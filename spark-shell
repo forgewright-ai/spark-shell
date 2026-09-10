@@ -503,7 +503,11 @@ cmd_check() {
     done
     [ "$rc_ok" = 1 ] && chk rc ok "the rc files are spark-shell's" || chk rc fail "an rc file is not spark-shell's" "spark-shell on"
     miss=''
-    for t in tmux starship fzf zoxide eza bat btop; do command -v "$t" >/dev/null 2>&1 || miss="$miss $t"; done
+    # ~/.local/bin holds the pinned starship (and spark): a non-login
+    # ssh shell has no such PATH, so look there too
+    for t in tmux starship fzf zoxide eza bat btop; do
+        command -v "$t" >/dev/null 2>&1 || [ -x "$HOME/.local/bin/$t" ] || miss="$miss $t"
+    done
     [ -z "$miss" ] && chk tools ok "tmux, starship, fzf, zoxide, eza, bat, btop" || chk tools fail "missing:$miss" "spark-shell on"
     if [ "$OS" = Darwin ]; then chk font ok "Homebrew's (the cask)"
     elif ls "$FONT_DIR"/*.ttf >/dev/null 2>&1; then chk font ok "JetBrainsMono Nerd Font"
@@ -531,7 +535,7 @@ cmd_check() {
     else
         chk backup ok "no $WORKSPACE yet"
     fi
-    if command -v spark >/dev/null 2>&1; then chk bar ok "spark bar line answers the status line"
+    if command -v spark >/dev/null 2>&1 || [ -x "$HOME/.local/bin/spark" ]; then chk bar ok "spark bar line answers the status line"
     else chk bar ok "spark not found -- the status line stays empty (github.com/forgewright-ai/spark)"; fi
     [ "$fails" = 0 ]
 }
