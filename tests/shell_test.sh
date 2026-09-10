@@ -95,5 +95,15 @@ sh "$SH" status >/dev/null
 grep -q 'PROMPT_STYLE=full' "$HOME/.config/spark-shell/config" && grep -q 'GIT_NAME=Test Person' "$HOME/.config/spark-shell/config" \
     && ok "first run seeds the config from site.env" || bad "seeding" "$(cat "$HOME/.config/spark-shell/config" 2>/dev/null)"
 
+# --- 8. invoked through a symlink (~/.local/bin): the repo still found --
+fresh
+theme_fixture '#abcdef'
+ln -s "$SH" "$H/.local/bin/spark-shell"
+sh -c '"$0" on' "$H/.local/bin/spark-shell" >/dev/null 2>&1 || true
+[ -f "$HOME/.tmux.conf" ] && grep -q '#abcdef' "$HOME/.tmux.conf" \
+    && ok "a symlinked spark-shell still finds its templates" || bad "symlink invocation" "$(ls -la "$HOME" | head -4)"
+case $(uname -s) in Darwin) r8=.zshrc ;; *) r8=.bashrc ;; esac
+[ -L "$HOME/$r8" ] && [ -e "$HOME/$r8" ] && ok "the rc link resolves (no dangling target)" || bad "rc link dangles" "$(readlink "$HOME/$r8" 2>&1)"
+
 printf '%s\n' "shell_test: $pass ok, $fail failed"
 [ "$fail" -eq 0 ]

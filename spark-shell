@@ -28,7 +28,14 @@
 # SITE_* keys are there (read once, copied, never read again).
 set -eu
 
-REPO=$(cd "$(dirname "$0")" && pwd)
+# ~/.local/bin/spark-shell is a symlink into the clone: resolve it, the
+# way spark's bin/spark does, so the templates are found from anywhere
+SELF=$0
+while [ -L "$SELF" ]; do
+    _t=$(readlink "$SELF")
+    case $_t in /*) SELF=$_t ;; *) SELF=$(dirname "$SELF")/$_t ;; esac
+done
+REPO=$(cd "$(dirname "$SELF")" && pwd)
 OS=$(uname -s)
 ARCH=$(uname -m)
 CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark-shell
