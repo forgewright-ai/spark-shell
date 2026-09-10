@@ -380,6 +380,8 @@ cmd_on() {
         fi
         if ls "$FONT_DIR"/*.ttf >/dev/null 2>&1; then
             ok font "JetBrainsMono Nerd Font in $FONT_DIR"
+        elif ! command -v unzip >/dev/null 2>&1; then
+            skip font "unzip is not here yet (the packages row) -- then spark-shell on again"
         elif need font "install JetBrainsMono Nerd Font $NERDFONT_VERSION"; then
             fetch "https://github.com/ryanoasis/nerd-fonts/releases/download/v$NERDFONT_VERSION/JetBrainsMono.zip" "$TMP/font.zip" "$NERDFONT_SHA"
             mkdir -p "$FONT_DIR"
