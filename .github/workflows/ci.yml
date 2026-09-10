@@ -35,7 +35,7 @@ jobs:
     container: archlinux:latest
     timeout-minutes: 10
     steps:
-      - run: pacman -Syu --noconfirm --needed git python >/dev/null
+      - run: pacman -Syu --noconfirm --needed git python diffutils >/dev/null
       - uses: actions/checkout@v4
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
