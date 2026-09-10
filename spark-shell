@@ -1,0 +1,568 @@
+#!/bin/sh
+# spark-shell -- spark's own shell for a machine that is an AI box.
+#
+#   spark-shell                 the state: rc files, tools, the look
+#   spark-shell on              tmux, starship, fzf, zoxide, eza, bat, btop,
+#                               the Nerd Font, one palette on every surface;
+#                               the rc files become spark-shell's (yours -> .bak)
+#   spark-shell off             everything back: rc files and the rendered
+#                               look from .bak, or gone; packages stay
+#   spark-shell apply           re-render the look from the current palette
+#                               (after: spark theme NAME)
+#   spark-shell check           is this machine still what this repo says?
+#   spark-shell bar on | off    tmux's status line (the line itself is
+#                               spark's: spark bar line)
+#   spark-shell on --dry-run    print what would change, touch nothing
+#
+# The one interface to spark is ~/.config/spark/theme.env -- the palette
+# `spark theme NAME` writes (21 THEME_* keys, THEME_LOGO optional). No
+# theme.env: the terminal keeps its own colours. spark itself is not
+# required; without it the status line stays empty and everything else
+# works. Nothing leaves this machine except the package manager and two
+# pinned, sha256-verified downloads (starship, the Nerd Font).
+#
+# POSIX sh, both OSes (Debian and Arch families, macOS). Choices live in
+# ~/.config/spark-shell/config (KEY=value): PROMPT starship|plain,
+# PROMPT_STYLE minimal|full, WORKSPACE, GIT_NAME, GIT_EMAIL. The first
+# `on` with no config seeds the five from spark's site.env when the old
+# SITE_* keys are there (read once, copied, never read again).
+set -eu
+
+REPO=$(cd "$(dirname "$0")" && pwd)
+OS=$(uname -s)
+ARCH=$(uname -m)
+CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark-shell
+CONFIG=$CONFIG_DIR/config
+SPARK_CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark
+THEME_ENV=$SPARK_CONFIG_DIR/theme.env
+
+# ------------------------------------------------------------ pinned bits
+# Everything not packaged is pinned by version and sha256. An empty sha
+# means "not pinned yet": the block skips with a notice, never guesses.
+STARSHIP_VERSION=1.26.0
+STARSHIP_SHA_X86_64=321f0dd7af8340a5f2e6a8fec6538a04f617486f9ec70d878f91c09cd8deef22
+STARSHIP_SHA_AARCH64=dc30189378d2f2e287384e8a692d3f95ad1df64cf0e8c36aa9201516028aed6b
+NERDFONT_VERSION=3.5.1
+NERDFONT_SHA=fab782a66f7d3019da64f6572db9fc5d3a4bcb19f9fa13e2d8a62e3693d6396e
+FONT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/fonts/JetBrainsMonoNerdFont"
+
+# --------------------------------------------------------------- readers
+# load_env FILE: set every KEY the environment does not already set.
+# A deliberate copy of spark lib/env.sh load_env (the twin): a valid line
+# is blank, a comment, or KEY=value with no shell syntax in the value.
+load_env() {
+    [ -f "$1" ] || return 0
+    bad=$(grep -nEv '^[[:space:]]*(#|$)|^[A-Z_0-9]+=[^;`$()|&<>]*$' "$1" || true)
+    if [ -n "$bad" ]; then
+        printf 'spark-shell: %s: refused, these lines are not KEY=value:\n%s\n' "$1" "$bad" >&2
+        return 1
+    fi
+    while IFS= read -r line || [ -n "$line" ]; do
+        case $line in ''|'#'*|' '*|'	'*) continue ;; esac
+        key=${line%%=*}
+        val=${line#*=}
+        case $val in \"*\") val=${val#\"}; val=${val%\"} ;; esac
+        tilde='~'
+        case $val in "$tilde"|"$tilde/"*) val=$HOME${val#"$tilde"} ;; esac
+        [ -n "$val" ] || continue
+        eval "cur=\${$key:-}"
+        [ -n "$cur" ] || export "$key=$val"
+    done < "$1"
+}
+
+# This machine's short name (the twin of spark lib/env.sh short_host)
+short_host() {
+    _host=
+    [ "$OS" != Darwin ] || _host=$(scutil --get LocalHostName 2>/dev/null || true)
+    [ -n "$_host" ] || _host=$(hostname -s 2>/dev/null || uname -n | cut -d. -f1)
+    printf '%s' "$_host"
+}
+
+config_load() {
+    if [ ! -f "$CONFIG" ] && [ -f "$SPARK_CONFIG_DIR/site.env" ]; then
+        # first run on a machine that ran spark's old shell layer: the
+        # five choices are seeded from site.env once, then this file is
+        # the only one read
+        # shellcheck disable=SC2153   # the SITE_* names come from site.env
+        ( load_env "$SPARK_CONFIG_DIR/site.env" || true
+          mkdir -p "$CONFIG_DIR"
+          {
+            printf '# spark-shell config -- KEY=value; seeded from spark site.env\n'
+            [ -z "${SITE_PROMPT:-}" ] || printf 'PROMPT=%s\n' "$SITE_PROMPT"
+            [ -z "${SITE_PROMPT_STYLE:-}" ] || printf 'PROMPT_STYLE=%s\n' "$SITE_PROMPT_STYLE"
+            [ -z "${SITE_WORKSPACE:-}" ] || printf 'WORKSPACE=%s\n' "$SITE_WORKSPACE"
+            [ -z "${SITE_GIT_NAME:-}" ] || [ "${SITE_GIT_NAME:-}" = "Your Name" ] || printf 'GIT_NAME=%s\n' "$SITE_GIT_NAME"
+            [ -z "${SITE_GIT_EMAIL:-}" ] || [ "${SITE_GIT_EMAIL:-}" = "you@example.com" ] || printf 'GIT_EMAIL=%s\n' "$SITE_GIT_EMAIL"
+          } > "$CONFIG" )
+    fi
+    load_env "$CONFIG" || exit 1
+    : "${PROMPT:=starship}"
+    : "${PROMPT_STYLE:=minimal}"
+    : "${WORKSPACE:=$HOME/projects}"
+    : "${GIT_NAME:=$(id -un)}"
+    : "${GIT_EMAIL:=$(id -un)@$(short_host)}"
+    export PROMPT PROMPT_STYLE WORKSPACE GIT_NAME GIT_EMAIL
+}
+
+THEME_KEYS="THEME_BG THEME_FG THEME_ACCENT THEME_MUTED THEME_BTOP THEME_ANSI_0 THEME_ANSI_1 THEME_ANSI_2 THEME_ANSI_3 THEME_ANSI_4 THEME_ANSI_5 THEME_ANSI_6 THEME_ANSI_7 THEME_ANSI_8 THEME_ANSI_9 THEME_ANSI_10 THEME_ANSI_11 THEME_ANSI_12 THEME_ANSI_13 THEME_ANSI_14 THEME_ANSI_15"
+
+# theme.env: written by `spark theme NAME` -- the interface (contract 3's
+# 21 keys). Absent, or spark absent: names both tmux and starship read as
+# the terminal's own colours (the twin of spark lib/env.sh theme_load's
+# `none` block).
+theme_load() {
+    if [ -f "$THEME_ENV" ]; then
+        load_env "$THEME_ENV" || return 1
+    fi
+    : "${THEME_BG:=default}" "${THEME_FG:=default}" "${THEME_ACCENT:=blue}" "${THEME_MUTED:=white}" "${THEME_BTOP:=Default}"
+    : "${THEME_ANSI_0:=black}" "${THEME_ANSI_1:=red}" "${THEME_ANSI_2:=green}" "${THEME_ANSI_3:=yellow}"
+    : "${THEME_ANSI_4:=blue}" "${THEME_ANSI_5:=magenta}" "${THEME_ANSI_6:=cyan}" "${THEME_ANSI_7:=white}"
+    : "${THEME_ANSI_8:=black}" "${THEME_ANSI_9:=red}" "${THEME_ANSI_10:=green}" "${THEME_ANSI_11:=yellow}"
+    : "${THEME_ANSI_12:=blue}" "${THEME_ANSI_13:=magenta}" "${THEME_ANSI_14:=cyan}" "${THEME_ANSI_15:=white}"
+    for k in $THEME_KEYS; do export "${k?}"; done
+}
+
+# ------------------------------------------------------------------ rows
+# The row vocabulary is spark bootstrap.sh's (the twin): ok | would |
+# skip | todo; an apply run says what it changed, --dry-run says all.
+MODE=apply
+VERBOSE=0
+todo=0
+acting=0
+row() { printf '%-6s %-12s %s\n' "$1" "$2" "${3:-}"; }
+loud() { [ "$MODE" = dry ] || [ "$VERBOSE" = 1 ]; }
+ok() { if loud || [ "$acting" = 1 ]; then row ok "$1" "${2:-}"; fi; acting=0; }
+skip() { if loud; then row skip "$1" "${2:-}"; fi; acting=0; }
+need() {
+    todo=$((todo + 1))
+    if [ "$MODE" = dry ]; then row would "$1" "${2:-}"; return 1; fi
+    acting=1
+    return 0
+}
+as_root() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }
+sudo_upfront() {
+    # ask once, before anything is touched (the twin of bootstrap.sh's)
+    [ "$MODE" = apply ] || return 0
+    [ "$(id -u)" -ne 0 ] || return 0
+    [ "$OS" = Darwin ] && return 0              # brew never needs root
+    command -v sudo >/dev/null 2>&1 || return 0
+    sudo -n true 2>/dev/null && return 0
+    [ -t 0 ] || return 0
+    printf 'spark-shell needs sudo once, now: the packages.\n'
+    sudo -v || { echo "spark-shell: sudo refused. Nothing was changed." >&2; exit 1; }
+}
+sha_ok() {
+    if [ "$OS" = Darwin ]; then shasum -a 256 "$1" | awk '{print $1}' | grep -qx "$2"
+    else sha256sum "$1" | awk '{print $1}' | grep -qx "$2"; fi
+}
+TMP=$(mktemp -d)
+PARTIAL=
+trap 'rm -rf "$TMP"; [ -z "$PARTIAL" ] || rm -f "$PARTIAL"' EXIT
+fetch() {   # fetch URL DEST SHA -- download, verify, or die (the twin)
+    PARTIAL=$2
+    if [ -t 2 ]; then
+        printf '       downloading %s\n' "${1##*/}"
+        curl -fL --retry 3 --progress-bar -o "$2" "$1" || { echo "spark-shell: download failed: $1" >&2; exit 1; }
+    else
+        curl -fsSL --retry 3 -o "$2" "$1" || { echo "spark-shell: download failed: $1" >&2; exit 1; }
+    fi
+    sha_ok "$2" "$3" || { echo "spark-shell: sha256 mismatch for $1" >&2; exit 1; }
+    PARTIAL=
+}
+
+# -------------------------------------------------------------- packages
+# One place switches on the manager (the twin of bootstrap.sh pkg_*).
+PM=
+DISTRO=
+pm_detect() {
+    # SPARK_OS_RELEASE pins the family (tests), even on macOS -- the
+    # same fixture pattern spark's bootstrap uses
+    if [ "$OS" = Darwin ] && [ -z "${SPARK_OS_RELEASE:-}" ]; then PM=brew; return; fi
+    _f=${SPARK_OS_RELEASE:-/etc/os-release}
+    for w in $(sed -n 's/^ID=//p; s/^ID_LIKE=//p' "$_f" 2>/dev/null | tr -d '"'); do
+        case $w in debian|arch) DISTRO=$w; break ;; esac
+    done
+    [ -z "$DISTRO" ] || load_env "$REPO/distro/$DISTRO.env" || exit 1
+    : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}"
+}
+pkg_installed() {
+    case $PM in
+        apt) dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed' ;;
+        pacman) pacman -Qq "$1" >/dev/null 2>&1 ;;
+        *) return 1 ;;
+    esac
+}
+pkg_install() {
+    case $PM in
+        apt) as_root apt-get update -qq && as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@" ;;
+        pacman) as_root pacman -S --needed --noconfirm "$@" ;;
+        *) return 1 ;;
+    esac
+}
+
+# --------------------------------------------------------------- renders
+# The link/render engine is the twin of spark install.sh's: a symlink for
+# a file used as-is, a rendered regular file where a value is baked in.
+# Yours is never overwritten -- it moves to <path>.bak. A file marked
+# `rendered by spark` (spark's old shell layer) is adopted as ours.
+changes=0
+backup() {
+    changes=$((changes + 1))
+    if [ "$MODE" = dry ]; then row would "back up" "$1"; return; fi
+    mv "$1" "$1.bak"
+    row "back" "up" "$1 -> $1.bak"
+}
+link_one() {   # link_one SRC DST
+    if [ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]; then ok rc "$2"; return; fi
+    if [ -e "$2" ] && [ ! -L "$2" ]; then backup "$2"
+    elif [ -L "$2" ]; then case $(readlink "$2") in "$REPO"/*) ;; *) backup "$2" ;; esac; fi
+    changes=$((changes + 1))
+    if [ "$MODE" = dry ]; then row would rc "$2"; return; fi
+    mkdir -p "$(dirname "$2")"
+    ln -sfn "$1" "$2"
+    row link rc "$2"
+}
+esc() { printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'; }
+render_expr() {
+    e="s|@HOME@|$(esc "$HOME")|g;s|@USER@|$(esc "$(id -un)")|g;s|@NAME@|$(esc "$(short_host)")|g"
+    e="$e;s|@WORKSPACE@|$(esc "$WORKSPACE")|g;s|@GIT_NAME@|$(esc "$GIT_NAME")|g;s|@GIT_EMAIL@|$(esc "$GIT_EMAIL")|g"
+    for k in $THEME_KEYS; do
+        eval "v=\$$k"
+        # shellcheck disable=SC2154   # v is set by the eval above
+        e="$e;s|@$k@|$(esc "$v")|g"
+    done
+    printf '%s' "$e"
+}
+render_one() {   # render_one SRC DST -- EXPR must be set
+    sed -e "$EXPR" "$1" > "$TMP/render"
+    if grep -q '@[A-Z_0-9]*@' "$TMP/render"; then
+        printf 'spark-shell: %s: unrendered placeholder: %s\n' "$1" "$(grep -o '@[A-Z_0-9]*@' "$TMP/render" | head -1)" >&2
+        exit 1
+    fi
+    if [ -f "$2" ] && [ ! -L "$2" ] && cmp -s "$TMP/render" "$2"; then ok look "$2"; return; fi
+    if [ -f "$2" ] && [ ! -L "$2" ] && ! grep -q 'rendered by spark' "$2"; then backup "$2"; fi
+    changes=$((changes + 1))
+    if [ "$MODE" = dry ]; then row would look "$2"; return; fi
+    mkdir -p "$(dirname "$2")"
+    rm -f "$2"
+    cp "$TMP/render" "$2"
+    chmod 0644 "$2"
+    row render look "$2"
+}
+
+# What `on` renders and `off` hands back
+RENDERED=".tmux.conf .config/btop/btop.conf .gitconfig"
+MICRO_SCHEME=.config/micro/colorschemes/spark.micro
+MICRO_SETTINGS=$HOME/.config/micro/settings.json
+rc_files() { if [ "$OS" = Darwin ]; then echo ".zshrc .zprofile"; else echo ".bashrc .bash_profile"; fi; }
+rc_tree() { if [ "$OS" = Darwin ]; then echo "$REPO/templates/macos"; else echo "$REPO/templates/linux"; fi; }
+
+render_all() {
+    theme_load
+    EXPR=$(render_expr)
+    for rel in $RENDERED; do
+        render_one "$REPO/templates/$rel" "$HOME/$rel"
+    done
+    if [ "$PROMPT" = starship ]; then
+        render_one "$REPO/templates/.config/starship.toml.$PROMPT_STYLE" "$HOME/.config/starship.toml"
+    fi
+    # micro's look, only for a micro the user has: the colorscheme, and a
+    # settings.json seeded once (micro rewrites it; the file is micro's)
+    if command -v micro >/dev/null 2>&1; then
+        render_one "$REPO/templates/$MICRO_SCHEME" "$HOME/$MICRO_SCHEME"
+        if [ -e "$MICRO_SETTINGS" ] || [ -L "$MICRO_SETTINGS" ]; then
+            micro_scheme_set
+        else
+            render_one "$REPO/templates/.config/micro/settings.json" "$MICRO_SETTINGS"
+        fi
+    fi
+}
+
+# micro's settings.json is JSON: the one piece sh does not parse. python3
+# is on any machine spark-shell makes sense on (spark requires it).
+micro_scheme_set() {
+    [ "$MODE" = dry ] && return 0
+    python3 - "$MICRO_SETTINGS" <<'EOF' 2>/dev/null || true
+import json, sys
+p = sys.argv[1]
+try:
+    with open(p) as f: d = json.load(f)
+except (OSError, ValueError): sys.exit(0)
+if isinstance(d, dict) and d.get("colorscheme") != "spark":
+    d["colorscheme"] = "spark"
+    with open(p, "w") as f: json.dump(d, f, indent=4); f.write("\n")
+EOF
+}
+micro_scheme_drop() {
+    python3 - "$MICRO_SETTINGS" <<'EOF' 2>/dev/null || true
+import json, sys
+p = sys.argv[1]
+try:
+    with open(p) as f: d = json.load(f)
+except (OSError, ValueError): sys.exit(0)
+if isinstance(d, dict) and d.get("colorscheme") == "spark":
+    del d["colorscheme"]
+    with open(p, "w") as f: json.dump(d, f, indent=4); f.write("\n")
+    print("ok     look         %s -- colorscheme key dropped, the rest is micro's" % p)
+EOF
+}
+
+restore_one() {   # restore_one PATH -- .bak back, or gone; never a husk
+    [ -e "$1" ] || [ -L "$1" ] || return 0
+    rm -f "$1"
+    if [ -e "$1.bak" ] || [ -L "$1.bak" ]; then
+        mv "$1.bak" "$1"
+        row ok restore "$1 -- back from ${1##*/}.bak"
+    else
+        row ok restore "$1 -- removed (no ${1##*/}.bak: there was no file before)"
+    fi
+}
+
+tmux_reload() {
+    command -v tmux >/dev/null 2>&1 || return 0
+    tmux list-sessions >/dev/null 2>&1 || return 0
+    if [ -f "$HOME/.tmux.conf" ]; then
+        tmux source-file "$HOME/.tmux.conf" >/dev/null 2>&1 || true
+        row ok tmux "reloaded (~/.tmux.conf)"
+    fi
+}
+
+# ------------------------------------------------------------------ verbs
+cmd_on() {
+    config_load
+    sudo_upfront
+    loud && printf '== packages\n'
+    pm_detect
+    if [ "$PM" = brew ]; then
+        if ! command -v brew >/dev/null 2>&1; then
+            row todo packages "Homebrew is not installed: https://brew.sh (then run again)"
+        elif brew bundle check --file "$REPO/Brewfile" --no-upgrade >/dev/null 2>&1; then
+            ok packages "Brewfile satisfied"
+        elif need packages "brew bundle --file Brewfile"; then
+            brew bundle --file "$REPO/Brewfile" --no-upgrade
+            ok packages "Brewfile satisfied"
+        fi
+    elif [ -z "$PM" ]; then
+        row todo packages "no package list for this Linux: distro/*.env know debian and arch"
+    else
+        missing=''
+        # shellcheck disable=SC2086
+        for p in $PKG_SHELL $PKG_CLI; do pkg_installed "$p" || missing="$missing $p"; done
+        if [ -z "$missing" ]; then ok packages "installed"
+        elif need packages "install$missing ($PM, sudo)"; then
+            # shellcheck disable=SC2086
+            pkg_install $missing
+            ok packages "installed"
+        fi
+    fi
+    loud && printf '\n== pinned\n'
+    if [ "$OS" = Darwin ]; then
+        skip starship "Homebrew provides starship and the Nerd Font here"
+    else
+        if [ -x "$HOME/.local/bin/starship" ] || command -v starship >/dev/null 2>&1; then
+            ok starship "$(PATH=$HOME/.local/bin:$PATH starship --version 2>/dev/null | head -1)"
+        else
+            case $ARCH in x86_64) sha=$STARSHIP_SHA_X86_64; tri=x86_64-unknown-linux-gnu ;;
+                          aarch64) sha=$STARSHIP_SHA_AARCH64; tri=aarch64-unknown-linux-musl ;;
+                          *) sha=; tri= ;; esac
+            if [ -z "$sha" ]; then
+                skip starship "no pin for $ARCH yet (NOTICE)"
+            elif need starship "install $STARSHIP_VERSION into ~/.local/bin"; then
+                fetch "https://github.com/starship/starship/releases/download/v$STARSHIP_VERSION/starship-$tri.tar.gz" "$TMP/starship.tgz" "$sha"
+                mkdir -p "$HOME/.local/bin"
+                tar -xzf "$TMP/starship.tgz" -C "$HOME/.local/bin" starship
+                ok starship "$STARSHIP_VERSION"
+            fi
+        fi
+        if ls "$FONT_DIR"/*.ttf >/dev/null 2>&1; then
+            ok font "JetBrainsMono Nerd Font in $FONT_DIR"
+        elif need font "install JetBrainsMono Nerd Font $NERDFONT_VERSION"; then
+            fetch "https://github.com/ryanoasis/nerd-fonts/releases/download/v$NERDFONT_VERSION/JetBrainsMono.zip" "$TMP/font.zip" "$NERDFONT_SHA"
+            mkdir -p "$FONT_DIR"
+            unzip -q -o "$TMP/font.zip" -d "$FONT_DIR" 'JetBrainsMonoNerdFont-*.ttf'
+            fc-cache -f "$FONT_DIR" >/dev/null 2>&1 || true
+            ok font "JetBrainsMono Nerd Font $NERDFONT_VERSION (set it in your terminal)"
+        fi
+    fi
+    # terminfo: tmux-256color must know modified arrow keys
+    if infocmp -1x tmux-256color 2>/dev/null | grep -q 'kUP='; then
+        ok terminfo "tmux-256color knows modified arrow keys"
+    elif [ "$OS" = Darwin ]; then
+        nc=$(brew --prefix ncurses 2>/dev/null || true)
+        if [ ! -x "$nc/bin/infocmp" ]; then skip terminfo "Homebrew ncurses not installed yet"
+        elif need terminfo "compile tmux-256color from Homebrew ncurses into ~/.terminfo"; then
+            "$nc/bin/infocmp" -x tmux-256color > "$TMP/tmux.ti"
+            tic -x -o "$HOME/.terminfo" "$TMP/tmux.ti"
+            ok terminfo "compiled into ~/.terminfo"
+        fi
+    else
+        skip terminfo "tmux-256color lacks kUP here; a newer ncurses-term has it"
+    fi
+    # the workspace folder (WORKSPACE): where your projects live
+    if [ -d "$WORKSPACE" ]; then ok dir "$WORKSPACE"
+    elif need dir "mkdir -p $WORKSPACE"; then mkdir -p "$WORKSPACE"; ok dir "$WORKSPACE"; fi
+    loud && printf '\n== the look\n'
+    tree=$(rc_tree)
+    for f in $(rc_files); do
+        link_one "$tree/$f" "$HOME/$f"
+    done
+    render_all
+    # spark-shell on PATH, so the prompt and tmux can call it
+    link_one "$REPO/spark-shell" "$HOME/.local/bin/spark-shell"
+    tmux_reload
+    if [ "$MODE" = dry ]; then
+        if [ "$todo" -eq 0 ]; then echo "Nothing to do"; else echo "$todo to do"; fi
+    else
+        echo "open a new shell (exec \$SHELL)"
+    fi
+}
+
+cmd_off() {
+    config_load
+    for f in $(rc_files); do
+        p=$HOME/$f
+        # only spark-shell's own symlink is handed back; a hook line or
+        # your own file is not ours to touch
+        if [ -L "$p" ]; then
+            case $(readlink "$p") in "$REPO"/*) restore_one "$p" ;; esac
+        fi
+    done
+    for rel in $RENDERED $MICRO_SCHEME .config/starship.toml; do
+        p=$HOME/$rel
+        if [ -f "$p" ] && [ ! -L "$p" ]; then
+            if grep -q 'rendered by spark' "$p" 2>/dev/null || [ -e "$p.bak" ]; then
+                restore_one "$p"
+            fi
+        fi
+    done
+    micro_scheme_drop
+    # spark's own hook must survive the hand-back: a restored or absent
+    # rc file gets the one marked line back when spark is installed here
+    hook_line=''
+    case $OS in
+        Darwin) [ -r "$SPARK_CONFIG_DIR/hook.zsh" ] && hook_line='[[ -r ~/.config/spark/hook.zsh ]] && source ~/.config/spark/hook.zsh   # spark: the AI at the prompt' ;;
+        *) [ -r "$SPARK_CONFIG_DIR/hook.bash" ] && hook_line='[ -r ~/.config/spark/hook.bash ] && . ~/.config/spark/hook.bash   # spark: the AI at the prompt' ;;
+    esac
+    if [ -n "$hook_line" ]; then
+        case $OS in Darwin) rcf=$HOME/.zshrc ;; *) rcf=$HOME/.bashrc ;; esac
+        if ! grep -q 'config/spark/hook\.' "$rcf" 2>/dev/null; then
+            printf '%s\n' "$hook_line" >> "$rcf"
+            row ok rc "$rcf -- spark's hook line kept"
+        fi
+    fi
+    tmux_reload
+    echo "packages stay installed -- the package manager removes them if you want"
+    echo "open a new shell (exec \$SHELL)"
+}
+
+cmd_apply() {
+    config_load
+    render_all
+    tmux_reload
+    if [ "$changes" -eq 0 ] && [ "$todo" -eq 0 ]; then echo "Nothing to do"; fi
+}
+
+cmd_status() {
+    config_load
+    tree=$(rc_tree)
+    printf 'spark-shell -- the look and the tools for an AI box\n'
+    for f in $(rc_files); do
+        p=$HOME/$f
+        if [ -L "$p" ] && [ "$(readlink "$p")" = "$tree/$f" ]; then s="spark-shell's"
+        elif [ -L "$p" ]; then s="a symlink elsewhere"
+        elif [ -f "$p" ]; then grep -q 'config/spark/hook\.' "$p" 2>/dev/null && s="yours, with spark's hook" || s="yours"
+        else s="absent"; fi
+        # shellcheck disable=SC2088   # the tilde is display, not a path
+        printf '  rc    %-16s %s\n' "~/$f" "$s"
+    done
+    for t in tmux starship fzf zoxide eza bat btop; do
+        command -v "$t" >/dev/null 2>&1 && s=yes || s=no
+        printf '  tool  %-16s %s\n' "$t" "$s"
+    done
+    [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' theme.env "read (spark theme NAME rewrites it; then spark-shell apply)" \
+                        || printf '  theme %-16s %s\n' theme.env "none: the terminal keeps its colours"
+}
+
+cmd_check() {
+    config_load
+    fails=0
+    chk() { # chk NAME ok|fail DETAIL [REMEDY]
+        if [ "$2" = ok ]; then printf 'ok     %-12s %s\n' "$1" "$3"
+        else printf 'FAIL   %-12s %s -- %s\n' "$1" "$3" "${4:-}"; fails=$((fails + 1)); fi
+    }
+    tree=$(rc_tree)
+    rc_ok=1
+    for f in $(rc_files); do
+        [ -L "$HOME/$f" ] && [ "$(readlink "$HOME/$f")" = "$tree/$f" ] || rc_ok=0
+    done
+    [ "$rc_ok" = 1 ] && chk rc ok "the rc files are spark-shell's" || chk rc fail "an rc file is not spark-shell's" "spark-shell on"
+    miss=''
+    for t in tmux starship fzf zoxide eza bat btop; do command -v "$t" >/dev/null 2>&1 || miss="$miss $t"; done
+    [ -z "$miss" ] && chk tools ok "tmux, starship, fzf, zoxide, eza, bat, btop" || chk tools fail "missing:$miss" "spark-shell on"
+    if [ "$OS" = Darwin ]; then chk font ok "Homebrew's (the cask)"
+    elif ls "$FONT_DIR"/*.ttf >/dev/null 2>&1; then chk font ok "JetBrainsMono Nerd Font"
+    else chk font fail "no Nerd Font in $FONT_DIR" "spark-shell on"; fi
+    infocmp -1x tmux-256color 2>/dev/null | grep -q 'kUP=' && chk terminfo ok "tmux-256color knows modified arrows" \
+        || chk terminfo fail "tmux-256color lacks kUP" "spark-shell on"
+    # render freshness: what apply would write vs what is on disk
+    theme_load
+    EXPR=$(render_expr)
+    stale=''
+    for rel in $RENDERED; do
+        [ -f "$HOME/$rel" ] || { stale="$stale $rel"; continue; }
+        sed -e "$EXPR" "$REPO/templates/$rel" > "$TMP/chk"
+        cmp -s "$TMP/chk" "$HOME/$rel" || stale="$stale $rel"
+    done
+    [ -z "$stale" ] && chk look ok "the rendered look matches the palette" || chk look fail "stale:$stale" "spark-shell apply"
+    # backup: unpushed work under WORKSPACE
+    if [ -d "$WORKSPACE" ]; then
+        dirty=0
+        for d in "$WORKSPACE"/*/ "$WORKSPACE"/*/*/; do
+            [ -d "$d/.git" ] || continue
+            if [ -n "$(git -C "$d" status --porcelain 2>/dev/null)" ]; then dirty=$((dirty + 1)); fi
+        done
+        [ "$dirty" = 0 ] && chk backup ok "no uncommitted work under $WORKSPACE" || chk backup ok "$dirty repo(s) with uncommitted work under $WORKSPACE"
+    else
+        chk backup ok "no $WORKSPACE yet"
+    fi
+    if command -v spark >/dev/null 2>&1; then chk bar ok "spark bar line answers the status line"
+    else chk bar ok "spark not found -- the status line stays empty (github.com/forgewright-ai/spark)"; fi
+    [ "$fails" = 0 ]
+}
+
+cmd_bar() {
+    command -v tmux >/dev/null 2>&1 || { echo "spark-shell bar: no tmux here (spark-shell on installs it)"; return 1; }
+    tmux list-sessions >/dev/null 2>&1 || { echo "spark-shell bar: no tmux running -- the status line is tmux's (tmux starts one)"; return 1; }
+    case ${1:-} in
+        on) tmux set -g status on; echo "spark-shell bar -- shown (spark-shell bar off hides it)" ;;
+        off) tmux set -g status off; echo "spark-shell bar -- hidden (spark-shell bar on brings it back)" ;;
+        *) s=$(tmux show -gv status 2>/dev/null || echo on)
+           [ "$s" != off ] && echo "spark-shell bar -- shown (spark-shell bar off hides it)" \
+                           || echo "spark-shell bar -- hidden (spark-shell bar on brings it back)" ;;
+    esac
+}
+
+usage() {
+    sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+main() {
+    sub=${1:-status}
+    shift 2>/dev/null || true
+    for a in "$@"; do
+        case $a in --dry-run) MODE=dry ;; --verbose|-v) VERBOSE=1 ;; esac
+    done
+    case $sub in
+        -h|--help|help) usage ;;
+        on) cmd_on ;;
+        off) cmd_off ;;
+        apply) cmd_apply ;;
+        check) cmd_check ;;
+        bar) cmd_bar "$@" ;;
+        status) cmd_status ;;
+        --dry-run) MODE=dry; cmd_on ;;
+        *) usage >&2; exit 2 ;;
+    esac
+}
+
+main "$@"
