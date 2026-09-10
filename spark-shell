@@ -349,6 +349,10 @@ cmd_on() {
         # shellcheck disable=SC2086
         for p in $PKG_SHELL $PKG_CLI; do pkg_installed "$p" || missing="$missing $p"; done
         if [ -z "$missing" ]; then ok packages "installed"
+        elif [ "$(id -u)" -ne 0 ] && ! sudo -n true 2>/dev/null && [ ! -t 0 ]; then
+            # nobody to type a password here: say what is left, keep going
+            # (the links and renders below need no root)
+            row todo packages "still to install:$missing -- spark-shell on at a terminal (sudo once)"
         elif need packages "install$missing ($PM, sudo)"; then
             # shellcheck disable=SC2086
             pkg_install $missing
