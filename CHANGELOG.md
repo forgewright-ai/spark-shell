@@ -10,6 +10,20 @@
   `~/.local/share/fonts/JetBrainsMonoNerdFont` is not touched -- nothing
   spark-shell did not render is ever removed; `rm -r` it and `fc-cache
   -f` if you want it gone.
+- One plain look: every render draws with ASCII and names colours by
+  palette slot, never by hex -- tmux without the truecolor override and
+  without the console hook (`colour0`..`colour15` need none), starship
+  with ASCII git marks and its colour words, btop in `force_tty` with
+  tty graphs, micro's colorscheme in its sixteen colour words, bat on
+  its `ansi` theme with numbers only, fzf with `--no-unicode
+  --color=16`. The accent and the muted tone become the nearest of the
+  palette's sixteen at render time (`spark-shell status` names the
+  pair); spark's `theme.env` is read as before. `MICRO_TRUECOLOR` is no
+  longer exported, and the status line asks `spark bar line` with
+  `SPARK_ASCII=1`.
+- `apply` and `on` also unset, in a running tmux, what the v0.1 render
+  had set and a reload cannot undo (the console hook, the appended
+  truecolor override), so the new look lands without a restart.
 
 ## v0.1
 

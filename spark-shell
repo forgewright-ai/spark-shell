@@ -110,10 +110,53 @@ config_load() {
 
 THEME_KEYS="THEME_BG THEME_FG THEME_ACCENT THEME_MUTED THEME_BTOP THEME_ANSI_0 THEME_ANSI_1 THEME_ANSI_2 THEME_ANSI_3 THEME_ANSI_4 THEME_ANSI_5 THEME_ANSI_6 THEME_ANSI_7 THEME_ANSI_8 THEME_ANSI_9 THEME_ANSI_10 THEME_ANSI_11 THEME_ANSI_12 THEME_ANSI_13 THEME_ANSI_14 THEME_ANSI_15"
 
+# ------------------------------------------------------------- the slots
+# The rendered look names colours by palette slot (0-15: tmux colourN,
+# starship's and micro's sixteen colour words), never by hex: the console
+# palette `spark theme NAME` programs is what draws them, so one file is
+# right on the Linux console and merely plain in an emulator. THEME_ACCENT
+# and THEME_MUTED are hex in theme.env: each becomes the slot whose
+# THEME_ANSI_n is nearest by RGB distance, the lowest index on a tie (a
+# palette's bright row often repeats its dim one). A colour word (the
+# no-theme.env defaults) is its own slot. BG and FG are the terminal's
+# own (`default`).
+SLOT_KEYS="ACCENT_SLOT MUTED_SLOT ACCENT_NAME MUTED_NAME ACCENT_STAR MUTED_STAR"
+hex_rgb() {   # hex_rgb #rrggbb -> "r g b" (decimal), or false
+    case $1 in \#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) ;; *) return 1 ;; esac
+    _h=${1#\#}; _m=${_h#??}
+    printf '%d %d %d' "$((0x${_h%????}))" "$((0x${_m%??}))" "$((0x${_h#????}))"
+}
+slot_of() {   # slot_of COLOUR -> 0..15
+    case $1 in
+        black) echo 0; return ;; red) echo 1; return ;; green) echo 2; return ;;
+        yellow) echo 3; return ;; blue) echo 4; return ;; magenta) echo 5; return ;;
+        cyan) echo 6; return ;; white) echo 7; return ;;
+    esac
+    want=$(hex_rgb "$1") || { echo 7; return; }
+    best=; slot=7; i=0
+    while [ "$i" -le 15 ]; do
+        eval "c=\$THEME_ANSI_$i"
+        # shellcheck disable=SC2154   # c is set by the eval above
+        if rgb=$(hex_rgb "$c"); then
+            # shellcheck disable=SC2086   # six numbers, split on purpose
+            set -- $want $rgb
+            d=$(( ($1-$4)*($1-$4) + ($2-$5)*($2-$5) + ($3-$6)*($3-$6) ))
+            if [ -z "$best" ] || [ "$d" -lt "$best" ]; then best=$d; slot=$i; fi
+        fi
+        i=$((i + 1))
+    done
+    echo "$slot"
+}
+slot_name() {   # slot_name N micro|starship -> that tool's word for slot N
+    _n=$1
+    if [ "$2" = starship ]; then _sep=-; _five=purple; else _sep=; _five=magenta; fi
+    set -- black red green yellow blue "$_five" cyan white
+    if [ "$_n" -ge 8 ]; then shift $((_n - 8)); echo "bright$_sep$1"; else shift "$_n"; echo "$1"; fi
+}
+
 # theme.env: written by `spark theme NAME` -- the interface (contract 3's
-# 21 keys). Absent, or spark absent: names both tmux and starship read as
-# the terminal's own colours (the twin of spark lib/env.sh theme_load's
-# `none` block).
+# 21 keys). Absent, or spark absent: colour words, each its own slot (the
+# twin of spark lib/env.sh theme_load's `none` block). Then the slots.
 theme_load() {
     if [ -f "$THEME_ENV" ]; then
         load_env "$THEME_ENV" || return 1
@@ -124,6 +167,10 @@ theme_load() {
     : "${THEME_ANSI_8:=black}" "${THEME_ANSI_9:=red}" "${THEME_ANSI_10:=green}" "${THEME_ANSI_11:=yellow}"
     : "${THEME_ANSI_12:=blue}" "${THEME_ANSI_13:=magenta}" "${THEME_ANSI_14:=cyan}" "${THEME_ANSI_15:=white}"
     for k in $THEME_KEYS; do export "${k?}"; done
+    ACCENT_SLOT=$(slot_of "$THEME_ACCENT"); MUTED_SLOT=$(slot_of "$THEME_MUTED")
+    ACCENT_NAME=$(slot_name "$ACCENT_SLOT" micro); MUTED_NAME=$(slot_name "$MUTED_SLOT" micro)
+    ACCENT_STAR=$(slot_name "$ACCENT_SLOT" starship); MUTED_STAR=$(slot_name "$MUTED_SLOT" starship)
+    export ACCENT_SLOT MUTED_SLOT ACCENT_NAME MUTED_NAME ACCENT_STAR MUTED_STAR
 }
 
 # ------------------------------------------------------------------ rows
@@ -235,6 +282,10 @@ render_expr() {
         # shellcheck disable=SC2154   # v is set by the eval above
         e="$e;s|@$k@|$(esc "$v")|g"
     done
+    for k in $SLOT_KEYS; do
+        eval "v=\$$k"
+        e="$e;s|@$k@|$(esc "$v")|g"
+    done
     printf '%s' "$e"
 }
 render_one() {   # render_one SRC DST -- EXPR must be set
@@ -326,6 +377,10 @@ tmux_reload() {
     command -v tmux >/dev/null 2>&1 || return 0
     tmux list-sessions >/dev/null 2>&1 || return 0
     if [ -f "$HOME/.tmux.conf" ]; then
+        # what a v0.1 render set and a source-file cannot unset: the
+        # console hook and the appended truecolor override
+        tmux set-hook -gu client-attached >/dev/null 2>&1 || true
+        tmux set -gu terminal-overrides >/dev/null 2>&1 || true
         tmux source-file "$HOME/.tmux.conf" >/dev/null 2>&1 || true
         row ok tmux "reloaded (~/.tmux.conf)"
     fi
@@ -478,8 +533,10 @@ cmd_status() {
         command -v "$t" >/dev/null 2>&1 && s=yes || s=no
         printf '  tool  %-16s %s\n' "$t" "$s"
     done
-    [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' theme.env "read (spark theme NAME rewrites it; then spark-shell apply)" \
-                        || printf '  theme %-16s %s\n' theme.env "none: the terminal keeps its colours"
+    theme_load || true
+    slots="accent colour${ACCENT_SLOT:-?}, muted colour${MUTED_SLOT:-?}"
+    [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' theme.env "read: $slots (spark theme NAME rewrites it; then spark-shell apply)" \
+                        || printf '  theme %-16s %s\n' theme.env "none: the terminal's own sixteen; $slots"
 }
 
 cmd_check() {

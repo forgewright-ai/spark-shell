@@ -3,30 +3,39 @@
 # package row is forced to `todo` by an unknown distro fixture, and the
 # pinned rows are satisfied by stubs, so `on` exercises the render and
 # link machinery only. Run: sh tests/shell_test.sh
+# With SPARK=/path/to/spark's clone, section 11 renders its palettes too.
 set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 pass=0; fail=0
 ok() { pass=$((pass + 1)); printf '  ok   %s\n' "$1"; }
 bad() { fail=$((fail + 1)); printf '  FAIL %s   %s\n' "$1" "${2:-}"; }
+tab=$(printf '\t')
+plain() {   # plain FILE -- no hex colour, no byte outside ASCII
+    ! grep -Eq '#[0-9a-fA-F]{6}' "$1" && ! LC_ALL=C grep -q "[^ -~${tab}]" "$1"
+}
 
 fresh() {   # a new throwaway HOME with the stubs in place
     H=$(mktemp -d)
     export HOME=$H XDG_CONFIG_HOME=$H/.config XDG_STATE_HOME=$H/.local/state XDG_DATA_HOME=$H/.local/share
     mkdir -p "$H/.local/bin" "$H/.config/spark"
     printf '#!/bin/sh\necho starship 0.0-stub\n' > "$H/.local/bin/starship"
-    chmod +x "$H/.local/bin/starship"
+    printf '#!/bin/sh\n' > "$H/.local/bin/micro"     # a micro on PATH: the colorscheme renders
+    chmod +x "$H/.local/bin/starship" "$H/.local/bin/micro"
     printf 'ID=fixture\n' > "$H/os-release"
     export SPARK_OS_RELEASE=$H/os-release
     PATH=$H/.local/bin:$PATH
 }
 
-theme_fixture() {   # theme_fixture ACCENT -- a full 21-key theme.env
+theme_fixture() {   # theme_fixture ACCENT [MUTED] -- a 21-key theme.env over the VGA sixteen
     {
-        printf 'THEME_BG=#101010\nTHEME_FG=#e0e0e0\nTHEME_ACCENT=%s\nTHEME_MUTED=#808080\nTHEME_BTOP=TTY\n' "$1"
+        printf 'THEME_BG=#000000\nTHEME_FG=#aaaaaa\nTHEME_ACCENT=%s\nTHEME_MUTED=%s\nTHEME_BTOP=TTY\n' "$1" "${2:-#555555}"
         i=0
-        while [ $i -le 15 ]; do printf 'THEME_ANSI_%d=#0000%02x\n' "$i" "$i"; i=$((i + 1)); done
+        for c in 000000 aa0000 00aa00 aa5500 0000aa aa00aa 00aaaa aaaaaa 555555 ff5555 55ff55 ffff55 5555ff ff55ff 55ffff ffffff; do
+            printf 'THEME_ANSI_%d=#%s\n' "$i" "$c"; i=$((i + 1))
+        done
     } > "$HOME/.config/spark/theme.env"
 }
+RENDERS=".tmux.conf .config/btop/btop.conf .config/starship.toml .gitconfig .config/micro/colorschemes/spark.micro"
 
 SH=$REPO/spark-shell
 
@@ -37,10 +46,11 @@ printf '%s\n' "$out" | grep -q '^would  rc' && ok "dry-run: would link the rc fi
 printf '%s\n' "$out" | grep -q '^would  look' && ok "dry-run: would render the look" || bad "dry-run look rows" "$out"
 printf '%s\n' "$out" | grep -q '^todo   packages' && ok "dry-run: an unknown family is a todo, not a guess" || bad "dry-run packages row" "$out"
 printf '%s\n' "$out" | grep -q ' to do$' && ok "dry-run ends with the count" || bad "dry-run count" "$out"
+printf '%s\n' "$out" | grep -q 'font' && bad "a font row survives" "$out" || ok "dry-run: no font row"
 [ ! -e "$HOME/.tmux.conf" ] && ok "dry-run touched nothing" || bad "dry-run wrote files"
 
-# --- 2. on: links, renders, idempotence ----------------------------------
-theme_fixture '#ff8800'
+# --- 2. on: links, renders, idempotence, the plain look ------------------
+theme_fixture '#ff5555'
 printf 'yours\n' > "$HOME/.bashrc"     # a pre-existing rc file of the user's
 out=$(sh "$SH" on)
 case $(uname -s) in Darwin) rc1=.zshrc ;; *) rc1=.bashrc ;; esac
@@ -48,19 +58,30 @@ case $(uname -s) in Darwin) rc1=.zshrc ;; *) rc1=.bashrc ;; esac
 if [ "$rc1" = .bashrc ]; then
     [ -f "$HOME/.bashrc.bak" ] && grep -q yours "$HOME/.bashrc.bak" && ok "on: yours went to .bak" || bad "rc backup"
 fi
-[ -f "$HOME/.tmux.conf" ] && grep -q '#ff8800' "$HOME/.tmux.conf" && ok "on: tmux.conf rendered with the palette" || bad "tmux render"
+[ -f "$HOME/.tmux.conf" ] && grep -q 'fg=colour9,bold' "$HOME/.tmux.conf" && ok "on: the accent is its palette slot (colour9)" || bad "tmux render" "$(grep -n colour "$HOME/.tmux.conf" 2>&1 | head -3)"
 grep -q '@[A-Z_0-9]*@' "$HOME/.tmux.conf" && bad "unrendered placeholder left" || ok "on: no placeholder left"
-[ -f "$HOME/.config/starship.toml" ] && ok "on: starship.toml rendered (minimal)" || bad "starship render"
-[ -f "$HOME/.gitconfig" ] && ok "on: .gitconfig rendered" || bad "gitconfig render"
+for rel in $RENDERS; do
+    [ -f "$HOME/$rel" ] || { bad "on: $rel not rendered"; continue; }
+    plain "$HOME/$rel" && ok "on: $rel is plain (no hex, ASCII)" || bad "on: $rel not plain" "$(grep -nE '#[0-9a-fA-F]{6}' "$HOME/$rel" | head -2)"
+done
+grep -q 'SPARK_ASCII=1 spark bar line' "$HOME/.tmux.conf" && ok "on: the bar is asked in ASCII" || bad "bar ascii"
+grep -q 'Tc' "$HOME/.tmux.conf" && bad "tmux still advertises truecolor" || ok "on: no truecolor override"
+grep -q 'client-attached' "$HOME/.tmux.conf" && bad "the console hook survives" || ok "on: no console hook (the slots need none)"
+grep -q '^force_tty = True' "$HOME/.config/btop/btop.conf" && grep -q '^graph_symbol = "tty"' "$HOME/.config/btop/btop.conf" \
+    && ok "on: btop in tty mode, tty graphs" || bad "btop tty mode"
+grep -q '^color-link preproc "brightred"' "$HOME/.config/micro/colorschemes/spark.micro" && ok "on: micro's accent is its colour word (brightred)" || bad "micro accent"
+grep -q 'style = "bold bright-red"' "$HOME/.config/starship.toml" && ok "on: starship's accent is its colour word (bright-red)" || bad "starship accent"
 out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "second run: Nothing to do" || bad "idempotence" "$out"
 
 # --- 3. apply follows the palette ----------------------------------------
-theme_fixture '#00cc66'
+theme_fixture '#ee8800'
 sh "$SH" apply >/dev/null
-grep -q '#00cc66' "$HOME/.tmux.conf" && ok "apply: a new palette lands in the render" || bad "apply rerender"
+grep -q 'fg=colour3,bold' "$HOME/.tmux.conf" && ok "apply: a new accent lands as its nearest slot (colour3)" || bad "apply rerender" "$(grep -n colour "$HOME/.tmux.conf" | head -2)"
 out=$(sh "$SH" check || true)
 printf '%s\n' "$out" | grep -q '^ok     look' && ok "check: the look matches the palette" || bad "check look row" "$out"
+printf '%s\n' "$out" | grep -q 'font' && bad "check: a font row survives" "$out" || ok "check: no font row"
+sh "$SH" status | grep -q 'accent colour3, muted colour8' && ok "status: the theme row names the slots" || bad "status slots" "$(sh "$SH" status | grep theme)"
 
 # --- 4. the prompt choices ------------------------------------------------
 mkdir -p "$HOME/.config/spark-shell"
@@ -70,7 +91,8 @@ sh "$SH" apply >/dev/null
 [ ! -e "$HOME/.config/starship.toml" ] && ok "PROMPT=plain renders no starship.toml" || bad "plain prompt"
 printf 'PROMPT=starship\nPROMPT_STYLE=full\n' > "$HOME/.config/spark-shell/config"
 sh "$SH" apply >/dev/null
-[ -f "$HOME/.config/starship.toml" ] && ok "PROMPT_STYLE=full renders the full style" || bad "full style"
+[ -f "$HOME/.config/starship.toml" ] && grep -q 'style = "bold yellow"' "$HOME/.config/starship.toml" \
+    && plain "$HOME/.config/starship.toml" && ok "PROMPT_STYLE=full renders the full style, plain" || bad "full style"
 
 # --- 5. off hands back ----------------------------------------------------
 out=$(sh "$SH" off)
@@ -82,10 +104,10 @@ printf '%s\n' "$out" | grep -q 'packages stay installed' && ok "off: packages st
 
 # --- 6. adoption: a file spark's old layer rendered is ours ---------------
 fresh
-theme_fixture '#123456'
+theme_fixture '#5555ff'
 printf '# rendered by spark install.sh from templates/.tmux.conf\nold\n' > "$HOME/.tmux.conf"
 sh "$SH" on >/dev/null
-grep -q '#123456' "$HOME/.tmux.conf" && [ ! -e "$HOME/.tmux.conf.bak" ] && ok "adoption: an old spark render is re-rendered, no .bak" || bad "adoption"
+grep -q 'fg=colour12,bold' "$HOME/.tmux.conf" && [ ! -e "$HOME/.tmux.conf.bak" ] && ok "adoption: an old spark render is re-rendered, no .bak" || bad "adoption"
 
 # --- 7. config seeded from site.env once ----------------------------------
 fresh
@@ -96,13 +118,42 @@ grep -q 'PROMPT_STYLE=full' "$HOME/.config/spark-shell/config" && grep -q 'GIT_N
 
 # --- 8. invoked through a symlink (~/.local/bin): the repo still found --
 fresh
-theme_fixture '#abcdef'
+theme_fixture '#ff55ff'
 ln -s "$SH" "$H/.local/bin/spark-shell"
 sh -c '"$0" on' "$H/.local/bin/spark-shell" >/dev/null 2>&1 || true
-[ -f "$HOME/.tmux.conf" ] && grep -q '#abcdef' "$HOME/.tmux.conf" \
+[ -f "$HOME/.tmux.conf" ] && grep -q 'fg=colour13,bold' "$HOME/.tmux.conf" \
     && ok "a symlinked spark-shell still finds its templates" || bad "symlink invocation" "$(ls -la "$HOME" | head -4)"
 case $(uname -s) in Darwin) r8=.zshrc ;; *) r8=.bashrc ;; esac
 [ -L "$HOME/$r8" ] && [ -e "$HOME/$r8" ] && ok "the rc link resolves (no dangling target)" || bad "rc link dangles" "$(readlink "$HOME/$r8" 2>&1)"
+
+# --- 9. no theme.env: the colour words, each its own slot -----------------
+fresh
+sh "$SH" on >/dev/null
+grep -q 'fg=colour4,bold' "$HOME/.tmux.conf" && grep -q 'pane-border-style "fg=colour7"' "$HOME/.tmux.conf" \
+    && ok "no theme.env: accent blue (colour4), muted white (colour7)" || bad "name defaults" "$(grep -n colour "$HOME/.tmux.conf" | head -3)"
+sh "$SH" status | grep -q "none: the terminal's own sixteen; accent colour4, muted colour7" && ok "status: no theme.env, the slots still named" || bad "status none" "$(sh "$SH" status | grep theme)"
+
+# --- 10. the templates themselves: no truecolor flag, ASCII fzf ----------
+grep -q MICRO_TRUECOLOR "$REPO/templates/linux/.bashrc" "$REPO/templates/macos/.zshrc" && bad "MICRO_TRUECOLOR still exported" || ok "rc files: no MICRO_TRUECOLOR"
+grep -q -- '--no-unicode' "$REPO/templates/linux/.bashrc" && grep -q -- '--no-unicode' "$REPO/templates/macos/.zshrc" && ok "rc files: fzf asked for ASCII" || bad "fzf opts"
+grep -rEq '#[0-9a-fA-F]{6}' "$REPO/templates" && bad "a template names a hex colour" "$(grep -rnE '#[0-9a-fA-F]{6}' "$REPO/templates" | head -2)" || ok "templates: no hex colour anywhere"
+
+# --- 11. spark's own palettes, when its clone is at hand -------------------
+if [ -n "${SPARK:-}" ] && ls "$SPARK"/themes/*.env >/dev/null 2>&1; then
+    for env in "$SPARK"/themes/*.env; do
+        name=${env##*/}; name=${name%.env}
+        fresh
+        cp "$env" "$HOME/.config/spark/theme.env"
+        sh "$SH" on >/dev/null
+        allplain=1
+        for rel in $RENDERS; do plain "$HOME/$rel" || allplain=0; done
+        [ "$allplain" = 1 ] && grep -Eq 'fg=colour(1[0-5]|[0-9]),bold' "$HOME/.tmux.conf" \
+            && ok "$name: renders plain, $(sh "$SH" status | sed -n 's/.*read: \(accent colour[0-9]*, muted colour[0-9]*\).*/\1/p')" \
+            || bad "$name: not plain or no accent slot" "$(grep -rnE '#[0-9a-fA-F]{6}' "$HOME/.tmux.conf" "$HOME/.config" | head -2)"
+    done
+else
+    printf '  NOTICE: SPARK unset -- spark'"'"'s palettes not exercised (SPARK=/path/to/spark sh tests/shell_test.sh)\n'
+fi
 
 printf '%s\n' "shell_test: $pass ok, $fail failed"
 [ "$fail" -eq 0 ]

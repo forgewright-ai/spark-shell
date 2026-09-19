@@ -1,13 +1,13 @@
-# spark ~/.bashrc -- bash 5 on Linux. Symlinked from the spark repository:
+# spark-shell ~/.bashrc -- bash 5 on Linux. Symlinked from the spark-shell repository:
 # edit it there, and `git status` shows the change.
 [[ $- == *i* ]] || return
 
 # --- PATH first: everything below may depend on ~/.local/bin ---------------
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac
 export PATH
-# micro is yours (spark-micro puts spark in it); the truecolor flag lets it
-# draw spark's palette when the layer rendered its colorscheme
-if command -v micro >/dev/null 2>&1; then export EDITOR=micro VISUAL=micro MICRO_TRUECOLOR=1; fi
+# micro is yours (spark-micro puts spark in it); the colorscheme rendered
+# for it uses the 16 palette slots, so no truecolor flag
+if command -v micro >/dev/null 2>&1; then export EDITOR=micro VISUAL=micro; fi
 
 # --- history ---------------------------------------------------------------
 HISTSIZE=20000 HISTFILESIZE=50000 HISTCONTROL=ignoreboth:erasedups
@@ -28,12 +28,16 @@ alias g=git
 alias ..='cd ..'
 alias check='spark check'
 
+# --- one plain look: ASCII and the 16 palette slots, console or emulator -
+export BAT_THEME=ansi BAT_STYLE=numbers              # 16-colour theme, no grid
+export FZF_DEFAULT_OPTS='--no-unicode --color=16'    # fzf >= 0.38
+
 # --- fzf, zoxide -----------------------------------------------------------
 for f in /usr/share/doc/fzf/examples/key-bindings.bash /usr/share/fzf/key-bindings.bash; do
     [ -r "$f" ] && { . "$f"; break; }
 done
 
-# --- prompt: starship when SITE_PROMPT=starship rendered a config ----------
+# --- prompt: starship when PROMPT=starship rendered a config ---------------
 if [ -r ~/.config/starship.toml ] && command -v starship >/dev/null; then
     eval "$(starship init bash)"
 else

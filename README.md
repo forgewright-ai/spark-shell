@@ -3,9 +3,10 @@
 A commercial box, a mac mini, an old laptop: a machine that serves a
 local AI on the LAN, to run and to keep. spark gives it the AI;
 spark-shell gives it the hands -- tmux, starship, fzf, zoxide, eza, bat,
-btop, and one palette on every surface (tmux, the prompt, btop, and a
-micro you happen to have). Discreet and light: this machine's cycles
-belong to the model.
+btop, and one plain look on every surface (tmux, the prompt, btop, and
+a micro you happen to have): ASCII and the 16 palette slots, right on
+the Linux console and merely plain in an emulator. Discreet and light:
+this machine's cycles belong to the model.
 
     spark-shell on          the tools, the look; the rc files
                             become spark-shell's (yours move to .bak)
@@ -28,12 +29,25 @@ spark's old shell layer are adopted: the first `on` reads your old
 choices out of spark's site.env once, and rendered files spark left
 behind are re-rendered in place, never backed up against you.
 
+## One plain look
+
+The machine this is for is often a bare Linux console: a 256-glyph
+font and 16 palette slots, nothing more. So every rendered file names
+colours by slot (`colour0`..`colour15`, or the tool's own sixteen colour
+words) and draws with ASCII, never with an icon or a hex colour. The
+palette reaches every surface through the console palette `spark theme
+NAME` programs; the accent and the muted tone become the nearest of the
+palette's sixteen. There is deliberately no fancy look, no switch and no
+detection: one file, right on the console, plain in an emulator.
+
 ## Options
 
 `~/.config/spark-shell/config` (KEY=value, every key optional):
 `PROMPT` starship|plain, `PROMPT_STYLE` minimal|full, `WORKSPACE`
 (default ~/projects), `GIT_NAME`, `GIT_EMAIL` (the rendered
-.gitconfig's author line). `config.example` shows the defaults.
+.gitconfig's author line). `config.example` shows the defaults. No key
+controls the look: PROMPT and PROMPT_STYLE shape the prompt, nothing
+chooses between icons and plain.
 
 ## What leaves this machine
 

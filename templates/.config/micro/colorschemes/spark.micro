@@ -1,44 +1,47 @@
-# spark.micro -- rendered by spark (install.sh, the shell layer) from the
-# palette in themes/<SITE_THEME>.env; `spark theme NAME` re-renders it.
+# spark.micro -- rendered by spark-shell from templates/.config/micro/colorschemes/spark.micro
+# `spark theme NAME`, then `spark-shell apply`, re-renders it;
 # ~/.config/micro/settings.json says "colorscheme": "spark".
 #
-# The mapping, from the 20 THEME_* colours to micro's colour groups:
-#   text on the page              THEME_FG on THEME_BG
-#   comments, line numbers, guides  THEME_MUTED
-#   keywords (statement)          bright red     (ANSI 9)
-#   types                         bright yellow  (ANSI 11)
-#   identifiers                   bright blue    (ANSI 12)
-#   constants, numbers            bright magenta (ANSI 13)
-#   strings                       bright green   (ANSI 10)
-#   symbols                       bright cyan    (ANSI 14)
-#   preproc, special, todo        THEME_ACCENT
-#   errors                        bright red, bold
-#   the cursor line, color column ANSI 0 (the palette's darkest ground)
-#   diff gutter                   green / yellow / red (ANSI 2 3 1)
-color-link default "@THEME_FG@,@THEME_BG@"
-color-link comment "@THEME_MUTED@"
-color-link identifier "@THEME_ANSI_12@"
-color-link constant "@THEME_ANSI_13@"
-color-link constant.number "@THEME_ANSI_13@"
-color-link constant.string "@THEME_ANSI_10@"
-color-link statement "@THEME_ANSI_9@"
-color-link symbol "@THEME_ANSI_14@"
-color-link symbol.brackets "@THEME_FG@"
-color-link preproc "@THEME_ACCENT@"
-color-link type "@THEME_ANSI_11@"
-color-link special "@THEME_ACCENT@"
-color-link underlined "@THEME_ANSI_12@"
-color-link error "bold @THEME_ANSI_9@"
-color-link todo "bold @THEME_ACCENT@"
-color-link statusline "@THEME_BG@,@THEME_FG@"
-color-link tabbar "@THEME_BG@,@THEME_FG@"
-color-link indent-char "@THEME_MUTED@"
-color-link line-number "@THEME_MUTED@,@THEME_BG@"
-color-link current-line-number "@THEME_FG@,@THEME_BG@"
-color-link gutter-error "@THEME_ANSI_1@"
-color-link gutter-warning "@THEME_ANSI_3@"
-color-link cursor-line "@THEME_ANSI_0@"
-color-link color-column "@THEME_ANSI_0@"
-color-link diff-added "@THEME_ANSI_2@"
-color-link diff-modified "@THEME_ANSI_3@"
-color-link diff-deleted "@THEME_ANSI_1@"
+# One plain look: micro's sixteen colour words, the palette slots the
+# console draws (no hex, no MICRO_TRUECOLOR). The page is the terminal's
+# own fg on bg (`default`); the rest maps as before:
+#   comments, line numbers, guides   the muted slot
+#   keywords (statement)             brightred      (slot 9)
+#   types                            brightyellow   (slot 11)
+#   identifiers                      brightblue     (slot 12)
+#   constants, numbers               brightmagenta  (slot 13)
+#   strings                          brightgreen    (slot 10)
+#   symbols                          brightcyan     (slot 14)
+#   preproc, special, todo           the accent slot
+#   errors                           brightred, bold
+#   status line, tab bar             black on white (slots 0 on 7: inverted)
+#   cursor line, colour column       brightblack (slot 8: a ground the
+#                                    console can tell from its own, slot 0)
+#   diff gutter                      green / yellow / red (slots 2 3 1)
+color-link default "default,default"
+color-link comment "@MUTED_NAME@"
+color-link identifier "brightblue"
+color-link constant "brightmagenta"
+color-link constant.number "brightmagenta"
+color-link constant.string "brightgreen"
+color-link statement "brightred"
+color-link symbol "brightcyan"
+color-link symbol.brackets "default"
+color-link preproc "@ACCENT_NAME@"
+color-link type "brightyellow"
+color-link special "@ACCENT_NAME@"
+color-link underlined "brightblue"
+color-link error "bold brightred"
+color-link todo "bold @ACCENT_NAME@"
+color-link statusline "black,white"
+color-link tabbar "black,white"
+color-link indent-char "@MUTED_NAME@"
+color-link line-number "@MUTED_NAME@,default"
+color-link current-line-number "default,default"
+color-link gutter-error "red"
+color-link gutter-warning "yellow"
+color-link cursor-line "brightblack"
+color-link color-column "brightblack"
+color-link diff-added "green"
+color-link diff-modified "yellow"
+color-link diff-deleted "red"

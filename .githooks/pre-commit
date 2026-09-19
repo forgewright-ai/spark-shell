@@ -42,12 +42,17 @@ if command -v shellcheck >/dev/null 2>&1; then
     shellcheck -S warning spark-shell tests/shell_test.sh || bad "shellcheck"
 else notice "shellcheck not found; skipped"; fi
 
-# --- 3. docs stay ASCII (read in the editor's help pane, and on a console)
+# --- 3. docs, script and templates stay ASCII (read on a console) -----
 tab=$(printf '\t')
-for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example; do
+for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example spark-shell tests/shell_test.sh $(find templates distro -type f | sort); do
     hit=$(LC_ALL=C grep -n "[^ -~${tab}]" "$f" | head -3 || true)
     [ -z "$hit" ] || bad "non-ASCII in $f:
 $hit"
 done
+
+# --- 4. no hex colour in a template: the look is the 16 palette slots ---
+hit=$(grep -rnE '#[0-9a-fA-F]{6}' templates | head -3 || true)
+[ -z "$hit" ] || bad "hex colour in a template (name a slot instead):
+$hit"
 
 [ "$fail" -eq 0 ] || { printf 'pre-commit: refused\n'; exit 1; }

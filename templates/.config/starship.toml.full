@@ -1,58 +1,67 @@
-# rendered by spark install.sh (SITE_PROMPT_STYLE=full) -- edit site.env or the template
+# rendered by spark-shell from templates/.config/starship.toml.full -- edit the template, then spark-shell apply
 # The blank line above the prompt is where spark prints its hint; keep it.
+# One plain look: ASCII and the 16 palette slots by their colour words,
+# no hex; the console palette `spark theme NAME` programs draws them.
 add_newline = true
 format = "$username$hostname$directory$git_branch$git_status$python$nodejs$rust$golang$cmd_duration$line_break$time$character"
 
 [username]
 format = "[$user]($style)@"
-style_user = "@THEME_MUTED@"
+style_user = "@MUTED_STAR@"
 show_always = true
 
 [hostname]
 format = "[$hostname]($style) "
-style = "@THEME_MUTED@"
+style = "@MUTED_STAR@"
 ssh_only = false
 
 [directory]
-style = "bold @THEME_ACCENT@"
+style = "bold @ACCENT_STAR@"
 truncation_length = 4
 truncate_to_repo = true
+truncation_symbol = ".../"
+read_only = " ro"
 
 [git_branch]
 format = "[$branch]($style) "
-style = "@THEME_ANSI_5@"
+style = "purple"
 
 [git_status]
 format = "[$all_status$ahead_behind]($style) "
-style = "@THEME_ANSI_3@"
+style = "yellow"
+ahead = ">"
+behind = "<"
+diverged = "<>"
+renamed = "r"
+deleted = "x"
 
 [python]
 format = "[py $version]($style) "
-style = "@THEME_ANSI_6@"
+style = "cyan"
 
 [nodejs]
 format = "[node $version]($style) "
-style = "@THEME_ANSI_6@"
+style = "cyan"
 
 [rust]
 format = "[rs $version]($style) "
-style = "@THEME_ANSI_6@"
+style = "cyan"
 
 [golang]
 format = "[go $version]($style) "
-style = "@THEME_ANSI_6@"
+style = "cyan"
 
 [cmd_duration]
 min_time = 2000
 format = "[$duration]($style) "
-style = "@THEME_ANSI_3@"
+style = "yellow"
 
 [time]
 disabled = false
 format = "[$time]($style) "
-style = "@THEME_MUTED@"
+style = "@MUTED_STAR@"
 time_format = "%H:%M"
 
 [character]
-success_symbol = "[>](@THEME_ANSI_2@)"
-error_symbol = "[>](@THEME_ANSI_1@)"
+success_symbol = "[>](green)"
+error_symbol = "[>](red)"
