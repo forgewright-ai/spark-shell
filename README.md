@@ -34,24 +34,18 @@ behind are re-rendered in place, never backed up against you.
 The machine this is for is often a bare Linux console: a 256-glyph
 font and 16 palette slots, nothing more. So every rendered file names
 colours by slot (`colour0`..`colour15`, or starship's sixteen colour
-words) and draws with ASCII, never with an icon or a hex colour. No
-editor is configured or coloured here: an editor's look is its own
-plugin's (spark-micro for micro), and `EDITOR` is yours. The
-palette reaches every surface through the console palette `spark theme
-NAME` programs; the accent and the muted tone become the nearest of the
-palette's sixteen. There is deliberately no fancy look, no switch and no
-detection: one file, right on the console, plain in an emulator.
+words) and draws with ASCII. The palette reaches every surface through
+the console palette `spark theme NAME` programs; the accent and the
+muted tone become the nearest of the palette's sixteen. One file, right
+on the console, plain in an emulator.
 
 ## Options
 
 `~/.config/spark-shell/config` (KEY=value, every key optional):
 `PROMPT` starship|plain, `PROMPT_STYLE` minimal|full, `GIT_NAME`,
 `GIT_EMAIL` (set both and a
-.gitconfig is rendered with that identity; unset, none is written and
-git's identity is yours to set -- never a guess; a .gitconfig you
-already have is never touched). `config.example` shows the defaults. No key
-controls the look: PROMPT and PROMPT_STYLE shape the prompt, nothing
-chooses between icons and plain.
+.gitconfig is rendered with that identity; one you already have stays
+yours). `config.example` shows the defaults.
 
 ## What leaves this machine
 

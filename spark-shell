@@ -26,8 +26,8 @@
 # PROMPT_STYLE minimal|full, GIT_NAME, GIT_EMAIL. The first
 # `on` with no config seeds them from spark's site.env when the old
 # SITE_* keys are there (read once, copied, never read again). A
-# .gitconfig is rendered only with an identity you gave (both GIT_NAME
-# and GIT_EMAIL): never a guess, and one you already have is never touched.
+# .gitconfig is rendered with an identity you gave (both GIT_NAME and
+# GIT_EMAIL); one you already have stays yours.
 set -eu
 
 # ~/.local/bin/spark-shell is a symlink into the clone: resolve it, the
