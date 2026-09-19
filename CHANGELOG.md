@@ -24,6 +24,11 @@
 - `apply` and `on` also unset, in a running tmux, what the v0.1 render
   had set and a reload cannot undo (the console hook, the appended
   truecolor override), so the new look lands without a restart.
+- The rc files carry spark's one marked hook line (`config/spark/hook.`)
+  instead of sourcing its widget and completion themselves: spark's rc
+  row sees the marker and never appends a second line -- which, with
+  `~/.bashrc` a symlink into this clone, used to land in the tracked
+  template and dirty the checkout.
 
 ## v0.1
 

@@ -44,10 +44,10 @@ else
     PROMPT=$'\n%n@%m:%~%# '   # the blank row is where spark prints its hint
 fi
 
-# --- spark at the prompt: `? words` or `words?` + Enter; Esc a on any line
-# After fzf, so its accept-line wrapper is the one spark wraps.
-[[ -r ~/.config/spark/widget.zsh ]] && source ~/.config/spark/widget.zsh
-[[ -r ~/.config/spark/completion.zsh ]] && source ~/.config/spark/completion.zsh
+# --- spark at the prompt: its one marked hook line (the widget, completion,
+#     the console palette). After fzf, so its accept-line wrapper is the one
+#     spark wraps; spark's rc row sees the marker and never appends a second.
+[[ -r ~/.config/spark/hook.zsh ]] && source ~/.config/spark/hook.zsh   # spark: the AI at the prompt
 
 # zoxide last: its prompt hook has to be the final one, or it complains
 command -v zoxide >/dev/null && eval "$(zoxide init zsh)"

@@ -44,10 +44,10 @@ else
     PS1='\n\u@\h:\w\$ '   # the blank row is where spark prints its hint
 fi
 
-# --- spark at the prompt: `? words` or `words?` + Enter; Esc a on any line -
-# After fzf, so its Enter macro is the one that wins.
-[ -r ~/.config/spark/widget.bash ] && . ~/.config/spark/widget.bash
-[ -r ~/.config/spark/completion.bash ] && . ~/.config/spark/completion.bash
+# --- spark at the prompt: its one marked hook line (the widget, completion,
+#     the console palette). After fzf, so its Enter macro is the one that
+#     wins; spark's rc row sees the marker and never appends a second one.
+[ -r ~/.config/spark/hook.bash ] && . ~/.config/spark/hook.bash   # spark: the AI at the prompt
 
 # zoxide last: its prompt hook has to be the final one, or it complains
 command -v zoxide >/dev/null && eval "$(zoxide init bash)"
