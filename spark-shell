@@ -312,9 +312,9 @@ RENDERED=".tmux.conf .config/btop/btop.conf"
 GITCONFIG=.gitconfig
 gitconfig_wanted() { [ -n "$GIT_NAME" ] && [ -n "$GIT_EMAIL" ]; }
 gitconfig_yours() { [ -f "$HOME/$GITCONFIG" ] && ! grep -q 'rendered by spark' "$HOME/$GITCONFIG"; }
-render_gitconfig() {
-    if ! gitconfig_wanted; then skip gitconfig "no GIT_NAME/GIT_EMAIL in $CONFIG: git's identity is yours to set"
-    elif gitconfig_yours; then skip gitconfig "$HOME/$GITCONFIG is yours, left alone"
+render_gitconfig() {   # no identity given: nothing to do, nothing to say
+    if ! gitconfig_wanted; then :
+    elif gitconfig_yours; then skip gitconfig "$HOME/$GITCONFIG is yours, left alone (GIT_NAME/GIT_EMAIL not applied over it)"
     else render_one "$REPO/templates/$GITCONFIG" "$HOME/$GITCONFIG"; fi
 }
 MICRO_SCHEME=.config/micro/colorschemes/spark.micro
@@ -541,7 +541,7 @@ cmd_status() {
         command -v "$t" >/dev/null 2>&1 && s=yes || s=no
         printf '  tool  %-16s %s\n' "$t" "$s"
     done
-    if ! gitconfig_wanted; then printf '  git   %-16s %s\n' .gitconfig "not written: no GIT_NAME/GIT_EMAIL in the config, git's identity is yours"
+    if ! gitconfig_wanted; then printf '  git   %-16s %s\n' .gitconfig "not written (no GIT_NAME/GIT_EMAIL in the config)"
     elif gitconfig_yours; then printf '  git   %-16s %s\n' .gitconfig "yours, left alone"
     else printf '  git   %-16s %s\n' .gitconfig "rendered: $GIT_NAME <$GIT_EMAIL>"; fi
     theme_load || true
