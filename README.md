@@ -3,8 +3,8 @@
 A commercial box, a mac mini, an old laptop: a machine that serves a
 local AI on the LAN, to run and to keep. spark gives it the AI;
 spark-shell gives it the hands -- tmux, starship, fzf, zoxide, eza, bat,
-btop, and one plain look on every surface (tmux, the prompt, btop, and
-a micro you happen to have): ASCII and the 16 palette slots, right on
+btop, and one plain look on every surface (tmux, the prompt, btop):
+ASCII and the 16 palette slots, right on
 the Linux console and merely plain in an emulator. Discreet and light:
 this machine's cycles belong to the model.
 
@@ -33,8 +33,10 @@ behind are re-rendered in place, never backed up against you.
 
 The machine this is for is often a bare Linux console: a 256-glyph
 font and 16 palette slots, nothing more. So every rendered file names
-colours by slot (`colour0`..`colour15`, or the tool's own sixteen colour
-words) and draws with ASCII, never with an icon or a hex colour. The
+colours by slot (`colour0`..`colour15`, or starship's sixteen colour
+words) and draws with ASCII, never with an icon or a hex colour. No
+editor is configured or coloured here: an editor's look is its own
+plugin's (spark-micro for micro), and `EDITOR` is yours. The
 palette reaches every surface through the console palette `spark theme
 NAME` programs; the accent and the muted tone become the nearest of the
 palette's sixteen. There is deliberately no fancy look, no switch and no

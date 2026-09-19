@@ -6,9 +6,6 @@
 #     `zsh` did not) -------------------------------------------------------
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac
 export PATH
-# micro is yours (spark-micro puts spark in it); the colorscheme rendered
-# for it uses the 16 palette slots, so no truecolor flag
-if command -v micro >/dev/null 2>&1; then export EDITOR=micro VISUAL=micro; fi
 
 # --- history and completion ---------------------------------------------
 HISTFILE=~/.zsh_history HISTSIZE=20000 SAVEHIST=50000

@@ -111,7 +111,7 @@ THEME_KEYS="THEME_BG THEME_FG THEME_ACCENT THEME_MUTED THEME_BTOP THEME_ANSI_0 T
 
 # ------------------------------------------------------------- the slots
 # The rendered look names colours by palette slot (0-15: tmux colourN,
-# starship's and micro's sixteen colour words), never by hex: the console
+# starship's sixteen colour words), never by hex: the console
 # palette `spark theme NAME` programs is what draws them, so one file is
 # right on the Linux console and merely plain in an emulator. THEME_ACCENT
 # and THEME_MUTED are hex in theme.env: each becomes the slot whose
@@ -119,7 +119,7 @@ THEME_KEYS="THEME_BG THEME_FG THEME_ACCENT THEME_MUTED THEME_BTOP THEME_ANSI_0 T
 # palette's bright row often repeats its dim one). A colour word (the
 # no-theme.env defaults) is its own slot. BG and FG are the terminal's
 # own (`default`).
-SLOT_KEYS="ACCENT_SLOT MUTED_SLOT ACCENT_NAME MUTED_NAME ACCENT_STAR MUTED_STAR"
+SLOT_KEYS="ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR"
 hex_rgb() {   # hex_rgb #rrggbb -> "r g b" (decimal), or false
     case $1 in \#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) ;; *) return 1 ;; esac
     _h=${1#\#}; _m=${_h#??}
@@ -146,11 +146,10 @@ slot_of() {   # slot_of COLOUR -> 0..15
     done
     echo "$slot"
 }
-slot_name() {   # slot_name N micro|starship -> that tool's word for slot N
+slot_name() {   # slot_name N -> starship's word for slot N (black .. bright-white)
     _n=$1
-    if [ "$2" = starship ]; then _sep=-; _five=purple; else _sep=; _five=magenta; fi
-    set -- black red green yellow blue "$_five" cyan white
-    if [ "$_n" -ge 8 ]; then shift $((_n - 8)); echo "bright$_sep$1"; else shift "$_n"; echo "$1"; fi
+    set -- black red green yellow blue purple cyan white
+    if [ "$_n" -ge 8 ]; then shift $((_n - 8)); echo "bright-$1"; else shift "$_n"; echo "$1"; fi
 }
 
 # theme.env: written by `spark theme NAME` -- the interface (contract 3's
@@ -167,9 +166,8 @@ theme_load() {
     : "${THEME_ANSI_12:=blue}" "${THEME_ANSI_13:=magenta}" "${THEME_ANSI_14:=cyan}" "${THEME_ANSI_15:=white}"
     for k in $THEME_KEYS; do export "${k?}"; done
     ACCENT_SLOT=$(slot_of "$THEME_ACCENT"); MUTED_SLOT=$(slot_of "$THEME_MUTED")
-    ACCENT_NAME=$(slot_name "$ACCENT_SLOT" micro); MUTED_NAME=$(slot_name "$MUTED_SLOT" micro)
-    ACCENT_STAR=$(slot_name "$ACCENT_SLOT" starship); MUTED_STAR=$(slot_name "$MUTED_SLOT" starship)
-    export ACCENT_SLOT MUTED_SLOT ACCENT_NAME MUTED_NAME ACCENT_STAR MUTED_STAR
+    ACCENT_STAR=$(slot_name "$ACCENT_SLOT"); MUTED_STAR=$(slot_name "$MUTED_SLOT")
+    export ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR
 }
 
 # ------------------------------------------------------------------ rows
@@ -317,8 +315,6 @@ render_gitconfig() {   # no identity given: nothing to do, nothing to say
     elif gitconfig_yours; then skip gitconfig "$HOME/$GITCONFIG is yours, left alone (GIT_NAME/GIT_EMAIL not applied over it)"
     else render_one "$REPO/templates/$GITCONFIG" "$HOME/$GITCONFIG"; fi
 }
-MICRO_SCHEME=.config/micro/colorschemes/spark.micro
-MICRO_SETTINGS=$HOME/.config/micro/settings.json
 rc_files() { if [ "$OS" = Darwin ]; then echo ".zshrc .zprofile"; else echo ".bashrc .bash_profile"; fi; }
 rc_tree() { if [ "$OS" = Darwin ]; then echo "$REPO/templates/macos"; else echo "$REPO/templates/linux"; fi; }
 
@@ -332,34 +328,23 @@ render_all() {
     if [ "$PROMPT" = starship ]; then
         render_one "$REPO/templates/.config/starship.toml.$PROMPT_STYLE" "$HOME/.config/starship.toml"
     fi
-    # micro's look, only for a micro the user has: the colorscheme, and a
-    # settings.json seeded once (micro rewrites it; the file is micro's)
-    if command -v micro >/dev/null 2>&1; then
-        render_one "$REPO/templates/$MICRO_SCHEME" "$HOME/$MICRO_SCHEME"
-        if [ -e "$MICRO_SETTINGS" ] || [ -L "$MICRO_SETTINGS" ]; then
-            micro_scheme_set
-        else
-            render_one "$REPO/templates/.config/micro/settings.json" "$MICRO_SETTINGS"
-        fi
-    fi
+    micro_look_gone
 }
 
-# micro's settings.json is JSON: the one piece sh does not parse. python3
+# micro (v0.2 and before) had a colorscheme rendered here. An editor's
+# look is its own plugin's business (spark-micro), never the shell's: what
+# v0.2 rendered is handed back once -- the scheme file if it is ours, and
+# the `colorscheme` key it seeded, so micro never points at a scheme that
+# is gone. settings.json is JSON, the one piece sh does not parse; python3
 # is on any machine spark-shell makes sense on (spark requires it).
-micro_scheme_set() {
+MICRO_SCHEME=$HOME/.config/micro/colorschemes/spark.micro
+MICRO_SETTINGS=$HOME/.config/micro/settings.json
+micro_look_gone() {
     [ "$MODE" = dry ] && return 0
-    python3 - "$MICRO_SETTINGS" <<'EOF' 2>/dev/null || true
-import json, sys
-p = sys.argv[1]
-try:
-    with open(p) as f: d = json.load(f)
-except (OSError, ValueError): sys.exit(0)
-if isinstance(d, dict) and d.get("colorscheme") != "spark":
-    d["colorscheme"] = "spark"
-    with open(p, "w") as f: json.dump(d, f, indent=4); f.write("\n")
-EOF
-}
-micro_scheme_drop() {
+    if [ -f "$MICRO_SCHEME" ] && grep -q 'rendered by spark' "$MICRO_SCHEME"; then
+        rm -f "$MICRO_SCHEME"
+        row ok restore "$MICRO_SCHEME -- removed (an editor's look is its plugin's, not the shell's)"
+    fi
     python3 - "$MICRO_SETTINGS" <<'EOF' 2>/dev/null || true
 import json, sys
 p = sys.argv[1]
@@ -369,7 +354,7 @@ except (OSError, ValueError): sys.exit(0)
 if isinstance(d, dict) and d.get("colorscheme") == "spark":
     del d["colorscheme"]
     with open(p, "w") as f: json.dump(d, f, indent=4); f.write("\n")
-    print("ok     look         %s -- colorscheme key dropped, the rest is micro's" % p)
+    print("ok     restore      %s -- colorscheme key dropped, the rest is micro's" % p)
 EOF
 }
 
@@ -489,7 +474,7 @@ cmd_off() {
             case $(readlink "$p") in "$REPO"/*) restore_one "$p" ;; esac
         fi
     done
-    for rel in $RENDERED $GITCONFIG $MICRO_SCHEME .config/starship.toml; do
+    for rel in $RENDERED $GITCONFIG .config/starship.toml; do
         p=$HOME/$rel
         if [ -f "$p" ] && [ ! -L "$p" ]; then
             if grep -q 'rendered by spark' "$p" 2>/dev/null || [ -e "$p.bak" ]; then
@@ -497,7 +482,7 @@ cmd_off() {
             fi
         fi
     done
-    micro_scheme_drop
+    micro_look_gone
     # spark's own hook must survive the hand-back: a restored or absent
     # rc file gets the one marked line back when spark is installed here
     hook_line=''

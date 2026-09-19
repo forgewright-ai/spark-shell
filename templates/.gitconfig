@@ -8,8 +8,6 @@
 	rebase = false
 [push]
 	autoSetupRemote = true
-[core]
-	editor = micro
 [alias]
 	st = status -sb
 	lg = log --oneline --graph --decorate -20

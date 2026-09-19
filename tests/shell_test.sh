@@ -19,8 +19,7 @@ fresh() {   # a new throwaway HOME with the stubs in place
     export HOME=$H XDG_CONFIG_HOME=$H/.config XDG_STATE_HOME=$H/.local/state XDG_DATA_HOME=$H/.local/share
     mkdir -p "$H/.local/bin" "$H/.config/spark"
     printf '#!/bin/sh\necho starship 0.0-stub\n' > "$H/.local/bin/starship"
-    printf '#!/bin/sh\n' > "$H/.local/bin/micro"     # a micro on PATH: the colorscheme renders
-    chmod +x "$H/.local/bin/starship" "$H/.local/bin/micro"
+    chmod +x "$H/.local/bin/starship"
     printf 'ID=fixture\n' > "$H/os-release"
     export SPARK_OS_RELEASE=$H/os-release
     PATH=$H/.local/bin:$PATH
@@ -35,7 +34,7 @@ theme_fixture() {   # theme_fixture ACCENT [MUTED] -- a 21-key theme.env over th
         done
     } > "$HOME/.config/spark/theme.env"
 }
-RENDERS=".tmux.conf .config/btop/btop.conf .config/starship.toml .config/micro/colorschemes/spark.micro"
+RENDERS=".tmux.conf .config/btop/btop.conf .config/starship.toml"
 
 SH=$REPO/spark-shell
 
@@ -70,7 +69,8 @@ grep -q 'Tc' "$HOME/.tmux.conf" && bad "tmux still advertises truecolor" || ok "
 grep -q 'client-attached' "$HOME/.tmux.conf" && bad "the console hook survives" || ok "on: no console hook (the slots need none)"
 grep -q '^force_tty = True' "$HOME/.config/btop/btop.conf" && grep -q '^graph_symbol = "tty"' "$HOME/.config/btop/btop.conf" \
     && ok "on: btop in tty mode, tty graphs" || bad "btop tty mode"
-grep -q '^color-link preproc "brightred"' "$HOME/.config/micro/colorschemes/spark.micro" && ok "on: micro's accent is its colour word (brightred)" || bad "micro accent"
+[ ! -e "$HOME/.config/micro" ] && ok "on: no editor configured (nothing under ~/.config/micro)" || bad "micro touched" "$(ls -R "$HOME/.config/micro")"
+grep -q "EDITOR\|editor = " "$REPO/templates/linux/.bashrc" "$REPO/templates/macos/.zshrc" "$REPO/templates/.gitconfig" && bad "an editor is still configured" || ok "templates: no EDITOR, no git editor"
 grep -q 'style = "bold bright-red"' "$HOME/.config/starship.toml" && ok "on: starship's accent is its colour word (bright-red)" || bad "starship accent"
 out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "second run: Nothing to do" || bad "idempotence" "$out"
@@ -161,7 +161,20 @@ st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q 'yours, left alone' && ok "
 out=$(sh "$SH" check || true)
 printf '%s\n' "$out" | grep -q '^ok     look' && ok "check: your .gitconfig is not stale look" || bad "check yours" "$out"
 
-# --- 12. spark's own palettes, when its clone is at hand -------------------
+# --- 12. v0.2's micro look is handed back once ---------------------------
+fresh
+mkdir -p "$HOME/.config/micro/colorschemes"
+printf '# spark.micro -- rendered by spark-shell\ncolor-link default "default,default"\n' > "$HOME/.config/micro/colorschemes/spark.micro"
+printf '{\n    "colorscheme": "spark",\n    "softwrap": true\n}\n' > "$HOME/.config/micro/settings.json"
+sh "$SH" on >/dev/null
+[ ! -e "$HOME/.config/micro/colorschemes/spark.micro" ] && ok "migration: the v0.2 spark.micro is removed" || bad "spark.micro stays"
+grep -q softwrap "$HOME/.config/micro/settings.json" && ! grep -q colorscheme "$HOME/.config/micro/settings.json" \
+    && ok "migration: the colorscheme key is dropped, the rest of settings.json is micro's" || bad "settings.json" "$(cat "$HOME/.config/micro/settings.json")"
+printf 'mine\n' > "$HOME/.config/micro/colorschemes/spark.micro"
+sh "$SH" apply >/dev/null
+grep -q mine "$HOME/.config/micro/colorschemes/spark.micro" && ok "a spark.micro of yours is never touched" || bad "yours removed"
+
+# --- 13. spark's own palettes, when its clone is at hand -------------------
 if [ -n "${SPARK:-}" ] && ls "$SPARK"/themes/*.env >/dev/null 2>&1; then
     for env in "$SPARK"/themes/*.env; do
         name=${env##*/}; name=${name%.env}

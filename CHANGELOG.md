@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.4
+
+- No editor. spark-shell installs no editor (it never did) and now
+  configures none either: no `EDITOR=micro` in the rc files, no
+  `editor = micro` in the rendered .gitconfig, no micro colorscheme and
+  no seed in micro's settings.json. An editor's look is its own plugin's
+  business (spark-micro), and which editor you use is yours. What v0.2
+  rendered is handed back once: a `spark.micro` it wrote is removed and
+  the `colorscheme` key it seeded is dropped, so micro never points at a
+  scheme that is gone.
+
 ## v0.3
 
 - No guessed git identity. A `.gitconfig` is rendered only when both
