@@ -35,7 +35,7 @@ theme_fixture() {   # theme_fixture ACCENT [MUTED] -- a 21-key theme.env over th
         done
     } > "$HOME/.config/spark/theme.env"
 }
-RENDERS=".tmux.conf .config/btop/btop.conf .config/starship.toml .gitconfig .config/micro/colorschemes/spark.micro"
+RENDERS=".tmux.conf .config/btop/btop.conf .config/starship.toml .config/micro/colorschemes/spark.micro"
 
 SH=$REPO/spark-shell
 
@@ -65,6 +65,7 @@ for rel in $RENDERS; do
     plain "$HOME/$rel" && ok "on: $rel is plain (no hex, ASCII)" || bad "on: $rel not plain" "$(grep -nE '#[0-9a-fA-F]{6}' "$HOME/$rel" | head -2)"
 done
 grep -q 'SPARK_ASCII=1 spark bar line' "$HOME/.tmux.conf" && ok "on: the bar is asked in ASCII" || bad "bar ascii"
+[ ! -e "$HOME/.gitconfig" ] && ok "on: no identity given, no .gitconfig written (never a guess)" || bad "gitconfig guessed" "$(cat "$HOME/.gitconfig")"
 grep -q 'Tc' "$HOME/.tmux.conf" && bad "tmux still advertises truecolor" || ok "on: no truecolor override"
 grep -q 'client-attached' "$HOME/.tmux.conf" && bad "the console hook survives" || ok "on: no console hook (the slots need none)"
 grep -q '^force_tty = True' "$HOME/.config/btop/btop.conf" && grep -q '^graph_symbol = "tty"' "$HOME/.config/btop/btop.conf" \
@@ -81,7 +82,7 @@ grep -q 'fg=colour3,bold' "$HOME/.tmux.conf" && ok "apply: a new accent lands as
 out=$(sh "$SH" check || true)
 printf '%s\n' "$out" | grep -q '^ok     look' && ok "check: the look matches the palette" || bad "check look row" "$out"
 printf '%s\n' "$out" | grep -q 'font' && bad "check: a font row survives" "$out" || ok "check: no font row"
-sh "$SH" status | grep -q 'accent colour3, muted colour8' && ok "status: the theme row names the slots" || bad "status slots" "$(sh "$SH" status | grep theme)"
+st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q 'accent colour3, muted colour8' && ok "status: the theme row names the slots" || bad "status slots" "$(printf '%s\n' "$st" | grep theme)"
 
 # --- 4. the prompt choices ------------------------------------------------
 mkdir -p "$HOME/.config/spark-shell"
@@ -131,14 +132,36 @@ fresh
 sh "$SH" on >/dev/null
 grep -q 'fg=colour4,bold' "$HOME/.tmux.conf" && grep -q 'pane-border-style "fg=colour7"' "$HOME/.tmux.conf" \
     && ok "no theme.env: accent blue (colour4), muted white (colour7)" || bad "name defaults" "$(grep -n colour "$HOME/.tmux.conf" | head -3)"
-sh "$SH" status | grep -q "none: the terminal's own sixteen; accent colour4, muted colour7" && ok "status: no theme.env, the slots still named" || bad "status none" "$(sh "$SH" status | grep theme)"
+st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q "none: the terminal's own sixteen; accent colour4, muted colour7" && ok "status: no theme.env, the slots still named" || bad "status none" "$(printf '%s\n' "$st" | grep theme)"
 
 # --- 10. the templates themselves: no truecolor flag, ASCII fzf ----------
 grep -q MICRO_TRUECOLOR "$REPO/templates/linux/.bashrc" "$REPO/templates/macos/.zshrc" && bad "MICRO_TRUECOLOR still exported" || ok "rc files: no MICRO_TRUECOLOR"
 grep -q -- '--no-unicode' "$REPO/templates/linux/.bashrc" && grep -q -- '--no-unicode' "$REPO/templates/macos/.zshrc" && ok "rc files: fzf asked for ASCII" || bad "fzf opts"
 grep -rEq '#[0-9a-fA-F]{6}' "$REPO/templates" && bad "a template names a hex colour" "$(grep -rnE '#[0-9a-fA-F]{6}' "$REPO/templates" | head -2)" || ok "templates: no hex colour anywhere"
 
-# --- 11. spark's own palettes, when its clone is at hand -------------------
+# --- 11. the git identity: yours to give, never guessed, never overwritten
+fresh
+mkdir -p "$HOME/.config/spark-shell"
+printf 'GIT_NAME=Test Person\nGIT_EMAIL=you@example.com\n' > "$HOME/.config/spark-shell/config"
+sh "$SH" on >/dev/null
+grep -q 'name = Test Person' "$HOME/.gitconfig" && grep -q 'email = you@example.com' "$HOME/.gitconfig" && plain "$HOME/.gitconfig" \
+    && ok "identity given: .gitconfig rendered with it" || bad "gitconfig render" "$(cat "$HOME/.gitconfig" 2>&1)"
+st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q 'rendered: Test Person <you@example.com>' && ok "status: the git row names the identity" || bad "status git row" "$(printf '%s\n' "$st" | grep git)"
+out=$(sh "$SH" check || true)
+printf '%s\n' "$out" | grep -q '^ok     look' && ok "check: a rendered .gitconfig is part of the look" || bad "check gitconfig" "$out"
+sh "$SH" off >/dev/null
+[ ! -e "$HOME/.gitconfig" ] && ok "off: the rendered .gitconfig is gone (no .bak: there was none before)" || bad "gitconfig off"
+fresh
+mkdir -p "$HOME/.config/spark-shell"
+printf 'GIT_NAME=Test Person\nGIT_EMAIL=you@example.com\n' > "$HOME/.config/spark-shell/config"
+printf '[user]\n\tname = Someone Else\n' > "$HOME/.gitconfig"
+sh "$SH" on >/dev/null
+grep -q 'Someone Else' "$HOME/.gitconfig" && [ ! -e "$HOME/.gitconfig.bak" ] && ok "a .gitconfig of yours is never touched, even with an identity in the config" || bad "gitconfig yours" "$(ls -la "$HOME")"
+st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q 'yours, left alone' && ok "status: the git row says yours" || bad "status yours" "$(printf '%s\n' "$st" | grep git)"
+out=$(sh "$SH" check || true)
+printf '%s\n' "$out" | grep -q '^ok     look' && ok "check: your .gitconfig is not stale look" || bad "check yours" "$out"
+
+# --- 12. spark's own palettes, when its clone is at hand -------------------
 if [ -n "${SPARK:-}" ] && ls "$SPARK"/themes/*.env >/dev/null 2>&1; then
     for env in "$SPARK"/themes/*.env; do
         name=${env##*/}; name=${name%.env}
@@ -148,7 +171,7 @@ if [ -n "${SPARK:-}" ] && ls "$SPARK"/themes/*.env >/dev/null 2>&1; then
         allplain=1
         for rel in $RENDERS; do plain "$HOME/$rel" || allplain=0; done
         [ "$allplain" = 1 ] && grep -Eq 'fg=colour(1[0-5]|[0-9]),bold' "$HOME/.tmux.conf" \
-            && ok "$name: renders plain, $(sh "$SH" status | sed -n 's/.*read: \(accent colour[0-9]*, muted colour[0-9]*\).*/\1/p')" \
+            && ok "$name: renders plain, $(printf '%s\n' "$st" | sed -n 's/.*read: \(accent colour[0-9]*, muted colour[0-9]*\).*/\1/p')" \
             || bad "$name: not plain or no accent slot" "$(grep -rnE '#[0-9a-fA-F]{6}' "$HOME/.tmux.conf" "$HOME/.config" | head -2)"
     done
 else

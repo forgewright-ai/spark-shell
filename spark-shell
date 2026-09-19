@@ -23,9 +23,11 @@
 #
 # POSIX sh, both OSes (Debian and Arch families, macOS). Choices live in
 # ~/.config/spark-shell/config (KEY=value): PROMPT starship|plain,
-# PROMPT_STYLE minimal|full, WORKSPACE, GIT_NAME, GIT_EMAIL. The first
-# `on` with no config seeds the five from spark's site.env when the old
-# SITE_* keys are there (read once, copied, never read again).
+# PROMPT_STYLE minimal|full, GIT_NAME, GIT_EMAIL. The first
+# `on` with no config seeds them from spark's site.env when the old
+# SITE_* keys are there (read once, copied, never read again). A
+# .gitconfig is rendered only with an identity you gave (both GIT_NAME
+# and GIT_EMAIL): never a guess, and one you already have is never touched.
 set -eu
 
 # ~/.local/bin/spark-shell is a symlink into the clone: resolve it, the
@@ -85,7 +87,7 @@ short_host() {
 config_load() {
     if [ ! -f "$CONFIG" ] && [ -f "$SPARK_CONFIG_DIR/site.env" ]; then
         # first run on a machine that ran spark's old shell layer: the
-        # five choices are seeded from site.env once, then this file is
+        # choices are seeded from site.env once, then this file is
         # the only one read
         # shellcheck disable=SC2153   # the SITE_* names come from site.env
         ( load_env "$SPARK_CONFIG_DIR/site.env" || true
@@ -94,7 +96,6 @@ config_load() {
             printf '# spark-shell config -- KEY=value; seeded from spark site.env\n'
             [ -z "${SITE_PROMPT:-}" ] || printf 'PROMPT=%s\n' "$SITE_PROMPT"
             [ -z "${SITE_PROMPT_STYLE:-}" ] || printf 'PROMPT_STYLE=%s\n' "$SITE_PROMPT_STYLE"
-            [ -z "${SITE_WORKSPACE:-}" ] || printf 'WORKSPACE=%s\n' "$SITE_WORKSPACE"
             [ -z "${SITE_GIT_NAME:-}" ] || [ "${SITE_GIT_NAME:-}" = "Your Name" ] || printf 'GIT_NAME=%s\n' "$SITE_GIT_NAME"
             [ -z "${SITE_GIT_EMAIL:-}" ] || [ "${SITE_GIT_EMAIL:-}" = "you@example.com" ] || printf 'GIT_EMAIL=%s\n' "$SITE_GIT_EMAIL"
           } > "$CONFIG" )
@@ -102,10 +103,8 @@ config_load() {
     load_env "$CONFIG" || exit 1
     : "${PROMPT:=starship}"
     : "${PROMPT_STYLE:=minimal}"
-    : "${WORKSPACE:=$HOME/projects}"
-    : "${GIT_NAME:=$(id -un)}"
-    : "${GIT_EMAIL:=$(id -un)@$(short_host)}"
-    export PROMPT PROMPT_STYLE WORKSPACE GIT_NAME GIT_EMAIL
+    : "${GIT_NAME:=}" "${GIT_EMAIL:=}"      # no guess: an identity is yours to give
+    export PROMPT PROMPT_STYLE GIT_NAME GIT_EMAIL
 }
 
 THEME_KEYS="THEME_BG THEME_FG THEME_ACCENT THEME_MUTED THEME_BTOP THEME_ANSI_0 THEME_ANSI_1 THEME_ANSI_2 THEME_ANSI_3 THEME_ANSI_4 THEME_ANSI_5 THEME_ANSI_6 THEME_ANSI_7 THEME_ANSI_8 THEME_ANSI_9 THEME_ANSI_10 THEME_ANSI_11 THEME_ANSI_12 THEME_ANSI_13 THEME_ANSI_14 THEME_ANSI_15"
@@ -276,7 +275,7 @@ link_one() {   # link_one SRC DST
 esc() { printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'; }
 render_expr() {
     e="s|@HOME@|$(esc "$HOME")|g;s|@USER@|$(esc "$(id -un)")|g;s|@NAME@|$(esc "$(short_host)")|g"
-    e="$e;s|@WORKSPACE@|$(esc "$WORKSPACE")|g;s|@GIT_NAME@|$(esc "$GIT_NAME")|g;s|@GIT_EMAIL@|$(esc "$GIT_EMAIL")|g"
+    e="$e;s|@GIT_NAME@|$(esc "$GIT_NAME")|g;s|@GIT_EMAIL@|$(esc "$GIT_EMAIL")|g"
     for k in $THEME_KEYS; do
         eval "v=\$$k"
         # shellcheck disable=SC2154   # v is set by the eval above
@@ -306,7 +305,18 @@ render_one() {   # render_one SRC DST -- EXPR must be set
 }
 
 # What `on` renders and `off` hands back
-RENDERED=".tmux.conf .config/btop/btop.conf .gitconfig"
+RENDERED=".tmux.conf .config/btop/btop.conf"
+# .gitconfig: only with an identity you gave (GIT_NAME and GIT_EMAIL in
+# the config, or seeded from an old site.env) -- never a guess -- and
+# never over a .gitconfig of yours
+GITCONFIG=.gitconfig
+gitconfig_wanted() { [ -n "$GIT_NAME" ] && [ -n "$GIT_EMAIL" ]; }
+gitconfig_yours() { [ -f "$HOME/$GITCONFIG" ] && ! grep -q 'rendered by spark' "$HOME/$GITCONFIG"; }
+render_gitconfig() {
+    if ! gitconfig_wanted; then skip gitconfig "no GIT_NAME/GIT_EMAIL in $CONFIG: git's identity is yours to set"
+    elif gitconfig_yours; then skip gitconfig "$HOME/$GITCONFIG is yours, left alone"
+    else render_one "$REPO/templates/$GITCONFIG" "$HOME/$GITCONFIG"; fi
+}
 MICRO_SCHEME=.config/micro/colorschemes/spark.micro
 MICRO_SETTINGS=$HOME/.config/micro/settings.json
 rc_files() { if [ "$OS" = Darwin ]; then echo ".zshrc .zprofile"; else echo ".bashrc .bash_profile"; fi; }
@@ -318,6 +328,7 @@ render_all() {
     for rel in $RENDERED; do
         render_one "$REPO/templates/$rel" "$HOME/$rel"
     done
+    render_gitconfig
     if [ "$PROMPT" = starship ]; then
         render_one "$REPO/templates/.config/starship.toml.$PROMPT_STYLE" "$HOME/.config/starship.toml"
     fi
@@ -452,9 +463,6 @@ cmd_on() {
     else
         skip terminfo "tmux-256color lacks kUP here; a newer ncurses-term has it"
     fi
-    # the workspace folder (WORKSPACE): where your projects live
-    if [ -d "$WORKSPACE" ]; then ok dir "$WORKSPACE"
-    elif need dir "mkdir -p $WORKSPACE"; then mkdir -p "$WORKSPACE"; ok dir "$WORKSPACE"; fi
     loud && printf '\n== the look\n'
     tree=$(rc_tree)
     for f in $(rc_files); do
@@ -481,7 +489,7 @@ cmd_off() {
             case $(readlink "$p") in "$REPO"/*) restore_one "$p" ;; esac
         fi
     done
-    for rel in $RENDERED $MICRO_SCHEME .config/starship.toml; do
+    for rel in $RENDERED $GITCONFIG $MICRO_SCHEME .config/starship.toml; do
         p=$HOME/$rel
         if [ -f "$p" ] && [ ! -L "$p" ]; then
             if grep -q 'rendered by spark' "$p" 2>/dev/null || [ -e "$p.bak" ]; then
@@ -533,6 +541,9 @@ cmd_status() {
         command -v "$t" >/dev/null 2>&1 && s=yes || s=no
         printf '  tool  %-16s %s\n' "$t" "$s"
     done
+    if ! gitconfig_wanted; then printf '  git   %-16s %s\n' .gitconfig "not written: no GIT_NAME/GIT_EMAIL in the config, git's identity is yours"
+    elif gitconfig_yours; then printf '  git   %-16s %s\n' .gitconfig "yours, left alone"
+    else printf '  git   %-16s %s\n' .gitconfig "rendered: $GIT_NAME <$GIT_EMAIL>"; fi
     theme_load || true
     slots="accent colour${ACCENT_SLOT:-?}, muted colour${MUTED_SLOT:-?}"
     [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' theme.env "read: $slots (spark theme NAME rewrites it; then spark-shell apply)" \
@@ -570,18 +581,13 @@ cmd_check() {
         sed -e "$EXPR" "$REPO/templates/$rel" > "$TMP/chk"
         cmp -s "$TMP/chk" "$HOME/$rel" || stale="$stale $rel"
     done
-    [ -z "$stale" ] && chk look ok "the rendered look matches the palette" || chk look fail "stale:$stale" "spark-shell apply"
-    # backup: unpushed work under WORKSPACE
-    if [ -d "$WORKSPACE" ]; then
-        dirty=0
-        for d in "$WORKSPACE"/*/ "$WORKSPACE"/*/*/; do
-            [ -d "$d/.git" ] || continue
-            if [ -n "$(git -C "$d" status --porcelain 2>/dev/null)" ]; then dirty=$((dirty + 1)); fi
-        done
-        [ "$dirty" = 0 ] && chk backup ok "no uncommitted work under $WORKSPACE" || chk backup ok "$dirty repo(s) with uncommitted work under $WORKSPACE"
-    else
-        chk backup ok "no $WORKSPACE yet"
+    if gitconfig_wanted && ! gitconfig_yours; then
+        if [ -f "$HOME/$GITCONFIG" ]; then
+            sed -e "$EXPR" "$REPO/templates/$GITCONFIG" > "$TMP/chk"
+            cmp -s "$TMP/chk" "$HOME/$GITCONFIG" || stale="$stale $GITCONFIG"
+        else stale="$stale $GITCONFIG"; fi
     fi
+    [ -z "$stale" ] && chk look ok "the rendered look matches the palette" || chk look fail "stale:$stale" "spark-shell apply"
     if command -v spark >/dev/null 2>&1 || [ -x "$HOME/.local/bin/spark" ]; then chk bar ok "spark bar line answers the status line"
     else chk bar ok "spark not found -- the status line stays empty (github.com/forgewright-ai/spark)"; fi
     [ "$fails" = 0 ]

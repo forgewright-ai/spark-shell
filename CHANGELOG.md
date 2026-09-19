@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.3
+
+- No guessed git identity. A `.gitconfig` is rendered only when both
+  `GIT_NAME` and `GIT_EMAIL` are in the config (typed, or seeded from an
+  old site.env); unset, none is written and git's identity is yours to
+  set. A `.gitconfig` you already have is never touched, even with an
+  identity in the config. v0.2 wrote `<user> <user@host>` on a machine
+  with neither, which is nobody's identity.
+- No projects folder. `on` no longer makes `~/projects`, the `WORKSPACE`
+  key is gone (an old one in the config is ignored), and `check` has no
+  backup row scanning it: where your work lives is not the look's
+  business.
+
 ## v0.2
 
 - The Nerd Font is gone: `on` no longer downloads it, `check` has no

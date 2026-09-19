@@ -43,9 +43,11 @@ detection: one file, right on the console, plain in an emulator.
 ## Options
 
 `~/.config/spark-shell/config` (KEY=value, every key optional):
-`PROMPT` starship|plain, `PROMPT_STYLE` minimal|full, `WORKSPACE`
-(default ~/projects), `GIT_NAME`, `GIT_EMAIL` (the rendered
-.gitconfig's author line). `config.example` shows the defaults. No key
+`PROMPT` starship|plain, `PROMPT_STYLE` minimal|full, `GIT_NAME`,
+`GIT_EMAIL` (set both and a
+.gitconfig is rendered with that identity; unset, none is written and
+git's identity is yours to set -- never a guess; a .gitconfig you
+already have is never touched). `config.example` shows the defaults. No key
 controls the look: PROMPT and PROMPT_STYLE shape the prompt, nothing
 chooses between icons and plain.
 

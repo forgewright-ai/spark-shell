@@ -10,9 +10,8 @@ PROMPT=starship
 # starship's shape: minimal (a compact single line) or full.
 PROMPT_STYLE=minimal
 
-# Where your projects live: the folder `on` makes and `check` watches.
-WORKSPACE=~/projects
-
-# The identity .gitconfig is rendered with (git's author line).
+# The identity a .gitconfig is rendered with (git's author line). Set
+# both, or no .gitconfig is written and git's identity stays yours to
+# set; a .gitconfig you already have is never touched.
 GIT_NAME=Your Name
 GIT_EMAIL=you@example.com
