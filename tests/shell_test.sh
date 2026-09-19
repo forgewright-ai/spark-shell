@@ -12,10 +12,9 @@ bad() { fail=$((fail + 1)); printf '  FAIL %s   %s\n' "$1" "${2:-}"; }
 fresh() {   # a new throwaway HOME with the stubs in place
     H=$(mktemp -d)
     export HOME=$H XDG_CONFIG_HOME=$H/.config XDG_STATE_HOME=$H/.local/state XDG_DATA_HOME=$H/.local/share
-    mkdir -p "$H/.local/bin" "$H/.local/share/fonts/JetBrainsMonoNerdFont" "$H/.config/spark"
+    mkdir -p "$H/.local/bin" "$H/.config/spark"
     printf '#!/bin/sh\necho starship 0.0-stub\n' > "$H/.local/bin/starship"
     chmod +x "$H/.local/bin/starship"
-    : > "$H/.local/share/fonts/JetBrainsMonoNerdFont/stub.ttf"
     printf 'ID=fixture\n' > "$H/os-release"
     export SPARK_OS_RELEASE=$H/os-release
     PATH=$H/.local/bin:$PATH

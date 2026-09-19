@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.2
+
+- The Nerd Font is gone: `on` no longer downloads it, `check` has no
+  font row, the Brewfile has no cask, and `unzip` and `fontconfig` left
+  the package lists (they served only the font). A machine that is a
+  bare Linux console cannot draw a `.ttf`, and the look below no longer
+  needs one anywhere. A font directory an earlier `on` left at
+  `~/.local/share/fonts/JetBrainsMonoNerdFont` is not touched -- nothing
+  spark-shell did not render is ever removed; `rm -r` it and `fc-cache
+  -f` if you want it gone.
+
 ## v0.1
 
 - The shell layer, out of spark and on its own: everything spark

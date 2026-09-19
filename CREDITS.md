@@ -11,19 +11,6 @@ starship -- https://github.com/starship/starship -- ISC
 Version 1.26.0 (`STARSHIP_VERSION` in `spark-shell`), pinned by sha256
 on Linux; Homebrew installs the same tool on macOS with no version pin.
 
-## Fonts
-
-JetBrains Mono -- https://github.com/JetBrains/JetBrainsMono -- SIL Open
-Font License 1.1, Reserved Font Name "JetBrains Mono"
-
-Nerd Fonts -- https://github.com/ryanoasis/nerd-fonts -- MIT (the
-patcher)
-
-Nerd Fonts patches JetBrains Mono and renames the result "JetBrainsMono
-Nerd Font" -- version 3.5.1 (`NERDFONT_VERSION` in `spark-shell`),
-pinned by sha256 on Linux; Homebrew's font-jetbrains-mono-nerd-font cask
-installs the same family on macOS with no version pin.
-
 ## The tools (apt or pacman / Homebrew)
 
 Installed from apt's, pacman's or Homebrew's own repositories,
@@ -32,8 +19,6 @@ repository with its own credits.
 
 - bash -- GPL-3.0-or-later
 - tmux -- ISC
-- unzip -- Info-ZIP (the Nerd Font's archive)
-- fontconfig -- MIT-style
 - ncurses-bin -- MIT-style (ncurses)
 - ncurses -- MIT-style (ncurses-bin, on Arch)
 - pacman-contrib -- GPL-2.0-or-later (`checkupdates`, on Arch)

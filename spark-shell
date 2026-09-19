@@ -3,7 +3,7 @@
 #
 #   spark-shell                 the state: rc files, tools, the look
 #   spark-shell on              tmux, starship, fzf, zoxide, eza, bat, btop,
-#                               the Nerd Font, one palette on every surface;
+#                               one palette on every surface;
 #                               the rc files become spark-shell's (yours -> .bak)
 #   spark-shell off             everything back: rc files and the rendered
 #                               look from .bak, or gone; packages stay
@@ -18,8 +18,8 @@
 # `spark theme NAME` writes (21 THEME_* keys, THEME_LOGO optional). No
 # theme.env: the terminal keeps its own colours. spark itself is not
 # required; without it the status line stays empty and everything else
-# works. Nothing leaves this machine except the package manager and two
-# pinned, sha256-verified downloads (starship, the Nerd Font).
+# works. Nothing leaves this machine except the package manager and one
+# pinned, sha256-verified download (starship).
 #
 # POSIX sh, both OSes (Debian and Arch families, macOS). Choices live in
 # ~/.config/spark-shell/config (KEY=value): PROMPT starship|plain,
@@ -49,9 +49,6 @@ THEME_ENV=$SPARK_CONFIG_DIR/theme.env
 STARSHIP_VERSION=1.26.0
 STARSHIP_SHA_X86_64=321f0dd7af8340a5f2e6a8fec6538a04f617486f9ec70d878f91c09cd8deef22
 STARSHIP_SHA_AARCH64=dc30189378d2f2e287384e8a692d3f95ad1df64cf0e8c36aa9201516028aed6b
-NERDFONT_VERSION=3.5.1
-NERDFONT_SHA=fab782a66f7d3019da64f6572db9fc5d3a4bcb19f9fa13e2d8a62e3693d6396e
-FONT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/fonts/JetBrainsMonoNerdFont"
 
 # --------------------------------------------------------------- readers
 # load_env FILE: set every KEY the environment does not already set.
@@ -368,7 +365,7 @@ cmd_on() {
     fi
     loud && printf '\n== pinned\n'
     if [ "$OS" = Darwin ]; then
-        skip starship "Homebrew provides starship and the Nerd Font here"
+        skip starship "Homebrew provides starship here"
     else
         if [ -x "$HOME/.local/bin/starship" ] || command -v starship >/dev/null 2>&1; then
             ok starship "$(PATH=$HOME/.local/bin:$PATH starship --version 2>/dev/null | head -1)"
@@ -384,17 +381,6 @@ cmd_on() {
                 tar -xzf "$TMP/starship.tgz" -C "$HOME/.local/bin" starship
                 ok starship "$STARSHIP_VERSION"
             fi
-        fi
-        if ls "$FONT_DIR"/*.ttf >/dev/null 2>&1; then
-            ok font "JetBrainsMono Nerd Font in $FONT_DIR"
-        elif ! command -v unzip >/dev/null 2>&1; then
-            skip font "unzip is not here yet (the packages row) -- then spark-shell on again"
-        elif need font "install JetBrainsMono Nerd Font $NERDFONT_VERSION"; then
-            fetch "https://github.com/ryanoasis/nerd-fonts/releases/download/v$NERDFONT_VERSION/JetBrainsMono.zip" "$TMP/font.zip" "$NERDFONT_SHA"
-            mkdir -p "$FONT_DIR"
-            unzip -q -o "$TMP/font.zip" -d "$FONT_DIR" 'JetBrainsMonoNerdFont-*.ttf'
-            fc-cache -f "$FONT_DIR" >/dev/null 2>&1 || true
-            ok font "JetBrainsMono Nerd Font $NERDFONT_VERSION (set it in your terminal)"
         fi
     fi
     # terminfo: tmux-256color must know modified arrow keys
@@ -516,9 +502,6 @@ cmd_check() {
         command -v "$t" >/dev/null 2>&1 || [ -x "$HOME/.local/bin/$t" ] || miss="$miss $t"
     done
     [ -z "$miss" ] && chk tools ok "tmux, starship, fzf, zoxide, eza, bat, btop" || chk tools fail "missing:$miss" "spark-shell on"
-    if [ "$OS" = Darwin ]; then chk font ok "Homebrew's (the cask)"
-    elif ls "$FONT_DIR"/*.ttf >/dev/null 2>&1; then chk font ok "JetBrainsMono Nerd Font"
-    else chk font fail "no Nerd Font in $FONT_DIR" "spark-shell on"; fi
     infocmp -1x tmux-256color 2>/dev/null | grep -q 'kUP=' && chk terminfo ok "tmux-256color knows modified arrows" \
         || chk terminfo fail "tmux-256color lacks kUP" "spark-shell on"
     # render freshness: what apply would write vs what is on disk
@@ -560,7 +543,7 @@ cmd_bar() {
 }
 
 usage() {
-    sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 main() {
