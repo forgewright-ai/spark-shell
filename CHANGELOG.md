@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.6
+
+- A desktop. `DESKTOP=sway` in the config and `on` installs sway, foot
+  and DejaVu Sans Mono from the distro (`PKG_DESKTOP` in
+  `distro/*.env`; names verified on Debian 13 and Arch, 2026-09-20) and
+  renders `~/.config/foot/foot.ini` and `~/.config/sway/config`;
+  `apply` re-renders them (and `swaymsg reload`s a running sway); `off`
+  hands both back, marker-guarded like every render. `spark-shell
+  desktop` starts sway on this console, as a child: its stderr goes to
+  `~/.local/state/spark-shell/sway.log`, the cursor is put back on the
+  console after it exits, its exit status is ours. It refuses, one line
+  each, on macOS, with `DESKTOP=none`, without sway, without the
+  renders, inside a desktop already (`WAYLAND_DISPLAY`), and without a
+  seat (`XDG_VTNR` unset: ssh has no seat, a console login does).
+  `status` gains a `desk` row, `check` a `desktop` row (`na` with
+  `DESKTOP=none` and on macOS). Default `none`: nothing changes for a
+  box that has not asked.
+- The HEX class. foot is the desktop's twin of the console palette: the
+  one surface that gives the sixteen slots their colours, so it, and
+  sway's borders beside it, take the palette's own rrggbb
+  (`HEX_BG`, `HEX_FG`, `HEX_ACCENT`, `HEX_MUTED`, `HEX_ANSI_0..15`,
+  filled at the end of `theme_load`: a `#rrggbb` stripped, a colour
+  word the VGA sixteen that `spark theme none` programs). The templates
+  carry `@HEX_*@` placeholders and the hex lands at render time, so the
+  gate's rule stays: no hex in a template, every other render still
+  names slots. foot's colours sit in `[colors]` (foot 1.21, Debian 13)
+  and `[colors-dark]` (foot 1.26 and newer; Arch ships 1.28, which
+  dropped `[colors]`): each foot reads the section it knows and logs
+  the other to stderr once, nothing in the window.
+- `FONT` in the config (foot's own spec; default `DejaVu Sans
+  Mono:size=12`). On Arch, sway depends on the virtual `ttf-font`:
+  `ttf-dejavu` provides it, `ttf-jetbrains-mono` does not (pacman would
+  add a second family on its own), which is why the desktop's face is
+  DejaVu.
+- sway stays bare, since tmux owns the terminal: no bar (the tmux line
+  is the bar), no titlebars (`default_border pixel 2`), no xwayland; a
+  new window is foot running the login shell, never tmux itself. The
+  keys are i3's. Every directive used is in sway 1.10 (Debian 13) and
+  1.12 (Arch).
+
 ## v0.5
 
 - The prompt's colour. `on` and `apply` render

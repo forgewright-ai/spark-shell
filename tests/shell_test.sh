@@ -222,5 +222,103 @@ else
     printf '  NOTICE: SPARK unset -- spark'"'"'s palettes not exercised (SPARK=/path/to/spark sh tests/shell_test.sh)\n'
 fi
 
+# --- 14. the desktop: sway and foot, asked for by DESKTOP=sway ---------
+# stubs stand in for sway, swaymsg and foot; the Linux half is guarded by
+# uname (macOS has its own desktop) and runs in CI's linux and arch jobs
+desktop_stubs() {
+    for t in sway swaymsg foot; do
+        printf '#!/bin/sh\necho "%s-stub $*" >&2\n' "$t" > "$H/.local/bin/$t"; chmod +x "$H/.local/bin/$t"
+    done
+}
+fresh
+desktop_stubs
+theme_fixture '#ff5555'
+out=$(sh "$SH" on --dry-run)
+[ ! -e "$HOME/.config/foot" ] && [ ! -e "$HOME/.config/sway" ] && ok "default: DESKTOP=none renders no foot.ini, no sway config" || bad "desktop rendered by default" "$(ls -R "$HOME/.config")"
+printf '%s\n' "$out" | grep -q 'font' && bad "default dry-run names a font" "$out" || ok "default dry-run: no font word"
+sh "$SH" on >/dev/null
+st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desk  none' && ok "status: the desk row says none" || bad "status desk none" "$(printf '%s\n' "$st" | grep desk)"
+out=$(sh "$SH" check || true)
+printf '%s\n' "$out" | grep -q '^ok     desktop      na (' && ok "check: desktop is na by default" || bad "check desktop na" "$out"
+printf '%s\n' "$out" | grep -q 'font' && bad "check names a font" "$out" || ok "check: no font word"
+out=$(DESKTOP=none sh "$SH" desktop 2>&1 || true)
+printf '%s\n' "$out" | grep -q '^spark-shell desktop: ' && ok "desktop: refused with DESKTOP=none, one line" || bad "desktop none" "$out"
+printf 'DESKTOP=gnome\n' > "$HOME/.config/spark-shell/config"
+sh "$SH" status >/dev/null 2>&1 && bad "DESKTOP=gnome accepted" || ok "config: DESKTOP=gnome is refused"
+printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+if [ "$(uname -s)" = Darwin ]; then
+    out=$(sh "$SH" on --dry-run)
+    printf '%s\n' "$out" | grep -q '^skip   desktop      na: macOS' && ok "macOS: DESKTOP=sway is na, said in a row" || bad "macOS na row" "$out"
+    sh "$SH" apply >/dev/null
+    [ ! -e "$HOME/.config/sway" ] && ok "macOS: nothing rendered for the desktop" || bad "macOS rendered sway"
+    out=$(sh "$SH" desktop 2>&1 || true)
+    printf '%s\n' "$out" | grep -q '^spark-shell desktop: na' && ok "macOS: desktop refuses, na" || bad "macOS desktop" "$out"
+    out=$(sh "$SH" check || true)
+    printf '%s\n' "$out" | grep -q '^ok     desktop      na (macOS)' && ok "macOS: check says na" || bad "macOS check" "$out"
+else
+    out=$(sh "$SH" on --dry-run)
+    printf '%s\n' "$out" | grep -q '^would  look .*foot/foot.ini' && printf '%s\n' "$out" | grep -q '^would  look .*sway/config' \
+        && ok "DESKTOP=sway: dry-run would render foot.ini and sway/config" || bad "sway dry-run" "$out"
+    sh "$SH" on >/dev/null
+    foot=$HOME/.config/foot/foot.ini; sway=$HOME/.config/sway/config
+    [ -f "$foot" ] && [ -f "$sway" ] && ok "DESKTOP=sway: both rendered" || bad "sway renders missing" "$(ls -R "$HOME/.config")"
+    grep -q '^background=000000$' "$foot" && grep -q '^foreground=aaaaaa$' "$foot" && grep -q '^regular1=aa0000$' "$foot" && grep -q '^bright1=ff5555$' "$foot" \
+        && ok "foot.ini: the palette's own hex (background 000000, regular1 aa0000, bright1 ff5555)" || bad "foot colours" "$(grep -n '=' "$foot" | head -8)"
+    grep -q '^font=DejaVu Sans Mono:size=12$' "$foot" && ok "foot.ini: the default FONT line" || bad "foot font line" "$(grep -n '^font' "$foot")"
+    grep -q '^\[colors\]$' "$foot" && grep -q '^\[colors-dark\]$' "$foot" && ok "foot.ini: colours in both [colors] (foot 1.21) and [colors-dark] (1.26+)" || bad "foot sections"
+    grep -q '^client.focused *#ff5555 ' "$sway" && ok "sway: client.focused takes the accent's hex (#ff5555)" || bad "sway focused" "$(grep -n client "$sway")"
+    grep -q '^output \* bg #000000 solid_color$' "$sway" && ok "sway: the background is the palette's bg (#000000)" || bad "sway bg" "$(grep -n output "$sway")"
+    grep -q '@[A-Z_0-9]*@' "$foot" "$sway" && bad "a desktop render keeps a placeholder" "$(grep -n '@[A-Z_0-9]*@' "$foot" "$sway" | head -2)" || ok "desktop renders: no placeholder left"
+    head -1 "$foot" | grep -q '^# rendered by spark-shell' && head -1 "$sway" | grep -q '^# rendered by spark-shell' && ok "desktop renders: both marked" || bad "desktop markers"
+    LC_ALL=C grep -q "[^ -~${tab}]" "$foot" "$sway" && bad "a desktop render is not ASCII" || ok "desktop renders: ASCII"
+    printf 'DESKTOP=sway\nFONT=Test Mono:size=14\n' > "$HOME/.config/spark-shell/config"
+    sh "$SH" apply >/dev/null
+    grep -q '^font=Test Mono:size=14$' "$foot" && ok "FONT in the config lands in foot.ini verbatim" || bad "FONT override" "$(grep -n '^font' "$foot")"
+    printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+    sh "$SH" apply >/dev/null
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desk  sway .*sway: rendered' && ok "status: the desk row says sway, rendered" || bad "status desk sway" "$(printf '%s\n' "$st" | grep desk)"
+    out=$(sh "$SH" check || true)
+    printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot' && ok "check: desktop ok with the stubs and fresh renders" || bad "check desktop ok" "$out"
+    printf '%s\n' "$out" | grep -q 'font' && bad "check names a font" "$out" || ok "check: no font word with DESKTOP=sway"
+    out=$(env -u XDG_VTNR -u WAYLAND_DISPLAY sh "$SH" desktop 2>&1 || true)
+    printf '%s\n' "$out" | grep -q 'needs a console login: ssh has no seat' && ok "desktop: refused without XDG_VTNR (ssh has no seat)" || bad "desktop no seat" "$out"
+    out=$(env -u XDG_VTNR XDG_VTNR=1 WAYLAND_DISPLAY=wayland-1 sh "$SH" desktop 2>&1 || true)
+    printf '%s\n' "$out" | grep -q 'already inside' && ok "desktop: refused inside a desktop (WAYLAND_DISPLAY set)" || bad "desktop inside" "$out"
+    out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 TERM=linux sh "$SH" desktop 2>&1); st=$?
+    [ "$st" -eq 0 ] && grep -q 'sway-stub' "$HOME/.local/state/spark-shell/sway.log" && printf '%s' "$out" | od -c | grep -q '033   \[   ?   2   5   h' \
+        && ok "desktop: runs sway as a child, its stderr in sway.log, the cursor back on TERM=linux" || bad "desktop run" "st=$st out=$out log=$(cat "$HOME/.local/state/spark-shell/sway.log" 2>&1)"
+    out=$(SWAYSOCK=/nonexistent sh "$SH" apply)
+    printf '%s\n' "$out" | grep -q '^ok     sway         reloaded' && ok "apply: swaymsg reload when SWAYSOCK is set" || bad "sway reload" "$out"
+    rm -f "$H/.local/bin/sway"
+    out=$(sh "$SH" check || true)
+    printf '%s\n' "$out" | grep -q '^FAIL   desktop      missing: sway -- spark-shell on' && ok "check: FAIL without sway, the remedy is spark-shell on" || bad "check no sway" "$out"
+    out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop 2>&1 || true)
+    printf '%s\n' "$out" | grep -q 'not installed: sway' && ok "desktop: refused without sway" || bad "desktop no sway" "$out"
+    desktop_stubs
+    sh "$SH" off >/dev/null
+    [ ! -e "$foot" ] && [ ! -e "$sway" ] && ok "off: both desktop renders are gone" || bad "desktop off" "$(ls -R "$HOME/.config")"
+    mkdir -p "$HOME/.config/sway"; printf 'mine\n' > "$sway"
+    sh "$SH" off >/dev/null
+    grep -q mine "$sway" && ok "off: a sway config of yours (no marker) is left alone" || bad "yours removed"
+    sh "$SH" on >/dev/null
+    [ -f "$sway.bak" ] && grep -q mine "$sway.bak" && grep -q '^# rendered by spark-shell' "$sway" && ok "on: yours moves to .bak, the render takes its place" || bad "sway backup" "$(ls "$HOME/.config/sway")"
+    rm -f "$foot"
+    out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop 2>&1 || true)
+    printf '%s\n' "$out" | grep -q 'not rendered (spark-shell apply)' && ok "desktop: refused when a render is missing" || bad "desktop not rendered" "$out"
+    # no theme.env: the VGA sixteen, what spark theme none programs
+    fresh
+    desktop_stubs
+    mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+    sh "$SH" on >/dev/null
+    grep -q '^regular4=0000aa$' "$HOME/.config/foot/foot.ini" && grep -q '^background=000000$' "$HOME/.config/foot/foot.ini" && grep -q '^foreground=aaaaaa$' "$HOME/.config/foot/foot.ini" \
+        && ok "no theme.env: foot.ini takes the VGA sixteen (regular4 0000aa, bg 000000, fg aaaaaa)" || bad "vga foot" "$(grep -n '=' "$HOME/.config/foot/foot.ini" | head -6)"
+    grep -q '^client.focused *#0000aa ' "$HOME/.config/sway/config" && ok "no theme.env: the accent's hex is its VGA slot (blue, #0000aa)" || bad "vga accent" "$(grep -n client "$HOME/.config/sway/config")"
+fi
+grep -q '@FONT@' "$REPO/templates/.config/foot/foot.ini" && grep -q 'output \* bg #@HEX_BG@ solid_color' "$REPO/templates/.config/sway/config" \
+    && ok "templates: foot.ini and sway/config carry placeholders, the hex lands at render time" || bad "desktop template placeholders"
+grep -q '^bar ' "$REPO/templates/.config/sway/config" && bad "sway: a bar block (the tmux line is the bar)" || ok "sway template: no bar, tmux's line is the bar"
+grep -q '^xwayland disable$' "$REPO/templates/.config/sway/config" && ok "sway template: xwayland disabled" || bad "sway xwayland"
+grep -v '^#' "$REPO/templates/.config/sway/config" | grep -q 'tmux' && bad "sway: a window starts tmux (it runs the login shell)" || ok "sway template: a new foot runs the login shell, never tmux"
+
 printf '%s\n' "shell_test: $pass ok, $fail failed"
 [ "$fail" -eq 0 ]

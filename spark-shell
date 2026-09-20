@@ -12,6 +12,9 @@
 #   spark-shell check           is this machine still what this repo says?
 #   spark-shell bar on | off    tmux's status line (the line itself is
 #                               spark's: spark bar line)
+#   spark-shell desktop         sway and one foot window on this console,
+#                               now (DESKTOP=sway in the config; Linux,
+#                               from a console login)
 #   spark-shell on --dry-run    print what would change, touch nothing
 #
 # The one interface to spark is ~/.config/spark/theme.env -- the palette
@@ -26,7 +29,8 @@
 #
 # POSIX sh, both OSes (Debian and Arch families, macOS). Choices live in
 # ~/.config/spark-shell/config (KEY=value): PROMPT starship|plain,
-# PROMPT_STYLE minimal|full, GIT_NAME, GIT_EMAIL. The first
+# PROMPT_STYLE minimal|full, GIT_NAME, GIT_EMAIL, DESKTOP none|sway,
+# FONT (foot's spec, DejaVu Sans Mono:size=12). The first
 # `on` with no config seeds them from spark's site.env when the old
 # SITE_* keys are there (read once, copied, never read again). A
 # .gitconfig is rendered with an identity you gave (both GIT_NAME and
@@ -107,7 +111,11 @@ config_load() {
     : "${PROMPT:=starship}"
     : "${PROMPT_STYLE:=minimal}"
     : "${GIT_NAME:=}" "${GIT_EMAIL:=}"      # no guess: an identity is yours to give
-    export PROMPT PROMPT_STYLE GIT_NAME GIT_EMAIL
+    : "${DESKTOP:=none}"
+    : "${FONT:=DejaVu Sans Mono:size=12}"   # foot's spec, verbatim
+    case $DESKTOP in none|sway) ;;
+        *) echo "spark-shell: DESKTOP=$DESKTOP in $CONFIG: none or sway" >&2; exit 1 ;; esac
+    export PROMPT PROMPT_STYLE GIT_NAME GIT_EMAIL DESKTOP FONT
 }
 
 THEME_KEYS="THEME_BG THEME_FG THEME_ACCENT THEME_MUTED THEME_BTOP THEME_ANSI_0 THEME_ANSI_1 THEME_ANSI_2 THEME_ANSI_3 THEME_ANSI_4 THEME_ANSI_5 THEME_ANSI_6 THEME_ANSI_7 THEME_ANSI_8 THEME_ANSI_9 THEME_ANSI_10 THEME_ANSI_11 THEME_ANSI_12 THEME_ANSI_13 THEME_ANSI_14 THEME_ANSI_15"
@@ -178,6 +186,39 @@ theme_load() {
     ACCENT_STAR=$(slot_name "$ACCENT_SLOT"); MUTED_STAR=$(slot_name "$MUTED_SLOT")
     ACCENT_SGR=$(sgr_of "$ACCENT_SLOT"); MUTED_SGR=$(sgr_of "$MUTED_SLOT")
     export ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR ACCENT_SGR MUTED_SGR
+    hex_load
+}
+
+# The desktop's hex. foot is the desktop's twin of the console palette:
+# the one surface that gives the sixteen slots their colours (the kernel
+# console gets them from `spark theme NAME`), so it, and sway's borders
+# beside it, take the palette's own rrggbb -- every other render keeps
+# naming slots. A THEME_* that is #rrggbb is stripped of its `#`; a
+# colour word (no theme.env) is the VGA sixteen, what `spark theme none`
+# programs. HEX_BG and HEX_FG fall back to slots 0 and 7, HEX_ACCENT and
+# HEX_MUTED to their slot's hex.
+HEX_KEYS="HEX_BG HEX_FG HEX_ACCENT HEX_MUTED HEX_ANSI_0 HEX_ANSI_1 HEX_ANSI_2 HEX_ANSI_3 HEX_ANSI_4 HEX_ANSI_5 HEX_ANSI_6 HEX_ANSI_7 HEX_ANSI_8 HEX_ANSI_9 HEX_ANSI_10 HEX_ANSI_11 HEX_ANSI_12 HEX_ANSI_13 HEX_ANSI_14 HEX_ANSI_15"
+VGA_HEX="000000 aa0000 00aa00 aa5500 0000aa aa00aa 00aaaa aaaaaa 555555 ff5555 55ff55 ffff55 5555ff ff55ff 55ffff ffffff"
+hex_or() {   # hex_or COLOUR FALLBACK -> rrggbb, lowercase
+    case $1 in
+        \#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) printf '%s' "${1#\#}" | tr 'A-F' 'a-f' ;;
+        *) printf '%s' "$2" ;;
+    esac
+}
+hex_load() {
+    i=0
+    for h in $VGA_HEX; do
+        eval "c=\$THEME_ANSI_$i"
+        eval "HEX_ANSI_$i=\$(hex_or \"\$c\" \"$h\")"
+        i=$((i + 1))
+    done
+    # shellcheck disable=SC2034   # read by render_expr through HEX_KEYS
+    HEX_BG=$(hex_or "$THEME_BG" "$HEX_ANSI_0")
+    # shellcheck disable=SC2034
+    HEX_FG=$(hex_or "$THEME_FG" "$HEX_ANSI_7")
+    eval "HEX_ACCENT=\$(hex_or \"\$THEME_ACCENT\" \"\$HEX_ANSI_$ACCENT_SLOT\")"
+    eval "HEX_MUTED=\$(hex_or \"\$THEME_MUTED\" \"\$HEX_ANSI_$MUTED_SLOT\")"
+    for k in $HEX_KEYS; do export "${k?}"; done
 }
 
 # ------------------------------------------------------------------ rows
@@ -241,7 +282,7 @@ pm_detect() {
         case $w in debian|arch) DISTRO=$w; break ;; esac
     done
     [ -z "$DISTRO" ] || load_env "$REPO/distro/$DISTRO.env" || exit 1
-    : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}"
+    : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}" "${PKG_DESKTOP:=}"
 }
 pkg_installed() {
     case $PM in
@@ -289,10 +330,11 @@ render_expr() {
         # shellcheck disable=SC2154   # v is set by the eval above
         e="$e;s|@$k@|$(esc "$v")|g"
     done
-    for k in $SLOT_KEYS; do
+    for k in $SLOT_KEYS $HEX_KEYS; do
         eval "v=\$$k"
         e="$e;s|@$k@|$(esc "$v")|g"
     done
+    e="$e;s|@FONT@|$(esc "$FONT")|g"
     printf '%s' "$e"
 }
 render_one() {   # render_one SRC DST -- EXPR must be set
@@ -328,6 +370,26 @@ render_gitconfig() {   # no identity given: nothing to do, nothing to say
 }
 rc_files() { if [ "$OS" = Darwin ]; then echo ".zshrc .zprofile"; else echo ".bashrc .bash_profile"; fi; }
 rc_tree() { if [ "$OS" = Darwin ]; then echo "$REPO/templates/macos"; else echo "$REPO/templates/linux"; fi; }
+# The desktop: sway and foot, rendered only when asked for (DESKTOP=sway)
+# and only on Linux -- macOS has its own desktop. `off` hands both back
+# whatever the config says.
+DESKTOP_RENDERED=".config/foot/foot.ini .config/sway/config"
+desktop_wanted() { [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; }
+desktop_tools() {   # -> the missing ones, if any (PATH or ~/.local/bin)
+    _miss=''
+    for t in sway foot; do
+        command -v "$t" >/dev/null 2>&1 || [ -x "$HOME/.local/bin/$t" ] || _miss="$_miss $t"
+    done
+    printf '%s' "$_miss"
+}
+sway_reload() {   # a running sway takes the new render now (borders, background)
+    [ "$MODE" = dry ] && return 0
+    [ -n "${SWAYSOCK:-}" ] || return 0
+    [ -f "$HOME/.config/sway/config" ] || return 0
+    command -v swaymsg >/dev/null 2>&1 || return 0
+    swaymsg reload >/dev/null 2>&1 || return 0
+    row ok sway "reloaded (~/.config/sway/config)"
+}
 
 render_all() {
     theme_load
@@ -338,6 +400,12 @@ render_all() {
     render_gitconfig
     if [ "$PROMPT" = starship ]; then
         render_one "$REPO/templates/.config/starship.toml.$PROMPT_STYLE" "$HOME/.config/starship.toml"
+    fi
+    if desktop_wanted; then
+        for rel in $DESKTOP_RENDERED; do
+            render_one "$REPO/templates/$rel" "$HOME/$rel"
+        done
+        sway_reload
     fi
     micro_look_gone
 }
@@ -412,8 +480,10 @@ cmd_on() {
         row todo packages "no package list for this Linux: distro/*.env know debian and arch"
     else
         missing=''
+        pkgs="$PKG_SHELL $PKG_CLI"
+        if desktop_wanted; then pkgs="$pkgs $PKG_DESKTOP"; fi
         # shellcheck disable=SC2086
-        for p in $PKG_SHELL $PKG_CLI; do pkg_installed "$p" || missing="$missing $p"; done
+        for p in $pkgs; do pkg_installed "$p" || missing="$missing $p"; done
         if [ -z "$missing" ]; then ok packages "installed"
         elif [ "$(id -u)" -ne 0 ] && ! sudo -n true 2>/dev/null && [ ! -t 0 ]; then
             # nobody to type a password here: say what is left, keep going
@@ -424,6 +494,13 @@ cmd_on() {
             pkg_install $missing
             ok packages "installed"
         fi
+    fi
+    # the desktop's packages ride the row above when DESKTOP=sway; say
+    # why they are not there otherwise
+    if [ "$OS" = Darwin ]; then
+        [ "$DESKTOP" != sway ] || skip desktop "na: macOS has its own desktop"
+    elif ! desktop_wanted; then
+        skip desktop "DESKTOP=none (the config)"
     fi
     loud && printf '\n== pinned\n'
     if [ "$OS" = Darwin ]; then
@@ -485,7 +562,7 @@ cmd_off() {
             case $(readlink "$p") in "$REPO"/*) restore_one "$p" ;; esac
         fi
     done
-    for rel in $RENDERED $GITCONFIG .config/starship.toml; do
+    for rel in $RENDERED $GITCONFIG .config/starship.toml $DESKTOP_RENDERED; do
         p=$HOME/$rel
         if [ -f "$p" ] && [ ! -L "$p" ]; then
             if grep -q 'rendered by spark' "$p" 2>/dev/null || [ -e "$p.bak" ]; then
@@ -540,6 +617,12 @@ cmd_status() {
     if ! gitconfig_wanted; then printf '  git   %-16s %s\n' .gitconfig "not written (no GIT_NAME/GIT_EMAIL in the config)"
     elif gitconfig_yours; then printf '  git   %-16s %s\n' .gitconfig "yours, left alone"
     else printf '  git   %-16s %s\n' .gitconfig "rendered: $GIT_NAME <$GIT_EMAIL>"; fi
+    if [ "$OS" = Darwin ]; then s="na: macOS has its own desktop"
+    elif [ "$DESKTOP" = none ]; then s="none (DESKTOP=sway in the config, then spark-shell on)"
+    elif [ -n "$(desktop_tools)" ]; then s="sway: not installed --$(desktop_tools) (spark-shell on)"
+    elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then s="sway: not rendered (spark-shell apply)"
+    else s="sway: rendered, foot in $(fc-match -f '%{family}' "$FONT" 2>/dev/null || printf '%s' "${FONT%%:*}") (spark-shell desktop starts it)"; fi
+    printf '  desk  %-16s %s\n' "$DESKTOP" "$s"
     theme_load || true
     slots="accent colour${ACCENT_SLOT:-?}, muted colour${MUTED_SLOT:-?} (SGR 1;${ACCENT_SGR:-?} / ${MUTED_SGR:-?})"
     [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' theme.env "read: $slots (spark theme NAME rewrites it; then spark-shell apply)" \
@@ -584,6 +667,18 @@ cmd_check() {
         else stale="$stale $GITCONFIG"; fi
     fi
     [ -z "$stale" ] && chk look ok "the rendered look matches the palette" || chk look fail "stale:$stale" "spark-shell apply"
+    if [ "$OS" = Darwin ]; then chk desktop ok "na (macOS)"
+    elif [ "$DESKTOP" = none ]; then chk desktop ok "na (DESKTOP=none)"
+    elif [ -n "$(desktop_tools)" ]; then chk desktop fail "missing:$(desktop_tools)" "spark-shell on"
+    else
+        stale=''
+        for rel in $DESKTOP_RENDERED; do
+            [ -f "$HOME/$rel" ] || { stale="$stale $rel"; continue; }
+            sed -e "$EXPR" "$REPO/templates/$rel" > "$TMP/chk"
+            cmp -s "$TMP/chk" "$HOME/$rel" || stale="$stale $rel"
+        done
+        [ -z "$stale" ] && chk desktop ok "sway and foot, the renders match the palette" || chk desktop fail "stale:$stale" "spark-shell apply"
+    fi
     if command -v spark >/dev/null 2>&1 || [ -x "$HOME/.local/bin/spark" ]; then chk bar ok "spark bar line answers the status line"
     else chk bar ok "spark not found -- the status line stays empty (github.com/forgewright-ai/spark)"; fi
     [ "$fails" = 0 ]
@@ -601,8 +696,29 @@ cmd_bar() {
     esac
 }
 
+# Start sway now, on this console. A child, never exec: the EXIT trap
+# still cleans TMP, and the cursor comes back after quiet boot's
+# vt.global_cursor_default=0. sway's stderr goes to a log; its exit status
+# is ours. Each refusal is one line and exit 1.
+cmd_desktop() {
+    config_load
+    refuse() { echo "spark-shell desktop: $1"; exit 1; }
+    [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
+    [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- DESKTOP=sway in $CONFIG, then spark-shell on"
+    [ -z "$(desktop_tools)" ] || refuse "not installed:$(desktop_tools) (spark-shell on)"
+    [ -f "$HOME/.config/sway/config" ] && [ -f "$HOME/.config/foot/foot.ini" ] || refuse "not rendered (spark-shell apply)"
+    [ -z "${WAYLAND_DISPLAY:-}" ] || refuse "already inside a desktop (WAYLAND_DISPLAY=$WAYLAND_DISPLAY)"
+    [ -n "${XDG_VTNR:-}" ] || refuse "needs a console login: ssh has no seat"
+    log_dir=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell
+    mkdir -p "$log_dir"
+    st=0
+    PATH=$HOME/.local/bin:$PATH sway 2>"$log_dir/sway.log" || st=$?
+    [ "${TERM:-}" != linux ] || printf '\033[?25h'
+    exit "$st"
+}
+
 usage() {
-    sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 main() {
@@ -618,6 +734,7 @@ main() {
         apply) cmd_apply ;;
         check) cmd_check ;;
         bar) cmd_bar "$@" ;;
+        desktop) cmd_desktop ;;
         status) cmd_status ;;
         --dry-run) MODE=dry; cmd_on ;;
         *) usage >&2; exit 2 ;;

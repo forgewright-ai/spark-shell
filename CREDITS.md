@@ -32,6 +32,17 @@ repository with its own credits.
 - jq -- MIT
 - btop -- Apache-2.0
 
+## The desktop (apt or pacman, with DESKTOP=sway)
+
+- sway -- https://github.com/swaywm/sway -- MIT
+- wlroots -- https://gitlab.freedesktop.org/wlroots/wlroots -- MIT
+  (sway's library; pulled by the package)
+- swaybg -- https://github.com/swaywm/swaybg -- MIT (the background;
+  its own package on Arch, pulled by sway on Debian)
+- foot, foot-terminfo -- https://codeberg.org/dnkl/foot -- MIT
+- DejaVu fonts -- https://dejavu-fonts.github.io -- Bitstream Vera
+  license (ttf-dejavu on Arch, fonts-dejavu-core on Debian)
+
 ## The palettes
 
 The colours the look is rendered with come from

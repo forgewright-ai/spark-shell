@@ -51,6 +51,8 @@ $hit"
 done
 
 # --- 4. no hex colour in a template: the look is the 16 palette slots ---
+# (the desktop's foot.ini and sway/config carry @HEX_*@ placeholders;
+# the palette's own rrggbb lands at render time, never in the tree)
 hit=$(grep -rnE '#[0-9a-fA-F]{6}' templates | head -3 || true)
 [ -z "$hit" ] || bad "hex colour in a template (name a slot instead):
 $hit"

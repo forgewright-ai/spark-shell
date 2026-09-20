@@ -28,6 +28,8 @@ jobs:
         run: "! grep -rnE '#[0-9a-fA-F]{6}' templates"
       - name: shellcheck
         run: shellcheck -S warning spark-shell tests/shell_test.sh
+      - name: the desktop's package names exist on the Debian family (nothing installed)
+        run: sudo apt-get update -qq && apt-cache show $(sed -n 's/^PKG_DESKTOP=//p' distro/debian.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
   arch:
@@ -39,6 +41,8 @@ jobs:
     steps:
       - run: pacman -Syu --noconfirm --needed git python diffutils >/dev/null
       - uses: actions/checkout@v4
+      - name: the desktop's package names exist on Arch (nothing installed)
+        run: pacman -Sp --needed $(sed -n 's/^PKG_DESKTOP=//p' distro/arch.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
   macos:

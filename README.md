@@ -14,6 +14,8 @@ this machine's cycles belong to the model.
     spark-shell apply       re-render the look from that palette
     spark-shell off         everything back from .bak, or gone
     spark-shell check       is this machine still what this repo says?
+    spark-shell desktop     sway and one foot window on this console
+                            (DESKTOP=sway in the config)
 
 ## Install
 
@@ -50,13 +52,40 @@ on the prompt while spark answers and `spark down` when it stopped,
 read from spark's own cache (`~/.local/state/spark/prompt`) by one sh
 between keystrokes; the cycles stay the model's.
 
+## A desktop
+
+Put `DESKTOP=sway` in the config and `spark-shell on` adds a desktop to
+the box: sway, a Wayland compositor that tiles windows, and foot, the
+terminal window, with DejaVu Sans Mono from the distro. Both are
+rendered from the same palette: foot takes the sixteen slots' own hex,
+so it is the desktop's twin of the console palette, and sway's borders
+and background take the accent, the muted tone and the background. tmux
+stays the multiplexer inside a window (sessions, panes, the bar line),
+so sway draws the borders only: the bar line is tmux's.
+
+    spark-shell desktop     start it, from a console login (tty1)
+    Super+Return            a window: foot, running your login shell
+    Super+Shift+q           close it
+    Super+Shift+c           reload sway (after spark-shell apply)
+    Super+Shift+e           back to the console
+
+The keys are i3's: `Super` and hjkl or the arrows to focus, with Shift
+to move, `Super+1`..`0` the workspaces, `Super+r` resize. `spark theme
+NAME` then `spark-shell apply` recolours the borders live and the next
+window. Between keystrokes it idles: sway and foot draw on demand, the
+cycles stay the model's. Start the desktop, then the model: they share
+the memory. sway's log is `~/.local/state/spark-shell/sway.log`. If
+`seatd.service` is ever enabled on the box, add your user to the `seat`
+group (libseat prefers seatd over logind when both are there).
+
 ## Options
 
 `~/.config/spark-shell/config` (KEY=value, every key optional):
 `PROMPT` starship|plain, `PROMPT_STYLE` minimal|full, `GIT_NAME`,
 `GIT_EMAIL` (set both and a
 .gitconfig is rendered with that identity; one you already have stays
-yours). `config.example` shows the defaults.
+yours), `DESKTOP` none|sway, `FONT` (foot's spec, `DejaVu Sans
+Mono:size=12`). `config.example` shows the defaults.
 
 ## What leaves this machine
 

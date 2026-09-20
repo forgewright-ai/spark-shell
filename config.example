@@ -14,3 +14,10 @@ PROMPT_STYLE=minimal
 # both. A .gitconfig you already have stays yours.
 GIT_NAME=Your Name
 GIT_EMAIL=you@example.com
+
+# The desktop (Linux): none, or sway -- sway and foot installed and
+# rendered from the palette; spark-shell desktop starts it on a console.
+DESKTOP=none
+
+# foot's face, in foot's own spec (family, then :size=N).
+FONT=DejaVu Sans Mono:size=12
