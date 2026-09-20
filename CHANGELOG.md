@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7
+
+- The starship prompt is starship's again: the `spark MODEL` /
+  `spark down` segment of v0.5 is gone from both styles (too much on
+  the prompt line). The three colour exports stay; spark's prompt cache
+  is still written by spark, read by nothing here.
+
 ## v0.6
 
 - A desktop. `DESKTOP=sway` in the config and `on` installs sway, foot

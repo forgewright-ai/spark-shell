@@ -3,7 +3,7 @@
 # One plain look: ASCII and the 16 palette slots by their colour words,
 # no hex; the console palette `spark theme NAME` programs draws them.
 add_newline = true
-format = "$directory$git_branch$git_status${custom.spark}${custom.spark_down}$character"
+format = "$directory$git_branch$git_status$character"
 
 [directory]
 style = "bold @ACCENT_STAR@"
@@ -24,29 +24,6 @@ behind = "<"
 diverged = "<>"
 renamed = "r"
 deleted = "x"
-
-[custom.spark]
-# spark's own state, from the one file it writes (~/.local/state/spark/prompt,
-# KEY=value): `spark MODEL` while it answers, nothing without the file.
-# sh builtins only -- no python on a prompt. The group in the format
-# draws its space only when there is an output.
-command = '''f=${XDG_STATE_HOME:-$HOME/.local/state}/spark/prompt; [ -r "$f" ] || exit 0
-m=- a=; while IFS== read -r k v; do case $k in MODEL) m=$v;; AI) a=$v;; esac; done < "$f"
-case $a in up) [ "$m" != - ] && printf 'spark %s' "$m";; esac'''
-when = true
-shell = ["sh"]
-format = "([$output]($style) )"
-style = "@ACCENT_STAR@"
-
-[custom.spark_down]
-# the same file when spark stopped: `spark down`, in red
-command = '''f=${XDG_STATE_HOME:-$HOME/.local/state}/spark/prompt; [ -r "$f" ] || exit 0
-a=; while IFS== read -r k v; do case $k in AI) a=$v;; esac; done < "$f"
-case $a in down) printf 'spark down';; esac'''
-when = true
-shell = ["sh"]
-format = "([$output]($style) )"
-style = "red"
 
 [character]
 success_symbol = "[>](green)"

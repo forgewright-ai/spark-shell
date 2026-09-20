@@ -47,10 +47,8 @@ With spark-shell on, spark's prompt takes the palette's colour: `on`
 and `apply` render `~/.config/spark-shell/sgr.sh`, three exports from
 the accent and muted slots (`SPARK_ACCENT_SGR`, `SPARK_MUTED_SGR`,
 `SPARK_WARN_SGR`), and spark 1.41 or newer draws its hint row, `spark
-chat` and `spark do` with them at a tty. starship shows `spark MODEL`
-on the prompt while spark answers and `spark down` when it stopped,
-read from spark's own cache (`~/.local/state/spark/prompt`) by one sh
-between keystrokes; the cycles stay the model's.
+chat` and `spark do` with them at a tty. The prompt line itself stays
+starship's.
 
 ## A desktop
 

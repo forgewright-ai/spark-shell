@@ -79,8 +79,7 @@ grep -q '^# rendered by spark-shell' "$sgr" && ok "on: sgr.sh carries the marker
 # shellcheck disable=SC1090   # the render just written, on purpose
 (. "$sgr" && [ "$SPARK_ACCENT_SGR" = '1;91' ] && [ "$SPARK_MUTED_SGR" = 90 ] && [ "$SPARK_WARN_SGR" = '1;31' ]) \
     && ok "on: sgr.sh sources in sh and sets the three" || bad "sgr source"
-grep -q '${custom.spark}${custom.spark_down}$character' "$HOME/.config/starship.toml" && grep -q 'style = "bright-red"' "$HOME/.config/starship.toml" \
-    && ok "on: starship's spark segment sits before the character, in the accent" || bad "starship segment" "$(grep -n 'custom\|^format' "$HOME/.config/starship.toml")"
+grep -q 'custom' "$HOME/.config/starship.toml" && bad "starship carries a segment of its own" || ok "on: starship's prompt is starship's alone (no spark segment)"
 out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "second run: Nothing to do" || bad "idempotence" "$out"
 
@@ -163,10 +162,7 @@ for rc in linux/.bashrc macos/.zshrc; do
 done
 for t in minimal full; do
     st_t=$REPO/templates/.config/starship.toml.$t
-    grep -q '^\[custom\.spark\]' "$st_t" && grep -q 'spark/prompt' "$st_t" && grep -q '^when = true' "$st_t" \
-        && ok "starship $t: the spark segment reads spark/prompt, when = true" || bad "starship $t segment"
-    grep -q '${custom.spark}${custom.spark_down}$character' "$st_t" && ok "starship $t: the segment sits right before the character" || bad "starship $t placement"
-    sed -n '/^\[custom\.spark/,/^\[character\]/p' "$st_t" | grep -v '^#' | grep -q python && bad "starship $t: python on a prompt" || ok "starship $t: the segment is sh builtins only"
+    grep -q 'custom' "$st_t" && bad "starship $t: a segment of spark's" || ok "starship $t: no spark segment on the prompt"
 done
 
 # --- 11. the git identity: yours to give, never guessed, never overwritten
