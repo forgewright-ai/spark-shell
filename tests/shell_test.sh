@@ -34,7 +34,7 @@ theme_fixture() {   # theme_fixture ACCENT [MUTED] -- a 21-key theme.env over th
         done
     } > "$HOME/.config/spark/theme.env"
 }
-RENDERS=".tmux.conf .config/btop/btop.conf .config/starship.toml"
+RENDERS=".tmux.conf .config/btop/btop.conf .config/starship.toml .config/spark-shell/sgr.sh"
 
 SH=$REPO/spark-shell
 
@@ -72,6 +72,15 @@ grep -q '^force_tty = True' "$HOME/.config/btop/btop.conf" && grep -q '^graph_sy
 [ ! -e "$HOME/.config/micro" ] && ok "on: no editor configured (nothing under ~/.config/micro)" || bad "micro touched" "$(ls -R "$HOME/.config/micro")"
 grep -q "EDITOR\|editor = " "$REPO/templates/linux/.bashrc" "$REPO/templates/macos/.zshrc" "$REPO/templates/.gitconfig" && bad "an editor is still configured" || ok "templates: no EDITOR, no git editor"
 grep -q 'style = "bold bright-red"' "$HOME/.config/starship.toml" && ok "on: starship's accent is its colour word (bright-red)" || bad "starship accent"
+sgr=$HOME/.config/spark-shell/sgr.sh
+grep -q "SPARK_ACCENT_SGR='1;91'" "$sgr" && grep -q "SPARK_MUTED_SGR='90'" "$sgr" && grep -q "SPARK_WARN_SGR='1;31'" "$sgr" \
+    && ok "on: sgr.sh exports the slots as SGR (accent 1;91, muted 90, warn 1;31)" || bad "sgr render" "$(cat "$sgr" 2>&1)"
+grep -q '^# rendered by spark-shell' "$sgr" && ok "on: sgr.sh carries the marker" || bad "sgr marker"
+# shellcheck disable=SC1090   # the render just written, on purpose
+(. "$sgr" && [ "$SPARK_ACCENT_SGR" = '1;91' ] && [ "$SPARK_MUTED_SGR" = 90 ] && [ "$SPARK_WARN_SGR" = '1;31' ]) \
+    && ok "on: sgr.sh sources in sh and sets the three" || bad "sgr source"
+grep -q '${custom.spark}${custom.spark_down}$character' "$HOME/.config/starship.toml" && grep -q 'style = "bright-red"' "$HOME/.config/starship.toml" \
+    && ok "on: starship's spark segment sits before the character, in the accent" || bad "starship segment" "$(grep -n 'custom\|^format' "$HOME/.config/starship.toml")"
 out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "second run: Nothing to do" || bad "idempotence" "$out"
 
@@ -82,7 +91,8 @@ grep -q 'fg=colour3,bold' "$HOME/.tmux.conf" && ok "apply: a new accent lands as
 out=$(sh "$SH" check || true)
 printf '%s\n' "$out" | grep -q '^ok     look' && ok "check: the look matches the palette" || bad "check look row" "$out"
 printf '%s\n' "$out" | grep -q 'font' && bad "check: a font row survives" "$out" || ok "check: no font row"
-st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q 'accent colour3, muted colour8' && ok "status: the theme row names the slots" || bad "status slots" "$(printf '%s\n' "$st" | grep theme)"
+grep -q "SPARK_ACCENT_SGR='1;33'" "$HOME/.config/spark-shell/sgr.sh" && ok "apply: the new accent lands in sgr.sh (1;33)" || bad "apply sgr" "$(cat "$HOME/.config/spark-shell/sgr.sh")"
+st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q 'accent colour3, muted colour8 (SGR 1;33 / 90)' && ok "status: the theme row names the slots and the SGR pair" || bad "status slots" "$(printf '%s\n' "$st" | grep theme)"
 
 # --- 4. the prompt choices ------------------------------------------------
 mkdir -p "$HOME/.config/spark-shell"
@@ -101,6 +111,7 @@ if [ "$rc1" = .bashrc ]; then
     [ ! -L "$HOME/.bashrc" ] && grep -q yours "$HOME/.bashrc" && ok "off: the rc file came back from .bak" || bad "rc restore" "$(ls -la "$HOME")"
 fi
 [ ! -e "$HOME/.tmux.conf" ] && ok "off: a render with no .bak is removed, never a husk" || bad "render removal"
+[ ! -e "$HOME/.config/spark-shell/sgr.sh" ] && ok "off: sgr.sh is gone (the prompt goes plain)" || bad "sgr removal"
 printf '%s\n' "$out" | grep -q 'packages stay installed' && ok "off: packages stay, said so" || bad "off closing" "$out"
 
 # --- 6. adoption: a file spark's old layer rendered is ours ---------------
@@ -132,12 +143,31 @@ fresh
 sh "$SH" on >/dev/null
 grep -q 'fg=colour4,bold' "$HOME/.tmux.conf" && grep -q 'pane-border-style "fg=colour7"' "$HOME/.tmux.conf" \
     && ok "no theme.env: accent blue (colour4), muted white (colour7)" || bad "name defaults" "$(grep -n colour "$HOME/.tmux.conf" | head -3)"
-st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q "none: the terminal's own sixteen; accent colour4, muted colour7" && ok "status: no theme.env, the slots still named" || bad "status none" "$(printf '%s\n' "$st" | grep theme)"
+grep -q "SPARK_ACCENT_SGR='1;34'" "$HOME/.config/spark-shell/sgr.sh" && grep -q "SPARK_MUTED_SGR='37'" "$HOME/.config/spark-shell/sgr.sh" \
+    && ok "no theme.env: sgr.sh says blue (1;34) and white (37)" || bad "sgr defaults" "$(cat "$HOME/.config/spark-shell/sgr.sh")"
+st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q "none: the terminal's own sixteen; accent colour4, muted colour7 (SGR 1;34 / 37)" && ok "status: no theme.env, the slots still named" || bad "status none" "$(printf '%s\n' "$st" | grep theme)"
 
 # --- 10. the templates themselves: no truecolor flag, ASCII fzf ----------
 grep -q MICRO_TRUECOLOR "$REPO/templates/linux/.bashrc" "$REPO/templates/macos/.zshrc" && bad "MICRO_TRUECOLOR still exported" || ok "rc files: no MICRO_TRUECOLOR"
 grep -q -- '--no-unicode' "$REPO/templates/linux/.bashrc" && grep -q -- '--no-unicode' "$REPO/templates/macos/.zshrc" && ok "rc files: fzf asked for ASCII" || bad "fzf opts"
 grep -rEq '#[0-9a-fA-F]{6}' "$REPO/templates" && bad "a template names a hex colour" "$(grep -rnE '#[0-9a-fA-F]{6}' "$REPO/templates" | head -2)" || ok "templates: no hex colour anywhere"
+for rc in linux/.bashrc macos/.zshrc; do
+    grep -q 'spark-shell/sgr.sh' "$REPO/templates/$rc" && ok "rc files: $rc sources spark-shell/sgr.sh" || bad "$rc: no sgr.sh"
+    # the order: starship's init, then sgr.sh, then spark's hook line, then zoxide
+    l_st=$(grep -n 'starship init' "$REPO/templates/$rc" | head -1 | cut -d: -f1)
+    l_sgr=$(grep -n '^[^#]*spark-shell/sgr.sh' "$REPO/templates/$rc" | head -1 | cut -d: -f1)
+    l_hook=$(grep -n '^[^#]*config/spark/hook\.' "$REPO/templates/$rc" | head -1 | cut -d: -f1)
+    l_zo=$(grep -n 'zoxide init' "$REPO/templates/$rc" | head -1 | cut -d: -f1)
+    [ "$l_st" -lt "$l_sgr" ] && [ "$l_sgr" -lt "$l_hook" ] && [ "$l_hook" -lt "$l_zo" ] \
+        && ok "rc files: $rc keeps the order (starship, sgr.sh, spark's hook, zoxide)" || bad "$rc order" "starship $l_st sgr $l_sgr hook $l_hook zoxide $l_zo"
+done
+for t in minimal full; do
+    st_t=$REPO/templates/.config/starship.toml.$t
+    grep -q '^\[custom\.spark\]' "$st_t" && grep -q 'spark/prompt' "$st_t" && grep -q '^when = true' "$st_t" \
+        && ok "starship $t: the spark segment reads spark/prompt, when = true" || bad "starship $t segment"
+    grep -q '${custom.spark}${custom.spark_down}$character' "$st_t" && ok "starship $t: the segment sits right before the character" || bad "starship $t placement"
+    sed -n '/^\[custom\.spark/,/^\[character\]/p' "$st_t" | grep -v '^#' | grep -q python && bad "starship $t: python on a prompt" || ok "starship $t: the segment is sh builtins only"
+done
 
 # --- 11. the git identity: yours to give, never guessed, never overwritten
 fresh
@@ -181,6 +211,7 @@ if [ -n "${SPARK:-}" ] && ls "$SPARK"/themes/*.env >/dev/null 2>&1; then
         fresh
         cp "$env" "$HOME/.config/spark/theme.env"
         sh "$SH" on >/dev/null
+        st=$(sh "$SH" status)
         allplain=1
         for rel in $RENDERS; do plain "$HOME/$rel" || allplain=0; done
         [ "$allplain" = 1 ] && grep -Eq 'fg=colour(1[0-5]|[0-9]),bold' "$HOME/.tmux.conf" \

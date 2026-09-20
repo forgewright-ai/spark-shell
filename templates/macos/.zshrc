@@ -41,9 +41,12 @@ else
     PROMPT=$'\n%n@%m:%~%# '   # the blank row is where spark prints its hint
 fi
 
-# --- spark at the prompt: its one marked hook line (the widget, completion,
-#     the console palette). After fzf, so its accept-line wrapper is the one
-#     spark wraps; spark's rc row sees the marker and never appends a second.
+# --- spark at the prompt: the colour it draws with (three exports from
+#     the palette slots, rendered by spark-shell apply), then its one
+#     marked hook line (the widget, completion, the console palette). After
+#     fzf, so its accept-line wrapper is the one spark wraps; spark's rc
+#     row sees the marker and never appends a second.
+[[ -r ~/.config/spark-shell/sgr.sh ]] && source ~/.config/spark-shell/sgr.sh   # spark-shell: the prompt's colour
 [[ -r ~/.config/spark/hook.zsh ]] && source ~/.config/spark/hook.zsh   # spark: the AI at the prompt
 
 # zoxide last: its prompt hook has to be the final one, or it complains

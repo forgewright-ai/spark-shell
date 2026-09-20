@@ -16,10 +16,13 @@
 #
 # The one interface to spark is ~/.config/spark/theme.env -- the palette
 # `spark theme NAME` writes (21 THEME_* keys, THEME_LOGO optional). No
-# theme.env: the terminal keeps its own colours. spark itself is not
-# required; without it the status line stays empty and everything else
-# works. Nothing leaves this machine except the package manager and one
-# pinned, sha256-verified download (starship).
+# theme.env: the terminal keeps its own colours. Back to spark go three
+# exports, SPARK_ACCENT_SGR, SPARK_MUTED_SGR and SPARK_WARN_SGR (the
+# rendered ~/.config/spark-shell/sgr.sh): the prompt's colour, from the
+# same slots. spark itself is not required; without it the status line
+# stays empty and everything else works. Nothing leaves this machine
+# except the package manager and one pinned, sha256-verified download
+# (starship).
 #
 # POSIX sh, both OSes (Debian and Arch families, macOS). Choices live in
 # ~/.config/spark-shell/config (KEY=value): PROMPT starship|plain,
@@ -119,7 +122,10 @@ THEME_KEYS="THEME_BG THEME_FG THEME_ACCENT THEME_MUTED THEME_BTOP THEME_ANSI_0 T
 # palette's bright row often repeats its dim one). A colour word (the
 # no-theme.env defaults) is its own slot. BG and FG are the terminal's
 # own (`default`).
-SLOT_KEYS="ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR"
+# ACCENT_SGR and MUTED_SGR are the same two slots as SGR parameters
+# (30-37 for slots 0-7, 90-97 for 8-15): what spark >= 1.41 reads from
+# the three SPARK_*_SGR exports to colour its prompt at a tty.
+SLOT_KEYS="ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR ACCENT_SGR MUTED_SGR"
 hex_rgb() {   # hex_rgb #rrggbb -> "r g b" (decimal), or false
     case $1 in \#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) ;; *) return 1 ;; esac
     _h=${1#\#}; _m=${_h#??}
@@ -146,6 +152,9 @@ slot_of() {   # slot_of COLOUR -> 0..15
     done
     echo "$slot"
 }
+sgr_of() {   # sgr_of N -> the SGR foreground parameter for slot N (30-37, 90-97)
+    if [ "$1" -lt 8 ]; then echo $((30 + $1)); else echo $((82 + $1)); fi
+}
 slot_name() {   # slot_name N -> starship's word for slot N (black .. bright-white)
     _n=$1
     set -- black red green yellow blue purple cyan white
@@ -167,7 +176,8 @@ theme_load() {
     for k in $THEME_KEYS; do export "${k?}"; done
     ACCENT_SLOT=$(slot_of "$THEME_ACCENT"); MUTED_SLOT=$(slot_of "$THEME_MUTED")
     ACCENT_STAR=$(slot_name "$ACCENT_SLOT"); MUTED_STAR=$(slot_name "$MUTED_SLOT")
-    export ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR
+    ACCENT_SGR=$(sgr_of "$ACCENT_SLOT"); MUTED_SGR=$(sgr_of "$MUTED_SLOT")
+    export ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR ACCENT_SGR MUTED_SGR
 }
 
 # ------------------------------------------------------------------ rows
@@ -302,8 +312,9 @@ render_one() {   # render_one SRC DST -- EXPR must be set
     row render look "$2"
 }
 
-# What `on` renders and `off` hands back
-RENDERED=".tmux.conf .config/btop/btop.conf"
+# What `on` renders and `off` hands back. sgr.sh is the prompt's colour:
+# the three exports the rc files source before spark's hook line.
+RENDERED=".tmux.conf .config/btop/btop.conf .config/spark-shell/sgr.sh"
 # .gitconfig: only with an identity you gave (GIT_NAME and GIT_EMAIL in
 # the config, or seeded from an old site.env) -- never a guess -- and
 # never over a .gitconfig of yours
@@ -530,7 +541,7 @@ cmd_status() {
     elif gitconfig_yours; then printf '  git   %-16s %s\n' .gitconfig "yours, left alone"
     else printf '  git   %-16s %s\n' .gitconfig "rendered: $GIT_NAME <$GIT_EMAIL>"; fi
     theme_load || true
-    slots="accent colour${ACCENT_SLOT:-?}, muted colour${MUTED_SLOT:-?}"
+    slots="accent colour${ACCENT_SLOT:-?}, muted colour${MUTED_SLOT:-?} (SGR 1;${ACCENT_SGR:-?} / ${MUTED_SGR:-?})"
     [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' theme.env "read: $slots (spark theme NAME rewrites it; then spark-shell apply)" \
                         || printf '  theme %-16s %s\n' theme.env "none: the terminal's own sixteen; $slots"
 }
@@ -591,7 +602,7 @@ cmd_bar() {
 }
 
 usage() {
-    sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 main() {

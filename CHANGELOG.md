@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.5
+
+- The prompt's colour. `on` and `apply` render
+  `~/.config/spark-shell/sgr.sh`, three exports from the palette slots
+  (`SPARK_ACCENT_SGR='1;<code>'`, `SPARK_MUTED_SGR='<code>'`,
+  `SPARK_WARN_SGR='1;31'`; a slot below 8 is 30+n, above is 82+n, so
+  console-safe 30-37 and 90-97 only, bold at most), and the rc files
+  source it right before spark's hook line. spark 1.41 or newer reads
+  them at a tty and paints its hint row, `spark chat` and `spark do`
+  with them; a pipe never sees them, and without the file the prompt
+  stays plain. `off` removes the render; `spark-shell status` names the
+  pair beside the slots (`SGR 1;91 / 90`). The interface stays one file
+  each way: spark writes `theme.env`, spark-shell writes `sgr.sh`.
+- A spark segment in starship, both styles, right before the `>`:
+  `spark MODEL` in the accent while spark answers, `spark down` in red
+  when it stopped, nothing when spark is not there. It reads spark's own
+  prompt cache (`~/.local/state/spark/prompt`, KEY=value) with sh
+  builtins -- one `sh` per module, no python on a prompt -- and draws
+  its space only when it has something to say. The blank hint row above
+  stays.
+
 ## v0.4
 
 - No editor. spark-shell installs no editor (it never did) and now
