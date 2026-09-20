@@ -335,6 +335,7 @@ render_expr() {
         e="$e;s|@$k@|$(esc "$v")|g"
     done
     e="$e;s|@FONT@|$(esc "$FONT")|g"
+    e="$e;s|@FOOT_COLORS@|$(foot_colors)|g"
     printf '%s' "$e"
 }
 render_one() {   # render_one SRC DST -- EXPR must be set
@@ -374,6 +375,11 @@ rc_tree() { if [ "$OS" = Darwin ]; then echo "$REPO/templates/macos"; else echo 
 # and only on Linux -- macOS has its own desktop. `off` hands both back
 # whatever the config says.
 DESKTOP_RENDERED=".config/foot/foot.ini .config/sway/config"
+foot_colors() {   # the name of foot's colour section: [colors] before 1.26, [colors-dark] from it
+    _v=$(PATH=$HOME/.local/bin:$PATH foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
+    set -- ${_v:-1 26}
+    if [ "$1" -gt 1 ] || [ "$2" -ge 26 ]; then echo colors-dark; else echo colors; fi
+}
 desktop_wanted() { [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; }
 desktop_tools() {   # -> the missing ones, if any (PATH or ~/.local/bin)
     _miss=''

@@ -2,6 +2,12 @@
 
 ## v0.7
 
+- foot.ini names ONE colour section, for the foot installed: `[colors]`
+  before foot 1.26 (Debian 13 has 1.21), `[colors-dark]` from 1.26 on
+  (Arch has 1.28) -- v0.6 rendered both, and foot 1.28 shows an
+  "invalid section name: colors" error in the window for the one it
+  dropped (`foot_colors`, from `foot --version`; 1.26+ when foot is not
+  there yet, as in a dry run).
 - The starship prompt is starship's again: the `spark MODEL` /
   `spark down` segment of v0.5 is gone from both styles (too much on
   the prompt line). The three colour exports stay; spark's prompt cache
