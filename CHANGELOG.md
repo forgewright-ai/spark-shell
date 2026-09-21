@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.9
+
+- foot: `pad=4x4 center`. A grid never fills a window exactly; foot put
+  the pixels left over at the bottom, and with 8 px of padding that read
+  as a blank line under the last row (23 px at 1920x1080, cell 10x19).
+  Four pixels and `center` split what is left evenly, one more row.
+
 ## v0.8
 
 - The desktop ends with its first terminal: `exit` in the foot it opened
