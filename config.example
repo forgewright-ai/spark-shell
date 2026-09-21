@@ -30,3 +30,7 @@ FONT=DejaVu Sans Mono:size=12
 # windows and foot is a little translucent, so it shows.
 # `spark-shell desktop wallpaper PATH|default|none` writes this line and applies it.
 WALLPAPER=default
+
+# foot over a picture: 0 to 1, 1 opaque. A dark picture reads well at
+# 0.85; a bright one wants more.
+ALPHA=0.85

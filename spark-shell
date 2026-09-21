@@ -37,7 +37,8 @@
 # POSIX sh, both OSes (Debian and Arch families, macOS). Choices live in
 # ~/.config/spark-shell/config (KEY=value): PROMPT starship|plain,
 # PROMPT_STYLE minimal|full, GIT_NAME, GIT_EMAIL, DESKTOP none|sway,
-# FONT (foot's spec, DejaVu Sans Mono:size=12), WALLPAPER default|none|PATH. The first
+# FONT (foot's spec, DejaVu Sans Mono:size=12), WALLPAPER default|none|PATH,
+# ALPHA (foot over a picture, 0.85). The first
 # `on` with no config seeds them from spark's site.env when the old
 # SITE_* keys are there (read once, copied, never read again). A
 # .gitconfig is rendered with an identity you gave (both GIT_NAME and
@@ -132,9 +133,12 @@ config_load() {
     : "${DESKTOP:=none}"
     : "${FONT:=DejaVu Sans Mono:size=12}"   # foot's spec, verbatim
     : "${WALLPAPER:=default}"               # the desktop's picture: default (the forge), none, or an absolute path
+    : "${ALPHA:=0.85}"                      # foot over a picture: 0..1, 1 = opaque
+    case $ALPHA in 0|1|0.[0-9]|0.[0-9][0-9]|1.0) ;;
+        *) echo "spark-shell: ALPHA=$ALPHA in $CONFIG: 0 to 1 (0.85)" >&2; exit 1 ;; esac
     case $DESKTOP in none|sway) ;;
         *) echo "spark-shell: DESKTOP=$DESKTOP in $CONFIG: none or sway" >&2; exit 1 ;; esac
-    export PROMPT PROMPT_STYLE GIT_NAME GIT_EMAIL DESKTOP FONT WALLPAPER
+    export PROMPT PROMPT_STYLE GIT_NAME GIT_EMAIL DESKTOP FONT WALLPAPER ALPHA
 }
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept
     mkdir -p "$CONFIG_DIR"
@@ -287,7 +291,7 @@ wall_there() { [ "$WALLPAPER" != none ] && [ -r "$(wall_path)" ]; }
 wall_load() {
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     if wall_there; then
-        WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=0.95
+        WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA
     else
         WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0
     fi

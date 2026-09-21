@@ -99,7 +99,8 @@ The desktop opens on the forge: `wallpapers/forge-1920x1080.jpg`, the
 smith at work, shipped here in two sizes (a 2560x1664 twin for a
 bigger display). sway fills the screen with it, keeps gaps around the
 windows (8 inside, 12 at the edges) and the next foot window is a
-little translucent (alpha 0.95), so it shows through the text.
+little translucent (`ALPHA` in the config, 0.85), so it shows through
+the text.
 `spark-shell desktop wallpaper PATH` puts a picture of yours there
 instead, `default` the forge again, `none` the palette's background,
 edge to edge and opaque; bare, it names the current one. A running
@@ -142,7 +143,8 @@ it unset they fall back to `vi`, which the tools bring as a safety net
 .gitconfig is rendered with that identity; one you already have stays
 yours), `DESKTOP` none|sway (`spark-shell desktop on|off` writes it),
 `FONT` (foot's spec, `DejaVu Sans Mono:size=12`), `WALLPAPER` default,
-none or an absolute path (`spark-shell desktop wallpaper` writes it).
+none or an absolute path (`spark-shell desktop wallpaper` writes it),
+`ALPHA` for foot over a picture (0.85).
 `config.example` shows the defaults.
 
 ## What leaves this machine

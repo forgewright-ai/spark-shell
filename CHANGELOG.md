@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.22
+
+- `ALPHA` in the config: foot over a picture, 0 to 1, default 0.85
+  (0.95 hid the forge; 0.9 had let a bright car through -- the number
+  depends on the picture, so it is yours).
+
 ## v0.21
 
 - The forge is the desktop's default wallpaper: `wallpapers/` ships the
