@@ -421,8 +421,8 @@ else
     [ "$allthere" = 1 ] && ok "desktop on: the four root files rendered under the root" || bad "root renders" "$(find "$H/root" -type f)"
     conf=$H/root/etc/greetd/config.toml
     head -1 "$conf" | grep -q '^# rendered by spark-shell' && ok "config.toml: the marker is line 1" || bad "config.toml marker" "$(head -1 "$conf")"
-    grep -q '^vt = 1$' "$conf" && grep -q '^user = "greeter"$' "$conf" && grep -q -- '--cmd sway ' "$conf" && grep -q -- '--sessions /etc/greetd/spark-shell ' "$conf" \
-        && ok "config.toml: vt 1, the greeter user, tuigreet --cmd sway --sessions" || bad "config.toml shape" "$(cat "$conf")"
+    grep -q '^vt = 1$' "$conf" && grep -q '^user = "greeter"$' "$conf" && grep -q -- "--cmd '$REPO/spark-shell desktop' " "$conf" && grep -q -- '--sessions /etc/greetd/spark-shell ' "$conf" \
+        && ok "config.toml: vt 1, the greeter user, tuigreet --cmd spark-shell desktop, --sessions" || bad "config.toml shape" "$(cat "$conf")"
     grep '^command' "$conf" | grep -q -- '--background' && bad "config.toml: --background for a tuigreet that lacks it" || ok "config.toml: no --background for a tuigreet without it (0.9)"
     printf '#!/bin/sh\n[ "$1" = --help ] && echo "        --background NAME background animation"\n' > "$H/.local/bin/tuigreet"
     sh "$SH" apply >/dev/null

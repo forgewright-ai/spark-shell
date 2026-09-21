@@ -1,7 +1,8 @@
 # rendered by spark-shell from templates/etc/greetd/config.toml -- edit the template, then spark-shell apply
 # greetd: the login box on tty1. tuigreet draws it on the console, in the
 # palette's slots (ratatui's colour words), with the machine's name above
-# and the clock. Enter starts the desktop (sway); F2 picks the console
+# and the clock. Enter starts the desktop the way the verb does (sway's
+# log in ~/.local/state/spark-shell, nothing on the console); F2 picks the console
 # session instead (a login shell on tty1, no desktop): the two sessions
 # are /etc/greetd/spark-shell/*.desktop. Leaving the desktop shows the box
 # again. greetd takes tty1 in getty's place at the next boot. Behind the
@@ -13,5 +14,5 @@
 vt = 1
 
 [default_session]
-command = "tuigreet --cmd sway --sessions /etc/greetd/spark-shell --remember --remember-session --asterisks --time --width 60 --window-padding 1 --greeting '@NAME@'@GREET_BG@ --theme 'border=@ACCENT_TUI@;title=@ACCENT_TUI@;prompt=@ACCENT_TUI@;button=@ACCENT_TUI@;text=@FG_TUI@;input=@FG_TUI@;greet=@MUTED_TUI@;time=@MUTED_TUI@;action=@MUTED_TUI@;container=@BG_TUI@'"
+command = "tuigreet --cmd '@REPO@/spark-shell desktop' --sessions /etc/greetd/spark-shell --remember --remember-session --asterisks --time --width 60 --window-padding 1 --greeting '@NAME@'@GREET_BG@ --theme 'border=@ACCENT_TUI@;title=@ACCENT_TUI@;prompt=@ACCENT_TUI@;button=@ACCENT_TUI@;text=@FG_TUI@;input=@FG_TUI@;greet=@MUTED_TUI@;time=@MUTED_TUI@;action=@MUTED_TUI@;container=@BG_TUI@'"
 user = "greeter"

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.17
+
+- The login box's Enter runs `spark-shell desktop` too (tuigreet's
+  `--cmd`), not bare sway: v0.12 wrapped only the F3 session, so the
+  default still spilled sway's stderr onto tty1 at every reboot.
+
 ## v0.16
 
 - yazi, the file manager, joins the tools: a package on Arch
