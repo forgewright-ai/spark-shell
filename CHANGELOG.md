@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.14
+
+- foot over a wallpaper is `alpha=0.95` (was 0.9): a bright picture
+  read through the text more than the number suggested.
+
 ## v0.13
 
 - `spark-shell desktop wallpaper PATH|none`: a picture behind the

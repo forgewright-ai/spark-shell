@@ -279,7 +279,7 @@ wall_there() { [ "$WALLPAPER" != none ] && [ -r "$WALLPAPER" ]; }
 wall_load() {
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     if wall_there; then
-        WALL_BG="\"$WALLPAPER\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=0.9
+        WALL_BG="\"$WALLPAPER\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=0.95
     else
         WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0
     fi

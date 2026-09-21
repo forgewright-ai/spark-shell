@@ -94,7 +94,7 @@ ask for sudo when they differ.
 `spark-shell desktop wallpaper PATH` puts a picture behind the windows:
 sway fills the screen with it, keeps gaps around the windows (8 inside,
 12 at the edges) and the next foot window is a little translucent
-(alpha 0.9), so it shows through the text. A running sway takes it at
+(alpha 0.95), so it shows through the text. A running sway takes it at
 once. `spark-shell desktop wallpaper none` is the palette's background
 again, edge to edge and opaque; bare, it names the current one. A dark
 picture in the palette's colours keeps the text readable. A picture
