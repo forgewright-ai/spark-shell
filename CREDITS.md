@@ -11,6 +11,15 @@ starship -- https://github.com/starship/starship -- ISC
 Version 1.26.0 (`STARSHIP_VERSION` in `spark-shell`), pinned by sha256
 on Linux; Homebrew installs the same tool on macOS with no version pin.
 
+## The file manager
+
+yazi -- https://github.com/sxyazi/yazi -- MIT
+(c) sxyazi and contributors
+
+A package on Arch and Homebrew; on Debian, which has none, version
+26.9.1 (`YAZI_VERSION` in `spark-shell`), pinned by sha256, unzipped
+into ~/.local/bin (yazi and ya).
+
 ## The tools (apt or pacman / Homebrew)
 
 Installed from apt's, pacman's or Homebrew's own repositories,
@@ -31,6 +40,7 @@ repository with its own credits.
 - fd -- MIT/Apache-2.0 (fd-find, on Arch)
 - jq -- MIT
 - btop -- Apache-2.0
+- unzip -- Info-ZIP license (yazi's zip on Debian; archives in yazi)
 
 ## The desktop (apt or pacman, with DESKTOP=sway)
 

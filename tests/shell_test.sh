@@ -19,7 +19,8 @@ fresh() {   # a new throwaway HOME with the stubs in place
     export HOME=$H XDG_CONFIG_HOME=$H/.config XDG_STATE_HOME=$H/.local/state XDG_DATA_HOME=$H/.local/share
     mkdir -p "$H/.local/bin" "$H/.config/spark"
     printf '#!/bin/sh\necho starship 0.0-stub\n' > "$H/.local/bin/starship"
-    chmod +x "$H/.local/bin/starship"
+    printf '#!/bin/sh\necho "Yazi 0.0-stub"\n' > "$H/.local/bin/yazi"   # the pin never downloads in a test
+    chmod +x "$H/.local/bin/starship" "$H/.local/bin/yazi"
     printf 'ID=fixture\n' > "$H/os-release"
     export SPARK_OS_RELEASE=$H/os-release
     # the root renders (the login box) land under a throwaway root, never
@@ -37,7 +38,7 @@ theme_fixture() {   # theme_fixture ACCENT [MUTED] -- a 21-key theme.env over th
         done
     } > "$HOME/.config/spark/theme.env"
 }
-RENDERS=".tmux.conf .config/btop/btop.conf .config/starship.toml .config/spark-shell/sgr.sh"
+RENDERS=".tmux.conf .config/btop/btop.conf .config/starship.toml .config/spark-shell/sgr.sh .config/yazi/theme.toml"
 
 SH=$REPO/spark-shell
 
@@ -76,6 +77,10 @@ grep -q '^force_tty = True' "$HOME/.config/btop/btop.conf" && grep -q '^graph_sy
 [ ! -e "$HOME/.config/micro" ] && ok "on: no editor configured (nothing under ~/.config/micro)" || bad "micro touched" "$(ls -R "$HOME/.config/micro")"
 grep -q "EDITOR\|editor = " "$REPO/templates/linux/.bashrc" "$REPO/templates/macos/.zshrc" "$REPO/templates/.gitconfig" && bad "an editor is still configured" || ok "templates: no EDITOR, no git editor"
 grep -q 'style = "bold bright-red"' "$HOME/.config/starship.toml" && ok "on: starship's accent is its colour word (bright-red)" || bad "starship accent"
+grep -q '^cwd = { fg = "bright-red" }$' "$HOME/.config/yazi/theme.toml" && grep -q '^globs = \[\]$' "$HOME/.config/yazi/theme.toml" \
+    && ok "on: yazi's look -- the accent word for cwd, no icon glyphs" || bad "yazi look" "$(cat "$HOME/.config/yazi/theme.toml")"
+st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  tool  yazi *yes' && ok "status: yazi is a tool" || bad "status yazi" "$st"
+ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q 'btop, yazi$' && ok "check: the tools row names yazi" || bad "check tools" "$(printf '%s\n' "$ck" | grep tools)"
 sgr=$HOME/.config/spark-shell/sgr.sh
 grep -q "SPARK_ACCENT_SGR='1;91'" "$sgr" && grep -q "SPARK_MUTED_SGR='90'" "$sgr" && grep -q "SPARK_WARN_SGR='1;31'" "$sgr" \
     && ok "on: sgr.sh exports the slots as SGR (accent 1;91, muted 90, warn 1;31)" || bad "sgr render" "$(cat "$sgr" 2>&1)"

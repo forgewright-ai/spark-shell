@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.16
+
+- yazi, the file manager, joins the tools: a package on Arch
+  (`PKG_CLI`) and Homebrew; on Debian, which has none, a pinned
+  release (26.9.1, sha256, `yazi` and `ya` into ~/.local/bin, unzipped
+  -- `unzip` joins `PKG_CLI` on both distros). A rendered
+  `~/.config/yazi/theme.toml`: no icon glyphs (they want a Nerd Font),
+  the accent word on the current directory. The `tools` rows name it.
+- The login box's fire was not lit: tuigreet prints its help on stderr,
+  so the flag check saw nothing. Read.
+
 ## v0.15
 
 - The login box burns: tuigreet's DOOM fire (`--background doom`) in

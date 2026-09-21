@@ -3,7 +3,8 @@
 A commercial box, a mac mini, an old laptop: a machine that serves a
 local AI on the LAN, to run and to keep. spark gives it the AI;
 spark-shell gives it the hands -- tmux, starship, fzf, zoxide, eza, bat,
-btop, and one plain look on every surface (tmux, the prompt, btop):
+btop, yazi, and one plain look on every surface (tmux, the prompt, btop,
+yazi):
 ASCII and the 16 palette slots, right on
 the Linux console and merely plain in an emulator. Discreet and light:
 this machine's cycles belong to the model.
@@ -128,8 +129,8 @@ an absolute path (`spark-shell desktop wallpaper` writes it).
 
 ## What leaves this machine
 
-Nothing, beyond the package manager and one pinned download verified
-by sha256 (starship). No model, no network call, no
+Nothing, beyond the package manager and two pinned downloads verified
+by sha256 (starship; yazi on Debian). No model, no network call, no
 telemetry. The one file read from spark is `~/.config/spark/theme.env`;
 nothing is ever sent to it.
 
