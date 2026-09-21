@@ -383,7 +383,7 @@ link_one() {   # link_one SRC DST
 }
 esc() { printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'; }
 render_expr() {
-    e="s|@HOME@|$(esc "$HOME")|g;s|@USER@|$(esc "$(id -un)")|g;s|@NAME@|$(esc "$(short_host)")|g"
+    e="s|@HOME@|$(esc "$HOME")|g;s|@USER@|$(esc "$(id -un)")|g;s|@NAME@|$(esc "$(short_host)")|g;s|@REPO@|$(esc "$REPO")|g"
     e="$e;s|@GIT_NAME@|$(esc "$GIT_NAME")|g;s|@GIT_EMAIL@|$(esc "$GIT_EMAIL")|g"
     for k in $THEME_KEYS; do
         eval "v=\$$k"

@@ -1,6 +1,10 @@
 # rendered by spark-shell from templates/etc/greetd/spark-shell/desktop.desktop -- edit the template, then spark-shell apply
-# The login box's first session: the desktop (sway; foot opens with it).
+# The login box's first session: the desktop, started the way the verb
+# starts it -- sway's and foot's stderr in ~/.local/state/spark-shell/
+# sway.log, the cursor back after -- so nothing spills onto tty1 when the
+# session ends (a reboot from inside it printed foot's broken-pipe lines
+# on the console). The path is the clone of whoever ran desktop on.
 [Desktop Entry]
 Name=desktop
-Exec=sway
+Exec=@REPO@/spark-shell desktop
 Type=Application

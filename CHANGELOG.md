@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.12
+
+- The login box's desktop session is `spark-shell desktop` (the clone's
+  path), not bare `sway`: sway's and foot's stderr go to
+  `~/.local/state/spark-shell/sway.log` and the cursor comes back, the
+  same as starting it by hand. A reboot from inside the desktop had
+  printed foot's broken-pipe lines on tty1.
+
 ## v0.11
 
 - `spark-shell desktop on|off`: the desktop and the login box together.

@@ -382,9 +382,9 @@ else
         && ok "config.toml: the palette as ratatui words (border lightred, container black, text gray, greet darkgray)" || bad "config.toml theme" "$(grep -o -- "--theme '[^']*'" "$conf")"
     name=$(hostname -s 2>/dev/null || uname -n | cut -d. -f1)
     grep -q -- "--greeting '$name' " "$conf" && ok "config.toml: the greeting is the machine's short name" || bad "config.toml greeting" "$(grep -o -- "--greeting '[^']*'" "$conf") vs $name"
-    grep -q '^Name=desktop$' "$H/root/etc/greetd/spark-shell/desktop.desktop" && grep -q '^Exec=sway$' "$H/root/etc/greetd/spark-shell/desktop.desktop" \
+    grep -q '^Name=desktop$' "$H/root/etc/greetd/spark-shell/desktop.desktop" && grep -q "^Exec=$REPO/spark-shell desktop\$" "$H/root/etc/greetd/spark-shell/desktop.desktop" \
         && grep -q '^Name=console$' "$H/root/etc/greetd/spark-shell/console.desktop" && grep -q '^Exec=bash -l$' "$H/root/etc/greetd/spark-shell/console.desktop" \
-        && ok "the two sessions: desktop = sway, console = bash -l" || bad "session files" "$(cat "$H"/root/etc/greetd/spark-shell/*.desktop)"
+        && ok "the two sessions: desktop = spark-shell desktop (the clone), console = bash -l" || bad "session files" "$(cat "$H"/root/etc/greetd/spark-shell/*.desktop)"
     grep -q '^After=spark-console.service$' "$H/root/etc/systemd/system/greetd.service.d/spark-shell.conf" && ok "the drop-in orders greetd after spark-console.service" || bad "drop-in" "$(cat "$H/root/etc/systemd/system/greetd.service.d/spark-shell.conf")"
     for rel in $ROOT_RENDERS; do
         if grep -q '@[A-Z_0-9]*@' "$H/root/$rel"; then bad "$rel keeps a placeholder" "$(grep -o '@[A-Z_0-9]*@' "$H/root/$rel" | head -1)"
