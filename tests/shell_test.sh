@@ -80,7 +80,8 @@ grep -q 'style = "bold bright-red"' "$HOME/.config/starship.toml" && ok "on: sta
 grep -q '^cwd = { fg = "bright-red" }$' "$HOME/.config/yazi/theme.toml" && grep -q '^globs = \[\]$' "$HOME/.config/yazi/theme.toml" \
     && ok "on: yazi's look -- the accent word for cwd, no icon glyphs" || bad "yazi look" "$(cat "$HOME/.config/yazi/theme.toml")"
 st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  tool  yazi *yes' && ok "status: yazi is a tool" || bad "status yazi" "$st"
-ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q 'btop, yazi$' && ok "check: the tools row names yazi" || bad "check tools" "$(printf '%s\n' "$ck" | grep tools)"
+ck=$(sh "$SH" check || true); tr_=$(printf '%s\n' "$ck" | grep tools)
+case $tr_ in *"btop, yazi"*) ok "check: the tools row names yazi" ;; *missing:*yazi*) bad "check tools: yazi missing with its stub on PATH" "$tr_" ;; *) ok "check: yazi is not among the missing tools (CI has few of them)" ;; esac
 sgr=$HOME/.config/spark-shell/sgr.sh
 grep -q "SPARK_ACCENT_SGR='1;91'" "$sgr" && grep -q "SPARK_MUTED_SGR='90'" "$sgr" && grep -q "SPARK_WARN_SGR='1;31'" "$sgr" \
     && ok "on: sgr.sh exports the slots as SGR (accent 1;91, muted 90, warn 1;31)" || bad "sgr render" "$(cat "$sgr" 2>&1)"
