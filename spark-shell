@@ -19,7 +19,7 @@
 #                               hands it all back, getty on tty1 again
 #   spark-shell desktop         sway and one foot window on this console,
 #                               now (Linux, from a console login)
-#   spark-shell desktop wallpaper [PATH|none]
+#   spark-shell desktop wallpaper [PATH|default|none]
 #                               the picture behind the windows (gaps and a
 #                               translucent foot show it); bare: the current
 #   spark-shell on --dry-run    print what would change, touch nothing
@@ -37,7 +37,7 @@
 # POSIX sh, both OSes (Debian and Arch families, macOS). Choices live in
 # ~/.config/spark-shell/config (KEY=value): PROMPT starship|plain,
 # PROMPT_STYLE minimal|full, GIT_NAME, GIT_EMAIL, DESKTOP none|sway,
-# FONT (foot's spec, DejaVu Sans Mono:size=12), WALLPAPER none|PATH. The first
+# FONT (foot's spec, DejaVu Sans Mono:size=12), WALLPAPER default|none|PATH. The first
 # `on` with no config seeds them from spark's site.env when the old
 # SITE_* keys are there (read once, copied, never read again). A
 # .gitconfig is rendered with an identity you gave (both GIT_NAME and
@@ -131,7 +131,7 @@ config_load() {
     : "${GIT_NAME:=}" "${GIT_EMAIL:=}"      # no guess: an identity is yours to give
     : "${DESKTOP:=none}"
     : "${FONT:=DejaVu Sans Mono:size=12}"   # foot's spec, verbatim
-    : "${WALLPAPER:=none}"                  # the desktop's picture: none, or an absolute path
+    : "${WALLPAPER:=default}"               # the desktop's picture: default (the forge), none, or an absolute path
     case $DESKTOP in none|sway) ;;
         *) echo "spark-shell: DESKTOP=$DESKTOP in $CONFIG: none or sway" >&2; exit 1 ;; esac
     export PROMPT PROMPT_STYLE GIT_NAME GIT_EMAIL DESKTOP FONT WALLPAPER
@@ -281,11 +281,13 @@ hex_load() {
 # opaque. A path that is not there falls back to the solid colour (the
 # render says so in a row), never to a black screen.
 WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA"
-wall_there() { [ "$WALLPAPER" != none ] && [ -r "$WALLPAPER" ]; }
+WALL_DEFAULT=$REPO/wallpapers/forge-1920x1080.jpg   # the forge, shipped here (wallpapers/)
+wall_path() { if [ "$WALLPAPER" = default ]; then printf '%s' "$WALL_DEFAULT"; else printf '%s' "$WALLPAPER"; fi; }
+wall_there() { [ "$WALLPAPER" != none ] && [ -r "$(wall_path)" ]; }
 wall_load() {
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     if wall_there; then
-        WALL_BG="\"$WALLPAPER\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=0.95
+        WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=0.95
     else
         WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0
     fi
@@ -498,7 +500,7 @@ sway_reload() {   # a running sway takes the new render now (borders, background
 # renders, a running sway reloaded, then the login box.
 desktop_look_apply() {   # the two user renders and a live sway
     if [ "$WALLPAPER" != none ] && ! wall_there; then
-        row todo wallpaper "$WALLPAPER is not there -- the palette's colour meanwhile (spark-shell desktop wallpaper PATH)"
+        row todo wallpaper "$(wall_path) is not there -- the palette's colour meanwhile (spark-shell desktop wallpaper PATH)"
     fi
     for rel in $DESKTOP_RENDERED; do
         render_one "$REPO/templates/$rel" "$HOME/$rel"
@@ -878,9 +880,10 @@ cmd_status() {
     fi
     printf '  desk  %-16s %s\n' "$DESKTOP" "$s"
     if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then
-        if [ "$WALLPAPER" = none ]; then printf '  wall  %-16s %s\n' none "the palette's background (spark-shell desktop wallpaper PATH)"
-        elif [ -r "$WALLPAPER" ]; then printf '  wall  %-16s %s\n' picture "$WALLPAPER"
-        else printf '  wall  %-16s %s\n' missing "$WALLPAPER is not there -- the palette's colour meanwhile"; fi
+        if [ "$WALLPAPER" = none ]; then printf '  wall  %-16s %s\n' none "the palette's background (spark-shell desktop wallpaper PATH|default)"
+        elif [ "$WALLPAPER" = default ] && wall_there; then printf '  wall  %-16s %s\n' default "the forge, $WALL_DEFAULT"
+        elif wall_there; then printf '  wall  %-16s %s\n' picture "$WALLPAPER"
+        else printf '  wall  %-16s %s\n' missing "$(wall_path) is not there -- the palette's colour meanwhile"; fi
     fi
     theme_load || true
     slots="accent colour${ACCENT_SLOT:-?}, muted colour${MUTED_SLOT:-?} (SGR 1;${ACCENT_SGR:-?} / ${MUTED_SGR:-?})"
@@ -996,13 +999,14 @@ cmd_desktop() {
         wallpaper)
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
             case ${2:-} in
-                '') if [ "$WALLPAPER" = none ]; then echo "wallpaper none -- the palette's background (spark-shell desktop wallpaper PATH)"
-                    elif [ -r "$WALLPAPER" ]; then echo "wallpaper $WALLPAPER"
-                    else echo "wallpaper $WALLPAPER -- not there; the palette's colour meanwhile"; fi
+                '') if [ "$WALLPAPER" = none ]; then echo "wallpaper none -- the palette's background (spark-shell desktop wallpaper PATH|default)"
+                    elif [ "$WALLPAPER" = default ] && wall_there; then echo "wallpaper default -- the forge, $WALL_DEFAULT"
+                    elif wall_there; then echo "wallpaper $WALLPAPER"
+                    else echo "wallpaper $(wall_path) -- not there; the palette's colour meanwhile"; fi
                     return ;;
-                none) ;;
+                none|default) ;;
                 /*) [ -r "$2" ] || refuse "$2 is not a readable file" ;;
-                *) refuse "$2: an absolute path (or none)" ;;
+                *) refuse "$2: an absolute path, default (the forge) or none" ;;
             esac
             [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on first"
             config_set WALLPAPER "$2"

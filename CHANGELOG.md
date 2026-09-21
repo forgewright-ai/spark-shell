@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.21
+
+- The forge is the desktop's default wallpaper: `wallpapers/` ships the
+  smith at work in 1920x1080 and 2560x1664 (JPEG, the maintainer's
+  own, CC BY-NC-ND 4.0); `WALLPAPER` defaults to `default` = the 1080
+  one from the clone, `spark-shell desktop wallpaper default` returns to
+  it, `none` and a PATH as before.
+
 ## v0.20
 
 - The look follows the palette by itself: the login profiles run

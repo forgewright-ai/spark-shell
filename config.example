@@ -24,8 +24,9 @@ DESKTOP=none
 # foot's face, in foot's own spec (family, then :size=N).
 FONT=DejaVu Sans Mono:size=12
 
-# The desktop's picture: none (the palette's background, edge to edge),
-# or an absolute path to an image -- then sway keeps gaps around the
+# The desktop's picture: default (the forge, wallpapers/forge-1920x1080.jpg
+# in this repository), none (the palette's background, edge to edge), or
+# an absolute path to an image. With a picture sway keeps gaps around the
 # windows and foot is a little translucent, so it shows.
-# `spark-shell desktop wallpaper PATH|none` writes this line and applies it.
-WALLPAPER=none
+# `spark-shell desktop wallpaper PATH|default|none` writes this line and applies it.
+WALLPAPER=default

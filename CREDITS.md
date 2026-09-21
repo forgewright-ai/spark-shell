@@ -73,3 +73,9 @@ palettes themselves live in spark's repository with their own credits
 (github.com/forgewright-ai/spark, CREDITS.md).
 
 Built with Claude (Anthropic).
+
+## The wallpapers
+
+`wallpapers/forge-1920x1080.jpg` and `forge-2560x1664.jpg` -- the smith
+at work -- are the maintainer's own, CC BY-NC-ND 4.0
+(https://creativecommons.org/licenses/by-nc-nd/4.0/).

@@ -19,8 +19,8 @@ this machine's cycles belong to the model.
                             greetd's box on tty1 at the next boot
     spark-shell desktop off both back: getty on tty1 again
     spark-shell desktop     sway and one foot window on this console, now
-    spark-shell desktop wallpaper PATH|none
-                            the picture behind the windows
+    spark-shell desktop wallpaper PATH|default|none
+                            the picture behind the windows (default: the forge)
 
 ## Install
 
@@ -95,15 +95,17 @@ ask for sudo when they differ.
     Super+Shift+e           back to the console (or the login box)
     exit                    in the first window: back there too
 
-`spark-shell desktop wallpaper PATH` puts a picture behind the windows:
-sway fills the screen with it, keeps gaps around the windows (8 inside,
-12 at the edges) and the next foot window is a little translucent
-(alpha 0.95), so it shows through the text. A running sway takes it at
-once. `spark-shell desktop wallpaper none` is the palette's background
-again, edge to edge and opaque; bare, it names the current one. A dark
-picture in the palette's colours keeps the text readable. A picture
-that goes missing leaves the palette's colour and a row saying so,
-never a black screen.
+The desktop opens on the forge: `wallpapers/forge-1920x1080.jpg`, the
+smith at work, shipped here in two sizes (a 2560x1664 twin for a
+bigger display). sway fills the screen with it, keeps gaps around the
+windows (8 inside, 12 at the edges) and the next foot window is a
+little translucent (alpha 0.95), so it shows through the text.
+`spark-shell desktop wallpaper PATH` puts a picture of yours there
+instead, `default` the forge again, `none` the palette's background,
+edge to edge and opaque; bare, it names the current one. A running
+sway takes the change at once. A dark picture keeps the text readable.
+A picture that goes missing leaves the palette's colour and a row
+saying so, never a black screen.
 
 The keys are i3's: `Super` and hjkl or the arrows to focus, with Shift
 to move, `Super+1`..`0` the workspaces, `Super+r` resize. `spark theme
@@ -139,8 +141,8 @@ it unset they fall back to `vi`, which the tools bring as a safety net
 `GIT_EMAIL` (set both and a
 .gitconfig is rendered with that identity; one you already have stays
 yours), `DESKTOP` none|sway (`spark-shell desktop on|off` writes it),
-`FONT` (foot's spec, `DejaVu Sans Mono:size=12`), `WALLPAPER` none or
-an absolute path (`spark-shell desktop wallpaper` writes it).
+`FONT` (foot's spec, `DejaVu Sans Mono:size=12`), `WALLPAPER` default,
+none or an absolute path (`spark-shell desktop wallpaper` writes it).
 `config.example` shows the defaults.
 
 ## What leaves this machine
