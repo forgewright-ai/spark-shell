@@ -329,6 +329,23 @@ else
     grep -q '^client.focused *#0000aa ' "$HOME/.config/sway/config" && ok "no theme.env: the accent's hex is its VGA slot (blue, #0000aa)" || bad "vga accent" "$(grep -n client "$HOME/.config/sway/config")"
 fi
 
+# --- follow: the login hook re-renders the look when theme.env changed
+fresh
+theme_fixture '#ff5555'
+sh "$SH" on >/dev/null
+out=$(sh "$SH" follow)
+[ -z "$out" ] && ok "follow: nothing to say right after on (the palette was seen)" || bad "follow after on" "$out"
+theme_fixture '#ee8800'
+out=$(sh "$SH" follow)
+printf '%s\n' "$out" | grep -q '^spark-shell: the look followed the palette' && grep -q 'fg=colour3,bold' "$HOME/.tmux.conf" && grep -q "SPARK_ACCENT_SGR='1;33'" "$HOME/.config/spark-shell/sgr.sh" \
+    && ok "follow: a changed palette re-renders the look, one line says so" || bad "follow changed" "$out"
+out=$(sh "$SH" follow)
+[ -z "$out" ] && ok "follow: quiet when the palette did not change since" || bad "follow quiet" "$out"
+rm -f "$HOME/.config/spark/theme.env"
+out=$(sh "$SH" follow)
+printf '%s\n' "$out" | grep -q 'followed' && grep -q 'fg=colour4,bold' "$HOME/.tmux.conf" && ok "follow: theme none (no theme.env) is a change too" || bad "follow none" "$out"
+grep -q 'spark-shell follow' "$REPO/templates/linux/.bash_profile" && grep -q 'spark-shell follow' "$REPO/templates/macos/.zprofile" && ok "the login profiles run spark-shell follow" || bad "profiles follow"
+
 # --- the wallpaper: a verb that sets and applies; gaps and a translucent foot
 if [ "$(uname -s)" != Darwin ]; then
     fresh; desktop_stubs

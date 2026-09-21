@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.20
+
+- The look follows the palette by itself: the login profiles run
+  `spark-shell follow`, which re-renders the user's files when
+  theme.env changed since the last render (a cksum stamp in
+  ~/.local/state/spark-shell/theme.seen) and says so in one line;
+  quiet otherwise. `spark theme nord` had left sway's border and
+  foot's background in gruvbox through a reboot, waiting for an apply
+  nobody had been told to run. The login box (root's files) still
+  follows at `spark-shell apply`.
+
 ## v0.19
 
 - `vi` as a safety net (`ex-vi-compat` on Arch, `vim-tiny` on Debian,

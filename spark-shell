@@ -8,7 +8,8 @@
 #   spark-shell off             everything back: rc files and the rendered
 #                               look from .bak, or gone; packages stay
 #   spark-shell apply           re-render the look from the current palette
-#                               (after: spark theme NAME)
+#                               (after: spark theme NAME; the login hook does
+#                               the user's half by itself: spark-shell follow)
 #   spark-shell check           is this machine still what this repo says?
 #   spark-shell bar on | off    tmux's status line (the line itself is
 #                               spark's: spark bar line)
@@ -776,6 +777,7 @@ cmd_on() {
     if [ "$MODE" = dry ]; then
         if [ "$todo" -eq 0 ]; then echo "Nothing to do"; else echo "$todo to do"; fi
     else
+        theme_seen
         echo "open a new shell (exec \$SHELL)"
     fi
 }
@@ -817,6 +819,33 @@ cmd_apply() {
     render_all
     tmux_reload
     if [ "$changes" -eq 0 ] && [ "$todo" -eq 0 ]; then echo "Nothing to do"; fi
+    theme_seen
+}
+
+# The look follows the palette: the login profile runs `spark-shell
+# follow`, which re-renders the user's files (never root's: the login box
+# follows at the next apply, which has sudo) when theme.env changed since
+# the last render -- one cksum, nothing else, when it did not. So `spark
+# theme NAME` alone reaches the next login; apply is for now.
+SEEN=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/theme.seen
+theme_sum() { if [ -f "$THEME_ENV" ]; then cksum < "$THEME_ENV" | cut -d' ' -f1; else echo none; fi; }
+theme_seen() { mkdir -p "$(dirname "$SEEN")"; theme_sum > "$SEEN"; }
+cmd_follow() {
+    config_load
+    [ "$(theme_sum)" != "$(cat "$SEEN" 2>/dev/null)" ] || return 0
+    theme_load
+    EXPR=$(render_expr)
+    n=0
+    for rel in $RENDERED; do render_one "$REPO/templates/$rel" "$HOME/$rel" >/dev/null; done
+    [ "$PROMPT" = starship ] && render_one "$REPO/templates/.config/starship.toml.$PROMPT_STYLE" "$HOME/.config/starship.toml" >/dev/null
+    if desktop_wanted; then
+        for rel in $DESKTOP_RENDERED; do render_one "$REPO/templates/$rel" "$HOME/$rel" >/dev/null; done
+        sway_reload >/dev/null
+    fi
+    n=$changes
+    tmux_reload >/dev/null 2>&1 || true
+    theme_seen
+    [ "$n" -eq 0 ] || echo "spark-shell: the look followed the palette ($n files; the login box at the next spark-shell apply)"
 }
 
 cmd_status() {
@@ -1017,6 +1046,7 @@ main() {
         on) cmd_on ;;
         off) cmd_off ;;
         apply) cmd_apply ;;
+        follow) cmd_follow ;;
         check) cmd_check ;;
         bar) cmd_bar "$@" ;;
         desktop) cmd_desktop "$@" ;;

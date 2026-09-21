@@ -7,6 +7,11 @@ fi
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac
 export PATH
 
+# the look follows the palette: when spark theme changed theme.env since
+# the last render, spark-shell re-renders its own files (yours are never
+# touched); one cksum otherwise
+if [[ -o interactive ]] && [ -t 1 ] && command -v spark-shell >/dev/null 2>&1; then spark-shell follow; fi
+
 # the greeting: once per interactive login on a terminal (every Terminal.app
 # window is one), never for scripts; SITE_QUIET_START=yes in site.env
 # silences it (spark quiet start on -- the file is read directly: no python

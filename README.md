@@ -116,6 +116,14 @@ from the login box it is the journal's. If `seatd.service` is ever
 enabled on the box, add your user to the `seat` group (libseat prefers
 seatd over logind when both are there).
 
+## The palette follows you
+
+`spark theme NAME` writes the palette; at your next login spark-shell
+sees the change and re-renders its own files (tmux, starship, btop,
+yazi, the prompt's colours, foot and sway) before the greeting -- one
+checksum when nothing changed. `spark-shell apply` does it now, and is
+the one that reaches the login box (root's files, sudo).
+
 ## Yours
 
 `~/.config/spark-shell/rc` is sourced last by both rc files and never
