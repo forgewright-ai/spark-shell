@@ -419,6 +419,7 @@ render_expr() {
     done
     e="$e;s|@FONT@|$(esc "$FONT")|g"
     e="$e;s|@FOOT_COLORS@|$(foot_colors)|g"
+    e="$e;s|@GREET_BG@|$(greet_background)|g"
     printf '%s' "$e"
 }
 render_tmp() {   # render_tmp SRC DST -- the template through EXPR, every placeholder gone
@@ -465,6 +466,11 @@ foot_colors() {   # the name of foot's colour section: [colors] before 1.26, [co
     _v=$(PATH=$HOME/.local/bin:$PATH foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
     set -- ${_v:-1 26}
     if [ "$1" -gt 1 ] || [ "$2" -ge 26 ]; then echo colors-dark; else echo colors; fi
+}
+greet_background() {   # the login box's DOOM fire: tuigreet 0.11+ has --background; older, nothing
+    if PATH=$HOME/.local/bin:$PATH tuigreet --help 2>/dev/null | grep -q -- '--background NAME'; then
+        printf ' --background doom'
+    fi
 }
 desktop_wanted() { [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; }
 desktop_tools() {   # -> the missing ones, if any (PATH or ~/.local/bin)

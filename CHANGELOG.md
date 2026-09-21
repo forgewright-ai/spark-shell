@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.15
+
+- The login box burns: tuigreet's DOOM fire (`--background doom`) in
+  the palette, where the installed tuigreet knows the flag (0.11 and
+  newer; Debian 13's 0.9 gets the plain box). About six percent of one
+  core while the box waits, nothing once you are in; F4 switches it for
+  one boot.
+
 ## v0.14
 
 - foot over a wallpaper is `alpha=0.95` (was 0.9): a bright picture

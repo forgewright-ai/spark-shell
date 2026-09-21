@@ -73,7 +73,10 @@ borders only: the bar line is tmux's. (`DESKTOP=sway` in the config and
 
 With it comes a login box on tty1: greetd, with tuigreet drawing a small
 box on the themed console -- the machine's name above, Login and
-Password, the clock -- in the palette's slots, like everything else.
+Password, the clock -- in the palette's slots, like everything else,
+and behind it tuigreet's DOOM fire in the same slots where tuigreet
+knows it (0.11 and newer; F4 switches it for one boot). It costs a few
+percent of one core while the box waits, nothing once you are in.
 Enter starts the desktop; F2 picks the console session instead, a login
 shell on tty1 with no desktop (`spark-shell desktop` starts one from
 there). greetd takes tty1 in getty's place at the next boot, never in
