@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.13
+
+- `spark-shell desktop wallpaper PATH|none`: a picture behind the
+  windows. `WALLPAPER` in the config; sway `output * bg "PATH" fill`
+  with gaps 8/12, foot `alpha=0.9` (opaque and edge to edge with
+  `none`, as before); a live sway reloads; the verb bare names the
+  current one; a missing file falls back to the palette's colour with a
+  `todo` row, and a path is refused unless absolute and readable. A
+  `wall` status row.
+
 ## v0.12
 
 - The login box's desktop session is `spark-shell desktop` (the clone's

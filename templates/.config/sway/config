@@ -1,7 +1,8 @@
 # rendered by spark-shell from templates/.config/sway/config -- edit the template, then spark-shell apply
 # sway, bare: it tiles windows, tmux tiles panes and draws the bar line,
 # so no bar, no titlebars, no xwayland. A new window is foot running the
-# login shell. The borders and the background take the palette's hex.
+# login shell. The borders and the background take the palette's hex,
+# or the picture from spark-shell desktop wallpaper PATH (then gaps).
 # Super+Return a window, Super+Shift+q close it, Super+Shift+c reload,
 # Super+Shift+e back to the console. Started by hand: spark-shell desktop.
 # The desktop opens with one terminal and ends with it: `exit` in that
@@ -12,7 +13,9 @@ set $mod Mod4
 set $term foot
 
 xwayland disable
-output * bg #@HEX_BG@ solid_color
+output * bg @WALL_BG@
+gaps inner @GAPS_INNER@
+gaps outer @GAPS_OUTER@
 default_border pixel 2
 default_floating_border pixel 2
 floating_modifier $mod normal

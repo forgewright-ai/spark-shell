@@ -18,6 +18,9 @@
 #                               hands it all back, getty on tty1 again
 #   spark-shell desktop         sway and one foot window on this console,
 #                               now (Linux, from a console login)
+#   spark-shell desktop wallpaper [PATH|none]
+#                               the picture behind the windows (gaps and a
+#                               translucent foot show it); bare: the current
 #   spark-shell on --dry-run    print what would change, touch nothing
 #
 # The one interface to spark is ~/.config/spark/theme.env -- the palette
@@ -33,7 +36,7 @@
 # POSIX sh, both OSes (Debian and Arch families, macOS). Choices live in
 # ~/.config/spark-shell/config (KEY=value): PROMPT starship|plain,
 # PROMPT_STYLE minimal|full, GIT_NAME, GIT_EMAIL, DESKTOP none|sway,
-# FONT (foot's spec, DejaVu Sans Mono:size=12). The first
+# FONT (foot's spec, DejaVu Sans Mono:size=12), WALLPAPER none|PATH. The first
 # `on` with no config seeds them from spark's site.env when the old
 # SITE_* keys are there (read once, copied, never read again). A
 # .gitconfig is rendered with an identity you gave (both GIT_NAME and
@@ -122,9 +125,10 @@ config_load() {
     : "${GIT_NAME:=}" "${GIT_EMAIL:=}"      # no guess: an identity is yours to give
     : "${DESKTOP:=none}"
     : "${FONT:=DejaVu Sans Mono:size=12}"   # foot's spec, verbatim
+    : "${WALLPAPER:=none}"                  # the desktop's picture: none, or an absolute path
     case $DESKTOP in none|sway) ;;
         *) echo "spark-shell: DESKTOP=$DESKTOP in $CONFIG: none or sway" >&2; exit 1 ;; esac
-    export PROMPT PROMPT_STYLE GIT_NAME GIT_EMAIL DESKTOP FONT
+    export PROMPT PROMPT_STYLE GIT_NAME GIT_EMAIL DESKTOP FONT WALLPAPER
 }
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept
     mkdir -p "$CONFIG_DIR"
@@ -216,6 +220,7 @@ theme_load() {
     export ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR ACCENT_SGR MUTED_SGR
     tui_load
     hex_load
+    wall_load
 }
 
 # The login box's words. tuigreet draws with ratatui's sixteen colour
@@ -262,6 +267,24 @@ hex_load() {
     eval "HEX_ACCENT=\$(hex_or \"\$THEME_ACCENT\" \"\$HEX_ANSI_$ACCENT_SLOT\")"
     eval "HEX_MUTED=\$(hex_or \"\$THEME_MUTED\" \"\$HEX_ANSI_$MUTED_SLOT\")"
     for k in $HEX_KEYS; do export "${k?}"; done
+}
+
+# The wallpaper: a picture behind the windows, or the palette's own
+# background. With a picture, sway keeps gaps around the windows and foot
+# is a little translucent, so it shows; without one, edge to edge and
+# opaque. A path that is not there falls back to the solid colour (the
+# render says so in a row), never to a black screen.
+WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA"
+wall_there() { [ "$WALLPAPER" != none ] && [ -r "$WALLPAPER" ]; }
+wall_load() {
+    # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
+    if wall_there; then
+        WALL_BG="\"$WALLPAPER\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=0.9
+    else
+        WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0
+    fi
+    # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
+    for k in $WALL_KEYS; do export "${k?}"; done
 }
 
 # ------------------------------------------------------------------ rows
@@ -390,7 +413,7 @@ render_expr() {
         # shellcheck disable=SC2154   # v is set by the eval above
         e="$e;s|@$k@|$(esc "$v")|g"
     done
-    for k in $SLOT_KEYS $TUI_KEYS $HEX_KEYS; do
+    for k in $SLOT_KEYS $TUI_KEYS $HEX_KEYS $WALL_KEYS; do
         eval "v=\$$k"
         e="$e;s|@$k@|$(esc "$v")|g"
     done
@@ -461,11 +484,17 @@ sway_reload() {   # a running sway takes the new render now (borders, background
 }
 # The desktop, one path for `on`, `apply` and `desktop on`: the two user
 # renders, a running sway reloaded, then the login box.
-desktop_apply() {
+desktop_look_apply() {   # the two user renders and a live sway
+    if [ "$WALLPAPER" != none ] && ! wall_there; then
+        row todo wallpaper "$WALLPAPER is not there -- the palette's colour meanwhile (spark-shell desktop wallpaper PATH)"
+    fi
     for rel in $DESKTOP_RENDERED; do
         render_one "$REPO/templates/$rel" "$HOME/$rel"
     done
     sway_reload
+}
+desktop_apply() {
+    desktop_look_apply
     greeter_apply
 }
 
@@ -788,6 +817,11 @@ cmd_status() {
         if greeter_at_boot; then s="$s; login box: greetd at boot"; else s="$s; login box: getty at boot (spark-shell desktop on)"; fi
     fi
     printf '  desk  %-16s %s\n' "$DESKTOP" "$s"
+    if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then
+        if [ "$WALLPAPER" = none ]; then printf '  wall  %-16s %s\n' none "the palette's background (spark-shell desktop wallpaper PATH)"
+        elif [ -r "$WALLPAPER" ]; then printf '  wall  %-16s %s\n' picture "$WALLPAPER"
+        else printf '  wall  %-16s %s\n' missing "$WALLPAPER is not there -- the palette's colour meanwhile"; fi
+    fi
     theme_load || true
     slots="accent colour${ACCENT_SLOT:-?}, muted colour${MUTED_SLOT:-?} (SGR 1;${ACCENT_SGR:-?} / ${MUTED_SGR:-?})"
     [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' theme.env "read: $slots (spark theme NAME rewrites it; then spark-shell apply)" \
@@ -899,8 +933,27 @@ cmd_desktop() {
             greeter_off
             echo "packages stay installed -- the package manager removes them if you want"
             return ;;
+        wallpaper)
+            [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
+            case ${2:-} in
+                '') if [ "$WALLPAPER" = none ]; then echo "wallpaper none -- the palette's background (spark-shell desktop wallpaper PATH)"
+                    elif [ -r "$WALLPAPER" ]; then echo "wallpaper $WALLPAPER"
+                    else echo "wallpaper $WALLPAPER -- not there; the palette's colour meanwhile"; fi
+                    return ;;
+                none) ;;
+                /*) [ -r "$2" ] || refuse "$2 is not a readable file" ;;
+                *) refuse "$2: an absolute path (or none)" ;;
+            esac
+            [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on first"
+            config_set WALLPAPER "$2"
+            WALLPAPER=$2; export WALLPAPER
+            theme_load; EXPR=$(render_expr)
+            desktop_look_apply
+            if [ "$2" = none ]; then echo "the palette's background is back; a new foot window is opaque again"
+            else echo "a running sway shows it now; the next foot window is translucent (Super+Return)"; fi
+            return ;;
         ''|-*) ;;
-        *) refuse "$1? on, off, or nothing: start it now" ;;
+        *) refuse "$1? on, off, wallpaper [PATH|none], or nothing: start it now" ;;
     esac
     [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
     [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on"
