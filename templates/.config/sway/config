@@ -4,6 +4,9 @@
 # login shell. The borders and the background take the palette's hex.
 # Super+Return a window, Super+Shift+q close it, Super+Shift+c reload,
 # Super+Shift+e back to the console. Started by hand: spark-shell desktop.
+# The desktop opens with one terminal and ends with it: `exit` in that
+# first foot is the console again (an empty sway is a black screen with
+# nothing to type into).
 
 set $mod Mod4
 set $term foot
@@ -87,4 +90,4 @@ mode "resize" {
 }
 bindsym $mod+r mode "resize"
 
-exec $term
+exec sh -c '$term; swaymsg exit'

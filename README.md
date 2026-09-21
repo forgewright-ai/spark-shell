@@ -66,6 +66,7 @@ so sway draws the borders only: the bar line is tmux's.
     Super+Shift+q           close it
     Super+Shift+c           reload sway (after spark-shell apply)
     Super+Shift+e           back to the console
+    exit                    in the first window: back to the console too
 
 The keys are i3's: `Super` and hjkl or the arrows to focus, with Shift
 to move, `Super+1`..`0` the workspaces, `Super+r` resize. `spark theme
