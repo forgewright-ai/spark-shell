@@ -14,8 +14,10 @@ this machine's cycles belong to the model.
     spark-shell apply       re-render the look from that palette
     spark-shell off         everything back from .bak, or gone
     spark-shell check       is this machine still what this repo says?
-    spark-shell desktop     sway and one foot window on this console
-                            (DESKTOP=sway in the config)
+    spark-shell desktop on  a desktop and a login box: sway, foot, and
+                            greetd's box on tty1 at the next boot
+    spark-shell desktop off both back: getty on tty1 again
+    spark-shell desktop     sway and one foot window on this console, now
 
 ## Install
 
@@ -57,30 +59,46 @@ starship's.
 
 ## A desktop
 
-Put `DESKTOP=sway` in the config and `spark-shell on` adds a desktop to
-the box: sway, a Wayland compositor that tiles windows, and foot, the
-terminal window, with DejaVu Sans Mono from the distro. Both are
-rendered from the same palette: foot takes the sixteen slots' own hex,
-so it is the desktop's twin of the console palette, and sway's borders
-and background take the accent, the muted tone and the background. tmux
-stays the multiplexer inside a window (sessions, panes, the bar line),
-so sway draws the borders only: the bar line is tmux's.
+`spark-shell desktop on` adds a desktop to the box: sway, a Wayland
+compositor that tiles windows, and foot, the terminal window, with
+DejaVu Sans Mono from the distro. Both are rendered from the same
+palette: foot takes the sixteen slots' own hex, so it is the desktop's
+twin of the console palette, and sway's borders and background take the
+accent, the muted tone and the background. tmux stays the multiplexer
+inside a window (sessions, panes, the bar line), so sway draws the
+borders only: the bar line is tmux's. (`DESKTOP=sway` in the config and
+`spark-shell on` is the same thing; `desktop on` writes that line.)
 
-    spark-shell desktop     start it, from a console login (tty1)
+With it comes a login box on tty1: greetd, with tuigreet drawing a small
+box on the themed console -- the machine's name above, Login and
+Password, the clock -- in the palette's slots, like everything else.
+Enter starts the desktop; F2 picks the console session instead, a login
+shell on tty1 with no desktop (`spark-shell desktop` starts one from
+there). greetd takes tty1 in getty's place at the next boot, never in
+the middle of a session; tty2 and up, and ssh, are as before. Leaving
+the desktop shows the box again. `spark-shell desktop off` writes
+`DESKTOP=none`, hands the renders back and puts getty on tty1 again at
+the next boot; the packages stay. The box's files are root's
+(`/etc/greetd`, a `greetd.service` drop-in), so `desktop on` and `apply`
+ask for sudo when they differ.
+
+    spark-shell desktop     start it now, from a console login (tty1)
     Super+Return            a window: foot, running your login shell
     Super+Shift+q           close it
     Super+Shift+c           reload sway (after spark-shell apply)
-    Super+Shift+e           back to the console
-    exit                    in the first window: back to the console too
+    Super+Shift+e           back to the console (or the login box)
+    exit                    in the first window: back there too
 
 The keys are i3's: `Super` and hjkl or the arrows to focus, with Shift
 to move, `Super+1`..`0` the workspaces, `Super+r` resize. `spark theme
-NAME` then `spark-shell apply` recolours the borders live and the next
-window. Between keystrokes it idles: sway and foot draw on demand, the
-cycles stay the model's. Start the desktop, then the model: they share
-the memory. sway's log is `~/.local/state/spark-shell/sway.log`. If
-`seatd.service` is ever enabled on the box, add your user to the `seat`
-group (libseat prefers seatd over logind when both are there).
+NAME` then `spark-shell apply` recolours the borders live, the next
+window and the login box. Between keystrokes it idles: sway and foot
+draw on demand, the login box waits on a tty, the cycles stay the
+model's. Start the desktop, then the model: they share the memory.
+Started by hand, sway's log is `~/.local/state/spark-shell/sway.log`;
+from the login box it is the journal's. If `seatd.service` is ever
+enabled on the box, add your user to the `seat` group (libseat prefers
+seatd over logind when both are there).
 
 ## Options
 
@@ -88,8 +106,9 @@ group (libseat prefers seatd over logind when both are there).
 `PROMPT` starship|plain, `PROMPT_STYLE` minimal|full, `GIT_NAME`,
 `GIT_EMAIL` (set both and a
 .gitconfig is rendered with that identity; one you already have stays
-yours), `DESKTOP` none|sway, `FONT` (foot's spec, `DejaVu Sans
-Mono:size=12`). `config.example` shows the defaults.
+yours), `DESKTOP` none|sway (`spark-shell desktop on|off` writes it),
+`FONT` (foot's spec, `DejaVu Sans Mono:size=12`). `config.example`
+shows the defaults.
 
 ## What leaves this machine
 

@@ -1,6 +1,7 @@
 # spark-shell CI: the render, link and hand-back machinery in a throwaway
-# HOME -- on Ubuntu, Arch and macOS. Plus the privacy patterns, ASCII
-# docs and shellcheck.
+# HOME and a throwaway root -- on Ubuntu, Debian, Arch and macOS. Plus the
+# privacy patterns, ASCII docs, shellcheck, and the package names of
+# distro/*.env looked up on their own family (nothing installed).
 name: ci
 on: [push, pull_request, workflow_dispatch]
 jobs:
@@ -17,7 +18,7 @@ jobs:
           terms=$(cat .privacy-terms "$RUNNER_TEMP/privacy-terms" | grep -v '^#' | grep -v '^[[:space:]]*$' | sort -u | paste -sd'|' -)
           if [ -z "$terms" ]; then echo "NOTICE: no privacy word list -- generic patterns only"; else
             ! git grep -i -w -E "$terms" -- . ':(exclude).privacy-terms'; fi
-          ! git grep -n -E '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- . | grep -v 'you@example.com'
+          ! git grep -n -E '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- . | sed -E 's/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.(service|socket|timer|target)//g' | grep -E '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' | grep -v 'you@example.com'
           ! git grep -n -E '\b(10\.[0-9]+\.[0-9]+\.[0-9]+|192\.168\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+)\b' -- .
       - name: ascii docs
         run: |
@@ -28,21 +29,34 @@ jobs:
         run: "! grep -rnE '#[0-9a-fA-F]{6}' templates"
       - name: shellcheck
         run: shellcheck -S warning spark-shell tests/shell_test.sh
-      - name: the desktop's package names exist on the Debian family (nothing installed)
-        run: sudo apt-get update -qq && apt-cache show $(sed -n 's/^PKG_DESKTOP=//p' distro/debian.env) >/dev/null
+      - name: the suite in a throwaway HOME
+        run: sh tests/shell_test.sh
+  debian:
+    # the same suite on Debian itself, where distro/debian.env's names are
+    # looked up (Ubuntu LTS lacks tuigreet). The privacy and ascii gates
+    # ran once, on linux.
+    runs-on: ubuntu-latest
+    container: debian:13
+    timeout-minutes: 10
+    steps:
+      - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git python3 shellcheck diffutils >/dev/null
+      - uses: actions/checkout@v4
+      - name: the desktop's and the login box's package names exist on Debian (nothing installed)
+        run: apt-cache show $(sed -n 's/^PKG_DESKTOP=//p; s/^PKG_GREETER=//p' distro/debian.env) >/dev/null
+      - name: shellcheck
+        run: shellcheck -S warning spark-shell tests/shell_test.sh
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
   arch:
-    # the same suite where the tools come from pacman. The privacy and
-    # ascii gates ran once, on linux.
+    # the same suite where the tools come from pacman
     runs-on: ubuntu-latest
     container: archlinux:latest
     timeout-minutes: 10
     steps:
       - run: pacman -Syu --noconfirm --needed git python diffutils >/dev/null
       - uses: actions/checkout@v4
-      - name: the desktop's package names exist on Arch (nothing installed)
-        run: pacman -Sp --needed $(sed -n 's/^PKG_DESKTOP=//p' distro/arch.env) >/dev/null
+      - name: the desktop's and the login box's package names exist on Arch (nothing installed)
+        run: pacman -Sp --needed $(sed -n 's/^PKG_DESKTOP=//p; s/^PKG_GREETER=//p' distro/arch.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
   macos:

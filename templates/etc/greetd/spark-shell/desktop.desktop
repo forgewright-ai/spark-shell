@@ -1,0 +1,6 @@
+# rendered by spark-shell from templates/etc/greetd/spark-shell/desktop.desktop -- edit the template, then spark-shell apply
+# The login box's first session: the desktop (sway; foot opens with it).
+[Desktop Entry]
+Name=desktop
+Exec=sway
+Type=Application

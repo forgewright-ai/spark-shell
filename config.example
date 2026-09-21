@@ -16,7 +16,9 @@ GIT_NAME=Your Name
 GIT_EMAIL=you@example.com
 
 # The desktop (Linux): none, or sway -- sway and foot installed and
-# rendered from the palette; spark-shell desktop starts it on a console.
+# rendered from the palette, and the login box (greetd) on tty1 at the
+# next boot. `spark-shell desktop on|off` writes this line and does the
+# rest; spark-shell desktop starts sway now, on a console.
 DESKTOP=none
 
 # foot's face, in foot's own spec (family, then :size=N).

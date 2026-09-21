@@ -22,7 +22,9 @@ if [ -n "$staged_files" ]; then
             [ -z "$hit" ] || bad "banned word in staged change:
 $hit"
         fi
-        hit=$(printf '%s\n' "$added" | grep -En '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' \
+        # a systemd instance (getty@tty1.service) is not an address
+        hit=$(printf '%s\n' "$added" | sed -E 's/[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.(service|socket|timer|target)//g' \
+              | grep -En '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' \
               | grep -v 'you@example.com' || true)
         [ -z "$hit" ] || bad "e-mail address in staged change:
 $hit"

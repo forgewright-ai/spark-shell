@@ -43,6 +43,14 @@ repository with its own credits.
 - DejaVu fonts -- https://dejavu-fonts.github.io -- Bitstream Vera
   license (ttf-dejavu on Arch, fonts-dejavu-core on Debian)
 
+## The login box (apt or pacman, with DESKTOP=sway)
+
+- greetd -- https://git.sr.ht/~kennylevinsen/greetd -- GPL-3.0-only
+  (the login daemon on tty1; 0.10.3 on Arch and Debian 13)
+- tuigreet -- https://github.com/apognu/tuigreet -- GPL-3.0-only (the
+  box it draws; greetd-tuigreet 0.11.1 on Arch, tuigreet 0.9.1 on
+  Debian 13; not packaged on Ubuntu LTS)
+
 ## The palettes
 
 The colours the look is rendered with come from

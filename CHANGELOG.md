@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.11
+
+- `spark-shell desktop on|off`: the desktop and the login box together.
+  `on` writes `DESKTOP=sway` into the config (the file made if missing,
+  the one line replaced, every other kept) and takes the path `on` takes
+  with it (`desktop_apply`, one code path for `on`, `apply` and this
+  verb): the packages, foot.ini and sway/config, and now the login box.
+  `off` writes `DESKTOP=none`, hands the two renders back and undoes the
+  box; packages stay. `spark-shell desktop` alone still starts sway now.
+- The login box: greetd with tuigreet on tty1 (`PKG_GREETER` in
+  `distro/*.env`: greetd + greetd-tuigreet on Arch, greetd + tuigreet on
+  Debian 13; names verified 2026-09-20; none on Ubuntu LTS). A small box
+  on the themed console -- the machine's short name, Login, Password,
+  the clock -- drawn in the palette's slots as ratatui's colour words
+  (`tui_name`, the placeholders `@ACCENT_TUI@ @MUTED_TUI@ @BG_TUI@
+  @FG_TUI@`; BG and FG by their nearest slot, `default` = black and
+  gray). Enter is the desktop (sway), F2 the console session (a login
+  shell on tty1); `--remember`, `--remember-session`.
+- Root renders, a new class: `/etc/greetd/config.toml`, the two session
+  files in `/etc/greetd/spark-shell/`, and a `greetd.service` drop-in
+  (`After=spark-console.service`, so the first frame is already in the
+  palette). Written through sudo only when the render differs from the
+  disk; `--dry-run` says `would`; no sudo to be had is a `todo` row. A
+  config.toml that is not ours goes to `config.toml.spark-orig` once and
+  comes back on off. Then `systemctl enable greetd.service` and
+  `disable getty@tty1.service` (greetd first, so tty1 never loses its
+  login), and the reverse on off -- never a start or stop: greetd takes
+  tty1 at the next boot, the session this runs in is not touched.
+- `apply` re-renders the root files too: a palette change reaches the
+  login box. `status`'s desk row adds `login box: greetd at boot` or
+  `getty`; `check` gains a `greeter` row (`na` with DESKTOP=none and on
+  macOS; the files, the render and the two unit states, remedy
+  `spark-shell desktop on`). `off` undoes the box as well.
+- `SPARK_SHELL_ROOT=DIR` (tests only): every root path under DIR, plain
+  writes, systemctl from PATH. The suite runs in a throwaway root as it
+  does in a throwaway HOME; a stub systemctl logs its calls. CI gains a
+  `debian:13` job, where distro/debian.env's names are looked up (the
+  apt-cache step leaves the Ubuntu job: no tuigreet there); the Arch
+  job looks up PKG_GREETER too. The e-mail gate (hook and CI) no longer
+  reads a systemd instance name (`getty@tty1.service`) as an address.
+
 ## v0.10
 
 - The plain look is for the look, not for content. tmux is told foot can
