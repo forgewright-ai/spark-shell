@@ -120,7 +120,9 @@ seatd over logind when both are there).
 
 `~/.config/spark-shell/rc` is sourced last by both rc files and never
 written by spark-shell: `export EDITOR=micro`, aliases, anything these
-files do not say. yazi, git and the rest read `EDITOR` from there.
+files do not say. yazi, git and the rest read `EDITOR` from there; with
+it unset they fall back to `vi`, which the tools bring as a safety net
+(a minimal Arch has none). The editor you use is yours.
 
 ## Options
 

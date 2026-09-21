@@ -23,10 +23,14 @@ into ~/.local/bin (yazi and ya).
 ## The tools (apt or pacman / Homebrew)
 
 Installed from apt's, pacman's or Homebrew's own repositories,
-unpinned. No editor is among them: an editor's spark plugin is its own
-repository with its own credits.
+unpinned. The editor you use is yours (its spark plugin is its own
+repository with its own credits); `vi` is here only as the safety net
+for what falls back to it when EDITOR is unset (yazi, git, crontab,
+visudo) -- a minimal Arch has none, and the fallback was exit 127.
 
 - bash -- GPL-3.0-or-later
+- ex-vi-compat -- 0BSD (vi on Arch: vim's compatibility mode; pulls vim, Vim license)
+- vim-tiny -- Vim license (vi on Debian)
 - tmux -- ISC
 - ncurses-bin -- MIT-style (ncurses)
 - ncurses -- MIT-style (ncurses-bin, on Arch)

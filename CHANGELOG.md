@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.19
+
+- `vi` as a safety net (`ex-vi-compat` on Arch, `vim-tiny` on Debian,
+  in `PKG_SHELL`): what falls back to vi when EDITOR is unset (yazi,
+  git, crontab, visudo) opened nothing on a minimal Arch. The editor
+  you use stays yours (`~/.config/spark-shell/rc`).
+
 ## v0.18
 
 - `~/.config/spark-shell/rc`: yours, sourced last by both rc files,
