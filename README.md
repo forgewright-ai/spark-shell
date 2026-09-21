@@ -41,6 +41,11 @@ the console palette `spark theme NAME` programs; the accent and the
 muted tone become the nearest of the palette's sixteen. One file, right
 on the console, plain in an emulator.
 
+The rule is for the look, not for content. What a program draws inside
+a pane, a picture or text art, keeps the colours it has: tmux passes
+RGB through under foot, and on the console, which has no RGB, the same
+file draws in its nearest slots.
+
 ## The prompt
 
 With spark-shell on, spark's prompt takes the palette's colour: `on`

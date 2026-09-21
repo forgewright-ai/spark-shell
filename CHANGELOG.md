@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.10
+
+- The plain look is for the look, not for content. tmux is told foot can
+  take RGB (`terminal-features ",foot*:RGB"`), so a picture or text art
+  drawn in a pane keeps its colours under the desktop instead of being
+  approximated to 256. Every rendered file still names slots only; on
+  the console nothing changes, there is no RGB to take.
+
 ## v0.9
 
 - foot: `pad=4x4 center`. A grid never fills a window exactly; foot put

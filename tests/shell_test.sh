@@ -65,7 +65,8 @@ for rel in $RENDERS; do
 done
 grep -q 'SPARK_ASCII=1 spark bar line' "$HOME/.tmux.conf" && ok "on: the bar is asked in ASCII" || bad "bar ascii"
 [ ! -e "$HOME/.gitconfig" ] && ok "on: no identity given, no .gitconfig written (never a guess)" || bad "gitconfig guessed" "$(cat "$HOME/.gitconfig")"
-grep -q 'Tc' "$HOME/.tmux.conf" && bad "tmux still advertises truecolor" || ok "on: no truecolor override"
+grep -q ':Tc' "$HOME/.tmux.conf" && bad "tmux advertises truecolor for the look" || ok "on: no Tc override (the look is slots)"
+grep -q 'terminal-features ",foot\*:RGB"' "$HOME/.tmux.conf" && ok "on: content passes through in RGB under foot" || bad "foot RGB passthrough" "$(grep -n terminal- "$HOME/.tmux.conf")"
 grep -q 'client-attached' "$HOME/.tmux.conf" && bad "the console hook survives" || ok "on: no console hook (the slots need none)"
 grep -q '^force_tty = True' "$HOME/.config/btop/btop.conf" && grep -q '^graph_symbol = "tty"' "$HOME/.config/btop/btop.conf" \
     && ok "on: btop in tty mode, tty graphs" || bad "btop tty mode"
