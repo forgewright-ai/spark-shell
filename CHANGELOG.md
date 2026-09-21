@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.18
+
+- `~/.config/spark-shell/rc`: yours, sourced last by both rc files,
+  never written here. The rc files are spark-shell's symlinks, so a
+  line of your own (`export EDITOR=micro`; yazi's Enter on a file was
+  exit 127 without one) had nowhere to live.
+
 ## v0.17
 
 - The login box's Enter runs `spark-shell desktop` too (tuigreet's

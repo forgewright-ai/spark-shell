@@ -51,3 +51,7 @@ fi
 
 # zoxide last: its prompt hook has to be the final one, or it complains
 command -v zoxide >/dev/null && eval "$(zoxide init zsh)"
+
+# --- yours: ~/.config/spark-shell/rc, sourced last, never written by
+#     spark-shell (your editor, aliases, anything these files do not say)
+[[ -r ~/.config/spark-shell/rc ]] && source ~/.config/spark-shell/rc

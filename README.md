@@ -116,6 +116,12 @@ from the login box it is the journal's. If `seatd.service` is ever
 enabled on the box, add your user to the `seat` group (libseat prefers
 seatd over logind when both are there).
 
+## Yours
+
+`~/.config/spark-shell/rc` is sourced last by both rc files and never
+written by spark-shell: `export EDITOR=micro`, aliases, anything these
+files do not say. yazi, git and the rest read `EDITOR` from there.
+
 ## Options
 
 `~/.config/spark-shell/config` (KEY=value, every key optional):
