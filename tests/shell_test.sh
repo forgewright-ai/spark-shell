@@ -650,6 +650,7 @@ EOF
     st=0; out=$(printf '%s\n\n' "$need" | SWAYSOCK=/tmp/x sh "$SH" desktop --ask 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | grep -c 'desk> ')" -eq 1 ] && grep -q '^exec gimp-3.0$' "$swlog" \
         && printf '%s\n' "$out" | grep -q 'Enter closes' && head -1 "$swlog" | grep -q '^\[app_id=spark-desk\] move container to workspace number 3$' \
+        && tail -1 "$swlog" | grep -q '^\[app_id=spark-desk\] focus$' \
         && ok "desktop --ask: one desk> line, the prompt window follows the desk, Enter closes it" || bad "ask form" "st=$st $out $(head -2 "$swlog")"
     printf '%s' "$out" | od -c | grep -q '033' && bad "the pulse reached a pipe" "$(printf '%s' "$out" | od -c | grep 033 | head -1)" || ok "no pulse on a pipe (a tty only, like spark's)"
     # keep, list, replay, status, forget
@@ -692,8 +693,13 @@ EOF
     printf '# desk: gone -- rendered by spark-shell\nworkspace number 1\nexec foot -e micro\nsplith\nexec gone\nsplitv\nexec firefox\nfocus left\nresize set width 70 ppt\n' > "$desks/gone"
     : > "$swlog"
     st=0; out=$(sh "$SH" desktop gone 2>&1) || st=$?
-    printf '%s\n' "$out" | grep -q '^  no window from gone -- going on$' && printf '%s\n' "$out" | grep -q '^  skipped  splitv  (no window to split)$' \
-        && ok "a window that never comes: said, and the split meant for it skipped" || bad "gone window" "st=$st $out"
+    printf '%s\n' "$out" | grep -q '^  gone -- no window$' && printf '%s\n' "$out" | grep -q '^  micro$' && printf '%s\n' "$out" | grep -q '^  firefox$' \
+        && ! printf '%s\n' "$out" | grep -q 'splitv\|focus left\|resize set' \
+        && ok "a window that never comes: said in the app's own words; no sway grammar on the screen" || bad "gone window" "st=$st $out"
+    : > "$swlog"
+    st=0; out=$(sh "$SH" desktop gone -v 2>&1) || st=$?
+    printf '%s\n' "$out" | grep -q '^  skipped  splitv  (no window to split)$' && printf '%s\n' "$out" | grep -q '^  exec foot -e micro$' \
+        && ok "-v after the words is a flag, not a word: the sway lines and the skipped split shown" || bad "gone verbose" "st=$st $out"
     printf '%s\n' 'workspace number 3' 'exec foot -e micro' 'splith' 'exec gone' 'exec firefox' 'focus left' 'resize set width 70 ppt' > "$H/expected.gone"
     cmp -s "$swlog" "$H/expected.gone" && ok "a window that never comes: sway never got the splitv" || bad "gone lines" "$(cat "$swlog" 2>&1)"
     # from a console: the words wait, sway starts, --pending lays them out once

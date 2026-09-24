@@ -1120,21 +1120,22 @@ desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec w
         if [ -n "$why" ]; then echo "  refused  $line  ($why)"; continue; fi
         # a split meant for a window that never came would cut the one
         # before it instead: skipped, the next window lands where that one would have
-        case $line in split*) [ "$nowin" = 0 ] || { echo "  skipped  $line  (no window to split)"; nowin=0; continue; } ;; esac
-        echo "  $line"
+        case $line in split*) [ "$nowin" = 0 ] || { [ "$VERBOSE" != 1 ] || echo "  skipped  $line  (no window to split)"; nowin=0; continue; } ;; esac
+        [ "$VERBOSE" != 1 ] || echo "  $line"   # the sway grammar is for the kept file, not the screen
         before=$(desk_windows "$ws")
-        swaymsg -- "$line" >/dev/null || { echo "  sway refused it"; continue; }
+        swaymsg -- "$line" >/dev/null || { echo "  sway refused: $line"; continue; }
         sent=$((sent + 1))
         case $line in exec*)
             # until its window maps; a program that ends first (mpv with
-            # nothing to play) is not waited for past a 3 s grace
+            # nothing to play) is not waited for past a 3 s grace. What a
+            # person reads: the app and its args, and whether it came
             set -- $line; shift; [ "${1:-}" = foot ] && [ "${2:-}" = -e ] && shift 2
-            prog=${1##*/}; t=0
+            prog=${1##*/}; shown=$*; t=0
             while [ "$(desk_windows "$ws")" -le "$before" ] && [ "$t" -lt $((DESK_WAIT * 4)) ]; do
                 [ "$t" -lt 12 ] || pgrep -u "$(id -u)" -x "$prog" >/dev/null 2>&1 || break
                 sleep 0.25; t=$((t + 1))
             done
-            if [ "$(desk_windows "$ws")" -gt "$before" ]; then nowin=0; else nowin=1; echo "  no window from $prog -- going on"; fi ;;
+            if [ "$(desk_windows "$ws")" -gt "$before" ]; then nowin=0; echo "  $shown"; else nowin=1; echo "  $shown -- no window"; fi ;;
         esac
     done < "$1"
     [ "$sent" -gt 0 ]
@@ -1168,7 +1169,8 @@ desk_make() {   # desk_make NEED -> the desk laid out, its lines in DESK_LAST
     # asked at the prompt: its window goes with the desk, on top, to be read
     [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] move container to workspace number $ws" >/dev/null 2>&1 || true
     desk_play "$DESK_LAST" || refuse "nothing ran"
-    [ "$MODE" = dry ] || echo "on workspace $ws -- spark-shell desktop keep NAME keeps it"
+    echo "on workspace $ws -- spark-shell desktop keep NAME keeps it"
+    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] focus" >/dev/null 2>&1 || true   # Enter is ours, not the app's
 }
 
 # The pulse spark draws while a reply is on its way (spark text.Busy):
@@ -1296,6 +1298,7 @@ cmd_desktop() {
                     ws=$(desk_next_ws)
                     sed "s/^workspace number .*/workspace number $ws/" "$DESKS_DIR/$1" > "$TMP/desk"
                     desk_play "$TMP/desk" || refuse "nothing ran"
+                    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] focus" >/dev/null 2>&1 || true
                     return
                 fi
                 desk_make "$*"; return
@@ -1326,9 +1329,13 @@ usage() {
 main() {
     sub=${1:-status}
     shift 2>/dev/null || true
+    words=''
     for a in "$@"; do
-        case $a in --dry-run) MODE=dry ;; --verbose|-v) VERBOSE=1 ;; esac
+        case $a in --dry-run) MODE=dry ;; --verbose|-v) VERBOSE=1 ;; *) words="$words$a\n" ;; esac
     done
+    # the flags out of the words (a need is words; -v is not one of them)
+    if [ -n "$words" ]; then set -- ; IFS_=$IFS; IFS='
+'; for a in $(printf "%b" "$words"); do set -- "$@" "$a"; done; IFS=$IFS_; fi
     case $sub in
         -h|--help|help) usage ;;
         on) cmd_on ;;

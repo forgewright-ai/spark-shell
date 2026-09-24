@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.30
+
+- The prompt takes the focus back before "Enter closes": Enter had
+  been going to the app opened last. What it shows is what a person
+  reads: the why, one line per window with its outcome (`w3m
+  duckduckgo.com`, `mpv radio.m3u -- no window`), any refusal; the
+  sway lines come with `-v` and live in the kept file. `-v` and
+  `--dry-run` after the words are flags, not words.
+
 ## v0.29
 
 - The prompt's header in whole sentences: "Say what you are about to
