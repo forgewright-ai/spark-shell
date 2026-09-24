@@ -1037,19 +1037,22 @@ desk_apps() {   # desk_apps NEED -> the lines (and $TMP/exec: NAME<tab>its entry
                 printf '%s: %s%s\n' "$name" "$what" "$term"
             done
         done
+        # the packages you chose, in the package's own words (its one-line description)
         pm_detect 2>/dev/null || true
         case $PM in
-            pacman) pacman -Qqe 2>/dev/null ;;
-            apt) apt-mark showmanual 2>/dev/null ;;
-            brew) brew leaves 2>/dev/null ;;
-        esac | while IFS= read -r p; do
-            ! desk_on_path "$p" || printf '%s: a tool you chose, terminal\n' "$p"
+            pacman) pacman -Qie 2>/dev/null | awk -F' *: ' '/^Name/ {n=$2} /^Description/ {print n ": " $2}' ;;
+            apt) apt-mark showmanual 2>/dev/null | xargs -r dpkg-query -W -f='${Package}: ${binary:Summary}\n' 2>/dev/null ;;
+            brew) brew leaves 2>/dev/null | xargs -r brew desc --eval-all 2>/dev/null ;;
+        esac | while IFS= read -r l; do
+            p=${l%%:*}
+            ! desk_on_path "$p" || printf '%s, terminal\n' "$l"
         done
         for w in $1; do
             w=$(printf '%s' "$w" | tr -cd 'A-Za-z0-9_.-' | tr 'A-Z' 'a-z')
             [ -z "$w" ] || ! desk_on_path "$w" || printf '%s: named in the need, terminal\n' "$w"
         done
-    } | grep -v '^\(sway\|swaybg\|swaymsg\|foot\|footclient\|xdg-open\):' | sort -t: -s -u -k1,1   # the desktop itself is not an app
+    } | grep -v "^\\($(printf '%s' "sway swaybg swaymsg foot footclient xdg-open $DESK_NOT_APPS" | sed 's/ /\\|/g')\\):" \
+      | sort -t: -s -u -k1,1   # the desktop itself, a shell, a way to root: not apps
 }
 desk_on_path() { case $(command -v "$1" 2>/dev/null) in /*) return 0 ;; *) return 1 ;; esac; }   # a program, not a keyword or builtin
 desk_app_known() { grep -q "^$1: " "$TMP/apps"; }                       # desk_app_known NAME (after desk_apps > $TMP/apps)

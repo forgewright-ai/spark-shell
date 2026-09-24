@@ -633,6 +633,18 @@ else
     cmp -s "$swlog" "$H/expected.lines" && ok "sway got exactly the nine lines in order (main, splith, side, splitv, micro in foot, focus left, resize 70 ppt; toad never)" || bad "swaymsg lines" "$(cat "$swlog" 2>&1)"
     head -1 "$desk_last" | grep -q "^# desk: $need -- rendered by spark-shell" && grep -q '^# why: photo work in gimp' "$desk_last" && grep -q '^exec foot -e micro$' "$desk_last" \
         && ok "desk.last: the header (the words, the marker), the why, the lines" || bad "desk.last" "$(cat "$desk_last" 2>&1)"
+    # the packages you chose reach the model in the package's own words; a shell is not in the list
+    cat > "$H/.local/bin/pacman" <<'EOF'
+#!/bin/sh
+[ "$1" = -Qie ] && printf 'Name            : reader\nDescription     : Text-based Web browser\n\nName            : bash\nDescription     : The GNU Bourne Again shell\n\nName            : linux\nDescription     : The Linux kernel\n'
+EOF
+    printf '#!/bin/sh\n:\n' > "$H/.local/bin/reader"; chmod +x "$H/.local/bin/pacman" "$H/.local/bin/reader"
+    printf 'ID=arch\n' > "$H/os-arch"
+    SPARK_OS_RELEASE=$H/os-arch SWAYSOCK=/tmp/x sh "$SH" desktop "$need" >/dev/null 2>&1 || true
+    grep -q 'reader: Text-based Web browser' "$argv" && ok "inventory: a chosen package in the package manager's own words" || bad "inventory package words" "$(grep -o 'reader[^;]*' "$argv")"
+    grep -q 'bash:' "$argv" && bad "inventory: a shell is offered to the model" "$(grep -o 'bash:[^;]*' "$argv")" || ok "inventory: a shell is not in the list"
+    grep -q 'linux:' "$argv" && bad "inventory: a package that is no program is in" || ok "inventory: a package that is no program is not in"
+    rm -f "$H/.local/bin/pacman" "$H/.local/bin/reader"
     # the prompt form: the words typed at desk> are not printed again
     : > "$swlog"
     st=0; out=$(printf '%s\n\n' "$need" | SWAYSOCK=/tmp/x sh "$SH" desktop --ask 2>&1) || st=$?

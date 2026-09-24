@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.28
+
+- The packages you chose reach the model in the package's own words
+  (pacman's, dpkg's or brew's one-line description): "internet
+  browsing" had opened avahi's SSH-server browser because w3m's line
+  said only "a tool you chose". A shell or a way to root is not in the
+  list at all.
+
 ## v0.27
 
 - The `Super+d` prompt window follows the desk to its workspace and
