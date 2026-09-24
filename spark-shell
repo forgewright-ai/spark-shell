@@ -1099,11 +1099,14 @@ desk_lines() {   # desk_lines WS JSONFILE -> the lines
 
 desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec waited for
     ws=$(sed -n 's/^workspace number //p' "$1" | head -1)
-    sent=0
+    sent=0; nowin=0
     while IFS= read -r line || [ -n "$line" ]; do
         case $line in ''|'#'*) continue ;; esac
         why=$(desk_gate "$line")
         if [ -n "$why" ]; then echo "  refused  $line  ($why)"; continue; fi
+        # a split meant for a window that never came would cut the one
+        # before it instead: skipped, the next window lands where that one would have
+        case $line in split*) [ "$nowin" = 0 ] || { echo "  skipped  $line  (no window to split)"; nowin=0; continue; } ;; esac
         echo "  $line"
         before=$(desk_windows "$ws")
         swaymsg -- "$line" >/dev/null || { echo "  sway refused it"; continue; }
@@ -1117,7 +1120,7 @@ desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec w
                 [ "$t" -lt 12 ] || pgrep -u "$(id -u)" -x "$prog" >/dev/null 2>&1 || break
                 sleep 0.25; t=$((t + 1))
             done
-            [ "$(desk_windows "$ws")" -gt "$before" ] || echo "  no window from $prog -- going on" ;;
+            if [ "$(desk_windows "$ws")" -gt "$before" ]; then nowin=0; else nowin=1; echo "  no window from $prog -- going on"; fi ;;
         esac
     done < "$1"
     [ "$sent" -gt 0 ]
@@ -1130,7 +1133,7 @@ desk_make() {   # desk_make NEED -> the desk laid out, its lines in DESK_LAST
     desk_apps "$1" > "$TMP/apps"
     [ -s "$TMP/apps" ] || refuse "no apps found on this machine (no desktop entries, no chosen packages)"
     ws=$(desk_next_ws)
-    about="A desk: the windows for one need, on a $(desk_screen) screen. Apps on this machine (name: what it does): $(sed 's/, terminal$//' "$TMP/apps" | paste -sd ';' - | sed 's/;/; /g'). Rules: an app the need names by name is in the desk; otherwise choose only the apps the work needs, two to four windows; an app may appear twice with different args (a browser on two pages: one window per page, args is that page's URL). Answer with one JSON object and nothing else: {\"why\": \"one sentence, from the need to the apps chosen\", \"main\": {\"app\": \"NAME\", \"args\": \"\", \"width\": 70}, \"side\": [{\"app\": \"NAME\", \"args\": \"\"}]} -- main is the big window at the left, width its percent of the screen; side is the windows stacked at the right, top to bottom."
+    about="A desk: the windows for one need, on a $(desk_screen) screen. Apps on this machine (name: what it does): $(sed 's/, terminal$//' "$TMP/apps" | paste -sd ';' - | sed 's/;/; /g'). Rules: an app the need names by name is in the desk; otherwise only the apps the work itself needs, as few windows as that takes (one to four), never an app the need does not call for; an app may appear twice with different args (a browser on two pages: one window per page, args is that page's URL). Answer with one JSON object and nothing else: {\"why\": \"one sentence, from the need to the apps chosen\", \"main\": {\"app\": \"NAME\", \"args\": \"\", \"width\": 70}, \"side\": [{\"app\": \"NAME\", \"args\": \"\"}]} -- main is the big window at the left, width its percent of the screen; side is the windows stacked at the right, top to bottom."
     printf 'desk> %s\n' "$1"
     if ! "$spark" edit --type json --name desk.json --about "$about" -- "write the desk for this need: $1" </dev/null > "$TMP/desk.json" 2>"$TMP/desk.err"; then
         refuse "spark did not answer: $(head -1 "$TMP/desk.err")"

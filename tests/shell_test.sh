@@ -566,7 +566,7 @@ case ${1:-} in
     -t) case $2 in
             get_outputs) echo '[{"current_mode":{"width":2560,"height":1440}}]' ;;
             get_workspaces) echo '[{"num":1},{"num":2}]' ;;
-            get_tree) n=$(grep -c '^exec' "$log" 2>/dev/null || :); [ -n "$n" ] || n=0; i=0
+            get_tree) n=$(grep '^exec' "$log" 2>/dev/null | grep -vc 'exec gone' || :); [ -n "$n" ] || n=0; i=0
                 printf '{"type":"root","nodes":[{"type":"workspace","num":3,"nodes":['
                 while [ "$i" -lt "$n" ]; do [ "$i" -eq 0 ] || printf ','; printf '{"type":"con","pid":%d}' $((100 + i)); i=$((i + 1)); done
                 echo ']}]}' ;;
@@ -574,14 +574,15 @@ case ${1:-} in
     --) shift; echo "$*" >> "$log" ;;
 esac
 EOF
-    for t in gimp-3.0 firefox micro; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done
-    chmod +x "$H/.local/bin/spark" "$H/.local/bin/swaymsg" "$H/.local/bin/gimp-3.0" "$H/.local/bin/firefox" "$H/.local/bin/micro"
+    for t in gimp-3.0 firefox micro gone; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done   # gone: an app that opens no window
+    chmod +x "$H/.local/bin/spark" "$H/.local/bin/swaymsg" "$H/.local/bin/gimp-3.0" "$H/.local/bin/firefox" "$H/.local/bin/micro" "$H/.local/bin/gone"
     apps=$XDG_DATA_HOME/applications; mkdir -p "$apps" "$H/share"
     export XDG_DATA_DIRS=$H/share
     printf '[Desktop Entry]\nName=GNU Image Manipulation Program\nComment=Create images and edit photographs\nExec=gimp-3.0 %%U\nTerminal=false\nType=Application\n' > "$apps/gimp.desktop"
     printf '[Desktop Entry]\nName=Firefox\nGenericName=Web Browser\nExec=firefox %%u\nType=Application\n' > "$apps/firefox.desktop"
     printf '[Desktop Entry]\nName=Micro\nExec=micro %%F\nTerminal=true\nType=Application\n' > "$apps/micro.desktop"
     printf '[Desktop Entry]\nName=Hidden\nExec=hidden\nNoDisplay=true\nType=Application\n' > "$apps/hidden.desktop"
+    printf '[Desktop Entry]\nName=Gone\nComment=Ends at once, no window\nExec=gone\nType=Application\n' > "$apps/gone.desktop"
 }
 fresh
 desktop_stubs
@@ -665,6 +666,15 @@ else
     printf '%s\n' "$out" | grep -qF '  refused  output * bg x  (output is not a desk verb)' && ok "gate: output is not a desk verb" || bad "gate verb" "$out"
     printf '%s\n' 'workspace number 3' 'exec foot -e micro notes.txt' > "$H/expected.gate"
     cmp -s "$swlog" "$H/expected.gate" && ok "gate: sway got the workspace line and the one good exec, nothing else" || bad "gate lines" "$(cat "$swlog" 2>&1)"
+    # a window that never comes (mpv with nothing to play): the split meant for it is skipped,
+    # so the next window lands beside the main one instead of cutting it
+    printf '# desk: gone -- rendered by spark-shell\nworkspace number 1\nexec foot -e micro\nsplith\nexec gone\nsplitv\nexec firefox\nfocus left\nresize set width 70 ppt\n' > "$desks/gone"
+    : > "$swlog"
+    st=0; out=$(sh "$SH" desktop gone 2>&1) || st=$?
+    printf '%s\n' "$out" | grep -q '^  no window from gone -- going on$' && printf '%s\n' "$out" | grep -q '^  skipped  splitv  (no window to split)$' \
+        && ok "a window that never comes: said, and the split meant for it skipped" || bad "gone window" "st=$st $out"
+    printf '%s\n' 'workspace number 3' 'exec foot -e micro' 'splith' 'exec gone' 'exec firefox' 'focus left' 'resize set width 70 ppt' > "$H/expected.gone"
+    cmp -s "$swlog" "$H/expected.gone" && ok "a window that never comes: sway never got the splitv" || bad "gone lines" "$(cat "$swlog" 2>&1)"
     # from a console: the words wait, sway starts, --pending lays them out once
     rm -f "$argv" "$swlog"
     st=0; out=$(env -u SWAYSOCK -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop "news and music" 2>&1) || st=$?

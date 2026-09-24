@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.24
+
+- A desk whose window never came (mpv with nothing to play) no longer
+  cuts the window before it: the split meant for it is skipped, and
+  the next window lands where that one would have. The model's brief
+  asks for as few windows as the work takes, never an app the need
+  does not call for (aerc had been padding "writing and music").
+
 ## v0.23
 
 - A desk from your words: `spark-shell desktop "focused news reading
