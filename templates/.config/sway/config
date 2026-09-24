@@ -29,7 +29,7 @@ client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@ #@HEX_ANSI_1@ #@HE
 
 bindsym $mod+Return exec $term
 bindsym $mod+d exec $term --app-id spark-desk -e @REPO@/spark-shell desktop --ask
-for_window [app_id="spark-desk"] floating enable, resize set width 60 ppt height 20 ppt
+for_window [app_id="spark-desk"] floating enable, resize set width 60 ppt height 40 ppt
 bindsym $mod+Shift+q kill
 bindsym $mod+Shift+c reload
 bindsym $mod+Shift+e exit

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.29
+
+- The prompt's header in whole sentences: "Say what you are about to
+  do and press Enter. Up and Down pick a desk you kept. Esc closes."
+  The window is taller (40 ppt), so the why line stays in view.
+
 ## v0.28
 
 - The packages you chose reach the model in the package's own words

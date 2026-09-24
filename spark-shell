@@ -1199,7 +1199,8 @@ desk_prompt() {
     if [ -t 0 ] && command -v fzf >/dev/null 2>&1; then
         _st=0
         _sel=$(ls -A "$DESKS_DIR" 2>/dev/null | fzf --print-query --prompt 'desk> ' --layout=reverse --no-info --color=16 --no-unicode \
-            --header 'what are you about to do? words and Enter: a desk; arrows: a kept desk; Esc closes') || _st=$?
+            --header 'Say what you are about to do and press Enter.
+Up and Down pick a desk you kept. Esc closes.') || _st=$?
         [ "$_st" -ne 130 ] && [ "$_st" -ne 2 ] || return 1
         _need=$(printf '%s\n' "$_sel" | sed -n 1p); _pick=$(printf '%s\n' "$_sel" | sed -n 2p)
         [ -n "$_need" ] || _need=$_pick
