@@ -1144,7 +1144,7 @@ desk_make() {   # desk_make NEED -> the desk laid out, its lines in DESK_LAST
     [ -s "$TMP/apps" ] || refuse "no apps found on this machine (no desktop entries, no chosen packages)"
     ws=$(desk_next_ws)
     about="A desk: the windows for one need, on a $(desk_screen) screen. Apps on this machine (name: what it does): $(sed 's/, terminal$//' "$TMP/apps" | paste -sd ';' - | sed 's/;/; /g'). Rules: an app the need names by name is in the desk; otherwise only the apps the work itself needs, as few windows as that takes (one to four), never an app the need does not call for; an app may appear twice with different args (a browser on two pages: one window per page, args is that page's URL). Answer with one JSON object and nothing else: {\"why\": \"one sentence, from the need to the apps chosen\", \"main\": {\"app\": \"NAME\", \"args\": \"\", \"width\": 70}, \"side\": [{\"app\": \"NAME\", \"args\": \"\"}]} -- main is the big window at the left, width its percent of the screen; side is the windows stacked at the right, top to bottom."
-    printf 'desk> %s\n' "$1"
+    [ -n "${ASKED:-}" ] || printf 'desk> %s\n' "$1"
     if ! "$spark" edit --type json --name desk.json --about "$about" -- "write the desk for this need: $1" </dev/null > "$TMP/desk.json" 2>"$TMP/desk.err"; then
         refuse "spark did not answer: $(head -1 "$TMP/desk.err")"
     fi
@@ -1231,7 +1231,7 @@ cmd_desktop() {
         --ask)   # one line at a prompt (Super+d opens a foot on this), then a desk
             printf 'desk> '; IFS= read -r need || need=''
             [ -n "$need" ] || return 0
-            cmd_desktop "$need"; return ;;
+            ASKED=1 cmd_desktop "$need"; return ;;   # the words are on the screen already
         --pending)   # the words left by a console start: laid out once, then gone
             [ -f "$DESK_PENDING" ] || return 0
             need=$(head -1 "$DESK_PENDING"); rm -f "$DESK_PENDING"
@@ -1244,7 +1244,7 @@ cmd_desktop() {
             if [ -n "${SWAYSOCK:-}" ]; then
                 if [ $# -eq 1 ] && desk_name_ok "$1" && [ -f "$DESKS_DIR/$1" ]; then
                     desk_apps "$1" > "$TMP/apps"
-                    printf 'desk> %s\n' "$(sed -n 's/^# desk: \(.*\) -- rendered by spark-shell.*/\1/p' "$DESKS_DIR/$1" | head -1)"
+                    [ -n "${ASKED:-}" ] || printf 'desk> %s\n' "$(sed -n 's/^# desk: \(.*\) -- rendered by spark-shell.*/\1/p' "$DESKS_DIR/$1" | head -1)"
                     ws=$(desk_next_ws)
                     sed "s/^workspace number .*/workspace number $ws/" "$DESKS_DIR/$1" > "$TMP/desk"
                     desk_play "$TMP/desk" || refuse "nothing ran"

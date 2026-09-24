@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.26
+
+- The `desk>` prompt (Super+d) no longer repeats your words on a
+  second line; the command-line form still names the need first.
+
 ## v0.25
 
 - An app opens the way its own desktop entry says: the Exec line with

@@ -633,6 +633,11 @@ else
     cmp -s "$swlog" "$H/expected.lines" && ok "sway got exactly the nine lines in order (main, splith, side, splitv, micro in foot, focus left, resize 70 ppt; toad never)" || bad "swaymsg lines" "$(cat "$swlog" 2>&1)"
     head -1 "$desk_last" | grep -q "^# desk: $need -- rendered by spark-shell" && grep -q '^# why: photo work in gimp' "$desk_last" && grep -q '^exec foot -e micro$' "$desk_last" \
         && ok "desk.last: the header (the words, the marker), the why, the lines" || bad "desk.last" "$(cat "$desk_last" 2>&1)"
+    # the prompt form: the words typed at desk> are not printed again
+    : > "$swlog"
+    st=0; out=$(printf '%s\n' "$need" | SWAYSOCK=/tmp/x sh "$SH" desktop --ask 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | grep -c 'desk> ')" -eq 1 ] && grep -q '^exec gimp-3.0$' "$swlog" \
+        && ok "desktop --ask: one desk> line, the desk laid out" || bad "ask form" "st=$st $out"
     # keep, list, replay, status, forget
     out=$(sh "$SH" desktop keep studio)
     printf '%s\n' "$out" | grep -q "^kept studio -- spark-shell desktop studio opens it ($desks/studio)\$" && cmp -s "$desk_last" "$desks/studio" \
