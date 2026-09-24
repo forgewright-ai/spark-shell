@@ -39,7 +39,7 @@ jobs:
     container: debian:13
     timeout-minutes: 10
     steps:
-      - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git python3 shellcheck diffutils >/dev/null
+      - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git python3 shellcheck diffutils jq >/dev/null   # jq: a desk reads the model's answer with it
       - uses: actions/checkout@v4
       - name: the desktop's and the login box's package names exist on Debian (nothing installed)
         run: apt-cache show $(sed -n 's/^PKG_DESKTOP=//p; s/^PKG_GREETER=//p' distro/debian.env) >/dev/null
@@ -53,7 +53,7 @@ jobs:
     container: archlinux:latest
     timeout-minutes: 10
     steps:
-      - run: pacman -Syu --noconfirm --needed git python diffutils >/dev/null
+      - run: pacman -Syu --noconfirm --needed git python diffutils jq >/dev/null
       - uses: actions/checkout@v4
       - name: the desktop's and the login box's package names exist on Arch (nothing installed)
         run: pacman -Sp --needed $(sed -n 's/^PKG_DESKTOP=//p; s/^PKG_GREETER=//p' distro/arch.env) >/dev/null
