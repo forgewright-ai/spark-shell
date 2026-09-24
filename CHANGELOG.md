@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.23
+
+- A desk from your words: `spark-shell desktop "focused news reading
+  and music"` asks the model (spark edit, from nothing, one JSON
+  answer: why, a main window and its width, the side windows) for the
+  windows the need calls for, from the apps this machine has -- its
+  desktop entries, the packages you chose, a tool the words name --
+  and sway opens them on the next empty workspace, main at the left,
+  the rest stacked at the right. `Super+d` asks at a small floating
+  prompt. `keep NAME`, `NAME`, `forget NAME`: a kept desk is a text
+  file of sway commands, replayed with no model call; bare `desktop`
+  inside the desktop lists them. Every line passes one gate before
+  sway sees it (a desk verb, no shell syntax -- sway hands exec to
+  sh -c -- and exec only of an app in the inventory, never a shell or
+  a way to root). From a console with no desktop, the words wait for
+  the one it starts. The `check` desktop row wants jq; `status` has a
+  `desks` row.
+
 ## v0.22
 
 - `ALPHA` in the config: foot over a picture, 0 to 1, default 0.85

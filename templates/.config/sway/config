@@ -3,7 +3,8 @@
 # so no bar, no titlebars, no xwayland. A new window is foot running the
 # login shell. The borders and the background take the palette's hex,
 # or the picture from spark-shell desktop wallpaper PATH (then gaps).
-# Super+Return a window, Super+Shift+q close it, Super+Shift+c reload,
+# Super+Return a window, Super+d a desk from your words (a small prompt;
+# spark-shell desktop "WORDS"), Super+Shift+q close it, Super+Shift+c reload,
 # Super+Shift+e back to the console. Started by hand: spark-shell desktop.
 # The desktop opens with one terminal and ends with it: `exit` in that
 # first foot is the console again (an empty sway is a black screen with
@@ -27,6 +28,8 @@ client.unfocused        #@HEX_BG@ #@HEX_BG@ #@HEX_MUTED@ #@HEX_BG@ #@HEX_BG@
 client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@ #@HEX_ANSI_1@ #@HEX_ANSI_1@
 
 bindsym $mod+Return exec $term
+bindsym $mod+d exec $term --app-id spark-desk -e @REPO@/spark-shell desktop --ask
+for_window [app_id="spark-desk"] floating enable, resize set width 60 ppt height 20 ppt
 bindsym $mod+Shift+q kill
 bindsym $mod+Shift+c reload
 bindsym $mod+Shift+e exit
@@ -93,4 +96,5 @@ mode "resize" {
 }
 bindsym $mod+r mode "resize"
 
+exec @REPO@/spark-shell desktop --pending
 exec sh -c '$term; swaymsg exit'

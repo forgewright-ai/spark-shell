@@ -90,6 +90,7 @@ ask for sudo when they differ.
 
     spark-shell desktop     start it now, from a console login (tty1)
     Super+Return            a window: foot, running your login shell
+    Super+d                 a desk from your words (below)
     Super+Shift+q           close it
     Super+Shift+c           reload sway (after spark-shell apply)
     Super+Shift+e           back to the console (or the login box)
@@ -118,6 +119,36 @@ Started by hand, sway's log is `~/.local/state/spark-shell/sway.log`;
 from the login box it is the journal's. If `seatd.service` is ever
 enabled on the box, add your user to the `seat` group (libseat prefers
 seatd over logind when both are there).
+
+## A desk from your words
+
+    spark-shell desktop "focused news reading and music"
+    spark-shell desktop "studio for content creation for Instagram and X"
+
+Say what you are about to do and the desktop lays it out: the model
+reads the apps this machine has (its desktop entries, the packages you
+chose, a tool the words name) and picks the windows for that work, a
+main one and the ones beside it; sway opens them on the next empty
+workspace, the main at the left at the width the model gave, the rest
+stacked at the right, and says in one line why those. The windows you
+already have are not touched. `Super+d` asks the same at a small
+prompt. A desk is for that need and that moment: close its windows and
+it is gone. One you would want again:
+
+    spark-shell desktop keep writing    the last desk, under a name
+    spark-shell desktop writing         opens it again, no model
+    spark-shell desktop forget writing
+    spark-shell desktop                 inside the desktop: the kept ones
+
+A kept desk is a text file of sway commands
+(`~/.config/spark-shell/desks/NAME`), yours to edit. Every line, fresh
+or kept, passes one gate before sway sees it: a desk verb, no shell
+syntax, and `exec` only of an app this machine has -- a shell or a way
+to root is not an app. A line that fails is named and dropped, the rest
+still opens. The model sees the need's words, the screen's size and
+the app list, never a window's title or a file. From a console with no
+desktop running, `spark-shell desktop "WORDS"` starts one and lays the
+desk out in it.
 
 ## The palette follows you
 

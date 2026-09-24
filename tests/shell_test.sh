@@ -298,7 +298,7 @@ else
     out=$(env -u XDG_VTNR -u WAYLAND_DISPLAY sh "$SH" desktop 2>&1 || true)
     printf '%s\n' "$out" | grep -q 'needs a console login: ssh has no seat' && ok "desktop: refused without XDG_VTNR (ssh has no seat)" || bad "desktop no seat" "$out"
     out=$(env -u XDG_VTNR XDG_VTNR=1 WAYLAND_DISPLAY=wayland-1 sh "$SH" desktop 2>&1 || true)
-    printf '%s\n' "$out" | grep -q 'already inside' && ok "desktop: refused inside a desktop (WAYLAND_DISPLAY set)" || bad "desktop inside" "$out"
+    printf '%s\n' "$out" | grep -q '^no kept desks yet' && ok "desktop: inside a desktop (WAYLAND_DISPLAY set) it lists the kept desks, none yet" || bad "desktop inside" "$out"
     out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 TERM=linux sh "$SH" desktop 2>&1); st=$?
     [ "$st" -eq 0 ] && grep -q 'sway-stub' "$HOME/.local/state/spark-shell/sway.log" && printf '%s' "$out" | od -c | grep -q '033   \[   ?   2   5   h' \
         && ok "desktop: runs sway as a child, its stderr in sway.log, the cursor back on TERM=linux" || bad "desktop run" "st=$st out=$out log=$(cat "$HOME/.local/state/spark-shell/sway.log" 2>&1)"
@@ -525,8 +525,9 @@ else
         && ok "no theme.env: border blue, greet gray, container black" || bad "no theme.env greeter" "$(grep -o -- "--theme '[^']*'" "$H/root/etc/greetd/config.toml")"
     out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop 2>&1); st=$?
     [ "$st" -eq 0 ] && ok "desktop (start now) still starts sway with the box in place" || bad "desktop start" "$out"
-    out=$(sh "$SH" desktop sideways 2>&1 || true)
-    printf '%s\n' "$out" | grep -q '^spark-shell desktop: sideways' && ok "desktop: an unknown word is refused in one line" || bad "desktop unknown word" "$out"
+    out=$(env -u XDG_VTNR -u SWAYSOCK sh "$SH" desktop sideways 2>&1 || true)
+    printf '%s\n' "$out" | grep -q '^spark-shell desktop: needs a console login' && [ ! -e "$HOME/.local/state/spark-shell/desk.pending" ] \
+        && ok "desktop: a word with no desktop and no seat is refused in one line, nothing left pending" || bad "desktop word no seat" "$out"
     # no sudo to be had (not root, sudo refuses, no tty): a todo row, nothing written
     if [ "$(id -u)" -ne 0 ]; then
         printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/sudo"; chmod +x "$H/.local/bin/sudo"
@@ -537,6 +538,173 @@ else
 fi
 grep -q '@ACCENT_TUI@' "$REPO/templates/etc/greetd/config.toml" && grep -q '@NAME@' "$REPO/templates/etc/greetd/config.toml" && ok "templates: config.toml carries the tui and name placeholders" || bad "config.toml template"
 grep -rq 'font' "$REPO/templates/etc" && bad "a root template names a font" || ok "templates/etc: no font word"
+
+# --- 16. desks: a desk from your words -----------------------------------
+# stubs: spark logs its argv and answers one fixed desk (main gimp-3.0 at
+# 70, two firefox pages, micro in a terminal, and toad, which this machine
+# lacks); swaymsg logs every line it is sent and answers the queries --
+# its tree holds one window per exec line already sent, so the wait after
+# an exec returns at once. jq is the real one. The inventory is a fixture
+# of desktop entries under XDG_DATA_HOME; XDG_DATA_DIRS points at an empty
+# dir so the machine's own entries stay out. The Linux half is guarded by
+# uname like 14 and 15.
+desk_stubs() {   # after desktop_stubs: its swaymsg is replaced
+    cat > "$H/.local/bin/spark" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" > "${XDG_STATE_HOME:-$HOME/.local/state}/spark.argv"
+cat <<'JSON'
+{"why": "photo work in gimp with the two feeds beside it and a notes file",
+ "main": {"app": "gimp-3.0", "args": "", "width": 70},
+ "side": [{"app": "firefox", "args": "https://instagram.com"}, {"app": "firefox", "args": "https://x.com"},
+          {"app": "micro", "args": ""}, {"app": "toad", "args": ""}]}
+JSON
+EOF
+    cat > "$H/.local/bin/swaymsg" <<'EOF'
+#!/bin/sh
+log=${XDG_STATE_HOME:-$HOME/.local/state}/swaymsg.log; mkdir -p "$(dirname "$log")"
+case ${1:-} in
+    -t) case $2 in
+            get_outputs) echo '[{"current_mode":{"width":2560,"height":1440}}]' ;;
+            get_workspaces) echo '[{"num":1},{"num":2}]' ;;
+            get_tree) n=$(grep -c '^exec' "$log" 2>/dev/null || :); [ -n "$n" ] || n=0; i=0
+                printf '{"type":"root","nodes":[{"type":"workspace","num":3,"nodes":['
+                while [ "$i" -lt "$n" ]; do [ "$i" -eq 0 ] || printf ','; printf '{"type":"con","pid":%d}' $((100 + i)); i=$((i + 1)); done
+                echo ']}]}' ;;
+        esac ;;
+    --) shift; echo "$*" >> "$log" ;;
+esac
+EOF
+    for t in gimp-3.0 firefox micro; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done
+    chmod +x "$H/.local/bin/spark" "$H/.local/bin/swaymsg" "$H/.local/bin/gimp-3.0" "$H/.local/bin/firefox" "$H/.local/bin/micro"
+    apps=$XDG_DATA_HOME/applications; mkdir -p "$apps" "$H/share"
+    export XDG_DATA_DIRS=$H/share
+    printf '[Desktop Entry]\nName=GNU Image Manipulation Program\nComment=Create images and edit photographs\nExec=gimp-3.0 %%U\nTerminal=false\nType=Application\n' > "$apps/gimp.desktop"
+    printf '[Desktop Entry]\nName=Firefox\nGenericName=Web Browser\nExec=firefox %%u\nType=Application\n' > "$apps/firefox.desktop"
+    printf '[Desktop Entry]\nName=Micro\nExec=micro %%F\nTerminal=true\nType=Application\n' > "$apps/micro.desktop"
+    printf '[Desktop Entry]\nName=Hidden\nExec=hidden\nNoDisplay=true\nType=Application\n' > "$apps/hidden.desktop"
+}
+fresh
+desktop_stubs
+desk_stubs
+need='photo editing for instagram and x'
+argv=$H/.local/state/spark.argv; swlog=$H/.local/state/swaymsg.log
+desk_last=$H/.local/state/spark-shell/desk.last; desk_pending=$H/.local/state/spark-shell/desk.pending
+desks=$H/.config/spark-shell/desks
+theme_fixture '#ff5555'
+mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+sh "$SH" on >/dev/null
+if [ "$(uname -s)" = Darwin ]; then
+    na_form() {   # na_form WORDS... -> one line, na, exit 1
+        st=0; out=$(sh "$SH" desktop "$@" 2>&1) || st=$?
+        [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: na: macOS has its own desktop$' \
+            && ok "macOS: desktop $1 refuses, na, one line, exit 1" || bad "macOS desktop $*" "st=$st $out"
+    }
+    na_form "$need"; na_form keep x; na_form forget x; na_form x
+    [ ! -e "$desk_last" ] && [ ! -e "$desk_pending" ] && [ ! -e "$desks" ] && [ ! -e "$argv" ] && [ ! -e "$swlog" ] \
+        && ok "macOS: no desk form wrote anything (no desk.last, no pending, no desks dir, spark and swaymsg never called)" || bad "macOS desk wrote" "$(find "$H/.local/state" "$H/.config/spark-shell")"
+else
+    export SWAYSOCK=$H/sway.sock WAYLAND_DISPLAY=wayland-1    # inside the desktop
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desks none .*spark-shell desktop "WORDS" makes one' && ok "status: the desks row says none before any" || bad "status desks none" "$(printf '%s\n' "$st" | grep desks)"
+    out=$(sh "$SH" desktop)
+    printf '%s\n' "$out" | grep -q '^no kept desks yet -- try: spark-shell desktop "' && ok "desktop (bare, inside): no kept desks yet, a try line" || bad "desk list empty" "$out"
+    # the need: spark asked once, the lines played, the missing app named
+    st=0; out=$(sh "$SH" desktop "$need" 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^desk> $need\$" && printf '%s\n' "$out" | grep -q '^  photo work in gimp with the two feeds' \
+        && ok "desktop WORDS: exit 0, the desk> line, the why line" || bad "desk need" "st=$st $out"
+    printf '%s\n' "$out" | grep -q '^  toad is not on this machine -- laid out without it$' && ok "desktop WORDS: an app the model named that is not here is said" || bad "toad line" "$out"
+    printf '%s\n' "$out" | grep -q '^  refused  exec toad  (toad is not on this machine)$' && ok "desktop WORDS: its exec line is refused with the reason" || bad "toad refused" "$out"
+    printf '%s\n' "$out" | grep -q '^on workspace 3 -- spark-shell desktop keep NAME keeps it$' && ok "desktop WORDS: on workspace 3 (1 and 2 are in use), keep named" || bad "on workspace" "$out"
+    printf '%s\n' "$out" | grep -q 'no window after\|sway refused' && bad "desktop WORDS: a wait ran out or sway refused" "$out" || ok "desktop WORDS: every window came up, sway took every line"
+    [ -f "$argv" ] && [ "$(sed -n '1,3p' "$argv" | paste -sd ' ' -)" = 'edit --type json' ] && grep -qx -- '--name' "$argv" && grep -qx desk.json "$argv" && grep -qx -- '--about' "$argv" \
+        && ok "spark: asked as spark edit --type json --name desk.json --about" || bad "spark argv" "$(cat "$argv" 2>&1)"
+    [ "$(tail -1 "$argv")" = "write the desk for this need: $need" ] && ok "spark: the prompt ends with the need's words" || bad "spark prompt" "$(tail -1 "$argv")"
+    grep -q 'on a 2560x1440 screen' "$argv" && ok "spark: the about names the screen (from swaymsg get_outputs)" || bad "about screen" "$(grep -o 'on a [^ ]* screen' "$argv")"
+    grep -q 'gimp-3.0: Create images and edit photographs' "$argv" && ok "inventory: a desktop entry's Comment (gimp-3.0)" || bad "inventory gimp" "$(grep -o 'gimp-3.0: [^;]*' "$argv")"
+    grep -q 'firefox: Web Browser' "$argv" && ok "inventory: GenericName when there is no Comment (firefox)" || bad "inventory firefox" "$(grep -o 'firefox: [^;]*' "$argv")"
+    grep -q 'micro: Micro' "$argv" && ok "inventory: Name when there is nothing else (micro)" || bad "inventory micro" "$(grep -o 'micro: [^;]*' "$argv")"
+    grep -q ', terminal' "$argv" && bad "inventory: the terminal mark reached the model" "$(grep -o '[^;]*, terminal[^;]*' "$argv")" || ok "inventory: the terminal mark is kept from the model (sway's business)"
+    grep -qi 'hidden' "$argv" && bad "inventory: a NoDisplay entry is in" "$(grep -oi '[^;]*hidden[^;]*' "$argv")" || ok "inventory: a NoDisplay entry is dropped"
+    grep -q 'for:' "$argv" && bad "inventory: the keyword for counts as a program" "$(grep -o 'for: [^;]*' "$argv")" || ok "inventory: a need word that is a keyword (for) is not a program"
+    grep -q 'foot:\|footclient:\|xdg-open:' "$argv" && bad "inventory: foot or xdg-open is in" || ok "inventory: no foot, footclient or xdg-open"
+    printf '%s\n' 'workspace number 3' 'exec gimp-3.0' splith 'exec firefox https://instagram.com' splitv 'exec firefox https://x.com' 'exec foot -e micro' 'focus left' 'resize set width 70 ppt' > "$H/expected.lines"
+    cmp -s "$swlog" "$H/expected.lines" && ok "sway got exactly the nine lines in order (main, splith, side, splitv, micro in foot, focus left, resize 70 ppt; toad never)" || bad "swaymsg lines" "$(cat "$swlog" 2>&1)"
+    head -1 "$desk_last" | grep -q "^# desk: $need -- rendered by spark-shell" && grep -q '^# why: photo work in gimp' "$desk_last" && grep -q '^exec foot -e micro$' "$desk_last" \
+        && ok "desk.last: the header (the words, the marker), the why, the lines" || bad "desk.last" "$(cat "$desk_last" 2>&1)"
+    # keep, list, replay, status, forget
+    out=$(sh "$SH" desktop keep studio)
+    printf '%s\n' "$out" | grep -q "^kept studio -- spark-shell desktop studio opens it ($desks/studio)\$" && cmp -s "$desk_last" "$desks/studio" \
+        && ok "desktop keep NAME: desk.last copied to desks/NAME, said in one line" || bad "keep" "$out"
+    out=$(sh "$SH" desktop)
+    printf '%s\n' "$out" | grep -q "^  studio  *$need\$" && printf '%s\n' "$out" | grep -q '^spark-shell desktop NAME opens one; keep NAME, forget NAME$' \
+        && ok "desktop (bare, inside): lists the kept desk with its words" || bad "desk list" "$out"
+    rm -f "$argv" "$swlog"
+    st=0; out=$(sh "$SH" desktop studio 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^desk> $need\$" && cmp -s "$swlog" "$H/expected.lines" \
+        && ok "desktop NAME: replays the same nine lines on the next free workspace (3)" || bad "replay" "st=$st $out $(cat "$swlog" 2>&1)"
+    [ ! -e "$argv" ] && ok "desktop NAME: no model call" || bad "replay called spark" "$(cat "$argv")"
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desks 1 kept  *studio (spark-shell desktop NAME)$' && ok "status: the desks row counts and names the kept ones" || bad "status desks" "$(printf '%s\n' "$st" | grep desks)"
+    out=$(sh "$SH" desktop forget studio)
+    [ "$out" = "forgot studio" ] && [ ! -e "$desks/studio" ] && ok "desktop forget NAME: gone, one line" || bad "forget" "$out"
+    st=0; out=$(sh "$SH" desktop forget studio 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = "spark-shell desktop: no kept desk named studio" ] && ok "desktop forget NAME twice: refused in one line" || bad "forget twice" "st=$st $out"
+    printf 'workspace number 1\nexec firefox\n' > "$desks/mine"
+    st=0; out=$(sh "$SH" desktop forget mine 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q 'is not a desk of ours -- left alone' && [ -f "$desks/mine" ] \
+        && ok "desktop forget NAME: a file without the marker is refused and left in place" || bad "forget yours" "st=$st $out"
+    st=0; out=$(sh "$SH" desktop keep 'a b' 2>&1) || st=$?
+    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: keep NAME -- letters, digits, - and _$' && ok "desktop keep: a name with a space is refused" || bad "keep name" "st=$st $out"
+    # the gate on a kept desk edited by hand: every line read, the bad ones named, the rest runs
+    printf '# desk: the gate -- rendered by spark-shell\nworkspace number 1\nexec foot -e rm x\nexec gimp-3.0 $(id)\nexec sudo ls\noutput * bg x\nexec firefox a|b\nexec foot -e micro notes.txt\n' > "$desks/gate"
+    rm -f "$swlog"
+    st=0; out=$(sh "$SH" desktop gate 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | grep -c '^  refused  ')" -eq 5 ] && ok "gate: five lines refused, the desk still runs (exit 0)" || bad "gate count" "st=$st $out"
+    printf '%s\n' "$out" | grep -qF '  refused  exec foot -e rm x  (rm is not on this machine)' && ok "gate: exec foot -e of an app not in the inventory (rm)" || bad "gate rm" "$out"
+    printf '%s\n' "$out" | grep -qF '  refused  exec gimp-3.0 $(id)  (shell syntax' && printf '%s\n' "$out" | grep -qF '  refused  exec firefox a|b  (shell syntax' \
+        && ok "gate: shell syntax (\$(id), a pipe) never reaches sh -c" || bad "gate syntax" "$out"
+    printf '%s\n' "$out" | grep -qF '  refused  exec sudo ls  (sudo is not an app)' && ok "gate: sudo is not an app" || bad "gate sudo" "$out"
+    printf '%s\n' "$out" | grep -qF '  refused  output * bg x  (output is not a desk verb)' && ok "gate: output is not a desk verb" || bad "gate verb" "$out"
+    printf '%s\n' 'workspace number 3' 'exec foot -e micro notes.txt' > "$H/expected.gate"
+    cmp -s "$swlog" "$H/expected.gate" && ok "gate: sway got the workspace line and the one good exec, nothing else" || bad "gate lines" "$(cat "$swlog" 2>&1)"
+    # from a console: the words wait, sway starts, --pending lays them out once
+    rm -f "$argv" "$swlog"
+    st=0; out=$(env -u SWAYSOCK -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop "news and music" 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$(cat "$desk_pending" 2>&1)" = 'news and music' ] && grep -q 'sway-stub' "$H/.local/state/spark-shell/sway.log" && [ ! -e "$argv" ] \
+        && ok "desktop WORDS from a console: the words wait in desk.pending, sway starts, no model call yet" || bad "pending write" "st=$st $out $(cat "$desk_pending" 2>&1)"
+    st=0; out=$(sh "$SH" desktop --pending 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^desk> news and music$' && printf '%s\n' "$out" | grep -q '^on workspace 3' && [ ! -e "$desk_pending" ] \
+        && [ "$(tail -1 "$argv")" = 'write the desk for this need: news and music' ] \
+        && ok "desktop --pending: lays the waiting words out, the file is gone" || bad "pending play" "st=$st $out"
+    st=0; out=$(sh "$SH" desktop --pending 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ -z "$out" ] && ok "desktop --pending twice: a quiet no-op" || bad "pending twice" "st=$st $out"
+    # no jq: check says so, a desk is refused
+    mkdir -p "$H/nojq"
+    for d in $(printf '%s' "$PATH" | tr ':' ' '); do
+        [ -d "$d" ] || continue
+        for f in "$d"/*; do
+            n=${f##*/}
+            if [ "$n" != jq ] && [ -x "$f" ] && [ ! -e "$H/nojq/$n" ]; then ln -s "$f" "$H/nojq/$n"; fi
+        done
+    done
+    out=$(PATH=$H/nojq sh "$SH" check 2>&1 || true)
+    printf '%s\n' "$out" | grep -q '^FAIL   desktop      jq is missing (.*) -- spark-shell on$' && ok "check: FAIL desktop without jq, the remedy is spark-shell on" || bad "check no jq" "$out"
+    st=0; out=$(PATH=$H/nojq sh "$SH" desktop "$need" 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = "spark-shell desktop: jq is not installed (spark-shell on)" ] && ok "desktop WORDS without jq: refused in one line" || bad "desk no jq" "st=$st $out"
+    out=$(sh "$SH" check || true)
+    printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot, the renders match the palette; a desk from your words$' && ok "check: the desktop row says a desk from your words" || bad "check desk row" "$out"
+    # the rendered sway config: Super+d, the floating prompt, --pending before the first terminal
+    sway=$HOME/.config/sway/config
+    grep -qF "bindsym \$mod+d exec \$term --app-id spark-desk -e $REPO/spark-shell desktop --ask" "$sway" && ok "sway render: Super+d asks at a prompt (the clone's spark-shell)" || bad "sway render bind" "$(grep -n 'mod+d' "$sway")"
+    grep -qF 'for_window [app_id="spark-desk"] floating enable' "$sway" && ok "sway render: the prompt floats" || bad "sway render for_window" "$(grep -n spark-desk "$sway")"
+    l_p=$(grep -nF "exec $REPO/spark-shell desktop --pending" "$sway" | head -1 | cut -d: -f1); l_t=$(grep -n "^exec sh -c '" "$sway" | tail -1 | cut -d: -f1)
+    [ -n "$l_p" ] && [ -n "$l_t" ] && [ "$l_p" -lt "$l_t" ] && ok "sway render: desktop --pending runs before the first terminal" || bad "sway render pending" "pending $l_p terminal $l_t"
+    unset SWAYSOCK WAYLAND_DISPLAY
+fi
+grep -q '^bindsym \$mod+d exec \$term --app-id spark-desk -e @REPO@/spark-shell desktop --ask$' "$REPO/templates/.config/sway/config" && ok "sway template: Super+d is spark-shell desktop --ask in a spark-desk foot" || bad "sway template bind" "$(grep -n 'mod+d' "$REPO/templates/.config/sway/config")"
+grep -q '^for_window \[app_id="spark-desk"\] floating enable' "$REPO/templates/.config/sway/config" && ok "sway template: the spark-desk window floats" || bad "sway template for_window"
+l_p=$(grep -n '^exec @REPO@/spark-shell desktop --pending$' "$REPO/templates/.config/sway/config" | head -1 | cut -d: -f1); l_t=$(grep -n "^exec sh -c '" "$REPO/templates/.config/sway/config" | tail -1 | cut -d: -f1)
+[ -n "$l_p" ] && [ -n "$l_t" ] && [ "$l_p" -lt "$l_t" ] && ok "sway template: desktop --pending is the exec before the last exec sh -c" || bad "sway template pending" "pending $l_p terminal $l_t"
+grep -q '^## A desk from your words$' "$REPO/README.md" && ok "README: A desk from your words" || bad "README desk section"
+grep -q '^## v0.23$' "$REPO/CHANGELOG.md" && ok "CHANGELOG: v0.23" || bad "CHANGELOG v0.23"
 
 printf '%s\n' "shell_test: $pass ok, $fail failed"
 [ "$fail" -eq 0 ]
