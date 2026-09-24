@@ -1131,10 +1131,12 @@ desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec w
             # person reads: the app and its args, and whether it came
             set -- $line; shift; [ "${1:-}" = foot ] && [ "${2:-}" = -e ] && shift 2
             prog=${1##*/}; shown=$*; t=0
+            desk_pulse   # a sign of life while the window is on its way
             while [ "$(desk_windows "$ws")" -le "$before" ] && [ "$t" -lt $((DESK_WAIT * 4)) ]; do
                 [ "$t" -lt 12 ] || pgrep -u "$(id -u)" -x "$prog" >/dev/null 2>&1 || break
                 sleep 0.25; t=$((t + 1))
             done
+            desk_pulse_stop
             if [ "$(desk_windows "$ws")" -gt "$before" ]; then nowin=0; echo "  $shown"; else nowin=1; echo "  $shown -- no window"; fi ;;
         esac
     done < "$1"

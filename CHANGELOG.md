@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.31
+
+- The pulse also runs while a window is awaited, not only while the
+  model writes: the seconds between the why line and the first window
+  had shown nothing.
+
 ## v0.30
 
 - The prompt takes the focus back before "Enter closes": Enter had
