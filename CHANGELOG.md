@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.25
+
+- An app opens the way its own desktop entry says: the Exec line with
+  its file/URL field taking the model's args, or dropped. mpv's entry
+  is `mpv --player-operation-mode=pseudo-gui -- %U`, so a music desk
+  gets an idle player window instead of nothing (bare `mpv` ends at
+  once with nothing to play).
+
 ## v0.24
 
 - A desk whose window never came (mpv with nothing to play) no longer

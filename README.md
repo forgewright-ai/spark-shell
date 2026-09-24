@@ -130,10 +130,14 @@ reads the apps this machine has (its desktop entries, the packages you
 chose, a tool the words name) and picks the windows for that work, a
 main one and the ones beside it; sway opens them on the next empty
 workspace, the main at the left at the width the model gave, the rest
-stacked at the right, and says in one line why those. The windows you
+stacked at the right, and says in one line why those. Each app opens
+the way its own desktop entry says (mpv's idle player, a browser on
+the page the model named), a terminal app inside foot. The windows you
 already have are not touched. `Super+d` asks the same at a small
 prompt. A desk is for that need and that moment: close its windows and
-it is gone. One you would want again:
+it is gone, an empty workspace with the forge on it; `Super+1` is your
+first terminal again, `Super+Return` a new one there. One you would
+want again:
 
     spark-shell desktop keep writing    the last desk, under a name
     spark-shell desktop writing         opens it again, no model

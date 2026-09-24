@@ -1016,15 +1016,18 @@ DESK_WAIT=30                                                    # seconds for a 
 # entries (Comment, else GenericName, else Name; Terminal=true marked),
 # then the packages the user chose that are commands, then the need's
 # own words that are on PATH (a pip tool has no entry and no package).
-desk_apps() {   # desk_apps NEED -> the lines
+desk_apps() {   # desk_apps NEED -> the lines (and $TMP/exec: NAME<tab>its entry's Exec)
+    : > "$TMP/exec"
     {
         for d in ${XDG_DATA_HOME:-$HOME/.local/share} $(printf '%s' "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" | tr ':' ' '); do
             [ -d "$d/applications" ] || continue
             for f in "$d"/applications/*.desktop; do
                 [ -f "$f" ] || continue
                 grep -qE '^(NoDisplay|Hidden)=true' "$f" && continue
-                name=$(sed -n 's/^Exec=//p' "$f" | head -1 | sed 's/^env [^ ]* //; s/ .*//; s|.*/||')
+                launch=$(sed -n 's/^Exec=//p' "$f" | head -1 | sed 's/^env [^ ]* //; s/ *%[ick]//g; s|^[^ ]*/||')
+                name=${launch%% *}
                 [ -n "$name" ] || continue
+                grep -q "^$name	" "$TMP/exec" 2>/dev/null || printf '%s\t%s\n' "$name" "$launch" >> "$TMP/exec"
                 what=''
                 for key in Comment GenericName Name; do
                     [ -n "$what" ] || what=$(sed -n "s/^$key=//p" "$f" | head -1)
@@ -1050,6 +1053,13 @@ desk_apps() {   # desk_apps NEED -> the lines
 desk_on_path() { case $(command -v "$1" 2>/dev/null) in /*) return 0 ;; *) return 1 ;; esac; }   # a program, not a keyword or builtin
 desk_app_known() { grep -q "^$1: " "$TMP/apps"; }                       # desk_app_known NAME (after desk_apps > $TMP/apps)
 desk_app_term() { grep "^$1: " "$TMP/apps" | grep -q ', terminal$'; }   # a terminal app opens inside foot
+desk_launch() {   # desk_launch NAME ARGS -> how the machine says to open it: the entry's Exec, its
+    # file/URL field taking the args (dropped when there are none), else the name and the args
+    _l=$(grep "^$1	" "$TMP/exec" 2>/dev/null | head -1 | cut -f2-)
+    [ -n "$_l" ] || _l="$1 %U"
+    case $_l in *%[fFuU]*) _l=$(printf '%s' "$_l" | sed "s|%[fFuU]|$2|g") ;; *) _l="$_l $2" ;; esac
+    printf '%s' "$_l" | sed 's/  */ /g; s/ *$//'
+}
 desk_screen() { swaymsg -t get_outputs 2>/dev/null | jq -r '.[0].current_mode | "\(.width)x\(.height)"' 2>/dev/null || echo 1920x1080; }
 desk_next_ws() {   # the lowest workspace number not in use
     used=$(swaymsg -t get_workspaces 2>/dev/null | jq -r '.[].num' 2>/dev/null)
@@ -1071,7 +1081,7 @@ desk_gate() {   # desk_gate LINE -> '' when it may run, else why not
     [ "$verb" = exec ] || return 0
     set -- $1; shift
     [ "${1:-}" = foot ] && [ "${2:-}" = -e ] && shift 2
-    app=${1:-}
+    app=${1:-}; app=${app##*/}
     [ -n "$app" ] || { echo "exec of nothing"; return; }
     case " $DESK_NOT_APPS " in *" $app "*) echo "$app is not an app"; return ;; esac
     desk_app_known "$app" || echo "$app is not on this machine"
@@ -1085,8 +1095,8 @@ desk_lines() {   # desk_lines WS JSONFILE -> the lines
     jq -r '[.main] + (.side // []) | .[] | "\(.app) \(.args // "")"' "$2" | sed 's/ *$//' | {
         i=0
         while IFS= read -r line; do
-            app=${line%% *}
-            if desk_app_term "$app"; then printf 'exec foot -e %s\n' "$line"; else printf 'exec %s\n' "$line"; fi
+            app=${line%% *}; args=''; case $line in *' '*) args=${line#* } ;; esac
+            if desk_app_term "$app"; then printf 'exec foot -e %s\n' "$(desk_launch "$app" "$args")"; else printf 'exec %s\n' "$(desk_launch "$app" "$args")"; fi
             case $i in 0) echo splith ;; 1) echo splitv ;; esac
             i=$((i + 1))
         done
