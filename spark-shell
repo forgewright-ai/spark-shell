@@ -359,7 +359,8 @@ sha_ok() {
 }
 TMP=$(mktemp -d)
 PARTIAL=
-trap 'rm -rf "$TMP"; [ -z "$PARTIAL" ] || rm -f "$PARTIAL"' EXIT
+PULSE=''
+trap 'rm -rf "$TMP"; [ -z "$PARTIAL" ] || rm -f "$PARTIAL"; [ -z "$PULSE" ] || kill "$PULSE" 2>/dev/null' EXIT
 fetch() {   # fetch URL DEST SHA -- download, verify, or die (the twin)
     PARTIAL=$2
     if [ -t 2 ]; then
@@ -1145,9 +1146,10 @@ desk_make() {   # desk_make NEED -> the desk laid out, its lines in DESK_LAST
     ws=$(desk_next_ws)
     about="A desk: the windows for one need, on a $(desk_screen) screen. Apps on this machine (name: what it does): $(sed 's/, terminal$//' "$TMP/apps" | paste -sd ';' - | sed 's/;/; /g'). Rules: an app the need names by name is in the desk; otherwise only the apps the work itself needs, as few windows as that takes (one to four), never an app the need does not call for; an app may appear twice with different args (a browser on two pages: one window per page, args is that page's URL). Answer with one JSON object and nothing else: {\"why\": \"one sentence, from the need to the apps chosen\", \"main\": {\"app\": \"NAME\", \"args\": \"\", \"width\": 70}, \"side\": [{\"app\": \"NAME\", \"args\": \"\"}]} -- main is the big window at the left, width its percent of the screen; side is the windows stacked at the right, top to bottom."
     [ -n "${ASKED:-}" ] || printf 'desk> %s\n' "$1"
-    if ! "$spark" edit --type json --name desk.json --about "$about" -- "write the desk for this need: $1" </dev/null > "$TMP/desk.json" 2>"$TMP/desk.err"; then
-        refuse "spark did not answer: $(head -1 "$TMP/desk.err")"
-    fi
+    desk_pulse
+    st=0; "$spark" edit --type json --name desk.json --about "$about" -- "write the desk for this need: $1" </dev/null > "$TMP/desk.json" 2>"$TMP/desk.err" || st=$?
+    desk_pulse_stop
+    [ "$st" -eq 0 ] || refuse "spark did not answer: $(head -1 "$TMP/desk.err")"
     jq -e '.main.app | strings' "$TMP/desk.json" >/dev/null 2>&1 || refuse "the answer was not a desk (spark-shell desktop -v shows it)"
     why=$(jq -r '.why // "" | gsub("[\\n\\r]"; " ")' "$TMP/desk.json")
     [ -z "$why" ] || printf '  %s\n' "$why"
@@ -1160,10 +1162,50 @@ desk_make() {   # desk_make NEED -> the desk laid out, its lines in DESK_LAST
         [ -z "$why" ] || printf '# why: %s\n' "$why"
         desk_lines "$ws" "$TMP/desk.json"
     } > "$DESK_LAST"
+    # asked at the prompt: its window goes with the desk, on top, to be read
+    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] move container to workspace number $ws" >/dev/null 2>&1 || true
     desk_play "$DESK_LAST" || refuse "nothing ran"
     [ "$MODE" = dry ] || echo "on workspace $ws -- spark-shell desktop keep NAME keeps it"
 }
 
+# The pulse spark draws while a reply is on its way (spark text.Busy):
+# `*` in the accent and `.` `..` `...` muted, redrawn every 0.35 s, at a
+# tty only -- a pipe never sees a byte of it. The colours are the three
+# SGR strings sgr.sh renders from the palette; unset = plain.
+desk_pulse() {
+    [ -t 1 ] || return 0
+    # shellcheck disable=SC1091   # our own render, when there is one
+    [ ! -f "$CONFIG_DIR/sgr.sh" ] || . "$CONFIG_DIR/sgr.sh"
+    ( i=0; while :; do
+        case $((i % 3)) in 0) d=. ;; 1) d=.. ;; *) d=... ;; esac
+        printf '\r\033[2K\033[%sm*\033[0m \033[%sm%s\033[0m' "${SPARK_ACCENT_SGR:-}" "${SPARK_MUTED_SGR:-}" "$d"
+        i=$((i + 1)); sleep 0.35
+      done ) &
+    PULSE=$!
+}
+desk_pulse_stop() {
+    [ -n "${PULSE:-}" ] || return 0
+    kill "$PULSE" 2>/dev/null || true; wait "$PULSE" 2>/dev/null || true; PULSE=''
+    printf '\r\033[2K'
+}
+# The desk> line: fzf when there is one and a terminal (the tools row
+# installs it): type a need, the arrows move over the kept desks, Enter
+# takes the words or the desk under the cursor, Esc closes, the header
+# says so. Without it, a plain line. Exit 1 when the window closed.
+desk_prompt() {
+    if [ -t 0 ] && command -v fzf >/dev/null 2>&1; then
+        _st=0
+        _sel=$(ls -A "$DESKS_DIR" 2>/dev/null | fzf --print-query --prompt 'desk> ' --layout=reverse --no-info --color=16 --no-unicode \
+            --header 'what are you about to do? words and Enter: a desk; arrows: a kept desk; Esc closes') || _st=$?
+        [ "$_st" -ne 130 ] && [ "$_st" -ne 2 ] || return 1
+        _need=$(printf '%s\n' "$_sel" | sed -n 1p); _pick=$(printf '%s\n' "$_sel" | sed -n 2p)
+        [ -n "$_need" ] || _need=$_pick
+        printf '%s' "$_need"
+    else
+        printf 'desk> ' >&2; IFS= read -r _need || return 1
+        printf '%s' "$_need"
+    fi
+}
 desk_name_ok() { case $1 in ''|*[!A-Za-z0-9_-]*) return 1 ;; *) return 0 ;; esac; }
 desk_list() {
     [ -d "$DESKS_DIR" ] && [ -n "$(ls -A "$DESKS_DIR" 2>/dev/null)" ] || { echo "no kept desks yet -- try: spark-shell desktop \"focused news reading and music\""; return 0; }
@@ -1228,10 +1270,12 @@ cmd_desktop() {
             [ -f "$DESK_LAST" ] || refuse "no desk to keep yet -- spark-shell desktop \"WORDS\" makes one"
             mkdir -p "$DESKS_DIR"; cp "$DESK_LAST" "$DESKS_DIR/$2"
             echo "kept $2 -- spark-shell desktop $2 opens it ($DESKS_DIR/$2)"; return ;;
-        --ask)   # one line at a prompt (Super+d opens a foot on this), then a desk
-            printf 'desk> '; IFS= read -r need || need=''
+        --ask)   # one line at a prompt (Super+d opens a foot on this), then a desk;
+            # the window follows the desk and stays until Enter, so the why is read
+            need=$(desk_prompt) || return 0
             [ -n "$need" ] || return 0
-            ASKED=1 cmd_desktop "$need"; return ;;   # the words are on the screen already
+            (ASKED=1 cmd_desktop "$need") || true   # a refusal is read too, not lost with the window
+            printf 'Enter closes '; IFS= read -r _ || true; return ;;
         --pending)   # the words left by a console start: laid out once, then gone
             [ -f "$DESK_PENDING" ] || return 0
             need=$(head -1 "$DESK_PENDING"); rm -f "$DESK_PENDING"

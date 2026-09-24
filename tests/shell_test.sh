@@ -635,9 +635,11 @@ else
         && ok "desk.last: the header (the words, the marker), the why, the lines" || bad "desk.last" "$(cat "$desk_last" 2>&1)"
     # the prompt form: the words typed at desk> are not printed again
     : > "$swlog"
-    st=0; out=$(printf '%s\n' "$need" | SWAYSOCK=/tmp/x sh "$SH" desktop --ask 2>&1) || st=$?
+    st=0; out=$(printf '%s\n\n' "$need" | SWAYSOCK=/tmp/x sh "$SH" desktop --ask 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | grep -c 'desk> ')" -eq 1 ] && grep -q '^exec gimp-3.0$' "$swlog" \
-        && ok "desktop --ask: one desk> line, the desk laid out" || bad "ask form" "st=$st $out"
+        && printf '%s\n' "$out" | grep -q 'Enter closes' && head -1 "$swlog" | grep -q '^\[app_id=spark-desk\] move container to workspace number 3$' \
+        && ok "desktop --ask: one desk> line, the prompt window follows the desk, Enter closes it" || bad "ask form" "st=$st $out $(head -2 "$swlog")"
+    printf '%s' "$out" | od -c | grep -q '033' && bad "the pulse reached a pipe" "$(printf '%s' "$out" | od -c | grep 033 | head -1)" || ok "no pulse on a pipe (a tty only, like spark's)"
     # keep, list, replay, status, forget
     out=$(sh "$SH" desktop keep studio)
     printf '%s\n' "$out" | grep -q "^kept studio -- spark-shell desktop studio opens it ($desks/studio)\$" && cmp -s "$desk_last" "$desks/studio" \

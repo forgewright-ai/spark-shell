@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.27
+
+- The `Super+d` prompt window follows the desk to its workspace and
+  stays, on top, until Enter: the model's why line and any refusal are
+  read, not lost with the window when the workspace switched.
+- The `desk>` prompt is an fzf line when fzf is there (the tools row
+  installs it): the arrows move over the kept desks, Enter takes the
+  words or the desk under the cursor, Esc closes, a header says so.
+  A bare `read` had thrown escape codes at the arrows and ignored Esc.
+- While the model writes, the prompt shows the pulse every spark prompt
+  shows (`*` in the accent, `.` `..` `...` muted, 0.35 s), at a tty only.
+
 ## v0.26
 
 - The `desk>` prompt (Super+d) no longer repeats your words on a
