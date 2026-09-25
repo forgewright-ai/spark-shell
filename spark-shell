@@ -5,7 +5,7 @@
 #   spark-shell status          the same, by name
 #   spark-shell on              tmux, starship, fzf, zoxide, eza, bat, btop, fd,
 #                               one palette on every surface;
-#                               the rc files become spark-shell's (yours -> .bak)
+#                               the rc files become spark-shell's (yours: .bak)
 #   spark-shell off             everything back: rc files and the rendered
 #                               look from .bak, or gone; packages stay
 #   spark-shell apply           re-render the look from the current palette
@@ -822,12 +822,12 @@ cmd_status() {
         if greeter_at_boot; then s="$s; login box: greetd at boot"; else s="$s; login box: getty at boot (spark-shell desktop on)"; fi
     fi
     printf '  desk  %-16s %s\n' "$DESKTOP" "$s"
+    n=$(ls -A "$DESKS_DIR" 2>/dev/null | wc -l | tr -d ' ')   # a kept desk plays as rooms anywhere
+    if [ "$n" -gt 0 ]; then printf '  desks %-16s %s\n' "$n kept" "$(ls -A "$DESKS_DIR" | paste -sd ',' - | sed 's/,/, /g') (spark-shell desktop NAME)"
+    else printf '  desks %-16s %s\n' none 'spark-shell desktop "WORDS" makes one'; fi
     if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then
         if apps_marked; then printf '  apps  %-16s %s\n' "$(grep -c '^[A-Za-z0-9]' "$APPS") marked" "$(grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd',' - | sed 's/,/, /g') (spark-shell desktop apps)"
         else printf '  apps  %-16s %s\n' unmarked "every app with a desktop entry (spark-shell desktop apps picks)"; fi
-        n=$(ls -A "$DESKS_DIR" 2>/dev/null | wc -l | tr -d ' ')
-        if [ "$n" -gt 0 ]; then printf '  desks %-16s %s\n' "$n kept" "$(ls -A "$DESKS_DIR" | paste -sd ',' - | sed 's/,/, /g') (spark-shell desktop NAME)"
-        else printf '  desks %-16s %s\n' none 'spark-shell desktop "WORDS" makes one'; fi
         if [ "$WALLPAPER" = none ]; then printf '  wall  %-16s %s\n' none "the palette's background (spark-shell desktop wallpaper PATH|default)"
         elif [ "$WALLPAPER" = default ] && wall_there; then printf '  wall  %-16s %s\n' default "the forge, $WALL_DEFAULT"
         elif wall_there; then printf '  wall  %-16s %s\n' picture "$WALLPAPER"

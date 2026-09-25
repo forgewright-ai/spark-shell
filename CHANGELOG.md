@@ -1,5 +1,84 @@
 # Changelog
 
+## v0.36
+
+The seat at an AI box, revamped: what a new user needs and nothing
+more, and the desktop grown into the seat it is for.
+
+- The tools are the hands of an AI box: tmux, starship, fzf, zoxide,
+  eza, bat, btop, fd, and jq for the desk. yazi is gone (the package,
+  the pinned release on Debian, the rendered `~/.config/yazi/theme.toml`
+  and its rows), and with it `unzip`; `vi` as a safety net is gone
+  (`ex-vi-compat`, `vim-tiny`); ripgrep and pacman-contrib are gone.
+  Installed packages stay where they are: the package manager removes
+  them if you want (`pacman -Rns yazi ex-vi-compat ripgrep
+  pacman-contrib unzip`), and a rendered yazi theme is yours to delete.
+- No .gitconfig: `GIT_NAME`, `GIT_EMAIL`, the render, the `git` status
+  row and the template are gone; git's identity is git's own (`git
+  config --global user.name`). A .gitconfig an earlier version rendered
+  stays as it is; it is git's file now.
+- starship comes from the package manager where one exists: `starship`
+  from Arch's extra (`PKG_SHELL`) and from Homebrew. The pinned download
+  and its sha256 pins are gone, and with them the last fetch outside the
+  package manager. Debian 13 has no starship package: there the rc
+  files draw the shell's own prompt. A starship an earlier version put
+  in ~/.local/bin shadows the package's: `rm ~/.local/bin/starship` once.
+- `check` has a real `bar` row: `spark bar line` is run, exit 0 is ok,
+  a failure is a FAIL with the remedy; without spark the row reads na.
+  It had passed whenever spark was on PATH.
+- The shims for machines that no longer exist are gone: the micro look
+  of v0.2 handed back at every run, the adoption of files spark's old
+  in-tree layer rendered (a file marked by anything but spark-shell
+  goes to .bak, like any file of yours), and the seeding of the config
+  from spark's site.env.
+- The help and the README name every verb: `status`, `bar`, `sbom`,
+  `desktop apps|tools|keep|forget|wallpaper`. "What leaves this
+  machine" names the one model call (`spark edit`, on this machine)
+  and nothing else.
+- `Super+s` opens spark's own prompt, `spark chat`, in a small floating
+  window on the workspace you are on, in the palette's colour; Ctrl-D
+  ends the conversation and the window goes with it. Without spark the
+  window says so and Enter closes it. The stacking layout moves to
+  `Super+Shift+s`.
+- `spark-shell desktop keys` says the desktop's keys in whole
+  sentences. The sentences live in the sway template, one `# key:`
+  line above each binding, so the verb, the render and the README say
+  the same thing; the suite holds the README to them. The first
+  desktop start on a machine shows them once, in the first window,
+  before the shell (`~/.local/state/spark-shell/desktop.seen` marks
+  it); never again, the verb is there any time.
+- `spark-shell status` ends with a `next` row naming the one next step
+  when something is off: spark to install, `spark-shell desktop on`,
+  the login box (sudo once), a reboot. Nothing off, no row.
+- A kept desk is the model's answer, one JSON object (`words`, `why`,
+  `main`, `side`), not the sway lines it made once: the lines are
+  rendered again each time it opens, for the screens and the workspace
+  there now; `desk.last` holds the same shape, so `keep` is still a
+  copy, and the file is yours to edit. A desk kept before this release
+  (sway lines under a `# desk:` header) is refused with one sentence
+  naming the file and the words to make it again.
+- A desk knows the screens: the brief names them left and right with
+  their sizes (`swaymsg -t get_outputs`, name and mode only), and the
+  answer may put a window on one (`"screen": "left"|"right"|NAME`).
+  Each screen a desk uses is its own workspace, the main's first,
+  reached by `focus output NAME` then `workspace number N`; nothing is
+  pinned to an output, dragging and floating stay yours. Opened on
+  fewer screens than it names, a desk lands on the one there and says
+  which in one line. The gate passes `focus output` only for a name
+  sway reports.
+- Rooms: a desk plays as a tmux session where there is no sway (a
+  console login, ssh, a Mac): one window per app, named by it, the
+  main first, attached from a terminal or switched to inside tmux. The
+  player is chosen by where you ask from (SWAYSOCK and a swaymsg that
+  answers: windows; else rooms), never guessed; `--rooms` and
+  `--windows` force one, at the prompt too. Rooms hold terminal apps;
+  a graphical app in the answer is skipped with its line, a kept desk
+  opens what the machine has. `shell` and `editor` are desk words
+  (`editor` is your `$EDITOR`, else micro). `desks/studio` in the
+  repository is the first kept desk of the shape: `cp` it into
+  `~/.config/spark-shell/desks` and `spark-shell desktop studio` opens
+  the shell, the editor, newsboat, w3m and aerc, one room each.
+
 ## v0.35
 
 - A desk you kept may open any program the machine has (never a
