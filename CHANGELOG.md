@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.38
+
+- One pair of switches. `spark-shell on` is the terminal seat;
+  `spark-shell on desktop` adds the desktop and the login box;
+  `spark-shell off desktop` takes those back and keeps the seat;
+  `spark-shell off` takes everything back. `apply` is folded into `on`:
+  run `on` again after `spark theme NAME` or a `git pull` and it renders
+  what changed (a new login does the user's half by itself). `desktop
+  on|off` and `apply` still work as spellings. Every row, refusal and
+  remedy says the new words.
+- `off --dry-run` and `off desktop --dry-run` print what they would hand
+  back and touch nothing; they had acted.
+
 ## v0.37
 
 - `spark-shell desktop off` under a running login box no longer strands

@@ -3,21 +3,19 @@
 #
 #   spark-shell                 the state: rc files, tools, the look
 #   spark-shell status          the same, by name
-#   spark-shell on              tmux, starship, fzf, zoxide, eza, bat, btop, fd,
-#                               one palette on every surface;
-#                               the rc files become spark-shell's (yours: .bak)
+#   spark-shell on              the terminal seat: tools, prompt, the look;
+#                               the rc files become spark-shell's (yours: .bak).
+#                               Again after spark theme NAME or a git pull:
+#                               it re-renders what changed
+#   spark-shell on desktop      the seat and a desktop: sway, foot, the login
+#                               box on tty1 at the next boot (DESKTOP=sway)
+#   spark-shell off desktop     the desktop and the login box off, at the next
+#                               boot; the terminal seat stays
 #   spark-shell off             everything back: rc files and the rendered
 #                               look from .bak, or gone; packages stay
-#   spark-shell apply           re-render the look from the current palette
-#                               (after: spark theme NAME; the login hook does
-#                               the user's half by itself: spark-shell follow)
 #   spark-shell check           is this machine still what this repo says?
 #   spark-shell bar on | off    tmux's status line (the line itself is
 #                               spark's: spark bar line)
-#   spark-shell desktop on|off  the desktop and the login box, together:
-#                               sway and foot, greetd's box on tty1 at the
-#                               next boot (DESKTOP=sway in the config); off
-#                               hands it all back, getty on tty1 again
 #   spark-shell desktop         sway and one foot window on this console,
 #                               now (Linux, from a console login)
 #   spark-shell desktop --chat  spark chat in a window: Super+s opens one,
@@ -52,6 +50,7 @@
 #                               or dependency, commands, desktop entries;
 #                               --json writes CycloneDX 1.5
 #   spark-shell on --dry-run    print what would change, touch nothing
+#   spark-shell off --dry-run   print what would be handed back, touch nothing
 #
 # The one interface to spark is ~/.config/spark/theme.env -- the palette
 # `spark theme NAME` writes (21 THEME_* keys, THEME_LOGO optional). No
@@ -482,7 +481,7 @@ sway_reload() {   # a running sway takes the new render now (borders, background
     swaymsg reload >/dev/null 2>&1 || return 0
     row ok sway "reloaded (~/.config/sway/config)"
 }
-# The desktop, one path for `on`, `apply` and `desktop on`: the two user
+# The desktop, one path for `on` and `on desktop`: the two user
 # renders, a running sway reloaded, then the login box.
 desktop_look_apply() {   # the two user renders and a live sway
     if [ "$WALLPAPER" != none ] && ! wall_there; then
@@ -526,8 +525,8 @@ root_render_one() {   # root_render_one SRC DST -- EXPR must be set
     if [ -f "$2" ] && cmp -s "$TMP/render" "$2"; then ok greeter "$2"; return; fi
     changes=$((changes + 1))
     need greeter "$2 (sudo)" || return 0
-    if ! root_can; then row todo greeter "$2 -- spark-shell desktop on at a terminal (sudo once)"; acting=0; return 0; fi
-    root_sudo_once || { row todo greeter "sudo refused -- spark-shell desktop on at a terminal (sudo once)"; acting=0; return 0; }
+    if ! root_can; then row todo greeter "$2 -- spark-shell on desktop at a terminal (sudo once)"; acting=0; return 0; fi
+    root_sudo_once || { row todo greeter "sudo refused -- spark-shell on desktop at a terminal (sudo once)"; acting=0; return 0; }
     if [ -f "$2" ] && ! grep -q 'rendered by spark-shell' "$2" && [ ! -e "$2.spark-orig" ]; then
         root_do cp "$2" "$2.spark-orig"        # the original, once: off puts it back
     fi
@@ -539,28 +538,28 @@ root_render_one() {   # root_render_one SRC DST -- EXPR must be set
 }
 greeter_apply() {
     miss=$(greeter_tools)
-    if [ -n "$miss" ]; then row todo greeter "not installed:$miss -- spark-shell desktop on (the packages)"; return 0; fi
+    if [ -n "$miss" ]; then row todo greeter "not installed:$miss -- spark-shell on desktop (the packages)"; return 0; fi
     for rel in $ROOT_RENDERED; do
         root_render_one "$REPO/templates/$rel" "$ROOT/$rel"
     done
     [ "$root_changed" = 0 ] || root_do systemctl daemon-reload >/dev/null 2>&1 || true
     if greeter_at_boot; then ok greeter "greetd on tty1 at boot (getty@tty1 off)"; return 0; fi
     need greeter "enable greetd.service, disable getty@tty1.service: greetd on tty1 at the next boot (sudo)" || return 0
-    if ! root_can; then row todo greeter "greetd not yet on tty1 -- spark-shell desktop on at a terminal (sudo once)"; acting=0; return 0; fi
-    root_sudo_once || { row todo greeter "sudo refused -- spark-shell desktop on at a terminal (sudo once)"; acting=0; return 0; }
+    if ! root_can; then row todo greeter "greetd not yet on tty1 -- spark-shell on desktop at a terminal (sudo once)"; acting=0; return 0; fi
+    root_sudo_once || { row todo greeter "sudo refused -- spark-shell on desktop at a terminal (sudo once)"; acting=0; return 0; }
     # greetd first: tty1 never loses its login
     if root_do systemctl enable greetd.service >/dev/null 2>&1; then
         root_do systemctl disable getty@tty1.service >/dev/null 2>&1 || true
         ok greeter "greetd on tty1 at the next boot (getty@tty1 until then)"
     else
-        row todo greeter "systemctl enable greetd.service failed (is greetd installed?) -- spark-shell desktop on"; acting=0
+        row todo greeter "systemctl enable greetd.service failed (is greetd installed?) -- spark-shell on desktop"; acting=0
     fi
 }
 greeter_off() {   # getty back on tty1 at the next boot, the root files handed back
     [ "$OS" != Darwin ] || return 0
     greeter_ours || return 0
-    if ! root_can; then row todo greeter "greetd still on tty1 -- spark-shell desktop off at a terminal (sudo once)"; return 0; fi
-    root_sudo_once || { row todo greeter "sudo refused -- spark-shell desktop off at a terminal (sudo once)"; return 0; }
+    if ! root_can; then row todo greeter "greetd still on tty1 -- spark-shell off desktop at a terminal (sudo once)"; return 0; fi
+    root_sudo_once || { row todo greeter "sudo refused -- spark-shell off desktop at a terminal (sudo once)"; return 0; }
     # getty first: tty1 never loses its login
     root_do systemctl enable getty@tty1.service >/dev/null 2>&1 || true
     root_do systemctl disable greetd.service >/dev/null 2>&1 || true
@@ -630,8 +629,26 @@ tmux_reload() {
 }
 
 # ------------------------------------------------------------------ verbs
-cmd_on() {
+# One pair of switches: `on` is the terminal seat, `on desktop` the seat
+# and the desktop with its login box; `off desktop` takes those back and
+# keeps the seat, `off` takes everything back. `apply`, `desktop on` and
+# `desktop off` are spellings of the same paths. The one noun is desktop;
+# any other word is refused before a thing is touched.
+noun_ok() {   # noun_ok on|off [WORD...]
+    [ $# -gt 1 ] || return 0
+    [ "$*" != "$1 desktop" ] || return 0
+    _v=$1; shift; echo "spark-shell $_v: $* is not a thing to switch $_v (desktop is)"; exit 1
+}
+cmd_on() {   # cmd_on [desktop]
+    noun_ok on "$@"
+    [ "${1:-}" != desktop ] || [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
     config_load
+    if [ "${1:-}" = desktop ]; then
+        # the config first, then everything on does with DESKTOP=sway:
+        # the packages, the renders, the login box (desktop_apply)
+        [ "$MODE" = dry ] || config_set DESKTOP sway
+        DESKTOP=sway; export DESKTOP
+    fi
     sudo_upfront
     loud && printf '== packages\n'
     pm_detect
@@ -709,12 +726,23 @@ cmd_on() {
         if [ "$todo" -eq 0 ]; then echo "Nothing to do"; else echo "$todo to do"; fi
     else
         theme_seen
-        echo "open a new shell (exec \$SHELL)"
+        if [ "$changes" -eq 0 ] && [ "$todo" -eq 0 ]; then echo "Nothing to do"; else echo "open a new shell (exec \$SHELL)"; fi
     fi
 }
 
-cmd_off() {
+cmd_off() {   # cmd_off [desktop]
+    noun_ok off "$@"
+    [ "${1:-}" != desktop ] || [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
     config_load
+    if [ "$MODE" = dry ]; then off_would "${1:-}"; return 0; fi
+    if [ "${1:-}" = desktop ]; then
+        config_set DESKTOP none
+        DESKTOP=none; export DESKTOP
+        hand_back $DESKTOP_RENDERED
+        greeter_off
+        echo "packages stay installed -- the package manager removes them if you want"
+        return 0
+    fi
     for f in $(rc_files); do
         p=$HOME/$f
         # only spark-shell's own symlink is handed back; a hook line or
@@ -744,19 +772,40 @@ cmd_off() {
     echo "open a new shell (exec \$SHELL)"
 }
 
-cmd_apply() {
-    config_load
-    render_all
-    tmux_reload
-    if [ "$changes" -eq 0 ] && [ "$todo" -eq 0 ]; then echo "Nothing to do"; fi
-    theme_seen
+# The dry run of off: what it would hand back, as the would rows on's dry
+# run uses; nothing is touched. The same gates as the real run: an rc
+# link of ours, a render with the marker or a .bak, the login box when
+# its config.toml is ours.
+off_would() {   # off_would [desktop]
+    n=0
+    if [ "${1:-}" = desktop ]; then
+        row would config "DESKTOP=none ($CONFIG)"; n=$((n + 1))
+        list=$DESKTOP_RENDERED
+    else
+        for f in $(rc_files); do
+            p=$HOME/$f
+            [ -L "$p" ] || continue
+            case $(readlink "$p") in "$REPO"/*) row would rc "$p"; n=$((n + 1)) ;; esac
+        done
+        list="$RENDERED .config/starship.toml .config/yazi/theme.toml $DESKTOP_RENDERED"
+    fi
+    for rel in $list; do
+        p=$HOME/$rel
+        [ -f "$p" ] && [ ! -L "$p" ] || continue
+        grep -q 'rendered by spark-shell' "$p" 2>/dev/null || [ -e "$p.bak" ] || continue
+        if [ -e "$p.bak" ]; then row would restore "$p -- back from ${p##*/}.bak"
+        else row would restore "$p -- removed (no ${p##*/}.bak: there was no file before)"; fi
+        n=$((n + 1))
+    done
+    if [ "$OS" != Darwin ] && greeter_ours; then row would greeter "getty on tty1 at the next boot, the login box's files handed back (sudo)"; n=$((n + 1)); fi
+    if [ "$n" -eq 0 ]; then echo "Nothing to do"; else echo "$n to do"; fi
 }
 
 # The look follows the palette: the login profile runs `spark-shell
 # follow`, which re-renders the user's files (never root's: the login box
-# follows at the next apply, which has sudo) when theme.env changed since
+# follows at the next on, which has sudo) when theme.env changed since
 # the last render -- one cksum, nothing else, when it did not. So `spark
-# theme NAME` alone reaches the next login; apply is for now.
+# theme NAME` alone reaches the next login; on is for now.
 SEEN=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/theme.seen
 theme_sum() { if [ -f "$THEME_ENV" ]; then cksum < "$THEME_ENV" | cut -d' ' -f1; else echo none; fi; }
 theme_seen() { mkdir -p "$(dirname "$SEEN")"; theme_sum > "$SEEN"; }
@@ -774,7 +823,7 @@ cmd_follow() {
     n=$changes
     tmux_reload >/dev/null 2>&1 || true
     theme_seen
-    [ "$n" -eq 0 ] || echo "spark-shell: the look followed the palette ($n files; the login box at the next spark-shell apply)"
+    [ "$n" -eq 0 ] || echo "spark-shell: the look followed the palette ($n files; the login box at the next spark-shell on)"
 }
 
 # The first hour: the desktop's keys are the `# key: ` sentences in the
@@ -792,10 +841,10 @@ desk_keys_card() {
 status_next() {   # the first sentence that applies, as a next row; nothing off, no row
     if [ -z "$(spark_bin)" ]; then n=spark; s="Install spark, the AI this seat is for: github.com/forgewright-ai/spark."
     elif [ "$OS" = Darwin ]; then return 0
-    elif [ "$DESKTOP" = none ]; then [ -d /dev/dri ] || return 0; n=desktop; s="spark-shell desktop on adds the desktop and the login box."
+    elif [ "$DESKTOP" = none ]; then [ -d /dev/dri ] || return 0; n=desktop; s="spark-shell on desktop adds the desktop and the login box."
     elif [ -n "$(desktop_tools)" ]; then n=desktop; s="spark-shell on installs sway and foot."
-    elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then n=desktop; s="spark-shell apply renders sway and foot."
-    elif ! greeter_at_boot; then n="login box"; s="spark-shell desktop on at a terminal puts greetd on tty1 (sudo once)."
+    elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then n=desktop; s="spark-shell on renders sway and foot."
+    elif ! greeter_at_boot; then n="login box"; s="spark-shell on desktop at a terminal puts greetd on tty1 (sudo once)."
     elif [ -z "${WAYLAND_DISPLAY:-}" ] && ! systemctl is-active greetd.service >/dev/null 2>&1; then n="login box"; s="Reboot: the login box takes tty1 at the next boot."
     else return 0; fi
     printf '  next  %-16s %s\n' "$n" "$s"
@@ -820,12 +869,12 @@ cmd_status() {
         printf '  tool  %-16s %s\n' "$t" "$s"
     done
     if [ "$OS" = Darwin ]; then s="na: macOS has its own desktop"
-    elif [ "$DESKTOP" = none ]; then s="none (spark-shell desktop on)"
-    elif [ -n "$(desktop_tools)" ]; then s="sway: not installed --$(desktop_tools) (spark-shell desktop on)"
-    elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then s="sway: not rendered (spark-shell apply)"
+    elif [ "$DESKTOP" = none ]; then s="none (spark-shell on desktop)"
+    elif [ -n "$(desktop_tools)" ]; then s="sway: not installed --$(desktop_tools) (spark-shell on desktop)"
+    elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then s="sway: not rendered (spark-shell on)"
     else s="sway: rendered, foot in $(fc-match -f '%{family}' "$FONT" 2>/dev/null || printf '%s' "${FONT%%:*}") (spark-shell desktop starts it)"; fi
     if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then
-        if greeter_at_boot; then s="$s; login box: greetd at boot"; else s="$s; login box: getty at boot (spark-shell desktop on)"; fi
+        if greeter_at_boot; then s="$s; login box: greetd at boot"; else s="$s; login box: getty at boot (spark-shell on desktop)"; fi
     fi
     printf '  desk  %-16s %s\n' "$DESKTOP" "$s"
     n=$(ls -A "$DESKS_DIR" 2>/dev/null | wc -l | tr -d ' ')   # a kept desk plays as rooms anywhere
@@ -841,7 +890,7 @@ cmd_status() {
     fi
     theme_load || true
     slots="accent colour${ACCENT_SLOT:-?}, muted colour${MUTED_SLOT:-?} (SGR 1;${ACCENT_SGR:-?} / ${MUTED_SGR:-?})"
-    [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' theme.env "read: $slots (spark theme NAME rewrites it; then spark-shell apply)" \
+    [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' theme.env "read: $slots (spark theme NAME rewrites it; then spark-shell on)" \
                         || printf '  theme %-16s %s\n' theme.env "none: the terminal's own sixteen; $slots"
     status_next
 }
@@ -872,7 +921,7 @@ cmd_check() {
     [ -z "$miss" ] && chk tools ok "$(printf '%s' "$tools" | sed 's/ /, /g')" || chk tools fail "missing:$miss" "spark-shell on"
     infocmp -1x tmux-256color 2>/dev/null | grep -q 'kUP=' && chk terminfo ok "tmux-256color knows modified arrows" \
         || chk terminfo fail "tmux-256color lacks kUP" "spark-shell on"
-    # render freshness: what apply would write vs what is on disk
+    # render freshness: what on would write vs what is on disk
     theme_load
     EXPR=$(render_expr)
     stale=''
@@ -881,7 +930,7 @@ cmd_check() {
         sed -e "$EXPR" "$REPO/templates/$rel" > "$TMP/chk"
         cmp -s "$TMP/chk" "$HOME/$rel" || stale="$stale $rel"
     done
-    [ -z "$stale" ] && chk look ok "the rendered look matches the palette" || chk look fail "stale:$stale" "spark-shell apply"
+    [ -z "$stale" ] && chk look ok "the rendered look matches the palette" || chk look fail "stale:$stale" "spark-shell on"
     if [ "$OS" = Darwin ]; then chk desktop ok "na (macOS)"
     elif [ "$DESKTOP" = none ]; then chk desktop ok "na (DESKTOP=none)"
     elif [ -n "$(desktop_tools)" ]; then chk desktop fail "missing:$(desktop_tools)" "spark-shell on"
@@ -892,13 +941,13 @@ cmd_check() {
             sed -e "$EXPR" "$REPO/templates/$rel" > "$TMP/chk"
             cmp -s "$TMP/chk" "$HOME/$rel" || stale="$stale $rel"
         done
-        if [ -n "$stale" ]; then chk desktop fail "stale:$stale" "spark-shell apply"
+        if [ -n "$stale" ]; then chk desktop fail "stale:$stale" "spark-shell on"
         elif ! command -v jq >/dev/null 2>&1; then chk desktop fail "jq is missing (a desk reads the model's answer with it)" "spark-shell on"
         else chk desktop ok "sway and foot, the renders match the palette; a desk from your words"; fi
     fi
     if [ "$OS" = Darwin ]; then chk greeter ok "na (macOS)"
     elif [ "$DESKTOP" = none ]; then chk greeter ok "na (DESKTOP=none)"
-    elif [ -n "$(greeter_tools)" ]; then chk greeter fail "missing:$(greeter_tools)" "spark-shell desktop on"
+    elif [ -n "$(greeter_tools)" ]; then chk greeter fail "missing:$(greeter_tools)" "spark-shell on desktop"
     else
         stale=''
         for rel in $ROOT_RENDERED; do
@@ -906,9 +955,9 @@ cmd_check() {
             render_tmp "$REPO/templates/$rel" "$TMP/chk"
             cmp -s "$TMP/chk" "$ROOT/$rel" || stale="$stale /$rel"
         done
-        if [ -n "$stale" ]; then chk greeter fail "stale:$stale" "spark-shell desktop on"
-        elif ! unit_enabled greetd.service; then chk greeter fail "greetd.service is not enabled" "spark-shell desktop on"
-        elif unit_enabled getty@tty1.service; then chk greeter fail "getty@tty1.service is still enabled" "spark-shell desktop on"
+        if [ -n "$stale" ]; then chk greeter fail "stale:$stale" "spark-shell on desktop"
+        elif ! unit_enabled greetd.service; then chk greeter fail "greetd.service is not enabled" "spark-shell on desktop"
+        elif unit_enabled getty@tty1.service; then chk greeter fail "getty@tty1.service is still enabled" "spark-shell on desktop"
         else chk greeter ok "greetd on tty1 at boot, the box matches the palette"; fi
     fi
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk apps ok "na (no desktop)"
@@ -1508,29 +1557,18 @@ desk_list() {
     echo "spark-shell desktop NAME opens one; keep [WORDS], forget NAME"
 }
 
-# desktop on|off: the desktop and the login box together, through the
-# config (DESKTOP=sway|none) and the one path `on` takes. Alone: start
-# sway now, on this console. A child, never exec: the EXIT trap
-# still cleans TMP, and the cursor comes back after quiet boot's
-# vt.global_cursor_default=0. sway's stderr goes to a log; its exit status
-# is ours. Each refusal is one line and exit 1.
+# The desktop verb. `desktop on|off` are spellings of `on desktop` and
+# `off desktop` (one path, cmd_on and cmd_off). Alone: start sway now,
+# on this console. A child, never exec: the EXIT trap still cleans TMP,
+# and the cursor comes back after quiet boot's
+# vt.global_cursor_default=0. sway's stderr goes to a log; its exit
+# status is ours. Each refusal is one line and exit 1.
 cmd_desktop() {
     config_load
     pending=''
     case ${1:-} in
-        on) [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
-            # the config first, then everything on does with DESKTOP=sway:
-            # the packages, the renders, the login box (desktop_apply)
-            [ "$MODE" = dry ] || config_set DESKTOP sway
-            DESKTOP=sway; export DESKTOP
-            cmd_on; return ;;
-        off) [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
-            config_set DESKTOP none
-            DESKTOP=none; export DESKTOP
-            hand_back $DESKTOP_RENDERED
-            greeter_off
-            echo "packages stay installed -- the package manager removes them if you want"
-            return ;;
+        on) cmd_on desktop; return ;;
+        off) cmd_off desktop; return ;;
         wallpaper)
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
             case ${2:-} in
@@ -1543,7 +1581,7 @@ cmd_desktop() {
                 /*) [ -r "$2" ] || refuse "$2 is not a readable file" ;;
                 *) refuse "$2: an absolute path, default (the forge) or none" ;;
             esac
-            [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on first"
+            [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
             config_set WALLPAPER "$2"
             WALLPAPER=$2; export WALLPAPER
             theme_load; EXPR=$(render_expr)
@@ -1607,7 +1645,7 @@ cmd_desktop() {
             if [ "$PLAYER" = windows ] && ! desk_in_sway; then pending=$*   # the words wait for the sway about to start
             else
                 [ "$PLAYER" = rooms ] || [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
-                [ "$PLAYER" = rooms ] || [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on first"
+                [ "$PLAYER" = rooms ] || [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
                 kept=$(desk_name_of "$*")
                 if [ -n "$kept" ] && [ -f "$DESKS_DIR/$kept" ]; then desk_replay "$kept"; else desk_make "$*"; fi
                 return
@@ -1617,13 +1655,13 @@ cmd_desktop() {
     # the desktop off, asked from a console (a login box still running
     # after desktop off runs this on Enter): your shell, never a dead end
     if [ "$DESKTOP" != sway ] && [ -n "${XDG_VTNR:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
-        echo "The desktop is off (spark-shell desktop on brings it back); this is your shell."
+        echo "The desktop is off (spark-shell on desktop brings it back); this is your shell."
         rm -rf "$TMP"; trap - EXIT
         exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA "${SHELL:-/bin/sh}" -l
     fi
-    [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on"
+    [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop"
     [ -z "$(desktop_tools)" ] || refuse "not installed:$(desktop_tools) (spark-shell on)"
-    [ -f "$HOME/.config/sway/config" ] && [ -f "$HOME/.config/foot/foot.ini" ] || refuse "not rendered (spark-shell apply)"
+    [ -f "$HOME/.config/sway/config" ] && [ -f "$HOME/.config/foot/foot.ini" ] || refuse "not rendered (spark-shell on)"
     if [ -n "${WAYLAND_DISPLAY:-}" ]; then desk_list; return 0; fi
     # a console session the login box started has its seat too (greetd
     # sets XDG_VTNR): fine, sway starts on it like on a getty login
@@ -1648,14 +1686,15 @@ main() {
     for a in "$@"; do
         case $a in --dry-run) MODE=dry ;; --verbose|-v) VERBOSE=1 ;; --windows|--rooms) PLAYER=${a#--} ;; *) words="$words$a\n" ;; esac
     done
-    # the flags out of the words (a need is words; -v and the desk's player are not among them)
-    if [ -n "$words" ]; then set -- ; IFS_=$IFS; IFS='
-'; set -f; for a in $(printf "%b" "$words"); do set -- "$@" "$a"; done; set +f; IFS=$IFS_; fi   # set -f: a word like * is a word, not the cwd's files
+    # the flags out of the words (a need is words; -v and the desk's player are not among them);
+    # a flag alone leaves no word, so a verb's noun is never a flag
+    set -- ; IFS_=$IFS; IFS='
+'; set -f; for a in $(printf "%b" "$words"); do set -- "$@" "$a"; done; set +f; IFS=$IFS_   # set -f: a word like * is a word, not the cwd's files
     case $sub in
         -h|--help|help) usage ;;
-        on) cmd_on ;;
-        off) cmd_off ;;
-        apply) cmd_apply ;;
+        on) cmd_on "$@" ;;
+        off) cmd_off "$@" ;;
+        apply) cmd_on ;;
         follow) cmd_follow ;;
         check) cmd_check ;;
         bar) cmd_bar "$@" ;;

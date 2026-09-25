@@ -1,4 +1,4 @@
-# rendered by spark-shell from templates/.config/starship.toml.full -- edit the template, then spark-shell apply
+# rendered by spark-shell from templates/.config/starship.toml.full -- edit the template, then spark-shell on
 # The blank line above the prompt is where spark prints its hint; keep it.
 # One plain look: ASCII and the 16 palette slots by their colour words,
 # no hex; the console palette `spark theme NAME` programs draws them.

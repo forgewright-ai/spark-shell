@@ -1,4 +1,4 @@
-# rendered by spark-shell from templates/.config/spark-shell/sgr.sh -- edit the template, then spark-shell apply
+# rendered by spark-shell from templates/.config/spark-shell/sgr.sh -- edit the template, then spark-shell on
 # spark's prompt colour: three SGR parameter strings from the palette
 # slots (30-37, 90-97; bold only), read by spark at a tty -- the hint
 # row's mark, chat's prompt, do's steps. Unset = plain.

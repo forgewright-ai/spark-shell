@@ -8,19 +8,22 @@ foot and sway, the login box): ASCII and the 16 palette slots, right on
 the Linux console and merely plain in an emulator. Discreet and light:
 this machine's cycles belong to the model.
 
-    spark-shell on          the tools, the look; the rc files
-                            become spark-shell's (yours move to .bak)
+    spark-shell on          the terminal seat: tools, prompt, the look;
+                            the rc files become spark-shell's (yours: .bak).
+                            Again after spark theme NAME or a git pull:
+                            it re-renders what changed
+    spark-shell on desktop  the seat and a desktop: sway, foot, the login
+                            box on tty1 at the next boot (DESKTOP=sway)
+    spark-shell off desktop the desktop and the login box off, at the next
+                            boot; the terminal seat stays
+    spark-shell off         everything back: rc files and the rendered
+                            look from .bak, or gone; packages stay
     spark theme NAME        one palette everywhere (spark's verb)
-    spark-shell apply       re-render the look from that palette
-    spark-shell off         everything back from .bak, or gone
     spark-shell check       is this machine still what this repo says?
     spark-shell status      the state: rc files, tools, the look
     spark-shell bar on|off  tmux's status line (the line is spark bar line)
     spark-shell sbom [apps|tools|parts|NAME] [--json]
                             the box's software, in the package manager's words
-    spark-shell desktop on  a desktop and a login box: sway, foot, and
-                            greetd's box on tty1 at the next boot
-    spark-shell desktop off both back: getty on tty1 again
     spark-shell desktop     sway and one foot window on this console, now
     spark-shell desktop wallpaper PATH|default|none
                             the picture behind the windows (default: the forge)
@@ -36,6 +39,9 @@ this machine's cycles belong to the model.
     spark-shell desktop keys
                             the desktop's keys, one sentence each
 
+Three states: nothing, the terminal seat, the seat with a desktop. `on`
+and `off` move between them; `desktop` is the noun for the third.
+
 ## Install
 
     git clone https://github.com/forgewright-ai/spark-shell ~/.spark-shell
@@ -43,9 +49,9 @@ this machine's cycles belong to the model.
 
 Debian and Arch families (apt or pacman, sudo asked once), macOS
 (Homebrew). To update: `git -C ~/.spark-shell pull`, then
-`spark-shell apply`. spark itself is not required; with it, the tmux
+`spark-shell on` again. spark itself is not required; with it, the tmux
 status line shows `spark bar line` and the palette follows
-`spark theme NAME` (then `spark-shell apply`).
+`spark theme NAME` (a new login does it, or `spark-shell on`).
 
 ## One plain look
 
@@ -65,7 +71,7 @@ file draws in its nearest slots.
 ## The prompt
 
 With spark-shell on, spark's prompt takes the palette's colour: `on`
-and `apply` render `~/.config/spark-shell/sgr.sh`, three exports from
+renders `~/.config/spark-shell/sgr.sh`, three exports from
 the accent and muted slots (`SPARK_ACCENT_SGR`, `SPARK_MUTED_SGR`,
 `SPARK_WARN_SGR`), and spark 1.41 or newer draws its hint row, `spark
 chat` and `spark do` with them at a tty. The prompt line itself stays
@@ -75,7 +81,7 @@ prompt (`PROMPT=plain` in the config picks it anywhere).
 
 ## A desktop
 
-`spark-shell desktop on` adds a desktop to the box: sway, a Wayland
+`spark-shell on desktop` adds a desktop to the box: sway, a Wayland
 compositor that tiles windows, and foot, the terminal window, with
 DejaVu Sans Mono from the distro. Both are rendered from the same
 palette: foot takes the sixteen slots' own hex, so it is the desktop's
@@ -83,7 +89,7 @@ twin of the console palette, and sway's borders and background take the
 accent, the muted tone and the background. tmux stays the multiplexer
 inside a window (sessions, panes, the bar line), so sway draws the
 borders only: the bar line is tmux's. (`DESKTOP=sway` in the config and
-`spark-shell on` is the same thing; `desktop on` writes that line.)
+`spark-shell on` is the same thing; `on desktop` writes that line.)
 
 With it comes a login box on tty1: greetd, with tuigreet drawing a small
 box on the themed console -- the machine's name above, Login and
@@ -95,11 +101,11 @@ Enter starts the desktop; F2 picks the console session instead, a login
 shell on tty1 with no desktop (`spark-shell desktop` starts one from
 there). greetd takes tty1 in getty's place at the next boot, never in
 the middle of a session; tty2 and up, and ssh, are as before. Leaving
-the desktop shows the box again. `spark-shell desktop off` writes
+the desktop shows the box again. `spark-shell off desktop` writes
 `DESKTOP=none`, hands the renders back and puts getty on tty1 again at
-the next boot; the packages stay. The box's files are root's
-(`/etc/greetd`, a `greetd.service` drop-in), so `desktop on` and `apply`
-ask for sudo when they differ.
+the next boot; the packages and the terminal seat stay. The box's files
+are root's (`/etc/greetd`, a `greetd.service` drop-in), so `on desktop`
+asks for sudo when the box's files differ.
 
     spark-shell desktop     start it now, from a console login (tty1)
     spark-shell desktop keys
@@ -109,7 +115,7 @@ ask for sudo when they differ.
     Super+d asks for a desk from your words at a small prompt.
     Super+s opens spark's own prompt in a small window; Ctrl-D closes it.
     Super+Shift+q closes the window.
-    Super+Shift+c reloads sway after spark-shell apply.
+    Super+Shift+c reloads sway after spark-shell on.
     Super+Shift+e leaves the desktop for the console or the login box.
     Super and h, j, k, l or the arrows move the focus; with Shift, the window.
     Super+f fills the screen with a window; Super+r resizes, Return ends it.
@@ -142,7 +148,7 @@ time (they are the `# key:` lines of the sway template, one source).
 `spark-shell status` ends with a `next` row when one thing is still
 off -- spark not installed, the desktop not on, a render missing, the
 login box not at boot, a reboot pending -- and with none when the seat
-is complete. `spark theme NAME` then `spark-shell apply` recolours the
+is complete. `spark theme NAME` then `spark-shell on` recolours the
 borders live, the next window and the login box. Between keystrokes it
 idles: sway and foot
 draw on demand, the login box waits on a tty, the cycles stay the
@@ -266,7 +272,7 @@ your own playlist:
 `spark theme NAME` writes the palette; at your next login spark-shell
 sees the change and re-renders its own files (tmux, starship, btop,
 the prompt's colours, foot and sway) before the greeting -- one
-checksum when nothing changed. `spark-shell apply` does it now, and is
+checksum when nothing changed. `spark-shell on` does it now, and is
 the one that reaches the login box (root's files, sudo).
 
 ## Yours
@@ -279,7 +285,7 @@ files do not say. The editor you use is yours.
 
 `~/.config/spark-shell/config` (KEY=value, every key optional):
 `PROMPT` starship|plain, `PROMPT_STYLE` minimal|full,
-`DESKTOP` none|sway (`spark-shell desktop on|off` writes it),
+`DESKTOP` none|sway (`spark-shell on|off desktop` writes it),
 `FONT` (foot's spec, `DejaVu Sans Mono:size=12`), `WALLPAPER` default,
 none or an absolute path (`spark-shell desktop wallpaper` writes it),
 `ALPHA` for foot over a picture (0.85).

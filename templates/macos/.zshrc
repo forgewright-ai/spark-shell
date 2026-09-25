@@ -42,7 +42,7 @@ else
 fi
 
 # --- spark at the prompt: the colour it draws with (three exports from
-#     the palette slots, rendered by spark-shell apply), then its one
+#     the palette slots, rendered by spark-shell on), then its one
 #     marked hook line (the widget, completion, the console palette). After
 #     fzf, so its accept-line wrapper is the one spark wraps; spark's rc
 #     row sees the marker and never appends a second.
