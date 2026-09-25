@@ -3,7 +3,7 @@
 # here. Homebrew has no pinning worth trusting: this records what, not
 # which version.
 brew "tmux"              # the terminal multiplexer the status line rides
-brew "starship"          # the prompt (PROMPT=starship)
+brew "starship"          # the prompt (PROMPT=starship): Homebrew's, never a download
 brew "bat"               # the shell's daily tools
 brew "eza"
 brew "fzf"

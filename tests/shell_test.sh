@@ -1,7 +1,7 @@
 #!/bin/sh
 # spark-shell tests -- a throwaway HOME, no network, no packages: the
 # package row is forced to `todo` by an unknown distro fixture, and the
-# pinned rows are satisfied by stubs, so `on` exercises the render and
+# prompt row is satisfied by a stub, so `on` exercises the render and
 # link machinery only. Run: sh tests/shell_test.sh
 # With SPARK=/path/to/spark's clone, section 13 renders its palettes too.
 set -eu
@@ -18,7 +18,7 @@ fresh() {   # a new throwaway HOME with the stubs in place
     H=$(mktemp -d)
     export HOME=$H XDG_CONFIG_HOME=$H/.config XDG_STATE_HOME=$H/.local/state XDG_DATA_HOME=$H/.local/share
     mkdir -p "$H/.local/bin" "$H/.config/spark"
-    printf '#!/bin/sh\necho starship 0.0-stub\n' > "$H/.local/bin/starship"   # the pin never downloads in a test
+    printf '#!/bin/sh\necho starship 0.0-stub\n' > "$H/.local/bin/starship"   # the prompt row finds it
     chmod +x "$H/.local/bin/starship"
     printf 'ID=fixture\n' > "$H/os-release"
     export SPARK_OS_RELEASE=$H/os-release
@@ -117,6 +117,16 @@ printf 'PROMPT=starship\nPROMPT_STYLE=full\n' > "$HOME/.config/spark-shell/confi
 sh "$SH" apply >/dev/null
 [ -f "$HOME/.config/starship.toml" ] && grep -q 'style = "bold yellow"' "$HOME/.config/starship.toml" \
     && plain "$HOME/.config/starship.toml" && ok "PROMPT_STYLE=full renders the full style, plain" || bad "full style"
+# no starship and no package for it (the fixture family): the shell's own prompt, a skip, never a download
+mv "$H/.local/bin/starship" "$H/starship.aside"
+out=$(PATH=$H/.local/bin:/usr/bin:/bin sh "$SH" on --dry-run)
+printf '%s\n' "$out" | grep -q 'would  starship' && bad "a starship download survives" "$out" || ok "on: no starship row would fetch anything"
+printf '%s\n' "$out" | grep -q '^skip   prompt       no starship package here' && ok "on: no starship package here is a skip (the shell's own prompt)" || bad "prompt skip" "$out"
+printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "on: a prompt skip still ends in Nothing to do" || bad "prompt skip count" "$out"
+mv "$H/starship.aside" "$H/.local/bin/starship"
+out=$(sh "$SH" on --dry-run)
+printf '%s\n' "$out" | grep -q '^ok     prompt       starship 0.0-stub draws the prompt$' && ok "on: the prompt row names the starship it found" || bad "prompt ok" "$out"
+! grep -q 'STARSHIP_VERSION\|sha256\|curl ' "$SH" && ok "spark-shell: no pinned version, no sha256, no curl (nothing is downloaded)" || bad "a download survives" "$(grep -n 'STARSHIP_VERSION\|sha256\|curl ' "$SH")"
 
 # --- 5. off hands back ----------------------------------------------------
 out=$(sh "$SH" off)

@@ -51,12 +51,14 @@
 # rendered ~/.config/spark-shell/sgr.sh): the prompt's colour, from the
 # same slots. spark itself is not required; without it the status line
 # stays empty and everything else works. Nothing leaves this machine
-# except the package manager and one pinned, sha256-verified download
-# (starship, on Linux).
+# except what the package manager fetches. A desk asks spark on this
+# machine (spark edit).
 #
 # POSIX sh, both OSes (Debian and Arch families, macOS). Choices live in
-# ~/.config/spark-shell/config (KEY=value): PROMPT starship|plain,
-# PROMPT_STYLE minimal|full, DESKTOP none|sway,
+# ~/.config/spark-shell/config (KEY=value): PROMPT starship|plain
+# (starship from pacman or Homebrew; Debian has no package, so the rc
+# files draw the shell's own prompt there), PROMPT_STYLE minimal|full,
+# DESKTOP none|sway,
 # FONT (foot's spec, DejaVu Sans Mono:size=12), WALLPAPER default|none|PATH,
 # ALPHA (foot over a picture, 0.85).
 #
@@ -76,18 +78,10 @@ while [ -L "$SELF" ]; do
 done
 REPO=$(cd "$(dirname "$SELF")" && pwd)
 OS=$(uname -s)
-ARCH=$(uname -m)
 CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark-shell
 CONFIG=$CONFIG_DIR/config
 SPARK_CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark
 THEME_ENV=$SPARK_CONFIG_DIR/theme.env
-
-# ------------------------------------------------------------ pinned bits
-# Everything not packaged is pinned by version and sha256. An empty sha
-# means "not pinned yet": the block skips with a notice, never guesses.
-STARSHIP_VERSION=1.26.0
-STARSHIP_SHA_X86_64=321f0dd7af8340a5f2e6a8fec6538a04f617486f9ec70d878f91c09cd8deef22
-STARSHIP_SHA_AARCH64=dc30189378d2f2e287384e8a692d3f95ad1df64cf0e8c36aa9201516028aed6b
 
 # --------------------------------------------------------------- readers
 # load_env FILE: set every KEY the environment does not already set.
@@ -344,25 +338,9 @@ spark_bin() {   # -> spark's path, or nothing: PATH, then ~/.local/bin (a non-lo
     if command -v spark >/dev/null 2>&1; then command -v spark
     elif [ -x "$HOME/.local/bin/spark" ]; then printf '%s\n' "$HOME/.local/bin/spark"; fi
 }
-sha_ok() {
-    if [ "$OS" = Darwin ]; then shasum -a 256 "$1" | awk '{print $1}' | grep -qx "$2"
-    else sha256sum "$1" | awk '{print $1}' | grep -qx "$2"; fi
-}
 TMP=$(mktemp -d)
-PARTIAL=
 PULSE=''
-trap 'rm -rf "$TMP"; [ -z "$PARTIAL" ] || rm -f "$PARTIAL"; [ -z "$PULSE" ] || kill "$PULSE" 2>/dev/null' EXIT
-fetch() {   # fetch URL DEST SHA -- download, verify, or die (the twin)
-    PARTIAL=$2
-    if [ -t 2 ]; then
-        printf '       downloading %s\n' "${1##*/}"
-        curl -fL --retry 3 --progress-bar -o "$2" "$1" || { echo "spark-shell: download failed: $1" >&2; exit 1; }
-    else
-        curl -fsSL --retry 3 -o "$2" "$1" || { echo "spark-shell: download failed: $1" >&2; exit 1; }
-    fi
-    sha_ok "$2" "$3" || { echo "spark-shell: sha256 mismatch for $1" >&2; exit 1; }
-    PARTIAL=
-}
+trap 'rm -rf "$TMP"; [ -z "$PULSE" ] || kill "$PULSE" 2>/dev/null' EXIT
 
 # -------------------------------------------------------------- packages
 # One place switches on the manager (the twin of bootstrap.sh pkg_*).
@@ -677,25 +655,17 @@ cmd_on() {
     elif ! desktop_wanted; then
         skip desktop "DESKTOP=none (the config)"
     fi
-    loud && printf '\n== pinned\n'
-    if [ "$OS" = Darwin ]; then
-        skip starship "Homebrew provides starship here"
-    else
-        if [ -x "$HOME/.local/bin/starship" ] || command -v starship >/dev/null 2>&1; then
-            ok starship "$(PATH=$HOME/.local/bin:$PATH starship --version 2>/dev/null | head -1)"
-        else
-            case $ARCH in x86_64) sha=$STARSHIP_SHA_X86_64; tri=x86_64-unknown-linux-gnu ;;
-                          aarch64) sha=$STARSHIP_SHA_AARCH64; tri=aarch64-unknown-linux-musl ;;
-                          *) sha=; tri= ;; esac
-            if [ -z "$sha" ]; then
-                skip starship "no pin for $ARCH yet (NOTICE)"
-            elif need starship "install $STARSHIP_VERSION into ~/.local/bin"; then
-                fetch "https://github.com/starship/starship/releases/download/v$STARSHIP_VERSION/starship-$tri.tar.gz" "$TMP/starship.tgz" "$sha"
-                mkdir -p "$HOME/.local/bin"
-                tar -xzf "$TMP/starship.tgz" -C "$HOME/.local/bin" starship
-                ok starship "$STARSHIP_VERSION"
-            fi
-        fi
+    # the prompt: starship from the package manager where one has it
+    # (pacman, Homebrew); where none does, the rc files draw the shell's
+    # own prompt. Nothing is downloaded. A skip, not a todo: Debian's
+    # dry-run still ends in Nothing to do.
+    loud && printf '\n== prompt\n'
+    if [ "$PROMPT" != starship ]; then skip prompt "PROMPT=$PROMPT (the config): the shell's own"
+    elif command -v starship >/dev/null 2>&1 || [ -x "$HOME/.local/bin/starship" ]; then
+        v=$(PATH=$HOME/.local/bin:$PATH starship --version 2>/dev/null | head -1)
+        ok prompt "${v:-starship} draws the prompt"
+    elif [ "$PM" = pacman ] || [ "$PM" = brew ]; then skip prompt "starship rides the packages row"
+    else skip prompt "no starship package here: the shell's own prompt (the rc files draw it)"
     fi
     # terminfo: tmux-256color must know modified arrow keys
     if infocmp -1x tmux-256color 2>/dev/null | grep -q 'kUP='; then
@@ -849,12 +819,16 @@ cmd_check() {
     done
     [ "$rc_ok" = 1 ] && chk rc ok "the rc files are spark-shell's" || chk rc fail "an rc file is not spark-shell's" "spark-shell on"
     miss=''
-    # ~/.local/bin holds the pinned starship (and spark): a non-login
-    # ssh shell has no such PATH, so look there too
-    for t in tmux starship fzf zoxide eza bat btop fd; do
+    # starship is required only where a package manager has it (pacman,
+    # Homebrew) and the config asks for it. ~/.local/bin may hold a tool
+    # (and spark): a non-login ssh shell has no such PATH, so look there too
+    pm_detect
+    tools="tmux fzf zoxide eza bat btop fd"
+    if [ "$PROMPT" = starship ] && { [ "$PM" = pacman ] || [ "$PM" = brew ]; }; then tools="$tools starship"; fi
+    for t in $tools; do
         command -v "$t" >/dev/null 2>&1 || [ -x "$HOME/.local/bin/$t" ] || miss="$miss $t"
     done
-    [ -z "$miss" ] && chk tools ok "tmux, starship, fzf, zoxide, eza, bat, btop, fd" || chk tools fail "missing:$miss" "spark-shell on"
+    [ -z "$miss" ] && chk tools ok "$(printf '%s' "$tools" | sed 's/ /, /g')" || chk tools fail "missing:$miss" "spark-shell on"
     infocmp -1x tmux-256color 2>/dev/null | grep -q 'kUP=' && chk terminfo ok "tmux-256color knows modified arrows" \
         || chk terminfo fail "tmux-256color lacks kUP" "spark-shell on"
     # render freshness: what apply would write vs what is on disk

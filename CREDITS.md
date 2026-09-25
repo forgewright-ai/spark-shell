@@ -1,15 +1,15 @@
 # Credits
 
-spark-shell stands on other people's work. Everything here is fetched
-from its own home, pinned by sha256 where a version is pinned at all.
+spark-shell stands on other people's work. Everything here comes from
+a package manager's own repositories, unpinned.
 
 ## The prompt
 
 starship -- https://github.com/starship/starship -- ISC
 (c) Starship Contributors
 
-Version 1.26.0 (`STARSHIP_VERSION` in `spark-shell`), pinned by sha256
-on Linux; Homebrew installs the same tool on macOS with no version pin.
+From Arch's extra repository (pacman) and from Homebrew. Debian 13 has
+no starship package; there the rc files draw the shell's own prompt.
 
 ## The tools (apt or pacman / Homebrew)
 

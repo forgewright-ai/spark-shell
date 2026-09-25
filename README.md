@@ -64,7 +64,9 @@ and `apply` render `~/.config/spark-shell/sgr.sh`, three exports from
 the accent and muted slots (`SPARK_ACCENT_SGR`, `SPARK_MUTED_SGR`,
 `SPARK_WARN_SGR`), and spark 1.41 or newer draws its hint row, `spark
 chat` and `spark do` with them at a tty. The prompt line itself stays
-starship's.
+starship's, from pacman on Arch and from Homebrew on macOS; Debian 13
+has no starship package, so there the rc files draw the shell's own
+prompt (`PROMPT=plain` in the config picks it anywhere).
 
 ## A desktop
 
@@ -209,9 +211,8 @@ none or an absolute path (`spark-shell desktop wallpaper` writes it),
 
 ## What leaves this machine
 
-The package manager's fetches and one pinned download verified by
-sha256 (starship, on Linux). A desk is one call to `spark edit` on this
-machine: the model runs here, and it reads the need's words, the
+The package manager's fetches. A desk is one call to `spark edit` on
+this machine: the model runs here, and it reads the need's words, the
 screen's size and the app list. No telemetry. The one file read from
 spark is `~/.config/spark/theme.env`.
 

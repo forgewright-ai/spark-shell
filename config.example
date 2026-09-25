@@ -3,7 +3,9 @@
 # Plain KEY=value, one per line. Every key is optional; a missing key
 # takes the default shown.
 
-# The prompt: starship (rendered from the palette) or plain (yours).
+# The prompt: starship (rendered from the palette; the package manager's,
+# pacman or Homebrew -- Debian has none, so the shell draws its own
+# there) or plain (yours).
 PROMPT=starship
 
 # starship's shape: minimal (a compact single line) or full.
