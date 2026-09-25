@@ -26,7 +26,10 @@
 #   spark-shell desktop "WORDS" a desk for that need: the model picks the
 #                               windows from the apps this machine has and
 #                               sway lays them out on an empty workspace
-#                               (Super+d asks the same at a prompt)
+#                               (Super+d asks the same at a prompt); with
+#                               no sway (a console, ssh, a Mac) the same
+#                               desk plays as rooms, one tmux window per
+#                               app; --rooms | --windows picks the player
 #   spark-shell desktop keep [WORDS] | WORDS | forget WORDS
 #                               keep the last desk under those words (its
 #                               own by default), open a kept one by its
@@ -295,6 +298,7 @@ wall_load() {
 # skip | todo; an apply run says what it changed, --dry-run says all.
 MODE=apply
 VERBOSE=0
+PLAYER=''   # a desk's player: windows | rooms, forced by --windows | --rooms; else where you ask from
 todo=0
 acting=0
 row() { printf '%-6s %-12s %s\n' "$1" "$2" "${3:-}"; }
@@ -919,7 +923,7 @@ cmd_bar() {
 DESKS_DIR=$CONFIG_DIR/desks
 DESK_LAST=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desk.last
 DESK_PENDING=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desk.pending
-DESK_VERBS="workspace splith splitv layout resize focus move floating fullscreen exec"
+DESK_VERBS="workspace splith splitv layout resize focus move floating fullscreen exec session room"   # session and room: the rooms player's
 DESK_NOT_APPS="sh bash zsh dash fish ksh sudo doas su pkexec"   # a shell or a way to root is not an app
 DESK_WAIT=30                                                    # seconds for a window to map (gimp, a browser)
 
@@ -1074,6 +1078,7 @@ desk_apps() {   # desk_apps NEED -> the lines
             w=$(printf '%s' "$w" | tr -cd 'A-Za-z0-9_.-' | tr 'A-Z' 'a-z')
             [ -z "$w" ] || ! desk_on_path "$w" || printf '%s: named in the need, terminal\n' "$w"
         done
+        echo "shell: a terminal with a prompt, terminal"   # a desk word: foot alone, or a room with no command
     } | grep -v "^\\($(printf '%s' "sway swaybg swaymsg foot footclient xdg-open $DESK_NOT_APPS" | sed 's/ /\\|/g')\\):" \
       | sort -t: -s -u -k1,1   # the desktop itself, a shell, a way to root: not apps
 }
@@ -1171,9 +1176,15 @@ desk_gate() {   # desk_gate LINE -> '' when it may run, else why not
     bad=$(printf '%s' "$1" | LC_ALL=C tr -d 'A-Za-z0-9 _.:/=,%~@#+?[]"-' | head -c 1)   # what a sway line may hold; the rest is sh's
     [ -z "$bad" ] || { echo "shell syntax or a control character"; return; }
     case $1 in 'focus output '*) grep -q "^${1#focus output } " "$TMP/screens" 2>/dev/null || echo "${1#focus output } is not a screen here"; return ;; esac
-    [ "$verb" = exec ] || return 0
+    [ "$verb" = exec ] || [ "$verb" = room ] || return 0
     set -- $1; shift
-    [ "${1:-}" = foot ] && [ "${2:-}" = -e ] && shift 2
+    if [ "$verb" = room ]; then   # room NAME [CMD ARGS]: bare is a shell, the rest is judged like an exec
+        [ $# -gt 0 ] || { echo "room with no name"; return; }
+        shift; [ $# -gt 0 ] || return 0
+    elif [ "${1:-}" = foot ]; then   # exec foot alone is a shell; exec foot -e CMD is the CMD
+        [ $# -gt 1 ] || return 0
+        [ "${2:-}" != -e ] || shift 2
+    fi
     app=${1:-}; app=${app##*/}
     [ -n "$app" ] || { echo "exec of nothing"; return; }
     case " $DESK_NOT_APPS " in *" $app "*) echo "$app is not an app"; return ;; esac
@@ -1217,7 +1228,11 @@ desk_lines() {   # desk_lines WS JSONFILE -> the lines, after desk_windows_of: o
             i=0
             while IFS='	' read -r _ app args; do
                 case $i in 1) echo splith ;; 2) echo splitv ;; esac   # the split the next window lands in
-                if desk_app_term "$app" || { ! desk_app_known "$app" && desk_on_path "$app"; }; then printf 'exec foot -e %s\n' "$(desk_launch "$app" "$args")"; else printf 'exec %s\n' "$(desk_launch "$app" "$args")"; fi
+                case $app in
+                    shell) echo "exec foot" ;;
+                    editor) printf 'exec foot -e %s\n' "$(desk_launch "$ED" "$args")" ;;
+                    *) if desk_app_term "$app" || { ! desk_app_known "$app" && desk_on_path "$app"; }; then printf 'exec foot -e %s\n' "$(desk_launch "$app" "$args")"; else printf 'exec %s\n' "$(desk_launch "$app" "$args")"; fi ;;
+                esac
                 i=$((i + 1))
             done
             if [ -n "$main" ] && [ "$i" -gt 1 ]; then
@@ -1228,11 +1243,82 @@ desk_lines() {   # desk_lines WS JSONFILE -> the lines, after desk_windows_of: o
         main=''
     done
 }
-desk_render() {   # desk_render JSONFILE -> $TMP/desk: the lines for the screens here; ws is the main's workspace
+# The same desk as rooms: a tmux session named after the words, one
+# window per app (windows, not panes: a terminal app wants the whole
+# page, and tmux's line names the rooms). `room NAME` bare is tmux's
+# own shell; `room NAME CMD ARGS` runs the command. width is the
+# desktop's and is not read here.
+desk_rooms() {   # desk_rooms NAME JSONFILE -> the lines
+    printf 'session %s\n' "$1"
+    jq -r '[.main] + (.side // []) | .[] | "\(.app) \(.args // "")"' "$2" | sed 's/ *$//' | while IFS= read -r line; do
+        app=${line%% *}; args=''; case $line in *' '*) args=${line#* } ;; esac
+        case $app in
+            shell) echo "room shell" ;;
+            editor) printf 'room editor %s\n' "$(desk_launch "$ED" "$args")" ;;
+            *) printf 'room %s %s\n' "$app" "$(desk_launch "$app" "$args")" ;;
+        esac
+    done
+}
+desk_play_rooms() {   # desk_play_rooms FILE -> the session made (or found open), one line per room; true when a room ran
+    name=$(sed -n 's/^session //p' "$1" | head -1)
+    if tmux has-session -t "=$name" 2>/dev/null; then echo "  the rooms $name are open already"; return 0; fi
+    ran=0
+    while IFS= read -r line || [ -n "$line" ]; do
+        case $line in ''|'#'*) continue ;; esac
+        why=$(desk_gate "$line")
+        if [ -n "$why" ]; then echo "  refused  $line  ($why)"; continue; fi
+        [ "$VERBOSE" != 1 ] || echo "  $line"   # the rooms grammar is for the file, not the screen
+        case $line in 'session '*) continue ;; esac
+        set -- $line; shift; room=$1; shift; cmd=$*; prog=${1:-}; prog=${prog##*/}
+        if [ "$prog" = "$room" ]; then shown=$cmd; else shown="$room $cmd"; fi; shown=${shown% }
+        # the model's answer keeps to the terminal apps it was offered; a desk you kept runs what the machine has
+        if [ -z "${KEPT:-}" ] && [ -n "$prog" ] && desk_app_known "$prog" && ! desk_app_term "$prog"; then echo "  $shown -- needs the desktop"; continue; fi
+        if [ "$ran" -eq 0 ]; then set -- new-session -d -s "$name" -n "$room"; else set -- new-window -t "=$name" -n "$room"; fi
+        [ -z "$cmd" ] || set -- "$@" "$cmd"   # the command is one argument: tmux hands it to sh -c, like sway's exec
+        tmux "$@" || { echo "  tmux refused: $line"; continue; }
+        ran=$((ran + 1)); echo "  $shown"
+    done < "$1"
+    [ "$ran" -gt 0 ]
+}
+desk_join() {   # desk_join NAME -- inside tmux: switch to it; at a terminal: attach; on a pipe: say how
+    if [ -n "${TMUX:-}" ]; then tmux switch-client -t "=$1"
+    elif [ -t 0 ] && [ -t 1 ]; then tmux attach-session -t "=$1"
+    else echo "rooms $1 -- tmux attach-session -t $1 joins them"; fi
+}
+desk_editor() {   # -> what a desk's `editor` word opens: EDITOR's basename, else micro when it is here; else why not
+    if [ -n "${EDITOR:-}" ]; then printf '%s\n' "${EDITOR##*/}"
+    elif desk_on_path micro; then echo micro
+    else echo "no editor: set EDITOR in ~/.config/spark-shell/rc"; return 1; fi
+}
+desk_has() { jq -e --arg a "$2" '[.main] + (.side // []) | any(.app == $a)' "$1" >/dev/null 2>&1; }   # desk_has JSONFILE APP
+desk_in_sway() { [ -n "${SWAYSOCK:-}" ] && [ -n "$(swaymsg -t get_version 2>/dev/null)" ]; }   # a sway that answers
+desk_player() {   # -> windows inside sway, else rooms; --windows and --rooms force one
+    if [ -n "${PLAYER:-}" ]; then echo "$PLAYER"; elif desk_in_sway; then echo windows; else echo rooms; fi
+}
+desk_render() {   # desk_render JSONFILE -> $TMP/desk: the lines for the player; ws is the main's workspace (windows)
+    if ! ED=$(desk_editor); then ! desk_has "$1" editor || refuse "$ED"; ED=''; fi
+    if [ "$PLAYER" = rooms ]; then desk_rooms "$(desk_name_of "$(desk_words "$1")")" "$1" > "$TMP/desk"; return; fi
     desk_screens
     desk_windows_of "$1"
     ws=$(desk_next_ws)
     desk_lines "$ws" "$1" > "$TMP/desk"
+}
+desk_show() {   # desk_show WHOSE -- the rendered desk played, then the closing line; KEPT=1 for a kept one
+    if [ "$PLAYER" = rooms ]; then
+        name=$(sed -n 's/^session //p' "$TMP/desk" | head -1)
+        desk_play_rooms "$TMP/desk" || refuse "nothing ran"
+        echo "rooms $name -- $1"
+        if desk_in_sway; then   # asked inside the desktop with --rooms: the rooms in a foot window of their own
+            printf 'workspace number %s\nexec foot -e tmux attach-session -t =%s\n' "$(desk_next_ws)" "$name" > "$TMP/desk.win"
+            KEPT=1 desk_play "$TMP/desk.win" >/dev/null || true
+        else desk_join "$name"; fi
+        return
+    fi
+    # asked at the prompt: its window goes with the desk, on top, to be read
+    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] move container to workspace number $ws" >/dev/null 2>&1 || true
+    desk_play "$TMP/desk" || refuse "nothing ran"
+    echo "on workspace $(desk_ws_said "$TMP/desk") -- $1"
+    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] focus" >/dev/null 2>&1 || true   # Enter is ours, not the app's
 }
 
 desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec waited for
@@ -1271,9 +1357,10 @@ desk_make() {   # desk_make NEED -> the desk laid out, the model's answer in DES
     command -v jq >/dev/null 2>&1 || refuse "jq is not installed (spark-shell on)"
     spark=$(spark_bin)
     [ -n "$spark" ] || refuse "spark is not installed -- the desk is the model's (github.com/forgewright-ai/spark)"
+    [ "$PLAYER" != rooms ] || command -v tmux >/dev/null 2>&1 || refuse "tmux is not installed (spark-shell on)"
     desk_apps "$1" > "$TMP/apps"
     [ -s "$TMP/apps" ] || refuse "no apps found on this machine (no desktop entries, no chosen packages)"
-    desk_screens
+    [ "$PLAYER" = rooms ] || desk_screens
     about=$(desk_brief)
     [ -n "${ASKED:-}" ] || printf 'desk> %s\n' "$1"
     desk_pulse
@@ -1291,21 +1378,34 @@ desk_make() {   # desk_make NEED -> the desk laid out, the model's answer in DES
     mkdir -p "$(dirname "$DESK_LAST")"
     jq --arg w "$1" '{words: $w} + .' "$TMP/desk.json" > "$DESK_LAST"
     desk_render "$DESK_LAST"
-    # asked at the prompt: its window goes with the desk, on top, to be read
-    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] move container to workspace number $ws" >/dev/null 2>&1 || true
-    desk_play "$TMP/desk" || refuse "nothing ran"
-    echo "on workspace $(desk_ws_said "$TMP/desk") -- spark-shell desktop keep NAME keeps it"
-    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] focus" >/dev/null 2>&1 || true   # Enter is ours, not the app's
+    desk_show "spark-shell desktop keep NAME keeps it"
 }
-# The brief: the screens, the apps, the rules, the shape asked for. With
-# more than one screen the example carries `screen` and one rule more.
+desk_replay() {   # desk_replay NAME -> the kept desk rendered for the player and played, no model call
+    why=$(desk_open "$DESKS_DIR/$1"); [ -z "$why" ] || refuse "$why"
+    desk_apps "$1" > "$TMP/apps"
+    [ -n "${ASKED:-}" ] || printf 'desk> %s\n' "$(desk_words "$DESKS_DIR/$1")"
+    why=$(desk_why "$DESKS_DIR/$1"); [ -z "$why" ] || printf '  %s\n' "$why"
+    desk_render "$DESKS_DIR/$1"
+    KEPT=1 desk_show "the kept desk $1"
+}
+# The brief: the screens (or the terminal, for rooms), the apps, the
+# rules, the shape asked for. With more than one screen the example
+# carries `screen` and one rule more; rooms are offered the terminal
+# apps only and no screen at all.
 desk_brief() {
     ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "args": "", "width": 70}, "side": [{"app": "NAME", "args": ""}]}'; rule=''
-    if [ "$(wc -l < "$TMP/screens")" -gt 1 ]; then
-        ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "args": "", "width": 70, "screen": "left"}, "side": [{"app": "NAME", "args": "", "screen": "right"}]}'
-        rule=" A window is on one screen; screen is $(cut -d' ' -f3 "$TMP/screens" | desk_said or); one screen unless the need names two or the work needs two."
+    if [ "$PLAYER" = rooms ]; then
+        opening="A desk of rooms: the windows for one need, each a terminal window (tmux), on a $(tput cols 2>/dev/null || echo 80)x$(tput lines 2>/dev/null || echo 24) terminal."
+        apps=$(grep ', terminal$' "$TMP/apps")
+    else
+        opening="A desk: the windows for one need, on $(desk_screens_say)."
+        apps=$(cat "$TMP/apps")
+        if [ "$(wc -l < "$TMP/screens")" -gt 1 ]; then
+            ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "args": "", "width": 70, "screen": "left"}, "side": [{"app": "NAME", "args": "", "screen": "right"}]}'
+            rule=" A window is on one screen; screen is $(cut -d' ' -f3 "$TMP/screens" | desk_said or); one screen unless the need names two or the work needs two."
+        fi
     fi
-    echo "A desk: the windows for one need, on $(desk_screens_say). Apps on this machine (name: what it does): $(sed 's/, terminal$//' "$TMP/apps" | paste -sd ';' - | sed 's/;/; /g'). Rules: an app the need names by name is in the desk; otherwise only the apps the work itself needs, as few windows as that takes (one to four), never an app the need does not call for; an app may appear twice with different args (a browser on two pages: one window per page, args is that page's URL).$rule Answer with one JSON object and nothing else: $ex -- main is the big window at the left, width its percent of the screen; side is the windows stacked at the right, top to bottom."
+    echo "$opening Apps on this machine (name: what it does): $(printf '%s\n' "$apps" | sed 's/, terminal$//' | paste -sd ';' - | sed 's/;/; /g'). Rules: an app the need names by name is in the desk; otherwise only the apps the work itself needs, as few windows as that takes (one to four), never an app the need does not call for; an app may appear twice with different args (a browser on two pages: one window per page, args is that page's URL).$rule Answer with one JSON object and nothing else: $ex -- main is the big window at the left, width its percent of the screen; side is the windows stacked at the right, top to bottom."
 }
 
 # The pulse spark draws while a reply is on its way (spark text.Busy):
@@ -1418,7 +1518,6 @@ cmd_desktop() {
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
             cmd_apps "$1"; return ;;
         keep|forget)   # keep [WORDS]: the last desk, under those words (its own by default); forget WORDS
-            [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
             verb=$1; shift
             if [ "$verb" = forget ]; then
                 name=$(desk_name_of "$*"); [ -n "$name" ] || refuse "forget WORDS -- which desk?"
@@ -1437,6 +1536,7 @@ cmd_desktop() {
             # the window follows the desk and stays until Enter, so the why is read
             need=$(desk_prompt) || return 0
             [ -n "$need" ] || return 0
+            case $need in *' --rooms'|*' --windows') PLAYER=${need##*--}; need=${need% --*} ;; esac   # the player, as the last word
             case $need in
                 keep|"keep "*|"forget "*) set -- $need; (cmd_desktop "$@") || true ;;   # the grammar's words, here too
                 *) (ASKED=1 cmd_desktop "$need") || true ;;   # a refusal is read too, not lost with the window
@@ -1447,27 +1547,18 @@ cmd_desktop() {
             need=$(head -1 "$DESK_PENDING"); rm -f "$DESK_PENDING"
             [ -z "$need" ] || cmd_desktop "$need"; return ;;
         ''|-*) ;;
-        *)  # a need, or a kept desk by name
-            [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
-            [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on first"
+        *)  # a need, or a kept desk by name; the player is where you ask from: windows inside
+            # sway, rooms (tmux) anywhere else; --windows from a console starts sway first
             command -v jq >/dev/null 2>&1 || refuse "jq is not installed (spark-shell on)"
-            if [ -n "${SWAYSOCK:-}" ]; then
+            PLAYER=$(desk_player)
+            if [ "$PLAYER" = windows ] && ! desk_in_sway; then pending=$*   # the words wait for the sway about to start
+            else
+                [ "$PLAYER" = rooms ] || [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
+                [ "$PLAYER" = rooms ] || [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on first"
                 kept=$(desk_name_of "$*")
-                if [ -n "$kept" ] && [ -f "$DESKS_DIR/$kept" ]; then
-                    why=$(desk_open "$DESKS_DIR/$kept"); [ -z "$why" ] || refuse "$why"
-                    desk_apps "$*" > "$TMP/apps"
-                    [ -n "${ASKED:-}" ] || printf 'desk> %s\n' "$(desk_words "$DESKS_DIR/$kept")"
-                    why=$(desk_why "$DESKS_DIR/$kept"); [ -z "$why" ] || printf '  %s\n' "$why"
-                    desk_render "$DESKS_DIR/$kept"
-                    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] move container to workspace number $ws" >/dev/null 2>&1 || true
-                    KEPT=1 desk_play "$TMP/desk" || refuse "nothing ran"
-                    echo "on workspace $(desk_ws_said "$TMP/desk") -- the kept desk $kept"
-                    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] focus" >/dev/null 2>&1 || true
-                    return
-                fi
-                desk_make "$*"; return
-            fi
-            pending=$* ;;   # no desktop yet: the words wait for the one about to start
+                if [ -n "$kept" ] && [ -f "$DESKS_DIR/$kept" ]; then desk_replay "$kept"; else desk_make "$*"; fi
+                return
+            fi ;;
     esac
     [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
     [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on"
@@ -1495,9 +1586,9 @@ main() {
     shift 2>/dev/null || true
     words=''
     for a in "$@"; do
-        case $a in --dry-run) MODE=dry ;; --verbose|-v) VERBOSE=1 ;; *) words="$words$a\n" ;; esac
+        case $a in --dry-run) MODE=dry ;; --verbose|-v) VERBOSE=1 ;; --windows|--rooms) PLAYER=${a#--} ;; *) words="$words$a\n" ;; esac
     done
-    # the flags out of the words (a need is words; -v is not one of them)
+    # the flags out of the words (a need is words; -v and the desk's player are not among them)
     if [ -n "$words" ]; then set -- ; IFS_=$IFS; IFS='
 '; for a in $(printf "%b" "$words"); do set -- "$@" "$a"; done; IFS=$IFS_; fi
     case $sub in

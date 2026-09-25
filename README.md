@@ -26,6 +26,9 @@ this machine's cycles belong to the model.
                             the picture behind the windows (default: the forge)
     spark-shell desktop "WORDS"
                             a desk for that need: the model picks the windows
+    spark-shell desktop "WORDS" --rooms | --windows
+                            the same desk as tmux rooms (no sway needed), or
+                            on the desktop (from a console: sway starts first)
     spark-shell desktop keep [WORDS] | WORDS | forget WORDS
                             keep the last desk, open a kept one, drop one
     spark-shell desktop apps | tools
@@ -195,7 +198,46 @@ machine has -- a shell or a way to root is not an app. A line that
 fails is named and dropped, the rest still opens. The model sees the
 need's words, the screens (name and size) and the app list, never a window's
 title or a file. From a console with no desktop running, `spark-shell
-desktop "WORDS"` starts one and lays the desk out in it.
+desktop "WORDS" --windows` starts one and lays the desk out in it;
+without that word the desk plays as rooms (below).
+
+## Rooms
+
+    spark-shell desktop "the feeds, the mail and a shell"
+    spark-shell desktop studio --rooms      inside the desktop, as rooms
+    spark-shell desktop "WORDS" --windows   from a console: sway first
+
+Where there is no sway -- a console login, ssh, a Mac -- the same desk
+plays as rooms: a tmux session named after the words, one window per
+app, tmux's line naming them, joined at once (inside tmux, the client
+switches to it; on a pipe, one line says how to attach). The player is
+where you ask from, never a guess: inside the desktop it is windows;
+`--rooms` there builds the session and opens it in a foot window of
+its own; `--windows` from a console starts sway and lays the desk out
+in it. A session with that name already open is joined, not built
+again; `tmux kill-session -t NAME` ends it.
+
+Rooms are terminal windows, so the model is offered the terminal apps
+only, and a kept desk's graphical app (gimp, a browser) is one line,
+"needs the desktop", the rest opens; a kept desk runs any program the
+machine has, as on the desktop. Two words are desks' own: `shell` is a
+terminal with a prompt (foot alone on the desktop, tmux's own window
+here), `editor` is `$EDITOR`'s name, else micro when it is here, else
+one refusal telling you to set it in `~/.config/spark-shell/rc`. The
+main window's `width` is the desktop's and is not read here.
+
+One desk ships with the repo, the studio: a shell, the editor, the
+feeds (newsboat), the web (w3m on duckduckgo.com) and the mail (aerc),
+one room each. Keeping it is a copy, then its name:
+
+    cp desks/studio ~/.config/spark-shell/desks/
+    spark-shell desktop studio
+
+An app the machine lacks is one refused line; the rest opens. A music
+room is yours to add, one entry in the kept file's `side` list, with
+your own playlist:
+
+    {"app": "mpv", "args": "--no-video radio.m3u"}
 
 ## The palette follows you
 
@@ -225,8 +267,9 @@ none or an absolute path (`spark-shell desktop wallpaper` writes it),
 
 The package manager's fetches. A desk is one call to `spark edit` on
 this machine: the model runs here, and it reads the need's words, the
-screen's size and the app list. No telemetry. The one file read from
-spark is `~/.config/spark/theme.env`.
+screens' names and sizes (or the terminal's, for rooms) and the app
+list. No telemetry. The one file read from spark is
+`~/.config/spark/theme.env`.
 
 ## Contributing
 

@@ -490,9 +490,9 @@ else
         && ok "no theme.env: border blue, greet gray, container black" || bad "no theme.env greeter" "$(grep -o -- "--theme '[^']*'" "$H/root/etc/greetd/config.toml")"
     out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop 2>&1); st=$?
     [ "$st" -eq 0 ] && ok "desktop (start now) still starts sway with the box in place" || bad "desktop start" "$out"
-    out=$(env -u XDG_VTNR -u SWAYSOCK sh "$SH" desktop sideways 2>&1 || true)
+    out=$(env -u XDG_VTNR -u SWAYSOCK sh "$SH" desktop sideways --windows 2>&1 || true)
     printf '%s\n' "$out" | grep -q '^spark-shell desktop: needs a console login' && [ ! -e "$HOME/.local/state/spark-shell/desk.pending" ] \
-        && ok "desktop: a word with no desktop and no seat is refused in one line, nothing left pending" || bad "desktop word no seat" "$out"
+        && ok "desktop --windows: a word with no desktop and no seat is refused in one line, nothing left pending" || bad "desktop word no seat" "$out"
     # no sudo to be had (not root, sudo refuses, no tty): a todo row, nothing written
     if [ "$(id -u)" -ne 0 ]; then
         printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/sudo"; chmod +x "$H/.local/bin/sudo"
@@ -516,7 +516,7 @@ grep -rq 'font' "$REPO/templates/etc" && bad "a root template names a font" || o
 desk_stubs() {   # after desktop_stubs: its swaymsg is replaced
     cat > "$H/.local/bin/spark" <<'EOF'
 #!/bin/sh
-printf '%s\n' "$@" > "${XDG_STATE_HOME:-$HOME/.local/state}/spark.argv"
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}"; printf '%s\n' "$@" > "${XDG_STATE_HOME:-$HOME/.local/state}/spark.argv"
 if [ -e "$HOME/two-screens" ]; then cat <<'JSON'
 {"why": "photo work in gimp at the left, the feed at the right, notes beside the photo",
  "main": {"app": "gimp-3.0", "args": "", "width": 70, "screen": "left"},
@@ -578,9 +578,9 @@ if [ "$(uname -s)" = Darwin ]; then
         [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: na: macOS has its own desktop$' \
             && ok "macOS: desktop $1 refuses, na, one line, exit 1" || bad "macOS desktop $*" "st=$st $out"
     }
-    na_form "$need"; na_form keep x; na_form forget x; na_form x
+    na_form apps   # a desk itself plays as rooms here (18)
     [ ! -e "$desk_last" ] && [ ! -e "$desk_pending" ] && [ ! -e "$desks" ] && [ ! -e "$argv" ] && [ ! -e "$swlog" ] \
-        && ok "macOS: no desk form wrote anything (no desk.last, no pending, no desks dir, spark and swaymsg never called)" || bad "macOS desk wrote" "$(find "$H/.local/state" "$H/.config/spark-shell")"
+        && ok "macOS: the picker wrote nothing (no desk.last, no pending, no desks dir, spark and swaymsg never called)" || bad "macOS desk wrote" "$(find "$H/.local/state" "$H/.config/spark-shell")"
 else
     export SWAYSOCK=$H/sway.sock WAYLAND_DISPLAY=wayland-1    # inside the desktop
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desks none .*spark-shell desktop "WORDS" makes one' && ok "status: the desks row says none before any" || bad "status desks none" "$(printf '%s\n' "$st" | grep desks)"
@@ -763,17 +763,6 @@ EOF
     st=0; out=$(sh "$SH" desktop nine -v 2>&1) || st=$?
     printf '%s\n' "$out" | grep -q '^  focus output HDMI-A-1$' && ok "-v shows the focus output lines" || bad "nine verbose" "$out"
     rm -f "$H/two-screens" "$desks/nine" "$desks/two"
-    # from a console: the words wait, sway starts, --pending lays them out once
-    rm -f "$argv" "$swlog"
-    st=0; out=$(env -u SWAYSOCK -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop "news and music" 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$(cat "$desk_pending" 2>&1)" = 'news and music' ] && grep -q 'sway-stub' "$H/.local/state/spark-shell/sway.log" && [ ! -e "$argv" ] \
-        && ok "desktop WORDS from a console: the words wait in desk.pending, sway starts, no model call yet" || bad "pending write" "st=$st $out $(cat "$desk_pending" 2>&1)"
-    st=0; out=$(sh "$SH" desktop --pending 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^desk> news and music$' && printf '%s\n' "$out" | grep -q '^on workspace 3' && [ ! -e "$desk_pending" ] \
-        && [ "$(tail -1 "$argv")" = 'write the desk for this need: news and music' ] \
-        && ok "desktop --pending: lays the waiting words out, the file is gone" || bad "pending play" "st=$st $out"
-    st=0; out=$(sh "$SH" desktop --pending 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ -z "$out" ] && ok "desktop --pending twice: a quiet no-op" || bad "pending twice" "st=$st $out"
     # no jq: check says so, a desk is refused
     mkdir -p "$H/nojq"
     for d in $(printf '%s' "$PATH" | tr ':' ' '); do
@@ -924,6 +913,111 @@ else
 fi
 grep -q '^Exec=tmux$' "$REPO/templates/.local/share/applications/spark-shell-tmux.desktop" && grep -q '^Terminal=true$' "$REPO/templates/.local/share/applications/spark-shell-tmux.desktop" \
     && ok "template: spark-shell-tmux.desktop runs tmux in a terminal" || bad "tmux template"
+
+# --- 18. rooms: the same desk as a tmux session --------------------------
+# No sway here (SWAYSOCK unset): a desk plays as rooms through a fake
+# tmux that logs each call as one line; has-session finds a session
+# only while $H/tmux.has exists. newsboat, w3m and aerc are stubs, mpv
+# is absent on purpose, the spark and swaymsg stubs are 16's. Not
+# uname-guarded: rooms run on macOS too; only the two forms that start
+# or address sway are Linux's.
+rooms_stubs() {
+    cat > "$H/.local/bin/tmux" <<'EOF'
+#!/bin/sh
+log=${XDG_STATE_HOME:-$HOME/.local/state}/tmux.log; mkdir -p "$(dirname "$log")"
+printf '%s\n' "$*" >> "$log"
+case ${1:-} in has-session) [ -e "$HOME/tmux.has" ] ;; esac
+EOF
+    for t in newsboat w3m aerc; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done
+    chmod +x "$H/.local/bin/tmux" "$H/.local/bin/newsboat" "$H/.local/bin/w3m" "$H/.local/bin/aerc"
+}
+fresh
+desktop_stubs
+desk_stubs
+rooms_stubs
+unset SWAYSOCK WAYLAND_DISPLAY TMUX EDITOR
+need='photo editing for instagram and x'; sname=photo-editing-for-instagram-and-x
+argv=$H/.local/state/spark.argv; swlog=$H/.local/state/swaymsg.log; tlog=$H/.local/state/tmux.log
+desk_last=$H/.local/state/spark-shell/desk.last; desks=$H/.config/spark-shell/desks
+# a need with no sway: the rooms player, the terminal apps offered, one room per app that is one
+st=0; out=$(sh "$SH" desktop "$need" 2>&1) || st=$?
+[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^desk> $need\$" && printf '%s\n' "$out" | grep -q '^  photo work in gimp with the two feeds' \
+    && ok "rooms: a need with no sway plays as rooms: exit 0, the desk> line, the why" || bad "rooms need" "st=$st $out"
+printf '%s\n' "has-session -t =$sname" "new-session -d -s $sname -n micro micro" > "$H/expected.rooms"
+cmp -s "$tlog" "$H/expected.rooms" && ok "rooms: tmux got has-session, then one new-session with micro as its first window, nothing else" || bad "rooms tmux log" "$(cat "$tlog" 2>&1)"
+printf '%s\n' "$out" | grep -q '^  gimp-3.0 -- needs the desktop$' && printf '%s\n' "$out" | grep -q '^  firefox https://instagram.com -- needs the desktop$' && printf '%s\n' "$out" | grep -q '^  micro$' \
+    && ok "rooms: a graphical app is one line (needs the desktop), a terminal app runs" || bad "rooms outcome lines" "$out"
+printf '%s\n' "$out" | grep -q '^  refused  room ghostapp ghostapp  (ghostapp is not on this machine)$' && ok "rooms: the gate reads a room line like an exec" || bad "rooms gate" "$out"
+printf '%s\n' "$out" | grep -q "^rooms $sname -- spark-shell desktop keep NAME keeps it\$" && printf '%s\n' "$out" | grep -q "^rooms $sname -- tmux attach-session -t $sname joins them\$" \
+    && ok "rooms: the closing line names the session and keep; on a pipe, the line that joins them" || bad "rooms closing" "$out"
+grep -q 'attach-session\|switch-client' "$tlog" && bad "rooms: attached on a pipe" "$(cat "$tlog")" || ok "rooms: no attach on a pipe"
+grep -q '^A desk of rooms: the windows for one need, each a terminal window (tmux), on a [0-9]*x[0-9]* terminal\. ' "$argv" && ok "rooms brief: rooms, a terminal, its columns and lines" || bad "rooms brief" "$(grep -o 'A desk[^.]*' "$argv")"
+grep -q 'micro: Micro' "$argv" && grep -q 'shell: a terminal with a prompt' "$argv" && ! grep -q 'gimp-3.0\|firefox\|"screen"\|on one screen\|on screens' "$argv" \
+    && ok "rooms brief: the terminal apps and shell only; no graphical app, no screen field, no screens" || bad "rooms brief apps" "$(grep -o 'Apps on this machine[^.]*' "$argv")"
+jq -e --arg w "$need" '.words == $w and .main.app == "gimp-3.0"' "$desk_last" >/dev/null 2>&1 && ok "rooms: desk.last is the same JSON shape (keep works the same)" || bad "rooms desk.last" "$(cat "$desk_last" 2>&1)"
+[ ! -e "$swlog" ] && ok "rooms: swaymsg never sent a line" || bad "rooms swaymsg" "$(cat "$swlog")"
+# inside tmux: switch-client; a session already open is joined, not built again
+: > "$tlog"
+st=0; out=$(TMUX=/x sh "$SH" desktop "$need" --rooms 2>&1) || st=$?
+[ "$st" -eq 0 ] && [ "$(tail -1 "$tlog")" = "switch-client -t =$sname" ] && ok "rooms inside tmux (TMUX set, --rooms): switch-client to the session" || bad "rooms switch" "st=$st $(cat "$tlog")"
+touch "$H/tmux.has"; : > "$tlog"
+st=0; out=$(sh "$SH" desktop "$need" 2>&1) || st=$?
+[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^  the rooms $sname are open already\$" && ! grep -q 'new-session' "$tlog" \
+    && ok "rooms open already: said in one line, no session built, joined" || bad "rooms has-session" "st=$st $out $(cat "$tlog")"
+rm -f "$H/tmux.has"
+# the studio shipped with the repo: copied, it is a kept desk; shell and editor are desk words
+mkdir -p "$desks"; cp "$REPO/desks/studio" "$desks/"
+jq -e '.words == "studio" and .main.app == "shell" and (.side | map(.app)) == ["editor", "newsboat", "w3m", "aerc"]' "$REPO/desks/studio" >/dev/null 2>&1 \
+    && ok "desks/studio: words studio, main shell, then editor, newsboat, w3m, aerc (no music room)" || bad "studio shape" "$(cat "$REPO/desks/studio")"
+: > "$tlog"; rm -f "$argv"
+st=0; out=$(sh "$SH" desktop studio 2>&1) || st=$?
+printf '%s\n' 'has-session -t =studio' 'new-session -d -s studio -n shell' 'new-window -t =studio -n editor micro' 'new-window -t =studio -n newsboat newsboat' 'new-window -t =studio -n w3m w3m duckduckgo.com' 'new-window -t =studio -n aerc aerc' > "$H/expected.studio"
+[ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.studio" && [ ! -e "$argv" ] \
+    && ok "desktop studio: the session with a bare shell window, then one window per room, the editor micro with EDITOR unset; no model call" || bad "studio play" "st=$st $out $(cat "$tlog")"
+printf '%s\n' "$out" | grep -q '^desk> studio$' && printf '%s\n' "$out" | grep -q '^  a shell, the editor, the feeds' && printf '%s\n' "$out" | grep -q '^  editor micro$' && printf '%s\n' "$out" | grep -q '^  w3m duckduckgo.com$' \
+    && printf '%s\n' "$out" | grep -q '^rooms studio -- the kept desk studio$' && ok "desktop studio: the desk> line, the why, one line per room, the closing line" || bad "studio lines" "$out"
+: > "$tlog"
+st=0; out=$(EDITOR=/usr/bin/nano sh "$SH" desktop studio 2>&1) || st=$?
+grep -q '^new-window -t =studio -n editor nano$' "$tlog" && ok "editor is EDITOR's basename (nano)" || bad "editor nano" "$(cat "$tlog")"
+mkdir -p "$H/nomicro"   # a PATH with everything but micro (this machine may have the real one)
+for d in $(printf '%s' "$PATH" | tr ':' ' '); do
+    [ -d "$d" ] || continue
+    for f in "$d"/*; do n=${f##*/}; if [ "$n" != micro ] && [ -x "$f" ] && [ ! -e "$H/nomicro/$n" ]; then ln -s "$f" "$H/nomicro/$n"; fi; done
+done
+: > "$tlog"
+st=0; out=$(PATH=$H/nomicro sh "$SH" desktop studio 2>&1) || st=$?
+[ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | tail -1)" = 'spark-shell desktop: no editor: set EDITOR in ~/.config/spark-shell/rc' ] && ! grep -q 'new-session' "$tlog" \
+    && ok "no EDITOR and no micro: refused in one sentence before any room is built" || bad "no editor" "st=$st $out $(cat "$tlog")"
+st=0; out=$(sh "$SH" desktop studio -v 2>&1) || st=$?
+printf '%s\n' "$out" | grep -q '^  room shell$' && printf '%s\n' "$out" | grep -q '^  room editor micro$' && printf '%s\n' "$out" | grep -q '^  room w3m w3m duckduckgo.com$' \
+    && ok "-v shows the rooms grammar (room NAME [CMD ARGS])" || bad "rooms verbose" "$out"
+printf '%s\n' "$out" | grep -q '^  session studio$' && ok "-v: the session line" || bad "rooms verbose session" "$out"
+printf '{"words": "pipe", "main": {"app": "w3m", "args": "a|b"}}\n' > "$desks/pipe"; : > "$tlog"
+st=0; out=$(sh "$SH" desktop pipe 2>&1) || st=$?
+[ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -qF '  refused  room w3m w3m a|b  (shell syntax' && ! grep -q 'new-session' "$tlog" && printf '%s\n' "$out" | grep -q 'nothing ran$' \
+    && ok "a kept desk edited by hand: shell syntax in a room is refused; with no room left, nothing ran" || bad "rooms pipe" "st=$st $out"
+# --rooms inside sway: the session is built, then a foot window of its own on a fresh workspace
+export SWAYSOCK=$H/sway.sock; : > "$tlog"; rm -f "$swlog"
+st=0; out=$(sh "$SH" desktop studio --rooms 2>&1) || st=$?
+[ "$st" -eq 0 ] && grep -q '^new-session -d -s studio -n shell$' "$tlog" && [ "$(head -1 "$swlog")" = 'workspace number 3' ] && [ "$(tail -1 "$swlog")" = 'exec foot -e tmux attach-session -t =studio' ] \
+    && ! grep -q 'attach-session\|switch-client' "$tlog" && ok "--rooms inside sway: the rooms built, then workspace 3 and one foot that attaches to them" || bad "rooms in sway" "st=$st $out $(cat "$swlog" "$tlog" 2>&1)"
+unset SWAYSOCK
+if [ "$(uname -s)" != Darwin ]; then
+    # --windows from a console: the words wait, sway starts, --pending lays them out once
+    theme_fixture '#ff5555'; mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+    sh "$SH" on >/dev/null
+    desk_pending=$H/.local/state/spark-shell/desk.pending; rm -f "$argv" "$swlog"
+    st=0; out=$(XDG_VTNR=1 sh "$SH" desktop "news and music" --windows 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$(cat "$desk_pending" 2>&1)" = 'news and music' ] && grep -q 'sway-stub' "$H/.local/state/spark-shell/sway.log" && [ ! -e "$argv" ] \
+        && ok "desktop WORDS --windows from a console: the words wait in desk.pending, sway starts, no model call yet" || bad "pending write" "st=$st $out $(cat "$desk_pending" 2>&1)"
+    st=0; out=$(SWAYSOCK=$H/sway.sock sh "$SH" desktop --pending 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^desk> news and music$' && printf '%s\n' "$out" | grep -q '^on workspace 3' && [ ! -e "$desk_pending" ] \
+        && [ "$(tail -1 "$argv")" = 'write the desk for this need: news and music' ] \
+        && ok "desktop --pending: lays the waiting words out as windows, the file is gone" || bad "pending play" "st=$st $out"
+    st=0; out=$(SWAYSOCK=$H/sway.sock sh "$SH" desktop --pending 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ -z "$out" ] && ok "desktop --pending twice: a quiet no-op" || bad "pending twice" "st=$st $out"
+fi
+grep -q '^## Rooms$' "$REPO/README.md" && ok "README: Rooms" || bad "README rooms section"
 
 printf '%s\n' "shell_test: $pass ok, $fail failed"
 [ "$fail" -eq 0 ]
