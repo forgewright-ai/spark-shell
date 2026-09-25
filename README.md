@@ -3,9 +3,8 @@
 A commercial box, a mac mini, an old laptop: a machine that serves a
 local AI on the LAN, to run and to keep. spark gives it the AI;
 spark-shell gives it the hands -- tmux, starship, fzf, zoxide, eza, bat,
-btop, yazi, and one plain look on every surface (tmux, the prompt, btop,
-yazi):
-ASCII and the 16 palette slots, right on
+btop, fd -- and one plain look on every surface (tmux, the prompt, btop,
+foot and sway, the login box): ASCII and the 16 palette slots, right on
 the Linux console and merely plain in an emulator. Discreet and light:
 this machine's cycles belong to the model.
 
@@ -181,7 +180,7 @@ desk out in it.
 
 `spark theme NAME` writes the palette; at your next login spark-shell
 sees the change and re-renders its own files (tmux, starship, btop,
-yazi, the prompt's colours, foot and sway) before the greeting -- one
+the prompt's colours, foot and sway) before the greeting -- one
 checksum when nothing changed. `spark-shell apply` does it now, and is
 the one that reaches the login box (root's files, sudo).
 
@@ -189,17 +188,13 @@ the one that reaches the login box (root's files, sudo).
 
 `~/.config/spark-shell/rc` is sourced last by both rc files and never
 written by spark-shell: `export EDITOR=micro`, aliases, anything these
-files do not say. yazi, git and the rest read `EDITOR` from there; with
-it unset they fall back to `vi`, which the tools bring as a safety net
-(a minimal Arch has none). The editor you use is yours.
+files do not say. The editor you use is yours.
 
 ## Options
 
 `~/.config/spark-shell/config` (KEY=value, every key optional):
-`PROMPT` starship|plain, `PROMPT_STYLE` minimal|full, `GIT_NAME`,
-`GIT_EMAIL` (set both and a
-.gitconfig is rendered with that identity; one you already have stays
-yours), `DESKTOP` none|sway (`spark-shell desktop on|off` writes it),
+`PROMPT` starship|plain, `PROMPT_STYLE` minimal|full,
+`DESKTOP` none|sway (`spark-shell desktop on|off` writes it),
 `FONT` (foot's spec, `DejaVu Sans Mono:size=12`), `WALLPAPER` default,
 none or an absolute path (`spark-shell desktop wallpaper` writes it),
 `ALPHA` for foot over a picture (0.85).
@@ -207,8 +202,8 @@ none or an absolute path (`spark-shell desktop wallpaper` writes it),
 
 ## What leaves this machine
 
-Nothing, beyond the package manager and two pinned downloads verified
-by sha256 (starship; yazi on Debian). No model, no network call, no
+Nothing, beyond the package manager and one pinned download verified
+by sha256 (starship, on Linux). No model, no network call, no
 telemetry. The one file read from spark is `~/.config/spark/theme.env`;
 nothing is ever sent to it.
 

@@ -2,7 +2,7 @@
 # spark-shell -- spark's own shell for a machine that is an AI box.
 #
 #   spark-shell                 the state: rc files, tools, the look
-#   spark-shell on              tmux, starship, fzf, zoxide, eza, bat, btop, yazi,
+#   spark-shell on              tmux, starship, fzf, zoxide, eza, bat, btop, fd,
 #                               one palette on every surface;
 #                               the rc files become spark-shell's (yours -> .bak)
 #   spark-shell off             everything back: rc files and the rendered
@@ -50,18 +50,16 @@
 # rendered ~/.config/spark-shell/sgr.sh): the prompt's colour, from the
 # same slots. spark itself is not required; without it the status line
 # stays empty and everything else works. Nothing leaves this machine
-# except the package manager and two pinned, sha256-verified downloads
-# (starship).
+# except the package manager and one pinned, sha256-verified download
+# (starship, on Linux).
 #
 # POSIX sh, both OSes (Debian and Arch families, macOS). Choices live in
 # ~/.config/spark-shell/config (KEY=value): PROMPT starship|plain,
-# PROMPT_STYLE minimal|full, GIT_NAME, GIT_EMAIL, DESKTOP none|sway,
+# PROMPT_STYLE minimal|full, DESKTOP none|sway,
 # FONT (foot's spec, DejaVu Sans Mono:size=12), WALLPAPER default|none|PATH,
 # ALPHA (foot over a picture, 0.85). The first
 # `on` with no config seeds them from spark's site.env when the old
-# SITE_* keys are there (read once, copied, never read again). A
-# .gitconfig is rendered with an identity you gave (both GIT_NAME and
-# GIT_EMAIL); one you already have stays yours.
+# SITE_* keys are there (read once, copied, never read again).
 #
 # The login box (DESKTOP=sway) is the one root render: /etc/greetd and a
 # greetd.service drop-in, written with sudo only when they differ, and
@@ -91,11 +89,6 @@ THEME_ENV=$SPARK_CONFIG_DIR/theme.env
 STARSHIP_VERSION=1.26.0
 STARSHIP_SHA_X86_64=321f0dd7af8340a5f2e6a8fec6538a04f617486f9ec70d878f91c09cd8deef22
 STARSHIP_SHA_AARCH64=dc30189378d2f2e287384e8a692d3f95ad1df64cf0e8c36aa9201516028aed6b
-# yazi, the file manager: a package on Arch and Homebrew; Debian has none,
-# so there it is this pinned release (a zip -- unzip is in PKG_CLI)
-YAZI_VERSION=26.9.1
-YAZI_SHA_X86_64=a02fe91d3304294048c681f010f1100856872a4e98ecf6927328e888d40a6ad2
-YAZI_SHA_AARCH64=dd569daecaae914185f295634109295ccd25c1b42b02eb89a74f651970024f2e
 
 # --------------------------------------------------------------- readers
 # load_env FILE: set every KEY the environment does not already set.
@@ -148,7 +141,6 @@ config_load() {
     load_env "$CONFIG" || exit 1
     : "${PROMPT:=starship}"
     : "${PROMPT_STYLE:=minimal}"
-    : "${GIT_NAME:=}" "${GIT_EMAIL:=}"      # no guess: an identity is yours to give
     : "${DESKTOP:=none}"
     : "${FONT:=DejaVu Sans Mono:size=12}"   # foot's spec, verbatim
     : "${WALLPAPER:=default}"               # the desktop's picture: default (the forge), none, or an absolute path
@@ -157,7 +149,7 @@ config_load() {
         *) echo "spark-shell: ALPHA=$ALPHA in $CONFIG: 0 to 1 (0.85)" >&2; exit 1 ;; esac
     case $DESKTOP in none|sway) ;;
         *) echo "spark-shell: DESKTOP=$DESKTOP in $CONFIG: none or sway" >&2; exit 1 ;; esac
-    export PROMPT PROMPT_STYLE GIT_NAME GIT_EMAIL DESKTOP FONT WALLPAPER ALPHA
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA
 }
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept
     mkdir -p "$CONFIG_DIR"
@@ -439,7 +431,6 @@ link_one() {   # link_one SRC DST
 esc() { printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'; }
 render_expr() {
     e="s|@HOME@|$(esc "$HOME")|g;s|@USER@|$(esc "$(id -un)")|g;s|@NAME@|$(esc "$(short_host)")|g;s|@REPO@|$(esc "$REPO")|g"
-    e="$e;s|@GIT_NAME@|$(esc "$GIT_NAME")|g;s|@GIT_EMAIL@|$(esc "$GIT_EMAIL")|g"
     for k in $THEME_KEYS; do
         eval "v=\$$k"
         # shellcheck disable=SC2154   # v is set by the eval above
@@ -476,18 +467,7 @@ render_one() {   # render_one SRC DST -- EXPR must be set
 
 # What `on` renders and `off` hands back. sgr.sh is the prompt's colour:
 # the three exports the rc files source before spark's hook line.
-RENDERED=".tmux.conf .config/btop/btop.conf .config/spark-shell/sgr.sh .config/yazi/theme.toml"
-# .gitconfig: only with an identity you gave (GIT_NAME and GIT_EMAIL in
-# the config, or seeded from an old site.env) -- never a guess -- and
-# never over a .gitconfig of yours
-GITCONFIG=.gitconfig
-gitconfig_wanted() { [ -n "$GIT_NAME" ] && [ -n "$GIT_EMAIL" ]; }
-gitconfig_yours() { [ -f "$HOME/$GITCONFIG" ] && ! grep -q 'rendered by spark' "$HOME/$GITCONFIG"; }
-render_gitconfig() {   # no identity given: nothing to do, nothing to say
-    if ! gitconfig_wanted; then :
-    elif gitconfig_yours; then skip gitconfig "$HOME/$GITCONFIG is yours, left alone (GIT_NAME/GIT_EMAIL not applied over it)"
-    else render_one "$REPO/templates/$GITCONFIG" "$HOME/$GITCONFIG"; fi
-}
+RENDERED=".tmux.conf .config/btop/btop.conf .config/spark-shell/sgr.sh"
 rc_files() { if [ "$OS" = Darwin ]; then echo ".zshrc .zprofile"; else echo ".bashrc .bash_profile"; fi; }
 rc_tree() { if [ "$OS" = Darwin ]; then echo "$REPO/templates/macos"; else echo "$REPO/templates/linux"; fi; }
 # The desktop: sway and foot, rendered only when asked for (DESKTOP=sway)
@@ -627,7 +607,6 @@ render_all() {
     for rel in $RENDERED; do
         render_one "$REPO/templates/$rel" "$HOME/$rel"
     done
-    render_gitconfig
     if [ "$PROMPT" = starship ]; then
         render_one "$REPO/templates/.config/starship.toml.$PROMPT_STYLE" "$HOME/.config/starship.toml"
     fi
@@ -756,26 +735,6 @@ cmd_on() {
                 ok starship "$STARSHIP_VERSION"
             fi
         fi
-        if [ -x "$HOME/.local/bin/yazi" ] || command -v yazi >/dev/null 2>&1; then
-            ok yazi "$(PATH=$HOME/.local/bin:$PATH yazi --version 2>/dev/null | head -1)"
-        elif [ "$PM" = pacman ]; then
-            skip yazi "pacman's (the packages row)"
-        else
-            case $ARCH in x86_64) sha=$YAZI_SHA_X86_64; tri=x86_64-unknown-linux-gnu ;;
-                          aarch64) sha=$YAZI_SHA_AARCH64; tri=aarch64-unknown-linux-musl ;;
-                          *) sha=; tri= ;; esac
-            if [ -z "$sha" ]; then
-                skip yazi "no pin for $ARCH yet (NOTICE)"
-            elif ! command -v unzip >/dev/null 2>&1; then
-                skip yazi "needs unzip first (the packages row)"
-            elif need yazi "install $YAZI_VERSION into ~/.local/bin"; then
-                fetch "https://github.com/sxyazi/yazi/releases/download/v$YAZI_VERSION/yazi-$tri.zip" "$TMP/yazi.zip" "$sha"
-                mkdir -p "$HOME/.local/bin"
-                unzip -q -o -j "$TMP/yazi.zip" "yazi-$tri/yazi" "yazi-$tri/ya" -d "$HOME/.local/bin"
-                chmod 0755 "$HOME/.local/bin/yazi" "$HOME/.local/bin/ya"
-                ok yazi "$YAZI_VERSION"
-            fi
-        fi
     fi
     # terminfo: tmux-256color must know modified arrow keys
     if infocmp -1x tmux-256color 2>/dev/null | grep -q 'kUP='; then
@@ -818,7 +777,7 @@ cmd_off() {
             case $(readlink "$p") in "$REPO"/*) restore_one "$p" ;; esac
         fi
     done
-    hand_back $RENDERED $GITCONFIG .config/starship.toml $DESKTOP_RENDERED
+    hand_back $RENDERED .config/starship.toml $DESKTOP_RENDERED
     greeter_off
     micro_look_gone
     # spark's own hook must survive the hand-back: a restored or absent
@@ -887,13 +846,10 @@ cmd_status() {
         # shellcheck disable=SC2088   # the tilde is display, not a path
         printf '  rc    %-16s %s\n' "~/$f" "$s"
     done
-    for t in tmux starship fzf zoxide eza bat btop yazi; do
+    for t in tmux starship fzf zoxide eza bat btop fd; do
         command -v "$t" >/dev/null 2>&1 && s=yes || s=no
         printf '  tool  %-16s %s\n' "$t" "$s"
     done
-    if ! gitconfig_wanted; then printf '  git   %-16s %s\n' .gitconfig "not written (no GIT_NAME/GIT_EMAIL in the config)"
-    elif gitconfig_yours; then printf '  git   %-16s %s\n' .gitconfig "yours, left alone"
-    else printf '  git   %-16s %s\n' .gitconfig "rendered: $GIT_NAME <$GIT_EMAIL>"; fi
     if [ "$OS" = Darwin ]; then s="na: macOS has its own desktop"
     elif [ "$DESKTOP" = none ]; then s="none (spark-shell desktop on)"
     elif [ -n "$(desktop_tools)" ]; then s="sway: not installed --$(desktop_tools) (spark-shell desktop on)"
@@ -936,10 +892,10 @@ cmd_check() {
     miss=''
     # ~/.local/bin holds the pinned starship (and spark): a non-login
     # ssh shell has no such PATH, so look there too
-    for t in tmux starship fzf zoxide eza bat btop yazi; do
+    for t in tmux starship fzf zoxide eza bat btop fd; do
         command -v "$t" >/dev/null 2>&1 || [ -x "$HOME/.local/bin/$t" ] || miss="$miss $t"
     done
-    [ -z "$miss" ] && chk tools ok "tmux, starship, fzf, zoxide, eza, bat, btop, yazi" || chk tools fail "missing:$miss" "spark-shell on"
+    [ -z "$miss" ] && chk tools ok "tmux, starship, fzf, zoxide, eza, bat, btop, fd" || chk tools fail "missing:$miss" "spark-shell on"
     infocmp -1x tmux-256color 2>/dev/null | grep -q 'kUP=' && chk terminfo ok "tmux-256color knows modified arrows" \
         || chk terminfo fail "tmux-256color lacks kUP" "spark-shell on"
     # render freshness: what apply would write vs what is on disk
@@ -951,12 +907,6 @@ cmd_check() {
         sed -e "$EXPR" "$REPO/templates/$rel" > "$TMP/chk"
         cmp -s "$TMP/chk" "$HOME/$rel" || stale="$stale $rel"
     done
-    if gitconfig_wanted && ! gitconfig_yours; then
-        if [ -f "$HOME/$GITCONFIG" ]; then
-            sed -e "$EXPR" "$REPO/templates/$GITCONFIG" > "$TMP/chk"
-            cmp -s "$TMP/chk" "$HOME/$GITCONFIG" || stale="$stale $GITCONFIG"
-        else stale="$stale $GITCONFIG"; fi
-    fi
     [ -z "$stale" ] && chk look ok "the rendered look matches the palette" || chk look fail "stale:$stale" "spark-shell apply"
     if [ "$OS" = Darwin ]; then chk desktop ok "na (macOS)"
     elif [ "$DESKTOP" = none ]; then chk desktop ok "na (DESKTOP=none)"

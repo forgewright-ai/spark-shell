@@ -8,9 +8,7 @@ brew "bat"               # the shell's daily tools
 brew "eza"
 brew "fzf"
 brew "zoxide"
-brew "ripgrep"
 brew "fd"
 brew "jq"
 brew "btop"
-brew "yazi"              # the file manager
 brew "ncurses"           # a tmux-256color terminfo with modified arrow keys

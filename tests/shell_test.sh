@@ -18,9 +18,8 @@ fresh() {   # a new throwaway HOME with the stubs in place
     H=$(mktemp -d)
     export HOME=$H XDG_CONFIG_HOME=$H/.config XDG_STATE_HOME=$H/.local/state XDG_DATA_HOME=$H/.local/share
     mkdir -p "$H/.local/bin" "$H/.config/spark"
-    printf '#!/bin/sh\necho starship 0.0-stub\n' > "$H/.local/bin/starship"
-    printf '#!/bin/sh\necho "Yazi 0.0-stub"\n' > "$H/.local/bin/yazi"   # the pin never downloads in a test
-    chmod +x "$H/.local/bin/starship" "$H/.local/bin/yazi"
+    printf '#!/bin/sh\necho starship 0.0-stub\n' > "$H/.local/bin/starship"   # the pin never downloads in a test
+    chmod +x "$H/.local/bin/starship"
     printf 'ID=fixture\n' > "$H/os-release"
     export SPARK_OS_RELEASE=$H/os-release
     # the root renders (the login box) land under a throwaway root, never
@@ -38,7 +37,7 @@ theme_fixture() {   # theme_fixture ACCENT [MUTED] -- a 21-key theme.env over th
         done
     } > "$HOME/.config/spark/theme.env"
 }
-RENDERS=".tmux.conf .config/btop/btop.conf .config/starship.toml .config/spark-shell/sgr.sh .config/yazi/theme.toml"
+RENDERS=".tmux.conf .config/btop/btop.conf .config/starship.toml .config/spark-shell/sgr.sh"
 
 SH=$REPO/spark-shell
 
@@ -68,20 +67,15 @@ for rel in $RENDERS; do
     plain "$HOME/$rel" && ok "on: $rel is plain (no hex, ASCII)" || bad "on: $rel not plain" "$(grep -nE '#[0-9a-fA-F]{6}' "$HOME/$rel" | head -2)"
 done
 grep -q 'SPARK_ASCII=1 spark bar line' "$HOME/.tmux.conf" && ok "on: the bar is asked in ASCII" || bad "bar ascii"
-[ ! -e "$HOME/.gitconfig" ] && ok "on: no identity given, no .gitconfig written (never a guess)" || bad "gitconfig guessed" "$(cat "$HOME/.gitconfig")"
+[ ! -e "$HOME/.gitconfig" ] && ok "on: no .gitconfig written (git's identity is git's)" || bad "gitconfig written" "$(cat "$HOME/.gitconfig")"
 grep -q ':Tc' "$HOME/.tmux.conf" && bad "tmux advertises truecolor for the look" || ok "on: no Tc override (the look is slots)"
 grep -q 'terminal-features ",foot\*:RGB"' "$HOME/.tmux.conf" && ok "on: content passes through in RGB under foot" || bad "foot RGB passthrough" "$(grep -n terminal- "$HOME/.tmux.conf")"
 grep -q 'client-attached' "$HOME/.tmux.conf" && bad "the console hook survives" || ok "on: no console hook (the slots need none)"
 grep -q '^force_tty = True' "$HOME/.config/btop/btop.conf" && grep -q '^graph_symbol = "tty"' "$HOME/.config/btop/btop.conf" \
     && ok "on: btop in tty mode, tty graphs" || bad "btop tty mode"
 [ ! -e "$HOME/.config/micro" ] && ok "on: no editor configured (nothing under ~/.config/micro)" || bad "micro touched" "$(ls -R "$HOME/.config/micro")"
-grep -q "EDITOR\|editor = " "$REPO/templates/linux/.bashrc" "$REPO/templates/macos/.zshrc" "$REPO/templates/.gitconfig" && bad "an editor is still configured" || ok "templates: no EDITOR, no git editor"
+grep -q "EDITOR\|editor = " "$REPO/templates/linux/.bashrc" "$REPO/templates/macos/.zshrc" && bad "an editor is still configured" || ok "templates: no EDITOR, no git editor"
 grep -q 'style = "bold bright-red"' "$HOME/.config/starship.toml" && ok "on: starship's accent is its colour word (bright-red)" || bad "starship accent"
-grep -q '^cwd = { fg = "bright-red" }$' "$HOME/.config/yazi/theme.toml" && grep -q '^globs = \[\]$' "$HOME/.config/yazi/theme.toml" \
-    && ok "on: yazi's look -- the accent word for cwd, no icon glyphs" || bad "yazi look" "$(cat "$HOME/.config/yazi/theme.toml")"
-st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  tool  yazi *yes' && ok "status: yazi is a tool" || bad "status yazi" "$st"
-ck=$(sh "$SH" check || true); tr_=$(printf '%s\n' "$ck" | grep tools)
-case $tr_ in *"btop, yazi"*) ok "check: the tools row names yazi" ;; *missing:*yazi*) bad "check tools: yazi missing with its stub on PATH" "$tr_" ;; *) ok "check: yazi is not among the missing tools (CI has few of them)" ;; esac
 sgr=$HOME/.config/spark-shell/sgr.sh
 grep -q "SPARK_ACCENT_SGR='1;91'" "$sgr" && grep -q "SPARK_MUTED_SGR='90'" "$sgr" && grep -q "SPARK_WARN_SGR='1;31'" "$sgr" \
     && ok "on: sgr.sh exports the slots as SGR (accent 1;91, muted 90, warn 1;31)" || bad "sgr render" "$(cat "$sgr" 2>&1)"
@@ -176,28 +170,6 @@ for t in minimal full; do
     st_t=$REPO/templates/.config/starship.toml.$t
     grep -q 'custom' "$st_t" && bad "starship $t: a segment of spark's" || ok "starship $t: no spark segment on the prompt"
 done
-
-# --- 11. the git identity: yours to give, never guessed, never overwritten
-fresh
-mkdir -p "$HOME/.config/spark-shell"
-printf 'GIT_NAME=Test Person\nGIT_EMAIL=you@example.com\n' > "$HOME/.config/spark-shell/config"
-sh "$SH" on >/dev/null
-grep -q 'name = Test Person' "$HOME/.gitconfig" && grep -q 'email = you@example.com' "$HOME/.gitconfig" && plain "$HOME/.gitconfig" \
-    && ok "identity given: .gitconfig rendered with it" || bad "gitconfig render" "$(cat "$HOME/.gitconfig" 2>&1)"
-st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q 'rendered: Test Person <you@example.com>' && ok "status: the git row names the identity" || bad "status git row" "$(printf '%s\n' "$st" | grep git)"
-out=$(sh "$SH" check || true)
-printf '%s\n' "$out" | grep -q '^ok     look' && ok "check: a rendered .gitconfig is part of the look" || bad "check gitconfig" "$out"
-sh "$SH" off >/dev/null
-[ ! -e "$HOME/.gitconfig" ] && ok "off: the rendered .gitconfig is gone (no .bak: there was none before)" || bad "gitconfig off"
-fresh
-mkdir -p "$HOME/.config/spark-shell"
-printf 'GIT_NAME=Test Person\nGIT_EMAIL=you@example.com\n' > "$HOME/.config/spark-shell/config"
-printf '[user]\n\tname = Someone Else\n' > "$HOME/.gitconfig"
-sh "$SH" on >/dev/null
-grep -q 'Someone Else' "$HOME/.gitconfig" && [ ! -e "$HOME/.gitconfig.bak" ] && ok "a .gitconfig of yours is never touched, even with an identity in the config" || bad "gitconfig yours" "$(ls -la "$HOME")"
-st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q 'yours, left alone' && ok "status: the git row says yours" || bad "status yours" "$(printf '%s\n' "$st" | grep git)"
-out=$(sh "$SH" check || true)
-printf '%s\n' "$out" | grep -q '^ok     look' && ok "check: your .gitconfig is not stale look" || bad "check yours" "$out"
 
 # --- 12. v0.2's micro look is handed back once ---------------------------
 fresh

@@ -10,11 +10,6 @@ PROMPT=starship
 # starship's shape: minimal (a compact single line) or full.
 PROMPT_STYLE=minimal
 
-# The identity a .gitconfig is rendered with (git's author line): set
-# both. A .gitconfig you already have stays yours.
-GIT_NAME=Your Name
-GIT_EMAIL=you@example.com
-
 # The desktop (Linux): none, or sway -- sway and foot installed and
 # rendered from the palette, and the login box (greetd) on tty1 at the
 # next boot. `spark-shell desktop on|off` writes this line and does the
