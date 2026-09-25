@@ -28,15 +28,22 @@ client.focused_inactive #@HEX_MUTED@ #@HEX_MUTED@ #@HEX_BG@ #@HEX_MUTED@ #@HEX_M
 client.unfocused        #@HEX_BG@ #@HEX_BG@ #@HEX_MUTED@ #@HEX_BG@ #@HEX_BG@
 client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@ #@HEX_ANSI_1@ #@HEX_ANSI_1@
 
+# key: Super+Return opens a window, foot running your login shell.
 bindsym $mod+Return exec $term
+# key: Super+d asks for a desk from your words at a small prompt.
 bindsym $mod+d exec $term --app-id spark-desk -e @REPO@/spark-shell desktop --ask
 for_window [app_id="spark-desk"] floating enable, resize set width 60 ppt height 40 ppt
+# key: Super+s opens spark's own prompt in a small window; Ctrl-D closes it.
 bindsym $mod+s exec $term --app-id spark-chat -e @REPO@/spark-shell desktop --chat
 for_window [app_id="spark-chat"] floating enable, resize set width 60 ppt height 40 ppt
+# key: Super+Shift+q closes the window.
 bindsym $mod+Shift+q kill
+# key: Super+Shift+c reloads sway after spark-shell apply.
 bindsym $mod+Shift+c reload
+# key: Super+Shift+e leaves the desktop for the console or the login box.
 bindsym $mod+Shift+e exit
 
+# key: Super and h, j, k, l or the arrows move the focus; with Shift, the window.
 bindsym $mod+h focus left
 bindsym $mod+j focus down
 bindsym $mod+k focus up
@@ -54,6 +61,7 @@ bindsym $mod+Shift+Down move down
 bindsym $mod+Shift+Up move up
 bindsym $mod+Shift+Right move right
 
+# key: Super+f fills the screen with a window; Super+r resizes, Return ends it.
 bindsym $mod+b splith
 bindsym $mod+v splitv
 bindsym $mod+f fullscreen
@@ -64,6 +72,7 @@ bindsym $mod+Shift+space floating toggle
 bindsym $mod+space focus mode_toggle
 bindsym $mod+a focus parent
 
+# key: Super+1 to 0 go to a workspace; with Shift they send the window there.
 bindsym $mod+1 workspace number 1
 bindsym $mod+2 workspace number 2
 bindsym $mod+3 workspace number 3
@@ -100,4 +109,5 @@ mode "resize" {
 bindsym $mod+r mode "resize"
 
 exec @REPO@/spark-shell desktop --pending
-exec sh -c '$term; swaymsg exit'
+# key: exit in the first window leaves the desktop too.
+exec sh -c '$term -e @REPO@/spark-shell desktop --first; swaymsg exit'

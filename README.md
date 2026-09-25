@@ -30,6 +30,8 @@ this machine's cycles belong to the model.
                             keep the last desk, open a kept one, drop one
     spark-shell desktop apps | tools
                             what a desk may open: a picker, one list of marks
+    spark-shell desktop keys
+                            the desktop's keys, one sentence each
 
 ## Install
 
@@ -97,13 +99,19 @@ the next boot; the packages stay. The box's files are root's
 ask for sudo when they differ.
 
     spark-shell desktop     start it now, from a console login (tty1)
-    Super+Return            a window: foot, running your login shell
-    Super+s                 spark chat in a small window (Ctrl-D closes it)
-    Super+d                 a desk from your words (below)
-    Super+Shift+q           close it
-    Super+Shift+c           reload sway (after spark-shell apply)
-    Super+Shift+e           back to the console (or the login box)
-    exit                    in the first window: back there too
+    spark-shell desktop keys
+                            the keys, the sentences below, any time
+
+    Super+Return opens a window, foot running your login shell.
+    Super+d asks for a desk from your words at a small prompt.
+    Super+s opens spark's own prompt in a small window; Ctrl-D closes it.
+    Super+Shift+q closes the window.
+    Super+Shift+c reloads sway after spark-shell apply.
+    Super+Shift+e leaves the desktop for the console or the login box.
+    Super and h, j, k, l or the arrows move the focus; with Shift, the window.
+    Super+f fills the screen with a window; Super+r resizes, Return ends it.
+    Super+1 to 0 go to a workspace; with Shift they send the window there.
+    exit in the first window leaves the desktop too.
 
 The desktop opens on the forge: `wallpapers/forge-1920x1080.jpg`, the
 smith at work, shipped here in two sizes (a 2560x1664 twin for a
@@ -125,8 +133,13 @@ like every other window (the palette's colours, the accent on the
 prompt). Without spark the window says so instead of never appearing.
 Stacking, i3's `Super+s`, is `Super+Shift+s` here.
 
-The keys are i3's: `Super` and hjkl or the arrows to focus, with Shift
-to move, `Super+1`..`0` the workspaces, `Super+r` resize. `spark theme
+The desktop's first window shows the keys once, as a short card, then
+your shell; `spark-shell desktop keys` prints the same sentences any
+time (they are the `# key:` lines of the sway template, one source).
+`spark-shell status` ends with a `next` row when one thing is still
+off -- spark not installed, the desktop not on, a render missing, the
+login box not at boot, a reboot pending -- and with none when the seat
+is complete. `spark theme
 NAME` then `spark-shell apply` recolours the borders live, the next
 window and the login box. Between keystrokes it idles: sway and foot
 draw on demand, the login box waits on a tty, the cycles stay the

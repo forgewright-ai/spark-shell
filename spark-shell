@@ -39,6 +39,8 @@
 #                               box's apps, or over its tools (Tab flips a
 #                               mark, Enter saves), one list of marks,
 #                               yours in ~/.config/spark-shell/apps
+#   spark-shell desktop keys    the desktop's keys, one sentence each (the
+#                               first window shows them once)
 #   spark-shell sbom [apps|tools|parts|NAME] [--json]
 #                               the box's software, in the package
 #                               manager's words: version, licence, chosen
@@ -764,6 +766,30 @@ cmd_follow() {
     [ "$n" -eq 0 ] || echo "spark-shell: the look followed the palette ($n files; the login box at the next spark-shell apply)"
 }
 
+# The first hour: the desktop's keys are the `# key: ` sentences in the
+# sway template, one source (the README carries them verbatim and the
+# suite holds it to them). The first window of the desktop shows them
+# once, as a card (DESK_SEEN), and `desktop keys` any time. `status`
+# ends with one `next` row when something is off, nothing when not.
+DESK_SEEN=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desktop.seen
+desk_keys() { sed -n 's/^# key: //p' "$REPO/templates/.config/sway/config"; }
+desk_keys_card() {
+    echo "These are the desktop's keys; spark-shell desktop keys shows them again any time."
+    desk_keys | sed 's/^/  /'
+    echo
+}
+status_next() {   # the first sentence that applies, as a next row; nothing off, no row
+    if [ -z "$(spark_bin)" ]; then n=spark; s="Install spark, the AI this seat is for: github.com/forgewright-ai/spark."
+    elif [ "$OS" = Darwin ]; then return 0
+    elif [ "$DESKTOP" = none ]; then [ -d /dev/dri ] || return 0; n=desktop; s="spark-shell desktop on adds the desktop and the login box."
+    elif [ -n "$(desktop_tools)" ]; then n=desktop; s="spark-shell on installs sway and foot."
+    elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then n=desktop; s="spark-shell apply renders sway and foot."
+    elif ! greeter_at_boot; then n="login box"; s="spark-shell desktop on at a terminal puts greetd on tty1 (sudo once)."
+    elif [ -z "${WAYLAND_DISPLAY:-}" ] && ! systemctl is-active greetd.service >/dev/null 2>&1; then n="login box"; s="Reboot: the login box takes tty1 at the next boot."
+    else return 0; fi
+    printf '  next  %-16s %s\n' "$n" "$s"
+}
+
 cmd_status() {
     config_load
     tree=$(rc_tree)
@@ -805,6 +831,7 @@ cmd_status() {
     slots="accent colour${ACCENT_SLOT:-?}, muted colour${MUTED_SLOT:-?} (SGR 1;${ACCENT_SGR:-?} / ${MUTED_SGR:-?})"
     [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' theme.env "read: $slots (spark theme NAME rewrites it; then spark-shell apply)" \
                         || printf '  theme %-16s %s\n' theme.env "none: the terminal's own sixteen; $slots"
+    status_next
 }
 
 cmd_check() {
@@ -1393,6 +1420,13 @@ cmd_desktop() {
             # shellcheck disable=SC1091   # our own render, when there is one
             [ ! -f "$CONFIG_DIR/sgr.sh" ] || . "$CONFIG_DIR/sgr.sh"
             rm -rf "$TMP"; trap - EXIT; exec "$spark" chat ;;
+        keys) desk_keys; return ;;   # the template's sentences, anywhere (documentation)
+        --first)   # the desktop's first window: the keys once (the stamp first, so never twice), then your shell, always
+            if [ ! -f "$DESK_SEEN" ]; then
+                { mkdir -p "$(dirname "$DESK_SEEN")" && : > "$DESK_SEEN"; } 2>/dev/null || true
+                desk_keys_card || true
+            fi
+            rm -rf "$TMP"; trap - EXIT; exec "${SHELL:-/bin/sh}" ;;
         ''|-*) ;;
         *)  # a need, or a kept desk by name
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"

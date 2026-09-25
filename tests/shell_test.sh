@@ -247,6 +247,7 @@ else
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
     grep -q '^client.focused *#ff5555 ' "$sway" && ok "sway: client.focused takes the accent's hex (#ff5555)" || bad "sway focused" "$(grep -n client "$sway")"
     grep -q "^bindsym \$mod+s exec \$term --app-id spark-chat -e $REPO/spark-shell desktop --chat\$" "$sway" && ok "sway: the Super+s line names the clone's spark-shell" || bad "sway Super+s render" "$(grep -n 'mod+s ' "$sway")"
+    grep -q "^exec sh -c '\$term -e $REPO/spark-shell desktop --first; swaymsg exit'\$" "$sway" && ok "sway: the first window's line names the clone's spark-shell" || bad "sway --first render" "$(grep -n '^exec sh' "$sway")"
     grep -q "^output \* bg \"$REPO/wallpapers/forge-1920x1080.jpg\" fill\$" "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
         && ok "sway: the default background is the forge (wallpapers/forge-1920x1080.jpg), gaps, foot translucent" || bad "sway default bg" "$(grep -n 'output\|gaps' "$sway")"
     grep -q '@[A-Z_0-9]*@' "$foot" "$sway" && bad "a desktop render keeps a placeholder" "$(grep -n '@[A-Z_0-9]*@' "$foot" "$sway" | head -2)" || ok "desktop renders: no placeholder left"
@@ -367,7 +368,7 @@ grep -q '@FONT@' "$REPO/templates/.config/foot/foot.ini" && grep -q '@FOOT_ALPHA
 grep -q '^bar ' "$REPO/templates/.config/sway/config" && bad "sway: a bar block (the tmux line is the bar)" || ok "sway template: no bar, tmux's line is the bar"
 grep -q '^xwayland disable$' "$REPO/templates/.config/sway/config" && ok "sway template: xwayland disabled" || bad "sway xwayland"
 grep -v '^#' "$REPO/templates/.config/sway/config" | grep -q 'tmux' && bad "sway: a window starts tmux (it runs the login shell)" || ok "sway template: a new foot runs the login shell, never tmux"
-grep -q "^exec sh -c '\$term; swaymsg exit'$" "$REPO/templates/.config/sway/config" && ok "sway template: the desktop ends with its first terminal" || bad "sway template: exec line" "$(grep -n '^exec' "$REPO/templates/.config/sway/config")"
+grep -q "^exec sh -c '\$term -e @REPO@/spark-shell desktop --first; swaymsg exit'$" "$REPO/templates/.config/sway/config" && ok "sway template: the desktop ends with its first terminal (desktop --first: the keys once, then your shell)" || bad "sway template: exec line" "$(grep -n '^exec' "$REPO/templates/.config/sway/config")"
 sway_t=$REPO/templates/.config/sway/config
 grep -q '^bindsym \$mod+s exec \$term --app-id spark-chat -e @REPO@/spark-shell desktop --chat$' "$sway_t" && ok "sway template: Super+s opens a foot on spark-shell desktop --chat (the AI one key away)" || bad "sway template: Super+s" "$(grep -n 'mod+s ' "$sway_t")"
 grep -q '^for_window \[app_id="spark-chat"\] floating enable, resize set width 60 ppt height 40 ppt$' "$sway_t" && ok "sway template: the chat window floats, small" || bad "sway template: spark-chat for_window" "$(grep -n spark-chat "$sway_t")"
@@ -390,6 +391,21 @@ st=0; out=$(PATH=$H/.local/bin:/usr/bin:/bin sh "$SH" desktop --chat 2>&1 </dev/
 [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^spark is not installed -- the AI is spark' && printf '%s\n' "$out" | grep -q 'Enter closes' \
     && ok "desktop --chat without spark: the window says so and waits for Enter, exit 0" || bad "desktop --chat no spark" "st=$st $out"
 
+# --- the first hour: desktop keys any time, the card once in the first window (all OSes)
+keys=$(sh "$SH" desktop keys)
+[ "$(printf '%s\n' "$keys" | wc -l | tr -d ' ')" -ge 8 ] && ok "desktop keys: the template's key sentences, eight or more" || bad "desktop keys count" "$keys"
+printf '%s\n' "$keys" | grep -vq '\.$' && bad "desktop keys: a line that is not a whole sentence" "$(printf '%s\n' "$keys" | grep -v '\.$')" || ok "desktop keys: every line is a sentence ending with a period"
+printf '%s\n' "$keys" | grep -q '^Super+s ' && ok "desktop keys: Super+s is among them" || bad "desktop keys Super+s" "$keys"
+printf '%s\n' "$keys" | while IFS= read -r line; do grep -qF -- "$line" "$REPO/README.md" || printf '%s\n' "$line"; done > "$H/keys.missing"
+[ ! -s "$H/keys.missing" ] && ok "README: every key sentence, verbatim" || bad "README keys" "$(cat "$H/keys.missing")"
+[ ! -e "$H/.local/state/spark-shell/desktop.seen" ] && ok "desktop keys: no stamp written" || bad "desktop keys wrote the stamp"
+printf '#!/bin/sh\necho shell-stub\n' > "$H/.local/bin/shellstub"; chmod +x "$H/.local/bin/shellstub"
+out=$(SHELL=$H/.local/bin/shellstub sh "$SH" desktop --first)
+printf '%s\n' "$out" | head -1 | grep -q "^These are the desktop's keys; spark-shell desktop keys shows them again any time\.$" && [ -f "$H/.local/state/spark-shell/desktop.seen" ] && [ "$(printf '%s\n' "$out" | tail -1)" = shell-stub ] \
+    && ok "desktop --first: the card once (the stamp written first), then the shell" || bad "desktop --first" "$out"
+out=$(SHELL=$H/.local/bin/shellstub sh "$SH" desktop --first)
+[ "$out" = shell-stub ] && ok "desktop --first again: the shell alone, no card" || bad "desktop --first twice" "$out"
+
 # --- 15. the login box: desktop on|off, greetd on tty1 --------------------
 # stubs for greetd and tuigreet beside the desktop's; systemctl is a stub
 # that logs its arguments and keeps enable/disable state in files. Every
@@ -407,6 +423,7 @@ case $1 in
     enable) touch "$st/$2" ;;
     disable) rm -f "$st/$2" ;;
     is-enabled) if [ -e "$st/$2" ]; then echo enabled; else echo disabled; exit 1; fi ;;
+    is-active) [ -e "$st/active-$2" ] ;;
 esac
 EOF
     chmod +x "$H/.local/bin/systemctl"
@@ -419,6 +436,7 @@ greeter_stubs
 theme_fixture '#ff5555'
 mkdir -p "$HOME/.config/spark-shell"
 printf 'PROMPT_STYLE=full\nDESKTOP=none\n' > "$HOME/.config/spark-shell/config"
+st=$(PATH=$H/.local/bin:/usr/bin:/bin sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next  spark .*Install spark, the AI this seat is for: github.com/forgewright-ai/spark\.$' && ok "status: next says install spark first, without spark on PATH" || bad "status next spark" "$(printf '%s\n' "$st" | grep next)"
 if [ "$(uname -s)" = Darwin ]; then
     st=0; out=$(sh "$SH" desktop on 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: na' \
@@ -463,6 +481,14 @@ else
     grep -Eq '^(start|stop|restart) ' "$H/root/units/log" && bad "a unit was started or stopped live" "$(cat "$H/root/units/log")" || ok "desktop on: no unit started or stopped live"
     printf '%s\n' "$out" | grep -q '^ok     greeter      greetd on tty1 at the next boot (getty@tty1 until then)' && ok "desktop on: the greeter row says the next boot" || bad "greeter row" "$out"
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desk  sway .*login box: greetd at boot' && ok "status: the desk row names the login box" || bad "status login box" "$(printf '%s\n' "$st" | grep desk)"
+    # the next row: the first sentence that applies, none when nothing is off
+    printf '#!/bin/sh\n:\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
+    st=$(env -u WAYLAND_DISPLAY sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next  login box .*Reboot: the login box takes tty1 at the next boot\.$' && ok "status: next says reboot when greetd is set for boot but not active" || bad "status next reboot" "$(printf '%s\n' "$st" | grep next)"
+    touch "$H/root/units/active-greetd.service"
+    st=$(env -u WAYLAND_DISPLAY sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next' && bad "status: a next row with nothing off" "$(printf '%s\n' "$st" | grep next)" || ok "status: no next row when nothing is off (greetd active)"
+    rm -f "$H/root/units/greetd.service"
+    st=$(env -u WAYLAND_DISPLAY sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next  login box .*spark-shell desktop on at a terminal puts greetd on tty1 (sudo once)\.$' && ok "status: next says desktop on when greetd is not at boot" || bad "status next greetd" "$(printf '%s\n' "$st" | grep next)"
+    systemctl enable greetd.service; rm -f "$H/.local/bin/spark"
     out=$(sh "$SH" check || true)
     printf '%s\n' "$out" | grep -q '^ok     greeter      greetd on tty1 at boot' && ok "check: ok greeter" || bad "check greeter" "$out"
     out=$(sh "$SH" on --dry-run)
