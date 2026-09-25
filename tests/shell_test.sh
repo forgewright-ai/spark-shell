@@ -596,8 +596,9 @@ else
     grep -q 'foot:\|footclient:\|xdg-open:' "$argv" && bad "inventory: foot or xdg-open is in" || ok "inventory: no foot, footclient or xdg-open"
     printf '%s\n' 'workspace number 3' 'exec gimp-3.0' splith 'exec firefox https://instagram.com' splitv 'exec firefox https://x.com' 'exec foot -e micro' 'exec player --idle --' 'focus left' 'resize set width 70 ppt' > "$H/expected.lines"
     cmp -s "$swlog" "$H/expected.lines" && ok "sway got exactly the nine lines in order (main, splith, side, splitv, micro in foot, focus left, resize 70 ppt; ghostapp never)" || bad "swaymsg lines" "$(cat "$swlog" 2>&1)"
-    head -1 "$desk_last" | grep -q "^# desk: $need -- rendered by spark-shell" && grep -q '^# why: photo work in gimp' "$desk_last" && grep -q '^exec foot -e micro$' "$desk_last" \
-        && ok "desk.last: the header (the words, the marker), the why, the lines" || bad "desk.last" "$(cat "$desk_last" 2>&1)"
+    jq -e --arg w "$need" '(keys_unsorted[0] == "words") and .words == $w and (.why | startswith("photo work in gimp")) and .main.app == "gimp-3.0" and .main.width == 70 and (.side | length) == 5 and .side[0].args == "https://instagram.com"' "$desk_last" >/dev/null 2>&1 \
+        && ok "desk.last: the model's answer as JSON, the words first, then why, main and side as answered" || bad "desk.last" "$(cat "$desk_last" 2>&1)"
+    grep -q '^exec\|^workspace\|^#' "$desk_last" && bad "desk.last holds sway lines or a header" "$(head -3 "$desk_last")" || ok "desk.last: no sway line, no header (rendered when it opens)"
     # the inventory: unmarked, every app with a desktop entry and never a package
     # (the fake pacman answers -Qi and -Ql, as sbom_collect asks); marked (the
     # apps file), exactly those names -- an entry's words, a package's words or
@@ -669,26 +670,42 @@ EOF
     [ "$st" -eq 1 ] && [ "$out" = "spark-shell desktop: no kept desk named studio" ] && ok "desktop forget NAME twice: refused in one line" || bad "forget twice" "st=$st $out"
     printf 'workspace number 1\nexec firefox\n' > "$desks/mine"
     st=0; out=$(sh "$SH" desktop forget mine 2>&1) || st=$?
-    [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q 'is not a desk of ours -- left alone' && [ -f "$desks/mine" ] \
-        && ok "desktop forget NAME: a file without the marker is refused and left in place" || bad "forget yours" "st=$st $out"
+    [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && [ "$out" = "spark-shell desktop: $desks/mine is not a desk of ours (one JSON object: words, why, main, side) -- left alone." ] && [ -f "$desks/mine" ] \
+        && ok "desktop forget NAME: a file that is not one JSON object is refused, named, and left in place" || bad "forget yours" "st=$st $out"
+    st=0; out=$(sh "$SH" desktop mine 2>&1) || st=$?
+    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q 'left alone\.$' && ok "desktop NAME on a file that is not a desk: refused, left alone" || bad "open yours" "st=$st $out"
+    # a desk kept before v0.36 (sway lines under a header): refused on open and on forget, the file named, the words to make it again
+    printf '# desk: news and mail -- rendered by spark-shell (spark-shell desktop keep NAME keeps it)\nworkspace number 1\nexec firefox\n' > "$desks/old"
+    old_why="spark-shell desktop: $desks/old is a desk of the old shape, sway lines; spark-shell desktop \"news and mail\" makes it again, then keep."
+    st=0; out=$(sh "$SH" desktop old 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = "$old_why" ] && ok "desktop NAME on a desk of the old shape: one sentence names the file and the words that make it again" || bad "open old" "st=$st $out"
+    st=0; out=$(sh "$SH" desktop forget old 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = "$old_why" ] && [ -f "$desks/old" ] && ok "desktop forget NAME on a desk of the old shape: the same sentence, the file left" || bad "forget old" "st=$st $out"
+    rm -f "$desks/old"
+    cp "$desk_last" "$H/desk.last.json"; printf '# desk: old -- rendered by spark-shell\nworkspace number 1\n' > "$desk_last"
+    st=0; out=$(sh "$SH" desktop keep 2>&1) || st=$?
+    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q "^spark-shell desktop: $desk_last is a desk of the old shape" && ok "desktop keep with a desk.last of the old shape: refused, the file named" || bad "keep old" "st=$st $out"
+    cp "$H/desk.last.json" "$desk_last"
     st=0; out=$(sh "$SH" desktop keep a b 2>&1) || st=$?
     [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^kept a-b -- ' && [ -f "$desks/a-b" ] && ok "desktop keep: words with a space become one name (a-b)" || bad "keep name" "st=$st $out"
     rm -f "$desks/a-b"
-    # the gate on a kept desk edited by hand: every line read, the bad ones named, the rest runs
-    printf '# desk: the gate -- rendered by spark-shell\nworkspace number 1\nexec foot -e rm x\nexec gimp-3.0 $(id)\nexec sudo ls\noutput * bg x\nexec firefox a|b\nexec foot -e micro notes.txt\n' > "$desks/gate"
+    # the gate on a kept desk edited by hand: every rendered line read, the bad ones named, the rest runs
+    cat > "$desks/gate" <<'EOF'
+{"words": "the gate", "main": {"app": "rm", "args": "x"},
+ "side": [{"app": "gimp-3.0", "args": "$(id)"}, {"app": "sudo", "args": "ls"}, {"app": "firefox", "args": "a|b"}, {"app": "micro", "args": "notes.txt"}]}
+EOF
     rm -f "$swlog"
     st=0; out=$(sh "$SH" desktop gate 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | grep -c '^  refused  ')" -eq 4 ] && ok "gate: four lines refused, the desk still runs (exit 0)" || bad "gate count" "st=$st $out"
+    [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | grep -c '^  refused  ')" -eq 3 ] && ok "gate: three lines refused, the desk still runs (exit 0)" || bad "gate count" "st=$st $out"
     printf '%s\n' "$out" | grep -q '^  rm x$' && ok "gate: a kept desk you edited may open a program the machine has (rm x ran; it is yours)" || bad "gate rm" "$out"
     printf '%s\n' "$out" | grep -qF '  refused  exec gimp-3.0 $(id)  (shell syntax' && printf '%s\n' "$out" | grep -qF '  refused  exec firefox a|b  (shell syntax' \
         && ok "gate: shell syntax (\$(id), a pipe) never reaches sh -c" || bad "gate syntax" "$out"
-    printf '%s\n' "$out" | grep -qF '  refused  exec sudo ls  (sudo is not an app)' && ok "gate: sudo is not an app" || bad "gate sudo" "$out"
-    printf '%s\n' "$out" | grep -qF '  refused  output * bg x  (output is not a desk verb)' && ok "gate: output is not a desk verb" || bad "gate verb" "$out"
-    printf '%s\n' 'workspace number 3' 'exec foot -e rm x' 'exec foot -e micro notes.txt' > "$H/expected.gate"
-    cmp -s "$swlog" "$H/expected.gate" && ok "gate: sway got the workspace line and the one good exec, nothing else" || bad "gate lines" "$(cat "$swlog" 2>&1)"
+    printf '%s\n' "$out" | grep -qF '  refused  exec foot -e sudo ls  (sudo is not an app)' && ok "gate: sudo is not an app" || bad "gate sudo" "$out"
+    printf '%s\n' 'workspace number 3' 'exec foot -e rm x' 'splith' 'exec foot -e micro notes.txt' 'focus left' 'resize set width 70 ppt' > "$H/expected.gate"
+    cmp -s "$swlog" "$H/expected.gate" && ok "gate: sway got the workspace line, the two good execs and their layout, nothing else" || bad "gate lines" "$(cat "$swlog" 2>&1)"
     # a kept desk may open any program the machine has (you kept it); the model's answer may not
     printf '#!/bin/sh\n:\n' > "$H/.local/bin/reader"; chmod +x "$H/.local/bin/reader"
-    printf '# desk: a reader you kept -- rendered by spark-shell\nworkspace number 1\nexec foot -e reader\nexec foot -e sudo ls\n' > "$desks/kept-reader"
+    printf '{"words": "a reader you kept", "main": {"app": "reader"}, "side": [{"app": "sudo", "args": "ls"}]}\n' > "$desks/kept-reader"
     : > "$swlog"
     st=0; out=$(sh "$SH" desktop kept-reader 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q '^exec foot -e reader$' "$swlog" && printf '%s\n' "$out" | grep -q '^  refused  exec foot -e sudo ls  (sudo is not an app)$' \
@@ -696,7 +713,7 @@ EOF
     rm -f "$desks/kept-reader" "$H/.local/bin/reader"
     # a window that never comes (mpv with nothing to play): the split meant for it is skipped,
     # so the next window lands beside the main one instead of cutting it
-    printf '# desk: gone -- rendered by spark-shell\nworkspace number 1\nexec foot -e micro\nsplith\nexec gone\nsplitv\nexec firefox\nfocus left\nresize set width 70 ppt\n' > "$desks/gone"
+    printf '{"words": "gone", "main": {"app": "micro", "width": 70}, "side": [{"app": "gone"}, {"app": "firefox"}]}\n' > "$desks/gone"
     : > "$swlog"
     st=0; out=$(sh "$SH" desktop gone 2>&1) || st=$?
     printf '%s\n' "$out" | grep -q '^  gone -- no window$' && printf '%s\n' "$out" | grep -q '^  micro$' && printf '%s\n' "$out" | grep -q '^  firefox$' \

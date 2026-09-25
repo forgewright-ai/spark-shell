@@ -175,15 +175,18 @@ narrow it, `sbom NAME` is one package, `sbom --json` writes CycloneDX
 1.5 to `~/.local/state/spark-shell/sbom.cdx.json`, the format spark's
 own `spark ver --sbom` uses.
 
-A kept desk is a text file of sway commands
-(`~/.config/spark-shell/desks/NAME`), yours to edit. Every line, fresh
-or kept, passes one gate before sway sees it: a desk verb, no shell
-syntax, and `exec` only of an app this machine has -- a shell or a way
-to root is not an app. A line that fails is named and dropped, the rest
-still opens. The model sees the need's words, the screen's size and
-the app list, never a window's title or a file. From a console with no
-desktop running, `spark-shell desktop "WORDS"` starts one and lays the
-desk out in it.
+A kept desk is the model's answer, one JSON object
+(`~/.config/spark-shell/desks/NAME`: the words, the why, the main
+window with its width, the windows beside it), yours to edit; it is
+laid out again for the screens you have each time it opens. A desk
+kept before v0.36 (sway lines) is refused with the words that make it
+again. Every rendered line, fresh or kept, passes one gate before sway
+sees it: a desk verb, no shell syntax, and `exec` only of an app this
+machine has -- a shell or a way to root is not an app. A line that
+fails is named and dropped, the rest still opens. The model sees the
+need's words, the screen's size and the app list, never a window's
+title or a file. From a console with no desktop running, `spark-shell
+desktop "WORDS"` starts one and lays the desk out in it.
 
 ## The palette follows you
 
