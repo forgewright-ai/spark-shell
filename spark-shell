@@ -580,7 +580,7 @@ greeter_off() {   # getty back on tty1 at the next boot, the root files handed b
     done
     for d in $ROOT_DIRS; do [ -d "$ROOT/$d" ] && root_do rmdir "$ROOT/$d" 2>/dev/null || true; done
     root_do systemctl daemon-reload >/dev/null 2>&1 || true
-    row ok greeter "getty on tty1 at the next boot (greetd until then)"
+    row ok greeter "getty on tty1 at the next boot; until then Enter at the login box opens your shell"
 }
 
 render_all() {
@@ -1614,6 +1614,13 @@ cmd_desktop() {
             fi ;;
     esac
     [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
+    # the desktop off, asked from a console (a login box still running
+    # after desktop off runs this on Enter): your shell, never a dead end
+    if [ "$DESKTOP" != sway ] && [ -n "${XDG_VTNR:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+        echo "The desktop is off (spark-shell desktop on brings it back); this is your shell."
+        rm -rf "$TMP"; trap - EXIT
+        exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA "${SHELL:-/bin/sh}" -l
+    fi
     [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on"
     [ -z "$(desktop_tools)" ] || refuse "not installed:$(desktop_tools) (spark-shell on)"
     [ -f "$HOME/.config/sway/config" ] && [ -f "$HOME/.config/foot/foot.ini" ] || refuse "not rendered (spark-shell apply)"

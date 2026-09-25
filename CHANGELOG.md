@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.37
+
+- `spark-shell desktop off` under a running login box no longer strands
+  you: the greeter's Enter still runs `spark-shell desktop`, and with the
+  desktop off that now lands in your shell (one line says so) instead of
+  a refusal that sent you back to the greeter until a reboot. The `off`
+  row says what happens until the next boot.
+
 ## v0.36
 
 The seat at an AI box, revamped: what a new user needs and nothing

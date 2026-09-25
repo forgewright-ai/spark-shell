@@ -536,6 +536,11 @@ else
     printf '%s\n' "$out" | grep -q 'packages stay installed' && ok "desktop off: packages stay, said so" || bad "desktop off closing" "$out"
     out=$(sh "$SH" desktop off)
     printf '%s\n' "$out" | grep -q '^ok     greeter' && bad "desktop off twice acts twice" "$out" || ok "desktop off twice: nothing to undo, nothing said"
+    # the login box still running after off: its Enter runs `desktop`, which lands in your shell
+    printf '#!/bin/sh\necho "shell-stub $* ${DESKTOP-unset}"\n' > "$H/.local/bin/offshell"; chmod +x "$H/.local/bin/offshell"
+    st=0; out=$(XDG_VTNR=1 SHELL=$H/.local/bin/offshell env -u WAYLAND_DISPLAY sh "$SH" desktop 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^The desktop is off (spark-shell desktop on brings it back); this is your shell\.$' && [ "$(printf '%s\n' "$out" | tail -1)" = 'shell-stub -l unset' ] \
+        && ok "desktop with the desktop off, from a console: one line, then your login shell (never a dead end at the greeter)" || bad "desktop off console landing" "st=$st $out"
     # a foreign config.toml is kept as .spark-orig and comes back on off
     mkdir -p "$H/root/etc/greetd"; printf '[terminal]\nvt = 1\n[default_session]\ncommand = "agreety --cmd /bin/sh"\nuser = "greeter"\n' > "$conf"
     sh "$SH" desktop on >/dev/null
