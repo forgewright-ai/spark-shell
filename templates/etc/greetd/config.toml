@@ -1,4 +1,4 @@
-# rendered by spark-shell from templates/etc/greetd/config.toml -- edit the template, then spark-shell apply
+# rendered by spark-shell from templates/etc/greetd/config.toml -- edit the template, then spark-shell on
 # greetd: the login box on tty1. tuigreet draws it on the console, in the
 # palette's slots (ratatui's colour words), with the machine's name above
 # and the clock. Enter starts the desktop the way the verb does (sway's

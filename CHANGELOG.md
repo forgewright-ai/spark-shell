@@ -12,6 +12,9 @@
   remedy says the new words.
 - `off --dry-run` and `off desktop --dry-run` print what they would hand
   back and touch nothing; they had acted.
+- A dry run's last line counts every `would` row it printed; `on
+  --dry-run` had counted the package and unit steps only and could close
+  "Nothing to do" under a list of would rows.
 
 ## v0.37
 

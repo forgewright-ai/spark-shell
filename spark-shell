@@ -303,8 +303,10 @@ MODE=apply
 VERBOSE=0
 PLAYER=''   # a desk's player: windows | rooms, forced by --windows | --rooms; else where you ask from
 todo=0
+would=0   # the would rows printed: a dry run's last line counts them
 acting=0
-row() { printf '%-6s %-12s %s\n' "$1" "$2" "${3:-}"; }
+row() { printf '%-6s %-12s %s\n' "$1" "$2" "${3:-}"; [ "$1" != would ] || would=$((would + 1)); }
+dry_close() { if [ "$would" -eq 0 ]; then echo "Nothing to do"; else echo "$would to do"; fi; }
 loud() { [ "$MODE" = dry ] || [ "$VERBOSE" = 1 ]; }
 ok() { if loud || [ "$acting" = 1 ]; then row ok "$1" "${2:-}"; fi; acting=0; }
 skip() { if loud; then row skip "$1" "${2:-}"; fi; acting=0; }
@@ -637,7 +639,9 @@ tmux_reload() {
 noun_ok() {   # noun_ok on|off [WORD...]
     [ $# -gt 1 ] || return 0
     [ "$*" != "$1 desktop" ] || return 0
-    _v=$1; shift; echo "spark-shell $_v: $* is not a thing to switch $_v (desktop is)"; exit 1
+    _v=$1; shift; _w=$*
+    case $_w in *[!\ ]*) ;; *) _w="an empty word" ;; esac
+    echo "spark-shell $_v: $_w is not a thing to switch $_v (desktop is)"; exit 1
 }
 cmd_on() {   # cmd_on [desktop]
     noun_ok on "$@"
@@ -645,7 +649,11 @@ cmd_on() {   # cmd_on [desktop]
     config_load
     if [ "${1:-}" = desktop ]; then
         # the config first, then everything on does with DESKTOP=sway:
-        # the packages, the renders, the login box (desktop_apply)
+        # the packages, the renders, the login box (desktop_apply). The
+        # line itself is a change: never "Nothing to do" after writing it
+        if [ "$DESKTOP" != sway ]; then
+            if [ "$MODE" = dry ]; then row would config "DESKTOP=sway ($CONFIG)"; else changes=$((changes + 1)); fi
+        fi
         [ "$MODE" = dry ] || config_set DESKTOP sway
         DESKTOP=sway; export DESKTOP
     fi
@@ -723,7 +731,7 @@ cmd_on() {   # cmd_on [desktop]
     link_one "$REPO/spark-shell" "$HOME/.local/bin/spark-shell"
     tmux_reload
     if [ "$MODE" = dry ]; then
-        if [ "$todo" -eq 0 ]; then echo "Nothing to do"; else echo "$todo to do"; fi
+        dry_close
     else
         theme_seen
         if [ "$changes" -eq 0 ] && [ "$todo" -eq 0 ]; then echo "Nothing to do"; else echo "open a new shell (exec \$SHELL)"; fi
@@ -777,16 +785,22 @@ cmd_off() {   # cmd_off [desktop]
 # link of ours, a render with the marker or a .bak, the login box when
 # its config.toml is ours.
 off_would() {   # off_would [desktop]
-    n=0
     if [ "${1:-}" = desktop ]; then
-        row would config "DESKTOP=none ($CONFIG)"; n=$((n + 1))
+        [ "$DESKTOP" = none ] || row would config "DESKTOP=none ($CONFIG)"
         list=$DESKTOP_RENDERED
     else
         for f in $(rc_files); do
             p=$HOME/$f
             [ -L "$p" ] || continue
-            case $(readlink "$p") in "$REPO"/*) row would rc "$p"; n=$((n + 1)) ;; esac
+            case $(readlink "$p") in "$REPO"/*) row would rc "$p" ;; esac
         done
+        # the one write off may do: spark's hook line back into the rc
+        # file it leaves there (the .bak, or nothing, where ours is linked)
+        case $OS in Darwin) hook=hook.zsh; rcf=$HOME/.zshrc ;; *) hook=hook.bash; rcf=$HOME/.bashrc ;; esac
+        if [ -r "$SPARK_CONFIG_DIR/$hook" ]; then
+            after=$rcf; if [ -L "$rcf" ]; then case $(readlink "$rcf") in "$REPO"/*) after=$rcf.bak ;; esac; fi
+            grep -q 'config/spark/hook\.' "$after" 2>/dev/null || row would rc "$rcf -- spark's hook line kept"
+        fi
         list="$RENDERED .config/starship.toml .config/yazi/theme.toml $DESKTOP_RENDERED"
     fi
     for rel in $list; do
@@ -795,10 +809,9 @@ off_would() {   # off_would [desktop]
         grep -q 'rendered by spark-shell' "$p" 2>/dev/null || [ -e "$p.bak" ] || continue
         if [ -e "$p.bak" ]; then row would restore "$p -- back from ${p##*/}.bak"
         else row would restore "$p -- removed (no ${p##*/}.bak: there was no file before)"; fi
-        n=$((n + 1))
     done
-    if [ "$OS" != Darwin ] && greeter_ours; then row would greeter "getty on tty1 at the next boot, the login box's files handed back (sudo)"; n=$((n + 1)); fi
-    if [ "$n" -eq 0 ]; then echo "Nothing to do"; else echo "$n to do"; fi
+    if [ "$OS" != Darwin ] && greeter_ours; then row would greeter "getty on tty1 at the next boot, the login box's files handed back (sudo)"; fi
+    dry_close
 }
 
 # The look follows the palette: the login profile runs `spark-shell
@@ -1567,8 +1580,8 @@ cmd_desktop() {
     config_load
     pending=''
     case ${1:-} in
-        on) cmd_on desktop; return ;;
-        off) cmd_off desktop; return ;;
+        on) shift; cmd_on desktop "$@"; return ;;
+        off) shift; cmd_off desktop "$@"; return ;;
         wallpaper)
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
             case ${2:-} in
@@ -1682,19 +1695,18 @@ usage() {
 main() {
     sub=${1:-status}
     shift 2>/dev/null || true
-    words=''
-    for a in "$@"; do
-        case $a in --dry-run) MODE=dry ;; --verbose|-v) VERBOSE=1 ;; --windows|--rooms) PLAYER=${a#--} ;; *) words="$words$a\n" ;; esac
+    # the flags out of the words (a need is words; -v and the desk's player
+    # are not among them): the list rotated once, every word byte-exact
+    n=$#
+    while [ "$n" -gt 0 ]; do
+        a=$1; shift; n=$((n - 1))
+        case $a in --dry-run) MODE=dry ;; --verbose|-v) VERBOSE=1 ;; --windows|--rooms) PLAYER=${a#--} ;; *) set -- "$@" "$a" ;; esac
     done
-    # the flags out of the words (a need is words; -v and the desk's player are not among them);
-    # a flag alone leaves no word, so a verb's noun is never a flag
-    set -- ; IFS_=$IFS; IFS='
-'; set -f; for a in $(printf "%b" "$words"); do set -- "$@" "$a"; done; set +f; IFS=$IFS_   # set -f: a word like * is a word, not the cwd's files
     case $sub in
         -h|--help|help) usage ;;
         on) cmd_on "$@" ;;
         off) cmd_off "$@" ;;
-        apply) cmd_on ;;
+        apply) cmd_on "$@" ;;
         follow) cmd_follow ;;
         check) cmd_check ;;
         bar) cmd_bar "$@" ;;

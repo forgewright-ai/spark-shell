@@ -40,6 +40,7 @@ theme_fixture() {   # theme_fixture ACCENT [MUTED] -- a 21-key theme.env over th
 RENDERS=".tmux.conf .config/btop/btop.conf .config/starship.toml .config/spark-shell/sgr.sh"
 
 SH=$REPO/spark-shell
+sys=$(dirname "$(command -v uname)"):/usr/bin:/bin   # the system's tools alone; a uname put first on PATH (the Linux halves on a Mac) stays
 
 # --- 1. dry-run: rows, nothing touched -----------------------------------
 fresh
@@ -47,7 +48,8 @@ out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^would  rc' && ok "dry-run: would link the rc files" || bad "dry-run rc rows" "$out"
 printf '%s\n' "$out" | grep -q '^would  look' && ok "dry-run: would render the look" || bad "dry-run look rows" "$out"
 printf '%s\n' "$out" | grep -q '^todo   packages' && ok "dry-run: an unknown family is a todo, not a guess" || bad "dry-run packages row" "$out"
-printf '%s\n' "$out" | grep -q ' to do$' && ok "dry-run ends with the count" || bad "dry-run count" "$out"
+printf '%s\n' "$out" | grep -Eq '^[0-9]+ to do$' && ok "dry-run ends with the count of its would rows" || bad "dry-run count" "$out"
+[ "$(printf '%s\n' "$out" | grep -c '^would ')" = "$(printf '%s\n' "$out" | sed -n 's/^\([0-9]*\) to do$/\1/p')" ] && ok "dry-run: the count is the number of would rows" || bad "dry-run count exact" "$out"
 printf '%s\n' "$out" | grep -q 'font' && bad "a font row survives" "$out" || ok "dry-run: no font row"
 [ ! -e "$HOME/.tmux.conf" ] && ok "dry-run touched nothing" || bad "dry-run wrote files"
 rc=0; out=$(sh "$SH" on nonsense 2>&1) || rc=$?
@@ -55,6 +57,13 @@ rc=0; out=$(sh "$SH" on nonsense 2>&1) || rc=$?
     && ok "on NOUN: an unknown noun is refused in one sentence before anything runs (exit 1)" || bad "on nonsense" "rc=$rc $out"
 rc=0; out=$(sh "$SH" off nonsense 2>&1) || rc=$?
 [ "$rc" -eq 1 ] && [ "$out" = "spark-shell off: nonsense is not a thing to switch off (desktop is)" ] && ok "off NOUN: the same refusal" || bad "off nonsense" "rc=$rc $out"
+rc=0; out=$(sh "$SH" apply nonsense 2>&1) || rc=$?
+[ "$rc" -eq 1 ] && [ "$out" = "spark-shell on: nonsense is not a thing to switch on (desktop is)" ] && ok "apply NOUN: the spelling refuses like on" || bad "apply nonsense" "rc=$rc $out"
+rc=0; out=$(sh "$SH" desktop on extra 2>&1) || rc=$?
+[ "$rc" -eq 1 ] && [ "$out" = "spark-shell on: desktop extra is not a thing to switch on (desktop is)" ] && [ ! -e "$HOME/.tmux.conf" ] && [ ! -e "$HOME/.config/spark-shell/config" ] \
+    && ok "desktop on EXTRA: the spelling refuses an extra word, nothing written" || bad "desktop on extra" "rc=$rc $out"
+rc=0; out=$(sh "$SH" on "" 2>&1) || rc=$?
+[ "$rc" -eq 1 ] && [ "$out" = "spark-shell on: an empty word is not a thing to switch on (desktop is)" ] && [ ! -e "$HOME/.tmux.conf" ] && ok "on '': an empty word is refused (every word byte-exact)" || bad "on empty" "rc=$rc $out"
 
 # --- 2. on: links, renders, idempotence, the plain look ------------------
 theme_fixture '#ff5555'
@@ -97,7 +106,7 @@ printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/spark"
 ck=$(sh "$SH" check || true)
 printf '%s\n' "$ck" | grep -q '^FAIL   bar          spark bar line failed -- spark check$' && ok "check: FAIL bar when spark bar line fails, the remedy is spark check" || bad "check bar fail" "$(printf '%s\n' "$ck" | grep bar)"
 rm -f "$H/.local/bin/spark"
-ck=$(PATH=$H/.local/bin:/usr/bin:/bin sh "$SH" check || true)
+ck=$(PATH=$H/.local/bin:$sys sh "$SH" check || true)
 printf '%s\n' "$ck" | grep -q '^ok     bar          na (spark not found -- the status line stays empty)$' && ok "check: bar is na without spark, still ok" || bad "check bar na" "$(printf '%s\n' "$ck" | grep bar)"
 out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "second run: Nothing to do" || bad "idempotence" "$out"
@@ -105,9 +114,9 @@ printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "second run: Nothing to d
 mkdir -p "$H/apt-bin"
 for t in tmux fzf zoxide eza btop fdfind batcat; do printf '#!/bin/sh\n:\n' > "$H/apt-bin/$t"; chmod +x "$H/apt-bin/$t"; done
 printf 'ID=debian\n' > "$H/os-debian"
-ck=$(SPARK_OS_RELEASE=$H/os-debian PATH=$H/apt-bin:/usr/bin:/bin sh "$SH" check || true)
+ck=$(SPARK_OS_RELEASE=$H/os-debian PATH=$H/apt-bin:$sys sh "$SH" check || true)
 printf '%s\n' "$ck" | grep -q '^ok     tools        tmux, fzf, zoxide, eza, bat, btop, fd$' && ok "check under apt: fdfind and batcat count as fd and bat" || bad "check apt tools" "$(printf '%s\n' "$ck" | grep tools)"
-st=$(SPARK_OS_RELEASE=$H/os-debian PATH=$H/apt-bin:/usr/bin:/bin sh "$SH" status)
+st=$(SPARK_OS_RELEASE=$H/os-debian PATH=$H/apt-bin:$sys sh "$SH" status)
 printf '%s\n' "$st" | grep -q '^  tool  fd  *yes$' && printf '%s\n' "$st" | grep -q '^  tool  bat  *yes$' && ok "status under apt: the fd and bat rows say yes" || bad "status apt tools" "$(printf '%s\n' "$st" | grep tool)"
 
 # --- 3. on again follows the palette --------------------------------------
@@ -121,8 +130,12 @@ grep -q "SPARK_ACCENT_SGR='1;33'" "$HOME/.config/spark-shell/sgr.sh" && ok "on a
 st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q 'accent colour3, muted colour8 (SGR 1;33 / 90)' && ok "status: the theme row names the slots and the SGR pair" || bad "status slots" "$(printf '%s\n' "$st" | grep theme)"
 out=$(sh "$SH" on)
 printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "on again with nothing changed: ends in Nothing to do" || bad "on nothing to do" "$out"
-out=$(sh "$SH" apply)
-printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "apply is on: the same path, the same closing" || bad "apply alias" "$out"
+theme_fixture '#5555ff'
+out=$(sh "$SH" on --dry-run); out2=$(sh "$SH" apply --dry-run)
+[ "$out2" = "$out" ] && printf '%s\n' "$out" | grep -q '^would  look' && ok "apply is on: the same dry run, row for row (the new accent would render)" || bad "apply alias" "$out2"
+sh "$SH" apply >/dev/null
+grep -q "SPARK_ACCENT_SGR='1;94'" "$HOME/.config/spark-shell/sgr.sh" && ok "apply: the accent lands in sgr.sh (1;94)" || bad "apply sgr" "$(cat "$HOME/.config/spark-shell/sgr.sh")"
+theme_fixture '#ee8800'; sh "$SH" on >/dev/null   # the palette section 4 reads
 
 # --- 4. the prompt choices ------------------------------------------------
 mkdir -p "$HOME/.config/spark-shell"
@@ -136,7 +149,7 @@ sh "$SH" on >/dev/null
     && plain "$HOME/.config/starship.toml" && ok "PROMPT_STYLE=full renders the full style, plain" || bad "full style"
 # no starship and no package for it (the fixture family): the shell's own prompt, a skip, never a download
 mv "$H/.local/bin/starship" "$H/starship.aside"
-out=$(PATH=$H/.local/bin:/usr/bin:/bin sh "$SH" on --dry-run)
+out=$(PATH=$H/.local/bin:$sys sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q 'would  starship' && bad "a starship download survives" "$out" || ok "on: no starship row would fetch anything"
 printf '%s\n' "$out" | grep -q '^skip   prompt       no starship package here' && ok "on: no starship package here is a skip (the shell's own prompt)" || bad "prompt skip" "$out"
 printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "on: a prompt skip still ends in Nothing to do" || bad "prompt skip count" "$out"
@@ -148,9 +161,11 @@ printf '%s\n' "$out" | grep -q '^ok     prompt       starship 0.0-stub draws the
 # --- 5. off hands back ----------------------------------------------------
 # a yazi theme v0.35 rendered over one of yours (.bak): off hands yours back
 mkdir -p "$HOME/.config/yazi"; printf '# rendered by spark-shell\n' > "$HOME/.config/yazi/theme.toml"; printf 'mine\n' > "$HOME/.config/yazi/theme.toml.bak"
+: > "$HOME/.config/spark/hook.bash"; : > "$HOME/.config/spark/hook.zsh"   # spark installed here: off keeps its hook line
 out=$(sh "$SH" off --dry-run)
-printf '%s\n' "$out" | grep -q '^would  rc ' && printf '%s\n' "$out" | grep -q '^would  restore .*\.tmux\.conf' && printf '%s\n' "$out" | grep -q '^would  restore .*yazi/theme\.toml -- back from theme\.toml\.bak' && printf '%s\n' "$out" | grep -q ' to do$' \
+printf '%s\n' "$out" | grep -q '^would  rc ' && printf '%s\n' "$out" | grep -q '^would  restore .*\.tmux\.conf' && printf '%s\n' "$out" | grep -q '^would  restore .*yazi/theme\.toml -- back from theme\.toml\.bak' && printf '%s\n' "$out" | grep -Eq '^[0-9]+ to do$' \
     && ok "off --dry-run: would rows for the rc link, the renders and the .bak, then the count" || bad "off dry-run rows" "$out"
+printf '%s\n' "$out" | grep -q "^would  rc .*/$rc1 -- spark's hook line kept\$" && ok "off --dry-run: the hook line off would append is a would row" || bad "off dry-run hook row" "$out"
 [ -L "$HOME/$rc1" ] && [ -f "$HOME/.tmux.conf" ] && [ -f "$HOME/.config/yazi/theme.toml.bak" ] && [ -f "$HOME/.config/spark-shell/sgr.sh" ] \
     && ok "off --dry-run: touched nothing (the rc link, the renders and the .bak still there)" || bad "off dry-run wrote" "$(ls -la "$HOME" "$HOME/.config/yazi")"
 out=$(sh "$SH" off)
@@ -412,7 +427,7 @@ st=0; out=$(sh "$SH" desktop --chat 2>&1) || st=$?
 [ "$st" -eq 0 ] && [ "$(head -1 "$H/spark.argv")" = chat ] && grep -q "^SPARK_ACCENT_SGR=1;91$" "$H/spark.argv" \
     && ok "desktop --chat: execs spark chat, sgr.sh sourced first (the accent's SGR 1;91 reaches it)" || bad "desktop --chat" "st=$st $out $(cat "$H/spark.argv" 2>&1)"
 mv "$H/.local/bin/spark" "$H/spark.away"
-st=0; out=$(PATH=$H/.local/bin:/usr/bin:/bin sh "$SH" desktop --chat 2>&1 </dev/null) || st=$?
+st=0; out=$(PATH=$H/.local/bin:$sys sh "$SH" desktop --chat 2>&1 </dev/null) || st=$?
 [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^spark is not installed -- the AI is spark' && printf '%s\n' "$out" | grep -q 'Enter closes' \
     && ok "desktop --chat without spark: the window says so and waits for Enter, exit 0" || bad "desktop --chat no spark" "st=$st $out"
 
@@ -464,7 +479,7 @@ greeter_stubs
 theme_fixture '#ff5555'
 mkdir -p "$HOME/.config/spark-shell"
 printf 'PROMPT_STYLE=full\nDESKTOP=none\n' > "$HOME/.config/spark-shell/config"
-st=$(PATH=$H/.local/bin:/usr/bin:/bin sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next  spark .*Install spark, the AI this seat is for: github.com/forgewright-ai/spark\.$' && ok "status: next says install spark first, without spark on PATH" || bad "status next spark" "$(printf '%s\n' "$st" | grep next)"
+st=$(PATH=$H/.local/bin:$sys sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next  spark .*Install spark, the AI this seat is for: github.com/forgewright-ai/spark\.$' && ok "status: next says install spark first, without spark on PATH" || bad "status next spark" "$(printf '%s\n' "$st" | grep next)"
 if [ "$(uname -s)" = Darwin ]; then
     st=0; out=$(sh "$SH" on desktop 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: na' \
@@ -547,6 +562,9 @@ else
         && ok "off desktop --dry-run: would rows for the config, the two renders and the login box" || bad "off desktop dry-run rows" "$out"
     grep -q '^DESKTOP=sway$' "$HOME/.config/spark-shell/config" && [ -f "$HOME/.config/sway/config" ] && [ -f "$conf" ] && ! grep -Eq '^(enable|disable) ' "$H/root/units/log" \
         && ok "off desktop --dry-run: touched nothing (DESKTOP=sway kept, the renders and the root files there, no unit switched)" || bad "off desktop dry-run wrote" "$(cat "$HOME/.config/spark-shell/config"; cat "$H/root/units/log")"
+    out=$(sh "$SH" off --dry-run)
+    printf '%s\n' "$out" | grep -q '^would  rc ' && printf '%s\n' "$out" | grep -q '^would  greeter      getty on tty1 at the next boot' && [ -f "$conf" ] && grep -q '^DESKTOP=sway$' "$HOME/.config/spark-shell/config" \
+        && ok "off --dry-run with the login box on: the rc and greeter would rows, nothing touched" || bad "off dry-run greeter row" "$out"
     out=$(sh "$SH" off desktop)
     grep -q '^DESKTOP=none$' "$HOME/.config/spark-shell/config" && grep -q '^PROMPT_STYLE=full$' "$HOME/.config/spark-shell/config" && ok "off desktop: DESKTOP=none written, the other line kept" || bad "off desktop config" "$(cat "$HOME/.config/spark-shell/config")"
     [ ! -e "$HOME/.config/foot/foot.ini" ] && [ ! -e "$HOME/.config/sway/config" ] && ok "off desktop: the two user renders are gone" || bad "off desktop user renders" "$(ls -R "$HOME/.config")"
@@ -1049,6 +1067,9 @@ jq -e --arg w "$need" '.words == $w and .main.app == "gimp-3.0"' "$desk_last" >/
 rm -f "$argv"
 (cd "$H/.local/bin" && sh "$SH" desktop '*' >/dev/null 2>&1) || true
 [ "$(tail -1 "$argv")" = 'write the desk for this need: *' ] && ok "a need of * reaches the model as *, not as the cwd's file names" || bad "glob need" "$(tail -1 "$argv" 2>&1)"
+rm -f "$argv"
+sh "$SH" desktop 'notes\nand a backslash' >/dev/null 2>&1 || true
+[ "$(tail -1 "$argv")" = 'write the desk for this need: notes\nand a backslash' ] && ok "a need with a literal backslash reaches the model byte-exact" || bad "backslash need" "$(tail -1 "$argv" 2>&1)"
 # inside tmux: switch-client; a session already open is joined, not built again
 : > "$tlog"
 st=0; out=$(TMUX=/x sh "$SH" desktop "$need" --rooms 2>&1) || st=$?

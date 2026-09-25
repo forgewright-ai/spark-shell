@@ -38,6 +38,10 @@ this machine's cycles belong to the model.
                             what a desk may open: a picker, one list of marks
     spark-shell desktop keys
                             the desktop's keys, one sentence each
+    spark-shell on --dry-run
+                            print what would change, touch nothing
+    spark-shell off --dry-run
+                            print what would be handed back, touch nothing
 
 Three states: nothing, the terminal seat, the seat with a desktop. `on`
 and `off` move between them; `desktop` is the noun for the third.
@@ -104,8 +108,9 @@ the middle of a session; tty2 and up, and ssh, are as before. Leaving
 the desktop shows the box again. `spark-shell off desktop` writes
 `DESKTOP=none`, hands the renders back and puts getty on tty1 again at
 the next boot; the packages and the terminal seat stay. The box's files
-are root's (`/etc/greetd`, a `greetd.service` drop-in), so `on desktop`
-asks for sudo when the box's files differ.
+are root's (`/etc/greetd`, a `greetd.service` drop-in): `on` asks for
+sudo once, at a terminal, whenever the login box is on; the box's files
+are only written when they differ.
 
     spark-shell desktop     start it now, from a console login (tty1)
     spark-shell desktop keys
