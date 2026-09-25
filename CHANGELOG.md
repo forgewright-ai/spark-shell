@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.39
+
+- The btop render no longer carries a `color_theme` line: btop on a tty
+  ignores it. `THEME_BTOP` in spark's theme.env is no longer read; the
+  key may be there or not.
+
 ## v0.38
 
 - One pair of switches. `spark-shell on` is the terminal seat;

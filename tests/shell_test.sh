@@ -28,7 +28,7 @@ fresh() {   # a new throwaway HOME with the stubs in place
     PATH=$H/.local/bin:$PATH
 }
 
-theme_fixture() {   # theme_fixture ACCENT [MUTED] -- a 21-key theme.env over the VGA sixteen
+theme_fixture() {   # theme_fixture ACCENT [MUTED] -- a theme.env as today's spark writes it (THEME_BTOP too) over the VGA sixteen
     {
         printf 'THEME_BG=#000000\nTHEME_FG=#aaaaaa\nTHEME_ACCENT=%s\nTHEME_MUTED=%s\nTHEME_BTOP=TTY\n' "$1" "${2:-#555555}"
         i=0
@@ -234,6 +234,20 @@ if [ -n "${SPARK:-}" ] && ls "$SPARK"/themes/*.env >/dev/null 2>&1; then
 else
     printf '  NOTICE: SPARK unset -- spark'"'"'s palettes not exercised (SPARK=/path/to/spark sh tests/shell_test.sh)\n'
 fi
+# the key spark's next release stops writing: a theme.env without
+# THEME_BTOP renders the same look, so both orders work meanwhile
+fresh
+theme_fixture '#aa0000'
+sh "$SH" on >/dev/null
+with=$(sed "s|$H|HOME|g" "$HOME/.tmux.conf")
+fresh
+theme_fixture '#aa0000'
+grep -v '^THEME_BTOP=' "$HOME/.config/spark/theme.env" > "$H/theme.env" && mv "$H/theme.env" "$HOME/.config/spark/theme.env"
+st=0; out=$(sh "$SH" on 2>&1) || st=$?
+[ "$st" -eq 0 ] && [ "$(sed "s|$H|HOME|g" "$HOME/.tmux.conf")" = "$with" ] \
+    && ! grep -q 'color_theme\|THEME_BTOP' "$HOME/.config/btop/btop.conf" \
+    && sh "$SH" status | grep -q 'read: accent colour1, muted colour8' \
+    && ok "theme.env without THEME_BTOP: the same render, no color_theme line in btop.conf" || bad "theme.env without THEME_BTOP" "st=$st $out"
 
 # --- 14. the desktop: sway and foot, asked for by DESKTOP=sway ---------
 # stubs stand in for sway, swaymsg and foot; the Linux half is guarded by

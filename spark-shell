@@ -53,7 +53,8 @@
 #   spark-shell off --dry-run   print what would be handed back, touch nothing
 #
 # The one interface to spark is ~/.config/spark/theme.env -- the palette
-# `spark theme NAME` writes (21 THEME_* keys, THEME_LOGO optional). No
+# `spark theme NAME` writes: the look reads THEME_BG, THEME_FG,
+# THEME_ACCENT, THEME_MUTED and THEME_ANSI_0-15 (THEME_LOGO optional). No
 # theme.env: the terminal keeps its own colours. Back to spark go three
 # exports, SPARK_ACCENT_SGR, SPARK_MUTED_SGR and SPARK_WARN_SGR (the
 # rendered ~/.config/spark-shell/sgr.sh): the prompt's colour, from the
@@ -149,7 +150,7 @@ config_set() {   # config_set KEY VALUE -- one line replaced or added; every oth
     row ok config "$1=$2 ($CONFIG)"
 }
 
-THEME_KEYS="THEME_BG THEME_FG THEME_ACCENT THEME_MUTED THEME_BTOP THEME_ANSI_0 THEME_ANSI_1 THEME_ANSI_2 THEME_ANSI_3 THEME_ANSI_4 THEME_ANSI_5 THEME_ANSI_6 THEME_ANSI_7 THEME_ANSI_8 THEME_ANSI_9 THEME_ANSI_10 THEME_ANSI_11 THEME_ANSI_12 THEME_ANSI_13 THEME_ANSI_14 THEME_ANSI_15"
+THEME_KEYS="THEME_BG THEME_FG THEME_ACCENT THEME_MUTED THEME_ANSI_0 THEME_ANSI_1 THEME_ANSI_2 THEME_ANSI_3 THEME_ANSI_4 THEME_ANSI_5 THEME_ANSI_6 THEME_ANSI_7 THEME_ANSI_8 THEME_ANSI_9 THEME_ANSI_10 THEME_ANSI_11 THEME_ANSI_12 THEME_ANSI_13 THEME_ANSI_14 THEME_ANSI_15"
 
 # ------------------------------------------------------------- the slots
 # The rendered look names colours by palette slot (0-15: tmux colourN,
@@ -208,14 +209,15 @@ slot_or() {   # slot_or COLOUR FALLBACK -> the nearest slot of a #rrggbb, else F
     if hex_rgb "$1" >/dev/null; then slot_of "$1"; else echo "$2"; fi
 }
 
-# theme.env: written by `spark theme NAME` -- the interface (contract 3's
-# 21 keys). Absent, or spark absent: colour words, each its own slot (the
+# theme.env: written by `spark theme NAME` -- the interface (contract 3:
+# BG, FG, ACCENT, MUTED and the sixteen ANSI slots; the file may carry
+# more). Absent, or spark absent: colour words, each its own slot (the
 # twin of spark lib/env.sh theme_load's `none` block). Then the slots.
 theme_load() {
     if [ -f "$THEME_ENV" ]; then
         load_env "$THEME_ENV" || return 1
     fi
-    : "${THEME_BG:=default}" "${THEME_FG:=default}" "${THEME_ACCENT:=blue}" "${THEME_MUTED:=white}" "${THEME_BTOP:=Default}"
+    : "${THEME_BG:=default}" "${THEME_FG:=default}" "${THEME_ACCENT:=blue}" "${THEME_MUTED:=white}"
     : "${THEME_ANSI_0:=black}" "${THEME_ANSI_1:=red}" "${THEME_ANSI_2:=green}" "${THEME_ANSI_3:=yellow}"
     : "${THEME_ANSI_4:=blue}" "${THEME_ANSI_5:=magenta}" "${THEME_ANSI_6:=cyan}" "${THEME_ANSI_7:=white}"
     : "${THEME_ANSI_8:=black}" "${THEME_ANSI_9:=red}" "${THEME_ANSI_10:=green}" "${THEME_ANSI_11:=yellow}"
