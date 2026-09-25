@@ -12,7 +12,8 @@ more, and the desktop grown into the seat it is for.
   (`ex-vi-compat`, `vim-tiny`); ripgrep and pacman-contrib are gone.
   Installed packages stay where they are: the package manager removes
   them if you want (`pacman -Rns yazi ex-vi-compat ripgrep
-  pacman-contrib unzip`), and a rendered yazi theme is yours to delete.
+  pacman-contrib unzip`), and a rendered yazi theme is yours to delete,
+  and `off` hands a theme of yours back from .bak.
 - No .gitconfig: `GIT_NAME`, `GIT_EMAIL`, the render, the `git` status
   row and the template are gone; git's identity is git's own (`git
   config --global user.name`). A .gitconfig an earlier version rendered
@@ -22,7 +23,8 @@ more, and the desktop grown into the seat it is for.
   and its sha256 pins are gone, and with them the last fetch outside the
   package manager. Debian 13 has no starship package: there the rc
   files draw the shell's own prompt. A starship an earlier version put
-  in ~/.local/bin shadows the package's: `rm ~/.local/bin/starship` once.
+  in ~/.local/bin shadows the package's: remove it once with
+  `rm ~/.local/bin/starship`.
 - `check` has a real `bar` row: `spark bar line` is run, exit 0 is ok,
   a failure is a FAIL with the remedy; without spark the row reads na.
   It had passed whenever spark was on PATH.

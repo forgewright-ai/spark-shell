@@ -367,6 +367,11 @@ pm_detect() {
     [ -z "$DISTRO" ] || load_env "$REPO/distro/$DISTRO.env" || exit 1
     : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}" "${PKG_DESKTOP:=}" "${PKG_GREETER:=}"
 }
+tool_here() {   # tool_here NAME -- on PATH or in ~/.local/bin; under apt by Debian's name (fdfind, batcat), after pm_detect
+    _n=$1
+    if [ "$PM" = apt ]; then case $1 in fd) _n=fdfind ;; bat) _n=batcat ;; esac; fi
+    command -v "$_n" >/dev/null 2>&1 || [ -x "$HOME/.local/bin/$_n" ]
+}
 pkg_installed() {
     case $PM in
         apt) dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed' ;;
@@ -718,7 +723,7 @@ cmd_off() {
             case $(readlink "$p") in "$REPO"/*) restore_one "$p" ;; esac
         fi
     done
-    hand_back $RENDERED .config/starship.toml $DESKTOP_RENDERED
+    hand_back $RENDERED .config/starship.toml .config/yazi/theme.toml $DESKTOP_RENDERED   # yazi: a render v0.35 left, its .bak yours
     greeter_off
     # spark's own hook must survive the hand-back: a restored or absent
     # rc file gets the one marked line back when spark is installed here
@@ -809,8 +814,9 @@ cmd_status() {
         # shellcheck disable=SC2088   # the tilde is display, not a path
         printf '  rc    %-16s %s\n' "~/$f" "$s"
     done
+    pm_detect
     for t in tmux starship fzf zoxide eza bat btop fd; do
-        command -v "$t" >/dev/null 2>&1 && s=yes || s=no
+        tool_here "$t" && s=yes || s=no
         printf '  tool  %-16s %s\n' "$t" "$s"
     done
     if [ "$OS" = Darwin ]; then s="na: macOS has its own desktop"
@@ -861,7 +867,7 @@ cmd_check() {
     tools="tmux fzf zoxide eza bat btop fd"
     if [ "$PROMPT" = starship ] && { [ "$PM" = pacman ] || [ "$PM" = brew ]; }; then tools="$tools starship"; fi
     for t in $tools; do
-        command -v "$t" >/dev/null 2>&1 || [ -x "$HOME/.local/bin/$t" ] || miss="$miss $t"
+        tool_here "$t" || miss="$miss $t"
     done
     [ -z "$miss" ] && chk tools ok "$(printf '%s' "$tools" | sed 's/ /, /g')" || chk tools fail "missing:$miss" "spark-shell on"
     infocmp -1x tmux-256color 2>/dev/null | grep -q 'kUP=' && chk terminfo ok "tmux-256color knows modified arrows" \
@@ -1413,7 +1419,7 @@ desk_make() {   # desk_make NEED -> the desk laid out, the model's answer in DES
 }
 desk_replay() {   # desk_replay NAME -> the kept desk rendered for the player and played, no model call
     why=$(desk_open "$DESKS_DIR/$1"); [ -z "$why" ] || refuse "$why"
-    desk_apps "$1" > "$TMP/apps"
+    desk_apps "$(desk_words "$DESKS_DIR/$1")" > "$TMP/apps"   # the desk's words, not its file name: a program they name is on the desk
     [ -n "${ASKED:-}" ] || printf 'desk> %s\n' "$(desk_words "$DESKS_DIR/$1")"
     why=$(desk_why "$DESKS_DIR/$1"); [ -z "$why" ] || printf '  %s\n' "$why"
     desk_render "$DESKS_DIR/$1"
@@ -1591,7 +1597,8 @@ cmd_desktop() {
                 { mkdir -p "$(dirname "$DESK_SEEN")" && : > "$DESK_SEEN"; } 2>/dev/null || true
                 desk_keys_card || true
             fi
-            rm -rf "$TMP"; trap - EXIT; exec "${SHELL:-/bin/sh}" ;;
+            # the config's exports are ours, not the shell's (PROMPT would be zsh's prompt string)
+            rm -rf "$TMP"; trap - EXIT; exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA "${SHELL:-/bin/sh}" ;;
         ''|-*) ;;
         *)  # a need, or a kept desk by name; the player is where you ask from: windows inside
             # sway, rooms (tmux) anywhere else; --windows from a console starts sway first
@@ -1636,7 +1643,7 @@ main() {
     done
     # the flags out of the words (a need is words; -v and the desk's player are not among them)
     if [ -n "$words" ]; then set -- ; IFS_=$IFS; IFS='
-'; for a in $(printf "%b" "$words"); do set -- "$@" "$a"; done; IFS=$IFS_; fi
+'; set -f; for a in $(printf "%b" "$words"); do set -- "$@" "$a"; done; set +f; IFS=$IFS_; fi   # set -f: a word like * is a word, not the cwd's files
     case $sub in
         -h|--help|help) usage ;;
         on) cmd_on ;;

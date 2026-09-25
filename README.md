@@ -142,9 +142,9 @@ time (they are the `# key:` lines of the sway template, one source).
 `spark-shell status` ends with a `next` row when one thing is still
 off -- spark not installed, the desktop not on, a render missing, the
 login box not at boot, a reboot pending -- and with none when the seat
-is complete. `spark theme
-NAME` then `spark-shell apply` recolours the borders live, the next
-window and the login box. Between keystrokes it idles: sway and foot
+is complete. `spark theme NAME` then `spark-shell apply` recolours the
+borders live, the next window and the login box. Between keystrokes it
+idles: sway and foot
 draw on demand, the login box waits on a tty, the cycles stay the
 model's. Start the desktop, then the model: they share the memory.
 Started by hand, sway's log is `~/.local/state/spark-shell/sway.log`;
@@ -168,8 +168,9 @@ it; "writing" alone once meant mail to the model). Each app opens
 the way its own desktop entry says (mpv's idle player, a browser on
 the page the model named), a terminal app inside foot. The windows you
 already have are not touched. `Super+d` asks the same at a small
-prompt: type, Enter; the arrows move over your kept desks; Esc closes. A desk is for that need and that moment: close its windows and
-it is gone, an empty workspace with the forge on it; `Super+1` is your
+prompt: type, Enter; the arrows move over your kept desks; Esc closes.
+A desk is for that need and that moment: close its windows and it is
+gone, an empty workspace with the forge on it; `Super+1` is your
 first terminal again, `Super+Return` a new one there. One you would
 want again:
 
@@ -289,8 +290,9 @@ none or an absolute path (`spark-shell desktop wallpaper` writes it),
 The package manager's fetches. A desk is one call to `spark edit` on
 this machine: the model runs here, and it reads the need's words, the
 screens' names and sizes (or the terminal's, for rooms) and the app
-list. No telemetry. The one file read from spark is
-`~/.config/spark/theme.env`.
+list. No telemetry. The files read from spark are `theme.env` (the
+palette) and, at login, `site.env` and `banner` (the greeting); nothing
+is ever sent to it.
 
 ## Contributing
 

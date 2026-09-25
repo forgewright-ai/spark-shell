@@ -96,6 +96,14 @@ ck=$(PATH=$H/.local/bin:/usr/bin:/bin sh "$SH" check || true)
 printf '%s\n' "$ck" | grep -q '^ok     bar          na (spark not found -- the status line stays empty)$' && ok "check: bar is na without spark, still ok" || bad "check bar na" "$(printf '%s\n' "$ck" | grep bar)"
 out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "second run: Nothing to do" || bad "idempotence" "$out"
+# Debian's names: apt ships fd as fdfind and bat as batcat; check and status find them so
+mkdir -p "$H/apt-bin"
+for t in tmux fzf zoxide eza btop fdfind batcat; do printf '#!/bin/sh\n:\n' > "$H/apt-bin/$t"; chmod +x "$H/apt-bin/$t"; done
+printf 'ID=debian\n' > "$H/os-debian"
+ck=$(SPARK_OS_RELEASE=$H/os-debian PATH=$H/apt-bin:/usr/bin:/bin sh "$SH" check || true)
+printf '%s\n' "$ck" | grep -q '^ok     tools        tmux, fzf, zoxide, eza, bat, btop, fd$' && ok "check under apt: fdfind and batcat count as fd and bat" || bad "check apt tools" "$(printf '%s\n' "$ck" | grep tools)"
+st=$(SPARK_OS_RELEASE=$H/os-debian PATH=$H/apt-bin:/usr/bin:/bin sh "$SH" status)
+printf '%s\n' "$st" | grep -q '^  tool  fd  *yes$' && printf '%s\n' "$st" | grep -q '^  tool  bat  *yes$' && ok "status under apt: the fd and bat rows say yes" || bad "status apt tools" "$(printf '%s\n' "$st" | grep tool)"
 
 # --- 3. apply follows the palette ----------------------------------------
 theme_fixture '#ee8800'
@@ -129,7 +137,10 @@ printf '%s\n' "$out" | grep -q '^ok     prompt       starship 0.0-stub draws the
 ! grep -q 'STARSHIP_VERSION\|sha256\|curl ' "$SH" && ok "spark-shell: no pinned version, no sha256, no curl (nothing is downloaded)" || bad "a download survives" "$(grep -n 'STARSHIP_VERSION\|sha256\|curl ' "$SH")"
 
 # --- 5. off hands back ----------------------------------------------------
+# a yazi theme v0.35 rendered over one of yours (.bak): off hands yours back
+mkdir -p "$HOME/.config/yazi"; printf '# rendered by spark-shell\n' > "$HOME/.config/yazi/theme.toml"; printf 'mine\n' > "$HOME/.config/yazi/theme.toml.bak"
 out=$(sh "$SH" off)
+[ ! -e "$HOME/.config/yazi/theme.toml.bak" ] && [ "$(cat "$HOME/.config/yazi/theme.toml")" = mine ] && ok "off: a yazi theme of yours comes back from .bak (v0.35's render gone)" || bad "yazi hand-back" "$(ls -la "$HOME/.config/yazi")"
 if [ "$rc1" = .bashrc ]; then
     [ ! -L "$HOME/.bashrc" ] && grep -q yours "$HOME/.bashrc" && ok "off: the rc file came back from .bak" || bad "rc restore" "$(ls -la "$HOME")"
 fi
@@ -405,6 +416,9 @@ printf '%s\n' "$out" | head -1 | grep -q "^These are the desktop's keys; spark-s
     && ok "desktop --first: the card once (the stamp written first), then the shell" || bad "desktop --first" "$out"
 out=$(SHELL=$H/.local/bin/shellstub sh "$SH" desktop --first)
 [ "$out" = shell-stub ] && ok "desktop --first again: the shell alone, no card" || bad "desktop --first twice" "$out"
+printf '#!/bin/sh\necho "${PROMPT-unset} ${DESKTOP-unset} ${FONT-unset}"\n' > "$H/.local/bin/envstub"; chmod +x "$H/.local/bin/envstub"
+out=$(SHELL=$H/.local/bin/envstub sh "$SH" desktop --first)
+[ "$out" = 'unset unset unset' ] && ok "desktop --first: the config's exports (PROMPT, DESKTOP, FONT) never reach your shell" || bad "desktop --first env" "$out"
 
 # --- 15. the login box: desktop on|off, greetd on tty1 --------------------
 # stubs for greetd and tuigreet beside the desktop's; systemctl is a stub
@@ -884,8 +898,7 @@ else
     [ -f "$tmuxd" ] && head -1 "$tmuxd" | grep -q '^# rendered by spark-shell' && grep -q '^Exec=tmux$' "$tmuxd" && grep -q '^Terminal=true$' "$tmuxd" \
         && ok "on with DESKTOP=sway: tmux declares itself (spark-shell-tmux.desktop, marked, Exec=tmux, Terminal=true)" || bad "tmux entry" "$(cat "$tmuxd" 2>&1)"
     plain "$tmuxd" && ok "tmux entry: plain (no hex, ASCII)" || bad "tmux entry not plain"
-    # the table and the kinds (the counts line and exit 0 are not asserted:
-    # with no app in the fixture, grep -c under set -e ends cmd_sbom first)
+    # the table and the kinds: the counts line, exit 0, one row per package
     st=0; out=$(SPARK_OS_RELEASE=$H/os-arch sh "$SH" sbom 2>&1) || st=$?
     [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^1 apps, 1 tools, 1 parts -- an app declares itself with a desktop entry; spark-shell desktop apps marks the desk'"'"'s$' \
         && ok "sbom: exit 0 and the counts line (one of each kind)" || bad "sbom counts" "st=$st $out"
@@ -1005,6 +1018,10 @@ grep -q 'micro: Micro' "$argv" && grep -q 'shell: a terminal with a prompt' "$ar
     && ok "rooms brief: the terminal apps and shell only; no graphical app, no screen field, no screens" || bad "rooms brief apps" "$(grep -o 'Apps on this machine[^.]*' "$argv")"
 jq -e --arg w "$need" '.words == $w and .main.app == "gimp-3.0"' "$desk_last" >/dev/null 2>&1 && ok "rooms: desk.last is the same JSON shape (keep works the same)" || bad "rooms desk.last" "$(cat "$desk_last" 2>&1)"
 [ ! -e "$swlog" ] && ok "rooms: swaymsg never sent a line" || bad "rooms swaymsg" "$(cat "$swlog")"
+# a need of * from a directory with files: the word, never the file names
+rm -f "$argv"
+(cd "$H/.local/bin" && sh "$SH" desktop '*' >/dev/null 2>&1) || true
+[ "$(tail -1 "$argv")" = 'write the desk for this need: *' ] && ok "a need of * reaches the model as *, not as the cwd's file names" || bad "glob need" "$(tail -1 "$argv" 2>&1)"
 # inside tmux: switch-client; a session already open is joined, not built again
 : > "$tlog"
 st=0; out=$(TMUX=/x sh "$SH" desktop "$need" --rooms 2>&1) || st=$?
