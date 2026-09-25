@@ -30,6 +30,14 @@
 #                               keep the last desk under NAME, open a kept
 #                               one (no model), or drop it; bare, inside
 #                               the desktop: the kept desks
+#   spark-shell desktop apps    the apps a desk may open: a picker over the
+#                               box's apps and tools (Tab marks, Enter
+#                               saves), yours in ~/.config/spark-shell/apps
+#   spark-shell sbom [apps|tools|parts|NAME] [--json]
+#                               the box's software, in the package
+#                               manager's words: version, licence, chosen
+#                               or dependency, commands, desktop entries;
+#                               --json writes CycloneDX 1.5
 #   spark-shell on --dry-run    print what would change, touch nothing
 #
 # The one interface to spark is ~/.config/spark/theme.env -- the palette
@@ -482,7 +490,7 @@ rc_tree() { if [ "$OS" = Darwin ]; then echo "$REPO/templates/macos"; else echo 
 # The desktop: sway and foot, rendered only when asked for (DESKTOP=sway)
 # and only on Linux -- macOS has its own desktop. `off` hands both back
 # whatever the config says.
-DESKTOP_RENDERED=".config/foot/foot.ini .config/sway/config"
+DESKTOP_RENDERED=".config/foot/foot.ini .config/sway/config .local/share/applications/spark-shell-tmux.desktop"
 foot_colors() {   # the name of foot's colour section: [colors] before 1.26, [colors-dark] from it
     _v=$(PATH=$HOME/.local/bin:$PATH foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
     set -- ${_v:-1 26}
@@ -893,6 +901,8 @@ cmd_status() {
     fi
     printf '  desk  %-16s %s\n' "$DESKTOP" "$s"
     if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then
+        if apps_marked; then printf '  apps  %-16s %s\n' "$(grep -c '^[A-Za-z0-9]' "$APPS") marked" "$(grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd',' - | sed 's/,/, /g') (spark-shell desktop apps)"
+        else printf '  apps  %-16s %s\n' unmarked "every app with a desktop entry (spark-shell desktop apps picks)"; fi
         n=$(ls -A "$DESKS_DIR" 2>/dev/null | wc -l | tr -d ' ')
         if [ "$n" -gt 0 ]; then printf '  desks %-16s %s\n' "$n kept" "$(ls -A "$DESKS_DIR" | paste -sd ',' - | sed 's/,/, /g') (spark-shell desktop NAME)"
         else printf '  desks %-16s %s\n' none 'spark-shell desktop "WORDS" makes one'; fi
@@ -974,6 +984,15 @@ cmd_check() {
         elif unit_enabled getty@tty1.service; then chk greeter fail "getty@tty1.service is still enabled" "spark-shell desktop on"
         else chk greeter ok "greetd on tty1 at boot, the box matches the palette"; fi
     fi
+    if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk apps ok "na (no desktop)"
+    else
+        sbom_entries; ne=$(wc -l < "$TMP/entries" | tr -d ' ')
+        if apps_marked; then
+            gone=''
+            for n in $(grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//'); do desk_on_path "$n" || grep -q "^$n	" "$TMP/entries" || gone="$gone $n"; done
+            [ -z "$gone" ] && chk apps ok "$(grep -c '^[A-Za-z0-9]' "$APPS") marked for the desk, $ne apps declare themselves" || chk apps fail "marked but not here:$gone" "spark-shell desktop apps"
+        else chk apps ok "$ne apps declare themselves, none marked (spark-shell desktop apps picks)"; fi
+    fi
     if command -v spark >/dev/null 2>&1 || [ -x "$HOME/.local/bin/spark" ]; then chk bar ok "spark bar line answers the status line"
     else chk bar ok "spark not found -- the status line stays empty (github.com/forgewright-ai/spark)"; fi
     [ "$fails" = 0 ]
@@ -1017,42 +1036,186 @@ DESK_WAIT=30                                                    # seconds for a 
 # entries (Comment, else GenericName, else Name; Terminal=true marked),
 # then the packages the user chose that are commands, then the need's
 # own words that are on PATH (a pip tool has no entry and no package).
-desk_apps() {   # desk_apps NEED -> the lines (and $TMP/exec: NAME<tab>its entry's Exec)
-    : > "$TMP/exec"
-    {
-        for d in ${XDG_DATA_HOME:-$HOME/.local/share} $(printf '%s' "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" | tr ':' ' '); do
-            [ -d "$d/applications" ] || continue
-            for f in "$d"/applications/*.desktop; do
-                [ -f "$f" ] || continue
-                grep -qE '^(NoDisplay|Hidden)=true' "$f" && continue
-                launch=$(sed -n 's/^Exec=//p' "$f" | head -1 | sed 's/^env [^ ]* //; s/ *%[ick]//g; s|^[^ ]*/||')
-                name=${launch%% *}
-                [ -n "$name" ] || continue
-                grep -q "^$name	" "$TMP/exec" 2>/dev/null || printf '%s\t%s\n' "$name" "$launch" >> "$TMP/exec"
-                what=''
-                for key in Comment GenericName Name; do
-                    [ -n "$what" ] || what=$(sed -n "s/^$key=//p" "$f" | head -1)
-                done
-                term=''; grep -q '^Terminal=true' "$f" && term=', terminal'
-                printf '%s: %s%s\n' "$name" "$what" "$term"
+# ------------------------------------------------------------------- sbom
+# The box's software bill of materials, in the package manager's own
+# words: every package, its version, licence, description, whether you
+# chose it or it came as a dependency, the commands it puts on PATH and
+# the desktop entries it ships (with their XDG categories). Its kind
+# follows from that, no list of ours: an app declares itself with an
+# entry, a tool is a command without one, a part is neither. One TSV in
+# TMP feeds the table, the CycloneDX 1.5 JSON (the format spark's own
+# `spark ver --sbom` writes, so the two compose) and the desk's inventory.
+SBOM_JSON=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/sbom.cdx.json
+APPS=$CONFIG_DIR/apps     # yours: the apps a desk may use, one per line, `name[: your words]`
+sbom_entries() {   # -> $TMP/entries: NAME<tab>FILE<tab>WHAT<tab>TERMINAL<tab>CATEGORIES<tab>LAUNCH, hidden ones out
+    : > "$TMP/entries"
+    for d in ${XDG_DATA_HOME:-$HOME/.local/share} $(printf '%s' "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" | tr ':' ' '); do
+        [ -d "$d/applications" ] || continue
+        for f in "$d"/applications/*.desktop; do
+            [ -f "$f" ] || continue
+            grep -qE '^(NoDisplay|Hidden)=true' "$f" && continue
+            launch=$(sed -n 's/^Exec=//p' "$f" | head -1 | sed 's/^env [^ ]* //; s/ *%[ick]//g; s|^[^ ]*/||')
+            name=${launch%% *}
+            [ -n "$name" ] || continue
+            grep -q "^$name	" "$TMP/entries" && continue
+            what=''
+            for key in Comment GenericName Name; do
+                [ -n "$what" ] || what=$(sed -n "s/^$key=//p" "$f" | head -1)
             done
+            term=no; grep -q '^Terminal=true' "$f" && term=yes
+            cats=$(sed -n 's/^Categories=//p' "$f" | head -1 | sed 's/;$//')
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$f" "$what" "$term" "$cats" "$launch" >> "$TMP/entries"
         done
-        # the packages you chose, in the package's own words (its one-line description)
-        pm_detect 2>/dev/null || true
-        case $PM in
-            pacman) pacman -Qie 2>/dev/null | awk -F' *: ' '/^Name/ {n=$2} /^Description/ {print n ": " $2}' ;;
-            apt) apt-mark showmanual 2>/dev/null | xargs -r dpkg-query -W -f='${Package}: ${binary:Summary}\n' 2>/dev/null ;;
-            brew) brew leaves 2>/dev/null | xargs -r brew desc --eval-all 2>/dev/null ;;
-        esac | while IFS= read -r l; do
-            p=${l%%:*}
-            ! desk_on_path "$p" || printf '%s, terminal\n' "$l"
-        done
+    done
+}
+sbom_collect() {   # -> $TMP/sbom: NAME VERSION LICENSE REASON DESCRIPTION COMMANDS ENTRIES (tab-separated; KIND first)
+    sbom_entries
+    pm_detect 2>/dev/null || true
+    : > "$TMP/files"   # PACKAGE<tab>PATH for every command and entry a package ships
+    case $PM in
+        pacman)
+            pacman -Qi 2>/dev/null | awk -F' *: ' '
+                /^Name/ {n=$2} /^Version/ {v=$2} /^Licenses/ {l=$2} /^Description/ {d=$2}
+                /^Install Reason/ {r=($2 ~ /Explicitly/) ? "chosen" : "dependency"}
+                /^$/ && n != "" {printf "%s\t%s\t%s\t%s\t%s\n", n, v, l, r, d; n=""}' > "$TMP/pkgs"
+            pacman -Ql 2>/dev/null | awk '$2 ~ /^\/usr\/bin\/[^\/]+$/ || $2 ~ /\/applications\/[^\/]+\.desktop$/ {print $1 "\t" $2}' > "$TMP/files" ;;
+        apt)
+            dpkg-query -W -f='${Package}\t${Version}\t?\t?\t${binary:Summary}\n' 2>/dev/null > "$TMP/pkgs.raw"
+            apt-mark showmanual 2>/dev/null | sort > "$TMP/manual"
+            while IFS='	' read -r n v _ _ d; do
+                lic=$(sed -n 's/^License: //p' "/usr/share/doc/$n/copyright" 2>/dev/null | head -1)
+                if grep -qx "$n" "$TMP/manual"; then r=chosen; else r=dependency; fi
+                printf '%s\t%s\t%s\t%s\t%s\n' "$n" "$v" "${lic:-?}" "$r" "$d"
+                grep -E '^/usr/bin/[^/]+$|/applications/[^/]+\.desktop$' "/var/lib/dpkg/info/$n.list" 2>/dev/null | sed "s/^/$n\t/" >> "$TMP/files"
+            done < "$TMP/pkgs.raw" > "$TMP/pkgs" ;;
+        brew)
+            brew info --json=v2 --installed 2>/dev/null | jq -r '
+                (.formulae[] | [.name, (.installed[0].version // .versions.stable // "?"), (.license // "?"),
+                    (if (.installed[0].installed_on_request // false) then "chosen" else "dependency" end), (.desc // "")] | @tsv),
+                (.casks[] | [.token, (.installed // .version // "?"), "?", "chosen", (.desc // "")] | @tsv)' > "$TMP/pkgs" 2>/dev/null
+            prefix=$(brew --prefix 2>/dev/null)
+            while IFS='	' read -r n _ _ _ _; do
+                for b in "$prefix/opt/$n/bin"/*; do [ -x "$b" ] && printf '%s\t/usr/bin/%s\n' "$n" "${b##*/}"; done
+            done < "$TMP/pkgs" >> "$TMP/files" 2>/dev/null ;;
+        *) : > "$TMP/pkgs" ;;
+    esac
+    # kind, commands and entries per package, one pass; an app is what declares itself
+    awk -F'\t' '
+        FILENAME == ARGV[1] { ent[$2] = $1 "=" $5; next }                         # entries: file -> NAME=Categories
+        FILENAME == files { if ($2 ~ /\.desktop$/) { if ($2 in ent) e[$1] = e[$1] " " ent[$2] }
+                            else { sub(".*/", "", $2); c[$1] = c[$1] " " $2 } ; next }
+        { n = $1; cmds = substr(c[n], 2); ents = substr(e[n], 2)
+          k = (ents != "") ? "app" : (cmds != "") ? "tool" : "part"
+          printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", k, n, $2, $3, $4, $5, cmds, ents }' \
+        "$TMP/entries" files="$TMP/files" "$TMP/files" "$TMP/pkgs" | sort -t'	' -k2,2 > "$TMP/sbom"
+}
+sbom_json() {   # the CycloneDX 1.5 document, from $TMP/sbom, to stdout
+    _pm=${PM:-none}; _os=${DISTRO:-$(printf '%s' "$OS" | tr 'A-Z' 'a-z')}
+    jq -R -s --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg host "$(short_host)" --arg pm "$_pm" --arg os "$_os" --arg ver "$(sed -n 's/^## v//p' "$REPO/CHANGELOG.md" | head -1)" '
+        split("\n") | map(select(length > 0) | split("\t")) |
+        {bomFormat: "CycloneDX", specVersion: "1.5", version: 1,
+         metadata: {timestamp: $ts, tools: [{name: "spark-shell", version: $ver}],
+                    component: {type: "operating-system", name: $host, description: ("the box, as " + $pm + " declares it")}},
+         components: map({
+            type: (if .[0] == "app" then "application" else "library" end),
+            name: .[1], version: .[2], description: .[5],
+            licenses: (if .[3] == "" or .[3] == "?" then [] else [{license: {name: .[3]}}] end),
+            purl: ("pkg:" + $pm + "/" + $os + "/" + .[1] + "@" + .[2]),
+            properties: ([{name: "spark-shell:kind", value: .[0]}, {name: "spark-shell:reason", value: .[4]}]
+                         + (if .[6] != "" then [{name: "spark-shell:commands", value: .[6]}] else [] end)
+                         + (if .[7] != "" then [{name: "spark-shell:entries", value: .[7]}] else [] end))})}' "$TMP/sbom"
+}
+cmd_sbom() {   # sbom [apps|tools|parts|NAME] [--json]
+    config_load
+    json=0; pick=''
+    for a in "$@"; do case $a in --json) json=1 ;; -*) ;; *) pick=$a ;; esac; done
+    command -v jq >/dev/null 2>&1 || { echo "spark-shell sbom: jq is not installed (spark-shell on)"; return 1; }
+    sbom_collect
+    [ -s "$TMP/sbom" ] || { echo "spark-shell sbom: no package manager here that this repo knows (pacman, apt, brew)"; return 1; }
+    if [ "$json" = 1 ]; then
+        mkdir -p "$(dirname "$SBOM_JSON")"
+        sbom_json > "$SBOM_JSON"
+        echo "$SBOM_JSON -- CycloneDX 1.5, $(wc -l < "$TMP/sbom" | tr -d ' ') components"
+        return 0
+    fi
+    case $pick in
+        ''|apps|tools|parts)
+            k=${pick%s}
+            awk -F'\t' -v k="$k" '$1 == k || k == "" {printf "%-5s %-24s %-14s %-22s %s\n", $1, $2, substr($3, 1, 14), substr($4, 1, 22), $6}' "$TMP/sbom"
+            a=$(grep -c '^app	' "$TMP/sbom" || true); t=$(grep -c '^tool	' "$TMP/sbom" || true); p=$(grep -c '^part	' "$TMP/sbom" || true)
+            echo "$a apps, $t tools, $p parts -- an app declares itself with a desktop entry; spark-shell desktop apps marks the desk's" ;;
+        *)
+            line=$(awk -F'\t' -v n="$pick" '$2 == n' "$TMP/sbom")
+            [ -n "$line" ] || { echo "spark-shell sbom: no package named $pick"; return 1; }
+            printf '%s\n' "$line" | awk -F'\t' '{printf "%s  %s %s\n  %s\n  licence   %s\n  reason    %s\n  commands  %s\n  entries   %s\n", $1, $2, $3, $6, $4, $5, ($7 == "" ? "-" : $7), ($8 == "" ? "-" : $8)}' ;;
+    esac
+}
+
+# The desk's inventory: what a desk may open, in the machine's words and
+# yours. Marked (~/.config/spark-shell/apps, `name[: your words]`): exactly
+# those. Unmarked: every app that declares itself with a desktop entry.
+# Always: a word of the need that is a program. Never: the desktop's own
+# parts, a shell, a way to root. Lines `NAME: what[, terminal]`, and
+# $TMP/exec keeps how each entry says to open it.
+apps_marked() { [ -f "$APPS" ] && grep -q '^[A-Za-z0-9]' "$APPS"; }
+desk_apps() {   # desk_apps NEED -> the lines
+    sbom_entries
+    awk -F'\t' '{print $1 "\t" $6}' "$TMP/entries" > "$TMP/exec"
+    {
+        if apps_marked; then
+            [ -s "$TMP/sbom" ] || sbom_collect
+            grep '^[A-Za-z0-9]' "$APPS" | while IFS= read -r m; do
+                n=${m%%:*}; n=$(printf '%s' "$n" | tr -d ' '); note=''; case $m in *:*) note=$(printf '%s' "${m#*:}" | sed 's/^ *//') ;; esac
+                e=$(awk -F'\t' -v n="$n" '$1 == n {print $3 "\t" $4}' "$TMP/entries" | head -1)
+                if [ -n "$e" ]; then what=${e%	*}; term=${e#*	}
+                else what=$(awk -F'\t' -v n="$n" '$2 == n || (" " $7 " ") ~ (" " n " ") {print $6; exit}' "$TMP/sbom"); term=yes; fi
+                desk_on_path "$n" || [ -n "$e" ] || continue   # marked but not here: not offered
+                [ -z "$note" ] || what=$note
+                [ "$term" = yes ] && printf '%s: %s, terminal\n' "$n" "${what:-$n}" || printf '%s: %s\n' "$n" "${what:-$n}"
+            done
+        else
+            awk -F'\t' '{printf "%s: %s%s\n", $1, $3, ($4 == "yes" ? ", terminal" : "")}' "$TMP/entries"
+        fi
         for w in $1; do
             w=$(printf '%s' "$w" | tr -cd 'A-Za-z0-9_.-' | tr 'A-Z' 'a-z')
             [ -z "$w" ] || ! desk_on_path "$w" || printf '%s: named in the need, terminal\n' "$w"
         done
     } | grep -v "^\\($(printf '%s' "sway swaybg swaymsg foot footclient xdg-open $DESK_NOT_APPS" | sed 's/ /\\|/g')\\):" \
       | sort -t: -s -u -k1,1   # the desktop itself, a shell, a way to root: not apps
+}
+# spark-shell desktop apps: the picker. fzf over the box's apps and
+# tools, Tab marks, Enter saves the marked names to your file (a note you
+# wrote beside a name that stays marked is kept); Esc leaves it as it was.
+cmd_apps() {
+    command -v fzf >/dev/null 2>&1 || refuse "fzf is not installed (spark-shell on)"
+    [ -t 0 ] || refuse "the picker needs a terminal; the file is $APPS (name[: your words], one per line)"
+    sbom_collect
+    now=$(apps_marked && grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd' ' - || echo none)
+    # the rows: an app package's entries as apps (the entry's own words), every other
+    # command as a tool (the package's words); apps first, then tools, by name
+    picked=$(awk -F'\t' '
+        FILENAME == ARGV[1] { ent[$1] = $3; next }
+        $1 == "app" || $1 == "tool" {
+            m = split($8, es, " "); isent[""] = 0
+            for (j = 1; j <= m; j++) { split(es[j], kv, "="); if (kv[1] != "") { printf "0\t%s: %s  [app]\n", kv[1], ent[kv[1]]; isent[kv[1]] = 1 } }
+            n = split($7, c, " ")
+            for (i = 1; i <= n; i++) if (c[i] ~ /^[A-Za-z]/ && !(c[i] in isent)) printf "1\t%s: %s  [tool]\n", c[i], $6 }' "$TMP/entries" "$TMP/sbom" \
+             | sort -t'	' -k1,1n -k2,2f -u | cut -f2 \
+             | grep -v "^\\($(printf '%s' "sway swaybg swaymsg foot footclient xdg-open $DESK_NOT_APPS" | sed 's/ /\\|/g')\\):" \
+             | fzf --multi --prompt 'apps> ' --layout=reverse --no-info --color=16 --no-unicode \
+                   --header "The apps a desk may open. Tab marks, Enter saves, Esc leaves it.
+Marked now: $now") || { echo "left as it was"; return 0; }
+    [ -n "$picked" ] || { echo "left as it was"; return 0; }
+    mkdir -p "$CONFIG_DIR"
+    {
+        printf '# the apps a desk may open -- spark-shell desktop apps writes this; yours to edit: name[: your words]\n'
+        printf '%s\n' "$picked" | sed 's/:.*//' | while IFS= read -r n; do
+            note=$(grep "^$n *:" "$APPS" 2>/dev/null | head -1 | sed 's/^[^:]*: *//')
+            if [ -n "$note" ]; then printf '%s: %s\n' "$n" "$note"; else printf '%s\n' "$n"; fi
+        done
+    } > "$TMP/apps.new"
+    cp "$TMP/apps.new" "$APPS"
+    echo "marked: $(grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd' ' -) ($APPS)"
 }
 desk_on_path() { case $(command -v "$1" 2>/dev/null) in /*) return 0 ;; *) return 1 ;; esac; }   # a program, not a keyword or builtin
 desk_app_known() { grep -q "^$1: " "$TMP/apps"; }                       # desk_app_known NAME (after desk_apps > $TMP/apps)
@@ -1267,6 +1430,9 @@ cmd_desktop() {
             if [ "$2" = none ]; then echo "the palette's background is back; a new foot window is opaque again"
             else echo "a running sway shows it now; the next foot window is translucent (Super+Return)"; fi
             return ;;
+        apps)
+            [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
+            cmd_apps; return ;;
         keep|forget)
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
             desk_name_ok "${2:-}" || refuse "$1 NAME -- letters, digits, - and _"
@@ -1346,6 +1512,7 @@ main() {
         follow) cmd_follow ;;
         check) cmd_check ;;
         bar) cmd_bar "$@" ;;
+        sbom) cmd_sbom "$@" ;;
         desktop) cmd_desktop "$@" ;;
         status) cmd_status ;;
         --dry-run) MODE=dry; cmd_on ;;

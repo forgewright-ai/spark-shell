@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.32
+
+- `spark-shell sbom [apps|tools|parts|NAME] [--json]`: the box's
+  software bill of materials in the package manager's words (pacman,
+  dpkg, brew): version, licence, description, chosen or dependency,
+  commands, desktop entries with their XDG categories; kind follows
+  (an app declares itself with an entry, a tool is a command, a part
+  is neither). `--json` writes CycloneDX 1.5, spark's own format.
+- The desk's inventory is what the box declares: every app with a
+  desktop entry, plus a program your words name. The list of chosen
+  packages is gone (it had offered mkinitcpio, greetd and fzf as apps).
+- `spark-shell desktop apps`: a picker (fzf, Tab marks, Enter saves)
+  over the box's apps and tools; the marks live in
+  ~/.config/spark-shell/apps, yours, `name[: your words]`. Marked, the
+  desk offers exactly those, with your words beside the machine's.
+- tmux declares itself as an app of the desktop (a rendered entry).
+- `status` has an `apps` row; `check` an `apps` row (a marked app that
+  is gone is a FAIL with the remedy).
+
 ## v0.31
 
 - The pulse also runs while a window is awaited, not only while the

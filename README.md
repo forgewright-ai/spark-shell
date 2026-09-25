@@ -146,6 +146,24 @@ want again:
     spark-shell desktop forget writing
     spark-shell desktop                 inside the desktop: the kept ones
 
+What a desk may open is what the box declares: every app with a
+desktop entry, the way the OS's own launchers see it, plus any program
+your words name. To choose for yourself, `spark-shell desktop apps`
+opens a picker over the box's apps and tools: Tab marks, Enter saves
+to `~/.config/spark-shell/apps`, yours, one name per line with your
+own words after a colon if you like (`mpv: my radio`). Marked, the
+desk offers exactly those. tmux declares itself when the desktop is
+on. A graphical app or a game is as welcome as a terminal one: it
+opens the way its entry says, and can be the whole workspace.
+
+`spark-shell sbom` is the box's software bill of materials, in the
+package manager's words: every package, its version, licence,
+description, chosen or dependency, the commands it puts on PATH and
+the desktop entries it ships. `sbom apps`, `sbom tools`, `sbom parts`
+narrow it, `sbom NAME` is one package, `sbom --json` writes CycloneDX
+1.5 to `~/.local/state/spark-shell/sbom.cdx.json`, the format spark's
+own `spark ver --sbom` uses.
+
 A kept desk is a text file of sway commands
 (`~/.config/spark-shell/desks/NAME`), yours to edit. Every line, fresh
 or kept, passes one gate before sway sees it: a desk verb, no shell

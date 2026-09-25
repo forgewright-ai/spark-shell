@@ -633,18 +633,33 @@ else
     cmp -s "$swlog" "$H/expected.lines" && ok "sway got exactly the nine lines in order (main, splith, side, splitv, micro in foot, focus left, resize 70 ppt; toad never)" || bad "swaymsg lines" "$(cat "$swlog" 2>&1)"
     head -1 "$desk_last" | grep -q "^# desk: $need -- rendered by spark-shell" && grep -q '^# why: photo work in gimp' "$desk_last" && grep -q '^exec foot -e micro$' "$desk_last" \
         && ok "desk.last: the header (the words, the marker), the why, the lines" || bad "desk.last" "$(cat "$desk_last" 2>&1)"
-    # the packages you chose reach the model in the package's own words; a shell is not in the list
+    # the inventory: unmarked, every app with a desktop entry and never a package
+    # (the fake pacman answers -Qi and -Ql, as sbom_collect asks); marked (the
+    # apps file), exactly those names -- an entry's words, a package's words or
+    # yours; a shell never, a name that is nowhere silently left out
     cat > "$H/.local/bin/pacman" <<'EOF'
 #!/bin/sh
-[ "$1" = -Qie ] && printf 'Name            : reader\nDescription     : Text-based Web browser\n\nName            : bash\nDescription     : The GNU Bourne Again shell\n\nName            : linux\nDescription     : The Linux kernel\n'
+case ${1:-} in
+    -Qi) printf 'Name            : reader\nVersion         : 1.0-1\nLicenses        : GPL2\nDescription     : Text-based Web browser\nInstall Reason  : Explicitly installed\n\n'
+         printf 'Name            : bash\nVersion         : 5.2-1\nLicenses        : GPL3\nDescription     : The GNU Bourne Again shell\nInstall Reason  : Explicitly installed\n\n'
+         printf 'Name            : linux\nVersion         : 6.1-1\nLicenses        : GPL2\nDescription     : The Linux kernel\nInstall Reason  : Explicitly installed\n\n' ;;
+    -Ql) printf 'reader /usr/bin/reader\nbash /usr/bin/bash\nlinux /boot/vmlinuz-linux\n' ;;
+esac
 EOF
     printf '#!/bin/sh\n:\n' > "$H/.local/bin/reader"; chmod +x "$H/.local/bin/pacman" "$H/.local/bin/reader"
     printf 'ID=arch\n' > "$H/os-arch"
     SPARK_OS_RELEASE=$H/os-arch SWAYSOCK=/tmp/x sh "$SH" desktop "$need" >/dev/null 2>&1 || true
-    grep -q 'reader: Text-based Web browser' "$argv" && ok "inventory: a chosen package in the package manager's own words" || bad "inventory package words" "$(grep -o 'reader[^;]*' "$argv")"
-    grep -q 'bash:' "$argv" && bad "inventory: a shell is offered to the model" "$(grep -o 'bash:[^;]*' "$argv")" || ok "inventory: a shell is not in the list"
-    grep -q 'linux:' "$argv" && bad "inventory: a package that is no program is in" || ok "inventory: a package that is no program is not in"
-    rm -f "$H/.local/bin/pacman" "$H/.local/bin/reader"
+    grep -q 'micro: Micro' "$argv" && ! grep -q 'reader:' "$argv" && ! grep -q 'bash:' "$argv" \
+        && ok "inventory unmarked: the entries (micro), never a package (reader, bash)" || bad "inventory unmarked" "$(grep -o 'micro: [^;]*\|reader:[^;]*\|bash:[^;]*' "$argv")"
+    apps_file=$HOME/.config/spark-shell/apps
+    printf '# the apps a desk may open\nreader: my browser\nmicro\nbash\nghost\n' > "$apps_file"
+    SPARK_OS_RELEASE=$H/os-arch SWAYSOCK=/tmp/x sh "$SH" desktop "$need" >/dev/null 2>&1 || true
+    grep -q 'reader: my browser' "$argv" && ok "inventory marked: a package with your note, in your words" || bad "inventory marked note" "$(grep -o 'reader[^;]*' "$argv")"
+    grep -q 'micro: Micro' "$argv" && ok "inventory marked: a marked entry in the entry's words" || bad "inventory marked entry" "$(grep -o 'micro[^;]*' "$argv")"
+    grep -q 'firefox' "$argv" && bad "inventory marked: an unmarked entry is in" "$(grep -o 'firefox[^;]*' "$argv")" || ok "inventory marked: an unmarked entry (firefox) is out"
+    grep -q 'bash:' "$argv" && bad "inventory marked: a shell is offered to the model" "$(grep -o 'bash:[^;]*' "$argv")" || ok "inventory marked: a shell is never offered"
+    grep -q 'ghost' "$argv" && bad "inventory marked: a name that is nowhere is in" "$(grep -o 'ghost[^;]*' "$argv")" || ok "inventory marked: a name that is nowhere is silently left out"
+    rm -f "$apps_file" "$H/.local/bin/pacman" "$H/.local/bin/reader"
     # the prompt form: the words typed at desk> are not printed again
     : > "$swlog"
     st=0; out=$(printf '%s\n\n' "$need" | SWAYSOCK=/tmp/x sh "$SH" desktop --ask 2>&1) || st=$?
@@ -742,6 +757,125 @@ l_p=$(grep -n '^exec @REPO@/spark-shell desktop --pending$' "$REPO/templates/.co
 [ -n "$l_p" ] && [ -n "$l_t" ] && [ "$l_p" -lt "$l_t" ] && ok "sway template: desktop --pending is the exec before the last exec sh -c" || bad "sway template pending" "pending $l_p terminal $l_t"
 grep -q '^## A desk from your words$' "$REPO/README.md" && ok "README: A desk from your words" || bad "README desk section"
 grep -q '^## v0.23$' "$REPO/CHANGELOG.md" && ok "CHANGELOG: v0.23" || bad "CHANGELOG v0.23"
+
+# --- 17. sbom and the apps a desk may open --------------------------------
+# a fake pacman answers -Qi (three packages) and -Ql (their files); the
+# entries are the fixture's (desk_stubs) plus the tmux entry that `on`
+# renders with DESKTOP=sway; fzf is a stub (the picker is asked with no
+# terminal, so it never runs); jq is the real one. ID=arch is pinned per
+# call, so `on` keeps the fixture's todo packages row. Linux-guarded like
+# 14-16. The fake -Ql maps gimp's entry to the fixture's applications dir,
+# so gimp is the one app, reader the tool, libfoo the part.
+sbom_stubs() {
+    cat > "$H/.local/bin/pacman" <<'EOF'
+#!/bin/sh
+case ${1:-} in
+    -Qi) printf 'Name            : gimp\nVersion         : 3.0.4-1\nLicenses        : GPL3\nDescription     : GNU Image Manipulation Program\nInstall Reason  : Explicitly installed\n\n'
+         printf 'Name            : reader\nVersion         : 1.0-1\nLicenses        : MIT\nDescription     : Text-based Web browser\nInstall Reason  : Explicitly installed\n\n'
+         printf 'Name            : libfoo\nVersion         : 2.1-3\nLicenses        : LGPL2.1\nDescription     : A library other packages need\nInstall Reason  : Installed as a dependency for another package\n\n' ;;
+    -Ql) printf 'gimp %s/applications/gimp.desktop\ngimp /usr/bin/gimp-3.0\nreader /usr/bin/reader\nlibfoo /usr/lib/libfoo.so\n' "${XDG_DATA_HOME:-$HOME/.local/share}" ;;
+esac
+EOF
+    printf '#!/bin/sh\n:\n' > "$H/.local/bin/reader"
+    printf '#!/bin/sh\necho fzf-stub >&2\n' > "$H/.local/bin/fzf"
+    chmod +x "$H/.local/bin/pacman" "$H/.local/bin/reader" "$H/.local/bin/fzf"
+    printf 'ID=arch\n' > "$H/os-arch"
+}
+fresh
+desktop_stubs
+desk_stubs
+sbom_stubs
+mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+apps_file=$HOME/.config/spark-shell/apps; argv=$H/.local/state/spark.argv
+if [ "$(uname -s)" = Darwin ]; then
+    sh "$SH" on >/dev/null
+    st=0; out=$(sh "$SH" desktop apps </dev/null 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: na: macOS has its own desktop$' \
+        && ok "macOS: desktop apps refuses, na, one line, exit 1" || bad "macOS desktop apps" "st=$st $out"
+    ck=$(sh "$SH" check || true)
+    printf '%s\n' "$ck" | grep -q '^ok     apps         na (' && ok "macOS: the check apps row says na" || bad "macOS check apps" "$(printf '%s\n' "$ck" | grep apps)"
+else
+    sh "$SH" on >/dev/null
+    tmuxd=$HOME/.local/share/applications/spark-shell-tmux.desktop
+    [ -f "$tmuxd" ] && head -1 "$tmuxd" | grep -q '^# rendered by spark-shell' && grep -q '^Exec=tmux$' "$tmuxd" && grep -q '^Terminal=true$' "$tmuxd" \
+        && ok "on with DESKTOP=sway: tmux declares itself (spark-shell-tmux.desktop, marked, Exec=tmux, Terminal=true)" || bad "tmux entry" "$(cat "$tmuxd" 2>&1)"
+    plain "$tmuxd" && ok "tmux entry: plain (no hex, ASCII)" || bad "tmux entry not plain"
+    # the table and the kinds (the counts line and exit 0 are not asserted:
+    # with no app in the fixture, grep -c under set -e ends cmd_sbom first)
+    st=0; out=$(SPARK_OS_RELEASE=$H/os-arch sh "$SH" sbom 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^1 apps, 1 tools, 1 parts -- an app declares itself with a desktop entry; spark-shell desktop apps marks the desk'"'"'s$' \
+        && ok "sbom: exit 0 and the counts line (one of each kind)" || bad "sbom counts" "st=$st $out"
+    printf '%s\n' "$out" | grep -q '^tool  reader  *1.0-1  *MIT  *Text-based Web browser$' \
+        && ok "sbom: a command without an entry is a tool (reader, its version, licence and words)" || bad "sbom tool row" "$out"
+    printf '%s\n' "$out" | grep -q '^part  libfoo  *2.1-3  *LGPL2.1  *A library other packages need$' && ok "sbom: a package with neither is a part (libfoo)" || bad "sbom part row" "$out"
+    printf '%s\n' "$out" | grep -q '^app   gimp  *3.0.4-1  *GPL3  *GNU Image Manipulation Program$' && ok "sbom: a package that ships an entry is an app (gimp)" || bad "sbom gimp row" "$out"
+    [ "$(printf '%s\n' "$out" | grep -c '^[a-z]*  ')" -eq 3 ] && ok "sbom: three packages, three rows" || bad "sbom row count" "$out"
+    out=$(SPARK_OS_RELEASE=$H/os-arch sh "$SH" sbom tools 2>&1 || true)
+    printf '%s\n' "$out" | grep -q '^tool  reader ' && ! printf '%s\n' "$out" | grep -q '^part ' && ok "sbom tools: the tools alone" || bad "sbom tools" "$out"
+    out=$(SPARK_OS_RELEASE=$H/os-arch sh "$SH" sbom parts 2>&1 || true)
+    printf '%s\n' "$out" | grep -q '^part  libfoo ' && ! printf '%s\n' "$out" | grep -q '^tool ' && ok "sbom parts: the parts alone" || bad "sbom parts" "$out"
+    out=$(SPARK_OS_RELEASE=$H/os-arch sh "$SH" sbom apps 2>&1 || true)
+    printf '%s\n' "$out" | grep -q '^tool \|^part ' && bad "sbom apps: a tool or a part in the apps" "$out" || ok "sbom apps: no tool, no part"
+    # one name: the detail block; an unknown name: one line, exit 1
+    st=0; out=$(SPARK_OS_RELEASE=$H/os-arch sh "$SH" sbom reader 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^tool  reader 1.0-1$' && printf '%s\n' "$out" | grep -q '^  licence   MIT$' \
+        && printf '%s\n' "$out" | grep -q '^  reason    chosen$' && printf '%s\n' "$out" | grep -q '^  commands  reader$' && printf '%s\n' "$out" | grep -q '^  entries   -$' \
+        && ok "sbom NAME: the detail block (licence, reason, commands, entries)" || bad "sbom detail" "st=$st $out"
+    out=$(SPARK_OS_RELEASE=$H/os-arch sh "$SH" sbom libfoo 2>&1 || true)
+    printf '%s\n' "$out" | grep -q '^  reason    dependency$' && printf '%s\n' "$out" | grep -q '^  commands  -$' && ok "sbom NAME: a dependency with no command says so" || bad "sbom libfoo detail" "$out"
+    st=0; out=$(SPARK_OS_RELEASE=$H/os-arch sh "$SH" sbom nosuch 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = "spark-shell sbom: no package named nosuch" ] && ok "sbom NAME: an unknown name is refused in one line, exit 1" || bad "sbom unknown" "st=$st $out"
+    # --json: CycloneDX 1.5 under the state dir, one line names it
+    cdx=$H/.local/state/spark-shell/sbom.cdx.json
+    st=0; out=$(SPARK_OS_RELEASE=$H/os-arch sh "$SH" sbom --json 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = "$cdx -- CycloneDX 1.5, 3 components" ] && [ -s "$cdx" ] \
+        && ok "sbom --json: writes sbom.cdx.json under the state dir, one line names it and the count" || bad "sbom json line" "st=$st $out"
+    jq -e '.bomFormat == "CycloneDX" and .specVersion == "1.5" and .metadata.tools[0].name == "spark-shell" and (.components | length) == 3' "$cdx" >/dev/null 2>&1 \
+        && ok "sbom.cdx.json: CycloneDX 1.5, the tool named, three components" || bad "cdx shape" "$(head -c 400 "$cdx" 2>&1)"
+    jq -e '.components[] | select(.name == "reader") | .type == "library" and .version == "1.0-1" and .purl == "pkg:pacman/arch/reader@1.0-1" and .licenses[0].license.name == "MIT" and .description == "Text-based Web browser"' "$cdx" >/dev/null 2>&1 \
+        && ok "cdx: a tool is a library component with its purl (pkg:pacman/arch/reader@1.0-1), licence and words" || bad "cdx reader" "$(jq -c '.components[] | select(.name == "reader")' "$cdx" 2>&1)"
+    jq -e '.components[] | select(.name == "reader") | .properties | (map(select(.name == "spark-shell:kind"))[0].value == "tool") and (map(select(.name == "spark-shell:reason"))[0].value == "chosen") and (map(select(.name == "spark-shell:commands"))[0].value == "reader")' "$cdx" >/dev/null 2>&1 \
+        && ok "cdx: the properties carry spark-shell:kind, :reason and :commands" || bad "cdx properties" "$(jq -c '.components[] | select(.name == "reader") | .properties' "$cdx" 2>&1)"
+    jq -e '.components[] | select(.name == "libfoo") | .type == "library" and (.properties | map(select(.name == "spark-shell:kind"))[0].value == "part") and (.properties | map(select(.name == "spark-shell:reason"))[0].value == "dependency") and (.properties | map(select(.name == "spark-shell:commands")) | length == 0)' "$cdx" >/dev/null 2>&1 \
+        && ok "cdx: a part is a library with kind part, reason dependency, no commands property" || bad "cdx libfoo" "$(jq -c '.components[] | select(.name == "libfoo")' "$cdx" 2>&1)"
+    jq -e '.components[] | select(.name == "gimp") | .type == "application" and (.properties | map(select(.name == "spark-shell:entries"))[0].value == "gimp-3.0=")' "$cdx" >/dev/null 2>&1 \
+        && ok "cdx: an app is an application component with its entries property (gimp-3.0)" || bad "cdx application" "$(jq -c '.components[] | select(.name == "gimp")' "$cdx" 2>&1)"
+    plain "$cdx" && ok "sbom.cdx.json: plain (no hex, ASCII)" || bad "cdx not plain"
+    # no package manager this repo knows: one line, exit 1
+    st=0; out=$(sh "$SH" sbom 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = "spark-shell sbom: no package manager here that this repo knows (pacman, apt, brew)" ] && ok "sbom with ID=fixture: no known package manager, one line, exit 1" || bad "sbom fixture" "st=$st $out"
+    # the picker with no terminal: refused in one line naming the file
+    st=0; out=$(sh "$SH" desktop apps </dev/null 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = "spark-shell desktop: the picker needs a terminal; the file is $apps_file (name[: your words], one per line)" ] \
+        && ok "desktop apps without a terminal: refused in one line naming the file, exit 1" || bad "desktop apps no tty" "st=$st $out"
+    [ ! -e "$apps_file" ] && ok "desktop apps without a terminal: wrote nothing" || bad "desktop apps wrote" "$(cat "$apps_file")"
+    # status and check, unmarked: every entry (the five fixtures and tmux)
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  apps  unmarked  *every app with a desktop entry (spark-shell desktop apps picks)$' && ok "status: the apps row says unmarked, every app with a desktop entry" || bad "status apps unmarked" "$(printf '%s\n' "$st" | grep apps)"
+    ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     apps         6 apps declare themselves, none marked (spark-shell desktop apps picks)$' \
+        && ok "check: the apps row counts the entries (five fixtures and tmux), none marked" || bad "check apps unmarked" "$(printf '%s\n' "$ck" | grep apps)"
+    # the unmarked inventory: tmux in its entry's words, a terminal app
+    rm -f "$argv"
+    SWAYSOCK=/tmp/x WAYLAND_DISPLAY=wayland-1 sh "$SH" desktop "$need" >/dev/null 2>&1 || true
+    if command -v tmux >/dev/null 2>&1; then
+        grep -q 'tmux: A shell with panes, sessions and the status line' "$argv" && ok "inventory unmarked: tmux in its entry's words" || bad "inventory tmux" "$(grep -o 'tmux[^;]*' "$argv" 2>&1)"
+    fi
+    grep -q 'gimp-3.0: Create images and edit photographs' "$argv" && ! grep -q 'gimp:' "$argv" && ok "inventory unmarked: an entry's Exec name, never the package name (gimp-3.0, not gimp)" || bad "inventory gimp" "$(grep -o 'gimp[^;]*' "$argv" 2>&1)"
+    # marked: the names, the rows; a name that is gone is a FAIL with the remedy
+    printf '# mine\nreader: my browser\nmicro\n' > "$apps_file"
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  apps  2 marked  *reader, micro (spark-shell desktop apps)$' && ok "status: the apps row counts and names the marked" || bad "status apps marked" "$(printf '%s\n' "$st" | grep apps)"
+    ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     apps         2 marked for the desk, 6 apps declare themselves$' && ok "check: ok apps when every marked name is here" || bad "check apps marked" "$(printf '%s\n' "$ck" | grep apps)"
+    printf 'reader: my browser\nmicro\nghost\n' > "$apps_file"
+    ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^FAIL   apps         marked but not here: ghost -- spark-shell desktop apps$' && ok "check: FAIL apps naming the marked name that is gone, the remedy is desktop apps" || bad "check apps gone" "$(printf '%s\n' "$ck" | grep apps)"
+    rm -f "$apps_file"
+    # off hands the tmux entry back
+    sh "$SH" off >/dev/null
+    [ ! -e "$tmuxd" ] && ok "off: the tmux entry is gone (no .bak: there was none before)" || bad "tmux entry off" "$(ls "$HOME/.local/share/applications")"
+    ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     apps         5 apps declare themselves, none marked' && ok "check after off: tmux is out of the count (five entries)" || bad "check apps after off" "$(printf '%s\n' "$ck" | grep apps)"
+    printf 'DESKTOP=none\n' > "$HOME/.config/spark-shell/config"
+    ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     apps         na (no desktop)$' && ok "check: apps na with DESKTOP=none" || bad "check apps none" "$(printf '%s\n' "$ck" | grep apps)"
+fi
+grep -q '^Exec=tmux$' "$REPO/templates/.local/share/applications/spark-shell-tmux.desktop" && grep -q '^Terminal=true$' "$REPO/templates/.local/share/applications/spark-shell-tmux.desktop" \
+    && ok "template: spark-shell-tmux.desktop runs tmux in a terminal" || bad "tmux template"
 
 printf '%s\n' "shell_test: $pass ok, $fail failed"
 [ "$fail" -eq 0 ]
