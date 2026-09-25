@@ -12,7 +12,7 @@
 #                               from .bak, or gone -- the packages stay
 #   spark-shell on --dry-run    print what would change, touch nothing
 #   spark-shell off --dry-run   print what would be handed back, touch nothing
-#   spark-shell check           is this machine still what this repo says?
+#   spark-shell check           the machine row by row -- exit 0 when no row fails
 #   spark-shell status          the state, row by row (bare spark-shell too)
 #   spark-shell bar on|off      tmux's status line (spark bar line draws it)
 #   spark-shell sbom [apps|tools|parts|NAME] [--json]

@@ -16,7 +16,7 @@ emulator. This machine's cycles belong to the model.
                             print what would change, touch nothing
     spark-shell off --dry-run
                             print what would be handed back, touch nothing
-    spark-shell check       is this machine still what this repository says?
+    spark-shell check       the machine row by row, exit 0 when no row fails
     spark-shell status      the state: rc files, tools, the look, the next step
     spark-shell bar on|off  the status line (tmux's, spark draws it)
     spark-shell sbom [apps|tools|parts|NAME] [--json]
