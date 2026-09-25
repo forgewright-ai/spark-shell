@@ -1,33 +1,34 @@
 # spark-shell config -- copied to ~/.config/spark-shell/config.
 #
-# Plain KEY=value, one per line. Every key is optional; a missing key
-# takes the default shown.
+# Plain KEY=value, one per line. Every key is optional, and a missing
+# key takes the default shown.
 
-# The prompt: starship (rendered from the palette; the package manager's,
-# pacman or Homebrew -- Debian has none, so the shell draws its own
-# there) or plain (yours).
+# The prompt: starship (rendered from the palette) or plain (the
+# shell's own). The README's Installing section says where starship
+# comes from and where there is none.
 PROMPT=starship
 
 # starship's shape: minimal (a compact single line) or full.
 PROMPT_STYLE=minimal
 
-# The desktop (Linux): none, or sway -- sway and foot installed and
-# rendered from the palette, and the login box (greetd) on tty1 at the
-# next boot. `spark-shell on desktop` writes this line and does the
-# rest; `spark-shell off desktop` writes none. spark-shell desktop
-# starts sway now, on a console.
+# The desktop (Linux): none, or sway. With sway, sway and foot are
+# installed and rendered from the palette, and the login box is on
+# tty1 at the next boot. spark-shell on desktop writes this line and
+# does the rest, and spark-shell off desktop writes none.
 DESKTOP=none
 
-# foot's face, in foot's own spec (family, then :size=N).
+# The font foot draws with, in foot's own spec (the family, then
+# :size=N).
 FONT=DejaVu Sans Mono:size=12
 
-# The desktop's picture: default (the forge, wallpapers/forge-1920x1080.jpg
-# in this repository), none (the palette's background, edge to edge), or
-# an absolute path to an image. With a picture sway keeps gaps around the
-# windows and foot is a little translucent, so it shows.
-# `spark-shell desktop wallpaper PATH|default|none` writes this line and applies it.
+# The wallpaper: default (the forge wallpaper shipped here as
+# wallpapers/forge-1920x1080.jpg), none (the palette's background,
+# edge to edge) or an absolute path to a picture. With a picture sway
+# keeps gaps around the windows and foot is a little translucent, so
+# it shows. spark-shell desktop wallpaper PATH|default|none writes
+# this line and applies it.
 WALLPAPER=default
 
 # foot over a picture: 0 to 1, 1 opaque. A dark picture reads well at
-# 0.85; a bright one wants more.
+# 0.85, and a bright one wants more.
 ALPHA=0.85

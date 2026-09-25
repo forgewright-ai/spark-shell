@@ -1,9 +1,9 @@
-# spark-shell ~/.zshrc -- zsh on macOS. Symlinked from the spark-shell repository:
-# edit it there, and `git status` shows the change.
+# spark-shell ~/.zshrc -- zsh on macOS. It is a symlink into the
+# spark-shell repository: edit it there, and git status shows the change.
 [[ -o interactive ]] || return
 
-# --- PATH first (Terminal.app opens login shells, so .zprofile ran; a plain
-#     `zsh` did not) -------------------------------------------------------
+# --- PATH first (Terminal.app opens a login shell, so .zprofile ran, and
+#     a plain zsh did not) --------------------------------------------------
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac
 export PATH
 
@@ -41,15 +41,15 @@ else
     PROMPT=$'\n%n@%m:%~%# '   # the blank row is where spark prints its hint
 fi
 
-# --- spark at the prompt: the colour it draws with (three exports from
-#     the palette slots, rendered by spark-shell on), then its one
-#     marked hook line (the widget, completion, the console palette). After
-#     fzf, so its accept-line wrapper is the one spark wraps; spark's rc
-#     row sees the marker and never appends a second.
+# --- spark at the prompt: spark's prompt marks (three exports from the
+#     palette slots, rendered by spark-shell on), then its one marked
+#     hook line (the widget, completion, the console palette). It comes
+#     after fzf, so its accept-line wrapper is the one spark wraps.
+#     spark's rc row sees the marker and never appends a second one.
 [[ -r ~/.config/spark-shell/sgr.sh ]] && source ~/.config/spark-shell/sgr.sh   # spark-shell: the prompt's colour
 [[ -r ~/.config/spark/hook.zsh ]] && source ~/.config/spark/hook.zsh   # spark: the AI at the prompt
 
-# zoxide last: its prompt hook has to be the final one, or it complains
+# zoxide last: its prompt hook has to be the final one, or it complains.
 command -v zoxide >/dev/null && eval "$(zoxide init zsh)"
 
 # --- yours: ~/.config/spark-shell/rc, sourced last, never written by

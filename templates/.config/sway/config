@@ -1,15 +1,13 @@
 # rendered by spark-shell from templates/.config/sway/config -- edit the template, then spark-shell on
-# sway, bare: it tiles windows, tmux tiles panes and draws the bar line,
-# so no bar, no titlebars, no xwayland. A new window is foot running the
-# login shell. The borders and the background take the palette's hex,
-# or the picture from spark-shell desktop wallpaper PATH (then gaps).
-# Super+Return a window, Super+s spark's own prompt in a small window
-# (Ctrl-D closes it), Super+d a desk from your words (a small prompt;
-# spark-shell desktop "WORDS"), Super+Shift+q close it, Super+Shift+c reload,
-# Super+Shift+e back to the console. Started by hand: spark-shell desktop.
-# The desktop opens with one terminal and ends with it: `exit` in that
-# first foot is the console again (an empty sway is a black screen with
-# nothing to type into).
+# sway, bare: it tiles windows. tmux tiles panes and draws the status
+# line, so there is no bar, no titlebar and no xwayland. A new window
+# is foot running the login shell. The borders and the background take
+# the palette's hex, or the wallpaper from spark-shell desktop
+# wallpaper PATH (then gaps). spark-shell desktop starts the desktop
+# from a console, and spark-shell desktop keys prints the keys. The
+# desktop opens with one terminal and ends with it: exit in that first
+# foot is the console again. An empty sway is a black screen with
+# nothing to type into.
 
 set $mod Mod4
 set $term foot
@@ -33,7 +31,7 @@ bindsym $mod+Return exec $term
 # key: Super+d asks for a desk from your words at a small prompt.
 bindsym $mod+d exec $term --app-id spark-desk -e @REPO@/spark-shell desktop --ask
 for_window [app_id="spark-desk"] floating enable, resize set width 60 ppt height 40 ppt
-# key: Super+s opens spark's own prompt in a small window; Ctrl-D closes it.
+# key: Super+s opens a small window with spark chat, and Ctrl-D closes it.
 bindsym $mod+s exec $term --app-id spark-chat -e @REPO@/spark-shell desktop --chat
 for_window [app_id="spark-chat"] floating enable, resize set width 60 ppt height 40 ppt
 # key: Super+Shift+q closes the window.
@@ -43,7 +41,7 @@ bindsym $mod+Shift+c reload
 # key: Super+Shift+e leaves the desktop for the console or the login box.
 bindsym $mod+Shift+e exit
 
-# key: Super and h, j, k, l or the arrows move the focus; with Shift, the window.
+# key: Super and h, j, k, l or an arrow move the focus, with Shift the window.
 bindsym $mod+h focus left
 bindsym $mod+j focus down
 bindsym $mod+k focus up
@@ -61,7 +59,7 @@ bindsym $mod+Shift+Down move down
 bindsym $mod+Shift+Up move up
 bindsym $mod+Shift+Right move right
 
-# key: Super+f fills the screen with a window; Super+r resizes, Return ends it.
+# key: Super+f fills the screen with a window, and Super+r resizes until Enter.
 bindsym $mod+b splith
 bindsym $mod+v splitv
 bindsym $mod+f fullscreen
@@ -72,7 +70,7 @@ bindsym $mod+Shift+space floating toggle
 bindsym $mod+space focus mode_toggle
 bindsym $mod+a focus parent
 
-# key: Super+1 to 0 go to a workspace; with Shift they send the window there.
+# key: Super+1 to 0 go to a workspace, and with Shift send the window there.
 bindsym $mod+1 workspace number 1
 bindsym $mod+2 workspace number 2
 bindsym $mod+3 workspace number 3
