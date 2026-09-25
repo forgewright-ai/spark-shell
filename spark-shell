@@ -20,6 +20,8 @@
 #                               hands it all back, getty on tty1 again
 #   spark-shell desktop         sway and one foot window on this console,
 #                               now (Linux, from a console login)
+#   spark-shell desktop --chat  spark chat in a window: Super+s opens one,
+#                               small and floating; Ctrl-D closes it
 #   spark-shell desktop wallpaper [PATH|default|none]
 #                               the picture behind the windows (gaps and a
 #                               translucent foot show it); bare: the current
@@ -1383,6 +1385,14 @@ cmd_desktop() {
             [ -f "$DESK_PENDING" ] || return 0
             need=$(head -1 "$DESK_PENDING"); rm -f "$DESK_PENDING"
             [ -z "$need" ] || cmd_desktop "$need"; return ;;
+        --chat)   # Super+s: spark's own prompt in a small foot window; Ctrl-D ends it and the window goes.
+            # foot execs without a shell, so the palette's exports are sourced here;
+            # without spark the window says so instead of never appearing
+            spark=$(spark_bin)
+            if [ -z "$spark" ]; then echo "spark is not installed -- the AI is spark's (github.com/forgewright-ai/spark)."; printf 'Enter closes '; IFS= read -r _ || true; return 0; fi
+            # shellcheck disable=SC1091   # our own render, when there is one
+            [ ! -f "$CONFIG_DIR/sgr.sh" ] || . "$CONFIG_DIR/sgr.sh"
+            rm -rf "$TMP"; trap - EXIT; exec "$spark" chat ;;
         ''|-*) ;;
         *)  # a need, or a kept desk by name
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"

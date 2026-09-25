@@ -3,7 +3,8 @@
 # so no bar, no titlebars, no xwayland. A new window is foot running the
 # login shell. The borders and the background take the palette's hex,
 # or the picture from spark-shell desktop wallpaper PATH (then gaps).
-# Super+Return a window, Super+d a desk from your words (a small prompt;
+# Super+Return a window, Super+s spark's own prompt in a small window
+# (Ctrl-D closes it), Super+d a desk from your words (a small prompt;
 # spark-shell desktop "WORDS"), Super+Shift+q close it, Super+Shift+c reload,
 # Super+Shift+e back to the console. Started by hand: spark-shell desktop.
 # The desktop opens with one terminal and ends with it: `exit` in that
@@ -30,6 +31,8 @@ client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@ #@HEX_ANSI_1@ #@HE
 bindsym $mod+Return exec $term
 bindsym $mod+d exec $term --app-id spark-desk -e @REPO@/spark-shell desktop --ask
 for_window [app_id="spark-desk"] floating enable, resize set width 60 ppt height 40 ppt
+bindsym $mod+s exec $term --app-id spark-chat -e @REPO@/spark-shell desktop --chat
+for_window [app_id="spark-chat"] floating enable, resize set width 60 ppt height 40 ppt
 bindsym $mod+Shift+q kill
 bindsym $mod+Shift+c reload
 bindsym $mod+Shift+e exit
@@ -54,7 +57,7 @@ bindsym $mod+Shift+Right move right
 bindsym $mod+b splith
 bindsym $mod+v splitv
 bindsym $mod+f fullscreen
-bindsym $mod+s layout stacking
+bindsym $mod+Shift+s layout stacking
 bindsym $mod+w layout tabbed
 bindsym $mod+e layout toggle split
 bindsym $mod+Shift+space floating toggle

@@ -98,6 +98,7 @@ ask for sudo when they differ.
 
     spark-shell desktop     start it now, from a console login (tty1)
     Super+Return            a window: foot, running your login shell
+    Super+s                 spark chat in a small window (Ctrl-D closes it)
     Super+d                 a desk from your words (below)
     Super+Shift+q           close it
     Super+Shift+c           reload sway (after spark-shell apply)
@@ -116,6 +117,13 @@ edge to edge and opaque; bare, it names the current one. A running
 sway takes the change at once. A dark picture keeps the text readable.
 A picture that goes missing leaves the palette's colour and a row
 saying so, never a black screen.
+
+The AI is one key away: `Super+s` opens `spark chat`, spark's own
+prompt, in a small floating window on the workspace you are on; Ctrl-D
+ends the chat and the window goes with it. It follows `spark theme`
+like every other window (the palette's colours, the accent on the
+prompt). Without spark the window says so instead of never appearing.
+Stacking, i3's `Super+s`, is `Super+Shift+s` here.
 
 The keys are i3's: `Super` and hjkl or the arrows to focus, with Shift
 to move, `Super+1`..`0` the workspaces, `Super+r` resize. `spark theme
