@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.35
+
+- A desk you kept may open any program the machine has (never a
+  shell or a way to root): the gate had refused newsboat in a kept
+  desk once the inventory became the declared apps. The model's own
+  answer stays inside the list it was given, and the refusal says
+  which it is: "not on the desk's list (spark-shell desktop apps
+  marks it)" or "not on this machine".
+
 ## v0.34
 
 - `spark-shell desktop apps` shows the apps, `spark-shell desktop

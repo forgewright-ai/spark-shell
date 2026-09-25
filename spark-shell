@@ -1277,7 +1277,12 @@ desk_gate() {   # desk_gate LINE -> '' when it may run, else why not
     app=${1:-}; app=${app##*/}
     [ -n "$app" ] || { echo "exec of nothing"; return; }
     case " $DESK_NOT_APPS " in *" $app "*) echo "$app is not an app"; return ;; esac
-    desk_app_known "$app" || echo "$app is not on this machine"
+    # the model's answer stays inside the list it was given; a desk you kept may
+    # open any program this machine has (you kept it, you can read and edit it)
+    if [ -n "${KEPT:-}" ]; then desk_on_path "$app" || desk_app_known "$app" || echo "$app is not on this machine"
+    elif desk_app_known "$app"; then :
+    elif desk_on_path "$app"; then echo "$app is not on the desk's list (spark-shell desktop apps marks it)"
+    else echo "$app is not on this machine"; fi
 }
 
 # The model's answer to sway's words: main at the left, the side stacked
@@ -1349,7 +1354,9 @@ desk_make() {   # desk_make NEED -> the desk laid out, its lines in DESK_LAST
     why=$(jq -r '.why // "" | gsub("[\\n\\r]"; " ")' "$TMP/desk.json")
     [ -z "$why" ] || printf '  %s\n' "$why"
     for a in $(jq -r '[.main] + (.side // []) | .[].app' "$TMP/desk.json"); do
-        desk_app_known "$a" || echo "  $a is not on this machine -- laid out without it"
+        desk_app_known "$a" && continue
+        if desk_on_path "$a"; then echo "  $a is not on the desk's list -- laid out without it (spark-shell desktop apps marks it)"
+        else echo "  $a is not on this machine -- laid out without it"; fi
     done
     mkdir -p "$(dirname "$DESK_LAST")"
     {
@@ -1505,7 +1512,7 @@ cmd_desktop() {
                     ws=$(desk_next_ws)
                     sed "s/^workspace number .*/workspace number $ws/" "$DESKS_DIR/$kept" > "$TMP/desk"
                     [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] move container to workspace number $ws" >/dev/null 2>&1 || true
-                    desk_play "$TMP/desk" || refuse "nothing ran"
+                    KEPT=1 desk_play "$TMP/desk" || refuse "nothing ran"
                     echo "on workspace $ws -- the kept desk $kept"
                     [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] focus" >/dev/null 2>&1 || true
                     return
