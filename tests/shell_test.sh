@@ -760,7 +760,7 @@ EOF
     printf '%s\n' "$out" | grep -q '^  rm x$' && ok "gate: a kept desk you edited may open a program the machine has (rm x ran; it is yours)" || bad "gate rm" "$out"
     printf '%s\n' "$out" | grep -qF '  refused  exec gimp-3.0 $(id)  (shell syntax' && printf '%s\n' "$out" | grep -qF '  refused  exec firefox a|b  (shell syntax' \
         && ok "gate: shell syntax (\$(id), a pipe) never reaches sh -c" || bad "gate syntax" "$out"
-    printf '%s\n' "$out" | grep -qF '  refused  exec foot -e sudo ls  (sudo is not an app)' && ok "gate: sudo is not an app" || bad "gate sudo" "$out"
+    printf '%s\n' "$out" | grep -qE '^  refused  exec (foot -e )?sudo ls  \(sudo is not an app\)$' && ok "gate: sudo is not an app (in foot when this machine has a sudo, plain when not)" || bad "gate sudo" "$out"
     printf '%s\n' 'workspace number 3' 'exec foot -e rm x' 'splith' 'exec foot -e micro notes.txt' 'focus left' 'resize set width 70 ppt' > "$H/expected.gate"
     cmp -s "$swlog" "$H/expected.gate" && ok "gate: sway got the workspace line, the two good execs and their layout, nothing else" || bad "gate lines" "$(cat "$swlog" 2>&1)"
     # a kept desk may open any program the machine has (you kept it); the model's answer may not
@@ -768,7 +768,7 @@ EOF
     printf '{"words": "a reader you kept", "main": {"app": "reader"}, "side": [{"app": "sudo", "args": "ls"}]}\n' > "$desks/kept-reader"
     : > "$swlog"
     st=0; out=$(sh "$SH" desktop kept-reader 2>&1) || st=$?
-    [ "$st" -eq 0 ] && grep -q '^exec foot -e reader$' "$swlog" && printf '%s\n' "$out" | grep -q '^  refused  exec foot -e sudo ls  (sudo is not an app)$' \
+    [ "$st" -eq 0 ] && grep -q '^exec foot -e reader$' "$swlog" && printf '%s\n' "$out" | grep -qE '^  refused  exec (foot -e )?sudo ls  \(sudo is not an app\)$' \
         && ok "a kept desk: a program on the machine but not in the inventory opens; sudo never" || bad "kept gate" "st=$st $out $(cat "$swlog")"
     rm -f "$desks/kept-reader" "$H/.local/bin/reader"
     # a window that never comes (mpv with nothing to play): the split meant for it is skipped,
@@ -795,12 +795,13 @@ EOF
     printf '%s\n' 'focus output DP-1' 'workspace number 3' 'exec gimp-3.0' splith 'exec foot -e micro' 'focus left' 'resize set width 70 ppt' 'focus output HDMI-A-1' 'workspace number 4' 'exec firefox https://instagram.com' > "$H/expected.two"
     cmp -s "$swlog" "$H/expected.two" && ok "two screens: the main's group first (focus output, workspace 3, main, micro beside it, sized), then the right screen's (focus output, workspace 4, firefox)" || bad "two screens lines" "$(cat "$swlog" 2>&1)"
     printf '%s\n' "$out" | grep -q '^on workspace 3 and 4 -- spark-shell desktop keep NAME keeps it$' && ok "two screens: the closing line says both workspaces" || bad "two screens closing" "$out"
+    printf '%s\n' "$out" | grep -q 'is not here' && bad "two screens: a screen that is here was said to be missing" "$(printf '%s\n' "$out" | grep 'is not here')" || ok "two screens: both named screens are here, no line says one is missing"
     grep -q 'workspace .* output\|floating\|sticky' "$swlog" && bad "two screens: a line that pins (workspace N output, floating, sticky)" "$(grep 'output\|floating\|sticky' "$swlog")" || ok "two screens: nothing pins a window (no workspace N output, no floating, no sticky)"
     sh "$SH" desktop keep two >/dev/null
     jq -e '.main.screen == "left" and .side[0].screen == "right" and (.side[1] | has("screen") | not)' "$desks/two" >/dev/null 2>&1 && ok "two screens: the kept desk carries screen on main and one side entry, as answered" || bad "two kept" "$(cat "$desks/two")"
     rm -f "$H/two-screens"; : > "$swlog"
     st=0; out=$(sh "$SH" desktop two 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^  the right screen is not here -- all on DP-1$' && [ "$(grep -c '^workspace number' "$swlog")" -eq 1 ] && ! grep -q '^focus output' "$swlog" \
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^  the right screen is not here -- all on DP-1$' && ! printf '%s\n' "$out" | grep -q 'all on *$' && [ "$(grep -c '^workspace number' "$swlog")" -eq 1 ] && ! grep -q '^focus output' "$swlog" \
         && printf '%s\n' "$out" | grep -q '^on workspace 3 -- the kept desk two$' && ok "a desk kept on two screens opens on one: said in one line, one workspace, no focus output" || bad "two on one" "st=$st $out $(cat "$swlog")"
     printf '{"words": "nine", "main": {"app": "micro", "screen": "DP-9"}, "side": [{"app": "firefox", "screen": "right"}]}\n' > "$desks/nine"
     touch "$H/two-screens"; : > "$swlog"
@@ -1024,9 +1025,14 @@ printf '%s\n' 'has-session -t =studio' 'new-session -d -s studio -n shell' 'new-
     && ok "desktop studio: the session with a bare shell window, then one window per room, the editor micro with EDITOR unset; no model call" || bad "studio play" "st=$st $out $(cat "$tlog")"
 printf '%s\n' "$out" | grep -q '^desk> studio$' && printf '%s\n' "$out" | grep -q '^  a shell, the editor, the feeds' && printf '%s\n' "$out" | grep -q '^  editor micro$' && printf '%s\n' "$out" | grep -q '^  w3m duckduckgo.com$' \
     && printf '%s\n' "$out" | grep -q '^rooms studio -- the kept desk studio$' && ok "desktop studio: the desk> line, the why, one line per room, the closing line" || bad "studio lines" "$out"
+printf '#!/bin/sh\n:\n' > "$H/.local/bin/nano"; chmod +x "$H/.local/bin/nano"   # the containers have no nano; a kept desk runs what is on PATH
 : > "$tlog"
 st=0; out=$(EDITOR=/usr/bin/nano sh "$SH" desktop studio 2>&1) || st=$?
 grep -q '^new-window -t =studio -n editor nano$' "$tlog" && ok "editor is EDITOR's basename (nano)" || bad "editor nano" "$(cat "$tlog")"
+rm -f "$H/.local/bin/nano"; : > "$tlog"
+st=0; out=$(EDITOR=/usr/bin/nosucheditor sh "$SH" desktop studio 2>&1) || st=$?
+[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^  refused  room editor nosucheditor  (nosucheditor is not on this machine)$' && grep -q '^new-window -t =studio -n newsboat newsboat$' "$tlog" \
+    && ok "EDITOR naming a program that is not here: its room is refused, the rest opens" || bad "editor absent" "st=$st $out"
 mkdir -p "$H/nomicro"   # a PATH with everything but micro (this machine may have the real one)
 for d in $(printf '%s' "$PATH" | tr ':' ' '); do
     [ -d "$d" ] || continue

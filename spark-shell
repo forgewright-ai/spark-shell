@@ -1241,9 +1241,11 @@ desk_windows_of() {   # desk_windows_of JSONFILE -> $TMP/windows: SCREEN<tab>APP
         | def out(w; dflt): (w.screen // "") as $n | ([$scr[] | select(.[0] == $n or .[2] == $n)] | first // [dflt]) | .[0];
         out(.main; $scr[0][0]) as $mo | ([.main] + (.side // [])) as $all
         | ([$all[] | (.screen // "") | select(. != "" and (. as $n | [$scr[] | .[0], .[2]] | index($n)) == null)] | first // "") as $miss
-        | "\($miss)\t\($mo)", ($all[] | "\(out(.; $mo))\t\(.app)\t\(.args // "")")' "$1" > "$TMP/windows.all"
-    IFS='	' read -r miss mo < "$TMP/windows.all"
-    sed 1d "$TMP/windows.all" > "$TMP/windows"
+        | $mo, $miss, ($all[] | "\(out(.; $mo))\t\(.app)\t\(.args // "")")' "$1" > "$TMP/windows.all"
+    # the main's output on line 1, the screen missed (or nothing) on line 2, one line each: a
+    # tab-split read would drop an empty first field (a leading tab is IFS whitespace)
+    mo=$(sed -n 1p "$TMP/windows.all"); miss=$(sed -n 2p "$TMP/windows.all")
+    sed 1,2d "$TMP/windows.all" > "$TMP/windows"
     [ -z "$miss" ] || echo "  the $miss screen is not here -- all on $mo"
 }
 desk_lines() {   # desk_lines WS JSONFILE -> the lines, after desk_windows_of: one group per screen, the main's on WS
