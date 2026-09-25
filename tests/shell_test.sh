@@ -517,22 +517,33 @@ desk_stubs() {   # after desktop_stubs: its swaymsg is replaced
     cat > "$H/.local/bin/spark" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$@" > "${XDG_STATE_HOME:-$HOME/.local/state}/spark.argv"
-cat <<'JSON'
+if [ -e "$HOME/two-screens" ]; then cat <<'JSON'
+{"why": "photo work in gimp at the left, the feed at the right, notes beside the photo",
+ "main": {"app": "gimp-3.0", "args": "", "width": 70, "screen": "left"},
+ "side": [{"app": "firefox", "args": "https://instagram.com", "screen": "right"}, {"app": "micro", "args": ""}]}
+JSON
+else cat <<'JSON'
 {"why": "photo work in gimp with the two feeds beside it and a notes file",
  "main": {"app": "gimp-3.0", "args": "", "width": 70},
  "side": [{"app": "firefox", "args": "https://instagram.com"}, {"app": "firefox", "args": "https://x.com"},
           {"app": "micro", "args": ""}, {"app": "player", "args": ""}, {"app": "ghostapp", "args": ""}]}
 JSON
+fi
 EOF
+    # the outputs carry make, model and serial like sway's (never to reach the model); two when $HOME/two-screens exists
     cat > "$H/.local/bin/swaymsg" <<'EOF'
 #!/bin/sh
 log=${XDG_STATE_HOME:-$HOME/.local/state}/swaymsg.log; mkdir -p "$(dirname "$log")"
 case ${1:-} in
     -t) case $2 in
-            get_outputs) echo '[{"current_mode":{"width":2560,"height":1440}}]' ;;
+            get_version) echo '{"human_readable":"sway-stub"}' ;;
+            get_outputs) o1='{"name":"DP-1","active":true,"make":"Fakemake","model":"Fakemodel","serial":"SN0001","rect":{"x":0,"y":0},"current_mode":{"width":2560,"height":1440}}'
+                o2='{"name":"HDMI-A-1","active":true,"make":"Fakemake","model":"Fakemodel","serial":"SN0002","rect":{"x":2560,"y":0},"current_mode":{"width":1920,"height":1080}}'
+                if [ -e "$HOME/two-screens" ]; then echo "[$o2,$o1]"; else echo "[$o1]"; fi ;;
             get_workspaces) echo '[{"num":1},{"num":2}]' ;;
-            get_tree) n=$(grep '^exec' "$log" 2>/dev/null | grep -vc 'exec gone' || :); [ -n "$n" ] || n=0; i=0
-                printf '{"type":"root","nodes":[{"type":"workspace","num":3,"nodes":['
+            get_tree) ws=$(grep -n '^workspace number' "$log" 2>/dev/null | tail -1); from=${ws%%:*}; num=${ws##* }; [ -n "$from" ] || { from=0; num=3; }
+                n=$({ if [ "$from" -gt 0 ]; then sed "1,${from}d" "$log"; else cat "$log"; fi; } 2>/dev/null | grep '^exec' | grep -vc 'exec gone' || :); [ -n "$n" ] || n=0; i=0
+                printf '{"type":"root","nodes":[{"type":"workspace","num":%s,"nodes":[' "$num"
                 while [ "$i" -lt "$n" ]; do [ "$i" -eq 0 ] || printf ','; printf '{"type":"con","pid":%d}' $((100 + i)); i=$((i + 1)); done
                 echo ']}]}' ;;
         esac ;;
@@ -586,7 +597,8 @@ else
     [ -f "$argv" ] && [ "$(sed -n '1,3p' "$argv" | paste -sd ' ' -)" = 'edit --type json' ] && grep -qx -- '--name' "$argv" && grep -qx desk.json "$argv" && grep -qx -- '--about' "$argv" \
         && ok "spark: asked as spark edit --type json --name desk.json --about" || bad "spark argv" "$(cat "$argv" 2>&1)"
     [ "$(tail -1 "$argv")" = "write the desk for this need: $need" ] && ok "spark: the prompt ends with the need's words" || bad "spark prompt" "$(tail -1 "$argv")"
-    grep -q 'on a 2560x1440 screen' "$argv" && ok "spark: the about names the screen (from swaymsg get_outputs)" || bad "about screen" "$(grep -o 'on a [^ ]* screen' "$argv")"
+    grep -q 'on one screen, 2560x1440\. ' "$argv" && ok "spark: the about says one screen and its size (from swaymsg get_outputs)" || bad "about screen" "$(grep -o 'on one screen[^.]*' "$argv")"
+    grep -q 'screen is left\|"screen"' "$argv" && bad "about: the screen rule or field reached the model with one screen" "$(grep -o 'A window is on one screen[^.]*' "$argv")" || ok "spark: one screen, no screen field and no screen rule in the about"
     grep -q 'gimp-3.0: Create images and edit photographs' "$argv" && ok "inventory: a desktop entry's Comment (gimp-3.0)" || bad "inventory gimp" "$(grep -o 'gimp-3.0: [^;]*' "$argv")"
     grep -q 'firefox: Web Browser' "$argv" && ok "inventory: GenericName when there is no Comment (firefox)" || bad "inventory firefox" "$(grep -o 'firefox: [^;]*' "$argv")"
     grep -q 'micro: Micro' "$argv" && ok "inventory: Name when there is nothing else (micro)" || bad "inventory micro" "$(grep -o 'micro: [^;]*' "$argv")"
@@ -725,6 +737,32 @@ EOF
         && ok "-v after the words is a flag, not a word: the sway lines and the skipped split shown" || bad "gone verbose" "st=$st $out"
     printf '%s\n' 'workspace number 3' 'exec foot -e micro' 'splith' 'exec gone' 'exec firefox' 'focus left' 'resize set width 70 ppt' > "$H/expected.gone"
     cmp -s "$swlog" "$H/expected.gone" && ok "a window that never comes: sway never got the splitv" || bad "gone lines" "$(cat "$swlog" 2>&1)"
+    # two screens: the brief says them and the rule; each screen its own workspace, the main's first,
+    # focus output before each; the outputs' make, model and serial never leave the machine
+    touch "$H/two-screens"; rm -f "$argv" "$swlog"
+    st=0; out=$(sh "$SH" desktop "$need" 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -q 'on screens: left 2560x1440, right 1920x1080\. ' "$argv" && grep -q ' A window is on one screen; screen is left or right; one screen unless the need names two or the work needs two\. ' "$argv" \
+        && grep -q '"screen": "left"' "$argv" && ok "two screens: the brief names them left to right with their sizes, the rule, the screen field" || bad "two screens brief" "st=$st $(grep -o 'on screens[^.]*' "$argv") $out"
+    grep -q 'Fakemake\|Fakemodel\|SN000' "$argv" && bad "two screens: an output's make, model or serial reached the model" "$(grep -o '[^ ]*Fake[^ ]*\|SN000[0-9]' "$argv" | head -3)" || ok "two screens: the outputs' make, model and serial never reach the model"
+    printf '%s\n' 'focus output DP-1' 'workspace number 3' 'exec gimp-3.0' splith 'exec foot -e micro' 'focus left' 'resize set width 70 ppt' 'focus output HDMI-A-1' 'workspace number 4' 'exec firefox https://instagram.com' > "$H/expected.two"
+    cmp -s "$swlog" "$H/expected.two" && ok "two screens: the main's group first (focus output, workspace 3, main, micro beside it, sized), then the right screen's (focus output, workspace 4, firefox)" || bad "two screens lines" "$(cat "$swlog" 2>&1)"
+    printf '%s\n' "$out" | grep -q '^on workspace 3 and 4 -- spark-shell desktop keep NAME keeps it$' && ok "two screens: the closing line says both workspaces" || bad "two screens closing" "$out"
+    grep -q 'workspace .* output\|floating\|sticky' "$swlog" && bad "two screens: a line that pins (workspace N output, floating, sticky)" "$(grep 'output\|floating\|sticky' "$swlog")" || ok "two screens: nothing pins a window (no workspace N output, no floating, no sticky)"
+    sh "$SH" desktop keep two >/dev/null
+    jq -e '.main.screen == "left" and .side[0].screen == "right" and (.side[1] | has("screen") | not)' "$desks/two" >/dev/null 2>&1 && ok "two screens: the kept desk carries screen on main and one side entry, as answered" || bad "two kept" "$(cat "$desks/two")"
+    rm -f "$H/two-screens"; : > "$swlog"
+    st=0; out=$(sh "$SH" desktop two 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^  the right screen is not here -- all on DP-1$' && [ "$(grep -c '^workspace number' "$swlog")" -eq 1 ] && ! grep -q '^focus output' "$swlog" \
+        && printf '%s\n' "$out" | grep -q '^on workspace 3 -- the kept desk two$' && ok "a desk kept on two screens opens on one: said in one line, one workspace, no focus output" || bad "two on one" "st=$st $out $(cat "$swlog")"
+    printf '{"words": "nine", "main": {"app": "micro", "screen": "DP-9"}, "side": [{"app": "firefox", "screen": "right"}]}\n' > "$desks/nine"
+    touch "$H/two-screens"; : > "$swlog"
+    st=0; out=$(sh "$SH" desktop nine 2>&1) || st=$?
+    printf '%s\n' 'focus output DP-1' 'workspace number 3' 'exec foot -e micro' 'focus output HDMI-A-1' 'workspace number 4' 'exec firefox' > "$H/expected.nine"
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^  the DP-9 screen is not here -- all on DP-1$' && cmp -s "$swlog" "$H/expected.nine" \
+        && ok "a kept screen name that is not here (DP-9) maps to the first screen; a side on the right keeps its own" || bad "nine" "st=$st $out $(cat "$swlog")"
+    st=0; out=$(sh "$SH" desktop nine -v 2>&1) || st=$?
+    printf '%s\n' "$out" | grep -q '^  focus output HDMI-A-1$' && ok "-v shows the focus output lines" || bad "nine verbose" "$out"
+    rm -f "$H/two-screens" "$desks/nine" "$desks/two"
     # from a console: the words wait, sway starts, --pending lays them out once
     rm -f "$argv" "$swlog"
     st=0; out=$(env -u SWAYSOCK -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop "news and music" 2>&1) || st=$?

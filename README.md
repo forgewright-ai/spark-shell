@@ -155,6 +155,15 @@ want again:
     spark-shell desktop forget writing
     spark-shell desktop                 inside the desktop: the kept ones
 
+With two monitors the model is told both, left and right with their
+sizes, and puts a window on one of them only when the need or the work
+wants two ("the feed on the right screen"). Each screen gets its own
+workspace, the main window's first, and the closing line names both. A
+desk kept on two screens opens on one and says so in a line. Nothing
+pins a window: dragging it to the other screen, floating it, closing
+it stay yours. More than two are named as sway names them (`DP-1`,
+`HDMI-A-1`), and a kept desk may name one that way too.
+
 What a desk may open is what the box declares: every app with a
 desktop entry, the way the OS's own launchers see it, plus any program
 your words name. To choose for yourself, `spark-shell desktop apps`
@@ -184,7 +193,7 @@ again. Every rendered line, fresh or kept, passes one gate before sway
 sees it: a desk verb, no shell syntax, and `exec` only of an app this
 machine has -- a shell or a way to root is not an app. A line that
 fails is named and dropped, the rest still opens. The model sees the
-need's words, the screen's size and the app list, never a window's
+need's words, the screens (name and size) and the app list, never a window's
 title or a file. From a console with no desktop running, `spark-shell
 desktop "WORDS"` starts one and lays the desk out in it.
 
