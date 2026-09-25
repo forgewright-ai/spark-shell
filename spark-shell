@@ -1,81 +1,61 @@
 #!/bin/sh
-# spark-shell -- spark's own shell for a machine that is an AI box.
+# spark-shell -- the seat at an AI box
 #
-#   spark-shell                 the state: rc files, tools, the look
-#   spark-shell status          the same, by name
-#   spark-shell on              the terminal seat: tools, prompt, the look;
-#                               the rc files become spark-shell's (yours: .bak).
-#                               Again after spark theme NAME or a git pull:
-#                               it re-renders what changed
-#   spark-shell on desktop      the seat and a desktop: sway, foot, the login
-#                               box on tty1 at the next boot (DESKTOP=sway)
-#   spark-shell off desktop     the desktop and the login box off, at the next
-#                               boot; the terminal seat stays
-#   spark-shell off             everything back: rc files and the rendered
-#                               look from .bak, or gone; packages stay
-#   spark-shell check           is this machine still what this repo says?
-#   spark-shell bar on | off    tmux's status line (the line itself is
-#                               spark's: spark bar line)
-#   spark-shell desktop         sway and one foot window on this console,
-#                               now (Linux, from a console login)
-#   spark-shell desktop --chat  spark chat in a window: Super+s opens one,
-#                               small and floating; Ctrl-D closes it
-#   spark-shell desktop wallpaper [PATH|default|none]
-#                               the picture behind the windows (gaps and a
-#                               translucent foot show it); bare: the current
-#   spark-shell desktop "WORDS" a desk for that need: the model picks the
-#                               windows from the apps this machine has and
-#                               sway lays them out on an empty workspace
-#                               (Super+d asks the same at a prompt); with
-#                               no sway (a console, ssh, a Mac) the same
-#                               desk plays as rooms, one tmux window per
-#                               app; --rooms | --windows picks the player
-#   spark-shell desktop keep [WORDS] | WORDS | forget WORDS
-#                               keep the last desk under those words (its
-#                               own by default), open a kept one by its
-#                               words (no model), or drop it; bare, inside
-#                               the desktop: the kept desks. A kept desk
-#                               is the model's answer (JSON, yours to
-#                               edit), rendered for the screen when it opens
-#   spark-shell desktop apps | tools
-#                               what a desk may open: a picker over the
-#                               box's apps, or over its tools (Tab flips a
-#                               mark, Enter saves), one list of marks,
-#                               yours in ~/.config/spark-shell/apps
-#   spark-shell desktop keys    the desktop's keys, one sentence each (the
-#                               first window shows them once)
-#   spark-shell sbom [apps|tools|parts|NAME] [--json]
-#                               the box's software, in the package
-#                               manager's words: version, licence, chosen
-#                               or dependency, commands, desktop entries;
-#                               --json writes CycloneDX 1.5
+#   spark-shell on              the terminal seat: the tools, the prompt and
+#                               the look (your rc files go to .bak) -- run it
+#                               again after spark theme NAME or a git pull
+#   spark-shell on desktop      the seat and a desktop: sway, foot and the
+#                               login box on tty1 at the next boot
+#   spark-shell off desktop     the desktop and the login box off at the
+#                               next boot -- the terminal seat stays
+#   spark-shell off             everything back: the rc files and the look
+#                               from .bak, or gone -- the packages stay
 #   spark-shell on --dry-run    print what would change, touch nothing
 #   spark-shell off --dry-run   print what would be handed back, touch nothing
+#   spark-shell check           is this machine still what this repo says?
+#   spark-shell status          the state, row by row (bare spark-shell too)
+#   spark-shell bar on|off      tmux's status line (spark bar line draws it)
+#   spark-shell sbom [apps|tools|parts|NAME] [--json]
+#                               this machine's software in the package
+#                               manager's words (--json writes CycloneDX 1.5)
+#   spark-shell desktop         sway and one foot window on this console, now
+#   spark-shell desktop "WORDS" [--rooms|--windows]
+#                               a desk for the need: the model picks the windows
+#                               in sway, or as tmux rooms (--rooms | --windows)
+#   spark-shell desktop keep [WORDS] | WORDS | forget WORDS
+#                               keep the last desk, open a kept one, drop one
+#   spark-shell desktop apps | tools
+#                               what a desk may open: a picker, one list of marks
+#   spark-shell desktop keys    the desktop's keys, one sentence each
+#   spark-shell desktop wallpaper PATH|default|none
+#                               the picture behind the windows (default: the
+#                               forge wallpaper, none: the palette's colour)
+#   spark-shell desktop --chat  spark chat in a small window (Super+s opens it)
+#   spark theme NAME            one palette everywhere (spark's verb)
 #
-# The one interface to spark is ~/.config/spark/theme.env -- the palette
-# `spark theme NAME` writes: the look reads THEME_BG, THEME_FG,
-# THEME_ACCENT, THEME_MUTED and THEME_ANSI_0-15 (THEME_LOGO optional). No
-# theme.env: the terminal keeps its own colours. Back to spark go three
-# exports, SPARK_ACCENT_SGR, SPARK_MUTED_SGR and SPARK_WARN_SGR (the
-# rendered ~/.config/spark-shell/sgr.sh): the prompt's colour, from the
-# same slots. spark itself is not required; without it the status line
-# stays empty and everything else works. Nothing leaves this machine
-# except what the package manager fetches. A desk asks spark on this
-# machine (spark edit).
+# The one interface to spark is ~/.config/spark/theme.env, the palette
+# `spark theme NAME` writes. The look reads THEME_BG, THEME_FG,
+# THEME_ACCENT, THEME_MUTED and THEME_ANSI_0-15. With no theme.env the
+# terminal keeps its own colours. Three exports go back to spark, from
+# the same slots: SPARK_ACCENT_SGR, SPARK_MUTED_SGR and SPARK_WARN_SGR in
+# the rendered ~/.config/spark-shell/sgr.sh colour the prompt. spark
+# itself is not required. Without it the status line stays empty and
+# everything else works. Nothing leaves this machine except what the
+# package manager fetches. A desk asks spark on this machine (spark edit).
 #
-# POSIX sh, both OSes (Debian and Arch families, macOS). Choices live in
-# ~/.config/spark-shell/config (KEY=value): PROMPT starship|plain
-# (starship from pacman or Homebrew; Debian has no package, so the rc
-# files draw the shell's own prompt there), PROMPT_STYLE minimal|full,
-# DESKTOP none|sway,
-# FONT (foot's spec, DejaVu Sans Mono:size=12), WALLPAPER default|none|PATH,
-# ALPHA (foot over a picture, 0.85).
+# POSIX sh on both OSes: the Debian and Arch families, and macOS. The
+# choices live in ~/.config/spark-shell/config, one KEY=value a line.
+# PROMPT is starship|plain, PROMPT_STYLE minimal|full, DESKTOP none|sway,
+# FONT foot's spec (DejaVu Sans Mono:size=12), WALLPAPER default|none|PATH
+# and ALPHA foot over a picture (0.85). starship comes from pacman or
+# Homebrew. Debian has no package, so there the rc files draw the shell's
+# own prompt.
 #
 # The login box (DESKTOP=sway) is the one root render: /etc/greetd and a
-# greetd.service drop-in, written with sudo only when they differ, and
-# greetd enabled on tty1 in getty's place for the next boot -- never
-# started or stopped live. SPARK_SHELL_ROOT=DIR (tests only) prefixes
-# every root path with DIR, writes plainly, and takes systemctl from PATH.
+# greetd.service drop-in, written with sudo only when they differ. greetd
+# is enabled on tty1 in getty's place for the next boot. Neither unit is
+# ever started or stopped live. SPARK_SHELL_ROOT=DIR (tests only) prefixes
+# every root path with DIR, writes plainly and takes systemctl from PATH.
 set -eu
 
 # ~/.local/bin/spark-shell is a symlink into the clone: resolve it, the
@@ -583,7 +563,7 @@ greeter_off() {   # getty back on tty1 at the next boot, the root files handed b
     done
     for d in $ROOT_DIRS; do [ -d "$ROOT/$d" ] && root_do rmdir "$ROOT/$d" 2>/dev/null || true; done
     root_do systemctl daemon-reload >/dev/null 2>&1 || true
-    row ok greeter "getty on tty1 at the next boot; until then Enter at the login box opens your shell"
+    row ok greeter "getty on tty1 at the next boot -- until then Enter at the login box opens your shell"
 }
 
 render_all() {
@@ -721,7 +701,7 @@ cmd_on() {   # cmd_on [desktop]
             ok terminfo "compiled into ~/.terminfo"
         fi
     else
-        skip terminfo "tmux-256color lacks kUP here; a newer ncurses-term has it"
+        skip terminfo "tmux-256color lacks kUP here -- a newer ncurses-term has it"
     fi
     loud && printf '\n== the look\n'
     tree=$(rc_tree)
@@ -838,7 +818,7 @@ cmd_follow() {
     n=$changes
     tmux_reload >/dev/null 2>&1 || true
     theme_seen
-    [ "$n" -eq 0 ] || echo "spark-shell: the look followed the palette ($n files; the login box at the next spark-shell on)"
+    [ "$n" -eq 0 ] || echo "spark-shell: the look followed the palette ($n files). The login box follows at the next spark-shell on."
 }
 
 # The first hour: the desktop's keys are the `# key: ` sentences in the
@@ -849,7 +829,7 @@ cmd_follow() {
 DESK_SEEN=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desktop.seen
 desk_keys() { sed -n 's/^# key: //p' "$REPO/templates/.config/sway/config"; }
 desk_keys_card() {
-    echo "These are the desktop's keys; spark-shell desktop keys shows them again any time."
+    echo "These are the desktop's keys. spark-shell desktop keys shows them again any time."
     desk_keys | sed 's/^/  /'
     echo
 }
@@ -868,7 +848,7 @@ status_next() {   # the first sentence that applies, as a next row; nothing off,
 cmd_status() {
     config_load
     tree=$(rc_tree)
-    printf 'spark-shell -- the look and the tools for an AI box\n'
+    printf 'spark-shell -- the seat at an AI box\n'
     for f in $(rc_files); do
         p=$HOME/$f
         if [ -L "$p" ] && [ "$(readlink "$p")" = "$tree/$f" ]; then s="spark-shell's"
@@ -889,7 +869,7 @@ cmd_status() {
     elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then s="sway: not rendered (spark-shell on)"
     else s="sway: rendered, foot in $(fc-match -f '%{family}' "$FONT" 2>/dev/null || printf '%s' "${FONT%%:*}") (spark-shell desktop starts it)"; fi
     if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then
-        if greeter_at_boot; then s="$s; login box: greetd at boot"; else s="$s; login box: getty at boot (spark-shell on desktop)"; fi
+        if greeter_at_boot; then s="$s -- the login box: greetd at boot"; else s="$s -- the login box: getty at boot (spark-shell on desktop)"; fi
     fi
     printf '  desk  %-16s %s\n' "$DESKTOP" "$s"
     n=$(ls -A "$DESKS_DIR" 2>/dev/null | wc -l | tr -d ' ')   # a kept desk plays as rooms anywhere
@@ -899,14 +879,14 @@ cmd_status() {
         if apps_marked; then printf '  apps  %-16s %s\n' "$(grep -c '^[A-Za-z0-9]' "$APPS") marked" "$(grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd',' - | sed 's/,/, /g') (spark-shell desktop apps)"
         else printf '  apps  %-16s %s\n' unmarked "every app with a desktop entry (spark-shell desktop apps picks)"; fi
         if [ "$WALLPAPER" = none ]; then printf '  wall  %-16s %s\n' none "the palette's background (spark-shell desktop wallpaper PATH|default)"
-        elif [ "$WALLPAPER" = default ] && wall_there; then printf '  wall  %-16s %s\n' default "the forge, $WALL_DEFAULT"
+        elif [ "$WALLPAPER" = default ] && wall_there; then printf '  wall  %-16s %s\n' default "the forge wallpaper, $WALL_DEFAULT"
         elif wall_there; then printf '  wall  %-16s %s\n' picture "$WALLPAPER"
         else printf '  wall  %-16s %s\n' missing "$(wall_path) is not there -- the palette's colour meanwhile"; fi
     fi
     theme_load || true
     slots="accent colour${ACCENT_SLOT:-?}, muted colour${MUTED_SLOT:-?} (SGR 1;${ACCENT_SGR:-?} / ${MUTED_SGR:-?})"
-    [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' theme.env "read: $slots (spark theme NAME rewrites it; then spark-shell on)" \
-                        || printf '  theme %-16s %s\n' theme.env "none: the terminal's own sixteen; $slots"
+    [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' theme.env "read: $slots (spark theme NAME rewrites it, then spark-shell on)" \
+                        || printf '  theme %-16s %s\n' theme.env "none: the terminal's own 16 -- $slots"
     status_next
 }
 
@@ -958,7 +938,7 @@ cmd_check() {
         done
         if [ -n "$stale" ]; then chk desktop fail "stale:$stale" "spark-shell on"
         elif ! command -v jq >/dev/null 2>&1; then chk desktop fail "jq is missing (a desk reads the model's answer with it)" "spark-shell on"
-        else chk desktop ok "sway and foot, the renders match the palette; a desk from your words"; fi
+        else chk desktop ok "sway and foot, the renders match the palette -- a desk from your words"; fi
     fi
     if [ "$OS" = Darwin ]; then chk greeter ok "na (macOS)"
     elif [ "$DESKTOP" = none ]; then chk greeter ok "na (DESKTOP=none)"
@@ -973,7 +953,7 @@ cmd_check() {
         if [ -n "$stale" ]; then chk greeter fail "stale:$stale" "spark-shell on desktop"
         elif ! unit_enabled greetd.service; then chk greeter fail "greetd.service is not enabled" "spark-shell on desktop"
         elif unit_enabled getty@tty1.service; then chk greeter fail "getty@tty1.service is still enabled" "spark-shell on desktop"
-        else chk greeter ok "greetd on tty1 at boot, the box matches the palette"; fi
+        else chk greeter ok "greetd on tty1 at boot, the login box matches the palette"; fi
     fi
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk apps ok "na (no desktop)"
     else
@@ -1027,7 +1007,7 @@ DESK_NOT_APPS="sh bash zsh dash fish ksh sudo doas su pkexec"   # a shell or a w
 DESK_WAIT=30                                                    # seconds for a window to map (gimp, a browser)
 
 # ------------------------------------------------------------------- sbom
-# The box's software bill of materials, in the package manager's own
+# This machine's software bill of materials, in the package manager's own
 # words: every package, its version, licence, description, whether you
 # chose it or it came as a dependency, the commands it puts on PATH and
 # the desktop entries it ships (with their XDG categories). Its kind
@@ -1105,7 +1085,7 @@ sbom_json() {   # the CycloneDX 1.5 document, from $TMP/sbom, to stdout
         split("\n") | map(select(length > 0) | split("\t")) |
         {bomFormat: "CycloneDX", specVersion: "1.5", version: 1,
          metadata: {timestamp: $ts, tools: [{name: "spark-shell", version: $ver}],
-                    component: {type: "operating-system", name: $host, description: ("the box, as " + $pm + " declares it")}},
+                    component: {type: "operating-system", name: $host, description: ("this machine, as " + $pm + " declares it")}},
          components: map({
             type: (if .[0] == "app" then "application" else "library" end),
             name: .[1], version: .[2], description: .[5],
@@ -1133,7 +1113,7 @@ cmd_sbom() {   # sbom [apps|tools|parts|NAME] [--json]
             k=${pick%s}
             awk -F'\t' -v k="$k" '$1 == k || k == "" {printf "%-5s %-24s %-14s %-22s %s\n", $1, $2, substr($3, 1, 14), substr($4, 1, 22), $6}' "$TMP/sbom"
             a=$(grep -c '^app	' "$TMP/sbom" || true); t=$(grep -c '^tool	' "$TMP/sbom" || true); p=$(grep -c '^part	' "$TMP/sbom" || true)
-            echo "$a apps, $t tools, $p parts -- an app declares itself with a desktop entry; spark-shell desktop apps marks the desk's" ;;
+            echo "$a apps, $t tools, $p parts -- an app declares itself with a desktop entry (spark-shell desktop apps marks the desk's)" ;;
         *)
             line=$(awk -F'\t' -v n="$pick" '$2 == n' "$TMP/sbom")
             [ -n "$line" ] || { echo "spark-shell sbom: no package named $pick"; return 1; }
@@ -1182,13 +1162,13 @@ desk_apps() {   # desk_apps NEED -> the lines
       | sort -t: -s -u -k1,1   # the desktop itself, a shell, a way to root: not apps
 }
 refuse() { echo "spark-shell desktop: $1"; exit 1; }   # a desktop refusal: one line, exit 1
-# spark-shell desktop apps: the picker. fzf over the box's apps and
+# spark-shell desktop apps: the picker. fzf over this machine's apps and
 # tools, Tab marks, Enter saves the marked names to your file (a note you
 # wrote beside a name that stays marked is kept); Esc leaves it as it was.
-cmd_apps() {   # cmd_apps apps|tools -- one picker, the same marks; apps are the box's declared ones, tools its commands
+cmd_apps() {   # cmd_apps apps|tools -- one picker, the same marks; apps are this machine's declared ones, tools its commands
     kind=${1:-apps}
     command -v fzf >/dev/null 2>&1 || refuse "fzf is not installed (spark-shell on)"
-    [ -t 0 ] || refuse "the picker needs a terminal; the file is $APPS (name[: your words], one per line)"
+    [ -t 0 ] || refuse "the picker needs a terminal -- the file is $APPS (name[: your words], one per line)"
     sbom_collect
     # the rows, one per thing you could mark: an app package's entries as apps (the entry's
     # own words), then every other package with a command as a tool (the package's words,
@@ -1196,7 +1176,7 @@ cmd_apps() {   # cmd_apps apps|tools -- one picker, the same marks; apps are the
     # dependency tools last. A marked row wears a *. Tab flips: what you select at Enter
     # is marked if it was not, unmarked if it was.
     marks=$(apps_marked && grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd' ' - || true)
-    if [ "$kind" = apps ]; then what="The apps a desk may open."; else what="The tools a desk may open; each runs in a terminal window."; fi
+    if [ "$kind" = apps ]; then what="The apps a desk may open."; else what="The tools a desk may open. Each runs in a terminal window."; fi
     picked=$(awk -F'\t' -v marks=" $marks " -v kind="$kind" '
         FILENAME == ARGV[1] { ent[$1] = $3; next }
         function star(n) { return (index(marks, " " n " ") > 0) ? "* " : "  " }
@@ -1219,7 +1199,7 @@ Marked now: ${marks:-none}") || { echo "left as it was"; return 0; }
     flipped=$(printf '%s\n' "$picked" | sed 's/^..//; s/[:(].*//; s/ *$//')
     mkdir -p "$CONFIG_DIR"
     {
-        printf '# the apps a desk may open -- spark-shell desktop apps writes this; yours to edit: name[: your words]\n'
+        printf '# the apps a desk may open, one per line: name[: your words] -- yours to edit\n'
         for n in $marks; do   # the marks kept, minus the flipped; a note stays with its name
             printf '%s\n' "$flipped" | grep -qx "$n" && continue
             grep "^$n *\(:.*\)\{0,1\}$" "$APPS" 2>/dev/null | head -1 || printf '%s\n' "$n"
@@ -1557,8 +1537,8 @@ desk_words() { jq -r '.words // ""' "$1" 2>/dev/null; }   # desk_words FILE
 desk_why() { jq -r '.why // "" | gsub("[\\n\\r]"; " ")' "$1" 2>/dev/null; }
 desk_open() {   # desk_open FILE -> '' when it may open, else one sentence
     if desk_old_shape "$1"; then
-        echo "$1 is a desk of the old shape, sway lines; spark-shell desktop \"$(sed -n 's/^# desk: \(.*\) -- rendered by spark-shell.*/\1/p' "$1" | head -1)\" makes it again, then keep."
-    elif ! desk_json_ok "$1"; then echo "$1 is not a desk of ours (one JSON object: words, why, main, side) -- left alone."; fi
+        echo "$1 is a desk of the old shape (sway lines). spark-shell desktop \"$(sed -n 's/^# desk: \(.*\) -- rendered by spark-shell.*/\1/p' "$1" | head -1)\" makes it again, then spark-shell desktop keep keeps it."
+    elif ! desk_json_ok "$1"; then echo "$1 is not a desk spark-shell made (one JSON object: words, why, main, side) -- left alone."; fi
 }
 desk_name_of() {   # desk_name_of WORDS... -> a file name: lowercase, the words joined by -, 40 at most
     printf '%s' "$*" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed 's/--*/-/g; s/^-//; s/-$//' | cut -c1-40
@@ -1569,7 +1549,7 @@ desk_list() {
     for f in "$DESKS_DIR"/*; do
         printf '  %-24s %s\n' "${f##*/}" "$(desk_words "$f")"
     done
-    echo "spark-shell desktop NAME opens one; keep [WORDS], forget NAME"
+    echo "spark-shell desktop NAME opens one -- keep [WORDS] keeps the last desk, forget NAME drops one"
 }
 
 # The desktop verb. `desktop on|off` are spellings of `on desktop` and
@@ -1588,21 +1568,21 @@ cmd_desktop() {
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
             case ${2:-} in
                 '') if [ "$WALLPAPER" = none ]; then echo "wallpaper none -- the palette's background (spark-shell desktop wallpaper PATH|default)"
-                    elif [ "$WALLPAPER" = default ] && wall_there; then echo "wallpaper default -- the forge, $WALL_DEFAULT"
+                    elif [ "$WALLPAPER" = default ] && wall_there; then echo "wallpaper default -- the forge wallpaper, $WALL_DEFAULT"
                     elif wall_there; then echo "wallpaper $WALLPAPER"
-                    else echo "wallpaper $(wall_path) -- not there; the palette's colour meanwhile"; fi
+                    else echo "wallpaper $(wall_path) -- not there, the palette's colour meanwhile"; fi
                     return ;;
                 none|default) ;;
                 /*) [ -r "$2" ] || refuse "$2 is not a readable file" ;;
-                *) refuse "$2: an absolute path, default (the forge) or none" ;;
+                *) refuse "$2: an absolute path, default (the forge wallpaper) or none" ;;
             esac
             [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
             config_set WALLPAPER "$2"
             WALLPAPER=$2; export WALLPAPER
             theme_load; EXPR=$(render_expr)
             desktop_look_apply
-            if [ "$2" = none ]; then echo "the palette's background is back; a new foot window is opaque again"
-            else echo "a running sway shows it now; the next foot window is translucent (Super+Return)"; fi
+            if [ "$2" = none ]; then echo "the palette's background is back -- a new foot window is opaque again"
+            else echo "a running sway shows it now -- the next foot window is translucent (Super+Return)"; fi
             return ;;
         apps|tools)
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
@@ -1670,7 +1650,7 @@ cmd_desktop() {
     # the desktop off, asked from a console (a login box still running
     # after desktop off runs this on Enter): your shell, never a dead end
     if [ "$DESKTOP" != sway ] && [ -n "${XDG_VTNR:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
-        echo "The desktop is off (spark-shell on desktop brings it back); this is your shell."
+        echo "The desktop is off (spark-shell on desktop brings it back). This is your shell."
         rm -rf "$TMP"; trap - EXIT
         exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA "${SHELL:-/bin/sh}" -l
     fi
