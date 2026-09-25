@@ -46,7 +46,7 @@ else notice "shellcheck not found; skipped"; fi
 
 # --- 3. docs, script and templates stay ASCII (read on a console) -----
 tab=$(printf '\t')
-for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example spark-shell tests/shell_test.sh $(find templates distro -type f | sort); do
+for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example spark-shell tests/shell_test.sh $(find templates distro desks -type f | sort); do
     hit=$(LC_ALL=C grep -n "[^ -~${tab}]" "$f" | head -3 || true)
     [ -z "$hit" ] || bad "non-ASCII in $f:
 $hit"

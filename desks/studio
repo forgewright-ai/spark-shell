@@ -1,0 +1,7 @@
+{"words": "studio",
+ "why": "a shell, the editor, the feeds, the web and the mail, one room each",
+ "main": {"app": "shell", "args": "", "width": 70},
+ "side": [{"app": "editor", "args": ""},
+          {"app": "newsboat", "args": ""},
+          {"app": "w3m", "args": "duckduckgo.com"},
+          {"app": "aerc", "args": ""}]}

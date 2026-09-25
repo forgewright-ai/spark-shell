@@ -23,7 +23,7 @@ jobs:
       - name: ascii docs
         run: |
           tab=$(printf '\t')
-          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example spark-shell tests/shell_test.sh $(find templates distro -type f | sort); do
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example spark-shell tests/shell_test.sh $(find templates distro desks -type f | sort); do
             ! LC_ALL=C grep -n "[^ -~${tab}]" "$f"; done
       - name: no hex colour in a template (the look is the 16 slots)
         run: "! grep -rnE '#[0-9a-fA-F]{6}' templates"

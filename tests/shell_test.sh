@@ -538,9 +538,9 @@ else
         && ok "no theme.env: border blue, greet gray, container black" || bad "no theme.env greeter" "$(grep -o -- "--theme '[^']*'" "$H/root/etc/greetd/config.toml")"
     out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop 2>&1); st=$?
     [ "$st" -eq 0 ] && ok "desktop (start now) still starts sway with the box in place" || bad "desktop start" "$out"
-    out=$(env -u XDG_VTNR -u SWAYSOCK sh "$SH" desktop sideways 2>&1 || true)
+    out=$(env -u XDG_VTNR -u SWAYSOCK sh "$SH" desktop sideways --windows 2>&1 || true)
     printf '%s\n' "$out" | grep -q '^spark-shell desktop: needs a console login' && [ ! -e "$HOME/.local/state/spark-shell/desk.pending" ] \
-        && ok "desktop: a word with no desktop and no seat is refused in one line, nothing left pending" || bad "desktop word no seat" "$out"
+        && ok "desktop --windows: a word with no desktop and no seat is refused in one line, nothing left pending" || bad "desktop word no seat" "$out"
     # no sudo to be had (not root, sudo refuses, no tty): a todo row, nothing written
     if [ "$(id -u)" -ne 0 ]; then
         printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/sudo"; chmod +x "$H/.local/bin/sudo"
@@ -564,23 +564,34 @@ grep -rq 'font' "$REPO/templates/etc" && bad "a root template names a font" || o
 desk_stubs() {   # after desktop_stubs: its swaymsg is replaced
     cat > "$H/.local/bin/spark" <<'EOF'
 #!/bin/sh
-printf '%s\n' "$@" > "${XDG_STATE_HOME:-$HOME/.local/state}/spark.argv"
-cat <<'JSON'
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}"; printf '%s\n' "$@" > "${XDG_STATE_HOME:-$HOME/.local/state}/spark.argv"
+if [ -e "$HOME/two-screens" ]; then cat <<'JSON'
+{"why": "photo work in gimp at the left, the feed at the right, notes beside the photo",
+ "main": {"app": "gimp-3.0", "args": "", "width": 70, "screen": "left"},
+ "side": [{"app": "firefox", "args": "https://instagram.com", "screen": "right"}, {"app": "micro", "args": ""}]}
+JSON
+else cat <<'JSON'
 {"why": "photo work in gimp with the two feeds beside it and a notes file",
  "main": {"app": "gimp-3.0", "args": "", "width": 70},
  "side": [{"app": "firefox", "args": "https://instagram.com"}, {"app": "firefox", "args": "https://x.com"},
           {"app": "micro", "args": ""}, {"app": "player", "args": ""}, {"app": "ghostapp", "args": ""}]}
 JSON
+fi
 EOF
+    # the outputs carry make, model and serial like sway's (never to reach the model); two when $HOME/two-screens exists
     cat > "$H/.local/bin/swaymsg" <<'EOF'
 #!/bin/sh
 log=${XDG_STATE_HOME:-$HOME/.local/state}/swaymsg.log; mkdir -p "$(dirname "$log")"
 case ${1:-} in
     -t) case $2 in
-            get_outputs) echo '[{"current_mode":{"width":2560,"height":1440}}]' ;;
+            get_version) echo '{"human_readable":"sway-stub"}' ;;
+            get_outputs) o1='{"name":"DP-1","active":true,"make":"Fakemake","model":"Fakemodel","serial":"SN0001","rect":{"x":0,"y":0},"current_mode":{"width":2560,"height":1440}}'
+                o2='{"name":"HDMI-A-1","active":true,"make":"Fakemake","model":"Fakemodel","serial":"SN0002","rect":{"x":2560,"y":0},"current_mode":{"width":1920,"height":1080}}'
+                if [ -e "$HOME/two-screens" ]; then echo "[$o2,$o1]"; else echo "[$o1]"; fi ;;
             get_workspaces) echo '[{"num":1},{"num":2}]' ;;
-            get_tree) n=$(grep '^exec' "$log" 2>/dev/null | grep -vc 'exec gone' || :); [ -n "$n" ] || n=0; i=0
-                printf '{"type":"root","nodes":[{"type":"workspace","num":3,"nodes":['
+            get_tree) ws=$(grep -n '^workspace number' "$log" 2>/dev/null | tail -1); from=${ws%%:*}; num=${ws##* }; [ -n "$from" ] || { from=0; num=3; }
+                n=$({ if [ "$from" -gt 0 ]; then sed "1,${from}d" "$log"; else cat "$log"; fi; } 2>/dev/null | grep '^exec' | grep -vc 'exec gone' || :); [ -n "$n" ] || n=0; i=0
+                printf '{"type":"root","nodes":[{"type":"workspace","num":%s,"nodes":[' "$num"
                 while [ "$i" -lt "$n" ]; do [ "$i" -eq 0 ] || printf ','; printf '{"type":"con","pid":%d}' $((100 + i)); i=$((i + 1)); done
                 echo ']}]}' ;;
         esac ;;
@@ -615,9 +626,9 @@ if [ "$(uname -s)" = Darwin ]; then
         [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: na: macOS has its own desktop$' \
             && ok "macOS: desktop $1 refuses, na, one line, exit 1" || bad "macOS desktop $*" "st=$st $out"
     }
-    na_form "$need"; na_form keep x; na_form forget x; na_form x
+    na_form apps   # a desk itself plays as rooms here (18)
     [ ! -e "$desk_last" ] && [ ! -e "$desk_pending" ] && [ ! -e "$desks" ] && [ ! -e "$argv" ] && [ ! -e "$swlog" ] \
-        && ok "macOS: no desk form wrote anything (no desk.last, no pending, no desks dir, spark and swaymsg never called)" || bad "macOS desk wrote" "$(find "$H/.local/state" "$H/.config/spark-shell")"
+        && ok "macOS: the picker wrote nothing (no desk.last, no pending, no desks dir, spark and swaymsg never called)" || bad "macOS desk wrote" "$(find "$H/.local/state" "$H/.config/spark-shell")"
 else
     export SWAYSOCK=$H/sway.sock WAYLAND_DISPLAY=wayland-1    # inside the desktop
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desks none .*spark-shell desktop "WORDS" makes one' && ok "status: the desks row says none before any" || bad "status desks none" "$(printf '%s\n' "$st" | grep desks)"
@@ -634,7 +645,8 @@ else
     [ -f "$argv" ] && [ "$(sed -n '1,3p' "$argv" | paste -sd ' ' -)" = 'edit --type json' ] && grep -qx -- '--name' "$argv" && grep -qx desk.json "$argv" && grep -qx -- '--about' "$argv" \
         && ok "spark: asked as spark edit --type json --name desk.json --about" || bad "spark argv" "$(cat "$argv" 2>&1)"
     [ "$(tail -1 "$argv")" = "write the desk for this need: $need" ] && ok "spark: the prompt ends with the need's words" || bad "spark prompt" "$(tail -1 "$argv")"
-    grep -q 'on a 2560x1440 screen' "$argv" && ok "spark: the about names the screen (from swaymsg get_outputs)" || bad "about screen" "$(grep -o 'on a [^ ]* screen' "$argv")"
+    grep -q 'on one screen, 2560x1440\. ' "$argv" && ok "spark: the about says one screen and its size (from swaymsg get_outputs)" || bad "about screen" "$(grep -o 'on one screen[^.]*' "$argv")"
+    grep -q 'screen is left\|"screen"' "$argv" && bad "about: the screen rule or field reached the model with one screen" "$(grep -o 'A window is on one screen[^.]*' "$argv")" || ok "spark: one screen, no screen field and no screen rule in the about"
     grep -q 'gimp-3.0: Create images and edit photographs' "$argv" && ok "inventory: a desktop entry's Comment (gimp-3.0)" || bad "inventory gimp" "$(grep -o 'gimp-3.0: [^;]*' "$argv")"
     grep -q 'firefox: Web Browser' "$argv" && ok "inventory: GenericName when there is no Comment (firefox)" || bad "inventory firefox" "$(grep -o 'firefox: [^;]*' "$argv")"
     grep -q 'micro: Micro' "$argv" && ok "inventory: Name when there is nothing else (micro)" || bad "inventory micro" "$(grep -o 'micro: [^;]*' "$argv")"
@@ -644,8 +656,9 @@ else
     grep -q 'foot:\|footclient:\|xdg-open:' "$argv" && bad "inventory: foot or xdg-open is in" || ok "inventory: no foot, footclient or xdg-open"
     printf '%s\n' 'workspace number 3' 'exec gimp-3.0' splith 'exec firefox https://instagram.com' splitv 'exec firefox https://x.com' 'exec foot -e micro' 'exec player --idle --' 'focus left' 'resize set width 70 ppt' > "$H/expected.lines"
     cmp -s "$swlog" "$H/expected.lines" && ok "sway got exactly the nine lines in order (main, splith, side, splitv, micro in foot, focus left, resize 70 ppt; ghostapp never)" || bad "swaymsg lines" "$(cat "$swlog" 2>&1)"
-    head -1 "$desk_last" | grep -q "^# desk: $need -- rendered by spark-shell" && grep -q '^# why: photo work in gimp' "$desk_last" && grep -q '^exec foot -e micro$' "$desk_last" \
-        && ok "desk.last: the header (the words, the marker), the why, the lines" || bad "desk.last" "$(cat "$desk_last" 2>&1)"
+    jq -e --arg w "$need" '(keys_unsorted[0] == "words") and .words == $w and (.why | startswith("photo work in gimp")) and .main.app == "gimp-3.0" and .main.width == 70 and (.side | length) == 5 and .side[0].args == "https://instagram.com"' "$desk_last" >/dev/null 2>&1 \
+        && ok "desk.last: the model's answer as JSON, the words first, then why, main and side as answered" || bad "desk.last" "$(cat "$desk_last" 2>&1)"
+    grep -q '^exec\|^workspace\|^#' "$desk_last" && bad "desk.last holds sway lines or a header" "$(head -3 "$desk_last")" || ok "desk.last: no sway line, no header (rendered when it opens)"
     # the inventory: unmarked, every app with a desktop entry and never a package
     # (the fake pacman answers -Qi and -Ql, as sbom_collect asks); marked (the
     # apps file), exactly those names -- an entry's words, a package's words or
@@ -717,26 +730,42 @@ EOF
     [ "$st" -eq 1 ] && [ "$out" = "spark-shell desktop: no kept desk named studio" ] && ok "desktop forget NAME twice: refused in one line" || bad "forget twice" "st=$st $out"
     printf 'workspace number 1\nexec firefox\n' > "$desks/mine"
     st=0; out=$(sh "$SH" desktop forget mine 2>&1) || st=$?
-    [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q 'is not a desk of ours -- left alone' && [ -f "$desks/mine" ] \
-        && ok "desktop forget NAME: a file without the marker is refused and left in place" || bad "forget yours" "st=$st $out"
+    [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && [ "$out" = "spark-shell desktop: $desks/mine is not a desk of ours (one JSON object: words, why, main, side) -- left alone." ] && [ -f "$desks/mine" ] \
+        && ok "desktop forget NAME: a file that is not one JSON object is refused, named, and left in place" || bad "forget yours" "st=$st $out"
+    st=0; out=$(sh "$SH" desktop mine 2>&1) || st=$?
+    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q 'left alone\.$' && ok "desktop NAME on a file that is not a desk: refused, left alone" || bad "open yours" "st=$st $out"
+    # a desk kept before v0.36 (sway lines under a header): refused on open and on forget, the file named, the words to make it again
+    printf '# desk: news and mail -- rendered by spark-shell (spark-shell desktop keep NAME keeps it)\nworkspace number 1\nexec firefox\n' > "$desks/old"
+    old_why="spark-shell desktop: $desks/old is a desk of the old shape, sway lines; spark-shell desktop \"news and mail\" makes it again, then keep."
+    st=0; out=$(sh "$SH" desktop old 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = "$old_why" ] && ok "desktop NAME on a desk of the old shape: one sentence names the file and the words that make it again" || bad "open old" "st=$st $out"
+    st=0; out=$(sh "$SH" desktop forget old 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = "$old_why" ] && [ -f "$desks/old" ] && ok "desktop forget NAME on a desk of the old shape: the same sentence, the file left" || bad "forget old" "st=$st $out"
+    rm -f "$desks/old"
+    cp "$desk_last" "$H/desk.last.json"; printf '# desk: old -- rendered by spark-shell\nworkspace number 1\n' > "$desk_last"
+    st=0; out=$(sh "$SH" desktop keep 2>&1) || st=$?
+    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q "^spark-shell desktop: $desk_last is a desk of the old shape" && ok "desktop keep with a desk.last of the old shape: refused, the file named" || bad "keep old" "st=$st $out"
+    cp "$H/desk.last.json" "$desk_last"
     st=0; out=$(sh "$SH" desktop keep a b 2>&1) || st=$?
     [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^kept a-b -- ' && [ -f "$desks/a-b" ] && ok "desktop keep: words with a space become one name (a-b)" || bad "keep name" "st=$st $out"
     rm -f "$desks/a-b"
-    # the gate on a kept desk edited by hand: every line read, the bad ones named, the rest runs
-    printf '# desk: the gate -- rendered by spark-shell\nworkspace number 1\nexec foot -e rm x\nexec gimp-3.0 $(id)\nexec sudo ls\noutput * bg x\nexec firefox a|b\nexec foot -e micro notes.txt\n' > "$desks/gate"
+    # the gate on a kept desk edited by hand: every rendered line read, the bad ones named, the rest runs
+    cat > "$desks/gate" <<'EOF'
+{"words": "the gate", "main": {"app": "rm", "args": "x"},
+ "side": [{"app": "gimp-3.0", "args": "$(id)"}, {"app": "sudo", "args": "ls"}, {"app": "firefox", "args": "a|b"}, {"app": "micro", "args": "notes.txt"}]}
+EOF
     rm -f "$swlog"
     st=0; out=$(sh "$SH" desktop gate 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | grep -c '^  refused  ')" -eq 4 ] && ok "gate: four lines refused, the desk still runs (exit 0)" || bad "gate count" "st=$st $out"
+    [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | grep -c '^  refused  ')" -eq 3 ] && ok "gate: three lines refused, the desk still runs (exit 0)" || bad "gate count" "st=$st $out"
     printf '%s\n' "$out" | grep -q '^  rm x$' && ok "gate: a kept desk you edited may open a program the machine has (rm x ran; it is yours)" || bad "gate rm" "$out"
     printf '%s\n' "$out" | grep -qF '  refused  exec gimp-3.0 $(id)  (shell syntax' && printf '%s\n' "$out" | grep -qF '  refused  exec firefox a|b  (shell syntax' \
         && ok "gate: shell syntax (\$(id), a pipe) never reaches sh -c" || bad "gate syntax" "$out"
-    printf '%s\n' "$out" | grep -qF '  refused  exec sudo ls  (sudo is not an app)' && ok "gate: sudo is not an app" || bad "gate sudo" "$out"
-    printf '%s\n' "$out" | grep -qF '  refused  output * bg x  (output is not a desk verb)' && ok "gate: output is not a desk verb" || bad "gate verb" "$out"
-    printf '%s\n' 'workspace number 3' 'exec foot -e rm x' 'exec foot -e micro notes.txt' > "$H/expected.gate"
-    cmp -s "$swlog" "$H/expected.gate" && ok "gate: sway got the workspace line and the one good exec, nothing else" || bad "gate lines" "$(cat "$swlog" 2>&1)"
+    printf '%s\n' "$out" | grep -qF '  refused  exec foot -e sudo ls  (sudo is not an app)' && ok "gate: sudo is not an app" || bad "gate sudo" "$out"
+    printf '%s\n' 'workspace number 3' 'exec foot -e rm x' 'splith' 'exec foot -e micro notes.txt' 'focus left' 'resize set width 70 ppt' > "$H/expected.gate"
+    cmp -s "$swlog" "$H/expected.gate" && ok "gate: sway got the workspace line, the two good execs and their layout, nothing else" || bad "gate lines" "$(cat "$swlog" 2>&1)"
     # a kept desk may open any program the machine has (you kept it); the model's answer may not
     printf '#!/bin/sh\n:\n' > "$H/.local/bin/reader"; chmod +x "$H/.local/bin/reader"
-    printf '# desk: a reader you kept -- rendered by spark-shell\nworkspace number 1\nexec foot -e reader\nexec foot -e sudo ls\n' > "$desks/kept-reader"
+    printf '{"words": "a reader you kept", "main": {"app": "reader"}, "side": [{"app": "sudo", "args": "ls"}]}\n' > "$desks/kept-reader"
     : > "$swlog"
     st=0; out=$(sh "$SH" desktop kept-reader 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q '^exec foot -e reader$' "$swlog" && printf '%s\n' "$out" | grep -q '^  refused  exec foot -e sudo ls  (sudo is not an app)$' \
@@ -744,7 +773,7 @@ EOF
     rm -f "$desks/kept-reader" "$H/.local/bin/reader"
     # a window that never comes (mpv with nothing to play): the split meant for it is skipped,
     # so the next window lands beside the main one instead of cutting it
-    printf '# desk: gone -- rendered by spark-shell\nworkspace number 1\nexec foot -e micro\nsplith\nexec gone\nsplitv\nexec firefox\nfocus left\nresize set width 70 ppt\n' > "$desks/gone"
+    printf '{"words": "gone", "main": {"app": "micro", "width": 70}, "side": [{"app": "gone"}, {"app": "firefox"}]}\n' > "$desks/gone"
     : > "$swlog"
     st=0; out=$(sh "$SH" desktop gone 2>&1) || st=$?
     printf '%s\n' "$out" | grep -q '^  gone -- no window$' && printf '%s\n' "$out" | grep -q '^  micro$' && printf '%s\n' "$out" | grep -q '^  firefox$' \
@@ -756,17 +785,32 @@ EOF
         && ok "-v after the words is a flag, not a word: the sway lines and the skipped split shown" || bad "gone verbose" "st=$st $out"
     printf '%s\n' 'workspace number 3' 'exec foot -e micro' 'splith' 'exec gone' 'exec firefox' 'focus left' 'resize set width 70 ppt' > "$H/expected.gone"
     cmp -s "$swlog" "$H/expected.gone" && ok "a window that never comes: sway never got the splitv" || bad "gone lines" "$(cat "$swlog" 2>&1)"
-    # from a console: the words wait, sway starts, --pending lays them out once
-    rm -f "$argv" "$swlog"
-    st=0; out=$(env -u SWAYSOCK -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop "news and music" 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$(cat "$desk_pending" 2>&1)" = 'news and music' ] && grep -q 'sway-stub' "$H/.local/state/spark-shell/sway.log" && [ ! -e "$argv" ] \
-        && ok "desktop WORDS from a console: the words wait in desk.pending, sway starts, no model call yet" || bad "pending write" "st=$st $out $(cat "$desk_pending" 2>&1)"
-    st=0; out=$(sh "$SH" desktop --pending 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^desk> news and music$' && printf '%s\n' "$out" | grep -q '^on workspace 3' && [ ! -e "$desk_pending" ] \
-        && [ "$(tail -1 "$argv")" = 'write the desk for this need: news and music' ] \
-        && ok "desktop --pending: lays the waiting words out, the file is gone" || bad "pending play" "st=$st $out"
-    st=0; out=$(sh "$SH" desktop --pending 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ -z "$out" ] && ok "desktop --pending twice: a quiet no-op" || bad "pending twice" "st=$st $out"
+    # two screens: the brief says them and the rule; each screen its own workspace, the main's first,
+    # focus output before each; the outputs' make, model and serial never leave the machine
+    touch "$H/two-screens"; rm -f "$argv" "$swlog"
+    st=0; out=$(sh "$SH" desktop "$need" 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -q 'on screens: left 2560x1440, right 1920x1080\. ' "$argv" && grep -q ' A window is on one screen; screen is left or right; one screen unless the need names two or the work needs two\. ' "$argv" \
+        && grep -q '"screen": "left"' "$argv" && ok "two screens: the brief names them left to right with their sizes, the rule, the screen field" || bad "two screens brief" "st=$st $(grep -o 'on screens[^.]*' "$argv") $out"
+    grep -q 'Fakemake\|Fakemodel\|SN000' "$argv" && bad "two screens: an output's make, model or serial reached the model" "$(grep -o '[^ ]*Fake[^ ]*\|SN000[0-9]' "$argv" | head -3)" || ok "two screens: the outputs' make, model and serial never reach the model"
+    printf '%s\n' 'focus output DP-1' 'workspace number 3' 'exec gimp-3.0' splith 'exec foot -e micro' 'focus left' 'resize set width 70 ppt' 'focus output HDMI-A-1' 'workspace number 4' 'exec firefox https://instagram.com' > "$H/expected.two"
+    cmp -s "$swlog" "$H/expected.two" && ok "two screens: the main's group first (focus output, workspace 3, main, micro beside it, sized), then the right screen's (focus output, workspace 4, firefox)" || bad "two screens lines" "$(cat "$swlog" 2>&1)"
+    printf '%s\n' "$out" | grep -q '^on workspace 3 and 4 -- spark-shell desktop keep NAME keeps it$' && ok "two screens: the closing line says both workspaces" || bad "two screens closing" "$out"
+    grep -q 'workspace .* output\|floating\|sticky' "$swlog" && bad "two screens: a line that pins (workspace N output, floating, sticky)" "$(grep 'output\|floating\|sticky' "$swlog")" || ok "two screens: nothing pins a window (no workspace N output, no floating, no sticky)"
+    sh "$SH" desktop keep two >/dev/null
+    jq -e '.main.screen == "left" and .side[0].screen == "right" and (.side[1] | has("screen") | not)' "$desks/two" >/dev/null 2>&1 && ok "two screens: the kept desk carries screen on main and one side entry, as answered" || bad "two kept" "$(cat "$desks/two")"
+    rm -f "$H/two-screens"; : > "$swlog"
+    st=0; out=$(sh "$SH" desktop two 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^  the right screen is not here -- all on DP-1$' && [ "$(grep -c '^workspace number' "$swlog")" -eq 1 ] && ! grep -q '^focus output' "$swlog" \
+        && printf '%s\n' "$out" | grep -q '^on workspace 3 -- the kept desk two$' && ok "a desk kept on two screens opens on one: said in one line, one workspace, no focus output" || bad "two on one" "st=$st $out $(cat "$swlog")"
+    printf '{"words": "nine", "main": {"app": "micro", "screen": "DP-9"}, "side": [{"app": "firefox", "screen": "right"}]}\n' > "$desks/nine"
+    touch "$H/two-screens"; : > "$swlog"
+    st=0; out=$(sh "$SH" desktop nine 2>&1) || st=$?
+    printf '%s\n' 'focus output DP-1' 'workspace number 3' 'exec foot -e micro' 'focus output HDMI-A-1' 'workspace number 4' 'exec firefox' > "$H/expected.nine"
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^  the DP-9 screen is not here -- all on DP-1$' && cmp -s "$swlog" "$H/expected.nine" \
+        && ok "a kept screen name that is not here (DP-9) maps to the first screen; a side on the right keeps its own" || bad "nine" "st=$st $out $(cat "$swlog")"
+    st=0; out=$(sh "$SH" desktop nine -v 2>&1) || st=$?
+    printf '%s\n' "$out" | grep -q '^  focus output HDMI-A-1$' && ok "-v shows the focus output lines" || bad "nine verbose" "$out"
+    rm -f "$H/two-screens" "$desks/nine" "$desks/two"
     # no jq: check says so, a desk is refused
     mkdir -p "$H/nojq"
     for d in $(printf '%s' "$PATH" | tr ':' ' '); do
@@ -917,6 +961,111 @@ else
 fi
 grep -q '^Exec=tmux$' "$REPO/templates/.local/share/applications/spark-shell-tmux.desktop" && grep -q '^Terminal=true$' "$REPO/templates/.local/share/applications/spark-shell-tmux.desktop" \
     && ok "template: spark-shell-tmux.desktop runs tmux in a terminal" || bad "tmux template"
+
+# --- 18. rooms: the same desk as a tmux session --------------------------
+# No sway here (SWAYSOCK unset): a desk plays as rooms through a fake
+# tmux that logs each call as one line; has-session finds a session
+# only while $H/tmux.has exists. newsboat, w3m and aerc are stubs, mpv
+# is absent on purpose, the spark and swaymsg stubs are 16's. Not
+# uname-guarded: rooms run on macOS too; only the two forms that start
+# or address sway are Linux's.
+rooms_stubs() {
+    cat > "$H/.local/bin/tmux" <<'EOF'
+#!/bin/sh
+log=${XDG_STATE_HOME:-$HOME/.local/state}/tmux.log; mkdir -p "$(dirname "$log")"
+printf '%s\n' "$*" >> "$log"
+case ${1:-} in has-session) [ -e "$HOME/tmux.has" ] ;; esac
+EOF
+    for t in newsboat w3m aerc; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done
+    chmod +x "$H/.local/bin/tmux" "$H/.local/bin/newsboat" "$H/.local/bin/w3m" "$H/.local/bin/aerc"
+}
+fresh
+desktop_stubs
+desk_stubs
+rooms_stubs
+unset SWAYSOCK WAYLAND_DISPLAY TMUX EDITOR
+need='photo editing for instagram and x'; sname=photo-editing-for-instagram-and-x
+argv=$H/.local/state/spark.argv; swlog=$H/.local/state/swaymsg.log; tlog=$H/.local/state/tmux.log
+desk_last=$H/.local/state/spark-shell/desk.last; desks=$H/.config/spark-shell/desks
+# a need with no sway: the rooms player, the terminal apps offered, one room per app that is one
+st=0; out=$(sh "$SH" desktop "$need" 2>&1) || st=$?
+[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^desk> $need\$" && printf '%s\n' "$out" | grep -q '^  photo work in gimp with the two feeds' \
+    && ok "rooms: a need with no sway plays as rooms: exit 0, the desk> line, the why" || bad "rooms need" "st=$st $out"
+printf '%s\n' "has-session -t =$sname" "new-session -d -s $sname -n micro micro" > "$H/expected.rooms"
+cmp -s "$tlog" "$H/expected.rooms" && ok "rooms: tmux got has-session, then one new-session with micro as its first window, nothing else" || bad "rooms tmux log" "$(cat "$tlog" 2>&1)"
+printf '%s\n' "$out" | grep -q '^  gimp-3.0 -- needs the desktop$' && printf '%s\n' "$out" | grep -q '^  firefox https://instagram.com -- needs the desktop$' && printf '%s\n' "$out" | grep -q '^  micro$' \
+    && ok "rooms: a graphical app is one line (needs the desktop), a terminal app runs" || bad "rooms outcome lines" "$out"
+printf '%s\n' "$out" | grep -q '^  refused  room ghostapp ghostapp  (ghostapp is not on this machine)$' && ok "rooms: the gate reads a room line like an exec" || bad "rooms gate" "$out"
+printf '%s\n' "$out" | grep -q "^rooms $sname -- spark-shell desktop keep NAME keeps it\$" && printf '%s\n' "$out" | grep -q "^rooms $sname -- tmux attach-session -t $sname joins them\$" \
+    && ok "rooms: the closing line names the session and keep; on a pipe, the line that joins them" || bad "rooms closing" "$out"
+grep -q 'attach-session\|switch-client' "$tlog" && bad "rooms: attached on a pipe" "$(cat "$tlog")" || ok "rooms: no attach on a pipe"
+grep -q '^A desk of rooms: the windows for one need, each a terminal window (tmux), on a [0-9]*x[0-9]* terminal\. ' "$argv" && ok "rooms brief: rooms, a terminal, its columns and lines" || bad "rooms brief" "$(grep -o 'A desk[^.]*' "$argv")"
+grep -q 'micro: Micro' "$argv" && grep -q 'shell: a terminal with a prompt' "$argv" && ! grep -q 'gimp-3.0\|firefox\|"screen"\|on one screen\|on screens' "$argv" \
+    && ok "rooms brief: the terminal apps and shell only; no graphical app, no screen field, no screens" || bad "rooms brief apps" "$(grep -o 'Apps on this machine[^.]*' "$argv")"
+jq -e --arg w "$need" '.words == $w and .main.app == "gimp-3.0"' "$desk_last" >/dev/null 2>&1 && ok "rooms: desk.last is the same JSON shape (keep works the same)" || bad "rooms desk.last" "$(cat "$desk_last" 2>&1)"
+[ ! -e "$swlog" ] && ok "rooms: swaymsg never sent a line" || bad "rooms swaymsg" "$(cat "$swlog")"
+# inside tmux: switch-client; a session already open is joined, not built again
+: > "$tlog"
+st=0; out=$(TMUX=/x sh "$SH" desktop "$need" --rooms 2>&1) || st=$?
+[ "$st" -eq 0 ] && [ "$(tail -1 "$tlog")" = "switch-client -t =$sname" ] && ok "rooms inside tmux (TMUX set, --rooms): switch-client to the session" || bad "rooms switch" "st=$st $(cat "$tlog")"
+touch "$H/tmux.has"; : > "$tlog"
+st=0; out=$(sh "$SH" desktop "$need" 2>&1) || st=$?
+[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^  the rooms $sname are open already\$" && ! grep -q 'new-session' "$tlog" \
+    && ok "rooms open already: said in one line, no session built, joined" || bad "rooms has-session" "st=$st $out $(cat "$tlog")"
+rm -f "$H/tmux.has"
+# the studio shipped with the repo: copied, it is a kept desk; shell and editor are desk words
+mkdir -p "$desks"; cp "$REPO/desks/studio" "$desks/"
+jq -e '.words == "studio" and .main.app == "shell" and (.side | map(.app)) == ["editor", "newsboat", "w3m", "aerc"]' "$REPO/desks/studio" >/dev/null 2>&1 \
+    && ok "desks/studio: words studio, main shell, then editor, newsboat, w3m, aerc (no music room)" || bad "studio shape" "$(cat "$REPO/desks/studio")"
+: > "$tlog"; rm -f "$argv"
+st=0; out=$(sh "$SH" desktop studio 2>&1) || st=$?
+printf '%s\n' 'has-session -t =studio' 'new-session -d -s studio -n shell' 'new-window -t =studio -n editor micro' 'new-window -t =studio -n newsboat newsboat' 'new-window -t =studio -n w3m w3m duckduckgo.com' 'new-window -t =studio -n aerc aerc' > "$H/expected.studio"
+[ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.studio" && [ ! -e "$argv" ] \
+    && ok "desktop studio: the session with a bare shell window, then one window per room, the editor micro with EDITOR unset; no model call" || bad "studio play" "st=$st $out $(cat "$tlog")"
+printf '%s\n' "$out" | grep -q '^desk> studio$' && printf '%s\n' "$out" | grep -q '^  a shell, the editor, the feeds' && printf '%s\n' "$out" | grep -q '^  editor micro$' && printf '%s\n' "$out" | grep -q '^  w3m duckduckgo.com$' \
+    && printf '%s\n' "$out" | grep -q '^rooms studio -- the kept desk studio$' && ok "desktop studio: the desk> line, the why, one line per room, the closing line" || bad "studio lines" "$out"
+: > "$tlog"
+st=0; out=$(EDITOR=/usr/bin/nano sh "$SH" desktop studio 2>&1) || st=$?
+grep -q '^new-window -t =studio -n editor nano$' "$tlog" && ok "editor is EDITOR's basename (nano)" || bad "editor nano" "$(cat "$tlog")"
+mkdir -p "$H/nomicro"   # a PATH with everything but micro (this machine may have the real one)
+for d in $(printf '%s' "$PATH" | tr ':' ' '); do
+    [ -d "$d" ] || continue
+    for f in "$d"/*; do n=${f##*/}; if [ "$n" != micro ] && [ -x "$f" ] && [ ! -e "$H/nomicro/$n" ]; then ln -s "$f" "$H/nomicro/$n"; fi; done
+done
+: > "$tlog"
+st=0; out=$(PATH=$H/nomicro sh "$SH" desktop studio 2>&1) || st=$?
+[ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | tail -1)" = 'spark-shell desktop: no editor: set EDITOR in ~/.config/spark-shell/rc' ] && ! grep -q 'new-session' "$tlog" \
+    && ok "no EDITOR and no micro: refused in one sentence before any room is built" || bad "no editor" "st=$st $out $(cat "$tlog")"
+st=0; out=$(sh "$SH" desktop studio -v 2>&1) || st=$?
+printf '%s\n' "$out" | grep -q '^  room shell$' && printf '%s\n' "$out" | grep -q '^  room editor micro$' && printf '%s\n' "$out" | grep -q '^  room w3m w3m duckduckgo.com$' \
+    && ok "-v shows the rooms grammar (room NAME [CMD ARGS])" || bad "rooms verbose" "$out"
+printf '%s\n' "$out" | grep -q '^  session studio$' && ok "-v: the session line" || bad "rooms verbose session" "$out"
+printf '{"words": "pipe", "main": {"app": "w3m", "args": "a|b"}}\n' > "$desks/pipe"; : > "$tlog"
+st=0; out=$(sh "$SH" desktop pipe 2>&1) || st=$?
+[ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -qF '  refused  room w3m w3m a|b  (shell syntax' && ! grep -q 'new-session' "$tlog" && printf '%s\n' "$out" | grep -q 'nothing ran$' \
+    && ok "a kept desk edited by hand: shell syntax in a room is refused; with no room left, nothing ran" || bad "rooms pipe" "st=$st $out"
+# --rooms inside sway: the session is built, then a foot window of its own on a fresh workspace
+export SWAYSOCK=$H/sway.sock; : > "$tlog"; rm -f "$swlog"
+st=0; out=$(sh "$SH" desktop studio --rooms 2>&1) || st=$?
+[ "$st" -eq 0 ] && grep -q '^new-session -d -s studio -n shell$' "$tlog" && [ "$(head -1 "$swlog")" = 'workspace number 3' ] && [ "$(tail -1 "$swlog")" = 'exec foot -e tmux attach-session -t =studio' ] \
+    && ! grep -q 'attach-session\|switch-client' "$tlog" && ok "--rooms inside sway: the rooms built, then workspace 3 and one foot that attaches to them" || bad "rooms in sway" "st=$st $out $(cat "$swlog" "$tlog" 2>&1)"
+unset SWAYSOCK
+if [ "$(uname -s)" != Darwin ]; then
+    # --windows from a console: the words wait, sway starts, --pending lays them out once
+    theme_fixture '#ff5555'; mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+    sh "$SH" on >/dev/null
+    desk_pending=$H/.local/state/spark-shell/desk.pending; rm -f "$argv" "$swlog"
+    st=0; out=$(XDG_VTNR=1 sh "$SH" desktop "news and music" --windows 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$(cat "$desk_pending" 2>&1)" = 'news and music' ] && grep -q 'sway-stub' "$H/.local/state/spark-shell/sway.log" && [ ! -e "$argv" ] \
+        && ok "desktop WORDS --windows from a console: the words wait in desk.pending, sway starts, no model call yet" || bad "pending write" "st=$st $out $(cat "$desk_pending" 2>&1)"
+    st=0; out=$(SWAYSOCK=$H/sway.sock sh "$SH" desktop --pending 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^desk> news and music$' && printf '%s\n' "$out" | grep -q '^on workspace 3' && [ ! -e "$desk_pending" ] \
+        && [ "$(tail -1 "$argv")" = 'write the desk for this need: news and music' ] \
+        && ok "desktop --pending: lays the waiting words out as windows, the file is gone" || bad "pending play" "st=$st $out"
+    st=0; out=$(SWAYSOCK=$H/sway.sock sh "$SH" desktop --pending 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ -z "$out" ] && ok "desktop --pending twice: a quiet no-op" || bad "pending twice" "st=$st $out"
+fi
+grep -q '^## Rooms$' "$REPO/README.md" && ok "README: Rooms" || bad "README rooms section"
 
 printf '%s\n' "shell_test: $pass ok, $fail failed"
 [ "$fail" -eq 0 ]

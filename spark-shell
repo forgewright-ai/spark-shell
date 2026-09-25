@@ -28,12 +28,17 @@
 #   spark-shell desktop "WORDS" a desk for that need: the model picks the
 #                               windows from the apps this machine has and
 #                               sway lays them out on an empty workspace
-#                               (Super+d asks the same at a prompt)
+#                               (Super+d asks the same at a prompt); with
+#                               no sway (a console, ssh, a Mac) the same
+#                               desk plays as rooms, one tmux window per
+#                               app; --rooms | --windows picks the player
 #   spark-shell desktop keep [WORDS] | WORDS | forget WORDS
 #                               keep the last desk under those words (its
 #                               own by default), open a kept one by its
 #                               words (no model), or drop it; bare, inside
-#                               the desktop: the kept desks
+#                               the desktop: the kept desks. A kept desk
+#                               is the model's answer (JSON, yours to
+#                               edit), rendered for the screen when it opens
 #   spark-shell desktop apps | tools
 #                               what a desk may open: a picker over the
 #                               box's apps, or over its tools (Tab flips a
@@ -297,6 +302,7 @@ wall_load() {
 # skip | todo; an apply run says what it changed, --dry-run says all.
 MODE=apply
 VERBOSE=0
+PLAYER=''   # a desk's player: windows | rooms, forced by --windows | --rooms; else where you ask from
 todo=0
 acting=0
 row() { printf '%-6s %-12s %s\n' "$1" "$2" "${3:-}"; }
@@ -931,28 +937,25 @@ cmd_bar() {
 # A desk: the windows for one need, laid out by the model from what this
 # machine has. `spark-shell desktop "focused news reading and music"`
 # asks spark (spark edit, contract 10, from nothing) for one JSON answer
-# -- why, a main window and its width, the side windows -- and turns it
-# into sway commands: main at the left, the side stacked at the right,
-# on the next empty workspace, so the windows already open are never
-# touched. The lines are kept in ~/.local/state/spark-shell/desk.last;
-# `desktop keep NAME` copies them to ~/.config/spark-shell/desks/NAME,
-# and `desktop NAME` replays them with no model call. Every line, fresh
-# or kept, passes desk_gate before swaymsg sees it: a known verb, no
-# shell syntax (sway hands exec to sh -c), and exec only of an app in
-# the inventory. The model never sees a window title or a file: the
-# need's words, the screen and the inventory, nothing else.
+# -- why, a main window and its width, the side windows. A kept desk is
+# the model's answer (JSON, yours to edit), rendered for the screen when
+# it opens: the answer is kept in ~/.local/state/spark-shell/desk.last
+# with the need's words first, `desktop keep NAME` copies it to
+# ~/.config/spark-shell/desks/NAME, and `desktop NAME` renders it again
+# with no model call. The render is sway commands: main at the left, the
+# side stacked at the right, on the next empty workspace, so the windows
+# already open are never touched. Every rendered line passes desk_gate
+# before swaymsg sees it: a known verb, no shell syntax (sway hands exec
+# to sh -c), and exec only of an app in the inventory (a kept desk: any
+# program the machine has). The model never sees a window title or a
+# file: the need's words, the screen and the inventory, nothing else.
 DESKS_DIR=$CONFIG_DIR/desks
 DESK_LAST=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desk.last
 DESK_PENDING=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desk.pending
-DESK_VERBS="workspace splith splitv layout resize focus move floating fullscreen exec"
+DESK_VERBS="workspace splith splitv layout resize focus move floating fullscreen exec session room"   # session and room: the rooms player's
 DESK_NOT_APPS="sh bash zsh dash fish ksh sudo doas su pkexec"   # a shell or a way to root is not an app
 DESK_WAIT=30                                                    # seconds for a window to map (gimp, a browser)
 
-# The inventory: what the machine declares it has, read fresh each time.
-# One line per app, `NAME: what it does[, terminal]`: the XDG desktop
-# entries (Comment, else GenericName, else Name; Terminal=true marked),
-# then the packages the user chose that are commands, then the need's
-# own words that are on PATH (a pip tool has no entry and no package).
 # ------------------------------------------------------------------- sbom
 # The box's software bill of materials, in the package manager's own
 # words: every package, its version, licence, description, whether you
@@ -1087,7 +1090,7 @@ desk_apps() {   # desk_apps NEED -> the lines
                 if [ -n "$e" ]; then what=${e%	*}; term=${e#*	}
                 else
                     what=$(awk -F'\t' -v n="$n" '$2 == n || (" " $7 " ") ~ (" " n " ") {print $6; exit}' "$TMP/sbom"); term=yes
-                    if ! desk_on_path "$n"; then   # a package's name: its first command that is here (ripgrep -> rg)
+                    if ! desk_on_path "$n"; then   # a package's name: its first command that is here (the two may differ)
                         for cmd in $(awk -F'\t' -v n="$n" '$2 == n {print $7; exit}' "$TMP/sbom"); do
                             desk_on_path "$cmd" && { n=$cmd; break; }
                         done
@@ -1104,9 +1107,11 @@ desk_apps() {   # desk_apps NEED -> the lines
             w=$(printf '%s' "$w" | tr -cd 'A-Za-z0-9_.-' | tr 'A-Z' 'a-z')
             [ -z "$w" ] || ! desk_on_path "$w" || printf '%s: named in the need, terminal\n' "$w"
         done
+        echo "shell: a terminal with a prompt, terminal"   # a desk word: foot alone, or a room with no command
     } | grep -v "^\\($(printf '%s' "sway swaybg swaymsg foot footclient xdg-open $DESK_NOT_APPS" | sed 's/ /\\|/g')\\):" \
       | sort -t: -s -u -k1,1   # the desktop itself, a shell, a way to root: not apps
 }
+refuse() { echo "spark-shell desktop: $1"; exit 1; }   # a desktop refusal: one line, exit 1
 # spark-shell desktop apps: the picker. fzf over the box's apps and
 # tools, Tab marks, Enter saves the marked names to your file (a note you
 # wrote beside a name that stays marked is kept); Esc leaves it as it was.
@@ -1164,13 +1169,27 @@ desk_launch() {   # desk_launch NAME ARGS -> how the machine says to open it: th
     # file/URL field taking the args (dropped when there are none), else the name and the args
     _l=$(grep "^$1	" "$TMP/exec" 2>/dev/null | head -1 | cut -f2-)
     [ -n "$_l" ] || _l="$1 %U"
-    case $_l in *%[fFuU]*) _l=$(printf '%s' "$_l" | sed "s|%[fFuU]|$2|g") ;; *) _l="$_l $2" ;; esac
+    case $_l in *%[fFuU]*) _l="${_l%%"%"[fFuU]*}$2${_l#*"%"[fFuU]}" ;; *) _l="$_l $2" ;; esac
     printf '%s' "$_l" | sed 's/  */ /g; s/ *$//'
 }
-desk_screen() { swaymsg -t get_outputs 2>/dev/null | jq -r '.[0].current_mode | "\(.width)x\(.height)"' 2>/dev/null || echo 1920x1080; }
-desk_next_ws() {   # the lowest workspace number not in use
-    used=$(swaymsg -t get_workspaces 2>/dev/null | jq -r '.[].num' 2>/dev/null)
-    n=1; while printf '%s\n' "$used" | grep -qx "$n"; do n=$((n + 1)); done
+# The screens: the active outputs left to right, name and mode only
+# (never make, model or serial), one per line in $TMP/screens as
+# `NAME WxH left|middle|right`; one line of a guess when sway is silent.
+desk_screens() {
+    [ ! -f "$TMP/screens" ] || return 0
+    swaymsg -t get_outputs 2>/dev/null | jq -r '[.[] | select(.active != false)] | sort_by(.rect.x) | length as $n | to_entries[]
+        | "\(.value.name) \(.value.current_mode.width)x\(.value.current_mode.height) \(if .key == 0 then "left" elif .key == $n - 1 then "right" else "middle" end)"' > "$TMP/screens" 2>/dev/null || true
+    [ -s "$TMP/screens" ] || echo "- 1920x1080 left" > "$TMP/screens"
+}
+desk_said() { paste -sd, - | sed "s/,\([^,]*\)\$/ $1 \1/; s/,/, /g"; }   # desk_said and|or, one per line on stdin -> "a, b and c"
+desk_screens_say() {   # -> the brief's words for them
+    if [ "$(wc -l < "$TMP/screens")" -le 1 ]; then echo "one screen, $(cut -d' ' -f2 "$TMP/screens")"
+    else echo "screens: $(awk '{print $3, $2}' "$TMP/screens" | paste -sd, - | sed 's/,/, /g')"; fi
+}
+desk_ws_said() { sed -n 's/^workspace number //p' "$1" | desk_said and; }   # desk_ws_said FILE -> "3" or "3 and 4"
+desk_next_ws() {   # desk_next_ws [SKIP...] -> the lowest workspace number not in use, nor among SKIP
+    used="$(swaymsg -t get_workspaces 2>/dev/null | jq -r '.[].num' 2>/dev/null) $*"
+    n=1; while printf '%s\n' $used | grep -qx "$n"; do n=$((n + 1)); done
     echo "$n"
 }
 desk_windows() {   # desk_windows N -> how many windows workspace N has
@@ -1185,9 +1204,16 @@ desk_gate() {   # desk_gate LINE -> '' when it may run, else why not
     case " $DESK_VERBS " in *" $verb "*) ;; *) echo "$verb is not a desk verb"; return ;; esac
     bad=$(printf '%s' "$1" | LC_ALL=C tr -d 'A-Za-z0-9 _.:/=,%~@#+?[]"-' | head -c 1)   # what a sway line may hold; the rest is sh's
     [ -z "$bad" ] || { echo "shell syntax or a control character"; return; }
-    [ "$verb" = exec ] || return 0
+    case $1 in 'focus output '*) grep -q "^${1#focus output } " "$TMP/screens" 2>/dev/null || echo "${1#focus output } is not a screen here"; return ;; esac
+    [ "$verb" = exec ] || [ "$verb" = room ] || return 0
     set -- $1; shift
-    [ "${1:-}" = foot ] && [ "${2:-}" = -e ] && shift 2
+    if [ "$verb" = room ]; then   # room NAME [CMD ARGS]: bare is a shell, the rest is judged like an exec
+        [ $# -gt 0 ] || { echo "room with no name"; return; }
+        shift; [ $# -gt 0 ] || return 0
+    elif [ "${1:-}" = foot ]; then   # exec foot alone is a shell; exec foot -e CMD is the CMD
+        [ $# -gt 1 ] || return 0
+        [ "${2:-}" != -e ] || shift 2
+    fi
     app=${1:-}; app=${app##*/}
     [ -n "$app" ] || { echo "exec of nothing"; return; }
     case " $DESK_NOT_APPS " in *" $app "*) echo "$app is not an app"; return ;; esac
@@ -1199,38 +1225,143 @@ desk_gate() {   # desk_gate LINE -> '' when it may run, else why not
     else echo "$app is not on this machine"; fi
 }
 
-# The model's answer to sway's words: main at the left, the side stacked
-# at the right (a new window lands beside the focused one; splitv turns
-# the side column vertical), then main sized. A terminal app opens in foot.
-desk_lines() {   # desk_lines WS JSONFILE -> the lines
-    printf 'workspace number %s\n' "$1"
-    jq -r '[.main] + (.side // []) | .[] | "\(.app) \(.args // "")"' "$2" | sed 's/ *$//' | {
-        i=0
-        while IFS= read -r line; do
-            app=${line%% *}; args=''; case $line in *' '*) args=${line#* } ;; esac
-            if desk_app_term "$app"; then printf 'exec foot -e %s\n' "$(desk_launch "$app" "$args")"; else printf 'exec %s\n' "$(desk_launch "$app" "$args")"; fi
-            case $i in 0) echo splith ;; 1) echo splitv ;; esac
-            i=$((i + 1))
-        done
-        if [ "$i" -gt 1 ]; then
-            echo "focus left"
-            printf 'resize set width %s ppt\n' "$(jq -r '.main.width // 70 | if . < 20 then 20 elif . > 90 then 90 else floor end' "$2")"
-        fi
-    }
+# The model's answer to sway's words, in two passes. First each window's
+# screen: `screen` is left or right (or an output's name), a side window
+# without one sits with the main, a screen named but not here maps to the
+# main's (said in one line) and the main's own to the first. Then one
+# group per screen, the main's first: `focus output NAME` (only with more
+# than one screen), `workspace number N` (a fresh number each; never
+# `workspace N output`, which would pin), main at the left, the side
+# stacked at the right (a new window lands beside the focused one; splitv
+# turns the side column vertical), then main sized. A terminal app opens
+# in foot, and so does a program with no desktop entry (a kept desk's).
+desk_windows_of() {   # desk_windows_of JSONFILE -> $TMP/windows: SCREEN<tab>APP<tab>ARGS, the main first
+    jq -r --rawfile s "$TMP/screens" '
+        ($s | split("\n") | map(select(. != "") | split(" "))) as $scr
+        | def out(w; dflt): (w.screen // "") as $n | ([$scr[] | select(.[0] == $n or .[2] == $n)] | first // [dflt]) | .[0];
+        out(.main; $scr[0][0]) as $mo | ([.main] + (.side // [])) as $all
+        | ([$all[] | (.screen // "") | select(. != "" and (. as $n | [$scr[] | .[0], .[2]] | index($n)) == null)] | first // "") as $miss
+        | "\($miss)\t\($mo)", ($all[] | "\(out(.; $mo))\t\(.app)\t\(.args // "")")' "$1" > "$TMP/windows.all"
+    IFS='	' read -r miss mo < "$TMP/windows.all"
+    sed 1d "$TMP/windows.all" > "$TMP/windows"
+    [ -z "$miss" ] || echo "  the $miss screen is not here -- all on $mo"
 }
-
-desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec waited for
-    ws=$(sed -n 's/^workspace number //p' "$1" | head -1)
-    sent=0; nowin=0
+desk_lines() {   # desk_lines WS JSONFILE -> the lines, after desk_windows_of: one group per screen, the main's on WS
+    w=$1; used=''; main=1; many=$(wc -l < "$TMP/screens" | tr -d ' ')
+    for scr in $(cut -f1 "$TMP/windows" | awk '!seen[$0]++'); do
+        [ "$many" -le 1 ] || printf 'focus output %s\n' "$scr"
+        [ -z "$used" ] || w=$(desk_next_ws $used)
+        used="$used $w"
+        printf 'workspace number %s\n' "$w"
+        grep "^$scr	" "$TMP/windows" | {
+            i=0
+            while IFS='	' read -r _ app args; do
+                case $i in 1) echo splith ;; 2) echo splitv ;; esac   # the split the next window lands in
+                case $app in
+                    shell) echo "exec foot" ;;
+                    editor) printf 'exec foot -e %s\n' "$(desk_launch "$ED" "$args")" ;;
+                    *) if desk_app_term "$app" || { ! desk_app_known "$app" && desk_on_path "$app"; }; then printf 'exec foot -e %s\n' "$(desk_launch "$app" "$args")"; else printf 'exec %s\n' "$(desk_launch "$app" "$args")"; fi ;;
+                esac
+                i=$((i + 1))
+            done
+            if [ -n "$main" ] && [ "$i" -gt 1 ]; then
+                echo "focus left"
+                printf 'resize set width %s ppt\n' "$(jq -r '.main.width // 70 | if . < 20 then 20 elif . > 90 then 90 else floor end' "$2")"
+            fi
+        }
+        main=''
+    done
+}
+# The same desk as rooms: a tmux session named after the words, one
+# window per app (windows, not panes: a terminal app wants the whole
+# page, and tmux's line names the rooms). `room NAME` bare is tmux's
+# own shell; `room NAME CMD ARGS` runs the command. width is the
+# desktop's and is not read here.
+desk_rooms() {   # desk_rooms NAME JSONFILE -> the lines
+    printf 'session %s\n' "$1"
+    jq -r '[.main] + (.side // []) | .[] | "\(.app) \(.args // "")"' "$2" | sed 's/ *$//' | while IFS= read -r line; do
+        app=${line%% *}; args=''; case $line in *' '*) args=${line#* } ;; esac
+        case $app in
+            shell) echo "room shell" ;;
+            editor) printf 'room editor %s\n' "$(desk_launch "$ED" "$args")" ;;
+            *) printf 'room %s %s\n' "$app" "$(desk_launch "$app" "$args")" ;;
+        esac
+    done
+}
+desk_play_rooms() {   # desk_play_rooms FILE -> the session made (or found open), one line per room; true when a room ran
+    name=$(sed -n 's/^session //p' "$1" | head -1)
+    if tmux has-session -t "=$name" 2>/dev/null; then echo "  the rooms $name are open already"; return 0; fi
+    ran=0
     while IFS= read -r line || [ -n "$line" ]; do
         case $line in ''|'#'*) continue ;; esac
         why=$(desk_gate "$line")
         if [ -n "$why" ]; then echo "  refused  $line  ($why)"; continue; fi
-        # a split meant for a window that never came would cut the one
-        # before it instead: skipped, the next window lands where that one would have
+        [ "$VERBOSE" != 1 ] || echo "  $line"   # the rooms grammar is for the file, not the screen
+        case $line in 'session '*) continue ;; esac
+        set -- $line; shift; room=$1; shift; cmd=$*; prog=${1:-}; prog=${prog##*/}
+        if [ "$prog" = "$room" ]; then shown=$cmd; else shown="$room $cmd"; fi; shown=${shown% }
+        # the model's answer keeps to the terminal apps it was offered; a desk you kept runs what the machine has
+        if [ -z "${KEPT:-}" ] && [ -n "$prog" ] && desk_app_known "$prog" && ! desk_app_term "$prog"; then echo "  $shown -- needs the desktop"; continue; fi
+        if [ "$ran" -eq 0 ]; then set -- new-session -d -s "$name" -n "$room"; else set -- new-window -t "=$name" -n "$room"; fi
+        [ -z "$cmd" ] || set -- "$@" "$cmd"   # the command is one argument: tmux hands it to sh -c, like sway's exec
+        tmux "$@" || { echo "  tmux refused: $line"; continue; }
+        ran=$((ran + 1)); echo "  $shown"
+    done < "$1"
+    [ "$ran" -gt 0 ]
+}
+desk_join() {   # desk_join NAME -- inside tmux: switch to it; at a terminal: attach; on a pipe: say how
+    if [ -n "${TMUX:-}" ]; then tmux switch-client -t "=$1"
+    elif [ -t 0 ] && [ -t 1 ]; then tmux attach-session -t "=$1"
+    else echo "rooms $1 -- tmux attach-session -t $1 joins them"; fi
+}
+desk_editor() {   # -> what a desk's `editor` word opens: EDITOR's basename, else micro when it is here; else why not
+    if [ -n "${EDITOR:-}" ]; then printf '%s\n' "${EDITOR##*/}"
+    elif desk_on_path micro; then echo micro
+    else echo "no editor: set EDITOR in ~/.config/spark-shell/rc"; return 1; fi
+}
+desk_has() { jq -e --arg a "$2" '[.main] + (.side // []) | any(.app == $a)' "$1" >/dev/null 2>&1; }   # desk_has JSONFILE APP
+desk_in_sway() { [ -n "${SWAYSOCK:-}" ] && [ -n "$(swaymsg -t get_version 2>/dev/null)" ]; }   # a sway that answers
+desk_player() {   # -> windows inside sway, else rooms; --windows and --rooms force one
+    if [ -n "${PLAYER:-}" ]; then echo "$PLAYER"; elif desk_in_sway; then echo windows; else echo rooms; fi
+}
+desk_render() {   # desk_render JSONFILE -> $TMP/desk: the lines for the player; ws is the main's workspace (windows)
+    if ! ED=$(desk_editor); then ! desk_has "$1" editor || refuse "$ED"; ED=''; fi
+    if [ "$PLAYER" = rooms ]; then desk_rooms "$(desk_name_of "$(desk_words "$1")")" "$1" > "$TMP/desk"; return; fi
+    desk_screens
+    desk_windows_of "$1"
+    ws=$(desk_next_ws)
+    desk_lines "$ws" "$1" > "$TMP/desk"
+}
+desk_show() {   # desk_show WHOSE -- the rendered desk played, then the closing line; KEPT=1 for a kept one
+    if [ "$PLAYER" = rooms ]; then
+        name=$(sed -n 's/^session //p' "$TMP/desk" | head -1)
+        desk_play_rooms "$TMP/desk" || refuse "nothing ran"
+        echo "rooms $name -- $1"
+        if desk_in_sway; then   # asked inside the desktop with --rooms: the rooms in a foot window of their own
+            printf 'workspace number %s\nexec foot -e tmux attach-session -t =%s\n' "$(desk_next_ws)" "$name" > "$TMP/desk.win"
+            KEPT=1 desk_play "$TMP/desk.win" >/dev/null || true
+        else desk_join "$name"; fi
+        return
+    fi
+    # asked at the prompt: its window goes with the desk, on top, to be read
+    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] move container to workspace number $ws" >/dev/null 2>&1 || true
+    desk_play "$TMP/desk" || refuse "nothing ran"
+    echo "on workspace $(desk_ws_said "$TMP/desk") -- $1"
+    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] focus" >/dev/null 2>&1 || true   # Enter is ours, not the app's
+}
+
+desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec waited for
+    sent=0; nowin=0; _ws=''
+    while IFS= read -r line || [ -n "$line" ]; do
+        case $line in ''|'#'*) continue ;; esac
+        why=$(desk_gate "$line")
+        if [ -n "$why" ]; then echo "  refused  $line  ($why)"; case $line in exec*) nowin=1 ;; esac; continue; fi
+        # a split meant for a window that never came (or was refused) would cut
+        # the one before it instead: skipped, the next window lands where that one would have
         case $line in split*) [ "$nowin" = 0 ] || { [ "$VERBOSE" != 1 ] || echo "  skipped  $line  (no window to split)"; nowin=0; continue; } ;; esac
         [ "$VERBOSE" != 1 ] || echo "  $line"   # the sway grammar is for the kept file, not the screen
-        before=$(desk_windows "$ws")
+        case $line in 'workspace number '*) _ws=${line#workspace number } ;; esac
+        before=$(desk_windows "$_ws")
         swaymsg -- "$line" >/dev/null || { echo "  sway refused: $line"; continue; }
         sent=$((sent + 1))
         case $line in exec*)
@@ -1240,32 +1371,33 @@ desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec w
             set -- $line; shift; [ "${1:-}" = foot ] && [ "${2:-}" = -e ] && shift 2
             prog=${1##*/}; shown=$*; t=0
             desk_pulse   # a sign of life while the window is on its way
-            while [ "$(desk_windows "$ws")" -le "$before" ] && [ "$t" -lt $((DESK_WAIT * 4)) ]; do
+            while [ "$(desk_windows "$_ws")" -le "$before" ] && [ "$t" -lt $((DESK_WAIT * 4)) ]; do
                 [ "$t" -lt 12 ] || pgrep -u "$(id -u)" -x "$prog" >/dev/null 2>&1 || break
                 sleep 0.25; t=$((t + 1))
             done
             desk_pulse_stop
-            if [ "$(desk_windows "$ws")" -gt "$before" ]; then nowin=0; echo "  $shown"; else nowin=1; echo "  $shown -- no window"; fi ;;
+            if [ "$(desk_windows "$_ws")" -gt "$before" ]; then nowin=0; echo "  $shown"; else nowin=1; echo "  $shown -- no window"; fi ;;
         esac
     done < "$1"
     [ "$sent" -gt 0 ]
 }
 
-desk_make() {   # desk_make NEED -> the desk laid out, its lines in DESK_LAST
+desk_make() {   # desk_make NEED -> the desk laid out, the model's answer in DESK_LAST
     command -v jq >/dev/null 2>&1 || refuse "jq is not installed (spark-shell on)"
-    spark=$(command -v spark 2>/dev/null || true); [ -n "$spark" ] || [ ! -x "$HOME/.local/bin/spark" ] || spark=$HOME/.local/bin/spark
+    spark=$(spark_bin)
     [ -n "$spark" ] || refuse "spark is not installed -- the desk is the model's (github.com/forgewright-ai/spark)"
+    [ "$PLAYER" != rooms ] || command -v tmux >/dev/null 2>&1 || refuse "tmux is not installed (spark-shell on)"
     desk_apps "$1" > "$TMP/apps"
     [ -s "$TMP/apps" ] || refuse "no apps found on this machine (no desktop entries, no chosen packages)"
-    ws=$(desk_next_ws)
-    about="A desk: the windows for one need, on a $(desk_screen) screen. Apps on this machine (name: what it does): $(sed 's/, terminal$//' "$TMP/apps" | paste -sd ';' - | sed 's/;/; /g'). Rules: an app the need names by name is in the desk; otherwise only the apps the work itself needs, as few windows as that takes (one to four), never an app the need does not call for; an app may appear twice with different args (a browser on two pages: one window per page, args is that page's URL). Answer with one JSON object and nothing else: {\"why\": \"one sentence, from the need to the apps chosen\", \"main\": {\"app\": \"NAME\", \"args\": \"\", \"width\": 70}, \"side\": [{\"app\": \"NAME\", \"args\": \"\"}]} -- main is the big window at the left, width its percent of the screen; side is the windows stacked at the right, top to bottom."
+    [ "$PLAYER" = rooms ] || desk_screens
+    about=$(desk_brief)
     [ -n "${ASKED:-}" ] || printf 'desk> %s\n' "$1"
     desk_pulse
     st=0; "$spark" edit --type json --name desk.json --about "$about" -- "write the desk for this need: $1" </dev/null > "$TMP/desk.json" 2>"$TMP/desk.err" || st=$?
     desk_pulse_stop
     [ "$st" -eq 0 ] || refuse "spark did not answer: $(head -1 "$TMP/desk.err")"
     jq -e '.main.app | strings' "$TMP/desk.json" >/dev/null 2>&1 || refuse "the answer was not a desk (spark-shell desktop -v shows it)"
-    why=$(jq -r '.why // "" | gsub("[\\n\\r]"; " ")' "$TMP/desk.json")
+    why=$(desk_why "$TMP/desk.json")
     [ -z "$why" ] || printf '  %s\n' "$why"
     for a in $(jq -r '[.main] + (.side // []) | .[].app' "$TMP/desk.json"); do
         desk_app_known "$a" && continue
@@ -1273,16 +1405,36 @@ desk_make() {   # desk_make NEED -> the desk laid out, its lines in DESK_LAST
         else echo "  $a is not on this machine -- laid out without it"; fi
     done
     mkdir -p "$(dirname "$DESK_LAST")"
-    {
-        printf '# desk: %s -- rendered by spark-shell (spark-shell desktop keep NAME keeps it)\n' "$1"
-        [ -z "$why" ] || printf '# why: %s\n' "$why"
-        desk_lines "$ws" "$TMP/desk.json"
-    } > "$DESK_LAST"
-    # asked at the prompt: its window goes with the desk, on top, to be read
-    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] move container to workspace number $ws" >/dev/null 2>&1 || true
-    desk_play "$DESK_LAST" || refuse "nothing ran"
-    echo "on workspace $ws -- spark-shell desktop keep NAME keeps it"
-    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] focus" >/dev/null 2>&1 || true   # Enter is ours, not the app's
+    jq --arg w "$1" '{words: $w} + .' "$TMP/desk.json" > "$DESK_LAST"
+    desk_render "$DESK_LAST"
+    desk_show "spark-shell desktop keep NAME keeps it"
+}
+desk_replay() {   # desk_replay NAME -> the kept desk rendered for the player and played, no model call
+    why=$(desk_open "$DESKS_DIR/$1"); [ -z "$why" ] || refuse "$why"
+    desk_apps "$1" > "$TMP/apps"
+    [ -n "${ASKED:-}" ] || printf 'desk> %s\n' "$(desk_words "$DESKS_DIR/$1")"
+    why=$(desk_why "$DESKS_DIR/$1"); [ -z "$why" ] || printf '  %s\n' "$why"
+    desk_render "$DESKS_DIR/$1"
+    KEPT=1 desk_show "the kept desk $1"
+}
+# The brief: the screens (or the terminal, for rooms), the apps, the
+# rules, the shape asked for. With more than one screen the example
+# carries `screen` and one rule more; rooms are offered the terminal
+# apps only and no screen at all.
+desk_brief() {
+    ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "args": "", "width": 70}, "side": [{"app": "NAME", "args": ""}]}'; rule=''
+    if [ "$PLAYER" = rooms ]; then
+        opening="A desk of rooms: the windows for one need, each a terminal window (tmux), on a $(tput cols 2>/dev/null || echo 80)x$(tput lines 2>/dev/null || echo 24) terminal."
+        apps=$(grep ', terminal$' "$TMP/apps")
+    else
+        opening="A desk: the windows for one need, on $(desk_screens_say)."
+        apps=$(cat "$TMP/apps")
+        if [ "$(wc -l < "$TMP/screens")" -gt 1 ]; then
+            ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "args": "", "width": 70, "screen": "left"}, "side": [{"app": "NAME", "args": "", "screen": "right"}]}'
+            rule=" A window is on one screen; screen is $(cut -d' ' -f3 "$TMP/screens" | desk_said or); one screen unless the need names two or the work needs two."
+        fi
+    fi
+    echo "$opening Apps on this machine (name: what it does): $(printf '%s\n' "$apps" | sed 's/, terminal$//' | paste -sd ';' - | sed 's/;/; /g'). Rules: an app the need names by name is in the desk; otherwise only the apps the work itself needs, as few windows as that takes (one to four), never an app the need does not call for; an app may appear twice with different args (a browser on two pages: one window per page, args is that page's URL).$rule Answer with one JSON object and nothing else: $ex -- main is the big window at the left, width its percent of the screen; side is the windows stacked at the right, top to bottom."
 }
 
 # The pulse spark draws while a reply is on its way (spark text.Busy):
@@ -1324,7 +1476,18 @@ Up and Down pick a desk you kept. Esc closes.') || _st=$?
         printf '%s' "$_need"
     fi
 }
-desk_words() { sed -n 's/^# desk: \(.*\) -- rendered by spark-shell.*/\1/p' "$1" | head -1; }   # desk_words FILE
+# A kept desk is one JSON object: words, why, main, side. A file that is
+# not one is left alone; a desk kept before v0.36 (sway lines under a
+# `# desk:` header) is refused with the words that make it again.
+desk_json_ok() { jq -e '(.words | strings) and (.main.app | strings)' "$1" >/dev/null 2>&1; }
+desk_old_shape() { head -1 "$1" 2>/dev/null | grep -q '^# desk: '; }
+desk_words() { jq -r '.words // ""' "$1" 2>/dev/null; }   # desk_words FILE
+desk_why() { jq -r '.why // "" | gsub("[\\n\\r]"; " ")' "$1" 2>/dev/null; }
+desk_open() {   # desk_open FILE -> '' when it may open, else one sentence
+    if desk_old_shape "$1"; then
+        echo "$1 is a desk of the old shape, sway lines; spark-shell desktop \"$(sed -n 's/^# desk: \(.*\) -- rendered by spark-shell.*/\1/p' "$1" | head -1)\" makes it again, then keep."
+    elif ! desk_json_ok "$1"; then echo "$1 is not a desk of ours (one JSON object: words, why, main, side) -- left alone."; fi
+}
 desk_name_of() {   # desk_name_of WORDS... -> a file name: lowercase, the words joined by -, 40 at most
     printf '%s' "$*" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed 's/--*/-/g; s/^-//; s/-$//' | cut -c1-40
 }
@@ -1346,7 +1509,6 @@ desk_list() {
 cmd_desktop() {
     config_load
     pending=''
-    refuse() { echo "spark-shell desktop: $1"; exit 1; }
     case ${1:-} in
         on) [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
             # the config first, then everything on does with DESKTOP=sway:
@@ -1385,15 +1547,15 @@ cmd_desktop() {
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
             cmd_apps "$1"; return ;;
         keep|forget)   # keep [WORDS]: the last desk, under those words (its own by default); forget WORDS
-            [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
             verb=$1; shift
             if [ "$verb" = forget ]; then
                 name=$(desk_name_of "$*"); [ -n "$name" ] || refuse "forget WORDS -- which desk?"
                 [ -f "$DESKS_DIR/$name" ] || refuse "no kept desk named $name"
-                grep -q 'rendered by spark-shell' "$DESKS_DIR/$name" || refuse "$DESKS_DIR/$name is not a desk of ours -- left alone"
+                why=$(desk_open "$DESKS_DIR/$name"); [ -z "$why" ] || refuse "$why"
                 rm -f "${DESKS_DIR:?}/${name:?}"; echo "forgot $name"; return
             fi
             [ -f "$DESK_LAST" ] || refuse "no desk to keep yet -- spark-shell desktop \"WORDS\" makes one"
+            why=$(desk_open "$DESK_LAST"); [ -z "$why" ] || refuse "$why"
             name=$(desk_name_of "$*")
             [ -n "$name" ] || name=$(desk_name_of "$(desk_words "$DESK_LAST")")
             [ -n "$name" ] || refuse "keep WORDS -- a name for it"
@@ -1403,6 +1565,7 @@ cmd_desktop() {
             # the window follows the desk and stays until Enter, so the why is read
             need=$(desk_prompt) || return 0
             [ -n "$need" ] || return 0
+            case $need in *' --rooms'|*' --windows') PLAYER=${need##*--}; need=${need% --*} ;; esac   # the player, as the last word
             case $need in
                 keep|"keep "*|"forget "*) set -- $need; (cmd_desktop "$@") || true ;;   # the grammar's words, here too
                 *) (ASKED=1 cmd_desktop "$need") || true ;;   # a refusal is read too, not lost with the window
@@ -1428,27 +1591,18 @@ cmd_desktop() {
             fi
             rm -rf "$TMP"; trap - EXIT; exec "${SHELL:-/bin/sh}" ;;
         ''|-*) ;;
-        *)  # a need, or a kept desk by name
-            [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
-            [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on first"
+        *)  # a need, or a kept desk by name; the player is where you ask from: windows inside
+            # sway, rooms (tmux) anywhere else; --windows from a console starts sway first
             command -v jq >/dev/null 2>&1 || refuse "jq is not installed (spark-shell on)"
-            if [ -n "${SWAYSOCK:-}" ]; then
+            PLAYER=$(desk_player)
+            if [ "$PLAYER" = windows ] && ! desk_in_sway; then pending=$*   # the words wait for the sway about to start
+            else
+                [ "$PLAYER" = rooms ] || [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
+                [ "$PLAYER" = rooms ] || [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on first"
                 kept=$(desk_name_of "$*")
-                if [ -n "$kept" ] && [ -f "$DESKS_DIR/$kept" ]; then
-                    desk_apps "$*" > "$TMP/apps"
-                    [ -n "${ASKED:-}" ] || printf 'desk> %s\n' "$(desk_words "$DESKS_DIR/$kept")"
-                    why=$(sed -n 's/^# why: //p' "$DESKS_DIR/$kept" | head -1); [ -z "$why" ] || printf '  %s\n' "$why"
-                    ws=$(desk_next_ws)
-                    sed "s/^workspace number .*/workspace number $ws/" "$DESKS_DIR/$kept" > "$TMP/desk"
-                    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] move container to workspace number $ws" >/dev/null 2>&1 || true
-                    KEPT=1 desk_play "$TMP/desk" || refuse "nothing ran"
-                    echo "on workspace $ws -- the kept desk $kept"
-                    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] focus" >/dev/null 2>&1 || true
-                    return
-                fi
-                desk_make "$*"; return
-            fi
-            pending=$* ;;   # no desktop yet: the words wait for the one about to start
+                if [ -n "$kept" ] && [ -f "$DESKS_DIR/$kept" ]; then desk_replay "$kept"; else desk_make "$*"; fi
+                return
+            fi ;;
     esac
     [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
     [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on"
@@ -1476,9 +1630,9 @@ main() {
     shift 2>/dev/null || true
     words=''
     for a in "$@"; do
-        case $a in --dry-run) MODE=dry ;; --verbose|-v) VERBOSE=1 ;; *) words="$words$a\n" ;; esac
+        case $a in --dry-run) MODE=dry ;; --verbose|-v) VERBOSE=1 ;; --windows|--rooms) PLAYER=${a#--} ;; *) words="$words$a\n" ;; esac
     done
-    # the flags out of the words (a need is words; -v is not one of them)
+    # the flags out of the words (a need is words; -v and the desk's player are not among them)
     if [ -n "$words" ]; then set -- ; IFS_=$IFS; IFS='
 '; for a in $(printf "%b" "$words"); do set -- "$@" "$a"; done; IFS=$IFS_; fi
     case $sub in
