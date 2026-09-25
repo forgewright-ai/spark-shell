@@ -26,9 +26,10 @@
 #                               windows from the apps this machine has and
 #                               sway lays them out on an empty workspace
 #                               (Super+d asks the same at a prompt)
-#   spark-shell desktop keep NAME | NAME | forget NAME
-#                               keep the last desk under NAME, open a kept
-#                               one (no model), or drop it; bare, inside
+#   spark-shell desktop keep [WORDS] | WORDS | forget WORDS
+#                               keep the last desk under those words (its
+#                               own by default), open a kept one by its
+#                               words (no model), or drop it; bare, inside
 #                               the desktop: the kept desks
 #   spark-shell desktop apps    the apps a desk may open: a picker over the
 #                               box's apps and tools (Tab marks, Enter
@@ -1168,7 +1169,14 @@ desk_apps() {   # desk_apps NEED -> the lines
                 n=${m%%:*}; n=$(printf '%s' "$n" | tr -d ' '); note=''; case $m in *:*) note=$(printf '%s' "${m#*:}" | sed 's/^ *//') ;; esac
                 e=$(awk -F'\t' -v n="$n" '$1 == n {print $3 "\t" $4}' "$TMP/entries" | head -1)
                 if [ -n "$e" ]; then what=${e%	*}; term=${e#*	}
-                else what=$(awk -F'\t' -v n="$n" '$2 == n || (" " $7 " ") ~ (" " n " ") {print $6; exit}' "$TMP/sbom"); term=yes; fi
+                else
+                    what=$(awk -F'\t' -v n="$n" '$2 == n || (" " $7 " ") ~ (" " n " ") {print $6; exit}' "$TMP/sbom"); term=yes
+                    if ! desk_on_path "$n"; then   # a package's name: its first command that is here (ripgrep -> rg)
+                        for cmd in $(awk -F'\t' -v n="$n" '$2 == n {print $7; exit}' "$TMP/sbom"); do
+                            desk_on_path "$cmd" && { n=$cmd; break; }
+                        done
+                    fi
+                fi
                 desk_on_path "$n" || [ -n "$e" ] || continue   # marked but not here: not offered
                 [ -z "$note" ] || what=$note
                 [ "$term" = yes ] && printf '%s: %s, terminal\n' "$n" "${what:-$n}" || printf '%s: %s\n' "$n" "${what:-$n}"
@@ -1190,29 +1198,43 @@ cmd_apps() {
     command -v fzf >/dev/null 2>&1 || refuse "fzf is not installed (spark-shell on)"
     [ -t 0 ] || refuse "the picker needs a terminal; the file is $APPS (name[: your words], one per line)"
     sbom_collect
-    now=$(apps_marked && grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd' ' - || echo none)
-    # the rows: an app package's entries as apps (the entry's own words), every other
-    # command as a tool (the package's words); apps first, then tools, by name
-    picked=$(awk -F'\t' '
+    # the rows, one per thing you could mark: an app package's entries as apps (the entry's
+    # own words), then every other package with a command as a tool (the package's words,
+    # the command in brackets when it differs); apps first, the tools you chose next,
+    # dependency tools last. A marked row wears a *. Tab flips: what you select at Enter
+    # is marked if it was not, unmarked if it was.
+    marks=$(apps_marked && grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd' ' - || true)
+    picked=$(awk -F'\t' -v marks=" $marks " '
         FILENAME == ARGV[1] { ent[$1] = $3; next }
-        $1 == "app" || $1 == "tool" {
-            m = split($8, es, " "); isent[""] = 0
-            for (j = 1; j <= m; j++) { split(es[j], kv, "="); if (kv[1] != "") { printf "0\t%s: %s  [app]\n", kv[1], ent[kv[1]]; isent[kv[1]] = 1 } }
-            n = split($7, c, " ")
-            for (i = 1; i <= n; i++) if (c[i] ~ /^[A-Za-z]/ && !(c[i] in isent)) printf "1\t%s: %s  [tool]\n", c[i], $6 }' "$TMP/entries" "$TMP/sbom" \
-             | sort -t'	' -k1,1n -k2,2f -u | cut -f2 \
-             | grep -v "^\\($(printf '%s' "sway swaybg swaymsg foot footclient xdg-open $DESK_NOT_APPS" | sed 's/ /\\|/g')\\):" \
+        function star(n) { return (index(marks, " " n " ") > 0) ? "* " : "  " }
+        $1 == "app" {   # its entries are the apps; its other commands are part of them
+            m = split($8, es, " ")
+            for (j = 1; j <= m; j++) { split(es[j], kv, "="); if (kv[1] != "") printf "0\t%s\t%s%s: %s  [app]\n", kv[1], star(kv[1]), kv[1], ent[kv[1]] } }
+        $1 == "tool" {
+            n = split($7, c, " "); first = ""
+            for (i = 1; i <= n; i++) if (c[i] ~ /^[A-Za-z]/) { first = c[i]; break }
+            if (first == "") next
+            name = ($2 ~ /^[A-Za-z]/) ? $2 : first
+            shown = (index(" " $7 " ", " " name " ") > 0) ? name : name " (" first ")"
+            printf "%d\t%s\t%s%s: %s  [tool]\n", ($5 == "chosen" ? 1 : 2), name, star(name), shown, $6 }' "$TMP/entries" "$TMP/sbom" \
+             | sort -t'	' -k1,1n -k2,2f -u | cut -f3 \
+             | grep -v "^..\\($(printf '%s' "sway swaybg swaymsg foot footclient xdg-open $DESK_NOT_APPS" | sed 's/ /\\|/g')\\)[ :(]" \
              | fzf --multi --prompt 'apps> ' --layout=reverse --no-info --color=16 --no-unicode \
-                   --header "The apps a desk may open. Tab marks, Enter saves, Esc leaves it.
-Marked now: $now") || { echo "left as it was"; return 0; }
+                   --header "The apps a desk may open. Tab flips a mark, Enter saves, Esc leaves it.
+Marked now: ${marks:-none}") || { echo "left as it was"; return 0; }
     [ -n "$picked" ] || { echo "left as it was"; return 0; }
+    flipped=$(printf '%s\n' "$picked" | sed 's/^..//; s/[:(].*//; s/ *$//')
     mkdir -p "$CONFIG_DIR"
     {
         printf '# the apps a desk may open -- spark-shell desktop apps writes this; yours to edit: name[: your words]\n'
-        printf '%s\n' "$picked" | sed 's/:.*//' | while IFS= read -r n; do
-            note=$(grep "^$n *:" "$APPS" 2>/dev/null | head -1 | sed 's/^[^:]*: *//')
-            if [ -n "$note" ]; then printf '%s: %s\n' "$n" "$note"; else printf '%s\n' "$n"; fi
+        for n in $marks; do   # the marks kept, minus the flipped; a note stays with its name
+            printf '%s\n' "$flipped" | grep -qx "$n" && continue
+            grep "^$n *\(:.*\)\{0,1\}$" "$APPS" 2>/dev/null | head -1 || printf '%s\n' "$n"
         done
+        printf '%s\n' "$flipped" | while IFS= read -r n; do
+            if [ -n "$n" ] && ! printf ' %s ' "$marks" | grep -q " $n "; then printf '%s\n' "$n"; fi
+        done
+        :
     } > "$TMP/apps.new"
     cp "$TMP/apps.new" "$APPS"
     echo "marked: $(grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd' ' -) ($APPS)"
@@ -1377,13 +1399,17 @@ Up and Down pick a desk you kept. Esc closes.') || _st=$?
         printf '%s' "$_need"
     fi
 }
+desk_words() { sed -n 's/^# desk: \(.*\) -- rendered by spark-shell.*/\1/p' "$1" | head -1; }   # desk_words FILE
+desk_name_of() {   # desk_name_of WORDS... -> a file name: lowercase, the words joined by -, 40 at most
+    printf '%s' "$*" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed 's/--*/-/g; s/^-//; s/-$//' | cut -c1-40
+}
 desk_name_ok() { case $1 in ''|*[!A-Za-z0-9_-]*) return 1 ;; *) return 0 ;; esac; }
 desk_list() {
     [ -d "$DESKS_DIR" ] && [ -n "$(ls -A "$DESKS_DIR" 2>/dev/null)" ] || { echo "no kept desks yet -- try: spark-shell desktop \"focused news reading and music\""; return 0; }
     for f in "$DESKS_DIR"/*; do
-        printf '  %-16s %s\n' "${f##*/}" "$(sed -n 's/^# desk: \(.*\) -- rendered by spark-shell.*/\1/p' "$f" | head -1)"
+        printf '  %-24s %s\n' "${f##*/}" "$(desk_words "$f")"
     done
-    echo "spark-shell desktop NAME opens one; keep NAME, forget NAME"
+    echo "spark-shell desktop NAME opens one; keep [WORDS], forget NAME"
 }
 
 # desktop on|off: the desktop and the login box together, through the
@@ -1433,22 +1459,29 @@ cmd_desktop() {
         apps)
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
             cmd_apps; return ;;
-        keep|forget)
+        keep|forget)   # keep [WORDS]: the last desk, under those words (its own by default); forget WORDS
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
-            desk_name_ok "${2:-}" || refuse "$1 NAME -- letters, digits, - and _"
-            if [ "$1" = forget ]; then
-                [ -f "$DESKS_DIR/$2" ] || refuse "no kept desk named $2"
-                grep -q 'rendered by spark-shell' "$DESKS_DIR/$2" || refuse "$DESKS_DIR/$2 is not a desk of ours -- left alone"
-                rm -f "$DESKS_DIR/$2"; echo "forgot $2"; return
+            verb=$1; shift
+            if [ "$verb" = forget ]; then
+                name=$(desk_name_of "$*"); [ -n "$name" ] || refuse "forget WORDS -- which desk?"
+                [ -f "$DESKS_DIR/$name" ] || refuse "no kept desk named $name"
+                grep -q 'rendered by spark-shell' "$DESKS_DIR/$name" || refuse "$DESKS_DIR/$name is not a desk of ours -- left alone"
+                rm -f "${DESKS_DIR:?}/${name:?}"; echo "forgot $name"; return
             fi
             [ -f "$DESK_LAST" ] || refuse "no desk to keep yet -- spark-shell desktop \"WORDS\" makes one"
-            mkdir -p "$DESKS_DIR"; cp "$DESK_LAST" "$DESKS_DIR/$2"
-            echo "kept $2 -- spark-shell desktop $2 opens it ($DESKS_DIR/$2)"; return ;;
+            name=$(desk_name_of "$*")
+            [ -n "$name" ] || name=$(desk_name_of "$(desk_words "$DESK_LAST")")
+            [ -n "$name" ] || refuse "keep WORDS -- a name for it"
+            mkdir -p "$DESKS_DIR"; cp "$DESK_LAST" "$DESKS_DIR/$name"
+            echo "kept $name -- spark-shell desktop $name opens it ($DESKS_DIR/$name)"; return ;;
         --ask)   # one line at a prompt (Super+d opens a foot on this), then a desk;
             # the window follows the desk and stays until Enter, so the why is read
             need=$(desk_prompt) || return 0
             [ -n "$need" ] || return 0
-            (ASKED=1 cmd_desktop "$need") || true   # a refusal is read too, not lost with the window
+            case $need in
+                keep|"keep "*|"forget "*) set -- $need; (cmd_desktop "$@") || true ;;   # the grammar's words, here too
+                *) (ASKED=1 cmd_desktop "$need") || true ;;   # a refusal is read too, not lost with the window
+            esac
             printf 'Enter closes '; IFS= read -r _ || true; return ;;
         --pending)   # the words left by a console start: laid out once, then gone
             [ -f "$DESK_PENDING" ] || return 0
@@ -1460,12 +1493,16 @@ cmd_desktop() {
             [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell desktop on first"
             command -v jq >/dev/null 2>&1 || refuse "jq is not installed (spark-shell on)"
             if [ -n "${SWAYSOCK:-}" ]; then
-                if [ $# -eq 1 ] && desk_name_ok "$1" && [ -f "$DESKS_DIR/$1" ]; then
-                    desk_apps "$1" > "$TMP/apps"
-                    [ -n "${ASKED:-}" ] || printf 'desk> %s\n' "$(sed -n 's/^# desk: \(.*\) -- rendered by spark-shell.*/\1/p' "$DESKS_DIR/$1" | head -1)"
+                kept=$(desk_name_of "$*")
+                if [ -n "$kept" ] && [ -f "$DESKS_DIR/$kept" ]; then
+                    desk_apps "$*" > "$TMP/apps"
+                    [ -n "${ASKED:-}" ] || printf 'desk> %s\n' "$(desk_words "$DESKS_DIR/$kept")"
+                    why=$(sed -n 's/^# why: //p' "$DESKS_DIR/$kept" | head -1); [ -z "$why" ] || printf '  %s\n' "$why"
                     ws=$(desk_next_ws)
-                    sed "s/^workspace number .*/workspace number $ws/" "$DESKS_DIR/$1" > "$TMP/desk"
+                    sed "s/^workspace number .*/workspace number $ws/" "$DESKS_DIR/$kept" > "$TMP/desk"
+                    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] move container to workspace number $ws" >/dev/null 2>&1 || true
                     desk_play "$TMP/desk" || refuse "nothing ran"
+                    echo "on workspace $ws -- the kept desk $kept"
                     [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] focus" >/dev/null 2>&1 || true
                     return
                 fi

@@ -672,13 +672,30 @@ EOF
     out=$(sh "$SH" desktop keep studio)
     printf '%s\n' "$out" | grep -q "^kept studio -- spark-shell desktop studio opens it ($desks/studio)\$" && cmp -s "$desk_last" "$desks/studio" \
         && ok "desktop keep NAME: desk.last copied to desks/NAME, said in one line" || bad "keep" "$out"
+    # keep takes all the words; bare keep names the desk after its own words
+    out=$(sh "$SH" desktop keep Photo Work, please)
+    printf '%s\n' "$out" | grep -q "^kept photo-work-please -- " && [ -f "$desks/photo-work-please" ] && ok "desktop keep WORDS: every word, lowercased, joined by -" || bad "keep words" "$out $(ls "$desks")"
+    out=$(sh "$SH" desktop keep)
+    printf '%s\n' "$out" | grep -q "^kept photo-editing-for-instagram-and-x -- " && [ -f "$desks/photo-editing-for-instagram-and-x" ] && ok "desktop keep (bare): named after the desk's own words" || bad "keep bare" "$out $(ls "$desks")"
+    rm -f "$desks/photo-work-please" "$desks/photo-editing-for-instagram-and-x"
     out=$(sh "$SH" desktop)
-    printf '%s\n' "$out" | grep -q "^  studio  *$need\$" && printf '%s\n' "$out" | grep -q '^spark-shell desktop NAME opens one; keep NAME, forget NAME$' \
+    printf '%s\n' "$out" | grep -q "^  studio  *$need\$" && printf '%s\n' "$out" | grep -q '^spark-shell desktop NAME opens one; keep \[WORDS\], forget NAME$' \
         && ok "desktop (bare, inside): lists the kept desk with its words" || bad "desk list" "$out"
     rm -f "$argv" "$swlog"
     st=0; out=$(sh "$SH" desktop studio 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^desk> $need\$" && cmp -s "$swlog" "$H/expected.lines" \
-        && ok "desktop NAME: replays the same nine lines on the next free workspace (3)" || bad "replay" "st=$st $out $(cat "$swlog" 2>&1)"
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^desk> $need\$" && printf '%s\n' "$out" | grep -q '^  photo work in gimp' && printf '%s\n' "$out" | grep -q '^on workspace 3 -- the kept desk studio$' && cmp -s "$swlog" "$H/expected.lines" \
+        && ok "desktop NAME: replays the same nine lines on the next free workspace (3), with its why" || bad "replay" "st=$st $out $(cat "$swlog" 2>&1)"
+    : > "$swlog"
+    st=0; out=$(sh "$SH" desktop Studio 2>&1) || st=$?
+    [ "$st" -eq 0 ] && head -1 "$swlog" | grep -q '^workspace number 3$' && [ ! -e "$argv" ] && ok "desktop WORDS that name a kept desk (any case): a replay, no model" || bad "replay by words" "st=$st $out"
+    : > "$swlog"
+    st=0; out=$(printf 'studio\n\n' | SWAYSOCK=/tmp/x sh "$SH" desktop --ask 2>&1) || st=$?
+    [ "$st" -eq 0 ] && head -1 "$swlog" | grep -q '^\[app_id=spark-desk\] move container to workspace number 3$' && tail -1 "$swlog" | grep -q '^\[app_id=spark-desk\] focus$' \
+        && printf '%s\n' "$out" | grep -q 'photo work in gimp' && printf '%s\n' "$out" | grep -q 'Enter closes' \
+        && ok "a kept desk from the prompt: the window follows it, the why is read, Enter closes" || bad "replay ask" "st=$st $out $(cat "$swlog")"
+    st=0; out=$(printf 'keep Second Try\n\n' | SWAYSOCK=/tmp/x sh "$SH" desktop --ask 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q 'kept second-try -- ' && [ -f "$desks/second-try" ] && ok "keep at the desk> prompt" || bad "keep at prompt" "st=$st $out"
+    rm -f "$desks/second-try"
     [ ! -e "$argv" ] && ok "desktop NAME: no model call" || bad "replay called spark" "$(cat "$argv")"
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desks 1 kept  *studio (spark-shell desktop NAME)$' && ok "status: the desks row counts and names the kept ones" || bad "status desks" "$(printf '%s\n' "$st" | grep desks)"
     out=$(sh "$SH" desktop forget studio)
@@ -689,8 +706,9 @@ EOF
     st=0; out=$(sh "$SH" desktop forget mine 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q 'is not a desk of ours -- left alone' && [ -f "$desks/mine" ] \
         && ok "desktop forget NAME: a file without the marker is refused and left in place" || bad "forget yours" "st=$st $out"
-    st=0; out=$(sh "$SH" desktop keep 'a b' 2>&1) || st=$?
-    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: keep NAME -- letters, digits, - and _$' && ok "desktop keep: a name with a space is refused" || bad "keep name" "st=$st $out"
+    st=0; out=$(sh "$SH" desktop keep a b 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^kept a-b -- ' && [ -f "$desks/a-b" ] && ok "desktop keep: words with a space become one name (a-b)" || bad "keep name" "st=$st $out"
+    rm -f "$desks/a-b"
     # the gate on a kept desk edited by hand: every line read, the bad ones named, the rest runs
     printf '# desk: the gate -- rendered by spark-shell\nworkspace number 1\nexec foot -e rm x\nexec gimp-3.0 $(id)\nexec sudo ls\noutput * bg x\nexec firefox a|b\nexec foot -e micro notes.txt\n' > "$desks/gate"
     rm -f "$swlog"

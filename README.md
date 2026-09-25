@@ -141,7 +141,8 @@ it is gone, an empty workspace with the forge on it; `Super+1` is your
 first terminal again, `Super+Return` a new one there. One you would
 want again:
 
-    spark-shell desktop keep writing    the last desk, under a name
+    spark-shell desktop keep            the last desk, under its own words
+    spark-shell desktop keep writing    or under yours
     spark-shell desktop writing         opens it again, no model
     spark-shell desktop forget writing
     spark-shell desktop                 inside the desktop: the kept ones
@@ -149,7 +150,8 @@ want again:
 What a desk may open is what the box declares: every app with a
 desktop entry, the way the OS's own launchers see it, plus any program
 your words name. To choose for yourself, `spark-shell desktop apps`
-opens a picker over the box's apps and tools: Tab marks, Enter saves
+opens a picker over the box's apps and tools, one row per package,
+apps first: a marked row wears a `*`, Tab flips a mark, Enter saves
 to `~/.config/spark-shell/apps`, yours, one name per line with your
 own words after a colon if you like (`mpv: my radio`). Marked, the
 desk offers exactly those. tmux declares itself when the desktop is

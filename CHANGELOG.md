@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.33
+
+- `keep` takes all your words (`keep reading and music` ->
+  `reading-and-music`), and bare `keep` names the desk after its own
+  words; only the first word had been taken. `desktop reading and
+  music` replays it when kept, else it is a need. `keep` and `forget`
+  work at the `desk>` prompt too.
+- A kept desk replays like a fresh one: the dialog follows it to the
+  new workspace, the why line from the file is shown, the pulse while
+  windows come, Enter closes. It had jumped to an empty workspace with
+  no word.
+- The picker is one row per package, not per command (1000+ rows had
+  become 230): apps, then the tools you chose, then dependency tools.
+  A marked row wears a `*`; Tab flips a mark, Enter saves what you
+  flipped. A marked package whose command has another name (ripgrep,
+  rg) reaches the desk by the command.
+
 ## v0.32
 
 - `spark-shell sbom [apps|tools|parts|NAME] [--json]`: the box's
