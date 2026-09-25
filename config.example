@@ -1,8 +1,7 @@
 # spark-shell config -- copied to ~/.config/spark-shell/config.
 #
 # Plain KEY=value, one per line. Every key is optional; a missing key
-# takes the default shown. The first `spark-shell on` with no config
-# seeds these from spark's site.env when the old SITE_* keys are there.
+# takes the default shown.
 
 # The prompt: starship (rendered from the palette) or plain (yours).
 PROMPT=starship

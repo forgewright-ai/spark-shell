@@ -3,7 +3,7 @@
 # package row is forced to `todo` by an unknown distro fixture, and the
 # pinned rows are satisfied by stubs, so `on` exercises the render and
 # link machinery only. Run: sh tests/shell_test.sh
-# With SPARK=/path/to/spark's clone, section 11 renders its palettes too.
+# With SPARK=/path/to/spark's clone, section 13 renders its palettes too.
 set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 pass=0; fail=0
@@ -84,6 +84,16 @@ grep -q '^# rendered by spark-shell' "$sgr" && ok "on: sgr.sh carries the marker
 (. "$sgr" && [ "$SPARK_ACCENT_SGR" = '1;91' ] && [ "$SPARK_MUTED_SGR" = 90 ] && [ "$SPARK_WARN_SGR" = '1;31' ]) \
     && ok "on: sgr.sh sources in sh and sets the three" || bad "sgr source"
 grep -q 'custom' "$HOME/.config/starship.toml" && bad "starship carries a segment of its own" || ok "on: starship's prompt is starship's alone (no spark segment)"
+# the bar row asks spark itself: a stub that answers, one that fails, none at all
+printf '#!/bin/sh\nexit 0\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
+ck=$(sh "$SH" check || true)
+printf '%s\n' "$ck" | grep -q '^ok     bar          spark bar line answers the status line$' && ok "check: ok bar when spark bar line answers" || bad "check bar ok" "$(printf '%s\n' "$ck" | grep bar)"
+printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/spark"
+ck=$(sh "$SH" check || true)
+printf '%s\n' "$ck" | grep -q '^FAIL   bar          spark bar line failed -- spark check$' && ok "check: FAIL bar when spark bar line fails, the remedy is spark check" || bad "check bar fail" "$(printf '%s\n' "$ck" | grep bar)"
+rm -f "$H/.local/bin/spark"
+ck=$(PATH=$H/.local/bin:/usr/bin:/bin sh "$SH" check || true)
+printf '%s\n' "$ck" | grep -q '^ok     bar          na (spark not found -- the status line stays empty)$' && ok "check: bar is na without spark, still ok" || bad "check bar na" "$(printf '%s\n' "$ck" | grep bar)"
 out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "second run: Nothing to do" || bad "idempotence" "$out"
 
@@ -116,20 +126,6 @@ fi
 [ ! -e "$HOME/.tmux.conf" ] && ok "off: a render with no .bak is removed, never a husk" || bad "render removal"
 [ ! -e "$HOME/.config/spark-shell/sgr.sh" ] && ok "off: sgr.sh is gone (the prompt goes plain)" || bad "sgr removal"
 printf '%s\n' "$out" | grep -q 'packages stay installed' && ok "off: packages stay, said so" || bad "off closing" "$out"
-
-# --- 6. adoption: a file spark's old layer rendered is ours ---------------
-fresh
-theme_fixture '#5555ff'
-printf '# rendered by spark install.sh from templates/.tmux.conf\nold\n' > "$HOME/.tmux.conf"
-sh "$SH" on >/dev/null
-grep -q 'fg=colour12,bold' "$HOME/.tmux.conf" && [ ! -e "$HOME/.tmux.conf.bak" ] && ok "adoption: an old spark render is re-rendered, no .bak" || bad "adoption"
-
-# --- 7. config seeded from site.env once ----------------------------------
-fresh
-printf 'SITE_PROMPT=starship\nSITE_PROMPT_STYLE=full\nSITE_GIT_NAME=Test Person\n' > "$HOME/.config/spark/site.env"
-sh "$SH" status >/dev/null
-grep -q 'PROMPT_STYLE=full' "$HOME/.config/spark-shell/config" && grep -q 'GIT_NAME=Test Person' "$HOME/.config/spark-shell/config" \
-    && ok "first run seeds the config from site.env" || bad "seeding" "$(cat "$HOME/.config/spark-shell/config" 2>/dev/null)"
 
 # --- 8. invoked through a symlink (~/.local/bin): the repo still found --
 fresh
@@ -170,19 +166,6 @@ for t in minimal full; do
     st_t=$REPO/templates/.config/starship.toml.$t
     grep -q 'custom' "$st_t" && bad "starship $t: a segment of spark's" || ok "starship $t: no spark segment on the prompt"
 done
-
-# --- 12. v0.2's micro look is handed back once ---------------------------
-fresh
-mkdir -p "$HOME/.config/micro/colorschemes"
-printf '# spark.micro -- rendered by spark-shell\ncolor-link default "default,default"\n' > "$HOME/.config/micro/colorschemes/spark.micro"
-printf '{\n    "colorscheme": "spark",\n    "softwrap": true\n}\n' > "$HOME/.config/micro/settings.json"
-sh "$SH" on >/dev/null
-[ ! -e "$HOME/.config/micro/colorschemes/spark.micro" ] && ok "migration: the v0.2 spark.micro is removed" || bad "spark.micro stays"
-grep -q softwrap "$HOME/.config/micro/settings.json" && ! grep -q colorscheme "$HOME/.config/micro/settings.json" \
-    && ok "migration: the colorscheme key is dropped, the rest of settings.json is micro's" || bad "settings.json" "$(cat "$HOME/.config/micro/settings.json")"
-printf 'mine\n' > "$HOME/.config/micro/colorschemes/spark.micro"
-sh "$SH" apply >/dev/null
-grep -q mine "$HOME/.config/micro/colorschemes/spark.micro" && ok "a spark.micro of yours is never touched" || bad "yours removed"
 
 # --- 13. spark's own palettes, when its clone is at hand -------------------
 if [ -n "${SPARK:-}" ] && ls "$SPARK"/themes/*.env >/dev/null 2>&1; then

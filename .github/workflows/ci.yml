@@ -39,10 +39,10 @@ jobs:
     container: debian:13
     timeout-minutes: 10
     steps:
-      - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git python3 shellcheck diffutils jq >/dev/null   # jq: a desk reads the model's answer with it
+      - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git shellcheck diffutils jq >/dev/null   # jq: a desk reads the model's answer with it
       - uses: actions/checkout@v4
-      - name: the desktop's and the login box's package names exist on Debian (nothing installed)
-        run: apt-cache show $(sed -n 's/^PKG_DESKTOP=//p; s/^PKG_GREETER=//p' distro/debian.env) >/dev/null
+      - name: every package name of distro/debian.env exists on Debian (nothing installed)
+        run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_DESKTOP=//p; s/^PKG_GREETER=//p' distro/debian.env) >/dev/null
       - name: shellcheck
         run: shellcheck -S warning spark-shell tests/shell_test.sh
       - name: the suite in a throwaway HOME
@@ -53,10 +53,10 @@ jobs:
     container: archlinux:latest
     timeout-minutes: 10
     steps:
-      - run: pacman -Syu --noconfirm --needed git python diffutils jq >/dev/null
+      - run: pacman -Syu --noconfirm --needed git diffutils jq >/dev/null
       - uses: actions/checkout@v4
-      - name: the desktop's and the login box's package names exist on Arch (nothing installed)
-        run: pacman -Sp --needed $(sed -n 's/^PKG_DESKTOP=//p; s/^PKG_GREETER=//p' distro/arch.env) >/dev/null
+      - name: every package name of distro/arch.env exists on Arch (nothing installed)
+        run: pacman -Sp --needed $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_DESKTOP=//p; s/^PKG_GREETER=//p' distro/arch.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
   macos:
@@ -64,5 +64,5 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: the suite in a throwaway HOME (Apple's sh and python 3.9)
+      - name: the suite in a throwaway HOME (Apple's sh)
         run: sh tests/shell_test.sh

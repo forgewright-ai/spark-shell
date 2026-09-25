@@ -14,12 +14,22 @@ this machine's cycles belong to the model.
     spark-shell apply       re-render the look from that palette
     spark-shell off         everything back from .bak, or gone
     spark-shell check       is this machine still what this repo says?
+    spark-shell status      the state: rc files, tools, the look
+    spark-shell bar on|off  tmux's status line (the line is spark bar line)
+    spark-shell sbom [apps|tools|parts|NAME] [--json]
+                            the box's software, in the package manager's words
     spark-shell desktop on  a desktop and a login box: sway, foot, and
                             greetd's box on tty1 at the next boot
     spark-shell desktop off both back: getty on tty1 again
     spark-shell desktop     sway and one foot window on this console, now
     spark-shell desktop wallpaper PATH|default|none
                             the picture behind the windows (default: the forge)
+    spark-shell desktop "WORDS"
+                            a desk for that need: the model picks the windows
+    spark-shell desktop keep [WORDS] | WORDS | forget WORDS
+                            keep the last desk, open a kept one, drop one
+    spark-shell desktop apps | tools
+                            what a desk may open: a picker, one list of marks
 
 ## Install
 
@@ -30,10 +40,7 @@ Debian and Arch families (apt or pacman, sudo asked once), macOS
 (Homebrew). To update: `git -C ~/.spark-shell pull`, then
 `spark-shell apply`. spark itself is not required; with it, the tmux
 status line shows `spark bar line` and the palette follows
-`spark theme NAME` (then `spark-shell apply`). Machines that ran
-spark's old shell layer are adopted: the first `on` reads your old
-choices out of spark's site.env once, and rendered files spark left
-behind are re-rendered in place, never backed up against you.
+`spark theme NAME` (then `spark-shell apply`).
 
 ## One plain look
 
@@ -202,10 +209,11 @@ none or an absolute path (`spark-shell desktop wallpaper` writes it),
 
 ## What leaves this machine
 
-Nothing, beyond the package manager and one pinned download verified
-by sha256 (starship, on Linux). No model, no network call, no
-telemetry. The one file read from spark is `~/.config/spark/theme.env`;
-nothing is ever sent to it.
+The package manager's fetches and one pinned download verified by
+sha256 (starship, on Linux). A desk is one call to `spark edit` on this
+machine: the model runs here, and it reads the need's words, the
+screen's size and the app list. No telemetry. The one file read from
+spark is `~/.config/spark/theme.env`.
 
 ## Contributing
 

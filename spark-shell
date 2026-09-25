@@ -2,6 +2,7 @@
 # spark-shell -- spark's own shell for a machine that is an AI box.
 #
 #   spark-shell                 the state: rc files, tools, the look
+#   spark-shell status          the same, by name
 #   spark-shell on              tmux, starship, fzf, zoxide, eza, bat, btop, fd,
 #                               one palette on every surface;
 #                               the rc files become spark-shell's (yours -> .bak)
@@ -57,9 +58,7 @@
 # ~/.config/spark-shell/config (KEY=value): PROMPT starship|plain,
 # PROMPT_STYLE minimal|full, DESKTOP none|sway,
 # FONT (foot's spec, DejaVu Sans Mono:size=12), WALLPAPER default|none|PATH,
-# ALPHA (foot over a picture, 0.85). The first
-# `on` with no config seeds them from spark's site.env when the old
-# SITE_* keys are there (read once, copied, never read again).
+# ALPHA (foot over a picture, 0.85).
 #
 # The login box (DESKTOP=sway) is the one root render: /etc/greetd and a
 # greetd.service drop-in, written with sudo only when they differ, and
@@ -123,21 +122,6 @@ short_host() {
 }
 
 config_load() {
-    if [ ! -f "$CONFIG" ] && [ -f "$SPARK_CONFIG_DIR/site.env" ]; then
-        # first run on a machine that ran spark's old shell layer: the
-        # choices are seeded from site.env once, then this file is
-        # the only one read
-        # shellcheck disable=SC2153   # the SITE_* names come from site.env
-        ( load_env "$SPARK_CONFIG_DIR/site.env" || true
-          mkdir -p "$CONFIG_DIR"
-          {
-            printf '# spark-shell config -- KEY=value; seeded from spark site.env\n'
-            [ -z "${SITE_PROMPT:-}" ] || printf 'PROMPT=%s\n' "$SITE_PROMPT"
-            [ -z "${SITE_PROMPT_STYLE:-}" ] || printf 'PROMPT_STYLE=%s\n' "$SITE_PROMPT_STYLE"
-            [ -z "${SITE_GIT_NAME:-}" ] || [ "${SITE_GIT_NAME:-}" = "Your Name" ] || printf 'GIT_NAME=%s\n' "$SITE_GIT_NAME"
-            [ -z "${SITE_GIT_EMAIL:-}" ] || [ "${SITE_GIT_EMAIL:-}" = "you@example.com" ] || printf 'GIT_EMAIL=%s\n' "$SITE_GIT_EMAIL"
-          } > "$CONFIG" )
-    fi
     load_env "$CONFIG" || exit 1
     : "${PROMPT:=starship}"
     : "${PROMPT_STYLE:=minimal}"
@@ -356,6 +340,10 @@ root_sudo_once() {   # the password, once, said why (a no-op after sudo_upfront)
     printf 'spark-shell needs sudo once, now: the login box (tty1).\n'
     sudo -v
 }
+spark_bin() {   # -> spark's path, or nothing: PATH, then ~/.local/bin (a non-login ssh shell lacks it)
+    if command -v spark >/dev/null 2>&1; then command -v spark
+    elif [ -x "$HOME/.local/bin/spark" ]; then printf '%s\n' "$HOME/.local/bin/spark"; fi
+}
 sha_ok() {
     if [ "$OS" = Darwin ]; then shasum -a 256 "$1" | awk '{print $1}' | grep -qx "$2"
     else sha256sum "$1" | awk '{print $1}' | grep -qx "$2"; fi
@@ -410,7 +398,8 @@ pkg_install() {
 # The link/render engine is the twin of spark install.sh's: a symlink for
 # a file used as-is, a rendered regular file where a value is baked in.
 # Yours is never overwritten -- it moves to <path>.bak. A file marked
-# `rendered by spark` (spark's old shell layer) is adopted as ours.
+# `rendered by spark-shell` is ours to render again; a file with any
+# other marker, or none, is yours: it moves to .bak.
 changes=0
 backup() {
     changes=$((changes + 1))
@@ -455,7 +444,7 @@ render_tmp() {   # render_tmp SRC DST -- the template through EXPR, every placeh
 render_one() {   # render_one SRC DST -- EXPR must be set
     render_tmp "$1" "$TMP/render"
     if [ -f "$2" ] && [ ! -L "$2" ] && cmp -s "$TMP/render" "$2"; then ok look "$2"; return; fi
-    if [ -f "$2" ] && [ ! -L "$2" ] && ! grep -q 'rendered by spark' "$2"; then backup "$2"; fi
+    if [ -f "$2" ] && [ ! -L "$2" ] && ! grep -q 'rendered by spark-shell' "$2"; then backup "$2"; fi
     changes=$((changes + 1))
     if [ "$MODE" = dry ]; then row would look "$2"; return; fi
     mkdir -p "$(dirname "$2")"
@@ -536,7 +525,7 @@ greeter_tools() {   # -> the missing ones, if any (greetd may live in sbin)
     command -v greetd >/dev/null 2>&1 || [ -x /usr/sbin/greetd ] || [ -x /usr/bin/greetd ] || [ -x "$HOME/.local/bin/greetd" ] || _miss="$_miss greetd"
     printf '%s' "$_miss"
 }
-greeter_ours() { grep -q 'rendered by spark' "$ROOT/$GREETD_CONF" 2>/dev/null || [ -e "$ROOT/$GREETD_CONF.spark-orig" ]; }
+greeter_ours() { grep -q 'rendered by spark-shell' "$ROOT/$GREETD_CONF" 2>/dev/null || [ -e "$ROOT/$GREETD_CONF.spark-orig" ]; }
 unit_enabled() { systemctl is-enabled "$1" >/dev/null 2>&1; }
 greeter_at_boot() { unit_enabled greetd.service && ! unit_enabled getty@tty1.service; }
 root_render_one() {   # root_render_one SRC DST -- EXPR must be set
@@ -546,7 +535,7 @@ root_render_one() {   # root_render_one SRC DST -- EXPR must be set
     need greeter "$2 (sudo)" || return 0
     if ! root_can; then row todo greeter "$2 -- spark-shell desktop on at a terminal (sudo once)"; acting=0; return 0; fi
     root_sudo_once || { row todo greeter "sudo refused -- spark-shell desktop on at a terminal (sudo once)"; acting=0; return 0; }
-    if [ -f "$2" ] && ! grep -q 'rendered by spark' "$2" && [ ! -e "$2.spark-orig" ]; then
+    if [ -f "$2" ] && ! grep -q 'rendered by spark-shell' "$2" && [ ! -e "$2.spark-orig" ]; then
         root_do cp "$2" "$2.spark-orig"        # the original, once: off puts it back
     fi
     root_do mkdir -p "$(dirname "$2")"
@@ -611,41 +600,13 @@ render_all() {
         render_one "$REPO/templates/.config/starship.toml.$PROMPT_STYLE" "$HOME/.config/starship.toml"
     fi
     if desktop_wanted; then desktop_apply; fi
-    micro_look_gone
-}
-
-# micro (v0.2 and before) had a colorscheme rendered here. An editor's
-# look is its own plugin's business (spark-micro), never the shell's: what
-# v0.2 rendered is handed back once -- the scheme file if it is ours, and
-# the `colorscheme` key it seeded, so micro never points at a scheme that
-# is gone. settings.json is JSON, the one piece sh does not parse; python3
-# is on any machine spark-shell makes sense on (spark requires it).
-MICRO_SCHEME=$HOME/.config/micro/colorschemes/spark.micro
-MICRO_SETTINGS=$HOME/.config/micro/settings.json
-micro_look_gone() {
-    [ "$MODE" = dry ] && return 0
-    if [ -f "$MICRO_SCHEME" ] && grep -q 'rendered by spark' "$MICRO_SCHEME"; then
-        rm -f "$MICRO_SCHEME"
-        row ok restore "$MICRO_SCHEME -- removed (an editor's look is its plugin's, not the shell's)"
-    fi
-    python3 - "$MICRO_SETTINGS" <<'EOF' 2>/dev/null || true
-import json, sys
-p = sys.argv[1]
-try:
-    with open(p) as f: d = json.load(f)
-except (OSError, ValueError): sys.exit(0)
-if isinstance(d, dict) and d.get("colorscheme") == "spark":
-    del d["colorscheme"]
-    with open(p, "w") as f: json.dump(d, f, indent=4); f.write("\n")
-    print("ok     restore      %s -- colorscheme key dropped, the rest is micro's" % p)
-EOF
 }
 
 hand_back() {   # hand_back REL... -- each render of ours under HOME (marker or .bak) restored
     for rel in "$@"; do
         p=$HOME/$rel
         if [ -f "$p" ] && [ ! -L "$p" ]; then
-            if grep -q 'rendered by spark' "$p" 2>/dev/null || [ -e "$p.bak" ]; then
+            if grep -q 'rendered by spark-shell' "$p" 2>/dev/null || [ -e "$p.bak" ]; then
                 restore_one "$p"
             fi
         fi
@@ -779,7 +740,6 @@ cmd_off() {
     done
     hand_back $RENDERED .config/starship.toml $DESKTOP_RENDERED
     greeter_off
-    micro_look_gone
     # spark's own hook must survive the hand-back: a restored or absent
     # rc file gets the one marked line back when spark is installed here
     hook_line=''
@@ -820,7 +780,6 @@ cmd_follow() {
     [ "$(theme_sum)" != "$(cat "$SEEN" 2>/dev/null)" ] || return 0
     theme_load
     EXPR=$(render_expr)
-    n=0
     for rel in $RENDERED; do render_one "$REPO/templates/$rel" "$HOME/$rel" >/dev/null; done
     [ "$PROMPT" = starship ] && render_one "$REPO/templates/.config/starship.toml.$PROMPT_STYLE" "$HOME/.config/starship.toml" >/dev/null
     if desktop_wanted; then
@@ -946,8 +905,10 @@ cmd_check() {
             [ -z "$gone" ] && chk apps ok "$(grep -c '^[A-Za-z0-9]' "$APPS") marked for the desk, $ne apps declare themselves" || chk apps fail "marked but not here:$gone" "spark-shell desktop apps"
         else chk apps ok "$ne apps declare themselves, none marked (spark-shell desktop apps picks)"; fi
     fi
-    if command -v spark >/dev/null 2>&1 || [ -x "$HOME/.local/bin/spark" ]; then chk bar ok "spark bar line answers the status line"
-    else chk bar ok "spark not found -- the status line stays empty (github.com/forgewright-ai/spark)"; fi
+    spark=$(spark_bin)
+    if [ -z "$spark" ]; then chk bar ok "na (spark not found -- the status line stays empty)"
+    elif "$spark" bar line >/dev/null 2>&1; then chk bar ok "spark bar line answers the status line"
+    else chk bar fail "spark bar line failed" "spark check"; fi
     [ "$fails" = 0 ]
 }
 
