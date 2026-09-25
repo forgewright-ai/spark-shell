@@ -31,9 +31,11 @@
 #                               own by default), open a kept one by its
 #                               words (no model), or drop it; bare, inside
 #                               the desktop: the kept desks
-#   spark-shell desktop apps    the apps a desk may open: a picker over the
-#                               box's apps and tools (Tab marks, Enter
-#                               saves), yours in ~/.config/spark-shell/apps
+#   spark-shell desktop apps | tools
+#                               what a desk may open: a picker over the
+#                               box's apps, or over its tools (Tab flips a
+#                               mark, Enter saves), one list of marks,
+#                               yours in ~/.config/spark-shell/apps
 #   spark-shell sbom [apps|tools|parts|NAME] [--json]
 #                               the box's software, in the package
 #                               manager's words: version, licence, chosen
@@ -1194,7 +1196,8 @@ desk_apps() {   # desk_apps NEED -> the lines
 # spark-shell desktop apps: the picker. fzf over the box's apps and
 # tools, Tab marks, Enter saves the marked names to your file (a note you
 # wrote beside a name that stays marked is kept); Esc leaves it as it was.
-cmd_apps() {
+cmd_apps() {   # cmd_apps apps|tools -- one picker, the same marks; apps are the box's declared ones, tools its commands
+    kind=${1:-apps}
     command -v fzf >/dev/null 2>&1 || refuse "fzf is not installed (spark-shell on)"
     [ -t 0 ] || refuse "the picker needs a terminal; the file is $APPS (name[: your words], one per line)"
     sbom_collect
@@ -1204,13 +1207,14 @@ cmd_apps() {
     # dependency tools last. A marked row wears a *. Tab flips: what you select at Enter
     # is marked if it was not, unmarked if it was.
     marks=$(apps_marked && grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd' ' - || true)
-    picked=$(awk -F'\t' -v marks=" $marks " '
+    if [ "$kind" = apps ]; then what="The apps a desk may open."; else what="The tools a desk may open; each runs in a terminal window."; fi
+    picked=$(awk -F'\t' -v marks=" $marks " -v kind="$kind" '
         FILENAME == ARGV[1] { ent[$1] = $3; next }
         function star(n) { return (index(marks, " " n " ") > 0) ? "* " : "  " }
-        $1 == "app" {   # its entries are the apps; its other commands are part of them
+        $1 == "app" && kind == "apps" {   # its entries are the apps; its other commands are part of them
             m = split($8, es, " ")
             for (j = 1; j <= m; j++) { split(es[j], kv, "="); if (kv[1] != "") printf "0\t%s\t%s%s: %s  [app]\n", kv[1], star(kv[1]), kv[1], ent[kv[1]] } }
-        $1 == "tool" {
+        $1 == "tool" && kind == "tools" {
             n = split($7, c, " "); first = ""
             for (i = 1; i <= n; i++) if (c[i] ~ /^[A-Za-z]/) { first = c[i]; break }
             if (first == "") next
@@ -1219,8 +1223,8 @@ cmd_apps() {
             printf "%d\t%s\t%s%s: %s  [tool]\n", ($5 == "chosen" ? 1 : 2), name, star(name), shown, $6 }' "$TMP/entries" "$TMP/sbom" \
              | sort -t'	' -k1,1n -k2,2f -u | cut -f3 \
              | grep -v "^..\\($(printf '%s' "sway swaybg swaymsg foot footclient xdg-open $DESK_NOT_APPS" | sed 's/ /\\|/g')\\)[ :(]" \
-             | fzf --multi --prompt 'apps> ' --layout=reverse --no-info --color=16 --no-unicode \
-                   --header "The apps a desk may open. Tab flips a mark, Enter saves, Esc leaves it.
+             | fzf --multi --prompt "$kind> " --layout=reverse --no-info --color=16 --no-unicode \
+                   --header "$what Tab flips a mark, Enter saves, Esc leaves it.
 Marked now: ${marks:-none}") || { echo "left as it was"; return 0; }
     [ -n "$picked" ] || { echo "left as it was"; return 0; }
     flipped=$(printf '%s\n' "$picked" | sed 's/^..//; s/[:(].*//; s/ *$//')
@@ -1456,9 +1460,9 @@ cmd_desktop() {
             if [ "$2" = none ]; then echo "the palette's background is back; a new foot window is opaque again"
             else echo "a running sway shows it now; the next foot window is translucent (Super+Return)"; fi
             return ;;
-        apps)
+        apps|tools)
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
-            cmd_apps; return ;;
+            cmd_apps "$1"; return ;;
         keep|forget)   # keep [WORDS]: the last desk, under those words (its own by default); forget WORDS
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
             verb=$1; shift

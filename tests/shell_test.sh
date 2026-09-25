@@ -862,7 +862,9 @@ else
     # no package manager this repo knows: one line, exit 1
     st=0; out=$(sh "$SH" sbom 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = "spark-shell sbom: no package manager here that this repo knows (pacman, apt, brew)" ] && ok "sbom with ID=fixture: no known package manager, one line, exit 1" || bad "sbom fixture" "st=$st $out"
-    # the picker with no terminal: refused in one line naming the file
+    # the picker with no terminal: refused in one line naming the file (apps and tools alike)
+    st=0; out=$(sh "$SH" desktop tools </dev/null 2>&1) || st=$?
+    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: the picker needs a terminal' && ok "desktop tools: the same picker, the same refusal without a terminal" || bad "tools refusal" "st=$st $out"
     st=0; out=$(sh "$SH" desktop apps </dev/null 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = "spark-shell desktop: the picker needs a terminal; the file is $apps_file (name[: your words], one per line)" ] \
         && ok "desktop apps without a terminal: refused in one line naming the file, exit 1" || bad "desktop apps no tty" "st=$st $out"

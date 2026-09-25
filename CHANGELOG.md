@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.34
+
+- `spark-shell desktop apps` shows the apps, `spark-shell desktop
+  tools` the tools; one list of marks behind both.
+
 ## v0.33
 
 - `keep` takes all your words (`keep reading and music` ->

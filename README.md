@@ -150,8 +150,9 @@ want again:
 What a desk may open is what the box declares: every app with a
 desktop entry, the way the OS's own launchers see it, plus any program
 your words name. To choose for yourself, `spark-shell desktop apps`
-opens a picker over the box's apps and tools, one row per package,
-apps first: a marked row wears a `*`, Tab flips a mark, Enter saves
+opens a picker over the box's apps, `spark-shell desktop tools` one
+over its tools (each runs in a terminal window), one row per package:
+a marked row wears a `*`, Tab flips a mark, Enter saves
 to `~/.config/spark-shell/apps`, yours, one name per line with your
 own words after a colon if you like (`mpv: my radio`). Marked, the
 desk offers exactly those. tmux declares itself when the desktop is
