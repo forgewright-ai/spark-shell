@@ -1,14 +1,15 @@
 # rendered by spark-shell from templates/etc/greetd/config.toml -- edit the template, then spark-shell on
-# greetd: the login box on tty1. tuigreet draws it on the console, in the
-# palette's slots (ratatui's colour words), with the machine's name above
-# and the clock. Enter starts the desktop the way the verb does (sway's
-# log in ~/.local/state/spark-shell, nothing on the console); F2 picks the console
-# session instead (a login shell on tty1, no desktop): the two sessions
-# are /etc/greetd/spark-shell/*.desktop. Leaving the desktop shows the box
-# again. greetd takes tty1 in getty's place at the next boot. Behind the
-# box, tuigreet's DOOM fire in the palette (0.11 and newer know
-# --background; F4 switches it for one boot); a few percent of one core
-# while the box waits, nothing once you are in.
+# greetd: the login box on tty1. tuigreet draws it on the console, in
+# the palette's slots (ratatui's colour words), with the machine's name
+# above and the clock. Enter starts the desktop the way the verb does
+# (sway's log in ~/.local/state/spark-shell, nothing on the console).
+# F2 picks the console session instead (a login shell on tty1, no
+# desktop). The two sessions are /etc/greetd/spark-shell/*.desktop.
+# Leaving the desktop shows the login box again. greetd takes tty1 in
+# getty's place at the next boot. Behind the login box, tuigreet's DOOM
+# fire burns in the palette (0.11 and newer know --background, and F4
+# switches it for one boot). It costs a few percent of one core while
+# the login box waits, nothing once you are in.
 
 [terminal]
 vt = 1

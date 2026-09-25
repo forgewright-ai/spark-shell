@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.40
+
+- Every document, the help and the program's words speak with one
+  voice, spark's, from its `docs/CONTRIBUTING.md`. That is the README,
+  CREDITS, config.example, the templates' comments, the help header,
+  the rows and the refusals. The words are the seat, this machine, the
+  login box, the status line, a screen, the app list. The README's
+  Contributing section lists spark-shell's own words.
+- The README is the seat at an AI box, with one home per topic. The
+  login box has its section, and the keys are the sway template's ten
+  sentences and nothing else. The desk section is short paragraphs.
+  The wallpaper, the marks, the sbom and the kept desk's JSON are each
+  explained once. The README's command block is the help's source.
+- `spark-shell desktop keys` says `Super+s` opens a small window with
+  spark chat, and the move, fill and workspace sentences lost their
+  semicolons. `Enter` names the key alone.
+- CREDITS lists diffutils (Arch) and ends every bullet with a period.
+  config.example says where starship comes from in one line, pointing
+  at the README.
+- tests/shell_test.sh holds the mechanical half: the words that are
+  out, capitals, contractions, widths.
+
 ## v0.39
 
 - The btop render no longer carries a `color_theme` line: btop on a tty

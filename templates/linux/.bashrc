@@ -1,5 +1,5 @@
-# spark-shell ~/.bashrc -- bash 5 on Linux. Symlinked from the spark-shell repository:
-# edit it there, and `git status` shows the change.
+# spark-shell ~/.bashrc -- bash 5 on Linux. It is a symlink into the
+# spark-shell repository: edit it there, and git status shows the change.
 [[ $- == *i* ]] || return
 
 # --- PATH first: everything below may depend on ~/.local/bin ---------------
@@ -41,15 +41,15 @@ else
     PS1='\n\u@\h:\w\$ '   # the blank row is where spark prints its hint
 fi
 
-# --- spark at the prompt: the colour it draws with (three exports from
-#     the palette slots, rendered by spark-shell on), then its one
-#     marked hook line (the widget, completion, the console palette). After
-#     fzf, so its Enter macro is the one that wins; spark's rc row sees the
-#     marker and never appends a second one.
+# --- spark at the prompt: spark's prompt marks (three exports from the
+#     palette slots, rendered by spark-shell on), then its one marked
+#     hook line (the widget, completion, the console palette). It comes
+#     after fzf, so its Enter macro is the one that wins. spark's rc row
+#     sees the marker and never appends a second one.
 [ -r ~/.config/spark-shell/sgr.sh ] && . ~/.config/spark-shell/sgr.sh   # spark-shell: the prompt's colour
 [ -r ~/.config/spark/hook.bash ] && . ~/.config/spark/hook.bash   # spark: the AI at the prompt
 
-# zoxide last: its prompt hook has to be the final one, or it complains
+# zoxide last: its prompt hook has to be the final one, or it complains.
 command -v zoxide >/dev/null && eval "$(zoxide init bash)"
 
 # --- yours: ~/.config/spark-shell/rc, sourced last, never written by
