@@ -673,11 +673,12 @@ PALETTE_MARK=' #spark-shell-palette#'
 QUIET_MARK=' #spark-shell-quiet#'
 SPLASH_MARK='#spark-shell-quiet# '
 CURSOR_ON=$(printf '\033[?25h')
-# the quiet kernel line, the same seven words on every shape: quiet and
+# the quiet kernel line, the same six words on every shape: quiet and
 # loglevel=3 silence the kernel, splash hands Plymouth the boot when it
 # is there, systemd.show_status=false keeps the unit lines off, udev's
-# level quiets the initramfs, the cursor and fbcon stop the flicker
-QUIET_WORDS='quiet splash loglevel=3 systemd.show_status=false udev.log_level=3 vt.global_cursor_default=0 fbcon=nodefer'
+# level quiets the initramfs, fbcon stops the flicker. The cursor stays:
+# a cursor during a quiet boot is harmless, a console without one is not
+QUIET_WORDS='quiet splash loglevel=3 systemd.show_status=false udev.log_level=3 fbcon=nodefer'
 
 is_wsl() { [ "$OS" != Darwin ] && { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qis microsoft "$ROOT/proc/version"; }; }
 init_shape() {   # -> systemd | runit | none: what boots this Linux
@@ -690,25 +691,44 @@ root_ready() {   # root_ready ROW -- a root to write with, asked once; else a to
     if ! root_can; then row todo "$1" "root is needed -- spark-shell on at a terminal (sudo once)"; acting=0; return 1; fi
     root_sudo_once "the console" || { row todo "$1" "sudo refused -- spark-shell on at a terminal (sudo once)"; acting=0; return 1; }
 }
+# Under /boot (a vfat ESP, dmask 0077) a user can neither read nor even
+# see a file: root reads and tests there, and a mode is a wish (vfat
+# has none, so a failed chmod is no error).
+root_exists() { [ -e "$1" ] || root_do test -e "$1" 2>/dev/null; }   # root_exists PATH
 root_put() {   # root_put SRC DST [MODE] -- a root file written from SRC; a new one takes MODE (0644)
-    _new=0; [ -e "$2" ] || _new=1
+    _new=0; root_exists "$2" || _new=1
     root_do mkdir -p "$(dirname "$2")"
     root_do cp "$1" "$2"
-    [ "$_new" = 0 ] || root_do chmod "${3:-0644}" "$2"
+    [ "$_new" = 0 ] || root_do chmod "${3:-0644}" "$2" 2>/dev/null || true
 }
-root_read() {   # root_read FILE -> its bytes (root when a user cannot read it); nothing when absent
-    if [ -r "$1" ]; then cat "$1"; elif [ -e "$1" ]; then root_do cat "$1" 2>/dev/null || true; fi
+root_read() {   # root_read FILE -> its bytes (root when a user cannot read it); false when absent or unreadable
+    if [ -r "$1" ]; then cat "$1"; else root_do cat "$1" 2>/dev/null; fi
 }
 # A marked line is one spark-shell appended to a file it does not own: it
 # ends with the mark, and off deletes exactly those, every other line as
-# it is (LC_ALL=C: the bytes pass through untouched).
+# it is (LC_ALL=C: the bytes pass through untouched, and a last line with
+# no newline stays without one).
 marked() {   # marked FILE MARK -> the lines carrying MARK, the mark off
     [ -f "$1" ] || return 0
     LC_ALL=C awk -v m="$2" 'length($0) >= length(m) && substr($0, length($0) - length(m) + 1) == m { print substr($0, 1, length($0) - length(m)) }' "$1"
 }
-marked_text() {   # marked_text FILE MARK [LINESFILE] -> FILE without MARK's lines, then LINESFILE's lines marked
-    [ ! -f "$1" ] || LC_ALL=C awk -v m="$2" '!(length($0) >= length(m) && substr($0, length($0) - length(m) + 1) == m)' "$1"
-    [ -z "${3:-}" ] || LC_ALL=C sed "s/\$/$2/" "$3"
+marked_text() {   # marked_text FILE MARK [LINESFILE [exit]] -> FILE without MARK's lines, then LINESFILE's lines marked
+    # (with exit: before a last `exit 0`, where rc.local still runs them)
+    [ -f "$1" ] || { [ -z "${3:-}" ] || LC_ALL=C sed "s/\$/$2/" "$3"; return 0; }
+    _open=0; [ -z "$(tail -c1 "$1")" ] || _open=1   # the last line has no newline
+    LC_ALL=C awk -v m="$2" -v open="$_open" -v add="${3:-}" -v ex="${4:-}" '
+        function add_lines(   l) { while ((getline l < add) > 0) print l m }
+        { k = !(length($0) >= length(m) && substr($0, length($0) - length(m) + 1) == m); if (k) line[++n] = $0 }
+        END {
+            if (!k) open = 0
+            last = n; while (last > 0 && line[last] ~ /^[ \t]*$/) last--
+            at = n + 1; if (add != "" && ex != "" && last > 0 && line[last] ~ /^[ \t]*exit 0[ \t]*$/) at = last
+            for (i = 1; i <= n; i++) {
+                if (i == at) add_lines()
+                printf "%s%s", line[i], (i == n && open && !(add != "" && at > n)) ? "" : "\n"
+            }
+            if (add != "" && at > n) add_lines()
+        }' "$1"
 }
 
 # ------------------------------------------------------------ the palette
@@ -759,11 +779,12 @@ console_send() {   # console_send FILE -- the escapes to this console, then a re
     [ "${TERM:-}" = linux ] && [ -t 1 ] && console_linux || return 0
     [ "$MODE" != dry ] || return 0
     cat "$1" 2>/dev/null || return 0
-    printf '\033[2J\033[H'
+    [ "$todos" -gt 0 ] || printf '\033[2J\033[H'   # a todo row stays on screen for the closing line to point at
 }
 # A framebuffer console paints a new palette only into the cells drawn
 # after it, so the escapes wait for the end of the run: sent, the screen
-# cleared, then the closing line (console_now, just before it).
+# cleared (never over a todo row), then the closing line (console_now,
+# just before it).
 CONSOLE_NOW=''
 console_now() { [ -z "$CONSOLE_NOW" ] || console_send "$CONSOLE_NOW"; }
 root_path_ok() { case $1 in *[!A-Za-z0-9/._-]*) return 1 ;; *) return 0 ;; esac; }   # a path a root file may carry
@@ -818,8 +839,8 @@ palette_boot() {   # Linux: the palette at boot, root's; the kernel's defaults s
         palette_line > "$TMP/line"; echo >> "$TMP/line"
         if [ "$(marked "$ROOT/etc/rc.local" "$PALETTE_MARK")" = "$(palette_line)" ]; then
             ok palette "a line in /etc/rc.local sets it at boot"
-        elif need palette "one marked line at the end of /etc/rc.local (sudo)" && root_ready palette; then
-            { [ -f "$ROOT/etc/rc.local" ] || printf '#!/bin/sh\n'; marked_text "$ROOT/etc/rc.local" "$PALETTE_MARK" "$TMP/line"; } > "$TMP/rc.local"
+        elif need palette "one marked line at the end of /etc/rc.local, before an exit 0 (sudo)" && root_ready palette; then
+            { [ -f "$ROOT/etc/rc.local" ] || printf '#!/bin/sh\n'; marked_text "$ROOT/etc/rc.local" "$PALETTE_MARK" "$TMP/line" exit; } > "$TMP/rc.local"
             root_put "$TMP/rc.local" "$ROOT/etc/rc.local" 0755
             ok palette "a line in /etc/rc.local sets it at boot"
         fi
@@ -842,7 +863,10 @@ palette_off() {   # palette_off all|ours -- VGA again, the boot's palette gone, 
     held=1
     if console_linux && { [ "$_unit" = 1 ] || [ -n "$_line" ] || [ "$_files" = 1 ]; }; then
         vt_vga_rgb
-        if [ "$MODE" = dry ]; then
+        if [ "$_unit" = 0 ] && [ -z "$_line" ]; then
+            # no root file: nothing sets it at boot; this console takes VGA by its escapes
+            cp "$TMP/console-colors" "$TMP/vga-colors"; CONSOLE_NOW=$TMP/vga-colors
+        elif [ "$MODE" = dry ]; then
             row would palette "the kernel's VGA sixteen again, the palette at boot gone (sudo)"
         elif root_ready palette; then
             cp "$TMP/console-colors" "$TMP/vga-colors"; CONSOLE_NOW=$TMP/vga-colors   # VGA on this console at the end
@@ -853,7 +877,8 @@ palette_off() {   # palette_off all|ours -- VGA again, the boot's palette gone, 
             fi
             if [ -n "$_line" ]; then
                 marked_text "$ROOT/etc/rc.local" "$PALETTE_MARK" > "$TMP/rc.local"
-                root_put "$TMP/rc.local" "$ROOT/etc/rc.local" || held=0
+                if [ "$(cat "$TMP/rc.local")" = '#!/bin/sh' ]; then root_do rm -f "$ROOT/etc/rc.local" || held=0   # the one spark-shell made
+                else root_put "$TMP/rc.local" "$ROOT/etc/rc.local" || held=0; fi
             fi
             if command -v setvtrgb >/dev/null 2>&1 && vt_here && [ "$(vt_live)" != "$(head -1 "$TMP/vga.rgb")" ]; then
                 root_do setvtrgb vga >/dev/null 2>&1 || held=0
@@ -877,15 +902,22 @@ palette_off() {   # palette_off all|ours -- VGA again, the boot's palette gone, 
 
 # macOS: the palette and the font are a Terminal.app profile, written
 # by the helper (lib/terminal_profile.py, python3 is every Mac's). The
-# stamp says what the profile has, so `on` calls it only on a change.
+# stamp says what the profile had when it was written, and the helper
+# says it is still there, so `on` imports it again only when it changed
+# or went (Terminal > Settings > Profiles can delete it).
+terminal_has() { python3 "$REPO/lib/terminal_profile.py" has-profile >/dev/null 2>&1; }
 terminal_apply() {
     [ "$OS" = Darwin ] || return 0
     [ -f "$THEME_ENV" ] && [ -n "$THEME" ] && [ "$THEME" != none ] || return 0
     set -- $CONSOLE_FONT
     _face=${1:-Menlo-Regular}; _size=${2:-13}
     _want="$(cksum < "$THEME_ENV" | cut -d' ' -f1) $_face $_size"
-    if [ "$(cat "$TERMINAL_SEEN" 2>/dev/null)" = "$_want" ]; then ok terminal "Terminal.app's profile is the palette, in $_face $_size"; return 0; fi
-    need terminal "Terminal.app's profile from the palette, in $_face $_size" || return 0
+    _why="Terminal.app's profile from the palette, in $_face $_size"
+    if [ "$(cat "$TERMINAL_SEEN" 2>/dev/null)" = "$_want" ]; then
+        if terminal_has; then ok terminal "Terminal.app's profile is the palette, in $_face $_size"; return 0; fi
+        _why="Terminal.app lost the spark-shell profile: import it again, in $_face $_size"
+    fi
+    need terminal "$_why" || return 0
     if python3 "$REPO/lib/terminal_profile.py" apply "$THEME_ENV" "$_face" "$_size"; then
         mkdir -p "$STATE_DIR"; printf '%s\n' "$_want" > "$TERMINAL_SEEN"
         ok terminal "Terminal.app's profile is the palette, in $_face $_size"
@@ -975,8 +1007,10 @@ font_off() {   # every font file with a .spark-shell-orig: its font lines back, 
         [ -e "$file.spark-shell-orig" ] || continue
         if [ "$MODE" = dry ]; then row would font "the font lines of $file back from ${file##*/}.spark-shell-orig (sudo)"; continue; fi
         root_ready font || continue
-        root_read "$file.spark-shell-orig" > "$TMP/font.orig"
-        if [ -e "$file" ]; then root_read "$file" > "$TMP/font.cur"; font_restored "$TMP/font.cur" "$TMP/font.orig" "$(font_keys "$shape")" = > "$TMP/font"
+        root_read "$file.spark-shell-orig" > "$TMP/font.orig" || { row todo font "root could not read ${file##*/}.spark-shell-orig -- spark-shell off again"; continue; }
+        if [ -e "$file" ]; then
+            root_read "$file" > "$TMP/font.cur" || { row todo font "root could not read $file -- spark-shell off again"; continue; }
+            font_restored "$TMP/font.cur" "$TMP/font.orig" "$(font_keys "$shape")" = > "$TMP/font"
         else cp "$TMP/font.orig" "$TMP/font"; fi
         root_put "$TMP/font" "$file" && root_do rm -f "$file.spark-shell-orig"
         if [ "$shape" = rcconf ]; then row ok font "the font lines of $file are back: the console's own font at the next boot"
@@ -1015,22 +1049,29 @@ console_fonts() {   # -> "FACE SIZE" lines, sorted; nothing when the fonts dir i
 }
 MAC_FACES="Menlo-Regular Monaco SFMono-Regular Courier CourierNewPSMT AndaleMono JetBrainsMono-Regular FiraCode-Regular Hack-Regular SourceCodePro-Regular CascadiaCode-Regular UbuntuMono-Regular DejaVuSansMono IBMPlexMono"
 MAC_SYSTEM_FACES="Menlo-Regular Monaco SFMono-Regular Courier CourierNewPSMT AndaleMono"
-mac_face_here() {   # a face every Mac ships, or one Spotlight finds (SPARK_SHELL_MAC_FONTS pins them in tests)
+mac_face_here() {   # a face every Mac ships, one Spotlight finds, else the helper's word (SPARK_SHELL_MAC_FONTS pins them in tests)
     if [ -n "${SPARK_SHELL_MAC_FONTS:-}" ]; then case " $SPARK_SHELL_MAC_FONTS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; fi
     case " $MAC_SYSTEM_FACES " in *" $1 "*) return 0 ;; esac
-    [ -n "$(mdfind "kMDItemFonts == '$1'" 2>/dev/null | head -1)" ]
+    [ -n "$(mdfind "kMDItemFonts == '$1'" 2>/dev/null | head -1)" ] && return 0
+    python3 "$REPO/lib/terminal_profile.py" has-font "$1" >/dev/null 2>&1   # Spotlight off: the helper does not refuse on no evidence
 }
 
 # --------------------------------------------------------- a quiet login
 # No distro notice, no kernel line, a bare `login:`: /etc/motd empties,
 # update-motd.d/10-uname stops running, and /etc/issue holds only the
-# cursor-on escape (a quiet boot hides the cursor, and the login prompt
-# needs it back). The first copies are FILE.spark-shell-orig; off puts
-# each back only while the live file is still spark-shell's.
+# cursor-on escape (a belt: a console that lost its cursor gets it back
+# at the login prompt). The first copies are FILE.spark-shell-orig, and
+# 10-uname's mark is UNAME_OFF. off acts on those records alone: a file
+# back only while the live one is still spark-shell's (the issue empty or
+# the escape), never an issue it did not write, and nothing at all while
+# spark core's own copy, /etc/issue.orig, is there (the login is spark's).
+UNAME_OFF=$STATE_DIR/uname.off
 login_quiet() {   # is the login quiet now?
     [ ! -s "$ROOT/etc/motd" ] && [ ! -x "$ROOT/etc/update-motd.d/10-uname" ] && [ "$(cat "$ROOT/etc/issue" 2>/dev/null)" = "$CURSOR_ON" ]
 }
-login_traces() { [ -e "$ROOT/etc/motd.spark-shell-orig" ] || [ -e "$ROOT/etc/issue.spark-shell-orig" ] || [ "$(cat "$ROOT/etc/issue" 2>/dev/null)" = "$CURSOR_ON" ]; }
+login_traces() {   # spark-shell's own records of a quiet login, and no spark core copy beside them
+    [ ! -e "$ROOT/etc/issue.orig" ] && { [ -e "$ROOT/etc/motd.spark-shell-orig" ] || [ -e "$ROOT/etc/issue.spark-shell-orig" ] || [ -e "$UNAME_OFF" ]; }
+}
 login_apply() {
     [ "$OS" != Darwin ] || return 0
     if [ "$QUIET_LOGIN" != yes ]; then login_off; return 0; fi
@@ -1041,12 +1082,16 @@ login_apply() {
     _mo=$ROOT/etc/motd; _is=$ROOT/etc/issue; _un=$ROOT/etc/update-motd.d/10-uname
     if [ -s "$_mo" ] && [ ! -e "$_mo.spark-shell-orig" ]; then root_do cp "$_mo" "$_mo.spark-shell-orig"; fi
     [ ! -s "$_mo" ] || { : > "$TMP/empty"; root_put "$TMP/empty" "$_mo"; }
-    [ ! -x "$_un" ] || root_do chmod -x "$_un"
-    if [ -s "$_is" ] && [ "$(cat "$_is")" != "$CURSOR_ON" ] && [ ! -e "$_is.spark-shell-orig" ]; then root_do cp "$_is" "$_is.spark-shell-orig"; fi
-    printf '%s' "$CURSOR_ON" > "$TMP/issue"; root_put "$TMP/issue" "$_is"
+    if [ -x "$_un" ]; then root_do chmod -x "$_un"; mkdir -p "$STATE_DIR"; : > "$UNAME_OFF"; fi
+    if [ "$(cat "$_is" 2>/dev/null)" != "$CURSOR_ON" ]; then   # an issue that is the escape already is not taken over
+        if [ -e "$_is.spark-shell-orig" ]; then :
+        elif [ -e "$_is" ]; then root_do cp "$_is" "$_is.spark-shell-orig"
+        else : > "$TMP/empty"; root_put "$TMP/empty" "$_is.spark-shell-orig"; fi
+        printf '%s' "$CURSOR_ON" > "$TMP/issue"; root_put "$TMP/issue" "$_is"
+    fi
     ok quiet "login: a bare login prompt, no notice, no kernel line (the originals: *.spark-shell-orig)"
 }
-login_off() {   # motd and issue back from their copies while still spark-shell's; a stale copy of yours only goes
+login_off() {   # motd, issue and 10-uname back by spark-shell's own records; a stale copy of yours only goes
     [ "$OS" != Darwin ] || return 0
     login_traces || return 0
     if [ "$MODE" = dry ]; then row would quiet "login: the notice, the kernel line and the login banner back (sudo)"; return 0; fi
@@ -1057,15 +1102,15 @@ login_off() {   # motd and issue back from their copies while still spark-shell'
         if [ ! -s "$_mo" ]; then root_do cp "$_mo.spark-shell-orig" "$_mo"; back="$back motd"; fi
         root_do rm -f "$_mo.spark-shell-orig"
     fi
-    _ours=0; [ "$(cat "$_is" 2>/dev/null)" = "$CURSOR_ON" ] && _ours=1
     if [ -e "$_is.spark-shell-orig" ]; then
-        if [ "$_ours" = 1 ]; then root_do cp "$_is.spark-shell-orig" "$_is"; back="$back issue"; fi
+        case $(cat "$_is" 2>/dev/null) in ''|"$CURSOR_ON") root_do cp "$_is.spark-shell-orig" "$_is"; back="$back issue" ;; esac
         root_do rm -f "$_is.spark-shell-orig"
-    elif [ "$_ours" = 1 ]; then
-        : > "$TMP/empty"; root_put "$TMP/empty" "$_is"; back="$back issue"
     fi
-    case $back in *motd*) [ ! -f "$_un" ] || [ -x "$_un" ] || root_do chmod +x "$_un" ;; esac
-    if [ -n "$back" ]; then row ok quiet "login: the login screen is as it was ($(printf '%s' "${back# }" | sed 's/ /, /'))"
+    if [ -e "$UNAME_OFF" ]; then
+        if [ -f "$_un" ] && [ ! -x "$_un" ]; then root_do chmod +x "$_un"; back="$back 10-uname"; fi
+        rm -f "$UNAME_OFF"
+    fi
+    if [ -n "$back" ]; then row ok quiet "login: the login screen is as it was ($(printf '%s' "${back# }" | sed 's/ /, /g'))"
     else row ok quiet "login: spark-shell's stale copies are gone, yours stay as they are"; fi
 }
 
@@ -1149,11 +1194,14 @@ boot_quiet() {   # boot_quiet SHAPE -- is every trace of a quiet boot in place?
     esac
 }
 boot_kind() { if [ "$1" = uki ]; then echo uki; else echo grub; fi; }
-loader_timeout() {   # loader_timeout N -- systemd-boot's menu wait, the file's first copy kept
+loader_timeout() {   # loader_timeout N -- systemd-boot's menu wait, the file's first copy kept (root reads under /boot)
     _lc=$ROOT/$LOADER_CONF
     [ -d "$ROOT/boot/loader" ] || root_do test -d "$ROOT/boot/loader" 2>/dev/null || return 0
-    root_read "$_lc" > "$TMP/loader"
-    [ -e "$_lc.spark-shell-orig" ] || root_do test -e "$_lc.spark-shell-orig" 2>/dev/null || root_put "$TMP/loader" "$_lc.spark-shell-orig"
+    if ! root_exists "$_lc"; then : > "$TMP/loader"   # none yet: the copy says so, empty
+    elif ! root_read "$_lc" > "$TMP/loader"; then
+        row todo quiet "boot: root could not read /$LOADER_CONF, so its timeout stays -- spark-shell on again"; acting=0; return 0
+    fi
+    root_exists "$_lc.spark-shell-orig" || root_put "$TMP/loader" "$_lc.spark-shell-orig"
     font_text "$TMP/loader" "timeout $1" ' ' > "$TMP/loader.new"
     root_put "$TMP/loader.new" "$_lc"
 }
@@ -1221,10 +1269,14 @@ boot_off() {   # spark-shell's boot traces out, per shape found, then the rebuil
             LC_ALL=C sed "s/^$SPLASH_MARK//" "$p" > "$TMP/preset"; root_put "$TMP/preset" "$p"
         done
         _lc=$ROOT/$LOADER_CONF
-        if root_do test -e "$_lc.spark-shell-orig" 2>/dev/null; then
-            root_read "$_lc.spark-shell-orig" > "$TMP/loader.orig"; root_read "$_lc" > "$TMP/loader"
-            font_restored "$TMP/loader" "$TMP/loader.orig" timeout ' ' > "$TMP/loader.new"
-            root_put "$TMP/loader.new" "$_lc" && root_do rm -f "$_lc.spark-shell-orig"
+        if root_exists "$_lc.spark-shell-orig"; then
+            : > "$TMP/loader"
+            if root_read "$_lc.spark-shell-orig" > "$TMP/loader.orig" && { ! root_exists "$_lc" || root_read "$_lc" > "$TMP/loader"; }; then
+                font_restored "$TMP/loader" "$TMP/loader.orig" timeout ' ' > "$TMP/loader.new"
+                root_put "$TMP/loader.new" "$_lc" && root_do rm -f "$_lc.spark-shell-orig"
+            else
+                row todo quiet "boot: root could not read /$LOADER_CONF, so its timeout stays -- spark-shell off again"; acting=0
+            fi
         fi
     fi
     _held=1
@@ -1727,7 +1779,7 @@ cmd_font() {   # font [FACE SIZE|list|none]
         mac_face_here "$face" || refuse_in font "no font named $face is installed here (spark-shell font list shows them)"
     else
         is_wsl && refuse_in font "WSL has no console: the font is Windows Terminal's."
-        [ -n "$(console_shape)" ] || refuse_in font "there is no console-setup, vconsole.conf or rc.conf here, so the console font stays as it is."
+        [ -n "$(console_shape)" ] || refuse_in font "this Linux has no console-setup, vconsole.conf or rc.conf."
         printf '%s' "$size" | grep -qE '^[0-9]+x[0-9]+$' || refuse_in font "$size is not a size: WxH on the console (16x32)"
         console_fonts > "$TMP/fonts"
         if [ -s "$TMP/fonts" ]; then
@@ -1835,6 +1887,7 @@ check_theme() {
         if [ "$(cat "$TERMINAL_SEEN" 2>/dev/null)" != "$(cksum < "$THEME_ENV" | cut -d' ' -f1) ${1:-Menlo-Regular} ${2:-13}" ]; then
             chk theme warn "$THEME: Terminal.app's profile is not the palette's yet" "spark-shell on"; return
         fi
+        terminal_has || { chk theme warn "$THEME: Terminal.app has no spark-shell profile" "spark-shell on"; return; }
         chk theme ok "$THEME: theme.env and Terminal.app's profile are current"; return
     fi
     if console_linux; then
@@ -2487,8 +2540,8 @@ desk_list() {
 # The desktop verb. `desktop on|off` are spellings of `on desktop` and
 # `off desktop` (one path, cmd_on and cmd_off). Alone: start sway now,
 # on this console. A child, never exec: the EXIT trap still cleans TMP,
-# and the cursor comes back after quiet boot's
-# vt.global_cursor_default=0. sway's stderr goes to a log; its exit
+# and the cursor comes back after sway (a belt: a console that lost it
+# gets it back). sway's stderr goes to a log; its exit
 # status is ours. Each refusal is one line and exit 1.
 cmd_desktop() {
     config_load

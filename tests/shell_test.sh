@@ -1179,7 +1179,8 @@ if [ -e "$H/root/etc/default/grub.d/zz-spark-shell-quiet.cfg" ] || grep -q 'spar
 else echo 'linux /vmlinuz' > "$H/root/boot/grub/grub.cfg"; fi
 EOF
     printf '#!/bin/sh\necho "mkinitcpio $*" >> "%s/log"\n[ ! -e "%s/fail" ]\n' "$H" "$H" > "$H/lx/mkinitcpio"
-    printf '#!/bin/sh\necho "python3 $*" >> "%s/log"\n' "$H" > "$H/lx/python3"
+    # the helper: has-profile fails once $H/gone is there, remove once $H/stuck is
+    printf '#!/bin/sh\necho "python3 $*" >> "%s/log"\ncase $2 in has-profile) [ ! -e "%s/gone" ] ;; remove) [ ! -e "%s/stuck" ] ;; esac\n' "$H" "$H" "$H" > "$H/lx/python3"
     cat > "$H/lx/systemctl" <<'EOF'
 #!/bin/sh
 st=${SPARK_SHELL_ROOT:-$HOME/root}/units
@@ -1281,6 +1282,24 @@ ck=$(L check || true)
 printf '%s\n' "$ck" | grep -q '^ok     theme        test:' && ok "check (runit): the theme row is ok" || bad "check runit" "$(printf '%s\n' "$ck" | grep theme)"
 L theme none >/dev/null
 cmp -s "$H/root/etc/rc.local" "$H/rc.local.orig" && ok "theme none (runit): /etc/rc.local byte for byte as it was" || bad "rc.local back" "$(cat "$H/root/etc/rc.local")"
+printf '#!/bin/sh\necho hello\nexit 0' > "$H/root/etc/rc.local"; cp "$H/root/etc/rc.local" "$H/rc.local.orig"   # a last line with no newline
+L theme test >/dev/null
+sed -n 3p "$H/root/etc/rc.local" | grep -q ' #spark-shell-palette#$' && [ "$(tail -c 6 "$H/root/etc/rc.local")" = 'exit 0' ] \
+    && printf '%s\n' "$(L check || true)" | grep -q '^ok     theme        test:' && ok "theme test (runit): the line goes before a last exit 0, and check reads it there" || bad "rc.local exit 0" "$(cat "$H/root/etc/rc.local")"
+L theme none >/dev/null
+cmp -s "$H/root/etc/rc.local" "$H/rc.local.orig" && ok "theme none (runit): byte for byte again, the last line still without a newline" || bad "rc.local exit back" "$(od -c "$H/root/etc/rc.local" | tail -3)"
+rm -f "$H/root/etc/rc.local"
+L theme test >/dev/null
+[ "$(head -1 "$H/root/etc/rc.local")" = '#!/bin/sh' ] && [ "$(wc -l < "$H/root/etc/rc.local" | tr -d ' ')" = 2 ] && ok "theme test (runit): no rc.local, one made with the shebang and the line" || bad "rc.local made" "$(cat "$H/root/etc/rc.local" 2>&1)"
+L theme none >/dev/null
+[ ! -e "$H/root/etc/rc.local" ] && ok "theme none (runit): the rc.local spark-shell made is gone" || bad "rc.local made gone" "$(cat "$H/root/etc/rc.local")"
+# no root file (no systemd, no runit): theme none asks no root, sets no VGA with setvtrgb
+fresh
+console_stubs Linux
+palette_fixture test '#fe8019'
+L theme test >/dev/null; : > "$H/log"
+L theme none >/dev/null
+[ ! -e "$HOME/.config/spark-shell/console-colors" ] && ! grep -q setvtrgb "$H/log" && ok "theme none: only the files in ~/.config, no root asked" || bad "palette off no root" "$(cat "$H/log")"
 
 # on applies THEME from the config before the renders; off hands the palette back
 fresh
@@ -1364,7 +1383,7 @@ cmp -s "$H/root/etc/rc.conf" "$H/rc.orig" && ok "font none (rc.conf): byte for b
 fresh
 console_stubs Linux
 rc=0; out=$(L font ter-132n 16x32 2>&1) || rc=$?
-[ "$rc" = 1 ] && [ "$out" = "spark-shell font: there is no console-setup, vconsole.conf or rc.conf here, so the console font stays as it is." ] && ok "font: no console file here, one sentence" || bad "font no shape" "rc=$rc $out"
+[ "$rc" = 1 ] && [ "$out" = "spark-shell font: this Linux has no console-setup, vconsole.conf or rc.conf." ] && ok "font: no console file here, one sentence" || bad "font no shape" "rc=$rc $out"
 rc=0; out=$(WSL_DISTRO_NAME=Debian L font ter-132n 16x32 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell font: WSL has no console: the font is Windows Terminal's." ] && ok "font on WSL: one sentence" || bad "font wsl" "rc=$rc $out"
 
@@ -1391,6 +1410,24 @@ L quiet login off >/dev/null
 [ "$(cat "$H/root/etc/motd")" = 'mine now' ] && [ ! -e "$H/root/etc/motd.spark-shell-orig" ] && cmp -s "$H/root/etc/issue" "$H/issue.orig" \
     && ok "quiet login off: a motd you changed since stays yours, only the stale copy goes" || bad "quiet login yours" "$(cat "$H/root/etc/motd")"
 [ "$(L quiet login)" = "login  off: the distro's notice and the kernel line (spark-shell quiet login on)" ] && ok "quiet login: bare says the state" || bad "quiet login show" "$(L quiet login)"
+# only spark-shell's own records: never an escape-only issue it did not
+# write, nothing while spark core's /etc/issue.orig is there
+printf '%s' "${esc}[?25h" > "$H/root/etc/issue"
+L quiet login off >/dev/null
+[ "$(cat "$H/root/etc/issue")" = "${esc}[?25h" ] && ok "quiet login off: an escape-only issue spark-shell did not write stays" || bad "foreign issue" "$(od -c "$H/root/etc/issue")"
+printf 'Debian\n' > "$H/root/etc/issue.orig"; printf 'ours\n' > "$H/root/etc/issue.spark-shell-orig"
+L quiet login off >/dev/null
+[ "$(cat "$H/root/etc/issue")" = "${esc}[?25h" ] && [ -e "$H/root/etc/issue.orig" ] && [ -e "$H/root/etc/issue.spark-shell-orig" ] \
+    && ok "quiet login off: nothing moves while spark core's /etc/issue.orig is there" || bad "spark core issue" "$(ls "$H/root/etc")"
+rm -f "$H/root/etc/issue.orig"; : > "$H/root/etc/issue"
+L quiet login off >/dev/null
+[ "$(cat "$H/root/etc/issue")" = ours ] && [ ! -e "$H/root/etc/issue.spark-shell-orig" ] && ok "quiet login off: an empty issue comes back from spark-shell's copy" || bad "empty issue" "$(cat "$H/root/etc/issue")"
+# Debian 13 has no /etc/motd: 10-uname comes back by its own mark
+rm -f "$H/root/etc/motd"; chmod +x "$H/root/etc/update-motd.d/10-uname"
+L quiet login on >/dev/null
+[ ! -x "$H/root/etc/update-motd.d/10-uname" ] && [ -e "$HOME/.local/state/spark-shell/uname.off" ] && ok "quiet login on, no motd: 10-uname off, its mark kept" || bad "uname off" "$(ls -la "$H/root/etc/update-motd.d")"
+L quiet login off >/dev/null
+[ -x "$H/root/etc/update-motd.d/10-uname" ] && [ ! -e "$HOME/.local/state/spark-shell/uname.off" ] && ok "quiet login off, no motd: 10-uname runs again" || bad "uname back" "$(ls -la "$H/root/etc/update-motd.d")"
 rc=0; out=$(L quiet loud on 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell quiet: loud is not a thing to quiet (login and boot are)" ] && ok "quiet WORD: an unknown word is one sentence" || bad "quiet word" "rc=$rc $out"
 
@@ -1404,7 +1441,7 @@ L quiet boot on >/dev/null
 d=$H/root/etc/default/grub.d/zz-spark-shell-quiet.cfg
 [ "$(cat "$d")" = "GRUB_TIMEOUT=0
 GRUB_TIMEOUT_STYLE=hidden
-GRUB_CMDLINE_LINUX_DEFAULT=\"\$GRUB_CMDLINE_LINUX_DEFAULT quiet splash loglevel=3 systemd.show_status=false udev.log_level=3 vt.global_cursor_default=0 fbcon=nodefer\"" ] \
+GRUB_CMDLINE_LINUX_DEFAULT=\"\$GRUB_CMDLINE_LINUX_DEFAULT quiet splash loglevel=3 systemd.show_status=false udev.log_level=3 fbcon=nodefer\"" ] \
     && cmp -s "$H/root/etc/default/grub" "$H/grub.orig" && grep -qx update-grub "$H/log" && [ ! -e "$HOME/.local/state/spark-shell/boot-rebuild" ] \
     && ok "quiet boot on (Debian): the drop-in, update-grub, /etc/default/grub untouched" || bad "quiet boot grub" "$(cat "$d" 2>&1)"
 out=$(L quiet boot on --dry-run)
@@ -1451,12 +1488,21 @@ printf 'ALL_kver="/boot/vmlinuz-linux"\ndefault_uki="/efi/EFI/Linux/arch-linux.e
 printf 'timeout 3\n#console-mode max\n' > "$H/root/boot/loader/loader.conf"
 cp "$H/root/etc/mkinitcpio.d/linux.preset" "$H/preset.orig"; cp "$H/root/boot/loader/loader.conf" "$H/loader.orig"
 L quiet boot on >/dev/null
-[ "$(cat "$H/root/etc/cmdline.d/zz-spark-shell-quiet.conf")" = 'quiet splash loglevel=3 systemd.show_status=false udev.log_level=3 vt.global_cursor_default=0 fbcon=nodefer' ] \
+[ "$(cat "$H/root/etc/cmdline.d/zz-spark-shell-quiet.conf")" = 'quiet splash loglevel=3 systemd.show_status=false udev.log_level=3 fbcon=nodefer' ] \
     && grep -q '^#spark-shell-quiet# default_options=' "$H/root/etc/mkinitcpio.d/linux.preset" && [ "$(head -1 "$H/root/boot/loader/loader.conf")" = 'timeout 0' ] && grep -qx 'mkinitcpio -P' "$H/log" \
     && ok "quiet boot on (Arch UKI): the drop-in, the splash marked off, timeout 0, mkinitcpio -P" || bad "quiet boot uki" "$(cat "$H/root/etc/mkinitcpio.d/linux.preset" "$H/root/boot/loader/loader.conf")"
 L quiet boot off >/dev/null
 [ ! -e "$H/root/etc/cmdline.d/zz-spark-shell-quiet.conf" ] && cmp -s "$H/root/etc/mkinitcpio.d/linux.preset" "$H/preset.orig" && cmp -s "$H/root/boot/loader/loader.conf" "$H/loader.orig" \
     && [ "$(grep -c 'mkinitcpio -P' "$H/log")" = 2 ] && ok "quiet boot off (Arch UKI): the preset and loader.conf byte for byte, the image rebuilt" || bad "uki off" "$(cat "$H/root/boot/loader/loader.conf")"
+# the ESP is vfat: a chmod there fails, and quiet boot on still reaches mkinitcpio -P
+mkdir -p "$H/esp"
+printf '#!/bin/sh\nfor a; do case $a in %s/root/boot/*) echo "chmod: not permitted" >&2; exit 1 ;; esac; done\nexec /bin/chmod "$@"\n' "$H" > "$H/esp/chmod"; /bin/chmod +x "$H/esp/chmod"
+rm -f "$H/root/boot/loader/loader.conf"; : > "$H/log"
+rc=0; PATH=$H/esp:$H/lx:$PATH sh "$SH" quiet boot on >/dev/null 2>&1 || rc=$?
+[ "$rc" = 0 ] && [ "$(cat "$H/root/boot/loader/loader.conf")" = 'timeout 0' ] && [ -e "$H/root/boot/loader/loader.conf.spark-shell-orig" ] && grep -qx 'mkinitcpio -P' "$H/log" \
+    && ok "quiet boot on (Arch UKI, vfat ESP): a failed chmod is no error, timeout 0 and mkinitcpio -P" || bad "uki vfat" "rc=$rc $(cat "$H/log")"
+PATH=$H/esp:$H/lx:$PATH sh "$SH" quiet boot off >/dev/null 2>&1
+[ ! -s "$H/root/boot/loader/loader.conf" ] && [ ! -e "$H/root/boot/loader/loader.conf.spark-shell-orig" ] && ok "quiet boot off (Arch UKI, vfat ESP): no timeout line of spark-shell's left" || bad "uki vfat off" "$(cat "$H/root/boot/loader/loader.conf")"
 # refused in one sentence: an Arch without a UKI, WSL, macOS
 rm -f "$H/root/etc/mkinitcpio.d/linux.preset"
 rc=0; out=$(L quiet boot on 2>&1) || rc=$?
@@ -1527,15 +1573,25 @@ L theme test >/dev/null
 grep -qx "python3 $REPO/lib/terminal_profile.py apply $HOME/.config/spark/theme.env Menlo-Regular 13" "$H/log" && [ ! -e "$H/root/etc" ] \
     && ok "macOS: theme test runs the helper with theme.env, Menlo-Regular 13, no root file" || bad "mac theme" "$(cat "$H/log")"
 : > "$H/log"; L theme test >/dev/null
-[ ! -s "$H/log" ] && ok "macOS: theme test again leaves the profile alone" || bad "mac idempotent" "$(cat "$H/log")"
+[ "$(cat "$H/log")" = "python3 $REPO/lib/terminal_profile.py has-profile" ] && ok "macOS: theme test again asks the helper, and leaves the profile alone" || bad "mac idempotent" "$(cat "$H/log")"
+: > "$H/gone"; : > "$H/log"
+ck=$(L check || true)
+printf '%s\n' "$ck" | grep -q "^warn   theme        test: Terminal.app has no spark-shell profile -- spark-shell on$" && ok "macOS: check warns when the profile is gone, the stamp alone is not enough" || bad "mac check gone" "$(printf '%s\n' "$ck" | grep theme)"
+L theme test >/dev/null
+grep -qx "python3 $REPO/lib/terminal_profile.py apply $HOME/.config/spark/theme.env Menlo-Regular 13" "$H/log" && ok "macOS: theme test imports the profile again when it is gone" || bad "mac reimport" "$(cat "$H/log")"
+rm -f "$H/gone"
 rc=0; out=$(SPARK_SHELL_MAC_FONTS="Menlo-Regular Monaco" L font VGA 14 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell font: no font named VGA is installed here (spark-shell font list shows them)" ] && ok "macOS: a face this Mac lacks is refused" || bad "mac font refused" "rc=$rc $out"
 SPARK_SHELL_MAC_FONTS="Menlo-Regular Monaco" L font Monaco 14 >/dev/null
 grep -qx "python3 $REPO/lib/terminal_profile.py apply $HOME/.config/spark/theme.env Monaco 14" "$H/log" && ok "macOS: font Monaco 14 rewrites the profile" || bad "mac font" "$(cat "$H/log")"
 rc=0; out=$(L quiet login on 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell quiet: macOS has no login notice or boot menu to quiet." ] && ok "macOS: quiet login on is one sentence" || bad "mac quiet" "rc=$rc $out"
-: > "$H/log"; L theme none >/dev/null
-grep -qx "python3 $REPO/lib/terminal_profile.py remove" "$H/log" && [ ! -e "$HOME/.config/spark/theme.env" ] && ok "macOS: theme none removes the profile and theme.env" || bad "mac none" "$(cat "$H/log")"
+: > "$H/stuck"; out=$(L theme none)
+printf '%s\n' "$out" | grep -q '^todo   terminal     Terminal.app kept the profile' && [ -f "$HOME/.local/state/spark-shell/terminal.seen" ] \
+    && ok "macOS: a remove that failed is a todo, and the stamp stays" || bad "mac remove stuck" "$out"
+rm -f "$H/stuck"; : > "$H/log"; L theme none >/dev/null
+grep -qx "python3 $REPO/lib/terminal_profile.py remove" "$H/log" && [ ! -e "$HOME/.config/spark/theme.env" ] && [ ! -e "$HOME/.local/state/spark-shell/terminal.seen" ] \
+    && ok "macOS: theme none removes the profile and theme.env" || bad "mac none" "$(cat "$H/log")"
 rc=0; out=$(L theme -h 2>&1) || rc=$?
 [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^  spark-shell theme \[NAME|none|list\]$' && ok "theme -h: the help answers first" || bad "theme -h" "rc=$rc $out"
 

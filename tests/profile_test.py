@@ -3,6 +3,7 @@
 # runnable with Apple's /usr/bin/python3. SPARK_SHELL_NO_APPLY=1 on every
 # run of the helper: Terminal.app is never touched, and HOME is a throwaway.
 
+import io
 import os
 import plistlib
 import subprocess
@@ -125,6 +126,39 @@ if sys.platform == "darwin":
     ok(rc == 0, "has-font Menlo-Regular: exit 0 on a Mac")
 rc, out, err = helper("has-font", "NoSuchFace-Regular")
 ok(rc in (0, 1), "has-font runs without the seam")
+
+rc, out, err = helper("has-profile")
+ok(rc in (0, 1) and out == "", "has-profile runs, exit 0 or 1, nothing printed (%d %r)" % (rc, out))
+
+# --- our names: exact, never a prefix -----------------------------------
+# in process, with the preferences faked: Terminal.app is never touched
+os.environ["XDG_CONFIG_HOME"] = os.path.join(TMP, "names")
+os.makedirs(os.path.join(TMP, "names", "spark", "themes"))
+open(os.path.join(TMP, "names", "spark", "themes", "yours.env"), "w").close()
+names = tp.our_names()
+for k in ("spark-shell", "spark-shell 1", "spark-nord", "spark-gruvbox-dark 2", "spark-yours"):
+    ok(tp._ours(k, names), "%s is ours" % k)
+for k in ("sparkle", "spark", "spark-mine", "spark-shell-old", "spark-nord x", "Basic"):
+    ok(not tp._ours(k, names), "%s is not ours" % k)
+seen = {}
+tp._terminal_prefs = lambda path: {"Window Settings": {"spark-shell": {}, "spark-nord 1": {}, "sparkle": {}, "Basic": {}},
+                                   "Default Window Settings": "spark-shell", "Startup Window Settings": "sparkle"}
+tp._import_prefs = lambda prefs, path: seen.update(prefs) or True
+gone, written = tp.remove_profiles()
+ok(written and gone == ["spark-nord 1", "spark-shell"], "remove_profiles takes ours: %r" % gone)
+ok(sorted(seen["Window Settings"]) == ["Basic", "sparkle"], "sparkle and Basic stay: %r" % seen["Window Settings"])
+ok(seen["Default Window Settings"] == "Basic" and seen["Startup Window Settings"] == "sparkle",
+   "the default falls back to Basic, a startup of yours stays")
+tp._import_prefs = lambda prefs, path: False
+saved = (tp.IS_MAC, os.environ.pop("SPARK_SHELL_NO_APPLY", None))
+tp.IS_MAC = True
+sys.stderr, said = io.StringIO(), sys.stderr
+rc = tp.cmd_remove()
+sys.stderr, said = said, sys.stderr.getvalue()
+ok(rc == 1 and "could not write" in said, "remove exits 1, and says so, when the preferences could not be written")
+tp.IS_MAC = saved[0]
+if saved[1] is not None:
+    os.environ["SPARK_SHELL_NO_APPLY"] = saved[1]
 
 rc, out, err = helper("nonsense")
 ok(rc == 2 and "usage" in err, "an unknown verb: the usage, exit 2")

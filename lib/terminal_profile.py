@@ -8,8 +8,10 @@
 #       build the spark-shell profile, import it, make it the default
 #       and set it on every open window
 #   terminal_profile.py remove
-#       remove the spark-shell profile (and any spark* profile an older
-#       spark left), the default back to Basic
+#       remove the spark-shell profile (and the spark-PALETTE profiles an
+#       older spark left), the default back to Basic
+#   terminal_profile.py has-profile
+#       exit 0 when Terminal.app holds the spark-shell profile, 1 when not
 #   terminal_profile.py fonts
 #       the monospace faces installed here, one PostScript name per line
 #   terminal_profile.py has-font FACE
@@ -25,11 +27,18 @@
 import os
 import plistlib
 import subprocess
+import shutil
 import sys
+import tempfile
 import time
 
 NAME = "spark-shell"
 IS_MAC = sys.platform == "darwin"
+
+# the palettes spark 1.61 shipped: it named its profiles spark-PALETTE
+# (and spark-NAME for a palette of yours in ~/.config/spark/themes)
+SPARK_PALETTES = ("catppuccin-mocha", "dracula", "everforest-dark", "gruvbox-dark", "nord",
+                  "rose-pine", "selenized-dark", "solarized-light", "tokyonight-night")
 
 THEME_KEYS = (["THEME_BG", "THEME_FG", "THEME_ACCENT", "THEME_MUTED"]
               + ["THEME_ANSI_%d" % i for i in range(16)])
@@ -259,8 +268,11 @@ def _terminal_prefs(path):
 
 def _import_prefs(prefs, path):
     tmp = path + ".prefs"
-    with open(tmp, "wb") as f:
-        plistlib.dump(prefs, f, fmt=plistlib.FMT_BINARY)
+    try:
+        with open(tmp, "wb") as f:
+            plistlib.dump(prefs, f, fmt=plistlib.FMT_BINARY)
+    except (OSError, TypeError, ValueError):
+        return False
     rc, _ = run(["defaults", "import", "com.apple.Terminal", tmp], timeout=10)
     try:
         os.remove(tmp)
@@ -289,37 +301,62 @@ def _install_profile(name, d, path):
     return _import_prefs(prefs, path)
 
 
-def _ours(k):
-    """spark-shell's profile, its duplicates, and any spark* an older spark left."""
-    return k.startswith("spark")
+def our_names():
+    """The exact profile names that are ours: spark-shell, and the
+    spark-PALETTE names spark 1.61 wrote. Never a prefix: a profile of
+    yours named sparkle, or spark-mine, stays."""
+    names = {NAME} | {"spark-" + p for p in SPARK_PALETTES}
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    try:
+        names |= {"spark-" + f[:-4] for f in os.listdir(os.path.join(base, "spark", "themes"))
+                  if f.endswith(".env")}
+    except OSError:
+        pass
+    return names
 
 
-def spark_profiles():
-    """The spark* profile names Terminal.app's preferences hold."""
-    prefs = _terminal_prefs(os.path.join(config_dir(), "terminal"))
-    ws = prefs.get("Window Settings")
-    return sorted(k for k in ws if _ours(k)) if isinstance(ws, dict) else []
+def _ours(k, names):
+    """One of our names, or its duplicate ("NAME 1") from an import by open."""
+    head, _, tail = k.rpartition(" ")
+    return k in names or (bool(head) and tail.isdigit() and head in names)
+
+
+def _prefs_now():
+    """Terminal.app's preferences, read through a scratch directory."""
+    tmp = tempfile.mkdtemp(prefix="spark-shell-terminal-")
+    try:
+        return _terminal_prefs(os.path.join(tmp, "terminal"))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def has_profile():
+    """True when Terminal.app's preferences hold the spark-shell profile."""
+    ws = _prefs_now().get("Window Settings") if IS_MAC else None
+    return isinstance(ws, dict) and NAME in ws
 
 
 def remove_profiles():
-    """Every spark* profile leaves Terminal.app's preferences; a default or
-    startup setting that named one falls back to Basic. Returns the names
-    removed. Open windows keep their look."""
+    """Our profiles leave Terminal.app's preferences; a default or startup
+    setting that named one falls back to Basic. Returns (the names
+    removed, True), or ([], False) when the preferences could not be
+    written. Open windows keep their look."""
     path = os.path.join(config_dir(), "terminal")
     os.makedirs(config_dir(), exist_ok=True)
     prefs = _terminal_prefs(path)
     ws = prefs.get("Window Settings")
     if not isinstance(ws, dict):
-        return []
-    gone = sorted(k for k in ws if _ours(k))
+        return [], True
+    names = our_names()
+    gone = sorted(k for k in ws if _ours(k, names))
     if not gone:
-        return []
+        return [], True
     for k in gone:
         del ws[k]
     for key in ("Default Window Settings", "Startup Window Settings"):
-        if _ours(str(prefs.get(key, ""))):
+        if _ours(str(prefs.get(key, "")), names):
             prefs[key] = "Basic"
-    return gone if _import_prefs(prefs, path) else []
+    return (gone, True) if _import_prefs(prefs, path) else ([], False)
 
 
 # --- the verbs --------------------------------------------------------------
@@ -382,13 +419,16 @@ def cmd_apply(theme_env, face, size):
 
 def cmd_remove():
     if no_apply():
-        print("Terminal.app would lose the %s profile and any spark* profile, and Basic would be the default."
+        print("Terminal.app would lose the %s profile and the ones an older spark wrote, and Basic would be the default."
               % NAME)
         return 0
     if not IS_MAC:
         print("This machine is not a Mac, so there is no Terminal.app profile to remove.")
         return 0
-    gone = remove_profiles()
+    gone, written = remove_profiles()
+    if not written:
+        return err("could not write Terminal.app's preferences, so its profiles stay"
+                   " (Terminal > Settings > Profiles removes them)")
     if gone:
         print("Terminal.app lost %d profile%s (%s), and Basic is the default again."
               % (len(gone), "" if len(gone) == 1 else "s", ", ".join(gone)))
@@ -399,6 +439,7 @@ def cmd_remove():
 
 USAGE = """usage: terminal_profile.py apply THEME_ENV FACE SIZE
        terminal_profile.py remove
+       terminal_profile.py has-profile
        terminal_profile.py fonts
        terminal_profile.py has-font FACE"""
 
@@ -409,6 +450,8 @@ def main(argv):
         return cmd_apply(argv[1], argv[2], argv[3])
     if verb == "remove" and len(argv) == 1:
         return cmd_remove()
+    if verb == "has-profile" and len(argv) == 1:
+        return 0 if has_profile() else 1
     if verb == "fonts" and len(argv) == 1:
         for face in installed_fonts():
             print(face)

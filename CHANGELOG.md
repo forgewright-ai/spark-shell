@@ -17,8 +17,11 @@
   spark 1.61 with the Python 3 standard library only, so Apple's
   `/usr/bin/python3` runs it. `apply THEME_ENV FACE SIZE` builds the
   `spark-shell` profile, makes it the default and sets it on every
-  open window. `remove` takes it away with any `spark*` profile an
-  older spark left, and Basic is the default again. `fonts` and
+  open window. `remove` takes it away with the `spark-PALETTE` profiles
+  an older spark wrote, by their exact names (a `sparkle` of yours
+  stays), and Basic is the default again; a remove that could not
+  write exits 1. `has-profile` says whether the profile is still there,
+  so `on` and `check` never trust the stamp alone. `fonts` and
   `has-font FACE` answer from Spotlight. The key map spark carried for
   micro is gone: key bindings are an app's business, not the look's.
   `SPARK_SHELL_NO_APPLY=1` builds and prints and never touches
@@ -26,6 +29,19 @@
 - Void is supported: the terminal seat, the palette, the font and
   quiet. The desktop and the login box stay with the Debian and Arch
   families.
+- The login screen is handed back by spark-shell's own records alone:
+  its copies of `/etc/issue` and `/etc/motd` and a mark for 10-uname.
+  An issue it did not write stays, and nothing moves while spark's own
+  `/etc/issue.orig` is there.
+- The kernel line keeps the cursor: a quiet boot without a quiet login
+  left a console with none. The login screen still turns it on.
+- On an Arch ESP (vfat, closed to a user) root reads and tests
+  `loader.conf`, a failed chmod is no error, and `quiet boot on`
+  reaches `mkinitcpio -P`.
+- The palette line goes before a last `exit 0` in `/etc/rc.local`, a
+  file keeps a last line with no newline, and an rc.local spark-shell
+  made leaves with its line. `theme none` asks for root only when a
+  root file is there, and the screen is not cleared over a todo row.
 
 ## v0.40
 
