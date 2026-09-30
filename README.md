@@ -6,7 +6,8 @@ the seat: the tools and one plain look. The tools are tmux, starship,
 fzf, zoxide, eza, bat, btop and fd. The look is ASCII and the 16
 palette slots on every surface: tmux, the prompt, btop, foot, sway,
 the login box. It is right on the Linux console and plain in an
-emulator. This machine's cycles belong to the model.
+emulator. The palette, the console font and a quiet boot are
+spark-shell's too. This machine's cycles belong to the model.
 
     spark-shell on          the terminal seat: the tools, the prompt, the look
     spark-shell on desktop  the seat and a desktop: sway, foot, the login box
@@ -32,7 +33,12 @@ emulator. This machine's cycles belong to the model.
                             the desktop's keys, one sentence each
     spark-shell desktop wallpaper PATH|default|none
                             the picture behind the windows
-    spark theme NAME        one palette everywhere (spark's verb)
+    spark-shell theme [NAME|list|show]
+                            one palette everywhere, or the list, or its colours
+    spark-shell font [FACE SIZE|list]
+                            the console font, or Terminal.app's on a Mac
+    spark-shell quiet [login|boot on|off]
+                            no noise before the greeting, or a silent boot
 
 Three states: nothing, the terminal seat, the seat with a desktop.
 `on` and `off` move between them, and `desktop` names the third.
@@ -47,14 +53,15 @@ seat has none.
     ~/.spark-shell/spark-shell on
 
 It runs on the Debian and Arch families (apt or pacman, sudo asked
-once) and on macOS (Homebrew). To update, `git -C ~/.spark-shell pull`
-and then `spark-shell on` again. spark itself is not required. With
-it, the status line is spark's and the palette follows `spark theme
-NAME` (a new login does it, or `spark-shell on`). The prompt is
-starship's, from pacman on Arch and from Homebrew on macOS. Debian 13
-has no starship package, so there the rc files draw the shell's own
-prompt. `PROMPT=plain` in the config picks the shell's own prompt
-anywhere.
+once), on Void (xbps) and on macOS (Homebrew). On Void it is
+everything but the desktop: the terminal seat, the palette, the font
+and quiet. The desktop and the login box are for the Debian and Arch
+families. To update, `git -C ~/.spark-shell pull` and then
+`spark-shell on` again. spark itself is not required. With it, the
+status line is spark's. The prompt is starship's, from pacman on Arch,
+xbps on Void and Homebrew on macOS. Debian 13 has no starship package,
+so there the rc files draw the shell's own prompt. `PROMPT=plain` in
+the config picks the shell's own prompt anywhere.
 
 ## One plain look
 
@@ -62,7 +69,7 @@ This machine is often a bare Linux console: a 256-glyph font and 16
 palette slots, nothing more. So every rendered file names colours by
 slot (`colour0` to `colour15`, or starship's 16 colour words) and
 draws with ASCII. The palette reaches every surface through the
-console palette that `spark theme NAME` programs. The accent and the
+console palette that `spark-shell theme NAME` programs. The accent and the
 muted tone become the nearest of the palette's 16 slots. One file,
 right on the console, plain in an emulator.
 
@@ -97,7 +104,7 @@ ever enabled on this machine, add your user to the `seat` group
 (libseat prefers seatd over logind when both are there).
 
 `Super+s` opens a small window with spark chat, floating on the
-workspace you are on, and `Ctrl-D` closes it. It follows `spark theme`
+workspace you are on, and `Ctrl-D` closes it. It follows `spark-shell theme`
 like every other window. Without spark the window says so instead of
 never appearing. Stacking, i3's `Super+s`, is `Super+Shift+s` here.
 
@@ -284,14 +291,64 @@ PATH and the desktop entries it ships. `sbom apps`, `sbom tools` and
 writes CycloneDX 1.5 to `~/.local/state/spark-shell/sbom.cdx.json`,
 the format spark's own `spark ver --sbom` uses.
 
-## The palette at login
+## The palette
 
-`spark theme NAME` writes the palette. At your next login spark-shell
-sees the change and re-renders its own files (tmux, starship, btop,
-spark's prompt marks, foot and sway) before the greeting, one checksum
-when nothing changed. `spark-shell on` does it now: a running sway
-takes the borders at once, and the login box follows (root's files,
-sudo).
+    spark-shell theme gruvbox-dark   one palette everywhere
+    spark-shell theme none           the terminal's own colours back
+    spark-shell theme list           the palettes, and which one is on
+    spark-shell theme show           the current palette's colours
+
+`spark-shell theme NAME` writes the palette to `theme.env`, 20
+colours: the background, the text, the accent, the muted tone and the
+16 slots. It is the `THEME` key in the config. 9 palettes ship in
+`themes/`, each with its upstream and licence on its first line:
+catppuccin-mocha, dracula, everforest-dark, gruvbox-dark, nord,
+rose-pine, selenized-dark, solarized-light and tokyonight-night.
+gruvbox-dark matches the forge wallpaper.
+
+On the Linux console the palette lands at once, then at every boot.
+`setvtrgb` sets the kernel's 16 colours (root, sudo once), so every
+console and the login box wear it before any shell runs. On a Mac it
+is a Terminal.app profile named `spark-shell`, made the default and
+set on every open window. `lib/terminal_profile.py` builds it from the
+palette and the font, because a profile is a plist of archived colours
+that no text file can carry.
+
+At your next login spark-shell sees the change and re-renders its own
+files (tmux, starship, btop, spark's prompt marks, foot and sway)
+before the greeting, one checksum when nothing changed. `spark-shell
+on` does it now: a running sway takes the borders at once, and the
+login box follows (root's files, sudo).
+
+## The font
+
+    spark-shell font list            the faces and sizes this machine has
+    spark-shell font Terminus 16x32  the console font, now and at boot
+    spark-shell font Monaco 14       on a Mac: the Terminal.app profile's
+
+On Linux it is the console font, from kbd's console fonts: `setfont`
+now, and the family's own file at boot (root, sudo once). 8x16 is
+small on a 1080p screen, and 16x32 reads well there. On a Mac it is a
+font's PostScript name and a size in points, and `font list` shows the
+monospace faces this Mac has. Font Book shows any other face's
+PostScript name. It is the `CONSOLE_FONT` key in the config, the face
+and the size. foot's font on the desktop is `FONT`, its own key.
+
+## Quiet
+
+    spark-shell quiet                the two switches and their state
+    spark-shell quiet login on       no distro notice before the greeting
+    spark-shell quiet boot on        a silent boot, the boot menu hidden
+
+Quiet is for Linux, and both switches are off until you turn them on.
+A quiet login drops the distro's notice and the kernel's line before
+the greeting. A quiet boot hides the boot menu and keeps the kernel
+and the init system silent. Each family has its own way: a grub drop-in on the Debian
+family, a kernel command line drop-in for a UKI on Arch, runit's first
+stage on Void. A machine where none fits is refused in one line, and
+`off` puts each back. Quiet hides noise, never a check: a disk check
+or a watchdog still speaks. They are the `QUIET_LOGIN` and
+`QUIET_BOOT` keys in the config.
 
 ## Yours
 
@@ -307,16 +364,20 @@ and `PROMPT_STYLE` minimal or full. `DESKTOP` is none or sway
 (`spark-shell on|off desktop` writes it). `FONT` is foot's spec
 (`DejaVu Sans Mono:size=12`). `WALLPAPER` is default, none or an
 absolute path (`spark-shell desktop wallpaper` writes it), and `ALPHA`
-is foot's opacity over a picture (0.85).
+is foot's opacity over a picture (0.85). `THEME` is a palette's name
+or none, and `CONSOLE_FONT` is the face and the size, empty for the
+console's own. `QUIET_LOGIN` and `QUIET_BOOT` are no or yes.
+`spark-shell theme`, `font` and `quiet` write these 4 keys.
 
 ## What leaves this machine
 
 The package manager's fetches. A desk is one call to `spark edit` on
 this machine, where the model runs. It reads the need's words, the
 screens' names and sizes (or the terminal's, for rooms) and the app
-list. No telemetry. The files read from spark are `theme.env` (the
-palette) and, at login, `site.env` and `banner` (the greeting).
-Nothing is ever sent to it.
+list. No telemetry. The palette, the font and quiet are written on
+this machine and never leave it. The files read from spark are, at
+login, `site.env` and `banner` (the greeting). Nothing is ever sent to
+it.
 
 ## Contributing
 

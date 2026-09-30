@@ -1,18 +1,20 @@
 # Credits
 
-spark-shell stands on other people's work. Everything here comes from
-a package manager's own repositories, unpinned.
+spark-shell stands on other people's work. Every program here comes
+from a package manager's own repositories, unpinned. The palettes are
+colour values, credited below.
 
 ## The prompt
 
 - starship -- https://github.com/starship/starship -- ISC, (c) Starship
-  Contributors. From Arch's extra repository (pacman) and from Homebrew.
+  Contributors. From Arch's extra repository (pacman), from Void's
+  (xbps) and from Homebrew.
 
 ## The tools
 
-Installed from apt's, pacman's or Homebrew's own repositories,
-unpinned. The editor you use is yours, and its spark plugin is its own
-repository with its own credits.
+Installed from apt's, pacman's, xbps's or Homebrew's own
+repositories, unpinned. The editor you use is yours, and its spark
+plugin is its own repository with its own credits.
 
 - bash -- GPL-3.0-or-later.
 - tmux -- ISC.
@@ -27,6 +29,8 @@ repository with its own credits.
 - fd -- MIT/Apache-2.0 (fd-find, on Arch and Homebrew).
 - jq -- MIT.
 - btop -- Apache-2.0.
+- kbd -- https://kbd-project.org/ -- GPL-2.0-or-later. `setvtrgb` for
+  the console palette, and `setfont` and the console fonts, on Linux.
 
 ## The desktop
 
@@ -53,10 +57,25 @@ With DESKTOP=sway, from apt or pacman.
 
 ## The palettes
 
-The colours the look is rendered with come from
-`~/.config/spark/theme.env`, written by `spark theme NAME`. The
-palettes themselves live in spark's repository with their own credits
-(github.com/forgewright-ai/spark, CREDITS.md).
+The 9 palettes in `themes/`, written to `theme.env` by `spark-shell
+theme NAME`. Colour values only, no code copied, each file's first
+line naming its upstream. The licence is the upstream's:
+
+- Catppuccin -- https://github.com/catppuccin/catppuccin -- MIT.
+- Dracula -- https://github.com/dracula/dracula-theme -- MIT.
+- Everforest -- https://github.com/sainnhe/everforest -- MIT.
+- Gruvbox -- https://github.com/morhetz/gruvbox -- MIT.
+- Nord -- https://www.nordtheme.com -- MIT.
+- Rose Pine -- https://github.com/rose-pine/rose-pine-theme -- MIT.
+- Selenized -- https://github.com/jan-warchol/selenized -- MIT.
+- Solarized -- https://ethanschoonover.com/solarized -- MIT.
+- Tokyo Night -- https://github.com/folke/tokyonight.nvim -- Apache-2.0.
+
+## The Terminal.app profile
+
+`lib/terminal_profile.py` builds it with the Python 3 standard library
+(macOS ships it) and hands it to Terminal.app with macOS's own
+`defaults`, `plutil`, `osascript` and `mdfind`. Nothing is installed.
 
 ## The wallpapers
 
