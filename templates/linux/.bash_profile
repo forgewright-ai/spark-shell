@@ -1,6 +1,13 @@
 # spark-shell ~/.bash_profile -- a login shell reads this, and everything lives in .bashrc.
 [ -r ~/.bashrc ] && . ~/.bashrc
 
+# The palette at a console login: the escapes spark-shell theme wrote,
+# then the cursor on (a quiet boot hides it). Nothing in an emulator.
+if [ "$TERM" = linux ] && [ -t 1 ]; then
+    [ -r ~/.config/spark-shell/console-colors ] && cat ~/.config/spark-shell/console-colors
+    printf '\033[?25h'
+fi
+
 # The palette at login: when spark theme changed theme.env since the
 # last render, spark-shell re-renders its own files and never touches
 # yours. Otherwise it is one cksum.

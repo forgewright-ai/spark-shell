@@ -7,6 +7,14 @@ fi
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac
 export PATH
 
+# The palette at a console login (TERM=linux): the escapes spark-shell
+# theme wrote, then the cursor on. Terminal.app is never one: its
+# profile carries the palette.
+if [ "$TERM" = linux ] && [ -t 1 ]; then
+    [ -r ~/.config/spark-shell/console-colors ] && cat ~/.config/spark-shell/console-colors
+    printf '\033[?25h'
+fi
+
 # The palette at login: when spark theme changed theme.env since the
 # last render, spark-shell re-renders its own files and never touches
 # yours. Otherwise it is one cksum.

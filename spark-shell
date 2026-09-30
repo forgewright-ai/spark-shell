@@ -1,15 +1,16 @@
 #!/bin/sh
 # spark-shell -- the seat at an AI box
 #
-#   spark-shell on              the terminal seat: the tools, the prompt and
-#                               the look (your rc files go to .bak) -- run it
-#                               again after spark theme NAME or a git pull
+#   spark-shell on              the terminal seat: the tools, the prompt, the
+#                               look and the console (your rc files go to
+#                               .bak) -- run it again after a git pull
 #   spark-shell on desktop      the seat and a desktop: sway, foot and the
 #                               login box on tty1 at the next boot
 #   spark-shell off desktop     the desktop and the login box off at the
 #                               next boot -- the terminal seat stays
 #   spark-shell off             everything back: the rc files and the look
-#                               from .bak, or gone -- the packages stay
+#                               from .bak, or gone, the console as it was
+#                               -- the packages stay
 #   spark-shell on --dry-run    print what would change, touch nothing
 #   spark-shell off --dry-run   print what would be handed back, touch nothing
 #   spark-shell check           the machine row by row -- exit 0 when no row fails
@@ -31,10 +32,17 @@
 #                               the picture behind the windows (default: the
 #                               forge wallpaper, none: the palette's colour)
 #   spark-shell desktop --chat  spark chat in a small window (Super+s opens it)
-#   spark theme NAME            one palette everywhere (spark's verb)
+#   spark-shell theme [NAME|none|list]
+#                               one palette everywhere: the console, the
+#                               renders and spark (bare: the one in use)
+#   spark-shell font [FACE SIZE|none|list]
+#                               the console's font, or Terminal.app's on
+#                               macOS (bare: the one in use)
+#   spark-shell quiet [login|boot on|off]
+#                               a bare login prompt, a quiet boot (Linux)
 #
 # The one interface to spark is ~/.config/spark/theme.env, the palette
-# `spark theme NAME` writes. The look reads THEME_BG, THEME_FG,
+# `spark-shell theme NAME` writes. The look reads THEME_BG, THEME_FG,
 # THEME_ACCENT, THEME_MUTED and THEME_ANSI_0-15. With no theme.env the
 # terminal keeps its own colours. Three exports go back to spark, from
 # the same slots: SPARK_ACCENT_SGR, SPARK_MUTED_SGR and SPARK_WARN_SGR in
@@ -43,19 +51,23 @@
 # everything else works. Nothing leaves this machine except what the
 # package manager fetches. A desk asks spark on this machine (spark edit).
 #
-# POSIX sh on both OSes: the Debian and Arch families, and macOS. The
-# choices live in ~/.config/spark-shell/config, one KEY=value a line.
-# PROMPT is starship|plain, PROMPT_STYLE minimal|full, DESKTOP none|sway,
-# FONT foot's spec (DejaVu Sans Mono:size=12), WALLPAPER default|none|PATH
-# and ALPHA foot over a picture (0.85). starship comes from pacman or
-# Homebrew. Debian has no package, so there the rc files draw the shell's
-# own prompt.
+# POSIX sh on both OSes: the Debian, Arch and Void families (Void has no
+# desktop yet), and macOS. The choices live in ~/.config/spark-shell/
+# config, one KEY=value a line. PROMPT is starship|plain, PROMPT_STYLE
+# minimal|full, DESKTOP none|sway, FONT foot's spec (DejaVu Sans
+# Mono:size=12), WALLPAPER default|none|PATH and ALPHA foot over a
+# picture (0.85). THEME is a palette's name or none, CONSOLE_FONT "FACE
+# SIZE" (empty: the console keeps its font), QUIET_LOGIN and QUIET_BOOT
+# yes|no. starship comes from pacman, xbps or Homebrew. Debian has no
+# package, so there the rc files draw the shell's own prompt.
 #
-# The login box (DESKTOP=sway) is the one root render: /etc/greetd and a
-# greetd.service drop-in, written with sudo only when they differ. greetd
-# is enabled on tty1 in getty's place for the next boot. Neither unit is
-# ever started or stopped live. SPARK_SHELL_ROOT=DIR (tests only) prefixes
-# every root path with DIR, writes plainly and takes systemctl from PATH.
+# The root files are the login box's (DESKTOP=sway: /etc/greetd and a
+# greetd.service drop-in) and the console's (the palette at boot, the
+# font, the login screen, the boot's kernel line), written with sudo only
+# when they differ. greetd is enabled on tty1 in getty's place for the
+# next boot. Neither unit is ever started or stopped live.
+# SPARK_SHELL_ROOT=DIR (tests only) prefixes every root path with DIR,
+# writes plainly and takes systemctl from PATH.
 set -eu
 
 # ~/.local/bin/spark-shell is a symlink into the clone: resolve it, the
@@ -116,7 +128,17 @@ config_load() {
         *) echo "spark-shell: ALPHA=$ALPHA in $CONFIG: 0 to 1 (0.85)" >&2; exit 1 ;; esac
     case $DESKTOP in none|sway) ;;
         *) echo "spark-shell: DESKTOP=$DESKTOP in $CONFIG: none or sway" >&2; exit 1 ;; esac
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA
+    # the console's four: a palette's name, "FACE SIZE", and two switches
+    : "${THEME:=}" "${CONSOLE_FONT:=}" "${QUIET_LOGIN:=no}" "${QUIET_BOOT:=no}"
+    case $THEME in .*|*[!A-Za-z0-9._-]*) echo "spark-shell: THEME=$THEME in $CONFIG: a palette's name or none (spark-shell theme list)" >&2; exit 1 ;; esac
+    if [ -n "$CONSOLE_FONT" ] && ! printf '%s' "$CONSOLE_FONT" | grep -qE '^[A-Za-z0-9._-]+ [0-9][0-9x.]*$'; then
+        echo "spark-shell: CONSOLE_FONT=$CONSOLE_FONT in $CONFIG: FACE SIZE (spark-shell font list)" >&2; exit 1
+    fi
+    for k in QUIET_LOGIN QUIET_BOOT; do
+        eval "v=\$$k"
+        case $v in yes|no) ;; *) echo "spark-shell: $k=$v in $CONFIG: yes or no" >&2; exit 1 ;; esac
+    done
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT
 }
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept
     mkdir -p "$CONFIG_DIR"
@@ -287,7 +309,12 @@ PLAYER=''   # a desk's player: windows | rooms, forced by --windows | --rooms; e
 todo=0
 would=0   # the would rows printed: a dry run's last line counts them
 acting=0
-row() { printf '%-6s %-12s %s\n' "$1" "$2" "${3:-}"; [ "$1" != would ] || would=$((would + 1)); }
+todos=0   # the todo rows printed: a verb's closing line says when one is left
+row() {
+    printf '%-6s %-12s %s\n' "$1" "$2" "${3:-}"
+    [ "$1" != would ] || would=$((would + 1))
+    [ "$1" != todo ] || todos=$((todos + 1))
+}
 dry_close() { if [ "$would" -eq 0 ]; then echo "Nothing to do"; else echo "$would to do"; fi; }
 loud() { [ "$MODE" = dry ] || [ "$VERBOSE" = 1 ]; }
 ok() { if loud || [ "$acting" = 1 ]; then row ok "$1" "${2:-}"; fi; acting=0; }
@@ -309,6 +336,7 @@ sudo_upfront() {
     [ -t 0 ] || return 0
     what="the packages"
     desktop_wanted && what="the packages and the login box (tty1)"
+    if [ -n "$THEME$CONSOLE_FONT" ] || [ "$QUIET_LOGIN$QUIET_BOOT" != nono ]; then what="$what and the console"; fi
     printf 'spark-shell needs sudo once, now: %s.\n' "$what"
     sudo -v || { echo "spark-shell: sudo refused. Nothing was changed." >&2; exit 1; }
 }
@@ -320,11 +348,11 @@ root_do() { if [ -n "$ROOT" ]; then "$@"; else as_root "$@"; fi; }
 root_can() {   # is there a root to write with (now, or at a tty)?
     [ -n "$ROOT" ] || [ "$(id -u)" -eq 0 ] || sudo -n true 2>/dev/null || { command -v sudo >/dev/null 2>&1 && [ -t 0 ]; }
 }
-root_sudo_once() {   # the password, once, said why (a no-op after sudo_upfront)
+root_sudo_once() {   # root_sudo_once [WHAT] -- the password, once, said why (a no-op after sudo_upfront)
     [ -z "$ROOT" ] || return 0
     [ "$(id -u)" -ne 0 ] || return 0
     sudo -n true 2>/dev/null && return 0
-    printf 'spark-shell needs sudo once, now: the login box (tty1).\n'
+    printf 'spark-shell needs sudo once, now: %s.\n' "${1:-the login box (tty1)}"
     sudo -v
 }
 spark_bin() {   # -> spark's path, or nothing: PATH, then ~/.local/bin (a non-login ssh shell lacks it)
@@ -345,10 +373,10 @@ pm_detect() {
     if [ "$OS" = Darwin ] && [ -z "${SPARK_OS_RELEASE:-}" ]; then PM=brew; return; fi
     _f=${SPARK_OS_RELEASE:-/etc/os-release}
     for w in $(sed -n 's/^ID=//p; s/^ID_LIKE=//p' "$_f" 2>/dev/null | tr -d '"'); do
-        case $w in debian|arch) DISTRO=$w; break ;; esac
+        case $w in debian|arch|void) DISTRO=$w; break ;; esac
     done
     [ -z "$DISTRO" ] || load_env "$REPO/distro/$DISTRO.env" || exit 1
-    : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}" "${PKG_DESKTOP:=}" "${PKG_GREETER:=}"
+    : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}" "${PKG_CONSOLE:=}" "${PKG_DESKTOP:=}" "${PKG_GREETER:=}"
 }
 tool_here() {   # tool_here NAME -- on PATH or in ~/.local/bin; under apt by Debian's name (fdfind, batcat), after pm_detect
     _n=$1
@@ -359,6 +387,7 @@ pkg_installed() {
     case $PM in
         apt) dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed' ;;
         pacman) pacman -Qq "$1" >/dev/null 2>&1 ;;
+        xbps) xbps-query "$1" >/dev/null 2>&1 ;;
         *) return 1 ;;
     esac
 }
@@ -366,6 +395,7 @@ pkg_install() {
     case $PM in
         apt) as_root apt-get update -qq && as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@" ;;
         pacman) as_root pacman -S --needed --noconfirm "$@" ;;
+        xbps) as_root xbps-install -Sy "$@" ;;
         *) return 1 ;;
     esac
 }
@@ -449,7 +479,8 @@ greet_background() {   # the login box's DOOM fire: tuigreet 0.11+ has --backgro
         printf ' --background doom'
     fi
 }
-desktop_wanted() { [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; }
+desktop_wanted() { [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && [ "$DISTRO" != void ]; }
+VOID_NO_DESKTOP="the desktop is not available on Void yet"
 desktop_tools() {   # -> the missing ones, if any (PATH or ~/.local/bin)
     _miss=''
     for t in sway foot; do
@@ -612,6 +643,611 @@ tmux_reload() {
     fi
 }
 
+# ------------------------------------------------------------- the console
+# The palette, the console font and a quiet login and boot: spark handed
+# them back in 1.62, and they are spark-shell's now. Four keys in the
+# config, each written by its verb and applied by it and by `on`:
+# THEME (a palette name, or none), CONSOLE_FONT ("FACE SIZE", empty: the
+# console keeps its font), QUIET_LOGIN and QUIET_BOOT (yes|no). `off`
+# hands every one back. Every root file is found by spark-shell's own
+# marks and names, so a machine that never had them does nothing, and
+# root is asked only for what is there:
+#   ~/.config/spark/theme.env     the palette, 20 THEME_* keys (spark reads it too)
+#   ~/.config/spark-shell/console-colors[.rgb]  the escapes a console login
+#                                 sends, and setvtrgb's form for the boot
+#   /etc/systemd/system/spark-shell-console.service  setvtrgb at boot (systemd)
+#   a line in /etc/rc.local ending ` #spark-shell-palette#`  the same (runit)
+#   FILE.spark-shell-orig         a root file as it was before spark-shell
+#   lines ending ` #spark-shell-quiet#`  a quiet boot on Void (GRUB, rc.conf, getty)
+#   zz-spark-shell-quiet.*        the GRUB and the kernel image drop-ins
+# Every root path is under ROOT (SPARK_SHELL_ROOT in the tests), even the
+# ones only read (/run/systemd, /sys, /proc), so a fixture pins the shape.
+PALETTE_DIR=$CONFIG_DIR/themes                     # yours: NAME.env wins over the repository's themes/
+CONSOLE_COLORS=$CONFIG_DIR/console-colors          # the escapes, sent at a console login
+CONSOLE_RGB=$CONFIG_DIR/console-colors.rgb         # setvtrgb's three lines, read by root at boot
+STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell
+REBUILD=$STATE_DIR/boot-rebuild                    # a boot rebuild that has not held yet: grub | uki, one a line
+TERMINAL_SEEN=$STATE_DIR/terminal.seen             # macOS: the palette and font Terminal.app's profile has
+CONSOLE_UNIT=etc/systemd/system/spark-shell-console.service
+PALETTE_MARK=' #spark-shell-palette#'
+QUIET_MARK=' #spark-shell-quiet#'
+SPLASH_MARK='#spark-shell-quiet# '
+CURSOR_ON=$(printf '\033[?25h')
+# the quiet kernel line, the same seven words on every shape: quiet and
+# loglevel=3 silence the kernel, splash hands Plymouth the boot when it
+# is there, systemd.show_status=false keeps the unit lines off, udev's
+# level quiets the initramfs, the cursor and fbcon stop the flicker
+QUIET_WORDS='quiet splash loglevel=3 systemd.show_status=false udev.log_level=3 vt.global_cursor_default=0 fbcon=nodefer'
+
+is_wsl() { [ "$OS" != Darwin ] && { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qis microsoft "$ROOT/proc/version"; }; }
+init_shape() {   # -> systemd | runit | none: what boots this Linux
+    if [ -d "$ROOT/run/systemd/system" ]; then echo systemd
+    elif [ -d "$ROOT/etc/runit" ]; then echo runit
+    else echo none; fi
+}
+console_linux() { [ "$OS" != Darwin ] && ! is_wsl; }   # a Linux with a console of its own
+root_ready() {   # root_ready ROW -- a root to write with, asked once; else a todo row and false
+    if ! root_can; then row todo "$1" "root is needed -- spark-shell on at a terminal (sudo once)"; acting=0; return 1; fi
+    root_sudo_once "the console" || { row todo "$1" "sudo refused -- spark-shell on at a terminal (sudo once)"; acting=0; return 1; }
+}
+root_put() {   # root_put SRC DST [MODE] -- a root file written from SRC; a new one takes MODE (0644)
+    _new=0; [ -e "$2" ] || _new=1
+    root_do mkdir -p "$(dirname "$2")"
+    root_do cp "$1" "$2"
+    [ "$_new" = 0 ] || root_do chmod "${3:-0644}" "$2"
+}
+root_read() {   # root_read FILE -> its bytes (root when a user cannot read it); nothing when absent
+    if [ -r "$1" ]; then cat "$1"; elif [ -e "$1" ]; then root_do cat "$1" 2>/dev/null || true; fi
+}
+# A marked line is one spark-shell appended to a file it does not own: it
+# ends with the mark, and off deletes exactly those, every other line as
+# it is (LC_ALL=C: the bytes pass through untouched).
+marked() {   # marked FILE MARK -> the lines carrying MARK, the mark off
+    [ -f "$1" ] || return 0
+    LC_ALL=C awk -v m="$2" 'length($0) >= length(m) && substr($0, length($0) - length(m) + 1) == m { print substr($0, 1, length($0) - length(m)) }' "$1"
+}
+marked_text() {   # marked_text FILE MARK [LINESFILE] -> FILE without MARK's lines, then LINESFILE's lines marked
+    [ ! -f "$1" ] || LC_ALL=C awk -v m="$2" '!(length($0) >= length(m) && substr($0, length($0) - length(m) + 1) == m)' "$1"
+    [ -z "${3:-}" ] || LC_ALL=C sed "s/\$/$2/" "$3"
+}
+
+# ------------------------------------------------------------ the palette
+# A palette is a KEY=value file: the 20 THEME_* keys, each #rrggbb, and
+# THEME_LOGO when it names spark's logo colours. `spark-shell theme NAME`
+# writes three files from it: theme.env (what spark and every render
+# read), console-colors (\033]P<n><rrggbb> for the 16 slots, what a
+# console login sends) and its .rgb twin (setvtrgb's decimal lines, what
+# root sets at boot, so the login prompt and every console wear it).
+palette_file() {   # palette_file NAME -> its file, yours first; false when there is none
+    case $1 in ''|.*|*[!A-Za-z0-9._-]*) return 1 ;; esac
+    for _p in "$PALETTE_DIR/$1.env" "$REPO/themes/$1.env"; do
+        [ -f "$_p" ] && { printf '%s' "$_p"; return 0; }
+    done
+    return 1
+}
+palette_names() { for _p in "$REPO"/themes/*.env "$PALETTE_DIR"/*.env; do [ -f "$_p" ] || continue; _n=${_p##*/}; printf '%s\n' "${_n%.env}"; done | sort -u; }
+palette_get() { sed -n "s/^$2=//p" "$1" | tail -1 | tr -d '"\r'; }   # palette_get FILE KEY
+console_render() {   # console_render RRGGBB... (16) -> $TMP/console-colors and $TMP/console-colors.rgb
+    _i=0; _esc=''; _r=''; _g=''; _b=''
+    for _h in "$@"; do
+        _esc="$_esc$(printf '\033]P%x%s' "$_i" "$_h")"
+        _rgb=$(hex_rgb "#$_h"); _gb=${_rgb#* }
+        _r="$_r,${_rgb%% *}"; _g="$_g,${_gb% *}"; _b="$_b,${_gb#* }"
+        _i=$((_i + 1))
+    done
+    printf '%s' "$_esc" > "$TMP/console-colors"
+    printf '%s\n%s\n%s\n' "${_r#,}" "${_g#,}" "${_b#,}" > "$TMP/console-colors.rgb"
+}
+palette_render() {   # palette_render NAME -> the three files in $TMP; false, and why in $TMP/palette.why, when it cannot
+    if ! _f=$(palette_file "$1"); then echo "no palette named $1 (spark-shell theme list)" > "$TMP/palette.why"; return 1; fi
+    printf '# rendered by spark-shell from the palette %s -- spark-shell theme NAME changes it\n' "$1" > "$TMP/theme.env"
+    _hexes=''
+    for _k in $THEME_KEYS; do
+        _v=$(palette_get "$_f" "$_k")
+        hex_rgb "$_v" >/dev/null || { echo "$_f: $_k is not #rrggbb" > "$TMP/palette.why"; return 1; }
+        printf '%s=%s\n' "$_k" "$_v" >> "$TMP/theme.env"
+        case $_k in THEME_ANSI_*) _hexes="$_hexes $(printf '%s' "${_v#\#}" | tr 'A-F' 'a-f')" ;; esac
+    done
+    _v=$(palette_get "$_f" THEME_LOGO)
+    case $_v in '') ;; *[!A-Za-z0-9\ _.#-]*) echo "$_f: THEME_LOGO holds more than names and colours" > "$TMP/palette.why"; return 1 ;;
+        *) printf 'THEME_LOGO=%s\n' "$_v" >> "$TMP/theme.env" ;; esac
+    # shellcheck disable=SC2086   # sixteen words, split on purpose
+    console_render $_hexes
+}
+theme_ours() { [ -f "$THEME_ENV" ] && grep -q 'rendered by spark-shell' "$THEME_ENV"; }
+console_send() {   # console_send FILE -- the escapes to this console, then a redraw; a console login at a tty only
+    [ "${TERM:-}" = linux ] && [ -t 1 ] && console_linux || return 0
+    [ "$MODE" != dry ] || return 0
+    cat "$1" 2>/dev/null || return 0
+    printf '\033[2J\033[H'
+}
+# A framebuffer console paints a new palette only into the cells drawn
+# after it, so the escapes wait for the end of the run: sent, the screen
+# cleared, then the closing line (console_now, just before it).
+CONSOLE_NOW=''
+console_now() { [ -z "$CONSOLE_NOW" ] || console_send "$CONSOLE_NOW"; }
+root_path_ok() { case $1 in *[!A-Za-z0-9/._-]*) return 1 ;; *) return 0 ;; esac; }   # a path a root file may carry
+unit_render() { sed -e "s|@CONSOLE_RGB@|$(esc "$CONSOLE_RGB")|g" "$REPO/templates/$CONSOLE_UNIT" > "$TMP/unit"; }
+palette_line() { printf "[ -r '%s' ] && setvtrgb '%s'" "$CONSOLE_RGB" "$CONSOLE_RGB"; }   # the rc.local line (runit)
+VT_SYSFS=$ROOT/sys/module/vt/parameters/default_red
+vt_here() { [ -r "$VT_SYSFS" ]; }                              # a kernel with consoles (not a container)
+vt_live() { head -1 "$VT_SYSFS" 2>/dev/null || true; }         # the kernel's default reds, now
+vt_vga_rgb() {   # -> $TMP/vga.rgb: the VGA sixteen in setvtrgb's form
+    # shellcheck disable=SC2086
+    console_render $VGA_HEX; cp "$TMP/console-colors.rgb" "$TMP/vga.rgb"
+}
+
+theme_files() {   # before the renders: theme.env and the console's two files, as THEME says
+    [ -n "$THEME" ] || { skip theme "THEME unset: the palette stays as it is (spark-shell theme NAME)"; return 0; }
+    if [ "$THEME" = none ]; then
+        if [ -f "$THEME_ENV" ] && need theme "remove $THEME_ENV (THEME=none)"; then
+            rm -f "$THEME_ENV"; ok theme "none: theme.env removed, the terminal's own colours"
+        fi
+        return 0
+    fi
+    if ! palette_render "$THEME"; then row todo theme "THEME=$THEME: $(cat "$TMP/palette.why")"; return 0; fi
+    for _f in theme.env console-colors console-colors.rgb; do
+        case $_f in theme.env) _d=$THEME_ENV ;; *) _d=$CONFIG_DIR/$_f ;; esac
+        if [ -f "$_d" ] && cmp -s "$TMP/$_f" "$_d"; then ok theme "$THEME ($_d)"; continue; fi
+        changes=$((changes + 1))
+        need theme "$THEME: write $_d" || continue
+        mkdir -p "$(dirname "$_d")"; cp "$TMP/$_f" "$_d"
+        [ "$_f" != console-colors ] || CONSOLE_NOW=$_d
+        ok theme "$THEME: $_d written"
+    done
+}
+
+palette_boot() {   # Linux: the palette at boot, root's; the kernel's defaults set now
+    [ -n "$THEME" ] && [ "$THEME" != none ] && [ -f "$CONSOLE_RGB" ] || return 0
+    console_linux || { skip palette "WSL has no console: the palette is Windows Terminal's"; return 0; }
+    shape=$(init_shape)
+    if [ "$shape" = none ]; then skip palette "no systemd or runit booted here: the palette at boot is left alone"; return 0; fi
+    command -v setvtrgb >/dev/null 2>&1 || { row todo palette "setvtrgb is missing: the kbd package has it (spark-shell on)"; return 0; }
+    root_path_ok "$CONSOLE_RGB" || { row todo palette "$CONSOLE_RGB holds a character a root file cannot carry: the palette at boot is left alone"; return 0; }
+    if [ "$shape" = systemd ]; then
+        unit_render
+        if cmp -s "$TMP/unit" "$ROOT/$CONSOLE_UNIT" && unit_enabled spark-shell-console.service; then
+            ok palette "spark-shell-console.service sets it at boot"
+        elif need palette "write /$CONSOLE_UNIT and enable it (sudo)" && root_ready palette; then
+            root_put "$TMP/unit" "$ROOT/$CONSOLE_UNIT"
+            root_do systemctl daemon-reload >/dev/null 2>&1 || true
+            root_do systemctl enable spark-shell-console.service >/dev/null 2>&1 || true
+            ok palette "spark-shell-console.service sets it at boot"
+        fi
+    else
+        palette_line > "$TMP/line"; echo >> "$TMP/line"
+        if [ "$(marked "$ROOT/etc/rc.local" "$PALETTE_MARK")" = "$(palette_line)" ]; then
+            ok palette "a line in /etc/rc.local sets it at boot"
+        elif need palette "one marked line at the end of /etc/rc.local (sudo)" && root_ready palette; then
+            { [ -f "$ROOT/etc/rc.local" ] || printf '#!/bin/sh\n'; marked_text "$ROOT/etc/rc.local" "$PALETTE_MARK" "$TMP/line"; } > "$TMP/rc.local"
+            root_put "$TMP/rc.local" "$ROOT/etc/rc.local" 0755
+            ok palette "a line in /etc/rc.local sets it at boot"
+        fi
+    fi
+    # the kernel's defaults now, so every console and the login prompt
+    # wear it before the next boot (sysfs says what they are)
+    vt_here && [ "$(vt_live)" != "$(head -1 "$CONSOLE_RGB")" ] || return 0
+    need palette "setvtrgb: the kernel's defaults are the palette now (sudo)" || return 0
+    root_ready palette || return 0
+    if root_do setvtrgb "$CONSOLE_RGB" >/dev/null 2>&1; then ok palette "the kernel's defaults are the palette now"
+    else row todo palette "setvtrgb failed -- the next boot sets the palette"; acting=0; fi
+}
+
+palette_off() {   # palette_off all|ours -- VGA again, the boot's palette gone, the files gone once root held
+    _unit=0; [ -e "$ROOT/$CONSOLE_UNIT" ] && _unit=1
+    _line=$(marked "$ROOT/etc/rc.local" "$PALETTE_MARK")
+    _files=0; [ -e "$CONSOLE_COLORS" ] || [ -e "$CONSOLE_RGB" ] && _files=1
+    _env=0; if [ -f "$THEME_ENV" ] && { [ "$1" = all ] || theme_ours; }; then _env=1; fi
+    [ "$_unit$_files$_env" != 000 ] || [ -n "$_line" ] || return 0
+    held=1
+    if console_linux && { [ "$_unit" = 1 ] || [ -n "$_line" ] || [ "$_files" = 1 ]; }; then
+        vt_vga_rgb
+        if [ "$MODE" = dry ]; then
+            row would palette "the kernel's VGA sixteen again, the palette at boot gone (sudo)"
+        elif root_ready palette; then
+            cp "$TMP/console-colors" "$TMP/vga-colors"; CONSOLE_NOW=$TMP/vga-colors   # VGA on this console at the end
+            if [ "$_unit" = 1 ]; then
+                root_do systemctl disable spark-shell-console.service >/dev/null 2>&1 || true
+                root_do rm -f "$ROOT/$CONSOLE_UNIT" && root_do systemctl daemon-reload >/dev/null 2>&1 || true
+                [ ! -e "$ROOT/$CONSOLE_UNIT" ] || held=0
+            fi
+            if [ -n "$_line" ]; then
+                marked_text "$ROOT/etc/rc.local" "$PALETTE_MARK" > "$TMP/rc.local"
+                root_put "$TMP/rc.local" "$ROOT/etc/rc.local" || held=0
+            fi
+            if command -v setvtrgb >/dev/null 2>&1 && vt_here && [ "$(vt_live)" != "$(head -1 "$TMP/vga.rgb")" ]; then
+                root_do setvtrgb vga >/dev/null 2>&1 || held=0
+            fi
+            [ "$held" = 0 ] || row ok palette "the console's VGA sixteen again, nothing sets a palette at boot"
+        else
+            held=0
+        fi
+    fi
+    if [ "$MODE" = dry ]; then
+        [ "$_env$_files" = 00 ] || row would theme "the palette's files leave ~/.config (theme.env, console-colors)"
+    elif [ "$held" = 1 ]; then
+        [ "$_env" = 0 ] || rm -f "$THEME_ENV"
+        rm -f "$CONSOLE_COLORS" "$CONSOLE_RGB"
+        [ "$_env$_files" = 00 ] || row ok theme "the palette's files left ~/.config (theme.env, console-colors)"
+    else
+        row todo theme "the palette's files stay until root hands the console back -- spark-shell off at a terminal"
+    fi
+    return 0
+}
+
+# macOS: the palette and the font are a Terminal.app profile, written
+# by the helper (lib/terminal_profile.py, python3 is every Mac's). The
+# stamp says what the profile has, so `on` calls it only on a change.
+terminal_apply() {
+    [ "$OS" = Darwin ] || return 0
+    [ -f "$THEME_ENV" ] && [ -n "$THEME" ] && [ "$THEME" != none ] || return 0
+    set -- $CONSOLE_FONT
+    _face=${1:-Menlo-Regular}; _size=${2:-13}
+    _want="$(cksum < "$THEME_ENV" | cut -d' ' -f1) $_face $_size"
+    if [ "$(cat "$TERMINAL_SEEN" 2>/dev/null)" = "$_want" ]; then ok terminal "Terminal.app's profile is the palette, in $_face $_size"; return 0; fi
+    need terminal "Terminal.app's profile from the palette, in $_face $_size" || return 0
+    if python3 "$REPO/lib/terminal_profile.py" apply "$THEME_ENV" "$_face" "$_size"; then
+        mkdir -p "$STATE_DIR"; printf '%s\n' "$_want" > "$TERMINAL_SEEN"
+        ok terminal "Terminal.app's profile is the palette, in $_face $_size"
+    else
+        row todo terminal "the helper could not write Terminal.app's profile -- spark-shell on again"; acting=0
+    fi
+}
+terminal_off() {
+    [ "$OS" = Darwin ] && [ -f "$TERMINAL_SEEN" ] || return 0
+    if [ "$MODE" = dry ]; then row would terminal "Terminal.app's spark-shell profile removed"; return 0; fi
+    if python3 "$REPO/lib/terminal_profile.py" remove; then
+        rm -f "$TERMINAL_SEEN"; row ok terminal "Terminal.app's spark-shell profile removed, open windows keep their look"
+    else
+        row todo terminal "Terminal.app kept the profile: Terminal > Settings > Profiles removes it"
+    fi
+}
+
+# --------------------------------------------------------- the console font
+# By mechanism, never by family: console-setup's FONTFACE and FONTSIZE
+# where /etc/default/console-setup is (Debian), vconsole.conf's FONT=
+# where /etc/vconsole.conf is (Arch), rc.conf's FONT= beside /etc/runit
+# (Void). The file's first copy is kept as FILE.spark-shell-orig, and off
+# puts its font lines back, every other line as it is then.
+console_shape() {   # -> setup | vconsole | rcconf, or nothing
+    console_linux || return 0
+    if [ -f "$ROOT/etc/default/console-setup" ]; then echo setup
+    elif [ -f "$ROOT/etc/vconsole.conf" ]; then echo vconsole
+    elif [ -f "$ROOT/etc/rc.conf" ] && [ -d "$ROOT/etc/runit" ]; then echo rcconf; fi
+}
+font_file() { case $1 in setup) echo "$ROOT/etc/default/console-setup" ;; rcconf) echo "$ROOT/etc/rc.conf" ;; *) echo "$ROOT/etc/vconsole.conf" ;; esac; }
+font_keys() { if [ "$1" = setup ]; then echo "FONTFACE FONTSIZE"; else echo FONT; fi; }
+font_value() { sed -n "s/^$2=\"\{0,1\}\([^\"]*\)\"\{0,1\}\$/\1/p" "$1" 2>/dev/null | head -1; }   # font_value FILE KEY
+font_now() {   # font_now SHAPE -> what the file says: FACE SIZE (console-setup), FACE (the others)
+    _ff=$(font_file "$1")
+    if [ "$1" = setup ]; then printf '%s %s' "$(font_value "$_ff" FONTFACE)" "$(font_value "$_ff" FONTSIZE)"
+    else font_value "$_ff" FONT; fi
+}
+font_want() { if [ "$1" = setup ]; then printf '%s' "$CONSOLE_FONT"; else printf '%s' "${CONSOLE_FONT%% *}"; fi; }
+font_text() {   # font_text FILE LINE[|LINE] [SEP] -- FILE with each KEY line set (a #KEY one when none is), added when absent
+    # SEP is what follows the key (= in the font files, a space in loader.conf)
+    LC_ALL=C awk -v kv="$2" -v sep="${3:-=}" '
+        BEGIN { n = split(kv, a, "|"); for (i = 1; i <= n; i++) { key[i] = substr(a[i], 1, index(a[i], sep) - 1) } }
+        NR == FNR { for (i = 1; i <= n; i++) { if (index($0, key[i] sep) == 1) on[i] = 1; else if (!(i in off) && index($0, "#" key[i] sep) == 1) off[i] = FNR }; next }
+        { for (i = 1; i <= n; i++) if ((on[i] && index($0, key[i] sep) == 1) || (!on[i] && off[i] == FNR)) { print a[i]; seen[i] = 1; next } ; print }
+        END { for (i = 1; i <= n; i++) if (!seen[i]) print a[i] }' "$1" "$1"
+}
+font_restored() {   # font_restored FILE ORIG KEYS SEP -- FILE with its KEY lines as ORIG had them, every other line as it is
+    LC_ALL=C awk -v keys="$3" -v sep="$4" '
+        function keyof(l,   i) { for (i = 1; i <= n; i++) if (index(l, k[i] sep) == 1 || index(l, "#" k[i] sep) == 1) return k[i]; return "" }
+        BEGIN { n = split(keys, k, " ") }
+        NR == FNR { x = keyof($0); if (x != "") old[x, ++no[x]] = $0; next }
+        { x = keyof($0); if (x == "") { print; next } ; if (used[x] < no[x]) print old[x, ++used[x]] }' "$2" "$1"
+}
+font_redraw() {   # font_redraw SHAPE FACE -- the console takes the file's font now
+    case $1 in
+        setup) root_do setupcon --force >/dev/null 2>&1 || true ;;
+        vconsole) root_do systemctl restart systemd-vconsole-setup >/dev/null 2>&1 || true ;;
+        rcconf) root_do setfont "$2" >/dev/null 2>&1 || true ;;
+    esac
+}
+font_apply() {
+    if [ "$OS" = Darwin ]; then return 0; fi   # the Terminal.app profile carries it (terminal_apply)
+    [ -n "$CONSOLE_FONT" ] || { skip font "CONSOLE_FONT unset: the console keeps its font"; return 0; }
+    is_wsl && { skip font "WSL has no console: the font is Windows Terminal's"; return 0; }
+    shape=$(console_shape)
+    [ -n "$shape" ] || { row todo font "no console-setup, vconsole.conf or rc.conf here -- spark-shell font none"; return 0; }
+    file=$(font_file "$shape"); face=${CONSOLE_FONT%% *}; size=${CONSOLE_FONT#* }
+    if [ "$(font_now "$shape")" = "$(font_want "$shape")" ]; then ok font "$CONSOLE_FONT ($file)"; return 0; fi
+    changes=$((changes + 1))
+    need font "$CONSOLE_FONT in $file, the console redrawn (sudo)" || return 0
+    root_ready font || return 0
+    [ -e "$file.spark-shell-orig" ] || root_do cp "$file" "$file.spark-shell-orig"   # the original, once: off puts it back
+    case $shape in
+        setup) lines="FONTFACE=\"$face\"|FONTSIZE=\"$size\"" ;;
+        vconsole) lines="FONT=$face" ;;
+        *) lines="FONT=\"$face\"" ;;
+    esac
+    font_text "$file" "$lines" > "$TMP/font"
+    root_put "$TMP/font" "$file"
+    font_redraw "$shape" "$face"
+    if [ "$shape" = rcconf ]; then ok font "$CONSOLE_FONT ($file): the console has it now and at every boot"
+    else ok font "$CONSOLE_FONT ($file)"; fi
+}
+font_off() {   # every font file with a .spark-shell-orig: its font lines back, the copy gone, the console redrawn
+    for shape in setup vconsole rcconf; do
+        file=$(font_file "$shape")
+        [ -e "$file.spark-shell-orig" ] || continue
+        if [ "$MODE" = dry ]; then row would font "the font lines of $file back from ${file##*/}.spark-shell-orig (sudo)"; continue; fi
+        root_ready font || continue
+        root_read "$file.spark-shell-orig" > "$TMP/font.orig"
+        if [ -e "$file" ]; then root_read "$file" > "$TMP/font.cur"; font_restored "$TMP/font.cur" "$TMP/font.orig" "$(font_keys "$shape")" = > "$TMP/font"
+        else cp "$TMP/font.orig" "$TMP/font"; fi
+        root_put "$TMP/font" "$file" && root_do rm -f "$file.spark-shell-orig"
+        if [ "$shape" = rcconf ]; then row ok font "the font lines of $file are back: the console's own font at the next boot"
+        else font_redraw "$shape" ""; row ok font "the console's font is back as it was ($file)"; fi
+    done
+}
+
+# Linux: what `spark-shell font list` may name. console-setup composes a
+# face from /usr/share/consolefonts (the file names say <codeset>-<Face>
+# <Size>, the size HxW, or the height of an 8-wide face); the other two
+# shapes name a kbd font file, its cell size read from its own header.
+consolefonts_dir() { for _d in "$ROOT/usr/share/kbd/consolefonts" "$ROOT/usr/share/consolefonts"; do [ -d "$_d" ] && { printf '%s' "$_d"; return 0; }; done; return 1; }
+psf_size() {   # psf_size FILE -> WxH from its header (PSF1 or PSF2, gzip or plain), or nothing
+    case $1 in *.gz) _hd=$(gzip -dc "$1" 2>/dev/null | od -An -tu1 -N32) ;; *) _hd=$(od -An -tu1 -N32 "$1" 2>/dev/null) ;; esac
+    # shellcheck disable=SC2086   # the header's bytes, one word each
+    set -- $_hd
+    if [ "${1:-}" = 54 ] && [ "${2:-}" = 4 ] && [ $# -ge 4 ]; then echo "8x$4"
+    elif [ "${1:-}" = 114 ] && [ "${2:-}" = 181 ] && [ "${3:-}" = 74 ] && [ "${4:-}" = 134 ] && [ $# -ge 32 ]; then
+        shift 24; _h=$(($1 + $2 * 256)); shift 4; echo "$(($1 + $2 * 256))x$_h"
+    fi
+}
+console_fonts() {   # -> "FACE SIZE" lines, sorted; nothing when the fonts dir is not here
+    _d=$(consolefonts_dir) || return 0
+    if [ "$(console_shape)" = setup ]; then
+        for _f in "$_d"/*; do
+            printf '%s\n' "${_f##*/}" | sed -n 's/^[A-Za-z0-9]*-\([A-Za-z]*\)\([0-9][0-9x]*\)\.psfu\{0,1\}\(\.gz\)\{0,1\}$/\1 \2/p'
+        done | awk '{ s = $2; if (s ~ /x/) { split(s, p, "x"); s = p[2] "x" p[1] } else s = "8x" s; print $1, s }'
+    else
+        for _f in "$_d"/*.psf* ; do
+            [ -f "$_f" ] || continue
+            _s=$(psf_size "$_f"); [ -n "$_s" ] || continue
+            _n=${_f##*/}; _n=${_n%.gz}; _n=${_n%.psfu}; _n=${_n%.psf}
+            printf '%s %s\n' "$_n" "$_s"
+        done
+    fi | sort -u
+}
+MAC_FACES="Menlo-Regular Monaco SFMono-Regular Courier CourierNewPSMT AndaleMono JetBrainsMono-Regular FiraCode-Regular Hack-Regular SourceCodePro-Regular CascadiaCode-Regular UbuntuMono-Regular DejaVuSansMono IBMPlexMono"
+MAC_SYSTEM_FACES="Menlo-Regular Monaco SFMono-Regular Courier CourierNewPSMT AndaleMono"
+mac_face_here() {   # a face every Mac ships, or one Spotlight finds (SPARK_SHELL_MAC_FONTS pins them in tests)
+    if [ -n "${SPARK_SHELL_MAC_FONTS:-}" ]; then case " $SPARK_SHELL_MAC_FONTS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; fi
+    case " $MAC_SYSTEM_FACES " in *" $1 "*) return 0 ;; esac
+    [ -n "$(mdfind "kMDItemFonts == '$1'" 2>/dev/null | head -1)" ]
+}
+
+# --------------------------------------------------------- a quiet login
+# No distro notice, no kernel line, a bare `login:`: /etc/motd empties,
+# update-motd.d/10-uname stops running, and /etc/issue holds only the
+# cursor-on escape (a quiet boot hides the cursor, and the login prompt
+# needs it back). The first copies are FILE.spark-shell-orig; off puts
+# each back only while the live file is still spark-shell's.
+login_quiet() {   # is the login quiet now?
+    [ ! -s "$ROOT/etc/motd" ] && [ ! -x "$ROOT/etc/update-motd.d/10-uname" ] && [ "$(cat "$ROOT/etc/issue" 2>/dev/null)" = "$CURSOR_ON" ]
+}
+login_traces() { [ -e "$ROOT/etc/motd.spark-shell-orig" ] || [ -e "$ROOT/etc/issue.spark-shell-orig" ] || [ "$(cat "$ROOT/etc/issue" 2>/dev/null)" = "$CURSOR_ON" ]; }
+login_apply() {
+    [ "$OS" != Darwin ] || return 0
+    if [ "$QUIET_LOGIN" != yes ]; then login_off; return 0; fi
+    if login_quiet; then ok quiet "login: a bare login prompt, no notice, no kernel line"; return 0; fi
+    changes=$((changes + 1))
+    need quiet "login: empty /etc/motd and /etc/issue (the cursor escape only), 10-uname off (sudo)" || return 0
+    root_ready quiet || return 0
+    _mo=$ROOT/etc/motd; _is=$ROOT/etc/issue; _un=$ROOT/etc/update-motd.d/10-uname
+    if [ -s "$_mo" ] && [ ! -e "$_mo.spark-shell-orig" ]; then root_do cp "$_mo" "$_mo.spark-shell-orig"; fi
+    [ ! -s "$_mo" ] || { : > "$TMP/empty"; root_put "$TMP/empty" "$_mo"; }
+    [ ! -x "$_un" ] || root_do chmod -x "$_un"
+    if [ -s "$_is" ] && [ "$(cat "$_is")" != "$CURSOR_ON" ] && [ ! -e "$_is.spark-shell-orig" ]; then root_do cp "$_is" "$_is.spark-shell-orig"; fi
+    printf '%s' "$CURSOR_ON" > "$TMP/issue"; root_put "$TMP/issue" "$_is"
+    ok quiet "login: a bare login prompt, no notice, no kernel line (the originals: *.spark-shell-orig)"
+}
+login_off() {   # motd and issue back from their copies while still spark-shell's; a stale copy of yours only goes
+    [ "$OS" != Darwin ] || return 0
+    login_traces || return 0
+    if [ "$MODE" = dry ]; then row would quiet "login: the notice, the kernel line and the login banner back (sudo)"; return 0; fi
+    root_ready quiet || return 0
+    _mo=$ROOT/etc/motd; _is=$ROOT/etc/issue; _un=$ROOT/etc/update-motd.d/10-uname
+    back=''
+    if [ -e "$_mo.spark-shell-orig" ]; then
+        if [ ! -s "$_mo" ]; then root_do cp "$_mo.spark-shell-orig" "$_mo"; back="$back motd"; fi
+        root_do rm -f "$_mo.spark-shell-orig"
+    fi
+    _ours=0; [ "$(cat "$_is" 2>/dev/null)" = "$CURSOR_ON" ] && _ours=1
+    if [ -e "$_is.spark-shell-orig" ]; then
+        if [ "$_ours" = 1 ]; then root_do cp "$_is.spark-shell-orig" "$_is"; back="$back issue"; fi
+        root_do rm -f "$_is.spark-shell-orig"
+    elif [ "$_ours" = 1 ]; then
+        : > "$TMP/empty"; root_put "$TMP/empty" "$_is"; back="$back issue"
+    fi
+    case $back in *motd*) [ ! -f "$_un" ] || [ -x "$_un" ] || root_do chmod +x "$_un" ;; esac
+    if [ -n "$back" ]; then row ok quiet "login: the login screen is as it was ($(printf '%s' "${back# }" | sed 's/ /, /'))"
+    else row ok quiet "login: spark-shell's stale copies are gone, yours stay as they are"; fi
+}
+
+# ---------------------------------------------------------- a quiet boot
+# Straight past the boot menu, a quiet kernel line, and on Void runit's
+# own lines off, per shape, each by spark-shell's own file or mark:
+#   grub  (Debian) one drop-in, /etc/default/grub.d/zz-spark-shell-quiet.cfg
+#         (the user's /etc/default/grub is never edited); update-grub
+#   void  GRUB reads no drop-in there: three marked lines at the end of
+#         /etc/default/grub, ten in /etc/rc.conf (runit's stage 1 quiet,
+#         a warning or an error still printed and marked in /run) and two
+#         in the tty1 getty's conf (the screen cleared after a clean boot
+#         only); update-grub
+#   uki   (Arch with a unified kernel image) /etc/cmdline.d/zz-spark-shell-
+#         quiet.conf, the preset's --splash line marked off, systemd-boot's
+#         menu wait 0 (loader.conf, its first copy kept); mkinitcpio -P
+# WSL, an Arch without a UKI and a Linux with no GRUB are refused in one
+# sentence. The rebuild is marked pending before a file changes and
+# unmarked when it held, so a rebuild that failed runs again next time.
+GRUB_DROPIN=etc/default/grub.d/zz-spark-shell-quiet.cfg
+CMDLINE_DROPIN=etc/cmdline.d/zz-spark-shell-quiet.conf
+LOADER_CONF=boot/loader/loader.conf
+BOOT_LOUD='"${SPARK_SHELL_BOOT_LOUD:-/run/spark-shell-boot-loud}"'
+grub_want() {
+    printf '%s\n' 'GRUB_TIMEOUT=0' 'GRUB_TIMEOUT_STYLE=hidden' "GRUB_CMDLINE_LINUX_DEFAULT=\"\$GRUB_CMDLINE_LINUX_DEFAULT $QUIET_WORDS\""
+}
+rc_want() {
+    printf '%s\n' '# spark-shell quiet boot on wrote these lines, spark-shell quiet boot off removes them' \
+        'case $0 in */runit/1)' \
+        'msg() { :; }' \
+        "msg_warn() { { : >$BOOT_LOUD; } 2>/dev/null; printf \"\\033[1m\\033[33mWARNING: \$@\\033[m\\n\"; }" \
+        "msg_error() { { : >$BOOT_LOUD; } 2>/dev/null; printf \"\\033[1m\\033[31mERROR: \$@\\033[m\\n\"; }" \
+        "fsck() { _ss_out=\$(command fsck \"\$@\" 2>&1); _ss_rc=\$?; [ \"\$_ss_rc\" = 0 ] || { printf '%s\\n' \"\$_ss_out\"; { : >$BOOT_LOUD; } 2>/dev/null; }; return \"\$_ss_rc\"; }" \
+        'sysctl() { if [ "$1" = -p ]; then command sysctl "$@" >/dev/null; else command sysctl "$@"; fi; }' \
+        'seedrng() { command seedrng "$@" >/dev/null; }' \
+        "alias modules-load='modules-load >/dev/null'" \
+        'esac'
+}
+getty_want() {
+    printf '%s\n' '# spark-shell quiet boot on wrote these lines, spark-shell quiet boot off removes them' \
+        "[ -e $BOOT_LOUD ] || [ -n \"\$(dmesg -l emerg,alert,crit 2>/dev/null)\" ] || GETTY_ARGS=\$(printf '%s' \"\$GETTY_ARGS\" | sed 's/--noclear//')"
+}
+GETTY_CONF=etc/sv/agetty-tty1/conf
+have_update_grub() { command -v update-grub >/dev/null 2>&1 || [ -x "$ROOT/usr/sbin/update-grub" ]; }
+uki_here() { grep -qs '^[a-z_]*_uki=' "$ROOT"/etc/mkinitcpio.d/*.preset; }
+splash_live() { grep -qs '^[a-z_]*_options=.*--splash' "$ROOT"/etc/mkinitcpio.d/*.preset; }
+boot_shape() {   # -> grub | void | uki, or a refusal word: mac | wsl | arch | nogrub
+    if [ "$OS" = Darwin ]; then echo mac
+    elif is_wsl; then echo wsl
+    elif uki_here; then echo uki
+    elif [ "$DISTRO" = arch ]; then echo arch
+    elif [ -f "$ROOT/etc/default/grub" ] && have_update_grub; then
+        if [ "$DISTRO" = void ]; then echo void; else echo grub; fi
+    else echo nogrub; fi
+}
+boot_refusal() {   # boot_refusal SHAPE -> the one sentence, or nothing when spark-shell may quiet it
+    case $1 in
+        mac) echo "macOS has no boot menu or kernel line to quiet." ;;
+        wsl) echo "WSL has no boot of its own: Windows boots it." ;;
+        arch) echo "This Arch has no unified kernel image, so its kernel line is the boot loader's and stays as it is." ;;
+        nogrub) echo "There is no GRUB with update-grub here, so the boot loader stays as it is." ;;
+    esac
+}
+pending_has() { grep -qx "$1" "$REBUILD" 2>/dev/null; }
+pending_add() { pending_has "$1" && return 0; mkdir -p "$STATE_DIR"; printf '%s\n' "$1" >> "$REBUILD"; }
+pending_drop() { [ -f "$REBUILD" ] || return 0; grep -vx "$1" "$REBUILD" > "$TMP/pending" || true; if [ -s "$TMP/pending" ]; then cp "$TMP/pending" "$REBUILD"; else rm -f "$REBUILD"; fi; }
+boot_rebuild() {   # boot_rebuild grub|uki -- update-grub or mkinitcpio -P as root; the pending mark goes when it held
+    case $1 in grub) set -- grub update-grub ;; *) set -- uki mkinitcpio -P ;; esac
+    _kind=$1; shift
+    if root_do "$@" >/dev/null 2>&1; then pending_drop "$_kind"; return 0; fi
+    row todo quiet "boot: $* failed -- spark-shell on runs it again"; acting=0; return 1
+}
+boot_quiet() {   # boot_quiet SHAPE -- is every trace of a quiet boot in place?
+    case $1 in
+        grub) grub_want > "$TMP/want"; cmp -s "$TMP/want" "$ROOT/$GRUB_DROPIN" ;;
+        void) [ "$(marked "$ROOT/etc/default/grub" "$QUIET_MARK")" = "$(grub_want)" ] \
+                && [ "$(marked "$ROOT/etc/rc.conf" "$QUIET_MARK")" = "$(rc_want)" ] \
+                && [ "$(marked "$ROOT/$GETTY_CONF" "$QUIET_MARK")" = "$(getty_want)" ] ;;
+        uki) [ "$(cat "$ROOT/$CMDLINE_DROPIN" 2>/dev/null)" = "$QUIET_WORDS" ] && ! splash_live ;;
+        *) return 1 ;;
+    esac
+}
+boot_kind() { if [ "$1" = uki ]; then echo uki; else echo grub; fi; }
+loader_timeout() {   # loader_timeout N -- systemd-boot's menu wait, the file's first copy kept
+    _lc=$ROOT/$LOADER_CONF
+    [ -d "$ROOT/boot/loader" ] || root_do test -d "$ROOT/boot/loader" 2>/dev/null || return 0
+    root_read "$_lc" > "$TMP/loader"
+    [ -e "$_lc.spark-shell-orig" ] || root_do test -e "$_lc.spark-shell-orig" 2>/dev/null || root_put "$TMP/loader" "$_lc.spark-shell-orig"
+    font_text "$TMP/loader" "timeout $1" ' ' > "$TMP/loader.new"
+    root_put "$TMP/loader.new" "$_lc"
+}
+boot_apply() {
+    [ "$OS" != Darwin ] || return 0
+    if [ "$QUIET_BOOT" != yes ]; then boot_off; return 0; fi
+    shape=$(boot_shape); why=$(boot_refusal "$shape")
+    if [ -n "$why" ]; then skip quiet "boot: $why"; return 0; fi
+    kind=$(boot_kind "$shape")
+    if boot_quiet "$shape"; then
+        if ! pending_has "$kind"; then ok quiet "boot: menu hidden, a quiet kernel line$( [ "$shape" != void ] || printf ", runit's lines off")"; return 0; fi
+        need quiet "boot: the last rebuild failed, run it again (sudo)" && root_ready quiet && boot_rebuilt "$kind" && ok quiet "boot: quiet after a reboot"
+        return 0
+    fi
+    changes=$((changes + 1))
+    case $shape in
+        grub) need quiet "boot: GRUB drop-in /$GRUB_DROPIN; update-grub (sudo)" || return 0 ;;
+        void) need quiet "boot: marked lines at the end of /etc/default/grub, /etc/rc.conf and /$GETTY_CONF; update-grub (sudo)" || return 0 ;;
+        uki) need quiet "boot: /$CMDLINE_DROPIN, the preset's splash marked off, loader.conf timeout 0; mkinitcpio -P (sudo)" || return 0 ;;
+    esac
+    root_ready quiet || return 0
+    pending_add "$kind"   # before a file changes: a failed rebuild runs again next time
+    case $shape in
+        grub) grub_want > "$TMP/dropin"; root_put "$TMP/dropin" "$ROOT/$GRUB_DROPIN" ;;
+        void)
+            grub_want > "$TMP/l"; marked_text "$ROOT/etc/default/grub" "$QUIET_MARK" "$TMP/l" > "$TMP/f"; root_put "$TMP/f" "$ROOT/etc/default/grub"
+            rc_want > "$TMP/l"; marked_text "$ROOT/etc/rc.conf" "$QUIET_MARK" "$TMP/l" > "$TMP/f"; root_put "$TMP/f" "$ROOT/etc/rc.conf"
+            getty_want > "$TMP/l"; marked_text "$ROOT/$GETTY_CONF" "$QUIET_MARK" "$TMP/l" > "$TMP/f"; root_put "$TMP/f" "$ROOT/$GETTY_CONF" ;;
+        uki)
+            printf '%s\n' "$QUIET_WORDS" > "$TMP/dropin"; root_put "$TMP/dropin" "$ROOT/$CMDLINE_DROPIN"
+            for p in "$ROOT"/etc/mkinitcpio.d/*.preset; do
+                grep -qs '^[a-z_]*_options=.*--splash' "$p" || continue
+                LC_ALL=C sed "s/^\([a-z_]*_options=.*--splash\)/$SPLASH_MARK\1/" "$p" > "$TMP/preset"; root_put "$TMP/preset" "$p"
+            done
+            loader_timeout 0 ;;
+    esac
+    boot_rebuilt "$kind" || return 0
+    ok quiet "boot: quiet after a reboot (hold Shift or Space at boot for the menu)"
+}
+boot_rebuilt() {   # boot_rebuilt grub|uki -- the rebuild, and for GRUB its artifact read back: grub.cfg carries the line
+    boot_rebuild "$1" || return 1
+    [ "$1" = grub ] || return 0
+    root_do grep -q 'loglevel=3' "$ROOT/boot/grub/grub.cfg" 2>/dev/null && return 0
+    pending_add grub   # the rebuild did not hold: the next on runs it again
+    row todo quiet "boot: grub.cfg does not carry the quiet line -- spark-shell on runs update-grub again"; acting=0; return 1
+}
+boot_off() {   # spark-shell's boot traces out, per shape found, then the rebuild; a failed one stays pending
+    [ "$OS" != Darwin ] || return 0
+    _g=0; _u=0; _m=''
+    [ ! -e "$ROOT/$GRUB_DROPIN" ] || _g=1
+    for f in "$ROOT/etc/default/grub" "$ROOT/etc/rc.conf" "$ROOT/$GETTY_CONF"; do [ -z "$(marked "$f" "$QUIET_MARK")" ] || _m="$_m $f"; done
+    case $_m in *"$ROOT/etc/default/grub"*) _g=1 ;; esac
+    { [ -e "$ROOT/$CMDLINE_DROPIN" ] || grep -qs "^$SPLASH_MARK" "$ROOT"/etc/mkinitcpio.d/*.preset; } && _u=1
+    [ "$_g$_u" != 00 ] || [ -n "$_m" ] || pending_has grub || pending_has uki || return 0
+    if [ "$MODE" = dry ]; then row would quiet "boot: the boot menu and the kernel's messages back, spark-shell's boot lines removed (sudo)"; return 0; fi
+    root_ready quiet || return 0
+    [ "$_g" = 0 ] || pending_add grub
+    [ "$_u" = 0 ] || pending_add uki
+    [ ! -e "$ROOT/$GRUB_DROPIN" ] || root_do rm -f "$ROOT/$GRUB_DROPIN"
+    for f in $_m; do marked_text "$f" "$QUIET_MARK" > "$TMP/f"; root_put "$TMP/f" "$f"; done
+    if [ "$_u" = 1 ]; then
+        root_do rm -f "$ROOT/$CMDLINE_DROPIN"
+        for p in "$ROOT"/etc/mkinitcpio.d/*.preset; do
+            grep -qs "^$SPLASH_MARK" "$p" || continue
+            LC_ALL=C sed "s/^$SPLASH_MARK//" "$p" > "$TMP/preset"; root_put "$TMP/preset" "$p"
+        done
+        _lc=$ROOT/$LOADER_CONF
+        if root_do test -e "$_lc.spark-shell-orig" 2>/dev/null; then
+            root_read "$_lc.spark-shell-orig" > "$TMP/loader.orig"; root_read "$_lc" > "$TMP/loader"
+            font_restored "$TMP/loader" "$TMP/loader.orig" timeout ' ' > "$TMP/loader.new"
+            root_put "$TMP/loader.new" "$_lc" && root_do rm -f "$_lc.spark-shell-orig"
+        fi
+    fi
+    _held=1
+    if pending_has grub; then boot_rebuild grub || _held=0; fi
+    if pending_has uki; then boot_rebuild uki || _held=0; fi
+    [ "$_held" = 0 ] || row ok quiet "boot: loud again after a reboot, the boot menu and the kernel's messages as your files say"
+}
+
+console_apply() {   # after the renders: the palette at boot, the font, a quiet login and boot; macOS: the profile
+    palette_boot
+    terminal_apply
+    font_apply
+    login_apply
+    boot_apply
+}
+console_off() {   # off: every one handed back
+    palette_off ours
+    terminal_off
+    font_off
+    login_off
+    boot_off
+}
+
 # ------------------------------------------------------------------ verbs
 # One pair of switches: `on` is the terminal seat, `on desktop` the seat
 # and the desktop with its login box; `off desktop` takes those back and
@@ -628,6 +1264,7 @@ noun_ok() {   # noun_ok on|off [WORD...]
 cmd_on() {   # cmd_on [desktop]
     noun_ok on "$@"
     [ "${1:-}" != desktop ] || [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
+    if [ "${1:-}" = desktop ]; then pm_detect; [ "$DISTRO" != void ] || refuse "$VOID_NO_DESKTOP"; fi
     config_load
     if [ "${1:-}" = desktop ]; then
         # the config first, then everything on does with DESKTOP=sway:
@@ -652,10 +1289,10 @@ cmd_on() {   # cmd_on [desktop]
             ok packages "Brewfile satisfied"
         fi
     elif [ -z "$PM" ]; then
-        row todo packages "no package list for this Linux: distro/*.env know debian and arch"
+        row todo packages "no package list for this Linux: distro/*.env know debian, arch and void"
     else
         missing=''
-        pkgs="$PKG_SHELL $PKG_CLI"
+        pkgs="$PKG_SHELL $PKG_CLI $PKG_CONSOLE"
         if desktop_wanted; then pkgs="$pkgs $PKG_DESKTOP $PKG_GREETER"; fi
         # shellcheck disable=SC2086
         for p in $pkgs; do pkg_installed "$p" || missing="$missing $p"; done
@@ -666,14 +1303,17 @@ cmd_on() {   # cmd_on [desktop]
             row todo packages "still to install:$missing -- spark-shell on at a terminal (sudo once)"
         elif need packages "install$missing ($PM, sudo)"; then
             # shellcheck disable=SC2086
-            pkg_install $missing
-            ok packages "installed"
+            if pkg_install $missing; then ok packages "installed"
+            elif [ "$PM" = xbps ]; then row todo packages "xbps refused: a rolling Void wants sudo xbps-install -Su first, then spark-shell on"; acting=0
+            else row todo packages "$PM refused: its words are above -- spark-shell on again"; acting=0; fi
         fi
     fi
     # the desktop's packages ride the row above when DESKTOP=sway; say
     # why they are not there otherwise
     if [ "$OS" = Darwin ]; then
         [ "$DESKTOP" != sway ] || skip desktop "na: macOS has its own desktop"
+    elif [ "$DISTRO" = void ]; then
+        skip desktop "na: $VOID_NO_DESKTOP"
     elif ! desktop_wanted; then
         skip desktop "DESKTOP=none (the config)"
     fi
@@ -686,7 +1326,7 @@ cmd_on() {   # cmd_on [desktop]
     elif command -v starship >/dev/null 2>&1 || [ -x "$HOME/.local/bin/starship" ]; then
         v=$(PATH=$HOME/.local/bin:$PATH starship --version 2>/dev/null | head -1)
         ok prompt "${v:-starship} draws the prompt"
-    elif [ "$PM" = pacman ] || [ "$PM" = brew ]; then skip prompt "starship rides the packages row"
+    elif [ "$PM" = pacman ] || [ "$PM" = xbps ] || [ "$PM" = brew ]; then skip prompt "starship rides the packages row"
     else skip prompt "no starship package here: the shell's own prompt (the rc files draw it)"
     fi
     # terminfo: tmux-256color must know modified arrow keys
@@ -708,14 +1348,19 @@ cmd_on() {   # cmd_on [desktop]
     for f in $(rc_files); do
         link_one "$tree/$f" "$HOME/$f"
     done
+    theme_files   # the palette first: every render reads theme.env
     render_all
     # spark-shell on PATH, so the prompt and tmux can call it
     link_one "$REPO/spark-shell" "$HOME/.local/bin/spark-shell"
     tmux_reload
+    loud && printf '\n== the console\n'
+    if [ "$THEME" = none ]; then palette_off all; fi
+    console_apply
     if [ "$MODE" = dry ]; then
         dry_close
     else
         theme_seen
+        console_now
         if [ "$changes" -eq 0 ] && [ "$todo" -eq 0 ]; then echo "Nothing to do"; else echo "open a new shell (exec \$SHELL)"; fi
     fi
 }
@@ -743,6 +1388,8 @@ cmd_off() {   # cmd_off [desktop]
     done
     hand_back $RENDERED .config/starship.toml .config/yazi/theme.toml $DESKTOP_RENDERED   # yazi: a render v0.35 left, its .bak yours
     greeter_off
+    pm_detect
+    console_off   # the palette, the font, the login screen and the boot, as they were
     # spark's own hook must survive the hand-back: a restored or absent
     # rc file gets the one marked line back when spark is installed here
     hook_line=''
@@ -758,6 +1405,7 @@ cmd_off() {   # cmd_off [desktop]
         fi
     fi
     tmux_reload
+    console_now
     echo "packages stay installed -- the package manager removes them if you want"
     echo "open a new shell (exec \$SHELL)"
 }
@@ -793,6 +1441,7 @@ off_would() {   # off_would [desktop]
         else row would restore "$p -- removed (no ${p##*/}.bak: there was no file before)"; fi
     done
     if [ "$OS" != Darwin ] && greeter_ours; then row would greeter "getty on tty1 at the next boot, the login box's files handed back (sudo)"; fi
+    if [ "${1:-}" != desktop ]; then pm_detect; console_off; fi
     dry_close
 }
 
@@ -836,7 +1485,7 @@ desk_keys_card() {
 status_next() {   # the first sentence that applies, as a next row; nothing off, no row
     if [ -z "$(spark_bin)" ]; then n=spark; s="Install spark, the AI this seat is for: github.com/forgewright-ai/spark."
     elif [ "$OS" = Darwin ]; then return 0
-    elif [ "$DESKTOP" = none ]; then [ -d /dev/dri ] || return 0; n=desktop; s="spark-shell on desktop adds the desktop and the login box."
+    elif [ "$DESKTOP" = none ]; then [ -d /dev/dri ] && [ "$DISTRO" != void ] || return 0; n=desktop; s="spark-shell on desktop adds the desktop and the login box."
     elif [ -n "$(desktop_tools)" ]; then n=desktop; s="spark-shell on installs sway and foot."
     elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then n=desktop; s="spark-shell on renders sway and foot."
     elif ! greeter_at_boot; then n="login box"; s="spark-shell on desktop at a terminal puts greetd on tty1 (sudo once)."
@@ -885,17 +1534,21 @@ cmd_status() {
     fi
     theme_load || true
     slots="accent colour${ACCENT_SLOT:-?}, muted colour${MUTED_SLOT:-?} (SGR 1;${ACCENT_SGR:-?} / ${MUTED_SGR:-?})"
-    [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' theme.env "read: $slots (spark theme NAME rewrites it, then spark-shell on)" \
-                        || printf '  theme %-16s %s\n' theme.env "none: the terminal's own 16 -- $slots"
+    [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' "${THEME:-theme.env}" "read: $slots (spark-shell theme NAME changes it)" \
+                        || printf '  theme %-16s %s\n' "${THEME:-theme.env}" "none: the terminal's own 16 -- $slots"
+    status_console
     status_next
 }
 
 cmd_check() {
     config_load
     fails=0
-    chk() { # chk NAME ok|fail DETAIL [REMEDY]
-        if [ "$2" = ok ]; then printf 'ok     %-12s %s\n' "$1" "$3"
-        else printf 'FAIL   %-12s %s -- %s\n' "$1" "$3" "${4:-}"; fails=$((fails + 1)); fi
+    chk() { # chk NAME ok|warn|fail DETAIL [REMEDY] -- a warn names its remedy and does not fail
+        case $2 in
+            ok) printf 'ok     %-12s %s\n' "$1" "$3" ;;
+            warn) printf 'warn   %-12s %s -- %s\n' "$1" "$3" "${4:-}" ;;
+            *) printf 'FAIL   %-12s %s -- %s\n' "$1" "$3" "${4:-}"; fails=$((fails + 1)) ;;
+        esac
     }
     tree=$(rc_tree)
     rc_ok=1
@@ -909,7 +1562,7 @@ cmd_check() {
     # (and spark): a non-login ssh shell has no such PATH, so look there too
     pm_detect
     tools="tmux fzf zoxide eza bat btop fd"
-    if [ "$PROMPT" = starship ] && { [ "$PM" = pacman ] || [ "$PM" = brew ]; }; then tools="$tools starship"; fi
+    if [ "$PROMPT" = starship ] && { [ "$PM" = pacman ] || [ "$PM" = xbps ] || [ "$PM" = brew ]; }; then tools="$tools starship"; fi
     for t in $tools; do
         tool_here "$t" || miss="$miss $t"
     done
@@ -926,7 +1579,11 @@ cmd_check() {
         cmp -s "$TMP/chk" "$HOME/$rel" || stale="$stale $rel"
     done
     [ -z "$stale" ] && chk look ok "the rendered look matches the palette" || chk look fail "stale:$stale" "spark-shell on"
+    check_theme
+    check_font
+    check_quiet
     if [ "$OS" = Darwin ]; then chk desktop ok "na (macOS)"
+    elif [ "$DISTRO" = void ]; then chk desktop ok "na ($VOID_NO_DESKTOP)"
     elif [ "$DESKTOP" = none ]; then chk desktop ok "na (DESKTOP=none)"
     elif [ -n "$(desktop_tools)" ]; then chk desktop fail "missing:$(desktop_tools)" "spark-shell on"
     else
@@ -941,6 +1598,7 @@ cmd_check() {
         else chk desktop ok "sway and foot, the renders match the palette -- a desk from your words"; fi
     fi
     if [ "$OS" = Darwin ]; then chk greeter ok "na (macOS)"
+    elif [ "$DISTRO" = void ]; then chk greeter ok "na ($VOID_NO_DESKTOP)"
     elif [ "$DESKTOP" = none ]; then chk greeter ok "na (DESKTOP=none)"
     elif [ -n "$(greeter_tools)" ]; then chk greeter fail "missing:$(greeter_tools)" "spark-shell on desktop"
     else
@@ -981,6 +1639,270 @@ cmd_bar() {
            [ "$s" != off ] && echo "spark-shell bar -- shown (spark-shell bar off hides it)" \
                            || echo "spark-shell bar -- hidden (spark-shell bar on brings it back)" ;;
     esac
+}
+
+# ---------------------------------------------- verbs: theme, font, quiet
+# Each writes its key in the config and applies it now, the same steps
+# `on` runs; bare, each says what is set. A refusal is one sentence and
+# exit 1, before the config is touched.
+refuse_in() { echo "spark-shell $1: $2"; exit 1; }   # refuse_in VERB SENTENCE
+seat_on() { _r=$(rc_files); _r=${_r%% *}; [ -L "$HOME/$_r" ] && [ "$(readlink "$HOME/$_r")" = "$(rc_tree)/$_r" ]; }
+look_follow() {   # after a palette change: the renders follow while the seat is on
+    seat_on || return 0
+    render_all
+    [ "$MODE" = dry ] || { tmux_reload; theme_seen; }
+}
+verb_close() {   # the last line of a verb: the count on a dry run, the sentence when all of it held
+    if [ "$MODE" = dry ]; then dry_close
+    elif [ "$todos" -gt 0 ]; then echo "Not all of it is done: the todo rows above say what is left."
+    else echo "$1"; fi
+}
+
+cmd_theme() {   # theme [NAME|none|list|show]
+    config_load
+    case ${1:-show} in
+        show) [ $# -le 1 ] || refuse_in theme "show takes no word"; theme_show; return ;;
+        list) [ $# -le 1 ] || refuse_in theme "list takes no word"; theme_list; return ;;
+    esac
+    [ $# -eq 1 ] || refuse_in theme "one palette at a time: spark-shell theme NAME"
+    name=$1
+    if [ "$name" != none ]; then
+        palette_file "$name" >/dev/null || refuse_in theme "no palette named $name -- spark-shell theme list shows them"
+        palette_render "$name" || refuse_in theme "$(cat "$TMP/palette.why")"
+    fi
+    pm_detect
+    [ "$MODE" = dry ] || [ "$THEME" = "$name" ] || config_set THEME "$name"
+    THEME=$name; export THEME
+    theme_files
+    look_follow
+    if [ "$name" = none ]; then palette_off all; terminal_off
+    else palette_boot; terminal_apply; fi
+    console_now
+    if [ "$name" = none ]; then verb_close "The palette is none: the console's VGA sixteen and the terminal's own colours."
+    else verb_close "The palette is $name. A new shell has it (exec \$SHELL)."; fi
+}
+theme_show() {
+    if [ -z "$THEME" ]; then echo "theme  unset: the palette stays as it is (spark-shell theme list shows them)"
+    else echo "theme  $THEME ($CONFIG)"; fi
+    if [ -f "$THEME_ENV" ]; then src=$THEME_ENV
+    elif [ -n "$THEME" ] && [ "$THEME" != none ]; then src=$(palette_file "$THEME") || src=''
+    else src=''; fi
+    if [ -z "$src" ]; then echo "  none: the console's VGA sixteen, the terminal's own colours"; return 0; fi
+    for k in BG FG ACCENT MUTED; do printf '  %-8s %s\n' "$(printf '%s' "$k" | tr 'A-Z' 'a-z')" "$(palette_get "$src" "THEME_$k")"; done
+    row8() { _l=''; for n in "$@"; do _l="$_l $(palette_get "$src" "THEME_ANSI_$n")"; done; printf '%s' "${_l# }"; }
+    printf '  %-8s %s\n' ansi "$(row8 0 1 2 3 4 5 6 7)" bright "$(row8 8 9 10 11 12 13 14 15)"
+    [ "$src" != "$THEME_ENV" ] || printf '  %-8s %s\n' files "theme.env and console-colors, rendered from the palette"
+}
+theme_list() {
+    echo "The palettes (yours in $PALETTE_DIR win over the repository's):"
+    { echo none; palette_names; } | while IFS= read -r n; do
+        note=''
+        case $n in none) note="the console's VGA sixteen, the terminal's own colours" ;; esac
+        [ ! -f "$PALETTE_DIR/$n.env" ] || note=yours
+        [ "$n" != "${THEME:-}" ] || note="${note:+$note, }current"
+        printf '  %-20s %s\n' "$n" "$note"
+    done
+    echo "spark-shell theme NAME puts one on the console, the renders and spark."
+}
+
+cmd_font() {   # font [FACE SIZE|list|none]
+    config_load
+    pm_detect
+    case ${1:-show} in
+        show) [ $# -le 1 ] || refuse_in font "show takes no word"; font_show; return ;;
+        list) [ $# -le 1 ] || refuse_in font "list takes no word"; font_list; return ;;
+        none)
+            [ $# -eq 1 ] || refuse_in font "none takes no word"
+            [ "$MODE" = dry ] || [ -z "$CONSOLE_FONT" ] || config_set CONSOLE_FONT ''
+            CONSOLE_FONT=''
+            if [ "$OS" = Darwin ]; then terminal_apply; else font_off; fi
+            verb_close "The console keeps its own font."; return ;;
+    esac
+    [ $# -eq 2 ] || refuse_in font "a face and a size: spark-shell font FACE SIZE (spark-shell font list shows them)"
+    face=$1; size=$2
+    printf '%s' "$face" | grep -qE '^[A-Za-z0-9._-]+$' || refuse_in font "$face is not a font name (spark-shell font list shows them)"
+    if [ "$OS" = Darwin ]; then
+        printf '%s' "$size" | grep -qE '^[0-9]{1,2}(\.[0-9])?$' && [ "${size%%.*}" -ge 6 ] && [ "${size%%.*}" -le 72 ] \
+            || refuse_in font "$size is not a size: points on macOS, 6 to 72 (13)"
+        mac_face_here "$face" || refuse_in font "no font named $face is installed here (spark-shell font list shows them)"
+    else
+        is_wsl && refuse_in font "WSL has no console: the font is Windows Terminal's."
+        [ -n "$(console_shape)" ] || refuse_in font "there is no console-setup, vconsole.conf or rc.conf here, so the console font stays as it is."
+        printf '%s' "$size" | grep -qE '^[0-9]+x[0-9]+$' || refuse_in font "$size is not a size: WxH on the console (16x32)"
+        console_fonts > "$TMP/fonts"
+        if [ -s "$TMP/fonts" ]; then
+            grep -q "^$face " "$TMP/fonts" || refuse_in font "no console font named $face here (spark-shell font list shows them)"
+            grep -qx "$face $size" "$TMP/fonts" || refuse_in font "$face comes in $(sed -n "s/^$face //p" "$TMP/fonts" | paste -sd' ' -), not $size"
+        fi
+    fi
+    [ "$MODE" = dry ] || [ "$CONSOLE_FONT" = "$face $size" ] || config_set CONSOLE_FONT "$face $size"
+    CONSOLE_FONT="$face $size"; export CONSOLE_FONT
+    if [ "$OS" = Darwin ]; then
+        [ -f "$THEME_ENV" ] && [ -n "$THEME" ] && [ "$THEME" != none ] \
+            || { verb_close "The font rides the palette's Terminal.app profile: spark-shell theme NAME makes it."; return 0; }
+        terminal_apply
+    else
+        font_apply
+    fi
+    verb_close "The console's font is $face $size."
+}
+font_show() {
+    if [ "$OS" = Darwin ]; then
+        set -- $CONSOLE_FONT
+        echo "font  ${1:-Menlo-Regular} ${2:-13}: Terminal.app's profile$([ -n "$CONSOLE_FONT" ] || printf ' (the default)')"
+    elif is_wsl; then echo "font  WSL has no console: the font is Windows Terminal's"
+    elif [ -z "$(console_shape)" ]; then echo "font  there is no console-setup, vconsole.conf or rc.conf here"
+    elif [ -z "$CONSOLE_FONT" ]; then echo "font  unset: the console keeps its font (spark-shell font list shows the faces)"
+    else echo "font  $CONSOLE_FONT ($(font_file "$(console_shape)"))"; fi
+}
+font_list() {
+    if [ "$OS" = Darwin ]; then
+        echo "The monospace faces here, by PostScript name (the size is points, 13):"
+        for f in $MAC_FACES; do mac_face_here "$f" && printf '  %s\n' "$f"; done
+        echo "Font Book shows any other font's PostScript name."
+        return 0
+    fi
+    is_wsl && { echo "WSL has no console: the font is Windows Terminal's."; return 0; }
+    shape=$(console_shape)
+    [ -n "$shape" ] || { echo "There is no console-setup, vconsole.conf or rc.conf here."; return 0; }
+    console_fonts > "$TMP/fonts"
+    if [ ! -s "$TMP/fonts" ]; then echo "No console fonts under /usr/share/kbd/consolefonts or /usr/share/consolefonts."; return 0; fi
+    echo "The console fonts in $(consolefonts_dir), as spark-shell font takes them:"
+    awk '{ s[$1] = s[$1] " " $2 } END { for (f in s) printf "  %-24s%s\n", f, s[f] }' "$TMP/fonts" | sort
+    echo "spark-shell font FACE SIZE puts one in $(font_file "$shape")."
+}
+
+cmd_quiet() {   # quiet [login|boot [on|off]]
+    config_load
+    pm_detect
+    case ${1:-} in
+        '') quiet_show login; quiet_show boot; return ;;
+        login|boot) ;;
+        *) refuse_in quiet "$1 is not a thing to quiet (login and boot are)" ;;
+    esac
+    what=$1
+    case ${2:-} in
+        '') quiet_show "$what"; return ;;
+        on|off) [ $# -eq 2 ] || refuse_in quiet "one switch at a time: spark-shell quiet $what on|off" ;;
+        *) refuse_in quiet "$2 is not a switch (on or off)" ;;
+    esac
+    [ "$OS" != Darwin ] || refuse_in quiet "macOS has no login notice or boot menu to quiet."
+    if [ "$what" = boot ] && [ "$2" = on ]; then
+        why=$(boot_refusal "$(boot_shape)"); [ -z "$why" ] || refuse_in quiet "$why"
+    fi
+    if [ "$2" = on ]; then val=yes; else val=no; fi
+    if [ "$what" = login ]; then
+        [ "$MODE" = dry ] || [ "$QUIET_LOGIN" = "$val" ] || config_set QUIET_LOGIN "$val"
+        QUIET_LOGIN=$val; export QUIET_LOGIN; login_apply
+    else
+        [ "$MODE" = dry ] || [ "$QUIET_BOOT" = "$val" ] || config_set QUIET_BOOT "$val"
+        QUIET_BOOT=$val; export QUIET_BOOT; boot_apply
+    fi
+    case $what$val in
+        loginyes) verb_close "The login is quiet: a bare login prompt from the next login." ;;
+        loginno) verb_close "The login is as the distro made it from the next login." ;;
+        bootyes) verb_close "The boot is quiet from the next boot." ;;
+        *) verb_close "The boot is as the distro made it from the next boot." ;;
+    esac
+}
+quiet_show() {   # quiet_show login|boot -- one row
+    if [ "$OS" = Darwin ]; then printf '%-6s na: macOS has no login notice or boot menu to quiet\n' "$1"; return 0; fi
+    if [ "$1" = login ]; then
+        if [ "$QUIET_LOGIN" = yes ]; then echo "login  on: a bare login prompt, no notice, no kernel line"
+        else echo "login  off: the distro's notice and the kernel line (spark-shell quiet login on)"; fi
+        return 0
+    fi
+    why=$(boot_refusal "$(boot_shape)")
+    if [ -n "$why" ]; then echo "boot   na: $why"
+    elif [ "$QUIET_BOOT" = yes ]; then echo "boot   on: straight past the menu, a quiet kernel line"
+    else echo "boot   off: the boot menu and the kernel's messages (spark-shell quiet boot on)"; fi
+}
+
+# check and status: the three console rows, ok|warn|fail, a remedy each
+check_theme() {
+    if [ -z "$THEME" ]; then chk theme ok "na (THEME unset: the palette stays as it is -- spark-shell theme NAME)"; return; fi
+    if [ "$THEME" = none ]; then
+        if [ -f "$THEME_ENV" ]; then chk theme fail "THEME=none, but theme.env is here" "spark-shell on"
+        elif console_linux && { [ -e "$ROOT/$CONSOLE_UNIT" ] || [ -n "$(marked "$ROOT/etc/rc.local" "$PALETTE_MARK")" ]; }; then
+            chk theme fail "THEME=none, but a palette is still set at boot" "spark-shell on"
+        else chk theme ok "none: the console's VGA sixteen, the terminal's own colours"; fi
+        return
+    fi
+    if ! palette_render "$THEME"; then chk theme fail "THEME=$THEME: $(cat "$TMP/palette.why")" "spark-shell theme list"; return; fi
+    cmp -s "$TMP/theme.env" "$THEME_ENV" || { chk theme fail "$THEME: theme.env is not the palette's" "spark-shell on"; return; }
+    if [ "$OS" = Darwin ]; then
+        set -- $CONSOLE_FONT
+        if [ "$(cat "$TERMINAL_SEEN" 2>/dev/null)" != "$(cksum < "$THEME_ENV" | cut -d' ' -f1) ${1:-Menlo-Regular} ${2:-13}" ]; then
+            chk theme warn "$THEME: Terminal.app's profile is not the palette's yet" "spark-shell on"; return
+        fi
+        chk theme ok "$THEME: theme.env and Terminal.app's profile are current"; return
+    fi
+    if console_linux; then
+        { cmp -s "$TMP/console-colors" "$CONSOLE_COLORS" && cmp -s "$TMP/console-colors.rgb" "$CONSOLE_RGB"; } \
+            || { chk theme fail "$THEME: console-colors is not the palette's" "spark-shell on"; return; }
+        case $(init_shape) in
+            systemd) unit_render
+                { cmp -s "$TMP/unit" "$ROOT/$CONSOLE_UNIT" && unit_enabled spark-shell-console.service; } \
+                    || { chk theme fail "$THEME: spark-shell-console.service does not set it at boot" "spark-shell on (sudo once)"; return; } ;;
+            runit) [ "$(marked "$ROOT/etc/rc.local" "$PALETTE_MARK")" = "$(palette_line)" ] \
+                    || { chk theme fail "$THEME: no line in /etc/rc.local sets it at boot" "spark-shell on (sudo once)"; return; } ;;
+        esac
+        if vt_here && [ "$(vt_live)" != "$(head -1 "$CONSOLE_RGB")" ]; then
+            chk theme warn "$THEME: the console wears another palette until the next boot" "spark-shell on"; return
+        fi
+    fi
+    chk theme ok "$THEME: theme.env and the console's palette are current"
+}
+check_font() {
+    if [ -z "$CONSOLE_FONT" ]; then chk font ok "na (CONSOLE_FONT unset: the console keeps its font)"; return; fi
+    if [ "$OS" = Darwin ]; then chk font ok "$CONSOLE_FONT in Terminal.app's profile"; return; fi
+    if is_wsl; then chk font ok "na (WSL has no console)"; return; fi
+    shape=$(console_shape)
+    if [ -z "$shape" ]; then chk font warn "no console-setup, vconsole.conf or rc.conf here" "spark-shell font none"; return; fi
+    if [ "$(font_now "$shape")" = "$(font_want "$shape")" ]; then chk font ok "$CONSOLE_FONT ($(font_file "$shape"))"
+    else chk font fail "$(font_file "$shape") says $(font_now "$shape")" "spark-shell on (sudo once)"; fi
+}
+check_quiet() {
+    if [ "$OS" = Darwin ]; then chk quiet ok "na (macOS)"; return; fi
+    st=ok; say=''
+    if [ "$QUIET_LOGIN" = yes ]; then
+        if login_quiet; then say="login quiet"; else say="login loud"; st=fail; fi
+    elif login_traces; then say="login still quiet (QUIET_LOGIN=no)"; st=fail
+    else say="login loud"; fi
+    shape=$(boot_shape); kind=$(boot_kind "$shape")
+    if [ "$QUIET_BOOT" = yes ]; then
+        case $shape in
+            wsl) say="$say, boot na (WSL)" ;;
+            arch) say="$say, boot na (no unified kernel image)" ;;
+            nogrub) say="$say, boot na (no GRUB)" ;;
+            *)
+                if ! boot_quiet "$shape"; then say="$say, boot loud"; st=fail
+                elif pending_has "$kind"; then say="$say, boot quiet but its rebuild failed"; st=fail
+                elif [ "$kind" = grub ] && [ -r "$ROOT/boot/grub/grub.cfg" ] && ! grep -q 'loglevel=3' "$ROOT/boot/grub/grub.cfg"; then say="$say, boot loud (grub.cfg lacks the quiet line)"; st=fail
+                elif [ -r "$ROOT/proc/cmdline" ] && ! grep -q 'loglevel=3' "$ROOT/proc/cmdline"; then
+                    say="$say, boot quiet after a reboot"; [ "$st" = fail ] || st=warn
+                else say="$say, boot quiet"; fi ;;
+        esac
+    elif [ -e "$ROOT/$GRUB_DROPIN" ] || [ -e "$ROOT/$CMDLINE_DROPIN" ] || pending_has grub || pending_has uki \
+         || [ -n "$(marked "$ROOT/etc/default/grub" "$QUIET_MARK")$(marked "$ROOT/etc/rc.conf" "$QUIET_MARK")" ]; then
+        say="$say, boot still quiet (QUIET_BOOT=no)"; st=fail
+    else say="$say, boot loud"; fi
+    case $st in
+        ok) chk quiet ok "$say" ;;
+        warn) chk quiet warn "$say" "reboot: the next boot is quiet" ;;
+        *) chk quiet fail "$say" "spark-shell on (sudo once)" ;;
+    esac
+}
+status_console() {   # the font and quiet rows of status (the theme row is the look's)
+    if [ "$OS" = Darwin ]; then set -- $CONSOLE_FONT; printf '  font  %-16s %s\n' "${1:-Menlo-Regular} ${2:-13}" "Terminal.app's profile (spark-shell font FACE SIZE)"
+    elif is_wsl; then printf '  font  %-16s %s\n' na "WSL has no console"
+    elif [ -z "$CONSOLE_FONT" ]; then printf '  font  %-16s %s\n' unset "the console keeps its font (spark-shell font list)"
+    else printf '  font  %-16s %s\n' "$CONSOLE_FONT" "$(font_file "$(console_shape)")"; fi
+    if [ "$OS" = Darwin ]; then printf '  quiet %-16s %s\n' na "macOS has no login notice or boot menu"; return 0; fi
+    l=off; [ "$QUIET_LOGIN" != yes ] || l=on
+    b=off; [ "$QUIET_BOOT" != yes ] || b=on
+    [ -z "$(boot_refusal "$(boot_shape)")" ] || b=na
+    printf '  quiet %-16s %s\n' "login $l" "boot $b (spark-shell quiet login|boot on|off)"
 }
 
 # ------------------------------------------------------------------ desks
@@ -1058,6 +1980,16 @@ sbom_collect() {   # -> $TMP/sbom: NAME VERSION LICENSE REASON DESCRIPTION COMMA
                 printf '%s\t%s\t%s\t%s\t%s\n' "$n" "$v" "${lic:-?}" "$r" "$d"
                 grep -E '^/usr/bin/[^/]+$|/applications/[^/]+\.desktop$' "/var/lib/dpkg/info/$n.list" 2>/dev/null | sed "s/^/$n\t/" >> "$TMP/files"
             done < "$TMP/pkgs.raw" > "$TMP/pkgs" ;;
+        xbps)
+            xbps-query -m 2>/dev/null | sort > "$TMP/manual"
+            xbps-query -l 2>/dev/null | while read -r _ pv d; do
+                n=${pv%-*}
+                lic=$(xbps-query -p license "$n" 2>/dev/null | head -1)
+                if grep -qx "$pv" "$TMP/manual"; then r=chosen; else r=dependency; fi
+                printf '%s\t%s\t%s\t%s\t%s\n' "$n" "${pv##*-}" "${lic:-?}" "$r" "$d"
+                grep -oE '/usr/bin/[^<]+|/usr/share/applications/[^<]+\.desktop' "$ROOT/var/db/xbps/.$n-files.plist" 2>/dev/null \
+                    | awk -v n="$n" '{print n "\t" $0}' >> "$TMP/files"
+            done > "$TMP/pkgs" ;;
         brew)
             brew info --json=v2 --installed 2>/dev/null | jq -r '
                 (.formulae[] | [.name, (.installed[0].version // .versions.stable // "?"), (.license // "?"),
@@ -1101,7 +2033,7 @@ cmd_sbom() {   # sbom [apps|tools|parts|NAME] [--json]
     for a in "$@"; do case $a in --json) json=1 ;; -*) ;; *) pick=$a ;; esac; done
     command -v jq >/dev/null 2>&1 || { echo "spark-shell sbom: jq is not installed (spark-shell on)"; return 1; }
     sbom_collect
-    [ -s "$TMP/sbom" ] || { echo "spark-shell sbom: no package manager here that this repo knows (pacman, apt, brew)"; return 1; }
+    [ -s "$TMP/sbom" ] || { echo "spark-shell sbom: no package manager here that this repo knows (pacman, apt, xbps, brew)"; return 1; }
     if [ "$json" = 1 ]; then
         mkdir -p "$(dirname "$SBOM_JSON")"
         sbom_json > "$SBOM_JSON"
@@ -1560,12 +2492,14 @@ desk_list() {
 # status is ours. Each refusal is one line and exit 1.
 cmd_desktop() {
     config_load
+    [ "$OS" = Darwin ] || pm_detect
     pending=''
     case ${1:-} in
         on) shift; cmd_on desktop "$@"; return ;;
         off) shift; cmd_off desktop "$@"; return ;;
         wallpaper)
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
+            [ "$DISTRO" != void ] || refuse "$VOID_NO_DESKTOP"
             case ${2:-} in
                 '') if [ "$WALLPAPER" = none ]; then echo "wallpaper none -- the palette's background (spark-shell desktop wallpaper PATH|default)"
                     elif [ "$WALLPAPER" = default ] && wall_there; then echo "wallpaper default -- the forge wallpaper, $WALL_DEFAULT"
@@ -1586,6 +2520,7 @@ cmd_desktop() {
             return ;;
         apps|tools)
             [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
+            [ "$DISTRO" != void ] || refuse "$VOID_NO_DESKTOP"
             cmd_apps "$1"; return ;;
         keep|forget)   # keep [WORDS]: the last desk, under those words (its own by default); forget WORDS
             verb=$1; shift
@@ -1631,7 +2566,7 @@ cmd_desktop() {
                 desk_keys_card || true
             fi
             # the config's exports are ours, not the shell's (PROMPT would be zsh's prompt string)
-            rm -rf "$TMP"; trap - EXIT; exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA "${SHELL:-/bin/sh}" ;;
+            rm -rf "$TMP"; trap - EXIT; exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT "${SHELL:-/bin/sh}" ;;
         ''|-*) ;;
         *)  # a need, or a kept desk by name; the player is where you ask from: windows inside
             # sway, rooms (tmux) anywhere else; --windows from a console starts sway first
@@ -1647,12 +2582,13 @@ cmd_desktop() {
             fi ;;
     esac
     [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
+    [ "$DISTRO" != void ] || refuse "$VOID_NO_DESKTOP"
     # the desktop off, asked from a console (a login box still running
     # after desktop off runs this on Enter): your shell, never a dead end
     if [ "$DESKTOP" != sway ] && [ -n "${XDG_VTNR:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
         echo "The desktop is off (spark-shell on desktop brings it back). This is your shell."
         rm -rf "$TMP"; trap - EXIT
-        exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA "${SHELL:-/bin/sh}" -l
+        exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT "${SHELL:-/bin/sh}" -l
     fi
     [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop"
     [ -z "$(desktop_tools)" ] || refuse "not installed:$(desktop_tools) (spark-shell on)"
@@ -1684,6 +2620,7 @@ main() {
         a=$1; shift; n=$((n - 1))
         case $a in --dry-run) MODE=dry ;; --verbose|-v) VERBOSE=1 ;; --windows|--rooms) PLAYER=${a#--} ;; *) set -- "$@" "$a" ;; esac
     done
+    case ${1:-} in -h|--help) usage; return 0 ;; esac   # a verb's -h answers first
     case $sub in
         -h|--help|help) usage ;;
         on) cmd_on "$@" ;;
@@ -1692,6 +2629,9 @@ main() {
         follow) cmd_follow ;;
         check) cmd_check ;;
         bar) cmd_bar "$@" ;;
+        theme) cmd_theme "$@" ;;
+        font) cmd_font "$@" ;;
+        quiet) cmd_quiet "$@" ;;
         sbom) cmd_sbom "$@" ;;
         desktop) cmd_desktop "$@" ;;
         status) cmd_status ;;

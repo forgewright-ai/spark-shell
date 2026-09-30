@@ -1,5 +1,5 @@
 # spark-shell CI: the render, link and hand-back machinery in a throwaway
-# HOME and a throwaway root -- on Ubuntu, Debian, Arch and macOS. Plus the
+# HOME and a throwaway root -- on Ubuntu, Debian, Arch, Void and macOS. Plus the
 # privacy patterns, ASCII docs, shellcheck, and the package names of
 # distro/*.env looked up on their own family (nothing installed).
 name: ci
@@ -42,7 +42,7 @@ jobs:
       - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git shellcheck diffutils jq >/dev/null   # jq: a desk reads the model's answer with it
       - uses: actions/checkout@v4
       - name: every package name of distro/debian.env exists on Debian (nothing installed)
-        run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_DESKTOP=//p; s/^PKG_GREETER=//p' distro/debian.env) >/dev/null
+        run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_GREETER=//p' distro/debian.env) >/dev/null
       - name: shellcheck
         run: shellcheck -S warning spark-shell tests/shell_test.sh
       - name: the suite in a throwaway HOME
@@ -56,7 +56,21 @@ jobs:
       - run: pacman -Syu --noconfirm --needed git diffutils jq >/dev/null
       - uses: actions/checkout@v4
       - name: every package name of distro/arch.env exists on Arch (nothing installed)
-        run: pacman -Sp --needed $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_DESKTOP=//p; s/^PKG_GREETER=//p' distro/arch.env) >/dev/null
+        run: pacman -Sp --needed $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_GREETER=//p' distro/arch.env) >/dev/null
+      - name: the suite in a throwaway HOME
+        run: sh tests/shell_test.sh
+  void:
+    # the third family: xbps (glibc), no desktop yet. xbps itself first: a
+    # rolling distro refuses every install while xbps is behind. libstdc++
+    # is the runner's node (checkout)
+    runs-on: ubuntu-latest
+    container: ghcr.io/void-linux/void-glibc-full:latest
+    timeout-minutes: 10
+    steps:
+      - run: xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null; xbps-install -Sy git bash diffutils jq gawk gzip libstdc++ >/dev/null
+      - uses: actions/checkout@v4
+      - name: every package name of distro/void.env exists on Void (nothing installed)
+        run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p' distro/void.env); do xbps-query -R "$p" >/dev/null || { echo "no package $p"; exit 1; }; done
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
   macos:
