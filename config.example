@@ -32,3 +32,21 @@ WALLPAPER=default
 # foot over a picture: 0 to 1, 1 opaque. A dark picture reads well at
 # 0.85, and a bright one wants more.
 ALPHA=0.85
+
+# The palette: none (the terminal's own colours) or a name from
+# themes/ (spark-shell theme list shows them). spark-shell theme NAME
+# writes this line and applies it.
+THEME=none
+
+# The console font on Linux, or the Terminal.app profile's on a Mac:
+# the face and the size (Terminus 16x32, or Menlo-Regular 13). Empty
+# leaves the console's own. spark-shell font writes this line.
+CONSOLE_FONT=
+
+# Linux only. no or yes: the distro's notice and the kernel's line off
+# before the greeting. spark-shell quiet login on|off writes this line.
+QUIET_LOGIN=no
+
+# Linux only. no or yes: a silent boot, the boot menu hidden. spark-shell
+# quiet boot on|off writes this line.
+QUIET_BOOT=no

@@ -43,10 +43,14 @@ sh -n spark-shell tests/shell_test.sh .githooks/pre-commit || bad "sh syntax"
 if command -v shellcheck >/dev/null 2>&1; then
     shellcheck -S warning spark-shell tests/shell_test.sh || bad "shellcheck"
 else notice "shellcheck not found; skipped"; fi
+python3 -m py_compile lib/terminal_profile.py tests/profile_test.py || bad "python syntax"
+if [ "$(uname)" = Darwin ]; then
+    SPARK_SHELL_NO_APPLY=1 /usr/bin/python3 tests/profile_test.py >/dev/null || bad "profile_test"
+fi
 
 # --- 3. docs, script and templates stay ASCII (read on a console) -----
 tab=$(printf '\t')
-for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example spark-shell tests/shell_test.sh $(find templates distro desks -type f | sort); do
+for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example spark-shell tests/shell_test.sh lib/terminal_profile.py tests/profile_test.py $(find templates distro desks themes -type f | sort); do
     hit=$(LC_ALL=C grep -n "[^ -~${tab}]" "$f" | head -3 || true)
     [ -z "$hit" ] || bad "non-ASCII in $f:
 $hit"

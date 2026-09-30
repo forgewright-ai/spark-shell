@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.41
+
+- The palette, the font and quiet came home from spark core, which
+  dropped `spark theme`, `spark font` and `spark quiet login|boot` in
+  1.62. They are `spark-shell theme [NAME|list|show]`,
+  `spark-shell font [FACE SIZE|list]` and
+  `spark-shell quiet [login|boot on|off]`, the look's own verbs beside
+  the look. The config keys are `THEME`,
+  `CONSOLE_FONT`, `QUIET_LOGIN` and `QUIET_BOOT`, each with a comment
+  in config.example.
+- The 9 palettes ship in `themes/`, copied from spark 1.61 with each
+  file's upstream and licence line kept. CREDITS lists every upstream
+  and its licence, and kbd (`setvtrgb`, `setfont`) under the tools.
+- `lib/terminal_profile.py` is the Terminal.app helper, ported from
+  spark 1.61 with the Python 3 standard library only, so Apple's
+  `/usr/bin/python3` runs it. `apply THEME_ENV FACE SIZE` builds the
+  `spark-shell` profile, makes it the default and sets it on every
+  open window. `remove` takes it away with any `spark*` profile an
+  older spark left, and Basic is the default again. `fonts` and
+  `has-font FACE` answer from Spotlight. The key map spark carried for
+  micro is gone: key bindings are an app's business, not the look's.
+  `SPARK_SHELL_NO_APPLY=1` builds and prints and never touches
+  Terminal.app. `tests/profile_test.py` holds it.
+- Void is supported: the terminal seat, the palette, the font and
+  quiet. The desktop and the login box stay with the Debian and Arch
+  families.
+
 ## v0.40
 
 - Every document, the help and the program's words speak with one
