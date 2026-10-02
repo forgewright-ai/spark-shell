@@ -58,17 +58,17 @@ printf '%s\n' "$out" | grep -Eq '^[0-9]+ to do$' && ok "dry-run ends with the co
 printf '%s\n' "$out" | grep -Eq '^(would|todo|FAIL|warn) +font' && bad "a font row acts with CONSOLE_FONT unset" "$out" || ok "dry-run: no font row acts (CONSOLE_FONT unset)"
 [ ! -e "$HOME/.tmux.conf" ] && ok "dry-run touched nothing" || bad "dry-run wrote files"
 rc=0; out=$(sh "$SH" on nonsense 2>&1) || rc=$?
-[ "$rc" -eq 1 ] && [ "$out" = "spark-shell on: nonsense is not a thing to switch on (desktop is)" ] && [ ! -e "$HOME/.tmux.conf" ] && [ ! -e "$HOME/.config/spark-shell/config" ] \
+[ "$rc" -eq 1 ] && [ "$out" = "spark-shell on: nonsense is not known here (only desktop is)" ] && [ ! -e "$HOME/.tmux.conf" ] && [ ! -e "$HOME/.config/spark-shell/config" ] \
     && ok "on NOUN: an unknown noun is refused in one sentence before anything runs (exit 1)" || bad "on nonsense" "rc=$rc $out"
 rc=0; out=$(sh "$SH" off nonsense 2>&1) || rc=$?
-[ "$rc" -eq 1 ] && [ "$out" = "spark-shell off: nonsense is not a thing to switch off (desktop is)" ] && ok "off NOUN: the same refusal" || bad "off nonsense" "rc=$rc $out"
+[ "$rc" -eq 1 ] && [ "$out" = "spark-shell off: nonsense is not known here (only desktop is)" ] && ok "off NOUN: the same refusal" || bad "off nonsense" "rc=$rc $out"
 rc=0; out=$(sh "$SH" apply nonsense 2>&1) || rc=$?
-[ "$rc" -eq 1 ] && [ "$out" = "spark-shell on: nonsense is not a thing to switch on (desktop is)" ] && ok "apply NOUN: the spelling refuses like on" || bad "apply nonsense" "rc=$rc $out"
+[ "$rc" -eq 1 ] && [ "$out" = "spark-shell on: nonsense is not known here (only desktop is)" ] && ok "apply NOUN: the spelling refuses like on" || bad "apply nonsense" "rc=$rc $out"
 rc=0; out=$(sh "$SH" desktop on extra 2>&1) || rc=$?
-[ "$rc" -eq 1 ] && [ "$out" = "spark-shell on: desktop extra is not a thing to switch on (desktop is)" ] && [ ! -e "$HOME/.tmux.conf" ] && [ ! -e "$HOME/.config/spark-shell/config" ] \
+[ "$rc" -eq 1 ] && [ "$out" = "spark-shell on: desktop extra is not known here (only desktop is)" ] && [ ! -e "$HOME/.tmux.conf" ] && [ ! -e "$HOME/.config/spark-shell/config" ] \
     && ok "desktop on EXTRA: the spelling refuses an extra word, nothing written" || bad "desktop on extra" "rc=$rc $out"
 rc=0; out=$(sh "$SH" on "" 2>&1) || rc=$?
-[ "$rc" -eq 1 ] && [ "$out" = "spark-shell on: an empty word is not a thing to switch on (desktop is)" ] && [ ! -e "$HOME/.tmux.conf" ] && ok "on '': an empty word is refused (every word byte-exact)" || bad "on empty" "rc=$rc $out"
+[ "$rc" -eq 1 ] && [ "$out" = "spark-shell on: an empty word is not known here (only desktop is)" ] && [ ! -e "$HOME/.tmux.conf" ] && ok "on '': an empty word is refused (every word byte-exact)" || bad "on empty" "rc=$rc $out"
 
 # --- 2. on: links, renders, idempotence, the plain look ------------------
 theme_fixture '#ff5555'
@@ -106,7 +106,7 @@ grep -q 'custom' "$HOME/.config/starship.toml" && bad "starship carries a segmen
 # the bar row asks spark itself: a stub that answers, one that fails, none at all
 printf '#!/bin/sh\nexit 0\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
 ck=$(sh "$SH" check || true)
-printf '%s\n' "$ck" | grep -q '^ok     bar          spark bar line answers the status line$' && ok "check: ok bar when spark bar line answers" || bad "check bar ok" "$(printf '%s\n' "$ck" | grep bar)"
+printf '%s\n' "$ck" | grep -q '^ok     bar          spark bar line works$' && ok "check: ok bar when spark bar line answers" || bad "check bar ok" "$(printf '%s\n' "$ck" | grep bar)"
 printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/spark"
 ck=$(sh "$SH" check || true)
 printf '%s\n' "$ck" | grep -q '^FAIL   bar          spark bar line failed -- spark check$' && ok "check: FAIL bar when spark bar line fails, the remedy is spark check" || bad "check bar fail" "$(printf '%s\n' "$ck" | grep bar)"
@@ -199,7 +199,7 @@ grep -q 'fg=colour4,bold' "$HOME/.tmux.conf" && grep -q 'pane-border-style "fg=c
     && ok "no theme.env: accent blue (colour4), muted white (colour7)" || bad "name defaults" "$(grep -n colour "$HOME/.tmux.conf" | head -3)"
 grep -q "SPARK_ACCENT_SGR='1;34'" "$HOME/.config/spark-shell/sgr.sh" && grep -q "SPARK_MUTED_SGR='37'" "$HOME/.config/spark-shell/sgr.sh" \
     && ok "no theme.env: sgr.sh says blue (1;34) and white (37)" || bad "sgr defaults" "$(cat "$HOME/.config/spark-shell/sgr.sh")"
-st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q "none: the terminal's own 16 -- accent colour4, muted colour7 (SGR 1;34 / 37)" && ok "status: no theme.env, the slots still named" || bad "status none" "$(printf '%s\n' "$st" | grep theme)"
+st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q "none: the terminal's own 16 colours -- accent colour4, muted colour7 (SGR 1;34 / 37)" && ok "status: no theme.env, the slots still named" || bad "status none" "$(printf '%s\n' "$st" | grep theme)"
 
 # --- 10. the templates themselves: no truecolor flag, ASCII fzf ----------
 grep -q MICRO_TRUECOLOR "$REPO/templates/linux/.bashrc" "$REPO/templates/macos/.zshrc" && bad "MICRO_TRUECOLOR still exported" || ok "rc files: no MICRO_TRUECOLOR"
@@ -251,7 +251,7 @@ grep -v '^THEME_BTOP=' "$HOME/.config/spark/theme.env" > "$H/theme.env" && mv "$
 st=0; out=$(sh "$SH" on --yes 2>&1) || st=$?
 [ "$st" -eq 0 ] && [ "$(sed "s|$H|HOME|g" "$HOME/.tmux.conf")" = "$with" ] \
     && ! grep -q 'color_theme\|THEME_BTOP' "$HOME/.config/btop/btop.conf" \
-    && sh "$SH" status | grep 'read: accent colour1, muted colour8' >/dev/null \
+    && sh "$SH" status | grep 'in use: accent colour1, muted colour8' >/dev/null \
     && ok "theme.env without THEME_BTOP: the same render, no color_theme line in btop.conf" || bad "theme.env without THEME_BTOP" "st=$st $out"
 
 # --- 14. the desktop: sway and foot, asked for by DESKTOP=sway ---------
@@ -269,7 +269,7 @@ out=$(sh "$SH" on --dry-run)
 [ ! -e "$HOME/.config/foot" ] && [ ! -e "$HOME/.config/sway" ] && ok "default: DESKTOP=none renders no foot.ini, no sway config" || bad "desktop rendered by default" "$(ls -R "$HOME/.config")"
 printf '%s\n' "$out" | grep -Eq '^(would|todo|FAIL|warn) +font' && bad "default dry-run acts on a font" "$out" || ok "default dry-run: no font row acts"
 sh "$SH" on --yes >/dev/null
-st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desk  none' && ok "status: the desk row says none" || bad "status desk none" "$(printf '%s\n' "$st" | grep desk)"
+st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desktop none' && ok "status: the desktop row says none" || bad "status desktop none" "$(printf '%s\n' "$st" | grep desktop)"
 out=$(sh "$SH" check || true)
 printf '%s\n' "$out" | grep -q '^ok     desktop      na (' && ok "check: desktop is na by default" || bad "check desktop na" "$out"
 printf '%s\n' "$out" | grep -Eq '^(would|todo|FAIL|warn) +font' && bad "check: a font row fails" "$out" || ok "check: the font row does not fail"
@@ -280,11 +280,11 @@ sh "$SH" status >/dev/null 2>&1 && bad "DESKTOP=gnome accepted" || ok "config: D
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 if [ "$(uname -s)" = Darwin ]; then
     out=$(sh "$SH" on --dry-run)
-    printf '%s\n' "$out" | grep -q '^skip   desktop      na: macOS' && ok "macOS: DESKTOP=sway is na, said in a row" || bad "macOS na row" "$out"
+    printf '%s\n' "$out" | grep -q '^skip   desktop      not on macOS' && ok "macOS: DESKTOP=sway is na, said in a row" || bad "macOS na row" "$out"
     sh "$SH" on --yes >/dev/null
     [ ! -e "$HOME/.config/sway" ] && ok "macOS: nothing rendered for the desktop" || bad "macOS rendered sway"
     out=$(sh "$SH" desktop 2>&1 || true)
-    printf '%s\n' "$out" | grep -q '^spark-shell desktop: na' && ok "macOS: desktop refuses, na" || bad "macOS desktop" "$out"
+    printf '%s\n' "$out" | grep -q '^spark-shell desktop: not on macOS' && ok "macOS: desktop refuses, not on macOS" || bad "macOS desktop" "$out"
     out=$(sh "$SH" check || true)
     printf '%s\n' "$out" | grep -q '^ok     desktop      na (macOS)' && ok "macOS: check says na" || bad "macOS check" "$out"
 else
@@ -317,7 +317,7 @@ else
     grep -q '^font=Test Mono:size=14$' "$foot" && ok "FONT in the config lands in foot.ini verbatim" || bad "FONT override" "$(grep -n '^font' "$foot")"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on --yes >/dev/null
-    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desk  sway .*sway: rendered' && ok "status: the desk row says sway, rendered" || bad "status desk sway" "$(printf '%s\n' "$st" | grep desk)"
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desktop sway .*sway: ready' && ok "status: the desktop row says sway, ready" || bad "status desktop sway" "$(printf '%s\n' "$st" | grep desktop)"
     out=$(sh "$SH" check || true)
     printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot' && ok "check: desktop ok with the stubs and fresh renders" || bad "check desktop ok" "$out"
     printf '%s\n' "$out" | grep -Eq '^(would|todo|FAIL|warn) +font' && bad "check: a font row fails with DESKTOP=sway" "$out" || ok "check: the font row does not fail with DESKTOP=sway"
@@ -345,7 +345,7 @@ else
     [ -f "$sway.bak" ] && grep -q mine "$sway.bak" && grep -q '^# rendered by spark-shell' "$sway" && ok "on: yours moves to .bak, the render takes its place" || bad "sway backup" "$(ls "$HOME/.config/sway")"
     rm -f "$foot"
     out=$(env -u WAYLAND_DISPLAY TEST_TTY=/dev/tty1 sh "$SH" desktop 2>&1 || true)
-    printf '%s\n' "$out" | grep -q 'not rendered (spark-shell on)' && ok "desktop: refused when a render is missing" || bad "desktop not rendered" "$out"
+    printf '%s\n' "$out" | grep -q 'the sway and foot settings are missing (spark-shell on)' && ok "desktop: refused when a render is missing" || bad "desktop not rendered" "$out"
     # no theme.env: the VGA sixteen, what spark-shell theme none programs
     fresh
     desktop_stubs
@@ -364,13 +364,13 @@ out=$(sh "$SH" follow)
 [ -z "$out" ] && ok "follow: nothing to say right after on (the palette was seen)" || bad "follow after on" "$out"
 theme_fixture '#ee8800'
 out=$(sh "$SH" follow)
-printf '%s\n' "$out" | grep -q '^spark-shell: the look followed the palette' && grep -q 'fg=colour3,bold' "$HOME/.tmux.conf" && grep -q "SPARK_ACCENT_SGR='1;33'" "$HOME/.config/spark-shell/sgr.sh" \
+printf '%s\n' "$out" | grep -q '^spark-shell: [0-9]* files updated for the new palette\.$' && grep -q 'fg=colour3,bold' "$HOME/.tmux.conf" && grep -q "SPARK_ACCENT_SGR='1;33'" "$HOME/.config/spark-shell/sgr.sh" \
     && ok "follow: a changed palette re-renders the look, one line says so" || bad "follow changed" "$out"
 out=$(sh "$SH" follow)
 [ -z "$out" ] && ok "follow: quiet when the palette did not change since" || bad "follow quiet" "$out"
 rm -f "$HOME/.config/spark/theme.env"
 out=$(sh "$SH" follow)
-printf '%s\n' "$out" | grep -q 'followed' && grep -q 'fg=colour4,bold' "$HOME/.tmux.conf" && ok "follow: theme none (no theme.env) is a change too" || bad "follow none" "$out"
+printf '%s\n' "$out" | grep -q 'updated for the new palette' && grep -q 'fg=colour4,bold' "$HOME/.tmux.conf" && ok "follow: theme none (no theme.env) is a change too" || bad "follow none" "$out"
 grep -q 'spark-shell follow' "$REPO/templates/linux/.bash_profile" && grep -q 'spark-shell follow' "$REPO/templates/macos/.zprofile" && ok "the login profiles run spark-shell follow" || bad "profiles follow"
 
 # --- the wallpaper: a verb that sets and applies; gaps and a translucent foot
@@ -381,7 +381,7 @@ if [ "$(uname -s)" != Darwin ]; then
     sh "$SH" on --yes >/dev/null
     sway=$HOME/.config/sway/config; foot=$HOME/.config/foot/foot.ini
     out=$(sh "$SH" desktop wallpaper)
-    printf '%s\n' "$out" | grep -q "^wallpaper default -- the forge wallpaper, $REPO/wallpapers/forge-1920x1080.jpg\$" && ok "desktop wallpaper (bare): the default is the forge" || bad "wallpaper bare default" "$out"
+    printf '%s\n' "$out" | grep -q "^wallpaper default -- the wallpaper that comes with spark-shell, $REPO/wallpapers/forge-1920x1080.jpg\$" && ok "desktop wallpaper (bare): the default is the forge" || bad "wallpaper bare default" "$out"
     [ -s "$REPO/wallpapers/forge-1920x1080.jpg" ] && [ -s "$REPO/wallpapers/forge-2560x1664.jpg" ] && ok "wallpapers/: the forge in two sizes ships with the repo" || bad "wallpapers missing"
     sh "$SH" desktop wallpaper none >/dev/null
     grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 0$' "$sway" && grep -q '^alpha=1.0$' "$foot" \
@@ -402,13 +402,13 @@ if [ "$(uname -s)" != Darwin ]; then
     ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     desktop' && ok "check: the desktop renders match with a wallpaper" || bad "check with wallpaper" "$(sh "$SH" check)"
     rm -f "$pic"
     out=$(sh "$SH" on --yes)
-    printf '%s\n' "$out" | grep -q '^todo   wallpaper .*is not there' && grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^alpha=1.0$' "$foot" \
+    printf '%s\n' "$out" | grep -q '^todo   wallpaper .*is missing' && grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^alpha=1.0$' "$foot" \
         && ok "a picture that went missing: a todo row, the palette's colour, never a black screen" || bad "missing wallpaper" "$out"
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  wall  missing' && ok "status: wall missing" || bad "status wall missing" "$(sh "$SH" status | grep wall)"
     rc=0; out=$(sh "$SH" desktop wallpaper /nowhere/at/all.jpg 2>&1) || rc=$?
     [ $rc = 1 ] && printf '%s\n' "$out" | grep -q 'not a readable file' && ok "desktop wallpaper: a path that is not there is refused" || bad "wallpaper refuse missing" "$out"
     rc=0; out=$(sh "$SH" desktop wallpaper pictures/x.jpg 2>&1) || rc=$?
-    [ $rc = 1 ] && printf '%s\n' "$out" | grep -q 'an absolute path' && ok "desktop wallpaper: a relative path is refused" || bad "wallpaper refuse relative" "$out"
+    [ $rc = 1 ] && printf '%s\n' "$out" | grep -q 'give a full path' && ok "desktop wallpaper: a relative path is refused" || bad "wallpaper refuse relative" "$out"
     out=$(sh "$SH" desktop wallpaper none)
     grep -q '^WALLPAPER=none$' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^alpha=1.0$' "$foot" \
         && ok "desktop wallpaper none: the palette's background is back" || bad "wallpaper none" "$out"
@@ -447,7 +447,7 @@ st=0; out=$(sh "$SH" desktop --chat 2>&1) || st=$?
     && ok "desktop --chat: execs spark chat, sgr.sh sourced first (the accent's SGR 1;91 reaches it)" || bad "desktop --chat" "st=$st $out $(cat "$H/spark.argv" 2>&1)"
 mv "$H/.local/bin/spark" "$H/spark.away"
 st=0; out=$(PATH=$H/.local/bin:$sys sh "$SH" desktop --chat 2>&1 </dev/null) || st=$?
-[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^spark is not installed -- the AI is spark' && printf '%s\n' "$out" | grep -q 'Enter closes' \
+[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^spark is not installed, so there is no chat' && printf '%s\n' "$out" | grep -q 'Enter closes' \
     && ok "desktop --chat without spark: the window says so and waits for Enter, exit 0" || bad "desktop --chat no spark" "st=$st $out"
 
 # --- the first hour: desktop keys any time, the card once in the first window (all OSes)
@@ -478,11 +478,11 @@ desktop_stubs
 theme_fixture '#ff5555'
 mkdir -p "$HOME/.config/spark-shell"
 printf 'PROMPT_STYLE=full\nDESKTOP=none\n' > "$HOME/.config/spark-shell/config"
-st=$(PATH=$H/.local/bin:$sys sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next  spark .*Install spark, the AI this seat is for: github.com/forgewright-ai/spark\.$' && ok "status: next says install spark first, without spark on PATH" || bad "status next spark" "$(printf '%s\n' "$st" | grep next)"
+st=$(PATH=$H/.local/bin:$sys sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next  spark .*Install spark, the local AI: github.com/forgewright-ai/spark\.$' && ok "status: next says install spark first, without spark on PATH" || bad "status next spark" "$(printf '%s\n' "$st" | grep next)"
 if [ "$(uname -s)" = Darwin ]; then
     st=0; out=$(sh "$SH" on desktop --yes 2>&1) || st=$?
-    [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: na' \
-        && ok "macOS: on desktop refuses, na, one line, exit 1" || bad "macOS on desktop" "st=$st $out"
+    [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: not on macOS' \
+        && ok "macOS: on desktop refuses, one line, exit 1" || bad "macOS on desktop" "st=$st $out"
     grep -q 'DESKTOP=none' "$HOME/.config/spark-shell/config" && [ ! -e "$H/root/etc" ] && ok "macOS: on desktop wrote nothing" || bad "macOS on desktop wrote" "$(cat "$HOME/.config/spark-shell/config")"
 else
     printf '#!/bin/sh\necho "$*" >> "%s/units.log"\n[ "$1" != is-enabled ] || exit 1\n' "$H" > "$H/.local/bin/systemctl"; chmod +x "$H/.local/bin/systemctl"
@@ -501,7 +501,7 @@ else
     [ ! -e "$H/root/etc/greetd" ] && [ ! -e "$H/root/etc/systemd" ] && ! grep -q 'greetd\|getty' "$H/units.log" 2>/dev/null \
         && ok "on desktop: no root file, no greetd, getty left alone" || bad "on desktop root" "$(find "$H/root" 2>&1; cat "$H/units.log" 2>&1)"
     printf '%s\n' "$out" | grep -qi 'greet\|login box' && bad "on desktop names greetd or a login box" "$out" || ok "on desktop: no word of greetd or a login box"
-    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desk  sway .*(a login on tty1 starts it)$' && ok "status: the desk row says a login on tty1 starts it" || bad "status desk row" "$(printf '%s\n' "$st" | grep desk)"
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desktop sway .*(log in on tty1 to start it)$' && ok "status: the desktop row says log in on tty1 to start it" || bad "status desktop row" "$(printf '%s\n' "$st" | grep desktop)"
     printf '#!/bin/sh\n:\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
     st=$(env -u WAYLAND_DISPLAY sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next' && bad "status: a next row with nothing off" "$(printf '%s\n' "$st" | grep next)" || ok "status: no next row when the desktop is ready (Debian, Arch: no reboot, no root)"
     rm -f "$H/.local/bin/spark"
@@ -641,7 +641,7 @@ sh "$SH" on --yes >/dev/null
 if [ "$(uname -s)" = Darwin ]; then
     na_form() {   # na_form WORDS... -> one line, na, exit 1
         st=0; out=$(sh "$SH" desktop "$@" 2>&1) || st=$?
-        [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: na: macOS has its own desktop$' \
+        [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: not on macOS, which has its own desktop$' \
             && ok "macOS: desktop $1 refuses, na, one line, exit 1" || bad "macOS desktop $*" "st=$st $out"
     }
     na_form apps   # a desk itself plays as rooms here (18)
@@ -660,9 +660,9 @@ else
     printf '%s\n' "$out" | grep -q '^  refused  exec ghostapp  (ghostapp is not on this machine)$' && ok "desktop WORDS: its exec line is refused with the reason" || bad "ghostapp refused" "$out"
     printf '%s\n' "$out" | grep -q '^on workspace 3 -- spark-shell layout save NAME saves it$' && ok "layout WORDS: on workspace 3 (1 and 2 are in use), save named" || bad "on workspace" "$out"
     printf '%s\n' "$out" | grep -q 'no window after\|sway refused' && bad "desktop WORDS: a wait ran out or sway refused" "$out" || ok "desktop WORDS: every window came up, sway took every line"
-    [ -f "$argv" ] && [ "$(sed -n '1,3p' "$argv" | paste -sd ' ' -)" = 'edit --type json' ] && grep -qx -- '--name' "$argv" && grep -qx desk.json "$argv" && grep -qx -- '--about' "$argv" \
-        && ok "spark: asked as spark edit --type json --name desk.json --about" || bad "spark argv" "$(cat "$argv" 2>&1)"
-    [ "$(tail -1 "$argv")" = "write the desk for this need: $need" ] && ok "spark: the prompt ends with the need's words" || bad "spark prompt" "$(tail -1 "$argv")"
+    [ -f "$argv" ] && [ "$(sed -n '1,3p' "$argv" | paste -sd ' ' -)" = 'edit --type json' ] && grep -qx -- '--name' "$argv" && grep -qx layout.json "$argv" && grep -qx -- '--about' "$argv" \
+        && ok "spark: asked as spark edit --type json --name layout.json --about" || bad "spark argv" "$(cat "$argv" 2>&1)"
+    [ "$(tail -1 "$argv")" = "write the layout for this need: $need" ] && ok "spark: the prompt ends with the need's words" || bad "spark prompt" "$(tail -1 "$argv")"
     grep -q 'on one screen, 2560x1440\. ' "$argv" && ok "spark: the about says one screen and its size (from swaymsg get_outputs)" || bad "about screen" "$(grep -o 'on one screen[^.]*' "$argv")"
     grep -q 'screen is left\|"screen"' "$argv" && bad "about: the screen rule or field reached the model with one screen" "$(grep -o 'A window is on one screen[^.]*' "$argv")" || ok "spark: one screen, no screen field and no screen rule in the about"
     grep -q 'gimp-3.0: Create images and edit photographs' "$argv" && ok "inventory: a desktop entry's Comment (gimp-3.0)" || bad "inventory gimp" "$(grep -o 'gimp-3.0: [^;]*' "$argv")"
@@ -847,7 +847,7 @@ EOF
     st=0; out=$(PATH=$H/nojq sh "$SH" layout "$need" 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = "spark-shell layout: jq is not installed (spark-shell on)" ] && ok "layout WORDS without jq: refused in one line" || bad "desk no jq" "st=$st $out"
     out=$(sh "$SH" check || true)
-    printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot, the renders match the palette -- a layout from your words$' && ok "check: the desktop row says a layout from your words" || bad "check desk row" "$out"
+    printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot are installed and up to date$' && ok "check: the desktop row says installed and up to date" || bad "check desk row" "$out"
     # the rendered sway config: Super+d, the floating prompt, --pending before the first terminal
     sway=$HOME/.config/sway/config
     grep -qF "bindsym \$mod+d exec \$term --app-id spark-desk -e $REPO/spark-shell layout --ask" "$sway" && ok "sway render: Super+d asks at a prompt (the clone's spark-shell)" || bad "sway render bind" "$(grep -n 'mod+d' "$sway")"
@@ -860,7 +860,7 @@ grep -q '^bindsym \$mod+d exec \$term --app-id spark-desk -e @REPO@/spark-shell 
 grep -q '^for_window \[app_id="spark-desk"\] floating enable' "$REPO/templates/.config/sway/config" && ok "sway template: the spark-desk window floats" || bad "sway template for_window"
 l_p=$(grep -n '^exec @REPO@/spark-shell desktop --pending$' "$REPO/templates/.config/sway/config" | head -1 | cut -d: -f1); l_t=$(grep -n "^exec sh -c '" "$REPO/templates/.config/sway/config" | tail -1 | cut -d: -f1)
 [ -n "$l_p" ] && [ -n "$l_t" ] && [ "$l_p" -lt "$l_t" ] && ok "sway template: desktop --pending is the exec before the last exec sh -c" || bad "sway template pending" "pending $l_p terminal $l_t"
-grep -q '^## A desk from your words$' "$REPO/README.md" && ok "README: A desk from your words" || bad "README desk section"
+grep -q '^## Layouts$' "$REPO/README.md" && ok "README: Layouts" || bad "README layouts section"
 grep -q '^## v0.23$' "$REPO/CHANGELOG.md" && ok "CHANGELOG: v0.23" || bad "CHANGELOG v0.23"
 grep -q '^## v0.38$' "$REPO/CHANGELOG.md" && ok "CHANGELOG: v0.38" || bad "CHANGELOG v0.38"
 
@@ -897,10 +897,10 @@ apps_file=$HOME/.config/spark-shell/apps; argv=$H/.local/state/spark.argv
 if [ "$(uname -s)" = Darwin ]; then
     sh "$SH" on --yes >/dev/null
     st=0; out=$(sh "$SH" desktop apps </dev/null 2>&1) || st=$?
-    [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: na: macOS has its own desktop$' \
+    [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: not on macOS, which has its own desktop$' \
         && ok "macOS: desktop apps refuses, na, one line, exit 1" || bad "macOS desktop apps" "st=$st $out"
     st=0; out=$(sh "$SH" apps </dev/null 2>&1) || st=$?
-    [ "$st" -eq 1 ] && [ "$out" = "spark-shell apps: na: macOS has its own desktop" ] && ok "macOS: apps refuses, na, one line, exit 1" || bad "macOS apps" "st=$st $out"
+    [ "$st" -eq 1 ] && [ "$out" = "spark-shell apps: not on macOS, which has its own desktop" ] && ok "macOS: apps refuses, na, one line, exit 1" || bad "macOS apps" "st=$st $out"
     ck=$(sh "$SH" check || true)
     printf '%s\n' "$ck" | grep -q '^ok     apps         na (' && ok "macOS: the check apps row says na" || bad "macOS check apps" "$(printf '%s\n' "$ck" | grep apps)"
 else
@@ -911,7 +911,7 @@ else
     plain "$tmuxd" && ok "tmux entry: plain (no hex, ASCII)" || bad "tmux entry not plain"
     # the table and the kinds: the counts line, exit 0, one row per package
     st=0; out=$(SPARK_OS_RELEASE=$H/os-arch sh "$SH" sbom 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^1 apps, 1 tools, 1 parts -- an app declares itself with a desktop entry (spark-shell apps picks the allowed apps)$' \
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^1 apps, 1 tools, 1 parts -- an app is a package with a desktop entry (spark-shell apps chooses the allowed apps)$' \
         && ok "sbom: exit 0 and the counts line (one of each kind)" || bad "sbom counts" "st=$st $out"
     printf '%s\n' "$out" | grep -q '^tool  reader  *1.0-1  *MIT  *Text-based Web browser$' \
         && ok "sbom: a command without an entry is a tool (reader, its version, licence and words)" || bad "sbom tool row" "$out"
@@ -980,12 +980,12 @@ else
             && ok "old spellings: desktop tools opens the same picker; an allowed row wears *, picking it again takes it off" || bad "apps flip" "st=$st $out $(cat "$HOME/fzf.rows" "$apps_file" 2>&1)"
         cp "$apps_file" "$H/apps.before"; rm -f "$HOME/fzf.pick"
         st=0; out=$(on_tty env SPARK_OS_RELEASE="$H/os-arch" sh "$SH" apps </dev/null 2>&1) || st=$?
-        [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q 'left as it was' && cmp -s "$apps_file" "$H/apps.before" && ok "apps: Esc leaves the file as it was" || bad "apps esc" "st=$st $out"
+        [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q 'nothing changed' && cmp -s "$apps_file" "$H/apps.before" && ok "apps: Esc leaves the file as it was" || bad "apps esc" "st=$st $out"
         rm -f "$apps_file" "$HOME/fzf.rows" "$HOME/fzf.args"
     fi
     # status and check, unmarked: every entry (the five fixtures and tmux)
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  apps  all  *every app with a desktop entry (spark-shell apps picks the allowed apps)$' && ok "status: the apps row says all, every app with a desktop entry" || bad "status apps unmarked" "$(printf '%s\n' "$st" | grep apps)"
-    ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     apps         6 apps declare themselves, all allowed (spark-shell apps picks)$' \
+    ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     apps         6 apps installed, all allowed (spark-shell apps chooses)$' \
         && ok "check: the apps row counts the entries (five fixtures and tmux), all allowed" || bad "check apps unmarked" "$(printf '%s\n' "$ck" | grep apps)"
     # the unmarked inventory: tmux in its entry's words, a terminal app
     rm -f "$argv"
@@ -997,14 +997,14 @@ else
     # marked: the names, the rows; a name that is gone is a FAIL with the remedy
     printf '# mine\nreader: my browser\nmicro\n' > "$apps_file"
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  apps  2 allowed  *reader, micro (spark-shell apps)$' && ok "status: the apps row counts and names the allowed apps" || bad "status apps marked" "$(printf '%s\n' "$st" | grep apps)"
-    ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     apps         2 allowed apps, 6 apps declare themselves$' && ok "check: ok apps when every allowed name is here" || bad "check apps marked" "$(printf '%s\n' "$ck" | grep apps)"
+    ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     apps         2 allowed apps, 6 apps installed$' && ok "check: ok apps when every allowed name is here" || bad "check apps marked" "$(printf '%s\n' "$ck" | grep apps)"
     printf 'reader: my browser\nmicro\nghost\n' > "$apps_file"
     ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^FAIL   apps         allowed but not here: ghost -- spark-shell apps$' && ok "check: FAIL apps naming the allowed name that is gone, the remedy is spark-shell apps" || bad "check apps gone" "$(printf '%s\n' "$ck" | grep apps)"
     rm -f "$apps_file"
     # off hands the tmux entry back
     sh "$SH" off >/dev/null
     [ ! -e "$tmuxd" ] && ok "off: the tmux entry is gone (no .bak: there was none before)" || bad "tmux entry off" "$(ls "$HOME/.local/share/applications")"
-    ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     apps         5 apps declare themselves, all allowed' && ok "check after off: tmux is out of the count (five entries)" || bad "check apps after off" "$(printf '%s\n' "$ck" | grep apps)"
+    ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     apps         5 apps installed, all allowed' && ok "check after off: tmux is out of the count (five entries)" || bad "check apps after off" "$(printf '%s\n' "$ck" | grep apps)"
     printf 'DESKTOP=none\n' > "$HOME/.config/spark-shell/config"
     ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     apps         na (no desktop)$' && ok "check: apps na with DESKTOP=none" || bad "check apps none" "$(printf '%s\n' "$ck" | grep apps)"
 fi
@@ -1044,11 +1044,11 @@ printf '%s\n' "has-session -t =$sname" "new-session -d -s $sname -n micro micro"
 cmp -s "$tlog" "$H/expected.rooms" && ok "rooms: tmux got has-session, then one new-session with micro as its first window, nothing else" || bad "rooms tmux log" "$(cat "$tlog" 2>&1)"
 printf '%s\n' "$out" | grep -q '^  gimp-3.0 -- needs the desktop$' && printf '%s\n' "$out" | grep -q '^  firefox https://instagram.com -- needs the desktop$' && printf '%s\n' "$out" | grep -q '^  micro$' \
     && ok "rooms: a graphical app is one line (needs the desktop), a terminal app runs" || bad "rooms outcome lines" "$out"
-printf '%s\n' "$out" | grep -q '^  refused  room ghostapp ghostapp  (ghostapp is not on this machine)$' && ok "rooms: the gate reads a room line like an exec" || bad "rooms gate" "$out"
+printf '%s\n' "$out" | grep -q '^  refused  window ghostapp ghostapp  (ghostapp is not on this machine)$' && ok "rooms: the gate reads a tmux window line like an exec" || bad "rooms gate" "$out"
 printf '%s\n' "$out" | grep -q "^tmux session $sname -- spark-shell layout save NAME saves it\$" && printf '%s\n' "$out" | grep -q "^tmux session $sname -- tmux attach-session -t $sname joins it\$" \
     && ok "rooms: the closing line names the session and keep; on a pipe, the line that joins them" || bad "rooms closing" "$out"
 grep -q 'attach-session\|switch-client' "$tlog" && bad "rooms: attached on a pipe" "$(cat "$tlog")" || ok "rooms: no attach on a pipe"
-grep -q '^A desk of rooms: the windows for one need, each a terminal window (tmux), on a [0-9]*x[0-9]* terminal\. ' "$argv" && ok "rooms brief: rooms, a terminal, its columns and lines" || bad "rooms brief" "$(grep -o 'A desk[^.]*' "$argv")"
+grep -q '^A layout of tmux windows: the apps for one need, each in a terminal window, on a [0-9]*x[0-9]* terminal\. ' "$argv" && ok "rooms brief: tmux windows, a terminal, its columns and lines" || bad "rooms brief" "$(grep -o 'A layout[^.]*' "$argv")"
 grep -q 'micro: Micro' "$argv" && grep -q 'shell: a terminal with a prompt' "$argv" && ! grep -q 'gimp-3.0\|firefox\|"screen"\|on one screen\|on screens' "$argv" \
     && ok "rooms brief: the terminal apps and shell only; no graphical app, no screen field, no screens" || bad "rooms brief apps" "$(grep -o 'Apps on this machine[^.]*' "$argv")"
 jq -e --arg w "$need" '.words == $w and .main.app == "gimp-3.0"' "$desk_last" >/dev/null 2>&1 && ok "rooms: desk.last is the same JSON shape (keep works the same)" || bad "rooms desk.last" "$(cat "$desk_last" 2>&1)"
@@ -1056,10 +1056,10 @@ jq -e --arg w "$need" '.words == $w and .main.app == "gimp-3.0"' "$desk_last" >/
 # a need of * from a directory with files: the word, never the file names
 rm -f "$argv"
 (cd "$H/.local/bin" && sh "$SH" layout '*' >/dev/null 2>&1) || true
-[ "$(tail -1 "$argv")" = 'write the desk for this need: *' ] && ok "a need of * reaches the model as *, not as the cwd's file names" || bad "glob need" "$(tail -1 "$argv" 2>&1)"
+[ "$(tail -1 "$argv")" = 'write the layout for this need: *' ] && ok "a need of * reaches the model as *, not as the cwd's file names" || bad "glob need" "$(tail -1 "$argv" 2>&1)"
 rm -f "$argv"
 sh "$SH" layout 'notes\nand a backslash' >/dev/null 2>&1 || true
-[ "$(tail -1 "$argv")" = 'write the desk for this need: notes\nand a backslash' ] && ok "a need with a literal backslash reaches the model byte-exact" || bad "backslash need" "$(tail -1 "$argv" 2>&1)"
+[ "$(tail -1 "$argv")" = 'write the layout for this need: notes\nand a backslash' ] && ok "a need with a literal backslash reaches the model byte-exact" || bad "backslash need" "$(tail -1 "$argv" 2>&1)"
 # inside tmux: switch-client; a session already open is joined, not built again
 : > "$tlog"
 st=0; out=$(TMUX=/x sh "$SH" layout "$need" --terminal 2>&1) || st=$?
@@ -1096,7 +1096,7 @@ st=0; out=$(EDITOR=/usr/bin/nano sh "$SH" layout studio 2>&1) || st=$?
 grep -q '^new-window -t =studio -n editor nano$' "$tlog" && ok "editor is EDITOR's basename (nano)" || bad "editor nano" "$(cat "$tlog")"
 rm -f "$H/.local/bin/nano"; : > "$tlog"
 st=0; out=$(EDITOR=/usr/bin/nosucheditor sh "$SH" layout studio 2>&1) || st=$?
-[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^  refused  room editor nosucheditor  (nosucheditor is not on this machine)$' && grep -q '^new-window -t =studio -n newsboat newsboat$' "$tlog" \
+[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^  refused  window editor nosucheditor  (nosucheditor is not on this machine)$' && grep -q '^new-window -t =studio -n newsboat newsboat$' "$tlog" \
     && ok "EDITOR naming a program that is not here: its room is refused, the rest opens" || bad "editor absent" "st=$st $out"
 mkdir -p "$H/noed"   # a PATH with everything but micro and vi (this machine may have the real ones)
 for d in $(printf '%s' "$PATH" | tr ':' ' '); do
@@ -1114,12 +1114,12 @@ st=0; out=$(PATH=$H/noed sh "$SH" layout studio 2>&1) || st=$?
 [ "$st" -eq 0 ] && grep -q '^new-window -t =studio -n editor vi$' "$tlog" && ! printf '%s\n' "$out" | grep -q 'no editor' \
     && ok "no EDITOR and no micro: the editor is vi when vi is here" || bad "editor vi" "st=$st $out $(cat "$tlog")"
 st=0; out=$(sh "$SH" layout studio -v 2>&1) || st=$?
-printf '%s\n' "$out" | grep -q '^  room shell$' && printf '%s\n' "$out" | grep -q '^  room editor micro$' && printf '%s\n' "$out" | grep -q '^  room w3m w3m duckduckgo.com$' \
-    && ok "-v shows the rooms grammar (room NAME [CMD ARGS])" || bad "rooms verbose" "$out"
+printf '%s\n' "$out" | grep -q '^  window shell$' && printf '%s\n' "$out" | grep -q '^  window editor micro$' && printf '%s\n' "$out" | grep -q '^  window w3m w3m duckduckgo.com$' \
+    && ok "-v shows the tmux lines (window NAME [CMD ARGS])" || bad "rooms verbose" "$out"
 printf '%s\n' "$out" | grep -q '^  session studio$' && ok "-v: the session line" || bad "rooms verbose session" "$out"
 printf '{"words": "pipe", "main": {"app": "w3m", "args": "a|b"}}\n' > "$desks/pipe"; : > "$tlog"
 st=0; out=$(sh "$SH" layout pipe 2>&1) || st=$?
-[ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -qF '  refused  room w3m w3m a|b  (shell syntax' && ! grep -q 'new-session' "$tlog" && printf '%s\n' "$out" | grep -q 'nothing ran$' \
+[ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -qF '  refused  window w3m w3m a|b  (shell syntax' && ! grep -q 'new-session' "$tlog" && printf '%s\n' "$out" | grep -q 'nothing ran$' \
     && ok "a kept desk edited by hand: shell syntax in a room is refused; with no room left, nothing ran" || bad "rooms pipe" "st=$st $out"
 # --terminal inside sway: the session is built, then a foot window of its own on a fresh workspace
 export SWAYSOCK=$H/sway.sock; : > "$tlog"; rm -f "$swlog"
@@ -1137,7 +1137,7 @@ out=$(sh "$SH" layout)
 printf '%s\n' "$out" | grep -q '^  studio ' && ! printf '%s\n' "$out" | grep -q olddesk && ok "layout (bare): lists layouts/, never the old desks/ folder" || bad "layouts list" "$out"
 : > "$tlog"; rm -f "$argv"
 st=0; out=$(sh "$SH" layout olddesk 2>&1) || st=$?
-[ "$st" -eq 0 ] && [ "$(tail -1 "$argv" 2>&1)" = 'write the desk for this need: olddesk' ] && [ -f "$H/.config/spark-shell/desks/olddesk" ] && [ ! -e "$desks/olddesk" ] \
+[ "$st" -eq 0 ] && [ "$(tail -1 "$argv" 2>&1)" = 'write the layout for this need: olddesk' ] && [ -f "$H/.config/spark-shell/desks/olddesk" ] && [ ! -e "$desks/olddesk" ] \
     && ok "layout NAME of a file in desks/: words for the model, the old file left where it is" || bad "desks ignored" "st=$st $out"
 st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  layouts [0-9]* saved  *pipe, studio (spark-shell layout NAME)$' && ok "status: the layouts row counts layouts/ alone" || bad "status layouts dir" "$(printf '%s\n' "$st" | grep layouts)"
 rm -rf "$H/.config/spark-shell/desks"
@@ -1201,7 +1201,7 @@ if [ "$(uname -s)" != Darwin ]; then
         && ok "layout WORDS --desktop from a console: the words wait in desk.pending, sway starts, no model call yet" || bad "pending write" "st=$st $out $(cat "$desk_pending" 2>&1)"
     st=0; out=$(SWAYSOCK=$H/sway.sock sh "$SH" layout --pending 2>&1) || st=$?
     [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^layout> news and music$' && printf '%s\n' "$out" | grep -q '^on workspace 3' && [ ! -e "$desk_pending" ] \
-        && [ "$(tail -1 "$argv")" = 'write the desk for this need: news and music' ] \
+        && [ "$(tail -1 "$argv")" = 'write the layout for this need: news and music' ] \
         && ok "layout --pending: lays the waiting words out as sway windows, the file is gone" || bad "pending play" "st=$st $out"
     st=0; out=$(SWAYSOCK=$H/sway.sock sh "$SH" layout --pending 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ -z "$out" ] && ok "layout --pending twice: a quiet no-op" || bad "pending twice" "st=$st $out"
@@ -1213,7 +1213,7 @@ if [ "$(uname -s)" != Darwin ]; then
     [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^layout> news and music$' && [ ! -e "$desk_pending" ] \
         && ok "old spellings: desktop --pending (the sway config's line) lays them out" || bad "alias pending" "st=$st $out"
 fi
-grep -q '^## Rooms$' "$REPO/README.md" && ok "README: Rooms" || bad "README rooms section"
+grep -q '^## Allowed apps$' "$REPO/README.md" && ok "README: Allowed apps" || bad "README allowed apps section"
 
 # --- 19. the console: theme, font, quiet (spark 1.62 handed them over) ----
 # Every Linux shape runs on any OS: a uname stub says Linux (or Darwin),
@@ -1305,7 +1305,7 @@ ck=$(L check || true)
 printf '%s\n' "$ck" | grep -q "^ok     theme        test: theme.env and the console's palette are current$" && ok "check: the theme row is ok" || bad "check theme ok" "$(printf '%s\n' "$ck" | grep theme)"
 echo '1,2,3' > "$H/root/sys/module/vt/parameters/default_red"
 st=0; ck=$(L check) || st=$?
-printf '%s\n' "$ck" | grep -q '^warn   theme        test: the console wears another palette until the next boot -- spark-shell on$' && ok "check: another palette live is a warn with its remedy" || bad "check theme warn" "$(printf '%s\n' "$ck" | grep theme)"
+printf '%s\n' "$ck" | grep -q '^warn   theme        test: the console uses another palette until the next boot -- spark-shell on$' && ok "check: another palette live is a warn with its remedy" || bad "check theme warn" "$(printf '%s\n' "$ck" | grep theme)"
 rm -f "$unit"
 ck=$(L check || true)
 printf '%s\n' "$ck" | grep -q '^FAIL   theme        test: spark-shell-console.service does not set it at boot -- spark-shell on (sudo once)$' && ok "check: a missing unit is a FAIL with its remedy" || bad "check theme fail" "$(printf '%s\n' "$ck" | grep theme)"
@@ -1317,7 +1317,7 @@ out=$(L theme none)
     && grep -q 'systemctl disable spark-shell-console.service' "$H/log" && grep -qx 'setvtrgb vga' "$H/log" && grep -qx 'THEME=none' "$HOME/.config/spark-shell/config" \
     && ok "theme none: theme.env, the unit and the console files gone, VGA set" || bad "theme none" "$out $(cat "$H/log")"
 ck=$(L check || true)
-printf '%s\n' "$ck" | grep -q "^ok     theme        none: the console's VGA sixteen" && ok "check: theme none is ok" || bad "check none" "$(printf '%s\n' "$ck" | grep theme)"
+printf '%s\n' "$ck" | grep -q "^ok     theme        none: the console's and the terminal's own colours" && ok "check: theme none is ok" || bad "check none" "$(printf '%s\n' "$ck" | grep theme)"
 
 # the repository's palettes (themes/*.env): each one a theme NAME takes
 if ls "$REPO"/themes/*.env >/dev/null 2>&1; then
@@ -1492,7 +1492,7 @@ L quiet login on >/dev/null
 L quiet login off >/dev/null
 [ -x "$H/root/etc/update-motd.d/10-uname" ] && [ ! -e "$HOME/.local/state/spark-shell/uname.off" ] && ok "quiet login off, no motd: 10-uname runs again" || bad "uname back" "$(ls -la "$H/root/etc/update-motd.d")"
 rc=0; out=$(L quiet loud on 2>&1) || rc=$?
-[ "$rc" = 1 ] && [ "$out" = "spark-shell quiet: loud is not a thing to quiet (login and boot are)" ] && ok "quiet WORD: an unknown word is one sentence" || bad "quiet word" "rc=$rc $out"
+[ "$rc" = 1 ] && [ "$out" = "spark-shell quiet: loud is not known here (login or boot)" ] && ok "quiet WORD: an unknown word is one sentence" || bad "quiet word" "rc=$rc $out"
 
 # quiet boot, Debian: one GRUB drop-in, /etc/default/grub never edited, a failed rebuild runs again
 fresh
@@ -1732,11 +1732,11 @@ old_gone() {   # old_gone -- spark-shell's greetd files gone, getty@tty1 on, gre
 }
 old_greetd
 out=$(L on --dry-run </dev/null)
-printf '%s\n' "$out" | grep -q "^would  login        the console login on tty1 again from the next boot: greetd off, spark-shell's files for it removed (sudo)\$" \
+printf '%s\n' "$out" | grep -q "^would  login        the normal console login on tty1 from the next boot: greetd turned off, its spark-shell files removed (sudo)\$" \
     && [ -f "$H/root/etc/greetd/config.toml" ] && [ -e "$H/root/units/greetd.service" ] && ok "v0.41 upgrade: on --dry-run says the login screen goes back to getty, touches nothing" || bad "upgrade dry-run" "$out"
 out=$(L on --yes </dev/null 2>&1)
 old_gone && [ ! -e "$H/root/etc/greetd/config.toml" ] && ok "v0.41 upgrade: on hands tty1 back to getty at the next boot, greetd disabled (never stopped), its files gone" || bad "upgrade on" "$(find "$H/root/etc" "$H/root/units"; cat "$H/log")"
-[ "$(printf '%s\n' "$out" | grep -c '^ok     login ')" = 1 ] && printf '%s\n' "$out" | grep -q '^ok     login        the console login is back on tty1 from the next boot: greetd is off, its packages stay$' \
+[ "$(printf '%s\n' "$out" | grep -c '^ok     login ')" = 1 ] && printf '%s\n' "$out" | grep -q '^ok     login        the normal console login is back on tty1 from the next boot: greetd is off, its packages stay$' \
     && ok "v0.41 upgrade: one plain line says so" || bad "upgrade line" "$out"
 : > "$H/log"; out=$(L on --yes </dev/null 2>&1)
 ! printf '%s\n' "$out" | grep -q 'login ' && ! grep -q greetd "$H/log" && ok "v0.41 upgrade: on again has nothing to hand back" || bad "upgrade twice" "$out"
@@ -1809,7 +1809,7 @@ rm -f "$H/stuck"; : > "$H/log"; L theme none >/dev/null
 grep -qx "python3 $REPO/lib/terminal_profile.py remove" "$H/log" && [ ! -e "$HOME/.config/spark/theme.env" ] && [ ! -e "$HOME/.local/state/spark-shell/terminal.seen" ] \
     && ok "macOS: theme none removes the profile and theme.env" || bad "mac none" "$(cat "$H/log")"
 rc=0; out=$(L theme -h 2>&1) || rc=$?
-[ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^  spark-shell theme \[NAME|none|list\]$' && ok "theme -h: the help answers first" || bad "theme -h" "rc=$rc $out"
+[ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^  spark-shell theme NAME|none  ' && ok "theme -h: the help answers first" || bad "theme -h" "rc=$rc $out"
 
 # --- the warning: on, on desktop and quiet boot on ask first -------------
 # The question is asked at a terminal only; the suite has none, so it
@@ -1899,7 +1899,7 @@ rc=0; out=$(L off desktop </dev/null 2>&1) || rc=$?
 L on --yes >/dev/null
 theme_fixture '#55ff55'
 rc=0; out=$(printf 'n\n' | A follow 2>&1) || rc=$?
-[ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^spark-shell: the look followed the palette' && ! printf '%s\n' "$out" | grep -q 'Continue?\|no terminal' \
+[ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^spark-shell: [0-9]* files updated for the new palette\.$' && ! printf '%s\n' "$out" | grep -q 'Continue?\|no terminal' \
     && ok "warning: follow (the login profile) never asks, even at a terminal" || bad "warning follow" "rc=$rc $out"
 rc=0; out=$(L theme none </dev/null 2>&1) || rc=$?
 ! printf '%s\n' "$out" | grep -q 'Continue?\|no terminal' && ok "warning: theme never asks" || bad "warning theme" "rc=$rc $out"
@@ -1936,15 +1936,14 @@ Continue? [y/N] spark-shell: nothing was changed." ] && ok "warning (macOS): the
 
 # --- the voice: the docs and the help hold to it -------------------------
 # README.md, the top entry of CHANGELOG.md, CREDITS.md, config.example, the
-# help (sh spark-shell -h) and the comment lines of the sway template speak
-# with one voice, spark's docs/CONTRIBUTING.md ("Voice"): the words that
-# are out, "the box" only as the login box, no contraction, capitals only
-# for acronyms, 80 columns. README is read without its fenced and indented
-# blocks (a row label or a command block is quoted there, not prose). The
-# key sentences are held above (desktop keys: a period each, verbatim in
-# README). Not uname-guarded: the words are the same on both OSes. Each
-# check names the file and the words it found. Runs last: a red row here
-# belongs to a document, not to the program.
+# help (sh spark-shell -h) and the comment lines of the sway template are
+# plain English: none of the made-up words that are out, no contraction,
+# capitals only for acronyms and placeholders, 80 columns. README is read
+# without its fenced and indented blocks (a command block is quoted there,
+# not prose). The key sentences are held above (desktop keys: a period
+# each, verbatim in README). Not uname-guarded: the words are the same on
+# both OSes. Each check names the file and the words it found. Runs last:
+# a red row here belongs to a document, not to the program.
 voice=$(mktemp -d)
 awk '/^```/ {fence = !fence; next} fence {next} /^    / {next} {print}' "$REPO/README.md" > "$voice/README.md"
 awk '/^## v/ {n++} n == 1' "$REPO/CHANGELOG.md" > "$voice/CHANGELOG.md"
@@ -1952,23 +1951,22 @@ cp "$REPO/CREDITS.md" "$voice/CREDITS.md"
 cp "$REPO/config.example" "$voice/config.example"
 sh "$SH" -h > "$voice/help"
 grep '^ *#' "$REPO/templates/.config/sway/config" > "$voice/sway-config-comments"
-out_words="stranger|newcomer|founder|WiFi|chars|inventory|the hands|shell layer|spark's own shell|the greeter|monitors?|bar line"
+out_words="desks?|rooms?|seat|login box|marks?|marked|player|this machine's cycles|the forge wallpaper|greeter|the box|stranger|newcomer|founder|inventory|the hands|shell layer|monitors?"
 contractions="[A-Za-z]*n't\b|\bit's\b|\byou'll\b|\bwe're\b|\bthat's\b|\bthere's\b|\blet's\b"
-caps_ok='ASCII|POSIX|JSON|SGR|PATH|NAME|WORDS|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|DOOM|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|WALLPAPER|ALPHA|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
+caps_ok='ASCII|POSIX|JSON|SGR|PATH|NAME|WORDS|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|WALLPAPER|ALPHA|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
 for n in README.md CHANGELOG.md CREDITS.md config.example help sway-config-comments; do
     f=$voice/$n
-    # (a) the words that are out; `spark bar line` is spark's verb, a command, and stays
-    hit=$(sed 's/spark bar line//g' "$f" | grep -ioEw "$out_words" | sort -u | paste -sd, -)
+    # (a) the words that are out, as whole words in any case
+    hit=$(grep -ioEw "$out_words" "$f" | sort -u | paste -sd, -)
     [ -z "$hit" ] && ok "voice: $n has none of the words that are out" || bad "voice: $n has a word that is out" "$hit"
-    # (b) the machine is this machine; "the box" is only ever the login box, which grep -w does not match
-    hit=$(grep -iow 'the box' "$f" | sort -u | paste -sd, -)
-    [ -z "$hit" ] && ok "voice: $n never says the box" || bad "voice: $n says the box" "$(grep -inw 'the box' "$f" | head -3 | paste -sd' ' -)"
-    # (c) no contraction
+    # (b) no contraction
     hit=$(grep -ioE "$contractions" "$f" | sort -u | paste -sd, -)
     [ -z "$hit" ] && ok "voice: $n has no contraction" || bad "voice: $n has a contraction" "$hit"
-    # (d) capitals only for acronyms: a word of 4+ capitals outside a code span is on the list or carries an underscore
+    # (c) capitals only for acronyms: a word of 4+ capitals outside a code span is on the list or carries an underscore
     hit=$(sed 's/`[^`]*`//g' "$f" | tr -c 'A-Za-z0-9_' '\n' | grep -E '^[A-Z][A-Z0-9]{3,}$' | grep -vxE "($caps_ok)" | sort -u | paste -sd, -)
     [ -z "$hit" ] && ok "voice: $n has capitals only for acronyms" || bad "voice: $n has a word in capitals" "$hit"
+    # (d) ASCII only
+    LC_ALL=C grep -q "[^ -~${tab}]" "$f" && bad "voice: $n has a byte outside ASCII" "$(LC_ALL=C grep -n "[^ -~${tab}]" "$f" | head -2)" || ok "voice: $n is ASCII"
 done
 # (e) the widths: the help and README at most 80 columns a line
 wide=$(awk 'length > 80 {print FNR ": " length}' "$voice/help" | head -3 | paste -sd, -)

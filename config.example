@@ -1,52 +1,48 @@
 # spark-shell config -- copied to ~/.config/spark-shell/config.
 #
-# Plain KEY=value, one per line. Every key is optional, and a missing
-# key takes the default shown.
+# Plain KEY=value, one per line. Every key is optional. A missing key
+# uses the default shown here.
 
-# The prompt: starship (rendered from the palette) or plain (the
-# shell's own). The README's Installing section says where starship
-# comes from and where there is none.
+# The prompt: starship, or plain (the shell's own). Debian has no
+# starship package, so there the prompt is always the shell's own.
 PROMPT=starship
 
-# starship's shape: minimal (a compact single line) or full.
+# The starship prompt: minimal (one short line) or full.
 PROMPT_STYLE=minimal
 
-# The desktop (Linux): none, or sway. With sway, sway and foot are
-# installed and rendered from the palette, and a login on tty1 starts
-# the desktop. spark-shell on desktop writes this line and does the
-# rest, and spark-shell off desktop writes none.
+# The desktop (Linux): none or sway. With sway, sway and foot are
+# installed, and a login on tty1 starts the desktop. spark-shell on
+# desktop sets this to sway, and spark-shell off desktop sets it to none.
 DESKTOP=none
 
-# The font foot draws with, in foot's own spec (the family, then
-# :size=N).
+# The font in foot, the desktop's terminal, in foot's own form (the
+# font name, then :size=N).
 FONT=DejaVu Sans Mono:size=12
 
-# The wallpaper: default (the forge wallpaper shipped here as
-# wallpapers/forge-1920x1080.jpg), none (the palette's background,
-# edge to edge) or an absolute path to a picture. With a picture sway
-# keeps gaps around the windows and foot is a little translucent, so
-# it shows. spark-shell desktop wallpaper PATH|default|none writes
-# this line and applies it.
+# The picture behind the desktop's windows: default (the wallpaper that
+# comes with spark-shell), none (the palette's background colour) or the
+# full path to a picture. With a picture, sway leaves gaps between the
+# windows and foot is a little see-through. spark-shell desktop
+# wallpaper sets this.
 WALLPAPER=default
 
-# foot over a picture: 0 to 1, 1 opaque. A dark picture reads well at
-# 0.85, and a bright one wants more.
+# How solid foot is over a picture: 0 to 1, where 1 is solid. 0.85 suits
+# a dark picture. A bright one needs more.
 ALPHA=0.85
 
-# The palette: none (the terminal's own colours) or a name from
-# themes/ (spark-shell theme list shows them). spark-shell theme NAME
-# writes this line and applies it.
+# The colour palette: none (the terminal's own colours) or a name that
+# spark-shell theme list shows. spark-shell theme NAME sets this.
 THEME=none
 
-# The console font on Linux, or the Terminal.app profile's on a Mac:
-# the face and the size (Terminus 16x32, or Menlo-Regular 13). Empty
-# leaves the console's own. spark-shell font writes this line.
+# The console font on Linux, or the Terminal.app font on a Mac: the name
+# and the size (Terminus 16x32, or Menlo-Regular 13). Empty keeps the
+# console's own font. spark-shell font sets this.
 CONSOLE_FONT=
 
-# Linux only. no or yes: the distro's notice and the kernel's line off
-# before the greeting. spark-shell quiet login on|off writes this line.
+# Linux only. yes hides the distro's notice and the kernel line before
+# the login prompt. spark-shell quiet login on|off sets this.
 QUIET_LOGIN=no
 
-# Linux only. no or yes: a silent boot, the boot menu hidden. spark-shell
-# quiet boot on|off writes this line.
+# Linux only. yes hides the boot menu and the boot messages.
+# spark-shell quiet boot on|off sets this.
 QUIET_BOOT=no

@@ -1,4 +1,4 @@
-# rendered by spark-shell from templates/.local/share/applications/spark-shell-tmux.desktop -- tmux declares itself as an app of this desktop
+# rendered by spark-shell from templates/.local/share/applications/spark-shell-tmux.desktop -- lists tmux as an app on this desktop
 [Desktop Entry]
 Type=Application
 Name=tmux

@@ -8,9 +8,9 @@ if [ "$TERM" = linux ] && [ -t 1 ]; then
     printf '\033[?25h'
 fi
 
-# The palette at login: when spark theme changed theme.env since the
-# last render, spark-shell re-renders its own files and never touches
-# yours. Otherwise it is one cksum.
+# The palette at login: when theme.env changed since the last time,
+# spark-shell writes its own files again and never touches yours.
+# Otherwise it is one cksum.
 if [[ $- == *i* ]] && [ -t 1 ] && command -v spark-shell >/dev/null 2>&1; then spark-shell follow; fi
 
 # The desktop at a login on tty1, when the config says DESKTOP=sway.

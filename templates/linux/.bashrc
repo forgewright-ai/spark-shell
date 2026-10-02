@@ -25,7 +25,7 @@ alias g=git
 alias ..='cd ..'
 alias check='spark check'
 
-# --- one plain look: ASCII and the 16 palette slots, console or emulator -
+# --- colours: ASCII and the 16 palette colours, console or terminal app -
 export BAT_THEME=ansi BAT_STYLE=numbers              # 16-colour theme, no grid
 export FZF_DEFAULT_OPTS='--no-unicode --color=16'    # fzf >= 0.38
 
@@ -41,8 +41,8 @@ else
     PS1='\n\u@\h:\w\$ '   # the blank row is where spark prints its hint
 fi
 
-# --- spark at the prompt: spark's prompt marks (three exports from the
-#     palette slots, rendered by spark-shell on), then its one marked
+# --- spark at the prompt: spark's prompt colours (three exports from the
+#     palette, written by spark-shell on), then its one
 #     hook line (the widget, completion, the console palette). It comes
 #     after fzf, so its Enter macro is the one that wins. spark's rc row
 #     sees the marker and never appends a second one.

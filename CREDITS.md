@@ -34,16 +34,21 @@ plugin is its own repository with its own credits.
 
 ## The desktop
 
-With DESKTOP=sway, from apt or pacman.
+With DESKTOP=sway, from apt, pacman or xbps.
 
 - sway -- https://github.com/swaywm/sway -- MIT.
 - wlroots -- https://gitlab.freedesktop.org/wlroots/wlroots -- MIT.
   sway's library, pulled by the package.
 - swaybg -- https://github.com/swaywm/swaybg -- MIT. The background:
-  its own package on Arch, pulled by sway on Debian.
+  its own package on Arch and Void, pulled by sway on Debian.
 - foot, foot-terminfo -- https://codeberg.org/dnkl/foot -- MIT.
 - DejaVu fonts -- https://dejavu-fonts.github.io -- Bitstream Vera
-  licence (ttf-dejavu on Arch, fonts-dejavu-core on Debian).
+  licence (ttf-dejavu on Arch, fonts-dejavu-core on Debian,
+  dejavu-fonts-ttf on Void).
+- seatd -- https://git.sr.ht/~kennylevinsen/seatd -- MIT. On Void,
+  which has no logind, it gives sway the screen and keyboard.
+- Mesa -- https://mesa3d.org -- MIT. mesa-dri on Void, the graphics
+  drivers sway draws with.
 
 ## The palettes
 
@@ -69,7 +74,7 @@ line naming its upstream. The licence is the upstream's:
 
 ## The wallpapers
 
-`wallpapers/forge-1920x1080.jpg` and `forge-2560x1664.jpg`, the forge
+`wallpapers/forge-1920x1080.jpg` and `forge-2560x1664.jpg`, the
 wallpaper in two sizes, are the maintainer's own, CC BY-NC-ND 4.0
 (https://creativecommons.org/licenses/by-nc-nd/4.0/).
 

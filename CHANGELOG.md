@@ -2,8 +2,30 @@
 
 ## v0.42
 
-- The studio desk is gone from the repository. It was one person's
-  setup, and it needed four apps a new machine does not have.
+- `spark-shell on` now says what it will change and asks
+  `Continue? [y/N]` first. So do `on desktop` and `quiet boot on`.
+  `--yes` skips the question. `off` never asks.
+- The login screen is now the normal console login on every Linux.
+  Logging in on tty1 starts the desktop, and leaving the desktop logs
+  you out. Alt+F2 gives a plain shell. greetd and tuigreet are no
+  longer used, and the fire background is gone. If v0.41 set up
+  greetd, `spark-shell on` turns it off from the next boot. Its
+  packages stay.
+- The desktop now works on Void too. `on desktop` turns on the seatd
+  service and adds you to the `_seatd` group (sudo).
+- New: `spark-shell layout "WORDS"`. spark picks apps for what you
+  describe and opens them: as sway windows on the desktop, or as tmux
+  windows anywhere else (`--desktop` or `--terminal` to choose). Apps
+  your words name are opened, and other apps spark picks are only
+  suggested. `layout save`, `layout NAME`, `layout delete NAME` and
+  `layout` save, open, delete and list layouts in
+  `~/.config/spark-shell/layouts/`.
+- New: `spark-shell apps` chooses which apps a layout may open.
+- In a layout the editor is `$EDITOR`, else micro, else vi. A missing
+  app is skipped, said in one line.
+- The README, the help and every message are rewritten in plain
+  English. The status row for the desktop is now named desktop.
+- The studio example layout is gone from the repository.
 
 ## v0.41
 
