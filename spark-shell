@@ -13,6 +13,8 @@
 #                               -- the packages stay
 #   spark-shell on --dry-run    print what would change, touch nothing
 #   spark-shell off --dry-run   print what would be handed back, touch nothing
+#   spark-shell on --yes        go ahead without asking first (on desktop and
+#                               quiet boot on take --yes too)
 #   spark-shell check           the machine row by row -- exit 0 when no row fails
 #   spark-shell status          the state, row by row (bare spark-shell too)
 #   spark-shell bar on|off      tmux's status line (spark bar line draws it)
@@ -38,7 +40,7 @@
 #   spark-shell font [FACE SIZE|none|list]
 #                               the console's font, or Terminal.app's on
 #                               macOS (bare: the one in use)
-#   spark-shell quiet [login|boot on|off]
+#   spark-shell quiet [login|boot on|off] [--yes]
 #                               a bare login prompt, a quiet boot (Linux)
 #
 # The one interface to spark is ~/.config/spark/theme.env, the palette
@@ -305,6 +307,7 @@ wall_load() {
 # skip | todo; an apply run says what it changed, --dry-run says all.
 MODE=apply
 VERBOSE=0
+YES=0       # --yes: on, on desktop and quiet boot on go ahead without asking
 PLAYER=''   # a desk's player: windows | rooms, forced by --windows | --rooms; else where you ask from
 todo=0
 would=0   # the would rows printed: a dry run's last line counts them
@@ -1313,7 +1316,79 @@ noun_ok() {   # noun_ok on|off [WORD...]
     case $_w in *[!\ ]*) ;; *) _w="an empty word" ;; esac
     echo "spark-shell $_v: $_w is not a thing to switch $_v (desktop is)"; exit 1
 }
+# The warning: on, on desktop and quiet boot on change how this machine
+# behaves, so each says what it changes and asks first. --yes goes
+# ahead without asking; --dry-run changes nothing and never asks. The
+# question is asked only at a terminal (stdin); with no terminal and no
+# --yes, one line and exit 1, nothing changed. The suite drives the
+# answer through stdin with SPARK_SHELL_TEST_TTY set.
+asks() { [ "$MODE" = apply ] && [ "$YES" = 0 ]; }   # will this run ask?
+ask_terminal() {   # before a word is printed: no terminal, one line and exit 1
+    [ -t 0 ] || [ -n "${SPARK_SHELL_TEST_TTY:-}" ] || { echo "spark-shell: no terminal to ask on -- add --yes to go ahead"; exit 1; }
+}
+ask_continue() {   # the question; anything but y or yes stops here, nothing changed
+    printf '\nContinue? [y/N] '
+    if ! IFS= read -r _ans; then echo; _ans=''; fi
+    case $_ans in y|Y|yes|Yes|YES) return 0 ;; esac
+    echo "spark-shell: nothing was changed."; exit 1
+}
+warn_wrap() {   # warn_wrap LABEL WORDS... -- one row of the desktop list, wrapped within 80 columns
+    _l=$1; shift
+    printf '%s\n' "$*" | awk -v l="$_l" '{
+        line = sprintf("  %-13s", l); n = length(line); first = 1
+        for (i = 1; i <= NF; i++) {
+            if (!first && n + 1 + length($i) > 79) { print line; line = sprintf("%15s", ""); n = 15; first = 1 }
+            if (first) { line = line $i; n += length($i); first = 0 } else { line = line " " $i; n += 1 + length($i) }
+        }
+        print line }'
+}
+on_warning() {   # on_warning [desktop] -- at the very start of on: what it changes, then the question
+    noun_ok on "$@"
+    asks || return 0
+    if [ "${1:-}" = desktop ]; then
+        [ "$OS" != Darwin ] || return 0   # refused next, before anything
+        pm_detect
+    fi
+    ask_terminal
+    if [ "$OS" = Darwin ]; then
+        printf '%s\n' 'spark-shell replaces your shell files, installs packages' \
+            'and changes the Terminal.app colours.' 'spark-shell on --dry-run shows every change.'
+    elif [ "${1:-}" = desktop ]; then
+        printf '%s\n' 'spark-shell replaces your shell files, installs packages' \
+            'and changes the console colours.' 'spark-shell on desktop --dry-run shows every change.'
+    else
+        printf '%s\n' 'spark-shell replaces your shell files, installs packages' \
+            'and changes the console colours. spark-shell on --dry-run' 'shows every change.'
+    fi
+    if [ "${1:-}" = desktop ]; then
+        printf '\nspark-shell changes how this machine works:\n\n'
+        # shellcheck disable=SC2086
+        [ -z "$PKG_DESKTOP" ] || warn_wrap packages $PKG_DESKTOP '(sudo)'
+        warn_wrap login 'logging in on tty1 starts the desktop'
+        warn_wrap '' 'Alt+F2 is a plain shell'
+        if [ "$DISTRO" = void ]; then
+            warn_wrap groups 'adds you to _seatd (sudo)'
+            warn_wrap services 'turns on seatd at boot (sudo)'
+        fi
+        printf '\n%s\n%s\n' 'spark-shell off desktop puts the login back.' 'Packages stay.'
+    fi
+    ask_continue
+}
+boot_warning() {   # boot_warning SHAPE -- before quiet boot on: what it changes, then the question
+    asks || return 0
+    ask_terminal
+    printf '%s\n' 'spark-shell quiet boot on changes how this machine starts:' \
+        'the boot menu is hidden, and the kernel and init are silent.'
+    case $1 in
+        grub) echo 'It adds a GRUB settings file and runs update-grub (sudo).' ;;
+        uki) echo 'It edits the kernel command line and runs mkinitcpio -P (sudo).' ;;
+        void) echo 'It edits the GRUB settings and the runit boot files (sudo).' ;;
+    esac
+    echo 'spark-shell quiet boot off puts it back.'
+    ask_continue
+}
 cmd_on() {   # cmd_on [desktop]
+    on_warning "$@"
     noun_ok on "$@"
     [ "${1:-}" != desktop ] || [ "$OS" != Darwin ] || refuse "na: macOS has its own desktop"
     if [ "${1:-}" = desktop ]; then pm_detect; [ "$DISTRO" != void ] || refuse "$VOID_NO_DESKTOP"; fi
@@ -1841,6 +1916,7 @@ cmd_quiet() {   # quiet [login|boot [on|off]]
     [ "$OS" != Darwin ] || refuse_in quiet "macOS has no login notice or boot menu to quiet."
     if [ "$what" = boot ] && [ "$2" = on ]; then
         why=$(boot_refusal "$(boot_shape)"); [ -z "$why" ] || refuse_in quiet "$why"
+        boot_warning "$(boot_shape)"
     fi
     if [ "$2" = on ]; then val=yes; else val=no; fi
     if [ "$what" = login ]; then
@@ -2671,7 +2747,7 @@ main() {
     n=$#
     while [ "$n" -gt 0 ]; do
         a=$1; shift; n=$((n - 1))
-        case $a in --dry-run) MODE=dry ;; --verbose|-v) VERBOSE=1 ;; --windows|--rooms) PLAYER=${a#--} ;; *) set -- "$@" "$a" ;; esac
+        case $a in --dry-run) MODE=dry ;; --yes) YES=1 ;; --verbose|-v) VERBOSE=1 ;; --windows|--rooms) PLAYER=${a#--} ;; *) set -- "$@" "$a" ;; esac
     done
     case ${1:-} in -h|--help) usage; return 0 ;; esac   # a verb's -h answers first
     case $sub in

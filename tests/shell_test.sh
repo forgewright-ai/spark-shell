@@ -68,7 +68,7 @@ rc=0; out=$(sh "$SH" on "" 2>&1) || rc=$?
 # --- 2. on: links, renders, idempotence, the plain look ------------------
 theme_fixture '#ff5555'
 printf 'yours\n' > "$HOME/.bashrc"     # a pre-existing rc file of the user's
-out=$(sh "$SH" on)
+out=$(sh "$SH" on --yes)
 case $(uname -s) in Darwin) rc1=.zshrc ;; *) rc1=.bashrc ;; esac
 [ -L "$HOME/$rc1" ] && ok "on: $rc1 is spark-shell's link" || bad "rc link" "$(ls -la "$HOME")"
 if [ "$rc1" = .bashrc ]; then
@@ -121,30 +121,30 @@ printf '%s\n' "$st" | grep -q '^  tool  fd  *yes$' && printf '%s\n' "$st" | grep
 
 # --- 3. on again follows the palette --------------------------------------
 theme_fixture '#ee8800'
-sh "$SH" on >/dev/null
+sh "$SH" on --yes >/dev/null
 grep -q 'fg=colour3,bold' "$HOME/.tmux.conf" && ok "on again: a new accent lands as its nearest slot (colour3)" || bad "on rerender" "$(grep -n colour "$HOME/.tmux.conf" | head -2)"
 out=$(sh "$SH" check || true)
 printf '%s\n' "$out" | grep -q '^ok     look' && ok "check: the look matches the palette" || bad "check look row" "$out"
 printf '%s\n' "$out" | grep -q '^ok     font         na (CONSOLE_FONT unset: the console keeps its font)$' && ok "check: the font row is na with CONSOLE_FONT unset" || bad "check: font row" "$out"
 grep -q "SPARK_ACCENT_SGR='1;33'" "$HOME/.config/spark-shell/sgr.sh" && ok "on again: the new accent lands in sgr.sh (1;33)" || bad "on again sgr" "$(cat "$HOME/.config/spark-shell/sgr.sh")"
 st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q 'accent colour3, muted colour8 (SGR 1;33 / 90)' && ok "status: the theme row names the slots and the SGR pair" || bad "status slots" "$(printf '%s\n' "$st" | grep theme)"
-out=$(sh "$SH" on)
+out=$(sh "$SH" on --yes)
 printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "on again with nothing changed: ends in Nothing to do" || bad "on nothing to do" "$out"
 theme_fixture '#5555ff'
 out=$(sh "$SH" on --dry-run); out2=$(sh "$SH" apply --dry-run)
 [ "$out2" = "$out" ] && printf '%s\n' "$out" | grep -q '^would  look' && ok "apply is on: the same dry run, row for row (the new accent would render)" || bad "apply alias" "$out2"
-sh "$SH" apply >/dev/null
+sh "$SH" apply --yes >/dev/null
 grep -q "SPARK_ACCENT_SGR='1;94'" "$HOME/.config/spark-shell/sgr.sh" && ok "apply: the accent lands in sgr.sh (1;94)" || bad "apply sgr" "$(cat "$HOME/.config/spark-shell/sgr.sh")"
-theme_fixture '#ee8800'; sh "$SH" on >/dev/null   # the palette section 4 reads
+theme_fixture '#ee8800'; sh "$SH" on --yes >/dev/null   # the palette section 4 reads
 
 # --- 4. the prompt choices ------------------------------------------------
 mkdir -p "$HOME/.config/spark-shell"
 printf 'PROMPT=plain\n' > "$HOME/.config/spark-shell/config"
 rm -f "$HOME/.config/starship.toml"
-sh "$SH" on >/dev/null
+sh "$SH" on --yes >/dev/null
 [ ! -e "$HOME/.config/starship.toml" ] && ok "PROMPT=plain renders no starship.toml" || bad "plain prompt"
 printf 'PROMPT=starship\nPROMPT_STYLE=full\n' > "$HOME/.config/spark-shell/config"
-sh "$SH" on >/dev/null
+sh "$SH" on --yes >/dev/null
 [ -f "$HOME/.config/starship.toml" ] && grep -q 'style = "bold yellow"' "$HOME/.config/starship.toml" \
     && plain "$HOME/.config/starship.toml" && ok "PROMPT_STYLE=full renders the full style, plain" || bad "full style"
 # no starship and no package for it (the fixture family): the shell's own prompt, a skip, never a download
@@ -181,7 +181,7 @@ printf '%s\n' "$out" | grep -q 'packages stay installed' && ok "off: packages st
 fresh
 theme_fixture '#ff55ff'
 ln -s "$SH" "$H/.local/bin/spark-shell"
-sh -c '"$0" on' "$H/.local/bin/spark-shell" >/dev/null 2>&1 || true
+sh -c '"$0" on --yes' "$H/.local/bin/spark-shell" >/dev/null 2>&1 || true
 [ -f "$HOME/.tmux.conf" ] && grep -q 'fg=colour13,bold' "$HOME/.tmux.conf" \
     && ok "a symlinked spark-shell still finds its templates" || bad "symlink invocation" "$(ls -la "$HOME" | head -4)"
 case $(uname -s) in Darwin) r8=.zshrc ;; *) r8=.bashrc ;; esac
@@ -189,7 +189,7 @@ case $(uname -s) in Darwin) r8=.zshrc ;; *) r8=.bashrc ;; esac
 
 # --- 9. no theme.env: the colour words, each its own slot -----------------
 fresh
-sh "$SH" on >/dev/null
+sh "$SH" on --yes >/dev/null
 grep -q 'fg=colour4,bold' "$HOME/.tmux.conf" && grep -q 'pane-border-style "fg=colour7"' "$HOME/.tmux.conf" \
     && ok "no theme.env: accent blue (colour4), muted white (colour7)" || bad "name defaults" "$(grep -n colour "$HOME/.tmux.conf" | head -3)"
 grep -q "SPARK_ACCENT_SGR='1;34'" "$HOME/.config/spark-shell/sgr.sh" && grep -q "SPARK_MUTED_SGR='37'" "$HOME/.config/spark-shell/sgr.sh" \
@@ -223,7 +223,7 @@ if [ -n "${SPARK:-}" ] && ls "$SPARK"/themes/*.env >/dev/null 2>&1; then
         name=${env##*/}; name=${name%.env}
         fresh
         cp "$env" "$HOME/.config/spark/theme.env"
-        sh "$SH" on >/dev/null
+        sh "$SH" on --yes >/dev/null
         st=$(sh "$SH" status)
         allplain=1
         for rel in $RENDERS; do plain "$HOME/$rel" || allplain=0; done
@@ -238,12 +238,12 @@ fi
 # THEME_BTOP renders the same look, so both orders work meanwhile
 fresh
 theme_fixture '#aa0000'
-sh "$SH" on >/dev/null
+sh "$SH" on --yes >/dev/null
 with=$(sed "s|$H|HOME|g" "$HOME/.tmux.conf")
 fresh
 theme_fixture '#aa0000'
 grep -v '^THEME_BTOP=' "$HOME/.config/spark/theme.env" > "$H/theme.env" && mv "$H/theme.env" "$HOME/.config/spark/theme.env"
-st=0; out=$(sh "$SH" on 2>&1) || st=$?
+st=0; out=$(sh "$SH" on --yes 2>&1) || st=$?
 [ "$st" -eq 0 ] && [ "$(sed "s|$H|HOME|g" "$HOME/.tmux.conf")" = "$with" ] \
     && ! grep -q 'color_theme\|THEME_BTOP' "$HOME/.config/btop/btop.conf" \
     && sh "$SH" status | grep 'read: accent colour1, muted colour8' >/dev/null \
@@ -263,7 +263,7 @@ theme_fixture '#ff5555'
 out=$(sh "$SH" on --dry-run)
 [ ! -e "$HOME/.config/foot" ] && [ ! -e "$HOME/.config/sway" ] && ok "default: DESKTOP=none renders no foot.ini, no sway config" || bad "desktop rendered by default" "$(ls -R "$HOME/.config")"
 printf '%s\n' "$out" | grep -Eq '^(would|todo|FAIL|warn) +font' && bad "default dry-run acts on a font" "$out" || ok "default dry-run: no font row acts"
-sh "$SH" on >/dev/null
+sh "$SH" on --yes >/dev/null
 st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desk  none' && ok "status: the desk row says none" || bad "status desk none" "$(printf '%s\n' "$st" | grep desk)"
 out=$(sh "$SH" check || true)
 printf '%s\n' "$out" | grep -q '^ok     desktop      na (' && ok "check: desktop is na by default" || bad "check desktop na" "$out"
@@ -276,7 +276,7 @@ printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 if [ "$(uname -s)" = Darwin ]; then
     out=$(sh "$SH" on --dry-run)
     printf '%s\n' "$out" | grep -q '^skip   desktop      na: macOS' && ok "macOS: DESKTOP=sway is na, said in a row" || bad "macOS na row" "$out"
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     [ ! -e "$HOME/.config/sway" ] && ok "macOS: nothing rendered for the desktop" || bad "macOS rendered sway"
     out=$(sh "$SH" desktop 2>&1 || true)
     printf '%s\n' "$out" | grep -q '^spark-shell desktop: na' && ok "macOS: desktop refuses, na" || bad "macOS desktop" "$out"
@@ -286,7 +286,7 @@ else
     out=$(sh "$SH" on --dry-run)
     printf '%s\n' "$out" | grep -q '^would  look .*foot/foot.ini' && printf '%s\n' "$out" | grep -q '^would  look .*sway/config' \
         && ok "DESKTOP=sway: dry-run would render foot.ini and sway/config" || bad "sway dry-run" "$out"
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     foot=$HOME/.config/foot/foot.ini; sway=$HOME/.config/sway/config
     [ -f "$foot" ] && [ -f "$sway" ] && ok "DESKTOP=sway: both rendered" || bad "sway renders missing" "$(ls -R "$HOME/.config")"
     grep -q '^background=000000$' "$foot" && grep -q '^foreground=aaaaaa$' "$foot" && grep -q '^regular1=aa0000$' "$foot" && grep -q '^bright1=ff5555$' "$foot" \
@@ -294,10 +294,10 @@ else
     grep -q '^font=DejaVu Sans Mono:size=12$' "$foot" && ok "foot.ini: the default FONT line" || bad "foot font line" "$(grep -n '^font' "$foot")"
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: one colour section, [colors-dark] (a foot with no version = 1.26+)" || bad "foot sections" "$(grep -n '^\[' "$foot")"
     printf '#!/bin/sh\n[ "$1" = --version ] && echo "foot version: 1.21.0 (Debian)"\n' > "$HOME/.local/bin/foot"
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     grep -q '^\[colors\]$' "$foot" && ! grep -q '^\[colors-dark\]$' "$foot" && ok "foot.ini: foot 1.21 gets [colors] alone" || bad "foot 1.21 section" "$(grep -n '^\[' "$foot")"
     printf '#!/bin/sh\n[ "$1" = --version ] && echo "foot version: 1.28.0 (Arch)"\n' > "$HOME/.local/bin/foot"
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
     grep -q '^client.focused *#ff5555 ' "$sway" && ok "sway: client.focused takes the accent's hex (#ff5555)" || bad "sway focused" "$(grep -n client "$sway")"
     grep -q "^bindsym \$mod+s exec \$term --app-id spark-chat -e $REPO/spark-shell desktop --chat\$" "$sway" && ok "sway: the Super+s line names the clone's spark-shell" || bad "sway Super+s render" "$(grep -n 'mod+s ' "$sway")"
@@ -308,10 +308,10 @@ else
     head -1 "$foot" | grep -q '^# rendered by spark-shell' && head -1 "$sway" | grep -q '^# rendered by spark-shell' && ok "desktop renders: both marked" || bad "desktop markers"
     LC_ALL=C grep -q "[^ -~${tab}]" "$foot" "$sway" && bad "a desktop render is not ASCII" || ok "desktop renders: ASCII"
     printf 'DESKTOP=sway\nFONT=Test Mono:size=14\n' > "$HOME/.config/spark-shell/config"
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     grep -q '^font=Test Mono:size=14$' "$foot" && ok "FONT in the config lands in foot.ini verbatim" || bad "FONT override" "$(grep -n '^font' "$foot")"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desk  sway .*sway: rendered' && ok "status: the desk row says sway, rendered" || bad "status desk sway" "$(printf '%s\n' "$st" | grep desk)"
     out=$(sh "$SH" check || true)
     printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot' && ok "check: desktop ok with the stubs and fresh renders" || bad "check desktop ok" "$out"
@@ -323,7 +323,7 @@ else
     out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 TERM=linux sh "$SH" desktop 2>&1); st=$?
     [ "$st" -eq 0 ] && grep -q 'sway-stub' "$HOME/.local/state/spark-shell/sway.log" && printf '%s' "$out" | od -c | grep -q '033   \[   ?   2   5   h' \
         && ok "desktop: runs sway as a child, its stderr in sway.log, the cursor back on TERM=linux" || bad "desktop run" "st=$st out=$out log=$(cat "$HOME/.local/state/spark-shell/sway.log" 2>&1)"
-    out=$(SWAYSOCK=/nonexistent sh "$SH" on)
+    out=$(SWAYSOCK=/nonexistent sh "$SH" on --yes)
     printf '%s\n' "$out" | grep -q '^ok     sway         reloaded' && ok "on: swaymsg reload when SWAYSOCK is set" || bad "sway reload" "$out"
     rm -f "$H/.local/bin/sway"
     out=$(sh "$SH" check || true)
@@ -336,7 +336,7 @@ else
     mkdir -p "$HOME/.config/sway"; printf 'mine\n' > "$sway"
     sh "$SH" off >/dev/null
     grep -q mine "$sway" && ok "off: a sway config of yours (no marker) is left alone" || bad "yours removed"
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     [ -f "$sway.bak" ] && grep -q mine "$sway.bak" && grep -q '^# rendered by spark-shell' "$sway" && ok "on: yours moves to .bak, the render takes its place" || bad "sway backup" "$(ls "$HOME/.config/sway")"
     rm -f "$foot"
     out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop 2>&1 || true)
@@ -345,7 +345,7 @@ else
     fresh
     desktop_stubs
     mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     grep -q '^regular4=0000aa$' "$HOME/.config/foot/foot.ini" && grep -q '^background=000000$' "$HOME/.config/foot/foot.ini" && grep -q '^foreground=aaaaaa$' "$HOME/.config/foot/foot.ini" \
         && ok "no theme.env: foot.ini takes the VGA sixteen (regular4 0000aa, bg 000000, fg aaaaaa)" || bad "vga foot" "$(grep -n '=' "$HOME/.config/foot/foot.ini" | head -6)"
     grep -q '^client.focused *#0000aa ' "$HOME/.config/sway/config" && ok "no theme.env: the accent's hex is its VGA slot (blue, #0000aa)" || bad "vga accent" "$(grep -n client "$HOME/.config/sway/config")"
@@ -354,7 +354,7 @@ fi
 # --- follow: the login hook re-renders the look when theme.env changed
 fresh
 theme_fixture '#ff5555'
-sh "$SH" on >/dev/null
+sh "$SH" on --yes >/dev/null
 out=$(sh "$SH" follow)
 [ -z "$out" ] && ok "follow: nothing to say right after on (the palette was seen)" || bad "follow after on" "$out"
 theme_fixture '#ee8800'
@@ -373,7 +373,7 @@ if [ "$(uname -s)" != Darwin ]; then
     fresh; desktop_stubs
     mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\nPROMPT_STYLE=full\n' > "$HOME/.config/spark-shell/config"
     theme_fixture '#ff5555'
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     sway=$HOME/.config/sway/config; foot=$HOME/.config/foot/foot.ini
     out=$(sh "$SH" desktop wallpaper)
     printf '%s\n' "$out" | grep -q "^wallpaper default -- the forge wallpaper, $REPO/wallpapers/forge-1920x1080.jpg\$" && ok "desktop wallpaper (bare): the default is the forge" || bad "wallpaper bare default" "$out"
@@ -396,7 +396,7 @@ if [ "$(uname -s)" != Darwin ]; then
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q "^  wall  picture *$pic\$" && ok "status: the wall row names the picture" || bad "status wall" "$(sh "$SH" status | grep wall)"
     ck=$(sh "$SH" check || true); printf '%s\n' "$ck" | grep -q '^ok     desktop' && ok "check: the desktop renders match with a wallpaper" || bad "check with wallpaper" "$(sh "$SH" check)"
     rm -f "$pic"
-    out=$(sh "$SH" on)
+    out=$(sh "$SH" on --yes)
     printf '%s\n' "$out" | grep -q '^todo   wallpaper .*is not there' && grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^alpha=1.0$' "$foot" \
         && ok "a picture that went missing: a todo row, the palette's colour, never a black screen" || bad "missing wallpaper" "$out"
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  wall  missing' && ok "status: wall missing" || bad "status wall missing" "$(sh "$SH" status | grep wall)"
@@ -410,10 +410,10 @@ if [ "$(uname -s)" != Darwin ]; then
     printf 'DESKTOP=none\n' > "$HOME/.config/spark-shell/config"
     rc=0; out=$(sh "$SH" desktop wallpaper "$HOME/.config/spark-shell/config" 2>&1) || rc=$?
     [ $rc = 1 ] && printf '%s\n' "$out" | grep -q 'spark-shell on desktop first' && ok "desktop wallpaper: refused without the desktop" || bad "wallpaper without desktop" "$out"
-    printf 'DESKTOP=sway\nALPHA=0.7\n' > "$HOME/.config/spark-shell/config"; sh "$SH" on >/dev/null
+    printf 'DESKTOP=sway\nALPHA=0.7\n' > "$HOME/.config/spark-shell/config"; sh "$SH" on --yes >/dev/null
     grep -q '^alpha=0.7$' "$foot" && ok "ALPHA in the config lands in foot.ini" || bad "alpha key" "$(grep -n alpha "$foot")"
     sed 's/^ALPHA=.*/ALPHA=2/' "$HOME/.config/spark-shell/config" > "$HOME/c.tmp"; mv "$HOME/c.tmp" "$HOME/.config/spark-shell/config"
-    rc=0; out=$(sh "$SH" on 2>&1) || rc=$?
+    rc=0; out=$(sh "$SH" on --yes 2>&1) || rc=$?
     [ $rc = 1 ] && printf '%s\n' "$out" | grep -q 'ALPHA=2' && ok "ALPHA outside 0..1 is refused in one line" || bad "alpha refuse" "$out"
 fi
 grep -q '@FONT@' "$REPO/templates/.config/foot/foot.ini" && grep -q '@FOOT_ALPHA@' "$REPO/templates/.config/foot/foot.ini" \
@@ -436,7 +436,7 @@ cat > "$H/.local/bin/spark" <<'EOF'
 EOF
 chmod +x "$H/.local/bin/spark"
 theme_fixture '#ff5555'
-sh "$SH" on >/dev/null
+sh "$SH" on --yes >/dev/null
 st=0; out=$(sh "$SH" desktop --chat 2>&1) || st=$?
 [ "$st" -eq 0 ] && [ "$(head -1 "$H/spark.argv")" = chat ] && grep -q "^SPARK_ACCENT_SGR=1;91$" "$H/spark.argv" \
     && ok "desktop --chat: execs spark chat, sgr.sh sourced first (the accent's SGR 1;91 reaches it)" || bad "desktop --chat" "st=$st $out $(cat "$H/spark.argv" 2>&1)"
@@ -495,7 +495,7 @@ mkdir -p "$HOME/.config/spark-shell"
 printf 'PROMPT_STYLE=full\nDESKTOP=none\n' > "$HOME/.config/spark-shell/config"
 st=$(PATH=$H/.local/bin:$sys sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next  spark .*Install spark, the AI this seat is for: github.com/forgewright-ai/spark\.$' && ok "status: next says install spark first, without spark on PATH" || bad "status next spark" "$(printf '%s\n' "$st" | grep next)"
 if [ "$(uname -s)" = Darwin ]; then
-    st=0; out=$(sh "$SH" on desktop 2>&1) || st=$?
+    st=0; out=$(sh "$SH" on desktop --yes 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: na' \
         && ok "macOS: on desktop refuses, na, one line, exit 1" || bad "macOS on desktop" "st=$st $out"
     grep -q 'DESKTOP=none' "$HOME/.config/spark-shell/config" && [ ! -e "$H/root/etc" ] && ok "macOS: on desktop wrote nothing" || bad "macOS on desktop wrote" "$(cat "$HOME/.config/spark-shell/config")"
@@ -507,7 +507,7 @@ else
     printf '%s\n' "$out" | grep -Eq '^(would|todo|FAIL|warn) +font' && bad "on desktop --dry-run acts on a font" "$out" || ok "on desktop --dry-run: no font row acts"
     out2=$(sh "$SH" desktop on --dry-run)
     [ "$out2" = "$out" ] && ok "desktop on is on desktop: the same dry run, row for row" || bad "desktop on alias" "$out2"
-    out=$(sh "$SH" on desktop 2>&1); st=$?
+    out=$(sh "$SH" on desktop --yes 2>&1); st=$?
     [ "$st" -eq 0 ] && grep -q '^DESKTOP=sway$' "$HOME/.config/spark-shell/config" && grep -q '^PROMPT_STYLE=full$' "$HOME/.config/spark-shell/config" \
         && [ "$(grep -c '^DESKTOP=' "$HOME/.config/spark-shell/config")" -eq 1 ] \
         && ok "on desktop: DESKTOP=sway written into the config, the other line kept" || bad "on desktop config" "st=$st $(cat "$HOME/.config/spark-shell/config")"
@@ -520,7 +520,7 @@ else
         && ok "config.toml: vt 1, the greeter user, tuigreet --cmd spark-shell desktop, --sessions" || bad "config.toml shape" "$(cat "$conf")"
     grep '^command' "$conf" | grep -q -- '--background' && bad "config.toml: --background for a tuigreet that lacks it" || ok "config.toml: no --background for a tuigreet without it (0.9)"
     printf '#!/bin/sh\n[ "$1" = --help ] && echo "        --background NAME background animation"\n' > "$H/.local/bin/tuigreet"
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     grep -q -- "--greeting '$(hostname -s 2>/dev/null || uname -n | cut -d. -f1)' --background doom --theme" "$conf" && ok "config.toml: the DOOM fire for a tuigreet that knows --background (0.11)" || bad "config.toml doom" "$(grep -o -- '--greeting.*--theme' "$conf")"
     grep -q -- "--theme 'border=lightred;" "$conf" && grep -q 'container=black' "$conf" && grep -q 'text=gray' "$conf" && grep -q 'greet=darkgray' "$conf" \
         && ok "config.toml: the palette as ratatui words (border lightred, container black, text gray, greet darkgray)" || bad "config.toml theme" "$(grep -o -- "--theme '[^']*'" "$conf")"
@@ -554,12 +554,12 @@ else
     printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "on --dry-run after on desktop: Nothing to do (the root files match, the units are set)" || bad "greeter idempotence" "$out"
     # a palette change reaches the box through on
     theme_fixture '#5555ff'
-    out=$(sh "$SH" on)
+    out=$(sh "$SH" on --yes)
     printf '%s\n' "$out" | grep -q '^render greeter .*config.toml' && grep -q -- "--theme 'border=lightblue;" "$conf" && ok "on: a new accent re-renders config.toml (border lightblue)" || bad "on greeter" "$out"
     printf '%s\n' "$out" | grep -q '^render greeter .*desktop.desktop' && bad "on re-wrote an unchanged root file" "$out" || ok "on: an unchanged root file is left alone"
     # the config set by hand + on = on desktop, one path
     rm -rf "$H/root/etc"; rm -f "$H/root/units/greetd.service"; : > "$H/root/units/log"
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     [ -f "$conf" ] && grep -q '^enable greetd.service$' "$H/root/units/log" && ok "DESKTOP=sway by hand + on: the same path (root files, greetd enabled)" || bad "on = on desktop" "$(cat "$H/root/units/log")"
     # check fails when a unit is off or a file is stale, the remedy is on desktop
     rm -f "$H/root/units/greetd.service"
@@ -596,16 +596,16 @@ else
         && ok "desktop with the desktop off, from a console: one line, then your login shell (never a dead end at the greeter)" || bad "desktop off console landing" "st=$st $out"
     # a foreign config.toml is kept as .spark-orig and comes back on off
     mkdir -p "$H/root/etc/greetd"; printf '[terminal]\nvt = 1\n[default_session]\ncommand = "agreety --cmd /bin/sh"\nuser = "greeter"\n' > "$conf"
-    sh "$SH" on desktop >/dev/null
+    sh "$SH" on desktop --yes >/dev/null
     [ -f "$conf.spark-orig" ] && grep -q agreety "$conf.spark-orig" && grep -q '^# rendered by spark-shell' "$conf" && ok "on desktop: a config.toml of the package's goes to .spark-orig once" || bad "spark-orig" "$(ls "$H/root/etc/greetd")"
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     [ -f "$conf.spark-orig" ] && grep -q agreety "$conf.spark-orig" && ok "on again: .spark-orig is never overwritten" || bad "spark-orig twice"
     sh "$SH" off >/dev/null
     [ -f "$conf" ] && grep -q agreety "$conf" && [ ! -e "$conf.spark-orig" ] && ok "off: config.toml is back from .spark-orig" || bad "spark-orig restore" "$(ls "$H/root/etc/greetd"; cat "$conf" 2>&1)"
     [ ! -e "$H/root/etc/greetd/spark-shell" ] && [ ! -e "$H/root/units/greetd.service" ] && [ -e "$H/root/units/getty@tty1.service" ] && ok "off: the whole layer undoes the login box too" || bad "off greeter" "$(find "$H/root")"
     # no theme.env: the colour words -- accent blue, muted white = gray in ratatui's words
     fresh; desktop_stubs; greeter_stubs
-    sh "$SH" on desktop >/dev/null
+    sh "$SH" on desktop --yes >/dev/null
     grep -q -- "--theme 'border=blue;" "$H/root/etc/greetd/config.toml" && grep -q 'greet=gray' "$H/root/etc/greetd/config.toml" && grep -q 'container=black' "$H/root/etc/greetd/config.toml" \
         && ok "no theme.env: border blue, greet gray, container black" || bad "no theme.env greeter" "$(grep -o -- "--theme '[^']*'" "$H/root/etc/greetd/config.toml")"
     out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop 2>&1); st=$?
@@ -616,7 +616,7 @@ else
     # no sudo to be had (not root, sudo refuses, no tty): a todo row, nothing written
     if [ "$(id -u)" -ne 0 ]; then
         printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/sudo"; chmod +x "$H/.local/bin/sudo"
-        out=$(env -u SPARK_SHELL_ROOT sh "$SH" on </dev/null 2>&1 || true)
+        out=$(env -u SPARK_SHELL_ROOT sh "$SH" on --yes </dev/null 2>&1 || true)
         printf '%s\n' "$out" | grep -q '^todo   greeter .*spark-shell on desktop at a terminal (sudo once)' && ok "no sudo: the root render is a todo row, the shape of the packages row" || bad "no sudo todo" "$out"
         rm -f "$H/.local/bin/sudo"
     fi
@@ -691,7 +691,7 @@ desk_last=$H/.local/state/spark-shell/desk.last; desk_pending=$H/.local/state/sp
 desks=$H/.config/spark-shell/desks
 theme_fixture '#ff5555'
 mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-sh "$SH" on >/dev/null
+sh "$SH" on --yes >/dev/null
 if [ "$(uname -s)" = Darwin ]; then
     na_form() {   # na_form WORDS... -> one line, na, exit 1
         st=0; out=$(sh "$SH" desktop "$@" 2>&1) || st=$?
@@ -945,14 +945,14 @@ sbom_stubs
 mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 apps_file=$HOME/.config/spark-shell/apps; argv=$H/.local/state/spark.argv
 if [ "$(uname -s)" = Darwin ]; then
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     st=0; out=$(sh "$SH" desktop apps </dev/null 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | wc -l)" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: na: macOS has its own desktop$' \
         && ok "macOS: desktop apps refuses, na, one line, exit 1" || bad "macOS desktop apps" "st=$st $out"
     ck=$(sh "$SH" check || true)
     printf '%s\n' "$ck" | grep -q '^ok     apps         na (' && ok "macOS: the check apps row says na" || bad "macOS check apps" "$(printf '%s\n' "$ck" | grep apps)"
 else
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     tmuxd=$HOME/.local/share/applications/spark-shell-tmux.desktop
     [ -f "$tmuxd" ] && head -1 "$tmuxd" | grep -q '^# rendered by spark-shell' && grep -q '^Exec=tmux$' "$tmuxd" && grep -q '^Terminal=true$' "$tmuxd" \
         && ok "on with DESKTOP=sway: tmux declares itself (spark-shell-tmux.desktop, marked, Exec=tmux, Terminal=true)" || bad "tmux entry" "$(cat "$tmuxd" 2>&1)"
@@ -1145,7 +1145,7 @@ unset SWAYSOCK
 if [ "$(uname -s)" != Darwin ]; then
     # --windows from a console: the words wait, sway starts, --pending lays them out once
     theme_fixture '#ff5555'; mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-    sh "$SH" on >/dev/null
+    sh "$SH" on --yes >/dev/null
     desk_pending=$H/.local/state/spark-shell/desk.pending; rm -f "$argv" "$swlog"
     st=0; out=$(XDG_VTNR=1 sh "$SH" desktop "news and music" --windows 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$(cat "$desk_pending" 2>&1)" = 'news and music' ] && grep -q 'sway-stub' "$H/.local/state/spark-shell/sway.log" && [ ! -e "$argv" ] \
@@ -1314,7 +1314,7 @@ console_stubs Linux
 mkdir -p "$H/root/run/systemd/system" "$HOME/.config/spark-shell"
 palette_fixture test '#fb4934'
 printf 'THEME=test\n' > "$HOME/.config/spark-shell/config"
-out=$(L on)
+out=$(L on --yes)
 grep -q 'fg=colour9,bold' "$HOME/.tmux.conf" && [ -f "$H/root/etc/systemd/system/spark-shell-console.service" ] && ok "on: THEME=test is the palette the renders read (colour9), the unit written" || bad "on theme" "$out"
 out=$(L on --dry-run)
 printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "on again: Nothing to do with THEME set" || bad "on theme idempotent" "$out"
@@ -1332,7 +1332,7 @@ out=$(L off)
 fresh
 console_stubs Linux
 theme_fixture '#ff5555'
-L on >/dev/null; L off >/dev/null
+L on --yes >/dev/null; L off >/dev/null
 [ -f "$HOME/.config/spark/theme.env" ] && ok "off: a theme.env spark-shell did not write stays" || bad "foreign theme.env removed"
 
 # font: console-setup (Debian), vconsole.conf (Arch), rc.conf (Void)
@@ -1444,7 +1444,7 @@ console_stubs Linux
 printf 'ID=debian\n' > "$H/os-release"
 mkdir -p "$H/root/etc/default"
 printf 'GRUB_DEFAULT=0\nGRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX_DEFAULT="quiet"\n' > "$H/root/etc/default/grub"; cp "$H/root/etc/default/grub" "$H/grub.orig"
-L quiet boot on >/dev/null
+L quiet boot on --yes >/dev/null
 d=$H/root/etc/default/grub.d/zz-spark-shell-quiet.cfg
 [ "$(cat "$d")" = "GRUB_TIMEOUT=0
 GRUB_TIMEOUT_STYLE=hidden
@@ -1465,7 +1465,7 @@ out=$(L quiet boot off)
 ck=$(L check || true)
 printf '%s\n' "$ck" | grep -q '^FAIL   quiet        login loud, boot still quiet (QUIET_BOOT=no) -- spark-shell on (sudo once)$' && ok "check: a pending rebuild is a FAIL" || bad "check pending" "$(printf '%s\n' "$ck" | grep quiet)"
 rm -f "$H/fail"; : > "$H/log"
-L on >/dev/null
+L on --yes >/dev/null
 grep -qx update-grub "$H/log" && [ ! -e "$HOME/.local/state/spark-shell/boot-rebuild" ] && cmp -s "$H/root/etc/default/grub" "$H/grub.orig" \
     && ok "on: the pending update-grub runs again and the mark goes" || bad "rebuild retry" "$(cat "$H/log")"
 # quiet boot, Void: marked lines at the end of three files, byte for byte back
@@ -1476,7 +1476,7 @@ mkdir -p "$H/root/etc/default" "$H/root/etc/runit" "$H/root/etc/sv/agetty-tty1"
 printf 'GRUB_DEFAULT=0\nGRUB_TIMEOUT=5' > "$H/root/etc/default/grub"   # no final newline: the first marked line must not glue on
 printf '# /etc/rc.conf\nKEYMAP="us"\n' > "$H/root/etc/rc.conf"; printf 'GETTY_ARGS="--noclear"\n' > "$H/root/etc/sv/agetty-tty1/conf"
 cp "$H/root/etc/rc.conf" "$H/rc.orig"; cp "$H/root/etc/sv/agetty-tty1/conf" "$H/getty.orig"
-L quiet boot on >/dev/null
+L quiet boot on --yes >/dev/null
 [ "$(grep -c ' #spark-shell-quiet#$' "$H/root/etc/default/grub")" = 3 ] && [ "$(grep -c ' #spark-shell-quiet#$' "$H/root/etc/rc.conf")" = 10 ] && [ "$(grep -c ' #spark-shell-quiet#$' "$H/root/etc/sv/agetty-tty1/conf")" = 2 ] \
     && grep -qx 'GRUB_TIMEOUT=5' "$H/root/etc/default/grub" && grep -qx 'GRUB_TIMEOUT=0 #spark-shell-quiet#' "$H/root/etc/default/grub" && grep -qx update-grub "$H/log" \
     && ok "quiet boot on (Void): 3, 10 and 2 marked lines, nothing glued, update-grub" || bad "quiet boot void" "$(cat "$H/root/etc/default/grub")"
@@ -1494,7 +1494,7 @@ mkdir -p "$H/root/etc/mkinitcpio.d" "$H/root/boot/loader"
 printf 'ALL_kver="/boot/vmlinuz-linux"\ndefault_uki="/efi/EFI/Linux/arch-linux.efi"\ndefault_options="--splash /usr/share/systemd/bootctl/splash-arch.bmp"\n' > "$H/root/etc/mkinitcpio.d/linux.preset"
 printf 'timeout 3\n#console-mode max\n' > "$H/root/boot/loader/loader.conf"
 cp "$H/root/etc/mkinitcpio.d/linux.preset" "$H/preset.orig"; cp "$H/root/boot/loader/loader.conf" "$H/loader.orig"
-L quiet boot on >/dev/null
+L quiet boot on --yes >/dev/null
 [ "$(cat "$H/root/etc/cmdline.d/zz-spark-shell-quiet.conf")" = 'quiet splash loglevel=3 systemd.show_status=false udev.log_level=3 fbcon=nodefer' ] \
     && grep -q '^#spark-shell-quiet# default_options=' "$H/root/etc/mkinitcpio.d/linux.preset" && [ "$(head -1 "$H/root/boot/loader/loader.conf")" = 'timeout 0' ] && grep -qx 'mkinitcpio -P' "$H/log" \
     && ok "quiet boot on (Arch UKI): the drop-in, the splash marked off, timeout 0, mkinitcpio -P" || bad "quiet boot uki" "$(cat "$H/root/etc/mkinitcpio.d/linux.preset" "$H/root/boot/loader/loader.conf")"
@@ -1505,7 +1505,7 @@ L quiet boot off >/dev/null
 mkdir -p "$H/esp"
 printf '#!/bin/sh\nfor a; do case $a in %s/root/boot/*) echo "chmod: not permitted" >&2; exit 1 ;; esac; done\nexec /bin/chmod "$@"\n' "$H" > "$H/esp/chmod"; /bin/chmod +x "$H/esp/chmod"
 rm -f "$H/root/boot/loader/loader.conf"; : > "$H/log"
-rc=0; PATH=$H/esp:$H/lx:$PATH sh "$SH" quiet boot on >/dev/null 2>&1 || rc=$?
+rc=0; PATH=$H/esp:$H/lx:$PATH sh "$SH" quiet boot on --yes >/dev/null 2>&1 || rc=$?
 [ "$rc" = 0 ] && [ "$(cat "$H/root/boot/loader/loader.conf")" = 'timeout 0' ] && [ -e "$H/root/boot/loader/loader.conf.spark-shell-orig" ] && grep -qx 'mkinitcpio -P' "$H/log" \
     && ok "quiet boot on (Arch UKI, vfat ESP): a failed chmod is no error, timeout 0 and mkinitcpio -P" || bad "uki vfat" "rc=$rc $(cat "$H/log")"
 PATH=$H/esp:$H/lx:$PATH sh "$SH" quiet boot off >/dev/null 2>&1
@@ -1528,7 +1528,7 @@ printf 'GRUB_TIMEOUT=5\n' > "$H/root/etc/default/grub"; printf 'motd\n' > "$H/ro
 ( cd "$H/root" && find etc -type f | sort | while read -r f; do cksum "$f"; done ) > "$H/before"
 palette_fixture test '#fe8019'
 printf 'THEME=test\nCONSOLE_FONT=Terminus 16x32\nQUIET_LOGIN=yes\nQUIET_BOOT=yes\n' > "$HOME/.config/spark-shell/config"
-L on >/dev/null
+L on --yes >/dev/null
 ck=$(L check || true)
 [ "$(printf '%s\n' "$ck" | grep -cE '^ok     (theme|font|quiet) ')" = 3 ] && ok "on: THEME, CONSOLE_FONT and QUIET_* applied from the config, three ok rows" || bad "on console" "$(printf '%s\n' "$ck" | grep -E 'theme|font|quiet')"
 st=$(L status)
@@ -1546,12 +1546,12 @@ printf '#!/bin/sh\nexit 0\n' > "$H/lx/xbps-query"; chmod +x "$H/lx/xbps-query"
 out=$(L on --dry-run)
 printf '%s\n' "$out" | grep -q '^ok     packages     installed$' && printf '%s\n' "$out" | grep -q '^skip   desktop      na: the desktop is not available on Void yet$' \
     && ok "Void: xbps finds the packages, the desktop row is na" || bad "void dry-run" "$out"
-rc=0; out=$(L on desktop 2>&1) || rc=$?
+rc=0; out=$(L on desktop --yes 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: the desktop is not available on Void yet" ] && [ ! -e "$HOME/.config/spark-shell/config" ] && [ ! -e "$HOME/.tmux.conf" ] \
     && ok "Void: on desktop refused in one sentence, nothing written" || bad "void on desktop" "rc=$rc $out"
 rc=0; out=$(L desktop wallpaper none 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: the desktop is not available on Void yet" ] && ok "Void: desktop wallpaper refused the same way" || bad "void wallpaper" "rc=$rc $out"
-L on >/dev/null
+L on --yes >/dev/null
 ck=$(L check || true)
 printf '%s\n' "$ck" | grep -q '^ok     desktop      na (the desktop is not available on Void yet)$' && ok "Void: check says the desktop is na" || bad "void check" "$(printf '%s\n' "$ck" | grep desktop)"
 grep -q '^PKG_CONSOLE=kbd$' "$REPO/distro/void.env" && ! grep -q '^PKG_DESKTOP' "$REPO/distro/void.env" && ok "distro/void.env: kbd for the console, no desktop packages" || bad "void.env"
@@ -1601,6 +1601,129 @@ grep -qx "python3 $REPO/lib/terminal_profile.py remove" "$H/log" && [ ! -e "$HOM
     && ok "macOS: theme none removes the profile and theme.env" || bad "mac none" "$(cat "$H/log")"
 rc=0; out=$(L theme -h 2>&1) || rc=$?
 [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^  spark-shell theme \[NAME|none|list\]$' && ok "theme -h: the help answers first" || bad "theme -h" "rc=$rc $out"
+
+# --- the warning: on, on desktop and quiet boot on ask first -------------
+# The question is asked at a terminal only; the suite has none, so it
+# drives the answer through stdin with SPARK_SHELL_TEST_TTY set. A
+# sudo stub logs every call: a refused or stopped run makes none.
+snap() { ( cd "$H" && find . -print | LC_ALL=C sort && find . -type f -exec cksum {} + | LC_ALL=C sort ); }
+A() { SPARK_SHELL_TEST_TTY=1 PATH=$H/lx:$PATH sh "$SH" "$@"; }   # spark-shell with an answer on stdin (the assignments on sh, never kept)
+fresh
+console_stubs Linux
+printf '#!/bin/sh\necho "sudo $*" >> "%s/sudo.log"\n' "$H" > "$H/lx/sudo"; chmod +x "$H/lx/sudo"
+warn_on='spark-shell replaces your shell files, installs packages
+and changes the console colours. spark-shell on --dry-run
+shows every change.
+
+Continue? [y/N] spark-shell: nothing was changed.'
+snap_a=$(mktemp); snap_b=$(mktemp)
+snap > "$snap_a"
+rc=0; out=$(L on </dev/null 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "spark-shell: no terminal to ask on -- add --yes to go ahead" ] && ok "warning: no terminal and no --yes, one line, exit 1" || bad "warning no terminal" "rc=$rc $out"
+rc=0; out=$(L apply </dev/null 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "spark-shell: no terminal to ask on -- add --yes to go ahead" ] && ok "warning: apply is on, the same line" || bad "warning apply" "rc=$rc $out"
+printf 'ID=arch\n' > "$H/os-release"
+rc=0; out=$(L on desktop </dev/null 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "spark-shell: no terminal to ask on -- add --yes to go ahead" ] && ok "warning: on desktop with no terminal, the same line" || bad "warning desktop no terminal" "rc=$rc $out"
+rc=0; out=$(L desktop on </dev/null 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "spark-shell: no terminal to ask on -- add --yes to go ahead" ] && ok "warning: desktop on is on desktop, the same line" || bad "warning desktop on" "rc=$rc $out"
+printf 'ID=fixture\n' > "$H/os-release"
+rc=0; out=$(printf 'n\n' | A on 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "$warn_on" ] && ok "warning: on says what it changes and asks; n stops it (exit 1)" || bad "warning text" "rc=$rc $out"
+rc=0; out=$(printf '\n' | A on 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "$warn_on" ] && ok "warning: Enter alone is No" || bad "warning enter" "rc=$rc $out"
+rc=0; out=$(A on </dev/null 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$(printf '%s\n' "$out" | tail -1)" = "spark-shell: nothing was changed." ] && ok "warning: no answer at all is No" || bad "warning eof" "rc=$rc $out"
+snap > "$snap_b"
+cmp -s "$snap_a" "$snap_b" && ok "warning: a refused or stopped on leaves HOME byte for byte as it was" || bad "warning HOME changed" "$(diff "$snap_a" "$snap_b" | head -5)"
+rm -f "$snap_a" "$snap_b"
+[ ! -e "$H/sudo.log" ] && ok "warning: a refused or stopped on asks sudo nothing" || bad "warning sudo" "$(cat "$H/sudo.log")"
+# the desktop: the distro's PKG_DESKTOP, the login, Void's two lines
+printf 'ID=arch\n' > "$H/os-release"
+rc=0; out=$(printf 'n\n' | A on desktop 2>&1) || rc=$?
+pk=$(sed -n 's/^PKG_DESKTOP=//p' "$REPO/distro/arch.env")
+[ "$rc" = 1 ] && [ "$out" = "spark-shell replaces your shell files, installs packages
+and changes the console colours.
+spark-shell on desktop --dry-run shows every change.
+
+spark-shell changes how this machine works:
+
+  packages     $pk (sudo)
+  login        logging in on tty1 starts the desktop
+               Alt+F2 is a plain shell
+
+spark-shell off desktop puts the login back.
+Packages stay.
+
+Continue? [y/N] spark-shell: nothing was changed." ] && ok "warning: on desktop names the packages, the login and the way back" || bad "warning desktop" "rc=$rc $out"
+[ ! -e "$HOME/.config/spark-shell/config" ] && [ ! -e "$H/sudo.log" ] && ok "warning: a stopped on desktop writes nothing, no sudo" || bad "warning desktop wrote" "$(cat "$HOME/.config/spark-shell/config" 2>&1)"
+printf 'ID=void\n' > "$H/os-release"
+rc=0; out=$(printf 'n\n' | A on desktop 2>&1) || rc=$?
+printf '%s\n' "$out" | grep -qx '  groups       adds you to _seatd (sudo)' && printf '%s\n' "$out" | grep -qx '  services     turns on seatd at boot (sudo)' \
+    && ok "warning: on desktop on Void adds the _seatd group and the seatd service" || bad "warning void" "rc=$rc $out"
+pk=$(sed -n 's/^PKG_DESKTOP=//p' "$REPO/distro/void.env")
+if [ -n "$pk" ]; then printf '%s\n' "$out" | grep -q "^  packages     ${pk%% *} " && ok "warning: Void's PKG_DESKTOP named" || bad "warning void packages" "$out"
+else printf '%s\n' "$out" | grep -q '^  packages' && bad "warning: a packages row with no PKG_DESKTOP" "$out" || ok "warning: no PKG_DESKTOP, no packages row"; fi
+rc=0; out=$(printf 'n\n' | PKG_DESKTOP="$(printf 'pkg%s ' 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18)" SPARK_SHELL_TEST_TTY=1 PATH=$H/lx:$PATH sh "$SH" on desktop 2>&1) || rc=$?
+[ "$(printf '%s\n' "$out" | awk 'length > 79' | wc -l | tr -d ' ')" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c '^               pkg')" -ge 1 ] && printf '%s\n' "$out" | grep -q 'pkg18 (sudo)$' \
+    && ok "warning: a long package list wraps under its column, within 80" || bad "warning wrap" "$out"
+# y and --yes go ahead; --dry-run never asks
+printf 'ID=fixture\n' > "$H/os-release"
+rc=0; out=$(printf 'y\n' | A on 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ -L "$HOME/.bashrc" ] && printf '%s\n' "$out" | grep -q '^Continue? \[y/N\] ' && ok "warning: y goes ahead" || bad "warning y" "rc=$rc $out"
+rm -f "$H/sudo.log"
+fresh
+console_stubs Linux
+rc=0; out=$(L on --yes </dev/null 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ -L "$HOME/.bashrc" ] && ! printf '%s\n' "$out" | grep -q 'Continue?\|no terminal' && ok "warning: --yes goes ahead with no terminal, no question" || bad "warning --yes" "rc=$rc $out"
+rc=0; out=$(L on --dry-run </dev/null 2>&1) || rc=$?
+[ "$rc" = 0 ] && ! printf '%s\n' "$out" | grep -q 'Continue?\|no terminal' && ok "warning: on --dry-run never asks" || bad "warning dry-run" "rc=$rc $out"
+printf 'ID=arch\n' > "$H/os-release"
+rc=0; out=$(L on desktop --dry-run </dev/null 2>&1) || rc=$?
+printf 'ID=fixture\n' > "$H/os-release"
+[ "$rc" = 0 ] && ! printf '%s\n' "$out" | grep -q 'Continue?\|no terminal' && ok "warning: on desktop --dry-run never asks" || bad "warning desktop dry-run" "rc=$rc $out"
+# off, follow, theme and quiet login never ask
+rc=0; out=$(L off </dev/null 2>&1) || rc=$?
+[ "$rc" = 0 ] && ! printf '%s\n' "$out" | grep -q 'Continue?\|no terminal' && ok "warning: off never asks" || bad "warning off" "rc=$rc $out"
+rc=0; out=$(L off desktop </dev/null 2>&1) || rc=$?
+[ "$rc" = 0 ] && ! printf '%s\n' "$out" | grep -q 'Continue?\|no terminal' && ok "warning: off desktop never asks" || bad "warning off desktop" "rc=$rc $out"
+L on --yes >/dev/null
+theme_fixture '#55ff55'
+rc=0; out=$(printf 'n\n' | A follow 2>&1) || rc=$?
+[ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^spark-shell: the look followed the palette' && ! printf '%s\n' "$out" | grep -q 'Continue?\|no terminal' \
+    && ok "warning: follow (the login profile) never asks, even at a terminal" || bad "warning follow" "rc=$rc $out"
+rc=0; out=$(L theme none </dev/null 2>&1) || rc=$?
+! printf '%s\n' "$out" | grep -q 'Continue?\|no terminal' && ok "warning: theme never asks" || bad "warning theme" "rc=$rc $out"
+printf 'ID=debian\n' > "$H/os-release"
+rc=0; out=$(L quiet login on </dev/null 2>&1) || rc=$?
+[ "$rc" = 0 ] && ! printf '%s\n' "$out" | grep -q 'Continue?\|no terminal' && ok "warning: quiet login on never asks" || bad "warning quiet login" "rc=$rc $out"
+# quiet boot on asks; quiet boot off does not
+mkdir -p "$H/root/etc/default"; printf 'GRUB_TIMEOUT=5\n' > "$H/root/etc/default/grub"
+rc=0; out=$(L quiet boot on </dev/null 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "spark-shell: no terminal to ask on -- add --yes to go ahead" ] && [ ! -e "$H/root/etc/default/grub.d" ] && ok "warning: quiet boot on with no terminal, one line, nothing written" || bad "warning boot no terminal" "rc=$rc $out"
+rc=0; out=$(printf 'n\n' | A quiet boot on 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "spark-shell quiet boot on changes how this machine starts:
+the boot menu is hidden, and the kernel and init are silent.
+It adds a GRUB settings file and runs update-grub (sudo).
+spark-shell quiet boot off puts it back.
+
+Continue? [y/N] spark-shell: nothing was changed." ] && [ ! -e "$H/root/etc/default/grub.d" ] && ! grep -q 'QUIET_BOOT=yes' "$HOME/.config/spark-shell/config" \
+    && ok "warning: quiet boot on names what it changes and asks; n stops it" || bad "warning boot text" "rc=$rc $out"
+rc=0; out=$(L quiet boot on --dry-run </dev/null 2>&1) || rc=$?
+[ "$rc" = 0 ] && ! printf '%s\n' "$out" | grep -q 'Continue?\|no terminal' && ok "warning: quiet boot on --dry-run never asks" || bad "warning boot dry-run" "rc=$rc $out"
+rc=0; out=$(printf 'yes\n' | A quiet boot on 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ -e "$H/root/etc/default/grub.d/zz-spark-shell-quiet.cfg" ] && ok "warning: quiet boot on, yes goes ahead" || bad "warning boot yes" "rc=$rc $out"
+rc=0; out=$(L quiet boot off </dev/null 2>&1) || rc=$?
+[ "$rc" = 0 ] && ! printf '%s\n' "$out" | grep -q 'Continue?\|no terminal' && ok "warning: quiet boot off never asks" || bad "warning boot off" "rc=$rc $out"
+# macOS: the Terminal.app colours
+fresh
+console_stubs Darwin
+rc=0; out=$(printf 'n\n' | A on 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "spark-shell replaces your shell files, installs packages
+and changes the Terminal.app colours.
+spark-shell on --dry-run shows every change.
+
+Continue? [y/N] spark-shell: nothing was changed." ] && ok "warning (macOS): the Terminal.app colours" || bad "warning mac" "rc=$rc $out"
 
 # --- the voice: the docs and the help hold to it -------------------------
 # README.md, the top entry of CHANGELOG.md, CREDITS.md, config.example, the
