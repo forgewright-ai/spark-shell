@@ -23,7 +23,7 @@
 #   spark-shell apps                  choose the apps a layout may open
 #   spark-shell desktop               start the desktop now (from a console)
 #   spark-shell desktop keys          list the desktop's keys
-#   spark-shell desktop wallpaper X   set the picture: a path, default or none
+#   spark-shell desktop wallpaper X   set a picture, a colour, default or none
 #   spark-shell bar on|off            show or hide the tmux status line
 #   spark-shell sbom [NAME]           list the installed software, or one
 #   spark-shell sbom --json           write the list as a CycloneDX 1.5 file
@@ -45,7 +45,7 @@
 # POSIX sh on both OSes: the Debian, Arch and Void families, and macOS. The choices live in ~/.config/spark-shell/
 # config, one KEY=value a line. PROMPT is starship|plain, PROMPT_STYLE
 # minimal|full, DESKTOP none|sway, FONT foot's spec (DejaVu Sans
-# Mono:size=12), WALLPAPER default|none|PATH and ALPHA foot over a
+# Mono:size=12), WALLPAPER default|none|PATH|#rrggbb and ALPHA foot over a
 # picture (0.85). THEME is a palette's name or none, CONSOLE_FONT "FACE
 # SIZE" (empty: the console keeps its font), QUIET_LOGIN and QUIET_BOOT
 # yes|no. starship comes from pacman, xbps or Homebrew. Debian has no
@@ -112,7 +112,7 @@ config_load() {
     : "${PROMPT_STYLE:=minimal}"
     : "${DESKTOP:=none}"
     : "${FONT:=DejaVu Sans Mono:size=12}"   # foot's spec, verbatim
-    : "${WALLPAPER:=default}"               # the desktop's picture: default (the forge), none, or an absolute path
+    : "${WALLPAPER:=default}"               # the desktop's background: default (the forge), none, a full path or #rrggbb
     : "${ALPHA:=0.85}"                      # foot over a picture: 0..1, 1 = opaque
     case $ALPHA in 0|1|0.[0-9]|0.[0-9][0-9]|1.0) ;;
         *) echo "spark-shell: ALPHA=$ALPHA in $CONFIG: 0 to 1 (0.85)" >&2; exit 1 ;; esac
@@ -247,19 +247,44 @@ hex_load() {
     for k in $HEX_KEYS; do export "${k?}"; done
 }
 
-# The wallpaper: a picture behind the windows, or the palette's own
-# background. With a picture, sway keeps gaps around the windows and foot
-# is a little translucent, so it shows; without one, edge to edge and
-# opaque. A path that is not there falls back to the solid colour (the
-# render says so in a row), never to a black screen.
+# The wallpaper: a picture behind the windows, a plain colour of yours,
+# or the palette's own background. With a picture, sway keeps gaps
+# around the windows and foot is a little translucent, so it shows;
+# without one, edge to edge and opaque. A colour is #rrggbb in the
+# config (a name is stored as its hex) and stays when the palette
+# changes. A path that is not there falls back to the palette's colour
+# (the render says so in a row), never to a black screen.
 WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA"
 WALL_DEFAULT=$REPO/wallpapers/forge-1920x1080.jpg   # the forge, shipped here (wallpapers/)
+WALL_NAMES="black white gray grey silver navy blue teal green olive maroon red purple brown orange"
 wall_path() { if [ "$WALLPAPER" = default ]; then printf '%s' "$WALL_DEFAULT"; else printf '%s' "$WALLPAPER"; fi; }
-wall_there() { [ "$WALLPAPER" != none ] && [ -r "$(wall_path)" ]; }
+wall_colour() { hex_rgb "$WALLPAPER" >/dev/null; }   # WALLPAPER is a plain colour, #rrggbb
+wall_there() { [ "$WALLPAPER" != none ] && ! wall_colour && [ -f "$(wall_path)" ] && [ -r "$(wall_path)" ]; }
+wall_hex() {   # wall_hex WORD -> #rrggbb, lowercase, for #rrggbb or one of WALL_NAMES (the CSS hex); false for anything else
+    case $(printf '%s' "$1" | tr 'A-Z' 'a-z') in
+        black) echo '#000000' ;; white) echo '#ffffff' ;; gray|grey) echo '#808080' ;;
+        silver) echo '#c0c0c0' ;; navy) echo '#000080' ;; blue) echo '#0000ff' ;;
+        teal) echo '#008080' ;; green) echo '#008000' ;; olive) echo '#808000' ;;
+        maroon) echo '#800000' ;; red) echo '#ff0000' ;; purple) echo '#800080' ;;
+        brown) echo '#a52a2a' ;; orange) echo '#ffa500' ;;
+        *) hex_rgb "$1" >/dev/null || return 1; printf '%s\n' "$1" | tr 'A-F' 'a-f' ;;
+    esac
+}
+wall_word() {   # wall_word WORD -> what WALLPAPER stores: none, default, #rrggbb, or a readable file's full path; nothing for anything else
+    case $1 in '') return 0 ;; none|default) printf '%s' "$1"; return 0 ;; esac
+    wall_hex "$1" && return 0
+    _w=$1; _t='~'   # a quoted ~ is HOME, as the shell would have it
+    case $_w in "$_t") _w=$HOME ;; "$_t/"*) _w=$HOME/${_w#"$_t/"} ;; esac
+    [ -f "$_w" ] && [ -r "$_w" ] || return 0
+    case $_w in /*) ;; *) _w=$(CDPATH='' cd -- "$(dirname -- "$_w")" && pwd)/$(basename -- "$_w") ;; esac
+    printf '%s' "$_w"
+}
 wall_load() {
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     if wall_there; then
         WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA
+    elif wall_colour; then
+        WALL_BG="$(wall_hex "$WALLPAPER") solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0
     else
         WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0
     fi
@@ -460,7 +485,7 @@ sway_reload() {   # a running sway takes the new render now (borders, background
 # The desktop, one path for `on` and `on desktop`: the two user
 # renders, a running sway reloaded, then seatd on Void.
 desktop_look_apply() {   # the two user renders and a live sway
-    if [ "$WALLPAPER" != none ] && ! wall_there; then
+    if [ "$WALLPAPER" != none ] && ! wall_colour && ! wall_there; then
         row todo wallpaper "$(wall_path) is missing -- the palette's background colour instead (spark-shell desktop wallpaper PATH)"
     fi
     for rel in $DESKTOP_RENDERED; do
@@ -906,6 +931,62 @@ terminal_off() {
     else
         row todo terminal "Terminal.app kept the profile: Terminal > Settings > Profiles removes it"
     fi
+}
+
+# The open terminals (Linux). foot, like most terminals, reads its
+# colours when a window opens and cannot reload them, so `theme NAME`
+# sends the palette to each terminal you have open: OSC 4 for the 16
+# slots, OSC 10 and 11 for the text and the background, OSC 12 for the
+# cursor when the palette has a THEME_CURSOR. `theme none` sends the
+# resets (OSC 104, 110, 111, 112). A terminal is a /dev/pts/N that you
+# own and can write. A tmux pane is a pty too, but tmux would keep the
+# codes for that pane alone, so the panes are left out: tmux's clients
+# are the outer terminals, among your ptys, and tmux follows by its own
+# re-render (tmux_reload). The Linux console is console_now's, a Mac's
+# Terminal.app its profile's. SPARK_SHELL_PTS_DIR (tests only) is the
+# directory the ptys are read from, with plain files standing in.
+PTS_DIR=${SPARK_SHELL_PTS_DIR:-/dev/pts}
+osc_render() {   # osc_render NAME|none -> $TMP/osc: the codes, each ended by ST (ESC \)
+    if [ "$1" = none ]; then
+        printf '\033]104\033\\\033]110\033\\\033]111\033\\\033]112\033\\' > "$TMP/osc"; return 0
+    fi
+    _f=$(palette_file "$1") || return 1
+    : > "$TMP/osc"
+    _i=0
+    while [ "$_i" -le 15 ]; do
+        printf '\033]4;%d;%s\033\\' "$_i" "$(palette_get "$_f" "THEME_ANSI_$_i" | tr 'A-F' 'a-f')" >> "$TMP/osc"
+        _i=$((_i + 1))
+    done
+    printf '\033]10;%s\033\\\033]11;%s\033\\' "$(palette_get "$_f" THEME_FG | tr 'A-F' 'a-f')" "$(palette_get "$_f" THEME_BG | tr 'A-F' 'a-f')" >> "$TMP/osc"
+    _c=$(palette_get "$_f" THEME_CURSOR)
+    if hex_rgb "$_c" >/dev/null; then printf '\033]12;%s\033\\' "$(printf '%s' "$_c" | tr 'A-F' 'a-f')" >> "$TMP/osc"; fi
+}
+pts_mine() {   # -> the ptys to paint, one a line: yours, writable, not a tmux pane
+    _me=$(id -u)
+    _panes=''
+    if command -v tmux >/dev/null 2>&1; then _panes=$(tmux list-panes -a -F '#{pane_tty}' 2>/dev/null || true); fi
+    for _p in "$PTS_DIR"/*; do
+        case ${_p##*/} in ''|*[!0-9]*) continue ;; esac   # N only: never ptmx
+        [ -w "$_p" ] || continue
+        [ "$(ls -lLdn "$_p" 2>/dev/null | awk '{print $3}')" = "$_me" ] || continue
+        if printf '%s\n' "$_panes" | grep -qxF -- "$_p"; then continue; fi
+        printf '%s\n' "$_p"
+    done
+}
+pts_write() {   # pts_write PTY -- the codes to one terminal, given 2 seconds (a stopped terminal never hangs the verb)
+    if command -v timeout >/dev/null 2>&1; then timeout 2 sh -c 'cat "$1" > "$2"' sh "$TMP/osc" "$1" 2>/dev/null
+    else cat "$TMP/osc" > "$1" 2>/dev/null; fi
+}
+theme_repaint() {   # theme_repaint NAME|none -- every open terminal takes it now; one line when any did
+    [ "$MODE" = apply ] && [ "$OS" != Darwin ] && [ -d "$PTS_DIR" ] || return 0
+    osc_render "$1" || return 0
+    pts_mine > "$TMP/pts"
+    _n=0
+    while IFS= read -r _p; do
+        if pts_write "$_p"; then _n=$((_n + 1)); fi
+    done < "$TMP/pts"
+    if [ "$_n" -eq 1 ]; then echo "Repainted 1 open terminal."
+    elif [ "$_n" -gt 1 ]; then echo "Repainted $_n open terminals."; fi
 }
 
 # --------------------------------------------------------- the console font
@@ -1623,6 +1704,7 @@ cmd_status() {
         if apps_marked; then printf '  apps  %-16s %s\n' "$(grep -c '^[A-Za-z0-9]' "$APPS") allowed" "$(grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd',' - | sed 's/,/, /g') (spark-shell apps)"
         else printf '  apps  %-16s %s\n' all "every app with a desktop entry (spark-shell apps picks the allowed apps)"; fi
         if [ "$WALLPAPER" = none ]; then printf '  wall  %-16s %s\n' none "the palette's background (spark-shell desktop wallpaper PATH|default)"
+        elif wall_colour; then printf '  wall  %-16s %s\n' colour "$WALLPAPER, a plain colour that stays when the palette changes"
         elif [ "$WALLPAPER" = default ] && wall_there; then printf '  wall  %-16s %s\n' default "the wallpaper that comes with spark-shell, $WALL_DEFAULT"
         elif wall_there; then printf '  wall  %-16s %s\n' picture "$WALLPAPER"
         else printf '  wall  %-16s %s\n' missing "$(wall_path) is missing -- the palette's background colour instead"; fi
@@ -1758,8 +1840,9 @@ cmd_theme() {   # theme [NAME|none|list|show]
     if [ "$name" = none ]; then palette_off all; terminal_off
     else palette_boot; terminal_apply; fi
     console_now
+    theme_repaint "$name"
     if [ "$name" = none ]; then verb_close "No palette: the console and the terminal use their own colours."
-    else verb_close "The palette is $name. A new shell has it (exec \$SHELL)."; fi
+    else verb_close "The palette is $name. A program that is already running, such as btop, takes it when it starts again."; fi
 }
 theme_show() {
     if [ -z "$THEME" ]; then echo "theme  unset: the palette stays as it is (spark-shell theme list shows them)"
@@ -2717,22 +2800,23 @@ cmd_desktop() {
         off) shift; cmd_off desktop "$@"; return ;;
         wallpaper)
             [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
-            case ${2:-} in
-                '') if [ "$WALLPAPER" = none ]; then echo "wallpaper none -- the palette's background (spark-shell desktop wallpaper PATH|default)"
-                    elif [ "$WALLPAPER" = default ] && wall_there; then echo "wallpaper default -- the wallpaper that comes with spark-shell, $WALL_DEFAULT"
-                    elif wall_there; then echo "wallpaper $WALLPAPER"
-                    else echo "wallpaper $(wall_path) -- missing, the palette's background colour instead"; fi
-                    return ;;
-                none|default) ;;
-                /*) [ -r "$2" ] || refuse "$2 is not a readable file" ;;
-                *) refuse "$2: give a full path, default or none" ;;
-            esac
+            want=$(wall_word "${2:-}")
+            if [ -z "${2:-}" ]; then
+                if [ "$WALLPAPER" = none ]; then echo "wallpaper none -- the palette's background (spark-shell desktop wallpaper PATH|default)"
+                elif wall_colour; then echo "wallpaper $WALLPAPER -- a plain colour, it stays when the palette changes"
+                elif [ "$WALLPAPER" = default ] && wall_there; then echo "wallpaper default -- the wallpaper that comes with spark-shell, $WALL_DEFAULT"
+                elif wall_there; then echo "wallpaper $WALLPAPER"
+                else echo "wallpaper $(wall_path) -- missing, the palette's background colour instead"; fi
+                return
+            fi
+            [ -n "$want" ] || refuse "$2 is not a readable file or a colour. Give a picture's path, default, none, #rrggbb or one of these colours: $(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')"
             [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
-            config_set WALLPAPER "$2"
-            WALLPAPER=$2; export WALLPAPER
+            config_set WALLPAPER "$want"
+            WALLPAPER=$want; export WALLPAPER
             theme_load; EXPR=$(render_expr)
             desktop_look_apply
-            if [ "$2" = none ]; then echo "the palette's background is back -- a new foot window is opaque again"
+            if [ "$want" = none ]; then echo "the palette's background is back -- a new foot window is opaque again"
+            elif wall_colour; then echo "a running sway shows $want now, and it stays when the palette changes -- a new foot window is opaque"
             else echo "a running sway shows it now -- the next foot window is translucent (Super+Return)"; fi
             return ;;
         apps|tools) cmd_apps_verb; return ;;   # the old spellings of spark-shell apps

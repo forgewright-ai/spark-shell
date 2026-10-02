@@ -51,7 +51,7 @@ Without it there are no layouts, no spark chat and no status line.
     spark-shell apps                  choose the apps a layout may open
     spark-shell desktop               start the desktop now (from a console)
     spark-shell desktop keys          list the desktop's keys
-    spark-shell desktop wallpaper X   set the picture: a path, default or none
+    spark-shell desktop wallpaper X   set a picture, a colour, default or none
     spark-shell bar on|off            show or hide the tmux status line
     spark-shell sbom [NAME]           list the installed software, or one
     spark-shell sbom --json           write the list as a CycloneDX 1.5 file
@@ -70,6 +70,8 @@ Type `spark-shell theme gruvbox-dark`. You get one palette in tmux, the
 prompt, btop, the desktop and the Linux console, also at boot. On a Mac
 it is a Terminal.app profile named `spark-shell`. `theme list` shows
 the 9 palettes, and your own go in `~/.config/spark-shell/themes/`.
+On Linux the terminals you have open change colour at once. A program
+that is already running, such as btop, changes when it starts again.
 
 ## Font
 
@@ -138,8 +140,14 @@ of the desktop shows them once.
 ## Wallpaper
 
 Type `spark-shell desktop wallpaper /path/to/picture.jpg`. You get that
-picture behind the windows. `default` gives the wallpaper that comes
+picture behind the windows. A path from where you are, or one that
+starts with `~`, works too. `default` gives the wallpaper that comes
 with spark-shell. `none` gives the palette's background colour.
+
+Type `spark-shell desktop wallpaper navy`. You get a plain colour, and
+it stays the same when you change the palette. Give `#rrggbb`, or one
+of these names: black, white, gray, grey, silver, navy, blue, teal,
+green, olive, maroon, red, purple, brown, orange.
 
 ## Status and check
 
