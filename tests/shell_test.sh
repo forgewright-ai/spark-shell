@@ -25,6 +25,9 @@ fresh() {   # a new throwaway HOME with the stubs in place
     # the root files land under a throwaway root, never in this
     # machine's /etc; systemctl is whatever PATH has (a stub)
     export SPARK_SHELL_ROOT=$H/root
+    # the open terminals theme repaints: plain files under $H/pts, never
+    # this machine's /dev/pts (a test must not repaint the terminal it runs in)
+    export SPARK_SHELL_PTS_DIR=$H/pts
     # the tty is a stub: TEST_TTY=/dev/ttyN is a console, unset is ssh;
     # sway's runtime dir is a login manager's (the desktop tests unset it)
     printf '#!/bin/sh\n[ -n "${TEST_TTY:-}" ] || { echo "not a tty"; exit 1; }\necho "$TEST_TTY"\n' > "$H/.local/bin/tty"
@@ -407,8 +410,45 @@ if [ "$(uname -s)" != Darwin ]; then
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  wall  missing' && ok "status: wall missing" || bad "status wall missing" "$(sh "$SH" status | grep wall)"
     rc=0; out=$(sh "$SH" desktop wallpaper /nowhere/at/all.jpg 2>&1) || rc=$?
     [ $rc = 1 ] && printf '%s\n' "$out" | grep -q 'not a readable file' && ok "desktop wallpaper: a path that is not there is refused" || bad "wallpaper refuse missing" "$out"
-    rc=0; out=$(sh "$SH" desktop wallpaper pictures/x.jpg 2>&1) || rc=$?
-    [ $rc = 1 ] && printf '%s\n' "$out" | grep -q 'give a full path' && ok "desktop wallpaper: a relative path is refused" || bad "wallpaper refuse relative" "$out"
+    [ $rc = 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: /nowhere/at/all.jpg is not a readable file or a colour\. Give a picture.s path, default, none, #rrggbb or one of these colours: black, white, gray, grey, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange$' \
+        && [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = 1 ] && ok "desktop wallpaper: the refusal is one line that lists what is accepted" || bad "wallpaper refusal words" "$out"
+    # a path from where you are, and a quoted ~: saved as the full path
+    printf x > "$pic"; printf x > "$HOME/pictures/two.png"
+    rc=0; out=$(cd "$HOME/pictures" && sh "$SH" desktop wallpaper two.png 2>&1) || rc=$?
+    full=$(cd "$HOME/pictures" && pwd)/two.png
+    [ $rc = 0 ] && grep -qxF "WALLPAPER=$full" "$HOME/.config/spark-shell/config" && grep -qxF "output * bg \"$full\" fill" "$sway" \
+        && ok "desktop wallpaper x.png: a path from where you are is saved as the full path" || bad "wallpaper relative" "rc=$rc $out $(grep WALLPAPER "$HOME/.config/spark-shell/config")"
+    rc=0; out=$(cd "$HOME" && sh "$SH" desktop wallpaper ./pictures/../pictures/two.png 2>&1) || rc=$?
+    [ $rc = 0 ] && grep -qxF "WALLPAPER=$full" "$HOME/.config/spark-shell/config" && ok "desktop wallpaper ./a/../a/x.png: the dots are resolved" || bad "wallpaper dots" "rc=$rc $out $(grep WALLPAPER "$HOME/.config/spark-shell/config")"
+    tl='~'   # a literal ~, on purpose: what a quoted one gives spark-shell
+    rc=0; out=$(sh "$SH" desktop wallpaper "$tl/pictures/one two.jpg" 2>&1) || rc=$?
+    [ $rc = 0 ] && grep -qxF "WALLPAPER=$HOME/pictures/one two.jpg" "$HOME/.config/spark-shell/config" && ok "desktop wallpaper '~/x.jpg': a quoted ~ is your home" || bad "wallpaper tilde" "rc=$rc $out $(grep WALLPAPER "$HOME/.config/spark-shell/config")"
+    rc=0; out=$(sh "$SH" desktop wallpaper '~' 2>&1) || rc=$?
+    rc2=0; out2=$(sh "$SH" desktop wallpaper "$HOME/pictures" 2>&1) || rc2=$?
+    [ $rc = 1 ] && [ $rc2 = 1 ] && printf '%s\n' "$out" "$out2" | grep -c 'is not a readable file' | grep -qx 2 && ok "desktop wallpaper: a directory is not a picture (~ alone too)" || bad "wallpaper dir" "$out $out2"
+    rm -f "$pic"
+    # a plain colour: #rrggbb or a name, saved as #rrggbb; it never follows the palette
+    out=$(sh "$SH" desktop wallpaper navy)
+    grep -qx 'WALLPAPER=#000080' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000080 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 0$' "$sway" && grep -q '^alpha=1.0$' "$foot" \
+        && ok "desktop wallpaper navy: #000080 in the config, sway paints it solid, no gaps, foot opaque" || bad "wallpaper navy" "$out $(grep -n 'bg\|gaps' "$sway"; grep -n alpha "$foot")"
+    [ "$(printf '%s\n' "$out" | tail -1)" = "a running sway shows #000080 now, and it stays when the palette changes -- a new foot window is opaque" ] && ok "desktop wallpaper navy: says what happens" || bad "wallpaper navy words" "$out"
+    [ "$(sh "$SH" desktop wallpaper)" = "wallpaper #000080 -- a plain colour, it stays when the palette changes" ] && ok "desktop wallpaper (bare): names the colour" || bad "wallpaper bare colour" "$(sh "$SH" desktop wallpaper)"
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  wall  colour  *#000080, a plain colour that stays when the palette changes$' && ok "status: the wall row names the colour" || bad "status wall colour" "$(printf '%s\n' "$st" | grep wall)"
+    printf '%s\n' "$(sh "$SH" on --yes)" | grep -q '^todo   wallpaper' && bad "a colour is reported missing" || ok "on: a colour is never a missing picture"
+    sh "$SH" theme dracula >/dev/null
+    grep -q '^output \* bg #000080 solid_color$' "$sway" && grep -q '^background=282a36$' "$foot" && ok "a colour stays when the palette changes (foot takes dracula, sway keeps #000080)" || bad "colour follows the palette" "$(grep -n 'output' "$sway"; grep -n '^background' "$foot")"
+    theme_fixture '#ff5555'   # the fixture's palette again, for the rows below
+    for c in black:000000 white:ffffff gray:808080 grey:808080 silver:c0c0c0 navy:000080 blue:0000ff teal:008080 green:008000 olive:808000 maroon:800000 red:ff0000 purple:800080 brown:a52a2a orange:ffa500 Teal:008080; do
+        sh "$SH" desktop wallpaper "${c%%:*}" >/dev/null && grep -qx "WALLPAPER=#${c#*:}" "$HOME/.config/spark-shell/config" || printf '%s\n' "$c"
+    done > "$H/names.bad"
+    [ ! -s "$H/names.bad" ] && ok "desktop wallpaper NAME: the 15 names are the CSS colours" || bad "wallpaper names" "$(cat "$H/names.bad")"
+    sh "$SH" desktop wallpaper '#ABCdef' >/dev/null
+    grep -qx 'WALLPAPER=#abcdef' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #abcdef solid_color$' "$sway" && ok "desktop wallpaper #ABCdef: saved and drawn as #abcdef" || bad "wallpaper hex" "$(grep WALLPAPER "$HOME/.config/spark-shell/config")"
+    for w in chartreuse '#12345' '#1234567' 'abcdef' '#ggg000'; do
+        rc=0; out=$(sh "$SH" desktop wallpaper "$w" 2>&1) || rc=$?
+        [ $rc = 1 ] && printf '%s\n' "$out" | grep -q 'is not a readable file or a colour' || printf '%s\n' "$w"
+    done > "$H/words.bad"
+    [ ! -s "$H/words.bad" ] && grep -qx 'WALLPAPER=#abcdef' "$HOME/.config/spark-shell/config" && ok "desktop wallpaper: a word that is no colour is refused, the config untouched" || bad "wallpaper bad colours" "$(cat "$H/words.bad")"
     out=$(sh "$SH" desktop wallpaper none)
     grep -q '^WALLPAPER=none$' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^alpha=1.0$' "$foot" \
         && ok "desktop wallpaper none: the palette's background is back" || bad "wallpaper none" "$out"
@@ -1371,6 +1411,69 @@ if ls "$REPO"/themes/*.env >/dev/null 2>&1; then
 else
     printf '  NOTICE: no themes/*.env in this clone -- the repository'"'"'s palettes not exercised\n'
 fi
+
+# theme repaints the open terminals: plain files stand in for /dev/pts/N
+# (SPARK_SHELL_PTS_DIR). 0 is yours and a tmux client's, 1 is not
+# writable, 2 is a tmux pane, 3 is not yours, ptmx is never a terminal.
+fresh
+console_stubs Linux
+palette_fixture test '#fe8019'
+mkdir -p "$H/pts"
+: > "$H/pts/0"; : > "$H/pts/1"; : > "$H/pts/2"; : > "$H/pts/ptmx"; chmod 0444 "$H/pts/1"
+if [ "$(id -u)" = 0 ]; then : > "$H/pts/3"; chown 65534 "$H/pts/3"   # root: a file of nobody's
+else ln -s /dev/null "$H/pts/3"; fi                                 # a user: root's /dev/null, writable by all
+cat > "$H/lx/tmux" <<EOF
+#!/bin/sh
+echo "tmux \$*" >> "$H/tmux.log"
+case \$1 in
+    list-panes) echo "$H/pts/2" ;;
+    list-clients) echo "$H/pts/0" ;;
+    *) exit 1 ;;
+esac
+EOF
+chmod +x "$H/lx/tmux"
+want=$H/osc.want; : > "$want"
+i=0
+for c in 282828 cc241d 98971a d79921 458588 b16286 689d6a a89984 928374 fb4934 b8bb26 fabd2f 83a598 d3869b 8ec07c ebdbb2; do
+    printf '\033]4;%d;#%s\033\\' "$i" "$c" >> "$want"; i=$((i + 1))
+done
+printf '\033]10;#ebdbb2\033\\\033]11;#282828\033\\' >> "$want"
+out=$(L theme test)
+cmp -s "$want" "$H/pts/0" && ok "theme test: an open terminal of yours gets OSC 4 for the 16 slots, then OSC 10 and 11, byte for byte" || bad "repaint bytes" "$(od -c "$H/pts/0" | head -4)"
+[ ! -s "$H/pts/2" ] && grep -q '^tmux list-panes -a -F #{pane_tty}$' "$H/tmux.log" && ok "theme test: a tmux pane gets nothing (tmux would keep the codes), its client's terminal gets them" || bad "repaint tmux pane" "$(od -c "$H/pts/2" | head -2; cat "$H/tmux.log")"
+[ ! -s "$H/pts/ptmx" ] && ok "theme test: ptmx is never painted" || bad "repaint ptmx"
+if [ "$(id -u)" = 0 ]; then
+    [ ! -s "$H/pts/3" ] && ok "theme test: a terminal that is not yours gets nothing" || bad "repaint not yours"
+    n=2   # root writes a file whatever its mode, and 1 is root's
+else
+    [ ! -s "$H/pts/1" ] && ok "theme test: a terminal you cannot write gets nothing" || bad "repaint not writable"
+    ok "theme test: /dev/null (root's) is not yours, so it is skipped (the count says so)"
+    n=1
+fi
+if [ "$n" = 1 ]; then said="Repainted 1 open terminal."; else said="Repainted $n open terminals."; fi
+[ "$(printf '%s\n' "$out" | tail -2 | head -1)" = "$said" ] && [ "$(printf '%s\n' "$out" | tail -1)" = "The palette is test. A program that is already running, such as btop, takes it when it starts again." ] \
+    && ok "theme test: one line counts the terminals, then the closing line" || bad "repaint line" "$out"
+printf 'THEME_CURSOR=#FE8019\n' >> "$HOME/.config/spark-shell/themes/test.env"
+printf '\033]12;#fe8019\033\\' >> "$want"
+L theme test >/dev/null
+cmp -s "$want" "$H/pts/0" && ok "theme test: a palette with THEME_CURSOR adds OSC 12, lowercase" || bad "repaint cursor" "$(od -c "$H/pts/0" | tail -3)"
+: > "$H/pts/0"
+out=$(L theme test --dry-run)
+[ ! -s "$H/pts/0" ] && ! printf '%s\n' "$out" | grep -q '^Repainted' && ok "theme test --dry-run: no terminal is painted" || bad "repaint dry" "$out"
+out=$(L theme none)
+[ "$(cat "$H/pts/0")" = "${esc}]104${esc}\\${esc}]110${esc}\\${esc}]111${esc}\\${esc}]112${esc}\\" ] && [ ! -s "$H/pts/2" ] \
+    && ok "theme none: the resets, OSC 104, 110, 111 and 112" || bad "repaint none" "$(od -c "$H/pts/0" | head -3)"
+[ "$(printf '%s\n' "$out" | tail -2 | head -1)" = "$said" ] && ok "theme none: the same line counts them" || bad "repaint none line" "$out"
+rm -f "$H/pts/0" "$H/pts/1" "$H/pts/3"
+out=$(L theme test)
+! printf '%s\n' "$out" | grep -q '^Repainted' && ok "theme test: with no terminal to paint, no line" || bad "repaint nothing" "$out"
+# macOS: Terminal.app is its profile's, no pty is written
+fresh
+console_stubs Darwin
+palette_fixture test '#fe8019'
+mkdir -p "$H/pts"; : > "$H/pts/0"
+out=$(L theme test)
+[ ! -s "$H/pts/0" ] && ! printf '%s\n' "$out" | grep -q '^Repainted' && ok "macOS: theme test writes to no pty (the profile does it)" || bad "mac repaint" "$out"
 
 # theme, runit: one marked line in /etc/rc.local, and off hands it back byte for byte
 fresh

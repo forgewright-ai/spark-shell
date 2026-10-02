@@ -7,6 +7,17 @@
   shell and vi. Other apps spark picks are only suggested. spark's
   reason for its picks is shown only when the layout opens exactly as
   spark answered.
+- `spark-shell theme NAME` now changes the colours of the terminals you
+  have open on Linux, foot windows on the desktop too. Before, they
+  kept the old colours until the next login. Inside tmux the colours
+  go to the terminal tmux runs in. `theme none` gives each terminal
+  its own colours back. One line says how many terminals changed.
+- New: `spark-shell desktop wallpaper COLOUR` puts a plain colour
+  behind the windows: `#rrggbb` or a name such as navy or teal. The
+  colour stays the same when you change the palette. It is saved as
+  `#rrggbb` in the config.
+- `spark-shell desktop wallpaper` now takes a path from where you are,
+  or one that starts with `~`, and saves it as the full path.
 
 ## v0.42
 
