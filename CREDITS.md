@@ -45,16 +45,6 @@ With DESKTOP=sway, from apt or pacman.
 - DejaVu fonts -- https://dejavu-fonts.github.io -- Bitstream Vera
   licence (ttf-dejavu on Arch, fonts-dejavu-core on Debian).
 
-## The login box
-
-With DESKTOP=sway, from apt or pacman.
-
-- greetd -- https://git.sr.ht/~kennylevinsen/greetd -- GPL-3.0-only.
-  The login daemon on tty1: 0.10.3 on Arch and Debian 13.
-- tuigreet -- https://github.com/apognu/tuigreet -- GPL-3.0-only. The
-  login box it draws: greetd-tuigreet 0.11.1 on Arch, tuigreet 0.9.1
-  on Debian 13, not packaged on Ubuntu LTS.
-
 ## The palettes
 
 The 9 palettes in `themes/`, written to `theme.env` by `spark-shell

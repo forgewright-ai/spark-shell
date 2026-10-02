@@ -1,7 +1,0 @@
-# rendered by spark-shell from templates/etc/greetd/spark-shell/console.desktop -- edit the template, then spark-shell on
-# The login box's other session (F2): a login shell on tty1, no desktop.
-# spark-shell desktop starts one from there when wanted.
-[Desktop Entry]
-Name=console
-Exec=bash -l
-Type=Application
