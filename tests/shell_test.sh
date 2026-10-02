@@ -1164,8 +1164,9 @@ st=0; out=$(sh "$SH" layout "writing with vi and the prompt shell" 2>&1) || st=$
 printf '%s\n' "has-session -t =$wname" "new-session -d -s $wname -n vi vi" "new-window -t =$wname -n shell" > "$H/expected.named"
 [ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.named" && ok "named: the words name vi and shell, only those two open" || bad "named open" "st=$st $out $(cat "$tlog")"
 printf '%s\n' "$out" | grep -qx '  also suggested: btop -- add it to your words to open it' && ok "named: the one app not named is said in one line, a suggestion" || bad "named suggestion" "$out"
-jq -e '.main.app == "vi" and (.side | map(.app)) == ["shell"] and (has("suggested") | not)' "$desk_last" >/dev/null 2>&1 \
-    && ok "named: desk.last holds what opened (vi and shell, no btop)" || bad "named desk.last" "$(cat "$desk_last")"
+jq -e '.main.app == "vi" and (.side | map(.app)) == ["shell"] and (has("suggested") | not) and (has("why") | not)' "$desk_last" >/dev/null 2>&1 \
+    && ok "named: desk.last holds what opened (vi and shell, no btop) and no why" || bad "named desk.last" "$(cat "$desk_last")"
+printf '%s\n' "$out" | grep -q 'vi to write, btop to watch' && bad "named: the model's why said though btop was dropped" "$out" || ok "named: btop dropped, so the model's why is not said"
 printf '{"main": {"app": "btop", "args": "", "width": 60}, "side": [{"app": "newsboat", "args": ""}, {"app": "shell", "args": ""}, {"app": "micro", "args": ""}]}\n' > "$H/answer.json"
 dname=the-feeds-in-newsboat-and-a-shell; : > "$tlog"
 st=0; out=$(sh "$SH" layout "the feeds in Newsboat and a shell" 2>&1) || st=$?
@@ -1173,18 +1174,58 @@ printf '%s\n' "has-session -t =$dname" "new-session -d -s $dname -n newsboat new
 [ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.dropped" && printf '%s\n' "$out" | grep -qx '  also suggested: btop and micro -- add them to your words to open them' \
     && jq -e '.main.app == "newsboat" and .main.width == 60 and (.side | map(.app)) == ["shell"]' "$desk_last" >/dev/null 2>&1 \
     && ok "named: the main window not named, the first named takes its place (its width kept); two suggestions in one line" || bad "named main dropped" "st=$st $out $(cat "$tlog" "$desk_last")"
-printf '{"main": {"app": "micro", "args": ""}, "side": [{"app": "btop", "args": ""}]}\n' > "$H/answer.json"
+printf '{"why": "micro for notes, btop to watch", "main": {"app": "micro", "args": ""}, "side": [{"app": "btop", "args": ""}]}\n' > "$H/answer.json"
 nname=news-reading-and-music; : > "$tlog"
 st=0; out=$(sh "$SH" layout "news reading and music" 2>&1) || st=$?
 printf '%s\n' "has-session -t =$nname" "new-session -d -s $nname -n micro micro" "new-window -t =$nname -n btop btop" > "$H/expected.none"
-[ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.none" && ! printf '%s\n' "$out" | grep -q 'also suggested' \
-    && ok "named: words that name no app open the model's picks as they are" || bad "named none" "st=$st $out $(cat "$tlog")"
+[ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.none" && ! printf '%s\n' "$out" | grep -q 'also suggested' && printf '%s\n' "$out" | grep -qx '  micro for notes, btop to watch' \
+    && jq -e '.why == "micro for notes, btop to watch"' "$desk_last" >/dev/null 2>&1 \
+    && ok "named: words that name no app open the model's picks as they are, with its why (said and kept)" || bad "named none" "st=$st $out $(cat "$tlog" "$desk_last")"
 printf '{"main": {"app": "editor", "args": "notes.txt"}, "side": [{"app": "btop", "args": ""}]}\n' > "$H/answer.json"
 ename=notes-in-micro; : > "$tlog"
 st=0; out=$(sh "$SH" layout "notes in micro" 2>&1) || st=$?
 printf '%s\n' "has-session -t =$ename" "new-session -d -s $ename -n editor micro notes.txt" > "$H/expected.editor"
 [ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.editor" && printf '%s\n' "$out" | grep -qx '  also suggested: btop -- add it to your words to open it' \
     && ok "named: the editor's own program (micro) names the editor window" || bad "named editor" "st=$st $out $(cat "$tlog")"
+# the box's case: the words name vi and shell, the answer has shell, tmux and btop; vi is added
+printf '[Desktop Entry]\nName=tmux\nComment=Terminal multiplexer\nExec=tmux\nTerminal=true\nType=Application\n' > "$XDG_DATA_HOME/applications/tmux.desktop"
+printf '{"why": "a shell to write in, tmux to split it, btop to watch", "main": {"app": "shell", "args": "", "width": 60}, "side": [{"app": "tmux", "args": ""}, {"app": "btop", "args": ""}]}\n' > "$H/answer.json"
+bname=writing-with-vi-and-shell-window; : > "$tlog"
+st=0; out=$(sh "$SH" layout "writing with vi and shell window" 2>&1) || st=$?
+printf '%s\n' "has-session -t =$bname" "new-session -d -s $bname -n shell" "new-window -t =$bname -n vi vi" > "$H/expected.box"
+[ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.box" && ok "named: the box's words (vi and shell) open shell and vi, vi added though the answer lacks it" || bad "named box" "st=$st $out $(cat "$tlog")"
+printf '%s\n' "$out" | grep -qx '  also suggested: tmux and btop -- add them to your words to open them' && ok "named: the box's case suggests tmux and btop" || bad "named box suggested" "$out"
+printf '%s\n' "$out" | grep -q 'tmux to split it' && bad "named: the box's case said the model's why" "$out" || ok "named: the box's case says no why (the set changed)"
+jq -e '.main.app == "shell" and .main.width == 60 and .side == [{"app": "vi", "args": ""}] and (has("why") | not)' "$desk_last" >/dev/null 2>&1 \
+    && ok "named: desk.last holds shell and vi, no why" || bad "named box desk.last" "$(cat "$desk_last")"
+sh "$SH" layout save box-case >/dev/null; : > "$tlog"
+st=0; out=$(sh "$SH" layout box-case 2>&1) || st=$?
+[ "$st" -eq 0 ] && grep -q "^new-window -t =$bname -n vi vi\$" "$tlog" && [ "$(printf '%s\n' "$out" | sed -n 2p)" = '  shell' ] \
+    && ok "named: the saved layout replays shell and vi with no stale why" || bad "named box replay" "st=$st $out $(cat "$tlog")"
+# no named app in the answer: the named ones are the layout (the first the main), the model's picks suggested
+printf '{"why": "btop to watch, micro for notes", "main": {"app": "btop", "args": "", "width": 50}, "side": [{"app": "micro", "args": ""}]}\n' > "$H/answer.json"
+fname=feeds-in-newsboat-beside-vi; : > "$tlog"
+st=0; out=$(sh "$SH" layout "feeds in newsboat beside vi" 2>&1) || st=$?
+printf '%s\n' "has-session -t =$fname" "new-session -d -s $fname -n newsboat newsboat" "new-window -t =$fname -n vi vi" > "$H/expected.added"
+[ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.added" && printf '%s\n' "$out" | grep -qx '  also suggested: btop and micro -- add them to your words to open them' \
+    && ! printf '%s\n' "$out" | grep -q 'btop to watch' && jq -e '.main.app == "newsboat" and .main.width == 50 and (.side | map(.app)) == ["vi"] and (has("why") | not)' "$desk_last" >/dev/null 2>&1 \
+    && ok "named: none of the answer named, the words name newsboat and vi: those two open, the answer suggested, no why" || bad "named added" "st=$st $out $(cat "$tlog" "$desk_last")"
+# editor and its own program are one app: added once
+printf '{"why": "btop to watch", "main": {"app": "btop", "args": ""}}\n' > "$H/answer.json"
+oname=notes-in-the-editor-with-vi; : > "$tlog"
+st=0; out=$(EDITOR="vi" sh "$SH" layout "notes in the editor with vi" 2>&1) || st=$?
+printf '%s\n' "has-session -t =$oname" "new-session -d -s $oname -n editor vi" > "$H/expected.once"
+[ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.once" && printf '%s\n' "$out" | grep -qx '  also suggested: btop -- add it to your words to open it' \
+    && ok "named: the words say editor and vi (EDITOR=vi), one editor window opens" || bad "named once" "st=$st $out $(cat "$tlog")"
+# the answer is what the words name: unchanged, so its why is said and kept
+printf '{"why": "vi to write and btop to watch", "main": {"app": "editor", "args": ""}, "side": [{"app": "btop", "args": ""}]}\n' > "$H/answer.json"
+sname_=notes-in-vi-and-btop; : > "$tlog"
+st=0; out=$(EDITOR="vi" sh "$SH" layout "notes in vi and btop" 2>&1) || st=$?
+printf '%s\n' "has-session -t =$sname_" "new-session -d -s $sname_ -n editor vi" "new-window -t =$sname_ -n btop btop" > "$H/expected.same"
+[ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.same" && printf '%s\n' "$out" | grep -qx '  vi to write and btop to watch' && ! printf '%s\n' "$out" | grep -q 'also suggested' \
+    && jq -e '.why == "vi to write and btop to watch"' "$desk_last" >/dev/null 2>&1 \
+    && ok "named: the answer opens unchanged (vi names the editor), so its why is said and kept" || bad "named same" "st=$st $out $(cat "$tlog" "$desk_last")"
+rm -f "$XDG_DATA_HOME/applications/tmux.desktop" "$desks/box-case"
 sh "$SH" layout save named-one >/dev/null
 printf '{"words": "saved as is", "main": {"app": "micro", "args": ""}, "side": [{"app": "btop", "args": ""}]}\n' > "$desks/as-is"; : > "$tlog"
 st=0; out=$(sh "$SH" layout as-is 2>&1) || st=$?
