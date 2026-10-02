@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.43
+
+- `spark-shell layout` now always opens the apps your words name, even
+  when spark left them out: "writing with vi and shell window" opens a
+  shell and vi. Other apps spark picks are only suggested. spark's
+  reason for its picks is shown only when the layout opens exactly as
+  spark answered.
+
 ## v0.42
 
 - `spark-shell on` now says what it will change and asks

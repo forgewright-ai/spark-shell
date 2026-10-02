@@ -1992,9 +1992,10 @@ status_console() {   # the font and quiet rows of status (the theme row is the l
 # the model from what this machine has. `spark-shell layout "focused news
 # reading and music"` asks spark (spark edit, contract 10, from nothing)
 # for one JSON answer -- why, a main window and its width, the side
-# windows. When the words name apps of that answer, only those open and
-# the rest are said as suggestions. A saved layout is the answer that
-# opened (JSON, yours to edit), rendered for the screen when it opens:
+# windows. The apps the words name always open (added when the answer
+# lacks them); the answer's other apps are then said as suggestions, and
+# its why only when what opens is the answer unchanged. A saved layout is
+# what opened (JSON, yours to edit), rendered for the screen when it opens:
 # it is kept in ~/.local/state/spark-shell/desk.last with the need's
 # words first, `layout save NAME` copies it to
 # ~/.config/spark-shell/layouts/NAME, and `layout NAME` renders it again
@@ -2403,22 +2404,39 @@ desk_editor() {   # -> what a layout's `editor` word opens: EDITOR's basename, e
 # The words name the apps to open. An app of the answer is named when
 # it is a word of the need (any case, a whole word); `editor` is named by
 # "editor" or by the editor's own program (vi), and that program by
-# "editor". Some named: only those open, the main window first when it
-# is one, else the first named in its place (the answer's width kept),
-# and the others are said as suggestions. None named: the answer as it
-# came.
+# "editor". A word that is an app of the list (shell, a program on PATH,
+# `editor` when there is one) always opens: the answer's named apps in
+# its order (the main window first when it is one, else the first named
+# in its place, the answer's width kept), then each named app the answer
+# lacks as a side window, in the words' order, once (`editor` and its
+# program are one app). The answer's other apps are said as suggestions.
+# None named: the answer as it came.
 desk_named() {   # desk_named JSONFILE NEED -> JSONFILE narrowed to the named apps; one line names the others
     _w=" $(printf '%s' "$2" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_.+-' ' ' | sed 's/[.-]*  */ /g; s/[.-]*$//; s/  */ /g') "
-    jq --arg w "$_w" --arg ed "$(printf '%s' "$ED" | tr 'A-Z' 'a-z')" '
+    _ed=$(printf '%s' "$ED" | tr 'A-Z' 'a-z'); _names=''
+    for _x in $_w; do   # the apps the words name, in their order: the list's names, any case
+        if [ "$_x" = editor ]; then [ -z "$ED" ] || _names="$_names$_x
+"; continue; fi
+        _n=$(awk -F': ' -v w="$_x" 'tolower($1) == w {print $1; exit}' "$TMP/apps")
+        [ -z "$_n" ] || _names="$_names$_n
+"
+    done
+    jq --arg w "$_w" --arg ed "$_ed" --arg names "$_names" '
+        def key: ascii_downcase as $a | if $a == "editor" or ($ed != "" and $a == $ed) then "editor" else $a end;
         def named: (.app | ascii_downcase) as $a
             | ($w | contains(" " + $a + " "))
               or ($a == "editor" and $ed != "" and ($w | contains(" " + $ed + " ")))
               or ($ed != "" and $a == $ed and ($w | contains(" editor ")));
         ([.main] + (.side // [])) as $all | [$all[] | select(named)] as $k
-        | if ($k | length) == 0 then .
+        | ($names | split("\n") | map(select(. != ""))
+           | reduce .[] as $n ([]; if (map(key) | index([$n | key])) then . else . + [$n] end)) as $nm
+        | ($k | map(.app | key)) as $have
+        | [$nm[] | select((key) as $x | $have | index([$x]) | not) | {app: ., args: ""}] as $add
+        | ($k + $add) as $open
+        | if ($open | length) == 0 then .
           else .main.width as $wd
-            | .main = ($k[0] + (if $k[0].width == null and $wd != null then {width: $wd} else {} end))
-            | .side = $k[1:] | .suggested = ([$all[] | select(named | not) | .app] | reduce .[] as $x ([]; if index([$x]) then . else . + [$x] end))
+            | .main = ($open[0] + (if $open[0].width == null and $wd != null then {width: $wd} else {} end))
+            | .side = $open[1:] | .suggested = ([$all[] | select(named | not) | .app] | reduce .[] as $x ([]; if index([$x]) then . else . + [$x] end))
           end' "$1" > "$TMP/named.json" 2>/dev/null || return 0
     _s=''
     for a in $(jq -r '.suggested // [] | .[]' "$TMP/named.json"); do   # only what naming it would open: an app on the list
@@ -2431,6 +2449,7 @@ desk_named() {   # desk_named JSONFILE NEED -> JSONFILE narrowed to the named ap
     if [ "$(printf '%s' "$_s" | wc -l)" -gt 1 ]; then _it=them; else _it=it; fi
     echo "  also suggested: $(printf '%s' "$_s" | desk_said and) -- add $_it to your words to open $_it"
 }
+desk_set() { jq -c '[.main] + (.side // []) | map([.app, (.args // "")])' "$1" 2>/dev/null; }   # desk_set JSONFILE -> its windows, to compare
 desk_has() { jq -e --arg a "$2" '[.main] + (.side // []) | any(.app == $a)' "$1" >/dev/null 2>&1; }   # desk_has JSONFILE APP
 desk_in_sway() { [ -n "${SWAYSOCK:-}" ] && [ -n "$(swaymsg -t get_version 2>/dev/null)" ]; }   # a sway that answers
 desk_player() {   # -> windows inside sway, else rooms; --desktop and --terminal (--windows, --rooms) force one
@@ -2510,18 +2529,23 @@ desk_make() {   # desk_make NEED -> the desk laid out, the model's answer in DES
     desk_pulse_stop
     [ "$st" -eq 0 ] || refuse "spark did not answer: $(head -1 "$TMP/desk.err")"
     jq -e '.main.app | strings' "$TMP/desk.json" >/dev/null 2>&1 || refuse "the answer was not a layout (spark-shell layout -v shows it)"
+    # what opens is what the words name, when they name any; the model's why is
+    # said only when what opens is its answer, unchanged
+    ED=$(desk_editor) || ED=''
+    answer=$(desk_set "$TMP/desk.json")
+    desk_named "$TMP/desk.json" "$1" > "$TMP/named.say"
+    changed=''; [ "$(desk_set "$TMP/desk.json")" = "$answer" ] || changed=1
     why=$(desk_why "$TMP/desk.json")
-    [ -z "$why" ] || printf '  %s\n' "$why"
+    [ -n "$changed" ] || [ -z "$why" ] || printf '  %s\n' "$why"
     for a in $(jq -r '[.main] + (.side // []) | .[].app' "$TMP/desk.json"); do
         [ "$a" != editor ] || continue   # a layout word: the editor this machine has, or one line in desk_render
         desk_app_known "$a" && continue
         if desk_on_path "$a"; then echo "  $a is not one of the allowed apps -- laid out without it (spark-shell apps adds it)"
         else echo "  $a is not on this machine -- laid out without it"; fi
     done
-    ED=$(desk_editor) || ED=''
-    desk_named "$TMP/desk.json" "$1"   # what opens is what the words name, when they name any
-    mkdir -p "$(dirname "$DESK_LAST")"
-    jq --arg w "$1" '{words: $w} + .' "$TMP/desk.json" > "$DESK_LAST"
+    cat "$TMP/named.say"
+    mkdir -p "$(dirname "$DESK_LAST")"   # what opened; a why only when that is the answer
+    jq --arg w "$1" --arg ch "$changed" '{words: $w} + . | if $ch == "" then . else del(.why) end' "$TMP/desk.json" > "$DESK_LAST"
     desk_render "$DESK_LAST"
     desk_show "spark-shell layout save NAME saves it"
 }
