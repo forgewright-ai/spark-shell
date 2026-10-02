@@ -119,7 +119,7 @@ sentence each. The first window shows them once, as a short card,
 then your shell. They are the `# key:` lines of the sway template.
 
     Super+Return opens a window, foot running your login shell.
-    Super+d asks for a desk from your words at a small prompt.
+    Super+d opens a small prompt, and your words there open a layout.
     Super+s opens a small window with spark chat, and Ctrl-D closes it.
     Super+Shift+q closes the window.
     Super+Shift+c reloads sway after spark-shell on.
