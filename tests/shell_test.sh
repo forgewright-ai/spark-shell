@@ -1093,10 +1093,17 @@ st=0; out=$(sh "$SH" desktop "$need" 2>&1) || st=$?
 [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^  the rooms $sname are open already\$" && ! grep -q 'new-session' "$tlog" \
     && ok "rooms open already: said in one line, no session built, joined" || bad "rooms has-session" "st=$st $out $(cat "$tlog")"
 rm -f "$H/tmux.has"
-# the studio shipped with the repo: copied, it is a kept desk; shell and editor are desk words
-mkdir -p "$desks"; cp "$REPO/desks/studio" "$desks/"
-jq -e '.words == "studio" and .main.app == "shell" and (.side | map(.app)) == ["editor", "newsboat", "w3m", "aerc"]' "$REPO/desks/studio" >/dev/null 2>&1 \
-    && ok "desks/studio: words studio, main shell, then editor, newsboat, w3m, aerc (no music room)" || bad "studio shape" "$(cat "$REPO/desks/studio")"
+# a kept desk named studio; shell and editor are desk words
+mkdir -p "$desks"
+cat > "$desks/studio" <<'EOF2'
+{"words": "studio",
+ "why": "a shell, the editor, the feeds, the web and the mail, one room each",
+ "main": {"app": "shell", "args": "", "width": 70},
+ "side": [{"app": "editor", "args": ""},
+          {"app": "newsboat", "args": ""},
+          {"app": "w3m", "args": "duckduckgo.com"},
+          {"app": "aerc", "args": ""}]}
+EOF2
 : > "$tlog"; rm -f "$argv"
 st=0; out=$(sh "$SH" desktop studio 2>&1) || st=$?
 printf '%s\n' 'has-session -t =studio' 'new-session -d -s studio -n shell' 'new-window -t =studio -n editor micro' 'new-window -t =studio -n newsboat newsboat' 'new-window -t =studio -n w3m w3m duckduckgo.com' 'new-window -t =studio -n aerc aerc' > "$H/expected.studio"

@@ -244,7 +244,7 @@ window's title or a file.
 ## Rooms
 
     spark-shell desktop "the feeds, the mail and a shell"
-    spark-shell desktop studio --rooms      inside the desktop, as rooms
+    spark-shell desktop writing --rooms     inside the desktop, as rooms
     spark-shell desktop "WORDS" --windows   from a console: sway first
 
 Where there is no sway (a console login, ssh, a Mac) the same desk
@@ -267,13 +267,6 @@ window here). `editor` is `$EDITOR`'s name, else micro when it is
 here, else one refusal telling you to set it in
 `~/.config/spark-shell/rc`. The main window's `width` is the desktop's
 and is not read here.
-
-One desk ships with the repository, the studio: a shell, the editor,
-the feeds (newsboat), the web (w3m on duckduckgo.com) and the mail
-(aerc), one room each. Keeping it is a copy, then its name:
-
-    cp desks/studio ~/.config/spark-shell/desks/
-    spark-shell desktop studio
 
 An app this machine lacks is one refused line, and the rest opens. A
 music room is yours to add, one entry in the kept file's `side` list,

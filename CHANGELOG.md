@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.42
+
+- The studio desk is gone from the repository. It was one person's
+  setup, and it needed four apps a new machine does not have.
+
 ## v0.41
 
 - The palette, the font and quiet came home from spark core, which
