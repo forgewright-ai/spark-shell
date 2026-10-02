@@ -28,8 +28,8 @@ client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@ #@HEX_ANSI_1@ #@HE
 
 # key: Super+Return opens a window, foot running your login shell.
 bindsym $mod+Return exec $term
-# key: Super+d asks for a desk from your words at a small prompt.
-bindsym $mod+d exec $term --app-id spark-desk -e @REPO@/spark-shell desktop --ask
+# key: Super+d opens a small prompt, and your words there open a layout.
+bindsym $mod+d exec $term --app-id spark-desk -e @REPO@/spark-shell layout --ask
 for_window [app_id="spark-desk"] floating enable, resize set width 60 ppt height 40 ppt
 # key: Super+s opens a small window with spark chat, and Ctrl-D closes it.
 bindsym $mod+s exec $term --app-id spark-chat -e @REPO@/spark-shell desktop --chat
