@@ -123,7 +123,7 @@ then your shell. They are the `# key:` lines of the sway template.
     Super+s opens a small window with spark chat, and Ctrl-D closes it.
     Super+Shift+q closes the window.
     Super+Shift+c reloads sway after spark-shell on.
-    Super+Shift+e leaves the desktop for the console or the login box.
+    Super+Shift+e leaves the desktop.
     Super and h, j, k, l or an arrow move the focus, with Shift the window.
     Super+f fills the screen with a window, and Super+r resizes until Enter.
     Super+1 to 0 go to a workspace, and with Shift send the window there.

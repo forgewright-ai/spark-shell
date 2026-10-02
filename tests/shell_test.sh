@@ -22,9 +22,14 @@ fresh() {   # a new throwaway HOME with the stubs in place
     chmod +x "$H/.local/bin/starship"
     printf 'ID=fixture\n' > "$H/os-release"
     export SPARK_OS_RELEASE=$H/os-release
-    # the root renders (the login box) land under a throwaway root, never
-    # in this machine's /etc; systemctl is whatever PATH has (a stub, 15)
+    # the root files land under a throwaway root, never in this
+    # machine's /etc; systemctl is whatever PATH has (a stub)
     export SPARK_SHELL_ROOT=$H/root
+    # the tty is a stub: TEST_TTY=/dev/ttyN is a console, unset is ssh;
+    # sway's runtime dir is a login manager's (the desktop tests unset it)
+    printf '#!/bin/sh\n[ -n "${TEST_TTY:-}" ] || { echo "not a tty"; exit 1; }\necho "$TEST_TTY"\n' > "$H/.local/bin/tty"
+    chmod +x "$H/.local/bin/tty"
+    export XDG_RUNTIME_DIR=$H/run
     PATH=$H/.local/bin:$PATH
 }
 
@@ -316,11 +321,11 @@ else
     out=$(sh "$SH" check || true)
     printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot' && ok "check: desktop ok with the stubs and fresh renders" || bad "check desktop ok" "$out"
     printf '%s\n' "$out" | grep -Eq '^(would|todo|FAIL|warn) +font' && bad "check: a font row fails with DESKTOP=sway" "$out" || ok "check: the font row does not fail with DESKTOP=sway"
-    out=$(env -u XDG_VTNR -u WAYLAND_DISPLAY sh "$SH" desktop 2>&1 || true)
-    printf '%s\n' "$out" | grep -q 'needs a console login: ssh has no seat' && ok "desktop: refused without XDG_VTNR (ssh has no seat)" || bad "desktop no seat" "$out"
-    out=$(env -u XDG_VTNR XDG_VTNR=1 WAYLAND_DISPLAY=wayland-1 sh "$SH" desktop 2>&1 || true)
+    out=$(env -u TEST_TTY -u WAYLAND_DISPLAY sh "$SH" desktop 2>&1 || true)
+    printf '%s\n' "$out" | grep -q 'needs a console login (tty1 to tty9): ssh and terminal windows cannot start sway' && ok "desktop: refused with no console tty (ssh)" || bad "desktop no console" "$out"
+    out=$(TEST_TTY=/dev/tty1 WAYLAND_DISPLAY=wayland-1 sh "$SH" desktop 2>&1 || true)
     printf '%s\n' "$out" | grep -q '^no kept desks yet' && ok "desktop: inside a desktop (WAYLAND_DISPLAY set) it lists the kept desks, none yet" || bad "desktop inside" "$out"
-    out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 TERM=linux sh "$SH" desktop 2>&1); st=$?
+    out=$(env -u WAYLAND_DISPLAY TEST_TTY=/dev/tty1 TERM=linux sh "$SH" desktop 2>&1); st=$?
     [ "$st" -eq 0 ] && grep -q 'sway-stub' "$HOME/.local/state/spark-shell/sway.log" && printf '%s' "$out" | od -c | grep -q '033   \[   ?   2   5   h' \
         && ok "desktop: runs sway as a child, its stderr in sway.log, the cursor back on TERM=linux" || bad "desktop run" "st=$st out=$out log=$(cat "$HOME/.local/state/spark-shell/sway.log" 2>&1)"
     out=$(SWAYSOCK=/nonexistent sh "$SH" on)
@@ -328,7 +333,7 @@ else
     rm -f "$H/.local/bin/sway"
     out=$(sh "$SH" check || true)
     printf '%s\n' "$out" | grep -q '^FAIL   desktop      missing: sway -- spark-shell on' && ok "check: FAIL without sway, the remedy is spark-shell on" || bad "check no sway" "$out"
-    out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop 2>&1 || true)
+    out=$(env -u WAYLAND_DISPLAY TEST_TTY=/dev/tty1 sh "$SH" desktop 2>&1 || true)
     printf '%s\n' "$out" | grep -q 'not installed: sway' && ok "desktop: refused without sway" || bad "desktop no sway" "$out"
     desktop_stubs
     sh "$SH" off >/dev/null
@@ -339,7 +344,7 @@ else
     sh "$SH" on >/dev/null
     [ -f "$sway.bak" ] && grep -q mine "$sway.bak" && grep -q '^# rendered by spark-shell' "$sway" && ok "on: yours moves to .bak, the render takes its place" || bad "sway backup" "$(ls "$HOME/.config/sway")"
     rm -f "$foot"
-    out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop 2>&1 || true)
+    out=$(env -u WAYLAND_DISPLAY TEST_TTY=/dev/tty1 sh "$SH" desktop 2>&1 || true)
     printf '%s\n' "$out" | grep -q 'not rendered (spark-shell on)' && ok "desktop: refused when a render is missing" || bad "desktop not rendered" "$out"
     # no theme.env: the VGA sixteen, what spark-shell theme none programs
     fresh
@@ -463,33 +468,13 @@ printf '#!/bin/sh\necho "${PROMPT-unset} ${DESKTOP-unset} ${FONT-unset}"\n' > "$
 out=$(SHELL=$H/.local/bin/envstub sh "$SH" desktop --first)
 [ "$out" = 'unset unset unset' ] && ok "desktop --first: the config's exports (PROMPT, DESKTOP, FONT) never reach your shell" || bad "desktop --first env" "$out"
 
-# --- 15. the login box: on desktop | off desktop, greetd on tty1 ----------
-# stubs for greetd and tuigreet beside the desktop's; systemctl is a stub
-# that logs its arguments and keeps enable/disable state in files. Every
-# root path is under SPARK_SHELL_ROOT (fresh), so nothing reaches /etc.
-greeter_stubs() {
-    for t in greetd tuigreet; do
-        printf '#!/bin/sh\necho "%s-stub $*" >&2\n' "$t" > "$H/.local/bin/$t"; chmod +x "$H/.local/bin/$t"
-    done
-    cat > "$H/.local/bin/systemctl" <<'EOF'
-#!/bin/sh
-st=${SPARK_SHELL_ROOT:-$HOME/root}/units
-mkdir -p "$st"
-echo "$*" >> "$st/log"
-case $1 in
-    enable) touch "$st/$2" ;;
-    disable) rm -f "$st/$2" ;;
-    is-enabled) if [ -e "$st/$2" ]; then echo enabled; else echo disabled; exit 1; fi ;;
-    is-active) [ -e "$st/active-$2" ] ;;
-esac
-EOF
-    chmod +x "$H/.local/bin/systemctl"
-    systemctl enable getty@tty1.service     # a box as it comes
-}
-ROOT_RENDERS="etc/greetd/config.toml etc/greetd/spark-shell/desktop.desktop etc/greetd/spark-shell/console.desktop etc/systemd/system/greetd.service.d/spark-shell.conf"
+# --- 15. the login screen: getty's own, a login on tty1 starts the desktop
+# No root file and no unit for the desktop on Debian or Arch: on desktop
+# writes DESKTOP=sway and renders sway and foot, and the rc file starts
+# the desktop at a login on tty1. systemctl is a stub that logs (it must
+# never be asked for greetd). The tty is the stub fresh puts on PATH.
 fresh
 desktop_stubs
-greeter_stubs
 theme_fixture '#ff5555'
 mkdir -p "$HOME/.config/spark-shell"
 printf 'PROMPT_STYLE=full\nDESKTOP=none\n' > "$HOME/.config/spark-shell/config"
@@ -500,10 +485,11 @@ if [ "$(uname -s)" = Darwin ]; then
         && ok "macOS: on desktop refuses, na, one line, exit 1" || bad "macOS on desktop" "st=$st $out"
     grep -q 'DESKTOP=none' "$HOME/.config/spark-shell/config" && [ ! -e "$H/root/etc" ] && ok "macOS: on desktop wrote nothing" || bad "macOS on desktop wrote" "$(cat "$HOME/.config/spark-shell/config")"
 else
+    printf '#!/bin/sh\necho "$*" >> "%s/units.log"\n[ "$1" != is-enabled ] || exit 1\n' "$H" > "$H/.local/bin/systemctl"; chmod +x "$H/.local/bin/systemctl"
     out=$(sh "$SH" on desktop --dry-run)
-    printf '%s\n' "$out" | grep -q '^would  greeter .*etc/greetd/config.toml' && printf '%s\n' "$out" | grep -q '^would  greeter      enable greetd.service, disable getty@tty1.service' \
-        && ok "on desktop --dry-run: would render the root files and switch the units" || bad "greeter dry-run rows" "$out"
-    grep -q 'DESKTOP=none' "$HOME/.config/spark-shell/config" && [ ! -e "$H/root/etc" ] && [ ! -e "$H/.config/sway" ] && ok "on desktop --dry-run: wrote nothing (the config kept)" || bad "greeter dry-run wrote" "$(find "$H/root" "$H/.config")"
+    printf '%s\n' "$out" | grep -q '^would  config       DESKTOP=sway' && printf '%s\n' "$out" | grep -q '^would  look .*sway/config' \
+        && ok "on desktop --dry-run: would write DESKTOP=sway and render sway" || bad "on desktop dry-run rows" "$out"
+    grep -q 'DESKTOP=none' "$HOME/.config/spark-shell/config" && [ ! -e "$H/root/etc" ] && [ ! -e "$H/.config/sway" ] && ok "on desktop --dry-run: wrote nothing (the config kept)" || bad "on desktop dry-run wrote" "$(find "$H/root" "$H/.config")"
     printf '%s\n' "$out" | grep -Eq '^(would|todo|FAIL|warn) +font' && bad "on desktop --dry-run acts on a font" "$out" || ok "on desktop --dry-run: no font row acts"
     out2=$(sh "$SH" desktop on --dry-run)
     [ "$out2" = "$out" ] && ok "desktop on is on desktop: the same dry run, row for row" || bad "desktop on alias" "$out2"
@@ -512,117 +498,76 @@ else
         && [ "$(grep -c '^DESKTOP=' "$HOME/.config/spark-shell/config")" -eq 1 ] \
         && ok "on desktop: DESKTOP=sway written into the config, the other line kept" || bad "on desktop config" "st=$st $(cat "$HOME/.config/spark-shell/config")"
     [ -f "$HOME/.config/foot/foot.ini" ] && [ -f "$HOME/.config/sway/config" ] && ok "on desktop: foot.ini and sway/config rendered" || bad "on desktop user renders" "$out"
-    allthere=1; for rel in $ROOT_RENDERS; do [ -f "$H/root/$rel" ] || allthere=0; done
-    [ "$allthere" = 1 ] && ok "on desktop: the four root files rendered under the root" || bad "root renders" "$(find "$H/root" -type f)"
-    conf=$H/root/etc/greetd/config.toml
-    head -1 "$conf" | grep -q '^# rendered by spark-shell' && ok "config.toml: the marker is line 1" || bad "config.toml marker" "$(head -1 "$conf")"
-    grep -q '^vt = 1$' "$conf" && grep -q '^user = "greeter"$' "$conf" && grep -q -- "--cmd '$REPO/spark-shell desktop' " "$conf" && grep -q -- '--sessions /etc/greetd/spark-shell ' "$conf" \
-        && ok "config.toml: vt 1, the greeter user, tuigreet --cmd spark-shell desktop, --sessions" || bad "config.toml shape" "$(cat "$conf")"
-    grep '^command' "$conf" | grep -q -- '--background' && bad "config.toml: --background for a tuigreet that lacks it" || ok "config.toml: no --background for a tuigreet without it (0.9)"
-    printf '#!/bin/sh\n[ "$1" = --help ] && echo "        --background NAME background animation"\n' > "$H/.local/bin/tuigreet"
-    sh "$SH" on >/dev/null
-    grep -q -- "--greeting '$(hostname -s 2>/dev/null || uname -n | cut -d. -f1)' --background doom --theme" "$conf" && ok "config.toml: the DOOM fire for a tuigreet that knows --background (0.11)" || bad "config.toml doom" "$(grep -o -- '--greeting.*--theme' "$conf")"
-    grep -q -- "--theme 'border=lightred;" "$conf" && grep -q 'container=black' "$conf" && grep -q 'text=gray' "$conf" && grep -q 'greet=darkgray' "$conf" \
-        && ok "config.toml: the palette as ratatui words (border lightred, container black, text gray, greet darkgray)" || bad "config.toml theme" "$(grep -o -- "--theme '[^']*'" "$conf")"
-    name=$(hostname -s 2>/dev/null || uname -n | cut -d. -f1)
-    grep -q -- "--greeting '$name' " "$conf" && ok "config.toml: the greeting is the machine's short name" || bad "config.toml greeting" "$(grep -o -- "--greeting '[^']*'" "$conf") vs $name"
-    grep -q '^Name=desktop$' "$H/root/etc/greetd/spark-shell/desktop.desktop" && grep -q "^Exec=$REPO/spark-shell desktop\$" "$H/root/etc/greetd/spark-shell/desktop.desktop" \
-        && grep -q '^Name=console$' "$H/root/etc/greetd/spark-shell/console.desktop" && grep -q '^Exec=bash -l$' "$H/root/etc/greetd/spark-shell/console.desktop" \
-        && ok "the two sessions: desktop = spark-shell desktop (the clone), console = bash -l" || bad "session files" "$(cat "$H"/root/etc/greetd/spark-shell/*.desktop)"
-    grep -q '^After=spark-shell-console.service$' "$H/root/etc/systemd/system/greetd.service.d/spark-shell.conf" && ok "the drop-in orders greetd after spark-shell-console.service" || bad "drop-in" "$(cat "$H/root/etc/systemd/system/greetd.service.d/spark-shell.conf")"
-    for rel in $ROOT_RENDERS; do
-        if grep -q '@[A-Z_0-9]*@' "$H/root/$rel"; then bad "$rel keeps a placeholder" "$(grep -o '@[A-Z_0-9]*@' "$H/root/$rel" | head -1)"
-        elif plain "$H/root/$rel"; then ok "$rel: no placeholder, no hex, ASCII"
-        else bad "$rel not plain"; fi
-    done
-    grep -q '^disable getty@tty1.service$' "$H/root/units/log" && grep -q '^enable greetd.service$' "$H/root/units/log" \
-        && ok "on desktop: getty@tty1 disabled, greetd enabled (never started or stopped)" || bad "unit switches" "$(cat "$H/root/units/log")"
-    grep -Eq '^(start|stop|restart) ' "$H/root/units/log" && bad "a unit was started or stopped live" "$(cat "$H/root/units/log")" || ok "on desktop: no unit started or stopped live"
-    printf '%s\n' "$out" | grep -q '^ok     greeter      greetd on tty1 at the next boot (getty@tty1 until then)' && ok "on desktop: the greeter row says the next boot" || bad "greeter row" "$out"
-    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desk  sway .*login box: greetd at boot' && ok "status: the desk row names the login box" || bad "status login box" "$(printf '%s\n' "$st" | grep desk)"
-    # the next row: the first sentence that applies, none when nothing is off
+    [ ! -e "$H/root/etc/greetd" ] && [ ! -e "$H/root/etc/systemd" ] && ! grep -q 'greetd\|getty' "$H/units.log" 2>/dev/null \
+        && ok "on desktop: no root file, no greetd, getty left alone" || bad "on desktop root" "$(find "$H/root" 2>&1; cat "$H/units.log" 2>&1)"
+    printf '%s\n' "$out" | grep -qi 'greet\|login box' && bad "on desktop names greetd or a login box" "$out" || ok "on desktop: no word of greetd or a login box"
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desk  sway .*(a login on tty1 starts it)$' && ok "status: the desk row says a login on tty1 starts it" || bad "status desk row" "$(printf '%s\n' "$st" | grep desk)"
     printf '#!/bin/sh\n:\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
-    st=$(env -u WAYLAND_DISPLAY sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next  login box .*Reboot: the login box takes tty1 at the next boot\.$' && ok "status: next says reboot when greetd is set for boot but not active" || bad "status next reboot" "$(printf '%s\n' "$st" | grep next)"
-    touch "$H/root/units/active-greetd.service"
-    st=$(env -u WAYLAND_DISPLAY sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next' && bad "status: a next row with nothing off" "$(printf '%s\n' "$st" | grep next)" || ok "status: no next row when nothing is off (greetd active)"
-    rm -f "$H/root/units/greetd.service"
-    st=$(env -u WAYLAND_DISPLAY sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next  login box .*spark-shell on desktop at a terminal puts greetd on tty1 (sudo once)\.$' && ok "status: next says on desktop when greetd is not at boot" || bad "status next greetd" "$(printf '%s\n' "$st" | grep next)"
-    systemctl enable greetd.service; rm -f "$H/.local/bin/spark"
+    st=$(env -u WAYLAND_DISPLAY sh "$SH" status); printf '%s\n' "$st" | grep -q '^  next' && bad "status: a next row with nothing off" "$(printf '%s\n' "$st" | grep next)" || ok "status: no next row when the desktop is ready (Debian, Arch: no reboot, no root)"
+    rm -f "$H/.local/bin/spark"
     out=$(sh "$SH" check || true)
-    printf '%s\n' "$out" | grep -q '^ok     greeter      greetd on tty1 at boot' && ok "check: ok greeter" || bad "check greeter" "$out"
+    printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot' && ! printf '%s\n' "$out" | grep -q 'greeter' && ok "check: ok desktop, no greeter row" || bad "check desktop" "$out"
     out=$(sh "$SH" on --dry-run)
-    printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "on --dry-run after on desktop: Nothing to do (the root files match, the units are set)" || bad "greeter idempotence" "$out"
-    # a palette change reaches the box through on
-    theme_fixture '#5555ff'
-    out=$(sh "$SH" on)
-    printf '%s\n' "$out" | grep -q '^render greeter .*config.toml' && grep -q -- "--theme 'border=lightblue;" "$conf" && ok "on: a new accent re-renders config.toml (border lightblue)" || bad "on greeter" "$out"
-    printf '%s\n' "$out" | grep -q '^render greeter .*desktop.desktop' && bad "on re-wrote an unchanged root file" "$out" || ok "on: an unchanged root file is left alone"
-    # the config set by hand + on = on desktop, one path
-    rm -rf "$H/root/etc"; rm -f "$H/root/units/greetd.service"; : > "$H/root/units/log"
-    sh "$SH" on >/dev/null
-    [ -f "$conf" ] && grep -q '^enable greetd.service$' "$H/root/units/log" && ok "DESKTOP=sway by hand + on: the same path (root files, greetd enabled)" || bad "on = on desktop" "$(cat "$H/root/units/log")"
-    # check fails when a unit is off or a file is stale, the remedy is on desktop
-    rm -f "$H/root/units/greetd.service"
-    out=$(sh "$SH" check || true)
-    printf '%s\n' "$out" | grep -q '^FAIL   greeter      greetd.service is not enabled -- spark-shell on desktop' && ok "check: FAIL greeter when greetd is not enabled, the remedy is on desktop" || bad "check greetd off" "$out"
-    systemctl enable greetd.service
-    printf 'edited\n' >> "$conf"
-    out=$(sh "$SH" check || true)
-    printf '%s\n' "$out" | grep -q '^FAIL   greeter      stale: /etc/greetd/config.toml -- spark-shell on desktop' && ok "check: FAIL greeter when config.toml is stale" || bad "check stale" "$out"
-    # off desktop: first the dry run (nothing touched), then DESKTOP=none, the renders gone, getty back
-    : > "$H/root/units/log"
+    printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "on --dry-run after on desktop: Nothing to do" || bad "on desktop idempotence" "$out"
     out=$(sh "$SH" off desktop --dry-run)
-    printf '%s\n' "$out" | grep -q '^would  config       DESKTOP=none' && printf '%s\n' "$out" | grep -q '^would  restore .*sway/config' && printf '%s\n' "$out" | grep -q '^would  restore .*foot/foot\.ini' && printf '%s\n' "$out" | grep -q '^would  greeter      getty on tty1 at the next boot' \
-        && ok "off desktop --dry-run: would rows for the config, the two renders and the login box" || bad "off desktop dry-run rows" "$out"
-    grep -q '^DESKTOP=sway$' "$HOME/.config/spark-shell/config" && [ -f "$HOME/.config/sway/config" ] && [ -f "$conf" ] && ! grep -Eq '^(enable|disable) ' "$H/root/units/log" \
-        && ok "off desktop --dry-run: touched nothing (DESKTOP=sway kept, the renders and the root files there, no unit switched)" || bad "off desktop dry-run wrote" "$(cat "$HOME/.config/spark-shell/config"; cat "$H/root/units/log")"
-    out=$(sh "$SH" off --dry-run)
-    printf '%s\n' "$out" | grep -q '^would  rc ' && printf '%s\n' "$out" | grep -q '^would  greeter      getty on tty1 at the next boot' && [ -f "$conf" ] && grep -q '^DESKTOP=sway$' "$HOME/.config/spark-shell/config" \
-        && ok "off --dry-run with the login box on: the rc and greeter would rows, nothing touched" || bad "off dry-run greeter row" "$out"
+    printf '%s\n' "$out" | grep -q '^would  config       DESKTOP=none' && printf '%s\n' "$out" | grep -q '^would  restore .*sway/config' && printf '%s\n' "$out" | grep -q '^would  restore .*foot/foot\.ini' \
+        && ok "off desktop --dry-run: would rows for the config and the two renders" || bad "off desktop dry-run rows" "$out"
+    grep -q '^DESKTOP=sway$' "$HOME/.config/spark-shell/config" && [ -f "$HOME/.config/sway/config" ] && ok "off desktop --dry-run: touched nothing" || bad "off desktop dry-run wrote" "$(cat "$HOME/.config/spark-shell/config")"
     out=$(sh "$SH" off desktop)
     grep -q '^DESKTOP=none$' "$HOME/.config/spark-shell/config" && grep -q '^PROMPT_STYLE=full$' "$HOME/.config/spark-shell/config" && ok "off desktop: DESKTOP=none written, the other line kept" || bad "off desktop config" "$(cat "$HOME/.config/spark-shell/config")"
     [ ! -e "$HOME/.config/foot/foot.ini" ] && [ ! -e "$HOME/.config/sway/config" ] && ok "off desktop: the two user renders are gone" || bad "off desktop user renders" "$(ls -R "$HOME/.config")"
-    [ ! -e "$conf" ] && [ ! -e "$H/root/etc/greetd/spark-shell" ] && [ ! -e "$H/root/etc/systemd/system/greetd.service.d" ] \
-        && ok "off desktop: the root files and the two dirs of ours are gone (/etc/greetd is the package's)" || bad "off desktop root" "$(find "$H/root/etc")"
-    grep -q '^disable greetd.service$' "$H/root/units/log" && grep -q '^enable getty@tty1.service$' "$H/root/units/log" && ok "off desktop: greetd disabled, getty@tty1 enabled" || bad "off desktop units" "$(cat "$H/root/units/log")"
-    printf '%s\n' "$out" | grep -q '^ok     greeter      getty on tty1 at the next boot' && ok "off desktop: the greeter row says getty at the next boot" || bad "off desktop row" "$out"
     printf '%s\n' "$out" | grep -q 'packages stay installed' && ok "off desktop: packages stay, said so" || bad "off desktop closing" "$out"
     out=$(sh "$SH" desktop off)
-    printf '%s\n' "$out" | grep -q '^ok     greeter' && bad "desktop off (a spelling of off desktop) twice acts twice" "$out" || ok "desktop off, the spelling, twice: nothing to undo, nothing said"
-    # the login box still running after off: its Enter runs `desktop`, which lands in your shell
+    printf '%s\n' "$out" | grep -Eq '^ok +(login|desktop|restore) ' && bad "desktop off (a spelling of off desktop) twice acts twice" "$out" || ok "desktop off, the spelling, twice: nothing to undo, nothing said"
+    # the old login screen, still running until the next boot, runs `desktop` on Enter: your shell
     printf '#!/bin/sh\necho "shell-stub $* ${DESKTOP-unset}"\n' > "$H/.local/bin/offshell"; chmod +x "$H/.local/bin/offshell"
-    st=0; out=$(XDG_VTNR=1 SHELL=$H/.local/bin/offshell env -u WAYLAND_DISPLAY sh "$SH" desktop 2>&1) || st=$?
+    st=0; out=$(TEST_TTY=/dev/tty1 SHELL=$H/.local/bin/offshell env -u WAYLAND_DISPLAY sh "$SH" desktop 2>&1) || st=$?
     [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^The desktop is off (spark-shell on desktop brings it back)\. This is your shell\.$' && [ "$(printf '%s\n' "$out" | tail -1)" = 'shell-stub -l unset' ] \
-        && ok "desktop with the desktop off, from a console: one line, then your login shell (never a dead end at the greeter)" || bad "desktop off console landing" "st=$st $out"
-    # a foreign config.toml is kept as .spark-orig and comes back on off
-    mkdir -p "$H/root/etc/greetd"; printf '[terminal]\nvt = 1\n[default_session]\ncommand = "agreety --cmd /bin/sh"\nuser = "greeter"\n' > "$conf"
+        && ok "desktop with the desktop off, from a console: one line, then your login shell (never a dead end)" || bad "desktop off console landing" "st=$st $out"
+    # no theme.env: the desktop still starts from a console, and a word with no console is refused
+    fresh; desktop_stubs
     sh "$SH" on desktop >/dev/null
-    [ -f "$conf.spark-orig" ] && grep -q agreety "$conf.spark-orig" && grep -q '^# rendered by spark-shell' "$conf" && ok "on desktop: a config.toml of the package's goes to .spark-orig once" || bad "spark-orig" "$(ls "$H/root/etc/greetd")"
-    sh "$SH" on >/dev/null
-    [ -f "$conf.spark-orig" ] && grep -q agreety "$conf.spark-orig" && ok "on again: .spark-orig is never overwritten" || bad "spark-orig twice"
-    sh "$SH" off >/dev/null
-    [ -f "$conf" ] && grep -q agreety "$conf" && [ ! -e "$conf.spark-orig" ] && ok "off: config.toml is back from .spark-orig" || bad "spark-orig restore" "$(ls "$H/root/etc/greetd"; cat "$conf" 2>&1)"
-    [ ! -e "$H/root/etc/greetd/spark-shell" ] && [ ! -e "$H/root/units/greetd.service" ] && [ -e "$H/root/units/getty@tty1.service" ] && ok "off: the whole layer undoes the login box too" || bad "off greeter" "$(find "$H/root")"
-    # no theme.env: the colour words -- accent blue, muted white = gray in ratatui's words
-    fresh; desktop_stubs; greeter_stubs
-    sh "$SH" on desktop >/dev/null
-    grep -q -- "--theme 'border=blue;" "$H/root/etc/greetd/config.toml" && grep -q 'greet=gray' "$H/root/etc/greetd/config.toml" && grep -q 'container=black' "$H/root/etc/greetd/config.toml" \
-        && ok "no theme.env: border blue, greet gray, container black" || bad "no theme.env greeter" "$(grep -o -- "--theme '[^']*'" "$H/root/etc/greetd/config.toml")"
-    out=$(env -u WAYLAND_DISPLAY XDG_VTNR=1 sh "$SH" desktop 2>&1); st=$?
-    [ "$st" -eq 0 ] && ok "desktop (start now) still starts sway with the box in place" || bad "desktop start" "$out"
-    out=$(env -u XDG_VTNR -u SWAYSOCK sh "$SH" desktop sideways --windows 2>&1 || true)
+    out=$(TEST_TTY=/dev/tty1 env -u WAYLAND_DISPLAY sh "$SH" desktop 2>&1); st=$?
+    [ "$st" -eq 0 ] && ok "desktop (start now) starts sway from a console" || bad "desktop start" "$out"
+    out=$(env -u TEST_TTY -u SWAYSOCK sh "$SH" desktop sideways --windows 2>&1 || true)
     printf '%s\n' "$out" | grep -q '^spark-shell desktop: needs a console login' && [ ! -e "$HOME/.local/state/spark-shell/desk.pending" ] \
-        && ok "desktop --windows: a word with no desktop and no seat is refused in one line, nothing left pending" || bad "desktop word no seat" "$out"
-    # no sudo to be had (not root, sudo refuses, no tty): a todo row, nothing written
-    if [ "$(id -u)" -ne 0 ]; then
-        printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/sudo"; chmod +x "$H/.local/bin/sudo"
-        out=$(env -u SPARK_SHELL_ROOT sh "$SH" on </dev/null 2>&1 || true)
-        printf '%s\n' "$out" | grep -q '^todo   greeter .*spark-shell on desktop at a terminal (sudo once)' && ok "no sudo: the root render is a todo row, the shape of the packages row" || bad "no sudo todo" "$out"
-        rm -f "$H/.local/bin/sudo"
-    fi
+        && ok "desktop --windows: a word with no desktop and no console is refused in one line, nothing left pending" || bad "desktop word no console" "$out"
 fi
-grep -q '@ACCENT_TUI@' "$REPO/templates/etc/greetd/config.toml" && grep -q '@NAME@' "$REPO/templates/etc/greetd/config.toml" && ok "templates: config.toml carries the tui and name placeholders" || bad "config.toml template"
+[ ! -e "$REPO/templates/etc/greetd" ] && [ ! -e "$REPO/templates/etc/systemd/system/greetd.service.d" ] && [ -f "$REPO/templates/etc/systemd/system/spark-shell-console.service" ] \
+    && ok "templates/etc: no greetd file, the console palette's unit stays" || bad "templates/etc greetd" "$(find "$REPO/templates/etc" -type f)"
+grep -q 'PKG_GREETER' "$REPO"/distro/*.env && bad "distro/*.env: a PKG_GREETER line" || ok "distro/*.env: no greeter packages"
 grep -rq 'font' "$REPO/templates/etc" && bad "a root template names a font" || ok "templates/etc: no font word"
+grep -v '^ *#' "$SH" | grep -q 'XDG_VTNR\|tuigreet\|greet_background' && bad "spark-shell reads XDG_VTNR or draws tuigreet" "$(grep -n 'XDG_VTNR\|tuigreet' "$SH" | grep -v ':[ ]*#' | head -3)" || ok "spark-shell: no XDG_VTNR, no tuigreet in the code (the tty says console)"
+
+# the rc file: a login on tty1 starts the desktop, nothing else does.
+# The block is run alone in an interactive bash, with stubs for tty and
+# spark-shell; `exit` after a desktop that ran ends that login.
+bp=$REPO/templates/linux/.bash_profile
+awk '/^# The desktop at a login on tty1/ {on = 1} on {print} on && /^fi$/ {exit}' "$bp" > "$H/autostart.sh"
+grep -q '"\$(tty 2>/dev/null)" = /dev/tty1' "$H/autostart.sh" && grep -q 'spark-shell desktop && exit' "$H/autostart.sh" && grep -q 'WAYLAND_DISPLAY' "$H/autostart.sh" \
+    && ok ".bash_profile: one block, tty1 exactly, no WAYLAND_DISPLAY, then spark-shell desktop" || bad ".bash_profile block" "$(cat "$H/autostart.sh")"
+l_pal=$(grep -n 'console-colors' "$bp" | head -1 | cut -d: -f1); l_auto=$(grep -n '^# The desktop at a login on tty1' "$bp" | cut -d: -f1)
+[ -n "$l_pal" ] && [ -n "$l_auto" ] && [ "$l_auto" -gt "$l_pal" ] && ok ".bash_profile: the desktop starts after the palette lines" || bad ".bash_profile order" "palette $l_pal desktop $l_auto"
+if command -v bash >/dev/null 2>&1; then
+    ab=$H/ab; mkdir -p "$ab/bin" "$ab/.config/spark-shell"
+    printf '#!/bin/sh\necho "${TEST_TTY:-not a tty}"\n[ -n "${TEST_TTY:-}" ]\n' > "$ab/bin/tty"
+    printf '#!/bin/sh\necho "spark-shell $*" >> "%s/ran"\n[ ! -e "%s/fails" ]\n' "$ab" "$ab" > "$ab/bin/spark-shell"
+    chmod +x "$ab/bin/tty" "$ab/bin/spark-shell"
+    autostart() {   # autostart TTY DESKTOP [VAR=VALUE] -> what ran, then "after" when the shell went on
+        rm -f "$ab/ran"; printf 'DESKTOP=%s\n' "$2" > "$ab/.config/spark-shell/config"
+        env -u WAYLAND_DISPLAY HOME="$ab" XDG_CONFIG_HOME="$ab/.config" TEST_TTY="$1" PATH="$ab/bin:$PATH" ${3:+"$3"} \
+            bash --norc --noprofile -i -c ". '$H/autostart.sh'; echo after" 2>/dev/null </dev/null
+        cat "$ab/ran" 2>/dev/null || true
+    }
+    [ "$(autostart /dev/tty1 sway)" = 'spark-shell desktop' ] && ok ".bash_profile: a login on tty1 with DESKTOP=sway starts the desktop, and leaving it ends the login" || bad "autostart tty1" "$(autostart /dev/tty1 sway)"
+    [ "$(autostart /dev/tty2 sway)" = after ] && ok ".bash_profile: tty2 (Alt+F2) stays a plain shell" || bad "autostart tty2" "$(autostart /dev/tty2 sway)"
+    [ "$(autostart /dev/tty10 sway)" = after ] && ok ".bash_profile: tty10 is not tty1" || bad "autostart tty10" "$(autostart /dev/tty10 sway)"
+    [ "$(autostart /dev/pts/0 sway)" = after ] && ok ".bash_profile: ssh and terminal windows (/dev/pts) never start it" || bad "autostart pts" "$(autostart /dev/pts/0 sway)"
+    [ "$(autostart /dev/tty1 none)" = after ] && ok ".bash_profile: DESKTOP=none on tty1 is a plain shell" || bad "autostart none" "$(autostart /dev/tty1 none)"
+    [ "$(autostart /dev/tty1 sway WAYLAND_DISPLAY=wayland-1)" = after ] && ok ".bash_profile: inside a desktop it never starts another" || bad "autostart wayland" "$(autostart /dev/tty1 sway WAYLAND_DISPLAY=wayland-1)"
+    : > "$ab/fails"
+    [ "$(autostart /dev/tty1 sway | paste -sd' ' -)" = 'after spark-shell desktop' ] && ok ".bash_profile: a desktop that cannot start leaves its reason and the shell goes on" || bad "autostart fails" "$(autostart /dev/tty1 sway)"
+fi
 
 # --- 16. desks: a desk from your words -----------------------------------
 # stubs: spark logs its argv and answers one fixed desk (main gimp-3.0 at
@@ -1147,7 +1092,7 @@ if [ "$(uname -s)" != Darwin ]; then
     theme_fixture '#ff5555'; mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on >/dev/null
     desk_pending=$H/.local/state/spark-shell/desk.pending; rm -f "$argv" "$swlog"
-    st=0; out=$(XDG_VTNR=1 sh "$SH" desktop "news and music" --windows 2>&1) || st=$?
+    st=0; out=$(TEST_TTY=/dev/tty1 sh "$SH" desktop "news and music" --windows 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$(cat "$desk_pending" 2>&1)" = 'news and music' ] && grep -q 'sway-stub' "$H/.local/state/spark-shell/sway.log" && [ ! -e "$argv" ] \
         && ok "desktop WORDS --windows from a console: the words wait in desk.pending, sway starts, no model call yet" || bad "pending write" "st=$st $out $(cat "$desk_pending" 2>&1)"
     st=0; out=$(SWAYSOCK=$H/sway.sock sh "$SH" desktop --pending 2>&1) || st=$?
@@ -1538,23 +1483,18 @@ L off >/dev/null
 ( cd "$H/root" && find etc -type f | sort | while read -r f; do cksum "$f"; done ) > "$H/after"
 cmp -s "$H/before" "$H/after" && [ ! -e "$HOME/.config/spark/theme.env" ] && ok "off: every root file byte for byte as before, no copy, no unit, no drop-in" || bad "off console" "$(diff "$H/before" "$H/after")"
 
-# Void: the seat, no desktop; the package names looked up through xbps
+# Void: the terminal setup; the package names looked up through xbps
 fresh
 console_stubs Linux
 printf 'NAME="Void"\nID="void"\n' > "$H/os-release"
 printf '#!/bin/sh\nexit 0\n' > "$H/lx/xbps-query"; chmod +x "$H/lx/xbps-query"
 out=$(L on --dry-run)
-printf '%s\n' "$out" | grep -q '^ok     packages     installed$' && printf '%s\n' "$out" | grep -q '^skip   desktop      na: the desktop is not available on Void yet$' \
-    && ok "Void: xbps finds the packages, the desktop row is na" || bad "void dry-run" "$out"
-rc=0; out=$(L on desktop 2>&1) || rc=$?
-[ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: the desktop is not available on Void yet" ] && [ ! -e "$HOME/.config/spark-shell/config" ] && [ ! -e "$HOME/.tmux.conf" ] \
-    && ok "Void: on desktop refused in one sentence, nothing written" || bad "void on desktop" "rc=$rc $out"
-rc=0; out=$(L desktop wallpaper none 2>&1) || rc=$?
-[ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: the desktop is not available on Void yet" ] && ok "Void: desktop wallpaper refused the same way" || bad "void wallpaper" "rc=$rc $out"
+printf '%s\n' "$out" | grep -q '^ok     packages     installed$' && printf '%s\n' "$out" | grep -q '^skip   desktop      DESKTOP=none (the config)$' \
+    && ok "Void: xbps finds the packages, the desktop row is the config's" || bad "void dry-run" "$out"
 L on >/dev/null
 ck=$(L check || true)
-printf '%s\n' "$ck" | grep -q '^ok     desktop      na (the desktop is not available on Void yet)$' && ok "Void: check says the desktop is na" || bad "void check" "$(printf '%s\n' "$ck" | grep desktop)"
-grep -q '^PKG_CONSOLE=kbd$' "$REPO/distro/void.env" && ! grep -q '^PKG_DESKTOP' "$REPO/distro/void.env" && ok "distro/void.env: kbd for the console, no desktop packages" || bad "void.env"
+printf '%s\n' "$ck" | grep -q '^ok     desktop      na (DESKTOP=none)$' && ok "Void: check says the desktop is na while DESKTOP=none" || bad "void check" "$(printf '%s\n' "$ck" | grep desktop)"
+grep -q '^PKG_CONSOLE=kbd$' "$REPO/distro/void.env" && ok "distro/void.env: kbd for the console" || bad "void.env"
 if command -v jq >/dev/null 2>&1; then
     mkdir -p "$H/root/var/db/xbps"
     printf '<key>files</key><string>/usr/bin/tmux</string>\n' > "$H/root/var/db/xbps/.tmux-files.plist"
@@ -1571,6 +1511,164 @@ EOF
     printf '%s\n' "$out" | grep -q '^tool  tmux 3.7c_1$' && printf '%s\n' "$out" | grep -q '^  licence   ISC$' && printf '%s\n' "$out" | grep -q '^  reason    chosen$' && printf '%s\n' "$out" | grep -q '^  commands  tmux$' \
         && ok "Void: sbom reads xbps (version, licence, chosen, commands)" || bad "void sbom" "$out"
 fi
+
+# Void: the desktop too. No logind there, so on desktop links seatd into
+# /var/service and adds you to _seatd, each with a record of its own, and
+# off desktop undoes exactly what the records say. The package manager,
+# usermod, gpasswd and pgrep are stubs; /etc/group is the root's.
+void_desktop() {   # void_desktop -- a fresh Void root: runit, seatd's service dir, /var/service, /etc/group
+    fresh
+    console_stubs Linux
+    desktop_stubs
+    printf 'NAME="Void"\nID="void"\n' > "$H/os-release"
+    mkdir -p "$H/root/etc/runit" "$H/root/etc/sv/seatd" "$H/root/var/service"
+    printf 'root:x:0:\nwheel:x:4:%s\n_seatd:x:990:\n' "$(id -un)" > "$H/root/etc/group"
+    printf '#!/bin/sh\nexit 0\n' > "$H/lx/xbps-query"
+    cat > "$H/lx/usermod" <<'EOF'
+#!/bin/sh
+echo "usermod $*" >> "$HOME/log"
+[ "$1" = -aG ] || exit 2
+awk -F: -v OFS=: -v g="$2" -v u="$3" '$1 == g { $4 = ($4 == "" ? u : $4 "," u) } { print }' "$SPARK_SHELL_ROOT/etc/group" > "$HOME/group.new" && cat "$HOME/group.new" > "$SPARK_SHELL_ROOT/etc/group"
+EOF
+    cat > "$H/lx/gpasswd" <<'EOF'
+#!/bin/sh
+echo "gpasswd $*" >> "$HOME/log"
+[ "$1" = -d ] || exit 2
+awk -F: -v OFS=: -v u="$2" -v g="$3" '$1 == g { n = split($4, m, ","); s = ""; for (i = 1; i <= n; i++) if (m[i] != u) s = (s == "" ? m[i] : s "," m[i]); $4 = s } { print }' "$SPARK_SHELL_ROOT/etc/group" > "$HOME/group.new" && cat "$HOME/group.new" > "$SPARK_SHELL_ROOT/etc/group"
+EOF
+    printf '#!/bin/sh\n[ -e "%s/sway-running" ]\n' "$H" > "$H/lx/pgrep"
+    chmod +x "$H/lx"/*
+}
+me=$(id -un)
+void_desktop
+out=$(L on desktop --dry-run </dev/null)
+printf '%s\n' "$out" | grep -q '^would  desktop      seatd: link /etc/sv/seatd into /var/service' && printf '%s\n' "$out" | grep -q "^would  desktop      add $me to the _seatd group (sudo)\$" \
+    && [ ! -e "$H/root/var/service/seatd" ] && ! grep -q 'usermod' "$H/log" && [ ! -e "$HOME/.config/spark-shell/config" ] \
+    && ok "Void: on desktop --dry-run says seatd and the group, touches nothing" || bad "void desktop dry-run" "$out"
+out=$(L on desktop </dev/null 2>&1); st=$?
+[ "$st" -eq 0 ] && [ -L "$H/root/var/service/seatd" ] && [ "$(readlink "$H/root/var/service/seatd")" = /etc/sv/seatd ] \
+    && ok "Void: on desktop links /etc/sv/seatd into /var/service" || bad "void seatd link" "st=$st $out"
+grep -q "^_seatd:x:990:$me\$" "$H/root/etc/group" && grep -qx "usermod -aG _seatd $me" "$H/log" && ok "Void: on desktop adds you to _seatd (usermod -aG)" || bad "void group" "$(cat "$H/root/etc/group" "$H/log")"
+[ -f "$HOME/.local/state/spark-shell/seatd.linked" ] && [ -f "$HOME/.local/state/spark-shell/seatd.group" ] && ok "Void: both steps recorded (seatd.linked, seatd.group)" || bad "void records" "$(ls "$HOME/.local/state/spark-shell" 2>&1)"
+printf '%s\n' "$out" | grep -q "^ok     desktop      $me is in the _seatd group now: it takes effect at your next login\$" && ok "Void: one line says the group takes effect at the next login" || bad "void group line" "$out"
+grep -q '^DESKTOP=sway$' "$HOME/.config/spark-shell/config" && [ -f "$HOME/.config/sway/config" ] && [ -f "$HOME/.config/foot/foot.ini" ] && ok "Void: on desktop writes DESKTOP=sway and renders sway and foot" || bad "void renders" "$out"
+[ ! -e "$H/root/etc/greetd" ] && ! grep -q 'greetd\|getty' "$H/log" && ok "Void: no greetd, getty left alone" || bad "void greetd" "$(cat "$H/log")"
+: > "$H/log"; out=$(L on --dry-run </dev/null)
+[ "$(printf '%s\n' "$out" | tail -1)" = 'Nothing to do' ] && ok "Void: on --dry-run after on desktop: Nothing to do" || bad "void idempotent" "$out"
+ck=$(L check || true)
+printf '%s\n' "$ck" | grep -q '^ok     desktop      sway and foot' && ok "Void: check says the desktop is ok" || bad "void check ok" "$(printf '%s\n' "$ck" | grep desktop)"
+printf '#!/bin/sh\n:\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
+st=$(L status); printf '%s\n' "$st" | grep -q '^  next  desktop .*Log out and in again: the _seatd group takes effect at the next login\.$' && ok "Void: status next says to log in again for the group" || bad "void next group" "$(printf '%s\n' "$st" | grep next)"
+rm -f "$H/root/var/service/seatd"
+ck=$(L check || true)
+printf '%s\n' "$ck" | grep -q '^FAIL   desktop      seatd does not start at boot (Void has no logind) -- spark-shell on desktop$' && ok "Void: check FAILs without seatd at boot, the remedy is on desktop" || bad "void check seatd" "$(printf '%s\n' "$ck" | grep desktop)"
+st=$(L status); printf '%s\n' "$st" | grep -q '^  next  desktop .*spark-shell on desktop at a terminal sets up seatd (sudo once)\.$' && ok "Void: status next says on desktop sets up seatd" || bad "void next seatd" "$(printf '%s\n' "$st" | grep next)"
+rm -f "$H/.local/bin/spark"
+L on >/dev/null </dev/null
+[ -L "$H/root/var/service/seatd" ] && ok "Void: on (DESKTOP=sway) links seatd again" || bad "void relink"
+out=$(L desktop wallpaper none 2>&1) && grep -q '^WALLPAPER=none$' "$HOME/.config/spark-shell/config" && ok "Void: desktop wallpaper is no longer refused" || bad "void wallpaper" "$out"
+# off desktop while a desktop runs: seatd stays (stopping it would end it), the group goes
+: > "$H/sway-running"; : > "$H/log"
+out=$(L off desktop 2>&1)
+[ -L "$H/root/var/service/seatd" ] && [ -f "$HOME/.local/state/spark-shell/seatd.linked" ] && printf '%s\n' "$out" | grep -q '^todo   desktop      seatd stays while a desktop runs' \
+    && ok "Void: off desktop with a desktop running keeps seatd, one todo row" || bad "void off running" "$out"
+! grep -q "^_seatd:x:990:.*$me" "$H/root/etc/group" && grep -qx "gpasswd -d $me _seatd" "$H/log" && [ ! -e "$HOME/.local/state/spark-shell/seatd.group" ] \
+    && ok "Void: off desktop takes you out of _seatd (gpasswd -d), the record gone" || bad "void off group" "$(cat "$H/root/etc/group" "$H/log")"
+rm -f "$H/sway-running"
+out=$(L off desktop --dry-run)
+printf '%s\n' "$out" | grep -q "^would  desktop      seatd's link and your _seatd membership removed" && [ -L "$H/root/var/service/seatd" ] && ok "Void: off desktop --dry-run says seatd, touches nothing" || bad "void off dry" "$out"
+out=$(L off desktop 2>&1)
+[ ! -e "$H/root/var/service/seatd" ] && [ ! -L "$H/root/var/service/seatd" ] && [ ! -e "$HOME/.local/state/spark-shell/seatd.linked" ] && printf '%s\n' "$out" | grep -q '^ok     desktop      seatd no longer starts at boot' \
+    && ok "Void: off desktop after leaving the desktop removes the link spark-shell made" || bad "void off link" "$out"
+[ -d "$H/root/etc/sv/seatd" ] && ok "Void: off desktop leaves the package's /etc/sv/seatd alone" || bad "void sv dir"
+: > "$H/log"; out=$(L off desktop 2>&1)
+! printf '%s\n' "$out" | grep -q 'seatd' && ! grep -q 'gpasswd\|usermod' "$H/log" && ok "Void: off desktop twice: nothing of seatd's left to undo, nothing said" || bad "void off twice" "$out"
+# a seatd you set up yourself: on desktop records nothing, off desktop leaves it
+void_desktop
+ln -s /etc/sv/seatd "$H/root/var/service/seatd"
+printf 'root:x:0:\n_seatd:x:990:%s\n' "$me" > "$H/root/etc/group"; cp "$H/root/etc/group" "$H/group.orig"
+L on desktop >/dev/null </dev/null
+[ ! -e "$HOME/.local/state/spark-shell/seatd.linked" ] && [ ! -e "$HOME/.local/state/spark-shell/seatd.group" ] && ! grep -q usermod "$H/log" && ok "Void: a seatd and a group already there are not recorded as spark-shell's" || bad "void yours on" "$(ls "$HOME/.local/state/spark-shell")"
+L off >/dev/null
+[ -L "$H/root/var/service/seatd" ] && cmp -s "$H/root/etc/group" "$H/group.orig" && ! grep -q gpasswd "$H/log" && ok "Void: off leaves your own seatd link and membership as they were" || bad "void yours off" "$(cat "$H/log")"
+# seatd not installed yet: a todo row after the packages, nothing linked
+void_desktop
+rm -rf "$H/root/etc/sv/seatd"
+out=$(L on desktop </dev/null 2>&1)
+printf '%s\n' "$out" | grep -q '^todo   desktop      seatd is not installed -- spark-shell on desktop (the packages)$' && [ ! -e "$H/root/var/service/seatd" ] && ok "Void: no seatd package, a todo row, no link" || bad "void no seatd" "$out"
+grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd among them" || bad "void.env desktop"
+
+# the login screen of v0.41 (greetd on tty1, spark-shell's files in
+# /etc/greetd): handed back to getty at the next boot by on, on desktop,
+# off desktop and off -- greetd is disabled, never stopped
+old_greetd() {   # old_greetd [ORIG] -- a root as v0.41 left it; ORIG: a config.toml of the package's kept as .spark-orig
+    fresh
+    console_stubs Linux
+    printf 'ID=debian\n' > "$H/os-release"
+    printf '#!/bin/sh\necho "install ok installed"\n' > "$H/lx/dpkg-query"; chmod +x "$H/lx/dpkg-query"
+    mkdir -p "$H/root/run/systemd/system" "$H/root/etc/greetd/spark-shell" "$H/root/etc/systemd/system/greetd.service.d" "$H/root/units"
+    printf '# rendered by spark-shell from templates/etc/greetd/config.toml\n[terminal]\nvt = 1\n' > "$H/root/etc/greetd/config.toml"
+    [ -z "${1:-}" ] || printf '[terminal]\nvt = 1\n# agreety\n' > "$H/root/etc/greetd/config.toml.spark-orig"
+    for f in desktop console; do printf '# rendered by spark-shell\n' > "$H/root/etc/greetd/spark-shell/$f.desktop"; done
+    printf '# rendered by spark-shell\n[Unit]\nAfter=spark-shell-console.service\n' > "$H/root/etc/systemd/system/greetd.service.d/spark-shell.conf"
+    : > "$H/root/units/greetd.service"; : > "$H/log"
+}
+old_gone() {   # old_gone -- spark-shell's greetd files gone, getty@tty1 on, greetd off, nothing stopped
+    [ ! -e "$H/root/etc/greetd/spark-shell" ] && [ ! -e "$H/root/etc/systemd/system/greetd.service.d" ] \
+        && [ -e "$H/root/units/getty@tty1.service" ] && [ ! -e "$H/root/units/greetd.service" ] \
+        && grep -qx 'systemctl enable getty@tty1.service' "$H/log" && grep -qx 'systemctl disable greetd.service' "$H/log" \
+        && ! grep -Eq '^systemctl (start|stop|restart|kill)' "$H/log"
+}
+old_greetd
+out=$(L on --dry-run </dev/null)
+printf '%s\n' "$out" | grep -q "^would  login        the console login on tty1 again from the next boot: greetd off, spark-shell's files for it removed (sudo)\$" \
+    && [ -f "$H/root/etc/greetd/config.toml" ] && [ -e "$H/root/units/greetd.service" ] && ok "v0.41 upgrade: on --dry-run says the login screen goes back to getty, touches nothing" || bad "upgrade dry-run" "$out"
+out=$(L on </dev/null 2>&1)
+old_gone && [ ! -e "$H/root/etc/greetd/config.toml" ] && ok "v0.41 upgrade: on hands tty1 back to getty at the next boot, greetd disabled (never stopped), its files gone" || bad "upgrade on" "$(find "$H/root/etc" "$H/root/units"; cat "$H/log")"
+[ "$(printf '%s\n' "$out" | grep -c '^ok     login ')" = 1 ] && printf '%s\n' "$out" | grep -q '^ok     login        the console login is back on tty1 from the next boot: greetd is off, its packages stay$' \
+    && ok "v0.41 upgrade: one plain line says so" || bad "upgrade line" "$out"
+: > "$H/log"; out=$(L on </dev/null 2>&1)
+! printf '%s\n' "$out" | grep -q 'login ' && ! grep -q greetd "$H/log" && ok "v0.41 upgrade: on again has nothing to hand back" || bad "upgrade twice" "$out"
+old_greetd orig
+mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=none\n' > "$HOME/.config/spark-shell/config"
+L on desktop </dev/null >/dev/null 2>&1
+old_gone && grep -q agreety "$H/root/etc/greetd/config.toml" && [ ! -e "$H/root/etc/greetd/config.toml.spark-orig" ] && grep -q '^DESKTOP=sway$' "$HOME/.config/spark-shell/config" \
+    && ok "v0.41 upgrade: on desktop hands it back too, the package's config.toml restored from .spark-orig" || bad "upgrade on desktop" "$(ls -a "$H/root/etc/greetd"; cat "$H/log")"
+old_greetd
+out=$(L off desktop --dry-run)
+printf '%s\n' "$out" | grep -q '^would  login ' && [ -e "$H/root/units/greetd.service" ] && ok "v0.41 upgrade: off desktop --dry-run says it, touches nothing" || bad "upgrade off dry" "$out"
+L off desktop >/dev/null 2>&1
+old_gone && ok "v0.41 upgrade: off desktop hands it back" || bad "upgrade off desktop" "$(cat "$H/log")"
+old_greetd
+L off >/dev/null 2>&1
+old_gone && ok "v0.41 upgrade: off hands it back" || bad "upgrade off" "$(cat "$H/log")"
+
+# the console is the tty, never XDG_VTNR (logind's; Void has none), and
+# sway gets a private XDG_RUNTIME_DIR when no login manager made one
+fresh
+console_stubs Linux
+desktop_stubs
+printf '#!/bin/sh\necho "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" >&2\n' > "$H/.local/bin/sway"
+mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+L on >/dev/null </dev/null
+slog=$HOME/.local/state/spark-shell/sway.log
+mkdir -p "$H/tmp"
+rc=0; out=$(TEST_TTY=/dev/pts/3 XDG_VTNR=1 env -u WAYLAND_DISPLAY PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: needs a console login (tty1 to tty9): ssh and terminal windows cannot start sway' ] \
+    && ok "desktop: a terminal window (/dev/pts) is refused even with XDG_VTNR set" || bad "desktop pts" "rc=$rc $out"
+rc=0; out=$(TEST_TTY=/dev/tty2 env -u XDG_VTNR -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR TMPDIR="$H/tmp/" PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
+rd=$H/tmp/$(id -u)-runtime-dir
+[ "$rc" = 0 ] && grep -qx "XDG_RUNTIME_DIR=$rd" "$slog" && ok "desktop: by hand on tty2 with no XDG_VTNR, sway starts" || bad "desktop tty2" "rc=$rc $out $(cat "$slog" 2>&1)"
+[ -d "$rd" ] && [ ! -L "$rd" ] && [ "$(ls -ld "$rd" | cut -c1-10)" = drwx------ ] && [ "$(ls -ldn "$rd" | awk '{print $3}')" = "$(id -u)" ] \
+    && ok "desktop: no XDG_RUNTIME_DIR, a private one made under TMPDIR (0700, yours) and handed to sway" || bad "runtime dir" "$(ls -ld "$rd" 2>&1)"
+chmod 0755 "$rd"
+rc=0; out=$(TEST_TTY=/dev/tty1 env -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR TMPDIR="$H/tmp" PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx "XDG_RUNTIME_DIR=$rd" "$slog" && [ "$(ls -ld "$rd" | cut -c1-10)" = drwx------ ] && ok "desktop: the same directory again, back to 0700" || bad "runtime dir again" "rc=$rc $out"
+rm -rf "$rd"; mkdir -p "$H/elsewhere"; ln -s "$H/elsewhere" "$rd"
+rc=0; out=$(TEST_TTY=/dev/tty1 env -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR TMPDIR="$H/tmp" PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: $rd is not a private directory of yours, and sway needs one (XDG_RUNTIME_DIR)" ] && ok "desktop: a symlink in its place is refused, sway never starts" || bad "runtime dir symlink" "rc=$rc $out"
+rc=0; out=$(TEST_TTY=/dev/tty1 XDG_RUNTIME_DIR=$H/run env -u WAYLAND_DISPLAY PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx "XDG_RUNTIME_DIR=$H/run" "$slog" && ok "desktop: an XDG_RUNTIME_DIR a login manager set is kept" || bad "runtime dir kept" "rc=$rc $out $(cat "$slog")"
 
 # macOS: the palette and the font are Terminal.app's profile, through the helper
 fresh

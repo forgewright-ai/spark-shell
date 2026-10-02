@@ -12,9 +12,9 @@ PROMPT=starship
 PROMPT_STYLE=minimal
 
 # The desktop (Linux): none, or sway. With sway, sway and foot are
-# installed and rendered from the palette, and the login box is on
-# tty1 at the next boot. spark-shell on desktop writes this line and
-# does the rest, and spark-shell off desktop writes none.
+# installed and rendered from the palette, and a login on tty1 starts
+# the desktop. spark-shell on desktop writes this line and does the
+# rest, and spark-shell off desktop writes none.
 DESKTOP=none
 
 # The font foot draws with, in foot's own spec (the family, then

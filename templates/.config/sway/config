@@ -38,7 +38,7 @@ for_window [app_id="spark-chat"] floating enable, resize set width 60 ppt height
 bindsym $mod+Shift+q kill
 # key: Super+Shift+c reloads sway after spark-shell on.
 bindsym $mod+Shift+c reload
-# key: Super+Shift+e leaves the desktop for the console or the login box.
+# key: Super+Shift+e leaves the desktop.
 bindsym $mod+Shift+e exit
 
 # key: Super and h, j, k, l or an arrow move the focus, with Shift the window.
