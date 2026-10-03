@@ -2365,6 +2365,9 @@ desk_gate() {   # desk_gate LINE -> '' when it may run, else why not
     case " $DESK_VERBS " in *" $verb "*) ;; *) echo "$verb is not a layout command"; return ;; esac
     bad=$(printf '%s' "$1" | LC_ALL=C tr -d 'A-Za-z0-9 _.:/=,%~@#+?[]"-' | head -c 1)   # what a sway line may hold; the rest is sh's
     [ -z "$bad" ] || { echo "shell syntax or a control character"; return; }
+    # sway splits a command line at a comma too: in an exec, the rest would
+    # be a second command nobody checked
+    case $verb in exec|window) case $1 in *,*) echo "a comma starts a second sway command"; return ;; esac ;; esac
     case $1 in 'focus output '*) grep -q "^${1#focus output } " "$TMP/screens" 2>/dev/null || echo "${1#focus output } is not a screen here"; return ;; esac
     [ "$verb" = exec ] || [ "$verb" = window ] || return 0
     set -- $1; shift

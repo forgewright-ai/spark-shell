@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.44
+
+- A layout line with a comma in an `exec` is refused. sway reads a
+  comma as the start of a second command, so a layout from the model
+  could have run a program nobody checked.
+
 ## v0.43
 
 - `spark-shell layout` now always opens the apps your words name, even
