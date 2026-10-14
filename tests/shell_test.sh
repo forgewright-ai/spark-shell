@@ -464,7 +464,7 @@ fi
 grep -q '@FONT@' "$REPO/templates/.config/foot/foot.ini" && grep -q '@FOOT_ALPHA@' "$REPO/templates/.config/foot/foot.ini" \
     && grep -q 'output \* bg @WALL_BG@' "$REPO/templates/.config/sway/config" && grep -q '^gaps inner @GAPS_INNER@' "$REPO/templates/.config/sway/config" \
     && ok "templates: foot.ini and sway/config carry placeholders, the hex and the wallpaper land at render time" || bad "desktop template placeholders"
-grep -q '^bar ' "$REPO/templates/.config/sway/config" && bad "sway: a bar block (the tmux line is the bar)" || ok "sway template: no bar, tmux's line is the bar"
+grep -q '^bar {' "$REPO/templates/.config/sway/config" && grep -q '^    position top' "$REPO/templates/.config/sway/config" && grep -q '^    status_command @REPO@/spark-shell bar status' "$REPO/templates/.config/sway/config" && ok "sway template: a bar at the top, drawn by spark-shell bar status" || bad "sway template: the bar block" "$(grep -n '^bar\|position\|status_command' "$REPO/templates/.config/sway/config")"
 grep -q '^xwayland disable$' "$REPO/templates/.config/sway/config" && ok "sway template: xwayland disabled" || bad "sway xwayland"
 grep -v '^#' "$REPO/templates/.config/sway/config" | grep -q 'tmux' && bad "sway: a window starts tmux (it runs the login shell)" || ok "sway template: a new foot runs the login shell, never tmux"
 grep -q "^exec sh -c '\$term -e @REPO@/spark-shell desktop --first; swaymsg exit'$" "$REPO/templates/.config/sway/config" && ok "sway template: the desktop ends with its first terminal (desktop --first: the keys once, then your shell)" || bad "sway template: exec line" "$(grep -n '^exec' "$REPO/templates/.config/sway/config")"
@@ -712,8 +712,9 @@ else
     grep -qi 'hidden' "$argv" && bad "inventory: a NoDisplay entry is in" "$(grep -oi '[^;]*hidden[^;]*' "$argv")" || ok "inventory: a NoDisplay entry is dropped"
     grep -q 'for:' "$argv" && bad "inventory: the keyword for counts as a program" "$(grep -o 'for: [^;]*' "$argv")" || ok "inventory: a need word that is a keyword (for) is not a program"
     grep -q 'foot:\|footclient:\|xdg-open:' "$argv" && bad "inventory: foot or xdg-open is in" || ok "inventory: no foot, footclient or xdg-open"
-    printf '%s\n' 'workspace number 3' 'exec gimp-3.0' splith 'exec firefox https://instagram.com' splitv 'exec firefox https://x.com' 'exec foot -e micro' 'exec player --idle --' 'focus left' 'resize set width 70 ppt' > "$H/expected.lines"
-    cmp -s "$swlog" "$H/expected.lines" && ok "sway got exactly the nine lines in order (main, splith, side, splitv, micro in foot, focus left, resize 70 ppt; ghostapp never)" || bad "swaymsg lines" "$(cat "$swlog" 2>&1)"
+    printf '%s\n' 'workspace number 3' 'rename workspace to "3 photo editing for"' 'exec gimp-3.0' splith 'exec firefox https://instagram.com' splitv 'exec firefox https://x.com' 'exec foot -e micro' 'exec player --idle --' 'focus left' 'resize set width 70 ppt' > "$H/expected.lines"
+    sed 's/^rename workspace to .*/rename workspace to "3 studio"/' "$H/expected.lines" > "$H/expected.studio"   # a saved layout names its workspace after itself
+    cmp -s "$swlog" "$H/expected.lines" && ok "sway got exactly the ten lines in order (main, the workspace named after the words, splith, side, splitv, micro in foot, focus left, resize 70 ppt; ghostapp never)" || bad "swaymsg lines" "$(cat "$swlog" 2>&1)"
     jq -e --arg w "$need" '(keys_unsorted[0] == "words") and .words == $w and (.why | startswith("photo work in gimp")) and .main.app == "gimp-3.0" and .main.width == 70 and (.side | length) == 5 and .side[0].args == "https://instagram.com"' "$desk_last" >/dev/null 2>&1 \
         && ok "desk.last: the model's answer as JSON, the words first, then why, main and side as answered" || bad "desk.last" "$(cat "$desk_last" 2>&1)"
     grep -q '^exec\|^workspace\|^#' "$desk_last" && bad "desk.last holds sway lines or a header" "$(head -3 "$desk_last")" || ok "desk.last: no sway line, no header (rendered when it opens)"
@@ -767,8 +768,8 @@ EOF
         && ok "layout (bare): lists the saved layout with its words" || bad "desk list" "$out"
     rm -f "$argv" "$swlog"
     st=0; out=$(sh "$SH" layout studio 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^layout> $need\$" && printf '%s\n' "$out" | grep -q '^  photo work in gimp' && printf '%s\n' "$out" | grep -q '^on workspace 3 -- the saved layout studio$' && cmp -s "$swlog" "$H/expected.lines" \
-        && ok "layout NAME: replays the same nine lines on the next free workspace (3), with its why" || bad "replay" "st=$st $out $(cat "$swlog" 2>&1)"
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^layout> $need\$" && printf '%s\n' "$out" | grep -q '^  photo work in gimp' && printf '%s\n' "$out" | grep -q '^on workspace 3 -- the saved layout studio$' && cmp -s "$swlog" "$H/expected.studio" \
+        && ok "layout NAME: replays the same lines on the next free workspace (3), named studio, with its why" || bad "replay" "st=$st $out $(cat "$swlog" 2>&1)"
     : > "$swlog"
     st=0; out=$(sh "$SH" layout Studio 2>&1) || st=$?
     [ "$st" -eq 0 ] && head -1 "$swlog" | grep -q '^workspace number 3$' && [ ! -e "$argv" ] && ok "layout WORDS that name a saved layout (any case): a replay, no model" || bad "replay by words" "st=$st $out"
@@ -824,7 +825,7 @@ EOF
     printf '%s\n' "$out" | grep -qF '  refused  exec firefox https://x, exec rm y  (a comma starts a second sway command)' \
         && ok "gate: a comma in an exec is refused (sway would run the rest as its own command)" || bad "gate comma" "$out"
     printf '%s\n' "$out" | grep -qE '^  refused  exec (foot -e )?sudo ls  \(sudo is not an app\)$' && ok "gate: sudo is not an app (in foot when this machine has a sudo, plain when not)" || bad "gate sudo" "$out"
-    printf '%s\n' 'workspace number 3' 'exec foot -e rm x' 'splith' 'exec foot -e micro notes.txt' 'focus left' 'resize set width 70 ppt' > "$H/expected.gate"
+    printf '%s\n' 'workspace number 3' 'rename workspace to "3 gate"' 'exec foot -e rm x' 'splith' 'exec foot -e micro notes.txt' 'focus left' 'resize set width 70 ppt' > "$H/expected.gate"
     cmp -s "$swlog" "$H/expected.gate" && ok "gate: sway got the workspace line, the two good execs and their layout, nothing else" || bad "gate lines" "$(cat "$swlog" 2>&1)"
     # a kept desk may open any program the machine has (you kept it); the model's answer may not
     printf '#!/bin/sh\n:\n' > "$H/.local/bin/reader"; chmod +x "$H/.local/bin/reader"
@@ -846,7 +847,7 @@ EOF
     st=0; out=$(sh "$SH" layout gone -v 2>&1) || st=$?
     printf '%s\n' "$out" | grep -q '^  skipped  splitv  (no window to split)$' && printf '%s\n' "$out" | grep -q '^  exec foot -e micro$' \
         && ok "-v after the words is a flag, not a word: the sway lines and the skipped split shown" || bad "gone verbose" "st=$st $out"
-    printf '%s\n' 'workspace number 3' 'exec foot -e micro' 'splith' 'exec gone' 'exec firefox' 'focus left' 'resize set width 70 ppt' > "$H/expected.gone"
+    printf '%s\n' 'workspace number 3' 'rename workspace to "3 gone"' 'exec foot -e micro' 'splith' 'exec gone' 'exec firefox' 'focus left' 'resize set width 70 ppt' > "$H/expected.gone"
     cmp -s "$swlog" "$H/expected.gone" && ok "a window that never comes: sway never got the splitv" || bad "gone lines" "$(cat "$swlog" 2>&1)"
     # two screens: the brief says them and the rule; each screen its own workspace, the main's first,
     # focus output before each; the outputs' make, model and serial never leave the machine
@@ -855,7 +856,7 @@ EOF
     [ "$st" -eq 0 ] && grep -q 'on screens: left 2560x1440, right 1920x1080\. ' "$argv" && grep -q ' A window is on one screen; screen is left or right; one screen unless the need names two or the work needs two\. ' "$argv" \
         && grep -q '"screen": "left"' "$argv" && ok "two screens: the brief names them left to right with their sizes, the rule, the screen field" || bad "two screens brief" "st=$st $(grep -o 'on screens[^.]*' "$argv") $out"
     grep -q 'Fakemake\|Fakemodel\|SN000' "$argv" && bad "two screens: an output's make, model or serial reached the model" "$(grep -o '[^ ]*Fake[^ ]*\|SN000[0-9]' "$argv" | head -3)" || ok "two screens: the outputs' make, model and serial never reach the model"
-    printf '%s\n' 'focus output DP-1' 'workspace number 3' 'exec gimp-3.0' splith 'exec foot -e micro' 'focus left' 'resize set width 70 ppt' 'focus output HDMI-A-1' 'workspace number 4' 'exec firefox https://instagram.com' > "$H/expected.two"
+    printf '%s\n' 'focus output DP-1' 'workspace number 3' 'rename workspace to "3 photo editing for"' 'exec gimp-3.0' splith 'exec foot -e micro' 'focus left' 'resize set width 70 ppt' 'focus output HDMI-A-1' 'workspace number 4' 'rename workspace to "4 photo editing for"' 'exec firefox https://instagram.com' > "$H/expected.two"
     cmp -s "$swlog" "$H/expected.two" && ok "two screens: the main's group first (focus output, workspace 3, main, micro beside it, sized), then the right screen's (focus output, workspace 4, firefox)" || bad "two screens lines" "$(cat "$swlog" 2>&1)"
     printf '%s\n' "$out" | grep -q '^on workspace 3 and 4 -- spark-shell layout save NAME saves it$' && ok "two screens: the closing line says both workspaces" || bad "two screens closing" "$out"
     printf '%s\n' "$out" | grep -q 'is not here' && bad "two screens: a screen that is here was said to be missing" "$(printf '%s\n' "$out" | grep 'is not here')" || ok "two screens: both named screens are here, no line says one is missing"
@@ -869,7 +870,7 @@ EOF
     printf '{"words": "nine", "main": {"app": "micro", "screen": "DP-9"}, "side": [{"app": "firefox", "screen": "right"}]}\n' > "$desks/nine"
     touch "$H/two-screens"; : > "$swlog"
     st=0; out=$(sh "$SH" layout nine 2>&1) || st=$?
-    printf '%s\n' 'focus output DP-1' 'workspace number 3' 'exec foot -e micro' 'focus output HDMI-A-1' 'workspace number 4' 'exec firefox' > "$H/expected.nine"
+    printf '%s\n' 'focus output DP-1' 'workspace number 3' 'rename workspace to "3 nine"' 'exec foot -e micro' 'focus output HDMI-A-1' 'workspace number 4' 'rename workspace to "4 nine"' 'exec firefox' > "$H/expected.nine"
     [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^  the DP-9 screen is not here -- all on DP-1$' && cmp -s "$swlog" "$H/expected.nine" \
         && ok "a kept screen name that is not here (DP-9) maps to the first screen; a side on the right keeps its own" || bad "nine" "st=$st $out $(cat "$swlog")"
     st=0; out=$(sh "$SH" layout nine -v 2>&1) || st=$?
@@ -2080,6 +2081,197 @@ spark-shell on --dry-run shows every change.
 
 Continue? [y/N] spark-shell: nothing was changed." ] && ok "warning (macOS): the Terminal.app colours" || bad "warning mac" "rc=$rc $out"
 
+# --- 20. the bar at the top of the screen --------------------------------
+# a fixture tree in place of /sys and /proc (SPARK_SHELL_SYS, SPARK_SHELL_PROC),
+# stubs for ip, bluetoothctl and amixer (wpctl and pactl stubs that fail, so
+# plain ALSA is the audio system), jq the real one. The theme fixture's
+# accent is #ff5555, its muted #555555, its red #aa0000. The Linux half is
+# guarded by uname like 14.
+bar_fixture() {   # a wire up, wifi up at 49/70, a bluetooth controller with a device, a battery at 80, two ALSA cards (0 plays and captures, 1 plays)
+    S=$H/sys; P=$H/proc; export SPARK_SHELL_SYS=$S SPARK_SHELL_PROC=$P
+    mkdir -p "$S/class/net/eth0" "$S/class/net/wlan0/wireless" "$S/class/net/lo" "$S/class/bluetooth/hci0" "$S/class/power_supply/BAT0" "$P/net" "$P/asound/card0/pcm0p/sub0" "$P/asound/card0/pcm0c/sub0" "$P/asound/card1/pcm0p/sub0"
+    : > "$S/class/net/eth0/device"; echo 1 > "$S/class/net/eth0/type"; echo 1 > "$S/class/net/eth0/carrier"; echo up > "$S/class/net/eth0/operstate"
+    : > "$S/class/net/wlan0/device"; echo 1 > "$S/class/net/wlan0/type"; echo up > "$S/class/net/wlan0/operstate"
+    echo 772 > "$S/class/net/lo/type"
+    echo Battery > "$S/class/power_supply/BAT0/type"; echo 80 > "$S/class/power_supply/BAT0/capacity"; echo Discharging > "$S/class/power_supply/BAT0/status"
+    printf 'Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE\n face | tus | link level noise |  nwid  crypt   frag  retry   misc | beacon | 22\n wlan0: 0000   49.  -61.  -256        0      0      0      0      0        0\n' > "$P/net/wireless"
+    printf ' 0 [Jabra          ]: USB-Audio - Jabra SPEAK 410 USB\n                      Jabra SPEAK 410 USB at usb-0000:00:14.0-2, full speed\n 1 [HDMI           ]: HDA-Intel - HD-Audio Generic\n                      HD-Audio Generic at 0xdc5c8000 irq 104\n' > "$P/asound/cards"
+    for s in card0/pcm0p card0/pcm0c card1/pcm0p; do echo closed > "$P/asound/$s/sub0/status"; done
+    cat > "$H/.local/bin/ip" <<'STUB'
+#!/bin/sh
+case "$*" in
+    *"dev eth0"*) echo '2: eth0    inet 192.0.2.10/24 brd 192.0.2.255 scope global eth0' ;;
+    *"dev wlan0"*) echo '3: wlan0    inet 192.0.2.20/24 brd 192.0.2.255 scope global wlan0' ;;
+esac
+STUB
+    cat > "$H/.local/bin/bluetoothctl" <<'STUB'
+#!/bin/sh
+case "$*" in
+    show) printf 'Controller 00:11:22:33:44:55 (public)\n\tPowered: yes\n' ;;
+    "devices Connected") [ -e "$HOME/bt-none" ] || echo 'Device 00:25:D1:4A:C2:AA MAJOR V' ;;
+esac
+STUB
+    cat > "$H/.local/bin/amixer" <<'STUB'
+#!/bin/sh
+log=${XDG_STATE_HOME:-$HOME/.local/state}/amixer.log; mkdir -p "$(dirname "$log")"
+[ "$1" != -q ] || shift
+case "$*" in
+    "-D default info") exit 1 ;;
+    "-c 0 scontrols") printf "Simple mixer control 'Master',0\nSimple mixer control 'PCM',0\nSimple mixer control 'Capture',0\n" ;;
+    "-c 1 scontrols") printf "Simple mixer control 'IEC958',0\n" ;;
+    "-c 0 sget Master") m=on; [ ! -e "$HOME/muted" ] || m=off; printf "Simple mixer control 'Master',0\n  Front Left: Playback 26214 [40%%] [%s]\n  Front Right: Playback 26214 [40%%] [%s]\n" "$m" "$m" ;;
+    "-c 0 sget Capture") printf "Simple mixer control 'Capture',0\n  Front Left: Capture 1000 [50%%] [on]\n" ;;
+    "-c "*" sset "*) echo "$*" >> "$log" ;;
+esac
+STUB
+    printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/wpctl"; cp "$H/.local/bin/wpctl" "$H/.local/bin/pactl"
+    cp "$H/.local/bin/wpctl" "$H/.local/bin/tmux"   # a tmux that is not running (this machine may run one)
+    chmod +x "$H/.local/bin/ip" "$H/.local/bin/bluetoothctl" "$H/.local/bin/amixer" "$H/.local/bin/wpctl" "$H/.local/bin/pactl" "$H/.local/bin/tmux"
+}
+full=$(printf '\342\226\210'); shade=$(printf '\342\226\221')
+count() { printf '%s' "$1" | LC_ALL=C grep -o "$2" | wc -l | tr -d ' '; }   # count TEXT GLYPH -> how many
+fresh
+desktop_stubs
+desk_stubs
+bar_fixture
+theme_fixture '#ff5555'
+mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+sh "$SH" on --yes >/dev/null
+sway=$HOME/.config/sway/config; amlog=$H/.local/state/amixer.log
+if [ "$(uname -s)" = Darwin ]; then
+    st=0; out=$(sh "$SH" bar status --once 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell bar: not on macOS, which has its own desktop' ] && ok "macOS: bar status refuses, na, one line, exit 1" || bad "macOS bar status" "st=$st $out"
+    st=0; out=$(sh "$SH" bar --desktop 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell bar: no desktop here (spark-shell on desktop)' ] && ok "macOS: bar --desktop refuses, one line" || bad "macOS bar --desktop" "st=$st $out"
+    st=0; out=$(sh "$SH" bar 2>&1) || st=$?
+    [ "$st" -eq 0 ] && ok "macOS: bare bar exits 0 (the status line's state, or that tmux is not running)" || bad "macOS bar" "st=$st $out"
+else
+    # the render: the bar block from the config, the palette's hex, the font in pango's words
+    grep -q '^bar {$' "$sway" && grep -q '^    position top$' "$sway" && grep -q "^    status_command $REPO/spark-shell bar status\$" "$sway" && grep -q '^    mode dock$' "$sway" \
+        && ok "sway: a bar at the top, dock mode, drawn by the clone's spark-shell bar status" || bad "sway bar render" "$(grep -n 'bar {\|position\|status_command\|mode ' "$sway")"
+    grep -q '^    font pango:DejaVu Sans Mono 12$' "$sway" && ok "sway: the bar's font is FONT in pango's words (DejaVu Sans Mono 12)" || bad "bar font" "$(grep -n 'font' "$sway")"
+    grep -q '^        background #000000d9$' "$sway" && grep -q '^        focused_workspace #ff5555 #ff5555 #000000$' "$sway" && grep -q '^        inactive_workspace #000000d9 #000000d9 #555555$' "$sway" \
+        && ok "sway: the bar's colours are the palette's, the background with the picture's alpha (d9 = 0.85)" || bad "bar colours" "$(grep -n 'background\|_workspace' "$sway")"
+    grep -q "^bindsym XF86AudioRaiseVolume exec $REPO/spark-shell bar volume up\$" "$sway" && grep -q "^bindsym XF86AudioMicMute exec $REPO/spark-shell bar volume mic\$" "$sway" \
+        && ok "sway: the volume keys and the mic mute key run spark-shell bar volume" || bad "volume keys" "$(grep -n XF86 "$sway")"
+    printf 'DESKTOP=sway\nFONT=Test Mono:pixelsize=14\nWALLPAPER=none\n' > "$HOME/.config/spark-shell/config"
+    sh "$SH" on --yes >/dev/null
+    grep -q '^    font pango:Test Mono 14px$' "$sway" && grep -q '^        background #000000$' "$sway" && ok "sway: a pixelsize font is Npx in pango; no picture, an opaque bar" || bad "bar font px" "$(grep -n 'font\|background' "$sway")"
+    printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+    sh "$SH" on --yes >/dev/null
+    # one line: every block present, in its group, parted by dividers
+    st=0; line=$(sh "$SH" bar status --once 2>&1) || st=$?
+    names=$(printf '%s' "$line" | jq -r '[.[] | .name + ":" + .instance] | join(" ")' 2>/dev/null || :)
+    [ "$st" -eq 0 ] && [ "$names" = 'lan: wifi: bt: div: out:name out:gauge mic: div: bat: div: clock:' ] \
+        && ok "bar status --once: lan, wifi, bt | out (name, gauge), mic | bat | clock, one JSON array" || bad "bar line" "st=$st $names $line"
+    printf '%s' "$line" | jq -e 'all(.[]; .markup == "pango" and .separator == false)' >/dev/null 2>&1 && ok "bar: every block is pango markup with swaybar's own separator off" || bad "bar markup" "$line"
+    t() { printf '%s' "$line" | jq -r --arg n "$1" --arg i "${2:-}" '.[] | select(.name == $n and .instance == $i) | .full_text'; }   # t NAME [INSTANCE] -> its text
+    [ "$(t lan)" = "<span foreground='#555555'>lan</span>" ] && ok "lan: the word alone, muted, when the wire is up (no address on screen)" || bad "lan block" "$(t lan)"
+    w=$(t wifi); [ "$(count "$w" "'#ff5555'")" = 3 ] && [ "$(count "$w" "'#555555'")" = 2 ] && ! printf '%s' "$w" | grep -q '192\.' \
+        && ok "wifi: four rising bars, 3 lit in the accent at 49/70 (70%), the word muted, no address" || bad "wifi block" "$w"
+    [ "$(t bt)" = "<span foreground='#555555'>bt</span> major v" ] && ok "bt: the word muted, the connected device's name in the text colour, lowercase" || bad "bt block" "$(t bt)"
+    [ "$(t out name)" = "<span foreground='#555555'>out</span> jabra" ] && ok "out: the word muted, the card's ALSA id in the text colour, lowercase (jabra)" || bad "out name" "$(t out name)"
+    g=$(t out gauge); [ "$(count "$g" "$full")" = 4 ] && [ "$(count "$g" "$shade")" = 6 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" \
+        && ok "out: the gauge is 10 cells, 4 full blocks in the accent at 40%, 6 light shades muted" || bad "out gauge" "$g"
+    [ "$(t mic)" = "<span foreground='#555555'>mic</span> jabra" ] && ok "mic: muted while idle, with the card's name" || bad "mic block" "$(t mic)"
+    [ "$(t bat)" = "<span foreground='#555555'>bat</span> <span foreground='#aaaaaa'>80</span>" ] && ok "bat: the word muted, the number in the text colour, no gauge" || bad "bat block" "$(t bat)"
+    printf '%s' "$(t clock)" | grep -Eq "^<span foreground='#555555'>[A-Za-z]+ [0-9]{2} [A-Za-z]+</span> [0-9]{2}:[0-9]{2}$" && ok "clock: the date muted, the time in the text colour" || bad "clock block" "$(t clock)"
+    [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "div")] | length')" = 3 ] && [ "$(printf '%s' "$line" | jq -r '.[3].full_text')" = "<span foreground='#555555'>$(printf '\342\224\202')</span>" ] \
+        && ok "bar: three thin dividers in the muted colour, one after each group that is there" || bad "dividers" "$line"
+    LC_ALL=C grep -q "[^ -~${tab}]" "$SH" && bad "the script holds a byte outside ASCII (the glyphs must be built from their bytes)" || ok "the script stays ASCII: the glyphs are built from their bytes"
+    # the states: mute, a recording mic, a low battery, a charging one, sound on another card
+    touch "$H/muted"; line=$(sh "$SH" bar status --once)
+    g=$(t out gauge); [ "$(count "$g" "'#ff5555'")" = 0 ] && [ "$(count "$g" "$full")" = 4 ] && ok "out muted: the level stays, the whole gauge turns muted" || bad "muted gauge" "$g"
+    rm -f "$H/muted"
+    echo 'state: RUNNING' > "$P/asound/card0/pcm0c/sub0/status"; line=$(sh "$SH" bar status --once)
+    [ "$(t mic)" = "<span foreground='#aa0000'>mic</span> jabra" ] && ok "mic recording: the word turns red" || bad "mic live" "$(t mic)"
+    echo closed > "$P/asound/card0/pcm0c/sub0/status"
+    echo 10 > "$S/class/power_supply/BAT0/capacity"; line=$(sh "$SH" bar status --once)
+    [ "$(t bat)" = "<span foreground='#555555'>bat</span> <span foreground='#aa0000'>10</span>" ] && ok "bat under 15: the number turns red" || bad "bat low" "$(t bat)"
+    echo Charging > "$S/class/power_supply/BAT0/status"; line=$(sh "$SH" bar status --once)
+    [ "$(t bat)" = "<span foreground='#555555'>bat</span> <span foreground='#aaaaaa'>10</span><span foreground='#ff5555'>+</span>" ] && ok "bat charging: a plus in the accent, and no red while it charges" || bad "bat charging" "$(t bat)"
+    echo 80 > "$S/class/power_supply/BAT0/capacity"; echo Discharging > "$S/class/power_supply/BAT0/status"
+    echo 'state: RUNNING' > "$P/asound/card1/pcm0p/sub0/status"; line=$(sh "$SH" bar status --once)
+    [ "$(t out name)" = "<span foreground='#555555'>out</span> hdmi" ] && [ -z "$(t out gauge)" ] && ok "sound playing on the HDMI card: out follows it; no volume control there, so no gauge" || bad "out follows" "$(t out name) / $(t out gauge)"
+    echo closed > "$P/asound/card1/pcm0p/sub0/status"
+    touch "$H/bt-none"; line=$(sh "$SH" bar status --once)
+    [ "$(t bt)" = "<span foreground='#555555'>bt</span>" ] && ok "bt with nothing connected: the word alone, muted" || bad "bt idle" "$(t bt)"
+    rm -f "$H/bt-none"
+    echo 0 > "$S/class/net/eth0/carrier"; line=$(sh "$SH" bar status --once)
+    [ "$(t lan)" = "<span foreground='#555555'>lan</span> <span foreground='#aa0000'>down</span>" ] && ok "lan with no carrier: down, in red" || bad "lan down" "$(t lan)"
+    echo 1 > "$S/class/net/eth0/carrier"
+    # present-only: a machine with none of it shows the clock alone, and no divider
+    mv "$S" "$S.full"; mv "$P" "$P.full"; mkdir -p "$S" "$P"
+    line=$(sh "$SH" bar status --once)
+    [ "$(printf '%s' "$line" | jq -r '[.[] | .name] | join(" ")')" = clock ] && ok "present-only: no hardware, no block and no divider; the clock alone" || bad "bare machine" "$line"
+    rm -rf "$S" "$P"; mv "$S.full" "$S"; mv "$P.full" "$P"
+    # clicks: swaybar's stream on stdin; the gauge sets the level, out moves to the next card, mic toggles; each redraws the bar at once
+    rm -f "$amlog"
+    printf '[\n,{"name":"out","instance":"gauge","button":1,"relative_x":60,"width":100}\n,{"name":"out","instance":"gauge","button":4}\n,{"name":"out","instance":"gauge","button":3}\n,{"name":"mic","instance":"","button":1}\n,{"name":"out","instance":"name","button":1}\n,{"name":"lan","instance":"","button":1}\n' > "$H/clicks"
+    sh "$SH" bar status < "$H/clicks" > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+    sleep 3
+    kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+    head -1 "$H/bar.out" | grep -q '^{"version":1,"click_events":true}$' && [ "$(sed -n 2p "$H/bar.out")" = '[' ] && ok "bar status: the i3bar header asks for clicks, then the array opens" || bad "bar header" "$(head -2 "$H/bar.out")"
+    [ "$(grep -c '^\[{' "$H/bar.out")" -ge 2 ] && ok "bar status: one line at start, and the bar drawn again after the clicks (quick clicks share one redraw)" || bad "bar redraws" "$(grep -c '^\[{' "$H/bar.out") lines; $(cat "$H/bar.err")"
+    [ "$(cat "$amlog" 2>/dev/null)" = "$(printf '%s\n' '-c 0 sset Master 60%' '-c 0 sset Master 5%+' '-c 0 sset Master toggle' '-c 0 sset Capture toggle')" ] \
+        && ok "clicks: a click at 60% of the gauge sets 60%, the wheel up adds 5, a right click mutes, a click on mic toggles its capture switch" || bad "click actions" "$(cat "$amlog" 2>&1)"
+    [ "$(sed -n '2,3p' "$H/.config/alsa/asoundrc" 2>/dev/null | paste -sd ' ' -)" = 'defaults.pcm.card HDMI defaults.ctl.card HDMI' ] && head -1 "$H/.config/alsa/asoundrc" | grep -q '^# rendered by spark-shell' \
+        && ok "a click on out: the next card (HDMI) becomes ALSA's default for new programs, in spark-shell's own marked file" || bad "asoundrc" "$(cat "$H/.config/alsa/asoundrc" 2>&1)"
+    tail -1 "$H/bar.out" | grep -q "<span foreground='#555555'>lan</span> 192.0.2.10" && ok "a click on lan: the address shows in the block" || bad "lan reveal" "$(tail -1 "$H/bar.out")"
+    [ ! -e "$H/.local/state/spark-shell/bar.pid" ] && ok "bar status ended: its pid file is gone" || bad "bar pid file stays"
+    # the volume keys reach the running bar (the default card back to the first: the asoundrc the click wrote is gone)
+    rm -f "$amlog" "$H/.config/alsa/asoundrc"
+    sh "$SH" bar status < /dev/null > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+    sleep 1
+    sh "$SH" bar volume up; sleep 1; sh "$SH" bar volume mute; sleep 1; sh "$SH" bar volume mic
+    sleep 1
+    kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+    [ "$(cat "$amlog" 2>/dev/null)" = "$(printf '%s\n' '-c 0 sset Master 5%+' '-c 0 sset Master toggle' '-c 0 sset Capture toggle')" ] && [ "$(grep -c '^\[{' "$H/bar.out")" -ge 3 ] \
+        && ok "bar volume up|mute|mic: the key's change, and the running bar redrawn after each" || bad "volume keys" "$(cat "$amlog" 2>&1); $(grep -c '^\[{' "$H/bar.out") lines"
+    st=0; out=$(sh "$SH" bar volume louder 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell bar: volume takes up, down, mute or mic' ] && ok "bar volume: a wrong word is refused in one line" || bad "volume refuse" "st=$st $out"
+    # a file of yours is never written over
+    printf 'pcm.!default { type hw card 1 }\n' > "$H/.config/alsa/asoundrc"
+    printf '[\n,{"name":"out","instance":"name","button":1}\n' > "$H/clicks"
+    sh "$SH" bar status < "$H/clicks" > "$H/bar.out" 2>&1 & bp=$!; sleep 2; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+    [ "$(cat "$H/.config/alsa/asoundrc")" = 'pcm.!default { type hw card 1 }' ] && tail -1 "$H/bar.out" | grep -q 'asoundrc is yours' \
+        && ok "a click on out with an asoundrc of yours: the file stays, the block says so for 5 s" || bad "asoundrc yours" "$(cat "$H/.config/alsa/asoundrc"); $(tail -1 "$H/bar.out")"
+    rm -f "$H/.config/alsa/asoundrc"
+    # the verb: both halves, one of them, the config key, the render, a running sway
+    export SWAYSOCK=$H/sway.sock
+    st=0; out=$(sh "$SH" bar 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^status line: tmux is not running (it shows inside tmux)$' && printf '%s\n' "$out" | grep -q '^bar: shown at the top of the screen -- bat, bt, clock, lan, mic, out, wifi (spark-shell bar off --desktop hides it)$' \
+        && ok "bar: both halves said -- tmux not running, the bar shown with its blocks" || bad "bar bare" "st=$st $out"
+    st=0; out=$(sh "$SH" bar --terminal 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell bar: tmux is not running -- start tmux first' ] && ok "bar --terminal with no tmux: refused in one line" || bad "bar --terminal" "st=$st $out"
+    st=0; out=$(sh "$SH" bar off --desktop 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -q '^DESKTOP_BAR=no$' "$HOME/.config/spark-shell/config" && grep -q '^    mode invisible$' "$sway" && printf '%s\n' "$out" | grep -q '^ok     sway         reloaded' && printf '%s\n' "$out" | grep -q '^bar: hidden (spark-shell bar on --desktop shows it)$' \
+        && ok "bar off --desktop: DESKTOP_BAR=no, the bar block in invisible mode, sway reloaded, one closing line" || bad "bar off" "st=$st $out $(grep -n 'mode ' "$sway")"
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  bar   hidden' && ok "status: the bar row says hidden" || bad "status bar hidden" "$(printf '%s\n' "$st" | grep '^  bar')"
+    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     top          hidden (spark-shell bar on --desktop shows it)' && ok "check: the top row says hidden, ok" || bad "check top hidden" "$out"
+    st=0; out=$(sh "$SH" bar on --desktop 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -q '^DESKTOP_BAR=yes$' "$HOME/.config/spark-shell/config" && grep -q '^    mode dock$' "$sway" && ok "bar on --desktop: DESKTOP_BAR=yes, dock mode again" || bad "bar on" "st=$st $out"
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  bar   shown .*at the top of the screen: bat, bt, clock, lan, mic, out, wifi' && ok "status: the bar row names the blocks present" || bad "status bar shown" "$(printf '%s\n' "$st" | grep '^  bar')"
+    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     top          the bar draws bat, bt, clock, lan, mic, out, wifi$' && ! printf '%s\n' "$out" | grep -q '^warn   sound' \
+        && ok "check: the top row names the blocks, no sound warning with an audio system" || bad "check top" "$out"
+    rm -f "$H/.local/bin/amixer" "$P/asound/cards"
+    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^warn   sound        no audio system found, so no out or mic block -- install pipewire, or alsa-utils for plain ALSA$' \
+        && ok "check: no audio system is a warn with the package to install, never a FAIL" || bad "check sound warn" "$out"
+    printf 'DESKTOP_BAR=maybe\n' > "$HOME/.config/spark-shell/config"
+    sh "$SH" status >/dev/null 2>&1 && bad "DESKTOP_BAR=maybe accepted" || ok "config: DESKTOP_BAR=maybe is refused"
+    printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+    st=0; out=$(sh "$SH" bar sideways 2>&1) || st=$?
+    [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q '^spark-shell bar: sideways is not a bar command' && ok "bar: a wrong word is refused in one line" || bad "bar refuse" "st=$st $out"
+    # off takes the ALSA file spark-shell wrote, never one of yours
+    printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.card HDMI\ndefaults.ctl.card HDMI\n' > "$H/.config/alsa/asoundrc"
+    sh "$SH" off >/dev/null
+    [ ! -e "$H/.config/alsa/asoundrc" ] && ok "off: the asoundrc spark-shell wrote is removed" || bad "off asoundrc"
+    mkdir -p "$H/.config/alsa"; printf 'pcm.!default { type hw card 1 }\n' > "$H/.config/alsa/asoundrc"
+    sh "$SH" off >/dev/null
+    [ "$(cat "$H/.config/alsa/asoundrc")" = 'pcm.!default { type hw card 1 }' ] && ok "off: an asoundrc of yours stays" || bad "off asoundrc yours"
+fi
+unset SPARK_SHELL_SYS SPARK_SHELL_PROC SWAYSOCK
+
 # --- the voice: the docs and the help hold to it -------------------------
 # README.md, the top entry of CHANGELOG.md, CREDITS.md, config.example, the
 # help (sh spark-shell -h) and the comment lines of the sway template are
@@ -2099,7 +2291,7 @@ sh "$SH" -h > "$voice/help"
 grep '^ *#' "$REPO/templates/.config/sway/config" > "$voice/sway-config-comments"
 out_words="desks?|rooms?|seat|login box|marks?|marked|player|this machine's cycles|the forge wallpaper|greeter|the box|stranger|newcomer|founder|inventory|the hands|shell layer|monitors?"
 contractions="[A-Za-z]*n't\b|\bit's\b|\byou'll\b|\bwe're\b|\bthat's\b|\bthere's\b|\blet's\b"
-caps_ok='ASCII|POSIX|JSON|SGR|PATH|NAME|WORDS|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|WALLPAPER|ALPHA|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
+caps_ok='ASCII|ALSA|POSIX|JSON|SGR|PATH|NAME|WORDS|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|WALLPAPER|ALPHA|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
 for n in README.md CHANGELOG.md CREDITS.md config.example help sway-config-comments; do
     f=$voice/$n
     # (a) the words that are out, as whole words in any case

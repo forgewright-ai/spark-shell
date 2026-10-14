@@ -1,8 +1,10 @@
 # rendered by spark-shell from templates/.config/sway/config -- edit the template, then spark-shell on
-# sway, kept simple: it tiles windows. tmux draws the status line, so
-# sway has no bar, no title bars and no Xwayland. A new window is foot
-# running your login shell. The borders and the background use the
-# palette, or the wallpaper (then with gaps between windows).
+# sway, kept simple: it tiles windows. The bar at the top shows the
+# workspaces and the hardware you sit at; tmux draws the machine and
+# the AI on its status line inside each window. No title bars, no
+# Xwayland. A new window is foot running your login shell. The borders,
+# the bar and the background use the palette, or the wallpaper (then
+# with gaps between windows).
 # spark-shell desktop starts the desktop from a console, and
 # spark-shell desktop keys lists the keys. The desktop opens with one
 # terminal, and typing exit there leaves the desktop.
@@ -23,6 +25,34 @@ client.focused          #@HEX_ACCENT@ #@HEX_ACCENT@ #@HEX_BG@ #@HEX_ACCENT@ #@HE
 client.focused_inactive #@HEX_MUTED@ #@HEX_MUTED@ #@HEX_BG@ #@HEX_MUTED@ #@HEX_MUTED@
 client.unfocused        #@HEX_BG@ #@HEX_BG@ #@HEX_MUTED@ #@HEX_BG@ #@HEX_BG@
 client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@ #@HEX_ANSI_1@ #@HEX_ANSI_1@
+
+# The bar at the top of the screen: the workspaces, then what this
+# machine has of lan, wifi, bluetooth, sound out and mic, battery, and
+# the date and time. spark-shell bar status draws it every 15 s and at
+# once after a click. The volume gauge takes the mouse: a click sets
+# it, the wheel nudges it, a right click mutes. spark-shell bar off
+# --desktop hides it. The AI and the machine stay on tmux's line.
+bar {
+    position top
+    mode @BAR_MODE@
+    font pango:@BAR_FONT@
+    status_command @REPO@/spark-shell bar status
+    workspace_buttons yes
+    strip_workspace_numbers no
+    status_padding 2
+    status_edge_padding 10
+    colors {
+        background #@HEX_BG@@BAR_ALPHA@
+        statusline #@HEX_FG@
+        separator #@HEX_MUTED@
+        # border background text
+        focused_workspace #@HEX_ACCENT@ #@HEX_ACCENT@ #@HEX_BG@
+        active_workspace #@HEX_MUTED@ #@HEX_MUTED@ #@HEX_BG@
+        inactive_workspace #@HEX_BG@@BAR_ALPHA@ #@HEX_BG@@BAR_ALPHA@ #@HEX_MUTED@
+        urgent_workspace #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@
+        binding_mode #@HEX_ACCENT@ #@HEX_ACCENT@ #@HEX_BG@
+    }
+}
 
 # key: Super+Return opens a terminal window.
 bindsym $mod+Return exec $term
@@ -89,6 +119,12 @@ bindsym $mod+Shift+7 move container to workspace number 7
 bindsym $mod+Shift+8 move container to workspace number 8
 bindsym $mod+Shift+9 move container to workspace number 9
 bindsym $mod+Shift+0 move container to workspace number 10
+
+# key: The volume and mute keys set the sound, and the mic mute key the mic.
+bindsym XF86AudioRaiseVolume exec @REPO@/spark-shell bar volume up
+bindsym XF86AudioLowerVolume exec @REPO@/spark-shell bar volume down
+bindsym XF86AudioMute exec @REPO@/spark-shell bar volume mute
+bindsym XF86AudioMicMute exec @REPO@/spark-shell bar volume mic
 
 mode "resize" {
     bindsym h resize shrink width 10px

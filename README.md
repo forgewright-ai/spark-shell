@@ -52,7 +52,8 @@ Without it there are no layouts, no spark chat and no status line.
     spark-shell desktop               start the desktop now (from a console)
     spark-shell desktop keys          list the desktop's keys
     spark-shell desktop wallpaper X   set a picture, a colour, default or none
-    spark-shell bar on|off            show or hide the tmux status line
+    spark-shell bar on|off            show or hide the status line and the bar
+    spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
     spark-shell sbom [NAME]           list the installed software, or one
     spark-shell sbom --json           write the list as a CycloneDX 1.5 file
 
@@ -135,6 +136,7 @@ of the desktop shows them once.
     Super+h, j, k, l or an arrow moves the focus. Shift moves the window.
     Super+f makes a window fill the screen, and Super+r resizes until Enter.
     Super+1 to 0 go to a workspace. Add Shift to send the window there.
+    The volume and mute keys set the sound, and the mic mute key the mic.
     Typing exit in the first window also leaves the desktop.
 
 ## Wallpaper
@@ -148,6 +150,36 @@ Type `spark-shell desktop wallpaper navy`. You get a plain colour, and
 it stays the same when you change the palette. Give `#rrggbb`, or one
 of these names: black, white, gray, grey, silver, navy, blue, teal,
 green, olive, maroon, red, purple, brown, orange.
+
+## Bar
+
+On the desktop, a bar sits at the top of the screen. The workspaces
+are on the left. A workspace a layout opened carries the layout's
+words, so `2 news` reads from a distance. On the right, in groups
+parted by a thin line: `lan`, `wifi` and `bt`; `out` with the volume
+gauge, and `mic`; `bat`; the date and time.
+
+A block appears only for hardware this machine has. No battery, no
+`bat`. The kind word is muted and the name is in the text colour, as
+in `out jabra`. Colour is for alarms: `mic` is red while any program
+records, and so are `lan down` and a battery under 15.
+
+The volume gauge is the one thing you can set. A click sets the level
+where you clicked, the wheel nudges it by 5, and a right click mutes.
+A click on `out` moves sound to the next output. A click on `mic`
+mutes or unmutes it. A click on `lan` or `wifi` shows the address for
+5 seconds, then it is gone again. The volume keys do the same.
+
+Sound comes from the audio system you have: PipeWire (wpctl),
+PulseAudio (pactl), or plain ALSA (amixer). On plain ALSA a change of
+output holds for programs started afterwards, and is written to
+`~/.config/alsa/asoundrc`, spark-shell's own file. `spark-shell off`
+removes it. Your `~/.asoundrc` is never touched.
+
+Type `spark-shell bar off --desktop`. The bar is hidden. `on` brings
+it back. Type `spark-shell bar`. You get the state of this bar and of
+the status line in tmux; `--terminal` or `--desktop` names one. The
+AI and the machine stay on the status line inside each window.
 
 ## Status and check
 
@@ -167,14 +199,16 @@ tools` or `sbom parts` shows one kind. `sbom --json` writes the list to
 Config keys, in `~/.config/spark-shell/config` (see `config.example`):
 `PROMPT` (starship or plain), `PROMPT_STYLE` (minimal or full),
 `DESKTOP` (none or sway), `FONT` (foot's font), `WALLPAPER` (default,
-none or a path), `ALPHA` (how see-through foot is, 0.85), `THEME`,
-`CONSOLE_FONT`, `QUIET_LOGIN`, `QUIET_BOOT`. The commands write them.
+none or a path), `ALPHA` (how see-through foot is, 0.85), `DESKTOP_BAR`
+(yes or no), `THEME`, `CONSOLE_FONT`, `QUIET_LOGIN`, `QUIET_BOOT`. The
+commands write them.
 
 Files it writes: the shell files, `~/.tmux.conf`, `~/.config/btop/`,
 `~/.config/starship.toml`, `~/.config/spark-shell/`,
 `~/.config/spark/theme.env`, `~/.local/state/spark-shell/`,
-`~/.local/bin/spark-shell`, and for the desktop `~/.config/sway/` and
-`~/.config/foot/`. As root: the console colours at boot (a systemd
+`~/.local/bin/spark-shell`, and for the desktop `~/.config/sway/`,
+`~/.config/foot/` and, after a change of output on plain ALSA,
+`~/.config/alsa/asoundrc`. As root: the console colours at boot (a systemd
 unit or a line in `/etc/rc.local`), the console font, and the login
 notice and boot files for quiet. `off` restores or removes each one.
 

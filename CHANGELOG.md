@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.45
+
+- New: a bar at the top of the desktop's screen. On the left the
+  workspaces, and a workspace a layout opened carries the layout's
+  words, as in `2 news`. On the right, in groups parted by a thin line:
+  `lan` and `wifi` and `bt`, then `out` with the volume gauge and
+  `mic`, then `bat`, then the date and time. A block appears only for
+  hardware this machine has.
+- The kind word is muted and the name is in the text colour, as in
+  `out jabra`. Colour is for alarms: `mic` is red while any program
+  records, and so are `lan down` and a battery under 15.
+- The volume gauge is the one thing you can set. A click sets the level
+  where you clicked, the wheel nudges it by 5, a right click mutes. A
+  click on `out` moves sound to the next output, a click on `mic` mutes
+  or unmutes it, a click on `lan` or `wifi` shows the address for 5
+  seconds. The volume keys and the mic mute key do the same.
+- Sound comes from the audio system you have: PipeWire (wpctl),
+  PulseAudio (pactl), or plain ALSA (amixer). On plain ALSA a change of
+  output holds for programs started afterwards and is written to
+  `~/.config/alsa/asoundrc`, spark-shell's own file, which
+  `spark-shell off` removes.
+- `spark-shell bar on|off` now sets both the status line in tmux and
+  the bar. `--terminal` or `--desktop` picks one. The config key is
+  `DESKTOP_BAR`. `status` has a `bar` row and `check` a `top` row.
+
 ## v0.44
 
 - A layout line with a comma in an `exec` is refused. sway reads a

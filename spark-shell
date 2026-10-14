@@ -24,7 +24,8 @@
 #   spark-shell desktop               start the desktop now (from a console)
 #   spark-shell desktop keys          list the desktop's keys
 #   spark-shell desktop wallpaper X   set a picture, a colour, default or none
-#   spark-shell bar on|off            show or hide the tmux status line
+#   spark-shell bar on|off            show or hide the status line and the bar
+#   spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
 #   spark-shell sbom [NAME]           list the installed software, or one
 #   spark-shell sbom --json           write the list as a CycloneDX 1.5 file
 #
@@ -45,10 +46,11 @@
 # POSIX sh on both OSes: the Debian, Arch and Void families, and macOS. The choices live in ~/.config/spark-shell/
 # config, one KEY=value a line. PROMPT is starship|plain, PROMPT_STYLE
 # minimal|full, DESKTOP none|sway, FONT foot's spec (DejaVu Sans
-# Mono:size=12), WALLPAPER default|none|PATH|#rrggbb and ALPHA foot over a
-# picture (0.85). THEME is a palette's name or none, CONSOLE_FONT "FACE
-# SIZE" (empty: the console keeps its font), QUIET_LOGIN and QUIET_BOOT
-# yes|no. starship comes from pacman, xbps or Homebrew. Debian has no
+# Mono:size=12), WALLPAPER default|none|PATH|#rrggbb, ALPHA foot over a
+# picture (0.85) and DESKTOP_BAR yes|no (the bar at the top). THEME is a
+# palette's name or none, CONSOLE_FONT "FACE SIZE" (empty: the console
+# keeps its font), QUIET_LOGIN and QUIET_BOOT yes|no. starship comes
+# from pacman, xbps or Homebrew. Debian has no
 # package, so there the rc files draw the shell's own prompt.
 #
 # The root files are the console's (the palette at boot, the font, the
@@ -114,6 +116,7 @@ config_load() {
     : "${FONT:=DejaVu Sans Mono:size=12}"   # foot's spec, verbatim
     : "${WALLPAPER:=default}"               # the desktop's background: default (the forge), none, a full path or #rrggbb
     : "${ALPHA:=0.85}"                      # foot over a picture: 0..1, 1 = opaque
+    : "${DESKTOP_BAR:=yes}"                # the bar at the top of the desktop: yes or no
     case $ALPHA in 0|1|0.[0-9]|0.[0-9][0-9]|1.0) ;;
         *) echo "spark-shell: ALPHA=$ALPHA in $CONFIG: 0 to 1 (0.85)" >&2; exit 1 ;; esac
     case $DESKTOP in none|sway) ;;
@@ -124,11 +127,11 @@ config_load() {
     if [ -n "$CONSOLE_FONT" ] && ! printf '%s' "$CONSOLE_FONT" | grep -qE '^[A-Za-z0-9._-]+ [0-9][0-9x.]*$'; then
         echo "spark-shell: CONSOLE_FONT=$CONSOLE_FONT in $CONFIG: FACE SIZE (spark-shell font list)" >&2; exit 1
     fi
-    for k in QUIET_LOGIN QUIET_BOOT; do
+    for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR; do
         eval "v=\$$k"
         case $v in yes|no) ;; *) echo "spark-shell: $k=$v in $CONFIG: yes or no" >&2; exit 1 ;; esac
     done
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR
 }
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept
     mkdir -p "$CONFIG_DIR"
@@ -254,7 +257,7 @@ hex_load() {
 # config (a name is stored as its hex) and stays when the palette
 # changes. A path that is not there falls back to the palette's colour
 # (the render says so in a row), never to a black screen.
-WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA"
+WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA"   # BAR_ALPHA: two hex digits after the bar background over a picture, else nothing
 WALL_DEFAULT=$REPO/wallpapers/forge-1920x1080.jpg   # the forge, shipped here (wallpapers/)
 WALL_NAMES="black white gray grey silver navy blue teal green olive maroon red purple brown orange"
 wall_path() { if [ "$WALLPAPER" = default ]; then printf '%s' "$WALL_DEFAULT"; else printf '%s' "$WALLPAPER"; fi; }
@@ -279,14 +282,15 @@ wall_word() {   # wall_word WORD -> what WALLPAPER stores: none, default, #rrggb
     case $_w in /*) ;; *) _w=$(CDPATH='' cd -- "$(dirname -- "$_w")" && pwd)/$(basename -- "$_w") ;; esac
     printf '%s' "$_w"
 }
+alpha_hex() { awk -v a="$1" 'BEGIN { printf "%02x", int(a * 255 + 0.5) }'; }   # alpha_hex 0.85 -> d9
 wall_load() {
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     if wall_there; then
-        WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA
+        WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA")
     elif wall_colour; then
-        WALL_BG="$(wall_hex "$WALLPAPER") solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0
+        WALL_BG="$(wall_hex "$WALLPAPER") solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0; BAR_ALPHA=""
     else
-        WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0
+        WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0; BAR_ALPHA=""
     fi
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     for k in $WALL_KEYS; do export "${k?}"; done
@@ -417,6 +421,13 @@ link_one() {   # link_one SRC DST
     row link rc "$2"
 }
 esc() { printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'; }
+bar_mode() { if [ "$DESKTOP_BAR" = yes ]; then echo dock; else echo invisible; fi; }   # sway bar mode: shown, or there but never drawn
+bar_font() {   # foot's FONT ("Face:size=N", or :pixelsize=N) in pango's words: "Face N", "Face Npx"; no size, 12
+    face=${FONT%%:*}; opts=""; case $FONT in *:*) opts=${FONT#*:} ;; esac
+    size=$(printf '%s' "$opts" | tr ':' '\n' | sed -n 's/^size=\([0-9.]*\)$/\1/p' | head -1)
+    px=$(printf '%s' "$opts" | tr ':' '\n' | sed -n 's/^pixelsize=\([0-9.]*\)$/\1/p' | head -1)
+    if [ -n "$size" ]; then printf '%s %s' "$face" "$size"; elif [ -n "$px" ]; then printf '%s %spx' "$face" "$px"; else printf '%s 12' "$face"; fi
+}
 render_expr() {
     e="s|@HOME@|$(esc "$HOME")|g;s|@USER@|$(esc "$(id -un)")|g;s|@NAME@|$(esc "$(short_host)")|g;s|@REPO@|$(esc "$REPO")|g"
     for k in $THEME_KEYS; do
@@ -429,6 +440,7 @@ render_expr() {
         e="$e;s|@$k@|$(esc "$v")|g"
     done
     e="$e;s|@FONT@|$(esc "$FONT")|g"
+    e="$e;s|@BAR_MODE@|$(bar_mode)|g;s|@BAR_FONT@|$(esc "$(bar_font)")|g"
     e="$e;s|@FOOT_COLORS@|$(foot_colors)|g"
     printf '%s' "$e"
 }
@@ -1549,7 +1561,7 @@ cmd_off() {   # cmd_off [desktop]
     if [ "${1:-}" = desktop ]; then
         config_set DESKTOP none
         DESKTOP=none; export DESKTOP
-        hand_back $DESKTOP_RENDERED
+        hand_back $DESKTOP_RENDERED .config/alsa/asoundrc
         old_greetd_off
         seat_off
         echo "packages stay installed -- the package manager removes them if you want"
@@ -1563,7 +1575,7 @@ cmd_off() {   # cmd_off [desktop]
             case $(readlink "$p") in "$REPO"/*) restore_one "$p" ;; esac
         fi
     done
-    hand_back $RENDERED .config/starship.toml .config/yazi/theme.toml $DESKTOP_RENDERED   # yazi: a render v0.35 left, its .bak yours
+    hand_back $RENDERED .config/starship.toml .config/yazi/theme.toml $DESKTOP_RENDERED .config/alsa/asoundrc   # alsa: the bar's default card; yazi: a render v0.35 left, its .bak yours
     old_greetd_off
     seat_off
     pm_detect
@@ -1708,6 +1720,8 @@ cmd_status() {
         elif [ "$WALLPAPER" = default ] && wall_there; then printf '  wall  %-16s %s\n' default "the wallpaper that comes with spark-shell, $WALL_DEFAULT"
         elif wall_there; then printf '  wall  %-16s %s\n' picture "$WALLPAPER"
         else printf '  wall  %-16s %s\n' missing "$(wall_path) is missing -- the palette's background colour instead"; fi
+        if [ "$DESKTOP_BAR" = yes ]; then printf '  bar   %-16s %s\n' shown "at the top of the screen: $(bar_names) (spark-shell bar off --desktop hides it)"
+        else printf '  bar   %-16s %s\n' hidden "spark-shell bar on --desktop shows it"; fi
     fi
     theme_load || true
     slots="accent colour${ACCENT_SLOT:-?}, muted colour${MUTED_SLOT:-?} (SGR 1;${ACCENT_SGR:-?} / ${MUTED_SGR:-?})"
@@ -1788,19 +1802,366 @@ cmd_check() {
     if [ -z "$spark" ]; then chk bar ok "na (spark not found -- the status line stays empty)"
     elif "$spark" bar line >/dev/null 2>&1; then chk bar ok "spark bar line works"
     else chk bar fail "spark bar line failed" "spark check"; fi
+    if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk top ok "na (no desktop)"
+    elif [ "$DESKTOP_BAR" != yes ]; then chk top ok "hidden (spark-shell bar on --desktop shows it)"
+    elif ! command -v jq >/dev/null 2>&1; then chk top warn "jq is not installed: the bar takes no clicks" "spark-shell on"
+    elif line=$(bar_status --once 2>/dev/null) && printf '%s' "$line" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
+        chk top ok "the bar draws $(printf '%s' "$line" | jq -r '[.[] | select(.name != "div") | .name] | unique | join(", ")')"
+        [ -n "$(snd_tool)" ] || chk sound warn "no audio system found, so no out or mic block" "install pipewire, or alsa-utils for plain ALSA"
+    else chk top fail "spark-shell bar status draws nothing" "spark-shell on"; fi
     [ "$fails" = 0 ]
 }
 
-cmd_bar() {
-    command -v tmux >/dev/null 2>&1 || { echo "spark-shell bar: no tmux here (spark-shell on installs it)"; return 1; }
-    tmux list-sessions >/dev/null 2>&1 || { echo "spark-shell bar: tmux is not running -- start tmux first"; return 1; }
-    case ${1:-} in
-        on) tmux set -g status on; echo "spark-shell bar -- shown (spark-shell bar off hides it)" ;;
-        off) tmux set -g status off; echo "spark-shell bar -- hidden (spark-shell bar on brings it back)" ;;
-        *) s=$(tmux show -gv status 2>/dev/null || echo on)
-           [ "$s" != off ] && echo "spark-shell bar -- shown (spark-shell bar off hides it)" \
-                           || echo "spark-shell bar -- hidden (spark-shell bar on brings it back)" ;;
+# ---------------------------------------------------------------- the bar
+# The bar at the top of the desktop's screen: swaybar draws what
+# `spark-shell bar status` prints, the i3bar JSON lines, one every 15 s
+# and one at once after a click or a volume key (SIGUSR1 to the pid in
+# STATE_DIR/bar.pid). It shows the screen and the hardware you sit at;
+# the AI and the machine's load stay on tmux's status line inside each
+# window. Its rules: a block appears only for hardware this machine has
+# (no battery, no bat block); words show state and colour shows alarm
+# (the kind word muted, a name in the text colour, red for a recording
+# mic, a wire that is down and a battery under 15); the one gauge, the
+# output volume, is the one thing you can set (a click sets it, the
+# wheel nudges, a right click mutes), so a read-only level takes another
+# shape (wifi as rising bars, the battery as a number); a click on lan
+# or wifi shows the address for 5 s and never keeps it on screen; the
+# groups (connections, sound, power, time) are parted by a thin line,
+# and a group that is absent takes its line with it. Sound comes from
+# the audio system there is: wpctl (PipeWire), pactl (PulseAudio), else
+# amixer on plain ALSA, where a change of output holds for programs
+# started afterwards (ALSA has no live routing) and is written to
+# spark-shell's own ~/.config/alsa/asoundrc, never your ~/.asoundrc.
+# The glyphs are built from their bytes: this file stays ASCII.
+BAR_SYS=${SPARK_SHELL_SYS:-/sys}      # tests: a fixture tree in place of /sys and /proc
+BAR_PROC=${SPARK_SHELL_PROC:-/proc}
+BAR_PID=$STATE_DIR/bar.pid            # the running `bar status`, for the redraw signal
+BAR_SHOW=$STATE_DIR/bar.show          # "NAME UNTIL [TEXT]": a block's detail shown until that epoch second
+BAR_ASOUNDRC=$HOME/.config/alsa/asoundrc   # ALSA reads it after ~/.asoundrc; ours only with the marker line
+BAR_GAP=14                            # px between blocks of a group
+BAR_FULL=$(printf '\342\226\210')     # U+2588 full block: the gauge's level
+BAR_SHADE=$(printf '\342\226\221')    # U+2591 light shade: the gauge's rest
+BAR_DIV=$(printf '\342\224\202')      # U+2502 light vertical line: between groups
+BAR_STEPS='\342\226\202 \342\226\204 \342\226\206 \342\226\210'   # U+2582 2584 2586 2588: the wifi bars
+
+bar_esc() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\\/\\\\/g; s/"/\\"/g'; }   # a name: pango, then JSON
+bar_span() { printf "<span foreground='#%s'>%s</span>" "$1" "$2"; }   # bar_span RRGGBB MARKUP
+bar_block() {   # bar_block NAME INSTANCE MARKUP [GAP] -> one block; swaybar's own separator off (the dividers are blocks)
+    printf '{"name":"%s","instance":"%s","full_text":"%s","markup":"pango","separator":false,"separator_block_width":%s}' "$1" "$2" "$3" "${4:-$BAR_GAP}"
+}
+bar_short() {   # bar_short NAME -> lowercase, whole words up to 12 characters
+    printf '%s' "$1" | tr 'A-Z' 'a-z' | awk '{ s = ""; for (i = 1; i <= NF; i++) { t = (s == "" ? $i : s " " $i); if (length(t) > 12 && s != "") break; s = t } print s }' | cut -c1-12
+}
+bar_gauge() {   # bar_gauge LEVEL MUTED -> 10 cells, the level in the accent (muted when MUTED=1), the rest muted
+    n=$(( ($1 + 5) / 10 )); [ "$1" -le 0 ] || [ "$n" -gt 0 ] || n=1; [ "$n" -le 10 ] || n=10
+    full=''; i=0; while [ "$i" -lt "$n" ]; do full="$full$BAR_FULL"; i=$((i + 1)); done
+    rest=''; while [ "$i" -lt 10 ]; do rest="$rest$BAR_SHADE"; i=$((i + 1)); done
+    c=$HEX_ACCENT; [ "$2" != 1 ] || c=$HEX_MUTED
+    printf '%s%s' "$(bar_span "$c" "$full")" "$(bar_span "$HEX_MUTED" "$rest")"
+}
+bar_bars() {   # bar_bars LEVEL (0-4) -> the four rising bars, LEVEL of them lit
+    i=1; out=''
+    for s in $BAR_STEPS; do
+        g=$(printf "$s"); c=$HEX_MUTED; [ "$i" -gt "$1" ] || c=$HEX_ACCENT
+        out="$out$(bar_span "$c" "$g")"; i=$((i + 1))
+    done
+    printf '%s' "$out"
+}
+bar_timeout() { if command -v timeout >/dev/null 2>&1; then timeout 3 "$@"; else "$@"; fi; }
+bar_shown() {   # bar_shown NAME -> the detail text to show now for that block, or nothing (and the record gone when its time is up)
+    [ -f "$BAR_SHOW" ] || return 0
+    read -r _n _until _text < "$BAR_SHOW" || return 0
+    if [ "$(date +%s)" -ge "${_until:-0}" ]; then rm -f "$BAR_SHOW"; return 0; fi
+    [ "$_n" = "$1" ] && printf '%s' "${_text:-}" || :
+}
+bar_reveal() {   # bar_reveal NAME [TEXT] -- show it for 5 s, then redraw without it
+    mkdir -p "$STATE_DIR"
+    printf '%s %s %s\n' "$1" "$(( $(date +%s) + 5 ))" "${2:-}" > "$BAR_SHOW"
+    ( sleep 5; kill -USR1 "$$" 2>/dev/null ) &
+}
+
+# --- what the hardware says
+bar_addr() { ip -4 -o addr show dev "$1" scope global 2>/dev/null | awk '{print $4; exit}' | cut -d/ -f1; }   # bar_addr IFACE -> a.b.c.d or nothing
+bar_wired() {   # -> the wired interfaces: a real device (not lo, not a bridge), ethernet, not wireless
+    for d in "$BAR_SYS"/class/net/*; do
+        [ -e "$d/device" ] && [ ! -d "$d/wireless" ] && [ "$(cat "$d/type" 2>/dev/null)" = 1 ] || continue
+        basename "$d"
+    done
+    return 0
+}
+bar_wireless() { for d in "$BAR_SYS"/class/net/*/wireless; do [ -d "$d" ] && basename "$(dirname "$d")"; done; return 0; }
+bar_lan() {   # -> "up ADDR", "down", or nothing (no wired interface)
+    any=''; up=''
+    for i in $(bar_wired); do
+        any=1
+        [ "$(cat "$BAR_SYS/class/net/$i/carrier" 2>/dev/null)" = 1 ] || continue
+        up="up $(bar_addr "$i")"; break
+    done
+    [ -n "$any" ] || return 0
+    if [ -n "$up" ]; then printf '%s\n' "$up"; else echo down; fi
+}
+bar_wifi() {   # -> "LEVEL ADDR" (0-4) for the first wireless interface that is up, else nothing
+    for i in $(bar_wireless); do
+        [ "$(cat "$BAR_SYS/class/net/$i/operstate" 2>/dev/null)" = up ] || continue
+        lvl=''
+        if command -v iw >/dev/null 2>&1; then   # -100 dBm is 0, -50 dBm is 100
+            dbm=$(iw dev "$i" link 2>/dev/null | awk '/signal:/ {print $2; exit}')
+            [ -z "$dbm" ] || lvl=$(( (dbm + 100) * 2 ))
+        fi
+        if [ -z "$lvl" ]; then   # the kernel's link quality, out of 70
+            q=$(awk -v i="$i:" '$1 == i {gsub(/\./, "", $3); print $3; exit}' "$BAR_PROC/net/wireless" 2>/dev/null)
+            [ -z "$q" ] || lvl=$(( q * 100 / 70 ))
+        fi
+        [ -n "$lvl" ] || lvl=0; [ "$lvl" -ge 0 ] || lvl=0; [ "$lvl" -le 100 ] || lvl=100
+        printf '%s %s\n' "$(( (lvl + 12) / 25 ))" "$(bar_addr "$i")"
+        return
+    done
+    return 0
+}
+bar_bt() {   # -> "name NAME", "on", "off", or nothing (no controller)
+    ls -d "$BAR_SYS"/class/bluetooth/hci* >/dev/null 2>&1 || return 0
+    command -v bluetoothctl >/dev/null 2>&1 || { echo on; return; }
+    bar_timeout bluetoothctl show 2>/dev/null | grep -q 'Powered: yes' || { echo off; return; }
+    dev=$(bar_timeout bluetoothctl devices Connected 2>/dev/null | awk '$1 == "Device" { $1 = ""; $2 = ""; sub(/^ +/, ""); print; exit }')
+    if [ -n "$dev" ]; then printf 'name %s\n' "$dev"; else echo on; fi
+}
+bar_power() {   # -> "CAPACITY STATUS" of the first battery, or nothing
+    for b in "$BAR_SYS"/class/power_supply/*; do
+        [ -f "$b/capacity" ] || continue
+        [ ! -f "$b/type" ] || [ "$(cat "$b/type")" = Battery ] || continue
+        printf '%s %s\n' "$(cat "$b/capacity")" "$(cat "$b/status" 2>/dev/null || echo Unknown)"; return
+    done
+    return 0
+}
+
+# --- sound: the audio system that answers, asked once per line
+snd_tool() {   # -> wpctl | pactl | alsa | nothing
+    if command -v wpctl >/dev/null 2>&1 && wpctl status >/dev/null 2>&1; then echo wpctl
+    elif command -v pactl >/dev/null 2>&1 && pactl info >/dev/null 2>&1; then echo pactl
+    elif command -v amixer >/dev/null 2>&1 && grep -q '^ *[0-9]' "$BAR_PROC/asound/cards" 2>/dev/null; then echo alsa
+    fi
+}
+# wpctl status: a section's rows are "N. Description [vol: ...]", the default starred
+wp_rows() { wpctl status 2>/dev/null | awk -v sec="$1:" 'index($0, sec) {on = 1; next} on && !/[0-9]+\. / {exit} on { star = index($0, "*") ? 1 : 0; id = $0; sub(/^[^0-9]*/, "", id); sub(/\..*$/, "", id); d = $0; sub(/^.*[0-9]+\. /, "", d); sub(/[ \t]+\[vol:.*$/, "", d); sub(/[ \t]+$/, "", d); print star "\t" id "\t" d }'; }   # wp_rows Sinks|Sources -> STAR<tab>ID<tab>DESCRIPTION
+wp_default() { wp_rows "$1" | awk -F '\t' '$1 == 1 {print $3; exit}'; }
+wp_level() { wpctl get-volume "$1" 2>/dev/null | awk '{printf "%d", $2 * 100 + 0.5}'; }   # wp_level @DEFAULT_AUDIO_SINK@|SOURCE@
+wp_muted() { wpctl get-volume "$1" 2>/dev/null | grep -q MUTED && echo 1 || echo 0; }
+wp_live() { command -v pw-dump >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && pw-dump 2>/dev/null | jq -e 'any(.[]; .info.props["media.class"]? == "Stream/Input/Audio" and .info.state? == "running")' >/dev/null 2>&1 && echo 1 || echo 0; }
+# pactl: names and descriptions in the long list, the default by name
+pa_desc() { pactl list "$1" 2>/dev/null | awk -v n="$2" '/^\tName: / {cur = $2} /^\tDescription: / && cur == n {sub(/^\tDescription: /, ""); print; exit}'; }   # pa_desc sinks|sources NAME
+pa_level() { pactl "get-$1-volume" "$2" 2>/dev/null | grep -o '[0-9]*%' | head -1 | tr -d %; }   # pa_level sink|source @DEFAULT_SINK@|@DEFAULT_SOURCE@
+pa_muted() { pactl "get-$1-mute" "$2" 2>/dev/null | grep -q 'yes' && echo 1 || echo 0; }
+pa_live() { [ -n "$(pactl list short source-outputs 2>/dev/null)" ] && echo 1 || echo 0; }
+# plain ALSA: the cards in /proc/asound, their mixers through amixer
+al_cards() { awk '/^ *[0-9]+ \[/ { n = $1; id = $0; sub(/^[^[]*\[/, "", id); sub(/ *\].*$/, "", id); long = $0; sub(/^[^-]*- /, "", long); print n "\t" id "\t" long }' "$BAR_PROC/asound/cards" 2>/dev/null; }   # -> N<tab>ID<tab>LONG NAME
+al_name() { al_cards | awk -F '\t' -v n="$1" '$1 == n { if ($2 ~ /^(Device|USB|Generic|PCH|Intel|SB|NVidia|Audio)$/) print $3; else print $2; exit }'; }   # al_name N -> its name for the bar
+al_with() { for c in $(al_cards | cut -f1); do ls -d "$BAR_PROC/asound/card$c/pcm"*"$1" >/dev/null 2>&1 && echo "$c"; done 2>/dev/null; return 0; }   # al_with p|c -> the cards that play | capture
+al_first() { al_with "$1" | sed -n 1p; }   # al_first p|c -> the first card that plays | captures (sed reads the whole pipe: no broken pipe)
+al_running() { for c in $(al_with "$1"); do grep -qs 'state: RUNNING' "$BAR_PROC/asound/card$c/pcm"*"$1"/sub*/status && { echo "$c"; return 0; }; done; return 0; }   # al_running p|c -> the card in use now
+al_default() {   # -> the card ALSA's default resolves to: the ctl device's card, else spark-shell's file, else the first that plays
+    d=$(amixer -D default info 2>/dev/null | sed -n "s/^Card default '\([^']*\)'.*/\1/p" | head -1)
+    [ -z "$d" ] || { al_cards | awk -F '\t' -v id="$d" '$2 == id {print $1; exit}'; return; }
+    [ ! -f "$BAR_ASOUNDRC" ] || { d=$(sed -n 's/^defaults\.pcm\.card //p' "$BAR_ASOUNDRC" | head -1); [ -z "$d" ] || { al_cards | awk -F '\t' -v id="$d" '$2 == id || $1 == id {print $1; exit}'; return; }; }
+    al_first p
+}
+al_out() { c=$(al_running p); [ -n "$c" ] || c=$(al_default); [ -n "$c" ] && al_with p | grep -qx "$c" || c=$(al_first p); printf '%s' "$c"; }   # -> the card the out block is about
+al_mic() { c=$(al_running c); [ -n "$c" ] || { c=$(al_default); al_with c | grep -qx "${c:-x}" || c=$(al_first c); }; printf '%s' "$c"; }
+al_control() {   # al_control N p|c -> the mixer control to read and set: Master, PCM, Speaker, Headphone (Capture, Mic), else none
+    want='Master PCM Speaker Headphone'; [ "$2" = p ] || want='Capture Mic'
+    have=$(amixer -c "$1" scontrols 2>/dev/null | sed -n "s/^Simple mixer control '\([^']*\)',0$/\1/p")
+    for w in $want; do printf '%s\n' "$have" | grep -qx "$w" && { echo "$w"; return; }; done
+    return 1
+}
+al_level() { amixer -c "$1" sget "$2" 2>/dev/null | grep -o '\[[0-9]*%\]' | head -1 | tr -d '[]%'; }   # al_level N CONTROL -> 0..100 or nothing
+al_muted() { amixer -c "$1" sget "$2" 2>/dev/null | grep -o '\[\(on\|off\)\]' | head -1 | grep -q off && echo 1 || echo 0; }
+al_set_default() {   # al_set_default N -- the card for programs started from now, in spark-shell's own file; refused when the file is yours
+    id=$(al_cards | awk -F '\t' -v n="$1" '$1 == n {print $2; exit}')
+    if [ -f "$BAR_ASOUNDRC" ] && ! grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC"; then bar_reveal out "asoundrc is yours"; return 1; fi
+    mkdir -p "$(dirname "$BAR_ASOUNDRC")"
+    printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.card %s\ndefaults.ctl.card %s\n' "$id" "$id" > "$BAR_ASOUNDRC"
+}
+snd_out() {   # -> NAME, LEVEL (or -), MUTED on three lines; nothing without an output
+    case $SND in
+        wpctl) n=$(wp_default Sinks); [ -n "$n" ] || return 0; printf '%s\n%s\n%s\n' "$n" "$(wp_level @DEFAULT_AUDIO_SINK@)" "$(wp_muted @DEFAULT_AUDIO_SINK@)" ;;
+        pactl) s=$(pactl get-default-sink 2>/dev/null); [ -n "$s" ] || return 0; n=$(pa_desc sinks "$s"); printf '%s\n%s\n%s\n' "${n:-$s}" "$(pa_level sink @DEFAULT_SINK@)" "$(pa_muted sink @DEFAULT_SINK@)" ;;
+        alsa) c=$(al_out); [ -n "$c" ] || return 0
+            if ctl=$(al_control "$c" p); then printf '%s\n%s\n%s\n' "$(al_name "$c")" "$(al_level "$c" "$ctl")" "$(al_muted "$c" "$ctl")"; else printf '%s\n-\n0\n' "$(al_name "$c")"; fi ;;
     esac
+}
+snd_mic() {   # -> NAME, LIVE, MUTED on three lines; nothing without a microphone
+    case $SND in
+        wpctl) n=$(wp_default Sources); [ -n "$n" ] || return 0; printf '%s\n%s\n%s\n' "$n" "$(wp_live)" "$(wp_muted @DEFAULT_AUDIO_SOURCE@)" ;;
+        pactl) s=$(pactl get-default-source 2>/dev/null); [ -n "$s" ] || return 0; case $s in *.monitor) return 0 ;; esac
+            n=$(pa_desc sources "$s"); printf '%s\n%s\n%s\n' "${n:-$s}" "$(pa_live)" "$(pa_muted source @DEFAULT_SOURCE@)" ;;
+        alsa) c=$(al_mic); [ -n "$c" ] || return 0; live=0; [ -z "$(al_running c)" ] || live=1
+            if ctl=$(al_control "$c" c); then printf '%s\n%s\n%s\n' "$(al_name "$c")" "$live" "$(al_muted "$c" "$ctl")"; else printf '%s\n%s\n0\n' "$(al_name "$c")" "$live"; fi ;;
+    esac
+}
+snd_set() {   # snd_set LEVEL | +5 | -5 | mute | mic | next -- the change asked by a click or a key
+    SND=${SND:-$(snd_tool)}
+    case $SND in
+        wpctl) case $1 in
+                mute) wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle ;;
+                mic) wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle ;;
+                next) wp_rows Sinks | awk -F '\t' '{ ids[NR] = $2; if ($1 == 1) cur = NR } END { if (NR > 1) print ids[cur % NR + 1] }' | { read -r id && [ -n "$id" ] && wpctl set-default "$id"; } ;;
+                +*|-*) wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ "${1#[+-]}%${1%"${1#?}"}" ;;
+                *) wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ "$1%" ;;
+            esac ;;
+        pactl) case $1 in
+                mute) pactl set-sink-mute @DEFAULT_SINK@ toggle ;;
+                mic) pactl set-source-mute @DEFAULT_SOURCE@ toggle ;;
+                next) cur=$(pactl get-default-sink 2>/dev/null); pactl list short sinks 2>/dev/null | cut -f2 | awk -v c="$cur" '{ n[NR] = $0; if ($0 == c) i = NR } END { if (NR > 1) print n[i % NR + 1] }' | { read -r s && [ -n "$s" ] && pactl set-default-sink "$s"; } ;;
+                +*|-*) pactl set-sink-volume @DEFAULT_SINK@ "${1#[+-]}%${1%"${1#?}"}" ;;   # 5%+ / 5%-
+                *) pactl set-sink-volume @DEFAULT_SINK@ "$1%" ;;
+            esac ;;
+        alsa) case $1 in
+                mic) c=$(al_mic); [ -n "$c" ] && ctl=$(al_control "$c" c) && amixer -q -c "$c" sset "$ctl" toggle ;;
+                next) cur=$(al_out); al_with p | awk -v c="$cur" '{ n[NR] = $0; if ($0 == c) i = NR } END { if (NR > 1) print n[i % NR + 1] }' | { read -r n && [ -n "$n" ] && al_set_default "$n"; } ;;
+                *) c=$(al_out); [ -n "$c" ] && ctl=$(al_control "$c" p) || return 0
+                    case $1 in mute) amixer -q -c "$c" sset "$ctl" toggle ;; +*|-*) amixer -q -c "$c" sset "$ctl" "${1#[+-]}%${1%"${1#?}"}" ;; *) amixer -q -c "$c" sset "$ctl" "$1%" ;; esac ;;
+            esac ;;
+    esac >/dev/null 2>&1 || :
+}
+
+# --- the line, the clicks, the loop
+bar_line() {   # one JSON array of the blocks present now; groups parted by a divider
+    line=''; group=''
+    bar_add() { group="${group:+$group,}$1"; }
+    bar_group() { [ -z "$group" ] || { [ -z "$line" ] || line="$line,$(bar_block div '' "$(bar_span "$HEX_MUTED" "$BAR_DIV")")"; line="${line:+$line,}$group"; group=''; }; }
+    SND=$(snd_tool)
+    # connections
+    lan=$(bar_lan)
+    case $lan in
+        up*) t=$(bar_shown lan); bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" lan)${t:+ $t}")" ;;
+        down) bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" lan) $(bar_span "$HEX_ANSI_1" down)")" ;;
+    esac
+    wifi=$(bar_wifi)
+    [ -z "$wifi" ] || { t=$(bar_shown wifi); bar_add "$(bar_block wifi '' "$(bar_span "$HEX_MUTED" wifi) $(bar_bars "${wifi%% *}")${t:+ $t}")"; }
+    bt=$(bar_bt)
+    case $bt in
+        name*) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" bt) $(bar_esc "$(bar_short "${bt#name }")")")" ;;
+        on) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" bt)")" ;;
+        off) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" 'bt off')")" ;;
+    esac
+    bar_group
+    # sound
+    out=$(snd_out)
+    if [ -n "$out" ]; then
+        n=$(printf '%s\n' "$out" | sed -n 1p); lvl=$(printf '%s\n' "$out" | sed -n 2p); m=$(printf '%s\n' "$out" | sed -n 3p)
+        t=$(bar_shown out); if [ -n "$t" ]; then shown=$(bar_esc "$t"); else shown=$(bar_esc "$(bar_short "$n")"); fi   # a note (asoundrc is yours) shows whole
+        gap=$BAR_GAP; [ "$lvl" = - ] || [ -z "$lvl" ] || gap=6   # the gauge sits close to its name
+        bar_add "$(bar_block out name "$(bar_span "$HEX_MUTED" out) $shown" "$gap")"
+        [ "$lvl" = - ] || [ -z "$lvl" ] || bar_add "$(bar_block out gauge "$(bar_gauge "$lvl" "$m")")"
+    fi
+    mic=$(snd_mic)
+    if [ -n "$mic" ]; then
+        n=$(printf '%s\n' "$mic" | sed -n 1p); live=$(printf '%s\n' "$mic" | sed -n 2p); m=$(printf '%s\n' "$mic" | sed -n 3p)
+        if [ "$m" = 1 ]; then bar_add "$(bar_block mic '' "$(bar_span "$HEX_MUTED" 'mic off')")"
+        elif [ "$live" = 1 ]; then bar_add "$(bar_block mic '' "$(bar_span "$HEX_ANSI_1" mic) $(bar_esc "$(bar_short "$n")")")"
+        else bar_add "$(bar_block mic '' "$(bar_span "$HEX_MUTED" mic) $(bar_esc "$(bar_short "$n")")")"; fi
+    fi
+    bar_group
+    # power
+    bat=$(bar_power)
+    if [ -n "$bat" ]; then
+        cap=${bat%% *}; stt=${bat#* }; plus=''; c=$HEX_FG
+        [ "$stt" != Charging ] || plus=$(bar_span "$HEX_ACCENT" +)
+        [ "$cap" -ge 15 ] || [ "$stt" = Charging ] || c=$HEX_ANSI_1
+        bar_add "$(bar_block bat '' "$(bar_span "$HEX_MUTED" bat) $(bar_span "$c" "$cap")$plus")"
+    fi
+    bar_group
+    # time
+    bar_add "$(bar_block clock '' "$(bar_span "$HEX_MUTED" "$(date '+%a %d %b')") $(date '+%H:%M')" 6)"
+    bar_group
+    printf '[%s],\n' "$line"
+}
+bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH -- one click or wheel step on a block
+    case $1 in
+        lan) [ "$3" != 1 ] || { a=$(bar_lan); bar_reveal lan "${a#up }"; } ;;
+        wifi) [ "$3" != 1 ] || { w=$(bar_wifi); bar_reveal wifi "${w#* }"; } ;;
+        out) case $2:$3 in
+                gauge:1) [ "$5" -gt 0 ] 2>/dev/null || return 0; l=$(( ($4 * 100 / $5 + 2) / 5 * 5 )); [ "$l" -le 100 ] || l=100; [ "$l" -ge 0 ] || l=0; snd_set "$l" ;;
+                name:1) snd_set next ;;
+                *:4) snd_set +5 ;; *:5) snd_set -5 ;; *:2|*:3) snd_set mute ;;
+            esac ;;
+        mic) case $3 in 1|2|3) snd_set mic ;; esac ;;
+    esac
+}
+bar_clicks() {   # swaybar's clicks on stdin: `[` then one `,{...}` a line; each acted on, then the bar redrawn
+    while IFS= read -r c; do
+        c=${c#,}; [ -n "$c" ] && [ "$c" != '[' ] || continue
+        # shellcheck disable=SC2046   # the five fields, split on purpose
+        set -- $(printf '%s' "$c" | jq -r 'def w: if . == null or . == "" then "-" else . end; [(.name | w), (.instance | w), .button // 0, .relative_x // 0, .width // 0] | @tsv' 2>/dev/null) || continue
+        [ $# -ge 5 ] || continue
+        bar_click "$1" "$2" "$3" "$4" "$5"
+        kill -USR1 "$$" 2>/dev/null || :
+    done
+}
+bar_status() {   # bar_status [--once] -- the bar's program: the header, then a line every 15 s and at once on a click or SIGUSR1
+    [ "$OS" != Darwin ] || refuse_in bar "not on macOS, which has its own desktop"
+    theme_load
+    if [ "${1:-}" = --once ]; then bar_line | sed 's/,$//'; return 0; fi
+    command -v jq >/dev/null 2>&1 || echo "spark-shell bar status: jq is not installed, so the bar takes no clicks (spark-shell on)" >&2
+    mkdir -p "$STATE_DIR"; printf '%s\n' "$$" > "$BAR_PID"
+    printf '{"version":1,"click_events":true}\n[\n'
+    # the traps first: the reader's first SIGUSR1 may come before it is read here
+    reader=''; sleeper=''
+    trap 'kill ${reader:-} ${sleeper:-} 2>/dev/null || :; rm -f "$BAR_PID"; exit 0' INT TERM HUP PIPE   # || : -- a failing kill inside a trap would end the shell under set -e
+    trap 'redraw=1; kill ${sleeper:-} 2>/dev/null || :' USR1   # redraw: a click while a line is drawn draws again at once
+    exec 3<&0; bar_clicks <&3 &   # an explicit stdin: a background job's own would be /dev/null in dash (POSIX)
+    reader=$!
+    while :; do
+        redraw=0
+        bar_line || break
+        t=0   # 15 one-second sleeps: a signal ends the current one, and a click that fell between two is seen within 1 s
+        while [ "$t" -lt 15 ] && [ "$redraw" = 0 ]; do
+            sleep 1 & sleeper=$!
+            wait "$sleeper" 2>/dev/null || :
+            t=$((t + 1))
+        done
+    done
+    kill ${reader:-} 2>/dev/null || :; rm -f "$BAR_PID"
+}
+bar_redraw() { [ -f "$BAR_PID" ] && read -r p < "$BAR_PID" && kill -USR1 "$p" 2>/dev/null || :; }   # the running bar draws again now
+bar_volume_key() {   # bar_volume_key up|down|mute|mic -- the keyboard's volume keys
+    case $1 in up) snd_set +5 ;; down) snd_set -5 ;; mute) snd_set mute ;; mic) snd_set mic ;;
+        *) refuse_in bar "volume takes up, down, mute or mic" ;; esac
+    bar_redraw
+}
+bar_names() { bar_status --once 2>/dev/null | jq -r '[.[] | select(.name != "div") | .name] | unique | join(", ")' 2>/dev/null || :; }   # the blocks present now
+bar_tmux() {   # bar_tmux [on|off] WHICH -- tmux's status line, live
+    if ! command -v tmux >/dev/null 2>&1; then [ "$2" = both ] || refuse_in bar "no tmux here (spark-shell on installs it)"; return 0; fi
+    if ! tmux list-sessions >/dev/null 2>&1; then
+        if [ "$2" = both ]; then echo "status line: tmux is not running (it shows inside tmux)"; else refuse_in bar "tmux is not running -- start tmux first"; fi; return 0
+    fi
+    case $1 in
+        on) tmux set -g status on; echo "status line: shown in tmux (spark-shell bar off --terminal hides it)" ;;
+        off) tmux set -g status off; echo "status line: hidden in tmux (spark-shell bar on --terminal brings it back)" ;;
+        *) s=$(tmux show -gv status 2>/dev/null || echo on)
+           if [ "$s" != off ]; then echo "status line: shown in tmux (spark-shell bar off --terminal hides it)"; else echo "status line: hidden in tmux (spark-shell bar on --terminal brings it back)"; fi ;;
+    esac
+}
+bar_desktop() {   # bar_desktop [on|off] WHICH -- the bar at the top: the config key, the render, a running sway
+    if [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ]; then [ "$2" = both ] || refuse_in bar "no desktop here (spark-shell on desktop)"; return 0; fi
+    case $1 in
+        on|off) want=yes; [ "$1" = on ] || want=no
+            config_set DESKTOP_BAR "$want"; DESKTOP_BAR=$want; export DESKTOP_BAR
+            theme_load; EXPR=$(render_expr); desktop_look_apply
+            if [ "$want" = yes ]; then echo "bar: shown at the top of the screen (spark-shell bar off --desktop hides it)"; else echo "bar: hidden (spark-shell bar on --desktop shows it)"; fi ;;
+        *) if [ "$DESKTOP_BAR" = yes ]; then echo "bar: shown at the top of the screen -- $(bar_names) (spark-shell bar off --desktop hides it)"; else echo "bar: hidden (spark-shell bar on --desktop shows it)"; fi ;;
+    esac
+}
+cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | volume up|down|mute|mic
+    config_load
+    case ${1:-} in
+        status) shift; bar_status "$@"; return ;;
+        volume) shift; bar_volume_key "${1:-}"; return ;;
+        on|off|'') ;;
+        *) refuse_in bar "$1 is not a bar command: on, off, or nothing (--terminal or --desktop for one of the two)" ;;
+    esac
+    which=both; case ${PLAYER:-} in rooms) which=rooms ;; windows) which=windows ;; esac
+    [ "$which" = windows ] || bar_tmux "${1:-}" "$which"
+    [ "$which" = rooms ] || bar_desktop "${1:-}" "$which"
 }
 
 # ---------------------------------------------- verbs: theme, font, quiet
@@ -2094,7 +2455,7 @@ status_console() {   # the font and quiet rows of status (the theme row is the l
 LAYOUTS_DIR=$CONFIG_DIR/layouts   # the saved layouts; the old desks/ folder beside it is never read
 DESK_LAST=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desk.last
 DESK_PENDING=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desk.pending
-DESK_VERBS="workspace splith splitv layout resize focus move floating fullscreen exec session window"   # session and window: the tmux lines
+DESK_VERBS="workspace rename splith splitv layout resize focus move floating fullscreen exec session window"   # session and window: the tmux lines; rename: the workspace takes the layout's words
 DESK_NOT_APPS="sh bash zsh dash fish ksh sudo doas su pkexec"   # a shell or a way to root is not an app
 DESK_WAIT=30                                                    # seconds for a window to map (gimp, a browser)
 
@@ -2419,6 +2780,7 @@ desk_lines() {   # desk_lines WS JSONFILE -> the lines, after desk_windows_of: o
         [ -z "$used" ] || w=$(desk_next_ws $used)
         used="$used $w"
         printf 'workspace number %s\n' "$w"
+        [ -z "${DESK_LABEL:-}" ] || printf 'rename workspace to "%s %s"\n' "$w" "$DESK_LABEL"   # the bar reads "3 writing"
         grep "^$scr	" "$TMP/windows" | {
             i=0
             while IFS='	' read -r _ app args; do
@@ -2543,6 +2905,7 @@ desk_player() {   # -> windows inside sway, else rooms; --desktop and --terminal
 }
 desk_render() {   # desk_render JSONFILE -> $TMP/desk: the lines for the player; ws is the main's workspace (windows)
     ED=$(desk_editor) || ED=''
+    : "${DESK_LABEL:=$(desk_ws_label "$(desk_words "$1")")}"   # a saved layout's name, else the words
     [ -n "$ED" ] || ! desk_has "$1" editor || echo "  editor -- no editor on this machine: set EDITOR in ~/.config/spark-shell/rc"
     if [ "$PLAYER" = rooms ]; then desk_rooms "$(desk_name_of "$(desk_words "$1")")" "$1" > "$TMP/desk"; return; fi
     desk_screens
@@ -2556,7 +2919,7 @@ desk_show() {   # desk_show WHOSE -- the rendered desk played, then the closing 
         desk_play_rooms "$TMP/desk" || refuse "nothing ran"
         echo "tmux session $name -- $1"
         if desk_in_sway; then   # asked inside the desktop with --terminal: the session in a foot window of its own
-            printf 'workspace number %s\nexec foot -e tmux attach-session -t =%s\n' "$(desk_next_ws)" "$name" > "$TMP/desk.win"
+            _w=$(desk_next_ws); printf 'workspace number %s\nrename workspace to "%s %s"\nexec foot -e tmux attach-session -t =%s\n' "$_w" "$_w" "$(desk_ws_label "$name")" "$name" > "$TMP/desk.win"
             KEPT=1 desk_play "$TMP/desk.win" >/dev/null || true
         else desk_join "$name"; fi
         return
@@ -2636,6 +2999,7 @@ desk_make() {   # desk_make NEED -> the desk laid out, the model's answer in DES
     desk_show "spark-shell layout save NAME saves it"
 }
 desk_replay() {   # desk_replay NAME -> the saved layout rendered for the player and played, no model call, no narrowing
+    DESK_LABEL=$(desk_ws_label "$1")
     why=$(desk_open "$LAYOUTS_DIR/$1"); [ -z "$why" ] || refuse "$why"
     desk_apps "$(desk_words "$LAYOUTS_DIR/$1")" > "$TMP/apps"   # the desk's words, not its file name: a program they name is on the desk
     [ -n "${ASKED:-}" ] || printf 'layout> %s\n' "$(desk_words "$LAYOUTS_DIR/$1")"
@@ -2718,6 +3082,9 @@ desk_name_of() {   # desk_name_of WORDS... -> a file name: lowercase, the words 
     printf '%s' "$*" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed 's/--*/-/g; s/^-//; s/-$//' | cut -c1-40
 }
 desk_name_ok() { case $1 in ''|*[!A-Za-z0-9_-]*) return 1 ;; *) return 0 ;; esac; }
+desk_ws_label() {   # desk_ws_label WORDS... -> what a workspace is named after: lowercase words, letters and digits, whole words up to 24
+    printf '%s' "$*" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' ' ' | awk '{ s = ""; for (i = 1; i <= NF; i++) { t = (s == "" ? $i : s " " $i); if (length(t) > 24 && s != "") break; s = t } print s }' | cut -c1-24
+}
 desk_list() {
     [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ] || { echo "no saved layouts yet -- try: spark-shell layout \"focused news reading and music\""; return 0; }
     for f in "$LAYOUTS_DIR"/*; do
@@ -2866,7 +3233,7 @@ cmd_desktop() {
                 desk_keys_card || true
             fi
             # the config's exports are ours, not the shell's (PROMPT would be zsh's prompt string)
-            rm -rf "$TMP"; trap - EXIT; exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT "${SHELL:-/bin/sh}" ;;
+            rm -rf "$TMP"; trap - EXIT; exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR "${SHELL:-/bin/sh}" ;;
         ''|-*) ;;
         *) desk_need "$@"; return ;;   # the old spelling of layout WORDS (and layout NAME)
     esac
@@ -2883,7 +3250,7 @@ desk_start() {   # desk_start PENDING
     if [ "$DESKTOP" != sway ] && on_console && [ -z "${WAYLAND_DISPLAY:-}" ]; then
         echo "The desktop is off (spark-shell on desktop brings it back). This is your shell."
         rm -rf "$TMP"; trap - EXIT
-        exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT "${SHELL:-/bin/sh}" -l
+        exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR "${SHELL:-/bin/sh}" -l
     fi
     [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop"
     [ -z "$(desktop_tools)" ] || refuse "not installed:$(desktop_tools) (spark-shell on)"

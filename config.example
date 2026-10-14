@@ -32,6 +32,12 @@ WALLPAPER=default
 # a dark picture. A bright one needs more.
 ALPHA=0.85
 
+# The bar at the top of the desktop's screen: yes or no. It shows the
+# workspaces, then lan, wifi, bluetooth, sound out and mic, battery, and
+# the date and time, each only when this machine has it. spark-shell bar
+# on|off --desktop sets this.
+DESKTOP_BAR=yes
+
 # The colour palette: none (the terminal's own colours) or a name that
 # spark-shell theme list shows. spark-shell theme NAME sets this.
 THEME=none
