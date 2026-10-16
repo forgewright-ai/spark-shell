@@ -159,7 +159,7 @@ On the desktop, a bar sits at the top of the screen. The workspaces
 are on the left. A workspace a layout opened carries the layout's
 words, so `2 news` reads from a distance. On the right, in groups
 parted by a thin line: `lan`, `wifi` and `bt`; `out` and `mic`, each
-with its gauge; `bat`; the date and time; and `look`, the palette's
+with its gauge; `bat`; the date and time; and `theme`, the palette's
 name.
 
 A block appears only for hardware this machine has. No battery, no
@@ -195,20 +195,23 @@ AI and the machine stay on the status line inside each window.
 The panel is one small window, the same size and place every time, in
 the middle of the screen, in the palette's colours. Super+p opens it.
 Super+d opens it with your layouts first. A click on a bar block opens
-it with that block first. Esc, or a click anywhere else, closes it.
+it with that block first. Esc closes it, and so does the key that
+opened it, pressed again. It stays while the mouse moves.
 
 The first line says what opened it: the network, its strength as
 bars and the address; the saved layouts and the last one; or the
 whole bar after Super+p. Then one list of everything this machine can
 do right now, in sections: `layout`, the bar's blocks in the bar's
 order, `apps`. The section you came from is on top. Every row names
-its section and what Enter does, as in `wifi  connect cafe`, `out
-use HDMI` or `look  dracula`, with a sign in front where there is a
+its section and the thing, with a sign in front where there is a
 state: a dot is in use or connected, a ring is available, a check is
-current or saved, a small triangle opens something. `lan`, `bat` and
-the clock have nothing to set: a click on one shows the address,
-speed and gateway; the charge, the time left and the health; this
-month.
+current or saved, a small triangle opens something. The sign says
+what Enter does: a ring before a network connects it, a dot before
+it disconnects, a ring before an output switches to it. Where there
+is no thing to point at, the row says the verb: `forget cafe`,
+`mute`, `font bigger`. `lan`, `bat` and the clock have nothing to
+set: a click on one shows the address, speed and gateway; the charge,
+the time left and the health; this month.
 
 - `layout`: a saved layout opens on Enter. Words at the prompt make a
   new one.
@@ -217,21 +220,22 @@ month.
 - `bt`: connect or disconnect your devices, look for new ones, pair a
   new one, turn Bluetooth off and on.
 - `out` and `mic`: use another device, mute and unmute.
-- `look`: a palette, the font bigger or smaller, a wallpaper, alpha. A
-  pick applies now. New windows take a font change.
+- `theme`: a palette, the font bigger or smaller, a wallpaper, alpha.
+  A pick applies now. New windows take a font change.
 - `apps`: the allowed apps, in the same window.
 
-Under the list, the question: what do you want? Type and the list
-narrows across every section: `drac` finds the palette from a click
-on `wifi`. Words that match no row are what you want: `mute everything
-and dracula, I need some quiet`, `movie night`, `call mom on the
-headset`, `warmer and bigger`. spark turns them into steps from that
-same list, and nothing else: mute `out` and `mic`, the palette; the
-HDMI output, a dark palette and a layout with mpv; connect the headset
-and move the sound to it. spark-shell checks every step against the
-list, plays it and says what it did, one line each. A layout step
-opens its windows, and the panel follows them. The same words work
-from a shell: `spark-shell panel "mute everything"`.
+Under the list, one line: pick an option, or say what you would like.
+Type and the list narrows across every section: `drac` finds the
+palette from a click on `wifi`. Words that match no row are what you
+would like: `mute everything and dracula, I need some quiet`, `Firefox
+fullscreen`, `movie night`, `call mom on the headset`. spark turns
+them into steps from that same list, and nothing else: mute `out` and
+`mic`, the palette; a layout with Firefox; the HDMI output, a dark
+palette and a layout with mpv; connect the headset and move the sound
+to it. spark-shell checks every step against the list, plays it and
+says what it did, one short line each. A layout step opens its
+windows, and the panel follows them. The same words work from a
+shell: `spark-shell panel "mute everything"`.
 
 ## Status and check
 

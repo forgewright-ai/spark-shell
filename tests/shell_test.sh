@@ -748,7 +748,7 @@ EOF
     # the old Super+d spelling: the panel with the layouts first; no terminal, so the list as text
     : > "$swlog"; SEP=$(printf '\302\267'); GO=$(printf '\342\226\270')
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" layout --ask </dev/null 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | sed -n 1p)" = "layout  none saved yet $SEP say what you want to do" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  layout  none saved yet: say what you want to do at the prompt	layout show" ] && [ ! -s "$swlog" ] \
+    [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | sed -n 1p)" = "layout  none saved yet" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  layout  none saved yet: say what you want to do at the prompt	layout show" ] && [ ! -s "$swlog" ] \
         && ok "layout --ask: the panel with the layouts first, as text without a terminal; nothing played" || bad "ask form" "st=$st $out $(head -2 "$swlog")"
     printf '%s' "$out" | od -c | grep -q '033' && bad "the pulse reached a pipe" "$(printf '%s' "$out" | od -c | grep 033 | head -1)" || ok "no pulse on a pipe (a tty only, like spark's)"
     # keep, list, replay, status, forget
@@ -2198,8 +2198,8 @@ else
     # one line: every block present, in its group, parted by dividers
     st=0; line=$(sh "$SH" bar status --once 2>&1) || st=$?
     names=$(printf '%s' "$line" | jq -r '[.[] | .name + ":" + .instance] | join(" ")' 2>/dev/null || :)
-    [ "$st" -eq 0 ] && [ "$names" = 'lan: wifi: bt: div: out:name out:gauge mic:name mic:gauge div: bat: div: clock: div: look:' ] \
-        && ok "bar status --once: lan, wifi, bt | out (name, gauge), mic (name, gauge) | bat | clock | look, one JSON array" || bad "bar line" "st=$st $names $line"
+    [ "$st" -eq 0 ] && [ "$names" = 'lan: wifi: bt: div: out:name out:gauge mic:name mic:gauge div: bat: div: clock: div: theme:' ] \
+        && ok "bar status --once: lan, wifi, bt | out (name, gauge), mic (name, gauge) | bat | clock | theme, one JSON array" || bad "bar line" "st=$st $names $line"
     printf '%s' "$line" | jq -e 'all(.[]; .markup == "pango" and .separator == false)' >/dev/null 2>&1 && ok "bar: every block is pango markup with swaybar's own separator off" || bad "bar markup" "$line"
     t() { printf '%s' "$line" | jq -r --arg n "$1" --arg i "${2:-}" '.[] | select(.name == $n and .instance == $i) | .full_text'; }   # t NAME [INSTANCE] -> its text
     [ "$(t lan)" = "<span foreground='#555555'>lan</span>" ] && ok "lan: the word alone, muted, when the wire is up (no address on screen)" || bad "lan block" "$(t lan)"
@@ -2212,7 +2212,7 @@ else
     [ "$(t mic name)" = "<span foreground='#555555'>mic</span> jabra" ] && ok "mic: muted while idle, with the card's name" || bad "mic block" "$(t mic name)"
     g=$(t mic gauge); [ "$(count "$g" "$full")" = 5 ] && [ "$(count "$g" "$shade")" = 5 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" \
         && ok "mic: its own gauge, 5 full blocks in the accent at 50% (the Capture level)" || bad "mic gauge" "$g"
-    [ "$(t look)" = "<span foreground='#555555'>look</span>" ] && ok "look: the word alone, muted, while no palette is set" || bad "look block" "$(t look)"
+    [ "$(t theme)" = "<span foreground='#555555'>theme</span>" ] && ok "theme: the word alone, muted, while no palette is set" || bad "look block" "$(t theme)"
     [ "$(t bat)" = "<span foreground='#555555'>bat</span> <span foreground='#aaaaaa'>80</span>" ] && ok "bat: the word muted, the number in the text colour, no gauge" || bad "bat block" "$(t bat)"
     printf '%s' "$(t clock)" | grep -Eq "^<span foreground='#555555'>[A-Za-z]+ [0-9]{2} [A-Za-z]+</span> [0-9]{2}:[0-9]{2}$" && ok "clock: the date muted, the time in the text colour" || bad "clock block" "$(t clock)"
     [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "div")] | length')" = 4 ] && [ "$(printf '%s' "$line" | jq -r '.[3].full_text')" = "<span foreground='#555555'>$(printf '\342\224\202')</span>" ] \
@@ -2242,7 +2242,7 @@ else
     # present-only: a machine with none of it shows the clock alone, and no divider
     mv "$S" "$S.full"; mv "$P" "$P.full"; mkdir -p "$S" "$P"
     line=$(sh "$SH" bar status --once)
-    [ "$(printf '%s' "$line" | jq -r '[.[] | .name] | join(" ")')" = 'clock div look' ] && ok "present-only: no hardware, no block for it and no divider; the clock and the look alone" || bad "bare machine" "$line"
+    [ "$(printf '%s' "$line" | jq -r '[.[] | .name] | join(" ")')" = 'clock div theme' ] && ok "present-only: no hardware, no block for it and no divider; the clock and the theme alone" || bad "bare machine" "$line"
     rm -rf "$S" "$P"; mv "$S.full" "$S"; mv "$P.full" "$P"
     # clicks: swaybar's stream on stdin; the gauges set the levels, any other block opens the panel; each redraws the bar at once
     rm -f "$amlog" "$H/.local/state/foot.log"
@@ -2272,7 +2272,7 @@ else
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell bar: volume takes up, down, mute or mic' ] && ok "bar volume: a wrong word is refused in one line" || bad "volume refuse" "st=$st $out"
     # the out page switches the card: ALSA's default for new programs, in spark-shell's own marked file, the ! form alsa.conf takes for a name
     st=0; out=$(sh "$SH" bar panel out use hdmi 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'out: HDMI, for programs started from now (plain ALSA)' ] && [ "$(sed -n '2,3p' "$H/.config/alsa/asoundrc" 2>/dev/null | paste -sd ' ' -)" = 'defaults.pcm.!card HDMI defaults.ctl.!card HDMI' ] && head -1 "$H/.config/alsa/asoundrc" | grep -q '^# rendered by spark-shell' \
+    [ "$st" -eq 0 ] && [ "$out" = 'out HDMI for programs started from now' ] && [ "$(sed -n '2,3p' "$H/.config/alsa/asoundrc" 2>/dev/null | paste -sd ' ' -)" = 'defaults.pcm.!card HDMI defaults.ctl.!card HDMI' ] && head -1 "$H/.config/alsa/asoundrc" | grep -q '^# rendered by spark-shell' \
         && ok "bar panel out use hdmi: the HDMI card becomes ALSA's default for new programs, in spark-shell's own marked file, the ! form" || bad "asoundrc" "st=$st $out; $(cat "$H/.config/alsa/asoundrc" 2>&1)"
     rm -f "$H/.config/alsa/asoundrc"
     # a file of yours is never written over
@@ -2296,7 +2296,7 @@ else
     # the verb: both halves, one of them, the config key, the render, a running sway
     export SWAYSOCK=$H/sway.sock
     st=0; out=$(sh "$SH" bar 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^status line: tmux is not running (it shows inside tmux)$' && printf '%s\n' "$out" | grep -q '^bar: shown at the top of the screen -- bat, bt, clock, lan, look, mic, out, wifi (spark-shell bar off --desktop hides it)$' \
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^status line: tmux is not running (it shows inside tmux)$' && printf '%s\n' "$out" | grep -q '^bar: shown at the top of the screen -- bat, bt, clock, lan, mic, out, theme, wifi (spark-shell bar off --desktop hides it)$' \
         && ok "bar: both halves said -- tmux not running, the bar shown with its blocks" || bad "bar bare" "st=$st $out"
     st=0; out=$(sh "$SH" bar --terminal 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell bar: tmux is not running -- start tmux first' ] && ok "bar --terminal with no tmux: refused in one line" || bad "bar --terminal" "st=$st $out"
@@ -2307,22 +2307,22 @@ else
     out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     top          hidden (spark-shell bar on --desktop shows it)' && ok "check: the top row says hidden, ok" || bad "check top hidden" "$out"
     st=0; out=$(sh "$SH" bar on --desktop 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q '^DESKTOP_BAR=yes$' "$HOME/.config/spark-shell/config" && grep -q '^    mode dock$' "$sway" && ok "bar on --desktop: DESKTOP_BAR=yes, dock mode again" || bad "bar on" "st=$st $out"
-    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  bar   shown .*at the top of the screen: bat, bt, clock, lan, look, mic, out, wifi' && ok "status: the bar row names the blocks present" || bad "status bar shown" "$(printf '%s\n' "$st" | grep '^  bar')"
-    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     top          the bar draws bat, bt, clock, lan, look, mic, out, wifi$' && ! printf '%s\n' "$out" | grep -q '^warn   sound' \
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  bar   shown .*at the top of the screen: bat, bt, clock, lan, mic, out, theme, wifi' && ok "status: the bar row names the blocks present" || bad "status bar shown" "$(printf '%s\n' "$st" | grep '^  bar')"
+    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     top          the bar draws bat, bt, clock, lan, mic, out, theme, wifi$' && ! printf '%s\n' "$out" | grep -q '^warn   sound' \
         && ok "check: the top row names the blocks, no sound warning with an audio system" || bad "check top" "$out"
     # the panel as text (no terminal): the title line restates what opened it, then ONE list in sections -- the first section's rows, then what every other section can do; each row wears a sign, names its section and carries its action
     DOT=$(printf '\342\227\217'); RING=$(printf '\342\227\213'); TICK=$(printf '\342\234\223'); GO=$(printf '\342\226\270'); SEP=$(printf '\302\267')
     out=$(sh "$SH" bar panel lan --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "lan  up $SEP 192.0.2.10" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  lan  address 192.0.2.10	lan show" ] && printf '%s\n' "$out" | grep -q "^  lan  speed 1000 Mb/s	lan show$" && printf '%s\n' "$out" | grep -q "^  lan  gateway 192.0.2.1	lan show$" \
         && ok "panel lan: the address, the speed and the gateway, a look only, first (the old bar panel spelling)" || bad "panel lan" "$out"
-    printf '%s\n' "$out" | grep -q "^$RING wifi  connect cafe .*	wifi connect cafe$" && printf '%s\n' "$out" | grep -q "^  look  dracula	look theme dracula$" && ! printf '%s\n' "$out" | grep -q "^. bat  " && ! printf '%s\n' "$out" | grep -q "^. clock  " && ! printf '%s\n' "$out" | grep -q "^. layout  " \
+    printf '%s\n' "$out" | grep -q "^$RING wifi  cafe .*	wifi connect cafe$" && printf '%s\n' "$out" | grep -q "^  theme  dracula	theme dracula$" && ! printf '%s\n' "$out" | grep -q "^. bat  " && ! printf '%s\n' "$out" | grep -q "^. clock  " && ! printf '%s\n' "$out" | grep -q "^. layout  " \
         && [ "$(printf '%s\n' "$out" | grep -c "	lan show$")" = "$(printf '%s\n' "$out" | grep -c "	[a-z]* show$")" ] && [ "$(printf '%s\n' "$out" | tail -1)" = "$GO apps  choose the allowed apps	apps pick" ] \
         && ok "panel lan: then what every other section can do, in order, apps last; never another section's look-only rows (no layout saved: its one row is a look)" || bad "panel lan rest" "$out"
     out=$(sh "$SH" panel --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "bar  lan up $SEP wifi home $SEP bt $DOT MAJOR V $SEP out 40% $SEP mic 50% $SEP bat 80% $SEP look none" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT wifi  disconnect home	wifi disconnect" ] && ! printf '%s\n' "$out" | grep -q "	[a-z]* show$" \
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "bar  lan up $SEP wifi home $SEP bt $DOT MAJOR V $SEP out 40% $SEP mic 50% $SEP bat 80% $SEP theme none" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT wifi  home	wifi disconnect" ] && ! printf '%s\n' "$out" | grep -q "	[a-z]* show$" \
         && ok "panel with nothing first (Super+p): the whole bar restated in its order, then everything it can do" || bad "panel bar" "$out"
     out=$(sh "$SH" panel apps --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "apps  no list $SEP every app with a desktop entry is allowed" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO apps  choose the allowed apps	apps pick" ] \
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "apps  every app allowed" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO apps  choose the allowed apps	apps pick" ] \
         && ok "panel apps --list: the title says what is allowed, one row opens the picker" || bad "panel apps" "$out"
     mkdir -p "$HOME/.config/spark-shell/layouts"; printf '{"words": "news and music", "why": "the feeds and a player", "main": {"app": "newsboat"}}\n' > "$HOME/.config/spark-shell/layouts/news"
     out=$(sh "$SH" panel --list)
@@ -2334,7 +2334,7 @@ else
     [ ! -e "$H/spark.away" ] || mv "$H/spark.away" "$H/.local/bin/spark"
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)' ] && ok "panel WORDS: a word that is no section is a want (here without spark: refused in one line)" || bad "panel no block" "st=$st $out"
     out=$(sh "$SH" bar panel wifi --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "wifi  $(printf '\342\226\202\342\226\204\342\226\206\342\226\221') home $SEP 192.0.2.20" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT wifi  disconnect home	wifi disconnect" ] && printf '%s\n' "$out" | sed -n 3p | grep -q "^$RING wifi  connect cafe .*	wifi connect cafe$" && printf '%s\n' "$out" | sed -n 4p | grep -q "^$RING wifi  connect open .*	wifi connect open$" && [ "$(printf '%s\n' "$out" | sed -n 5p)" = "  wifi  forget old	wifi forget old" ] \
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "wifi  $(printf '\342\226\202\342\226\204\342\226\206\342\226\221') home $SEP 192.0.2.20" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT wifi  home	wifi disconnect" ] && printf '%s\n' "$out" | sed -n 3p | grep -q "^$RING wifi  cafe .*	wifi connect cafe$" && printf '%s\n' "$out" | sed -n 4p | grep -q "^$RING wifi  open .*	wifi connect open$" && [ "$(printf '%s\n' "$out" | sed -n 5p)" = "  wifi  forget old	wifi forget old" ] \
         && ok "panel wifi (wpa_cli): the network in use first, the ones around strongest first, then forget for a saved one" || bad "panel wifi" "$out"
     st=0; out=$(sh "$SH" bar panel wifi connect cafe 2>&1 </dev/null) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'no password given, so not connected' ] && ok "panel wifi connect, a secured network that is new: asks for the password; with none, nothing is done" || bad "wifi connect secured" "st=$st $out"
@@ -2349,20 +2349,20 @@ else
     st=0; out=$(sh "$SH" bar panel wifi forget old 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'forgot old' ] && grep -qx 'remove_network 1' "$wlog" && grep -qx save_config "$wlog" && ok "panel wifi forget: the saved network removed, the config saved" || bad "wifi forget" "st=$st $out; $(cat "$wlog" 2>&1)"
     st=0; out=$(sh "$SH" bar panel wifi connect nowhere 2>&1) || st=$?
-    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: wifi: connect nowhere is not something the panel does now' ] && ok "panel: an action the section does not offer is refused in one line" || bad "panel gate" "st=$st $out"
+    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: wifi: connect nowhere is not on the panel now' ] && ok "panel: an action the section does not offer is refused in one line" || bad "panel gate" "st=$st $out"
     out=$(sh "$SH" bar panel bt --list); blog=$H/.local/state/bt.log
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "bt  $DOT MAJOR V" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT bt  disconnect MAJOR V	bt disconnect MAJOR V" ] && printf '%s\n' "$out" | grep -q "^$RING bt  pair Buds	bt pair Buds$" && printf '%s\n' "$out" | grep -q "^  bt  look for new devices	bt scan$" && printf '%s\n' "$out" | grep -q "^  bt  turn bluetooth off	bt power off$" \
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "bt  $DOT MAJOR V" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT bt  MAJOR V	bt disconnect MAJOR V" ] && printf '%s\n' "$out" | grep -q "^$RING bt  Buds $SEP new	bt pair Buds$" && printf '%s\n' "$out" | grep -q "^  bt  find new devices	bt scan$" && printf '%s\n' "$out" | grep -q "^  bt  turn off	bt power off$" \
         && ok "panel bt: the connected device, a new one to pair, a row that scans, and off" || bad "panel bt" "$out"
     rm -f "$blog"; st=0; out=$(sh "$SH" bar panel bt disconnect MAJOR V 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'disconnected MAJOR V' ] && grep -qx 'disconnect 00:25:D1:4A:C2:AA' "$blog" && ok "panel bt disconnect NAME: the device's address told to bluetoothctl" || bad "bt disconnect" "st=$st $out; $(cat "$blog" 2>&1)"
     out=$(sh "$SH" bar panel out --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "out  Jabra $SEP 40%" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT out  Jabra	out show" ] && printf '%s\n' "$out" | grep -q "^$RING out  use HDMI	out use HDMI$" && printf '%s\n' "$out" | grep -q "^  out  mute	out mute$" && printf '%s\n' "$out" | grep -q "^  mic  mute	mic mute$" && ! printf '%s\n' "$out" | grep -q "^$DOT mic  Jabra" \
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "out  Jabra $SEP 40%" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT out  Jabra	out show" ] && printf '%s\n' "$out" | grep -q "^$RING out  HDMI	out use HDMI$" && printf '%s\n' "$out" | grep -q "^  out  mute	out mute$" && printf '%s\n' "$out" | grep -q "^  mic  mute	mic mute$" && ! printf '%s\n' "$out" | grep -q "^$DOT mic  Jabra" \
         && ok "panel out: the cards that play, the one in use named, and mute; the mic's mute after, never its look-only row" || bad "panel out" "$out"
     printf ' 0 [USB            ]: USB-Audio - Jabra SPEAK 410 USB\n                      Jabra SPEAK 410 USB at usb-0000:00:14.0-2, full speed\n 1 [HDMI           ]: HDA-Intel - HD-Audio Generic\n' > "$P/asound/cards"
     [ "$(sh "$SH" bar panel out --list | sed -n 1p)" = "out  Jabra SPEAK 410 USB $SEP 40%" ] && ok "ALSA: a card with the generic id USB is named by its long name, read past the driver's own hyphen (USB-Audio)" || bad "alsa usb name" "$(sh "$SH" bar panel out --list | sed -n 1p)"
     printf ' 0 [Jabra          ]: USB-Audio - Jabra SPEAK 410 USB\n                      Jabra SPEAK 410 USB at usb-0000:00:14.0-2, full speed\n 1 [HDMI           ]: HDA-Intel - HD-Audio Generic\n                      HD-Audio Generic at 0xdc5c8000 irq 104\n' > "$P/asound/cards"
     out=$(sh "$SH" bar panel mic --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "mic  Jabra $SEP 50%" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT mic  Jabra	mic show" ] && ! printf '%s\n' "$out" | grep -q "mic  use HDMI" && printf '%s\n' "$out" | grep -q "^  mic  mute	mic mute$" \
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "mic  Jabra $SEP 50%" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT mic  Jabra	mic show" ] && ! printf '%s\n' "$out" | grep -q "mic  HDMI" && printf '%s\n' "$out" | grep -q "^  mic  mute	mic mute$" \
         && ok "panel mic: the cards that capture only, with the level" || bad "panel mic" "$out"
     rm -f "$amlog"; sh "$SH" bar panel mic mute >/dev/null && sh "$SH" bar panel out level 35 >/dev/null
     [ "$(cat "$amlog")" = "$(printf '%s\n' '-c 0 sset Capture nocap' '-c 0 sset Master 35%')" ] && ok "panel mic mute, out level 35: set, not toggled; the mic's capture switch by amixer's own word" || bad "panel sound actions" "$(cat "$amlog")"
@@ -2376,30 +2376,30 @@ else
     [ "$(printf '%s\n' "$out" | sed -n 2p | cut -f1)" = "  clock  $(date '+%B %Y')" ] && [ "$(printf '%s\n' "$out" | sed -n 3p)" = "  clock  Su Mo Tu We Th Fr Sa	clock show" ] && [ "$(printf '%s\n' "$out" | grep -c "	clock show$")" -ge 6 ] \
         && ok "panel clock: this month, Sunday first" || bad "panel clock" "$out"
     out=$(sh "$SH" bar panel look --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "look  none $SEP DejaVu Sans Mono 12" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$TICK look  none	look show" ] && printf '%s\n' "$out" | grep -q "^  look  dracula	look theme dracula$" && printf '%s\n' "$out" | grep -q "^  look  font bigger $SEP 12 now	look font bigger$" && printf '%s\n' "$out" | grep -q "^  look  wallpaper navy	look wallpaper navy$" && printf '%s\n' "$out" | grep -q "^$TICK look  alpha 0.85	look show$" \
-        && ok "panel look: the palettes, the font size, the wallpaper words and alpha, the current ones named" || bad "panel look" "$out"
-    st=0; out=$(sh "$SH" bar panel look font bigger 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'font size 13: the bar now, new windows next' ] && grep -q '^FONT=DejaVu Sans Mono:size=13$' "$HOME/.config/spark-shell/config" && grep -q '^    font pango:DejaVu Sans Mono 13$' "$sway" \
-        && ok "panel look font bigger: FONT in the config, the bar's font rendered" || bad "look font" "st=$st $out $(grep -n 'FONT\|font' "$HOME/.config/spark-shell/config" "$sway")"
-    st=0; out=$(sh "$SH" bar panel look alpha 0.5 2>&1) || st=$?
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "theme  none $SEP DejaVu Sans Mono 12" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$TICK theme  none	theme show" ] && printf '%s\n' "$out" | grep -q "^  theme  dracula	theme dracula$" && printf '%s\n' "$out" | grep -q "^  theme  font bigger $SEP 12 now	theme font bigger$" && printf '%s\n' "$out" | grep -q "^  theme  wallpaper navy	theme wallpaper navy$" && printf '%s\n' "$out" | grep -q "^$TICK theme  alpha 0.85	theme show$" \
+        && ok "panel theme (look, the old word, still opens it): the palettes by name, the font size, the wallpaper words and alpha, the current ones named" || bad "panel look" "$out"
+    st=0; out=$(sh "$SH" panel theme font bigger 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'font 13' ] && grep -q '^FONT=DejaVu Sans Mono:size=13$' "$HOME/.config/spark-shell/config" && grep -q '^    font pango:DejaVu Sans Mono 13$' "$sway" \
+        && ok "panel theme font bigger: FONT in the config, the bar's font rendered, said in two words" || bad "look font" "st=$st $out $(grep -n 'FONT\|font' "$HOME/.config/spark-shell/config" "$sway")"
+    st=0; out=$(sh "$SH" panel theme alpha 0.5 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q '^ALPHA=0.5$' "$HOME/.config/spark-shell/config" && grep -q '^        background #00000080$' "$sway" && ok "panel look alpha 0.5: ALPHA in the config, the bar's background rendered with it (80)" || bad "look alpha" "st=$st $out $(grep -n 'background' "$sway")"
     printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
     line=$(sh "$SH" bar status --once)
-    [ "$(t look)" = "<span foreground='#555555'>look</span> dracula" ] && ok "look block: the palette's name in the text colour" || bad "look block" "$(t look)"
-    [ "$(sh "$SH" bar panel look --list | grep -c "^$TICK look  dracula	look show$")" = 1 ] && ok "panel look: the current palette named" || bad "look current" "$(sh "$SH" bar panel look --list | head -4)"
+    [ "$(t theme)" = "<span foreground='#555555'>theme</span> dracula" ] && ok "theme block: the palette's name in the text colour" || bad "look block" "$(t theme)"
+    [ "$(sh "$SH" bar panel look --list | grep -c "^$TICK theme  dracula	theme show$")" = 1 ] && ok "panel look: the current palette named" || bad "look current" "$(sh "$SH" bar panel look --list | head -4)"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     # a want: spark turns the words into steps from what this machine offers; the gate refuses the rest
     cat > "$H/.local/bin/spark" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$@" > "$HOME/spark.argv"
-printf '{"why": "quiet: no sound out, no mic, no bluetooth", "steps": [{"page": "out", "action": "mute"}, {"page": "mic", "action": "mute"}, {"page": "bt", "action": "power", "arg": "off"}, {"page": "bt", "action": "dance", "arg": "x"}, {"page": "look", "action": "alpha", "arg": "7"}]}\n'
+printf '{"why": "quiet: no sound out, no mic, no bluetooth", "steps": [{"page": "out", "action": "mute"}, {"page": "mic", "action": "mute"}, {"page": "bt", "action": "power", "arg": "off"}, {"page": "bt", "action": "dance", "arg": "x"}, {"page": "theme", "action": "alpha", "arg": "7"}, {"page": "desktop", "action": "lights", "arg": "low"}]}\n'
 EOF
     chmod +x "$H/.local/bin/spark"; rm -f "$amlog" "$blog"
     st=0; out=$(sh "$SH" bar quiet please 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> quiet please' '  quiet: no sound out, no mic, no bluetooth' '  out muted' '  mic muted' '  bluetooth off' '  bt: dance x is not something the panel does now' '  look: alpha takes 0 to 1')" ] \
-        && ok "bar WORDS: the why, then one line per step; a step the bar does not offer is refused, the rest played" || bad "bar want" "st=$st $out"
+    [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> quiet please' '  out muted' '  mic muted' '  bluetooth off' '  bt: dance x is not on the panel now' '  theme: alpha takes 0 to 1' '  no desktop here')" ] \
+        && ok "bar WORDS: one line per step and no why line; a step the panel does not offer, or a section it does not have, is refused in a few words, the rest played" || bad "bar want" "st=$st $out"
     [ "$(cat "$amlog")" = "$(printf '%s\n' '-c 0 sset Master mute' '-c 0 sset Capture nocap')" ] && grep -qx 'power off' "$blog" && ok "bar WORDS: the steps reached amixer and bluetoothctl" || bad "want steps" "$(cat "$amlog" "$blog" 2>&1)"
-    grep -q '^do this on the desktop: quiet please$' "$H/spark.argv" && grep -q 'bt: disconnect MAJOR V, pair Buds, scan, power off' "$H/spark.argv" && grep -q 'out: use HDMI, mute, level N' "$H/spark.argv" && grep -q 'layout: new WORDS' "$H/spark.argv" \
+    grep -q '^do this on the desktop: quiet please$' "$H/spark.argv" && grep -q 'bt: disconnect MAJOR V, pair Buds, scan, power off' "$H/spark.argv" && grep -q 'out: use HDMI, mute, level N' "$H/spark.argv" && grep -q 'layout: new TASK' "$H/spark.argv" && grep -q 'theme: .*dracula, .*font bigger' "$H/spark.argv" \
         && ok "bar WORDS: spark gets the words and what each section offers now, a new layout among them" || bad "want brief" "$(cat "$H/spark.argv")"
     rm -f "$H/.local/bin/spark"
     rm -f "$H/.local/bin/amixer" "$P/asound/cards"

@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.49
+
+- Changed: the panel stays while the mouse moves. It closed when the
+  focus left it, and the focus follows the mouse. Esc closes it, and
+  so does the key that opened it, pressed again.
+- Fixed: a want that names a program or a task, as `Firefox
+  fullscreen` or `write notes`, becomes a layout step. The list given
+  to spark read "new WORDS", and the model copied those words back as
+  a step the panel refused.
+- Changed: `look` is `theme`, on the bar and in the panel. A palette
+  row is its name alone.
+- Changed: less to read. A row names the thing and its sign says what
+  Enter does: a ring before a network connects it, a dot before it
+  disconnects, a ring before an output switches to it. The line under
+  the list reads "Pick an option, or say what you would like." A step
+  says what it did in a few words, as `theme dracula` or `font 12`. The
+  model's why line is gone; the steps say it. The highlighted row is
+  the cursor. `bt` rows read `find new devices` and `turn off`.
+
 ## v0.48
 
 - Changed: one panel. The bar's panel and the layout prompt are one
