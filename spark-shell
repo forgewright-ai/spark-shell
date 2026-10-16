@@ -26,8 +26,8 @@
 #   spark-shell desktop wallpaper X   set a picture, a colour, default or none
 #   spark-shell bar on|off            show or hide the status line and the bar
 #   spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
-#   spark-shell bar panel [PAGE]      open the bar's panel (Super+p)
-#   spark-shell bar "WORDS"           ask for a change: "mute everything"
+#   spark-shell panel [SECTION]       open the panel (Super+p), SECTION first
+#   spark-shell panel "WORDS"         ask for it: "mute everything", "quiet"
 #   spark-shell sbom [NAME]           list the installed software, or one
 #   spark-shell sbom --json           write the list as a CycloneDX 1.5 file
 #
@@ -2036,13 +2036,13 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by a di
     lan=$(bar_lan)
     case $lan in
         up*) bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" lan)")" ;;
-        down) bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" lan) $(bar_span "$HEX_ANSI_1" down)")" ;;
+        down) bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" lan) $(bar_span "$HEX_ANSI_1" "$PANEL_WARN down")")" ;;
     esac
     wifi=$(bar_wifi)
     [ -z "$wifi" ] || bar_add "$(bar_block wifi '' "$(bar_span "$HEX_MUTED" wifi) $(bar_bars "${wifi%% *}")")"
     bt=$(bar_bt)
     case $bt in
-        name*) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" bt) $(bar_esc "$(bar_short "${bt#name }")")")" ;;
+        name*) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" bt) $(bar_span "$HEX_ACCENT" "$PANEL_DOT") $(bar_esc "$(bar_short "${bt#name }")")")" ;;
         on) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" bt)")" ;;
         off) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" 'bt off')")" ;;
     esac
@@ -2059,12 +2059,12 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by a di
     mic=$(snd_mic)
     if [ -n "$mic" ]; then
         n=$(printf '%s\n' "$mic" | sed -n 1p); live=$(printf '%s\n' "$mic" | sed -n 2p); m=$(printf '%s\n' "$mic" | sed -n 3p); lvl=$(printf '%s\n' "$mic" | sed -n 4p)
-        c=$HEX_MUTED; [ "$live" != 1 ] || c=$HEX_ANSI_1   # red while a program records
+        c=$HEX_MUTED; k=mic; [ "$live" != 1 ] || { c=$HEX_ANSI_1; k="mic $PANEL_DOT"; }   # red, with a dot, while a program records
         if [ "$lvl" = - ] || [ -z "$lvl" ]; then   # no level control: the word says muted
             if [ "$m" = 1 ]; then bar_add "$(bar_block mic name "$(bar_span "$HEX_MUTED" 'mic off')")"
-            else bar_add "$(bar_block mic name "$(bar_span "$c" mic) $(bar_esc "$(bar_short "$n")")")"; fi
+            else bar_add "$(bar_block mic name "$(bar_span "$c" "$k") $(bar_esc "$(bar_short "$n")")")"; fi
         else
-            bar_add "$(bar_block mic name "$(bar_span "$c" mic) $(bar_esc "$(bar_short "$n")")" 6)"
+            bar_add "$(bar_block mic name "$(bar_span "$c" "$k") $(bar_esc "$(bar_short "$n")")" 6)"
             bar_add "$(bar_block mic gauge "$(bar_gauge "$lvl" "$m")")"
         fi
     fi
@@ -2074,7 +2074,7 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by a di
     if [ -n "$bat" ]; then
         cap=${bat%% *}; stt=${bat#* }; plus=''; c=$HEX_FG
         [ "$stt" != Charging ] || plus=$(bar_span "$HEX_ACCENT" +)
-        [ "$cap" -ge 15 ] || [ "$stt" = Charging ] || c=$HEX_ANSI_1
+        [ "$cap" -ge 15 ] || [ "$stt" = Charging ] || { c=$HEX_ANSI_1; cap="$PANEL_WARN $cap"; }
         bar_add "$(bar_block bat '' "$(bar_span "$HEX_MUTED" bat) $(bar_span "$c" "$cap")$plus")"
     fi
     bar_group
@@ -2094,7 +2094,7 @@ bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X -- one click or wh
         out:*:4|mic:*:4) snd_set "$1" +5 ;;
         out:*:5|mic:*:5) snd_set "$1" -5 ;;
         out:*:2|out:*:3|mic:*:2|mic:*:3) snd_set "$1" mute ;;
-        *:*:1) bar_panel_open "$1" "$(( ${6:-0} - $4 ))" "$5" ;;   # the block's left edge: the pointer's x less its x inside the block
+        *:*:1) bar_panel_open "$1" ;;   # the panel, that block first
     esac
 }
 bar_clicks() {   # swaybar's clicks on stdin: `[` then one `,{...}` a line; each acted on, then the bar redrawn
@@ -2166,7 +2166,7 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | volu
     case ${1:-} in
         status) shift; bar_status "$@"; return ;;
         volume) shift; bar_volume_key "${1:-}"; return ;;
-        panel) shift; bar_panel "$@"; return ;;
+        panel) shift; cmd_panel "$@"; return ;;   # the old spelling of spark-shell panel
         on|off|'') ;;
         -*) refuse_in bar "$1 is not a bar command: on, off, status, volume, panel, or words for what you want" ;;
         *) [ "$OS" != Darwin ] || refuse_in bar "not on macOS, which has its own desktop"; bar_want "$*"; return ;;
@@ -2177,26 +2177,37 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | volu
 }
 
 # ------------------------------------------------------------------ panel
-# The bar's panel: one small window under the block you clicked (or
-# at the right edge for Super+p), in the palette's colours. It is the
-# bar's panel, not the block's: its first line restates the block you
-# clicked (or the whole bar), then ONE list of everything the bar can
-# do right now, the clicked block's rows first and the other blocks'
-# after them in the bar's order, each row with its block's word in
-# front. Enter acts. The prompt asks what you want to change: a few
-# letters narrow the list across every block, and words that match no
-# row are a want for spark ("mute everything and dracula, I need some
-# quiet"), turned into steps from that same list, checked against it,
-# then played (bar_want). Esc, or a click anywhere else, closes it. The
-# bar itself never changes width: everything a click has to say is said
-# here. `spark-shell bar panel [PAGE] --list` prints the list as text,
-# and `bar panel PAGE ACTION [ARG]` does one action by hand; both are
-# what the tests and the want use.
-PANEL_PAGES="lan wifi bt out mic bat clock look"
-PANEL_APP='spark-panel'               # the window's app id (the sway template floats it)
-PANEL_SIZE=52x20                      # columns x rows of the window
-PANEL_OPEN=$STATE_DIR/panel.page      # the page open now, written by the panel itself
+# THE PANEL: one small floating window, the same size and place every
+# time (the sway template centres it), in the palette's colours. Super+p
+# opens it, Super+d opens it with the layouts first, a click on a bar
+# block opens it with that block first. Its first line restates what
+# opened it (the block, the whole bar, the layouts). Then ONE list of
+# everything this machine can do right now, in sections: the saved
+# layouts, the bar's blocks in the bar's order, the allowed apps; the
+# section you came from on top. Every row names its section and what
+# Enter does, with a mark in front where there is a state: in use or
+# connected, available, current or saved, opens something. The prompt
+# asks what you want: a few letters narrow the list across every
+# section, and words that match no row are a want for spark ("mute
+# everything and dracula, I need some quiet", "movie night"), turned
+# into steps from that same list, a layout step among them, checked
+# against it, then played (want_play). Esc, or a click anywhere else,
+# closes it. The bar itself never changes width: everything a click has
+# to say is said here. `spark-shell panel [WHAT] --list` prints the
+# list as text, and `panel WHAT ACTION [ARG]` does one step by hand;
+# both are what the tests and the want use.
+PANEL_PAGES="lan wifi bt out mic bat clock look"   # the bar's blocks, in the bar's order
+PANEL_APP='spark-panel'               # the window's app id (the sway template floats and centres it)
+PANEL_SIZE=64x24                      # columns x rows of the window
 TAB=$(printf '\t')
+PANEL_DOT=$(printf '\342\227\217')    # U+25CF, a filled circle: in use, connected
+PANEL_RING=$(printf '\342\227\213')   # U+25CB, an empty circle: available
+PANEL_TICK=$(printf '\342\234\223')   # U+2713, a check: current, saved
+PANEL_GO=$(printf '\342\226\270')     # U+25B8, a small triangle: opens something; the cursor row
+PANEL_WARN=$(printf '\342\232\240')   # U+26A0, a warning sign: an alarm
+PANEL_SEP=$(printf '\302\267')        # U+00B7, a middle dot: between facts on a line
+PANEL_PROMPT=$(printf '\342\235\257') # U+276F, a heavy angle: the prompt, as starship draws it
+PANEL_ENTER=$(printf '\342\206\265')  # U+21B5, a return arrow: Enter, in the hint
 panel_pages_here() {   # -> the pages this machine has, in the bar's order
     for p in $PANEL_PAGES; do
         case $p in
@@ -2208,6 +2219,11 @@ panel_pages_here() {   # -> the pages this machine has, in the bar's order
         esac
         echo "$p"
     done
+}
+panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on top: layout, the blocks this machine has, apps
+    _f=${1:-bar}
+    [ "$_f" = bar ] || echo "$_f"
+    { echo layout; panel_pages_here; echo apps; } | grep -vx "$_f" || :
 }
 panel_lower() { printf '%s' "$*" | tr 'A-Z' 'a-z'; }
 panel_bars() { bar_bars_plain "$1"; }
@@ -2374,30 +2390,35 @@ snd_use() {   # snd_use out|mic NAME -> one line; on plain ALSA the output's car
 }
 
 # --- the pages: a title line, the rows (TEXT<tab>ACTION ARG), an action
-panel_title() {   # panel_title PAGE -> one line that restates the block
+panel_title() {   # panel_title WHAT -> one line that restates what opened the panel
     case $1 in
-        lan) _l=$(bar_lan); case $_l in up*) echo "lan  up, ${_l#up }" ;; down) echo "lan  down: no carrier on the wire" ;; *) echo "lan  no wire" ;; esac ;;
+        lan) _l=$(bar_lan); case $_l in up*) echo "lan  up $PANEL_SEP ${_l#up }" ;; down) echo "lan  $PANEL_WARN down: no carrier on the wire" ;; *) echo "lan  no wire" ;; esac ;;
         wifi) _t=$(wifi_tool); _c=$(wifi_connected); _w=$(bar_wifi)
             if [ -z "$_t" ]; then echo "wifi  no tool answers (nmcli, iwctl or wpa_cli)"
             elif [ -z "$_c" ]; then echo "wifi  not connected"
-            else case ${_w%% *} in 4) _s=strong ;; 3) _s=good ;; 2) _s=fair ;; *) _s=weak ;; esac; _a=${_w#* }; echo "wifi  $_c, $_s${_a:+, $_a}"; fi ;;
-        bt) _b=$(bar_bt); case $_b in name*) echo "bt  ${_b#name }, connected" ;; on) echo "bt  on, nothing connected" ;; off) echo "bt  off" ;; *) echo "bt  no controller" ;; esac ;;
+            else case $_w in *' '*) _a=${_w#* } ;; *) _a='' ;; esac; echo "wifi  $(panel_bars "${_w%% *}") $_c${_a:+ $PANEL_SEP $_a}"; fi ;;
+        bt) _b=$(bar_bt); case $_b in name*) echo "bt  $PANEL_DOT ${_b#name }" ;; on) echo "bt  on $PANEL_SEP nothing connected" ;; off) echo "bt  off" ;; *) echo "bt  no controller" ;; esac ;;
         out|mic) if [ "$1" = out ]; then _o=$(snd_out); else _o=$(snd_mic); fi
             [ -n "$_o" ] || { echo "$1  nothing found"; return 0; }
-            _n=$(printf '%s\n' "$_o" | sed -n 1p); _lv=$(printf '%s\n' "$_o" | sed -n 2p); _m=$(printf '%s\n' "$_o" | sed -n 3p)
+            _n=$(printf '%s\n' "$_o" | sed -n 1p); _lv=$(printf '%s\n' "$_o" | sed -n 2p); _m=$(printf '%s\n' "$_o" | sed -n 3p); _live=0
             if [ "$1" = mic ]; then _lv=$(printf '%s\n' "$_o" | sed -n 4p); _live=$(printf '%s\n' "$_o" | sed -n 2p); fi
-            _s="$1  $_n"; [ "$_lv" = - ] || [ -z "$_lv" ] || _s="$_s, $_lv%"; [ "$_m" != 1 ] || _s="$_s, muted"; [ "${_live:-0}" != 1 ] || _s="$_s, recording"
+            _s="$1  $_n"; [ "$_lv" = - ] || [ -z "$_lv" ] || _s="$_s $PANEL_SEP $_lv%"; [ "$_m" != 1 ] || _s="$_s $PANEL_SEP muted"; [ "${_live:-0}" != 1 ] || _s="$_s $PANEL_SEP $PANEL_DOT recording"
             echo "$_s" ;;
         bat) _b=$(bar_power); [ -n "$_b" ] || { echo "bat  no battery"; return 0; }
-            _s="bat  ${_b%% *}%, $(panel_lower "${_b#* }")"; _left=$(bat_left); [ -z "$_left" ] || _s="$_s, $_left"; echo "$_s" ;;
-        clock) echo "clock  $(date '+%A %d %B %Y, %H:%M')" ;;
-        look) echo "look  ${THEME:-none}, $(bar_font)" ;;   # the wallpaper and alpha are named in their rows
+            _cap=${_b%% *}; _st=$(panel_lower "${_b#* }"); _w=''; [ "$_cap" -ge 15 ] 2>/dev/null || [ "$_st" = charging ] || _w="$PANEL_WARN "
+            _s="bat  $_w$_cap% $PANEL_SEP $_st"; _left=$(bat_left); [ -z "$_left" ] || _s="$_s $PANEL_SEP $_left"; echo "$_s" ;;
+        clock) echo "clock  $(date '+%A %d %B %Y') $PANEL_SEP $(date '+%H:%M')" ;;
+        look) echo "look  ${THEME:-none} $PANEL_SEP $(bar_font)" ;;   # the wallpaper and alpha are named in their rows
+        layout) _n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' '); _last=''; [ ! -f "$DESK_LAST" ] || _last=$(desk_words "$DESK_LAST")
+            if [ "$_n" -eq 0 ]; then echo "layout  none saved yet $PANEL_SEP say what you want to do"
+            else echo "layout  $_n saved${_last:+ $PANEL_SEP last: $_last}"; fi ;;
+        apps) if apps_marked; then echo "apps  $(grep -c '^[A-Za-z0-9]' "$APPS") allowed"; else echo "apps  no list $PANEL_SEP every app with a desktop entry is allowed"; fi ;;
         bar) _s=''   # Super+p, no block clicked: the whole bar in words, in its order
             for p in $(panel_pages_here); do
                 case $p in
-                    lan) _l=$(bar_lan); case $_l in up*) _w='lan up' ;; down) _w='lan down' ;; *) _w='lan no wire' ;; esac ;;
+                    lan) _l=$(bar_lan); case $_l in up*) _w='lan up' ;; down) _w="lan $PANEL_WARN down" ;; *) _w='lan no wire' ;; esac ;;
                     wifi) _c=$(wifi_connected); _w="wifi ${_c:-not connected}" ;;
-                    bt) _b=$(bar_bt); case $_b in name*) _w="bt ${_b#name }" ;; on|off) _w="bt $_b" ;; *) continue ;; esac ;;
+                    bt) _b=$(bar_bt); case $_b in name*) _w="bt $PANEL_DOT ${_b#name }" ;; on|off) _w="bt $_b" ;; *) continue ;; esac ;;
                     out|mic) if [ "$p" = out ]; then _o=$(snd_out); _lv=$(printf '%s\n' "$_o" | sed -n 2p); else _o=$(snd_mic); _lv=$(printf '%s\n' "$_o" | sed -n 4p); fi
                         [ -n "$_o" ] || continue
                         if [ "$(printf '%s\n' "$_o" | sed -n 3p)" = 1 ]; then _w="$p muted"; elif [ "$_lv" = - ] || [ -z "$_lv" ]; then _w="$p on"; else _w="$p $_lv%"; fi ;;
@@ -2405,7 +2426,7 @@ panel_title() {   # panel_title PAGE -> one line that restates the block
                     clock) continue ;;
                     look) _w="look ${THEME:-none}" ;;
                 esac
-                _s="${_s:+$_s, }$_w"
+                _s="${_s:+$_s $PANEL_SEP }$_w"
             done
             echo "bar  ${_s:-nothing on this machine to set}" ;;
     esac
@@ -2437,72 +2458,77 @@ cal_rows() {   # this month, Sunday first, today marked (awk: no cal, no GNU dat
         if (line != "") print line }'
 }
 look_font_size() { printf '%s' "$FONT" | sed -n 's/.*size=\([0-9][0-9]*\).*/\1/p' | sed -n 1p; }
-panel_rows() {   # panel_rows PAGE -> TEXT<tab>ACTION [ARG] per row; info rows carry `show`
+panel_rows() {   # panel_rows SECTION -> MARK<tab>TEXT<tab>ACTION [ARG] per row; MARK is a mark or -; look-only rows carry `show`
     case $1 in
         lan) for i in $(bar_wired); do
-                [ "$(cat "$BAR_SYS/class/net/$i/carrier" 2>/dev/null)" = 1 ] || { printf 'wire %s: no carrier\tshow\n' "$i"; continue; }
-                printf 'address %s\tshow\n' "$(bar_addr "$i")"
-                _sp=$(cat "$BAR_SYS/class/net/$i/speed" 2>/dev/null); [ -z "$_sp" ] || [ "$_sp" -le 0 ] 2>/dev/null || printf 'speed %s Mb/s\tshow\n' "$_sp"
-                _gw=$(ip -4 route show default dev "$i" 2>/dev/null | awk '{print $3; exit}'); [ -z "$_gw" ] || printf 'gateway %s\tshow\n' "$_gw"
-                _ns=$(awk '$1 == "nameserver" {print $2; exit}' /etc/resolv.conf 2>/dev/null); [ -z "$_ns" ] || printf 'name server %s\tshow\n' "$_ns"
+                [ "$(cat "$BAR_SYS/class/net/$i/carrier" 2>/dev/null)" = 1 ] || { printf -- '-\twire %s: no carrier\tshow\n' "$i"; continue; }
+                printf -- '-\taddress %s\tshow\n' "$(bar_addr "$i")"
+                _sp=$(cat "$BAR_SYS/class/net/$i/speed" 2>/dev/null); [ -z "$_sp" ] || [ "$_sp" -le 0 ] 2>/dev/null || printf -- '-\tspeed %s Mb/s\tshow\n' "$_sp"
+                _gw=$(ip -4 route show default dev "$i" 2>/dev/null | awk '{print $3; exit}'); [ -z "$_gw" ] || printf -- '-\tgateway %s\tshow\n' "$_gw"
+                _ns=$(awk '$1 == "nameserver" {print $2; exit}' /etc/resolv.conf 2>/dev/null); [ -z "$_ns" ] || printf -- '-\tname server %s\tshow\n' "$_ns"
                 break
             done ;;
-        wifi) [ -n "$(wifi_tool)" ] || { printf 'no tool answers for wifi (nmcli, iwctl or wpa_cli)\tshow\n'; return 0; }
+        wifi) [ -n "$(wifi_tool)" ] || { printf -- '-\tno tool answers for wifi (nmcli, iwctl or wpa_cli)\tshow\n'; return 0; }
             _c=$(wifi_connected); _known=$(wifi_known | cut -f2)
-            [ -z "$_c" ] || printf 'disconnect %s\tdisconnect\n' "$_c"
+            [ -z "$_c" ] || printf '%s\tdisconnect %s\tdisconnect\n' "$PANEL_DOT" "$_c"
             wifi_scan | while IFS="$TAB" read -r n l sec; do
                 [ "$n" != "$_c" ] || continue
-                _k=''; printf '%s\n' "$_known" | grep -qxF "$n" && _k=', saved'
-                printf 'connect %s %s%s\tconnect %s\n' "$n" "$(panel_bars "$l")" "$_k" "$n"
+                _k=''; printf '%s\n' "$_known" | grep -qxF "$n" && _k=" $PANEL_TICK saved"
+                printf '%s\tconnect %s %s%s\tconnect %s\n' "$PANEL_RING" "$n" "$(panel_bars "$l")" "$_k" "$n"
             done
-            printf '%s\n' "$_known" | while IFS= read -r n; do [ -n "$n" ] && [ "$n" != "$_c" ] && printf 'forget %s\tforget %s\n' "$n" "$n"; done ;;
-        bt) command -v bluetoothctl >/dev/null 2>&1 || { printf 'bluetoothctl is not installed\tshow\n'; return 0; }
+            printf '%s\n' "$_known" | while IFS= read -r n; do [ -n "$n" ] && [ "$n" != "$_c" ] && printf -- '-\tforget %s\tforget %s\n' "$n" "$n"; done ;;
+        bt) command -v bluetoothctl >/dev/null 2>&1 || { printf -- '-\tbluetoothctl is not installed\tshow\n'; return 0; }
             if bt_powered; then
                 bt_list | while IFS="$TAB" read -r mac n p c; do
-                    if [ "$c" = 1 ]; then printf 'disconnect %s\tdisconnect %s\n' "$n" "$n"
-                    elif [ "$p" = 1 ]; then printf 'connect %s\tconnect %s\n' "$n" "$n"
-                    else printf 'pair %s, new\tpair %s\n' "$n" "$n"; fi
+                    if [ "$c" = 1 ]; then printf '%s\tdisconnect %s\tdisconnect %s\n' "$PANEL_DOT" "$n" "$n"
+                    elif [ "$p" = 1 ]; then printf '%s\tconnect %s\tconnect %s\n' "$PANEL_RING" "$n" "$n"
+                    else printf '%s\tpair %s\tpair %s\n' "$PANEL_RING" "$n" "$n"; fi
                 done
-                printf 'look for new devices\tscan\nturn bluetooth off\tpower off\n'
-            else printf 'turn bluetooth on\tpower on\n'; fi ;;
-        out|mic) [ -n "${SND:-}" ] || { printf 'no audio system found\tshow\n'; return 0; }
-            snd_devices "$1" | while IFS="$TAB" read -r n d; do if [ "$d" = 1 ]; then printf '%s, in use\tshow\n' "$n"; else printf 'use %s\tuse %s\n' "$n" "$n"; fi; done
+                printf -- '-\tlook for new devices\tscan\n-\tturn bluetooth off\tpower off\n'
+            else printf -- '-\tturn bluetooth on\tpower on\n'; fi ;;
+        out|mic) [ -n "${SND:-}" ] || { printf -- '-\tno audio system found\tshow\n'; return 0; }
+            snd_devices "$1" | while IFS="$TAB" read -r n d; do if [ "$d" = 1 ]; then printf '%s\t%s\tshow\n' "$PANEL_DOT" "$n"; else printf '%s\tuse %s\tuse %s\n' "$PANEL_RING" "$n" "$n"; fi; done
             if [ "$1" = out ]; then _o=$(snd_out); _m=$(printf '%s\n' "$_o" | sed -n 3p); _lv=$(printf '%s\n' "$_o" | sed -n 2p)
             else _o=$(snd_mic); _m=$(printf '%s\n' "$_o" | sed -n 3p); _lv=$(printf '%s\n' "$_o" | sed -n 4p); fi
-            [ "$_lv" = - ] || [ -z "$_lv" ] || { if [ "$_m" = 1 ]; then printf 'unmute\tunmute\n'; else printf 'mute\tmute\n'; fi; } ;;
-        bat) _d=$(bat_dir); [ -n "$_d" ] || { printf 'no battery\tshow\n'; return 0; }
-            printf 'charge %s%%, %s\tshow\n' "$(bat_num capacity)" "$(panel_lower "$(bat_num status)")"
-            _left=$(bat_left); [ -z "$_left" ] || printf '%s\tshow\n' "$_left"
+            [ "$_lv" = - ] || [ -z "$_lv" ] || { if [ "$_m" = 1 ]; then printf -- '-\tunmute\tunmute\n'; else printf -- '-\tmute\tmute\n'; fi; } ;;
+        bat) _d=$(bat_dir); [ -n "$_d" ] || { printf -- '-\tno battery\tshow\n'; return 0; }
+            printf -- '-\tcharge %s%% %s %s\tshow\n' "$(bat_num capacity)" "$PANEL_SEP" "$(panel_lower "$(bat_num status)")"
+            _left=$(bat_left); [ -z "$_left" ] || printf -- '-\t%s\tshow\n' "$_left"
             _f=$(bat_num energy_full); _fd=$(bat_num energy_full_design); [ -n "$_f" ] || { _f=$(bat_num charge_full); _fd=$(bat_num charge_full_design); }
-            [ -z "$_f" ] || [ -z "$_fd" ] || [ "$_fd" -le 0 ] 2>/dev/null || printf 'health %s%% of new\tshow\n' $(( _f * 100 / _fd ))
-            _cy=$(bat_num cycle_count); [ -z "$_cy" ] || printf 'cycles %s\tshow\n' "$_cy"
-            _r=$(bat_num power_now); [ -z "$_r" ] || [ "$_r" -le 0 ] 2>/dev/null || printf 'power %s W\tshow\n' "$(awk -v r="$_r" 'BEGIN { printf "%.1f", r / 1000000 }')" ;;
-        clock) cal_rows "${PANEL_MARK:-}" "${PANEL_UNMARK:-}" | sed 's/$/\tshow/' ;;
+            [ -z "$_f" ] || [ -z "$_fd" ] || [ "$_fd" -le 0 ] 2>/dev/null || printf -- '-\thealth %s%% of new\tshow\n' $(( _f * 100 / _fd ))
+            _cy=$(bat_num cycle_count); [ -z "$_cy" ] || printf -- '-\tcycles %s\tshow\n' "$_cy"
+            _r=$(bat_num power_now); [ -z "$_r" ] || [ "$_r" -le 0 ] 2>/dev/null || printf -- '-\tpower %s W\tshow\n' "$(awk -v r="$_r" 'BEGIN { printf "%.1f", r / 1000000 }')" ;;
+        clock) cal_rows "${PANEL_MARK:-}" "${PANEL_UNMARK:-}" | while IFS= read -r l; do printf -- '-\t%s\tshow\n' "$l"; done ;;
         look) { echo none; palette_names; } | while IFS= read -r n; do
-                if [ "$n" = "${THEME:-none}" ]; then printf 'theme %s, current\tshow\n' "$n"; else printf 'theme %s\ttheme %s\n' "$n" "$n"; fi
+                if [ "$n" = "${THEME:-none}" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$n"; else printf -- '-\t%s\ttheme %s\n' "$n" "$n"; fi
             done
-            _sz=$(look_font_size); [ -z "$_sz" ] || printf 'font bigger (%s now)\tfont bigger\nfont smaller\tfont smaller\n' "$_sz"
-            _cur=$WALLPAPER; case $_cur in default|none) ;; *) if wall_colour; then _cur=$WALLPAPER; else printf 'wallpaper %s, current\tshow\n' "$_cur"; _cur=''; fi ;; esac
+            _sz=$(look_font_size); [ -z "$_sz" ] || printf -- '-\tfont bigger %s %s now\tfont bigger\n-\tfont smaller\tfont smaller\n' "$PANEL_SEP" "$_sz"
+            _cur=$WALLPAPER; case $_cur in default|none) ;; *) if wall_colour; then _cur=$WALLPAPER; else printf '%s\twallpaper %s\tshow\n' "$PANEL_TICK" "$_cur"; _cur=''; fi ;; esac
             for w in default none $WALL_NAMES; do
                 _h=$(wall_hex "$w" 2>/dev/null || :)
-                if [ "$w" = "$_cur" ] || { [ -n "$_h" ] && [ "$_h" = "$(panel_lower "$WALLPAPER")" ]; }; then printf 'wallpaper %s, current\tshow\n' "$w"; else printf 'wallpaper %s\twallpaper %s\n' "$w" "$w"; fi
+                if [ "$w" = "$_cur" ] || { [ -n "$_h" ] && [ "$_h" = "$(panel_lower "$WALLPAPER")" ]; }; then printf '%s\twallpaper %s\tshow\n' "$PANEL_TICK" "$w"; else printf -- '-\twallpaper %s\twallpaper %s\n' "$w" "$w"; fi
             done
             for a in 1.0 0.9 0.85 0.75 0.5; do
-                if [ "$a" = "$ALPHA" ]; then printf 'alpha %s, current\tshow\n' "$a"; else printf 'alpha %s\talpha %s\n' "$a" "$a"; fi
+                if [ "$a" = "$ALPHA" ]; then printf '%s\talpha %s\tshow\n' "$PANEL_TICK" "$a"; else printf -- '-\talpha %s\talpha %s\n' "$a" "$a"; fi
             done ;;
+        layout) if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then
+                for f in "$LAYOUTS_DIR"/*; do _w=$(desk_words "$f"); [ -n "$_w" ] || _w=${f##*/}; printf '%s\t%s\topen %s\n' "$PANEL_GO" "$_w" "${f##*/}"; done
+            else printf -- '-\tnone saved yet: say what you want to do at the prompt\tshow\n'; fi ;;
+        apps) printf '%s\tchoose the allowed apps\tpick\n' "$PANEL_GO" ;;
     esac
 }
-panel_all() {   # panel_all [PAGE] -> the one list, TEXT<tab>PAGE ACTION [ARG]: PAGE's rows in full, then what the other blocks can do, in the bar's order
+panel_all() {   # panel_all [WHAT] -> the one list, "MARK SECTION  TEXT<tab>SECTION ACTION [ARG]": WHAT's rows in full, then what every other section can do, in order
     _first=${1:-bar}
-    { [ "$_first" = bar ] || echo "$_first"; panel_pages_here | grep -vx "$_first" || :; } | while IFS= read -r p; do
-        panel_rows "$p" | while IFS="$TAB" read -r t a; do
-            [ "$p" = "$_first" ] || [ "$a" != show ] || continue
-            printf '%s%s%s  %s\t%s %s\n' "${PANEL_MARK:-}" "$p" "${PANEL_UNMARK:-}" "$t" "$p" "$a"
+    panel_sections "$_first" | while IFS= read -r p; do
+        panel_rows "$p" | while IFS="$TAB" read -r m t a; do
+            [ "$p" = "$_first" ] || [ "$a" != show ] || continue   # another section's look-only rows stay out
+            [ "$m" != - ] || m=' '
+            printf '%s %s%s%s  %s\t%s %s\n' "$m" "${PANEL_MARK:-}" "$p" "${PANEL_UNMARK:-}" "$t" "$p" "$a"
         done
     done
 }
-panel_hint() {   # the two hint lines under the list, each under 50 columns (the window is 52 wide)
-    printf 'What do you want to change?\nPick a row, or say it in words. Esc closes.'
+panel_hint() {   # the one hint line under the list
+    printf 'What do you want?  %s picks %s Esc closes' "$PANEL_ENTER" "$PANEL_SEP"
 }
 look_apply() {   # the look's renders and a running sway, quietly
     theme_load; EXPR=$(render_expr); desktop_look_apply >/dev/null 2>&1 || :
@@ -2541,18 +2567,29 @@ panel_act() {   # panel_act PAGE ACTION [ARG] -> one line (what was done, or why
                     echo "alpha $_arg: the bar now, new windows next" ;;
                 *) echo "$_a is not something look does"; return 1 ;;
             esac ;;
+        layout) case $_a in
+                open) [ -f "$LAYOUTS_DIR/$_arg" ] || { echo "no saved layout named $_arg"; return 1; }
+                    ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; desk_need "$_arg" ) ;;
+                new) [ -n "$_arg" ] || { echo "say what you want to do"; return 1; }
+                    ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; desk_need "$_arg" ) ;;
+                *) echo "$_a is not something layout does"; return 1 ;;
+            esac ;;
+        apps) case $_a in pick) ( cmd_apps_verb ) ;; *) echo "$_a is not something apps does"; return 1 ;; esac ;;
         *) echo "$_p takes no action"; return 1 ;;
     esac
 }
-panel_gate() {   # panel_gate PAGE ACTION [ARG] -> the row's own ARG (exit 0), or why not (exit 1): only a step the page offers now
-    case " $PANEL_PAGES " in *" $1 "*) ;; *) echo "$1 is not a page of the bar"; return 1 ;; esac
+panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0), or why not (exit 1): only a step the section offers now
+    case " layout apps $PANEL_PAGES " in *" $1 "*) ;; *) echo "$1 is not a section of the panel"; return 1 ;; esac
     case $1:$2 in
+        layout:open) _n=$(desk_name_of "$3"); if [ -n "$_n" ] && [ -f "$LAYOUTS_DIR/$_n" ]; then echo "$_n"; return 0; fi; echo "layout: no saved layout named $3"; return 1 ;;
+        layout:new) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: new takes the words for it"; return 1 ;;
+        apps:pick) echo ''; return 0 ;;
         out:level|mic:level) case $3 in [0-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "$1: level takes 0 to 100"; return 1 ;; esac ;;
         look:alpha) case $3 in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) echo "$3"; return 0 ;; *) echo "look: alpha takes 0 to 1"; return 1 ;; esac ;;
     esac
     _want=$(panel_lower "$2 $3" | sed 's/ *$//')
-    _m=$(panel_rows "$1" | cut -f2 | awk -v w="$_want" 'tolower($0) == w { print; exit }')
-    [ -n "$_m" ] && [ "$_m" != show ] || { echo "$1: $2${3:+ $3} is not something the bar does now"; return 1; }
+    _m=$(panel_rows "$1" | cut -f3 | awk -v w="$_want" 'tolower($0) == w { print; exit }')
+    [ -n "$_m" ] && [ "$_m" != show ] || { echo "$1: $2${3:+ $3} is not something the panel does now"; return 1; }
     printf '%s\n' "${_m#* }" | awk -v a="$2" '$0 == a { print ""; exit } { print }'
 }
 panel_list() {   # panel_list [PAGE] -> the title, then the one list as text (tests, no terminal)
@@ -2562,10 +2599,15 @@ panel_list() {   # panel_list [PAGE] -> the title, then the one list as text (te
 }
 
 # --- the want: words to steps, by spark, from what this machine offers
-panel_brief() {   # -> "page: action ARG, ...; page: ..." for the pages this machine has
-    for p in $(panel_pages_here); do
-        _acts=$(panel_rows "$p" | cut -f2 | grep -vx show | awk '!seen[$0]++' | paste -sd, - | sed 's/,/, /g')
-        case $p in out|mic) _acts="${_acts:+$_acts, }level N" ;; esac
+panel_brief() {   # -> "section: action ARG, ...; section: ..." for the layouts and the blocks this machine has
+    for p in layout $(panel_pages_here); do
+        if [ "$p" = layout ]; then
+            _saved=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | sed 's/^/open /' | paste -sd, - | sed 's/,/, /g')
+            _acts="${_saved:+$_saved, }new WORDS (windows with the apps for a task, in the user's own words)"
+        else
+            _acts=$(panel_rows "$p" | cut -f3 | grep -vx show | awk '!seen[$0]++' | paste -sd, - | sed 's/,/, /g')
+            case $p in out|mic) _acts="${_acts:+$_acts, }level N" ;; esac
+        fi
         [ -z "$_acts" ] || printf '%s: %s; ' "$p" "$_acts"
     done | sed 's/; $//'
 }
@@ -2574,111 +2616,99 @@ want_play() {   # want_play WORDS -> the why, then one line per step
     spark=$(spark_bin); [ -n "$spark" ] || { echo "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
     SND=${SND:-$(snd_tool)}
     _brief=$(panel_brief)
-    [ -n "$_brief" ] || { echo "nothing on the bar takes an action on this machine"; return 1; }
-    about="The bar of a desktop and what this machine can do now, as page: action ARG -- $_brief. Rules: only steps from that list, ARG exactly as listed (N is a number, 0 to 100 for level, 0 to 1 for alpha); as few steps as the want takes; no step when nothing on the list does it. Answer with one JSON object and nothing else: {\"why\": \"one sentence, from the want to the steps\", \"steps\": [{\"page\": \"bt\", \"action\": \"connect\", \"arg\": \"NAME\"}]}"
+    [ -n "$_brief" ] || { echo "nothing on the panel takes an action on this machine"; return 1; }
+    about="The panel of a desktop and what this machine can do now, as section: action ARG -- $_brief. Rules: only steps from that list, ARG exactly as listed (N is a number, 0 to 100 for level, 0 to 1 for alpha; WORDS for a new layout are the task in the user's own words); a layout step only when the want is a task to do, never for a setting; as few steps as the want takes; no step when nothing on the list does it. Answer with one JSON object and nothing else: {\"why\": \"one sentence, from the want to the steps\", \"steps\": [{\"page\": \"bt\", \"action\": \"connect\", \"arg\": \"NAME\"}]}"
     [ -t 1 ] && desk_pulse || :
-    st=0; "$spark" edit --type json --name bar.json --about "$about" -- "do this on the bar: $1" </dev/null > "$TMP/want.json" 2>"$TMP/want.err" || st=$?
+    st=0; "$spark" edit --type json --name panel.json --about "$about" -- "do this on the desktop: $1" </dev/null > "$TMP/want.json" 2>"$TMP/want.err" || st=$?
     [ -t 1 ] && desk_pulse_stop || :
     [ "$st" -eq 0 ] || { echo "spark did not answer: $(head -1 "$TMP/want.err")"; return 1; }
-    jq -e '.steps | arrays' "$TMP/want.json" >/dev/null 2>&1 || { echo "the answer was not steps for the bar"; return 1; }
+    jq -e '.steps | arrays' "$TMP/want.json" >/dev/null 2>&1 || { echo "the answer was not steps for the panel"; return 1; }
     why=$(jq -r '.why // "" | gsub("[\\n\\r]"; " ")' "$TMP/want.json"); [ -z "$why" ] || printf '%s\n' "$why"
-    [ "$(jq -r '.steps | length' "$TMP/want.json")" -gt 0 ] || { echo "nothing on the bar does that"; return 0; }
+    [ "$(jq -r '.steps | length' "$TMP/want.json")" -gt 0 ] || { echo "nothing on the panel does that"; return 0; }
     jq -r '.steps[] | [(.page // "" | tostring), (.action // "" | tostring), (.arg // "" | tostring)] | @tsv' "$TMP/want.json" | while IFS="$TAB" read -r pg ac ar; do
         # shellcheck disable=SC2086   # the row's own ARG, split on purpose
         if arg=$(panel_gate "$pg" "$ac" "$ar"); then panel_act "$pg" "$ac" $arg || :; else printf '%s\n' "$arg"; fi
     done
 }
-bar_want() {   # bar_want WORDS -- from the shell: `spark-shell bar "mute everything"`
-    [ -n "$(spark_bin)" ] || refuse_in bar "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"
-    printf 'bar> %s\n' "$1"
+bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute everything"` (and the old `bar "WORDS"`)
+    [ -n "$(spark_bin)" ] || refuse_in panel "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"
+    printf 'panel> %s\n' "$1"
     st=0; want_play "$1" > "$TMP/want.out" 2>&1 || st=$?
     sed 's/^/  /' "$TMP/want.out"
     return "$st"
 }
 
-# --- the window: placed under its block, closed when the focus leaves
-panel_place() {   # under the bar, its right edge at the block's (SPARK_SHELL_PANEL_AT="X W"), else at the screen's right edge
-    [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 0
-    _i=0; _pw=''
-    while [ "$_i" -lt 30 ]; do
-        _pw=$(swaymsg -t get_tree 2>/dev/null | jq -r --arg a "$PANEL_APP" '[.. | objects | select(.app_id? == $a)] | .[0].rect.width // empty' 2>/dev/null)
-        [ -z "$_pw" ] || break
-        sleep 0.1; _i=$((_i + 1))
-    done
-    [ -n "$_pw" ] || return 0
-    # shellcheck disable=SC2046   # the three numbers, split on purpose
-    set -- $(swaymsg -t get_workspaces 2>/dev/null | jq -r '.[] | select(.focused) | "\(.rect.x) \(.rect.y) \(.rect.width)"' 2>/dev/null)
-    [ $# -eq 3 ] || return 0
-    _wx=$1; _wy=$2; _ww=$3; _right=$((_wx + _ww))
-    [ -z "${SPARK_SHELL_PANEL_AT:-}" ] || { set -- $SPARK_SHELL_PANEL_AT; _right=$(( ${1:-0} + ${2:-0} )); }
-    _x=$((_right - _pw)); [ "$_x" -ge "$_wx" ] || _x=$_wx; [ $((_x + _pw)) -le $((_wx + _ww)) ] || _x=$((_wx + _ww - _pw))
-    swaymsg "[app_id=$PANEL_APP] move absolute position $_x px $_wy px" >/dev/null 2>&1 || :
-}
+# --- the window: centred by the sway template, closed when the focus leaves
 panel_watch() {   # panel_watch PID -- when sway's focus goes to another window, the panel ends
     [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 0
     ( swaymsg -t subscribe -m '["window"]' 2>/dev/null | jq --unbuffered -r 'select(.change == "focus") | .container.app_id // ""' 2>/dev/null \
       | while IFS= read -r _id; do [ "$_id" = "$PANEL_APP" ] || { kill -TERM "$1" 2>/dev/null; break; }; done ) &
     WATCH=$!
 }
-panel_quit() { kill "${FZF:-}" "${WATCH:-}" 2>/dev/null || :; rm -f "$PANEL_OPEN"; stty echo 2>/dev/null || :; }
-panel_loop() {   # panel_loop PAGE -- the window: the title, what was last done, then fzf with the one list, the hint and the prompt
+panel_unwatch() { [ -z "${WATCH:-}" ] || kill "$WATCH" 2>/dev/null || :; WATCH=''; }
+panel_quit() { kill "${FZF:-}" "${WATCH:-}" 2>/dev/null || :; stty echo 2>/dev/null || :; }
+panel_loop() {   # panel_loop WHAT -- the window: the title, what was last done, then fzf with the one list, the hint and the prompt
     # shellcheck disable=SC1091   # our own render, when there is one
     [ ! -f "$CONFIG_DIR/sgr.sh" ] || . "$CONFIG_DIR/sgr.sh"
     PANEL_MARK=$(printf '\033[%sm' "${SPARK_ACCENT_SGR:-1}"); PANEL_UNMARK=$(printf '\033[0m')
-    mkdir -p "$STATE_DIR"; printf '%s\n' "$1" > "$PANEL_OPEN"
+    ASKED=1; export ASKED   # a layout asked here: its window follows the layout, and the layout> line is not repeated
     FZF=''; WATCH=''
     trap 'panel_quit' EXIT
     trap 'kill "${FZF:-}" 2>/dev/null || :; exit 0' TERM INT HUP
-    panel_place; panel_watch $$
-    page=$1; said=''
-    cols=$(tput cols 2>/dev/null || echo 52); [ "$cols" -ge 20 ] 2>/dev/null || cols=52
+    panel_watch $$
+    what=$1; said=''
+    cols=$(tput cols 2>/dev/null || echo 64); [ "$cols" -ge 20 ] 2>/dev/null || cols=64
     while :; do
         printf '\033[2J\033[H'
-        title=$(panel_title "$page" | fold -s -w "$cols")   # a long line wraps at a word, and counts as its lines
+        title=$(panel_title "$what" | fold -s -w "$cols")   # a long line wraps at a word, and counts as its lines
         printf '%s\n' "$title" | sed "1s/^\([a-z]*\)  /$PANEL_MARK\1$PANEL_UNMARK  /"
         last=''; [ -z "$said" ] || last=$(printf '%s\n' "$said" | fold -s -w $((cols - 2)) | sed 's/^/  /')
         [ -z "$last" ] || printf '%s\n' "$last"
-        rows=$(panel_all "$page")
-        lines=$(tput lines 2>/dev/null || echo 20); saidn=$(printf '%s\n' "$last" | grep -c . || :); titlen=$(printf '%s\n' "$title" | grep -c . || :)
+        rows=$(panel_all "$what")
+        lines=$(tput lines 2>/dev/null || echo 24); saidn=$(printf '%s\n' "$last" | grep -c . || :); titlen=$(printf '%s\n' "$title" | grep -c . || :)
         h=$((lines - 1 - titlen - saidn)); [ "$h" -ge 6 ] || h=6
-        printf '%s\n' "$rows" | fzf --delimiter "$TAB" --with-nth 1 --print-query --exact --prompt 'bar> ' --header "$(panel_hint)" \
-            --layout=reverse-list --no-info --color=16 --no-unicode --ansi --height="~$h" > "$TMP/sel" 2>/dev/null & FZF=$!   # ~: as tall as the rows, no taller
+        printf '%s\n' "$rows" | fzf --delimiter "$TAB" --with-nth 1 --print-query --exact --prompt "$PANEL_PROMPT " --pointer "$PANEL_GO" --header "$(panel_hint)" \
+            --layout=reverse-list --no-info --color=16 --ansi --height="~$h" > "$TMP/sel" 2>/dev/null & FZF=$!   # ~: as tall as the rows, no taller
         st=0; wait "$FZF" || st=$?
         FZF=''
         [ "$st" -lt 128 ] || break   # Esc, Ctrl-C, or the focus went elsewhere
         q=$(sed -n 1p "$TMP/sel"); s=$(sed -n 2p "$TMP/sel")
+        panel_unwatch   # a step may open windows that take the focus on purpose (a layout): the panel stays and follows
         if [ -n "$s" ]; then
-            # shellcheck disable=SC2086   # the row's PAGE ACTION ARG, split on purpose
+            # shellcheck disable=SC2086   # the row's SECTION ACTION ARG, split on purpose
             set -- ${s#*"$TAB"}; pg=$1; a=$2; shift 2
-            [ "$a" != show ] || continue
-            said=$(panel_act "$pg" "$a" "$@" 2>&1) || :
+            [ "$a" = show ] || said=$(panel_act "$pg" "$a" "$@" 2>&1) || :
         elif [ -n "$q" ]; then said=$(want_play "$q" 2>&1) || :   # words that matched no row: a want
         fi
+        panel_watch $$
     done
 }
-bar_panel() {   # bar_panel [PAGE] [--list | ACTION [ARG...]] -- Super+p (no PAGE: the whole bar), a click on a block, the tests, a step by hand
-    [ "$OS" != Darwin ] || refuse_in bar "not on macOS, which has its own desktop"
-    command -v jq >/dev/null 2>&1 || refuse_in bar "jq is not installed (spark-shell on)"
+cmd_panel() {   # cmd_panel [WHAT] [--list | ACTION [ARG...]] | "WORDS" -- Super+p, Super+d (layout first), a click on a block, the tests, a step by hand
+    config_load
+    [ "$OS" != Darwin ] || refuse_in panel "not on macOS, which has its own desktop"
+    command -v jq >/dev/null 2>&1 || refuse_in panel "jq is not installed (spark-shell on)"
+    pm_detect
     theme_load; SND=$(snd_tool)
-    case ${1:-} in ""|--list) page=bar ;; *) page=$1; shift ;; esac   # no block named: the whole bar
-    case " bar $PANEL_PAGES " in *" $page "*) ;; *) refuse_in bar "$page is not a block of the bar: $(printf '%s' "$PANEL_PAGES" | sed 's/ /, /g')" ;; esac
     case ${1:-} in
-        --list) panel_list "$page"; return 0 ;;
-        '') ;;
-        *) a=$1; shift; arg=$(panel_gate "$page" "$a" "$*") || { echo "spark-shell bar: $arg"; exit 1; }
-           # shellcheck disable=SC2086   # the row's own ARG, split on purpose
-           panel_act "$page" "$a" $arg; return ;;
+        ''|--list) what=bar ;;
+        -*) refuse_in panel "$1 is not an option here: a section (layout, apps, $(printf '%s' "$PANEL_PAGES" | sed 's/ /, /g')), --list, or words for what you want" ;;
+        *) what=$1; shift
+           case " bar layout apps $PANEL_PAGES " in *" $what "*) ;; *) bar_want "$what${1:+ $*}"; return ;; esac ;;   # any other words: a want
     esac
-    if [ -t 0 ] && command -v fzf >/dev/null 2>&1; then panel_loop "$page"; else panel_list "$page"; fi
+    case ${1:-} in
+        --list) panel_list "$what"; return 0 ;;
+        '') ;;
+        *) a=$1; shift; arg=$(panel_gate "$what" "$a" "$*") || { echo "spark-shell panel: $arg"; exit 1; }
+           # shellcheck disable=SC2086   # the row's own ARG, split on purpose
+           panel_act "$what" "$a" $arg; return ;;
+    esac
+    if [ -t 0 ] && command -v fzf >/dev/null 2>&1; then panel_loop "$what"; else panel_list "$what"; fi
 }
-bar_panel_open() {   # bar_panel_open PAGE X W -- from a click: the panel under that block; a click on the block of the open page closes it
+bar_panel_open() {   # bar_panel_open BLOCK -- from a click: the panel with that block first; a panel already open goes first
     command -v foot >/dev/null 2>&1 || return 0
-    open=$(cat "$PANEL_OPEN" 2>/dev/null || :)
     [ -z "${SWAYSOCK:-}" ] || swaymsg "[app_id=$PANEL_APP] kill" >/dev/null 2>&1 || :
-    rm -f "$PANEL_OPEN"
-    [ "$open" != "$1" ] || return 0
     lead=''; ! command -v setsid >/dev/null 2>&1 || lead=setsid
-    SPARK_SHELL_PANEL_AT="$2 $3" $lead foot --app-id "$PANEL_APP" -W "$PANEL_SIZE" -e "$REPO/spark-shell" bar panel "$1" >/dev/null 2>&1 </dev/null &
+    $lead foot --app-id "$PANEL_APP" -W "$PANEL_SIZE" -e "$REPO/spark-shell" panel "$1" >/dev/null 2>&1 </dev/null &
 }
 
 # ---------------------------------------------- verbs: theme, font, quiet
@@ -3442,10 +3472,10 @@ desk_show() {   # desk_show WHOSE -- the rendered desk played, then the closing 
         return
     fi
     # asked at the prompt: its window goes with the desk, on top, to be read
-    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] move container to workspace number $ws" >/dev/null 2>&1 || true
+    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=$PANEL_APP] move container to workspace number $ws" >/dev/null 2>&1 || true
     desk_play "$TMP/desk" || refuse "nothing ran"
     echo "on workspace $(desk_ws_said "$TMP/desk") -- $1"
-    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=spark-desk] focus" >/dev/null 2>&1 || true   # Enter is ours, not the app's
+    [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=$PANEL_APP] focus" >/dev/null 2>&1 || true   # the panel's keys are ours, not the app's
 }
 
 desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec waited for
@@ -3568,21 +3598,6 @@ desk_pulse_stop() {
 # installs it): type a need, the arrows move over the saved layouts, Enter
 # takes the words or the layout under the cursor, Esc closes, the header
 # says so. Without it, a plain line. Exit 1 when the window closed.
-desk_prompt() {
-    if [ -t 0 ] && command -v fzf >/dev/null 2>&1; then
-        _st=0
-        _sel=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | fzf --print-query --prompt 'layout> ' --layout=reverse --no-info --color=16 --no-unicode \
-            --header 'Say what you are about to do and press Enter.
-Up and Down pick a saved layout. Esc closes.') || _st=$?
-        [ "$_st" -ne 130 ] && [ "$_st" -ne 2 ] || return 1
-        _need=$(printf '%s\n' "$_sel" | sed -n 1p); _pick=$(printf '%s\n' "$_sel" | sed -n 2p)
-        [ -n "$_need" ] || _need=$_pick
-        printf '%s' "$_need"
-    else
-        printf 'layout> ' >&2; IFS= read -r _need || return 1
-        printf '%s' "$_need"
-    fi
-}
 # A saved layout is one JSON object: words, why, main, side. A file that
 # is not one is left alone; one of the shape before v0.36 (sway lines
 # under a `# desk:` header) is refused with the words that make it again.
@@ -3624,24 +3639,6 @@ desk_delete() {   # desk_delete NAME...
     why=$(desk_open "$LAYOUTS_DIR/$name"); [ -z "$why" ] || refuse "$why"
     rm -f "${LAYOUTS_DIR:?}/${name:?}"; echo "deleted $name"
 }
-# One need, at a prompt (Super+d opens a foot on this), then a layout; the
-# window follows the layout and stays until Enter, so the why is read. The
-# last word may be --terminal or --desktop (or --rooms, --windows).
-desk_ask() {
-    need=$(desk_prompt) || return 0
-    [ -n "$need" ] || return 0
-    case $need in
-        *' --terminal'|*' --rooms') PLAYER=rooms; need=${need% --*} ;;
-        *' --desktop'|*' --windows') PLAYER=windows; need=${need% --*} ;;
-    esac
-    case $need in   # the grammar's words, here too; a refusal is read, not lost with the window
-        save|"save "*|delete|"delete "*) set -- $need; (cmd_layout "$@") || true ;;
-        keep|"keep "*) set -- $need; shift; (cmd_layout save "$@") || true ;;
-        forget|"forget "*) set -- $need; shift; (cmd_layout delete "$@") || true ;;
-        *) (ASKED=1 cmd_layout "$need") || true ;;
-    esac
-    printf 'Enter closes '; IFS= read -r _ || true
-}
 # Words: a saved layout by that name first, else words for the model. The
 # player is where you ask from: sway windows inside sway, tmux windows
 # anywhere else; --desktop from a console starts sway first, the words
@@ -3657,8 +3654,8 @@ desk_need() {   # desk_need WORDS...
 }
 
 # The layout verb: the same layouts under their own name. Bare, the saved
-# ones; save, delete, a name or words. --ask and --pending are Super+d's
-# and the desktop's first start's.
+# ones; save, delete, a name or words. --ask is the old Super+d (the panel
+# with the layouts first now); --pending is the desktop's first start's.
 cmd_layout() {   # cmd_layout [save [NAME] | delete NAME | NAME | WORDS | --ask | --pending]
     config_load
     [ "$OS" = Darwin ] || pm_detect
@@ -3667,7 +3664,7 @@ cmd_layout() {   # cmd_layout [save [NAME] | delete NAME | NAME | WORDS | --ask 
         '') desk_list ;;
         save) shift; desk_save "$@" ;;
         delete) shift; desk_delete "$@" ;;
-        --ask) desk_ask ;;
+        --ask) cmd_panel layout ;;
         --pending) desk_pending ;;
         -*) refuse "$1 is not an option here (spark-shell -h)" ;;
         *) desk_need "$@" ;;
@@ -3733,7 +3730,7 @@ cmd_desktop() {
         apps|tools) cmd_apps_verb; return ;;   # the old spellings of spark-shell apps
         keep) shift; desk_save "$@"; return ;;       # the old spellings of layout save and layout delete
         forget) shift; desk_delete "$@"; return ;;
-        --ask) desk_ask; return ;;                   # the old spellings of layout --ask and layout --pending
+        --ask) cmd_panel layout; return ;;           # the old spellings of layout --ask and layout --pending
         --pending) desk_pending; return ;;
         --chat)   # Super+s: spark's own prompt in a small foot window; Ctrl-D ends it and the window goes.
             # foot execs without a shell, so the palette's exports are sourced here;
@@ -3814,6 +3811,7 @@ main() {
         follow) cmd_follow ;;
         check) cmd_check ;;
         bar) cmd_bar "$@" ;;
+        panel) cmd_panel "$@" ;;
         theme) cmd_theme "$@" ;;
         font) cmd_font "$@" ;;
         quiet) cmd_quiet "$@" ;;

@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.48
+
+- Changed: one panel. The bar's panel and the layout prompt are one
+  window now, the same size and place every time, in the middle of the
+  screen. Super+p opens it, Super+d opens it with your layouts first,
+  a click on a bar block opens it with that block first. One list in
+  sections: `layout`, the bar's blocks, `apps`. Words at the prompt are
+  a want across all of it: `movie night` can set the output, the
+  palette and open a layout. `spark-shell panel [WHAT]` and
+  `spark-shell panel "WORDS"`; `bar panel` and `bar "WORDS"` still
+  work. The panel no longer moves under the block you clicked.
+- Changed: signs. A dot for in use or connected, a ring for available,
+  a check for current or saved, a triangle for a row that opens
+  something; a warning sign on the bar with `lan down` and a low
+  battery, a red dot after `mic` while a program records, a dot after
+  `bt` with a connected device. The prompt is the same angle starship
+  draws. The look rows are the palettes' names alone.
+- Changed: spark chat's window has the panel's size and place.
+- Gone: the layout prompt's own window and its picker of saved
+  layouts, the panel's own placement. `spark-shell layout --ask` opens
+  the panel with the layouts first.
+
 ## v0.47
 
 - Changed: the panel is the bar's, not the block's. A click on a block

@@ -107,7 +107,8 @@ apps for that task and opens them: as sway windows on the desktop, or
 as tmux windows anywhere else. Add `--desktop` or `--terminal` to
 choose. Apps your words name are always opened. Other apps spark picks
 are only suggested. If your words name no app, spark's picks are opened.
-On the desktop, `Super+d` asks for the words.
+On the desktop, `Super+d` opens the panel with your layouts first, and
+the words go at its prompt.
 
 `spark-shell layout save writing` saves the last layout, and
 `spark-shell layout writing` opens it again without asking spark. It is
@@ -128,9 +129,9 @@ Type `spark-shell desktop keys`. You get these lines. The first window
 of the desktop shows them once.
 
     Super+Return opens a terminal window.
-    Super+d asks what you want to do, then opens a layout for it.
+    Super+d opens the panel with your layouts first: say what you want to do.
     Super+s opens spark chat in a small window, and Ctrl-D closes it.
-    Super+p opens the bar's panel, where you pick or type what you want.
+    Super+p opens the panel: pick a row, or say what you want.
     Super+Shift+q closes the window.
     Super+Shift+c reloads sway after spark-shell on.
     Super+Shift+e leaves the desktop.
@@ -172,37 +173,10 @@ the level where you clicked, the wheel nudges it by 5, and a right
 click mutes. The volume keys do the same for `out`, and the mic mute
 key for `mic`.
 
-A click on any other block opens the panel: a small window right under
-that block, in the palette's colours. It is the bar's panel, not the
-block's. The first line says what the block you clicked is about, as
-in `wifi  home, strong, 192.0.2.20`. Then one list of everything the
-bar can do right now: that block's rows first, then the other blocks'
-in the bar's order, each row with its block's word in front, as in
-`out  use Jabra` or `look  theme dracula`. Enter acts. Under the list,
-the question: what do you want to change? Esc, or a click anywhere
-else, closes it. Super+p opens the panel from the keyboard with no
-block picked: the first line restates the whole bar.
-
-- `wifi`: disconnect the network in use; connect one around, strongest
-  first, and a new network asks its password once; forget a saved one.
-- `bt`: connect or disconnect your devices, look for new ones, pair a
-  new one, turn Bluetooth off and on.
-- `out` and `mic`: use another device, mute and unmute.
-- `look`: a palette, the font bigger or smaller, a wallpaper, alpha. A
-  pick applies now. New windows take a font change.
-- `lan`, `bat` and the clock have nothing to set. A click on one shows
-  the address, speed and gateway; the charge, the time left and the
-  health; this month.
-
-Type at the prompt and the list narrows across every block: `drac`
-finds the palette from a click on `wifi`. Words that match no row are
-what you want: `mute everything and dracula, I need some quiet`, `call
-mom on the headset`, `movie night`, `warmer and bigger`. spark turns
-them into steps from that same list, and nothing else: mute `out` and
-`mic`, the palette; connect the headset and move the sound to it.
-spark-shell checks every step against the list, plays it and says
-what it did, one line each. The same words work from a shell:
-`spark-shell bar "mute everything"`.
+A click on any other block opens the panel with that block first.
+The signs the bar wears are the panel's: a dot before a connected
+device, a warning sign with a red `lan down` or a low battery, a red
+dot after `mic` while a program records.
 
 Wi-Fi is set through the tool this machine has: nmcli, iwctl or
 wpa_cli. Sound comes from the audio system you have: PipeWire (wpctl),
@@ -215,6 +189,49 @@ Type `spark-shell bar off --desktop`. The bar is hidden. `on` brings
 it back. Type `spark-shell bar`. You get the state of this bar and of
 the status line in tmux; `--terminal` or `--desktop` names one. The
 AI and the machine stay on the status line inside each window.
+
+## Panel
+
+The panel is one small window, the same size and place every time, in
+the middle of the screen, in the palette's colours. Super+p opens it.
+Super+d opens it with your layouts first. A click on a bar block opens
+it with that block first. Esc, or a click anywhere else, closes it.
+
+The first line says what opened it: the network, its strength as
+bars and the address; the saved layouts and the last one; or the
+whole bar after Super+p. Then one list of everything this machine can
+do right now, in sections: `layout`, the bar's blocks in the bar's
+order, `apps`. The section you came from is on top. Every row names
+its section and what Enter does, as in `wifi  connect cafe`, `out
+use HDMI` or `look  dracula`, with a sign in front where there is a
+state: a dot is in use or connected, a ring is available, a check is
+current or saved, a small triangle opens something. `lan`, `bat` and
+the clock have nothing to set: a click on one shows the address,
+speed and gateway; the charge, the time left and the health; this
+month.
+
+- `layout`: a saved layout opens on Enter. Words at the prompt make a
+  new one.
+- `wifi`: disconnect the network in use; connect one around, strongest
+  first, and a new network asks its password once; forget a saved one.
+- `bt`: connect or disconnect your devices, look for new ones, pair a
+  new one, turn Bluetooth off and on.
+- `out` and `mic`: use another device, mute and unmute.
+- `look`: a palette, the font bigger or smaller, a wallpaper, alpha. A
+  pick applies now. New windows take a font change.
+- `apps`: the allowed apps, in the same window.
+
+Under the list, the question: what do you want? Type and the list
+narrows across every section: `drac` finds the palette from a click
+on `wifi`. Words that match no row are what you want: `mute everything
+and dracula, I need some quiet`, `movie night`, `call mom on the
+headset`, `warmer and bigger`. spark turns them into steps from that
+same list, and nothing else: mute `out` and `mic`, the palette; the
+HDMI output, a dark palette and a layout with mpv; connect the headset
+and move the sound to it. spark-shell checks every step against the
+list, plays it and says what it did, one line each. A layout step
+opens its windows, and the panel follows them. The same words work
+from a shell: `spark-shell panel "mute everything"`.
 
 ## Status and check
 
@@ -249,9 +266,10 @@ notice and boot files for quiet. `off` restores or removes each one.
 
 What leaves the machine: only what the package manager downloads. A
 layout asks spark, which runs on this machine, with your words, the
-screen sizes and the app list; a want at the bar asks it with your
-words and the list of what the bar can do. Never a window title or a
-file. A new Wi-Fi network is saved by the Wi-Fi tool itself.
+screen sizes and the app list; a want at the panel asks it with your
+words, the list of what the bar can do and the names of your saved
+layouts. Never a window title or a file. A new Wi-Fi network is saved
+by the Wi-Fi tool itself.
 
 Uninstall: `spark-shell off`, then delete `~/.spark-shell`.
 

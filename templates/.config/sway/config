@@ -57,15 +57,14 @@ bar {
 
 # key: Super+Return opens a terminal window.
 bindsym $mod+Return exec $term
-# key: Super+d asks what you want to do, then opens a layout for it.
-bindsym $mod+d exec $term --app-id spark-desk -e @REPO@/spark-shell layout --ask
-for_window [app_id="spark-desk"] floating enable, resize set width 60 ppt height 40 ppt
+# key: Super+d opens the panel with your layouts first: say what you want to do.
+bindsym $mod+d exec $term --app-id spark-panel -W 64x24 -e @REPO@/spark-shell panel layout
 # key: Super+s opens spark chat in a small window, and Ctrl-D closes it.
-bindsym $mod+s exec $term --app-id spark-chat -e @REPO@/spark-shell desktop --chat
-for_window [app_id="spark-chat"] floating enable, resize set width 60 ppt height 40 ppt
-# key: Super+p opens the bar's panel, where you pick or type what you want.
-bindsym $mod+p exec $term --app-id spark-panel -W 52x20 -e @REPO@/spark-shell bar panel
-for_window [app_id="spark-panel"] floating enable, border pixel 2
+bindsym $mod+s exec $term --app-id spark-chat -W 64x24 -e @REPO@/spark-shell desktop --chat
+# key: Super+p opens the panel: pick a row, or say what you want.
+bindsym $mod+p exec $term --app-id spark-panel -W 64x24 -e @REPO@/spark-shell panel
+for_window [app_id="spark-panel"] floating enable, border pixel 2, move position center
+for_window [app_id="spark-chat"] floating enable, border pixel 2, move position center
 # key: Super+Shift+q closes the window.
 bindsym $mod+Shift+q kill
 # key: Super+Shift+c reloads sway after spark-shell on.
