@@ -26,6 +26,8 @@
 #   spark-shell desktop wallpaper X   set a picture, a colour, default or none
 #   spark-shell bar on|off            show or hide the status line and the bar
 #   spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
+#   spark-shell bar panel [PAGE]      open the bar's panel (Super+p)
+#   spark-shell bar "WORDS"           ask for a change: "mute everything"
 #   spark-shell sbom [NAME]           list the installed software, or one
 #   spark-shell sbom --json           write the list as a CycloneDX 1.5 file
 #
@@ -41,7 +43,8 @@
 # the rendered ~/.config/spark-shell/sgr.sh colour the prompt. spark
 # itself is not required. Without it the status line stays empty and
 # everything else works. Nothing leaves this machine except what the
-# package manager fetches. A layout asks spark on this machine (spark edit).
+# package manager fetches. A layout, and a want at the bar, ask spark on
+# this machine (spark edit).
 #
 # POSIX sh on both OSes: the Debian, Arch and Void families, and macOS. The choices live in ~/.config/spark-shell/
 # config, one KEY=value a line. PROMPT is starship|plain, PROMPT_STYLE
@@ -1821,13 +1824,14 @@ cmd_check() {
 # window. Its rules: a block appears only for hardware this machine has
 # (no battery, no bat block); words show state and colour shows alarm
 # (the kind word muted, a name in the text colour, red for a recording
-# mic, a wire that is down and a battery under 15); the one gauge, the
-# output volume, is the one thing you can set (a click sets it, the
-# wheel nudges, a right click mutes), so a read-only level takes another
-# shape (wifi as rising bars, the battery as a number); a click on lan
-# or wifi shows the address for 5 s and never keeps it on screen; the
-# groups (connections, sound, power, time) are parted by a thin line,
-# and a group that is absent takes its line with it. Sound comes from
+# mic, a wire that is down and a battery under 15); the gauges, the
+# output volume and the mic level, are the things you can set (a click
+# sets, the wheel nudges, a right click mutes), so a read-only level
+# takes another shape (wifi as rising bars, the battery as a number); a
+# click on any other block opens its panel under the bar (below), and
+# the bar itself never changes width; the groups (connections, sound,
+# power, time, the look) are parted by a thin line, and a group that is
+# absent takes its line with it. Sound comes from
 # the audio system there is: wpctl (PipeWire), pactl (PulseAudio), else
 # amixer on plain ALSA, where a change of output holds for programs
 # started afterwards (ALSA has no live routing) and is written to
@@ -1836,7 +1840,6 @@ cmd_check() {
 BAR_SYS=${SPARK_SHELL_SYS:-/sys}      # tests: a fixture tree in place of /sys and /proc
 BAR_PROC=${SPARK_SHELL_PROC:-/proc}
 BAR_PID=$STATE_DIR/bar.pid            # the running `bar status`, for the redraw signal
-BAR_SHOW=$STATE_DIR/bar.show          # "NAME UNTIL [TEXT]": a block's detail shown until that epoch second
 BAR_ASOUNDRC=$HOME/.config/alsa/asoundrc   # ALSA reads it after ~/.asoundrc; ours only with the marker line
 BAR_GAP=14                            # px between blocks of a group
 BAR_FULL=$(printf '\342\226\210')     # U+2588 full block: the gauge's level
@@ -1868,17 +1871,6 @@ bar_bars() {   # bar_bars LEVEL (0-4) -> the four rising bars, LEVEL of them lit
     printf '%s' "$out"
 }
 bar_timeout() { if command -v timeout >/dev/null 2>&1; then timeout 3 "$@"; else "$@"; fi; }
-bar_shown() {   # bar_shown NAME -> the detail text to show now for that block, or nothing (and the record gone when its time is up)
-    [ -f "$BAR_SHOW" ] || return 0
-    read -r _n _until _text < "$BAR_SHOW" || return 0
-    if [ "$(date +%s)" -ge "${_until:-0}" ]; then rm -f "$BAR_SHOW"; return 0; fi
-    [ "$_n" = "$1" ] && printf '%s' "${_text:-}" || :
-}
-bar_reveal() {   # bar_reveal NAME [TEXT] -- show it for 5 s, then redraw without it
-    mkdir -p "$STATE_DIR"
-    printf '%s %s %s\n' "$1" "$(( $(date +%s) + 5 ))" "${2:-}" > "$BAR_SHOW"
-    ( sleep 5; kill -USR1 "$$" 2>/dev/null ) &
-}
 
 # --- what the hardware says
 bar_addr() { ip -4 -o addr show dev "$1" scope global 2>/dev/null | awk '{print $4; exit}' | cut -d/ -f1; }   # bar_addr IFACE -> a.b.c.d or nothing
@@ -1976,11 +1968,11 @@ al_level() { amixer -c "$1" sget "$2" 2>/dev/null | grep -o '\[[0-9]*%\]' | head
 al_muted() { amixer -c "$1" sget "$2" 2>/dev/null | grep -o '\[\(on\|off\)\]' | head -1 | grep -q off && echo 1 || echo 0; }
 al_set_default() {   # al_set_default N -- the card for programs started from now, in spark-shell's own file; refused when the file is yours, taken back when ALSA refuses it
     id=$(al_cards | awk -F '\t' -v n="$1" '$1 == n {print $2; exit}')
-    if [ -f "$BAR_ASOUNDRC" ] && ! grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC"; then bar_reveal out "asoundrc is yours"; return 1; fi
+    if [ -f "$BAR_ASOUNDRC" ] && ! grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC"; then echo "asoundrc is yours"; return 1; fi
     mkdir -p "$(dirname "$BAR_ASOUNDRC")"
     # !card: alsa.conf sets the card as a number, and only the ! form lets a name replace it (the plain form is refused, and ALSA drops its whole configuration with it)
     printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.!card %s\ndefaults.ctl.!card %s\n' "$id" "$id" > "$BAR_ASOUNDRC"
-    amixer -c "$1" scontrols >/dev/null 2>&1 || { rm -f "$BAR_ASOUNDRC"; bar_reveal out "ALSA refused the file"; return 1; }   # ALSA reads every file at each start: a refused one would take every program's sound
+    amixer -c "$1" scontrols >/dev/null 2>&1 || { rm -f "$BAR_ASOUNDRC"; echo "ALSA refused the file"; return 1; }   # ALSA reads every file at each start: a refused one would take every program's sound
 }
 al_mend_file() {   # a file v0.45 wrote said `defaults.pcm.card NAME`, which ALSA refuses: the ! form from now
     [ -f "$BAR_ASOUNDRC" ] && grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC" && grep -q '^defaults\.pcm\.card ' "$BAR_ASOUNDRC" || return 0
@@ -1994,37 +1986,37 @@ snd_out() {   # -> NAME, LEVEL (or -), MUTED on three lines; nothing without an 
             if ctl=$(al_control "$c" p); then printf '%s\n%s\n%s\n' "$(al_name "$c")" "$(al_level "$c" "$ctl")" "$(al_muted "$c" "$ctl")"; else printf '%s\n-\n0\n' "$(al_name "$c")"; fi ;;
     esac
 }
-snd_mic() {   # -> NAME, LIVE, MUTED on three lines; nothing without a microphone
+snd_mic() {   # -> NAME, LIVE, MUTED, LEVEL (or -) on four lines; nothing without a microphone
     case $SND in
-        wpctl) n=$(wp_default Sources); [ -n "$n" ] || return 0; printf '%s\n%s\n%s\n' "$n" "$(wp_live)" "$(wp_muted @DEFAULT_AUDIO_SOURCE@)" ;;
+        wpctl) n=$(wp_default Sources); [ -n "$n" ] || return 0; printf '%s\n%s\n%s\n%s\n' "$n" "$(wp_live)" "$(wp_muted @DEFAULT_AUDIO_SOURCE@)" "$(wp_level @DEFAULT_AUDIO_SOURCE@)" ;;
         pactl) s=$(pactl get-default-source 2>/dev/null); [ -n "$s" ] || return 0; case $s in *.monitor) return 0 ;; esac
-            n=$(pa_desc sources "$s"); printf '%s\n%s\n%s\n' "${n:-$s}" "$(pa_live)" "$(pa_muted source @DEFAULT_SOURCE@)" ;;
+            n=$(pa_desc sources "$s"); printf '%s\n%s\n%s\n%s\n' "${n:-$s}" "$(pa_live)" "$(pa_muted source @DEFAULT_SOURCE@)" "$(pa_level source @DEFAULT_SOURCE@)" ;;
         alsa) c=$(al_mic); [ -n "$c" ] || return 0; live=0; [ -z "$(al_running c)" ] || live=1
-            if ctl=$(al_control "$c" c); then printf '%s\n%s\n%s\n' "$(al_name "$c")" "$live" "$(al_muted "$c" "$ctl")"; else printf '%s\n%s\n0\n' "$(al_name "$c")" "$live"; fi ;;
+            if ctl=$(al_control "$c" c); then printf '%s\n%s\n%s\n%s\n' "$(al_name "$c")" "$live" "$(al_muted "$c" "$ctl")" "$(al_level "$c" "$ctl")"; else printf '%s\n%s\n0\n-\n' "$(al_name "$c")" "$live"; fi ;;
     esac
 }
-snd_set() {   # snd_set LEVEL | +5 | -5 | mute | mic | next -- the change asked by a click or a key
+snd_set() {   # snd_set out|mic LEVEL|+5|-5|mute|muted|unmuted -- the change asked by a click, a key or the panel (mute toggles)
     SND=${SND:-$(snd_tool)}
+    t=$1; shift
     case $SND in
-        wpctl) case $1 in
-                mute) wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle ;;
-                mic) wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle ;;
-                next) wp_rows Sinks | awk -F '\t' '{ ids[NR] = $2; if ($1 == 1) cur = NR } END { if (NR > 1) print ids[cur % NR + 1] }' | { read -r id && [ -n "$id" ] && wpctl set-default "$id"; } ;;
-                +*|-*) wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ "${1#[+-]}%${1%"${1#?}"}" ;;
-                *) wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ "$1%" ;;
+        wpctl) n=@DEFAULT_AUDIO_SINK@; [ "$t" = out ] || n=@DEFAULT_AUDIO_SOURCE@
+            case $1 in
+                mute) wpctl set-mute "$n" toggle ;; muted) wpctl set-mute "$n" 1 ;; unmuted) wpctl set-mute "$n" 0 ;;
+                +*|-*) wpctl set-volume -l 1.0 "$n" "${1#[+-]}%${1%"${1#?}"}" ;;
+                *) wpctl set-volume -l 1.0 "$n" "$1%" ;;
             esac ;;
-        pactl) case $1 in
-                mute) pactl set-sink-mute @DEFAULT_SINK@ toggle ;;
-                mic) pactl set-source-mute @DEFAULT_SOURCE@ toggle ;;
-                next) cur=$(pactl get-default-sink 2>/dev/null); pactl list short sinks 2>/dev/null | cut -f2 | awk -v c="$cur" '{ n[NR] = $0; if ($0 == c) i = NR } END { if (NR > 1) print n[i % NR + 1] }' | { read -r s && [ -n "$s" ] && pactl set-default-sink "$s"; } ;;
-                +*|-*) pactl set-sink-volume @DEFAULT_SINK@ "${1#[+-]}%${1%"${1#?}"}" ;;   # 5%+ / 5%-
-                *) pactl set-sink-volume @DEFAULT_SINK@ "$1%" ;;
+        pactl) k=sink; n=@DEFAULT_SINK@; [ "$t" = out ] || { k=source; n=@DEFAULT_SOURCE@; }
+            case $1 in
+                mute) pactl "set-$k-mute" "$n" toggle ;; muted) pactl "set-$k-mute" "$n" 1 ;; unmuted) pactl "set-$k-mute" "$n" 0 ;;
+                +*|-*) pactl "set-$k-volume" "$n" "${1#[+-]}%${1%"${1#?}"}" ;;   # 5%+ / 5%-
+                *) pactl "set-$k-volume" "$n" "$1%" ;;
             esac ;;
-        alsa) case $1 in
-                mic) c=$(al_mic); [ -n "$c" ] && ctl=$(al_control "$c" c) && amixer -q -c "$c" sset "$ctl" toggle ;;
-                next) cur=$(al_out); al_with p | awk -v c="$cur" '{ n[NR] = $0; if ($0 == c) i = NR } END { if (NR > 1) print n[i % NR + 1] }' | { read -r n && [ -n "$n" ] && al_set_default "$n"; } ;;
-                *) c=$(al_out); [ -n "$c" ] && ctl=$(al_control "$c" p) || return 0
-                    case $1 in mute) amixer -q -c "$c" sset "$ctl" toggle ;; +*|-*) amixer -q -c "$c" sset "$ctl" "${1#[+-]}%${1%"${1#?}"}" ;; *) amixer -q -c "$c" sset "$ctl" "$1%" ;; esac ;;
+        alsa) if [ "$t" = out ]; then c=$(al_out); k=p; else c=$(al_mic); k=c; fi
+            [ -n "$c" ] && ctl=$(al_control "$c" "$k") || return 0
+            case $1 in
+                mute) amixer -q -c "$c" sset "$ctl" toggle ;; muted) amixer -q -c "$c" sset "$ctl" mute ;; unmuted) amixer -q -c "$c" sset "$ctl" unmute ;;
+                +*|-*) amixer -q -c "$c" sset "$ctl" "${1#[+-]}%${1%"${1#?}"}" ;;
+                *) amixer -q -c "$c" sset "$ctl" "$1%" ;;
             esac ;;
     esac >/dev/null 2>&1 || :
 }
@@ -2038,11 +2030,11 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by a di
     # connections
     lan=$(bar_lan)
     case $lan in
-        up*) t=$(bar_shown lan); bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" lan)${t:+ $t}")" ;;
+        up*) bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" lan)")" ;;
         down) bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" lan) $(bar_span "$HEX_ANSI_1" down)")" ;;
     esac
     wifi=$(bar_wifi)
-    [ -z "$wifi" ] || { t=$(bar_shown wifi); bar_add "$(bar_block wifi '' "$(bar_span "$HEX_MUTED" wifi) $(bar_bars "${wifi%% *}")${t:+ $t}")"; }
+    [ -z "$wifi" ] || bar_add "$(bar_block wifi '' "$(bar_span "$HEX_MUTED" wifi) $(bar_bars "${wifi%% *}")")"
     bt=$(bar_bt)
     case $bt in
         name*) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" bt) $(bar_esc "$(bar_short "${bt#name }")")")" ;;
@@ -2054,17 +2046,22 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by a di
     out=$(snd_out)
     if [ -n "$out" ]; then
         n=$(printf '%s\n' "$out" | sed -n 1p); lvl=$(printf '%s\n' "$out" | sed -n 2p); m=$(printf '%s\n' "$out" | sed -n 3p)
-        t=$(bar_shown out); if [ -n "$t" ]; then shown=$(bar_esc "$t"); else shown=$(bar_esc "$(bar_short "$n")"); fi   # a note (asoundrc is yours) shows whole
+        shown=$(bar_esc "$(bar_short "$n")")
         gap=$BAR_GAP; [ "$lvl" = - ] || [ -z "$lvl" ] || gap=6   # the gauge sits close to its name
         bar_add "$(bar_block out name "$(bar_span "$HEX_MUTED" out) $shown" "$gap")"
         [ "$lvl" = - ] || [ -z "$lvl" ] || bar_add "$(bar_block out gauge "$(bar_gauge "$lvl" "$m")")"
     fi
     mic=$(snd_mic)
     if [ -n "$mic" ]; then
-        n=$(printf '%s\n' "$mic" | sed -n 1p); live=$(printf '%s\n' "$mic" | sed -n 2p); m=$(printf '%s\n' "$mic" | sed -n 3p)
-        if [ "$m" = 1 ]; then bar_add "$(bar_block mic '' "$(bar_span "$HEX_MUTED" 'mic off')")"
-        elif [ "$live" = 1 ]; then bar_add "$(bar_block mic '' "$(bar_span "$HEX_ANSI_1" mic) $(bar_esc "$(bar_short "$n")")")"
-        else bar_add "$(bar_block mic '' "$(bar_span "$HEX_MUTED" mic) $(bar_esc "$(bar_short "$n")")")"; fi
+        n=$(printf '%s\n' "$mic" | sed -n 1p); live=$(printf '%s\n' "$mic" | sed -n 2p); m=$(printf '%s\n' "$mic" | sed -n 3p); lvl=$(printf '%s\n' "$mic" | sed -n 4p)
+        c=$HEX_MUTED; [ "$live" != 1 ] || c=$HEX_ANSI_1   # red while a program records
+        if [ "$lvl" = - ] || [ -z "$lvl" ]; then   # no level control: the word says muted
+            if [ "$m" = 1 ]; then bar_add "$(bar_block mic name "$(bar_span "$HEX_MUTED" 'mic off')")"
+            else bar_add "$(bar_block mic name "$(bar_span "$c" mic) $(bar_esc "$(bar_short "$n")")")"; fi
+        else
+            bar_add "$(bar_block mic name "$(bar_span "$c" mic) $(bar_esc "$(bar_short "$n")")" 6)"
+            bar_add "$(bar_block mic gauge "$(bar_gauge "$lvl" "$m")")"
+        fi
     fi
     bar_group
     # power
@@ -2077,29 +2074,31 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by a di
     fi
     bar_group
     # time
-    bar_add "$(bar_block clock '' "$(bar_span "$HEX_MUTED" "$(date '+%a %d %b')") $(date '+%H:%M')" 6)"
+    bar_add "$(bar_block clock '' "$(bar_span "$HEX_MUTED" "$(date '+%a %d %b')") $(date '+%H:%M')")"
+    bar_group
+    # the look: the palette's name, or the word alone with none
+    t=''; [ -z "$THEME" ] || [ "$THEME" = none ] || t=" $(bar_esc "$THEME")"
+    bar_add "$(bar_block look '' "$(bar_span "$HEX_MUTED" look)$t" 6)"
     bar_group
     printf '[%s],\n' "$line"
 }
-bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH -- one click or wheel step on a block
-    case $1 in
-        lan) [ "$3" != 1 ] || { a=$(bar_lan); bar_reveal lan "${a#up }"; } ;;
-        wifi) [ "$3" != 1 ] || { w=$(bar_wifi); bar_reveal wifi "${w#* }"; } ;;
-        out) case $2:$3 in
-                gauge:1) [ "$5" -gt 0 ] 2>/dev/null || return 0; l=$(( ($4 * 100 / $5 + 2) / 5 * 5 )); [ "$l" -le 100 ] || l=100; [ "$l" -ge 0 ] || l=0; snd_set "$l" ;;
-                name:1) snd_set next ;;
-                *:4) snd_set +5 ;; *:5) snd_set -5 ;; *:2|*:3) snd_set mute ;;
-            esac ;;
-        mic) case $3 in 1|2|3) snd_set mic ;; esac ;;
+bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X -- one click or wheel step on a block
+    case $1:$2:$3 in
+        div:*) ;;
+        out:gauge:1|mic:gauge:1) [ "$5" -gt 0 ] 2>/dev/null || return 0; l=$(( ($4 * 100 / $5 + 2) / 5 * 5 )); [ "$l" -le 100 ] || l=100; [ "$l" -ge 0 ] || l=0; snd_set "$1" "$l" ;;
+        out:*:4|mic:*:4) snd_set "$1" +5 ;;
+        out:*:5|mic:*:5) snd_set "$1" -5 ;;
+        out:*:2|out:*:3|mic:*:2|mic:*:3) snd_set "$1" mute ;;
+        *:*:1) bar_panel_open "$1" "$(( ${6:-0} - $4 ))" "$5" ;;   # the block's left edge: the pointer's x less its x inside the block
     esac
 }
 bar_clicks() {   # swaybar's clicks on stdin: `[` then one `,{...}` a line; each acted on, then the bar redrawn
     while IFS= read -r c; do
         c=${c#,}; [ -n "$c" ] && [ "$c" != '[' ] || continue
-        # shellcheck disable=SC2046   # the five fields, split on purpose
-        set -- $(printf '%s' "$c" | jq -r 'def w: if . == null or . == "" then "-" else . end; [(.name | w), (.instance | w), .button // 0, .relative_x // 0, .width // 0] | @tsv' 2>/dev/null) || continue
-        [ $# -ge 5 ] || continue
-        bar_click "$1" "$2" "$3" "$4" "$5"
+        # shellcheck disable=SC2046   # the six fields, split on purpose
+        set -- $(printf '%s' "$c" | jq -r 'def w: if . == null or . == "" then "-" else . end; [(.name | w), (.instance | w), .button // 0, .relative_x // 0, .width // 0, .x // 0] | @tsv' 2>/dev/null) || continue
+        [ $# -ge 6 ] || continue
+        bar_click "$1" "$2" "$3" "$4" "$5" "$6"
         kill -USR1 "$$" 2>/dev/null || :
     done
 }
@@ -2130,7 +2129,7 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
 }
 bar_redraw() { [ -f "$BAR_PID" ] && read -r p < "$BAR_PID" && kill -USR1 "$p" 2>/dev/null || :; }   # the running bar draws again now
 bar_volume_key() {   # bar_volume_key up|down|mute|mic -- the keyboard's volume keys
-    case $1 in up) snd_set +5 ;; down) snd_set -5 ;; mute) snd_set mute ;; mic) snd_set mic ;;
+    case $1 in up) snd_set out +5 ;; down) snd_set out -5 ;; mute) snd_set out mute ;; mic) snd_set mic mute ;;
         *) refuse_in bar "volume takes up, down, mute or mic" ;; esac
     bar_redraw
 }
@@ -2157,17 +2156,511 @@ bar_desktop() {   # bar_desktop [on|off] WHICH -- the bar at the top: the config
         *) if [ "$DESKTOP_BAR" = yes ]; then echo "bar: shown at the top of the screen -- $(bar_names) (spark-shell bar off --desktop hides it)"; else echo "bar: hidden (spark-shell bar on --desktop shows it)"; fi ;;
     esac
 }
-cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | volume up|down|mute|mic
+cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | volume up|down|mute|mic | panel [PAGE] [--list|ACTION [ARG]] | WORDS
     config_load
     case ${1:-} in
         status) shift; bar_status "$@"; return ;;
         volume) shift; bar_volume_key "${1:-}"; return ;;
+        panel) shift; bar_panel "$@"; return ;;
         on|off|'') ;;
-        *) refuse_in bar "$1 is not a bar command: on, off, or nothing (--terminal or --desktop for one of the two)" ;;
+        -*) refuse_in bar "$1 is not a bar command: on, off, status, volume, panel, or words for what you want" ;;
+        *) [ "$OS" != Darwin ] || refuse_in bar "not on macOS, which has its own desktop"; bar_want "$*"; return ;;
     esac
     which=both; case ${PLAYER:-} in rooms) which=rooms ;; windows) which=windows ;; esac
     [ "$which" = windows ] || bar_tmux "${1:-}" "$which"
     [ "$which" = rooms ] || bar_desktop "${1:-}" "$which"
+}
+
+# ------------------------------------------------------------------ panel
+# The bar's panel: one small window under the block you clicked (or
+# Super+p), in the palette's colours. Its first line restates the block,
+# then a list where Enter acts, a hint row, and a prompt where you type
+# instead: a few letters narrow the list, and words that match no row
+# are a want for spark ("call mom on the headset"), turned into steps
+# from what this machine can do right now, checked against that list,
+# then played (bar_want). Tab and Shift+Tab walk the pages. Esc, or a
+# click anywhere else, closes it. The bar itself never changes width:
+# everything a click has to say is said here. `spark-shell bar panel
+# PAGE --list` prints a page as text, and `bar panel PAGE ACTION [ARG]`
+# does one action by hand; both are what the tests and the want use.
+PANEL_PAGES="lan wifi bt out mic bat clock look"
+PANEL_APP='spark-panel'               # the window's app id (the sway template floats it)
+PANEL_SIZE=52x16                      # columns x rows of the window
+PANEL_OPEN=$STATE_DIR/panel.page      # the page open now, written by the panel itself
+TAB=$(printf '\t')
+panel_pages_here() {   # -> the pages this machine has, in the bar's order
+    for p in $PANEL_PAGES; do
+        case $p in
+            lan) [ -n "$(bar_wired)" ] || continue ;;
+            wifi) [ -n "$(bar_wireless)" ] || continue ;;
+            bt) ls -d "$BAR_SYS"/class/bluetooth/hci* >/dev/null 2>&1 || continue ;;
+            out|mic) [ -n "${SND:-}" ] || continue ;;
+            bat) [ -n "$(bar_power)" ] || continue ;;
+        esac
+        echo "$p"
+    done
+}
+panel_next() {   # panel_next PAGE "PAGES" 1|-1 -> the page after or before it, around the end
+    # shellcheck disable=SC2086   # the pages, split on purpose
+    _cur=$1; _step=$3; set -- $2
+    _n=$#; _at=0; _i=0
+    for p in "$@"; do [ "$p" != "$_cur" ] || _at=$_i; _i=$((_i + 1)); done
+    _at=$(( (_at + _step + _n) % _n )); _i=0
+    for p in "$@"; do [ "$_i" -ne "$_at" ] || { echo "$p"; return; }; _i=$((_i + 1)); done
+}
+panel_lower() { printf '%s' "$*" | tr 'A-Z' 'a-z'; }
+panel_bars() { bar_bars_plain "$1"; }
+bar_bars_plain() {   # bar_bars_plain LEVEL (0-4) -> the four rising bars as text, the unlit ones as a light shade
+    i=1; out=''
+    for s in $BAR_STEPS; do
+        if [ "$i" -gt "$1" ]; then out="$out$BAR_SHADE"; else out="$out$(printf "$s")"; fi
+        i=$((i + 1))
+    done
+    printf '%s' "$out"
+}
+panel_secret() {   # panel_secret PROMPT -> what was typed, unseen; nothing when there is no terminal
+    [ -t 0 ] || return 0
+    printf '%s' "$1" > /dev/tty
+    stty -echo 2>/dev/null; IFS= read -r _s </dev/tty || _s=''; stty echo 2>/dev/null; echo >/dev/tty
+    printf '%s' "$_s"
+}
+
+# --- wifi: the tool that answers for this machine's wireless interface
+wifi_if() { bar_wireless | sed -n 1p; }
+wifi_tool() {   # -> nmcli | iwctl | wpa_cli | nothing
+    _i=$(wifi_if); [ -n "$_i" ] || return 0
+    if command -v nmcli >/dev/null 2>&1 && nmcli -t -f RUNNING general 2>/dev/null | grep -q running; then echo nmcli
+    elif command -v iwctl >/dev/null 2>&1 && iwctl station "$_i" show >/dev/null 2>&1; then echo iwctl
+    elif command -v wpa_cli >/dev/null 2>&1 && wpa_cli -i "$_i" status >/dev/null 2>&1; then echo wpa_cli
+    fi
+}
+wifi_level() { _l=$(( ($1 + 100) * 2 )); [ "$_l" -ge 0 ] || _l=0; [ "$_l" -le 100 ] || _l=100; echo $(( (_l + 12) / 25 )); }   # wifi_level DBM -> 0..4
+wifi_strip() { sed 's/\x1b\[[0-9;]*m//g; s/^[ >]*//; s/ *$//'; }   # iwctl's colours and marks off
+wifi_connected() {   # -> the network in use, or nothing
+    case $(wifi_tool) in
+        nmcli) nmcli -t -e yes -f IN-USE,SSID dev wifi list 2>/dev/null | awk -F: '$1 == "*" { sub(/^[^:]*:/, ""); gsub(/\\:/, ":"); print; exit }' ;;
+        iwctl) iwctl station "$(wifi_if)" show 2>/dev/null | wifi_strip | awk '$1 == "Connected" && $2 == "network" { $1 = ""; $2 = ""; sub(/^ +/, ""); print; exit }' ;;
+        wpa_cli) wpa_cli -i "$(wifi_if)" status 2>/dev/null | sed -n 's/^ssid=//p' | sed -n 1p ;;
+    esac
+}
+wifi_known() {   # -> ID<tab>NAME per saved network (ID is the tool's handle: a name for nmcli and iwctl, a number for wpa_cli)
+    case $(wifi_tool) in
+        nmcli) nmcli -t -e yes -f NAME,TYPE con show 2>/dev/null | awk -F: '$NF ~ /wireless/ { $NF = ""; sub(/:$/, ""); gsub(/\\:/, ":"); print $0 "\t" $0 }' ;;
+        iwctl) iwctl known-networks list 2>/dev/null | wifi_strip | awk 'NR > 4 && NF >= 3 { n = ""; for (i = 1; i <= NF - 3; i++) n = n (n == "" ? "" : " ") $i; if (n != "") print n "\t" n }' ;;
+        wpa_cli) wpa_cli -i "$(wifi_if)" list_networks 2>/dev/null | awk -F '\t' 'NR > 1 && $2 != "" { print $1 "\t" $2 }' ;;
+    esac
+}
+wifi_scan() {   # -> NAME<tab>LEVEL<tab>SECURED per network around, strongest first, one line per name; a scan once per run
+    [ ! -f "$TMP/wifi.scan" ] || { cat "$TMP/wifi.scan"; return 0; }
+    case $(wifi_tool) in
+        nmcli) nmcli -t -e yes -f SIGNAL,SECURITY,SSID dev wifi list --rescan auto 2>/dev/null \
+            | awk -F: '{ sig = $1; sec = ($2 == "" || $2 == "--") ? 0 : 1; $1 = ""; $2 = ""; sub(/^::/, ""); gsub(/\\:/, ":"); if ($0 != "") print $0 "\t" int((sig + 12) / 25) "\t" sec }' ;;
+        iwctl) iwctl station "$(wifi_if)" scan >/dev/null 2>&1; sleep 2
+            iwctl station "$(wifi_if)" get-networks 2>/dev/null | wifi_strip | awk 'NR > 4 && NF >= 3 { s = $NF; l = gsub(/\*/, "*", s); sec = ($(NF - 1) == "open") ? 0 : 1; n = ""; for (i = 1; i <= NF - 2; i++) n = n (n == "" ? "" : " ") $i; if (n != "") print n "\t" l "\t" sec }' ;;
+        wpa_cli) wpa_cli -i "$(wifi_if)" scan >/dev/null 2>&1; sleep 2
+            wpa_cli -i "$(wifi_if)" scan_results 2>/dev/null | awk -F '\t' 'NR > 1 && $5 != "" { sec = ($4 ~ /WPA|WEP|PSK|SAE/) ? 1 : 0; print $5 "\t" $3 "\t" sec }' \
+            | while IFS="$TAB" read -r n dbm sec; do printf '%s\t%s\t%s\n' "$n" "$(wifi_level "$dbm")" "$sec"; done ;;
+    esac | awk -F '\t' '!seen[$1]++ || $2 > best[$1] { best[$1] = $2; sec[$1] = $3 } END { for (n in best) print n "\t" best[n] "\t" sec[n] }' | sort -t "$TAB" -k2,2nr -k1,1 > "$TMP/wifi.scan"
+    cat "$TMP/wifi.scan"
+}
+wifi_known_id() { wifi_known | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($2) == n && !done { print $1; done = 1 }'; }   # wifi_known_id NAME -> its handle, or nothing
+wifi_connect() {   # wifi_connect NAME [PASSWORD] -> one line
+    _i=$(wifi_if); _id=$(wifi_known_id "$1"); _r=''
+    case $(wifi_tool) in
+        nmcli) if [ -n "$_id" ]; then _r=$(nmcli con up id "$_id" 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_r" | tail -1)"; return 1; }
+               else _r=$(nmcli dev wifi connect "$1" ${2:+password "$2"} 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_r" | tail -1)"; return 1; }; fi ;;
+        iwctl) _r=$(iwctl ${2:+--passphrase "$2"} station "$_i" connect "$1" 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_r" | wifi_strip | tail -1)"; return 1; } ;;
+        wpa_cli) if [ -z "$_id" ]; then
+                _id=$(wpa_cli -i "$_i" add_network 2>/dev/null | tail -1)
+                case $_id in ''|*[!0-9]*) echo "could not connect to $1: wpa_cli did not add it"; return 1 ;; esac
+                wpa_cli -i "$_i" set_network "$_id" ssid "\"$1\"" >/dev/null 2>&1
+                if [ -n "${2:-}" ]; then wpa_cli -i "$_i" set_network "$_id" psk "\"$2\"" >/dev/null 2>&1; else wpa_cli -i "$_i" set_network "$_id" key_mgmt NONE >/dev/null 2>&1; fi
+                wpa_cli -i "$_i" enable_network "$_id" >/dev/null 2>&1
+                wpa_cli -i "$_i" save_config 2>/dev/null | grep -q OK || _r="(kept until the next boot: wpa_supplicant.conf is not writable from here)"
+            fi
+            wpa_cli -i "$_i" select_network "$_id" >/dev/null 2>&1
+            wpa_cli -i "$_i" enable_network all >/dev/null 2>&1   # select_network puts the other saved networks aside
+            wpa_cli -i "$_i" reconnect >/dev/null 2>&1
+            _t=0; while [ "$_t" -lt 15 ]; do [ "$(wifi_connected)" = "$1" ] && break; sleep 1; _t=$((_t + 1)); done
+            [ "$(wifi_connected)" = "$1" ] || { echo "could not connect to $1 (wrong password, or out of reach)"; return 1; } ;;
+        *) echo "no tool answers for wifi (nmcli, iwctl or wpa_cli)"; return 1 ;;
+    esac
+    rm -f "$TMP/wifi.scan"
+    echo "connected to $1${_r:+ $_r}"
+}
+wifi_disconnect() {   # -> one line
+    _i=$(wifi_if); _c=$(wifi_connected)
+    case $(wifi_tool) in
+        nmcli) nmcli dev disconnect "$_i" >/dev/null 2>&1 ;;
+        iwctl) iwctl station "$_i" disconnect >/dev/null 2>&1 ;;
+        wpa_cli) wpa_cli -i "$_i" disconnect >/dev/null 2>&1 ;;
+        *) echo "no tool answers for wifi (nmcli, iwctl or wpa_cli)"; return 1 ;;
+    esac || { echo "could not disconnect"; return 1; }
+    echo "disconnected${_c:+ from $_c}"
+}
+wifi_forget() {   # wifi_forget NAME -> one line
+    _i=$(wifi_if); _id=$(wifi_known_id "$1"); [ -n "$_id" ] || { echo "$1 is not a saved network"; return 1; }
+    case $(wifi_tool) in
+        nmcli) nmcli con delete id "$_id" >/dev/null 2>&1 ;;
+        iwctl) iwctl known-networks "$_id" forget >/dev/null 2>&1 ;;
+        wpa_cli) wpa_cli -i "$_i" remove_network "$_id" >/dev/null 2>&1 && wpa_cli -i "$_i" save_config >/dev/null 2>&1 ;;
+    esac || { echo "could not forget $1"; return 1; }
+    echo "forgot $1"
+}
+
+# --- bluetooth: bluetoothctl, the one tool
+bt_powered() { bar_timeout bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; }
+bt_list() {   # -> MAC<tab>NAME<tab>PAIRED<tab>CONNECTED per device bluez knows
+    _p=$(bar_timeout bluetoothctl devices Paired 2>/dev/null | awk '$1 == "Device" {print $2}')
+    _c=$(bar_timeout bluetoothctl devices Connected 2>/dev/null | awk '$1 == "Device" {print $2}')
+    bar_timeout bluetoothctl devices 2>/dev/null | awk '$1 == "Device" { mac = $2; $1 = ""; $2 = ""; sub(/^ +/, ""); print mac "\t" $0 }' | while IFS="$TAB" read -r mac name; do
+        p=0; c=0
+        printf '%s\n' "$_p" | grep -qx "$mac" && p=1
+        printf '%s\n' "$_c" | grep -qx "$mac" && c=1
+        printf '%s\t%s\t%s\t%s\n' "$mac" "$name" "$p" "$c"
+    done
+}
+bt_mac() { bt_list | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($2) == n && !done { print $1; done = 1 }'; }   # bt_mac NAME -> its address, or nothing (the whole list read: no broken pipe)
+bt_act() {   # bt_act connect|disconnect|pair NAME | scan | power on|off -> one line
+    case $1 in
+        connect|disconnect|pair)
+            _m=$(bt_mac "$2"); [ -n "$_m" ] || { echo "no device named $2"; return 1; }
+            case $1 in
+                connect) bar_timeout bluetoothctl connect "$_m" 2>&1 | grep -q 'successful' && echo "connected $2" || { echo "could not connect $2 (is it on, and near?)"; return 1; } ;;
+                disconnect) bar_timeout bluetoothctl disconnect "$_m" 2>&1 | grep -q 'Successful' && echo "disconnected $2" || { echo "could not disconnect $2"; return 1; } ;;
+                pair) timeout 25 bluetoothctl pair "$_m" 2>&1 | grep -q 'Pairing successful' || { echo "could not pair $2 (put it in pairing mode, then try again)"; return 1; }
+                      bar_timeout bluetoothctl trust "$_m" >/dev/null 2>&1
+                      bar_timeout bluetoothctl connect "$_m" >/dev/null 2>&1 && echo "paired and connected $2" || echo "paired $2" ;;
+            esac ;;
+        scan) timeout 10 bluetoothctl --timeout 8 scan on >/dev/null 2>&1 || :
+              _n=$(bt_list | awk -F '\t' '$3 == 0 {print $2}' | paste -sd, - | sed 's/,/, /g')
+              if [ -n "$_n" ]; then echo "new: $_n (Enter on one pairs it)"; else echo "nothing new near (put the device in pairing mode)"; fi ;;
+        power) bar_timeout bluetoothctl power "$2" >/dev/null 2>&1 && echo "bluetooth $2" || { echo "could not turn bluetooth $2"; return 1; } ;;
+        *) echo "$1 is not something bt does"; return 1 ;;
+    esac
+}
+
+# --- sound: the devices, through the same tool the bar reads
+snd_devices() {   # snd_devices out|mic -> NAME<tab>DEFAULT(1/0) per device
+    case $SND in
+        wpctl) _s=Sinks; [ "$1" = out ] || _s=Sources; wp_rows "$_s" | awk -F '\t' '{print $3 "\t" $1}' ;;
+        pactl) _k=sinks; _d=$(pactl get-default-sink 2>/dev/null); [ "$1" = out ] || { _k=sources; _d=$(pactl get-default-source 2>/dev/null); }
+            pactl list short "$_k" 2>/dev/null | cut -f2 | while IFS= read -r s; do
+                case $s in *.monitor) continue ;; esac
+                n=$(pa_desc "$_k" "$s"); d=0; [ "$s" != "$_d" ] || d=1; printf '%s\t%s\n' "${n:-$s}" "$d"
+            done ;;
+        alsa) if [ "$1" = out ]; then _k=p; _d=$(al_out); else _k=c; _d=$(al_mic); fi
+            for c in $(al_with "$_k"); do d=0; [ "$c" != "$_d" ] || d=1; printf '%s\t%s\n' "$(al_name "$c")" "$d"; done ;;
+    esac
+}
+snd_use() {   # snd_use out|mic NAME -> one line; on plain ALSA the output's card holds for programs started from now
+    _n=$(panel_lower "$2")
+    case $SND in
+        wpctl) _s=Sinks; [ "$1" = out ] || _s=Sources
+            _id=$(wp_rows "$_s" | awk -F '\t' -v n="$_n" 'tolower($3) == n && !done {print $2; done = 1}'); [ -n "$_id" ] || { echo "no $1 named $2"; return 1; }
+            wpctl set-default "$_id" >/dev/null 2>&1 && echo "$1: $2" || { echo "could not switch $1 to $2"; return 1; } ;;
+        pactl) _k=sinks; _v=set-default-sink; [ "$1" = out ] || { _k=sources; _v=set-default-source; }
+            _id=$(pactl list short "$_k" 2>/dev/null | cut -f2 | while IFS= read -r s; do d=$(pa_desc "$_k" "$s"); [ "$(panel_lower "${d:-$s}")" != "$_n" ] || { echo "$s"; break; }; done)
+            [ -n "$_id" ] || { echo "no $1 named $2"; return 1; }
+            pactl "$_v" "$_id" >/dev/null 2>&1 && echo "$1: $2" || { echo "could not switch $1 to $2"; return 1; } ;;
+        alsa) [ "$1" = out ] || { echo "on plain ALSA the mic follows the output's card"; return 0; }
+            _c=''; for c in $(al_with p); do [ "$(panel_lower "$(al_name "$c")")" != "$_n" ] || { _c=$c; break; }; done
+            [ -n "$_c" ] || { echo "no output named $2"; return 1; }
+            _r=$(al_set_default "$_c") || { echo "$_r"; return 1; }
+            echo "out: $2, for programs started from now (plain ALSA)" ;;
+        *) echo "no audio system answers"; return 1 ;;
+    esac
+}
+
+# --- the pages: a title line, the rows (TEXT<tab>ACTION ARG), an action
+panel_title() {   # panel_title PAGE -> one line that restates the block
+    case $1 in
+        lan) _l=$(bar_lan); case $_l in up*) echo "lan  up, ${_l#up }" ;; down) echo "lan  down: no carrier on the wire" ;; *) echo "lan  no wire" ;; esac ;;
+        wifi) _t=$(wifi_tool); _c=$(wifi_connected); _w=$(bar_wifi)
+            if [ -z "$_t" ]; then echo "wifi  no tool answers (nmcli, iwctl or wpa_cli)"
+            elif [ -z "$_c" ]; then echo "wifi  not connected"
+            else case ${_w%% *} in 4) _s=strong ;; 3) _s=good ;; 2) _s=fair ;; *) _s=weak ;; esac; _a=${_w#* }; echo "wifi  $_c, $_s${_a:+, $_a}"; fi ;;
+        bt) _b=$(bar_bt); case $_b in name*) echo "bt  ${_b#name }, connected" ;; on) echo "bt  on, nothing connected" ;; off) echo "bt  off" ;; *) echo "bt  no controller" ;; esac ;;
+        out|mic) if [ "$1" = out ]; then _o=$(snd_out); else _o=$(snd_mic); fi
+            [ -n "$_o" ] || { echo "$1  nothing found"; return 0; }
+            _n=$(printf '%s\n' "$_o" | sed -n 1p); _lv=$(printf '%s\n' "$_o" | sed -n 2p); _m=$(printf '%s\n' "$_o" | sed -n 3p)
+            if [ "$1" = mic ]; then _lv=$(printf '%s\n' "$_o" | sed -n 4p); _live=$(printf '%s\n' "$_o" | sed -n 2p); fi
+            _s="$1  $_n"; [ "$_lv" = - ] || [ -z "$_lv" ] || _s="$_s, $_lv%"; [ "$_m" != 1 ] || _s="$_s, muted"; [ "${_live:-0}" != 1 ] || _s="$_s, recording"
+            echo "$_s" ;;
+        bat) _b=$(bar_power); [ -n "$_b" ] || { echo "bat  no battery"; return 0; }
+            _s="bat  ${_b%% *}%, $(panel_lower "${_b#* }")"; _left=$(bat_left); [ -z "$_left" ] || _s="$_s, $_left"; echo "$_s" ;;
+        clock) echo "clock  $(date '+%A %d %B %Y, %H:%M')" ;;
+        look) echo "look  ${THEME:-none}, $(bar_font)" ;;   # the wallpaper and alpha are named in their rows
+    esac
+}
+bat_dir() { for b in "$BAR_SYS"/class/power_supply/*; do [ -f "$b/capacity" ] && { [ ! -f "$b/type" ] || [ "$(cat "$b/type")" = Battery ]; } && { echo "$b"; return; }; done; }
+bat_num() { cat "$(bat_dir)/$1" 2>/dev/null || :; }
+bat_left() {   # -> "H:MM left" or "H:MM to full", from the kernel's energy or charge numbers; nothing when it cannot tell
+    _d=$(bat_dir); [ -n "$_d" ] || return 0
+    _now=$(bat_num energy_now); _full=$(bat_num energy_full); _rate=$(bat_num power_now)
+    [ -n "$_now" ] || { _now=$(bat_num charge_now); _full=$(bat_num charge_full); _rate=$(bat_num current_now); }
+    [ -n "$_now" ] && [ -n "$_rate" ] && [ "$_rate" -gt 0 ] 2>/dev/null || return 0
+    case $(bat_num status) in
+        Discharging) _m=$(( _now * 60 / _rate )); printf '%d:%02d left\n' $((_m / 60)) $((_m % 60)) ;;
+        Charging) [ -n "$_full" ] && [ "$_full" -gt "$_now" ] || return 0; _m=$(( (_full - _now) * 60 / _rate )); printf '%d:%02d to full\n' $((_m / 60)) $((_m % 60)) ;;
+    esac
+}
+cal_rows() {   # this month, Sunday first, today marked (awk: no cal, no GNU date needed)
+    date '+%Y %m %d' | awk -v mark="${1:-}" -v unmark="${2:-}" '{
+        y = $1; m = $2 + 0; d = $3 + 0
+        split("31 28 31 30 31 30 31 31 30 31 30 31", dim, " "); if ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0) dim[2] = 29
+        mm = m; yy = y; if (mm < 3) { mm += 12; yy-- }; k = yy % 100; j = int(yy / 100)
+        h = (1 + int(13 * (mm + 1) / 5) + k + int(k / 4) + int(j / 4) + 5 * j) % 7; w = (h + 6) % 7
+        split("January February March April May June July August September October November December", mon, " ")
+        printf "%s %d\n", mon[m], y; print "Su Mo Tu We Th Fr Sa"
+        line = ""; for (i = 0; i < w; i++) line = line "   "
+        for (day = 1; day <= dim[m]; day++) {
+            cell = sprintf("%2d", day); if (day == d) cell = mark cell unmark
+            line = line cell " "; w++; if (w == 7) { print line; line = ""; w = 0 } }
+        if (line != "") print line }'
+}
+look_font_size() { printf '%s' "$FONT" | sed -n 's/.*size=\([0-9][0-9]*\).*/\1/p' | sed -n 1p; }
+panel_rows() {   # panel_rows PAGE -> TEXT<tab>ACTION [ARG] per row; info rows carry `show`
+    case $1 in
+        lan) for i in $(bar_wired); do
+                [ "$(cat "$BAR_SYS/class/net/$i/carrier" 2>/dev/null)" = 1 ] || { printf 'wire %s: no carrier\tshow\n' "$i"; continue; }
+                printf 'address %s\tshow\n' "$(bar_addr "$i")"
+                _sp=$(cat "$BAR_SYS/class/net/$i/speed" 2>/dev/null); [ -z "$_sp" ] || [ "$_sp" -le 0 ] 2>/dev/null || printf 'speed %s Mb/s\tshow\n' "$_sp"
+                _gw=$(ip -4 route show default dev "$i" 2>/dev/null | awk '{print $3; exit}'); [ -z "$_gw" ] || printf 'gateway %s\tshow\n' "$_gw"
+                _ns=$(awk '$1 == "nameserver" {print $2; exit}' /etc/resolv.conf 2>/dev/null); [ -z "$_ns" ] || printf 'name server %s\tshow\n' "$_ns"
+                break
+            done ;;
+        wifi) [ -n "$(wifi_tool)" ] || { printf 'no tool answers for wifi (nmcli, iwctl or wpa_cli)\tshow\n'; return 0; }
+            _c=$(wifi_connected); _known=$(wifi_known | cut -f2)
+            [ -z "$_c" ] || printf '%s %s, connected\tdisconnect\n' "$(panel_bars "$(bar_wifi | cut -d' ' -f1)")" "$_c"
+            wifi_scan | while IFS="$TAB" read -r n l sec; do
+                [ "$n" != "$_c" ] || continue
+                _k=''; printf '%s\n' "$_known" | grep -qxF "$n" && _k=', saved'
+                printf '%s %s%s\tconnect %s\n' "$(panel_bars "$l")" "$n" "$_k" "$n"
+            done
+            printf '%s\n' "$_known" | while IFS= read -r n; do [ -n "$n" ] && [ "$n" != "$_c" ] && printf 'forget %s\tforget %s\n' "$n" "$n"; done ;;
+        bt) command -v bluetoothctl >/dev/null 2>&1 || { printf 'bluetoothctl is not installed\tshow\n'; return 0; }
+            if bt_powered; then
+                bt_list | while IFS="$TAB" read -r mac n p c; do
+                    if [ "$c" = 1 ]; then printf '%s, connected\tdisconnect %s\n' "$n" "$n"
+                    elif [ "$p" = 1 ]; then printf '%s\tconnect %s\n' "$n" "$n"
+                    else printf '%s, new\tpair %s\n' "$n" "$n"; fi
+                done
+                printf 'look for new devices\tscan\nturn bluetooth off\tpower off\n'
+            else printf 'turn bluetooth on\tpower on\n'; fi ;;
+        out|mic) [ -n "${SND:-}" ] || { printf 'no audio system found\tshow\n'; return 0; }
+            snd_devices "$1" | while IFS="$TAB" read -r n d; do if [ "$d" = 1 ]; then printf '%s, in use\tshow\n' "$n"; else printf '%s\tuse %s\n' "$n" "$n"; fi; done
+            if [ "$1" = out ]; then _o=$(snd_out); _m=$(printf '%s\n' "$_o" | sed -n 3p); _lv=$(printf '%s\n' "$_o" | sed -n 2p)
+            else _o=$(snd_mic); _m=$(printf '%s\n' "$_o" | sed -n 3p); _lv=$(printf '%s\n' "$_o" | sed -n 4p); fi
+            [ "$_lv" = - ] || [ -z "$_lv" ] || { if [ "$_m" = 1 ]; then printf 'unmute\tunmute\n'; else printf 'mute\tmute\n'; fi; } ;;
+        bat) _d=$(bat_dir); [ -n "$_d" ] || { printf 'no battery\tshow\n'; return 0; }
+            printf 'charge %s%%, %s\tshow\n' "$(bat_num capacity)" "$(panel_lower "$(bat_num status)")"
+            _left=$(bat_left); [ -z "$_left" ] || printf '%s\tshow\n' "$_left"
+            _f=$(bat_num energy_full); _fd=$(bat_num energy_full_design); [ -n "$_f" ] || { _f=$(bat_num charge_full); _fd=$(bat_num charge_full_design); }
+            [ -z "$_f" ] || [ -z "$_fd" ] || [ "$_fd" -le 0 ] 2>/dev/null || printf 'health %s%% of new\tshow\n' $(( _f * 100 / _fd ))
+            _cy=$(bat_num cycle_count); [ -z "$_cy" ] || printf 'cycles %s\tshow\n' "$_cy"
+            _r=$(bat_num power_now); [ -z "$_r" ] || [ "$_r" -le 0 ] 2>/dev/null || printf 'power %s W\tshow\n' "$(awk -v r="$_r" 'BEGIN { printf "%.1f", r / 1000000 }')" ;;
+        clock) cal_rows "${PANEL_MARK:-}" "${PANEL_UNMARK:-}" | sed 's/$/\tshow/' ;;
+        look) { echo none; palette_names; } | while IFS= read -r n; do
+                if [ "$n" = "${THEME:-none}" ]; then printf 'theme %s, current\tshow\n' "$n"; else printf 'theme %s\ttheme %s\n' "$n" "$n"; fi
+            done
+            _sz=$(look_font_size); [ -z "$_sz" ] || printf 'font bigger (%s now)\tfont bigger\nfont smaller\tfont smaller\n' "$_sz"
+            _cur=$WALLPAPER; case $_cur in default|none) ;; *) if wall_colour; then _cur=$WALLPAPER; else printf 'wallpaper %s, current\tshow\n' "$_cur"; _cur=''; fi ;; esac
+            for w in default none $WALL_NAMES; do
+                _h=$(wall_hex "$w" 2>/dev/null || :)
+                if [ "$w" = "$_cur" ] || { [ -n "$_h" ] && [ "$_h" = "$(panel_lower "$WALLPAPER")" ]; }; then printf 'wallpaper %s, current\tshow\n' "$w"; else printf 'wallpaper %s\twallpaper %s\n' "$w" "$w"; fi
+            done
+            for a in 1.0 0.9 0.85 0.75 0.5; do
+                if [ "$a" = "$ALPHA" ]; then printf 'alpha %s, current\tshow\n' "$a"; else printf 'alpha %s\talpha %s\n' "$a" "$a"; fi
+            done ;;
+    esac
+}
+panel_hint() {   # the two hint lines under the list, each under 50 columns (the window is 52 wide)
+    case $1 in
+        wifi) printf 'Enter connects, or drops the one in use.\n' ;;
+        lan|bat|clock) printf 'A look only.\n' ;;
+        *) printf 'Enter picks.\n' ;;
+    esac
+    printf 'Type to narrow, or say what you want. Tab, Esc.'
+}
+look_apply() {   # the look's renders and a running sway, quietly
+    theme_load; EXPR=$(render_expr); desktop_look_apply >/dev/null 2>&1 || :
+}
+panel_act() {   # panel_act PAGE ACTION [ARG] -> one line (what was done, or why not)
+    _p=$1; _a=$2; shift 2; _arg=$*
+    case $_a in show) return 0 ;; esac
+    case $_p in
+        wifi) case $_a in
+                connect) _sec=$(wifi_scan | awk -F '\t' -v n="$(panel_lower "$_arg")" 'tolower($1) == n && !done {print $3; done = 1}')
+                    if [ -n "$(wifi_known_id "$_arg")" ] || [ "${_sec:-0}" = 0 ]; then wifi_connect "$_arg"
+                    else _pw=$(panel_secret "password for $_arg: "); [ -n "$_pw" ] || { echo "no password given, so not connected"; return 1; }; wifi_connect "$_arg" "$_pw"; fi ;;
+                disconnect) wifi_disconnect ;;
+                forget) wifi_forget "$_arg" ;;
+                *) echo "$_a is not something wifi does"; return 1 ;;
+            esac ;;
+        bt) bt_act "$_a" "$_arg" ;;
+        out|mic) case $_a in
+                use) snd_use "$_p" "$_arg" ;;
+                level) snd_set "$_p" "$_arg" && echo "$_p at $_arg%" ;;
+                mute) snd_set "$_p" muted && echo "$_p muted" ;;
+                unmute) snd_set "$_p" unmuted && echo "$_p unmuted" ;;
+                *) echo "$_a is not something $_p does"; return 1 ;;
+            esac ;;
+        look) case $_a in
+                theme) _r=$(cmd_theme "$_arg" 2>&1 | tail -1); echo "${_r:-theme $_arg}" ;;
+                font) _sz=$(look_font_size); [ -n "$_sz" ] || { echo "FONT=$FONT has no size to change (the config)"; return 1; }
+                    if [ "$_arg" = bigger ]; then _new=$((_sz + 1)); else _new=$((_sz - 1)); fi
+                    [ "$_new" -ge 6 ] && [ "$_new" -le 40 ] || { echo "font size $_sz stays (6 to 40)"; return 1; }
+                    _f=$(printf '%s' "$FONT" | sed "s/size=$_sz/size=$_new/")
+                    config_set FONT "$_f" >/dev/null; FONT=$_f; export FONT; look_apply
+                    echo "font size $_new: the bar now, new windows next" ;;
+                wallpaper) _r=$(cmd_desktop wallpaper "$_arg" 2>&1 | tail -1); echo "${_r:-wallpaper $_arg}" ;;
+                alpha) case $_arg in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) ;; *) echo "alpha is 0 to 1, as 0.85"; return 1 ;; esac
+                    config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply
+                    echo "alpha $_arg: the bar now, new windows next" ;;
+                *) echo "$_a is not something look does"; return 1 ;;
+            esac ;;
+        *) echo "$_p takes no action"; return 1 ;;
+    esac
+}
+panel_gate() {   # panel_gate PAGE ACTION [ARG] -> the row's own ARG (exit 0), or why not (exit 1): only a step the page offers now
+    case " $PANEL_PAGES " in *" $1 "*) ;; *) echo "$1 is not a page of the bar"; return 1 ;; esac
+    case $1:$2 in
+        out:level|mic:level) case $3 in [0-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "$1: level takes 0 to 100"; return 1 ;; esac ;;
+        look:alpha) case $3 in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) echo "$3"; return 0 ;; *) echo "look: alpha takes 0 to 1"; return 1 ;; esac ;;
+    esac
+    _want=$(panel_lower "$2 $3" | sed 's/ *$//')
+    _m=$(panel_rows "$1" | cut -f2 | awk -v w="$_want" 'tolower($0) == w { print; exit }')
+    [ -n "$_m" ] && [ "$_m" != show ] || { echo "$1: $2${3:+ $3} is not something the bar does now"; return 1; }
+    printf '%s\n' "${_m#* }" | awk -v a="$2" '$0 == a { print ""; exit } { print }'
+}
+panel_list() {   # panel_list PAGE -> the title, then the rows as text (tests, no terminal)
+    SND=${SND:-$(snd_tool)}
+    panel_title "$1"
+    panel_rows "$1"
+}
+
+# --- the want: words to steps, by spark, from what this machine offers
+panel_brief() {   # -> "page: action ARG, ...; page: ..." for the pages this machine has
+    for p in $(panel_pages_here); do
+        _acts=$(panel_rows "$p" | cut -f2 | grep -vx show | awk '!seen[$0]++' | paste -sd, - | sed 's/,/, /g')
+        case $p in out|mic) _acts="${_acts:+$_acts, }level N" ;; esac
+        [ -z "$_acts" ] || printf '%s: %s; ' "$p" "$_acts"
+    done | sed 's/; $//'
+}
+want_play() {   # want_play WORDS -> the why, then one line per step
+    command -v jq >/dev/null 2>&1 || { echo "jq is not installed (spark-shell on)"; return 1; }
+    spark=$(spark_bin); [ -n "$spark" ] || { echo "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
+    SND=${SND:-$(snd_tool)}
+    _brief=$(panel_brief)
+    [ -n "$_brief" ] || { echo "nothing on the bar takes an action on this machine"; return 1; }
+    about="The bar of a desktop and what this machine can do now, as page: action ARG -- $_brief. Rules: only steps from that list, ARG exactly as listed (N is a number, 0 to 100 for level, 0 to 1 for alpha); as few steps as the want takes; no step when nothing on the list does it. Answer with one JSON object and nothing else: {\"why\": \"one sentence, from the want to the steps\", \"steps\": [{\"page\": \"bt\", \"action\": \"connect\", \"arg\": \"NAME\"}]}"
+    [ -t 1 ] && desk_pulse || :
+    st=0; "$spark" edit --type json --name bar.json --about "$about" -- "do this on the bar: $1" </dev/null > "$TMP/want.json" 2>"$TMP/want.err" || st=$?
+    [ -t 1 ] && desk_pulse_stop || :
+    [ "$st" -eq 0 ] || { echo "spark did not answer: $(head -1 "$TMP/want.err")"; return 1; }
+    jq -e '.steps | arrays' "$TMP/want.json" >/dev/null 2>&1 || { echo "the answer was not steps for the bar"; return 1; }
+    why=$(jq -r '.why // "" | gsub("[\\n\\r]"; " ")' "$TMP/want.json"); [ -z "$why" ] || printf '%s\n' "$why"
+    [ "$(jq -r '.steps | length' "$TMP/want.json")" -gt 0 ] || { echo "nothing on the bar does that"; return 0; }
+    jq -r '.steps[] | [(.page // "" | tostring), (.action // "" | tostring), (.arg // "" | tostring)] | @tsv' "$TMP/want.json" | while IFS="$TAB" read -r pg ac ar; do
+        # shellcheck disable=SC2086   # the row's own ARG, split on purpose
+        if arg=$(panel_gate "$pg" "$ac" "$ar"); then panel_act "$pg" "$ac" $arg || :; else printf '%s\n' "$arg"; fi
+    done
+}
+bar_want() {   # bar_want WORDS -- from the shell: `spark-shell bar "mute everything"`
+    [ -n "$(spark_bin)" ] || refuse_in bar "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"
+    printf 'bar> %s\n' "$1"
+    st=0; want_play "$1" > "$TMP/want.out" 2>&1 || st=$?
+    sed 's/^/  /' "$TMP/want.out"
+    return "$st"
+}
+
+# --- the window: placed under its block, closed when the focus leaves
+panel_place() {   # under the bar, its right edge at the block's (SPARK_SHELL_PANEL_AT="X W"), else at the screen's right edge
+    [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 0
+    _i=0; _pw=''
+    while [ "$_i" -lt 30 ]; do
+        _pw=$(swaymsg -t get_tree 2>/dev/null | jq -r --arg a "$PANEL_APP" '[.. | objects | select(.app_id? == $a)] | .[0].rect.width // empty' 2>/dev/null)
+        [ -z "$_pw" ] || break
+        sleep 0.1; _i=$((_i + 1))
+    done
+    [ -n "$_pw" ] || return 0
+    # shellcheck disable=SC2046   # the three numbers, split on purpose
+    set -- $(swaymsg -t get_workspaces 2>/dev/null | jq -r '.[] | select(.focused) | "\(.rect.x) \(.rect.y) \(.rect.width)"' 2>/dev/null)
+    [ $# -eq 3 ] || return 0
+    _wx=$1; _wy=$2; _ww=$3; _right=$((_wx + _ww))
+    [ -z "${SPARK_SHELL_PANEL_AT:-}" ] || { set -- $SPARK_SHELL_PANEL_AT; _right=$(( ${1:-0} + ${2:-0} )); }
+    _x=$((_right - _pw)); [ "$_x" -ge "$_wx" ] || _x=$_wx; [ $((_x + _pw)) -le $((_wx + _ww)) ] || _x=$((_wx + _ww - _pw))
+    swaymsg "[app_id=$PANEL_APP] move absolute position $_x px $_wy px" >/dev/null 2>&1 || :
+}
+panel_watch() {   # panel_watch PID -- when sway's focus goes to another window, the panel ends
+    [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 0
+    ( swaymsg -t subscribe -m '["window"]' 2>/dev/null | jq --unbuffered -r 'select(.change == "focus") | .container.app_id // ""' 2>/dev/null \
+      | while IFS= read -r _id; do [ "$_id" = "$PANEL_APP" ] || { kill -TERM "$1" 2>/dev/null; break; }; done ) &
+    WATCH=$!
+}
+panel_quit() { kill "${FZF:-}" "${WATCH:-}" 2>/dev/null || :; rm -f "$PANEL_OPEN"; stty echo 2>/dev/null || :; }
+panel_loop() {   # panel_loop PAGE -- the pages in a window: fzf draws the list, the prompt and the hint
+    # shellcheck disable=SC1091   # our own render, when there is one
+    [ ! -f "$CONFIG_DIR/sgr.sh" ] || . "$CONFIG_DIR/sgr.sh"
+    PANEL_MARK=$(printf '\033[%sm' "${SPARK_ACCENT_SGR:-1}"); PANEL_UNMARK=$(printf '\033[0m')
+    mkdir -p "$STATE_DIR"; printf '%s\n' "$1" > "$PANEL_OPEN"
+    FZF=''; WATCH=''
+    trap 'panel_quit' EXIT
+    trap 'kill "${FZF:-}" 2>/dev/null || :; exit 0' TERM INT HUP
+    panel_place; panel_watch $$
+    page=$1; said=''
+    while :; do
+        pages=$(panel_pages_here | paste -sd ' ' -)
+        printf '\033[2J\033[H'
+        panel_title "$page" | sed "s/^\([a-z]*\)  /$(printf '\033[%sm' "${SPARK_ACCENT_SGR:-1}")\1$(printf '\033[0m')  /"
+        [ -z "$said" ] || printf '%s\n' "$said" | sed 's/^/  /'
+        rows=$(panel_rows "$page")
+        lines=$(tput lines 2>/dev/null || echo 16); saidn=$(printf '%s\n' "${said:-}" | grep -c . || :)
+        h=$((lines - 2 - saidn)); [ "$h" -ge 6 ] || h=6
+        printf '%s\n' "$rows" | fzf --delimiter "$TAB" --with-nth 1 --print-query --expect=tab,btab --prompt "$page> " --header "$(panel_hint "$page")" \
+            --layout=reverse-list --no-info --color=16 --no-unicode --ansi --height="~$h" > "$TMP/sel" 2>/dev/null & FZF=$!   # ~: as tall as the rows, no taller
+        st=0; wait "$FZF" || st=$?
+        FZF=''
+        [ "$st" -lt 128 ] || break   # Esc, Ctrl-C, or the focus went elsewhere
+        q=$(sed -n 1p "$TMP/sel"); k=$(sed -n 2p "$TMP/sel"); s=$(sed -n 3p "$TMP/sel")
+        case $k in
+            tab) page=$(panel_next "$page" "$pages" 1); said=''; printf '%s\n' "$page" > "$PANEL_OPEN"; rm -f "$TMP/wifi.scan"; continue ;;
+            btab) page=$(panel_next "$page" "$pages" -1); said=''; printf '%s\n' "$page" > "$PANEL_OPEN"; rm -f "$TMP/wifi.scan"; continue ;;
+        esac
+        if [ -n "$s" ]; then
+            # shellcheck disable=SC2086   # the row's ACTION ARG, split on purpose
+            set -- ${s#*"$TAB"}; a=$1; shift
+            [ "$a" != show ] || continue
+            said=$(panel_act "$page" "$a" "$@" 2>&1) || :
+        elif [ -n "$q" ]; then said=$(want_play "$q" 2>&1) || :
+        fi
+    done
+}
+bar_panel() {   # bar_panel [PAGE] [--list | ACTION [ARG...]] -- Super+p, a click on a block, the tests, a step by hand
+    [ "$OS" != Darwin ] || refuse_in bar "not on macOS, which has its own desktop"
+    command -v jq >/dev/null 2>&1 || refuse_in bar "jq is not installed (spark-shell on)"
+    theme_load; SND=$(snd_tool)
+    page=${1:-}; [ $# -eq 0 ] || shift
+    [ -n "$page" ] || page=$(panel_pages_here | sed -n 1p)
+    case " $PANEL_PAGES " in *" $page "*) ;; *) refuse_in bar "$page is not a page of the panel: $(printf '%s' "$PANEL_PAGES" | sed 's/ /, /g')" ;; esac
+    case ${1:-} in
+        --list) panel_list "$page"; return 0 ;;
+        '') ;;
+        *) a=$1; shift; arg=$(panel_gate "$page" "$a" "$*") || { echo "spark-shell bar: $arg"; exit 1; }
+           # shellcheck disable=SC2086   # the row's own ARG, split on purpose
+           panel_act "$page" "$a" $arg; return ;;
+    esac
+    if [ -t 0 ] && command -v fzf >/dev/null 2>&1; then panel_loop "$page"; else panel_list "$page"; fi
+}
+bar_panel_open() {   # bar_panel_open PAGE X W -- from a click: the panel under that block; a click on the block of the open page closes it
+    command -v foot >/dev/null 2>&1 || return 0
+    open=$(cat "$PANEL_OPEN" 2>/dev/null || :)
+    [ -z "${SWAYSOCK:-}" ] || swaymsg "[app_id=$PANEL_APP] kill" >/dev/null 2>&1 || :
+    rm -f "$PANEL_OPEN"
+    [ "$open" != "$1" ] || return 0
+    lead=''; ! command -v setsid >/dev/null 2>&1 || lead=setsid
+    SPARK_SHELL_PANEL_AT="$2 $3" $lead foot --app-id "$PANEL_APP" -W "$PANEL_SIZE" -e "$REPO/spark-shell" bar panel "$1" >/dev/null 2>&1 </dev/null &
 }
 
 # ---------------------------------------------- verbs: theme, font, quiet

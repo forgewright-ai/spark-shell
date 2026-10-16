@@ -29,9 +29,10 @@ client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@ #@HEX_ANSI_1@ #@HE
 # The bar at the top of the screen: the workspaces, then what this
 # machine has of lan, wifi, bluetooth, sound out and mic, battery, and
 # the date and time. spark-shell bar status draws it every 15 s and at
-# once after a click. The volume gauge takes the mouse: a click sets
-# it, the wheel nudges it, a right click mutes. spark-shell bar off
-# --desktop hides it. The AI and the machine stay on tmux's line.
+# once after a click. The two gauges take the mouse: a click sets, the
+# wheel nudges, a right click mutes. A click on any other block opens
+# its panel under the bar. spark-shell bar off --desktop hides it. The
+# AI and the machine stay on tmux's line.
 bar {
     position top
     mode @BAR_MODE@
@@ -62,6 +63,9 @@ for_window [app_id="spark-desk"] floating enable, resize set width 60 ppt height
 # key: Super+s opens spark chat in a small window, and Ctrl-D closes it.
 bindsym $mod+s exec $term --app-id spark-chat -e @REPO@/spark-shell desktop --chat
 for_window [app_id="spark-chat"] floating enable, resize set width 60 ppt height 40 ppt
+# key: Super+p opens the bar's panel, where you pick or type what you want.
+bindsym $mod+p exec $term --app-id spark-panel -W 52x16 -e @REPO@/spark-shell bar panel
+for_window [app_id="spark-panel"] floating enable, border pixel 2
 # key: Super+Shift+q closes the window.
 bindsym $mod+Shift+q kill
 # key: Super+Shift+c reloads sway after spark-shell on.

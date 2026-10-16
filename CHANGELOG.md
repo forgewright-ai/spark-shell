@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.46
+
+- New: the bar's panel. A click on a block opens a small window right
+  under it, in the palette's colours: a line that says what the block
+  is about, a list where Enter acts, a hint row and a prompt. Super+p
+  opens it from the keyboard, Tab walks the pages, Esc or a click
+  anywhere else closes it. `wifi` lists the networks around and
+  connects, disconnects and forgets; `bt` connects, disconnects, looks
+  for new devices and pairs; `out` and `mic` switch devices and mute;
+  `lan`, `bat` and the clock show the address and speed, the charge
+  and time left, and this month.
+- New: `look`, a last block with the palette's name. Its page sets the
+  palette, the font size, the wallpaper and alpha, and applies the pick
+  now.
+- New: words at the panel's prompt, or `spark-shell bar "WORDS"`, are
+  what you want. spark turns them into steps from what this machine can
+  do right now, spark-shell checks each step against that list, plays
+  it and says what it did.
+- New: `mic` has a gauge like `out`, set the same way, where the mic
+  has a level control.
+- Changed: the bar never changes width. The address no longer swaps
+  into the `lan` or `wifi` block for 5 seconds; the panel shows it. A
+  click on `out` opens its page instead of moving to the next output
+  without a word, and a click on `mic` opens its page instead of
+  muting it; the mic gauge's right click mutes.
+- Wi-Fi is set through nmcli, iwctl or wpa_cli, whichever answers on
+  this machine.
+
 ## v0.45.1
 
 - Fixed: on plain ALSA, a click on `out` wrote a file ALSA refuses, and

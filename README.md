@@ -130,6 +130,7 @@ of the desktop shows them once.
     Super+Return opens a terminal window.
     Super+d asks what you want to do, then opens a layout for it.
     Super+s opens spark chat in a small window, and Ctrl-D closes it.
+    Super+p opens the bar's panel, where you pick or type what you want.
     Super+Shift+q closes the window.
     Super+Shift+c reloads sway after spark-shell on.
     Super+Shift+e leaves the desktop.
@@ -156,21 +157,49 @@ green, olive, maroon, red, purple, brown, orange.
 On the desktop, a bar sits at the top of the screen. The workspaces
 are on the left. A workspace a layout opened carries the layout's
 words, so `2 news` reads from a distance. On the right, in groups
-parted by a thin line: `lan`, `wifi` and `bt`; `out` with the volume
-gauge, and `mic`; `bat`; the date and time.
+parted by a thin line: `lan`, `wifi` and `bt`; `out` and `mic`, each
+with its gauge; `bat`; the date and time; and `look`, the palette's
+name.
 
 A block appears only for hardware this machine has. No battery, no
 `bat`. The kind word is muted and the name is in the text colour, as
 in `out jabra`. Colour is for alarms: `mic` is red while any program
-records, and so are `lan down` and a battery under 15.
+records, and so are `lan down` and a battery under 15. The bar never
+changes width: a click never swaps a block's text.
 
-The volume gauge is the one thing you can set. A click sets the level
-where you clicked, the wheel nudges it by 5, and a right click mutes.
-A click on `out` moves sound to the next output. A click on `mic`
-mutes or unmutes it. A click on `lan` or `wifi` shows the address for
-5 seconds, then it is gone again. The volume keys do the same.
+The two gauges are the things you set in the bar itself. A click sets
+the level where you clicked, the wheel nudges it by 5, and a right
+click mutes. The volume keys do the same for `out`, and the mic mute
+key for `mic`.
 
-Sound comes from the audio system you have: PipeWire (wpctl),
+A click on any other block opens the panel: a small window right under
+that block, in the palette's colours. Super+p opens it from the
+keyboard, and Tab walks the pages. The first line says what the block
+is about, as in `wifi  home, strong, 192.0.2.20`. Then a list where
+Enter acts, a hint row, and a prompt. Esc, or a click anywhere else,
+closes it.
+
+- `wifi`: the networks around, strongest first, the one in use at the
+  top. Enter connects, and a new network asks its password once. Enter
+  on the one in use disconnects. `forget NAME` drops a saved one.
+- `bt`: your devices. Enter connects or disconnects one. A row looks
+  for new devices, and a new one pairs on Enter.
+- `out` and `mic`: the devices, the one in use named; mute and unmute.
+- `lan`, `bat` and the clock: the address, speed and gateway; the
+  charge, the time left and the health; this month.
+- `look`: the palettes, the font size, the wallpaper and alpha. A pick
+  applies now. New windows take a font change.
+
+Type at the prompt and the list narrows. Words that match no row are
+what you want: `call mom on the headset`, `movie night`, `quiet`,
+`warmer and bigger`. spark turns them into steps from what this
+machine can do right now, and nothing else: connect the headset, move
+`out` and `mic` to it, mute, a warmer palette. spark-shell checks
+every step against that list, plays it and says what it did. The same
+words work from a shell: `spark-shell bar "mute everything"`.
+
+Wi-Fi is set through the tool this machine has: nmcli, iwctl or
+wpa_cli. Sound comes from the audio system you have: PipeWire (wpctl),
 PulseAudio (pactl), or plain ALSA (amixer). On plain ALSA a change of
 output holds for programs started afterwards, and is written to
 `~/.config/alsa/asoundrc`, spark-shell's own file. `spark-shell off`
@@ -214,7 +243,9 @@ notice and boot files for quiet. `off` restores or removes each one.
 
 What leaves the machine: only what the package manager downloads. A
 layout asks spark, which runs on this machine, with your words, the
-screen sizes and the app list. Never a window title or a file.
+screen sizes and the app list; a want at the bar asks it with your
+words and the list of what the bar can do. Never a window title or a
+file. A new Wi-Fi network is saved by the Wi-Fi tool itself.
 
 Uninstall: `spark-shell off`, then delete `~/.spark-shell`.
 
