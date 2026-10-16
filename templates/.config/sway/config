@@ -64,7 +64,7 @@ for_window [app_id="spark-desk"] floating enable, resize set width 60 ppt height
 bindsym $mod+s exec $term --app-id spark-chat -e @REPO@/spark-shell desktop --chat
 for_window [app_id="spark-chat"] floating enable, resize set width 60 ppt height 40 ppt
 # key: Super+p opens the bar's panel, where you pick or type what you want.
-bindsym $mod+p exec $term --app-id spark-panel -W 52x16 -e @REPO@/spark-shell bar panel
+bindsym $mod+p exec $term --app-id spark-panel -W 52x20 -e @REPO@/spark-shell bar panel
 for_window [app_id="spark-panel"] floating enable, border pixel 2
 # key: Super+Shift+q closes the window.
 bindsym $mod+Shift+q kill

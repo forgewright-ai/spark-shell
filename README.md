@@ -173,30 +173,36 @@ click mutes. The volume keys do the same for `out`, and the mic mute
 key for `mic`.
 
 A click on any other block opens the panel: a small window right under
-that block, in the palette's colours. Super+p opens it from the
-keyboard, and Tab walks the pages. The first line says what the block
-is about, as in `wifi  home, strong, 192.0.2.20`. Then a list where
-Enter acts, a hint row, and a prompt. Esc, or a click anywhere else,
-closes it.
+that block, in the palette's colours. It is the bar's panel, not the
+block's. The first line says what the block you clicked is about, as
+in `wifi  home, strong, 192.0.2.20`. Then one list of everything the
+bar can do right now: that block's rows first, then the other blocks'
+in the bar's order, each row with its block's word in front, as in
+`out  use Jabra` or `look  theme dracula`. Enter acts. Under the list,
+the question: what do you want to change? Esc, or a click anywhere
+else, closes it. Super+p opens the panel from the keyboard with no
+block picked: the first line restates the whole bar.
 
-- `wifi`: the networks around, strongest first, the one in use at the
-  top. Enter connects, and a new network asks its password once. Enter
-  on the one in use disconnects. `forget NAME` drops a saved one.
-- `bt`: your devices. Enter connects or disconnects one. A row looks
-  for new devices, and a new one pairs on Enter.
-- `out` and `mic`: the devices, the one in use named; mute and unmute.
-- `lan`, `bat` and the clock: the address, speed and gateway; the
-  charge, the time left and the health; this month.
-- `look`: the palettes, the font size, the wallpaper and alpha. A pick
-  applies now. New windows take a font change.
+- `wifi`: disconnect the network in use; connect one around, strongest
+  first, and a new network asks its password once; forget a saved one.
+- `bt`: connect or disconnect your devices, look for new ones, pair a
+  new one, turn Bluetooth off and on.
+- `out` and `mic`: use another device, mute and unmute.
+- `look`: a palette, the font bigger or smaller, a wallpaper, alpha. A
+  pick applies now. New windows take a font change.
+- `lan`, `bat` and the clock have nothing to set. A click on one shows
+  the address, speed and gateway; the charge, the time left and the
+  health; this month.
 
-Type at the prompt and the list narrows. Words that match no row are
-what you want: `call mom on the headset`, `movie night`, `quiet`,
-`warmer and bigger`. spark turns them into steps from what this
-machine can do right now, and nothing else: connect the headset, move
-`out` and `mic` to it, mute, a warmer palette. spark-shell checks
-every step against that list, plays it and says what it did. The same
-words work from a shell: `spark-shell bar "mute everything"`.
+Type at the prompt and the list narrows across every block: `drac`
+finds the palette from a click on `wifi`. Words that match no row are
+what you want: `mute everything and dracula, I need some quiet`, `call
+mom on the headset`, `movie night`, `warmer and bigger`. spark turns
+them into steps from that same list, and nothing else: mute `out` and
+`mic`, the palette; connect the headset and move the sound to it.
+spark-shell checks every step against the list, plays it and says
+what it did, one line each. The same words work from a shell:
+`spark-shell bar "mute everything"`.
 
 Wi-Fi is set through the tool this machine has: nmcli, iwctl or
 wpa_cli. Sound comes from the audio system you have: PipeWire (wpctl),

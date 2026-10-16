@@ -2173,19 +2173,23 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | volu
 
 # ------------------------------------------------------------------ panel
 # The bar's panel: one small window under the block you clicked (or
-# Super+p), in the palette's colours. Its first line restates the block,
-# then a list where Enter acts, a hint row, and a prompt where you type
-# instead: a few letters narrow the list, and words that match no row
-# are a want for spark ("call mom on the headset"), turned into steps
-# from what this machine can do right now, checked against that list,
-# then played (bar_want). Tab and Shift+Tab walk the pages. Esc, or a
-# click anywhere else, closes it. The bar itself never changes width:
-# everything a click has to say is said here. `spark-shell bar panel
-# PAGE --list` prints a page as text, and `bar panel PAGE ACTION [ARG]`
-# does one action by hand; both are what the tests and the want use.
+# at the right edge for Super+p), in the palette's colours. It is the
+# bar's panel, not the block's: its first line restates the block you
+# clicked (or the whole bar), then ONE list of everything the bar can
+# do right now, the clicked block's rows first and the other blocks'
+# after them in the bar's order, each row with its block's word in
+# front. Enter acts. The prompt asks what you want to change: a few
+# letters narrow the list across every block, and words that match no
+# row are a want for spark ("mute everything and dracula, I need some
+# quiet"), turned into steps from that same list, checked against it,
+# then played (bar_want). Esc, or a click anywhere else, closes it. The
+# bar itself never changes width: everything a click has to say is said
+# here. `spark-shell bar panel [PAGE] --list` prints the list as text,
+# and `bar panel PAGE ACTION [ARG]` does one action by hand; both are
+# what the tests and the want use.
 PANEL_PAGES="lan wifi bt out mic bat clock look"
 PANEL_APP='spark-panel'               # the window's app id (the sway template floats it)
-PANEL_SIZE=52x16                      # columns x rows of the window
+PANEL_SIZE=52x20                      # columns x rows of the window
 PANEL_OPEN=$STATE_DIR/panel.page      # the page open now, written by the panel itself
 TAB=$(printf '\t')
 panel_pages_here() {   # -> the pages this machine has, in the bar's order
@@ -2199,14 +2203,6 @@ panel_pages_here() {   # -> the pages this machine has, in the bar's order
         esac
         echo "$p"
     done
-}
-panel_next() {   # panel_next PAGE "PAGES" 1|-1 -> the page after or before it, around the end
-    # shellcheck disable=SC2086   # the pages, split on purpose
-    _cur=$1; _step=$3; set -- $2
-    _n=$#; _at=0; _i=0
-    for p in "$@"; do [ "$p" != "$_cur" ] || _at=$_i; _i=$((_i + 1)); done
-    _at=$(( (_at + _step + _n) % _n )); _i=0
-    for p in "$@"; do [ "$_i" -ne "$_at" ] || { echo "$p"; return; }; _i=$((_i + 1)); done
 }
 panel_lower() { printf '%s' "$*" | tr 'A-Z' 'a-z'; }
 panel_bars() { bar_bars_plain "$1"; }
@@ -2391,6 +2387,22 @@ panel_title() {   # panel_title PAGE -> one line that restates the block
             _s="bat  ${_b%% *}%, $(panel_lower "${_b#* }")"; _left=$(bat_left); [ -z "$_left" ] || _s="$_s, $_left"; echo "$_s" ;;
         clock) echo "clock  $(date '+%A %d %B %Y, %H:%M')" ;;
         look) echo "look  ${THEME:-none}, $(bar_font)" ;;   # the wallpaper and alpha are named in their rows
+        bar) _s=''   # Super+p, no block clicked: the whole bar in words, in its order
+            for p in $(panel_pages_here); do
+                case $p in
+                    lan) _l=$(bar_lan); case $_l in up*) _w='lan up' ;; down) _w='lan down' ;; *) _w='lan no wire' ;; esac ;;
+                    wifi) _c=$(wifi_connected); _w="wifi ${_c:-not connected}" ;;
+                    bt) _b=$(bar_bt); case $_b in name*) _w="bt ${_b#name }" ;; on|off) _w="bt $_b" ;; *) continue ;; esac ;;
+                    out|mic) if [ "$p" = out ]; then _o=$(snd_out); _lv=$(printf '%s\n' "$_o" | sed -n 2p); else _o=$(snd_mic); _lv=$(printf '%s\n' "$_o" | sed -n 4p); fi
+                        [ -n "$_o" ] || continue
+                        if [ "$(printf '%s\n' "$_o" | sed -n 3p)" = 1 ]; then _w="$p muted"; elif [ "$_lv" = - ] || [ -z "$_lv" ]; then _w="$p on"; else _w="$p $_lv%"; fi ;;
+                    bat) _b=$(bar_power); _w="bat ${_b%% *}%" ;;
+                    clock) continue ;;
+                    look) _w="look ${THEME:-none}" ;;
+                esac
+                _s="${_s:+$_s, }$_w"
+            done
+            echo "bar  ${_s:-nothing on this machine to set}" ;;
     esac
 }
 bat_dir() { for b in "$BAR_SYS"/class/power_supply/*; do [ -f "$b/capacity" ] && { [ ! -f "$b/type" ] || [ "$(cat "$b/type")" = Battery ]; } && { echo "$b"; return; }; done; }
@@ -2432,24 +2444,24 @@ panel_rows() {   # panel_rows PAGE -> TEXT<tab>ACTION [ARG] per row; info rows c
             done ;;
         wifi) [ -n "$(wifi_tool)" ] || { printf 'no tool answers for wifi (nmcli, iwctl or wpa_cli)\tshow\n'; return 0; }
             _c=$(wifi_connected); _known=$(wifi_known | cut -f2)
-            [ -z "$_c" ] || printf '%s %s, connected\tdisconnect\n' "$(panel_bars "$(bar_wifi | cut -d' ' -f1)")" "$_c"
+            [ -z "$_c" ] || printf 'disconnect %s\tdisconnect\n' "$_c"
             wifi_scan | while IFS="$TAB" read -r n l sec; do
                 [ "$n" != "$_c" ] || continue
                 _k=''; printf '%s\n' "$_known" | grep -qxF "$n" && _k=', saved'
-                printf '%s %s%s\tconnect %s\n' "$(panel_bars "$l")" "$n" "$_k" "$n"
+                printf 'connect %s %s%s\tconnect %s\n' "$n" "$(panel_bars "$l")" "$_k" "$n"
             done
             printf '%s\n' "$_known" | while IFS= read -r n; do [ -n "$n" ] && [ "$n" != "$_c" ] && printf 'forget %s\tforget %s\n' "$n" "$n"; done ;;
         bt) command -v bluetoothctl >/dev/null 2>&1 || { printf 'bluetoothctl is not installed\tshow\n'; return 0; }
             if bt_powered; then
                 bt_list | while IFS="$TAB" read -r mac n p c; do
-                    if [ "$c" = 1 ]; then printf '%s, connected\tdisconnect %s\n' "$n" "$n"
-                    elif [ "$p" = 1 ]; then printf '%s\tconnect %s\n' "$n" "$n"
-                    else printf '%s, new\tpair %s\n' "$n" "$n"; fi
+                    if [ "$c" = 1 ]; then printf 'disconnect %s\tdisconnect %s\n' "$n" "$n"
+                    elif [ "$p" = 1 ]; then printf 'connect %s\tconnect %s\n' "$n" "$n"
+                    else printf 'pair %s, new\tpair %s\n' "$n" "$n"; fi
                 done
                 printf 'look for new devices\tscan\nturn bluetooth off\tpower off\n'
             else printf 'turn bluetooth on\tpower on\n'; fi ;;
         out|mic) [ -n "${SND:-}" ] || { printf 'no audio system found\tshow\n'; return 0; }
-            snd_devices "$1" | while IFS="$TAB" read -r n d; do if [ "$d" = 1 ]; then printf '%s, in use\tshow\n' "$n"; else printf '%s\tuse %s\n' "$n" "$n"; fi; done
+            snd_devices "$1" | while IFS="$TAB" read -r n d; do if [ "$d" = 1 ]; then printf '%s, in use\tshow\n' "$n"; else printf 'use %s\tuse %s\n' "$n" "$n"; fi; done
             if [ "$1" = out ]; then _o=$(snd_out); _m=$(printf '%s\n' "$_o" | sed -n 3p); _lv=$(printf '%s\n' "$_o" | sed -n 2p)
             else _o=$(snd_mic); _m=$(printf '%s\n' "$_o" | sed -n 3p); _lv=$(printf '%s\n' "$_o" | sed -n 4p); fi
             [ "$_lv" = - ] || [ -z "$_lv" ] || { if [ "$_m" = 1 ]; then printf 'unmute\tunmute\n'; else printf 'mute\tmute\n'; fi; } ;;
@@ -2475,13 +2487,17 @@ panel_rows() {   # panel_rows PAGE -> TEXT<tab>ACTION [ARG] per row; info rows c
             done ;;
     esac
 }
+panel_all() {   # panel_all [PAGE] -> the one list, TEXT<tab>PAGE ACTION [ARG]: PAGE's rows in full, then what the other blocks can do, in the bar's order
+    _first=${1:-bar}
+    { [ "$_first" = bar ] || echo "$_first"; panel_pages_here | grep -vx "$_first" || :; } | while IFS= read -r p; do
+        panel_rows "$p" | while IFS="$TAB" read -r t a; do
+            [ "$p" = "$_first" ] || [ "$a" != show ] || continue
+            printf '%s%s%s  %s\t%s %s\n' "${PANEL_MARK:-}" "$p" "${PANEL_UNMARK:-}" "$t" "$p" "$a"
+        done
+    done
+}
 panel_hint() {   # the two hint lines under the list, each under 50 columns (the window is 52 wide)
-    case $1 in
-        wifi) printf 'Enter connects, or drops the one in use.\n' ;;
-        lan|bat|clock) printf 'A look only.\n' ;;
-        *) printf 'Enter picks.\n' ;;
-    esac
-    printf 'Type to narrow, or say what you want. Tab, Esc.'
+    printf 'What do you want to change?\nPick a row, or say it in words. Esc closes.'
 }
 look_apply() {   # the look's renders and a running sway, quietly
     theme_load; EXPR=$(render_expr); desktop_look_apply >/dev/null 2>&1 || :
@@ -2534,10 +2550,10 @@ panel_gate() {   # panel_gate PAGE ACTION [ARG] -> the row's own ARG (exit 0), o
     [ -n "$_m" ] && [ "$_m" != show ] || { echo "$1: $2${3:+ $3} is not something the bar does now"; return 1; }
     printf '%s\n' "${_m#* }" | awk -v a="$2" '$0 == a { print ""; exit } { print }'
 }
-panel_list() {   # panel_list PAGE -> the title, then the rows as text (tests, no terminal)
+panel_list() {   # panel_list [PAGE] -> the title, then the one list as text (tests, no terminal)
     SND=${SND:-$(snd_tool)}
     panel_title "$1"
-    panel_rows "$1"
+    panel_all "$1"
 }
 
 # --- the want: words to steps, by spark, from what this machine offers
@@ -2600,7 +2616,7 @@ panel_watch() {   # panel_watch PID -- when sway's focus goes to another window,
     WATCH=$!
 }
 panel_quit() { kill "${FZF:-}" "${WATCH:-}" 2>/dev/null || :; rm -f "$PANEL_OPEN"; stty echo 2>/dev/null || :; }
-panel_loop() {   # panel_loop PAGE -- the pages in a window: fzf draws the list, the prompt and the hint
+panel_loop() {   # panel_loop PAGE -- the window: the title, what was last done, then fzf with the one list, the hint and the prompt
     # shellcheck disable=SC1091   # our own render, when there is one
     [ ! -f "$CONFIG_DIR/sgr.sh" ] || . "$CONFIG_DIR/sgr.sh"
     PANEL_MARK=$(printf '\033[%sm' "${SPARK_ACCENT_SGR:-1}"); PANEL_UNMARK=$(printf '\033[0m')
@@ -2610,40 +2626,37 @@ panel_loop() {   # panel_loop PAGE -- the pages in a window: fzf draws the list,
     trap 'kill "${FZF:-}" 2>/dev/null || :; exit 0' TERM INT HUP
     panel_place; panel_watch $$
     page=$1; said=''
+    cols=$(tput cols 2>/dev/null || echo 52); [ "$cols" -ge 20 ] 2>/dev/null || cols=52
     while :; do
-        pages=$(panel_pages_here | paste -sd ' ' -)
         printf '\033[2J\033[H'
-        panel_title "$page" | sed "s/^\([a-z]*\)  /$(printf '\033[%sm' "${SPARK_ACCENT_SGR:-1}")\1$(printf '\033[0m')  /"
-        [ -z "$said" ] || printf '%s\n' "$said" | sed 's/^/  /'
-        rows=$(panel_rows "$page")
-        lines=$(tput lines 2>/dev/null || echo 16); saidn=$(printf '%s\n' "${said:-}" | grep -c . || :)
-        h=$((lines - 2 - saidn)); [ "$h" -ge 6 ] || h=6
-        printf '%s\n' "$rows" | fzf --delimiter "$TAB" --with-nth 1 --print-query --expect=tab,btab --prompt "$page> " --header "$(panel_hint "$page")" \
+        title=$(panel_title "$page" | fold -s -w "$cols")   # a long line wraps at a word, and counts as its lines
+        printf '%s\n' "$title" | sed "1s/^\([a-z]*\)  /$PANEL_MARK\1$PANEL_UNMARK  /"
+        last=''; [ -z "$said" ] || last=$(printf '%s\n' "$said" | fold -s -w $((cols - 2)) | sed 's/^/  /')
+        [ -z "$last" ] || printf '%s\n' "$last"
+        rows=$(panel_all "$page")
+        lines=$(tput lines 2>/dev/null || echo 20); saidn=$(printf '%s\n' "$last" | grep -c . || :); titlen=$(printf '%s\n' "$title" | grep -c . || :)
+        h=$((lines - 1 - titlen - saidn)); [ "$h" -ge 6 ] || h=6
+        printf '%s\n' "$rows" | fzf --delimiter "$TAB" --with-nth 1 --print-query --exact --prompt 'bar> ' --header "$(panel_hint)" \
             --layout=reverse-list --no-info --color=16 --no-unicode --ansi --height="~$h" > "$TMP/sel" 2>/dev/null & FZF=$!   # ~: as tall as the rows, no taller
         st=0; wait "$FZF" || st=$?
         FZF=''
         [ "$st" -lt 128 ] || break   # Esc, Ctrl-C, or the focus went elsewhere
-        q=$(sed -n 1p "$TMP/sel"); k=$(sed -n 2p "$TMP/sel"); s=$(sed -n 3p "$TMP/sel")
-        case $k in
-            tab) page=$(panel_next "$page" "$pages" 1); said=''; printf '%s\n' "$page" > "$PANEL_OPEN"; rm -f "$TMP/wifi.scan"; continue ;;
-            btab) page=$(panel_next "$page" "$pages" -1); said=''; printf '%s\n' "$page" > "$PANEL_OPEN"; rm -f "$TMP/wifi.scan"; continue ;;
-        esac
+        q=$(sed -n 1p "$TMP/sel"); s=$(sed -n 2p "$TMP/sel")
         if [ -n "$s" ]; then
-            # shellcheck disable=SC2086   # the row's ACTION ARG, split on purpose
-            set -- ${s#*"$TAB"}; a=$1; shift
+            # shellcheck disable=SC2086   # the row's PAGE ACTION ARG, split on purpose
+            set -- ${s#*"$TAB"}; pg=$1; a=$2; shift 2
             [ "$a" != show ] || continue
-            said=$(panel_act "$page" "$a" "$@" 2>&1) || :
-        elif [ -n "$q" ]; then said=$(want_play "$q" 2>&1) || :
+            said=$(panel_act "$pg" "$a" "$@" 2>&1) || :
+        elif [ -n "$q" ]; then said=$(want_play "$q" 2>&1) || :   # words that matched no row: a want
         fi
     done
 }
-bar_panel() {   # bar_panel [PAGE] [--list | ACTION [ARG...]] -- Super+p, a click on a block, the tests, a step by hand
+bar_panel() {   # bar_panel [PAGE] [--list | ACTION [ARG...]] -- Super+p (no PAGE: the whole bar), a click on a block, the tests, a step by hand
     [ "$OS" != Darwin ] || refuse_in bar "not on macOS, which has its own desktop"
     command -v jq >/dev/null 2>&1 || refuse_in bar "jq is not installed (spark-shell on)"
     theme_load; SND=$(snd_tool)
-    page=${1:-}; [ $# -eq 0 ] || shift
-    [ -n "$page" ] || page=$(panel_pages_here | sed -n 1p)
-    case " $PANEL_PAGES " in *" $page "*) ;; *) refuse_in bar "$page is not a page of the panel: $(printf '%s' "$PANEL_PAGES" | sed 's/ /, /g')" ;; esac
+    case ${1:-} in ""|--list) page=bar ;; *) page=$1; shift ;; esac   # no block named: the whole bar
+    case " bar $PANEL_PAGES " in *" $page "*) ;; *) refuse_in bar "$page is not a block of the bar: $(printf '%s' "$PANEL_PAGES" | sed 's/ /, /g')" ;; esac
     case ${1:-} in
         --list) panel_list "$page"; return 0 ;;
         '') ;;

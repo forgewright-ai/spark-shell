@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.47
+
+- Changed: the panel is the bar's, not the block's. A click on a block
+  still opens it right under that block, with a line about the block,
+  but the list below holds everything the bar can do right now: the
+  block's rows first, then the other blocks' in the bar's order, each
+  row with its block's word in front. Typing narrows across every
+  block, and the prompt asks what you want to change: `mute everything
+  and dracula, I need some quiet` is played as steps from that same
+  list. Tab is gone, the list is one. Super+p opens the panel with no
+  block picked, its first line the whole bar restated.
+- Changed: the rows say what Enter does: `connect cafe`, `disconnect
+  home`, `pair Buds`, `use HDMI`. A few letters match as typed, not by
+  skipping letters, so words that are a want never land on a row by
+  chance.
+- The window is 4 rows taller.
+
 ## v0.46
 
 - New: the bar's panel. A click on a block opens a small window right
