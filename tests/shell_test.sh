@@ -2115,6 +2115,7 @@ STUB
 #!/bin/sh
 log=${XDG_STATE_HOME:-$HOME/.local/state}/amixer.log; mkdir -p "$(dirname "$log")"
 [ "$1" != -q ] || shift
+case "$*" in *scontrols) [ ! -e "$HOME/amixer-refuse" ] || exit 1 ;; esac   # amixer-refuse: ALSA cannot read its configuration
 case "$*" in
     "-D default info") exit 1 ;;
     "-c 0 scontrols") printf "Simple mixer control 'Master',0\nSimple mixer control 'PCM',0\nSimple mixer control 'Capture',0\n" ;;
@@ -2215,8 +2216,8 @@ else
     [ "$(grep -c '^\[{' "$H/bar.out")" -ge 2 ] && ok "bar status: one line at start, and the bar drawn again after the clicks (quick clicks share one redraw)" || bad "bar redraws" "$(grep -c '^\[{' "$H/bar.out") lines; $(cat "$H/bar.err")"
     [ "$(cat "$amlog" 2>/dev/null)" = "$(printf '%s\n' '-c 0 sset Master 60%' '-c 0 sset Master 5%+' '-c 0 sset Master toggle' '-c 0 sset Capture toggle')" ] \
         && ok "clicks: a click at 60% of the gauge sets 60%, the wheel up adds 5, a right click mutes, a click on mic toggles its capture switch" || bad "click actions" "$(cat "$amlog" 2>&1)"
-    [ "$(sed -n '2,3p' "$H/.config/alsa/asoundrc" 2>/dev/null | paste -sd ' ' -)" = 'defaults.pcm.card HDMI defaults.ctl.card HDMI' ] && head -1 "$H/.config/alsa/asoundrc" | grep -q '^# rendered by spark-shell' \
-        && ok "a click on out: the next card (HDMI) becomes ALSA's default for new programs, in spark-shell's own marked file" || bad "asoundrc" "$(cat "$H/.config/alsa/asoundrc" 2>&1)"
+    [ "$(sed -n '2,3p' "$H/.config/alsa/asoundrc" 2>/dev/null | paste -sd ' ' -)" = 'defaults.pcm.!card HDMI defaults.ctl.!card HDMI' ] && head -1 "$H/.config/alsa/asoundrc" | grep -q '^# rendered by spark-shell' \
+        && ok "a click on out: the next card (HDMI) becomes ALSA's default for new programs, in spark-shell's own marked file, in the ! form alsa.conf takes for a name" || bad "asoundrc" "$(cat "$H/.config/alsa/asoundrc" 2>&1)"
     tail -1 "$H/bar.out" | grep -q "<span foreground='#555555'>lan</span> 192.0.2.10" && ok "a click on lan: the address shows in the block" || bad "lan reveal" "$(tail -1 "$H/bar.out")"
     [ ! -e "$H/.local/state/spark-shell/bar.pid" ] && ok "bar status ended: its pid file is gone" || bad "bar pid file stays"
     # the volume keys reach the running bar (the default card back to the first: the asoundrc the click wrote is gone)
@@ -2236,6 +2237,18 @@ else
     sh "$SH" bar status < "$H/clicks" > "$H/bar.out" 2>&1 & bp=$!; sleep 2; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
     [ "$(cat "$H/.config/alsa/asoundrc")" = 'pcm.!default { type hw card 1 }' ] && tail -1 "$H/bar.out" | grep -q 'asoundrc is yours' \
         && ok "a click on out with an asoundrc of yours: the file stays, the block says so for 5 s" || bad "asoundrc yours" "$(cat "$H/.config/alsa/asoundrc"); $(tail -1 "$H/bar.out")"
+    rm -f "$H/.config/alsa/asoundrc"
+    # a file ALSA refuses would take every program's sound with it: taken back at once, the block says so
+    touch "$H/amixer-refuse"
+    sh "$SH" bar status < "$H/clicks" > "$H/bar.out" 2>&1 & bp=$!; sleep 2; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
+    [ ! -e "$H/.config/alsa/asoundrc" ] && tail -1 "$H/bar.out" | grep -q 'ALSA refused the file' \
+        && ok "a click on out when ALSA refuses the file: the file is taken back, the block says so for 5 s" || bad "asoundrc refused" "$(cat "$H/.config/alsa/asoundrc" 2>&1); $(tail -1 "$H/bar.out")"
+    rm -f "$H/amixer-refuse" "$H/.local/state/spark-shell/bar.show"   # the note would show for 5 s
+    # the file v0.45 wrote (the card by name without !) is mended when the bar starts, and read
+    printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.card HDMI\ndefaults.ctl.card HDMI\n' > "$H/.config/alsa/asoundrc"
+    line=$(sh "$SH" bar status --once)
+    [ "$(sed -n '2,3p' "$H/.config/alsa/asoundrc" | paste -sd ' ' -)" = 'defaults.pcm.!card HDMI defaults.ctl.!card HDMI' ] && head -1 "$H/.config/alsa/asoundrc" | grep -q '^# rendered by spark-shell' && [ "$(t out name)" = "<span foreground='#555555'>out</span> hdmi" ] \
+        && ok "bar status: a file v0.45 wrote is mended to the ! form at the start, and the out block reads it (hdmi)" || bad "asoundrc mend" "$(cat "$H/.config/alsa/asoundrc"); $(t out name)"
     rm -f "$H/.config/alsa/asoundrc"
     # the verb: both halves, one of them, the config key, the render, a running sway
     export SWAYSOCK=$H/sway.sock
@@ -2263,7 +2276,7 @@ else
     st=0; out=$(sh "$SH" bar sideways 2>&1) || st=$?
     [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q '^spark-shell bar: sideways is not a bar command' && ok "bar: a wrong word is refused in one line" || bad "bar refuse" "st=$st $out"
     # off takes the ALSA file spark-shell wrote, never one of yours
-    printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.card HDMI\ndefaults.ctl.card HDMI\n' > "$H/.config/alsa/asoundrc"
+    printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.!card HDMI\ndefaults.ctl.!card HDMI\n' > "$H/.config/alsa/asoundrc"
     sh "$SH" off >/dev/null
     [ ! -e "$H/.config/alsa/asoundrc" ] && ok "off: the asoundrc spark-shell wrote is removed" || bad "off asoundrc"
     mkdir -p "$H/.config/alsa"; printf 'pcm.!default { type hw card 1 }\n' > "$H/.config/alsa/asoundrc"

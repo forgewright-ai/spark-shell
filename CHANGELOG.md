@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.45.1
+
+- Fixed: on plain ALSA, a click on `out` wrote a file ALSA refuses, and
+  with it ALSA dropped its whole configuration, so every program lost
+  its sound until the file was gone. The line said `defaults.pcm.card
+  NAME`; alsa.conf sets that card as a number, and only
+  `defaults.pcm.!card NAME` may replace it with a name. The bar writes
+  the `!` form now, mends a file v0.45 wrote when it starts, and takes
+  back at once a file ALSA still refuses, saying so in the block for 5
+  seconds.
+
 ## v0.45
 
 - New: a bar at the top of the desktop's screen. On the left the

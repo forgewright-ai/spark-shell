@@ -1961,7 +1961,7 @@ al_running() { for c in $(al_with "$1"); do grep -qs 'state: RUNNING' "$BAR_PROC
 al_default() {   # -> the card ALSA's default resolves to: the ctl device's card, else spark-shell's file, else the first that plays
     d=$(amixer -D default info 2>/dev/null | sed -n "s/^Card default '\([^']*\)'.*/\1/p" | head -1)
     [ -z "$d" ] || { al_cards | awk -F '\t' -v id="$d" '$2 == id {print $1; exit}'; return; }
-    [ ! -f "$BAR_ASOUNDRC" ] || { d=$(sed -n 's/^defaults\.pcm\.card //p' "$BAR_ASOUNDRC" | head -1); [ -z "$d" ] || { al_cards | awk -F '\t' -v id="$d" '$2 == id || $1 == id {print $1; exit}'; return; }; }
+    [ ! -f "$BAR_ASOUNDRC" ] || { d=$(sed -n 's/^defaults\.pcm\.!*card //p' "$BAR_ASOUNDRC" | head -1); [ -z "$d" ] || { al_cards | awk -F '\t' -v id="$d" '$2 == id || $1 == id {print $1; exit}'; return; }; }
     al_first p
 }
 al_out() { c=$(al_running p); [ -n "$c" ] || c=$(al_default); [ -n "$c" ] && al_with p | grep -qx "$c" || c=$(al_first p); printf '%s' "$c"; }   # -> the card the out block is about
@@ -1974,11 +1974,17 @@ al_control() {   # al_control N p|c -> the mixer control to read and set: Master
 }
 al_level() { amixer -c "$1" sget "$2" 2>/dev/null | grep -o '\[[0-9]*%\]' | head -1 | tr -d '[]%'; }   # al_level N CONTROL -> 0..100 or nothing
 al_muted() { amixer -c "$1" sget "$2" 2>/dev/null | grep -o '\[\(on\|off\)\]' | head -1 | grep -q off && echo 1 || echo 0; }
-al_set_default() {   # al_set_default N -- the card for programs started from now, in spark-shell's own file; refused when the file is yours
+al_set_default() {   # al_set_default N -- the card for programs started from now, in spark-shell's own file; refused when the file is yours, taken back when ALSA refuses it
     id=$(al_cards | awk -F '\t' -v n="$1" '$1 == n {print $2; exit}')
     if [ -f "$BAR_ASOUNDRC" ] && ! grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC"; then bar_reveal out "asoundrc is yours"; return 1; fi
     mkdir -p "$(dirname "$BAR_ASOUNDRC")"
-    printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.card %s\ndefaults.ctl.card %s\n' "$id" "$id" > "$BAR_ASOUNDRC"
+    # !card: alsa.conf sets the card as a number, and only the ! form lets a name replace it (the plain form is refused, and ALSA drops its whole configuration with it)
+    printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.!card %s\ndefaults.ctl.!card %s\n' "$id" "$id" > "$BAR_ASOUNDRC"
+    amixer -c "$1" scontrols >/dev/null 2>&1 || { rm -f "$BAR_ASOUNDRC"; bar_reveal out "ALSA refused the file"; return 1; }   # ALSA reads every file at each start: a refused one would take every program's sound
+}
+al_mend_file() {   # a file v0.45 wrote said `defaults.pcm.card NAME`, which ALSA refuses: the ! form from now
+    [ -f "$BAR_ASOUNDRC" ] && grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC" && grep -q '^defaults\.pcm\.card ' "$BAR_ASOUNDRC" || return 0
+    t=$(sed -e 's/^defaults\.pcm\.card /defaults.pcm.!card /' -e 's/^defaults\.ctl\.card /defaults.ctl.!card /' "$BAR_ASOUNDRC") && printf '%s\n' "$t" > "$BAR_ASOUNDRC"
 }
 snd_out() {   # -> NAME, LEVEL (or -), MUTED on three lines; nothing without an output
     case $SND in
@@ -2099,7 +2105,7 @@ bar_clicks() {   # swaybar's clicks on stdin: `[` then one `,{...}` a line; each
 }
 bar_status() {   # bar_status [--once] -- the bar's program: the header, then a line every 15 s and at once on a click or SIGUSR1
     [ "$OS" != Darwin ] || refuse_in bar "not on macOS, which has its own desktop"
-    theme_load
+    theme_load; al_mend_file
     if [ "${1:-}" = --once ]; then bar_line | sed 's/,$//'; return 0; fi
     command -v jq >/dev/null 2>&1 || echo "spark-shell bar status: jq is not installed, so the bar takes no clicks (spark-shell on)" >&2
     mkdir -p "$STATE_DIR"; printf '%s\n' "$$" > "$BAR_PID"
