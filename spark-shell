@@ -2220,10 +2220,10 @@ panel_pages_here() {   # -> the pages this machine has, in the bar's order
         echo "$p"
     done
 }
-panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on top: layout, the blocks this machine has, apps
+panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on top: layout, the blocks this machine has, apps (on macOS: the layouts alone)
     _f=${1:-bar}
     [ "$_f" = bar ] || echo "$_f"
-    { echo layout; panel_pages_here; echo apps; } | grep -vx "$_f" || :
+    { echo layout; [ "$OS" = Darwin ] || { panel_pages_here; echo apps; }; } | grep -vx "$_f" || :
 }
 panel_lower() { printf '%s' "$*" | tr 'A-Z' 'a-z'; }
 panel_bars() { bar_bars_plain "$1"; }
@@ -2685,10 +2685,9 @@ panel_loop() {   # panel_loop WHAT -- the window: the title, what was last done,
 }
 cmd_panel() {   # cmd_panel [WHAT] [--list | ACTION [ARG...]] | "WORDS" -- Super+p, Super+d (layout first), a click on a block, the tests, a step by hand
     config_load
-    [ "$OS" != Darwin ] || refuse_in panel "not on macOS, which has its own desktop"
     command -v jq >/dev/null 2>&1 || refuse_in panel "jq is not installed (spark-shell on)"
-    pm_detect
-    theme_load; SND=$(snd_tool)
+    [ "$OS" = Darwin ] || pm_detect
+    theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)   # on macOS the panel holds the layouts alone: the desktop is the Mac's own
     case ${1:-} in
         ''|--list) what=bar ;;
         -*) refuse_in panel "$1 is not an option here: a section (layout, apps, $(printf '%s' "$PANEL_PAGES" | sed 's/ /, /g')), --list, or words for what you want" ;;
