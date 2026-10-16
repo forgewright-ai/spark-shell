@@ -26,7 +26,8 @@
 #   spark-shell desktop wallpaper X   set a picture, a colour, default or none
 #   spark-shell bar on|off            show or hide the status line and the bar
 #   spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
-#   spark-shell panel [SECTION]       open the panel (Super+p), SECTION first
+#   spark-shell panel [SECTION]       open the panel (Super+d), SECTION first
+#   spark-shell panel chat            spark chat in the panel's window (Super+s)
 #   spark-shell panel "WORDS"         ask for it: "mute everything", "quiet"
 #   spark-shell sbom [NAME]           list the installed software, or one
 #   spark-shell sbom --json           write the list as a CycloneDX 1.5 file
@@ -2229,10 +2230,10 @@ panel_pages_here() {   # -> the pages this machine has, in the bar's order
         echo "$p"
     done
 }
-panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on top: layout, the blocks this machine has, apps (on macOS: the layouts alone)
+panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on top: spark (the chat), layout, the blocks this machine has, apps (on macOS: spark and the layouts)
     _f=${1:-bar}
     [ "$_f" = bar ] || echo "$_f"
-    { echo layout; [ "$OS" = Darwin ] || { panel_pages_here; echo apps; }; } | grep -vx "$_f" || :
+    { echo spark; echo layout; [ "$OS" = Darwin ] || { panel_pages_here; echo apps; }; } | grep -vx "$_f" || :
 }
 panel_lower() { printf '%s' "$*" | tr 'A-Z' 'a-z'; }
 panel_bars() { bar_bars_plain "$1"; }
@@ -2422,6 +2423,7 @@ panel_title() {   # panel_title WHAT -> one line that restates what opened the p
             if [ "$_n" -eq 0 ]; then echo "layout  none saved yet"
             else echo "layout  $_n saved${_last:+ $PANEL_SEP last: $_last}"; fi ;;
         apps) if apps_marked; then echo "apps  $(grep -c '^[A-Za-z0-9]' "$APPS") allowed"; else echo "apps  every app allowed"; fi ;;
+        spark) echo "spark  a conversation, in this window" ;;
         bar) _s=''   # Super+p, no block clicked: the whole bar in words, in its order
             for p in $(panel_pages_here); do
                 case $p in
@@ -2524,6 +2526,7 @@ panel_rows() {   # panel_rows SECTION -> MARK<tab>TEXT<tab>ACTION [ARG] per row;
                 for f in "$LAYOUTS_DIR"/*; do _w=$(desk_words "$f"); [ -n "$_w" ] || _w=${f##*/}; printf '%s\t%s\topen %s\n' "$PANEL_GO" "$_w" "${f##*/}"; done
             else printf -- '-\tnone saved yet: say what you want to do at the prompt\tshow\n'; fi ;;
         apps) printf '%s\tchoose the allowed apps\tpick\n' "$PANEL_GO" ;;
+        spark) printf '%s\tchat\tchat\n' "$PANEL_GO" ;;
     esac
 }
 panel_all() {   # panel_all [WHAT] -> the one list, "MARK SECTION  TEXT<tab>SECTION ACTION [ARG]": WHAT's rows in full, then what every other section can do, in order
@@ -2584,12 +2587,14 @@ panel_act() {   # panel_act PAGE ACTION [ARG] -> one line (what was done, or why
                 *) echo "$_a is not something layout does"; return 1 ;;
             esac ;;
         apps) case $_a in pick) ( cmd_apps_verb ) ;; *) echo "$_a is not something apps does"; return 1 ;; esac ;;
+        spark) case $_a in chat) panel_chat ;; *) echo "$_a is not something spark does here"; return 1 ;; esac ;;
         *) echo "$_p takes no action"; return 1 ;;
     esac
 }
 panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0), or why not (exit 1): only a step the section offers now
-    case " layout apps $PANEL_PAGES " in *" $1 "*) ;; *) if [ -n "$1" ]; then echo "no $1 here"; else echo "a step with no section"; fi; return 1 ;; esac
+    case " spark layout apps $PANEL_PAGES " in *" $1 "*) ;; *) if [ -n "$1" ]; then echo "no $1 here"; else echo "a step with no section"; fi; return 1 ;; esac
     case $1:$2 in
+        spark:chat) echo ''; return 0 ;;
         layout:open) _n=$(desk_name_of "$3"); if [ -n "$_n" ] && [ -f "$LAYOUTS_DIR/$_n" ]; then echo "$_n"; return 0; fi; echo "layout: no saved layout named $3"; return 1 ;;
         layout:new) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: new takes the words for it"; return 1 ;;
         apps:pick) echo ''; return 0 ;;
@@ -2626,13 +2631,17 @@ want_play() {   # want_play WORDS -> the why, then one line per step
     SND=${SND:-$(snd_tool)}
     _brief=$(panel_brief)
     [ -n "$_brief" ] || { echo "nothing on the panel takes an action on this machine"; return 1; }
-    about="The panel of a desktop and what this machine can do now, by section -- $_brief. Rules: only steps from that list; N is a number (0 to 100 for level, 0 to 1 for alpha), NAME a name as listed, TASK the want in the user's own words, as {\"page\": \"layout\", \"action\": \"new\", \"arg\": \"write notes\"}, which opens the apps for that task, any program by name included; a layout step for a want that names a program or a task to do, never for a setting alone; as few steps as the want takes; no step when nothing on the list does it. Answer with one JSON object and nothing else: {\"why\": \"one sentence\", \"steps\": [{\"page\": \"bt\", \"action\": \"connect\", \"arg\": \"NAME\"}]}"
+    about="The panel of a desktop and what this machine can do now, by section -- $_brief. Rules: only steps from that list; N is a number (0 to 100 for level, 0 to 1 for alpha), NAME a name as listed, TASK the want in the user's own words, as {\"page\": \"layout\", \"action\": \"new\", \"arg\": \"write notes\"}, which opens the apps for that task, any program by name included; a layout step for a want that names a program or a task to do, never for a setting alone; as few steps as the want takes; no step when nothing on the list does it; when the words ask something rather than ask for a change, put the answer in \"answer\", one or two sentences, and give no steps. Answer with one JSON object and nothing else: {\"why\": \"one sentence\", \"answer\": \"\", \"steps\": [{\"page\": \"bt\", \"action\": \"connect\", \"arg\": \"NAME\"}]}"
     [ -t 1 ] && desk_pulse || :
     st=0; "$spark" edit --type json --name panel.json --about "$about" -- "do this on the desktop: $1" </dev/null > "$TMP/want.json" 2>"$TMP/want.err" || st=$?
     [ -t 1 ] && desk_pulse_stop || :
     [ "$st" -eq 0 ] || { echo "spark did not answer: $(head -1 "$TMP/want.err")"; return 1; }
     jq -e '.steps | arrays' "$TMP/want.json" >/dev/null 2>&1 || { echo "the answer was not steps for the panel"; return 1; }
-    [ "$(jq -r '.steps | length' "$TMP/want.json")" -gt 0 ] || { echo "nothing here does that"; return 0; }   # the model's why is not shown: the steps say it
+    if [ "$(jq -r '.steps | length' "$TMP/want.json")" -eq 0 ]; then   # the model's why is not shown: the steps say it; a question gets its answer
+        _ans=$(jq -r '.answer // "" | gsub("[\\n\\r]+"; " ")' "$TMP/want.json")
+        if [ -n "$_ans" ]; then printf '%s\n' "$_ans"; else echo "nothing here does that"; fi
+        return 0
+    fi
     jq -r '.steps[] | [(.page // "" | tostring), (.action // "" | tostring), (.arg // "" | tostring)] | @tsv' "$TMP/want.json" | while IFS="$TAB" read -r pg ac ar; do
         # shellcheck disable=SC2086   # the row's own ARG, split on purpose
         if arg=$(panel_gate "$pg" "$ac" "$ar"); then panel_act "$pg" "$ac" $arg || :; else printf '%s\n' "$arg"; fi
@@ -2648,6 +2657,17 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 
 # --- the window: centred by the sway template, closed by Esc or by its key again
 panel_quit() { kill "${FZF:-}" 2>/dev/null || :; stty echo 2>/dev/null || :; }
+panel_chat_why() {   # -> why there is no chat here, or nothing
+    [ -n "$(spark_bin)" ] || echo "spark is not installed, so there is no chat (github.com/forgewright-ai/spark)"
+}
+panel_chat() {   # spark chat takes this window (Super+s, the spark row): the palette's exports first; without spark, one line that waits to be read
+    _why=$(panel_chat_why)
+    if [ -n "$_why" ]; then echo "$_why"; printf 'Enter closes '; IFS= read -r _ || true; return 0; fi
+    # shellcheck disable=SC1091   # our own render, when there is one
+    [ ! -f "$CONFIG_DIR/sgr.sh" ] || . "$CONFIG_DIR/sgr.sh"
+    stty echo 2>/dev/null || :
+    rm -rf "$TMP"; trap - EXIT; exec "$(spark_bin)" chat
+}
 panel_open_count() {   # -> how many panel windows a running sway shows (0 without sway)
     [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || { echo 0; return 0; }
     swaymsg -t get_tree 2>/dev/null | jq -r --arg a "$PANEL_APP" '[.. | objects | select(.app_id? == $a)] | length' 2>/dev/null || echo 0
@@ -2680,21 +2700,26 @@ panel_loop() {   # panel_loop WHAT -- the window: the title, what was last done,
         if [ -n "$s" ]; then
             # shellcheck disable=SC2086   # the row's SECTION ACTION ARG, split on purpose
             set -- ${s#*"$TAB"}; pg=$1; a=$2; shift 2
-            [ "$a" = show ] || said=$(panel_act "$pg" "$a" "$@" 2>&1) || :
+            if [ "$pg:$a" = spark:chat ]; then
+                _why=$(panel_chat_why); [ -n "$_why" ] || { panel_quit; panel_chat; }   # exec: the conversation takes the window
+                said=$_why
+            elif [ "$a" != show ]; then said=$(panel_act "$pg" "$a" "$@" 2>&1) || :; fi
         elif [ -n "$q" ]; then said=$(want_play "$q" 2>&1) || :   # words that matched no row: a want
         fi
     done
 }
-cmd_panel() {   # cmd_panel [WHAT] [--list | ACTION [ARG...]] | "WORDS" -- Super+p, Super+d (layout first), a click on a block, the tests, a step by hand
+cmd_panel() {   # cmd_panel [WHAT] [--list | ACTION [ARG...]] | chat | "WORDS" -- Super+d, Super+s (chat), a click on a block, the tests, a step by hand
     config_load
     command -v jq >/dev/null 2>&1 || refuse_in panel "jq is not installed (spark-shell on)"
     [ "$OS" = Darwin ] || pm_detect
-    theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)   # on macOS the panel holds the layouts alone: the desktop is the Mac's own
+    theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)   # on macOS the panel holds the chat and the layouts: the desktop is the Mac's own
     case ${1:-} in
+        chat) [ "$(panel_open_count)" -lt 2 ] || { swaymsg "[app_id=$PANEL_APP] kill" >/dev/null 2>&1 || :; return 0; }   # the key again: a panel already open goes
+              panel_chat; return ;;
         ''|--list) what=bar ;;
         -*) refuse_in panel "$1 is not an option here: a section (layout, apps, $(printf '%s' "$PANEL_PAGES" | sed 's/ /, /g')), --list, or words for what you want" ;;
         *) what=$1; shift; [ "$what" != look ] || what=theme   # look: the block's old word
-           case " bar layout apps $PANEL_PAGES " in *" $what "*) ;; *) bar_want "$what${1:+ $*}"; return ;; esac ;;   # any other words: a want
+           case " bar spark layout apps $PANEL_PAGES " in *" $what "*) ;; *) bar_want "$what${1:+ $*}"; return ;; esac ;;   # any other words: a want
     esac
     case ${1:-} in
         --list) panel_list "$what"; return 0 ;;
@@ -3740,14 +3765,7 @@ cmd_desktop() {
         forget) shift; desk_delete "$@"; return ;;
         --ask) cmd_panel layout; return ;;           # the old spellings of layout --ask and layout --pending
         --pending) desk_pending; return ;;
-        --chat)   # Super+s: spark's own prompt in a small foot window; Ctrl-D ends it and the window goes.
-            # foot execs without a shell, so the palette's exports are sourced here;
-            # without spark the window says so instead of never appearing
-            spark=$(spark_bin)
-            if [ -z "$spark" ]; then echo "spark is not installed, so there is no chat (github.com/forgewright-ai/spark)."; printf 'Enter closes '; IFS= read -r _ || true; return 0; fi
-            # shellcheck disable=SC1091   # our own render, when there is one
-            [ ! -f "$CONFIG_DIR/sgr.sh" ] || . "$CONFIG_DIR/sgr.sh"
-            rm -rf "$TMP"; trap - EXIT; exec "$spark" chat ;;
+        --chat) cmd_panel chat; return ;;             # the old Super+s: spark chat in the panel's window
         keys) desk_keys; return ;;   # the template's sentences, anywhere (documentation)
         --first)   # the desktop's first window: the keys once (the stamp first, so never twice), then your shell, always
             if [ ! -f "$DESK_SEEN" ]; then

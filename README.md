@@ -107,8 +107,8 @@ apps for that task and opens them: as sway windows on the desktop, or
 as tmux windows anywhere else. Add `--desktop` or `--terminal` to
 choose. Apps your words name are always opened. Other apps spark picks
 are only suggested. If your words name no app, spark's picks are opened.
-On the desktop, `Super+d` opens the panel with your layouts first, and
-the words go at its prompt.
+On the desktop, `Super+d` opens the panel, and the words go at its
+prompt.
 
 `spark-shell layout save writing` saves the last layout, and
 `spark-shell layout writing` opens it again without asking spark. It is
@@ -129,9 +129,8 @@ Type `spark-shell desktop keys`. You get these lines. The first window
 of the desktop shows them once.
 
     Super+Return opens a terminal window.
-    Super+d opens the panel with your layouts first: say what you want to do.
-    Super+s opens spark chat in a small window, and Ctrl-D closes it.
-    Super+p opens the panel: pick a row, or say what you want.
+    Super+d opens the panel: pick an option, or say what you would like.
+    Super+s opens spark chat in the panel's window, and Ctrl-D closes it.
     Super+Shift+q closes the window.
     Super+Shift+c reloads sway after spark-shell on.
     Super+Shift+e leaves the desktop.
@@ -193,16 +192,16 @@ AI and the machine stay on the status line inside each window.
 ## Panel
 
 The panel is one small window, the same size and place every time, in
-the middle of the screen, in the palette's colours. Super+p opens it.
-Super+d opens it with your layouts first. A click on a bar block opens
+the middle of the screen, in the palette's colours. Super+d opens it.
+Super+s opens it already in spark chat. A click on a bar block opens
 it with that block first. Esc closes it, and so does the key that
 opened it, pressed again. It stays while the mouse moves.
 
-The first line says what opened it: the network, its strength as
-bars and the address; the saved layouts and the last one; or the
-whole bar after Super+p. Then one list of everything this machine can
-do right now, in sections: `layout`, the bar's blocks in the bar's
-order, `apps`. The section you came from is on top. Every row names
+The first line says what opened it: the whole bar after Super+d, or
+the network, its strength as bars and the address after a click on
+`wifi`. Then one list of everything this machine can do right now, in
+sections: `spark`, `layout`, the bar's blocks in the bar's order,
+`apps`. The section you came from is on top. Every row names
 its section and the thing, with a sign in front where there is a
 state: a dot is in use or connected, a ring is available, a check is
 current or saved, a small triangle opens something. The sign says
@@ -213,6 +212,8 @@ is no thing to point at, the row says the verb: `forget cafe`,
 set: a click on one shows the address, speed and gateway; the charge,
 the time left and the health; this month.
 
+- `spark`: one row, `chat`. Enter opens spark chat in this window,
+  and Ctrl-D brings the desktop back. The newest conversation goes on.
 - `layout`: a saved layout opens on Enter. Words at the prompt make a
   new one.
 - `wifi`: disconnect the network in use; connect one around, strongest
@@ -226,16 +227,17 @@ the time left and the health; this month.
 
 Under the list, one line: pick an option, or say what you would like.
 Type and the list narrows across every section: `drac` finds the
-palette from a click on `wifi`. Words that match no row are what you
-would like: `mute everything and dracula, I need some quiet`, `Firefox
-fullscreen`, `movie night`, `call mom on the headset`. spark turns
-them into steps from that same list, and nothing else: mute `out` and
-`mic`, the palette; a layout with Firefox; the HDMI output, a dark
-palette and a layout with mpv; connect the headset and move the sound
-to it. spark-shell checks every step against the list, plays it and
-says what it did, one short line each. A layout step opens its
-windows, and the panel follows them. The same words work from a
-shell: `spark-shell panel "mute everything"`.
+palette from a click on `wifi`. Words that match no row go to spark.
+A change is played: `mute everything and dracula, I need some quiet`,
+`Firefox fullscreen`, `movie night`, `call mom on the headset` become
+steps from that same list, and nothing else: mute `out` and `mic`,
+the palette; a layout with Firefox; the HDMI output, a dark palette
+and a layout with mpv; connect the headset and move the sound to it.
+spark-shell checks every step against the list, plays it and says
+what it did, one short line each. A layout step opens its windows,
+and the panel follows them. A question is answered in the same
+place, in a sentence or two: `what is my address`. The same words
+work from a shell: `spark-shell panel "mute everything"`.
 
 ## Status and check
 

@@ -310,7 +310,7 @@ else
     sh "$SH" on --yes >/dev/null
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
     grep -q '^client.focused *#ff5555 ' "$sway" && ok "sway: client.focused takes the accent's hex (#ff5555)" || bad "sway focused" "$(grep -n client "$sway")"
-    grep -q "^bindsym \$mod+s exec \$term --app-id spark-chat -W 64x24 -e $REPO/spark-shell desktop --chat\$" "$sway" && ok "sway: the Super+s line names the clone's spark-shell" || bad "sway Super+s render" "$(grep -n 'mod+s ' "$sway")"
+    grep -q "^bindsym \$mod+s exec \$term --app-id spark-panel -W 64x24 -e $REPO/spark-shell panel chat\$" "$sway" && ok "sway: the Super+s line names the clone's spark-shell" || bad "sway Super+s render" "$(grep -n 'mod+s ' "$sway")"
     grep -q "^exec sh -c '\$term -e $REPO/spark-shell desktop --first; swaymsg exit'\$" "$sway" && ok "sway: the first window's line names the clone's spark-shell" || bad "sway --first render" "$(grep -n '^exec sh' "$sway")"
     grep -q "^output \* bg \"$REPO/wallpapers/forge-1920x1080.jpg\" fill\$" "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
         && ok "sway: the default background is the forge (wallpapers/forge-1920x1080.jpg), gaps, foot translucent" || bad "sway default bg" "$(grep -n 'output\|gaps' "$sway")"
@@ -471,8 +471,8 @@ grep -q '^xwayland disable$' "$REPO/templates/.config/sway/config" && ok "sway t
 grep -v '^#' "$REPO/templates/.config/sway/config" | grep -q 'tmux' && bad "sway: a window starts tmux (it runs the login shell)" || ok "sway template: a new foot runs the login shell, never tmux"
 grep -q "^exec sh -c '\$term -e @REPO@/spark-shell desktop --first; swaymsg exit'$" "$REPO/templates/.config/sway/config" && ok "sway template: the desktop ends with its first terminal (desktop --first: the keys once, then your shell)" || bad "sway template: exec line" "$(grep -n '^exec' "$REPO/templates/.config/sway/config")"
 sway_t=$REPO/templates/.config/sway/config
-grep -q '^bindsym \$mod+s exec \$term --app-id spark-chat -W 64x24 -e @REPO@/spark-shell desktop --chat$' "$sway_t" && ok "sway template: Super+s opens a foot on spark-shell desktop --chat (the AI one key away), the panel's size" || bad "sway template: Super+s" "$(grep -n 'mod+s ' "$sway_t")"
-grep -q '^for_window \[app_id="spark-chat"\] floating enable, border pixel 2, move position center$' "$sway_t" && ok "sway template: the chat window floats in the middle, the panel's place" || bad "sway template: spark-chat for_window" "$(grep -n spark-chat "$sway_t")"
+grep -q '^bindsym \$mod+s exec \$term --app-id spark-panel -W 64x24 -e @REPO@/spark-shell panel chat$' "$sway_t" && ok "sway template: Super+s opens spark chat in the panel's window (the AI one key away)" || bad "sway template: Super+s" "$(grep -n 'mod+s ' "$sway_t")"
+! grep -q 'spark-chat\|mod+p ' "$sway_t" && ok "sway template: no chat window of its own and no Super+p: one window, two keys" || bad "sway template: old keys" "$(grep -n 'spark-chat\|mod+p ' "$sway_t")"
 grep -q '^bindsym \$mod+Shift+s layout stacking$' "$sway_t" && ! grep -q '^bindsym \$mod+s layout' "$sway_t" && ok "sway template: stacking moved to Super+Shift+s, Super+s is spark's" || bad "sway template: stacking key" "$(grep -n 'layout stacking' "$sway_t")"
 
 # --- the AI one key away: desktop --chat execs spark chat with the palette's exports (all OSes)
@@ -486,11 +486,15 @@ theme_fixture '#ff5555'
 sh "$SH" on --yes >/dev/null
 st=0; out=$(sh "$SH" desktop --chat 2>&1) || st=$?
 [ "$st" -eq 0 ] && [ "$(head -1 "$H/spark.argv")" = chat ] && grep -q "^SPARK_ACCENT_SGR=1;91$" "$H/spark.argv" \
-    && ok "desktop --chat: execs spark chat, sgr.sh sourced first (the accent's SGR 1;91 reaches it)" || bad "desktop --chat" "st=$st $out $(cat "$H/spark.argv" 2>&1)"
+    && ok "desktop --chat (the old Super+s): execs spark chat, sgr.sh sourced first (the accent's SGR 1;91 reaches it)" || bad "desktop --chat" "st=$st $out $(cat "$H/spark.argv" 2>&1)"
+rm -f "$H/spark.argv"; st=0; out=$(sh "$SH" panel spark chat 2>&1) || st=$?
+[ "$st" -eq 0 ] && [ "$(head -1 "$H/spark.argv")" = chat ] && ok "panel spark chat: the row's step execs spark chat the same way" || bad "panel spark chat" "st=$st $out $(cat "$H/spark.argv" 2>&1)"
 mv "$H/.local/bin/spark" "$H/spark.away"
 st=0; out=$(PATH=$H/.local/bin:$sys sh "$SH" desktop --chat 2>&1 </dev/null) || st=$?
 [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^spark is not installed, so there is no chat' && printf '%s\n' "$out" | grep -q 'Enter closes' \
     && ok "desktop --chat without spark: the window says so and waits for Enter, exit 0" || bad "desktop --chat no spark" "st=$st $out"
+st=0; out=$(PATH=$H/.local/bin:$sys sh "$SH" panel chat 2>&1 </dev/null) || st=$?
+[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^spark is not installed, so there is no chat' && ok "panel chat without spark: the same line, exit 0" || bad "panel chat no spark" "st=$st $out"
 
 # --- the first hour: desktop keys any time, the card once in the first window (all OSes)
 keys=$(sh "$SH" desktop keys)
@@ -894,13 +898,13 @@ EOF
     printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot are installed and up to date$' && ok "check: the desktop row says installed and up to date" || bad "check desk row" "$out"
     # the rendered sway config: Super+d, the floating prompt, --pending before the first terminal
     sway=$HOME/.config/sway/config
-    grep -qF "bindsym \$mod+d exec \$term --app-id spark-panel -W 64x24 -e $REPO/spark-shell panel layout" "$sway" && ok "sway render: Super+d opens the panel with the layouts first (the clone's spark-shell)" || bad "sway render bind" "$(grep -n 'mod+d' "$sway")"
+    grep -qF "bindsym \$mod+d exec \$term --app-id spark-panel -W 64x24 -e $REPO/spark-shell panel" "$sway" && ok "sway render: Super+d opens the panel (the clone's spark-shell)" || bad "sway render bind" "$(grep -n 'mod+d' "$sway")"
     grep -qF 'for_window [app_id="spark-panel"] floating enable, border pixel 2, move position center' "$sway" && ok "sway render: the panel floats in the middle" || bad "sway render for_window" "$(grep -n spark-panel "$sway")"
     l_p=$(grep -nF "exec $REPO/spark-shell desktop --pending" "$sway" | head -1 | cut -d: -f1); l_t=$(grep -n "^exec sh -c '" "$sway" | tail -1 | cut -d: -f1)
     [ -n "$l_p" ] && [ -n "$l_t" ] && [ "$l_p" -lt "$l_t" ] && ok "sway render: desktop --pending runs before the first terminal" || bad "sway render pending" "pending $l_p terminal $l_t"
     unset SWAYSOCK WAYLAND_DISPLAY
 fi
-grep -q '^bindsym \$mod+d exec \$term --app-id spark-panel -W 64x24 -e @REPO@/spark-shell panel layout$' "$REPO/templates/.config/sway/config" && ok "sway template: Super+d is spark-shell panel layout in a spark-panel foot" || bad "sway template bind" "$(grep -n 'mod+d' "$REPO/templates/.config/sway/config")"
+grep -q '^bindsym \$mod+d exec \$term --app-id spark-panel -W 64x24 -e @REPO@/spark-shell panel$' "$REPO/templates/.config/sway/config" && ok "sway template: Super+d is spark-shell panel in a spark-panel foot" || bad "sway template bind" "$(grep -n 'mod+d' "$REPO/templates/.config/sway/config")"
 ! grep -q 'spark-desk' "$REPO/templates/.config/sway/config" && ok "sway template: no spark-desk window any more, the panel is the one window" || bad "sway template spark-desk"
 l_p=$(grep -n '^exec @REPO@/spark-shell desktop --pending$' "$REPO/templates/.config/sway/config" | head -1 | cut -d: -f1); l_t=$(grep -n "^exec sh -c '" "$REPO/templates/.config/sway/config" | tail -1 | cut -d: -f1)
 [ -n "$l_p" ] && [ -n "$l_t" ] && [ "$l_p" -lt "$l_t" ] && ok "sway template: desktop --pending is the exec before the last exec sh -c" || bad "sway template pending" "pending $l_p terminal $l_t"
@@ -2190,8 +2194,8 @@ else
         && ok "sway: the bar's colours are the palette's, the background with the picture's alpha (d9 = 0.85)" || bad "bar colours" "$(grep -n 'background\|_workspace' "$sway")"
     grep -q "^bindsym XF86AudioRaiseVolume exec $REPO/spark-shell bar volume up\$" "$sway" && grep -q "^bindsym XF86AudioMicMute exec $REPO/spark-shell bar volume mic\$" "$sway" \
         && ok "sway: the volume keys and the mic mute key run spark-shell bar volume" || bad "volume keys" "$(grep -n XF86 "$sway")"
-    grep -q "^bindsym \$mod+p exec \$term --app-id spark-panel -W 64x24 -e $REPO/spark-shell panel\$" "$sway" && grep -q '^for_window \[app_id="spark-panel"\] floating enable, border pixel 2, move position center$' "$sway" \
-        && ok "sway: Super+p opens the panel in a small floating foot window in the middle" || bad "panel key" "$(grep -n 'spark-panel' "$sway")"
+    ! grep -q 'mod+p ' "$sway" && grep -q '^for_window \[app_id="spark-panel"\] floating enable, border pixel 2, move position center$' "$sway" \
+        && ok "sway: no Super+p any more; the panel window floats in the middle" || bad "panel key" "$(grep -n 'spark-panel\|mod+p' "$sway")"
     printf 'DESKTOP=sway\nFONT=Test Mono:pixelsize=14\nWALLPAPER=none\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on --yes >/dev/null
     grep -q '^    font pango:Test Mono 14px$' "$sway" && grep -q '^        background #000000$' "$sway" && ok "sway: a pixelsize font is Npx in pango; no picture, an opaque bar" || bad "bar font px" "$(grep -n 'font\|background' "$sway")"
@@ -2321,15 +2325,17 @@ else
         && [ "$(printf '%s\n' "$out" | grep -c "	lan show$")" = "$(printf '%s\n' "$out" | grep -c "	[a-z]* show$")" ] && [ "$(printf '%s\n' "$out" | tail -1)" = "$GO apps  choose the allowed apps	apps pick" ] \
         && ok "panel lan: then what every other section can do, in order, apps last; never another section's look-only rows (no layout saved: its one row is a look)" || bad "panel lan rest" "$out"
     out=$(sh "$SH" panel --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "bar  lan up $SEP wifi home $SEP bt $DOT MAJOR V $SEP out 40% $SEP mic 50% $SEP bat 80% $SEP theme none" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT wifi  home	wifi disconnect" ] && ! printf '%s\n' "$out" | grep -q "	[a-z]* show$" \
-        && ok "panel with nothing first (Super+p): the whole bar restated in its order, then everything it can do" || bad "panel bar" "$out"
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "bar  lan up $SEP wifi home $SEP bt $DOT MAJOR V $SEP out 40% $SEP mic 50% $SEP bat 80% $SEP theme none" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO spark  chat	spark chat" ] && [ "$(printf '%s\n' "$out" | sed -n 3p)" = "$DOT wifi  home	wifi disconnect" ] && ! printf '%s\n' "$out" | grep -q "	[a-z]* show$" \
+        && ok "panel with nothing first (Super+d): the whole bar restated, the chat row first, then everything it can do" || bad "panel bar" "$out"
+    out=$(sh "$SH" panel spark --list)
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "spark  a conversation, in this window" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO spark  chat	spark chat" ] && ok "panel spark --list: the one row that opens the conversation" || bad "panel spark" "$out"
     out=$(sh "$SH" panel apps --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "apps  every app allowed" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO apps  choose the allowed apps	apps pick" ] \
         && ok "panel apps --list: the title says what is allowed, one row opens the picker" || bad "panel apps" "$out"
     mkdir -p "$HOME/.config/spark-shell/layouts"; printf '{"words": "news and music", "why": "the feeds and a player", "main": {"app": "newsboat"}}\n' > "$HOME/.config/spark-shell/layouts/news"
     out=$(sh "$SH" panel --list)
-    [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO layout  news and music	layout open news" ] && [ "$(sh "$SH" panel layout --list | sed -n 1p)" = "layout  1 saved" ] \
-        && ok "panel: a saved layout is the first row after the title, by its words, opening it by name; the layout title counts it" || bad "panel layout row" "$out"
+    [ "$(printf '%s\n' "$out" | sed -n 3p)" = "$GO layout  news and music	layout open news" ] && [ "$(sh "$SH" panel layout --list | sed -n 1p)" = "layout  1 saved" ] \
+        && ok "panel: a saved layout is the row after the chat, by its words, opening it by name; the layout title counts it" || bad "panel layout row" "$out"
     rm -rf "$HOME/.config/spark-shell/layouts"
     [ ! -e "$H/.local/bin/spark" ] || mv "$H/.local/bin/spark" "$H/spark.away"   # no spark for a moment: the want is refused, not asked
     st=0; out=$(PATH=$H/.local/bin:$sys sh "$SH" panel sideways --list 2>&1) || st=$?
@@ -2403,6 +2409,9 @@ EOF
     [ "$(cat "$amlog")" = "$(printf '%s\n' '-c 0 sset Master mute' '-c 0 sset Capture nocap')" ] && grep -qx 'power off' "$blog" && ok "bar WORDS: the steps reached amixer and bluetoothctl" || bad "want steps" "$(cat "$amlog" "$blog" 2>&1)"
     grep -q '^do this on the desktop: quiet please$' "$H/spark.argv" && grep -q 'bt: disconnect MAJOR V, pair Buds, scan, power off' "$H/spark.argv" && grep -q 'out: use HDMI, mute, level N' "$H/spark.argv" && grep -q 'layout: new TASK' "$H/spark.argv" && grep -q 'theme: .*dracula, .*font bigger' "$H/spark.argv" \
         && ok "bar WORDS: spark gets the words and what each section offers now, a new layout among them" || bad "want brief" "$(cat "$H/spark.argv")"
+    printf '#!/bin/sh\nprintf "{\\"why\\": \\"a question\\", \\"answer\\": \\"192.0.2.10 on the wire, 192.0.2.20 on wifi.\\", \\"steps\\": []}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
+    st=0; out=$(sh "$SH" panel what is my address 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> what is my address' '  192.0.2.10 on the wire, 192.0.2.20 on wifi.')" ] && ok "panel WORDS that ask: the answer in place, no steps" || bad "want answer" "st=$st $out"
     rm -f "$H/.local/bin/spark"
     rm -f "$H/.local/bin/amixer" "$P/asound/cards"
     out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^warn   sound        no audio system found, so no out or mic block -- install pipewire, or alsa-utils for plain ALSA$' \

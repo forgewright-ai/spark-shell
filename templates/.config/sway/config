@@ -57,14 +57,11 @@ bar {
 
 # key: Super+Return opens a terminal window.
 bindsym $mod+Return exec $term
-# key: Super+d opens the panel with your layouts first: say what you want to do.
-bindsym $mod+d exec $term --app-id spark-panel -W 64x24 -e @REPO@/spark-shell panel layout
-# key: Super+s opens spark chat in a small window, and Ctrl-D closes it.
-bindsym $mod+s exec $term --app-id spark-chat -W 64x24 -e @REPO@/spark-shell desktop --chat
-# key: Super+p opens the panel: pick a row, or say what you want.
-bindsym $mod+p exec $term --app-id spark-panel -W 64x24 -e @REPO@/spark-shell panel
+# key: Super+d opens the panel: pick an option, or say what you would like.
+bindsym $mod+d exec $term --app-id spark-panel -W 64x24 -e @REPO@/spark-shell panel
+# key: Super+s opens spark chat in the panel's window, and Ctrl-D closes it.
+bindsym $mod+s exec $term --app-id spark-panel -W 64x24 -e @REPO@/spark-shell panel chat
 for_window [app_id="spark-panel"] floating enable, border pixel 2, move position center
-for_window [app_id="spark-chat"] floating enable, border pixel 2, move position center
 # key: Super+Shift+q closes the window.
 bindsym $mod+Shift+q kill
 # key: Super+Shift+c reloads sway after spark-shell on.
