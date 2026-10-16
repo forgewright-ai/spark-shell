@@ -1945,7 +1945,7 @@ pa_level() { pactl "get-$1-volume" "$2" 2>/dev/null | grep -o '[0-9]*%' | head -
 pa_muted() { pactl "get-$1-mute" "$2" 2>/dev/null | grep -q 'yes' && echo 1 || echo 0; }
 pa_live() { [ -n "$(pactl list short source-outputs 2>/dev/null)" ] && echo 1 || echo 0; }
 # plain ALSA: the cards in /proc/asound, their mixers through amixer
-al_cards() { awk '/^ *[0-9]+ \[/ { n = $1; id = $0; sub(/^[^[]*\[/, "", id); sub(/ *\].*$/, "", id); long = $0; sub(/^[^-]*- /, "", long); print n "\t" id "\t" long }' "$BAR_PROC/asound/cards" 2>/dev/null; }   # -> N<tab>ID<tab>LONG NAME
+al_cards() { awk '/^ *[0-9]+ \[/ { n = $1; id = $0; sub(/^[^[]*\[/, "", id); sub(/ *\].*$/, "", id); long = $0; sub(/^[^:]*: [^ ]* - /, "", long); print n "\t" id "\t" long }' "$BAR_PROC/asound/cards" 2>/dev/null; }   # -> N<tab>ID<tab>LONG NAME (past "DRIVER - ": a driver's own hyphen, as USB-Audio, is not the dash)
 al_name() { al_cards | awk -F '\t' -v n="$1" '$1 == n { if ($2 ~ /^(Device|USB|Generic|PCH|Intel|SB|NVidia|Audio)$/) print $3; else print $2; exit }'; }   # al_name N -> its name for the bar
 al_with() { for c in $(al_cards | cut -f1); do ls -d "$BAR_PROC/asound/card$c/pcm"*"$1" >/dev/null 2>&1 && echo "$c"; done 2>/dev/null; return 0; }   # al_with p|c -> the cards that play | capture
 al_first() { al_with "$1" | sed -n 1p; }   # al_first p|c -> the first card that plays | captures (sed reads the whole pipe: no broken pipe)

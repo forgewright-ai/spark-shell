@@ -2341,6 +2341,9 @@ else
     out=$(sh "$SH" bar panel out --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = 'out  Jabra, 40%' ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "out  Jabra, in use	out show" ] && printf '%s\n' "$out" | grep -q "^out  use HDMI	out use HDMI$" && printf '%s\n' "$out" | grep -q "^out  mute	out mute$" && printf '%s\n' "$out" | grep -q "^mic  mute	mic mute$" && ! printf '%s\n' "$out" | grep -q "^mic  Jabra, in use" \
         && ok "panel out: the cards that play, the one in use named, and mute; the mic's mute after, never its look-only row" || bad "panel out" "$out"
+    printf ' 0 [USB            ]: USB-Audio - Jabra SPEAK 410 USB\n                      Jabra SPEAK 410 USB at usb-0000:00:14.0-2, full speed\n 1 [HDMI           ]: HDA-Intel - HD-Audio Generic\n' > "$P/asound/cards"
+    [ "$(sh "$SH" bar panel out --list | sed -n 1p)" = 'out  Jabra SPEAK 410 USB, 40%' ] && ok "ALSA: a card with the generic id USB is named by its long name, read past the driver's own hyphen (USB-Audio)" || bad "alsa usb name" "$(sh "$SH" bar panel out --list | sed -n 1p)"
+    printf ' 0 [Jabra          ]: USB-Audio - Jabra SPEAK 410 USB\n                      Jabra SPEAK 410 USB at usb-0000:00:14.0-2, full speed\n 1 [HDMI           ]: HDA-Intel - HD-Audio Generic\n                      HD-Audio Generic at 0xdc5c8000 irq 104\n' > "$P/asound/cards"
     out=$(sh "$SH" bar panel mic --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = 'mic  Jabra, 50%' ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "mic  Jabra, in use	mic show" ] && ! printf '%s\n' "$out" | grep -q "^mic  use HDMI" && printf '%s\n' "$out" | grep -q "^mic  mute	mic mute$" \
         && ok "panel mic: the cards that capture only, with the level" || bad "panel mic" "$out"
