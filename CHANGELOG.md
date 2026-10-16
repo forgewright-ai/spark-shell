@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.49.1
+
+- Fixed: a palette picked after login did not reach the bar's name, and
+  the panel could refuse the pick as the palette in use. spark-shell
+  exported its settings and then started sway, so every window, the
+  bar and the panel kept the settings of login time, and a key in the
+  environment won over the file. The file wins now, and sway starts
+  without the keys.
+
 ## v0.49
 
 - Changed: the panel stays while the mouse moves. It closed when the

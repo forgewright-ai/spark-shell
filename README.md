@@ -275,6 +275,9 @@ words, the list of what the bar can do and the names of your saved
 layouts. Never a window title or a file. A new Wi-Fi network is saved
 by the Wi-Fi tool itself.
 
+The settings live in `~/.config/spark-shell/config`, and every run
+reads that file. A setting in the environment never stands in for it.
+
 Uninstall: `spark-shell off`, then delete `~/.spark-shell`.
 
 ## Contributing

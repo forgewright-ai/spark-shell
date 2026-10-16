@@ -80,9 +80,15 @@ SPARK_CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/spark
 THEME_ENV=$SPARK_CONFIG_DIR/theme.env
 
 # --------------------------------------------------------------- readers
-# load_env FILE: set every KEY the environment does not already set.
-# A deliberate copy of spark lib/env.sh load_env (the twin): a valid line
-# is blank, a comment, or KEY=value with no shell syntax in the value.
+# load_env FILE [env]: every KEY in the file is set, whatever the
+# environment holds. Close to spark lib/env.sh load_env (the twin), with
+# one difference on purpose: there the environment wins, here the file
+# does. spark-shell exports its keys and then starts sway, so every
+# window, the bar and the panel inherit the keys as they were at login;
+# a palette picked later must still be read from the file by each of
+# them. With `env`, a key the environment already holds is kept: the
+# distro files, whose package lists may be given on the command line.
+# A valid line is blank, a comment, or KEY=value with no shell syntax.
 load_env() {
     [ -f "$1" ] || return 0
     bad=$(grep -nEv '^[[:space:]]*(#|$)|^[A-Z_0-9]+=[^;`$()|&<>]*$' "$1" || true)
@@ -98,10 +104,13 @@ load_env() {
         tilde='~'
         case $val in "$tilde"|"$tilde/"*) val=$HOME${val#"$tilde"} ;; esac
         [ -n "$val" ] || continue
-        eval "cur=\${$key:-}"
-        [ -n "$cur" ] || export "$key=$val"
+        if [ "${2:-}" = env ]; then eval "cur=\${$key:-}"; [ -z "$cur" ] || continue; fi
+        export "$key=$val"
     done < "$1"
 }
+# The keys spark-shell exports for its own runs; a shell or a desktop it
+# starts for you gets them unset, so nothing stale is handed on.
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR'
 
 # This machine's short name (the twin of spark lib/env.sh short_host)
 short_host() {
@@ -375,7 +384,7 @@ pm_detect() {
     for w in $(sed -n 's/^ID=//p; s/^ID_LIKE=//p' "$_f" 2>/dev/null | tr -d '"'); do
         case $w in debian|arch|void) DISTRO=$w; break ;; esac
     done
-    [ -z "$DISTRO" ] || load_env "$REPO/distro/$DISTRO.env" || exit 1
+    [ -z "$DISTRO" ] || load_env "$REPO/distro/$DISTRO.env" env || exit 1
     : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}" "${PKG_CONSOLE:=}" "${PKG_DESKTOP:=}"
 }
 tool_here() {   # tool_here NAME -- on PATH or in ~/.local/bin; under apt by Debian's name (fdfind, batcat), after pm_detect
@@ -3746,7 +3755,8 @@ cmd_desktop() {
                 desk_keys_card || true
             fi
             # the config's exports are ours, not the shell's (PROMPT would be zsh's prompt string)
-            rm -rf "$TMP"; trap - EXIT; exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR "${SHELL:-/bin/sh}" ;;
+            # shellcheck disable=SC2086   # the -u words, split on purpose
+            rm -rf "$TMP"; trap - EXIT; exec env $CONFIG_UNSET "${SHELL:-/bin/sh}" ;;
         ''|-*) ;;
         *) desk_need "$@"; return ;;   # the old spelling of layout WORDS (and layout NAME)
     esac
@@ -3763,7 +3773,8 @@ desk_start() {   # desk_start PENDING
     if [ "$DESKTOP" != sway ] && on_console && [ -z "${WAYLAND_DISPLAY:-}" ]; then
         echo "The desktop is off (spark-shell on desktop brings it back). This is your shell."
         rm -rf "$TMP"; trap - EXIT
-        exec env -u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR "${SHELL:-/bin/sh}" -l
+        # shellcheck disable=SC2086   # the -u words, split on purpose
+        exec env $CONFIG_UNSET "${SHELL:-/bin/sh}" -l
     fi
     [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop"
     [ -z "$(desktop_tools)" ] || refuse "not installed:$(desktop_tools) (spark-shell on)"
@@ -3777,7 +3788,8 @@ desk_start() {   # desk_start PENDING
     mkdir -p "$log_dir"
     [ -z "${pending:-}" ] || printf '%s\n' "$pending" > "$DESK_PENDING"
     st=0
-    PATH=$HOME/.local/bin:$PATH sway 2>"$log_dir/sway.log" || st=$?
+    # shellcheck disable=SC2086   # the -u words, split on purpose: sway and all it starts read the file, never a key from this login
+    PATH=$HOME/.local/bin:$PATH env $CONFIG_UNSET sway 2>"$log_dir/sway.log" || st=$?
     [ "${TERM:-}" != linux ] || printf '\033[?25h'
     exit "$st"
 }

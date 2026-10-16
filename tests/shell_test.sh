@@ -276,8 +276,10 @@ st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desktop none' && ok "st
 out=$(sh "$SH" check || true)
 printf '%s\n' "$out" | grep -q '^ok     desktop      na (' && ok "check: desktop is na by default" || bad "check desktop na" "$out"
 printf '%s\n' "$out" | grep -Eq '^(would|todo|FAIL|warn) +font' && bad "check: a font row fails" "$out" || ok "check: the font row does not fail"
-out=$(DESKTOP=none sh "$SH" desktop 2>&1 || true)
-printf '%s\n' "$out" | grep -q '^spark-shell desktop: ' && ok "desktop: refused with DESKTOP=none, one line" || bad "desktop none" "$out"
+out=$(sh "$SH" desktop 2>&1 || true)
+printf '%s\n' "$out" | grep -q '^spark-shell desktop: ' && ok "desktop: refused with DESKTOP=none (the default), one line" || bad "desktop none" "$out"
+printf 'THEME=nord\n' > "$HOME/.config/spark-shell/config"
+[ "$(THEME=dracula sh "$SH" theme | sed -n 1p | cut -d' ' -f1-3)" = 'theme  nord' ] && ok "config: the file wins over a key in the environment (a window started at login carries the old one)" || bad "file wins" "$(THEME=dracula sh "$SH" theme | sed -n 1p)"
 printf 'DESKTOP=gnome\n' > "$HOME/.config/spark-shell/config"
 sh "$SH" status >/dev/null 2>&1 && bad "DESKTOP=gnome accepted" || ok "config: DESKTOP=gnome is refused"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
