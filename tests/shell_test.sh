@@ -2148,8 +2148,15 @@ case "$*" in
     "-c 0 scontrols") printf "Simple mixer control 'Master',0\nSimple mixer control 'PCM',0\nSimple mixer control 'Capture',0\n" ;;
     "-c 1 scontrols") printf "Simple mixer control 'IEC958',0\n" ;;
     "-c 0 sget Master") m=on; [ ! -e "$HOME/muted" ] || m=off; printf "Simple mixer control 'Master',0\n  Front Left: Playback 26214 [40%%] [%s]\n  Front Right: Playback 26214 [40%%] [%s]\n" "$m" "$m" ;;
-    "-c 0 sget Capture") printf "Simple mixer control 'Capture',0\n  Front Left: Capture 1000 [50%%] [on]\n" ;;
-    "-c "*" sset "*) echo "$*" >> "$log" ;;
+    "-c 0 sget Capture") m=on; [ ! -e "$HOME/cmuted" ] || m=off; printf "Simple mixer control 'Capture',0\n  Front Left: Capture 1000 [50%%] [%s]\n" "$m" ;;
+    "-c "*" sset "*) echo "$*" >> "$log"   # the switches, as amixer keeps them: mute/unmute/toggle for a playback switch, cap/nocap/toggle for a capture one
+        case "$*" in
+            "-c 0 sset Master mute") touch "$HOME/muted" ;; "-c 0 sset Master unmute") rm -f "$HOME/muted" ;;
+            "-c 0 sset Master toggle") if [ -e "$HOME/muted" ]; then rm -f "$HOME/muted"; else touch "$HOME/muted"; fi ;;
+            "-c 0 sset Capture nocap") touch "$HOME/cmuted" ;; "-c 0 sset Capture cap") rm -f "$HOME/cmuted" ;;
+            "-c 0 sset Capture toggle") if [ -e "$HOME/cmuted" ]; then rm -f "$HOME/cmuted"; else touch "$HOME/cmuted"; fi ;;
+            "-c 0 sset Capture mute"|"-c 0 sset Capture unmute") echo "amixer: Invalid command!" >&2; exit 1 ;;
+        esac ;;
 esac
 STUB
     printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/wpctl"; cp "$H/.local/bin/wpctl" "$H/.local/bin/pactl"
@@ -2348,7 +2355,10 @@ else
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = 'mic  Jabra, 50%' ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "mic  Jabra, in use	mic show" ] && ! printf '%s\n' "$out" | grep -q "^mic  use HDMI" && printf '%s\n' "$out" | grep -q "^mic  mute	mic mute$" \
         && ok "panel mic: the cards that capture only, with the level" || bad "panel mic" "$out"
     rm -f "$amlog"; sh "$SH" bar panel mic mute >/dev/null && sh "$SH" bar panel out level 35 >/dev/null
-    [ "$(cat "$amlog")" = "$(printf '%s\n' '-c 0 sset Capture mute' '-c 0 sset Master 35%')" ] && ok "panel mic mute, out level 35: set, not toggled" || bad "panel sound actions" "$(cat "$amlog")"
+    [ "$(cat "$amlog")" = "$(printf '%s\n' '-c 0 sset Capture nocap' '-c 0 sset Master 35%')" ] && ok "panel mic mute, out level 35: set, not toggled; the mic's capture switch by amixer's own word" || bad "panel sound actions" "$(cat "$amlog")"
+    m1=$(sh "$SH" bar panel mic --list | sed -n 1p); un=$(sh "$SH" bar panel mic unmute); m2=$(sh "$SH" bar panel mic --list | sed -n 1p)
+    [ "$m1" = 'mic  Jabra, 50%, muted' ] && [ "$un" = 'mic unmuted' ] && [ "$m2" = 'mic  Jabra, 50%' ] \
+        && ok "panel mic mute then unmute: the state read back from amixer, the title says muted in between" || bad "panel mic read back" "$m1 | $un | $m2"
     out=$(sh "$SH" bar panel bat --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = 'bat  80%, discharging, 2:00 left' ] && printf '%s\n' "$out" | grep -q "^bat  health 83% of new	bat show$" && printf '%s\n' "$out" | grep -q "^bat  cycles 123	bat show$" && printf '%s\n' "$out" | grep -q "^bat  power 20.0 W	bat show$" \
         && ok "panel bat: the charge, the time left from the kernel's numbers, the health, the cycles" || bad "panel bat" "$out"
@@ -2378,7 +2388,7 @@ EOF
     st=0; out=$(sh "$SH" bar quiet please 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'bar> quiet please' '  quiet: no sound out, no mic, no bluetooth' '  out muted' '  mic muted' '  bluetooth off' '  bt: dance x is not something the bar does now' '  look: alpha takes 0 to 1')" ] \
         && ok "bar WORDS: the why, then one line per step; a step the bar does not offer is refused, the rest played" || bad "bar want" "st=$st $out"
-    [ "$(cat "$amlog")" = "$(printf '%s\n' '-c 0 sset Master mute' '-c 0 sset Capture mute')" ] && grep -qx 'power off' "$blog" && ok "bar WORDS: the steps reached amixer and bluetoothctl" || bad "want steps" "$(cat "$amlog" "$blog" 2>&1)"
+    [ "$(cat "$amlog")" = "$(printf '%s\n' '-c 0 sset Master mute' '-c 0 sset Capture nocap')" ] && grep -qx 'power off' "$blog" && ok "bar WORDS: the steps reached amixer and bluetoothctl" || bad "want steps" "$(cat "$amlog" "$blog" 2>&1)"
     grep -q '^do this on the bar: quiet please$' "$H/spark.argv" && grep -q 'bt: disconnect MAJOR V, pair Buds, scan, power off' "$H/spark.argv" && grep -q 'out: use HDMI, mute, level N' "$H/spark.argv" \
         && ok "bar WORDS: spark gets the words and what each page offers now" || bad "want brief" "$(cat "$H/spark.argv")"
     rm -f "$H/.local/bin/spark"

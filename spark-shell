@@ -2013,12 +2013,17 @@ snd_set() {   # snd_set out|mic LEVEL|+5|-5|mute|muted|unmuted -- the change ask
             esac ;;
         alsa) if [ "$t" = out ]; then c=$(al_out); k=p; else c=$(al_mic); k=c; fi
             [ -n "$c" ] && ctl=$(al_control "$c" "$k") || return 0
+            off=mute; on=unmute; [ "$k" = p ] || { off=nocap; on=cap; }   # a capture control has a capture switch: amixer's words for it are cap and nocap (mute is refused)
             case $1 in
-                mute) amixer -q -c "$c" sset "$ctl" toggle ;; muted) amixer -q -c "$c" sset "$ctl" mute ;; unmuted) amixer -q -c "$c" sset "$ctl" unmute ;;
+                mute) amixer -q -c "$c" sset "$ctl" toggle ;; muted) amixer -q -c "$c" sset "$ctl" "$off" ;; unmuted) amixer -q -c "$c" sset "$ctl" "$on" ;;
                 +*|-*) amixer -q -c "$c" sset "$ctl" "${1#[+-]}%${1%"${1#?}"}" ;;
                 *) amixer -q -c "$c" sset "$ctl" "$1%" ;;
             esac ;;
     esac >/dev/null 2>&1 || :
+}
+snd_said() {   # snd_said out|mic muted|unmuted -> the state read back, one line; exit 1 when the audio system did not take it
+    if [ "$1" = out ]; then _m=$(snd_out | sed -n 3p); else _m=$(snd_mic | sed -n 3p); fi
+    case $2:$_m in muted:1|unmuted:0) echo "$1 $2" ;; *) echo "$1 is not $2: the audio system did not take it"; return 1 ;; esac
 }
 
 # --- the line, the clicks, the loop
@@ -2518,8 +2523,8 @@ panel_act() {   # panel_act PAGE ACTION [ARG] -> one line (what was done, or why
         out|mic) case $_a in
                 use) snd_use "$_p" "$_arg" ;;
                 level) snd_set "$_p" "$_arg" && echo "$_p at $_arg%" ;;
-                mute) snd_set "$_p" muted && echo "$_p muted" ;;
-                unmute) snd_set "$_p" unmuted && echo "$_p unmuted" ;;
+                mute) snd_set "$_p" muted; snd_said "$_p" muted ;;
+                unmute) snd_set "$_p" unmuted; snd_said "$_p" unmuted ;;
                 *) echo "$_a is not something $_p does"; return 1 ;;
             esac ;;
         look) case $_a in
