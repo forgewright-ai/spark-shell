@@ -108,7 +108,7 @@ as tmux windows anywhere else. Add `--desktop` or `--terminal` to
 choose. Apps your words name are always opened, each once. Other apps
 spark picks are only suggested. If your words name no app, spark's
 picks are opened. Say `fullscreen` and the main window fills the
-screen alone.
+screen alone. Say `workspace 3` and the layout opens there.
 On the desktop, `Super+d` opens the panel, and the words go at its
 prompt.
 

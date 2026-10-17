@@ -3685,6 +3685,8 @@ desk_windows_of() {   # desk_windows_of JSONFILE -> $TMP/windows: SCREEN<tab>APP
     sed 1,2d "$TMP/windows.all" > "$TMP/windows"
     [ -z "$miss" ] || echo "  the $miss screen is not here -- all on $mo"
 }
+desk_words_full() { case " $(panel_lower "$1") " in *' fullscreen '*|*' full screen '*|*' full-screen '*) echo true ;; *) echo false ;; esac; }   # desk_words_full WORDS -> the words ask for fullscreen (the machine reads that, not the model)
+desk_words_ws() { printf '%s' "$1" | tr 'A-Z' 'a-z' | sed -n 's/.*workspace \([1-9][0-9]*\).*/\1/p' | sed -n 1p; }   # desk_words_ws WORDS -> the workspace the words name, or nothing
 desk_lines() {   # desk_lines WS JSONFILE -> the lines, after desk_windows_of: one group per screen, the main's on WS
     w=$1; used=''; main=1; many=$(wc -l < "$TMP/screens" | tr -d ' ')
     for scr in $(cut -f1 "$TMP/windows" | awk '!seen[$0]++'); do
@@ -3824,7 +3826,7 @@ desk_render() {   # desk_render JSONFILE -> $TMP/desk: the lines for the player;
     if [ "$PLAYER" = rooms ]; then desk_rooms "$(desk_name_of "$(desk_words "$1")")" "$1" > "$TMP/desk"; return; fi
     desk_screens
     desk_windows_of "$1"
-    ws=$(desk_next_ws)
+    ws=$(desk_words_ws "$(desk_words "$1")"); [ -n "$ws" ] || ws=$(desk_next_ws)   # the words may name the workspace; else the lowest free one
     desk_lines "$ws" "$1" > "$TMP/desk"
 }
 desk_show() {   # desk_show WHOSE -- the rendered desk played, then the closing line; KEPT=1 for a kept one
@@ -3908,7 +3910,7 @@ desk_make() {   # desk_make NEED -> the desk laid out, the model's answer in DES
     done
     cat "$TMP/named.say"
     mkdir -p "$(dirname "$DESK_LAST")"   # what opened; a why only when that is the answer
-    jq --arg w "$1" --arg ch "$changed" '{words: $w} + . | if $ch == "" then . else del(.why) end' "$TMP/desk.json" > "$DESK_LAST"
+    jq --arg w "$1" --arg ch "$changed" --argjson full "$(desk_words_full "$1")" '{words: $w} + . | if $ch == "" then . else del(.why) end | if $full then .main.fullscreen = true else . end' "$TMP/desk.json" > "$DESK_LAST"
     desk_render "$DESK_LAST"
     if [ -n "${ASKED:-}" ]; then desk_show ''; else desk_show "spark-shell layout save NAME saves it"; fi   # the panel has its save row
 }

@@ -8,7 +8,9 @@
   the whole sentence, and that is the whole answer. A named app opens
   once; the model's second copy is dropped.
 - New: a layout can be fullscreen. Say `fullscreen` and the main
-  window fills the screen alone once it is there.
+  window fills the screen alone once it is there. Say `workspace 3`
+  and the layout opens there. Both are read from your words by
+  spark-shell itself, never left to the model.
 - Changed: a layout asked from the panel closes with the workspace
   alone, since the panel has its own row to save it.
 
