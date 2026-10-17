@@ -2318,11 +2318,12 @@ else
         && ok "check: the top row names the blocks, no sound warning with an audio system" || bad "check top" "$out"
     # the panel as text (no terminal): the title line restates what opened it, then ONE list in sections -- the first section's rows, then what every other section can do; each row wears a sign, names its section and carries its action
     DOT=$(printf '\342\227\217'); RING=$(printf '\342\227\213'); TICK=$(printf '\342\234\223'); CROSS=$(printf '\342\234\227'); GO=$(printf '\342\226\270'); SEP=$(printf '\302\267')
+    journal=$H/.local/state/spark-shell/panel; rm -f "$journal/undo" "$journal/recent"   # the lists below in their plain order: nothing picked yet
     out=$(sh "$SH" bar panel lan --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "lan  up $SEP 192.0.2.10" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  lan  address 192.0.2.10	lan show" ] && printf '%s\n' "$out" | grep -q "^  lan  speed 1000 Mb/s	lan show$" && printf '%s\n' "$out" | grep -q "^  lan  gateway 192.0.2.1	lan show$" \
         && ok "panel lan: the address, the speed and the gateway, a look only, first (the old bar panel spelling)" || bad "panel lan" "$out"
-    printf '%s\n' "$out" | grep -q "^$RING wifi  cafe .*	wifi connect cafe$" && printf '%s\n' "$out" | grep -q "^  theme  dracula	theme dracula$" && ! printf '%s\n' "$out" | grep -q "^. bat  " && ! printf '%s\n' "$out" | grep -q "^. clock  " && ! printf '%s\n' "$out" | grep -q "^. layout  " \
-        && [ "$(printf '%s\n' "$out" | grep -c "	lan show$")" = "$(printf '%s\n' "$out" | grep -c "	[a-z]* show$")" ] && printf '%s\n' "$out" | grep -q "^$GO apps  choose the allowed apps	apps pick$" && [ "$(printf '%s\n' "$out" | grep -n "^$GO apps" | cut -d: -f1)" -lt "$(printf '%s\n' "$out" | grep -n "^$RING wifi  cafe" | cut -d: -f1)" ] \
+    printf '%s\n' "$out" | grep -q "^$RING wifi  cafe .*	wifi connect cafe$" && printf '%s\n' "$out" | grep -q "^  theme  dracula	theme dracula$" && ! printf '%s\n' "$out" | grep -q "^. bat  " && ! printf '%s\n' "$out" | grep -q "^. clock  " && ! printf '%s\n' "$out" | grep -q "^. layout  none" \
+        && [ "$(printf '%s\n' "$out" | grep -c "	lan show$")" = "$(printf '%s\n' "$out" | grep -c "	[a-z]* show$")" ] && printf '%s\n' "$out" | grep -q "^$GO apps  choose the allowed apps	apps pick$" && [ "$(printf '%s\n' "$out" | grep -n "^$GO apps" | head -1 | cut -d: -f1)" -lt "$(printf '%s\n' "$out" | grep -n "^$RING wifi  cafe" | cut -d: -f1)" ] \
         && ok "panel lan: then what every other section can do, in order, the slow wifi last; never another section's look-only rows (no layout saved: its one row is a look)" || bad "panel lan rest" "$out"
     out=$(sh "$SH" panel --list)
     printf '%s\n' "$out" | sed -n 1p | grep -q "^bar  $(date '+%A %d %B') $SEP [0-9][0-9]:[0-9][0-9]$" && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "wifi home $SEP bt $DOT MAJOR V $SEP out 40% $SEP mic 50% $SEP bat 80% $SEP theme none" ] && [ "$(printf '%s\n' "$out" | sed -n 3p)" = "$GO spark  chat	spark chat" ] && printf '%s\n' "$out" | grep -q "^$DOT wifi  home	wifi disconnect$" && ! printf '%s\n' "$out" | grep -q "	[a-z]* show$" \
@@ -2348,8 +2349,22 @@ else
     printf '%s\n' "$out" | grep -q "^  theme  wallpaper and alpha	theme more$" && ! printf '%s\n' "$out" | grep -q "^  theme  wallpaper navy" && sh "$SH" panel theme --list | grep -q "^  theme  wallpaper navy	theme wallpaper navy$" \
         && ok "panel: theme shows the palettes and the font, a more row for the wallpaper and alpha; opened on theme, all of it" || bad "theme more" "$(printf '%s\n' "$out" | grep theme)"
     out=$(sh "$SH" panel apps --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "apps  every app allowed" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO apps  choose the allowed apps	apps pick" ] \
-        && ok "panel apps --list: the title says what is allowed, one row opens the picker" || bad "panel apps" "$out"
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "apps  every app allowed $SEP Enter opens one" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO apps  firefox	apps open firefox" ] && printf '%s\n' "$out" | grep -q "^$GO apps  gimp-3.0	apps open gimp-3.0$" && [ "$(printf '%s\n' "$out" | grep "^$GO apps  " | tail -1)" = "$GO apps  choose the allowed apps	apps pick" ] \
+        && ok "panel apps --list: the title says what is allowed, a row per app that opens it, the picker last" || bad "panel apps" "$out"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps open GIMP-3.0 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'opened gimp-3.0' ] && grep -q '^exec gimp-3.0' "$H/.local/state/swaymsg.log" && ok "panel apps open NAME: the app opens on the current workspace the way its entry says (any case)" || bad "apps open" "st=$st $out $(tail -2 "$H/.local/state/swaymsg.log" 2>&1)"
+    [ "$(sh "$SH" panel --list | sed -n 3p)" = "$GO apps  gimp-3.0	apps open gimp-3.0" ] && [ "$(sed -n 1p "$journal/recent")" = "apps	open gimp-3.0" ] \
+        && ok "recent: the app just opened is the first row of the next list, and the journal's first line" || bad "recent" "$(sh "$SH" panel --list | sed -n 2,4p) | $(cat "$journal/recent")"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps open nowhere 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: apps: no app named nowhere here' ] && ok "panel apps open: an app that is not here is refused in one line" || bad "apps open gate" "st=$st $out"
+    # undo: a step's inverse is read before the act, kept in the journal, played back newest first
+    rm -f "$amlog" "$journal/recent"; sh "$SH" panel out use hdmi >/dev/null
+    [ "$(sh "$SH" panel undo --list | sed -n 2p)" = "  undo  out Jabra	undo all" ] && [ "$(sh "$SH" panel --list | sed -n 3p)" = "  undo  out Jabra	undo all" ] && [ "$(cat "$journal/undo")" = "out	use Jabra	out Jabra" ] \
+        && ok "undo: after out use hdmi the undo row says out Jabra, first in the list; the journal holds the inverse step" || bad "undo row" "$(sh "$SH" panel --list | sed -n 2,5p) | $(cat "$journal/undo" 2>&1)"
+    st=0; out=$(sh "$SH" panel undo all 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = "$TICK out Jabra for programs started from now" ] && [ "$(sh "$SH" panel out --list | sed -n 1p)" = "out  Jabra $SEP 40%" ] && ! sh "$SH" panel --list | grep -q "^  undo  " \
+        && ok "undo all: the inverse played (out is Jabra again), then nothing to undo" || bad "undo all" "st=$st $out $(sh "$SH" panel out --list | sed -n 1p)"
+    rm -f "$journal/undo" "$journal/recent"
     mkdir -p "$HOME/.config/spark-shell/layouts"; printf '{"words": "news and music", "why": "the feeds and a player", "main": {"app": "newsboat"}}\n' > "$HOME/.config/spark-shell/layouts/news"
     out=$(sh "$SH" panel --list)
     [ "$(printf '%s\n' "$out" | sed -n 4p)" = "$GO layout  news and music	layout open news" ] && [ "$(sh "$SH" panel layout --list | sed -n 1p)" = "layout  1 saved" ] \
@@ -2428,13 +2443,15 @@ EOF
     grep -q '^do this on the desktop: quiet please$' "$H/spark.argv" && grep -q 'bt: disconnect MAJOR V, pair Buds, scan, power off' "$H/spark.argv" && grep -q 'out: use HDMI, mute, level N' "$H/spark.argv" && grep -q 'layout: new TASK' "$H/spark.argv" && grep -q 'theme: .*dracula, .*font bigger' "$H/spark.argv" && grep -q "What the bar shows now: lan  up $SEP 192.0.2.10; wifi  .* home $SEP 192.0.2.20; bt  $DOT MAJOR V; out  Jabra $SEP 40%" "$H/spark.argv" \
         && ok "bar WORDS: spark gets the words, what the bar shows now (a question has its facts) and what each section offers, a new layout among them" || bad "want brief" "$(cat "$H/spark.argv")"
     printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/spark.argv"; printf "{\\"why\\": \\"a question\\", \\"answer\\": \\"192.0.2.10 on the wire, 192.0.2.20 on wifi.\\", \\"steps\\": []}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
-    mkdir -p "$HOME/.local/share/applications"; printf '[Desktop Entry]\nName=Firefox\nExec=firefox %%U\nType=Application\n' > "$HOME/.local/share/applications/firefox.desktop"
     rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel Firefox fullscreen 2>&1) || st=$?
-    grep -q 'write the layout for this need: Firefox fullscreen' "$H/spark.argv" && ! grep -q 'do this on the desktop' "$H/spark.argv" \
-        && ok "panel WORDS that name an app this machine declares (Firefox): a layout for them at once, and two words ask spark nothing else" || bad "want program" "st=$st $out $(cat "$H/spark.argv" 2>&1)"
+    [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> Firefox fullscreen' "  $TICK opened firefox")" ] && [ ! -e "$H/spark.argv" ] && grep -q '^exec firefox' "$H/.local/state/swaymsg.log" \
+        && ok "panel WORDS, one or two, that name an app this machine declares (Firefox): the app opens at once, spark is not asked" || bad "want program" "st=$st $out $(cat "$H/spark.argv" 2>&1)"
+    rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel Firefox fullscreen please now 2>&1) || st=$?
+    printf '%s\n' "$out" | grep -q '^  layout> Firefox fullscreen please now$' \
+        && ok "panel WORDS, more of them, that name an app: a layout for the task" || bad "want layout" "st=$st $out"
     rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel what is my address 2>&1) || st=$?
     grep -q 'do this on the desktop: what is my address' "$H/spark.argv" && ok "panel WORDS with no app named go to spark, even where a word is a command (what, on a Mac)" || bad "want not an app" "st=$st $out $(head -3 "$H/spark.argv" 2>&1)"
-    rm -f "$HOME/.local/share/applications/firefox.desktop"
+    rm -f "$journal/undo" "$journal/recent"
     st=0; out=$(sh "$SH" panel what is my address 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> what is my address' '  192.0.2.10 on the wire, 192.0.2.20 on wifi.')" ] && ok "panel WORDS that ask: the answer in place, no steps" || bad "want answer" "st=$st $out"
     rm -f "$H/.local/bin/spark"

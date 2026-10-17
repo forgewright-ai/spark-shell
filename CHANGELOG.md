@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.52
+
+- New: undo. Every step, from a pick or a want, writes its inverse
+  before it acts; one row, `undo  theme everforest-dark, out unmute`,
+  stays at the top while the last thing done can be taken back, and
+  Enter puts it back. Sound, palette, font, wallpaper, alpha, Wi-Fi
+  and Bluetooth connections can be taken back; a layout and an app
+  opened cannot, and say nothing.
+- New: the apps are rows. Each app a layout may open is a row, and
+  Enter opens it on this workspace the way its desktop entry says. One
+  or two words that name an app open it at once, with no model asked;
+  more words that name one open a layout for the task.
+- New: `layout  save what is open now` turns the windows on this
+  workspace into a saved layout, under a name you type.
+- New: the rows you picked most recently come first, in that order,
+  while they can still be picked. The panel keeps the last five.
+- The journal is two plain files under the state directory, `undo`
+  and `recent`.
+
 ## v0.51
 
 - Changed: the panel draws at once and fills in place. It opened only

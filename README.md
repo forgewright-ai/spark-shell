@@ -225,10 +225,16 @@ A pick, a want or a layout shows its pulse too, with the seconds from
 two, and each line of what was done as it lands. A check is a step
 done, a cross one refused.
 
+- `undo`: one row, there while the last thing done can be taken back,
+  as `undo  theme everforest-dark, out unmute`. Enter puts it back.
+  The panel reads the state before each step, so the undo is exact.
+- The rows you picked most recently come next, in that order, while
+  they can still be picked.
 - `spark`: one row, `chat`. Enter opens spark chat in this window,
   and Ctrl-D brings the desktop back. The newest conversation goes on.
 - `layout`: a saved layout opens on Enter. Words at the prompt make a
-  new one.
+  new one. `save what is open now` turns the windows on this
+  workspace into a layout, under a name you type.
 - `wifi`: disconnect the network in use; connect one around, strongest
   first, and a new network asks its password once; forget a saved one.
 - `bt`: connect or disconnect your devices, look for new ones, pair a
@@ -236,13 +242,16 @@ done, a cross one refused.
 - `out` and `mic`: use another device, mute and unmute.
 - `theme`: a palette, the font bigger or smaller, a wallpaper, alpha.
   A pick applies now. New windows take a font change.
-- `apps`: the allowed apps, in the same window.
+- `apps`: a row per app a layout may open, and Enter opens it on this
+  workspace, the way its desktop entry says. The last row chooses the
+  allowed apps, in the same window.
 
 Under the list, one line: pick an option, or say what you would like.
 Type and the list narrows across every section: `drac` finds the
-palette from a click on `wifi`. Words that name a program on this
-machine, as `Firefox fullscreen` or `notes with vi`, open a layout for
-them at once. Other words that match no row go to spark.
+palette from a click on `wifi`. One or two words that name an app
+this machine declares, as `Firefox`, open it at once. More words that
+name one, as `Firefox and the notes`, open a layout for the task.
+Other words that match no row go to spark.
 A change is played: `mute everything and dracula, I need some quiet`,
 `Firefox fullscreen`, `movie night`, `call mom on the headset` become
 steps from that same list, and nothing else: mute `out` and `mic`,
