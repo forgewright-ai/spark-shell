@@ -234,10 +234,12 @@ Super+d does.
 The window draws at once from what costs nothing to know. The Wi-Fi
 scan and the Bluetooth list take a moment, so they keep their last
 answer, for a minute and for half a minute, and fill the list in
-place while a small march under the glance says the panel is looking.
-A pick, a want or a layout shows its pulse too, with the seconds from
-two, and each line of what was done as it lands. A check is a step
-done, a cross one refused.
+place while a small march in the top right corner of the window says
+the panel is looking. A pick, a want or a layout shows its pulse in
+the same corner, with the seconds from two, and each line of what was
+done as it lands under the clock. A check is a step done, a cross one
+refused. The window keeps two fixed places: that corner, and the
+bottom, where the hint and the prompt are.
 
 - `undo`: one row, there while the last thing done can be taken back,
   as `undo  theme everforest-dark, out unmute`. Enter puts it back.

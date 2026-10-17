@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.57
+
+- Changed: the march has one place, the top right corner of the
+  window, on the date's row, whether the panel is looking around or a
+  pick is running. The lines of a step land under the clock as before.
+  The window keeps two fixed places: that corner, and the bottom with
+  the hint and the prompt.
+
 ## v0.56
 
 - Changed: one view behind every door. The panel opens on the date,
