@@ -2980,6 +2980,7 @@ panel_stream_live() {   # panel_stream_live FIRST ROW -> panel_stream, with the 
     pulse_stop "$2" >/dev/tty 2>/dev/null; rm -f "$TMP/pulse.pid"
 }
 panel_run() {   # panel_run KIND CMD... -> CMD's lines as they land under the glance, the pulse of KIND beneath them until CMD ends; the lines stay in $TMP/run.out
+    _kind=$1; shift
     : > "$TMP/run.out"
     "$@" > "$TMP/run.out" 2>&1 & _w=$!
     if [ -t 1 ]; then
@@ -2987,7 +2988,7 @@ panel_run() {   # panel_run KIND CMD... -> CMD's lines as they land under the gl
         while kill -0 "$_w" 2>/dev/null; do
             _m=$(grep -c '' "$TMP/run.out" || :)
             while [ "$_n" -lt "$_m" ]; do _n=$((_n + 1)); printf '\r\033[2K  %s\n' "$(sed -n "${_n}p" "$TMP/run.out")"; done
-            printf '\r\033[2K  %s' "$(pulse_line "$1" "$i" "$_t0")"; i=$((i + 1)); sleep 0.35
+            printf '\r\033[2K  %s' "$(pulse_line "$_kind" "$i" "$_t0")"; i=$((i + 1)); sleep 0.35
         done
         printf '\r\033[2K'
     fi
@@ -3063,7 +3064,7 @@ cmd_panel() {   # cmd_panel [SECTION] [--list | ACTION [ARG...]] | chat | "WORDS
            panel_step "$what" "$a" $arg; st=$?
            panel_group_end; return "$st" ;;
     esac
-    if [ -t 0 ] && command -v fzf >/dev/null 2>&1; then
+    if { [ -t 0 ] || [ -n "${SPARK_SHELL_TEST_TTY:-}" ]; } && command -v fzf >/dev/null 2>&1; then   # the tests drive the window with an fzf of their own
         # the key pressed again: this window is the second panel, so both go (a click on a block closed the old one before opening)
         [ "$(panel_open_count)" -lt 2 ] || { swaymsg "[app_id=$PANEL_APP] kill" >/dev/null 2>&1 || :; return 0; }
         panel_loop "$what"

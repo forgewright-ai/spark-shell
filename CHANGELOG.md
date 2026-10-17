@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.52.2
+
+- Fixed: a pick or a want from the window failed with "march: not
+  found" since v0.51. The pulse's kind was handed to the command as
+  its first word. The window now has a test of its own, driven by a
+  stand-in for fzf.
+
 ## v0.52
 
 - New: undo. Every step, from a pick or a want, writes its inverse

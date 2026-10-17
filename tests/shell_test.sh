@@ -2454,6 +2454,18 @@ EOF
     rm -f "$journal/undo" "$journal/recent"
     st=0; out=$(sh "$SH" panel what is my address 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> what is my address' '  192.0.2.10 on the wire, 192.0.2.20 on wifi.')" ] && ok "panel WORDS that ask: the answer in place, no steps" || bad "want answer" "st=$st $out"
+    # the window itself, driven by an fzf of the test's: a pick runs through panel_run and panel_step, the next list carries the undo row
+    cat > "$H/.local/bin/fzf" <<'STUB'
+#!/bin/sh
+n=$(cat "$HOME/fzf.calls" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$HOME/fzf.calls"
+cat > "$HOME/fzf.in.$n"
+if [ "$n" -eq 1 ]; then printf '\n  out  mute\tout mute\n'; exit 0; else exit 130; fi
+STUB
+    chmod +x "$H/.local/bin/fzf"; rm -f "$H/fzf.calls" "$H/fzf.in."* "$amlog" "$journal/undo" "$journal/recent"
+    st=0; out=$(SPARK_SHELL_TEST_TTY=1 sh "$SH" panel 2>&1 </dev/null) || st=$?
+    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && printf '%s\n' "$out" | grep -q "$TICK out muted" && ! printf '%s\n' "$out" | grep -q 'not found' && grep -q "undo.*  out unmute	undo all$" "$H/fzf.in.2" && grep -qx -- '-c 0 sset Master mute' "$amlog" \
+        && ok "the window: Enter on out mute plays the step, the receipt says it with a check, the next list opens with the undo row; Esc ends it" || bad "window pick" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) out=$(printf '%s' "$out" | tr -d '\033' | tr '\n' '|' | tail -c 400) in2=$(grep undo "$H/fzf.in.2" 2>&1)"
+    rm -f "$H/.local/bin/fzf" "$H/fzf.calls" "$H/fzf.in."* "$journal/undo" "$journal/recent"
     rm -f "$H/.local/bin/spark"
     rm -f "$H/.local/bin/amixer" "$P/asound/cards"
     out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^warn   sound        no audio system found, so no out or mic block -- install pipewire, or alsa-utils for plain ALSA$' \
