@@ -7,7 +7,8 @@
   same list. A `spark  chat` row is the panel's first; Enter on it
   opens the conversation in the same window.
 - New: a question at the panel's prompt is answered there, in a
-  sentence or two. A change is still played as steps.
+  sentence or two, from what the bar shows: `what is my address`. A
+  change is still played as steps.
 - Changed: `spark-shell panel chat` is the chat verb; `desktop --chat`
   still works. The chat window is the panel's, one rule in sway.
 

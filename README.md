@@ -273,8 +273,8 @@ notice and boot files for quiet. `off` restores or removes each one.
 What leaves the machine: only what the package manager downloads. A
 layout asks spark, which runs on this machine, with your words, the
 screen sizes and the app list; a want at the panel asks it with your
-words, the list of what the bar can do and the names of your saved
-layouts. Never a window title or a file. A new Wi-Fi network is saved
+words, what the bar shows, the list of what it can do and the names of
+your saved layouts. Never a window title or a file. A new Wi-Fi network is saved
 by the Wi-Fi tool itself.
 
 The settings live in `~/.config/spark-shell/config`, and every run

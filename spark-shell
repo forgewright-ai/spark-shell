@@ -2625,13 +2625,16 @@ panel_brief() {   # -> "section: action ARG, ...; section: ..." for the layouts 
         [ -z "$_acts" ] || printf '%s: %s; ' "$p" "$_acts"
     done | sed 's/; $//'
 }
-want_play() {   # want_play WORDS -> the why, then one line per step
+panel_facts() {   # -> what the bar shows now, one title per block, for a question at the prompt
+    for p in $(panel_pages_here); do [ "$p" = clock ] || printf '%s; ' "$(panel_title "$p")"; done | sed 's/; $//'
+}
+want_play() {   # want_play WORDS -> one line per step, or the answer to a question
     command -v jq >/dev/null 2>&1 || { echo "jq is not installed (spark-shell on)"; return 1; }
     spark=$(spark_bin); [ -n "$spark" ] || { echo "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
     SND=${SND:-$(snd_tool)}
     _brief=$(panel_brief)
     [ -n "$_brief" ] || { echo "nothing on the panel takes an action on this machine"; return 1; }
-    about="The panel of a desktop and what this machine can do now, by section -- $_brief. Rules: only steps from that list; N is a number (0 to 100 for level, 0 to 1 for alpha), NAME a name as listed, TASK the want in the user's own words, as {\"page\": \"layout\", \"action\": \"new\", \"arg\": \"write notes\"}, which opens the apps for that task, any program by name included; a layout step for a want that names a program or a task to do, never for a setting alone; as few steps as the want takes; no step when nothing on the list does it; when the words ask something rather than ask for a change, put the answer in \"answer\", one or two sentences, and give no steps. Answer with one JSON object and nothing else: {\"why\": \"one sentence\", \"answer\": \"\", \"steps\": [{\"page\": \"bt\", \"action\": \"connect\", \"arg\": \"NAME\"}]}"
+    about="The panel of a desktop. What the bar shows now: $(panel_facts). What this machine can do now, by section -- $_brief. Rules: only steps from that list; N is a number (0 to 100 for level, 0 to 1 for alpha), NAME a name as listed, TASK the want in the user's own words, as {\"page\": \"layout\", \"action\": \"new\", \"arg\": \"write notes\"}, which opens the apps for that task, any program by name included; a layout step for a want that names a program or a task to do, never for a setting alone; as few steps as the want takes; no step when nothing on the list does it; when the words ask something rather than ask for a change, put the answer in \"answer\", one or two sentences, and give no steps. Answer with one JSON object and nothing else: {\"why\": \"one sentence\", \"answer\": \"\", \"steps\": [{\"page\": \"bt\", \"action\": \"connect\", \"arg\": \"NAME\"}]}"
     [ -t 1 ] && desk_pulse || :
     st=0; "$spark" edit --type json --name panel.json --about "$about" -- "do this on the desktop: $1" </dev/null > "$TMP/want.json" 2>"$TMP/want.err" || st=$?
     [ -t 1 ] && desk_pulse_stop || :
