@@ -197,21 +197,25 @@ AI and the machine stay on the status line inside each window.
 
 ## Panel
 
-The panel is one small window, the same size and place every time, in
-the middle of the screen, in the palette's colours. Super+d opens it.
-Super+s opens it already in spark chat. A click on a bar block opens
-it with that block first. Esc closes it, and so does the key that
-opened it, pressed again. It stays while the mouse moves.
+The panel is one window, the same size and place every time, in the
+middle of the screen: a plain surface a shade lighter than the
+windows behind it, with air around its text and no frame. Super+d
+opens it. Super+s opens it already in spark chat, on the same
+surface. A click on a bar block opens it with that block first. Esc
+closes it, and so does the key that opened it, pressed again. It
+stays while the mouse moves.
 
-The first lines are the glance: after Super+d the date and time, the
-bar's facts in words, and an alarm on its own line when there is one;
-after a click on `wifi`, the network, its strength as bars and the
-address. Then one list of everything this machine can do right now,
-in sections ordered by use: `spark`, `layout`, `out`, `mic`, `theme`,
-`bt`, `apps`, `wifi`. The section you came from is on top. Every row
-names its section and the thing, with a sign in front where there is
-a state: a dot is in use or connected, a ring is available, a check is
-current or saved, a small triangle opens something. The sign says
+The first lines are the glance: after Super+d the date, the time at
+the right edge, the bar's facts in words under them, and an alarm on
+its own line when there is one; after a click on `wifi`, the network,
+its strength as bars and the address. Then one list of everything
+this machine can do right now, in sections ordered by use: `spark`,
+`layout`, `out`, `mic`, `theme`, `bt`, `apps`, `wifi`. The section
+you came from is on top. Every row names its section in a column of
+its own, muted, then the thing, with a sign in front where there is a
+state: a dot is in use or connected, a ring is available, a check is
+current or saved, a small triangle opens something. The picked row is
+lit across the window. The sign says
 what Enter does: a ring before a network connects it, a dot before
 it disconnects, a ring before an output switches to it. Where there
 is no thing to point at, the row says the verb: `forget cafe`,
@@ -221,7 +225,8 @@ the strongest three, then `12 more`; `theme` the palettes and the
 font, then `wallpaper and alpha`. `lan` and `bat` have nothing to
 set: a click on one shows the address, speed and gateway; the charge,
 the time left and the health. A click on the clock shows the time
-large and this month, today in the accent.
+large, in strokes two cells wide, beside this month, today a chip in
+the accent.
 
 The window draws at once from what costs nothing to know. The Wi-Fi
 scan and the Bluetooth list take a moment, so they keep their last

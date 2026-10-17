@@ -229,6 +229,7 @@ theme_load() {
     export ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR ACCENT_SGR MUTED_SGR
     hex_load
     wall_load
+    panel_load
 }
 
 # The desktop's hex. foot is the desktop's twin of the console palette:
@@ -296,6 +297,11 @@ wall_word() {   # wall_word WORD -> what WALLPAPER stores: none, default, #rrggb
     printf '%s' "$_w"
 }
 alpha_hex() { awk -v a="$1" 'BEGIN { printf "%02x", int(a * 255 + 0.5) }'; }   # alpha_hex 0.85 -> d9
+hex_mix() {   # hex_mix RRGGBB RRGGBB PERCENT -> rrggbb: the first colour moved PERCENT of the way to the second
+    # shellcheck disable=SC2046   # three numbers each, split on purpose
+    set -- $(hex_rgb "#$1") $(hex_rgb "#$2") "$3"
+    printf '%02x%02x%02x' $(( $1 + ($4 - $1) * $7 / 100 )) $(( $2 + ($5 - $2) * $7 / 100 )) $(( $3 + ($6 - $3) * $7 / 100 ))
+}
 wall_load() {
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     if wall_there; then
@@ -307,6 +313,28 @@ wall_load() {
     fi
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     for k in $WALL_KEYS; do export "${k?}"; done
+}
+
+# The panel's surface: its window is a shade of the palette's background
+# towards the text, the picked row a shade more, with air around the
+# text from the font size; no frame, so it reads as a surface of the
+# desktop, not a window with a border. The sway template takes the keys.
+PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_BG PANEL_HI"
+panel_load() {
+    # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
+    PANEL_BG=$(hex_mix "$HEX_BG" "$HEX_FG" 9); PANEL_HI=$(hex_mix "$HEX_BG" "$HEX_FG" 18); PANEL_PAD=$(panel_pad)
+    PANEL_MUTED=$(hex_mix "$HEX_MUTED" "$HEX_FG" 35)   # the palette's muted, lifted a third of the way to the text: readable on the surface
+    for k in $PANEL_KEYS; do export "${k?}"; done
+}
+hex_sgr() {   # hex_sgr rrggbb -> the SGR of that colour as text
+    # shellcheck disable=SC2046   # three numbers, split on purpose
+    set -- $(hex_rgb "#$1"); printf '38;2;%s;%s;%s' "$1" "$2" "$3"
+}
+panel_pad() { _s=$(look_font_size); : "${_s:=12}"; printf '%sx%s' $(( _s * 2 )) $(( _s * 16 / 10 )); }   # the air in pixels: two cells wide, one tall, at the font's size
+panel_foot() {   # panel_foot ARGS... -- the panel's window: foot sized, padded and coloured the way the sway template renders it, running spark-shell panel ARGS (PANEL_LEAD, setsid, before it)
+    _fc=$(foot_colors)
+    # shellcheck disable=SC2086   # the leader, or nothing
+    ${PANEL_LEAD:-} foot --app-id "$PANEL_APP" -W "$PANEL_SIZE" -o "pad=$PANEL_PAD" -o "$_fc.background=$PANEL_BG" -o "$_fc.alpha=1.0" -e "$REPO/spark-shell" panel "$@"
 }
 
 # ------------------------------------------------------------------ rows
@@ -448,7 +476,7 @@ render_expr() {
         # shellcheck disable=SC2154   # v is set by the eval above
         e="$e;s|@$k@|$(esc "$v")|g"
     done
-    for k in $SLOT_KEYS $HEX_KEYS $WALL_KEYS; do
+    for k in $SLOT_KEYS $HEX_KEYS $WALL_KEYS $PANEL_KEYS; do
         eval "v=\$$k"
         e="$e;s|@$k@|$(esc "$v")|g"
     done
@@ -2234,7 +2262,13 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | volu
 
 # --- the signs and the sizes
 PANEL_APP='spark-panel'               # the window's app id (the sway template floats and centres it)
-PANEL_SIZE=64x24                      # columns x rows of the window
+PANEL_SIZE=76x30                      # columns x rows of the window
+PANEL_COL=6                           # the section column: as wide as the longest section's name
+PANEL_IN=4                            # the glance's indent: the section column, where every row's text begins
+panel_col() { printf "%-${PANEL_COL}s  " "$1"; }   # panel_col SECTION -> the name in its column, two cells before the text
+panel_sign() { case $1 in "$PANEL_DOT"|"$PANEL_TICK") printf '%s%s%s' "${PANEL_MARK:-}" "$1" "${PANEL_UNMARK:-}" ;; "$PANEL_CROSS") printf '%s%s%s' "${PANEL_RED:-}" "$1" "${PANEL_UNMARK:-}" ;; *) printf '%s' "$1" ;; esac; }   # panel_sign SIGN -> coloured: what is current in the accent, a refusal red
+panel_indent() { sed "s/^/$(printf "%${PANEL_IN}s" '')/"; }   # the glance's lines, in from the edge
+panel_line_sign() { case $1 in "$PANEL_DOT "*|"$PANEL_TICK "*|"$PANEL_CROSS "*) printf '%s %s' "$(panel_sign "${1%% *}")" "${1#* }" ;; *) printf '%s' "$1" ;; esac; }   # panel_line_sign LINE -> the line, its leading sign coloured
 TAB=$(printf '\t')
 PANEL_DOT=$(printf '\342\227\217')    # U+25CF, a filled circle: in use, connected
 PANEL_RING=$(printf '\342\227\213')   # U+25CB, an empty circle: available
@@ -2248,7 +2282,7 @@ PANEL_MARK=''; PANEL_UNMARK=''; PANEL_DIM=''   # the accent, its end, the muted 
 panel_colours() {   # the three SGRs from our own render, when there is one (a pipe gets none)
     # shellcheck disable=SC1091   # our own render
     [ ! -f "$CONFIG_DIR/sgr.sh" ] || . "$CONFIG_DIR/sgr.sh"
-    PANEL_MARK=$(printf '\033[%sm' "${SPARK_ACCENT_SGR:-1}"); PANEL_UNMARK=$(printf '\033[0m'); PANEL_DIM=$(printf '\033[%sm' "${SPARK_MUTED_SGR:-2}")
+    PANEL_MARK=$(printf '\033[%sm' "${SPARK_ACCENT_SGR:-1}"); PANEL_UNMARK=$(printf '\033[0m'); PANEL_DIM=$(printf '\033[%sm' "$(hex_sgr "$PANEL_MUTED")"); PANEL_RED=$(printf '\033[31m')
 }
 
 # --- the sections: their order by use, which of them this machine has, what each costs
@@ -2268,8 +2302,8 @@ panel_blocks_here() {   # -> the bar's blocks this machine has, in the bar's ord
     done
 }
 panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on top, absent blocks left out (on macOS: spark and layout)
-    _f=${1:-bar}; _here=" $(panel_blocks_here | paste -sd ' ' -) "
-    [ "$_f" = bar ] || echo "$_f"
+    _f=${1:-glance}; _here=" $(panel_blocks_here | paste -sd ' ' -) "
+    [ "$_f" = glance ] || echo "$_f"
     for s in $PANEL_ORDER; do
         [ "$s" != "$_f" ] || continue
         case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout) ;; apps) [ "$OS" != Darwin ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
@@ -2279,7 +2313,7 @@ panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on
 panel_cost() {   # panel_cost SECTION -> instant | fast | slow: what its rows cost to know
     case $1 in wifi) echo slow ;; bt|out|mic|apps) echo fast ;; *) echo instant ;; esac
 }
-panel_section_ok() { case " bar chat $PANEL_ORDER $PANEL_BLOCKS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }   # panel_section_ok WORD
+panel_section_ok() { case " glance chat $PANEL_ORDER $PANEL_BLOCKS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }   # panel_section_ok WORD
 
 # --- the cache: a probe's last answer, kept with its age under the state directory
 PANEL_CACHE=$STATE_DIR/panel
@@ -2329,7 +2363,7 @@ pulse_start() {   # pulse_start KIND [LABEL] [ROW] -- redrawn every 0.35 s on th
     [ -t 1 ] || return 0
     _k=$1; _l=${2:-}; _row=${3:-}; _t0=$(date +%s)
     ( i=0; while :; do
-        if [ -n "$_row" ]; then printf '\0337\033[%s;1H\033[2K%s\0338' "$_row" "$(pulse_line "$_k" "$i" "$_t0" "$_l")"
+        if [ -n "$_row" ]; then printf '\0337\033[%s;%sH\033[2K%s\0338' "$_row" "${PULSE_COL:-1}" "$(pulse_line "$_k" "$i" "$_t0" "$_l")"
         else printf '\r\033[2K%s' "$(pulse_line "$_k" "$i" "$_t0" "$_l")"; fi
         i=$((i + 1)); sleep 0.35
       done ) &
@@ -2514,34 +2548,48 @@ snd_use() {   # snd_use out|mic NAME -> one line; on plain ALSA the output's car
 # MARK<tab>TEXT<tab>ACTION [ARG]: the mark a sign or -, a look-only row
 # carries `show`. Not every row of a long section shows when it is not
 # the one that opened the panel: a `more` row opens it in full.
-panel_title() {   # panel_title SECTION -> the line(s) that say what opened the panel; `bar` is the glance: date and time, the facts, an alarm line when there is one
+panel_title() {   # panel_title SECTION -> the line(s) that say what opened the panel, the section in its column; `glance` is the date and time, the facts, an alarm line when there is one
     case $1 in
-        lan) _l=$(bar_lan); case $_l in up*) echo "lan  up $PANEL_SEP ${_l#up }" ;; down) echo "lan  $PANEL_WARN down: no carrier on the wire" ;; *) echo "lan  no wire" ;; esac ;;
+        lan) _l=$(bar_lan); case $_l in up*) echo "$(panel_col lan)up $PANEL_SEP ${_l#up }" ;; down) echo "$(panel_col lan)$PANEL_WARN down: no carrier on the wire" ;; *) echo "$(panel_col lan)no wire" ;; esac ;;
         wifi) _t=$(wifi_tool); _c=$(wifi_connected); _w=$(bar_wifi)
-            if [ -z "$_t" ]; then echo "wifi  no tool answers (nmcli, iwctl or wpa_cli)"
-            elif [ -z "$_c" ]; then echo "wifi  not connected"
-            else case $_w in *' '*) _a=${_w#* } ;; *) _a='' ;; esac; echo "wifi  $(panel_bars "${_w%% *}") $_c${_a:+ $PANEL_SEP $_a}"; fi ;;
-        bt) _b=$(bar_bt); case $_b in name*) echo "bt  $PANEL_DOT ${_b#name }" ;; on) echo "bt  on $PANEL_SEP nothing connected" ;; off) echo "bt  off" ;; *) echo "bt  no controller" ;; esac ;;
+            if [ -z "$_t" ]; then echo "$(panel_col wifi)no tool answers (nmcli, iwctl or wpa_cli)"
+            elif [ -z "$_c" ]; then echo "$(panel_col wifi)not connected"
+            else case $_w in *' '*) _a=${_w#* } ;; *) _a='' ;; esac; echo "$(panel_col wifi)$(panel_bars "${_w%% *}") $_c${_a:+ $PANEL_SEP $_a}"; fi ;;
+        bt) _b=$(bar_bt); case $_b in name*) echo "$(panel_col bt)$PANEL_DOT ${_b#name }" ;; on) echo "$(panel_col bt)on $PANEL_SEP nothing connected" ;; off) echo "$(panel_col bt)off" ;; *) echo "$(panel_col bt)no controller" ;; esac ;;
         out|mic) if [ "$1" = out ]; then _o=$(snd_out); else _o=$(snd_mic); fi
-            [ -n "$_o" ] || { echo "$1  nothing found"; return 0; }
+            [ -n "$_o" ] || { echo "$(panel_col "$1")nothing found"; return 0; }
             _n=$(printf '%s\n' "$_o" | sed -n 1p); _lv=$(printf '%s\n' "$_o" | sed -n 2p); _m=$(printf '%s\n' "$_o" | sed -n 3p); _live=0
             if [ "$1" = mic ]; then _lv=$(printf '%s\n' "$_o" | sed -n 4p); _live=$(printf '%s\n' "$_o" | sed -n 2p); fi
-            _s="$1  $_n"; [ "$_lv" = - ] || [ -z "$_lv" ] || _s="$_s $PANEL_SEP $_lv%"; [ "$_m" != 1 ] || _s="$_s $PANEL_SEP muted"; [ "${_live:-0}" != 1 ] || _s="$_s $PANEL_SEP $PANEL_DOT recording"
+            _s="$(panel_col "$1")$_n"; [ "$_lv" = - ] || [ -z "$_lv" ] || _s="$_s $PANEL_SEP $_lv%"; [ "$_m" != 1 ] || _s="$_s $PANEL_SEP muted"; [ "${_live:-0}" != 1 ] || _s="$_s $PANEL_SEP $PANEL_DOT recording"
             echo "$_s" ;;
-        bat) _b=$(bar_power); [ -n "$_b" ] || { echo "bat  no battery"; return 0; }
+        bat) _b=$(bar_power); [ -n "$_b" ] || { echo "$(panel_col bat)no battery"; return 0; }
             _cap=${_b%% *}; _st=$(panel_lower "${_b#* }"); _w=''; [ "$_cap" -ge 15 ] 2>/dev/null || [ "$_st" = charging ] || _w="$PANEL_WARN "
-            _s="bat  $_w$_cap% $PANEL_SEP $_st"; _left=$(bat_left); [ -z "$_left" ] || _s="$_s $PANEL_SEP $_left"; echo "$_s" ;;
-        clock) echo "clock  $(date '+%A %d %B %Y')" ;;   # the time is drawn large under it (clock_face)
-        theme) echo "theme  ${THEME:-none} $PANEL_SEP $(bar_font)" ;;   # the wallpaper and alpha are named in their rows
+            _s="$(panel_col bat)$_w$_cap% $PANEL_SEP $_st"; _left=$(bat_left); [ -z "$_left" ] || _s="$_s $PANEL_SEP $_left"; echo "$_s" ;;
+        clock) date '+%A %d %B %Y' ;;   # the time and the month are drawn under it (clock_view)
+        theme) echo "$(panel_col theme)${THEME:-none} $PANEL_SEP $(bar_font)" ;;   # the wallpaper and alpha are named in their rows
         layout) _n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' '); _last=''; [ ! -f "$DESK_LAST" ] || _last=$(desk_words "$DESK_LAST")
-            if [ "$_n" -eq 0 ]; then echo "layout  none saved yet"
-            else echo "layout  $_n saved${_last:+ $PANEL_SEP last: $_last}"; fi ;;
-        apps) if apps_marked; then echo "apps  $(grep -c '^[A-Za-z0-9]' "$APPS") allowed $PANEL_SEP Enter opens one"; else echo "apps  every app allowed $PANEL_SEP Enter opens one"; fi ;;
-        spark) echo "spark  a conversation, in this window" ;;
-        undo) echo "undo  the last thing done, taken back" ;;
-        bar) echo "bar  $(date '+%A %d %B') $PANEL_SEP $(date '+%H:%M')"
+            if [ "$_n" -eq 0 ]; then echo "$(panel_col layout)none saved yet"
+            else echo "$(panel_col layout)$_n saved${_last:+ $PANEL_SEP last: $_last}"; fi ;;
+        apps) if apps_marked; then echo "$(panel_col apps)$(grep -c '^[A-Za-z0-9]' "$APPS") allowed $PANEL_SEP Enter opens one"; else echo "$(panel_col apps)every app allowed $PANEL_SEP Enter opens one"; fi ;;
+        spark) echo "$(panel_col spark)a conversation, in this window" ;;
+        undo) echo "$(panel_col undo)the last thing done, taken back" ;;
+        glance) panel_glance_line
             _f=$(panel_facts_short); [ -z "$_f" ] || echo "$_f"
             _a=$(panel_alarms); [ -z "$_a" ] || echo "$_a" ;;
+    esac
+}
+panel_glance_line() {   # panel_glance_line [WIDTH] -> the date and the time: beside each other on a pipe; the time at the right edge of WIDTH, in the accent, in the window
+    _d=$(date '+%A %d %B'); _t=$(date '+%H:%M')
+    if [ -n "${1:-}" ] && [ "$1" -gt $(( ${#_d} + ${#_t} + 3 )) ] 2>/dev/null; then printf '%s%*s%s%s%s\n' "$_d" $(( $1 - ${#_d} - ${#_t} )) '' "${PANEL_MARK:-}" "$_t" "${PANEL_UNMARK:-}"
+    else echo "$_d $PANEL_SEP $_t"; fi
+}
+panel_glance() {   # panel_glance SECTION WIDTH -> the lines over the list in the window, folded at a word and coloured: the section in the accent, the facts muted, an alarm red; the clock's view under its date
+    case $1 in
+        glance) panel_glance_line "$2"
+            _f=$(panel_facts_short); [ -z "$_f" ] || printf '%s\n' "$_f" | fold -s -w "$2" | sed "s/.*/$PANEL_DIM&$PANEL_UNMARK/"
+            _a=$(panel_alarms); [ -z "$_a" ] || printf '%s\n' "$_a" | fold -s -w "$2" | sed "s/.*/$PANEL_RED&$PANEL_UNMARK/" ;;
+        clock) panel_title clock; echo; clock_view "$PANEL_MARK" "$PANEL_UNMARK" ;;
+        *) panel_title "$1" | fold -s -w "$2" | sed "1s/^\([a-z]*\)\(  *\)/$PANEL_MARK\1$PANEL_UNMARK\2/" ;;
     esac
 }
 panel_facts_short() {   # -> the bar's facts in a few words each, one line (the glance's second line)
@@ -2574,7 +2622,7 @@ panel_alarms() {   # -> the alarms the bar shows in red, on one line with the wa
     printf '%s\n' "$_a"
 }
 panel_facts() {   # -> what the bar shows now, one title per block, for a question at the prompt
-    for p in $(panel_blocks_here); do [ "$p" = clock ] || printf '%s; ' "$(panel_title "$p")"; done | sed 's/; $//'
+    for p in $(panel_blocks_here); do [ "$p" = clock ] || printf '%s; ' "$(panel_title "$p")"; done | sed 's/; $//' | tr -s ' '
 }
 panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long section shows what matters and a `more` row
     case $1 in
@@ -2658,7 +2706,7 @@ panel_section_rows() {   # panel_section_rows SECTION FIRST -> the section's row
     panel_rows "$1" $_full | while IFS="$TAB" read -r m t a; do
         [ "$1" = "$2" ] || [ "$a" != show ] || continue
         [ "$m" != - ] || m=' '
-        printf '%s %s%s%s  %s\t%s %s\n' "$m" "$PANEL_MARK" "$1" "$PANEL_UNMARK" "$t" "$1" "$a"
+        printf '%s %s%s%s%s\t%s %s\n' "$(panel_sign "$m")" "${PANEL_DIM:-}" "$(panel_col "$1")" "${PANEL_UNMARK:-}" "$t" "$1" "$a"
     done
 }
 panel_stream() {   # panel_stream FIRST -> the one list, in the order rows are ready: FIRST, the recent picks, the instant and fast sections, then the slow ones as each answers
@@ -2813,21 +2861,22 @@ bat_left() {   # -> "H:MM left" or "H:MM to full", from the kernel's energy or c
         Charging) [ -n "$_full" ] && [ "$_full" -gt "$_now" ] || return 0; _m=$(( (_full - _now) * 60 / _rate )); printf '%d:%02d to full\n' $((_m / 60)) $((_m % 60)) ;;
     esac
 }
-cal_rows() {   # this month, Sunday first, today marked (awk: no cal, no GNU date needed)
+cal_rows() {   # cal_rows [MARK UNMARK] -> this month, 28 cells wide: its name over the week, Sunday first, each day a cell four wide, today between MARK and UNMARK (awk: no cal, no GNU date needed)
     date '+%Y %m %d' | awk -v mark="${1:-}" -v unmark="${2:-}" '{
         y = $1; m = $2 + 0; d = $3 + 0
         split("31 28 31 30 31 30 31 31 30 31 30 31", dim, " "); if ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0) dim[2] = 29
         mm = m; yy = y; if (mm < 3) { mm += 12; yy-- }; k = yy % 100; j = int(yy / 100)
         h = (1 + int(13 * (mm + 1) / 5) + k + int(k / 4) + int(j / 4) + 5 * j) % 7; w = (h + 6) % 7
         split("January February March April May June July August September October November December", mon, " ")
-        printf "%s %d\n", mon[m], y; print "Su Mo Tu We Th Fr Sa"
-        line = ""; for (i = 0; i < w; i++) line = line "   "
+        title = mon[m] " " y; pad = ""; for (i = 0; i < int((28 - length(title)) / 2); i++) pad = pad " "
+        print pad title; print " Su  Mo  Tu  We  Th  Fr  Sa"
+        line = ""; for (i = 0; i < w; i++) line = line "    "
         for (day = 1; day <= dim[m]; day++) {
-            cell = sprintf("%2d", day); if (day == d) cell = mark cell unmark
-            line = line cell " "; w++; if (w == 7) { print line; line = ""; w = 0 } }
+            cell = sprintf(" %2d ", day); if (day == d) cell = mark cell unmark
+            line = line cell; w++; if (w == 7) { print line; line = ""; w = 0 } }
         if (line != "") print line }'
 }
-clock_digit() {   # clock_digit D -> five rows of a 3-wide figure in full blocks (D is 0-9 or :)
+clock_digit() {   # clock_digit D -> five rows of a figure six cells wide in full blocks, every stroke two cells wide (D is 0-9; : is two cells wide)
     case $1 in
         0) printf '%s\n' '###' '# #' '# #' '# #' '###' ;;
         1) printf '%s\n' '  #' ' ##' '  #' '  #' '  #' ;;
@@ -2840,25 +2889,32 @@ clock_digit() {   # clock_digit D -> five rows of a 3-wide figure in full blocks
         8) printf '%s\n' '###' '# #' '###' '# #' '###' ;;
         9) printf '%s\n' '###' '# #' '###' '  #' '###' ;;
         :) printf '%s\n' ' ' '#' ' ' '#' ' ' ;;
-    esac | sed "s/#/$BAR_FULL/g"
+    esac | sed "s/ /  /g; s/#/$BAR_FULL$BAR_FULL/g"
 }
-clock_face() {   # -> the time, five rows tall, in the accent; a blank; this month with today marked
+clock_rows() {   # -> the time, five rows tall and 34 cells wide, the figures two cells apart
     _t=$(date '+%H:%M')
     for _r in 1 2 3 4 5; do
         _line=''; _k=0
         while [ "$_k" -lt ${#_t} ]; do
-            _c=$(printf '%s' "$_t" | cut -c$((_k + 1))); _line="$_line${_line:+ }$(clock_digit "$_c" | sed -n "${_r}p")"; _k=$((_k + 1))
+            _c=$(printf '%s' "$_t" | cut -c$((_k + 1))); _line="$_line${_line:+  }$(clock_digit "$_c" | sed -n "${_r}p")"; _k=$((_k + 1))
         done
-        printf '%s%s%s\n' "${PANEL_MARK:-}" "$_line" "${PANEL_UNMARK:-}"
+        printf '%s\n' "$_line"
     done
-    echo
-    cal_rows "${PANEL_MARK:-}" "${PANEL_UNMARK:-}"
+}
+clock_view() {   # clock_view [MARK UNMARK] -> the time large on the left, in MARK, and this month on the right, today a chip: one block, as tall as the month (seven or eight rows)
+    clock_rows > "$TMP/clock.time"; cal_rows "${1:-}${1:+$(printf '\033[7m')}" "${2:-}" > "$TMP/clock.month"
+    _i=0
+    while IFS= read -r _m; do
+        _i=$((_i + 1)); _l=''
+        [ "$_i" -lt 2 ] || [ "$_i" -gt 6 ] || _l=$(sed -n "$((_i - 1))p" "$TMP/clock.time")   # the time beside the week's names and the first four weeks
+        if [ -n "$_l" ]; then printf '%s%s%s      %s\n' "${1:-}" "$_l" "${2:-}" "$_m"; else printf '%34s      %s\n' '' "$_m"; fi
+    done < "$TMP/clock.month"
 }
 look_font_size() { printf '%s' "$FONT" | sed -n 's/.*size=\([0-9][0-9]*\).*/\1/p' | sed -n 1p; }
 
 # --- the gate and the list as text
 panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0), or why not (exit 1): only a step the section offers now
-    if ! panel_section_ok "$1" || [ "$1" = bar ] || [ "$1" = chat ]; then if [ -n "$1" ]; then echo "no $1 here"; else echo "a step with no section"; fi; return 1; fi
+    if ! panel_section_ok "$1" || [ "$1" = glance ] || [ "$1" = chat ]; then if [ -n "$1" ]; then echo "no $1 here"; else echo "a step with no section"; fi; return 1; fi
     case $1:$2 in
         spark:chat|undo:all) echo ''; return 0 ;;
         layout:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: save takes a name"; return 1 ;;
@@ -2875,10 +2931,10 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
     [ -n "$_m" ] && [ "$_m" != show ] || { echo "$1: $2${3:+ $3} is not on the panel now"; return 1; }
     printf '%s\n' "${_m#* }" | awk -v a="$2" '$0 == a { print ""; exit } { print }'
 }
-panel_list() {   # panel_list [SECTION] -> the glance (the clock's face under it), then the one list as text (tests, no terminal)
+panel_list() {   # panel_list [SECTION] -> the glance (the clock's view under it), then the one list as text (tests, no terminal)
     SND=${SND:-$(snd_tool)}
     panel_title "$1"
-    [ "$1" != clock ] || clock_face
+    [ "$1" != clock ] || { echo; clock_view; }
     panel_stream "$1"
 }
 
@@ -2990,15 +3046,28 @@ panel_run() {   # panel_run KIND CMD... -> CMD's lines as they land under the gl
     : > "$TMP/run.out"
     "$@" > "$TMP/run.out" 2>&1 & _w=$!
     if [ -t 1 ]; then
-        _n=0; i=0; _t0=$(date +%s)
+        _n=0; i=0; _t0=$(date +%s); _in=$(printf "%${PANEL_IN}s" '')
         while kill -0 "$_w" 2>/dev/null; do
             _m=$(grep -c '' "$TMP/run.out" || :)
-            while [ "$_n" -lt "$_m" ]; do _n=$((_n + 1)); printf '\r\033[2K  %s\n' "$(sed -n "${_n}p" "$TMP/run.out")"; done
-            printf '\r\033[2K  %s' "$(pulse_line "$_kind" "$i" "$_t0")"; i=$((i + 1)); sleep 0.35
+            while [ "$_n" -lt "$_m" ]; do _n=$((_n + 1)); printf '\r\033[2K%s%s\n' "$_in" "$(panel_line_sign "$(sed -n "${_n}p" "$TMP/run.out")")"; done
+            printf '\r\033[2K%s%s' "$_in" "$(pulse_line "$_kind" "$i" "$_t0")"; i=$((i + 1)); sleep 0.35
         done
         printf '\r\033[2K'
     fi
     wait "$_w"
+}
+panel_own_window() {   # the terminal is the panel's own window: foot under a running sway, with the panel's app id
+    [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 1
+    [ "$(swaymsg -t get_tree 2>/dev/null | jq -r --argjson p "$PPID" '[.. | objects | select(.pid? == $p) | .app_id // empty] | first // empty' 2>/dev/null)" = "$PANEL_APP" ]
+}
+panel_fzf_new() { fzf --version 2>/dev/null | awk '{ split($1, v, "."); exit !(v[1] > 0 || v[2] >= 54) }'; }   # fzf 0.54 or newer: the picked row lit across, no pointer cell
+panel_fzf() {   # panel_fzf HEIGHT -- the list, the hint and the prompt in HEIGHT rows: the rows in from the edge, the picked row lit across the window, the prompt at the foot; stdin the rows, stdout the query and the pick
+    _c="fg:-1,bg:-1,fg+:-1,bg+:#$PANEL_HI,hl:#$HEX_ACCENT,hl+:#$HEX_ACCENT,prompt:#$HEX_ACCENT,header:#$PANEL_MUTED,gutter:-1,query:-1,scrollbar:#$HEX_MUTED"
+    _h=$1
+    if panel_fzf_new; then set -- --highlight-line --pointer '' --marker '' --padding "0,0,0,$((PANEL_IN - 2))"
+    else set -- --pointer ' ' --padding "0,0,0,$((PANEL_IN - 3))"; fi
+    fzf --delimiter "$TAB" --with-nth 1 --print-query --exact --ansi --layout=reverse-list --no-info --no-separator --color="$_c" \
+        --prompt "$PANEL_PROMPT " --header "$(printf ' \n%s' "$(panel_hint)")" --height="$_h" "$@"
 }
 panel_loop() {   # panel_loop SECTION -- the window: the glance, the receipt, the list streamed into fzf under the hint and the prompt; a pick or words, then again
     panel_colours
@@ -3006,23 +3075,24 @@ panel_loop() {   # panel_loop SECTION -- the window: the glance, the receipt, th
     FZF=''; PULSE=''
     trap 'panel_quit' EXIT
     trap 'kill "${FZF:-}" 2>/dev/null || :; exit 0' TERM INT HUP
-    what=$1; said=''
-    cols=$(tput cols 2>/dev/null || echo 64); [ "$cols" -ge 20 ] 2>/dev/null || cols=64
-    lines=$(tput lines 2>/dev/null || echo 24); [ "$lines" -ge 10 ] 2>/dev/null || lines=24
+    what=$1; said=''; own=''; ! panel_own_window || own=yes
+    cols=$(tput cols 2>/dev/null || echo 76); [ "$cols" -ge 24 ] 2>/dev/null || cols=76
+    lines=$(tput lines 2>/dev/null || echo 30); [ "$lines" -ge 12 ] 2>/dev/null || lines=30
+    width=$((cols - PANEL_IN)); PULSE_COL=$((PANEL_IN + 1))   # the text's width, and the column the march draws at
     while :; do
-        printf '\033[2J\033[H'
-        glance=$(panel_title "$what" | fold -s -w "$cols")   # a long line wraps at a word, and counts as its lines
-        [ "$what" != clock ] || glance="$glance
-$(clock_face)"
-        printf '%s\n' "$glance" | sed "1s/^\([a-z]*\)  /$PANEL_MARK\1$PANEL_UNMARK  /; s/^\($PANEL_WARN.*\)\$/$(printf '\033[31m')\1$PANEL_UNMARK/"
-        receipt=''; [ -z "$said" ] || receipt=$(printf '%s\n' "$said" | fold -s -w $((cols - 2)) | sed 's/^/  /')
-        [ -z "$receipt" ] || printf '%s\n' "$receipt"
-        glancen=$(printf '%s\n' "$glance" | grep -c . || :); saidn=$(printf '%s\n' "$receipt" | grep -c . || :)
-        status_row=$((glancen + saidn + 1)); echo   # the status row: the march while something looks around
+        [ -z "$own" ] || printf '\033]11;#%s\033\\' "$PANEL_BG"   # the surface again: a theme step repaints every terminal, this one included
+        printf '\033[2J\033[H\n'   # a row of air on top, as at the sides
+        panel_glance "$what" "$width" > "$TMP/glance"; panel_indent < "$TMP/glance"
+        n=$(( $(grep -c '' "$TMP/glance" || :) + 1 ))
+        if [ -n "$said" ]; then   # the receipt: what the last pick or want did, a blank over it
+            echo; printf '%s\n' "$said" | fold -s -w "$width" > "$TMP/receipt"
+            while IFS= read -r _r; do panel_line_sign "$_r"; echo; done < "$TMP/receipt" | panel_indent
+            n=$((n + 1 + $(grep -c '' "$TMP/receipt" || :)))
+        fi
+        status_row=$((n + 1)); echo   # the status row: the march while something looks around
         panel_warm "$what" "$status_row"
-        h=$((lines - 2 - glancen - saidn)); [ "$h" -ge 6 ] || h=6
-        panel_stream_live "$what" "$status_row" | fzf --delimiter "$TAB" --with-nth 1 --print-query --exact --prompt "$PANEL_PROMPT " --pointer ' ' --header "$(panel_hint)" \
-            --layout=reverse-list --no-info --color=16 --ansi --height="~$h" > "$TMP/sel" 2>/dev/null & FZF=$!   # ~: as tall as the rows, no taller
+        h=$((lines - n - 2)); [ "$h" -ge 6 ] || h=6   # the list fills the rest, the hint and the prompt at the foot, a row of air under them
+        panel_stream_live "$what" "$status_row" | panel_fzf "$h" > "$TMP/sel" 2>/dev/null & FZF=$!
         st=0; wait "$FZF" || st=$?
         FZF=''; panel_pulse_kill
         [ "$st" -lt 128 ] || break   # Esc, Ctrl-C, or the window was closed
@@ -3056,7 +3126,7 @@ cmd_panel() {   # cmd_panel [SECTION] [--list | ACTION [ARG...]] | chat | "WORDS
     case ${1:-} in
         chat) [ "$(panel_open_count)" -lt 2 ] || { swaymsg "[app_id=$PANEL_APP] kill" >/dev/null 2>&1 || :; return 0; }   # the key again: a panel already open goes
               panel_chat; return ;;
-        ''|--list) what=bar ;;
+        ''|--list) what=glance ;;
         -*) refuse_in panel "$1 is not an option here: a section ($(printf '%s' "$PANEL_ORDER $PANEL_LOOKS" | sed 's/ /, /g')), --list, or words for what you would like" ;;
         *) what=$1; shift; [ "$what" != look ] || what=theme   # look: the block's old word
            panel_section_ok "$what" || { bar_want "$what${1:+ $*}"; return; } ;;   # any other words: a want
@@ -3083,7 +3153,7 @@ bar_panel_open() {   # bar_panel_open BLOCK -- from a click: the panel with that
         _i=0; while [ "$_i" -lt 10 ] && [ "$(panel_open_count)" -gt 0 ]; do sleep 0.1; _i=$((_i + 1)); done
     fi
     lead=''; ! command -v setsid >/dev/null 2>&1 || lead=setsid
-    $lead foot --app-id "$PANEL_APP" -W "$PANEL_SIZE" -e "$REPO/spark-shell" panel "$1" >/dev/null 2>&1 </dev/null &
+    PANEL_LEAD=$lead panel_foot "$1" >/dev/null 2>&1 </dev/null &
 }
 
 # ---------------------------------------------- verbs: theme, font, quiet

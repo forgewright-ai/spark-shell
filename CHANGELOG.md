@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.55
+
+- Changed: the panel is a surface, not a framed window. Its background
+  is a shade of the palette's towards the text, the windows behind it
+  keep theirs, the border is gone, and there is air around the text,
+  sized from the font. The picked row is lit across the window. The
+  window is 76 by 30 cells. Super+s opens spark chat on the same
+  surface.
+- Changed: the glance after Super+d starts with the date, the time at
+  the right edge, and the facts under them, muted. It no longer calls
+  itself `bar`.
+- Changed: every row names its section in a column of its own, muted,
+  so the things line up: `wifi` and `layout` begin their text at the
+  same cell. The section that opened the panel is in the accent on
+  its title line.
+- Changed: the clock. The time is drawn in strokes two cells wide, so
+  the figures keep their shape, and this month sits beside it with
+  today a chip in the accent, the week names and the days four cells
+  apart.
+- Fixed: a theme picked in the panel repainted the panel's own window
+  flat; it takes its surface again.
+- Needs fzf 0.54 or newer for the lit row and the pointer gone; an
+  older fzf gets the same list with a one-cell pointer.
+
 ## v0.54.1
 
 - Changed: the layout's model reads the need part by part, at `and`

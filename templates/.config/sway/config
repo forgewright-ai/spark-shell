@@ -57,11 +57,15 @@ bar {
 
 # key: Super+Return opens a terminal window.
 bindsym $mod+Return exec $term
+# The panel: one window in the middle of the screen, a surface a shade
+# lighter than the palette's background, with air around its text and
+# no frame. spark-shell panel draws in it; a click on a bar block opens
+# the same window (panel_foot in spark-shell builds the same foot line).
 # key: Super+d opens the panel: pick an option, or say what you would like.
-bindsym $mod+d exec $term --app-id spark-panel -W 64x24 -e @REPO@/spark-shell panel
+bindsym $mod+d exec $term --app-id spark-panel -W @PANEL_SIZE@ -o pad=@PANEL_PAD@ -o @FOOT_COLORS@.background=@PANEL_BG@ -o @FOOT_COLORS@.alpha=1.0 -e @REPO@/spark-shell panel
 # key: Super+s opens spark chat in the panel's window, and Ctrl-D closes it.
-bindsym $mod+s exec $term --app-id spark-panel -W 64x24 -e @REPO@/spark-shell panel chat
-for_window [app_id="spark-panel"] floating enable, border pixel 2, move position center
+bindsym $mod+s exec $term --app-id spark-panel -W @PANEL_SIZE@ -o pad=@PANEL_PAD@ -o @FOOT_COLORS@.background=@PANEL_BG@ -o @FOOT_COLORS@.alpha=1.0 -e @REPO@/spark-shell panel chat
+for_window [app_id="spark-panel"] floating enable, border none, move position center
 # key: Super+Shift+q closes the window.
 bindsym $mod+Shift+q kill
 # key: Super+Shift+c reloads sway after spark-shell on.
