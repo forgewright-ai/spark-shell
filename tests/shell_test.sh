@@ -431,9 +431,9 @@ if [ "$(uname -s)" != Darwin ]; then
     rm -f "$pic"
     # a plain colour: #rrggbb or a name, saved as #rrggbb; it never follows the palette
     out=$(sh "$SH" desktop wallpaper navy)
-    grep -qx 'WALLPAPER=#000080' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000080 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 0$' "$sway" && grep -q '^alpha=1.0$' "$foot" \
-        && ok "desktop wallpaper navy: #000080 in the config, sway paints it solid, no gaps, foot opaque" || bad "wallpaper navy" "$out $(grep -n 'bg\|gaps' "$sway"; grep -n alpha "$foot")"
-    [ "$(printf '%s\n' "$out" | tail -1)" = "a running sway shows #000080 now, and it stays when the palette changes -- a new foot window is opaque" ] && ok "desktop wallpaper navy: says what happens" || bad "wallpaper navy words" "$out"
+    grep -qx 'WALLPAPER=#000080' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000080 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 12$' "$sway" && grep -q '^alpha=0.85$' "$foot" && grep -q '^        background #000000d9$' "$sway" \
+        && ok "desktop wallpaper navy: #000080 in the config, sway paints it solid, with the gaps and the translucent foot and bar a picture has" || bad "wallpaper navy" "$out $(grep -n 'bg\|gaps\|background' "$sway"; grep -n alpha "$foot")"
+    [ "$(printf '%s\n' "$out" | tail -1)" = "a running sway shows #000080 now, and it stays when the palette changes -- a new foot window is translucent over it, as over a picture" ] && ok "desktop wallpaper navy: says what happens" || bad "wallpaper navy words" "$out"
     [ "$(sh "$SH" desktop wallpaper)" = "wallpaper #000080 -- a plain colour, it stays when the palette changes" ] && ok "desktop wallpaper (bare): names the colour" || bad "wallpaper bare colour" "$(sh "$SH" desktop wallpaper)"
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  wall  colour  *#000080, a plain colour that stays when the palette changes$' && ok "status: the wall row names the colour" || bad "status wall colour" "$(printf '%s\n' "$st" | grep wall)"
     printf '%s\n' "$(sh "$SH" on --yes)" | grep -q '^todo   wallpaper' && bad "a colour is reported missing" || ok "on: a colour is never a missing picture"
@@ -2238,8 +2238,8 @@ else
     # one line: every block present, in its group, parted by dividers
     st=0; line=$(sh "$SH" bar status --once 2>&1) || st=$?
     names=$(printf '%s' "$line" | jq -r '[.[] | .name + ":" + .instance] | join(" ")' 2>/dev/null || :)
-    [ "$st" -eq 0 ] && [ "$names" = 'lan: wifi: bt: div: out:name out:gauge mic:name mic:gauge div: bat: div: clock: div: theme:' ] \
-        && ok "bar status --once: lan, wifi, bt | out (name, gauge), mic (name, gauge) | bat | clock | theme, one JSON array" || bad "bar line" "st=$st $names $line"
+    [ "$st" -eq 0 ] && [ "$names" = 'lan: wifi: bt: div: out:name out:gauge mic:name mic:gauge div: bat: div: clock:' ] \
+        && ok "bar status --once: lan, wifi, bt | out (name, gauge), mic (name, gauge) | bat | clock, one JSON array; no theme block (the palette is the panel's)" || bad "bar line" "st=$st $names $line"
     printf '%s' "$line" | jq -e 'all(.[]; .markup == "pango" and .separator == false)' >/dev/null 2>&1 && ok "bar: every block is pango markup with swaybar's own separator off" || bad "bar markup" "$line"
     t() { printf '%s' "$line" | jq -r --arg n "$1" --arg i "${2:-}" '.[] | select(.name == $n and .instance == $i) | .full_text'; }   # t NAME [INSTANCE] -> its text
     [ "$(t lan)" = "<span foreground='#555555'>lan</span>" ] && ok "lan: the word alone, muted, when the wire is up (no address on screen)" || bad "lan block" "$(t lan)"
@@ -2252,11 +2252,10 @@ else
     [ "$(t mic name)" = "<span foreground='#555555'>mic</span> jabra" ] && ok "mic: muted while idle, with the card's name" || bad "mic block" "$(t mic name)"
     g=$(t mic gauge); [ "$(count "$g" "$full")" = 5 ] && [ "$(count "$g" "$shade")" = 5 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" \
         && ok "mic: its own gauge, 5 full blocks in the accent at 50% (the Capture level)" || bad "mic gauge" "$g"
-    [ "$(t theme)" = "<span foreground='#555555'>theme</span>" ] && ok "theme: the word alone, muted, while no palette is set" || bad "look block" "$(t theme)"
     [ "$(t bat)" = "<span foreground='#555555'>bat</span> <span foreground='#aaaaaa'>80</span>" ] && ok "bat: the word muted, the number in the text colour, no gauge" || bad "bat block" "$(t bat)"
     printf '%s' "$(t clock)" | grep -Eq "^<span foreground='#555555'>[A-Za-z]+ [0-9]{2} [A-Za-z]+</span> [0-9]{2}:[0-9]{2}$" && ok "clock: the date muted, the time in the text colour" || bad "clock block" "$(t clock)"
-    [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "div")] | length')" = 4 ] && [ "$(printf '%s' "$line" | jq -r '.[3].full_text')" = "<span foreground='#555555'>$(printf '\342\224\202')</span>" ] \
-        && ok "bar: four thin dividers in the muted colour, one after each group that is there" || bad "dividers" "$line"
+    [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "div")] | length')" = 3 ] && [ "$(printf '%s' "$line" | jq -r '.[3].full_text')" = "<span foreground='#555555'>$(printf '\342\224\202')</span>" ] && [ "$(printf '%s' "$line" | jq -r '.[-1].name')" = clock ] \
+        && ok "bar: three thin dividers in the muted colour, one between each pair of groups, the clock last" || bad "dividers" "$line"
     LC_ALL=C grep -q "[^ -~${tab}]" "$SH" && bad "the script holds a byte outside ASCII (the glyphs must be built from their bytes)" || ok "the script stays ASCII: the glyphs are built from their bytes"
     # the states: mute, a recording mic, a low battery, a charging one, sound on another card
     touch "$H/muted"; line=$(sh "$SH" bar status --once)
@@ -2282,7 +2281,7 @@ else
     # present-only: a machine with none of it shows the clock alone, and no divider
     mv "$S" "$S.full"; mv "$P" "$P.full"; mkdir -p "$S" "$P"
     line=$(sh "$SH" bar status --once)
-    [ "$(printf '%s' "$line" | jq -r '[.[] | .name] | join(" ")')" = 'clock div theme' ] && ok "present-only: no hardware, no block for it and no divider; the clock and the theme alone" || bad "bare machine" "$line"
+    [ "$(printf '%s' "$line" | jq -r '[.[] | .name] | join(" ")')" = 'clock' ] && ok "present-only: no hardware, no block for it and no divider; the clock alone" || bad "bare machine" "$line"
     rm -rf "$S" "$P"; mv "$S.full" "$S"; mv "$P.full" "$P"
     # clicks: swaybar's stream on stdin; the gauges set the levels, any other block opens the panel; each redraws the bar at once
     rm -f "$amlog" "$H/.local/state/foot.log"
@@ -2336,7 +2335,7 @@ else
     # the verb: both halves, one of them, the config key, the render, a running sway
     export SWAYSOCK=$H/sway.sock
     st=0; out=$(sh "$SH" bar 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^status line: tmux is not running (it shows inside tmux)$' && printf '%s\n' "$out" | grep -q '^bar: shown at the top of the screen -- bat, bt, clock, lan, mic, out, theme, wifi (spark-shell bar off --desktop hides it)$' \
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^status line: tmux is not running (it shows inside tmux)$' && printf '%s\n' "$out" | grep -q '^bar: shown at the top of the screen -- bat, bt, clock, lan, mic, out, wifi (spark-shell bar off --desktop hides it)$' \
         && ok "bar: both halves said -- tmux not running, the bar shown with its blocks" || bad "bar bare" "st=$st $out"
     st=0; out=$(sh "$SH" bar --terminal 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell bar: tmux is not running -- start tmux first' ] && ok "bar --terminal with no tmux: refused in one line" || bad "bar --terminal" "st=$st $out"
@@ -2347,8 +2346,8 @@ else
     out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     top          hidden (spark-shell bar on --desktop shows it)' && ok "check: the top row says hidden, ok" || bad "check top hidden" "$out"
     st=0; out=$(sh "$SH" bar on --desktop 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q '^DESKTOP_BAR=yes$' "$HOME/.config/spark-shell/config" && grep -q '^    mode dock$' "$sway" && ok "bar on --desktop: DESKTOP_BAR=yes, dock mode again" || bad "bar on" "st=$st $out"
-    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  bar   shown .*at the top of the screen: bat, bt, clock, lan, mic, out, theme, wifi' && ok "status: the bar row names the blocks present" || bad "status bar shown" "$(printf '%s\n' "$st" | grep '^  bar')"
-    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     top          the bar draws bat, bt, clock, lan, mic, out, theme, wifi$' && ! printf '%s\n' "$out" | grep -q '^warn   sound' \
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  bar   shown .*at the top of the screen: bat, bt, clock, lan, mic, out, wifi' && ok "status: the bar row names the blocks present" || bad "status bar shown" "$(printf '%s\n' "$st" | grep '^  bar')"
+    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     top          the bar draws bat, bt, clock, lan, mic, out, wifi$' && ! printf '%s\n' "$out" | grep -q '^warn   sound' \
         && ok "check: the top row names the blocks, no sound warning with an audio system" || bad "check top" "$out"
     # the panel as text (no terminal): the title line restates what opened it, then ONE list in sections -- the first section's rows, then what every other section can do; each row wears a sign, names its section and carries its action
     DOT=$(printf '\342\227\217'); RING=$(printf '\342\227\213'); TICK=$(printf '\342\234\223'); CROSS=$(printf '\342\234\227'); GO=$(printf '\342\226\270'); SEP=$(printf '\302\267')
@@ -2461,7 +2460,7 @@ else
     [ "$st" -eq 0 ] && grep -q '^ALPHA=0.5$' "$HOME/.config/spark-shell/config" && grep -q '^        background #00000080$' "$sway" && ok "panel look alpha 0.5: ALPHA in the config, the bar's background rendered with it (80)" || bad "look alpha" "st=$st $out $(grep -n 'background' "$sway")"
     printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
     line=$(sh "$SH" bar status --once)
-    [ "$(t theme)" = "<span foreground='#555555'>theme</span> dracula" ] && ok "theme block: the palette's name in the text colour" || bad "look block" "$(t theme)"
+    printf '%s' "$line" | jq -e '[.[] | select(.name == "theme")] | length == 0' >/dev/null && ok "bar: no theme block even with a palette set (the panel's theme section has it)" || bad "theme block" "$line"
     [ "$(sh "$SH" bar panel look --list | grep -c "^$TICK theme   dracula	theme show$")" = 1 ] && ok "panel look: the current palette named" || bad "look current" "$(sh "$SH" bar panel look --list | head -4)"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     # a want: spark turns the words into steps from what this machine offers; the gate refuses the rest

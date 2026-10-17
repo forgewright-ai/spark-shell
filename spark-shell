@@ -306,9 +306,9 @@ wall_load() {
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     if wall_there; then
         WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA")
-    elif wall_colour; then
-        WALL_BG="$(wall_hex "$WALLPAPER") solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0; BAR_ALPHA=""
-    else
+    elif wall_colour; then   # a plain colour is a wallpaper too: the same gaps and the same translucent terminals as a picture
+        WALL_BG="$(wall_hex "$WALLPAPER") solid_color"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA")
+    else   # none: the palette's colour, full windows, opaque
         WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0; BAR_ALPHA=""
     fi
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
@@ -533,6 +533,8 @@ sway_reload() {   # a running sway takes the new render now (borders, background
     [ -f "$HOME/.config/sway/config" ] || return 0
     command -v swaymsg >/dev/null 2>&1 || return 0
     swaymsg reload >/dev/null 2>&1 || return 0
+    # a reload gives the gaps to new workspaces only: the ones open take them now (none: 0)
+    [ -z "${GAPS_INNER:-}" ] || { swaymsg "gaps inner all set $GAPS_INNER" >/dev/null 2>&1; swaymsg "gaps outer all set $GAPS_OUTER" >/dev/null 2>&1; } || :
     row ok sway "reloaded (~/.config/sway/config)"
 }
 # The desktop, one path for `on` and `on desktop`: the two user
@@ -2118,11 +2120,7 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by a di
     bar_group
     # time
     bar_add "$(bar_block clock '' "$(bar_span "$HEX_MUTED" "$(date '+%a %d %b')") $(date '+%H:%M')")"
-    bar_group
-    # the look: the palette's name, or the word alone with none
-    t=''; [ -z "$THEME" ] || [ "$THEME" = none ] || t=" $(bar_esc "$THEME")"
-    bar_add "$(bar_block theme '' "$(bar_span "$HEX_MUTED" theme)$t" 6)"
-    bar_group
+    bar_group   # the palette has no block: it is picked in the panel, where every click leads
     printf '[%s],\n' "$line"
 }
 bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X -- one click or wheel step on a block
@@ -2288,7 +2286,7 @@ panel_colours() {   # the three SGRs from our own render, when there is one (a p
 
 # --- the sections: their order by use, which of them this machine has, what each costs
 PANEL_ORDER="undo spark layout out mic theme bt apps wifi"   # the sections with something to do, most used first; undo only while there is one; the slow one last, so the order never shifts
-PANEL_BLOCKS="lan wifi bt out mic bat clock theme"      # the bar's blocks, in the bar's order (facts, presence)
+PANEL_BLOCKS="lan wifi bt out mic bat clock theme"      # the bar's blocks in the bar's order, and the palette: the facts, and what a click may open
 PANEL_LOOKS="lan bat clock"                            # blocks with nothing to set: shown only when they opened the panel
 panel_blocks_here() {   # -> the bar's blocks this machine has, in the bar's order
     for p in $PANEL_BLOCKS; do
@@ -4210,7 +4208,7 @@ cmd_desktop() {
             theme_load; EXPR=$(render_expr)
             desktop_look_apply
             if [ "$want" = none ]; then echo "the palette's background is back -- a new foot window is opaque again"
-            elif wall_colour; then echo "a running sway shows $want now, and it stays when the palette changes -- a new foot window is opaque"
+            elif wall_colour; then echo "a running sway shows $want now, and it stays when the palette changes -- a new foot window is translucent over it, as over a picture"
             else echo "a running sway shows it now -- the next foot window is translucent (Super+Return)"; fi
             return ;;
         apps|tools) cmd_apps_verb; return ;;   # the old spellings of spark-shell apps

@@ -7,6 +7,12 @@
   pick is running. The lines of a step land under the clock as before.
   The window keeps two fixed places: that corner, and the bottom with
   the hint and the prompt.
+- Changed: the bar has no `theme` block. Every click on the bar opens
+  the same panel, and the palette is picked there.
+- Changed: a plain colour wallpaper is drawn like a picture, with the
+  gaps around the windows and the translucent terminals and bar. Only
+  `none` gives full, opaque windows. A running sway gives the gaps to
+  the workspaces already open, not only to new ones.
 
 ## v0.56
 

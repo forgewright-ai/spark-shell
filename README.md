@@ -156,7 +156,10 @@ with spark-shell. `none` gives the palette's background colour.
 Type `spark-shell desktop wallpaper navy`. You get a plain colour, and
 it stays the same when you change the palette. Give `#rrggbb`, or one
 of these names: black, white, gray, grey, silver, navy, blue, teal,
-green, olive, maroon, red, purple, brown, orange.
+green, olive, maroon, red, purple, brown, orange. A picture and a
+colour are drawn the same way: gaps around the windows, and the
+terminals a little translucent. `none` fills the screen with the
+windows, opaque.
 
 ## Bar
 
@@ -164,8 +167,8 @@ On the desktop, a bar sits at the top of the screen. The workspaces
 are on the left. A workspace a layout opened carries the layout's
 words, so `2 news` reads from a distance. On the right, in groups
 parted by a thin line: `lan`, `wifi` and `bt`; `out` and `mic`, each
-with its gauge; `bat`; the date and time; and `theme`, the palette's
-name.
+with its gauge; `bat`; and the date and time. The palette has no
+block: it is picked in the panel, where a click on any block leads.
 
 A block appears only for hardware this machine has. No battery, no
 `bat`. The kind word is muted and the name is in the text colour, as
