@@ -106,9 +106,10 @@ Type `spark-shell layout "read the news and play music"`. spark picks
 apps for that task and opens them: as sway windows on the desktop, or
 as tmux windows anywhere else. Add `--desktop` or `--terminal` to
 choose. Apps your words name are always opened, each once. Other apps
-spark picks are only suggested. If your words name no app, spark's
-picks are opened. Say `fullscreen` and the main window fills the
-screen alone. Say `workspace 3` and the layout opens there.
+spark picks are only suggested, and each suggestion is one Enter away
+in the panel, as `layout  also open micro`. If your words name no
+app, spark's picks are opened. Say `fullscreen` and the main window
+fills the screen alone. Say `workspace 3` and the layout opens there.
 On the desktop, `Super+d` opens the panel, and the words go at its
 prompt.
 

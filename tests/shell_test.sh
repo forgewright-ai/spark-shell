@@ -759,8 +759,8 @@ EOF
     printf '%s' "$out" | od -c | grep -q '033' && bad "the pulse reached a pipe" "$(printf '%s' "$out" | od -c | grep 033 | head -1)" || ok "no pulse on a pipe (a tty only, like spark's)"
     # keep, list, replay, status, forget
     out=$(sh "$SH" layout save studio)
-    printf '%s\n' "$out" | grep -q "^saved studio -- spark-shell layout studio opens it ($desks/studio)\$" && cmp -s "$desk_last" "$desks/studio" \
-        && ok "layout save NAME: desk.last copied to layouts/NAME, said in one line" || bad "keep" "$out"
+    printf '%s\n' "$out" | grep -q "^saved studio -- spark-shell layout studio opens it ($desks/studio)\$" && [ "$(jq -S 'del(.suggested)' "$desk_last")" = "$(jq -S . "$desks/studio")" ] && ! jq -e 'has("suggested")' "$desks/studio" >/dev/null \
+        && ok "layout save NAME: desk.last saved as layouts/NAME without what was only suggested, said in one line" || bad "keep" "$out"
     # keep takes all the words; bare keep names the desk after its own words
     out=$(sh "$SH" layout save Photo Work, please)
     printf '%s\n' "$out" | grep -q "^saved photo-work-please -- " && [ -f "$desks/photo-work-please" ] && ok "layout save WORDS: every word, lowercased, joined by -" || bad "keep words" "$out $(ls "$desks")"
@@ -807,6 +807,16 @@ EOF
     : > "$swlog"; st=0; out=$(sh "$SH" layout "micro workspace 7 fullscreen" 2>&1) || st=$?
     [ "$st" -eq 0 ] && head -1 "$swlog" | grep -q '^workspace number 7$' && grep -q '^fullscreen enable$' "$swlog" && [ "$(jq -r .main.fullscreen "$desk_last")" = true ] \
         && ok "layout WORDS with workspace 7 and fullscreen: that workspace, and fullscreen, by the words themselves (the model had said false)" || bad "words decide" "st=$st $out $(cat "$swlog")"
+    # what spark also suggested is one Enter away: a row per app, opening it on this workspace, gone once taken
+    printf '#!/bin/sh\nprintf "{\\"why\\": \\"notes beside the browser\\", \\"main\\": {\\"app\\": \\"firefox\\", \\"args\\": \\"\\"}, \\"side\\": [{\\"app\\": \\"micro\\", \\"args\\": \\"\\"}]}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
+    : > "$swlog"; st=0; out=$(sh "$SH" layout "notes and firefox" 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q 'also suggested: micro' && [ "$(jq -r '.suggested | join(",")' "$desk_last")" = micro ] && sh "$SH" panel layout --list | grep -q "also open micro	layout add micro$" \
+        && ok "layout: what spark also suggested is kept with the last layout and offered as a panel row" || bad "suggested row" "st=$st $out $(jq -c . "$desk_last")"
+    : > "$swlog"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel layout add micro 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'opened micro' ] && grep -q '^exec foot -e micro' "$swlog" && ! sh "$SH" panel layout --list | grep -q 'also open micro' \
+        && ok "panel layout add NAME: the suggested app opens on this workspace, and its row is gone" || bad "suggested add" "st=$st $out $(cat "$swlog")"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel layout add gimp 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: layout: gimp was not suggested for the last layout' ] && ok "panel layout add: an app that was not suggested is refused in one line" || bad "suggested gate" "st=$st $out"
     mv "$H/spark.keep" "$H/.local/bin/spark"; : > "$swlog"
     st=0; out=$(sh "$SH" layout delete studio 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = "spark-shell layout: no saved layout named studio" ] && ok "layout delete NAME twice: refused in one line" || bad "delete twice" "st=$st $out"
@@ -1227,8 +1237,8 @@ st=0; out=$(sh "$SH" layout "writing with vi and the prompt shell" 2>&1) || st=$
 printf '%s\n' "has-session -t =$wname" "new-session -d -s $wname -n vi vi" "new-window -t =$wname -n shell" > "$H/expected.named"
 [ "$st" -eq 0 ] && cmp -s "$tlog" "$H/expected.named" && ok "named: the words name vi and shell, only those two open" || bad "named open" "st=$st $out $(cat "$tlog")"
 printf '%s\n' "$out" | grep -qx '  also suggested: btop -- add it to your words to open it' && ok "named: the one app not named is said in one line, a suggestion" || bad "named suggestion" "$out"
-jq -e '.main.app == "vi" and (.side | map(.app)) == ["shell"] and (has("suggested") | not) and (has("why") | not)' "$desk_last" >/dev/null 2>&1 \
-    && ok "named: desk.last holds what opened (vi and shell, no btop) and no why" || bad "named desk.last" "$(cat "$desk_last")"
+jq -e '.main.app == "vi" and (.side | map(.app)) == ["shell"] and .suggested == ["btop"] and (has("why") | not)' "$desk_last" >/dev/null 2>&1 \
+    && ok "named: desk.last holds what opened (vi and shell), btop as suggested for the panel's row, and no why" || bad "named desk.last" "$(cat "$desk_last")"
 printf '%s\n' "$out" | grep -q 'vi to write, btop to watch' && bad "named: the model's why said though btop was dropped" "$out" || ok "named: btop dropped, so the model's why is not said"
 printf '{"main": {"app": "btop", "args": "", "width": 60}, "side": [{"app": "newsboat", "args": ""}, {"app": "shell", "args": ""}, {"app": "micro", "args": ""}]}\n' > "$H/answer.json"
 dname=the-feeds-in-newsboat-and-a-shell; : > "$tlog"

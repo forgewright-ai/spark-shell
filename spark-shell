@@ -2638,6 +2638,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
         layout) if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then
                 for f in "$LAYOUTS_DIR"/*; do _w=$(desk_words "$f"); [ -n "$_w" ] || _w=${f##*/}; printf '%s\t%s\topen %s\n' "$PANEL_GO" "$_w" "${f##*/}"; done
             else printf -- '-\tnone saved yet: say what you want to do at the prompt\tshow\n'; fi
+            [ ! -f "$DESK_LAST" ] || jq -r '.suggested // [] | .[]' "$DESK_LAST" 2>/dev/null | while IFS= read -r a; do printf '%s\talso open %s\tadd %s\n' "$PANEL_GO" "$a" "$a"; done   # what spark also suggested for the last layout, one Enter away
             [ -z "${SWAYSOCK:-}" ] || printf '%s\tsave what is open now\tsave\n' "$PANEL_GO" ;;
         apps) panel_apps_known | { _n=0; while IFS= read -r a; do   # the apps a layout may open, as rows that open one; six unless full
                     _n=$((_n + 1)); if [ "${2:-}" != full ] && [ "$_n" -gt 6 ]; then continue; fi
@@ -2718,6 +2719,8 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 new) [ -n "$_arg" ] || { echo "say what you want to do"; return 1; }
                     ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; desk_need "$_arg" ) ;;
                 save) panel_layout_save "$_arg" ;;
+                add) panel_app_open "$_arg" || return 1   # on this workspace, where the panel followed the layout
+                    jq --arg a "$_arg" '.suggested = ((.suggested // []) - [$a])' "$DESK_LAST" > "$DESK_LAST.new" && mv "$DESK_LAST.new" "$DESK_LAST" ;;
                 *) echo "$_a is not something layout does"; return 1 ;;
             esac ;;
         apps) case $_a in
@@ -2859,6 +2862,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
     case $1:$2 in
         spark:chat|undo:all) echo ''; return 0 ;;
         layout:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: save takes a name"; return 1 ;;
+        layout:add) _n=$(jq -r '.suggested // [] | .[]' "$DESK_LAST" 2>/dev/null | awk -v w="$(panel_lower "$3")" 'tolower($0) == w && !d {print; d = 1}'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "layout: $3 was not suggested for the last layout"; return 1 ;;
         apps:open) _n=$(panel_apps_known | awk -v w="$(panel_lower "$3")" 'tolower($0) == w && !d {print; d = 1}'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "apps: no app named $3 here"; return 1 ;;
         layout:open) _n=$(desk_name_of "$3"); if [ -n "$_n" ] && [ -f "$LAYOUTS_DIR/$_n" ]; then echo "$_n"; return 0; fi; echo "layout: no saved layout named $3"; return 1 ;;
         layout:new) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: new takes the words for it"; return 1 ;;
@@ -3808,7 +3812,7 @@ desk_named() {   # desk_named JSONFILE NEED -> JSONFILE narrowed to the named ap
         _s="$_s$a
 "
     done
-    jq 'del(.suggested)' "$TMP/named.json" > "$1"
+    jq --arg s "$(printf '%s' "$_s" | paste -sd, -)" '.suggested = ($s | split(",") | map(select(. != "")))' "$TMP/named.json" > "$1"   # kept with the last layout: the panel offers each as a row
     [ -n "$_s" ] || return 0
     if [ "$(printf '%s' "$_s" | wc -l)" -gt 1 ]; then _it=them; else _it=it; fi
     echo "  also suggested: $(printf '%s' "$_s" | desk_said and) -- add $_it to your words to open $_it"
@@ -3986,7 +3990,7 @@ desk_save() {   # desk_save [NAME...] -- the last layout under that name (its ow
     name=$(desk_name_of "$*")
     [ -n "$name" ] || name=$(desk_name_of "$(desk_words "$DESK_LAST")")
     [ -n "$name" ] || refuse "save NAME -- a name for it"
-    mkdir -p "$LAYOUTS_DIR"; cp "$DESK_LAST" "$LAYOUTS_DIR/$name"
+    mkdir -p "$LAYOUTS_DIR"; jq 'del(.suggested)' "$DESK_LAST" > "$LAYOUTS_DIR/$name"   # a saved layout is what opened, not what was suggested
     echo "saved $name -- spark-shell layout $name opens it ($LAYOUTS_DIR/$name)"
 }
 desk_delete() {   # desk_delete NAME...

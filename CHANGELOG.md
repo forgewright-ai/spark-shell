@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.53.2
+
+- New: what spark also suggested for a layout is one Enter away. After
+  `notes and firefox`, the panel offers `layout  also open micro`, and
+  Enter opens it on that workspace. Your words still decide what opens
+  by itself: the apps they name.
+
 ## v0.53
 
 - Fixed: `Firefox workspace 2 fullscreen` at the panel opened two
