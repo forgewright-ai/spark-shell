@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.51
+
+- Changed: the panel draws at once and fills in place. It opened only
+  after the Wi-Fi scan and the Bluetooth list had answered; now what
+  costs nothing to know draws first, the scan and the list keep their
+  last answer with its age (a minute, half a minute) and land in the
+  list while a march says the panel is looking. A pick, a want and a
+  layout show a pulse with the seconds from two, and each line of what
+  was done as it lands. A check is a step done, a cross one refused.
+- Changed: the glance. After Super+d the first lines are the date and
+  time, the bar's facts in words and, when there is one, an alarm on a
+  line of its own: `lan down`, a low battery, a recording mic.
+- Changed: sections in order of use, spark, layout, out, mic, theme, bt,
+  apps, wifi, and a long one shows what matters with a row for the
+  rest: wifi the network in use, the saved ones and the strongest
+  three, then `N more`; theme the palettes and the font, then
+  `wallpaper and alpha`.
+- Fixed: `Firefox fullscreen` at the panel opens a layout with Firefox,
+  every time. Words that name an app this machine declares are a
+  layout by the machine's own word, not by spark's reading of them,
+  which had answered "I cannot" twice. A word that is merely a command,
+  as `what`, is not an app.
+- Changed: a click on the clock shows the time large, five rows tall in
+  the palette's accent, and this month under it, today in the accent. The
+  month is no longer a list of rows.
+- Changed: a question at the prompt has what the bar shows, so `what is
+  my address` is answered with the address.
+
 ## v0.50
 
 - Changed: one door. Super+d opens the panel, Super+s opens it already
@@ -7,8 +35,7 @@
   same list. A `spark  chat` row is the panel's first; Enter on it
   opens the conversation in the same window.
 - New: a question at the panel's prompt is answered there, in a
-  sentence or two, from what the bar shows: `what is my address`. A
-  change is still played as steps.
+  sentence or two. A change is still played as steps.
 - Changed: `spark-shell panel chat` is the chat verb; `desktop --chat`
   still works. The chat window is the panel's, one rule in sway.
 

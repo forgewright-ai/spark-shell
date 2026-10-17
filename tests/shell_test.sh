@@ -2317,24 +2317,36 @@ else
     out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     top          the bar draws bat, bt, clock, lan, mic, out, theme, wifi$' && ! printf '%s\n' "$out" | grep -q '^warn   sound' \
         && ok "check: the top row names the blocks, no sound warning with an audio system" || bad "check top" "$out"
     # the panel as text (no terminal): the title line restates what opened it, then ONE list in sections -- the first section's rows, then what every other section can do; each row wears a sign, names its section and carries its action
-    DOT=$(printf '\342\227\217'); RING=$(printf '\342\227\213'); TICK=$(printf '\342\234\223'); GO=$(printf '\342\226\270'); SEP=$(printf '\302\267')
+    DOT=$(printf '\342\227\217'); RING=$(printf '\342\227\213'); TICK=$(printf '\342\234\223'); CROSS=$(printf '\342\234\227'); GO=$(printf '\342\226\270'); SEP=$(printf '\302\267')
     out=$(sh "$SH" bar panel lan --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "lan  up $SEP 192.0.2.10" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  lan  address 192.0.2.10	lan show" ] && printf '%s\n' "$out" | grep -q "^  lan  speed 1000 Mb/s	lan show$" && printf '%s\n' "$out" | grep -q "^  lan  gateway 192.0.2.1	lan show$" \
         && ok "panel lan: the address, the speed and the gateway, a look only, first (the old bar panel spelling)" || bad "panel lan" "$out"
     printf '%s\n' "$out" | grep -q "^$RING wifi  cafe .*	wifi connect cafe$" && printf '%s\n' "$out" | grep -q "^  theme  dracula	theme dracula$" && ! printf '%s\n' "$out" | grep -q "^. bat  " && ! printf '%s\n' "$out" | grep -q "^. clock  " && ! printf '%s\n' "$out" | grep -q "^. layout  " \
-        && [ "$(printf '%s\n' "$out" | grep -c "	lan show$")" = "$(printf '%s\n' "$out" | grep -c "	[a-z]* show$")" ] && [ "$(printf '%s\n' "$out" | tail -1)" = "$GO apps  choose the allowed apps	apps pick" ] \
-        && ok "panel lan: then what every other section can do, in order, apps last; never another section's look-only rows (no layout saved: its one row is a look)" || bad "panel lan rest" "$out"
+        && [ "$(printf '%s\n' "$out" | grep -c "	lan show$")" = "$(printf '%s\n' "$out" | grep -c "	[a-z]* show$")" ] && printf '%s\n' "$out" | grep -q "^$GO apps  choose the allowed apps	apps pick$" && [ "$(printf '%s\n' "$out" | grep -n "^$GO apps" | cut -d: -f1)" -lt "$(printf '%s\n' "$out" | grep -n "^$RING wifi  cafe" | cut -d: -f1)" ] \
+        && ok "panel lan: then what every other section can do, in order, the slow wifi last; never another section's look-only rows (no layout saved: its one row is a look)" || bad "panel lan rest" "$out"
     out=$(sh "$SH" panel --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "bar  lan up $SEP wifi home $SEP bt $DOT MAJOR V $SEP out 40% $SEP mic 50% $SEP bat 80% $SEP theme none" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO spark  chat	spark chat" ] && [ "$(printf '%s\n' "$out" | sed -n 3p)" = "$DOT wifi  home	wifi disconnect" ] && ! printf '%s\n' "$out" | grep -q "	[a-z]* show$" \
-        && ok "panel with nothing first (Super+d): the whole bar restated, the chat row first, then everything it can do" || bad "panel bar" "$out"
+    printf '%s\n' "$out" | sed -n 1p | grep -q "^bar  $(date '+%A %d %B') $SEP [0-9][0-9]:[0-9][0-9]$" && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "wifi home $SEP bt $DOT MAJOR V $SEP out 40% $SEP mic 50% $SEP bat 80% $SEP theme none" ] && [ "$(printf '%s\n' "$out" | sed -n 3p)" = "$GO spark  chat	spark chat" ] && printf '%s\n' "$out" | grep -q "^$DOT wifi  home	wifi disconnect$" && ! printf '%s\n' "$out" | grep -q "	[a-z]* show$" \
+        && ok "panel with nothing first (Super+d): the glance (the date and time, the bar's facts; a wire that is up says nothing), the chat row first, then everything it can do" || bad "panel bar" "$out"
     out=$(sh "$SH" panel spark --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "spark  a conversation, in this window" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO spark  chat	spark chat" ] && ok "panel spark --list: the one row that opens the conversation" || bad "panel spark" "$out"
+    # the cache: a probe's last answer is kept with its age; a long section shows what matters and a `more` row
+    cache=$H/.local/state/spark-shell/panel; mkdir -p "$cache"
+    { echo "$(date +%s)"; printf 'a1\t4\t1\nb2\t3\t1\nc3\t3\t1\nd4\t2\t1\ne5\t1\t1\nopen\t2\t0\nold\t1\t1\n'; } > "$cache/wifi.scan"
+    out=$(sh "$SH" panel --list)
+    [ "$(printf '%s\n' "$out" | grep -c "^$RING wifi  ")" = 4 ] && printf '%s\n' "$out" | grep -q "^$RING wifi  old .* $TICK saved	wifi connect old$" && printf '%s\n' "$out" | grep -q "^  wifi  3 more	wifi more$" \
+        && ok "panel: a fresh scan is read from the cache; wifi shows the saved ones, the strongest three and a more row" || bad "wifi more" "$out"
+    [ "$(sh "$SH" panel wifi --list | grep -c "^$RING wifi  ")" = 7 ] && ! sh "$SH" panel wifi --list | grep -q "	wifi more$" && ok "panel wifi: the section that opened the panel shows every network, no more row" || bad "wifi full" "$(sh "$SH" panel wifi --list)"
+    { echo "$(( $(date +%s) - 120 ))"; printf 'stale\t4\t1\n'; } > "$cache/wifi.scan"
+    sh "$SH" panel --list | grep -q "^$RING wifi  cafe" && ! sh "$SH" panel --list | grep -q stale && grep -q "^cafe" "$cache/wifi.scan" && [ $(( $(date +%s) - $(sed -n 1p "$cache/wifi.scan") )) -lt 60 ] \
+        && ok "panel: a scan older than a minute is made again and kept, with its time" || bad "wifi stale" "cache: $(tr '\n' '|' < "$cache/wifi.scan"); list: $(sh "$SH" panel --list 2>&1 | grep wifi | tr '\n' '|')"
+    printf '%s\n' "$out" | grep -q "^  theme  wallpaper and alpha	theme more$" && ! printf '%s\n' "$out" | grep -q "^  theme  wallpaper navy" && sh "$SH" panel theme --list | grep -q "^  theme  wallpaper navy	theme wallpaper navy$" \
+        && ok "panel: theme shows the palettes and the font, a more row for the wallpaper and alpha; opened on theme, all of it" || bad "theme more" "$(printf '%s\n' "$out" | grep theme)"
     out=$(sh "$SH" panel apps --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "apps  every app allowed" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO apps  choose the allowed apps	apps pick" ] \
         && ok "panel apps --list: the title says what is allowed, one row opens the picker" || bad "panel apps" "$out"
     mkdir -p "$HOME/.config/spark-shell/layouts"; printf '{"words": "news and music", "why": "the feeds and a player", "main": {"app": "newsboat"}}\n' > "$HOME/.config/spark-shell/layouts/news"
     out=$(sh "$SH" panel --list)
-    [ "$(printf '%s\n' "$out" | sed -n 3p)" = "$GO layout  news and music	layout open news" ] && [ "$(sh "$SH" panel layout --list | sed -n 1p)" = "layout  1 saved" ] \
+    [ "$(printf '%s\n' "$out" | sed -n 4p)" = "$GO layout  news and music	layout open news" ] && [ "$(sh "$SH" panel layout --list | sed -n 1p)" = "layout  1 saved" ] \
         && ok "panel: a saved layout is the row after the chat, by its words, opening it by name; the layout title counts it" || bad "panel layout row" "$out"
     rm -rf "$HOME/.config/spark-shell/layouts"
     [ ! -e "$H/.local/bin/spark" ] || mv "$H/.local/bin/spark" "$H/spark.away"   # no spark for a moment: the want is refused, not asked
@@ -2381,8 +2393,8 @@ else
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "bat  80% $SEP discharging $SEP 2:00 left" ] && printf '%s\n' "$out" | grep -q "^  bat  health 83% of new	bat show$" && printf '%s\n' "$out" | grep -q "^  bat  cycles 123	bat show$" && printf '%s\n' "$out" | grep -q "^  bat  power 20.0 W	bat show$" \
         && ok "panel bat: the charge, the time left from the kernel's numbers, the health, the cycles" || bad "panel bat" "$out"
     out=$(sh "$SH" bar panel clock --list)
-    [ "$(printf '%s\n' "$out" | sed -n 2p | cut -f1)" = "  clock  $(date '+%B %Y')" ] && [ "$(printf '%s\n' "$out" | sed -n 3p)" = "  clock  Su Mo Tu We Th Fr Sa	clock show" ] && [ "$(printf '%s\n' "$out" | grep -c "	clock show$")" -ge 6 ] \
-        && ok "panel clock: this month, Sunday first" || bad "panel clock" "$out"
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "clock  $(date '+%A %d %B %Y')" ] && [ "$(printf '%s\n' "$out" | sed -n '2,6p' | grep -c "$(printf '\342\226\210')")" = 5 ] && [ "$(printf '%s\n' "$out" | sed -n 8p)" = "$(date '+%B %Y')" ] && [ "$(printf '%s\n' "$out" | sed -n 9p)" = 'Su Mo Tu We Th Fr Sa' ] && ! printf '%s\n' "$out" | grep -q "	clock show$" \
+        && ok "panel clock: the date on the title, the time five rows tall in full blocks, this month under it; no clock rows" || bad "panel clock" "$out"
     out=$(sh "$SH" bar panel look --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "theme  none $SEP DejaVu Sans Mono 12" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$TICK theme  none	theme show" ] && printf '%s\n' "$out" | grep -q "^  theme  dracula	theme dracula$" && printf '%s\n' "$out" | grep -q "^  theme  font bigger $SEP 12 now	theme font bigger$" && printf '%s\n' "$out" | grep -q "^  theme  wallpaper navy	theme wallpaper navy$" && printf '%s\n' "$out" | grep -q "^$TICK theme  alpha 0.85	theme show$" \
         && ok "panel theme (look, the old word, still opens it): the palettes by name, the font size, the wallpaper words and alpha, the current ones named" || bad "panel look" "$out"
@@ -2404,12 +2416,19 @@ printf '{"why": "quiet: no sound out, no mic, no bluetooth", "steps": [{"page": 
 EOF
     chmod +x "$H/.local/bin/spark"; rm -f "$amlog" "$blog"
     st=0; out=$(sh "$SH" bar quiet please 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> quiet please' '  out muted' '  mic muted' '  bluetooth off' '  bt: dance x is not on the panel now' '  theme: alpha takes 0 to 1' '  no desktop here')" ] \
-        && ok "bar WORDS: one line per step and no why line; a step the panel does not offer, or a section it does not have, is refused in a few words, the rest played" || bad "bar want" "st=$st $out"
+    [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> quiet please' "  $TICK out muted" "  $TICK mic muted" "  $TICK bluetooth off" "  $CROSS bt: dance x is not on the panel now" "  $CROSS theme: alpha takes 0 to 1" "  $CROSS no desktop here")" ] \
+        && ok "bar WORDS: one line per step with its sign and no why line; a step the panel does not offer, or a section it does not have, is refused in a few words, the rest played" || bad "bar want" "st=$st $out"
     [ "$(cat "$amlog")" = "$(printf '%s\n' '-c 0 sset Master mute' '-c 0 sset Capture nocap')" ] && grep -qx 'power off' "$blog" && ok "bar WORDS: the steps reached amixer and bluetoothctl" || bad "want steps" "$(cat "$amlog" "$blog" 2>&1)"
     grep -q '^do this on the desktop: quiet please$' "$H/spark.argv" && grep -q 'bt: disconnect MAJOR V, pair Buds, scan, power off' "$H/spark.argv" && grep -q 'out: use HDMI, mute, level N' "$H/spark.argv" && grep -q 'layout: new TASK' "$H/spark.argv" && grep -q 'theme: .*dracula, .*font bigger' "$H/spark.argv" && grep -q "What the bar shows now: lan  up $SEP 192.0.2.10; wifi  .* home $SEP 192.0.2.20; bt  $DOT MAJOR V; out  Jabra $SEP 40%" "$H/spark.argv" \
         && ok "bar WORDS: spark gets the words, what the bar shows now (a question has its facts) and what each section offers, a new layout among them" || bad "want brief" "$(cat "$H/spark.argv")"
-    printf '#!/bin/sh\nprintf "{\\"why\\": \\"a question\\", \\"answer\\": \\"192.0.2.10 on the wire, 192.0.2.20 on wifi.\\", \\"steps\\": []}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
+    printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/spark.argv"; printf "{\\"why\\": \\"a question\\", \\"answer\\": \\"192.0.2.10 on the wire, 192.0.2.20 on wifi.\\", \\"steps\\": []}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
+    mkdir -p "$HOME/.local/share/applications"; printf '[Desktop Entry]\nName=Firefox\nExec=firefox %%U\nType=Application\n' > "$HOME/.local/share/applications/firefox.desktop"
+    rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel Firefox fullscreen 2>&1) || st=$?
+    grep -q 'write the layout for this need: Firefox fullscreen' "$H/spark.argv" && ! grep -q 'do this on the desktop' "$H/spark.argv" \
+        && ok "panel WORDS that name an app this machine declares (Firefox): a layout for them at once, and two words ask spark nothing else" || bad "want program" "st=$st $out $(cat "$H/spark.argv" 2>&1)"
+    rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel what is my address 2>&1) || st=$?
+    grep -q 'do this on the desktop: what is my address' "$H/spark.argv" && ok "panel WORDS with no app named go to spark, even where a word is a command (what, on a Mac)" || bad "want not an app" "st=$st $out $(head -3 "$H/spark.argv" 2>&1)"
+    rm -f "$HOME/.local/share/applications/firefox.desktop"
     st=0; out=$(sh "$SH" panel what is my address 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> what is my address' '  192.0.2.10 on the wire, 192.0.2.20 on wifi.')" ] && ok "panel WORDS that ask: the answer in place, no steps" || bad "want answer" "st=$st $out"
     rm -f "$H/.local/bin/spark"

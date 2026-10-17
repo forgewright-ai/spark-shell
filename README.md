@@ -197,20 +197,33 @@ Super+s opens it already in spark chat. A click on a bar block opens
 it with that block first. Esc closes it, and so does the key that
 opened it, pressed again. It stays while the mouse moves.
 
-The first line says what opened it: the whole bar after Super+d, or
-the network, its strength as bars and the address after a click on
-`wifi`. Then one list of everything this machine can do right now, in
-sections: `spark`, `layout`, the bar's blocks in the bar's order,
-`apps`. The section you came from is on top. Every row names
-its section and the thing, with a sign in front where there is a
-state: a dot is in use or connected, a ring is available, a check is
+The first lines are the glance: after Super+d the date and time, the
+bar's facts in words, and an alarm on its own line when there is one;
+after a click on `wifi`, the network, its strength as bars and the
+address. Then one list of everything this machine can do right now,
+in sections ordered by use: `spark`, `layout`, `out`, `mic`, `theme`,
+`bt`, `apps`, `wifi`. The section you came from is on top. Every row
+names its section and the thing, with a sign in front where there is
+a state: a dot is in use or connected, a ring is available, a check is
 current or saved, a small triangle opens something. The sign says
 what Enter does: a ring before a network connects it, a dot before
 it disconnects, a ring before an output switches to it. Where there
 is no thing to point at, the row says the verb: `forget cafe`,
-`mute`, `font bigger`. `lan`, `bat` and the clock have nothing to
+`mute`, `font bigger`. A long section shows what matters and one row
+that opens the rest: `wifi` the network in use, the saved ones and
+the strongest three, then `12 more`; `theme` the palettes and the
+font, then `wallpaper and alpha`. `lan` and `bat` have nothing to
 set: a click on one shows the address, speed and gateway; the charge,
-the time left and the health; this month.
+the time left and the health. A click on the clock shows the time
+large and this month, today in the accent.
+
+The window draws at once from what costs nothing to know. The Wi-Fi
+scan and the Bluetooth list take a moment, so they keep their last
+answer, for a minute and for half a minute, and fill the list in
+place while a small march under the glance says the panel is looking.
+A pick, a want or a layout shows its pulse too, with the seconds from
+two, and each line of what was done as it lands. A check is a step
+done, a cross one refused.
 
 - `spark`: one row, `chat`. Enter opens spark chat in this window,
   and Ctrl-D brings the desktop back. The newest conversation goes on.
@@ -227,7 +240,9 @@ the time left and the health; this month.
 
 Under the list, one line: pick an option, or say what you would like.
 Type and the list narrows across every section: `drac` finds the
-palette from a click on `wifi`. Words that match no row go to spark.
+palette from a click on `wifi`. Words that name a program on this
+machine, as `Firefox fullscreen` or `notes with vi`, open a layout for
+them at once. Other words that match no row go to spark.
 A change is played: `mute everything and dracula, I need some quiet`,
 `Firefox fullscreen`, `movie night`, `call mom on the headset` become
 steps from that same list, and nothing else: mute `out` and `mic`,
