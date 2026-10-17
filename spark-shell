@@ -2909,14 +2909,11 @@ want_play() {   # want_play WORDS -> one line per step with its sign, or the ans
     command -v jq >/dev/null 2>&1 || { echo "jq is not installed (spark-shell on)"; return 1; }
     spark=$(spark_bin); [ -n "$spark" ] || { echo "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
     SND=${SND:-$(snd_tool)}
-    LAYOUT_DONE=''
     if _app=$(want_names_app "$1"); then   # the machine's own word: an app named opens, or is a layout for the task; never a question for the model
         if [ "$(printf '%s\n' "$1" | wc -w | tr -d ' ')" -le 2 ]; then   # a word or two: the app itself, at once
             if _l=$(panel_step apps open "$(panel_apps_known | awk -v w="$_app" 'tolower($0) == w && !d {print; d = 1}')" 2>&1); then printf '%s %s\n' "$PANEL_TICK" "$_l"; else printf '%s %s\n' "$PANEL_CROSS" "$_l"; fi
-            return 0
-        fi
-        ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; desk_need "$1" ) || :
-        LAYOUT_DONE=1
+        else ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; desk_need "$1" ) || :; fi   # the layout's model reads the whole sentence: the workspace, fullscreen, the pages
+        return 0
     fi
     _brief=$(panel_brief)
     [ -n "$_brief" ] || { echo "nothing on the panel takes an action on this machine"; return 1; }
@@ -2930,7 +2927,6 @@ want_play() {   # want_play WORDS -> one line per step with its sign, or the ans
         return 0
     fi
     jq -r '.steps[] | [(.page // "" | tostring), (.action // "" | tostring), (.arg // "" | tostring)] | @tsv' "$TMP/want.json" | while IFS="$TAB" read -r pg ac ar; do
-        [ -z "$LAYOUT_DONE" ] || [ "$pg" != layout ] || continue   # the layout is already open
         if arg=$(panel_gate "$pg" "$ac" "$ar"); then
             # shellcheck disable=SC2086   # the row's own ARG, split on purpose
             if _l=$(panel_step "$pg" "$ac" $arg 2>&1); then printf '%s %s\n' "$PANEL_TICK" "$_l"; else printf '%s %s\n' "$PANEL_CROSS" "$_l"; fi
@@ -3707,6 +3703,7 @@ desk_lines() {   # desk_lines WS JSONFILE -> the lines, after desk_windows_of: o
                     editor) printf 'exec foot -e %s\n' "$(desk_launch "$ED" "$args")" ;;
                     *) if desk_app_term "$app" || { ! desk_app_known "$app" && desk_on_path "$app"; }; then printf 'exec foot -e %s\n' "$(desk_launch "$app" "$args")"; else printf 'exec %s\n' "$(desk_launch "$app" "$args")"; fi ;;
                 esac
+                [ "$i" -ne 0 ] || [ -z "$main" ] || [ "$(jq -r '.main.fullscreen // false' "$2")" != true ] || echo "fullscreen enable"   # the main window, once it is there, fills the screen
                 i=$((i + 1))
             done
             if [ -n "$main" ] && [ "$i" -gt 1 ]; then
@@ -3791,7 +3788,8 @@ desk_named() {   # desk_named JSONFILE NEED -> JSONFILE narrowed to the named ap
             | ($w | contains(" " + $a + " "))
               or ($a == "editor" and $ed != "" and ($w | contains(" " + $ed + " ")))
               or ($ed != "" and $a == $ed and ($w | contains(" editor ")));
-        ([.main] + (.side // [])) as $all | [$all[] | select(named)] as $k
+        ([.main] + (.side // [])) as $all
+        | ([$all[] | select(named)] | reduce .[] as $x ([]; if any(.[]; (.app | ascii_downcase) == ($x.app | ascii_downcase) and (.args // "") == ($x.args // "")) then . else . + [$x] end)) as $k
         | ($names | split("\n") | map(select(. != ""))
            | reduce .[] as $n ([]; if (map(key) | index([$n | key])) then . else . + [$n] end)) as $nm
         | ($k | map(.app | key)) as $have
@@ -3843,7 +3841,7 @@ desk_show() {   # desk_show WHOSE -- the rendered desk played, then the closing 
     # asked at the prompt: its window goes with the desk, on top, to be read
     [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=$PANEL_APP] move container to workspace number $ws" >/dev/null 2>&1 || true
     desk_play "$TMP/desk" || refuse "nothing ran"
-    echo "on workspace $(desk_ws_said "$TMP/desk") -- $1"
+    echo "on workspace $(desk_ws_said "$TMP/desk")${1:+ -- $1}"
     [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=$PANEL_APP] focus" >/dev/null 2>&1 || true   # the panel's keys are ours, not the app's
 }
 
@@ -3912,7 +3910,7 @@ desk_make() {   # desk_make NEED -> the desk laid out, the model's answer in DES
     mkdir -p "$(dirname "$DESK_LAST")"   # what opened; a why only when that is the answer
     jq --arg w "$1" --arg ch "$changed" '{words: $w} + . | if $ch == "" then . else del(.why) end' "$TMP/desk.json" > "$DESK_LAST"
     desk_render "$DESK_LAST"
-    desk_show "spark-shell layout save NAME saves it"
+    if [ -n "${ASKED:-}" ]; then desk_show ''; else desk_show "spark-shell layout save NAME saves it"; fi   # the panel has its save row
 }
 desk_replay() {   # desk_replay NAME -> the saved layout rendered for the player and played, no model call, no narrowing
     DESK_LABEL=$(desk_ws_label "$1")
@@ -3928,7 +3926,8 @@ desk_replay() {   # desk_replay NAME -> the saved layout rendered for the player
 # carries `screen` and one rule more; rooms are offered the terminal
 # apps only and no screen at all.
 desk_brief() {
-    ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "args": "", "width": 70}, "side": [{"app": "NAME", "args": ""}]}'; rule=''
+    ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "args": "", "width": 70, "fullscreen": false}, "side": [{"app": "NAME", "args": ""}]}'
+    rule=' main fullscreen is true only when the need says fullscreen or full screen: that window alone fills the screen, and side is then empty.'
     if [ "$PLAYER" = rooms ]; then
         opening="A layout of tmux windows: the apps for one need, each in a terminal window, on a $(tput cols 2>/dev/null || echo 80)x$(tput lines 2>/dev/null || echo 24) terminal."
         apps=$(grep ', terminal$' "$TMP/apps")
@@ -3936,8 +3935,8 @@ desk_brief() {
         opening="A layout: the windows for one need, on $(desk_screens_say)."
         apps=$(cat "$TMP/apps")
         if [ "$(wc -l < "$TMP/screens")" -gt 1 ]; then
-            ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "args": "", "width": 70, "screen": "left"}, "side": [{"app": "NAME", "args": "", "screen": "right"}]}'
-            rule=" A window is on one screen; screen is $(cut -d' ' -f3 "$TMP/screens" | desk_said or); one screen unless the need names two or the work needs two."
+            ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "args": "", "width": 70, "fullscreen": false, "screen": "left"}, "side": [{"app": "NAME", "args": "", "screen": "right"}]}'
+            rule="$rule A window is on one screen; screen is $(cut -d' ' -f3 "$TMP/screens" | desk_said or); one screen unless the need names two or the work needs two."
         fi
     fi
     echo "$opening Apps on this machine (name: what it does): $(printf '%s\n' "$apps" | sed 's/, terminal$//' | paste -sd ';' - | sed 's/;/; /g'). Rules: an app the need names by name is in the layout; otherwise only the apps the work itself needs, as few windows as that takes (one to four), never an app the need does not call for; an app may appear twice with different args (a browser on two pages: one window per page, args is that page's URL).$rule Answer with one JSON object and nothing else: $ex -- main is the big window at the left, width its percent of the screen; side is the windows stacked at the right, top to bottom."

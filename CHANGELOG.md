@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.53
+
+- Fixed: `Firefox workspace 2 fullscreen` at the panel opened two
+  Firefox windows and then asked spark for more, which answered that
+  it could not. An app named in more than two words is a layout for
+  the whole sentence, and that is the whole answer. A named app opens
+  once; the model's second copy is dropped.
+- New: a layout can be fullscreen. Say `fullscreen` and the main
+  window fills the screen alone once it is there.
+- Changed: a layout asked from the panel closes with the workspace
+  alone, since the panel has its own row to save it.
+
 ## v0.52.2
 
 - Fixed: a pick or a want from the window failed with "march: not

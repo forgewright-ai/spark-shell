@@ -782,6 +782,9 @@ EOF
     [ "$st" -eq 0 ] && head -1 "$swlog" | grep -q '^\[app_id=spark-panel\] move container to workspace number 3$' && tail -1 "$swlog" | grep -q '^\[app_id=spark-panel\] focus$' \
         && printf '%s\n' "$out" | grep -q 'photo work in gimp' && ! printf '%s\n' "$out" | grep -q 'layout> ' \
         && ok "a saved layout as a panel step (asked): the panel window follows it and is focused again, the why said, no layout> line" || bad "replay ask" "st=$st $out $(cat "$swlog")"
+    st=0; out=$(ASKED=1 SWAYSOCK=/tmp/x sh "$SH" layout "$need" 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^on workspace [0-9]*$' && ok "a fresh layout asked from the panel: the closing line names the workspace alone (the panel has its save row)" || bad "asked closing" "st=$st $out"
+    rm -f "$argv"   # that one asked spark; the replay tests below must see no call
     out=$(SWAYSOCK=/tmp/x sh "$SH" panel layout --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "layout  1 saved $SEP last: $need" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO layout  $need	layout open studio" ] \
         && ok "panel layout --list: the count and the last one on the title, a saved layout as a row that opens it by name" || bad "panel layout list" "$out"
@@ -793,6 +796,13 @@ EOF
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  layouts 1 saved  *studio (spark-shell layout NAME)$' && ok "status: the layouts row counts and names the saved ones" || bad "status layouts" "$(printf '%s\n' "$st" | grep layouts)"
     out=$(sh "$SH" layout delete studio)
     [ "$out" = "deleted studio" ] && [ ! -e "$desks/studio" ] && ok "layout delete NAME: gone, one line" || bad "delete" "$out"
+    # a named app twice with the same args is the model's padding: once; main fullscreen fills the screen once the window is there
+    mv "$H/.local/bin/spark" "$H/spark.keep"
+    printf '#!/bin/sh\nprintf "{\\"why\\": \\"the browser, full\\", \\"main\\": {\\"app\\": \\"firefox\\", \\"args\\": \\"\\", \\"fullscreen\\": true}, \\"side\\": [{\\"app\\": \\"firefox\\", \\"args\\": \\"\\"}]}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
+    : > "$swlog"; st=0; out=$(sh "$SH" layout "firefox fullscreen" 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$(grep -c '^exec firefox' "$swlog")" = 1 ] && [ "$(grep -A1 '^exec firefox' "$swlog" | sed -n 2p)" = 'fullscreen enable' ] && ! grep -q '^splith' "$swlog" \
+        && ok "layout: firefox named twice opens once; fullscreen true on main sends fullscreen enable right after its window" || bad "layout once full" "st=$st $out $(cat "$swlog")"
+    mv "$H/spark.keep" "$H/.local/bin/spark"; : > "$swlog"
     st=0; out=$(sh "$SH" layout delete studio 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = "spark-shell layout: no saved layout named studio" ] && ok "layout delete NAME twice: refused in one line" || bad "delete twice" "st=$st $out"
     printf 'workspace number 1\nexec firefox\n' > "$desks/mine"
@@ -2447,8 +2457,8 @@ EOF
     [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> Firefox fullscreen' "  $TICK opened firefox")" ] && [ ! -e "$H/spark.argv" ] && grep -q '^exec firefox' "$H/.local/state/swaymsg.log" \
         && ok "panel WORDS, one or two, that name an app this machine declares (Firefox): the app opens at once, spark is not asked" || bad "want program" "st=$st $out $(cat "$H/spark.argv" 2>&1)"
     rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel Firefox fullscreen please now 2>&1) || st=$?
-    printf '%s\n' "$out" | grep -q '^  layout> Firefox fullscreen please now$' \
-        && ok "panel WORDS, more of them, that name an app: a layout for the task" || bad "want layout" "st=$st $out"
+    printf '%s\n' "$out" | grep -q '^  layout> Firefox fullscreen please now$' && grep -q 'write the layout for this need' "$H/spark.argv" && ! grep -q 'do this on the desktop' "$H/spark.argv" \
+        && ok "panel WORDS, more of them, that name an app: a layout for the task, and that is the whole answer (spark is not asked for steps after)" || bad "want layout" "st=$st $out $(head -2 "$H/spark.argv")"
     rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel what is my address 2>&1) || st=$?
     grep -q 'do this on the desktop: what is my address' "$H/spark.argv" && ok "panel WORDS with no app named go to spark, even where a word is a command (what, on a Mac)" || bad "want not an app" "st=$st $out $(head -3 "$H/spark.argv" 2>&1)"
     rm -f "$journal/undo" "$journal/recent"
