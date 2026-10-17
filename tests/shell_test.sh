@@ -2339,6 +2339,12 @@ else
     { echo "$(( $(date +%s) - 120 ))"; printf 'stale\t4\t1\n'; } > "$cache/wifi.scan"
     sh "$SH" panel --list | grep -q "^$RING wifi  cafe" && ! sh "$SH" panel --list | grep -q stale && grep -q "^cafe" "$cache/wifi.scan" && [ $(( $(date +%s) - $(sed -n 1p "$cache/wifi.scan") )) -lt 60 ] \
         && ok "panel: a scan older than a minute is made again and kept, with its time" || bad "wifi stale" "cache: $(tr '\n' '|' < "$cache/wifi.scan"); list: $(sh "$SH" panel --list 2>&1 | grep wifi | tr '\n' '|')"
+    { echo "$(( $(date +%s) - 120 ))"; printf 'stale\t4\t1\n'; } > "$cache/wifi.scan"; printf '#!/bin/sh\n[ "$3" = scan_results ] && printf "bssid\\tfreq\\tsignal\\tflags\\tssid\\n00\\t2412\\t-50\\t[WPA2]\\thome\\n"; [ "$3" = status ] && echo ssid=home; exit 0\n' > "$H/.local/bin/wpa_cli.thin"
+    mv "$H/.local/bin/wpa_cli" "$H/wpa_cli.full"; mv "$H/.local/bin/wpa_cli.thin" "$H/.local/bin/wpa_cli"; chmod +x "$H/.local/bin/wpa_cli"
+    sh "$SH" panel --list >/dev/null; _age=$(( $(date +%s) - $(sed -n 1p "$cache/wifi.scan") ))
+    mv "$H/wpa_cli.full" "$H/.local/bin/wpa_cli"
+    [ "$_age" -ge 50 ] && [ "$_age" -lt 60 ] && ok "panel: a scan that found one network at most (the radio was busy) is kept for ten seconds, not a minute" || bad "wifi thin" "age $_age: $(tr '\n' '|' < "$cache/wifi.scan")"
+    rm -f "$cache/wifi.scan"
     printf '%s\n' "$out" | grep -q "^  theme  wallpaper and alpha	theme more$" && ! printf '%s\n' "$out" | grep -q "^  theme  wallpaper navy" && sh "$SH" panel theme --list | grep -q "^  theme  wallpaper navy	theme wallpaper navy$" \
         && ok "panel: theme shows the palettes and the font, a more row for the wallpaper and alpha; opened on theme, all of it" || bad "theme more" "$(printf '%s\n' "$out" | grep theme)"
     out=$(sh "$SH" panel apps --list)

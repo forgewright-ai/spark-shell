@@ -2282,6 +2282,10 @@ panel_cache() {   # panel_cache NAME AGE CMD... -> CMD's output, from the cache 
     sed 1d "$_pc_file"
 }
 panel_forget() { rm -f "$PANEL_CACHE/$1"; }   # panel_forget NAME -- after a change the probe must see
+panel_age() {   # panel_age NAME SECONDS -- an answer made older by that much, so it is asked again sooner
+    _pc_file=$PANEL_CACHE/$1; [ -f "$_pc_file" ] || return 0
+    { echo $(( $(sed -n 1p "$_pc_file") - $2 )); sed 1d "$_pc_file"; } > "$_pc_file.new" && mv "$_pc_file.new" "$_pc_file"
+}
 panel_fresh() {   # panel_fresh NAME AGE -> 0 when the cache would answer without a probe
     _f=$PANEL_CACHE/$1; [ -f "$_f" ] && [ $(( $(date +%s) - $(sed -n 1p "$_f") )) -lt "$2" ] 2>/dev/null
 }
@@ -2360,7 +2364,10 @@ wifi_known() {   # -> ID<tab>NAME per saved network (ID is the tool's handle: a 
         wpa_cli) wpa_cli -i "$(wifi_if)" list_networks 2>/dev/null | awk -F '\t' 'NR > 1 && $2 != "" { print $1 "\t" $2 }' ;;
     esac
 }
-wifi_scan() { panel_cache wifi.scan 60 wifi_scan_now; }   # -> NAME<tab>LEVEL<tab>SECURED per network around, strongest first; a scan is kept for a minute
+wifi_scan() {   # -> NAME<tab>LEVEL<tab>SECURED per network around, strongest first; a scan is kept for a minute, a thin one (the radio was busy) for ten seconds
+    panel_cache wifi.scan 60 wifi_scan_now | tee "$TMP/wifi.last"
+    [ "$(grep -c '' "$TMP/wifi.last")" -ge 2 ] || panel_age wifi.scan 50
+}
 wifi_scan_now() {
     case $(wifi_tool) in
         nmcli) nmcli -t -e yes -f SIGNAL,SECURITY,SSID dev wifi list --rescan auto 2>/dev/null \
