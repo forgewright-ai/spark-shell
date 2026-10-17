@@ -2473,17 +2473,22 @@ EOF
     grep -q '^do this on the desktop: quiet please$' "$H/spark.argv" && grep -q 'bt: disconnect MAJOR V, pair Buds, scan, power off' "$H/spark.argv" && grep -q 'out: use HDMI, mute, level N' "$H/spark.argv" && grep -q 'layout: new TASK' "$H/spark.argv" && grep -q 'theme: .*dracula, .*font bigger' "$H/spark.argv" && grep -q "What the bar shows now: lan  up $SEP 192.0.2.10; wifi  .* home $SEP 192.0.2.20; bt  $DOT MAJOR V; out  Jabra $SEP 40%" "$H/spark.argv" \
         && ok "bar WORDS: spark gets the words, what the bar shows now (a question has its facts) and what each section offers, a new layout among them" || bad "want brief" "$(cat "$H/spark.argv")"
     printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/spark.argv"; printf "{\\"why\\": \\"a question\\", \\"answer\\": \\"192.0.2.10 on the wire, 192.0.2.20 on wifi.\\", \\"steps\\": []}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
-    rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel Firefox fullscreen 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> Firefox fullscreen' "  $TICK opened firefox")" ] && [ ! -e "$H/spark.argv" ] && grep -q '^exec firefox' "$H/.local/state/swaymsg.log" \
+    rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel Firefox please 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> Firefox please' "  $TICK opened firefox")" ] && [ ! -e "$H/spark.argv" ] && grep -q '^exec firefox' "$H/.local/state/swaymsg.log" \
         && ok "panel WORDS, one or two, that name an app this machine declares (Firefox): the app opens at once, spark is not asked" || bad "want program" "st=$st $out $(cat "$H/spark.argv" 2>&1)"
     rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel Firefox fullscreen please now 2>&1) || st=$?
     printf '%s\n' "$out" | grep -q '^  layout> Firefox fullscreen please now$' && grep -q 'write the layout for this need' "$H/spark.argv" && ! grep -q 'do this on the desktop' "$H/spark.argv" \
         && ok "panel WORDS, more of them, that name an app: a layout for the task, and that is the whole answer (spark is not asked for steps after)" || bad "want layout" "st=$st $out $(head -2 "$H/spark.argv")"
     rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel what is my address 2>&1) || st=$?
     grep -q 'do this on the desktop: what is my address' "$H/spark.argv" && ok "panel WORDS with no app named go to spark, even where a word is a command (what, on a Mac)" || bad "want not an app" "st=$st $out $(head -3 "$H/spark.argv" 2>&1)"
+    rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel Firefox fullscreen 2>&1) || st=$?
+    grep -q 'write the layout for this need: Firefox fullscreen' "$H/spark.argv" && ok "panel WORDS, two, naming an app with a layout word (fullscreen): a layout, not a bare open" || bad "want app layout word" "st=$st $out $(head -2 "$H/spark.argv")"
     rm -f "$journal/undo" "$journal/recent"
     st=0; out=$(sh "$SH" panel what is my address 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> what is my address' '  192.0.2.10 on the wire, 192.0.2.20 on wifi.')" ] && ok "panel WORDS that ask: the answer in place, no steps" || bad "want answer" "st=$st $out"
+    rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel writing with vi and the prompt shell 2>&1) || st=$?
+    printf '%s\n' "$out" | grep -q '^  layout> writing with vi and the prompt shell$' && ! printf '%s\n' "$out" | grep -q '192.0.2.10' \
+        && ok "panel WORDS that are no question and get no step: a layout for the task, never the model's shrug or a facts dump" || bad "want task fallback" "st=$st $out"
     # the window itself, driven by an fzf of the test's: a pick runs through panel_run and panel_step, the next list carries the undo row
     cat > "$H/.local/bin/fzf" <<'STUB'
 #!/bin/sh

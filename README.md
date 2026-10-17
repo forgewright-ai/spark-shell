@@ -266,8 +266,10 @@ and a layout with mpv; connect the headset and move the sound to it.
 spark-shell checks every step against the list, plays it and says
 what it did, one short line each. A layout step opens its windows,
 and the panel follows them. A question is answered in the same
-place, in a sentence or two: `what is my address`. The same words
-work from a shell: `spark-shell panel "mute everything"`.
+place, in a sentence or two: `what is my address`. Words that are no
+question and match no step are a task, and a layout opens for them.
+The same words work from a shell: `spark-shell panel "mute
+everything"`.
 
 ## Status and check
 

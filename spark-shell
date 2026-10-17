@@ -2909,14 +2909,19 @@ want_names_app() {   # want_names_app WORDS -> the first word that names an app 
     done
     return 1
 }
+want_is_question() {   # want_is_question WORDS -> 0 when the words ask something (a question mark, or a question's first word)
+    case $1 in *'?') return 0 ;; esac
+    case " $(printf '%s' "$1" | tr 'A-Z' 'a-z' | cut -d' ' -f1) " in ' what '|' how '|' why '|' when '|' where '|' who '|' which '|' is '|' are '|' can '|' could '|' do '|' does '|' did '|' will '|' should '|' was '|' were ') return 0 ;; *) return 1 ;; esac
+}
+want_layout() { ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; desk_need "$1" ) || :; }   # want_layout WORDS -- a layout for the task, by the layout's own model
 want_play() {   # want_play WORDS -> one line per step with its sign, or the answer to a question; an app named is a layout first
     command -v jq >/dev/null 2>&1 || { echo "jq is not installed (spark-shell on)"; return 1; }
     spark=$(spark_bin); [ -n "$spark" ] || { echo "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
     SND=${SND:-$(snd_tool)}
     if _app=$(want_names_app "$1"); then   # the machine's own word: an app named opens, or is a layout for the task; never a question for the model
-        if [ "$(printf '%s\n' "$1" | wc -w | tr -d ' ')" -le 2 ]; then   # a word or two: the app itself, at once
+        if [ "$(printf '%s\n' "$1" | wc -w | tr -d ' ')" -le 2 ] && [ "$(desk_words_full "$1")" = false ] && [ -z "$(desk_words_ws "$1")" ]; then   # a word or two and no layout word: the app itself, at once
             if _l=$(panel_step apps open "$(panel_apps_known | awk -v w="$_app" 'tolower($0) == w && !d {print; d = 1}')" 2>&1); then printf '%s %s\n' "$PANEL_TICK" "$_l"; else printf '%s %s\n' "$PANEL_CROSS" "$_l"; fi
-        else ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; desk_need "$1" ) || :; fi   # the layout's model reads the whole sentence: the workspace, fullscreen, the pages
+        else want_layout "$1"; fi   # the layout's model reads the whole sentence: the workspace, fullscreen, the pages
         return 0
     fi
     _brief=$(panel_brief)
@@ -2927,7 +2932,8 @@ want_play() {   # want_play WORDS -> one line per step with its sign, or the ans
     jq -e '.steps | arrays' "$TMP/want.json" >/dev/null 2>&1 || { echo "$PANEL_CROSS the answer was not steps for the panel"; return 1; }
     if [ "$(jq -r '.steps | length' "$TMP/want.json")" -eq 0 ]; then   # the model's why is not shown: the steps say it; a question gets its answer
         _ans=$(jq -r '.answer // "" | gsub("[\\n\\r]+"; " ")' "$TMP/want.json")
-        if [ -n "$_ans" ]; then printf '%s\n' "$_ans"; else echo "nothing here does that"; fi
+        if want_is_question "$1"; then if [ -n "$_ans" ]; then printf '%s\n' "$_ans"; else echo "nothing here answers that"; fi
+        else want_layout "$1"; fi   # not a question and no step: a task, then -- the layout's own model reads it (never a shrug for "writing with vi")
         return 0
     fi
     jq -r '.steps[] | [(.page // "" | tostring), (.action // "" | tostring), (.arg // "" | tostring)] | @tsv' "$TMP/want.json" | while IFS="$TAB" read -r pg ac ar; do
@@ -3941,7 +3947,7 @@ desk_replay() {   # desk_replay NAME -> the saved layout rendered for the player
 # apps only and no screen at all.
 desk_brief() {
     ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "quote": "the words of the need this window is for", "args": "", "width": 70, "fullscreen": false}, "side": [{"app": "NAME", "quote": "the words of the need this window is for", "args": ""}]}'
-    rule=' Every window carries quote: the words of the need it answers, as they are in the need; a window the need has no words for is not in the layout. main fullscreen is true only when the need says fullscreen or full screen: that window alone fills the screen, and side is then empty.'
+    rule=' The need is read part by part: each thing it names, split at and or a comma, is one window of its own, with quote: the words of that part as they are in the need (two things named, two windows, each with the words of its own part). A window the need has no words for is not in the layout, and one window never answers two parts. main fullscreen is true only when the need says fullscreen or full screen: that window alone fills the screen, and side is then empty.'
     if [ "$PLAYER" = rooms ]; then
         opening="A layout of tmux windows: the apps for one need, each in a terminal window, on a $(tput cols 2>/dev/null || echo 80)x$(tput lines 2>/dev/null || echo 24) terminal."
         apps=$(grep ', terminal$' "$TMP/apps")

@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.54.1
+
+- Changed: the layout's model reads the need part by part, at `and`
+  and commas, one window each: `notes and firefox` is an editor and
+  Firefox, never one window for both.
+- Fixed: `firefox fullscreen` opened Firefox and skipped the
+  fullscreen. An app's name with a layout word beside it is a layout.
+- Fixed: words that are no question and get no step from spark, as
+  `writing with vi and the prompt shell`, were answered with the bar's
+  facts. They are a task now, and a layout opens for them.
+
 ## v0.54
 
 - Changed: a layout opens what your words ask for, all of it, and
