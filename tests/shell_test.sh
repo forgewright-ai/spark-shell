@@ -299,7 +299,7 @@ else
     sh "$SH" on --yes >/dev/null
     foot=$HOME/.config/foot/foot.ini; sway=$HOME/.config/sway/config
     [ -f "$foot" ] && [ -f "$sway" ] && ok "DESKTOP=sway: both rendered" || bad "sway renders missing" "$(ls -R "$HOME/.config")"
-    grep -q '^background=000000$' "$foot" && grep -q '^foreground=aaaaaa$' "$foot" && grep -q '^regular1=aa0000$' "$foot" && grep -q '^bright1=ff5555$' "$foot" \
+    grep -q '^background=000000$' "$foot" && grep -q '^foreground=aaaaaa$' "$foot" && grep -q '^regular1=aa0000$' "$foot" && grep -q '^bright1=ff5555$' "$foot" && grep -q '^title=terminal$' "$foot" \
         && ok "foot.ini: the palette's own hex (background 000000, regular1 aa0000, bright1 ff5555)" || bad "foot colours" "$(grep -n '=' "$foot" | head -8)"
     grep -q '^font=DejaVu Sans Mono:size=12$' "$foot" && ok "foot.ini: the default FONT line" || bad "foot font line" "$(grep -n '^font' "$foot")"
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: one colour section, [colors-dark] (a foot with no version = 1.26+)" || bad "foot sections" "$(grep -n '^\[' "$foot")"
@@ -2355,7 +2355,7 @@ else
     out=$(sh "$SH" bar panel lan --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "lan     up $SEP 192.0.2.10" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  lan     address 192.0.2.10	lan show" ] && printf '%s\n' "$out" | grep -q "^  lan     speed 1000 Mb/s	lan show$" && printf '%s\n' "$out" | grep -q "^  lan     gateway 192.0.2.1	lan show$" \
         && ok "panel lan: the address, the speed and the gateway, a look only, first (the old bar panel spelling)" || bad "panel lan" "$out"
-    printf '%s\n' "$out" | grep -q "^$RING wifi    cafe .*	wifi connect cafe$" && printf '%s\n' "$out" | grep -q "^  theme   dracula	theme dracula$" && ! printf '%s\n' "$out" | grep -q "^. bat     " && ! printf '%s\n' "$out" | grep -q "^. clock   " && ! printf '%s\n' "$out" | grep -q "^. layout  none" \
+    printf '%s\n' "$out" | grep -q "^$RING wifi    cafe .*	wifi connect cafe$" && printf '%s\n' "$out" | grep -q "^  theme   [a-z-]* $SEP size 12 $SEP more	theme more$" && ! printf '%s\n' "$out" | grep -q "^  theme   dracula	" && ! printf '%s\n' "$out" | grep -q "^. bat     " && ! printf '%s\n' "$out" | grep -q "^. clock   " && ! printf '%s\n' "$out" | grep -q "^. layout  none" \
         && [ "$(printf '%s\n' "$out" | grep -c "	lan show$")" = "$(printf '%s\n' "$out" | grep -c "	[a-z]* show$")" ] && printf '%s\n' "$out" | grep -q "^$GO apps    choose the allowed apps	apps pick$" && [ "$(printf '%s\n' "$out" | grep -n "^$GO apps" | head -1 | cut -d: -f1)" -lt "$(printf '%s\n' "$out" | grep -n "^$RING wifi    cafe" | cut -d: -f1)" ] \
         && ok "panel lan: then what every other section can do, in order, the slow wifi last; never another section's look-only rows (no layout saved: its one row is a look)" || bad "panel lan rest" "$out"
     out=$(sh "$SH" panel --list)
@@ -2379,11 +2379,13 @@ else
     mv "$H/wpa_cli.full" "$H/.local/bin/wpa_cli"
     [ "$_age" -ge 50 ] && [ "$_age" -lt 60 ] && ok "panel: a scan that found one network at most (the radio was busy) is kept for ten seconds, not a minute" || bad "wifi thin" "age $_age: $(tr '\n' '|' < "$cache/wifi.scan")"
     rm -f "$cache/wifi.scan"
-    printf '%s\n' "$out" | grep -q "^  theme   wallpaper and alpha	theme more$" && ! printf '%s\n' "$out" | grep -q "^  theme   wallpaper navy" && sh "$SH" panel theme --list | grep -q "^  theme   wallpaper navy	theme wallpaper navy$" \
-        && ok "panel: theme shows the palettes and the font, a more row for the wallpaper and alpha; opened on theme, all of it" || bad "theme more" "$(printf '%s\n' "$out" | grep theme)"
+    printf '%s\n' "$out" | grep -q "^  theme   none $SEP size 12 $SEP more	theme more$" && [ "$(printf '%s\n' "$out" | grep -c "^. theme   ")" = 1 ] && sh "$SH" panel theme --list > "$H/theme.list" && grep -q "^  theme   wallpaper navy	theme wallpaper navy$" "$H/theme.list" && grep -q "^  theme   dracula	theme dracula$" "$H/theme.list" && grep -q "^  theme   more see-through	theme see-through more$" "$H/theme.list" \
+        && ok "panel: theme is one row in the list, the palette and the size, a more; opened on theme, the palettes, the font, the wallpaper words and see-through" || bad "theme more" "$(printf '%s\n' "$out" | grep theme; grep theme "$H/theme.list" | head -3)"
     out=$(sh "$SH" panel apps --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "apps    every app allowed $SEP Enter opens one" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO apps    firefox	apps open firefox" ] && printf '%s\n' "$out" | grep -q "^$GO apps    gimp-3.0	apps open gimp-3.0$" && [ "$(printf '%s\n' "$out" | grep "^$GO apps    " | tail -1)" = "$GO apps    choose the allowed apps	apps pick" ] \
-        && ok "panel apps --list: the title says what is allowed, a row per app that opens it, the picker last" || bad "panel apps" "$out"
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "apps    every app allowed $SEP Enter opens one" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO apps    terminal	apps terminal" ] && [ "$(printf '%s\n' "$out" | sed -n 3p)" = "$GO apps    firefox	apps open firefox" ] && printf '%s\n' "$out" | grep -q "^$GO apps    gimp-3.0	apps open gimp-3.0$" && [ "$(printf '%s\n' "$out" | grep "^$GO apps    " | tail -1)" = "$GO apps    choose the allowed apps	apps pick" ] \
+        && ok "panel apps --list: the title says what is allowed, a terminal first, a row per app that opens it, the picker last" || bad "panel apps" "$out"
+    rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps terminal 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'opened a terminal' ] && grep -qx 'exec foot' "$H/.local/state/swaymsg.log" && ok "panel apps terminal: a terminal window, as Super+Return" || bad "apps terminal" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps open GIMP-3.0 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'opened gimp-3.0' ] && grep -q '^exec gimp-3.0' "$H/.local/state/swaymsg.log" && ok "panel apps open NAME: the app opens on the current workspace the way its entry says (any case)" || bad "apps open" "st=$st $out $(tail -2 "$H/.local/state/swaymsg.log" 2>&1)"
     [ "$(sh "$SH" panel --list | sed -n 3p)" = "$GO apps    gimp-3.0	apps open gimp-3.0" ] && [ "$(sed -n 1p "$journal/recent")" = "apps	open gimp-3.0" ] \
@@ -2451,13 +2453,36 @@ else
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "$(date '+%A %d %B %Y')" ] && [ -z "$(printf '%s\n' "$out" | sed -n 2p)" ] && printf '%s\n' "$out" | sed -n 3p | grep -q "^ \{40\} *$(date '+%B %Y')$" && printf '%s\n' "$out" | sed -n 4p | grep -q " Su  Mo  Tu  We  Th  Fr  Sa$" && [ "$(printf '%s\n' "$out" | sed -n '4,8p' | grep -c "^[$B ]*${B}[$B ]*      ")" = 5 ] && printf '%s\n' "$out" | sed -n '4,8p' | grep -q "$B$B  *$B" && ! printf '%s\n' "$out" | grep -q "	clock show$" \
         && ok "panel clock: the date alone on top, then the time five rows tall in strokes two cells wide on the left and this month on the right, 34 cells apart; no clock rows" || bad "panel clock" "$out"
     out=$(sh "$SH" bar panel look --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "theme   none $SEP DejaVu Sans Mono 12" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$TICK theme   none	theme show" ] && printf '%s\n' "$out" | grep -q "^  theme   dracula	theme dracula$" && printf '%s\n' "$out" | grep -q "^  theme   font bigger $SEP 12 now	theme font bigger$" && printf '%s\n' "$out" | grep -q "^  theme   wallpaper navy	theme wallpaper navy$" && printf '%s\n' "$out" | grep -q "^$TICK theme   alpha 0.85	theme show$" \
-        && ok "panel theme (look, the old word, still opens it): the palettes by name, the font size, the wallpaper words and alpha, the current ones named" || bad "panel look" "$out"
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "theme   none $SEP DejaVu Sans Mono 12" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$TICK theme   none	theme show" ] && printf '%s\n' "$out" | grep -q "^  theme   dracula	theme dracula$" && printf '%s\n' "$out" | grep -q "^  theme   font bigger $SEP 12 now	theme font bigger$" && printf '%s\n' "$out" | grep -q "^  theme   wallpaper navy	theme wallpaper navy$" && printf '%s\n' "$out" | grep -q "^$TICK theme   windows see-through 15%	theme show$" && printf '%s\n' "$out" | grep -q "^  theme   less see-through	theme see-through less$" \
+        && ok "panel theme (look, the old word, still opens it): the palettes by name, the font size, the wallpaper words and see-through, the current ones named" || bad "panel look" "$out"
     st=0; out=$(sh "$SH" panel theme font bigger 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'font 13' ] && grep -q '^FONT=DejaVu Sans Mono:size=13$' "$HOME/.config/spark-shell/config" && grep -q '^    font pango:DejaVu Sans Mono 13$' "$sway" \
         && ok "panel theme font bigger: FONT in the config, the bar's font rendered, said in two words" || bad "look font" "st=$st $out $(grep -n 'FONT\|font' "$HOME/.config/spark-shell/config" "$sway")"
     st=0; out=$(sh "$SH" panel theme alpha 0.5 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q '^ALPHA=0.5$' "$HOME/.config/spark-shell/config" && grep -q '^        background #00000080$' "$sway" && ok "panel look alpha 0.5: ALPHA in the config, the bar's background rendered with it (80)" || bad "look alpha" "st=$st $out $(grep -n 'background' "$sway")"
+    st=0; out=$(sh "$SH" panel theme see-through more 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = 'see-through stops at 50%' ] && grep -q '^ALPHA=0.5$' "$HOME/.config/spark-shell/config" && ok "panel theme see-through more at 50%: refused in one line, nothing written" || bad "see-through floor" "st=$st $out"
+    st=0; out=$(sh "$SH" panel theme see-through less 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = "windows see-through 40% $SEP new windows take it" ] && grep -q '^ALPHA=0.6$' "$HOME/.config/spark-shell/config" && sh "$SH" panel theme --list | grep -q "^$TICK theme   windows see-through 40%	theme show$" \
+        && ok "panel theme see-through less: a tenth less, said as a percent, the row follows (foot takes it with a wallpaper)" || bad "see-through less" "st=$st $out $(grep ALPHA "$HOME/.config/spark-shell/config")"
+    sh "$SH" panel --list | grep -q "^  undo    windows see-through 50%	undo all$" && ok "undo: the see-through step's inverse names the percent it was" || bad "see-through undo" "$(sh "$SH" panel --list | grep undo)"
+    # the bar: hide and show from the panel, remembered in the config and the render
+    rm -f "$journal/undo"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar off 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = "bar hidden $SEP Super+d opens the panel" ] && grep -q '^DESKTOP_BAR=no$' "$HOME/.config/spark-shell/config" && grep -q '^    mode invisible$' "$sway" && [ "$(sh "$SH" panel bar --list | sed -n 2p)" = "  bar     show	bar on" ] && sh "$SH" panel --list | grep -q "^  undo    bar shown	undo all$" \
+        && ok "panel bar off (the row says hide): DESKTOP_BAR=no, the bar invisible in the render, the row says show now, the undo says shown" || bad "bar off" "st=$st $out $(grep -n 'mode ' "$sway"; sh "$SH" panel bar --list)"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar on 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'bar shown' ] && grep -q '^DESKTOP_BAR=yes$' "$HOME/.config/spark-shell/config" && grep -q '^    mode dock$' "$sway" && [ "$(sh "$SH" panel bar --list | sed -n 2p)" = "  bar     hide	bar off" ] \
+        && ok "panel bar on: back, and the row says hide again" || bad "bar on" "st=$st $out"
+    # the windows: how new ones sit, this workspace now and the default for new ones
+    rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window tabs 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'windows tabs' ] && grep -q '^WINDOWS=tabs$' "$HOME/.config/spark-shell/config" && grep -q '^workspace_layout tabbed$' "$sway" && grep -qxF '[workspace=__focused__ tiling] layout tabbed' "$H/.local/state/swaymsg.log" \
+        && [ "$(sh "$SH" panel window --list | sed -n 1p)" = "window  tabs" ] && sh "$SH" panel window --list | grep -q "^$TICK window  tabs	window show$" && sh "$SH" panel window --list | grep -q "^  window  side by side	window split$" && sh "$SH" panel --list | grep -q "^  undo    windows side by side	undo all$" \
+        && ok "panel window tabs: WINDOWS=tabs, workspace_layout tabbed rendered, this workspace's tiling windows in tabs now, the rows and the undo say it" || bad "window tabs" "st=$st $out $(grep -n 'workspace_layout' "$sway"; cat "$H/.local/state/swaymsg.log"; sh "$SH" panel window --list)"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window split 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'windows side by side' ] && grep -q '^WINDOWS=split$' "$HOME/.config/spark-shell/config" && grep -q '^workspace_layout default$' "$sway" && grep -qxF '[workspace=__focused__ tiling] layout splith' "$H/.local/state/swaymsg.log" \
+        && ok "panel window split: side by side again, workspace_layout default" || bad "window split" "st=$st $out"
+    st=0; out=$(sh "$SH" panel window sideways 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: window: sideways is not on the panel now' ] && ok "panel window WORD: a way that is not a row is refused" || bad "window refuse" "st=$st $out"
     printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
     line=$(sh "$SH" bar status --once)
     printf '%s' "$line" | jq -e '[.[] | select(.name == "theme")] | length == 0' >/dev/null && ok "bar: no theme block even with a palette set (the panel's theme section has it)" || bad "theme block" "$line"
@@ -2503,7 +2528,7 @@ if [ "$n" -eq 1 ]; then printf '\n  out     mute\tout mute\n'; exit 0; else exit
 STUB
     chmod +x "$H/.local/bin/fzf"; rm -f "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$amlog" "$journal/undo" "$journal/recent"
     st=0; out=$(SPARK_SHELL_TEST_TTY=1 sh "$SH" panel 2>&1 </dev/null) || st=$?
-    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g" | grep -q "$TICK out muted" && ! printf '%s\n' "$out" | grep -q 'not found' && grep -q "undo.*out unmute	undo all$" "$H/fzf.in.2" && grep -q -- "--highlight-line --pointer  --marker  --padding 0,0,0,2" "$H/fzf.args.2" && grep -qx -- '-c 0 sset Master mute' "$amlog" \
+    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g" | grep -q "$TICK out muted" && ! printf '%s\n' "$out" | grep -q 'not found' && grep -q "undo.*out unmute	undo all$" "$H/fzf.in.2" && grep -q -- "--highlight-line --pointer  --marker  --padding 0,0,0,2 --bind change:reload(if \[ -n {q} \]; then cat .*/rows.full; else cat .*/rows.short; fi)" "$H/fzf.args.2" && grep -qx -- '-c 0 sset Master mute' "$amlog" \
         && ok "the window: Enter on out mute plays the step, the receipt says it with a check, the next list opens with the undo row; Esc ends it" || bad "window pick" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) out=$(printf '%s' "$out" | tr -d '\033' | tr '\n' '|' | tail -c 400) in2=$(grep undo "$H/fzf.in.2" 2>&1)"
     plain=$(printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g")
     printf '%s\n' "$plain" | grep -q "^    $(date '+%A %d %B')$" && printf '%s\n' "$plain" | grep -q "$B$B.*      .* Su  Mo  Tu  We  Th  Fr  Sa$" && [ "$(printf '%s\n' "$plain" | grep -c "$B$B")" -ge 10 ] && ! printf '%s\n' "$plain" | grep -q "wifi home $SEP" && ! printf '%s\n' "$plain" | grep -q "^    out     Jabra" \
@@ -2601,7 +2626,7 @@ sh "$SH" -h > "$voice/help"
 grep '^ *#' "$REPO/templates/.config/sway/config" > "$voice/sway-config-comments"
 out_words="desks?|rooms?|seat|login box|marks?|marked|player|this machine's cycles|the forge wallpaper|greeter|the box|stranger|newcomer|founder|inventory|the hands|shell layer|monitors?"
 contractions="[A-Za-z]*n't\b|\bit's\b|\byou'll\b|\bwe're\b|\bthat's\b|\bthere's\b|\blet's\b"
-caps_ok='ASCII|ALSA|POSIX|JSON|SGR|PATH|NAME|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|WALLPAPER|ALPHA|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
+caps_ok='ASCII|ALSA|POSIX|JSON|SGR|PATH|NAME|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|WALLPAPER|ALPHA|WINDOWS|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
 for n in README.md CHANGELOG.md CREDITS.md config.example help sway-config-comments; do
     f=$voice/$n
     # (a) the words that are out, as whole words in any case

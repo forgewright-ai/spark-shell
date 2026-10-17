@@ -28,9 +28,15 @@ FONT=DejaVu Sans Mono:size=12
 # colour's name as its #rrggbb.
 WALLPAPER=default
 
-# How solid foot is over a picture: 0 to 1, where 1 is solid. 0.85 suits
-# a dark picture. A bright one needs more.
+# How solid foot is over a picture or a colour: 0 to 1, where 1 is solid.
+# 0.85 suits a dark picture. A bright one needs more. The panel's theme
+# section says it as see-through: 0.85 is 15% see-through.
 ALPHA=0.85
+
+# How new windows sit on a workspace: split (side by side), tabs or
+# stacked. The panel's window section sets this, and the keys change
+# the workspace you are on.
+WINDOWS=split
 
 # The bar at the top of the desktop's screen: yes or no. It shows the
 # workspaces, then lan, wifi, bluetooth, sound out and mic, battery, and

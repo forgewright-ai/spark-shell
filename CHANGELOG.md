@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.58
+
+- Changed: the list after Super+d is short, each section's state and
+  everyday steps; `theme` is one row with the palette and the font
+  size. Typing searches everything the panel can do, shown or not, so
+  a palette is still one Enter away from anywhere. The prompt cleared,
+  the short list is back.
+- Added: `bar` in the panel, `hide` and `show`, remembered across
+  reboots as before.
+- Added: `window` in the panel: side by side, tabs or stacked. It sets
+  the workspace you are on now and is remembered for new ones, as
+  `WINDOWS` in the config. The keys that do the same, Super+w,
+  Super+Shift+s, Super+e, Super+b and Super+v, are in the keys list.
+- Added: `apps  terminal`, a terminal window from the panel, as
+  Super+Return.
+- Changed: alpha is said as see-through. The theme section shows
+  `windows see-through 15%`, with `more see-through` and `less
+  see-through` as the steps, in tenths. The config key is still
+  `ALPHA`, and `theme alpha N` still works.
+- Changed: a terminal window is titled `terminal` at the prompt and
+  with the program's name while one runs, so sway's tabs never say
+  `foot`.
+
 ## v0.57
 
 - Changed: the march has one place, the top right corner of the

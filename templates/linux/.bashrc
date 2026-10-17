@@ -34,6 +34,13 @@ for f in /usr/share/doc/fzf/examples/key-bindings.bash /usr/share/fzf/key-bindin
     [ -r "$f" ] && { . "$f"; break; }
 done
 
+# --- the window's title: the program's name while one runs (sway shows it
+#     on tabs); set before starship, which chains an earlier DEBUG trap
+if [ -z "${TMUX:-}" ]; then
+    __spark_shell_title() { [ -z "${__spark_shell_ran:-}" ] || return 0; case $BASH_COMMAND in _*) return 0 ;; esac; __spark_shell_ran=1; printf '\033]2;%s\033\\' "${BASH_COMMAND%% *}"; }
+    trap '__spark_shell_title' DEBUG
+fi
+
 # --- prompt: starship when PROMPT=starship rendered a config ---------------
 if [ -r ~/.config/starship.toml ] && command -v starship >/dev/null; then
     eval "$(starship init bash)"
@@ -51,6 +58,13 @@ fi
 
 # zoxide last: its prompt hook has to be the final one, or it complains.
 command -v zoxide >/dev/null && eval "$(zoxide init bash)"
+
+# --- the window's title at the prompt: terminal (the last prompt hook, so
+#     the next command is the one named)
+if [ -z "${TMUX:-}" ]; then
+    __spark_shell_prompt() { printf '\033]2;terminal\033\\'; __spark_shell_ran=''; }
+    PROMPT_COMMAND="${PROMPT_COMMAND:+$PROMPT_COMMAND;}__spark_shell_prompt"
+fi
 
 # --- yours: ~/.config/spark-shell/rc, sourced last, never written by
 #     spark-shell (your editor, aliases, anything these files do not say)

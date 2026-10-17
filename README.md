@@ -142,6 +142,8 @@ of the desktop shows them once.
     Super+Shift+e leaves the desktop.
     Super+h, j, k, l or an arrow moves the focus. Shift moves the window.
     Super+f makes a window fill the screen, and Super+r resizes until Enter.
+    Super+w makes tabs, Super+Shift+s a stack, Super+e side by side again.
+    Super+b and Super+v put the next window beside this one, or below it.
     Super+1 to 0 go to a workspace. Add Shift to send the window there.
     The volume and mute keys set the sound, and the mic mute key the mic.
     Typing exit in the first window also leaves the desktop.
@@ -158,8 +160,8 @@ it stays the same when you change the palette. Give `#rrggbb`, or one
 of these names: black, white, gray, grey, silver, navy, blue, teal,
 green, olive, maroon, red, purple, brown, orange. A picture and a
 colour are drawn the same way: gaps around the windows, and the
-terminals a little translucent. `none` fills the screen with the
-windows, opaque.
+terminals a little see-through. The panel's `theme` section sets how
+much. `none` fills the screen with the windows, solid.
 
 ## Bar
 
@@ -215,11 +217,11 @@ The first lines are the same behind every door: the date, the time
 large in strokes two cells wide, this month beside it with today a
 chip in the accent, and an alarm in red under them when there is
 one. The facts are on the bar. The time keeps the minute while the
-panel is open. Then one list of everything
-this machine can do right now, in sections ordered by use: `spark`,
-`layout`, `out`, `mic`, `theme`, `bt`, `apps`, `wifi`. The section
-you came from is on top. Every row names its section in a column of
-its own, muted, then the thing, with a sign in front where there is a
+panel is open. Then one list of everything this machine can do right
+now, in sections ordered by use: `spark`, `layout`, `out`, `mic`,
+`theme`, `window`, `bar`, `bt`, `apps`, `wifi`. The section you came
+from is on top. Every row names its section in a column of its own,
+muted, then the thing, with a sign in front where there is a
 state: a dot is in use or connected, a ring is available, a check is
 current or saved, a small triangle opens something. The picked row is
 lit across the window. The sign says
@@ -259,16 +261,23 @@ bottom, where the hint and the prompt are.
 - `bt`: connect or disconnect your devices, look for new ones, pair a
   new one, turn Bluetooth off and on.
 - `out` and `mic`: use another device, mute and unmute.
-- `theme`: a palette, the font bigger or smaller, a wallpaper, alpha.
-  A pick applies now, the panel included. New windows take a font
-  change.
-- `apps`: a row per app a layout may open, and Enter opens it on this
-  workspace, the way its desktop entry says. The last row chooses the
-  allowed apps, in the same window.
+- `theme`: one row in the list, the palette and the font size. Enter
+  opens the section: a palette, the font bigger or smaller, a
+  wallpaper, and how see-through the windows are, more or less. A pick
+  applies now, the panel included. New windows take a font change.
+- `window`: how new windows sit on a workspace, side by side, in tabs
+  or stacked. A pick sets this workspace now and is remembered for new
+  ones, reboots included.
+- `bar`: hide the bar at the top of the screen, or show it again.
+  Super+d opens the panel either way. Remembered too.
+- `apps`: a terminal window, then a row per app a layout may open, and
+  Enter opens it on this workspace, the way its desktop entry says.
+  The last row chooses the allowed apps, in the same window.
 
 Under the list, one line: pick an option, or say what you would like.
-Type and the list narrows across every section: `drac` finds the
-palette from a click on `wifi`. One or two words that name an app
+The list shows each section's state and everyday steps. Type, and the
+search runs over everything the panel can do, shown or not: `drac`
+finds the palette from a click on `wifi`. One or two words that name an app
 this machine declares, as `Firefox`, open it at once. More words that
 name one, as `Firefox and the notes`, open a layout for the task.
 Other words that match no row go to spark.
