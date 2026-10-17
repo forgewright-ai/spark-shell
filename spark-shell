@@ -2749,6 +2749,7 @@ panel_layout_save() {   # panel_layout_save NAME -> what is open on the focused 
             _child=$(pgrep -P "$_pid" 2>/dev/null | head -1); _app=$(ps -o comm= -p "${_child:-0}" 2>/dev/null | sed 's/.*\///'); case $_app in ''|sh|bash|zsh|dash|fish) _app=shell ;; esac
             [ "$_id" != "$PANEL_APP" ] || continue   # not the panel itself
         fi
+        _known=$(panel_apps_known | awk -v w="$(panel_lower "$_app")" 'tolower($0) == w && !d {print; d = 1}'); [ -z "$_known" ] || _app=$_known   # the name a layout knows it by (Firefox is firefox)
         [ -z "$_app" ] || echo "$_app" >> "$TMP/open.apps"
     done < "$TMP/open"
     [ -s "$TMP/open.apps" ] || { echo "nothing is open on this workspace"; return 1; }
