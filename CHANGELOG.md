@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.54
+
+- Changed: a layout opens what your words ask for, all of it, and
+  nothing else. Every window spark proposes now carries the words of
+  yours it is for, quoted back, and spark-shell checks the quote
+  against your words. `notes and firefox` opens Firefox and the editor
+  spark picked for the notes. A window tied to none of your words, or
+  only to a word like fullscreen, is padding: it does not open and is
+  offered as a row. Apps your words name still always open.
+
 ## v0.53.2
 
 - New: what spark also suggested for a layout is one Enter away. After

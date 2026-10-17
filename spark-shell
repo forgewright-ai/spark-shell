@@ -3778,7 +3778,12 @@ desk_editor() {   # -> what a layout's `editor` word opens: EDITOR's basename, e
 # lacks as a side window, in the words' order, once (`editor` and its
 # program are one app). The answer's other apps are said as suggestions.
 # None named: the answer as it came.
-desk_named() {   # desk_named JSONFILE NEED -> JSONFILE narrowed to the named apps; one line names the others
+DESK_SMALL_WORDS='["and","or","with","the","a","an","in","on","for","to","my","of","at","plus","also","then","now","please","open","window","windows","layout","desktop","terminal","workspace","fullscreen","full","screen","it","them","me","i","some"]'   # words that ground nothing on their own
+desk_named() {   # desk_named JSONFILE NEED -> JSONFILE narrowed to the windows the need asks for; one line names the others
+    # A window the model ties to words of the need (its `quote`) stays when those words are in the need and
+    # say something on their own; an app the need names stays always, and is added when the model forgot it; the
+    # rest -- a helper, a shell, a monitor the need did not ask for -- is suggested, never opened. An answer with no
+    # `quote` at all (an older model, a saved layout) keeps the named apps alone.
     _w=" $(printf '%s' "$2" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_.+-' ' ' | sed 's/[.-]*  */ /g; s/[.-]*$//; s/  */ /g') "
     _ed=$(printf '%s' "$ED" | tr 'A-Z' 'a-z'); _names=''
     for _x in $_w; do   # the apps the words name, in their order: the list's names, any case
@@ -3788,14 +3793,17 @@ desk_named() {   # desk_named JSONFILE NEED -> JSONFILE narrowed to the named ap
         [ -z "$_n" ] || _names="$_names$_n
 "
     done
-    jq --arg w "$_w" --arg ed "$_ed" --arg names "$_names" '
+    jq --arg w "$_w" --arg ed "$_ed" --arg names "$_names" --argjson small "$DESK_SMALL_WORDS" '
         def key: ascii_downcase as $a | if $a == "editor" or ($ed != "" and $a == $ed) then "editor" else $a end;
         def named: (.app | ascii_downcase) as $a
             | ($w | contains(" " + $a + " "))
               or ($a == "editor" and $ed != "" and ($w | contains(" " + $ed + " ")))
               or ($ed != "" and $a == $ed and ($w | contains(" editor ")));
+        def grounded: ((.quote // "") | ascii_downcase | gsub("[^a-z0-9_.+-]+"; " ") | split(" ") | map(select(. != "" and (. as $x | $small | index($x) | not)))) as $fw
+            | ($fw | length) > 0 and all($fw[]; . as $x | $w | contains(" " + $x + " "));
         ([.main] + (.side // [])) as $all
-        | ([$all[] | select(named)] | reduce .[] as $x ([]; if any(.[]; (.app | ascii_downcase) == ($x.app | ascii_downcase) and (.args // "") == ($x.args // "")) then . else . + [$x] end)) as $k
+        | (any($all[]; has("quote"))) as $tied
+        | ([$all[] | select(named or ($tied and grounded))] | reduce .[] as $x ([]; if any(.[]; (.app | ascii_downcase) == ($x.app | ascii_downcase) and (.args // "") == ($x.args // "")) then . else . + [$x] end)) as $k
         | ($names | split("\n") | map(select(. != ""))
            | reduce .[] as $n ([]; if (map(key) | index([$n | key])) then . else . + [$n] end)) as $nm
         | ($k | map(.app | key)) as $have
@@ -3804,7 +3812,7 @@ desk_named() {   # desk_named JSONFILE NEED -> JSONFILE narrowed to the named ap
         | if ($open | length) == 0 then .
           else .main.width as $wd
             | .main = ($open[0] + (if $open[0].width == null and $wd != null then {width: $wd} else {} end))
-            | .side = $open[1:] | .suggested = ([$all[] | select(named | not) | .app] | reduce .[] as $x ([]; if index([$x]) then . else . + [$x] end))
+            | .side = $open[1:] | .suggested = ([$all[] | select((named or ($tied and grounded)) | not) | .app] | reduce .[] as $x ([]; if index([$x]) then . else . + [$x] end))
           end' "$1" > "$TMP/named.json" 2>/dev/null || return 0
     _s=''
     for a in $(jq -r '.suggested // [] | .[]' "$TMP/named.json"); do   # only what naming it would open: an app on the list
@@ -3932,8 +3940,8 @@ desk_replay() {   # desk_replay NAME -> the saved layout rendered for the player
 # carries `screen` and one rule more; rooms are offered the terminal
 # apps only and no screen at all.
 desk_brief() {
-    ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "args": "", "width": 70, "fullscreen": false}, "side": [{"app": "NAME", "args": ""}]}'
-    rule=' main fullscreen is true only when the need says fullscreen or full screen: that window alone fills the screen, and side is then empty.'
+    ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "quote": "the words of the need this window is for", "args": "", "width": 70, "fullscreen": false}, "side": [{"app": "NAME", "quote": "the words of the need this window is for", "args": ""}]}'
+    rule=' Every window carries quote: the words of the need it answers, as they are in the need; a window the need has no words for is not in the layout. main fullscreen is true only when the need says fullscreen or full screen: that window alone fills the screen, and side is then empty.'
     if [ "$PLAYER" = rooms ]; then
         opening="A layout of tmux windows: the apps for one need, each in a terminal window, on a $(tput cols 2>/dev/null || echo 80)x$(tput lines 2>/dev/null || echo 24) terminal."
         apps=$(grep ', terminal$' "$TMP/apps")
@@ -3941,11 +3949,11 @@ desk_brief() {
         opening="A layout: the windows for one need, on $(desk_screens_say)."
         apps=$(cat "$TMP/apps")
         if [ "$(wc -l < "$TMP/screens")" -gt 1 ]; then
-            ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "args": "", "width": 70, "fullscreen": false, "screen": "left"}, "side": [{"app": "NAME", "args": "", "screen": "right"}]}'
+            ex='{"why": "one sentence, from the need to the apps chosen", "main": {"app": "NAME", "quote": "the words of the need this window is for", "args": "", "width": 70, "fullscreen": false, "screen": "left"}, "side": [{"app": "NAME", "quote": "the words of the need this window is for", "args": "", "screen": "right"}]}'
             rule="$rule A window is on one screen; screen is $(cut -d' ' -f3 "$TMP/screens" | desk_said or); one screen unless the need names two or the work needs two."
         fi
     fi
-    echo "$opening Apps on this machine (name: what it does): $(printf '%s\n' "$apps" | sed 's/, terminal$//' | paste -sd ';' - | sed 's/;/; /g'). Rules: an app the need names by name is in the layout; otherwise only the apps the work itself needs, as few windows as that takes (one to four), never an app the need does not call for; an app may appear twice with different args (a browser on two pages: one window per page, args is that page's URL).$rule Answer with one JSON object and nothing else: $ex -- main is the big window at the left, width its percent of the screen; side is the windows stacked at the right, top to bottom."
+    echo "$opening Apps on this machine (name: what it does): $(printf '%s\n' "$apps" | sed 's/, terminal$//' | paste -sd ';' - | sed 's/;/; /g'). Rules: an app the need names by name is in the layout; otherwise only the apps the work itself needs, as few windows as that takes (one to four), never an app the need does not call for (no helper, no shell, no monitor the need did not ask for); an app may appear twice with different args (a browser on two pages: one window per page, args is that page's URL).$rule Answer with one JSON object and nothing else: $ex -- main is the big window at the left, width its percent of the screen; side is the windows stacked at the right, top to bottom."
 }
 
 # The pulse spark draws while a reply is on its way (spark text.Busy):

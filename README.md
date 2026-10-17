@@ -105,11 +105,14 @@ Alt+F2 gives a plain shell with no desktop. ssh never starts it.
 Type `spark-shell layout "read the news and play music"`. spark picks
 apps for that task and opens them: as sway windows on the desktop, or
 as tmux windows anywhere else. Add `--desktop` or `--terminal` to
-choose. Apps your words name are always opened, each once. Other apps
-spark picks are only suggested, and each suggestion is one Enter away
-in the panel, as `layout  also open micro`. If your words name no
-app, spark's picks are opened. Say `fullscreen` and the main window
-fills the screen alone. Say `workspace 3` and the layout opens there.
+choose. Every window spark proposes is tied to words of yours, quoted
+back, and spark-shell checks the quote: `notes and firefox` opens
+Firefox for `firefox` and the editor for `notes`. A window spark can
+tie to none of your words is padding; it does not open, and is one
+Enter away in the panel, as `layout  also open btop`. Apps your words
+name are always opened, each once. Say `fullscreen` and the main
+window fills the screen alone. Say `workspace 3` and the layout opens
+there.
 On the desktop, `Super+d` opens the panel, and the words go at its
 prompt.
 
