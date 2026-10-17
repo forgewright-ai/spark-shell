@@ -310,7 +310,7 @@ else
     sh "$SH" on --yes >/dev/null
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
     grep -q '^client.focused *#ff5555 ' "$sway" && ok "sway: client.focused takes the accent's hex (#ff5555)" || bad "sway focused" "$(grep -n client "$sway")"
-    grep -q "^bindsym \$mod+s exec \$term --app-id spark-panel -W 76x30 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell panel chat\$" "$sway" && ok "sway: the Super+s line names the clone's spark-shell" || bad "sway Super+s render" "$(grep -n 'mod+s ' "$sway")"
+    grep -q "^bindsym \$mod+s exec \$term --app-id spark-panel -W 76x36 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell panel chat\$" "$sway" && ok "sway: the Super+s line names the clone's spark-shell" || bad "sway Super+s render" "$(grep -n 'mod+s ' "$sway")"
     grep -q "^exec sh -c '\$term -e $REPO/spark-shell desktop --first; swaymsg exit'\$" "$sway" && ok "sway: the first window's line names the clone's spark-shell" || bad "sway --first render" "$(grep -n '^exec sh' "$sway")"
     grep -q "^output \* bg \"$REPO/wallpapers/forge-1920x1080.jpg\" fill\$" "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
         && ok "sway: the default background is the forge (wallpapers/forge-1920x1080.jpg), gaps, foot translucent" || bad "sway default bg" "$(grep -n 'output\|gaps' "$sway")"
@@ -655,9 +655,13 @@ case ${1:-} in
             get_workspaces) echo '[{"num":1},{"num":2}]' ;;
             get_tree) ws=$(grep -n '^workspace number' "$log" 2>/dev/null | tail -1); from=${ws%%:*}; num=${ws##* }; [ -n "$from" ] || { from=0; num=3; }
                 n=$({ if [ "$from" -gt 0 ]; then sed "1,${from}d" "$log"; else cat "$log"; fi; } 2>/dev/null | grep '^exec' | grep -vc 'exec gone' || :); [ -n "$n" ] || n=0; i=0
-                printf '{"type":"root","nodes":[{"type":"workspace","num":%s,"nodes":[' "$num"
+                printf '{"type":"root","nodes":[{"type":"workspace","num":%s,"fullscreen_mode":0,"nodes":[' "$num"
+                # with $HOME/fullscreen: a fullscreen window (77) on the workspace, and the panel floating under it with the pid the test wrote
+                [ ! -e "$HOME/fullscreen" ] || { printf '{"type":"con","id":77,"pid":200,"app_id":"firefox","fullscreen_mode":1}'; [ "$n" -eq 0 ] || printf ','; }
                 while [ "$i" -lt "$n" ]; do [ "$i" -eq 0 ] || printf ','; printf '{"type":"con","pid":%d}' $((100 + i)); i=$((i + 1)); done
-                echo ']}]}' ;;
+                printf ']'
+                [ ! -e "$HOME/fullscreen" ] || printf ',"floating_nodes":[{"type":"floating_con","id":78,"app_id":"spark-panel","pid":%s,"fullscreen_mode":0}]' "$(cat "$HOME/panel.ppid" 2>/dev/null || echo 1)"
+                echo '}]}' ;;
         esac ;;
     --) shift; echo "$*" >> "$log" ;;
 esac
@@ -928,7 +932,7 @@ EOF
     printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot are installed and up to date$' && ok "check: the desktop row says installed and up to date" || bad "check desk row" "$out"
     # the rendered sway config: Super+d, the floating prompt, --pending before the first terminal
     sway=$HOME/.config/sway/config
-    grep -qF "bindsym \$mod+d exec \$term --app-id spark-panel -W 76x30 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell panel" "$sway" && ok "sway render: Super+d opens the panel (the clone's spark-shell), 76x30 with air and the surface a shade of black towards the text (no theme: 0f0f0f)" || bad "sway render bind" "$(grep -n 'mod+d' "$sway")"
+    grep -qF "bindsym \$mod+d exec \$term --app-id spark-panel -W 76x36 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell panel" "$sway" && ok "sway render: Super+d opens the panel (the clone's spark-shell), 76x36 with air and the surface a shade of black towards the text (no theme: 0f0f0f)" || bad "sway render bind" "$(grep -n 'mod+d' "$sway")"
     grep -qF 'for_window [app_id="spark-panel"] floating enable, border none, move position center' "$sway" && ok "sway render: the panel floats in the middle, no frame" || bad "sway render for_window" "$(grep -n spark-panel "$sway")"
     l_p=$(grep -nF "exec $REPO/spark-shell desktop --pending" "$sway" | head -1 | cut -d: -f1); l_t=$(grep -n "^exec sh -c '" "$sway" | tail -1 | cut -d: -f1)
     [ -n "$l_p" ] && [ -n "$l_t" ] && [ "$l_p" -lt "$l_t" ] && ok "sway render: desktop --pending runs before the first terminal" || bad "sway render pending" "pending $l_p terminal $l_t"
@@ -2291,7 +2295,7 @@ else
     [ "$(cat "$amlog" 2>/dev/null)" = "$(printf '%s\n' '-c 0 sset Master 60%' '-c 0 sset Master 5%+' '-c 0 sset Master toggle' '-c 0 sset Capture toggle' '-c 0 sset Capture 30%')" ] \
         && ok "clicks: a click at 60% of the gauge sets 60%, the wheel up adds 5, a right click mutes; the mic gauge mutes on a right click and sets 30% on a click" || bad "click actions" "$(cat "$amlog" 2>&1)"
     for _i in 1 2 3 4 5 6; do [ "$(wc -l < "$H/.local/state/foot.log" 2>/dev/null || echo 0)" -ge 2 ] && break; sleep 1; done   # two detached openers write the log
-    [ "$(sort "$H/.local/state/foot.log" 2>/dev/null | grep -v '^--version')" = "$(printf '%s\n' "--app-id spark-panel -W 76x30 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell panel lan | " "--app-id spark-panel -W 76x30 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell panel out | ")" ] \
+    [ "$(sort "$H/.local/state/foot.log" 2>/dev/null | grep -v '^--version')" = "$(printf '%s\n' "--app-id spark-panel -W 76x36 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell panel lan | " "--app-id spark-panel -W 76x36 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell panel out | ")" ] \
         && ok "a click on out or lan opens the panel with that block first, in a foot window; no placement passed" || bad "panel open" "$(cat "$H/.local/state/foot.log" 2>&1); $(cat "$H/bar.err")"
     ! tail -1 "$H/bar.out" | grep -q '192\.0\.2\.' && ok "a click never puts an address in the bar" || bad "address in the bar" "$(tail -1 "$H/bar.out")"
     [ ! -e "$H/.local/state/spark-shell/bar.pid" ] && ok "bar status ended: its pid file is gone" || bad "bar pid file stays"
@@ -2502,7 +2506,64 @@ STUB
     st=0; out=$(SPARK_SHELL_TEST_TTY=1 sh "$SH" panel 2>&1 </dev/null) || st=$?
     [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g" | grep -q "$TICK out muted" && ! printf '%s\n' "$out" | grep -q 'not found' && grep -q "undo.*out unmute	undo all$" "$H/fzf.in.2" && grep -q -- "--highlight-line --pointer  --marker  --padding 0,0,0,2" "$H/fzf.args.2" && grep -qx -- '-c 0 sset Master mute' "$amlog" \
         && ok "the window: Enter on out mute plays the step, the receipt says it with a check, the next list opens with the undo row; Esc ends it" || bad "window pick" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) out=$(printf '%s' "$out" | tr -d '\033' | tr '\n' '|' | tail -c 400) in2=$(grep undo "$H/fzf.in.2" 2>&1)"
+    plain=$(printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g")
+    printf '%s\n' "$plain" | grep -q "^    $(date '+%A %d %B')$" && printf '%s\n' "$plain" | grep -q "$B$B.*      .* Su  Mo  Tu  We  Th  Fr  Sa$" && [ "$(printf '%s\n' "$plain" | grep -c "$B$B")" -ge 10 ] && ! printf '%s\n' "$plain" | grep -q "wifi home $SEP" && ! printf '%s\n' "$plain" | grep -q "^    out     Jabra" \
+        && ok "the window: one view behind every door -- the date, the time in strokes beside this month, no facts line and no title line (the bar has them); drawn again after the pick" || bad "window view" "$(printf '%s' "$plain" | tr '\n' '|' | head -c 600)"
     rm -f "$H/.local/bin/fzf" "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent"
+    # a pick that puts a window on the screen closes the panel: fzf runs once, the receipt is the last thing printed, the app was sent to sway
+    cat > "$H/.local/bin/fzf" <<'STUB'
+#!/bin/sh
+case $1 in --version) echo 0.60.3; exit 0 ;; esac
+n=$(cat "$HOME/fzf.calls" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$HOME/fzf.calls"
+cat > "$HOME/fzf.in.$n"; printf '%s\n' "$*" > "$HOME/fzf.args.$n"
+if [ "$n" -eq 1 ]; then printf '\n  apps    firefox\tapps open firefox\n'; exit 0; else exit 130; fi
+STUB
+    swlog=$H/.local/state/swaymsg.log; chmod +x "$H/.local/bin/fzf"; rm -f "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent" "$swlog"
+    st=0; out=$(SWAYSOCK=/tmp/x SPARK_SHELL_TEST_TTY=1 sh "$SH" panel 2>&1 </dev/null) || st=$?
+    plain=$(printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g" | tr -d '\033' | sed 's/\[2J\[H//')
+    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 1 ] && [ "$(printf '%s\n' "$plain" | grep -v '^ *$' | tail -1)" = "    $TICK opened firefox" ] && grep -q '^exec firefox' "$swlog" \
+        && ok "the window: Enter on an app opens it and the panel closes at once, the receipt its last line (the window is the receipt)" || bad "window app closes" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) out=$(printf '%s' "$plain" | tr '\n' '|' | tail -c 300) sway=$(grep exec "$swlog" 2>&1)"
+    rm -f "$H/.local/bin/fzf" "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent" "$swlog"
+    # a palette picked inside the panel: the next list is drawn with the new palette's shades (the settings read anew), not the ones the panel opened with
+    cat > "$H/.local/bin/fzf" <<'STUB'
+#!/bin/sh
+case $1 in --version) echo 0.60.3; exit 0 ;; esac
+n=$(cat "$HOME/fzf.calls" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$HOME/fzf.calls"
+cat > "$HOME/fzf.in.$n"; printf '%s\n' "$*" > "$HOME/fzf.args.$n"
+if [ "$n" -eq 1 ]; then printf '\n  theme   nord\ttheme nord\n'; exit 0; else exit 130; fi
+STUB
+    chmod +x "$H/.local/bin/fzf"; rm -f "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent"
+    st=0; out=$(SPARK_SHELL_TEST_TTY=1 sh "$SH" panel 2>&1 </dev/null) || st=$?
+    plain=$(printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g")
+    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && printf '%s\n' "$plain" | grep -q "$TICK theme nord" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" && grep -q 'bg+:#4c525e,hl:#88c0d0' "$H/fzf.args.2" && ! grep -q 'bg+:#4c525e' "$H/fzf.args.1" && grep -q "undo.*theme none	undo all$" "$H/fzf.in.2" \
+        && ok "the window: a palette picked is read anew -- the next list is lit and marked in nord's shades (bg+ a fifth of the way to the text, hl the accent), the undo row goes back to none" || bad "window theme reload" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) a1=$(grep -o 'color=[^ ]*' "$H/fzf.args.1" 2>&1) a2=$(grep -o 'color=[^ ]*' "$H/fzf.args.2" 2>&1) out=$(printf '%s' "$plain" | tr '\n' '|' | tail -c 200)"
+    sh "$SH" theme none >/dev/null 2>&1 || true; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"   # as before the pick
+    rm -f "$H/.local/bin/fzf" "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent"
+    # a window fullscreen on the workspace steps aside for the panel, which is focused over it; Esc puts it back. The panel's parent pid is written for the stub's tree
+    cat > "$H/.local/bin/fzf" <<'STUB'
+#!/bin/sh
+case $1 in --version) echo 0.60.3; exit 0 ;; esac
+n=$(cat "$HOME/fzf.calls" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$HOME/fzf.calls"
+cat > "$HOME/fzf.in.$n"; printf '%s\n' "$*" > "$HOME/fzf.args.$n"
+if [ "$n" -eq 1 ]; then printf '\n  out     mute\tout mute\n'; exit 0; else exit 130; fi
+STUB
+    chmod +x "$H/.local/bin/fzf"; : > "$H/fullscreen"; rm -f "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent" "$swlog" "$amlog"
+    mkdir -p "$H/ft"; ln -sf "$(command -v sh)" "$H/ft/foot"   # the panel's parent must be a foot: a shell by that name stands in, and writes its pid for the stub's tree
+    out=$(SWAYSOCK=/tmp/x SPARK_SHELL_TEST_TTY=1 "$H/ft/foot" -c 'echo $$ > "$HOME/panel.ppid"; sh "$1" panel 2>&1 </dev/null; echo "exit $?"' foot "$SH"); st=${out##*exit }
+    [ "$st" = 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && [ "$(grep 'fullscreen\|focus' "$swlog" | tr '\n' '|')" = '[con_id=77] fullscreen disable|[app_id=spark-panel] focus|[con_id=77] fullscreen enable|' ] && grep -qx -- '-c 0 sset Master mute' "$amlog" \
+        && ok "the window under a fullscreen one: the window steps aside and the panel is focused over it; after the pick and Esc it is fullscreen again" || bad "window fullscreen" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) sway=$(tr '\n' '|' < "$swlog" 2>&1) out=$(printf '%s' "$out" | tr -d '\033' | tr '\n' '|' | tail -c 200)"
+    cat > "$H/.local/bin/fzf" <<'STUB'
+#!/bin/sh
+case $1 in --version) echo 0.60.3; exit 0 ;; esac
+n=$(cat "$HOME/fzf.calls" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$HOME/fzf.calls"
+cat > "$HOME/fzf.in.$n"; printf '%s\n' "$*" > "$HOME/fzf.args.$n"
+if [ "$n" -eq 1 ]; then printf '\n  apps    firefox\tapps open firefox\n'; exit 0; else exit 130; fi
+STUB
+    chmod +x "$H/.local/bin/fzf"; rm -f "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent" "$swlog"
+    out=$(SWAYSOCK=/tmp/x SPARK_SHELL_TEST_TTY=1 "$H/ft/foot" -c 'echo $$ > "$HOME/panel.ppid"; sh "$1" panel 2>&1 </dev/null; echo "exit $?"' foot "$SH"); st=${out##*exit }
+    [ "$st" = 0 ] && [ "$(cat "$H/fzf.calls")" = 1 ] && grep -q '^\[con_id=77\] fullscreen disable$' "$swlog" && grep -q '^exec firefox' "$swlog" && ! grep -q 'fullscreen enable' "$swlog" \
+        && ok "the window under a fullscreen one, an app picked: the panel closes and the window stays as it is, the app has the screen" || bad "window fullscreen app" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) sway=$(tr '\n' '|' < "$swlog" 2>&1)"
+    rm -rf "$H/fullscreen" "$H/panel.ppid" "$H/ft" "$H/.local/bin/fzf" "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent" "$swlog"
     rm -f "$H/.local/bin/spark"
     rm -f "$H/.local/bin/amixer" "$P/asound/cards"
     out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^warn   sound        no audio system found, so no out or mic block -- install pipewire, or alsa-utils for plain ALSA$' \

@@ -203,12 +203,16 @@ windows behind it, with air around its text and no frame. Super+d
 opens it. Super+s opens it already in spark chat, on the same
 surface. A click on a bar block opens it with that block first. Esc
 closes it, and so does the key that opened it, pressed again. It
-stays while the mouse moves.
+stays while the mouse moves. A pick that opens an app or a layout
+closes it: the window is the receipt. A window that is fullscreen
+steps aside for the panel and is fullscreen again when the panel
+closes with nothing opened.
 
-The first lines are the glance: after Super+d the date, the time at
-the right edge, the bar's facts in words under them, and an alarm on
-its own line when there is one; after a click on `wifi`, the network,
-its strength as bars and the address. Then one list of everything
+The first lines are the same behind every door: the date, the time
+large in strokes two cells wide, this month beside it with today a
+chip in the accent, and an alarm in red under them when there is
+one. The facts are on the bar. The time keeps the minute while the
+panel is open. Then one list of everything
 this machine can do right now, in sections ordered by use: `spark`,
 `layout`, `out`, `mic`, `theme`, `bt`, `apps`, `wifi`. The section
 you came from is on top. Every row names its section in a column of
@@ -224,9 +228,8 @@ that opens the rest: `wifi` the network in use, the saved ones and
 the strongest three, then `12 more`; `theme` the palettes and the
 font, then `wallpaper and alpha`. `lan` and `bat` have nothing to
 set: a click on one shows the address, speed and gateway; the charge,
-the time left and the health. A click on the clock shows the time
-large, in strokes two cells wide, beside this month, today a chip in
-the accent.
+the time left and the health. A click on the clock opens the panel as
+Super+d does.
 
 The window draws at once from what costs nothing to know. The Wi-Fi
 scan and the Bluetooth list take a moment, so they keep their last
@@ -252,7 +255,8 @@ done, a cross one refused.
   new one, turn Bluetooth off and on.
 - `out` and `mic`: use another device, mute and unmute.
 - `theme`: a palette, the font bigger or smaller, a wallpaper, alpha.
-  A pick applies now. New windows take a font change.
+  A pick applies now, the panel included. New windows take a font
+  change.
 - `apps`: a row per app a layout may open, and Enter opens it on this
   workspace, the way its desktop entry says. The last row chooses the
   allowed apps, in the same window.
@@ -270,8 +274,8 @@ the palette; a layout with Firefox; the HDMI output, a dark palette
 and a layout with mpv; connect the headset and move the sound to it.
 spark-shell checks every step against the list, plays it and says
 what it did, one short line each. A layout step opens its windows,
-and the panel follows them. A question is answered in the same
-place, in a sentence or two: `what is my address`. Words that are no
+and the panel closes. A question is answered in the same place, in
+a sentence or two: `what is my address`. Words that are no
 question and match no step are a task, and a layout opens for them.
 The same words work from a shell: `spark-shell panel "mute
 everything"`.

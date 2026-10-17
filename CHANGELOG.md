@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.56
+
+- Changed: one view behind every door. The panel opens on the date,
+  the time large beside this month, and an alarm in red when there is
+  one; the facts stay on the bar, and a block's title line is gone
+  from the window. The window is 76 by 36 cells, so the list keeps
+  its rows. The time keeps the minute while the panel is open. A
+  click on the clock opens the same view.
+- Changed: a pick that opens an app or a layout closes the panel. The
+  window is the receipt. A pick that could not open stays, with why.
+- Changed: with the focused window fullscreen, Super+d still shows the
+  panel: the window steps aside, and is fullscreen again when the
+  panel closes with nothing opened.
+- Fixed: a palette or a font picked in the panel was drawn with the
+  shades the panel opened with, and the facts named the old palette.
+  The panel reads its settings again after every pick and paints its
+  own window.
+- Fixed: the window left its temporary files behind on every run.
+
 ## v0.55
 
 - Changed: the panel is a surface, not a framed window. Its background

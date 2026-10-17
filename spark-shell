@@ -2262,7 +2262,7 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | volu
 
 # --- the signs and the sizes
 PANEL_APP='spark-panel'               # the window's app id (the sway template floats and centres it)
-PANEL_SIZE=76x30                      # columns x rows of the window
+PANEL_SIZE=76x36                      # columns x rows of the window: the clock and the month, a list of twenty rows, the hint and the prompt
 PANEL_COL=6                           # the section column: as wide as the longest section's name
 PANEL_IN=4                            # the glance's indent: the section column, where every row's text begins
 panel_col() { printf "%-${PANEL_COL}s  " "$1"; }   # panel_col SECTION -> the name in its column, two cells before the text
@@ -2548,7 +2548,7 @@ snd_use() {   # snd_use out|mic NAME -> one line; on plain ALSA the output's car
 # MARK<tab>TEXT<tab>ACTION [ARG]: the mark a sign or -, a look-only row
 # carries `show`. Not every row of a long section shows when it is not
 # the one that opened the panel: a `more` row opens it in full.
-panel_title() {   # panel_title SECTION -> the line(s) that say what opened the panel, the section in its column; `glance` is the date and time, the facts, an alarm line when there is one
+panel_title() {   # panel_title SECTION -> the line(s) that say what opened the panel, as text, the section in its column; `glance` is the date and time, the facts, an alarm line when there is one
     case $1 in
         lan) _l=$(bar_lan); case $_l in up*) echo "$(panel_col lan)up $PANEL_SEP ${_l#up }" ;; down) echo "$(panel_col lan)$PANEL_WARN down: no carrier on the wire" ;; *) echo "$(panel_col lan)no wire" ;; esac ;;
         wifi) _t=$(wifi_tool); _c=$(wifi_connected); _w=$(bar_wifi)
@@ -2578,21 +2578,13 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
             _a=$(panel_alarms); [ -z "$_a" ] || echo "$_a" ;;
     esac
 }
-panel_glance_line() {   # panel_glance_line [WIDTH] -> the date and the time: beside each other on a pipe; the time at the right edge of WIDTH, in the accent, in the window
-    _d=$(date '+%A %d %B'); _t=$(date '+%H:%M')
-    if [ -n "${1:-}" ] && [ "$1" -gt $(( ${#_d} + ${#_t} + 3 )) ] 2>/dev/null; then printf '%s%*s%s%s%s\n' "$_d" $(( $1 - ${#_d} - ${#_t} )) '' "${PANEL_MARK:-}" "$_t" "${PANEL_UNMARK:-}"
-    else echo "$_d $PANEL_SEP $_t"; fi
+panel_glance_line() { echo "$(date '+%A %d %B') $PANEL_SEP $(date '+%H:%M')"; }   # -> the date and the time on a pipe (the window draws the clock instead)
+panel_glance() {   # panel_glance WIDTH -> the lines over the list in the window, the same behind every door: the date, the clock beside the month, an alarm in red under them when there is one (the facts are on the bar)
+    date '+%A %d %B'; echo
+    clock_view "$PANEL_MARK" "$PANEL_UNMARK"
+    _a=$(panel_alarms); [ -z "$_a" ] || { echo; printf '%s\n' "$_a" | fold -s -w "$1" | sed "s/.*/$PANEL_RED&$PANEL_UNMARK/"; }
 }
-panel_glance() {   # panel_glance SECTION WIDTH -> the lines over the list in the window, folded at a word and coloured: the section in the accent, the facts muted, an alarm red; the clock's view under its date
-    case $1 in
-        glance) panel_glance_line "$2"
-            _f=$(panel_facts_short); [ -z "$_f" ] || printf '%s\n' "$_f" | fold -s -w "$2" | sed "s/.*/$PANEL_DIM&$PANEL_UNMARK/"
-            _a=$(panel_alarms); [ -z "$_a" ] || printf '%s\n' "$_a" | fold -s -w "$2" | sed "s/.*/$PANEL_RED&$PANEL_UNMARK/" ;;
-        clock) panel_title clock; echo; clock_view "$PANEL_MARK" "$PANEL_UNMARK" ;;
-        *) panel_title "$1" | fold -s -w "$2" | sed "1s/^\([a-z]*\)\(  *\)/$PANEL_MARK\1$PANEL_UNMARK\2/" ;;
-    esac
-}
-panel_facts_short() {   # -> the bar's facts in a few words each, one line (the glance's second line)
+panel_facts_short() {   # -> the bar's facts in a few words each, one line (the second line of the list as text: on a pipe there is no bar to read them from)
     _s=''
     for p in $(panel_blocks_here); do
         case $p in
@@ -2786,8 +2778,13 @@ panel_app_open() {   # panel_app_open NAME -> the app opens on the current works
     ( [ "$OS" = Darwin ] || pm_detect; desk_apps '' ) > "$TMP/apps" 2>/dev/null
     _n=$(sed -n "s/^\($(printf '%s' "$1" | sed 's/[.[\*^$]/\\&/g')\): .*/\1/Ip" "$TMP/apps" | head -1); [ -n "$_n" ] || { echo "no app named $1 here"; return 1; }
     _l=$(desk_launch "$_n" ''); ! desk_app_term "$_n" || _l="foot -e $_l"
-    swaymsg -- exec "$_l" >/dev/null 2>&1 && echo "opened $_n" || { echo "could not open $_n"; return 1; }
+    _before=$(desk_windows_all)
+    swaymsg -- exec "$_l" >/dev/null 2>&1 || { echo "could not open $_n"; return 1; }
+    _t=0; while [ "$(desk_windows_all)" -le "$_before" ] && [ "$_t" -lt $((DESK_WAIT * 4)) ]; do sleep 0.25; _t=$((_t + 1)); done   # until its window maps and takes the focus; then the panel may go
+    [ "$(desk_windows_all)" -gt "$_before" ] || { echo "$_n opened no window"; return 1; }
+    : > "$TMP/opened"; echo "opened $_n"   # the mark the panel's window reads: it closes, the app has the screen
 }
+desk_windows_all() { swaymsg -t get_tree 2>/dev/null | jq '[.. | objects | select(.pid? != null)] | length' 2>/dev/null || echo 0; }   # -> how many windows sway shows, on every workspace
 panel_layout_save() {   # panel_layout_save NAME -> what is open on the focused workspace, saved as a layout under NAME
     desk_in_sway || { echo "saving what is open needs the desktop"; return 1; }
     [ -n "$1" ] || { echo "a name for it"; return 1; }
@@ -3010,7 +3007,36 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 }
 
 # --- the window: centred by the sway template, closed by Esc or by its key again
-panel_quit() { kill "${FZF:-}" 2>/dev/null || :; panel_pulse_kill; stty echo 2>/dev/null || :; }
+panel_quit() { kill "${FZF:-}" 2>/dev/null || :; panel_tick_stop; panel_pulse_kill; stty echo 2>/dev/null || :; }
+panel_tick_start() {   # panel_tick_start ROW -- the time's five rows drawn again at ROW as each minute turns, the cursor put back, until panel_tick_stop; silent on a pipe
+    [ -t 1 ] || return 0
+    _row=$1
+    ( while :; do
+        _s=$(date +%S); _s=${_s#0}; sleep $((60 - ${_s:-0}))
+        _r=$_row; clock_rows | while IFS= read -r _l; do printf '\0337\033[%s;%sH%s%s%s\0338' "$_r" "$((PANEL_IN + 1))" "$PANEL_MARK" "$_l" "$PANEL_UNMARK"; _r=$((_r + 1)); done
+      done ) &
+    TICK=$!
+}
+panel_tick_stop() { [ -z "${TICK:-}" ] || { kill "$TICK" 2>/dev/null || :; wait "$TICK" 2>/dev/null || :; TICK=''; }; }
+panel_full_aside() {   # a window fullscreen on the panel's workspace steps aside, and the panel is focused over it (sway draws nothing but a dialog over a fullscreen window); FULL_ID remembers it for panel_full_back
+    FULL_ID=$(swaymsg -t get_tree 2>/dev/null | jq -r --argjson p "$PPID" '[.. | objects | select(.type? == "workspace") | select([.. | objects | select(.pid? == $p)] | length > 0) | .. | objects | select((.type? == "con" or .type? == "floating_con") and (.fullscreen_mode? // 0) > 0 and .pid? != $p) | .id] | first // empty' 2>/dev/null)   # a window or a container, never the workspace (it says fullscreen too)
+    [ -n "$FULL_ID" ] || return 0
+    swaymsg -- "[con_id=$FULL_ID] fullscreen disable" >/dev/null 2>&1 || { FULL_ID=''; return 0; }
+    swaymsg -- "[app_id=$PANEL_APP] focus" >/dev/null 2>&1 || :
+}
+panel_full_back() {   # the window that stepped aside is fullscreen again, unless a pick put a window on the screen
+    [ -n "${FULL_ID:-}" ] && [ ! -f "$TMP/opened" ] || return 0
+    swaymsg -- "[con_id=$FULL_ID] fullscreen enable" >/dev/null 2>&1 || :
+}
+panel_reload() {   # the settings again, as a pick may have changed them (a palette, the font): the config, the palette's hex, the panel's shades and signs
+    config_load
+    for _k in $THEME_KEYS; do unset "$_k"; done   # a palette gone (theme none) leaves no file to read: the defaults again, not the old one
+    theme_load; panel_colours
+}
+panel_paint() {   # the panel's own window takes the palette and the surface as the settings say now: a theme step repaints every terminal flat, this one included
+    ! osc_render "${THEME:-none}" || cat "$TMP/osc"
+    printf '\033]11;#%s\033\\' "$PANEL_BG"
+}
 panel_pulse_kill() { [ -f "$TMP/pulse.pid" ] && kill "$(cat "$TMP/pulse.pid")" 2>/dev/null; rm -f "$TMP/pulse.pid"; :; }   # a march left by a list that fzf stopped reading
 panel_chat_why() {   # -> why there is no chat here, or nothing
     [ -n "$(spark_bin)" ] || echo "spark is not installed, so there is no chat (github.com/forgewright-ai/spark)"
@@ -3056,9 +3082,16 @@ panel_run() {   # panel_run KIND CMD... -> CMD's lines as they land under the gl
     fi
     wait "$_w"
 }
-panel_own_window() {   # the terminal is the panel's own window: foot under a running sway, with the panel's app id
+panel_own_window() {   # the terminal is the panel's own window: foot is our parent, under a running sway, and its window carries the panel's app id
     [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 1
-    [ "$(swaymsg -t get_tree 2>/dev/null | jq -r --argjson p "$PPID" '[.. | objects | select(.pid? == $p) | .app_id // empty] | first // empty' 2>/dev/null)" = "$PANEL_APP" ]
+    _c=$(cat "/proc/$PPID/comm" 2>/dev/null || ps -o comm= -p "$PPID" 2>/dev/null); [ "${_c##*/}" = foot ] || return 1
+    _i=0
+    while :; do   # foot maps its window a moment after it starts us: up to a second for the tree to show it
+        _a=$(swaymsg -t get_tree 2>/dev/null | jq -r --argjson p "$PPID" '[.. | objects | select(.pid? == $p) | .app_id // empty] | first // empty' 2>/dev/null)
+        [ -z "$_a" ] && [ "$_i" -lt 10 ] || break
+        sleep 0.1; _i=$((_i + 1))
+    done
+    [ "$_a" = "$PANEL_APP" ]
 }
 panel_fzf_new() { fzf --version 2>/dev/null | awk '{ split($1, v, "."); exit !(v[1] > 0 || v[2] >= 54) }'; }   # fzf 0.54 or newer: the picked row lit across, no pointer cell
 panel_fzf() {   # panel_fzf HEIGHT -- the list, the hint and the prompt in HEIGHT rows: the rows in from the edge, the picked row lit across the window, the prompt at the foot; stdin the rows, stdout the query and the pick
@@ -3069,20 +3102,20 @@ panel_fzf() {   # panel_fzf HEIGHT -- the list, the hint and the prompt in HEIGH
     fzf --delimiter "$TAB" --with-nth 1 --print-query --exact --ansi --layout=reverse-list --no-info --no-separator --color="$_c" \
         --prompt "$PANEL_PROMPT " --header "$(printf ' \n%s' "$(panel_hint)")" --height="$_h" "$@"
 }
-panel_loop() {   # panel_loop SECTION -- the window: the glance, the receipt, the list streamed into fzf under the hint and the prompt; a pick or words, then again
+panel_loop() {   # panel_loop SECTION -- the window: the glance, the receipt, the list streamed into fzf under the hint and the prompt; a pick or words, then again with the settings read anew; gone once a pick put a window on the screen
     panel_colours
     ASKED=1; export ASKED   # a layout asked here: its window follows the layout, and the layout> line is not repeated
-    FZF=''; PULSE=''
-    trap 'panel_quit' EXIT
-    trap 'kill "${FZF:-}" 2>/dev/null || :; exit 0' TERM INT HUP
-    what=$1; said=''; own=''; ! panel_own_window || own=yes
-    cols=$(tput cols 2>/dev/null || echo 76); [ "$cols" -ge 24 ] 2>/dev/null || cols=76
-    lines=$(tput lines 2>/dev/null || echo 30); [ "$lines" -ge 12 ] 2>/dev/null || lines=30
-    width=$((cols - PANEL_IN)); PULSE_COL=$((PANEL_IN + 1))   # the text's width, and the column the march draws at
+    FZF=''; PULSE=''; TICK=''; FULL_ID=''
+    trap 'panel_quit; panel_full_back; rm -rf "$TMP"' EXIT
+    trap 'trap "" TERM INT HUP; kill "${FZF:-}" 2>/dev/null || :; exit 0' TERM INT HUP   # the window closed under us: one signal is enough, a second must not cut the leaving short
+    what=$1; said=''; own=''; ! panel_own_window || { own=yes; panel_full_aside; }
     while :; do
-        [ -z "$own" ] || printf '\033]11;#%s\033\\' "$PANEL_BG"   # the surface again: a theme step repaints every terminal, this one included
+        cols=$(tput cols 2>/dev/null || echo 76); [ "$cols" -ge 24 ] 2>/dev/null || cols=76   # read each time: a font step changes the cells
+        lines=$(tput lines 2>/dev/null || echo 36); [ "$lines" -ge 12 ] 2>/dev/null || lines=36
+        width=$((cols - PANEL_IN)); PULSE_COL=$((PANEL_IN + 1))   # the text's width, and the column the march draws at
+        [ -z "$own" ] || panel_paint
         printf '\033[2J\033[H\n'   # a row of air on top, as at the sides
-        panel_glance "$what" "$width" > "$TMP/glance"; panel_indent < "$TMP/glance"
+        panel_glance "$width" > "$TMP/glance"; panel_indent < "$TMP/glance"
         n=$(( $(grep -c '' "$TMP/glance" || :) + 1 ))
         if [ -n "$said" ]; then   # the receipt: what the last pick or want did, a blank over it
             echo; printf '%s\n' "$said" | fold -s -w "$width" > "$TMP/receipt"
@@ -3092,11 +3125,13 @@ panel_loop() {   # panel_loop SECTION -- the window: the glance, the receipt, th
         status_row=$((n + 1)); echo   # the status row: the march while something looks around
         panel_warm "$what" "$status_row"
         h=$((lines - n - 2)); [ "$h" -ge 6 ] || h=6   # the list fills the rest, the hint and the prompt at the foot, a row of air under them
+        panel_tick_start $(( $(grep -nF "$BAR_FULL" "$TMP/glance" | head -1 | cut -d: -f1) + 1 ))   # the time's first row: the glance's first row with a stroke, under the air
         panel_stream_live "$what" "$status_row" | panel_fzf "$h" > "$TMP/sel" 2>/dev/null & FZF=$!
         st=0; wait "$FZF" || st=$?
-        FZF=''; panel_pulse_kill
+        FZF=''; panel_tick_stop; panel_pulse_kill
         [ "$st" -lt 128 ] || break   # Esc, Ctrl-C, or the window was closed
         q=$(sed -n 1p "$TMP/sel"); s=$(sed -n 2p "$TMP/sel")
+        rm -f "$TMP/opened"
         if [ -n "$s" ]; then
             # shellcheck disable=SC2086   # the row's SECTION ACTION ARG, split on purpose
             set -- ${s#*"$TAB"}; pg=$1; a=$2; shift 2
@@ -3113,6 +3148,11 @@ panel_loop() {   # panel_loop SECTION -- the window: the glance, the receipt, th
             esac
         elif [ -n "$q" ]; then panel_group_begin; panel_run think want_play "$q" || :; panel_group_end; said=$(cat "$TMP/run.out")   # words that matched no row: a want
         fi
+        if [ -f "$TMP/opened" ]; then   # an app or a layout came up for it: the window is the receipt, and the panel is out of its way
+            printf '\033[2J\033[H\n'; printf '%s\n' "$said" | while IFS= read -r _r; do panel_line_sign "$_r"; echo; done | panel_indent
+            break
+        fi
+        panel_reload
     done
 }
 panel_hint() { printf 'Pick an option, or say what you would like.'; }   # the one line under the list
@@ -3924,13 +3964,14 @@ desk_show() {   # desk_show WHOSE -- the rendered desk played, then the closing 
         echo "tmux session $name -- $1"
         if desk_in_sway; then   # asked inside the desktop with --terminal: the session in a foot window of its own
             _w=$(desk_next_ws); printf 'workspace number %s\nrename workspace to "%s %s"\nexec foot -e tmux attach-session -t =%s\n' "$_w" "$_w" "$(desk_ws_label "$name")" "$name" > "$TMP/desk.win"
-            KEPT=1 desk_play "$TMP/desk.win" >/dev/null || true
+            KEPT=1 desk_play "$TMP/desk.win" >/dev/null || true; : > "$TMP/opened"
         else desk_join "$name"; fi
         return
     fi
     # asked at the prompt: its window goes with the desk, on top, to be read
     [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=$PANEL_APP] move container to workspace number $ws" >/dev/null 2>&1 || true
     desk_play "$TMP/desk" || refuse "nothing ran"
+    : > "$TMP/opened"   # the mark the panel's window reads: it closes, the layout has the screen
     echo "on workspace $(desk_ws_said "$TMP/desk")${1:+ -- $1}"
     [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=$PANEL_APP] focus" >/dev/null 2>&1 || true   # the panel's keys are ours, not the app's
 }
