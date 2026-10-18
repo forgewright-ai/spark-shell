@@ -63,7 +63,8 @@ Without it there are no layouts, no spark chat and no status line.
     spark-shell want --json "WORDS"   the steps spark picks, as JSON; none run
     spark-shell want --attach FILE "WORDS"
                                       ask about a text file (txt md)
-    spark-shell provide SECTION       a panel section as an MCP server on stdio
+    spark-shell dialog [SECTION]      open the dialog (Super+d), SECTION first
+    spark-shell provide SECTION       a dialog section as an MCP server on stdio
     spark-shell sbom [NAME]           list the installed software, or one
     spark-shell sbom --json           write the list as a CycloneDX 1.5 file
 
@@ -119,11 +120,11 @@ choose. Every window spark proposes is tied to words of yours, quoted
 back, and spark-shell checks the quote: `notes and firefox` opens
 Firefox for `firefox` and the editor for `notes`. A window spark can
 tie to none of your words is padding; it does not open, and is one
-Enter away in the panel, as `layout  also open btop`. Apps your words
+Enter away in the dialog, as `layout  also open btop`. Apps your words
 name are always opened, each once. Say `fullscreen` and the main
 window fills the screen alone. Say `workspace 3` and the layout opens
 there.
-On the desktop, `Super+d` opens the panel, and the words go at its
+On the desktop, `Super+d` opens the dialog, and the words go at its
 prompt.
 
 `spark-shell layout save writing` saves the last layout, and
@@ -142,20 +143,21 @@ no list, any app with a desktop entry is allowed.
 ## Keys
 
 Type `spark-shell desktop keys`. You get these lines. The first
-desktop start shows them in the splash, and the panel's `about` row
-shows it again.
+desktop start shows them in the about dialog, and the dialog's `about`
+row shows them again.
 
     Super+Return opens a terminal window.
-    Super+d opens the panel: pick an option, or say what you would like.
-    Super+s opens spark chat in the panel's window, and Ctrl-D closes it.
+    Super+d opens the dialog: pick an option, or say what you would like.
+    Super+s opens the dialog in spark chat, and Ctrl-D closes it.
     Super+Shift+q closes the window.
     Super+Shift+c reloads sway after spark-shell on.
     Super+Shift+e leaves the desktop.
-    Super+h, j, k, l or an arrow moves the focus. Shift moves the window.
-    Super+f makes a window fill the screen, and Super+r resizes until Enter.
+    Super+arrow moves the focus, as h, j, k, l do; Shift moves the window.
+    Super+f makes a window fill the screen.
+    Super+r resizes the window, until Enter.
     Super+w makes tabs, Super+Shift+s a stack, Super+e side by side again.
-    Super+b and Super+v put the next window beside this one, or below it.
-    Super+1 to 0 go to a workspace. Add Shift to send the window there.
+    Super+b puts the next window beside this one, and Super+v below it.
+    Super+1..0 go to workspaces 1 to 10; with Shift the window goes there.
     The volume and mute keys set the sound, and the mic mute key the mic.
     Typing exit in the first window also leaves the desktop.
 
@@ -175,7 +177,7 @@ it stays the same when you change the palette. Give `#rrggbb`, or one
 of these names: black, white, gray, grey, silver, navy, blue, teal,
 green, olive, maroon, red, purple, brown, orange. The ground, a
 picture and a colour are drawn the same way: gaps around the windows,
-and the terminals a little see-through. The panel's `theme` section
+and the terminals a little see-through. The dialog's `theme` section
 sets how much.
 
 ## Bar
@@ -186,7 +188,7 @@ words, so `2 news` reads from a distance. On the right, in groups
 parted by a thin line: `lan`, `wifi` and `bt`; `out` and `mic`, each
 with its gauge; `bat`; the date and time; and last, spark-shell's own
 sign, the prompt sign in the palette's yellow. The palette has no
-block: it is picked in the panel, where a click on any block leads.
+block: it is picked in the dialog, where a click on any block leads.
 
 A block appears only for hardware this machine has. No battery, no
 `bat`. The kind word is muted and the name is in the text colour, as
@@ -199,9 +201,9 @@ the level where you clicked, the wheel nudges it by 5, and a right
 click mutes. The volume keys do the same for `out`, and the mic mute
 key for `mic`.
 
-A click on any other block opens the panel with that block first.
+A click on any other block opens the dialog with that block first.
 The sign at the end opens it as Super+d does.
-The signs the bar wears are the panel's: a dot before a connected
+The signs the bar wears are the dialog's: a dot before a connected
 device, a warning sign with a red `lan down` or a low battery, a red
 dot after `mic` while a program records.
 
@@ -217,120 +219,87 @@ it back. Type `spark-shell bar`. You get the state of this bar and of
 the status line in tmux; `--terminal` or `--desktop` names one. The
 AI and the machine stay on the status line inside each window.
 
-## Panel
+## Dialog
 
-The panel is one window, the same size and place every time, in the
-middle of the screen: a plain surface a shade lighter than the
-windows behind it, with air around its text and no frame. Super+d
-opens it. Super+s opens it already in spark chat, on the same
-surface. A click on a bar block opens it with that block first. Esc
+The dialog is one window in the middle of the screen, 60 by 44 cells:
+a plain surface a shade lighter than the windows behind it, with air
+around its text and no frame. Super+d opens it. Super+s opens it in
+spark chat. A click on a bar block opens it with that block first. Esc
 closes it, and so does the key that opened it, pressed again, and so
-does a click on the sign in its top right corner. It stays while the
-mouse moves. A pick that opens an app or a layout
-closes it: the window is the receipt. A window that is fullscreen
-steps aside for the panel and is fullscreen again when the panel
-closes with nothing opened.
+does a click on the x in its top right corner. A pick that opens an
+app or a layout closes it: the window is the receipt. A window that is
+fullscreen steps aside for the dialog and is fullscreen again when the
+dialog closes with nothing opened.
 
-The first lines are the same behind every door: the date, the time
-large in strokes two cells wide, this month beside it with today a
-chip in the accent, and an alarm in red under them when there is
-one. The facts are on the bar. The time keeps the minute while the
-panel is open. Then one list of everything this machine can do right
-now, in sections ordered by use: `spark`, `layout`, `out`, `mic`,
+The top row says where you are: the date and the time on the home
+dialog, a section's name and its state on its own, and a small march
+at the right while a step runs. Under it, what this machine can do
+right now, in sections ordered by use: `layout`, `out`, `mic`,
 `theme`, `window`, `bar`, `bt`, `apps`, `wifi`, `about`. The section
-you came from is on top. Every row names its section in a column of its own,
-muted, then the thing, with a sign in front where there is a
-state: a dot is in use or connected, a ring is available, a check is
-current or saved, a small triangle opens something. The picked row is
-lit across the window. The sign says
-what Enter does: a ring before a network connects it, a dot before
-it disconnects, a ring before an output switches to it. Where there
-is no thing to point at, the row says the verb: `forget cafe`,
-`mute`, `font bigger`. A long section shows what matters and one row
-that opens the rest: `wifi` the network in use, the saved ones and
-the strongest three, then `12 more`; `theme` the palettes and the
-font, then `wallpaper and alpha`. `lan` and `bat` have nothing to
-set: a click on one shows the address, speed and gateway; the charge,
-the time left and the health. A click on the clock opens the panel as
-Super+d does.
+you came from is on top, the rows you picked most recently come first,
+and the `undo` row takes the last step back. A row wears a sign where
+there is a state: a dot is in use or connected, a ring is available, a
+check is current or saved, a small triangle opens something. A row
+that ends in a small arrow opens its section in full.
 
-The window draws at once from what costs nothing to know. The Wi-Fi
-scan and the Bluetooth list take a moment, so they keep their last
-answer, for a minute and for half a minute, and fill the list in
-place while a small march in the top right corner of the window says
-the panel is looking. A pick, a want or a layout shows its pulse in
-the same corner, with the seconds from two, and each line of what was
-done as it lands under the clock. A check is a step done, a cross one
-refused. The window keeps two fixed places: that corner, and the
-bottom, where the hint and the prompt are.
-
-- `undo`: one row, there while the last thing done can be taken back,
-  as `undo  theme everforest-dark, out unmute`. Enter puts it back.
-  The panel reads the state before each step, so the undo is exact.
-- The rows you picked most recently come next, in that order, while
-  they can still be picked.
-- `spark`: one row, `chat`. Enter opens spark chat in this window,
-  and Ctrl-D brings the desktop back. The newest conversation goes on.
 - `layout`: a saved layout opens on Enter. Words at the prompt make a
-  new one. `save what is open now` turns the windows on this
-  workspace into a layout, under a name you type.
-- `wifi`: disconnect the network in use; connect one around, strongest
-  first, and a new network asks its password once; forget a saved one.
+  new one. `save what is open now` asks a name for it.
+- `wifi`: disconnect the network in use; connect one around, and a new
+  network asks its password once, masked; forget a saved one.
 - `bt`: connect or disconnect your devices, look for new ones, pair a
   new one, turn Bluetooth off and on.
 - `out` and `mic`: use another device, mute and unmute.
-- `theme`: one row in the list, the palette and the font size. Enter
-  opens the section: a palette, the font bigger or smaller, a
-  wallpaper, and how see-through the windows are, more or less. A pick
-  applies now, the panel included. New windows take a font change.
-- `window`: how new windows sit on a workspace, side by side, in tabs
-  or stacked. A pick sets this workspace now and is remembered for new
-  ones, reboots included. Typing an open window's name finds two more
-  rows: Enter puts it in front, and `close NAME` closes it. A terminal
-  window goes by what runs in it, as `aerc`. Words about closing never
-  open an app.
+- `theme`: the palette, the font bigger or smaller, a wallpaper, and
+  how see-through the windows are.
+- `window`: the windows open now, in front or closed, and how new
+  windows sit on a workspace: side by side, in tabs or stacked.
 - `bar`: hide the bar at the top of the screen, or show it again.
-  Super+d opens the panel either way. Remembered too.
-- `apps`: a terminal window, then a row per app a layout may open, and
-  Enter opens it on this workspace, the way its desktop entry says.
-  The last row chooses the allowed apps, in the same window.
-- `about`: one row, spark-shell and its version. Enter shows the
-  splash in this window: the logo, the keys, the licence and the
-  address. It opens by itself the first time the desktop starts, and
-  Esc gives the list back.
+- `apps`: a terminal window, then a row per app a layout may open.
+- `about`: the version, the keys, the licence and the address. It opens
+  by itself the first time the desktop starts, and Esc gives the list
+  back.
 
-Under the list, one line: the arrow keys pick an option, or say what
-you would like, and Esc closes. A key named on the screen looks like
-a key.
-The list shows each section's state and everyday steps. Type, and the
-search runs over everything the panel can do, shown or not: `drac`
-finds the palette from a click on `wifi`. One or two words that name an app
-this machine declares, as `Firefox`, open it at once. More words that
-name one, as `Firefox and the notes`, open a layout for the task.
-Other words that match no row go to spark.
-A change is played: `mute everything and dracula, I need some quiet`,
-`Firefox fullscreen`, `movie night`, `call mom on the headset` become
-steps from that same list, and nothing else: mute `out` and `mic`,
-the palette; a layout with Firefox; the HDMI output, a dark palette
-and a layout with mpv; connect the headset and move the sound to it.
-spark-shell checks every step against the list, plays it and says
-what it did, one short line each. A layout step opens its windows,
-and the panel closes. A question is answered in the same place, in
-a sentence or two: `what is my address`. Words that are no
-question and match no step are a task, and a layout opens for them.
-The same words work from a shell: `spark-shell panel "mute
-everything"`, or `spark-shell want "mute everything"`.
+Under the rows, what was said and done, the newest nearest the prompt:
+a check is a step done, a cross one refused, and `undo` after a line
+says it can be taken back. Then one line of hints, the prompt, and two
+chips: the model spark uses, where a pick runs `spark model NAME`, and
+talk, which listens through spark's own voice until a pause and puts
+the words at the prompt (shown while the voice is on). Tab moves to the
+chips. `DIALOG_MODEL` and `DIALOG_TALK` hide them.
+
+Type, and the search runs over everything the dialog can do, shown or
+not: `drac` finds the palette. Words that match no row go to spark, the
+way `spark-shell want --json` reads them: spark picks steps from the
+same list, and each step is checked against the list, drawn, then
+played. A step that cannot be taken back, as closing a window or
+forgetting a network, waits for you to type yes. A question is answered
+in a sentence or two.
+
+The dialog is a program of its own, `spark-dialog`, built from
+`dialog/` in this repository. `spark-shell on` installs it for the
+desktop from the release of the tag this copy is on, and only when a
+key in `allowed-signers` signed the tag and the file has the sha256
+that `dialog/dialog.env` pins (x86_64 machines for now). It starts each
+section as a provider, `spark-shell provide SECTION`, with no shell
+and a short list of settings from your environment. It keeps one line
+for each step it played in `~/.local/state/spark-shell/audit`: the
+time, who asked, the section, the step and a short digest, never a
+name or a password.
+
+In a terminal outside the desktop, and on a Mac, `spark-shell panel`
+shows the same list in the terminal, and `spark-shell panel SECTION
+--list` prints it as text.
 
 ## Providers
 
-Every section of the panel is also a provider: `spark-shell provide
-wifi` serves the section as an MCP server on stdin and stdout (the
-Model Context Protocol, 2025-06-18), for the dialog that replaces the
-panel and for spark itself later. A step is a tool, as `wifi_connect`
+Every section of the dialog is a provider: `spark-shell provide wifi`
+serves the section as an MCP server on stdin and stdout (the Model
+Context Protocol, 2025-06-18), for the dialog and for spark itself
+later. A step is a tool, as `wifi_connect`
 with its title `wifi connect NAME`; the rows are the resource
 `spark-shell://wifi/rows`, and a host that subscribes is told when they
 change. A tool runs only a step the section offers now, with a row's
-own argument, checked as the panel checks a pick. A tool that cannot be
+own argument, checked as the dialog checks a pick. A tool that cannot be
 taken back says so, and a result carries the step that takes it back
 when there is one. A password is the tool's own argument: it is never
 written down. `spark-shell want --json "WORDS"` prints the steps spark
@@ -371,9 +340,11 @@ Files it writes: the shell files, `~/.tmux.conf`, `~/.config/btop/`,
 unit or a line in `/etc/rc.local`), the console font, and the login
 notice and boot files for quiet. `off` restores or removes each one.
 
-What leaves the machine: only what the package manager downloads. A
+What leaves the machine: only what the package manager downloads and,
+for the desktop, the dialog's release file from GitHub, checked against
+the sha256 the signed tree pins. A
 layout asks spark, which runs on this machine, with your words, the
-screen sizes and the app list; a want at the panel asks it with your
+screen sizes and the app list; a want at the dialog asks it with your
 words, what the bar shows, the list of what it can do (an open window
 by its name among it) and the names of your saved layouts. A file only
 when you attach one, its text and its name, never its path.

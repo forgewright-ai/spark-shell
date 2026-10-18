@@ -1,5 +1,50 @@
 # Changelog
 
+## v0.64
+
+The second release of the dialog's arc (issue 1): the dialog replaces
+the panel on the desktop.
+
+- Added: the dialog, one window of 60 by 44 cells in the middle of the
+  screen. A one-row header: the date and the time on the home dialog, a
+  section's name and its state on its own, a march while a step runs,
+  and close as x. The rows of every section under it, the exchange
+  above the hint with the newest line nearest the prompt, then the
+  prompt and two chips, the model and talk. Super+d and Super+s open
+  it, a click on a bar block opens it with that block first, and the
+  about dialog takes the splash's place at the first desktop start.
+- Added: `spark-dialog`, a Rust MCP host (`dialog/`), one static musl
+  binary. It starts every section as `spark-shell provide SECTION` with
+  no shell and a named list of settings, reads each tool's hints with
+  the spec's defaults, gates every step the model picks (a tool listed
+  now, its arguments by its schema, a name that is a row's own), asks a
+  typed yes for a step that cannot be taken back, masks a password and
+  keeps it nowhere, scrubs every string a provider hands it, caps lines
+  and resources, times every request out, and keeps one line per step
+  in `~/.local/state/spark-shell/audit`, numbers and names only. It
+  uses its own client rather than rmcp: the SDK's client alone is 65
+  crates of an async runtime, and the dialog needs none.
+- Added: the binary's channel. The release workflow builds `dialog/` at
+  a signed tag, refuses to publish when the build's sha256 is not the
+  one `dialog/dialog.env` pins in the tagged tree, attests the build and
+  publishes the binary, its sha256 and its SBOM. `spark-shell on`
+  installs the binary only from the release of a tag a key in the new
+  `allowed-signers` signed, only when the file has the tree's sha256,
+  and `spark-shell dialog` runs it only while it still has. The build is
+  reproducible: CI builds it twice and compares.
+- Added: `spark-shell dialog [SECTION|about|chat]`, the window's verb.
+  On a Mac, `spark-shell panel` stays the list in the terminal.
+- Changed: the providers' rows carry a group and the arguments the
+  dialog asks for (a new network's password, a layout's name); the
+  about's rows are the keys.
+- Changed: the key sentences open with one combo and a verb each, so
+  the about shows them in two columns; Super+d and Super+s say the
+  dialog. The README follows them.
+- Added: a dialog job in CI (the format, clippy, the golden renders in
+  two palettes, the host against stub providers, the build twice, the
+  binary at a pty with no network, cargo-deny) and a zizmor job over the
+  workflows; Dependabot for the actions and the dialog's crates.
+
 ## v0.63
 
 The first of three releases for the dialog that replaces the panel

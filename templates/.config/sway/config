@@ -58,15 +58,16 @@ bar {
 
 # key: Super+Return opens a terminal window.
 bindsym $mod+Return exec $term
-# The panel: one window in the middle of the screen, a surface a shade
-# lighter than the palette's background, with air around its text and
-# no frame. spark-shell panel draws in it; a click on a bar block opens
-# the same window (panel_foot in spark-shell builds the same foot line).
-# key: Super+d opens the panel: pick an option, or say what you would like.
-bindsym $mod+d exec $term --app-id spark-panel -W @PANEL_SIZE@ -o pad=@PANEL_PAD@ -o @FOOT_COLORS@.background=@PANEL_BG@ -o @FOOT_COLORS@.alpha=1.0 -e @REPO@/spark-shell panel
-# key: Super+s opens spark chat in the panel's window, and Ctrl-D closes it.
-bindsym $mod+s exec $term --app-id spark-panel -W @PANEL_SIZE@ -o pad=@PANEL_PAD@ -o @FOOT_COLORS@.background=@PANEL_BG@ -o @FOOT_COLORS@.alpha=1.0 -e @REPO@/spark-shell panel chat
-for_window [app_id="spark-panel"] floating enable, border none, move position center
+# The dialog: one window in the middle of the screen, 60 by 44 cells, a
+# surface a shade lighter than the palette's background, with air around
+# its text and no frame. spark-shell dialog draws in it; a click on a bar
+# block opens the same window (panel_foot in spark-shell builds the same
+# foot line).
+# key: Super+d opens the dialog: pick an option, or say what you would like.
+bindsym $mod+d exec $term --app-id spark-dialog -W @PANEL_SIZE@ -o pad=@PANEL_PAD@ -o @FOOT_COLORS@.background=@PANEL_BG@ -o @FOOT_COLORS@.alpha=1.0 -e @REPO@/spark-shell dialog
+# key: Super+s opens the dialog in spark chat, and Ctrl-D closes it.
+bindsym $mod+s exec $term --app-id spark-dialog -W @PANEL_SIZE@ -o pad=@PANEL_PAD@ -o @FOOT_COLORS@.background=@PANEL_BG@ -o @FOOT_COLORS@.alpha=1.0 -e @REPO@/spark-shell dialog chat
+for_window [app_id="spark-dialog"] floating enable, border none, move position center
 # key: Super+Shift+q closes the window.
 bindsym $mod+Shift+q kill
 # key: Super+Shift+c reloads sway after spark-shell on.
@@ -74,7 +75,7 @@ bindsym $mod+Shift+c reload
 # key: Super+Shift+e leaves the desktop.
 bindsym $mod+Shift+e exit
 
-# key: Super+h, j, k, l or an arrow moves the focus. Shift moves the window.
+# key: Super+arrow moves the focus, as h, j, k, l do; Shift moves the window.
 bindsym $mod+h focus left
 bindsym $mod+j focus down
 bindsym $mod+k focus up
@@ -92,10 +93,11 @@ bindsym $mod+Shift+Down move down
 bindsym $mod+Shift+Up move up
 bindsym $mod+Shift+Right move right
 
-# key: Super+f makes a window fill the screen, and Super+r resizes until Enter.
+# key: Super+f makes a window fill the screen.
+# key: Super+r resizes the window, until Enter.
 bindsym $mod+f fullscreen
 # key: Super+w makes tabs, Super+Shift+s a stack, Super+e side by side again.
-# key: Super+b and Super+v put the next window beside this one, or below it.
+# key: Super+b puts the next window beside this one, and Super+v below it.
 bindsym $mod+b splith
 bindsym $mod+v splitv
 bindsym $mod+Shift+s layout stacking
@@ -105,7 +107,7 @@ bindsym $mod+Shift+space floating toggle
 bindsym $mod+space focus mode_toggle
 bindsym $mod+a focus parent
 
-# key: Super+1 to 0 go to a workspace. Add Shift to send the window there.
+# key: Super+1..0 go to workspaces 1 to 10; with Shift the window goes there.
 bindsym $mod+1 workspace number 1
 bindsym $mod+2 workspace number 2
 bindsym $mod+3 workspace number 3

@@ -26,14 +26,16 @@
 #   spark-shell desktop wallpaper X   set a picture, a colour, default or none
 #   spark-shell bar on|off            show or hide the status line and the bar
 #   spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
-#   spark-shell panel [SECTION]       open the panel (Super+d), SECTION first
-#   spark-shell panel chat            spark chat in the panel's window (Super+s)
+#   spark-shell dialog [SECTION]      open the dialog (Super+d), SECTION first
+#   spark-shell dialog chat           spark chat in the dialog's window (Super+s)
+#   spark-shell dialog about          the version, the keys and the address
+#   spark-shell panel [SECTION]       the same list in a terminal, as text
 #   spark-shell panel "WORDS"         ask for it: "mute everything", "quiet"
 #   spark-shell want "WORDS"          the same, from anywhere: the steps run
 #   spark-shell want --json "WORDS"   the steps spark picks, as JSON; none run
 #   spark-shell want --attach FILE "WORDS"
 #                                     ask about a text file (txt md)
-#   spark-shell provide SECTION       a panel section as an MCP server on stdio
+#   spark-shell provide SECTION       a dialog section as an MCP server on stdio
 #   spark-shell sbom [NAME]           list the installed software, or one
 #   spark-shell sbom --json           write the list as a CycloneDX 1.5 file
 #
@@ -364,10 +366,10 @@ hex_sgr() {   # hex_sgr rrggbb -> the SGR of that colour as text
     set -- $(hex_rgb "#$1"); printf '38;2;%s;%s;%s' "$1" "$2" "$3"
 }
 panel_pad() { _s=$(look_font_size); : "${_s:=12}"; printf '%sx%s' $(( _s * 2 )) $(( _s * 16 / 10 )); }   # the air in pixels: two cells wide, one tall, at the font's size
-panel_foot() {   # panel_foot ARGS... -- the panel's window: foot sized, padded and coloured the way the sway template renders it, running spark-shell panel ARGS (PANEL_LEAD, setsid, before it)
+panel_foot() {   # panel_foot ARGS... -- the desktop window: foot sized, padded and coloured the way the sway template renders it, running spark-shell dialog ARGS (PANEL_LEAD, setsid, before it)
     _fc=$(foot_colors)
     # shellcheck disable=SC2086   # the leader, or nothing
-    ${PANEL_LEAD:-} foot --app-id "$PANEL_APP" -W "$PANEL_SIZE" -o "pad=$PANEL_PAD" -o "$_fc.background=$PANEL_BG" -o "$_fc.alpha=1.0" -e "$REPO/spark-shell" panel "$@"
+    ${PANEL_LEAD:-} foot --app-id "$PANEL_APP" -W "$PANEL_SIZE" -o "pad=$PANEL_PAD" -o "$_fc.background=$PANEL_BG" -o "$_fc.alpha=1.0" -e "$REPO/spark-shell" dialog "$@"
 }
 
 # ------------------------------------------------------------------ rows
@@ -584,6 +586,7 @@ desktop_look_apply() {   # the two user renders and a live sway
 desktop_apply() {
     desktop_look_apply
     seat_apply
+    dialog_install
 }
 
 # The desktop on Void. Void has no logind, so sway takes the screen and
@@ -2289,8 +2292,8 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | volu
 # `panel SECTION ACTION [ARG]` does one step by hand: the tests' doors.
 
 # --- the signs and the sizes
-PANEL_APP='spark-panel'               # the window's app id (the sway template floats and centres it)
-PANEL_SIZE=76x36                      # columns x rows of the window: the clock and the month, a list of twenty rows, the hint and the prompt
+PANEL_APP='spark-dialog'              # the desktop window's app id: the dialog's since v0.64 (the sway template floats and centres it)
+PANEL_SIZE=60x44                      # columns x rows of the desktop window: the dialog's size, a design token
 PANEL_COL=6                           # the section column: as wide as the longest section's name
 PANEL_IN=4                            # the glance's indent: the section column, where every row's text begins
 PULSE_W=32                            # the corner: the march's place at the top right of the window, on the date's row, this many cells from the right margin
@@ -2608,7 +2611,7 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
         clock) date '+%A %d %B %Y' ;;   # the time and the month are drawn under it (clock_view)
         theme) echo "$(panel_col theme)${THEME:-none} $PANEL_SEP $(bar_font)" ;;   # the wallpaper and the see-through amount are named in their rows
         window) echo "$(panel_col window)$(win_words "$WINDOWS")" ;;
-        bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown at the top of the screen"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys Super+d) opens the panel"; fi ;;
+        bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown at the top of the screen"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys Super+d) opens the dialog"; fi ;;
         about) echo "$(panel_col about)spark-shell $(panel_version) $PANEL_SEP the keys, the licence, the address" ;;
         layout) _n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' '); _last=''; [ ! -f "$DESK_LAST" ] || _last=$(desk_words "$DESK_LAST")
             if [ "$_n" -eq 0 ]; then echo "$(panel_col layout)none saved yet"
@@ -2841,7 +2844,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
             esac ;;
         about) case $_a in open) panel_about 72 ;; *) echo "$_a is not something about does"; return 1 ;; esac ;;   # on a pipe: the splash as text
         bar) case $_a in
-                off) bar_desktop off desktop >/dev/null; echo "bar hidden $PANEL_SEP $(panel_keys Super+d) opens the panel" ;;
+                off) bar_desktop off desktop >/dev/null; echo "bar hidden $PANEL_SEP $(panel_keys Super+d) opens the dialog" ;;
                 on) bar_desktop on desktop >/dev/null; echo "bar shown" ;;
                 *) echo "$_a is not something bar does"; return 1 ;;
             esac ;;
@@ -3274,13 +3277,26 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
 provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON array
     for _n in $PROVIDE_TOOLS; do tool_spec "$_n" && [ "$_ts" = "$1" ] && tool_json "$_n"; done | jq -cs .
 }
-provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "rows": [{"id", "sign", "text", "tool", "more", "columns", "children"}], "short": [ID]}
+provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "rows": [{"id", "sign", "text", "tool", "more", "columns", "children", "group"}], "short": [ID]}; a tool may carry `ask`, the arguments the host asks the person for
+    [ "$1" != about ] || { provide_about_rows; return; }
+    _asks='[]'
+    if [ "$1" = wifi ] && [ -n "$(wifi_tool)" ]; then   # a secured network not saved yet: its password is asked, masked
+        wifi_known | cut -f2 > "$TMP/wifi.known.ask"
+        _asks=$(wifi_scan | awk -F '\t' '$3 == 1' | cut -f1 | grep -vxFf "$TMP/wifi.known.ask" | jq -R . | jq -cs . 2>/dev/null) || _asks='[]'
+    fi
     panel_rows "$1" | while IFS="$TAB" read -r _m _t _a; do provide_row_line "$1" "$_m" "$_t" "$_a"; done > "$TMP/rows.short"   # the short form: what matters, and a more row that opens the rest
     { panel_rows "$1" full | while IFS="$TAB" read -r _m _t _a; do provide_row_line "$1" "$_m" "$_t" "$_a"; done; grep "^$1:more$US" "$TMP/rows.short" || :; } \
         | jq -Rn --arg s "$1" --arg u "spark-shell://$1/rows" --rawfile short "$TMP/rows.short" '
             [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [], columns: [],
-                children: (if .[0] == ($s + ":more") then $u else null end)}] as $rows
-            | {title: $s, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}'
+                children: (if .[0] == ($s + ":more") then $u else null end), group: null}] as $rows
+            | {title: $s, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
+        | jq -c --arg s "$1" --argjson asks "$_asks" '
+            .rows |= map(
+                if $s == "window" and ((.tool.name // "") | test("^window_(focus|close)$")) then .group = "open now"
+                elif $s == "window" and (((.tool.name // "") | test("^window_(split|tabs|stacked)$")) or (.id | startswith("window:show:"))) then .group = "layout"
+                elif (.tool.name // "") == "layout_save" then .tool.ask = ["name"]
+                elif (.tool.name // "") == "wifi_connect" and (.tool.arguments.name as $n | $asks | index([$n])) then .tool.ask = ["password"]
+                else . end)'
 }
 provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION -> ID US SIGN US TEXT US TOOL US ARGUMENTS: one row, scrubbed, its step as a tool call
     case $2 in "$PANEL_DOT") _sg="dot" ;; "$PANEL_RING") _sg="ring" ;; "$PANEL_TICK") _sg="check" ;; "$PANEL_CROSS") _sg="cross" ;; "$PANEL_GO") _sg="opens" ;; *) _sg="blank" ;; esac
@@ -3290,7 +3306,19 @@ provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION -> ID US SIGN
     elif action_tool "$1" "$_ac"; then _tn=$_tool; _ag=$(tool_call_json "$_tool" "$_tv" | jq -c .arguments); fi
     printf '%s\n' "$_id$US$_sg$US$_tx$US$_tn$US$_ag"   # the parts scrubbed, never the line: the scrubber drops US
 }
-provide_title() { panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }   # provide_title SECTION -> the context title: the panel's title line without the section's column
+provide_title() { [ "$1" != about ] || { echo "a light desktop of sway and foot, for an AI box"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
+provide_about_rows() {   # -> the about's rows: the template's `# key:` sentences, a combo as a column, in the splash's four groups; the licence and the address; the row that opens it
+    desk_keys | scrub_text | jq -Rn --arg v "$(panel_version)" '
+        [inputs] | to_entries | map(.key as $i | .value as $l
+            | ($l | test("^(Super|Ctrl|Alt|Shift)\\+")) as $k
+            | {id: ("about:key:" + ($i | tostring)), sign: "blank",
+               text: (if $k then ($l | sub("^[^ ]* "; "")) else $l end), tool: null, more: [],
+               columns: (if $k then [$l | sub(" .*$"; "") | sub(",$"; "")] else [] end), children: null,
+               group: ("keys " + (if $i < 3 then "1" elif $i < 6 then "2" elif $i < 12 then "3" else "4" end))})
+        | . + [{id: "about:address", sign: "opens", text: "github.com/forgewright-ai/spark-shell", tool: null, more: [], columns: [], children: null, group: "address"},
+               {id: "about:open", sign: "opens", text: ("spark-shell " + $v), tool: {name: "about_open", arguments: {}}, more: [], columns: [], children: null, group: null}]
+        | {title: "about", rows: ., short: ["about:open"]}'
+}   # provide_title SECTION -> the context title: the panel's title line without the section's column
 
 # The wire. Only MCP reaches stdout: the server moves stdout to fd 3 and
 # points fd 1 at stderr before any panel step runs. One process writes
@@ -3419,6 +3447,73 @@ provide_refuse() { rpc_result "$1" "$(jq -cn --arg t "$2" '{content: [{type: "te
 cmd_provide() {   # cmd_provide SECTION -- the verb
     [ $# -eq 1 ] || refuse_in provide "one section: $(printf '%s' "$PROVIDE_SECTIONS" | sed 's/ /, /g')" >&2
     provide_main "$1"
+}
+
+# --- the dialog: the desktop's window (spark-shell issue 1). spark-dialog
+# is one static binary built from dialog/ by the release workflow at a
+# signed tag. dialog/dialog.env in the tagged tree holds its sha256, so
+# the signed tag pins the binary the way a tree pins a download. `on`
+# installs it only for a release tag a key in allowed-signers signed,
+# and only when the file fetched has the tree's sha256; `dialog` runs it
+# only while it still has. The dialog is an MCP host: each section below
+# is `spark-shell provide SECTION`, started by the dialog with no shell.
+DIALOG_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-dialog
+DIALOG_URL=${SPARK_SHELL_DIALOG_URL:-https://github.com/forgewright-ai/spark-shell/releases/download}   # the release assets; the tests point it at a file:// folder
+dialog_target() { case $(uname -m) in x86_64|amd64) echo x86_64-linux-musl ;; *) return 1 ;; esac; }   # the builds there are: x86_64 alone today
+dialog_want_sha() {   # -> the sha256 the release tag's own tree pins for this machine (never the working copy's file), or nothing
+    _dk=DIALOG_SHA256_$(dialog_target | tr 'a-z-' 'A-Z_'); _rt=$(release_tag) || return 0
+    git -C "$REPO" show "$_rt:dialog/dialog.env" 2>/dev/null | sed -n "s/^$_dk=\([0-9a-f]\{64\}\)$/\1/p"
+}
+sha256_of() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
+dialog_ok() { [ -x "$DIALOG_BIN" ] && _dw=$(dialog_want_sha) && [ -n "$_dw" ] && [ "$(sha256_of "$DIALOG_BIN")" = "$_dw" ]; }   # the binary in place is the one the tree pins
+release_tag() {   # -> the release the clone's dialog belongs to: the newest tag at or behind HEAD whose tree has dialog/dialog.env, when dialog/ is unchanged since (committed or not); false otherwise
+    _rt=$(git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null) || return 1
+    git -C "$REPO" cat-file -e "$_rt:dialog/dialog.env" 2>/dev/null || return 1
+    git -C "$REPO" diff --quiet "$_rt" -- dialog 2>/dev/null || return 1
+    printf '%s\n' "$_rt"
+}
+tag_signed() {   # tag_signed TAG -> 0 when a key in the tree's allowed-signers signed it, and the tag object names itself TAG
+    command -v ssh-keygen >/dev/null 2>&1 && [ -f "$REPO/allowed-signers" ] || return 1
+    git -C "$REPO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$REPO/allowed-signers" verify-tag "$1" >/dev/null 2>&1 || return 1
+    [ "$(git -C "$REPO" cat-file tag "$1" 2>/dev/null | sed -n 's/^tag //p' | sed -n 1p)" = "$1" ]
+}
+dialog_install() {   # the dialog's row of `on`: in place as the tree pins it, or fetched for the signed release tag and checked
+    _dt=$(dialog_target) || { skip dialog "no build for $(uname -m) yet: the desktop keys open nothing"; return 0; }
+    _rt=$(release_tag) || { row todo dialog "this clone is past its release: the dialog comes with the next tag"; return 0; }
+    _dw=$(dialog_want_sha); [ -n "$_dw" ] || { row todo dialog "$_rt pins no build for $_dt in dialog/dialog.env"; return 0; }
+    if dialog_ok; then ok dialog "$DIALOG_BIN, the sha256 $_rt pins"; return 0; fi
+    tag_signed "$_rt" || { row todo dialog "$_rt is not signed by a key in allowed-signers: no dialog installed"; return 0; }
+    command -v curl >/dev/null 2>&1 || { row todo dialog "curl is not installed: the dialog cannot be fetched (spark-shell on installs it)"; return 0; }
+    need dialog "fetch spark-dialog for $_rt and check its sha256" || return 0
+    _df=$TMP/spark-dialog
+    curl -fsSL --proto '=https,file' -o "$_df" "$DIALOG_URL/$_rt/spark-dialog-$_dt" 2>/dev/null || { rm -f "$_df"; row todo dialog "could not fetch spark-dialog for $_rt -- spark-shell on again"; return 0; }
+    [ "$(sha256_of "$_df")" = "$_dw" ] || { rm -f "$_df"; row todo dialog "the spark-dialog fetched for $_rt is not the one the tree pins: not installed"; return 0; }
+    mkdir -p "$(dirname "$DIALOG_BIN")" && cp "$_df" "$DIALOG_BIN.new" && chmod 755 "$DIALOG_BIN.new" && mv "$DIALOG_BIN.new" "$DIALOG_BIN"
+    row ok dialog "installed for $_rt ($DIALOG_BIN), sha256 checked"
+}
+dialog_sections() {   # dialog_sections [FIRST] -> the providers the dialog starts, FIRST on top: every panel section but spark (the dialog holds the conversation) and undo (it keeps a result's own)
+    panel_sections "${1:-glance}" | grep -vxE 'spark|undo|glance|chat' || :
+}
+cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a click on a bar block, the first desktop start (about)
+    config_load
+    [ "$OS" != Darwin ] || refuse_in dialog "the dialog is the Linux desktop's; in a terminal here, spark-shell panel"
+    command -v jq >/dev/null 2>&1 || refuse_in dialog "jq is not installed (spark-shell on)"
+    pm_detect; theme_load; SND=$(snd_tool)
+    _first=${1:-}
+    case $_first in ''|about|chat) ;; *) panel_section_ok "$_first" || refuse_in dialog "$_first is not a section of the dialog" ;; esac
+    [ "$(panel_open_count)" -lt 2 ] || { swaymsg "[app_id=$PANEL_APP] kill" >/dev/null 2>&1 || :; return 0; }   # the key again: the dialog already open goes, this one too
+    [ "$_first" != chat ] || { panel_chat; return; }
+    dialog_ok || refuse_in dialog "the dialog is not installed, or not the release's -- spark-shell on"
+    case $REPO in *[[:space:]]*) refuse_in dialog "the clone's path holds a space, and a provider is argv words: move it ($REPO)" ;; esac
+    set --
+    for s in $(dialog_sections "$_first"); do set -- "$@" --provider "$REPO/spark-shell provide $s"; done
+    case $_first in about) set -- "$@" --home about --mark on ;; '') ;; *) set -- "$@" --home "$_first" ;; esac
+    _dc=''; [ "$DIALOG_MODEL" != yes ] || _dc=model; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
+    _sp=$(spark_bin); [ -z "$_sp" ] || set -- "$@" --spark "$_sp"
+    FULL_ID=''; ! panel_own_window || panel_full_aside
+    st=0; "$DIALOG_BIN" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?
+    [ "$st" -eq 3 ] || panel_full_back   # 3: a step put a window on the screen, and the window is the receipt
+    [ "$st" -eq 3 ] || [ "$st" -eq 0 ] || return "$st"
 }
 
 # --- the window: centred by the sway template, closed by Esc or by its key again
@@ -3613,7 +3708,7 @@ panel_about() {   # panel_about WIDTH -> the splash: the logo small, the version
     echo; printf '%sspark-shell %s%s\n' "$_b" "$(panel_version)" "$PANEL_UNMARK"; echo
     _i=0
     desk_keys | while IFS= read -r _l; do
-        _i=$((_i + 1)); case $_i in 4|7|12) echo ;; esac   # the keys in their groups: opening, the window, moving, the rest
+        _i=$((_i + 1)); case $_i in 4|7|13) echo ;; esac   # the keys in their groups: opening, the window, moving, the rest
         case $_l in
             Super+*|Ctrl+*|Alt+*|Shift+*)
                 _combo=${_l%% *}; _combo=${_combo%,}; _rest=${_l#* }
@@ -4765,6 +4860,7 @@ main() {
         check) cmd_check ;;
         bar) cmd_bar "$@" ;;
         panel) cmd_panel "$@" ;;
+        dialog) cmd_dialog "$@" ;;
         want) cmd_want "$@" ;;
         provide) cmd_provide "$@" ;;
         theme) cmd_theme "$@" ;;

@@ -1,0 +1,7 @@
+# The dialog's toolchain, pinned: the release binary is reproducible from
+# this file, Cargo.lock and the tree (dialog/dialog.env holds its sha256).
+[toolchain]
+channel = "1.98.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-unknown-linux-musl"]

@@ -53,8 +53,31 @@ With DESKTOP=sway, from apt, pacman or xbps.
   dejavu-fonts-ttf on Void).
 - seatd -- https://git.sr.ht/~kennylevinsen/seatd -- MIT. On Void,
   which has no logind, it gives sway the screen and keyboard.
+- curl -- https://curl.se -- curl licence (MIT-style). Fetches the
+  dialog's release file.
+- OpenSSH (openssh, openssh-client on Debian) -- https://www.openssh.com --
+  BSD-style. ssh-keygen checks a release tag's signature.
 - Mesa -- https://mesa3d.org -- MIT. mesa-dri on Void, the graphics
   drivers sway draws with.
+
+## The dialog
+
+`spark-dialog`, built from `dialog/` with crates from crates.io, each
+pinned by `dialog/Cargo.lock`. The release's `spark-dialog.cdx.json`
+lists every one with its licence (93 today: MIT, Apache-2.0, Zlib and
+Unicode-3.0). The ones it is made of:
+
+- ratatui -- https://github.com/ratatui/ratatui -- MIT. The drawing.
+- crossterm -- https://github.com/crossterm-rs/crossterm -- MIT. The
+  terminal.
+- serde_json -- https://github.com/serde-rs/json -- MIT or Apache-2.0.
+  The protocol's JSON.
+- png -- https://github.com/image-rs/image-png -- MIT or Apache-2.0.
+  The favicon, read for the logo in the about.
+- unicode-width -- https://github.com/unicode-rs/unicode-width -- MIT or
+  Apache-2.0. A character's cells.
+- libc -- https://github.com/rust-lang/libc -- MIT or Apache-2.0. The
+  clock and a signal.
 
 ## The palettes
 

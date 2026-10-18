@@ -40,7 +40,7 @@ jobs:
       - name: ascii docs
         run: |
           tab=$(printf '\t')
-          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example spark-shell tests/shell_test.sh lib/terminal_profile.py tests/profile_test.py $(find templates distro themes -type f | sort); do
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/dialog_pty.py lib/terminal_profile.py tests/profile_test.py $(find templates distro themes dialog/src dialog/tests -type f ! -name '*.txt' | sort) dialog/Cargo.toml dialog/deny.toml dialog/dialog.env dialog/rust-toolchain.toml; do
             if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
               echo "non-ASCII in $f"; exit 1; fi; done
       - name: no hex colour in a template (the look is the 16 slots)
@@ -48,7 +48,7 @@ jobs:
           if grep -rnE '#[0-9a-fA-F]{6}' templates; then
             echo "a hex colour is in a template"; exit 1; fi
       - name: shellcheck
-        run: shellcheck -S warning spark-shell tests/shell_test.sh
+        run: shellcheck -S warning spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
   debian:
@@ -58,7 +58,7 @@ jobs:
     container: debian:13@sha256:9cc080028c43b27d2074d63a5f9caf7166d731494965616c1a6d2827a004585c   # a stable release: pinned, bump the digest with a point release
     timeout-minutes: 10
     steps:
-      - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git shellcheck diffutils jq >/dev/null   # jq: a desk reads the model's answer with it
+      - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git shellcheck diffutils jq openssh-client curl >/dev/null   # jq: a desk reads the model's answer with it; ssh-keygen: a release tag's signature
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           persist-credentials: false
@@ -74,7 +74,7 @@ jobs:
     container: archlinux:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Arch there is, and -Syu moves it to today anyway
     timeout-minutes: 10
     steps:
-      - run: pacman -Syu --noconfirm --needed git diffutils jq >/dev/null
+      - run: pacman -Syu --noconfirm --needed git diffutils jq openssh >/dev/null   # ssh-keygen: a release tag's signature
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           persist-credentials: false
@@ -90,7 +90,7 @@ jobs:
     container: ghcr.io/void-linux/void-glibc-full:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Void there is, and -Su moves it to today anyway
     timeout-minutes: 10
     steps:
-      - run: xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null; xbps-install -Sy git bash diffutils jq gawk gzip libstdc++ >/dev/null
+      - run: xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null; xbps-install -Sy git bash diffutils jq gawk gzip libstdc++ openssh curl >/dev/null
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
         with:
           persist-credentials: false
@@ -109,3 +109,65 @@ jobs:
         run: sh tests/shell_test.sh
       - name: the Terminal.app helper, built and never applied
         run: SPARK_SHELL_NO_APPLY=1 /usr/bin/python3 tests/profile_test.py
+  dialog:
+    # the dialog (dialog/): the format, clippy, its tests (the golden
+    # renders in two palettes, the host against stub providers), the
+    # release build twice and its sha256 against dialog/dialog.env (the
+    # build is reproducible, so the tree pins the binary), the binary at a
+    # pty against spark-shell's own providers with no network, cargo-deny,
+    # and the binary kept as an artifact for a proof on a machine.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: the toolchain dialog/rust-toolchain.toml pins
+        working-directory: dialog
+        run: rustup show active-toolchain || rustup toolchain install
+      - name: the format and clippy
+        working-directory: dialog
+        run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings
+      - name: the tests
+        working-directory: dialog
+        run: cargo test --locked
+      - name: the release build, twice, the same bytes
+        run: |
+          set -eu
+          one=$(sh tests/dialog_build.sh | cut -d' ' -f1)
+          (cd dialog && cargo clean --release --target x86_64-unknown-linux-musl)
+          two=$(sh tests/dialog_build.sh | cut -d' ' -f1)
+          echo "built $one, from clean again $two"
+          if [ "$one" != "$two" ]; then echo "two builds of one tree differ: the build is not reproducible"; exit 1; fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a   # v7.0.1
+        with:
+          name: spark-dialog-x86_64-linux-musl
+          path: dialog/target/x86_64-unknown-linux-musl/release/spark-dialog
+          retention-days: 14
+      - name: the sha256 dialog/dialog.env pins
+        run: |
+          set -eu
+          got=$(sha256sum dialog/target/x86_64-unknown-linux-musl/release/spark-dialog | cut -d' ' -f1)
+          want=$(sed -n 's/^DIALOG_SHA256_X86_64_LINUX_MUSL=//p' dialog/dialog.env)
+          if [ "$got" != "$want" ]; then echo "the build is not the binary dialog/dialog.env pins -- DIALOG_SHA256_X86_64_LINUX_MUSL=$got"; exit 1; fi
+      - name: the binary at a pty against spark-shell's providers, with no network
+        run: sudo unshare -n sudo -u "$(id -un)" env PATH="$PATH" python3 tests/dialog_pty.py dialog/target/x86_64-unknown-linux-musl/release/spark-dialog
+      - name: cargo-deny (advisories, licences, no network crate)
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
+        with:
+          manifest-path: dialog/Cargo.toml
+  workflows:
+    # the workflows are code too: zizmor (pinned, in a venv of its own)
+    # reads every file under .github/workflows; medium and above fail.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+        with:
+          persist-credentials: false
+      - name: zizmor over .github/workflows
+        run: |
+          python3 -m venv "$RUNNER_TEMP/zizmor"
+          "$RUNNER_TEMP/zizmor/bin/pip" install --quiet zizmor==1.30.1
+          "$RUNNER_TEMP/zizmor/bin/zizmor" --min-severity medium .github/workflows
