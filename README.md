@@ -283,13 +283,15 @@ words, and plus again lets it go. Tab moves to the chips.
 Type, and the search runs over everything the dialog can do, shown or
 not: `drac` finds the palette. A section's name alone, as `about` or
 `files`, opens that section. Words that match no row go to spark, the
-way `spark-shell want --json` reads them: spark picks steps from the
-same list, and each step is checked against the list, drawn, then
-played. A word or two with no step gets one line, no step on the panel
-does that; longer words that name a task open a layout for it. A step
-that cannot be taken back, as closing a window or forgetting a network,
-waits for you to type yes. A question is answered
-in a sentence or two.
+way `spark-shell want --json` reads them. With spark 1.90 or newer,
+`spark steps` plans with the desktop's own tools and what each section
+offers now; each step is checked against the list again, drawn, then
+played. Words that get no step get one line, no step on the panel does
+that, and a task gets a layout because spark picks `layout new` for it.
+With an older spark, a word or two with no step gets that line and
+longer words that name a task open a layout. A step that cannot be
+taken back, as closing a window or forgetting a network, waits for you
+to type yes. A question is answered in a sentence or two.
 
 The dialog is a program of its own, `spark-dialog`, built from
 `dialog/` in this repository. `spark-shell on` installs it for the

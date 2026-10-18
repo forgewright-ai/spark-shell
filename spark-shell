@@ -3102,9 +3102,14 @@ panel_list() {   # panel_list [SECTION] -> the glance (the clock's view under it
 }
 
 # --- the router and the want: a row is fzf's; an app named is a layout; the rest is spark's
-panel_brief() {   # -> "section: action ARG, ...; section: ..." -- what spark may pick from
+panel_brief_sections() {   # -> the sections the want path offers here, in the brief's order
     for p in layout apps window bar $(panel_blocks_here); do
-        case $p in lan|bat|clock) continue ;; window|bar) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; esac
+        case $p in lan|bat|clock) continue ;; window|bar) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
+        printf '%s\n' "$p"
+    done
+}
+panel_brief() {   # -> "section: action ARG, ...; section: ..." -- what spark may pick from
+    for p in $(panel_brief_sections); do
         if [ "$p" = layout ]; then
             _saved=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | sed 's/^/open /' | paste -sd, - | sed 's/,/, /g')
             _acts="${_saved:+$_saved, }new TASK"
@@ -3155,22 +3160,73 @@ want_plan() {   # want_plan WORDS -> $TMP/plan; exit 1 when the words could not 
         else want_put step layout new "$1" "$1"; fi   # the layout's model reads the whole sentence: the workspace, fullscreen, the pages
         return 0
     fi
+    if "$spark" help </dev/null 2>/dev/null | grep -q '^ *spark steps '; then want_steps "$1"; return; fi   # spark 1.90 plans with the tools themselves (contract 16); an older spark, the brief below
     _brief=$(panel_brief)
     [ -n "$_brief" ] || { want_put no "nothing on the panel takes an action on this machine"; return 1; }
     about="The panel of a desktop. What the bar shows now: $(panel_facts). What this machine can do now, by section -- $_brief. Rules: only steps from that list; N is a number (0 to 100 for level, 0 to 1 for alpha), NAME a name as listed, TASK the want in the user's own words, as {\"page\": \"layout\", \"action\": \"new\", \"arg\": \"write notes\"}, which opens the apps for that task, any program by name included; a layout step for a want that names a program or a task to do, never for a setting alone; as few steps as the want takes; no step when nothing on the list does it; when the words ask something rather than ask for a change, put the answer in \"answer\", one or two sentences, and give no steps. Answer with one JSON object and nothing else: {\"why\": \"one sentence\", \"answer\": \"\", \"steps\": [{\"page\": \"bt\", \"action\": \"connect\", \"arg\": \"NAME\"}]}"
     st=0; "$spark" edit --type json --name panel.json --about "$about" -- "do this on the desktop: $1" </dev/null > "$TMP/want.json" 2>"$TMP/want.err" || st=$?
     [ "$st" -eq 0 ] || { want_put no "$PANEL_CROSS spark did not answer: $(head -1 "$TMP/want.err")"; return 1; }
     jq -e '.steps | arrays' "$TMP/want.json" >/dev/null 2>&1 || { want_put no "$PANEL_CROSS the answer was not steps for the panel"; return 1; }
-    if [ "$(jq -r '.steps | length' "$TMP/want.json")" -eq 0 ]; then   # the model's why is not shown: the steps say it; a question gets its answer
-        _ans=$(jq -r '.answer // "" | gsub("[\\n\\r]+"; " ")' "$TMP/want.json")
-        if want_is_question "$1"; then if [ -n "$_ans" ]; then want_put say "$_ans"; else want_put say "nothing here answers that"; fi
-        elif want_says_close "$1"; then want_put no "$PANEL_CROSS no step on the panel does that"
-        elif [ "$(printf '%s\n' "$1" | wc -w | tr -d ' ')" -le 2 ]; then want_put no "$PANEL_CROSS no step on the panel does that"   # a word or two is no task: "about" once opened aerc
-        else want_put step layout new "$1" "$1"; fi   # not a question and no step: a task, then -- the layout's own model reads it (never a shrug for "writing with vi")
-        return 0
-    fi
+    if [ "$(jq -r '.steps | length' "$TMP/want.json")" -eq 0 ]; then want_nostep "$1"; return 0; fi
     jq -r '.steps[] | [(.page // "" | tostring), (.action // "" | tostring), (.arg // "" | tostring)] | @tsv' "$TMP/want.json" > "$TMP/want.steps"
     while IFS="$TAB" read -r pg ac ar; do want_step "$pg" "$ac" "$ar"; done < "$TMP/want.steps"
+}
+want_nostep() {   # want_nostep WORDS -- no step came back: a question gets its answer, words that end something or a word or two the honest line, else a task (the model's why is not shown: the steps say it)
+    _ans=$(jq -r '.answer // "" | gsub("[\\n\\r]+"; " ")' "$TMP/want.json")
+    if want_is_question "$1"; then if [ -n "$_ans" ]; then want_put say "$_ans"; else want_put say "nothing here answers that"; fi
+    elif want_says_close "$1"; then want_put no "$PANEL_CROSS no step on the panel does that"
+    elif [ "$(printf '%s\n' "$1" | wc -w | tr -d ' ')" -le 2 ]; then want_put no "$PANEL_CROSS no step on the panel does that"   # a word or two is no task: "about" once opened aerc
+    else want_put step layout new "$1" "$1"; fi   # not a question and no step: a task, then -- the layout's own model reads it (never a shrug for "writing with vi")
+}
+# spark steps (spark 1.90, contract 16) plans with the tools themselves: the
+# desktop's tools on stdin as one tools/list result, the words, and the
+# bar's facts and the names each tool takes now as the about, so a step
+# names a thing as the rows write it.
+# What comes back is held by spark's grammar and gated by it; here each
+# step maps back to SECTION ACTION ARG and is gated against the rows again.
+want_tools() {   # -> the desktop's tools as one tools/list result: those of the sections the panel offers here, the about and undo, never the files' (a path is picked in the dialog, never said)
+    _here=" $(panel_brief_sections | tr '\n' ' ')"
+    for t in $PROVIDE_TOOLS; do
+        tool_spec "$t" || continue
+        case $_ts in files) continue ;; about|undo) ;; *) case $_here in *" $_ts "*) ;; *) continue ;; esac ;; esac
+        tool_json "$t"   # no enum of the names listed now: a grammar held to them wrote a wrong network for one not listed; a name not listed whole is refused by the gate instead
+    done | jq -cs '{tools: .}'
+}
+want_name_rows() {   # -> TOOL<tab>NAME per name a tool takes now, as the rows write it: the machine's own things (outputs, devices, networks, windows, layouts, apps), never the theme's words (palettes and colours read from the words; listing them pulled a model off theme_alpha)
+    for p in $(panel_brief_sections); do
+        case $p in
+            theme) ;;
+            layout) ls -A "$LAYOUTS_DIR" 2>/dev/null | sed 's/^/layout_open	/' ;;
+            apps) panel_apps_known | sed 's/^/apps_open	/' ;;
+            *) panel_rows "$p" full | cut -f3 | grep -vx show | while IFS= read -r a; do if action_tool "$p" "$a" && [ "$_tp" = name ] && [ -n "$_tv" ]; then printf '%s\t%s\n' "$_tool" "$_tv"; fi; done ;;   # an if: a row that takes no name is no failure under set -e
+        esac
+    done | awk '!seen[$0]++'
+}
+want_names() { awk -F '\t' '{ if (!($1 in l)) { o[++n] = $1; l[$1] = $2 } else l[$1] = l[$1] ", " $2 } END { for (i = 1; i <= n; i++) printf "%s%s: %s", (i > 1 ? "; " : ""), o[i], l[o[i]] }' "$TMP/want.names"; }   # -> "TOOL: NAME, NAME; ..." for the about, from the rows want_steps read (an enum of names with spaces reads TEXT in spark's brief)
+want_steps() {   # want_steps WORDS -> $TMP/plan from spark steps; exit 1 when spark did not answer
+    want_name_rows > "$TMP/want.names"
+    _about=$(printf 'A desktop. What the bar shows now: %s. The names each tool takes now -- %s. A name in a step is one of these, whole and exactly as written here.' "$(panel_facts)" "$(want_names)" | cut -c1-1800)
+    st=0; want_tools | "$spark" steps --about "$_about" -- "$1" > "$TMP/want.json" 2>"$TMP/want.err" || st=$?
+    [ "$st" -eq 0 ] || { want_put no "$PANEL_CROSS spark did not answer: $(head -1 "$TMP/want.err")"; return 1; }
+    jq -e '.steps | arrays' "$TMP/want.json" >/dev/null 2>&1 || { want_put no "$PANEL_CROSS the answer was not steps for the panel"; return 1; }
+    jq -r '.refused[]? | strings' "$TMP/want.json" > "$TMP/want.refused"
+    while IFS= read -r l; do want_put no "$PANEL_CROSS $l"; done < "$TMP/want.refused"
+    _n=$(jq -r '.steps | length' "$TMP/want.json")
+    if [ "$_n" -eq 0 ]; then   # no step: the answer, else one honest line; never a layout of our own (layout_new is a tool spark may pick itself)
+        [ ! -s "$TMP/want.refused" ] || return 0
+        _ans=$(jq -r '.answer // "" | gsub("[\\n\\r]+"; " ")' "$TMP/want.json")
+        if [ -n "$_ans" ]; then want_put say "$_ans"
+        elif want_is_question "$1"; then want_put say "nothing here answers that"
+        else want_put no "$PANEL_CROSS no step on the panel does that"; fi
+        return 0
+    fi
+    _i=0
+    while [ "$_i" -lt "$_n" ]; do
+        _sn=$(jq -r --argjson i "$_i" '.steps[$i].name // "" | tostring' "$TMP/want.json"); _i=$((_i + 1))
+        if ! tool_spec "$_sn"; then want_put no "$PANEL_CROSS $_sn is not a step the panel takes"; continue; fi
+        _sv=''; [ -z "$_tp" ] || _sv=$(jq -r --argjson i "$((_i - 1))" --arg p "$_tp" '.steps[$i].arguments[$p] // "" | tostring' "$TMP/want.json")
+        case $_sn in theme_palette) want_step theme "$_sv" '' ;; *) want_step "$_ts" "$_ta" "$_sv" ;; esac   # a palette's step is its name alone
+    done
 }
 want_step() {   # want_step SECTION ACTION ARG -- into the plan when panel_gate takes it, else its refusal
     if _g=$(panel_gate "$1" "$2" "$3"); then want_put step "$1" "$2" "$3" "$_g"; else want_put no "$PANEL_CROSS $_g"; fi

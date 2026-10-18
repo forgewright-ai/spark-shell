@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.69
+
+The want path asks spark's planner (issue 7, his word on the card).
+
+- Changed: with spark 1.90 or newer, words that match no row go to
+  `spark steps`: the desktop's tools on its stdin (the sections offered
+  here, the about and undo, never the files', whose path is picked and
+  never said), and as its about the bar's facts and the names each tool
+  takes now (the outputs, devices, networks, windows, layouts and apps,
+  as the rows write them), so "play it on my headset" names the headset
+  as listed. A name not listed whole is refused in one line, never
+  guessed. Each step comes back as a tool call, maps to its section's
+  step and is checked against the list as before. Measured on a Void
+  machine with gemma4-26b-a4b, 22 wants three times each: 58 of 66
+  right where the old path had 39, in the same time (p50 4.4 s). Six of
+  the eight left were refused in one line because the machine was
+  already that way (the mic not muted, new windows already side by
+  side); two wrote less see-through for fully solid.
+- Changed: on that path, words that get no step get the answer or the
+  one line, no step on the panel does that. spark picks `layout new`
+  itself for a task, so the shell no longer turns a stray sentence into
+  a layout (make me a sandwich).
+- Added: the dialog plays a planned undo as its undo row, and a planned
+  about opens its about.
+- With an older spark the path is the one before.
+
 ## v0.68
 
 Found by hand at v0.67 (issue 6).

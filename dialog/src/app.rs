@@ -1043,6 +1043,24 @@ impl App {
             let Some(name) = s.get("name").and_then(Value::as_str) else { continue };
             let arguments = s.get("arguments").and_then(Value::as_object).cloned().unwrap_or_default();
             let line = scrub(s.get("line").and_then(Value::as_str).unwrap_or(name));
+            // two steps are the dialog's own: undo is its undo row, about opens its about
+            if name == "undo_all" {
+                match self.undo.take() {
+                    Some(u) => self.queue.push_back(u),
+                    None => self.say(Sign::Refused, "nothing to undo"),
+                }
+                continue;
+            }
+            if name == "about_open" {
+                if self.about_idx.is_some() {
+                    self.came_from.push(self.view.clone());
+                    self.view = View::About;
+                    self.sel = 0;
+                } else {
+                    self.say(Sign::Refused, &format!("{}: not a step here now", line));
+                }
+                continue;
+            }
             let call = Call {
                 name: name.to_string(),
                 arguments,

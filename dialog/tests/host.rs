@@ -502,3 +502,34 @@ fn a_search_finds_the_about_and_a_section_name_opens_its_section() {
         "a section's name never goes to the model"
     );
 }
+
+#[test]
+fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
+    let (mut app, rx, calls, _r) = started();
+    app.plan(r#"{"answer": "", "steps": [{"name": "undo_all", "arguments": {}, "line": "undo"}], "refused": []}"#);
+    assert_eq!(app.exchange.last().unwrap().text, "nothing to undo");
+    app.undo = Some(spark_dialog::app::Step {
+        prov: 0,
+        call: spark_dialog::model::Call {
+            name: "window_focus".into(),
+            arguments: json!({"name": "terminal"}).as_object().unwrap().clone(),
+            ask: vec![],
+        },
+        who: spark_dialog::app::Who::Undo,
+        line: "undo terminal".into(),
+    });
+    app.plan(r#"{"answer": "", "steps": [{"name": "undo_all", "arguments": {}, "line": "undo"}], "refused": []}"#);
+    assert!(
+        pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["name"] == "window_focus")),
+        "the undo ran"
+    );
+    assert!(app.undo.is_none());
+    app.plan(r#"{"answer": "", "steps": [{"name": "about_open", "arguments": {}, "line": "about"}], "refused": []}"#);
+    assert_eq!(app.exchange.last().unwrap().text, "about: not a step here now", "no about provider here");
+    let (mut app, rx, tx) = app_with(&["about"]);
+    app.servers.push(stub(0, "about", about_stub(), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
+    app.plan(r#"{"answer": "", "steps": [{"name": "about_open", "arguments": {}, "line": "about"}], "refused": []}"#);
+    assert_eq!(app.view, View::About);
+}
