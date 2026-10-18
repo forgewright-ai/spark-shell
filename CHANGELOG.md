@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.65
+
+The last release of the dialog's arc (issue 1): files, the first new
+provider.
+
+- Added: `spark-shell provide files`, the folders the host hands over as
+  its roots (MCP `roots/list`; the dialog hands over your home) and a
+  rows resource per folder under them: its folders, then its files with
+  the size and the date as columns, a folder's own rows as its children,
+  `..` back up, the count and the size at the end. Three read-only
+  tools: open (the app for the file's kind, through xdg-open), show (a
+  text file's first lines) and attach (a text file for the next words).
+  Every path is held to four named lines before anything reads it: it
+  resolves to itself (no link is followed), it sits under a root (never
+  / itself), no part of it is hidden, and it is a regular file or a
+  folder.
+- Added: the files section in the dialog, a folder view that drills
+  down and walks back with Esc, and its columns lined up.
+- Added: plus in the composer. It opens your home filtered by
+  `DIALOG_ATTACH_TYPES`; Enter on a file attaches it (the chip shows its
+  name), the next words go to spark as a question about it
+  (`spark-shell want --attach`), and plus again lets it go. The dialog
+  checks the file sits under your home before anything reads it.
+- Changed: the dialog declares the `roots` capability now that a
+  provider uses it, as the review asked.
+
 ## v0.64
 
 The second release of the dialog's arc (issue 1): the dialog replaces

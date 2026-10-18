@@ -237,7 +237,11 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let cy = HEIGHT - 1;
     let chips = app.chips();
     if chips.contains(&0) {
-        let e = pen.chip(2, cy, "+", app.chip_focus == Some(0));
+        let label = match &app.attachment {
+            Some(a) => format!("+ {}", cut(a.rsplit('/').next().unwrap_or(""), 20)),
+            None => "+".to_string(),
+        };
+        let e = pen.chip(2, cy, &label, app.chip_focus == Some(0));
         drawn.chips.push((2, e, 0));
     }
     if chips.contains(&1) {
@@ -271,6 +275,7 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> Vec<(u16, usize)>
         }
     }
     let pal = pen.pal.clone();
+    let widths = widths(app, &items);
     for (k, it) in items.iter().enumerate().skip(first).take(room) {
         let y = top + (k - first) as u16;
         let lit = Some(k) == selected;
@@ -299,21 +304,63 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> Vec<(u16, usize)>
                     pen.put(x, y, &format!("{}in use", SEP), pal.muted, false, lit);
                 }
             }
-            Item::Row(p, r) => {
-                let row = &app.providers[*p].rows.rows[*r];
-                let (g, c) = sign(&pal, &row.sign);
-                pen.put(4, y, g, c, false, lit);
-                let mut x = pen.put(6, y, &row.text, pal.fg, false, lit);
-                for col in &row.columns {
-                    x = pen.put(x + 3, y, col, pal.muted, false, lit);
-                }
-                if row.children.is_some() {
-                    pen.put(x, y, " \u{203a}", pal.muted, false, lit);
+            Item::Row(p, r) => row_line(pen, &app.providers[*p].rows.rows[*r], y, lit, &widths),
+            Item::Folder(i) => {
+                if let Some(row) = app.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)) {
+                    row_line(pen, row, y, lit, &widths);
                 }
             }
         }
     }
     at
+}
+
+/// The widths of a list's columns: the name, then each column, so they line up (the name 26 cells at most).
+fn widths(app: &App, items: &[Item]) -> Vec<usize> {
+    let mut w: Vec<usize> = vec![];
+    for it in items {
+        let row = match it {
+            Item::Row(p, r) => &app.providers[*p].rows.rows[*r],
+            Item::Folder(i) => match app.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)) {
+                Some(r) => r,
+                None => continue,
+            },
+            _ => continue,
+        };
+        if row.columns.is_empty() {
+            continue;
+        }
+        let cols = std::iter::once(cells(&row.text).min(26)).chain(row.columns.iter().map(|c| cells(c)));
+        for (k, c) in cols.enumerate() {
+            if w.len() <= k {
+                w.push(0);
+            }
+            w[k] = w[k].max(c);
+        }
+    }
+    w
+}
+
+/// One row: its sign at 4, its text at 6, its columns lined up (the first right-aligned, a size; the rest left), its arrow when it opens more.
+fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &[usize]) {
+    let pal = pen.pal.clone();
+    let (g, c) = sign(&pal, &row.sign);
+    pen.put(4, y, g, c, false, lit);
+    let name = if row.columns.is_empty() { row.text.clone() } else { cut(&row.text, 26) };
+    let mut x = pen.put(6, y, &name, pal.fg, false, lit);
+    if !row.columns.is_empty() && !widths.is_empty() {
+        x = 6 + widths[0] as u16;
+        for (k, col) in row.columns.iter().enumerate() {
+            let w = widths.get(k + 1).copied().unwrap_or(0) as u16;
+            let cw = cells(col) as u16;
+            let at = if k == 0 { x + 2 + w.saturating_sub(cw) } else { x + 3 };
+            pen.put(at, y, col, pal.muted, false, lit);
+            x = if k == 0 { x + 2 + w } else { x + 3 + w };
+        }
+    }
+    if row.children.is_some() && row.text != ".." {
+        pen.put(x, y, " \u{203a}", pal.muted, false, lit);
+    }
 }
 
 fn about(app: &App, pen: &mut Pen, bottom: u16) {

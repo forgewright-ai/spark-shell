@@ -3181,9 +3181,9 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 # JSON value is built by jq with --arg, every request is parsed by jq,
 # and a method or a tool name is matched by case, never run as a name.
 PROVIDE_PROTOCOL=2025-06-18
-PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window bar layout apps about undo"   # every panel section but spark: its one row is the chat, which the dialog holds itself
+PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_font theme_wallpaper theme_see_through theme_alpha window_split window_tabs window_stacked window_focus window_close bar_on bar_off layout_open layout_new layout_save layout_add apps_open apps_terminal about_open undo_all"
+PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_font theme_wallpaper theme_see_through theme_alpha window_split window_tabs window_stacked window_focus window_close bar_on bar_off layout_open layout_new layout_save layout_add apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -3242,6 +3242,9 @@ tool_spec() {
         apps_terminal)     _ts=apps _ta=terminal _th='' _tt='apps terminal' _td='Open a terminal window.' ;;
         about_open)        _ts=about _ta=open _th=ri _tt='about' _td='The version, the keys, the licence and the address.' ;;
         undo_all)          _ts=undo _ta=all _th='' _tt='undo' _td='Take the last thing done back.' ;;
+        files_open)        _ts=files _ta=open _tp=path _tk=path _th=if _tt='files open PATH' _td='Open a file with the app that opens its kind.' ;;
+        files_show)        _ts=files _ta=show _tp=path _tk=path _th=rif _tt='files show PATH' _td='The first lines of a text file.' ;;
+        files_attach)      _ts=files _ta=attach _tp=path _tk=path _th=rif _tt='files attach PATH' _td='A text file to ask spark about, with the next words.' ;;
         *) return 1 ;;
     esac
 }
@@ -3266,11 +3269,12 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
             properties: ((if $p == "" then {} else {($p): (
                 if $k == "level" then {type: "integer", minimum: 0, maximum: 100}
                 elif $k == "alpha" then {type: "number", minimum: 0, maximum: 1}
+                elif $k == "path" then {type: "string", minLength: 2, maxLength: 4096}
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
                 else {type: "string", minLength: 1, maxLength: 256} end)} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)),
             required: (if $p == "" then [] else [$p] end), additionalProperties: false},
-         outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"},
+         outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]}}, additionalProperties: false},
          annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}'
 }
@@ -3279,6 +3283,7 @@ provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON a
 }
 provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "rows": [{"id", "sign", "text", "tool", "more", "columns", "children", "group"}], "short": [ID]}; a tool may carry `ask`, the arguments the host asks the person for
     [ "$1" != about ] || { provide_about_rows; return; }
+    [ "$1" != files ] || { provide_files_rows; return; }
     _asks='[]'
     if [ "$1" = wifi ] && [ -n "$(wifi_tool)" ]; then   # a secured network not saved yet: its password is asked, masked
         wifi_known | cut -f2 > "$TMP/wifi.known.ask"
@@ -3306,7 +3311,7 @@ provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION -> ID US SIGN
     elif action_tool "$1" "$_ac"; then _tn=$_tool; _ag=$(tool_call_json "$_tool" "$_tv" | jq -c .arguments); fi
     printf '%s\n' "$_id$US$_sg$US$_tx$US$_tn$US$_ag"   # the parts scrubbed, never the line: the scrubber drops US
 }
-provide_title() { [ "$1" != about ] || { echo "a light desktop of sway and foot, for an AI box"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
+provide_title() { [ "$1" != about ] || { echo "a light desktop of sway and foot, for an AI box"; return; }; [ "$1" != files ] || { echo "your home folder"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
 provide_about_rows() {   # -> the about's rows: the template's `# key:` sentences, a combo as a column, in the splash's four groups; the licence and the address; the row that opens it
     desk_keys | scrub_text | jq -Rn --arg v "$(panel_version)" '
         [inputs] | to_entries | map(.key as $i | .value as $l
@@ -3352,7 +3357,7 @@ provide_main() {   # provide_main SECTION -- serve it until stdin ends
     command -v mkfifo >/dev/null 2>&1 || refuse_in provide "mkfifo is not installed" >&2
     config_load; [ "$OS" = Darwin ] || pm_detect; theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)
     exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in; whatever a step prints goes to stderr
-    WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock
+    WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; : > "$PROOTS"
     trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
     mkfifo "$TMP/in"
     ( while IFS= read -r _l || [ -n "$_l" ]; do fifo_put "in $_l"; _l=''; done; fifo_put eof ) <&6 5>"$TMP/in" 3>&- & READER=$!
@@ -3370,7 +3375,12 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
     _kind=$(printf '%s' "$1" | jq -r 'if type != "object" or .jsonrpc != "2.0" then "bad" elif (has("method") | not) then "answer" elif has("id") then "request" else "note" end' 2>/dev/null) || { rpc_error null -32700 "not JSON"; return 0; }
     case $_kind in
         request) ;;
-        answer|note) return 0 ;;   # a notification (initialized, cancelled) or an answer: this server asks nothing, so nothing to say
+        answer)   # the one question this server asks: the host's roots
+            [ "$(printf '%s' "$1" | jq -c '.id')" = '"roots"' ] && provide_roots "$(printf '%s' "$1" | jq -c '.result // {}')"; return 0 ;;
+        note)   # initialized, roots changed: ask the host for its roots when it has them; anything else, nothing to say
+            case $(printf '%s' "$1" | jq -r '.method') in notifications/initialized|notifications/roots/list_changed)
+                [ -z "$CLIENT_ROOTS" ] || rpc_send "$(jq -cn '{jsonrpc: "2.0", id: "roots", method: "roots/list"}')" ;; esac
+            return 0 ;;
         *) rpc_error null -32600 "one JSON-RPC 2.0 object a line"; return 0 ;;
     esac
     _id=$(printf '%s' "$1" | jq -c '.id')
@@ -3379,15 +3389,21 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
     _params=$(printf '%s' "$1" | jq -c '.params // {}')
     case $_method in
         initialize)
+            [ "$(printf '%s' "$_params" | jq -r '.capabilities.roots != null')" != true ] || CLIENT_ROOTS=1
             rpc_result "$_id" "$(jq -cn --arg v "$PROVIDE_PROTOCOL" --arg n "$sec" --arg t "$(provide_title "$sec")" --arg ver "$(panel_version)" \
                 '{protocolVersion: $v, capabilities: {tools: {listChanged: true}, resources: {subscribe: true, listChanged: true}, logging: {}}, serverInfo: {name: $n, title: $t, version: $ver}}')" ;;
         ping|logging/setLevel) rpc_result "$_id" '{}' ;;
         tools/list) rpc_result "$_id" "$(provide_tools "$sec" | jq -c '{tools: .}')" ;;
         tools/call) provide_call "$_id" "$_params" ;;
         resources/list) rpc_result "$_id" "$(jq -cn --arg u "spark-shell://$sec/rows" --arg s "$sec" '{resources: [{uri: $u, name: "rows", title: ($s + " rows"), mimeType: "application/json"}]}')" ;;
-        resources/templates/list) rpc_result "$_id" '{"resourceTemplates":[]}' ;;
+        resources/templates/list) if [ "$sec" = files ]; then rpc_result "$_id" '{"resourceTemplates":[{"uriTemplate":"spark-shell://files/rows/{folder}","name":"folder","title":"a folder under the roots","mimeType":"application/json"}]}'; else rpc_result "$_id" '{"resourceTemplates":[]}'; fi ;;
         resources/read|resources/subscribe|resources/unsubscribe)
             _uri=$(printf '%s' "$_params" | jq -r '.uri // "" | tostring')
+            if [ "$sec" = files ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://files/rows/?*) true ;; *) false ;; esac; then   # a folder under the roots
+                if provide_files_rows "$_uri" > "$TMP/folder.json"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/folder.json")"
+                else rpc_error "$_id" -32002 "no folder at that uri"; fi
+                return 0
+            fi
             [ "$_uri" = "spark-shell://$sec/rows" ] || { rpc_error "$_id" -32002 "no resource at that uri"; return 0; }
             case $_method in
                 resources/read) provide_rows "$sec" | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' > "$TMP/read.json"
@@ -3411,6 +3427,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
         elif $k == "alpha" then (if (.[$p] | type) == "number" and .[$p] >= 0 and .[$p] <= 1 then "" else $p + " is a number, 0 to 1" end)
+        elif $k == "path" then (if (.[$p] | type) == "string" and (.[$p] | startswith("/")) and (.[$p] | length) <= 4096 and (.[$p] | test("[\u0000-\u001f\u007f]") | not) then "" else $p + " is a whole path, plain text" end)
         elif (.[$p] | type) != "string" or ((.[$p]) | plain | not) then $p + " is plain text, 256 characters at most"
         elif ($k | contains("|")) and (.[$p] as $x | $k | split("|") | any(. == $x) | not) then $p + " is one of " + ($k | split("|") | join(", "))
         else "" end
@@ -3419,6 +3436,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     _v=''; [ -z "$_tp" ] || _v=$(printf '%s' "$_args" | jq -r --arg p "$_tp" '.[$p] | tostring')
     PANEL_PASS=''; [ -z "$_tq" ] || PANEL_PASS=$(printf '%s' "$_args" | jq -r --arg q "$_tq" '.[$q] // ""')   # a password: a shell variable for the step, never a file, never a line out
     _plain=$(printf '%s' "$_args" | jq -c --arg q "$_tq" 'if $q == "" then . else del(.[$q]) end')   # the arguments without the secret: what a row is matched against
+    [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_v"; return 0; }   # files: the four lines, not the panel's gate
     _act=$_ta; _arg=$_v; [ "$_ta" != '=' ] || { _act=$_v; _arg=''; }   # a palette's step is its name alone
     case $_th in *f*) ;; *)   # the argument must be a row's own, exactly: the rows are the allowlist
         provide_rows "$sec" > "$TMP/rows.json"
@@ -3447,6 +3465,116 @@ provide_refuse() { rpc_result "$1" "$(jq -cn --arg t "$2" '{content: [{type: "te
 cmd_provide() {   # cmd_provide SECTION -- the verb
     [ $# -eq 1 ] || refuse_in provide "one section: $(printf '%s' "$PROVIDE_SECTIONS" | sed 's/ /, /g')" >&2
     provide_main "$1"
+}
+
+# --- the files provider (v0.65): the folders the host hands over as its
+# roots (MCP roots/list) and the folders under them, a rows resource a
+# folder: the name, the size and the date as columns, a folder's own
+# rows as its children. Read-only: open, show and attach. Every path is
+# held to four named lines before anything reads it:
+#   it resolves to itself          (realpath: no link is followed, ever)
+#   it sits under a root           (the host's folders, never / itself)
+#   no part of it starts with a dot (a hidden file or folder: not listed, not read)
+#   it is a regular file or folder  (no device, socket or pipe)
+FILES_SHOW_MAX=1048576   # a file shown or attached: a megabyte at most
+FILES_SHOW_LINES=12      # the lines a show puts in the exchange
+files_roots() { [ -z "${PROOTS:-}" ] || cat "$PROOTS" 2>/dev/null || :; }   # -> the roots, one folder a line, each its own realpath
+files_b64() { printf '%s' "$1" | base64 | tr -d '\n=' | tr '+/' '-_'; }   # files_b64 PATH -> the folder's part of its uri
+files_unb64() {   # files_unb64 PART -> the path, or false
+    _fx=$(printf '%s' "$1" | tr -- '-_' '+/'); case $(( ${#_fx} % 4 )) in 2) _fx="$_fx==" ;; 3) _fx="$_fx=" ;; 1) return 1 ;; esac
+    printf '%s' "$_fx" | base64 -d 2>/dev/null || printf '%s' "$_fx" | base64 -D 2>/dev/null
+}
+files_uri() { printf 'spark-shell://files/rows/%s' "$(files_b64 "$1")"; }
+files_ok() {   # files_ok PATH dir|file -> the path when it holds to the four lines, else false
+    _fp=$(realpath "$1" 2>/dev/null) || return 1
+    [ "$_fp" = "$1" ] || return 1   # resolves to itself
+    _froot=''; while IFS= read -r _fr; do [ -n "$_fr" ] || continue; case $_fp in "$_fr"|"$_fr"/*) _froot=$_fr; break ;; esac; done <<ROOTS
+$(files_roots)
+ROOTS
+    [ -n "$_froot" ] || return 1   # under a root
+    case /${_fp#"$_froot"}/ in */.*/*) return 1 ;; esac   # no part of it hidden
+    case $2 in dir) [ -d "$_fp" ] && [ ! -L "$_fp" ] ;; *) [ -f "$_fp" ] && [ ! -L "$_fp" ] ;; esac || return 1
+    printf '%s\n' "$_fp"
+}
+files_stat() {   # files_stat PATH -> "SIZE EPOCH" (GNU stat, else BSD's)
+    stat -c '%s %Y' "$1" 2>/dev/null || stat -f '%z %m' "$1" 2>/dev/null || echo '0 0'
+}
+files_size() { awk -v n="$1" 'BEGIN { if (n < 1024) printf "%d B", n; else if (n < 1048576) printf "%d KB", n / 1024; else if (n < 1073741824) printf "%.1f MB", n / 1048576; else printf "%.1f GB", n / 1073741824 }'; }   # files_size BYTES -> 14 KB, 2.1 MB
+files_when() {   # files_when EPOCH -> today, yesterday, 18 Oct, or the year
+    _fd=$(date -d "@$1" +%Y%m%d 2>/dev/null || date -r "$1" +%Y%m%d 2>/dev/null) || { echo ''; return 0; }
+    _now=$(date +%s); _today=$(date +%Y%m%d); _yday=$(date -d "@$((_now - 86400))" +%Y%m%d 2>/dev/null || date -r "$((_now - 86400))" +%Y%m%d 2>/dev/null)
+    if [ "$_fd" = "$_today" ]; then echo today; elif [ "$_fd" = "$_yday" ]; then echo yesterday
+    elif [ "${_fd%????}" = "$(date +%Y)" ]; then date -d "@$1" '+%d %b' 2>/dev/null || date -r "$1" '+%d %b' 2>/dev/null
+    else echo "${_fd%????}"; fi
+}
+files_home() { _tl='~'; case $1 in "$HOME") echo "$_tl" ;; "$HOME"/*) echo "$_tl/${1#"$HOME"/}" ;; *) echo "$1" ;; esac; }   # files_home PATH -> as a person writes it
+provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows, or one folder's; false when the uri names no folder that holds to the lines
+    _fu=${1:-spark-shell://files/rows}
+    if [ "$_fu" = spark-shell://files/rows ]; then
+        files_roots | while IFS= read -r _fr; do [ -n "$_fr" ] && printf 'files:root:%s\037opens\037%s\037%s\037\037\037\n' "$(files_b64 "$_fr")" "$(files_home "$_fr" | scrub_text)" "$(files_uri "$_fr")"; done > "$TMP/files.rows"
+        _ft='files'
+    else
+        _fp=$(files_unb64 "${_fu#spark-shell://files/rows/}") && _fp=$(files_ok "$_fp" dir) || return 1
+        _ft=$(files_home "$_fp" | scrub_text); : > "$TMP/files.rows"
+        files_roots | grep -qxF "$_fp" || printf 'files:up\037opens\037..\037%s\037\037\037\n' "$(files_uri "$(dirname "$_fp")")" >> "$TMP/files.rows"
+        _fn=0; _fb=0; _fd=0
+        find "$_fp" -mindepth 1 -maxdepth 1 ! -name '.*' -print0 2>/dev/null | tr '\n\000' '\001\n' | sort > "$TMP/files.list"
+        while IFS= read -r _fe; do
+            case $_fe in *"$(printf '\001')"*) continue ;; esac   # a name with a line feed in it: not listed
+            _fname=$(printf '%s' "${_fe##*/}" | scrub_text)
+            if [ -L "$_fe" ]; then printf '2\037files:link:%s\037blank\037%s -> %s\037\037\037\037\n' "$(files_b64 "$_fe")" "$_fname" "$(readlink "$_fe" | scrub_text)"   # a link: shown, never followed
+            elif [ -d "$_fe" ]; then _fd=$((_fd + 1)); _fc=$(find "$_fe" -mindepth 1 -maxdepth 1 ! -name '.*' 2>/dev/null | wc -l | tr -d ' ')
+                _fi=items; [ "$_fc" != 1 ] || _fi=item
+                printf '0\037files:dir:%s\037opens\037%s\037%s\037\037%s %s\037\n' "$(files_b64 "$_fe")" "$_fname" "$(files_uri "$_fe")" "$_fc" "$_fi"
+            elif [ -f "$_fe" ]; then
+                # shellcheck disable=SC2046   # two numbers, split on purpose
+                set -- $(files_stat "$_fe"); _fn=$((_fn + 1)); _fb=$((_fb + $1))
+                printf '1\037files:file:%s\037blank\037%s\037\037%s\037%s\037%s\n' "$(files_b64 "$_fe")" "$_fname" "$(jq -cn --arg p "$_fe" '{path: $p}')" "$(files_size "$1")" "$(files_when "$2")"
+            fi   # a device, a socket, a pipe: not listed
+        done < "$TMP/files.list" > "$TMP/files.unsorted"   # no pipe: the counts stay in this shell
+        sort -t "$(printf '\037')" -k1,1 -k4,4 "$TMP/files.unsorted" | cut -d "$(printf '\037')" -f2- >> "$TMP/files.rows"
+        # the total: the files and their size; a folder of folders counts its folders; nothing listed is empty
+        if [ "$_fn" -gt 0 ]; then _fw="files"; [ "$_fn" != 1 ] || _fw="file"; _fw="$_fn $_fw $PANEL_SEP $(files_size "$_fb")"
+        elif [ "$_fd" -gt 0 ]; then _fw="folders"; [ "$_fd" != 1 ] || _fw="folder"; _fw="$_fd $_fw"
+        else _fw=empty; fi
+        printf 'files:total\037blank\037%s\037\037\037\037\n' "$_fw" >> "$TMP/files.rows"
+    fi
+    jq -Rn --arg t "$_ft" '
+        [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end),
+            tool: (if .[4] == "" then null else {name: "files_open", arguments: (.[4] | fromjson)} end),
+            more: (if .[4] == "" then [] else [{name: "files_show", arguments: (.[4] | fromjson)}, {name: "files_attach", arguments: (.[4] | fromjson)}] end),
+            columns: ([.[5], .[6]] | map(select(. != null and . != ""))), group: null}] as $rows
+        | {title: $t, rows: $rows, short: [$rows[] | select(.id | startswith("files:root:")) | .id]}' "$TMP/files.rows"
+}
+provide_files_call() {   # provide_files_call ID TOOL PATH -- open, show or attach a file that holds to the four lines
+    _ff=$(files_ok "$3" file) || { provide_refuse "$1" "files: that is not a file in the folders given"; return 0; }
+    _fname=$(printf '%s' "${_ff##*/}" | scrub_text)
+    case $2 in
+        files_open)
+            command -v xdg-open >/dev/null 2>&1 || { provide_refuse "$1" "files: xdg-open is not installed, so nothing opens files"; return 0; }
+            [ -n "${WAYLAND_DISPLAY:-}" ] || { provide_refuse "$1" "files: opening a file needs the desktop"; return 0; }
+            _before=$(desk_windows_all); _lead=''; ! command -v setsid >/dev/null 2>&1 || _lead=setsid
+            ( $_lead xdg-open "$_ff" </dev/null >/dev/null 2>&1 & ) 3>&- 4<&- 5>&-
+            if [ -n "${SWAYSOCK:-}" ] && panel_open_wait "$_before"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+            else rpc_result "$1" "$(jq -cn --arg r "opened $_fname" '{receipt: $r} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"; fi ;;
+        files_show|files_attach)
+            set -- "$1" "$2" "$(files_stat "$_ff" | cut -d' ' -f1)"
+            [ "$3" -le "$FILES_SHOW_MAX" ] || { provide_refuse "$1" "files: $_fname is larger than $((FILES_SHOW_MAX / 1024)) kB"; return 0; }
+            [ "$(tr -d '\000' < "$_ff" | wc -c | tr -d ' ')" = "$3" ] || { provide_refuse "$1" "files: $_fname is not text"; return 0; }
+            if [ "$2" = files_show ]; then
+                rpc_result "$1" "$(head -n "$FILES_SHOW_LINES" "$_ff" | scrub_text | jq -Rs --arg n "$_fname" '{receipt: ($n + "\n" + (. | rtrimstr("\n")))} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+            else
+                _fx=$(printf '%s' "${_ff##*/}" | sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | tr 'A-Z' 'a-z')
+                case " $DIALOG_ATTACH_TYPES " in *" ${_fx:-.} "*) ;; *) provide_refuse "$1" "files: $_fname is not a type plus attaches ($DIALOG_ATTACH_TYPES)"; return 0 ;; esac
+                rpc_result "$1" "$(jq -cn --arg r "attached $_fname" --arg p "$_ff" '{receipt: $r, attach: $p} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+            fi ;;
+    esac
+}
+provide_roots() {   # provide_roots RESULT -- the host's roots, each a folder that resolves to itself, never / itself; kept for the steps and the watcher
+    printf '%s' "$1" | jq -r '.roots // [] | .[] | .uri // "" | select(startswith("file://")) | ltrimstr("file://")
+        | [match("%[0-9A-Fa-f]{2}|[^%]+|%"; "g").string | if (startswith("%") and length == 3) then ([.[1:] | ascii_downcase | explode | map(if . >= 97 then . - 87 else . - 48 end) | .[0] * 16 + .[1]] | implode) else . end] | add // ""' 2>/dev/null \
+        | while IFS= read -r _fr; do _fr=$(realpath "$_fr" 2>/dev/null) && [ "$_fr" != / ] && [ -d "$_fr" ] && printf '%s\n' "$_fr"; done > "$PROOTS.new" || :
+    mv "$PROOTS.new" "$PROOTS"
 }
 
 # --- the dialog: the desktop's window (spark-shell issue 1). spark-dialog
@@ -3500,15 +3628,17 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     command -v jq >/dev/null 2>&1 || refuse_in dialog "jq is not installed (spark-shell on)"
     pm_detect; theme_load; SND=$(snd_tool)
     _first=${1:-}
-    case $_first in ''|about|chat) ;; *) panel_section_ok "$_first" || refuse_in dialog "$_first is not a section of the dialog" ;; esac
+    case $_first in ''|about|chat|files) ;; *) panel_section_ok "$_first" || refuse_in dialog "$_first is not a section of the dialog" ;; esac
     [ "$(panel_open_count)" -lt 2 ] || { swaymsg "[app_id=$PANEL_APP] kill" >/dev/null 2>&1 || :; return 0; }   # the key again: the dialog already open goes, this one too
     [ "$_first" != chat ] || { panel_chat; return; }
     dialog_ok || refuse_in dialog "the dialog is not installed, or not the release's -- spark-shell on"
     case $REPO in *[[:space:]]*) refuse_in dialog "the clone's path holds a space, and a provider is argv words: move it ($REPO)" ;; esac
     set --
-    for s in $(dialog_sections "$_first"); do set -- "$@" --provider "$REPO/spark-shell provide $s"; done
+    _ds=$_first; [ "$_ds" != files ] || _ds=''   # files is no panel section: it is started once, below
+    for s in $(dialog_sections "$_ds"); do set -- "$@" --provider "$REPO/spark-shell provide $s"; done
+    set -- "$@" --provider "$REPO/spark-shell provide files"   # the files under HOME, the root the dialog hands it; plus picks from them
     case $_first in about) set -- "$@" --home about --mark on ;; '') ;; *) set -- "$@" --home "$_first" ;; esac
-    _dc=''; [ "$DIALOG_MODEL" != yes ] || _dc=model; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
+    _dc=''; [ "$DIALOG_ATTACH" != yes ] || _dc=plus; [ "$DIALOG_MODEL" != yes ] || _dc="${_dc:+$_dc,}model"; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
     _sp=$(spark_bin); [ -z "$_sp" ] || set -- "$@" --spark "$_sp"
     FULL_ID=''; ! panel_own_window || panel_full_aside
     st=0; "$DIALOG_BIN" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?

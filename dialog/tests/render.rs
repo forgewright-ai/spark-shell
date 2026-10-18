@@ -177,3 +177,39 @@ fn an_answer_wraps_under_its_sign() {
     ];
     render(&app, "answer");
 }
+
+#[test]
+fn a_folder_with_its_columns_and_an_attachment() {
+    let mut app = base();
+    app.cfg.plus = true;
+    let files = provider(
+        "files",
+        "the folders the host hands over",
+        json!({"title": "files", "rows": [
+        {"id": "files:root:a", "sign": "opens", "text": "~", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null}
+    ], "short": ["files:root:a"]}),
+        json!([]),
+    );
+    app.providers.push(files);
+    let f = app.providers.len() - 1;
+    let file = |id: &str, name: &str, size: &str, when: &str| json!({"id": id, "sign": "blank", "text": name, "tool": {"name": "files_open", "arguments": {"path": format!("/data/me/Downloads/{}", name)}}, "more": [], "columns": [size, when], "children": null, "group": null});
+    let rows = model::rows(&json!({"title": "~/Downloads", "rows": [
+        {"id": "files:up", "sign": "opens", "text": "..", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null},
+        {"id": "files:dir:a", "sign": "opens", "text": "archive", "tool": null, "more": [], "columns": ["12 items"], "children": "spark-shell://files/rows/YQ", "group": null},
+        file("files:file:1", "report.pdf", "2.1 MB", "yesterday"),
+        file("files:file:2", "photo-0412.jpg", "4.8 MB", "today"),
+        file("files:file:3", "notes.md", "2 KB", "today"),
+        file("files:file:4", "setup.log", "14 KB", "today"),
+        {"id": "files:total", "sign": "blank", "text": "4 files \u{b7} 6.9 MB", "tool": null, "more": [], "columns": [], "children": null, "group": null}
+    ], "short": []}).to_string()).unwrap();
+    app.view = View::Folder(f, "spark-shell://files/rows/RG93bmxvYWRz".into());
+    app.folder = Some((f, "spark-shell://files/rows/RG93bmxvYWRz".into(), rows));
+    app.sel = 3;
+    app.attachment = Some("/data/me/notes.md".into());
+    app.exchange = vec![Line {
+        sign: Sign::You,
+        text: "which of these are big".into(),
+        undo: false,
+    }];
+    render(&app, "folder");
+}

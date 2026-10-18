@@ -3,7 +3,7 @@
 mod common;
 use common::*;
 use serde_json::{json, Value};
-use spark_dialog::app::{Mode, Sign, View};
+use spark_dialog::app::{Item, Job, Mode, Sign, View};
 use spark_dialog::mcp::Incoming;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -298,4 +298,158 @@ fn an_undo_that_carries_a_secret_is_not_kept_and_esc_closes() {
     app.escape();
     assert_eq!(app.quit, Some(0));
     assert_eq!(app.view, View::Home);
+}
+
+/// A stub files provider: one root whose rows open a folder; the folder holds a text file and a picture; attach answers with a path.
+fn files_stub(calls: Arc<Mutex<Vec<Value>>>, home: String) -> Script {
+    let root = json!({"title": "files", "rows": [{"id": "files:root:a", "sign": "opens", "text": "~", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null}], "short": ["files:root:a"]});
+    let note = format!("{}/notes.md", home);
+    let folder = json!({"title": "~", "rows": [
+        {"id": "files:dir:d", "sign": "opens", "text": "docs", "tool": null, "more": [], "columns": ["3 items"], "children": "spark-shell://files/rows/ZG9jcw", "group": null},
+        {"id": "files:file:n", "sign": "blank", "text": "notes.md", "tool": {"name": "files_open", "arguments": {"path": note}},
+         "more": [{"name": "files_show", "arguments": {"path": note}}, {"name": "files_attach", "arguments": {"path": note}}], "columns": ["12 B", "today"], "children": null, "group": null},
+        {"id": "files:file:p", "sign": "blank", "text": "photo.png", "tool": {"name": "files_open", "arguments": {"path": "/x/photo.png"}}, "more": [], "columns": ["4.8 MB", "today"], "children": null, "group": null},
+        {"id": "files:total", "sign": "blank", "text": "2 files", "tool": null, "more": [], "columns": [], "children": null, "group": null}
+    ], "short": []});
+    let tools = json!([
+        {"name": "files_open", "title": "files open PATH", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}, "annotations": {"destructiveHint": false}},
+        {"name": "files_attach", "title": "files attach PATH", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}, "annotations": {"readOnlyHint": true}}
+    ]);
+    Box::new(move |v, send| {
+        if v.get("method").and_then(Value::as_str) == Some("resources/read") && v.pointer("/params/uri") != Some(&json!("spark-shell://files/rows")) {
+            calls.lock().unwrap().push(json!({"read": v["params"]["uri"].clone()}));
+            return send(result(
+                &v["id"],
+                json!({"contents": [{"uri": v["params"]["uri"], "mimeType": "application/json", "text": folder.to_string()}]}),
+            ));
+        }
+        if let Some(r) = ordinary("files", v, &tools, &root) {
+            return send(r);
+        }
+        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+            calls.lock().unwrap().push(v["params"].clone());
+            let path = v.pointer("/params/arguments/path").cloned().unwrap_or(Value::Null);
+            send(result(
+                &v["id"],
+                json!({"content": [], "structuredContent": {"receipt": "attached notes.md", "attach": path}, "isError": false}),
+            ));
+        }
+    })
+}
+
+#[test]
+fn plus_opens_the_files_attaches_one_and_the_want_carries_it() {
+    let home = std::env::var("HOME").unwrap();
+    let (mut app, rx, tx) = app_with(&["files"]);
+    app.cfg.plus = true;
+    app.cfg.attach = vec!["txt".into(), "md".into()];
+    app.cfg.spark_shell = "/bin/spark-shell".into();
+    let calls = Arc::new(Mutex::new(vec![]));
+    app.servers.push(stub(0, "files", files_stub(calls.clone(), home.clone()), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    assert_eq!(app.chips(), vec![0], "plus shows once a files provider runs");
+    app.chip(0);
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "plus opens the root folder");
+    let shown: Vec<String> = app
+        .items()
+        .iter()
+        .filter_map(|i| match i {
+            Item::Folder(k) => Some(app.folder.as_ref().unwrap().2.rows[*k].text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(shown, vec!["docs", "notes.md"], "a picture and the total are not offered for attaching");
+    app.sel = 1;
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.attachment.is_some()));
+    assert_eq!(app.attachment.as_deref(), Some(format!("{}/notes.md", home).as_str()));
+    assert_eq!(
+        calls.lock().unwrap().last().unwrap()["name"],
+        "files_attach",
+        "attaching calls attach, not open"
+    );
+    assert_eq!(app.view, View::Home, "back where plus was pressed");
+    for c in "what do these say".chars() {
+        app.typed(c);
+    }
+    app.enter();
+    let Some(Job::Run(_, argv)) = app
+        .jobs
+        .iter()
+        .rev()
+        .find(|j| matches!(j, Job::Run(h, _) if *h == spark_dialog::app::Helper::Want))
+    else {
+        panic!("no want")
+    };
+    assert_eq!(
+        argv[1..5].to_vec(),
+        vec!["want".to_string(), "--json".into(), "--attach".into(), format!("{}/notes.md", home)]
+    );
+    assert!(app.attachment.is_none(), "an attachment rides one want");
+}
+
+#[test]
+fn an_attach_from_a_folder_comes_back_to_its_rows() {
+    let home = std::env::var("HOME").unwrap();
+    let (mut app, rx, tx) = app_with(&["files"]);
+    app.cfg.plus = true;
+    app.cfg.attach = vec!["md".into()];
+    let calls = Arc::new(Mutex::new(vec![]));
+    app.servers.push(stub(0, "files", files_stub(calls.clone(), home), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
+    app.chip(0);
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some() && a.attaching.is_some()));
+    app.sel = 1;
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.attachment.is_some()));
+    assert!(matches!(app.view, View::Folder(0, _)), "back in the folder plus was pressed in");
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "its rows are read again, not left empty");
+    assert!(!app.items().is_empty());
+}
+
+#[test]
+fn a_folder_drills_down_and_esc_walks_back() {
+    let home = std::env::var("HOME").unwrap();
+    let (mut app, rx, tx) = app_with(&["files"]);
+    let calls = Arc::new(Mutex::new(vec![]));
+    app.servers.push(stub(0, "files", files_stub(calls.clone(), home), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
+    assert!(matches!(app.view, View::Folder(0, _)));
+    app.enter();
+    assert!(
+        pump(&mut app, &rx, |_a| calls.lock().unwrap().iter().filter(|c| c.get("read").is_some()).count()
+            == 2),
+        "a folder row opens its own rows"
+    );
+    app.escape();
+    assert!(matches!(app.view, View::Folder(0, _)), "Esc goes back one folder");
+    app.escape();
+    assert_eq!(app.view, View::Home);
+    app.escape();
+    assert_eq!(app.quit, Some(0));
+    let _ = rx;
+}
+
+#[test]
+fn an_attachment_outside_home_is_refused() {
+    let (mut app, rx, tx) = app_with(&["files"]);
+    app.cfg.plus = true;
+    app.cfg.attach = vec!["md".into()];
+    let calls = Arc::new(Mutex::new(vec![]));
+    app.servers.push(stub(0, "files", files_stub(calls, "/etc".into()), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    app.chip(0);
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
+    app.sel = 1;
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("not under your home"))));
+    assert!(app.attachment.is_none());
 }

@@ -62,6 +62,7 @@ pub enum Kind {
     Init,
     Tools,
     Read,
+    Folder,
     Subscribe,
     Call(u64),
 }
@@ -287,7 +288,7 @@ fn read_lines(idx: usize, out: impl Read, tx: SyncSender<Incoming>) {
 pub fn init_params() -> Value {
     json!({
         "protocolVersion": PROTOCOL,
-        "capabilities": {"elicitation": {}},
+        "capabilities": {"elicitation": {}, "roots": {"listChanged": false}},
         "clientInfo": {"name": "spark-dialog", "title": "the spark dialog", "version": env!("CARGO_PKG_VERSION")}
     })
 }

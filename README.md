@@ -258,14 +258,22 @@ that ends in a small arrow opens its section in full.
 - `about`: the version, the keys, the licence and the address. It opens
   by itself the first time the desktop starts, and Esc gives the list
   back.
+- `files`: your home folder. Enter on a folder opens it, `..` goes back
+  up, and Esc walks back the way you came; a folder lists its folders,
+  then its files with the size and the date. Enter on a file opens it
+  with the app for its kind. A hidden file, a link and anything outside
+  your home are never read.
 
 Under the rows, what was said and done, the newest nearest the prompt:
 a check is a step done, a cross one refused, and `undo` after a line
 says it can be taken back. Then one line of hints, the prompt, and two
-chips: the model spark uses, where a pick runs `spark model NAME`, and
-talk, which listens through spark's own voice until a pause and puts
-the words at the prompt (shown while the voice is on). Tab moves to the
-chips. `DIALOG_MODEL` and `DIALOG_TALK` hide them.
+chips: plus, which picks a text file from your home to ask about (the
+types `DIALOG_ATTACH_TYPES` names), the model spark uses, where a pick
+runs `spark model NAME`, and talk, which listens through spark's own
+voice until a pause and puts the words at the prompt (shown while the
+voice is on). A file attached shows on the plus chip and rides the next
+words, and plus again lets it go. Tab moves to the chips.
+`DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide them.
 
 Type, and the search runs over everything the dialog can do, shown or
 not: `drac` finds the palette. Words that match no row go to spark, the

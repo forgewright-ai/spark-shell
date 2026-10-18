@@ -20,6 +20,11 @@ pub const ASK_PER_MINUTE: usize = 10;
 /// One redraw of a provider's rows per this long, however often it says they changed.
 pub const READ_GAP: Duration = Duration::from_millis(250);
 
+/// HOME, the one root the dialog hands the files provider; an attachment must sit under it.
+pub fn home() -> Option<String> {
+    std::env::var("HOME").ok().filter(|h| h.starts_with('/') && h.len() > 1)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Sign {
     You,
@@ -40,6 +45,8 @@ pub struct Line {
 pub enum View {
     Home,
     Section(usize),
+    /// A folder (or any rows resource) under a provider: its uri.
+    Folder(usize, String),
     About,
     Models,
 }
@@ -179,6 +186,8 @@ pub enum Item {
     Blank,
     Undo,
     Row(usize, usize),
+    /// A row of the folder shown now.
+    Folder(usize),
     Model(usize),
 }
 
@@ -187,7 +196,14 @@ pub struct App {
     pub providers: Vec<Provider>,
     pub servers: Vec<Server>,
     pub view: View,
-    pub came_from: Option<View>,
+    /// The views behind this one: Esc goes back through them.
+    pub came_from: Vec<View>,
+    /// The folder shown now: its provider, its uri, its rows once read.
+    pub folder: Option<(usize, String, Rows)>,
+    /// Plus is picking a file: the view to go back to and how deep the stack was.
+    pub attaching: Option<(View, usize)>,
+    /// The file the next want carries (`spark-shell want --attach`).
+    pub attachment: Option<String>,
     pub mode: Mode,
     pub input: String,
     pub sel: usize,
@@ -220,13 +236,16 @@ impl App {
             Some(h) => providers.iter().position(|p| p.label == h).map(View::Section).unwrap_or(View::Home),
             None => View::Home,
         };
-        let came_from = (view == View::About).then_some(View::Home); // opened on the about (the first desktop start): Esc gives the list back
+        let came_from: Vec<View> = if view == View::About { vec![View::Home] } else { vec![] }; // opened on the about (the first desktop start): Esc gives the list back
         App {
             cfg,
             providers,
             servers: vec![],
             view,
             came_from,
+            folder: None,
+            attaching: None,
+            attachment: None,
             mode: Mode::Normal,
             input: String::new(),
             sel: 0,
@@ -373,6 +392,12 @@ impl App {
                 }
             }
             "elicitation/create" => self.elicit(idx, id, p),
+            "roots/list" => {
+                let roots: Vec<Value> = home().map(|h| json!({"uri": format!("file://{}", h), "name": "home"})).into_iter().collect();
+                if let Some(s) = self.server(idx) {
+                    s.answer(&id, json!({"roots": roots}));
+                }
+            }
             _ => {
                 if let Some(s) = self.server(idx) {
                     s.refuse(&id, -32601, "the dialog does not answer that");
@@ -471,6 +496,24 @@ impl App {
                     self.providers[idx].ready = true;
                 }
             }
+            Kind::Folder => {
+                let text = result
+                    .as_ref()
+                    .and_then(|r| r.pointer("/contents/0/text"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if text.len() > mcp::RESOURCE_MAX {
+                    return self.say(Sign::Refused, "that folder holds too much to show");
+                }
+                if let View::Folder(p, uri) = self.view.clone() {
+                    if p == idx {
+                        match model::rows(text) {
+                            Some(rows) => self.folder = Some((p, uri, rows)),
+                            None => self.say(Sign::Refused, &error.unwrap_or_else(|| "that folder could not be read".into())),
+                        }
+                    }
+                }
+            }
             Kind::Call(_) => self.called(idx, n, result, error),
         }
     }
@@ -529,6 +572,27 @@ impl App {
                 }
             }
             View::About => {}
+            View::Folder(..) => {
+                let Some((p, _, rows)) = &self.folder else { return out };
+                for (i, r) in rows.rows.iter().enumerate() {
+                    if !self.input.is_empty() && !self.matches(*p, r) {
+                        continue;
+                    }
+                    if self.attaching.is_some() && r.children.is_none() && r.tool.is_some() {
+                        let ext = r.text.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+                        if !self.cfg.attach.contains(&ext) {
+                            continue;
+                        }
+                    }
+                    if self.attaching.is_some() && r.tool.is_none() && r.children.is_none() {
+                        continue;
+                    }
+                    if i + 1 == rows.rows.len() && i > 0 && r.tool.is_none() && r.children.is_none() {
+                        out.push(Item::Blank); // the summary at the end stands apart
+                    }
+                    out.push(Item::Folder(i));
+                }
+            }
             View::Section(p) => {
                 let mut group: Option<String> = None;
                 for (i, r) in self.providers[*p].rows.rows.iter().enumerate() {
@@ -617,6 +681,12 @@ impl App {
             .into_iter()
             .filter(|i| match i {
                 Item::Row(p, r) => Self::pickable(&self.providers[*p].rows.rows[*r]),
+                Item::Folder(i) => self
+                    .folder
+                    .as_ref()
+                    .and_then(|(_, _, rows)| rows.rows.get(*i))
+                    .map(Self::pickable)
+                    .unwrap_or(false),
                 Item::Undo | Item::Model(_) => true,
                 _ => false,
             })
@@ -684,9 +754,17 @@ impl App {
                 } else if !self.input.is_empty() {
                     self.input.clear();
                     self.sel = 0;
-                } else if let Some(v) = self.came_from.take() {
+                } else if let Some(v) = self.came_from.pop() {
                     self.view = v;
                     self.sel = 0;
+                    if self.attaching.as_ref().map(|(_, d)| self.came_from.len() < *d + 1).unwrap_or(false) {
+                        self.attaching = None;
+                    }
+                    if !matches!(self.view, View::Folder(..)) {
+                        self.folder = None;
+                    } else if let View::Folder(p, uri) = self.view.clone() {
+                        self.read_folder(p, &uri);
+                    }
                 } else {
                     self.quit = Some(0);
                 }
@@ -778,26 +856,16 @@ impl App {
                 self.say(Sign::Step, &format!("model {}", name));
                 self.thinking = true;
                 self.jobs.push(Job::Run(Helper::ModelSet, vec![self.cfg.spark.clone(), "model".into(), name]));
-                self.view = self.came_from.take().unwrap_or(View::Home);
+                self.view = self.came_from.pop().unwrap_or(View::Home);
                 self.sel = 0;
             }
             Item::Row(p, r) => {
                 let row = self.providers[p].rows.rows[r].clone();
                 if let Some(c) = row.children {
-                    let label = c.trim_start_matches("spark-shell://").trim_end_matches("/rows").to_string();
-                    if let Some(q) = self.providers.iter().position(|x| x.label == label) {
-                        if q == self.about_idx.unwrap_or(usize::MAX) {
-                            self.came_from = Some(self.view.clone());
-                            self.view = View::About;
-                        } else {
-                            self.came_from = Some(self.view.clone());
-                            self.view = View::Section(q);
-                        }
-                        self.sel = 0;
-                    }
+                    self.open_children(p, &c);
                 } else if let Some(call) = row.tool {
                     if call.name == "about_open" {
-                        self.came_from = Some(self.view.clone());
+                        self.came_from.push(self.view.clone());
                         self.view = View::About;
                         self.sel = 0;
                         return;
@@ -811,16 +879,81 @@ impl App {
                     });
                 }
             }
+            Item::Folder(i) => {
+                let Some((p, _, rows)) = self.folder.clone() else { return };
+                let Some(row) = rows.rows.get(i).cloned() else { return };
+                if let Some(c) = row.children {
+                    self.open_children(p, &c);
+                    return;
+                }
+                let call = if self.attaching.is_some() {
+                    row.more.iter().find(|m| m.name.ends_with("_attach")).cloned()
+                } else {
+                    row.tool.clone()
+                };
+                if let Some(call) = call {
+                    let line = format!("{} {}", self.providers[p].label, row.text);
+                    self.run(Step {
+                        prov: p,
+                        call,
+                        who: Who::Person,
+                        line,
+                    });
+                }
+            }
             _ => {}
         }
+    }
+
+    /// A row's children: a provider's own rows (its section), or one of its folders.
+    fn open_children(&mut self, from: usize, uri: &str) {
+        let rest = uri.strip_prefix("spark-shell://").unwrap_or("");
+        let (label, tail) = rest.split_once('/').unwrap_or((rest, ""));
+        let Some(q) = self.providers.iter().position(|x| x.label == label) else {
+            return;
+        };
+        let _ = from;
+        self.came_from.push(self.view.clone());
+        self.sel = 0;
+        if tail == "rows" {
+            self.view = if Some(q) == self.about_idx { View::About } else { View::Section(q) };
+        } else if tail.starts_with("rows/") {
+            self.view = View::Folder(q, uri.to_string());
+            self.read_folder(q, uri);
+        }
+    }
+
+    fn read_folder(&mut self, p: usize, uri: &str) {
+        self.folder = None;
+        if let Some(s) = self.server(p) {
+            s.request("resources/read", json!({"uri": uri}), Kind::Folder, mcp::T_READ);
+        }
+    }
+
+    /// The files provider, when one is running and handed a root.
+    fn files(&self) -> Option<usize> {
+        self.providers.iter().position(|p| p.label == "files" && p.dead.is_none())
     }
 
     /// The chips: 0 plus, 1 the model, 2 talk.
     pub fn chip(&mut self, c: usize) {
         self.chip_focus = None;
         match c {
+            0 if self.cfg.plus => {
+                if let Some(a) = self.attachment.take() {
+                    let name = a.rsplit('/').next().unwrap_or("").to_string();
+                    self.say(Sign::Done, &format!("{} no longer attached", name));
+                    return;
+                }
+                let Some(f) = self.files() else { return };
+                let Some(root) = self.providers[f].rows.rows.iter().find_map(|r| r.children.clone()) else {
+                    return self.say(Sign::Refused, "no folder to attach from");
+                };
+                self.attaching = Some((self.view.clone(), self.came_from.len()));
+                self.open_children(f, &root);
+            }
             1 if self.cfg.model => {
-                self.came_from = Some(self.view.clone());
+                self.came_from.push(self.view.clone());
                 self.view = View::Models;
                 self.sel = self.models.iter().position(|(_, s)| s == "serving").unwrap_or(0);
             }
@@ -841,7 +974,7 @@ impl App {
 
     pub fn chips(&self) -> Vec<usize> {
         let mut v = vec![];
-        if self.cfg.plus {
+        if self.cfg.plus && self.files().is_some() {
             v.push(0);
         }
         if self.cfg.model && self.model_name.is_some() {
@@ -872,10 +1005,14 @@ impl App {
             return self.say(Sign::Refused, "no spark-shell to read the words");
         }
         self.thinking = true;
-        self.jobs.push(Job::Run(
-            Helper::Want,
-            vec![self.cfg.spark_shell.clone(), "want".into(), "--json".into(), "--".into(), words.to_string()],
-        ));
+        let mut argv = vec![self.cfg.spark_shell.clone(), "want".into(), "--json".into()];
+        if let Some(a) = self.attachment.take() {
+            argv.push("--attach".into());
+            argv.push(a);
+        }
+        argv.push("--".into());
+        argv.push(words.to_string());
+        self.jobs.push(Job::Run(Helper::Want, argv));
     }
 
     /// The plan from `spark-shell want --json`: each step gated here too, then run in order.
@@ -1007,6 +1144,23 @@ impl App {
                 self.say(Sign::Refused, text);
             } else {
                 let sc = r.get("structuredContent").cloned().unwrap_or(Value::Null);
+                if let Some(path) = sc.get("attach").and_then(Value::as_str) {
+                    let under = home().map(|h| path.starts_with(&format!("{}/", h))).unwrap_or(false);
+                    if under && !path.split('/').any(|c| c == ".." || c.starts_with('.')) {
+                        self.attachment = Some(path.to_string());
+                        if let Some((v, depth)) = self.attaching.take() {
+                            self.came_from.truncate(depth);
+                            self.view = v;
+                            self.folder = None;
+                            self.sel = 0;
+                            if let View::Folder(p, uri) = self.view.clone() {
+                                self.read_folder(p, &uri);
+                            }
+                        }
+                    } else {
+                        self.say(Sign::Refused, "that file is not under your home: not attached");
+                    }
+                }
                 if sc.get("opened").and_then(Value::as_bool) == Some(true) {
                     self.opened = true;
                 } else {
@@ -1140,7 +1294,7 @@ impl App {
         }
         match &self.view {
             View::Home => clock.to_string(),
-            View::Section(p) => self.providers[*p].label.clone(),
+            View::Section(p) | View::Folder(p, _) => self.providers[*p].label.clone(),
             View::About => "spark-shell".into(),
             View::Models => "model".into(),
         }
@@ -1149,6 +1303,7 @@ impl App {
     pub fn subtitle(&self) -> String {
         match &self.view {
             View::Section(p) => self.providers[*p].title.clone(),
+            View::Folder(..) => self.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default(),
             View::About => self.about_idx.map(|i| self.providers[i].version.clone()).unwrap_or_default(),
             _ => String::new(),
         }
@@ -1189,6 +1344,11 @@ impl App {
             }
             Mode::Normal => vec![],
         };
+        if self.attaching.is_some() {
+            v.push((format!("pick a file to attach ({})", self.cfg.attach.join(" ")), false));
+            v.extend(esc("cancels"));
+            return v;
+        }
         if self.view == View::About {
             v.push(("say what you would like".into(), false));
         } else {
