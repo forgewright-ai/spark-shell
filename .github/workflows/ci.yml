@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
       - name: privacy gate over the whole tree
@@ -59,7 +59,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git shellcheck diffutils jq openssh-client curl >/dev/null   # jq: a desk reads the model's answer with it; ssh-keygen: a release tag's signature
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
       - name: every package name of distro/debian.env exists on Debian (nothing installed)
@@ -75,7 +75,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - run: pacman -Syu --noconfirm --needed git diffutils jq openssh >/dev/null   # ssh-keygen: a release tag's signature
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
       - name: every package name of distro/arch.env exists on Arch (nothing installed)
@@ -91,7 +91,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - run: xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null; xbps-install -Sy git bash diffutils jq gawk gzip libstdc++ openssh curl >/dev/null
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
       - name: every package name of distro/void.env exists on Void (nothing installed)
@@ -102,7 +102,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
       - name: the suite in a throwaway HOME (Apple's sh)
@@ -119,7 +119,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -163,7 +163,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262   # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
       - name: zizmor over .github/workflows
