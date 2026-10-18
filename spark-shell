@@ -2713,7 +2713,8 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
         about) printf '%s\tspark-shell %s\topen\n' "$PANEL_GO" "$(panel_version)" ;;   # the splash, in this window
         window) for _w in split tabs stacked; do
                 if [ "$_w" = "${WINDOWS:-split}" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$(win_words "$_w")"; else printf -- '-\t%s\t%s\n' "$(win_words "$_w")" "$_w"; fi
-            done ;;
+            done
+            [ "${2:-}" != full ] || win_open | awk -F '\t' '!s[$1]++' | while IFS="$TAB" read -r _a _t _i; do printf '%s\t%s\tfocus %s\n-\tclose %s\tclose %s\n' "$PANEL_GO" "$_a" "$_a" "$_a" "$_a"; done ;;   # the windows open now: in front, or closed; typing a name finds them
         bar) if [ "$DESKTOP_BAR" = yes ]; then printf -- '-\thide\toff\n'; else printf -- '-\tshow\ton\n'; fi ;;   # on and off, as the verb: show is the panel's look-only word
         layout) if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then
                 for f in "$LAYOUTS_DIR"/*; do _w=$(desk_words "$f"); [ -n "$_w" ] || _w=${f##*/}; printf '%s\t%s\topen %s\n' "$PANEL_GO" "$_w" "${f##*/}"; done
@@ -2824,6 +2825,8 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                     case $_a in tabs) _l=tabbed ;; stacked) _l=stacking ;; *) _l=splith ;; esac
                     [ -z "${SWAYSOCK:-}" ] || swaymsg -- "[workspace=__focused__ tiling] layout $_l" >/dev/null 2>&1 || :
                     echo "windows $(win_words "$_a")" ;;
+                close) swaymsg -- "[app_id=$_arg] kill" >/dev/null 2>&1 || swaymsg -- "[class=$_arg] kill" >/dev/null 2>&1 || { echo "$_arg did not close"; return 1; }; echo "$_arg closed" ;;
+                focus) swaymsg -- "[app_id=$_arg] focus" >/dev/null 2>&1 || swaymsg -- "[class=$_arg] focus" >/dev/null 2>&1 || { echo "no window named $_arg"; return 1; }; : > "$TMP/opened"; echo "$_arg in front" ;;   # the window is the receipt
                 *) echo "$_a is not something window does"; return 1 ;;
             esac ;;
         about) case $_a in open) panel_about 72 ;; *) echo "$_a is not something about does"; return 1 ;; esac ;;   # on a pipe: the splash as text
@@ -2850,6 +2853,10 @@ panel_open_wait() {   # panel_open_wait COUNT -- until sway shows more windows t
     _t=0; while [ "$(desk_windows_all)" -le "$1" ] && [ "$_t" -lt $((DESK_WAIT * 4)) ]; do sleep 0.25; _t=$((_t + 1)); done
     [ "$(desk_windows_all)" -gt "$1" ]
 }
+win_open() {   # -> the windows sway shows, one a line: APP<tab>TITLE<tab>ID; the panel's own left out
+    swaymsg -t get_tree 2>/dev/null | jq -r --arg me "$PANEL_APP" '.. | objects | select(.pid? != null and (.type? == "con" or .type? == "floating_con")) | select(((.app_id // .window_properties.class // "") != "") and .app_id != $me) | "\(.app_id // .window_properties.class)\t\(.name // "")\t\(.id)"' 2>/dev/null || :
+}
+win_named() { win_open | awk -F '\t' -v w="$(panel_lower "$1")" 'tolower($1) == w || (w != "" && index(tolower($2), w) > 0) { print $1; exit }'; }   # win_named WORD -> the app of the first open window named so, by its app or its title
 desk_windows_all() { swaymsg -t get_tree 2>/dev/null | jq '[.. | objects | select(.pid? != null)] | length' 2>/dev/null || echo 0; }   # -> how many windows sway shows, on every workspace
 panel_layout_save() {   # panel_layout_save NAME -> what is open on the focused workspace, saved as a layout under NAME
     desk_in_sway || { echo "saving what is open needs the desktop"; return 1; }
@@ -2893,6 +2900,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         out:use|mic:use) _cur=$(snd_devices "$_p" | awk -F '\t' '$2 == 1 && !d {print $1; d = 1}'); [ -z "$_cur" ] || printf 'use %s\t%s %s\n' "$_cur" "$_p" "$_cur" ;;   # the whole list read: no broken pipe
         theme:font) if [ "$_arg" = bigger ]; then printf 'font smaller\tfont smaller\n'; else printf 'font bigger\tfont bigger\n'; fi ;;
         theme:alpha|theme:see-through) printf 'alpha %s\twindows see-through %s%%\n' "$ALPHA" "$(see_through "$ALPHA")" ;;
+        window:close|window:focus) ;;   # a closed window does not come back; a window in front has no inverse worth a row
         window:*) printf '%s\twindows %s\n' "${WINDOWS:-split}" "$(win_words "$WINDOWS")" ;;
         bar:off) printf 'on\tbar shown\n' ;;
         bar:on) printf 'off\tbar hidden\n' ;;
@@ -2909,7 +2917,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
 panel_step() {   # panel_step SECTION ACTION [ARG] -> panel_act's line; a step that worked is remembered as recent, and its inverse kept for undo
     _inv=$(panel_inverse "$@")
     if panel_act "$@"; then
-        case $2 in show|all|pick|chat|more|save) ;; *) panel_recent_add "$1" "$(printf '%s' "$2${3:+ $3}${4:+ $4}${5:+ $5}" | sed 's/ *$//')" ;; esac
+        case $2 in show|all|pick|chat|more|save|close|focus) ;; *) panel_recent_add "$1" "$(printf '%s' "$2${3:+ $3}${4:+ $4}${5:+ $5}" | sed 's/ *$//')" ;; esac
         [ -z "$_inv" ] || printf '%s\t%s\n' "$1" "$_inv" >> "$TMP/group"
         return 0
     fi
@@ -2989,6 +2997,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         layout:open) _n=$(desk_name_of "$3"); if [ -n "$_n" ] && [ -f "$LAYOUTS_DIR/$_n" ]; then echo "$_n"; return 0; fi; echo "layout: no saved layout named $3"; return 1 ;;
         layout:new) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: new takes the words for it"; return 1 ;;
         apps:pick|apps:terminal) echo ''; return 0 ;;
+        window:close|window:focus) _n=$(win_named "${3:-}"); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "window: no window named ${3:-?} is open"; return 1 ;;
         out:level|mic:level) case $3 in [0-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "$1: level takes 0 to 100"; return 1 ;; esac ;;
         theme:alpha) case $3 in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) echo "$3"; return 0 ;; *) echo "theme: alpha takes 0 to 1"; return 1 ;; esac ;;
     esac
@@ -3031,6 +3040,7 @@ want_names_app() {   # want_names_app WORDS -> the first word that names an app 
     done
     return 1
 }
+want_says_close() { printf '%s\n' "$1" | grep -qiwE 'close|quit|kill|exit|stop|hide|minimi[sz]e'; }   # want_says_close WORDS -> 0 when the words end something: never an app to open, never a layout
 want_is_question() {   # want_is_question WORDS -> 0 when the words ask something (a question mark, or a question's first word)
     case $1 in *'?') return 0 ;; esac
     case " $(printf '%s' "$1" | tr 'A-Z' 'a-z' | cut -d' ' -f1) " in ' what '|' how '|' why '|' when '|' where '|' who '|' which '|' is '|' are '|' can '|' could '|' do '|' does '|' did '|' will '|' should '|' was '|' were ') return 0 ;; *) return 1 ;; esac
@@ -3040,7 +3050,7 @@ want_play() {   # want_play WORDS -> one line per step with its sign, or the ans
     command -v jq >/dev/null 2>&1 || { echo "jq is not installed (spark-shell on)"; return 1; }
     spark=$(spark_bin); [ -n "$spark" ] || { echo "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
     SND=${SND:-$(snd_tool)}
-    if _app=$(want_names_app "$1"); then   # the machine's own word: an app named opens, or is a layout for the task; never a question for the model
+    if ! want_says_close "$1" && _app=$(want_names_app "$1"); then   # the machine's own word: an app named opens, or is a layout for the task; never a question for the model; words about closing go to the list
         if [ "$(printf '%s\n' "$1" | wc -w | tr -d ' ')" -le 2 ] && [ "$(desk_words_full "$1")" = false ] && [ -z "$(desk_words_ws "$1")" ]; then   # a word or two and no layout word: the app itself, at once
             if _l=$(panel_step apps open "$(panel_apps_known | awk -v w="$_app" 'tolower($0) == w && !d {print; d = 1}')" 2>&1); then printf '%s %s\n' "$PANEL_TICK" "$_l"; else printf '%s %s\n' "$PANEL_CROSS" "$_l"; fi
         else want_layout "$1"; fi   # the layout's model reads the whole sentence: the workspace, fullscreen, the pages
@@ -3055,6 +3065,7 @@ want_play() {   # want_play WORDS -> one line per step with its sign, or the ans
     if [ "$(jq -r '.steps | length' "$TMP/want.json")" -eq 0 ]; then   # the model's why is not shown: the steps say it; a question gets its answer
         _ans=$(jq -r '.answer // "" | gsub("[\\n\\r]+"; " ")' "$TMP/want.json")
         if want_is_question "$1"; then if [ -n "$_ans" ]; then printf '%s\n' "$_ans"; else echo "nothing here answers that"; fi
+        elif want_says_close "$1"; then echo "$PANEL_CROSS no step on the panel does that"
         else want_layout "$1"; fi   # not a question and no step: a task, then -- the layout's own model reads it (never a shrug for "writing with vi")
         return 0
     fi
@@ -3222,7 +3233,11 @@ panel_loop() {   # panel_loop SECTION -- the window: the glance, the receipt, th
         FZF=''; panel_tick_stop; panel_pulse_kill
         [ "$st" -lt 128 ] || { [ "$view" = about ] || break; view=home; said=''; continue; }   # Esc, the corner, Ctrl-C, or the window was closed: the splash gives the list back, the list ends the window
         q=$(sed -n 1p "$TMP/sel"); s=$(sed -n 2p "$TMP/sel")
-        rm -f "$TMP/opened"; view=home
+        rm -f "$TMP/opened"; _was=$view; view=home
+        if panel_fzf_head && { [ -n "$s" ] || [ -n "$q" ]; }; then   # fzf took its lines with it: the glance back under the step; a want from the splash runs under the clock
+            [ "$_was" = home ] || { panel_glance "$width" > "$TMP/glance"; : > "$TMP/receipt"; panel_head > "$TMP/head"; }
+            printf '\033[2J\033[H\n'; sed 's/^/  /' "$TMP/head"
+        fi
         if [ -n "$s" ]; then
             # shellcheck disable=SC2086   # the row's SECTION ACTION ARG, split on purpose
             set -- ${s#*"$TAB"}; pg=$1; a=$2; shift 2

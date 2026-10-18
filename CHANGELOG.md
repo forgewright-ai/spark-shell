@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.62
+
+- Fixed: a want typed at the splash, or a pick in the panel, ran on a
+  blank window with only the march showing. The glance is drawn again
+  before the step runs.
+- Fixed: words about closing an app, as `close the window with
+  firefox`, opened it. They never open an app or a layout now.
+- Added: `window close NAME` and `window focus NAME` for the windows
+  that are open. Typing a window's name finds the rows, and spark picks
+  them from the list.
+
 ## v0.61
 
 - Added: the splash. The first time the desktop starts, the panel's

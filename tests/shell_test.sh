@@ -2487,6 +2487,17 @@ else
         && ok "panel window split: side by side again, workspace_layout default" || bad "window split" "st=$st $out"
     st=0; out=$(sh "$SH" panel window sideways 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: window: sideways is not on the panel now' ] && ok "panel window WORD: a way that is not a row is refused" || bad "window refuse" "st=$st $out"
+    # the windows open now: a row that puts one in front, a close row, the steps by name; the tree shows a firefox window while $HOME/fullscreen is there
+    touch "$HOME/fullscreen"; rm -f "$H/.local/state/swaymsg.log"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window close firefox 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'firefox closed' ] && grep -qxF '[app_id=firefox] kill' "$H/.local/state/swaymsg.log" && ! sh "$SH" panel --list | grep -q 'undo.*firefox' \
+        && ok "panel window close firefox: the open window is told to close; no undo row for it" || bad "window close" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
+    SWAYSOCK=/tmp/x sh "$SH" panel window --list > "$H/win.list"
+    grep -q "^$(printf '\342\226\270') window  firefox	window focus firefox$" "$H/win.list" && grep -q "^  window  close firefox	window close firefox$" "$H/win.list" && ! grep -q 'spark-panel' "$H/win.list" \
+        && ok "panel window --list: an open window is a row that puts it in front, and a close row; the panel's own window is not listed" || bad "window rows" "$(cat "$H/win.list")"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window close nothing 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: window: no window named nothing is open' ] && ok "panel window close NAME: a window that is not open is refused" || bad "window close refuse" "st=$st $out"
+    rm -f "$HOME/fullscreen" "$H/win.list"
     printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
     line=$(sh "$SH" bar status --once)
     printf '%s' "$line" | jq -e '[.[] | select(.name == "theme")] | length == 0' >/dev/null && ok "bar: no theme block even with a palette set (the panel's theme section has it)" || bad "theme block" "$line"
@@ -2522,6 +2533,21 @@ EOF
     rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel writing with vi and the prompt shell 2>&1) || st=$?
     printf '%s\n' "$out" | grep -q '^  layout> writing with vi and the prompt shell$' && ! printf '%s\n' "$out" | grep -q '192.0.2.10' \
         && ok "panel WORDS that are no question and get no step: a layout for the task, never the model's shrug or a facts dump" || bad "want task fallback" "st=$st $out"
+    # words about closing an app never open it or a layout: they go to the list, where spark picks window close
+    cat > "$H/.local/bin/spark" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" > "$HOME/spark.argv"
+printf '{"why": "close it", "steps": [{"page": "window", "action": "close", "arg": "firefox"}]}\n'
+EOF
+    chmod +x "$H/.local/bin/spark"; touch "$HOME/fullscreen"; rm -f "$H/.local/state/swaymsg.log" "$HOME/spark.argv"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel close the window with firefox 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^  $TICK firefox closed$" && grep -qxF '[app_id=firefox] kill' "$H/.local/state/swaymsg.log" && ! grep -q '^exec firefox' "$H/.local/state/swaymsg.log" && grep -q 'close firefox' "$HOME/spark.argv" \
+        && ok "panel WORDS about closing an app: never the app opened or a layout; spark picks window close firefox from the list, and the window is told to close" || bad "want close" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
+    printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/spark.argv"\nprintf "{\\"why\\": \\"no\\", \\"steps\\": []}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"; rm -f "$H/.local/state/swaymsg.log"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel quit firefox 2>&1) || st=$?
+    printf '%s\n' "$out" | grep -q "^  $CROSS no step on the panel does that$" && ! grep -q '^exec firefox' "$H/.local/state/swaymsg.log" 2>/dev/null \
+        && ok "panel WORDS about closing with no step from spark: one honest line, never a layout" || bad "want close no step" "st=$st $out"
+    rm -f "$HOME/fullscreen"
     # the window itself, driven by an fzf of the test's: a pick runs through panel_run and panel_step, the next list carries the undo row
     cat > "$H/.local/bin/fzf" <<'STUB'
 #!/bin/sh
@@ -2532,7 +2558,7 @@ if [ "$n" -eq 1 ]; then printf '\n  out     mute\tout mute\n'; exit 0; else exit
 STUB
     chmod +x "$H/.local/bin/fzf"; rm -f "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$amlog" "$journal/undo" "$journal/recent"
     st=0; out=$(SPARK_SHELL_TEST_TTY=1 sh "$SH" panel 2>&1 </dev/null) || st=$?
-    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && sed "s/$(printf '\033')\[[0-9;]*m//g" "$H/fzf.in.2" | grep -q "^  $TICK out muted$" && ! printf '%s\n' "$out" | grep -q 'not found' && grep -q "undo.*out unmute	undo all$" "$H/fzf.in.2" && grep -q -- "--highlight-line --pointer  --marker  --padding 1,0,0,2 --header-lines=[0-9]* --bind change:reload(cat .*/head; if \[ -n {q} \]; then cat .*/rows.full; else cat .*/rows.short; fi) --bind resize:reload(cat .*/head; " "$H/fzf.args.2" && grep -q -- 'click-header:transform(if \[ "$FZF_CLICK_HEADER_LINE" = 1 \] && \[ "$FZF_CLICK_HEADER_COLUMN" -ge [0-9]* \]; then echo abort; fi)' "$H/fzf.args.2" && grep -qx -- '-c 0 sset Master mute' "$amlog" \
+    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && sed "s/$(printf '\033')\[[0-9;]*m//g" "$H/fzf.in.2" | grep -q "^  $TICK out muted$" && printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g" | grep -q "^    $(date '+%A %d %B') *$(printf '\342\235\257')$" && ! printf '%s\n' "$out" | grep -q 'not found' && grep -q "undo.*out unmute	undo all$" "$H/fzf.in.2" && grep -q -- "--highlight-line --pointer  --marker  --padding 1,0,0,2 --header-lines=[0-9]* --bind change:reload(cat .*/head; if \[ -n {q} \]; then cat .*/rows.full; else cat .*/rows.short; fi) --bind resize:reload(cat .*/head; " "$H/fzf.args.2" && grep -q -- 'click-header:transform(if \[ "$FZF_CLICK_HEADER_LINE" = 1 \] && \[ "$FZF_CLICK_HEADER_COLUMN" -ge [0-9]* \]; then echo abort; fi)' "$H/fzf.args.2" && grep -qx -- '-c 0 sset Master mute' "$amlog" \
         && ok "the window: Enter on out mute plays the step, the receipt rides in fzf's first lines with a check, the next list opens with the undo row, fzf holds the glance (header lines, a reload with the head on a change and on a resize, the corner's click told by line and column); Esc ends it" || bad "window pick" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) out=$(printf '%s' "$out" | tr -d '\033' | tr '\n' '|' | tail -c 400) in2=$(grep undo "$H/fzf.in.2" 2>&1)"
     plain=$(sed "s/$(printf '\033')\[[0-9;]*m//g" "$H/fzf.in.1")
     printf '%s\n' "$plain" | grep -q "^  $(date '+%A %d %B') *$(printf '\342\235\257')$" && printf '%s\n' "$plain" | grep -q "$B$B.*      .* Su  Mo  Tu  We  Th  Fr  Sa$" && [ "$(printf '%s\n' "$plain" | grep -c "$B$B")" -ge 5 ] && [ "$(grep -c "$B$B" "$H/fzf.in.2")" -ge 5 ] && ! printf '%s\n' "$plain" | grep -q "wifi home $SEP" && ! printf '%s\n' "$plain" | grep -q "out     Jabra" && grep -q "	about open$" "$H/fzf.in.1" && grep -q "pick an option, or say what you would like .* Esc .*closes" "$H/fzf.args.1" \

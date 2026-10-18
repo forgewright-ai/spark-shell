@@ -280,7 +280,9 @@ bottom, where the hint and the prompt are.
   applies now, the panel included. New windows take a font change.
 - `window`: how new windows sit on a workspace, side by side, in tabs
   or stacked. A pick sets this workspace now and is remembered for new
-  ones, reboots included.
+  ones, reboots included. Typing an open window's name finds two more
+  rows: Enter puts it in front, and `close NAME` closes it. Words about
+  closing never open an app.
 - `bar`: hide the bar at the top of the screen, or show it again.
   Super+d opens the panel either way. Remembered too.
 - `apps`: a terminal window, then a row per app a layout may open, and
