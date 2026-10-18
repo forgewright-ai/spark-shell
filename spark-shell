@@ -3638,7 +3638,8 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     _ds=$_first; [ "$_ds" != files ] || _ds=''   # files is no panel section: it is started once, below
     for s in $(dialog_sections "$_ds"); do set -- "$@" --provider "$REPO/spark-shell provide $s"; done
     set -- "$@" --provider "$REPO/spark-shell provide files"   # the files under HOME, the root the dialog hands it; plus picks from them
-    case $_first in about) set -- "$@" --home about --mark on ;; '') ;; *) set -- "$@" --home "$_first" ;; esac
+    case $_first in '') ;; *) set -- "$@" --home "$_first" ;; esac
+    set -- "$@" --mark on   # the logo on the about however it is reached; the dialog draws it only where the terminal draws sixel
     _dc=''; [ "$DIALOG_ATTACH" != yes ] || _dc=plus; [ "$DIALOG_MODEL" != yes ] || _dc="${_dc:+$_dc,}model"; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
     _sp=$(spark_bin); [ -z "$_sp" ] || set -- "$@" --spark "$_sp"
     FULL_ID=''; ! panel_own_window || panel_full_aside

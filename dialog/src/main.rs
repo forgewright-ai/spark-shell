@@ -257,13 +257,29 @@ fn main() {
                 f.set_cursor_position(drawn.cursor);
             });
             match ui::mark_at(&app) {
-                Some((mx, my)) if sixel_ok && !mark_drawn => {
+                Some((mx, my)) if !mark_drawn => {
+                    // the buffer skips the logo's cells, so what the last view drew there stays: blank them first,
+                    // or the old text shows through the logo's transparent ground
+                    let ground = match pal.surface {
+                        ratatui::style::Color::Rgb(r, g, b) => ratatui::crossterm::style::Color::Rgb { r, g, b },
+                        _ => ratatui::crossterm::style::Color::Reset,
+                    };
+                    let _ = queue!(
+                        out,
+                        ratatui::crossterm::cursor::SavePosition,
+                        ratatui::crossterm::cursor::MoveTo(mx, my),
+                        ratatui::crossterm::style::SetBackgroundColor(ground),
+                        ratatui::crossterm::style::Print(" ".repeat(ui::MARK_CELLS as usize)),
+                        ratatui::crossterm::style::ResetColor,
+                        ratatui::crossterm::cursor::RestorePosition
+                    );
+                    let _ = out.flush();
                     let cell_h = terminal::window_size()
                         .ok()
                         .filter(|w| w.rows > 0 && w.height > 0)
                         .map(|w| (w.height / w.rows) as u32)
                         .unwrap_or(0);
-                    if let Some(s) = sixel::mark(cell_h, pal.dark) {
+                    if let Some(s) = sixel::mark(cell_h, pal.dark).filter(|_| sixel_ok) {
                         let _ = queue!(out, ratatui::crossterm::cursor::SavePosition, ratatui::crossterm::cursor::MoveTo(mx, my));
                         let _ = out.write_all(s.as_bytes());
                         let _ = queue!(out, ratatui::crossterm::cursor::RestorePosition);

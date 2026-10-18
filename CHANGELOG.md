@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.67
+
+Found by hand at v0.66 (issue 5).
+
+- Fixed: the about opened from the home dialog, by its row or by typing
+  about, now shows the logo. It showed only when the dialog started on
+  the about. Its cells are blanked first, so the clock of the home
+  dialog never shows through the logo.
+- Fixed: the arrows in the hint are key chips, as Esc is: a key named on
+  the screen is a chip, everywhere.
+
 ## v0.66
 
 Found by hand at v0.65 (issue 4): the about could not be found, and a

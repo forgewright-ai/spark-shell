@@ -1360,7 +1360,11 @@ impl App {
         if self.view == View::About {
             v.push(("say what you would like".into(), false));
         } else {
-            v.push(("\u{2191} \u{2193} pick, or say what you would like".into(), false));
+            // a key named on the screen is a chip: each arrow its own, as Esc
+            v.push(("\u{2191}".into(), true));
+            v.push((" ".into(), false));
+            v.push(("\u{2193}".into(), true));
+            v.push((" pick, or say what you would like".into(), false));
         }
         v.extend(esc("closes"));
         v
