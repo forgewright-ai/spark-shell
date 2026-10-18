@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.59
+
+- Added: the logo, in `assets/`: spark's block-letter S with the prompt
+  sign and a cursor cell, in two inks by the ground, and a favicon for
+  each. The README shows it. Nothing else changes.
+
 ## v0.58
 
 - Changed: the list after Super+d is short, each section's state and

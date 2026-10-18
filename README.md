@@ -1,5 +1,10 @@
 # spark-shell
 
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="assets/logo.svg">
+<img src="assets/logo-light.svg" alt="spark-shell" width="150">
+</picture>
+
 spark-shell sets up the terminal on a Linux machine or a Mac: tmux, a
 prompt, a few everyday tools and one colour palette. On Linux it can
 also add a simple desktop, and spark, the local AI, can open the apps
@@ -334,6 +339,11 @@ by the Wi-Fi tool itself.
 
 The settings live in `~/.config/spark-shell/config`, and every run
 reads that file. A setting in the environment never stands in for it.
+
+The logo, in `assets/`: spark's block-letter S, then the prompt sign and
+a cursor cell. `logo.svg` is for a dark ground and `logo-light.svg` for
+a light one; `favicon.svg` and `favicon-light.svg` carry their ground.
+The S keeps spark's colours and is never recoloured.
 
 Uninstall: `spark-shell off`, then delete `~/.spark-shell`.
 

@@ -4,6 +4,12 @@ spark-shell stands on other people's work. Every program here comes
 from a package manager's own repositories, unpinned. The palettes are
 colour values, credited below.
 
+## The logo
+
+The S in `assets/` is spark's own block letter, from
+https://github.com/forgewright-ai/spark -- MIT. spark-shell adds the
+prompt sign and the cursor cell.
+
 ## The prompt
 
 - starship -- https://github.com/starship/starship -- ISC, (c) Starship
