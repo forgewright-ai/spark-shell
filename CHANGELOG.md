@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.63
+
+The first of three releases for the dialog that replaces the panel
+(issue 1). Nothing on the screen changes.
+
+- Added: `spark-shell provide SECTION`, every panel section but spark as
+  an MCP server on stdin and stdout, protocol 2025-06-18. Its steps are
+  tools with a title the model may say (`wifi connect NAME`), a closed
+  input schema and every hint written out, since an unmarked tool counts
+  as destructive. Its rows are the resource `spark-shell://SECTION/rows`,
+  a host that subscribes is told when they change, and a long step
+  reports its progress. A call runs only a step the section offers now,
+  with a row's own argument, then the panel's own check. A result
+  carries the step that takes it back. Only MCP reaches stdout. spark is
+  no provider: its one row is the chat, which the dialog holds itself.
+- Added: `spark-shell want "WORDS"`, the panel's prompt from anywhere;
+  `--json` prints the steps spark picks, each checked and named as a
+  tool, and runs none, for the dialog; `--attach FILE` asks spark about
+  a text file, sent by its name alone.
+- Added: the dialog's keys, `DIALOG_ATTACH`, `DIALOG_ATTACH_TYPES`,
+  `DIALOG_MODEL` and `DIALOG_TALK`. The types default to `txt md`, not
+  the five first planned: spark reads text, so a PDF or a picture waits
+  for a reader of its own.
+- Changed: the favicons have no ground of their own, and come as PNGs at
+  the heights of a terminal row, 16, 19, 22 and 26 pixels, dark and
+  light.
+- Fixed: a network, a device or a window named with an escape or a
+  direction control could redraw the panel; such characters are dropped
+  from every name. A name with a star or a bracket in it is used as
+  written. The panel's journal folder is yours alone.
+- Changed: the README says a window's name rides a want, as it does, and
+  a file only when you attach one.
+
 ## v0.62.1
 
 - Fixed: a terminal window was listed as `foot`, so `close aerc` found

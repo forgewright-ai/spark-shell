@@ -29,6 +29,11 @@
 #   spark-shell panel [SECTION]       open the panel (Super+d), SECTION first
 #   spark-shell panel chat            spark chat in the panel's window (Super+s)
 #   spark-shell panel "WORDS"         ask for it: "mute everything", "quiet"
+#   spark-shell want "WORDS"          the same, from anywhere: the steps run
+#   spark-shell want --json "WORDS"   the steps spark picks, as JSON; none run
+#   spark-shell want --attach FILE "WORDS"
+#                                     ask about a text file (txt md)
+#   spark-shell provide SECTION       a panel section as an MCP server on stdio
 #   spark-shell sbom [NAME]           list the installed software, or one
 #   spark-shell sbom --json           write the list as a CycloneDX 1.5 file
 #
@@ -111,7 +116,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK'
 
 # This machine's short name (the twin of spark lib/env.sh short_host)
 short_host() {
@@ -143,11 +148,14 @@ config_load() {
     if [ -n "$CONSOLE_FONT" ] && ! printf '%s' "$CONSOLE_FONT" | grep -qE '^[A-Za-z0-9._-]+ [0-9][0-9x.]*$'; then
         echo "spark-shell: CONSOLE_FONT=$CONSOLE_FONT in $CONFIG: FACE SIZE (spark-shell font list)" >&2; exit 1
     fi
-    for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR; do
+    # the dialog's composer: plus and the file types it attaches, the model chip, talk
+    : "${DIALOG_ATTACH:=yes}" "${DIALOG_ATTACH_TYPES:=txt md}" "${DIALOG_MODEL:=yes}" "${DIALOG_TALK:=yes}"
+    for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK; do
         eval "v=\$$k"
         case $v in yes|no) ;; *) echo "spark-shell: $k=$v in $CONFIG: yes or no" >&2; exit 1 ;; esac
     done
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS
+    printf '%s\n' "$DIALOG_ATTACH_TYPES" | grep -qE '^[a-z0-9]{1,8}( [a-z0-9]{1,8})*$' || { echo "spark-shell: DIALOG_ATTACH_TYPES=$DIALOG_ATTACH_TYPES in $CONFIG: file types in lower case, a space between (txt md)" >&2; exit 1; }
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK
 }
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept
     mkdir -p "$CONFIG_DIR"
@@ -2351,11 +2359,12 @@ PANEL_CACHE=$STATE_DIR/panel
 panel_cache() {   # panel_cache NAME AGE CMD... -> CMD's output, from the cache while younger than AGE seconds, else fresh (and kept)
     _pc_file=$PANEL_CACHE/$1; _pc_age=$2; _pc_now=$(date +%s); shift 2   # names of their own: CMD may use the usual short ones
     if [ -f "$_pc_file" ] && [ $(( _pc_now - $(sed -n 1p "$_pc_file") )) -lt "$_pc_age" ] 2>/dev/null; then sed 1d "$_pc_file"; return 0; fi
-    mkdir -p "$PANEL_CACHE"
+    panel_dir
     { echo "$_pc_now"; "$@"; } > "$_pc_file.new" 2>/dev/null && mv "$_pc_file.new" "$_pc_file" || { rm -f "$_pc_file.new"; "$@"; return; }
     sed 1d "$_pc_file"
 }
 panel_forget() { rm -f "$PANEL_CACHE/$1"; }   # panel_forget NAME -- after a change the probe must see
+panel_dir() { mkdir -p "$PANEL_CACHE" && chmod 700 "$PANEL_CACHE"; }   # the cache and the journal: names of networks, devices and apps, for you alone
 panel_age() {   # panel_age NAME SECONDS -- an answer made older by that much, so it is asked again sooner
     _pc_file=$PANEL_CACHE/$1; [ -f "$_pc_file" ] || return 0
     { echo $(( $(sed -n 1p "$_pc_file") - $2 )); sed 1d "$_pc_file"; } > "$_pc_file.new" && mv "$_pc_file.new" "$_pc_file"
@@ -2364,10 +2373,10 @@ panel_age() {   # panel_age NAME SECONDS -- an answer made older by that much, s
 panel_group_begin() { : > "$TMP/group"; }   # a pick, a want, a step by hand: one group, one undo
 panel_group_end() {   # the group's inverses become the undo (none: the old undo stays)
     [ -s "$TMP/group" ] || return 0
-    mkdir -p "$PANEL_CACHE"; awk '{ l[NR] = $0 } END { for (i = NR; i >= 1; i--) print l[i] }' "$TMP/group" > "$PANEL_CACHE/undo"
+    panel_dir; awk '{ l[NR] = $0 } END { for (i = NR; i >= 1; i--) print l[i] }' "$TMP/group" > "$PANEL_CACHE/undo"
 }
 panel_recent_add() {   # panel_recent_add SECTION "ACTION ARG" -- the newest first, once, five kept
-    mkdir -p "$PANEL_CACHE"; printf '%s\t%s\n' "$1" "$2" > "$TMP/recent.new"
+    panel_dir; printf '%s\t%s\n' "$1" "$2" > "$TMP/recent.new"
     [ ! -f "$PANEL_CACHE/recent" ] || grep -vxF "$(printf '%s\t%s' "$1" "$2")" "$PANEL_CACHE/recent" | head -4 >> "$TMP/recent.new"
     mv "$TMP/recent.new" "$PANEL_CACHE/recent"
 }
@@ -2440,14 +2449,14 @@ wifi_connected() {   # -> the network in use, or nothing
         nmcli) nmcli -t -e yes -f IN-USE,SSID dev wifi list 2>/dev/null | awk -F: '$1 == "*" { sub(/^[^:]*:/, ""); gsub(/\\:/, ":"); print; exit }' ;;
         iwctl) iwctl station "$(wifi_if)" show 2>/dev/null | wifi_strip | awk '$1 == "Connected" && $2 == "network" { $1 = ""; $2 = ""; sub(/^ +/, ""); print; exit }' ;;
         wpa_cli) wpa_cli -i "$(wifi_if)" status 2>/dev/null | sed -n 's/^ssid=//p' | sed -n 1p ;;
-    esac
+    esac | scrub_text   # a network's name is anyone's words: nothing in it redraws a screen
 }
 wifi_known() {   # -> ID<tab>NAME per saved network (ID is the tool's handle: a name for nmcli and iwctl, a number for wpa_cli)
     case $(wifi_tool) in
         nmcli) nmcli -t -e yes -f NAME,TYPE con show 2>/dev/null | awk -F: '$NF ~ /wireless/ { $NF = ""; sub(/:$/, ""); gsub(/\\:/, ":"); print $0 "\t" $0 }' ;;
         iwctl) iwctl known-networks list 2>/dev/null | wifi_strip | awk 'NR > 4 && NF >= 3 { n = ""; for (i = 1; i <= NF - 3; i++) n = n (n == "" ? "" : " ") $i; if (n != "") print n "\t" n }' ;;
         wpa_cli) wpa_cli -i "$(wifi_if)" list_networks 2>/dev/null | awk -F '\t' 'NR > 1 && $2 != "" { print $1 "\t" $2 }' ;;
-    esac
+    esac | scrub_text
 }
 wifi_scan() {   # -> NAME<tab>LEVEL<tab>SECURED per network around, strongest first; a scan is kept for a minute, a thin one (the radio was busy) for ten seconds
     panel_cache wifi.scan 60 wifi_scan_now | tee "$TMP/wifi.last"
@@ -2462,7 +2471,7 @@ wifi_scan_now() {
         wpa_cli) wpa_cli -i "$(wifi_if)" scan >/dev/null 2>&1; sleep 2
             wpa_cli -i "$(wifi_if)" scan_results 2>/dev/null | awk -F '\t' 'NR > 1 && $5 != "" { sec = ($4 ~ /WPA|WEP|PSK|SAE/) ? 1 : 0; print $5 "\t" $3 "\t" sec }' \
             | while IFS="$TAB" read -r n dbm sec; do printf '%s\t%s\t%s\n' "$n" "$(wifi_level "$dbm")" "$sec"; done ;;
-    esac | awk -F '\t' '!seen[$1]++ || $2 > best[$1] { best[$1] = $2; sec[$1] = $3 } END { for (n in best) print n "\t" best[n] "\t" sec[n] }' | sort -t "$TAB" -k2,2nr -k1,1
+    esac | awk -F '\t' '!seen[$1]++ || $2 > best[$1] { best[$1] = $2; sec[$1] = $3 } END { for (n in best) print n "\t" best[n] "\t" sec[n] }' | scrub_text | sort -t "$TAB" -k2,2nr -k1,1
 }
 wifi_known_id() { wifi_known | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($2) == n && !done { print $1; done = 1 }'; }   # wifi_known_id NAME -> its handle, or nothing
 wifi_connect() {   # wifi_connect NAME [PASSWORD] -> one line
@@ -2515,7 +2524,7 @@ bt_list() { panel_cache bt.list 30 bt_list_now; }   # -> MAC<tab>NAME<tab>PAIRED
 bt_list_now() {
     _p=$(bar_timeout bluetoothctl devices Paired 2>/dev/null | awk '$1 == "Device" {print $2}')
     _c=$(bar_timeout bluetoothctl devices Connected 2>/dev/null | awk '$1 == "Device" {print $2}')
-    bar_timeout bluetoothctl devices 2>/dev/null | awk '$1 == "Device" { mac = $2; $1 = ""; $2 = ""; sub(/^ +/, ""); print mac "\t" $0 }' | while IFS="$TAB" read -r mac name; do
+    bar_timeout bluetoothctl devices 2>/dev/null | scrub_text | awk '$1 == "Device" { mac = $2; $1 = ""; $2 = ""; sub(/^ +/, ""); print mac "\t" $0 }' | while IFS="$TAB" read -r mac name; do
         p=0; c=0
         printf '%s\n' "$_p" | grep -qx "$mac" && p=1
         printf '%s\n' "$_c" | grep -qx "$mac" && c=1
@@ -2768,7 +2777,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
         wifi) case $_a in
                 connect) _sec=$(wifi_scan | awk -F '\t' -v n="$(panel_lower "$_arg")" 'tolower($1) == n && !done {print $3; done = 1}')
                     if [ -n "$(wifi_known_id "$_arg")" ] || [ "${_sec:-0}" = 0 ]; then wifi_connect "$_arg"
-                    else _pw=$(panel_secret "password for $_arg: "); [ -n "$_pw" ] || { echo "no password given, so not connected"; return 1; }; wifi_connect "$_arg" "$_pw"; fi ;;
+                    else _pw=${PANEL_PASS:-}; [ -n "$_pw" ] || _pw=$(panel_secret "password for $_arg: "); [ -n "$_pw" ] || { echo "no password given, so not connected"; return 1; }; wifi_connect "$_arg" "$_pw"; fi ;;
                 disconnect) wifi_disconnect ;;
                 forget) wifi_forget "$_arg" ;;
                 *) echo "$_a is not something wifi does"; return 1 ;;
@@ -2855,7 +2864,7 @@ panel_open_wait() {   # panel_open_wait COUNT -- until sway shows more windows t
     [ "$(desk_windows_all)" -gt "$1" ]
 }
 win_open() {   # -> the windows sway shows, one a line: APP<tab>TITLE<tab>ID; the panel's own left out
-    swaymsg -t get_tree 2>/dev/null | jq -r --arg me "$PANEL_APP" '.. | objects | select(.pid? != null and (.type? == "con" or .type? == "floating_con")) | select(((.app_id // .window_properties.class // "") != "") and .app_id != $me) | "\(.app_id // .window_properties.class)\t\(.name // "")\t\(.id)"' 2>/dev/null || :
+    swaymsg -t get_tree 2>/dev/null | jq -r --arg me "$PANEL_APP" '.. | objects | select(.pid? != null and (.type? == "con" or .type? == "floating_con")) | select(((.app_id // .window_properties.class // "") != "") and .app_id != $me) | "\(.app_id // .window_properties.class)\t\(.name // "" | gsub("\t"; " "))\t\(.id)"' 2>/dev/null | scrub_text || :   # a title is any program's words: scrubbed
 }
 win_label() { win_open | awk -F '\t' '{ l = $1; if (($1 == "foot" || $1 == "footclient") && $2 != "") l = $2; print l "\t" $3 }'; }   # -> NAME<tab>ID: a terminal window goes by what runs in it (its title: aerc, btop, terminal), every other by its app
 win_named() { win_label | awk -F '\t' -v w="$(panel_lower "$1")" 'w != "" && (tolower($1) == w || index(tolower($1), w) > 0) { print $2; exit }'; }   # win_named WORD -> the id of the first open window named so
@@ -2887,8 +2896,9 @@ panel_undo() {   # the last group's inverse steps, played newest first, then for
     [ -s "$PANEL_CACHE/undo" ] || { echo "nothing to undo"; return 1; }
     cp "$PANEL_CACHE/undo" "$TMP/undo"; rm -f "$PANEL_CACHE/undo"
     while IFS="$TAB" read -r pg step _; do   # the words are the row's, not needed here
-        # shellcheck disable=SC2086   # the inverse's ACTION ARG, split on purpose
-        if _l=$(panel_act "$pg" $step 2>&1); then printf '%s %s\n' "$PANEL_TICK" "$_l"; else printf '%s %s\n' "$PANEL_CROSS" "$_l"; fi
+        # shellcheck disable=SC2086   # the inverse's ACTION ARG, split on purpose, never a glob (the step itself keeps its own)
+        set -f; set -- $step; set +f
+        if _l=$(panel_act "$pg" "$@" 2>&1); then printf '%s %s\n' "$PANEL_TICK" "$_l"; else printf '%s %s\n' "$PANEL_CROSS" "$_l"; fi
     done < "$TMP/undo"
 }
 
@@ -3049,35 +3059,107 @@ want_is_question() {   # want_is_question WORDS -> 0 when the words ask somethin
     case " $(printf '%s' "$1" | tr 'A-Z' 'a-z' | cut -d' ' -f1) " in ' what '|' how '|' why '|' when '|' where '|' who '|' which '|' is '|' are '|' can '|' could '|' do '|' does '|' did '|' will '|' should '|' was '|' were ') return 0 ;; *) return 1 ;; esac
 }
 want_layout() { ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; desk_need "$1" ) || :; }   # want_layout WORDS -- a layout for the task, by the layout's own model
-want_play() {   # want_play WORDS -> one line per step with its sign, or the answer to a question; an app named is a layout first
-    command -v jq >/dev/null 2>&1 || { echo "jq is not installed (spark-shell on)"; return 1; }
-    spark=$(spark_bin); [ -n "$spark" ] || { echo "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
+# The want: words that match no row, from the panel's prompt, `spark-shell
+# panel "WORDS"`, `spark-shell want` and the dialog. want_plan reads the
+# words and writes the plan, $TMP/plan, a line each, its fields parted by
+# US (an empty field stays a field): `step SECTION ACTION ARG GATED`, `say
+# LINE` (an answer) or `no LINE` (a refusal, its sign in front). A step is
+# in the plan only once panel_gate took it: a step the panel offers now,
+# GATED the row's own ARG. Nothing runs here. want_run plays a plan;
+# want_json prints it for the dialog, which runs each step as a tools/call.
+US=$(printf '\037')
+want_put() { _wp=''; for _f in "$@"; do _wp="$_wp${_wp:+$US}$(printf '%s' "$_f" | scrub_text)"; done; printf '%s\n' "$_wp" >> "$TMP/plan"; }   # want_put FIELD... -- one plan line, every field scrubbed
+want_plan() {   # want_plan WORDS -> $TMP/plan; exit 1 when the words could not be read (the plan says why)
+    : > "$TMP/plan"
+    command -v jq >/dev/null 2>&1 || { want_put no "jq is not installed (spark-shell on)"; return 1; }
+    spark=$(spark_bin); [ -n "$spark" ] || { want_put no "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
     SND=${SND:-$(snd_tool)}
     if ! want_says_close "$1" && _app=$(want_names_app "$1"); then   # the machine's own word: an app named opens, or is a layout for the task; never a question for the model; words about closing go to the list
         if [ "$(printf '%s\n' "$1" | wc -w | tr -d ' ')" -le 2 ] && [ "$(desk_words_full "$1")" = false ] && [ -z "$(desk_words_ws "$1")" ]; then   # a word or two and no layout word: the app itself, at once
-            if _l=$(panel_step apps open "$(panel_apps_known | awk -v w="$_app" 'tolower($0) == w && !d {print; d = 1}')" 2>&1); then printf '%s %s\n' "$PANEL_TICK" "$_l"; else printf '%s %s\n' "$PANEL_CROSS" "$_l"; fi
-        else want_layout "$1"; fi   # the layout's model reads the whole sentence: the workspace, fullscreen, the pages
+            want_step apps open "$(panel_apps_known | awk -v w="$_app" 'tolower($0) == w && !d {print; d = 1}')"
+        else want_put step layout new "$1" "$1"; fi   # the layout's model reads the whole sentence: the workspace, fullscreen, the pages
         return 0
     fi
     _brief=$(panel_brief)
-    [ -n "$_brief" ] || { echo "nothing on the panel takes an action on this machine"; return 1; }
+    [ -n "$_brief" ] || { want_put no "nothing on the panel takes an action on this machine"; return 1; }
     about="The panel of a desktop. What the bar shows now: $(panel_facts). What this machine can do now, by section -- $_brief. Rules: only steps from that list; N is a number (0 to 100 for level, 0 to 1 for alpha), NAME a name as listed, TASK the want in the user's own words, as {\"page\": \"layout\", \"action\": \"new\", \"arg\": \"write notes\"}, which opens the apps for that task, any program by name included; a layout step for a want that names a program or a task to do, never for a setting alone; as few steps as the want takes; no step when nothing on the list does it; when the words ask something rather than ask for a change, put the answer in \"answer\", one or two sentences, and give no steps. Answer with one JSON object and nothing else: {\"why\": \"one sentence\", \"answer\": \"\", \"steps\": [{\"page\": \"bt\", \"action\": \"connect\", \"arg\": \"NAME\"}]}"
     st=0; "$spark" edit --type json --name panel.json --about "$about" -- "do this on the desktop: $1" </dev/null > "$TMP/want.json" 2>"$TMP/want.err" || st=$?
-    [ "$st" -eq 0 ] || { echo "$PANEL_CROSS spark did not answer: $(head -1 "$TMP/want.err")"; return 1; }
-    jq -e '.steps | arrays' "$TMP/want.json" >/dev/null 2>&1 || { echo "$PANEL_CROSS the answer was not steps for the panel"; return 1; }
+    [ "$st" -eq 0 ] || { want_put no "$PANEL_CROSS spark did not answer: $(head -1 "$TMP/want.err")"; return 1; }
+    jq -e '.steps | arrays' "$TMP/want.json" >/dev/null 2>&1 || { want_put no "$PANEL_CROSS the answer was not steps for the panel"; return 1; }
     if [ "$(jq -r '.steps | length' "$TMP/want.json")" -eq 0 ]; then   # the model's why is not shown: the steps say it; a question gets its answer
         _ans=$(jq -r '.answer // "" | gsub("[\\n\\r]+"; " ")' "$TMP/want.json")
-        if want_is_question "$1"; then if [ -n "$_ans" ]; then printf '%s\n' "$_ans"; else echo "nothing here answers that"; fi
-        elif want_says_close "$1"; then echo "$PANEL_CROSS no step on the panel does that"
-        else want_layout "$1"; fi   # not a question and no step: a task, then -- the layout's own model reads it (never a shrug for "writing with vi")
+        if want_is_question "$1"; then if [ -n "$_ans" ]; then want_put say "$_ans"; else want_put say "nothing here answers that"; fi
+        elif want_says_close "$1"; then want_put no "$PANEL_CROSS no step on the panel does that"
+        else want_put step layout new "$1" "$1"; fi   # not a question and no step: a task, then -- the layout's own model reads it (never a shrug for "writing with vi")
         return 0
     fi
-    jq -r '.steps[] | [(.page // "" | tostring), (.action // "" | tostring), (.arg // "" | tostring)] | @tsv' "$TMP/want.json" | while IFS="$TAB" read -r pg ac ar; do
-        if arg=$(panel_gate "$pg" "$ac" "$ar"); then
-            # shellcheck disable=SC2086   # the row's own ARG, split on purpose
-            if _l=$(panel_step "$pg" "$ac" $arg 2>&1); then printf '%s %s\n' "$PANEL_TICK" "$_l"; else printf '%s %s\n' "$PANEL_CROSS" "$_l"; fi
-        else printf '%s %s\n' "$PANEL_CROSS" "$arg"; fi
+    jq -r '.steps[] | [(.page // "" | tostring), (.action // "" | tostring), (.arg // "" | tostring)] | @tsv' "$TMP/want.json" > "$TMP/want.steps"
+    while IFS="$TAB" read -r pg ac ar; do want_step "$pg" "$ac" "$ar"; done < "$TMP/want.steps"
+}
+want_step() {   # want_step SECTION ACTION ARG -- into the plan when panel_gate takes it, else its refusal
+    if _g=$(panel_gate "$1" "$2" "$3"); then want_put step "$1" "$2" "$3" "$_g"; else want_put no "$PANEL_CROSS $_g"; fi
+}
+want_run() {   # plays $TMP/plan: each step's line with its sign, a say or no line as it is
+    while IFS="$US" read -r k pg ac ar ga; do
+        case $k in
+            say|no) printf '%s\n' "$pg" ;;
+            step) if [ "$pg:$ac" = layout:new ]; then want_layout "$ar"
+                  elif _l=$(panel_step "$pg" "$ac" "$ga" 2>&1); then printf '%s %s\n' "$PANEL_TICK" "$_l"; else printf '%s %s\n' "$PANEL_CROSS" "$_l"; fi ;;
+        esac
+    done < "$TMP/plan"
+}
+want_play() {   # want_play WORDS -> one line per step with its sign, or the answer to a question; an app named is a layout first
+    _st=0; want_plan "$1" || _st=$?
+    want_run
+    return "$_st"
+}
+want_json() {   # -> the plan as one JSON object for the dialog: {"answer", "steps": [{"name", "arguments", "line"}], "refused": [LINE]}
+    while IFS="$US" read -r k pg ac ar ga; do
+        case $k in
+            say) jq -cn --arg t "$pg" '{answer: $t}' ;;
+            no) jq -cn --arg t "$pg" '{refused: $t}' ;;
+            step) if action_tool "$pg" "$ac${ar:+ $ar}"; then tool_call_json "$_tool" "$_tv" "$pg $ac${ar:+ $ar}"
+                  else jq -cn --arg t "$PANEL_CROSS $pg: $ac is not a step the dialog takes" '{refused: $t}'; fi ;;
+        esac
+    done < "$TMP/plan" | jq -cs '{answer: ([.[] | .answer // empty] | join(" ")), steps: [.[] | select(.name)], refused: [.[] | .refused // empty]}'
+}
+want_attach() {   # want_attach FILE WORDS -> spark's answer about the file, a question about someone else's text (spark edit ? --source); exit 1 with one line when the file is refused
+    [ "$DIALOG_ATTACH" = yes ] || { echo "attaching is off (DIALOG_ATTACH=no)"; return 1; }
+    [ -f "$1" ] && [ -r "$1" ] || { echo "$1 is not a file that can be read"; return 1; }
+    _ext=$(printf '%s' "${1##*/}" | sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | tr 'A-Z' 'a-z')
+    case " $DIALOG_ATTACH_TYPES " in *" ${_ext:-.} "*) ;; *) echo "${1##*/} is not a type plus attaches ($DIALOG_ATTACH_TYPES)"; return 1 ;; esac
+    _n=$(wc -c < "$1" | tr -d ' '); [ "$_n" -le "$WANT_ATTACH_MAX" ] || { echo "${1##*/} is larger than $((WANT_ATTACH_MAX / 1024)) kB"; return 1; }
+    [ "$(tr -d '\000' < "$1" | wc -c | tr -d ' ')" = "$_n" ] || { echo "${1##*/} is not text: spark reads text"; return 1; }
+    spark=$(spark_bin); [ -n "$spark" ] || { echo "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
+    st=0; "$spark" edit --source --name "${1##*/}" -- '?' "$2" < "$1" > "$TMP/attach.out" 2>"$TMP/attach.err" || st=$?
+    [ "$st" -eq 0 ] || { echo "$PANEL_CROSS spark did not answer: $(head -1 "$TMP/attach.err" | scrub_text)"; return 1; }
+    scrub_text < "$TMP/attach.out"
+}
+WANT_ATTACH_MAX=1048576   # an attached file, at most a megabyte: spark edit sends 16 kB of it at most anyway
+cmd_want() {   # cmd_want [--attach FILE] [--json] WORDS -- the one entry to the want path
+    _file=''; _json=''
+    while [ $# -gt 0 ]; do
+        case $1 in
+            --attach) [ $# -ge 2 ] || refuse_in want "--attach takes a file"; _file=$2; shift 2 ;;
+            --json) _json=1; shift ;;
+            --) shift; break ;;
+            -*) refuse_in want "$1 is not an option here: --attach FILE, --json, then the words" ;;
+            *) break ;;
+        esac
     done
+    [ $# -gt 0 ] && [ -n "$*" ] || refuse_in want "say what you would like, as spark-shell want \"mute everything\""
+    config_load; [ "$OS" = Darwin ] || pm_detect; theme_load
+    if [ -n "$_file" ]; then
+        st=0; _a=$(want_attach "$_file" "$*") || st=$?
+        if [ -n "$_json" ]; then if [ "$st" -eq 0 ]; then jq -cn --arg a "$_a" '{answer: $a, steps: [], refused: []}'; else jq -cn --arg r "$_a" '{answer: "", steps: [], refused: [$r]}'; fi
+        else printf '%s\n' "$_a"; fi
+        return "$st"
+    fi
+    SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)
+    st=0; want_plan "$*" || st=$?
+    if [ -n "$_json" ]; then want_json; return "$st"; fi
+    panel_group_begin; want_run; panel_group_end
+    return "$st"
 }
 bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute everything"` (and the old `bar "WORDS"`)
     [ -n "$(spark_bin)" ] || refuse_in panel "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"
@@ -3087,6 +3169,256 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
     panel_group_end
     sed 's/^/  /' "$TMP/want.out"
     return "$st"
+}
+
+# --- the providers: a section as an MCP server on stdio (spark-shell
+# issue #1, the contract). `spark-shell provide SECTION` speaks MCP
+# 2025-06-18 on stdin and stdout, JSON-RPC a line: the section's steps
+# are tools, its rows a resource, a long step reports progress. Every
+# JSON value is built by jq with --arg, every request is parsed by jq,
+# and a method or a tool name is matched by case, never run as a name.
+PROVIDE_PROTOCOL=2025-06-18
+PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window bar layout apps about undo"   # every panel section but spark: its one row is the chat, which the dialog holds itself
+PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
+PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_font theme_wallpaper theme_see_through theme_alpha window_split window_tabs window_stacked window_focus window_close bar_on bar_off layout_open layout_new layout_save layout_add apps_open apps_terminal about_open undo_all"
+# The scrubber, one list for every string a provider hands on (a row, a
+# receipt, a title) and for the want's plan: what can redraw or reorder a
+# screen goes. Each class is a named line, so it can be argued with:
+#   C0 but the tab, DEL and C1            \u0000-\u0008 \u000b-\u001f \u007f-\u009f
+#   the bidi controls                     \u200e \u200f \u202a-\u202e \u2066-\u2069
+#   the zero-width set                    \u200b-\u200d \u2060 \ufeff
+#   the line and paragraph separators     \u2028 \u2029
+SCRUB_JQ='gsub("[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069\u200b-\u200d\u2060\ufeff\u2028\u2029]"; "")'
+scrub_text() {   # stdin -> the same lines scrubbed; C0 and DEL alone where there is no jq
+    if command -v jq >/dev/null 2>&1; then jq -Rr "$SCRUB_JQ" 2>/dev/null || :; else tr -d '\000-\010\013-\037\177'; fi
+}
+
+# The tools, a named line each: tool_spec NAME sets _ts the section, _ta
+# the panel's action, _tp the argument and _tk its kind (string, level
+# 0-100, alpha 0-1, a|b for a closed set), _tq a secret argument, _th the
+# hints (r read only, d destructive, i idempotent, f free: the argument
+# names no row), _tt the title, the sentence the model may say, and _td
+# the words for a person. False for a name that is no tool. The panel's
+# action `=` takes the argument itself as the action (a palette's name).
+tool_spec() {
+    _tp=''; _tk=''; _tq=''
+    case $1 in
+        wifi_connect)      _ts=wifi _ta=connect _tp=name _tk=string _tq=password _th=i _tt='wifi connect NAME' _td='Connect to a network around, or a saved one.' ;;
+        wifi_disconnect)   _ts=wifi _ta=disconnect _th=i _tt='wifi disconnect' _td='Leave the network in use.' ;;
+        wifi_forget)       _ts=wifi _ta=forget _tp=name _tk=string _th=di _tt='wifi forget NAME' _td='Forget a saved network and its password.' ;;
+        bt_connect)        _ts=bt _ta=connect _tp=name _tk=string _th=i _tt='bt connect NAME' _td='Connect a paired device.' ;;
+        bt_disconnect)     _ts=bt _ta=disconnect _tp=name _tk=string _th=i _tt='bt disconnect NAME' _td='Disconnect a device.' ;;
+        bt_pair)           _ts=bt _ta=pair _tp=name _tk=string _th='' _tt='bt pair NAME' _td='Pair a new device and connect it.' ;;
+        bt_scan)           _ts=bt _ta=scan _th='' _tt='bt scan' _td='Look for new devices nearby.' ;;
+        bt_power)          _ts=bt _ta=power _tp=state _tk='on|off' _th=i _tt='bt power STATE' _td='Turn Bluetooth on or off.' ;;
+        out_use)           _ts=out _ta=use _tp=name _tk=string _th=i _tt='out use NAME' _td='Play the sound on another output.' ;;
+        out_level)         _ts=out _ta=level _tp=level _tk=level _th=if _tt='out level N' _td='Set the volume, 0 to 100.' ;;
+        out_mute)          _ts=out _ta=mute _th=i _tt='out mute' _td='Mute the sound.' ;;
+        out_unmute)        _ts=out _ta=unmute _th=i _tt='out unmute' _td='Unmute the sound.' ;;
+        mic_use)           _ts=mic _ta=use _tp=name _tk=string _th=i _tt='mic use NAME' _td='Listen on another microphone.' ;;
+        mic_level)         _ts=mic _ta=level _tp=level _tk=level _th=if _tt='mic level N' _td='Set the microphone level, 0 to 100.' ;;
+        mic_mute)          _ts=mic _ta=mute _th=i _tt='mic mute' _td='Mute the microphone.' ;;
+        mic_unmute)        _ts=mic _ta=unmute _th=i _tt='mic unmute' _td='Unmute the microphone.' ;;
+        theme_palette)     _ts=theme _ta='=' _tp=name _tk=string _th=i _tt='theme NAME' _td='Use a palette everywhere, or none.' ;;
+        theme_font)        _ts=theme _ta=font _tp=size _tk='bigger|smaller' _th='' _tt='theme font SIZE' _td='The font one size bigger or smaller.' ;;
+        theme_wallpaper)   _ts=theme _ta=wallpaper _tp=name _tk=string _th=i _tt='theme wallpaper NAME' _td='Set the wallpaper: the ground, none, or a colour.' ;;
+        theme_see_through) _ts=theme _ta=see-through _tp=amount _tk='more|less' _th='' _tt='theme see-through AMOUNT' _td='The windows more or less see-through.' ;;
+        theme_alpha)       _ts=theme _ta=alpha _tp=value _tk=alpha _th=if _tt='theme alpha N' _td='How solid the windows are, 0 to 1.' ;;
+        window_split)      _ts=window _ta=split _th=i _tt='window split' _td='New windows side by side.' ;;
+        window_tabs)       _ts=window _ta=tabs _th=i _tt='window tabs' _td='New windows in tabs.' ;;
+        window_stacked)    _ts=window _ta=stacked _th=i _tt='window stacked' _td='New windows stacked.' ;;
+        window_focus)      _ts=window _ta=focus _tp=name _tk=string _th=i _tt='window focus NAME' _td='Put an open window in front.' ;;
+        window_close)      _ts=window _ta=close _tp=name _tk=string _th=d _tt='window close NAME' _td='Close an open window.' ;;
+        bar_on)            _ts=bar _ta=on _th=i _tt='bar on' _td='Show the bar at the top of the screen.' ;;
+        bar_off)           _ts=bar _ta=off _th=i _tt='bar off' _td='Hide the bar.' ;;
+        layout_open)       _ts=layout _ta=open _tp=name _tk=string _th='' _tt='layout open NAME' _td='Open a saved layout.' ;;
+        layout_new)        _ts=layout _ta=new _tp=words _tk=string _th=f _tt='layout new WORDS' _td='Open the apps for a task, picked by spark.' ;;
+        layout_save)       _ts=layout _ta=save _tp=name _tk=string _th=df _tt='layout save NAME' _td='Save what is open on this workspace as a layout.' ;;
+        layout_add)        _ts=layout _ta=add _tp=name _tk=string _th='' _tt='layout add NAME' _td='Open an app spark also suggested for the last layout.' ;;
+        apps_open)         _ts=apps _ta=open _tp=name _tk=string _th='' _tt='apps open NAME' _td='Open an app on this workspace.' ;;
+        apps_terminal)     _ts=apps _ta=terminal _th='' _tt='apps terminal' _td='Open a terminal window.' ;;
+        about_open)        _ts=about _ta=open _th=ri _tt='about' _td='The version, the keys, the licence and the address.' ;;
+        undo_all)          _ts=undo _ta=all _th='' _tt='undo' _td='Take the last thing done back.' ;;
+        *) return 1 ;;
+    esac
+}
+action_tool() {   # action_tool SECTION "ACTION [ARG]" -> sets _tool and _tv, the tool that does that panel step and its argument; false when no tool does
+    _av=${2%% *}; _tv=''; [ "$_av" = "$2" ] || _tv=${2#* }
+    case $1:$_av in apps:close|apps:focus) _tool=window_$_av; tool_spec "$_tool"; return ;; esac   # said of an app, done to its window
+    _tool=$(printf '%s_%s' "$1" "$_av" | tr '-' '_')
+    if tool_spec "$_tool" && [ "$_ts" = "$1" ] && [ "$_ta" = "$_av" ]; then return 0; fi
+    [ "$1" = theme ] && [ -z "$_tv" ] && tool_spec theme_palette || return 1   # a palette's step is its name alone
+    _tool=theme_palette; _tv=$_av
+}
+tool_call_json() {   # tool_call_json TOOL VALUE [LINE] -> {"name", "arguments", "line"}: VALUE under the tool's argument, typed as its kind
+    tool_spec "$1" || return 1
+    jq -cn --arg n "$1" --arg p "$_tp" --arg k "$_tk" --arg v "$2" --arg l "${3:-}" \
+        '{name: $n, arguments: (if $p == "" then {} elif ($k == "level" or $k == "alpha") then {($p): ($v | tonumber? // $v)} else {($p): $v} end)} + (if $l == "" then {} else {line: $l} end)'
+}
+tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, the words, the input schema, the hints with the spec's defaults spelled out
+    tool_spec "$1" || return 1
+    jq -cn --arg n "$1" --arg t "$_tt" --arg d "$_td" --arg p "$_tp" --arg k "$_tk" --arg q "$_tq" --arg h "$_th" '
+        {name: $n, title: $t, description: $d,
+         inputSchema: {type: "object",
+            properties: ((if $p == "" then {} else {($p): (
+                if $k == "level" then {type: "integer", minimum: 0, maximum: 100}
+                elif $k == "alpha" then {type: "number", minimum: 0, maximum: 1}
+                elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
+                else {type: "string", minLength: 1, maxLength: 256} end)} end)
+              + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)),
+            required: (if $p == "" then [] else [$p] end), additionalProperties: false},
+         outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"},
+            undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]}}, additionalProperties: false},
+         annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}'
+}
+provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON array
+    for _n in $PROVIDE_TOOLS; do tool_spec "$_n" && [ "$_ts" = "$1" ] && tool_json "$_n"; done | jq -cs .
+}
+provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "rows": [{"id", "sign", "text", "tool", "more", "columns", "children"}], "short": [ID]}
+    panel_rows "$1" | while IFS="$TAB" read -r _m _t _a; do provide_row_line "$1" "$_m" "$_t" "$_a"; done > "$TMP/rows.short"   # the short form: what matters, and a more row that opens the rest
+    { panel_rows "$1" full | while IFS="$TAB" read -r _m _t _a; do provide_row_line "$1" "$_m" "$_t" "$_a"; done; grep "^$1:more$US" "$TMP/rows.short" || :; } \
+        | jq -Rn --arg s "$1" --arg u "spark-shell://$1/rows" --rawfile short "$TMP/rows.short" '
+            [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [], columns: [],
+                children: (if .[0] == ($s + ":more") then $u else null end)}] as $rows
+            | {title: $s, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}'
+}
+provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION -> ID US SIGN US TEXT US TOOL US ARGUMENTS: one row, scrubbed, its step as a tool call
+    case $2 in "$PANEL_DOT") _sg="dot" ;; "$PANEL_RING") _sg="ring" ;; "$PANEL_TICK") _sg="check" ;; "$PANEL_CROSS") _sg="cross" ;; "$PANEL_GO") _sg="opens" ;; *) _sg="blank" ;; esac
+    _tx=$(printf '%s' "$3" | scrub_text); _ac=$(printf '%s' "$4" | scrub_text); _id="$1:$_ac"; _tn=''; _ag='{}'
+    if [ "$_ac" = show ]; then _id="$1:show:$_tx"
+    elif [ "$_ac" = more ]; then :   # the rest of the section: its children, no tool
+    elif action_tool "$1" "$_ac"; then _tn=$_tool; _ag=$(tool_call_json "$_tool" "$_tv" | jq -c .arguments); fi
+    printf '%s\n' "$_id$US$_sg$US$_tx$US$_tn$US$_ag"   # the parts scrubbed, never the line: the scrubber drops US
+}
+provide_title() { panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }   # provide_title SECTION -> the context title: the panel's title line without the section's column
+
+# The wire. Only MCP reaches stdout: the server moves stdout to fd 3 and
+# points fd 1 at stderr before any panel step runs. One process writes
+# fd 3, the loop. Two writers feed the loop through one FIFO, each line
+# under a lock: the reader copies stdin a line at a time ("in LINE"), the
+# watcher says "poke" when the rows changed.
+rpc_send() { printf '%s\n' "$1" >&3; }
+rpc_result() { printf '%s' "$2" | jq -c --argjson id "$1" '{jsonrpc: "2.0", id: $id, result: .}' >&3; }   # rpc_result ID JSON (the result on stdin to jq: no argument grows past a limit)
+rpc_error() { rpc_send "$(jq -cn --argjson id "$1" --argjson c "$2" --arg m "$3" '{jsonrpc: "2.0", id: $id, error: {code: $c, message: $m}}')"; }   # rpc_error ID CODE MESSAGE
+rpc_note() { rpc_send "$(jq -cn --arg m "$1" --argjson p "$2" '{jsonrpc: "2.0", method: $m, params: $p}')"; }   # rpc_note METHOD PARAMS -- a notification
+fifo_put() {   # fifo_put LINE -- one line into the loop's FIFO (fd 5), under the lock, so a long line is never cut by a poke
+    until mkdir "$PLOCK" 2>/dev/null; do sleep 0.01; done
+    printf '%s\n' "$1" >&5 || :; rmdir "$PLOCK"
+}
+PROVIDE_POLL=${SPARK_SHELL_PROVIDE_POLL:-}   # the watcher's seconds between looks; the tests set it
+provide_watch() {   # the rows looked at again every few seconds while a host is subscribed; a change pokes the loop. Its own TMP: the loop's files are the loop's
+    TMP=$TMP/watch; mkdir -p "$TMP"
+    _every=$PROVIDE_POLL; [ -n "$_every" ] || case $(panel_cost "$1") in slow) _every=15 ;; fast) _every=5 ;; *) _every=3 ;; esac
+    _last=$(provide_rows "$1" 2>/dev/null | cksum)
+    while :; do
+        sleep "$_every"
+        config_load; theme_load
+        _now=$(provide_rows "$1" 2>/dev/null | cksum)
+        [ "$_now" = "$_last" ] || { _last=$_now; fifo_put poke; }
+    done
+}
+provide_main() {   # provide_main SECTION -- serve it until stdin ends
+    sec=$1
+    case " $PROVIDE_SECTIONS " in *" $sec "*) ;; *) refuse_in provide "${sec:-a section} is not one: $(printf '%s' "$PROVIDE_SECTIONS" | sed 's/ /, /g')" >&2 ;; esac   # a refusal on stderr: stdout is the wire
+    command -v jq >/dev/null 2>&1 || refuse_in provide "jq is not installed (spark-shell on)" >&2
+    command -v mkfifo >/dev/null 2>&1 || refuse_in provide "mkfifo is not installed" >&2
+    config_load; [ "$OS" = Darwin ] || pm_detect; theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)
+    exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in; whatever a step prints goes to stderr
+    WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock
+    trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
+    mkfifo "$TMP/in"
+    ( while IFS= read -r _l || [ -n "$_l" ]; do fifo_put "in $_l"; _l=''; done; fifo_put eof ) <&6 5>"$TMP/in" 3>&- & READER=$!
+    exec 4<"$TMP/in" 6<&-
+    while IFS= read -r _msg <&4; do
+        case $_msg in
+            eof) break ;;
+            poke) [ -z "$SUBSCRIBED" ] || rpc_note notifications/resources/updated "$(jq -cn --arg u "spark-shell://$sec/rows" '{uri: $u}')" ;;
+            "in "*) provide_one "${_msg#in }" || : ;;
+        esac
+    done
+}
+provide_one() {   # provide_one LINE -- one message: a request answered, a notification taken, anything else refused
+    [ "${#1}" -le "$PROVIDE_LINE_MAX" ] || { rpc_error null -32600 "a message is $PROVIDE_LINE_MAX bytes at most"; return 0; }
+    _kind=$(printf '%s' "$1" | jq -r 'if type != "object" or .jsonrpc != "2.0" then "bad" elif (has("method") | not) then "answer" elif has("id") then "request" else "note" end' 2>/dev/null) || { rpc_error null -32700 "not JSON"; return 0; }
+    case $_kind in
+        request) ;;
+        answer|note) return 0 ;;   # a notification (initialized, cancelled) or an answer: this server asks nothing, so nothing to say
+        *) rpc_error null -32600 "one JSON-RPC 2.0 object a line"; return 0 ;;
+    esac
+    _id=$(printf '%s' "$1" | jq -c '.id')
+    case $_id in '"'*|[0-9]*|-[0-9]*) ;; *) rpc_error null -32600 "an id is a string or a number"; return 0 ;; esac
+    _method=$(printf '%s' "$1" | jq -r '.method | tostring | gsub("[\u0000-\u001f]"; " ")')
+    _params=$(printf '%s' "$1" | jq -c '.params // {}')
+    case $_method in
+        initialize)
+            rpc_result "$_id" "$(jq -cn --arg v "$PROVIDE_PROTOCOL" --arg n "$sec" --arg t "$(provide_title "$sec")" --arg ver "$(panel_version)" \
+                '{protocolVersion: $v, capabilities: {tools: {listChanged: true}, resources: {subscribe: true, listChanged: true}, logging: {}}, serverInfo: {name: $n, title: $t, version: $ver}}')" ;;
+        ping|logging/setLevel) rpc_result "$_id" '{}' ;;
+        tools/list) rpc_result "$_id" "$(provide_tools "$sec" | jq -c '{tools: .}')" ;;
+        tools/call) provide_call "$_id" "$_params" ;;
+        resources/list) rpc_result "$_id" "$(jq -cn --arg u "spark-shell://$sec/rows" --arg s "$sec" '{resources: [{uri: $u, name: "rows", title: ($s + " rows"), mimeType: "application/json"}]}')" ;;
+        resources/templates/list) rpc_result "$_id" '{"resourceTemplates":[]}' ;;
+        resources/read|resources/subscribe|resources/unsubscribe)
+            _uri=$(printf '%s' "$_params" | jq -r '.uri // "" | tostring')
+            [ "$_uri" = "spark-shell://$sec/rows" ] || { rpc_error "$_id" -32002 "no resource at that uri"; return 0; }
+            case $_method in
+                resources/read) provide_rows "$sec" | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' > "$TMP/read.json"
+                    rpc_result "$_id" "$(cat "$TMP/read.json")" ;;
+                resources/subscribe) SUBSCRIBED=1; [ -n "$WATCH" ] || { provide_watch "$sec" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }; rpc_result "$_id" '{}' ;;
+                resources/unsubscribe) SUBSCRIBED=''; [ -z "$WATCH" ] || { kill "$WATCH" 2>/dev/null || :; wait "$WATCH" 2>/dev/null || :; WATCH=''; }; rpc_result "$_id" '{}' ;;
+            esac ;;
+        *) rpc_error "$_id" -32601 "no method $_method here" ;;
+    esac
+}
+provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its arguments by its schema, the row it names, panel_gate, then the step itself
+    _name=$(printf '%s' "$2" | jq -r '.name // "" | tostring')
+    case $_name in *[!a-z0-9_]*|[!a-z]*|'') rpc_error "$1" -32602 "no tool by that name"; return 0 ;; esac
+    { tool_spec "$_name" && [ "$_ts" = "$sec" ]; } || { rpc_error "$1" -32602 "no tool $_name in $sec"; return 0; }
+    _args=$(printf '%s' "$2" | jq -c '.arguments // {}')
+    _bad=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg k "$_tk" --arg q "$_tq" '
+        def plain: test("^[^\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff\u2028\u2029]{1,256}$");
+        if type != "object" then "arguments are an object"
+        elif (keys - [$p, $q] - [""]) != [] then "no argument " + ((keys - [$p, $q])[0])
+        elif $p != "" and (has($p) | not) then "missing " + $p
+        elif $p == "" then ""
+        elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
+        elif $k == "alpha" then (if (.[$p] | type) == "number" and .[$p] >= 0 and .[$p] <= 1 then "" else $p + " is a number, 0 to 1" end)
+        elif (.[$p] | type) != "string" or ((.[$p]) | plain | not) then $p + " is plain text, 256 characters at most"
+        elif ($k | contains("|")) and (.[$p] as $x | $k | split("|") | any(. == $x) | not) then $p + " is one of " + ($k | split("|") | join(", "))
+        else "" end
+        + (if $q != "" and has($q) and ((.[$q] | type) != "string" or (.[$q] | length) > 256) then "; " + $q + " is text, 256 characters at most" else "" end)')
+    [ -z "$_bad" ] || { rpc_error "$1" -32602 "$_name: $_bad"; return 0; }
+    _v=''; [ -z "$_tp" ] || _v=$(printf '%s' "$_args" | jq -r --arg p "$_tp" '.[$p] | tostring')
+    PANEL_PASS=''; [ -z "$_tq" ] || PANEL_PASS=$(printf '%s' "$_args" | jq -r --arg q "$_tq" '.[$q] // ""')   # a password: a shell variable for the step, never a file, never a line out
+    _plain=$(printf '%s' "$_args" | jq -c --arg q "$_tq" 'if $q == "" then . else del(.[$q]) end')   # the arguments without the secret: what a row is matched against
+    _act=$_ta; _arg=$_v; [ "$_ta" != '=' ] || { _act=$_v; _arg=''; }   # a palette's step is its name alone
+    case $_th in *f*) ;; *)   # the argument must be a row's own, exactly: the rows are the allowlist
+        provide_rows "$sec" > "$TMP/rows.json"
+        jq -e --arg n "$_name" --argjson a "$_plain" 'any(.rows[] | .tool, (.more // [])[] | select(. != null); .name == $n and .arguments == $a)' "$TMP/rows.json" >/dev/null 2>&1 \
+            || { provide_refuse "$1" "$sec: $_act${_arg:+ $_arg} is not on the panel now"; return 0; } ;;
+    esac
+    _g=$(panel_gate "$sec" "$_act" "$_arg") || { provide_refuse "$1" "$(printf '%s' "$_g" | scrub_text)"; return 0; }
+    _undo='null'; _inv=$(panel_inverse "$sec" "$_act" "$_g" | cut -f1)   # read before the step: the state now is what undo puts back
+    if [ -n "$_inv" ] && action_tool "$sec" "$_inv"; then _undo=$(tool_call_json "$_tool" "$_tv") || _undo='null'; fi
+    _tok=$(printf '%s' "$2" | jq -c '._meta.progressToken // empty')
+    rm -f "$TMP/opened"; panel_group_begin
+    ( set +e; panel_step "$sec" "$_act" "$_g" > "$TMP/call.out" 2>&1; echo $? > "$TMP/call.rc" ) 3>&- 4<&- 5>&- & _w=$!
+    if [ -n "$_tok" ]; then _i=0; while kill -0 "$_w" 2>/dev/null; do _i=$((_i + 1)); rpc_note notifications/progress "$(jq -cn --argjson t "$_tok" --argjson p "$_i" --arg s "$sec" '{progressToken: $t, progress: $p, message: ($s + ": working")}')"; sleep 0.5; done; fi
+    wait "$_w" 2>/dev/null || :
+    PANEL_PASS=''
+    panel_group_end
+    _rc=$(cat "$TMP/call.rc" 2>/dev/null || echo 1); _out=$(scrub_text < "$TMP/call.out")
+    for _k in $THEME_KEYS; do unset "$_k"; done; config_load; theme_load   # a step may have changed the settings: the rows read them anew
+    if [ "$_rc" -ne 0 ]; then provide_refuse "$1" "${_out:-$sec: $_tt did not work}"; return 0; fi
+    if [ -f "$TMP/opened" ]; then _sc=$(jq -cn '{opened: true}')
+    else _sc=$(jq -cn --arg r "$_out" --argjson u "$_undo" '{receipt: $r} + (if $u == null then {} else {undo: $u} end)'); fi
+    rpc_result "$1" "$(printf '%s' "$_sc" | jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+    [ -z "$SUBSCRIBED" ] || rpc_note notifications/resources/updated "$(jq -cn --arg u "spark-shell://$sec/rows" '{uri: $u}')"
+}
+provide_refuse() { rpc_result "$1" "$(jq -cn --arg t "$2" '{content: [{type: "text", text: $t}], isError: true}')"; }   # provide_refuse ID SENTENCE -- a tool's refusal, in the result
+cmd_provide() {   # cmd_provide SECTION -- the verb
+    [ $# -eq 1 ] || refuse_in provide "one section: $(printf '%s' "$PROVIDE_SECTIONS" | sed 's/ /, /g')" >&2
+    provide_main "$1"
 }
 
 # --- the window: centred by the sway template, closed by Esc or by its key again
@@ -3242,8 +3574,8 @@ panel_loop() {   # panel_loop SECTION -- the window: the glance, the receipt, th
             printf '\033[2J\033[H\n'; sed 's/^/  /' "$TMP/head"
         fi
         if [ -n "$s" ]; then
-            # shellcheck disable=SC2086   # the row's SECTION ACTION ARG, split on purpose
-            set -- ${s#*"$TAB"}; pg=$1; a=$2; shift 2
+            # shellcheck disable=SC2086   # the row's SECTION ACTION ARG, split on purpose, never a glob
+            set -f; set -- ${s#*"$TAB"}; set +f; pg=$1; a=$2; shift 2
             case $pg:$a in
                 spark:chat) _why=$(panel_chat_why); [ -n "$_why" ] || { panel_quit; panel_chat; }; said=$_why ;;   # exec: the conversation takes the window
                 *:more) what=$pg; said='' ;;   # the section in full
@@ -3315,8 +3647,7 @@ cmd_panel() {   # cmd_panel [SECTION] [--list | ACTION [ARG...]] | chat | "WORDS
         '') ;;
         *) a=$1; shift; arg=$(panel_gate "$what" "$a" "$*") || { echo "spark-shell panel: $arg"; exit 1; }
            panel_group_begin
-           # shellcheck disable=SC2086   # the row's own ARG, split on purpose
-           panel_step "$what" "$a" $arg; st=$?
+           panel_step "$what" "$a" "$arg"; st=$?   # the row's own ARG, one word: never re-split, never a glob
            panel_group_end; return "$st" ;;
     esac
     if { [ -t 0 ] || [ -n "${SPARK_SHELL_TEST_TTY:-}" ]; } && command -v fzf >/dev/null 2>&1; then   # the tests drive the window with an fzf of their own
@@ -4434,6 +4765,8 @@ main() {
         check) cmd_check ;;
         bar) cmd_bar "$@" ;;
         panel) cmd_panel "$@" ;;
+        want) cmd_want "$@" ;;
+        provide) cmd_provide "$@" ;;
         theme) cmd_theme "$@" ;;
         font) cmd_font "$@" ;;
         quiet) cmd_quiet "$@" ;;

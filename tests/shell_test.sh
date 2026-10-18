@@ -2643,6 +2643,146 @@ STUB
 fi
 unset SPARK_SHELL_SYS SPARK_SHELL_PROC SWAYSOCK
 
+# --- 21. the providers: a section as an MCP server, the want verb, the dialog's keys
+# `spark-shell provide SECTION` driven on a pipe by a scripted client:
+# each request a jq line, every line out parsed. The Linux half reads
+# the bar's fixture (wpa_cli, bluetoothctl, amixer stubs).
+fresh
+desktop_stubs
+desk_stubs
+bar_fixture
+theme_fixture '#ff5555'
+mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+rq() { jq -cn --argjson i "$1" --arg m "$2" --argjson p "${3:-null}" '{jsonrpc: "2.0", id: $i, method: $m} + (if $p == null then {} else {params: $p} end)'; }   # rq ID METHOD [PARAMS] -> one request
+call() { rq "$1" tools/call "$(jq -cn --arg n "$2" --argjson a "${3:-{\}}" '{name: $n, arguments: $a}')"; }   # call ID TOOL [ARGUMENTS]
+mcp() { _s=$1; shift; printf '%s\n' "$@" | sh "$SH" provide "$_s" > "$H/mcp.out" 2> "$H/mcp.err"; }   # mcp SECTION LINE... -> $H/mcp.out, its stderr apart
+ans() { jq -c --argjson i "$1" 'select(.id == $i)' "$H/mcp.out"; }   # ans ID -> that answer
+init=$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{"elicitation":{}},"clientInfo":{"name":"test","version":"0"}}')
+mcp theme "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 2 tools/list)" "$(rq 3 ping)"
+st=$?; [ "$st" -eq 0 ] && [ "$(ans 1 | jq -r '.result.protocolVersion + " " + .result.serverInfo.name')" = '2025-06-18 theme' ] && ans 1 | jq -e '.result.capabilities == {tools: {listChanged: true}, resources: {subscribe: true, listChanged: true}, logging: {}}' >/dev/null \
+    && [ "$(grep -c '' "$H/mcp.out")" = 3 ] && [ "$(ans 3 | jq -c .result)" = '{}' ] \
+    && ok "provide: initialize answers 2025-06-18, the section as the server's name, tools, resources with subscribe, logging; a notification gets no answer; ping is {}" || bad "provide initialize" "st=$st $(cat "$H/mcp.out" "$H/mcp.err")"
+ans 1 | jq -e '.result.serverInfo.title | test("^none")' >/dev/null && ok "provide: the server's title is the context title, the panel's title line (the palette in use)" || bad "provide title" "$(ans 1)"
+jq -e -s 'all(.[]; .jsonrpc == "2.0")' "$H/mcp.out" >/dev/null && ok "provide: every line on stdout is a JSON-RPC 2.0 message, nothing else" || bad "provide stdout" "$(cat "$H/mcp.out")"
+long=$(awk 'BEGIN { s = "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"ping\",\"params\":{\"x\":\""; while (length(s) < 70000) s = s "aaaaaaaaaa"; print s "\"}}" }')
+mcp theme 'not json' '[1,2]' '{"jsonrpc":"2.0","id":null,"method":"ping"}' '{"jsonrpc":"1.0","id":4,"method":"ping"}' "$(rq 5 prompts/list)" "$long" "$(rq 6 ping)"
+[ "$(jq -r -s 'map(.error.code // "ok") | map(tostring) | join(" ")' "$H/mcp.out")" = '-32700 -32600 -32600 -32600 -32601 -32600 ok' ] && [ "$(ans 6 | jq -c .result)" = '{}' ] \
+    && ok "provide: bad JSON -32700, an array, a null id, the wrong jsonrpc and a line over 64 kB -32600, a method it lacks -32601; the server goes on" || bad "provide errors" "$(cat "$H/mcp.out")"
+# every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
+: > "$H/tools.all"
+for s in lan wifi bt out mic bat clock theme window bar layout apps about undo; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
+[ "$(grep -c '' "$H/tools.all")" = 36 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the fourteen sections hold the 36 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+jq -e -s 'all(.[]; (.name | test("^[a-z][a-z0-9_]{0,63}$")) and (.title | test("^[a-z][a-z-]*( [a-z-]+| [A-Z]+)*$")) and (.title | length) <= 60)' "$H/tools.all" >/dev/null \
+    && ok "provide: every tool name is lower case with underscores, every title a sentence of plain words with its argument in capitals, 60 at most" || bad "tool shapes" "$(jq -r '.name + " | " + .title' "$H/tools.all")"
+jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.destructiveHint | type) == "boolean" and (.idempotentHint | type) == "boolean" and .openWorldHint == false)' "$H/tools.all" >/dev/null \
+    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'layout_save wifi_forget window_close' ] \
+    && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = about_open ] \
+    && ok "provide: every hint spelled out (the spec's default is destructive); destructive: wifi forget, window close, layout save; read only: about" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
+jq -e -s 'all(.[]; .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .outputSchema.type == "object")' "$H/tools.all" >/dev/null \
+    && [ "$(jq -c 'select(.name == "wifi_connect") | .inputSchema.properties.password' "$H/tools.all")" = '{"type":"string","format":"password","maxLength":256}' ] \
+    && [ "$(jq -c 'select(.name == "bt_power") | .inputSchema.properties.state.enum' "$H/tools.all")" = '["on","off"]' ] && [ "$(jq -c 'select(.name == "out_level") | .inputSchema.properties.level' "$H/tools.all")" = '{"type":"integer","minimum":0,"maximum":100}' ] \
+    && ok "provide: every input schema closed (no other argument), a password a masked string, a closed set an enum, a level 0 to 100" || bad "tool schemas" "$(jq -c '[.name, .inputSchema]' "$H/tools.all" | head -5)"
+# the rows resource, a call, its undo, the refusals
+mcp theme "$(rq 1 resources/list)" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows"}')" "$(rq 3 resources/read '{"uri":"spark-shell://wifi/rows"}')"
+ans 2 | jq -r '.result.contents[0].text' > "$H/rows.json"
+[ "$(ans 1 | jq -c '.result.resources[0] | [.uri, .mimeType]')" = '["spark-shell://theme/rows","application/json"]' ] && [ "$(ans 3 | jq -r .error.code)" = -32002 ] \
+    && jq -e '.title == "theme" and (.rows[] | select(.id == "theme:show:none") | .sign == "check" and .tool == null) and (.rows[] | select(.id == "theme:dracula") | .tool == {name: "theme_palette", arguments: {name: "dracula"}})' "$H/rows.json" >/dev/null \
+    && jq -e '.short == ["theme:more"] and (.rows[] | select(.id == "theme:more") | .children == "spark-shell://theme/rows" and .tool == null)' "$H/rows.json" >/dev/null \
+    && ok "provide: the rows resource: the palette in use a check with no tool, every other a row whose tool takes it by name; the short form the one row that opens the section" || bad "provide rows" "$(cat "$H/rows.json" | head -c 600)"
+mcp theme "$(call 1 theme_palette '{"name":"nord"}')" "$(call 2 theme_palette '{"name":"nowhere"}')" "$(call 3 theme_font '{"size":"huge"}')" "$(call 4 theme_alpha '{"value":0.9,"x":1}')" "$(call 5 wifi_connect '{"name":"home"}')" "$(call 6 'Theme_Font')" "$(call 7 theme_alpha '{"value":2}')"
+[ "$(ans 1 | jq -c .result.structuredContent)" = '{"receipt":"theme nord","undo":{"name":"theme_palette","arguments":{"name":"none"}}}' ] && ans 1 | jq -e '.result.isError == false and (.result.content[0].text | fromjson) == .result.structuredContent' >/dev/null && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
+    && ok "provide tools/call: the palette set, the receipt in the present tense, the undo the step that takes it back, the same JSON in a text block" || bad "provide call" "$(ans 1) $(cat "$H/mcp.err")"
+[ "$(ans 2 | jq -c .result)" = '{"content":[{"type":"text","text":"theme: nowhere is not on the panel now"}],"isError":true}' ] && [ "$(ans 3 | jq -r .error.message)" = 'theme_font: size is one of bigger, smaller' ] && [ "$(ans 4 | jq -r .error.message)" = 'theme_alpha: no argument x' ] \
+    && [ "$(ans 5 | jq -r .error.message)" = 'no tool wifi_connect in theme' ] && [ "$(ans 6 | jq -r .error.code)" = -32602 ] && [ "$(ans 7 | jq -r .error.message)" = 'theme_alpha: value is a number, 0 to 1' ] \
+    && ok "provide: a step no row offers is refused in the result, one sentence; an argument outside its schema, an argument it lacks, another section's tool and a name of another shape are -32602" || bad "provide refusals" "$(cat "$H/mcp.out")"
+mcp theme "$(call 1 theme_palette '{"name":"none"}')"; grep -q '^THEME=none$' "$HOME/.config/spark-shell/config" && ok "provide: the undo, called as a tool, puts the palette back" || bad "provide undo" "$(cat "$H/mcp.out")"
+# subscribe: an updated notification after a step, and from the watcher when the rows change under it
+{ rq 1 resources/subscribe '{"uri":"spark-shell://theme/rows"}'; rq 2 tools/call '{"name":"theme_see_through","arguments":{"amount":"more"},"_meta":{"progressToken":"p1"}}'
+  sleep 2; printf 'THEME=dracula\n' >> "$HOME/.config/spark-shell/config"; sleep 3; rq 3 resources/unsubscribe '{"uri":"spark-shell://theme/rows"}'; } \
+    | SPARK_SHELL_PROVIDE_POLL=1 sh "$SH" provide theme > "$H/mcp.out" 2> "$H/mcp.err"
+order=$(jq -r 'if .id then "r" + (.id | tostring) else .method end' "$H/mcp.out" | uniq | paste -sd ' ' -)
+case $order in "r1 notifications/progress r2 notifications/resources/updated r3") ok "provide: progress against the token while a step runs, then its result, then the rows updated (after the step, and from the watcher), unsubscribed" ;;
+    *) bad "provide subscribe" "$order $(cat "$H/mcp.err")" ;; esac
+[ "$(jq -s '[.[] | select(.method == "notifications/resources/updated")] | length' "$H/mcp.out")" -ge 2 ] && jq -e -s '[.[] | select(.method == "notifications/progress") | .params.progress] | . == (sort | unique)' "$H/mcp.out" >/dev/null \
+    && ok "provide: the watcher saw the palette change made outside it; progress only grows" || bad "provide watcher" "$(cat "$H/mcp.out")"
+printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+st=0; out=$(sh "$SH" provide spark 2>&1 >/dev/null) || st=$?
+[ "$st" -eq 1 ] && [ "$out" = 'spark-shell provide: spark is not one: lan, wifi, bt, out, mic, bat, clock, theme, window, bar, layout, apps, about, undo' ] && ok "provide spark: no provider (the dialog holds the chat itself), the list on stderr, exit 1" || bad "provide spark" "st=$st $out"
+st=0; out=$(sh "$SH" provide theme wifi 2>&1 >/dev/null) || st=$?
+[ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell provide: one section: lan, ' && ok "provide with two words: one section, refused on stderr" || bad "provide two" "st=$st $out"
+# the dialog's keys
+for kv in DIALOG_ATTACH=maybe DIALOG_MODEL=1 DIALOG_TALK=off 'DIALOG_ATTACH_TYPES=.exe' 'DIALOG_ATTACH_TYPES=TXT'; do
+    printf 'DESKTOP=sway\n%s\n' "$kv" > "$HOME/.config/spark-shell/config"; st=0; out=$(sh "$SH" status 2>&1) || st=$?
+    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q "^spark-shell: ${kv%%=*}=" || bad "key $kv refused" "st=$st $out"
+done
+ok "config: DIALOG_ATTACH, DIALOG_MODEL and DIALOG_TALK take yes or no, DIALOG_ATTACH_TYPES lower-case types; anything else is refused in one line"
+printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" \
+    && ok "config: the four keys are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
+# the want verb: one entry for words, the plan as JSON, a file asked about
+cat > "$H/.local/bin/spark" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$@" > "$HOME/spark.argv"; cat > "$HOME/spark.stdin"
+case "$*" in
+    *--source*) echo 'the notes say to buy bread.' ;;
+    *) printf '{"why": "a palette", "steps": [{"page": "theme", "action": "nord"}, {"page": "theme", "action": "rainbow"}, {"page": "out", "action": "level", "arg": "30"}]}\n' ;;
+esac
+STUB
+chmod +x "$H/.local/bin/spark"
+st=0; out=$(sh "$SH" want --json the nord palette and quieter 2>&1) || st=$?
+[ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg c "$(printf '\342\234\227')" '.answer == "" and .steps[0] == {name: "theme_palette", arguments: {name: "nord"}, line: "theme nord"} and .refused[0] == ($c + " theme: rainbow is not on the panel now")' >/dev/null \
+    && ! grep -q '^THEME=nord' "$HOME/.config/spark-shell/config" && grep -q '^do this on the desktop: the nord palette and quieter$' "$HOME/spark.argv" \
+    && ok "want --json: the steps spark picked, each gated and named as a tool with its arguments and its line, the refused ones as lines; nothing run" || bad "want json" "st=$st $out"
+if [ "$(uname -s)" != Darwin ]; then
+    printf '%s' "$out" | jq -e '.steps[1] == {name: "out_level", arguments: {level: 30}, line: "out level 30"}' >/dev/null && ok "want --json: a level is a number in the arguments, as the tool's schema says" || bad "want json level" "$out"
+fi
+st=0; out=$(sh "$SH" want the nord palette 2>&1) || st=$?
+[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^$(printf '\342\234\223') theme nord$" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
+    && ok "want WORDS: the same steps run, one line each with its sign, as the panel's prompt does" || bad "want run" "st=$st $out"
+printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+printf 'buy bread\n' > "$H/notes.md"; printf 'x\000y' > "$H/blob.txt"; printf 'a' > "$H/pic.png"
+st=0; out=$(sh "$SH" want --attach "$H/notes.md" "what do these say" 2>&1) || st=$?
+[ "$st" -eq 0 ] && [ "$out" = 'the notes say to buy bread.' ] && [ "$(cat "$HOME/spark.stdin")" = 'buy bread' ] && [ "$(paste -sd ' ' - < "$HOME/spark.argv")" = 'edit --source --name notes.md -- ? what do these say' ] \
+    && ok "want --attach FILE: the file is the text on stdin of spark edit ? --source, by its name alone, never its path" || bad "want attach" "st=$st $out $(cat "$HOME/spark.argv")"
+st=0; o1=$(sh "$SH" want --attach "$H/pic.png" what 2>&1) || st=$?; st2=0; o2=$(sh "$SH" want --attach "$H/blob.txt" what 2>&1) || st2=$?; st3=0; o3=$(sh "$SH" want --attach "$H/none.md" what 2>&1) || st3=$?
+[ "$st" -eq 1 ] && [ "$o1" = 'pic.png is not a type plus attaches (txt md)' ] && [ "$st2" -eq 1 ] && [ "$o2" = 'blob.txt is not text: spark reads text' ] && [ "$st3" -eq 1 ] && [ "$o3" = "$H/none.md is not a file that can be read" ] \
+    && ok "want --attach: a type outside DIALOG_ATTACH_TYPES, a file that is not text, a file that is not there: one line each, exit 1" || bad "want attach refusals" "$st $o1 | $st2 $o2 | $st3 $o3"
+printf 'DIALOG_ATTACH=no\n' > "$HOME/.config/spark-shell/config"; st=0; out=$(sh "$SH" want --json --attach "$H/notes.md" what 2>&1) || st=$?
+[ "$st" -eq 1 ] && [ "$out" = '{"answer":"","steps":[],"refused":["attaching is off (DIALOG_ATTACH=no)"]}' ] && ok "want --attach with DIALOG_ATTACH=no: refused; in JSON, as a refused line" || bad "want attach off" "st=$st $out"
+printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+st=0; out=$(sh "$SH" want 2>&1) || st=$?; st2=0; out2=$(sh "$SH" want --loud x 2>&1) || st2=$?
+[ "$st" -eq 1 ] && [ "$out" = 'spark-shell want: say what you would like, as spark-shell want "mute everything"' ] && [ "$st2" -eq 1 ] && [ "$out2" = 'spark-shell want: --loud is not an option here: --attach FILE, --json, then the words' ] \
+    && ok "want: no words, or an option it lacks, refused in one line" || bad "want usage" "$st $out | $st2 $out2"
+if [ "$(uname -s)" != Darwin ]; then
+    export SWAYSOCK=$H/sway.sock
+    # wifi through the provider: a saved network connects with no password; a secured new one takes it as an argument, never kept
+    mcp wifi "$(rq 3 resources/read '{"uri":"spark-shell://wifi/rows"}')" "$(call 2 wifi_forget '{"name":"nowhere"}')"
+    ans 3 | jq -r '.result.contents[0].text' | jq -e '.rows[] | select(.text == "home") | .sign == "dot" and .tool == {name: "wifi_disconnect", arguments: {}}' >/dev/null \
+        && ok "provide wifi rows: the network in use a dot, its tool disconnects" || bad "provide wifi rows" "$(ans 3 | head -c 400)"
+    [ "$(ans 2 | jq -r '.result.content[0].text')" = 'wifi: forget nowhere is not on the panel now' ] && ok "provide wifi: forget names a saved network or nothing" || bad "provide forget" "$(ans 2)"
+    rm -f "$H/.local/state/wpa.log"; mcp wifi "$(call 1 wifi_connect '{"name":"cafe","password":"s3cret-pass"}')"
+    grep -q 'set_network 2 psk "s3cret-pass"' "$H/.local/state/wpa.log" && ans 1 | jq -e '.result.content[0].text | startswith("could not connect to cafe")' >/dev/null && ! grep -rq 's3cret-pass' "$H/mcp.out" "$H/mcp.err" "$H/.local/state/spark-shell" \
+        && ok "provide wifi: a new secured network takes its password as the tool's argument, straight to the Wi-Fi tool (this stub cannot join it); it is in no answer, no log and no journal" || bad "provide wifi connect" "$(ans 1) $(cat "$H/.local/state/wpa.log") $(grep -rl s3cret "$H/.local/state/spark-shell" 2>&1)"
+    rm -f "$H/wpa.sel" "$H/wpa.down"
+    [ "$(ls -ld "$H/.local/state/spark-shell/panel" | cut -c1-10)" = drwx------ ] && ok "the panel's journal folder is yours alone (0700)" || bad "journal mode" "$(ls -ld "$H/.local/state/spark-shell/panel")"
+    # the scrubber: a name in the air with an escape and a bidi control reaches no screen, no row, no brief
+    esc=$(printf '\033'); rlo=$(printf '\342\200\256')
+    cp "$H/.local/bin/wpa_cli" "$H/wpa_cli.keep"
+    sed "s/\\\\topen\\\\n' ;;/\\\\topen\\\\n00:11:22:33:44:88\\\\t2462\\\\t-60\\\\t[ESS]\\\\tev${esc}[2Jil${rlo}x\\\\n' ;;/" "$H/wpa_cli.keep" > "$H/.local/bin/wpa_cli"; chmod +x "$H/.local/bin/wpa_cli"
+    rm -f "$H/.local/state/spark-shell/panel/wifi.scan"
+    sh "$SH" panel wifi --list > "$H/wifi.list"; mcp wifi "$(rq 1 resources/read '{"uri":"spark-shell://wifi/rows"}')"
+    grep -q 'ev\[2Jilx' "$H/wifi.list" && ! grep -q "$esc" "$H/wifi.list" && ! grep -q "$rlo" "$H/wifi.list" && ans 1 | jq -r '.result.contents[0].text' | jq -e 'any(.rows[]; .text | startswith("ev[2Jilx")) and all(.rows[]; .text | test("[\u001b\u202e]") | not)' >/dev/null \
+        && ok "scrub: a network named with an escape and a bidi control is listed without them, in the panel and in the rows" || bad "scrub" "$(cat -v "$H/wifi.list" | grep ev)"
+    mv "$H/wpa_cli.keep" "$H/.local/bin/wpa_cli"; rm -f "$H/.local/state/spark-shell/panel/wifi.scan"
+    # the undo journal plays an ARG as it is: a glob in a name never expands against the folder it runs in
+    mkdir -p "$H/globdir"; : > "$H/globdir/Jx"; printf 'out\tuse J*\tout J*\n' > "$H/.local/state/spark-shell/panel/undo"
+    out=$(cd "$H/globdir" && sh "$SH" panel undo all 2>&1 || :)
+    [ "$out" = "$(printf '\342\234\227') no output named J*" ] && ok "undo: a step's ARG with a glob is played as written, never as the files it matches" || bad "undo glob" "$out"
+    unset SWAYSOCK
+fi
+unset SPARK_SHELL_SYS SPARK_SHELL_PROC SWAYSOCK
+
 # --- the voice: the docs and the help hold to it -------------------------
 # README.md, the top entry of CHANGELOG.md, CREDITS.md, config.example, the
 # help (sh spark-shell -h) and the comment lines of the sway template are

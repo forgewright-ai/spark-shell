@@ -59,6 +59,11 @@ Without it there are no layouts, no spark chat and no status line.
     spark-shell desktop wallpaper X   set a picture, a colour, default or none
     spark-shell bar on|off            show or hide the status line and the bar
     spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
+    spark-shell want "WORDS"          ask for it from anywhere: the steps run
+    spark-shell want --json "WORDS"   the steps spark picks, as JSON; none run
+    spark-shell want --attach FILE "WORDS"
+                                      ask about a text file (txt md)
+    spark-shell provide SECTION       a panel section as an MCP server on stdio
     spark-shell sbom [NAME]           list the installed software, or one
     spark-shell sbom --json           write the list as a CycloneDX 1.5 file
 
@@ -314,7 +319,25 @@ and the panel closes. A question is answered in the same place, in
 a sentence or two: `what is my address`. Words that are no
 question and match no step are a task, and a layout opens for them.
 The same words work from a shell: `spark-shell panel "mute
-everything"`.
+everything"`, or `spark-shell want "mute everything"`.
+
+## Providers
+
+Every section of the panel is also a provider: `spark-shell provide
+wifi` serves the section as an MCP server on stdin and stdout (the
+Model Context Protocol, 2025-06-18), for the dialog that replaces the
+panel and for spark itself later. A step is a tool, as `wifi_connect`
+with its title `wifi connect NAME`; the rows are the resource
+`spark-shell://wifi/rows`, and a host that subscribes is told when they
+change. A tool runs only a step the section offers now, with a row's
+own argument, checked as the panel checks a pick. A tool that cannot be
+taken back says so, and a result carries the step that takes it back
+when there is one. A password is the tool's own argument: it is never
+written down. `spark-shell want --json "WORDS"` prints the steps spark
+picks for the words as JSON, each checked the same way, and runs none.
+`spark-shell want --attach FILE "WORDS"` asks spark about a text file:
+the file's text goes to spark as someone else's text, by its name
+alone.
 
 ## Status and check
 
@@ -335,8 +358,9 @@ Config keys, in `~/.config/spark-shell/config` (see `config.example`):
 `PROMPT` (starship or plain), `PROMPT_STYLE` (minimal or full),
 `DESKTOP` (none or sway), `FONT` (foot's font), `WALLPAPER` (default,
 none or a path), `ALPHA` (how see-through foot is, 0.85), `DESKTOP_BAR`
-(yes or no), `THEME`, `CONSOLE_FONT`, `QUIET_LOGIN`, `QUIET_BOOT`. The
-commands write them.
+(yes or no), `THEME`, `CONSOLE_FONT`, `QUIET_LOGIN`, `QUIET_BOOT`,
+`DIALOG_ATTACH` (yes or no), `DIALOG_ATTACH_TYPES` (txt md),
+`DIALOG_MODEL` and `DIALOG_TALK` (yes or no). The commands write them.
 
 Files it writes: the shell files, `~/.tmux.conf`, `~/.config/btop/`,
 `~/.config/starship.toml`, `~/.config/spark-shell/`,
@@ -350,16 +374,19 @@ notice and boot files for quiet. `off` restores or removes each one.
 What leaves the machine: only what the package manager downloads. A
 layout asks spark, which runs on this machine, with your words, the
 screen sizes and the app list; a want at the panel asks it with your
-words, what the bar shows, the list of what it can do and the names of
-your saved layouts. Never a window title or a file. A new Wi-Fi network is saved
-by the Wi-Fi tool itself.
+words, what the bar shows, the list of what it can do (an open window
+by its name among it) and the names of your saved layouts. A file only
+when you attach one, its text and its name, never its path.
+A new Wi-Fi network is saved by the Wi-Fi tool itself.
 
 The settings live in `~/.config/spark-shell/config`, and every run
 reads that file. A setting in the environment never stands in for it.
 
 The logo, in `assets/`: spark's block-letter S, then the prompt sign and
 a cursor cell. `logo.svg` is for a dark ground and `logo-light.svg` for
-a light one; `favicon.svg` and `favicon-light.svg` carry their ground.
+a light one; `favicon.svg` and `favicon-light.svg` are the same with no
+ground of their own, and `favicon-16.png` to `favicon-26.png`, with
+their `-light` twins, are those at the height of a terminal row.
 The S keeps spark's colours and is never recoloured.
 
 Uninstall: `spark-shell off`, then delete `~/.spark-shell`.

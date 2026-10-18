@@ -59,3 +59,17 @@ QUIET_LOGIN=no
 # Linux only. yes hides the boot menu and the boot messages.
 # spark-shell quiet boot on|off sets this.
 QUIET_BOOT=no
+
+# The dialog's composer (the desktop, from v0.64). Plus attaches a file to
+# what you ask: yes or no, and the types it lists, lower case with a space
+# between. spark reads text, so the first version takes text files only.
+DIALOG_ATTACH=yes
+DIALOG_ATTACH_TYPES=txt md
+
+# The model chip, which shows the model spark uses and picks another: yes
+# or no.
+DIALOG_MODEL=yes
+
+# Talk, which speaks to spark through its own voice: yes or no. It is
+# hidden while spark's voice is off.
+DIALOG_TALK=yes
