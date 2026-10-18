@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.62.1
+
+- Fixed: a terminal window was listed as `foot`, so `close aerc` found
+  nothing; it goes by what runs in it now. A close or focus step acts on
+  one window by its id, never on every window of an app. `apps close
+  NAME` is read as `window close NAME`.
+
 ## v0.62
 
 - Fixed: a want typed at the splash, or a pick in the panel, ran on a

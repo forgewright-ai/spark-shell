@@ -2714,7 +2714,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
         window) for _w in split tabs stacked; do
                 if [ "$_w" = "${WINDOWS:-split}" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$(win_words "$_w")"; else printf -- '-\t%s\t%s\n' "$(win_words "$_w")" "$_w"; fi
             done
-            [ "${2:-}" != full ] || win_open | awk -F '\t' '!s[$1]++' | while IFS="$TAB" read -r _a _t _i; do printf '%s\t%s\tfocus %s\n-\tclose %s\tclose %s\n' "$PANEL_GO" "$_a" "$_a" "$_a" "$_a"; done ;;   # the windows open now: in front, or closed; typing a name finds them
+            [ "${2:-}" != full ] || win_label | awk -F '\t' '!s[$1]++' | while IFS="$TAB" read -r _l _i; do printf '%s\t%s\tfocus %s\n-\tclose %s\tclose %s\n' "$PANEL_GO" "$_l" "$_l" "$_l" "$_l"; done ;;   # the windows open now, by name: in front, or closed; typing a name finds them
         bar) if [ "$DESKTOP_BAR" = yes ]; then printf -- '-\thide\toff\n'; else printf -- '-\tshow\ton\n'; fi ;;   # on and off, as the verb: show is the panel's look-only word
         layout) if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then
                 for f in "$LAYOUTS_DIR"/*; do _w=$(desk_words "$f"); [ -n "$_w" ] || _w=${f##*/}; printf '%s\t%s\topen %s\n' "$PANEL_GO" "$_w" "${f##*/}"; done
@@ -2811,6 +2811,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 *) echo "$_a is not something layout does"; return 1 ;;
             esac ;;
         apps) case $_a in
+                close|focus) panel_act window "$_a" "$_arg" ;;   # said of an app, done to its window
                 pick) ( cmd_apps_verb ) ;;
                 open) panel_app_open "$_arg" ;;
                 terminal) desk_in_sway || { echo "a terminal window needs the desktop"; return 1; }
@@ -2825,8 +2826,8 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                     case $_a in tabs) _l=tabbed ;; stacked) _l=stacking ;; *) _l=splith ;; esac
                     [ -z "${SWAYSOCK:-}" ] || swaymsg -- "[workspace=__focused__ tiling] layout $_l" >/dev/null 2>&1 || :
                     echo "windows $(win_words "$_a")" ;;
-                close) swaymsg -- "[app_id=$_arg] kill" >/dev/null 2>&1 || swaymsg -- "[class=$_arg] kill" >/dev/null 2>&1 || { echo "$_arg did not close"; return 1; }; echo "$_arg closed" ;;
-                focus) swaymsg -- "[app_id=$_arg] focus" >/dev/null 2>&1 || swaymsg -- "[class=$_arg] focus" >/dev/null 2>&1 || { echo "no window named $_arg"; return 1; }; : > "$TMP/opened"; echo "$_arg in front" ;;   # the window is the receipt
+                close) _nm=$(win_name_of "$_arg"); swaymsg -- "[con_id=$_arg] kill" >/dev/null 2>&1 || { echo "${_nm:-$_arg} did not close"; return 1; }; echo "${_nm:-$_arg} closed" ;;   # one window, by its id: never every window of an app
+                focus) _nm=$(win_name_of "$_arg"); swaymsg -- "[con_id=$_arg] focus" >/dev/null 2>&1 || { echo "no window named ${_nm:-$_arg}"; return 1; }; : > "$TMP/opened"; echo "${_nm:-$_arg} in front" ;;   # the window is the receipt
                 *) echo "$_a is not something window does"; return 1 ;;
             esac ;;
         about) case $_a in open) panel_about 72 ;; *) echo "$_a is not something about does"; return 1 ;; esac ;;   # on a pipe: the splash as text
@@ -2856,7 +2857,9 @@ panel_open_wait() {   # panel_open_wait COUNT -- until sway shows more windows t
 win_open() {   # -> the windows sway shows, one a line: APP<tab>TITLE<tab>ID; the panel's own left out
     swaymsg -t get_tree 2>/dev/null | jq -r --arg me "$PANEL_APP" '.. | objects | select(.pid? != null and (.type? == "con" or .type? == "floating_con")) | select(((.app_id // .window_properties.class // "") != "") and .app_id != $me) | "\(.app_id // .window_properties.class)\t\(.name // "")\t\(.id)"' 2>/dev/null || :
 }
-win_named() { win_open | awk -F '\t' -v w="$(panel_lower "$1")" 'tolower($1) == w || (w != "" && index(tolower($2), w) > 0) { print $1; exit }'; }   # win_named WORD -> the app of the first open window named so, by its app or its title
+win_label() { win_open | awk -F '\t' '{ l = $1; if (($1 == "foot" || $1 == "footclient") && $2 != "") l = $2; print l "\t" $3 }'; }   # -> NAME<tab>ID: a terminal window goes by what runs in it (its title: aerc, btop, terminal), every other by its app
+win_named() { win_label | awk -F '\t' -v w="$(panel_lower "$1")" 'w != "" && (tolower($1) == w || index(tolower($1), w) > 0) { print $2; exit }'; }   # win_named WORD -> the id of the first open window named so
+win_name_of() { win_label | awk -F '\t' -v i="$1" '$2 == i { print $1; exit }'; }   # win_name_of ID -> its name
 desk_windows_all() { swaymsg -t get_tree 2>/dev/null | jq '[.. | objects | select(.pid? != null)] | length' 2>/dev/null || echo 0; }   # -> how many windows sway shows, on every workspace
 panel_layout_save() {   # panel_layout_save NAME -> what is open on the focused workspace, saved as a layout under NAME
     desk_in_sway || { echo "saving what is open needs the desktop"; return 1; }
@@ -2997,7 +3000,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         layout:open) _n=$(desk_name_of "$3"); if [ -n "$_n" ] && [ -f "$LAYOUTS_DIR/$_n" ]; then echo "$_n"; return 0; fi; echo "layout: no saved layout named $3"; return 1 ;;
         layout:new) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: new takes the words for it"; return 1 ;;
         apps:pick|apps:terminal) echo ''; return 0 ;;
-        window:close|window:focus) _n=$(win_named "${3:-}"); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "window: no window named ${3:-?} is open"; return 1 ;;
+        window:close|window:focus|apps:close|apps:focus) _n=$(win_named "${3:-}"); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "window: no window named ${3:-?} is open"; return 1 ;;   # apps close NAME is read as window close: the window, not the app
         out:level|mic:level) case $3 in [0-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "$1: level takes 0 to 100"; return 1 ;; esac ;;
         theme:alpha) case $3 in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) echo "$3"; return 0 ;; *) echo "theme: alpha takes 0 to 1"; return 1 ;; esac ;;
     esac

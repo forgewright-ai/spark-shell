@@ -660,6 +660,7 @@ case ${1:-} in
                 n=$({ if [ "$from" -gt 0 ]; then sed "1,${from}d" "$log"; else cat "$log"; fi; } 2>/dev/null | grep '^exec' | grep -vc 'exec gone' || :); [ -n "$n" ] || n=0; i=0
                 printf '{"type":"root","nodes":[{"type":"workspace","num":%s,"fullscreen_mode":0,"nodes":[' "$num"
                 # with $HOME/fullscreen: a fullscreen window (77) on the workspace, and the panel floating under it with the pid the test wrote
+                [ ! -e "$HOME/aerc" ] || { printf '{"type":"con","id":79,"pid":300,"app_id":"foot","name":"aerc"}'; { [ -e "$HOME/fullscreen" ] || [ "$n" -gt 0 ]; } && printf ','; }   # a terminal running aerc
                 [ ! -e "$HOME/fullscreen" ] || { printf '{"type":"con","id":77,"pid":200,"app_id":"firefox","fullscreen_mode":1}'; [ "$n" -eq 0 ] || printf ','; }
                 while [ "$i" -lt "$n" ]; do [ "$i" -eq 0 ] || printf ','; printf '{"type":"con","pid":%d}' $((100 + i)); i=$((i + 1)); done
                 printf ']'
@@ -2488,16 +2489,21 @@ else
     st=0; out=$(sh "$SH" panel window sideways 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: window: sideways is not on the panel now' ] && ok "panel window WORD: a way that is not a row is refused" || bad "window refuse" "st=$st $out"
     # the windows open now: a row that puts one in front, a close row, the steps by name; the tree shows a firefox window while $HOME/fullscreen is there
-    touch "$HOME/fullscreen"; rm -f "$H/.local/state/swaymsg.log"
+    touch "$HOME/fullscreen" "$HOME/aerc"; rm -f "$H/.local/state/swaymsg.log"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window close firefox 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'firefox closed' ] && grep -qxF '[app_id=firefox] kill' "$H/.local/state/swaymsg.log" && ! sh "$SH" panel --list | grep -q 'undo.*firefox' \
-        && ok "panel window close firefox: the open window is told to close; no undo row for it" || bad "window close" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
+    [ "$st" -eq 0 ] && [ "$out" = 'firefox closed' ] && grep -qxF '[con_id=77] kill' "$H/.local/state/swaymsg.log" && ! grep -q 'app_id=firefox\] kill' "$H/.local/state/swaymsg.log" && ! sh "$SH" panel --list | grep -q 'undo.*firefox' \
+        && ok "panel window close firefox: that one window, by its id, is told to close; no undo row for it" || bad "window close" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
+    rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window close aerc 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'aerc closed' ] && grep -qxF '[con_id=79] kill' "$H/.local/state/swaymsg.log" && ! grep -q 'foot' "$H/.local/state/swaymsg.log" \
+        && ok "panel window close aerc: a terminal window goes by what runs in it, and only that terminal is told to close" || bad "window close aerc" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
+    rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps close aerc 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'aerc closed' ] && grep -qxF '[con_id=79] kill' "$H/.local/state/swaymsg.log" && ok "panel apps close NAME: read as window close, the way spark tends to say it" || bad "apps close" "st=$st $out"
     SWAYSOCK=/tmp/x sh "$SH" panel window --list > "$H/win.list"
-    grep -q "^$(printf '\342\226\270') window  firefox	window focus firefox$" "$H/win.list" && grep -q "^  window  close firefox	window close firefox$" "$H/win.list" && ! grep -q 'spark-panel' "$H/win.list" \
-        && ok "panel window --list: an open window is a row that puts it in front, and a close row; the panel's own window is not listed" || bad "window rows" "$(cat "$H/win.list")"
+    grep -q "^$(printf '\342\226\270') window  firefox	window focus firefox$" "$H/win.list" && grep -q "^  window  close firefox	window close firefox$" "$H/win.list" && grep -q "^$(printf '\342\226\270') window  aerc	window focus aerc$" "$H/win.list" && ! grep -q 'spark-panel\|window  foot' "$H/win.list" \
+        && ok "panel window --list: each open window by its name is a row that puts it in front, and a close row; the terminal by what runs in it; the panel's own window not listed" || bad "window rows" "$(cat "$H/win.list")"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window close nothing 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: window: no window named nothing is open' ] && ok "panel window close NAME: a window that is not open is refused" || bad "window close refuse" "st=$st $out"
-    rm -f "$HOME/fullscreen" "$H/win.list"
+    rm -f "$HOME/fullscreen" "$HOME/aerc" "$H/win.list"
     printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
     line=$(sh "$SH" bar status --once)
     printf '%s' "$line" | jq -e '[.[] | select(.name == "theme")] | length == 0' >/dev/null && ok "bar: no theme block even with a palette set (the panel's theme section has it)" || bad "theme block" "$line"
@@ -2541,7 +2547,7 @@ printf '{"why": "close it", "steps": [{"page": "window", "action": "close", "arg
 EOF
     chmod +x "$H/.local/bin/spark"; touch "$HOME/fullscreen"; rm -f "$H/.local/state/swaymsg.log" "$HOME/spark.argv"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel close the window with firefox 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^  $TICK firefox closed$" && grep -qxF '[app_id=firefox] kill' "$H/.local/state/swaymsg.log" && ! grep -q '^exec firefox' "$H/.local/state/swaymsg.log" && grep -q 'close firefox' "$HOME/spark.argv" \
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^  $TICK firefox closed$" && grep -qxF '[con_id=77] kill' "$H/.local/state/swaymsg.log" && ! grep -q '^exec firefox' "$H/.local/state/swaymsg.log" && grep -q 'close firefox' "$HOME/spark.argv" \
         && ok "panel WORDS about closing an app: never the app opened or a layout; spark picks window close firefox from the list, and the window is told to close" || bad "want close" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
     printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/spark.argv"\nprintf "{\\"why\\": \\"no\\", \\"steps\\": []}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"; rm -f "$H/.local/state/swaymsg.log"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel quit firefox 2>&1) || st=$?
