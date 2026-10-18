@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.61
+
+- Added: the splash. The first time the desktop starts, the panel's
+  window opens over the first terminal with the logo, the version, the
+  keys, the licence and the address, and the prompt under them. The
+  panel's new `about` row, last in the list, shows it again. The first
+  terminal no longer prints the keys.
+- Added: a sign in the panel's top right corner; a click on it closes
+  the panel, as Esc does. With fzf 0.57 or newer, fzf holds the date and
+  the time as its first lines, so the corner hears the click.
+- Changed: a key named on the screen looks like a key: the hint under
+  the list reads the arrow keys, pick an option, or say what you would
+  like, Esc closes; the splash and the receipts that name a key follow.
+
 ## v0.60
 
 - Changed: the default wallpaper is the ground, the palette's

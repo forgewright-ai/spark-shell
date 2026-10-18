@@ -509,10 +509,10 @@ printf '%s\n' "$keys" | while IFS= read -r line; do grep -qF -- "$line" "$REPO/R
 [ ! -e "$H/.local/state/spark-shell/desktop.seen" ] && ok "desktop keys: no stamp written" || bad "desktop keys wrote the stamp"
 printf '#!/bin/sh\necho shell-stub\n' > "$H/.local/bin/shellstub"; chmod +x "$H/.local/bin/shellstub"
 out=$(SHELL=$H/.local/bin/shellstub sh "$SH" desktop --first)
-printf '%s\n' "$out" | head -1 | grep -q "^These are the desktop's keys\. spark-shell desktop keys shows them again any time\.$" && [ -f "$H/.local/state/spark-shell/desktop.seen" ] && [ "$(printf '%s\n' "$out" | tail -1)" = shell-stub ] \
-    && ok "desktop --first: the card once (the stamp written first), then the shell" || bad "desktop --first" "$out"
+[ "$out" = shell-stub ] && [ -f "$H/.local/state/spark-shell/desktop.seen" ] && [ "$(printf '%s\n' "$out" | tail -1)" = shell-stub ] \
+    && ok "desktop --first: the stamp written, no card in the shell (the splash is a window, when there is one), then the shell" || bad "desktop --first" "$out"
 out=$(SHELL=$H/.local/bin/shellstub sh "$SH" desktop --first)
-[ "$out" = shell-stub ] && ok "desktop --first again: the shell alone, no card" || bad "desktop --first twice" "$out"
+[ "$out" = shell-stub ] && [ ! -f "$H/first.splash" ] && ok "desktop --first again: the shell alone" || bad "desktop --first twice" "$out"
 printf '#!/bin/sh\necho "${PROMPT-unset} ${DESKTOP-unset} ${FONT-unset}"\n' > "$H/.local/bin/envstub"; chmod +x "$H/.local/bin/envstub"
 out=$(SHELL=$H/.local/bin/envstub sh "$SH" desktop --first)
 [ "$out" = 'unset unset unset' ] && ok "desktop --first: the config's exports (PROMPT, DESKTOP, FONT) never reach your shell" || bad "desktop --first env" "$out"
@@ -2532,11 +2532,11 @@ if [ "$n" -eq 1 ]; then printf '\n  out     mute\tout mute\n'; exit 0; else exit
 STUB
     chmod +x "$H/.local/bin/fzf"; rm -f "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$amlog" "$journal/undo" "$journal/recent"
     st=0; out=$(SPARK_SHELL_TEST_TTY=1 sh "$SH" panel 2>&1 </dev/null) || st=$?
-    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g" | grep -q "$TICK out muted" && ! printf '%s\n' "$out" | grep -q 'not found' && grep -q "undo.*out unmute	undo all$" "$H/fzf.in.2" && grep -q -- "--highlight-line --pointer  --marker  --padding 0,0,0,2 --bind change:reload(if \[ -n {q} \]; then cat .*/rows.full; else cat .*/rows.short; fi)" "$H/fzf.args.2" && grep -qx -- '-c 0 sset Master mute' "$amlog" \
-        && ok "the window: Enter on out mute plays the step, the receipt says it with a check, the next list opens with the undo row; Esc ends it" || bad "window pick" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) out=$(printf '%s' "$out" | tr -d '\033' | tr '\n' '|' | tail -c 400) in2=$(grep undo "$H/fzf.in.2" 2>&1)"
-    plain=$(printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g")
-    printf '%s\n' "$plain" | grep -q "^    $(date '+%A %d %B')$" && printf '%s\n' "$plain" | grep -q "$B$B.*      .* Su  Mo  Tu  We  Th  Fr  Sa$" && [ "$(printf '%s\n' "$plain" | grep -c "$B$B")" -ge 10 ] && ! printf '%s\n' "$plain" | grep -q "wifi home $SEP" && ! printf '%s\n' "$plain" | grep -q "^    out     Jabra" \
-        && ok "the window: one view behind every door -- the date, the time in strokes beside this month, no facts line and no title line (the bar has them); drawn again after the pick" || bad "window view" "$(printf '%s' "$plain" | tr '\n' '|' | head -c 600)"
+    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && sed "s/$(printf '\033')\[[0-9;]*m//g" "$H/fzf.in.2" | grep -q "^  $TICK out muted$" && ! printf '%s\n' "$out" | grep -q 'not found' && grep -q "undo.*out unmute	undo all$" "$H/fzf.in.2" && grep -q -- "--highlight-line --pointer  --marker  --padding 1,0,0,2 --header-lines=[0-9]* --bind change:reload(cat .*/head; if \[ -n {q} \]; then cat .*/rows.full; else cat .*/rows.short; fi) --bind resize:reload(cat .*/head; " "$H/fzf.args.2" && grep -q -- 'click-header:transform(if \[ "$FZF_CLICK_HEADER_LINE" = 1 \] && \[ "$FZF_CLICK_HEADER_COLUMN" -ge [0-9]* \]; then echo abort; fi)' "$H/fzf.args.2" && grep -qx -- '-c 0 sset Master mute' "$amlog" \
+        && ok "the window: Enter on out mute plays the step, the receipt rides in fzf's first lines with a check, the next list opens with the undo row, fzf holds the glance (header lines, a reload with the head on a change and on a resize, the corner's click told by line and column); Esc ends it" || bad "window pick" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) out=$(printf '%s' "$out" | tr -d '\033' | tr '\n' '|' | tail -c 400) in2=$(grep undo "$H/fzf.in.2" 2>&1)"
+    plain=$(sed "s/$(printf '\033')\[[0-9;]*m//g" "$H/fzf.in.1")
+    printf '%s\n' "$plain" | grep -q "^  $(date '+%A %d %B') *$(printf '\342\235\257')$" && printf '%s\n' "$plain" | grep -q "$B$B.*      .* Su  Mo  Tu  We  Th  Fr  Sa$" && [ "$(printf '%s\n' "$plain" | grep -c "$B$B")" -ge 5 ] && [ "$(grep -c "$B$B" "$H/fzf.in.2")" -ge 5 ] && ! printf '%s\n' "$plain" | grep -q "wifi home $SEP" && ! printf '%s\n' "$plain" | grep -q "out     Jabra" && grep -q "	about open$" "$H/fzf.in.1" && grep -q "pick an option, or say what you would like .* Esc .*closes" "$H/fzf.args.1" \
+        && ok "the window: one view behind every door as fzf's first lines -- the date with the close glyph in the last cell, the time in strokes beside this month, no facts line and no title line; the about row last; the hint names the keys; drawn again after the pick" || bad "window view" "$(printf '%s' "$plain" | tr '\n' '|' | head -c 600)"
     rm -f "$H/.local/bin/fzf" "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent"
     # a pick that puts a window on the screen closes the panel: fzf runs once, the receipt is the last thing printed, the app was sent to sway
     cat > "$H/.local/bin/fzf" <<'STUB'
@@ -2563,7 +2563,7 @@ STUB
     chmod +x "$H/.local/bin/fzf"; rm -f "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent"
     st=0; out=$(SPARK_SHELL_TEST_TTY=1 sh "$SH" panel 2>&1 </dev/null) || st=$?
     plain=$(printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g")
-    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && printf '%s\n' "$plain" | grep -q "$TICK theme nord" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" && grep -q 'bg+:#4c525e,hl:#88c0d0' "$H/fzf.args.2" && ! grep -q 'bg+:#4c525e' "$H/fzf.args.1" && grep -q "undo.*theme none	undo all$" "$H/fzf.in.2" \
+    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && sed "s/$(printf '\033')\[[0-9;]*m//g" "$H/fzf.in.2" | grep -q "$TICK theme nord" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" && grep -q 'bg+:#4c525e,hl:#88c0d0' "$H/fzf.args.2" && ! grep -q 'bg+:#4c525e' "$H/fzf.args.1" && grep -q "undo.*theme none	undo all$" "$H/fzf.in.2" \
         && ok "the window: a palette picked is read anew -- the next list is lit and marked in nord's shades (bg+ a fifth of the way to the text, hl the accent), the undo row goes back to none" || bad "window theme reload" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) a1=$(grep -o 'color=[^ ]*' "$H/fzf.args.1" 2>&1) a2=$(grep -o 'color=[^ ]*' "$H/fzf.args.2" 2>&1) out=$(printf '%s' "$plain" | tr '\n' '|' | tail -c 200)"
     sh "$SH" theme none >/dev/null 2>&1 || true; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"   # as before the pick
     rm -f "$H/.local/bin/fzf" "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent"

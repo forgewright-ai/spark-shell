@@ -136,8 +136,9 @@ no list, any app with a desktop entry is allowed.
 
 ## Keys
 
-Type `spark-shell desktop keys`. You get these lines. The first window
-of the desktop shows them once.
+Type `spark-shell desktop keys`. You get these lines. The first
+desktop start shows them in the splash, and the panel's `about` row
+shows it again.
 
     Super+Return opens a terminal window.
     Super+d opens the panel: pick an option, or say what you would like.
@@ -218,8 +219,9 @@ middle of the screen: a plain surface a shade lighter than the
 windows behind it, with air around its text and no frame. Super+d
 opens it. Super+s opens it already in spark chat, on the same
 surface. A click on a bar block opens it with that block first. Esc
-closes it, and so does the key that opened it, pressed again. It
-stays while the mouse moves. A pick that opens an app or a layout
+closes it, and so does the key that opened it, pressed again, and so
+does a click on the sign in its top right corner. It stays while the
+mouse moves. A pick that opens an app or a layout
 closes it: the window is the receipt. A window that is fullscreen
 steps aside for the panel and is fullscreen again when the panel
 closes with nothing opened.
@@ -230,8 +232,8 @@ chip in the accent, and an alarm in red under them when there is
 one. The facts are on the bar. The time keeps the minute while the
 panel is open. Then one list of everything this machine can do right
 now, in sections ordered by use: `spark`, `layout`, `out`, `mic`,
-`theme`, `window`, `bar`, `bt`, `apps`, `wifi`. The section you came
-from is on top. Every row names its section in a column of its own,
+`theme`, `window`, `bar`, `bt`, `apps`, `wifi`, `about`. The section
+you came from is on top. Every row names its section in a column of its own,
 muted, then the thing, with a sign in front where there is a
 state: a dot is in use or connected, a ring is available, a check is
 current or saved, a small triangle opens something. The picked row is
@@ -284,8 +286,14 @@ bottom, where the hint and the prompt are.
 - `apps`: a terminal window, then a row per app a layout may open, and
   Enter opens it on this workspace, the way its desktop entry says.
   The last row chooses the allowed apps, in the same window.
+- `about`: one row, spark-shell and its version. Enter shows the
+  splash in this window: the logo, the keys, the licence and the
+  address. It opens by itself the first time the desktop starts, and
+  Esc gives the list back.
 
-Under the list, one line: pick an option, or say what you would like.
+Under the list, one line: the arrow keys pick an option, or say what
+you would like, and Esc closes. A key named on the screen looks like
+a key.
 The list shows each section's state and everyday steps. Type, and the
 search runs over everything the panel can do, shown or not: `drac`
 finds the palette from a click on `wifi`. One or two words that name an app
