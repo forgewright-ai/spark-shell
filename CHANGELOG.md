@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.68
+
+Found by hand at v0.67 (issue 6).
+
+- Changed: the logo in the about is sharp. The favicon is pixel art, and
+  at a 19 px row its blocks fell between pixels, each colour was cut to
+  16 levels, and the thin shadow lines were lost. The dialog now draws
+  it as a pixel grid snapped from the favicon: a block 2 by 3 pixels, a
+  shadow line 1 pixel, the prompt sign the same above and below its
+  tip, the exact colours, at a whole multiple of its 18 rows (36 on a
+  HiDPI screen). A row shorter than 18 pixels keeps the 16 px logo.
+- Added: on plain ALSA, a Bluetooth headset that bluez-alsa offers is
+  listed in out and mic beside the cards. A pick plays on its A2DP link,
+  or listens on its call link (SCO), for programs started from then on,
+  in spark-shell's own ALSA file; the bar names it, and its level and
+  mute are bluez-alsa's mixer. A card picked after it takes the playing
+  back and keeps the headset's mic.
+- Fixed: when your own ~/.asoundrc, or a file it includes, sets the
+  default device, a pick in out says so and writes nothing. Before, a
+  card pick wrote a file your default overrode.
+
 ## v0.67
 
 Found by hand at v0.66 (issue 5).

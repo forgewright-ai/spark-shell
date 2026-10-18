@@ -212,7 +212,11 @@ wpa_cli. Sound comes from the audio system you have: PipeWire (wpctl),
 PulseAudio (pactl), or plain ALSA (amixer). On plain ALSA a change of
 output holds for programs started afterwards, and is written to
 `~/.config/alsa/asoundrc`, spark-shell's own file. `spark-shell off`
-removes it. Your `~/.asoundrc` is never touched.
+removes it. Your `~/.asoundrc` is never touched, and when it sets the
+default device itself, spark-shell says so and leaves the choice to it.
+A Bluetooth headset that bluez-alsa offers is listed in `out` and `mic`
+beside the cards: it plays on A2DP, listens on its call link (SCO, 8
+kHz), and its level and mute are bluez-alsa's own.
 
 Type `spark-shell bar off --desktop`. The bar is hidden. `on` brings
 it back. Type `spark-shell bar`. You get the state of this bar and of
@@ -369,7 +373,10 @@ The logo, in `assets/`: spark's block-letter S, then the prompt sign and
 a cursor cell. `logo.svg` is for a dark ground and `logo-light.svg` for
 a light one; `favicon.svg` and `favicon-light.svg` are the same with no
 ground of their own, and `favicon-16.png` to `favicon-26.png`, with
-their `-light` twins, are those at the height of a terminal row.
+their `-light` twins, are those at the height of a terminal row. The
+dialog draws the logo as a pixel grid snapped from `favicon.svg`, a
+block 2 by 3 pixels and a shadow line 1, at a whole multiple of its 18
+rows.
 The S keeps spark's colours and is never recoloured.
 
 Uninstall: `spark-shell off`, then delete `~/.spark-shell`.

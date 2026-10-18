@@ -2037,14 +2037,56 @@ al_control() {   # al_control N p|c -> the mixer control to read and set: Master
 }
 al_level() { amixer -c "$1" sget "$2" 2>/dev/null | grep -o '\[[0-9]*%\]' | head -1 | tr -d '[]%'; }   # al_level N CONTROL -> 0..100 or nothing
 al_muted() { amixer -c "$1" sget "$2" 2>/dev/null | grep -o '\[\(on\|off\)\]' | head -1 | grep -q off && echo 1 || echo 0; }
-al_set_default() {   # al_set_default N -- the card for programs started from now, in spark-shell's own file; refused when the file is yours, taken back when ALSA refuses it
+al_set_default() { al_write "$1" "$(al_bt_routed p)" "$(al_bt_routed c)"; }   # al_set_default N -- the card for programs started from now; a Bluetooth way picked stays
+al_write() {   # al_write N [PLAYDEV] [CAPDEV] -- spark-shell's own file: card N for programs started from now, and a Bluetooth device for playing or listening when one is picked; refused when the file is yours, taken back when ALSA refuses it
     id=$(al_cards | awk -F '\t' -v n="$1" '$1 == n {print $2; exit}')
     if [ -f "$BAR_ASOUNDRC" ] && ! grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC"; then echo "asoundrc is yours"; return 1; fi
+    if al_theirs; then echo "your ~/.asoundrc picks the sound device, and spark-shell leaves it to that file"; return 1; fi
     mkdir -p "$(dirname "$BAR_ASOUNDRC")"
     # !card: alsa.conf sets the card as a number, and only the ! form lets a name replace it (the plain form is refused, and ALSA drops its whole configuration with it)
-    printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.!card %s\ndefaults.ctl.!card %s\n' "$id" "$id" > "$BAR_ASOUNDRC"
+    {   printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.!card %s\ndefaults.ctl.!card %s\n' "$id" "$id"
+        if [ -n "${2:-}${3:-}" ]; then   # a Bluetooth way: bluez-alsa's own PCM, the other way the card's (sysdefault follows defaults.pcm.card)
+            [ -z "${2:-}" ] || printf '# bluetooth out: %s\n' "$(al_bt_name p "$2")"
+            [ -z "${3:-}" ] || printf '# bluetooth mic: %s\n' "$(al_bt_name c "$3")"
+            printf 'pcm.!default {\n    type asym\n'
+            if [ -n "${2:-}" ]; then printf '    playback.pcm { type plug slave.pcm "bluealsa:DEV=%s,PROFILE=a2dp" }\n' "$2"; else printf '    playback.pcm "sysdefault"\n'; fi
+            if [ -n "${3:-}" ]; then printf '    capture.pcm { type plug slave.pcm "bluealsa:DEV=%s,PROFILE=sco" }\n' "$3"; else printf '    capture.pcm "sysdefault"\n'; fi
+            printf '}\n'
+        fi
+    } > "$BAR_ASOUNDRC"
     amixer -c "$1" scontrols >/dev/null 2>&1 || { rm -f "$BAR_ASOUNDRC"; echo "ALSA refused the file"; return 1; }   # ALSA reads every file at each start: a refused one would take every program's sound
 }
+al_theirs() {   # -> 0 when the user's own ~/.asoundrc, or a file it includes, sets the default device: a pick of ours would be overridden or would override theirs
+    [ -f "$HOME/.asoundrc" ] || return 1
+    { echo "$HOME/.asoundrc"; sed -n 's/^ *<\([~/][^>]*\)>.*$/\1/p' "$HOME/.asoundrc" | sed "s|^~/|$HOME/|"; } | while IFS= read -r f; do grep -qs '^ *pcm\.!default' "$f" && exit 0; done
+}
+# Bluetooth on plain ALSA: bluez-alsa's devices are no card. A headset plays
+# on A2DP and listens on the hands-free link (SCO, 8 kHz); its level is
+# bluez-alsa's own mixer, NAME - A2DP and NAME - SCO, through amixer -D bluealsa.
+al_bt() {   # al_bt p|c -> NAME<tab>DEV per Bluetooth device bluez-alsa offers now that plays (A2DP) | listens (SCO)
+    command -v bluealsa-aplay >/dev/null 2>&1 || return 0
+    _pr=a2dp; _dir=playback; [ "$1" = p ] || { _pr=sco; _dir=capture; }
+    bar_timeout bluealsa-aplay -L 2>/dev/null | awk -v pr="PROFILE=$_pr" -v dir="$_dir" '
+        /^bluealsa:/ { dev = ""; if (index($0, pr)) { d = $0; sub(/.*DEV=/, "", d); sub(/,.*$/, "", d); if (d ~ /^[0-9A-F][0-9A-F](:[0-9A-F][0-9A-F])(:[0-9A-F][0-9A-F])(:[0-9A-F][0-9A-F])(:[0-9A-F][0-9A-F])(:[0-9A-F][0-9A-F])$/) dev = d }; next }
+        dev != "" { l = $0; sub(/^[ \t]+/, "", l); n = split(l, f, ", "); if (f[n] == dir) { name = l; sub(/, .*$/, "", name); gsub(/[^ -~]/, "", name); if (name != "" && !seen[dev]++) print name "\t" dev }; dev = "" }'
+}
+al_bt_name() { al_bt "$1" | awk -F '\t' -v d="$2" '$2 == d {print $1; exit}'; }   # al_bt_name p|c DEV -> its name while bluez-alsa offers it
+al_bt_routed() {   # al_bt_routed p|c -> the DEV spark-shell's file sends playing | listening to, or nothing
+    [ -f "$BAR_ASOUNDRC" ] && grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC" || return 0
+    _w=playback; _pr=a2dp; [ "$1" = p ] || { _w=capture; _pr=sco; }
+    sed -n "s/^ *$_w\.pcm { type plug slave\.pcm \"bluealsa:DEV=\([0-9A-F:]*\),PROFILE=$_pr\" }\$/\1/p" "$BAR_ASOUNDRC" | head -1
+}
+al_bt_said() {   # al_bt_said p|c -> the routed device's name as the file wrote it
+    _w=out; [ "$1" = p ] || _w=mic
+    [ -n "$(al_bt_routed "$1")" ] && sed -n "s/^# bluetooth $_w: //p" "$BAR_ASOUNDRC" | head -1
+}
+al_bt_ctl() {   # al_bt_ctl p|c -> bluez-alsa's mixer control for the routed device, while it is there
+    _d=$(al_bt_routed "$1"); [ -n "$_d" ] || return 1
+    _n=$(al_bt_name "$1" "$_d"); [ -n "$_n" ] || return 1
+    if [ "$1" = p ]; then echo "$_n - A2DP"; else echo "$_n - SCO"; fi
+}
+al_bt_level() { if [ "$1" = p ]; then amixer -D bluealsa sget "$2" 2>/dev/null | sed -n 's/.*Playback [0-9]* \[\([0-9]*\)%\].*/\1/p' | head -1; else amixer -D bluealsa sget "$2" 2>/dev/null | sed -n 's/.*Capture [0-9]* \[\([0-9]*\)%\].*/\1/p' | head -1; fi; }   # al_bt_level p|c CONTROL
+al_bt_muted() { if [ "$1" = p ]; then _s=$(amixer -D bluealsa sget "$2" 2>/dev/null | grep 'Playback [0-9]' | grep -o '\[o[nf]*\]' | head -1); else _s=$(amixer -D bluealsa sget "$2" 2>/dev/null | sed -n 's/.*Capture [0-9]//p' | grep -o '\[o[nf]*\]' | head -1); fi; [ "$_s" = '[off]' ] && echo 1 || echo 0; }   # al_bt_muted p|c CONTROL -> 1 when its switch is off
 al_mend_file() {   # a file v0.45 wrote said `defaults.pcm.card NAME`, which ALSA refuses: the ! form from now
     [ -f "$BAR_ASOUNDRC" ] && grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC" && grep -q '^defaults\.pcm\.card ' "$BAR_ASOUNDRC" || return 0
     t=$(sed -e 's/^defaults\.pcm\.card /defaults.pcm.!card /' -e 's/^defaults\.ctl\.card /defaults.ctl.!card /' "$BAR_ASOUNDRC") && printf '%s\n' "$t" > "$BAR_ASOUNDRC"
@@ -2053,7 +2095,10 @@ snd_out() {   # -> NAME, LEVEL (or -), MUTED on three lines; nothing without an 
     case $SND in
         wpctl) n=$(wp_default Sinks); [ -n "$n" ] || return 0; printf '%s\n%s\n%s\n' "$n" "$(wp_level @DEFAULT_AUDIO_SINK@)" "$(wp_muted @DEFAULT_AUDIO_SINK@)" ;;
         pactl) s=$(pactl get-default-sink 2>/dev/null); [ -n "$s" ] || return 0; n=$(pa_desc sinks "$s"); printf '%s\n%s\n%s\n' "${n:-$s}" "$(pa_level sink @DEFAULT_SINK@)" "$(pa_muted sink @DEFAULT_SINK@)" ;;
-        alsa) c=$(al_out); [ -n "$c" ] || return 0
+        alsa) if [ -n "$(al_bt_routed p)" ]; then   # a Bluetooth output: its mixer while it is there, its name from the file when it is gone
+                if ctl=$(al_bt_ctl p); then printf '%s\n%s\n%s\n' "${ctl% - A2DP}" "$(al_bt_level p "$ctl")" "$(al_bt_muted p "$ctl")"; else printf '%s\n-\n0\n' "$(al_bt_said p)"; fi; return 0
+            fi
+            c=$(al_out); [ -n "$c" ] || return 0
             if ctl=$(al_control "$c" p); then printf '%s\n%s\n%s\n' "$(al_name "$c")" "$(al_level "$c" "$ctl")" "$(al_muted "$c" "$ctl")"; else printf '%s\n-\n0\n' "$(al_name "$c")"; fi ;;
     esac
 }
@@ -2062,7 +2107,10 @@ snd_mic() {   # -> NAME, LIVE, MUTED, LEVEL (or -) on four lines; nothing withou
         wpctl) n=$(wp_default Sources); [ -n "$n" ] || return 0; printf '%s\n%s\n%s\n%s\n' "$n" "$(wp_live)" "$(wp_muted @DEFAULT_AUDIO_SOURCE@)" "$(wp_level @DEFAULT_AUDIO_SOURCE@)" ;;
         pactl) s=$(pactl get-default-source 2>/dev/null); [ -n "$s" ] || return 0; case $s in *.monitor) return 0 ;; esac
             n=$(pa_desc sources "$s"); printf '%s\n%s\n%s\n%s\n' "${n:-$s}" "$(pa_live)" "$(pa_muted source @DEFAULT_SOURCE@)" "$(pa_level source @DEFAULT_SOURCE@)" ;;
-        alsa) c=$(al_mic); [ -n "$c" ] || return 0; live=0; [ -z "$(al_running c)" ] || live=1
+        alsa) if [ -n "$(al_bt_routed c)" ]; then
+                if ctl=$(al_bt_ctl c); then printf '%s\n0\n%s\n%s\n' "${ctl% - SCO}" "$(al_bt_muted c "$ctl")" "$(al_bt_level c "$ctl")"; else printf '%s\n0\n0\n-\n' "$(al_bt_said c)"; fi; return 0
+            fi
+            c=$(al_mic); [ -n "$c" ] || return 0; live=0; [ -z "$(al_running c)" ] || live=1
             if ctl=$(al_control "$c" c); then printf '%s\n%s\n%s\n%s\n' "$(al_name "$c")" "$live" "$(al_muted "$c" "$ctl")" "$(al_level "$c" "$ctl")"; else printf '%s\n%s\n0\n-\n' "$(al_name "$c")" "$live"; fi ;;
     esac
 }
@@ -2082,7 +2130,18 @@ snd_set() {   # snd_set out|mic LEVEL|+5|-5|mute|muted|unmuted -- the change ask
                 +*|-*) pactl "set-$k-volume" "$n" "${1#[+-]}%${1%"${1#?}"}" ;;   # 5%+ / 5%-
                 *) pactl "set-$k-volume" "$n" "$1%" ;;
             esac ;;
-        alsa) if [ "$t" = out ]; then c=$(al_out); k=p; else c=$(al_mic); k=c; fi
+        alsa) k=p; [ "$t" = out ] || k=c
+            if [ -n "$(al_bt_routed "$k")" ]; then   # a Bluetooth way: bluez-alsa's mixer, the same words
+                ctl=$(al_bt_ctl "$k") || return 0
+                off=mute; on=unmute; [ "$k" = p ] || { off=nocap; on=cap; }
+                case $1 in
+                    mute) amixer -q -D bluealsa sset "$ctl" toggle ;; muted) amixer -q -D bluealsa sset "$ctl" "$off" ;; unmuted) amixer -q -D bluealsa sset "$ctl" "$on" ;;
+                    +*|-*) amixer -q -D bluealsa sset "$ctl" "${1#[+-]}%${1%"${1#?}"}" ;;
+                    *) amixer -q -D bluealsa sset "$ctl" "$1%" ;;
+                esac
+                return 0
+            fi
+            if [ "$t" = out ]; then c=$(al_out); else c=$(al_mic); fi
             [ -n "$c" ] && ctl=$(al_control "$c" "$k") || return 0
             off=mute; on=unmute; [ "$k" = p ] || { off=nocap; on=cap; }   # a capture control has a capture switch: amixer's words for it are cap and nocap (mute is refused)
             case $1 in
@@ -2565,7 +2624,9 @@ snd_devices() {   # snd_devices out|mic -> NAME<tab>DEFAULT(1/0) per device
                 n=$(pa_desc "$_k" "$s"); d=0; [ "$s" != "$_d" ] || d=1; printf '%s\t%s\n' "${n:-$s}" "$d"
             done ;;
         alsa) if [ "$1" = out ]; then _k=p; _d=$(al_out); else _k=c; _d=$(al_mic); fi
-            for c in $(al_with "$_k"); do d=0; [ "$c" != "$_d" ] || d=1; printf '%s\t%s\n' "$(al_name "$c")" "$d"; done ;;
+            _b=$(al_bt_routed "$_k"); [ -z "$_b" ] || _d=''   # a Bluetooth way picked: no card is the one in use
+            for c in $(al_with "$_k"); do d=0; [ "$c" != "$_d" ] || d=1; printf '%s\t%s\n' "$(al_name "$c")" "$d"; done
+            al_bt "$_k" | while IFS="$TAB" read -r n v; do d=0; [ "$v" != "$_b" ] || d=1; printf '%s\t%s\n' "$n" "$d"; done ;;
     esac
 }
 snd_use() {   # snd_use out|mic NAME -> one line; on plain ALSA the output's card holds for programs started from now
@@ -2578,10 +2639,21 @@ snd_use() {   # snd_use out|mic NAME -> one line; on plain ALSA the output's car
             _id=$(pactl list short "$_k" 2>/dev/null | cut -f2 | while IFS= read -r s; do d=$(pa_desc "$_k" "$s"); [ "$(panel_lower "${d:-$s}")" != "$_n" ] || { echo "$s"; break; }; done)
             [ -n "$_id" ] || { echo "no $1 named $2"; return 1; }
             pactl "$_v" "$_id" >/dev/null 2>&1 && echo "$1 $2" || { echo "could not switch $1 to $2"; return 1; } ;;
-        alsa) [ "$1" = out ] || { echo "on plain ALSA the mic follows the output's card"; return 0; }
+        alsa) _k=p; [ "$1" = out ] || _k=c
+            _v=$(al_bt "$_k" | awk -F '\t' -v n="$_n" 'tolower($1) == n && !d {print $2; d = 1}')
+            if [ -n "$_v" ]; then   # a Bluetooth device: this way through bluez-alsa, the other way as it was, the card kept
+                _c=$(al_default); [ -n "$_c" ] || _c=$(al_first p)
+                if [ "$_k" = p ]; then _r=$(al_write "$_c" "$_v" "$(al_bt_routed c)"); else _r=$(al_write "$_c" "$(al_bt_routed p)" "$_v"); fi || { echo "$_r"; return 1; }
+                echo "$1 $2 for programs started from now"; return 0
+            fi
+            if [ "$_k" = c ]; then   # a card: on plain ALSA the mic follows the output's card; a Bluetooth mic picked goes back to it
+                [ -n "$(al_bt_routed c)" ] || { echo "on plain ALSA the mic follows the output's card"; return 0; }
+                _r=$(al_write "$(al_default)" "$(al_bt_routed p)" '') || { echo "$_r"; return 1; }
+                echo "mic back on the output's card for programs started from now"; return 0
+            fi
             _c=''; for c in $(al_with p); do [ "$(panel_lower "$(al_name "$c")")" != "$_n" ] || { _c=$c; break; }; done
             [ -n "$_c" ] || { echo "no output named $2"; return 1; }
-            _r=$(al_set_default "$_c") || { echo "$_r"; return 1; }
+            _r=$(al_write "$_c" '' "$(al_bt_routed c)") || { echo "$_r"; return 1; }
             echo "out $2 for programs started from now" ;;
         *) echo "no audio system answers"; return 1 ;;
     esac
