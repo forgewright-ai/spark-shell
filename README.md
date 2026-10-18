@@ -304,6 +304,13 @@ for each step it played in `~/.local/state/spark-shell/audit`: the
 time, who asked, the section, the step and a short digest, never a
 name or a password.
 
+With spark 1.90 or newer, `spark-shell on desktop` also puts each of
+the 15 providers on spark's MCP list, as `spark mcp add NAME
+~/.spark-shell/spark-shell provide NAME`, so the prompt line and `spark
+do` know the desktop's tools too. A server of yours already listed under
+one of those names stays as it is. `spark-shell off desktop` and
+`spark-shell off` take back only spark-shell's own lines.
+
 In a terminal outside the desktop, and on a Mac, `spark-shell panel`
 shows the same list in the terminal, and `spark-shell panel SECTION
 --list` prints it as text.

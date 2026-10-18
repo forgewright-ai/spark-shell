@@ -587,6 +587,7 @@ desktop_apply() {
     desktop_look_apply
     seat_apply
     dialog_install
+    mcp_apply
 }
 
 # The desktop on Void. Void has no logind, so sway takes the screen and
@@ -1643,6 +1644,7 @@ cmd_off() {   # cmd_off [desktop]
         hand_back $DESKTOP_RENDERED .config/alsa/asoundrc
         old_greetd_off
         seat_off
+        mcp_off
         echo "packages stay installed -- the package manager removes them if you want"
         return 0
     fi
@@ -1657,6 +1659,7 @@ cmd_off() {   # cmd_off [desktop]
     hand_back $RENDERED .config/starship.toml .config/yazi/theme.toml $DESKTOP_RENDERED .config/alsa/asoundrc   # alsa: the bar's default card; yazi: a render v0.35 left, its .bak yours
     old_greetd_off
     seat_off
+    mcp_off
     pm_detect
     console_off   # the palette, the font, the login screen and the boot, as they were
     # spark's own hook must survive the hand-back: a restored or absent
@@ -1684,6 +1687,7 @@ cmd_off() {   # cmd_off [desktop]
 # link of ours, a render with the marker or a .bak, the old login screen
 # when its config.toml is ours, seatd by spark-shell's records.
 off_would() {   # off_would [desktop]
+    _mo=$(mcp_mine); [ -z "$_mo" ] || row would mcp "take$_mo off spark's MCP list"
     if [ "${1:-}" = desktop ]; then
         [ "$DESKTOP" = none ] || row would config "DESKTOP=none ($CONFIG)"
         list=$DESKTOP_RENDERED
@@ -1862,6 +1866,11 @@ cmd_check() {
         elif seat_needed && ! seatd_on; then chk desktop fail "seatd does not start at boot (Void has no logind)" "spark-shell on desktop"
         elif seat_needed && ! in_group _seatd "$(id -un)"; then chk desktop fail "$(id -un) is not in the _seatd group" "spark-shell on desktop"
         else chk desktop ok "sway and foot are installed and up to date"; fi
+    fi
+    if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk mcp ok "na (no desktop)"
+    elif ! mcp_spark >/dev/null; then chk mcp ok "na (spark has no MCP list before 1.90)"
+    else _mn=$(mcp_mine | wc -w | tr -d ' '); _mt=$(printf '%s' "$PROVIDE_SECTIONS" | wc -w | tr -d ' ')
+        if [ "$_mn" = "$_mt" ]; then chk mcp ok "the $_mt providers are on spark's MCP list"; else chk mcp warn "$_mn of $_mt providers on spark's MCP list" "spark-shell on desktop"; fi
     fi
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk apps ok "na (no desktop)"
     else
@@ -3747,6 +3756,41 @@ dialog_install() {   # the dialog's row of `on`: in place as the tree pins it, o
     [ "$(sha256_of "$_df")" = "$_dw" ] || { rm -f "$_df"; row todo dialog "the spark-dialog fetched for $_rt is not the one the tree pins: not installed"; return 0; }
     mkdir -p "$(dirname "$DIALOG_BIN")" && cp "$_df" "$DIALOG_BIN.new" && chmod 755 "$DIALOG_BIN.new" && mv "$DIALOG_BIN.new" "$DIALOG_BIN"
     row ok dialog "installed for $_rt ($DIALOG_BIN), sha256 checked"
+}
+
+# --- spark's MCP list (spark 1.90, contract 16): desktop on puts each
+# provider on it, `spark mcp add NAME CLONE/spark-shell provide NAME`, so
+# the prompt line, spark do and /do know the desktop's tools; off takes
+# back only the lines that are ours. A name already on the list that is
+# not ours is the user's own server and stays. spark-shell is a client of
+# core's verb here: it never writes spark's file itself.
+MCP_ENV=${SPARK_MCP_ENV:-$SPARK_CONFIG_DIR/mcp.env}
+mcp_spark() { _sp=$(spark_bin); [ -n "$_sp" ] && "$_sp" help </dev/null 2>/dev/null | grep -q '^ *spark mcp ' && printf '%s\n' "$_sp"; }   # -> spark, when it has the mcp verb
+mcp_line() { [ -f "$MCP_ENV" ] || return 0; sed -n "s/^MCP_SERVER_$(printf '%s' "$1" | tr 'a-z' 'A-Z')=//p" "$MCP_ENV" | tail -1 | sed 's/^"\(.*\)"$/\1/'; }   # mcp_line NAME -> its program and words on spark's list
+mcp_ours() { case $(mcp_line "$1") in */spark-shell" provide $1") return 0 ;; *) return 1 ;; esac; }   # spark-shell's line, this clone's or an older one's
+mcp_mine() { for s in $PROVIDE_SECTIONS; do if mcp_ours "$s"; then printf ' %s' "$s"; fi; done; }   # -> " NAME..." the lines on spark's list that are ours
+mcp_apply() {   # the mcp row of `on desktop`: each provider on spark's MCP list
+    _sp=$(mcp_spark) || { skip mcp "spark 1.90 or newer lists the desktop's tools (spark update)"; return 0; }
+    _want=''; _theirs=''
+    for s in $PROVIDE_SECTIONS; do
+        _l=$(mcp_line "$s")
+        if [ "$_l" = "$REPO/spark-shell provide $s" ]; then continue; fi
+        if [ -n "$_l" ] && ! mcp_ours "$s"; then _theirs="$_theirs $s"; else _want="$_want $s"; fi
+    done
+    [ -z "$_theirs" ] || row todo mcp "already on spark's MCP list as servers of yours, left as they are:$_theirs"
+    if [ -z "$_want" ]; then ok mcp "spark-shell's providers are on spark's MCP list"; return 0; fi
+    need mcp "put$_want on spark's MCP list" || return 0
+    for s in $_want; do
+        if mcp_ours "$s"; then "$_sp" mcp rm "$s" </dev/null >/dev/null 2>&1 || :; fi   # a line an older clone wrote
+        "$_sp" mcp add "$s" "$REPO/spark-shell" provide "$s" </dev/null >/dev/null 2>"$TMP/mcp.err" || { row todo mcp "$s: $(head -1 "$TMP/mcp.err") -- spark-shell on desktop again"; return 0; }
+    done
+    row ok mcp "$(mcp_mine | wc -w | tr -d ' ') providers on spark's MCP list: the prompt line and spark do know the desktop's tools"
+}
+mcp_off() {   # off: spark-shell's lines taken off spark's MCP list, a server of yours left
+    _sp=$(mcp_spark) || return 0
+    _mo=$(mcp_mine); [ -n "$_mo" ] || return 0
+    for s in $_mo; do "$_sp" mcp rm "$s" </dev/null >/dev/null 2>&1 || :; done
+    row ok mcp "$(printf '%s' "$_mo" | wc -w | tr -d ' ') providers off spark's MCP list"
 }
 dialog_sections() {   # dialog_sections [FIRST] -> the providers the dialog starts, FIRST on top: every panel section but spark (the dialog holds the conversation) and undo (it keeps a result's own)
     panel_sections "${1:-glance}" | grep -vxE 'spark|undo|glance|chat' || :

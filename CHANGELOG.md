@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.70
+
+The desktop's tools on spark's MCP list (issue 8, his word on the card).
+
+- Added: with spark 1.90 or newer, `on desktop` puts each of the 15
+  providers on spark's MCP list through `spark mcp add NAME
+  ~/.spark-shell/spark-shell provide NAME` (the clone's own path), so
+  the prompt line, `spark do` and /do know the desktop's tools. A
+  server of yours already listed under one of those names stays, and a
+  row says so; a line an older clone wrote is replaced. spark-shell
+  never writes spark's file itself.
+- Added: `off desktop` and `off` take spark-shell's own lines back with
+  `spark mcp rm NAME`, and `off --dry-run` names them.
+- Added: a check row, mcp: the 15 providers on the list, or how many
+  with the remedy. With an older spark it is na and nothing is written.
+
 ## v0.69
 
 The want path asks spark's planner (issue 7, his word on the card).
