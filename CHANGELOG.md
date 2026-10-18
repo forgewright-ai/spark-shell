@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.66
+
+Found by hand at v0.65 (issue 4): the about could not be found, and a
+mistyped word opened an app.
+
+- Fixed: a search in the dialog finds the about's own row. v0.64 left
+  the whole about section out of a search, so typing `about` showed
+  nothing; the key sentences still stay out.
+- Added: a section's name typed alone (`about`, `files`, `wifi`) and
+  Enter opens that section. It never goes to the model, and a theme row
+  is never applied by typing `theme`.
+- Added: when the list is longer than the dialog, its last line says how
+  many rows sit below (`8 more`).
+- Fixed: a word or two that gets no step from spark is now the one
+  honest line, no step on the panel does that. Since v0.55 such words
+  were a task and a layout opened for them: `about` opened aerc in a
+  workspace named about. Longer words that name a task still open a
+  layout, as `writing with vi and the prompt shell` does.
+
 ## v0.65
 
 The last release of the dialog's arc (issue 1): files, the first new

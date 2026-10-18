@@ -134,6 +134,54 @@ fn a_section_with_its_groups_and_the_exchange() {
 }
 
 #[test]
+fn a_long_list_says_how_many_rows_sit_below() {
+    let mut app = base();
+    let names = [
+        "terminal",
+        "aerc",
+        "btop",
+        "micro",
+        "mpv",
+        "pyradio",
+        "firefox",
+        "foot",
+        "htop",
+        "ncdu",
+        "newsboat",
+        "ranger",
+        "vim",
+        "w3m",
+        "weechat",
+        "alacritty",
+        "cmus",
+        "darktable",
+        "evince",
+        "fzf",
+        "gimp",
+        "helix",
+        "imv",
+        "inkscape",
+        "kakoune",
+        "lynx",
+        "mutt",
+        "nnn",
+        "qutebrowser",
+        "zathura",
+    ];
+    let rows: Vec<serde_json::Value> = names
+        .iter()
+        .map(|n| row(&format!("apps:open {}", n), "opens", n, Some(("apps_open", json!({"name": n}))), None))
+        .collect();
+    let short: Vec<String> = names.iter().map(|n| format!("apps:open {}", n)).collect();
+    app.providers.insert(
+        3,
+        provider("apps", "30 apps", json!({"title": "apps", "rows": rows, "short": short}), json!([])),
+    );
+    app.about_idx = Some(4);
+    render(&app, "long");
+}
+
+#[test]
 fn about() {
     let mut app = base();
     app.cfg.mark = true;

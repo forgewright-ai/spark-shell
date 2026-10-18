@@ -240,7 +240,8 @@ you came from is on top, the rows you picked most recently come first,
 and the `undo` row takes the last step back. A row wears a sign where
 there is a state: a dot is in use or connected, a ring is available, a
 check is current or saved, a small triangle opens something. A row
-that ends in a small arrow opens its section in full.
+that ends in a small arrow opens its section in full. When the list is
+longer than the dialog, its last line says how many rows sit below.
 
 - `layout`: a saved layout opens on Enter. Words at the prompt make a
   new one. `save what is open now` asks a name for it.
@@ -276,11 +277,14 @@ words, and plus again lets it go. Tab moves to the chips.
 `DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide them.
 
 Type, and the search runs over everything the dialog can do, shown or
-not: `drac` finds the palette. Words that match no row go to spark, the
+not: `drac` finds the palette. A section's name alone, as `about` or
+`files`, opens that section. Words that match no row go to spark, the
 way `spark-shell want --json` reads them: spark picks steps from the
 same list, and each step is checked against the list, drawn, then
-played. A step that cannot be taken back, as closing a window or
-forgetting a network, waits for you to type yes. A question is answered
+played. A word or two with no step gets one line, no step on the panel
+does that; longer words that name a task open a layout for it. A step
+that cannot be taken back, as closing a window or forgetting a network,
+waits for you to type yes. A question is answered
 in a sentence or two.
 
 The dialog is a program of its own, `spark-dialog`, built from

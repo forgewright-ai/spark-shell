@@ -642,9 +642,6 @@ impl App {
                     }
                 }
                 for (p, prov) in self.providers.iter().enumerate() {
-                    if prov.label == "about" && searching {
-                        continue;
-                    }
                     let rows: Vec<usize> = prov
                         .rows
                         .rows
@@ -653,7 +650,8 @@ impl App {
                         .filter(|(i, r)| {
                             Self::pickable(r)
                                 && if searching {
-                                    self.matches(p, r)
+                                    // the about's own row is found; its key sentences stay out of a search
+                                    self.matches(p, r) && (Some(p) != self.about_idx || r.tool.as_ref().is_some_and(|t| t.name == "about_open"))
                                 } else {
                                     prov.rows.short.contains(&r.id) && !shown.contains(&(p, *i))
                                 }
@@ -834,6 +832,16 @@ impl App {
         }
         if self.view == View::About && typed.trim().is_empty() {
             return;
+        }
+        // a section's own name typed alone opens that section, never the model ("about" once opened aerc)
+        if matches!(self.view, View::Home | View::Section(_)) && self.sel == 0 {
+            let word = typed.trim().to_lowercase();
+            if let Some(q) = self.providers.iter().position(|x| x.label == word && x.ready && x.dead.is_none()) {
+                if self.view != View::Section(q) {
+                    self.open_children(q, &format!("spark-shell://{}/rows", word));
+                }
+                return;
+            }
         }
         self.input = typed.clone(); // the list the person saw, filtered by what they typed
         let picks = self.picks();

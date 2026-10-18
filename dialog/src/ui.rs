@@ -17,6 +17,7 @@ pub const CROSS: &str = "\u{2717}";
 pub const OPENS: &str = "\u{25b8}";
 pub const PROMPT: &str = "\u{276f}";
 pub const CLOSE: &str = "\u{d7}";
+pub const BELOW: &str = "\u{2193}";
 pub const SEP: &str = " \u{b7} ";
 /// The bottom: a row of air, the hint, air, the prompt, air, the chips.
 pub const BOTTOM: u16 = 6;
@@ -266,7 +267,9 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> Vec<(u16, usize)>
     let items = app.items();
     let picks: Vec<usize> = items.iter().enumerate().filter(|(_, it)| app.picks().contains(it)).map(|(i, _)| i).collect();
     let selected = picks.get(app.sel).copied();
-    let room = bottom.saturating_sub(top) as usize;
+    let all = bottom.saturating_sub(top) as usize;
+    // a list longer than the area keeps its last line to say how many rows sit below
+    let room = if items.len() > all { all.saturating_sub(1) } else { all };
     // scroll so the selected row is in view, its heading too when it fits
     let mut first = 0usize;
     if let Some(s) = selected {
@@ -275,6 +278,16 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> Vec<(u16, usize)>
         }
     }
     let pal = pen.pal.clone();
+    let below = items
+        .iter()
+        .skip(first + room)
+        .filter(|it| !matches!(it, Item::Heading(_) | Item::Blank))
+        .count();
+    if below > 0 {
+        let y = top + room as u16;
+        pen.put(4, y, BELOW, pal.muted, false, false);
+        pen.put(6, y, &format!("{} more", below), pal.muted, false, false);
+    }
     let widths = widths(app, &items);
     for (k, it) in items.iter().enumerate().skip(first).take(room) {
         let y = top + (k - first) as u16;

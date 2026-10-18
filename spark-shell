@@ -3093,6 +3093,7 @@ want_plan() {   # want_plan WORDS -> $TMP/plan; exit 1 when the words could not 
         _ans=$(jq -r '.answer // "" | gsub("[\\n\\r]+"; " ")' "$TMP/want.json")
         if want_is_question "$1"; then if [ -n "$_ans" ]; then want_put say "$_ans"; else want_put say "nothing here answers that"; fi
         elif want_says_close "$1"; then want_put no "$PANEL_CROSS no step on the panel does that"
+        elif [ "$(printf '%s\n' "$1" | wc -w | tr -d ' ')" -le 2 ]; then want_put no "$PANEL_CROSS no step on the panel does that"   # a word or two is no task: "about" once opened aerc
         else want_put step layout new "$1" "$1"; fi   # not a question and no step: a task, then -- the layout's own model reads it (never a shrug for "writing with vi")
         return 0
     fi

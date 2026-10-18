@@ -453,3 +453,52 @@ fn an_attachment_outside_home_is_refused() {
     assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("not under your home"))));
     assert!(app.attachment.is_none());
 }
+
+fn about_stub() -> Script {
+    let rows: Value = serde_json::from_str(include_str!("golden/about-rows.json")).unwrap();
+    let tools = json!([{"name": "about_open", "title": "about", "inputSchema": {"type": "object", "properties": {}}, "annotations": {"readOnlyHint": true}}]);
+    Box::new(move |v, send| {
+        if let Some(r) = ordinary("about", v, &tools, &rows) {
+            send(r);
+        }
+    })
+}
+
+#[test]
+fn a_search_finds_the_about_and_a_section_name_opens_its_section() {
+    let (mut app, rx, tx) = app_with(&["window", "about"]);
+    let calls = Arc::new(Mutex::new(vec![]));
+    let reads = Arc::new(Mutex::new(0));
+    app.servers.push(stub(0, "window", window_stub(calls, reads), tx.clone()));
+    app.servers.push(stub(1, "about", about_stub(), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers.iter().all(|p| p.ready && !p.rows.rows.is_empty())));
+    for c in "abo".chars() {
+        app.typed(c);
+    }
+    let found: Vec<String> = app
+        .picks()
+        .iter()
+        .filter_map(|i| match i {
+            Item::Row(p, r) => Some(app.providers[*p].rows.rows[*r].id.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(found, vec!["about:open"], "the about's own row is found, its key sentences are not");
+    for c in "ut".chars() {
+        app.typed(c);
+    }
+    app.enter();
+    assert_eq!(app.view, View::About, "about typed alone opens the about");
+    app.escape();
+    assert_eq!(app.view, View::Home);
+    for c in "Window ".chars() {
+        app.typed(c);
+    }
+    app.enter();
+    assert_eq!(app.view, View::Section(0), "a section's name typed alone opens its section");
+    assert!(
+        !app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, _))),
+        "a section's name never goes to the model"
+    );
+}
