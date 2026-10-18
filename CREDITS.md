@@ -78,10 +78,4 @@ line naming its upstream. The licence is the upstream's:
 (macOS ships it) and hands it to Terminal.app with macOS's own
 `defaults`, `plutil`, `osascript` and `mdfind`. Nothing is installed.
 
-## The wallpapers
-
-`wallpapers/forge-1920x1080.jpg` and `forge-2560x1664.jpg`, the
-wallpaper in two sizes, are the maintainer's own, CC BY-NC-ND 4.0
-(https://creativecommons.org/licenses/by-nc-nd/4.0/).
-
 Built with Claude (Anthropic).

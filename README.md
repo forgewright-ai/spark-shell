@@ -155,18 +155,22 @@ of the desktop shows them once.
 
 ## Wallpaper
 
-Type `spark-shell desktop wallpaper /path/to/picture.jpg`. You get that
-picture behind the windows. A path from where you are, or one that
-starts with `~`, works too. `default` gives the wallpaper that comes
-with spark-shell. `none` gives the palette's background colour.
+By default there is no picture. Behind the windows is the ground: the
+palette's background a shade darker than the windows, so the
+see-through terminals sit on something quieter than themselves. It
+follows the palette. Type `spark-shell desktop wallpaper
+/path/to/picture.jpg` for a picture of yours. A path from where you
+are, or one that starts with `~`, works too. `default` is the ground
+again. `none` fills the screen with the windows, solid, in the
+palette's background colour.
 
 Type `spark-shell desktop wallpaper navy`. You get a plain colour, and
 it stays the same when you change the palette. Give `#rrggbb`, or one
 of these names: black, white, gray, grey, silver, navy, blue, teal,
-green, olive, maroon, red, purple, brown, orange. A picture and a
-colour are drawn the same way: gaps around the windows, and the
-terminals a little see-through. The panel's `theme` section sets how
-much. `none` fills the screen with the windows, solid.
+green, olive, maroon, red, purple, brown, orange. The ground, a
+picture and a colour are drawn the same way: gaps around the windows,
+and the terminals a little see-through. The panel's `theme` section
+sets how much.
 
 ## Bar
 
@@ -174,7 +178,8 @@ On the desktop, a bar sits at the top of the screen. The workspaces
 are on the left. A workspace a layout opened carries the layout's
 words, so `2 news` reads from a distance. On the right, in groups
 parted by a thin line: `lan`, `wifi` and `bt`; `out` and `mic`, each
-with its gauge; `bat`; and the date and time. The palette has no
+with its gauge; `bat`; the date and time; and last, spark-shell's own
+sign, the prompt sign in the palette's yellow. The palette has no
 block: it is picked in the panel, where a click on any block leads.
 
 A block appears only for hardware this machine has. No battery, no
@@ -189,6 +194,7 @@ click mutes. The volume keys do the same for `out`, and the mic mute
 key for `mic`.
 
 A click on any other block opens the panel with that block first.
+The sign at the end opens it as Super+d does.
 The signs the bar wears are the panel's: a dot before a connected
 device, a warning sign with a red `lan down` or a low battery, a red
 dot after `mic` while a program records.

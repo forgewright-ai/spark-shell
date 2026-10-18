@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.60
+
+- Changed: the default wallpaper is the ground, the palette's
+  background a shade darker than the windows, and it follows the
+  palette. The forge picture leaves the repository. `default` means the
+  ground; a picture of yours by path, a colour, or `none` work as
+  before.
+- Added: spark-shell's own sign at the far right of the bar, the prompt
+  sign in the palette's yellow. A click on it opens the panel as
+  Super+d does.
+
 ## v0.59
 
 - Added: the logo, in `assets/`: spark's block-letter S with the prompt

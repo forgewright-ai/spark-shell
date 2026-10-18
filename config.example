@@ -19,11 +19,10 @@ DESKTOP=none
 # font name, then :size=N).
 FONT=DejaVu Sans Mono:size=12
 
-# What is behind the desktop's windows: default (the wallpaper that
-# comes with spark-shell), none (the palette's background colour), the
-# full path to a picture, or a plain colour as #rrggbb (#000080 is navy).
-# A plain colour stays the same when the palette changes. With a
-# picture, sway leaves gaps between the windows and foot is a little
+# The wallpaper: default is the ground, the palette's background a shade
+# darker than the windows, following the palette; or a picture's full
+# path, a colour as #rrggbb, or none for the windows edge to edge and
+# solid. The ground, a picture and a colour get gaps and a little
 # see-through. spark-shell desktop wallpaper sets this, and it saves a
 # colour's name as its #rrggbb.
 WALLPAPER=default

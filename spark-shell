@@ -267,19 +267,25 @@ hex_load() {
     for k in $HEX_KEYS; do export "${k?}"; done
 }
 
-# The wallpaper: a picture behind the windows, a plain colour of yours,
-# or the palette's own background. With a picture, sway keeps gaps
-# around the windows and foot is a little translucent, so it shows;
-# without one, edge to edge and opaque. A colour is #rrggbb in the
-# config (a name is stored as its hex) and stays when the palette
-# changes. A path that is not there falls back to the palette's colour
-# (the render says so in a row), never to a black screen.
+# The wallpaper: by default the ground, the palette's background a shade
+# darker than the windows, which follows the palette; or a picture of
+# yours, a plain colour, or none. With the ground, a picture or a
+# colour, sway keeps gaps around the windows and foot is a little
+# translucent, so it shows; with none, edge to edge and opaque. A colour
+# is #rrggbb in the config (a name is stored as its hex) and stays when
+# the palette changes. A path that is not there falls back to the
+# palette's colour (the render says so in a row), never to a black
+# screen.
 WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA"   # BAR_ALPHA: two hex digits after the bar background over a picture, else nothing
-WALL_DEFAULT=$REPO/wallpapers/forge-1920x1080.jpg   # the forge, shipped here (wallpapers/)
 WALL_NAMES="black white gray grey silver navy blue teal green olive maroon red purple brown orange"
-wall_path() { if [ "$WALLPAPER" = default ]; then printf '%s' "$WALL_DEFAULT"; else printf '%s' "$WALLPAPER"; fi; }
+wall_path() { printf '%s' "$WALLPAPER"; }   # a picture's path (default and none are words, a colour is hex)
 wall_colour() { hex_rgb "$WALLPAPER" >/dev/null; }   # WALLPAPER is a plain colour, #rrggbb
-wall_there() { [ "$WALLPAPER" != none ] && ! wall_colour && [ -f "$(wall_path)" ] && [ -r "$(wall_path)" ]; }
+wall_there() { [ "$WALLPAPER" != none ] && [ "$WALLPAPER" != default ] && ! wall_colour && [ -f "$(wall_path)" ] && [ -r "$(wall_path)" ]; }
+wall_ground() {   # -> #rrggbb: the palette's background a shade darker, 30% of the way to black when it is dark, 8% when it is light
+    # shellcheck disable=SC2046   # three numbers, split on purpose
+    set -- $(hex_rgb "#$HEX_BG")
+    if [ $(($1 + $2 + $3)) -gt 384 ]; then printf '#%s' "$(hex_mix "$HEX_BG" 000000 8)"; else printf '#%s' "$(hex_mix "$HEX_BG" 000000 30)"; fi
+}
 wall_hex() {   # wall_hex WORD -> #rrggbb, lowercase, for #rrggbb or one of WALL_NAMES (the CSS hex); false for anything else
     case $(printf '%s' "$1" | tr 'A-Z' 'a-z') in
         black) echo '#000000' ;; white) echo '#ffffff' ;; gray|grey) echo '#808080' ;;
@@ -309,6 +315,8 @@ wall_load() {
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     if wall_there; then
         WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA")
+    elif [ "$WALLPAPER" = default ]; then   # the ground: a shade darker than the windows, drawn like a picture
+        WALL_BG="$(wall_ground) solid_color"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA")
     elif wall_colour; then   # a plain colour is a wallpaper too: the same gaps and the same translucent terminals as a picture
         WALL_BG="$(wall_hex "$WALLPAPER") solid_color"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA")
     else   # none: the palette's colour, full windows, opaque
@@ -553,7 +561,7 @@ sway_reload() {   # a running sway takes the new render now (borders, background
 # The desktop, one path for `on` and `on desktop`: the two user
 # renders, a running sway reloaded, then seatd on Void.
 desktop_look_apply() {   # the two user renders and a live sway
-    if [ "$WALLPAPER" != none ] && ! wall_colour && ! wall_there; then
+    if [ "$WALLPAPER" != none ] && [ "$WALLPAPER" != default ] && ! wall_colour && ! wall_there; then
         row todo wallpaper "$(wall_path) is missing -- the palette's background colour instead (spark-shell desktop wallpaper PATH)"
     fi
     for rel in $DESKTOP_RENDERED; do
@@ -1773,7 +1781,7 @@ cmd_status() {
         else printf '  apps  %-16s %s\n' all "every app with a desktop entry (spark-shell apps picks the allowed apps)"; fi
         if [ "$WALLPAPER" = none ]; then printf '  wall  %-16s %s\n' none "the palette's background (spark-shell desktop wallpaper PATH|default)"
         elif wall_colour; then printf '  wall  %-16s %s\n' colour "$WALLPAPER, a plain colour that stays when the palette changes"
-        elif [ "$WALLPAPER" = default ] && wall_there; then printf '  wall  %-16s %s\n' default "the wallpaper that comes with spark-shell, $WALL_DEFAULT"
+        elif [ "$WALLPAPER" = default ]; then printf '  wall  %-16s %s\n' default "the ground, the palette's background a shade darker ($(wall_ground)); it follows the palette"
         elif wall_there; then printf '  wall  %-16s %s\n' picture "$WALLPAPER"
         else printf '  wall  %-16s %s\n' missing "$(wall_path) is missing -- the palette's background colour instead"; fi
         if [ "$DESKTOP_BAR" = yes ]; then printf '  bar   %-16s %s\n' shown "at the top of the screen: $(bar_names) (spark-shell bar off --desktop hides it)"
@@ -1862,7 +1870,7 @@ cmd_check() {
     elif [ "$DESKTOP_BAR" != yes ]; then chk top ok "hidden (spark-shell bar on --desktop shows it)"
     elif ! command -v jq >/dev/null 2>&1; then chk top warn "jq is not installed: the bar takes no clicks" "spark-shell on"
     elif line=$(bar_status --once 2>/dev/null) && printf '%s' "$line" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
-        chk top ok "the bar draws $(printf '%s' "$line" | jq -r '[.[] | select(.name != "div") | .name] | unique | join(", ")')"
+        chk top ok "the bar draws $(printf '%s' "$line" | jq -r '[.[] | select(.name != "div" and .name != "logo") | .name] | unique | join(", ")')"
         [ -n "$(snd_tool)" ] || chk sound warn "no audio system found, so no out or mic block" "install pipewire, or alsa-utils for plain ALSA"
     else chk top fail "spark-shell bar status draws nothing" "spark-shell on"; fi
     [ "$fails" = 0 ]
@@ -2133,6 +2141,7 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by a di
     bar_group
     # time
     bar_add "$(bar_block clock '' "$(bar_span "$HEX_MUTED" "$(date '+%a %d %b')") $(date '+%H:%M')")"
+    bar_add "$(bar_block logo '' "$(bar_span "$HEX_ANSI_3" "$PANEL_PROMPT")")"   # spark-shell's own sign, last: the prompt sign in the palette's yellow; a click opens the panel as Super+d does
     bar_group   # the palette has no block: it is picked in the panel, where every click leads
     printf '[%s],\n' "$line"
 }
@@ -2143,6 +2152,7 @@ bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X -- one click or wh
         out:*:4|mic:*:4) snd_set "$1" +5 ;;
         out:*:5|mic:*:5) snd_set "$1" -5 ;;
         out:*:2|out:*:3|mic:*:2|mic:*:3) snd_set "$1" mute ;;
+        logo:*:1) bar_panel_open clock ;;   # the sign opens the panel as Super+d does
         *:*:1) bar_panel_open "$1" ;;   # the panel, that block first
     esac
 }
@@ -2187,7 +2197,7 @@ bar_volume_key() {   # bar_volume_key up|down|mute|mic -- the keyboard's volume 
         *) refuse_in bar "volume takes up, down, mute or mic" ;; esac
     bar_redraw
 }
-bar_names() { bar_status --once 2>/dev/null | jq -r '[.[] | select(.name != "div") | .name] | unique | join(", ")' 2>/dev/null || :; }   # the blocks present now
+bar_names() { bar_status --once 2>/dev/null | jq -r '[.[] | select(.name != "div" and .name != "logo") | .name] | unique | join(", ")' 2>/dev/null || :; }   # the blocks present now (the sign is no fact)
 bar_tmux() {   # bar_tmux [on|off] WHICH -- tmux's status line, live
     if ! command -v tmux >/dev/null 2>&1; then [ "$2" = both ] || refuse_in bar "no tmux here (spark-shell on installs it)"; return 0; fi
     if ! tmux list-sessions >/dev/null 2>&1; then
@@ -4240,11 +4250,12 @@ cmd_desktop() {
         off) shift; cmd_off desktop "$@"; return ;;
         wallpaper)
             [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
+            theme_load   # the ground's hex, said back
             want=$(wall_word "${2:-}")
             if [ -z "${2:-}" ]; then
                 if [ "$WALLPAPER" = none ]; then echo "wallpaper none -- the palette's background (spark-shell desktop wallpaper PATH|default)"
                 elif wall_colour; then echo "wallpaper $WALLPAPER -- a plain colour, it stays when the palette changes"
-                elif [ "$WALLPAPER" = default ] && wall_there; then echo "wallpaper default -- the wallpaper that comes with spark-shell, $WALL_DEFAULT"
+                elif [ "$WALLPAPER" = default ]; then echo "wallpaper default -- the ground, the palette's background a shade darker ($(wall_ground)); it follows the palette"
                 elif wall_there; then echo "wallpaper $WALLPAPER"
                 else echo "wallpaper $(wall_path) -- missing, the palette's background colour instead"; fi
                 return
@@ -4256,6 +4267,7 @@ cmd_desktop() {
             theme_load; EXPR=$(render_expr)
             desktop_look_apply
             if [ "$want" = none ]; then echo "the palette's background is back -- a new foot window is opaque again"
+            elif [ "$want" = default ]; then echo "the ground is back -- the palette's background a shade darker, and it follows the palette"
             elif wall_colour; then echo "a running sway shows $want now, and it stays when the palette changes -- a new foot window is translucent over it, as over a picture"
             else echo "a running sway shows it now -- the next foot window is translucent (Super+Return)"; fi
             return ;;

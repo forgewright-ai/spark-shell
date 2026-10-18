@@ -312,8 +312,8 @@ else
     grep -q '^client.focused *#ff5555 ' "$sway" && ok "sway: client.focused takes the accent's hex (#ff5555)" || bad "sway focused" "$(grep -n client "$sway")"
     grep -q "^bindsym \$mod+s exec \$term --app-id spark-panel -W 76x36 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell panel chat\$" "$sway" && ok "sway: the Super+s line names the clone's spark-shell" || bad "sway Super+s render" "$(grep -n 'mod+s ' "$sway")"
     grep -q "^exec sh -c '\$term -e $REPO/spark-shell desktop --first; swaymsg exit'\$" "$sway" && ok "sway: the first window's line names the clone's spark-shell" || bad "sway --first render" "$(grep -n '^exec sh' "$sway")"
-    grep -q "^output \* bg \"$REPO/wallpapers/forge-1920x1080.jpg\" fill\$" "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
-        && ok "sway: the default background is the forge (wallpapers/forge-1920x1080.jpg), gaps, foot translucent" || bad "sway default bg" "$(grep -n 'output\|gaps' "$sway")"
+    grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 12$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
+        && ok "sway: the default background is the ground (the palette's background a shade darker), gaps, foot translucent" || bad "sway default bg" "$(grep -n 'output\|gaps' "$sway")"
     grep -q '@[A-Z_0-9]*@' "$foot" "$sway" && bad "a desktop render keeps a placeholder" "$(grep -n '@[A-Z_0-9]*@' "$foot" "$sway" | head -2)" || ok "desktop renders: no placeholder left"
     head -1 "$foot" | grep -q '^# rendered by spark-shell' && head -1 "$sway" | grep -q '^# rendered by spark-shell' && ok "desktop renders: both marked" || bad "desktop markers"
     LC_ALL=C grep -q "[^ -~${tab}]" "$foot" "$sway" && bad "a desktop render is not ASCII" || ok "desktop renders: ASCII"
@@ -386,15 +386,15 @@ if [ "$(uname -s)" != Darwin ]; then
     sh "$SH" on --yes >/dev/null
     sway=$HOME/.config/sway/config; foot=$HOME/.config/foot/foot.ini
     out=$(sh "$SH" desktop wallpaper)
-    printf '%s\n' "$out" | grep -q "^wallpaper default -- the wallpaper that comes with spark-shell, $REPO/wallpapers/forge-1920x1080.jpg\$" && ok "desktop wallpaper (bare): the default is the forge" || bad "wallpaper bare default" "$out"
-    [ -s "$REPO/wallpapers/forge-1920x1080.jpg" ] && [ -s "$REPO/wallpapers/forge-2560x1664.jpg" ] && ok "wallpapers/: the forge in two sizes ships with the repo" || bad "wallpapers missing"
+    printf '%s\n' "$out" | grep -q "^wallpaper default -- the ground, the palette's background a shade darker (#000000); it follows the palette\$" && ok "desktop wallpaper (bare): the default is the forge" || bad "wallpaper bare default" "$out"
+    [ ! -e "$REPO/wallpapers" ] && ok "wallpapers/: no picture ships with the repo; the ground is the default" || bad "wallpapers dir" "$(ls "$REPO/wallpapers")"
     sh "$SH" desktop wallpaper none >/dev/null
     grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 0$' "$sway" && grep -q '^alpha=1.0$' "$foot" \
         && ok "wallpaper none: the palette's colour, no gaps, foot opaque" || bad "wallpaper none render" "$(grep -n 'bg\|gaps' "$sway"; grep -n alpha "$foot")"
     out=$(sh "$SH" desktop wallpaper)
     printf '%s\n' "$out" | grep -q '^wallpaper none' && ok "desktop wallpaper (bare): says none" || bad "wallpaper bare" "$out"
     sh "$SH" desktop wallpaper default >/dev/null
-    grep -q '^WALLPAPER=default$' "$HOME/.config/spark-shell/config" && grep -q "forge-1920x1080.jpg\" fill\$" "$sway" && ok "desktop wallpaper default: the forge again" || bad "wallpaper default" "$(grep -n output "$sway")"
+    grep -q '^WALLPAPER=default$' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && ok "desktop wallpaper default: the ground again" || bad "wallpaper default" "$(grep -n 'bg\|gaps' "$sway")"
     pic="$HOME/pictures/one two.jpg"; mkdir -p "$HOME/pictures"; printf x > "$pic"
     out=$(sh "$SH" desktop wallpaper "$pic")
     grep -q "^WALLPAPER=$pic\$" "$HOME/.config/spark-shell/config" && grep -q '^PROMPT_STYLE=full$' "$HOME/.config/spark-shell/config" \
@@ -439,6 +439,9 @@ if [ "$(uname -s)" != Darwin ]; then
     printf '%s\n' "$(sh "$SH" on --yes)" | grep -q '^todo   wallpaper' && bad "a colour is reported missing" || ok "on: a colour is never a missing picture"
     sh "$SH" theme dracula >/dev/null
     grep -q '^output \* bg #000080 solid_color$' "$sway" && grep -q '^background=282a36$' "$foot" && ok "a colour stays when the palette changes (foot takes dracula, sway keeps #000080)" || bad "colour follows the palette" "$(grep -n 'output' "$sway"; grep -n '^background' "$foot")"
+    sh "$SH" desktop wallpaper default >/dev/null
+    grep -q '^output \* bg #1c1e26 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^alpha=0.85$' "$foot" && ok "desktop wallpaper default: the ground follows the palette (dracula's background a shade darker, #1c1e26)" || bad "ground dracula" "$(grep -n 'bg\|gaps' "$sway")"
+    [ "$(sh "$SH" desktop wallpaper)" = "wallpaper default -- the ground, the palette's background a shade darker (#1c1e26); it follows the palette" ] && ok "desktop wallpaper (bare): names the ground and its hex" || bad "wallpaper bare ground" "$(sh "$SH" desktop wallpaper)"
     theme_fixture '#ff5555'   # the fixture's palette again, for the rows below
     for c in black:000000 white:ffffff gray:808080 grey:808080 silver:c0c0c0 navy:000080 blue:0000ff teal:008080 green:008000 olive:808000 maroon:800000 red:ff0000 purple:800080 brown:a52a2a orange:ffa500 Teal:008080; do
         sh "$SH" desktop wallpaper "${c%%:*}" >/dev/null && grep -qx "WALLPAPER=#${c#*:}" "$HOME/.config/spark-shell/config" || printf '%s\n' "$c"
@@ -2238,7 +2241,7 @@ else
     # one line: every block present, in its group, parted by dividers
     st=0; line=$(sh "$SH" bar status --once 2>&1) || st=$?
     names=$(printf '%s' "$line" | jq -r '[.[] | .name + ":" + .instance] | join(" ")' 2>/dev/null || :)
-    [ "$st" -eq 0 ] && [ "$names" = 'lan: wifi: bt: div: out:name out:gauge mic:name mic:gauge div: bat: div: clock:' ] \
+    [ "$st" -eq 0 ] && [ "$names" = 'lan: wifi: bt: div: out:name out:gauge mic:name mic:gauge div: bat: div: clock: logo:' ] \
         && ok "bar status --once: lan, wifi, bt | out (name, gauge), mic (name, gauge) | bat | clock, one JSON array; no theme block (the palette is the panel's)" || bad "bar line" "st=$st $names $line"
     printf '%s' "$line" | jq -e 'all(.[]; .markup == "pango" and .separator == false)' >/dev/null 2>&1 && ok "bar: every block is pango markup with swaybar's own separator off" || bad "bar markup" "$line"
     t() { printf '%s' "$line" | jq -r --arg n "$1" --arg i "${2:-}" '.[] | select(.name == $n and .instance == $i) | .full_text'; }   # t NAME [INSTANCE] -> its text
@@ -2254,8 +2257,9 @@ else
         && ok "mic: its own gauge, 5 full blocks in the accent at 50% (the Capture level)" || bad "mic gauge" "$g"
     [ "$(t bat)" = "<span foreground='#555555'>bat</span> <span foreground='#aaaaaa'>80</span>" ] && ok "bat: the word muted, the number in the text colour, no gauge" || bad "bat block" "$(t bat)"
     printf '%s' "$(t clock)" | grep -Eq "^<span foreground='#555555'>[A-Za-z]+ [0-9]{2} [A-Za-z]+</span> [0-9]{2}:[0-9]{2}$" && ok "clock: the date muted, the time in the text colour" || bad "clock block" "$(t clock)"
-    [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "div")] | length')" = 3 ] && [ "$(printf '%s' "$line" | jq -r '.[3].full_text')" = "<span foreground='#555555'>$(printf '\342\224\202')</span>" ] && [ "$(printf '%s' "$line" | jq -r '.[-1].name')" = clock ] \
-        && ok "bar: three thin dividers in the muted colour, one between each pair of groups, the clock last" || bad "dividers" "$line"
+    printf '%s' "$(t logo)" | grep -Eq "^<span foreground='#[0-9a-f]{6}'>$(printf '\342\235\257')</span>$" && ok "logo: spark-shell's sign, the prompt sign in the palette's yellow, one cell" || bad "logo block" "$(t logo)"
+    [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "div")] | length')" = 3 ] && [ "$(printf '%s' "$line" | jq -r '.[3].full_text')" = "<span foreground='#555555'>$(printf '\342\224\202')</span>" ] && [ "$(printf '%s' "$line" | jq -r '.[-1].name')" = logo ] \
+        && ok "bar: three thin dividers in the muted colour, one between each pair of groups, the sign last" || bad "dividers" "$line"
     LC_ALL=C grep -q "[^ -~${tab}]" "$SH" && bad "the script holds a byte outside ASCII (the glyphs must be built from their bytes)" || ok "the script stays ASCII: the glyphs are built from their bytes"
     # the states: mute, a recording mic, a low battery, a charging one, sound on another card
     touch "$H/muted"; line=$(sh "$SH" bar status --once)
@@ -2281,7 +2285,7 @@ else
     # present-only: a machine with none of it shows the clock alone, and no divider
     mv "$S" "$S.full"; mv "$P" "$P.full"; mkdir -p "$S" "$P"
     line=$(sh "$SH" bar status --once)
-    [ "$(printf '%s' "$line" | jq -r '[.[] | .name] | join(" ")')" = 'clock' ] && ok "present-only: no hardware, no block for it and no divider; the clock alone" || bad "bare machine" "$line"
+    [ "$(printf '%s' "$line" | jq -r '[.[] | .name] | join(" ")')" = 'clock logo' ] && ok "present-only: no hardware, no block for it and no divider; the clock and the sign alone" || bad "bare machine" "$line"
     rm -rf "$S" "$P"; mv "$S.full" "$S"; mv "$P.full" "$P"
     # clicks: swaybar's stream on stdin; the gauges set the levels, any other block opens the panel; each redraws the bar at once
     rm -f "$amlog" "$H/.local/state/foot.log"
