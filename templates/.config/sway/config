@@ -129,6 +129,19 @@ bindsym $mod+Shift+8 move container to workspace number 8
 bindsym $mod+Shift+9 move container to workspace number 9
 bindsym $mod+Shift+0 move container to workspace number 10
 
+# key: Super+Escape locks the screen; it locks by itself after 15 idle minutes.
+bindsym $mod+Escape exec @REPO@/spark-shell desktop lock || swaylock -f
+# Ten idle minutes turn the display off and fifteen lock the screen
+# (swaylock over the wallpaper, in the palette); a key or a move turns
+# the display on. Where logind runs, it locks before the machine sleeps.
+# Plain swaylock when spark-shell cannot run: the screen locks anyway.
+exec swayidle -w timeout 600 'swaymsg "output * power off"' resume 'swaymsg "output * power on"' timeout 900 '@REPO@/spark-shell desktop lock || swaylock -f' before-sleep '@REPO@/spark-shell desktop lock || swaylock -f'
+
+# key: Print captures the screen, Shift+Print an area, Super+Print the window.
+bindsym Print exec @REPO@/spark-shell desktop capture screen
+bindsym Shift+Print exec @REPO@/spark-shell desktop capture area
+bindsym $mod+Print exec @REPO@/spark-shell desktop capture window
+
 # key: The volume and mute keys set the sound, and the mic mute key the mic.
 bindsym XF86AudioRaiseVolume exec @REPO@/spark-shell bar volume up
 bindsym XF86AudioLowerVolume exec @REPO@/spark-shell bar volume down

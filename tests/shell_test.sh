@@ -1973,7 +1973,7 @@ printf '%s\n' "$out" | grep -q '^todo   sound        pulseaudio is installed, an
     && ok "Arch with pulseaudio: pipewire-pulse is left out of the install, one todo says how to take it" || bad "arch pulseaudio" "$out"
 grep -q '^PKG_SOUND=pipewire wireplumber alsa-pipewire libspa-bluetooth$' "$REPO/distro/void.env" && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa libspa-0.2-bluetooth$' "$REPO/distro/debian.env" \
     && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa$' "$REPO/distro/arch.env" && ok "distro: the sound's packages, each family's names" || bad "PKG_SOUND" "$(grep -h PKG_SOUND "$REPO"/distro/*.env)"
-grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd among them" || bad "void.env desktop"
+grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd among them" || bad "void.env desktop"
 
 # the login screen of v0.41 (greetd on tty1, spark-shell's files in
 # /etc/greetd): handed back to getty at the next boot by on, on desktop,
@@ -2081,6 +2081,88 @@ rc=0; out=$(TEST_TTY=/dev/tty1 XDG_RUNTIME_DIR=$H/rt env -u WAYLAND_DISPLAY PATH
 [ "$rc" = 0 ] && [ ! -e "$HOME/pipewire.pid" ] && ok "desktop: a PipeWire that answers already is left as it is, none started" || bad "sound running" "rc=$rc $(cat "$slog")"
 rm -f "$H/lx/wpctl" "$H/lx/pipewire" "$H/lx/wireplumber" "$H/lx/pipewire-pulse"
 
+# the lock and screen capture: the template's keys and swayidle, then the
+# verbs against stubs (swaylock, pgrep, grim, slurp, wl-copy, swaymsg, date)
+sw_t=$REPO/templates/.config/sway/config
+grep -qx "exec swayidle -w timeout 600 'swaymsg \"output \* power off\"' resume 'swaymsg \"output \* power on\"' timeout 900 '@REPO@/spark-shell desktop lock || swaylock -f' before-sleep '@REPO@/spark-shell desktop lock || swaylock -f'" "$sw_t" \
+    && grep -qx 'bindsym $mod+Escape exec @REPO@/spark-shell desktop lock || swaylock -f' "$sw_t" \
+    && ok "sway template: ten idle minutes turn the display off, fifteen lock, and it locks before sleep; Super+Escape locks now" || bad "lock template" "$(grep -n 'swayidle\|Escape' "$sw_t")"
+grep -qx 'bindsym Print exec @REPO@/spark-shell desktop capture screen' "$sw_t" && grep -qx 'bindsym Shift+Print exec @REPO@/spark-shell desktop capture area' "$sw_t" && grep -qx 'bindsym $mod+Print exec @REPO@/spark-shell desktop capture window' "$sw_t" \
+    && ok "sway template: Print the screen, Shift+Print an area, Super+Print the window" || bad "capture keys" "$(grep -n Print "$sw_t")"
+printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/swaylock.args"\n' > "$H/lx/swaylock"
+printf '#!/bin/sh\n[ "$*" = "-u %s -x swaylock" ] && [ -e "$HOME/locked" ]\n' "$(id -u)" > "$H/lx/pgrep"
+printf '#!/bin/sh\necho "$*" >> "$HOME/grim.log"\nfor a; do f=$a; done\n[ ! -e "$HOME/grim-fails" ] || exit 1\nprintf PNG > "$f"\n' > "$H/lx/grim"
+printf '#!/bin/sh\n[ -e "$HOME/slurp-none" ] && exit 1\necho "10,20 300x200"\n' > "$H/lx/slurp"
+printf '#!/bin/sh\necho "$*" >> "$HOME/wlcopy.log"; cat > "$HOME/clip"\n' > "$H/lx/wl-copy"
+cat > "$H/lx/swaymsg" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$HOME/swaymsg.log"
+case "$*" in
+    "-t get_version") echo '{"major":1}' ;;
+    "-t get_outputs") echo '[{"name":"DP-1","focused":false},{"name":"HDMI-A-1","focused":true}]' ;;
+    "-t get_tree") [ -e "$HOME/no-window" ] && echo '{"type":"root","nodes":[{"type":"workspace","focused":true,"rect":{"x":0,"y":0,"width":1,"height":1}}]}' \
+        || echo '{"type":"root","nodes":[{"type":"output","nodes":[{"type":"workspace","focused":false,"nodes":[{"type":"con","focused":true,"rect":{"x":10,"y":40,"width":800,"height":600}}]}]}]}' ;;
+esac
+STUB
+printf '#!/bin/sh\ncase "$1" in +%%Y-%%m-%%d-%%H%%M%%S) echo 2026-10-19-153012 ;; *) exec %s "$@" ;; esac\n' "$(command -v date)" > "$H/lx/date"
+chmod +x "$H/lx/swaylock" "$H/lx/pgrep" "$H/lx/grim" "$H/lx/slurp" "$H/lx/wl-copy" "$H/lx/swaymsg" "$H/lx/date"
+theme_fixture '#ff5555'
+printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop lock 2>&1) || rc=$?
+args=$(paste -sd ' ' - < "$HOME/swaylock.args" 2>/dev/null)
+[ "$rc" = 0 ] && case " $args " in *" --daemonize --color 000000 --font DejaVu Sans Mono --font-size 20 "*) true ;; *) false ;; esac \
+    && case " $args " in *" --ring-color ff5555 "*) true ;; *) false ;; esac && case " $args " in *" --ring-wrong-color aa0000 "*) true ;; *) false ;; esac \
+    && ! case " $args " in *indicator-idle-visible*) true ;; *) false ;; esac \
+    && ok "desktop lock: swaylock, daemonized, over the ground, the ring in the accent, wrong in the red, no ring at rest" || bad "lock args" "rc=$rc $out $args"
+printf 'DESKTOP=sway\nWALLPAPER=ripples\n' > "$HOME/.config/spark-shell/config"; rm -f "$HOME/swaylock.args"
+WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || :
+args=$(paste -sd ' ' - < "$HOME/swaylock.args" 2>/dev/null)
+case " $args " in *" --image $REPO/wallpaper/ripples.png --scaling fill "*) ok "desktop lock: a wallpaper picture is the lock's picture, filled" ;; *) bad "lock picture" "$args" ;; esac
+# a theme.env that will not load: the lock still comes up, in the VGA's colors
+printf 'THEME_BG=$(oops)\n' > "$HOME/.config/spark/theme.env.bad"; cp "$HOME/.config/spark/theme.env" "$HOME/.config/spark/theme.env.good"; cp "$HOME/.config/spark/theme.env.bad" "$HOME/.config/spark/theme.env"; rm -f "$HOME/swaylock.args"
+rc=0; WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || rc=$?
+[ "$rc" = 0 ] && grep -qx -- --daemonize "$HOME/swaylock.args" && ok "desktop lock with a theme.env that will not load: the lock comes up anyway" || bad "lock bad theme" "rc=$rc $(cat "$HOME/swaylock.args" 2>&1)"
+mv "$HOME/.config/spark/theme.env.good" "$HOME/.config/spark/theme.env"; rm -f "$HOME/.config/spark/theme.env.bad"
+touch "$HOME/locked"; rm -f "$HOME/swaylock.args"
+rc=0; WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || rc=$?
+[ "$rc" = 0 ] && [ ! -e "$HOME/swaylock.args" ] && ok "desktop lock: a lock already up stays, no second" || bad "lock twice" "rc=$rc"
+rm -f "$HOME/locked"
+rc=0; out=$(env -u WAYLAND_DISPLAY PATH="$H/lx:$PATH" sh "$SH" desktop lock 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: locks the desktop: run it inside it (Super+Escape)' ] && ok "desktop lock outside the desktop: refused in one line" || bad "lock outside" "rc=$rc $out"
+shots=$HOME/pictures/screenshots
+rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture screen 2>&1) || rc=$?
+# shellcheck disable=SC2088   # the line as the user reads it, a tilde and all
+[ "$rc" = 0 ] && [ "$out" = '~/pictures/screenshots/2026-10-19-153012.png, and on the clipboard' ] && [ "$(cat "$shots/2026-10-19-153012.png")" = PNG ] \
+    && [ "$(tail -1 "$HOME/grim.log")" = "-o HDMI-A-1 $shots/2026-10-19-153012.png" ] && [ "$(cat "$HOME/wlcopy.log")" = '--type image/png' ] && [ "$(cat "$HOME/clip")" = PNG ] \
+    && ok "desktop capture screen: the screen in use, a PNG named by the time in ~/pictures/screenshots, and on the clipboard" || bad "capture screen" "rc=$rc $out $(cat "$HOME/grim.log" 2>&1)"
+rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture area 2>&1) || rc=$?
+# shellcheck disable=SC2088   # the line as the user reads it, a tilde and all
+[ "$rc" = 0 ] && [ "$out" = '~/pictures/screenshots/2026-10-19-153012-2.png, and on the clipboard' ] && [ "$(tail -1 "$HOME/grim.log")" = "-g 10,20 300x200 $shots/2026-10-19-153012-2.png" ] \
+    && ok "desktop capture area: the area slurp gives; a second picture in the same second gets -2" || bad "capture area" "rc=$rc $out $(tail -1 "$HOME/grim.log")"
+rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture window 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$(tail -1 "$HOME/grim.log")" = "-g 10,40 800x600 $shots/2026-10-19-153012-3.png" ] && ok "desktop capture window: the window in front, by its place on the screen" || bad "capture window" "rc=$rc $out $(tail -1 "$HOME/grim.log")"
+touch "$HOME/slurp-none"; n0=$(ls "$shots" | wc -l)
+rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture area 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = 'no area picked: nothing captured' ] && [ "$(ls "$shots" | wc -l)" = "$n0" ] && ok "desktop capture area, Esc in slurp: nothing captured, one line" || bad "capture no area" "rc=$rc $out"
+rm -f "$HOME/slurp-none"; touch "$HOME/no-window"
+rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture window 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: no window in front to capture' ] && ok "desktop capture window with no window: refused in one line" || bad "capture no window" "rc=$rc $out"
+rm -f "$HOME/no-window"; touch "$HOME/grim-fails"
+rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture screen 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: grim could not take the picture' ] && [ "$(ls "$shots" | wc -l | tr -d ' ')" = 3 ] && ok "desktop capture: grim failing leaves no file, one line" || bad "capture grim fails" "rc=$rc $out $(ls "$shots")"
+rm -f "$HOME/grim-fails"
+rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture photo 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: capture takes screen, area or window' ] && ok "desktop capture: a wrong word refused in one line" || bad "capture word" "rc=$rc $out"
+# the dialog's window section: two capture rows; a pick closes the dialog and captures a second later
+rows=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel window --list 2>&1)
+printf '%s\n' "$rows" | grep -q 'capture the screen	window capture screen$' && printf '%s\n' "$rows" | grep -q 'capture an area	window capture area$' \
+    && ok "the dialog's window section: capture the screen, capture an area" || bad "capture rows" "$rows"
+rm -f "$HOME/swaymsg.log"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel window capture area 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'capture: the area, in ~/pictures/screenshots' ] && grep -qx -- "-- exec $REPO/spark-shell desktop capture area --wait 1" "$HOME/swaymsg.log" \
+    && ok "the dialog: capture runs through sway a second later, after the dialog closes" || bad "capture from the dialog" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
+rm -f "$H/lx/swaylock" "$H/lx/pgrep" "$H/lx/grim" "$H/lx/slurp" "$H/lx/wl-copy" "$H/lx/swaymsg" "$H/lx/date"
+
 # macOS: the palette and the font are Terminal.app's profile, through the helper
 fresh
 console_stubs Darwin
@@ -2156,8 +2238,9 @@ spark-shell on desktop --dry-run shows every change.
 
 spark-shell changes how this machine works:
 
-  packages     sway swaybg foot foot-terminfo ttf-dejavu curl openssh pipewire
-               wireplumber pipewire-pulse pipewire-alsa (sudo)
+  packages     sway swaybg foot foot-terminfo ttf-dejavu curl openssh swayidle
+               swaylock grim slurp wl-clipboard pipewire wireplumber
+               pipewire-pulse pipewire-alsa (sudo)
   login        logging in on tty1 starts the desktop
                Alt+F2 is a plain shell
 
@@ -2908,8 +2991,8 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt out mic bat clock theme wallpaper window bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 40 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the sixteen sections hold the 40 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 41 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the sixteen sections hold the 41 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 # the rows carry the section's state, the dialog's subtitle, read again with every rows read
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows"}')"
 ans 2 | jq -r '.result.contents[0].text' | jq -e '.title == "theme" and (.state | type == "string" and length > 0)' >/dev/null \
@@ -3116,7 +3199,7 @@ printf '%s\n' "$(rq 1 resources/read '{"uri":"spark-shell://about/rows"}')" | sh
     && [ "$(jq -c '.rows[0] | [.columns, .text, .group]' "$H/about.json")" = '[["Super+Return"],"opens a terminal window.","keys 1"]' ] \
     && [ "$(jq -c '.short' "$H/about.json")" = '["about:open"]' ] && jq -e '.rows[] | select(.id == "about:open") | .tool.name == "about_open"' "$H/about.json" >/dev/null \
     && ok "provide about: a row per key sentence, the combo a column, in groups; the address; the short form is the row that opens it" || bad "about rows" "$(head -c 400 "$H/about.json")"
-sh "$SH" desktop keys | grep -v '^\(Super\|Ctrl\|Alt\|Shift\)+[^ ,]* [a-z]' | grep -v '^The volume\|^Typing exit' > "$H/keys.odd" || :
+sh "$SH" desktop keys | grep -v '^\(\(Super\|Ctrl\|Alt\|Shift\)+[^ ,]*\|Print\) [a-z]' | grep -v '^The volume\|^Typing exit' > "$H/keys.odd" || :
 [ ! -s "$H/keys.odd" ] && ok "desktop keys: each sentence opens with one combo and a verb (the about's two columns)" || bad "key sentences" "$(cat "$H/keys.odd")"
 if [ "$(uname -s)" = Darwin ]; then
     st=0; out=$(sh "$SH" dialog 2>&1) || st=$?

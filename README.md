@@ -188,8 +188,26 @@ row shows them again.
     Super+w makes tabs, Super+Shift+s a stack, Super+e side by side again.
     Super+b puts the next window beside this one, and Super+v below it.
     Super+1..0 go to workspaces 1 to 10; with Shift the window goes there.
+    Super+Escape locks the screen; it locks by itself after 15 idle minutes.
+    Print captures the screen, Shift+Print an area, Super+Print the window.
     The volume and mute keys set the sound, and the mic mute key the mic.
     Typing exit in the first window also leaves the desktop.
+
+## Lock and capture
+
+After 10 idle minutes the display turns off, and after 15 the screen
+locks. Where logind runs (Debian, Arch), it locks before the machine
+sleeps too; Void has no logind to say so. Super+Escape, or
+`spark-shell desktop lock`, locks it now. The lock is swaylock over
+your wallpaper, in the palette: at rest the picture alone, and a ring
+comes up with the first key you type.
+
+Print takes a picture of the screen, Shift+Print of an area you drag,
+and Super+Print of the window in front; `spark-shell desktop capture
+screen|area|window` does the same, and the dialog's `window` section
+has the screen and an area. Each picture is a PNG named by the time in
+`~/pictures/screenshots`, and it is on the clipboard too (grim, slurp
+and wl-clipboard).
 
 ## Wallpaper
 

@@ -26,6 +26,9 @@
 #   spark-shell desktop               start the desktop now (from a console)
 #   spark-shell desktop keys          list the desktop's keys
 #   spark-shell desktop wallpaper X   set a picture, a color, default or none
+#   spark-shell desktop lock          lock the screen now (Super+Escape)
+#   spark-shell desktop capture screen|area|window
+#                                     a picture in ~/pictures/screenshots (Print)
 #   spark-shell bar on|off            show or hide the status line and the bar
 #   spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
 #   spark-shell dialog [SECTION]      open the dialog (Super+d), SECTION first
@@ -3217,6 +3220,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
         window) for _w in split tabs stacked; do
                 if [ "$_w" = "${WINDOWS:-split}" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$(win_words "$_w")"; else printf -- '-\t%s\t%s\n' "$(win_words "$_w")" "$_w"; fi
             done
+            printf '%s\tcapture the screen\tcapture screen\n%s\tcapture an area\tcapture area\n' "$PANEL_GO" "$PANEL_GO"   # a picture, the dialog closed first
             [ "${2:-}" != full ] || win_label | awk -F '\t' '!s[$1]++' | while IFS="$TAB" read -r _l _i; do printf '%s\t%s\tfocus %s\n-\tclose %s\tclose %s\n' "$PANEL_GO" "$_l" "$_l" "$_l" "$_l"; done ;;   # the windows open now, by name: in front, or closed; typing a name finds them
         bar) if [ "$DESKTOP_BAR" = yes ]; then printf -- '-\thide\toff\n'; else printf -- '-\tshow\ton\n'; fi ;;   # on and off, as the verb: show is the panel's look-only word
         layout) if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then
@@ -3336,6 +3340,10 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                     [ -z "${SWAYSOCK:-}" ] || swaymsg -- "[workspace=__focused__ tiling] layout $_l" >/dev/null 2>&1 || :
                     echo "windows $(win_words "$_a")" ;;
                 close) _nm=$(win_name_of "$_arg"); swaymsg -- "[con_id=$_arg] kill" >/dev/null 2>&1 || { echo "${_nm:-$_arg} did not close"; return 1; }; echo "${_nm:-$_arg} closed" ;;   # one window, by its id: never every window of an app
+                capture) case $_arg in screen|area) ;; *) echo "capture takes screen or area"; return 1 ;; esac
+                    desk_in_sway || { echo "a capture needs the desktop"; return 1; }
+                    swaymsg -- exec "$REPO/spark-shell desktop capture $_arg --wait 1" >/dev/null 2>&1 || { echo "could not capture"; return 1; }   # after the dialog closes, so it is not in the picture
+                    : > "$TMP/opened"; echo "capture: the $_arg, in ~/pictures/screenshots" ;;
                 focus) _nm=$(win_name_of "$_arg"); swaymsg -- "[con_id=$_arg] focus" >/dev/null 2>&1 || { echo "no window named ${_nm:-$_arg}"; return 1; }; : > "$TMP/opened"; echo "${_nm:-$_arg} in front" ;;   # the window is the receipt
                 *) echo "$_a is not something window does"; return 1 ;;
             esac ;;
@@ -3741,7 +3749,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme wallpaper window bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_font wallpaper_use wallpaper_picture theme_transparency theme_alpha window_split window_tabs window_stacked window_focus window_close bar_on bar_off layout_open layout_new layout_save layout_add apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_font wallpaper_use wallpaper_picture theme_transparency theme_alpha window_split window_tabs window_stacked window_focus window_close window_capture bar_on bar_off layout_open layout_new layout_save layout_add apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -3791,6 +3799,7 @@ tool_spec() {
         window_stacked)    _ts=window _ta=stacked _th=i _tt='window stacked' _td='New windows stacked.' ;;
         window_focus)      _ts=window _ta=focus _tp=name _tk=string _th=i _tt='window focus NAME' _td='Put an open window in front.' ;;
         window_close)      _ts=window _ta=close _tp=name _tk=string _th=d _tt='window close NAME' _td='Close an open window.' ;;
+        window_capture)    _ts=window _ta=capture _tp=what _tk='screen|area' _th='' _tt='window capture WHAT' _td='A picture of the screen, or of an area you drag, in ~/pictures/screenshots.' ;;
         bar_on)            _ts=bar _ta=on _th=i _tt='bar on' _td='Show the bar at the top of the screen.' ;;
         bar_off)           _ts=bar _ta=off _th=i _tt='bar off' _td='Hide the bar.' ;;
         layout_open)       _ts=layout _ta=open _tp=name _tk=string _th='' _tt='layout open NAME' _td='Open a saved layout.' ;;
@@ -3882,14 +3891,14 @@ provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION -> ID US SIGN
     printf '%s\n' "$_id$US$_sg$US$_tx$US$_tn$US$_ag"   # the parts scrubbed, never the line: the scrubber drops US
 }
 provide_title() { [ "$1" != about ] || return 0; [ "$1" != files ] || { echo "your home folder"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
-provide_about_rows() {   # -> the about's rows: the template's `# key:` sentences, a combo as a column, in the splash's four groups; the licence and the address; the row that opens it
+provide_about_rows() {   # -> the about's rows: the template's `# key:` sentences, a combo (or Print) as a column, in five groups; the licence and the address; the row that opens it
     desk_keys | scrub_text | jq -Rn --arg v "$(panel_version)" '
         [inputs] | to_entries | map(.key as $i | .value as $l
-            | ($l | test("^(Super|Ctrl|Alt|Shift)\\+")) as $k
+            | ($l | test("^((Super|Ctrl|Alt|Shift)\\+|Print )")) as $k
             | {id: ("about:key:" + ($i | tostring)), sign: "blank",
                text: (if $k then ($l | sub("^[^ ]* "; "")) else $l end), tool: null, more: [],
                columns: (if $k then [$l | sub(" .*$"; "") | sub(",$"; "")] else [] end), children: null,
-               group: ("keys " + (if $i < 3 then "1" elif $i < 6 then "2" elif $i < 12 then "3" else "4" end))})
+               group: ("keys " + (if $i < 3 then "1" elif $i < 6 then "2" elif $i < 12 then "3" elif $i < 14 then "4" else "5" end))})
         | . + [{id: "about:address", sign: "opens", text: "github.com/forgewright-ai/spark-shell", tool: null, more: [], columns: [], children: null, group: "address"},
                {id: "about:open", sign: "opens", text: ("spark-shell " + $v), tool: {name: "about_open", arguments: {}}, more: [], columns: [], children: null, group: null}]
         | {title: "about", rows: ., short: ["about:open"]}'
@@ -4448,9 +4457,9 @@ panel_about() {   # panel_about WIDTH -> the splash: the logo small, the version
     echo; printf '%sspark-shell %s%s\n' "$_b" "$(panel_version)" "$PANEL_UNMARK"; echo
     _i=0
     desk_keys | while IFS= read -r _l; do
-        _i=$((_i + 1)); case $_i in 4|7|13) echo ;; esac   # the keys in their groups: opening, the window, moving, the rest
+        _i=$((_i + 1)); case $_i in 4|7|13|15) echo ;; esac   # the keys in their groups: opening, the window, moving, lock and capture, the rest
         case $_l in
-            Super+*|Ctrl+*|Alt+*|Shift+*)
+            Super+*|Ctrl+*|Alt+*|Shift+*|Print\ *)
                 _combo=${_l%% *}; _combo=${_combo%,}; _rest=${_l#* }
                 _n=0; _c2=$_combo; while [ -n "$_c2" ]; do case $_c2 in *+*) _p=${_c2%%+*}; _c2=${_c2#*+} ;; *) _p=$_c2; _c2='' ;; esac; _n=$((_n + ${#_p} + 3)); done
                 _pad=$((_k - _n + 1)); [ "$_pad" -ge 1 ] || _pad=1
@@ -5528,6 +5537,8 @@ cmd_desktop() {
         --pending) desk_pending; return ;;
         --chat) cmd_panel chat; return ;;             # the old Super+s: spark chat in the panel's window
         keys) desk_keys; return ;;   # the template's sentences, anywhere (documentation)
+        lock) theme_load 2>/dev/null || :; desk_lock; return ;;   # a palette that will not load never keeps the lock away
+        capture) shift; desk_capture "$@"; return ;;
         --first)   # the desktop's first window: the splash once, over it (the stamp first, so never twice), then your shell, always
             if [ ! -f "$DESK_SEEN" ]; then
                 { mkdir -p "$(dirname "$DESK_SEEN")" && : > "$DESK_SEEN"; } 2>/dev/null || true
@@ -5540,6 +5551,67 @@ cmd_desktop() {
         *) desk_need "$@"; return ;;   # the old spelling of layout WORDS (and layout NAME)
     esac
     desk_start ''
+}
+# The lock (Super+Escape; swayidle after 15 idle minutes and before the
+# machine sleeps): swaylock over the desktop's own wallpaper, in the
+# palette. At rest it draws the wallpaper alone, so a picture stands as
+# it is; the ring comes up with the first key. A lock already up stays.
+desk_lock() {
+    [ "$OS" != Darwin ] || refuse "not on macOS, which has its own lock"
+    [ -n "${WAYLAND_DISPLAY:-}" ] || refuse "locks the desktop: run it inside it (Super+Escape)"
+    command -v swaylock >/dev/null 2>&1 || refuse "swaylock is not installed (spark-shell on desktop)"
+    ! pgrep -u "$(id -u)" -x swaylock >/dev/null 2>&1 || return 0
+    : "${HEX_BG:=000000}" "${HEX_FG:=aaaaaa}" "${HEX_ACCENT:=5555ff}" "${HEX_MUTED:=555555}" "${HEX_ANSI_1:=aa0000}" "${HEX_ANSI_3:=aa5500}"   # the VGA's, when the palette did not load
+    if wall_there; then set -- --image "$(wall_path)" --scaling fill
+    elif [ "$WALLPAPER" = default ]; then set -- --color "$(wall_ground | tr -d '#')"
+    elif wall_color; then set -- --color "$(wall_hex "$WALLPAPER" | tr -d '#')"
+    else set -- --color "$HEX_BG"; fi
+    # the inside 90% of the background; no lines; the key the text color,
+    # a wrong password and backspace the red, caps lock the yellow
+    _in=${HEX_BG}e6
+    rm -rf "$TMP"; trap - EXIT
+    exec swaylock --daemonize "$@" --font "${FONT%%:*}" --font-size 20 --indicator-radius 72 --indicator-thickness 6 --show-failed-attempts \
+        --inside-color "$_in" --ring-color "$HEX_ACCENT" --key-hl-color "$HEX_FG" --bs-hl-color "$HEX_ANSI_1" --text-color "$HEX_FG" \
+        --line-color 00000000 --separator-color 00000000 --line-clear-color 00000000 --line-ver-color 00000000 --line-wrong-color 00000000 \
+        --inside-clear-color "$_in" --ring-clear-color "$HEX_MUTED" --text-clear-color "$HEX_FG" \
+        --inside-ver-color "$_in" --ring-ver-color "$HEX_FG" --text-ver-color "$HEX_FG" \
+        --inside-wrong-color "$_in" --ring-wrong-color "$HEX_ANSI_1" --text-wrong-color "$HEX_ANSI_1" \
+        --layout-text-color "$HEX_FG" --caps-lock-key-hl-color "$HEX_ANSI_3" --text-caps-lock-color "$HEX_ANSI_3" \
+        --ring-caps-lock-color "$HEX_ANSI_3" --inside-caps-lock-color "$_in" --line-caps-lock-color 00000000 --caps-lock-bs-hl-color "$HEX_ANSI_1"
+}
+# Screen capture (Print, Shift+Print, Super+Print, the dialog's window
+# section): grim takes the picture, slurp the area you drag, sway's tree
+# the window in front. A PNG named by the time lands in
+# ~/pictures/screenshots (lowercase, as every folder spark-shell makes)
+# and on the clipboard (wl-copy). --wait N first, for the dialog to close.
+CAPTURE_DIR=$HOME/pictures/screenshots
+desk_capture() {   # desk_capture screen|area|window [--wait N]
+    _what=${1:-screen}; _wait=0
+    if [ "${2:-}" = --wait ]; then _wait=${3:-}; fi
+    case $_what in screen|area|window) ;; *) refuse "capture takes screen, area or window" ;; esac
+    case $_wait in ''|*[!0-9]*) refuse "--wait takes whole seconds" ;; esac
+    [ "$OS" != Darwin ] || refuse "not on macOS, which has its own (Shift+Command+5)"
+    [ -n "${WAYLAND_DISPLAY:-}" ] || refuse "captures the desktop: run it inside it (Print)"
+    command -v grim >/dev/null 2>&1 || refuse "grim is not installed (spark-shell on desktop)"
+    [ "$_what" != area ] || command -v slurp >/dev/null 2>&1 || refuse "slurp is not installed (spark-shell on desktop)"
+    [ "$_wait" = 0 ] || sleep "$_wait"
+    mkdir -p "$CAPTURE_DIR"
+    _b=$(date +%Y-%m-%d-%H%M%S); _f=$CAPTURE_DIR/$_b.png; _n=2
+    while [ -e "$_f" ]; do _f=$CAPTURE_DIR/$_b-$_n.png; _n=$((_n + 1)); done
+    case $_what in
+        screen) _o=$(swaymsg -t get_outputs 2>/dev/null | jq -r '.[] | select(.focused) | .name' 2>/dev/null | head -1)   # the screen in use, with more than one
+            if [ -n "$_o" ]; then set -- -o "$_o"; else set --; fi ;;
+        area) _g=$(slurp 2>/dev/null) && [ -n "$_g" ] || { echo "no area picked: nothing captured"; return 1; }
+            set -- -g "$_g" ;;
+        window) _g=$(swaymsg -t get_tree 2>/dev/null | jq -r '[.. | objects | select(.focused? == true and .type? != "workspace" and .type? != "output")][0] | if . == null then "" else "\(.rect.x),\(.rect.y) \(.rect.width)x\(.rect.height)" end' 2>/dev/null || :)
+            [ -n "$_g" ] || refuse "no window in front to capture"
+            set -- -g "$_g" ;;
+    esac
+    grim "$@" "$_f" 2>/dev/null || { rm -f "$_f"; refuse "grim could not take the picture"; }
+    _c=''
+    if command -v wl-copy >/dev/null 2>&1 && wl-copy --type image/png < "$_f" 2>/dev/null; then _c=', and on the clipboard'; fi
+    # shellcheck disable=SC2088   # the path as you read it, a tilde and all
+    echo "~/${_f#"$HOME"/}$_c"
 }
 # Start sway now, on this console; inside the desktop, the saved layouts.
 # PENDING is words a layout waits with for the sway about to start.

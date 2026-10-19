@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.76
+
+The lock and screen capture (the owner's picks: off, then lock; the
+lock screen A of the mock-ups, the wallpaper alone so a picture stands
+as art; screen capture with the standard tools; every folder
+lowercase).
+
+- Added: ten idle minutes turn the display off and fifteen lock the
+  screen, and where logind runs (Debian, Arch) it locks before the
+  machine sleeps (swayidle in the sway template; Void has no logind to
+  tell it). Super+Escape and `spark-shell desktop lock` lock it now.
+- Added: the lock is swaylock over the desktop's own wallpaper (a
+  picture, or the ground or a color), in the palette: at rest nothing
+  over the picture; the ring comes up with the first key, in the
+  accent, the key in the text color, a wrong password in the red, then
+  the count of wrong tries. A lock already up stays.
+- Added: screen capture. Print takes the screen in use, Shift+Print an
+  area you drag (slurp), Super+Print the window in front; `spark-shell
+  desktop capture screen|area|window` does the same, and the dialog's
+  window section has two rows for it (a tool, window_capture), run a
+  second after the dialog closes so it is not in the picture. A PNG
+  named by the time lands in ~/pictures/screenshots and on the
+  clipboard (wl-copy).
+- Changed: PKG_DESKTOP adds swayidle, swaylock, grim, slurp and
+  wl-clipboard on Debian, Arch and Void.
+- Changed: the about dialog groups the key rows in five: Print counts
+  as a combo, and the lock and capture keys sit in a group of their
+  own before the two plain sentences.
+
 ## v0.75
 
 PipeWire with the desktop (the owner's word: build it next, one arc,
