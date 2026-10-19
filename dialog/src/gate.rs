@@ -143,6 +143,7 @@ mod tests {
             vec![tool("wifi_connect", s), tool("out_level", lv)],
             Rows {
                 title: "wifi".into(),
+                state: None,
                 rows: vec![row],
                 short: vec![],
             },

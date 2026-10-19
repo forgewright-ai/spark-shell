@@ -396,7 +396,15 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &
         for (k, col) in row.columns.iter().enumerate() {
             let w = widths.get(k + 1).copied().unwrap_or(0) as u16;
             let cw = cells(col) as u16;
-            let at = if k == 0 { x + 2 + w.saturating_sub(cw) } else { x + 3 };
+            // a size or a count lines up on its right edge; words (a palette's name) on their left
+            let numeric = col.chars().next().is_some_and(|c| c.is_ascii_digit());
+            let at = if k == 0 && numeric {
+                x + 2 + w.saturating_sub(cw)
+            } else if k == 0 {
+                x + 2
+            } else {
+                x + 3
+            };
             pen.put(at, y, col, pal.muted, false, lit);
             x = if k == 0 { x + 2 + w } else { x + 3 + w };
         }

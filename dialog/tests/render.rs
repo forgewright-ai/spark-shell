@@ -285,14 +285,16 @@ fn the_clock_section_is_the_time_and_the_month() {
 #[test]
 fn the_wallpaper_section_shows_each_color_as_a_sample() {
     let mut app = base();
-    let color = |n: &str, hex: &str| json!({"id": format!("wallpaper:use {}", n), "sign": "blank", "text": n, "tool": {"name": "wallpaper_use", "arguments": {"name": n}}, "more": [], "columns": [], "children": null, "group": null, "swatch": hex});
+    let color = |n: &str, hex: &str| json!({"id": format!("wallpaper:use {}", n), "sign": "blank", "text": n, "tool": {"name": "wallpaper_use", "arguments": {"name": n}}, "more": [], "columns": [], "children": null, "group": "colors", "swatch": hex});
+    let shipped = |n: &str, pal: &str, hex: &str| json!({"id": format!("wallpaper:use {}", n), "sign": "blank", "text": n, "tool": {"name": "wallpaper_use", "arguments": {"name": n}}, "more": [], "columns": [pal], "children": null, "group": "wallpapers", "swatch": hex});
     app.providers.push(provider(
         "wallpaper",
         "teal",
         json!({"title": "wallpaper", "rows": [
             {"id": "wallpaper:use default", "sign": "blank", "text": "default", "tool": {"name": "wallpaper_use", "arguments": {"name": "default"}}, "more": [], "columns": [], "children": null, "group": null},
+            shipped("fjord", "nord", "#88c0d0"), shipped("sunset", "gruvbox-dark", "#fe8019"), shipped("embers", "any dark palette", "#d24a2a"),
             color("black", "#000000"), color("navy", "#000080"),
-            {"id": "wallpaper:show:teal", "sign": "check", "text": "teal", "tool": null, "more": [], "columns": [], "children": null, "group": null, "swatch": "#008080"},
+            {"id": "wallpaper:show:teal", "sign": "check", "text": "teal", "tool": null, "more": [], "columns": [], "children": null, "group": "colors", "swatch": "#008080"},
             color("orange", "#ffa500"),
             {"id": "wallpaper:pick", "sign": "blank", "text": "a picture", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows", "group": null, "pick": {"tool": "wallpaper_picture", "types": ["jpg", "png"]}}
         ], "short": []}),

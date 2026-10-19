@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.72
+
+Ten wallpapers ship with spark-shell (issue 10, the owner's word).
+
+- Added: `wallpaper/`, ten wallpapers drawn for the palettes, each its
+  SVG source and a 3840 by 2160 PNG: skyline (tokyonight-night), fjord
+  (nord), forest (everforest-dark), sunset (gruvbox-dark), hills
+  (catppuccin-mocha), dunes (dracula), ripples (rose-pine), contours
+  (selenized-dark), morning (solarized-light) and embers, in spark's
+  ember hues, for any dark palette. Flat shapes in each palette's own
+  colors, the detail at the edges and the bottom, the middle calm
+  behind the windows.
+- Added: `spark-shell desktop wallpaper NAME` takes one by its name;
+  the config keeps the name and the clone's own file is drawn, so it
+  follows the clone. No palette's default changes.
+- Changed: the dialog's wallpaper section lists them in a group of
+  their own, each with the palette it was drawn for and a sample of its
+  main color, then the colors in theirs. A row's first column lines up
+  on its right edge only when it is a number (a size, a count); words
+  line up on their left.
+- Fixed: a section's subtitle follows its state. It was read once when
+  the dialog started, so after a pick the header still said the old
+  wallpaper, level or palette; each rows read now carries the state.
+
 ## v0.71
 
 Found by hand at v0.70, and the owner's picks (issue 9).

@@ -66,6 +66,8 @@ fn pick(v: Option<&Value>) -> Option<Pick> {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Rows {
     pub title: String,
+    /// The section's state now, read again with every rows read: the dialog's subtitle.
+    pub state: Option<String>,
     pub rows: Vec<Row>,
     pub short: Vec<String>,
 }
@@ -179,6 +181,7 @@ pub fn rows(text: &str) -> Option<Rows> {
         .unwrap_or_default();
     Some(Rows {
         title: s(&v, "title"),
+        state: v.get("state").and_then(Value::as_str).map(scrub).filter(|t| !t.is_empty()),
         rows,
         short,
     })

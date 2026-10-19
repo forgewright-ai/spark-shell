@@ -637,3 +637,38 @@ fn calendar_typed_alone_opens_the_clock() {
     assert_eq!(app.view, View::Section(0));
     assert!(app.is_calendar());
 }
+
+#[test]
+fn the_subtitle_follows_the_state_each_rows_read_carries() {
+    let (mut app, rx, tx) = app_with(&["wallpaper"]);
+    let n = Arc::new(Mutex::new(0));
+    let tools = json!([]);
+    let reads = n.clone();
+    app.servers.push(stub(
+        0,
+        "wallpaper",
+        Box::new(move |v, send| {
+            let mut k = reads.lock().unwrap();
+            let state = if *k == 0 { "default" } else { "hills" };
+            let rows = json!({"title": "wallpaper", "state": state, "rows": [], "short": []});
+            if v.get("method").and_then(Value::as_str) == Some("resources/read") {
+                *k += 1;
+            }
+            if let Some(r) = ordinary("wallpaper", v, &tools, &rows) {
+                send(r);
+            }
+        }),
+        tx,
+    ));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
+    assert_eq!(app.providers[0].title, "default");
+    app.incoming(spark_dialog::mcp::Incoming::Msg(
+        0,
+        json!({"jsonrpc": "2.0", "method": "notifications/resources/updated", "params": {"uri": "spark-shell://wallpaper/rows"}}),
+    ));
+    assert!(
+        pump(&mut app, &rx, |a| a.providers[0].title == "hills"),
+        "the next rows read brings the new state"
+    );
+}

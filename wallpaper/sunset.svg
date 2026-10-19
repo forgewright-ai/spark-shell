@@ -1,0 +1,25 @@
+<!-- spark-shell wallpaper: sunset (MIT, the repository's license) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<defs>
+<clipPath id="sun"><circle cx="960" cy="860" r="330"></circle></clipPath>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" fill="#282828"></rect>
+<g style="clip-path: url(#sun)">
+<rect x="600" y="530" width="720" height="110" fill="#fabd2f"></rect>
+<rect x="600" y="650" width="720" height="70" fill="#fe8019"></rect>
+<rect x="600" y="734" width="720" height="52" fill="#fb4934"></rect>
+<rect x="600" y="804" width="720" height="34" fill="#d3869b"></rect>
+<rect x="600" y="848" width="720" height="12" fill="#b16286"></rect>
+</g>
+<rect x="0" y="860" width="1920" height="220" fill="#1d2021"></rect>
+<g stroke="#3c3836" style="stroke-width: 2">
+<line x1="960" y1="860" x2="-840" y2="1080"></line><line x1="960" y1="860" x2="-360" y2="1080"></line>
+<line x1="960" y1="860" x2="120" y2="1080"></line><line x1="960" y1="860" x2="600" y2="1080"></line>
+<line x1="960" y1="860" x2="1320" y2="1080"></line><line x1="960" y1="860" x2="1800" y2="1080"></line>
+<line x1="960" y1="860" x2="2280" y2="1080"></line><line x1="960" y1="860" x2="2760" y2="1080"></line>
+<line x1="0" y1="878" x2="1920" y2="878"></line><line x1="0" y1="902" x2="1920" y2="902"></line>
+<line x1="0" y1="936" x2="1920" y2="936"></line><line x1="0" y1="984" x2="1920" y2="984"></line>
+<line x1="0" y1="1052" x2="1920" y2="1052"></line>
+</g>
+<rect x="0" y="858" width="1920" height="3" fill="#fe8019" opacity="0.6"></rect>
+</svg>

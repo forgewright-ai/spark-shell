@@ -172,6 +172,15 @@ are, or one that starts with `~`, works too. `default` is the ground
 again. `none` fills the screen with the windows, solid, in the
 palette's background color.
 
+Type `spark-shell desktop wallpaper skyline`. You get one of the ten
+wallpapers spark-shell ships in `wallpaper/`, each drawn for a palette:
+skyline (tokyonight-night), fjord (nord), forest (everforest-dark),
+sunset (gruvbox-dark), hills (catppuccin-mocha), dunes (dracula),
+ripples (rose-pine), contours (selenized-dark), morning
+(solarized-light) and embers (any dark palette). Each is its SVG
+source and a 3840 by 2160 PNG, and the config keeps its name, so it
+follows the clone.
+
 Type `spark-shell desktop wallpaper navy`. You get a plain color, and
 it stays the same when you change the palette. Give `#rrggbb`, or one
 of these names: black, white, gray (or grey), silver, navy, blue, teal,
@@ -260,9 +269,10 @@ longer than the dialog, its last line says how many rows sit below.
 - `out` and `mic`: use another device, mute and unmute.
 - `theme`: the palette, the font bigger or smaller, and the windows'
   transparency.
-- `wallpaper`: default, none, or a plain color, each with a sample of
-  its color; `a picture` opens your home folder, offering pictures
-  (jpg, jpeg, png, webp), and Enter on one sets it.
+- `wallpaper`: default, none, the ten wallpapers with the palette each
+  was drawn for, or a plain color, each with a sample of its color;
+  `a picture` opens your home folder, offering pictures (jpg, jpeg,
+  png, webp), and Enter on one sets it.
 - `clock`: the time in large figures and this month, today lit; the
   left and right arrows show the month before and after.
 - `window`: the windows open now, in front or closed, and how new

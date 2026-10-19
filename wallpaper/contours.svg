@@ -1,0 +1,40 @@
+<!-- spark-shell wallpaper: contours (MIT, the repository's license) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<defs>
+<path id="a" style="vector-effect: non-scaling-stroke" d="M100 0 C100 58 62 96 4 100 C-54 104 -100 66 -100 8 C-100 -52 -58 -98 2 -98 C62 -98 100 -58 100 0 Z"></path>
+<path id="b" style="vector-effect: non-scaling-stroke" d="M104 -8 C108 52 70 102 10 98 C-48 94 -98 62 -96 0 C-94 -60 -50 -104 8 -102 C66 -100 100 -66 104 -8 Z"></path>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" fill="#103c48"></rect>
+<g fill="none" stroke="#184956" transform="translate(1460 820) rotate(-14) scale(1.25 0.9)" style="stroke-width: 2; vector-effect: non-scaling-stroke">
+<use href="#a" transform="scale(0.5)" style="vector-effect: non-scaling-stroke"></use>
+<use href="#b" transform="scale(1.1)"></use>
+<use href="#a" transform="scale(1.7)"></use>
+<use href="#b" transform="scale(2.3)"></use>
+<use href="#a" transform="scale(2.9)"></use>
+<use href="#b" transform="scale(3.5)"></use>
+<use href="#a" transform="scale(4.1)"></use>
+<use href="#b" transform="scale(4.7)"></use>
+<use href="#a" transform="scale(5.3)"></use>
+<use href="#b" transform="scale(5.9)"></use>
+<use href="#a" transform="scale(6.5)"></use>
+</g>
+<g fill="none" stroke="#41c7b9" opacity="0.32" transform="translate(1460 820) rotate(-14) scale(1.25 0.9)" style="stroke-width: 2">
+<use href="#b" transform="scale(2.3)"></use>
+<use href="#a" transform="scale(4.1)"></use>
+<use href="#b" transform="scale(5.9)"></use>
+</g>
+<g fill="none" stroke="#184956" transform="translate(360 240) rotate(24) scale(1 0.8)" style="stroke-width: 2">
+<use href="#b" transform="scale(0.45)"></use>
+<use href="#a" transform="scale(1)"></use>
+<use href="#b" transform="scale(1.55)"></use>
+<use href="#a" transform="scale(2.1)"></use>
+<use href="#b" transform="scale(2.65)"></use>
+<use href="#a" transform="scale(3.2)"></use>
+<use href="#b" transform="scale(3.75)"></use>
+</g>
+<g fill="none" stroke="#41c7b9" opacity="0.28" transform="translate(360 240) rotate(24) scale(1 0.8)" style="stroke-width: 2">
+<use href="#a" transform="scale(2.1)"></use>
+</g>
+<circle cx="1460" cy="820" r="5" fill="#dbb32d" opacity="0.7"></circle>
+<circle cx="360" cy="240" r="4" fill="#dbb32d" opacity="0.6"></circle>
+</svg>

@@ -288,10 +288,16 @@ hex_load() {
 # screen.
 WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA"   # BAR_ALPHA: two hex digits after the bar background over a picture, else nothing
 WALL_NAMES="black white gray silver navy blue teal green olive maroon red purple brown orange"   # one name a color: grey is still read as gray, never listed twice
-wall_path() { printf '%s' "$WALLPAPER"; }   # a picture's path (default and none are words, a color is hex)
+# the wallpapers spark-shell ships in wallpaper/, each NAME:PALETTE:SAMPLE, the palette it was drawn
+# for and its main color for the sample on its row; WALLPAPER stores the name, so it follows the clone
+WALL_SHIPPED="skyline:tokyonight-night:7aa2f7 fjord:nord:88c0d0 forest:everforest-dark:a7c080 sunset:gruvbox-dark:fe8019 hills:catppuccin-mocha:f5c2e7 dunes:dracula:ff79c6 ripples:rose-pine:ebbcba contours:selenized-dark:41c7b9 morning:solarized-light:b58900 embers:any:d24a2a"
+wall_shipped() { for _e in $WALL_SHIPPED; do [ "${_e%%:*}" != "$1" ] || return 0; done; return 1; }   # wall_shipped NAME -> 0 for a wallpaper spark-shell ships
+wall_shipped_names() { for _e in $WALL_SHIPPED; do printf '%s\n' "${_e%%:*}"; done; }
+wall_path() { if wall_shipped "$WALLPAPER"; then printf '%s' "$REPO/wallpaper/$WALLPAPER.png"; else printf '%s' "$WALLPAPER"; fi; }   # a picture's path: a shipped one in the clone (default and none are words, a color is hex)
 wall_color() { hex_rgb "$WALLPAPER" >/dev/null; }   # WALLPAPER is a plain color, #rrggbb
-wall_name() {   # -> default, none, the name of a color WALL_NAMES has (or its hex), or nothing for a picture
+wall_name() {   # -> default, none, a shipped wallpaper's name, the name of a color WALL_NAMES has (or its hex), or nothing for a picture of yours
     case $WALLPAPER in default|none) echo "$WALLPAPER"; return ;; esac
+    if wall_shipped "$WALLPAPER"; then echo "$WALLPAPER"; return; fi
     wall_color || return 0
     for w in $WALL_NAMES; do [ "$(wall_hex "$w")" != "$(panel_lower "$WALLPAPER")" ] || { echo "$w"; return; }; done
     echo "$WALLPAPER"
@@ -322,8 +328,9 @@ wall_hex() {   # wall_hex WORD -> #rrggbb, lowercase, for #rrggbb or one of WALL
         *) hex_rgb "$1" >/dev/null || return 1; printf '%s\n' "$1" | tr 'A-F' 'a-f' ;;
     esac
 }
-wall_word() {   # wall_word WORD -> what WALLPAPER stores: none, default, #rrggbb, or a readable file's full path; nothing for anything else
+wall_word() {   # wall_word WORD -> what WALLPAPER stores: none, default, a shipped wallpaper's name, #rrggbb, or a readable file's full path; nothing for anything else
     case $1 in '') return 0 ;; none|default) printf '%s' "$1"; return 0 ;; esac
+    if wall_shipped "$1"; then printf '%s' "$1"; return 0; fi
     wall_hex "$1" && return 0
     _w=$1; _t='~'   # a quoted ~ is HOME, as the shell would have it
     case $_w in "$_t") _w=$HOME ;; "$_t/"*) _w=$HOME/${_w#"$_t/"} ;; esac
@@ -2827,7 +2834,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
         wallpaper) _cur=$(wall_name)
             [ "${2:-}" = full ] || { printf -- '-\t%s %s more\tmore\n' "${_cur:-a picture}" "$PANEL_SEP"; return 0; }   # one row in the list, as theme: typing finds every row below
             [ -n "$_cur" ] || printf '%s\tpicture %s\tshow\n' "$PANEL_TICK" "$(basename "$(wall_path)")"
-            for w in default none $WALL_NAMES; do
+            for w in default none $(wall_shipped_names) $WALL_NAMES; do   # the shipped wallpapers, then the colors
                 if [ "$w" = "$_cur" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$w"; else printf -- '-\t%s\tuse %s\n' "$w" "$w"; fi
             done
             printf -- '-\ta picture\tpick\n' ;;   # the files, to pick a picture from (the dialog's)
@@ -3458,7 +3465,7 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
 provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON array
     for _n in $PROVIDE_TOOLS; do tool_spec "$_n" && [ "$_ts" = "$1" ] && tool_json "$_n"; done | jq -cs .
 }
-provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "rows": [{"id", "sign", "text", "tool", "more", "columns", "children", "group"}], "short": [ID]}; a tool may carry `ask`, the arguments the host asks the person for
+provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state" (the section's state now, the dialog's subtitle), "rows": [{"id", "sign", "text", "tool", "more", "columns", "children", "group"}], "short": [ID]}; a tool may carry `ask`, the arguments the host asks the person for
     [ "$1" != about ] || { provide_about_rows; return; }
     [ "$1" != files ] || { provide_files_rows; return; }
     _asks='[]'
@@ -3466,15 +3473,23 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "rows"
         wifi_known | cut -f2 > "$TMP/wifi.known.ask"
         _asks=$(wifi_scan | awk -F '\t' '$3 == 1' | cut -f1 | grep -vxFf "$TMP/wifi.known.ask" | jq -R . | jq -cs . 2>/dev/null) || _asks='[]'
     fi
-    _sw='{}'; [ "$1" != wallpaper ] || _sw=$(for w in $WALL_NAMES; do printf '%s\t%s\n' "$w" "$(wall_hex "$w")"; done | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add')   # a color's sample, its #rrggbb
+    _sw='{}'; _wp='{}'
+    if [ "$1" = wallpaper ]; then   # a color's sample, its #rrggbb; a shipped wallpaper's sample, its main color, and its palette as a column
+        _sw=$({ for w in $WALL_NAMES; do printf '%s\t%s\n' "$w" "$(wall_hex "$w")"; done; for e in $WALL_SHIPPED; do printf '%s\t#%s\n' "${e%%:*}" "${e##*:}"; done; } | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add')
+        _wp=$(for e in $WALL_SHIPPED; do _r=${e#*:}; printf '%s\t%s\n' "${e%%:*}" "${_r%%:*}"; done | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add')
+    fi
     panel_rows "$1" | while IFS="$TAB" read -r _m _t _a; do provide_row_line "$1" "$_m" "$_t" "$_a"; done > "$TMP/rows.short"   # the short form: what matters, and a more row that opens the rest
     { panel_rows "$1" full | while IFS="$TAB" read -r _m _t _a; do provide_row_line "$1" "$_m" "$_t" "$_a"; done; grep "^$1:more$US" "$TMP/rows.short" || :; } \
-        | jq -Rn --arg s "$1" --arg u "spark-shell://$1/rows" --rawfile short "$TMP/rows.short" '
+        | jq -Rn --arg s "$1" --arg u "spark-shell://$1/rows" --arg st "$(provide_title "$1")" --rawfile short "$TMP/rows.short" '
             [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [], columns: [],
                 children: (if .[0] == ($s + ":more") then $u else null end), group: null}] as $rows
-            | {title: $s, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --arg s "$1" --argjson asks "$_asks" --argjson sw "$_sw" --arg types "$WALL_TYPES" '
+            | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
+        | jq -c --arg s "$1" --argjson asks "$_asks" --argjson sw "$_sw" --argjson wp "$_wp" --arg types "$WALL_TYPES" '
             .rows |= map(
+                (if $s == "wallpaper" then (.tool.arguments.name // (if (.id | startswith("wallpaper:show:")) then .text else "" end)) as $n
+                    | if $wp[$n] != null then .group = "wallpapers" | .columns = [(if $wp[$n] == "any" then "any dark palette" else $wp[$n] end)]
+                      elif $sw[$n] != null then .group = "colors" else . end
+                 else . end) |
                 if $s == "wallpaper" and .id == "wallpaper:pick" then .children = "spark-shell://files/rows" | .pick = {tool: "wallpaper_picture", types: ($types | split(" "))}
                 elif $s == "wallpaper" and ($sw[.tool.arguments.name // (if (.id | startswith("wallpaper:show:")) then .text else "" end)] != null) then .swatch = $sw[.tool.arguments.name // .text]
                 elif $s == "window" and ((.tool.name // "") | test("^window_(focus|close)$")) then .group = "open now"
@@ -5118,7 +5133,7 @@ cmd_desktop() {
                 else echo "wallpaper $(wall_path) -- missing, the palette's background color instead"; fi
                 return
             fi
-            [ -n "$want" ] || refuse "$2 is not a readable file or a color. Give a picture's path, default, none, #rrggbb or one of these colors: $(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')"
+            [ -n "$want" ] || refuse "$2 is not a readable file or a color. Give a picture's path, default, none, one of the wallpapers ($(wall_shipped_names | paste -sd ' ' - | sed 's/ /, /g')), #rrggbb or one of these colors: $(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')"
             [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
             config_set WALLPAPER "$want"
             WALLPAPER=$want; export WALLPAPER

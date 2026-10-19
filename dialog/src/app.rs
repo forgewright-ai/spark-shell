@@ -512,6 +512,9 @@ impl App {
                     return self.lose(idx, "its rows are over 256 kB");
                 }
                 if let Some(rows) = model::rows(text) {
+                    if let Some(st) = &rows.state {
+                        self.providers[idx].title = st.clone(); // the subtitle follows the section's state, step by step
+                    }
                     self.providers[idx].rows = rows;
                     self.providers[idx].ready = true;
                 }
