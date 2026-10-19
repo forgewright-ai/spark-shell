@@ -2,7 +2,7 @@
 //! favicon is pixel art (the block letters, their one-pixel shadow lines,
 //! the prompt sign), so the mark is a pixel grid snapped from
 //! assets/favicon.svg: a block 2 by 3 pixels, a shadow line 1, the exact
-//! colours, drawn at a whole multiple of its rows. A row shorter than the
+//! colors, drawn at a whole multiple of its rows. A row shorter than the
 //! grid keeps the 16 px PNG. Nothing is read from a path at run time; a
 //! terminal without sixel draws nothing.
 
@@ -29,7 +29,7 @@ const GRID: [&str; 18] = [
     ".c.............c..pp.........",
     ".ccccccccccccccc..........kkk",
 ];
-/// The favicon's colours on a dark palette (assets/favicon.svg) and a light one (favicon-light.svg).
+/// The favicon's colors on a dark palette (assets/favicon.svg) and a light one (favicon-light.svg).
 const DARK_INK: [(char, [u8; 3]); 5] = [
     ('a', [0xff, 0xe0, 0x66]),
     ('b', [0xe0, 0xb4, 0x00]),
@@ -104,10 +104,10 @@ pub fn pixels(n: u32, dark: bool) -> Option<(u32, u32, Vec<u8>)> {
     Some((w, h, rgba))
 }
 
-/// A sixel image of RGBA pixels: each colour exact (sixel takes it in
+/// A sixel image of RGBA pixels: each color exact (sixel takes it in
 /// percent), a pixel under half opacity left unpainted (the background shows).
 pub fn encode(w: u32, h: u32, rgba: &[u8]) -> String {
-    let mut colours: Vec<(u8, u8, u8)> = Vec::new();
+    let mut colors: Vec<(u8, u8, u8)> = Vec::new();
     let mut index = vec![usize::MAX; (w * h) as usize];
     for i in 0..(w * h) as usize {
         let p = &rgba[i * 4..i * 4 + 4];
@@ -115,25 +115,25 @@ pub fn encode(w: u32, h: u32, rgba: &[u8]) -> String {
             continue;
         }
         let c = (p[0], p[1], p[2]);
-        let k = match colours.iter().position(|x| *x == c) {
+        let k = match colors.iter().position(|x| *x == c) {
             Some(k) => k,
             None => {
-                colours.push(c);
-                colours.len() - 1
+                colors.push(c);
+                colors.len() - 1
             }
         };
         index[i] = k;
     }
     // DCS P1=0 P2=1 (unpainted pixels stay transparent), raster 1:1 at w x h
     let mut out = format!("\x1bP0;1;0q\"1;1;{};{}", w, h);
-    for (k, (r, g, b)) in colours.iter().enumerate() {
+    for (k, (r, g, b)) in colors.iter().enumerate() {
         let pct = |v: u8| (v as u32 * 100 + 127) / 255;
         out.push_str(&format!("#{};2;{};{};{}", k, pct(*r), pct(*g), pct(*b)));
     }
     let mut band = 0;
     while band < h {
         let mut first = true;
-        for k in 0..colours.len() {
+        for k in 0..colors.len() {
             let mut line = String::new();
             let mut any = false;
             let mut run: Option<(char, u32)> = None;
@@ -242,7 +242,7 @@ mod tests {
             }
         }
         let (_, _, px) = pixels(18, true).unwrap();
-        assert_eq!(&px[(29 * 4)..(29 * 4 + 4)], &[0xff, 0xe0, 0x66, 255], "the exact colour, row 1");
+        assert_eq!(&px[(29 * 4)..(29 * 4 + 4)], &[0xff, 0xe0, 0x66, 255], "the exact color, row 1");
     }
 
     #[test]

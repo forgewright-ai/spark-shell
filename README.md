@@ -6,7 +6,7 @@
 </picture>
 
 spark-shell sets up the terminal on a Linux machine or a Mac: tmux, a
-prompt, a few everyday tools and one colour palette. On Linux it can
+prompt, a few everyday tools and one color palette. On Linux it can
 also add a simple desktop, and spark, the local AI, can open the apps
 for a task you describe.
 
@@ -14,7 +14,7 @@ for a task you describe.
 
 spark-shell changes your machine. `spark-shell on` replaces your shell
 files and your tmux, starship and btop settings (yours are saved as
-`.bak` files). It installs packages (sudo) and sets the console colours,
+`.bak` files). It installs packages (sudo) and sets the console colors,
 also at boot. On a Mac it sets a Terminal.app profile instead.
 `spark-shell on desktop` makes a login on tty1 start the desktop.
 `spark-shell quiet boot on` changes how the machine boots.
@@ -42,7 +42,7 @@ Without it there are no layouts, no spark chat and no status line.
     spark-shell on --yes              do not ask first
     spark-shell status                show what is set up
     spark-shell check                 test the setup (exit 0 when all is ok)
-    spark-shell theme NAME|none       set the colours, or use the terminal's own
+    spark-shell theme NAME|none       set the colors, or use the terminal's own
     spark-shell theme [list]          show the palette in use, or list them all
     spark-shell font FACE SIZE|none   set the console font, or use its own
     spark-shell font list             list the fonts you can use
@@ -56,7 +56,7 @@ Without it there are no layouts, no spark chat and no status line.
     spark-shell apps                  choose the apps a layout may open
     spark-shell desktop               start the desktop now (from a console)
     spark-shell desktop keys          list the desktop's keys
-    spark-shell desktop wallpaper X   set a picture, a colour, default or none
+    spark-shell desktop wallpaper X   set a picture, a color, default or none
     spark-shell bar on|off            show or hide the status line and the bar
     spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
     spark-shell want "WORDS"          ask for it from anywhere: the steps run
@@ -76,13 +76,13 @@ package, so there the prompt is the shell's own. Your own settings go
 in `~/.config/spark-shell/rc`, which spark-shell reads last and never
 writes.
 
-## Colours (theme)
+## Colors (theme)
 
 Type `spark-shell theme gruvbox-dark`. You get one palette in tmux, the
 prompt, btop, the desktop and the Linux console, also at boot. On a Mac
 it is a Terminal.app profile named `spark-shell`. `theme list` shows
 the 9 palettes, and your own go in `~/.config/spark-shell/themes/`.
-On Linux the terminals you have open change colour at once. A program
+On Linux the terminals you have open change color at once. A program
 that is already running, such as btop, changes when it starts again.
 
 ## Font
@@ -165,20 +165,20 @@ row shows them again.
 
 By default there is no picture. Behind the windows is the ground: the
 palette's background a shade darker than the windows, so the
-see-through terminals sit on something quieter than themselves. It
+transparent terminals sit on something quieter than themselves. It
 follows the palette. Type `spark-shell desktop wallpaper
 /path/to/picture.jpg` for a picture of yours. A path from where you
 are, or one that starts with `~`, works too. `default` is the ground
 again. `none` fills the screen with the windows, solid, in the
-palette's background colour.
+palette's background color.
 
-Type `spark-shell desktop wallpaper navy`. You get a plain colour, and
+Type `spark-shell desktop wallpaper navy`. You get a plain color, and
 it stays the same when you change the palette. Give `#rrggbb`, or one
-of these names: black, white, gray, grey, silver, navy, blue, teal,
+of these names: black, white, gray (or grey), silver, navy, blue, teal,
 green, olive, maroon, red, purple, brown, orange. The ground, a
-picture and a colour are drawn the same way: gaps around the windows,
-and the terminals a little see-through. The dialog's `theme` section
-sets how much.
+picture and a color are drawn the same way: gaps around the windows,
+and the terminals a little transparent. The dialog's `theme` section
+sets the transparency.
 
 ## Bar
 
@@ -191,8 +191,8 @@ sign, the prompt sign in the palette's yellow. The palette has no
 block: it is picked in the dialog, where a click on any block leads.
 
 A block appears only for hardware this machine has. No battery, no
-`bat`. The kind word is muted and the name is in the text colour, as
-in `out jabra`. Colour is for alarms: `mic` is red while any program
+`bat`. The kind word is muted and the name is in the text color, as
+in `out jabra`. Color is for alarms: `mic` is red while any program
 records, and so are `lan down` and a battery under 15. The bar never
 changes width: a click never swaps a block's text.
 
@@ -228,7 +228,9 @@ AI and the machine stay on the status line inside each window.
 The dialog is one window in the middle of the screen, 60 by 44 cells:
 a plain surface a shade lighter than the windows behind it, with air
 around its text and no frame. Super+d opens it. Super+s opens it in
-spark chat. A click on a bar block opens it with that block first. Esc
+spark chat. A click on a bar block opens that block's section: the
+clock opens the time and the calendar, and the prompt sign at the end
+of the bar opens the whole dialog at its prompt, as Super+d does. Esc
 closes it, and so does the key that opened it, pressed again, and so
 does a click on the x in its top right corner. A pick that opens an
 app or a layout closes it: the window is the receipt. A window that is
@@ -238,8 +240,10 @@ dialog closes with nothing opened.
 The top row says where you are: the date and the time on the home
 dialog, a section's name and its state on its own, and a small march
 at the right while a step runs. Under it, what this machine can do
-right now, in sections ordered by use: `layout`, `out`, `mic`,
-`theme`, `window`, `bar`, `bt`, `apps`, `wifi`, `about`. The section
+right now, in sections grouped by what you do: `apps`, `layout` and
+`window`, what is on the screen; `out` and `mic`, the sound; `bt` and
+`wifi`, the connections; `theme`, `wallpaper` and `bar`, the look; then
+`files` and `about`. The section
 you came from is on top, the rows you picked most recently come first,
 and the `undo` row takes the last step back. A row wears a sign where
 there is a state: a dot is in use or connected, a ring is available, a
@@ -254,12 +258,18 @@ longer than the dialog, its last line says how many rows sit below.
 - `bt`: connect or disconnect your devices, look for new ones, pair a
   new one, turn Bluetooth off and on.
 - `out` and `mic`: use another device, mute and unmute.
-- `theme`: the palette, the font bigger or smaller, a wallpaper, and
-  how see-through the windows are.
+- `theme`: the palette, the font bigger or smaller, and the windows'
+  transparency.
+- `wallpaper`: default, none, or a plain color, each with a sample of
+  its color; `a picture` opens your home folder, offering pictures
+  (jpg, jpeg, png, webp), and Enter on one sets it.
+- `clock`: the time in large figures and this month, today lit; the
+  left and right arrows show the month before and after.
 - `window`: the windows open now, in front or closed, and how new
   windows sit on a workspace: side by side, in tabs or stacked.
 - `bar`: hide the bar at the top of the screen, or show it again.
-- `apps`: a terminal window, then a row per app a layout may open.
+- `apps`: a terminal window, then a row per app a layout may open, three
+  on the home dialog and the rest in the section.
 - `about`: the version, the keys, the licence and the address. It opens
   by itself the first time the desktop starts, and Esc gives the list
   back.
@@ -271,14 +281,17 @@ longer than the dialog, its last line says how many rows sit below.
 
 Under the rows, what was said and done, the newest nearest the prompt:
 a check is a step done, a cross one refused, and `undo` after a line
-says it can be taken back. Then one line of hints, the prompt, and two
-chips: plus, which picks a text file from your home to ask about (the
-types `DIALOG_ATTACH_TYPES` names), the model spark uses, where a pick
-runs `spark model NAME`, and talk, which listens through spark's own
-voice until a pause and puts the words at the prompt (shown while the
-voice is on). A file attached shows on the plus chip and rides the next
-words, and plus again lets it go. Tab moves to the chips.
-`DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide them.
+says it can be taken back. Then the hint, the prompt, and three
+controls in plain text: plus, which
+picks a text file from your home to ask about (the types
+`DIALOG_ATTACH_TYPES` names), the model spark uses, where a pick runs
+`spark model NAME`, and talk, which listens through spark's own voice
+until a pause and puts the words at the prompt (shown while the voice
+is on). A file attached shows beside plus and rides the next words,
+and plus again lets it go. Tab moves to the controls, and the one in
+focus is lit. `DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide
+them. The hint above the prompt shows the keys alone: the arrows, then
+Esc, which closes, or goes back where there is a view to go back to.
 
 Type, and the search runs over everything the dialog can do, shown or
 not: `drac` finds the palette. A section's name alone, as `about` or
@@ -351,8 +364,8 @@ tools` or `sbom parts` shows one kind. `sbom --json` writes the list to
 Config keys, in `~/.config/spark-shell/config` (see `config.example`):
 `PROMPT` (starship or plain), `PROMPT_STYLE` (minimal or full),
 `DESKTOP` (none or sway), `FONT` (foot's font), `WALLPAPER` (default,
-none or a path), `ALPHA` (how see-through foot is, 0.85), `DESKTOP_BAR`
-(yes or no), `THEME`, `CONSOLE_FONT`, `QUIET_LOGIN`, `QUIET_BOOT`,
+none or a path), `ALPHA` (how solid foot is, 0.85: 15% transparency),
+`DESKTOP_BAR` (yes or no), `THEME`, `CONSOLE_FONT`, `QUIET_LOGIN`, `QUIET_BOOT`,
 `DIALOG_ATTACH` (yes or no), `DIALOG_ATTACH_TYPES` (txt md),
 `DIALOG_MODEL` and `DIALOG_TALK` (yes or no). The commands write them.
 
@@ -361,7 +374,7 @@ Files it writes: the shell files, `~/.tmux.conf`, `~/.config/btop/`,
 `~/.config/spark/theme.env`, `~/.local/state/spark-shell/`,
 `~/.local/bin/spark-shell`, and for the desktop `~/.config/sway/`,
 `~/.config/foot/` and, after a change of output on plain ALSA,
-`~/.config/alsa/asoundrc`. As root: the console colours at boot (a systemd
+`~/.config/alsa/asoundrc`. As root: the console colors at boot (a systemd
 unit or a line in `/etc/rc.local`), the console font, and the login
 notice and boot files for quiet. `off` restores or removes each one.
 
@@ -386,7 +399,7 @@ their `-light` twins, are those at the height of a terminal row. The
 dialog draws the logo as a pixel grid snapped from `favicon.svg`, a
 block 2 by 3 pixels and a shadow line 1, at a whole multiple of its 18
 rows.
-The S keeps spark's colours and is never recoloured.
+The S keeps spark's colors and is never recolored.
 
 Uninstall: `spark-shell off`, then delete `~/.spark-shell`.
 

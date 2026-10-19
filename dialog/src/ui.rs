@@ -1,4 +1,4 @@
-//! The drawing: one 60 by 44 grid, every character a cell, every colour
+//! The drawing: one 60 by 44 grid, every character a cell, every color
 //! a slot of the palette. No frame. The header's one row (the mark, the
 //! title, the progress, close), the provider's rows, the exchange above
 //! the hint (newest nearest the composer), the prompt, the chips.
@@ -18,6 +18,8 @@ pub const OPENS: &str = "\u{25b8}";
 pub const PROMPT: &str = "\u{276f}";
 pub const CLOSE: &str = "\u{d7}";
 pub const BELOW: &str = "\u{2193}";
+/// A color's sample: two full blocks, about a square in a terminal cell's shape.
+pub const SAMPLE: &str = "\u{2588}\u{2588}";
 pub const SEP: &str = " \u{b7} ";
 /// The bottom: a row of air, the hint, air, the prompt, air, the chips.
 pub const BOTTOM: u16 = 6;
@@ -49,7 +51,7 @@ impl Pen<'_> {
         }
         s
     }
-    /// Text at (x, y) in a colour; returns the column after it; nothing past the grid.
+    /// Text at (x, y) in a color; returns the column after it; nothing past the grid.
     fn put(&mut self, x: u16, y: u16, text: &str, fg: Color, bold: bool, lit: bool) -> u16 {
         if x >= WIDTH || y >= HEIGHT {
             return x;
@@ -65,6 +67,21 @@ impl Pen<'_> {
             Style::default().fg(self.pal.surface).bg(self.pal.accent)
         } else {
             Style::default().fg(self.pal.fg).bg(self.pal.lit)
+        };
+        let t = format!(" {} ", text);
+        self.buf.set_string(x, y, &t, st);
+        x + cells(&t) as u16
+    }
+    /// A composer control (plus, the model, talk): plain text in muted, for it is no key; the one Tab
+    /// focuses lit, one that is on (talk listening, a file attached) in the accent. A cell of air each
+    /// side, as a chip has, so the places a click takes stay the same.
+    fn control(&mut self, x: u16, y: u16, text: &str, focus: bool, on: bool) -> u16 {
+        let st = if focus {
+            Style::default().fg(self.pal.fg).bg(self.pal.lit)
+        } else if on {
+            Style::default().fg(self.pal.accent).bg(self.pal.surface)
+        } else {
+            Style::default().fg(self.pal.muted).bg(self.pal.surface)
         };
         let t = format!(" {} ", text);
         self.buf.set_string(x, y, &t, st);
@@ -109,7 +126,7 @@ pub fn wrap(text: &str, w: usize) -> Vec<String> {
     out
 }
 
-/// The exchange as drawn rows: (indent, sign, its colour, text, text colour, the undo after it).
+/// The exchange as drawn rows: (indent, sign, its color, text, text color, the undo after it).
 fn exchange_rows(app: &App, pal: &Palette) -> Vec<(u16, &'static str, Color, String, Color, bool)> {
     let mut out = vec![];
     let last_undo = app.undo.as_ref().map(|_| app.exchange.iter().rposition(|l| l.undo)).unwrap_or(None);
@@ -181,7 +198,8 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     }
 
     // the exchange, then the content above it
-    let ex = exchange_rows(app, pal);
+    // the about is a page of its own: no exchange on it, the lines are there again when Esc goes back
+    let ex = if app.view == View::About { vec![] } else { exchange_rows(app, pal) };
     let bottom_top = HEIGHT - BOTTOM;
     let ex_top = if ex.is_empty() { bottom_top } else { bottom_top - 1 - ex.len() as u16 };
     for (k, (ind, sg, sc, text, tc, undo)) in ex.iter().enumerate() {
@@ -196,7 +214,11 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     if app.view == View::About {
         about(app, &mut pen, content_bottom);
     } else {
-        drawn.picks = content(app, &mut pen, 2, content_bottom);
+        if app.is_calendar() {
+            calendar(app, &mut pen, clock, content_bottom);
+        } else {
+            drawn.picks = content(app, &mut pen, 2, content_bottom);
+        }
     }
 
     // the hint
@@ -242,20 +264,20 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
             Some(a) => format!("+ {}", cut(a.rsplit('/').next().unwrap_or(""), 20)),
             None => "+".to_string(),
         };
-        let e = pen.chip(2, cy, &label, app.chip_focus == Some(0));
+        let e = pen.control(2, cy, &label, app.chip_focus == Some(0), app.attachment.is_some());
         drawn.chips.push((2, e, 0));
     }
     if chips.contains(&1) {
         let name = app.model_name.clone().unwrap_or_default();
         let name = cut(&name, 30);
         let w = cells(&name) as u16 + 2;
-        let e = pen.chip((WIDTH - w) / 2, cy, &name, app.chip_focus == Some(1));
+        let e = pen.control((WIDTH - w) / 2, cy, &name, app.chip_focus == Some(1), false);
         drawn.chips.push(((WIDTH - w) / 2, e, 1));
     }
     if chips.contains(&2) {
         let t = if app.mode == Mode::Listening { "listening" } else { "talk" };
         let w = cells(t) as u16 + 2;
-        let e = pen.chip(WIDTH - 2 - w, cy, t, app.chip_focus == Some(2) || app.mode == Mode::Listening);
+        let e = pen.control(WIDTH - 2 - w, cy, t, app.chip_focus == Some(2), app.mode == Mode::Listening);
         drawn.chips.push((WIDTH - 2 - w, e, 2));
     }
     drawn.cursor = (cursor_x, py);
@@ -289,6 +311,9 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> Vec<(u16, usize)>
         pen.put(6, y, &format!("{} more", below), pal.muted, false, false);
     }
     let widths = widths(app, &items);
+    let samples = items
+        .iter()
+        .any(|it| matches!(it, Item::Row(p, r) if app.providers[*p].rows.rows[*r].swatch.is_some()));
     for (k, it) in items.iter().enumerate().skip(first).take(room) {
         let y = top + (k - first) as u16;
         let lit = Some(k) == selected;
@@ -317,10 +342,10 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> Vec<(u16, usize)>
                     pen.put(x, y, &format!("{}in use", SEP), pal.muted, false, lit);
                 }
             }
-            Item::Row(p, r) => row_line(pen, &app.providers[*p].rows.rows[*r], y, lit, &widths),
+            Item::Row(p, r) => row_line(pen, &app.providers[*p].rows.rows[*r], y, lit, &widths, samples),
             Item::Folder(i) => {
                 if let Some(row) = app.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)) {
-                    row_line(pen, row, y, lit, &widths);
+                    row_line(pen, row, y, lit, &widths, samples);
                 }
             }
         }
@@ -355,14 +380,19 @@ fn widths(app: &App, items: &[Item]) -> Vec<usize> {
 }
 
 /// One row: its sign at 4, its text at 6, its columns lined up (the first right-aligned, a size; the rest left), its arrow when it opens more.
-fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &[usize]) {
+/// A row: its sign at 4, its text at 6, or at 9 in a list where rows carry a color's sample, the sample at 6.
+fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &[usize], samples: bool) {
     let pal = pen.pal.clone();
     let (g, c) = sign(&pal, &row.sign);
     pen.put(4, y, g, c, false, lit);
+    let tx = if samples { 9 } else { 6 };
+    if let Some([r, gr, b]) = row.swatch {
+        pen.put(6, y, SAMPLE, Color::Rgb(r, gr, b), false, lit);
+    }
     let name = if row.columns.is_empty() { row.text.clone() } else { cut(&row.text, 26) };
-    let mut x = pen.put(6, y, &name, pal.fg, false, lit);
+    let mut x = pen.put(tx, y, &name, pal.fg, false, lit);
     if !row.columns.is_empty() && !widths.is_empty() {
-        x = 6 + widths[0] as u16;
+        x = tx + widths[0] as u16;
         for (k, col) in row.columns.iter().enumerate() {
             let w = widths.get(k + 1).copied().unwrap_or(0) as u16;
             let cw = cells(col) as u16;
@@ -373,6 +403,45 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &
     }
     if row.children.is_some() && row.text != ".." {
         pen.put(x, y, " \u{203a}", pal.muted, false, lit);
+    }
+}
+
+/// The clock section: the time in blocks, then the month, today lit; left and right move the month.
+fn calendar(app: &App, pen: &mut Pen, clock: &str, bottom: u16) {
+    use crate::calendar::{shift, strokes, weeks, DAYS, MONTHS};
+    let pal = pen.pal.clone();
+    let mut y = 2;
+    let hhmm = clock.rsplit(' ').next().unwrap_or("");
+    if hhmm.len() == 5 && hhmm.as_bytes()[2] == b':' {
+        for l in strokes(hhmm) {
+            pen.put(2, y, &l, pal.accent, false, false);
+            y += 1;
+        }
+        y += 2;
+    }
+    let Some((ty, tm, td)) = app.today else { return };
+    let (yr, mo) = shift(ty, tm, app.month_offset);
+    pen.put(2, y, &format!("{} {}", MONTHS[(mo - 1) as usize], yr), pal.muted, false, false);
+    y += 1;
+    for (i, d) in DAYS.iter().enumerate() {
+        pen.put(2 + i as u16 * 4, y, d, pal.muted, false, false);
+    }
+    y += 1;
+    for wk in weeks(yr, mo) {
+        if y >= bottom {
+            break;
+        }
+        for (i, d) in wk.iter().enumerate() {
+            let Some(d) = d else { continue };
+            let x = 2 + i as u16 * 4;
+            let n = format!("{:>2}", d);
+            if (yr, mo, *d) == (ty, tm, td) {
+                pen.chip(x - 1, y, &n, false); // today, a cell of air each side
+            } else {
+                pen.put(x, y, &n, pal.fg, false, false);
+            }
+        }
+        y += 1;
     }
 }
 
@@ -459,7 +528,8 @@ pub fn snapshot(buf: &Buffer, pal: &Palette) -> String {
                 text.push_str(if sym.is_empty() { " " } else { sym });
                 skip_next = cells(sym).saturating_sub(1);
             }
-            let mut f = slot(c.fg);
+            // a color's sample is the data's color, not a palette slot: w
+            let mut f = if c.symbol() == "\u{2588}" && slot(c.fg) == '?' { 'w' } else { slot(c.fg) };
             if c.modifier.contains(Modifier::BOLD) {
                 f = f.to_ascii_uppercase();
             }
@@ -479,7 +549,7 @@ pub fn snapshot(buf: &Buffer, pal: &Palette) -> String {
     format!("{}\n{}", text, codes)
 }
 
-/// A rendered buffer as an HTML page in its real colours, for a person to
+/// A rendered buffer as an HTML page in its real colors, for a person to
 /// look at before a golden is kept (the tests write it under RENDER_HTML).
 pub fn html(buf: &Buffer, pal: &Palette, caption: &str) -> String {
     let hex = |c: Color, d: Color| match if c == Color::Reset { d } else { c } {

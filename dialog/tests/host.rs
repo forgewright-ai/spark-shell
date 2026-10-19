@@ -533,3 +533,107 @@ fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
     app.plan(r#"{"answer": "", "steps": [{"name": "about_open", "arguments": {}, "line": "about"}], "refused": []}"#);
     assert_eq!(app.view, View::About);
 }
+
+#[test]
+fn the_hint_says_esc_goes_back_where_it_does() {
+    let (mut app, _rx, _c, _r) = started();
+    let said = |a: &spark_dialog::app::App| a.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
+    assert!(said(&app).ends_with("Esc closes"), "{}", said(&app));
+    app.came_from.push(View::Home);
+    app.view = View::Section(0);
+    assert!(said(&app).ends_with("Esc goes back"), "{}", said(&app));
+    app.escape();
+    assert_eq!(app.view, View::Home);
+    assert!(said(&app).ends_with("Esc closes"));
+}
+
+#[test]
+fn left_and_right_move_the_month_in_the_calendar_and_nowhere_else() {
+    let (mut app, _rx, _c, _r) = started();
+    app.month(1);
+    assert_eq!(app.month_offset, 0, "not in the calendar");
+    app.providers.push(spark_dialog::app::Provider::new("clock"));
+    app.view = View::Section(1);
+    app.month(1);
+    app.month(1);
+    app.month(-1);
+    assert_eq!(app.month_offset, 1);
+    let said = app.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
+    assert!(said.starts_with("\u{2190}\u{2192} month"), "{}", said);
+}
+
+#[test]
+fn a_pick_row_opens_the_files_offers_its_types_and_hands_the_picture_to_its_tool() {
+    let home = std::env::var("HOME").unwrap();
+    let (mut app, rx, tx) = app_with(&["wallpaper", "files"]);
+    let calls = Arc::new(Mutex::new(vec![]));
+    let wall_tools = json!([{"name": "wallpaper_picture", "title": "wallpaper picture PATH", "inputSchema": {"type": "object", "properties": {"path": {"type": "string", "minLength": 2}}, "required": ["path"]}, "annotations": {"destructiveHint": false}}]);
+    let wall_rows = json!({"title": "wallpaper", "rows": [{"id": "wallpaper:pick", "sign": "blank", "text": "a picture", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows", "group": null, "pick": {"tool": "wallpaper_picture", "types": ["png"]}}], "short": ["wallpaper:pick"]});
+    let wc = calls.clone();
+    let wall: Script = Box::new(move |v, send| {
+        if let Some(r) = ordinary("wallpaper", v, &wall_tools, &wall_rows) {
+            return send(r);
+        }
+        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+            wc.lock().unwrap().push(v["params"].clone());
+            send(result(
+                &v["id"],
+                json!({"content": [{"type": "text", "text": "wallpaper set"}], "structuredContent": {"receipt": "wallpaper pic.png"}, "isError": false}),
+            ));
+        }
+    });
+    app.servers.push(stub(0, "wallpaper", wall, tx.clone()));
+    app.servers.push(stub(1, "files", files_stub(Arc::new(Mutex::new(vec![])), home.clone()), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers.iter().all(|p| p.ready && !p.rows.rows.is_empty())));
+    app.came_from.push(View::Home);
+    app.view = View::Section(0);
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "the pick opens the home folder");
+    let shown: Vec<String> = app
+        .items()
+        .iter()
+        .filter_map(|i| match i {
+            Item::Folder(k) => Some(app.folder.as_ref().unwrap().2.rows[*k].text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(shown, vec!["docs", "photo.png"], "only the types the pick takes, and the folders");
+    assert!(app.hint().iter().any(|(t, _)| t.starts_with("pick a picture (png)")));
+    app.sel = 1;
+    app.enter();
+    assert!(pump(&mut app, &rx, |_| !calls.lock().unwrap().is_empty()));
+    let c = calls.lock().unwrap()[0].clone();
+    assert_eq!(c["name"], "wallpaper_picture");
+    assert_eq!(
+        c["arguments"]["path"], "/x/photo.png",
+        "the file's own path, as the files provider gave it (the shell checks it)"
+    );
+    assert_eq!(app.view, View::Section(0), "back where the pick began");
+    assert!(app.picking.is_none());
+}
+
+#[test]
+fn calendar_typed_alone_opens_the_clock() {
+    let (mut app, rx, tx) = app_with(&["clock"]);
+    let empty = json!({"title": "clock", "rows": [], "short": []});
+    let tools = json!([]);
+    app.servers.push(stub(
+        0,
+        "clock",
+        Box::new(move |v, send| {
+            if let Some(r) = ordinary("clock", v, &tools, &empty) {
+                send(r);
+            }
+        }),
+        tx,
+    ));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
+    for c in "Calendar".chars() {
+        app.typed(c);
+    }
+    app.enter();
+    assert_eq!(app.view, View::Section(0));
+    assert!(app.is_calendar());
+}

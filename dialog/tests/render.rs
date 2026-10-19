@@ -1,6 +1,6 @@
 // The golden renders: the dialog drawn from fixed state in the two
 // palettes the records name. Both palettes give the same grid of slots
-// (every colour bound to a token), and the grid is the file in golden/.
+// (every color bound to a token), and the grid is the file in golden/.
 // UPDATE_GOLDEN=1 writes the files after a change that was looked at.
 mod common;
 use common::palette;
@@ -66,7 +66,7 @@ fn base() -> App {
         json!([]),
     );
     let about_rows: serde_json::Value = serde_json::from_str(include_str!("golden/about-rows.json")).unwrap();
-    let mut about = provider("about", "a light desktop of sway and foot, for an AI box", about_rows, json!([]));
+    let mut about = provider("about", "", about_rows, json!([]));
     about.version = "0.64".into();
     app.providers = vec![window, theme, bt, about];
     app.about_idx = Some(3);
@@ -86,7 +86,7 @@ fn render(app: &App, name: &str) {
             std::fs::write(format!("{}/{}-{}.html", dir, name, pal), page).unwrap();
         }
         let s = spark_dialog::ui::snapshot(&b, &p);
-        assert!(!s.contains('?'), "{} in {}: a colour that is no slot of the palette\n{}", name, pal, s);
+        assert!(!s.contains('?'), "{} in {}: a color that is no slot of the palette\n{}", name, pal, s);
         grids.push(s);
     }
     assert_eq!(grids[0], grids[1], "{}: the two palettes draw different grids", name);
@@ -186,6 +186,11 @@ fn about() {
     let mut app = base();
     app.cfg.mark = true;
     app.view = View::About;
+    app.exchange = vec![Line {
+        sign: Sign::You,
+        text: "show me about".into(),
+        undo: false,
+    }]; // the about is a page: the exchange is not drawn on it
     render(&app, "about");
 }
 
@@ -260,4 +265,40 @@ fn a_folder_with_its_columns_and_an_attachment() {
         undo: false,
     }];
     render(&app, "folder");
+}
+
+#[test]
+fn the_clock_section_is_the_time_and_the_month() {
+    let mut app = base();
+    app.providers.push(provider(
+        "clock",
+        "Sunday 18 October 2026",
+        json!({"title": "clock", "rows": [], "short": []}),
+        json!([]),
+    ));
+    app.view = View::Section(app.providers.len() - 1);
+    app.came_from = vec![View::Home];
+    app.today = Some((2026, 10, 18));
+    render(&app, "calendar");
+}
+
+#[test]
+fn the_wallpaper_section_shows_each_color_as_a_sample() {
+    let mut app = base();
+    let color = |n: &str, hex: &str| json!({"id": format!("wallpaper:use {}", n), "sign": "blank", "text": n, "tool": {"name": "wallpaper_use", "arguments": {"name": n}}, "more": [], "columns": [], "children": null, "group": null, "swatch": hex});
+    app.providers.push(provider(
+        "wallpaper",
+        "teal",
+        json!({"title": "wallpaper", "rows": [
+            {"id": "wallpaper:use default", "sign": "blank", "text": "default", "tool": {"name": "wallpaper_use", "arguments": {"name": "default"}}, "more": [], "columns": [], "children": null, "group": null},
+            color("black", "#000000"), color("navy", "#000080"),
+            {"id": "wallpaper:show:teal", "sign": "check", "text": "teal", "tool": null, "more": [], "columns": [], "children": null, "group": null, "swatch": "#008080"},
+            color("orange", "#ffa500"),
+            {"id": "wallpaper:pick", "sign": "blank", "text": "a picture", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows", "group": null, "pick": {"tool": "wallpaper_picture", "types": ["jpg", "png"]}}
+        ], "short": []}),
+        json!([]),
+    ));
+    app.view = View::Section(app.providers.len() - 1);
+    app.came_from = vec![View::Home];
+    render(&app, "wallpaper");
 }

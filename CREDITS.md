@@ -2,7 +2,7 @@
 
 spark-shell stands on other people's work. Every program here comes
 from a package manager's own repositories, unpinned. The palettes are
-colour values, credited below.
+color values, credited below.
 
 ## The logo
 
@@ -82,7 +82,7 @@ Unicode-3.0). The ones it is made of:
 ## The palettes
 
 The 9 palettes in `themes/`, written to `theme.env` by `spark-shell
-theme NAME`. Colour values only, no code copied, each file's first
+theme NAME`. Color values only, no code copied, each file's first
 line naming its upstream. The licence is the upstream's:
 
 - Catppuccin -- https://github.com/catppuccin/catppuccin -- MIT.

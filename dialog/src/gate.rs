@@ -136,6 +136,8 @@ mod tests {
             columns: vec![],
             children: None,
             group: None,
+            swatch: None,
+            pick: None,
         };
         (
             vec![tool("wifi_connect", s), tool("out_level", lv)],

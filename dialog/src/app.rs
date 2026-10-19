@@ -41,6 +41,17 @@ pub struct Line {
     pub undo: bool,
 }
 
+/// A pick in progress: the view to go back to and how deep the stack was,
+/// the provider and tool the file goes to, and the types offered.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Picking {
+    pub back: View,
+    pub depth: usize,
+    pub prov: usize,
+    pub tool: String,
+    pub types: Vec<String>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum View {
     Home,
@@ -204,6 +215,12 @@ pub struct App {
     pub attaching: Option<(View, usize)>,
     /// The file the next want carries (`spark-shell want --attach`).
     pub attachment: Option<String>,
+    /// A row's pick is choosing a file for a tool of its own provider (the wallpaper's picture).
+    pub picking: Option<Picking>,
+    /// Today, (year, month, day), the machine's own clock: the calendar's today.
+    pub today: Option<(i32, u32, u32)>,
+    /// The calendar's month, as months from this one.
+    pub month_offset: i32,
     pub mode: Mode,
     pub input: String,
     pub sel: usize,
@@ -246,6 +263,9 @@ impl App {
             folder: None,
             attaching: None,
             attachment: None,
+            picking: None,
+            today: None,
+            month_offset: 0,
             mode: Mode::Normal,
             input: String::new(),
             sel: 0,
@@ -578,14 +598,22 @@ impl App {
                     if !self.input.is_empty() && !self.matches(*p, r) {
                         continue;
                     }
-                    if self.attaching.is_some() && r.children.is_none() && r.tool.is_some() {
-                        let ext = r.text.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
-                        if !self.cfg.attach.contains(&ext) {
+                    // attaching or picking, the files offered are of the types asked; the summary goes
+                    let types = match (&self.picking, &self.attaching) {
+                        (Some(pk), _) => Some(&pk.types),
+                        (None, Some(_)) => Some(&self.cfg.attach),
+                        _ => None,
+                    };
+                    if let Some(t) = types {
+                        if r.children.is_none() && r.tool.is_some() {
+                            let ext = r.text.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+                            if !t.contains(&ext) {
+                                continue;
+                            }
+                        }
+                        if r.tool.is_none() && r.children.is_none() {
                             continue;
                         }
-                    }
-                    if self.attaching.is_some() && r.tool.is_none() && r.children.is_none() {
-                        continue;
                     }
                     if i + 1 == rows.rows.len() && i > 0 && r.tool.is_none() && r.children.is_none() {
                         out.push(Item::Blank); // the summary at the end stands apart
@@ -758,6 +786,9 @@ impl App {
                     if self.attaching.as_ref().map(|(_, d)| self.came_from.len() < *d + 1).unwrap_or(false) {
                         self.attaching = None;
                     }
+                    if self.picking.as_ref().map(|pk| self.came_from.len() < pk.depth + 1).unwrap_or(false) {
+                        self.picking = None;
+                    }
                     if !matches!(self.view, View::Folder(..)) {
                         self.folder = None;
                     } else if let View::Folder(p, uri) = self.view.clone() {
@@ -836,6 +867,7 @@ impl App {
         // a section's own name typed alone opens that section, never the model ("about" once opened aerc)
         if matches!(self.view, View::Home | View::Section(_)) && self.sel == 0 {
             let word = typed.trim().to_lowercase();
+            let word = if word == "calendar" { "clock".to_string() } else { word }; // the clock section is the Calendar
             if let Some(q) = self.providers.iter().position(|x| x.label == word && x.ready && x.dead.is_none()) {
                 if self.view != View::Section(q) {
                     self.open_children(q, &format!("spark-shell://{}/rows", word));
@@ -869,7 +901,23 @@ impl App {
             }
             Item::Row(p, r) => {
                 let row = self.providers[p].rows.rows[r].clone();
-                if let Some(c) = row.children {
+                if let Some(pk) = &row.pick {
+                    // a pick opens the files at the home folder, offering the types it takes
+                    let Some(f) = self.files() else {
+                        return self.say(Sign::Refused, "no files to pick from");
+                    };
+                    let Some(root) = self.providers[f].rows.rows.iter().find_map(|r| r.children.clone()) else {
+                        return self.say(Sign::Refused, "no folder to pick from");
+                    };
+                    self.picking = Some(Picking {
+                        back: self.view.clone(),
+                        depth: self.came_from.len(),
+                        prov: p,
+                        tool: pk.tool.clone(),
+                        types: pk.types.clone(),
+                    });
+                    self.open_children(f, &root);
+                } else if let Some(c) = row.children {
                     self.open_children(p, &c);
                 } else if let Some(call) = row.tool {
                     if call.name == "about_open" {
@@ -892,6 +940,31 @@ impl App {
                 let Some(row) = rows.rows.get(i).cloned() else { return };
                 if let Some(c) = row.children {
                     self.open_children(p, &c);
+                    return;
+                }
+                if let Some(pk) = self.picking.clone() {
+                    // the file picked goes to the tool the pick names, at its own provider; the shell checks the path
+                    let Some(path) = row.tool.as_ref().and_then(|t| t.arguments.get("path")).and_then(Value::as_str) else {
+                        return;
+                    };
+                    let mut arguments = serde_json::Map::new();
+                    arguments.insert("path".into(), Value::String(path.to_string()));
+                    self.picking = None;
+                    self.came_from.truncate(pk.depth);
+                    self.view = pk.back;
+                    self.folder = None;
+                    self.sel = 0;
+                    let line = format!("{} {}", self.providers[pk.prov].label, row.text);
+                    self.run(Step {
+                        prov: pk.prov,
+                        call: Call {
+                            name: pk.tool,
+                            arguments,
+                            ask: vec![],
+                        },
+                        who: Who::Person,
+                        line,
+                    });
                     return;
                 }
                 let call = if self.attaching.is_some() {
@@ -925,6 +998,7 @@ impl App {
         self.sel = 0;
         if tail == "rows" {
             self.view = if Some(q) == self.about_idx { View::About } else { View::Section(q) };
+            self.month_offset = 0; // the calendar opens on this month
         } else if tail.starts_with("rows/") {
             self.view = View::Folder(q, uri.to_string());
             self.read_folder(q, uri);
@@ -1375,16 +1449,38 @@ impl App {
             v.extend(esc("cancels"));
             return v;
         }
-        if self.view == View::About {
-            v.push(("say what you would like".into(), false));
-        } else {
-            // a key named on the screen is a chip: each arrow its own, as Esc
-            v.push(("\u{2191}".into(), true));
-            v.push((" ".into(), false));
-            v.push(("\u{2193}".into(), true));
-            v.push((" pick, or say what you would like".into(), false));
+        if let Some(pk) = &self.picking {
+            v.push((format!("pick a picture ({})", pk.types.join(" ")), false));
+            v.extend(esc("cancels"));
+            return v;
         }
-        v.extend(esc("closes"));
+        // the keys, no words for them: the arrows where there is something to pick, the month's in the calendar
+        if self.is_calendar() {
+            v.push(("\u{2190}\u{2192}".into(), true));
+            v.push((" month".into(), false));
+        } else if self.view != View::About {
+            v.push(("\u{2191}\u{2193}".into(), true));
+        }
+        // Esc goes back one view where there is one to go back to, and closes from the first
+        let word = if self.came_from.is_empty() { "closes" } else { "goes back" };
+        if v.is_empty() {
+            v.push(("Esc".into(), true));
+            v.push((format!(" {}", word), false));
+        } else {
+            v.extend(esc(word));
+        }
         v
+    }
+
+    /// The clock section is the calendar.
+    pub fn is_calendar(&self) -> bool {
+        matches!(self.view, View::Section(p) if self.providers.get(p).map(|x| x.label == "clock").unwrap_or(false))
+    }
+
+    /// Left and right: the calendar's month back or on; nothing elsewhere.
+    pub fn month(&mut self, d: i32) {
+        if self.is_calendar() {
+            self.month_offset += d;
+        }
     }
 }

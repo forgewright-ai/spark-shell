@@ -1,5 +1,5 @@
 //! The palette spark-shell hands the dialog in the environment: every
-//! colour a slot of the palette, never one of the dialog's own.
+//! color a slot of the palette, never one of the dialog's own.
 
 use ratatui::style::Color;
 
@@ -14,7 +14,7 @@ pub struct Palette {
     pub dark: bool,
 }
 
-/// rrggbb (or #rrggbb) as a colour; None for anything else.
+/// rrggbb (or #rrggbb) as a color; None for anything else.
 pub fn hex(s: &str) -> Option<Color> {
     let s = s.trim().trim_start_matches('#');
     if s.len() != 6 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -33,7 +33,7 @@ fn luma(c: Color) -> u32 {
 
 impl Palette {
     /// From a lookup (the environment, or a test's table); a key that is
-    /// missing or not a colour takes the dark default.
+    /// missing or not a color takes the dark default.
     pub fn from(get: impl Fn(&str) -> Option<String>) -> Palette {
         let c = |k: &str, d: &str| get(k).and_then(|v| hex(&v)).unwrap_or_else(|| hex(d).unwrap());
         let surface = c("PANEL_BG", "1f1f1f");
@@ -58,7 +58,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn colours_come_from_the_keys() {
+    fn colors_come_from_the_keys() {
         let p = Palette::from(|k| match k {
             "PANEL_BG" => Some("fdf6e3".into()),
             "HEX_ACCENT" => Some("#268bd2".into()),

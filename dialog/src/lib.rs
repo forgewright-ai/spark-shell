@@ -3,6 +3,7 @@
 
 pub mod app;
 pub mod audit;
+pub mod calendar;
 pub mod gate;
 pub mod mcp;
 pub mod model;

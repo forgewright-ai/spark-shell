@@ -107,7 +107,7 @@ pub fn pump(app: &mut App, rx: &Receiver<Incoming>, done: impl Fn(&App) -> bool)
     done(app)
 }
 
-/// A rendered buffer as HTML in its real colours, for a person to look at
+/// A rendered buffer as HTML in its real colors, for a person to look at
 /// before a golden is kept and for the design system's preview: one span
 /// per run of one style, a glyph outside ASCII held to one cell, the
 /// mark's cells one image (`mark`, its URL).
