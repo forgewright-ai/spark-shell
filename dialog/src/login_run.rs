@@ -4,7 +4,7 @@
 //! the state is login.rs, the drawing login_ui.rs, greetd greetd.rs.
 
 use ratatui::backend::CrosstermBackend;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::Terminal;
@@ -237,7 +237,7 @@ pub fn main() {
     }
 
     let _ = terminal::enable_raw_mode();
-    let _ = execute!(std::io::stdout(), EnterAlternateScreen);
+    let _ = execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture);
     let mut term = match Terminal::new(CrosstermBackend::new(std::io::stdout())) {
         Ok(t) => t,
         Err(e) => {
@@ -281,10 +281,23 @@ pub fn main() {
                 let _ = term.clear();
                 dirty = true;
             }
-            Ev::Term(Event::Key(k)) if k.kind == KeyEventKind::Press => {
+            Ev::Term(e @ (Event::Key(_) | Event::Mouse(_))) => {
+                let act = match e {
+                    Event::Key(k) if k.kind == KeyEventKind::Press => {
+                        let Some(key) = key_of(k.code, k.modifiers) else { continue };
+                        l.key(key)
+                    }
+                    Event::Mouse(m) if m.kind == MouseEventKind::Down(MouseButton::Left) => {
+                        let size = term.size().unwrap_or_default();
+                        let Some(s) = login_ui::spot(&l, size.width, size.height, m.column, m.row) else {
+                            continue;
+                        };
+                        l.click(s)
+                    }
+                    _ => continue,
+                };
                 dirty = true;
-                let Some(key) = key_of(k.code, k.modifiers) else { continue };
-                match l.key(key) {
+                match act {
                     None => {}
                     Some(Action::LogIn) => {
                         let pass = l.take_password();
@@ -346,7 +359,7 @@ pub fn main() {
             _ => {}
         }
     }
-    let _ = execute!(term.backend_mut(), LeaveAlternateScreen);
+    let _ = execute!(term.backend_mut(), DisableMouseCapture, LeaveAlternateScreen);
     let _ = terminal::disable_raw_mode();
     let _ = term.show_cursor();
     std::process::exit(code.unwrap_or(0));

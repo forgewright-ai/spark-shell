@@ -3171,10 +3171,20 @@ else
     login_root void; mkdir -p "$H/root/etc/runit"
     out=$(LC on login --yes 2>&1 || :); printf '%s\n' "$out" | grep -q '^todo   login        greetd is not installed -- spark-shell on login (the packages)$' && [ ! -e "$H/root/etc/spark-shell" ] && ok "Void without greetd: a todo row, nothing written" || bad "login no greetd" "$out"
 fi
-grep -q '^PKG_LOGIN=greetd$' "$REPO/distro/void.env" && grep -q '^LOGIN_ACCOUNT=_greeter$' "$REPO/distro/void.env" && grep -q '^LOGIN_ACCOUNT=greeter$' "$REPO/distro/arch.env" && grep -q '^LOGIN_ACCOUNT=_greetd$' "$REPO/distro/debian.env" \
-    && ok "distro/*.env: greetd and each package's account for the login screen" || bad "distro login keys"
+[ "$(grep -h '^PKG_LOGIN=' "$REPO"/distro/*.env | sort -u)" = 'PKG_LOGIN=greetd swayidle' ] && grep -q '^LOGIN_ACCOUNT=_greeter$' "$REPO/distro/void.env" && grep -q '^LOGIN_ACCOUNT=greeter$' "$REPO/distro/arch.env" && grep -q '^LOGIN_ACCOUNT=_greetd$' "$REPO/distro/debian.env" \
+    && ok "distro/*.env: greetd, swayidle and each package's account for the login screen" || bad "distro login keys"
 ! grep -v '^#' "$REPO/templates/login/sway.conf" | grep -q fullscreen && grep -q '^gaps outer 0$' "$REPO/templates/login/sway.conf" && grep -q '^alpha=0.0$' "$REPO/templates/login/foot.ini" \
     && ok "templates/login: the window fills the screen tiled, never fullscreen (foot draws a fullscreen background solid), clear over the wallpaper" || bad "login sway fullscreen"
+sw=$(grep '^exec swayidle ' "$REPO/templates/login/sway.conf"); [ "$sw" = "exec swayidle timeout 300 'swaymsg \"output * power off\"' resume 'swaymsg \"output * power on\"'" ] \
+    && ok "templates/login: five idle minutes turn the display off, a key or a move turns it on" || bad "login swayidle" "$(grep -n swayidle "$REPO/templates/login/sway.conf")"
+# the session says nothing on tty1: the console cleared and its cursor hidden, then what sway and its children say lands in login.log
+ls_d=$(mktemp -d); mkdir -p "$ls_d/bin" "$ls_d/run"
+printf '#!/bin/sh\necho "sway $*"\necho "[main.c:332] Found config * for output" >&2\n' > "$ls_d/bin/sway"; chmod +x "$ls_d/bin/sway"
+sed 's|@LOGIN_ETC@|etc/spark-shell/login|g' "$REPO/templates/login/session" > "$ls_d/session"
+out=$(PATH="$ls_d/bin:$PATH" XDG_RUNTIME_DIR="$ls_d/run" sh "$ls_d/session" 2>&1)
+[ "$out" = "$(printf '\033[2J\033[H\033[?25l')" ] && grep -qx 'sway -c /etc/spark-shell/login/sway.conf' "$ls_d/run/login.log" && grep -q 'Found config' "$ls_d/run/login.log" \
+    && ok "templates/login/session: tty1 is cleared, its cursor hidden, and sway's words go to login.log, none on the screen" || bad "login session quiet" "$(printf '%s' "$out" | od -c | head -3) $(cat "$ls_d/run/login.log" 2>&1)"
+rm -rf "$ls_d"
 bp=$REPO/templates/linux/.bash_profile
 grep -q 'SPARK_SHELL_SESSION:-}" != shell' "$bp" && ok ".bash_profile: the login screen's shell session never starts the desktop" || bad ".bash_profile shell session"
 

@@ -52,6 +52,14 @@ pub enum Key {
     Char(char),
 }
 
+/// What a click lands on: a field, a session, or a key chip with its words.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Spot {
+    Focus(Field),
+    Pick(Session),
+    Press(Key),
+}
+
 /// What main.rs is asked to do.
 #[derive(Debug, PartialEq)]
 pub enum Action {
@@ -162,6 +170,30 @@ impl Login {
             View::Confirm(p) => self.confirm_key(p, k),
             View::Form => self.form_key(k),
         }
+    }
+
+    /// A click: a field takes the focus, a session is picked (and its row
+    /// the focus), a key chip does what its key does.
+    pub fn click(&mut self, s: Spot) -> Option<Action> {
+        if self.busy.is_some() {
+            return None;
+        }
+        match s {
+            Spot::Press(k) => return self.key(k),
+            _ if self.view != View::Form => {}
+            Spot::Focus(f) => {
+                if self.fields().contains(&f) {
+                    self.field = f;
+                }
+            }
+            Spot::Pick(s) => {
+                if self.desktop {
+                    self.session = s;
+                    self.field = Field::Session;
+                }
+            }
+        }
+        None
     }
 
     fn confirm_key(&mut self, p: Power, k: Key) -> Option<Action> {
@@ -426,6 +458,33 @@ mod tests {
         assert_eq!(l.confirm, "");
         l.key(Key::Esc);
         assert_eq!(l.view, View::Form);
+    }
+
+    #[test]
+    fn a_click_focuses_a_field_picks_a_session_or_presses_a_key() {
+        let mut l = Login::new("void", "Void Linux");
+        l.click(Spot::Pick(Session::Shell));
+        assert_eq!((l.session, l.field), (Session::Shell, Field::Session));
+        l.click(Spot::Focus(Field::Password));
+        assert_eq!(l.field, Field::Password);
+        l.click(Spot::Pick(Session::Desktop));
+        assert_eq!(l.session, Session::Desktop);
+        l.can_shutdown = true;
+        assert_eq!(l.click(Spot::Press(Key::F(12))), None);
+        assert_eq!(l.view, View::Confirm(Power::Shutdown), "a power chip asks for yes, as its key does");
+        l.click(Spot::Pick(Session::Shell));
+        assert_eq!(l.session, Session::Desktop, "the confirm view has no session row");
+        l.click(Spot::Press(Key::Esc));
+        assert_eq!(l.view, View::Form);
+        l.desktop = false;
+        l.click(Spot::Focus(Field::Password));
+        l.click(Spot::Focus(Field::Session));
+        l.click(Spot::Pick(Session::Shell));
+        assert_eq!((l.field, l.session), (Field::Password, Session::Desktop), "no desktop: no session row to click");
+        l.desktop = true;
+        l.busy = Some(3);
+        l.click(Spot::Pick(Session::Shell));
+        assert_eq!(l.session, Session::Desktop, "the clicks wait while a login runs");
     }
 
     #[test]

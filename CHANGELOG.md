@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.74
+
+The login screen after its first real boot (the owner's checks at the
+screen: a click on desktop or shell did nothing, lines printed before
+the screen; and his ask for an idle screen saver, the standard kind).
+
+- Fixed: the mouse on the login screen. A click on desktop or shell
+  picks it, a click on a field or its label moves the focus there, and
+  a click on a key chip or its words does what the key does: F11 and
+  F12 still open the confirm, which still takes a typed yes. The
+  screen and the clicks share one layout, and a test clicks every
+  target on the drawn screen.
+- Fixed: the lines on tty1 before the login screen (swaybg's `Found
+  config` and a foot warning). The screen's session clears tty1, hides
+  its cursor and sends what sway, swaybg, swayidle and foot say to
+  login.log in the screen account's runtime directory.
+- Added: after five idle minutes the login screen turns the display
+  off (swayidle, `output * power off`); a key or a mouse move turns it
+  back on. Nobody is logged in there, so nothing is locked. The
+  desktop's own idle and lock is a decision of its own.
+- Changed: PKG_LOGIN is greetd and swayidle on Debian, Arch and Void.
+
 ## v0.73
 
 The login screen, the Login component (the owner's picks from the

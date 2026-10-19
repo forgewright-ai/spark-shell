@@ -119,13 +119,17 @@ Type `spark-shell on login`. From the next boot, tty1 shows a login
 screen in your palette, over your wallpaper: the machine's name, its
 Linux and version, the date and the time on a strip down the left, and
 the form under them. Type your user name and your password, pick the
-desktop or a shell, and press Enter. No account is listed, and a wrong
-try says only `Wrong user name or password.` F11 restarts the machine
-and F12 shuts it down, each after you type `yes`. There is no AI on
-the login screen: nobody is logged in yet. A line at the bottom says
-whether spark is ready, never its address or its model.
+desktop or a shell (the arrows or a click), and press Enter. No
+account is listed, and a wrong try says only `Wrong user name or
+password.` F11 restarts the machine and F12 shuts it down, each after
+you type `yes`; a click on a key does what the key does. There is no
+AI on the login screen: nobody is logged in yet. A line at the bottom
+says whether spark is ready, never its address or its model. After
+five idle minutes the screen turns off; a key or a mouse move turns it
+back on. Nothing else prints on tty1 before the login screen.
 
-greetd runs the screen (Debian, Arch and Void; sudo). tty2 keeps the
+greetd runs the login screen, and swayidle turns it off when idle
+(Debian, Arch and Void; sudo). tty2 keeps the
 console login, so Alt+F2 always lets you in. tty1 changes hands only
 at a boot, never under a login that is running. On Void the screen's
 account joins the `_seatd` group, and it may run reboot and poweroff,

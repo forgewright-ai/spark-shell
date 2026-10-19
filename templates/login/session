@@ -2,11 +2,14 @@
 # rendered by spark-shell from templates/login/session -- spark-shell off login removes it
 # The login screen's session, run by greetd on tty1 as @LOGIN_ACCOUNT@: sway
 # with one window. With no login manager to make a runtime dir (Void),
-# it makes its own, never one another account owns.
+# it makes its own, never one another account owns. Nothing it runs
+# writes on tty1: the console is cleared, its cursor hidden, and what
+# sway, swaybg, swayidle and foot say goes to login.log in that dir.
 if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
     XDG_RUNTIME_DIR=/tmp/$(id -u)-runtime-dir
     mkdir -p -m 0700 "$XDG_RUNTIME_DIR"
     [ -O "$XDG_RUNTIME_DIR" ] || { echo "spark-shell login: $XDG_RUNTIME_DIR belongs to another account" >&2; exit 1; }
     export XDG_RUNTIME_DIR
 fi
-exec sway -c /@LOGIN_ETC@/sway.conf
+printf '\033[2J\033[H\033[?25l'
+exec sway -c /@LOGIN_ETC@/sway.conf >"$XDG_RUNTIME_DIR/login.log" 2>&1

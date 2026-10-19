@@ -3,7 +3,7 @@
 //! terminal's own ground, which foot draws with transparency over the
 //! wallpaper. One text column, every color a slot of the palette.
 
-use crate::login::{Field, Login, Note, Power, Session, View};
+use crate::login::{Field, Key, Login, Note, Power, Session, Spot, View};
 use crate::palette::Palette;
 use crate::scrub::{cells, cut};
 use crate::ui::{CROSS, DOT, RING};
@@ -47,12 +47,12 @@ impl Pen<'_> {
         let st = Style::default().fg(self.pal.fg).bg(self.pal.lit);
         self.put(x, y, &format!(" {} ", key), st)
     }
-    /// A key chip and its words: the row of keys a hint is made of.
-    fn keys(&mut self, y: u16, keys: &[(&str, &str)]) {
+    /// Key chips and their words on one row, `gap` cells apart: a hint, or the power keys.
+    fn keys(&mut self, y: u16, keys: &[(&str, &str, Key)], gap: u16) {
         let mut x = COL;
-        for (i, (k, w)) in keys.iter().enumerate() {
+        for (i, (k, w, _)) in keys.iter().enumerate() {
             if i > 0 {
-                x = self.put(x, y, "   ", self.fg(self.pal.muted));
+                x = self.put(x, y, &" ".repeat(gap as usize), self.fg(self.pal.muted));
             }
             x = self.chip(x, y, k);
             x = self.put(x, y, &format!(" {}", w), self.fg(self.pal.muted));
@@ -90,6 +90,97 @@ pub fn rows(h: u16) -> (u16, u16, u16) {
     (form, spark, power)
 }
 
+/// The hint under the form: its chips, their words, the key each stands for.
+fn hint(l: &Login) -> Vec<(&'static str, &'static str, Key)> {
+    match l.view {
+        View::Form => vec![("Tab", "next field", Key::Tab), ("Enter", "log in", Key::Enter)],
+        View::Confirm(Power::Restart) => vec![("Enter", "restart", Key::Enter), ("Esc", "back", Key::Esc)],
+        View::Confirm(Power::Shutdown) => vec![("Enter", "shut down", Key::Enter), ("Esc", "back", Key::Esc)],
+    }
+}
+
+/// The power keys at the foot: the ones this machine has, less the one being confirmed.
+fn power(l: &Login) -> Vec<(&'static str, &'static str, Key)> {
+    let showing = match l.view {
+        View::Confirm(pw) => Some(pw),
+        View::Form => None,
+    };
+    let mut v = vec![];
+    if l.can_restart && showing != Some(Power::Restart) {
+        v.push(("F11", "restart", Key::F(11)));
+    }
+    if l.can_shutdown && showing != Some(Power::Shutdown) {
+        v.push(("F12", "shut down", Key::F(12)));
+    }
+    v
+}
+
+/// The gaps between the hint's keys and between the power keys.
+const HINT_GAP: u16 = 3;
+const POWER_GAP: u16 = 4;
+
+/// The cells each key of a row takes, its chip and its words: (from, to, key).
+fn key_spans(keys: &[(&str, &str, Key)], gap: u16) -> Vec<(u16, u16, Key)> {
+    let mut x = COL;
+    keys.iter()
+        .map(|(k, w, key)| {
+            let from = x;
+            x += cells(k) as u16 + 2 + 1 + cells(w) as u16;
+            let span = (from, x, *key);
+            x += gap;
+            span
+        })
+        .collect()
+}
+
+/// The session row's choices: each one's sign and name, and the column it starts at.
+fn choices() -> [(Session, &'static str, u16); 2] {
+    let desktop = FIELD_COL + 1;
+    let shell = desktop + 2 + cells("desktop") as u16 + 4;
+    [(Session::Desktop, "desktop", desktop), (Session::Shell, "shell", shell)]
+}
+
+/// What a click at (x, y) lands on, on a screen `w` by `h` cells: a
+/// field with its label, a session with its sign, a key chip with its
+/// words, the cells `draw` puts them on.
+pub fn spot(l: &Login, w: u16, h: u16, x: u16, y: u16) -> Option<Spot> {
+    if x >= w.min(STRIP) || y >= h {
+        return None;
+    }
+    let (r0, _, power_row) = rows(h);
+    let in_keys = |keys: &[(&str, &str, Key)], gap| {
+        key_spans(keys, gap)
+            .into_iter()
+            .find(|(a, b, _)| (*a..*b).contains(&x))
+            .map(|(_, _, k)| Spot::Press(k))
+    };
+    if y == r0 + 13 {
+        return in_keys(&hint(l), HINT_GAP);
+    }
+    if y == power_row {
+        return in_keys(&power(l), POWER_GAP);
+    }
+    if l.view != View::Form || !(COL..FIELD_COL + FIELD_W).contains(&x) {
+        return None;
+    }
+    if y == r0 + 3 {
+        return Some(Spot::Focus(Field::User));
+    }
+    if y == r0 + 5 {
+        return Some(Spot::Focus(Field::Password));
+    }
+    if y == r0 + 7 && l.desktop {
+        if x < FIELD_COL {
+            return Some(Spot::Focus(Field::Session));
+        }
+        return choices()
+            .into_iter()
+            .find(|(_, name, at)| (*at..*at + 2 + cells(name) as u16).contains(&x))
+            .map(|(s, _, _)| Spot::Pick(s));
+    }
+    None
+}
+
 pub fn draw(l: &Login, pal: &Palette, clock: &str, buf: &mut Buffer) {
     let area = buf.area;
     let strip = Style::default().bg(pal.surface);
@@ -112,28 +203,25 @@ pub fn draw(l: &Login, pal: &Palette, clock: &str, buf: &mut Buffer) {
             if l.desktop {
                 let focus = l.field == Field::Session;
                 p.put(COL, r0 + 7, "session", p.fg(if focus { pal.accent } else { pal.muted }));
-                let mut x = FIELD_COL + 1;
-                for (s, name) in [(Session::Desktop, "desktop"), (Session::Shell, "shell")] {
+                for (s, name, x) in choices() {
                     let on = l.session == s;
-                    x = p.put(x, r0 + 7, if on { DOT } else { RING }, p.fg(if on { pal.accent } else { pal.muted }));
-                    x = p.put(x, r0 + 7, &format!(" {}", name), p.fg(if on { pal.fg } else { pal.muted }));
-                    x += 4;
+                    let x = p.put(x, r0 + 7, if on { DOT } else { RING }, p.fg(if on { pal.accent } else { pal.muted }));
+                    p.put(x, r0 + 7, &format!(" {}", name), p.fg(if on { pal.fg } else { pal.muted }));
                 }
             }
-            p.keys(r0 + 13, &[("Tab", "next field"), ("Enter", "log in")]);
         }
         View::Confirm(pw) => {
-            let (title, says, verb) = match pw {
-                Power::Restart => ("restart", " restarts. Type yes to go on.", "restart"),
-                Power::Shutdown => ("shut down", " turns off. Type yes to go on.", "shut down"),
+            let (title, says) = match pw {
+                Power::Restart => ("restart", " restarts. Type yes to go on."),
+                Power::Shutdown => ("shut down", " turns off. Type yes to go on."),
             };
             p.put(COL, r0, title, p.bold(pal.fg));
             let x = p.put(COL, r0 + 3, &l.host, p.fg(pal.fg));
             p.put(x, r0 + 3, says, p.fg(pal.muted));
             p.field(r0 + 5, "confirm", &l.confirm, true);
-            p.keys(r0 + 13, &[("Enter", verb), ("Esc", "back")]);
         }
     }
+    p.keys(r0 + 13, &hint(l), HINT_GAP);
     match &l.note {
         Some(Note::Wrong(t)) => {
             let x = p.put(COL, r0 + 10, CROSS, p.fg(pal.alarm));
@@ -150,27 +238,7 @@ pub fn draw(l: &Login, pal: &Palette, clock: &str, buf: &mut Buffer) {
         let x = p.put(x, spark_row, " spark", p.fg(pal.fg));
         p.put(x, spark_row, &format!("  {}", words), p.fg(pal.muted));
     }
-    let mut power: Vec<(&str, &str)> = vec![];
-    let showing = match l.view {
-        View::Confirm(pw) => Some(pw),
-        View::Form => None,
-    };
-    if l.can_restart && showing != Some(Power::Restart) {
-        power.push(("F11", "restart"));
-    }
-    if l.can_shutdown && showing != Some(Power::Shutdown) {
-        power.push(("F12", "shut down"));
-    }
-    if !power.is_empty() {
-        let mut x = COL;
-        for (i, (k, w)) in power.iter().enumerate() {
-            if i > 0 {
-                x = p.put(x, power_row, "    ", p.fg(pal.muted));
-            }
-            x = p.chip(x, power_row, k);
-            x = p.put(x, power_row, &format!(" {}", w), p.fg(pal.muted));
-        }
-    }
+    p.keys(power_row, &power(l), POWER_GAP);
 }
 
 /// The screen as text and its color slots, one code pair a cell, for the

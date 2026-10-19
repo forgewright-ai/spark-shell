@@ -8,7 +8,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use serde_json::{json, Value};
 use spark_dialog::greetd::{self, Outcome, Secret};
-use spark_dialog::login::{Field, Key, Login, Note, Power, View};
+use spark_dialog::login::{Field, Key, Login, Note, Power, Session, Spot, View};
 use spark_dialog::login_ui;
 use std::os::unix::net::UnixStream;
 
@@ -220,4 +220,67 @@ fn login_with_no_desktop_and_no_spark() {
     l.spark = None;
     l.can_restart = false;
     render(&l, "login-shell");
+}
+
+/// The row of a drawn screen as text, one char a cell.
+fn row(b: &Buffer, y: u16) -> String {
+    (0..b.area.width).map(|x| b[(x, y)].symbol().chars().next().unwrap_or(' ')).collect()
+}
+
+/// Where `word` is drawn on the screen: its first cell.
+fn find(b: &Buffer, word: &str) -> (u16, u16) {
+    for y in 0..b.area.height {
+        if let Some(i) = row(b, y).find(word) {
+            return (row(b, y)[..i].chars().count() as u16, y);
+        }
+    }
+    panic!("{} is not on the screen", word);
+}
+
+#[test]
+fn a_click_lands_on_what_is_drawn_there() {
+    let p = palette("tokyonight-night");
+    let (w, h) = (176, 49);
+    let mut l = base();
+    let mut b = Buffer::empty(Rect::new(0, 0, w, h));
+    login_ui::draw(&l, &p, CLOCK, &mut b);
+    let at = |b: &Buffer, l: &Login, word: &str| {
+        let (x, y) = find(b, word);
+        login_ui::spot(l, w, h, x, y)
+    };
+    assert_eq!(at(&b, &l, "desktop"), Some(Spot::Pick(Session::Desktop)));
+    assert_eq!(at(&b, &l, "shell"), Some(Spot::Pick(Session::Shell)));
+    let (x, y) = find(&b, "shell");
+    assert_eq!(login_ui::spot(&l, w, h, x - 2, y), Some(Spot::Pick(Session::Shell)), "the sign picks it too");
+    assert_eq!(login_ui::spot(&l, w, h, x + 5, y), None, "past the name");
+    assert_eq!(at(&b, &l, "session"), Some(Spot::Focus(Field::Session)));
+    assert_eq!(at(&b, &l, "user"), Some(Spot::Focus(Field::User)));
+    let (x, y) = find(&b, "ada");
+    assert_eq!(login_ui::spot(&l, w, h, x + 20, y), Some(Spot::Focus(Field::User)), "the field's empty cells");
+    assert_eq!(at(&b, &l, "password"), Some(Spot::Focus(Field::Password)));
+    assert_eq!(at(&b, &l, " Tab "), Some(Spot::Press(Key::Tab)));
+    let (x, y) = find(&b, "Enter  log in");
+    assert_eq!(
+        login_ui::spot(&l, w, h, x + 9, y),
+        Some(Spot::Press(Key::Enter)),
+        "the words go with their chip"
+    );
+    assert_eq!(at(&b, &l, "log in"), None, "the title is no target");
+    assert_eq!(at(&b, &l, " F11 "), Some(Spot::Press(Key::F(11))));
+    assert_eq!(at(&b, &l, "shut down"), Some(Spot::Press(Key::F(12))));
+    assert_eq!(at(&b, &l, "void"), None, "the machine's name is no target");
+    assert_eq!(login_ui::spot(&l, w, h, 120, 20), None, "the wallpaper is no target");
+
+    let s = at(&b, &l, "shell").unwrap();
+    l.click(s);
+    login_ui::draw(&l, &p, CLOCK, &mut b);
+    let (x, y) = find(&b, "shell");
+    assert_eq!(b[(x - 2, y)].fg, p.accent, "the click lit shell's sign");
+
+    l.key(Key::F(12));
+    let mut b = Buffer::empty(Rect::new(0, 0, w, h));
+    login_ui::draw(&l, &p, CLOCK, &mut b);
+    assert_eq!(at(&b, &l, " Esc "), Some(Spot::Press(Key::Esc)));
+    assert_eq!(at(&b, &l, "confirm"), None, "the confirm view has its one field");
+    assert_eq!(at(&b, &l, " F11 "), Some(Spot::Press(Key::F(11))));
 }
