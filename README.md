@@ -17,6 +17,7 @@ files and your tmux, starship and btop settings (yours are saved as
 `.bak` files). It installs packages (sudo) and sets the console colors,
 also at boot. On a Mac it sets a Terminal.app profile instead.
 `spark-shell on desktop` makes a login on tty1 start the desktop.
+`spark-shell on login` puts a login screen on tty1 from the next boot.
 `spark-shell quiet boot on` changes how the machine boots.
 
 Each of these says what it will change and asks `Continue? [y/N]`
@@ -37,6 +38,8 @@ Without it there are no layouts, no spark chat and no status line.
     spark-shell on                    set up the terminal (asks first)
     spark-shell on desktop            add the sway desktop on Linux (asks first)
     spark-shell off desktop           remove the desktop, keep the terminal
+    spark-shell on login              a login screen on tty1 (Linux, asks)
+    spark-shell off login             the console login on tty1 again
     spark-shell off                   undo it all (packages stay installed)
     spark-shell on --dry-run          show what on would change, change nothing
     spark-shell on --yes              do not ask first
@@ -107,9 +110,28 @@ the `_seatd` group (sudo).
 
 ## Login
 
-The login screen is the normal console login on every Linux. Log in on
-tty1 and the desktop starts. Leave the desktop and you are logged out.
-Alt+F2 gives a plain shell with no desktop. ssh never starts it.
+Without `spark-shell on login`, the login screen is the normal console
+login on every Linux. Log in on tty1 and the desktop starts. Leave the
+desktop and you are logged out. Alt+F2 gives a plain shell with no
+desktop. ssh never starts it.
+
+Type `spark-shell on login`. From the next boot, tty1 shows a login
+screen in your palette, over your wallpaper: the machine's name, its
+Linux and version, the date and the time on a strip down the left, and
+the form under them. Type your user name and your password, pick the
+desktop or a shell, and press Enter. No account is listed, and a wrong
+try says only `Wrong user name or password.` F11 restarts the machine
+and F12 shuts it down, each after you type `yes`. There is no AI on
+the login screen: nobody is logged in yet. A line at the bottom says
+whether spark is ready, never its address or its model.
+
+greetd runs the screen (Debian, Arch and Void; sudo). tty2 keeps the
+console login, so Alt+F2 always lets you in. tty1 changes hands only
+at a boot, never under a login that is running. On Void the screen's
+account joins the `_seatd` group, and it may run reboot and poweroff,
+nothing else. `spark-shell theme` and the wallpaper reach the screen
+too. `spark-shell off login` puts the console login back from the next
+boot; greetd's package stays.
 
 ## Layouts
 

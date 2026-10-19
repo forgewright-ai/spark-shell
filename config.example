@@ -37,6 +37,11 @@ ALPHA=0.85
 # the workspace you are on.
 WINDOWS=split
 
+# The login screen on tty1: yes or no. With yes, greetd shows a login
+# screen in your palette, over your wallpaper, from the next boot; tty2
+# keeps the console login. spark-shell on login and off login set this.
+LOGIN=no
+
 # The bar at the top of the desktop's screen: yes or no. It shows the
 # workspaces, then lan, wifi, bluetooth, sound out and mic, battery, and
 # the date and time, each only when this machine has it. spark-shell bar

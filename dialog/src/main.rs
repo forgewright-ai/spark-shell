@@ -17,12 +17,15 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod login_run;
+
 const USAGE: &str = "spark-dialog -- the spark dialog, one window for every domain (run by spark-shell dialog)
 
   spark-dialog [--provider \"PATH WORDS\"]... [--home SECTION] [--title TEXT]
                [--mark on|off] [--close on|off] [--progress on|off]
                [--composer plus,model,talk] [--attach \"txt md\"]
                [--spark-shell PATH] [--spark PATH]
+  spark-dialog login ...   the login screen on tty1 (spark-dialog login -h)
 ";
 
 enum Ev {
@@ -170,6 +173,9 @@ fn run_job(job: Job, tx: mpsc::Sender<Ev>, listening: Arc<Mutex<Option<u32>>>) {
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("login") {
+        login_run::main();
+    }
     let a = match args() {
         Ok(a) => a,
         Err(e) => {

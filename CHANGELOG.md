@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.73
+
+The login screen, the Login component (the owner's picks from the
+mock-ups: the strip down the left, dots for the password, no account
+listed, no AI before a login, spark's state without its address or
+its model, the distro and its version).
+
+- Added: `spark-shell on login` and `off login` (and `login on|off`),
+  a switch of its own beside the desktop: LOGIN=yes in the config.
+  From the next boot greetd shows the login screen on tty1: sway with
+  one foot window that fills the screen, clear over the wallpaper
+  (never fullscreen, where foot draws its background solid), running
+  `spark-dialog login`. On the strip: the machine's name, its Linux
+  (PRETTY_NAME, and the kernel when the distro has no version, as Void
+  and Arch), the date and the time; the form for a user name, the
+  password (a dot each character), the desktop or a shell; a hint;
+  spark ready or not running; F11 restart and F12 shut down, each after
+  a typed yes.
+- Added: `spark-dialog login`, in the one binary the tree pins. It
+  talks to greetd over its socket (create_session, the password as the
+  answer to PAM's first question, start_session with your login shell).
+  The password is in one buffer, wiped when it is sent, cleared or
+  dropped, and never logged. A wrong try says only `Wrong user name or
+  password.` An account that asks for more than a password is refused
+  in one line.
+- Added: the root files, written when they differ and named in the
+  question first: /etc/spark-shell/login (the session, the window, the
+  palette, sway's and foot's settings, the wallpaper), a copy of the
+  pinned dialog in /usr/local/lib/spark-shell, greetd's config.toml (the
+  package's kept as config.toml.spark-shell-orig). On Void the screen's
+  account joins `_seatd`, and a sudoers file, checked by visudo first,
+  lets it run reboot and poweroff, nothing else.
+- Added: tty1 changes hands only at a boot. systemd enables greetd and
+  disables getty@tty1, starting or stopping neither. On Void a line in
+  /etc/rc.local runs login-boot before runit starts its services. tty2
+  keeps the console login. `off login` undoes exactly what the records
+  in /etc/spark-shell/login say, and while greetd runs the screen's
+  files stay until the next boot.
+- Added: `theme` and the wallpaper reach the login screen too. status
+  and check have a login row. The shell session the screen offers
+  never starts the desktop (SPARK_SHELL_SESSION=shell, read by the
+  rc file).
+- Changed: the help, the README, config.example and CREDITS (greetd)
+  name the login screen.
+- Fixed: status named the ground's color before it had read the
+  palette, so the wall row said `()` and the shell printed an error.
+
 ## v0.72
 
 Ten wallpapers ship with spark-shell (issue 10, the owner's word).

@@ -11,6 +11,8 @@ pub struct Palette {
     pub surface: Color,
     pub lit: Color,
     pub alarm: Color,
+    /// A good state: the login's ready dot.
+    pub ok: Color,
     pub dark: bool,
 }
 
@@ -44,6 +46,7 @@ impl Palette {
             surface,
             lit: c("PANEL_HI", "333333"),
             alarm: c("HEX_ANSI_1", "aa0000"),
+            ok: c("HEX_ANSI_2", "00aa00"),
             dark: luma(surface) < 128,
         }
     }

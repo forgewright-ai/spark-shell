@@ -53,6 +53,10 @@ With DESKTOP=sway, from apt, pacman or xbps.
   dejavu-fonts-ttf on Void).
 - seatd -- https://git.sr.ht/~kennylevinsen/seatd -- MIT. On Void,
   which has no logind, it gives sway the screen and keyboard.
+- greetd -- https://git.sr.ht/~kennylevinsen/greetd -- GPL-3.0. With
+  LOGIN=yes (spark-shell on login), it runs the login screen on tty1
+  and starts your session after it. spark-shell talks to it over its
+  socket and ships none of its code.
 - curl -- https://curl.se -- curl licence (MIT-style). Fetches the
   dialog's release file.
 - OpenSSH (openssh, openssh-client on Debian) -- https://www.openssh.com --

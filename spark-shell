@@ -4,6 +4,8 @@
 #   spark-shell on                    set up the terminal (asks first)
 #   spark-shell on desktop            add the sway desktop on Linux (asks first)
 #   spark-shell off desktop           remove the desktop, keep the terminal
+#   spark-shell on login              a login screen on tty1 (Linux, asks)
+#   spark-shell off login             the console login on tty1 again
 #   spark-shell off                   undo it all (packages stay installed)
 #   spark-shell on --dry-run          show what on would change, change nothing
 #   spark-shell on --yes              do not ask first
@@ -118,7 +120,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK'
 
 # This machine's short name (the twin of spark lib/env.sh short_host)
 short_host() {
@@ -138,6 +140,7 @@ config_load() {
     : "${ALPHA:=0.85}"                      # foot over a picture: 0..1, 1 = opaque
     : "${DESKTOP_BAR:=yes}"                # the bar at the top of the desktop: yes or no
     : "${WINDOWS:=split}"                  # how new windows sit on a workspace: split (side by side), tabs or stacked
+    : "${LOGIN:=no}"                       # the login screen on tty1 (greetd): yes or no
     case $WINDOWS in split|tabs|stacked) ;;
         *) echo "spark-shell: WINDOWS=$WINDOWS in $CONFIG: split, tabs or stacked" >&2; exit 1 ;; esac
     case $ALPHA in 0|1|0.[0-9]|0.[0-9][0-9]|1.0) ;;
@@ -152,12 +155,12 @@ config_load() {
     fi
     # the dialog's composer: plus and the file types it attaches, the model chip, talk
     : "${DIALOG_ATTACH:=yes}" "${DIALOG_ATTACH_TYPES:=txt md}" "${DIALOG_MODEL:=yes}" "${DIALOG_TALK:=yes}"
-    for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK; do
+    for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK LOGIN; do
         eval "v=\$$k"
         case $v in yes|no) ;; *) echo "spark-shell: $k=$v in $CONFIG: yes or no" >&2; exit 1 ;; esac
     done
     printf '%s\n' "$DIALOG_ATTACH_TYPES" | grep -qE '^[a-z0-9]{1,8}( [a-z0-9]{1,8})*$' || { echo "spark-shell: DIALOG_ATTACH_TYPES=$DIALOG_ATTACH_TYPES in $CONFIG: file types in lower case, a space between (txt md)" >&2; exit 1; }
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK LOGIN
 }
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept
     mkdir -p "$CONFIG_DIR"
@@ -432,6 +435,7 @@ sudo_upfront() {
     [ -t 0 ] || return 0
     what="the packages"
     if desktop_wanted; then pm_detect; seat_needed && what="the packages and seatd for the desktop"; fi
+    if login_wanted; then what="$what and the login screen"; fi
     if [ -n "$THEME$CONSOLE_FONT" ] || [ "$QUIET_LOGIN$QUIET_BOOT" != nono ]; then what="$what and the console"; fi
     printf 'spark-shell needs sudo once, now: %s.\n' "$what"
     sudo -v || { echo "spark-shell: sudo refused. Nothing was changed." >&2; exit 1; }
@@ -472,7 +476,7 @@ pm_detect() {
         case $w in debian|arch|void) DISTRO=$w; break ;; esac
     done
     [ -z "$DISTRO" ] || load_env "$REPO/distro/$DISTRO.env" env || exit 1
-    : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}" "${PKG_CONSOLE:=}" "${PKG_DESKTOP:=}"
+    : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}" "${PKG_CONSOLE:=}" "${PKG_DESKTOP:=}" "${PKG_LOGIN:=}" "${LOGIN_ACCOUNT:=}"
 }
 tool_here() {   # tool_here NAME -- on PATH or in ~/.local/bin; under apt by Debian's name (fdfind, batcat), after pm_detect
     _n=$1
@@ -692,7 +696,7 @@ OLD_GREETD_CONF=etc/greetd/config.toml
 OLD_GREETD_FILES="etc/greetd/spark-shell/desktop.desktop etc/greetd/spark-shell/console.desktop etc/systemd/system/greetd.service.d/spark-shell.conf"
 OLD_GREETD_DIRS="etc/greetd/spark-shell etc/systemd/system/greetd.service.d"
 unit_enabled() { systemctl is-enabled "$1" >/dev/null 2>&1; }
-old_greetd_here() { grep -q 'rendered by spark-shell' "$ROOT/$OLD_GREETD_CONF" 2>/dev/null || [ -e "$ROOT/$OLD_GREETD_CONF.spark-orig" ]; }
+old_greetd_here() { grep -q 'rendered by spark-shell from templates/etc/greetd' "$ROOT/$OLD_GREETD_CONF" 2>/dev/null || [ -e "$ROOT/$OLD_GREETD_CONF.spark-orig" ]; }
 old_greetd_off() {
     [ "$OS" != Darwin ] && old_greetd_here || return 0
     need login "the normal console login on tty1 from the next boot: greetd turned off, its spark-shell files removed (sudo)" || return 0
@@ -708,6 +712,196 @@ old_greetd_off() {
     for d in $OLD_GREETD_DIRS; do [ -d "$ROOT/$d" ] && root_do rmdir "$ROOT/$d" 2>/dev/null || true; done
     root_do systemctl daemon-reload >/dev/null 2>&1 || true
     ok login "the normal console login is back on tty1 from the next boot: greetd is off, its packages stay"
+}
+
+# The login screen (LOGIN=yes, spark-shell on login): greetd on tty1
+# runs sway as the login screen's own account, with one window,
+# `spark-dialog login`, in the palette. Its files are root's, written
+# from templates/login when they differ: the screen's under
+# /etc/spark-shell/login, a copy of the dialog the tree pins in
+# /usr/local/lib/spark-shell, and greetd's config.toml (the package's
+# kept as .spark-shell-orig). tty1 changes hands at the next boot, never
+# under a login that runs: systemd enables greetd and disables
+# getty@tty1, starting or stopping neither; on Void a line in
+# /etc/rc.local runs login-boot before runit starts its services. On
+# Void the account also joins _seatd, and a sudoers file lets it run
+# reboot and poweroff, nothing else (logind lets the screen do both on
+# systemd). tty2 keeps its console login. Each change to a service or a
+# group leaves a record in /etc/spark-shell/login, and off login undoes
+# exactly those; while greetd runs, the screen's files stay.
+LOGIN_ETC=etc/spark-shell/login
+LOGIN_LIB=usr/local/lib/spark-shell
+GREETD_CONF=etc/greetd/config.toml
+LOGIN_SUDOERS=etc/sudoers.d/spark-shell-login
+LOGIN_MARK=' #spark-shell-login#'
+LOGIN_FILES="session window run sway.conf foot.ini"
+login_wanted() { [ "$OS" != Darwin ] && [ "$LOGIN" = yes ]; }
+login_rec() { [ -e "$ROOT/$LOGIN_ETC/$1" ]; }                       # login_rec NAME -- a record of a change spark-shell made
+login_record() { root_do touch "$ROOT/$LOGIN_ETC/$1"; }
+login_unrecord() { root_do rm -f "$ROOT/$LOGIN_ETC/$1"; }
+login_line() { printf '[ -x /%s/login-boot ] && /%s/login-boot' "$LOGIN_LIB" "$LOGIN_LIB"; }   # the rc.local line (runit)
+greetd_here() { [ -e "$ROOT/usr/bin/greetd" ] || [ -e "$ROOT/usr/sbin/greetd" ]; }
+greetd_live() { pgrep -x greetd >/dev/null 2>&1; }
+greetd_ours() { grep -q 'rendered by spark-shell from templates/login/config.toml' "$ROOT/$GREETD_CONF" 2>/dev/null; }
+login_account_here() { awk -F: -v u="$LOGIN_ACCOUNT" '$1 == u { f = 1 } END { exit !f }' "$ROOT/etc/passwd" 2>/dev/null; }
+login_screen_traces() { [ -d "$ROOT/$LOGIN_ETC" ] || greetd_ours || [ -e "$ROOT/$GREETD_CONF.spark-shell-orig" ] || [ -n "$(marked "$ROOT/etc/rc.local" "$LOGIN_MARK")" ]; }
+login_switched() {   # does the login screen take tty1 at boot?
+    if [ "$(init_shape)" = systemd ]; then unit_enabled greetd.service && ! unit_enabled getty@tty1.service
+    else [ "$(cat "$ROOT/$LOGIN_ETC/boot" 2>/dev/null)" = on ] && [ "$(marked "$ROOT/etc/rc.local" "$LOGIN_MARK")" = "$(login_line)" ]; fi
+}
+login_port() {   # -> spark's port for the screen's spark row, or nothing without spark
+    [ -n "$(spark_bin)" ] || return 0
+    _p=$(sed -n 's/^SPARK_PORT=//p' "$SPARK_CONFIG_DIR/spark.env" 2>/dev/null | tail -1 | tr -d "\"'")
+    case $_p in ''|*[!0-9]*) _p=8080 ;; esac
+    printf '%s' "$_p"
+}
+login_render() {   # -> the screen's files in $TMP/login, from templates/login in the palette
+    mkdir -p "$TMP/login"
+    if [ "$(init_shape)" = systemd ]; then _pw=' --restart "/usr/bin/systemctl reboot" --shutdown "/usr/bin/systemctl poweroff"'
+    else _pw=' --restart "/usr/bin/sudo -n /usr/bin/reboot" --shutdown "/usr/bin/sudo -n /usr/bin/poweroff"'; fi
+    _p=$(login_port); [ -z "$_p" ] || _pw="$_pw --spark-port $_p"
+    _d=off; ! desktop_wanted || _d=on
+    if wall_there; then _bg="/$LOGIN_ETC/wallpaper fill"; else _bg=$WALL_BG; fi
+    _le="$EXPR;s|@LOGIN_ETC@|$LOGIN_ETC|g;s|@LOGIN_LIB@|$LOGIN_LIB|g;s|@LOGIN_ACCOUNT@|$(esc "$LOGIN_ACCOUNT")|g"
+    _le="$_le;s|@LOGIN_DESKTOP@|$_d|g;s|@LOGIN_ARGS@|$(esc "$_pw")|g;s|@LOGIN_BG@|$(esc "$_bg")|g;s|@PANEL_MUTED@|$PANEL_MUTED|g"
+    for f in $LOGIN_FILES config.toml sudoers login-boot; do
+        sed -e "$_le" "$REPO/templates/login/$f" > "$TMP/login/$f"
+        if grep -q '@[A-Z_0-9]*@' "$TMP/login/$f"; then
+            printf 'spark-shell: templates/login/%s: unrendered placeholder: %s\n' "$f" "$(grep -o '@[A-Z_0-9]*@' "$TMP/login/$f" | head -1)" >&2
+            exit 1
+        fi
+    done
+}
+login_mode() { case $1 in session|window|run|login-boot) echo 0755 ;; sudoers) echo 0440 ;; *) echo 0644 ;; esac; }
+login_files_differ() {   # -> the screen's files that differ from what spark-shell would write, by name
+    for f in $LOGIN_FILES; do cmp -s "$TMP/login/$f" "$ROOT/$LOGIN_ETC/$f" || printf ' %s' "$f"; done
+    cmp -s "$DIALOG_BIN" "$ROOT/$LOGIN_LIB/spark-dialog" || printf ' spark-dialog'
+    cmp -s "$TMP/login/config.toml" "$ROOT/$GREETD_CONF" || printf ' config.toml'
+    if wall_there; then cmp -s "$(wall_path)" "$ROOT/$LOGIN_ETC/wallpaper" || printf ' wallpaper'
+    elif [ -e "$ROOT/$LOGIN_ETC/wallpaper" ]; then printf ' wallpaper'; fi
+    if [ "$DISTRO" = void ]; then
+        sudoers_same || printf ' sudoers'
+        cmp -s "$TMP/login/login-boot" "$ROOT/$LOGIN_LIB/login-boot" || printf ' login-boot'
+    fi
+}
+# /etc/sudoers.d is root's alone (0750): read as root, never asking (a
+# password asked for is the write's, after the would row)
+sudoers_same() { if [ -n "$ROOT" ]; then cmp -s "$TMP/login/sudoers" "$ROOT/$LOGIN_SUDOERS"; else sudo -n cmp -s "$TMP/login/sudoers" "/$LOGIN_SUDOERS" 2>/dev/null; fi; }
+status_login() {   # the login row of status
+    if [ "$OS" = Darwin ]; then _w=na; _s="not on macOS, which has its own login screen"
+    elif [ "$LOGIN" != yes ]; then _w=console; _s="the console login on tty1 (spark-shell on login shows the login screen)"
+    elif ! greetd_here; then _w=screen; _s="greetd is not installed (spark-shell on login)"
+    elif ! login_switched; then _w=screen; _s="not set up yet (spark-shell on login)"
+    elif greetd_live; then _w=screen; _s="the login screen on tty1, the console login on tty2"
+    else _w=screen; _s="the login screen on tty1 from the next boot, the console login on tty2"; fi
+    printf '  login %-16s %s\n' "$_w" "$_s"
+}
+login_root() {   # login_root VERB -- a root to write with, asked once; else a todo row and false
+    if ! root_can; then row todo login "root is needed for the login screen -- spark-shell $1 login at a terminal (sudo once)"; acting=0; return 1; fi
+    root_sudo_once "the login screen on tty1" || { row todo login "sudo refused -- spark-shell $1 login at a terminal (sudo once)"; acting=0; return 1; }
+}
+login_screen_apply() {   # the login rows of `on` with LOGIN=yes
+    login_wanted || return 0
+    case $DISTRO in debian|arch|void) ;; *) row todo login "the login screen knows Debian, Arch and Void"; acting=0; return 0 ;; esac
+    console_linux || { skip login "WSL has no console: no login screen"; return 0; }
+    [ "$(init_shape)" != none ] || { skip login "no systemd or runit here: nothing starts a login screen"; return 0; }
+    if ! greetd_here; then
+        need login "the login screen on tty1, once greetd is installed (the packages)" || return 0
+        row todo login "greetd is not installed -- spark-shell on login (the packages)"; acting=0; return 0
+    fi
+    login_account_here || { row todo login "greetd's account $LOGIN_ACCOUNT is missing -- install greetd again, then spark-shell on login"; acting=0; return 0; }
+    desktop_wanted || dialog_install
+    if ! dialog_ok; then
+        need login "the login screen on tty1, once spark-dialog is in place" || return 0
+        row todo login "the login screen needs spark-dialog -- the dialog row says why"; acting=0; return 0
+    fi
+    login_render
+    _f=$(login_files_differ)
+    if [ -z "$_f" ]; then ok login "the login screen's files are in place (/$LOGIN_ETC)"
+    elif need login "write the login screen's files:$_f (sudo)" && login_root on; then
+        if [ "$DISTRO" = void ] && ! root_do visudo -cf "$TMP/login/sudoers" >/dev/null 2>&1; then
+            row todo login "visudo refused the sudoers file -- nothing written, spark-shell on login again"; acting=0; return 0
+        fi
+        root_do mkdir -p "$ROOT/$LOGIN_ETC" "$ROOT/$LOGIN_LIB"
+        for f in $LOGIN_FILES; do root_put "$TMP/login/$f" "$ROOT/$LOGIN_ETC/$f" "$(login_mode "$f")"; done
+        root_put "$DIALOG_BIN" "$ROOT/$LOGIN_LIB/spark-dialog" 0755
+        if wall_there; then root_put "$(wall_path)" "$ROOT/$LOGIN_ETC/wallpaper"
+        else root_do rm -f "$ROOT/$LOGIN_ETC/wallpaper"; fi
+        if [ -e "$ROOT/$GREETD_CONF" ] && ! greetd_ours && [ ! -e "$ROOT/$GREETD_CONF.spark-shell-orig" ]; then
+            root_do cp "$ROOT/$GREETD_CONF" "$ROOT/$GREETD_CONF.spark-shell-orig"
+        fi
+        root_put "$TMP/login/config.toml" "$ROOT/$GREETD_CONF"
+        if [ "$DISTRO" = void ]; then
+            root_put "$TMP/login/sudoers" "$ROOT/$LOGIN_SUDOERS" 0440
+            root_put "$TMP/login/login-boot" "$ROOT/$LOGIN_LIB/login-boot" 0755
+        fi
+        ok login "the login screen's files are written (/$LOGIN_ETC)"
+    else return 0
+    fi
+    # Void: the account takes the screen through seatd, as you do
+    if [ "$DISTRO" = void ] && ! in_group _seatd "$LOGIN_ACCOUNT"; then
+        if need login "add $LOGIN_ACCOUNT to the _seatd group, so the login screen can draw (sudo)" && login_root on; then
+            if root_do usermod -aG _seatd "$LOGIN_ACCOUNT"; then login_record seatd.group; ok login "$LOGIN_ACCOUNT is in the _seatd group"
+            else row todo login "usermod could not add $LOGIN_ACCOUNT to _seatd -- spark-shell on login again"; acting=0; fi
+        fi
+    fi
+    if login_switched; then ok login "the login screen takes tty1 at boot (tty2 keeps the console login)"; return 0; fi
+    need login "the login screen on tty1 from the next boot, tty2 keeps the console login (sudo)" || return 0
+    login_root on || return 0
+    if [ "$(init_shape)" = systemd ]; then
+        # greetd first: tty1 never loses its login
+        if ! unit_enabled greetd.service; then
+            root_do systemctl enable greetd.service >/dev/null 2>&1 || { row todo login "systemctl could not enable greetd -- another display manager may hold tty1"; acting=0; return 0; }
+            login_record greetd.on
+        fi
+        if unit_enabled getty@tty1.service; then root_do systemctl disable getty@tty1.service >/dev/null 2>&1 && login_record getty.off; fi
+    else
+        printf 'on\n' > "$TMP/login/boot"
+        root_put "$TMP/login/boot" "$ROOT/$LOGIN_ETC/boot"
+        login_line > "$TMP/line"; echo >> "$TMP/line"
+        { [ -f "$ROOT/etc/rc.local" ] || printf '#!/bin/sh\n'; marked_text "$ROOT/etc/rc.local" "$LOGIN_MARK" "$TMP/line" exit; } > "$TMP/rc.local"
+        root_put "$TMP/rc.local" "$ROOT/etc/rc.local" 0755
+    fi
+    ok login "the login screen takes tty1 from the next boot (tty2 keeps the console login)"
+}
+login_follow() {   # theme and wallpaper: the login screen takes the new look too, when it is on
+    login_wanted || return 0
+    theme_load; EXPR=$(render_expr)
+    login_screen_apply
+}
+login_screen_off() {   # by the records alone: the boot back to getty, the screen's files gone once greetd stopped
+    [ "$OS" != Darwin ] && login_screen_traces || return 0
+    if [ "$MODE" = dry ]; then row would login "the console login on tty1 from the next boot, the login screen's files removed (sudo)"; return 0; fi
+    login_root off || return 0
+    if [ "$(init_shape)" = systemd ]; then
+        # getty first: tty1 never loses its login
+        if login_rec getty.off; then root_do systemctl enable getty@tty1.service >/dev/null 2>&1 && login_unrecord getty.off; fi
+        if login_rec greetd.on; then root_do systemctl disable greetd.service >/dev/null 2>&1 && login_unrecord greetd.on; fi
+        _pending=0
+    else
+        [ ! -d "$ROOT/$LOGIN_ETC" ] || { printf 'off\n' > "$TMP/boot"; root_put "$TMP/boot" "$ROOT/$LOGIN_ETC/boot"; }
+        _pending=0; if login_rec getty.off || login_rec greetd.on; then _pending=1; fi
+    fi
+    if login_rec seatd.group; then
+        if ! in_group _seatd "$LOGIN_ACCOUNT" || root_do gpasswd -d "$LOGIN_ACCOUNT" _seatd >/dev/null 2>&1; then login_unrecord seatd.group; fi
+    fi
+    root_do rm -f "$ROOT/$LOGIN_SUDOERS"
+    if greetd_live || [ "$_pending" = 1 ]; then
+        row todo login "the login screen runs until the next boot, then tty1 has the console login -- spark-shell off login again after it removes the rest"; acting=0
+        return 0
+    fi
+    if [ -e "$ROOT/$GREETD_CONF.spark-shell-orig" ]; then root_do mv "$ROOT/$GREETD_CONF.spark-shell-orig" "$ROOT/$GREETD_CONF"
+    elif greetd_ours; then root_do rm -f "$ROOT/$GREETD_CONF"; fi
+    _line=$(marked "$ROOT/etc/rc.local" "$LOGIN_MARK")
+    if [ -n "$_line" ]; then
+        marked_text "$ROOT/etc/rc.local" "$LOGIN_MARK" > "$TMP/rc.local"
+        if [ "$(cat "$TMP/rc.local")" = '#!/bin/sh' ]; then root_do rm -f "$ROOT/etc/rc.local"   # the one spark-shell made
+        else root_put "$TMP/rc.local" "$ROOT/etc/rc.local"; fi
+    fi
+    for f in $LOGIN_FILES wallpaper boot; do root_do rm -f "$ROOT/$LOGIN_ETC/$f"; done
+    root_do rm -f "$ROOT/$LOGIN_LIB/spark-dialog" "$ROOT/$LOGIN_LIB/login-boot"
+    for d in "$LOGIN_ETC" etc/spark-shell "$LOGIN_LIB"; do [ ! -d "$ROOT/$d" ] || root_do rmdir "$ROOT/$d" 2>/dev/null || true; done
+    row ok login "the console login is back on tty1 from the next boot, the login screen's files are gone (greetd's package stays)"
 }
 
 render_all() {
@@ -1477,10 +1671,10 @@ console_off() {   # off: every one handed back
 # any other word is refused before a thing is touched.
 noun_ok() {   # noun_ok on|off [WORD...]
     [ $# -gt 1 ] || return 0
-    [ "$*" != "$1 desktop" ] || return 0
+    [ "$*" != "$1 desktop" ] && [ "$*" != "$1 login" ] || return 0
     _v=$1; shift; _w=$*
     case $_w in *[!\ ]*) ;; *) _w="an empty word" ;; esac
-    echo "spark-shell $_v: $_w is not known here (only desktop is)"; exit 1
+    echo "spark-shell $_v: $_w is not known here (only desktop and login are)"; exit 1
 }
 # The warning: on, on desktop and quiet boot on change how this machine
 # behaves, so each says what it changes and asks first. --yes goes
@@ -1508,9 +1702,27 @@ warn_wrap() {   # warn_wrap LABEL WORDS... -- one row of the desktop list, wrapp
         }
         print line }'
 }
-on_warning() {   # on_warning [desktop] -- at the very start of on: what it changes, then the question
+on_warning() {   # on_warning [desktop|login] -- at the very start of on: what it changes, then the question
     noun_ok on "$@"
     asks || return 0
+    if [ "${1:-}" = login ]; then
+        [ "$OS" != Darwin ] || return 0   # refused next, before anything
+        pm_detect
+        ask_terminal
+        printf '%s\n' 'spark-shell on login changes how this machine starts:' ''
+        # shellcheck disable=SC2086
+        [ -z "$PKG_LOGIN$PKG_DESKTOP" ] || warn_wrap packages $PKG_LOGIN $PKG_DESKTOP '(sudo)'
+        warn_wrap login 'tty1 shows the login screen from the next boot (greetd)'
+        warn_wrap '' 'tty2 keeps the console login (Alt+F2)'
+        warn_wrap files "/$LOGIN_ETC, greetd's config.toml (sudo)"
+        if [ "$DISTRO" = void ]; then
+            warn_wrap groups "adds $LOGIN_ACCOUNT to _seatd (sudo)"
+            warn_wrap power "lets $LOGIN_ACCOUNT run reboot and poweroff, nothing else (sudo)"
+        fi
+        printf '\n%s\n%s\n' 'spark-shell off login puts the console login back.' 'Packages stay.'
+        ask_continue
+        return 0
+    fi
     if [ "${1:-}" = desktop ]; then
         [ "$OS" != Darwin ] || return 0   # refused next, before anything
         pm_detect
@@ -1553,11 +1765,20 @@ boot_warning() {   # boot_warning SHAPE -- before quiet boot on: what it changes
     echo 'spark-shell quiet boot off puts it back.'
     ask_continue
 }
-cmd_on() {   # cmd_on [desktop]
+cmd_on() {   # cmd_on [desktop|login]
     on_warning "$@"
     noun_ok on "$@"
     [ "${1:-}" != desktop ] || [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
+    [ "${1:-}" != login ] || [ "$OS" != Darwin ] || refuse_in login "not on macOS, which has its own login screen"
     config_load
+    if [ "${1:-}" = login ]; then
+        # the config first, as on desktop: everything on does with LOGIN=yes follows
+        if [ "$LOGIN" != yes ]; then
+            if [ "$MODE" = dry ]; then row would config "LOGIN=yes ($CONFIG)"; else changes=$((changes + 1)); fi
+        fi
+        [ "$MODE" = dry ] || config_set LOGIN yes
+        LOGIN=yes; export LOGIN
+    fi
     if [ "${1:-}" = desktop ]; then
         # the config first, then everything on does with DESKTOP=sway:
         # the packages, the renders, seatd on Void (desktop_apply). The
@@ -1585,7 +1806,8 @@ cmd_on() {   # cmd_on [desktop]
     else
         missing=''
         pkgs="$PKG_SHELL $PKG_CLI $PKG_CONSOLE"
-        if desktop_wanted; then pkgs="$pkgs $PKG_DESKTOP"; fi
+        if desktop_wanted || login_wanted; then pkgs="$pkgs $PKG_DESKTOP"; fi
+        if login_wanted; then pkgs="$pkgs $PKG_LOGIN"; fi
         # shellcheck disable=SC2086
         for p in $pkgs; do pkg_installed "$p" || missing="$missing $p"; done
         if [ -z "$missing" ]; then ok packages "installed"
@@ -1641,6 +1863,7 @@ cmd_on() {   # cmd_on [desktop]
     theme_files   # the palette first: every render reads theme.env
     render_all
     old_greetd_off   # the login screen before v0.42, handed back to getty
+    if login_wanted; then login_screen_apply; else login_screen_off; fi
     # spark-shell on PATH, so the prompt and tmux can call it
     link_one "$REPO/spark-shell" "$HOME/.local/bin/spark-shell"
     tmux_reload
@@ -1656,11 +1879,20 @@ cmd_on() {   # cmd_on [desktop]
     fi
 }
 
-cmd_off() {   # cmd_off [desktop]
+cmd_off() {   # cmd_off [desktop|login]
     noun_ok off "$@"
     [ "${1:-}" != desktop ] || [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
+    [ "${1:-}" != login ] || [ "$OS" != Darwin ] || refuse_in login "not on macOS, which has its own login screen"
     config_load
+    [ "$OS" = Darwin ] || pm_detect
     if [ "$MODE" = dry ]; then off_would "${1:-}"; return 0; fi
+    if [ "${1:-}" = login ]; then
+        config_set LOGIN no
+        LOGIN=no; export LOGIN
+        login_screen_off
+        echo "packages stay installed -- the package manager removes them if you want"
+        return 0
+    fi
     if [ "${1:-}" = desktop ]; then
         config_set DESKTOP none
         DESKTOP=none; export DESKTOP
@@ -1681,6 +1913,7 @@ cmd_off() {   # cmd_off [desktop]
     done
     hand_back $RENDERED .config/starship.toml .config/yazi/theme.toml $DESKTOP_RENDERED .config/alsa/asoundrc   # alsa: the bar's default card; yazi: a render v0.35 left, its .bak yours
     old_greetd_off
+    login_screen_off
     seat_off
     mcp_off
     pm_detect
@@ -1709,7 +1942,13 @@ cmd_off() {   # cmd_off [desktop]
 # run uses; nothing is touched. The same gates as the real run: an rc
 # link of ours, a render with the marker or a .bak, the old login screen
 # when its config.toml is ours, seatd by spark-shell's records.
-off_would() {   # off_would [desktop]
+off_would() {   # off_would [desktop|login]
+    if [ "${1:-}" = login ]; then
+        [ "$LOGIN" = no ] || row would config "LOGIN=no ($CONFIG)"
+        login_screen_off
+        dry_close
+        return 0
+    fi
     _mo=$(mcp_mine); [ -z "$_mo" ] || row would mcp "take$_mo off spark's MCP list"
     if [ "${1:-}" = desktop ]; then
         [ "$DESKTOP" = none ] || row would config "DESKTOP=none ($CONFIG)"
@@ -1737,6 +1976,7 @@ off_would() {   # off_would [desktop]
         else row would restore "$p -- removed (no ${p##*/}.bak: there was no file before)"; fi
     done
     old_greetd_off
+    [ "${1:-}" = desktop ] || login_screen_off
     seat_off
     if [ "${1:-}" != desktop ]; then pm_detect; console_off; fi
     dry_close
@@ -1804,12 +2044,14 @@ cmd_status() {
         tool_here "$t" && s=yes || s=no
         printf '  tool  %-16s %s\n' "$t" "$s"
     done
+    theme_load || true   # the wall row below names the ground's hex
     if [ "$OS" = Darwin ]; then s="not on macOS, which has its own desktop"
     elif [ "$DESKTOP" = none ]; then s="none (spark-shell on desktop)"
     elif [ -n "$(desktop_tools)" ]; then s="sway: not installed --$(desktop_tools) (spark-shell on desktop)"
     elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then s="sway: settings not written (spark-shell on)"
     else s="sway: ready, foot uses $(fc-match -f '%{family}' "$FONT" 2>/dev/null || printf '%s' "${FONT%%:*}") (log in on tty1 to start it)"; fi
     printf '  desktop %-14s %s\n' "$DESKTOP" "$s"
+    status_login
     n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' ')   # a saved layout opens as tmux windows anywhere
     if [ "$n" -gt 0 ]; then printf '  layouts %-14s %s\n' "$n saved" "$(ls -A "$LAYOUTS_DIR" | paste -sd ',' - | sed 's/,/, /g') (spark-shell layout NAME)"
     else printf '  layouts %-14s %s\n' none 'spark-shell layout "WORDS" makes one'; fi
@@ -1894,6 +2136,15 @@ cmd_check() {
     elif ! mcp_spark >/dev/null; then chk mcp ok "na (spark has no MCP list before 1.90)"
     else _mn=$(mcp_mine | wc -w | tr -d ' '); _mt=$(printf '%s' "$PROVIDE_SECTIONS" | wc -w | tr -d ' ')
         if [ "$_mn" = "$_mt" ]; then chk mcp ok "the $_mt providers are on spark's MCP list"; else chk mcp warn "$_mn of $_mt providers on spark's MCP list" "spark-shell on desktop"; fi
+    fi
+    if [ "$OS" = Darwin ] || [ "$LOGIN" != yes ]; then chk login ok "na (the console login, LOGIN=no)"
+    elif ! greetd_here; then chk login fail "greetd is not installed" "spark-shell on login"
+    else
+        login_render; _f=$(login_files_differ)
+        if [ -n "$_f" ]; then chk login fail "out of date:$_f" "spark-shell on login"
+        elif ! login_switched; then chk login fail "the login screen does not take tty1 at boot" "spark-shell on login"
+        elif [ "$DISTRO" = void ] && ! in_group _seatd "$LOGIN_ACCOUNT"; then chk login fail "$LOGIN_ACCOUNT is not in the _seatd group" "spark-shell on login"
+        else chk login ok "the login screen takes tty1 at boot, tty2 keeps the console login"; fi
     fi
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk apps ok "na (no desktop)"
     else
@@ -4162,6 +4413,7 @@ cmd_theme() {   # theme [NAME|none|list|show]
     look_follow
     if [ "$name" = none ]; then palette_off all; terminal_off
     else palette_boot; terminal_apply; fi
+    login_follow
     console_now
     theme_repaint "$name"
     if [ "$name" = none ]; then verb_close "No palette: the console and the terminal use their own colors."
@@ -5139,6 +5391,7 @@ cmd_desktop() {
             WALLPAPER=$want; export WALLPAPER
             theme_load; EXPR=$(render_expr)
             desktop_look_apply
+            login_follow
             if [ "$want" = none ]; then echo "the palette's background is back -- a new foot window is opaque again"
             elif [ "$want" = default ]; then echo "the ground is back -- the palette's background a shade darker, and it follows the palette"
             elif wall_color; then echo "a running sway shows $want now, and it stays when the palette changes -- a new foot window is translucent over it, as over a picture"
@@ -5196,6 +5449,17 @@ desk_start() {   # desk_start PENDING
     exit "$st"
 }
 
+# The login verb: `login on|off` are spellings of `on login` and `off
+# login` (one path, cmd_on and cmd_off); alone, the login row of status.
+cmd_login() {
+    case ${1:-} in
+        on) shift; cmd_on login "$@" ;;
+        off) shift; cmd_off login "$@" ;;
+        '') config_load; [ "$OS" = Darwin ] || pm_detect; status_login ;;
+        *) refuse_in login "on or off: spark-shell login on" ;;
+    esac
+}
+
 usage() {
     sed -n '2,/^# The one interface/p' "$0" | sed '$d' | sed '$d' | sed 's/^# \{0,1\}//'   # the command list
 }
@@ -5233,6 +5497,7 @@ main() {
         quiet) cmd_quiet "$@" ;;
         sbom) cmd_sbom "$@" ;;
         desktop) cmd_desktop "$@" ;;
+        login) cmd_login "$@" ;;
         layout) cmd_layout "$@" ;;
         apps) REFUSE_AS=apps; cmd_apps_verb ;;
         status) cmd_status ;;

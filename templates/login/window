@@ -1,0 +1,6 @@
+#!/bin/sh
+# rendered by spark-shell from templates/login/window -- spark-shell off login removes it
+# The login screen's window. When it closes (a login, or the window
+# gone), sway ends, and greetd starts the session or the screen again.
+foot -c /@LOGIN_ETC@/foot.ini -a spark-login /@LOGIN_ETC@/run
+swaymsg exit

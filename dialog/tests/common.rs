@@ -23,6 +23,7 @@ pub fn palette(name: &str) -> Palette {
             ("PANEL_BG", "282a38"),
             ("PANEL_HI", "373a4b"),
             ("HEX_ANSI_1", "f7768e"),
+            ("HEX_ANSI_2", "9ece6a"),
         ],
         _ => &[
             ("HEX_FG", "657b83"),
@@ -31,6 +32,7 @@ pub fn palette(name: &str) -> Palette {
             ("PANEL_BG", "f0ebdb"),
             ("PANEL_HI", "e2e0d2"),
             ("HEX_ANSI_1", "dc322f"),
+            ("HEX_ANSI_2", "859900"),
         ],
     };
     Palette::from(|k| t.iter().find(|(a, _)| *a == k).map(|(_, v)| v.to_string()))
