@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.75
+
+PipeWire with the desktop (the owner's word: build it next, one arc,
+with the volume keys and the bar on it, proven on a real machine).
+
+- Added: `spark-shell on desktop` installs the sound with the desktop,
+  PKG_SOUND: PipeWire, WirePlumber, its PulseAudio server, its ALSA
+  files and Bluetooth sound, by each family's names. The login screen
+  alone does not take them. On Arch with pulseaudio installed,
+  pipewire-pulse is left out with a todo that says how to take it:
+  pacman refuses the conflict unasked, and every package with it.
+- Added: where systemd runs, the packages' own user services start
+  PipeWire at every login, and spark-shell adds nothing. On Void
+  nothing would: `spark-shell desktop` starts PipeWire, WirePlumber
+  and pipewire-pulse before sway and stops them when sway ends (none
+  when one already answers, and neither WirePlumber nor pipewire-pulse
+  when a pipewire.conf.d file has PipeWire start them, the Void
+  handbook's way). It runs with no session bus; WirePlumber then leaves
+  out only its device reservation.
+- Added: on Void, `on desktop` links PipeWire's two ALSA files into
+  /etc/alsa/conf.d (Debian's and Arch's packages put them there
+  themselves), so ALSA programs play through PipeWire, and adds you to
+  the audio group, since without logind nothing opens the sound
+  devices to the person at the screen. Each step is recorded, as
+  seatd's are, and `off desktop` undoes only those.
+- Added: check has a sound row: PipeWire answers, with the output and
+  the mic it uses, or it starts with the desktop. A warn each says a
+  missing link or group, an ~/.asoundrc of yours that sends ALSA's
+  default elsewhere, and bluez-alsa running beside PipeWire (only one
+  of them can offer Bluetooth sound).
+- Changed: the bar's own ~/.config/alsa/asoundrc goes once PipeWire
+  is in: PipeWire moves the sound itself. The bar, the volume keys and
+  a pick of output already spoke wpctl; tests now drive that path.
+- Fixed: an ~/.asoundrc that sets no default was taken as one that
+  does, so a pick of output on plain ALSA could be refused naming no
+  file.
+
 ## v0.74
 
 The login screen after its first real boot (the owner's checks at the

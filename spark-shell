@@ -476,7 +476,7 @@ pm_detect() {
         case $w in debian|arch|void) DISTRO=$w; break ;; esac
     done
     [ -z "$DISTRO" ] || load_env "$REPO/distro/$DISTRO.env" env || exit 1
-    : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}" "${PKG_CONSOLE:=}" "${PKG_DESKTOP:=}" "${PKG_LOGIN:=}" "${LOGIN_ACCOUNT:=}"
+    : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}" "${PKG_CONSOLE:=}" "${PKG_DESKTOP:=}" "${PKG_SOUND:=}" "${PKG_LOGIN:=}" "${LOGIN_ACCOUNT:=}"
 }
 tool_here() {   # tool_here NAME -- on PATH or in ~/.local/bin; under apt by Debian's name (fdfind, batcat), after pm_detect
     _n=$1
@@ -613,6 +613,7 @@ desktop_look_apply() {   # the two user renders and a live sway
 desktop_apply() {
     desktop_look_apply
     seat_apply
+    sound_apply
     dialog_install
     mcp_apply
 }
@@ -634,9 +635,9 @@ in_group() {   # in_group GROUP USER -- USER is a member of GROUP in /etc/group
 seatd_on() { [ -e "$ROOT/$SEATD_LINK" ] || [ -L "$ROOT/$SEATD_LINK" ]; }
 seat_ready() { seatd_on && in_group _seatd "$(id -un)"; }
 sway_running() { [ -n "${WAYLAND_DISPLAY:-}" ] || pgrep -x sway >/dev/null 2>&1; }
-seat_root() {   # seat_root VERB -- a root to write with, asked once; else a todo row and false
-    if ! root_can; then row todo desktop "root is needed for seatd -- spark-shell $1 desktop at a terminal (sudo once)"; acting=0; return 1; fi
-    root_sudo_once "seatd for the desktop" || { row todo desktop "sudo refused -- spark-shell $1 desktop at a terminal (sudo once)"; acting=0; return 1; }
+seat_root() {   # seat_root VERB [FOR] -- a root to write with, asked once; else a todo row and false
+    if ! root_can; then row todo desktop "root is needed for ${2:-seatd} -- spark-shell $1 desktop at a terminal (sudo once)"; acting=0; return 1; fi
+    root_sudo_once "${2:-seatd} for the desktop" || { row todo desktop "sudo refused -- spark-shell $1 desktop at a terminal (sudo once)"; acting=0; return 1; }
 }
 seat_apply() {
     seat_needed || return 0
@@ -683,6 +684,109 @@ seat_off() {   # by the records alone: the link spark-shell made, the membership
             row ok desktop "$_me is out of the _seatd group spark-shell added: it takes effect at your next login"
         else row todo desktop "gpasswd could not take $_me out of _seatd -- spark-shell off desktop again"; fi
     fi
+}
+
+# The sound on the desktop: PipeWire, its session manager WirePlumber
+# and its PulseAudio server (PKG_SOUND). Where systemd runs, the
+# packages' own user units start them at every login. Elsewhere (Void)
+# nothing would: spark-shell desktop starts them beside sway and stops
+# them when sway ends (sound_start). ALSA programs play through PipeWire
+# by its two ALSA files in /etc/alsa/conf.d: Debian's and Arch's packages
+# put them there, Void's leaves them in /usr/share, so on desktop links
+# them. Without logind nothing hands the sound devices to the person at
+# the screen, so on desktop adds you to the audio group. Each root step
+# leaves a record, as seatd's do, and off desktop undoes only those.
+# The bar's pick of card on plain ALSA, spark-shell's own asoundrc, goes
+# once PipeWire is here: PipeWire moves the sound itself.
+SOUND_ALSA='50-pipewire.conf 99-pipewire-default.conf'
+SOUND_SHARE=usr/share/alsa/alsa.conf.d
+SOUND_CONF=etc/alsa/conf.d
+sound_links_missing() { for f in $SOUND_ALSA; do [ -f "$ROOT/$SOUND_SHARE/$f" ] && [ ! -e "$ROOT/$SOUND_CONF/$f" ] && [ ! -L "$ROOT/$SOUND_CONF/$f" ] && printf ' %s' "$f"; done; return 0; }   # -> the files PipeWire's package left out of /etc/alsa/conf.d
+sound_group_needed() { [ "$(init_shape)" != systemd ] && grep -q '^audio:' "$ROOT/etc/group" 2>/dev/null; }   # no logind: the audio group opens the sound devices
+sound_apply() {
+    [ "$OS" != Darwin ] || return 0
+    _miss=$(sound_links_missing)
+    if [ -n "$_miss" ] && need sound "ALSA programs play through PipeWire: link$_miss into /$SOUND_CONF (sudo)" && seat_root on "the sound"; then
+        _ok=1; mkdir -p "$STATE_DIR"
+        root_do mkdir -p "$ROOT/$SOUND_CONF" || _ok=0
+        for f in $_miss; do   # the record names each link made, and only those
+            if root_do ln -s "/$SOUND_SHARE/$f" "$ROOT/$SOUND_CONF/$f"; then echo "$f" >> "$STATE_DIR/sound.alsa"; else _ok=0; fi
+        done
+        if [ "$_ok" = 1 ]; then
+            ok sound "ALSA programs play through PipeWire (/$SOUND_CONF)"
+        else row todo sound "the links in /$SOUND_CONF failed -- spark-shell on desktop again"; acting=0; fi
+    fi
+    _me=$(id -un)
+    if sound_group_needed && ! in_group audio "$_me" && need sound "add $_me to the audio group: the sound devices open to you (sudo)" && seat_root on "the sound"; then
+        if root_do usermod -aG audio "$_me"; then
+            mkdir -p "$STATE_DIR"; : > "$STATE_DIR/sound.group"
+            ok sound "$_me is in the audio group now: it takes effect at your next login"
+        else row todo sound "usermod could not add $_me to audio -- spark-shell on desktop again"; acting=0; fi
+    fi
+    if [ -f "$BAR_ASOUNDRC" ] && grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC" && command -v pipewire >/dev/null 2>&1; then
+        changes=$((changes + 1))
+        if [ "$MODE" = dry ]; then row would sound "remove $BAR_ASOUNDRC: PipeWire picks the output now"
+        else rm -f "$BAR_ASOUNDRC"; row ok sound "$BAR_ASOUNDRC removed: PipeWire picks the output now"; fi
+    fi
+}
+sound_off() {   # by the records alone, as seat_off
+    [ -e "$STATE_DIR/sound.alsa" ] || [ -e "$STATE_DIR/sound.group" ] || return 0
+    need sound "PipeWire's ALSA links and your audio membership removed, as spark-shell made them (sudo)" || return 0
+    seat_root off "the sound" || return 0
+    if [ -e "$STATE_DIR/sound.alsa" ]; then
+        _ok=1
+        for f in $(cat "$STATE_DIR/sound.alsa"); do
+            case " $SOUND_ALSA " in *" $f "*) ;; *) continue ;; esac   # a name of ours, never a path read back
+            [ "$(readlink "$ROOT/$SOUND_CONF/$f" 2>/dev/null)" = "/$SOUND_SHARE/$f" ] || continue
+            root_do rm -f "$ROOT/$SOUND_CONF/$f" || _ok=0
+        done
+        if [ "$_ok" = 1 ]; then rm -f "$STATE_DIR/sound.alsa"; row ok sound "ALSA programs no longer play through PipeWire (the links spark-shell made are gone)"
+        else row todo sound "the links in /$SOUND_CONF stay -- spark-shell off desktop again"; fi
+    fi
+    if [ -e "$STATE_DIR/sound.group" ]; then
+        _me=$(id -un)
+        if ! in_group audio "$_me" || root_do gpasswd -d "$_me" audio >/dev/null 2>&1; then
+            rm -f "$STATE_DIR/sound.group"
+            row ok sound "$_me is out of the audio group spark-shell added: it takes effect at your next login"
+        else row todo sound "gpasswd could not take $_me out of audio -- spark-shell off desktop again"; fi
+    fi
+}
+sound_start() {   # PipeWire, WirePlumber and the PulseAudio server for the desktop about to start, where nothing else runs them; their pids in SOUND_PIDS
+    SOUND_PIDS=''
+    [ "$(init_shape)" != systemd ] || return 0   # the packages' user units
+    command -v pipewire >/dev/null 2>&1 && command -v wireplumber >/dev/null 2>&1 || return 0
+    ! wpctl status >/dev/null 2>&1 || return 0   # one answers already: yours
+    pipewire >"$1" 2>&1 </dev/null & SOUND_PIDS=$!
+    for _i in 1 2 3 4 5; do [ ! -S "$XDG_RUNTIME_DIR/pipewire-0" ] || break; sleep 1; done
+    sound_by_pipewire wireplumber || { wireplumber >>"$1" 2>&1 </dev/null & SOUND_PIDS="$SOUND_PIDS $!"; }
+    if command -v pipewire-pulse >/dev/null 2>&1 && ! sound_by_pipewire pipewire-pulse; then pipewire-pulse >>"$1" 2>&1 </dev/null & SOUND_PIDS="$SOUND_PIDS $!"; fi
+}
+sound_by_pipewire() {   # sound_by_pipewire NAME -- PipeWire starts NAME itself: a pipewire.conf.d file (the Void handbook's links) runs it
+    for _d in "$ROOT/etc/pipewire/pipewire.conf.d" "${XDG_CONFIG_HOME:-$HOME/.config}/pipewire/pipewire.conf.d"; do
+        grep -qs "$1" "$_d"/*.conf && return 0
+    done
+    return 1
+}
+# shellcheck disable=SC2086   # the pids, split on purpose
+sound_stop() { [ -z "${SOUND_PIDS:-}" ] || { kill $SOUND_PIDS 2>/dev/null; wait $SOUND_PIDS 2>/dev/null; } || :; }   # wait: gone before the next desktop asks wpctl
+sound_check() {   # the sound rows of check, on a desktop machine
+    if ! command -v pipewire >/dev/null 2>&1; then
+        case $(snd_tool) in
+            '') chk sound warn "no audio system found, so no out or mic block" "spark-shell on desktop" ;;
+            pactl) chk sound warn "PipeWire is not installed: the bar reads PulseAudio" "spark-shell on desktop" ;;
+            *) chk sound warn "PipeWire is not installed: the bar reads plain ALSA" "spark-shell on desktop" ;;
+        esac
+        return 0
+    fi
+    if [ "$(snd_tool)" = wpctl ]; then chk sound ok "PipeWire answers: out $(wp_default Sinks | grep . || echo none), mic $(wp_default Sources | grep . || echo none)"
+    elif [ "$(init_shape)" != systemd ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then chk sound ok "PipeWire starts with the desktop"
+    else chk sound warn "PipeWire does not answer" "leave the desktop and log in again"; fi
+    _miss=$(sound_links_missing)
+    [ -z "$_miss" ] || chk sound warn "ALSA programs skip PipeWire: /$SOUND_CONF lacks$_miss" "spark-shell on desktop"
+    ! sound_group_needed || in_group audio "$(id -un)" || chk sound warn "$(id -un) is not in the audio group, so the sound devices stay closed" "spark-shell on desktop"
+    if _tf=$(al_theirs); then chk sound warn "$(al_theirs_said "$_tf"), so ALSA programs that use it skip PipeWire" "take the default out of it"; fi
+    if pgrep -x bluealsa >/dev/null 2>&1 || pgrep -x bluealsad >/dev/null 2>&1; then chk sound warn "bluez-alsa runs beside PipeWire, and only one of them can offer Bluetooth sound" "turn one of them off"; fi
+    return 0
 }
 
 # The login screen before v0.42: greetd and tuigreet on tty1, enabled by
@@ -1750,12 +1854,13 @@ on_warning() {   # on_warning [desktop|login] -- at the very start of on: what i
     if [ "${1:-}" = desktop ]; then
         printf '\nspark-shell changes how this machine works:\n\n'
         # shellcheck disable=SC2086
-        [ -z "$PKG_DESKTOP" ] || warn_wrap packages $PKG_DESKTOP '(sudo)'
+        [ -z "$PKG_DESKTOP$PKG_SOUND" ] || warn_wrap packages $PKG_DESKTOP $PKG_SOUND '(sudo)'
         warn_wrap login 'logging in on tty1 starts the desktop'
         warn_wrap '' 'Alt+F2 is a plain shell'
         if [ "$DISTRO" = void ]; then
-            warn_wrap groups 'adds you to _seatd (sudo)'
+            warn_wrap groups 'adds you to _seatd and audio (sudo)'
             warn_wrap services 'turns on seatd at boot (sudo)'
+            warn_wrap sound 'PipeWire starts with the desktop, and ALSA programs play through it (sudo)'
         fi
         printf '\n%s\n%s\n' 'spark-shell off desktop puts the login back.' 'Packages stay.'
     fi
@@ -1816,6 +1921,13 @@ cmd_on() {   # cmd_on [desktop|login]
         missing=''
         pkgs="$PKG_SHELL $PKG_CLI $PKG_CONSOLE"
         if desktop_wanted || login_wanted; then pkgs="$pkgs $PKG_DESKTOP"; fi
+        if desktop_wanted; then pkgs="$pkgs $PKG_SOUND"; fi
+        # Arch: pipewire-pulse conflicts with a pulseaudio installed, and
+        # pacman --noconfirm answers no, which would stop every package
+        if [ "$PM" = pacman ] && desktop_wanted && pkg_installed pulseaudio; then
+            pkgs=$(printf '%s\n' $pkgs | grep -vx pipewire-pulse | paste -sd ' ' -)
+            row todo sound "pulseaudio is installed, and pipewire-pulse takes its place -- sudo pacman -S pipewire-pulse (it asks before removing pulseaudio)"
+        fi
         if login_wanted; then pkgs="$pkgs $PKG_LOGIN"; fi
         # shellcheck disable=SC2086
         for p in $pkgs; do pkg_installed "$p" || missing="$missing $p"; done
@@ -1908,6 +2020,7 @@ cmd_off() {   # cmd_off [desktop|login]
         hand_back $DESKTOP_RENDERED .config/alsa/asoundrc
         old_greetd_off
         seat_off
+        sound_off
         mcp_off
         echo "packages stay installed -- the package manager removes them if you want"
         return 0
@@ -1924,6 +2037,7 @@ cmd_off() {   # cmd_off [desktop|login]
     old_greetd_off
     login_screen_off
     seat_off
+    sound_off
     mcp_off
     pm_detect
     console_off   # the palette, the font, the login screen and the boot, as they were
@@ -1987,6 +2101,7 @@ off_would() {   # off_would [desktop|login]
     old_greetd_off
     [ "${1:-}" = desktop ] || login_screen_off
     seat_off
+    sound_off
     if [ "${1:-}" != desktop ]; then pm_detect; console_off; fi
     dry_close
 }
@@ -2173,8 +2288,8 @@ cmd_check() {
     elif ! command -v jq >/dev/null 2>&1; then chk top warn "jq is not installed: the bar takes no clicks" "spark-shell on"
     elif line=$(bar_status --once 2>/dev/null) && printf '%s' "$line" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
         chk top ok "the bar draws $(printf '%s' "$line" | jq -r '[.[] | select(.name != "div" and .name != "logo") | .name] | unique | join(", ")')"
-        [ -n "$(snd_tool)" ] || chk sound warn "no audio system found, so no out or mic block" "install pipewire, or alsa-utils for plain ALSA"
     else chk top fail "spark-shell bar status draws nothing" "spark-shell on"; fi
+    if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then sound_check; fi
     [ "$fails" = 0 ]
 }
 
@@ -2350,7 +2465,7 @@ al_write() {   # al_write N [PLAYDEV] [CAPDEV] -- spark-shell's own file: card N
 }
 al_theirs() {   # -> the file, the user's own ~/.asoundrc or one it includes, that sets the default device (exit 0), else exit 1: a pick of ours would be overridden or would override theirs
     [ -f "$HOME/.asoundrc" ] || return 1
-    { echo "$HOME/.asoundrc"; sed -n 's/^ *<\([~/][^>]*\)>.*$/\1/p' "$HOME/.asoundrc" | sed "s|^~/|$HOME/|"; } | while IFS= read -r f; do if grep -qs '^ *pcm\.!default' "$f"; then printf '%s\n' "$f"; exit 0; fi; done
+    { echo "$HOME/.asoundrc"; sed -n 's/^ *<\([~/][^>]*\)>.*$/\1/p' "$HOME/.asoundrc" | sed "s|^~/|$HOME/|"; } | while IFS= read -r f; do if grep -qs '^ *pcm\.!default' "$f"; then printf '%s\n' "$f"; exit 0; fi; done | grep .   # grep: no such file is exit 1 (a loop that ends finding none says 0)
 }
 al_theirs_said() {   # al_theirs_said FILE -> who picks the sound device, in a few words, the home as ~
     case $1 in "$HOME/.asoundrc") echo "your ~/.asoundrc picks the sound device" ;; *) echo "${1#"$HOME/"} picks the sound device, read by your ~/.asoundrc" | sed 's|^\([^/~]\)|~/\1|' ;; esac
@@ -5452,8 +5567,10 @@ desk_start() {   # desk_start PENDING
     mkdir -p "$log_dir"
     [ -z "${pending:-}" ] || printf '%s\n' "$pending" > "$DESK_PENDING"
     st=0
+    sound_start "$log_dir/sound.log"
     # shellcheck disable=SC2086   # the -u words, split on purpose: sway and all it starts read the file, never a key from this login
     PATH=$HOME/.local/bin:$PATH env $CONFIG_UNSET sway 2>"$log_dir/sway.log" || st=$?
+    sound_stop
     [ "${TERM:-}" != linux ] || printf '\033[?25h'
     exit "$st"
 }

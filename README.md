@@ -104,9 +104,13 @@ It edits boot files, so it asks first. Linux only.
 ## Desktop
 
 Type `spark-shell on desktop`. You get sway (a window manager that
-tiles windows) and foot (a terminal), in your palette. Debian, Arch and
-Void only. On Void it also turns on the seatd service and adds you to
-the `_seatd` group (sudo).
+tiles windows) and foot (a terminal), in your palette, and the sound:
+PipeWire with WirePlumber, for every program and Bluetooth too. Debian,
+Arch and Void only. On Debian and Arch, PipeWire's own user services
+run it. On Void it starts with the desktop and stops when you leave it,
+and `on desktop` also turns on the seatd service, adds you to the
+`_seatd` and `audio` groups, and links PipeWire's two ALSA files into
+`/etc/alsa/conf.d`, so ALSA programs play through it (sudo).
 
 ## Login
 
@@ -243,15 +247,20 @@ device, a warning sign with a red `lan down` or a low battery, a red
 dot after `mic` while a program records.
 
 Wi-Fi is set through the tool this machine has: nmcli, iwctl or
-wpa_cli. Sound comes from the audio system you have: PipeWire (wpctl),
-PulseAudio (pactl), or plain ALSA (amixer). On plain ALSA a change of
+wpa_cli. Sound comes from PipeWire, which `on desktop` installs,
+through wpctl: a pick of output moves the sound at once, a Bluetooth
+headset included. Without PipeWire, the bar reads PulseAudio (pactl)
+or plain ALSA (amixer). On plain ALSA a change of
 output holds for programs started afterwards, and is written to
 `~/.config/alsa/asoundrc`, spark-shell's own file. `spark-shell off`
-removes it. Your `~/.asoundrc` is never touched, and when it sets the
+removes it, and so does `on desktop` once PipeWire is in. Your
+`~/.asoundrc` is never touched, and when it sets the
 default device itself, spark-shell says so and leaves the choice to it.
 A Bluetooth headset that bluez-alsa offers is listed in `out` and `mic`
 beside the cards: it plays on A2DP, listens on its call link (SCO, 8
-kHz), and its level and mute are bluez-alsa's own.
+kHz), and its level and mute are bluez-alsa's own. Only one of
+bluez-alsa and PipeWire can offer Bluetooth sound: `spark-shell check`
+says so when both run.
 
 Type `spark-shell bar off --desktop`. The bar is hidden. `on` brings
 it back. Type `spark-shell bar`. You get the state of this bar and of
@@ -411,8 +420,10 @@ Files it writes: the shell files, `~/.tmux.conf`, `~/.config/btop/`,
 `~/.local/bin/spark-shell`, and for the desktop `~/.config/sway/`,
 `~/.config/foot/` and, after a change of output on plain ALSA,
 `~/.config/alsa/asoundrc`. As root: the console colors at boot (a systemd
-unit or a line in `/etc/rc.local`), the console font, and the login
-notice and boot files for quiet. `off` restores or removes each one.
+unit or a line in `/etc/rc.local`), the console font, the login
+notice and boot files for quiet, and on Void PipeWire's two links in
+`/etc/alsa/conf.d` and your place in the `audio` group. `off` restores
+or removes each one.
 
 What leaves the machine: only what the package manager downloads and,
 for the desktop, the dialog's release file from GitHub, checked against

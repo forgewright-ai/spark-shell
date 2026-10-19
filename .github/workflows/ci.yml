@@ -63,7 +63,7 @@ jobs:
         with:
           persist-credentials: false
       - name: every package name of distro/debian.env exists on Debian (nothing installed)
-        run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p' distro/debian.env) >/dev/null
+        run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' distro/debian.env) >/dev/null
       - name: shellcheck
         run: shellcheck -S warning spark-shell tests/shell_test.sh
       - name: the suite in a throwaway HOME
@@ -79,7 +79,7 @@ jobs:
         with:
           persist-credentials: false
       - name: every package name of distro/arch.env exists on Arch (nothing installed)
-        run: pacman -Sp --needed $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p' distro/arch.env) >/dev/null
+        run: pacman -Sp --needed $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' distro/arch.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
   void:
@@ -95,7 +95,7 @@ jobs:
         with:
           persist-credentials: false
       - name: every package name of distro/void.env exists on Void (nothing installed)
-        run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p' distro/void.env); do xbps-query -R "$p" >/dev/null || { echo "no package $p"; exit 1; }; done
+        run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' distro/void.env); do xbps-query -R "$p" >/dev/null || { echo "no package $p"; exit 1; }; done
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
   macos:

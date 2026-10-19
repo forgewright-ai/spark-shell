@@ -1904,6 +1904,75 @@ void_desktop
 rm -rf "$H/root/etc/sv/seatd"
 out=$(L on desktop --yes </dev/null 2>&1)
 printf '%s\n' "$out" | grep -q '^todo   desktop      seatd is not installed -- spark-shell on desktop (the packages)$' && [ ! -e "$H/root/var/service/seatd" ] && ok "Void: no seatd package, a todo row, no link" || bad "void no seatd" "$out"
+# the sound on Void: PipeWire's two ALSA files linked into /etc/alsa/conf.d
+# (Void's package leaves them in /usr/share) and you in the audio group (no
+# logind), each recorded; off desktop undoes exactly those
+void_sound() {   # void_sound -- a Void root with PipeWire installed, an audio group, the bar's old ALSA file
+    void_desktop
+    printf 'audio:x:12:\n' >> "$H/root/etc/group"
+    mkdir -p "$H/root/usr/share/alsa/alsa.conf.d"; for f in 50-pipewire.conf 99-pipewire-default.conf; do : > "$H/root/usr/share/alsa/alsa.conf.d/$f"; done
+    printf '#!/bin/sh\nexit 0\n' > "$H/lx/pipewire"; chmod +x "$H/lx/pipewire"
+    share=/usr/share/alsa/alsa.conf.d; conf=$H/root/etc/alsa/conf.d
+    mkdir -p "$HOME/.config/alsa"; printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.!card HDMI\ndefaults.ctl.!card HDMI\n' > "$HOME/.config/alsa/asoundrc"
+}
+void_sound
+out=$(L on desktop --dry-run </dev/null)
+printf '%s\n' "$out" | grep -q '^would  sound        ALSA programs play through PipeWire: link 50-pipewire.conf 99-pipewire-default.conf into /etc/alsa/conf.d (sudo)$' \
+    && printf '%s\n' "$out" | grep -q "^would  sound        add $me to the audio group: the sound devices open to you (sudo)\$" \
+    && printf '%s\n' "$out" | grep -q "^would  sound        remove $HOME/.config/alsa/asoundrc: PipeWire picks the output now\$" \
+    && [ ! -e "$conf" ] && [ -f "$HOME/.config/alsa/asoundrc" ] && ! grep -q usermod "$H/log" \
+    && ok "Void: on desktop --dry-run says the ALSA links, the audio group and the bar's old file, touches nothing" || bad "void sound dry" "$out"
+out=$(L on desktop --yes </dev/null 2>&1)
+[ "$(readlink "$conf/50-pipewire.conf")" = "$share/50-pipewire.conf" ] && [ "$(readlink "$conf/99-pipewire-default.conf")" = "$share/99-pipewire-default.conf" ] \
+    && ok "Void: on desktop links PipeWire's two ALSA files into /etc/alsa/conf.d" || bad "void alsa links" "$(ls -l "$conf" 2>&1) $out"
+grep -q "^audio:x:12:$me\$" "$H/root/etc/group" && grep -qx "usermod -aG audio $me" "$H/log" && [ -f "$HOME/.local/state/spark-shell/sound.alsa" ] && [ -f "$HOME/.local/state/spark-shell/sound.group" ] \
+    && ok "Void: on desktop adds you to audio; both steps recorded (sound.alsa, sound.group)" || bad "void audio group" "$(cat "$H/root/etc/group" "$H/log")"
+[ ! -e "$HOME/.config/alsa/asoundrc" ] && printf '%s\n' "$out" | grep -q "^ok     sound        $me is in the audio group now: it takes effect at your next login\$" \
+    && ok "Void: the bar's own ALSA file is gone (PipeWire picks the output), one line says the group takes effect at the next login" || bad "void sound lines" "$out"
+ck=$(L check || true)
+printf '%s\n' "$ck" | grep -q '^ok     sound        PipeWire starts with the desktop$' && ! printf '%s\n' "$ck" | grep -q '^warn   sound' \
+    && ok "Void: check says PipeWire starts with the desktop, and no warn" || bad "void sound check" "$(printf '%s\n' "$ck" | grep sound)"
+: > "$H/log"; out=$(L on desktop --yes </dev/null 2>&1)
+! printf '%s\n' "$out" | grep -q 'sound' && ! grep -q usermod "$H/log" && ok "Void: on desktop again: nothing of the sound left to do, nothing said" || bad "void sound twice" "$out"
+rm -f "$conf/99-pipewire-default.conf"
+awk -F: -v OFS=: '$1 == "audio" { $4 = "" } { print }' "$H/root/etc/group" > "$H/g" && cat "$H/g" > "$H/root/etc/group"
+ck=$(L check || true)
+printf '%s\n' "$ck" | grep -q '^warn   sound        ALSA programs skip PipeWire: /etc/alsa/conf.d lacks 99-pipewire-default.conf -- spark-shell on desktop$' \
+    && printf '%s\n' "$ck" | grep -q "^warn   sound        $me is not in the audio group, so the sound devices stay closed -- spark-shell on desktop\$" \
+    && ok "Void: check warns when a link or the group is gone, the remedy on desktop" || bad "void sound check warns" "$(printf '%s\n' "$ck" | grep sound)"
+L on desktop --yes </dev/null >/dev/null 2>&1
+: > "$H/log"; out=$(L off desktop 2>&1)
+[ ! -e "$conf/50-pipewire.conf" ] && [ ! -e "$conf/99-pipewire-default.conf" ] && grep -qx "gpasswd -d $me audio" "$H/log" && ! grep -q "^audio:x:12:.*$me" "$H/root/etc/group" \
+    && [ ! -e "$HOME/.local/state/spark-shell/sound.alsa" ] && [ ! -e "$HOME/.local/state/spark-shell/sound.group" ] && [ -f "$H/root$share/50-pipewire.conf" ] \
+    && printf '%s\n' "$out" | grep -q '^ok     sound        ALSA programs no longer play through PipeWire (the links spark-shell made are gone)$' \
+    && ok "Void: off desktop removes the links and the membership it made, the records with them; the package's files stay" || bad "void sound off" "$out $(cat "$H/log")"
+# one link yours, the other spark-shell's: the record names its own, and off removes only that one
+void_sound
+mkdir -p "$conf"; ln -s "$share/50-pipewire.conf" "$conf/50-pipewire.conf"
+L on desktop --yes </dev/null >/dev/null 2>&1
+[ "$(cat "$HOME/.local/state/spark-shell/sound.alsa")" = 99-pipewire-default.conf ] && L off desktop >/dev/null 2>&1 && [ -L "$conf/50-pipewire.conf" ] && [ ! -e "$conf/99-pipewire-default.conf" ] \
+    && ok "Void: a link of yours beside one spark-shell made: the record names its own, off removes only that" || bad "void sound half" "$(ls -l "$conf"; cat "$HOME/.local/state/spark-shell/sound.alsa" 2>&1)"
+# links and a membership that were there before: nothing recorded, nothing undone
+void_sound
+mkdir -p "$conf"; for f in 50-pipewire.conf 99-pipewire-default.conf; do ln -s "$share/$f" "$conf/$f"; done
+awk -F: -v OFS=: -v u="$me" '$1 == "audio" { $4 = u } { print }' "$H/root/etc/group" > "$H/g" && cat "$H/g" > "$H/root/etc/group"
+L on desktop --yes </dev/null >/dev/null 2>&1; L off desktop >/dev/null 2>&1
+[ -L "$conf/50-pipewire.conf" ] && [ -L "$conf/99-pipewire-default.conf" ] && grep -q "^audio:x:12:$me\$" "$H/root/etc/group" && ! grep -q 'gpasswd -d [^ ]* audio\|usermod -aG audio' "$H/log" \
+    && ok "Void: links and a membership of yours are not recorded, and off desktop leaves them" || bad "void sound yours" "$(ls -l "$conf"; cat "$H/log")"
+# Arch with pulseaudio: pipewire-pulse left out (pacman --noconfirm would refuse the conflict, and every package with it), one todo says how
+fresh
+console_stubs Linux
+desktop_stubs
+printf 'ID=arch\n' > "$H/os-release"
+printf '#!/bin/sh\n[ "$*" = "-Qq pulseaudio" ]\n' > "$H/lx/pacman"; chmod +x "$H/lx/pacman"
+mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+out=$(L on --dry-run </dev/null 2>&1)
+pk=$(printf '%s\n' "$out" | grep -E '^(would|todo) +packages ')
+printf '%s\n' "$out" | grep -q '^todo   sound        pulseaudio is installed, and pipewire-pulse takes its place -- sudo pacman -S pipewire-pulse (it asks before removing pulseaudio)$' \
+    && printf '%s' "$pk" | grep -q ' pipewire-alsa' && ! printf '%s' "$pk" | grep -q 'pipewire-pulse' \
+    && ok "Arch with pulseaudio: pipewire-pulse is left out of the install, one todo says how to take it" || bad "arch pulseaudio" "$out"
+grep -q '^PKG_SOUND=pipewire wireplumber alsa-pipewire libspa-bluetooth$' "$REPO/distro/void.env" && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa libspa-0.2-bluetooth$' "$REPO/distro/debian.env" \
+    && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa$' "$REPO/distro/arch.env" && ok "distro: the sound's packages, each family's names" || bad "PKG_SOUND" "$(grep -h PKG_SOUND "$REPO"/distro/*.env)"
 grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd among them" || bad "void.env desktop"
 
 # the login screen of v0.41 (greetd on tty1, spark-shell's files in
@@ -1977,6 +2046,40 @@ rc=0; out=$(TEST_TTY=/dev/tty1 env -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR TMPDIR=
 [ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: $rd is not a private directory of yours, and sway needs one (XDG_RUNTIME_DIR)" ] && ok "desktop: a symlink in its place is refused, sway never starts" || bad "runtime dir symlink" "rc=$rc $out"
 rc=0; out=$(TEST_TTY=/dev/tty1 XDG_RUNTIME_DIR=$H/run env -u WAYLAND_DISPLAY PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
 [ "$rc" = 0 ] && grep -qx "XDG_RUNTIME_DIR=$H/run" "$slog" && ok "desktop: an XDG_RUNTIME_DIR a login manager set is kept" || bad "runtime dir kept" "rc=$rc $out $(cat "$slog")"
+# no systemd: PipeWire, WirePlumber and the PulseAudio server start before
+# sway and stop after it; with systemd (its user units) or one already
+# answering, none is started
+py3=$(command -v python3 || :)   # the real one (console_stubs put a fake in $H/lx); a container without it: the stub makes no socket, and the start waits its 5 s
+for t in pipewire wireplumber pipewire-pulse; do
+    { printf '#!/bin/sh\necho $$ > "$HOME/%s.pid"\n' "$t"
+      [ "$t" != pipewire ] || [ -z "$py3" ] || printf '%s -c "import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])" "$XDG_RUNTIME_DIR/pipewire-0"\n' "$py3"
+      printf 'exec sleep 60\n'; } > "$H/lx/$t"
+done
+printf '#!/bin/sh\nsleep 1; for t in pipewire wireplumber pipewire-pulse; do [ -f "$HOME/$t.pid" ] && kill -0 "$(cat "$HOME/$t.pid")" 2>/dev/null && echo "$t runs" >&2; done; exit 0\n' > "$H/.local/bin/sway"
+chmod +x "$H/lx/pipewire" "$H/lx/wireplumber" "$H/lx/pipewire-pulse" "$H/.local/bin/sway"
+mkdir -p "$H/rt"; chmod 700 "$H/rt"
+t0=$(date +%s); rc=0; out=$(TEST_TTY=/dev/tty1 XDG_RUNTIME_DIR=$H/rt env -u WAYLAND_DISPLAY PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$(grep -c ' runs$' "$slog")" = 3 ] && { [ -z "$py3" ] || [ $(($(date +%s) - t0)) -lt 4 ]; } \
+    && ok "desktop, no systemd: PipeWire, WirePlumber and pipewire-pulse run while sway does (WirePlumber once PipeWire's socket is there)" || bad "sound start" "rc=$rc $(($(date +%s) - t0))s $out $(cat "$slog" "$HOME/.local/state/spark-shell/sound.log" 2>&1)"
+alive=''; for t in pipewire wireplumber pipewire-pulse; do ! kill -0 "$(cat "$HOME/$t.pid")" 2>/dev/null || alive="$alive $t"; done
+[ -z "$alive" ] && ok "desktop: all three stop when sway ends, waited for" || bad "sound stop" "still running:$alive"
+for t in pipewire wireplumber pipewire-pulse; do kill "$(cat "$HOME/$t.pid")" 2>/dev/null || :; done
+# the Void handbook's way: pipewire.conf.d files have PipeWire start WirePlumber and its PulseAudio server itself
+rm -f "$HOME"/*.pid "$H/rt/pipewire-0"; mkdir -p "$H/root/etc/pipewire/pipewire.conf.d"
+printf 'context.exec = [ { path = "/usr/bin/wireplumber" args = "" } ]\n' > "$H/root/etc/pipewire/pipewire.conf.d/10-wireplumber.conf"
+printf 'context.exec = [ { path = "/usr/bin/pipewire" args = "-c pipewire-pulse.conf" } ]\n' > "$H/root/etc/pipewire/pipewire.conf.d/20-pipewire-pulse.conf"
+rc=0; out=$(TEST_TTY=/dev/tty1 XDG_RUNTIME_DIR=$H/rt env -u WAYLAND_DISPLAY PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx 'pipewire runs' "$slog" && [ ! -e "$HOME/wireplumber.pid" ] && [ ! -e "$HOME/pipewire-pulse.pid" ] \
+    && ok "desktop: pipewire.conf.d files that start WirePlumber and pipewire-pulse: PipeWire alone, no second of either" || bad "sound by pipewire" "rc=$rc $(cat "$slog")"
+rm -rf "$H/root/etc/pipewire"
+rm -f "$HOME"/*.pid "$H/rt/pipewire-0"; mkdir -p "$H/root/run/systemd/system"
+rc=0; out=$(TEST_TTY=/dev/tty1 XDG_RUNTIME_DIR=$H/rt env -u WAYLAND_DISPLAY PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
+[ "$rc" = 0 ] && ! grep -q ' runs$' "$slog" && [ ! -e "$HOME/pipewire.pid" ] && ok "desktop, systemd: none started (the packages' user units start them)" || bad "sound systemd" "rc=$rc $(cat "$slog")"
+rm -rf "$H/root/run/systemd"
+printf '#!/bin/sh\nexit 0\n' > "$H/lx/wpctl"; chmod +x "$H/lx/wpctl"
+rc=0; out=$(TEST_TTY=/dev/tty1 XDG_RUNTIME_DIR=$H/rt env -u WAYLAND_DISPLAY PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ ! -e "$HOME/pipewire.pid" ] && ok "desktop: a PipeWire that answers already is left as it is, none started" || bad "sound running" "rc=$rc $(cat "$slog")"
+rm -f "$H/lx/wpctl" "$H/lx/pipewire" "$H/lx/wireplumber" "$H/lx/pipewire-pulse"
 
 # macOS: the palette and the font are Terminal.app's profile, through the helper
 fresh
@@ -2047,30 +2150,31 @@ rm -f "$snap_a" "$snap_b"
 # the desktop: the distro's PKG_DESKTOP, the login, Void's two lines
 printf 'ID=arch\n' > "$H/os-release"
 rc=0; out=$(printf 'n\n' | A on desktop 2>&1) || rc=$?
-pk=$(sed -n 's/^PKG_DESKTOP=//p' "$REPO/distro/arch.env")
 [ "$rc" = 1 ] && [ "$out" = "spark-shell replaces your shell files, installs packages
 and changes the console colors.
 spark-shell on desktop --dry-run shows every change.
 
 spark-shell changes how this machine works:
 
-  packages     $pk (sudo)
+  packages     sway swaybg foot foot-terminfo ttf-dejavu curl openssh pipewire
+               wireplumber pipewire-pulse pipewire-alsa (sudo)
   login        logging in on tty1 starts the desktop
                Alt+F2 is a plain shell
 
 spark-shell off desktop puts the login back.
 Packages stay.
 
-Continue? [y/N] spark-shell: nothing was changed." ] && ok "warning: on desktop names the packages, the login and the way back" || bad "warning desktop" "rc=$rc $out"
+Continue? [y/N] spark-shell: nothing was changed." ] && ok "warning: on desktop names the packages (the desktop's, then the sound's), the login and the way back" || bad "warning desktop" "rc=$rc $out"
 [ ! -e "$HOME/.config/spark-shell/config" ] && [ ! -e "$H/sudo.log" ] && ok "warning: a stopped on desktop writes nothing, no sudo" || bad "warning desktop wrote" "$(cat "$HOME/.config/spark-shell/config" 2>&1)"
 printf 'ID=void\n' > "$H/os-release"
 rc=0; out=$(printf 'n\n' | A on desktop 2>&1) || rc=$?
-printf '%s\n' "$out" | grep -qx '  groups       adds you to _seatd (sudo)' && printf '%s\n' "$out" | grep -qx '  services     turns on seatd at boot (sudo)' \
-    && ok "warning: on desktop on Void adds the _seatd group and the seatd service" || bad "warning void" "rc=$rc $out"
+printf '%s\n' "$out" | grep -qx '  groups       adds you to _seatd and audio (sudo)' && printf '%s\n' "$out" | grep -qx '  services     turns on seatd at boot (sudo)' \
+    && printf '%s\n' "$out" | grep -qx '  sound        PipeWire starts with the desktop, and ALSA programs play through' && printf '%s\n' "$out" | grep -qx '               it (sudo)' \
+    && ok "warning: on desktop on Void adds the _seatd and audio groups, the seatd service, and says PipeWire starts with the desktop" || bad "warning void" "rc=$rc $out"
 pk=$(sed -n 's/^PKG_DESKTOP=//p' "$REPO/distro/void.env")
 if [ -n "$pk" ]; then printf '%s\n' "$out" | grep -q "^  packages     ${pk%% *} " && ok "warning: Void's PKG_DESKTOP named" || bad "warning void packages" "$out"
 else printf '%s\n' "$out" | grep -q '^  packages' && bad "warning: a packages row with no PKG_DESKTOP" "$out" || ok "warning: no PKG_DESKTOP, no packages row"; fi
-rc=0; out=$(printf 'n\n' | PKG_DESKTOP="$(printf 'pkg%s ' 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18)" SPARK_SHELL_TEST_TTY=1 PATH=$H/lx:$PATH sh "$SH" on desktop 2>&1) || rc=$?
+rc=0; out=$(printf 'n\n' | PKG_DESKTOP="$(printf 'pkg%s ' 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17)" PKG_SOUND=pkg18 SPARK_SHELL_TEST_TTY=1 PATH=$H/lx:$PATH sh "$SH" on desktop 2>&1) || rc=$?
 [ "$(printf '%s\n' "$out" | awk 'length > 79' | wc -l | tr -d ' ')" = 0 ] && [ "$(printf '%s\n' "$out" | grep -c '^               pkg')" -ge 1 ] && printf '%s\n' "$out" | grep -q 'pkg18 (sudo)$' \
     && ok "warning: a long package list wraps under its column, within 80" || bad "warning wrap" "$out"
 # y and --yes go ahead; --dry-run never asks
@@ -2396,6 +2500,69 @@ else
     ! printf '%s\n' "$rows" | grep -q '^out use ' && sh "$SH" bar panel out --list 2>&1 | grep -q '~/.config/box/box.conf picks the sound device, read by your ~/.asoundrc' \
         && ok "out rows when your own file picks the device: the devices shown with no pick that could only be refused, and one row names the file" || bad "asoundrc theirs rows" "$rows"
     rm -rf "$HOME/.asoundrc" "$HOME/.config/box"
+    # PipeWire: the same bar through wpctl (the stub answers as WirePlumber 0.5 does), the volume keys and a pick of output
+    wplog=$H/.local/state/wpctl.log; rm -f "$wplog"
+    cat > "$H/.local/bin/wpctl" <<'STUB'
+#!/bin/sh
+log=${XDG_STATE_HOME:-$HOME/.local/state}/wpctl.log; mkdir -p "$(dirname "$log")"
+[ ! -e "$HOME/wp-down" ] || { echo 'Could not connect to PipeWire' >&2; exit 1; }
+sink=$(cat "$HOME/wp-sink" 2>/dev/null || echo 50)
+V=$(printf '\342\224\202'); T=$(printf '\342\224\234\342\224\200'); E=$(printf '\342\224\224\342\224\200')   # the tree wpctl draws, built from its bytes
+s50=' '; s51=' '; [ "$sink" = 50 ] && s50='*' || s51='*'
+case "$1" in
+    status) printf '%s\n' "PipeWire 'pipewire-0' [1.6.8, ada@box, cookie:1]" " $E Clients:" '        33. WirePlumber                         [1.6.8, ada@box, pid:900]' '' 'Audio' " $T Devices:" "  $V      46. Jabra SPEAK 410 USB                 [alsa]" "  $V      47. Built-in Audio                      [alsa]" "  $V  " \
+            " $T Sinks:" " $V  $s50   50. Jabra SPEAK 410 USB Analog Stereo   [vol: 0.40]" " $V  $s51   51. Built-in Audio Digital Stereo (HDMI) [vol: 1.00]" " $V  " " $T Sources:" " $V  *   52. Jabra SPEAK 410 USB Mono            [vol: 0.50]" " $V  " " $T Filters:" " $V  " " $E Streams:" '' 'Video' " $T Devices:" " $V  " " $T Sinks:" " $V  " " $E Sources:" ;;
+    get-volume) case $2 in *SINK*) v=0.40; f=$HOME/wp-muted ;; *) v=0.50; f=$HOME/wp-cmuted ;; esac
+        if [ -e "$f" ]; then echo "Volume: $v [MUTED]"; else echo "Volume: $v"; fi ;;
+    set-default) echo "$*" >> "$log"; echo "$2" > "$HOME/wp-sink" ;;
+    set-mute) echo "$*" >> "$log"; f=$HOME/wp-muted; case $2 in *SOURCE*) f=$HOME/wp-cmuted ;; esac
+        case $3 in 1) touch "$f" ;; 0) rm -f "$f" ;; toggle) if [ -e "$f" ]; then rm -f "$f"; else touch "$f"; fi ;; esac ;;
+    *) echo "$*" >> "$log" ;;
+esac
+STUB
+    printf '#!/bin/sh\n[ -e "$HOME/wp-rec" ] && echo %s || echo %s\n' "'[{\"info\":{\"state\":\"running\",\"props\":{\"media.class\":\"Stream/Input/Audio\"}}}]'" "'[]'" > "$H/.local/bin/pw-dump"
+    printf '#!/bin/sh\nexit 0\n' > "$H/.local/bin/pipewire"
+    printf '#!/bin/sh\n[ "$*" = "-x bluealsa" ] && [ -e "$HOME/bluealsa-runs" ]\n' > "$H/.local/bin/pgrep"
+    chmod +x "$H/.local/bin/wpctl" "$H/.local/bin/pw-dump" "$H/.local/bin/pipewire" "$H/.local/bin/pgrep"
+    line=$(sh "$SH" bar status --once)
+    [ "$(t out name)" = "<span foreground='#555555'>out</span> jabra speak" ] && [ "$(t mic name)" = "<span foreground='#555555'>mic</span> jabra speak" ] \
+        && ok "PipeWire: out and mic name WirePlumber's defaults, whole words up to 12 characters" || bad "wp names" "$(t out name) / $(t mic name)"
+    g=$(t out gauge); m=$(t mic gauge); [ "$(count "$g" "$full")" = 4 ] && [ "$(count "$m" "$full")" = 5 ] && ok "PipeWire: the gauges are wpctl's volumes (40, 50)" || bad "wp gauges" "$g / $m"
+    touch "$H/wp-rec"; line=$(sh "$SH" bar status --once)
+    [ "$(t mic name)" = "<span foreground='#aa0000'>mic $(printf '\342\227\217')</span> jabra speak" ] && ok "PipeWire: a running capture stream turns the mic red, with a dot" || bad "wp mic live" "$(t mic name)"
+    rm -f "$H/wp-rec"
+    sh "$SH" bar volume up; sh "$SH" bar volume down; sh "$SH" bar volume mute; sh "$SH" bar volume mic
+    [ "$(cat "$wplog" 2>/dev/null)" = "$(printf '%s\n' 'set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+' 'set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%-' 'set-mute @DEFAULT_AUDIO_SINK@ toggle' 'set-mute @DEFAULT_AUDIO_SOURCE@ toggle')" ] \
+        && ok "PipeWire: the volume keys are wpctl's, capped at 100 (-l 1.0); mute and the mic key toggle" || bad "wp keys" "$(cat "$wplog" 2>&1)"
+    line=$(sh "$SH" bar status --once); g=$(t out gauge)
+    [ "$(count "$g" "'#ff5555'")" = 0 ] && ok "PipeWire: a muted output turns its gauge muted" || bad "wp muted" "$g"
+    rm -f "$wplog" "$H/wp-muted" "$H/wp-cmuted"
+    st=0; out=$(sh "$SH" bar panel out use built-in audio digital stereo '(hdmi)' 2>&1) || st=$?
+    line=$(sh "$SH" bar status --once)
+    [ "$st" -eq 0 ] && [ "$(cat "$wplog")" = 'set-default 51' ] && [ "$(t out name)" = "<span foreground='#555555'>out</span> built-in" ] && [ ! -e "$H/.config/alsa/asoundrc" ] \
+        && ok "PipeWire: out use moves sound at once (wpctl set-default), no ALSA file written" || bad "wp out use" "st=$st $out; $(cat "$wplog" 2>&1); $(t out name)"
+    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     sound        PipeWire answers: out Built-in Audio Digital Stereo (HDMI), mic Jabra SPEAK 410 USB Mono$' \
+        && [ "$(printf '%s\n' "$out" | grep -c '^[a-zA-Z]* *sound ')" = 1 ] \
+        && ok "check: one sound row, PipeWire answers, naming the output and the mic" || bad "check wp" "$(printf '%s\n' "$out" | grep sound)"
+    # what keeps sound from PipeWire, each a warn of its own: bluez-alsa beside it, your own ALSA default
+    touch "$H/bluealsa-runs"; printf 'pcm.!default { type hw card 1 }\n' > "$HOME/.asoundrc"
+    out=$(sh "$SH" check || true)
+    # shellcheck disable=SC2088   # the line as the user reads it, a tilde and all
+    printf '%s\n' "$out" | grep -q '^warn   sound        bluez-alsa runs beside PipeWire, and only one of them can offer Bluetooth sound -- turn one of them off$' \
+        && printf '%s\n' "$out" | grep -q '^warn   sound        your ~/.asoundrc picks the sound device, so ALSA programs that use it skip PipeWire -- take the default out of it$' \
+        && ok "check: bluez-alsa running and an ~/.asoundrc of yours with a default are said, each with its remedy" || bad "check wp warns" "$(printf '%s\n' "$out" | grep sound)"
+    rm -f "$H/bluealsa-runs" "$HOME/.asoundrc" "$H/.local/bin/pgrep"
+    printf '# a file with no default\npcm.mine { type hw card 1 }\n' > "$HOME/.asoundrc"
+    out=$(sh "$SH" check || true)
+    ! printf '%s\n' "$out" | grep -q 'asoundrc' && ok "check: an ~/.asoundrc that sets no default is not said (no empty name)" || bad "asoundrc no default" "$(printf '%s\n' "$out" | grep sound)"
+    rm -f "$HOME/.asoundrc"
+    # PipeWire installed and silent: outside a desktop it starts with the next one (no systemd); inside, a warn
+    touch "$H/wp-down"
+    out=$(env -u WAYLAND_DISPLAY sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     sound        PipeWire starts with the desktop$' && ok "check: PipeWire silent outside a desktop, no systemd: it starts with the desktop, ok" || bad "check wp later" "$(printf '%s\n' "$out" | grep sound)"
+    out=$(WAYLAND_DISPLAY=wayland-1 sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^warn   sound        PipeWire does not answer -- leave the desktop and log in again$' && ok "check: PipeWire silent inside a desktop: a warn, log in again" || bad "check wp silent" "$(printf '%s\n' "$out" | grep sound)"
+    rm -f "$H/wp-down"
+    rm -f "$wplog" "$H/wp-sink"
+    printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/wpctl"; rm -f "$H/.local/bin/pw-dump" "$H/.local/bin/pipewire"; chmod +x "$H/.local/bin/wpctl"
     # the verb: both halves, one of them, the config key, the render, a running sway
     export SWAYSOCK=$H/sway.sock
     st=0; out=$(sh "$SH" bar 2>&1) || st=$?
@@ -2411,8 +2578,9 @@ else
     st=0; out=$(sh "$SH" bar on --desktop 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q '^DESKTOP_BAR=yes$' "$HOME/.config/spark-shell/config" && grep -q '^    mode dock$' "$sway" && ok "bar on --desktop: DESKTOP_BAR=yes, dock mode again" || bad "bar on" "st=$st $out"
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  bar   shown .*at the top of the screen: bat, bt, clock, lan, mic, out, wifi' && ok "status: the bar row names the blocks present" || bad "status bar shown" "$(printf '%s\n' "$st" | grep '^  bar')"
-    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     top          the bar draws bat, bt, clock, lan, mic, out, wifi$' && ! printf '%s\n' "$out" | grep -q '^warn   sound' \
-        && ok "check: the top row names the blocks, no sound warning with an audio system" || bad "check top" "$out"
+    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     top          the bar draws bat, bt, clock, lan, mic, out, wifi$' \
+        && [ "$(printf '%s\n' "$out" | grep '^[a-zA-Z]* *sound ')" = 'warn   sound        PipeWire is not installed: the bar reads plain ALSA -- spark-shell on desktop' ] \
+        && ok "check: the top row names the blocks; on plain ALSA one sound warn, PipeWire missing, the remedy on desktop" || bad "check top" "$out"
     # the panel as text (no terminal): the title line restates what opened it, then ONE list in sections -- the first section's rows, then what every other section can do; each row wears a sign, names its section and carries its action
     DOT=$(printf '\342\227\217'); RING=$(printf '\342\227\213'); TICK=$(printf '\342\234\223'); CROSS=$(printf '\342\234\227'); GO=$(printf '\342\226\270'); SEP=$(printf '\302\267')
     journal=$H/.local/state/spark-shell/panel; rm -f "$journal/undo" "$journal/recent"   # the lists below in their plain order: nothing picked yet
@@ -2689,7 +2857,7 @@ STUB
     rm -rf "$H/fullscreen" "$H/panel.ppid" "$H/ft" "$H/.local/bin/fzf" "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent" "$swlog"
     rm -f "$H/.local/bin/spark"
     rm -f "$H/.local/bin/amixer" "$P/asound/cards"
-    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^warn   sound        no audio system found, so no out or mic block -- install pipewire, or alsa-utils for plain ALSA$' \
+    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^warn   sound        no audio system found, so no out or mic block -- spark-shell on desktop$' \
         && ok "check: no audio system is a warn with the package to install, never a FAIL" || bad "check sound warn" "$out"
     printf 'DESKTOP_BAR=maybe\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" status >/dev/null 2>&1 && bad "DESKTOP_BAR=maybe accepted" || ok "config: DESKTOP_BAR=maybe is refused"
