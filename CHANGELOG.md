@@ -16,6 +16,10 @@ the screen; and his ask for an idle screen saver, the standard kind).
   config` and a foot warning). The screen's session clears tty1, hides
   its cursor and sends what sway, swaybg, swayidle and foot say to
   login.log in the screen account's runtime directory.
+- Fixed: an update while the login screen runs. The screen's programs
+  (its binary, the session, the window, the run file, the boot hook)
+  are put in place by a rename, never written over: Linux refuses a
+  write to a running binary, and sh reads a script as it runs.
 - Added: after five idle minutes the login screen turns the display
   off (swayidle, `output * power off`); a key or a mouse move turns it
   back on. Nobody is logged in there, so nothing is locked. The

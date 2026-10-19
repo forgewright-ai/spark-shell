@@ -823,8 +823,11 @@ login_screen_apply() {   # the login rows of `on` with LOGIN=yes
             row todo login "visudo refused the sudoers file -- nothing written, spark-shell on login again"; acting=0; return 0
         fi
         root_do mkdir -p "$ROOT/$LOGIN_ETC" "$ROOT/$LOGIN_LIB"
-        for f in $LOGIN_FILES; do root_put "$TMP/login/$f" "$ROOT/$LOGIN_ETC/$f" "$(login_mode "$f")"; done
-        root_put "$DIALOG_BIN" "$ROOT/$LOGIN_LIB/spark-dialog" 0755
+        for f in $LOGIN_FILES; do
+            _m=$(login_mode "$f")
+            if [ "$_m" = 0755 ]; then root_swap "$TMP/login/$f" "$ROOT/$LOGIN_ETC/$f" "$_m"; else root_put "$TMP/login/$f" "$ROOT/$LOGIN_ETC/$f" "$_m"; fi
+        done
+        root_swap "$DIALOG_BIN" "$ROOT/$LOGIN_LIB/spark-dialog" 0755
         if wall_there; then root_put "$(wall_path)" "$ROOT/$LOGIN_ETC/wallpaper"
         else root_do rm -f "$ROOT/$LOGIN_ETC/wallpaper"; fi
         if [ -e "$ROOT/$GREETD_CONF" ] && ! greetd_ours && [ ! -e "$ROOT/$GREETD_CONF.spark-shell-orig" ]; then
@@ -833,7 +836,7 @@ login_screen_apply() {   # the login rows of `on` with LOGIN=yes
         root_put "$TMP/login/config.toml" "$ROOT/$GREETD_CONF"
         if [ "$DISTRO" = void ]; then
             root_put "$TMP/login/sudoers" "$ROOT/$LOGIN_SUDOERS" 0440
-            root_put "$TMP/login/login-boot" "$ROOT/$LOGIN_LIB/login-boot" 0755
+            root_swap "$TMP/login/login-boot" "$ROOT/$LOGIN_LIB/login-boot" 0755
         fi
         ok login "the login screen's files are written (/$LOGIN_ETC)"
     else return 0
@@ -1007,6 +1010,12 @@ root_put() {   # root_put SRC DST [MODE] -- a root file written from SRC; a new 
     root_do mkdir -p "$(dirname "$2")"
     root_do cp "$1" "$2"
     [ "$_new" = 0 ] || root_do chmod "${3:-0644}" "$2" 2>/dev/null || true
+}
+root_swap() {   # root_swap SRC DST MODE -- a root program put in place by a rename, never written over: one that runs (the login screen's binary, a script sh is still reading) keeps its old file, and Linux refuses a write to a running binary
+    root_do mkdir -p "$(dirname "$2")"
+    root_do cp "$1" "$2.spark-shell-new"
+    root_do chmod "$3" "$2.spark-shell-new"
+    root_do mv -f "$2.spark-shell-new" "$2"
 }
 root_read() {   # root_read FILE -> its bytes (root when a user cannot read it); false when absent or unreadable
     if [ -r "$1" ]; then cat "$1"; else root_do cat "$1" 2>/dev/null; fi
