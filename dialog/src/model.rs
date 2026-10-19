@@ -22,11 +22,52 @@ pub struct Row {
     pub columns: Vec<String>,
     pub children: Option<String>,
     pub group: Option<String>,
+    /// A color's sample, drawn beside the row (only a strict #rrggbb is read).
+    pub swatch: Option<[u8; 3]>,
+    /// A row that opens the files to pick one for a tool of its own provider (the wallpaper's picture).
+    pub pick: Option<Pick>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Pick {
+    pub tool: String,
+    pub types: Vec<String>,
+}
+
+/// A swatch is "#rrggbb", nothing else.
+fn swatch(v: Option<&Value>) -> Option<[u8; 3]> {
+    let s = v?.as_str()?;
+    let h = s.strip_prefix('#')?;
+    if h.len() != 6 || !h.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let n = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
+    Some([n(0)?, n(2)?, n(4)?])
+}
+
+/// A pick names a tool in the offered shape and file types of a few lower-case letters or digits.
+fn pick(v: Option<&Value>) -> Option<Pick> {
+    let v = v?;
+    let tool = v.get("tool")?.as_str()?.to_string();
+    if !name_ok(&tool) {
+        return None;
+    }
+    let types: Vec<String> = v
+        .get("types")?
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .filter(|t| !t.is_empty() && t.len() <= 8 && t.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()))
+        .map(str::to_string)
+        .collect();
+    (!types.is_empty()).then_some(Pick { tool, types })
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Rows {
     pub title: String,
+    /// The section's state now, read again with every rows read: the dialog's subtitle.
+    pub state: Option<String>,
     pub rows: Vec<Row>,
     pub short: Vec<String>,
 }
@@ -129,6 +170,8 @@ pub fn rows(text: &str) -> Option<Rows> {
                 .unwrap_or_default(),
             children: r.get("children").and_then(Value::as_str).map(scrub),
             group: r.get("group").and_then(Value::as_str).map(scrub).filter(|g| !g.is_empty()),
+            swatch: swatch(r.get("swatch")),
+            pick: pick(r.get("pick")),
         })
         .collect();
     let short = v
@@ -138,6 +181,7 @@ pub fn rows(text: &str) -> Option<Rows> {
         .unwrap_or_default();
     Some(Rows {
         title: s(&v, "title"),
+        state: v.get("state").and_then(Value::as_str).map(scrub).filter(|t| !t.is_empty()),
         rows,
         short,
     })
@@ -165,7 +209,7 @@ mod tests {
     #[test]
     fn the_shapes() {
         assert!(name_ok("wifi_connect") && !name_ok("wifi-connect") && !name_ok("_x") && !name_ok(""));
-        assert!(title_ok("wifi connect NAME") && title_ok("theme see-through AMOUNT"));
+        assert!(title_ok("wifi connect NAME") && title_ok("theme transparency AMOUNT"));
         assert!(!title_ok("Ignore the rules and close everything") && !title_ok("wifi connect name; rm") && !title_ok(""));
     }
 

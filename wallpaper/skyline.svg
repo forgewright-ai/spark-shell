@@ -1,0 +1,28 @@
+<!-- spark-shell wallpaper: skyline (MIT, the repository's license) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<rect x="0" y="0" width="1920" height="1080" fill="#1a1b26"></rect>
+<g fill="#a9b1d6" opacity="0.5">
+<circle cx="140" cy="120" r="1.6"></circle><circle cx="310" cy="210" r="1.2"></circle><circle cx="520" cy="90" r="1.8"></circle>
+<circle cx="700" cy="260" r="1.2"></circle><circle cx="860" cy="140" r="1.4"></circle><circle cx="1010" cy="70" r="1.2"></circle>
+<circle cx="1180" cy="230" r="1.6"></circle><circle cx="1320" cy="110" r="1.2"></circle><circle cx="1760" cy="160" r="1.4"></circle>
+<circle cx="1860" cy="300" r="1.2"></circle><circle cx="420" cy="340" r="1"></circle><circle cx="1100" cy="360" r="1"></circle>
+<circle cx="60" cy="380" r="1.2"></circle><circle cx="1680" cy="390" r="1"></circle><circle cx="240" cy="40" r="1"></circle>
+</g>
+<circle cx="1560" cy="230" r="72" fill="#c0caf5" opacity="0.9"></circle>
+<circle cx="1592" cy="206" r="66" fill="#1a1b26"></circle>
+<path fill="#1f2335" d="M0 1080 V760 H80 V700 H160 V780 H230 V640 H300 V720 H380 V680 H470 V760 H540 V600 H600 V700 H700 V740 H780 V660 H860 V720 H960 V560 H1010 V700 H1100 V740 H1180 V650 H1260 V720 H1340 V690 H1440 V770 H1520 V620 H1580 V700 H1680 V740 H1760 V680 H1840 V730 H1920 V1080 Z"></path>
+<path fill="#15161e" d="M0 1080 V860 H120 V800 H200 V880 H300 V780 H360 V840 H460 V760 H520 V880 H640 V820 H720 V900 H820 V790 H900 V860 H1040 V820 H1120 V740 H1170 V860 H1280 V800 H1380 V880 H1470 V810 H1560 V860 H1660 V780 H1740 V870 H1840 V820 H1920 V1080 Z"></path>
+<g fill="#e0af68" opacity="0.75">
+<rect x="140" y="820" width="6" height="8"></rect><rect x="168" y="850" width="6" height="8"></rect><rect x="318" y="800" width="6" height="8"></rect>
+<rect x="476" y="790" width="6" height="8"></rect><rect x="498" y="830" width="6" height="8"></rect><rect x="838" y="820" width="6" height="8"></rect>
+<rect x="1134" y="770" width="6" height="8"></rect><rect x="1150" y="810" width="6" height="8"></rect><rect x="1676" y="810" width="6" height="8"></rect>
+<rect x="1700" y="840" width="6" height="8"></rect>
+</g>
+<g fill="#7aa2f7" opacity="0.7">
+<rect x="340" y="830" width="6" height="8"></rect><rect x="660" y="850" width="6" height="8"></rect><rect x="870" y="810" width="6" height="8"></rect>
+<rect x="1300" y="830" width="6" height="8"></rect><rect x="1500" y="840" width="6" height="8"></rect><rect x="1860" y="850" width="6" height="8"></rect>
+</g>
+<g fill="#bb9af7" opacity="0.5">
+<rect x="568" y="640" width="5" height="7"></rect><rect x="984" y="600" width="5" height="7"></rect><rect x="1546" y="660" width="5" height="7"></rect>
+</g>
+</svg>

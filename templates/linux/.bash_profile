@@ -15,10 +15,11 @@ if [[ $- == *i* ]] && [ -t 1 ] && command -v spark-shell >/dev/null 2>&1; then s
 
 # The desktop at a login on tty1, when the config says DESKTOP=sway.
 # Leaving the desktop ends this login and the login prompt comes back.
-# Any other console (Alt+F2), a terminal window and ssh stay a plain
-# shell. When the desktop cannot start, its reason stays on the screen
-# and this shell goes on.
+# Any other console (Alt+F2), a terminal window, ssh and the shell
+# session the login screen offers stay a plain shell. When the desktop
+# cannot start, its reason stays on the screen and this shell goes on.
 if [[ $- == *i* ]] && [ -z "${WAYLAND_DISPLAY:-}" ] && [ "$(tty 2>/dev/null)" = /dev/tty1 ] \
+    && [ "${SPARK_SHELL_SESSION:-}" != shell ] \
     && grep -Eqx 'DESKTOP="?sway"?' "${XDG_CONFIG_HOME:-$HOME/.config}/spark-shell/config" 2>/dev/null \
     && command -v spark-shell >/dev/null 2>&1; then
     spark-shell desktop && exit

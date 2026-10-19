@@ -1,5 +1,260 @@
 # Changelog
 
+## v0.74
+
+The login screen after its first real boot (the owner's checks at the
+screen: a click on desktop or shell did nothing, lines printed before
+the screen; and his ask for an idle screen saver, the standard kind).
+
+- Fixed: the mouse on the login screen. A click on desktop or shell
+  picks it, a click on a field or its label moves the focus there, and
+  a click on a key chip or its words does what the key does: F11 and
+  F12 still open the confirm, which still takes a typed yes. The
+  screen and the clicks share one layout, and a test clicks every
+  target on the drawn screen.
+- Fixed: the lines on tty1 before the login screen (swaybg's `Found
+  config` and a foot warning). The screen's session clears tty1, hides
+  its cursor and sends what sway, swaybg, swayidle and foot say to
+  login.log in the screen account's runtime directory.
+- Fixed: an update while the login screen runs. The screen's programs
+  (its binary, the session, the window, the run file, the boot hook)
+  are put in place by a rename, never written over: Linux refuses a
+  write to a running binary, and sh reads a script as it runs.
+- Added: after five idle minutes the login screen turns the display
+  off (swayidle, `output * power off`); a key or a mouse move turns it
+  back on. Nobody is logged in there, so nothing is locked. The
+  desktop's own idle and lock is a decision of its own.
+- Changed: PKG_LOGIN is greetd and swayidle on Debian, Arch and Void.
+
+## v0.73
+
+The login screen, the Login component (the owner's picks from the
+mock-ups: the strip down the left, dots for the password, no account
+listed, no AI before a login, spark's state without its address or
+its model, the distro and its version).
+
+- Added: `spark-shell on login` and `off login` (and `login on|off`),
+  a switch of its own beside the desktop: LOGIN=yes in the config.
+  From the next boot greetd shows the login screen on tty1: sway with
+  one foot window that fills the screen, clear over the wallpaper
+  (never fullscreen, where foot draws its background solid), running
+  `spark-dialog login`. On the strip: the machine's name, its Linux
+  (PRETTY_NAME, and the kernel when the distro has no version, as Void
+  and Arch), the date and the time; the form for a user name, the
+  password (a dot each character), the desktop or a shell; a hint;
+  spark ready or not running; F11 restart and F12 shut down, each after
+  a typed yes.
+- Added: `spark-dialog login`, in the one binary the tree pins. It
+  talks to greetd over its socket (create_session, the password as the
+  answer to PAM's first question, start_session with your login shell).
+  The password is in one buffer, wiped when it is sent, cleared or
+  dropped, and never logged. A wrong try says only `Wrong user name or
+  password.` An account that asks for more than a password is refused
+  in one line.
+- Added: the root files, written when they differ and named in the
+  question first: /etc/spark-shell/login (the session, the window, the
+  palette, sway's and foot's settings, the wallpaper), a copy of the
+  pinned dialog in /usr/local/lib/spark-shell, greetd's config.toml (the
+  package's kept as config.toml.spark-shell-orig). On Void the screen's
+  account joins `_seatd`, and a sudoers file, checked by visudo first,
+  lets it run reboot and poweroff, nothing else.
+- Added: tty1 changes hands only at a boot. systemd enables greetd and
+  disables getty@tty1, starting or stopping neither. On Void a line in
+  /etc/rc.local runs login-boot before runit starts its services. tty2
+  keeps the console login. `off login` undoes exactly what the records
+  in /etc/spark-shell/login say, and while greetd runs the screen's
+  files stay until the next boot.
+- Added: `theme` and the wallpaper reach the login screen too. status
+  and check have a login row. The shell session the screen offers
+  never starts the desktop (SPARK_SHELL_SESSION=shell, read by the
+  rc file).
+- Changed: the help, the README, config.example and CREDITS (greetd)
+  name the login screen.
+- Fixed: status named the ground's color before it had read the
+  palette, so the wall row said `()` and the shell printed an error.
+
+## v0.72
+
+Ten wallpapers ship with spark-shell (issue 10, the owner's word).
+
+- Added: `wallpaper/`, ten wallpapers drawn for the palettes, each its
+  SVG source and a 3840 by 2160 PNG: skyline (tokyonight-night), fjord
+  (nord), forest (everforest-dark), sunset (gruvbox-dark), hills
+  (catppuccin-mocha), dunes (dracula), ripples (rose-pine), contours
+  (selenized-dark), morning (solarized-light) and embers, in spark's
+  ember hues, for any dark palette. Flat shapes in each palette's own
+  colors, the detail at the edges and the bottom, the middle calm
+  behind the windows.
+- Added: `spark-shell desktop wallpaper NAME` takes one by its name;
+  the config keeps the name and the clone's own file is drawn, so it
+  follows the clone. No palette's default changes.
+- Changed: the dialog's wallpaper section lists them in a group of
+  their own, each with the palette it was drawn for and a sample of its
+  main color, then the colors in theirs. A row's first column lines up
+  on its right edge only when it is a number (a size, a count); words
+  line up on their left.
+- Fixed: a section's subtitle follows its state. It was read once when
+  the dialog started, so after a pick the header still said the old
+  wallpaper, level or palette; each rows read now carries the state.
+
+## v0.71
+
+Found by hand at v0.70, and the owner's picks (issue 9).
+
+- Added: the Calendar. The clock section shows the time in large
+  figures and this month, today lit; the left and right arrows show the
+  month before and after. A click on the clock opens it.
+- Added: `wallpaper` is a section of its own, beside theme: default,
+  none and each color with a sample of its color, and `a picture`,
+  which opens your home folder offering pictures (jpg, jpeg, png, webp);
+  Enter on one sets it. The tools are wallpaper_use and
+  wallpaper_picture, and `desktop on` puts the new section on spark's
+  MCP list too.
+- Changed: transparency, the industry's word, in place of see-through:
+  `spark-shell theme transparency more|less` (see-through is still
+  read), the rows "transparency 15%", "more transparency", "less
+  transparency", and the tool theme_transparency.
+- Changed: the sections are grouped by what you do: apps, layout and
+  window; out and mic; bt and wifi; theme, wallpaper and bar; then files
+  and about. The home dialog shows three apps and a more row.
+- Changed: the hint is the keys alone, the arrows as one key, then Esc,
+  which closes, or goes back where there is a view to go back to.
+- Changed: plus, the model and talk are drawn as plain text, for they
+  are controls, not keys; the one Tab focuses is lit, and talk while it
+  listens or plus with a file attached is in the accent.
+- Fixed: a click on the prompt sign at the end of the bar opens the
+  whole dialog at its prompt; it opened an empty clock page.
+- Fixed: the about is a page of its own and shows no exchange, and its
+  tagline is gone.
+- Changed: on plain ALSA, when your own ~/.asoundrc or a file it
+  includes picks the sound device, out and mic list the devices with no
+  pick that could only be refused, and one row names that file; a
+  refusal names it too.
+- Changed: American spelling everywhere, color; tmux keeps its own
+  spelling in its syntax. The status row names the slots as slot 3. The
+  wallpaper colors list gray once (grey is still read).
+- Changed: the text list's section column is nine wide, as wide as
+  wallpaper, the longest section's name.
+
+## v0.70
+
+The desktop's tools on spark's MCP list (issue 8, his word on the card).
+
+- Added: with spark 1.90 or newer, `on desktop` puts each of the 15
+  providers on spark's MCP list through `spark mcp add NAME
+  ~/.spark-shell/spark-shell provide NAME` (the clone's own path), so
+  the prompt line, `spark do` and /do know the desktop's tools. A
+  server of yours already listed under one of those names stays, and a
+  row says so; a line an older clone wrote is replaced. spark-shell
+  never writes spark's file itself.
+- Added: `off desktop` and `off` take spark-shell's own lines back with
+  `spark mcp rm NAME`, and `off --dry-run` names them.
+- Added: a check row, mcp: the 15 providers on the list, or how many
+  with the remedy. With an older spark it is na and nothing is written.
+
+## v0.69
+
+The want path asks spark's planner (issue 7, his word on the card).
+
+- Changed: with spark 1.90 or newer, words that match no row go to
+  `spark steps`: the desktop's tools on its stdin (the sections offered
+  here, the about and undo, never the files', whose path is picked and
+  never said), and as its about the bar's facts and the names each tool
+  takes now (the outputs, devices, networks, windows, layouts and apps,
+  as the rows write them), so "play it on my headset" names the headset
+  as listed. A name not listed whole is refused in one line, never
+  guessed. Each step comes back as a tool call, maps to its section's
+  step and is checked against the list as before. Measured on a Void
+  machine with gemma4-26b-a4b, 22 wants three times each: 58 of 66
+  right where the old path had 39, in the same time (p50 4.4 s). Six of
+  the eight left were refused in one line because the machine was
+  already that way (the mic not muted, new windows already side by
+  side); two wrote less see-through for fully solid.
+- Changed: on that path, words that get no step get the answer or the
+  one line, no step on the panel does that. spark picks `layout new`
+  itself for a task, so the shell no longer turns a stray sentence into
+  a layout (make me a sandwich).
+- Added: the dialog plays a planned undo as its undo row, and a planned
+  about opens its about.
+- With an older spark the path is the one before.
+
+## v0.68
+
+Found by hand at v0.67 (issue 6).
+
+- Changed: the logo in the about is sharp. The favicon is pixel art, and
+  at a 19 px row its blocks fell between pixels, each color was cut to
+  16 levels, and the thin shadow lines were lost. The dialog now draws
+  it as a pixel grid snapped from the favicon: a block 2 by 3 pixels, a
+  shadow line 1 pixel, the prompt sign the same above and below its
+  tip, the exact colors, at a whole multiple of its 18 rows (36 on a
+  HiDPI screen). A row shorter than 18 pixels keeps the 16 px logo.
+- Added: on plain ALSA, a Bluetooth headset that bluez-alsa offers is
+  listed in out and mic beside the cards. A pick plays on its A2DP link,
+  or listens on its call link (SCO), for programs started from then on,
+  in spark-shell's own ALSA file; the bar names it, and its level and
+  mute are bluez-alsa's mixer. A card picked after it takes the playing
+  back and keeps the headset's mic.
+- Fixed: when your own ~/.asoundrc, or a file it includes, sets the
+  default device, a pick in out says so and writes nothing. Before, a
+  card pick wrote a file your default overrode.
+
+## v0.67
+
+Found by hand at v0.66 (issue 5).
+
+- Fixed: the about opened from the home dialog, by its row or by typing
+  about, now shows the logo. It showed only when the dialog started on
+  the about. Its cells are blanked first, so the clock of the home
+  dialog never shows through the logo.
+- Fixed: the arrows in the hint are key chips, as Esc is: a key named on
+  the screen is a chip, everywhere.
+
+## v0.66
+
+Found by hand at v0.65 (issue 4): the about could not be found, and a
+mistyped word opened an app.
+
+- Fixed: a search in the dialog finds the about's own row. v0.64 left
+  the whole about section out of a search, so typing `about` showed
+  nothing; the key sentences still stay out.
+- Added: a section's name typed alone (`about`, `files`, `wifi`) and
+  Enter opens that section. It never goes to the model, and a theme row
+  is never applied by typing `theme`.
+- Added: when the list is longer than the dialog, its last line says how
+  many rows sit below (`8 more`).
+- Fixed: a word or two that gets no step from spark is now the one
+  honest line, no step on the panel does that. Since v0.55 such words
+  were a task and a layout opened for them: `about` opened aerc in a
+  workspace named about. Longer words that name a task still open a
+  layout, as `writing with vi and the prompt shell` does.
+
+## v0.65
+
+The last release of the dialog's arc (issue 1): files, the first new
+provider.
+
+- Added: `spark-shell provide files`, the folders the host hands over as
+  its roots (MCP `roots/list`; the dialog hands over your home) and a
+  rows resource per folder under them: its folders, then its files with
+  the size and the date as columns, a folder's own rows as its children,
+  `..` back up, the count and the size at the end. Three read-only
+  tools: open (the app for the file's kind, through xdg-open), show (a
+  text file's first lines) and attach (a text file for the next words).
+  Every path is held to four named lines before anything reads it: it
+  resolves to itself (no link is followed), it sits under a root (never
+  / itself), no part of it is hidden, and it is a regular file or a
+  folder.
+- Added: the files section in the dialog, a folder view that drills
+  down and walks back with Esc, and its columns lined up.
+- Added: plus in the composer. It opens your home filtered by
+  `DIALOG_ATTACH_TYPES`; Enter on a file attaches it (the chip shows its
+  name), the next words go to spark as a question about it
+  (`spark-shell want --attach`), and plus again lets it go. The dialog
+  checks the file sits under your home before anything reads it.
+- Changed: the dialog declares the `roots` capability now that a
+  provider uses it, as the review asked.
+
 ## v0.64
 
 The second release of the dialog's arc (issue 1): the dialog replaces
@@ -115,7 +370,7 @@ The first of three releases for the dialog that replaces the panel
 - Changed: the default wallpaper is the ground, the palette's
   background a shade darker than the windows, and it follows the
   palette. The forge picture leaves the repository. `default` means the
-  ground; a picture of yours by path, a colour, or `none` work as
+  ground; a picture of yours by path, a color, or `none` work as
   before.
 - Added: spark-shell's own sign at the far right of the bar, the prompt
   sign in the palette's yellow. A click on it opens the panel as
@@ -159,7 +414,7 @@ The first of three releases for the dialog that replaces the panel
   the hint and the prompt.
 - Changed: the bar has no `theme` block. Every click on the bar opens
   the same panel, and the palette is picked there.
-- Changed: a plain colour wallpaper is drawn like a picture, with the
+- Changed: a plain color wallpaper is drawn like a picture, with the
   gaps around the windows and the translucent terminals and bar. Only
   `none` gives full, opaque windows. A running sway gives the gaps to
   the workspaces already open, not only to new ones.
@@ -384,7 +639,7 @@ The first of three releases for the dialog that replaces the panel
 ## v0.46
 
 - New: the bar's panel. A click on a block opens a small window right
-  under it, in the palette's colours: a line that says what the block
+  under it, in the palette's colors: a line that says what the block
   is about, a list where Enter acts, a hint row and a prompt. Super+p
   opens it from the keyboard, Tab walks the pages, Esc or a click
   anywhere else closes it. `wifi` lists the networks around and
@@ -428,8 +683,8 @@ The first of three releases for the dialog that replaces the panel
   `lan` and `wifi` and `bt`, then `out` with the volume gauge and
   `mic`, then `bat`, then the date and time. A block appears only for
   hardware this machine has.
-- The kind word is muted and the name is in the text colour, as in
-  `out jabra`. Colour is for alarms: `mic` is red while any program
+- The kind word is muted and the name is in the text color, as in
+  `out jabra`. Color is for alarms: `mic` is red while any program
   records, and so are `lan down` and a battery under 15.
 - The volume gauge is the one thing you can set. A click sets the level
   where you clicked, the wheel nudges it by 5, a right click mutes. A
@@ -458,14 +713,14 @@ The first of three releases for the dialog that replaces the panel
   shell and vi. Other apps spark picks are only suggested. spark's
   reason for its picks is shown only when the layout opens exactly as
   spark answered.
-- `spark-shell theme NAME` now changes the colours of the terminals you
+- `spark-shell theme NAME` now changes the colors of the terminals you
   have open on Linux, foot windows on the desktop too. Before, they
-  kept the old colours until the next login. Inside tmux the colours
+  kept the old colors until the next login. Inside tmux the colors
   go to the terminal tmux runs in. `theme none` gives each terminal
-  its own colours back. One line says how many terminals changed.
-- New: `spark-shell desktop wallpaper COLOUR` puts a plain colour
+  its own colors back. One line says how many terminals changed.
+- New: `spark-shell desktop wallpaper COLOR` puts a plain color
   behind the windows: `#rrggbb` or a name such as navy or teal. The
-  colour stays the same when you change the palette. It is saved as
+  color stays the same when you change the palette. It is saved as
   `#rrggbb` in the config.
 - `spark-shell desktop wallpaper` now takes a path from where you are,
   or one that starts with `~`, and saves it as the full path.
@@ -630,7 +885,7 @@ more, and the desktop grown into the seat it is for.
   machine" names the one model call (`spark edit`, on this machine)
   and nothing else.
 - `Super+s` opens spark's own prompt, `spark chat`, in a small floating
-  window on the workspace you are on, in the palette's colour; Ctrl-D
+  window on the workspace you are on, in the palette's color; Ctrl-D
   ends the conversation and the window goes with it. Without spark the
   window says so and Enter closes it. The stacking layout moves to
   `Super+Shift+s`.
@@ -878,7 +1133,7 @@ more, and the desktop grown into the seat it is for.
   windows. `WALLPAPER` in the config; sway `output * bg "PATH" fill`
   with gaps 8/12, foot `alpha=0.9` (opaque and edge to edge with
   `none`, as before); a live sway reloads; the verb bare names the
-  current one; a missing file falls back to the palette's colour with a
+  current one; a missing file falls back to the palette's color with a
   `todo` row, and a path is refused unless absolute and readable. A
   `wall` status row.
 
@@ -903,7 +1158,7 @@ more, and the desktop grown into the seat it is for.
   `distro/*.env`: greetd + greetd-tuigreet on Arch, greetd + tuigreet on
   Debian 13; names verified 2026-09-20; none on Ubuntu LTS). A small box
   on the themed console -- the machine's short name, Login, Password,
-  the clock -- drawn in the palette's slots as ratatui's colour words
+  the clock -- drawn in the palette's slots as ratatui's color words
   (`tui_name`, the placeholders `@ACCENT_TUI@ @MUTED_TUI@ @BG_TUI@
   @FG_TUI@`; BG and FG by their nearest slot, `default` = black and
   gray). Enter is the desktop (sway), F2 the console session (a login
@@ -935,7 +1190,7 @@ more, and the desktop grown into the seat it is for.
 
 - The plain look is for the look, not for content. tmux is told foot can
   take RGB (`terminal-features ",foot*:RGB"`), so a picture or text art
-  drawn in a pane keeps its colours under the desktop instead of being
+  drawn in a pane keeps its colors under the desktop instead of being
   approximated to 256. Every rendered file still names slots only; on
   the console nothing changes, there is no RGB to take.
 
@@ -952,7 +1207,7 @@ more, and the desktop grown into the seat it is for.
   is the console again (sway's `exec` runs `foot; swaymsg exit`). An
   empty sway was a black screen with nothing to type into; Super+Shift+e
   still works, Super+Return still opens more windows.
-- foot.ini names ONE colour section, for the foot installed: `[colors]`
+- foot.ini names ONE color section, for the foot installed: `[colors]`
   before foot 1.26 (Debian 13 has 1.21), `[colors-dark]` from 1.26 on
   (Arch has 1.28) -- v0.6 rendered both, and foot 1.28 shows an
   "invalid section name: colors" error in the window for the one it
@@ -963,7 +1218,7 @@ more, and the desktop grown into the seat it is for.
 
 - The starship prompt is starship's again: the `spark MODEL` /
   `spark down` segment of v0.5 is gone from both styles (too much on
-  the prompt line). The three colour exports stay; spark's prompt cache
+  the prompt line). The three color exports stay; spark's prompt cache
   is still written by spark, read by nothing here.
 
 ## v0.6
@@ -984,14 +1239,14 @@ more, and the desktop grown into the seat it is for.
   `DESKTOP=none` and on macOS). Default `none`: nothing changes for a
   box that has not asked.
 - The HEX class. foot is the desktop's twin of the console palette: the
-  one surface that gives the sixteen slots their colours, so it, and
+  one surface that gives the sixteen slots their colors, so it, and
   sway's borders beside it, take the palette's own rrggbb
   (`HEX_BG`, `HEX_FG`, `HEX_ACCENT`, `HEX_MUTED`, `HEX_ANSI_0..15`,
-  filled at the end of `theme_load`: a `#rrggbb` stripped, a colour
+  filled at the end of `theme_load`: a `#rrggbb` stripped, a color
   word the VGA sixteen that `spark theme none` programs). The templates
   carry `@HEX_*@` placeholders and the hex lands at render time, so the
   gate's rule stays: no hex in a template, every other render still
-  names slots. foot's colours sit in `[colors]` (foot 1.21, Debian 13)
+  names slots. foot's colors sit in `[colors]` (foot 1.21, Debian 13)
   and `[colors-dark]` (foot 1.26 and newer; Arch ships 1.28, which
   dropped `[colors]`): each foot reads the section it knows and logs
   the other to stderr once, nothing in the window.
@@ -1008,7 +1263,7 @@ more, and the desktop grown into the seat it is for.
 
 ## v0.5
 
-- The prompt's colour. `on` and `apply` render
+- The prompt's color. `on` and `apply` render
   `~/.config/spark-shell/sgr.sh`, three exports from the palette slots
   (`SPARK_ACCENT_SGR='1;<code>'`, `SPARK_MUTED_SGR='<code>'`,
   `SPARK_WARN_SGR='1;31'`; a slot below 8 is 30+n, above is 82+n, so
@@ -1061,11 +1316,11 @@ more, and the desktop grown into the seat it is for.
   `~/.local/share/fonts/JetBrainsMonoNerdFont` is not touched -- nothing
   spark-shell did not render is ever removed; `rm -r` it and `fc-cache
   -f` if you want it gone.
-- One plain look: every render draws with ASCII and names colours by
+- One plain look: every render draws with ASCII and names colors by
   palette slot, never by hex -- tmux without the truecolor override and
   without the console hook (`colour0`..`colour15` need none), starship
-  with ASCII git marks and its colour words, btop in `force_tty` with
-  tty graphs, micro's colorscheme in its sixteen colour words, bat on
+  with ASCII git marks and its color words, btop in `force_tty` with
+  tty graphs, micro's colorscheme in its sixteen color words, bat on
   its `ansi` theme with numbers only, fzf with `--no-unicode
   --color=16`. The accent and the muted tone become the nearest of the
   palette's sixteen at render time (`spark-shell status` names the

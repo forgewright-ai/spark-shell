@@ -20,6 +20,11 @@ pub const ASK_PER_MINUTE: usize = 10;
 /// One redraw of a provider's rows per this long, however often it says they changed.
 pub const READ_GAP: Duration = Duration::from_millis(250);
 
+/// HOME, the one root the dialog hands the files provider; an attachment must sit under it.
+pub fn home() -> Option<String> {
+    std::env::var("HOME").ok().filter(|h| h.starts_with('/') && h.len() > 1)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Sign {
     You,
@@ -36,10 +41,23 @@ pub struct Line {
     pub undo: bool,
 }
 
+/// A pick in progress: the view to go back to and how deep the stack was,
+/// the provider and tool the file goes to, and the types offered.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Picking {
+    pub back: View,
+    pub depth: usize,
+    pub prov: usize,
+    pub tool: String,
+    pub types: Vec<String>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum View {
     Home,
     Section(usize),
+    /// A folder (or any rows resource) under a provider: its uri.
+    Folder(usize, String),
     About,
     Models,
 }
@@ -179,6 +197,8 @@ pub enum Item {
     Blank,
     Undo,
     Row(usize, usize),
+    /// A row of the folder shown now.
+    Folder(usize),
     Model(usize),
 }
 
@@ -187,7 +207,20 @@ pub struct App {
     pub providers: Vec<Provider>,
     pub servers: Vec<Server>,
     pub view: View,
-    pub came_from: Option<View>,
+    /// The views behind this one: Esc goes back through them.
+    pub came_from: Vec<View>,
+    /// The folder shown now: its provider, its uri, its rows once read.
+    pub folder: Option<(usize, String, Rows)>,
+    /// Plus is picking a file: the view to go back to and how deep the stack was.
+    pub attaching: Option<(View, usize)>,
+    /// The file the next want carries (`spark-shell want --attach`).
+    pub attachment: Option<String>,
+    /// A row's pick is choosing a file for a tool of its own provider (the wallpaper's picture).
+    pub picking: Option<Picking>,
+    /// Today, (year, month, day), the machine's own clock: the calendar's today.
+    pub today: Option<(i32, u32, u32)>,
+    /// The calendar's month, as months from this one.
+    pub month_offset: i32,
     pub mode: Mode,
     pub input: String,
     pub sel: usize,
@@ -220,13 +253,19 @@ impl App {
             Some(h) => providers.iter().position(|p| p.label == h).map(View::Section).unwrap_or(View::Home),
             None => View::Home,
         };
-        let came_from = (view == View::About).then_some(View::Home); // opened on the about (the first desktop start): Esc gives the list back
+        let came_from: Vec<View> = if view == View::About { vec![View::Home] } else { vec![] }; // opened on the about (the first desktop start): Esc gives the list back
         App {
             cfg,
             providers,
             servers: vec![],
             view,
             came_from,
+            folder: None,
+            attaching: None,
+            attachment: None,
+            picking: None,
+            today: None,
+            month_offset: 0,
             mode: Mode::Normal,
             input: String::new(),
             sel: 0,
@@ -373,6 +412,12 @@ impl App {
                 }
             }
             "elicitation/create" => self.elicit(idx, id, p),
+            "roots/list" => {
+                let roots: Vec<Value> = home().map(|h| json!({"uri": format!("file://{}", h), "name": "home"})).into_iter().collect();
+                if let Some(s) = self.server(idx) {
+                    s.answer(&id, json!({"roots": roots}));
+                }
+            }
             _ => {
                 if let Some(s) = self.server(idx) {
                     s.refuse(&id, -32601, "the dialog does not answer that");
@@ -467,8 +512,29 @@ impl App {
                     return self.lose(idx, "its rows are over 256 kB");
                 }
                 if let Some(rows) = model::rows(text) {
+                    if let Some(st) = &rows.state {
+                        self.providers[idx].title = st.clone(); // the subtitle follows the section's state, step by step
+                    }
                     self.providers[idx].rows = rows;
                     self.providers[idx].ready = true;
+                }
+            }
+            Kind::Folder => {
+                let text = result
+                    .as_ref()
+                    .and_then(|r| r.pointer("/contents/0/text"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if text.len() > mcp::RESOURCE_MAX {
+                    return self.say(Sign::Refused, "that folder holds too much to show");
+                }
+                if let View::Folder(p, uri) = self.view.clone() {
+                    if p == idx {
+                        match model::rows(text) {
+                            Some(rows) => self.folder = Some((p, uri, rows)),
+                            None => self.say(Sign::Refused, &error.unwrap_or_else(|| "that folder could not be read".into())),
+                        }
+                    }
                 }
             }
             Kind::Call(_) => self.called(idx, n, result, error),
@@ -529,6 +595,35 @@ impl App {
                 }
             }
             View::About => {}
+            View::Folder(..) => {
+                let Some((p, _, rows)) = &self.folder else { return out };
+                for (i, r) in rows.rows.iter().enumerate() {
+                    if !self.input.is_empty() && !self.matches(*p, r) {
+                        continue;
+                    }
+                    // attaching or picking, the files offered are of the types asked; the summary goes
+                    let types = match (&self.picking, &self.attaching) {
+                        (Some(pk), _) => Some(&pk.types),
+                        (None, Some(_)) => Some(&self.cfg.attach),
+                        _ => None,
+                    };
+                    if let Some(t) = types {
+                        if r.children.is_none() && r.tool.is_some() {
+                            let ext = r.text.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+                            if !t.contains(&ext) {
+                                continue;
+                            }
+                        }
+                        if r.tool.is_none() && r.children.is_none() {
+                            continue;
+                        }
+                    }
+                    if i + 1 == rows.rows.len() && i > 0 && r.tool.is_none() && r.children.is_none() {
+                        out.push(Item::Blank); // the summary at the end stands apart
+                    }
+                    out.push(Item::Folder(i));
+                }
+            }
             View::Section(p) => {
                 let mut group: Option<String> = None;
                 for (i, r) in self.providers[*p].rows.rows.iter().enumerate() {
@@ -578,9 +673,6 @@ impl App {
                     }
                 }
                 for (p, prov) in self.providers.iter().enumerate() {
-                    if prov.label == "about" && searching {
-                        continue;
-                    }
                     let rows: Vec<usize> = prov
                         .rows
                         .rows
@@ -589,7 +681,8 @@ impl App {
                         .filter(|(i, r)| {
                             Self::pickable(r)
                                 && if searching {
-                                    self.matches(p, r)
+                                    // the about's own row is found; its key sentences stay out of a search
+                                    self.matches(p, r) && (Some(p) != self.about_idx || r.tool.as_ref().is_some_and(|t| t.name == "about_open"))
                                 } else {
                                     prov.rows.short.contains(&r.id) && !shown.contains(&(p, *i))
                                 }
@@ -617,6 +710,12 @@ impl App {
             .into_iter()
             .filter(|i| match i {
                 Item::Row(p, r) => Self::pickable(&self.providers[*p].rows.rows[*r]),
+                Item::Folder(i) => self
+                    .folder
+                    .as_ref()
+                    .and_then(|(_, _, rows)| rows.rows.get(*i))
+                    .map(Self::pickable)
+                    .unwrap_or(false),
                 Item::Undo | Item::Model(_) => true,
                 _ => false,
             })
@@ -684,9 +783,20 @@ impl App {
                 } else if !self.input.is_empty() {
                     self.input.clear();
                     self.sel = 0;
-                } else if let Some(v) = self.came_from.take() {
+                } else if let Some(v) = self.came_from.pop() {
                     self.view = v;
                     self.sel = 0;
+                    if self.attaching.as_ref().map(|(_, d)| self.came_from.len() < *d + 1).unwrap_or(false) {
+                        self.attaching = None;
+                    }
+                    if self.picking.as_ref().map(|pk| self.came_from.len() < pk.depth + 1).unwrap_or(false) {
+                        self.picking = None;
+                    }
+                    if !matches!(self.view, View::Folder(..)) {
+                        self.folder = None;
+                    } else if let View::Folder(p, uri) = self.view.clone() {
+                        self.read_folder(p, &uri);
+                    }
                 } else {
                     self.quit = Some(0);
                 }
@@ -757,6 +867,17 @@ impl App {
         if self.view == View::About && typed.trim().is_empty() {
             return;
         }
+        // a section's own name typed alone opens that section, never the model ("about" once opened aerc)
+        if matches!(self.view, View::Home | View::Section(_)) && self.sel == 0 {
+            let word = typed.trim().to_lowercase();
+            let word = if word == "calendar" { "clock".to_string() } else { word }; // the clock section is the Calendar
+            if let Some(q) = self.providers.iter().position(|x| x.label == word && x.ready && x.dead.is_none()) {
+                if self.view != View::Section(q) {
+                    self.open_children(q, &format!("spark-shell://{}/rows", word));
+                }
+                return;
+            }
+        }
         self.input = typed.clone(); // the list the person saw, filtered by what they typed
         let picks = self.picks();
         self.input.clear();
@@ -778,26 +899,32 @@ impl App {
                 self.say(Sign::Step, &format!("model {}", name));
                 self.thinking = true;
                 self.jobs.push(Job::Run(Helper::ModelSet, vec![self.cfg.spark.clone(), "model".into(), name]));
-                self.view = self.came_from.take().unwrap_or(View::Home);
+                self.view = self.came_from.pop().unwrap_or(View::Home);
                 self.sel = 0;
             }
             Item::Row(p, r) => {
                 let row = self.providers[p].rows.rows[r].clone();
-                if let Some(c) = row.children {
-                    let label = c.trim_start_matches("spark-shell://").trim_end_matches("/rows").to_string();
-                    if let Some(q) = self.providers.iter().position(|x| x.label == label) {
-                        if q == self.about_idx.unwrap_or(usize::MAX) {
-                            self.came_from = Some(self.view.clone());
-                            self.view = View::About;
-                        } else {
-                            self.came_from = Some(self.view.clone());
-                            self.view = View::Section(q);
-                        }
-                        self.sel = 0;
-                    }
+                if let Some(pk) = &row.pick {
+                    // a pick opens the files at the home folder, offering the types it takes
+                    let Some(f) = self.files() else {
+                        return self.say(Sign::Refused, "no files to pick from");
+                    };
+                    let Some(root) = self.providers[f].rows.rows.iter().find_map(|r| r.children.clone()) else {
+                        return self.say(Sign::Refused, "no folder to pick from");
+                    };
+                    self.picking = Some(Picking {
+                        back: self.view.clone(),
+                        depth: self.came_from.len(),
+                        prov: p,
+                        tool: pk.tool.clone(),
+                        types: pk.types.clone(),
+                    });
+                    self.open_children(f, &root);
+                } else if let Some(c) = row.children {
+                    self.open_children(p, &c);
                 } else if let Some(call) = row.tool {
                     if call.name == "about_open" {
-                        self.came_from = Some(self.view.clone());
+                        self.came_from.push(self.view.clone());
                         self.view = View::About;
                         self.sel = 0;
                         return;
@@ -811,16 +938,107 @@ impl App {
                     });
                 }
             }
+            Item::Folder(i) => {
+                let Some((p, _, rows)) = self.folder.clone() else { return };
+                let Some(row) = rows.rows.get(i).cloned() else { return };
+                if let Some(c) = row.children {
+                    self.open_children(p, &c);
+                    return;
+                }
+                if let Some(pk) = self.picking.clone() {
+                    // the file picked goes to the tool the pick names, at its own provider; the shell checks the path
+                    let Some(path) = row.tool.as_ref().and_then(|t| t.arguments.get("path")).and_then(Value::as_str) else {
+                        return;
+                    };
+                    let mut arguments = serde_json::Map::new();
+                    arguments.insert("path".into(), Value::String(path.to_string()));
+                    self.picking = None;
+                    self.came_from.truncate(pk.depth);
+                    self.view = pk.back;
+                    self.folder = None;
+                    self.sel = 0;
+                    let line = format!("{} {}", self.providers[pk.prov].label, row.text);
+                    self.run(Step {
+                        prov: pk.prov,
+                        call: Call {
+                            name: pk.tool,
+                            arguments,
+                            ask: vec![],
+                        },
+                        who: Who::Person,
+                        line,
+                    });
+                    return;
+                }
+                let call = if self.attaching.is_some() {
+                    row.more.iter().find(|m| m.name.ends_with("_attach")).cloned()
+                } else {
+                    row.tool.clone()
+                };
+                if let Some(call) = call {
+                    let line = format!("{} {}", self.providers[p].label, row.text);
+                    self.run(Step {
+                        prov: p,
+                        call,
+                        who: Who::Person,
+                        line,
+                    });
+                }
+            }
             _ => {}
         }
+    }
+
+    /// A row's children: a provider's own rows (its section), or one of its folders.
+    fn open_children(&mut self, from: usize, uri: &str) {
+        let rest = uri.strip_prefix("spark-shell://").unwrap_or("");
+        let (label, tail) = rest.split_once('/').unwrap_or((rest, ""));
+        let Some(q) = self.providers.iter().position(|x| x.label == label) else {
+            return;
+        };
+        let _ = from;
+        self.came_from.push(self.view.clone());
+        self.sel = 0;
+        if tail == "rows" {
+            self.view = if Some(q) == self.about_idx { View::About } else { View::Section(q) };
+            self.month_offset = 0; // the calendar opens on this month
+        } else if tail.starts_with("rows/") {
+            self.view = View::Folder(q, uri.to_string());
+            self.read_folder(q, uri);
+        }
+    }
+
+    fn read_folder(&mut self, p: usize, uri: &str) {
+        self.folder = None;
+        if let Some(s) = self.server(p) {
+            s.request("resources/read", json!({"uri": uri}), Kind::Folder, mcp::T_READ);
+        }
+    }
+
+    /// The files provider, when one is running and handed a root.
+    fn files(&self) -> Option<usize> {
+        self.providers.iter().position(|p| p.label == "files" && p.dead.is_none())
     }
 
     /// The chips: 0 plus, 1 the model, 2 talk.
     pub fn chip(&mut self, c: usize) {
         self.chip_focus = None;
         match c {
+            0 if self.cfg.plus => {
+                if let Some(a) = self.attachment.take() {
+                    let name = a.rsplit('/').next().unwrap_or("").to_string();
+                    self.say(Sign::Done, &format!("{} no longer attached", name));
+                    return;
+                }
+                let Some(f) = self.files() else { return };
+                let Some(root) = self.providers[f].rows.rows.iter().find_map(|r| r.children.clone()) else {
+                    return self.say(Sign::Refused, "no folder to attach from");
+                };
+                self.attaching = Some((self.view.clone(), self.came_from.len()));
+                self.open_children(f, &root);
+            }
             1 if self.cfg.model => {
-                self.came_from = Some(self.view.clone());
+                self.came_from.push(self.view.clone());
                 self.view = View::Models;
                 self.sel = self.models.iter().position(|(_, s)| s == "serving").unwrap_or(0);
             }
@@ -841,7 +1059,7 @@ impl App {
 
     pub fn chips(&self) -> Vec<usize> {
         let mut v = vec![];
-        if self.cfg.plus {
+        if self.cfg.plus && self.files().is_some() {
             v.push(0);
         }
         if self.cfg.model && self.model_name.is_some() {
@@ -872,10 +1090,14 @@ impl App {
             return self.say(Sign::Refused, "no spark-shell to read the words");
         }
         self.thinking = true;
-        self.jobs.push(Job::Run(
-            Helper::Want,
-            vec![self.cfg.spark_shell.clone(), "want".into(), "--json".into(), "--".into(), words.to_string()],
-        ));
+        let mut argv = vec![self.cfg.spark_shell.clone(), "want".into(), "--json".into()];
+        if let Some(a) = self.attachment.take() {
+            argv.push("--attach".into());
+            argv.push(a);
+        }
+        argv.push("--".into());
+        argv.push(words.to_string());
+        self.jobs.push(Job::Run(Helper::Want, argv));
     }
 
     /// The plan from `spark-shell want --json`: each step gated here too, then run in order.
@@ -898,6 +1120,24 @@ impl App {
             let Some(name) = s.get("name").and_then(Value::as_str) else { continue };
             let arguments = s.get("arguments").and_then(Value::as_object).cloned().unwrap_or_default();
             let line = scrub(s.get("line").and_then(Value::as_str).unwrap_or(name));
+            // two steps are the dialog's own: undo is its undo row, about opens its about
+            if name == "undo_all" {
+                match self.undo.take() {
+                    Some(u) => self.queue.push_back(u),
+                    None => self.say(Sign::Refused, "nothing to undo"),
+                }
+                continue;
+            }
+            if name == "about_open" {
+                if self.about_idx.is_some() {
+                    self.came_from.push(self.view.clone());
+                    self.view = View::About;
+                    self.sel = 0;
+                } else {
+                    self.say(Sign::Refused, &format!("{}: not a step here now", line));
+                }
+                continue;
+            }
             let call = Call {
                 name: name.to_string(),
                 arguments,
@@ -1007,6 +1247,23 @@ impl App {
                 self.say(Sign::Refused, text);
             } else {
                 let sc = r.get("structuredContent").cloned().unwrap_or(Value::Null);
+                if let Some(path) = sc.get("attach").and_then(Value::as_str) {
+                    let under = home().map(|h| path.starts_with(&format!("{}/", h))).unwrap_or(false);
+                    if under && !path.split('/').any(|c| c == ".." || c.starts_with('.')) {
+                        self.attachment = Some(path.to_string());
+                        if let Some((v, depth)) = self.attaching.take() {
+                            self.came_from.truncate(depth);
+                            self.view = v;
+                            self.folder = None;
+                            self.sel = 0;
+                            if let View::Folder(p, uri) = self.view.clone() {
+                                self.read_folder(p, &uri);
+                            }
+                        }
+                    } else {
+                        self.say(Sign::Refused, "that file is not under your home: not attached");
+                    }
+                }
                 if sc.get("opened").and_then(Value::as_bool) == Some(true) {
                     self.opened = true;
                 } else {
@@ -1140,7 +1397,7 @@ impl App {
         }
         match &self.view {
             View::Home => clock.to_string(),
-            View::Section(p) => self.providers[*p].label.clone(),
+            View::Section(p) | View::Folder(p, _) => self.providers[*p].label.clone(),
             View::About => "spark-shell".into(),
             View::Models => "model".into(),
         }
@@ -1149,6 +1406,7 @@ impl App {
     pub fn subtitle(&self) -> String {
         match &self.view {
             View::Section(p) => self.providers[*p].title.clone(),
+            View::Folder(..) => self.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default(),
             View::About => self.about_idx.map(|i| self.providers[i].version.clone()).unwrap_or_default(),
             _ => String::new(),
         }
@@ -1189,12 +1447,43 @@ impl App {
             }
             Mode::Normal => vec![],
         };
-        if self.view == View::About {
-            v.push(("say what you would like".into(), false));
-        } else {
-            v.push(("\u{2191} \u{2193} pick, or say what you would like".into(), false));
+        if self.attaching.is_some() {
+            v.push((format!("pick a file to attach ({})", self.cfg.attach.join(" ")), false));
+            v.extend(esc("cancels"));
+            return v;
         }
-        v.extend(esc("closes"));
+        if let Some(pk) = &self.picking {
+            v.push((format!("pick a picture ({})", pk.types.join(" ")), false));
+            v.extend(esc("cancels"));
+            return v;
+        }
+        // the keys, no words for them: the arrows where there is something to pick, the month's in the calendar
+        if self.is_calendar() {
+            v.push(("\u{2190}\u{2192}".into(), true));
+            v.push((" month".into(), false));
+        } else if self.view != View::About {
+            v.push(("\u{2191}\u{2193}".into(), true));
+        }
+        // Esc goes back one view where there is one to go back to, and closes from the first
+        let word = if self.came_from.is_empty() { "closes" } else { "goes back" };
+        if v.is_empty() {
+            v.push(("Esc".into(), true));
+            v.push((format!(" {}", word), false));
+        } else {
+            v.extend(esc(word));
+        }
         v
+    }
+
+    /// The clock section is the calendar.
+    pub fn is_calendar(&self) -> bool {
+        matches!(self.view, View::Section(p) if self.providers.get(p).map(|x| x.label == "clock").unwrap_or(false))
+    }
+
+    /// Left and right: the calendar's month back or on; nothing elsewhere.
+    pub fn month(&mut self, d: i32) {
+        if self.is_calendar() {
+            self.month_offset += d;
+        }
     }
 }

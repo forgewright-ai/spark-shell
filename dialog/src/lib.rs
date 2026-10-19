@@ -3,7 +3,11 @@
 
 pub mod app;
 pub mod audit;
+pub mod calendar;
 pub mod gate;
+pub mod greetd;
+pub mod login;
+pub mod login_ui;
 pub mod mcp;
 pub mod model;
 pub mod palette;

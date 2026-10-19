@@ -1,15 +1,17 @@
 #!/bin/sh
-# spark-shell -- sets up the terminal, its colours and a simple desktop
+# spark-shell -- sets up the terminal, its colors and a simple desktop
 #
 #   spark-shell on                    set up the terminal (asks first)
 #   spark-shell on desktop            add the sway desktop on Linux (asks first)
 #   spark-shell off desktop           remove the desktop, keep the terminal
+#   spark-shell on login              a login screen on tty1 (Linux, asks)
+#   spark-shell off login             the console login on tty1 again
 #   spark-shell off                   undo it all (packages stay installed)
 #   spark-shell on --dry-run          show what on would change, change nothing
 #   spark-shell on --yes              do not ask first
 #   spark-shell status                show what is set up
 #   spark-shell check                 test the setup (exit 0 when all is ok)
-#   spark-shell theme NAME|none       set the colours, or use the terminal's own
+#   spark-shell theme NAME|none       set the colors, or use the terminal's own
 #   spark-shell theme [list]          show the palette in use, or list them all
 #   spark-shell font FACE SIZE|none   set the console font, or use its own
 #   spark-shell font list             list the fonts you can use
@@ -23,7 +25,7 @@
 #   spark-shell apps                  choose the apps a layout may open
 #   spark-shell desktop               start the desktop now (from a console)
 #   spark-shell desktop keys          list the desktop's keys
-#   spark-shell desktop wallpaper X   set a picture, a colour, default or none
+#   spark-shell desktop wallpaper X   set a picture, a color, default or none
 #   spark-shell bar on|off            show or hide the status line and the bar
 #   spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
 #   spark-shell dialog [SECTION]      open the dialog (Super+d), SECTION first
@@ -46,9 +48,9 @@
 # The one interface to spark is ~/.config/spark/theme.env, the palette
 # `spark-shell theme NAME` writes. The look reads THEME_BG, THEME_FG,
 # THEME_ACCENT, THEME_MUTED and THEME_ANSI_0-15. With no theme.env the
-# terminal keeps its own colours. Three exports go back to spark, from
+# terminal keeps its own colors. Three exports go back to spark, from
 # the same slots: SPARK_ACCENT_SGR, SPARK_MUTED_SGR and SPARK_WARN_SGR in
-# the rendered ~/.config/spark-shell/sgr.sh colour the prompt. spark
+# the rendered ~/.config/spark-shell/sgr.sh color the prompt. spark
 # itself is not required. Without it the status line stays empty and
 # everything else works. Nothing leaves this machine except what the
 # package manager fetches. A layout, and a want at the bar, ask spark on
@@ -118,7 +120,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK'
 
 # This machine's short name (the twin of spark lib/env.sh short_host)
 short_host() {
@@ -138,6 +140,7 @@ config_load() {
     : "${ALPHA:=0.85}"                      # foot over a picture: 0..1, 1 = opaque
     : "${DESKTOP_BAR:=yes}"                # the bar at the top of the desktop: yes or no
     : "${WINDOWS:=split}"                  # how new windows sit on a workspace: split (side by side), tabs or stacked
+    : "${LOGIN:=no}"                       # the login screen on tty1 (greetd): yes or no
     case $WINDOWS in split|tabs|stacked) ;;
         *) echo "spark-shell: WINDOWS=$WINDOWS in $CONFIG: split, tabs or stacked" >&2; exit 1 ;; esac
     case $ALPHA in 0|1|0.[0-9]|0.[0-9][0-9]|1.0) ;;
@@ -152,12 +155,12 @@ config_load() {
     fi
     # the dialog's composer: plus and the file types it attaches, the model chip, talk
     : "${DIALOG_ATTACH:=yes}" "${DIALOG_ATTACH_TYPES:=txt md}" "${DIALOG_MODEL:=yes}" "${DIALOG_TALK:=yes}"
-    for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK; do
+    for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK LOGIN; do
         eval "v=\$$k"
         case $v in yes|no) ;; *) echo "spark-shell: $k=$v in $CONFIG: yes or no" >&2; exit 1 ;; esac
     done
     printf '%s\n' "$DIALOG_ATTACH_TYPES" | grep -qE '^[a-z0-9]{1,8}( [a-z0-9]{1,8})*$' || { echo "spark-shell: DIALOG_ATTACH_TYPES=$DIALOG_ATTACH_TYPES in $CONFIG: file types in lower case, a space between (txt md)" >&2; exit 1; }
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK LOGIN
 }
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept
     mkdir -p "$CONFIG_DIR"
@@ -174,25 +177,25 @@ config_set() {   # config_set KEY VALUE -- one line replaced or added; every oth
 THEME_KEYS="THEME_BG THEME_FG THEME_ACCENT THEME_MUTED THEME_ANSI_0 THEME_ANSI_1 THEME_ANSI_2 THEME_ANSI_3 THEME_ANSI_4 THEME_ANSI_5 THEME_ANSI_6 THEME_ANSI_7 THEME_ANSI_8 THEME_ANSI_9 THEME_ANSI_10 THEME_ANSI_11 THEME_ANSI_12 THEME_ANSI_13 THEME_ANSI_14 THEME_ANSI_15"
 
 # ------------------------------------------------------------- the slots
-# The rendered look names colours by palette slot (0-15: tmux colourN,
-# starship's sixteen colour words), never by hex: the console
+# The rendered look names colors by palette slot (0-15: tmux colourN,
+# starship's sixteen color words), never by hex: the console
 # palette `spark theme NAME` programs is what draws them, so one file is
 # right on the Linux console and merely plain in an emulator. THEME_ACCENT
 # and THEME_MUTED are hex in theme.env: each becomes the slot whose
 # THEME_ANSI_n is nearest by RGB distance, the lowest index on a tie (a
-# palette's bright row often repeats its dim one). A colour word (the
+# palette's bright row often repeats its dim one). A color word (the
 # no-theme.env defaults) is its own slot. BG and FG are the terminal's
 # own (`default`).
 # ACCENT_SGR and MUTED_SGR are the same two slots as SGR parameters
 # (30-37 for slots 0-7, 90-97 for 8-15): what spark >= 1.41 reads from
-# the three SPARK_*_SGR exports to colour its prompt at a tty.
+# the three SPARK_*_SGR exports to color its prompt at a tty.
 SLOT_KEYS="ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR ACCENT_SGR MUTED_SGR"
 hex_rgb() {   # hex_rgb #rrggbb -> "r g b" (decimal), or false
     case $1 in \#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) ;; *) return 1 ;; esac
     _h=${1#\#}; _m=${_h#??}
     printf '%d %d %d' "$((0x${_h%????}))" "$((0x${_m%??}))" "$((0x${_h#????}))"
 }
-slot_of() {   # slot_of COLOUR -> 0..15
+slot_of() {   # slot_of COLOR -> 0..15
     case $1 in
         black) echo 0; return ;; red) echo 1; return ;; green) echo 2; return ;;
         yellow) echo 3; return ;; blue) echo 4; return ;; magenta) echo 5; return ;;
@@ -224,7 +227,7 @@ slot_name() {   # slot_name N -> starship's word for slot N (black .. bright-whi
 
 # theme.env: written by `spark theme NAME` -- the interface (contract 3:
 # BG, FG, ACCENT, MUTED and the sixteen ANSI slots; the file may carry
-# more). Absent, or spark absent: colour words, each its own slot (the
+# more). Absent, or spark absent: color words, each its own slot (the
 # twin of spark lib/env.sh theme_load's `none` block). Then the slots.
 theme_load() {
     if [ -f "$THEME_ENV" ]; then
@@ -246,16 +249,16 @@ theme_load() {
 }
 
 # The desktop's hex. foot is the desktop's twin of the console palette:
-# the one surface that gives the sixteen slots their colours (the kernel
+# the one surface that gives the sixteen slots their colors (the kernel
 # console gets them from `spark theme NAME`), so it, and sway's borders
 # beside it, take the palette's own rrggbb -- every other render keeps
 # naming slots. A THEME_* that is #rrggbb is stripped of its `#`; a
-# colour word (no theme.env) is the VGA sixteen, what `spark theme none`
+# color word (no theme.env) is the VGA sixteen, what `spark theme none`
 # programs. HEX_BG and HEX_FG fall back to slots 0 and 7, HEX_ACCENT and
 # HEX_MUTED to their slot's hex.
 HEX_KEYS="HEX_BG HEX_FG HEX_ACCENT HEX_MUTED HEX_ANSI_0 HEX_ANSI_1 HEX_ANSI_2 HEX_ANSI_3 HEX_ANSI_4 HEX_ANSI_5 HEX_ANSI_6 HEX_ANSI_7 HEX_ANSI_8 HEX_ANSI_9 HEX_ANSI_10 HEX_ANSI_11 HEX_ANSI_12 HEX_ANSI_13 HEX_ANSI_14 HEX_ANSI_15"
 VGA_HEX="000000 aa0000 00aa00 aa5500 0000aa aa00aa 00aaaa aaaaaa 555555 ff5555 55ff55 ffff55 5555ff ff55ff 55ffff ffffff"
-hex_or() {   # hex_or COLOUR FALLBACK -> rrggbb, lowercase
+hex_or() {   # hex_or COLOR FALLBACK -> rrggbb, lowercase
     case $1 in
         \#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) printf '%s' "${1#\#}" | tr 'A-F' 'a-f' ;;
         *) printf '%s' "$2" ;;
@@ -279,18 +282,40 @@ hex_load() {
 
 # The wallpaper: by default the ground, the palette's background a shade
 # darker than the windows, which follows the palette; or a picture of
-# yours, a plain colour, or none. With the ground, a picture or a
-# colour, sway keeps gaps around the windows and foot is a little
-# translucent, so it shows; with none, edge to edge and opaque. A colour
+# yours, a plain color, or none. With the ground, a picture or a
+# color, sway keeps gaps around the windows and foot is a little
+# translucent, so it shows; with none, edge to edge and opaque. A color
 # is #rrggbb in the config (a name is stored as its hex) and stays when
 # the palette changes. A path that is not there falls back to the
-# palette's colour (the render says so in a row), never to a black
+# palette's color (the render says so in a row), never to a black
 # screen.
 WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA"   # BAR_ALPHA: two hex digits after the bar background over a picture, else nothing
-WALL_NAMES="black white gray grey silver navy blue teal green olive maroon red purple brown orange"
-wall_path() { printf '%s' "$WALLPAPER"; }   # a picture's path (default and none are words, a colour is hex)
-wall_colour() { hex_rgb "$WALLPAPER" >/dev/null; }   # WALLPAPER is a plain colour, #rrggbb
-wall_there() { [ "$WALLPAPER" != none ] && [ "$WALLPAPER" != default ] && ! wall_colour && [ -f "$(wall_path)" ] && [ -r "$(wall_path)" ]; }
+WALL_NAMES="black white gray silver navy blue teal green olive maroon red purple brown orange"   # one name a color: grey is still read as gray, never listed twice
+# the wallpapers spark-shell ships in wallpaper/, each NAME:PALETTE:SAMPLE, the palette it was drawn
+# for and its main color for the sample on its row; WALLPAPER stores the name, so it follows the clone
+WALL_SHIPPED="skyline:tokyonight-night:7aa2f7 fjord:nord:88c0d0 forest:everforest-dark:a7c080 sunset:gruvbox-dark:fe8019 hills:catppuccin-mocha:f5c2e7 dunes:dracula:ff79c6 ripples:rose-pine:ebbcba contours:selenized-dark:41c7b9 morning:solarized-light:b58900 embers:any:d24a2a"
+wall_shipped() { for _e in $WALL_SHIPPED; do [ "${_e%%:*}" != "$1" ] || return 0; done; return 1; }   # wall_shipped NAME -> 0 for a wallpaper spark-shell ships
+wall_shipped_names() { for _e in $WALL_SHIPPED; do printf '%s\n' "${_e%%:*}"; done; }
+wall_path() { if wall_shipped "$WALLPAPER"; then printf '%s' "$REPO/wallpaper/$WALLPAPER.png"; else printf '%s' "$WALLPAPER"; fi; }   # a picture's path: a shipped one in the clone (default and none are words, a color is hex)
+wall_color() { hex_rgb "$WALLPAPER" >/dev/null; }   # WALLPAPER is a plain color, #rrggbb
+wall_name() {   # -> default, none, a shipped wallpaper's name, the name of a color WALL_NAMES has (or its hex), or nothing for a picture of yours
+    case $WALLPAPER in default|none) echo "$WALLPAPER"; return ;; esac
+    if wall_shipped "$WALLPAPER"; then echo "$WALLPAPER"; return; fi
+    wall_color || return 0
+    for w in $WALL_NAMES; do [ "$(wall_hex "$w")" != "$(panel_lower "$WALLPAPER")" ] || { echo "$w"; return; }; done
+    echo "$WALLPAPER"
+}
+wall_picture_ok() {   # wall_picture_ok PATH -> its real path when it is a picture of yours: no link, under your home, nothing hidden on the way, a regular file of a type a wallpaper takes; else one line, exit 1
+    _rp=$(realpath "$1" 2>/dev/null) && [ ! -L "$1" ] || { echo "wallpaper: $1 is not a file of yours"; return 1; }
+    _hr=$(realpath "$HOME" 2>/dev/null) || _hr=$HOME
+    case $_rp in "$_hr"/*) ;; *) echo "wallpaper: a picture comes from under your home"; return 1 ;; esac
+    case ${_rp#"$_hr"/} in .*|*/.*) echo "wallpaper: a hidden file is not offered"; return 1 ;; esac
+    [ -f "$_rp" ] && [ -r "$_rp" ] || { echo "wallpaper: $1 is not a file that can be read"; return 1; }
+    case " $WALL_TYPES " in *" $(printf '%s' "${_rp##*.}" | tr 'A-Z' 'a-z') "*) ;; *) echo "wallpaper: a picture is $WALL_TYPES"; return 1 ;; esac
+    printf '%s\n' "$_rp"
+}
+WALL_TYPES='jpg jpeg png webp'   # the pictures the wallpaper picker offers and takes
+wall_there() { [ "$WALLPAPER" != none ] && [ "$WALLPAPER" != default ] && ! wall_color && [ -f "$(wall_path)" ] && [ -r "$(wall_path)" ]; }
 wall_ground() {   # -> #rrggbb: the palette's background a shade darker, 30% of the way to black when it is dark, 8% when it is light
     # shellcheck disable=SC2046   # three numbers, split on purpose
     set -- $(hex_rgb "#$HEX_BG")
@@ -306,8 +331,9 @@ wall_hex() {   # wall_hex WORD -> #rrggbb, lowercase, for #rrggbb or one of WALL
         *) hex_rgb "$1" >/dev/null || return 1; printf '%s\n' "$1" | tr 'A-F' 'a-f' ;;
     esac
 }
-wall_word() {   # wall_word WORD -> what WALLPAPER stores: none, default, #rrggbb, or a readable file's full path; nothing for anything else
+wall_word() {   # wall_word WORD -> what WALLPAPER stores: none, default, a shipped wallpaper's name, #rrggbb, or a readable file's full path; nothing for anything else
     case $1 in '') return 0 ;; none|default) printf '%s' "$1"; return 0 ;; esac
+    if wall_shipped "$1"; then printf '%s' "$1"; return 0; fi
     wall_hex "$1" && return 0
     _w=$1; _t='~'   # a quoted ~ is HOME, as the shell would have it
     case $_w in "$_t") _w=$HOME ;; "$_t/"*) _w=$HOME/${_w#"$_t/"} ;; esac
@@ -316,7 +342,7 @@ wall_word() {   # wall_word WORD -> what WALLPAPER stores: none, default, #rrggb
     printf '%s' "$_w"
 }
 alpha_hex() { awk -v a="$1" 'BEGIN { printf "%02x", int(a * 255 + 0.5) }'; }   # alpha_hex 0.85 -> d9
-hex_mix() {   # hex_mix RRGGBB RRGGBB PERCENT -> rrggbb: the first colour moved PERCENT of the way to the second
+hex_mix() {   # hex_mix RRGGBB RRGGBB PERCENT -> rrggbb: the first color moved PERCENT of the way to the second
     # shellcheck disable=SC2046   # three numbers each, split on purpose
     set -- $(hex_rgb "#$1") $(hex_rgb "#$2") "$3"
     printf '%02x%02x%02x' $(( $1 + ($4 - $1) * $7 / 100 )) $(( $2 + ($5 - $2) * $7 / 100 )) $(( $3 + ($6 - $3) * $7 / 100 ))
@@ -327,9 +353,9 @@ wall_load() {
         WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA")
     elif [ "$WALLPAPER" = default ]; then   # the ground: a shade darker than the windows, drawn like a picture
         WALL_BG="$(wall_ground) solid_color"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA")
-    elif wall_colour; then   # a plain colour is a wallpaper too: the same gaps and the same translucent terminals as a picture
+    elif wall_color; then   # a plain color is a wallpaper too: the same gaps and the same translucent terminals as a picture
         WALL_BG="$(wall_hex "$WALLPAPER") solid_color"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA")
-    else   # none: the palette's colour, full windows, opaque
+    else   # none: the palette's color, full windows, opaque
         WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0; BAR_ALPHA=""
     fi
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
@@ -344,7 +370,7 @@ win_load() {
     export WS_LAYOUT
 }
 win_words() { case ${1:-split} in split) echo 'side by side' ;; *) echo "$1" ;; esac; }   # win_words WINDOWS -> the words of the row
-see_through() { awk -v a="${1:-1}" 'BEGIN { printf "%d", (1 - a) * 100 + 0.5 }'; }   # see_through ALPHA -> the percent the windows let through
+transparency_of() { awk -v a="${1:-1}" 'BEGIN { printf "%d", (1 - a) * 100 + 0.5 }'; }   # transparency_of ALPHA -> the windows' transparency, a percent
 
 # The panel's surface: its window is a shade of the palette's background
 # towards the text, the picked row a shade more, with air around the
@@ -357,16 +383,16 @@ panel_load() {
     PANEL_MUTED=$(hex_mix "$HEX_MUTED" "$HEX_FG" 35)   # the palette's muted, lifted a third of the way to the text: readable on the surface
     for k in $PANEL_KEYS; do export "${k?}"; done
 }
-hex_bg_sgr() {   # hex_bg_sgr rrggbb -> the SGR of that colour as a ground
+hex_bg_sgr() {   # hex_bg_sgr rrggbb -> the SGR of that color as a ground
     # shellcheck disable=SC2046   # three numbers, split on purpose
     set -- $(hex_rgb "#$1"); printf '48;2;%s;%s;%s' "$1" "$2" "$3"
 }
-hex_sgr() {   # hex_sgr rrggbb -> the SGR of that colour as text
+hex_sgr() {   # hex_sgr rrggbb -> the SGR of that color as text
     # shellcheck disable=SC2046   # three numbers, split on purpose
     set -- $(hex_rgb "#$1"); printf '38;2;%s;%s;%s' "$1" "$2" "$3"
 }
 panel_pad() { _s=$(look_font_size); : "${_s:=12}"; printf '%sx%s' $(( _s * 2 )) $(( _s * 16 / 10 )); }   # the air in pixels: two cells wide, one tall, at the font's size
-panel_foot() {   # panel_foot ARGS... -- the desktop window: foot sized, padded and coloured the way the sway template renders it, running spark-shell dialog ARGS (PANEL_LEAD, setsid, before it)
+panel_foot() {   # panel_foot ARGS... -- the desktop window: foot sized, padded and colored the way the sway template renders it, running spark-shell dialog ARGS (PANEL_LEAD, setsid, before it)
     _fc=$(foot_colors)
     # shellcheck disable=SC2086   # the leader, or nothing
     ${PANEL_LEAD:-} foot --app-id "$PANEL_APP" -W "$PANEL_SIZE" -o "pad=$PANEL_PAD" -o "$_fc.background=$PANEL_BG" -o "$_fc.alpha=1.0" -e "$REPO/spark-shell" dialog "$@"
@@ -409,6 +435,7 @@ sudo_upfront() {
     [ -t 0 ] || return 0
     what="the packages"
     if desktop_wanted; then pm_detect; seat_needed && what="the packages and seatd for the desktop"; fi
+    if login_wanted; then what="$what and the login screen"; fi
     if [ -n "$THEME$CONSOLE_FONT" ] || [ "$QUIET_LOGIN$QUIET_BOOT" != nono ]; then what="$what and the console"; fi
     printf 'spark-shell needs sudo once, now: %s.\n' "$what"
     sudo -v || { echo "spark-shell: sudo refused. Nothing was changed." >&2; exit 1; }
@@ -449,7 +476,7 @@ pm_detect() {
         case $w in debian|arch|void) DISTRO=$w; break ;; esac
     done
     [ -z "$DISTRO" ] || load_env "$REPO/distro/$DISTRO.env" env || exit 1
-    : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}" "${PKG_CONSOLE:=}" "${PKG_DESKTOP:=}"
+    : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}" "${PKG_CONSOLE:=}" "${PKG_DESKTOP:=}" "${PKG_LOGIN:=}" "${LOGIN_ACCOUNT:=}"
 }
 tool_here() {   # tool_here NAME -- on PATH or in ~/.local/bin; under apt by Debian's name (fdfind, batcat), after pm_detect
     _n=$1
@@ -540,7 +567,7 @@ render_one() {   # render_one SRC DST -- EXPR must be set
     row render look "$2"
 }
 
-# What `on` renders and `off` hands back. sgr.sh is the prompt's colour:
+# What `on` renders and `off` hands back. sgr.sh is the prompt's color:
 # the three exports the rc files source before spark's hook line.
 RENDERED=".tmux.conf .config/btop/btop.conf .config/spark-shell/sgr.sh"
 rc_files() { if [ "$OS" = Darwin ]; then echo ".zshrc .zprofile"; else echo ".bashrc .bash_profile"; fi; }
@@ -549,7 +576,7 @@ rc_tree() { if [ "$OS" = Darwin ]; then echo "$REPO/templates/macos"; else echo 
 # and only on Linux -- macOS has its own desktop. `off` hands both back
 # whatever the config says.
 DESKTOP_RENDERED=".config/foot/foot.ini .config/sway/config .local/share/applications/spark-shell-tmux.desktop"
-foot_colors() {   # the name of foot's colour section: [colors] before 1.26, [colors-dark] from it
+foot_colors() {   # the name of foot's color section: [colors] before 1.26, [colors-dark] from it
     _v=$(PATH=$HOME/.local/bin:$PATH foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
     set -- ${_v:-1 26}
     if [ "$1" -gt 1 ] || [ "$2" -ge 26 ]; then echo colors-dark; else echo colors; fi
@@ -575,8 +602,8 @@ sway_reload() {   # a running sway takes the new render now (borders, background
 # The desktop, one path for `on` and `on desktop`: the two user
 # renders, a running sway reloaded, then seatd on Void.
 desktop_look_apply() {   # the two user renders and a live sway
-    if [ "$WALLPAPER" != none ] && [ "$WALLPAPER" != default ] && ! wall_colour && ! wall_there; then
-        row todo wallpaper "$(wall_path) is missing -- the palette's background colour instead (spark-shell desktop wallpaper PATH)"
+    if [ "$WALLPAPER" != none ] && [ "$WALLPAPER" != default ] && ! wall_color && ! wall_there; then
+        row todo wallpaper "$(wall_path) is missing -- the palette's background color instead (spark-shell desktop wallpaper PATH)"
     fi
     for rel in $DESKTOP_RENDERED; do
         render_one "$REPO/templates/$rel" "$HOME/$rel"
@@ -587,6 +614,7 @@ desktop_apply() {
     desktop_look_apply
     seat_apply
     dialog_install
+    mcp_apply
 }
 
 # The desktop on Void. Void has no logind, so sway takes the screen and
@@ -668,7 +696,7 @@ OLD_GREETD_CONF=etc/greetd/config.toml
 OLD_GREETD_FILES="etc/greetd/spark-shell/desktop.desktop etc/greetd/spark-shell/console.desktop etc/systemd/system/greetd.service.d/spark-shell.conf"
 OLD_GREETD_DIRS="etc/greetd/spark-shell etc/systemd/system/greetd.service.d"
 unit_enabled() { systemctl is-enabled "$1" >/dev/null 2>&1; }
-old_greetd_here() { grep -q 'rendered by spark-shell' "$ROOT/$OLD_GREETD_CONF" 2>/dev/null || [ -e "$ROOT/$OLD_GREETD_CONF.spark-orig" ]; }
+old_greetd_here() { grep -q 'rendered by spark-shell from templates/etc/greetd' "$ROOT/$OLD_GREETD_CONF" 2>/dev/null || [ -e "$ROOT/$OLD_GREETD_CONF.spark-orig" ]; }
 old_greetd_off() {
     [ "$OS" != Darwin ] && old_greetd_here || return 0
     need login "the normal console login on tty1 from the next boot: greetd turned off, its spark-shell files removed (sudo)" || return 0
@@ -684,6 +712,199 @@ old_greetd_off() {
     for d in $OLD_GREETD_DIRS; do [ -d "$ROOT/$d" ] && root_do rmdir "$ROOT/$d" 2>/dev/null || true; done
     root_do systemctl daemon-reload >/dev/null 2>&1 || true
     ok login "the normal console login is back on tty1 from the next boot: greetd is off, its packages stay"
+}
+
+# The login screen (LOGIN=yes, spark-shell on login): greetd on tty1
+# runs sway as the login screen's own account, with one window,
+# `spark-dialog login`, in the palette. Its files are root's, written
+# from templates/login when they differ: the screen's under
+# /etc/spark-shell/login, a copy of the dialog the tree pins in
+# /usr/local/lib/spark-shell, and greetd's config.toml (the package's
+# kept as .spark-shell-orig). tty1 changes hands at the next boot, never
+# under a login that runs: systemd enables greetd and disables
+# getty@tty1, starting or stopping neither; on Void a line in
+# /etc/rc.local runs login-boot before runit starts its services. On
+# Void the account also joins _seatd, and a sudoers file lets it run
+# reboot and poweroff, nothing else (logind lets the screen do both on
+# systemd). tty2 keeps its console login. Each change to a service or a
+# group leaves a record in /etc/spark-shell/login, and off login undoes
+# exactly those; while greetd runs, the screen's files stay.
+LOGIN_ETC=etc/spark-shell/login
+LOGIN_LIB=usr/local/lib/spark-shell
+GREETD_CONF=etc/greetd/config.toml
+LOGIN_SUDOERS=etc/sudoers.d/spark-shell-login
+LOGIN_MARK=' #spark-shell-login#'
+LOGIN_FILES="session window run sway.conf foot.ini"
+login_wanted() { [ "$OS" != Darwin ] && [ "$LOGIN" = yes ]; }
+login_rec() { [ -e "$ROOT/$LOGIN_ETC/$1" ]; }                       # login_rec NAME -- a record of a change spark-shell made
+login_record() { root_do touch "$ROOT/$LOGIN_ETC/$1"; }
+login_unrecord() { root_do rm -f "$ROOT/$LOGIN_ETC/$1"; }
+login_line() { printf '[ -x /%s/login-boot ] && /%s/login-boot' "$LOGIN_LIB" "$LOGIN_LIB"; }   # the rc.local line (runit)
+greetd_here() { [ -e "$ROOT/usr/bin/greetd" ] || [ -e "$ROOT/usr/sbin/greetd" ]; }
+greetd_live() { pgrep -x greetd >/dev/null 2>&1; }
+greetd_ours() { grep -q 'rendered by spark-shell from templates/login/config.toml' "$ROOT/$GREETD_CONF" 2>/dev/null; }
+login_account_here() { awk -F: -v u="$LOGIN_ACCOUNT" '$1 == u { f = 1 } END { exit !f }' "$ROOT/etc/passwd" 2>/dev/null; }
+login_screen_traces() { [ -d "$ROOT/$LOGIN_ETC" ] || greetd_ours || [ -e "$ROOT/$GREETD_CONF.spark-shell-orig" ] || [ -n "$(marked "$ROOT/etc/rc.local" "$LOGIN_MARK")" ]; }
+login_switched() {   # does the login screen take tty1 at boot?
+    if [ "$(init_shape)" = systemd ]; then unit_enabled greetd.service && ! unit_enabled getty@tty1.service
+    else [ "$(cat "$ROOT/$LOGIN_ETC/boot" 2>/dev/null)" = on ] && [ "$(marked "$ROOT/etc/rc.local" "$LOGIN_MARK")" = "$(login_line)" ]; fi
+}
+login_port() {   # -> spark's port for the screen's spark row, or nothing without spark
+    [ -n "$(spark_bin)" ] || return 0
+    _p=$(sed -n 's/^SPARK_PORT=//p' "$SPARK_CONFIG_DIR/spark.env" 2>/dev/null | tail -1 | tr -d "\"'")
+    case $_p in ''|*[!0-9]*) _p=8080 ;; esac
+    printf '%s' "$_p"
+}
+login_render() {   # -> the screen's files in $TMP/login, from templates/login in the palette
+    mkdir -p "$TMP/login"
+    if [ "$(init_shape)" = systemd ]; then _pw=' --restart "/usr/bin/systemctl reboot" --shutdown "/usr/bin/systemctl poweroff"'
+    else _pw=' --restart "/usr/bin/sudo -n /usr/bin/reboot" --shutdown "/usr/bin/sudo -n /usr/bin/poweroff"'; fi
+    _p=$(login_port); [ -z "$_p" ] || _pw="$_pw --spark-port $_p"
+    _d=off; ! desktop_wanted || _d=on
+    if wall_there; then _bg="/$LOGIN_ETC/wallpaper fill"; else _bg=$WALL_BG; fi
+    _le="$EXPR;s|@LOGIN_ETC@|$LOGIN_ETC|g;s|@LOGIN_LIB@|$LOGIN_LIB|g;s|@LOGIN_ACCOUNT@|$(esc "$LOGIN_ACCOUNT")|g"
+    _le="$_le;s|@LOGIN_DESKTOP@|$_d|g;s|@LOGIN_ARGS@|$(esc "$_pw")|g;s|@LOGIN_BG@|$(esc "$_bg")|g;s|@PANEL_MUTED@|$PANEL_MUTED|g"
+    for f in $LOGIN_FILES config.toml sudoers login-boot; do
+        sed -e "$_le" "$REPO/templates/login/$f" > "$TMP/login/$f"
+        if grep -q '@[A-Z_0-9]*@' "$TMP/login/$f"; then
+            printf 'spark-shell: templates/login/%s: unrendered placeholder: %s\n' "$f" "$(grep -o '@[A-Z_0-9]*@' "$TMP/login/$f" | head -1)" >&2
+            exit 1
+        fi
+    done
+}
+login_mode() { case $1 in session|window|run|login-boot) echo 0755 ;; sudoers) echo 0440 ;; *) echo 0644 ;; esac; }
+login_files_differ() {   # -> the screen's files that differ from what spark-shell would write, by name
+    for f in $LOGIN_FILES; do cmp -s "$TMP/login/$f" "$ROOT/$LOGIN_ETC/$f" || printf ' %s' "$f"; done
+    cmp -s "$DIALOG_BIN" "$ROOT/$LOGIN_LIB/spark-dialog" || printf ' spark-dialog'
+    cmp -s "$TMP/login/config.toml" "$ROOT/$GREETD_CONF" || printf ' config.toml'
+    if wall_there; then cmp -s "$(wall_path)" "$ROOT/$LOGIN_ETC/wallpaper" || printf ' wallpaper'
+    elif [ -e "$ROOT/$LOGIN_ETC/wallpaper" ]; then printf ' wallpaper'; fi
+    if [ "$DISTRO" = void ]; then
+        sudoers_same || printf ' sudoers'
+        cmp -s "$TMP/login/login-boot" "$ROOT/$LOGIN_LIB/login-boot" || printf ' login-boot'
+    fi
+}
+# /etc/sudoers.d is root's alone (0750): read as root, never asking (a
+# password asked for is the write's, after the would row)
+sudoers_same() { if [ -n "$ROOT" ]; then cmp -s "$TMP/login/sudoers" "$ROOT/$LOGIN_SUDOERS"; else sudo -n cmp -s "$TMP/login/sudoers" "/$LOGIN_SUDOERS" 2>/dev/null; fi; }
+status_login() {   # the login row of status
+    if [ "$OS" = Darwin ]; then _w=na; _s="not on macOS, which has its own login screen"
+    elif [ "$LOGIN" != yes ]; then _w=console; _s="the console login on tty1 (spark-shell on login shows the login screen)"
+    elif ! greetd_here; then _w=screen; _s="greetd is not installed (spark-shell on login)"
+    elif ! login_switched; then _w=screen; _s="not set up yet (spark-shell on login)"
+    elif greetd_live; then _w=screen; _s="the login screen on tty1, the console login on tty2"
+    else _w=screen; _s="the login screen on tty1 from the next boot, the console login on tty2"; fi
+    printf '  login %-16s %s\n' "$_w" "$_s"
+}
+login_root() {   # login_root VERB -- a root to write with, asked once; else a todo row and false
+    if ! root_can; then row todo login "root is needed for the login screen -- spark-shell $1 login at a terminal (sudo once)"; acting=0; return 1; fi
+    root_sudo_once "the login screen on tty1" || { row todo login "sudo refused -- spark-shell $1 login at a terminal (sudo once)"; acting=0; return 1; }
+}
+login_screen_apply() {   # the login rows of `on` with LOGIN=yes
+    login_wanted || return 0
+    case $DISTRO in debian|arch|void) ;; *) row todo login "the login screen knows Debian, Arch and Void"; acting=0; return 0 ;; esac
+    console_linux || { skip login "WSL has no console: no login screen"; return 0; }
+    [ "$(init_shape)" != none ] || { skip login "no systemd or runit here: nothing starts a login screen"; return 0; }
+    if ! greetd_here; then
+        need login "the login screen on tty1, once greetd is installed (the packages)" || return 0
+        row todo login "greetd is not installed -- spark-shell on login (the packages)"; acting=0; return 0
+    fi
+    login_account_here || { row todo login "greetd's account $LOGIN_ACCOUNT is missing -- install greetd again, then spark-shell on login"; acting=0; return 0; }
+    desktop_wanted || dialog_install
+    if ! dialog_ok; then
+        need login "the login screen on tty1, once spark-dialog is in place" || return 0
+        row todo login "the login screen needs spark-dialog -- the dialog row says why"; acting=0; return 0
+    fi
+    login_render
+    _f=$(login_files_differ)
+    if [ -z "$_f" ]; then ok login "the login screen's files are in place (/$LOGIN_ETC)"
+    elif need login "write the login screen's files:$_f (sudo)" && login_root on; then
+        if [ "$DISTRO" = void ] && ! root_do visudo -cf "$TMP/login/sudoers" >/dev/null 2>&1; then
+            row todo login "visudo refused the sudoers file -- nothing written, spark-shell on login again"; acting=0; return 0
+        fi
+        root_do mkdir -p "$ROOT/$LOGIN_ETC" "$ROOT/$LOGIN_LIB"
+        for f in $LOGIN_FILES; do
+            _m=$(login_mode "$f")
+            if [ "$_m" = 0755 ]; then root_swap "$TMP/login/$f" "$ROOT/$LOGIN_ETC/$f" "$_m"; else root_put "$TMP/login/$f" "$ROOT/$LOGIN_ETC/$f" "$_m"; fi
+        done
+        root_swap "$DIALOG_BIN" "$ROOT/$LOGIN_LIB/spark-dialog" 0755
+        if wall_there; then root_put "$(wall_path)" "$ROOT/$LOGIN_ETC/wallpaper"
+        else root_do rm -f "$ROOT/$LOGIN_ETC/wallpaper"; fi
+        if [ -e "$ROOT/$GREETD_CONF" ] && ! greetd_ours && [ ! -e "$ROOT/$GREETD_CONF.spark-shell-orig" ]; then
+            root_do cp "$ROOT/$GREETD_CONF" "$ROOT/$GREETD_CONF.spark-shell-orig"
+        fi
+        root_put "$TMP/login/config.toml" "$ROOT/$GREETD_CONF"
+        if [ "$DISTRO" = void ]; then
+            root_put "$TMP/login/sudoers" "$ROOT/$LOGIN_SUDOERS" 0440
+            root_swap "$TMP/login/login-boot" "$ROOT/$LOGIN_LIB/login-boot" 0755
+        fi
+        ok login "the login screen's files are written (/$LOGIN_ETC)"
+    else return 0
+    fi
+    # Void: the account takes the screen through seatd, as you do
+    if [ "$DISTRO" = void ] && ! in_group _seatd "$LOGIN_ACCOUNT"; then
+        if need login "add $LOGIN_ACCOUNT to the _seatd group, so the login screen can draw (sudo)" && login_root on; then
+            if root_do usermod -aG _seatd "$LOGIN_ACCOUNT"; then login_record seatd.group; ok login "$LOGIN_ACCOUNT is in the _seatd group"
+            else row todo login "usermod could not add $LOGIN_ACCOUNT to _seatd -- spark-shell on login again"; acting=0; fi
+        fi
+    fi
+    if login_switched; then ok login "the login screen takes tty1 at boot (tty2 keeps the console login)"; return 0; fi
+    need login "the login screen on tty1 from the next boot, tty2 keeps the console login (sudo)" || return 0
+    login_root on || return 0
+    if [ "$(init_shape)" = systemd ]; then
+        # greetd first: tty1 never loses its login
+        if ! unit_enabled greetd.service; then
+            root_do systemctl enable greetd.service >/dev/null 2>&1 || { row todo login "systemctl could not enable greetd -- another display manager may hold tty1"; acting=0; return 0; }
+            login_record greetd.on
+        fi
+        if unit_enabled getty@tty1.service; then root_do systemctl disable getty@tty1.service >/dev/null 2>&1 && login_record getty.off; fi
+    else
+        printf 'on\n' > "$TMP/login/boot"
+        root_put "$TMP/login/boot" "$ROOT/$LOGIN_ETC/boot"
+        login_line > "$TMP/line"; echo >> "$TMP/line"
+        { [ -f "$ROOT/etc/rc.local" ] || printf '#!/bin/sh\n'; marked_text "$ROOT/etc/rc.local" "$LOGIN_MARK" "$TMP/line" exit; } > "$TMP/rc.local"
+        root_put "$TMP/rc.local" "$ROOT/etc/rc.local" 0755
+    fi
+    ok login "the login screen takes tty1 from the next boot (tty2 keeps the console login)"
+}
+login_follow() {   # theme and wallpaper: the login screen takes the new look too, when it is on
+    login_wanted || return 0
+    theme_load; EXPR=$(render_expr)
+    login_screen_apply
+}
+login_screen_off() {   # by the records alone: the boot back to getty, the screen's files gone once greetd stopped
+    [ "$OS" != Darwin ] && login_screen_traces || return 0
+    if [ "$MODE" = dry ]; then row would login "the console login on tty1 from the next boot, the login screen's files removed (sudo)"; return 0; fi
+    login_root off || return 0
+    if [ "$(init_shape)" = systemd ]; then
+        # getty first: tty1 never loses its login
+        if login_rec getty.off; then root_do systemctl enable getty@tty1.service >/dev/null 2>&1 && login_unrecord getty.off; fi
+        if login_rec greetd.on; then root_do systemctl disable greetd.service >/dev/null 2>&1 && login_unrecord greetd.on; fi
+        _pending=0
+    else
+        [ ! -d "$ROOT/$LOGIN_ETC" ] || { printf 'off\n' > "$TMP/boot"; root_put "$TMP/boot" "$ROOT/$LOGIN_ETC/boot"; }
+        _pending=0; if login_rec getty.off || login_rec greetd.on; then _pending=1; fi
+    fi
+    if login_rec seatd.group; then
+        if ! in_group _seatd "$LOGIN_ACCOUNT" || root_do gpasswd -d "$LOGIN_ACCOUNT" _seatd >/dev/null 2>&1; then login_unrecord seatd.group; fi
+    fi
+    root_do rm -f "$ROOT/$LOGIN_SUDOERS"
+    if greetd_live || [ "$_pending" = 1 ]; then
+        row todo login "the login screen runs until the next boot, then tty1 has the console login -- spark-shell off login again after it removes the rest"; acting=0
+        return 0
+    fi
+    if [ -e "$ROOT/$GREETD_CONF.spark-shell-orig" ]; then root_do mv "$ROOT/$GREETD_CONF.spark-shell-orig" "$ROOT/$GREETD_CONF"
+    elif greetd_ours; then root_do rm -f "$ROOT/$GREETD_CONF"; fi
+    _line=$(marked "$ROOT/etc/rc.local" "$LOGIN_MARK")
+    if [ -n "$_line" ]; then
+        marked_text "$ROOT/etc/rc.local" "$LOGIN_MARK" > "$TMP/rc.local"
+        if [ "$(cat "$TMP/rc.local")" = '#!/bin/sh' ]; then root_do rm -f "$ROOT/etc/rc.local"   # the one spark-shell made
+        else root_put "$TMP/rc.local" "$ROOT/etc/rc.local"; fi
+    fi
+    for f in $LOGIN_FILES wallpaper boot; do root_do rm -f "$ROOT/$LOGIN_ETC/$f"; done
+    root_do rm -f "$ROOT/$LOGIN_LIB/spark-dialog" "$ROOT/$LOGIN_LIB/login-boot"
+    for d in "$LOGIN_ETC" etc/spark-shell "$LOGIN_LIB"; do [ ! -d "$ROOT/$d" ] || root_do rmdir "$ROOT/$d" 2>/dev/null || true; done
+    row ok login "the console login is back on tty1 from the next boot, the login screen's files are gone (greetd's package stays)"
 }
 
 render_all() {
@@ -790,6 +1011,12 @@ root_put() {   # root_put SRC DST [MODE] -- a root file written from SRC; a new 
     root_do cp "$1" "$2"
     [ "$_new" = 0 ] || root_do chmod "${3:-0644}" "$2" 2>/dev/null || true
 }
+root_swap() {   # root_swap SRC DST MODE -- a root program put in place by a rename, never written over: one that runs (the login screen's binary, a script sh is still reading) keeps its old file, and Linux refuses a write to a running binary
+    root_do mkdir -p "$(dirname "$2")"
+    root_do cp "$1" "$2.spark-shell-new"
+    root_do chmod "$3" "$2.spark-shell-new"
+    root_do mv -f "$2.spark-shell-new" "$2"
+}
 root_read() {   # root_read FILE -> its bytes (root when a user cannot read it); false when absent or unreadable
     if [ -r "$1" ]; then cat "$1"; else root_do cat "$1" 2>/dev/null; fi
 }
@@ -822,7 +1049,7 @@ marked_text() {   # marked_text FILE MARK [LINESFILE [exit]] -> FILE without MAR
 
 # ------------------------------------------------------------ the palette
 # A palette is a KEY=value file: the 20 THEME_* keys, each #rrggbb, and
-# THEME_LOGO when it names spark's logo colours. `spark-shell theme NAME`
+# THEME_LOGO when it names spark's logo colors. `spark-shell theme NAME`
 # writes three files from it: theme.env (what spark and every render
 # read), console-colors (\033]P<n><rrggbb> for the 16 slots, what a
 # console login sends) and its .rgb twin (setvtrgb's decimal lines, what
@@ -858,7 +1085,7 @@ palette_render() {   # palette_render NAME -> the three files in $TMP; false, an
         case $_k in THEME_ANSI_*) _hexes="$_hexes $(printf '%s' "${_v#\#}" | tr 'A-F' 'a-f')" ;; esac
     done
     _v=$(palette_get "$_f" THEME_LOGO)
-    case $_v in '') ;; *[!A-Za-z0-9\ _.#-]*) echo "$_f: THEME_LOGO holds more than names and colours" > "$TMP/palette.why"; return 1 ;;
+    case $_v in '') ;; *[!A-Za-z0-9\ _.#-]*) echo "$_f: THEME_LOGO holds more than names and colors" > "$TMP/palette.why"; return 1 ;;
         *) printf 'THEME_LOGO=%s\n' "$_v" >> "$TMP/theme.env" ;; esac
     # shellcheck disable=SC2086   # sixteen words, split on purpose
     console_render $_hexes
@@ -891,7 +1118,7 @@ theme_files() {   # before the renders: theme.env and the console's two files, a
     [ -n "$THEME" ] || { skip theme "THEME unset: the palette stays as it is (spark-shell theme NAME)"; return 0; }
     if [ "$THEME" = none ]; then
         if [ -f "$THEME_ENV" ] && need theme "remove $THEME_ENV (THEME=none)"; then
-            rm -f "$THEME_ENV"; ok theme "none: theme.env removed, the terminal's own colours"
+            rm -f "$THEME_ENV"; ok theme "none: theme.env removed, the terminal's own colors"
         fi
         return 0
     fi
@@ -956,7 +1183,7 @@ palette_off() {   # palette_off all|ours -- VGA again, the boot's palette gone, 
             # no root file: nothing sets it at boot; this console takes VGA by its escapes
             cp "$TMP/console-colors" "$TMP/vga-colors"; CONSOLE_NOW=$TMP/vga-colors
         elif [ "$MODE" = dry ]; then
-            row would palette "the console's default colours again, nothing sets a palette at boot (sudo)"
+            row would palette "the console's default colors again, nothing sets a palette at boot (sudo)"
         elif root_ready palette; then
             cp "$TMP/console-colors" "$TMP/vga-colors"; CONSOLE_NOW=$TMP/vga-colors   # VGA on this console at the end
             if [ "$_unit" = 1 ]; then
@@ -972,7 +1199,7 @@ palette_off() {   # palette_off all|ours -- VGA again, the boot's palette gone, 
             if command -v setvtrgb >/dev/null 2>&1 && vt_here && [ "$(vt_live)" != "$(head -1 "$TMP/vga.rgb")" ]; then
                 root_do setvtrgb vga >/dev/null 2>&1 || held=0
             fi
-            [ "$held" = 0 ] || row ok palette "the console's default colours are back, nothing sets a palette at boot"
+            [ "$held" = 0 ] || row ok palette "the console's default colors are back, nothing sets a palette at boot"
         else
             held=0
         fi
@@ -984,7 +1211,7 @@ palette_off() {   # palette_off all|ours -- VGA again, the boot's palette gone, 
         rm -f "$CONSOLE_COLORS" "$CONSOLE_RGB"
         [ "$_env$_files" = 00 ] || row ok theme "the palette files are removed from ~/.config (theme.env, console-colors)"
     else
-        row todo theme "the palette files stay until sudo resets the console colours -- spark-shell off at a terminal"
+        row todo theme "the palette files stay until sudo resets the console colors -- spark-shell off at a terminal"
     fi
     return 0
 }
@@ -1025,7 +1252,7 @@ terminal_off() {
 }
 
 # The open terminals (Linux). foot, like most terminals, reads its
-# colours when a window opens and cannot reload them, so `theme NAME`
+# colors when a window opens and cannot reload them, so `theme NAME`
 # sends the palette to each terminal you have open: OSC 4 for the 16
 # slots, OSC 10 and 11 for the text and the background, OSC 12 for the
 # cursor when the palette has a THEME_CURSOR. `theme none` sends the
@@ -1453,10 +1680,10 @@ console_off() {   # off: every one handed back
 # any other word is refused before a thing is touched.
 noun_ok() {   # noun_ok on|off [WORD...]
     [ $# -gt 1 ] || return 0
-    [ "$*" != "$1 desktop" ] || return 0
+    [ "$*" != "$1 desktop" ] && [ "$*" != "$1 login" ] || return 0
     _v=$1; shift; _w=$*
     case $_w in *[!\ ]*) ;; *) _w="an empty word" ;; esac
-    echo "spark-shell $_v: $_w is not known here (only desktop is)"; exit 1
+    echo "spark-shell $_v: $_w is not known here (only desktop and login are)"; exit 1
 }
 # The warning: on, on desktop and quiet boot on change how this machine
 # behaves, so each says what it changes and asks first. --yes goes
@@ -1484,9 +1711,27 @@ warn_wrap() {   # warn_wrap LABEL WORDS... -- one row of the desktop list, wrapp
         }
         print line }'
 }
-on_warning() {   # on_warning [desktop] -- at the very start of on: what it changes, then the question
+on_warning() {   # on_warning [desktop|login] -- at the very start of on: what it changes, then the question
     noun_ok on "$@"
     asks || return 0
+    if [ "${1:-}" = login ]; then
+        [ "$OS" != Darwin ] || return 0   # refused next, before anything
+        pm_detect
+        ask_terminal
+        printf '%s\n' 'spark-shell on login changes how this machine starts:' ''
+        # shellcheck disable=SC2086
+        [ -z "$PKG_LOGIN$PKG_DESKTOP" ] || warn_wrap packages $PKG_LOGIN $PKG_DESKTOP '(sudo)'
+        warn_wrap login 'tty1 shows the login screen from the next boot (greetd)'
+        warn_wrap '' 'tty2 keeps the console login (Alt+F2)'
+        warn_wrap files "/$LOGIN_ETC, greetd's config.toml (sudo)"
+        if [ "$DISTRO" = void ]; then
+            warn_wrap groups "adds $LOGIN_ACCOUNT to _seatd (sudo)"
+            warn_wrap power "lets $LOGIN_ACCOUNT run reboot and poweroff, nothing else (sudo)"
+        fi
+        printf '\n%s\n%s\n' 'spark-shell off login puts the console login back.' 'Packages stay.'
+        ask_continue
+        return 0
+    fi
     if [ "${1:-}" = desktop ]; then
         [ "$OS" != Darwin ] || return 0   # refused next, before anything
         pm_detect
@@ -1494,13 +1739,13 @@ on_warning() {   # on_warning [desktop] -- at the very start of on: what it chan
     ask_terminal
     if [ "$OS" = Darwin ]; then
         printf '%s\n' 'spark-shell replaces your shell files, installs packages' \
-            'and changes the Terminal.app colours.' 'spark-shell on --dry-run shows every change.'
+            'and changes the Terminal.app colors.' 'spark-shell on --dry-run shows every change.'
     elif [ "${1:-}" = desktop ]; then
         printf '%s\n' 'spark-shell replaces your shell files, installs packages' \
-            'and changes the console colours.' 'spark-shell on desktop --dry-run shows every change.'
+            'and changes the console colors.' 'spark-shell on desktop --dry-run shows every change.'
     else
         printf '%s\n' 'spark-shell replaces your shell files, installs packages' \
-            'and changes the console colours. spark-shell on --dry-run' 'shows every change.'
+            'and changes the console colors. spark-shell on --dry-run' 'shows every change.'
     fi
     if [ "${1:-}" = desktop ]; then
         printf '\nspark-shell changes how this machine works:\n\n'
@@ -1529,11 +1774,20 @@ boot_warning() {   # boot_warning SHAPE -- before quiet boot on: what it changes
     echo 'spark-shell quiet boot off puts it back.'
     ask_continue
 }
-cmd_on() {   # cmd_on [desktop]
+cmd_on() {   # cmd_on [desktop|login]
     on_warning "$@"
     noun_ok on "$@"
     [ "${1:-}" != desktop ] || [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
+    [ "${1:-}" != login ] || [ "$OS" != Darwin ] || refuse_in login "not on macOS, which has its own login screen"
     config_load
+    if [ "${1:-}" = login ]; then
+        # the config first, as on desktop: everything on does with LOGIN=yes follows
+        if [ "$LOGIN" != yes ]; then
+            if [ "$MODE" = dry ]; then row would config "LOGIN=yes ($CONFIG)"; else changes=$((changes + 1)); fi
+        fi
+        [ "$MODE" = dry ] || config_set LOGIN yes
+        LOGIN=yes; export LOGIN
+    fi
     if [ "${1:-}" = desktop ]; then
         # the config first, then everything on does with DESKTOP=sway:
         # the packages, the renders, seatd on Void (desktop_apply). The
@@ -1561,7 +1815,8 @@ cmd_on() {   # cmd_on [desktop]
     else
         missing=''
         pkgs="$PKG_SHELL $PKG_CLI $PKG_CONSOLE"
-        if desktop_wanted; then pkgs="$pkgs $PKG_DESKTOP"; fi
+        if desktop_wanted || login_wanted; then pkgs="$pkgs $PKG_DESKTOP"; fi
+        if login_wanted; then pkgs="$pkgs $PKG_LOGIN"; fi
         # shellcheck disable=SC2086
         for p in $pkgs; do pkg_installed "$p" || missing="$missing $p"; done
         if [ -z "$missing" ]; then ok packages "installed"
@@ -1617,6 +1872,7 @@ cmd_on() {   # cmd_on [desktop]
     theme_files   # the palette first: every render reads theme.env
     render_all
     old_greetd_off   # the login screen before v0.42, handed back to getty
+    if login_wanted; then login_screen_apply; else login_screen_off; fi
     # spark-shell on PATH, so the prompt and tmux can call it
     link_one "$REPO/spark-shell" "$HOME/.local/bin/spark-shell"
     tmux_reload
@@ -1632,17 +1888,27 @@ cmd_on() {   # cmd_on [desktop]
     fi
 }
 
-cmd_off() {   # cmd_off [desktop]
+cmd_off() {   # cmd_off [desktop|login]
     noun_ok off "$@"
     [ "${1:-}" != desktop ] || [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
+    [ "${1:-}" != login ] || [ "$OS" != Darwin ] || refuse_in login "not on macOS, which has its own login screen"
     config_load
+    [ "$OS" = Darwin ] || pm_detect
     if [ "$MODE" = dry ]; then off_would "${1:-}"; return 0; fi
+    if [ "${1:-}" = login ]; then
+        config_set LOGIN no
+        LOGIN=no; export LOGIN
+        login_screen_off
+        echo "packages stay installed -- the package manager removes them if you want"
+        return 0
+    fi
     if [ "${1:-}" = desktop ]; then
         config_set DESKTOP none
         DESKTOP=none; export DESKTOP
         hand_back $DESKTOP_RENDERED .config/alsa/asoundrc
         old_greetd_off
         seat_off
+        mcp_off
         echo "packages stay installed -- the package manager removes them if you want"
         return 0
     fi
@@ -1656,7 +1922,9 @@ cmd_off() {   # cmd_off [desktop]
     done
     hand_back $RENDERED .config/starship.toml .config/yazi/theme.toml $DESKTOP_RENDERED .config/alsa/asoundrc   # alsa: the bar's default card; yazi: a render v0.35 left, its .bak yours
     old_greetd_off
+    login_screen_off
     seat_off
+    mcp_off
     pm_detect
     console_off   # the palette, the font, the login screen and the boot, as they were
     # spark's own hook must survive the hand-back: a restored or absent
@@ -1683,7 +1951,14 @@ cmd_off() {   # cmd_off [desktop]
 # run uses; nothing is touched. The same gates as the real run: an rc
 # link of ours, a render with the marker or a .bak, the old login screen
 # when its config.toml is ours, seatd by spark-shell's records.
-off_would() {   # off_would [desktop]
+off_would() {   # off_would [desktop|login]
+    if [ "${1:-}" = login ]; then
+        [ "$LOGIN" = no ] || row would config "LOGIN=no ($CONFIG)"
+        login_screen_off
+        dry_close
+        return 0
+    fi
+    _mo=$(mcp_mine); [ -z "$_mo" ] || row would mcp "take$_mo off spark's MCP list"
     if [ "${1:-}" = desktop ]; then
         [ "$DESKTOP" = none ] || row would config "DESKTOP=none ($CONFIG)"
         list=$DESKTOP_RENDERED
@@ -1710,6 +1985,7 @@ off_would() {   # off_would [desktop]
         else row would restore "$p -- removed (no ${p##*/}.bak: there was no file before)"; fi
     done
     old_greetd_off
+    [ "${1:-}" = desktop ] || login_screen_off
     seat_off
     if [ "${1:-}" != desktop ]; then pm_detect; console_off; fi
     dry_close
@@ -1777,12 +2053,14 @@ cmd_status() {
         tool_here "$t" && s=yes || s=no
         printf '  tool  %-16s %s\n' "$t" "$s"
     done
+    theme_load || true   # the wall row below names the ground's hex
     if [ "$OS" = Darwin ]; then s="not on macOS, which has its own desktop"
     elif [ "$DESKTOP" = none ]; then s="none (spark-shell on desktop)"
     elif [ -n "$(desktop_tools)" ]; then s="sway: not installed --$(desktop_tools) (spark-shell on desktop)"
     elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then s="sway: settings not written (spark-shell on)"
     else s="sway: ready, foot uses $(fc-match -f '%{family}' "$FONT" 2>/dev/null || printf '%s' "${FONT%%:*}") (log in on tty1 to start it)"; fi
     printf '  desktop %-14s %s\n' "$DESKTOP" "$s"
+    status_login
     n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' ')   # a saved layout opens as tmux windows anywhere
     if [ "$n" -gt 0 ]; then printf '  layouts %-14s %s\n' "$n saved" "$(ls -A "$LAYOUTS_DIR" | paste -sd ',' - | sed 's/,/, /g') (spark-shell layout NAME)"
     else printf '  layouts %-14s %s\n' none 'spark-shell layout "WORDS" makes one'; fi
@@ -1790,17 +2068,17 @@ cmd_status() {
         if apps_marked; then printf '  apps  %-16s %s\n' "$(grep -c '^[A-Za-z0-9]' "$APPS") allowed" "$(grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd',' - | sed 's/,/, /g') (spark-shell apps)"
         else printf '  apps  %-16s %s\n' all "every app with a desktop entry (spark-shell apps picks the allowed apps)"; fi
         if [ "$WALLPAPER" = none ]; then printf '  wall  %-16s %s\n' none "the palette's background (spark-shell desktop wallpaper PATH|default)"
-        elif wall_colour; then printf '  wall  %-16s %s\n' colour "$WALLPAPER, a plain colour that stays when the palette changes"
+        elif wall_color; then printf '  wall  %-16s %s\n' color "$WALLPAPER, a plain color that stays when the palette changes"
         elif [ "$WALLPAPER" = default ]; then printf '  wall  %-16s %s\n' default "the ground, the palette's background a shade darker ($(wall_ground)); it follows the palette"
         elif wall_there; then printf '  wall  %-16s %s\n' picture "$WALLPAPER"
-        else printf '  wall  %-16s %s\n' missing "$(wall_path) is missing -- the palette's background colour instead"; fi
+        else printf '  wall  %-16s %s\n' missing "$(wall_path) is missing -- the palette's background color instead"; fi
         if [ "$DESKTOP_BAR" = yes ]; then printf '  bar   %-16s %s\n' shown "at the top of the screen: $(bar_names) (spark-shell bar off --desktop hides it)"
         else printf '  bar   %-16s %s\n' hidden "spark-shell bar on --desktop shows it"; fi
     fi
     theme_load || true
-    slots="accent colour${ACCENT_SLOT:-?}, muted colour${MUTED_SLOT:-?} (SGR 1;${ACCENT_SGR:-?} / ${MUTED_SGR:-?})"
+    slots="accent slot ${ACCENT_SLOT:-?}, muted slot ${MUTED_SLOT:-?} (SGR 1;${ACCENT_SGR:-?} / ${MUTED_SGR:-?})"
     [ -f "$THEME_ENV" ] && printf '  theme %-16s %s\n' "${THEME:-theme.env}" "in use: $slots (spark-shell theme NAME changes it)" \
-                        || printf '  theme %-16s %s\n' "${THEME:-theme.env}" "none: the terminal's own 16 colours -- $slots"
+                        || printf '  theme %-16s %s\n' "${THEME:-theme.env}" "none: the terminal's own 16 colors -- $slots"
     status_console
     status_next
 }
@@ -1863,6 +2141,20 @@ cmd_check() {
         elif seat_needed && ! in_group _seatd "$(id -un)"; then chk desktop fail "$(id -un) is not in the _seatd group" "spark-shell on desktop"
         else chk desktop ok "sway and foot are installed and up to date"; fi
     fi
+    if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk mcp ok "na (no desktop)"
+    elif ! mcp_spark >/dev/null; then chk mcp ok "na (spark has no MCP list before 1.90)"
+    else _mn=$(mcp_mine | wc -w | tr -d ' '); _mt=$(printf '%s' "$PROVIDE_SECTIONS" | wc -w | tr -d ' ')
+        if [ "$_mn" = "$_mt" ]; then chk mcp ok "the $_mt providers are on spark's MCP list"; else chk mcp warn "$_mn of $_mt providers on spark's MCP list" "spark-shell on desktop"; fi
+    fi
+    if [ "$OS" = Darwin ] || [ "$LOGIN" != yes ]; then chk login ok "na (the console login, LOGIN=no)"
+    elif ! greetd_here; then chk login fail "greetd is not installed" "spark-shell on login"
+    else
+        login_render; _f=$(login_files_differ)
+        if [ -n "$_f" ]; then chk login fail "out of date:$_f" "spark-shell on login"
+        elif ! login_switched; then chk login fail "the login screen does not take tty1 at boot" "spark-shell on login"
+        elif [ "$DISTRO" = void ] && ! in_group _seatd "$LOGIN_ACCOUNT"; then chk login fail "$LOGIN_ACCOUNT is not in the _seatd group" "spark-shell on login"
+        else chk login ok "the login screen takes tty1 at boot, tty2 keeps the console login"; fi
+    fi
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk apps ok "na (no desktop)"
     else
         sbom_entries; ne=$(wc -l < "$TMP/entries" | tr -d ' ')
@@ -1893,8 +2185,8 @@ cmd_check() {
 # STATE_DIR/bar.pid). It shows the screen and the hardware you sit at;
 # the AI and the machine's load stay on tmux's status line inside each
 # window. Its rules: a block appears only for hardware this machine has
-# (no battery, no bat block); words show state and colour shows alarm
-# (the kind word muted, a name in the text colour, red for a recording
+# (no battery, no bat block); words show state and color shows alarm
+# (the kind word muted, a name in the text color, red for a recording
 # mic, a wire that is down and a battery under 15); the gauges, the
 # output volume and the mic level, are the things you can set (a click
 # sets, the wheel nudges, a right click mutes), so a read-only level
@@ -2037,14 +2329,59 @@ al_control() {   # al_control N p|c -> the mixer control to read and set: Master
 }
 al_level() { amixer -c "$1" sget "$2" 2>/dev/null | grep -o '\[[0-9]*%\]' | head -1 | tr -d '[]%'; }   # al_level N CONTROL -> 0..100 or nothing
 al_muted() { amixer -c "$1" sget "$2" 2>/dev/null | grep -o '\[\(on\|off\)\]' | head -1 | grep -q off && echo 1 || echo 0; }
-al_set_default() {   # al_set_default N -- the card for programs started from now, in spark-shell's own file; refused when the file is yours, taken back when ALSA refuses it
+al_set_default() { al_write "$1" "$(al_bt_routed p)" "$(al_bt_routed c)"; }   # al_set_default N -- the card for programs started from now; a Bluetooth way picked stays
+al_write() {   # al_write N [PLAYDEV] [CAPDEV] -- spark-shell's own file: card N for programs started from now, and a Bluetooth device for playing or listening when one is picked; refused when the file is yours, taken back when ALSA refuses it
     id=$(al_cards | awk -F '\t' -v n="$1" '$1 == n {print $2; exit}')
     if [ -f "$BAR_ASOUNDRC" ] && ! grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC"; then echo "asoundrc is yours"; return 1; fi
+    if _tf=$(al_theirs); then echo "$(al_theirs_said "$_tf"): spark-shell leaves it to that file"; return 1; fi
     mkdir -p "$(dirname "$BAR_ASOUNDRC")"
     # !card: alsa.conf sets the card as a number, and only the ! form lets a name replace it (the plain form is refused, and ALSA drops its whole configuration with it)
-    printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.!card %s\ndefaults.ctl.!card %s\n' "$id" "$id" > "$BAR_ASOUNDRC"
+    {   printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.!card %s\ndefaults.ctl.!card %s\n' "$id" "$id"
+        if [ -n "${2:-}${3:-}" ]; then   # a Bluetooth way: bluez-alsa's own PCM, the other way the card's (sysdefault follows defaults.pcm.card)
+            [ -z "${2:-}" ] || printf '# bluetooth out: %s\n' "$(al_bt_name p "$2")"
+            [ -z "${3:-}" ] || printf '# bluetooth mic: %s\n' "$(al_bt_name c "$3")"
+            printf 'pcm.!default {\n    type asym\n'
+            if [ -n "${2:-}" ]; then printf '    playback.pcm { type plug slave.pcm "bluealsa:DEV=%s,PROFILE=a2dp" }\n' "$2"; else printf '    playback.pcm "sysdefault"\n'; fi
+            if [ -n "${3:-}" ]; then printf '    capture.pcm { type plug slave.pcm "bluealsa:DEV=%s,PROFILE=sco" }\n' "$3"; else printf '    capture.pcm "sysdefault"\n'; fi
+            printf '}\n'
+        fi
+    } > "$BAR_ASOUNDRC"
     amixer -c "$1" scontrols >/dev/null 2>&1 || { rm -f "$BAR_ASOUNDRC"; echo "ALSA refused the file"; return 1; }   # ALSA reads every file at each start: a refused one would take every program's sound
 }
+al_theirs() {   # -> the file, the user's own ~/.asoundrc or one it includes, that sets the default device (exit 0), else exit 1: a pick of ours would be overridden or would override theirs
+    [ -f "$HOME/.asoundrc" ] || return 1
+    { echo "$HOME/.asoundrc"; sed -n 's/^ *<\([~/][^>]*\)>.*$/\1/p' "$HOME/.asoundrc" | sed "s|^~/|$HOME/|"; } | while IFS= read -r f; do if grep -qs '^ *pcm\.!default' "$f"; then printf '%s\n' "$f"; exit 0; fi; done
+}
+al_theirs_said() {   # al_theirs_said FILE -> who picks the sound device, in a few words, the home as ~
+    case $1 in "$HOME/.asoundrc") echo "your ~/.asoundrc picks the sound device" ;; *) echo "${1#"$HOME/"} picks the sound device, read by your ~/.asoundrc" | sed 's|^\([^/~]\)|~/\1|' ;; esac
+}
+# Bluetooth on plain ALSA: bluez-alsa's devices are no card. A headset plays
+# on A2DP and listens on the hands-free link (SCO, 8 kHz); its level is
+# bluez-alsa's own mixer, NAME - A2DP and NAME - SCO, through amixer -D bluealsa.
+al_bt() {   # al_bt p|c -> NAME<tab>DEV per Bluetooth device bluez-alsa offers now that plays (A2DP) | listens (SCO)
+    command -v bluealsa-aplay >/dev/null 2>&1 || return 0
+    _pr=a2dp; _dir=playback; [ "$1" = p ] || { _pr=sco; _dir=capture; }
+    bar_timeout bluealsa-aplay -L 2>/dev/null | awk -v pr="PROFILE=$_pr" -v dir="$_dir" '
+        /^bluealsa:/ { dev = ""; if (index($0, pr)) { d = $0; sub(/.*DEV=/, "", d); sub(/,.*$/, "", d); if (d ~ /^[0-9A-F][0-9A-F](:[0-9A-F][0-9A-F])(:[0-9A-F][0-9A-F])(:[0-9A-F][0-9A-F])(:[0-9A-F][0-9A-F])(:[0-9A-F][0-9A-F])$/) dev = d }; next }
+        dev != "" { l = $0; sub(/^[ \t]+/, "", l); n = split(l, f, ", "); if (f[n] == dir) { name = l; sub(/, .*$/, "", name); gsub(/[^ -~]/, "", name); if (name != "" && !seen[dev]++) print name "\t" dev }; dev = "" }'
+}
+al_bt_name() { al_bt "$1" | awk -F '\t' -v d="$2" '$2 == d {print $1; exit}'; }   # al_bt_name p|c DEV -> its name while bluez-alsa offers it
+al_bt_routed() {   # al_bt_routed p|c -> the DEV spark-shell's file sends playing | listening to, or nothing
+    [ -f "$BAR_ASOUNDRC" ] && grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC" || return 0
+    _w=playback; _pr=a2dp; [ "$1" = p ] || { _w=capture; _pr=sco; }
+    sed -n "s/^ *$_w\.pcm { type plug slave\.pcm \"bluealsa:DEV=\([0-9A-F:]*\),PROFILE=$_pr\" }\$/\1/p" "$BAR_ASOUNDRC" | head -1
+}
+al_bt_said() {   # al_bt_said p|c -> the routed device's name as the file wrote it
+    _w=out; [ "$1" = p ] || _w=mic
+    [ -n "$(al_bt_routed "$1")" ] && sed -n "s/^# bluetooth $_w: //p" "$BAR_ASOUNDRC" | head -1
+}
+al_bt_ctl() {   # al_bt_ctl p|c -> bluez-alsa's mixer control for the routed device, while it is there
+    _d=$(al_bt_routed "$1"); [ -n "$_d" ] || return 1
+    _n=$(al_bt_name "$1" "$_d"); [ -n "$_n" ] || return 1
+    if [ "$1" = p ]; then echo "$_n - A2DP"; else echo "$_n - SCO"; fi
+}
+al_bt_level() { if [ "$1" = p ]; then amixer -D bluealsa sget "$2" 2>/dev/null | sed -n 's/.*Playback [0-9]* \[\([0-9]*\)%\].*/\1/p' | head -1; else amixer -D bluealsa sget "$2" 2>/dev/null | sed -n 's/.*Capture [0-9]* \[\([0-9]*\)%\].*/\1/p' | head -1; fi; }   # al_bt_level p|c CONTROL
+al_bt_muted() { if [ "$1" = p ]; then _s=$(amixer -D bluealsa sget "$2" 2>/dev/null | grep 'Playback [0-9]' | grep -o '\[o[nf]*\]' | head -1); else _s=$(amixer -D bluealsa sget "$2" 2>/dev/null | sed -n 's/.*Capture [0-9]//p' | grep -o '\[o[nf]*\]' | head -1); fi; [ "$_s" = '[off]' ] && echo 1 || echo 0; }   # al_bt_muted p|c CONTROL -> 1 when its switch is off
 al_mend_file() {   # a file v0.45 wrote said `defaults.pcm.card NAME`, which ALSA refuses: the ! form from now
     [ -f "$BAR_ASOUNDRC" ] && grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC" && grep -q '^defaults\.pcm\.card ' "$BAR_ASOUNDRC" || return 0
     t=$(sed -e 's/^defaults\.pcm\.card /defaults.pcm.!card /' -e 's/^defaults\.ctl\.card /defaults.ctl.!card /' "$BAR_ASOUNDRC") && printf '%s\n' "$t" > "$BAR_ASOUNDRC"
@@ -2053,7 +2390,10 @@ snd_out() {   # -> NAME, LEVEL (or -), MUTED on three lines; nothing without an 
     case $SND in
         wpctl) n=$(wp_default Sinks); [ -n "$n" ] || return 0; printf '%s\n%s\n%s\n' "$n" "$(wp_level @DEFAULT_AUDIO_SINK@)" "$(wp_muted @DEFAULT_AUDIO_SINK@)" ;;
         pactl) s=$(pactl get-default-sink 2>/dev/null); [ -n "$s" ] || return 0; n=$(pa_desc sinks "$s"); printf '%s\n%s\n%s\n' "${n:-$s}" "$(pa_level sink @DEFAULT_SINK@)" "$(pa_muted sink @DEFAULT_SINK@)" ;;
-        alsa) c=$(al_out); [ -n "$c" ] || return 0
+        alsa) if [ -n "$(al_bt_routed p)" ]; then   # a Bluetooth output: its mixer while it is there, its name from the file when it is gone
+                if ctl=$(al_bt_ctl p); then printf '%s\n%s\n%s\n' "${ctl% - A2DP}" "$(al_bt_level p "$ctl")" "$(al_bt_muted p "$ctl")"; else printf '%s\n-\n0\n' "$(al_bt_said p)"; fi; return 0
+            fi
+            c=$(al_out); [ -n "$c" ] || return 0
             if ctl=$(al_control "$c" p); then printf '%s\n%s\n%s\n' "$(al_name "$c")" "$(al_level "$c" "$ctl")" "$(al_muted "$c" "$ctl")"; else printf '%s\n-\n0\n' "$(al_name "$c")"; fi ;;
     esac
 }
@@ -2062,7 +2402,10 @@ snd_mic() {   # -> NAME, LIVE, MUTED, LEVEL (or -) on four lines; nothing withou
         wpctl) n=$(wp_default Sources); [ -n "$n" ] || return 0; printf '%s\n%s\n%s\n%s\n' "$n" "$(wp_live)" "$(wp_muted @DEFAULT_AUDIO_SOURCE@)" "$(wp_level @DEFAULT_AUDIO_SOURCE@)" ;;
         pactl) s=$(pactl get-default-source 2>/dev/null); [ -n "$s" ] || return 0; case $s in *.monitor) return 0 ;; esac
             n=$(pa_desc sources "$s"); printf '%s\n%s\n%s\n%s\n' "${n:-$s}" "$(pa_live)" "$(pa_muted source @DEFAULT_SOURCE@)" "$(pa_level source @DEFAULT_SOURCE@)" ;;
-        alsa) c=$(al_mic); [ -n "$c" ] || return 0; live=0; [ -z "$(al_running c)" ] || live=1
+        alsa) if [ -n "$(al_bt_routed c)" ]; then
+                if ctl=$(al_bt_ctl c); then printf '%s\n0\n%s\n%s\n' "${ctl% - SCO}" "$(al_bt_muted c "$ctl")" "$(al_bt_level c "$ctl")"; else printf '%s\n0\n0\n-\n' "$(al_bt_said c)"; fi; return 0
+            fi
+            c=$(al_mic); [ -n "$c" ] || return 0; live=0; [ -z "$(al_running c)" ] || live=1
             if ctl=$(al_control "$c" c); then printf '%s\n%s\n%s\n%s\n' "$(al_name "$c")" "$live" "$(al_muted "$c" "$ctl")" "$(al_level "$c" "$ctl")"; else printf '%s\n%s\n0\n-\n' "$(al_name "$c")" "$live"; fi ;;
     esac
 }
@@ -2082,7 +2425,18 @@ snd_set() {   # snd_set out|mic LEVEL|+5|-5|mute|muted|unmuted -- the change ask
                 +*|-*) pactl "set-$k-volume" "$n" "${1#[+-]}%${1%"${1#?}"}" ;;   # 5%+ / 5%-
                 *) pactl "set-$k-volume" "$n" "$1%" ;;
             esac ;;
-        alsa) if [ "$t" = out ]; then c=$(al_out); k=p; else c=$(al_mic); k=c; fi
+        alsa) k=p; [ "$t" = out ] || k=c
+            if [ -n "$(al_bt_routed "$k")" ]; then   # a Bluetooth way: bluez-alsa's mixer, the same words
+                ctl=$(al_bt_ctl "$k") || return 0
+                off=mute; on=unmute; [ "$k" = p ] || { off=nocap; on=cap; }
+                case $1 in
+                    mute) amixer -q -D bluealsa sset "$ctl" toggle ;; muted) amixer -q -D bluealsa sset "$ctl" "$off" ;; unmuted) amixer -q -D bluealsa sset "$ctl" "$on" ;;
+                    +*|-*) amixer -q -D bluealsa sset "$ctl" "${1#[+-]}%${1%"${1#?}"}" ;;
+                    *) amixer -q -D bluealsa sset "$ctl" "$1%" ;;
+                esac
+                return 0
+            fi
+            if [ "$t" = out ]; then c=$(al_out); else c=$(al_mic); fi
             [ -n "$c" ] && ctl=$(al_control "$c" "$k") || return 0
             off=mute; on=unmute; [ "$k" = p ] || { off=nocap; on=cap; }   # a capture control has a capture switch: amixer's words for it are cap and nocap (mute is refused)
             case $1 in
@@ -2162,7 +2516,7 @@ bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X -- one click or wh
         out:*:4|mic:*:4) snd_set "$1" +5 ;;
         out:*:5|mic:*:5) snd_set "$1" -5 ;;
         out:*:2|out:*:3|mic:*:2|mic:*:3) snd_set "$1" mute ;;
-        logo:*:1) bar_panel_open clock ;;   # the sign opens the panel as Super+d does
+        logo:*:1) bar_panel_open '' ;;   # the prompt sign opens the dialog at its prompt, every section under it, as Super+d does
         *:*:1) bar_panel_open "$1" ;;   # the panel, that block first
     esac
 }
@@ -2249,7 +2603,7 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | volu
 # THE PANEL is the desktop's one surface: see the machine, say what you
 # would like, have it done, and take it back. One small floating window, the same
 # size and place every time (the sway template centres it), in the
-# palette's colours. Super+d opens it, Super+s opens it already in spark
+# palette's colors. Super+d opens it, Super+s opens it already in spark
 # chat, a click on a bar block opens it with that block first. Esc
 # closes it, and so does the key that opened it, pressed again. The
 # focus is never watched: the mouse may wander.
@@ -2294,13 +2648,13 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | volu
 # --- the signs and the sizes
 PANEL_APP='spark-dialog'              # the desktop window's app id: the dialog's since v0.64 (the sway template floats and centres it)
 PANEL_SIZE=60x44                      # columns x rows of the desktop window: the dialog's size, a design token
-PANEL_COL=6                           # the section column: as wide as the longest section's name
+PANEL_COL=9                           # the section column: as wide as the longest section's name
 PANEL_IN=4                            # the glance's indent: the section column, where every row's text begins
 PULSE_W=32                            # the corner: the march's place at the top right of the window, on the date's row, this many cells from the right margin
 panel_col() { printf "%-${PANEL_COL}s  " "$1"; }   # panel_col SECTION -> the name in its column, two cells before the text
-panel_sign() { case $1 in "$PANEL_DOT"|"$PANEL_TICK") printf '%s%s%s' "${PANEL_MARK:-}" "$1" "${PANEL_UNMARK:-}" ;; "$PANEL_CROSS") printf '%s%s%s' "${PANEL_RED:-}" "$1" "${PANEL_UNMARK:-}" ;; *) printf '%s' "$1" ;; esac; }   # panel_sign SIGN -> coloured: what is current in the accent, a refusal red
+panel_sign() { case $1 in "$PANEL_DOT"|"$PANEL_TICK") printf '%s%s%s' "${PANEL_MARK:-}" "$1" "${PANEL_UNMARK:-}" ;; "$PANEL_CROSS") printf '%s%s%s' "${PANEL_RED:-}" "$1" "${PANEL_UNMARK:-}" ;; *) printf '%s' "$1" ;; esac; }   # panel_sign SIGN -> colored: what is current in the accent, a refusal red
 panel_indent() { sed "s/^/$(printf "%${PANEL_IN}s" '')/"; }   # the glance's lines, in from the edge
-panel_line_sign() { case $1 in "$PANEL_DOT "*|"$PANEL_TICK "*|"$PANEL_CROSS "*) printf '%s %s' "$(panel_sign "${1%% *}")" "${1#* }" ;; *) printf '%s' "$1" ;; esac; }   # panel_line_sign LINE -> the line, its leading sign coloured
+panel_line_sign() { case $1 in "$PANEL_DOT "*|"$PANEL_TICK "*|"$PANEL_CROSS "*) printf '%s %s' "$(panel_sign "${1%% *}")" "${1#* }" ;; *) printf '%s' "$1" ;; esac; }   # panel_line_sign LINE -> the line, its leading sign colored
 TAB=$(printf '\t')
 PANEL_DOT=$(printf '\342\227\217')    # U+25CF, a filled circle: in use, connected
 PANEL_RING=$(printf '\342\227\213')   # U+25CB, an empty circle: available
@@ -2312,7 +2666,7 @@ PANEL_SEP=$(printf '\302\267')        # U+00B7, a middle dot: between facts on a
 PANEL_PROMPT=$(printf '\342\235\257') # U+276F, a heavy angle: the prompt, as starship draws it; in the top right corner, the glyph that closes
 PANEL_UP=$(printf '\342\206\221')     # U+2191, up: the arrow keys in the hint
 PANEL_DOWN=$(printf '\342\206\223')   # U+2193, down
-PANEL_MARK=''; PANEL_UNMARK=''; PANEL_DIM=''; PANEL_CHIP=''   # the accent, its end, the muted colour, a key's ground: set at a terminal (panel_colours)
+PANEL_MARK=''; PANEL_UNMARK=''; PANEL_DIM=''; PANEL_CHIP=''   # the accent, its end, the muted color, a key's ground: set at a terminal (panel_colors)
 panel_chip() { if [ -n "$PANEL_CHIP" ]; then printf '%s %s %s' "$PANEL_CHIP" "$1" "$PANEL_UNMARK"; else printf '%s' "$1"; fi; }   # panel_chip KEY -> the key as a key: on the lit ground, a cell of air each side; plain on a pipe
 panel_keys() {   # panel_keys COMBO -> each key of Super+d as a chip, a cell apart; the combo as written on a pipe
     [ -n "$PANEL_CHIP" ] || { printf '%s' "$1"; return 0; }
@@ -2320,7 +2674,7 @@ panel_keys() {   # panel_keys COMBO -> each key of Super+d as a chip, a cell apa
     while [ -n "$_rest" ]; do case $_rest in *+*) _k=${_rest%%+*}; _rest=${_rest#*+} ;; *) _k=$_rest; _rest='' ;; esac; _o="$_o${_o:+ }$(panel_chip "$_k")"; done
     printf '%s' "$_o"
 }
-panel_colours() {   # the three SGRs from our own render, when there is one (a pipe gets none)
+panel_colors() {   # the three SGRs from our own render, when there is one (a pipe gets none)
     # shellcheck disable=SC1091   # our own render
     [ ! -f "$CONFIG_DIR/sgr.sh" ] || . "$CONFIG_DIR/sgr.sh"
     PANEL_MARK=$(printf '\033[%sm' "${SPARK_ACCENT_SGR:-1}"); PANEL_UNMARK=$(printf '\033[0m'); PANEL_DIM=$(printf '\033[%sm' "$(hex_sgr "$PANEL_MUTED")"); PANEL_RED=$(printf '\033[31m')
@@ -2328,7 +2682,7 @@ panel_colours() {   # the three SGRs from our own render, when there is one (a p
 }
 
 # --- the sections: their order by use, which of them this machine has, what each costs
-PANEL_ORDER="undo spark layout out mic theme window bar bt apps wifi about"   # the sections with something to do, most used first; undo only while there is one; the slow one late, so the order never shifts; about last
+PANEL_ORDER="undo spark apps layout window out mic bt wifi theme wallpaper bar about"   # grouped by what you do: what is on the screen, the sound, the connections, the look, then about; undo only while there is one
 PANEL_BLOCKS="lan wifi bt out mic bat clock theme"      # the bar's blocks in the bar's order, and the palette: the facts, and what a click may open
 PANEL_LOOKS="lan bat clock"                            # blocks with nothing to set: shown only when they opened the panel
 panel_blocks_here() {   # -> the bar's blocks this machine has, in the bar's order
@@ -2348,7 +2702,7 @@ panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on
     [ "$_f" = glance ] || echo "$_f"
     for s in $PANEL_ORDER; do
         [ "$s" != "$_f" ] || continue
-        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
+        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|wallpaper) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
         echo "$s"
     done
 }
@@ -2446,7 +2800,7 @@ wifi_tool() {   # -> nmcli | iwctl | wpa_cli | nothing
     fi
 }
 wifi_level() { _l=$(( ($1 + 100) * 2 )); [ "$_l" -ge 0 ] || _l=0; [ "$_l" -le 100 ] || _l=100; echo $(( (_l + 12) / 25 )); }   # wifi_level DBM -> 0..4
-wifi_strip() { sed 's/\x1b\[[0-9;]*m//g; s/^[ >]*//; s/ *$//'; }   # iwctl's colours and marks off
+wifi_strip() { sed 's/\x1b\[[0-9;]*m//g; s/^[ >]*//; s/ *$//'; }   # iwctl's colors and marks off
 wifi_connected() {   # -> the network in use, or nothing
     case $(wifi_tool) in
         nmcli) nmcli -t -e yes -f IN-USE,SSID dev wifi list 2>/dev/null | awk -F: '$1 == "*" { sub(/^[^:]*:/, ""); gsub(/\\:/, ":"); print; exit }' ;;
@@ -2565,7 +2919,9 @@ snd_devices() {   # snd_devices out|mic -> NAME<tab>DEFAULT(1/0) per device
                 n=$(pa_desc "$_k" "$s"); d=0; [ "$s" != "$_d" ] || d=1; printf '%s\t%s\n' "${n:-$s}" "$d"
             done ;;
         alsa) if [ "$1" = out ]; then _k=p; _d=$(al_out); else _k=c; _d=$(al_mic); fi
-            for c in $(al_with "$_k"); do d=0; [ "$c" != "$_d" ] || d=1; printf '%s\t%s\n' "$(al_name "$c")" "$d"; done ;;
+            _b=$(al_bt_routed "$_k"); [ -z "$_b" ] || _d=''   # a Bluetooth way picked: no card is the one in use
+            for c in $(al_with "$_k"); do d=0; [ "$c" != "$_d" ] || d=1; printf '%s\t%s\n' "$(al_name "$c")" "$d"; done
+            al_bt "$_k" | while IFS="$TAB" read -r n v; do d=0; [ "$v" != "$_b" ] || d=1; printf '%s\t%s\n' "$n" "$d"; done ;;
     esac
 }
 snd_use() {   # snd_use out|mic NAME -> one line; on plain ALSA the output's card holds for programs started from now
@@ -2578,10 +2934,21 @@ snd_use() {   # snd_use out|mic NAME -> one line; on plain ALSA the output's car
             _id=$(pactl list short "$_k" 2>/dev/null | cut -f2 | while IFS= read -r s; do d=$(pa_desc "$_k" "$s"); [ "$(panel_lower "${d:-$s}")" != "$_n" ] || { echo "$s"; break; }; done)
             [ -n "$_id" ] || { echo "no $1 named $2"; return 1; }
             pactl "$_v" "$_id" >/dev/null 2>&1 && echo "$1 $2" || { echo "could not switch $1 to $2"; return 1; } ;;
-        alsa) [ "$1" = out ] || { echo "on plain ALSA the mic follows the output's card"; return 0; }
+        alsa) _k=p; [ "$1" = out ] || _k=c
+            _v=$(al_bt "$_k" | awk -F '\t' -v n="$_n" 'tolower($1) == n && !d {print $2; d = 1}')
+            if [ -n "$_v" ]; then   # a Bluetooth device: this way through bluez-alsa, the other way as it was, the card kept
+                _c=$(al_default); [ -n "$_c" ] || _c=$(al_first p)
+                if [ "$_k" = p ]; then _r=$(al_write "$_c" "$_v" "$(al_bt_routed c)"); else _r=$(al_write "$_c" "$(al_bt_routed p)" "$_v"); fi || { echo "$_r"; return 1; }
+                echo "$1 $2 for programs started from now"; return 0
+            fi
+            if [ "$_k" = c ]; then   # a card: on plain ALSA the mic follows the output's card; a Bluetooth mic picked goes back to it
+                [ -n "$(al_bt_routed c)" ] || { echo "on plain ALSA the mic follows the output's card"; return 0; }
+                _r=$(al_write "$(al_default)" "$(al_bt_routed p)" '') || { echo "$_r"; return 1; }
+                echo "mic back on the output's card for programs started from now"; return 0
+            fi
             _c=''; for c in $(al_with p); do [ "$(panel_lower "$(al_name "$c")")" != "$_n" ] || { _c=$c; break; }; done
             [ -n "$_c" ] || { echo "no output named $2"; return 1; }
-            _r=$(al_set_default "$_c") || { echo "$_r"; return 1; }
+            _r=$(al_write "$_c" '' "$(al_bt_routed c)") || { echo "$_r"; return 1; }
             echo "out $2 for programs started from now" ;;
         *) echo "no audio system answers"; return 1 ;;
     esac
@@ -2609,7 +2976,8 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
             _cap=${_b%% *}; _st=$(panel_lower "${_b#* }"); _w=''; [ "$_cap" -ge 15 ] 2>/dev/null || [ "$_st" = charging ] || _w="$PANEL_WARN "
             _s="$(panel_col bat)$_w$_cap% $PANEL_SEP $_st"; _left=$(bat_left); [ -z "$_left" ] || _s="$_s $PANEL_SEP $_left"; echo "$_s" ;;
         clock) date '+%A %d %B %Y' ;;   # the time and the month are drawn under it (clock_view)
-        theme) echo "$(panel_col theme)${THEME:-none} $PANEL_SEP $(bar_font)" ;;   # the wallpaper and the see-through amount are named in their rows
+        theme) echo "$(panel_col theme)${THEME:-none} $PANEL_SEP $(bar_font)" ;;   # the transparency is named in its row
+        wallpaper) _cur=$(wall_name); echo "$(panel_col wallpaper)${_cur:-$(basename "$(wall_path)")}" ;;
         window) echo "$(panel_col window)$(win_words "$WINDOWS")" ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown at the top of the screen"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys Super+d) opens the dialog"; fi ;;
         about) echo "$(panel_col about)spark-shell $(panel_version) $PANEL_SEP the keys, the licence, the address" ;;
@@ -2696,7 +3064,13 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                 printf -- '-\tfind new devices\tscan\n-\tturn off\tpower off\n'
             else printf -- '-\tturn on\tpower on\n'; fi ;;
         out|mic) [ -n "${SND:-}" ] || { printf -- '-\tno audio system found\tshow\n'; return 0; }
-            snd_devices "$1" | while IFS="$TAB" read -r n d; do if [ "$d" = 1 ]; then printf '%s\t%s\tshow\n' "$PANEL_DOT" "$n"; else printf '%s\t%s\tuse %s\n' "$PANEL_RING" "$n" "$n"; fi; done
+            _tf=''; [ "$SND" != alsa ] || _tf=$(al_theirs) || _tf=''
+            if [ -n "$_tf" ]; then   # your own file picks the device: the devices shown, no pick that could only be refused, and the file named
+                snd_devices "$1" | while IFS="$TAB" read -r n d; do if [ "$d" = 1 ]; then printf '%s\t%s\tshow\n' "$PANEL_DOT" "$n"; else printf '%s\t%s\tshow\n' "$PANEL_RING" "$n"; fi; done
+                printf -- '-\t%s\tshow\n' "$(al_theirs_said "$_tf")"
+            else
+                snd_devices "$1" | while IFS="$TAB" read -r n d; do if [ "$d" = 1 ]; then printf '%s\t%s\tshow\n' "$PANEL_DOT" "$n"; else printf '%s\t%s\tuse %s\n' "$PANEL_RING" "$n" "$n"; fi; done
+            fi
             if [ "$1" = out ]; then _o=$(snd_out); _m=$(printf '%s\n' "$_o" | sed -n 3p); _lv=$(printf '%s\n' "$_o" | sed -n 2p)
             else _o=$(snd_mic); _m=$(printf '%s\n' "$_o" | sed -n 3p); _lv=$(printf '%s\n' "$_o" | sed -n 4p); fi
             [ "$_lv" = - ] || [ -z "$_lv" ] || { if [ "$_m" = 1 ]; then printf -- '-\tunmute\tunmute\n'; else printf -- '-\tmute\tmute\n'; fi; } ;;
@@ -2714,14 +3088,16 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                 if [ "$n" = "${THEME:-none}" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$n"; else printf -- '-\t%s\t%s\n' "$n" "$n"; fi
             done
             [ -z "$_sz" ] || printf -- '-\tfont bigger %s %s now\tfont bigger\n-\tfont smaller\tfont smaller\n' "$PANEL_SEP" "$_sz"
-            _cur=$WALLPAPER; case $_cur in default|none) ;; *) if wall_colour; then _cur=$WALLPAPER; else printf '%s\twallpaper %s\tshow\n' "$PANEL_TICK" "$_cur"; _cur=''; fi ;; esac
-            for w in default none $WALL_NAMES; do
-                _h=$(wall_hex "$w" 2>/dev/null || :)
-                if [ "$w" = "$_cur" ] || { [ -n "$_h" ] && [ "$_h" = "$(panel_lower "$WALLPAPER")" ]; }; then printf '%s\twallpaper %s\tshow\n' "$PANEL_TICK" "$w"; else printf -- '-\twallpaper %s\twallpaper %s\n' "$w" "$w"; fi
+            _st=$(transparency_of "$ALPHA")
+            if [ "$_st" -eq 0 ]; then printf '%s\ttransparency off\tshow\n' "$PANEL_TICK"; else printf '%s\ttransparency %s%%\tshow\n' "$PANEL_TICK" "$_st"; fi
+            printf -- '-\tmore transparency\ttransparency more\n-\tless transparency\ttransparency less\n' ;;
+        wallpaper) _cur=$(wall_name)
+            [ "${2:-}" = full ] || { printf -- '-\t%s %s more\tmore\n' "${_cur:-a picture}" "$PANEL_SEP"; return 0; }   # one row in the list, as theme: typing finds every row below
+            [ -n "$_cur" ] || printf '%s\tpicture %s\tshow\n' "$PANEL_TICK" "$(basename "$(wall_path)")"
+            for w in default none $(wall_shipped_names) $WALL_NAMES; do   # the shipped wallpapers, then the colors
+                if [ "$w" = "$_cur" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$w"; else printf -- '-\t%s\tuse %s\n' "$w" "$w"; fi
             done
-            _st=$(see_through "$ALPHA")
-            if [ "$_st" -eq 0 ]; then printf '%s\twindows solid\tshow\n' "$PANEL_TICK"; else printf '%s\twindows see-through %s%%\tshow\n' "$PANEL_TICK" "$_st"; fi
-            printf -- '-\tmore see-through\tsee-through more\n-\tless see-through\tsee-through less\n' ;;
+            printf -- '-\ta picture\tpick\n' ;;   # the files, to pick a picture from (the dialog's)
         about) printf '%s\tspark-shell %s\topen\n' "$PANEL_GO" "$(panel_version)" ;;   # the splash, in this window
         window) for _w in split tabs stacked; do
                 if [ "$_w" = "${WINDOWS:-split}" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$(win_words "$_w")"; else printf -- '-\t%s\t%s\n' "$(win_words "$_w")" "$_w"; fi
@@ -2734,10 +3110,10 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ ! -f "$DESK_LAST" ] || jq -r '.suggested // [] | .[]' "$DESK_LAST" 2>/dev/null | while IFS= read -r a; do printf '%s\talso open %s\tadd %s\n' "$PANEL_GO" "$a" "$a"; done   # what spark also suggested for the last layout, one Enter away
             [ -z "${SWAYSOCK:-}" ] || printf '%s\tsave what is open now\tsave\n' "$PANEL_GO" ;;
         apps) printf '%s\tterminal\tterminal\n' "$PANEL_GO"   # a terminal window, as Super+Return
-            panel_apps_known | { _n=0; while IFS= read -r a; do   # the apps a layout may open, as rows that open one; six unless full
-                    _n=$((_n + 1)); if [ "${2:-}" != full ] && [ "$_n" -gt 6 ]; then continue; fi
+            panel_apps_known | { _n=0; while IFS= read -r a; do   # the apps a layout may open, as rows that open one; three unless full
+                    _n=$((_n + 1)); if [ "${2:-}" != full ] && [ "$_n" -gt 3 ]; then continue; fi
                     printf '%s\t%s\topen %s\n' "$PANEL_GO" "$a" "$a"
-                done; [ "${2:-}" = full ] || [ "$_n" -le 6 ] || printf -- '-\t%s more\tmore\n' $((_n - 6)); }
+                done; [ "${2:-}" = full ] || [ "$_n" -le 3 ] || printf -- '-\t%s more\tmore\n' $((_n - 3)); }
             printf '%s\tchoose the allowed apps\tpick\n' "$PANEL_GO" ;;
         spark) printf '%s\tchat\tchat\n' "$PANEL_GO" ;;
         undo) [ -s "$PANEL_CACHE/undo" ] || return 0
@@ -2793,6 +3169,12 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 unmute) snd_set "$_p" unmuted; snd_said "$_p" unmuted ;;
                 *) echo "$_a is not something $_p does"; return 1 ;;
             esac ;;
+        wallpaper) case $_a in
+                use) _r=$(cmd_desktop wallpaper "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "wallpaper $_arg" ;;
+                picture) _pp=$(wall_picture_ok "$_arg") || { echo "$_pp"; return 1; }
+                    _r=$(cmd_desktop wallpaper "$_pp" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "wallpaper ${_pp##*/}" ;;
+                *) echo "$_a is not something wallpaper does"; return 1 ;;
+            esac ;;
         theme) case $_a in
                 font) _sz=$(look_font_size); [ -n "$_sz" ] || { echo "FONT=$FONT has no size to change (the config)"; return 1; }
                     if [ "$_arg" = bigger ]; then _new=$((_sz + 1)); else _new=$((_sz - 1)); fi
@@ -2804,11 +3186,11 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 alpha) case $_arg in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) ;; *) echo "alpha is 0 to 1, as 0.85"; return 1 ;; esac
                     config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply
                     echo "alpha $_arg" ;;
-                see-through) case $_arg in more) _d=-0.1 ;; less) _d=0.1 ;; *) echo "see-through takes more or less"; return 1 ;; esac
+                transparency|see-through) case $_arg in more) _d=-0.1 ;; less) _d=0.1 ;; *) echo "transparency takes more or less"; return 1 ;; esac   # see-through: the word before v0.71
                     _new=$(awk -v a="$ALPHA" -v d="$_d" 'BEGIN { v = a + d; if (v > 1) v = 1; if (v < 0.5) v = 0.5; s = sprintf("%.2f", v); sub(/0$/, "", s); print s }')
-                    [ "$_new" != "$ALPHA" ] || { if [ "$_d" = 0.1 ]; then echo "the windows are solid already"; else echo "see-through stops at 50%"; fi; return 1; }
+                    [ "$_new" != "$ALPHA" ] || { if [ "$_d" = 0.1 ]; then echo "transparency is off already"; else echo "transparency stops at 50%"; fi; return 1; }
                     config_set ALPHA "$_new" >/dev/null; ALPHA=$_new; export ALPHA; look_apply
-                    _st=$(see_through "$_new"); if [ "$_st" -eq 0 ]; then echo "windows solid"; else echo "windows see-through $_st% $PANEL_SEP new windows take it"; fi ;;
+                    _st=$(transparency_of "$_new"); if [ "$_st" -eq 0 ]; then echo "transparency off"; else echo "transparency $_st% $PANEL_SEP new windows take it"; fi ;;
                 theme) _r=$(cmd_theme "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "theme $_arg" ;;   # the old spelling of a step
                 *) _r=$(cmd_theme "$_a" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "theme $_a" ;;   # a palette, by its name
             esac ;;
@@ -2915,12 +3297,13 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
             case $_lv in ''|-) ;; *) printf 'level %s\t%s at %s%%\n' "$_lv" "$_p" "$_lv" ;; esac ;;
         out:use|mic:use) _cur=$(snd_devices "$_p" | awk -F '\t' '$2 == 1 && !d {print $1; d = 1}'); [ -z "$_cur" ] || printf 'use %s\t%s %s\n' "$_cur" "$_p" "$_cur" ;;   # the whole list read: no broken pipe
         theme:font) if [ "$_arg" = bigger ]; then printf 'font smaller\tfont smaller\n'; else printf 'font bigger\tfont bigger\n'; fi ;;
-        theme:alpha|theme:see-through) printf 'alpha %s\twindows see-through %s%%\n' "$ALPHA" "$(see_through "$ALPHA")" ;;
+        theme:alpha|theme:transparency|theme:see-through) printf 'alpha %s\ttransparency %s%%\n' "$ALPHA" "$(transparency_of "$ALPHA")" ;;
         window:close|window:focus) ;;   # a closed window does not come back; a window in front has no inverse worth a row
         window:*) printf '%s\twindows %s\n' "${WINDOWS:-split}" "$(win_words "$WINDOWS")" ;;
         bar:off) printf 'on\tbar shown\n' ;;
         bar:on) printf 'off\tbar hidden\n' ;;
         theme:wallpaper) printf 'wallpaper %s\twallpaper %s\n' "$WALLPAPER" "$WALLPAPER" ;;
+        wallpaper:*) _cur=$(wall_name); if [ -n "$_cur" ]; then printf 'use %s\twallpaper %s\n' "$_cur" "$_cur"; else printf 'picture %s\twallpaper %s\n' "$WALLPAPER" "${WALLPAPER##*/}"; fi ;;
         theme:theme) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
         theme:*) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
         wifi:connect) _c=$(wifi_connected); if [ -n "$_c" ]; then printf 'connect %s\twifi %s\n' "$_c" "$_c"; else printf 'disconnect\twifi off\n'; fi ;;
@@ -3004,6 +3387,8 @@ look_font_size() { printf '%s' "$FONT" | sed -n 's/.*size=\([0-9][0-9]*\).*/\1/p
 
 # --- the gate and the list as text
 panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0), or why not (exit 1): only a step the section offers now
+    [ "$1:$2" != theme:see-through ] || set -- theme transparency "${3:-}"   # the word before v0.71
+    case $1:$2 in out:use|mic:use) SND=${SND:-$(snd_tool)}; if [ "$SND" = alsa ] && _tf=$(al_theirs); then echo "$(al_theirs_said "$_tf"): spark-shell leaves it to that file"; return 1; fi ;; esac   # your own file picks the device: said, not "not on the panel"
     if ! panel_section_ok "$1" || [ "$1" = glance ] || [ "$1" = chat ]; then if [ -n "$1" ]; then echo "no $1 here"; else echo "a step with no section"; fi; return 1; fi
     case $1:$2 in
         spark:chat|undo:all|about:open) echo ''; return 0 ;;
@@ -3015,6 +3400,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         apps:pick|apps:terminal) echo ''; return 0 ;;
         window:close|window:focus|apps:close|apps:focus) _n=$(win_named "${3:-}"); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "window: no window named ${3:-?} is open"; return 1 ;;   # apps close NAME is read as window close: the window, not the app
         out:level|mic:level) case $3 in [0-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "$1: level takes 0 to 100"; return 1 ;; esac ;;
+        wallpaper:picture) _pp=$(wall_picture_ok "${3:-}") && { echo "$_pp"; return 0; }; echo "$_pp"; return 1 ;;
         theme:alpha) case $3 in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) echo "$3"; return 0 ;; *) echo "theme: alpha takes 0 to 1"; return 1 ;; esac ;;
     esac
     _want=$(panel_lower "$2 $3" | sed 's/ *$//')
@@ -3030,9 +3416,14 @@ panel_list() {   # panel_list [SECTION] -> the glance (the clock's view under it
 }
 
 # --- the router and the want: a row is fzf's; an app named is a layout; the rest is spark's
-panel_brief() {   # -> "section: action ARG, ...; section: ..." -- what spark may pick from
+panel_brief_sections() {   # -> the sections the want path offers here, in the brief's order
     for p in layout apps window bar $(panel_blocks_here); do
-        case $p in lan|bat|clock) continue ;; window|bar) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; esac
+        case $p in lan|bat|clock) continue ;; window|bar) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
+        printf '%s\n' "$p"
+    done
+}
+panel_brief() {   # -> "section: action ARG, ...; section: ..." -- what spark may pick from
+    for p in $(panel_brief_sections); do
         if [ "$p" = layout ]; then
             _saved=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | sed 's/^/open /' | paste -sd, - | sed 's/,/, /g')
             _acts="${_saved:+$_saved, }new TASK"
@@ -3083,21 +3474,73 @@ want_plan() {   # want_plan WORDS -> $TMP/plan; exit 1 when the words could not 
         else want_put step layout new "$1" "$1"; fi   # the layout's model reads the whole sentence: the workspace, fullscreen, the pages
         return 0
     fi
+    if "$spark" help </dev/null 2>/dev/null | grep -q '^ *spark steps '; then want_steps "$1"; return; fi   # spark 1.90 plans with the tools themselves (contract 16); an older spark, the brief below
     _brief=$(panel_brief)
     [ -n "$_brief" ] || { want_put no "nothing on the panel takes an action on this machine"; return 1; }
     about="The panel of a desktop. What the bar shows now: $(panel_facts). What this machine can do now, by section -- $_brief. Rules: only steps from that list; N is a number (0 to 100 for level, 0 to 1 for alpha), NAME a name as listed, TASK the want in the user's own words, as {\"page\": \"layout\", \"action\": \"new\", \"arg\": \"write notes\"}, which opens the apps for that task, any program by name included; a layout step for a want that names a program or a task to do, never for a setting alone; as few steps as the want takes; no step when nothing on the list does it; when the words ask something rather than ask for a change, put the answer in \"answer\", one or two sentences, and give no steps. Answer with one JSON object and nothing else: {\"why\": \"one sentence\", \"answer\": \"\", \"steps\": [{\"page\": \"bt\", \"action\": \"connect\", \"arg\": \"NAME\"}]}"
     st=0; "$spark" edit --type json --name panel.json --about "$about" -- "do this on the desktop: $1" </dev/null > "$TMP/want.json" 2>"$TMP/want.err" || st=$?
     [ "$st" -eq 0 ] || { want_put no "$PANEL_CROSS spark did not answer: $(head -1 "$TMP/want.err")"; return 1; }
     jq -e '.steps | arrays' "$TMP/want.json" >/dev/null 2>&1 || { want_put no "$PANEL_CROSS the answer was not steps for the panel"; return 1; }
-    if [ "$(jq -r '.steps | length' "$TMP/want.json")" -eq 0 ]; then   # the model's why is not shown: the steps say it; a question gets its answer
-        _ans=$(jq -r '.answer // "" | gsub("[\\n\\r]+"; " ")' "$TMP/want.json")
-        if want_is_question "$1"; then if [ -n "$_ans" ]; then want_put say "$_ans"; else want_put say "nothing here answers that"; fi
-        elif want_says_close "$1"; then want_put no "$PANEL_CROSS no step on the panel does that"
-        else want_put step layout new "$1" "$1"; fi   # not a question and no step: a task, then -- the layout's own model reads it (never a shrug for "writing with vi")
-        return 0
-    fi
+    if [ "$(jq -r '.steps | length' "$TMP/want.json")" -eq 0 ]; then want_nostep "$1"; return 0; fi
     jq -r '.steps[] | [(.page // "" | tostring), (.action // "" | tostring), (.arg // "" | tostring)] | @tsv' "$TMP/want.json" > "$TMP/want.steps"
     while IFS="$TAB" read -r pg ac ar; do want_step "$pg" "$ac" "$ar"; done < "$TMP/want.steps"
+}
+want_nostep() {   # want_nostep WORDS -- no step came back: a question gets its answer, words that end something or a word or two the honest line, else a task (the model's why is not shown: the steps say it)
+    _ans=$(jq -r '.answer // "" | gsub("[\\n\\r]+"; " ")' "$TMP/want.json")
+    if want_is_question "$1"; then if [ -n "$_ans" ]; then want_put say "$_ans"; else want_put say "nothing here answers that"; fi
+    elif want_says_close "$1"; then want_put no "$PANEL_CROSS no step on the panel does that"
+    elif [ "$(printf '%s\n' "$1" | wc -w | tr -d ' ')" -le 2 ]; then want_put no "$PANEL_CROSS no step on the panel does that"   # a word or two is no task: "about" once opened aerc
+    else want_put step layout new "$1" "$1"; fi   # not a question and no step: a task, then -- the layout's own model reads it (never a shrug for "writing with vi")
+}
+# spark steps (spark 1.90, contract 16) plans with the tools themselves: the
+# desktop's tools on stdin as one tools/list result, the words, and the
+# bar's facts and the names each tool takes now as the about, so a step
+# names a thing as the rows write it.
+# What comes back is held by spark's grammar and gated by it; here each
+# step maps back to SECTION ACTION ARG and is gated against the rows again.
+want_tools() {   # -> the desktop's tools as one tools/list result: those of the sections the panel offers here, the about and undo, never the files' (a path is picked in the dialog, never said)
+    _here=" $(panel_brief_sections | tr '\n' ' ')"
+    for t in $PROVIDE_TOOLS; do
+        tool_spec "$t" || continue
+        case $_ts in files) continue ;; about|undo) ;; *) case $_here in *" $_ts "*) ;; *) continue ;; esac ;; esac
+        tool_json "$t"   # no enum of the names listed now: a grammar held to them wrote a wrong network for one not listed; a name not listed whole is refused by the gate instead
+    done | jq -cs '{tools: .}'
+}
+want_name_rows() {   # -> TOOL<tab>NAME per name a tool takes now, as the rows write it: the machine's own things (outputs, devices, networks, windows, layouts, apps), never the theme's words (palettes and colors read from the words; listing them pulled a model off theme_alpha)
+    for p in $(panel_brief_sections); do
+        case $p in
+            theme) ;;
+            layout) ls -A "$LAYOUTS_DIR" 2>/dev/null | sed 's/^/layout_open	/' ;;
+            apps) panel_apps_known | sed 's/^/apps_open	/' ;;
+            *) panel_rows "$p" full | cut -f3 | grep -vx show | while IFS= read -r a; do if action_tool "$p" "$a" && [ "$_tp" = name ] && [ -n "$_tv" ]; then printf '%s\t%s\n' "$_tool" "$_tv"; fi; done ;;   # an if: a row that takes no name is no failure under set -e
+        esac
+    done | awk '!seen[$0]++'
+}
+want_names() { awk -F '\t' '{ if (!($1 in l)) { o[++n] = $1; l[$1] = $2 } else l[$1] = l[$1] ", " $2 } END { for (i = 1; i <= n; i++) printf "%s%s: %s", (i > 1 ? "; " : ""), o[i], l[o[i]] }' "$TMP/want.names"; }   # -> "TOOL: NAME, NAME; ..." for the about, from the rows want_steps read (an enum of names with spaces reads TEXT in spark's brief)
+want_steps() {   # want_steps WORDS -> $TMP/plan from spark steps; exit 1 when spark did not answer
+    want_name_rows > "$TMP/want.names"
+    _about=$(printf 'A desktop. What the bar shows now: %s. The names each tool takes now -- %s. A name in a step is one of these, whole and exactly as written here.' "$(panel_facts)" "$(want_names)" | cut -c1-1800)
+    st=0; want_tools | "$spark" steps --about "$_about" -- "$1" > "$TMP/want.json" 2>"$TMP/want.err" || st=$?
+    [ "$st" -eq 0 ] || { want_put no "$PANEL_CROSS spark did not answer: $(head -1 "$TMP/want.err")"; return 1; }
+    jq -e '.steps | arrays' "$TMP/want.json" >/dev/null 2>&1 || { want_put no "$PANEL_CROSS the answer was not steps for the panel"; return 1; }
+    jq -r '.refused[]? | strings' "$TMP/want.json" > "$TMP/want.refused"
+    while IFS= read -r l; do want_put no "$PANEL_CROSS $l"; done < "$TMP/want.refused"
+    _n=$(jq -r '.steps | length' "$TMP/want.json")
+    if [ "$_n" -eq 0 ]; then   # no step: the answer, else one honest line; never a layout of our own (layout_new is a tool spark may pick itself)
+        [ ! -s "$TMP/want.refused" ] || return 0
+        _ans=$(jq -r '.answer // "" | gsub("[\\n\\r]+"; " ")' "$TMP/want.json")
+        if [ -n "$_ans" ]; then want_put say "$_ans"
+        elif want_is_question "$1"; then want_put say "nothing here answers that"
+        else want_put no "$PANEL_CROSS no step on the panel does that"; fi
+        return 0
+    fi
+    _i=0
+    while [ "$_i" -lt "$_n" ]; do
+        _sn=$(jq -r --argjson i "$_i" '.steps[$i].name // "" | tostring' "$TMP/want.json"); _i=$((_i + 1))
+        if ! tool_spec "$_sn"; then want_put no "$PANEL_CROSS $_sn is not a step the panel takes"; continue; fi
+        _sv=''; [ -z "$_tp" ] || _sv=$(jq -r --argjson i "$((_i - 1))" --arg p "$_tp" '.steps[$i].arguments[$p] // "" | tostring' "$TMP/want.json")
+        case $_sn in theme_palette) want_step theme "$_sv" '' ;; *) want_step "$_ts" "$_ta" "$_sv" ;; esac   # a palette's step is its name alone
+    done
 }
 want_step() {   # want_step SECTION ACTION ARG -- into the plan when panel_gate takes it, else its refusal
     if _g=$(panel_gate "$1" "$2" "$3"); then want_put step "$1" "$2" "$3" "$_g"; else want_put no "$PANEL_CROSS $_g"; fi
@@ -3181,9 +3624,9 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 # JSON value is built by jq with --arg, every request is parsed by jq,
 # and a method or a tool name is matched by case, never run as a name.
 PROVIDE_PROTOCOL=2025-06-18
-PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window bar layout apps about undo"   # every panel section but spark: its one row is the chat, which the dialog holds itself
+PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme wallpaper window bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_font theme_wallpaper theme_see_through theme_alpha window_split window_tabs window_stacked window_focus window_close bar_on bar_off layout_open layout_new layout_save layout_add apps_open apps_terminal about_open undo_all"
+PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_font wallpaper_use wallpaper_picture theme_transparency theme_alpha window_split window_tabs window_stacked window_focus window_close bar_on bar_off layout_open layout_new layout_save layout_add apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -3224,8 +3667,9 @@ tool_spec() {
         mic_unmute)        _ts=mic _ta=unmute _th=i _tt='mic unmute' _td='Unmute the microphone.' ;;
         theme_palette)     _ts=theme _ta='=' _tp=name _tk=string _th=i _tt='theme NAME' _td='Use a palette everywhere, or none.' ;;
         theme_font)        _ts=theme _ta=font _tp=size _tk='bigger|smaller' _th='' _tt='theme font SIZE' _td='The font one size bigger or smaller.' ;;
-        theme_wallpaper)   _ts=theme _ta=wallpaper _tp=name _tk=string _th=i _tt='theme wallpaper NAME' _td='Set the wallpaper: the ground, none, or a colour.' ;;
-        theme_see_through) _ts=theme _ta=see-through _tp=amount _tk='more|less' _th='' _tt='theme see-through AMOUNT' _td='The windows more or less see-through.' ;;
+        wallpaper_use)     _ts=wallpaper _ta=use _tp=name _tk=string _th=i _tt='wallpaper NAME' _td='Set the wallpaper: default, none, or a color by its name.' ;;
+        wallpaper_picture) _ts=wallpaper _ta=picture _tp=path _tk=path _th=if _tt='wallpaper picture PATH' _td='Set a picture of yours as the wallpaper.' ;;
+        theme_transparency) _ts=theme _ta=transparency _tp=amount _tk='more|less' _th='' _tt='theme transparency AMOUNT' _td='The windows more or less transparent.' ;;
         theme_alpha)       _ts=theme _ta=alpha _tp=value _tk=alpha _th=if _tt='theme alpha N' _td='How solid the windows are, 0 to 1.' ;;
         window_split)      _ts=window _ta=split _th=i _tt='window split' _td='New windows side by side.' ;;
         window_tabs)       _ts=window _ta=tabs _th=i _tt='window tabs' _td='New windows in tabs.' ;;
@@ -3242,6 +3686,9 @@ tool_spec() {
         apps_terminal)     _ts=apps _ta=terminal _th='' _tt='apps terminal' _td='Open a terminal window.' ;;
         about_open)        _ts=about _ta=open _th=ri _tt='about' _td='The version, the keys, the licence and the address.' ;;
         undo_all)          _ts=undo _ta=all _th='' _tt='undo' _td='Take the last thing done back.' ;;
+        files_open)        _ts=files _ta=open _tp=path _tk=path _th=if _tt='files open PATH' _td='Open a file with the app that opens its kind.' ;;
+        files_show)        _ts=files _ta=show _tp=path _tk=path _th=rif _tt='files show PATH' _td='The first lines of a text file.' ;;
+        files_attach)      _ts=files _ta=attach _tp=path _tk=path _th=rif _tt='files attach PATH' _td='A text file to ask spark about, with the next words.' ;;
         *) return 1 ;;
     esac
 }
@@ -3266,33 +3713,46 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
             properties: ((if $p == "" then {} else {($p): (
                 if $k == "level" then {type: "integer", minimum: 0, maximum: 100}
                 elif $k == "alpha" then {type: "number", minimum: 0, maximum: 1}
+                elif $k == "path" then {type: "string", minLength: 2, maxLength: 4096}
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
                 else {type: "string", minLength: 1, maxLength: 256} end)} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)),
             required: (if $p == "" then [] else [$p] end), additionalProperties: false},
-         outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"},
+         outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]}}, additionalProperties: false},
          annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}'
 }
 provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON array
     for _n in $PROVIDE_TOOLS; do tool_spec "$_n" && [ "$_ts" = "$1" ] && tool_json "$_n"; done | jq -cs .
 }
-provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "rows": [{"id", "sign", "text", "tool", "more", "columns", "children", "group"}], "short": [ID]}; a tool may carry `ask`, the arguments the host asks the person for
+provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state" (the section's state now, the dialog's subtitle), "rows": [{"id", "sign", "text", "tool", "more", "columns", "children", "group"}], "short": [ID]}; a tool may carry `ask`, the arguments the host asks the person for
     [ "$1" != about ] || { provide_about_rows; return; }
+    [ "$1" != files ] || { provide_files_rows; return; }
     _asks='[]'
     if [ "$1" = wifi ] && [ -n "$(wifi_tool)" ]; then   # a secured network not saved yet: its password is asked, masked
         wifi_known | cut -f2 > "$TMP/wifi.known.ask"
         _asks=$(wifi_scan | awk -F '\t' '$3 == 1' | cut -f1 | grep -vxFf "$TMP/wifi.known.ask" | jq -R . | jq -cs . 2>/dev/null) || _asks='[]'
     fi
+    _sw='{}'; _wp='{}'
+    if [ "$1" = wallpaper ]; then   # a color's sample, its #rrggbb; a shipped wallpaper's sample, its main color, and its palette as a column
+        _sw=$({ for w in $WALL_NAMES; do printf '%s\t%s\n' "$w" "$(wall_hex "$w")"; done; for e in $WALL_SHIPPED; do printf '%s\t#%s\n' "${e%%:*}" "${e##*:}"; done; } | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add')
+        _wp=$(for e in $WALL_SHIPPED; do _r=${e#*:}; printf '%s\t%s\n' "${e%%:*}" "${_r%%:*}"; done | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add')
+    fi
     panel_rows "$1" | while IFS="$TAB" read -r _m _t _a; do provide_row_line "$1" "$_m" "$_t" "$_a"; done > "$TMP/rows.short"   # the short form: what matters, and a more row that opens the rest
     { panel_rows "$1" full | while IFS="$TAB" read -r _m _t _a; do provide_row_line "$1" "$_m" "$_t" "$_a"; done; grep "^$1:more$US" "$TMP/rows.short" || :; } \
-        | jq -Rn --arg s "$1" --arg u "spark-shell://$1/rows" --rawfile short "$TMP/rows.short" '
+        | jq -Rn --arg s "$1" --arg u "spark-shell://$1/rows" --arg st "$(provide_title "$1")" --rawfile short "$TMP/rows.short" '
             [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [], columns: [],
                 children: (if .[0] == ($s + ":more") then $u else null end), group: null}] as $rows
-            | {title: $s, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --arg s "$1" --argjson asks "$_asks" '
+            | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
+        | jq -c --arg s "$1" --argjson asks "$_asks" --argjson sw "$_sw" --argjson wp "$_wp" --arg types "$WALL_TYPES" '
             .rows |= map(
-                if $s == "window" and ((.tool.name // "") | test("^window_(focus|close)$")) then .group = "open now"
+                (if $s == "wallpaper" then (.tool.arguments.name // (if (.id | startswith("wallpaper:show:")) then .text else "" end)) as $n
+                    | if $wp[$n] != null then .group = "wallpapers" | .columns = [(if $wp[$n] == "any" then "any dark palette" else $wp[$n] end)]
+                      elif $sw[$n] != null then .group = "colors" else . end
+                 else . end) |
+                if $s == "wallpaper" and .id == "wallpaper:pick" then .children = "spark-shell://files/rows" | .pick = {tool: "wallpaper_picture", types: ($types | split(" "))}
+                elif $s == "wallpaper" and ($sw[.tool.arguments.name // (if (.id | startswith("wallpaper:show:")) then .text else "" end)] != null) then .swatch = $sw[.tool.arguments.name // .text]
+                elif $s == "window" and ((.tool.name // "") | test("^window_(focus|close)$")) then .group = "open now"
                 elif $s == "window" and (((.tool.name // "") | test("^window_(split|tabs|stacked)$")) or (.id | startswith("window:show:"))) then .group = "layout"
                 elif (.tool.name // "") == "layout_save" then .tool.ask = ["name"]
                 elif (.tool.name // "") == "wifi_connect" and (.tool.arguments.name as $n | $asks | index([$n])) then .tool.ask = ["password"]
@@ -3306,7 +3766,7 @@ provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION -> ID US SIGN
     elif action_tool "$1" "$_ac"; then _tn=$_tool; _ag=$(tool_call_json "$_tool" "$_tv" | jq -c .arguments); fi
     printf '%s\n' "$_id$US$_sg$US$_tx$US$_tn$US$_ag"   # the parts scrubbed, never the line: the scrubber drops US
 }
-provide_title() { [ "$1" != about ] || { echo "a light desktop of sway and foot, for an AI box"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
+provide_title() { [ "$1" != about ] || return 0; [ "$1" != files ] || { echo "your home folder"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
 provide_about_rows() {   # -> the about's rows: the template's `# key:` sentences, a combo as a column, in the splash's four groups; the licence and the address; the row that opens it
     desk_keys | scrub_text | jq -Rn --arg v "$(panel_version)" '
         [inputs] | to_entries | map(.key as $i | .value as $l
@@ -3352,7 +3812,7 @@ provide_main() {   # provide_main SECTION -- serve it until stdin ends
     command -v mkfifo >/dev/null 2>&1 || refuse_in provide "mkfifo is not installed" >&2
     config_load; [ "$OS" = Darwin ] || pm_detect; theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)
     exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in; whatever a step prints goes to stderr
-    WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock
+    WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; : > "$PROOTS"
     trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
     mkfifo "$TMP/in"
     ( while IFS= read -r _l || [ -n "$_l" ]; do fifo_put "in $_l"; _l=''; done; fifo_put eof ) <&6 5>"$TMP/in" 3>&- & READER=$!
@@ -3370,7 +3830,12 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
     _kind=$(printf '%s' "$1" | jq -r 'if type != "object" or .jsonrpc != "2.0" then "bad" elif (has("method") | not) then "answer" elif has("id") then "request" else "note" end' 2>/dev/null) || { rpc_error null -32700 "not JSON"; return 0; }
     case $_kind in
         request) ;;
-        answer|note) return 0 ;;   # a notification (initialized, cancelled) or an answer: this server asks nothing, so nothing to say
+        answer)   # the one question this server asks: the host's roots
+            [ "$(printf '%s' "$1" | jq -c '.id')" = '"roots"' ] && provide_roots "$(printf '%s' "$1" | jq -c '.result // {}')"; return 0 ;;
+        note)   # initialized, roots changed: ask the host for its roots when it has them; anything else, nothing to say
+            case $(printf '%s' "$1" | jq -r '.method') in notifications/initialized|notifications/roots/list_changed)
+                [ -z "$CLIENT_ROOTS" ] || rpc_send "$(jq -cn '{jsonrpc: "2.0", id: "roots", method: "roots/list"}')" ;; esac
+            return 0 ;;
         *) rpc_error null -32600 "one JSON-RPC 2.0 object a line"; return 0 ;;
     esac
     _id=$(printf '%s' "$1" | jq -c '.id')
@@ -3379,15 +3844,21 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
     _params=$(printf '%s' "$1" | jq -c '.params // {}')
     case $_method in
         initialize)
+            [ "$(printf '%s' "$_params" | jq -r '.capabilities.roots != null')" != true ] || CLIENT_ROOTS=1
             rpc_result "$_id" "$(jq -cn --arg v "$PROVIDE_PROTOCOL" --arg n "$sec" --arg t "$(provide_title "$sec")" --arg ver "$(panel_version)" \
                 '{protocolVersion: $v, capabilities: {tools: {listChanged: true}, resources: {subscribe: true, listChanged: true}, logging: {}}, serverInfo: {name: $n, title: $t, version: $ver}}')" ;;
         ping|logging/setLevel) rpc_result "$_id" '{}' ;;
         tools/list) rpc_result "$_id" "$(provide_tools "$sec" | jq -c '{tools: .}')" ;;
         tools/call) provide_call "$_id" "$_params" ;;
         resources/list) rpc_result "$_id" "$(jq -cn --arg u "spark-shell://$sec/rows" --arg s "$sec" '{resources: [{uri: $u, name: "rows", title: ($s + " rows"), mimeType: "application/json"}]}')" ;;
-        resources/templates/list) rpc_result "$_id" '{"resourceTemplates":[]}' ;;
+        resources/templates/list) if [ "$sec" = files ]; then rpc_result "$_id" '{"resourceTemplates":[{"uriTemplate":"spark-shell://files/rows/{folder}","name":"folder","title":"a folder under the roots","mimeType":"application/json"}]}'; else rpc_result "$_id" '{"resourceTemplates":[]}'; fi ;;
         resources/read|resources/subscribe|resources/unsubscribe)
             _uri=$(printf '%s' "$_params" | jq -r '.uri // "" | tostring')
+            if [ "$sec" = files ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://files/rows/?*) true ;; *) false ;; esac; then   # a folder under the roots
+                if provide_files_rows "$_uri" > "$TMP/folder.json"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/folder.json")"
+                else rpc_error "$_id" -32002 "no folder at that uri"; fi
+                return 0
+            fi
             [ "$_uri" = "spark-shell://$sec/rows" ] || { rpc_error "$_id" -32002 "no resource at that uri"; return 0; }
             case $_method in
                 resources/read) provide_rows "$sec" | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' > "$TMP/read.json"
@@ -3411,6 +3882,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
         elif $k == "alpha" then (if (.[$p] | type) == "number" and .[$p] >= 0 and .[$p] <= 1 then "" else $p + " is a number, 0 to 1" end)
+        elif $k == "path" then (if (.[$p] | type) == "string" and (.[$p] | startswith("/")) and (.[$p] | length) <= 4096 and (.[$p] | test("[\u0000-\u001f\u007f]") | not) then "" else $p + " is a whole path, plain text" end)
         elif (.[$p] | type) != "string" or ((.[$p]) | plain | not) then $p + " is plain text, 256 characters at most"
         elif ($k | contains("|")) and (.[$p] as $x | $k | split("|") | any(. == $x) | not) then $p + " is one of " + ($k | split("|") | join(", "))
         else "" end
@@ -3419,6 +3891,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     _v=''; [ -z "$_tp" ] || _v=$(printf '%s' "$_args" | jq -r --arg p "$_tp" '.[$p] | tostring')
     PANEL_PASS=''; [ -z "$_tq" ] || PANEL_PASS=$(printf '%s' "$_args" | jq -r --arg q "$_tq" '.[$q] // ""')   # a password: a shell variable for the step, never a file, never a line out
     _plain=$(printf '%s' "$_args" | jq -c --arg q "$_tq" 'if $q == "" then . else del(.[$q]) end')   # the arguments without the secret: what a row is matched against
+    [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_v"; return 0; }   # files: the four lines, not the panel's gate
     _act=$_ta; _arg=$_v; [ "$_ta" != '=' ] || { _act=$_v; _arg=''; }   # a palette's step is its name alone
     case $_th in *f*) ;; *)   # the argument must be a row's own, exactly: the rows are the allowlist
         provide_rows "$sec" > "$TMP/rows.json"
@@ -3447,6 +3920,116 @@ provide_refuse() { rpc_result "$1" "$(jq -cn --arg t "$2" '{content: [{type: "te
 cmd_provide() {   # cmd_provide SECTION -- the verb
     [ $# -eq 1 ] || refuse_in provide "one section: $(printf '%s' "$PROVIDE_SECTIONS" | sed 's/ /, /g')" >&2
     provide_main "$1"
+}
+
+# --- the files provider (v0.65): the folders the host hands over as its
+# roots (MCP roots/list) and the folders under them, a rows resource a
+# folder: the name, the size and the date as columns, a folder's own
+# rows as its children. Read-only: open, show and attach. Every path is
+# held to four named lines before anything reads it:
+#   it resolves to itself          (realpath: no link is followed, ever)
+#   it sits under a root           (the host's folders, never / itself)
+#   no part of it starts with a dot (a hidden file or folder: not listed, not read)
+#   it is a regular file or folder  (no device, socket or pipe)
+FILES_SHOW_MAX=1048576   # a file shown or attached: a megabyte at most
+FILES_SHOW_LINES=12      # the lines a show puts in the exchange
+files_roots() { [ -z "${PROOTS:-}" ] || cat "$PROOTS" 2>/dev/null || :; }   # -> the roots, one folder a line, each its own realpath
+files_b64() { printf '%s' "$1" | base64 | tr -d '\n=' | tr '+/' '-_'; }   # files_b64 PATH -> the folder's part of its uri
+files_unb64() {   # files_unb64 PART -> the path, or false
+    _fx=$(printf '%s' "$1" | tr -- '-_' '+/'); case $(( ${#_fx} % 4 )) in 2) _fx="$_fx==" ;; 3) _fx="$_fx=" ;; 1) return 1 ;; esac
+    printf '%s' "$_fx" | base64 -d 2>/dev/null || printf '%s' "$_fx" | base64 -D 2>/dev/null
+}
+files_uri() { printf 'spark-shell://files/rows/%s' "$(files_b64 "$1")"; }
+files_ok() {   # files_ok PATH dir|file -> the path when it holds to the four lines, else false
+    _fp=$(realpath "$1" 2>/dev/null) || return 1
+    [ "$_fp" = "$1" ] || return 1   # resolves to itself
+    _froot=''; while IFS= read -r _fr; do [ -n "$_fr" ] || continue; case $_fp in "$_fr"|"$_fr"/*) _froot=$_fr; break ;; esac; done <<ROOTS
+$(files_roots)
+ROOTS
+    [ -n "$_froot" ] || return 1   # under a root
+    case /${_fp#"$_froot"}/ in */.*/*) return 1 ;; esac   # no part of it hidden
+    case $2 in dir) [ -d "$_fp" ] && [ ! -L "$_fp" ] ;; *) [ -f "$_fp" ] && [ ! -L "$_fp" ] ;; esac || return 1
+    printf '%s\n' "$_fp"
+}
+files_stat() {   # files_stat PATH -> "SIZE EPOCH" (GNU stat, else BSD's)
+    stat -c '%s %Y' "$1" 2>/dev/null || stat -f '%z %m' "$1" 2>/dev/null || echo '0 0'
+}
+files_size() { awk -v n="$1" 'BEGIN { if (n < 1024) printf "%d B", n; else if (n < 1048576) printf "%d KB", n / 1024; else if (n < 1073741824) printf "%.1f MB", n / 1048576; else printf "%.1f GB", n / 1073741824 }'; }   # files_size BYTES -> 14 KB, 2.1 MB
+files_when() {   # files_when EPOCH -> today, yesterday, 18 Oct, or the year
+    _fd=$(date -d "@$1" +%Y%m%d 2>/dev/null || date -r "$1" +%Y%m%d 2>/dev/null) || { echo ''; return 0; }
+    _now=$(date +%s); _today=$(date +%Y%m%d); _yday=$(date -d "@$((_now - 86400))" +%Y%m%d 2>/dev/null || date -r "$((_now - 86400))" +%Y%m%d 2>/dev/null)
+    if [ "$_fd" = "$_today" ]; then echo today; elif [ "$_fd" = "$_yday" ]; then echo yesterday
+    elif [ "${_fd%????}" = "$(date +%Y)" ]; then date -d "@$1" '+%d %b' 2>/dev/null || date -r "$1" '+%d %b' 2>/dev/null
+    else echo "${_fd%????}"; fi
+}
+files_home() { _tl='~'; case $1 in "$HOME") echo "$_tl" ;; "$HOME"/*) echo "$_tl/${1#"$HOME"/}" ;; *) echo "$1" ;; esac; }   # files_home PATH -> as a person writes it
+provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows, or one folder's; false when the uri names no folder that holds to the lines
+    _fu=${1:-spark-shell://files/rows}
+    if [ "$_fu" = spark-shell://files/rows ]; then
+        files_roots | while IFS= read -r _fr; do [ -n "$_fr" ] && printf 'files:root:%s\037opens\037%s\037%s\037\037\037\n' "$(files_b64 "$_fr")" "$(files_home "$_fr" | scrub_text)" "$(files_uri "$_fr")"; done > "$TMP/files.rows"
+        _ft='files'
+    else
+        _fp=$(files_unb64 "${_fu#spark-shell://files/rows/}") && _fp=$(files_ok "$_fp" dir) || return 1
+        _ft=$(files_home "$_fp" | scrub_text); : > "$TMP/files.rows"
+        files_roots | grep -qxF "$_fp" || printf 'files:up\037opens\037..\037%s\037\037\037\n' "$(files_uri "$(dirname "$_fp")")" >> "$TMP/files.rows"
+        _fn=0; _fb=0; _fd=0
+        find "$_fp" -mindepth 1 -maxdepth 1 ! -name '.*' -print0 2>/dev/null | tr '\n\000' '\001\n' | sort > "$TMP/files.list"
+        while IFS= read -r _fe; do
+            case $_fe in *"$(printf '\001')"*) continue ;; esac   # a name with a line feed in it: not listed
+            _fname=$(printf '%s' "${_fe##*/}" | scrub_text)
+            if [ -L "$_fe" ]; then printf '2\037files:link:%s\037blank\037%s -> %s\037\037\037\037\n' "$(files_b64 "$_fe")" "$_fname" "$(readlink "$_fe" | scrub_text)"   # a link: shown, never followed
+            elif [ -d "$_fe" ]; then _fd=$((_fd + 1)); _fc=$(find "$_fe" -mindepth 1 -maxdepth 1 ! -name '.*' 2>/dev/null | wc -l | tr -d ' ')
+                _fi=items; [ "$_fc" != 1 ] || _fi=item
+                printf '0\037files:dir:%s\037opens\037%s\037%s\037\037%s %s\037\n' "$(files_b64 "$_fe")" "$_fname" "$(files_uri "$_fe")" "$_fc" "$_fi"
+            elif [ -f "$_fe" ]; then
+                # shellcheck disable=SC2046   # two numbers, split on purpose
+                set -- $(files_stat "$_fe"); _fn=$((_fn + 1)); _fb=$((_fb + $1))
+                printf '1\037files:file:%s\037blank\037%s\037\037%s\037%s\037%s\n' "$(files_b64 "$_fe")" "$_fname" "$(jq -cn --arg p "$_fe" '{path: $p}')" "$(files_size "$1")" "$(files_when "$2")"
+            fi   # a device, a socket, a pipe: not listed
+        done < "$TMP/files.list" > "$TMP/files.unsorted"   # no pipe: the counts stay in this shell
+        sort -t "$(printf '\037')" -k1,1 -k4,4 "$TMP/files.unsorted" | cut -d "$(printf '\037')" -f2- >> "$TMP/files.rows"
+        # the total: the files and their size; a folder of folders counts its folders; nothing listed is empty
+        if [ "$_fn" -gt 0 ]; then _fw="files"; [ "$_fn" != 1 ] || _fw="file"; _fw="$_fn $_fw $PANEL_SEP $(files_size "$_fb")"
+        elif [ "$_fd" -gt 0 ]; then _fw="folders"; [ "$_fd" != 1 ] || _fw="folder"; _fw="$_fd $_fw"
+        else _fw=empty; fi
+        printf 'files:total\037blank\037%s\037\037\037\037\n' "$_fw" >> "$TMP/files.rows"
+    fi
+    jq -Rn --arg t "$_ft" '
+        [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end),
+            tool: (if .[4] == "" then null else {name: "files_open", arguments: (.[4] | fromjson)} end),
+            more: (if .[4] == "" then [] else [{name: "files_show", arguments: (.[4] | fromjson)}, {name: "files_attach", arguments: (.[4] | fromjson)}] end),
+            columns: ([.[5], .[6]] | map(select(. != null and . != ""))), group: null}] as $rows
+        | {title: $t, rows: $rows, short: [$rows[] | select(.id | startswith("files:root:")) | .id]}' "$TMP/files.rows"
+}
+provide_files_call() {   # provide_files_call ID TOOL PATH -- open, show or attach a file that holds to the four lines
+    _ff=$(files_ok "$3" file) || { provide_refuse "$1" "files: that is not a file in the folders given"; return 0; }
+    _fname=$(printf '%s' "${_ff##*/}" | scrub_text)
+    case $2 in
+        files_open)
+            command -v xdg-open >/dev/null 2>&1 || { provide_refuse "$1" "files: xdg-open is not installed, so nothing opens files"; return 0; }
+            [ -n "${WAYLAND_DISPLAY:-}" ] || { provide_refuse "$1" "files: opening a file needs the desktop"; return 0; }
+            _before=$(desk_windows_all); _lead=''; ! command -v setsid >/dev/null 2>&1 || _lead=setsid
+            ( $_lead xdg-open "$_ff" </dev/null >/dev/null 2>&1 & ) 3>&- 4<&- 5>&-
+            if [ -n "${SWAYSOCK:-}" ] && panel_open_wait "$_before"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+            else rpc_result "$1" "$(jq -cn --arg r "opened $_fname" '{receipt: $r} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"; fi ;;
+        files_show|files_attach)
+            set -- "$1" "$2" "$(files_stat "$_ff" | cut -d' ' -f1)"
+            [ "$3" -le "$FILES_SHOW_MAX" ] || { provide_refuse "$1" "files: $_fname is larger than $((FILES_SHOW_MAX / 1024)) kB"; return 0; }
+            [ "$(tr -d '\000' < "$_ff" | wc -c | tr -d ' ')" = "$3" ] || { provide_refuse "$1" "files: $_fname is not text"; return 0; }
+            if [ "$2" = files_show ]; then
+                rpc_result "$1" "$(head -n "$FILES_SHOW_LINES" "$_ff" | scrub_text | jq -Rs --arg n "$_fname" '{receipt: ($n + "\n" + (. | rtrimstr("\n")))} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+            else
+                _fx=$(printf '%s' "${_ff##*/}" | sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | tr 'A-Z' 'a-z')
+                case " $DIALOG_ATTACH_TYPES " in *" ${_fx:-.} "*) ;; *) provide_refuse "$1" "files: $_fname is not a type plus attaches ($DIALOG_ATTACH_TYPES)"; return 0 ;; esac
+                rpc_result "$1" "$(jq -cn --arg r "attached $_fname" --arg p "$_ff" '{receipt: $r, attach: $p} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+            fi ;;
+    esac
+}
+provide_roots() {   # provide_roots RESULT -- the host's roots, each a folder that resolves to itself, never / itself; kept for the steps and the watcher
+    printf '%s' "$1" | jq -r '.roots // [] | .[] | .uri // "" | select(startswith("file://")) | ltrimstr("file://")
+        | [match("%[0-9A-Fa-f]{2}|[^%]+|%"; "g").string | if (startswith("%") and length == 3) then ([.[1:] | ascii_downcase | explode | map(if . >= 97 then . - 87 else . - 48 end) | .[0] * 16 + .[1]] | implode) else . end] | add // ""' 2>/dev/null \
+        | while IFS= read -r _fr; do _fr=$(realpath "$_fr" 2>/dev/null) && [ "$_fr" != / ] && [ -d "$_fr" ] && printf '%s\n' "$_fr"; done > "$PROOTS.new" || :
+    mv "$PROOTS.new" "$PROOTS"
 }
 
 # --- the dialog: the desktop's window (spark-shell issue 1). spark-dialog
@@ -3491,6 +4074,41 @@ dialog_install() {   # the dialog's row of `on`: in place as the tree pins it, o
     mkdir -p "$(dirname "$DIALOG_BIN")" && cp "$_df" "$DIALOG_BIN.new" && chmod 755 "$DIALOG_BIN.new" && mv "$DIALOG_BIN.new" "$DIALOG_BIN"
     row ok dialog "installed for $_rt ($DIALOG_BIN), sha256 checked"
 }
+
+# --- spark's MCP list (spark 1.90, contract 16): desktop on puts each
+# provider on it, `spark mcp add NAME CLONE/spark-shell provide NAME`, so
+# the prompt line, spark do and /do know the desktop's tools; off takes
+# back only the lines that are ours. A name already on the list that is
+# not ours is the user's own server and stays. spark-shell is a client of
+# core's verb here: it never writes spark's file itself.
+MCP_ENV=${SPARK_MCP_ENV:-$SPARK_CONFIG_DIR/mcp.env}
+mcp_spark() { _sp=$(spark_bin); [ -n "$_sp" ] && "$_sp" help </dev/null 2>/dev/null | grep -q '^ *spark mcp ' && printf '%s\n' "$_sp"; }   # -> spark, when it has the mcp verb
+mcp_line() { [ -f "$MCP_ENV" ] || return 0; sed -n "s/^MCP_SERVER_$(printf '%s' "$1" | tr 'a-z' 'A-Z')=//p" "$MCP_ENV" | tail -1 | sed 's/^"\(.*\)"$/\1/'; }   # mcp_line NAME -> its program and words on spark's list
+mcp_ours() { case $(mcp_line "$1") in */spark-shell" provide $1") return 0 ;; *) return 1 ;; esac; }   # spark-shell's line, this clone's or an older one's
+mcp_mine() { for s in $PROVIDE_SECTIONS; do if mcp_ours "$s"; then printf ' %s' "$s"; fi; done; }   # -> " NAME..." the lines on spark's list that are ours
+mcp_apply() {   # the mcp row of `on desktop`: each provider on spark's MCP list
+    _sp=$(mcp_spark) || { skip mcp "spark 1.90 or newer lists the desktop's tools (spark update)"; return 0; }
+    _want=''; _theirs=''
+    for s in $PROVIDE_SECTIONS; do
+        _l=$(mcp_line "$s")
+        if [ "$_l" = "$REPO/spark-shell provide $s" ]; then continue; fi
+        if [ -n "$_l" ] && ! mcp_ours "$s"; then _theirs="$_theirs $s"; else _want="$_want $s"; fi
+    done
+    [ -z "$_theirs" ] || row todo mcp "already on spark's MCP list as servers of yours, left as they are:$_theirs"
+    if [ -z "$_want" ]; then ok mcp "spark-shell's providers are on spark's MCP list"; return 0; fi
+    need mcp "put$_want on spark's MCP list" || return 0
+    for s in $_want; do
+        if mcp_ours "$s"; then "$_sp" mcp rm "$s" </dev/null >/dev/null 2>&1 || :; fi   # a line an older clone wrote
+        "$_sp" mcp add "$s" "$REPO/spark-shell" provide "$s" </dev/null >/dev/null 2>"$TMP/mcp.err" || { row todo mcp "$s: $(head -1 "$TMP/mcp.err") -- spark-shell on desktop again"; return 0; }
+    done
+    row ok mcp "$(mcp_mine | wc -w | tr -d ' ') providers on spark's MCP list: the prompt line and spark do know the desktop's tools"
+}
+mcp_off() {   # off: spark-shell's lines taken off spark's MCP list, a server of yours left
+    _sp=$(mcp_spark) || return 0
+    _mo=$(mcp_mine); [ -n "$_mo" ] || return 0
+    for s in $_mo; do "$_sp" mcp rm "$s" </dev/null >/dev/null 2>&1 || :; done
+    row ok mcp "$(printf '%s' "$_mo" | wc -w | tr -d ' ') providers off spark's MCP list"
+}
 dialog_sections() {   # dialog_sections [FIRST] -> the providers the dialog starts, FIRST on top: every panel section but spark (the dialog holds the conversation) and undo (it keeps a result's own)
     panel_sections "${1:-glance}" | grep -vxE 'spark|undo|glance|chat' || :
 }
@@ -3500,15 +4118,22 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     command -v jq >/dev/null 2>&1 || refuse_in dialog "jq is not installed (spark-shell on)"
     pm_detect; theme_load; SND=$(snd_tool)
     _first=${1:-}
-    case $_first in ''|about|chat) ;; *) panel_section_ok "$_first" || refuse_in dialog "$_first is not a section of the dialog" ;; esac
+    case $_first in ''|about|chat|files) ;; *) panel_section_ok "$_first" || refuse_in dialog "$_first is not a section of the dialog" ;; esac
     [ "$(panel_open_count)" -lt 2 ] || { swaymsg "[app_id=$PANEL_APP] kill" >/dev/null 2>&1 || :; return 0; }   # the key again: the dialog already open goes, this one too
     [ "$_first" != chat ] || { panel_chat; return; }
     dialog_ok || refuse_in dialog "the dialog is not installed, or not the release's -- spark-shell on"
     case $REPO in *[[:space:]]*) refuse_in dialog "the clone's path holds a space, and a provider is argv words: move it ($REPO)" ;; esac
     set --
-    for s in $(dialog_sections "$_first"); do set -- "$@" --provider "$REPO/spark-shell provide $s"; done
-    case $_first in about) set -- "$@" --home about --mark on ;; '') ;; *) set -- "$@" --home "$_first" ;; esac
-    _dc=''; [ "$DIALOG_MODEL" != yes ] || _dc=model; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
+    _ds=$_first; [ "$_ds" != files ] || _ds=''   # files is no panel section: it is started once, below
+    for s in $(dialog_sections "$_ds"); do
+        [ "$s" != about ] || set -- "$@" --provider "$REPO/spark-shell provide files"   # the files under HOME, the root the dialog hands it, just before the about; plus picks from them
+        set -- "$@" --provider "$REPO/spark-shell provide $s"
+    done
+    case " $* " in *" provide files "*) ;; *) set -- "$@" --provider "$REPO/spark-shell provide files" ;; esac
+    case " $* " in *" provide clock "*) ;; *) set -- "$@" --provider "$REPO/spark-shell provide clock" ;; esac   # the Calendar, there to open from any view: it has no rows on the home dialog
+    case $_first in '') ;; *) set -- "$@" --home "$_first" ;; esac
+    set -- "$@" --mark on   # the logo on the about however it is reached; the dialog draws it only where the terminal draws sixel
+    _dc=''; [ "$DIALOG_ATTACH" != yes ] || _dc=plus; [ "$DIALOG_MODEL" != yes ] || _dc="${_dc:+$_dc,}model"; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
     _sp=$(spark_bin); [ -z "$_sp" ] || set -- "$@" --spark "$_sp"
     FULL_ID=''; ! panel_own_window || panel_full_aside
     st=0; "$DIALOG_BIN" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?
@@ -3542,7 +4167,7 @@ panel_full_back() {   # the window that stepped aside is fullscreen again, unles
 panel_reload() {   # the settings again, as a pick may have changed them (a palette, the font): the config, the palette's hex, the panel's shades and signs
     config_load
     for _k in $THEME_KEYS; do unset "$_k"; done   # a palette gone (theme none) leaves no file to read: the defaults again, not the old one
-    theme_load; panel_colours
+    theme_load; panel_colors
 }
 panel_paint() {   # the panel's own window takes the palette and the surface as the settings say now: a theme step repaints every terminal flat, this one included
     ! osc_render "${THEME:-none}" || cat "$TMP/osc"
@@ -3626,7 +4251,7 @@ panel_head() {   # -> the lines fzf holds over the list: the glance, the close g
     echo
 }
 panel_loop() {   # panel_loop SECTION -- the window: the glance, the receipt, the list streamed into fzf under the hint and the prompt; a pick or words, then again with the settings read anew; gone once a pick put a window on the screen
-    panel_colours
+    panel_colors
     ASKED=1; export ASKED   # a layout asked here: its window follows the layout, and the layout> line is not repeated
     FZF=''; PULSE=''; TICK=''; FULL_ID=''
     trap 'panel_quit; panel_full_back; rm -rf "$TMP"' EXIT
@@ -3797,9 +4422,10 @@ cmd_theme() {   # theme [NAME|none|list|show]
     look_follow
     if [ "$name" = none ]; then palette_off all; terminal_off
     else palette_boot; terminal_apply; fi
+    login_follow
     console_now
     theme_repaint "$name"
-    if [ "$name" = none ]; then verb_close "No palette: the console and the terminal use their own colours."
+    if [ "$name" = none ]; then verb_close "No palette: the console and the terminal use their own colors."
     else verb_close "The palette is $name. A program that is already running, such as btop, takes it when it starts again."; fi
 }
 theme_show() {
@@ -3808,7 +4434,7 @@ theme_show() {
     if [ -f "$THEME_ENV" ]; then src=$THEME_ENV
     elif [ -n "$THEME" ] && [ "$THEME" != none ]; then src=$(palette_file "$THEME") || src=''
     else src=''; fi
-    if [ -z "$src" ]; then echo "  none: the console's and the terminal's own colours"; return 0; fi
+    if [ -z "$src" ]; then echo "  none: the console's and the terminal's own colors"; return 0; fi
     for k in BG FG ACCENT MUTED; do printf '  %-8s %s\n' "$(printf '%s' "$k" | tr 'A-Z' 'a-z')" "$(palette_get "$src" "THEME_$k")"; done
     row8() { _l=''; for n in "$@"; do _l="$_l $(palette_get "$src" "THEME_ANSI_$n")"; done; printf '%s' "${_l# }"; }
     printf '  %-8s %s\n' ansi "$(row8 0 1 2 3 4 5 6 7)" bright "$(row8 8 9 10 11 12 13 14 15)"
@@ -3818,7 +4444,7 @@ theme_list() {
     echo "The palettes (yours in $PALETTE_DIR come first):"
     { echo none; palette_names; } | while IFS= read -r n; do
         note=''
-        case $n in none) note="the console's and the terminal's own colours" ;; esac
+        case $n in none) note="the console's and the terminal's own colors" ;; esac
         [ ! -f "$PALETTE_DIR/$n.env" ] || note=yours
         [ "$n" != "${THEME:-}" ] || note="${note:+$note, }current"
         printf '  %-20s %s\n' "$n" "$note"
@@ -3947,7 +4573,7 @@ check_theme() {
         if [ -f "$THEME_ENV" ]; then chk theme fail "THEME=none, but theme.env is here" "spark-shell on"
         elif console_linux && { [ -e "$ROOT/$CONSOLE_UNIT" ] || [ -n "$(marked "$ROOT/etc/rc.local" "$PALETTE_MARK")" ]; }; then
             chk theme fail "THEME=none, but a palette is still set at boot" "spark-shell on"
-        else chk theme ok "none: the console's and the terminal's own colours"; fi
+        else chk theme ok "none: the console's and the terminal's own colors"; fi
         return
     fi
     if ! palette_render "$THEME"; then chk theme fail "THEME=$THEME: $(cat "$TMP/palette.why")" "spark-shell theme list"; return; fi
@@ -4640,9 +5266,9 @@ desk_brief() {
 
 # The pulse spark draws while a reply is on its way (spark text.Busy):
 # `*` in the accent and `.` `..` `...` muted, redrawn every 0.35 s, at a
-# tty only -- a pipe never sees a byte of it. The colours are the three
+# tty only -- a pipe never sees a byte of it. The colors are the three
 # SGR strings sgr.sh renders from the palette; unset = plain.
-desk_pulse() { [ ! -t 1 ] || { panel_colours; pulse_start think; }; }   # the layout's wait: the panel's think cells (one pulse for all of spark-shell)
+desk_pulse() { [ ! -t 1 ] || { panel_colors; pulse_start think; }; }   # the layout's wait: the panel's think cells (one pulse for all of spark-shell)
 desk_pulse_stop() { pulse_stop; }
 # The layout> line: fzf when there is one and a terminal (the tools row
 # installs it): type a need, the arrows move over the saved layouts, Enter
@@ -4762,21 +5388,22 @@ cmd_desktop() {
             want=$(wall_word "${2:-}")
             if [ -z "${2:-}" ]; then
                 if [ "$WALLPAPER" = none ]; then echo "wallpaper none -- the palette's background (spark-shell desktop wallpaper PATH|default)"
-                elif wall_colour; then echo "wallpaper $WALLPAPER -- a plain colour, it stays when the palette changes"
+                elif wall_color; then echo "wallpaper $WALLPAPER -- a plain color, it stays when the palette changes"
                 elif [ "$WALLPAPER" = default ]; then echo "wallpaper default -- the ground, the palette's background a shade darker ($(wall_ground)); it follows the palette"
                 elif wall_there; then echo "wallpaper $WALLPAPER"
-                else echo "wallpaper $(wall_path) -- missing, the palette's background colour instead"; fi
+                else echo "wallpaper $(wall_path) -- missing, the palette's background color instead"; fi
                 return
             fi
-            [ -n "$want" ] || refuse "$2 is not a readable file or a colour. Give a picture's path, default, none, #rrggbb or one of these colours: $(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')"
+            [ -n "$want" ] || refuse "$2 is not a readable file or a color. Give a picture's path, default, none, one of the wallpapers ($(wall_shipped_names | paste -sd ' ' - | sed 's/ /, /g')), #rrggbb or one of these colors: $(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')"
             [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
             config_set WALLPAPER "$want"
             WALLPAPER=$want; export WALLPAPER
             theme_load; EXPR=$(render_expr)
             desktop_look_apply
+            login_follow
             if [ "$want" = none ]; then echo "the palette's background is back -- a new foot window is opaque again"
             elif [ "$want" = default ]; then echo "the ground is back -- the palette's background a shade darker, and it follows the palette"
-            elif wall_colour; then echo "a running sway shows $want now, and it stays when the palette changes -- a new foot window is translucent over it, as over a picture"
+            elif wall_color; then echo "a running sway shows $want now, and it stays when the palette changes -- a new foot window is translucent over it, as over a picture"
             else echo "a running sway shows it now -- the next foot window is translucent (Super+Return)"; fi
             return ;;
         apps|tools) cmd_apps_verb; return ;;   # the old spellings of spark-shell apps
@@ -4831,6 +5458,17 @@ desk_start() {   # desk_start PENDING
     exit "$st"
 }
 
+# The login verb: `login on|off` are spellings of `on login` and `off
+# login` (one path, cmd_on and cmd_off); alone, the login row of status.
+cmd_login() {
+    case ${1:-} in
+        on) shift; cmd_on login "$@" ;;
+        off) shift; cmd_off login "$@" ;;
+        '') config_load; [ "$OS" = Darwin ] || pm_detect; status_login ;;
+        *) refuse_in login "on or off: spark-shell login on" ;;
+    esac
+}
+
 usage() {
     sed -n '2,/^# The one interface/p' "$0" | sed '$d' | sed '$d' | sed 's/^# \{0,1\}//'   # the command list
 }
@@ -4868,6 +5506,7 @@ main() {
         quiet) cmd_quiet "$@" ;;
         sbom) cmd_sbom "$@" ;;
         desktop) cmd_desktop "$@" ;;
+        login) cmd_login "$@" ;;
         layout) cmd_layout "$@" ;;
         apps) REFUSE_AS=apps; cmd_apps_verb ;;
         status) cmd_status ;;

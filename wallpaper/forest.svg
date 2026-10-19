@@ -1,0 +1,38 @@
+<!-- spark-shell wallpaper: forest (MIT, the repository's license) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<defs>
+<pattern id="far1" x="0" y="600" width="58" height="120" patternUnits="userSpaceOnUse">
+<polygon points="29,10 52,120 6,120" fill="#3d484d"></polygon>
+</pattern>
+<pattern id="far2" x="17" y="600" width="41" height="120" patternUnits="userSpaceOnUse">
+<polygon points="20,44 36,120 4,120" fill="#3d484d"></polygon>
+</pattern>
+<pattern id="mid1" x="30" y="730" width="86" height="190" patternUnits="userSpaceOnUse">
+<polygon points="43,0 80,190 6,190" fill="#343f44"></polygon>
+</pattern>
+<pattern id="mid2" x="0" y="730" width="61" height="190" patternUnits="userSpaceOnUse">
+<polygon points="30,70 56,190 4,190" fill="#343f44"></polygon>
+</pattern>
+<pattern id="near1" x="60" y="840" width="128" height="250" patternUnits="userSpaceOnUse">
+<polygon points="64,0 120,250 8,250" fill="#232a2e"></polygon>
+</pattern>
+<pattern id="near2" x="10" y="840" width="91" height="250" patternUnits="userSpaceOnUse">
+<polygon points="45,96 84,250 6,250" fill="#232a2e"></polygon>
+</pattern>
+</defs>
+<rect x="0" y="0" width="1920" height="1080" fill="#2d353b"></rect>
+<circle cx="1420" cy="330" r="92" fill="#dbbc7f" opacity="0.85"></circle>
+<rect x="0" y="600" width="1920" height="120" fill="url(#far1)"></rect>
+<rect x="0" y="600" width="1920" height="120" fill="url(#far2)"></rect>
+<rect x="0" y="720" width="1920" height="360" fill="#3d484d"></rect>
+<rect x="0" y="730" width="1920" height="190" fill="url(#mid1)"></rect>
+<rect x="0" y="730" width="1920" height="190" fill="url(#mid2)"></rect>
+<rect x="0" y="920" width="1920" height="160" fill="#343f44"></rect>
+<rect x="0" y="840" width="1920" height="240" fill="url(#near1)"></rect>
+<rect x="0" y="840" width="1920" height="240" fill="url(#near2)"></rect>
+<rect x="0" y="1060" width="1920" height="20" fill="#232a2e"></rect>
+<g fill="#a7c080" opacity="0.4">
+<rect x="300" y="700" width="4" height="4"></rect><rect x="980" y="680" width="4" height="4"></rect><rect x="1660" y="712" width="4" height="4"></rect>
+<rect x="640" y="860" width="4" height="4"></rect><rect x="1320" y="880" width="4" height="4"></rect>
+</g>
+</svg>

@@ -27,8 +27,8 @@ alias g=git
 alias ..='cd ..'
 alias check='spark check'
 
-# --- colours: ASCII and the 16 palette colours, console or terminal app -
-export BAT_THEME=ansi BAT_STYLE=numbers              # 16-colour theme, no grid
+# --- colors: ASCII and the 16 palette colors, console or terminal app -
+export BAT_THEME=ansi BAT_STYLE=numbers              # 16-color theme, no grid
 export FZF_DEFAULT_OPTS='--no-unicode --color=16'    # fzf >= 0.38
 
 # --- fzf, zoxide ----------------------------------------------------------
@@ -41,12 +41,12 @@ else
     PROMPT=$'\n%n@%m:%~%# '   # the blank row is where spark prints its hint
 fi
 
-# --- spark at the prompt: spark's prompt colours (three exports from the
+# --- spark at the prompt: spark's prompt colors (three exports from the
 #     palette, written by spark-shell on), then its one
 #     hook line (the widget, completion, the console palette). It comes
 #     after fzf, so its accept-line wrapper is the one spark wraps.
 #     spark's rc row sees the marker and never appends a second one.
-[[ -r ~/.config/spark-shell/sgr.sh ]] && source ~/.config/spark-shell/sgr.sh   # spark-shell: the prompt's colour
+[[ -r ~/.config/spark-shell/sgr.sh ]] && source ~/.config/spark-shell/sgr.sh   # spark-shell: the prompt's color
 [[ -r ~/.config/spark/hook.zsh ]] && source ~/.config/spark/hook.zsh   # spark: the AI at the prompt
 
 # zoxide last: its prompt hook has to be the final one, or it complains.

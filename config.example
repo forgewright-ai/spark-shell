@@ -21,15 +21,15 @@ FONT=DejaVu Sans Mono:size=12
 
 # The wallpaper: default is the ground, the palette's background a shade
 # darker than the windows, following the palette; or a picture's full
-# path, a colour as #rrggbb, or none for the windows edge to edge and
-# solid. The ground, a picture and a colour get gaps and a little
-# see-through. spark-shell desktop wallpaper sets this, and it saves a
-# colour's name as its #rrggbb.
+# path, a color as #rrggbb, or none for the windows edge to edge and
+# solid. The ground, a picture and a color get gaps and a little
+# transparency. spark-shell desktop wallpaper sets this, and it saves a
+# color's name as its #rrggbb.
 WALLPAPER=default
 
-# How solid foot is over a picture or a colour: 0 to 1, where 1 is solid.
+# How solid foot is over a picture or a color: 0 to 1, where 1 is solid.
 # 0.85 suits a dark picture. A bright one needs more. The panel's theme
-# section says it as see-through: 0.85 is 15% see-through.
+# section says it as transparency: 0.85 is 15% transparency.
 ALPHA=0.85
 
 # How new windows sit on a workspace: split (side by side), tabs or
@@ -37,13 +37,18 @@ ALPHA=0.85
 # the workspace you are on.
 WINDOWS=split
 
+# The login screen on tty1: yes or no. With yes, greetd shows a login
+# screen in your palette, over your wallpaper, from the next boot; tty2
+# keeps the console login. spark-shell on login and off login set this.
+LOGIN=no
+
 # The bar at the top of the desktop's screen: yes or no. It shows the
 # workspaces, then lan, wifi, bluetooth, sound out and mic, battery, and
 # the date and time, each only when this machine has it. spark-shell bar
 # on|off --desktop sets this.
 DESKTOP_BAR=yes
 
-# The colour palette: none (the terminal's own colours) or a name that
+# The color palette: none (the terminal's own colors) or a name that
 # spark-shell theme list shows. spark-shell theme NAME sets this.
 THEME=none
 

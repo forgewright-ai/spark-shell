@@ -1,0 +1,19 @@
+<!-- spark-shell wallpaper: dunes (MIT, the repository's license) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<rect x="0" y="0" width="1920" height="1080" fill="#282a36"></rect>
+<g fill="#bd93f9" opacity="0.5">
+<circle cx="200" cy="140" r="1.6"></circle><circle cx="520" cy="240" r="1.2"></circle><circle cx="820" cy="110" r="1.4"></circle>
+<circle cx="1100" cy="300" r="1.2"></circle><circle cx="1700" cy="160" r="1.4"></circle><circle cx="60" cy="330" r="1"></circle>
+</g>
+<g fill="#ff79c6" opacity="0.5">
+<circle cx="380" cy="80" r="1.4"></circle><circle cx="1260" cy="160" r="1.2"></circle><circle cx="1840" cy="380" r="1.2"></circle>
+<circle cx="960" cy="420" r="1"></circle>
+</g>
+<circle cx="1500" cy="260" r="78" fill="#f8f8f2" opacity="0.92"></circle>
+<circle cx="1534" cy="236" r="70" fill="#282a36"></circle>
+<path fill="#44475a" opacity="0.75" d="M0 1080 V760 C240 700 420 640 640 690 C820 730 980 640 1220 660 C1460 680 1660 600 1920 650 V1080 Z"></path>
+<path fill="none" stroke="#6272a4" opacity="0.6" style="stroke-width: 2" d="M0 760 C240 700 420 640 640 690 C820 730 980 640 1220 660 C1460 680 1660 600 1920 650"></path>
+<path fill="#383a4a" d="M0 1080 V860 C300 800 560 770 840 830 C1080 880 1300 790 1560 800 C1720 806 1840 830 1920 820 V1080 Z"></path>
+<path fill="none" stroke="#bd93f9" opacity="0.35" style="stroke-width: 2" d="M0 860 C300 800 560 770 840 830 C1080 880 1300 790 1560 800 C1720 806 1840 830 1920 820"></path>
+<path fill="#21222c" d="M0 1080 V960 C380 910 700 920 1000 960 C1300 1000 1600 930 1920 950 V1080 Z"></path>
+</svg>

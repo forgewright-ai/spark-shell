@@ -17,12 +17,15 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod login_run;
+
 const USAGE: &str = "spark-dialog -- the spark dialog, one window for every domain (run by spark-shell dialog)
 
   spark-dialog [--provider \"PATH WORDS\"]... [--home SECTION] [--title TEXT]
                [--mark on|off] [--close on|off] [--progress on|off]
                [--composer plus,model,talk] [--attach \"txt md\"]
                [--spark-shell PATH] [--spark PATH]
+  spark-dialog login ...   the login screen on tty1 (spark-dialog login -h)
 ";
 
 enum Ev {
@@ -96,6 +99,16 @@ fn clock() -> String {
     }
 }
 
+/// Today, (year, month, day), by the machine's own clock and zone.
+fn today() -> (i32, u32, u32) {
+    unsafe {
+        let t = libc::time(std::ptr::null_mut());
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&t, &mut tm);
+        (tm.tm_year + 1900, (tm.tm_mon + 1) as u32, tm.tm_mday as u32)
+    }
+}
+
 /// The ids of the panel's recent picks (SECTION<tab>ACTION ARG), newest first.
 fn recent() -> Vec<String> {
     let base = std::env::var("XDG_STATE_HOME")
@@ -160,6 +173,9 @@ fn run_job(job: Job, tx: mpsc::Sender<Ev>, listening: Arc<Mutex<Option<u32>>>) {
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("login") {
+        login_run::main();
+    }
     let a = match args() {
         Ok(a) => a,
         Err(e) => {
@@ -241,6 +257,7 @@ fn main() {
         let now_clock = clock();
         if now_clock != last_clock {
             last_clock = now_clock;
+            app.today = Some(today());
             dirty = true;
         }
         if dirty {
@@ -257,13 +274,29 @@ fn main() {
                 f.set_cursor_position(drawn.cursor);
             });
             match ui::mark_at(&app) {
-                Some((mx, my)) if sixel_ok && !mark_drawn => {
+                Some((mx, my)) if !mark_drawn => {
+                    // the buffer skips the logo's cells, so what the last view drew there stays: blank them first,
+                    // or the old text shows through the logo's transparent ground
+                    let ground = match pal.surface {
+                        ratatui::style::Color::Rgb(r, g, b) => ratatui::crossterm::style::Color::Rgb { r, g, b },
+                        _ => ratatui::crossterm::style::Color::Reset,
+                    };
+                    let _ = queue!(
+                        out,
+                        ratatui::crossterm::cursor::SavePosition,
+                        ratatui::crossterm::cursor::MoveTo(mx, my),
+                        ratatui::crossterm::style::SetBackgroundColor(ground),
+                        ratatui::crossterm::style::Print(" ".repeat(ui::MARK_CELLS as usize)),
+                        ratatui::crossterm::style::ResetColor,
+                        ratatui::crossterm::cursor::RestorePosition
+                    );
+                    let _ = out.flush();
                     let cell_h = terminal::window_size()
                         .ok()
                         .filter(|w| w.rows > 0 && w.height > 0)
                         .map(|w| (w.height / w.rows) as u32)
                         .unwrap_or(0);
-                    if let Some(s) = sixel::mark(cell_h, pal.dark) {
+                    if let Some(s) = sixel::mark(cell_h, pal.dark).filter(|_| sixel_ok) {
                         let _ = queue!(out, ratatui::crossterm::cursor::SavePosition, ratatui::crossterm::cursor::MoveTo(mx, my));
                         let _ = out.write_all(s.as_bytes());
                         let _ = queue!(out, ratatui::crossterm::cursor::RestorePosition);
@@ -306,6 +339,8 @@ fn main() {
                     (KeyCode::Esc, _) => app.escape(),
                     (KeyCode::Enter, _) => app.enter(),
                     (KeyCode::Up, _) => app.up(),
+                    (KeyCode::Left, _) => app.month(-1),
+                    (KeyCode::Right, _) => app.month(1),
                     (KeyCode::Down, _) => app.down(),
                     (KeyCode::Tab, _) => app.tab(),
                     (KeyCode::Backspace, _) => app.backspace(),

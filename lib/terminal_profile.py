@@ -152,7 +152,7 @@ def profile_dict(name, pal, font_name="Menlo-Regular", font_size=13.0):
 
 
 def read_back(data):
-    """Decode a profile's archived values: the colours as "r g b" and the
+    """Decode a profile's archived values: the colors as "r g b" and the
     font as "FACE SIZE". Proof the archive is readable."""
     d = plistlib.loads(data) if isinstance(data, bytes) else data
     out = {}

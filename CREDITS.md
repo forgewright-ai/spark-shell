@@ -2,7 +2,7 @@
 
 spark-shell stands on other people's work. Every program here comes
 from a package manager's own repositories, unpinned. The palettes are
-colour values, credited below.
+color values, credited below.
 
 ## The logo
 
@@ -53,6 +53,10 @@ With DESKTOP=sway, from apt, pacman or xbps.
   dejavu-fonts-ttf on Void).
 - seatd -- https://git.sr.ht/~kennylevinsen/seatd -- MIT. On Void,
   which has no logind, it gives sway the screen and keyboard.
+- greetd -- https://git.sr.ht/~kennylevinsen/greetd -- GPL-3.0. With
+  LOGIN=yes (spark-shell on login), it runs the login screen on tty1
+  and starts your session after it. spark-shell talks to it over its
+  socket and ships none of its code.
 - curl -- https://curl.se -- curl licence (MIT-style). Fetches the
   dialog's release file.
 - OpenSSH (openssh, openssh-client on Debian) -- https://www.openssh.com --
@@ -82,7 +86,7 @@ Unicode-3.0). The ones it is made of:
 ## The palettes
 
 The 9 palettes in `themes/`, written to `theme.env` by `spark-shell
-theme NAME`. Colour values only, no code copied, each file's first
+theme NAME`. Color values only, no code copied, each file's first
 line naming its upstream. The licence is the upstream's:
 
 - Catppuccin -- https://github.com/catppuccin/catppuccin -- MIT.

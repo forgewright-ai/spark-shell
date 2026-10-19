@@ -43,10 +43,10 @@ jobs:
           for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/dialog_pty.py lib/terminal_profile.py tests/profile_test.py $(find templates distro themes dialog/src dialog/tests -type f ! -name '*.txt' | sort) dialog/Cargo.toml dialog/deny.toml dialog/dialog.env dialog/rust-toolchain.toml; do
             if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
               echo "non-ASCII in $f"; exit 1; fi; done
-      - name: no hex colour in a template (the look is the 16 slots)
+      - name: no hex color in a template (the look is the 16 slots)
         run: |
           if grep -rnE '#[0-9a-fA-F]{6}' templates; then
-            echo "a hex colour is in a template"; exit 1; fi
+            echo "a hex color is in a template"; exit 1; fi
       - name: shellcheck
         run: shellcheck -S warning spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh
       - name: the suite in a throwaway HOME

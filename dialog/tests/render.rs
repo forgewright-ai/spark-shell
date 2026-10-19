@@ -1,6 +1,6 @@
 // The golden renders: the dialog drawn from fixed state in the two
 // palettes the records name. Both palettes give the same grid of slots
-// (every colour bound to a token), and the grid is the file in golden/.
+// (every color bound to a token), and the grid is the file in golden/.
 // UPDATE_GOLDEN=1 writes the files after a change that was looked at.
 mod common;
 use common::palette;
@@ -66,7 +66,7 @@ fn base() -> App {
         json!([]),
     );
     let about_rows: serde_json::Value = serde_json::from_str(include_str!("golden/about-rows.json")).unwrap();
-    let mut about = provider("about", "a light desktop of sway and foot, for an AI box", about_rows, json!([]));
+    let mut about = provider("about", "", about_rows, json!([]));
     about.version = "0.64".into();
     app.providers = vec![window, theme, bt, about];
     app.about_idx = Some(3);
@@ -86,7 +86,7 @@ fn render(app: &App, name: &str) {
             std::fs::write(format!("{}/{}-{}.html", dir, name, pal), page).unwrap();
         }
         let s = spark_dialog::ui::snapshot(&b, &p);
-        assert!(!s.contains('?'), "{} in {}: a colour that is no slot of the palette\n{}", name, pal, s);
+        assert!(!s.contains('?'), "{} in {}: a color that is no slot of the palette\n{}", name, pal, s);
         grids.push(s);
     }
     assert_eq!(grids[0], grids[1], "{}: the two palettes draw different grids", name);
@@ -134,10 +134,63 @@ fn a_section_with_its_groups_and_the_exchange() {
 }
 
 #[test]
+fn a_long_list_says_how_many_rows_sit_below() {
+    let mut app = base();
+    let names = [
+        "terminal",
+        "aerc",
+        "btop",
+        "micro",
+        "mpv",
+        "pyradio",
+        "firefox",
+        "foot",
+        "htop",
+        "ncdu",
+        "newsboat",
+        "ranger",
+        "vim",
+        "w3m",
+        "weechat",
+        "alacritty",
+        "cmus",
+        "darktable",
+        "evince",
+        "fzf",
+        "gimp",
+        "helix",
+        "imv",
+        "inkscape",
+        "kakoune",
+        "lynx",
+        "mutt",
+        "nnn",
+        "qutebrowser",
+        "zathura",
+    ];
+    let rows: Vec<serde_json::Value> = names
+        .iter()
+        .map(|n| row(&format!("apps:open {}", n), "opens", n, Some(("apps_open", json!({"name": n}))), None))
+        .collect();
+    let short: Vec<String> = names.iter().map(|n| format!("apps:open {}", n)).collect();
+    app.providers.insert(
+        3,
+        provider("apps", "30 apps", json!({"title": "apps", "rows": rows, "short": short}), json!([])),
+    );
+    app.about_idx = Some(4);
+    render(&app, "long");
+}
+
+#[test]
 fn about() {
     let mut app = base();
     app.cfg.mark = true;
     app.view = View::About;
+    app.exchange = vec![Line {
+        sign: Sign::You,
+        text: "show me about".into(),
+        undo: false,
+    }]; // the about is a page: the exchange is not drawn on it
     render(&app, "about");
 }
 
@@ -176,4 +229,78 @@ fn an_answer_wraps_under_its_sign() {
         },
     ];
     render(&app, "answer");
+}
+
+#[test]
+fn a_folder_with_its_columns_and_an_attachment() {
+    let mut app = base();
+    app.cfg.plus = true;
+    let files = provider(
+        "files",
+        "the folders the host hands over",
+        json!({"title": "files", "rows": [
+        {"id": "files:root:a", "sign": "opens", "text": "~", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null}
+    ], "short": ["files:root:a"]}),
+        json!([]),
+    );
+    app.providers.push(files);
+    let f = app.providers.len() - 1;
+    let file = |id: &str, name: &str, size: &str, when: &str| json!({"id": id, "sign": "blank", "text": name, "tool": {"name": "files_open", "arguments": {"path": format!("/data/me/Downloads/{}", name)}}, "more": [], "columns": [size, when], "children": null, "group": null});
+    let rows = model::rows(&json!({"title": "~/Downloads", "rows": [
+        {"id": "files:up", "sign": "opens", "text": "..", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null},
+        {"id": "files:dir:a", "sign": "opens", "text": "archive", "tool": null, "more": [], "columns": ["12 items"], "children": "spark-shell://files/rows/YQ", "group": null},
+        file("files:file:1", "report.pdf", "2.1 MB", "yesterday"),
+        file("files:file:2", "photo-0412.jpg", "4.8 MB", "today"),
+        file("files:file:3", "notes.md", "2 KB", "today"),
+        file("files:file:4", "setup.log", "14 KB", "today"),
+        {"id": "files:total", "sign": "blank", "text": "4 files \u{b7} 6.9 MB", "tool": null, "more": [], "columns": [], "children": null, "group": null}
+    ], "short": []}).to_string()).unwrap();
+    app.view = View::Folder(f, "spark-shell://files/rows/RG93bmxvYWRz".into());
+    app.folder = Some((f, "spark-shell://files/rows/RG93bmxvYWRz".into(), rows));
+    app.sel = 3;
+    app.attachment = Some("/data/me/notes.md".into());
+    app.exchange = vec![Line {
+        sign: Sign::You,
+        text: "which of these are big".into(),
+        undo: false,
+    }];
+    render(&app, "folder");
+}
+
+#[test]
+fn the_clock_section_is_the_time_and_the_month() {
+    let mut app = base();
+    app.providers.push(provider(
+        "clock",
+        "Sunday 18 October 2026",
+        json!({"title": "clock", "rows": [], "short": []}),
+        json!([]),
+    ));
+    app.view = View::Section(app.providers.len() - 1);
+    app.came_from = vec![View::Home];
+    app.today = Some((2026, 10, 18));
+    render(&app, "calendar");
+}
+
+#[test]
+fn the_wallpaper_section_shows_each_color_as_a_sample() {
+    let mut app = base();
+    let color = |n: &str, hex: &str| json!({"id": format!("wallpaper:use {}", n), "sign": "blank", "text": n, "tool": {"name": "wallpaper_use", "arguments": {"name": n}}, "more": [], "columns": [], "children": null, "group": "colors", "swatch": hex});
+    let shipped = |n: &str, pal: &str, hex: &str| json!({"id": format!("wallpaper:use {}", n), "sign": "blank", "text": n, "tool": {"name": "wallpaper_use", "arguments": {"name": n}}, "more": [], "columns": [pal], "children": null, "group": "wallpapers", "swatch": hex});
+    app.providers.push(provider(
+        "wallpaper",
+        "teal",
+        json!({"title": "wallpaper", "rows": [
+            {"id": "wallpaper:use default", "sign": "blank", "text": "default", "tool": {"name": "wallpaper_use", "arguments": {"name": "default"}}, "more": [], "columns": [], "children": null, "group": null},
+            shipped("fjord", "nord", "#88c0d0"), shipped("sunset", "gruvbox-dark", "#fe8019"), shipped("embers", "any dark palette", "#d24a2a"),
+            color("black", "#000000"), color("navy", "#000080"),
+            {"id": "wallpaper:show:teal", "sign": "check", "text": "teal", "tool": null, "more": [], "columns": [], "children": null, "group": "colors", "swatch": "#008080"},
+            color("orange", "#ffa500"),
+            {"id": "wallpaper:pick", "sign": "blank", "text": "a picture", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows", "group": null, "pick": {"tool": "wallpaper_picture", "types": ["jpg", "png"]}}
+        ], "short": []}),
+        json!([]),
+    ));
+    app.view = View::Section(app.providers.len() - 1);
+    app.came_from = vec![View::Home];
+    render(&app, "wallpaper");
 }
