@@ -4,6 +4,7 @@
 
 - Changed: the workflows run actions/upload-artifact 7.0.2 (dependabot
   #2).
+- Changed: the workflows run actions/checkout 7.0.1 (dependabot #3).
 
 ## v0.79
 
