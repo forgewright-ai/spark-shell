@@ -3566,11 +3566,24 @@ rem_column() {   # rem_column START GROUP -> the column: 17:00, Fri 20:00, Tue 2
            else echo "$(LC_ALL=C when_of "$_e" '%a %d %b' | sed 's/ 0/ /') $(rem_hm "$1")"; fi ;;
     esac
 }
+rem_reorder() {   # rem_reorder WORDS -> "DAY TIME WORDS" when the day and the time come last, as spoken ("call the dentist tomorrow at 9", "gym at 6pm", "dinner fri at 8:30"); false when they do not
+    printf '%s\n' "$1" | awk '
+        function isday(w) { w = tolower(w); return w ~ /^(today|tomorrow|mon|monday|tue|tuesday|wed|wednesday|thu|thursday|fri|friday|sat|saturday|sun|sunday)$/ || w ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/ }
+        function istime(w) { w = tolower(w); return w ~ /^[0-9][0-9]?(:[0-5][0-9])?(am|pm)?$/ }
+        { n = split($0, t, " "); day = ""; tm = ""; at = 0; e = n
+          if (e > 0 && isday(t[e])) { day = t[e]; e-- }
+          if (e > 0 && istime(t[e])) { tm = t[e]; e--; if (e > 0 && tolower(t[e]) == "at") { at = 1; e-- } }
+          if (day == "" && e > 0 && isday(t[e])) { day = t[e]; e--; if (e > 0 && tolower(t[e]) == "on") e-- }
+          if (tm == "" || e < 1) exit 1
+          if (tm ~ /^[0-9]+$/) { if (!at) exit 1; tm = tm ":00" }   # a bare number is a time only after "at"
+          w = t[1]; for (i = 2; i <= e; i++) w = w " " t[i]
+          print (day == "" ? "today" : day) " " tm " " w }'
+}
 rem_in() {   # rem_in N UNIT -> the minutes "in N UNIT" says (minutes or hours, an or a for one), or false
     case $1 in a|an) _n=1 ;; [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) _n=$1 ;; *) return 1 ;; esac
     case $(printf '%s' "$2" | tr 'A-Z' 'a-z') in min|mins|minute|minutes|m) echo "$_n" ;; h|hr|hrs|hour|hours) echo $((_n * 60)) ;; *) return 1 ;; esac
 }
-rem_parse() {   # rem_parse WORDS -> START<tab>TEXT: today|tomorrow|a weekday|YYYY-MM-DD, then HH:MM (or 6pm, 6:30pm), then the words; or "in 10 minutes" (in 2 hours, in an hour) before the words or after them; false when no day and time are found
+rem_parse() {   # rem_parse WORDS -> START<tab>TEXT: today|tomorrow|a weekday|YYYY-MM-DD, then HH:MM (or 6pm, 6:30pm), then the words, or the words then the day and the time ("call the dentist tomorrow at 9"); or "in 10 minutes" (in 2 hours, in an hour) before the words or after them; false when no day and time are found
     set -f
     # shellcheck disable=SC2046   # the words, split on purpose; no glob
     set -- $1
@@ -3592,6 +3605,16 @@ rem_parse() {   # rem_parse WORDS -> START<tab>TEXT: today|tomorrow|a weekday|YY
         printf '%s	%s
 ' "$(when_of "$_e" %Y%m%d%H%M)" "$*"; return 0
     fi
+    # the day and the time last, as spoken: put first, as the rest reads them
+    case $(printf '%s' "${1:-}" | tr 'A-Z' 'a-z') in
+        today|tomorrow|mon|monday|tue|tuesday|wed|wednesday|thu|thursday|fri|friday|sat|saturday|sun|sunday|[0-9]*) ;;
+        *) if _ro=$(rem_reorder "$*"); then
+               set -f
+               # shellcheck disable=SC2046   # the reordered words, split on purpose; no glob
+               set -- $(printf '%s' "$_ro")
+               set +f
+           fi ;;
+    esac
     printf '%s' "$*" > "$TMP/rem.w"
     set -f
     # shellcheck disable=SC2046   # the words, split on purpose; no glob
@@ -4037,9 +4060,9 @@ panel_list() {   # panel_list [SECTION] -> the glance (the clock's view under it
 }
 
 # --- the router and the want: a row is fzf's; an app named is a layout; the rest is spark's
-panel_brief_sections() {   # -> the sections the want path offers here, in the brief's order
-    for p in layout apps window bar $(panel_blocks_here); do
-        case $p in lan|bat|clock) continue ;; window|bar) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
+panel_brief_sections() {   # -> the sections the want path offers here, in the brief's order: every one the dialog has (notes and reminders are files, so a Mac has them too)
+    for p in layout apps window bar notes reminders display keyboard wallpaper $(panel_blocks_here); do
+        case $p in lan|bat|clock) continue ;; window|bar|display|keyboard|wallpaper) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
         printf '%s\n' "$p"
     done
 }

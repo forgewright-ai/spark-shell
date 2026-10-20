@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.81.1
+
+- Fixed: words never reached a reminder, a note, the display, the
+  keyboard or the wallpaper. The sections the want path offers spark
+  stopped at the bar's and the window's: "set reminder gym in 10
+  minutes" got no step, and "reminders add gym in 10 minutes" a layout.
+  The want path now offers every section the dialog has (#16).
+- Fixed: a reminder said in spoken order had no time: spark passes
+  "call the dentist tomorrow at 9" as said, and only "tomorrow 9:00
+  call the dentist" was read. The day and the time may now come last
+  ("gym at 6pm", "dinner fri at 8:30pm", "pay rent on mon at 10"); a
+  bare number is a time only after "at".
+
 ## v0.81
 
 Light themes, as many as the dark ones (the owner's ask), and reminders
