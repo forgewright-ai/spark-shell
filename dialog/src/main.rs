@@ -199,7 +199,7 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let pal = Palette::from_env();
+    let mut pal = Palette::from_env();
     let labels: Vec<String> = a.providers.iter().map(|(l, _)| l.clone()).collect();
     let mut app = App::new(a.cfg, &labels);
     unsafe {
@@ -274,6 +274,17 @@ fn main() {
     loop {
         for j in std::mem::take(&mut app.jobs) {
             run_job(j, tx.clone(), listening.clone());
+        }
+        if let Some(m) = app.palette.take() {
+            // a theme step: the new palette, and the window's ground with it (the cells keep the terminal's own)
+            pal = Palette::from(|k| m.get(k).and_then(serde_json::Value::as_str).map(String::from));
+            if let ratatui::style::Color::Rgb(r, g, b) = pal.surface {
+                let _ = write!(out, "\x1b]11;#{:02x}{:02x}{:02x}\x1b\\", r, g, b);
+                let _ = out.flush();
+            }
+            mark_drawn = false;
+            let _ = term.clear();
+            dirty = true;
         }
         let now_clock = clock(twelve);
         if now_clock != last_clock {

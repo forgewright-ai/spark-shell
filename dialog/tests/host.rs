@@ -1028,3 +1028,37 @@ fn a_model_picked_is_reviewed_first_and_the_draft_waits() {
         .any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::ModelSet, a) if a.last().map(String::as_str) == Some("qwen"))));
     assert_eq!(app.input, "half a thought");
 }
+
+#[test]
+fn a_theme_step_hands_the_dialog_its_new_palette_and_no_other_provider_can() {
+    for (label, kept) in [("theme", true), ("window", false)] {
+        let (mut app, rx, tx) = app_with(&[label]);
+        let l = label.to_string();
+        let tools = json!([{"name": format!("{}_palette", label), "title": format!("{} palette NAME", label), "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}, "annotations": {"destructiveHint": false}}]);
+        let rows = json!({"title": label, "rows": [{"id": "x", "sign": "ring", "text": "dracula", "tool": {"name": format!("{}_palette", label), "arguments": {"name": "dracula"}}, "more": [], "columns": [], "children": null}], "short": []});
+        app.servers.push(stub(
+            0,
+            label,
+            Box::new(move |v, send| {
+                if let Some(r) = ordinary(&l, v, &tools, &rows) {
+                    return send(r);
+                }
+                if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+                    send(result(&v["id"], json!({"content": [], "structuredContent": {"receipt": "theme dracula", "palette": {"HEX_FG": "f8f8f2", "PANEL_BG": "30323e"}}, "isError": false})));
+                }
+            }),
+            tx,
+        ));
+        app.start();
+        assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+        at_row(&mut app, View::Section(0), 0);
+        app.enter();
+        assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text == "theme dracula")));
+        assert_eq!(
+            app.palette.as_ref().and_then(|p| p.get("PANEL_BG")).and_then(Value::as_str),
+            if kept { Some("30323e") } else { None },
+            "{}",
+            label
+        );
+    }
+}

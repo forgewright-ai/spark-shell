@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.80.1
+
+- Fixed: a theme set from the dialog changed every window but the
+  dialog, which kept its old colors until it was opened again. A theme
+  step's result now carries the palette as it is, and the dialog
+  repaints itself and its ground with it at once.
+
 ## v0.80
 
 A new home for the dialog: six places, the prompt at the top, and

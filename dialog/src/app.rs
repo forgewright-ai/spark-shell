@@ -410,6 +410,9 @@ pub struct App {
     pub about_idx: Option<usize>,
     /// How far the content area is scrolled by Page Up and Page Down.
     pub scroll: usize,
+    /// A theme step's palette, for main.rs to repaint the window with: the colors came in the
+    /// environment at start, and a new palette must not wait for the dialog to be opened again.
+    pub palette: Option<Map<String, Value>>,
 }
 
 impl App {
@@ -465,6 +468,7 @@ impl App {
             chip_focus: None,
             about_idx,
             scroll: 0,
+            palette: None,
         }
     }
 
@@ -2020,6 +2024,12 @@ impl App {
                         }
                     } else {
                         self.say(Sign::Refused, "that file is not under your home: not attached");
+                    }
+                }
+                // the theme section's own palette, never another provider's
+                if self.providers[idx].label == "theme" {
+                    if let Some(p) = sc.get("palette").and_then(Value::as_object) {
+                        self.palette = Some(p.clone());
                     }
                 }
                 if sc.get("opened").and_then(Value::as_bool) == Some(true) {
