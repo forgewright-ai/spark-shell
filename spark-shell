@@ -3357,8 +3357,8 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                 for _m in 5 10 15 30 60 0; do [ "$_m" = "$_v" ] || printf -- '-\t%s %s\t%s %s\n' "$_w" "$(idle_words "$_m")" "$_k" "$_m"; done
             done
             _b=$(light_get); [ -z "$_b" ] || printf -- '-\tbrightness %s%%\tshow\n-\tbrighter\tbrightness up\n-\tdimmer\tbrightness down\n' "$_b"
-            [ -z "${SWAYSOCK:-}" ] || screen_rows | while IFS="$TAB" read -r _n _id _on _md _sc _x _y _w _h; do
-                if [ "$_on" = on ]; then printf -- '-\tscreen %s %s %s %s scale %s\tshow\n' "$_n" "$PANEL_SEP" "${_id:-a screen}" "$_md" "$_sc"; else printf -- '-\tscreen %s %s off\tshow\n' "$_n" "$PANEL_SEP"; fi
+            [ -z "${SWAYSOCK:-}" ] || screen_rows | while IFS="$TAB" read -r _n _id _on _md _sc _x _y _w _h _mo; do   # short, for the dialog's width: the port, the model, the mode, the scale
+                if [ "$_on" = on ]; then printf -- '-\tscreen %s %s %s%s %s scale %s\tshow\n' "$_n" "$PANEL_SEP" "${_mo:+$_mo $PANEL_SEP }" "$_md" "$PANEL_SEP" "$_sc"; else printf -- '-\tscreen %s %s off\tshow\n' "$_n" "$PANEL_SEP"; fi
             done ;;
         keyboard) if [ -z "$KEYBOARD" ]; then printf -- "-\tsway's own layout: spark-shell desktop keyboard us br sets some\tshow\n"; return 0; fi
             _a=$(kb_active)
@@ -5803,9 +5803,9 @@ desk_keyboard() {   # desk_keyboard [next | LAYOUT...]
 # file's for the next start. The last screen on is never turned off.
 SCREENS_CONF=$CONFIG_DIR/screens.conf
 screens_json() { swaymsg -t get_outputs 2>/dev/null || echo '[]'; }
-screen_rows() {   # -> NAME<tab>ID<tab>ON<tab>MODE<tab>SCALE<tab>X<tab>Y<tab>W<tab>H per screen (W, H: its place in layout pixels)
+screen_rows() {   # -> NAME<tab>ID<tab>ON<tab>MODE<tab>SCALE<tab>X<tab>Y<tab>W<tab>H<tab>MODEL per screen (W, H: its place in layout pixels)
     screens_json | jq -r '.[] | [.name, ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")), (if .active then "on" else "off" end),
-        (if .current_mode then "\(.current_mode.width)x\(.current_mode.height)" else "" end), ((.scale // 1) * 100 | round / 100 | tostring), (.rect.x | tostring), (.rect.y | tostring), (.rect.width | tostring), (.rect.height | tostring)] | @tsv' 2>/dev/null || :
+        (if .current_mode then "\(.current_mode.width)x\(.current_mode.height)" else "" end), ((.scale // 1) * 100 | round / 100 | tostring), (.rect.x | tostring), (.rect.y | tostring), (.rect.width | tostring), (.rect.height | tostring), (.model // "")] | @tsv' 2>/dev/null || :
 }
 screen_find() { screen_rows | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($1) == n || (n != "" && index(tolower($2), n) > 0) { print; exit }'; }   # screen_find NAME -> its row: by the port's name, or words of its make and model
 screen_save() {   # screen_save ID WORDS -- the screen's line of that kind (scale, mode, position, on or off) in screens.conf, every other kept
@@ -5821,7 +5821,7 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | on | off | left-of|r
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own display settings"
     desk_in_sway || refuse "changes the desktop's screens: run it inside it"
     if [ -z "${1:-}" ]; then
-        screen_rows | while IFS="$TAB" read -r n id on m sc x y w h; do
+        screen_rows | while IFS="$TAB" read -r n id on m sc x y w h _mo; do
             if [ "$on" = on ]; then echo "$n  ${id:-a screen}  $m  scale $sc  at $x,$y"; else echo "$n  ${id:-a screen}  off"; fi
         done; return 0
     fi
