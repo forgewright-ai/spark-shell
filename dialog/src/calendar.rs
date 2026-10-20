@@ -43,6 +43,16 @@ pub fn shift(y: i32, m: u32, offset: i32) -> (i32, u32) {
     (n.div_euclid(12), (n.rem_euclid(12) + 1) as u32)
 }
 
+/// "YYYY-MM-DD" as (year, month, day), a real day of a real month; None for any other shape.
+pub fn ymd(s: &str) -> Option<(i32, u32, u32)> {
+    let b = s.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' || !b.iter().enumerate().all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit()) {
+        return None;
+    }
+    let (y, m, d) = (s[0..4].parse().ok()?, s[5..7].parse().ok()?, s[8..10].parse().ok()?);
+    ((1..=12).contains(&m) && d >= 1 && d <= days_in(y, m)).then_some((y, m, d))
+}
+
 /// The month as weeks of seven, a day or none.
 pub fn weeks(y: i32, m: u32) -> Vec<[Option<u32>; 7]> {
     let mut out = vec![];
@@ -113,6 +123,16 @@ mod tests {
         assert_eq!(shift(2026, 1, -1), (2025, 12));
         assert_eq!(days_in(2028, 2), 29);
         assert_eq!(days_in(2100, 2), 28);
+    }
+
+    #[test]
+    fn a_date_reads_only_as_a_real_day() {
+        assert_eq!(ymd("2026-10-19"), Some((2026, 10, 19)));
+        assert_eq!(ymd("2028-02-29"), Some((2028, 2, 29)));
+        assert_eq!(ymd("2026-02-29"), None);
+        assert_eq!(ymd("2026-1-19"), None);
+        assert_eq!(ymd("2026-00-10"), None);
+        assert_eq!(ymd("+026-10-19"), None);
     }
 
     #[test]

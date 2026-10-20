@@ -267,9 +267,30 @@ fn a_folder_with_its_columns_and_an_attachment() {
     render(&app, "folder");
 }
 
-#[test]
-fn the_clock_section_is_the_time_and_the_month() {
+/// The reminders a provider labelled "reminders" offers: a row with no day, then rows for days in groups.
+fn reminders() -> Provider {
+    let r = |date: &str, sign: &str, text: &str, when: &str, group: &str| json!({"id": format!("r:{}:{}", date, text.len()), "sign": sign, "text": text, "tool": {"name": "reminder_show", "arguments": {}}, "more": [], "columns": [when], "children": null, "group": group, "date": date});
+    provider(
+        "reminders",
+        "2 today, 4 ahead",
+        json!({"title": "reminders", "rows": [
+            {"id": "r:new", "sign": "opens", "text": "new reminder", "tool": {"name": "reminder_new", "arguments": {}}, "more": [], "columns": [], "children": null, "group": null},
+            r("2026-10-18", "dot", "call the dentist", "17:00", "today"),
+            r("2026-10-18", "ring", "water the plants", "18:00", "today"),
+            r("2026-10-19", "ring", "standup with the team", "09:00", "tomorrow"),
+            r("2026-10-23", "ring", "dinner with friends", "Fri 20:00", "this week"),
+            r("2026-11-03", "ring", "the vet", "Tue 3 Nov 16:30", "later")
+        ], "short": []}),
+        json!([]),
+    )
+}
+
+/// The Calendar of the clock section, with the reminders provider or without it.
+fn calendar_app(with_reminders: bool) -> App {
     let mut app = base();
+    if with_reminders {
+        app.providers.push(reminders());
+    }
     app.providers.push(provider(
         "clock",
         "Sunday 18 October 2026",
@@ -279,7 +300,107 @@ fn the_clock_section_is_the_time_and_the_month() {
     app.view = View::Section(app.providers.len() - 1);
     app.came_from = vec![View::Home];
     app.today = Some((2026, 10, 18));
-    render(&app, "calendar");
+    app
+}
+
+#[test]
+fn the_clock_section_is_the_time_and_the_month() {
+    render(&calendar_app(true), "calendar");
+}
+
+/// The app drawn in tokyonight-night: the buffer and each row's text.
+fn drawn(app: &App) -> (Buffer, spark_dialog::palette::Palette, Vec<String>) {
+    let p = palette("tokyonight-night");
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    spark_dialog::ui::draw(app, &p, CLOCK, &mut b);
+    let rows = (0..HEIGHT).map(|y| (0..WIDTH).map(|x| b[(x, y)].symbol().to_string()).collect()).collect();
+    (b, p, rows)
+}
+
+/// The column (in chars) where `needle` starts on a row.
+fn at(row: &str, needle: &str) -> Option<usize> {
+    row.find(needle).map(|i| row[..i].chars().count())
+}
+
+#[test]
+fn the_calendar_draws_this_month_and_the_next_side_by_side() {
+    let (_, _, rows) = drawn(&calendar_app(true));
+    let y = rows.iter().position(|r| r.starts_with("  October 2026")).expect("this month");
+    assert_eq!(at(&rows[y], "October 2026"), Some(2));
+    assert_eq!(at(&rows[y], "November 2026"), Some(32), "the next month on the same row");
+    assert_eq!(at(&rows[y + 1], "Su"), Some(2));
+    assert_eq!(rows[y + 1].matches("Su").count(), 2, "a weekday line under each month");
+    // November 2026 is five weeks, all of it inside the 60 columns
+    assert!(rows[y + 2..y + 7].iter().any(|r| r.trim_end().ends_with("30") && r.chars().count() <= 60));
+}
+
+#[test]
+fn a_day_with_a_reminder_is_in_the_accent_and_today_is_a_chip() {
+    let (b, p, rows) = drawn(&calendar_app(true));
+    let y = rows.iter().position(|r| r.starts_with("  October 2026")).unwrap() as u16;
+    // October 2026: the 23rd is a Friday of the fourth week, column 2 + 5 * 4
+    let (x, wk) = (22u16, y + 2 + 3);
+    assert_eq!(format!("{}{}", b[(x, wk)].symbol(), b[(x + 1, wk)].symbol()), "23");
+    assert_eq!(b[(x, wk)].fg, p.accent);
+    assert!(b[(x, wk)].modifier.contains(ratatui::style::Modifier::BOLD));
+    // the 18th, today, has a reminder too: the chip wins
+    let wk = y + 2 + 3;
+    assert_eq!(format!("{}{}", b[(2, wk)].symbol(), b[(3, wk)].symbol()), "18");
+    assert_eq!(b[(2, wk)].bg, p.lit);
+    // November's 3rd, the next month's reminder, is marked too: Tuesday, column 32 + 2 * 4
+    let x = 32 + 8 + 1;
+    assert_eq!(b[(x, y + 2)].symbol(), "3");
+    assert_eq!(b[(x, y + 2)].fg, p.accent);
+    // a day with none is plain
+    assert_eq!(b[(10, wk)].fg, p.fg, "the 20th");
+}
+
+#[test]
+fn the_agenda_is_the_dated_reminders_in_their_groups_the_time_on_the_right() {
+    let (b, p, rows) = drawn(&calendar_app(true));
+    let head = |g: &str| {
+        rows.iter()
+            .position(|r| r.trim_end() == format!("  {}", g))
+            .unwrap_or_else(|| panic!("a header {}", g))
+    };
+    let (today, tomorrow, week, later) = (head("today"), head("tomorrow"), head("this week"), head("later"));
+    assert!(today < tomorrow && tomorrow < week && week < later, "in their order");
+    assert_eq!(b[(2, today as u16)].fg, p.muted);
+    assert_eq!(tomorrow, today + 4, "two rows, then a blank row between groups");
+    let y = today + 1;
+    assert_eq!(at(&rows[y], "call the dentist"), Some(6));
+    assert_eq!(b[(6, y as u16)].fg, p.fg);
+    assert_eq!(rows[y].chars().nth(4), Some('\u{25cf}'), "a dot");
+    assert_eq!(b[(4, y as u16)].fg, p.accent);
+    assert_eq!(rows[y + 1].chars().nth(4), Some('\u{25cb}'), "a ring");
+    assert_eq!(b[(4, y as u16 + 1)].fg, p.muted);
+    assert_eq!(at(&rows[y], "17:00"), Some(53), "the time ends at column 58");
+    assert_eq!(b[(53, y as u16)].fg, p.muted);
+    let y = later + 1;
+    assert_eq!(at(&rows[y], "Tue 3 Nov 16:30"), Some(58 - 15));
+    assert!(rows[y][..].trim_end().chars().count() == 58);
+}
+
+#[test]
+fn a_reminder_with_no_day_is_not_in_the_agenda() {
+    let (_, _, rows) = drawn(&calendar_app(true));
+    assert!(!rows.iter().any(|r| r.contains("new reminder")));
+}
+
+#[test]
+fn the_calendar_with_no_reminders_is_the_time_and_the_two_months() {
+    let (b, p, rows) = drawn(&calendar_app(false));
+    let y = rows.iter().position(|r| r.starts_with("  October 2026")).unwrap();
+    assert_eq!(at(&rows[y], "November 2026"), Some(32));
+    // nothing below the months but the hint and the composer
+    let last = rows.iter().rposition(|r| r.contains("31")).unwrap();
+    assert!(rows[last + 1..last + 6].iter().all(|r| r.trim().is_empty()));
+    // no day in the accent
+    for yy in y as u16..last as u16 + 1 {
+        for x in 0..WIDTH {
+            assert_ne!(b[(x, yy)].fg, p.accent, "({}, {})", x, yy);
+        }
+    }
 }
 
 #[test]

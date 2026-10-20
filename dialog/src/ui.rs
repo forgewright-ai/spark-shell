@@ -310,7 +310,7 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> Vec<(u16, usize)>
         pen.put(4, y, BELOW, pal.muted, false, false);
         pen.put(6, y, &format!("{} more", below), pal.muted, false, false);
     }
-    let widths = widths(app, &items);
+    let (widths, right) = widths(app, &items);
     let samples = items
         .iter()
         .any(|it| matches!(it, Item::Row(p, r) if app.providers[*p].rows.rows[*r].swatch.is_some()));
@@ -342,10 +342,10 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> Vec<(u16, usize)>
                     pen.put(x, y, &format!("{}in use", SEP), pal.muted, false, lit);
                 }
             }
-            Item::Row(p, r) => row_line(pen, &app.providers[*p].rows.rows[*r], y, lit, &widths, samples),
+            Item::Row(p, r) => row_line(pen, &app.providers[*p].rows.rows[*r], y, lit, &widths, &right, samples),
             Item::Folder(i) => {
                 if let Some(row) = app.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)) {
-                    row_line(pen, row, y, lit, &widths, samples);
+                    row_line(pen, row, y, lit, &widths, &right, samples);
                 }
             }
         }
@@ -353,9 +353,16 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> Vec<(u16, usize)>
     at
 }
 
-/// The widths of a list's columns: the name, then each column, so they line up (the name 26 cells at most).
-fn widths(app: &App, items: &[Item]) -> Vec<usize> {
+/// A cell that starts or ends with a figure: a size, a count, a time.
+fn figure(col: &str) -> bool {
+    col.chars().next().is_some_and(|c| c.is_ascii_digit()) || col.chars().last().is_some_and(|c| c.is_ascii_digit())
+}
+
+/// The widths of a list's columns: the name, then each column, so they line up (the name 26 cells at most);
+/// and per column whether every cell in it is a figure, so the column lines up on its right edge.
+fn widths(app: &App, items: &[Item]) -> (Vec<usize>, Vec<bool>) {
     let mut w: Vec<usize> = vec![];
+    let mut right: Vec<bool> = vec![];
     for it in items {
         let row = match it {
             Item::Row(p, r) => &app.providers[*p].rows.rows[*r],
@@ -375,13 +382,19 @@ fn widths(app: &App, items: &[Item]) -> Vec<usize> {
             }
             w[k] = w[k].max(c);
         }
+        for (k, col) in row.columns.iter().enumerate() {
+            if right.len() <= k {
+                right.push(true);
+            }
+            right[k] = right[k] && figure(col);
+        }
     }
-    w
+    (w, right)
 }
 
 /// One row: its sign at 4, its text at 6, its columns lined up (the first right-aligned, a size; the rest left), its arrow when it opens more.
 /// A row: its sign at 4, its text at 6, or at 9 in a list where rows carry a color's sample, the sample at 6.
-fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &[usize], samples: bool) {
+fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &[usize], right: &[bool], samples: bool) {
     let pal = pen.pal.clone();
     let (g, c) = sign(&pal, &row.sign);
     pen.put(4, y, g, c, false, lit);
@@ -396,8 +409,8 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &
         for (k, col) in row.columns.iter().enumerate() {
             let w = widths.get(k + 1).copied().unwrap_or(0) as u16;
             let cw = cells(col) as u16;
-            // a size or a count lines up on its right edge; words (a palette's name) on their left
-            let numeric = col.chars().next().is_some_and(|c| c.is_ascii_digit());
+            // a size, a count or a time lines up on its right edge; words (a palette's name) on their left
+            let numeric = right.get(k).copied().unwrap_or(false); // a column of sizes, counts or times: its right edge
             let at = if k == 0 && numeric {
                 x + 2 + w.saturating_sub(cw)
             } else if k == 0 {
@@ -414,10 +427,23 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &
     }
 }
 
-/// The clock section: the time in blocks, then the month, today lit; left and right move the month.
+/// Where the Calendar's two months start, and where the agenda's times end.
+const MONTH_X: [u16; 2] = [2, 32];
+const AGENDA_RIGHT: u16 = 58;
+
+/// The clock section: the time in blocks, then this month and the next side by side, today lit and
+/// a day with a reminder in the accent, then the agenda (the reminders that have a day, in their
+/// groups); left and right move both months.
 fn calendar(app: &App, pen: &mut Pen, clock: &str, bottom: u16) {
-    use crate::calendar::{shift, strokes, weeks, DAYS, MONTHS};
+    use crate::calendar::{shift, strokes, weeks, ymd, DAYS, MONTHS};
     let pal = pen.pal.clone();
+    // the reminders provider's rows that are for a day
+    let dated: Vec<(&crate::model::Row, (i32, u32, u32))> = app
+        .providers
+        .iter()
+        .find(|p| p.label == "reminders")
+        .map(|p| p.rows.rows.iter().filter_map(|r| Some((r, ymd(r.date.as_deref()?)?))).collect())
+        .unwrap_or_default();
     let mut y = 2;
     let hhmm = clock.rsplit(' ').next().unwrap_or("");
     if hhmm.len() == 5 && hhmm.as_bytes()[2] == b':' {
@@ -428,26 +454,70 @@ fn calendar(app: &App, pen: &mut Pen, clock: &str, bottom: u16) {
         y += 2;
     }
     let Some((ty, tm, td)) = app.today else { return };
-    let (yr, mo) = shift(ty, tm, app.month_offset);
-    pen.put(2, y, &format!("{} {}", MONTHS[(mo - 1) as usize], yr), pal.muted, false, false);
-    y += 1;
-    for (i, d) in DAYS.iter().enumerate() {
-        pen.put(2 + i as u16 * 4, y, d, pal.muted, false, false);
+    let top = y;
+    let mut low = y;
+    for (k, x0) in MONTH_X.iter().enumerate() {
+        let (yr, mo) = shift(ty, tm, app.month_offset + k as i32);
+        let mut y = top;
+        pen.put(*x0, y, &format!("{} {}", MONTHS[(mo - 1) as usize], yr), pal.muted, false, false);
+        y += 1;
+        for (i, d) in DAYS.iter().enumerate() {
+            pen.put(x0 + i as u16 * 4, y, d, pal.muted, false, false);
+        }
+        y += 1;
+        for wk in weeks(yr, mo) {
+            if y >= bottom {
+                break;
+            }
+            for (i, d) in wk.iter().enumerate() {
+                let Some(d) = d else { continue };
+                let x = x0 + i as u16 * 4;
+                let n = format!("{:>2}", d);
+                if (yr, mo, *d) == (ty, tm, td) {
+                    pen.chip(x - 1, y, &n, false); // today, a cell of air each side
+                } else if dated.iter().any(|(_, day)| *day == (yr, mo, *d)) {
+                    pen.put(x, y, &n, pal.accent, true, false);
+                } else {
+                    pen.put(x, y, &n, pal.fg, false, false);
+                }
+            }
+            y += 1;
+        }
+        low = low.max(y);
     }
-    y += 1;
-    for wk in weeks(yr, mo) {
-        if y >= bottom {
+    // the agenda: a blank row, then each group's header and its rows, the first column ending at AGENDA_RIGHT
+    let mut y = low + 1;
+    let mut group: Option<&String> = None;
+    for (k, (r, _)) in dated.iter().enumerate() {
+        let new = k == 0 || r.group.as_ref() != group;
+        // the row, and a new group's blank row and header: all of it above the bottom, or none
+        let need = 1 + if new { u16::from(k > 0) + u16::from(r.group.is_some()) } else { 0 };
+        if y + need > bottom {
             break;
         }
-        for (i, d) in wk.iter().enumerate() {
-            let Some(d) = d else { continue };
-            let x = 2 + i as u16 * 4;
-            let n = format!("{:>2}", d);
-            if (yr, mo, *d) == (ty, tm, td) {
-                pen.chip(x - 1, y, &n, false); // today, a cell of air each side
-            } else {
-                pen.put(x, y, &n, pal.fg, false, false);
+        if new {
+            if k > 0 {
+                y += 1;
             }
+            group = r.group.as_ref();
+            if let Some(g) = group {
+                pen.put(2, y, g, pal.muted, false, false);
+                y += 1;
+            }
+        }
+        let sign = match r.sign.as_str() {
+            "ring" => Some((RING, pal.muted)),
+            "dot" => Some((DOT, pal.accent)),
+            _ => None,
+        };
+        if let Some((sg, c)) = sign {
+            pen.put(4, y, sg, c, false, false);
+        }
+        let col = r.columns.first().map(|c| cut(c, (AGENDA_RIGHT - 8) as usize));
+        let col_x = col.as_ref().map_or(AGENDA_RIGHT, |c| AGENDA_RIGHT - cells(c) as u16);
+        pen.put(6, y, &cut(&r.text, col_x.saturating_sub(7) as usize), pal.fg, false, false);
+        if let Some(c) = &col {
+            pen.put(col_x, y, c, pal.muted, false, false);
         }
         y += 1;
     }

@@ -1,12 +1,42 @@
 # Changelog
 
-## Unreleased
+## v0.78
 
+Notes, reminders and a Calendar that uses the space (the owner's picks
+from the mock-ups: the Calendar layout B, notes as Markdown in ~/notes,
+reminders as iCalendar in ~/calendar, a due reminder a bar block and a
+short sound, a note opened in the editor).
+
+- Added: Notes. The dialog's `notes` section: a new note, then the
+  notes, the newest first, the date a column. A note is a Markdown file
+  in ~/notes, its first line its name. Enter opens it in the editor
+  (EDITOR, else nano, else vi) in a foot window. Tools for spark:
+  notes_new, notes_open, notes_add (`NAME: TEXT` adds a line to the
+  note named so, else a new note) and notes_find (the note and the line
+  that say the words).
+- Added: Reminders. The `reminders` section: due, today, tomorrow, this
+  week and later, the time a column. A reminder is an iCalendar event
+  (RFC 5545) with its alarm at its time, one .ics file each in
+  ~/calendar, its time local; events other tools write there are read
+  too, a time in UTC turned local. Tools: reminders_add (when: today,
+  tomorrow, a weekday or a date as `2026-11-03`, then a time as 18:30
+  or 9am, then the words), reminders_done and reminders_snooze (10 minutes on).
+- Added: a due reminder. The bar's line, every 15 seconds, finds one
+  due: a `due` block (the word muted, a dot in the accent, the words),
+  a short sound once (assets/chime.wav, made for spark-shell; PipeWire,
+  else ALSA), and a click opens the reminders, where it has done and
+  again in 10 minutes.
+- Changed: the Calendar. The time, then this month and the next side
+  by side, a day with a reminder in the accent, then the agenda of the
+  reminders ahead in their groups, the times lined up on the right.
+  The rows schema gains `date`, a day as `2026-10-20`, for it.
+- Changed: a column that starts or ends with a figure lines up on its
+  right edge (a time, Fri 20:00), as a size does.
 - Fixed: which screen answers DDC/CI was kept on disk, so a "none"
   from a session without the i2c group yet (before its next login)
   outlived the reboot and hid the bar's light block for an hour. The
   answer lives in the runtime directory now, which a reboot clears; a
-  bus or none is kept 10 minutes, and a screen asleep (DPMS) one.
+  bus or none is kept 10 minutes, and a screen asleep one.
 
 ## v0.77
 

@@ -2727,6 +2727,9 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by a di
         fi
     fi
     bar_group
+    # a reminder due: its own group, before the seat (a click opens the reminders)
+    due=$(rem_due 2>/dev/null || :)
+    [ -z "$due" ] || { bar_add "$(bar_block due '' "$(bar_span "$HEX_MUTED" due) $(bar_span "$HEX_ACCENT" "$PANEL_DOT") $(bar_esc "$(printf '%s' "${due#*"$TAB"}" | cut_chars 28)")")"; bar_group; }
     # the seat: the brightness, the keyboard's layout
     lt=$(light_get)
     if [ -n "$lt" ]; then
@@ -2759,6 +2762,7 @@ bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X -- one click or wh
         light:*:4) light_set up >/dev/null || : ;;
         light:*:5) light_set down >/dev/null || : ;;
         light:name:1) bar_panel_open display ;;   # the word opens the display's section
+        due:*:1) bar_panel_open reminders ;;
         kb:*:1) swaymsg -- input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || : ;;   # the next layout, as Super+Ctrl+space
         out:*:4|mic:*:4) snd_set "$1" +5 ;;
         out:*:5|mic:*:5) snd_set "$1" -5 ;;
@@ -2930,7 +2934,7 @@ panel_colors() {   # the three SGRs from our own render, when there is one (a pi
 }
 
 # --- the sections: their order by use, which of them this machine has, what each costs
-PANEL_ORDER="undo spark apps layout window display keyboard out mic bt wifi theme wallpaper bar about"   # grouped by what you do: what is on the screen, the sound, the connections, the look, then about; undo only while there is one
+PANEL_ORDER="undo spark apps layout notes reminders window display keyboard out mic bt wifi theme wallpaper bar about"   # grouped by what you do: what is on the screen, the sound, the connections, the look, then about; undo only while there is one
 PANEL_BLOCKS="lan wifi bt out mic bat clock theme"      # the bar's blocks in the bar's order, and the palette: the facts, and what a click may open
 PANEL_LOOKS="lan bat clock"                            # blocks with nothing to set: shown only when they opened the panel
 panel_blocks_here() {   # -> the bar's blocks this machine has, in the bar's order
@@ -2950,7 +2954,7 @@ panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on
     [ "$_f" = glance ] || echo "$_f"
     for s in $PANEL_ORDER; do
         [ "$s" != "$_f" ] || continue
-        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|wallpaper|display|keyboard) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
+        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|wallpaper|display|keyboard|notes|reminders) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
         echo "$s"
     done
 }
@@ -3227,6 +3231,11 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
         theme) echo "$(panel_col theme)${THEME:-none} $PANEL_SEP $(bar_font)" ;;   # the transparency is named in its row
         wallpaper) _cur=$(wall_name); echo "$(panel_col wallpaper)${_cur:-$(basename "$(wall_path)")}" ;;
         window) echo "$(panel_col window)$(win_words "$WINDOWS")" ;;
+        notes) _n=$(notes_list | grep -c . || :); echo "$(panel_col notes)${_n:-0} in ~/notes" ;;
+        reminders) _now=$(date +%Y%m%d%H%M); rem_list > "$TMP/rem.t"; _d=$(awk -F '\t' -v n="$_now" '$1 <= n {t = $3} END {print t}' "$TMP/rem.t")
+            if [ -n "$_d" ]; then echo "$(panel_col reminders)due now: $_d"
+            else _td=$(awk -F '\t' -v n="$_now" -v d="$(date +%Y%m%d)" '$1 > n && substr($1, 1, 8) == d' "$TMP/rem.t" | grep -c . || :); _all=$(grep -c . "$TMP/rem.t" || :)
+                if [ "${_all:-0}" -eq 0 ]; then echo "$(panel_col reminders)none ahead"; else echo "$(panel_col reminders)${_td:-0} today, $((_all - ${_td:-0})) after"; fi; fi ;;
         display) _b=$(light_get); if [ -n "$_b" ]; then echo "$(panel_col display)brightness $_b%"; else echo "$(panel_col display)off $(idle_words "$DISPLAY_IDLE")"; fi ;;   # short: the header holds it; the rows say the minutes
         keyboard) _k=$(kb_active); if [ -n "$_k" ]; then echo "$(panel_col keyboard)$_k $PANEL_SEP $(printf '%s\n' $KEYBOARD | grep -c .) layouts"; elif [ -n "$KEYBOARD" ]; then echo "$(panel_col keyboard)$KEYBOARD"; else echo "$(panel_col keyboard)sway's own layout"; fi ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown at the top of the screen"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys Super+d) opens the dialog"; fi ;;
@@ -3368,6 +3377,23 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             _a=$(kb_active)
             for _x in $KEYBOARD; do if [ "$_x" = "$_a" ] || [ -z "$_a" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$_x"; else printf -- '-\t%s\tuse %s\n' "$_x" "$_x"; fi; done
             [ -z "$_a" ] || printf '%s\tthe next layout\tnext\n' "$PANEL_GO" ;;
+        notes) printf '%s\tnew note\tnew\n' "$PANEL_GO"   # the newest five, and a more row; a full list, all of them; the date a column, the group recent
+            notes_list > "$TMP/notes.l"; _n=0
+            while IFS="$TAB" read -r _e _nm _f; do
+                _n=$((_n + 1)); if [ "${2:-}" != full ] && [ "$_n" -gt 5 ]; then continue; fi
+                printf -- '-\t%s\topen %s\trecent|%s|\n' "$_nm" "$_nm" "$(note_when "$_e")"
+            done < "$TMP/notes.l"
+            [ "${2:-}" = full ] || [ "$_n" -le 5 ] || printf -- '-\t%s more\tmore\trecent||\n' $((_n - 5)) ;;
+        reminders) printf -- '-\tsay it: remind me to call the dentist tomorrow at 9\tshow\n'   # the reminders ahead in their groups, each its time a column and its day for the Calendar; the first one due with done and a snooze
+            _now=$(date +%Y%m%d%H%M); _first=1
+            rem_list | while IFS="$TAB" read -r _s _u _t _f; do
+                _g=$(rem_group "$_s" "$_now"); _x="$_g|$(rem_column "$_s" "$_g")|$(printf '%s' "$_s" | sed 's/^\(....\)\(..\)\(..\).*/\1-\2-\3/')"
+                if [ "$_g" = due ]; then
+                    printf '%s\t%s\tdone %s\t%s\n' "$PANEL_DOT" "$_t" "$_t" "$_x"
+                    [ -z "$_first" ] || printf -- '-\tdone\tdone %s\tdue||\n-\tagain in 10 minutes\tsnooze %s\tdue||\n' "$_t" "$_t"
+                    _first=''
+                else printf '%s\t%s\tshow\t%s\n' "$PANEL_RING" "$_t" "$_x"; fi
+            done ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then printf -- '-\thide\toff\n'; else printf -- '-\tshow\ton\n'; fi ;;   # on and off, as the verb: show is the panel's look-only word
         layout) if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then
                 for f in "$LAYOUTS_DIR"/*; do _w=$(desk_words "$f"); [ -n "$_w" ] || _w=${f##*/}; printf '%s\t%s\topen %s\n' "$PANEL_GO" "$_w" "${f##*/}"; done
@@ -3385,12 +3411,241 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             printf -- '-\t%s\tall\n' "$(cut -f3 "$PANEL_CACHE/undo" | paste -sd '|' - | sed "s/|/ $PANEL_SEP /g")" ;;
     esac
 }
+# --- notes: one Markdown file a note in ~/notes (lowercase, as every
+# folder spark-shell makes), its first line its name. The list is the
+# newest first; Enter opens a note in your editor in a terminal window;
+# words add one ("NAME: TEXT" adds a line to the note NAME), and a find
+# says which note holds the words and the line.
+NOTES_DIR=$HOME/notes
+when_of() { date -d "@$1" "+$2" 2>/dev/null || date -r "$1" "+$2" 2>/dev/null; }   # when_of EPOCH FORMAT (GNU date, else BSD's)
+mtime_of() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
+note_name() {   # note_name FILE -> its first line that says something, the heading's hashes off; else the file's name
+    _nn=$(awk 'NF { sub(/^#+[ \t]*/, ""); sub(/[ \t]+$/, ""); print; exit }' "$1" 2>/dev/null | scrub_text | cut_chars 80)
+    [ -n "$_nn" ] || { _nn=${1##*/}; _nn=${_nn%.md}; }
+    printf '%s\n' "$_nn"
+}
+notes_list() {   # -> EPOCH<tab>NAME<tab>FILE per note, the newest first
+    [ -d "$NOTES_DIR" ] || return 0
+    for _f in "$NOTES_DIR"/*.md; do [ -f "$_f" ] && [ ! -L "$_f" ] || continue; printf '%s\t%s\t%s\n' "$(mtime_of "$_f")" "$(note_name "$_f")" "$_f"; done | sort -t "$TAB" -k1,1nr
+}
+note_file() { notes_list | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($2) == n { print $3; exit }'; }   # note_file NAME -> its file, or nothing
+note_when() {   # note_when EPOCH -> today 09:12, yesterday, Oct 17, or the year
+    _d=$(when_of "$1" %Y%m%d); _now=$(date +%s)
+    if [ "$_d" = "$(date +%Y%m%d)" ]; then echo "today $(when_of "$1" %H:%M)"
+    elif [ "$_d" = "$(when_of "$((_now - 86400))" %Y%m%d)" ]; then echo yesterday
+    elif [ "${_d%????}" = "$(date +%Y)" ]; then when_of "$1" '%b %d' | sed 's/ 0/ /'
+    else echo "${_d%????}"; fi
+}
+note_editor() {   # -> the editor a note opens in: EDITOR, else nano, else vi
+    for _e in "${EDITOR:-}" nano vi; do [ -n "$_e" ] && command -v "${_e%% *}" >/dev/null 2>&1 && { echo "$_e"; return 0; }; done
+    return 1
+}
+note_slug() { printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//' | cut -c1-40; }   # note_slug WORDS -> a file name
+note_open_file() {   # note_open_file FILE NAME -> one line: the note in the editor, in a terminal window
+    desk_in_sway || { echo "a note opens in the desktop's terminal: ${1#"$HOME"/} is the file"; return 1; }
+    case $1 in *[,\;\'\"]*) echo "the file's name holds a comma, a quote or a semicolon, which sway would split: ${1##*/}"; return 1 ;; esac
+    _ed=$(note_editor) || { echo "no editor here: set EDITOR, or install nano"; return 1; }
+    swaymsg -- exec "foot -e $_ed '$1'" >/dev/null 2>&1 || { echo "could not open $2"; return 1; }
+    : > "$TMP/opened"; echo "opened $2"
+}
+notes_act() {   # notes_act new|open|add|find [ARG]
+    case $1 in
+        new) mkdir -p "$NOTES_DIR"; _f=$NOTES_DIR/$(date +%Y-%m-%d-%H%M%S).md
+            [ -e "$_f" ] || printf '# \n' > "$_f"
+            note_open_file "$_f" "a new note" ;;
+        open) _f=$(note_file "$2"); [ -n "$_f" ] || { echo "no note named $2"; return 1; }; note_open_file "$_f" "$2" ;;
+        add) [ -n "$2" ] || { echo "add takes the words of the note"; return 1; }
+            mkdir -p "$NOTES_DIR"
+            case $2 in *": "*) _f=$(note_file "${2%%: *}") ;; *) _f='' ;; esac
+            if [ -n "$_f" ]; then printf -- '- %s\n' "${2#*: }" >> "$_f"; echo "added to ${2%%: *}: ${2#*: }"; return 0; fi
+            _s=$(note_slug "$2"); [ -n "$_s" ] || _s=$(date +%Y-%m-%d-%H%M%S); _f=$NOTES_DIR/$_s.md; _n=2
+            while [ -e "$_f" ]; do _f=$NOTES_DIR/$_s-$_n.md; _n=$((_n + 1)); done
+            printf '# %s\n' "$2" > "$_f"; echo "new note: $2" ;;
+        find) [ -n "$2" ] || { echo "find takes the words to look for"; return 1; }
+            notes_list | while IFS="$TAB" read -r _e _n _f; do   # the line that says it, the body before the name
+                _l=$({ tail -n +2 "$_f" | grep -i -m1 -F -- "$2" || head -1 "$_f" | grep -i -F -- "$2"; } 2>/dev/null | sed 's/^[#*-]*[[:space:]]*//' | scrub_text | cut -c1-120) || continue
+                [ -n "$_l" ] && printf '%s\t%s\n' "$_n" "$_l"
+            done > "$TMP/notes.found"
+            _c=$(grep -c . "$TMP/notes.found" || :)
+            if [ "${_c:-0}" -eq 0 ]; then echo "no note says $2"
+            else _w='notes say'; [ "$_c" != 1 ] || _w='note says'; IFS="$TAB" read -r _n _l < "$TMP/notes.found"; echo "$_c $_w $2 $PANEL_SEP $_n: $_l"; fi ;;
+        *) echo "$1 is not something notes does"; return 1 ;;
+    esac
+}
+
+# --- reminders: one iCalendar file an event in ~/calendar, its alarm at
+# its time (an event, not a to-do: Apple's Reminders left CalDAV, while
+# its Calendar and every other calendar read events). The list: due,
+# today, tomorrow, this week, later; the bar's 15 s line says one that
+# is due and plays a short sound once; done takes it away, and a snooze
+# puts it 10 minutes on. Times are this machine's own (floating, as an
+# alarm clock is); a time in UTC or in a named zone from another tool is
+# turned to local, and its folded lines joined. Due means the last day
+# only: an old event is no reminder. A repeating event (RRULE) is left
+# to the calendar that made it, and done and a snooze touch only the
+# events spark-shell wrote.
+CAL_DIR=$HOME/calendar
+REM_FIRED=$STATE_DIR/reminders.fired
+REM_CHIME=$REPO/assets/chime.wav
+cut_chars() { jq -Rr --argjson n "$1" '.[0:$n]' 2>/dev/null || cut -c1-"$1"; }   # cut_chars N -> each line N characters at most, never half a character
+rem_local() {   # rem_local ICS-TIME [TZID] -> YYYYMMDDHHMM in local time, or nothing
+    _v=$1; _z=${2:-}
+    case $_v in *Z) _z=UTC0; _v=${_v%Z} ;; esac
+    case $_v in
+        [0-9][0-9][0-9][0-9][0-1][0-9][0-3][0-9]T[0-2][0-9][0-5][0-9]*)
+            _hm="$(printf '%s' "$_v" | cut -c1-8)$(printf '%s' "$_v" | cut -c10-13)"
+            if [ -z "$_z" ]; then printf '%s\n' "$_hm"; return 0; fi
+            _e=$(TZ=$_z date -d "$(printf '%s' "$_hm" | sed 's/^\(....\)\(..\)\(..\)\(..\)\(..\)$/\1-\2-\3 \4:\5/')" +%s 2>/dev/null || TZ=$_z date -j -f %Y%m%d%H%M "$_hm" +%s 2>/dev/null) || return 0
+            when_of "$_e" %Y%m%d%H%M ;;
+        [0-9][0-9][0-9][0-9][0-1][0-9][0-3][0-9]) printf '%s0000\n' "$_v" ;;
+    esac
+}
+rem_all() {   # -> START<tab>UID<tab>SUMMARY<tab>FILE per event of ~/calendar, kept while the folder is unchanged (the bar asks every 15 s)
+    [ -d "$CAL_DIR" ] || return 0
+    _rc=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; _rc=${_rc:-$STATE_DIR}/reminders.list
+    # the key: the day, and every file's name, size and time; a step here drops the list as well (a rewrite in the same second, the same size)
+    _key="$(date +%Y%m%d) $({ stat -c '%n %s %Y' "$CAL_DIR"/*.ics 2>/dev/null || stat -f '%N %z %m' "$CAL_DIR"/*.ics 2>/dev/null || :; } | cksum)"
+    if [ -f "$_rc" ] && [ "$(sed -n 1p "$_rc")" = "$_key" ]; then sed 1d "$_rc"; return 0; fi
+    for _f in "$CAL_DIR"/*.ics; do
+        [ -f "$_f" ] && [ ! -L "$_f" ] || continue
+        # a folded line (one starting with a space or a tab) joins the one before it; TEXT unescaped in one pass, left to right
+        tr -d '\r' < "$_f" | awk -v f="$_f" -v US="$US" '
+            function untext(s,   o, i, c, n) { o = ""; for (i = 1; i <= length(s); i++) { c = substr(s, i, 1); if (c == "\\" && i < length(s)) { n = substr(s, ++i, 1); o = o ((n == "n" || n == "N") ? " " : n) } else o = o c } return o }
+            function line(l,   v, z) {
+                if (l ~ /^BEGIN:VEVENT/) { ev = 1; s = ""; z0 = ""; u = ""; t = ""; r = 0; return }
+                if (l ~ /^END:VEVENT/ && ev) { if (!r && s != "") print s US z0 US (u == "" ? "-" : u) US (t == "" ? "(no title)" : t) US f; ev = 0; return }
+                if (!ev) return
+                if (l ~ /^DTSTART/) { v = l; sub(/^[^:]*:/, "", v); s = v; z0 = ""; if (l ~ /^DTSTART;[^:]*TZID=/) { z = l; sub(/^DTSTART;.*TZID=/, "", z); sub(/[;:].*$/, "", z); gsub(/"/, "", z); z0 = z } }
+                else if (l ~ /^UID:/) u = substr(l, 5)
+                else if (l ~ /^SUMMARY[;:]/) { v = l; sub(/^[^:]*:/, "", v); t = untext(v) }
+                else if (l ~ /^RRULE/) r = 1
+            }
+            /^[ \t]/ { cur = cur substr($0, 2); next }
+            { if (have) line(cur); cur = $0; have = 1 }
+            END { if (have) line(cur) }'
+    done > "$TMP/rem.raw"
+    while IFS="$US" read -r _s _z _u _t _f; do
+        case $_z in *[!A-Za-z0-9/_+-]*) _z='' ;; esac   # a zone is a name: anything else is not handed to TZ
+        _l=$(rem_local "$_s" "$_z"); [ -n "$_l" ] || continue
+        printf '%s\t%s\t%s\t%s\n' "$_l" "$_u" "$_t" "$_f"
+    done < "$TMP/rem.raw" | scrub_text | sort -t "$TAB" -k1,1 > "$TMP/rem.all"
+    mkdir -p "$(dirname "$_rc")"; { echo "$_key"; cat "$TMP/rem.all"; } > "$_rc.new" && mv "$_rc.new" "$_rc"
+    cat "$TMP/rem.all"
+}
+rem_list() {   # -> the events from a day ago on, soonest first: an older one is no reminder
+    _cut=$(when_of "$(( $(date +%s) - 86400 ))" %Y%m%d%H%M)
+    rem_all | awk -F '\t' -v c="$_cut" '$1 >= c'
+}
+rem_day() { _x=$(date -d "+$1 days" +%Y%m%d 2>/dev/null || date -v+"$1"d +%Y%m%d 2>/dev/null); printf '%s' "$_x"; }   # rem_day N -> the date N days on
+rem_group() {   # rem_group START NOW -> due, today, tomorrow, this week or later
+    if [ "$1" -le "$2" ]; then echo due
+    elif [ "${1%????}" = "${2%????}" ]; then echo today
+    elif [ "${1%????}" = "$(rem_day 1)" ]; then echo tomorrow
+    elif [ "${1%????}" -le "$(rem_day 6)" ]; then echo 'this week'
+    else echo later; fi
+}
+rem_hm() { printf '%s:%s' "$(printf '%s' "$1" | cut -c9-10)" "$(printf '%s' "$1" | cut -c11-12)"; }   # rem_hm START -> HH:MM
+rem_column() {   # rem_column START GROUP -> the column: 17:00, Fri 20:00, Tue 27 10:00, Tue 3 Nov 16:30
+    _d=$(printf '%s' "$1" | cut -c1-8); _e=$(date -d "$_d" +%s 2>/dev/null || date -j -f %Y%m%d%H%M "${_d}1200" +%s 2>/dev/null) || { rem_hm "$1"; return; }
+    case $2 in
+        due|today|tomorrow) rem_hm "$1" ;;
+        'this week') echo "$(LC_ALL=C when_of "$_e" %a) $(rem_hm "$1")" ;;
+        *) if [ "$(printf '%s' "$1" | cut -c1-6)" = "$(date +%Y%m)" ]; then echo "$(LC_ALL=C when_of "$_e" '%a %d' | sed 's/ 0/ /') $(rem_hm "$1")"
+           else echo "$(LC_ALL=C when_of "$_e" '%a %d %b' | sed 's/ 0/ /') $(rem_hm "$1")"; fi ;;
+    esac
+}
+rem_parse() {   # rem_parse WORDS -> START<tab>TEXT: today|tomorrow|a weekday|YYYY-MM-DD, then HH:MM (or 6pm, 6:30pm), then the words; false when no day and time are found
+    printf '%s' "$1" > "$TMP/rem.w"
+    set -f
+    # shellcheck disable=SC2046   # the words, split on purpose; no glob
+    set -- $(cat "$TMP/rem.w")
+    set +f
+    _off=0; _date=''; _wd=''
+    _w1=$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z')   # the day and the time are read in lower case; the words stay as said
+    case $_w1 in
+        today) shift ;;
+        tomorrow) _off=1; shift ;;
+        mon|monday|tue|tuesday|wed|wednesday|thu|thursday|fri|friday|sat|saturday|sun|sunday)
+            _wd=$(printf '%s' "$_w1" | cut -c1-3 | awk '{print toupper(substr($0,1,1)) substr($0,2)}'); _i=0
+            while [ "$_i" -le 6 ]; do [ "$(LC_ALL=C date -d "+$_i days" +%a 2>/dev/null || LC_ALL=C date -v+"$_i"d +%a 2>/dev/null)" != "$_wd" ] || break; _i=$((_i + 1)); done
+            _off=$_i; shift ;;
+        [0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9])
+            _date=$(printf '%s' "$_w1" | tr -d -)
+            [ "$(date -d "$_w1" +%Y%m%d 2>/dev/null || date -j -f %Y%m%d%H%M "${_date}1200" +%Y%m%d 2>/dev/null)" = "$_date" ] || return 1   # a day the calendar has
+            shift ;;
+    esac
+    _t=$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z'); _h=''; _m=00
+    case $_t in
+        [0-9]:[0-5][0-9]|[0-2][0-9]:[0-5][0-9]) _h=${_t%%:*}; _m=${_t#*:} ;;
+        [0-9]pm|1[0-2]pm|[0-9]am|1[0-2]am) _h=${_t%??}; [ "${_t#"$_h"}" = am ] || [ "$_h" = 12 ] || _h=$((_h + 12)); [ "${_t#"$_h"}" != am ] || [ "$_h" != 12 ] || _h=0 ;;
+        [0-9]:[0-5][0-9]pm|1[0-2]:[0-5][0-9]pm|[0-9]:[0-5][0-9]am|1[0-2]:[0-5][0-9]am)
+            _h=${_t%%:*}; _m=$(printf '%s' "${_t#*:}" | cut -c1-2); case $_t in *pm) [ "$_h" = 12 ] || _h=$((_h + 12)) ;; *am) [ "$_h" != 12 ] || _h=0 ;; esac ;;
+    esac
+    _h=$(printf '%s' "$_h" | sed 's/^0\([0-9]\)$/\1/')   # 09 is no octal: nine
+    [ -n "$_h" ] && [ "$_h" -le 23 ] 2>/dev/null || return 1
+    shift; [ $# -gt 0 ] || return 1
+    [ -n "$_date" ] || _date=$(rem_day "$_off")
+    _st=$(printf '%s%02d%s' "$_date" "$_h" "$_m")
+    if [ -n "$_wd" ] && [ "$_st" -le "$(date +%Y%m%d%H%M)" ]; then _st=$(printf '%s%02d%s' "$(rem_day $((_off + 7)))" "$_h" "$_m"); fi   # today's weekday at a time gone: next week
+    printf '%s\t%s\n' "$_st" "$*"
+}
+ics_text() { printf '%s' "$1" | awk '{ o = ""; for (i = 1; i <= length($0); i++) { c = substr($0, i, 1); o = o ((c == "\\" || c == "," || c == ";") ? "\\" c : c) } printf "%s", o }'; }   # ics_text WORDS -> a TEXT value (RFC 5545 3.3.11): backslash, comma and semicolon escaped (one pass: BSD sed drops the backslash before ;)
+rem_write() {   # rem_write FILE UID START SUMMARY -- one event with its alarm at its time, CRLF lines
+    _st="$(printf '%s' "$3" | cut -c1-8)T$(printf '%s' "$3" | cut -c9-12)00"
+    printf 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//forgewright-ai//spark-shell//EN\r\nBEGIN:VEVENT\r\nUID:%s\r\nDTSTAMP:%s\r\nDTSTART:%s\r\nDURATION:PT10M\r\nSUMMARY:%s\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:%s\r\nTRIGGER:PT0M\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' \
+        "$2" "$(TZ=UTC0 date +%Y%m%dT%H%M%SZ)" "$_st" "$(ics_text "$4")" "$(ics_text "$4")" > "$1.new" && mv "$1.new" "$1"
+}
+rem_find() { rem_list | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($3) == n || $2 == n { print; exit }'; }   # rem_find NAME|UID -> its line
+rem_said() {   # rem_said START -> today 18:30, tomorrow 09:00, Fri 20:00, Tue 3 Nov 16:30
+    _g=$(rem_group "$1" "$(date +%Y%m%d%H%M)")
+    case $_g in due|today) echo "today $(rem_hm "$1")" ;; tomorrow) echo "tomorrow $(rem_hm "$1")" ;; *) rem_column "$1" "$_g" ;; esac
+}
+rem_ours() {   # rem_ours LINE -> 0 when spark-shell wrote that event (its uid, its file alone): only those are done or moved here
+    case $(printf '%s' "$1" | cut -f2) in spark-shell-*) ;; *) return 1 ;; esac
+    [ "$(grep -c '^BEGIN:VEVENT' "$(printf '%s' "$1" | cut -f4)")" = 1 ]
+}
+rem_act() {   # rem_act add|done|snooze ARG
+    _rc=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; rm -f "${_rc:-$STATE_DIR}/reminders.list"   # the list made again after this step
+    case $1 in
+        add) _p=$(rem_parse "$2") || { echo "a reminder takes a day and a time, then the words: tomorrow 09:00 call the dentist"; return 1; }
+            _s=${_p%%"$TAB"*}; _t=${_p#*"$TAB"}
+            [ "$_s" -gt "$(date +%Y%m%d%H%M)" ] || { echo "$(rem_said "$_s") has passed: say a time to come"; return 1; }
+            mkdir -p "$CAL_DIR"; _u="spark-shell-$(date +%s)-$$@$(short_host)"
+            rem_write "$CAL_DIR/$(date +%s)-$$.ics" "$_u" "$_s" "$_t" || { echo "could not write the reminder in ${CAL_DIR#"$HOME"/}"; return 1; }
+            bar_redraw; echo "reminder $(rem_said "$_s") $_t" ;;
+        done|snooze) _l=$(rem_find "$2"); [ -n "$_l" ] || { echo "no reminder named $2"; return 1; }
+            _t=$(printf '%s' "$_l" | cut -f3)
+            rem_ours "$_l" || { echo "$_t is an event another calendar wrote: change it there"; return 1; }
+            if [ "$1" = 'done' ]; then rm -f "$(printf '%s' "$_l" | cut -f4)"; bar_redraw; echo "done: $_t"; return 0; fi
+            _e=$(( $(date +%s) + 600 )); _s=$(when_of "$_e" %Y%m%d%H%M)
+            rem_write "$(printf '%s' "$_l" | cut -f4)" "$(printf '%s' "$_l" | cut -f2)" "$_s" "$_t"
+            bar_redraw; echo "$_t again at $(rem_hm "$_s")" ;;
+        *) echo "$1 is not something reminders does"; return 1 ;;
+    esac
+}
+rem_due() {   # -> UID<tab>SUMMARY of the latest reminder due now (in the last day), and one chime when any is due for the first time
+    _now=$(date +%Y%m%d%H%M)
+    rem_list | awk -F '\t' -v n="$_now" '$1 <= n' > "$TMP/rem.due"
+    mkdir -p "$STATE_DIR"; touch "$REM_FIRED"
+    awk -F '\t' '{print $2 " " $1}' "$TMP/rem.due" > "$TMP/rem.keys"
+    _new=$(grep -vxF -f "$REM_FIRED" "$TMP/rem.keys" | grep -c . || :)
+    cp "$TMP/rem.keys" "$REM_FIRED"   # the ones due now, and no more: the file never grows
+    [ "${_new:-0}" -eq 0 ] || [ -n "${SPARK_SHELL_NO_CHIME:-}" ] || rem_chime
+    [ -s "$TMP/rem.due" ] || return 0
+    tail -1 "$TMP/rem.due" | cut -f2,3
+}
+rem_chime() {   # the short sound, once, never waited for: PipeWire, else ALSA
+    [ -r "$REM_CHIME" ] || return 0
+    if command -v pw-play >/dev/null 2>&1; then ( pw-play --volume 0.6 "$REM_CHIME" >/dev/null 2>&1 & ) 3>&- 4<&- 5>&-
+    elif command -v aplay >/dev/null 2>&1; then ( aplay -q "$REM_CHIME" >/dev/null 2>&1 & ) 3>&- 4<&- 5>&-; fi
+}
+
 panel_apps_known() {   # -> the apps a layout may open (your allowed list, else every desktop entry), one name per line; never the desktop's own
     ( [ "$OS" = Darwin ] || pm_detect; desk_apps '' ) 2>/dev/null | sed -n 's/^\([A-Za-z0-9][^:]*\): .*/\1/p' | grep -vx shell
 }
 panel_section_rows() {   # panel_section_rows SECTION FIRST -> the section's rows for the list, "MARK SECTION  TEXT<tab>SECTION ACTION [ARG]"; look-only rows only for FIRST
     _full=''; [ "$1" != "$2" ] || _full=full
-    panel_rows "$1" $_full | while IFS="$TAB" read -r m t a; do
+    panel_rows "$1" $_full | while IFS="$TAB" read -r m t a _x; do
         [ "$1" = "$2" ] || [ "$a" != show ] || continue
         [ "$m" != - ] || m=' '
         printf '%s %s%s%s%s\t%s %s\n' "$(panel_sign "$m")" "${PANEL_DIM:-}" "$(panel_col "$1")" "${PANEL_UNMARK:-}" "$t" "$1" "$a"
@@ -3493,6 +3748,8 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 focus) _nm=$(win_name_of "$_arg"); swaymsg -- "[con_id=$_arg] focus" >/dev/null 2>&1 || { echo "no window named ${_nm:-$_arg}"; return 1; }; : > "$TMP/opened"; echo "${_nm:-$_arg} in front" ;;   # the window is the receipt
                 *) echo "$_a is not something window does"; return 1 ;;
             esac ;;
+        notes) notes_act "$_a" "$_arg" ;;
+        reminders) rem_act "$_a" "$_arg" ;;
         display) case $_a in
                 idle|lock) case $_arg in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "$_a takes minutes, 0 to 999 (0: never)"; return 1 ;; esac
                     _k=DISPLAY_IDLE; [ "$_a" = idle ] || _k=DISPLAY_LOCK
@@ -3689,6 +3946,12 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         out:level|mic:level) case $3 in [0-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "$1: level takes 0 to 100"; return 1 ;; esac ;;
         wallpaper:picture) _pp=$(wall_picture_ok "${3:-}") && { echo "$_pp"; return 0; }; echo "$_pp"; return 1 ;;
         theme:alpha) case $3 in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) echo "$3"; return 0 ;; *) echo "theme: alpha takes 0 to 1"; return 1 ;; esac ;;
+        notes:new) echo ''; return 0 ;;
+        notes:open) _n=$(notes_list | awk -F '\t' -v w="$(panel_lower "${3:-}")" 'tolower($2) == w { print $2; exit }'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "notes: no note named ${3:-?}"; return 1 ;;   # any note, not only the five shown
+        reminders:done|reminders:snooze) _n=$(rem_find "${3:-}" | cut -f3); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "reminders: no reminder named ${3:-?}"; return 1 ;;   # any reminder, due or ahead
+        notes:add|notes:find|reminders:add) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo "$1: $2 takes the words"; return 1 ;;   # free words, as layout new
+        display:brightness) case $3 in up|down|[1-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "display: brightness takes 1 to 100, up or down"; return 1 ;; esac ;;
+        display:idle|display:lock) case $3 in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) echo "$3"; return 0 ;; *) echo "display: $2 takes minutes, 0 to 999"; return 1 ;; esac ;;
     esac
     _want=$(panel_lower "$2 $3" | sed 's/ *$//')
     _m=$(panel_rows "$1" full | cut -f3 | awk -v w="$_want" 'tolower($0) == w { print; exit }')
@@ -3911,9 +4174,9 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 # JSON value is built by jq with --arg, every request is parsed by jq,
 # and a method or a tool name is matched by case, never run as a name.
 PROVIDE_PROTOCOL=2025-06-18
-PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme wallpaper window display keyboard bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
+PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme wallpaper window display keyboard notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_font wallpaper_use wallpaper_picture theme_transparency theme_alpha window_split window_tabs window_stacked window_focus window_close window_capture display_idle display_lock display_brightness keyboard_use keyboard_next bar_on bar_off layout_open layout_new layout_save layout_add apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_font wallpaper_use wallpaper_picture theme_transparency theme_alpha window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze display_idle display_lock display_brightness keyboard_use keyboard_next bar_on bar_off layout_open layout_new layout_save layout_add apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -3964,6 +4227,13 @@ tool_spec() {
         window_focus)      _ts=window _ta=focus _tp=name _tk=string _th=i _tt='window focus NAME' _td='Put an open window in front.' ;;
         window_close)      _ts=window _ta=close _tp=name _tk=string _th=d _tt='window close NAME' _td='Close an open window.' ;;
         window_capture)    _ts=window _ta=capture _tp=what _tk='screen|area' _th='' _tt='window capture WHAT' _td='A picture of the screen, or of an area you drag, in ~/pictures/screenshots.' ;;
+        notes_new)         _ts=notes _ta=new _th='' _tt='notes new' _td='Open a new note in the editor.' ;;
+        notes_open)        _ts=notes _ta=open _tp=name _tk=string _th='' _tt='notes open NAME' _td='Open a note in the editor.' ;;
+        notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='A new note of TEXT; with "NAME: TEXT", a line added to the note NAME.' ;;
+        notes_find)        _ts=notes _ta=find _tp=words _tk=string _th=rf _tt='notes find WORDS' _td='Which notes say these words, and the line that does.' ;;
+        reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _th=f _tt='reminders add WHEN TEXT' _td='A reminder: WHEN is today, tomorrow, a weekday or YYYY-MM-DD, then HH:MM, then what to remember.' ;;
+        reminders_done)    _ts=reminders _ta='done' _tp=name _tk=string _th='' _tt='reminders done NAME' _td='Mark a reminder done, which takes it away.' ;;
+        reminders_snooze)  _ts=reminders _ta=snooze _tp=name _tk=string _th='' _tt='reminders snooze NAME' _td='The reminder again in 10 minutes.' ;;
         display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=i _tt='display idle N' _td='Turn the display off after N idle minutes; 0 never.' ;;
         display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=i _tt='display lock N' _td='Lock the screen after N idle minutes; 0 never.' ;;
         display_brightness) _ts=display _ta=brightness _tp=level _tk=level _th=if _tt='display brightness N' _td='Set the screen brightness, 1 to 100.' ;;
@@ -4032,11 +4302,13 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
         _sw=$({ for w in $WALL_NAMES; do printf '%s\t%s\n' "$w" "$(wall_hex "$w")"; done; for e in $WALL_SHIPPED; do printf '%s\t#%s\n' "${e%%:*}" "${e##*:}"; done; } | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add')
         _wp=$(for e in $WALL_SHIPPED; do _r=${e#*:}; printf '%s\t%s\n' "${e%%:*}" "${_r%%:*}"; done | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add')
     fi
-    panel_rows "$1" | while IFS="$TAB" read -r _m _t _a; do provide_row_line "$1" "$_m" "$_t" "$_a"; done > "$TMP/rows.short"   # the short form: what matters, and a more row that opens the rest
-    { panel_rows "$1" full | while IFS="$TAB" read -r _m _t _a; do provide_row_line "$1" "$_m" "$_t" "$_a"; done; grep "^$1:more$US" "$TMP/rows.short" || :; } \
+    panel_rows "$1" | while IFS="$TAB" read -r _m _t _a _x; do provide_row_line "$1" "$_m" "$_t" "$_a" "$_x"; done > "$TMP/rows.short"   # the short form: what matters, and a more row that opens the rest
+    { panel_rows "$1" full | while IFS="$TAB" read -r _m _t _a _x; do provide_row_line "$1" "$_m" "$_t" "$_a" "$_x"; done; grep "^$1:more$US" "$TMP/rows.short" || :; } \
         | jq -Rn --arg s "$1" --arg u "spark-shell://$1/rows" --arg st "$(provide_title "$1")" --rawfile short "$TMP/rows.short" '
-            [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [], columns: [],
-                children: (if .[0] == ($s + ":more") then $u else null end), group: null}] as $rows
+            [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [],
+                columns: ((.[5] // "") | split("|") | .[1:2] | map(select(. != ""))),
+                children: (if .[0] == ($s + ":more") then $u else null end), group: ((.[5] // "") | split("|") | .[0] | if . == "" or . == null then null else . end)}
+                + ((.[5] // "") | split("|") | .[2] // "" | if . == "" then {} else {date: .} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
         | jq -c --arg s "$1" --argjson asks "$_asks" --argjson sw "$_sw" --argjson wp "$_wp" --arg types "$WALL_TYPES" '
             .rows |= map(
@@ -4052,13 +4324,14 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif (.tool.name // "") == "wifi_connect" and (.tool.arguments.name as $n | $asks | index([$n])) then .tool.ask = ["password"]
                 else . end)'
 }
-provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION -> ID US SIGN US TEXT US TOOL US ARGUMENTS: one row, scrubbed, its step as a tool call
+provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION [GROUP|COLUMN|DATE] -> ID US SIGN US TEXT US TOOL US ARGUMENTS US EXTRAS: one row, scrubbed, its step as a tool call
     case $2 in "$PANEL_DOT") _sg="dot" ;; "$PANEL_RING") _sg="ring" ;; "$PANEL_TICK") _sg="check" ;; "$PANEL_CROSS") _sg="cross" ;; "$PANEL_GO") _sg="opens" ;; *) _sg="blank" ;; esac
     _tx=$(printf '%s' "$3" | scrub_text); _ac=$(printf '%s' "$4" | scrub_text); _id="$1:$_ac"; _tn=''; _ag='{}'
     if [ "$_ac" = show ]; then _id="$1:show:$_tx"
     elif [ "$_ac" = more ]; then :   # the rest of the section: its children, no tool
     elif action_tool "$1" "$_ac"; then _tn=$_tool; _ag=$(tool_call_json "$_tool" "$_tv" | jq -c .arguments); fi
-    printf '%s\n' "$_id$US$_sg$US$_tx$US$_tn$US$_ag"   # the parts scrubbed, never the line: the scrubber drops US
+    _dt=$(printf '%s' "${5:-}" | cut -d'|' -f3); [ -z "$_dt" ] || _id="$_id:$_dt"   # a dated row's id is its own (two reminders may share a name)
+    printf '%s\n' "$_id$US$_sg$US$_tx$US$_tn$US$_ag$US$(printf '%s' "${5:-}" | scrub_text)"   # the parts scrubbed, never the line: the scrubber drops US
 }
 provide_title() { [ "$1" != about ] || return 0; [ "$1" != files ] || { echo "your home folder"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
 provide_about_rows() {   # -> the about's rows: the template's `# key:` sentences, a combo (or Print) as a column, in five groups; the licence and the address; the row that opens it

@@ -232,6 +232,21 @@ until the desktop starts again, so a later start never comes up with no
 screen, and the last screen on stays on. The dialog has a `display` and
 a `keyboard` section for the same.
 
+## Notes and reminders
+
+A note is a Markdown file in `~/notes`, its first line its name, so
+any editor and any sync reads it. A reminder is an iCalendar event
+with its alarm at its time, one `.ics` file each in `~/calendar`, the
+standard other calendars read (khal, and the Calendar of a Mac or a
+phone through a CalDAV sync). An event, not a to-do: Apple's Reminders
+no longer take to-dos over CalDAV, while every calendar takes events.
+
+When a reminder comes due, the bar shows a `due` block with its words,
+a click opens the reminders, and a short sound plays once (PipeWire,
+else ALSA). The bar's own line checks the time every 15 seconds, so
+nothing more runs for it. Done takes the reminder away; again in 10
+minutes moves it on.
+
 ## Lock and capture
 
 After the idle minutes (10 for the display, 15 for the lock) the display
@@ -278,13 +293,13 @@ sets the transparency.
 
 ## Bar
 
-On the desktop, a bar sits at the top of the screen. The workspaces
-are on the left. A workspace a layout opened carries the layout's
-words, so `2 news` reads from a distance. On the right, in groups
-parted by a thin line: `lan`, `wifi` and `bt`; `out` and `mic`, each
-with its gauge; `light`, the brightness with its gauge, and `kb`, the
-keyboard's layout; `bat`; the date and time; and last, spark-shell's own
-sign, the prompt sign in the palette's yellow. The palette has no
+On the desktop, a bar sits at the top of the screen. The workspaces are
+on the left. A workspace a layout opened carries the layout's words, so
+`2 news` reads from a distance. On the right, in groups parted by a thin
+line: `lan`, `wifi` and `bt`; `out` and `mic`, each with its gauge;
+`due`, a reminder due; `light`, the brightness with its gauge, and `kb`,
+the keyboard's layout; `bat`; the date and time; and last, spark-shell's
+own sign, the prompt sign in the palette's yellow. The palette has no
 block: it is picked in the dialog, where a click on any block leads.
 
 A block appears only for hardware this machine has. No battery, no
@@ -366,8 +381,18 @@ longer than the dialog, its last line says how many rows sit below.
   was drawn for, or a plain color, each with a sample of its color;
   `a picture` opens your home folder, offering pictures (jpg, jpeg,
   png, webp), and Enter on one sets it.
-- `clock`: the time in large figures and this month, today lit; the
-  left and right arrows show the month before and after.
+- `clock`: the Calendar. The time in large figures, this month and the
+  next side by side, today lit and a day with a reminder in the accent,
+  then the agenda: the reminders of today, tomorrow, this week and
+  later, each with its time. The left and right arrows move the months.
+- `notes`: a new note, then your notes, the newest first, each with its
+  date. Enter opens one in your editor in a terminal window. Said in
+  words, `note buy oat milk` makes a note, `groceries: buy oat milk`
+  adds a line to the note named groceries, and a question finds the
+  note and the line that answer it.
+- `reminders`: the reminders in their groups, due, today, tomorrow,
+  this week and later. Said in words, `remind me to call the dentist
+  tomorrow at 9`; one due has done and again in 10 minutes.
 - `window`: the windows open now, in front or closed, and how new
   windows sit on a workspace: side by side, in tabs or stacked.
 - `bar`: hide the bar at the top of the screen, or show it again.

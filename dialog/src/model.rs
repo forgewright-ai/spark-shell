@@ -26,6 +26,8 @@ pub struct Row {
     pub swatch: Option<[u8; 3]>,
     /// A row that opens the files to pick one for a tool of its own provider (the wallpaper's picture).
     pub pick: Option<Pick>,
+    /// The day a row is for, "YYYY-MM-DD" (only that shape is read): the Calendar marks it.
+    pub date: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -172,6 +174,11 @@ pub fn rows(text: &str) -> Option<Rows> {
             group: r.get("group").and_then(Value::as_str).map(scrub).filter(|g| !g.is_empty()),
             swatch: swatch(r.get("swatch")),
             pick: pick(r.get("pick")),
+            date: r
+                .get("date")
+                .and_then(Value::as_str)
+                .filter(|d| crate::calendar::ymd(d).is_some())
+                .map(str::to_string),
         })
         .collect();
     let short = v
@@ -219,5 +226,12 @@ mod tests {
         assert_eq!(r.rows[0].text, "ev[2Jil");
         assert_eq!(r.rows[0].tool.as_ref().unwrap().ask, vec!["password".to_string()]);
         assert_eq!(r.short, vec!["wifi:connect a".to_string()]);
+    }
+
+    #[test]
+    fn a_date_is_read_only_in_its_shape() {
+        let r = rows(r#"{"rows":[{"id":"a","date":"2026-10-19"},{"id":"b","date":"2026-13-01"},{"id":"c","date":"19 Oct"},{"id":"d"}]}"#).unwrap();
+        let d: Vec<Option<&str>> = r.rows.iter().map(|r| r.date.as_deref()).collect();
+        assert_eq!(d, vec![Some("2026-10-19"), None, None, None]);
     }
 }

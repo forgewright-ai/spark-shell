@@ -138,6 +138,7 @@ mod tests {
             group: None,
             swatch: None,
             pick: None,
+            date: None,
         };
         (
             vec![tool("wifi_connect", s), tool("out_level", lv)],
