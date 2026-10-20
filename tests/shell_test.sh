@@ -2260,15 +2260,19 @@ case "$*" in
     "--bus 5 getvcp 10 --terse") echo 'VCP 10 C 30 50' ;;
 esac
 STUB
-chmod +x "$H/lx/ddcutil"; rm -f "$HOME/.local/state/spark-shell/ddc.bus" "$HOME/.local/state/spark-shell/light"
+chmod +x "$H/lx/ddcutil"; export XDG_RUNTIME_DIR=$H/rt; mkdir -p "$H/rt"; rm -f "$H/rt/spark-shell/ddc.bus" "$HOME/.local/state/spark-shell/light"
 rc=0; out=$(SPARK_SHELL_DEV=$H/dev SPARK_SHELL_SYS=$H/sysnone PATH="$H/lx:$PATH" sh "$SH" desktop display brightness 80 2>&1) || rc=$?
-[ "$rc" = 1 ] && [ ! -e "$HOME/ddc.log" ] && [ ! -e "$HOME/.local/state/spark-shell/ddc.bus" ] && ok "brightness with no i2c device open to you: ddcutil never asked, nothing kept (the group comes at the next login)" || bad "ddc no device" "rc=$rc $out"
+[ "$rc" = 1 ] && [ ! -e "$HOME/ddc.log" ] && [ ! -e "$H/rt/spark-shell/ddc.bus" ] && ok "brightness with no i2c device open to you: ddcutil never asked, nothing kept (the group comes at the next login)" || bad "ddc no device" "rc=$rc $out"
 mkdir -p "$H/dev"; : > "$H/dev/i2c-5"
 rc=0; out=$(SPARK_SHELL_DEV=$H/dev SPARK_SHELL_SYS=$H/sysnone PATH="$H/lx:$PATH" sh "$SH" desktop display brightness 80 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'brightness 80%' ] && grep -qx -- '--bus 5 setvcp 10 80 --noverify' "$HOME/ddc.log" && ok "desktop display brightness 80: the screen's DDC/CI on its own bus (5, the first display that answers), no read back" || bad "brightness ddc" "rc=$rc $out $(cat "$HOME/ddc.log")"
 rm -f "$HOME/.local/state/spark-shell/light"
 out=$(SPARK_SHELL_DEV=$H/dev SPARK_SHELL_SYS=$H/sysnone PATH="$H/lx:$PATH" sh "$SH" desktop display 2>&1)
 [ "$(printf '%s\n' "$out" | sed -n 2p)" = 'brightness 60%' ] && [ "$(grep -c '^detect' "$HOME/ddc.log")" = 1 ] && ok "desktop display: the brightness read from the screen (30 of 50, 60%); which screen answers is kept, asked once" || bad "display show" "$out $(cat "$HOME/ddc.log")"
+# a screen asleep (DPMS) is asked again within a minute, never kept as none; the answer lives in the runtime directory a reboot clears
+printf '#!/bin/sh\necho "$*" >> "$HOME/ddc.log"\nprintf "Invalid display\\n   I2C bus:  /dev/i2c-5\\n   DRM reports the monitor is in a DPMS sleep state\\n"\n' > "$H/lx/ddcutil"; rm -f "$H/rt/spark-shell/ddc.bus"
+SPARK_SHELL_DEV=$H/dev SPARK_SHELL_SYS=$H/sysnone PATH="$H/lx:$PATH" sh "$SH" desktop display >/dev/null 2>&1 || :
+[ "$(cat "$H/rt/spark-shell/ddc.bus" 2>/dev/null)" = asleep ] && ok "brightness: a screen asleep is kept as asleep (asked again in a minute), in the runtime directory" || bad "ddc asleep" "$(cat "$H/rt/spark-shell/ddc.bus" 2>&1)"
 # the dialog's display and keyboard sections
 rows=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display --list 2>&1)
 printf '%s\n' "$rows" | grep -q 'display off after 10 minutes	display show$' && printf '%s\n' "$rows" | grep -q 'lock after 15 minutes	display show$' && printf '%s\n' "$rows" | grep -q 'brighter	display brightness up$' && printf '%s\n' "$rows" | grep -qF "screen HDMI-A-1 $(printf '\302\267') T24i-30 $(printf '\302\267') 1920x1080 $(printf '\302\267') scale 1	display show" \

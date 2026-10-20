@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: which screen answers DDC/CI was kept on disk, so a "none"
+  from a session without the i2c group yet (before its next login)
+  outlived the reboot and hid the bar's light block for an hour. The
+  answer lives in the runtime directory now, which a reboot clears; a
+  bus or none is kept 10 minutes, and a screen asleep (DPMS) one.
+
 ## v0.77
 
 The display, the keyboard and the screens (the owner's word: the idle
