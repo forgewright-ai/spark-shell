@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.80
+
+- Changed: the workflows run actions/upload-artifact 7.0.2 (dependabot
+  #2).
+
 ## v0.79
 
 Notes and reminders of their own (the owner's review of v0.78: a
