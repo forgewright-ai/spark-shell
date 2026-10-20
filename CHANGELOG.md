@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.77
+
+The display, the keyboard and the screens (the owner's word: the idle
+minutes a setting, `desktop display idle|lock N`, with brightness, the
+keyboard layout and screens in the same arc).
+
+- Added: `spark-shell desktop display idle N` and `lock N`, the
+  minutes before the display turns off and before the screen locks (0:
+  never), kept as DISPLAY_IDLE and DISPLAY_LOCK (10 and 15 by
+  default). The sway template's swayidle line comes from them, and a
+  running desktop takes a change at once (its swayidle started again).
+  v0.76 had them fixed in the template.
+- Added: the brightness. `desktop display brightness N|up|down`, the
+  brightness keys and the bar's new `light` gauge (a click sets it,
+  the wheel nudges it) set a laptop's backlight through brightnessctl,
+  or a screen's own through DDC/CI and ddcutil, on the screen's bus
+  (which screen answers is kept 10 minutes, its level 60 seconds), one
+  ddcutil at a time. On desktop adds you to the video and i2c groups
+  that exist, recorded, and loads i2c-dev now; off desktop takes back
+  only those groups.
+- Added: the keyboard. KEYBOARD holds the layouts by their xkb names,
+  a variant after a plus (`us us+intl br`); `desktop keyboard us br`
+  sets them (a name xkb does not list is refused), and Super+Ctrl+space,
+  `desktop keyboard next` and a click on the bar's new `kb` block go to
+  the next. `kb` shows the layout in use, only with more than one.
+- Added: screens. `desktop screen` lists them by port, make, model and
+  serial, with mode, scale and place; `desktop screen NAME scale N`,
+  `mode WxH`, `left-of`, `right-of`, `above` and `below` another set
+  one, at once in sway and kept in ~/.config/spark-shell/screens.conf
+  by make, model and serial (sway's own words, Unknown for a part a
+  screen does not give), which the sway template includes. `on` and
+  `off` hold until the desktop starts again, so no start comes up with
+  no screen; the last screen on stays on.
+- Added: the dialog's `display` section (the minutes, brighter and
+  dimmer, a row per screen) and `keyboard` section (the layouts, the
+  next), with five tools for spark: display_idle, display_lock,
+  display_brightness, keyboard_use, keyboard_next.
+- Changed: PKG_DESKTOP adds brightnessctl and ddcutil (Void i2c-tools,
+  Debian brightness-udev).
+
 ## v0.76
 
 The lock and screen capture (the owner's picks: off, then lock; the

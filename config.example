@@ -42,6 +42,17 @@ WINDOWS=split
 # keeps the console login. spark-shell on login and off login set this.
 LOGIN=no
 
+# The display: idle minutes before it turns off, and before the screen
+# locks (0: never). spark-shell desktop display idle|lock N sets these.
+DISPLAY_IDLE=10
+DISPLAY_LOCK=15
+
+# The keyboard's layouts on the desktop, by their xkb names, a space
+# between, a variant after a plus (us us+intl); the first is the one in
+# use at start, and Super+Ctrl+space goes to the next. Empty keeps
+# sway's own. spark-shell desktop keyboard sets this.
+KEYBOARD=
+
 # The bar at the top of the desktop's screen: yes or no. It shows the
 # workspaces, then lan, wifi, bluetooth, sound out and mic, battery, and
 # the date and time, each only when this machine has it. spark-shell bar

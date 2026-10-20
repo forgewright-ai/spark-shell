@@ -60,6 +60,18 @@ Without it there are no layouts, no spark chat and no status line.
     spark-shell desktop               start the desktop now (from a console)
     spark-shell desktop keys          list the desktop's keys
     spark-shell desktop wallpaper X   set a picture, a color, default or none
+    spark-shell desktop lock          lock the screen now (Super+Escape)
+    spark-shell desktop capture screen|area|window
+                                      a PNG in ~/pictures/screenshots (Print)
+    spark-shell desktop display       the idle and lock minutes, the brightness
+    spark-shell desktop display idle|lock N
+                                      display off, or lock, after N idle minutes
+    spark-shell desktop display brightness N|up|down
+                                      the screen's brightness, 1 to 100
+    spark-shell desktop keyboard [us br|next]
+                                      the keyboard's layouts, or the next one
+    spark-shell desktop screen [NAME scale N|mode WxH|on|off|left-of NAME]
+                                      list the screens, or set one
     spark-shell bar on|off            show or hide the status line and the bar
     spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
     spark-shell want "WORDS"          ask for it from anywhere: the steps run
@@ -188,19 +200,46 @@ row shows them again.
     Super+w makes tabs, Super+Shift+s a stack, Super+e side by side again.
     Super+b puts the next window beside this one, and Super+v below it.
     Super+1..0 go to workspaces 1 to 10; with Shift the window goes there.
-    Super+Escape locks the screen; it locks by itself after 15 idle minutes.
+    Super+Escape locks the screen; it locks by itself after idle minutes.
     Print captures the screen, Shift+Print an area, Super+Print the window.
+    Super+Ctrl+space goes to the next keyboard layout, with more than one.
     The volume and mute keys set the sound, and the mic mute key the mic.
+    The brightness keys set the screen's brightness.
     Typing exit in the first window also leaves the desktop.
+
+## Display, keyboard and screens
+
+`spark-shell desktop display` shows the idle and lock minutes and the
+brightness. `display idle 10` turns the display off after 10 idle
+minutes, `display lock 15` locks the screen after 15, and 0 means
+never; a running desktop takes the change at once. `display
+brightness 70` (or `up`, `down`, and the brightness keys) sets a
+laptop's backlight through brightnessctl, or a screen's own through
+DDC/CI and ddcutil; the bar's `light` gauge sets it with a click or the
+wheel. On desktop adds you to the `video` and `i2c` groups for it.
+
+`spark-shell desktop keyboard us br` gives the keyboard two layouts, a
+variant after a plus (`us+intl`); Super+Ctrl+space, a click on the
+bar's `kb` block and `desktop keyboard next` go to the next one. The
+`kb` block shows only with more than one layout.
+
+`spark-shell desktop screen` lists the screens. `desktop screen NAME
+scale 1.5`, `mode 2560x1440`, or `left-of`, `right-of`, `above` and
+`below` another screen set one, by its port or words of its make and
+model; each is sway's at once and kept, by the screen's make, model and
+serial, in `~/.config/spark-shell/screens.conf`. `on` and `off` hold
+until the desktop starts again, so a later start never comes up with no
+screen, and the last screen on stays on. The dialog has a `display` and
+a `keyboard` section for the same.
 
 ## Lock and capture
 
-After 10 idle minutes the display turns off, and after 15 the screen
-locks. Where logind runs (Debian, Arch), it locks before the machine
-sleeps too; Void has no logind to say so. Super+Escape, or
-`spark-shell desktop lock`, locks it now. The lock is swaylock over
-your wallpaper, in the palette: at rest the picture alone, and a ring
-comes up with the first key you type.
+After the idle minutes (10 for the display, 15 for the lock) the display
+turns off, then the screen locks. Where logind runs (Debian, Arch), it
+locks before the machine sleeps too; Void has no logind to say so.
+Super+Escape, or `spark-shell desktop lock`, locks it now. The lock is
+swaylock over your wallpaper, in the palette: at rest the picture alone,
+and a ring comes up with the first key you type.
 
 Print takes a picture of the screen, Shift+Print of an area you drag,
 and Super+Print of the window in front; `spark-shell desktop capture
@@ -243,7 +282,8 @@ On the desktop, a bar sits at the top of the screen. The workspaces
 are on the left. A workspace a layout opened carries the layout's
 words, so `2 news` reads from a distance. On the right, in groups
 parted by a thin line: `lan`, `wifi` and `bt`; `out` and `mic`, each
-with its gauge; `bat`; the date and time; and last, spark-shell's own
+with its gauge; `light`, the brightness with its gauge, and `kb`, the
+keyboard's layout; `bat`; the date and time; and last, spark-shell's own
 sign, the prompt sign in the palette's yellow. The palette has no
 block: it is picked in the dialog, where a click on any block leads.
 
@@ -430,18 +470,21 @@ Config keys, in `~/.config/spark-shell/config` (see `config.example`):
 none or a path), `ALPHA` (how solid foot is, 0.85: 15% transparency),
 `DESKTOP_BAR` (yes or no), `THEME`, `CONSOLE_FONT`, `QUIET_LOGIN`, `QUIET_BOOT`,
 `DIALOG_ATTACH` (yes or no), `DIALOG_ATTACH_TYPES` (txt md),
-`DIALOG_MODEL` and `DIALOG_TALK` (yes or no). The commands write them.
+`DIALOG_MODEL` and `DIALOG_TALK` (yes or no), `DISPLAY_IDLE` and
+`DISPLAY_LOCK` (minutes, 0 never), `KEYBOARD` (layouts). The commands
+write them.
 
 Files it writes: the shell files, `~/.tmux.conf`, `~/.config/btop/`,
 `~/.config/starship.toml`, `~/.config/spark-shell/`,
 `~/.config/spark/theme.env`, `~/.local/state/spark-shell/`,
 `~/.local/bin/spark-shell`, and for the desktop `~/.config/sway/`,
 `~/.config/foot/` and, after a change of output on plain ALSA,
-`~/.config/alsa/asoundrc`. As root: the console colors at boot (a systemd
-unit or a line in `/etc/rc.local`), the console font, the login
-notice and boot files for quiet, and on Void PipeWire's two links in
-`/etc/alsa/conf.d` and your place in the `audio` group. `off` restores
-or removes each one.
+`~/.config/alsa/asoundrc`, and `~/.config/spark-shell/screens.conf`. As
+root: the console colors at boot (a systemd unit or a line in
+`/etc/rc.local`), the console font, the login notice and boot files for
+quiet, and on Void PipeWire's two links in `/etc/alsa/conf.d` and your
+place in the `audio` group, and your place in `video` and `i2c` for the
+brightness. `off` restores or removes each one.
 
 What leaves the machine: only what the package manager downloads and,
 for the desktop, the dialog's release file from GitHub, checked against

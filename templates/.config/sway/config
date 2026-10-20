@@ -14,6 +14,11 @@ set $term foot
 
 xwayland disable
 output * bg @WALL_BG@
+# The screens as spark-shell desktop screen set them (scale, mode, place, on or off)
+include "@SCREENS_CONF@"
+# The keyboard's layouts, as spark-shell desktop keyboard set them
+@KB_LAYOUT@
+@KB_VARIANT@
 gaps inner @GAPS_INNER@
 gaps outer @GAPS_OUTER@
 workspace_layout @WS_LAYOUT@
@@ -129,24 +134,31 @@ bindsym $mod+Shift+8 move container to workspace number 8
 bindsym $mod+Shift+9 move container to workspace number 9
 bindsym $mod+Shift+0 move container to workspace number 10
 
-# key: Super+Escape locks the screen; it locks by itself after 15 idle minutes.
+# key: Super+Escape locks the screen; it locks by itself after idle minutes.
 bindsym $mod+Escape exec @REPO@/spark-shell desktop lock || swaylock -f
-# Ten idle minutes turn the display off and fifteen lock the screen
-# (swaylock over the wallpaper, in the palette); a key or a move turns
-# the display on. Where logind runs, it locks before the machine sleeps.
-# Plain swaylock when spark-shell cannot run: the screen locks anyway.
-exec swayidle -w timeout 600 'swaymsg "output * power off"' resume 'swaymsg "output * power on"' timeout 900 '@REPO@/spark-shell desktop lock || swaylock -f' before-sleep '@REPO@/spark-shell desktop lock || swaylock -f'
+# Idle minutes turn the display off, then lock the screen, as
+# spark-shell desktop display idle|lock N set them (0: never); a key or
+# a move turns the display on. Where logind runs, it locks before the
+# machine sleeps. Plain swaylock when spark-shell cannot run.
+exec @IDLE_EXEC@
 
 # key: Print captures the screen, Shift+Print an area, Super+Print the window.
 bindsym Print exec @REPO@/spark-shell desktop capture screen
 bindsym Shift+Print exec @REPO@/spark-shell desktop capture area
 bindsym $mod+Print exec @REPO@/spark-shell desktop capture window
 
+# key: Super+Ctrl+space goes to the next keyboard layout, with more than one.
+bindsym $mod+Ctrl+space exec @REPO@/spark-shell desktop keyboard next
+
 # key: The volume and mute keys set the sound, and the mic mute key the mic.
 bindsym XF86AudioRaiseVolume exec @REPO@/spark-shell bar volume up
 bindsym XF86AudioLowerVolume exec @REPO@/spark-shell bar volume down
 bindsym XF86AudioMute exec @REPO@/spark-shell bar volume mute
 bindsym XF86AudioMicMute exec @REPO@/spark-shell bar volume mic
+
+# key: The brightness keys set the screen's brightness.
+bindsym XF86MonBrightnessUp exec @REPO@/spark-shell bar light up
+bindsym XF86MonBrightnessDown exec @REPO@/spark-shell bar light down
 
 mode "resize" {
     bindsym h resize shrink width 10px

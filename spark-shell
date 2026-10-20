@@ -28,7 +28,16 @@
 #   spark-shell desktop wallpaper X   set a picture, a color, default or none
 #   spark-shell desktop lock          lock the screen now (Super+Escape)
 #   spark-shell desktop capture screen|area|window
-#                                     a picture in ~/pictures/screenshots (Print)
+#                                     a PNG in ~/pictures/screenshots (Print)
+#   spark-shell desktop display       the idle and lock minutes, the brightness
+#   spark-shell desktop display idle|lock N
+#                                     display off, or lock, after N idle minutes
+#   spark-shell desktop display brightness N|up|down
+#                                     the screen's brightness, 1 to 100
+#   spark-shell desktop keyboard [us br|next]
+#                                     the keyboard's layouts, or the next one
+#   spark-shell desktop screen [NAME scale N|mode WxH|on|off|left-of NAME]
+#                                     list the screens, or set one
 #   spark-shell bar on|off            show or hide the status line and the bar
 #   spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
 #   spark-shell dialog [SECTION]      open the dialog (Super+d), SECTION first
@@ -123,7 +132,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u KEYBOARD'
 
 # This machine's short name (the twin of spark lib/env.sh short_host)
 short_host() {
@@ -162,9 +171,17 @@ config_load() {
         eval "v=\$$k"
         case $v in yes|no) ;; *) echo "spark-shell: $k=$v in $CONFIG: yes or no" >&2; exit 1 ;; esac
     done
+    # the display (minutes, 0 never) and the keyboard's layouts (xkb names, a variant after a plus)
+    : "${DISPLAY_IDLE:=10}" "${DISPLAY_LOCK:=15}" "${KEYBOARD:=}"
+    for k in DISPLAY_IDLE DISPLAY_LOCK; do
+        eval "v=\$$k"
+        case $v in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "spark-shell: $k=$v in $CONFIG: minutes, 0 to 999 (0: never)" >&2; exit 1 ;; esac
+    done
+    [ -z "$KEYBOARD" ] || printf '%s\n' "$KEYBOARD" | grep -qE "$KB_RE" || { echo "spark-shell: KEYBOARD=$KEYBOARD in $CONFIG: layouts by their xkb names, a space between, a variant after a plus (us us+intl)" >&2; exit 1; }
     printf '%s\n' "$DIALOG_ATTACH_TYPES" | grep -qE '^[a-z0-9]{1,8}( [a-z0-9]{1,8})*$' || { echo "spark-shell: DIALOG_ATTACH_TYPES=$DIALOG_ATTACH_TYPES in $CONFIG: file types in lower case, a space between (txt md)" >&2; exit 1; }
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK LOGIN
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK LOGIN DISPLAY_IDLE DISPLAY_LOCK KEYBOARD
 }
+KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}$'   # one to eight layouts, a variant after a plus: us us+intl
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept
     mkdir -p "$CONFIG_DIR"
     if [ -f "$CONFIG" ] && grep -q "^$1=" "$CONFIG"; then
@@ -548,6 +565,7 @@ render_expr() {
     e="$e;s|@FONT@|$(esc "$FONT")|g"
     e="$e;s|@BAR_MODE@|$(bar_mode)|g;s|@BAR_FONT@|$(esc "$(bar_font)")|g"
     e="$e;s|@FOOT_COLORS@|$(foot_colors)|g"
+    e="$e;s|@SCREENS_CONF@|$(esc "$SCREENS_CONF")|g;s|@IDLE_EXEC@|$(esc "$(idle_exec)")|g;s|@KB_LAYOUT@|$(esc "$(kb_line layout)")|g;s|@KB_VARIANT@|$(esc "$(kb_line variant)")|g"
     printf '%s' "$e"
 }
 render_tmp() {   # render_tmp SRC DST -- the template through EXPR, every placeholder gone
@@ -611,12 +629,14 @@ desktop_look_apply() {   # the two user renders and a live sway
     for rel in $DESKTOP_RENDERED; do
         render_one "$REPO/templates/$rel" "$HOME/$rel"
     done
+    [ "$MODE" = dry ] || [ -f "$SCREENS_CONF" ] || { mkdir -p "$CONFIG_DIR" && echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them' > "$SCREENS_CONF"; }   # the template includes it
     sway_reload
 }
 desktop_apply() {
     desktop_look_apply
     seat_apply
     sound_apply
+    light_apply
     dialog_install
     mcp_apply
 }
@@ -753,6 +773,39 @@ sound_off() {   # by the records alone, as seat_off
             row ok sound "$_me is out of the audio group spark-shell added: it takes effect at your next login"
         else row todo sound "gpasswd could not take $_me out of audio -- spark-shell off desktop again"; fi
     fi
+}
+# The brightness: brightnessctl writes a laptop's backlight through the
+# video group (its udev rule), ddcutil a screen's DDC/CI through the
+# i2c group and the i2c-dev module (its package loads it at boot; on
+# desktop loads it now). on desktop adds you to each group that exists
+# and you are not in, recorded, and off desktop takes back only those.
+LIGHT_GROUPS='video i2c'
+light_apply() {
+    [ "$OS" != Darwin ] || return 0
+    _me=$(id -un)
+    for _g in $LIGHT_GROUPS; do
+        grep -q "^$_g:" "$ROOT/etc/group" 2>/dev/null && ! in_group "$_g" "$_me" || continue
+        need light "add $_me to the $_g group: the screen's brightness opens to you (sudo)" && seat_root on "the brightness" || continue
+        if root_do usermod -aG "$_g" "$_me"; then
+            mkdir -p "$STATE_DIR"; echo "$_g" >> "$STATE_DIR/light.groups"
+            ok light "$_me is in the $_g group now: it takes effect at your next login"
+        else row todo light "usermod could not add $_me to $_g -- spark-shell on desktop again"; acting=0; fi
+    done
+    if command -v ddcutil >/dev/null 2>&1 && ! ls "$ROOT"/dev/i2c-* >/dev/null 2>&1 && [ -z "$ROOT" ]; then   # the module now; the package loads it at every boot
+        need light "load i2c-dev now, for a screen's brightness over DDC/CI (sudo)" && seat_root on "the brightness" && { root_do modprobe i2c-dev 2>/dev/null && ok light "i2c-dev loaded"; } || :
+    fi
+}
+light_off() {   # by the record alone
+    [ -s "$STATE_DIR/light.groups" ] || return 0
+    need light "your video and i2c memberships removed, as spark-shell added them (sudo)" || return 0
+    seat_root off "the brightness" || return 0
+    _me=$(id -un)
+    for _g in $(cat "$STATE_DIR/light.groups"); do
+        case " $LIGHT_GROUPS " in *" $_g "*) ;; *) continue ;; esac
+        if ! in_group "$_g" "$_me" || root_do gpasswd -d "$_me" "$_g" >/dev/null 2>&1; then row ok light "$_me is out of the $_g group spark-shell added: it takes effect at your next login"
+        else row todo light "gpasswd could not take $_me out of $_g -- spark-shell off desktop again"; fi
+    done
+    rm -f "$STATE_DIR/light.groups"
 }
 sound_start() {   # PipeWire, WirePlumber and the PulseAudio server for the desktop about to start, where nothing else runs them; their pids in SOUND_PIDS
     SOUND_PIDS=''
@@ -2024,6 +2077,7 @@ cmd_off() {   # cmd_off [desktop|login]
         old_greetd_off
         seat_off
         sound_off
+        light_off
         mcp_off
         echo "packages stay installed -- the package manager removes them if you want"
         return 0
@@ -2041,6 +2095,7 @@ cmd_off() {   # cmd_off [desktop|login]
     login_screen_off
     seat_off
     sound_off
+    light_off
     mcp_off
     pm_detect
     console_off   # the palette, the font, the login screen and the boot, as they were
@@ -2105,6 +2160,7 @@ off_would() {   # off_would [desktop|login]
     [ "${1:-}" = desktop ] || login_screen_off
     seat_off
     sound_off
+    light_off
     if [ "${1:-}" != desktop ]; then pm_detect; console_off; fi
     dry_close
 }
@@ -2569,6 +2625,58 @@ snd_said() {   # snd_said out|mic muted|unmuted -> the state read back, one line
     case $2:$_m in muted:1|unmuted:0) echo "$1 $2" ;; *) echo "$1 is not $2: the audio system did not take it"; return 1 ;; esac
 }
 
+# --- brightness: a laptop's backlight through brightnessctl, else a
+# screen that speaks DDC/CI through ddcutil (slow: which display answers
+# is kept for 10 minutes, its level for 60 seconds, a set kept at once)
+light_tool() {   # -> backlight | ddc | nothing
+    if ls "$BAR_SYS"/class/backlight/* >/dev/null 2>&1 && command -v brightnessctl >/dev/null 2>&1; then echo backlight
+    elif command -v ddcutil >/dev/null 2>&1 && [ -n "$(light_ddc_bus)" ]; then echo ddc; fi
+}
+light_ddc() {   # light_ddc ARGS... -- ddcutil on the screen's own bus (the fast path), one at a time (a held key would race the bus)
+    _b=$(light_ddc_bus); [ -n "$_b" ] || return 1
+    if command -v flock >/dev/null 2>&1; then mkdir -p "$STATE_DIR"; flock -w 3 "$STATE_DIR/ddc.lock" ddcutil --bus "$_b" "$@"; else ddcutil --bus "$_b" "$@"; fi
+}
+light_ddc_bus() {   # -> the i2c bus of the first screen ddcutil drives; nothing when none answers (the answer kept 10 minutes)
+    _f=$STATE_DIR/ddc.bus; _ttl=600; ! grep -qx none "$_f" 2>/dev/null || _ttl=3600
+    if [ -f "$_f" ] && [ $(( $(date +%s) - $(stat -c %Y "$_f" 2>/dev/null || stat -f %m "$_f" 2>/dev/null || echo 0) )) -lt "$_ttl" ]; then grep -vx none "$_f" || :; return 0; fi
+    mkdir -p "$STATE_DIR"
+    { if command -v timeout >/dev/null 2>&1; then timeout 10 ddcutil detect --terse; else ddcutil detect --terse; fi; } 2>/dev/null | awk '/^Display [0-9]+/ {on = 1; next} /^[A-Z]/ {on = 0} on && /I2C bus:/ {sub(/.*i2c-/, ""); print; exit}' > "$_f.new" || :
+    [ -s "$_f.new" ] || echo none > "$_f.new"   # none answers: said so, and asked again in an hour, not every bar line
+    mv "$_f.new" "$_f"
+    grep -vx none "$_f" || :
+}
+light_get() {   # -> PERCENT, or nothing without a brightness to set
+    case $(light_tool) in
+        backlight) brightnessctl -m -c backlight info 2>/dev/null | awk -F, '{gsub(/%/, "", $4); print $4; exit}' ;;
+        ddc) _f=$STATE_DIR/light
+            if [ -f "$_f" ] && [ $(( $(date +%s) - $(stat -c %Y "$_f" 2>/dev/null || stat -f %m "$_f" 2>/dev/null || echo 0) )) -lt 60 ]; then cat "$_f"; return 0; fi
+            light_ddc getvcp 10 --terse 2>/dev/null | awk '$1 == "VCP" && $2 == "10" && $5 > 0 {printf "%d\n", $4 * 100 / $5 + 0.5}' > "$_f.new" && [ -s "$_f.new" ] && mv "$_f.new" "$_f" || rm -f "$_f.new"
+            cat "$_f" 2>/dev/null || : ;;
+    esac
+}
+light_set() {   # light_set N|up|down|+5|-5 -> one line; exit 1 when nothing took it
+    _t=$(light_tool); [ -n "$_t" ] || { echo "no brightness to set here (a laptop's backlight, or a screen that speaks DDC/CI)"; return 1; }
+    _now=$(light_get); [ -n "$_now" ] || _now=50
+    case ${1:-} in
+        up|+5) _to=$((_now + 5)) ;; down|-5) _to=$((_now - 5)) ;;
+        [0-9]|[0-9][0-9]|100) _to=$1 ;;
+        *) echo "brightness takes 1 to 100, up or down"; return 1 ;;
+    esac
+    [ "$_to" -le 100 ] || _to=100; [ "$_to" -ge 1 ] || _to=1   # never black: a screen at 0 looks off
+    case $_t in
+        backlight) brightnessctl -q -c backlight set "$_to%" >/dev/null 2>&1 || { echo "brightnessctl could not set it (the video group, a login again)"; return 1; } ;;
+        ddc) light_ddc setvcp 10 "$_to" --noverify >/dev/null 2>&1 || { echo "the screen took no brightness over DDC/CI"; return 1; }
+            mkdir -p "$STATE_DIR"; echo "$_to" > "$STATE_DIR/light" ;;
+    esac
+    bar_redraw
+    echo "brightness $_to%"
+}
+kb_active() {   # -> the layout in use, by its KEYBOARD word; nothing with one layout or none
+    [ "$(printf '%s\n' $KEYBOARD | grep -c .)" -gt 1 ] || return 0
+    _i=$(kb_names | cut -f1); [ -n "$_i" ] || _i=0
+    printf '%s\n' $KEYBOARD | sed -n "$((_i + 1))p"
+}
+
 # --- the line, the clicks, the loop
 bar_line() {   # one JSON array of the blocks present now; groups parted by a divider
     line=''; group=''
@@ -2612,6 +2720,15 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by a di
         fi
     fi
     bar_group
+    # the seat: the brightness, the keyboard's layout
+    lt=$(light_get)
+    if [ -n "$lt" ]; then
+        bar_add "$(bar_block light name "$(bar_span "$HEX_MUTED" light)" 6)"
+        bar_add "$(bar_block light gauge "$(bar_gauge "$lt" 0)")"
+    fi
+    kb=$(kb_active)
+    [ -z "$kb" ] || bar_add "$(bar_block kb '' "$(bar_span "$HEX_MUTED" kb) $(bar_esc "$kb")")"
+    bar_group
     # power
     bat=$(bar_power)
     if [ -n "$bat" ]; then
@@ -2631,6 +2748,11 @@ bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X -- one click or wh
     case $1:$2:$3 in
         div:*) ;;
         out:gauge:1|mic:gauge:1) [ "$5" -gt 0 ] 2>/dev/null || return 0; l=$(( ($4 * 100 / $5 + 2) / 5 * 5 )); [ "$l" -le 100 ] || l=100; [ "$l" -ge 0 ] || l=0; snd_set "$1" "$l" ;;
+        light:gauge:1) [ "$5" -gt 0 ] 2>/dev/null || return 0; l=$(( ($4 * 100 / $5 + 2) / 5 * 5 )); [ "$l" -le 100 ] || l=100; light_set "$l" >/dev/null || : ;;
+        light:*:4) light_set up >/dev/null || : ;;
+        light:*:5) light_set down >/dev/null || : ;;
+        light:name:1) bar_panel_open display ;;   # the word opens the display's section
+        kb:*:1) swaymsg -- input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || : ;;   # the next layout, as Super+Ctrl+space
         out:*:4|mic:*:4) snd_set "$1" +5 ;;
         out:*:5|mic:*:5) snd_set "$1" -5 ;;
         out:*:2|out:*:3|mic:*:2|mic:*:3) snd_set "$1" mute ;;
@@ -2707,6 +2829,7 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | volu
     case ${1:-} in
         status) shift; bar_status "$@"; return ;;
         volume) shift; bar_volume_key "${1:-}"; return ;;
+        light) shift; case ${1:-} in up|down) light_set "$1" >/dev/null || :; return ;; *) refuse_in bar "light takes up or down" ;; esac ;;
         panel) shift; cmd_panel "$@"; return ;;   # the old spelling of spark-shell panel
         on|off|'') ;;
         -*) refuse_in bar "$1 is not a bar command: on, off, status, volume, panel, or words for what you want" ;;
@@ -2800,7 +2923,7 @@ panel_colors() {   # the three SGRs from our own render, when there is one (a pi
 }
 
 # --- the sections: their order by use, which of them this machine has, what each costs
-PANEL_ORDER="undo spark apps layout window out mic bt wifi theme wallpaper bar about"   # grouped by what you do: what is on the screen, the sound, the connections, the look, then about; undo only while there is one
+PANEL_ORDER="undo spark apps layout window display keyboard out mic bt wifi theme wallpaper bar about"   # grouped by what you do: what is on the screen, the sound, the connections, the look, then about; undo only while there is one
 PANEL_BLOCKS="lan wifi bt out mic bat clock theme"      # the bar's blocks in the bar's order, and the palette: the facts, and what a click may open
 PANEL_LOOKS="lan bat clock"                            # blocks with nothing to set: shown only when they opened the panel
 panel_blocks_here() {   # -> the bar's blocks this machine has, in the bar's order
@@ -2820,12 +2943,12 @@ panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on
     [ "$_f" = glance ] || echo "$_f"
     for s in $PANEL_ORDER; do
         [ "$s" != "$_f" ] || continue
-        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|wallpaper) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
+        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|wallpaper|display|keyboard) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
         echo "$s"
     done
 }
 panel_cost() {   # panel_cost SECTION -> instant | fast | slow: what its rows cost to know
-    case $1 in wifi) echo slow ;; bt|out|mic|apps) echo fast ;; *) echo instant ;; esac
+    case $1 in wifi) echo slow ;; bt|out|mic|apps|display) echo fast ;; *) echo instant ;; esac
 }
 panel_section_ok() { case " glance chat $PANEL_ORDER $PANEL_BLOCKS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }   # panel_section_ok WORD
 
@@ -3097,6 +3220,8 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
         theme) echo "$(panel_col theme)${THEME:-none} $PANEL_SEP $(bar_font)" ;;   # the transparency is named in its row
         wallpaper) _cur=$(wall_name); echo "$(panel_col wallpaper)${_cur:-$(basename "$(wall_path)")}" ;;
         window) echo "$(panel_col window)$(win_words "$WINDOWS")" ;;
+        display) _b=$(light_get); echo "$(panel_col display)off $(idle_words "$DISPLAY_IDLE") $PANEL_SEP lock $(idle_words "$DISPLAY_LOCK")${_b:+ $PANEL_SEP brightness $_b%}" ;;
+        keyboard) _k=$(kb_active); if [ -n "$_k" ]; then echo "$(panel_col keyboard)$_k $PANEL_SEP $(printf '%s\n' $KEYBOARD | grep -c .) layouts"; elif [ -n "$KEYBOARD" ]; then echo "$(panel_col keyboard)$KEYBOARD"; else echo "$(panel_col keyboard)sway's own layout"; fi ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown at the top of the screen"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys Super+d) opens the dialog"; fi ;;
         about) echo "$(panel_col about)spark-shell $(panel_version) $PANEL_SEP the keys, the licence, the address" ;;
         layout) _n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' '); _last=''; [ ! -f "$DESK_LAST" ] || _last=$(desk_words "$DESK_LAST")
@@ -3222,6 +3347,20 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             done
             printf '%s\tcapture the screen\tcapture screen\n%s\tcapture an area\tcapture area\n' "$PANEL_GO" "$PANEL_GO"   # a picture, the dialog closed first
             [ "${2:-}" != full ] || win_label | awk -F '\t' '!s[$1]++' | while IFS="$TAB" read -r _l _i; do printf '%s\t%s\tfocus %s\n-\tclose %s\tclose %s\n' "$PANEL_GO" "$_l" "$_l" "$_l" "$_l"; done ;;   # the windows open now, by name: in front, or closed; typing a name finds them
+        display) for _k in idle lock; do   # the minutes now, then the other picks in a full list
+                if [ "$_k" = idle ]; then _v=$DISPLAY_IDLE; _w='display off'; else _v=$DISPLAY_LOCK; _w=lock; fi
+                printf '%s\t%s %s\tshow\n' "$PANEL_TICK" "$_w" "$(idle_words "$_v")"
+                [ "${2:-}" = full ] || continue
+                for _m in 5 10 15 30 60 0; do [ "$_m" = "$_v" ] || printf -- '-\t%s %s\t%s %s\n' "$_w" "$(idle_words "$_m")" "$_k" "$_m"; done
+            done
+            _b=$(light_get); [ -z "$_b" ] || printf -- '-\tbrightness %s%%\tshow\n-\tbrighter\tbrightness up\n-\tdimmer\tbrightness down\n' "$_b"
+            [ -z "${SWAYSOCK:-}" ] || screen_rows | while IFS="$TAB" read -r _n _id _on _md _sc _x _y _w _h; do
+                if [ "$_on" = on ]; then printf -- '-\tscreen %s %s %s %s scale %s\tshow\n' "$_n" "$PANEL_SEP" "${_id:-a screen}" "$_md" "$_sc"; else printf -- '-\tscreen %s %s off\tshow\n' "$_n" "$PANEL_SEP"; fi
+            done ;;
+        keyboard) if [ -z "$KEYBOARD" ]; then printf -- "-\tsway's own layout: spark-shell desktop keyboard us br sets some\tshow\n"; return 0; fi
+            _a=$(kb_active)
+            for _x in $KEYBOARD; do if [ "$_x" = "$_a" ] || [ -z "$_a" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$_x"; else printf -- '-\t%s\tuse %s\n' "$_x" "$_x"; fi; done
+            [ -z "$_a" ] || printf '%s\tthe next layout\tnext\n' "$PANEL_GO" ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then printf -- '-\thide\toff\n'; else printf -- '-\tshow\ton\n'; fi ;;   # on and off, as the verb: show is the panel's look-only word
         layout) if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then
                 for f in "$LAYOUTS_DIR"/*; do _w=$(desk_words "$f"); [ -n "$_w" ] || _w=${f##*/}; printf '%s\t%s\topen %s\n' "$PANEL_GO" "$_w" "${f##*/}"; done
@@ -3346,6 +3485,24 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                     : > "$TMP/opened"; echo "capture: the $_arg, in ~/pictures/screenshots" ;;
                 focus) _nm=$(win_name_of "$_arg"); swaymsg -- "[con_id=$_arg] focus" >/dev/null 2>&1 || { echo "no window named ${_nm:-$_arg}"; return 1; }; : > "$TMP/opened"; echo "${_nm:-$_arg} in front" ;;   # the window is the receipt
                 *) echo "$_a is not something window does"; return 1 ;;
+            esac ;;
+        display) case $_a in
+                idle|lock) case $_arg in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "$_a takes minutes, 0 to 999 (0: never)"; return 1 ;; esac
+                    _k=DISPLAY_IDLE; [ "$_a" = idle ] || _k=DISPLAY_LOCK
+                    config_set "$_k" "$_arg" >/dev/null; eval "$_k=\$_arg"; export "${_k?}"; look_apply; idle_restart
+                    if [ "$_a" = idle ]; then echo "display off $(idle_words "$_arg")"; else echo "lock $(idle_words "$_arg")"; fi ;;
+                brightness) light_set "$_arg" ;;
+                *) echo "$_a is not something display does"; return 1 ;;
+            esac ;;
+        keyboard) case $_a in
+                next) desk_in_sway || { echo "a layout switch needs the desktop"; return 1; }
+                    swaymsg -- input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || { echo "sway took no layout switch"; return 1; }
+                    bar_redraw; echo "keyboard $(kb_active)" ;;
+                use) desk_in_sway || { echo "a layout switch needs the desktop"; return 1; }
+                    _i=$(printf '%s\n' $KEYBOARD | awk -v n="$(panel_lower "$_arg")" 'tolower($0) == n {print NR - 1; exit}'); [ -n "$_i" ] || { echo "no layout $_arg in KEYBOARD ($KEYBOARD)"; return 1; }
+                    swaymsg -- input type:keyboard xkb_switch_layout "$_i" >/dev/null 2>&1 || { echo "sway took no layout switch"; return 1; }
+                    bar_redraw; echo "keyboard $_arg" ;;
+                *) echo "$_a is not something keyboard does"; return 1 ;;
             esac ;;
         about) case $_a in open) panel_about 72 ;; *) echo "$_a is not something about does"; return 1 ;; esac ;;   # on a pipe: the splash as text
         bar) case $_a in
@@ -3747,9 +3904,9 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 # JSON value is built by jq with --arg, every request is parsed by jq,
 # and a method or a tool name is matched by case, never run as a name.
 PROVIDE_PROTOCOL=2025-06-18
-PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme wallpaper window bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
+PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme wallpaper window display keyboard bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_font wallpaper_use wallpaper_picture theme_transparency theme_alpha window_split window_tabs window_stacked window_focus window_close window_capture bar_on bar_off layout_open layout_new layout_save layout_add apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_font wallpaper_use wallpaper_picture theme_transparency theme_alpha window_split window_tabs window_stacked window_focus window_close window_capture display_idle display_lock display_brightness keyboard_use keyboard_next bar_on bar_off layout_open layout_new layout_save layout_add apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -3800,6 +3957,11 @@ tool_spec() {
         window_focus)      _ts=window _ta=focus _tp=name _tk=string _th=i _tt='window focus NAME' _td='Put an open window in front.' ;;
         window_close)      _ts=window _ta=close _tp=name _tk=string _th=d _tt='window close NAME' _td='Close an open window.' ;;
         window_capture)    _ts=window _ta=capture _tp=what _tk='screen|area' _th='' _tt='window capture WHAT' _td='A picture of the screen, or of an area you drag, in ~/pictures/screenshots.' ;;
+        display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=i _tt='display idle N' _td='Turn the display off after N idle minutes; 0 never.' ;;
+        display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=i _tt='display lock N' _td='Lock the screen after N idle minutes; 0 never.' ;;
+        display_brightness) _ts=display _ta=brightness _tp=level _tk=level _th=if _tt='display brightness N' _td='Set the screen brightness, 1 to 100.' ;;
+        keyboard_use)      _ts=keyboard _ta=use _tp=name _tk=string _th=i _tt='keyboard use NAME' _td='Type in another of the keyboard layouts.' ;;
+        keyboard_next)     _ts=keyboard _ta=next _th='' _tt='keyboard next' _td='Go to the next keyboard layout.' ;;
         bar_on)            _ts=bar _ta=on _th=i _tt='bar on' _td='Show the bar at the top of the screen.' ;;
         bar_off)           _ts=bar _ta=off _th=i _tt='bar off' _td='Hide the bar.' ;;
         layout_open)       _ts=layout _ta=open _tp=name _tk=string _th='' _tt='layout open NAME' _td='Open a saved layout.' ;;
@@ -3827,7 +3989,7 @@ action_tool() {   # action_tool SECTION "ACTION [ARG]" -> sets _tool and _tv, th
 tool_call_json() {   # tool_call_json TOOL VALUE [LINE] -> {"name", "arguments", "line"}: VALUE under the tool's argument, typed as its kind
     tool_spec "$1" || return 1
     jq -cn --arg n "$1" --arg p "$_tp" --arg k "$_tk" --arg v "$2" --arg l "${3:-}" \
-        '{name: $n, arguments: (if $p == "" then {} elif ($k == "level" or $k == "alpha") then {($p): ($v | tonumber? // $v)} else {($p): $v} end)} + (if $l == "" then {} else {line: $l} end)'
+        '{name: $n, arguments: (if $p == "" then {} elif ($k == "level" or $k == "alpha" or $k == "minutes") then {($p): ($v | tonumber? // $v)} else {($p): $v} end)} + (if $l == "" then {} else {line: $l} end)'
 }
 tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, the words, the input schema, the hints with the spec's defaults spelled out
     tool_spec "$1" || return 1
@@ -3836,6 +3998,7 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
          inputSchema: {type: "object",
             properties: ((if $p == "" then {} else {($p): (
                 if $k == "level" then {type: "integer", minimum: 0, maximum: 100}
+                elif $k == "minutes" then {type: "integer", minimum: 0, maximum: 999}
                 elif $k == "alpha" then {type: "number", minimum: 0, maximum: 1}
                 elif $k == "path" then {type: "string", minLength: 2, maxLength: 4096}
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
@@ -3898,7 +4061,7 @@ provide_about_rows() {   # -> the about's rows: the template's `# key:` sentence
             | {id: ("about:key:" + ($i | tostring)), sign: "blank",
                text: (if $k then ($l | sub("^[^ ]* "; "")) else $l end), tool: null, more: [],
                columns: (if $k then [$l | sub(" .*$"; "") | sub(",$"; "")] else [] end), children: null,
-               group: ("keys " + (if $i < 3 then "1" elif $i < 6 then "2" elif $i < 12 then "3" elif $i < 14 then "4" else "5" end))})
+               group: ("keys " + (if $i < 3 then "1" elif $i < 6 then "2" elif $i < 12 then "3" elif $i < 15 then "4" else "5" end))})
         | . + [{id: "about:address", sign: "opens", text: "github.com/forgewright-ai/spark-shell", tool: null, more: [], columns: [], children: null, group: "address"},
                {id: "about:open", sign: "opens", text: ("spark-shell " + $v), tool: {name: "about_open", arguments: {}}, more: [], columns: [], children: null, group: null}]
         | {title: "about", rows: ., short: ["about:open"]}'
@@ -4005,6 +4168,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif $p != "" and (has($p) | not) then "missing " + $p
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
+        elif $k == "minutes" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 999 then "" else $p + " is a whole number of minutes, 0 to 999" end)
         elif $k == "alpha" then (if (.[$p] | type) == "number" and .[$p] >= 0 and .[$p] <= 1 then "" else $p + " is a number, 0 to 1" end)
         elif $k == "path" then (if (.[$p] | type) == "string" and (.[$p] | startswith("/")) and (.[$p] | length) <= 4096 and (.[$p] | test("[\u0000-\u001f\u007f]") | not) then "" else $p + " is a whole path, plain text" end)
         elif (.[$p] | type) != "string" or ((.[$p]) | plain | not) then $p + " is plain text, 256 characters at most"
@@ -4457,7 +4621,7 @@ panel_about() {   # panel_about WIDTH -> the splash: the logo small, the version
     echo; printf '%sspark-shell %s%s\n' "$_b" "$(panel_version)" "$PANEL_UNMARK"; echo
     _i=0
     desk_keys | while IFS= read -r _l; do
-        _i=$((_i + 1)); case $_i in 4|7|13|15) echo ;; esac   # the keys in their groups: opening, the window, moving, lock and capture, the rest
+        _i=$((_i + 1)); case $_i in 4|7|13|16) echo ;; esac   # the keys in their groups: opening, the window, moving, lock and capture, the rest
         case $_l in
             Super+*|Ctrl+*|Alt+*|Shift+*|Print\ *)
                 _combo=${_l%% *}; _combo=${_combo%,}; _rest=${_l#* }
@@ -5538,6 +5702,9 @@ cmd_desktop() {
         --chat) cmd_panel chat; return ;;             # the old Super+s: spark chat in the panel's window
         keys) desk_keys; return ;;   # the template's sentences, anywhere (documentation)
         lock) theme_load 2>/dev/null || :; desk_lock; return ;;   # a palette that will not load never keeps the lock away
+        display) shift; desk_display "$@"; return ;;
+        keyboard) shift; desk_keyboard "$@"; return ;;
+        screen|screens) shift; desk_screen "$@"; return ;;
         capture) shift; desk_capture "$@"; return ;;
         --first)   # the desktop's first window: the splash once, over it (the stamp first, so never twice), then your shell, always
             if [ ! -f "$DESK_SEEN" ]; then
@@ -5552,6 +5719,132 @@ cmd_desktop() {
     esac
     desk_start ''
 }
+# The display: DISPLAY_IDLE idle minutes turn it off, DISPLAY_LOCK lock
+# the screen (0: never), swayidle in the sway template; where logind
+# runs it locks before the machine sleeps too. `desktop display idle N`
+# and `lock N` set them, and a running desktop takes the new swayidle
+# at once. Plain swaylock when spark-shell cannot run: it locks anyway.
+idle_exec() {   # -> the swayidle command the template and a live change run
+    _l="$REPO/spark-shell desktop lock || swaylock -f"
+    printf 'swayidle -w'
+    [ "${DISPLAY_IDLE:-10}" = 0 ] || printf " timeout %s 'swaymsg \"output * power off\"' resume 'swaymsg \"output * power on\"'" "$((DISPLAY_IDLE * 60))"
+    [ "${DISPLAY_LOCK:-15}" = 0 ] || printf " timeout %s '%s'" "$((DISPLAY_LOCK * 60))" "$_l"
+    printf " before-sleep '%s'" "$_l"
+}
+idle_restart() {   # the running desktop's swayidle, again with the settings now
+    desk_in_sway || return 0
+    pkill -u "$(id -u)" -x swayidle 2>/dev/null || :
+    swaymsg -- exec "$(idle_exec)" >/dev/null 2>&1 || :
+}
+idle_words() { if [ "$1" = 0 ]; then echo never; elif [ "$1" = 1 ]; then echo "after 1 minute"; else echo "after $1 minutes"; fi; }   # idle_words MINUTES
+desk_display() {   # desk_display [idle|lock N | brightness N|up|down]
+    case ${1:-} in
+        '') echo "display off $(idle_words "$DISPLAY_IDLE") $PANEL_SEP lock $(idle_words "$DISPLAY_LOCK")"
+            [ "$OS" = Darwin ] || { _b=$(light_get); [ -z "$_b" ] || echo "brightness ${_b%% *}%"; } ;;
+        idle|lock) _k=DISPLAY_IDLE; [ "$1" = idle ] || _k=DISPLAY_LOCK
+            case ${2:-} in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; never) set -- "$1" 0 ;; *) refuse "display $1 takes minutes, 0 to 999 (0: never)" ;; esac
+            [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
+            config_set "$_k" "$2" >/dev/null; eval "$_k=\$2"; export "${_k?}"
+            look_apply; idle_restart
+            if [ "$1" = idle ]; then echo "display off $(idle_words "$2")"; else echo "lock $(idle_words "$2")"; fi ;;
+        brightness) light_set "${2:-}" ;;
+        *) refuse "display takes idle N, lock N or brightness N|up|down" ;;
+    esac
+}
+
+# The keyboard: KEYBOARD is its layouts by their xkb names (us br, a
+# variant after a plus: us+intl), the first the one in use at start;
+# empty leaves sway's own. Super+Ctrl+space, a click on the bar's kb
+# block and `desktop keyboard next` go to the next one.
+kb_line() {   # kb_line layout|variant -> the template's input line, or a comment when KEYBOARD is empty
+    if [ -z "${KEYBOARD:-}" ]; then echo "# the keyboard: sway's own layout (spark-shell desktop keyboard us br sets some)"; return; fi
+    _ls=''; _vs=''; _any=''
+    for _x in $KEYBOARD; do
+        case $_x in *+*) _v=${_x#*+}; _x=${_x%%+*}; _any=1 ;; *) _v='' ;; esac
+        _ls="${_ls:+$_ls,}$_x"; _vs="$_vs${_vs:+,}$_v"; [ -n "$_vs" ] || _vs=' '
+    done
+    _vs=$(printf '%s' "$_vs" | sed 's/^ //')
+    if [ "$1" = layout ]; then echo "input type:keyboard xkb_layout \"$_ls\""
+    elif [ -n "$_any" ]; then echo "input type:keyboard xkb_variant \"$_vs\""
+    else echo "# no variant"; fi
+}
+kb_names() { swaymsg -t get_inputs 2>/dev/null | jq -r '[.[] | select(.type == "keyboard" and (.xkb_layout_names // [] | length) > 0)][0] | if . == null then empty else (.xkb_active_layout_index | tostring) + "\t" + (.xkb_layout_names | join("\t")) end' 2>/dev/null || :; }   # -> ACTIVE<tab>NAME<tab>NAME..., the long names sway knows
+kb_known() {   # kb_known LAYOUT -> 0 when xkb lists it (no list to read: every name passes)
+    _lst=${SPARK_SHELL_XKB_LST:-/usr/share/X11/xkb/rules/evdev.lst}
+    [ -r "$_lst" ] || return 0
+    awk -v n="${1%%+*}" '/^! layout/ {on = 1; next} /^!/ {on = 0} on && $1 == n {f = 1} END {exit !f}' "$_lst"
+}
+desk_keyboard() {   # desk_keyboard [next | LAYOUT...]
+    [ "$OS" != Darwin ] || refuse "not on macOS, which has its own keyboard settings"
+    case ${1:-} in
+        '') if [ -z "$KEYBOARD" ]; then echo "keyboard: sway's own layout (spark-shell desktop keyboard us br sets some)"; return 0; fi
+            _a=$(kb_names | cut -f1); _i=0
+            for _x in $KEYBOARD; do if [ "$_i" = "${_a:-0}" ]; then echo "$PANEL_TICK $_x"; else echo "  $_x"; fi; _i=$((_i + 1)); done ;;
+        next) desk_in_sway || refuse "switches the desktop's keyboard: run it inside it (Super+Ctrl+space)"
+            swaymsg -- input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || refuse "sway took no layout switch"
+            bar_redraw; kb_names | awk -F '\t' '{print "keyboard " $($1 + 2)}' ;;
+        *) [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
+            _w=$(printf '%s ' "$@" | sed 's/ $//')
+            printf '%s\n' "$_w" | grep -qE "$KB_RE" || refuse "$_w: layouts by their xkb names, a space between, a variant after a plus (us us+intl)"
+            for _x in $_w; do kb_known "$_x" || refuse "$_x is no keyboard layout xkb knows (the two-letter names: us, br, de, fr, gb)"; done
+            config_set KEYBOARD "$_w" >/dev/null; KEYBOARD=$_w; export KEYBOARD
+            look_apply; bar_redraw
+            echo "keyboard $_w" ;;
+    esac
+}
+
+# Screens: each one by its make, model and serial, so it keeps its
+# place on any port; its lines live in ~/.config/spark-shell/screens.conf,
+# which the sway template includes. A change is sway's at once and the
+# file's for the next start. The last screen on is never turned off.
+SCREENS_CONF=$CONFIG_DIR/screens.conf
+screens_json() { swaymsg -t get_outputs 2>/dev/null || echo '[]'; }
+screen_rows() {   # -> NAME<tab>ID<tab>ON<tab>MODE<tab>SCALE<tab>X<tab>Y<tab>W<tab>H per screen (W, H: its place in layout pixels)
+    screens_json | jq -r '.[] | [.name, ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")), (if .active then "on" else "off" end),
+        (if .current_mode then "\(.current_mode.width)x\(.current_mode.height)" else "" end), ((.scale // 1) * 100 | round / 100 | tostring), (.rect.x | tostring), (.rect.y | tostring), (.rect.width | tostring), (.rect.height | tostring)] | @tsv' 2>/dev/null || :
+}
+screen_find() { screen_rows | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($1) == n || (n != "" && index(tolower($2), n) > 0) { print; exit }'; }   # screen_find NAME -> its row: by the port's name, or words of its make and model
+screen_save() {   # screen_save ID WORDS -- the screen's line of that kind (scale, mode, position, on or off) in screens.conf, every other kept
+    mkdir -p "$CONFIG_DIR"
+    _kd=${2%% *}
+    { [ -f "$SCREENS_CONF" ] && grep -v '^# rendered' "$SCREENS_CONF" | while IFS= read -r _ln; do
+            _drop=''; for _k in $_kd; do case $_ln in "output \"$1\" $_k"|"output \"$1\" $_k "*) _drop=1 ;; esac; done
+            [ -n "$_drop" ] || printf '%s\n' "$_ln"
+        done || :; } > "$TMP/screens"
+    { echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them'; grep . "$TMP/screens" || :; printf 'output "%s" %s\n' "$1" "$2"; } > "$SCREENS_CONF"
+}
+desk_screen() {   # desk_screen [NAME [scale N | mode WxH | on | off | left-of|right-of|above|below OTHER]]
+    [ "$OS" != Darwin ] || refuse "not on macOS, which has its own display settings"
+    desk_in_sway || refuse "changes the desktop's screens: run it inside it"
+    if [ -z "${1:-}" ]; then
+        screen_rows | while IFS="$TAB" read -r n id on m sc x y w h; do
+            if [ "$on" = on ]; then echo "$n  ${id:-a screen}  $m  scale $sc  at $x,$y"; else echo "$n  ${id:-a screen}  off"; fi
+        done; return 0
+    fi
+    _r=$(screen_find "$1"); [ -n "$_r" ] || refuse "no screen named $1 (spark-shell desktop screen lists them)"
+    _n=$(printf '%s' "$_r" | cut -f1); _id=$(printf '%s' "$_r" | cut -f2); [ -n "$_id" ] || _id=$_n
+    case ${2:-} in
+        scale) case ${3:-} in 0.5|0.75|1|1.25|1.5|1.75|2|2.5|3) ;; *) refuse "scale takes 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5 or 3" ;; esac
+            _cmd="scale $3"; _said="$_n scale $3" ;;
+        mode) screens_json | jq -e --arg n "$_n" --arg m "${3:-}" '.[] | select(.name == $n) | .modes[] | select("\(.width)x\(.height)" == $m)' >/dev/null 2>&1 || refuse "$_n has no mode ${3:-}: $(screens_json | jq -r --arg n "$_n" '[.[] | select(.name == $n) | .modes[] | "\(.width)x\(.height)"] | unique | join(", ")')"
+            _cmd="mode ${3}"; _said="$_n $3" ;;
+        on) _cmd=enable; _said="$_n on" ;;   # on and off hold until sway starts again: a screen kept off could leave a later start with none
+        off) [ "$(screen_rows | awk -F '\t' '$3 == "on"' | grep -c .)" -gt 1 ] || refuse "$_n is the only screen on: it stays on"
+            _cmd=disable; _said="$_n off until the desktop starts again" ;;
+        left-of|right-of|above|below)
+            _o=$(screen_find "${3:-}"); [ -n "$_o" ] || refuse "no screen named ${3:-} (spark-shell desktop screen lists them)"
+            [ "$(printf '%s' "$_o" | cut -f1)" != "$_n" ] || refuse "a screen is not placed beside itself"
+            # shellcheck disable=SC2046   # six numbers, split on purpose
+            set -- "$2" $(printf '%s' "$_o" | cut -f6-9) $(printf '%s' "$_r" | cut -f8-9)   # SIDE OX OY OW OH W H
+            case $1 in left-of) _x=$(($2 - $6)); _y=$3 ;; right-of) _x=$(($2 + $4)); _y=$3 ;; above) _x=$2; _y=$(($3 - $7)) ;; *) _x=$2; _y=$(($3 + $5)) ;; esac
+            _cmd="position $_x $_y"; _said="$_n $1 $(printf '%s' "$_o" | cut -f1)" ;;
+        *) refuse "screen NAME takes scale N, mode WxH, on, off, or left-of, right-of, above or below another screen" ;;
+    esac
+    swaymsg -- output "\"$_id\"" "$_cmd" >/dev/null 2>&1 || swaymsg -- output "$_n" "$_cmd" >/dev/null 2>&1 || refuse "sway refused: output $_n $_cmd"
+    case $_cmd in enable|disable) ;; *) screen_save "$_id" "$_cmd" ;; esac
+    echo "$_said"
+}
+
 # The lock (Super+Escape; swayidle after 15 idle minutes and before the
 # machine sleeps): swaylock over the desktop's own wallpaper, in the
 # palette. At rest it draws the wallpaper alone, so a picture stands as

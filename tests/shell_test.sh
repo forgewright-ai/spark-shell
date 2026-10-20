@@ -1952,6 +1952,13 @@ mkdir -p "$conf"; ln -s "$share/50-pipewire.conf" "$conf/50-pipewire.conf"
 L on desktop --yes </dev/null >/dev/null 2>&1
 [ "$(cat "$HOME/.local/state/spark-shell/sound.alsa")" = 99-pipewire-default.conf ] && L off desktop >/dev/null 2>&1 && [ -L "$conf/50-pipewire.conf" ] && [ ! -e "$conf/99-pipewire-default.conf" ] \
     && ok "Void: a link of yours beside one spark-shell made: the record names its own, off removes only that" || bad "void sound half" "$(ls -l "$conf"; cat "$HOME/.local/state/spark-shell/sound.alsa" 2>&1)"
+# the brightness's groups: video and i2c, where they exist, each recorded; off desktop takes back only those
+void_sound
+printf 'video:x:13:\ni2c:x:20:\n' >> "$H/root/etc/group"
+L on desktop --yes </dev/null >/dev/null 2>&1
+grep -q "^video:x:13:$me\$" "$H/root/etc/group" && grep -q "^i2c:x:20:$me\$" "$H/root/etc/group" && [ "$(cat "$HOME/.local/state/spark-shell/light.groups")" = "$(printf 'video\ni2c')" ] \
+    && L off desktop >/dev/null 2>&1 && ! grep -q "^video:x:13:.*$me" "$H/root/etc/group" && ! grep -q "^i2c:x:20:.*$me" "$H/root/etc/group" && [ ! -e "$HOME/.local/state/spark-shell/light.groups" ] \
+    && ok "on desktop adds you to video and i2c for the brightness, recorded; off desktop takes you out of both" || bad "light groups" "$(cat "$H/root/etc/group" "$H/log")"
 # links and a membership that were there before: nothing recorded, nothing undone
 void_sound
 mkdir -p "$conf"; for f in 50-pipewire.conf 99-pipewire-default.conf; do ln -s "$share/$f" "$conf/$f"; done
@@ -1973,7 +1980,7 @@ printf '%s\n' "$out" | grep -q '^todo   sound        pulseaudio is installed, an
     && ok "Arch with pulseaudio: pipewire-pulse is left out of the install, one todo says how to take it" || bad "arch pulseaudio" "$out"
 grep -q '^PKG_SOUND=pipewire wireplumber alsa-pipewire libspa-bluetooth$' "$REPO/distro/void.env" && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa libspa-0.2-bluetooth$' "$REPO/distro/debian.env" \
     && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa$' "$REPO/distro/arch.env" && ok "distro: the sound's packages, each family's names" || bad "PKG_SOUND" "$(grep -h PKG_SOUND "$REPO"/distro/*.env)"
-grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd among them" || bad "void.env desktop"
+grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd among them" || bad "void.env desktop"
 
 # the login screen of v0.41 (greetd on tty1, spark-shell's files in
 # /etc/greetd): handed back to getty at the next boot by on, on desktop,
@@ -2084,8 +2091,7 @@ rm -f "$H/lx/wpctl" "$H/lx/pipewire" "$H/lx/wireplumber" "$H/lx/pipewire-pulse"
 # the lock and screen capture: the template's keys and swayidle, then the
 # verbs against stubs (swaylock, pgrep, grim, slurp, wl-copy, swaymsg, date)
 sw_t=$REPO/templates/.config/sway/config
-grep -qx "exec swayidle -w timeout 600 'swaymsg \"output \* power off\"' resume 'swaymsg \"output \* power on\"' timeout 900 '@REPO@/spark-shell desktop lock || swaylock -f' before-sleep '@REPO@/spark-shell desktop lock || swaylock -f'" "$sw_t" \
-    && grep -qx 'bindsym $mod+Escape exec @REPO@/spark-shell desktop lock || swaylock -f' "$sw_t" \
+grep -qx 'exec @IDLE_EXEC@' "$sw_t" && grep -qx 'bindsym $mod+Escape exec @REPO@/spark-shell desktop lock || swaylock -f' "$sw_t" \
     && ok "sway template: ten idle minutes turn the display off, fifteen lock, and it locks before sleep; Super+Escape locks now" || bad "lock template" "$(grep -n 'swayidle\|Escape' "$sw_t")"
 grep -qx 'bindsym Print exec @REPO@/spark-shell desktop capture screen' "$sw_t" && grep -qx 'bindsym Shift+Print exec @REPO@/spark-shell desktop capture area' "$sw_t" && grep -qx 'bindsym $mod+Print exec @REPO@/spark-shell desktop capture window' "$sw_t" \
     && ok "sway template: Print the screen, Shift+Print an area, Super+Print the window" || bad "capture keys" "$(grep -n Print "$sw_t")"
@@ -2163,6 +2169,111 @@ rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel window captur
     && ok "the dialog: capture runs through sway a second later, after the dialog closes" || bad "capture from the dialog" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
 rm -f "$H/lx/swaylock" "$H/lx/pgrep" "$H/lx/grim" "$H/lx/slurp" "$H/lx/wl-copy" "$H/lx/swaymsg" "$H/lx/date"
 
+# the display, the keyboard, the screens and the brightness: the renders
+# from the config, the verbs against stubs (swaymsg, pkill, brightnessctl,
+# ddcutil), the bar's blocks and the dialog's sections
+cat > "$H/lx/swaymsg" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$HOME/swaymsg.log"
+case "$*" in
+    "-t get_version") echo '{"major":1}' ;;
+    "-t get_inputs") echo '[{"type":"keyboard","xkb_layout_names":["English (US)","Portuguese (Brazil)"],"xkb_active_layout_index":1}]' ;;
+    "-t get_outputs") echo '[{"name":"eDP-1","make":"BOE","model":"0x0BCA","serial":"","active":true,"scale":1.0,"current_mode":{"width":1920,"height":1080},"rect":{"x":0,"y":0,"width":1920,"height":1080},"modes":[{"width":1920,"height":1080},{"width":1280,"height":720}]},{"name":"HDMI-A-1","make":"Lenovo Group Limited","model":"T24i-30","serial":"V30A1","active":true,"scale":1.0,"current_mode":{"width":1920,"height":1080},"rect":{"x":1920,"y":0,"width":1920,"height":1080},"modes":[{"width":1920,"height":1080}]}]' ;;
+esac
+STUB
+printf '#!/bin/sh\necho "pkill $*" >> "$HOME/swaymsg.log"\n' > "$H/lx/pkill"
+chmod +x "$H/lx/swaymsg" "$H/lx/pkill"
+printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+L on --yes >/dev/null 2>&1 </dev/null || :
+swc=$HOME/.config/sway/config
+grep -qx "exec swayidle -w timeout 600 'swaymsg \"output \* power off\"' resume 'swaymsg \"output \* power on\"' timeout 900 '$REPO/spark-shell desktop lock || swaylock -f' before-sleep '$REPO/spark-shell desktop lock || swaylock -f'" "$swc" \
+    && grep -qx "include \"$HOME/.config/spark-shell/screens.conf\"" "$swc" && [ -f "$HOME/.config/spark-shell/screens.conf" ] \
+    && grep -qx "# the keyboard: sway's own layout (spark-shell desktop keyboard us br sets some)" "$swc" \
+    && ok "sway render: swayidle at 10 and 15 minutes by default, the screens file included (and there), no keyboard line without KEYBOARD" || bad "display render" "$(grep -n 'swayidle\|include\|keyboard' "$swc")"
+rm -f "$HOME/swaymsg.log"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop display idle 0 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'display off never' ] && grep -qx 'DISPLAY_IDLE=0' "$HOME/.config/spark-shell/config" \
+    && grep -qx "exec swayidle -w timeout 900 '$REPO/spark-shell desktop lock || swaylock -f' before-sleep '$REPO/spark-shell desktop lock || swaylock -f'" "$swc" \
+    && grep -qx "pkill -u $(id -u) -x swayidle" "$HOME/swaymsg.log" && grep -q "^-- exec swayidle -w timeout 900 " "$HOME/swaymsg.log" \
+    && ok "desktop display idle 0: never off; the render and the running desktop's swayidle (restarted) follow" || bad "display idle 0" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop display lock 30 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'lock after 30 minutes' ] && grep -q "^exec swayidle -w timeout 1800 " "$swc" && ok "desktop display lock 30: the lock after 30 minutes" || bad "display lock 30" "rc=$rc $out"
+rc=0; out=$(PATH="$H/lx:$PATH" sh "$SH" desktop display idle soon 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: display idle takes minutes, 0 to 999 (0: never)' ] && ok "desktop display idle: a wrong word refused in one line" || bad "display idle word" "rc=$rc $out"
+rc=0; out=$(PATH="$H/lx:$PATH" sh "$SH" desktop display idle 08 2>&1) || rc=$?
+[ "$rc" = 1 ] && ! grep -q 'DISPLAY_IDLE=08' "$HOME/.config/spark-shell/config" && ok "desktop display idle 08: a leading zero refused (sh reads 08 as a bad octal)" || bad "display idle 08" "rc=$rc $out"
+printf 'DESKTOP=sway\nDISPLAY_IDLE=ten\n' > "$HOME/.config/spark-shell/config"
+rc=0; out=$(PATH="$H/lx:$PATH" sh "$SH" status 2>&1) || rc=$?
+[ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'DISPLAY_IDLE=ten in .*: minutes, 0 to 999 (0: never)$' && ok "config: DISPLAY_IDLE=ten is refused" || bad "display key" "rc=$rc $out"
+printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+# the keyboard
+mkdir -p "$H/xkb"; printf '! model\n  pc105  Generic\n\n! layout\n  us              English (US)\n  br              Portuguese (Brazil)\n\n! variant\n  intl            us: English (US, intl.)\n' > "$H/xkb/evdev.lst"
+rc=0; out=$(SPARK_SHELL_XKB_LST=$H/xkb/evdev.lst PATH="$H/lx:$PATH" sh "$SH" desktop keyboard us us+intl br 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'keyboard us us+intl br' ] && grep -qx 'KEYBOARD=us us+intl br' "$HOME/.config/spark-shell/config" \
+    && grep -qx 'input type:keyboard xkb_layout "us,us,br"' "$swc" && grep -qx 'input type:keyboard xkb_variant ",intl,"' "$swc" \
+    && ok "desktop keyboard us us+intl br: the config, and sway's layouts and variants line for line" || bad "keyboard set" "rc=$rc $out $(grep -n 'input' "$swc")"
+rc=0; out=$(SPARK_SHELL_XKB_LST=$H/xkb/evdev.lst PATH="$H/lx:$PATH" sh "$SH" desktop keyboard us zz 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: zz is no keyboard layout xkb knows (the two-letter names: us, br, de, fr, gb)' ] && grep -qx 'KEYBOARD=us us+intl br' "$HOME/.config/spark-shell/config" \
+    && ok "desktop keyboard: a layout xkb does not list is refused, the config kept" || bad "keyboard unknown" "rc=$rc $out"
+rm -f "$HOME/swaymsg.log"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop keyboard next 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx -- '-- input type:keyboard xkb_switch_layout next' "$HOME/swaymsg.log" && ok "desktop keyboard next: sway goes to the next layout" || bad "keyboard next" "rc=$rc $out $(cat "$HOME/swaymsg.log")"
+# the screens
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen 2>&1) || rc=$?
+[ "$rc" = 0 ] && printf '%s\n' "$out" | grep -qx 'HDMI-A-1  Lenovo Group Limited T24i-30 V30A1  1920x1080  scale 1  at 1920,0' && ok "desktop screen: each screen by port, make, model and serial, its mode, scale and place" || bad "screen list" "rc=$rc $out"
+rm -f "$HOME/swaymsg.log"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen t24i scale 1.5 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'HDMI-A-1 scale 1.5' ] && grep -qxF -- '-- output "Lenovo Group Limited T24i-30 V30A1" scale 1.5' "$HOME/swaymsg.log" \
+    && grep -qxF 'output "Lenovo Group Limited T24i-30 V30A1" scale 1.5' "$HOME/.config/spark-shell/screens.conf" \
+    && ok "desktop screen t24i scale 1.5: found by its model, sway takes it at once, the file keeps it by make, model and serial" || bad "screen scale" "rc=$rc $out $(cat "$HOME/swaymsg.log")"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 left-of edp-1 2>&1) || rc=$?
+SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 scale 1 >/dev/null 2>&1 || :
+[ "$rc" = 0 ] && [ "$out" = 'HDMI-A-1 left-of eDP-1' ] && grep -qxF 'output "Lenovo Group Limited T24i-30 V30A1" position -1920 0' "$HOME/.config/spark-shell/screens.conf" \
+    && [ "$(grep -c 'T24i-30' "$HOME/.config/spark-shell/screens.conf")" = 2 ] && grep -qxF 'output "Lenovo Group Limited T24i-30 V30A1" scale 1' "$HOME/.config/spark-shell/screens.conf" \
+    && ok "desktop screen left-of: placed by the other's edge; the file keeps one line per kind (the scale replaced, the place kept)" || bad "screen place" "rc=$rc $out $(cat "$HOME/.config/spark-shell/screens.conf")"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 off 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'eDP-1 off until the desktop starts again' ] && grep -qxF -- '-- output "BOE 0x0BCA Unknown" disable' "$HOME/swaymsg.log" && ! grep -q 'disable' "$HOME/.config/spark-shell/screens.conf" \
+    && ok "desktop screen off: sway's at once, by sway's own name (Unknown for no serial), never kept (a later start never comes up with no screen)" || bad "screen off" "rc=$rc $out $(cat "$HOME/.config/spark-shell/screens.conf")"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 mode 800x600 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: eDP-1 has no mode 800x600: 1280x720, 1920x1080' ] && ok "desktop screen mode: a mode the screen lacks refused, naming those it has" || bad "screen mode" "rc=$rc $out"
+# the brightness: a laptop's backlight
+mkdir -p "$H/sysb/class/backlight/amdgpu_bl1"
+printf '#!/bin/sh\necho "$*" >> "$HOME/bctl.log"\ncase "$*" in "-m -c backlight info") echo "amdgpu_bl1,backlight,120,47%%,255" ;; esac\n' > "$H/lx/brightnessctl"; chmod +x "$H/lx/brightnessctl"
+rc=0; out=$(SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" desktop display brightness up 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'brightness 52%' ] && grep -qx -- '-q -c backlight set 52%' "$HOME/bctl.log" && ok "desktop display brightness up: the backlight 5 up, through brightnessctl" || bad "brightness backlight" "rc=$rc $out $(cat "$HOME/bctl.log" 2>&1)"
+line=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null)
+full=$(printf '\342\226\210'); g=$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "gauge") | .full_text'); k=$(printf '%s' "$line" | jq -r '.[] | select(.name == "kb") | .full_text')
+[ "$(printf '%s' "$g" | LC_ALL=C grep -o "$full" | wc -l | tr -d ' ')" = 5 ] && [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "name") | .full_text')" = "<span foreground='#555555'>light</span>" ] && [ "$k" = "<span foreground='#555555'>kb</span> us+intl" ] \
+    && ok "bar: light with its gauge (47, five cells), and kb with the layout in use (sway's second, us+intl)" || bad "bar light kb" "$line"
+SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" bar light down; grep -qx -- '-q -c backlight set 42%' "$HOME/bctl.log" && ok "bar light down: the brightness keys, 5 down" || bad "bar light down" "$(cat "$HOME/bctl.log")"
+# a screen over DDC/CI: no backlight, ddcutil on the screen's bus
+cat > "$H/lx/ddcutil" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$HOME/ddc.log"
+case "$*" in
+    "detect --terse") printf 'Invalid display\n   I2C bus:  /dev/i2c-3\n\nDisplay 1\n   I2C bus:          /dev/i2c-5\n   Monitor:          LEN:T24i-30:V30A1\n' ;;
+    "--bus 5 getvcp 10 --terse") echo 'VCP 10 C 30 50' ;;
+esac
+STUB
+chmod +x "$H/lx/ddcutil"; rm -f "$HOME/.local/state/spark-shell/ddc.bus" "$HOME/.local/state/spark-shell/light"
+rc=0; out=$(SPARK_SHELL_SYS=$H/sysnone PATH="$H/lx:$PATH" sh "$SH" desktop display brightness 80 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'brightness 80%' ] && grep -qx -- '--bus 5 setvcp 10 80 --noverify' "$HOME/ddc.log" && ok "desktop display brightness 80: the screen's DDC/CI on its own bus (5, the first display that answers), no read back" || bad "brightness ddc" "rc=$rc $out $(cat "$HOME/ddc.log")"
+rm -f "$HOME/.local/state/spark-shell/light"
+out=$(SPARK_SHELL_SYS=$H/sysnone PATH="$H/lx:$PATH" sh "$SH" desktop display 2>&1)
+[ "$(printf '%s\n' "$out" | sed -n 2p)" = 'brightness 60%' ] && [ "$(grep -c '^detect' "$HOME/ddc.log")" = 1 ] && ok "desktop display: the brightness read from the screen (30 of 50, 60%); which screen answers is kept, asked once" || bad "display show" "$out $(cat "$HOME/ddc.log")"
+# the dialog's display and keyboard sections
+rows=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display --list 2>&1)
+printf '%s\n' "$rows" | grep -q 'display off after 10 minutes	display show$' && printf '%s\n' "$rows" | grep -q 'lock after 15 minutes	display show$' && printf '%s\n' "$rows" | grep -q 'brighter	display brightness up$' && printf '%s\n' "$rows" | grep -q 'screen HDMI-A-1 .* Lenovo Group Limited T24i-30 V30A1 1920x1080 scale 1	display show$' \
+    && ok "the dialog's display section: the minutes now, brighter and dimmer, a row per screen" || bad "display rows" "$rows"
+rows=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel keyboard --list 2>&1)
+printf '%s\n' "$rows" | grep -q 'br	keyboard use br$' && printf '%s\n' "$rows" | grep -q 'the next layout	keyboard next$' && ok "the dialog's keyboard section: the layouts, the one in use ticked, the others one Enter away, and the next" || bad "keyboard rows" "$rows"
+rm -f "$HOME/swaymsg.log"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel keyboard use br 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'keyboard br' ] && grep -qx -- '-- input type:keyboard xkb_switch_layout 2' "$HOME/swaymsg.log" && ok "the dialog: keyboard use br switches to its index (2)" || bad "keyboard use" "rc=$rc $out $(cat "$HOME/swaymsg.log")"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display idle 5 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'display off after 5 minutes' ] && grep -qx 'DISPLAY_IDLE=5' "$HOME/.config/spark-shell/config" && ok "the dialog: display idle 5 sets it" || bad "display idle from dialog" "rc=$rc $out"
+rm -rf "$H/lx/swaymsg" "$H/lx/pkill" "$H/lx/brightnessctl" "$H/lx/ddcutil" "$H/sysb" "$H/xkb"
+
 # macOS: the palette and the font are Terminal.app's profile, through the helper
 fresh
 console_stubs Darwin
@@ -2239,8 +2350,8 @@ spark-shell on desktop --dry-run shows every change.
 spark-shell changes how this machine works:
 
   packages     sway swaybg foot foot-terminfo ttf-dejavu curl openssh swayidle
-               swaylock grim slurp wl-clipboard pipewire wireplumber
-               pipewire-pulse pipewire-alsa (sudo)
+               swaylock grim slurp wl-clipboard brightnessctl ddcutil pipewire
+               wireplumber pipewire-pulse pipewire-alsa (sudo)
   login        logging in on tty1 starts the desktop
                Alt+F2 is a plain shell
 
@@ -2990,9 +3101,9 @@ done
 [ -z "$_wb" ] && [ "$(ls "$REPO/wallpaper" | wc -l | tr -d ' ')" = 20 ] && ok "wallpaper/: the ten shipped wallpapers, each its SVG and a 3840 by 2160 PNG, nothing else" || bad "wallpaper files" "$_wb $(ls "$REPO/wallpaper")"
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
-for s in lan wifi bt out mic bat clock theme wallpaper window bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 41 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the sixteen sections hold the 41 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+for s in lan wifi bt out mic bat clock theme wallpaper window display keyboard bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
+[ "$(grep -c '' "$H/tools.all")" = 46 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the eighteen sections hold the 46 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 # the rows carry the section's state, the dialog's subtitle, read again with every rows read
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows"}')"
 ans 2 | jq -r '.result.contents[0].text' | jq -e '.title == "theme" and (.state | type == "string" and length > 0)' >/dev/null \
@@ -3038,7 +3149,7 @@ case $order in "r1 notifications/progress r2 notifications/resources/updated r3"
     && ok "provide: the watcher saw the palette change made outside it; progress only grows" || bad "provide watcher" "$(cat "$H/mcp.out")"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 st=0; out=$(sh "$SH" provide spark 2>&1 >/dev/null) || st=$?
-[ "$st" -eq 1 ] && [ "$out" = 'spark-shell provide: spark is not one: lan, wifi, bt, out, mic, bat, clock, theme, wallpaper, window, bar, layout, apps, about, undo, files' ] && ok "provide spark: no provider (the dialog holds the chat itself), the list on stderr, exit 1" || bad "provide spark" "st=$st $out"
+[ "$st" -eq 1 ] && [ "$out" = 'spark-shell provide: spark is not one: lan, wifi, bt, out, mic, bat, clock, theme, wallpaper, window, display, keyboard, bar, layout, apps, about, undo, files' ] && ok "provide spark: no provider (the dialog holds the chat itself), the list on stderr, exit 1" || bad "provide spark" "st=$st $out"
 st=0; out=$(sh "$SH" provide theme wifi 2>&1 >/dev/null) || st=$?
 [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell provide: one section: lan, ' && ok "provide with two words: one section, refused on stderr" || bad "provide two" "st=$st $out"
 # the files provider: the host's roots, a folder's rows, three read-only tools held to four lines
@@ -3082,7 +3193,7 @@ for kv in DIALOG_ATTACH=maybe DIALOG_MODEL=1 DIALOG_TALK=off 'DIALOG_ATTACH_TYPE
 done
 ok "config: DIALOG_ATTACH, DIALOG_MODEL and DIALOG_TALK take yes or no, DIALOG_ATTACH_TYPES lower-case types; anything else is refused in one line"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" \
+grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u KEYBOARD'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" \
     && ok "config: the four keys are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
 # the want verb: one entry for words, the plan as JSON, a file asked about
 cat > "$H/.local/bin/spark" <<'STUB'
@@ -3199,7 +3310,7 @@ printf '%s\n' "$(rq 1 resources/read '{"uri":"spark-shell://about/rows"}')" | sh
     && [ "$(jq -c '.rows[0] | [.columns, .text, .group]' "$H/about.json")" = '[["Super+Return"],"opens a terminal window.","keys 1"]' ] \
     && [ "$(jq -c '.short' "$H/about.json")" = '["about:open"]' ] && jq -e '.rows[] | select(.id == "about:open") | .tool.name == "about_open"' "$H/about.json" >/dev/null \
     && ok "provide about: a row per key sentence, the combo a column, in groups; the address; the short form is the row that opens it" || bad "about rows" "$(head -c 400 "$H/about.json")"
-sh "$SH" desktop keys | grep -v '^\(\(Super\|Ctrl\|Alt\|Shift\)+[^ ,]*\|Print\) [a-z]' | grep -v '^The volume\|^Typing exit' > "$H/keys.odd" || :
+sh "$SH" desktop keys | grep -v '^\(\(Super\|Ctrl\|Alt\|Shift\)+[^ ,]*\|Print\) [a-z]' | grep -v '^The volume\|^The brightness\|^Typing exit' > "$H/keys.odd" || :
 [ ! -s "$H/keys.odd" ] && ok "desktop keys: each sentence opens with one combo and a verb (the about's two columns)" || bad "key sentences" "$(cat "$H/keys.odd")"
 if [ "$(uname -s)" = Darwin ]; then
     st=0; out=$(sh "$SH" dialog 2>&1) || st=$?
@@ -3260,19 +3371,19 @@ STUB
     chmod +x "$H/.local/bin/spark"; mcpf=$HOME/.config/spark/mcp.env; mkdir -p "$HOME/.config/spark"; rm -f "$HOME/mcp.log"
     printf 'MCP_SERVER_FILES="/opt/mine/files-server"\nMCP_SERVER_WIFI="/old/clone/spark-shell provide wifi"\n' > "$mcpf"
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes 2>&1 || :)
-    printf '%s\n' "$out" | grep -q "^ok     mcp          15 providers on spark's MCP list: the prompt line and spark do know the desktop's tools$" \
+    printf '%s\n' "$out" | grep -q "^ok     mcp          17 providers on spark's MCP list: the prompt line and spark do know the desktop's tools$" \
         && printf '%s\n' "$out" | grep -q "^todo   mcp          already on spark's MCP list as servers of yours, left as they are: files$" \
         && grep -qx 'MCP_SERVER_FILES="/opt/mine/files-server"' "$mcpf" && grep -qx "MCP_SERVER_WIFI=\"$C/spark-shell provide wifi\"" "$mcpf" && grep -qx "MCP_SERVER_CLOCK=\"$C/spark-shell provide clock\"" "$mcpf" \
-        && [ "$(grep -c '^MCP_SERVER_' "$mcpf")" = 16 ] && grep -qx 'mcp rm wifi' "$HOME/mcp.log" && ! grep -q 'mcp add files' "$HOME/mcp.log" \
+        && [ "$(grep -c '^MCP_SERVER_' "$mcpf")" = 18 ] && grep -qx 'mcp rm wifi' "$HOME/mcp.log" && ! grep -q 'mcp add files' "$HOME/mcp.log" \
         && ok "on desktop: each provider on spark's MCP list through spark mcp add; a server of yours under one of the names stays; an older clone's line replaced" || bad "mcp add" "$(printf '%s\n' "$out" | grep mcp); $(cat "$mcpf")"
     rm -f "$HOME/mcp.log"; SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes >/dev/null 2>&1 || :
-    [ ! -e "$HOME/mcp.log" ] && sh "$C/spark-shell" check 2>&1 | grep -q "^warn   mcp          15 of 16 providers on spark's MCP list -- spark-shell on desktop$" \
+    [ ! -e "$HOME/mcp.log" ] && sh "$C/spark-shell" check 2>&1 | grep -q "^warn   mcp          17 of 18 providers on spark's MCP list -- spark-shell on desktop$" \
         && ok "on desktop again: nothing asked of spark; check counts the providers on the list" || bad "mcp again" "$(cat "$HOME/mcp.log" 2>&1); $(sh "$C/spark-shell" check 2>&1 | grep mcp)"
     out=$(sh "$C/spark-shell" off desktop --dry-run 2>&1 || :)
-    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt out mic bat clock theme wallpaper window bar layout apps about undo off spark's MCP list$" \
+    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt out mic bat clock theme wallpaper window display keyboard bar layout apps about undo off spark's MCP list$" \
         && ok "off desktop --dry-run: the lines that are ours, by name; a server of yours is not among them" || bad "mcp off would" "$(printf '%s\n' "$out" | grep mcp)"
     st=0; out=$(sh "$C/spark-shell" off desktop 2>&1) || st=$?
-    printf '%s\n' "$out" | grep -q "^ok     mcp          15 providers off spark's MCP list$" && [ "$(cat "$mcpf")" = 'MCP_SERVER_FILES="/opt/mine/files-server"' ] \
+    printf '%s\n' "$out" | grep -q "^ok     mcp          17 providers off spark's MCP list$" && [ "$(cat "$mcpf")" = 'MCP_SERVER_FILES="/opt/mine/files-server"' ] \
         && ok "off desktop: spark-shell's lines off spark's MCP list through spark mcp rm, a server of yours left" || bad "mcp off" "st=$st $(printf '%s\n' "$out" | grep mcp); $(cat "$mcpf")"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"; rm -f "$mcpf" "$H/.local/bin/spark"
     SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes >/dev/null 2>&1 || :
@@ -3462,7 +3573,7 @@ sh "$SH" -h > "$voice/help"
 grep '^ *#' "$REPO/templates/.config/sway/config" > "$voice/sway-config-comments"
 out_words="colours?|desks?|rooms?|seat|login box|marks?|marked|player|this machine's cycles|the forge wallpaper|greeter|the box|stranger|newcomer|founder|inventory|the hands|shell layer|monitors?"
 contractions="[A-Za-z]*n't\b|\bit's\b|\byou'll\b|\bwe're\b|\bthat's\b|\bthere's\b|\blet's\b"
-caps_ok='ASCII|ALSA|A2DP|POSIX|JSON|SGR|SBOM|PATH|NAME|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|LOGIN|WALLPAPER|ALPHA|WINDOWS|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
+caps_ok='KEYBOARD|ASCII|ALSA|A2DP|POSIX|JSON|SGR|SBOM|PATH|NAME|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|LOGIN|WALLPAPER|ALPHA|WINDOWS|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
 for n in README.md CHANGELOG.md CREDITS.md config.example help sway-config-comments; do
     f=$voice/$n
     # (a) the words that are out, as whole words in any case
