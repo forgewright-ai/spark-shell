@@ -4686,7 +4686,7 @@ provide_roots() {   # provide_roots RESULT -- the host's roots, each a folder th
 # only while it still has. The dialog is an MCP host: each section below
 # is `spark-shell provide SECTION`, started by the dialog with no shell.
 DIALOG_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-dialog
-DIALOG_URL=${SPARK_SHELL_DIALOG_URL:-https://github.com/forgewright-ai/spark-shell/releases/download}   # the release assets; the tests point it at a file:// folder
+DIALOG_URL=${SPARK_SHELL_DIALOG_URL:-https://github.com/forgewright-ai/spark-shell/releases/download}   # the release assets; the tests point it at a file:// folder, or none
 dialog_target() { case $(uname -m) in x86_64|amd64) echo x86_64-linux-musl ;; *) return 1 ;; esac; }   # the builds there are: x86_64 alone today
 dialog_want_sha() {   # -> the sha256 the release tag's own tree pins for this machine (never the working copy's file), or nothing
     _dk=DIALOG_SHA256_$(dialog_target | tr 'a-z-' 'A-Z_'); _rt=$(release_tag) || return 0
@@ -4710,6 +4710,7 @@ dialog_install() {   # the dialog's row of `on`: in place as the tree pins it, o
     _rt=$(release_tag) || { row todo dialog "this clone is past its release: the dialog comes with the next tag"; return 0; }
     _dw=$(dialog_want_sha); [ -n "$_dw" ] || { row todo dialog "$_rt pins no build for $_dt in dialog/dialog.env"; return 0; }
     if dialog_ok; then ok dialog "$DIALOG_BIN, the sha256 $_rt pins"; return 0; fi
+    [ "$DIALOG_URL" != none ] || { skip dialog "no release to fetch it from (SPARK_SHELL_DIALOG_URL=none)"; return 0; }
     tag_signed "$_rt" || { row todo dialog "$_rt is not signed by a key in allowed-signers: no dialog installed"; return 0; }
     command -v curl >/dev/null 2>&1 || { row todo dialog "curl is not installed: the dialog cannot be fetched (spark-shell on installs it)"; return 0; }
     need dialog "fetch spark-dialog for $_rt and check its sha256" || return 0

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.81
+
+- Changed: the test suite fetches no dialog from GitHub. On a tag, the
+  checkout is at its release and the suite's own `on` raced the release
+  job for the file; `SPARK_SHELL_DIALOG_URL=none` now says there is no
+  release to fetch from, and the dialog's own tests keep their local
+  folder.
+
 ## v0.80.1
 
 - Fixed: a theme set from the dialog changed every window but the

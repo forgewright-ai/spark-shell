@@ -28,6 +28,9 @@ fresh() {   # a new throwaway HOME with the stubs in place
     # the open terminals theme repaints: plain files under $H/pts, never
     # this machine's /dev/pts (a test must not repaint the terminal it runs in)
     export SPARK_SHELL_PTS_DIR=$H/pts
+    # no release to fetch the dialog from: on a tag the checkout is at its release, and a download
+    # would race the release job (the dialog's own tests point it at a file:// folder)
+    export SPARK_SHELL_DIALOG_URL=none
     # the tty is a stub: TEST_TTY=/dev/ttyN is a console, unset is ssh;
     # sway's runtime dir is a login manager's (the desktop tests unset it)
     printf '#!/bin/sh\n[ -n "${TEST_TTY:-}" ] || { echo "not a tty"; exit 1; }\necho "$TEST_TTY"\n' > "$H/.local/bin/tty"
