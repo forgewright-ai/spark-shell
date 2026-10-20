@@ -1,7 +1,26 @@
 # Changelog
 
-## v0.81
+## v0.80.2
 
+From the owner's first look at v0.80.
+
+- Changed: Talk is a row of Settings, showing click the mic or off,
+  not a control in the footer. The footer is Attach, the model and the
+  mic, and the mic shows only while talk is click the mic.
+- Changed: Files opens at your home folder, picked, typed or from the
+  bar, not at a list whose one row is that folder.
+- Changed: the Calendar's hint draws the left and right arrows apart,
+  so they read as two keys.
+- Changed: the about lists the keys alone, then the version with its
+  licence, then the address; the version left the header. The
+  sentences with no key (the volume and brightness keys, typing exit)
+  stay in `spark-shell desktop keys` and the README. The keyboard
+  layout key reads "goes to the next keyboard layout." It ran past the
+  window before.
+- Fixed: `spark-shell check` and `spark-shell bar` read the bar's line,
+  and a reminder due then had its one chime rung there, from a shell
+  that may reach no sound, and never again on the bar. They now look
+  without ringing; the chime is the bar's and the tmux line's alone.
 - Changed: the test suite fetches no dialog from GitHub. On a tag, the
   checkout is at its release and the suite's own `on` raced the release
   job for the file; `SPARK_SHELL_DIALOG_URL=none` now says there is no

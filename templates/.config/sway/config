@@ -147,7 +147,7 @@ bindsym Print exec @REPO@/spark-shell desktop capture screen
 bindsym Shift+Print exec @REPO@/spark-shell desktop capture area
 bindsym $mod+Print exec @REPO@/spark-shell desktop capture window
 
-# key: Super+Ctrl+space goes to the next keyboard layout, with more than one.
+# key: Super+Ctrl+space goes to the next keyboard layout.
 bindsym $mod+Ctrl+space exec @REPO@/spark-shell desktop keyboard next
 
 # key: The volume and mute keys set the sound, and the mic mute key the mic.

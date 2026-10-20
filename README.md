@@ -213,7 +213,7 @@ row shows them again.
     Super+1..0 go to workspaces 1 to 10; with Shift the window goes there.
     Super+Escape locks the screen; it locks by itself after idle minutes.
     Print captures the screen, Shift+Print an area, Super+Print the window.
-    Super+Ctrl+space goes to the next keyboard layout, with more than one.
+    Super+Ctrl+space goes to the next keyboard layout.
     The volume and mute keys set the sound, and the mic mute key the mic.
     The brightness keys set the screen's brightness.
     Typing exit in the first window also leaves the desktop.
@@ -392,7 +392,7 @@ a key, and nothing else is.
 The home lists six places: Apps, Files, Workspace (windows and
 layouts), Notes, Calendar (the months and the reminders) and Settings
 (sound, microphone, Wi-Fi, Bluetooth, display, keyboard, theme,
-wallpaper, the bar, Connections and About). A place shows only where
+wallpaper, the bar, Talk, Connections and About). A place shows only where
 this machine has it. The down arrow moves from the prompt into the
 list, and up from the first row comes back. A row wears a sign where
 there is a state: a dot is in use or connected, a ring is available, a
@@ -444,7 +444,7 @@ and Page Down scroll it.
 Above the list, what was said and done, the newest first: a check is
 a step done, a cross one refused, and an Undo row takes the last step
 back while it can be. At the bottom, under a rule, the controls in plain
-text: Attach, the model, Talk, and the mic at the right. Tab moves
+text: Attach, the model, and the mic at the right. Tab moves
 through them and the one in focus is lit; Shift+Tab goes back.
 
 - Attach picks one text or Markdown file from your home (the types
@@ -461,11 +461,11 @@ through them and the one in focus is lit; Shift+Tab goes back.
   says what changes and for whom (every client of that spark), and Enter
   applies it; Esc keeps the one in use. Your draft and file stay. Another
   server or a cloud provider is not available yet, and is shown as such.
-- Talk picks how you talk: click the mic, or off. Clicking the mic
-  listens through spark's own voice until a pause and puts the words in
-  the draft at the cursor, to read and change; Enter still sends. Esc,
-  a click on the mic again, or leaving the window stops it, and nothing
-  is kept. Holding Space to talk waits for a newer spark.
+- The mic shows while Settings > Talk is click the mic (off hides it).
+  Clicking it listens through spark's own voice until a pause and puts
+  the words in the draft at the cursor, to read and change; Enter still
+  sends. Esc, a click on the mic again, or leaving the window stops it,
+  and nothing is kept. Holding Space to talk waits for a newer spark.
 
 `DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide the controls.
 

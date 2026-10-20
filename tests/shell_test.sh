@@ -2356,6 +2356,12 @@ printf '%s' "$j" | jq -e '.[] | select(.name == "reminders_add") | .inputSchema.
 rows=$(NL --list)
 printf '%s\n' "$rows" | grep -q 'new reminder	reminders add$' && printf '%s\n' "$rows" | grep -q 'reminders  [a-z].*	reminders more$' \
     && ok "the home list: new reminder, and the next reminder ahead, which opens the rest" || bad "home reminders" "$rows"
+# a look at the bar (check, status) rings no chime and spends none
+printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:spark-shell-test-look@box\r\nDTSTART:%s\r\nSUMMARY:look only\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' "$(ago 2)" > "$HOME/calendar/look.ics"
+rm -f "$HOME/chime.log"; SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" check >/dev/null 2>&1 || :; SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar >/dev/null 2>&1 || :; sleep 1
+c0=$(grep -c . "$HOME/chime.log" 2>/dev/null || :); SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once >/dev/null 2>&1; sleep 1; c1=$(grep -c . "$HOME/chime.log" 2>/dev/null || :)
+[ "${c0:-0}" = 0 ] && [ "${c1:-0}" = 1 ] && ok "a reminder due: check and bar look without ringing; the bar's own pass rings it once" || bad "look rings" "check/bar=$c0 then bar status=$c1"
+rm -f "$HOME/calendar/look.ics"
 # notes and reminders as commands of their own
 out=$(SWAYSOCK=$H/sock EDITOR=true PATH="$H/lx:$PATH" sh "$SH" notes 2>&1); printf '%s\n' "$out" | grep -q '^  [a-zA-Z].* *groceries for the weekend$' && printf '%s\n' "$out" | grep -q '^  Jan 1  *the jabra mic levels$' \
     && ok "spark-shell notes: each note with its date, the newest first" || bad "notes command" "$out"

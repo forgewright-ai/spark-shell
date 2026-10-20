@@ -22,7 +22,7 @@
                                         
                                         
   ────────────────────────────────────  
-  Model ⌄   Talk ⌄             Mic off  
+  gemma4-26b-a4b ⌄             Mic off  
                                         
 
 f.f.F.F.F.F.f.f.f.f.f.f.f.f.f.f.f.m.m.m.m.m.m.m.m.m.m.m.m.m.m.m.m.m.m.f.f.m.f.f.

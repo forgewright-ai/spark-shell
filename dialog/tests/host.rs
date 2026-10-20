@@ -635,7 +635,7 @@ fn left_and_right_move_the_month_in_the_calendar_and_nowhere_else() {
     app.left();
     assert_eq!(app.month_offset, 1);
     let said = app.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
-    assert!(said.ends_with("Month \u{2190}\u{2192}"), "{}", said);
+    assert!(said.ends_with("Month \u{2190} \u{2192}"), "{}", said);
     typed(&mut app, "ab");
     app.left();
     assert_eq!((app.month_offset, app.cursor), (1, 1), "with words typed, left moves the cursor");
@@ -1061,4 +1061,37 @@ fn a_theme_step_hands_the_dialog_its_new_palette_and_no_other_provider_can() {
             label
         );
     }
+}
+
+#[test]
+fn files_opens_at_the_home_folder_and_talk_is_a_setting_not_a_control() {
+    let home = std::env::var("HOME").unwrap();
+    let (mut app, rx, tx) = app_with(&["files"]);
+    app.cfg.talk = true;
+    app.voice_on = true;
+    app.talk = spark_dialog::app::Talk::Off;
+    app.servers.push(stub(0, "files", files_stub(Arc::new(Mutex::new(vec![])), home), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
+    // typed or picked, Files is the home folder, never the one-row list with ~ in it
+    typed(&mut app, "files");
+    app.enter();
+    assert!(matches!(app.view, View::Folder(0, _)), "{:?}", app.view);
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
+    app.escape();
+    assert_eq!(app.view, View::Home, "Esc goes straight back home");
+    // talk: a row of Settings, and the footer has no Talk control; the mic only while it is click to talk
+    assert!(!app.chips().contains(&3) && !app.chips().contains(&2));
+    typed(&mut app, "settings");
+    app.enter();
+    let talk = app
+        .items()
+        .iter()
+        .position(|i| matches!(i, Item::Setting(k) if spark_dialog::app::SETTINGS[*k].0 == "talk"));
+    assert!(talk.is_some(), "{:?}", app.items());
+    typed(&mut app, "talk");
+    app.enter();
+    assert_eq!(app.view, View::Talk);
+    app.talk = spark_dialog::app::Talk::Click;
+    assert_eq!(app.chips(), vec![3]);
 }

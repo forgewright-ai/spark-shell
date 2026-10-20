@@ -68,7 +68,7 @@ pub const DESTS: [Dest; 6] = [
 pub const SETTINGS_DEST: usize = 5;
 pub const CALENDAR_DEST: usize = 4;
 /// Settings: a section each, then Connections and About, in this order.
-pub const SETTINGS: [(&str, &str, &str); 13] = [
+pub const SETTINGS: [(&str, &str, &str); 14] = [
     ("out", "Sound", "Output and volume"),
     ("mic", "Microphone", "Input and level"),
     ("wifi", "Wi-Fi", "Networks"),
@@ -80,6 +80,7 @@ pub const SETTINGS: [(&str, &str, &str); 13] = [
     ("wallpaper", "Wallpaper", "The desktop picture"),
     ("bar", "Bar", "The status bar"),
     ("bat", "Battery", "Charge"),
+    ("talk", "Talk", "Click the mic, or off"),
     ("connections", "Connections", "Tools and the model"),
     ("about", "About", "Version and keys"),
 ];
@@ -706,6 +707,12 @@ impl App {
                     }
                     self.providers[idx].rows = rows;
                     self.providers[idx].ready = true;
+                    if self.view == View::Section(idx) {
+                        if let Some(root) = self.files_root(idx) {
+                            self.view = View::Folder(idx, root.clone());
+                            self.read_folder(idx, &root);
+                        }
+                    }
                 }
             }
             Kind::Folder => {
@@ -796,7 +803,7 @@ impl App {
         SETTINGS
             .iter()
             .enumerate()
-            .filter(|(_, (l, _, _))| *l == "connections" || self.providers.iter().any(|p| &p.label == l && p.dead.is_none()))
+            .filter(|(_, (l, _, _))| *l == "connections" || (*l == "talk" && self.cfg.talk) || self.providers.iter().any(|p| &p.label == l && p.dead.is_none()))
             .map(|(i, _)| i)
             .collect()
     }
@@ -1325,6 +1332,17 @@ impl App {
     }
 
     fn go(&mut self, v: View) {
+        // the files section is its home folder: its one row, ~, is no stop of its own
+        if let View::Section(p) = v {
+            if let Some(root) = self.files_root(p) {
+                self.came_from.push(self.view.clone());
+                self.view = View::Folder(p, root.clone());
+                self.sel = 0;
+                self.in_list = false;
+                self.scroll = 0;
+                return self.read_folder(p, &root);
+            }
+        }
         self.came_from.push(self.view.clone());
         self.view = v;
         self.sel = 0;
@@ -1342,6 +1360,9 @@ impl App {
         }
         if w == "connections" {
             return Some(View::Connections);
+        }
+        if w == "talk" && self.cfg.talk {
+            return Some(View::Talk);
         }
         if w == "about" && self.about_idx.is_some() {
             return Some(View::About);
@@ -1489,19 +1510,15 @@ impl App {
             }
             Item::Dest(d) => {
                 let v = self.dest_view(d);
-                if let View::Section(p) = v {
-                    if self.providers[p].label == "files" {
-                        if let Some(root) = self.providers[p].rows.rows.iter().find_map(|r| r.children.clone()) {
-                            return self.open_children(p, &root);
-                        }
-                    }
-                }
                 self.go(v);
             }
             Item::Setting(i) => {
                 let label = SETTINGS[i].0;
                 if label == "connections" {
                     return self.go(View::Connections);
+                }
+                if label == "talk" {
+                    return self.go(View::Talk);
                 }
                 if let Some(v) = self.place(label) {
                     self.go(v);
@@ -1511,7 +1528,7 @@ impl App {
             Item::TalkOpt(t) => {
                 self.talk = t;
                 talk_keep(t);
-                self.say(Sign::Done, if t == Talk::Off { "talk off" } else { "click Mic to talk" });
+                self.say(Sign::Done, if t == Talk::Off { "talk off" } else { "click the mic to talk" });
                 if let Some(v) = self.came_from.pop() {
                     self.go_back(v);
                 }
@@ -1653,13 +1670,22 @@ impl App {
         }
     }
 
+    /// The home folder's uri when provider p is the files section and its rows have come.
+    fn files_root(&self, p: usize) -> Option<String> {
+        let prov = self.providers.get(p)?;
+        if prov.label != "files" {
+            return None;
+        }
+        prov.rows.rows.iter().find_map(|r| r.children.clone())
+    }
+
     /// The files provider, when one is running and handed a root.
     fn files(&self) -> Option<usize> {
         self.providers.iter().position(|p| p.label == "files" && p.dead.is_none())
     }
 
-    /// The footer's controls and the attachment's Remove: 0 attach, 1 the model, 2 talk, 3 the mic,
-    /// 4 remove the file attached.
+    /// The footer's controls and the attachment's Remove: 0 attach, 1 the model, 3 the mic, 4 remove
+    /// the file attached. How talk works is a setting (Settings > Talk), not a control.
     pub fn chip(&mut self, c: usize) {
         self.chip_focus = None;
         match c {
@@ -1680,11 +1706,6 @@ impl App {
             1 if self.cfg.model => {
                 if self.view != View::Models {
                     self.go(View::Models);
-                }
-            }
-            2 if self.cfg.talk => {
-                if self.view != View::Talk {
-                    self.go(View::Talk);
                 }
             }
             3 if self.cfg.talk && self.voice_on && self.talk == Talk::Click => {
@@ -1716,9 +1737,6 @@ impl App {
         }
         if self.cfg.model && self.model_name.is_some() {
             v.push(1);
-        }
-        if self.cfg.talk {
-            v.push(2);
         }
         if self.cfg.talk && self.voice_on && self.talk == Talk::Click {
             v.push(3);
@@ -2193,7 +2211,6 @@ impl App {
         match &self.view {
             View::Section(p) => self.providers[*p].title.clone(),
             View::Folder(..) => self.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default(),
-            View::About => self.about_idx.map(|i| format!("spark-shell {}", self.providers[i].version)).unwrap_or_default(),
             _ => String::new(),
         }
     }
@@ -2280,7 +2297,7 @@ impl App {
         v.extend(key("New line", "Shift+Enter"));
         if self.input.is_empty() && self.is_calendar() {
             v.push(gap());
-            v.extend(key("Month", "\u{2190}\u{2192}"));
+            v.extend(key("Month", "\u{2190} \u{2192}"));
         }
         v
     }

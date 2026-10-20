@@ -1,7 +1,8 @@
 //! The drawing: one grid the terminal's size (60 by 40 cells as made), every character a cell, every
 //! color a slot of the palette. No frame. The header's one row (the title, the progress, the date and
 //! the time, close); the prompt of two rows; what a key does now; the content (the exchange, the newest
-//! turn first, then the view's list), scrolled as it needs; a rule; the footer's controls.
+//! turn first, then the view's list), scrolled as it needs; a rule; the footer's controls (Attach, the
+//! model, the mic).
 
 use crate::app::{App, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, PLACEHOLDER, SETTINGS};
 use crate::palette::Palette;
@@ -339,7 +340,9 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     let w = pen.w;
     let chips = app.chips();
     let mic = if app.mode == Mode::Listening { "Listening" } else { "Mic off" };
-    let mic_w = if app.cfg.talk { cells(mic) as u16 + 2 } else { 0 };
+    // the mic while talk is click to talk; how talk works is a setting
+    let mic_on = app.cfg.talk && app.talk == Talk::Click;
+    let mic_w = if mic_on { cells(mic) as u16 + 2 } else { 0 };
     let mut x = 1;
     if chips.contains(&0) {
         let e = pen.control(x, y, "Attach", app.chip_focus == Some(0), app.attachment.is_some(), false);
@@ -347,19 +350,14 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
         x = e + 1;
     }
     if app.cfg.model && app.model_name.is_some() {
-        let talk_w = if app.cfg.talk { 9 } else { 0 };
-        let room = (w.saturating_sub(x + talk_w + mic_w + 6)) as usize;
+        let room = (w.saturating_sub(x + mic_w + 6)) as usize;
         let full = app.model_name.clone().unwrap_or_default();
         // the model's whole name, or the word for it where the name does not fit whole
         let name = format!("{} {}", if cells(&full) + 2 <= room { full.as_str() } else { "Model" }, MENU);
         let e = pen.control(x, y, &name, app.chip_focus == Some(1), false, false);
         drawn.chips.push((x, e, y, 1));
-        x = e + 1;
     }
-    if app.cfg.talk {
-        let t = format!("Talk {}", MENU);
-        let e = pen.control(x, y, &t, app.chip_focus == Some(2), false, false);
-        drawn.chips.push((x, e, y, 2));
+    if mic_on {
         let mx = w - 1 - mic_w;
         let live = chips.contains(&3);
         let e = pen.control(mx, y, mic, app.chip_focus == Some(3), app.mode == Mode::Listening, true);
@@ -415,12 +413,15 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             let (label, name, purpose) = SETTINGS[*i];
             pen.put(2, y, name, pal.fg, false, lit);
             // a section's own state reads better than its purpose where it has one (on, a level, a name)
-            let state = app
-                .providers
-                .iter()
-                .find(|p| p.label == label)
-                .map(|p| p.title.clone())
-                .filter(|t| !t.is_empty() && label != "about");
+            let state = if label == "talk" {
+                Some(if app.talk == Talk::Off { "Off" } else { "Click the mic" }.to_string())
+            } else {
+                app.providers
+                    .iter()
+                    .find(|p| p.label == label)
+                    .map(|p| p.title.clone())
+                    .filter(|t| !t.is_empty() && label != "about")
+            };
             let words = state.unwrap_or_else(|| purpose.to_string());
             pen.put(PURPOSE_X, y, &cut(&words, (w - PURPOSE_X - 4) as usize), pal.muted, false, lit);
             pen.put(w - 3, y, MORE, pal.muted, false, lit);
@@ -446,7 +447,7 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             let on = app.talk == *t;
             let (g, c) = if on { (DOT, pal.accent) } else { (RING, pal.fg) };
             pen.put(4, y, g, c, false, lit);
-            let words = if *t == Talk::Click { "Click Mic to talk" } else { "Off" };
+            let words = if *t == Talk::Click { "Click the mic to talk" } else { "Off" };
             pen.put(6, y, words, if app.voice_on { pal.fg } else { pal.muted }, false, lit);
         }
         Item::Conn(k) => {
@@ -665,52 +666,43 @@ fn calendar(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> u16 {
     low
 }
 
+/// The about: the keys, each a chip and its sentence, in their groups; under them the version with
+/// its licence, and the address. A sentence with no key (the media keys, typing exit) stays in
+/// `spark-shell desktop keys` and the README, not here.
 fn about(app: &App, pen: &mut Pen, top: u16, bottom: u16) {
     let pal = pen.pal.clone();
     let w = pen.w;
     let Some(i) = app.about_idx else { return };
     let p = &app.providers[i];
+    let keys_end = bottom.saturating_sub(3); // a blank row, the version, the address
     let mut y = top;
-    if !p.title.is_empty() {
-        pen.put(2, y, &p.title, pal.muted, false, false);
-        y += 2;
-    }
     let mut group: Option<String> = None;
     for r in &p.rows.rows {
-        if r.tool.is_some() || r.children.is_some() {
+        let Some(key) = r.columns.first() else { continue };
+        if r.tool.is_some() || r.children.is_some() || y >= keys_end {
             continue;
-        }
-        if y >= bottom {
-            break;
         }
         if r.group != group && group.is_some() {
             y += 1;
         }
         group = r.group.clone();
-        if let Some(key) = r.columns.first() {
-            pen.chip(2, y, key, false);
-            for (k, part) in wrap(&r.text, (w - ABOUT_COL - 2) as usize).into_iter().enumerate() {
-                if k > 0 {
-                    y += 1;
-                }
-                if y >= bottom {
-                    break;
-                }
-                pen.put(ABOUT_COL, y, &part, pal.fg, false, false);
+        pen.chip(2, y, key, false);
+        for (k, part) in wrap(&r.text, (w - ABOUT_COL - 2) as usize).into_iter().enumerate() {
+            if k > 0 {
+                y += 1;
             }
-        } else if r.sign == "opens" {
-            let x = pen.put(2, y, "MIT", pal.muted, false, false);
-            let x = pen.put(x, y, SEP, pal.muted, false, false);
-            pen.put(x, y, &r.text, pal.accent, false, false);
-        } else {
-            for (k, part) in wrap(&r.text, (w - 4) as usize).into_iter().enumerate() {
-                if k > 0 {
-                    y += 1;
-                }
-                pen.put(2, y, &part, pal.fg, false, false);
+            if y >= keys_end {
+                break;
             }
+            pen.put(ABOUT_COL, y, &part, pal.fg, false, false);
         }
         y += 1;
+    }
+    let y = (y + 1).min(keys_end + 1);
+    let x = pen.put(2, y, &format!("spark-shell {}", p.version), pal.fg, false, false);
+    pen.put(x, y, &format!("{}MIT", SEP), pal.muted, false, false);
+    if let Some(addr) = p.rows.rows.iter().find(|r| r.id == "about:address") {
+        pen.put(2, y + 1, &addr.text, pal.accent, false, false);
     }
 }
 

@@ -2354,7 +2354,7 @@ cmd_check() {
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk top ok "na (no desktop)"
     elif [ "$DESKTOP_BAR" != yes ]; then chk top ok "hidden (spark-shell bar on --desktop shows it)"
     elif ! command -v jq >/dev/null 2>&1; then chk top warn "jq is not installed: the bar takes no clicks" "spark-shell on"
-    elif line=$(bar_status --once 2>/dev/null) && printf '%s' "$line" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
+    elif line=$(REM_LOOK=1 bar_status --once 2>/dev/null) && printf '%s' "$line" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
         chk top ok "the bar draws $(printf '%s' "$line" | jq -r '[.[] | select(.name != "div" and .name != "logo") | .name] | unique | join(", ")')"
     else chk top fail "spark-shell bar status draws nothing" "spark-shell on"; fi
     if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then sound_check; fi
@@ -2821,7 +2821,7 @@ bar_volume_key() {   # bar_volume_key up|down|mute|mic -- the keyboard's volume 
         *) refuse_in bar "volume takes up, down, mute or mic" ;; esac
     bar_redraw
 }
-bar_names() { bar_status --once 2>/dev/null | jq -r '[.[] | select(.name != "div" and .name != "logo") | .name] | unique | join(", ")' 2>/dev/null || :; }   # the blocks present now (the sign is no fact)
+bar_names() { REM_LOOK=1 bar_status --once 2>/dev/null | jq -r '[.[] | select(.name != "div" and .name != "logo") | .name] | unique | join(", ")' 2>/dev/null || :; }   # the blocks present now (the sign is no fact)
 bar_tmux() {   # bar_tmux [on|off] WHICH -- tmux's status line, live
     if ! command -v tmux >/dev/null 2>&1; then [ "$2" = both ] || refuse_in bar "no tmux here (spark-shell on installs it)"; return 0; fi
     if ! tmux list-sessions >/dev/null 2>&1; then
@@ -3663,7 +3663,8 @@ rem_due() {   # -> UID<tab>SUMMARY of the latest reminder due now (in the last d
     mkdir -p "$STATE_DIR"; touch "$REM_FIRED"
     awk -F '\t' '{print $2 " " $1}' "$TMP/rem.due" > "$TMP/rem.keys"
     [ -z "$(find "$REM_FIRED.lock" -maxdepth 0 -mmin +1 2>/dev/null)" ] || rmdir "$REM_FIRED.lock" 2>/dev/null || :   # a lock left by a pass that was killed
-    if mkdir "$REM_FIRED.lock" 2>/dev/null; then   # the bar and the tmux line both ask: one of them at a time, so the chime plays once
+    # REM_LOOK: a look at the bar (check, status) rings nothing and marks nothing, or the one chime is spent where no one hears it
+    if [ -z "${REM_LOOK:-}" ] && mkdir "$REM_FIRED.lock" 2>/dev/null; then   # the bar and the tmux line both ask: one of them at a time, so the chime plays once
         _new=$(grep -vxF -f "$REM_FIRED" "$TMP/rem.keys" | grep -c . || :)
         cp "$TMP/rem.keys" "$REM_FIRED"   # the ones due now, and no more: the file never grows
         rmdir "$REM_FIRED.lock" 2>/dev/null || :
