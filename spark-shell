@@ -2376,6 +2376,7 @@ cmd_check() {
 # The glyphs are built from their bytes: this file stays ASCII.
 BAR_SYS=${SPARK_SHELL_SYS:-/sys}      # tests: a fixture tree in place of /sys and /proc
 BAR_PROC=${SPARK_SHELL_PROC:-/proc}
+BAR_DEV=${SPARK_SHELL_DEV:-/dev}      # tests: the i2c devices a DDC/CI screen is reached through
 BAR_PID=$STATE_DIR/bar.pid            # the running `bar status`, for the redraw signal
 BAR_ASOUNDRC=$HOME/.config/alsa/asoundrc   # ALSA reads it after ~/.asoundrc; ours only with the marker line
 BAR_GAP=14                            # px between blocks of a group
@@ -2637,6 +2638,8 @@ light_ddc() {   # light_ddc ARGS... -- ddcutil on the screen's own bus (the fast
     if command -v flock >/dev/null 2>&1; then mkdir -p "$STATE_DIR"; flock -w 3 "$STATE_DIR/ddc.lock" ddcutil --bus "$_b" "$@"; else ddcutil --bus "$_b" "$@"; fi
 }
 light_ddc_bus() {   # -> the i2c bus of the first screen ddcutil drives; nothing when none answers (the answer kept 10 minutes)
+    _rw=''; for _d in "$BAR_DEV"/i2c-*; do [ ! -r "$_d" ] || [ ! -w "$_d" ] || { _rw=1; break; }; done
+    [ -n "$_rw" ] || return 0   # no i2c device open to you (the module, or the i2c group at your next login): nothing asked, nothing kept
     _f=$STATE_DIR/ddc.bus; _ttl=600; ! grep -qx none "$_f" 2>/dev/null || _ttl=3600
     if [ -f "$_f" ] && [ $(( $(date +%s) - $(stat -c %Y "$_f" 2>/dev/null || stat -f %m "$_f" 2>/dev/null || echo 0) )) -lt "$_ttl" ]; then grep -vx none "$_f" || :; return 0; fi
     mkdir -p "$STATE_DIR"
