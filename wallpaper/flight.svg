@@ -1,0 +1,21 @@
+<!-- spark-shell wallpaper: flight (MIT, the repository's license) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<rect x="0" y="0" width="1920" height="1080" fill="#fafafa"></rect>
+<g fill="none" stroke="#a0a1a7" opacity="0.6" style="stroke-width: 2.5; stroke-dasharray: 10 14">
+<path d="M120 860 C520 760 820 720 1160 470"></path>
+<path d="M300 1000 C760 960 1180 880 1500 700"></path>
+<path d="M760 1080 C980 820 1320 520 1650 330"></path>
+</g>
+<g transform="translate(1190 450) rotate(-36) scale(1.60)">
+<path fill="#4078f2" opacity="0.85" d="M60 0 L-50 -34 L-22 0 Z"></path>
+<path fill="#4078f2" opacity="0.55" d="M60 0 L-22 0 L-50 30 Z"></path>
+</g>
+<g transform="translate(1530 685) rotate(-28) scale(1.25)">
+<path fill="#a626a4" opacity="0.85" d="M60 0 L-50 -34 L-22 0 Z"></path>
+<path fill="#a626a4" opacity="0.55" d="M60 0 L-22 0 L-50 30 Z"></path>
+</g>
+<g transform="translate(1680 312) rotate(-30) scale(1.00)">
+<path fill="#e45649" opacity="0.85" d="M60 0 L-50 -34 L-22 0 Z"></path>
+<path fill="#e45649" opacity="0.55" d="M60 0 L-22 0 L-50 30 Z"></path>
+</g>
+</svg>

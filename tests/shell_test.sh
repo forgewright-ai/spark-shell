@@ -417,7 +417,7 @@ if [ "$(uname -s)" != Darwin ]; then
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  wall  missing' && ok "status: wall missing" || bad "status wall missing" "$(sh "$SH" status | grep wall)"
     rc=0; out=$(sh "$SH" desktop wallpaper /nowhere/at/all.jpg 2>&1) || rc=$?
     [ $rc = 1 ] && printf '%s\n' "$out" | grep -q 'not a readable file' && ok "desktop wallpaper: a path that is not there is refused" || bad "wallpaper refuse missing" "$out"
-    [ $rc = 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: /nowhere/at/all.jpg is not a readable file or a color\. Give a picture.s path, default, none, one of the wallpapers (skyline, fjord, forest, sunset, hills, dunes, ripples, contours, morning, embers), #rrggbb or one of these colors: black, white, gray, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange$' \
+    [ $rc = 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell desktop: /nowhere/at/all.jpg is not a readable file or a color\. Give a picture.s path, default, none, one of the wallpapers (skyline, fjord, forest, sunset, hills, dunes, ripples, contours, morning, meadow, kites, fields, grove, arches, shore, flight, embers), #rrggbb or one of these colors: black, white, gray, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange$' \
         && [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = 1 ] && ok "desktop wallpaper: the refusal is one line that lists what is accepted" || bad "wallpaper refusal words" "$out"
     # a path from where you are, and a quoted ~: saved as the full path
     printf x > "$pic"; printf x > "$HOME/pictures/two.png"
@@ -2310,7 +2310,10 @@ vd=$(LC_ALL=C date -d 2030-01-02 '+%a %d %b' 2>/dev/null || LC_ALL=C date -j -f 
     && f=$(ls "$HOME"/calendar/*.ics) && tr -d '\r' < "$f" | grep -qx 'DTSTART:20300102T100000' && tr -d '\r' < "$f" | grep -qxF "SUMMARY:the vet\\, Luna's shots" && tr -d '\r' < "$f" | grep -qx 'TRIGGER:PT0M' && [ "$(grep -c "$(printf '\r')$" "$f")" = "$(wc -l < "$f" | tr -d ' ')" ] \
     && ok "reminders add: an iCalendar event in ~/calendar, its local time, its alarm at that time, the comma escaped, every line CRLF" || bad "reminders add" "$(cat "$HOME"/calendar/*.ics 2>&1)"
 [ "$(NL reminders add 'tomorrow 9am standup with the team')" = 'reminder tomorrow 09:00 standup with the team' ] && ok "reminders add: tomorrow, 9am read as 09:00, the words as said" || bad "reminders tomorrow" "$(NL reminders --list)"
-out=$(NL reminders add 'yesterday call the bank' || :); [ "$out" = 'a reminder takes a day and a time, then the words: tomorrow 09:00 call the dentist' ] && ok "reminders add: no day and time, refused with an example" || bad "reminders refuse" "$out"
+for w in 'gym in 10 minutes' 'in 10 minutes gym' 'gym in an hour'; do out=$(NL reminders add "$w"); printf '%s\n' "$out" | grep -Eq '^reminder (today|tomorrow) [0-2][0-9]:[0-5][0-9] gym$' || bad "reminders add $w" "$out"; done
+ok "reminders add: a while from now, before the words or after them (gym in 10 minutes, in an hour), the time from now"
+grep -l '^SUMMARY:gym' "$HOME"/calendar/*.ics 2>/dev/null | while IFS= read -r f; do rm -f "$f"; done   # the later checks read the next one ahead
+out=$(NL reminders add 'yesterday call the bank' || :); [ "$out" = 'a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), or a while from now (gym in 10 minutes)' ] && ok "reminders add: no day and time, refused with an example" || bad "reminders refuse" "$out"
 # a reminder due: the bar's due block, one chime, done and a snooze in the section; another tool's events read, never changed
 ago() { date -d "-$1 min" "+%Y%m%dT%H%M00" 2>/dev/null || date -v-"$1"M "+%Y%m%dT%H%M00"; }   # ago MINUTES -> a local time that long ago
 ago_utc() { date -u -d "-$1 min" "+%Y%m%dT%H%M00Z" 2>/dev/null || date -u -v-"$1"M "+%Y%m%dT%H%M00Z"; }
@@ -2343,7 +2346,7 @@ out=$(NL reminders 'done' water the plants) && touch -t 202001010000 "$HOME/cale
 out=$(NL reminders restore nothing like it || :); [ "$out" = 'no reminder done named nothing like it' ] && ok "reminders restore: no such one, said" || bad "restore none" "$out"
 [ "$(NL reminders add 'tomorrow 09:00 semi; colon, comma' | tail -1)" != '' ] && f=$(grep -l 'semi' "$HOME"/calendar/*.ics 2>/dev/null | head -1) && tr -d '\r' < "${f:-/dev/null}" | grep -qxF 'SUMMARY:semi\; colon\, comma' \
     && ok "reminders add: a semicolon and a comma escaped as iCalendar text" || bad "ics escape" "$(cat "${f:-/dev/null}" 2>&1) $(ls "$HOME/calendar")"
-out=$(NL reminders add '2026-19-39 10:00 nothing' || :); [ "$out" = 'a reminder takes a day and a time, then the words: tomorrow 09:00 call the dentist' ] && ok "reminders add: a day the calendar lacks is refused" || bad "bad date" "$out"
+out=$(NL reminders add '2026-19-39 10:00 nothing' || :); [ "$out" = 'a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), or a while from now (gym in 10 minutes)' ] && ok "reminders add: a day the calendar lacks is refused" || bad "bad date" "$out"
 rm -f "$HOME/calendar/other.ics"
 j=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://reminders/rows"}}' | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide reminders 2>/dev/null | jq -r 'select(.id == 2) | .result.contents[0].text')
 printf '%s' "$j" | jq -e '[.rows[] | select(.text | startswith("the vet"))][0] | .date == "2030-01-02" and .group == "later" and (.columns[0] | endswith("10:00"))' >/dev/null \
@@ -3211,7 +3214,7 @@ _wb=''
 for n in $(sed -n 's/^WALL_SHIPPED="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | cut -d: -f1); do
     [ -f "$REPO/wallpaper/$n.svg" ] && [ -f "$REPO/wallpaper/$n.png" ] && [ "$(od -An -tu1 -j16 -N8 "$REPO/wallpaper/$n.png" | tr -s ' \n' ' ' | sed 's/^ //; s/ $//')" = '0 0 15 0 0 0 8 112' ] || _wb="$_wb $n"
 done
-[ -z "$_wb" ] && [ "$(ls "$REPO/wallpaper" | wc -l | tr -d ' ')" = 20 ] && ok "wallpaper/: the ten shipped wallpapers, each its SVG and a 3840 by 2160 PNG, nothing else" || bad "wallpaper files" "$_wb $(ls "$REPO/wallpaper")"
+[ -z "$_wb" ] && [ "$(ls "$REPO/wallpaper" | wc -l | tr -d ' ')" = 34 ] && ok "wallpaper/: the 17 shipped wallpapers, each its SVG and a 3840 by 2160 PNG, nothing else" || bad "wallpaper files" "$_wb $(ls "$REPO/wallpaper")"
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt out mic bat clock theme wallpaper window display keyboard notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done

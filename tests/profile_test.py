@@ -44,7 +44,7 @@ def rgb(h):
 
 # --- every palette in themes/ reads whole ---------------------------------
 themes = sorted(f for f in os.listdir(os.path.join(REPO, "themes")) if f.endswith(".env"))
-ok(len(themes) == 9, "9 palettes in themes/, found %d" % len(themes))
+ok(len(themes) == 16, "16 palettes in themes/, eight dark and eight light, found %d" % len(themes))
 for t in themes:
     path = os.path.join(REPO, "themes", t)
     with open(path, encoding="utf-8") as f:

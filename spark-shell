@@ -322,7 +322,7 @@ WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA"   # BAR_ALPHA: tw
 WALL_NAMES="black white gray silver navy blue teal green olive maroon red purple brown orange"   # one name a color: grey is still read as gray, never listed twice
 # the wallpapers spark-shell ships in wallpaper/, each NAME:PALETTE:SAMPLE, the palette it was drawn
 # for and its main color for the sample on its row; WALLPAPER stores the name, so it follows the clone
-WALL_SHIPPED="skyline:tokyonight-night:7aa2f7 fjord:nord:88c0d0 forest:everforest-dark:a7c080 sunset:gruvbox-dark:fe8019 hills:catppuccin-mocha:f5c2e7 dunes:dracula:ff79c6 ripples:rose-pine:ebbcba contours:selenized-dark:41c7b9 morning:solarized-light:b58900 embers:any:d24a2a"
+WALL_SHIPPED="skyline:tokyonight-night:7aa2f7 fjord:nord:88c0d0 forest:everforest-dark:a7c080 sunset:gruvbox-dark:fe8019 hills:catppuccin-mocha:f5c2e7 dunes:dracula:ff79c6 ripples:rose-pine:ebbcba contours:selenized-dark:41c7b9 morning:solarized-light:b58900 meadow:catppuccin-latte:ea76cb kites:tokyonight-day:2e7de9 fields:gruvbox-light:d79921 grove:everforest-light:8da101 arches:rose-pine-dawn:d7827e shore:selenized-light:009c8f flight:one-light:4078f2 embers:any:d24a2a"
 wall_shipped() { for _e in $WALL_SHIPPED; do [ "${_e%%:*}" != "$1" ] || return 0; done; return 1; }   # wall_shipped NAME -> 0 for a wallpaper spark-shell ships
 wall_shipped_names() { for _e in $WALL_SHIPPED; do printf '%s\n' "${_e%%:*}"; done; }
 wall_path() { if wall_shipped "$WALLPAPER"; then printf '%s' "$REPO/wallpaper/$WALLPAPER.png"; else printf '%s' "$WALLPAPER"; fi; }   # a picture's path: a shipped one in the clone (default and none are words, a color is hex)
@@ -3566,8 +3566,33 @@ rem_column() {   # rem_column START GROUP -> the column: 17:00, Fri 20:00, Tue 2
            else echo "$(LC_ALL=C when_of "$_e" '%a %d %b' | sed 's/ 0/ /') $(rem_hm "$1")"; fi ;;
     esac
 }
-rem_parse() {   # rem_parse WORDS -> START<tab>TEXT: today|tomorrow|a weekday|YYYY-MM-DD, then HH:MM (or 6pm, 6:30pm), then the words; false when no day and time are found
-    printf '%s' "$1" > "$TMP/rem.w"
+rem_in() {   # rem_in N UNIT -> the minutes "in N UNIT" says (minutes or hours, an or a for one), or false
+    case $1 in a|an) _n=1 ;; [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) _n=$1 ;; *) return 1 ;; esac
+    case $(printf '%s' "$2" | tr 'A-Z' 'a-z') in min|mins|minute|minutes|m) echo "$_n" ;; h|hr|hrs|hour|hours) echo $((_n * 60)) ;; *) return 1 ;; esac
+}
+rem_parse() {   # rem_parse WORDS -> START<tab>TEXT: today|tomorrow|a weekday|YYYY-MM-DD, then HH:MM (or 6pm, 6:30pm), then the words; or "in 10 minutes" (in 2 hours, in an hour) before the words or after them; false when no day and time are found
+    set -f
+    # shellcheck disable=SC2046   # the words, split on purpose; no glob
+    set -- $1
+    set +f
+    _mins=''
+    if [ "$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z')" = in ] && [ $# -ge 4 ] && _mins=$(rem_in "$2" "$3"); then shift 3
+    else   # the words, then "in N UNIT" at their end
+        _tl=$(printf '%s' "$*" | sed -n 's/^\(.*[^ ]\)  *[Ii][Nn]  *\([^ ]*\)  *\([^ ]*\)$/\2 \3	\1/p')
+        if [ -n "$_tl" ] && _mins=$(rem_in "${_tl%% *}" "$(printf '%s' "${_tl%%"$TAB"*}" | cut -d' ' -f2)"); then
+            set -f
+            # shellcheck disable=SC2046   # the words before "in N UNIT", split on purpose; no glob
+            set -- $(printf '%s' "${_tl#*"$TAB"}")
+            set +f
+        fi
+    fi
+    if [ -n "$_mins" ]; then   # from now, rounded up to the minute
+        [ $# -gt 0 ] || return 1
+        _e=$(( $(date +%s) + _mins * 60 + 59 )); _e=$((_e - _e % 60))
+        printf '%s	%s
+' "$(when_of "$_e" %Y%m%d%H%M)" "$*"; return 0
+    fi
+    printf '%s' "$*" > "$TMP/rem.w"
     set -f
     # shellcheck disable=SC2046   # the words, split on purpose; no glob
     set -- $(cat "$TMP/rem.w")
@@ -3635,7 +3660,7 @@ rem_restore() {   # rem_restore UID|NAME -> the newest reminder done with that u
 rem_act() {   # rem_act add|done|snooze|restore ARG
     _rc=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; rm -f "${_rc:-$STATE_DIR}/reminders.list"   # the list made again after this step
     case $1 in
-        add) _p=$(rem_parse "$2") || { echo "a reminder takes a day and a time, then the words: tomorrow 09:00 call the dentist"; return 1; }
+        add) _p=$(rem_parse "$2") || { echo "a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), or a while from now (gym in 10 minutes)"; return 1; }
             _s=${_p%%"$TAB"*}; _t=${_p#*"$TAB"}
             [ "$_s" -gt "$(date +%Y%m%d%H%M)" ] || { echo "$(rem_said "$_s") has passed: say a time to come"; return 1; }
             mkdir -p "$CAL_DIR"; _u="spark-shell-$(date +%s)-$$@$(short_host)"
@@ -4304,7 +4329,7 @@ tool_spec() {
         notes_open)        _ts=notes _ta=open _tp=name _tk=string _th='' _tt='notes open NAME' _td='Open a note in the editor.' ;;
         notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='A new note of TEXT; with "NAME: TEXT", a line added to the note NAME.' ;;
         notes_find)        _ts=notes _ta=find _tp=words _tk=string _th=rf _tt='notes find WORDS' _td='Which notes say these words, and the line that does.' ;;
-        reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _tw='when and what: fri 9am call the vet' _th=f _tt='reminders add WHEN TEXT' _td='A reminder: WHEN is today, tomorrow, a weekday or YYYY-MM-DD, then HH:MM, then what to remember.' ;;
+        reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _tw='when and what: fri 9am call the vet' _th=f _tt='reminders add WHEN TEXT' _td='A reminder: WHEN is today, tomorrow, a weekday or YYYY-MM-DD, then HH:MM, then what to remember; or in N minutes, in N hours, before the words or after them.' ;;
         reminders_done)    _ts=reminders _ta='done' _tp=name _tk=string _th='' _tt='reminders done NAME' _td='A reminder done: it is put aside for 30 days, and undo brings it back.' ;;
         reminders_restore) _ts=reminders _ta=restore _tp=name _tk=string _th=f _tt='reminders restore NAME' _td='Bring back a reminder marked done in the last 30 days.' ;;
         reminders_snooze)  _ts=reminders _ta=snooze _tp=name _tk=string _th='' _tt='reminders snooze NAME' _td='The reminder again in 10 minutes.' ;;

@@ -245,9 +245,10 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     };
     x = pen.put(x, 0, &cut(&title, end.saturating_sub(x + 1) as usize), pal.fg, true, false);
     let sub = app.subtitle();
-    if !sub.is_empty() && end > x + 4 {
+    if !sub.is_empty() && end > x + 5 {
+        // two cells of air before the date: a long state is cut, never run into it
         let sep = if app.view == View::About { " " } else { SEP };
-        pen.put(x, 0, &cut(&format!("{}{}", sep, sub), (end - x - 1) as usize), pal.muted, false, false);
+        pen.put(x, 0, &cut(&format!("{}{}", sep, sub), (end - x - 2) as usize), pal.muted, false, false);
     }
     match march_x {
         Some(mx) => {

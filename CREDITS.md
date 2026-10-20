@@ -85,7 +85,7 @@ Unicode-3.0). The ones it is made of:
 
 ## The palettes
 
-The 9 palettes in `themes/`, written to `theme.env` by `spark-shell
+The 16 palettes in `themes/`, written to `theme.env` by `spark-shell
 theme NAME`. Color values only, no code copied, each file's first
 line naming its upstream. The licence is the upstream's:
 
@@ -94,6 +94,7 @@ line naming its upstream. The licence is the upstream's:
 - Everforest -- https://github.com/sainnhe/everforest -- MIT.
 - Gruvbox -- https://github.com/morhetz/gruvbox -- MIT.
 - Nord -- https://www.nordtheme.com -- MIT.
+- One Light -- https://github.com/atom/atom, its One Light syntax -- MIT.
 - Rose Pine -- https://github.com/rose-pine/rose-pine-theme -- MIT.
 - Selenized -- https://github.com/jan-warchol/selenized -- MIT.
 - Solarized -- https://ethanschoonover.com/solarized -- MIT.

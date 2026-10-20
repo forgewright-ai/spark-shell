@@ -533,3 +533,15 @@ fn the_wallpaper_section_shows_each_color_as_a_sample() {
     app.came_from = vec![View::Home];
     render(&app, "wallpaper");
 }
+
+#[test]
+fn a_long_state_in_the_header_stops_short_of_the_date() {
+    let mut app = base();
+    app.providers[1].title = "catppuccin-latte \u{b7} DejaVu Sans Mono 12 \u{b7} more".into();
+    app.view = View::Section(1);
+    app.came_from = vec![View::Home];
+    let (_, _, rows) = drawn(&app);
+    let at_clock = at(&rows[0], CLOCK).expect("the date and the time");
+    let before: String = rows[0].chars().skip(at_clock - 2).take(2).collect();
+    assert_eq!(before, "  ", "two cells of air before the date: {}", rows[0]);
+}

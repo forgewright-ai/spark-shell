@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.81
+
+Light themes, as many as the dark ones (the owner's ask), and reminders
+a while from now.
+
+- Added: seven light palettes, so there are eight dark and eight light:
+  catppuccin-latte, tokyonight-day, gruvbox-light, everforest-light,
+  rose-pine-dawn and selenized-light, the official light siblings of
+  six of the dark ones, and one-light (Atom's One Light). Each file
+  names its upstream; the colors are the upstream's own.
+- Added: a wallpaper drawn for each, in the style of the others: meadow
+  (catppuccin-latte), kites (tokyonight-day), fields (gruvbox-light),
+  grove (everforest-light), arches (rose-pine-dawn), shore
+  (selenized-light) and flight (one-light). 17 wallpapers in all, each
+  its SVG and a 3840 by 2160 PNG.
+- Fixed: "set reminder gym in 10 minutes" got no step. A reminder now
+  takes a while from now too, before the words or after them: in 10
+  minutes, in 2 hours, in an hour. The step's description says so, so
+  spark offers it.
+- Fixed: a long state in the dialog's header ran into the date; it now
+  stops two cells short of it.
+
 ## v0.80.2
 
 From the owner's first look at v0.80.

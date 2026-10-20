@@ -107,7 +107,8 @@ writes.
 Type `spark-shell theme gruvbox-dark`. You get one palette in tmux, the
 prompt, btop, the desktop and the Linux console, also at boot. On a Mac
 it is a Terminal.app profile named `spark-shell`. `theme list` shows
-the 9 palettes, and your own go in `~/.config/spark-shell/themes/`.
+the 16 palettes, eight dark and eight light, and your own go in
+`~/.config/spark-shell/themes/`.
 On Linux the terminals you have open change color at once. A program
 that is already running, such as btop, changes when it starts again.
 
@@ -299,14 +300,17 @@ are, or one that starts with `~`, works too. `default` is the ground
 again. `none` fills the screen with the windows, solid, in the
 palette's background color.
 
-Type `spark-shell desktop wallpaper skyline`. You get one of the ten
-wallpapers spark-shell ships in `wallpaper/`, each drawn for a palette:
-skyline (tokyonight-night), fjord (nord), forest (everforest-dark),
-sunset (gruvbox-dark), hills (catppuccin-mocha), dunes (dracula),
-ripples (rose-pine), contours (selenized-dark), morning
-(solarized-light) and embers (any dark palette). Each is its SVG
-source and a 3840 by 2160 PNG, and the config keeps its name, so it
-follows the clone.
+Type `spark-shell desktop wallpaper skyline`. You get one of the 17
+wallpapers spark-shell ships in `wallpaper/`, each drawn for a palette.
+For the dark ones: skyline (tokyonight-night), fjord (nord), forest
+(everforest-dark), sunset (gruvbox-dark), hills (catppuccin-mocha),
+dunes (dracula), ripples (rose-pine), contours (selenized-dark) and
+embers (any dark palette). For the light ones: morning
+(solarized-light), meadow (catppuccin-latte), kites (tokyonight-day),
+fields (gruvbox-light), grove (everforest-light), arches
+(rose-pine-dawn), shore (selenized-light) and flight (one-light).
+Each is its SVG source and a 3840 by 2160 PNG, and the config keeps its
+name, so it follows the clone.
 
 Type `spark-shell desktop wallpaper navy`. You get a plain color, and
 it stays the same when you change the palette. Give `#rrggbb`, or one
@@ -410,7 +414,7 @@ and Page Down scroll it.
 - `out` and `mic`: use another device, mute and unmute.
 - `theme`: the palette, the font bigger or smaller, and the windows'
   transparency.
-- `wallpaper`: default, none, the ten wallpapers with the palette each
+- `wallpaper`: default, none, the 17 wallpapers with the palette each
   was drawn for, or a plain color, each with a sample of its color;
   `a picture` opens your home folder, offering pictures (jpg, jpeg,
   png, webp), and Enter on one sets it.

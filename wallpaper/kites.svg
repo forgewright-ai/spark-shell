@@ -1,0 +1,16 @@
+<!-- spark-shell wallpaper: kites (MIT, the repository's license) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<rect x="0" y="0" width="1920" height="1080" fill="#e1e2e7"></rect>
+<g fill="none" stroke="#6172b0" opacity="0.35" style="stroke-width: 2">
+<path d="M1320 398 C1200 660 1060 820 900 1080"></path>
+<path d="M1580 492 C1460 780 1320 940 1160 1080"></path>
+<path d="M1120 531 C1000 830 860 990 700 1080"></path>
+</g>
+<path fill="#2e7de9" opacity="0.8" d="M1320 230 L1372 300 L1320 398 L1267 300 Z"></path>
+<path fill="#e1e2e7" opacity="0.5" d="M1320 230 L1372 300 L1320 398 Z"></path>
+<path fill="#9854f1" opacity="0.8" d="M1580 368 L1619 420 L1580 493 L1541 420 Z"></path>
+<path fill="#e1e2e7" opacity="0.5" d="M1580 368 L1619 420 L1580 493 Z"></path>
+<path fill="#007197" opacity="0.8" d="M1120 426 L1153 470 L1120 532 L1087 470 Z"></path>
+<path fill="#e1e2e7" opacity="0.5" d="M1120 426 L1153 470 L1120 532 Z"></path>
+<path fill="#d0d5e3" d="M0 1080 V941 L60 942 L120 942 L180 943 L240 943 L300 944 L360 944 L420 944 L480 944 L540 944 L600 943 L660 943 L720 942 L780 942 L840 941 L900 940 L960 939 L1020 938 L1080 936 L1140 935 L1200 934 L1260 933 L1320 931 L1380 930 L1440 928 L1500 927 L1560 926 L1620 924 L1680 923 L1740 922 L1800 921 L1860 920 L1920 919 V1080 Z"></path>
+</svg>
