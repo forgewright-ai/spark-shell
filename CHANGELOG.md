@@ -39,6 +39,10 @@ keyboard layout and screens in the same arc).
   display_brightness, keyboard_use, keyboard_next.
 - Changed: PKG_DESKTOP adds brightnessctl and ddcutil (Void i2c-tools,
   Debian brightness-udev).
+- Fixed: two screens that share make, model and serial (no serial, the
+  same model) go by their ports, so a change to one never sets both.
+- Fixed: the dialog failed with "Illegal number" when sway gave no
+  answer about its windows; it now counts none.
 
 ## v0.76
 

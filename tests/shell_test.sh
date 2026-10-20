@@ -2236,6 +2236,11 @@ rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 of
     && ok "desktop screen off: sway's at once, by sway's own name (Unknown for no serial), never kept (a later start never comes up with no screen)" || bad "screen off" "rc=$rc $out $(cat "$HOME/.config/spark-shell/screens.conf")"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 mode 800x600 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: eDP-1 has no mode 800x600: 1280x720, 1920x1080' ] && ok "desktop screen mode: a mode the screen lacks refused, naming those it has" || bad "screen mode" "rc=$rc $out"
+# two screens with one name (no serial, the same model): each by its port, never both at once
+sed -i.bak 's/"make":"BOE","model":"0x0BCA","serial":""/"make":"Lenovo Group Limited","model":"T24i-30","serial":"V30A1"/' "$H/lx/swaymsg"; rm -f "$H/lx/swaymsg.bak" "$HOME/swaymsg.log"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 scale 2 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qxF -- '-- output "HDMI-A-1" scale 2' "$HOME/swaymsg.log" && grep -qxF 'output "HDMI-A-1" scale 2' "$HOME/.config/spark-shell/screens.conf" \
+    && ok "desktop screen: two screens sharing make, model and serial go by their ports" || bad "screen twins" "rc=$rc $out $(cat "$HOME/swaymsg.log")"
 # the brightness: a laptop's backlight
 mkdir -p "$H/sysb/class/backlight/amdgpu_bl1"
 printf '#!/bin/sh\necho "$*" >> "$HOME/bctl.log"\ncase "$*" in "-m -c backlight info") echo "amdgpu_bl1,backlight,120,47%%,255" ;; esac\n' > "$H/lx/brightnessctl"; chmod +x "$H/lx/brightnessctl"

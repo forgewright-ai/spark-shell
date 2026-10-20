@@ -3223,7 +3223,7 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
         theme) echo "$(panel_col theme)${THEME:-none} $PANEL_SEP $(bar_font)" ;;   # the transparency is named in its row
         wallpaper) _cur=$(wall_name); echo "$(panel_col wallpaper)${_cur:-$(basename "$(wall_path)")}" ;;
         window) echo "$(panel_col window)$(win_words "$WINDOWS")" ;;
-        display) _b=$(light_get); echo "$(panel_col display)off $(idle_words "$DISPLAY_IDLE") $PANEL_SEP lock $(idle_words "$DISPLAY_LOCK")${_b:+ $PANEL_SEP brightness $_b%}" ;;
+        display) _b=$(light_get); if [ -n "$_b" ]; then echo "$(panel_col display)brightness $_b%"; else echo "$(panel_col display)off $(idle_words "$DISPLAY_IDLE")"; fi ;;   # short: the header holds it; the rows say the minutes
         keyboard) _k=$(kb_active); if [ -n "$_k" ]; then echo "$(panel_col keyboard)$_k $PANEL_SEP $(printf '%s\n' $KEYBOARD | grep -c .) layouts"; elif [ -n "$KEYBOARD" ]; then echo "$(panel_col keyboard)$KEYBOARD"; else echo "$(panel_col keyboard)sway's own layout"; fi ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown at the top of the screen"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys Super+d) opens the dialog"; fi ;;
         about) echo "$(panel_col about)spark-shell $(panel_version) $PANEL_SEP the keys, the licence, the address" ;;
@@ -4478,7 +4478,8 @@ panel_chat() {   # spark chat takes this window (Super+s, the spark row): the pa
 }
 panel_open_count() {   # -> how many panel windows a running sway shows (0 without sway)
     [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || { echo 0; return 0; }
-    swaymsg -t get_tree 2>/dev/null | jq -r --arg a "$PANEL_APP" '[.. | objects | select(.app_id? == $a)] | length' 2>/dev/null || echo 0
+    _c=$(swaymsg -t get_tree 2>/dev/null | jq -r --arg a "$PANEL_APP" '[.. | objects | select(.app_id? == $a)] | length' 2>/dev/null || :)
+    echo "${_c:-0}"   # a sway that does not answer: none (jq on nothing says nothing)
 }
 panel_warm() {   # panel_warm SECTION ROW -- a slow section that opened the panel is probed first, whole, with the march in the corner
     case $1 in wifi) panel_fresh wifi.scan 60 || { pulse_start march 'looking around' "$2"; wifi_scan >/dev/null; pulse_stop "$2"; } ;; esac
@@ -5825,7 +5826,8 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | on | off | left-of|r
         done; return 0
     fi
     _r=$(screen_find "$1"); [ -n "$_r" ] || refuse "no screen named $1 (spark-shell desktop screen lists them)"
-    _n=$(printf '%s' "$_r" | cut -f1); _id=$(printf '%s' "$_r" | cut -f2); [ -n "$_id" ] || _id=$_n
+    _n=$(printf '%s' "$_r" | cut -f1); _id=$(printf '%s' "$_r" | cut -f2)
+    [ "$(screen_rows | awk -F '\t' -v i="$_id" '$2 == i' | grep -c .)" -eq 1 ] || _id=$_n   # a name two screens share (no serial, the same model) would set both: the port's name instead
     case ${2:-} in
         scale) case ${3:-} in 0.5|0.75|1|1.25|1.5|1.75|2|2.5|3) ;; *) refuse "scale takes 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5 or 3" ;; esac
             _cmd="scale $3"; _said="$_n scale $3" ;;
