@@ -2,6 +2,62 @@
 
 ## v0.80
 
+A new home for the dialog: six places, the prompt at the top, and
+steps that are careful about what they run.
+
+- Changed: the dialog's home is six places: Apps, Files, Workspace
+  (windows and layouts), Notes, Calendar (the months and the reminders)
+  and Settings (each device and look section, Connections and About).
+  A place shows only where this machine has it. The home's old mix of
+  rows and recent picks is gone; typing still finds every step.
+- Changed: the prompt sits at the top of every view, two rows tall.
+  Enter sends, Shift+Enter starts a new line (Alt+Enter where a
+  terminal cannot tell them apart), a longer draft scrolls inside the
+  two rows, and a paste keeps its lines and never sends. The row under
+  it says what Enter and Esc do now, and only keys are drawn as keys.
+  What was said and done shows above the list, the newest first.
+- Changed: the window is 60 by 40 cells, 3:4 with a 9 by 18 pixel
+  cell, and the dialog fits its rows to a smaller window, down to 36 by
+  20 cells. The header is the place's name, then the date and the time
+  as your locale writes them (12 or 24 hours), then close.
+- Changed: the footer, under a rule: Attach, the model, Talk, and the
+  mic, as plain text; Tab and Shift+Tab move through them.
+- Changed: Attach takes one text or Markdown file for the next question
+  only, shown under the prompt with Remove. A request that fails gives
+  back its words and its file. A file over 16 kB (what spark reads
+  whole), empty, or not UTF-8 text is refused with the reason, never
+  cut unseen (it was a megabyte, and spark sent 16 kB of it).
+- Changed: the model list says where the model runs (this computer, or
+  the spark server this machine is a client of), shows the models in
+  use, installed and not downloaded, and says for whom a change counts
+  before Enter applies it. Your draft and file stay. Another server or a
+  cloud provider shows as not available yet.
+- Changed: Talk picks click-to-talk or off. What is heard goes into the
+  draft at the cursor, never sent by itself; Esc, a second click or
+  leaving the window stops it with nothing kept. Holding Space waits for
+  a newer spark.
+- Changed: Enter in the prompt sends the words as a request, even when a
+  row matches them; the down arrow picks a row. A place's name alone
+  still opens it.
+- Fixed: a question changed things. A question is answered and now runs
+  nothing: the steps spark would take are proposals, run only when
+  picked (in the dialog) or said as a request (at the terminal), and
+  naming an app in a question no longer opens it.
+- Fixed: whether a step waits for a typed yes was the provider's word
+  alone. This machine keeps its own list (forget a network, close a
+  window, save a layout over another, pair a device) on top of the
+  hint, the yes is checked again against what is offered when it is
+  typed, and `spark-shell want` at a terminal asks for it too, where
+  before it ran such a step at once. With no terminal, the step is kept.
+- Fixed: a step that failed or got no answer let the steps after it run.
+  They are now not run, and no answer is said as no answer: it may or
+  may not have happened.
+- Fixed: a reminder done had its file deleted while the step said it
+  was safe. Done now puts it aside in `~/calendar/done` for 30 days, and
+  undo, or `spark-shell reminders restore NAME`, brings it back.
+- Changed: the Calendar draws the two months and, under them, the
+  reminders as rows to add, set done or snooze; the time is the
+  header's, so the large figures are gone.
 - Changed: the workflows run actions/upload-artifact 7.0.2 (dependabot
   #2).
 - Changed: the workflows run actions/checkout 7.0.1 (dependabot #3).

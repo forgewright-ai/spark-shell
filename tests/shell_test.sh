@@ -312,7 +312,7 @@ else
     sh "$SH" on --yes >/dev/null
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
     grep -q '^client.focused *#ff5555 ' "$sway" && ok "sway: client.focused takes the accent's hex (#ff5555)" || bad "sway focused" "$(grep -n client "$sway")"
-    grep -q "^bindsym \$mod+s exec \$term --app-id spark-dialog -W 60x44 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell dialog chat\$" "$sway" && ok "sway: the Super+s line names the clone's spark-shell" || bad "sway Super+s render" "$(grep -n 'mod+s ' "$sway")"
+    grep -q "^bindsym \$mod+s exec \$term --app-id spark-dialog -W 60x40 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell dialog chat\$" "$sway" && ok "sway: the Super+s line names the clone's spark-shell" || bad "sway Super+s render" "$(grep -n 'mod+s ' "$sway")"
     grep -q "^exec sh -c '\$term -e $REPO/spark-shell desktop --first; swaymsg exit'\$" "$sway" && ok "sway: the first window's line names the clone's spark-shell" || bad "sway --first render" "$(grep -n '^exec sh' "$sway")"
     grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 12$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
         && ok "sway: the default background is the ground (the palette's background a shade darker), gaps, foot translucent" || bad "sway default bg" "$(grep -n 'output\|gaps' "$sway")"
@@ -944,7 +944,7 @@ EOF
     printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot are installed and up to date$' && ok "check: the desktop row says installed and up to date" || bad "check desk row" "$out"
     # the rendered sway config: Super+d, the floating prompt, --pending before the first terminal
     sway=$HOME/.config/sway/config
-    grep -qF "bindsym \$mod+d exec \$term --app-id spark-dialog -W 60x44 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell dialog" "$sway" && ok "sway render: Super+d opens the panel (the clone's spark-shell), 76x36 with air and the surface a shade of black towards the text (no theme: 0f0f0f)" || bad "sway render bind" "$(grep -n 'mod+d' "$sway")"
+    grep -qF "bindsym \$mod+d exec \$term --app-id spark-dialog -W 60x40 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell dialog" "$sway" && ok "sway render: Super+d opens the panel (the clone's spark-shell), 76x36 with air and the surface a shade of black towards the text (no theme: 0f0f0f)" || bad "sway render bind" "$(grep -n 'mod+d' "$sway")"
     grep -qF 'for_window [app_id="spark-dialog"] floating enable, border none, move position center' "$sway" && ok "sway render: the panel floats in the middle, no frame" || bad "sway render for_window" "$(grep -n spark-dialog "$sway")"
     l_p=$(grep -nF "exec $REPO/spark-shell desktop --pending" "$sway" | head -1 | cut -d: -f1); l_t=$(grep -n "^exec sh -c '" "$sway" | tail -1 | cut -d: -f1)
     [ -n "$l_p" ] && [ -n "$l_t" ] && [ "$l_p" -lt "$l_t" ] && ok "sway render: desktop --pending runs before the first terminal" || bad "sway render pending" "pending $l_p terminal $l_t"
@@ -2325,7 +2325,19 @@ out=$(NL reminders snooze a long title from another calendar, folded across two 
     && ok "reminders snooze on another calendar's event: refused, its file untouched" || bad "foreign snooze" "$out"
 out=$(NL reminders snooze water the plants); printf '%s' "$out" | grep -q '^water the plants again at [0-9][0-9]:[0-9][0-9]$' \
     && ok "reminders snooze: our event moved 10 minutes on" || bad "snooze" "$out $(cat "$HOME/calendar/ours.ics")"
-out=$(NL reminders 'done' water the plants); [ "$out" = 'done: water the plants' ] && [ ! -e "$HOME/calendar/ours.ics" ] && ok "reminders done: our event is gone" || bad "done" "$out"
+out=$(NL reminders 'done' water the plants); [ "$out" = 'done: water the plants' ] && [ ! -e "$HOME/calendar/ours.ics" ] && [ -f "$HOME/calendar/done/ours.ics" ] && ! NL reminders --list | grep -q "water the plants$(printf '\t')reminders" && NL --list | grep -q "reminder water the plants$(printf '\t')undo all" \
+    && ok "reminders done: our event put aside in ~/calendar/done, out of the list, and undo offered" || bad "done" "$out $(ls -R "$HOME/calendar")"
+out=$(NL reminders restore water the plants); [ "$out" = 'water the plants is back' ] && [ -f "$HOME/calendar/ours.ics" ] && [ ! -e "$HOME/calendar/done/ours.ics" ] \
+    && ok "reminders restore: the one put aside is back where it was" || bad "restore" "$out $(ls -R "$HOME/calendar")"
+printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:spark-shell-test-3@box\r\nDTSTART:%s\r\nSUMMARY:check the oven\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' "$(ago 5)" > "$HOME/calendar/oven.ics"
+mcp_rem() { printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"$1\",\"arguments\":{\"name\":\"$2\"}}}" | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide reminders 2>/dev/null | jq -c 'select(.id == 2) | .result'; }
+j=$(mcp_rem reminders_done 'check the oven'); u=$(printf '%s' "$j" | jq -c '.structuredContent.undo'); j2=$(mcp_rem reminders_restore spark-shell-test-3@box)
+[ "$u" = '{"name":"reminders_restore","arguments":{"name":"spark-shell-test-3@box"}}' ] && printf '%s' "$j2" | jq -e '.isError == false' >/dev/null && [ -f "$HOME/calendar/oven.ics" ] && [ ! -e "$HOME/calendar/done/oven.ics" ] \
+    && ok "provide reminders: done is put aside, its undo names that one by its uid, and the undo brings it back: a real undo" || bad "done undo" "$j | $j2"
+rm -f "$HOME/calendar/oven.ics"
+out=$(NL reminders 'done' water the plants) && touch -t 202001010000 "$HOME/calendar/done/ours.ics" && NL reminders add 'tomorrow 08:00 a later one' >/dev/null && NL reminders 'done' a later one >/dev/null && [ ! -e "$HOME/calendar/done/ours.ics" ] \
+    && ok "reminders done: one put aside more than 30 days ago is gone at the next done" || bad "done prune" "$out $(ls -l "$HOME/calendar/done")"
+out=$(NL reminders restore nothing like it || :); [ "$out" = 'no reminder done named nothing like it' ] && ok "reminders restore: no such one, said" || bad "restore none" "$out"
 [ "$(NL reminders add 'tomorrow 09:00 semi; colon, comma' | tail -1)" != '' ] && f=$(grep -l 'semi' "$HOME"/calendar/*.ics 2>/dev/null | head -1) && tr -d '\r' < "${f:-/dev/null}" | grep -qxF 'SUMMARY:semi\; colon\, comma' \
     && ok "reminders add: a semicolon and a comma escaped as iCalendar text" || bad "ics escape" "$(cat "${f:-/dev/null}" 2>&1) $(ls "$HOME/calendar")"
 out=$(NL reminders add '2026-19-39 10:00 nothing' || :); [ "$out" = 'a reminder takes a day and a time, then the words: tomorrow 09:00 call the dentist' ] && ok "reminders add: a day the calendar lacks is refused" || bad "bad date" "$out"
@@ -2353,6 +2365,7 @@ out=$(sh "$SH" reminders add tomorrow 7:30pm feed the cat 2>&1); [ "$out" = 'rem
 out=$(sh "$SH" reminders 2>&1); printf '%s\n' "$out" | grep -q '^tomorrow$' && printf '%s\n' "$out" | grep -q '^  19:30  *feed the cat$' && printf '%s\n' "$out" | grep -q '^later$' \
     && ok "spark-shell reminders: the ones ahead under their groups, each its time" || bad "reminders command" "$out"
 [ "$(sh "$SH" reminders 'done' feed the cat 2>&1)" = 'done: feed the cat' ] && ok "spark-shell reminders done NAME" || bad "reminders done command" "$(sh "$SH" reminders 2>&1)"
+[ "$(sh "$SH" reminders restore feed the cat 2>&1)" = 'feed the cat is back' ] && sh "$SH" reminders 2>&1 | grep -q 'feed the cat$' && sh "$SH" reminders 'done' feed the cat >/dev/null 2>&1 && ok "spark-shell reminders restore NAME" || bad "reminders restore command" "$(sh "$SH" reminders 2>&1)"
 rc=0; out=$(sh "$SH" reminders snooze 2>&1) || rc=$?; [ "$rc" = 1 ] && [ "$out" = "spark-shell reminders: snooze takes the reminder's name (spark-shell reminders lists them)" ] && ok "spark-shell reminders snooze with no name: refused" || bad "snooze refuse" "rc=$rc $out"
 # a reminder due on tmux's status line: the words, and the chime once though the bar asks too
 printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:spark-shell-test-2@box\r\nDTSTART:%s\r\nSUMMARY:#take the bread out of the oven now\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' "$(ago 1)" > "$HOME/calendar/bread.ics"
@@ -2707,7 +2720,7 @@ else
     [ "$(cat "$amlog" 2>/dev/null)" = "$(printf '%s\n' '-c 0 sset Master 60%' '-c 0 sset Master 5%+' '-c 0 sset Master toggle' '-c 0 sset Capture toggle' '-c 0 sset Capture 30%')" ] \
         && ok "clicks: a click at 60% of the gauge sets 60%, the wheel up adds 5, a right click mutes; the mic gauge mutes on a right click and sets 30% on a click" || bad "click actions" "$(cat "$amlog" 2>&1)"
     for _i in 1 2 3 4 5 6; do [ "$(wc -l < "$H/.local/state/foot.log" 2>/dev/null || echo 0)" -ge 2 ] && break; sleep 1; done   # two detached openers write the log
-    [ "$(sort "$H/.local/state/foot.log" 2>/dev/null | grep -v '^--version')" = "$(printf '%s\n' "--app-id spark-dialog -W 60x44 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell dialog lan | " "--app-id spark-dialog -W 60x44 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell dialog out | ")" ] \
+    [ "$(sort "$H/.local/state/foot.log" 2>/dev/null | grep -v '^--version')" = "$(printf '%s\n' "--app-id spark-dialog -W 60x40 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell dialog lan | " "--app-id spark-dialog -W 60x40 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell dialog out | ")" ] \
         && ok "a click on out or lan opens the panel with that block first, in a foot window; no placement passed" || bad "panel open" "$(cat "$H/.local/state/foot.log" 2>&1); $(cat "$H/bar.err")"
     ! tail -1 "$H/bar.out" | grep -q '192\.0\.2\.' && ok "a click never puts an address in the bar" || bad "address in the bar" "$(tail -1 "$H/bar.out")"
     [ ! -e "$H/.local/state/spark-shell/bar.pid" ] && ok "bar status ended: its pid file is gone" || bad "bar pid file stays"
@@ -3057,9 +3070,11 @@ printf '%s\n' "$@" > "$HOME/spark.argv"
 printf '{"why": "close it", "steps": [{"page": "window", "action": "close", "arg": "firefox"}]}\n'
 EOF
     chmod +x "$H/.local/bin/spark"; touch "$HOME/fullscreen"; rm -f "$H/.local/state/swaymsg.log" "$HOME/spark.argv"
-    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel close the window with firefox 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^  $TICK firefox closed$" && grep -qxF '[con_id=77] kill' "$H/.local/state/swaymsg.log" && ! grep -q '^exec firefox' "$H/.local/state/swaymsg.log" && grep -q 'close firefox' "$HOME/spark.argv" \
-        && ok "panel WORDS about closing an app: never the app opened or a layout; spark picks window close firefox from the list, and the window is told to close" || bad "want close" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
+    st=0; out0=$(SWAYSOCK=/tmp/x sh "$SH" panel close the window with firefox </dev/null 2>&1) || st=$?
+    printf '%s\n' "$out0" | grep -q "window close firefox: kept, not done (it takes a typed yes)$" && [ ! -s "$H/.local/state/swaymsg.log" ] || bad "want close no yes" "$out0"
+    st=0; out=$(echo yes | SPARK_SHELL_TEST_TTY=1 SWAYSOCK=/tmp/x sh "$SH" panel close the window with firefox 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "type yes to window close firefox: $TICK firefox closed$" && grep -qxF '[con_id=77] kill' "$H/.local/state/swaymsg.log" && ! grep -q '^exec firefox' "$H/.local/state/swaymsg.log" && grep -q 'close firefox' "$HOME/spark.argv" \
+        && ok "panel WORDS about closing an app: never the app opened or a layout; spark picks window close firefox from the list; with no yes it is kept, and after a typed yes the window is told to close" || bad "want close" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
     printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/spark.argv"\nprintf "{\\"why\\": \\"no\\", \\"steps\\": []}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"; rm -f "$H/.local/state/swaymsg.log"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel quit firefox 2>&1) || st=$?
     printf '%s\n' "$out" | grep -q "^  $CROSS no step on the panel does that$" && ! grep -q '^exec firefox' "$H/.local/state/swaymsg.log" 2>/dev/null \
@@ -3191,8 +3206,8 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt out mic bat clock theme wallpaper window display keyboard notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 53 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty sections hold the 53 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 54 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty sections hold the 54 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 # the rows carry the section's state, the dialog's subtitle, read again with every rows read
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows"}')"
 ans 2 | jq -r '.result.contents[0].text' | jq -e '.title == "theme" and (.state | type == "string" and length > 0)' >/dev/null \
@@ -3332,8 +3347,32 @@ st=0; out=$(sh "$SH" want --json what time is it 2>&1) || st=$?; st2=0; out2=$(s
 [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e '.answer == "It is noon." and .steps == []' >/dev/null && [ "$st2" -eq 0 ] && printf '%s' "$out2" | jq -e --arg x "$x" '.steps == [] and .refused == [$x + " no step on the panel does that"]' >/dev/null \
     && [ "$st3" -eq 0 ] && printf '%s' "$out3" | jq -e --arg x "$x" '.steps == [] and .refused == [$x + " no step on the panel does that"]' >/dev/null \
     && ok "want with spark steps: a question gets its answer; words with no step, however many, the honest line and never a layout of ours (spark picks layout_new itself)" || bad "want steps nostep" "$out | $out2 | $out3"
+st=0; out=$(sh "$SH" want --json is dracula on? 2>&1) || st=$?; st2=0; out2=$(sh "$SH" want is dracula on? 2>&1) || st2=$?
+[ "$st" -eq 0 ] && printf '%s' "$out" | jq -e '.question == true and .steps[0].name == "theme_palette"' >/dev/null && [ "$st2" -eq 0 ] && printf '%s\n' "$out2" | grep -qx "$(printf '\342\226\270') proposed, not run: theme dracula" \
+    && ! grep -q '^THEME=dracula' "$HOME/.config/spark-shell/config" && sh "$SH" want --json make it dracula 2>&1 | jq -e '.question == false' >/dev/null \
+    && ok "want: a question changes nothing; its steps are proposals (question: true for the dialog), shown and not run at the terminal" || bad "want question" "$out | $out2"
+cat > "$H/.local/bin/spark" <<'STUB'
+#!/bin/sh
+case $1 in
+    help) echo ' spark steps <words> < TOOLS  the tool calls that do what you say (-h)' ;;
+    steps) cat > /dev/null; printf '{"answer": "", "steps": [{"name": "layout_save", "arguments": {"name": "work"}}, {"name": "theme_palette", "arguments": {"name": "dracula"}}], "refused": []}\n' ;;
+    *) printf '%s\n' "$@" > "$HOME/spark.argv"; cat > "$HOME/spark.stdin"; case "$*" in *--source*) echo 'the notes say to buy bread.' ;; *) echo '{"steps": []}' ;; esac ;;
+esac
+STUB
+chmod +x "$H/.local/bin/spark"
+st=0; out=$(echo no | SPARK_SHELL_TEST_TTY=1 sh "$SH" want keep this as work and go dracula 2>&1) || st=$?; st2=0; out2=$(sh "$SH" want keep this as work and go dracula </dev/null 2>&1) || st2=$?
+x=$(printf '\342\234\227')
+printf '%s\n' "$out" | grep -q "type yes to layout save work: $x layout save work: kept, not done (it takes a typed yes)" && printf '%s\n' "$out" | grep -qx "$x not run, for the step before was not done: theme dracula" \
+    && printf '%s\n' "$out2" | grep -qx "$x layout save work: kept, not done (it takes a typed yes)" && ! grep -q '^THEME=dracula' "$HOME/.config/spark-shell/config" && [ ! -e "$HOME/.config/spark-shell/layouts/work" ] \
+    && ok "want at the terminal: a risky step (this machine's list, whatever its hint) asks for yes, and with no terminal is kept; the steps after it are not run" || bad "want risky" "$out | $out2"
+grep -q '^LOCAL_RISK="wifi_forget window_close layout_save bt_pair"$' "$SH" && grep -q 'pub const LOCAL_RISK: \[&str; 4\] = \["wifi_forget", "window_close", "layout_save", "bt_pair"\];' "$REPO/dialog/src/app.rs" \
+    && ok "the shell and the dialog hold one list of risky steps" || bad "risk lists" "$(grep -n LOCAL_RISK "$SH" "$REPO/dialog/src/app.rs")"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 printf 'buy bread\n' > "$H/notes.md"; printf 'x\000y' > "$H/blob.txt"; printf 'a' > "$H/pic.png"
+awk 'BEGIN { for (i = 0; i < 1601; i++) printf "0123456789" }' > "$H/long.md"; : > "$H/empty.md"; printf 'caf\351\n' > "$H/latin1.txt"
+st=0; o1=$(sh "$SH" want --attach "$H/long.md" what 2>&1) || st=$?; st2=0; o2=$(sh "$SH" want --attach "$H/empty.md" what 2>&1) || st2=$?; st3=0; o3=$(sh "$SH" want --attach "$H/latin1.txt" what 2>&1) || st3=$?
+[ "$st" -eq 1 ] && [ "$o1" = 'long.md is 16 kB; spark reads a file of 16 kB at most whole, so attach a shorter one' ] && [ "$st2" -eq 1 ] && [ "$o2" = 'empty.md is empty' ] && [ "$st3" -eq 1 ] && [ "$o3" = 'latin1.txt is not UTF-8 text' ] \
+    && ok "want --attach: a file over 16 kB, an empty one, one not UTF-8: refused with the reason, never cut or sent" || bad "want attach limits" "$st $o1 | $st2 $o2 | $st3 $o3"
 st=0; out=$(sh "$SH" want --attach "$H/notes.md" "what do these say" 2>&1) || st=$?
 [ "$st" -eq 0 ] && [ "$out" = 'the notes say to buy bread.' ] && [ "$(cat "$HOME/spark.stdin")" = 'buy bread' ] && [ "$(paste -sd ' ' - < "$HOME/spark.argv")" = 'edit --source --name notes.md -- ? what do these say' ] \
     && ok "want --attach FILE: the file is the text on stdin of spark edit ? --source, by its name alone, never its path" || bad "want attach" "st=$st $out $(cat "$HOME/spark.argv")"

@@ -30,8 +30,8 @@
 #   spark-shell reminders             the reminders ahead, in their groups
 #   spark-shell reminders add DAY TIME WORDS
 #                                     tomorrow 9:00 call the dentist
-#   spark-shell reminders done|snooze NAME
-#                                     take one away, or have it in 10 minutes
+#   spark-shell reminders done|snooze|restore NAME
+#                                     done (kept 30 days), in 10 minutes, back
 #   spark-shell desktop               start the desktop now (from a console)
 #   spark-shell desktop keys          list the desktop's keys
 #   spark-shell desktop wallpaper X   set a picture, a color, default or none
@@ -52,7 +52,8 @@
 #   spark-shell dialog [SECTION]      open the dialog (Super+d), SECTION first
 #   spark-shell dialog chat           spark chat in the dialog's window (Super+s)
 #   spark-shell dialog about          the version, the keys and the address
-#   spark-shell want "WORDS"          ask for it: "mute everything"; the steps run
+#   spark-shell want "WORDS"          ask for it, "mute everything": steps run;
+#                                     a question's are shown, not run
 #   spark-shell want --json "WORDS"   the steps spark picks, as JSON; none run
 #   spark-shell want --attach FILE "WORDS"
 #                                     ask about a text file (txt md)
@@ -2908,7 +2909,7 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | due 
 
 # --- the signs and the sizes
 PANEL_APP='spark-dialog'              # the desktop window's app id: the dialog's since v0.64 (the sway template floats and centres it)
-PANEL_SIZE=60x44                      # columns x rows of the desktop window: the dialog's size, a design token
+PANEL_SIZE=60x40                      # columns x rows of the desktop window: the dialog's size, a design token
 PANEL_COL=9                           # the section column: as wide as the longest section's name
 PANEL_IN=4                            # the glance's indent: the section column, where every row's text begins
 PULSE_W=32                            # the corner: the march's place at the top right of the window, on the date's row, this many cells from the right margin
@@ -3615,7 +3616,23 @@ rem_ours() {   # rem_ours LINE -> 0 when spark-shell wrote that event (its uid, 
     case $(printf '%s' "$1" | cut -f2) in spark-shell-*) ;; *) return 1 ;; esac
     [ "$(grep -c '^BEGIN:VEVENT' "$(printf '%s' "$1" | cut -f4)")" = 1 ]
 }
-rem_act() {   # rem_act add|done|snooze ARG
+REM_DONE_DAYS=30   # a reminder done is kept this long in ~/calendar/done, so undo can bring it back
+rem_restore() {   # rem_restore UID|NAME -> the newest reminder done with that uid or name, back in ~/calendar
+    [ -d "$CAL_DIR/done" ] || { echo "no reminder done to bring back"; return 1; }
+    _rn=$(panel_lower "$1")
+    ls -t "$CAL_DIR/done" > "$TMP/rem.done" 2>/dev/null || :   # the newest first: the one put aside last comes back
+    while IFS= read -r _f; do
+        case $_f in *.ics) ;; *) continue ;; esac
+        _p=$CAL_DIR/done/$_f; [ -f "$_p" ] && [ ! -L "$_p" ] || continue
+        _u=$(tr -d '\r' < "$_p" | sed -n 's/^UID://p' | head -1); _t=$(tr -d '\r' < "$_p" | sed -n 's/^SUMMARY://p' | head -1)
+        [ "$_u" = "$1" ] || [ "$(panel_lower "$_t")" = "$_rn" ] || continue
+        [ ! -e "$CAL_DIR/$_f" ] || { echo "$_t is in your reminders already"; return 1; }
+        mv "$_p" "$CAL_DIR/$_f" || { echo "could not bring $_t back"; return 1; }
+        bar_redraw; echo "$_t is back"; return 0
+    done < "$TMP/rem.done"
+    echo "no reminder done named $1"; return 1
+}
+rem_act() {   # rem_act add|done|snooze|restore ARG
     _rc=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; rm -f "${_rc:-$STATE_DIR}/reminders.list"   # the list made again after this step
     case $1 in
         add) _p=$(rem_parse "$2") || { echo "a reminder takes a day and a time, then the words: tomorrow 09:00 call the dentist"; return 1; }
@@ -3627,10 +3644,16 @@ rem_act() {   # rem_act add|done|snooze ARG
         done|snooze) _l=$(rem_find "$2"); [ -n "$_l" ] || { echo "no reminder named $2"; return 1; }
             _t=$(printf '%s' "$_l" | cut -f3)
             rem_ours "$_l" || { echo "$_t is an event another calendar wrote: change it there"; return 1; }
-            if [ "$1" = 'done' ]; then rm -f "$(printf '%s' "$_l" | cut -f4)"; bar_redraw; echo "done: $_t"; return 0; fi
+            if [ "$1" = 'done' ]; then   # done is put aside, not deleted: undo brings it back for REM_DONE_DAYS
+                mkdir -p "$CAL_DIR/done"; _f=$(printf '%s' "$_l" | cut -f4)
+                mv "$_f" "$CAL_DIR/done/" && touch "$CAL_DIR/done/${_f##*/}" || { echo "could not mark $_t done"; return 1; }
+                find "$CAL_DIR/done" -name '*.ics' -mtime +"$REM_DONE_DAYS" -exec rm -f {} + 2>/dev/null || :
+                bar_redraw; echo "done: $_t"; return 0
+            fi
             _e=$(( $(date +%s) + 600 )); _s=$(when_of "$_e" %Y%m%d%H%M)
             rem_write "$(printf '%s' "$_l" | cut -f4)" "$(printf '%s' "$_l" | cut -f2)" "$_s" "$_t"
             bar_redraw; echo "$_t again at $(rem_hm "$_s")" ;;
+        restore) rem_restore "$2" ;;
         *) echo "$1 is not something reminders does"; return 1 ;;
     esac
 }
@@ -3875,6 +3898,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         bt:connect) printf 'disconnect %s\tbt %s off\n' "$_arg" "$_arg" ;;
         bt:disconnect) printf 'connect %s\tbt %s\n' "$_arg" "$_arg" ;;
         bt:power) if [ "$_arg" = off ]; then printf 'power on\tbt on\n'; else printf 'power off\tbt off\n'; fi ;;
+        reminders:done) _rl=$(rem_find "$_arg"); [ -z "$_rl" ] || printf 'restore %s\treminder %s\n' "$(printf '%s' "$_rl" | cut -f2)" "$(printf '%s' "$_rl" | cut -f3)" ;;   # by its uid: the one put aside, not another of that name
     esac
 }
 panel_step() {   # panel_step SECTION ACTION [ARG] -> panel_act's line; a step that worked is remembered as recent, and its inverse kept for undo
@@ -3969,6 +3993,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         notes:new) echo ''; return 0 ;;
         notes:open) _n=$(notes_list | awk -F '\t' -v w="$(panel_lower "${3:-}")" 'tolower($2) == w { print $2; exit }'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "notes: no note named ${3:-?}"; return 1 ;;   # any note, not only the five shown
         reminders:done|reminders:snooze) _n=$(rem_find "${3:-}" | cut -f3); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "reminders: no reminder named ${3:-?}"; return 1 ;;   # any reminder, due or ahead
+        reminders:restore) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo "reminders: restore takes the reminder's name"; return 1 ;;   # one put aside: no row lists it
         notes:add|notes:find|reminders:add) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo "$1: $2 takes the words"; return 1 ;;   # free words, as layout new
         display:brightness) case $3 in up|down|[1-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "display: brightness takes 1 to 100, up or down"; return 1 ;; esac ;;
         display:idle|display:lock) case $3 in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) echo "$3"; return 0 ;; *) echo "display: $2 takes minutes, 0 to 999"; return 1 ;; esac ;;
@@ -4033,12 +4058,13 @@ want_layout() { ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; desk_need "
 # want_json prints it for the dialog, which runs each step as a tools/call.
 US=$(printf '\037')
 want_put() { _wp=''; for _f in "$@"; do _wp="$_wp${_wp:+$US}$(printf '%s' "$_f" | scrub_text)"; done; printf '%s\n' "$_wp" >> "$TMP/plan"; }   # want_put FIELD... -- one plan line, every field scrubbed
-want_plan() {   # want_plan WORDS -> $TMP/plan; exit 1 when the words could not be read (the plan says why)
+want_plan() {   # want_plan WORDS -> $TMP/plan; exit 1 when the words could not be read (the plan says why); WANT_Q set when the words ask something
     : > "$TMP/plan"
+    WANT_Q=''; ! want_is_question "$1" || WANT_Q=1   # a question changes nothing: its steps are proposals, run when asked for
     command -v jq >/dev/null 2>&1 || { want_put no "jq is not installed (spark-shell on)"; return 1; }
     spark=$(spark_bin); [ -n "$spark" ] || { want_put no "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
     SND=${SND:-$(snd_tool)}
-    if ! want_says_close "$1" && _app=$(want_names_app "$1"); then   # the machine's own word: an app named opens, or is a layout for the task; never a question for the model; words about closing go to the list
+    if [ -z "$WANT_Q" ] && ! want_says_close "$1" && _app=$(want_names_app "$1"); then   # the machine's own word: an app named opens, or is a layout for the task; words about closing go to the list; a question that names an app opens nothing
         if [ "$(printf '%s\n' "$1" | wc -w | tr -d ' ')" -le 2 ] && [ "$(desk_words_full "$1")" = false ] && [ -z "$(desk_words_ws "$1")" ]; then   # a word or two and no layout word: the app itself, at once
             want_step apps open "$(panel_apps_known | awk -v w="$_app" 'tolower($0) == w && !d {print; d = 1}')"
         else want_put step layout new "$1" "$1"; fi   # the layout's model reads the whole sentence: the workspace, fullscreen, the pages
@@ -4115,21 +4141,44 @@ want_steps() {   # want_steps WORDS -> $TMP/plan from spark steps; exit 1 when s
 want_step() {   # want_step SECTION ACTION ARG -- into the plan when panel_gate takes it, else its refusal
     if _g=$(panel_gate "$1" "$2" "$3"); then want_put step "$1" "$2" "$3" "$_g"; else want_put no "$PANEL_CROSS $_g"; fi
 }
-want_run() {   # plays $TMP/plan: each step's line with its sign, a say or no line as it is
-    while IFS="$US" read -r k pg ac ar ga; do
+# The steps this machine counts as risky whatever a tool's hint says (the
+# hint is the provider's word; the risk is decided here): a saved password
+# gone, a window closed with its work, a layout written over, a new device
+# trusted. The dialog holds the same list (dialog/src/app.rs LOCAL_RISK).
+LOCAL_RISK="wifi_forget window_close layout_save bt_pair"
+step_risky() {   # step_risky SECTION ACTION [ARG] -> 0 when the step waits for a typed yes: its tool's destructive hint, or LOCAL_RISK
+    action_tool "$1" "$2${3:+ $3}" || return 1
+    case " $LOCAL_RISK " in *" $_tool "*) return 0 ;; esac
+    tool_spec "$_tool" || return 1
+    case $_th in *d*) return 0 ;; esac
+    return 1
+}
+step_yes() {   # step_yes LINE -> 0 when yes was typed for this step at a terminal; with no terminal, never
+    if [ -n "${SPARK_SHELL_TEST_TTY:-}" ]; then printf 'type yes to %s: ' "$1"; IFS= read -r _y || _y=''
+    elif [ -t 0 ] && { : < /dev/tty; } 2>/dev/null; then printf 'type yes to %s: ' "$1" > /dev/tty; IFS= read -r _y < /dev/tty || _y=''
+    else return 1; fi
+    [ "$_y" = yes ]
+}
+want_run() {   # plays $TMP/plan: each step's line with its sign, a say or no line as it is; a question's steps are proposed, not run; a risky step asks for yes; a step not done stops the ones after it
+    _wf=''
+    while IFS="$US" read -r k pg ac ar ga <&3; do
         case $k in
             say|no) printf '%s\n' "$pg" ;;
-            step) if [ "$pg:$ac" = layout:new ]; then want_layout "$ar"
-                  elif _l=$(panel_step "$pg" "$ac" "$ga" 2>&1); then printf '%s %s\n' "$PANEL_TICK" "$_l"; else printf '%s %s\n' "$PANEL_CROSS" "$_l"; fi ;;
+            step) _wl="$pg $ac${ar:+ $ar}"
+                  if [ -n "${WANT_Q:-}" ]; then printf '%s proposed, not run: %s\n' "$PANEL_GO" "$_wl"; continue; fi
+                  if [ -n "$_wf" ]; then printf '%s not run, for the step before was not done: %s\n' "$PANEL_CROSS" "$_wl"; continue; fi
+                  if step_risky "$pg" "$ac" "$ga" && ! step_yes "$_wl"; then printf '%s %s: kept, not done (it takes a typed yes)\n' "$PANEL_CROSS" "$_wl"; _wf=1; continue; fi
+                  if [ "$pg:$ac" = layout:new ]; then want_layout "$ar"
+                  elif _l=$(panel_step "$pg" "$ac" "$ga" 2>&1); then printf '%s %s\n' "$PANEL_TICK" "$_l"; else printf '%s %s\n' "$PANEL_CROSS" "$_l"; _wf=1; fi ;;
         esac
-    done < "$TMP/plan"
+    done 3< "$TMP/plan"
 }
 want_play() {   # want_play WORDS -> one line per step with its sign, or the answer to a question; an app named is a layout first
     _st=0; want_plan "$1" || _st=$?
     want_run
     return "$_st"
 }
-want_json() {   # -> the plan as one JSON object for the dialog: {"answer", "steps": [{"name", "arguments", "line"}], "refused": [LINE]}
+want_json() {   # -> the plan as one JSON object for the dialog: {"answer", "question", "steps": [{"name", "arguments", "line"}], "refused": [LINE]}; a question's steps are the dialog's proposals
     while IFS="$US" read -r k pg ac ar ga; do
         case $k in
             say) jq -cn --arg t "$pg" '{answer: $t}' ;;
@@ -4137,21 +4186,23 @@ want_json() {   # -> the plan as one JSON object for the dialog: {"answer", "ste
             step) if action_tool "$pg" "$ac${ar:+ $ar}"; then tool_call_json "$_tool" "$_tv" "$pg $ac${ar:+ $ar}"
                   else jq -cn --arg t "$PANEL_CROSS $pg: $ac is not a step the dialog takes" '{refused: $t}'; fi ;;
         esac
-    done < "$TMP/plan" | jq -cs '{answer: ([.[] | .answer // empty] | join(" ")), steps: [.[] | select(.name)], refused: [.[] | .refused // empty]}'
+    done < "$TMP/plan" | jq -cs --arg q "${WANT_Q:-}" '{answer: ([.[] | .answer // empty] | join(" ")), question: ($q == "1"), steps: [.[] | select(.name)], refused: [.[] | .refused // empty]}'
 }
 want_attach() {   # want_attach FILE WORDS -> spark's answer about the file, a question about someone else's text (spark edit ? --source); exit 1 with one line when the file is refused
     [ "$DIALOG_ATTACH" = yes ] || { echo "attaching is off (DIALOG_ATTACH=no)"; return 1; }
     [ -f "$1" ] && [ -r "$1" ] || { echo "$1 is not a file that can be read"; return 1; }
     _ext=$(printf '%s' "${1##*/}" | sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | tr 'A-Z' 'a-z')
     case " $DIALOG_ATTACH_TYPES " in *" ${_ext:-.} "*) ;; *) echo "${1##*/} is not a type plus attaches ($DIALOG_ATTACH_TYPES)"; return 1 ;; esac
-    _n=$(wc -c < "$1" | tr -d ' '); [ "$_n" -le "$WANT_ATTACH_MAX" ] || { echo "${1##*/} is larger than $((WANT_ATTACH_MAX / 1024)) kB"; return 1; }
-    [ "$(tr -d '\000' < "$1" | wc -c | tr -d ' ')" = "$_n" ] || { echo "${1##*/} is not text: spark reads text"; return 1; }
+    _n=$(wc -c < "$1" | tr -d ' '); [ "$_n" -le "$WANT_ATTACH_MAX" ] || { echo "${1##*/} is $((_n / 1000)) kB; spark reads a file of 16 kB at most whole, so attach a shorter one"; return 1; }
+    [ "$_n" -gt 0 ] || { echo "${1##*/} is empty"; return 1; }
+    [ "$(LC_ALL=C tr -d '\000' < "$1" | wc -c | tr -d ' ')" = "$_n" ] || { echo "${1##*/} is not text: spark reads text"; return 1; }
+    ! command -v iconv >/dev/null 2>&1 || iconv -f UTF-8 -t UTF-8 < "$1" > /dev/null 2>&1 || { echo "${1##*/} is not UTF-8 text"; return 1; }
     spark=$(spark_bin); [ -n "$spark" ] || { echo "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
     st=0; "$spark" edit --source --name "${1##*/}" -- '?' "$2" < "$1" > "$TMP/attach.out" 2>"$TMP/attach.err" || st=$?
     [ "$st" -eq 0 ] || { echo "$PANEL_CROSS spark did not answer: $(head -1 "$TMP/attach.err" | scrub_text)"; return 1; }
     scrub_text < "$TMP/attach.out"
 }
-WANT_ATTACH_MAX=1048576   # an attached file, at most a megabyte: spark edit sends 16 kB of it at most anyway
+WANT_ATTACH_MAX=16000   # an attached file, at most what spark reads whole (forge.FILE_MAX characters): a longer one is refused, never cut unseen
 cmd_want() {   # cmd_want [--attach FILE] [--json] WORDS -- the one entry to the want path
     _file=''; _json=''
     while [ $# -gt 0 ]; do
@@ -4196,7 +4247,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme wallpaper window display keyboard notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_font wallpaper_use wallpaper_picture theme_transparency theme_alpha window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze display_idle display_lock display_brightness keyboard_use keyboard_next bar_on bar_off layout_open layout_new layout_save layout_add apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_font wallpaper_use wallpaper_picture theme_transparency theme_alpha window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_brightness keyboard_use keyboard_next bar_on bar_off layout_open layout_new layout_save layout_add apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -4253,7 +4304,8 @@ tool_spec() {
         notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='A new note of TEXT; with "NAME: TEXT", a line added to the note NAME.' ;;
         notes_find)        _ts=notes _ta=find _tp=words _tk=string _th=rf _tt='notes find WORDS' _td='Which notes say these words, and the line that does.' ;;
         reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _tw='when and what: fri 9am call the vet' _th=f _tt='reminders add WHEN TEXT' _td='A reminder: WHEN is today, tomorrow, a weekday or YYYY-MM-DD, then HH:MM, then what to remember.' ;;
-        reminders_done)    _ts=reminders _ta='done' _tp=name _tk=string _th='' _tt='reminders done NAME' _td='Mark a reminder done, which takes it away.' ;;
+        reminders_done)    _ts=reminders _ta='done' _tp=name _tk=string _th='' _tt='reminders done NAME' _td='A reminder done: it is put aside for 30 days, and undo brings it back.' ;;
+        reminders_restore) _ts=reminders _ta=restore _tp=name _tk=string _th=f _tt='reminders restore NAME' _td='Bring back a reminder marked done in the last 30 days.' ;;
         reminders_snooze)  _ts=reminders _ta=snooze _tp=name _tk=string _th='' _tt='reminders snooze NAME' _td='The reminder again in 10 minutes.' ;;
         display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=i _tt='display idle N' _td='Turn the display off after N idle minutes; 0 never.' ;;
         display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=i _tt='display lock N' _td='Lock the screen after N idle minutes; 0 never.' ;;
@@ -4897,6 +4949,7 @@ panel_loop() {   # panel_loop SECTION -- the window: the glance, the receipt, th
                 reminders:add) printf 'when and what (fri 9am call the vet): '; IFS= read -r _nm </dev/tty || _nm=''; [ -n "$_nm" ] || { said="no reminder: no words"; continue; }
                    if panel_run march panel_step reminders add "$_nm"; then said="$PANEL_TICK $(cat "$TMP/run.out")"; else said="$PANEL_CROSS $(cat "$TMP/run.out")"; fi ;;
                 *) kind=march; [ "$pg" != layout ] || kind=steps
+                   if step_risky "$pg" "$a" "$*" && ! step_yes "$pg $a${*:+ $*}"; then said="$PANEL_CROSS $pg $a${*:+ $*}: kept, not done (it takes a typed yes)"; continue; fi
                    panel_group_begin
                    if panel_run "$kind" panel_step "$pg" "$a" "$@"; then said="$PANEL_TICK $(cat "$TMP/run.out")"; else said="$PANEL_CROSS $(cat "$TMP/run.out")"; fi
                    panel_group_end ;;
@@ -5519,7 +5572,7 @@ note_here() {   # note_here FILE NAME -- the note in your editor: in this termin
         [ "$2" != "a new note" ] || [ "$(cat "$1" 2>/dev/null)" != '# ' ] || { rm -f "$1"; echo "nothing written, so no new note"; }   # an empty new note is not kept
     else _l=$(note_open_file "$1" "$2") || refuse_in notes "$_l"; echo "$_l"; fi
 }
-cmd_reminders() {   # spark-shell reminders [add DAY TIME WORDS | done NAME | snooze NAME]: the dialog's reminders, at the prompt
+cmd_reminders() {   # spark-shell reminders [add DAY TIME WORDS | done NAME | snooze NAME | restore NAME]: the dialog's reminders, at the prompt
     config_load
     case ${1:-} in
         '') _now=$(date +%Y%m%d%H%M); rem_list > "$TMP/rem.l"
@@ -5530,10 +5583,10 @@ cmd_reminders() {   # spark-shell reminders [add DAY TIME WORDS | done NAME | sn
                 [ "$_g" = "$_gp" ] || { [ -z "$_gp" ] || echo; if [ "$_g" = due ]; then echo 'due now'; else echo "$_g"; fi; _gp=$_g; }
                 printf '  %-16s %s\n' "$(rem_column "$_s" "$_g")" "$_t"
             done < "$TMP/rem.l" ;;
-        add|done|snooze) _a=$1; shift
+        add|done|snooze|restore) _a=$1; shift
             [ $# -gt 0 ] || [ "$_a" = add ] || refuse_in reminders "$_a takes the reminder's name (spark-shell reminders lists them)"
             _l=$(rem_act "$_a" "$*") || refuse_in reminders "$_l"; echo "$_l" ;;
-        *) refuse_in reminders "$1 is not something reminders does: add, done or snooze" ;;
+        *) refuse_in reminders "$1 is not something reminders does: add, done, snooze or restore" ;;
     esac
 }
 cmd_apps_verb() {   # spark-shell apps (and the old desktop apps|tools): the picker, where there is a desktop

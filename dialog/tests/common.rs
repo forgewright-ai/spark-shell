@@ -6,7 +6,6 @@ use ratatui::buffer::{Buffer, CellDiffOption};
 use ratatui::style::{Color, Modifier};
 use serde_json::{json, Value};
 use spark_dialog::app::{App, Config};
-use spark_dialog::app::{HEIGHT, WIDTH};
 use spark_dialog::mcp::{Incoming, Server};
 use spark_dialog::palette::Palette;
 use spark_dialog::scrub::cells;
@@ -120,21 +119,23 @@ pub fn html_runs(buf: &Buffer, pal: &Palette, caption: &str, mark: &str) -> Stri
     };
     let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     let mut out = format!(
-        "<div><p style=\"color:{};font-size:13px;margin:0 0 8px\">{}</p><div style=\"background:{};padding:19px 2ch;white-space:pre;width:60ch;line-height:19px\">",
+        "<div><p style=\"color:{};font-size:13px;margin:0 0 8px\">{}</p><div style=\"background:{};padding:19px 2ch;white-space:pre;width:{}ch;line-height:19px\">",
         hex(pal.muted, pal.muted),
         esc(caption),
-        hex(pal.surface, pal.surface)
+        hex(pal.surface, pal.surface),
+        buf.area.width
     );
-    for y in 0..HEIGHT {
+    let (w, h) = (buf.area.width, buf.area.height);
+    for y in 0..h {
         let mut run = String::new();
         let mut style = String::new();
         let mut skip = 0;
         let mut x = 0;
-        while x < WIDTH {
+        while x < w {
             let c = &buf[(x, y)];
             if c.diff_option == CellDiffOption::Skip {
                 let mut n = 0;
-                while x < WIDTH && buf[(x, y)].diff_option == CellDiffOption::Skip {
+                while x < w && buf[(x, y)].diff_option == CellDiffOption::Skip {
                     n += 1;
                     x += 1;
                 }

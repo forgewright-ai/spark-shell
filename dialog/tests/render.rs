@@ -7,10 +7,10 @@ use common::palette;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use serde_json::json;
-use spark_dialog::app::{App, Config, Line, Mode, Provider, Sign, Step, View, Who, HEIGHT, WIDTH};
+use spark_dialog::app::{App, Config, Line, Mode, Provider, Sign, Step, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
 use spark_dialog::model;
 
-const CLOCK: &str = "Sunday 18 October \u{b7} 12:04";
+const CLOCK: &str = "Sun 18 Oct \u{b7} 12:04";
 
 fn provider(label: &str, title: &str, rows: serde_json::Value, tools: serde_json::Value) -> Provider {
     let mut p = Provider::new(label);
@@ -76,17 +76,24 @@ fn base() -> App {
 }
 
 fn render(app: &App, name: &str) {
+    render_at(app, name, WIDTH, HEIGHT);
+}
+
+/// The app drawn at w by h in both palettes: the same grid of slots, the grid kept in golden/.
+fn render_at(app: &App, name: &str, w: u16, h: u16) {
     let mut grids = vec![];
     for pal in ["tokyonight-night", "solarized-light"] {
         let p = palette(pal);
-        let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+        let mut b = Buffer::empty(Rect::new(0, 0, w, h));
+        assert_eq!(app.size, (w, h), "{}: the app is told the size it is drawn at", name);
         spark_dialog::ui::draw(app, &p, CLOCK, &mut b);
         if let Ok(dir) = std::env::var("RENDER_HTML") {
-            let page = format!("<!doctype html><meta charset=utf-8><body style=\"margin:0;padding:28px;background:#111;font:16px 'DejaVu Sans Mono',Menlo,monospace\">{}</body>", common::html_runs(&b, &p, &format!("{} \u{b7} {} \u{b7} 60x44", name, pal), "MARKBLOB"));
+            let page = format!("<!doctype html><meta charset=utf-8><body style=\"margin:0;padding:28px;background:#111;font:16px 'DejaVu Sans Mono',Menlo,monospace\">{}</body>", common::html_runs(&b, &p, &format!("{} \u{b7} {} \u{b7} {}x{}", name, pal, w, h), "MARKBLOB"));
             std::fs::write(format!("{}/{}-{}.html", dir, name, pal), page).unwrap();
         }
         let s = spark_dialog::ui::snapshot(&b, &p);
-        assert!(!s.contains('?'), "{} in {}: a color that is no slot of the palette\n{}", name, pal, s);
+        let codes = s.split_once("\n\n").map(|(_, c)| c).unwrap_or("");
+        assert!(!codes.contains('?'), "{} in {}: a color that is no slot of the palette\n{}", name, pal, s);
         grids.push(s);
     }
     assert_eq!(grids[0], grids[1], "{}: the two palettes draw different grids", name);
@@ -98,16 +105,89 @@ fn render(app: &App, name: &str) {
     assert_eq!(grids[0], want, "{} differs from {} (UPDATE_GOLDEN=1 after looking at it)", name, path);
 }
 
+/// The base with a section for each place of the home: apps, files, notes and the clock too.
+fn full() -> App {
+    let mut app = base();
+    for (l, t) in [("apps", "4 apps"), ("files", "your home"), ("notes", "2 notes"), ("clock", "")] {
+        app.providers.push(provider(l, t, json!({"title": l, "rows": [], "short": []}), json!([])));
+    }
+    app
+}
+
 #[test]
 fn home() {
-    let app = base();
-    render(&app, "home");
+    render(&full(), "home");
+}
+
+#[test]
+fn home_in_a_small_window() {
+    let mut app = full();
+    app.size = (40, 26);
+    render_at(&app, "home-small", 40, 26);
+}
+
+#[test]
+fn a_window_too_small_says_so() {
+    let mut app = full();
+    app.size = (30, 14);
+    let p = palette("tokyonight-night");
+    let mut b = Buffer::empty(Rect::new(0, 0, 30, 14));
+    spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
+    let row: String = (0..30).map(|x| b[(x, 7)].symbol().to_string()).collect();
+    assert_eq!(row.trim(), "Make this window larger");
+}
+
+#[test]
+fn settings() {
+    let mut app = full();
+    app.view = View::Dest(SETTINGS_DEST);
+    app.came_from = vec![View::Home];
+    app.in_list = true;
+    app.sel = 1;
+    render(&app, "settings");
+}
+
+#[test]
+fn the_model_picker_says_where_it_runs_and_for_whom() {
+    let mut app = full();
+    app.models = vec![
+        ("gemma4-26b-a4b".into(), "serving".into()),
+        ("qwen3-5-2b".into(), "downloaded".into()),
+        ("qwen3-30b-a3b".into(), "-".into()),
+    ];
+    app.view = View::Models;
+    app.came_from = vec![View::Home];
+    app.in_list = true;
+    app.sel = 1;
+    app.input = "half a thought".into();
+    app.cursor = 14;
+    render(&app, "models");
+}
+
+#[test]
+fn talk() {
+    let mut app = full();
+    app.view = View::Talk;
+    app.came_from = vec![View::Home];
+    render(&app, "talk");
+}
+
+#[test]
+fn a_two_line_draft_and_a_file_for_the_next_question() {
+    let mut app = full();
+    app.cfg.plus = true;
+    app.input = "summarize this\nand list what I should do first,\nthen what can wait".into();
+    app.cursor = app.input.chars().count();
+    app.attachment = Some("/data/me/notes.md".into());
+    app.chip_focus = Some(4);
+    render(&app, "draft");
 }
 
 #[test]
 fn a_section_with_its_groups_and_the_exchange() {
     let mut app = base();
     app.view = View::Section(0);
+    app.came_from = vec![View::Home];
     app.exchange = vec![
         Line {
             sign: Sign::You,
@@ -131,6 +211,36 @@ fn a_section_with_its_groups_and_the_exchange() {
         line: "undo aerc".into(),
     });
     render(&app, "section");
+}
+
+#[test]
+fn a_question_s_steps_are_proposals() {
+    let mut app = full();
+    app.exchange = vec![
+        Line {
+            sign: Sign::You,
+            text: "is firefox open?".into(),
+            undo: false,
+        },
+        Line {
+            sign: Sign::Says,
+            text: "No. Firefox is installed, and no window of it is open now.".into(),
+            undo: false,
+        },
+    ];
+    app.proposals = vec![Step {
+        prov: 0,
+        call: model::Call {
+            name: "window_focus".into(),
+            arguments: json!({"name": "firefox"}).as_object().unwrap().clone(),
+            ask: vec![],
+        },
+        who: Who::Model,
+        line: "apps open firefox".into(),
+    }];
+    app.in_list = true;
+    app.sel = 0;
+    render(&app, "proposal");
 }
 
 #[test]
@@ -172,12 +282,11 @@ fn a_long_list_says_how_many_rows_sit_below() {
         .iter()
         .map(|n| row(&format!("apps:open {}", n), "opens", n, Some(("apps_open", json!({"name": n}))), None))
         .collect();
-    let short: Vec<String> = names.iter().map(|n| format!("apps:open {}", n)).collect();
-    app.providers.insert(
-        3,
-        provider("apps", "30 apps", json!({"title": "apps", "rows": rows, "short": short}), json!([])),
-    );
+    app.providers
+        .insert(3, provider("apps", "30 apps", json!({"title": "apps", "rows": rows, "short": []}), json!([])));
     app.about_idx = Some(4);
+    app.view = View::Section(3);
+    app.came_from = vec![View::Home];
     render(&app, "long");
 }
 
@@ -186,6 +295,7 @@ fn about() {
     let mut app = base();
     app.cfg.mark = true;
     app.view = View::About;
+    app.came_from = vec![View::Home];
     app.exchange = vec![Line {
         sign: Sign::You,
         text: "show me about".into(),
@@ -198,6 +308,8 @@ fn about() {
 fn a_destructive_step_waits_for_yes() {
     let mut app = base();
     app.view = View::Section(0);
+    app.came_from = vec![View::Home];
+    app.in_list = true;
     app.sel = 1;
     app.mode = Mode::Confirm(Step {
         prov: 0,
@@ -210,12 +322,13 @@ fn a_destructive_step_waits_for_yes() {
         line: "window close terminal".into(),
     });
     app.input = "ye".into();
+    app.cursor = 2;
     render(&app, "confirm");
 }
 
 #[test]
 fn an_answer_wraps_under_its_sign() {
-    let mut app = base();
+    let mut app = full();
     app.exchange = vec![
         Line {
             sign: Sign::You,
@@ -256,7 +369,9 @@ fn a_folder_with_its_columns_and_an_attachment() {
         {"id": "files:total", "sign": "blank", "text": "4 files \u{b7} 6.9 MB", "tool": null, "more": [], "columns": [], "children": null, "group": null}
     ], "short": []}).to_string()).unwrap();
     app.view = View::Folder(f, "spark-shell://files/rows/RG93bmxvYWRz".into());
+    app.came_from = vec![View::Home];
     app.folder = Some((f, "spark-shell://files/rows/RG93bmxvYWRz".into(), rows));
+    app.in_list = true;
     app.sel = 3;
     app.attachment = Some("/data/me/notes.md".into());
     app.exchange = vec![Line {
@@ -285,7 +400,7 @@ fn reminders() -> Provider {
     )
 }
 
-/// The Calendar of the clock section, with the reminders provider or without it.
+/// The Calendar, with the reminders provider or without it.
 fn calendar_app(with_reminders: bool) -> App {
     let mut app = base();
     if with_reminders {
@@ -297,14 +412,14 @@ fn calendar_app(with_reminders: bool) -> App {
         json!({"title": "clock", "rows": [], "short": []}),
         json!([]),
     ));
-    app.view = View::Section(app.providers.len() - 1);
+    app.view = View::Dest(CALENDAR_DEST);
     app.came_from = vec![View::Home];
     app.today = Some((2026, 10, 18));
     app
 }
 
 #[test]
-fn the_clock_section_is_the_time_and_the_month() {
+fn the_calendar_is_the_months_then_the_reminders() {
     render(&calendar_app(true), "calendar");
 }
 
@@ -326,7 +441,7 @@ fn at(row: &str, needle: &str) -> Option<usize> {
 fn the_calendar_draws_this_month_and_the_next_side_by_side() {
     let (_, _, rows) = drawn(&calendar_app(true));
     let y = rows.iter().position(|r| r.starts_with("  October 2026")).expect("this month");
-    assert_eq!(at(&rows[y], "October 2026"), Some(2));
+    assert_eq!(y, 7, "under the prompt and the hint");
     assert_eq!(at(&rows[y], "November 2026"), Some(32), "the next month on the same row");
     assert_eq!(at(&rows[y + 1], "Su"), Some(2));
     assert_eq!(rows[y + 1].matches("Su").count(), 2, "a weekday line under each month");
@@ -356,43 +471,36 @@ fn a_day_with_a_reminder_is_in_the_accent_and_today_is_a_chip() {
 }
 
 #[test]
-fn the_agenda_is_the_dated_reminders_in_their_groups_the_time_on_the_right() {
-    let (b, p, rows) = drawn(&calendar_app(true));
+fn the_reminders_under_the_months_are_rows_to_pick_in_their_groups() {
+    let mut app = calendar_app(true);
+    let (b, p, rows) = drawn(&app);
     let head = |g: &str| {
         rows.iter()
             .position(|r| r.trim_end() == format!("  {}", g))
             .unwrap_or_else(|| panic!("a header {}", g))
     };
+    let new = rows.iter().position(|r| r.contains("new reminder")).expect("new reminder, to add one here");
     let (today, tomorrow, week, later) = (head("today"), head("tomorrow"), head("this week"), head("later"));
-    assert!(today < tomorrow && tomorrow < week && week < later, "in their order");
+    assert!(new < today && today < tomorrow && tomorrow < week && week < later, "in their order");
     assert_eq!(b[(2, today as u16)].fg, p.muted);
     assert_eq!(tomorrow, today + 4, "two rows, then a blank row between groups");
     let y = today + 1;
     assert_eq!(at(&rows[y], "call the dentist"), Some(6));
-    assert_eq!(b[(6, y as u16)].fg, p.fg);
     assert_eq!(rows[y].chars().nth(4), Some('\u{25cf}'), "a dot");
     assert_eq!(b[(4, y as u16)].fg, p.accent);
-    assert_eq!(rows[y + 1].chars().nth(4), Some('\u{25cb}'), "a ring");
-    assert_eq!(b[(4, y as u16 + 1)].fg, p.muted);
-    assert_eq!(at(&rows[y], "17:00"), Some(53), "the time ends at column 58");
-    assert_eq!(b[(53, y as u16)].fg, p.muted);
-    let y = later + 1;
-    assert_eq!(at(&rows[y], "Tue 3 Nov 16:30"), Some(58 - 15));
-    assert!(rows[y][..].trim_end().chars().count() == 58);
+    // the times line up on their right edge
+    let end = |r: &str| r.trim_end().chars().count();
+    assert_eq!(end(&rows[y]), end(&rows[later + 1]));
+    // and the rows are picked as any list's
+    app.in_list = true;
+    assert!(app.picks().len() >= 6);
 }
 
 #[test]
-fn a_reminder_with_no_day_is_not_in_the_agenda() {
-    let (_, _, rows) = drawn(&calendar_app(true));
-    assert!(!rows.iter().any(|r| r.contains("new reminder")));
-}
-
-#[test]
-fn the_calendar_with_no_reminders_is_the_time_and_the_two_months() {
+fn the_calendar_with_no_reminders_is_the_two_months() {
     let (b, p, rows) = drawn(&calendar_app(false));
     let y = rows.iter().position(|r| r.starts_with("  October 2026")).unwrap();
     assert_eq!(at(&rows[y], "November 2026"), Some(32));
-    // nothing below the months but the hint and the composer
     let last = rows.iter().rposition(|r| r.contains("31")).unwrap();
     assert!(rows[last + 1..last + 6].iter().all(|r| r.trim().is_empty()));
     // no day in the accent

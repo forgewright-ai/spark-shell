@@ -1,14 +1,17 @@
 //! spark-dialog: the terminal, the event loop, the helpers. Run by
-//! `spark-shell dialog` in a foot window of 60 by 44 cells.
+//! `spark-shell dialog` in a foot window of 60 by 40 cells.
 
 use ratatui::backend::CrosstermBackend;
 use ratatui::buffer::Buffer;
-use ratatui::crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
+use ratatui::crossterm::event::{
+    self, DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste, EnableFocusChange, EnableMouseCapture, Event, KeyCode,
+    KeyEventKind, KeyModifiers, KeyboardEnhancementFlags, MouseButton, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+};
 use ratatui::crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::crossterm::{execute, queue};
 use ratatui::layout::Rect;
 use ratatui::Terminal;
-use spark_dialog::app::{App, Config, Helper, Job, HEIGHT, WIDTH};
+use spark_dialog::app::{App, Config, Helper, Job};
 use spark_dialog::mcp::{Incoming, Server};
 use spark_dialog::palette::Palette;
 use spark_dialog::{sixel, ui};
@@ -86,16 +89,40 @@ fn args() -> Result<Args, String> {
     Ok(Args { cfg, providers })
 }
 
-/// The date and the time, the home dialog's title: the machine's own clock and zone.
-fn clock() -> String {
+/// How the person's locale writes the time: twelve hours when its own format says so, else 24.
+fn twelve_hours() -> bool {
+    unsafe {
+        let p = libc::nl_langinfo(libc::T_FMT);
+        if p.is_null() {
+            return false;
+        }
+        let f = std::ffi::CStr::from_ptr(p).to_string_lossy();
+        f.contains("%I") || f.contains("%r") || f.contains("%p") || f.contains("%l")
+    }
+}
+
+/// The date and the time, the header's right: the machine's own clock and zone, in the person's
+/// locale (the day and the month in its words, 12 or 24 hours as it says), as "Tue 20 Oct, 11:18" with a middle dot.
+fn clock(twelve: bool) -> String {
     unsafe {
         let t = libc::time(std::ptr::null_mut());
         let mut tm: libc::tm = std::mem::zeroed();
         libc::localtime_r(&t, &mut tm);
-        let mut b = [0u8; 64];
-        let f = b"%A %d %B \xc2\xb7 %H:%M\0";
+        let mut b = [0u8; 96];
+        let f: &[u8] = if twelve {
+            b"%a %d %b \xc2\xb7 %I:%M %p\0"
+        } else {
+            b"%a %d %b \xc2\xb7 %H:%M\0"
+        };
         let n = libc::strftime(b.as_mut_ptr() as *mut libc::c_char, b.len(), f.as_ptr() as *const libc::c_char, &tm);
-        String::from_utf8_lossy(&b[..n]).into_owned()
+        let s = String::from_utf8_lossy(&b[..n]).into_owned();
+        // no leading zero on the day or a twelve-hour hour: "Tue 5 Oct", "9:05 AM"
+        let s = s.replacen(" 0", " ", 1);
+        if twelve {
+            s.replace("\u{b7} 0", "\u{b7} ")
+        } else {
+            s
+        }
     }
 }
 
@@ -107,21 +134,6 @@ fn today() -> (i32, u32, u32) {
         libc::localtime_r(&t, &mut tm);
         (tm.tm_year + 1900, (tm.tm_mon + 1) as u32, tm.tm_mday as u32)
     }
-}
-
-/// The ids of the panel's recent picks (SECTION<tab>ACTION ARG), newest first.
-fn recent() -> Vec<String> {
-    let base = std::env::var("XDG_STATE_HOME")
-        .ok()
-        .filter(|s| s.starts_with('/'))
-        .or_else(|| std::env::var("HOME").ok().map(|h| h + "/.local/state"));
-    let Some(b) = base else { return vec![] };
-    std::fs::read_to_string(format!("{}/spark-shell/panel/recent", b))
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|l| l.split_once('\t').map(|(s, a)| format!("{}:{}", s, a)))
-        .take(5)
-        .collect()
 }
 
 fn run_job(job: Job, tx: mpsc::Sender<Ev>, listening: Arc<Mutex<Option<u32>>>) {
@@ -190,7 +202,10 @@ fn main() {
     let pal = Palette::from_env();
     let labels: Vec<String> = a.providers.iter().map(|(l, _)| l.clone()).collect();
     let mut app = App::new(a.cfg, &labels);
-    app.recent = recent();
+    unsafe {
+        libc::setlocale(libc::LC_TIME, c"".as_ptr());
+    }
+    let twelve = twelve_hours();
     let (tx, rx) = mpsc::channel::<Ev>();
     let (mtx, mrx) = mpsc::sync_channel::<Incoming>(256);
     for (i, (label, argv)) in a.providers.iter().enumerate() {
@@ -218,6 +233,15 @@ fn main() {
             }
         });
     }
+    let mut out = std::io::stdout();
+    let _ = terminal::enable_raw_mode();
+    let _ = execute!(out, EnterAlternateScreen, EnableMouseCapture, EnableBracketedPaste, EnableFocusChange);
+    // the kitty keyboard protocol (foot speaks it): Shift+Enter is a key of its own, a new line, not
+    // Enter. Asked before the keys' thread starts: that thread would hold the terminal's answer.
+    let kitty = terminal::supports_keyboard_enhancement().unwrap_or(false);
+    if kitty {
+        let _ = execute!(out, PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES));
+    }
     {
         let tx = tx.clone();
         std::thread::spawn(move || loop {
@@ -233,9 +257,6 @@ fn main() {
     }
     app.start();
 
-    let mut out = std::io::stdout();
-    let _ = terminal::enable_raw_mode();
-    let _ = execute!(out, EnterAlternateScreen, EnableMouseCapture);
     let mut term = match Terminal::new(CrosstermBackend::new(std::io::stdout())) {
         Ok(t) => t,
         Err(e) => {
@@ -254,20 +275,23 @@ fn main() {
         for j in std::mem::take(&mut app.jobs) {
             run_job(j, tx.clone(), listening.clone());
         }
-        let now_clock = clock();
+        let now_clock = clock(twelve);
         if now_clock != last_clock {
             last_clock = now_clock;
             app.today = Some(today());
             dirty = true;
         }
         if dirty {
+            if let Ok(sz) = term.size() {
+                app.size = (sz.width, sz.height);
+            }
             let _ = term.draw(|f| {
-                let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
-                drawn = ui::draw(&app, &pal, &last_clock, &mut b);
                 let area = f.area();
+                let mut b = Buffer::empty(Rect::new(0, 0, area.width, area.height));
+                drawn = ui::draw(&app, &pal, &last_clock, &mut b);
                 let fb = f.buffer_mut();
-                for y in 0..HEIGHT.min(area.height) {
-                    for x in 0..WIDTH.min(area.width) {
+                for y in 0..area.height {
+                    for x in 0..area.width {
                         fb[(x, y)] = b[(x, y)].clone();
                     }
                 }
@@ -337,38 +361,53 @@ fn main() {
                 match (k.code, k.modifiers) {
                     (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) => app.quit = Some(130),
                     (KeyCode::Esc, _) => app.escape(),
+                    // Shift+Enter, or Alt+Enter where the terminal cannot tell Shift+Enter from Enter
+                    (KeyCode::Enter, m) if m.contains(KeyModifiers::SHIFT) || m.contains(KeyModifiers::ALT) => app.newline(),
+                    (KeyCode::Char('j'), m) if m.contains(KeyModifiers::CONTROL) => app.newline(),
                     (KeyCode::Enter, _) => app.enter(),
                     (KeyCode::Up, _) => app.up(),
-                    (KeyCode::Left, _) => app.month(-1),
-                    (KeyCode::Right, _) => app.month(1),
                     (KeyCode::Down, _) => app.down(),
-                    (KeyCode::Tab, _) => app.tab(),
+                    (KeyCode::Left, _) => app.left(),
+                    (KeyCode::Right, _) => app.right(),
+                    (KeyCode::Home, _) => app.line_start(),
+                    (KeyCode::End, _) => app.line_end(),
+                    (KeyCode::PageUp, _) => app.page(-1),
+                    (KeyCode::PageDown, _) => app.page(1),
+                    (KeyCode::Tab, m) => app.tab(m.contains(KeyModifiers::SHIFT)),
+                    (KeyCode::BackTab, _) => app.tab(true),
                     (KeyCode::Backspace, _) => app.backspace(),
+                    (KeyCode::Delete, _) => app.delete(),
                     (KeyCode::Char(c), m) if !m.contains(KeyModifiers::CONTROL) && !m.contains(KeyModifiers::ALT) => app.typed(c),
                     _ => {}
                 }
             }
             Ev::Term(Event::Paste(p)) => {
-                for c in p.chars().filter(|c| !c.is_control()) {
-                    app.typed(c);
-                }
+                app.paste(&p);
+                dirty = true;
+            }
+            Ev::Term(Event::FocusLost) => {
+                app.focus_lost();
                 dirty = true;
             }
             Ev::Term(Event::Mouse(m)) => {
                 dirty = true;
                 match m.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
-                        if m.row == 0 && m.column + 2 >= WIDTH && app.cfg.close {
+                        if m.row == 0 && drawn.close.is_some_and(|(a, b)| m.column >= a && m.column < b) {
                             app.quit = Some(0);
-                        } else if let Some((_, _, c)) = drawn.chips.iter().find(|(a, b, _)| m.row == HEIGHT - 1 && m.column >= *a && m.column < *b) {
+                        } else if let Some((_, _, _, c)) = drawn.chips.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.chip(*c);
+                        } else if m.row >= drawn.prompt.0 && m.row <= drawn.prompt.1 {
+                            app.in_list = false;
+                            app.chip_focus = None;
                         } else if let Some((_, n)) = drawn.picks.iter().find(|(y, _)| *y == m.row) {
+                            app.in_list = true;
                             app.sel = *n;
                             app.enter();
                         }
                     }
-                    MouseEventKind::ScrollUp => app.up(),
-                    MouseEventKind::ScrollDown => app.down(),
+                    MouseEventKind::ScrollUp => app.page(-1),
+                    MouseEventKind::ScrollDown => app.page(1),
                     _ => {}
                 }
             }
@@ -376,7 +415,18 @@ fn main() {
         }
     }
     let code = app.quit.unwrap_or(0);
-    let _ = execute!(term.backend_mut(), DisableMouseCapture, LeaveAlternateScreen);
+    // a recording does not outlive the window
+    run_job(Job::StopListening, tx.clone(), listening.clone());
+    if kitty {
+        let _ = execute!(term.backend_mut(), PopKeyboardEnhancementFlags);
+    }
+    let _ = execute!(
+        term.backend_mut(),
+        DisableFocusChange,
+        DisableBracketedPaste,
+        DisableMouseCapture,
+        LeaveAlternateScreen
+    );
     let _ = terminal::disable_raw_mode();
     let _ = term.show_cursor();
     for s in app.servers.iter_mut() {

@@ -3,7 +3,7 @@
 mod common;
 use common::*;
 use serde_json::{json, Value};
-use spark_dialog::app::{Item, Job, Mode, Sign, View};
+use spark_dialog::app::{App, Item, Job, Mode, Sign, View, CALENDAR_DEST, SETTINGS_DEST};
 use spark_dialog::mcp::Incoming;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -98,6 +98,22 @@ fn started() -> Started {
     (app, rx, calls, reads)
 }
 
+/// The person opens a section and moves into its list, on row `sel`.
+fn at_row(app: &mut App, view: View, sel: usize) {
+    if app.view != view {
+        app.came_from.push(app.view.clone());
+        app.view = view;
+    }
+    app.in_list = true;
+    app.sel = sel;
+}
+
+fn typed(app: &mut App, words: &str) {
+    for c in words.chars() {
+        app.typed(c);
+    }
+}
+
 #[test]
 fn rows_and_tools_come_in_scrubbed_and_a_bad_title_is_not_offered() {
     let (app, _rx, _c, _r) = started();
@@ -116,16 +132,18 @@ fn rows_and_tools_come_in_scrubbed_and_a_bad_title_is_not_offered() {
 #[test]
 fn a_destructive_step_takes_the_typed_yes() {
     let (mut app, rx, calls, reads) = started();
-    app.sel = 1;
-    app.enter();
+    // a draft typed while a plan comes back: the yes it asks for does not eat it
+    typed(&mut app, "my draft");
+    app.plan(r#"{"answer": "", "steps": [{"name": "window_close", "arguments": {"name": "terminal"}, "line": "window close terminal"}], "refused": []}"#);
     assert!(matches!(app.mode, Mode::Confirm(_)), "{:?}", app.mode);
-    for c in "y".chars() {
-        app.typed(c);
-    }
+    assert!(app.input.is_empty(), "the prompt takes the yes; the draft waits aside");
+    typed(&mut app, "y");
     app.enter();
     assert!(calls.lock().unwrap().is_empty(), "anything but yes runs nothing");
     assert_eq!(app.exchange.last().unwrap().sign, Sign::Refused);
-    app.sel = 1;
+    assert_eq!(app.input, "my draft", "the draft comes back after the question");
+    app.set_draft("");
+    at_row(&mut app, View::Section(0), 1);
     app.enter();
     for c in "yes".chars() {
         app.typed(c);
@@ -148,7 +166,7 @@ fn a_destructive_step_takes_the_typed_yes() {
 #[test]
 fn an_elicitation_is_asked_in_the_composer_and_a_secret_is_declined() {
     let (mut app, rx, calls, _r) = started();
-    app.sel = 2;
+    at_row(&mut app, View::Section(0), 2);
     app.enter();
     assert!(pump(&mut app, &rx, |a| matches!(a.mode, Mode::Elicit { .. })));
     for c in "box".chars() {
@@ -281,6 +299,7 @@ fn an_undo_that_carries_a_secret_is_not_kept_and_esc_closes() {
     app.servers.push(stub(0, "wifi", script, tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    at_row(&mut app, View::Section(0), 0);
     app.enter();
     assert!(
         matches!(app.mode, Mode::Ask { masked: true, .. }),
@@ -296,8 +315,9 @@ fn an_undo_that_carries_a_secret_is_not_kept_and_esc_closes() {
     assert!(app.undo.is_none(), "an undo with a password in it is not kept");
     assert!(!app.exchange.iter().any(|l| l.text.contains("s3cret")), "the password is in no line");
     app.escape();
-    assert_eq!(app.quit, Some(0));
-    assert_eq!(app.view, View::Home);
+    assert_eq!(app.view, View::Home, "Esc goes back to the home");
+    app.escape();
+    assert_eq!(app.quit, Some(0), "and from the home it closes");
 }
 
 #[test]
@@ -322,6 +342,7 @@ fn a_row_that_asks_for_words_says_what_they_are() {
     app.servers.push(stub(0, "reminders", script, tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    at_row(&mut app, View::Section(0), 0);
     app.enter();
     assert!(
         matches!(app.mode, Mode::Ask { masked: false, .. }),
@@ -400,6 +421,7 @@ fn plus_opens_the_files_attaches_one_and_the_want_carries_it() {
         })
         .collect();
     assert_eq!(shown, vec!["docs", "notes.md"], "a picture and the total are not offered for attaching");
+    app.in_list = true;
     app.sel = 1;
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.attachment.is_some()));
@@ -427,6 +449,13 @@ fn plus_opens_the_files_attaches_one_and_the_want_carries_it() {
         vec!["want".to_string(), "--json".into(), "--attach".into(), format!("{}/notes.md", home)]
     );
     assert!(app.attachment.is_none(), "an attachment rides one want");
+    // the want failed: the words and the file come back, nothing lost
+    app.helper(spark_dialog::app::Helper::Want, Err("spark did not answer: the model is loading".into()));
+    assert_eq!(app.input, "what do these say");
+    assert_eq!(app.attachment.as_deref(), Some(format!("{}/notes.md", home).as_str()));
+    // Remove takes it off before the next question
+    app.chip(4);
+    assert!(app.attachment.is_none());
 }
 
 #[test]
@@ -439,10 +468,12 @@ fn an_attach_from_a_folder_comes_back_to_its_rows() {
     app.servers.push(stub(0, "files", files_stub(calls.clone(), home), tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    at_row(&mut app, View::Home, 0);
     app.enter();
-    assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "Files opens the home folder");
     app.chip(0);
     assert!(pump(&mut app, &rx, |a| a.folder.is_some() && a.attaching.is_some()));
+    app.in_list = true;
     app.sel = 1;
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.attachment.is_some()));
@@ -459,9 +490,11 @@ fn a_folder_drills_down_and_esc_walks_back() {
     app.servers.push(stub(0, "files", files_stub(calls.clone(), home), tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
+    at_row(&mut app, View::Home, 0);
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
     assert!(matches!(app.view, View::Folder(0, _)));
+    app.in_list = true;
     app.enter();
     assert!(
         pump(&mut app, &rx, |_a| calls.lock().unwrap().iter().filter(|c| c.get("read").is_some()).count()
@@ -488,6 +521,7 @@ fn an_attachment_outside_home_is_refused() {
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
     app.chip(0);
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
+    app.in_list = true;
     app.sel = 1;
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("not under your home"))));
@@ -575,31 +609,36 @@ fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
 }
 
 #[test]
-fn the_hint_says_esc_goes_back_where_it_does() {
+fn the_hint_says_what_enter_and_esc_do_and_only_keys_are_chips() {
     let (mut app, _rx, _c, _r) = started();
-    let said = |a: &spark_dialog::app::App| a.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
-    assert!(said(&app).ends_with("Esc closes"), "{}", said(&app));
-    app.came_from.push(View::Home);
-    app.view = View::Section(0);
-    assert!(said(&app).ends_with("Esc goes back"), "{}", said(&app));
+    let said = |a: &App| a.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
+    assert_eq!(said(&app), "Send Enter   New line Shift+Enter");
+    let chips: Vec<String> = app.hint().into_iter().filter(|(_, k)| *k).map(|(t, _)| t).collect();
+    assert_eq!(chips, vec!["Enter", "Shift+Enter"], "a chip is a key, nothing else");
+    at_row(&mut app, View::Home, 0);
+    assert!(said(&app).ends_with("Close Esc"), "{}", said(&app));
+    at_row(&mut app, View::Section(0), 0);
+    assert_eq!(said(&app), "Open Enter   Back Esc");
     app.escape();
     assert_eq!(app.view, View::Home);
-    assert!(said(&app).ends_with("Esc closes"));
 }
 
 #[test]
 fn left_and_right_move_the_month_in_the_calendar_and_nowhere_else() {
     let (mut app, _rx, _c, _r) = started();
-    app.month(1);
+    app.right();
     assert_eq!(app.month_offset, 0, "not in the calendar");
     app.providers.push(spark_dialog::app::Provider::new("clock"));
-    app.view = View::Section(1);
-    app.month(1);
-    app.month(1);
-    app.month(-1);
+    app.view = View::Dest(CALENDAR_DEST);
+    app.right();
+    app.right();
+    app.left();
     assert_eq!(app.month_offset, 1);
     let said = app.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
-    assert!(said.starts_with("\u{2190}\u{2192} month"), "{}", said);
+    assert!(said.ends_with("Month \u{2190}\u{2192}"), "{}", said);
+    typed(&mut app, "ab");
+    app.left();
+    assert_eq!((app.month_offset, app.cursor), (1, 1), "with words typed, left moves the cursor");
 }
 
 #[test]
@@ -626,8 +665,7 @@ fn a_pick_row_opens_the_files_offers_its_types_and_hands_the_picture_to_its_tool
     app.servers.push(stub(1, "files", files_stub(Arc::new(Mutex::new(vec![])), home.clone()), tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers.iter().all(|p| p.ready && !p.rows.rows.is_empty())));
-    app.came_from.push(View::Home);
-    app.view = View::Section(0);
+    at_row(&mut app, View::Section(0), 0);
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "the pick opens the home folder");
     let shown: Vec<String> = app
@@ -639,7 +677,8 @@ fn a_pick_row_opens_the_files_offers_its_types_and_hands_the_picture_to_its_tool
         })
         .collect();
     assert_eq!(shown, vec!["docs", "photo.png"], "only the types the pick takes, and the folders");
-    assert!(app.hint().iter().any(|(t, _)| t.starts_with("pick a picture (png)")));
+    assert!(app.hint().iter().any(|(t, _)| t.starts_with("Pick a picture (png)")));
+    app.in_list = true;
     app.sel = 1;
     app.enter();
     assert!(pump(&mut app, &rx, |_| !calls.lock().unwrap().is_empty()));
@@ -674,7 +713,7 @@ fn calendar_typed_alone_opens_the_clock() {
         app.typed(c);
     }
     app.enter();
-    assert_eq!(app.view, View::Section(0));
+    assert_eq!(app.view, View::Dest(CALENDAR_DEST));
     assert!(app.is_calendar());
 }
 
@@ -711,4 +750,281 @@ fn the_subtitle_follows_the_state_each_rows_read_carries() {
         pump(&mut app, &rx, |a| a.providers[0].title == "hills"),
         "the next rows read brings the new state"
     );
+}
+
+#[test]
+fn the_home_is_six_places_and_settings_holds_the_sections_that_run() {
+    let (mut app, rx, tx) = app_with(&["window", "out", "wifi", "notes"]);
+    for (i, l) in ["window", "out", "wifi", "notes"].iter().enumerate() {
+        let label = l.to_string();
+        let rows = json!({"title": label, "rows": [], "short": []});
+        app.servers.push(stub(
+            i,
+            l,
+            Box::new(move |v, send| {
+                if let Some(r) = ordinary(&label, v, &json!([]), &rows) {
+                    send(r);
+                }
+            }),
+            tx.clone(),
+        ));
+    }
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers.iter().all(|p| p.ready)));
+    let names = |a: &App| -> Vec<String> {
+        a.items()
+            .iter()
+            .filter_map(|i| match i {
+                Item::Dest(d) => Some(spark_dialog::app::DESTS[*d].name.to_string()),
+                Item::Setting(k) => Some(spark_dialog::app::SETTINGS[*k].1.to_string()),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(names(&app), vec!["Workspace", "Notes", "Settings"], "a place with no section here is not shown");
+    at_row(&mut app, View::Home, 2);
+    app.enter();
+    assert_eq!(app.view, View::Dest(SETTINGS_DEST));
+    assert_eq!(names(&app), vec!["Sound", "Wi-Fi", "Connections"]);
+    at_row(&mut app, View::Dest(SETTINGS_DEST), 1);
+    app.enter();
+    assert_eq!(app.view, View::Section(2), "a setting opens its section");
+    assert_eq!(app.title(), "wi-fi");
+    app.escape();
+    app.escape();
+    assert_eq!(app.view, View::Home);
+    typed(&mut app, "settings");
+    app.enter();
+    assert_eq!(app.view, View::Dest(SETTINGS_DEST), "a place's name typed alone opens it");
+}
+
+#[test]
+fn words_typed_are_a_request_never_the_row_they_happen_to_match() {
+    let (mut app, _rx, calls, _r) = started();
+    app.cfg.spark_shell = "/bin/spark-shell".into();
+    typed(&mut app, "close terminal");
+    assert!(!app.picks().is_empty(), "the words find the row as a search");
+    app.enter();
+    assert!(calls.lock().unwrap().is_empty(), "Enter in the prompt runs no row");
+    assert!(app
+        .jobs
+        .iter()
+        .any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, a) if a.last().map(String::as_str) == Some("close terminal"))));
+}
+
+#[test]
+fn a_question_changes_nothing_its_steps_are_proposals_run_when_picked() {
+    let (mut app, rx, calls, _r) = started();
+    app.plan(r#"{"answer": "The terminal is open.", "question": true, "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(calls.lock().unwrap().is_empty(), "a question runs no step");
+    assert_eq!(app.proposals.len(), 1);
+    assert!(app.items().contains(&Item::Proposal(0)));
+    let k = app.picks().iter().position(|i| *i == Item::Proposal(0)).unwrap();
+    at_row(&mut app, View::Home, k);
+    assert!(app.hint().iter().any(|(t, _)| t == "Run "), "{:?}", app.hint());
+    app.enter();
+    assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["name"] == "window_focus")));
+}
+
+#[test]
+fn risk_is_decided_here_a_hint_that_says_safe_does_not_skip_the_yes() {
+    let (mut app, rx, tx) = app_with(&["wifi"]);
+    // the provider says wifi_forget is not destructive; this machine's list says it is
+    let tools = json!([{"name": "wifi_forget", "title": "wifi forget NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}, "annotations": {"destructiveHint": false, "readOnlyHint": false}}]);
+    let rows = json!({"title": "wifi", "rows": [{"id": "wifi:forget cafe", "sign": "blank", "text": "forget cafe", "tool": {"name": "wifi_forget", "arguments": {"name": "cafe"}}, "more": [], "columns": [], "children": null}], "short": []});
+    let seen = Arc::new(Mutex::new(0));
+    let s2 = seen.clone();
+    app.servers.push(stub(
+        0,
+        "wifi",
+        Box::new(move |v, send| {
+            if let Some(r) = ordinary("wifi", v, &tools, &rows) {
+                return send(r);
+            }
+            if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+                *s2.lock().unwrap() += 1;
+                send(result(
+                    &v["id"],
+                    json!({"content": [], "structuredContent": {"receipt": "forgot cafe"}, "isError": false}),
+                ));
+            }
+        }),
+        tx,
+    ));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    assert!(!app.providers[0].tools[0].destructive);
+    at_row(&mut app, View::Section(0), 0);
+    app.enter();
+    assert!(matches!(app.mode, Mode::Confirm(_)), "{:?}", app.mode);
+    // the rows change while the question waits: the network is gone, the yes is checked again
+    app.providers[0].tools.clear();
+    typed(&mut app, "yes");
+    app.enter();
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(*seen.lock().unwrap(), 0, "a yes for a step no longer offered runs nothing");
+    assert!(
+        app.exchange.last().unwrap().text.contains("not done, not a step here now"),
+        "{:?}",
+        app.exchange
+    );
+}
+
+/// A provider whose first tool fails and whose second records a call.
+fn failing_stub(calls: Arc<Mutex<Vec<Value>>>, answer: bool) -> Script {
+    let tools = json!([
+        {"name": "out_mute", "title": "out mute", "inputSchema": {"type": "object", "properties": {}}, "annotations": {"destructiveHint": false}},
+        {"name": "out_unmute", "title": "out unmute", "inputSchema": {"type": "object", "properties": {}}, "annotations": {"destructiveHint": false}}
+    ]);
+    let rows = json!({"title": "out", "rows": [], "short": []});
+    Box::new(move |v, send| {
+        if let Some(r) = ordinary("out", v, &tools, &rows) {
+            return send(r);
+        }
+        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+            calls.lock().unwrap().push(v["params"].clone());
+            if answer {
+                send(result(
+                    &v["id"],
+                    json!({"content": [{"type": "text", "text": "no output to mute"}], "isError": true}),
+                ));
+            }
+        }
+    })
+}
+
+#[test]
+fn a_failed_step_stops_the_steps_that_depend_on_it() {
+    let (mut app, rx, tx) = app_with(&["out"]);
+    let calls = Arc::new(Mutex::new(vec![]));
+    app.servers.push(stub(0, "out", failing_stub(calls.clone(), true), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    app.plan(r#"{"answer": "", "steps": [{"name": "out_mute", "arguments": {}, "line": "out mute"}, {"name": "out_unmute", "arguments": {}, "line": "out unmute"}], "refused": []}"#);
+    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.starts_with("not run"))));
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(calls.lock().unwrap().len(), 1, "the step after the failure did not run");
+    assert!(
+        app.exchange.iter().any(|l| l.text == "not run, for the step before failed: out unmute"),
+        "{:?}",
+        app.exchange
+    );
+}
+
+#[test]
+fn a_step_with_no_answer_is_neither_done_nor_failed_and_stops_the_rest() {
+    let (mut app, rx, tx) = app_with(&["out"]);
+    let calls = Arc::new(Mutex::new(vec![]));
+    app.servers.push(stub(0, "out", failing_stub(calls.clone(), false), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    app.plan(r#"{"answer": "", "steps": [{"name": "out_mute", "arguments": {}, "line": "out mute"}, {"name": "out_unmute", "arguments": {}, "line": "out unmute"}], "refused": []}"#);
+    assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 1));
+    app.tick(Instant::now() + spark_dialog::mcp::T_CALL + Duration::from_secs(1));
+    assert!(
+        app.exchange.iter().any(|l| l.text.contains("may or may not have happened")),
+        "{:?}",
+        app.exchange
+    );
+    assert!(app.exchange.iter().any(|l| l.text == "not run: out unmute"), "{:?}", app.exchange);
+    assert!(app.queue.is_empty() && app.running.is_none());
+}
+
+#[test]
+fn an_argument_with_a_control_character_is_never_a_step() {
+    let (mut app, _rx, calls, _r) = started();
+    app.plan("{\"answer\": \"\", \"steps\": [{\"name\": \"window_focus\", \"arguments\": {\"name\": \"terminal\\nrm -rf ~\"}, \"line\": \"window focus\"}], \"refused\": []}");
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn the_draft_takes_new_lines_and_a_paste_never_sends() {
+    let (mut app, _rx, _c, _r) = started();
+    app.cfg.spark_shell = "/bin/spark-shell".into();
+    typed(&mut app, "one");
+    app.newline();
+    typed(&mut app, "two");
+    app.paste("three\r\nfour\tfive\u{1b}[2J");
+    assert_eq!(app.input, "one\ntwothree\nfour five[2J");
+    assert!(
+        app.jobs.is_empty() || !app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, _))),
+        "nothing sent"
+    );
+    // the cursor moves within the lines; a newline is no send
+    app.up();
+    assert_eq!(app.cursor, 12, "up keeps the column, held to the shorter line above");
+    app.up();
+    assert_eq!(app.cursor, 3);
+    app.line_end();
+    app.delete();
+    assert_eq!(app.input, "onetwothree\nfour five[2J");
+    app.enter();
+    assert!(app
+        .jobs
+        .iter()
+        .any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, a) if a.last().map(String::as_str) == Some("onetwothree\nfour five[2J"))));
+}
+
+#[test]
+fn talk_puts_what_was_heard_in_the_draft_and_esc_keeps_the_draft() {
+    let (mut app, _rx, _c, _r) = started();
+    app.cfg.talk = true;
+    app.voice_on = true;
+    app.talk = spark_dialog::app::Talk::Click;
+    typed(&mut app, "play");
+    app.chip(3);
+    assert_eq!(app.mode, Mode::Listening);
+    app.helper(spark_dialog::app::Helper::Listen, Ok("some jazz\n".into()));
+    assert_eq!(app.input, "play some jazz", "heard words join the draft at the cursor, not sent");
+    assert_eq!(app.mode, Mode::Normal);
+    app.chip(3);
+    app.escape();
+    assert!(app.jobs.contains(&Job::StopListening));
+    app.helper(spark_dialog::app::Helper::Listen, Err(String::new()));
+    assert_eq!(app.input, "play some jazz", "Esc kept the draft");
+    assert_eq!(app.exchange.last().unwrap().text, "stopped: nothing kept");
+    app.chip(3);
+    app.jobs.clear();
+    app.focus_lost();
+    assert!(app.jobs.contains(&Job::StopListening), "losing focus stops the recording");
+    // talk off: no mic to click
+    app.helper(spark_dialog::app::Helper::Listen, Err(String::new()));
+    app.talk = spark_dialog::app::Talk::Off;
+    assert!(!app.chips().contains(&3));
+}
+
+#[test]
+fn a_model_picked_is_reviewed_first_and_the_draft_waits() {
+    let (mut app, _rx, _c, _r) = started();
+    app.cfg.model = true;
+    app.helper(
+        spark_dialog::app::Helper::Models,
+        Ok("gemma\trepo\t1\t1\tx\tline\t-\tserving\nqwen\trepo\t1\t1\tx\tline\t-\tdownloaded\nbig\trepo\t1\t1\tx\tline\t-\t-\n".into()),
+    );
+    assert_eq!(app.model_name.as_deref(), Some("gemma"));
+    typed(&mut app, "half a thought");
+    app.chip(1);
+    assert_eq!(app.view, View::Models);
+    let models: Vec<Item> = app.picks().into_iter().filter(|i| matches!(i, Item::Model(_))).collect();
+    assert_eq!(models, vec![Item::Model(0), Item::Model(1)], "a model not downloaded is shown, not offered");
+    let k = app.picks().iter().position(|i| *i == Item::Model(1)).unwrap();
+    app.in_list = true;
+    app.sel = k;
+    app.enter();
+    assert_eq!(app.mode, Mode::Apply("qwen".into()), "browsing changed nothing; picking asks");
+    assert!(app.exchange.last().unwrap().text.contains("every client of this computer's spark"));
+    assert!(!app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::ModelSet, _))));
+    app.escape();
+    assert_eq!(app.input, "half a thought", "Esc keeps the model and the draft");
+    app.in_list = true;
+    app.sel = k;
+    app.enter();
+    app.enter();
+    assert!(app
+        .jobs
+        .iter()
+        .any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::ModelSet, a) if a.last().map(String::as_str) == Some("qwen"))));
+    assert_eq!(app.input, "half a thought");
 }

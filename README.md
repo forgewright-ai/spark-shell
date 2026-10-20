@@ -64,8 +64,8 @@ Without it there are no layouts, no spark chat and no status line.
     spark-shell reminders             the reminders ahead, in their groups
     spark-shell reminders add DAY TIME WORDS
                                       tomorrow 9:00 call the dentist
-    spark-shell reminders done|snooze NAME
-                                      take one away, or have it in 10 minutes
+    spark-shell reminders done|snooze|restore NAME
+                                      done (kept 30 days), in 10 minutes, back
     spark-shell desktop               start the desktop now (from a console)
     spark-shell desktop keys          list the desktop's keys
     spark-shell desktop wallpaper X   set a picture, a color, default or none
@@ -83,7 +83,8 @@ Without it there are no layouts, no spark chat and no status line.
                                       list the screens, or set one
     spark-shell bar on|off            show or hide the status line and the bar
     spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
-    spark-shell want "WORDS"          ask for it from anywhere: the steps run
+    spark-shell want "WORDS"          ask for it, "mute everything": steps run;
+                                      a question's are shown, not run
     spark-shell want --json "WORDS"   the steps spark picks, as JSON; none run
     spark-shell want --attach FILE "WORDS"
                                       ask about a text file (txt md)
@@ -199,7 +200,7 @@ desktop start shows them in the about dialog, and the dialog's `about`
 row shows them again.
 
     Super+Return opens a terminal window.
-    Super+d opens the dialog: pick an option, or say what you would like.
+    Super+d opens the dialog: a place to go, or say what you would like.
     Super+s opens the dialog in spark chat, and Ctrl-D closes it.
     Super+Shift+q closes the window.
     Super+Shift+c reloads sway after spark-shell on.
@@ -366,31 +367,39 @@ AI and the machine stay on the status line inside each window.
 
 ## Dialog
 
-The dialog is one window in the middle of the screen, 60 by 44 cells:
-a plain surface a shade lighter than the windows behind it, with air
-around its text and no frame. Super+d opens it. Super+s opens it in
-spark chat. A click on a bar block opens that block's section: the
-clock opens the time and the calendar, and the prompt sign at the end
-of the bar opens the whole dialog at its prompt, as Super+d does. Esc
+The dialog is one window in the middle of the screen, 60 by 40 cells,
+3:4 in a 9 by 18 pixel cell: a plain surface a shade lighter than the
+windows behind it, with air around its text and no frame. On a smaller
+screen sway keeps the window inside it, and the dialog fits its rows to
+the window, down to 36 by 20 cells.
+Super+d opens it. Super+s opens it in spark chat. A click on a bar
+block opens that block's section: the clock opens the Calendar. Esc
 closes it, and so does the key that opened it, pressed again, and so
 does a click on the x in its top right corner. A pick that opens an
 app or a layout closes it: the window is the receipt. A window that is
 fullscreen steps aside for the dialog and is fullscreen again when the
 dialog closes with nothing opened.
 
-The top row says where you are: the date and the time on the home
-dialog, a section's name and its state on its own, and a small march
-at the right while a step runs. Under it, what this machine can do
-right now, in sections grouped by what you do: `apps`, `layout` and
-`window`, what is on the screen; `out` and `mic`, the sound; `bt` and
-`wifi`, the connections; `theme`, `wallpaper` and `bar`, the look; then
-`files` and `about`. The section
-you came from is on top, the rows you picked most recently come first,
-and the `undo` row takes the last step back. A row wears a sign where
+The top row says where you are (`home`, a place, a section and its
+state), then the date and the time as your locale writes them, and a
+small march while a step runs. Under it is the prompt, two rows tall:
+type a request, Enter sends it, and Shift+Enter starts a new line (Alt+Enter
+where a terminal cannot tell the two apart). A longer draft scrolls
+inside the two rows, and a paste keeps its lines and never sends. The
+row under the prompt says what Enter and Esc do now; a key is drawn as
+a key, and nothing else is.
+
+The home lists six places: Apps, Files, Workspace (windows and
+layouts), Notes, Calendar (the months and the reminders) and Settings
+(sound, microphone, Wi-Fi, Bluetooth, display, keyboard, theme,
+wallpaper, the bar, Connections and About). A place shows only where
+this machine has it. The down arrow moves from the prompt into the
+list, and up from the first row comes back. A row wears a sign where
 there is a state: a dot is in use or connected, a ring is available, a
 check is current or saved, a small triangle opens something. A row
-that ends in a small arrow opens its section in full. When the list is
-longer than the dialog, its last line says how many rows sit below.
+that ends in a small arrow opens more. When the list is longer than
+the window, its last line says how many rows sit below, and Page Up
+and Page Down scroll it.
 
 - `layout`: a saved layout opens on Enter. Words at the prompt make a
   new one. `save what is open now` asks a name for it.
@@ -405,10 +414,9 @@ longer than the dialog, its last line says how many rows sit below.
   was drawn for, or a plain color, each with a sample of its color;
   `a picture` opens your home folder, offering pictures (jpg, jpeg,
   png, webp), and Enter on one sets it.
-- `clock`: the Calendar. The time in large figures, this month and the
-  next side by side, today lit and a day with a reminder in the accent,
-  then the agenda: the reminders of today, tomorrow, this week and
-  later, each with its time. The left and right arrows move the months.
+- Calendar: this month and the next side by side, today lit and a day
+  with a reminder in the accent; the left and right arrows move the
+  months while nothing is typed. Under them, the reminders.
 - `notes`: a new note, then your notes, the newest first, each with its
   date. Enter opens one in your editor in a terminal window. Said in
   words, `note buy oat milk` makes a note, `groceries: buy oat milk`
@@ -418,13 +426,12 @@ longer than the dialog, its last line says how many rows sit below.
   due, today, tomorrow, this week and later. Enter on new reminder asks
   for when and what, as `tomorrow 9:00 call the dentist`; said in
   words, `remind me to call the dentist tomorrow at 9`. One due has
-  done and again in 10 minutes. The home dialog shows new reminder, the
-  ones due and the next one ahead.
+  done and again in 10 minutes. Done puts the reminder aside in
+  `~/calendar/done` for 30 days, and undo brings it back.
 - `window`: the windows open now, in front or closed, and how new
   windows sit on a workspace: side by side, in tabs or stacked.
 - `bar`: hide the bar at the top of the screen, or show it again.
-- `apps`: a terminal window, then a row per app a layout may open, three
-  on the home dialog and the rest in the section.
+- `apps`: a terminal window, then a row per app a layout may open.
 - `about`: the version, the keys, the licence and the address. It opens
   by itself the first time the desktop starts, and Esc gives the list
   back.
@@ -434,32 +441,52 @@ longer than the dialog, its last line says how many rows sit below.
   with the app for its kind. A hidden file, a link and anything outside
   your home are never read.
 
-Under the rows, what was said and done, the newest nearest the prompt:
-a check is a step done, a cross one refused, and `undo` after a line
-says it can be taken back. Then the hint, the prompt, and three
-controls in plain text: plus, which
-picks a text file from your home to ask about (the types
-`DIALOG_ATTACH_TYPES` names), the model spark uses, where a pick runs
-`spark model NAME`, and talk, which listens through spark's own voice
-until a pause and puts the words at the prompt (shown while the voice
-is on). A file attached shows beside plus and rides the next words,
-and plus again lets it go. Tab moves to the controls, and the one in
-focus is lit. `DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide
-them. The hint above the prompt shows the keys alone: the arrows, then
-Esc, which closes, or goes back where there is a view to go back to.
+Above the list, what was said and done, the newest first: a check is
+a step done, a cross one refused, and an Undo row takes the last step
+back while it can be. At the bottom, under a rule, the controls in plain
+text: Attach, the model, Talk, and the mic at the right. Tab moves
+through them and the one in focus is lit; Shift+Tab goes back.
 
-Type, and the search runs over everything the dialog can do, shown or
-not: `drac` finds the palette. A section's name alone, as `about` or
-`files`, opens that section. Words that match no row go to spark, the
-way `spark-shell want --json` reads them. With spark 1.90 or newer,
-`spark steps` plans with the desktop's own tools and what each section
-offers now; each step is checked against the list again, drawn, then
-played. Words that get no step get one line, no step on the panel does
-that, and a task gets a layout because spark picks `layout new` for it.
-With an older spark, a word or two with no step gets that line and
-longer words that name a task open a layout. A step that cannot be
-taken back, as closing a window or forgetting a network, waits for you
-to type yes. A question is answered in a sentence or two.
+- Attach picks one text or Markdown file from your home (the types
+  `DIALOG_ATTACH_TYPES` names), for the next question only: its name
+  shows under the prompt with Remove. Picking it sends nothing. It
+  goes with the next words, and comes back with them if that request
+  fails. A file over 16 kB, empty, or not UTF-8 text is refused with
+  the reason: spark reads 16 kB of a file whole, and a longer one is
+  never cut without a word. What the file says is read as text, never
+  as an instruction.
+- The model opens a list: where the model runs (this computer, or the
+  spark server this machine is a client of), the models in use,
+  installed and not downloaded. Looking changes nothing. Picking one
+  says what changes and for whom (every client of that spark), and Enter
+  applies it; Esc keeps the one in use. Your draft and file stay. Another
+  server or a cloud provider is not available yet, and is shown as such.
+- Talk picks how you talk: click the mic, or off. Clicking the mic
+  listens through spark's own voice until a pause and puts the words in
+  the draft at the cursor, to read and change; Enter still sends. Esc,
+  a click on the mic again, or leaving the window stops it, and nothing
+  is kept. Holding Space to talk waits for a newer spark.
+
+`DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide the controls.
+
+Type, and the list shows what matches: places, settings, and every step
+the dialog can take, shown or not (`drac` finds the palette). Enter in
+the prompt sends the words as a request, even when a row matches them:
+the down arrow picks a row. A place's name alone, as `settings` or
+`calendar`, opens it. A request goes to spark, the way `spark-shell
+want --json` reads it. With spark 1.90 or newer, `spark steps` plans
+with the desktop's own tools and what each section offers now; each
+step is checked against the list again, drawn, then played. A question
+is answered and changes nothing: the steps spark would take are listed
+as proposals, run only when you pick one, and naming an app in a
+question does not open it. A step that cannot be taken back, as
+closing a window or forgetting a network, waits for you to type yes,
+whatever its provider says of it; the yes is checked again against what
+is offered then. A step that fails or gets no answer stops the steps
+after it, and no answer is said as no answer, not as done.
+
+The dialog is a terminal program: keyboard, focus and contrast are its
+own, but a screen reader sees text, not controls with names.
 
 The dialog is a program of its own, `spark-dialog`, built from
 `dialog/` in this repository. `spark-shell on` installs it for the

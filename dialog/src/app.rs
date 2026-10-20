@@ -9,11 +9,80 @@ use serde_json::{json, Map, Value};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-/// The size, a design token: 60 by 44 cells.
+/// The size, a design token: 60 by 40 cells, 3:4 in a 9 by 18 pixel cell. The window may be smaller:
+/// the drawing takes the terminal's own size, MIN_WIDTH by MIN_HEIGHT at least.
 pub const WIDTH: u16 = 60;
-pub const HEIGHT: u16 = 44;
-/// The newest lines of the exchange the window keeps.
-pub const EXCHANGE_MAX: usize = 12;
+pub const HEIGHT: u16 = 40;
+pub const MIN_WIDTH: u16 = 36;
+pub const MIN_HEIGHT: u16 = 20;
+/// The newest lines of the exchange the content area shows, newest turn first.
+pub const EXCHANGE_MAX: usize = 10;
+/// The draft's length, in characters.
+pub const INPUT_MAX: usize = 2000;
+/// What the prompt says while it is empty.
+pub const PLACEHOLDER: &str = "Type a request.";
+/// Steps this machine counts as risky whatever their provider says (the hint is the provider's word,
+/// the risk is decided here): a saved password gone, a window closed with its work, a layout written
+/// over, a new device trusted.
+pub const LOCAL_RISK: [&str; 4] = ["wifi_forget", "window_close", "layout_save", "bt_pair"];
+
+/// The home's destinations: a name, what it is for, the sections it holds. Home rows are places;
+/// commands are verbs; AI is what the prompt does, not a place.
+pub struct Dest {
+    pub name: &'static str,
+    pub purpose: &'static str,
+    pub sections: &'static [&'static str],
+}
+pub const DESTS: [Dest; 6] = [
+    Dest {
+        name: "Apps",
+        purpose: "Open an application",
+        sections: &["apps"],
+    },
+    Dest {
+        name: "Files",
+        purpose: "Browse your home",
+        sections: &["files"],
+    },
+    Dest {
+        name: "Workspace",
+        purpose: "Windows and layouts",
+        sections: &["window", "layout"],
+    },
+    Dest {
+        name: "Notes",
+        purpose: "Write and find",
+        sections: &["notes"],
+    },
+    Dest {
+        name: "Calendar",
+        purpose: "Dates and reminders",
+        sections: &["clock", "reminders"],
+    },
+    Dest {
+        name: "Settings",
+        purpose: "Devices and appearance",
+        sections: &[],
+    },
+];
+pub const SETTINGS_DEST: usize = 5;
+pub const CALENDAR_DEST: usize = 4;
+/// Settings: a section each, then Connections and About, in this order.
+pub const SETTINGS: [(&str, &str, &str); 13] = [
+    ("out", "Sound", "Output and volume"),
+    ("mic", "Microphone", "Input and level"),
+    ("wifi", "Wi-Fi", "Networks"),
+    ("bt", "Bluetooth", "Devices nearby"),
+    ("lan", "Network", "The wired connection"),
+    ("display", "Display", "Screens, brightness, lock"),
+    ("keyboard", "Keyboard", "Layouts"),
+    ("theme", "Theme", "Palette and font"),
+    ("wallpaper", "Wallpaper", "The desktop picture"),
+    ("bar", "Bar", "The status bar"),
+    ("bat", "Battery", "Charge"),
+    ("connections", "Connections", "Tools and the model"),
+    ("about", "About", "Version and keys"),
+];
 /// Elicitation's caps: a provider asks at most this often (the review's M1).
 pub const ASK_PER_CALL: usize = 3;
 pub const ASK_PER_MINUTE: usize = 10;
@@ -23,6 +92,47 @@ pub const READ_GAP: Duration = Duration::from_millis(250);
 /// HOME, the one root the dialog hands the files provider; an attachment must sit under it.
 pub fn home() -> Option<String> {
     std::env::var("HOME").ok().filter(|h| h.starts_with('/') && h.len() > 1)
+}
+
+fn state_dir() -> Option<std::path::PathBuf> {
+    let base = std::env::var("XDG_STATE_HOME")
+        .ok()
+        .filter(|s| s.starts_with('/'))
+        .or_else(|| home().map(|h| h + "/.local/state"))?;
+    Some(std::path::PathBuf::from(base).join("spark-shell").join("dialog"))
+}
+
+/// A section's name as a person reads it: Settings' names, and the places' own.
+pub fn section_name(label: &str) -> String {
+    if let Some((_, n, _)) = SETTINGS.iter().find(|(s, _, _)| *s == label) {
+        return n.to_string();
+    }
+    match label {
+        "window" => "Windows".into(),
+        "layout" => "Layouts".into(),
+        "clock" => "Calendar".into(),
+        l => {
+            let mut c = l.chars();
+            c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+        }
+    }
+}
+
+/// How talk works, as the person last chose it: click to talk unless they turned it off.
+pub fn talk_kept() -> Talk {
+    let said = state_dir().and_then(|d| std::fs::read_to_string(d.join("talk")).ok()).unwrap_or_default();
+    if said.trim() == "off" {
+        Talk::Off
+    } else {
+        Talk::Click
+    }
+}
+
+fn talk_keep(t: Talk) {
+    use std::os::unix::fs::DirBuilderExt;
+    let Some(d) = state_dir() else { return };
+    let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&d);
+    let _ = std::fs::write(d.join("talk"), if t == Talk::Off { "off\n" } else { "click\n" });
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -55,11 +165,25 @@ pub struct Picking {
 #[derive(Clone, Debug, PartialEq)]
 pub enum View {
     Home,
+    /// A destination of the home that holds more than one section, or none (Settings).
+    Dest(usize),
     Section(usize),
     /// A folder (or any rows resource) under a provider: its uri.
     Folder(usize, String),
     About,
     Models,
+    /// How talk works: click to talk, or off.
+    Talk,
+    /// Settings > Connections: the tools the dialog talks to, and where the model runs.
+    Connections,
+}
+
+/// How the person talks to the prompt. Hold Space waits for a spark that can finish a recording on a
+/// signal; until then it is shown, and not offered.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Talk {
+    Click,
+    Off,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -108,6 +232,8 @@ pub enum Mode {
         at: usize,
     },
     Listening,
+    /// A model picked: Enter applies it, Esc keeps the one in use.
+    Apply(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -117,6 +243,7 @@ pub enum Helper {
     ModelSet,
     Listen,
     Voice,
+    Client,
 }
 
 /// What the app asks the outside world to do; main.rs runs each in a thread.
@@ -200,6 +327,27 @@ pub enum Item {
     /// A row of the folder shown now.
     Folder(usize),
     Model(usize),
+    /// A destination of the home.
+    Dest(usize),
+    /// A row of Settings: its index in SETTINGS.
+    Setting(usize),
+    /// A line of the exchange as drawn: its sign, the words, the first of its lines.
+    Said(Sign, String, bool),
+    /// A step the model proposed for a question: it runs only when picked.
+    Proposal(usize),
+    /// A way to talk.
+    TalkOpt(Talk),
+    /// A section's name over its rows, where a view holds more than one section.
+    Title(String),
+    /// A line that says something and opens nothing: (words, muted).
+    Text(String, bool),
+    /// A provider the dialog talks to, in Connections.
+    Provider(usize),
+    /// Connections' row that opens the models.
+    OpenModels,
+    /// Where the model runs: 0 the one in use (this computer, or the server spark is a client of);
+    /// 1 the ones to come (another server, a cloud provider), shown and not offered.
+    Conn(usize),
 }
 
 pub struct App {
@@ -222,18 +370,36 @@ pub struct App {
     /// The calendar's month, as months from this one.
     pub month_offset: i32,
     pub mode: Mode,
+    /// The draft; a newline in it is Shift+Enter's, never a send.
     pub input: String,
+    /// The cursor in the draft, in characters.
+    pub cursor: usize,
+    /// The draft kept while the prompt takes a yes, an argument or an answer for a provider.
+    pub stash: Option<String>,
+    /// The words and the file of the request in flight, given back if it fails.
+    pub pending: Option<(String, Option<String>)>,
+    /// Focus: the list (true) or the prompt (false); sel is the row in the list.
+    pub in_list: bool,
     pub sel: usize,
     pub exchange: Vec<Line>,
     pub undo: Option<Step>,
     pub queue: VecDeque<Step>,
+    /// Steps the model proposed for a question: run only when picked.
+    pub proposals: Vec<Step>,
     pub running: Option<(usize, u64, Step, usize)>,
     pub busy_since: Option<Instant>,
     pub frame: u64,
-    pub recent: Vec<String>,
+    /// Every model spark lists: (name, serving | downloaded | -).
     pub models: Vec<(String, String)>,
     pub model_name: Option<String>,
+    /// Where the model runs: None this computer, else the spark server's address (`spark client`).
+    pub server: Option<String>,
     pub voice_on: bool,
+    pub talk: Talk,
+    /// Esc stopped the listening: what comes back is not said.
+    pub listen_cancelled: bool,
+    /// The window's size in cells, as the terminal says.
+    pub size: (u16, u16),
     pub thinking: bool,
     pub jobs: Vec<Job>,
     pub quit: Option<i32>,
@@ -242,6 +408,8 @@ pub struct App {
     asks: VecDeque<Instant>,
     pub chip_focus: Option<usize>,
     pub about_idx: Option<usize>,
+    /// How far the content area is scrolled by Page Up and Page Down.
+    pub scroll: usize,
 }
 
 impl App {
@@ -250,6 +418,7 @@ impl App {
         let about_idx = providers.iter().position(|p| p.label == "about");
         let view = match cfg.home.as_deref() {
             Some("about") => View::About,
+            Some("clock") | Some("reminders") => View::Dest(CALENDAR_DEST), // the bar's clock opens the Calendar
             Some(h) => providers.iter().position(|p| p.label == h).map(View::Section).unwrap_or(View::Home),
             None => View::Home,
         };
@@ -268,17 +437,25 @@ impl App {
             month_offset: 0,
             mode: Mode::Normal,
             input: String::new(),
+            cursor: 0,
+            stash: None,
+            pending: None,
+            in_list: false,
             sel: 0,
             exchange: vec![],
             undo: None,
             queue: VecDeque::new(),
+            proposals: vec![],
             running: None,
             busy_since: None,
             frame: 0,
-            recent: vec![],
             models: vec![],
             model_name: None,
+            server: None,
             voice_on: false,
+            talk: talk_kept(),
+            listen_cancelled: false,
+            size: (WIDTH, HEIGHT),
             thinking: false,
             jobs: vec![],
             quit: None,
@@ -287,6 +464,7 @@ impl App {
             asks: VecDeque::new(),
             chip_focus: None,
             about_idx,
+            scroll: 0,
         }
     }
 
@@ -321,6 +499,9 @@ impl App {
                 Helper::Models,
                 vec![self.cfg.spark.clone(), "model".into(), "list".into(), "--porcelain".into()],
             ));
+        }
+        if self.cfg.model {
+            self.jobs.push(Job::Run(Helper::Client, vec![self.cfg.spark.clone(), "client".into()]));
         }
         if self.cfg.talk {
             self.jobs.push(Job::Run(Helper::Voice, vec![self.cfg.spark.clone(), "voice".into()]));
@@ -357,7 +538,11 @@ impl App {
         if let Some((p, _, step, _)) = self.running.clone() {
             if p == idx {
                 self.running = None;
-                self.say(Sign::Refused, &format!("{}: not done, {} stopped", step.line, label));
+                self.say(
+                    Sign::Refused,
+                    &format!("{}: {} stopped before it answered, so it may or may not have happened", step.line, label),
+                );
+                self.stop_queue("not run");
                 self.next_step();
             }
         }
@@ -556,7 +741,16 @@ impl App {
             match kind {
                 Kind::Call(_) => {
                     if let Some((_, _, step, _)) = self.running.take() {
-                        self.say(Sign::Refused, &format!("{}: no answer in {} s", step.line, mcp::T_CALL.as_secs()));
+                        // no answer is no proof either way: say so, and run nothing that depends on it
+                        self.say(
+                            Sign::Refused,
+                            &format!(
+                                "{}: no answer in {} s, so it may or may not have happened: look before you try again",
+                                step.line,
+                                mcp::T_CALL.as_secs()
+                            ),
+                        );
+                        self.stop_queue("not run");
                         self.next_step();
                     }
                 }
@@ -584,15 +778,150 @@ impl App {
         row.tool.is_some() || row.children.is_some()
     }
 
-    /// The content area's items, in order: the undo, the recent picks, then each provider's rows under its heading.
+    /// The sections present that a destination holds; Settings holds those of SETTINGS that run here.
+    pub fn dest_sections(&self, d: usize) -> Vec<usize> {
+        DESTS[d]
+            .sections
+            .iter()
+            .filter_map(|s| self.providers.iter().position(|p| &p.label == s && p.dead.is_none()))
+            .collect()
+    }
+
+    /// The rows of Settings shown here: a section that runs, Connections always, About when it runs.
+    pub fn settings(&self) -> Vec<usize> {
+        SETTINGS
+            .iter()
+            .enumerate()
+            .filter(|(_, (l, _, _))| *l == "connections" || self.providers.iter().any(|p| &p.label == l && p.dead.is_none()))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// The home's destinations shown here: one with a section that runs, Settings always.
+    pub fn dests(&self) -> Vec<usize> {
+        (0..DESTS.len()).filter(|d| *d == SETTINGS_DEST || !self.dest_sections(*d).is_empty()).collect()
+    }
+
+    /// The exchange as content lines: the newest turn first (a turn starts at what was asked), each in
+    /// its own order; older turns while EXCHANGE_MAX lines hold them. Then the undo, then the proposals.
+    fn said(&self, out: &mut Vec<Item>) {
+        let w = self.size.0.saturating_sub(8).max(10) as usize; // the sign at 2, the words at 4, air at the right
+        let mut turns: Vec<Vec<usize>> = vec![];
+        for (i, l) in self.exchange.iter().enumerate() {
+            if l.sign == Sign::You || turns.is_empty() {
+                turns.push(vec![]);
+            }
+            if let Some(t) = turns.last_mut() {
+                t.push(i);
+            }
+        }
+        let mut lines = 0;
+        for (k, t) in turns.iter().rev().enumerate() {
+            let mut turn = vec![];
+            for &i in t {
+                let l = &self.exchange[i];
+                for (j, part) in crate::ui::wrap(&l.text, w).into_iter().enumerate() {
+                    turn.push(Item::Said(l.sign.clone(), part, j == 0));
+                }
+            }
+            if k > 0 && lines + turn.len() > EXCHANGE_MAX {
+                break;
+            }
+            lines += turn.len();
+            out.extend(turn);
+        }
+        if self.undo.is_some() {
+            out.push(Item::Undo);
+        }
+        if !self.proposals.is_empty() {
+            // a question changed nothing: what the model would do, offered, run only when picked
+            out.push(Item::Heading("proposed, not run".into()));
+            for i in 0..self.proposals.len() {
+                out.push(Item::Proposal(i));
+            }
+        }
+    }
+
+    /// A section's rows under their groups, as its own view shows them; under the section's name too
+    /// where a view holds more than one section.
+    fn section_rows(&self, p: usize, out: &mut Vec<Item>, heading: bool) {
+        let mut rows = vec![];
+        let mut group: Option<String> = None;
+        for (i, r) in self.providers[p].rows.rows.iter().enumerate() {
+            if r.children.as_deref() == Some(&format!("spark-shell://{}/rows", self.providers[p].label)) {
+                continue;
+            }
+            if !self.input.is_empty() && !self.matches(p, r) {
+                continue;
+            }
+            if r.group != group {
+                if !rows.is_empty() {
+                    rows.push(Item::Blank);
+                }
+                if let Some(g) = &r.group {
+                    rows.push(Item::Heading(g.clone()));
+                }
+                group = r.group.clone();
+            }
+            rows.push(Item::Row(p, i));
+        }
+        if rows.is_empty() {
+            return;
+        }
+        if heading {
+            if !out.is_empty() {
+                out.push(Item::Blank);
+            }
+            out.push(Item::Title(section_name(&self.providers[p].label)));
+        }
+        out.extend(rows);
+    }
+
+    /// The content area's items, in order: the exchange (the newest turn first), the undo and the
+    /// proposals, then the view's list.
     pub fn items(&self) -> Vec<Item> {
         let mut out = vec![];
+        if self.view != View::About {
+            self.said(&mut out);
+        }
+        let mut list = vec![];
         match &self.view {
             View::Models => {
-                out.push(Item::Heading("models".into()));
+                list.push(Item::Heading("where it runs".into()));
+                list.push(Item::Conn(0));
+                list.push(Item::Conn(1));
+                list.push(Item::Blank);
+                list.push(Item::Heading("models".into()));
                 for i in 0..self.models.len() {
-                    out.push(Item::Model(i));
+                    list.push(Item::Model(i));
                 }
+                list.push(Item::Blank);
+                let who = if self.server.is_some() {
+                    "everyone who uses that server"
+                } else {
+                    "every client of this computer's spark"
+                };
+                self.text(&mut list, &format!("A change restarts the model for {}.", who), true);
+            }
+            View::Talk => {
+                list.push(Item::TalkOpt(Talk::Click));
+                list.push(Item::TalkOpt(Talk::Off));
+                list.push(Item::Blank);
+                self.text(&mut list, "Hold Space to talk needs a newer spark.", true);
+                if !self.voice_on {
+                    self.text(&mut list, "spark's voice is off: spark voice clear turns it on.", true);
+                }
+            }
+            View::Connections => {
+                list.push(Item::Heading("tools".into()));
+                for (i, p) in self.providers.iter().enumerate() {
+                    if p.dead.is_none() && Some(i) != self.about_idx {
+                        list.push(Item::Provider(i));
+                    }
+                }
+                list.push(Item::Blank);
+                list.push(Item::Heading("model".into()));
+                list.push(Item::OpenModels);
             }
             View::About => {}
             View::Folder(..) => {
@@ -619,184 +948,353 @@ impl App {
                         }
                     }
                     if i + 1 == rows.rows.len() && i > 0 && r.tool.is_none() && r.children.is_none() {
-                        out.push(Item::Blank); // the summary at the end stands apart
+                        list.push(Item::Blank); // the summary at the end stands apart
                     }
-                    out.push(Item::Folder(i));
+                    list.push(Item::Folder(i));
                 }
             }
-            View::Section(p) => {
-                let mut group: Option<String> = None;
-                for (i, r) in self.providers[*p].rows.rows.iter().enumerate() {
-                    if r.children.as_deref() == Some(&format!("spark-shell://{}/rows", self.providers[*p].label)) {
-                        continue;
+            View::Section(p) => self.section_rows(*p, &mut list, false),
+            View::Dest(d) if *d == SETTINGS_DEST => {
+                for i in self.settings() {
+                    if self.input.is_empty() || self.word_in(SETTINGS[i].1) {
+                        list.push(Item::Setting(i));
                     }
-                    if !self.input.is_empty() && !self.matches(*p, r) {
-                        continue;
-                    }
-                    if r.group != group {
-                        if group.is_some() || !out.is_empty() {
-                            out.push(Item::Blank);
-                        }
-                        if let Some(g) = &r.group {
-                            out.push(Item::Heading(g.clone()));
-                        }
-                        group = r.group.clone();
-                    }
-                    out.push(Item::Row(*p, i));
+                }
+            }
+            View::Dest(d) if *d == CALENDAR_DEST => {
+                // the months are drawn above; the reminders, to add, mark done or snooze, below them
+                if let Some(p) = self.providers.iter().position(|p| p.label == "reminders" && p.dead.is_none()) {
+                    self.section_rows(p, &mut list, false);
+                }
+            }
+            View::Dest(d) => {
+                let secs = self.dest_sections(*d);
+                let one = secs.len() == 1;
+                for p in secs {
+                    self.section_rows(p, &mut list, !one);
                 }
             }
             View::Home => {
-                let searching = !self.input.trim().is_empty();
-                let mut shown: Vec<(usize, usize)> = vec![];
-                if !searching {
-                    if self.undo.is_some() {
-                        out.push(Item::Heading("undo".into()));
-                        out.push(Item::Undo);
+                if self.input.trim().is_empty() {
+                    // the six places with air between them, as the approved home has them
+                    for (k, d) in self.dests().into_iter().enumerate() {
+                        if k > 0 {
+                            list.push(Item::Blank);
+                        }
+                        list.push(Item::Dest(d));
                     }
-                    let mut recent = vec![];
-                    for id in &self.recent {
-                        for (p, prov) in self.providers.iter().enumerate() {
-                            if let Some(i) = prov.rows.rows.iter().position(|r| &r.id == id && Self::pickable(r)) {
-                                recent.push((p, i));
-                            }
+                } else {
+                    // what was typed, found: the places, then every step that says those words
+                    for d in self.dests() {
+                        if self.word_in(DESTS[d].name) {
+                            list.push(Item::Dest(d));
                         }
                     }
-                    if !recent.is_empty() {
-                        if !out.is_empty() {
-                            out.push(Item::Blank);
-                        }
-                        out.push(Item::Heading("recent".into()));
-                        for (p, i) in recent {
-                            out.push(Item::Row(p, i));
-                            shown.push((p, i));
+                    for i in self.settings() {
+                        if self.word_in(SETTINGS[i].1) {
+                            list.push(Item::Setting(i));
                         }
                     }
-                }
-                for (p, prov) in self.providers.iter().enumerate() {
-                    let rows: Vec<usize> = prov
-                        .rows
-                        .rows
-                        .iter()
-                        .enumerate()
-                        .filter(|(i, r)| {
-                            Self::pickable(r)
-                                && if searching {
-                                    // the about's own row is found; its key sentences stay out of a search
-                                    self.matches(p, r) && (Some(p) != self.about_idx || r.tool.as_ref().is_some_and(|t| t.name == "about_open"))
-                                } else {
-                                    prov.rows.short.contains(&r.id) && !shown.contains(&(p, *i))
-                                }
-                        })
-                        .map(|(i, _)| i)
-                        .collect();
-                    if rows.is_empty() {
-                        continue;
-                    }
-                    if !out.is_empty() {
-                        out.push(Item::Blank);
-                    }
-                    out.push(Item::Heading(prov.label.clone()));
-                    for i in rows {
-                        out.push(Item::Row(p, i));
+                    for (p, prov) in self.providers.iter().enumerate() {
+                        let rows: Vec<usize> = prov
+                            .rows
+                            .rows
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, r)| {
+                                // the about's own row is found; its key sentences stay out of a search
+                                Self::pickable(r)
+                                    && self.matches(p, r)
+                                    && (Some(p) != self.about_idx || r.tool.as_ref().is_some_and(|t| t.name == "about_open"))
+                            })
+                            .map(|(i, _)| i)
+                            .collect();
+                        if rows.is_empty() {
+                            continue;
+                        }
+                        if !list.is_empty() {
+                            list.push(Item::Blank);
+                        }
+                        list.push(Item::Heading(prov.label.clone()));
+                        for i in rows {
+                            list.push(Item::Row(p, i));
+                        }
                     }
                 }
             }
         }
+        if !out.is_empty() && !list.is_empty() {
+            out.push(Item::Blank);
+        }
+        out.extend(list);
         out
     }
 
+    /// Words that open nothing, wrapped to the content's width.
+    fn text(&self, out: &mut Vec<Item>, words: &str, muted: bool) {
+        for l in crate::ui::wrap(words, self.size.0.saturating_sub(6).max(10) as usize) {
+            out.push(Item::Text(l, muted));
+        }
+    }
+
+    /// Every word typed is in these words.
+    fn word_in(&self, words: &str) -> bool {
+        let hay = words.to_lowercase();
+        self.input.to_lowercase().split_whitespace().all(|w| hay.contains(w))
+    }
+
+    pub fn pickable_item(&self, i: &Item) -> bool {
+        match i {
+            Item::Row(p, r) => Self::pickable(&self.providers[*p].rows.rows[*r]),
+            Item::Folder(i) => self
+                .folder
+                .as_ref()
+                .and_then(|(_, _, rows)| rows.rows.get(*i))
+                .map(Self::pickable)
+                .unwrap_or(false),
+            Item::Model(i) => self.models.get(*i).map(|(_, s)| s == "serving" || s == "downloaded").unwrap_or(false),
+            Item::TalkOpt(_) => self.voice_on,
+            Item::Undo | Item::Dest(_) | Item::Setting(_) | Item::Proposal(_) | Item::OpenModels => true,
+            _ => false,
+        }
+    }
+
     pub fn picks(&self) -> Vec<Item> {
-        self.items()
-            .into_iter()
-            .filter(|i| match i {
-                Item::Row(p, r) => Self::pickable(&self.providers[*p].rows.rows[*r]),
-                Item::Folder(i) => self
-                    .folder
-                    .as_ref()
-                    .and_then(|(_, _, rows)| rows.rows.get(*i))
-                    .map(Self::pickable)
-                    .unwrap_or(false),
-                Item::Undo | Item::Model(_) => true,
-                _ => false,
-            })
-            .collect()
+        self.items().into_iter().filter(|i| self.pickable_item(i)).collect()
     }
 
     // ---- keys
 
-    pub fn up(&mut self) {
-        self.sel = self.sel.saturating_sub(1);
+    /// The cursor as (line, column) in the draft's lines.
+    fn at(&self) -> (usize, usize) {
+        let before: String = self.input.chars().take(self.cursor).collect();
+        let line = before.matches('\n').count();
+        let col = before.rsplit('\n').next().map(|l| l.chars().count()).unwrap_or(0);
+        (line, col)
     }
 
-    pub fn down(&mut self) {
-        let n = self.picks().len();
-        if self.sel + 1 < n {
-            self.sel += 1;
+    /// The cursor put at (line, column), the column held to the line's length.
+    fn put_at(&mut self, line: usize, col: usize) {
+        let mut n = 0;
+        for (i, l) in self.input.split('\n').enumerate() {
+            let len = l.chars().count();
+            if i == line {
+                self.cursor = n + col.min(len);
+                return;
+            }
+            n += len + 1;
+        }
+        self.cursor = self.input.chars().count();
+    }
+
+    fn lines(&self) -> usize {
+        self.input.matches('\n').count() + 1
+    }
+
+    pub fn up(&mut self) {
+        if self.in_list {
+            if self.sel == 0 {
+                self.in_list = false; // above the first row is the prompt
+            } else {
+                self.sel -= 1;
+            }
+        } else {
+            let (l, c) = self.at();
+            if l > 0 {
+                self.put_at(l - 1, c);
+            }
         }
     }
 
+    pub fn down(&mut self) {
+        if self.in_list {
+            if self.sel + 1 < self.picks().len() {
+                self.sel += 1;
+            }
+            return;
+        }
+        let (l, c) = self.at();
+        if l + 1 < self.lines() {
+            self.put_at(l + 1, c);
+        } else if !self.picks().is_empty() && self.chip_focus.is_none() {
+            self.in_list = true;
+            self.sel = 0;
+        }
+    }
+
+    /// A key that types: it goes to the prompt, wherever the focus was.
     pub fn typed(&mut self, c: char) {
         if c.is_control() {
             return;
         }
+        self.insert(&c.to_string());
+    }
+
+    /// Shift+Enter: a new line in the draft; never in a yes, an argument or an answer, which are one line.
+    pub fn newline(&mut self) {
+        if self.mode == Mode::Normal {
+            self.insert("\n");
+        }
+    }
+
+    /// Pasted text goes into the draft as it is, its lines kept: a newline in it never sends. Where the
+    /// prompt takes one line, the lines are joined by spaces.
+    pub fn paste(&mut self, text: &str) {
+        let one = self.mode != Mode::Normal;
+        let t: String = text
+            .replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .chars()
+            .map(|c| if c == '\t' || (one && c == '\n') { ' ' } else { c })
+            .filter(|c| *c == '\n' || !c.is_control())
+            .collect();
+        self.insert(&t);
+    }
+
+    fn insert(&mut self, t: &str) {
         self.chip_focus = None;
-        if self.input.chars().count() < 400 {
-            self.input.push(c);
+        let room = INPUT_MAX.saturating_sub(self.input.chars().count());
+        let t: String = t.chars().take(room).collect();
+        if t.is_empty() {
+            return;
         }
+        let at = self.byte_at(self.cursor);
+        self.input.insert_str(at, &t);
+        self.cursor += t.chars().count();
         if matches!(self.mode, Mode::Normal) {
+            self.in_list = false;
             self.sel = 0;
+            self.scroll = 0;
         }
+    }
+
+    fn byte_at(&self, chars: usize) -> usize {
+        self.input.char_indices().nth(chars).map(|(b, _)| b).unwrap_or(self.input.len())
+    }
+
+    /// The draft set whole, the cursor at its end.
+    pub fn set_draft(&mut self, s: &str) {
+        self.set_input(s.to_string());
+    }
+
+    fn set_input(&mut self, s: String) {
+        self.cursor = s.chars().count();
+        self.input = s;
     }
 
     pub fn backspace(&mut self) {
-        self.input.pop();
+        if self.cursor == 0 {
+            return;
+        }
+        let a = self.byte_at(self.cursor - 1);
+        let b = self.byte_at(self.cursor);
+        self.input.replace_range(a..b, "");
+        self.cursor -= 1;
         if matches!(self.mode, Mode::Normal) {
+            self.in_list = false;
             self.sel = 0;
         }
     }
 
-    /// Esc: a question waiting is answered no; the about or the models go back; else the dialog closes.
+    pub fn delete(&mut self) {
+        if self.cursor >= self.input.chars().count() {
+            return;
+        }
+        let a = self.byte_at(self.cursor);
+        let b = self.byte_at(self.cursor + 1);
+        self.input.replace_range(a..b, "");
+    }
+
+    /// Left and right: the cursor in the draft; in the Calendar with nothing typed, the months.
+    pub fn left(&mut self) {
+        if self.input.is_empty() && !self.in_list {
+            return self.month(-1);
+        }
+        self.cursor = self.cursor.saturating_sub(1);
+    }
+
+    pub fn right(&mut self) {
+        if self.input.is_empty() && !self.in_list {
+            return self.month(1);
+        }
+        self.cursor = (self.cursor + 1).min(self.input.chars().count());
+    }
+
+    pub fn line_start(&mut self) {
+        let (l, _) = self.at();
+        self.put_at(l, 0);
+    }
+
+    pub fn line_end(&mut self) {
+        let (l, _) = self.at();
+        self.put_at(l, usize::MAX);
+    }
+
+    /// Page up and down: the content area, by most of its height.
+    pub fn page(&mut self, d: i32) {
+        let step = self.size.1.saturating_sub(14).max(4) as usize;
+        self.scroll = if d < 0 { self.scroll.saturating_sub(step) } else { self.scroll + step };
+    }
+
+    /// The prompt takes a yes, an argument or an answer: the draft waits aside.
+    fn stash_draft(&mut self) {
+        if self.stash.is_none() {
+            self.stash = Some(std::mem::take(&mut self.input));
+        }
+        self.cursor = 0;
+    }
+
+    /// The question answered or let go: the draft comes back as it was.
+    fn unstash(&mut self) {
+        if let Some(s) = self.stash.take() {
+            if self.input.is_empty() {
+                self.set_input(s);
+            }
+        }
+    }
+
+    /// Esc: a question waiting is answered no (the draft comes back); the focus on a control or the
+    /// draft goes first; then back one view; from the first view the dialog closes.
     pub fn escape(&mut self) {
         match std::mem::replace(&mut self.mode, Mode::Normal) {
             Mode::Confirm(step) => {
                 self.say(Sign::Refused, &format!("{}: kept, not done", step.line));
                 self.input.clear();
-                self.next_step();
+                self.unstash();
+                self.stop_queue("the steps after it were not run");
             }
             Mode::Ask { step, .. } => {
                 self.say(Sign::Refused, &format!("{}: not done", step.line));
                 self.input.clear();
-                self.next_step();
+                self.unstash();
+                self.stop_queue("the steps after it were not run");
             }
             Mode::Elicit { prov, id, .. } => {
                 if let Some(s) = self.server(prov) {
                     s.answer(&id, json!({"action": "cancel"}));
                 }
                 self.input.clear();
+                self.unstash();
+            }
+            Mode::Apply(name) => {
+                self.say(Sign::Refused, &format!("model {}: kept {}", name, self.model_name.clone().unwrap_or_default()));
+                self.input.clear();
+                self.unstash();
             }
             Mode::Listening => {
+                // the recording is dropped; the draft stays as it was
+                self.listen_cancelled = true;
+                self.mode = Mode::Listening;
                 self.jobs.push(Job::StopListening);
             }
             Mode::Normal => {
                 if self.chip_focus.is_some() {
                     self.chip_focus = None;
-                } else if !self.input.is_empty() {
-                    self.input.clear();
+                } else if !self.input.is_empty() && !self.in_list {
+                    self.set_input(String::new());
                     self.sel = 0;
                 } else if let Some(v) = self.came_from.pop() {
-                    self.view = v;
-                    self.sel = 0;
-                    if self.attaching.as_ref().map(|(_, d)| self.came_from.len() < *d + 1).unwrap_or(false) {
-                        self.attaching = None;
-                    }
-                    if self.picking.as_ref().map(|pk| self.came_from.len() < pk.depth + 1).unwrap_or(false) {
-                        self.picking = None;
-                    }
-                    if !matches!(self.view, View::Folder(..)) {
-                        self.folder = None;
-                    } else if let View::Folder(p, uri) = self.view.clone() {
-                        self.read_folder(p, &uri);
-                    }
+                    self.go_back(v);
                 } else {
                     self.quit = Some(0);
                 }
@@ -804,22 +1302,92 @@ impl App {
         }
     }
 
+    fn go_back(&mut self, v: View) {
+        self.view = v;
+        self.sel = 0;
+        self.in_list = false;
+        self.scroll = 0;
+        if self.attaching.as_ref().map(|(_, d)| self.came_from.len() < *d + 1).unwrap_or(false) {
+            self.attaching = None;
+        }
+        if self.picking.as_ref().map(|pk| self.came_from.len() < pk.depth + 1).unwrap_or(false) {
+            self.picking = None;
+        }
+        if !matches!(self.view, View::Folder(..)) {
+            self.folder = None;
+        } else if let View::Folder(p, uri) = self.view.clone() {
+            self.read_folder(p, &uri);
+        }
+    }
+
+    fn go(&mut self, v: View) {
+        self.came_from.push(self.view.clone());
+        self.view = v;
+        self.sel = 0;
+        self.in_list = false;
+        self.scroll = 0;
+        self.month_offset = 0;
+    }
+
+    /// A word typed alone that names a place: its view. "calendar" and "settings" are places, and
+    /// so is a section's own name ("about" once opened aerc).
+    fn place(&self, word: &str) -> Option<View> {
+        let w = word.trim().to_lowercase();
+        if let Some(d) = self.dests().into_iter().find(|d| DESTS[*d].name.to_lowercase() == w) {
+            return Some(self.dest_view(d));
+        }
+        if w == "connections" {
+            return Some(View::Connections);
+        }
+        if w == "about" && self.about_idx.is_some() {
+            return Some(View::About);
+        }
+        let w = if w == "clock" { return Some(View::Dest(CALENDAR_DEST)) } else { w };
+        if let Some(i) = SETTINGS.iter().position(|(_, n, _)| n.to_lowercase() == w) {
+            if let Some(q) = self.providers.iter().position(|x| x.label == SETTINGS[i].0 && x.ready && x.dead.is_none()) {
+                return Some(View::Section(q));
+            }
+        }
+        self.providers.iter().position(|x| x.label == w && x.ready && x.dead.is_none()).map(|q| {
+            if Some(q) == self.about_idx {
+                View::About
+            } else {
+                View::Section(q)
+            }
+        })
+    }
+
+    /// A destination's view: one section is that section's own, files is its home folder.
+    fn dest_view(&self, d: usize) -> View {
+        if d == SETTINGS_DEST || d == CALENDAR_DEST {
+            return View::Dest(d);
+        }
+        let secs = self.dest_sections(d);
+        match secs.as_slice() {
+            [p] => View::Section(*p),
+            _ => View::Dest(d),
+        }
+    }
+
     pub fn enter(&mut self) {
-        let typed = std::mem::take(&mut self.input);
         match std::mem::replace(&mut self.mode, Mode::Normal) {
             Mode::Confirm(step) => {
+                let typed = std::mem::take(&mut self.input);
+                self.unstash();
                 if typed.trim() == "yes" {
-                    self.call(step);
+                    self.approved(step);
                 } else {
                     self.say(Sign::Refused, &format!("{}: kept, not done (it takes yes)", step.line));
-                    self.next_step();
+                    self.stop_queue("the steps after it were not run");
                 }
                 return;
             }
             Mode::Ask { mut step, field, .. } => {
-                if typed.is_empty() {
+                let typed = std::mem::take(&mut self.input);
+                self.unstash();
+                if typed.trim().is_empty() {
                     self.say(Sign::Refused, &format!("{}: not done, no {}", step.line, field));
-                    self.next_step();
+                    self.stop_queue("the steps after it were not run");
                     return;
                 }
                 step.call.arguments.insert(field.clone(), Value::String(typed));
@@ -835,6 +1403,8 @@ impl App {
                 mut answers,
                 at,
             } => {
+                let typed = std::mem::take(&mut self.input);
+                self.cursor = 0;
                 let (k, _) = &fields[at];
                 answers.insert(k.clone(), Value::String(typed.clone()));
                 self.say(Sign::You, &format!("{} {}", self.providers[prov].label, typed));
@@ -847,60 +1417,123 @@ impl App {
                         answers,
                         at: at + 1,
                     };
-                } else if let Some(s) = self.server(prov) {
-                    s.answer(&id, json!({"action": "accept", "content": answers}));
+                } else {
+                    self.unstash();
+                    if let Some(s) = self.server(prov) {
+                        s.answer(&id, json!({"action": "accept", "content": answers}));
+                    }
                 }
+                return;
+            }
+            Mode::Apply(name) => {
+                self.input.clear();
+                self.unstash();
+                self.say(Sign::Step, &format!("model {}", name));
+                self.thinking = true;
+                self.jobs.push(Job::Run(Helper::ModelSet, vec![self.cfg.spark.clone(), "model".into(), name]));
                 return;
             }
             Mode::Listening => {
                 self.mode = Mode::Listening;
-                self.input = typed;
                 return;
             }
             Mode::Normal => {}
         }
         if let Some(c) = self.chip_focus {
-            self.input = typed;
             self.chip(c);
             return;
         }
-        if self.view == View::About && typed.trim().is_empty() {
-            return;
-        }
-        // a section's own name typed alone opens that section, never the model ("about" once opened aerc)
-        if matches!(self.view, View::Home | View::Section(_)) && self.sel == 0 {
-            let word = typed.trim().to_lowercase();
-            let word = if word == "calendar" { "clock".to_string() } else { word }; // the clock section is the Calendar
-            if let Some(q) = self.providers.iter().position(|x| x.label == word && x.ready && x.dead.is_none()) {
-                if self.view != View::Section(q) {
-                    self.open_children(q, &format!("spark-shell://{}/rows", word));
-                }
+        if !self.in_list {
+            // the prompt: a place's name alone opens it; any other words are a request, never a row
+            // that happens to match them (a question that names an app does not open it)
+            let typed = self.input.trim().to_string();
+            if typed.is_empty() {
                 return;
             }
+            if !typed.contains('\n') {
+                if let Some(v) = self.place(&typed) {
+                    self.set_input(String::new());
+                    if self.view != v {
+                        self.go(v);
+                    }
+                    return;
+                }
+            }
+            self.set_input(String::new());
+            return self.want(&typed);
         }
-        self.input = typed.clone(); // the list the person saw, filtered by what they typed
         let picks = self.picks();
-        self.input.clear();
-        self.sel = self.sel.min(picks.len().saturating_sub(1));
-        let sel = self.sel;
-        self.sel = 0;
-        if !typed.trim().is_empty() && (picks.is_empty() || self.view == View::About) {
-            return self.want(typed.trim());
-        }
+        let sel = self.sel.min(picks.len().saturating_sub(1));
         let Some(item) = picks.get(sel).cloned() else { return };
+        // a list filtered by the words typed: the words were a search, and go with the pick
+        if matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..)) {
+            self.set_input(String::new());
+        }
+        self.sel = 0;
+        self.in_list = false;
         match item {
             Item::Undo => {
                 if let Some(u) = self.undo.take() {
                     self.run(u);
                 }
             }
+            Item::Proposal(i) => {
+                if i < self.proposals.len() {
+                    let s = self.proposals.remove(i);
+                    self.run(s);
+                }
+            }
+            Item::Dest(d) => {
+                let v = self.dest_view(d);
+                if let View::Section(p) = v {
+                    if self.providers[p].label == "files" {
+                        if let Some(root) = self.providers[p].rows.rows.iter().find_map(|r| r.children.clone()) {
+                            return self.open_children(p, &root);
+                        }
+                    }
+                }
+                self.go(v);
+            }
+            Item::Setting(i) => {
+                let label = SETTINGS[i].0;
+                if label == "connections" {
+                    return self.go(View::Connections);
+                }
+                if let Some(v) = self.place(label) {
+                    self.go(v);
+                }
+            }
+            Item::OpenModels => self.go(View::Models),
+            Item::TalkOpt(t) => {
+                self.talk = t;
+                talk_keep(t);
+                self.say(Sign::Done, if t == Talk::Off { "talk off" } else { "click Mic to talk" });
+                if let Some(v) = self.came_from.pop() {
+                    self.go_back(v);
+                }
+            }
             Item::Model(i) => {
-                let name = self.models[i].0.clone();
-                self.say(Sign::Step, &format!("model {}", name));
-                self.thinking = true;
-                self.jobs.push(Job::Run(Helper::ModelSet, vec![self.cfg.spark.clone(), "model".into(), name]));
-                self.view = self.came_from.pop().unwrap_or(View::Home);
-                self.sel = 0;
+                let (name, state) = self.models[i].clone();
+                if state == "serving" {
+                    self.say(Sign::Done, &format!("{} is in use", name));
+                    return;
+                }
+                // browsing changed nothing; this is the review: what changes, and for whom
+                let who = match &self.server {
+                    Some(s) => format!("everyone who uses {}", s),
+                    None => "every client of this computer's spark".to_string(),
+                };
+                self.say(
+                    Sign::Says,
+                    &format!(
+                        "Use {} instead of {}? It restarts the model for {}.",
+                        name,
+                        self.model_name.clone().unwrap_or_default(),
+                        who
+                    ),
+                );
+                self.stash_draft();
+                self.mode = Mode::Apply(name);
             }
             Item::Row(p, r) => {
                 let row = self.providers[p].rows.rows[r].clone();
@@ -924,10 +1557,7 @@ impl App {
                     self.open_children(p, &c);
                 } else if let Some(call) = row.tool {
                     if call.name == "about_open" {
-                        self.came_from.push(self.view.clone());
-                        self.view = View::About;
-                        self.sel = 0;
-                        return;
+                        return self.go(View::About);
                     }
                     let line = format!("{} {}", self.providers[p].label, row.text);
                     self.run(Step {
@@ -997,13 +1627,17 @@ impl App {
             return;
         };
         let _ = from;
-        self.came_from.push(self.view.clone());
-        self.sel = 0;
         if tail == "rows" {
-            self.view = if Some(q) == self.about_idx { View::About } else { View::Section(q) };
-            self.month_offset = 0; // the calendar opens on this month
+            let v = if Some(q) == self.about_idx {
+                View::About
+            } else if label == "clock" || label == "reminders" {
+                View::Dest(CALENDAR_DEST)
+            } else {
+                View::Section(q)
+            };
+            self.go(v);
         } else if tail.starts_with("rows/") {
-            self.view = View::Folder(q, uri.to_string());
+            self.go(View::Folder(q, uri.to_string()));
             self.read_folder(q, uri);
         }
     }
@@ -1020,16 +1654,18 @@ impl App {
         self.providers.iter().position(|p| p.label == "files" && p.dead.is_none())
     }
 
-    /// The chips: 0 plus, 1 the model, 2 talk.
+    /// The footer's controls and the attachment's Remove: 0 attach, 1 the model, 2 talk, 3 the mic,
+    /// 4 remove the file attached.
     pub fn chip(&mut self, c: usize) {
         self.chip_focus = None;
         match c {
-            0 if self.cfg.plus => {
+            4 => {
                 if let Some(a) = self.attachment.take() {
                     let name = a.rsplit('/').next().unwrap_or("").to_string();
-                    self.say(Sign::Done, &format!("{} no longer attached", name));
-                    return;
+                    self.say(Sign::Done, &format!("{} removed: the next question goes without it", name));
                 }
+            }
+            0 if self.cfg.plus => {
                 let Some(f) = self.files() else { return };
                 let Some(root) = self.providers[f].rows.rows.iter().find_map(|r| r.children.clone()) else {
                     return self.say(Sign::Refused, "no folder to attach from");
@@ -1038,14 +1674,22 @@ impl App {
                 self.open_children(f, &root);
             }
             1 if self.cfg.model => {
-                self.came_from.push(self.view.clone());
-                self.view = View::Models;
-                self.sel = self.models.iter().position(|(_, s)| s == "serving").unwrap_or(0);
+                if self.view != View::Models {
+                    self.go(View::Models);
+                }
             }
-            2 if self.cfg.talk && self.voice_on => {
+            2 if self.cfg.talk => {
+                if self.view != View::Talk {
+                    self.go(View::Talk);
+                }
+            }
+            3 if self.cfg.talk && self.voice_on && self.talk == Talk::Click => {
                 if self.mode == Mode::Listening {
+                    // a click on the mic again: stop, nothing kept (spark ends a recording at a pause)
+                    self.listen_cancelled = true;
                     self.jobs.push(Job::StopListening);
-                } else if self.mode == Mode::Normal {
+                } else if self.mode == Mode::Normal && self.running.is_none() {
+                    self.listen_cancelled = false;
                     self.mode = Mode::Listening;
                     self.jobs.push(Job::Run(
                         Helper::Listen,
@@ -1057,72 +1701,131 @@ impl App {
         }
     }
 
+    /// The controls Tab moves through, in their order on the screen.
     pub fn chips(&self) -> Vec<usize> {
         let mut v = vec![];
+        if self.attachment.is_some() {
+            v.push(4);
+        }
         if self.cfg.plus && self.files().is_some() {
             v.push(0);
         }
         if self.cfg.model && self.model_name.is_some() {
             v.push(1);
         }
-        if self.cfg.talk && self.voice_on {
+        if self.cfg.talk {
             v.push(2);
+        }
+        if self.cfg.talk && self.voice_on && self.talk == Talk::Click {
+            v.push(3);
         }
         v
     }
 
-    pub fn tab(&mut self) {
+    /// Tab: the next control; after the last, the prompt again. Shift+Tab goes the other way.
+    pub fn tab(&mut self, back: bool) {
         let c = self.chips();
         if c.is_empty() {
             return;
         }
-        self.chip_focus = match self.chip_focus {
-            None => Some(c[0]),
-            Some(f) => c.iter().position(|x| *x == f).and_then(|i| c.get(i + 1)).copied(),
+        self.in_list = false;
+        let at = self.chip_focus.and_then(|f| c.iter().position(|x| *x == f));
+        self.chip_focus = match (at, back) {
+            (None, false) => Some(c[0]),
+            (None, true) => c.last().copied(),
+            (Some(i), false) => c.get(i + 1).copied(),
+            (Some(0), true) => None,
+            (Some(i), true) => c.get(i - 1).copied(),
         };
+    }
+
+    /// Focus left the window (another window, the lock): a recording stops, nothing kept.
+    pub fn focus_lost(&mut self) {
+        if self.mode == Mode::Listening {
+            self.listen_cancelled = true;
+            self.jobs.push(Job::StopListening);
+        }
     }
 
     // ---- the want and the steps
 
     fn want(&mut self, words: &str) {
         self.say(Sign::You, words);
+        self.proposals.clear();
         if self.cfg.spark_shell.is_empty() {
+            self.set_input(words.to_string());
             return self.say(Sign::Refused, "no spark-shell to read the words");
         }
         self.thinking = true;
         let mut argv = vec![self.cfg.spark_shell.clone(), "want".into(), "--json".into()];
-        if let Some(a) = self.attachment.take() {
+        // the file goes with this request alone; it comes back if the request fails
+        let file = self.attachment.take();
+        if let Some(a) = &file {
             argv.push("--attach".into());
-            argv.push(a);
+            argv.push(a.clone());
         }
+        self.pending = Some((words.to_string(), file));
         argv.push("--".into());
         argv.push(words.to_string());
         self.jobs.push(Job::Run(Helper::Want, argv));
     }
 
-    /// The plan from `spark-shell want --json`: each step gated here too, then run in order.
+    /// A request that did not get its answer: the words and the file come back, unless something new
+    /// was typed or attached meanwhile.
+    fn give_back(&mut self) {
+        if let Some((words, file)) = self.pending.take() {
+            if self.input.is_empty() && self.mode == Mode::Normal {
+                self.set_input(words);
+            }
+            if self.attachment.is_none() {
+                self.attachment = file;
+            }
+        }
+    }
+
+    /// The plan from `spark-shell want --json`: each step gated here too, then run in order. A question
+    /// changes nothing: its steps are proposals, run only when picked.
     pub fn plan(&mut self, text: &str) {
         self.thinking = false;
         let Ok(v) = serde_json::from_str::<Value>(text) else {
+            self.give_back();
             return self.say(Sign::Refused, "the answer was not a plan");
         };
+        let question = v.get("question").and_then(Value::as_bool).unwrap_or(false);
         if let Some(a) = v.get("answer").and_then(Value::as_str) {
             if !a.trim().is_empty() {
                 self.say(Sign::Says, a);
             }
         }
-        for r in v.get("refused").and_then(Value::as_array).cloned().unwrap_or_default() {
-            if let Some(t) = r.as_str() {
-                self.say(Sign::Refused, t.trim_start_matches('\u{2717}').trim());
-            }
+        let refused: Vec<String> = v
+            .get("refused")
+            .and_then(Value::as_array)
+            .map(|r| {
+                r.iter()
+                    .filter_map(Value::as_str)
+                    .map(|t| t.trim_start_matches('\u{2717}').trim().to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        for t in &refused {
+            self.say(Sign::Refused, t);
         }
-        for s in v.get("steps").and_then(Value::as_array).cloned().unwrap_or_default() {
+        let steps = v.get("steps").and_then(Value::as_array).cloned().unwrap_or_default();
+        if steps.is_empty() && v.get("answer").and_then(Value::as_str).unwrap_or("").trim().is_empty() && !refused.is_empty() {
+            self.give_back(); // refused whole: the words come back to be said again
+        } else {
+            self.pending = None;
+        }
+        for s in steps {
             let Some(name) = s.get("name").and_then(Value::as_str) else { continue };
             let arguments = s.get("arguments").and_then(Value::as_object).cloned().unwrap_or_default();
             let line = scrub(s.get("line").and_then(Value::as_str).unwrap_or(name));
             // two steps are the dialog's own: undo is its undo row, about opens its about
             if name == "undo_all" {
                 match self.undo.take() {
+                    Some(u) if question => {
+                        self.undo = Some(u);
+                    }
                     Some(u) => self.queue.push_back(u),
                     None => self.say(Sign::Refused, "nothing to undo"),
                 }
@@ -1130,9 +1833,7 @@ impl App {
             }
             if name == "about_open" {
                 if self.about_idx.is_some() {
-                    self.came_from.push(self.view.clone());
-                    self.view = View::About;
-                    self.sel = 0;
+                    self.go(View::About);
                 } else {
                     self.say(Sign::Refused, &format!("{}: not a step here now", line));
                 }
@@ -1146,12 +1847,19 @@ impl App {
             match self.providers.iter().position(|p| p.tools.iter().any(|t| t.name == name)) {
                 None => self.say(Sign::Refused, &format!("{}: not a step here now", line)),
                 Some(p) => match gate::step(&self.providers[p].tools, &self.providers[p].rows, &call) {
-                    Ok(()) => self.queue.push_back(Step {
-                        prov: p,
-                        call,
-                        who: Who::Model,
-                        line,
-                    }),
+                    Ok(()) => {
+                        let step = Step {
+                            prov: p,
+                            call,
+                            who: Who::Model,
+                            line,
+                        };
+                        if question {
+                            self.proposals.push(step);
+                        } else {
+                            self.queue.push_back(step);
+                        }
+                    }
                     Err(e) => self.say(Sign::Refused, &format!("{}: {}", line, e)),
                 },
             }
@@ -1172,31 +1880,79 @@ impl App {
         }
     }
 
-    /// A step: its line drawn, an argument asked when it lacks one, a typed yes when it is destructive, then the call.
+    /// A step failed, was refused or kept: the steps planned after it depend on it, and are not run.
+    fn stop_queue(&mut self, why: &str) {
+        if self.queue.is_empty() {
+            return;
+        }
+        let left: Vec<String> = self.queue.drain(..).map(|s| s.line).collect();
+        self.say(Sign::Refused, &format!("{}: {}", why, left.join(", ")));
+    }
+
+    /// Whether a step waits for the typed yes: the provider's destructive hint, or this machine's own
+    /// list. The hint alone never makes a step safe.
+    pub fn risky(&self, tool: &Tool) -> bool {
+        tool.destructive || LOCAL_RISK.contains(&tool.name.as_str())
+    }
+
+    /// A step: an argument asked when it lacks one, a typed yes when it is risky, then the call.
     pub fn run(&mut self, step: Step) {
         if let Some(field) = step.call.ask.first().cloned() {
             let masked = gate::secret(&field, self.tool_of(&step).and_then(|t| t.schema.pointer(&format!("/properties/{}", field))));
+            self.stash_draft();
             self.mode = Mode::Ask { step, field, masked };
             return;
         }
         let Some(tool) = self.tool_of(&step).cloned() else {
             self.say(Sign::Refused, &format!("{}: not a step here now", step.line));
-            return self.next_step();
+            return self.stop_queue("the steps after it were not run");
         };
-        if step.who != Who::Person {
-            if let Err(e) = gate::step(&self.providers[step.prov].tools, &self.providers[step.prov].rows, &step.call) {
-                self.say(Sign::Refused, &format!("{}: {}", step.line, e));
-                return self.next_step();
-            }
+        if let Err(e) = self.checked(&step) {
+            self.say(Sign::Refused, &format!("{}: {}", step.line, e));
+            return self.stop_queue("the steps after it were not run");
         }
         if step.who == Who::Model {
             self.say(Sign::Step, &step.line);
         }
-        if tool.destructive {
+        if self.risky(&tool) {
+            self.stash_draft();
             self.mode = Mode::Confirm(step);
             return;
         }
         self.call(step);
+    }
+
+    /// What every step passes, now and again at its yes: its tool is still offered, no argument holds a
+    /// control character (a pasted or spoken newline is never a step's), and a step the model or the
+    /// undo planned names only what the rows list now.
+    fn checked(&self, step: &Step) -> Result<(), String> {
+        if self.tool_of(step).is_none() {
+            return Err("not a step here now".into());
+        }
+        if step
+            .call
+            .arguments
+            .values()
+            .any(|v| v.as_str().is_some_and(|s| s.chars().any(char::is_control)))
+        {
+            return Err("an argument holds a control character".into());
+        }
+        if step.who != Who::Person {
+            gate::step(&self.providers[step.prov].tools, &self.providers[step.prov].rows, &step.call)?;
+        }
+        Ok(())
+    }
+
+    /// The yes was typed for this step, these arguments: checked again against what is offered now,
+    /// for the rows may have changed while the question waited.
+    fn approved(&mut self, step: Step) {
+        match self.checked(&step) {
+            Ok(()) => self.call(step),
+            Err(e) => {
+                self.say(Sign::Refused, &format!("{}: not done, {}", step.line, e));
+                self.stop_queue("the steps after it were not run");
+            }
+        }
     }
 
     fn tool_of(&self, step: &Step) -> Option<&Tool> {
@@ -1218,7 +1974,7 @@ impl App {
             }
             None => {
                 self.say(Sign::Refused, &format!("{}: not done, its provider is gone", step.line));
-                self.next_step();
+                self.stop_queue("the steps after it were not run");
             }
         }
     }
@@ -1241,10 +1997,12 @@ impl App {
         );
         if let Some(e) = error {
             self.say(Sign::Refused, &format!("{}: {}", step.line, e));
+            self.stop_queue("not run, for the step before failed");
         } else if let Some(r) = result {
             let text = r.pointer("/content/0/text").and_then(Value::as_str).unwrap_or("");
             if refused {
                 self.say(Sign::Refused, text);
+                self.stop_queue("not run, for the step before failed");
             } else {
                 let sc = r.get("structuredContent").cloned().unwrap_or(Value::Null);
                 if let Some(path) = sc.get("attach").and_then(Value::as_str) {
@@ -1299,31 +2057,14 @@ impl App {
                         }
                     }
                 }
-                if step.who == Who::Person {
-                    let id = self.providers[idx]
-                        .rows
-                        .rows
-                        .iter()
-                        .find(|r| {
-                            r.tool
-                                .as_ref()
-                                .map(|t| t.name == step.call.name && t.arguments == step.call.arguments)
-                                .unwrap_or(false)
-                        })
-                        .map(|r| r.id.clone());
-                    if let Some(id) = id {
-                        self.recent.retain(|x| x != &id);
-                        self.recent.insert(0, id);
-                        self.recent.truncate(5);
-                    }
-                }
             }
         }
         self.providers[idx].dirty = true;
         self.next_step();
     }
 
-    /// A helper's answer: the plan, the model list, the model set, the words heard, the voice's state.
+    /// A helper's answer: the plan, the model list, the model set, the words heard, the voice's state,
+    /// where the model runs.
     pub fn helper(&mut self, h: Helper, out: Result<String, String>) {
         match h {
             Helper::Want => match out {
@@ -1332,19 +2073,30 @@ impl App {
                     self.thinking = false;
                     match serde_json::from_str::<Value>(&e) {
                         Ok(_) => self.plan(&e),
-                        Err(_) => self.say(Sign::Refused, e.lines().next().unwrap_or("spark did not answer")),
+                        Err(_) => {
+                            self.give_back();
+                            self.say(Sign::Refused, e.lines().next().unwrap_or("spark did not answer"))
+                        }
                     }
                 }
             },
             Helper::Models => {
                 if let Ok(t) = out {
+                    // every model spark knows: in use, installed, or not downloaded (shown, not offered)
                     self.models = t
                         .lines()
                         .filter_map(|l| {
                             let f: Vec<&str> = l.split('\t').collect();
                             let name = scrub(f.first()?);
                             let state = scrub(f.last()?);
-                            (state == "serving" || state == "downloaded").then_some((name, state))
+                            (!name.is_empty()).then_some((
+                                name,
+                                if state == "serving" || state == "downloaded" {
+                                    state
+                                } else {
+                                    "-".to_string()
+                                },
+                            ))
                         })
                         .collect();
                     self.model_name = self.models.iter().find(|(_, s)| s == "serving").map(|(n, _)| n.clone());
@@ -1367,14 +2119,24 @@ impl App {
                 if self.mode == Mode::Listening {
                     self.mode = Mode::Normal;
                 }
+                let cancelled = std::mem::take(&mut self.listen_cancelled);
                 match out {
-                    Ok(t) => {
-                        let heard = scrub(t.trim());
+                    Ok(t) if !cancelled => {
+                        // what was heard goes into the draft at the cursor, to read and change; Enter sends
+                        let heard = scrub(t.trim()).replace('\n', " ");
                         if !heard.is_empty() {
-                            self.input = heard;
+                            let before: String = self.input.chars().take(self.cursor).collect();
+                            let pad = if before.is_empty() || before.ends_with(char::is_whitespace) {
+                                ""
+                            } else {
+                                " "
+                            };
+                            self.insert(&format!("{}{}", pad, heard));
                         }
                     }
-                    Err(e) => self.say(Sign::Refused, e.lines().next().unwrap_or("nothing heard")),
+                    Ok(_) => {}
+                    Err(_) if cancelled => self.say(Sign::Done, "stopped: nothing kept"),
+                    Err(e) => self.say(Sign::Refused, e.lines().next().filter(|l| !l.trim().is_empty()).unwrap_or("nothing heard")),
                 }
             }
             Helper::Voice => {
@@ -1386,20 +2148,34 @@ impl App {
                         .unwrap_or(false);
                 }
             }
+            Helper::Client => {
+                // "spark client -- of http://HOST:PORT, ..." when the model runs on another machine
+                if let Ok(t) = out {
+                    let first = t.lines().next().unwrap_or("");
+                    self.server = first
+                        .split_once(" of ")
+                        .map(|(_, r)| scrub(r.split(|c: char| c == ',' || c.is_whitespace()).next().unwrap_or("")))
+                        .filter(|u| u.starts_with("http"));
+                }
+            }
         }
     }
 
     // ---- what the window says
 
-    pub fn title(&self, clock: &str) -> String {
+    /// The header's title: the view's name, in lower case as the home's.
+    pub fn title(&self) -> String {
         if let Some(t) = &self.cfg.title {
             return scrub(t);
         }
         match &self.view {
-            View::Home => clock.to_string(),
-            View::Section(p) | View::Folder(p, _) => self.providers[*p].label.clone(),
-            View::About => "spark-shell".into(),
+            View::Home => "home".into(),
+            View::Dest(d) => DESTS[*d].name.to_lowercase(),
+            View::Section(p) | View::Folder(p, _) => section_name(&self.providers[*p].label).to_lowercase(),
+            View::About => "about".into(),
             View::Models => "model".into(),
+            View::Talk => "talk".into(),
+            View::Connections => "connections".into(),
         }
     }
 
@@ -1407,17 +2183,20 @@ impl App {
         match &self.view {
             View::Section(p) => self.providers[*p].title.clone(),
             View::Folder(..) => self.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default(),
-            View::About => self.about_idx.map(|i| self.providers[i].version.clone()).unwrap_or_default(),
+            View::About => self.about_idx.map(|i| format!("spark-shell {}", self.providers[i].version)).unwrap_or_default(),
             _ => String::new(),
         }
     }
 
+    /// The row under the prompt: what a key does now, a key named as a chip and nothing else as one.
     pub fn hint(&self) -> Vec<(String, bool)> {
-        let esc = |w: &str| vec![(" \u{b7} ".to_string(), false), ("Esc".to_string(), true), (format!(" {}", w), false)];
-        let mut v: Vec<(String, bool)> = match &self.mode {
+        let key = |w: &str, k: &str| vec![(format!("{} ", w), false), (k.to_string(), true)];
+        let gap = || ("   ".to_string(), false);
+        let esc = |w: &str| vec![gap(), (format!("{} ", w), false), ("Esc".to_string(), true)];
+        match &self.mode {
             Mode::Confirm(s) => {
                 let mut v = vec![(format!("type yes to {}", s.line), false)];
-                v.extend(esc("keeps it"));
+                v.extend(esc("Keep"));
                 return v;
             }
             Mode::Ask { step, field, masked } => {
@@ -1435,7 +2214,7 @@ impl App {
                     format!("the {} for {}", field, step.line)
                 };
                 let mut v = vec![(what, false)];
-                v.extend(esc("cancels"));
+                v.extend(esc("Cancel"));
                 return v;
             }
             Mode::Elicit { prov, message, fields, at, .. } => {
@@ -1445,47 +2224,60 @@ impl App {
                     format!("{}: {}", message, fields[*at].1)
                 };
                 let mut v = vec![(format!("{} asks: {}", self.providers[*prov].label, m), false)];
-                v.extend(esc("declines"));
+                v.extend(esc("Decline"));
                 return v;
             }
             Mode::Listening => {
-                let mut v = vec![("listening, a pause ends it".to_string(), false)];
-                v.extend(esc("stops"));
+                let mut v = vec![("Listening, a pause ends it".to_string(), false)];
+                v.extend(esc("Cancel"));
                 return v;
             }
-            Mode::Normal => vec![],
-        };
+            Mode::Apply(_) => {
+                let mut v = key("Apply", "Enter");
+                v.extend(esc("Keep"));
+                return v;
+            }
+            Mode::Normal => {}
+        }
         if self.attaching.is_some() {
-            v.push((format!("pick a file to attach ({})", self.cfg.attach.join(" ")), false));
-            v.extend(esc("cancels"));
+            let mut v = vec![(format!("Pick a file to attach ({})", self.cfg.attach.join(" ")), false)];
+            v.extend(esc("Cancel"));
             return v;
         }
         if let Some(pk) = &self.picking {
-            v.push((format!("pick a picture ({})", pk.types.join(" ")), false));
-            v.extend(esc("cancels"));
+            let mut v = vec![(format!("Pick a picture ({})", pk.types.join(" ")), false)];
+            v.extend(esc("Cancel"));
             return v;
         }
-        // the keys, no words for them: the arrows where there is something to pick, the month's in the calendar
-        if self.is_calendar() {
-            v.push(("\u{2190}\u{2192}".into(), true));
-            v.push((" month".into(), false));
-        } else if self.view != View::About {
-            v.push(("\u{2191}\u{2193}".into(), true));
+        if self.chip_focus.is_some() {
+            let mut v = key("Choose", "Enter");
+            v.push(gap());
+            v.extend(key("Next", "Tab"));
+            return v;
         }
-        // Esc goes back one view where there is one to go back to, and closes from the first
-        let word = if self.came_from.is_empty() { "closes" } else { "goes back" };
-        if v.is_empty() {
-            v.push(("Esc".into(), true));
-            v.push((format!(" {}", word), false));
-        } else {
-            v.extend(esc(word));
+        if self.in_list {
+            let word = match self.picks().get(self.sel) {
+                Some(Item::Proposal(_)) | Some(Item::Undo) => "Run",
+                Some(Item::Model(_)) | Some(Item::TalkOpt(_)) => "Choose",
+                _ => "Open",
+            };
+            let mut v = key(word, "Enter");
+            v.extend(esc(if self.came_from.is_empty() { "Close" } else { "Back" }));
+            return v;
+        }
+        let mut v = key("Send", "Enter");
+        v.push(gap());
+        v.extend(key("New line", "Shift+Enter"));
+        if self.input.is_empty() && self.is_calendar() {
+            v.push(gap());
+            v.extend(key("Month", "\u{2190}\u{2192}"));
         }
         v
     }
 
-    /// The clock section is the calendar.
+    /// The Calendar: its months, then the reminders.
     pub fn is_calendar(&self) -> bool {
-        matches!(self.view, View::Section(p) if self.providers.get(p).map(|x| x.label == "clock").unwrap_or(false))
+        self.view == View::Dest(CALENDAR_DEST)
     }
 
     /// Left and right: the calendar's month back or on; nothing elsewhere.
