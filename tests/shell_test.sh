@@ -89,6 +89,7 @@ for rel in $RENDERS; do
     plain "$HOME/$rel" && ok "on: $rel is plain (no hex, ASCII)" || bad "on: $rel not plain" "$(grep -nE '#[0-9a-fA-F]{6}' "$HOME/$rel" | head -2)"
 done
 grep -q 'SPARK_ASCII=1 spark bar line' "$HOME/.tmux.conf" && ok "on: the bar is asked in ASCII" || bad "bar ascii"
+grep -qF "status-right \"#[fg=colour9]#($REPO/spark-shell bar due)#[default]#(SPARK_ASCII=1 spark bar line)\"" "$HOME/.tmux.conf" && ok "on: tmux's line asks for a reminder due, in the accent, before spark's line" || bad "tmux due" "$(grep -n status-right "$HOME/.tmux.conf")"
 [ ! -e "$HOME/.gitconfig" ] && ok "on: no .gitconfig written (git's identity is git's)" || bad "gitconfig written" "$(cat "$HOME/.gitconfig")"
 grep -q ':Tc' "$HOME/.tmux.conf" && bad "tmux advertises truecolor for the look" || ok "on: no Tc override (the look is slots)"
 grep -q 'terminal-features ",foot\*:RGB"' "$HOME/.tmux.conf" && ok "on: content passes through in RGB under foot" || bad "foot RGB passthrough" "$(grep -n terminal- "$HOME/.tmux.conf")"
@@ -2332,6 +2333,33 @@ rm -f "$HOME/calendar/other.ics"
 j=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://reminders/rows"}}' | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide reminders 2>/dev/null | jq -r 'select(.id == 2) | .result.contents[0].text')
 printf '%s' "$j" | jq -e '[.rows[] | select(.text | startswith("the vet"))][0] | .date == "2030-01-02" and .group == "later" and (.columns[0] | endswith("10:00"))' >/dev/null \
     && ok "provide reminders: a reminder's row carries its day for the Calendar, its group and its time" || bad "provide reminders" "$j"
+printf '%s' "$j" | jq -e '(.rows[0] | .id == "reminders:add" and .text == "new reminder" and .tool.ask == ["words"]) and ([.rows[] | select(.id == "reminders:more")][0] | .children == "spark-shell://reminders/rows" and (.columns[0] | startswith("tomorrow 09:00"))) and ([.rows[] | select(.text | startswith("say it"))] | length == 0)' >/dev/null \
+    && ok "provide reminders: new reminder first, asking for its words; the next one ahead, its day and time, opens the rest; no hint posing as a row" || bad "provide reminders rows" "$j"
+j=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide reminders 2>/dev/null | jq -c 'select(.id == 2) | .result.tools')
+printf '%s' "$j" | jq -e '.[] | select(.name == "reminders_add") | .inputSchema.properties.words.description == "when and what: fri 9am call the vet"' >/dev/null \
+    && ok "provide reminders: the words of reminders_add say what they are, for the dialog's hint when it asks" || bad "reminders_add description" "$j"
+rows=$(NL --list)
+printf '%s\n' "$rows" | grep -q 'new reminder	reminders add$' && printf '%s\n' "$rows" | grep -q 'reminders  [a-z].*	reminders more$' \
+    && ok "the home list: new reminder, and the next reminder ahead, which opens the rest" || bad "home reminders" "$rows"
+# notes and reminders as commands of their own
+out=$(SWAYSOCK=$H/sock EDITOR=true PATH="$H/lx:$PATH" sh "$SH" notes 2>&1); printf '%s\n' "$out" | grep -q '^  [a-zA-Z].* *groceries for the weekend$' && printf '%s\n' "$out" | grep -q '^  Jan 1  *the jabra mic levels$' \
+    && ok "spark-shell notes: each note with its date, the newest first" || bad "notes command" "$out"
+[ "$(sh "$SH" notes add 'groceries for the weekend: eggs' 2>&1)" = 'added to groceries for the weekend: eggs' ] && [ "$(sh "$SH" notes find eggs 2>&1)" = "1 note says eggs $(printf '\302\267') groceries for the weekend: eggs" ] \
+    && ok "spark-shell notes add and find" || bad "notes add/find command" "$(sh "$SH" notes find eggs 2>&1)"
+rm -f "$HOME/swaymsg.log"; out=$(SWAYSOCK=$H/sock EDITOR=true PATH="$H/lx:$PATH" sh "$SH" notes the jabra mic levels </dev/null 2>&1)
+[ "$out" = 'opened the jabra mic levels' ] && grep -qxF -- "-- exec foot -e true '$HOME/notes/jabra.md'" "$HOME/swaymsg.log" && ok "spark-shell notes NAME: away from a terminal, the note opens in the desktop's" || bad "notes open command" "$out"
+rc=0; out=$(sh "$SH" notes nothing like it 2>&1) || rc=$?; [ "$rc" = 1 ] && [ "$out" = 'spark-shell notes: no note named nothing like it (spark-shell notes lists them)' ] && ok "spark-shell notes NAME: no such note, refused" || bad "notes refuse" "rc=$rc $out"
+out=$(sh "$SH" reminders add tomorrow 7:30pm feed the cat 2>&1); [ "$out" = 'reminder tomorrow 19:30 feed the cat' ] && ok "spark-shell reminders add: the day, the time, the words" || bad "reminders add command" "$out"
+out=$(sh "$SH" reminders 2>&1); printf '%s\n' "$out" | grep -q '^tomorrow$' && printf '%s\n' "$out" | grep -q '^  19:30  *feed the cat$' && printf '%s\n' "$out" | grep -q '^later$' \
+    && ok "spark-shell reminders: the ones ahead under their groups, each its time" || bad "reminders command" "$out"
+[ "$(sh "$SH" reminders 'done' feed the cat 2>&1)" = 'done: feed the cat' ] && ok "spark-shell reminders done NAME" || bad "reminders done command" "$(sh "$SH" reminders 2>&1)"
+rc=0; out=$(sh "$SH" reminders snooze 2>&1) || rc=$?; [ "$rc" = 1 ] && [ "$out" = "spark-shell reminders: snooze takes the reminder's name (spark-shell reminders lists them)" ] && ok "spark-shell reminders snooze with no name: refused" || bad "snooze refuse" "rc=$rc $out"
+# a reminder due on tmux's status line: the words, and the chime once though the bar asks too
+printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:spark-shell-test-2@box\r\nDTSTART:%s\r\nSUMMARY:#take the bread out of the oven now\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' "$(ago 1)" > "$HOME/calendar/bread.ics"
+rm -f "$HOME/chime.log"; out=$(PATH="$H/lx:$PATH" sh "$SH" bar due 2>&1); PATH="$H/lx:$PATH" sh "$SH" bar due >/dev/null 2>&1; SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once >/dev/null 2>&1; sleep 1
+[ "$out" = 'due: take the bread out of the ov  ' ] && [ "$(grep -c . "$HOME/chime.log" 2>/dev/null)" = 1 ] \
+    && ok "bar due: tmux's line says the reminder due (no #, cut at 28), and the chime plays once across the line and the bar" || bad "bar due" "[$out] chimes=$(cat "$HOME/chime.log" 2>&1)"
+rm -f "$HOME/calendar/bread.ics"; [ -z "$(PATH="$H/lx:$PATH" sh "$SH" bar due 2>&1)" ] && ok "bar due: nothing due, nothing on the line" || bad "bar due empty"
 rm -rf "$HOME/notes" "$HOME/calendar" "$H/lx/pw-play"
 rm -rf "$H/lx/swaymsg" "$H/lx/pkill" "$H/lx/brightnessctl" "$H/lx/ddcutil" "$H/sysb" "$H/xkb"
 
@@ -3634,7 +3662,7 @@ sh "$SH" -h > "$voice/help"
 grep '^ *#' "$REPO/templates/.config/sway/config" > "$voice/sway-config-comments"
 out_words="colours?|desks?|rooms?|seat|login box|marks?|marked|player|this machine's cycles|the forge wallpaper|greeter|the box|stranger|newcomer|founder|inventory|the hands|shell layer|monitors?"
 contractions="[A-Za-z]*n't\b|\bit's\b|\byou'll\b|\bwe're\b|\bthat's\b|\bthere's\b|\blet's\b"
-caps_ok='KEYBOARD|ASCII|ALSA|A2DP|POSIX|JSON|SGR|SBOM|PATH|NAME|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|LOGIN|WALLPAPER|ALPHA|WINDOWS|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
+caps_ok='DAY|TIME|KEYBOARD|ASCII|ALSA|A2DP|POSIX|JSON|SGR|SBOM|PATH|NAME|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|LOGIN|WALLPAPER|ALPHA|WINDOWS|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
 for n in README.md CHANGELOG.md CREDITS.md config.example help sway-config-comments; do
     f=$voice/$n
     # (a) the words that are out, as whole words in any case

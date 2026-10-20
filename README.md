@@ -57,6 +57,15 @@ Without it there are no layouts, no spark chat and no status line.
     spark-shell layout [NAME]         list the saved layouts, or open one
     spark-shell layout delete NAME    delete a saved layout
     spark-shell apps                  choose the apps a layout may open
+    spark-shell notes                 list your notes, the newest first
+    spark-shell notes new|NAME        a new note, or that one, in your editor
+    spark-shell notes add WORDS       a new note; "NAME: WORDS" adds a line
+    spark-shell notes find WORDS      the notes that say it, and the line
+    spark-shell reminders             the reminders ahead, in their groups
+    spark-shell reminders add DAY TIME WORDS
+                                      tomorrow 9:00 call the dentist
+    spark-shell reminders done|snooze NAME
+                                      take one away, or have it in 10 minutes
     spark-shell desktop               start the desktop now (from a console)
     spark-shell desktop keys          list the desktop's keys
     spark-shell desktop wallpaper X   set a picture, a color, default or none
@@ -79,6 +88,7 @@ Without it there are no layouts, no spark chat and no status line.
     spark-shell want --attach FILE "WORDS"
                                       ask about a text file (txt md)
     spark-shell dialog [SECTION]      open the dialog (Super+d), SECTION first
+    spark-shell panel [SECTION]       the dialog's list as text, for scripts
     spark-shell provide SECTION       a dialog section as an MCP server on stdio
     spark-shell sbom [NAME]           list the installed software, or one
     spark-shell sbom --json           write the list as a CycloneDX 1.5 file
@@ -241,11 +251,25 @@ standard other calendars read (khal, and the Calendar of a Mac or a
 phone through a CalDAV sync). An event, not a to-do: Apple's Reminders
 no longer take to-dos over CalDAV, while every calendar takes events.
 
+Both work in a terminal, on the desktop and on a Mac:
+
+    spark-shell notes add groceries: buy oat milk
+    spark-shell notes groceries
+    spark-shell reminders add tomorrow 9:00 call the dentist
+    spark-shell reminders
+
+The day is today, tomorrow, a weekday (fri or friday) or a date
+(2026-11-03); the time is 18:30, 9am or 6:30pm; the rest is the words.
+A note opens in your editor right in the terminal you typed in, and in
+a terminal window from the dialog. A new note you leave empty is not
+kept.
+
 When a reminder comes due, the bar shows a `due` block with its words,
 a click opens the reminders, and a short sound plays once (PipeWire,
-else ALSA). The bar's own line checks the time every 15 seconds, so
-nothing more runs for it. Done takes the reminder away; again in 10
-minutes moves it on.
+else ALSA; afplay on a Mac). The tmux status line shows it too, in the
+accent, so a terminal outside the desktop and a Mac hear and see it.
+Both lines check the time every 15 seconds, so nothing more runs for
+it. Done takes the reminder away; again in 10 minutes moves it on.
 
 ## Lock and capture
 
@@ -390,9 +414,12 @@ longer than the dialog, its last line says how many rows sit below.
   words, `note buy oat milk` makes a note, `groceries: buy oat milk`
   adds a line to the note named groceries, and a question finds the
   note and the line that answer it.
-- `reminders`: the reminders in their groups, due, today, tomorrow,
-  this week and later. Said in words, `remind me to call the dentist
-  tomorrow at 9`; one due has done and again in 10 minutes.
+- `reminders`: a new reminder, then the reminders in their groups,
+  due, today, tomorrow, this week and later. Enter on new reminder asks
+  for when and what, as `tomorrow 9:00 call the dentist`; said in
+  words, `remind me to call the dentist tomorrow at 9`. One due has
+  done and again in 10 minutes. The home dialog shows new reminder, the
+  ones due and the next one ahead.
 - `window`: the windows open now, in front or closed, and how new
   windows sit on a workspace: side by side, in tabs or stacked.
 - `bar`: hide the bar at the top of the screen, or show it again.
@@ -452,9 +479,10 @@ do` know the desktop's tools too. A server of yours already listed under
 one of those names stays as it is. `spark-shell off desktop` and
 `spark-shell off` take back only spark-shell's own lines.
 
-In a terminal outside the desktop, and on a Mac, `spark-shell panel`
-shows the same list in the terminal, and `spark-shell panel SECTION
---list` prints it as text.
+For scripts and tests, `spark-shell panel SECTION --list` prints a
+section's list as text, and `spark-shell panel SECTION ACTION WORDS`
+runs one of its steps. Day to day, the dialog and commands such as
+`spark-shell notes` are the way in.
 
 ## Providers
 

@@ -1421,8 +1421,16 @@ impl App {
                 return v;
             }
             Mode::Ask { step, field, masked } => {
+                // the argument's own description when its tool gives one ("when and what: fri 9am call the vet")
+                let said = self
+                    .tool_of(step)
+                    .and_then(|t| t.schema.pointer(&format!("/properties/{}/description", field)))
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
                 let what = if *masked {
                     format!("the {} for {}, not shown", field, step.line)
+                } else if let Some(d) = said {
+                    d
                 } else {
                     format!("the {} for {}", field, step.line)
                 };

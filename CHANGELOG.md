@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.79
+
+Notes and reminders of their own (the owner's review of v0.78: a
+reminder set from a terminal went through `spark-shell panel`, and the
+home dialog showed notes but no reminders).
+
+- Added: `spark-shell notes`. Alone, your notes with their dates, the
+  newest first; `new` or a note's name opens it in your editor, right
+  in the terminal you typed in (in a terminal window when there is no
+  terminal, as from the dialog); `add WORDS` and `find WORDS` as the
+  dialog's. A new note left empty is not kept.
+- Added: `spark-shell reminders`. Alone, the reminders ahead under
+  their groups, each with its time; `add DAY TIME WORDS` (tomorrow 9:00
+  call the dentist), `done NAME` and `snooze NAME`. Notes and reminders
+  are files, so both work on a Mac too.
+- Added: a reminder due on tmux's status line, before spark's line, in
+  the accent: a terminal outside the desktop and a Mac see it, and the
+  short sound plays there too (afplay on a Mac). The bar and the line
+  both ask every 15 seconds; a lock keeps the sound to once.
+- Changed: the reminders section opens with `new reminder`, a row like
+  `new note`: Enter asks for when and what, and the hint says how (`fri
+  9am call the vet`). The "say it" line that stood in its place is gone.
+  A tool's argument may now carry a description, and the dialog's hint
+  says it when it asks for that argument.
+- Fixed: the home dialog had no reminders unless one was due (a
+  reminder ahead was a look-only row). It now shows `new reminder` and
+  the next one ahead with its day and time; Enter on it opens the rest.
+- Fixed: notes find failed when the last note looked at did not say the
+  words (the loop ended false under set -e). The dialog never saw it:
+  there the step runs inside an if.
+- Changed: help. Notes and reminders have their lines; `spark-shell
+  panel` is the dialog's list as text, for scripts, and its words form
+  is `spark-shell want`.
+
 ## v0.78
 
 Notes, reminders and a Calendar that uses the space (the owner's picks

@@ -300,6 +300,46 @@ fn an_undo_that_carries_a_secret_is_not_kept_and_esc_closes() {
     assert_eq!(app.view, View::Home);
 }
 
+#[test]
+fn a_row_that_asks_for_words_says_what_they_are() {
+    let (mut app, rx, tx) = app_with(&["reminders"]);
+    let tools = json!([{"name": "reminders_add", "title": "reminders add WHEN TEXT", "inputSchema": {"type": "object", "properties": {"words": {"type": "string", "description": "when and what: fri 9am call the vet"}}, "required": ["words"]}, "annotations": {"destructiveHint": false}}]);
+    let rows = json!({"title": "reminders", "rows": [{"id": "reminders:add", "sign": "opens", "text": "new reminder", "tool": {"name": "reminders_add", "arguments": {"words": ""}, "ask": ["words"]}, "more": [], "columns": [], "children": null}], "short": ["reminders:add"]});
+    let seen = Arc::new(Mutex::new(vec![]));
+    let s2 = seen.clone();
+    let script: Script = Box::new(move |v, send| {
+        if let Some(r) = ordinary("reminders", v, &tools, &rows) {
+            return send(r);
+        }
+        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+            s2.lock().unwrap().push(v["params"]["arguments"].clone());
+            send(result(
+                &v["id"],
+                json!({"content": [], "structuredContent": {"receipt": "reminder tomorrow 09:00 call the dentist"}, "isError": false}),
+            ));
+        }
+    });
+    app.servers.push(stub(0, "reminders", script, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    app.enter();
+    assert!(
+        matches!(app.mode, Mode::Ask { masked: false, .. }),
+        "the row asks for its words: {:?}",
+        app.mode
+    );
+    assert_eq!(app.hint()[0].0, "when and what: fri 9am call the vet");
+    for c in "tomorrow 9:00 call the dentist".chars() {
+        app.typed(c);
+    }
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a
+        .exchange
+        .iter()
+        .any(|l| l.text == "reminder tomorrow 09:00 call the dentist")));
+    assert_eq!(seen.lock().unwrap()[0], json!({"words": "tomorrow 9:00 call the dentist"}));
+}
+
 /// A stub files provider: one root whose rows open a folder; the folder holds a text file and a picture; attach answers with a path.
 fn files_stub(calls: Arc<Mutex<Vec<Value>>>, home: String) -> Script {
     let root = json!({"title": "files", "rows": [{"id": "files:root:a", "sign": "opens", "text": "~", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null}], "short": ["files:root:a"]});

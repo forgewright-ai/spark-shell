@@ -23,6 +23,15 @@
 #   spark-shell layout [NAME]         list the saved layouts, or open one
 #   spark-shell layout delete NAME    delete a saved layout
 #   spark-shell apps                  choose the apps a layout may open
+#   spark-shell notes                 list your notes, the newest first
+#   spark-shell notes new|NAME        a new note, or that one, in your editor
+#   spark-shell notes add WORDS       a new note; "NAME: WORDS" adds a line
+#   spark-shell notes find WORDS      the notes that say it, and the line
+#   spark-shell reminders             the reminders ahead, in their groups
+#   spark-shell reminders add DAY TIME WORDS
+#                                     tomorrow 9:00 call the dentist
+#   spark-shell reminders done|snooze NAME
+#                                     take one away, or have it in 10 minutes
 #   spark-shell desktop               start the desktop now (from a console)
 #   spark-shell desktop keys          list the desktop's keys
 #   spark-shell desktop wallpaper X   set a picture, a color, default or none
@@ -43,12 +52,11 @@
 #   spark-shell dialog [SECTION]      open the dialog (Super+d), SECTION first
 #   spark-shell dialog chat           spark chat in the dialog's window (Super+s)
 #   spark-shell dialog about          the version, the keys and the address
-#   spark-shell panel [SECTION]       the same list in a terminal, as text
-#   spark-shell panel "WORDS"         ask for it: "mute everything", "quiet"
-#   spark-shell want "WORDS"          the same, from anywhere: the steps run
+#   spark-shell want "WORDS"          ask for it: "mute everything"; the steps run
 #   spark-shell want --json "WORDS"   the steps spark picks, as JSON; none run
 #   spark-shell want --attach FILE "WORDS"
 #                                     ask about a text file (txt md)
+#   spark-shell panel [SECTION]       the dialog's list as text, for scripts
 #   spark-shell provide SECTION       a dialog section as an MCP server on stdio
 #   spark-shell sbom [NAME]           list the installed software, or one
 #   spark-shell sbom --json           write the list as a CycloneDX 1.5 file
@@ -2835,10 +2843,11 @@ bar_desktop() {   # bar_desktop [on|off] WHICH -- the bar at the top: the config
         *) if [ "$DESKTOP_BAR" = yes ]; then echo "bar: shown at the top of the screen -- $(bar_names) (spark-shell bar off --desktop hides it)"; else echo "bar: hidden (spark-shell bar on --desktop shows it)"; fi ;;
     esac
 }
-cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | volume up|down|mute|mic | panel [PAGE] [--list|ACTION [ARG]] | WORDS
+cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | due | volume up|down|mute|mic | panel [PAGE] [--list|ACTION [ARG]] | WORDS
     config_load
     case ${1:-} in
         status) shift; bar_status "$@"; return ;;
+        due) rem_due_line; return ;;   # tmux's status line, every 15 s
         volume) shift; bar_volume_key "${1:-}"; return ;;
         light) shift; case ${1:-} in up|down) light_set "$1" >/dev/null || :; return ;; *) refuse_in bar "light takes up or down" ;; esac ;;
         panel) shift; cmd_panel "$@"; return ;;   # the old spelling of spark-shell panel
@@ -3384,16 +3393,18 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                 printf -- '-\t%s\topen %s\trecent|%s|\n' "$_nm" "$_nm" "$(note_when "$_e")"
             done < "$TMP/notes.l"
             [ "${2:-}" = full ] || [ "$_n" -le 5 ] || printf -- '-\t%s more\tmore\trecent||\n' $((_n - 5)) ;;
-        reminders) printf -- '-\tsay it: remind me to call the dentist tomorrow at 9\tshow\n'   # the reminders ahead in their groups, each its time a column and its day for the Calendar; the first one due with done and a snooze
-            _now=$(date +%Y%m%d%H%M); _first=1
-            rem_list | while IFS="$TAB" read -r _s _u _t _f; do
+        reminders) printf '%s\tnew reminder\tadd\n' "$PANEL_GO"   # its words asked for; then the ones due, the first with done and a snooze; then the ones ahead in their groups, each its time a column and its day for the Calendar
+            _now=$(date +%Y%m%d%H%M); _first=1; _next=1
+            rem_list > "$TMP/rem.rows"
+            while IFS="$TAB" read -r _s _u _t _f; do
                 _g=$(rem_group "$_s" "$_now"); _x="$_g|$(rem_column "$_s" "$_g")|$(printf '%s' "$_s" | sed 's/^\(....\)\(..\)\(..\).*/\1-\2-\3/')"
                 if [ "$_g" = due ]; then
                     printf '%s\t%s\tdone %s\t%s\n' "$PANEL_DOT" "$_t" "$_t" "$_x"
                     [ -z "$_first" ] || printf -- '-\tdone\tdone %s\tdue||\n-\tagain in 10 minutes\tsnooze %s\tdue||\n' "$_t" "$_t"
                     _first=''
-                else printf '%s\t%s\tshow\t%s\n' "$PANEL_RING" "$_t" "$_x"; fi
-            done ;;
+                elif [ "${2:-}" = full ]; then printf '%s\t%s\tshow\t%s\n' "$PANEL_RING" "$_t" "$_x"
+                elif [ -n "$_next" ]; then printf '%s\t%s\tmore\t|%s|\n' "$PANEL_RING" "$_t" "$(rem_said "$_s")"; _next=''; fi   # short: the next one ahead, its day and time; Enter opens the rest
+            done < "$TMP/rem.rows" ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then printf -- '-\thide\toff\n'; else printf -- '-\tshow\ton\n'; fi ;;   # on and off, as the verb: show is the panel's look-only word
         layout) if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then
                 for f in "$LAYOUTS_DIR"/*; do _w=$(desk_words "$f"); [ -n "$_w" ] || _w=${f##*/}; printf '%s\t%s\topen %s\n' "$PANEL_GO" "$_w" "${f##*/}"; done
@@ -3464,7 +3475,7 @@ notes_act() {   # notes_act new|open|add|find [ARG]
         find) [ -n "$2" ] || { echo "find takes the words to look for"; return 1; }
             notes_list | while IFS="$TAB" read -r _e _n _f; do   # the line that says it, the body before the name
                 _l=$({ tail -n +2 "$_f" | grep -i -m1 -F -- "$2" || head -1 "$_f" | grep -i -F -- "$2"; } 2>/dev/null | sed 's/^[#*-]*[[:space:]]*//' | scrub_text | cut -c1-120) || continue
-                [ -n "$_l" ] && printf '%s\t%s\n' "$_n" "$_l"
+                [ -z "$_l" ] || printf '%s\t%s\n' "$_n" "$_l"   # never false at the end: a last note that does not say it is no failure
             done > "$TMP/notes.found"
             _c=$(grep -c . "$TMP/notes.found" || :)
             if [ "${_c:-0}" -eq 0 ]; then echo "no note says $2"
@@ -3628,16 +3639,25 @@ rem_due() {   # -> UID<tab>SUMMARY of the latest reminder due now (in the last d
     rem_list | awk -F '\t' -v n="$_now" '$1 <= n' > "$TMP/rem.due"
     mkdir -p "$STATE_DIR"; touch "$REM_FIRED"
     awk -F '\t' '{print $2 " " $1}' "$TMP/rem.due" > "$TMP/rem.keys"
-    _new=$(grep -vxF -f "$REM_FIRED" "$TMP/rem.keys" | grep -c . || :)
-    cp "$TMP/rem.keys" "$REM_FIRED"   # the ones due now, and no more: the file never grows
-    [ "${_new:-0}" -eq 0 ] || [ -n "${SPARK_SHELL_NO_CHIME:-}" ] || rem_chime
+    [ -z "$(find "$REM_FIRED.lock" -maxdepth 0 -mmin +1 2>/dev/null)" ] || rmdir "$REM_FIRED.lock" 2>/dev/null || :   # a lock left by a pass that was killed
+    if mkdir "$REM_FIRED.lock" 2>/dev/null; then   # the bar and the tmux line both ask: one of them at a time, so the chime plays once
+        _new=$(grep -vxF -f "$REM_FIRED" "$TMP/rem.keys" | grep -c . || :)
+        cp "$TMP/rem.keys" "$REM_FIRED"   # the ones due now, and no more: the file never grows
+        rmdir "$REM_FIRED.lock" 2>/dev/null || :
+        [ "${_new:-0}" -eq 0 ] || [ -n "${SPARK_SHELL_NO_CHIME:-}" ] || rem_chime
+    fi
     [ -s "$TMP/rem.due" ] || return 0
     tail -1 "$TMP/rem.due" | cut -f2,3
 }
-rem_chime() {   # the short sound, once, never waited for: PipeWire, else ALSA
+rem_chime() {   # the short sound, once, never waited for: PipeWire, else ALSA, else the Mac's own player
     [ -r "$REM_CHIME" ] || return 0
     if command -v pw-play >/dev/null 2>&1; then ( pw-play --volume 0.6 "$REM_CHIME" >/dev/null 2>&1 & ) 3>&- 4<&- 5>&-
-    elif command -v aplay >/dev/null 2>&1; then ( aplay -q "$REM_CHIME" >/dev/null 2>&1 & ) 3>&- 4<&- 5>&-; fi
+    elif command -v aplay >/dev/null 2>&1; then ( aplay -q "$REM_CHIME" >/dev/null 2>&1 & ) 3>&- 4<&- 5>&-
+    elif command -v afplay >/dev/null 2>&1; then ( afplay -v 0.6 "$REM_CHIME" >/dev/null 2>&1 & ) 3>&- 4<&- 5>&-; fi
+}
+rem_due_line() {   # -> "due: WORDS  " for tmux's status line while a reminder is due, else nothing; the chime as on the bar
+    _dl=$(rem_due 2>/dev/null || :); [ -n "$_dl" ] || return 0
+    printf 'due: %s  ' "$(printf '%s' "${_dl#*"$TAB"}" | tr -d '#' | cut_chars 28)"   # no # for tmux to read as a format
 }
 
 panel_apps_known() {   # -> the apps a layout may open (your allowed list, else every desktop entry), one name per line; never the desktop's own
@@ -4191,13 +4211,14 @@ scrub_text() {   # stdin -> the same lines scrubbed; C0 and DEL alone where ther
 
 # The tools, a named line each: tool_spec NAME sets _ts the section, _ta
 # the panel's action, _tp the argument and _tk its kind (string, level
-# 0-100, alpha 0-1, a|b for a closed set), _tq a secret argument, _th the
+# 0-100, alpha 0-1, a|b for a closed set), _tw what the argument says,
+# when a person is asked for it, _tq a secret argument, _th the
 # hints (r read only, d destructive, i idempotent, f free: the argument
 # names no row), _tt the title, the sentence the model may say, and _td
 # the words for a person. False for a name that is no tool. The panel's
 # action `=` takes the argument itself as the action (a palette's name).
 tool_spec() {
-    _tp=''; _tk=''; _tq=''
+    _tp=''; _tk=''; _tq=''; _tw=''
     case $1 in
         wifi_connect)      _ts=wifi _ta=connect _tp=name _tk=string _tq=password _th=i _tt='wifi connect NAME' _td='Connect to a network around, or a saved one.' ;;
         wifi_disconnect)   _ts=wifi _ta=disconnect _th=i _tt='wifi disconnect' _td='Leave the network in use.' ;;
@@ -4231,7 +4252,7 @@ tool_spec() {
         notes_open)        _ts=notes _ta=open _tp=name _tk=string _th='' _tt='notes open NAME' _td='Open a note in the editor.' ;;
         notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='A new note of TEXT; with "NAME: TEXT", a line added to the note NAME.' ;;
         notes_find)        _ts=notes _ta=find _tp=words _tk=string _th=rf _tt='notes find WORDS' _td='Which notes say these words, and the line that does.' ;;
-        reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _th=f _tt='reminders add WHEN TEXT' _td='A reminder: WHEN is today, tomorrow, a weekday or YYYY-MM-DD, then HH:MM, then what to remember.' ;;
+        reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _tw='when and what: fri 9am call the vet' _th=f _tt='reminders add WHEN TEXT' _td='A reminder: WHEN is today, tomorrow, a weekday or YYYY-MM-DD, then HH:MM, then what to remember.' ;;
         reminders_done)    _ts=reminders _ta='done' _tp=name _tk=string _th='' _tt='reminders done NAME' _td='Mark a reminder done, which takes it away.' ;;
         reminders_snooze)  _ts=reminders _ta=snooze _tp=name _tk=string _th='' _tt='reminders snooze NAME' _td='The reminder again in 10 minutes.' ;;
         display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=i _tt='display idle N' _td='Turn the display off after N idle minutes; 0 never.' ;;
@@ -4270,16 +4291,16 @@ tool_call_json() {   # tool_call_json TOOL VALUE [LINE] -> {"name", "arguments",
 }
 tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, the words, the input schema, the hints with the spec's defaults spelled out
     tool_spec "$1" || return 1
-    jq -cn --arg n "$1" --arg t "$_tt" --arg d "$_td" --arg p "$_tp" --arg k "$_tk" --arg q "$_tq" --arg h "$_th" '
+    jq -cn --arg n "$1" --arg t "$_tt" --arg d "$_td" --arg p "$_tp" --arg k "$_tk" --arg q "$_tq" --arg w "$_tw" --arg h "$_th" '
         {name: $n, title: $t, description: $d,
          inputSchema: {type: "object",
-            properties: ((if $p == "" then {} else {($p): (
+            properties: ((if $p == "" then {} else {($p): ((
                 if $k == "level" then {type: "integer", minimum: 0, maximum: 100}
                 elif $k == "minutes" then {type: "integer", minimum: 0, maximum: 999}
                 elif $k == "alpha" then {type: "number", minimum: 0, maximum: 1}
                 elif $k == "path" then {type: "string", minLength: 2, maxLength: 4096}
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
-                else {type: "string", minLength: 1, maxLength: 256} end)} end)
+                else {type: "string", minLength: 1, maxLength: 256} end) + (if $w == "" then {} else {description: $w} end))} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)),
             required: (if $p == "" then [] else [$p] end), additionalProperties: false},
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"},
@@ -4321,6 +4342,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif $s == "window" and ((.tool.name // "") | test("^window_(focus|close)$")) then .group = "open now"
                 elif $s == "window" and (((.tool.name // "") | test("^window_(split|tabs|stacked)$")) or (.id | startswith("window:show:"))) then .group = "layout"
                 elif (.tool.name // "") == "layout_save" then .tool.ask = ["name"]
+                elif (.tool.name // "") == "reminders_add" then .tool.ask = ["words"]
                 elif (.tool.name // "") == "wifi_connect" and (.tool.arguments.name as $n | $asks | index([$n])) then .tool.ask = ["password"]
                 else . end)'
 }
@@ -4872,6 +4894,8 @@ panel_loop() {   # panel_loop SECTION -- the window: the glance, the receipt, th
                 *:show) ;;
                 layout:save) printf 'a name for it: '; IFS= read -r _nm </dev/tty || _nm=''; [ -n "$_nm" ] || { said="not saved: no name"; continue; }
                    if panel_run march panel_step layout save "$_nm"; then said="$PANEL_TICK $(cat "$TMP/run.out")"; else said="$PANEL_CROSS $(cat "$TMP/run.out")"; fi ;;
+                reminders:add) printf 'when and what (fri 9am call the vet): '; IFS= read -r _nm </dev/tty || _nm=''; [ -n "$_nm" ] || { said="no reminder: no words"; continue; }
+                   if panel_run march panel_step reminders add "$_nm"; then said="$PANEL_TICK $(cat "$TMP/run.out")"; else said="$PANEL_CROSS $(cat "$TMP/run.out")"; fi ;;
                 *) kind=march; [ "$pg" != layout ] || kind=steps
                    panel_group_begin
                    if panel_run "$kind" panel_step "$pg" "$a" "$@"; then said="$PANEL_TICK $(cat "$TMP/run.out")"; else said="$PANEL_CROSS $(cat "$TMP/run.out")"; fi
@@ -5469,6 +5493,48 @@ Allowed now: ${marks:-no list, so every app with a desktop entry}") || { echo "n
     cp "$TMP/apps.new" "$APPS"
     if apps_marked; then echo "allowed apps: $(grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd' ' -) ($APPS)"
     else echo "allowed apps: no list, so every app with a desktop entry ($APPS)"; fi
+}
+cmd_notes() {   # spark-shell notes [new | NAME | open NAME | add WORDS | find WORDS]: the dialog's notes, at the prompt
+    config_load
+    case ${1:-} in
+        '') notes_list > "$TMP/notes.l"
+            [ -s "$TMP/notes.l" ] || { echo "no notes yet in ~/notes (spark-shell notes new writes one)"; return 0; }
+            while IFS="$TAB" read -r _e _nm _f; do printf '  %-14s %s\n' "$(note_when "$_e")" "$_nm"; done < "$TMP/notes.l" ;;
+        new) [ $# -eq 1 ] || refuse_in notes "new takes no words (spark-shell notes add WORDS writes them)"
+            mkdir -p "$NOTES_DIR"; _f=$NOTES_DIR/$(date +%Y-%m-%d-%H%M%S).md; [ -e "$_f" ] || printf '# \n' > "$_f"
+            note_here "$_f" "a new note" ;;
+        add|find) _a=$1; shift; [ $# -gt 0 ] || refuse_in notes "$_a takes the words"
+            _l=$(notes_act "$_a" "$*") || refuse_in notes "$_l"; echo "$_l" ;;
+        -*) refuse_in notes "$1 is not an option here: new, a note's name, add WORDS or find WORDS" ;;
+        *) [ "$1" != open ] || shift; [ $# -gt 0 ] || refuse_in notes "open takes a note's name"
+            _f=$(note_file "$*"); [ -n "$_f" ] || refuse_in notes "no note named $* (spark-shell notes lists them)"
+            note_here "$_f" "$*" ;;
+    esac
+}
+note_here() {   # note_here FILE NAME -- the note in your editor: in this terminal when you are at one, else in the desktop's
+    if [ -t 0 ] && [ -t 1 ]; then
+        _ed=$(note_editor) || refuse_in notes "no editor here: set EDITOR, or install nano"
+        # shellcheck disable=SC2086   # EDITOR may carry its flags
+        $_ed "$1"
+        [ "$2" != "a new note" ] || [ "$(cat "$1" 2>/dev/null)" != '# ' ] || { rm -f "$1"; echo "nothing written, so no new note"; }   # an empty new note is not kept
+    else _l=$(note_open_file "$1" "$2") || refuse_in notes "$_l"; echo "$_l"; fi
+}
+cmd_reminders() {   # spark-shell reminders [add DAY TIME WORDS | done NAME | snooze NAME]: the dialog's reminders, at the prompt
+    config_load
+    case ${1:-} in
+        '') _now=$(date +%Y%m%d%H%M); rem_list > "$TMP/rem.l"
+            [ -s "$TMP/rem.l" ] || { echo "no reminders ahead (spark-shell reminders add tomorrow 9:00 call the dentist sets one)"; return 0; }
+            _gp=''
+            while IFS="$TAB" read -r _s _u _t _f; do   # soonest first, so each group comes once
+                _g=$(rem_group "$_s" "$_now")
+                [ "$_g" = "$_gp" ] || { [ -z "$_gp" ] || echo; if [ "$_g" = due ]; then echo 'due now'; else echo "$_g"; fi; _gp=$_g; }
+                printf '  %-16s %s\n' "$(rem_column "$_s" "$_g")" "$_t"
+            done < "$TMP/rem.l" ;;
+        add|done|snooze) _a=$1; shift
+            [ $# -gt 0 ] || [ "$_a" = add ] || refuse_in reminders "$_a takes the reminder's name (spark-shell reminders lists them)"
+            _l=$(rem_act "$_a" "$*") || refuse_in reminders "$_l"; echo "$_l" ;;
+        *) refuse_in reminders "$1 is not something reminders does: add, done or snooze" ;;
+    esac
 }
 cmd_apps_verb() {   # spark-shell apps (and the old desktop apps|tools): the picker, where there is a desktop
     config_load
@@ -6273,6 +6339,8 @@ main() {
         login) cmd_login "$@" ;;
         layout) cmd_layout "$@" ;;
         apps) REFUSE_AS=apps; cmd_apps_verb ;;
+        notes) cmd_notes "$@" ;;
+        reminders) cmd_reminders "$@" ;;
         status) cmd_status ;;
         --dry-run) MODE=dry; cmd_on ;;
         *) usage >&2; exit 2 ;;
