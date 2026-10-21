@@ -22,13 +22,16 @@ include "@SCREENS_CONF@"
 gaps inner @GAPS_INNER@
 gaps outer @GAPS_OUTER@
 workspace_layout @WS_LAYOUT@
-default_border pixel 2
-default_floating_border pixel 2
+# Flat windows (#19): no outline while a wallpaper is on, for the gaps part the windows; with none, a
+# thin edge in the surface shade, so two windows never merge. Never the accent: nothing outlines in
+# a bright color; urgent keeps the alarm.
+default_border @BORDER@
+default_floating_border @BORDER@
 floating_modifier $mod normal
 
 # border  background  text  indicator  child_border
-client.focused          #@HEX_ACCENT@ #@HEX_ACCENT@ #@HEX_BG@ #@HEX_ACCENT@ #@HEX_ACCENT@
-client.focused_inactive #@HEX_MUTED@ #@HEX_MUTED@ #@HEX_BG@ #@HEX_MUTED@ #@HEX_MUTED@
+client.focused          #@PANEL_HI@ #@PANEL_HI@ #@HEX_FG@ #@PANEL_HI@ #@PANEL_HI@
+client.focused_inactive #@PANEL_BG@ #@PANEL_BG@ #@HEX_FG@ #@PANEL_BG@ #@PANEL_BG@
 client.unfocused        #@HEX_BG@ #@HEX_BG@ #@HEX_MUTED@ #@HEX_BG@ #@HEX_BG@
 client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@ #@HEX_ANSI_1@ #@HEX_ANSI_1@
 

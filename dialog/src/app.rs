@@ -1013,10 +1013,12 @@ impl App {
                             .iter()
                             .enumerate()
                             .filter(|(_, r)| {
-                                // the about's own row is found; its key sentences stay out of a search
+                                // the about's own row is found; its key sentences stay out of a search; a row that only opens
+                                // its own section is left out, as the section's view leaves it (the setting opens it already)
                                 Self::pickable(r)
                                     && self.matches(p, r)
                                     && (Some(p) != self.about_idx || r.tool.as_ref().is_some_and(|t| t.name == "about_open"))
+                                    && r.children.as_deref() != Some(format!("spark-shell://{}/rows", prov.label).as_str())
                             })
                             .map(|(i, _)| i)
                             .collect();

@@ -1095,3 +1095,39 @@ fn files_opens_at_the_home_folder_and_talk_is_a_setting_not_a_control() {
     app.talk = spark_dialog::app::Talk::Click;
     assert_eq!(app.chips(), vec![3]);
 }
+
+#[test]
+fn typing_a_section_s_name_lists_the_section_once() {
+    let (mut app, rx, tx) = app_with(&["theme"]);
+    let rows = json!({"title": "theme", "rows": [
+        {"id": "theme:dracula", "sign": "ring", "text": "dracula", "tool": {"name": "theme_palette", "arguments": {"name": "dracula"}}, "more": [], "columns": [], "children": null},
+        {"id": "theme:more", "sign": "blank", "text": "gruvbox-dark \u{b7} size 11 \u{b7} more", "tool": null, "more": [], "columns": [], "children": "spark-shell://theme/rows"}
+    ], "short": []});
+    let tools = json!([{"name": "theme_palette", "title": "theme NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}]);
+    app.servers.push(stub(
+        0,
+        "theme",
+        Box::new(move |v, send| {
+            if let Some(r) = ordinary("theme", v, &tools, &rows) {
+                send(r);
+            }
+        }),
+        tx,
+    ));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
+    typed(&mut app, "theme");
+    let items = app.items();
+    assert!(
+        items
+            .iter()
+            .any(|i| matches!(i, Item::Setting(k) if spark_dialog::app::SETTINGS[*k].0 == "theme")),
+        "the setting opens the section"
+    );
+    assert!(
+        !items.iter().any(|i| matches!(i, Item::Row(0, 1))),
+        "the section's own more row is not listed again: {:?}",
+        items
+    );
+    assert!(items.contains(&Item::Row(0, 0)), "its steps are");
+}

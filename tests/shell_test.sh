@@ -314,7 +314,8 @@ else
     printf '#!/bin/sh\n[ "$1" = --version ] && echo "foot version: 1.28.0 (Arch)"\n' > "$HOME/.local/bin/foot"
     sh "$SH" on --yes >/dev/null
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
-    grep -q '^client.focused *#ff5555 ' "$sway" && ok "sway: client.focused takes the accent's hex (#ff5555)" || bad "sway focused" "$(grep -n client "$sway")"
+    grep -q '^client.focused *#1e1e1e #1e1e1e #aaaaaa ' "$sway" && ! grep -q '^client\.\(focused\|unfocused\).*#ff5555' "$sway" && grep -q '^default_border none$' "$sway" && grep -q '^default_floating_border none$' "$sway" \
+        && ok "sway: flat windows (#19): no border while a wallpaper is on; the focused title in the surface shade (#1e1e1e), never the accent" || bad "sway focused" "$(grep -n 'client\|border' "$sway")"
     grep -q "^bindsym \$mod+s exec \$term --app-id spark-dialog -W 60x40 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell dialog chat\$" "$sway" && ok "sway: the Super+s line names the clone's spark-shell" || bad "sway Super+s render" "$(grep -n 'mod+s ' "$sway")"
     grep -q "^exec sh -c '\$term -e $REPO/spark-shell desktop --first; swaymsg exit'\$" "$sway" && ok "sway: the first window's line names the clone's spark-shell" || bad "sway --first render" "$(grep -n '^exec sh' "$sway")"
     grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 12$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
@@ -363,7 +364,7 @@ else
     sh "$SH" on --yes >/dev/null
     grep -q '^regular4=0000aa$' "$HOME/.config/foot/foot.ini" && grep -q '^background=000000$' "$HOME/.config/foot/foot.ini" && grep -q '^foreground=aaaaaa$' "$HOME/.config/foot/foot.ini" \
         && ok "no theme.env: foot.ini takes the VGA sixteen (regular4 0000aa, bg 000000, fg aaaaaa)" || bad "vga foot" "$(grep -n '=' "$HOME/.config/foot/foot.ini" | head -6)"
-    grep -q '^client.focused *#0000aa ' "$HOME/.config/sway/config" && ok "no theme.env: the accent's hex is its VGA slot (blue, #0000aa)" || bad "vga accent" "$(grep -n client "$HOME/.config/sway/config")"
+    grep -q '^client.focused *#1e1e1e ' "$HOME/.config/sway/config" && ok "no theme.env: the focused title is the surface shade of the VGA ground and text (#1e1e1e)" || bad "vga focused" "$(grep -n client "$HOME/.config/sway/config")"
 fi
 
 # --- follow: the login hook re-renders the look when theme.env changed
@@ -394,8 +395,8 @@ if [ "$(uname -s)" != Darwin ]; then
     printf '%s\n' "$out" | grep -q "^wallpaper default -- the ground, the palette's background a shade darker (#000000); it follows the palette\$" && ok "desktop wallpaper (bare): the default is the forge" || bad "wallpaper bare default" "$out"
     [ ! -e "$REPO/wallpapers" ] && ok "wallpapers/: no picture ships with the repo; the ground is the default" || bad "wallpapers dir" "$(ls "$REPO/wallpapers")"
     sh "$SH" desktop wallpaper none >/dev/null
-    grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 0$' "$sway" && grep -q '^alpha=1.0$' "$foot" \
-        && ok "wallpaper none: the palette's color, no gaps, foot opaque" || bad "wallpaper none render" "$(grep -n 'bg\|gaps' "$sway"; grep -n alpha "$foot")"
+    grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 0$' "$sway" && grep -q '^alpha=1.0$' "$foot" && grep -q '^default_border pixel 1$' "$sway" \
+        && ok "wallpaper none: the palette's color, no gaps, foot opaque, a thin edge in the surface shade parts the windows" || bad "wallpaper none render" "$(grep -n 'bg\|gaps\|border' "$sway"; grep -n alpha "$foot")"
     out=$(sh "$SH" desktop wallpaper)
     printf '%s\n' "$out" | grep -q '^wallpaper none' && ok "desktop wallpaper (bare): says none" || bad "wallpaper bare" "$out"
     sh "$SH" desktop wallpaper default >/dev/null
@@ -3260,6 +3261,20 @@ ans 1 | jq -e --arg f "$nfg" --arg b "$nbg" '.result.structuredContent.palette |
     && [ "$(ans 5 | jq -r .error.message)" = 'no tool wifi_connect in theme' ] && [ "$(ans 6 | jq -r .error.code)" = -32602 ] && [ "$(ans 7 | jq -r .error.message)" = 'theme_alpha: value is a number, 0 to 1' ] \
     && ok "provide: a step no row offers is refused in the result, one sentence; an argument outside its schema, an argument it lacks, another section's tool and a name of another shape are -32602" || bad "provide refusals" "$(cat "$H/mcp.out")"
 mcp theme "$(call 1 theme_palette '{"name":"none"}')"; grep -q '^THEME=none$' "$HOME/.config/spark-shell/config" && ok "provide: the undo, called as a tool, puts the palette back" || bad "provide undo" "$(cat "$H/mcp.out")"
+# every palette: the dialog's quiet words read at 4.5 to 1 on its surface, or as its author's own text where that reads lower (#18)
+_cw=''
+for env in "$REPO"/themes/*.env; do
+    name=${env##*/}; name=${name%.env}
+    mcp theme "$(call 1 theme_palette "{\"name\":\"$name\"}")"
+    ans 1 | jq -r '.result.structuredContent.palette | "\(.PANEL_MUTED) \(.PANEL_BG) \(.HEX_FG)"' > "$H/pal.txt"
+    awk -v n="$name" 'function h(c, i) { return index("0123456789abcdef", substr(tolower(c), i, 1)) - 1 }
+        function ch(c, i,   v) { v = (h(c, i) * 16 + h(c, i + 1)) / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ^ 2.4 }
+        function lum(c) { return 0.2126 * ch(c, 1) + 0.7152 * ch(c, 3) + 0.0722 * ch(c, 5) }
+        function cr(a, b,   x, y, t) { x = lum(a); y = lum(b); if (x < y) { t = x; x = y; y = t }; return (x + 0.05) / (y + 0.05) }
+        { if (!(cr($1, $2) >= 4.5 || tolower($1) == tolower($3))) printf "%s %.2f\n", n, cr($1, $2) }' "$H/pal.txt" >> "$H/contrast.bad"
+done
+[ ! -s "$H/contrast.bad" ] && ok "every palette: the dialog's quiet words read at 4.5 to 1, or as the author's own text where that reads lower" || bad "panel-muted contrast" "$(cat "$H/contrast.bad")"
+mcp theme "$(call 1 theme_palette '{"name":"none"}')"
 # subscribe: an updated notification after a step, and from the watcher when the rows change under it
 { rq 1 resources/subscribe '{"uri":"spark-shell://theme/rows"}'; rq 2 tools/call '{"name":"theme_transparency","arguments":{"amount":"more"},"_meta":{"progressToken":"p1"}}'
   sleep 2; printf 'THEME=dracula\n' >> "$HOME/.config/spark-shell/config"; sleep 3; rq 3 resources/unsubscribe '{"uri":"spark-shell://theme/rows"}'; } \

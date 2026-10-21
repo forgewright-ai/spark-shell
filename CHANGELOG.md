@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.82
+
+Flat windows and readable quiet words (the owner's picks).
+
+- Changed: no outline around the focused window (#19). While a
+  wallpaper is on, windows have no border and the gaps part them; with
+  none, a thin edge in the surface shade parts them, so two windows
+  never merge. Tabs and stacks show the focused title in the surface
+  shade. Nothing outlines in the accent; an urgent window keeps the
+  alarm. The windows open take the new border at once.
+- Changed: the dialog's quiet words read at 4.5 to 1 on every palette
+  (#18). They start at the palette's muted lifted a third toward the
+  text, as before, and are lifted further where they read lower. The
+  palettes' own colors stay their authors': on solarized-light and
+  tokyonight-day, whose text reads under 4.5 to 1, the quiet words
+  stop at the text's own color.
+- Fixed: typing a section's name listed it twice, the setting and the
+  section's own "more" row (#20). The search leaves that row out, as
+  the section's view does.
+
 ## v0.81.1
 
 - Fixed: words never reached a reminder, a note, the display, the

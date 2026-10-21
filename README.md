@@ -317,8 +317,11 @@ it stays the same when you change the palette. Give `#rrggbb`, or one
 of these names: black, white, gray (or grey), silver, navy, blue, teal,
 green, olive, maroon, red, purple, brown, orange. The ground, a
 picture and a color are drawn the same way: gaps around the windows,
-and the terminals a little transparent. The dialog's `theme` section
-sets the transparency.
+no border, and the terminals a little transparent. The dialog's `theme`
+section sets the transparency. With `none`, the windows are opaque and
+touch, and a thin edge in the surface shade parts them. No window is
+outlined in the accent; tabs and stacks show the focused title in the
+surface shade.
 
 ## Bar
 

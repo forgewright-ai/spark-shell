@@ -318,7 +318,7 @@ hex_load() {
 # the palette changes. A path that is not there falls back to the
 # palette's color (the render says so in a row), never to a black
 # screen.
-WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA"   # BAR_ALPHA: two hex digits after the bar background over a picture, else nothing
+WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA BORDER"   # BAR_ALPHA: two hex digits after the bar background over a picture, else nothing
 WALL_NAMES="black white gray silver navy blue teal green olive maroon red purple brown orange"   # one name a color: grey is still read as gray, never listed twice
 # the wallpapers spark-shell ships in wallpaper/, each NAME:PALETTE:SAMPLE, the palette it was drawn
 # for and its main color for the sample on its row; WALLPAPER stores the name, so it follows the clone
@@ -379,13 +379,13 @@ hex_mix() {   # hex_mix RRGGBB RRGGBB PERCENT -> rrggbb: the first color moved P
 wall_load() {
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     if wall_there; then
-        WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA")
+        WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER=none
     elif [ "$WALLPAPER" = default ]; then   # the ground: a shade darker than the windows, drawn like a picture
-        WALL_BG="$(wall_ground) solid_color"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA")
+        WALL_BG="$(wall_ground) solid_color"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER=none
     elif wall_color; then   # a plain color is a wallpaper too: the same gaps and the same translucent terminals as a picture
-        WALL_BG="$(wall_hex "$WALLPAPER") solid_color"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA")
+        WALL_BG="$(wall_hex "$WALLPAPER") solid_color"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER=none
     else   # none: the palette's color, full windows, opaque
-        WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0; BAR_ALPHA=""
+        WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0; BAR_ALPHA=""; BORDER="pixel 1"   # no gaps: a thin edge parts the windows
     fi
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     for k in $WALL_KEYS; do export "${k?}"; done
@@ -409,8 +409,17 @@ PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_BG PANEL_HI"
 panel_load() {
     # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
     PANEL_BG=$(hex_mix "$HEX_BG" "$HEX_FG" 9); PANEL_HI=$(hex_mix "$HEX_BG" "$HEX_FG" 18); PANEL_PAD=$(panel_pad)
-    PANEL_MUTED=$(hex_mix "$HEX_MUTED" "$HEX_FG" 35)   # the palette's muted, lifted a third of the way to the text: readable on the surface
+    # the palette's muted, lifted a third of the way to the text, then further, 5% at a time, until it
+    # reads at 4.5 to 1 on the surface (#18): spark-shell's own shade; the palette's colors stay its author's
+    _pl=35; PANEL_MUTED=$(hex_mix "$HEX_MUTED" "$HEX_FG" "$_pl")
+    while [ "$_pl" -lt 100 ] && [ "$(hex_contrast "$PANEL_MUTED" "$PANEL_BG")" -lt 450 ]; do _pl=$((_pl + 5)); PANEL_MUTED=$(hex_mix "$HEX_MUTED" "$HEX_FG" "$_pl"); done
     for k in $PANEL_KEYS; do export "${k?}"; done
+}
+hex_contrast() {   # hex_contrast RRGGBB RRGGBB -> the WCAG contrast of the two colors, times 100 (450 is 4.5 to 1)
+    awk -v a="$1" -v b="$2" 'function h(c, i) { return index("0123456789abcdef", substr(tolower(c), i, 1)) - 1 }
+        function ch(c, i,   v) { v = (h(c, i) * 16 + h(c, i + 1)) / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ^ 2.4 }
+        function lum(c) { return 0.2126 * ch(c, 1) + 0.7152 * ch(c, 3) + 0.0722 * ch(c, 5) }
+        BEGIN { x = lum(a); y = lum(b); if (x < y) { t = x; x = y; y = t }; printf "%d", (x + 0.05) / (y + 0.05) * 100 }'
 }
 hex_bg_sgr() {   # hex_bg_sgr rrggbb -> the SGR of that color as a ground
     # shellcheck disable=SC2046   # three numbers, split on purpose
@@ -627,6 +636,7 @@ sway_reload() {   # a running sway takes the new render now (borders, background
     swaymsg reload >/dev/null 2>&1 || return 0
     # a reload gives the gaps to new workspaces only: the ones open take them now (none: 0)
     [ -z "${GAPS_INNER:-}" ] || { swaymsg "gaps inner all set $GAPS_INNER" >/dev/null 2>&1; swaymsg "gaps outer all set $GAPS_OUTER" >/dev/null 2>&1; } || :
+    [ -z "${BORDER:-}" ] || swaymsg "[tiling] border $BORDER" >/dev/null 2>&1 || :   # and the windows open now their border (a reload gives it to new ones only)
     row ok sway "reloaded (~/.config/sway/config)"
 }
 # The desktop, one path for `on` and `on desktop`: the two user
