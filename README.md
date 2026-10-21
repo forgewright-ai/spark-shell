@@ -5,10 +5,12 @@
 <img src="assets/logo-light.svg" alt="spark-shell" width="150">
 </picture>
 
-spark-shell sets up the terminal on a Linux machine or a Mac: tmux, a
-prompt, a few everyday tools and one color palette. On Linux it can
-also add a simple desktop, and spark, the local AI, can open the apps
-for a task you describe.
+spark-shell sets up your terminal on Debian, Arch, Void or macOS. It
+adds tmux, a prompt, everyday tools and a color theme. On Linux, it
+can also set up a sway desktop with a login screen. With
+[spark](https://github.com/forgewright-ai/spark), the local AI, you can
+ask it to open apps for a task. The terminal, desktop, notes and
+reminders also work without spark.
 
 ## Before you install
 
@@ -29,9 +31,33 @@ first. `--dry-run` shows every change and changes nothing.
     git clone https://github.com/forgewright-ai/spark-shell ~/.spark-shell
     ~/.spark-shell/spark-shell on
 
-It runs on Debian, Arch and Void Linux, and on macOS. To update, run
-`git -C ~/.spark-shell pull`, then `spark-shell on`. spark is optional.
-Without it there are no layouts, no spark chat and no status line.
+To update, run `git -C ~/.spark-shell pull`, then `spark-shell on`.
+spark is optional.
+Without it, layouts and spark chat are unavailable. The tmux
+status line still shows the machine and your reminders.
+
+## First task
+
+After setup, run `spark-shell check`. It lists any part that needs
+attention. Then add a note:
+
+    spark-shell notes add groceries: buy oat milk
+    spark-shell notes
+
+The second command lists your notes. `spark-shell notes groceries`
+opens the note in your editor. Notes work without spark or the desktop.
+See [Notes and reminders](#notes-and-reminders) for where they are kept.
+
+For a desktop, read [Desktop](#desktop). On Linux, run
+`spark-shell on desktop`. It asks before making changes. You can see
+them first with `spark-shell on desktop --dry-run`.
+
+## Help
+
+Run `spark-shell -h` for commands, or `spark-shell status` to see what
+is set up. [Commands](#commands) is the short list; the sections below
+explain each part. If something fails, run `spark-shell check` and
+[report the problem](https://github.com/forgewright-ai/spark-shell/issues).
 
 ## Commands
 
