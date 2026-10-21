@@ -196,12 +196,11 @@ boot; greetd's package stays.
 Type `spark-shell layout "read the news and play music"`. spark picks
 apps for that task and opens them: as sway windows on the desktop, or
 as tmux windows anywhere else. Add `--desktop` or `--terminal` to
-choose. Every window spark proposes is tied to words of yours, quoted
-back, and spark-shell checks the quote: `notes and firefox` opens
-Firefox for `firefox` and the editor for `notes`. A window spark can
-tie to none of your words is padding; it does not open, and is one
-Enter away in the dialog, as `layout  also open btop`. Apps your words
-name are always opened, each once. Say `fullscreen` and the main
+choose. spark-shell checks each proposed window against your words
+before opening it. For `notes and firefox`, it opens
+your editor and Firefox. An unmatched suggestion stays closed; the
+dialog offers it as `layout  also open btop`; press Enter to open it.
+Each app you name opens once. Say `fullscreen` and the main
 window fills the screen alone. Say `workspace 3` and the layout opens
 there.
 On the desktop, `Super+d` opens the dialog, and the words go at its
@@ -272,21 +271,20 @@ a `keyboard` section for the same.
 
 ## Notes and reminders
 
-A note is a Markdown file in `~/notes`, its first line its name, so
-any editor and any sync reads it. A reminder is an iCalendar event
-with its alarm at its time, one `.ics` file each in `~/calendar`, the
-standard other calendars read (khal, and the Calendar of a Mac or a
-phone through a CalDAV sync). An event, not a to-do: Apple's Reminders
-no longer take to-dos over CalDAV, while every calendar takes events.
+A note is a Markdown file in `~/notes`. Its first line is its name.
+You can edit or sync it with other tools. [First task](#first-task)
+shows how to add one. A reminder is an iCalendar event with an alarm.
+Each has an `.ics` file in `~/calendar`. khal and calendar apps on a
+Mac or phone can read them, including through CalDAV sync. Apple's
+Reminders no longer accepts to-dos over CalDAV, so spark-shell uses
+events.
 
-Both work in a terminal, on the desktop and on a Mac:
+Reminders work in a terminal, on the desktop and on a Mac:
 
-    spark-shell notes add groceries: buy oat milk
-    spark-shell notes groceries
     spark-shell reminders add tomorrow 9:00 call the dentist
     spark-shell reminders
 
-The day is today, tomorrow, a weekday (fri or friday) or a date
+The day can be today, tomorrow, a weekday (fri or friday) or a date
 (2026-11-03); the time is 18:30, 9am or 6:30pm; the rest is the words.
 A note opens in your editor right in the terminal you typed in, and in
 a terminal window from the dialog. A new note you leave empty is not
