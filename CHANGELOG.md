@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.83
+
+The README leads a new reader to a first task.
+
+- Changed: the README opens with what spark-shell does on each system,
+  gives a first task (check, then a note) and a Help section, reads
+  the layouts and the notes and reminders sections in shorter
+  sentences, and says the tmux status line still shows the name and a
+  reminder due without spark (#21).
+
 ## v0.82
 
 Flat windows and readable quiet words (the owner's picks).
