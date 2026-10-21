@@ -7,7 +7,7 @@
 
 spark-shell sets up your terminal on Debian, Arch, Void or macOS. It
 adds tmux, a prompt, everyday tools and a color theme. On Linux, it
-can also set up a sway desktop with a login screen. With
+can also set up a sway desktop and an optional login screen. With
 [spark](https://github.com/forgewright-ai/spark), the local AI, you can
 ask it to open apps for a task. The terminal, desktop, notes and
 reminders also work without spark.
