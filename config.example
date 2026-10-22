@@ -27,6 +27,11 @@ FONT=DejaVu Sans Mono:size=12
 # color's name as its #rrggbb.
 WALLPAPER=default
 
+# The pointer: empty for the spark pointer, white on a dark palette and
+# black on a light one; or a cursor theme's name and, after a space, its
+# size in pixels (24 when left out): spark-black 32, Adwaita.
+POINTER=
+
 # How solid foot is over a picture or a color: 0 to 1, where 1 is solid.
 # 0.85 suits a dark picture. A bright one needs more. The panel's theme
 # section says it as transparency: 0.85 is 15% transparency.

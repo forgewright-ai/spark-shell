@@ -314,18 +314,52 @@ else
     printf '#!/bin/sh\n[ "$1" = --version ] && echo "foot version: 1.28.0 (Arch)"\n' > "$HOME/.local/bin/foot"
     sh "$SH" on --yes >/dev/null
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
-    grep -q '^client.focused *#1e1e1e #1e1e1e #aaaaaa ' "$sway" && ! grep -q '^client\.\(focused\|unfocused\).*#ff5555' "$sway" && grep -q '^default_border none$' "$sway" && grep -q '^default_floating_border none$' "$sway" \
-        && ok "sway: flat windows (#19): no border while a wallpaper is on; the focused title in the surface shade (#1e1e1e), never the accent" || bad "sway focused" "$(grep -n 'client\|border' "$sway")"
+    grep -q '^client.focused *#00000000 #1e1e1e #aaaaaa #00000000 #00000000$' "$sway" && grep -q '^client.unfocused *#00000000 #000000 #555555 #00000000 #00000000$' "$sway" && ! grep -q '^client\.\(focused\|unfocused\).*#ff5555' "$sway" && grep -q '^default_border pixel 4$' "$sway" && grep -q '^default_floating_border pixel 4$' "$sway" \
+        && ok "sway: flat windows (#19, #22): a transparent four-pixel edge on every window while a wallpaper is on; the focused title in the surface shade (#1e1e1e), never the accent" || bad "sway focused" "$(grep -n 'client\|border' "$sway")"
     grep -q "^bindsym \$mod+s exec \$term --app-id spark-dialog -W 60x40 -o pad=24x19 -o colors-dark.background=0f0f0f -o colors-dark.alpha=1.0 -e $REPO/spark-shell dialog chat\$" "$sway" && ok "sway: the Super+s line names the clone's spark-shell" || bad "sway Super+s render" "$(grep -n 'mod+s ' "$sway")"
     grep -q "^exec sh -c '\$term -e $REPO/spark-shell desktop --first; swaymsg exit'\$" "$sway" && ok "sway: the first window's line names the clone's spark-shell" || bad "sway --first render" "$(grep -n '^exec sh' "$sway")"
-    grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 12$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
-        && ok "sway: the default background is the ground (the palette's background a shade darker), gaps, foot translucent" || bad "sway default bg" "$(grep -n 'output\|gaps' "$sway")"
+    grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 16$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
+        && ok "sway: the default background is the ground (the palette's background a shade darker), the windows apart (no inner gap, the edge; outer 16), foot translucent" || bad "sway default bg" "$(grep -n 'output\|gaps' "$sway")"
     grep -q '@[A-Z_0-9]*@' "$foot" "$sway" && bad "a desktop render keeps a placeholder" "$(grep -n '@[A-Z_0-9]*@' "$foot" "$sway" | head -2)" || ok "desktop renders: no placeholder left"
     head -1 "$foot" | grep -q '^# rendered by spark-shell' && head -1 "$sway" | grep -q '^# rendered by spark-shell' && ok "desktop renders: both marked" || bad "desktop markers"
     LC_ALL=C grep -q "[^ -~${tab}]" "$foot" "$sway" && bad "a desktop render is not ASCII" || ok "desktop renders: ASCII"
     printf 'DESKTOP=sway\nFONT=Test Mono:size=14\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on --yes >/dev/null
     grep -q '^font=Test Mono:size=14$' "$foot" && ok "FONT in the config lands in foot.ini verbatim" || bad "FONT override" "$(grep -n '^font' "$foot")"
+    grep -q '^seat \* xcursor_theme spark-white 24$' "$sway" && ok "sway: the pointer line names spark-white at 24 on a dark palette (#22)" || bad "sway pointer line" "$(grep -n xcursor "$sway")"
+    printf 'DESKTOP=sway\nPOINTER=Adwaita 32\n' > "$HOME/.config/spark-shell/config"
+    sh "$SH" on --yes >/dev/null
+    grep -q '^seat \* xcursor_theme Adwaita 32$' "$sway" && ok "POINTER=NAME SIZE in the config lands in the sway render" || bad "POINTER override" "$(grep -n xcursor "$sway")"
+    printf 'DESKTOP=sway\nPOINTER=Adwaita\n' > "$HOME/.config/spark-shell/config"
+    sh "$SH" on --yes >/dev/null
+    grep -q '^seat \* xcursor_theme Adwaita 24$' "$sway" && ok "POINTER=NAME alone: the size is 24" || bad "POINTER name alone" "$(grep -n xcursor "$sway")"
+    printf 'DESKTOP=sway\nPOINTER=two words 24\n' > "$HOME/.config/spark-shell/config"
+    rc=0; out=$(sh "$SH" on --yes 2>&1) || rc=$?
+    [ "$rc" -eq 1 ] && printf '%s\n' "$out" | grep -q "^spark-shell: POINTER=two words 24 in .*: a cursor theme's NAME and, after a space, its SIZE in pixels" && ok "POINTER of a wrong shape is refused in one sentence (exit 1)" || bad "POINTER refusal" "rc=$rc $out"
+    sed 's/^THEME_BG=.*/THEME_BG=#ffffff/' "$HOME/.config/spark/theme.env" > "$HOME/.config/spark/theme.light" && mv "$HOME/.config/spark/theme.light" "$HOME/.config/spark/theme.env"
+    printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+    sh "$SH" on --yes >/dev/null
+    grep -q '^seat \* xcursor_theme spark-black 24$' "$sway" && ok "a light palette (background #ffffff) gets spark-black" || bad "light pointer" "$(grep -n xcursor "$sway")"
+    theme_fixture '#ff5555'
+    sh "$SH" on --yes >/dev/null
+    pd=$HOME/.local/share/icons
+    if command -v python3 >/dev/null 2>&1; then
+        [ -f "$pd/spark-white/cursors/default" ] && [ -f "$pd/spark-black/cursors/pointer" ] && [ "$(head -c 4 "$pd/spark-white/cursors/default")" = Xcur ] && [ "$(readlink "$pd/spark-white/cursors/hand2")" = pointer ] \
+            && [ "$(cat "$pd/spark-white/version")" = "$(sed -n 's/^VERSION = "\(.*\)".*/\1/p' "$REPO/lib/pointer.py")" ] && [ -f "$pd/spark-black/index.theme" ] \
+            && ok "on desktop drew the spark pointer: two themes under ~/.local/share/icons, Xcursor files, hand2 an alias of pointer, the version stamped" || bad "pointer files" "$(ls -R "$pd" 2>&1 | head -12)"
+        pn=$(ls "$pd/spark-white/cursors" | wc -l | tr -d ' '); [ "$pn" -ge 60 ] && ok "pointer: $pn names in spark-white (the shapes and their aliases)" || bad "pointer names" "$pn"
+        out=$(sh "$SH" on --yes)
+        printf '%s\n' "$out" | grep -q 'pointer' && bad "pointer: a second on draws again or says a todo" "$out" || ok "pointer: a second on leaves the drawn themes alone, no row"
+        out=$(sh "$SH" check || true)
+        printf '%s\n' "$out" | grep -q '^ok     pointer      spark-white and spark-black are drawn; sway shows spark-white at 24' && ok "check: the pointer row says both themes are drawn and which one sway shows" || bad "check pointer" "$(printf '%s\n' "$out" | grep pointer)"
+        sh "$SH" off desktop >/dev/null 2>&1 || true
+        [ ! -d "$pd/spark-white" ] && [ ! -d "$pd/spark-black" ] && ok "off desktop removes the two spark themes" || bad "pointer off" "$(ls "$pd")"
+    else
+        out=$(sh "$SH" on --yes 2>&1 || true)
+        [ ! -d "$pd/spark-white" ] && ok "no python3: the spark pointer is not drawn, the desktop renders still" || bad "pointer without python3" "$out"
+        out=$(sh "$SH" check || true)
+        printf '%s\n' "$out" | grep -q '^warn   pointer      python3 cannot draw the spark pointer here' && ok "check: without python3 the pointer row is a warn with its remedy" || bad "check pointer no python3" "$(printf '%s\n' "$out" | grep pointer)"
+    fi
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on --yes >/dev/null
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desktop sway .*sway: ready' && ok "status: the desktop row says sway, ready" || bad "status desktop sway" "$(printf '%s\n' "$st" | grep desktop)"
@@ -364,7 +398,7 @@ else
     sh "$SH" on --yes >/dev/null
     grep -q '^regular4=0000aa$' "$HOME/.config/foot/foot.ini" && grep -q '^background=000000$' "$HOME/.config/foot/foot.ini" && grep -q '^foreground=aaaaaa$' "$HOME/.config/foot/foot.ini" \
         && ok "no theme.env: foot.ini takes the VGA sixteen (regular4 0000aa, bg 000000, fg aaaaaa)" || bad "vga foot" "$(grep -n '=' "$HOME/.config/foot/foot.ini" | head -6)"
-    grep -q '^client.focused *#1e1e1e ' "$HOME/.config/sway/config" && ok "no theme.env: the focused title is the surface shade of the VGA ground and text (#1e1e1e)" || bad "vga focused" "$(grep -n client "$HOME/.config/sway/config")"
+    grep -q '^client.focused *#00000000 #1e1e1e ' "$HOME/.config/sway/config" && ok "no theme.env: the focused title is the surface shade of the VGA ground and text (#1e1e1e)" || bad "vga focused" "$(grep -n client "$HOME/.config/sway/config")"
 fi
 
 # --- follow: the login hook re-renders the look when theme.env changed
@@ -395,17 +429,17 @@ if [ "$(uname -s)" != Darwin ]; then
     printf '%s\n' "$out" | grep -q "^wallpaper default -- the ground, the palette's background a shade darker (#000000); it follows the palette\$" && ok "desktop wallpaper (bare): the default is the forge" || bad "wallpaper bare default" "$out"
     [ ! -e "$REPO/wallpapers" ] && ok "wallpapers/: no picture ships with the repo; the ground is the default" || bad "wallpapers dir" "$(ls "$REPO/wallpapers")"
     sh "$SH" desktop wallpaper none >/dev/null
-    grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 0$' "$sway" && grep -q '^alpha=1.0$' "$foot" && grep -q '^default_border pixel 1$' "$sway" \
-        && ok "wallpaper none: the palette's color, no gaps, foot opaque, a thin edge in the surface shade parts the windows" || bad "wallpaper none render" "$(grep -n 'bg\|gaps\|border' "$sway"; grep -n alpha "$foot")"
+    grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 0$' "$sway" && grep -q '^alpha=1.0$' "$foot" && grep -q '^default_border pixel 4$' "$sway" && grep -q '^client.focused *#0f0f0f #1e1e1e #aaaaaa #0f0f0f #0f0f0f$' "$sway" && grep -q '^client.unfocused *#0f0f0f ' "$sway" \
+        && ok "wallpaper none: the palette's color, no gaps, foot opaque, a four-pixel edge in the surface shade (#0f0f0f) on every window parts them" || bad "wallpaper none render" "$(grep -n 'bg\|gaps\|border' "$sway"; grep -n alpha "$foot")"
     out=$(sh "$SH" desktop wallpaper)
     printf '%s\n' "$out" | grep -q '^wallpaper none' && ok "desktop wallpaper (bare): says none" || bad "wallpaper bare" "$out"
     sh "$SH" desktop wallpaper default >/dev/null
-    grep -q '^WALLPAPER=default$' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && ok "desktop wallpaper default: the ground again" || bad "wallpaper default" "$(grep -n 'bg\|gaps' "$sway")"
+    grep -q '^WALLPAPER=default$' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000000 solid_color$' "$sway" && grep -q '^gaps outer 16$' "$sway" && ok "desktop wallpaper default: the ground again" || bad "wallpaper default" "$(grep -n 'bg\|gaps' "$sway")"
     pic="$HOME/pictures/one two.jpg"; mkdir -p "$HOME/pictures"; printf x > "$pic"
     out=$(sh "$SH" desktop wallpaper "$pic")
     grep -q "^WALLPAPER=$pic\$" "$HOME/.config/spark-shell/config" && grep -q '^PROMPT_STYLE=full$' "$HOME/.config/spark-shell/config" \
         && ok "desktop wallpaper PATH: WALLPAPER in the config, the other lines kept" || bad "wallpaper config" "$(cat "$HOME/.config/spark-shell/config")"
-    grep -q "^output \* bg \"$pic\" fill\$" "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 12$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
+    grep -q "^output \* bg \"$pic\" fill\$" "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 16$' "$sway" && grep -q '^alpha=0.85$' "$foot" \
         && ok "wallpaper PATH: sway fills it (quoted: a space in the path), gaps 8/12, foot alpha 0.85" || bad "wallpaper render" "$(grep -n 'bg\|gaps' "$sway"; grep -n alpha "$foot")"
     printf '%s\n' "$out" | grep -q 'a running sway shows it now' && ok "desktop wallpaper PATH: says what happens" || bad "wallpaper words" "$out"
     sh "$SH" desktop wallpaper | grep -q "^wallpaper $pic\$" && ok "desktop wallpaper (bare): names the picture" || bad "wallpaper bare after"
@@ -437,7 +471,7 @@ if [ "$(uname -s)" != Darwin ]; then
     rm -f "$pic"
     # a plain color: #rrggbb or a name, saved as #rrggbb; it never follows the palette
     out=$(sh "$SH" desktop wallpaper navy)
-    grep -qx 'WALLPAPER=#000080' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000080 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^gaps outer 12$' "$sway" && grep -q '^alpha=0.85$' "$foot" && grep -q '^        background #000000d9$' "$sway" \
+    grep -qx 'WALLPAPER=#000080' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000080 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 16$' "$sway" && grep -q '^alpha=0.85$' "$foot" && grep -q '^        background #000000d9$' "$sway" \
         && ok "desktop wallpaper navy: #000080 in the config, sway paints it solid, with the gaps and the translucent foot and bar a picture has" || bad "wallpaper navy" "$out $(grep -n 'bg\|gaps\|background' "$sway"; grep -n alpha "$foot")"
     [ "$(printf '%s\n' "$out" | tail -1)" = "a running sway shows #000080 now, and it stays when the palette changes -- a new foot window is translucent over it, as over a picture" ] && ok "desktop wallpaper navy: says what happens" || bad "wallpaper navy words" "$out"
     [ "$(sh "$SH" desktop wallpaper)" = "wallpaper #000080 -- a plain color, it stays when the palette changes" ] && ok "desktop wallpaper (bare): names the color" || bad "wallpaper bare color" "$(sh "$SH" desktop wallpaper)"
@@ -446,7 +480,7 @@ if [ "$(uname -s)" != Darwin ]; then
     sh "$SH" theme dracula >/dev/null
     grep -q '^output \* bg #000080 solid_color$' "$sway" && grep -q '^background=282a36$' "$foot" && ok "a color stays when the palette changes (foot takes dracula, sway keeps #000080)" || bad "color follows the palette" "$(grep -n 'output' "$sway"; grep -n '^background' "$foot")"
     sh "$SH" desktop wallpaper default >/dev/null
-    grep -q '^output \* bg #1c1e26 solid_color$' "$sway" && grep -q '^gaps inner 8$' "$sway" && grep -q '^alpha=0.85$' "$foot" && ok "desktop wallpaper default: the ground follows the palette (dracula's background a shade darker, #1c1e26)" || bad "ground dracula" "$(grep -n 'bg\|gaps' "$sway")"
+    grep -q '^output \* bg #1c1e26 solid_color$' "$sway" && grep -q '^gaps outer 16$' "$sway" && grep -q '^alpha=0.85$' "$foot" && ok "desktop wallpaper default: the ground follows the palette (dracula's background a shade darker, #1c1e26)" || bad "ground dracula" "$(grep -n 'bg\|gaps' "$sway")"
     [ "$(sh "$SH" desktop wallpaper)" = "wallpaper default -- the ground, the palette's background a shade darker (#1c1e26); it follows the palette" ] && ok "desktop wallpaper (bare): names the ground and its hex" || bad "wallpaper bare ground" "$(sh "$SH" desktop wallpaper)"
     theme_fixture '#ff5555'   # the fixture's palette again, for the rows below
     for c in black:000000 white:ffffff gray:808080 grey:808080 silver:c0c0c0 navy:000080 blue:0000ff teal:008080 green:008000 olive:808000 maroon:800000 red:ff0000 purple:800080 brown:a52a2a orange:ffa500 Teal:008080; do
@@ -455,7 +489,7 @@ if [ "$(uname -s)" != Darwin ]; then
     [ ! -s "$H/names.bad" ] && ok "desktop wallpaper NAME: the 15 names are the CSS colors" || bad "wallpaper names" "$(cat "$H/names.bad")"
     # the wallpapers spark-shell ships (issue 10): stored by name, drawn from the clone's own file
     sh "$SH" desktop wallpaper skyline >/dev/null
-    grep -qx 'WALLPAPER=skyline' "$HOME/.config/spark-shell/config" && grep -qF "output * bg \"$REPO/wallpaper/skyline.png\" fill" "$sway" && grep -q '^gaps inner 8$' "$sway" \
+    grep -qx 'WALLPAPER=skyline' "$HOME/.config/spark-shell/config" && grep -qF "output * bg \"$REPO/wallpaper/skyline.png\" fill" "$sway" && grep -q '^gaps outer 16$' "$sway" \
         && [ "$(sh "$SH" desktop wallpaper)" = "wallpaper skyline" ] \
         && ok "desktop wallpaper skyline: the name in the config, sway draws the clone's own picture with the gaps a picture has" || bad "wallpaper shipped" "$(grep WALLPAPER "$HOME/.config/spark-shell/config"); $(grep -n ' bg ' "$sway")"
     sh "$SH" desktop wallpaper default >/dev/null
@@ -3471,7 +3505,7 @@ printf '%s\n' "$(rq 1 resources/read '{"uri":"spark-shell://about/rows"}')" | sh
     && [ "$(jq -c '.rows[0] | [.columns, .text, .group]' "$H/about.json")" = '[["Super+Return"],"opens a terminal window.","keys 1"]' ] \
     && [ "$(jq -c '.short' "$H/about.json")" = '["about:open"]' ] && jq -e '.rows[] | select(.id == "about:open") | .tool.name == "about_open"' "$H/about.json" >/dev/null \
     && ok "provide about: a row per key sentence, the combo a column, in groups; the address; the short form is the row that opens it" || bad "about rows" "$(head -c 400 "$H/about.json")"
-sh "$SH" desktop keys | grep -v '^\(\(Super\|Ctrl\|Alt\|Shift\)+[^ ,]*\|Print\) [a-z]' | grep -v '^The volume\|^The brightness\|^Typing exit' > "$H/keys.odd" || :
+sh "$SH" desktop keys | grep -v '^\(\(Super\|Ctrl\|Alt\|Shift\)+[^ ,]*\|Print\) [a-z]' | grep -v '^The volume\|^The brightness\|^The mouse\|^Typing exit' > "$H/keys.odd" || :
 [ ! -s "$H/keys.odd" ] && ok "desktop keys: each sentence opens with one combo and a verb (the about's two columns)" || bad "key sentences" "$(cat "$H/keys.odd")"
 if [ "$(uname -s)" = Darwin ]; then
     st=0; out=$(sh "$SH" dialog 2>&1) || st=$?
@@ -3734,7 +3768,7 @@ sh "$SH" -h > "$voice/help"
 grep '^ *#' "$REPO/templates/.config/sway/config" > "$voice/sway-config-comments"
 out_words="colours?|desks?|rooms?|seat|login box|marks?|marked|player|this machine's cycles|the forge wallpaper|greeter|the box|stranger|newcomer|founder|inventory|the hands|shell layer|monitors?"
 contractions="[A-Za-z]*n't\b|\bit's\b|\byou'll\b|\bwe're\b|\bthat's\b|\bthere's\b|\blet's\b"
-caps_ok='DAY|TIME|KEYBOARD|ASCII|ALSA|A2DP|POSIX|JSON|SGR|SBOM|PATH|NAME|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|LOGIN|WALLPAPER|ALPHA|WINDOWS|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
+caps_ok='DAY|TIME|KEYBOARD|POINTER|ASCII|ALSA|A2DP|POSIX|JSON|SGR|SBOM|PATH|NAME|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|LOGIN|WALLPAPER|ALPHA|WINDOWS|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
 for n in README.md CHANGELOG.md CREDITS.md config.example help sway-config-comments; do
     f=$voice/$n
     # (a) the words that are out, as whole words in any case

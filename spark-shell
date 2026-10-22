@@ -141,7 +141,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u KEYBOARD'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u KEYBOARD'
 
 # This machine's short name (the twin of spark lib/env.sh short_host)
 short_host() {
@@ -158,6 +158,7 @@ config_load() {
     : "${DESKTOP:=none}"
     : "${FONT:=DejaVu Sans Mono:size=12}"   # foot's spec, verbatim
     : "${WALLPAPER:=default}"               # the desktop's background: default (the forge), none, a full path or #rrggbb
+    : "${POINTER:=}"                        # the pointer: "NAME [SIZE]", a cursor theme's name and its size in pixels (24); empty: the spark pointer by palette
     : "${ALPHA:=0.85}"                      # foot over a picture: 0..1, 1 = opaque
     : "${DESKTOP_BAR:=yes}"                # the bar at the top of the desktop: yes or no
     : "${WINDOWS:=split}"                  # how new windows sit on a workspace: split (side by side), tabs or stacked
@@ -174,6 +175,9 @@ config_load() {
     if [ -n "$CONSOLE_FONT" ] && ! printf '%s' "$CONSOLE_FONT" | grep -qE '^[A-Za-z0-9._-]+ [0-9][0-9x.]*$'; then
         echo "spark-shell: CONSOLE_FONT=$CONSOLE_FONT in $CONFIG: FACE SIZE (spark-shell font list)" >&2; exit 1
     fi
+    if [ -n "$POINTER" ] && ! printf '%s' "$POINTER" | grep -qE '^[A-Za-z0-9._-]+( [1-9][0-9]{0,2})?$'; then
+        echo "spark-shell: POINTER=$POINTER in $CONFIG: a cursor theme's NAME and, after a space, its SIZE in pixels (spark-white 24, spark-black 32, Adwaita)" >&2; exit 1
+    fi
     # the dialog's composer: plus and the file types it attaches, the model chip, talk
     : "${DIALOG_ATTACH:=yes}" "${DIALOG_ATTACH_TYPES:=txt md}" "${DIALOG_MODEL:=yes}" "${DIALOG_TALK:=yes}"
     for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK LOGIN; do
@@ -188,7 +192,7 @@ config_load() {
     done
     [ -z "$KEYBOARD" ] || printf '%s\n' "$KEYBOARD" | grep -qE "$KB_RE" || { echo "spark-shell: KEYBOARD=$KEYBOARD in $CONFIG: layouts by their xkb names, a space between, a variant after a plus (us us+intl)" >&2; exit 1; }
     printf '%s\n' "$DIALOG_ATTACH_TYPES" | grep -qE '^[a-z0-9]{1,8}( [a-z0-9]{1,8})*$' || { echo "spark-shell: DIALOG_ATTACH_TYPES=$DIALOG_ATTACH_TYPES in $CONFIG: file types in lower case, a space between (txt md)" >&2; exit 1; }
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK LOGIN DISPLAY_IDLE DISPLAY_LOCK KEYBOARD
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK LOGIN DISPLAY_IDLE DISPLAY_LOCK KEYBOARD POINTER
 }
 KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}$'   # one to eight layouts, a variant after a plus: us us+intl
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept
@@ -274,6 +278,7 @@ theme_load() {
     export ACCENT_SLOT MUTED_SLOT ACCENT_STAR MUTED_STAR ACCENT_SGR MUTED_SGR
     hex_load
     wall_load
+    pointer_load
     panel_load; win_load
 }
 
@@ -312,13 +317,18 @@ hex_load() {
 # The wallpaper: by default the ground, the palette's background a shade
 # darker than the windows, which follows the palette; or a picture of
 # yours, a plain color, or none. With the ground, a picture or a
-# color, sway keeps gaps around the windows and foot is a little
-# translucent, so it shows; with none, edge to edge and opaque. A color
+# color, the windows stand apart and foot is a little translucent, so
+# it shows; with none, edge to edge and opaque. Every window has a
+# four-pixel edge (#22): between two windows an eight-pixel strip that
+# the mouse can grab to resize, where the pointer shows the resize
+# arrows. Over a wallpaper the edge is transparent, so the look does
+# not change (the outer gap grows by the edge); with none it is the
+# surface shade, so two windows never merge. A color
 # is #rrggbb in the config (a name is stored as its hex) and stays when
 # the palette changes. A path that is not there falls back to the
 # palette's color (the render says so in a row), never to a black
 # screen.
-WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA BORDER"   # BAR_ALPHA: two hex digits after the bar background over a picture, else nothing
+WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA BORDER BORDER_HEX"   # BAR_ALPHA: two hex digits after the bar background over a picture, else nothing; BORDER_HEX: the edge's color, rrggbbaa
 WALL_NAMES="black white gray silver navy blue teal green olive maroon red purple brown orange"   # one name a color: grey is still read as gray, never listed twice
 # the wallpapers spark-shell ships in wallpaper/, each NAME:PALETTE:SAMPLE, the palette it was drawn
 # for and its main color for the sample on its row; WALLPAPER stores the name, so it follows the clone
@@ -379,17 +389,43 @@ hex_mix() {   # hex_mix RRGGBB RRGGBB PERCENT -> rrggbb: the first color moved P
 wall_load() {
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     if wall_there; then
-        WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER=none
+        WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=0; GAPS_OUTER=16; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER="pixel 4"; BORDER_HEX=00000000
     elif [ "$WALLPAPER" = default ]; then   # the ground: a shade darker than the windows, drawn like a picture
-        WALL_BG="$(wall_ground) solid_color"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER=none
-    elif wall_color; then   # a plain color is a wallpaper too: the same gaps and the same translucent terminals as a picture
-        WALL_BG="$(wall_hex "$WALLPAPER") solid_color"; GAPS_INNER=8; GAPS_OUTER=12; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER=none
-    else   # none: the palette's color, full windows, opaque
-        WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0; BAR_ALPHA=""; BORDER="pixel 1"   # no gaps: a thin edge parts the windows
+        WALL_BG="$(wall_ground) solid_color"; GAPS_INNER=0; GAPS_OUTER=16; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER="pixel 4"; BORDER_HEX=00000000
+    elif wall_color; then   # a plain color is a wallpaper too: the same spacing and the same translucent terminals as a picture
+        WALL_BG="$(wall_hex "$WALLPAPER") solid_color"; GAPS_INNER=0; GAPS_OUTER=16; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER="pixel 4"; BORDER_HEX=00000000
+    else   # none: the palette's color, full windows, opaque; the edge in the surface shade (PANEL_BG) parts the windows
+        WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0; BAR_ALPHA=""; BORDER="pixel 4"; BORDER_HEX=$(hex_mix "$HEX_BG" "$HEX_FG" 9)
     fi
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     for k in $WALL_KEYS; do export "${k?}"; done
 }
+
+# The pointer (#22): the spark pointer, two cursor themes lib/pointer.py
+# draws from geometry (spark-white and spark-black), or any theme
+# POINTER names, with its size. By default a dark palette gets white
+# and a light one black. sway takes the name and the size for its own
+# cursor and hands them to every program it starts (XCURSOR_THEME and
+# XCURSOR_SIZE), so one pointer shows everywhere.
+POINTER_KEYS="POINTER_NAME POINTER_SIZE"
+POINTER_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/icons
+POINTER_THEMES="spark-white spark-black"
+theme_is_dark() {   # the palette's background is dark (its luminance under half)
+    # shellcheck disable=SC2046   # three numbers, split on purpose
+    set -- $(hex_rgb "#$HEX_BG")
+    [ $(( ($1 * 299 + $2 * 587 + $3 * 114) / 1000 )) -lt 128 ]
+}
+pointer_load() {
+    # shellcheck disable=SC2034   # read by render_expr through POINTER_KEYS
+    if [ -n "$POINTER" ]; then
+        POINTER_NAME=${POINTER%% *}; POINTER_SIZE=${POINTER#* }; [ "$POINTER_SIZE" != "$POINTER" ] || POINTER_SIZE=24
+    elif theme_is_dark; then POINTER_NAME="spark-white"; POINTER_SIZE=24
+    else POINTER_NAME="spark-black"; POINTER_SIZE=24; fi
+    export POINTER_NAME POINTER_SIZE
+}
+pointer_version() { sed -n 's/^VERSION = "\(.*\)".*/\1/p' "$REPO/lib/pointer.py"; }   # the geometry's version, read without python3
+pointer_drawn() { for _t in $POINTER_THEMES; do [ "$(cat "$POINTER_DIR/$_t/version" 2>/dev/null)" = "$(pointer_version)" ] || return 1; done; }
+pointer_can() { [ "$(python3 "$REPO/lib/pointer.py" --version 2>/dev/null)" = "$(pointer_version)" ]; }   # a python3 that runs the generator (not a stub, not missing)
 
 # How new windows sit: WINDOWS in the config, sway's workspace_layout in the template.
 WIN_KEYS="WS_LAYOUT"
@@ -576,7 +612,7 @@ render_expr() {
         # shellcheck disable=SC2154   # v is set by the eval above
         e="$e;s|@$k@|$(esc "$v")|g"
     done
-    for k in $SLOT_KEYS $HEX_KEYS $WALL_KEYS $PANEL_KEYS $WIN_KEYS; do
+    for k in $SLOT_KEYS $HEX_KEYS $WALL_KEYS $PANEL_KEYS $WIN_KEYS $POINTER_KEYS; do
         eval "v=\$$k"
         e="$e;s|@$k@|$(esc "$v")|g"
     done
@@ -628,7 +664,19 @@ desktop_tools() {   # -> the missing ones, if any (PATH or ~/.local/bin)
     done
     printf '%s' "$_miss"
 }
-sway_reload() {   # a running sway takes the new render now (borders, background)
+pointer_apply() {   # the pointer row of `on desktop`: the two spark themes drawn under ~/.local/share/icons, again when the geometry changed
+    if pointer_drawn; then ok pointer "spark-white and spark-black are in $POINTER_DIR"; return 0; fi
+    if ! pointer_can; then skip pointer "python3 cannot draw the spark pointer here (spark needs python3 too): sway keeps its built-in cursors"; return 0; fi
+    need pointer "draw the spark pointer, spark-white and spark-black, in $POINTER_DIR" || return 0
+    if python3 "$REPO/lib/pointer.py" "$POINTER_DIR" 2>"$TMP/pointer.err" && pointer_drawn; then ok pointer "spark-white and spark-black drawn in $POINTER_DIR"
+    else row todo pointer "lib/pointer.py failed: $(head -1 "$TMP/pointer.err" 2>/dev/null)"; acting=0; fi
+}
+pointer_off() {   # the two spark themes are spark-shell's own: gone with the desktop
+    _had=0
+    for _t in $POINTER_THEMES; do [ ! -d "$POINTER_DIR/$_t" ] || { _had=1; [ "$MODE" = dry ] || rm -rf "${POINTER_DIR:?}/$_t"; }; done
+    [ "$_had" = 0 ] || { if [ "$MODE" = dry ]; then row would pointer "spark-white and spark-black removed from $POINTER_DIR"; else row ok pointer "spark-white and spark-black removed from $POINTER_DIR"; fi; }
+}
+sway_reload() {   # a running sway takes the new render now (borders, background, the pointer)
     [ "$MODE" = dry ] && return 0
     [ -n "${SWAYSOCK:-}" ] || return 0
     [ -f "$HOME/.config/sway/config" ] || return 0
@@ -649,6 +697,7 @@ desktop_look_apply() {   # the two user renders and a live sway
         render_one "$REPO/templates/$rel" "$HOME/$rel"
     done
     [ "$MODE" = dry ] || [ -f "$SCREENS_CONF" ] || { mkdir -p "$CONFIG_DIR" && echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them' > "$SCREENS_CONF"; }   # the template includes it
+    pointer_apply
     sway_reload
 }
 desktop_apply() {
@@ -910,6 +959,7 @@ old_greetd_off() {
 # exactly those; while greetd runs, the screen's files stay.
 LOGIN_ETC=etc/spark-shell/login
 LOGIN_LIB=usr/local/lib/spark-shell
+LOGIN_ICONS=usr/share/icons   # the spark pointer for the login screen's account, a copy of the two themes
 GREETD_CONF=etc/greetd/config.toml
 LOGIN_SUDOERS=etc/sudoers.d/spark-shell-login
 LOGIN_MARK=' #spark-shell-login#'
@@ -952,12 +1002,24 @@ login_render() {   # -> the screen's files in $TMP/login, from templates/login i
     done
 }
 login_mode() { case $1 in session|window|run|login-boot) echo 0755 ;; sudoers) echo 0440 ;; *) echo 0644 ;; esac; }
+login_pointer_put() {   # the two spark themes copied under /usr/share/icons, where the login screen's account finds them
+    for _t in $POINTER_THEMES; do
+        [ -d "$POINTER_DIR/$_t" ] || continue
+        root_do rm -rf "$ROOT/$LOGIN_ICONS/$_t"
+        root_do mkdir -p "$ROOT/$LOGIN_ICONS"
+        root_do cp -R "$POINTER_DIR/$_t" "$ROOT/$LOGIN_ICONS/$_t"
+        root_do chmod -R u=rwX,go=rX "$ROOT/$LOGIN_ICONS/$_t"
+    done
+}
 login_files_differ() {   # -> the screen's files that differ from what spark-shell would write, by name
     for f in $LOGIN_FILES; do cmp -s "$TMP/login/$f" "$ROOT/$LOGIN_ETC/$f" || printf ' %s' "$f"; done
     cmp -s "$DIALOG_BIN" "$ROOT/$LOGIN_LIB/spark-dialog" || printf ' spark-dialog'
     cmp -s "$TMP/login/config.toml" "$ROOT/$GREETD_CONF" || printf ' config.toml'
     if wall_there; then cmp -s "$(wall_path)" "$ROOT/$LOGIN_ETC/wallpaper" || printf ' wallpaper'
     elif [ -e "$ROOT/$LOGIN_ETC/wallpaper" ]; then printf ' wallpaper'; fi
+    for _t in $POINTER_THEMES; do   # the pointer's copy, when the themes are drawn: the same version
+        [ ! -d "$POINTER_DIR/$_t" ] || [ "$(cat "$ROOT/$LOGIN_ICONS/$_t/version" 2>/dev/null)" = "$(cat "$POINTER_DIR/$_t/version")" ] || printf ' %s' "$_t"
+    done
     if [ "$DISTRO" = void ]; then
         sudoers_same || printf ' sudoers'
         cmp -s "$TMP/login/login-boot" "$ROOT/$LOGIN_LIB/login-boot" || printf ' login-boot'
@@ -1009,6 +1071,7 @@ login_screen_apply() {   # the login rows of `on` with LOGIN=yes
         root_swap "$DIALOG_BIN" "$ROOT/$LOGIN_LIB/spark-dialog" 0755
         if wall_there; then root_put "$(wall_path)" "$ROOT/$LOGIN_ETC/wallpaper"
         else root_do rm -f "$ROOT/$LOGIN_ETC/wallpaper"; fi
+        login_pointer_put
         if [ -e "$ROOT/$GREETD_CONF" ] && ! greetd_ours && [ ! -e "$ROOT/$GREETD_CONF.spark-shell-orig" ]; then
             root_do cp "$ROOT/$GREETD_CONF" "$ROOT/$GREETD_CONF.spark-shell-orig"
         fi
@@ -1081,6 +1144,7 @@ login_screen_off() {   # by the records alone: the boot back to getty, the scree
         else root_put "$TMP/rc.local" "$ROOT/etc/rc.local"; fi
     fi
     for f in $LOGIN_FILES wallpaper boot; do root_do rm -f "$ROOT/$LOGIN_ETC/$f"; done
+    for _t in $POINTER_THEMES; do root_do rm -rf "$ROOT/$LOGIN_ICONS/$_t"; done
     root_do rm -f "$ROOT/$LOGIN_LIB/spark-dialog" "$ROOT/$LOGIN_LIB/login-boot"
     for d in "$LOGIN_ETC" etc/spark-shell "$LOGIN_LIB"; do [ ! -d "$ROOT/$d" ] || root_do rmdir "$ROOT/$d" 2>/dev/null || true; done
     row ok login "the console login is back on tty1 from the next boot, the login screen's files are gone (greetd's package stays)"
@@ -2093,6 +2157,7 @@ cmd_off() {   # cmd_off [desktop|login]
         config_set DESKTOP none
         DESKTOP=none; export DESKTOP
         hand_back $DESKTOP_RENDERED .config/alsa/asoundrc
+        pointer_off
         old_greetd_off
         seat_off
         sound_off
@@ -2110,6 +2175,7 @@ cmd_off() {   # cmd_off [desktop|login]
         fi
     done
     hand_back $RENDERED .config/starship.toml .config/yazi/theme.toml $DESKTOP_RENDERED .config/alsa/asoundrc   # alsa: the bar's default card; yazi: a render v0.35 left, its .bak yours
+    [ "$OS" = Darwin ] || pointer_off
     old_greetd_off
     login_screen_off
     seat_off
@@ -2334,6 +2400,10 @@ cmd_check() {
         elif seat_needed && ! in_group _seatd "$(id -un)"; then chk desktop fail "$(id -un) is not in the _seatd group" "spark-shell on desktop"
         else chk desktop ok "sway and foot are installed and up to date"; fi
     fi
+    if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk pointer ok "na (no desktop)"
+    elif pointer_drawn; then chk pointer ok "spark-white and spark-black are drawn; sway shows $POINTER_NAME at $POINTER_SIZE"
+    elif ! pointer_can; then chk pointer warn "python3 cannot draw the spark pointer here" "install python3, then spark-shell on desktop"
+    else chk pointer fail "the spark pointer is not drawn" "spark-shell on desktop"; fi
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk mcp ok "na (no desktop)"
     elif ! mcp_spark >/dev/null; then chk mcp ok "na (spark has no MCP list before 1.90)"
     else _mn=$(mcp_mine | wc -w | tr -d ' '); _mt=$(printf '%s' "$PROVIDE_SECTIONS" | wc -w | tr -d ' ')

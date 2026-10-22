@@ -22,17 +22,22 @@ include "@SCREENS_CONF@"
 gaps inner @GAPS_INNER@
 gaps outer @GAPS_OUTER@
 workspace_layout @WS_LAYOUT@
-# Flat windows (#19): no outline while a wallpaper is on, for the gaps part the windows; with none, a
-# thin edge in the surface shade, so two windows never merge. Never the accent: nothing outlines in
-# a bright color; urgent keeps the alarm.
+# Flat windows (#19, #22): no outline. Every window has a four-pixel edge, the same focused or not:
+# between two windows an eight-pixel strip the mouse can grab to resize, where the pointer shows the
+# resize arrows. Over a wallpaper the edge is transparent, so only the wallpaper shows there; with
+# none it is the surface shade, so two windows never merge. Never the accent: nothing outlines in a
+# bright color; urgent keeps the alarm.
 default_border @BORDER@
 default_floating_border @BORDER@
 floating_modifier $mod normal
+# The pointer (#22): the spark pointer, white on a dark palette and black on a light one, or the theme
+# POINTER names, at its size; sway hands the name and the size to every program it starts
+seat * xcursor_theme @POINTER_NAME@ @POINTER_SIZE@
 
 # border  background  text  indicator  child_border
-client.focused          #@PANEL_HI@ #@PANEL_HI@ #@HEX_FG@ #@PANEL_HI@ #@PANEL_HI@
-client.focused_inactive #@PANEL_BG@ #@PANEL_BG@ #@HEX_FG@ #@PANEL_BG@ #@PANEL_BG@
-client.unfocused        #@HEX_BG@ #@HEX_BG@ #@HEX_MUTED@ #@HEX_BG@ #@HEX_BG@
+client.focused          #@BORDER_HEX@ #@PANEL_HI@ #@HEX_FG@ #@BORDER_HEX@ #@BORDER_HEX@
+client.focused_inactive #@BORDER_HEX@ #@PANEL_BG@ #@HEX_FG@ #@BORDER_HEX@ #@BORDER_HEX@
+client.unfocused        #@BORDER_HEX@ #@HEX_BG@ #@HEX_MUTED@ #@BORDER_HEX@ #@BORDER_HEX@
 client.urgent           #@HEX_ANSI_1@ #@HEX_ANSI_1@ #@HEX_BG@ #@HEX_ANSI_1@ #@HEX_ANSI_1@
 
 # The bar at the top of the screen: the workspaces, then what this
@@ -103,6 +108,8 @@ bindsym $mod+Shift+Right move right
 
 # key: Super+f makes a window fill the screen.
 # key: Super+r resizes the window, until Enter.
+# key: The mouse resizes too: drag the strip between two windows.
+# key: Super+right-drag resizes a window by its corner, Super+left-drag moves it.
 bindsym $mod+f fullscreen
 # key: Super+w makes tabs, Super+Shift+s a stack, Super+e side by side again.
 # key: Super+b puts the next window beside this one, and Super+v below it.

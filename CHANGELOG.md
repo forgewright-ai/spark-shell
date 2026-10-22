@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.84
+
+The pointer and the window edge (#22, two findings of a new user at the
+desktop).
+
+- Added: the spark pointer, two cursor themes drawn from geometry by
+  lib/pointer.py, spark-white and spark-black: a notched arrow with no
+  stem, a hand, the I-beam, the resize arrows and brackets, an
+  hourglass, every straight edge on a whole pixel, in 24, 32, 48, 64
+  and 96. `on desktop` writes them under ~/.local/share/icons, the
+  login screen gets a copy under /usr/share/icons, and `off desktop`
+  removes them. sway showed its built-in set before: the X bitmaps of
+  1999, with a hand hanging from its top-right pixel.
+- Added: `POINTER` in the config, a cursor theme's name and size. Empty,
+  a dark palette gets spark-white and a light one spark-black; sway
+  hands the name and the size to every program it starts. `check` has
+  a pointer row.
+- Changed: every window has a four-pixel edge, the same focused or not,
+  so two windows are parted by an eight-pixel strip the mouse can grab:
+  the pointer shows the resize arrows over it and a drag resizes. Over
+  a wallpaper the edge is transparent and the outer gap grows by it, so
+  the look of v0.82 stays; with none the edge is the surface shade. sway
+  offers a resize edge only where a window has a border, and the old
+  one-pixel line was no target.
+- Changed: the keys name the mouse: the strip between two windows,
+  Super+right-drag by a corner, Super+left-drag to move.
+
 ## v0.83
 
 The README leads a new reader to a first task.

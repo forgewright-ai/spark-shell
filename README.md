@@ -234,6 +234,8 @@ row shows them again.
     Super+arrow moves the focus, as h, j, k, l do; Shift moves the window.
     Super+f makes a window fill the screen.
     Super+r resizes the window, until Enter.
+    The mouse resizes too: drag the strip between two windows.
+    Super+right-drag resizes a window by its corner, Super+left-drag moves it.
     Super+w makes tabs, Super+Shift+s a stack, Super+e side by side again.
     Super+b puts the next window beside this one, and Super+v below it.
     Super+1..0 go to workspaces 1 to 10; with Shift the window goes there.
@@ -340,12 +342,29 @@ Type `spark-shell desktop wallpaper navy`. You get a plain color, and
 it stays the same when you change the palette. Give `#rrggbb`, or one
 of these names: black, white, gray (or grey), silver, navy, blue, teal,
 green, olive, maroon, red, purple, brown, orange. The ground, a
-picture and a color are drawn the same way: gaps around the windows,
-no border, and the terminals a little transparent. The dialog's `theme`
-section sets the transparency. With `none`, the windows are opaque and
-touch, and a thin edge in the surface shade parts them. No window is
-outlined in the accent; tabs and stacks show the focused title in the
-surface shade.
+picture and a color are drawn the same way: the windows stand apart,
+with a transparent edge the mouse can grab, and the terminals a little
+transparent. The dialog's `theme` section sets the transparency. With
+`none`, the windows are opaque, and a four-pixel edge in the surface
+shade parts them. No window is outlined in the accent; tabs and stacks
+show the focused title in the surface shade.
+
+## Pointer
+
+The desktop draws its own pointer, the spark pointer: an arrow with no
+stem, a hand, the I-beam, the resize arrows, an hourglass, in white on
+a dark palette and in black on a light one. `spark-shell on desktop`
+writes the two cursor themes, `spark-white` and `spark-black`, under
+`~/.local/share/icons`, and the login screen gets a copy. sway shows
+the one the palette picks and hands its name and size to every program
+it starts, so one pointer shows everywhere. To use another theme, or
+another size, set `POINTER` in the config: `POINTER=spark-black 32`,
+or `POINTER=Adwaita` for a theme installed on the machine.
+
+The edge of a window is where the mouse resizes it. Every window has a
+four-pixel edge, so two windows are parted by an eight-pixel strip: the
+pointer shows the resize arrows over it, and a drag resizes. Over a
+wallpaper the edge is transparent; with none it is the surface shade.
 
 ## Bar
 
@@ -578,7 +597,8 @@ tools` or `sbom parts` shows one kind. `sbom --json` writes the list to
 Config keys, in `~/.config/spark-shell/config` (see `config.example`):
 `PROMPT` (starship or plain), `PROMPT_STYLE` (minimal or full),
 `DESKTOP` (none or sway), `FONT` (foot's font), `WALLPAPER` (default,
-none or a path), `ALPHA` (how solid foot is, 0.85: 15% transparency),
+none or a path), `POINTER` (a cursor theme's name and size, empty for
+the spark pointer), `ALPHA` (how solid foot is, 0.85: 15% transparency),
 `DESKTOP_BAR` (yes or no), `THEME`, `CONSOLE_FONT`, `QUIET_LOGIN`, `QUIET_BOOT`,
 `DIALOG_ATTACH` (yes or no), `DIALOG_ATTACH_TYPES` (txt md),
 `DIALOG_MODEL` and `DIALOG_TALK` (yes or no), `DISPLAY_IDLE` and
@@ -589,7 +609,8 @@ Files it writes: the shell files, `~/.tmux.conf`, `~/.config/btop/`,
 `~/.config/starship.toml`, `~/.config/spark-shell/`,
 `~/.config/spark/theme.env`, `~/.local/state/spark-shell/`,
 `~/.local/bin/spark-shell`, and for the desktop `~/.config/sway/`,
-`~/.config/foot/` and, after a change of output on plain ALSA,
+`~/.config/foot/`, the two cursor themes in `~/.local/share/icons/`
+and, after a change of output on plain ALSA,
 `~/.config/alsa/asoundrc`, and `~/.config/spark-shell/screens.conf`. As
 root: the console colors at boot (a systemd unit or a line in
 `/etc/rc.local`), the console font, the login notice and boot files for
