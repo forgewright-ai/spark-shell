@@ -1,4 +1,5 @@
 <!-- spark-shell wallpaper: forest (MIT, the repository's license) -->
+<!-- roles: #3d484d bg+ansi_0:63; #343f44 bg+ansi_4:8; #232a2e bg+black:23; #2d353b bg; #dbbc7f ansi_11; #a7c080 accent -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
 <defs>
 <pattern id="far1" x="0" y="600" width="58" height="120" patternUnits="userSpaceOnUse">

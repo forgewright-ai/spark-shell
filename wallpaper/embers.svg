@@ -1,4 +1,5 @@
 <!-- spark-shell wallpaper: embers (MIT, the repository's license) -->
+<!-- roles: #141418 bg; #d24a2a ansi_1; #e0b400 ansi_3; #ffe066 ansi_11 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
 <rect x="0" y="0" width="1920" height="1080" fill="#141418"></rect>
 <rect x="0" y="1064" width="1920" height="16" fill="#d24a2a" opacity="0.4"></rect>

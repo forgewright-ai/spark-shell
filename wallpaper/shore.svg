@@ -1,4 +1,5 @@
 <!-- spark-shell wallpaper: shore (MIT, the repository's license) -->
+<!-- roles: #fbf3db bg; #c9e0dc bg+accent:19; #9fd0c8 bg+ansi_6:36; #ad8900 ansi_3 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
 <rect x="0" y="0" width="1920" height="1080" fill="#fbf3db"></rect>
 <path fill="#c9e0dc" d="M0 0 H1920 V380 C1500 440 1100 340 700 420 S200 460 0 430 Z"></path>

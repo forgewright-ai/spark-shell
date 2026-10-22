@@ -146,10 +146,15 @@ bindsym $mod+Shift+0 move container to workspace number 10
 
 # key: Super+Escape locks the screen; it locks by itself after idle minutes.
 bindsym $mod+Escape exec @REPO@/spark-shell desktop lock || swaylock -f
-# Idle minutes turn the display off, then lock the screen, as
-# spark-shell desktop display idle|lock N set them (0: never); a key or
-# a move turns the display on. Where logind runs, it locks before the
-# machine sleeps. Plain swaylock when spark-shell cannot run.
+# After the idle minutes the idle screen: the wallpaper dimmed to the ground and the time
+# at the lower left, one foot window alone on a workspace named idle, no gaps and no border
+# (fullscreen would be solid). After the lock minutes the lock and the display off, as
+# spark-shell desktop display idle|lock N set them (0: never); a key or a move takes the idle
+# screen down and turns the display on. Where logind runs, it locks before the machine
+# sleeps. Plain swaylock when spark-shell cannot run.
+for_window [app_id="spark-idle"] border none
+workspace idle gaps inner 0
+workspace idle gaps outer 0
 exec @IDLE_EXEC@
 
 # key: Print captures the screen, Shift+Print an area, Super+Print the window.

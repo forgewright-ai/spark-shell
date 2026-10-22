@@ -1,4 +1,5 @@
 <!-- spark-shell wallpaper: hills (MIT, the repository's license) -->
+<!-- roles: #1e1e2e bg; #cdd6f4 fg; #f5c2e7 ansi_13; #45475a ansi_0; #313244 bg+muted:25; #181825 bg+black:20; #f9e2af ansi_11; #94e2d5 ansi_14 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
 <rect x="0" y="0" width="1920" height="1080" fill="#1e1e2e"></rect>
 <g fill="#cdd6f4" opacity="0.45">

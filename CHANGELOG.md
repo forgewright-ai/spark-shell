@@ -1,5 +1,57 @@
 # Changelog
 
+## v0.85
+
+The theme end to end (#24): one choice brings the rest, saved and
+tracked like layouts, generated from a picture or from words.
+
+- Added: `theme save NAME`, `theme delete NAME`, `theme back`, and
+  `theme list` with the saved themes and the last ten looks. A saved
+  theme is a folder `~/.config/spark-shell/themes/NAME/`: the palette,
+  the wallpaper's SVG and PNG or the picture, the text size, the
+  transparency, the pointer; it copies to another machine. The last
+  ten looks are a history under the state, with the time; a look not
+  saved lives there under its own name. Layouts keep the same history:
+  `layout back`, and a layout made from words is kept for it, so it
+  opens again with no model call. One set of functions holds both.
+- Added: the palette brings the drawing made for it when a shipped
+  drawing is on; a picture or a color of yours stays. The second line
+  of each shipped SVG names the role of every color it uses, so any
+  drawing is drawn again in any palette (gdk-pixbuf renders it, the PNG
+  under the state); `theme wallpaper NAME` picks one for the palette in
+  use. `desktop wallpaper` moved under theme and says so.
+- Added: `theme picture PATH`, a theme from a picture of yours by color
+  math in lib/look.py (Python's standard library): the text at 7 to 1
+  on the background, the accent, the muted color and the six hues at 3
+  to 1, dark or light as the picture is; the picture is the wallpaper.
+  `theme "WORDS"` asks spark for a hue, a warmth, a contrast and light
+  or dark (the theme_words tool, its one task) and makes the palette
+  from them; the drawing in use is drawn again in it. Both apply at
+  once.
+- Added: the idle screen. After the idle minutes the wallpaper dims to
+  the ground and the time sits at the lower left in the muted color,
+  the date under it: one foot window at twice the text size, alone on a
+  workspace named idle, no gaps and no border. The display turns off
+  with the lock at the lock minutes. `desktop idle` shows it now.
+- Changed: `theme text N` is the one text size. foot, the bar, the
+  dialog, the login, the lock and the idle screen take it, and the
+  pointer's size follows it: 24 pixels up to 13 points, 32 up to 19, 48
+  above. It lives inside FONT as before. `theme transparency N` is the
+  windows' transparency as a percent.
+- Changed: the dialog's theme section opens with the saved themes and
+  `save this look as`, then the last ten looks with the time, then the
+  palettes with the drawing each carries and `a theme from a picture`,
+  then the wallpaper as a row that opens the drawings, a picture of
+  yours, the colors, default and none; the font rows are the text size
+  now. The wallpaper section is gone into it. The header names the
+  look: the theme, the text size, the wallpaper. A row applies at once;
+  the desktop is the preview.
+- Added: the tools theme_save, theme_delete, theme_back, theme_text,
+  theme_wallpaper, theme_wallpaper_picture, theme_picture, theme_words,
+  layout_delete and layout_back; theme_font, wallpaper_use and
+  wallpaper_picture are gone. A tool may take more than one argument
+  now (theme_words takes four words, each from a closed set).
+
 ## v0.84
 
 The pointer and the window edge (#22, two findings of a new user at the

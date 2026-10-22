@@ -1,4 +1,5 @@
 <!-- spark-shell wallpaper: fjord (MIT, the repository's license) -->
+<!-- roles: #2e3440 bg; #88c0d0 accent; #a3be8c ansi_10; #434c5e bg+muted:72; #d8dee9 fg; #3b4252 ansi_0; #272c36 bg+black:16 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
 <rect x="0" y="0" width="1920" height="1080" fill="#2e3440"></rect>
 <path fill="#88c0d0" opacity="0.12" d="M0 250 C380 130 760 330 1180 200 S1700 110 1920 210 L1920 290 C1620 210 1300 380 900 300 S320 250 0 350 Z"></path>

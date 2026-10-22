@@ -16,15 +16,19 @@ PROMPT_STYLE=minimal
 DESKTOP=none
 
 # The font in foot, the desktop's terminal, in foot's own form (the
-# font name, then :size=N).
+# font name, then :size=N). The size is the text size everywhere: the
+# bar, the dialog, the login, the lock and the idle screen take it, and
+# the pointer grows with it. spark-shell theme text N sets the size.
 FONT=DejaVu Sans Mono:size=12
 
 # The wallpaper: default is the ground, the palette's background a shade
 # darker than the windows, following the palette; or a picture's full
 # path, a color as #rrggbb, or none for the windows edge to edge and
 # solid. The ground, a picture and a color get gaps and a little
-# transparency. spark-shell desktop wallpaper sets this, and it saves a
-# color's name as its #rrggbb.
+# transparency. A shipped drawing's name follows the palette: a palette
+# with a drawing of its own brings it, any other has the drawing drawn
+# again in its colors. spark-shell theme wallpaper sets this, and it
+# saves a color's name as its #rrggbb.
 WALLPAPER=default
 
 # The pointer: empty for the spark pointer, white on a dark palette and
@@ -33,8 +37,8 @@ WALLPAPER=default
 POINTER=
 
 # How solid foot is over a picture or a color: 0 to 1, where 1 is solid.
-# 0.85 suits a dark picture. A bright one needs more. The panel's theme
-# section says it as transparency: 0.85 is 15% transparency.
+# 0.85 suits a dark picture. A bright one needs more. spark-shell theme
+# transparency N says it as a percent: 0.85 is 15% transparency.
 ALPHA=0.85
 
 # How new windows sit on a workspace: split (side by side), tabs or
@@ -47,8 +51,10 @@ WINDOWS=split
 # keeps the console login. spark-shell on login and off login set this.
 LOGIN=no
 
-# The display: idle minutes before it turns off, and before the screen
-# locks (0: never). spark-shell desktop display idle|lock N sets these.
+# The display: idle minutes before the idle screen (the wallpaper dimmed,
+# the time at the lower left), and before the screen locks and the
+# display turns off (0: never). spark-shell desktop display idle|lock N
+# sets these.
 DISPLAY_IDLE=10
 DISPLAY_LOCK=15
 
@@ -64,8 +70,10 @@ KEYBOARD=
 # on|off --desktop sets this.
 DESKTOP_BAR=yes
 
-# The color palette: none (the terminal's own colors) or a name that
-# spark-shell theme list shows. spark-shell theme NAME sets this.
+# The theme: none (the terminal's own colors), a palette's name, or a
+# saved theme's (a folder under ~/.config/spark-shell/themes, the whole
+# look), as spark-shell theme list shows them. spark-shell theme NAME
+# sets this; theme save NAME keeps the look in use.
 THEME=none
 
 # The console font on Linux, or the Terminal.app font on a Mac: the name

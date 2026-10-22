@@ -1,4 +1,5 @@
 <!-- spark-shell wallpaper: skyline (MIT, the repository's license) -->
+<!-- roles: #1a1b26 bg; #a9b1d6 ansi_7; #c0caf5 ansi_15; #1f2335 bg+accent:7; #15161e ansi_0; #e0af68 ansi_3; #7aa2f7 accent; #bb9af7 ansi_5 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
 <rect x="0" y="0" width="1920" height="1080" fill="#1a1b26"></rect>
 <g fill="#a9b1d6" opacity="0.5">

@@ -71,8 +71,16 @@ explain each part. If something fails, run `spark-shell check` and
     spark-shell on --yes              do not ask first
     spark-shell status                show what is set up
     spark-shell check                 test the setup (exit 0 when all is ok)
-    spark-shell theme NAME|none       set the colors, or use the terminal's own
-    spark-shell theme [list]          show the palette in use, or list them all
+    spark-shell theme NAME|none       set the colors and the look, or none
+    spark-shell theme [list]          show the look in use, or list them all
+    spark-shell theme save [NAME]     keep the look in use as a saved theme
+    spark-shell theme delete NAME     delete a saved theme
+    spark-shell theme back            the look before this one, again
+    spark-shell theme wallpaper X     a drawing, a picture, a color or none
+    spark-shell theme text N          the text size everywhere; bigger, smaller
+    spark-shell theme transparency N  the windows' transparency; more, less
+    spark-shell theme picture PATH    a theme from a picture of yours
+    spark-shell theme "WORDS"         a theme from words, read by spark
     spark-shell font FACE SIZE|none   set the console font, or use its own
     spark-shell font list             list the fonts you can use
     spark-shell quiet login on|off    hide the notice before the login (Linux)
@@ -82,6 +90,7 @@ explain each part. If something fails, run `spark-shell check` and
     spark-shell layout save [NAME]    save the last layout
     spark-shell layout [NAME]         list the saved layouts, or open one
     spark-shell layout delete NAME    delete a saved layout
+    spark-shell layout back           the layout before this one, again
     spark-shell apps                  choose the apps a layout may open
     spark-shell notes                 list your notes, the newest first
     spark-shell notes new|NAME        a new note, or that one, in your editor
@@ -94,13 +103,13 @@ explain each part. If something fails, run `spark-shell check` and
                                       done (kept 30 days), in 10 minutes, back
     spark-shell desktop               start the desktop now (from a console)
     spark-shell desktop keys          list the desktop's keys
-    spark-shell desktop wallpaper X   set a picture, a color, default or none
     spark-shell desktop lock          lock the screen now (Super+Escape)
+    spark-shell desktop idle [off]    the idle screen now, or down
     spark-shell desktop capture screen|area|window
                                       a PNG in ~/pictures/screenshots (Print)
     spark-shell desktop display       the idle and lock minutes, the brightness
     spark-shell desktop display idle|lock N
-                                      display off, or lock, after N idle minutes
+                                      idle screen or lock after N idle minutes
     spark-shell desktop display brightness N|up|down
                                       the screen's brightness, 1 to 100
     spark-shell desktop keyboard [us br|next]
@@ -137,6 +146,34 @@ the 16 palettes, eight dark and eight light, and your own go in
 `~/.config/spark-shell/themes/`.
 On Linux the terminals you have open change color at once. A program
 that is already running, such as btop, changes when it starts again.
+
+On the desktop a theme is the whole look, and one choice brings the
+rest: the palette brings the wallpaper drawn for it (`theme nord` puts
+fjord behind the windows; a picture or a color of your own stays), the
+pointer in white or black, and the login, the lock and the idle screen
+in its colors. `theme wallpaper skyline` picks a drawing for the palette
+in use, drawn again in that palette's colors. `theme text 14` is the one
+text size, on foot, the bar, the dialog, the login, the lock and the
+idle screen; the pointer grows with it (24, 32 or 48 pixels). `theme
+transparency 15` is the windows' transparency, 0 to 50.
+
+`theme save winter` keeps the look in use as a theme: a folder
+`~/.config/spark-shell/themes/winter/` with the palette, the
+wallpaper's files, the text size, the transparency and the pointer. It
+copies to another machine. `theme winter` brings it back, `theme list`
+shows the saved themes, `theme delete winter` removes one. The last ten
+looks you chose are kept, with the time: `theme back` steps through
+them, and the dialog's theme section lists them. Layouts are kept the
+same way, so `layout back` opens the one before.
+
+`theme picture ~/pictures/beach.jpg` makes a theme from a picture of
+yours: its colors become the palette, with the text at 7 to 1 on the
+background and every other color at 3 to 1, dark or light as the
+picture is, and the picture is the wallpaper. `theme "warm dark
+winter"` asks spark for four words, a hue, how warm, how much contrast,
+dark or light, and makes the palette from them; the drawing you have is
+drawn again in it. Both apply at once and sit in the last ten under the
+picture's or the words' name until you save them.
 
 ## Font
 
@@ -249,9 +286,10 @@ row shows them again.
 ## Display, keyboard and screens
 
 `spark-shell desktop display` shows the idle and lock minutes and the
-brightness. `display idle 10` turns the display off after 10 idle
-minutes, `display lock 15` locks the screen after 15, and 0 means
-never; a running desktop takes the change at once. `display
+brightness. `display idle 10` brings the idle screen after 10 idle
+minutes, `display lock 15` locks the screen and turns the display off
+after 15, and 0 means never; a running desktop takes the change at
+once. `display
 brightness 70` (or `up`, `down`, and the brightness keys) sets a
 laptop's backlight through brightnessctl, or a screen's own through
 DDC/CI and ddcutil; the bar's `light` gauge sets it with a click or the
@@ -301,12 +339,16 @@ it. Done takes the reminder away; again in 10 minutes moves it on.
 
 ## Lock and capture
 
-After the idle minutes (10 for the display, 15 for the lock) the display
-turns off, then the screen locks. Where logind runs (Debian, Arch), it
-locks before the machine sleeps too; Void has no logind to say so.
-Super+Escape, or `spark-shell desktop lock`, locks it now. The lock is
-swaylock over your wallpaper, in the palette: at rest the picture alone,
-and a ring comes up with the first key you type.
+After the idle minutes (10) the idle screen: the wallpaper dims to the
+ground and the time sits at the lower left, small, in the palette's
+muted color, the date under it; a key or a mouse move takes it down.
+After the lock minutes (15) the screen locks and the display turns off.
+Where logind runs (Debian, Arch), it locks before the machine sleeps
+too; Void has no logind to say so. Super+Escape, or `spark-shell
+desktop lock`, locks it now; `spark-shell desktop idle` shows the idle
+screen now. The lock is swaylock over your wallpaper, in the palette:
+at rest the picture alone, and a ring comes up with the first key you
+type.
 
 Print takes a picture of the screen, Shift+Print of an area you drag,
 and Super+Print of the window in front; `spark-shell desktop capture
@@ -320,13 +362,13 @@ and wl-clipboard).
 By default there is no picture. Behind the windows is the ground: the
 palette's background a shade darker than the windows, so the
 transparent terminals sit on something quieter than themselves. It
-follows the palette. Type `spark-shell desktop wallpaper
+follows the palette. Type `spark-shell theme wallpaper
 /path/to/picture.jpg` for a picture of yours. A path from where you
 are, or one that starts with `~`, works too. `default` is the ground
 again. `none` fills the screen with the windows, solid, in the
 palette's background color.
 
-Type `spark-shell desktop wallpaper skyline`. You get one of the 17
+Type `spark-shell theme wallpaper skyline`. You get one of the 17
 wallpapers spark-shell ships in `wallpaper/`, each drawn for a palette.
 For the dark ones: skyline (tokyonight-night), fjord (nord), forest
 (everforest-dark), sunset (gruvbox-dark), hills (catppuccin-mocha),
@@ -336,9 +378,15 @@ embers (any dark palette). For the light ones: morning
 fields (gruvbox-light), grove (everforest-light), arches
 (rose-pine-dawn), shore (selenized-light) and flight (one-light).
 Each is its SVG source and a 3840 by 2160 PNG, and the config keeps its
-name, so it follows the clone.
+name, so it follows the clone. A drawing follows the palette: the second
+line of each SVG names the role of every color it uses (the background,
+the accent, a terminal color, a mix of two), so a drawing picked for
+another palette, or for a palette made from a picture or from words, is
+drawn again in that palette's colors (gdk-pixbuf renders it; the PNG
+lands under `~/.local/state/spark-shell/wallpapers/`), and a palette
+with a drawing of its own brings that one.
 
-Type `spark-shell desktop wallpaper navy`. You get a plain color, and
+Type `spark-shell theme wallpaper navy`. You get a plain color, and
 it stays the same when you change the palette. Give `#rrggbb`, or one
 of these names: black, white, gray (or grey), silver, navy, blue, teal,
 green, olive, maroon, red, purple, brown, orange. The ground, a
@@ -357,8 +405,9 @@ a dark palette and in black on a light one. `spark-shell on desktop`
 writes the two cursor themes, `spark-white` and `spark-black`, under
 `~/.local/share/icons`, and the login screen gets a copy. sway shows
 the one the palette picks and hands its name and size to every program
-it starts, so one pointer shows everywhere. To use another theme, or
-another size, set `POINTER` in the config: `POINTER=spark-black 32`,
+it starts, so one pointer shows everywhere. Its size follows the text
+size: 24 pixels up to 13 points, 32 up to 19, 48 above. To use another
+theme, or another size, set `POINTER` in the config: `POINTER=spark-black 32`,
 or `POINTER=Adwaita` for a theme installed on the machine.
 
 The edge of a window is where the mouse resizes it. Every window has a
@@ -441,8 +490,8 @@ a key, and nothing else is.
 
 The home lists six places: Apps, Files, Workspace (windows and
 layouts), Notes, Calendar (the months and the reminders) and Settings
-(sound, microphone, Wi-Fi, Bluetooth, display, keyboard, theme,
-wallpaper, the bar, Talk, Connections and About). A place shows only where
+(sound, microphone, Wi-Fi, Bluetooth, display, keyboard, theme, the
+bar, Talk, Connections and About). A place shows only where
 this machine has it. The down arrow moves from the prompt into the
 list, and up from the first row comes back. A row wears a sign where
 there is a state: a dot is in use or connected, a ring is available, a
@@ -458,12 +507,16 @@ and Page Down scroll it.
 - `bt`: connect or disconnect your devices, look for new ones, pair a
   new one, turn Bluetooth off and on.
 - `out` and `mic`: use another device, mute and unmute.
-- `theme`: the palette, the font bigger or smaller, and the windows'
-  transparency.
-- `wallpaper`: default, none, the 17 wallpapers with the palette each
-  was drawn for, or a plain color, each with a sample of its color;
-  `a picture` opens your home folder, offering pictures (jpg, jpeg,
-  png, webp), and Enter on one sets it.
+- `theme`: the saved themes and `save this look as`, which asks a
+  name; the last ten looks, each with the time it was chosen; the
+  palettes, each with the drawing made for it, and `a theme from a
+  picture`, which opens your home folder; the wallpaper, a row that
+  opens the drawings with the palette each was drawn for, `a picture
+  of yours` (jpg, jpeg, png, webp), the colors, default and none, each
+  with a sample of its color; the text bigger or smaller; the windows'
+  transparency. A row applies at once: the desktop is the preview, and
+  a look in the last ten brings the one before back. The header names
+  the look: the theme, the text size, the wallpaper.
 - Calendar: this month and the next side by side, today lit and a day
   with a reminder in the accent; the left and right arrows move the
   months while nothing is typed. Under them, the reminders.
@@ -606,8 +659,10 @@ the spark pointer), `ALPHA` (how solid foot is, 0.85: 15% transparency),
 write them.
 
 Files it writes: the shell files, `~/.tmux.conf`, `~/.config/btop/`,
-`~/.config/starship.toml`, `~/.config/spark-shell/`,
-`~/.config/spark/theme.env`, `~/.local/state/spark-shell/`,
+`~/.config/starship.toml`, `~/.config/spark-shell/` (a saved theme a
+folder under its `themes/`), `~/.config/spark/theme.env`,
+`~/.local/state/spark-shell/` (the last ten looks and layouts, a
+drawing rendered in another palette),
 `~/.local/bin/spark-shell`, and for the desktop `~/.config/sway/`,
 `~/.config/foot/`, the two cursor themes in `~/.local/share/icons/`
 and, after a change of output on plain ALSA,
@@ -624,7 +679,9 @@ the sha256 the signed tree pins. A
 layout asks spark, which runs on this machine, with your words, the
 screen sizes and the app list; a want at the dialog asks it with your
 words, what the bar shows, the list of what it can do (an open window
-by its name among it) and the names of your saved layouts. A file only
+by its name among it) and the names of your saved layouts. A theme from
+words asks spark, on this machine, with the words alone; a theme from
+a picture is color math here, and the picture goes nowhere. A file only
 when you attach one, its text and its name, never its path.
 A new Wi-Fi network is saved by the Wi-Fi tool itself.
 

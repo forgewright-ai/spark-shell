@@ -1,4 +1,5 @@
 <!-- spark-shell wallpaper: contours (MIT, the repository's license) -->
+<!-- roles: #103c48 bg; #184956 ansi_0; #41c7b9 ansi_6; #dbb32d ansi_3 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
 <defs>
 <path id="a" style="vector-effect: non-scaling-stroke" d="M100 0 C100 58 62 96 4 100 C-54 104 -100 66 -100 8 C-100 -52 -58 -98 2 -98 C62 -98 100 -58 100 0 Z"></path>

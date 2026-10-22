@@ -1,4 +1,5 @@
 <!-- spark-shell wallpaper: meadow (MIT, the repository's license) -->
+<!-- roles: #eff1f5 bg; #ea76cb ansi_13; #ccd0da bg+ansi_15:68; #bcc0cc ansi_15; #df8e1d ansi_11; #8839ef accent; #fe640b ansi_3+ansi_1:28 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
 <rect x="0" y="0" width="1920" height="1080" fill="#eff1f5"></rect>
 <circle cx="1440" cy="330" r="210" fill="#ea76cb" opacity="0.10"></circle>

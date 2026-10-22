@@ -1,4 +1,5 @@
 <!-- spark-shell wallpaper: grove (MIT, the repository's license) -->
+<!-- roles: #fdf6e3 bg; #dfa000 ansi_11; #e9e4cf bg+ansi_7:72; #d2d3c1 bg+muted:41; #d8deb3 accent+white:69; #d6d894 bg+accent:35; #b7dabf bg+ansi_6:35; #f0ead6 bg+ansi_7:47; #b3b9a8 ansi_7+muted:59; #85c7a5 bg+ansi_6:60; #bac35b bg+accent:60; #bdcd90 accent+ansi_7:71; #f4eedb bg+ansi_7:32 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
 <rect x="0" y="0" width="1920" height="1080" fill="#fdf6e3"></rect>
 <circle cx="420" cy="300" r="190" fill="#dfa000" opacity="0.08"></circle>

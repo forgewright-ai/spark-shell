@@ -1,4 +1,5 @@
 <!-- spark-shell wallpaper: arches (MIT, the repository's license) -->
+<!-- roles: #faf4ed bg; #f1d8d1 bg+ansi_6:26; #dcd2da bg+accent:28; #c9d7d6 bg+ansi_4:30; #bfcdcf ansi_2+bg:72; #f4d1a3 bg+ansi_3:40; #f2e9e1 ansi_0; #f4d6ac ansi_3+bg:65 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
 <rect x="0" y="0" width="1920" height="1080" fill="#faf4ed"></rect>
 <path fill="#f1d8d1" d="M1180 1000 V540 A260 260 0 0 1 1700 540 V1000 Z"></path>
