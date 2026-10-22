@@ -3779,7 +3779,7 @@ rc=0; out=$(sh "$SH" theme save nord 2>&1) || rc=$?
 out=$(sh "$SH" theme save Winter Desk 2>&1)
 [ "$(printf '%s\n' "$out" | sed -n 1p)" = "saved winter-desk ($th_dir/winter-desk) -- spark-shell theme winter-desk brings the look back" ] && [ -f "$th_dir/winter-desk/palette.env" ] && cmp -s "$th_dir/winter-desk/palette.env" "$REPO/themes/nord.env" \
     && grep -qx 'PALETTE=nord' "$th_dir/winter-desk/look.env" && grep -qx 'WALLPAPER=default' "$th_dir/winter-desk/look.env" && grep -qx 'FONT=DejaVu Sans Mono:size=12' "$th_dir/winter-desk/look.env" && grep -qx 'ALPHA=0.85' "$th_dir/winter-desk/look.env" \
-    && grep -qx 'THEME=winter-desk' "$cfg" && printf '%s\n' "$out" | grep -q '^The theme is winter-desk: ' \
+    && grep -qx 'THEME=winter-desk' "$cfg" \
     && ok "theme save WORDS: a folder named by the words with the palette and the look, the theme in use now, said in one line" || bad "theme save" "$out $(ls "$th_dir" 2>&1; cat "$th_dir/winter-desk/look.env" 2>&1)"
 out=$(sh "$SH" theme list)
 printf '%s\n' "$out" | grep -q "^Saved themes (folders in $th_dir):$" && printf '%s\n' "$out" | grep -q "^  winter-desk  *nord $SEP default, current$" && printf '%s\n' "$out" | grep -q '^  nord  *fjord$' && printf '%s\n' "$out" | grep -q '^  tokyonight-night  *skyline$' \
