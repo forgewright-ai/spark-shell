@@ -9,7 +9,7 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
@@ -56,7 +56,7 @@ jobs:
     # looked up. The privacy and ascii gates ran once, on linux.
     runs-on: ubuntu-latest
     container: debian:13@sha256:9cc080028c43b27d2074d63a5f9caf7166d731494965616c1a6d2827a004585c   # a stable release: pinned, bump the digest with a point release
-    timeout-minutes: 10
+    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
     steps:
       - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git shellcheck diffutils jq openssh-client curl >/dev/null   # jq: a desk reads the model's answer with it; ssh-keygen: a release tag's signature
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
@@ -72,7 +72,7 @@ jobs:
     # the same suite where the tools come from pacman
     runs-on: ubuntu-latest
     container: archlinux:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Arch there is, and -Syu moves it to today anyway
-    timeout-minutes: 10
+    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
     steps:
       - run: pacman -Syu --noconfirm --needed git diffutils jq openssh >/dev/null   # ssh-keygen: a release tag's signature
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
@@ -88,7 +88,7 @@ jobs:
     # libstdc++ is the runner's node (checkout)
     runs-on: ubuntu-latest
     container: ghcr.io/void-linux/void-glibc-full:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Void there is, and -Su moves it to today anyway
-    timeout-minutes: 10
+    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
     steps:
       - run: xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null; xbps-install -Sy git bash diffutils jq gawk gzip libstdc++ openssh curl >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
