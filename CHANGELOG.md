@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.87
+
+His live test of v0.86, the same night (#29).
+
+- Fixed: a step that names what is in use is a receipt, never
+  "not on the panel now". The row in use carries no tool, and the
+  provider's gate took only the rows' tools as the allowlist.
+- Fixed: after a step run from a folder (the wallpaper list, a files
+  folder), the dialog reads that folder again, so the check moves to
+  the row chosen. Before, only the section's rows were read again, and
+  the list offered the step a second time.
+- Fixed: `theme none` left the open terminals in the palette before it.
+  The repaint sent a reset, and a running foot resets to the colors it
+  started with. On the desktop the repaint says foot's sixteen outright.
+- Changed: the wallpaper list starts with default and none, as the
+  palettes start with none.
+
 ## v0.86
 
 A theme from words that name two colors, the save from words, the

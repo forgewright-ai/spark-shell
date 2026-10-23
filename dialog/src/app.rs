@@ -774,6 +774,12 @@ impl App {
             let p = &self.providers[i];
             if p.dirty && !p.reading && p.last_read.map(|t| now.duration_since(t) >= READ_GAP).unwrap_or(true) {
                 self.read(i);
+                // the folder on screen is this provider's too (the wallpaper list, a files folder): read again, kept up meanwhile, so a check moves to the row chosen (#29)
+                if let View::Folder(fp, uri) = self.view.clone() {
+                    if fp == i {
+                        self.refresh_folder(fp, &uri);
+                    }
+                }
             }
         }
     }
@@ -1678,6 +1684,11 @@ impl App {
 
     fn read_folder(&mut self, p: usize, uri: &str) {
         self.folder = None;
+        self.refresh_folder(p, uri);
+    }
+
+    /// The folder read again while its rows stay on screen: the answer replaces them.
+    fn refresh_folder(&mut self, p: usize, uri: &str) {
         if let Some(s) = self.server(p) {
             s.request("resources/read", json!({"uri": uri}), Kind::Folder, mcp::T_READ);
         }

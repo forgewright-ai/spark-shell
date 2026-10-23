@@ -485,6 +485,32 @@ fn an_attach_from_a_folder_comes_back_to_its_rows() {
 }
 
 #[test]
+fn a_step_run_from_a_folder_reads_the_folder_again() {
+    // #29: the wallpaper list kept its check on the old row after a step run from it, and offered the step twice
+    let home = std::env::var("HOME").unwrap();
+    let (mut app, rx, tx) = app_with(&["files"]);
+    let calls = Arc::new(Mutex::new(vec![]));
+    app.servers.push(stub(0, "files", files_stub(calls.clone(), home), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    at_row(&mut app, View::Home, 0);
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "Files opens the home folder");
+    let reads = |c: &Arc<Mutex<Vec<Value>>>| c.lock().unwrap().iter().filter(|v| v.get("read").is_some()).count();
+    assert_eq!(reads(&calls), 1, "one read of the folder so far");
+    app.in_list = true;
+    app.sel = 1;
+    app.enter();
+    assert!(
+        pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("attached"))),
+        "the row's step ran"
+    );
+    assert!(pump(&mut app, &rx, |_| reads(&calls) >= 2), "the folder is read again after the step");
+    assert!(matches!(app.view, View::Folder(0, _)), "still in the folder");
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "its rows stayed on screen and came back fresh");
+}
+
+#[test]
 fn a_folder_drills_down_and_esc_walks_back() {
     let home = std::env::var("HOME").unwrap();
     let (mut app, rx, tx) = app_with(&["files"]);

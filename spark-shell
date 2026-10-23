@@ -1656,7 +1656,11 @@ terminal_off() {
 PTS_DIR=${SPARK_SHELL_PTS_DIR:-/dev/pts}
 osc_render() {   # osc_render NAME|none -> $TMP/osc: the codes, each ended by ST (ESC \)
     if [ "$1" = none ]; then
-        printf '\033]104\033\\\033]110\033\\\033]111\033\\\033]112\033\\' > "$TMP/osc"; return 0
+        if [ "$OS" = Darwin ]; then printf '\033]104\033\\\033]110\033\\\033]111\033\\\033]112\033\\' > "$TMP/osc"; return 0; fi
+        # the desktop's none is foot's own sixteen: said outright, since a reset (OSC 104) takes a running foot back to the colors it started with (#29)
+        : > "$TMP/osc"; _i=0
+        for _h in $FOOT_HEX; do printf '\033]4;%d;%s\033\\' "$_i" "$_h" >> "$TMP/osc"; _i=$((_i + 1)); done
+        printf '\033]10;ffffff\033\\\033]11;242424\033\\\033]112\033\\' >> "$TMP/osc"; return 0
     fi
     _f=$(palette_file "$1") || return 1
     : > "$TMP/osc"
@@ -3602,8 +3606,11 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             _st=$(transparency_of "$ALPHA")
             if [ "$_st" -eq 0 ]; then printf '%s\ttransparency off\tshow\n' "$PANEL_TICK"; else printf '%s\ttransparency %s%%\tshow\n' "$PANEL_TICK" "$_st"; fi
             printf -- '-\tmore transparency\ttransparency more\n-\tless transparency\ttransparency less\n' ;;
-        wallpapers) _cur=$(wall_name)   # the theme's wallpaper list (no section of its own): the drawings, a picture of yours, the colors, default and none; a step is theme wallpaper NAME
+        wallpapers) _cur=$(wall_name)   # the theme's wallpaper list (no section of its own): default and none first (as none leads the palettes), the drawings, a picture of yours, the colors; a step is theme wallpaper NAME
             [ -n "$_cur" ] || printf '%s\tpicture %s\tshow\n' "$PANEL_TICK" "$(basename "$(wall_path)")"
+            for w in default none; do
+                if [ "$w" = "$_cur" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$w"; else printf -- '-\t%s\twallpaper %s\n' "$w" "$w"; fi
+            done
             for w in $(wall_shipped_names); do
                 _pw=$(wall_palette_of "$w"); [ "$_pw" != any ] || _pw='any dark palette'
                 if [ "$w" = "$_cur" ]; then printf '%s\t%s\tshow\tdrawings|%s\n' "$PANEL_TICK" "$w" "$_pw"; else printf -- '-\t%s\twallpaper %s\tdrawings|%s\n' "$w" "$w" "$_pw"; fi
@@ -3611,9 +3618,6 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             printf -- '-\ta picture of yours\twallpaper-picture\tdrawings\n'   # the files, to pick a picture from (the dialog's)
             for w in $WALL_NAMES; do
                 if [ "$w" = "$_cur" ]; then printf '%s\t%s\tshow\tcolors\n' "$PANEL_TICK" "$w"; else printf -- '-\t%s\twallpaper %s\tcolors\n' "$w" "$w"; fi
-            done
-            for w in default none; do
-                if [ "$w" = "$_cur" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$w"; else printf -- '-\t%s\twallpaper %s\n' "$w" "$w"; fi
             done ;;
         about) printf '%s\tspark-shell %s\topen\n' "$PANEL_GO" "$(panel_version)" ;;   # the splash, in this window
         window) for _w in split tabs stacked; do
@@ -4301,6 +4305,10 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
     _want=$(panel_lower "$2 $3" | sed 's/ *$//')
     _m=$(panel_rows "$1" full | cut -f3 | awk -v w="$_want" 'tolower($0) == w { print; exit }')
     [ "$1" != theme ] || [ -n "$_m" ] || _m=$(panel_rows wallpapers full | cut -f3 | awk -v w="$_want" 'tolower($0) == w { print; exit }')   # the wallpaper list is the theme's too
+    if [ -z "$_m" ]; then   # what is in use: its row says show and names it, so a step naming it again is a receipt, not a refusal (#29)
+        _tx=$(panel_lower "${3:-$2}")
+        { panel_rows "$1" full; [ "$1" != theme ] || panel_rows wallpapers full; } | awk -F '\t' -v t="$_tx" '$3 == "show" && tolower($2) == t { f = 1; exit } END { exit !f }' && { echo "${3:-}"; return 0; }
+    fi
     [ -n "$_m" ] && [ "$_m" != show ] || { echo "$1: $2${3:+ $3} is not on the panel now"; return 1; }
     printf '%s\n' "${_m#* }" | awk -v a="$2" '$0 == a { print ""; exit } { print }'
 }
@@ -4714,7 +4722,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif (.tool.name // "") == "wifi_connect" and (.tool.arguments.name as $n | $asks | index([$n])) then .tool.ask = ["password"]
                 else . end)'
 }
-provide_wall_rows() {   # -> the theme's wallpaper list as a rows resource (spark-shell://theme/rows/wallpapers): the drawings with the palette each was drawn for and a sample, a picture of yours (the files, to pick from), the colors with a sample, default and none
+provide_wall_rows() {   # -> the theme's wallpaper list as a rows resource (spark-shell://theme/rows/wallpapers): default and none, the drawings with the palette each was drawn for and a sample, a picture of yours (the files, to pick from), the colors with a sample
     _sw=$({ for w in $WALL_NAMES; do printf '%s\t%s\n' "$w" "$(wall_hex "$w")"; done; for e in $WALL_SHIPPED; do printf '%s\t#%s\n' "${e%%:*}" "${e##*:}"; done; } | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add')
     panel_rows wallpapers full | while IFS="$TAB" read -r _m _t _a _x; do provide_row_line theme "$_m" "$_t" "$_a" "$_x"; done \
         | jq -Rn --argjson sw "$_sw" --arg types "$WALL_TYPES" '
@@ -4724,6 +4732,11 @@ provide_wall_rows() {   # -> the theme's wallpaper list as a rows resource (spar
              | if $sw[$n] != null then .swatch = $sw[$n] else . end
              | if .id == "theme:wallpaper-picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_wallpaper_picture", types: ($types | split(" "))} else . end]
             | {title: "wallpaper", state: "", rows: ., short: []}'
+}
+provide_in_use() {   # provide_in_use SECTION TOOL ARG -> 0 when ARG names what is in use: the check row shows it with no tool, and choosing it again is a receipt, not a refusal (#29)
+    [ -n "$3" ] || return 1
+    jq -e -s --arg id "$1:show:$3" 'any(.[].rows[]; .id == $id and .sign == "check")' "$TMP/rows.json" >/dev/null 2>&1 && return 0
+    case $2 in theme_palette) [ "$3" = "${THEME:-}" ] ;; theme_wallpaper) [ "$3" = "$(wall_name)" ] ;; *) return 1 ;; esac
 }
 provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION [GROUP|COLUMN|DATE|SUFFIX] -> ID US SIGN US TEXT US TOOL US ARGUMENTS US EXTRAS: one row, scrubbed, its step as a tool call; SUFFIX tells two rows with one step apart (a look in the history and the palette)
     case $2 in "$PANEL_DOT") _sg="dot" ;; "$PANEL_RING") _sg="ring" ;; "$PANEL_TICK") _sg="check" ;; "$PANEL_CROSS") _sg="cross" ;; "$PANEL_GO") _sg="opens" ;; *) _sg="blank" ;; esac
@@ -4876,6 +4889,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         provide_rows "$sec" > "$TMP/rows.json"
         [ "$sec" != theme ] || provide_wall_rows >> "$TMP/rows.json"   # the wallpaper list opens from the theme section: its rows are the theme's too
         jq -e -s --arg n "$_name" --argjson a "$_plain" 'any(.[].rows[] | .tool, (.more // [])[] | select(. != null); .name == $n and .arguments == $a)' "$TMP/rows.json" >/dev/null 2>&1 \
+            || provide_in_use "$sec" "$_name" "${_arg:-$_act}" \
             || { provide_refuse "$1" "$sec: $_act${_arg:+ $_arg} is not on the panel now"; return 0; } ;;
     esac
     _g=$(panel_gate "$sec" "$_act" "$_arg") || { provide_refuse "$1" "$(printf '%s' "$_g" | scrub_text)"; return 0; }

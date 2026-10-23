@@ -515,8 +515,8 @@ and Page Down scroll it.
   name; the last ten looks, each with the time it was chosen; the
   palettes, each with the drawing made for it, and `a theme from a
   picture`, which opens your home folder; the wallpaper, a row that
-  opens the drawings with the palette each was drawn for, `a picture
-  of yours` (jpg, jpeg, png, webp), the colors, default and none, each
+  opens default and none, the drawings with the palette each was drawn
+  for, `a picture of yours` (jpg, jpeg, png, webp) and the colors, each
   with a sample of its color; the text bigger or smaller; the windows'
   transparency. A row applies at once: the desktop is the preview, and
   a look in the last ten brings the one before back. The header names

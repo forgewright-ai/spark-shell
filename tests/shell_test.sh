@@ -1554,8 +1554,9 @@ cmp -s "$want" "$H/pts/0" && ok "theme test: a palette with THEME_CURSOR adds OS
 out=$(L theme test --dry-run)
 [ ! -s "$H/pts/0" ] && ! printf '%s\n' "$out" | grep -q '^Repainted' && ok "theme test --dry-run: no terminal is painted" || bad "repaint dry" "$out"
 out=$(L theme none)
-[ "$(cat "$H/pts/0")" = "${esc}]104${esc}\\${esc}]110${esc}\\${esc}]111${esc}\\${esc}]112${esc}\\" ] && [ ! -s "$H/pts/2" ] \
-    && ok "theme none: the resets, OSC 104, 110, 111 and 112" || bad "repaint none" "$(od -c "$H/pts/0" | head -3)"
+want_none=''; i=0; for h in 242424 f62b5a 47b413 e3c401 24acd4 f2affd 13c299 e6e6e6 616161 ff4d51 35d450 e9e836 5dc5f8 feabf2 24dfc4 ffffff; do want_none="$want_none${esc}]4;$i;$h${esc}\\"; i=$((i + 1)); done
+[ "$(cat "$H/pts/0")" = "$want_none${esc}]10;ffffff${esc}\\${esc}]11;242424${esc}\\${esc}]112${esc}\\" ] && [ ! -s "$H/pts/2" ] \
+    && ok "theme none on Linux: foot's sixteen said outright with OSC 4, 10 and 11, the cursor reset; a reset alone takes a running foot back to the colors it started with (#29)" || bad "repaint none" "$(od -c "$H/pts/0" | head -3)"
 [ "$(printf '%s\n' "$out" | tail -2 | head -1)" = "$said" ] && ok "theme none: the same line counts them" || bad "repaint none line" "$out"
 rm -f "$H/pts/0" "$H/pts/1" "$H/pts/3"
 out=$(L theme test)
@@ -3979,12 +3980,13 @@ if [ "$(uname -s)" != Darwin ]; then
         and (.rows[] | select(.id == "theme:picture") | .text == "a theme from a picture" and .children == "spark-shell://files/rows" and .pick == {tool: "theme_picture", types: ["jpg", "jpeg", "png", "webp"]})' "$H/trows.json" >/dev/null \
         && jq -e '.title == "wallpaper" and (.rows[] | select(.id == "theme:wallpaper skyline") | .group == "drawings" and .columns == ["tokyonight-night"] and .swatch == "#7aa2f7" and .tool == {name: "theme_wallpaper", arguments: {name: "skyline"}})
             and (.rows[] | select(.id == "theme:wallpaper-picture") | .children == "spark-shell://files/rows" and .pick.tool == "theme_wallpaper_picture") and (.rows[] | select(.id == "theme:wallpaper navy") | .group == "colors" and .swatch == "#000080")
-            and (.rows[] | select(.id == "theme:show:dunes") | .sign == "check") and (.rows[] | select(.id == "theme:wallpaper default") | .tool.arguments.name == "default") and (.rows[] | select(.id == "theme:wallpaper none") | .tool.arguments.name == "none")' "$H/wrows.json" >/dev/null \
-        && ok "provide theme: the wallpaper row opens the list resource; the list has the drawings with their palettes and samples, a picture of yours to pick, the colors, dunes (dracula's drawing) checked, default, none" || bad "wallpaper rows" "$(head -c 700 "$H/trows.json"; head -c 900 "$H/wrows.json")"
-    mcp theme "$(call 1 theme_wallpaper '{"name":"sunset"}')" "$(call 2 theme_wallpaper '{"name":"nowhere"}')"
-    [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'wallpaper sunset' ] && grep -qx 'WALLPAPER=sunset' "$cfg" && [ "$(ans 1 | jq -c '.result.structuredContent.undo')" = '{"name":"theme_wallpaper","arguments":{"name":"dunes"}}' ] \
+            and (.rows[] | select(.id == "theme:show:dunes") | .sign == "check") and .rows[0].id == "theme:wallpaper default" and .rows[1].id == "theme:wallpaper none" and (.rows[] | select(.id == "theme:wallpaper none") | .tool.arguments.name == "none")' "$H/wrows.json" >/dev/null \
+        && ok "provide theme: the wallpaper row opens the list resource; the list starts with default and none, then the drawings with their palettes and samples, a picture of yours to pick, the colors; dunes (dracula's drawing) checked" || bad "wallpaper rows" "$(head -c 700 "$H/trows.json"; head -c 900 "$H/wrows.json")"
+    mcp theme "$(call 1 theme_wallpaper '{"name":"sunset"}')" "$(call 2 theme_wallpaper '{"name":"nowhere"}')" "$(call 3 theme_wallpaper '{"name":"sunset"}')" "$(call 4 theme_palette '{"name":"dracula"}')"
+    [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'wallpaper sunset' ] && grep -qx 'WALLPAPER=dunes' "$cfg" && [ "$(ans 1 | jq -c '.result.structuredContent.undo')" = '{"name":"theme_wallpaper","arguments":{"name":"dunes"}}' ] \
         && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'theme: wallpaper nowhere is not on the panel now' ] \
-        && ok "provide theme_wallpaper: a row of the list is a step with its undo; a name no row holds is refused" || bad "theme_wallpaper call" "$(cat "$H/mcp.out")"
+        && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'wallpaper sunset' ] && [ "$(ans 4 | jq -r '.result.structuredContent.receipt')" = 'theme dracula' ] \
+        && ok "provide theme_wallpaper: a row of the list is a step with its undo; a name no row holds is refused; what is in use, chosen again, is a receipt (#29), and dracula chosen again brings dunes back over sunset" || bad "theme_wallpaper call" "$(cat "$H/mcp.out")"
 fi
 mcp theme "$(rq 1 tools/list)" "$(call 2 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal"}')" "$(call 3 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal","light":"dim"}')" "$(call 4 theme_delete '{"name":"nord"}')" "$(call 5 theme_back '{}')" "$(call 6 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal","light":"dark","name":"a name that runs on and on past forty letters"}')"
 ans 1 | jq -e '.result.tools[] | select(.name == "theme_words") | .inputSchema.required == ["hue", "accent", "warmth", "contrast", "light"] and .inputSchema.properties.light.enum == ["dark", "light"] and .inputSchema.properties.hue.enum[0] == "red" and .inputSchema.properties.accent.enum[-1] == "same" and .inputSchema.properties.name.maxLength == 40' >/dev/null \
