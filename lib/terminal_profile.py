@@ -170,9 +170,11 @@ def read_back(data):
 # --- the fonts --------------------------------------------------------------
 
 def mac_font_installed(face):
-    """True for a face every Mac ships or one Spotlight finds (kMDItemFonts
-    holds PostScript names); False when Spotlight indexes and has no such
-    face; None when indexing is off or this is not a Mac, so a caller never
+    """True for a face every Mac ships, a file of its name in a Fonts
+    folder (one just installed, before Spotlight has it: spark-shell on
+    puts Monaspace Neon there) or one Spotlight finds (kMDItemFonts holds
+    PostScript names); False when Spotlight indexes and has no such face;
+    None when indexing is off or this is not a Mac, so a caller never
     refuses on no evidence."""
     seam = os.environ.get("SPARK_SHELL_MAC_FONTS")
     if seam is not None:
@@ -181,6 +183,9 @@ def mac_font_installed(face):
         return None
     if face in MAC_SYSTEM:
         return True
+    for folder in (os.path.join(os.path.expanduser("~"), "Library", "Fonts"), "/Library/Fonts"):
+        if any(os.path.isfile(os.path.join(folder, face + ext)) for ext in (".otf", ".ttf", ".ttc")):
+            return True
     rc, out = run(["mdfind", "kMDItemFonts == '%s'" % face.replace("'", "")], timeout=5)
     if rc == 0 and out.strip():
         return True

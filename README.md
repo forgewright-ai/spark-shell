@@ -79,7 +79,7 @@ explain each part. If something fails, run `spark-shell check` and
     spark-shell theme save [NAME]     keep the look in use as a saved theme
     spark-shell theme delete NAME     delete a saved theme
     spark-shell theme back            the look before this one, again
-    spark-shell theme wallpaper X     a drawing, a picture, a color or none
+    spark-shell theme wallpaper X     a drawing, a picture, a color or default
     spark-shell theme text N          the text size everywhere; bigger, smaller
     spark-shell theme transparency N  the windows' transparency; more, less
     spark-shell theme picture PATH    a theme from a picture of yours
@@ -147,8 +147,15 @@ prompt, btop, the desktop and the Linux console, also at boot. On a Mac
 it is a Terminal.app profile named `spark-shell`. `theme list` shows
 the 16 palettes, eight dark and eight light, and your own go in
 `~/.config/spark-shell/themes/`.
-On Linux the terminals you have open change color at once. A program
-that is already running, such as btop, changes when it starts again.
+On Linux the terminals you have open change color at once. On the
+desktop a theme change is one moment: the terminals, the dialog, the
+bar, the window edges, the pointer and the wallpaper change together,
+nothing reloads, and the new wallpaper is drawn over the old before the
+old one goes, so the screen never goes dark. The prompt and spark's
+line draw their accent in a slot of the terminal that the change sets,
+so text already on the screen changes too: no `exec $SHELL`, no
+`clear`. A program that is already running, such as btop, changes when
+it starts again.
 
 On the desktop a theme is the whole look, and one choice brings the
 rest: the palette brings the wallpaper drawn for it (`theme nord` puts
@@ -159,7 +166,7 @@ skyline` picks a drawing for the palette in use, drawn again in that
 palette's colors. `theme text 14` is the one text size, on foot, the
 bar, the dialog, the login, the lock and the idle screen; the pointer
 grows with it (24, 32 or 48 pixels). `theme transparency 15` is the
-windows' transparency, 0 to 50.
+windows' transparency, 0 to 50; the open windows take it at once.
 
 `theme save winter` keeps the look in use as a theme: a folder
 `~/.config/spark-shell/themes/winter/` with the palette, the
@@ -167,8 +174,8 @@ wallpaper's files, the text size, the transparency and the pointer. It
 copies to another machine. `theme winter` brings it back, `theme list`
 shows the saved themes, `theme delete winter` removes one. The last ten
 looks you chose are kept, with the time: `theme back` steps through
-them, and the dialog's theme section lists them. Layouts are kept the
-same way, so `layout back` opens the one before.
+them. Layouts are kept the same way, so `layout back` opens the one
+before.
 
 `theme picture ~/pictures/beach.jpg` makes a theme from a picture of
 yours: its colors become the palette, with the text at 7 to 1 on the
@@ -184,9 +191,22 @@ foot's own sixteen on the desktop, the console's own at the console.
 
 ## Font
 
+The terminal's font is Monaspace Neon, by GitHub Next, the same type as
+spark's page. `spark-shell on` installs it for foot on the desktop and
+for Terminal.app on a Mac: from the distro's package where there is one
+(Arch), else the release file from GitHub, installed only when its
+sha256 is the one spark-shell pins. Without a network nothing is
+installed, and the terminal keeps DejaVu Sans Mono (Menlo on a Mac)
+until the next `spark-shell on`. A font you chose in `FONT` or
+`CONSOLE_FONT` stays yours. DejaVu Sans Mono and Menlo-Regular, the
+defaults before, move to Monaspace Neon once, at the same size. foot
+draws the lines, blocks and braille of tmux and btop itself, and takes
+a glyph the font lacks from DejaVu Sans Mono.
+
 Type `spark-shell font Terminus 16x32`. You get that console font, now
-and at every boot (sudo). On a Mac it sets the Terminal.app font
-instead: `spark-shell font Monaco 14`.
+and at every boot (sudo). The Linux console takes only such a bitmap
+font. On a Mac it sets the Terminal.app font instead: `spark-shell font
+Monaco 14`.
 
 ## Quiet
 
@@ -201,10 +221,19 @@ Type `spark-shell on desktop`. You get sway (a window manager that
 tiles windows) and foot (a terminal), in your palette, and the sound:
 PipeWire with WirePlumber, for every program and Bluetooth too. Debian,
 Arch and Void only. On Debian and Arch, PipeWire's own user services
-run it. On Void it starts with the desktop and stops when you leave it,
-and `on desktop` also turns on the seatd service, adds you to the
-`_seatd` and `audio` groups, and links PipeWire's two ALSA files into
+run it from login. On Void it runs from boot, desktop or not, so a
+console login has sound too: a service of yours under spark's
+supervisor, `~/.config/spark/sv/spark-shell-sound`. PipeWire starts
+WirePlumber and its PulseAudio server itself, from two links in
+`~/.config/pipewire/pipewire.conf.d`. If the desktop already runs its
+own PipeWire when the service comes, that one keeps running until you
+leave the desktop, and then the service takes over. Without spark,
+PipeWire starts with the desktop and stops when you leave it.
+`on desktop` also turns on the seatd service, adds you to the `_seatd`
+and `audio` groups, and links PipeWire's two ALSA files into
 `/etc/alsa/conf.d`, so ALSA programs play through it (sudo).
+`spark-shell check` says where PipeWire runs from: boot, login or the
+desktop. `off desktop` stops the service and removes it, with the links.
 
 ## Login
 
@@ -372,8 +401,7 @@ transparent terminals sit on something quieter than themselves. It
 follows the palette. Type `spark-shell theme wallpaper
 /path/to/picture.jpg` for a picture of yours. A path from where you
 are, or one that starts with `~`, works too. `default` is the ground
-again. `none` fills the screen with the windows, solid, in the
-palette's background color.
+again, and so is `none`: no wallpaper changes the transparency.
 
 Type `spark-shell theme wallpaper skyline`. You get one of the 17
 wallpapers spark-shell ships in `wallpaper/`, each drawn for a palette.
@@ -397,12 +425,11 @@ Type `spark-shell theme wallpaper navy`. You get a plain color, until
 a palette with a drawing of its own replaces it. Give `#rrggbb`, or one
 of these names: black, white, gray (or grey), silver, navy, blue, teal,
 green, olive, maroon, red, purple, brown, orange. The ground, a
-picture and a color are drawn the same way: the windows stand apart,
-with a transparent edge the mouse can grab, and the terminals a little
-transparent. The dialog's `theme` section sets the transparency. With
-`none`, the windows are opaque, and a four-pixel edge in the surface
-shade parts them. No window is outlined in the accent; tabs and stacks
-show the focused title in the surface shade.
+drawing, a picture and a color are drawn the same way: the windows
+stand apart, with a transparent edge the mouse can grab, and the
+terminals as transparent as `theme transparency` says. No window is
+outlined in the accent; tabs and stacks show the focused title in the
+surface shade.
 
 ## Pointer
 
@@ -419,8 +446,8 @@ or `POINTER=Adwaita` for a theme installed on the machine.
 
 The edge of a window is where the mouse resizes it. Every window has a
 four-pixel edge, so two windows are parted by an eight-pixel strip: the
-pointer shows the resize arrows over it, and a drag resizes. Over a
-wallpaper the edge is transparent; with none it is the surface shade.
+pointer shows the resize arrows over it, and a drag resizes. The edge
+is transparent, so the wallpaper shows there.
 
 ## Bar
 
@@ -487,19 +514,23 @@ fullscreen steps aside for the dialog and is fullscreen again when the
 dialog closes with nothing opened.
 
 The top row says where you are (`home`, a place, a section and its
-state), then the date and the time as your locale writes them, and a
-small march while a step runs. Under it is the prompt, two rows tall:
+state; a long one is cut at a word), then the date and the time as your
+locale writes them, and a small march while a step runs. Under it is
+the prompt, two rows tall:
 type a request, Enter sends it, and Shift+Enter starts a new line (Alt+Enter
 where a terminal cannot tell the two apart). A longer draft scrolls
 inside the two rows, and a paste keeps its lines and never sends. The
-row under the prompt says what Enter and Esc do now; a key is drawn as
-a key, and nothing else is.
+row under the prompt says what Enter does to the lit row and what Esc
+does now; with nothing typed it says only what Esc does. A key is drawn
+as a key, and nothing else is.
 
-The home lists six places: Apps, Files, Workspace (windows and
-layouts), Notes, Calendar (the months and the reminders) and Settings
-(sound, microphone, Wi-Fi, Bluetooth, display, keyboard, theme, the
-bar, Talk, Connections and About). A place shows only where
-this machine has it. The down arrow moves from the prompt into the
+The home lists six places, each with what it holds now: Apps (the
+apps by name), Files (your home folder), Workspace (the windows open
+and the layouts saved), Notes (how many, and the newest), Calendar (the
+next reminder, or none ahead) and Settings (the network and the theme;
+inside, sound, microphone, Wi-Fi, Bluetooth, display, keyboard, theme,
+the bar, Talk, Connections and About). A place shows only where this
+machine has it. The down arrow moves from the prompt into the
 list, and up from the first row comes back. A row wears a sign where
 there is a state: a dot is in use or connected, a ring is available, a
 check is current or saved, a small triangle opens something. A row
@@ -514,18 +545,21 @@ and Page Down scroll it.
 - `bt`: connect or disconnect your devices, look for new ones, pair a
   new one, turn Bluetooth off and on.
 - `out` and `mic`: use another device, mute and unmute.
-- `theme`: the saved themes and `save this look as`, which asks a
-  name; the last ten looks, each with the time it was chosen; the
-  palettes, each with the drawing made for it, and `a theme from a
-  picture`, which opens your home folder; the wallpaper, a row that
-  opens default and none, the drawings with the palette each was drawn
-  for, `a picture of yours` (jpg, jpeg, png, webp) and the colors, each
-  with a sample of its color; the text bigger or smaller; the windows'
-  transparency. A row applies at once: the desktop is the preview, and
-  a look in the last ten brings the one before back. The header names
-  the look: the theme, the text size, the wallpaper. At the home, Esc
-  clears what the last request left on the screen, its receipts and
-  refusals; the next Esc closes the dialog.
+- `theme`: first the wallpaper, the text size and the transparency, a
+  row each; on the text size and the transparency, left and right
+  change the value in place. Then the palettes, dark and light, each
+  with a chip of its colors (its ground, its accent and six hues) and
+  the drawing it brings. Then yours: your saved themes, `save this look
+  as`, which asks a name, `a theme from a picture`, which opens your
+  home folder, and the terminal's own colors (palette none). Enter on a
+  palette applies it, and Undo takes it back; `theme back` on the
+  command line steps through the last ten. The wallpaper row opens the
+  wallpaper list: the drawings, each with the palette it was drawn for,
+  the lit one shown as a picture in your palette at the top right; `a
+  picture of yours` (jpg, jpeg, png, webp); `a color`, which asks for a
+  name or `#rrggbb`; and the ground. The header names the palette. At
+  the home, Esc clears what the last request left on the screen, its
+  receipts and refusals; the next Esc closes the dialog.
 - Calendar: this month and the next side by side, today lit and a day
   with a reminder in the accent; the left and right arrows move the
   months while nothing is typed. Under them, the reminders.
@@ -582,13 +616,14 @@ through them and the one in focus is lit; Shift+Tab goes back.
 `DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide the controls.
 
 Type, and the list shows what matches: places, settings, and every step
-the dialog can take, shown or not (`drac` finds the palette). Enter in
-the prompt sends the words as a request, even when a row matches them:
-the down arrow picks a row. A place's name alone, as `settings` or
-`calendar`, opens it. A request goes to spark, the way `spark-shell
-want --json` reads it. With spark 1.90 or newer, `spark steps` plans
-with the desktop's own tools and what each section offers now; each
-step is checked against the list again, drawn, then played. A question
+the dialog can take, shown or not. The row your words name is lit, and
+Enter runs it with no model call: `nord` and Enter is the palette nord
+(`drac` lights dracula). Words that name no row light `Ask spark`, the
+first row while you type, and Enter sends them. A place's name alone,
+as `settings` or `calendar`, opens it. A request goes to spark, the way
+`spark-shell want --json` reads it. With spark 1.90 or newer, `spark
+steps` plans with the desktop's own tools and what each section offers
+now; each step is checked against the list again, drawn, then played. A question
 is answered and changes nothing: the steps spark would take are listed
 as proposals, run only when you pick one, and naming an app in a
 question does not open it. A step that cannot be taken back, as
@@ -606,7 +641,10 @@ desktop from the release of the tag this copy is on, and only when a
 key in `allowed-signers` signed the tag and the file has the sha256
 that `dialog/dialog.env` pins (x86_64 machines for now). It starts each
 section as a provider, `spark-shell provide SECTION`, with no shell
-and a short list of settings from your environment. It keeps one line
+and a short list of settings from your environment. They start
+quietly: the progress bar shows only for work you asked for, a section
+checks its rows only while they are on screen, and a provider leaves
+nothing behind in `/tmp`, whatever stops it. It keeps one line
 for each step it played in `~/.local/state/spark-shell/audit`: the
 time, who asked, the section, the step and a short digest, never a
 name or a password.
@@ -671,20 +709,29 @@ Files it writes: the shell files, `~/.tmux.conf`, `~/.config/btop/`,
 `~/.config/starship.toml`, `~/.config/spark-shell/` (a saved theme a
 folder under its `themes/`), `~/.config/spark/theme.env`,
 `~/.local/state/spark-shell/` (the last ten looks and layouts, a
-drawing rendered in another palette),
+drawing rendered in another palette, the drawings' small pictures for
+the wallpaper list),
 `~/.local/bin/spark-shell`, and for the desktop `~/.config/sway/`,
-`~/.config/foot/`, the two cursor themes in `~/.local/share/icons/`
-and, after a change of output on plain ALSA,
-`~/.config/alsa/asoundrc`, and `~/.config/spark-shell/screens.conf`. As
+`~/.config/foot/` (foot.ini and the dialog's own dialog.ini),
+`~/.config/starship-foot.toml`, the two cursor themes in
+`~/.local/share/icons/`, on Void with spark the sound's service in
+`~/.config/spark/sv/spark-shell-sound` and two links in
+`~/.config/pipewire/pipewire.conf.d`, and, after a change of output on
+plain ALSA, `~/.config/alsa/asoundrc`, and
+`~/.config/spark-shell/screens.conf`. As
 root: the console colors at boot (a systemd unit or a line in
 `/etc/rc.local`), the console font, the login notice and boot files for
 quiet, and on Void PipeWire's two links in `/etc/alsa/conf.d` and your
 place in the `audio` group, and your place in `video` and `i2c` for the
-brightness. `off` restores or removes each one.
+brightness. `off` restores or removes each one. The font stays, as the
+packages do: four files in `~/.local/share/fonts/monaspace-neon/`, or
+`MonaspaceNeon-*.otf` in `~/Library/Fonts` on a Mac. `off login`
+removes the login screen's copy, in `/usr/share/fonts/spark-shell/`.
 
 What leaves the machine: only what the package manager downloads and,
 for the desktop, the dialog's release file from GitHub, checked against
-the sha256 the signed tree pins. A
+the sha256 the signed tree pins, and Monaspace Neon's release file from
+GitHub, checked against the sha256 spark-shell pins. A
 layout asks spark, which runs on this machine, with your words, the
 screen sizes and the app list; a want at the dialog asks it with your
 words, what the bar shows, the list of what it can do (an open window

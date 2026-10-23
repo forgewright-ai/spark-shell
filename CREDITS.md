@@ -1,8 +1,8 @@
 # Credits
 
 spark-shell stands on other people's work. Every program here comes
-from a package manager's own repositories, unpinned. The palettes are
-color values, credited below.
+from a package manager's own repositories, unpinned. The terminal's font
+is pinned to one release. The palettes are color values, credited below.
 
 ## The logo
 
@@ -63,6 +63,15 @@ With DESKTOP=sway, from apt, pacman or xbps.
   BSD-style. ssh-keygen checks a release tag's signature.
 - Mesa -- https://mesa3d.org -- MIT. mesa-dri on Void, the graphics
   drivers sway draws with.
+
+## The font
+
+- Monaspace Neon -- https://github.com/githubnext/monaspace -- SIL Open
+  Font License 1.1, (c) 2023 GitHub, by GitHub Next and Lettermatic.
+  Version 1.400, the terminal's font and the type of spark's page. From
+  Arch's otf-monaspace package; elsewhere `spark-shell on` fetches the
+  release's monaspace-static-v1.400.zip and installs its four Neon faces
+  only when the file's sha256 is the one spark-shell pins.
 
 ## The dialog
 

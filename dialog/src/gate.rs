@@ -90,7 +90,7 @@ pub fn step(tools: &[Tool], rows: &Rows, c: &Call) -> Result<(), String> {
     let naming: Vec<&Call> = rows
         .rows
         .iter()
-        .flat_map(|r| r.tool.iter().chain(r.more.iter()))
+        .flat_map(|r| r.tool.iter().chain(r.more.iter()).chain(r.step.iter().flat_map(|st| [&st.less, &st.more])))
         .filter(|x| x.name == c.name && required.iter().all(|k| x.arguments.contains_key(k) && !x.ask.contains(k)))
         .collect();
     if naming.is_empty() {
@@ -141,6 +141,9 @@ mod tests {
             swatch: None,
             pick: None,
             date: None,
+            chip: vec![],
+            step: None,
+            preview: None,
         };
         (
             vec![tool("wifi_connect", s), tool("out_level", lv)],

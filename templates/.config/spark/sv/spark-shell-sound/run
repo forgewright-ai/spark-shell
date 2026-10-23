@@ -1,0 +1,35 @@
+#!/bin/sh
+# rendered by spark-shell from templates/.config/spark/sv/spark-shell-sound/run -- spark-shell off desktop removes it
+# The sound from boot (runit): PipeWire as you, under spark's supervisor,
+# in the private runtime dir the desktop uses too (UID-runtime-dir under
+# TMPDIR or /tmp), made 0700 when missing and refused when it is not a
+# real directory of yours. WirePlumber and the PulseAudio server start
+# from PipeWire's own pipewire.conf.d links.
+exec 2>&1
+trap 'kill $! 2>/dev/null; exit 0' TERM INT
+rm -f pipewire.pid
+uid=$(id -u); rd=${TMPDIR:-/tmp}; rd=${rd%/}/$uid-runtime-dir
+[ -e "$rd" ] || [ -L "$rd" ] || mkdir -m 0700 "$rd" 2>/dev/null || :
+if [ ! -d "$rd" ] || [ -L "$rd" ] || [ "$(ls -ldn "$rd" | awk '{print $3}')" != "$uid" ] || ! chmod 0700 "$rd"; then
+    echo "$rd is not a private directory of yours: no sound, and it looks again in a minute"
+    sleep 60 & wait $!; exit 1
+fi
+XDG_RUNTIME_DIR=$rd; export XDG_RUNTIME_DIR
+# A PipeWire that answers there already (a desktop started it) is left
+# as it is: this looks again every 10 seconds and takes over once it is
+# gone. Never a second PipeWire beside it.
+if wpctl status >/dev/null 2>&1; then
+    echo "a PipeWire answers in $rd already: this waits until it is gone"
+    while wpctl status >/dev/null 2>&1; do sleep 10 & wait $!; done
+fi
+# PipeWire in a process group of its own, so finish stops what it
+# started too. A sound device closed to this supervisor while the group
+# file lists you in audio (on desktop added you after the boot): sg
+# reads the group file again, as spark does for the render group.
+echo $$ > pipewire.pid
+closed=''
+for c in @SND_DIR@/controlC*; do [ ! -e "$c" ] || { [ -r "$c" ] && [ -w "$c" ]; } || closed=1; done
+if [ -n "$closed" ] && command -v sg >/dev/null 2>&1 && id -Gn "$(id -un)" | tr ' ' '\n' | grep -qx audio; then
+    exec chpst -P sg audio -c 'exec pipewire'
+fi
+exec chpst -P pipewire

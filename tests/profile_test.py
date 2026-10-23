@@ -126,6 +126,12 @@ if sys.platform == "darwin":
     ok(rc == 0, "has-font Menlo-Regular: exit 0 on a Mac")
 rc, out, err = helper("has-font", "NoSuchFace-Regular")
 ok(rc in (0, 1), "has-font runs without the seam")
+if sys.platform == "darwin":
+    # a face just put in ~/Library/Fonts counts before Spotlight has it (spark-shell on, Monaspace Neon)
+    os.makedirs(os.path.join(TMP, "Library", "Fonts"), exist_ok=True)
+    open(os.path.join(TMP, "Library", "Fonts", "SparkTestMono-Regular.otf"), "wb").close()
+    rc, out, err = helper("has-font", "SparkTestMono-Regular")
+    ok(rc == 0, "has-font: a file of the face's name in ~/Library/Fonts is installed")
 
 rc, out, err = helper("has-profile")
 ok(rc in (0, 1) and out == "", "has-profile runs, exit 0 or 1, nothing printed (%d %r)" % (rc, out))

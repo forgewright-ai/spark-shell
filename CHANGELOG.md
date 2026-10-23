@@ -1,5 +1,91 @@
 # Changelog
 
+## v0.89
+
+The home and the look, from his review of 2026-10-23: a look change is
+one moment, open terminals and the dialog change color in place, the
+home says what each place holds, and the theme section is built around
+its choices (#33 to #37, #27, #28, #32). With them, the terminal's font
+(#26) and the sound from boot (#23).
+
+- Fixed: a theme change passed through five states in two seconds:
+  sway reloaded, the wallpaper and the bar went dark, the new picture
+  showed behind windows still in the old colors, and the dialog took
+  the windows' ground before its own. A look change is one moment now:
+  what takes time first (the palette's files, the drawing drawn in the
+  palette), then one burst (every open terminal, sway's colors, the
+  bar, the pointer), and the new wallpaper drawn over the old before
+  sway lets the old one go, so no frame is black. Nothing reloads sway
+  for a look. On a test desktop the whole screen changes in one frame,
+  about 0.4 s after Enter in the dialog. The dialog's window reads its
+  own foot config, `dialog.ini`, so the next one opens in the new
+  colors too. `on` reloads sway only when its file changed, and sends
+  the look to the open windows, so an update reaches them too (#33)
+- Fixed: open terminals kept the prompt and spark's line in an older
+  palette's color until `exec $SHELL` and `clear`. foot.ini sets five
+  slots after the sixteen (the accent, the muted color and the dialog's
+  three shades), and a look change sends them to every open window. In
+  foot the prompt (a starship twin of its config, `starship-foot.toml`),
+  spark's line (`SPARK_ACCENT_SGR=1;38;5;16`) and the dialog draw in
+  them, so text already on the screen changes color with the look. The
+  console, tmux and the Mac keep the sixteen. spark takes the slots in
+  chat and in do from v1.100.1 (spark #94) (#34)
+- Fixed: wallpaper none set the windows solid and edge to edge, a
+  transparency change that no row named, so the next drawing could not
+  be seen behind them. Wallpaper none is gone: the ground is the choice
+  with no picture, a config or a word that says none reads as the
+  ground, and no wallpaper changes the transparency. A transparency
+  change reaches the open windows at once (#35)
+- Changed: the home says what each place holds: the apps by name, your
+  home folder, the windows and the layouts, the notes, the next
+  reminder, the network and the theme. Typed words light the row they
+  name, and Enter runs it with no model call (#28); words that name no
+  row light Ask spark, the first row while words are typed, and Enter
+  sends them. The row under the prompt names what Enter does to the lit
+  row, and at rest says only what Esc does (#36)
+- Changed: the theme section starts with the wallpaper, the text size
+  and the transparency, one row each, and left and right change a value
+  in place. Then the palettes, dark and light, each with a chip of its
+  colors and the drawing it brings, and yours: saved themes, save this
+  look as, a theme from a picture, the terminal's own colors (palette
+  none). The ten rows of looks before are gone; `theme back` stays. The
+  wallpaper list shows the lit drawing as a picture in your palette, and
+  holds the drawings, a picture of yours, a color (asked for: a name or
+  #rrggbb) and the ground. A provider's row may carry a chip, a value
+  and a picture: the rows schema of #1 grows by three fields (#36)
+- Fixed: the header cut a long title in the middle of a word. It cuts at
+  a word and ends with an ellipsis, and the theme's state is its palette
+  alone: the wallpaper, the text size and the transparency are rows (#27)
+- Fixed: a step was worded as its section, so the Undo of a wallpaper
+  picked from the list read `theme none`. A step is worded by its own
+  tool, the same in the exchange and on the Undo line (#32)
+- Fixed: every open of the dialog showed the progress bar for about two
+  seconds while sixteen providers started, and each of them checked its
+  rows every few seconds, shown or not. A provider stopped by the dialog
+  left its temp folder behind, and a dialog whose window was gone kept
+  running with its providers. The progress bar shows for work you asked
+  for, a provider checks only while its rows are on screen, a signal
+  ends a provider through its own cleanup, and the dialog ends with its
+  window (#37)
+- Changed: the sound runs from boot on Void (#23). `on desktop` writes
+  one service of yours, `spark-shell-sound`, under spark's supervisor,
+  and links PipeWire's own `pipewire.conf.d` files, so PipeWire starts
+  WirePlumber and its PulseAudio server itself. A console login gets
+  the same private runtime dir, so spark's voice plays with the desktop
+  off, and a PipeWire the desktop already runs is left alone until you
+  leave the desktop. `spark-shell check` says where PipeWire runs from
+  (boot, login or the desktop), and `off desktop` stops the service and
+  removes it with the links
+- Changed: the terminal's font is Monaspace Neon 1.400, by GitHub Next,
+  the type of spark's page (#26). `spark-shell on` installs it for foot
+  and for Terminal.app on a Mac: Arch's otf-monaspace, elsewhere the
+  release's zip, installed only when its sha256 is the one spark-shell
+  pins; offline, a todo row says so and foot keeps DejaVu Sans Mono.
+  The default FONT is Monaspace Neon at 11; a FONT on DejaVu Sans Mono,
+  or a Mac's Menlo-Regular, moves to it once at its size, a saved theme
+  on the old face takes the new one at its size, the login screen gets
+  its own copy, and the Linux console keeps its bitmap font
+
 ## v0.88
 
 The want path from a login outside the desktop (#31).

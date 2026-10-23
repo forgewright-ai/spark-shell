@@ -1,4 +1,18 @@
 # spark-shell ~/.bash_profile -- a login shell reads this, and everything lives in .bashrc.
+
+# The sound at a login with no XDG_RUNTIME_DIR (Void has no logind to set
+# one): PipeWire runs in the private runtime dir spark-shell makes, from
+# boot or from the desktop, and a program started here finds it there
+# (spark's voice plays through aplay, and ALSA's default is PipeWire).
+# The dir is taken when it is a real directory of yours at 0700, and it
+# is never made here.
+if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+    __rd=${TMPDIR:-/tmp}; __rd=${__rd%/}/$UID-runtime-dir
+    if [ -d "$__rd" ] && [ ! -L "$__rd" ]; then
+        case $(ls -ldn "$__rd" | awk '{print $1, $3}') in "drwx------ $UID"|"drwx------. $UID") export XDG_RUNTIME_DIR=$__rd ;; esac
+    fi
+    unset __rd
+fi
 [ -r ~/.bashrc ] && . ~/.bashrc
 
 # The palette at a console login: the escapes spark-shell theme wrote,

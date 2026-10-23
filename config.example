@@ -19,13 +19,15 @@ DESKTOP=none
 # font name, then :size=N). The size is the text size everywhere: the
 # bar, the dialog, the login, the lock and the idle screen take it, and
 # the pointer grows with it. spark-shell theme text N sets the size.
-FONT=DejaVu Sans Mono:size=12
+# Monaspace Neon is the type of spark's page; spark-shell on installs it,
+# and until it is in, foot draws DejaVu Sans Mono at the same size.
+FONT=Monaspace Neon:size=11
 
 # The wallpaper: default is the ground, the palette's background a shade
 # darker than the windows, following the palette; or a picture's full
-# path, a color as #rrggbb, or none for the windows edge to edge and
-# solid. The ground, a picture and a color get gaps and a little
-# transparency. A shipped drawing's name follows the palette: a palette
+# path, or a color as #rrggbb (none, the word before v0.89, is the
+# ground). Over every one the windows stand apart, as transparent as
+# ALPHA says. A shipped drawing's name follows the palette: a palette
 # with a drawing of its own brings it, any other has the drawing drawn
 # again in its colors. spark-shell theme wallpaper sets this, and it
 # saves a color's name as its #rrggbb.
@@ -36,9 +38,10 @@ WALLPAPER=default
 # size in pixels (24 when left out): spark-black 32, Adwaita.
 POINTER=
 
-# How solid foot is over a picture or a color: 0 to 1, where 1 is solid.
+# How solid foot is over the wallpaper: 0 to 1, where 1 is solid.
 # 0.85 suits a dark picture. A bright one needs more. spark-shell theme
-# transparency N says it as a percent: 0.85 is 15% transparency.
+# transparency N says it as a percent: 0.85 is 15% transparency, and
+# the open windows take it at once.
 ALPHA=0.85
 
 # How new windows sit on a workspace: split (side by side), tabs or
@@ -78,8 +81,9 @@ DESKTOP_BAR=yes
 THEME=none
 
 # The console font on Linux, or the Terminal.app font on a Mac: the name
-# and the size (Terminus 16x32, or Menlo-Regular 13). Empty keeps the
-# console's own font. spark-shell font sets this.
+# and the size (Terminus 16x32, or MonaspaceNeon-Regular 13). Empty keeps
+# the console's own font on Linux; on a Mac it is Monaspace Neon at 13
+# once spark-shell on has installed it. spark-shell font sets this.
 CONSOLE_FONT=
 
 # Linux only. yes hides the distro's notice and the kernel line before

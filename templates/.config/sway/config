@@ -73,13 +73,13 @@ bar {
 bindsym $mod+Return exec $term
 # The dialog: one window in the middle of the screen, 60 by 40 cells, a
 # surface a shade lighter than the palette's background, with air around
-# its text and no frame. spark-shell dialog draws in it; a click on a bar
-# block opens the same window (panel_foot in spark-shell builds the same
-# foot line).
+# its text and no frame. spark-shell dialog draws in it; foot reads its
+# size and colors from dialog.ini, so a new look needs no reload; a click
+# on a bar block opens the same window (panel_foot in spark-shell).
 # key: Super+d opens the dialog: a place to go, or say what you would like.
-bindsym $mod+d exec $term --app-id spark-dialog -W @PANEL_SIZE@ -o pad=@PANEL_PAD@ -o @FOOT_COLORS@.background=@PANEL_BG@ -o @FOOT_COLORS@.alpha=1.0 -e @REPO@/spark-shell dialog
+bindsym $mod+d exec $term --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog
 # key: Super+s opens the dialog in spark chat, and Ctrl-D closes it.
-bindsym $mod+s exec $term --app-id spark-dialog -W @PANEL_SIZE@ -o pad=@PANEL_PAD@ -o @FOOT_COLORS@.background=@PANEL_BG@ -o @FOOT_COLORS@.alpha=1.0 -e @REPO@/spark-shell dialog chat
+bindsym $mod+s exec $term --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog chat
 for_window [app_id="spark-dialog"] floating enable, border none, move position center
 # key: Super+Shift+q closes the window.
 bindsym $mod+Shift+q kill

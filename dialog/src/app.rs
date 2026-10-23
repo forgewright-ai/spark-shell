@@ -76,7 +76,7 @@ pub const SETTINGS: [(&str, &str, &str); 14] = [
     ("lan", "Network", "The wired connection"),
     ("display", "Display", "Screens, brightness, lock"),
     ("keyboard", "Keyboard", "Layouts"),
-    ("theme", "Theme", "Palette and font"),
+    ("theme", "Theme", "Palette, wallpaper and text"),
     ("wallpaper", "Wallpaper", "The desktop picture"),
     ("bar", "Bar", "The status bar"),
     ("bat", "Battery", "Charge"),
@@ -89,6 +89,31 @@ pub const ASK_PER_CALL: usize = 3;
 pub const ASK_PER_MINUTE: usize = 10;
 /// One redraw of a provider's rows per this long, however often it says they changed.
 pub const READ_GAP: Duration = Duration::from_millis(250);
+/// Rows older than this are read again when their place comes back on screen.
+pub const STALE: Duration = Duration::from_secs(5);
+/// The sections whose rows the home's places say (#36): read again when the home comes back.
+pub const HOME_STATES: [&str; 7] = ["apps", "window", "layout", "notes", "reminders", "wifi", "theme"];
+
+/// What Enter does to a row, in a word, from its tool's name: the hint says it (Use dracula, Connect a
+/// network). A row that opens more is Open.
+pub fn verb_of(tool: &str) -> &'static str {
+    let last = tool.rsplit('_').next().unwrap_or("");
+    match last {
+        "open" | "terminal" | "focus" | "new" => "Open",
+        "connect" | "pair" => "Connect",
+        "disconnect" => "Disconnect",
+        "forget" => "Forget",
+        "close" => "Close",
+        "mute" => "Mute",
+        "unmute" => "Unmute",
+        "save" => "Save",
+        "delete" => "Delete",
+        "done" => "Done",
+        "snooze" => "Snooze",
+        "capture" => "Capture",
+        _ => "Use",
+    }
+}
 
 /// HOME, the one root the dialog hands the files provider; an attachment must sit under it.
 pub fn home() -> Option<String> {
@@ -266,6 +291,8 @@ pub struct Provider {
     pub dirty: bool,
     pub reading: bool,
     pub last_read: Option<Instant>,
+    /// It checks its rows for changes: only while its rows are on screen (#37).
+    pub subscribed: bool,
 }
 
 impl Provider {
@@ -281,6 +308,7 @@ impl Provider {
             dirty: false,
             reading: false,
             last_read: None,
+            subscribed: false,
         }
     }
 }
@@ -321,6 +349,8 @@ impl Default for Config {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item {
+    /// The words typed, as a request to spark: the first row while words are typed, lit when no name matches them.
+    Ask,
     Heading(String),
     Blank,
     Undo,
@@ -414,6 +444,11 @@ pub struct App {
     /// A theme step's palette, for main.rs to repaint the window with: the colors came in the
     /// environment at start, and a new palette must not wait for the dialog to be opened again.
     pub palette: Option<Map<String, Value>>,
+    /// The view the providers were last fitted to (follow_view).
+    pub last_view: Option<View>,
+    /// The row a value was just changed on: the light stays on it while the list around it changes
+    /// (the receipt and the Undo row come in above it), until a key moves it.
+    pub keep_lit: Option<String>,
 }
 
 impl App {
@@ -470,6 +505,8 @@ impl App {
             about_idx,
             scroll: 0,
             palette: None,
+            last_view: None,
+            keep_lit: None,
         }
     }
 
@@ -485,8 +522,59 @@ impl App {
         }
     }
 
+    /// Work you asked for: a step, a request, a recording, or the rows of the place you opened while
+    /// they come. The providers' first rows at open come quietly (#37).
     pub fn busy(&self) -> bool {
-        self.running.is_some() || self.thinking || self.providers.iter().any(|p| p.reading && !p.ready) || matches!(self.mode, Mode::Listening)
+        self.running.is_some()
+            || self.thinking
+            || matches!(self.mode, Mode::Listening)
+            || self.shown().iter().any(|&p| self.providers[p].reading && !self.providers[p].ready)
+    }
+
+    /// The providers whose rows the view on screen shows: they check for changes while it does (#37).
+    pub fn shown(&self) -> Vec<usize> {
+        match &self.view {
+            View::Section(p) | View::Folder(p, _) => vec![*p],
+            View::Dest(d) if *d != SETTINGS_DEST => self.dest_sections(*d),
+            _ => vec![],
+        }
+    }
+
+    /// Subscribe what is on screen, unsubscribe what left it; the rows of a place just opened read
+    /// again when they are older than a few seconds, and the home's states when it comes back (#37).
+    fn follow_view(&mut self, now: Instant) {
+        let shown = self.shown();
+        for i in 0..self.providers.len() {
+            let on = shown.contains(&i);
+            let (ready, sub, dead) = (self.providers[i].ready, self.providers[i].subscribed, self.providers[i].dead.is_some());
+            if dead || !ready || on == sub {
+                continue;
+            }
+            let uri = format!("spark-shell://{}/rows", self.providers[i].label);
+            let method = if on { "resources/subscribe" } else { "resources/unsubscribe" };
+            if let Some(s) = self.server(i) {
+                s.request(method, json!({"uri": uri}), Kind::Subscribe, mcp::T_LIST);
+            }
+            self.providers[i].subscribed = on;
+            let old = self.providers[i].last_read.map(|t| now.duration_since(t) >= STALE).unwrap_or(true);
+            if on && old && !self.providers[i].reading {
+                self.read(i);
+            }
+        }
+        if self.view == View::Home && self.last_view.as_ref() != Some(&View::Home) {
+            for i in 0..self.providers.len() {
+                let p = &self.providers[i];
+                if HOME_STATES.contains(&p.label.as_str())
+                    && p.ready
+                    && !p.reading
+                    && p.dead.is_none()
+                    && p.last_read.map(|t| now.duration_since(t) >= STALE).unwrap_or(true)
+                {
+                    self.read(i);
+                }
+            }
+        }
+        self.last_view = Some(self.view.clone());
     }
 
     // ---- the providers
@@ -558,6 +646,19 @@ impl App {
         match m {
             Incoming::Gone(idx, why) => self.lose(idx, &why),
             Incoming::Msg(idx, v) => self.message(idx, v),
+        }
+        self.follow_lit();
+    }
+
+    /// The light back on the row a value was changed on, wherever the list moved it.
+    fn follow_lit(&mut self) {
+        let Some(id) = self.keep_lit.clone() else { return };
+        if !self.in_list {
+            self.keep_lit = None;
+            return;
+        }
+        if let Some(i) = self.picks().iter().position(|it| self.row_ref(it).is_some_and(|r| r.id == id)) {
+            self.sel = i;
         }
     }
 
@@ -675,13 +776,11 @@ impl App {
                     }
                     self.providers[idx].title = scrub(r.pointer("/serverInfo/title").and_then(Value::as_str).unwrap_or(""));
                     self.providers[idx].version = scrub(r.pointer("/serverInfo/version").and_then(Value::as_str).unwrap_or(""));
-                    let uri = format!("spark-shell://{}/rows", label);
                     if let Some(s) = self.server(idx) {
                         s.notify("notifications/initialized", json!({}));
                         s.request("tools/list", json!({}), Kind::Tools, mcp::T_LIST);
-                        s.request("resources/subscribe", json!({"uri": uri}), Kind::Subscribe, mcp::T_LIST);
                     }
-                    self.read(idx);
+                    self.read(idx); // its subscription is follow_view's, only while its rows are on screen (#37)
                 }
                 None => self.lose(idx, &error.unwrap_or_else(|| "it would not start".into())),
             },
@@ -737,11 +836,12 @@ impl App {
         }
     }
 
-    /// The clock: rows read again when they changed, deadlines kept.
+    /// The clock: rows read again when they changed, deadlines kept, the subscriptions fitted to the view.
     pub fn tick(&mut self, now: Instant) {
         if self.busy() {
             self.frame += 1;
         }
+        self.follow_view(now);
         let mut late = vec![];
         for s in self.servers.iter_mut() {
             for (_, p) in s.expired(now) {
@@ -792,7 +892,7 @@ impl App {
     }
 
     fn pickable(row: &model::Row) -> bool {
-        row.tool.is_some() || row.children.is_some()
+        row.tool.is_some() || row.children.is_some() || row.step.is_some()
     }
 
     /// The sections present that a destination holds; Settings holds those of SETTINGS that run here.
@@ -902,6 +1002,9 @@ impl App {
             self.said(&mut out);
         }
         let mut list = vec![];
+        if self.asks_spark() {
+            list.push(Item::Ask);
+        }
         match &self.view {
             View::Models => {
                 list.push(Item::Heading("where it runs".into()));
@@ -966,6 +1069,18 @@ impl App {
                     }
                     if i + 1 == rows.rows.len() && i > 0 && r.tool.is_none() && r.children.is_none() {
                         list.push(Item::Blank); // the summary at the end stands apart
+                    }
+                    // a group starts under its heading, with air above it, as in a section
+                    let prev = rows.rows[..i]
+                        .iter()
+                        .rev()
+                        .find(|q| self.input.is_empty() || self.matches(*p, q))
+                        .map(|q| q.group.clone());
+                    if r.group.is_some() && prev.as_ref() != Some(&r.group) {
+                        if !list.is_empty() {
+                            list.push(Item::Blank);
+                        }
+                        list.push(Item::Heading(r.group.clone().unwrap_or_default()));
                     }
                     list.push(Item::Folder(i));
                 }
@@ -1073,13 +1188,159 @@ impl App {
                 .unwrap_or(false),
             Item::Model(i) => self.models.get(*i).map(|(_, s)| s == "serving" || s == "downloaded").unwrap_or(false),
             Item::TalkOpt(_) => self.voice_on,
-            Item::Undo | Item::Dest(_) | Item::Setting(_) | Item::Proposal(_) | Item::OpenModels => true,
+            Item::Ask | Item::Undo | Item::Dest(_) | Item::Setting(_) | Item::Proposal(_) | Item::OpenModels => true,
             _ => false,
         }
     }
 
     pub fn picks(&self) -> Vec<Item> {
         self.items().into_iter().filter(|i| self.pickable_item(i)).collect()
+    }
+
+    /// Words are typed where a list is shown, in no question: they can go to spark as a request.
+    pub fn asks_spark(&self) -> bool {
+        self.mode == Mode::Normal
+            && !self.input.trim().is_empty()
+            && self.attaching.is_none()
+            && self.picking.is_none()
+            && matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..))
+    }
+
+    /// The name a pick goes by, as typed words are matched against it.
+    fn name_of(&self, it: &Item) -> Option<String> {
+        match it {
+            Item::Row(p, r) => Some(self.providers[*p].rows.rows[*r].text.clone()),
+            Item::Folder(i) => self.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)).map(|r| r.text.clone()),
+            Item::Dest(d) => Some(DESTS[*d].name.to_string()),
+            Item::Setting(i) => Some(SETTINGS[*i].1.to_string()),
+            _ => None,
+        }
+        .map(|n| n.to_lowercase())
+    }
+
+    /// How well the words typed name a pick: 3 the name itself, 2 the start of it, 1 the start of a
+    /// word in it, 0 not by name (the words may still be found in it).
+    fn name_score(&self, it: &Item) -> u8 {
+        let typed = self.input.trim().to_lowercase();
+        let Some(name) = self.name_of(it) else { return 0 };
+        if typed.is_empty() || typed.contains('\n') {
+            0
+        } else if name == typed {
+            3
+        } else if name.starts_with(&typed) {
+            2
+        } else if !typed.contains(' ') && name.split_whitespace().any(|w| w.starts_with(&typed)) {
+            1
+        } else {
+            0
+        }
+    }
+
+    /// The pick lit as words are typed: the one they name best; the request when they name none (#28).
+    pub fn best(&self) -> usize {
+        let picks = self.picks();
+        let mut best: Option<(u8, usize)> = None;
+        for (i, it) in picks.iter().enumerate() {
+            let sc = self.name_score(it);
+            if sc > 0 && best.is_none_or(|(b, _)| sc > b) {
+                best = Some((sc, i));
+            }
+        }
+        best.map(|(_, i)| i).unwrap_or(0)
+    }
+
+    /// The words changed: the lit row follows them; with no words, nothing is lit.
+    fn follow_words(&mut self) {
+        if self.mode != Mode::Normal {
+            return;
+        }
+        self.scroll = 0;
+        if self.asks_spark() || (!self.input.trim().is_empty() && !self.picks().is_empty()) {
+            self.in_list = true;
+            self.sel = self.best();
+        } else {
+            self.in_list = false;
+            self.sel = 0;
+        }
+    }
+
+    /// A place's state for the home, from what its sections say now; None keeps what it is for.
+    pub fn dest_state(&self, d: usize) -> Option<String> {
+        let prov = |l: &str| self.providers.iter().find(|p| p.label == l && p.dead.is_none() && p.ready);
+        let tools = |l: &str, names: &[&str]| -> Vec<String> {
+            prov(l)
+                .map(|p| {
+                    p.rows
+                        .rows
+                        .iter()
+                        .filter(|r| r.tool.as_ref().is_some_and(|t| names.contains(&t.name.as_str())))
+                        .map(|r| r.text.clone())
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let count = |n: usize, one: &str, many: &str| if n == 1 { format!("1 {}", one) } else { format!("{} {}", n, many) };
+        let said = match DESTS[d].name {
+            "Apps" => {
+                let apps = tools("apps", &["apps_open", "apps_terminal"]);
+                match apps.len() {
+                    0 => return None,
+                    1..=3 => apps.join(", "),
+                    n => format!("{} and {} more", apps[..3].join(", "), n - 3),
+                }
+            }
+            "Workspace" => {
+                let w = tools("window", &["window_focus"]).len();
+                let l = tools("layout", &["layout_open"]).len();
+                let wins = if w == 0 {
+                    "no windows open".to_string()
+                } else {
+                    count(w, "window", "windows")
+                };
+                if l == 0 {
+                    wins
+                } else {
+                    format!("{}{}{}", wins, crate::ui::SEP, count(l, "layout", "layouts"))
+                }
+            }
+            "Notes" => {
+                let notes = tools("notes", &["notes_open"]);
+                match notes.first() {
+                    None => "no notes yet".to_string(),
+                    Some(n) => format!("{}{}{}", count(notes.len(), "note", "notes"), crate::ui::SEP, n),
+                }
+            }
+            "Calendar" => {
+                // the first reminder, due or ahead: its sign is a dot or a ring, its group says when
+                let p = prov("reminders")?;
+                let next = p.rows.rows.iter().find(|r| r.group.is_some() && (r.sign == "dot" || r.sign == "ring"));
+                match next {
+                    None => "no reminders ahead".to_string(),
+                    Some(r) => {
+                        let at = r.columns.first().cloned().unwrap_or_default();
+                        match r.group.as_deref().unwrap_or("") {
+                            "due" => format!("due now: {}", r.text),
+                            g @ ("today" | "tomorrow") => format!("{} {} {}", g, at, r.text),
+                            _ => format!("{} {}", at, r.text),
+                        }
+                    }
+                }
+            }
+            "Files" => "your home folder".to_string(),
+            "Settings" => {
+                let parts: Vec<String> = ["wifi", "theme"]
+                    .iter()
+                    .filter_map(|l| prov(l).map(|p| p.title.split(crate::ui::SEP).next().unwrap_or("").trim().to_string()))
+                    .filter(|t| !t.is_empty())
+                    .collect();
+                if parts.is_empty() {
+                    return None;
+                }
+                parts.join(crate::ui::SEP)
+            }
+            _ => return None,
+        };
+        Some(said)
     }
 
     // ---- keys
@@ -1111,6 +1372,7 @@ impl App {
     }
 
     pub fn up(&mut self) {
+        self.keep_lit = None;
         if self.in_list {
             if self.sel == 0 {
                 self.in_list = false; // above the first row is the prompt
@@ -1126,6 +1388,7 @@ impl App {
     }
 
     pub fn down(&mut self) {
+        self.keep_lit = None;
         if self.in_list {
             if self.sel + 1 < self.picks().len() {
                 self.sel += 1;
@@ -1143,10 +1406,12 @@ impl App {
 
     /// A key that types: it goes to the prompt, wherever the focus was.
     pub fn typed(&mut self, c: char) {
+        self.keep_lit = None;
         if c.is_control() {
             return;
         }
         self.insert(&c.to_string());
+        self.follow_words();
     }
 
     /// Shift+Enter: a new line in the draft; never in a yes, an argument or an answer, which are one line.
@@ -1209,10 +1474,7 @@ impl App {
         let b = self.byte_at(self.cursor);
         self.input.replace_range(a..b, "");
         self.cursor -= 1;
-        if matches!(self.mode, Mode::Normal) {
-            self.in_list = false;
-            self.sel = 0;
-        }
+        self.follow_words();
     }
 
     pub fn delete(&mut self) {
@@ -1226,6 +1488,9 @@ impl App {
 
     /// Left and right: the cursor in the draft; in the Calendar with nothing typed, the months.
     pub fn left(&mut self) {
+        if self.step_value(false) {
+            return;
+        }
         if self.input.is_empty() && !self.in_list {
             return self.month(-1);
         }
@@ -1233,6 +1498,9 @@ impl App {
     }
 
     pub fn right(&mut self) {
+        if self.step_value(true) {
+            return;
+        }
         if self.input.is_empty() && !self.in_list {
             return self.month(1);
         }
@@ -1275,6 +1543,7 @@ impl App {
     /// Esc: a question waiting is answered no (the draft comes back); the focus on a control or the
     /// draft goes first; then back one view; from the first view the dialog closes.
     pub fn escape(&mut self) {
+        self.keep_lit = None;
         match std::mem::replace(&mut self.mode, Mode::Normal) {
             Mode::Confirm(step) => {
                 self.say(Sign::Refused, &format!("{}: kept, not done", step.line));
@@ -1309,8 +1578,9 @@ impl App {
             Mode::Normal => {
                 if self.chip_focus.is_some() {
                     self.chip_focus = None;
-                } else if !self.input.is_empty() && !self.in_list {
+                } else if !self.input.is_empty() {
                     self.set_input(String::new());
+                    self.in_list = false;
                     self.sel = 0;
                 } else if let Some(v) = self.came_from.pop() {
                     self.go_back(v);
@@ -1333,6 +1603,7 @@ impl App {
     }
 
     fn go_back(&mut self, v: View) {
+        self.keep_lit = None;
         self.view = v;
         self.sel = 0;
         self.in_list = false;
@@ -1351,6 +1622,7 @@ impl App {
     }
 
     fn go(&mut self, v: View) {
+        self.keep_lit = None;
         // the files section is its home folder: its one row, ~, is no stop of its own
         if let View::Section(p) = v {
             if let Some(root) = self.files_root(p) {
@@ -1509,6 +1781,7 @@ impl App {
         let picks = self.picks();
         let sel = self.sel.min(picks.len().saturating_sub(1));
         let Some(item) = picks.get(sel).cloned() else { return };
+        let words = self.input.trim().to_string();
         // a list filtered by the words typed: the words were a search, and go with the pick
         if matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..)) {
             self.set_input(String::new());
@@ -1516,6 +1789,21 @@ impl App {
         self.sel = 0;
         self.in_list = false;
         match item {
+            Item::Ask => {
+                // words that name no row: a place's name alone opens it (Window, Settings, about); any other words are a request
+                if words.is_empty() {
+                    return;
+                }
+                if !words.contains('\n') {
+                    if let Some(v) = self.place(&words) {
+                        if self.view != v {
+                            self.go(v);
+                        }
+                        return;
+                    }
+                }
+                self.want(&words);
+            }
             Item::Undo => {
                 if let Some(u) = self.undo.take() {
                     self.run(u);
@@ -1599,7 +1887,7 @@ impl App {
                     if call.name == "about_open" {
                         return self.go(View::About);
                     }
-                    let line = format!("{} {}", self.providers[p].label, row.text);
+                    let line = self.step_line(p, &call, &row.text);
                     self.run(Step {
                         prov: p,
                         call,
@@ -1646,7 +1934,7 @@ impl App {
                     row.tool.clone()
                 };
                 if let Some(call) = call {
-                    let line = format!("{} {}", self.providers[p].label, row.text);
+                    let line = self.step_line(p, &call, &row.text);
                     self.run(Step {
                         prov: p,
                         call,
@@ -2306,33 +2594,125 @@ impl App {
             v.extend(key("Next", "Tab"));
             return v;
         }
+        // what Esc does now: the words typed go first, then back a view, then what was said, then the dialog
+        let esc_word = if !self.input.is_empty() {
+            "Clear"
+        } else if !self.came_from.is_empty() {
+            "Back"
+        } else if self.exchange_up() {
+            "Clear"
+        } else {
+            "Close"
+        };
         if self.in_list {
-            let word = match self.picks().get(self.sel) {
+            let lit = self.picks().get(self.sel).cloned();
+            if let Some(st) = lit.as_ref().and_then(|it| self.row_ref(it)).and_then(|r| r.step.clone()) {
+                if self.input.is_empty() {
+                    // a value: left and right change it, in place
+                    let cap = |w: &str| w[..1].to_uppercase() + &w[1..];
+                    let mut v = key(&cap(&st.words.0), "\u{2190}");
+                    v.push(gap());
+                    v.extend(key(&cap(&st.words.1), "\u{2192}"));
+                    v.extend(esc(esc_word));
+                    return v;
+                }
+            }
+            let word = match &lit {
+                Some(Item::Ask) => "Ask",
                 Some(Item::Proposal(_)) | Some(Item::Undo) => "Run",
                 Some(Item::Model(_)) | Some(Item::TalkOpt(_)) => "Choose",
-                _ => "Open",
+                Some(it) => match self.row_ref(it) {
+                    Some(r) if r.children.is_none() && r.pick.is_none() => r.tool.as_ref().map(|t| verb_of(&t.name)).unwrap_or("Open"),
+                    _ => "Open",
+                },
+                None => "Open",
             };
             let mut v = key(word, "Enter");
-            v.extend(esc(if !self.came_from.is_empty() {
-                "Back"
-            } else if self.exchange_up() {
-                "Clear"
-            } else {
-                "Close"
-            }));
+            if lit == Some(Item::Ask) {
+                v.push(gap());
+                v.extend(key("New line", "Shift+Enter"));
+            }
+            v.extend(esc(esc_word));
             return v;
         }
-        let mut v = key("Send", "Enter");
-        v.push(gap());
-        v.extend(key("New line", "Shift+Enter"));
-        if self.came_from.is_empty() && self.exchange_up() {
-            v.extend(esc("Clear")); // at the home an exchange is up: Esc clears it (#25)
+        if !self.input.trim().is_empty() {
+            // words where no list is shown (the about, the models): they go to spark as they are
+            let mut v = key("Send", "Enter");
+            v.push(gap());
+            v.extend(key("New line", "Shift+Enter"));
+            v.extend(esc(esc_word));
+            return v;
         }
-        if self.input.is_empty() && self.is_calendar() {
+        // nothing typed and nothing lit: Esc, and the down arrow into the list
+        let mut v = vec![(format!("{} ", esc_word), false), ("Esc".to_string(), true)];
+        if self.is_calendar() {
             v.push(gap());
             v.extend(key("Month", "\u{2190} \u{2192}"));
         }
         v
+    }
+
+    /// The provider row an item stands for (a section's row, or a folder's).
+    fn row_ref(&self, it: &Item) -> Option<&model::Row> {
+        match it {
+            Item::Row(p, r) => self.providers[*p].rows.rows.get(*r),
+            Item::Folder(i) => self.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)),
+            _ => None,
+        }
+    }
+
+    /// A step's line as people read it: its tool's title with the arguments in place of the capital
+    /// words (theme wallpaper NAME gives theme wallpaper none), else the section and the row (#32).
+    fn step_line(&self, p: usize, call: &Call, row_text: &str) -> String {
+        let title = self.providers[p]
+            .tools
+            .iter()
+            .find(|t| t.name == call.name)
+            .map(|t| t.title.clone())
+            .unwrap_or_default();
+        if !title.is_empty() && model::title_ok(&title) {
+            let mut args = call.arguments.values().filter_map(Value::as_str);
+            let words: Vec<String> = title
+                .split(' ')
+                .map(|w| {
+                    if w.bytes().all(|c| c.is_ascii_uppercase()) {
+                        args.next().map(str::to_string).unwrap_or_else(|| row_text.to_string())
+                    } else {
+                        w.to_string()
+                    }
+                })
+                .collect();
+            return words.join(" ");
+        }
+        format!("{} {}", self.providers[p].label, row_text)
+    }
+
+    /// Left or right on a value row: its step down or up, run as a pick is.
+    fn step_value(&mut self, up: bool) -> bool {
+        if !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal {
+            return false;
+        }
+        let Some(it) = self.picks().get(self.sel).cloned() else { return false };
+        let prov = match &it {
+            Item::Row(p, _) => *p,
+            Item::Folder(_) => match &self.folder {
+                Some((p, _, _)) => *p,
+                None => return false,
+            },
+            _ => return false,
+        };
+        let Some(row) = self.row_ref(&it).cloned() else { return false };
+        let Some(st) = row.step else { return false };
+        let call = if up { st.more } else { st.less };
+        self.keep_lit = Some(row.id.clone());
+        let line = self.step_line(prov, &call, &row.text);
+        self.run(Step {
+            prov,
+            call,
+            who: Who::Person,
+            line,
+        });
+        true
     }
 
     /// The Calendar: its months, then the reminders.

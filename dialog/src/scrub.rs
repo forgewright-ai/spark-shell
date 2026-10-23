@@ -39,6 +39,30 @@ pub fn cut(s: &str, cells: usize) -> String {
     out
 }
 
+/// The text cut to `n` cells at a word, with an ellipsis where words were left out; a first word
+/// longer than the room is cut where it must be (#27).
+pub fn cut_words(s: &str, n: usize) -> String {
+    if cells(s) <= n {
+        return s.to_string();
+    }
+    if n == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    for w in s.split(' ') {
+        let next = if out.is_empty() { w.to_string() } else { format!("{} {}", out, w) };
+        if cells(&next) + 1 > n {
+            break;
+        }
+        out = next;
+    }
+    let out = out.trim_end_matches([' ', '\u{b7}']).trim_end().to_string();
+    if out.is_empty() {
+        return format!("{}\u{2026}", cut(s, n - 1));
+    }
+    format!("{}\u{2026}", out)
+}
+
 /// How many cells the text takes.
 pub fn cells(s: &str) -> usize {
     unicode_width::UnicodeWidthStr::width(s)

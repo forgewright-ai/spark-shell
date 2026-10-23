@@ -640,13 +640,21 @@ fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
 fn the_hint_says_what_enter_and_esc_do_and_only_keys_are_chips() {
     let (mut app, _rx, _c, _r) = started();
     let said = |a: &App| a.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
-    assert_eq!(said(&app), "Send Enter   New line Shift+Enter");
+    assert_eq!(said(&app), "Close Esc", "at rest it says only what Esc does");
+    typed(&mut app, "is anything open");
+    assert_eq!(
+        said(&app),
+        "Ask Enter   New line Shift+Enter   Clear Esc",
+        "words that name no row: Ask spark, and a new line"
+    );
     let chips: Vec<String> = app.hint().into_iter().filter(|(_, k)| *k).map(|(t, _)| t).collect();
-    assert_eq!(chips, vec!["Enter", "Shift+Enter"], "a chip is a key, nothing else");
-    at_row(&mut app, View::Home, 0);
-    assert!(said(&app).ends_with("Close Esc"), "{}", said(&app));
-    at_row(&mut app, View::Section(0), 0);
-    assert_eq!(said(&app), "Open Enter   Back Esc");
+    assert_eq!(chips, vec!["Enter", "Shift+Enter", "Esc"], "a chip is a key, nothing else");
+    app.escape();
+    typed(&mut app, "terminal");
+    assert_eq!(said(&app), "Open Enter   Clear Esc", "a row the words name: its own verb, no new line");
+    app.escape();
+    at_row(&mut app, View::Section(0), 1);
+    assert_eq!(said(&app), "Close Enter   Back Esc", "the lit row's verb");
     app.escape();
     assert_eq!(app.view, View::Home);
 }
@@ -827,17 +835,38 @@ fn the_home_is_six_places_and_settings_holds_the_sections_that_run() {
 }
 
 #[test]
-fn words_typed_are_a_request_never_the_row_they_happen_to_match() {
+fn words_that_name_no_row_are_a_request() {
     let (mut app, _rx, calls, _r) = started();
     app.cfg.spark_shell = "/bin/spark-shell".into();
-    typed(&mut app, "close terminal");
-    assert!(!app.picks().is_empty(), "the words find the row as a search");
+    typed(&mut app, "is anything open");
+    assert_eq!(app.picks().first(), Some(&Item::Ask), "Ask spark leads while words are typed");
     app.enter();
-    assert!(calls.lock().unwrap().is_empty(), "Enter in the prompt runs no row");
+    assert!(calls.lock().unwrap().is_empty(), "words that name no row run no row");
     assert!(app
         .jobs
         .iter()
-        .any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, a) if a.last().map(String::as_str) == Some("close terminal"))));
+        .any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, a) if a.last().map(String::as_str) == Some("is anything open"))));
+}
+
+#[test]
+fn words_that_name_a_row_run_that_row_with_no_model_call() {
+    let (mut app, rx, calls, _r) = started();
+    app.cfg.spark_shell = "/bin/spark-shell".into();
+    typed(&mut app, "termi");
+    assert!(
+        matches!(app.picks().get(app.sel), Some(Item::Row(0, 0))),
+        "the row the words begin is lit (#28)"
+    );
+    typed(&mut app, "nal");
+    app.enter();
+    assert!(
+        pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["name"] == "window_focus")),
+        "Enter runs the lit row"
+    );
+    assert!(
+        !app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, _))),
+        "and spark is not asked"
+    );
 }
 
 #[test]
@@ -1201,4 +1230,83 @@ fn esc_at_the_home_clears_the_exchange_then_closes() {
     );
     app.escape();
     assert_eq!(app.quit, Some(0), "the next Esc closes");
+}
+
+#[test]
+fn a_provider_checks_its_rows_only_while_they_are_on_screen_and_its_first_rows_come_quietly() {
+    let (mut app, rx, tx) = app_with(&["window"]);
+    let methods = Arc::new(Mutex::new(vec![]));
+    let m2 = methods.clone();
+    let script: common::Script = Box::new(move |v, send| {
+        if let Some(m) = v.get("method").and_then(Value::as_str) {
+            m2.lock().unwrap().push(m.to_string());
+        }
+        if let Some(r) = ordinary("window", v, &window_tools(), &window_rows()) {
+            send(r);
+        }
+    });
+    app.servers.push(stub(0, "window", script, tx));
+    app.start();
+    assert!(!app.busy(), "the first rows at open come quietly: no progress bar at the home (#37)");
+    app.view = View::Section(0);
+    assert!(app.busy(), "a place opened while its rows come: the bar shows");
+    app.view = View::Home;
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
+    let n = |w: &str| methods.lock().unwrap().iter().filter(|x| x.as_str() == w).count();
+    app.tick(Instant::now());
+    assert_eq!(n("resources/subscribe"), 0, "nothing on screen: nothing checks");
+    app.view = View::Section(0);
+    assert!(pump(&mut app, &rx, |_| n("resources/subscribe") == 1), "its section on screen: it checks");
+    app.view = View::Home;
+    assert!(pump(&mut app, &rx, |_| n("resources/unsubscribe") == 1), "back at the home: it stops");
+    assert_eq!(n("resources/subscribe"), 1);
+}
+
+#[test]
+fn left_and_right_change_a_value_in_place() {
+    let (mut app, rx, tx) = app_with(&["theme"]);
+    let calls = Arc::new(Mutex::new(vec![]));
+    let c2 = calls.clone();
+    let tools = json!([{"name": "theme_text", "title": "theme text SIZE", "inputSchema": {"type": "object", "properties": {"size": {"type": "string", "enum": ["bigger", "smaller"]}}, "required": ["size"], "additionalProperties": false}, "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}}]);
+    let rows = json!({"title": "theme", "rows": [
+        {"id": "theme:show:Text size", "sign": "blank", "text": "Text size", "tool": null, "more": [], "columns": [], "children": null, "group": null,
+         "step": {"value": "11", "less": {"name": "theme_text", "arguments": {"size": "smaller"}}, "more": {"name": "theme_text", "arguments": {"size": "bigger"}}, "words": ["smaller", "bigger"]}}
+    ], "short": []});
+    let script: common::Script = Box::new(move |v, send| {
+        if let Some(r) = ordinary("theme", v, &tools, &rows) {
+            return send(r);
+        }
+        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+            c2.lock().unwrap().push(v["params"].clone());
+            send(result(
+                &v["id"],
+                json!({"content": [{"type": "text", "text": "text 12"}], "structuredContent": {"receipt": "text 12", "undo": {"name": "theme_text", "arguments": {"size": "smaller"}}}, "isError": false}),
+            ));
+        }
+    });
+    app.servers.push(stub(0, "theme", script, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    at_row(&mut app, View::Section(0), 0);
+    let said = app.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
+    assert_eq!(
+        said, "Smaller \u{2190}   Bigger \u{2192}   Back Esc",
+        "the row under the prompt says what left and right do"
+    );
+    app.right();
+    assert!(
+        pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["arguments"]["size"] == "bigger")),
+        "right is the value's step up, run at once"
+    );
+    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("text 12"))));
+    assert!(
+        matches!(app.picks().get(app.sel), Some(Item::Row(0, 0))),
+        "the light stays on the value's row while the receipt and the Undo row come in above it: {:?}",
+        app.picks().get(app.sel)
+    );
+    app.right();
+    assert!(
+        pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 2),
+        "a second right steps the same value again"
+    );
 }

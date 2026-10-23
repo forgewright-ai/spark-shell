@@ -17,7 +17,7 @@
 #   spark-shell theme save [NAME]     keep the look in use as a saved theme
 #   spark-shell theme delete NAME     delete a saved theme
 #   spark-shell theme back            the look before this one, again
-#   spark-shell theme wallpaper X     a drawing, a picture, a color or none
+#   spark-shell theme wallpaper X     a drawing, a picture, a color or default
 #   spark-shell theme text N          the text size everywhere; bigger, smaller
 #   spark-shell theme transparency N  the windows' transparency; more, less
 #   spark-shell theme picture PATH    a theme from a picture of yours
@@ -84,13 +84,14 @@
 # the rendered ~/.config/spark-shell/sgr.sh color the prompt. spark
 # itself is not required. Without it the status line stays empty and
 # everything else works. Nothing leaves this machine except what the
-# package manager fetches. A layout, and a want at the bar, ask spark on
-# this machine (spark edit).
+# package manager fetches, the dialog's release file and the font's
+# (Monaspace Neon), each checked against its sha256. A layout, and a want
+# at the bar, ask spark on this machine (spark edit).
 #
 # POSIX sh on both OSes: the Debian, Arch and Void families, and macOS. The choices live in ~/.config/spark-shell/
 # config, one KEY=value a line. PROMPT is starship|plain, PROMPT_STYLE
-# minimal|full, DESKTOP none|sway, FONT foot's spec (DejaVu Sans
-# Mono:size=12), WALLPAPER default|none|PATH|#rrggbb, ALPHA foot over a
+# minimal|full, DESKTOP none|sway, FONT foot's spec (Monaspace
+# Neon:size=11), WALLPAPER default|none|PATH|#rrggbb, ALPHA foot over a
 # picture (0.85) and DESKTOP_BAR yes|no (the bar at the top). THEME is a
 # palette's name or none, CONSOLE_FONT "FACE SIZE" (empty: the console
 # keeps its font), QUIET_LOGIN and QUIET_BOOT yes|no. starship comes
@@ -166,7 +167,7 @@ config_load() {
     : "${PROMPT:=starship}"
     : "${PROMPT_STYLE:=minimal}"
     : "${DESKTOP:=none}"
-    : "${FONT:=DejaVu Sans Mono:size=12}"   # foot's spec, verbatim
+    : "${FONT:=Monaspace Neon:size=11}"     # foot's spec, verbatim; drawn as font_spec says until the font is installed
     : "${WALLPAPER:=default}"               # the desktop's background: default (the forge), none, a full path or #rrggbb
     : "${POINTER:=}"                        # the pointer: "NAME [SIZE]", a cursor theme's name and its size in pixels (24); empty: the spark pointer by palette
     : "${ALPHA:=0.85}"                      # foot over a picture: 0..1, 1 = opaque
@@ -238,21 +239,25 @@ hex_rgb() {   # hex_rgb #rrggbb -> "r g b" (decimal), or false
     _h=${1#\#}; _m=${_h#??}
     printf '%d %d %d' "$((0x${_h%????}))" "$((0x${_m%??}))" "$((0x${_h#????}))"
 }
+rgb_of() {   # rgb_of #rrggbb -- _R _G _B its three numbers, with no subshell; false for anything else
+    case $1 in \#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) ;; *) return 1 ;; esac
+    _h=${1#\#}; _m=${_h#??}
+    _R=$((0x${_h%????})); _G=$((0x${_m%??})); _B=$((0x${_h#????}))
+}
 slot_of() {   # slot_of COLOR -> 0..15
     case $1 in
         black) echo 0; return ;; red) echo 1; return ;; green) echo 2; return ;;
         yellow) echo 3; return ;; blue) echo 4; return ;; magenta) echo 5; return ;;
         cyan) echo 6; return ;; white) echo 7; return ;;
     esac
-    want=$(hex_rgb "$1") || { echo 7; return; }
+    rgb_of "$1" || { echo 7; return; }
+    _wr=$_R; _wg=$_G; _wb=$_B
     best=; slot=7; i=0
     while [ "$i" -le 15 ]; do
         eval "c=\$THEME_ANSI_$i"
         # shellcheck disable=SC2154   # c is set by the eval above
-        if rgb=$(hex_rgb "$c"); then
-            # shellcheck disable=SC2086   # six numbers, split on purpose
-            set -- $want $rgb
-            d=$(( ($1-$4)*($1-$4) + ($2-$5)*($2-$5) + ($3-$6)*($3-$6) ))
+        if rgb_of "$c"; then
+            d=$(( (_wr-_R)*(_wr-_R) + (_wg-_G)*(_wg-_G) + (_wb-_B)*(_wb-_B) ))
             if [ -z "$best" ] || [ "$d" -lt "$best" ]; then best=$d; slot=$i; fi
         fi
         i=$((i + 1))
@@ -311,32 +316,37 @@ hex_or() {   # hex_or COLOR FALLBACK -> rrggbb, lowercase
         *) printf '%s' "$2" ;;
     esac
 }
+hex_put() {   # hex_put VAR COLOR FALLBACK -- VAR is what hex_or says, with no subshell for a color already in lowercase (the palettes' own)
+    case $2 in
+        \#[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) _hp=${2#\#} ;;
+        \#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) _hp=$(printf '%s' "${2#\#}" | tr 'A-F' 'a-f') ;;
+        *) _hp=$3 ;;
+    esac
+    eval "$1=\$_hp"
+}
 hex_load() {
     i=0
     for h in $FOOT_HEX; do
         eval "c=\$THEME_ANSI_$i"
-        eval "HEX_ANSI_$i=\$(hex_or \"\$c\" \"$h\")"
+        hex_put "HEX_ANSI_$i" "$c" "$h"
         i=$((i + 1))
     done
-    # shellcheck disable=SC2034   # read by render_expr through HEX_KEYS
-    HEX_BG=$(hex_or "$THEME_BG" 242424)
-    # shellcheck disable=SC2034
-    HEX_FG=$(hex_or "$THEME_FG" ffffff)
-    eval "HEX_ACCENT=\$(hex_or \"\$THEME_ACCENT\" \"\$HEX_ANSI_$ACCENT_SLOT\")"
-    eval "HEX_MUTED=\$(hex_or \"\$THEME_MUTED\" \"\$HEX_ANSI_$MUTED_SLOT\")"
+    hex_put HEX_BG "$THEME_BG" 242424
+    hex_put HEX_FG "$THEME_FG" ffffff
+    eval "hex_put HEX_ACCENT \"\$THEME_ACCENT\" \"\$HEX_ANSI_$ACCENT_SLOT\""
+    eval "hex_put HEX_MUTED \"\$THEME_MUTED\" \"\$HEX_ANSI_$MUTED_SLOT\""
     for k in $HEX_KEYS; do export "${k?}"; done
 }
 
 # The wallpaper: by default the ground, the palette's background a shade
-# darker than the windows, which follows the palette; or a picture of
-# yours, a plain color, or none. With the ground, a picture or a
-# color, the windows stand apart and foot is a little translucent, so
-# it shows; with none, edge to edge and opaque. Every window has a
-# four-pixel edge (#22): between two windows an eight-pixel strip that
-# the mouse can grab to resize, where the pointer shows the resize
-# arrows. Over a wallpaper the edge is transparent, so the look does
-# not change (the outer gap grows by the edge); with none it is the
-# surface shade, so two windows never merge. A color
+# darker than the windows, which follows the palette; or a drawing, a
+# picture of yours or a plain color. Over every one the windows stand
+# apart and foot is as transparent as ALPHA says: no wallpaper changes
+# the transparency (#35; none, before v0.89 solid windows edge to edge,
+# is the ground now). Every window has a four-pixel edge (#22): between
+# two windows an eight-pixel strip that the mouse can grab to resize,
+# where the pointer shows the resize arrows. The edge is transparent,
+# so the look does not change (the outer gap grows by the edge). A color
 # is #rrggbb in the config (a name is stored as its hex) and stays when
 # the palette changes. A path that is not there falls back to the
 # palette's color (the render says so in a row), never to a black
@@ -395,8 +405,8 @@ wall_follow() {   # the drawing in use, rendered in the palette in use when that
 }
 wall_color() { hex_rgb "$WALLPAPER" >/dev/null; }   # WALLPAPER is a plain color, #rrggbb
 wall_yours() { case ${WALLPAPER:-} in ''|none|default) return 1 ;; esac; ! wall_color && ! wall_shipped "$WALLPAPER"; }   # WALLPAPER is a picture of yours (a path, there or not): the one wallpaper a palette never replaces; false before the config is read
-wall_name() {   # -> default, none, a shipped wallpaper's name, the name of a color WALL_NAMES has (or its hex), or nothing for a picture of yours
-    case $WALLPAPER in default|none) echo "$WALLPAPER"; return ;; esac
+wall_name() {   # -> default (the ground; none was its old word), a shipped wallpaper's name, the name of a color WALL_NAMES has (or its hex), or nothing for a picture of yours
+    case $WALLPAPER in default|none) echo default; return ;; esac
     if wall_shipped "$WALLPAPER"; then echo "$WALLPAPER"; return; fi
     wall_color || return 0
     for w in $WALL_NAMES; do [ "$(wall_hex "$w")" != "$(panel_lower "$WALLPAPER")" ] || { echo "$w"; return; }; done
@@ -412,6 +422,21 @@ wall_picture_ok() {   # wall_picture_ok PATH -> its real path when it is a pictu
     printf '%s\n' "$_rp"
 }
 WALL_TYPES='jpg jpeg png webp'   # the pictures the wallpaper picker offers and takes
+WALL_GROUND_SAID="the palette's own, darker"   # the ground's column in the wallpaper list
+THUMB_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/thumbs   # the drawings' small pictures in a palette, DRAWING-PALETTE.png, for the wallpaper list (#36)
+thumb_palette() { if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && palette_file "$THEME" >/dev/null; then printf '%s' "$THEME"; else printf none; fi; }   # -> the palette the small pictures are drawn in: the one in use, else none (the drawings' own colors)
+wall_thumbs() {   # the drawings' small pictures in the palette in use (#36): each one missing or older than its drawing, from the big picture when one is drawn, else from the drawing itself; quiet
+    command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1 || return 0
+    mkdir -p "$THUMB_DIR"; _tp=$(thumb_palette); _pf=''; [ "$_tp" = none ] || _pf=$(palette_file "$_tp")
+    for _w in $(wall_shipped_names); do
+        _t=$THUMB_DIR/$_w-$_tp.png
+        [ ! -f "$_t" ] || [ "$REPO/wallpaper/$_w.svg" -nt "$_t" ] || continue
+        if [ -z "$_pf" ] || [ "$(wall_palette_of "$_w")" = "$_tp" ]; then _src=$REPO/wallpaper/$_w.png   # its own palette, or none: the clone's picture
+        elif [ -f "$WALL_CACHE/$_w-$_tp.png" ]; then _src=$WALL_CACHE/$_w-$_tp.png
+        else wall_recolor "$REPO/wallpaper/$_w.svg" "$_pf" > "$TMP/thumb.svg" || continue; _src=$TMP/thumb.svg; fi
+        if gdk-pixbuf-thumbnailer -s 480 "$_src" "$TMP/thumb.png" 2>/dev/null; then cp "$TMP/thumb.png" "$_t.${TMP##*/}" && mv "$_t.${TMP##*/}" "$_t"; fi   # a whole file or none: the dialog may read it meanwhile
+    done
+}
 wall_there() { [ "$WALLPAPER" != none ] && [ "$WALLPAPER" != default ] && ! wall_color && [ -f "$(wall_path)" ] && [ -r "$(wall_path)" ]; }
 wall_ground() {   # -> #rrggbb: the palette's background a shade darker, 30% of the way to black when it is dark, 8% when it is light
     # shellcheck disable=SC2046   # three numbers, split on purpose
@@ -428,8 +453,8 @@ wall_hex() {   # wall_hex WORD -> #rrggbb, lowercase, for #rrggbb or one of WALL
         *) hex_rgb "$1" >/dev/null || return 1; printf '%s\n' "$1" | tr 'A-F' 'a-f' ;;
     esac
 }
-wall_word() {   # wall_word WORD -> what WALLPAPER stores: none, default, a shipped wallpaper's name, #rrggbb, or a readable file's full path; nothing for anything else
-    case $1 in '') return 0 ;; none|default) printf '%s' "$1"; return 0 ;; esac
+wall_word() {   # wall_word WORD -> what WALLPAPER stores: default (none says the same since v0.89, #35), a shipped wallpaper's name, #rrggbb, or a readable file's full path; nothing for anything else
+    case $1 in '') return 0 ;; none|default|ground) printf 'default'; return 0 ;; esac
     if wall_shipped "$1"; then printf '%s' "$1"; return 0; fi
     wall_hex "$1" && return 0
     _w=$1; _t='~'   # a quoted ~ is HOME, as the shell would have it
@@ -444,18 +469,13 @@ hex_mix() {   # hex_mix RRGGBB RRGGBB PERCENT -> rrggbb: the first color moved P
     set -- $(hex_rgb "#$1") $(hex_rgb "#$2") "$3"
     printf '%02x%02x%02x' $(( $1 + ($4 - $1) * $7 / 100 )) $(( $2 + ($5 - $2) * $7 / 100 )) $(( $3 + ($6 - $3) * $7 / 100 ))
 }
-wall_load() {
+wall_load() {   # every wallpaper alike: the windows stand apart over it, as transparent as ALPHA says, their edge clear (#35: no wallpaper changes the transparency)
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
-    if wall_there; then
-        WALL_BG="\"$(wall_path)\" fill"; GAPS_INNER=0; GAPS_OUTER=16; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER="pixel 4"; BORDER_HEX=00000000
-    elif [ "$WALLPAPER" = default ]; then   # the ground: a shade darker than the windows, drawn like a picture
-        WALL_BG="$(wall_ground) solid_color"; GAPS_INNER=0; GAPS_OUTER=16; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER="pixel 4"; BORDER_HEX=00000000
-    elif wall_color; then   # a plain color is a wallpaper too: the same spacing and the same translucent terminals as a picture
-        WALL_BG="$(wall_hex "$WALLPAPER") solid_color"; GAPS_INNER=0; GAPS_OUTER=16; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER="pixel 4"; BORDER_HEX=00000000
-    else   # none: the palette's color, full windows, opaque; the edge in the surface shade (PANEL_BG) parts the windows
-        WALL_BG="#$HEX_BG solid_color"; GAPS_INNER=0; GAPS_OUTER=0; FOOT_ALPHA=1.0; BAR_ALPHA=""; BORDER="pixel 4"; BORDER_HEX=$(hex_mix "$HEX_BG" "$HEX_FG" 9)
-    fi
-    # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
+    if wall_there; then WALL_BG="\"$(wall_path)\" fill"
+    elif wall_color; then WALL_BG="$(wall_hex "$WALLPAPER") solid_color"   # a plain color is a wallpaper too
+    else WALL_BG="$(wall_ground) solid_color"; fi   # the ground, a shade darker than the windows, drawn like a picture: default, none before v0.89, a picture that is not there
+    # shellcheck disable=SC2034
+    GAPS_INNER=0; GAPS_OUTER=16; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER="pixel 4"; BORDER_HEX=00000000
     for k in $WALL_KEYS; do export "${k?}"; done
 }
 
@@ -500,7 +520,7 @@ transparency_of() { awk -v a="${1:-1}" 'BEGIN { printf "%d", (1 - a) * 100 + 0.5
 # towards the text, the picked row a shade more, with air around the
 # text from the font size; no frame, so it reads as a surface of the
 # desktop, not a window with a border. The sway template takes the keys.
-PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_BG PANEL_HI"
+PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_BG PANEL_HI PANEL_MUTED"
 panel_load() {
     # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
     PANEL_BG=$(hex_mix "$HEX_BG" "$HEX_FG" 9); PANEL_HI=$(hex_mix "$HEX_BG" "$HEX_FG" 18); PANEL_PAD=$(panel_pad)
@@ -525,10 +545,15 @@ hex_sgr() {   # hex_sgr rrggbb -> the SGR of that color as text
     set -- $(hex_rgb "#$1"); printf '38;2;%s;%s;%s' "$1" "$2" "$3"
 }
 panel_pad() { _s=$(look_font_size); : "${_s:=12}"; printf '%sx%s' $(( _s * 2 )) $(( _s * 16 / 10 )); }   # the air in pixels: two cells wide, one tall, at the font's size
-panel_foot() {   # panel_foot ARGS... -- the desktop window: foot sized, padded and colored the way the sway template renders it, running spark-shell dialog ARGS (PANEL_LEAD, setsid, before it)
-    _fc=$(foot_colors)
-    # shellcheck disable=SC2086   # the leader, or nothing
-    ${PANEL_LEAD:-} foot --app-id "$PANEL_APP" -W "$PANEL_SIZE" -o "pad=$PANEL_PAD" -o "$_fc.background=$PANEL_BG" -o "$_fc.alpha=1.0" -e "$REPO/spark-shell" dialog "$@"
+panel_foot() {   # panel_foot ARGS... -- the desktop window as Super+d opens it: foot with the dialog's own dialog.ini (its size, air and ground), running spark-shell dialog ARGS (PANEL_LEAD, setsid, before it); before dialog.ini is rendered, the same window from options
+    if [ -f "$HOME/.config/foot/dialog.ini" ]; then
+        # shellcheck disable=SC2086   # the leader, or nothing
+        ${PANEL_LEAD:-} foot --config "$HOME/.config/foot/dialog.ini" --app-id "$PANEL_APP" -e "$REPO/spark-shell" dialog "$@"
+    else
+        _fc=$(foot_colors)
+        # shellcheck disable=SC2086   # the leader, or nothing
+        ${PANEL_LEAD:-} foot --app-id "$PANEL_APP" -W "$PANEL_SIZE" -o "pad=$PANEL_PAD" -o "$_fc.background=$PANEL_BG" -o "$_fc.alpha=1.0" -e "$REPO/spark-shell" dialog "$@"
+    fi
 }
 
 # ------------------------------------------------------------------ rows
@@ -595,6 +620,7 @@ spark_bin() {   # -> spark's path, or nothing: PATH, then ~/.local/bin (a non-lo
 TMP=$(mktemp -d)
 PULSE=''
 trap 'rm -rf "$TMP"; [ -z "$PULSE" ] || kill "$PULSE" 2>/dev/null' EXIT
+trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # a signal ends it through the EXIT trap: TMP never stays behind (#37)
 
 # -------------------------------------------------------------- packages
 # One place switches on the manager (the twin of bootstrap.sh pkg_*).
@@ -658,8 +684,8 @@ link_one() {   # link_one SRC DST
 }
 esc() { printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'; }
 bar_mode() { if [ "$DESKTOP_BAR" = yes ]; then echo dock; else echo invisible; fi; }   # sway bar mode: shown, or there but never drawn
-bar_font() {   # foot's FONT ("Face:size=N", or :pixelsize=N) in pango's words: "Face N", "Face Npx"; no size, 12
-    face=${FONT%%:*}; opts=""; case $FONT in *:*) opts=${FONT#*:} ;; esac
+bar_font() {   # bar_font [SPEC] -- foot's FONT ("Face:size=N", or :pixelsize=N) in pango's words: "Face N", "Face Npx"; no size, 12
+    _bf=${1:-$FONT}; face=${_bf%%:*}; opts=""; case $_bf in *:*) opts=${_bf#*:} ;; esac
     size=$(printf '%s' "$opts" | tr ':' '\n' | sed -n 's/^size=\([0-9.]*\)$/\1/p' | head -1)
     px=$(printf '%s' "$opts" | tr ':' '\n' | sed -n 's/^pixelsize=\([0-9.]*\)$/\1/p' | head -1)
     if [ -n "$size" ]; then printf '%s %s' "$face" "$size"; elif [ -n "$px" ]; then printf '%s %spx' "$face" "$px"; else printf '%s 12' "$face"; fi
@@ -677,9 +703,14 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
         eval "v=\$$k"
         e="$e${NL}s|@$k@|$(esc "$v")|g"
     done
-    e="$e${NL}s|@FONT@|$(esc "$FONT")|g"
-    e="$e${NL}s|@BAR_MODE@|$(bar_mode)|g${NL}s|@BAR_FONT@|$(esc "$(bar_font)")|g"
+    _fs=$(font_spec)   # FONT as foot can draw it: the old face until Monaspace Neon is installed
+    # foot's font is a list: a glyph Neon lacks (the dialog's U+2304) comes from DejaVu Sans Mono
+    # before fontconfig's own list, whose first is the proportional DejaVu Sans
+    case $_fs in "$NEON"|"$NEON":*) _ff="$_fs,$NEON_OLD${_fs#"$NEON"}" ;; *) _ff=$_fs ;; esac
+    e="$e${NL}s|@FONT@|$(esc "$_ff")|g"
+    e="$e${NL}s|@BAR_MODE@|$(bar_mode)|g${NL}s|@BAR_FONT@|$(esc "$(bar_font "$_fs")")|g"
     e="$e${NL}s|@FOOT_COLORS@|$(foot_colors)|g"
+    if desktop_wanted; then e="$e${NL}s|@DESK_SLOTS@|yes|g"; else e="$e${NL}s|@DESK_SLOTS@|no|g"; fi   # sgr.sh: the five slots in foot only where the desktop's foot.ini sets them (#34)
     e="$e${NL}s|@SCREENS_CONF@|$(esc "$SCREENS_CONF")|g${NL}s|@IDLE_EXEC@|$(esc "$(idle_exec)")|g${NL}s|@KB_LAYOUT@|$(esc "$(kb_line layout)")|g${NL}s|@KB_VARIANT@|$(esc "$(kb_line variant)")|g"
     printf '%s' "$e"
 }
@@ -712,7 +743,7 @@ rc_tree() { if [ "$OS" = Darwin ]; then echo "$REPO/templates/macos"; else echo 
 # The desktop: sway and foot, rendered only when asked for (DESKTOP=sway)
 # and only on Linux -- macOS has its own desktop. `off` hands both back
 # whatever the config says.
-DESKTOP_RENDERED=".config/foot/foot.ini .config/sway/config .local/share/applications/spark-shell-tmux.desktop"
+DESKTOP_RENDERED=".config/foot/foot.ini .config/foot/dialog.ini .config/sway/config .local/share/applications/spark-shell-tmux.desktop"
 foot_colors() {   # the name of foot's color section: [colors] before 1.26, [colors-dark] from it
     _v=$(PATH=$HOME/.local/bin:$PATH foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
     set -- ${_v:-1 26}
@@ -738,30 +769,40 @@ pointer_off() {   # the two spark themes are spark-shell's own: gone with the de
     for _t in $POINTER_THEMES; do [ ! -d "$POINTER_DIR/$_t" ] || { _had=1; [ "$MODE" = dry ] || rm -rf "${POINTER_DIR:?}/$_t"; }; done
     [ "$_had" = 0 ] || { if [ "$MODE" = dry ]; then row would pointer "spark-white and spark-black removed from $POINTER_DIR"; else row ok pointer "spark-white and spark-black removed from $POINTER_DIR"; fi; }
 }
-sway_reload() {   # a running sway takes the new render now (borders, background, the pointer)
+sway_reload() {   # a running sway reads its new config (on, on desktop: the keys may have changed), under a cover so the wallpaper never goes black
     [ "$MODE" = dry ] && return 0
     [ -n "${SWAYSOCK:-}" ] || return 0
     [ -f "$HOME/.config/sway/config" ] || return 0
     command -v swaymsg >/dev/null 2>&1 || return 0
-    swaymsg reload >/dev/null 2>&1 || return 0
-    # a reload gives the gaps to new workspaces only: the ones open take them now (none: 0)
+    wall_cover; [ -z "$WALL_COVER" ] || sleep 0.25   # drawn before the reload stops sway's own
+    swaymsg reload >/dev/null 2>&1 || { wall_uncover; return 0; }
+    wall_uncover
+    # a reload gives the gaps to new workspaces only: the ones open take them now
     [ -z "${GAPS_INNER:-}" ] || { swaymsg "gaps inner all set $GAPS_INNER" >/dev/null 2>&1; swaymsg "gaps outer all set $GAPS_OUTER" >/dev/null 2>&1; } || :
     [ -z "${BORDER:-}" ] || swaymsg "[tiling] border $BORDER" >/dev/null 2>&1 || :   # and the windows open now their border (a reload gives it to new ones only)
     row ok sway "reloaded (~/.config/sway/config)"
 }
 # The desktop, one path for `on` and `on desktop`: the two user
 # renders, a running sway reloaded, then seatd on Void.
-desktop_look_apply() {   # the two user renders and a live sway
+wall_missing() {   # a todo row when the picture the config names is not there: the ground instead
     if [ "$WALLPAPER" != none ] && [ "$WALLPAPER" != default ] && ! wall_color && ! wall_there; then
-        row todo wallpaper "$(wall_path) is missing -- the palette's background color instead (spark-shell theme wallpaper PATH)"
+        row todo wallpaper "$(wall_path) is missing -- the ground instead (spark-shell theme wallpaper PATH)"
     fi
-    wall_follow   # a shipped drawing under a palette not its own: drawn in that palette first, so the render names the picture
+}
+desktop_files() {   # the desktop's renders: foot's, the dialog's, sway's, the tmux entry, the screens' file
     for rel in $DESKTOP_RENDERED; do
         render_one "$REPO/templates/$rel" "$HOME/$rel"
     done
     [ "$MODE" = dry ] || [ -f "$SCREENS_CONF" ] || { mkdir -p "$CONFIG_DIR" && echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them' > "$SCREENS_CONF"; }   # the template includes it
+}
+desktop_look_apply() {   # on and on desktop: the renders, the pointer, and a running sway reloaded when its file changed (its keys may have)
+    wall_missing
+    wall_follow   # a shipped drawing under a palette not its own: drawn in that palette first, so the render names the picture
+    _sc=$({ cksum < "$HOME/.config/sway/config"; } 2>/dev/null || :)
+    desktop_files
     pointer_apply
-    sway_reload
+    [ "$({ cksum < "$HOME/.config/sway/config"; } 2>/dev/null || :)" = "$_sc" ] || sway_reload
+    look_burst   # the open terminals take the look too: after an upgrade, the slots their new shells draw in
 }
 desktop_apply() {
     desktop_look_apply
@@ -842,9 +883,11 @@ seat_off() {   # by the records alone: the link spark-shell made, the membership
 
 # The sound on the desktop: PipeWire, its session manager WirePlumber
 # and its PulseAudio server (PKG_SOUND). Where systemd runs, the
-# packages' own user units start them at every login. Elsewhere (Void)
-# nothing would: spark-shell desktop starts them beside sway and stops
-# them when sway ends (sound_start). ALSA programs play through PipeWire
+# packages' own user units start them at every login. On runit (Void)
+# they run from boot, a service under spark's supervisor (sound_svc,
+# below); without that supervisor nothing else would start them, so
+# spark-shell desktop starts them beside sway and stops them when sway
+# ends (sound_start). ALSA programs play through PipeWire
 # by its two ALSA files in /etc/alsa/conf.d: Debian's and Arch's packages
 # put them there, Void's leaves them in /usr/share, so on desktop links
 # them. Without logind nothing hands the sound devices to the person at
@@ -855,6 +898,10 @@ seat_off() {   # by the records alone: the link spark-shell made, the membership
 SOUND_ALSA='50-pipewire.conf 99-pipewire-default.conf'
 SOUND_SHARE=usr/share/alsa/alsa.conf.d
 SOUND_CONF=etc/alsa/conf.d
+SOUND_SV=$SPARK_CONFIG_DIR/sv/spark-shell-sound   # the service, in the directory spark's runsvdir-USER runs from boot
+SOUND_FILES='run finish log/run'                  # its files, from templates/.config/spark/sv/spark-shell-sound
+SOUND_PW='wireplumber=usr/share/examples/wireplumber/10-wireplumber.conf pipewire-pulse=usr/share/examples/pipewire/20-pipewire-pulse.conf'   # PROGRAM=the package's own example that has PipeWire start it
+SOUND_PW_CONF=${XDG_CONFIG_HOME:-$HOME/.config}/pipewire/pipewire.conf.d   # the handbook's per-user place for their links
 sound_links_missing() { for f in $SOUND_ALSA; do [ -f "$ROOT/$SOUND_SHARE/$f" ] && [ ! -e "$ROOT/$SOUND_CONF/$f" ] && [ ! -L "$ROOT/$SOUND_CONF/$f" ] && printf ' %s' "$f"; done; return 0; }   # -> the files PipeWire's package left out of /etc/alsa/conf.d
 sound_group_needed() { [ "$(init_shape)" != systemd ] && grep -q '^audio:' "$ROOT/etc/group" 2>/dev/null; }   # no logind: the audio group opens the sound devices
 sound_apply() {
@@ -882,8 +929,11 @@ sound_apply() {
         if [ "$MODE" = dry ]; then row would sound "remove $BAR_ASOUNDRC: PipeWire picks the output now"
         else rm -f "$BAR_ASOUNDRC"; row ok sound "$BAR_ASOUNDRC removed: PipeWire picks the output now"; fi
     fi
+    sound_svc_apply
 }
-sound_off() {   # by the records alone, as seat_off
+sound_off() {   # by the records alone, as seat_off: the service and PipeWire's own links first (yours, no root), then the root steps
+    sound_svc_off
+    sound_pw_off
     [ -e "$STATE_DIR/sound.alsa" ] || [ -e "$STATE_DIR/sound.group" ] || return 0
     need sound "PipeWire's ALSA links and your audio membership removed, as spark-shell made them (sudo)" || return 0
     seat_root off "the sound" || return 0
@@ -904,6 +954,120 @@ sound_off() {   # by the records alone, as seat_off
             row ok sound "$_me is out of the audio group spark-shell added: it takes effect at your next login"
         else row todo sound "gpasswd could not take $_me out of audio -- spark-shell off desktop again"; fi
     fi
+}
+# The sound from boot (runit, #23). With the desktop off nothing ran
+# PipeWire, so no program could open ALSA's default, which is PipeWire.
+# on desktop writes one service of yours, spark-shell-sound, in the
+# directory spark's runsvdir-USER runs from boot (spark's bootstrap
+# writes that root service; spark's CLAUDE.md names ~/.config/spark/sv
+# as where user services live). Its run makes or takes the private
+# runtime dir the desktop uses, leaves a PipeWire that answers there
+# already as it is until it is gone, then runs PipeWire in a process
+# group of its own; finish stops what PipeWire started. WirePlumber and
+# the PulseAudio server start from PipeWire's own pipewire.conf.d links,
+# the Void handbook's per-user ones (no root), linked and recorded here.
+# Without spark's supervisor, or with a runtime dir a login manager set,
+# PipeWire starts with the desktop, as before. The service is written
+# whole under a dot name runsvdir skips, then renamed into place; off
+# desktop takes it down through its runsv, then removes it.
+sound_rd() { _r=${TMPDIR:-/tmp}; printf '%s/%s-runtime-dir' "${_r%/}" "$(id -u)"; }   # -> the private runtime dir runtime_dir makes, the service's too
+sound_svc_ours() { [ -d "$SOUND_SV" ] && [ ! -L "$SOUND_SV" ] && grep -qs 'rendered by spark-shell' "$SOUND_SV/run"; }   # the service is spark-shell's: the marker in its run
+sound_svc_why() {   # -> why PipeWire does not run from boot on this runit machine, or nothing
+    if [ ! -d "$SPARK_CONFIG_DIR/sv" ]; then echo "spark's supervisor is not here ($SPARK_CONFIG_DIR/sv)"
+    elif [ -n "${XDG_RUNTIME_DIR:-}" ] && [ "$XDG_RUNTIME_DIR" != "$(sound_rd)" ]; then echo "a login manager set the runtime dir ($XDG_RUNTIME_DIR)"; fi
+}
+sound_svc_render() {   # -> the service's files in $TMP/sound, from its templates
+    _se="s|@SND_DIR@|$(esc "$ROOT/dev/snd")|g${NL}s|@SOUND_LOG@|$(esc "$STATE_DIR/log/sound")|g"
+    mkdir -p "$TMP/sound/log"
+    for f in $SOUND_FILES; do
+        render_sed "$_se" "$REPO/templates/.config/spark/sv/spark-shell-sound/$f" > "$TMP/sound/$f"
+        ! grep -q '@[A-Z_0-9]*@' "$TMP/sound/$f" || { printf 'spark-shell: the sound service %s: unrendered placeholder\n' "$f" >&2; exit 1; }
+    done
+}
+sound_svc_differ() { for f in $SOUND_FILES; do cmp -s "$TMP/sound/$f" "$SOUND_SV/$f" || printf ' %s' "$f"; done; }   # -> the service's files that differ from the render, by name
+sound_svc_put() {   # sound_svc_put DIR -- the rendered files into DIR, 0755, each through a rename: a run that runs keeps its own file
+    mkdir -p "$1/log" || return 1
+    for f in $SOUND_FILES; do cp "$TMP/sound/$f" "$1/$f.new" && chmod 0755 "$1/$f.new" && mv -f "$1/$f.new" "$1/$f" || return 1; done
+}
+sound_svc_status() { sound_svc_ours && sv status "$SOUND_SV" 2>/dev/null; }   # -> runsv's own line for the service (run: DIR: (pid N) Ts; ...), nothing when nothing supervises it
+sound_svc_up() { case $(sound_svc_status || :) in run:*|finish:*) return 0 ;; esac; return 1; }   # its runsv keeps it up: running, or between two starts
+sound_from() {   # -> boot | login | the desktop: where the PipeWire that answers runs from
+    if [ "$(init_shape)" = systemd ]; then echo login; return 0; fi
+    _p=$(sound_svc_status | sed -n 's/^run: [^(]*(pid \([0-9][0-9]*\)).*/\1/p')   # the service's pid is PipeWire's once it runs it, the run script's while it waits
+    if [ -n "$_p" ] && [ "$(cat "$ROOT/proc/$_p/comm" 2>/dev/null)" = pipewire ]; then echo boot; else echo 'the desktop'; fi
+}
+sound_pw_links() {   # PipeWire starts WirePlumber and its PulseAudio server itself: the handbook's per-user links, recorded; false when it cannot
+    _want=''; _who=''
+    for _w in $SOUND_PW; do
+        _p=${_w%%=*}; _e=${_w#*=}
+        [ "$_p" != pipewire-pulse ] || command -v pipewire-pulse >/dev/null 2>&1 || continue
+        ! sound_by_pipewire "$_p" || continue
+        [ -f "$ROOT/$_e" ] || { skip sound "PipeWire cannot start $_p itself here (no /$_e): PipeWire starts with the desktop"; return 1; }
+        _want="$_want ${_e##*/}"
+        if [ "$_p" = wireplumber ]; then _who="${_who:+$_who and }WirePlumber"; else _who="${_who:+$_who and }its PulseAudio server"; fi
+    done
+    [ -n "$_want" ] || return 0
+    need sound "PipeWire starts $_who itself: link$_want into $SOUND_PW_CONF" || return 0
+    mkdir -p "$SOUND_PW_CONF" "$STATE_DIR" 2>/dev/null || :
+    for _w in $SOUND_PW; do
+        _e=${_w#*=}
+        case "$_want " in *" ${_e##*/} "*) ;; *) continue ;; esac
+        if ln -s "$ROOT/$_e" "$SOUND_PW_CONF/${_e##*/}"; then grep -qsx "${_e##*/}" "$STATE_DIR/sound.pipewire" || echo "${_e##*/}" >> "$STATE_DIR/sound.pipewire"
+        else row todo sound "the link $SOUND_PW_CONF/${_e##*/} failed -- spark-shell on desktop again"; acting=0; return 1; fi
+    done
+    ok sound "PipeWire starts $_who itself ($SOUND_PW_CONF)"
+}
+sound_svc_apply() {   # the boot row of on desktop (runit): the service, after PipeWire's own links
+    [ "$(init_shape)" = runit ] && command -v pipewire >/dev/null 2>&1 || return 0
+    _why=$(sound_svc_why)
+    if [ -n "$_why" ]; then skip sound "$_why: PipeWire starts with the desktop"; return 0; fi
+    if { [ -e "$SOUND_SV" ] || [ -L "$SOUND_SV" ]; } && ! sound_svc_ours; then
+        row todo sound "$SOUND_SV is not spark-shell's: left as it is, and PipeWire starts with the desktop"; acting=0; return 0
+    fi
+    sound_pw_links || return 0
+    sound_svc_render
+    if sound_svc_ours; then
+        _f=$(sound_svc_differ)
+        if [ -z "$_f" ]; then ok sound "PipeWire runs from boot ($SOUND_SV)"; return 0; fi
+        need sound "PipeWire from boot: write$_f in $SOUND_SV" || return 0
+        if sound_svc_put "$SOUND_SV"; then ok sound "PipeWire from boot: $SOUND_SV updated, in effect from its next start"
+        else row todo sound "$SOUND_SV could not be written -- spark-shell on desktop again"; acting=0; fi
+        return 0
+    fi
+    need sound "PipeWire from boot: $SOUND_SV, a service under spark's supervisor" || return 0
+    _new=$SPARK_CONFIG_DIR/sv/.spark-shell-sound.new   # a dot name: runsvdir skips it until it is whole
+    rm -rf "$_new"
+    if sound_svc_put "$_new" && mv "$_new" "$SOUND_SV"; then
+        if XDG_RUNTIME_DIR=$(sound_rd) wpctl status >/dev/null 2>&1; then ok sound "PipeWire runs from boot ($SOUND_SV); the one running now stays until it ends"
+        else ok sound "PipeWire runs from boot ($SOUND_SV)"; fi
+    else rm -rf "$_new"; row todo sound "$SOUND_SV could not be written -- spark-shell on desktop again"; acting=0; fi
+}
+sound_svc_off() {   # off: the service down through its runsv, then its directory gone
+    sound_svc_ours || return 0
+    if [ "$MODE" = dry ]; then row would sound "PipeWire no longer runs from boot: $SOUND_SV stopped and removed"; return 0; fi
+    touch "$SOUND_SV/down" 2>/dev/null || :   # a runsv started for it again never starts PipeWire
+    sv -w 10 force-stop "$SOUND_SV" >/dev/null 2>&1 || :
+    _gone=$SPARK_CONFIG_DIR/sv/.spark-shell-sound.off   # a dot name: runsvdir lets go of it, and never starts a runsv for it again
+    rm -rf "$_gone"
+    if mv "$SOUND_SV" "$_gone"; then
+        sv exit "$_gone" >/dev/null 2>&1 || :
+        _i=0; while [ "$_i" -lt 10 ] && sv status "$_gone" >/dev/null 2>&1; do sleep 1; _i=$((_i + 1)); done   # its runsv gone first, then its files
+        rm -rf "$_gone"
+        row ok sound "PipeWire no longer runs from boot ($SOUND_SV is gone)"
+    else row todo sound "$SOUND_SV stays -- spark-shell off desktop again"; fi
+}
+sound_pw_off() {   # off: PipeWire's own links, by the record alone
+    [ -s "$STATE_DIR/sound.pipewire" ] || return 0
+    if [ "$MODE" = dry ]; then row would sound "PipeWire's links in $SOUND_PW_CONF removed, as spark-shell made them"; return 0; fi
+    for _n in $(cat "$STATE_DIR/sound.pipewire"); do
+        for _w in $SOUND_PW; do
+            _e=${_w#*=}; [ "${_e##*/}" = "$_n" ] || continue   # a name of ours, never a path read back
+            [ "$(readlink "$SOUND_PW_CONF/$_n" 2>/dev/null)" != "$ROOT/$_e" ] || rm -f "$SOUND_PW_CONF/$_n"
+        done
+    done
+    rm -f "$STATE_DIR/sound.pipewire"
+    rmdir "$SOUND_PW_CONF" "${SOUND_PW_CONF%/*}" 2>/dev/null || :   # only when nothing else is in them
+    row ok sound "PipeWire no longer starts WirePlumber or its PulseAudio server itself (the links spark-shell made are gone)"
 }
 # The brightness: brightnessctl writes a laptop's backlight through the
 # video group (its udev rule), ddcutil a screen's DDC/CI through the
@@ -965,9 +1129,16 @@ sound_check() {   # the sound rows of check, on a desktop machine
         esac
         return 0
     fi
-    if [ "$(snd_tool)" = wpctl ]; then chk sound ok "PipeWire answers: out $(wp_default Sinks | grep . || echo none), mic $(wp_default Sources | grep . || echo none)"
+    if [ "$(snd_tool)" = wpctl ]; then chk sound ok "PipeWire runs from $(sound_from): out $(wp_default Sinks | grep . || echo none), mic $(wp_default Sources | grep . || echo none)"
+    elif [ "$(init_shape)" = runit ] && sound_svc_up; then chk sound warn "PipeWire runs from boot, and does not answer" "tail $STATE_DIR/log/sound/current"
     elif [ "$(init_shape)" != systemd ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then chk sound ok "PipeWire starts with the desktop"
     else chk sound warn "PipeWire does not answer" "leave the desktop and log in again"; fi
+    if [ "$(init_shape)" = runit ] && [ ! -e "$SOUND_SV" ] && [ ! -L "$SOUND_SV" ] && [ -z "$(sound_svc_why)" ]; then
+        chk sound warn "PipeWire starts with the desktop, so a console has no sound" "spark-shell on desktop"
+    elif sound_svc_ours; then
+        sound_svc_render; _f=$(sound_svc_differ)
+        [ -z "$_f" ] || chk sound warn "$SOUND_SV is out of date:$_f" "spark-shell on desktop"
+    fi
     _miss=$(sound_links_missing)
     [ -z "$_miss" ] || chk sound warn "ALSA programs skip PipeWire: /$SOUND_CONF lacks$_miss" "spark-shell on desktop"
     ! sound_group_needed || in_group audio "$(id -un)" || chk sound warn "$(id -un) is not in the audio group, so the sound devices stay closed" "spark-shell on desktop"
@@ -1023,6 +1194,7 @@ old_greetd_off() {
 LOGIN_ETC=etc/spark-shell/login
 LOGIN_LIB=usr/local/lib/spark-shell
 LOGIN_ICONS=usr/share/icons   # the spark pointer for the login screen's account, a copy of the two themes
+LOGIN_FONTS=usr/share/fonts/spark-shell   # Monaspace Neon for the login screen's account, a copy of the four faces spark-shell installed
 GREETD_CONF=etc/greetd/config.toml
 LOGIN_SUDOERS=etc/sudoers.d/spark-shell-login
 LOGIN_MARK=' #spark-shell-login#'
@@ -1074,6 +1246,12 @@ login_pointer_put() {   # the two spark themes copied under /usr/share/icons, wh
         root_do chmod -R u=rwX,go=rX "$ROOT/$LOGIN_ICONS/$_t"
     done
 }
+login_fonts_differ() { neon_ours || return 1; for _s in $NEON_STYLES; do cmp -s "$NEON_DIR/MonaspaceNeon-$_s.otf" "$ROOT/$LOGIN_FONTS/MonaspaceNeon-$_s.otf" || return 0; done; return 1; }   # the four faces in your fonts are not the login screen's copy
+login_fonts_put() {   # the copy under /usr/share/fonts, where the login screen's account finds it: your fonts are yours alone
+    neon_ours || return 0
+    for _s in $NEON_STYLES; do root_put "$NEON_DIR/MonaspaceNeon-$_s.otf" "$ROOT/$LOGIN_FONTS/MonaspaceNeon-$_s.otf"; done
+    ! command -v fc-cache >/dev/null 2>&1 || root_do fc-cache -f "$ROOT/$LOGIN_FONTS" >/dev/null 2>&1 || :
+}
 login_files_differ() {   # -> the screen's files that differ from what spark-shell would write, by name
     for f in $LOGIN_FILES; do cmp -s "$TMP/login/$f" "$ROOT/$LOGIN_ETC/$f" || printf ' %s' "$f"; done
     cmp -s "$DIALOG_BIN" "$ROOT/$LOGIN_LIB/spark-dialog" || printf ' spark-dialog'
@@ -1083,6 +1261,7 @@ login_files_differ() {   # -> the screen's files that differ from what spark-she
     for _t in $POINTER_THEMES; do   # the pointer's copy, when the themes are drawn: the same version
         [ ! -d "$POINTER_DIR/$_t" ] || [ "$(cat "$ROOT/$LOGIN_ICONS/$_t/version" 2>/dev/null)" = "$(cat "$POINTER_DIR/$_t/version")" ] || printf ' %s' "$_t"
     done
+    ! login_fonts_differ || printf ' fonts'   # Monaspace Neon's copy, when spark-shell installed it in your fonts
     if [ "$DISTRO" = void ]; then
         sudoers_same || printf ' sudoers'
         cmp -s "$TMP/login/login-boot" "$ROOT/$LOGIN_LIB/login-boot" || printf ' login-boot'
@@ -1135,6 +1314,7 @@ login_screen_apply() {   # the login rows of `on` with LOGIN=yes
         if wall_there; then root_put "$(wall_path)" "$ROOT/$LOGIN_ETC/wallpaper"
         else root_do rm -f "$ROOT/$LOGIN_ETC/wallpaper"; fi
         login_pointer_put
+        login_fonts_put
         if [ -e "$ROOT/$GREETD_CONF" ] && ! greetd_ours && [ ! -e "$ROOT/$GREETD_CONF.spark-shell-orig" ]; then
             root_do cp "$ROOT/$GREETD_CONF" "$ROOT/$GREETD_CONF.spark-shell-orig"
         fi
@@ -1208,6 +1388,7 @@ login_screen_off() {   # by the records alone: the boot back to getty, the scree
     fi
     for f in $LOGIN_FILES wallpaper boot; do root_do rm -f "$ROOT/$LOGIN_ETC/$f"; done
     for _t in $POINTER_THEMES; do root_do rm -rf "$ROOT/$LOGIN_ICONS/$_t"; done
+    root_do rm -rf "$ROOT/$LOGIN_FONTS"
     root_do rm -f "$ROOT/$LOGIN_LIB/spark-dialog" "$ROOT/$LOGIN_LIB/login-boot"
     for d in "$LOGIN_ETC" etc/spark-shell "$LOGIN_LIB"; do [ ! -d "$ROOT/$d" ] || root_do rmdir "$ROOT/$d" 2>/dev/null || true; done
     row ok login "the console login is back on tty1 from the next boot, the login screen's files are gone (greetd's package stays)"
@@ -1219,9 +1400,7 @@ render_all() {
     for rel in $RENDERED; do
         render_one "$REPO/templates/$rel" "$HOME/$rel"
     done
-    if [ "$PROMPT" = starship ]; then
-        render_one "$REPO/templates/.config/starship.toml.$PROMPT_STYLE" "$HOME/.config/starship.toml"
-    fi
+    prompt_render
     if desktop_wanted; then desktop_apply; fi
 }
 
@@ -1454,12 +1633,22 @@ kept_delete_ok() {   # kept_delete_ok KIND NAME -> 0 to go on: at a terminal it 
 }
 palette_names() { for _p in "$REPO"/themes/*.env "$PALETTE_DIR"/*.env; do [ -f "$_p" ] || continue; _n=${_p##*/}; printf '%s\n' "${_n%.env}"; done | sort -u; }
 palette_get() { sed -n "s/^$2=//p" "$1" | tail -1 | tr -d '"\r'; }   # palette_get FILE KEY
+PALETTE_NONE="the terminal's own colors"   # palette none's row: foot's own sixteen on the desktop, the console's own colors at the console
+palette_darks() {   # -> the palettes whose ground is dark, one name a line (theme_is_dark's rule: the background's luminance under half)
+    palette_names | while IFS= read -r _n; do _f=$(palette_file "$_n") && printf '%s\t%s\n' "$_n" "$(palette_get "$_f" THEME_BG)"; done \
+        | awk -F '\t' 'function hx(s, i) { return (index("0123456789abcdef", substr(s, i, 1)) - 1) * 16 + index("0123456789abcdef", substr(s, i + 1, 1)) - 1 }
+            { c = tolower($2); sub(/^#/, "", c); if ((hx(c, 1) * 299 + hx(c, 3) * 587 + hx(c, 5) * 114) / 1000 < 128) print $1 }'
+}
+palette_chip() {   # palette_chip NAME -> its chip, nine colors: the ground, the text, the accent and six hues (red to cyan); false with no palette
+    _f=$(palette_file "$1") || return 1
+    awk -F= '{ v[$1] = $2; gsub(/["\r]/, "", v[$1]) } END { printf "%s %s %s %s %s %s %s %s %s\n", v["THEME_BG"], v["THEME_FG"], v["THEME_ACCENT"], v["THEME_ANSI_1"], v["THEME_ANSI_2"], v["THEME_ANSI_3"], v["THEME_ANSI_4"], v["THEME_ANSI_5"], v["THEME_ANSI_6"] }' "$_f"
+}
 console_render() {   # console_render RRGGBB... (16) -> $TMP/console-colors and $TMP/console-colors.rgb
     _i=0; _esc=''; _r=''; _g=''; _b=''
     for _h in "$@"; do
         _esc="$_esc$(printf '\033]P%x%s' "$_i" "$_h")"
-        _rgb=$(hex_rgb "#$_h"); _gb=${_rgb#* }
-        _r="$_r,${_rgb%% *}"; _g="$_g,${_gb% *}"; _b="$_b,${_gb#* }"
+        rgb_of "#$_h"
+        _r="$_r,$_R"; _g="$_g,$_G"; _b="$_b,$_B"
         _i=$((_i + 1))
     done
     printf '%s' "$_esc" > "$TMP/console-colors"
@@ -1468,14 +1657,16 @@ console_render() {   # console_render RRGGBB... (16) -> $TMP/console-colors and 
 palette_render() {   # palette_render NAME -> the three files in $TMP; false, and why in $TMP/palette.why, when it cannot
     if ! _f=$(palette_file "$1"); then echo "no palette named $1 (spark-shell theme list)" > "$TMP/palette.why"; return 1; fi
     printf '# rendered by spark-shell from the palette %s -- spark-shell theme NAME changes it\n' "$1" > "$TMP/theme.env"
+    awk -F= '{ k = $1; sub(/^[^=]*=/, ""); gsub(/["\r]/, ""); v[k] = $0 } END { for (k in v) print k "=" v[k] }' "$_f" > "$TMP/palette.kv"   # the file read once, the last line of a key winning (palette_get's rule)
     _hexes=''
     for _k in $THEME_KEYS; do
-        _v=$(palette_get "$_f" "$_k")
+        _v=$(sed -n "s/^$_k=//p" "$TMP/palette.kv")
         hex_rgb "$_v" >/dev/null || { echo "$_f: $_k is not #rrggbb" > "$TMP/palette.why"; return 1; }
         printf '%s=%s\n' "$_k" "$_v" >> "$TMP/theme.env"
-        case $_k in THEME_ANSI_*) _hexes="$_hexes $(printf '%s' "${_v#\#}" | tr 'A-F' 'a-f')" ;; esac
+        # shellcheck disable=SC2154   # _hv is set by hex_put
+        case $_k in THEME_ANSI_*) hex_put _hv "$_v" ''; _hexes="$_hexes $_hv" ;; esac
     done
-    _v=$(palette_get "$_f" THEME_LOGO)
+    _v=$(sed -n 's/^THEME_LOGO=//p' "$TMP/palette.kv")
     case $_v in '') ;; *[!A-Za-z0-9\ _.#-]*) echo "$_f: THEME_LOGO holds more than names and colors" > "$TMP/palette.why"; return 1 ;;
         *) printf 'THEME_LOGO=%s\n' "$_v" >> "$TMP/theme.env" ;; esac
     # shellcheck disable=SC2086   # sixteen words, split on purpose
@@ -1513,7 +1704,7 @@ theme_files() {   # before the renders: theme.env and the console's two files, a
         fi
         return 0
     fi
-    if ! palette_render "$THEME"; then row todo theme "THEME=$THEME: $(cat "$TMP/palette.why")"; return 0; fi
+    if [ "${PALETTE_RENDERED:-}" != "$THEME" ] && ! palette_render "$THEME"; then row todo theme "THEME=$THEME: $(cat "$TMP/palette.why")"; return 0; fi
     for _f in theme.env console-colors console-colors.rgb; do
         case $_f in theme.env) _d=$THEME_ENV ;; *) _d=$CONFIG_DIR/$_f ;; esac
         if [ -f "$_d" ] && cmp -s "$TMP/$_f" "$_d"; then ok theme "$THEME ($_d)"; continue; fi
@@ -1616,8 +1807,9 @@ terminal_has() { python3 "$REPO/lib/terminal_profile.py" has-profile >/dev/null 
 terminal_apply() {
     [ "$OS" = Darwin ] || return 0
     [ -f "$THEME_ENV" ] && [ -n "$THEME" ] && [ "$THEME" != none ] || return 0
-    set -- $CONSOLE_FONT
-    _face=${1:-Menlo-Regular}; _size=${2:-13}
+    # shellcheck disable=SC2046   # FACE SIZE, split on purpose
+    set -- $(term_font)
+    _face=$1; _size=$2
     _want="$(cksum < "$THEME_ENV" | cut -d' ' -f1) $_face $_size"
     _why="Terminal.app's profile from the palette, in $_face $_size"
     if [ "$(cat "$TERMINAL_SEEN" 2>/dev/null)" = "$_want" ]; then
@@ -1643,36 +1835,40 @@ terminal_off() {
 }
 
 # The open terminals (Linux). foot, like most terminals, reads its
-# colors when a window opens and cannot reload them, so `theme NAME`
-# sends the palette to each terminal you have open: OSC 4 for the 16
-# slots, OSC 10 and 11 for the text and the background, OSC 12 for the
-# cursor when the palette has a THEME_CURSOR. `theme none` sends the
-# resets (OSC 104, 110, 111, 112). A terminal is a /dev/pts/N that you
-# own and can write. A tmux pane is a pty too, but tmux would keep the
+# colors when a window opens, so a look change sends the look to each
+# terminal you have open, all in one moment (look_burst): OSC 4 for the
+# 16 slots, OSC 10 and 11 for the text and the background, OSC 12 for
+# the cursor when the palette has a THEME_CURSOR (else 112). `theme
+# none` says foot's own sixteen outright, since a reset takes a running
+# foot back to the colors it started with (#29). A window of the desktop
+# (foot under spark-shell's foot.ini) also gets the five slots after the
+# sixteen, and its transparency as foot's [NN] before the background
+# (#34, #35); the dialog's own window gets its surface, opaque. A
+# terminal is a /dev/pts/N that you own and can write. A tmux pane is a pty too, but tmux would keep the
 # codes for that pane alone, so the panes are left out: tmux's clients
 # are the outer terminals, among your ptys, and tmux follows by its own
 # re-render (tmux_reload). The Linux console is console_now's, a Mac's
 # Terminal.app its profile's. SPARK_SHELL_PTS_DIR (tests only) is the
 # directory the ptys are read from, with plain files standing in.
 PTS_DIR=${SPARK_SHELL_PTS_DIR:-/dev/pts}
-osc_render() {   # osc_render NAME|none -> $TMP/osc: the codes, each ended by ST (ESC \)
-    if [ "$1" = none ]; then
-        if [ "$OS" = Darwin ]; then printf '\033]104\033\\\033]110\033\\\033]111\033\\\033]112\033\\' > "$TMP/osc"; return 0; fi
-        # the desktop's none is foot's own sixteen: said outright, since a reset (OSC 104) takes a running foot back to the colors it started with (#29)
-        : > "$TMP/osc"; _i=0
-        for _h in $FOOT_HEX; do printf '\033]4;%d;%s\033\\' "$_i" "$_h" >> "$TMP/osc"; _i=$((_i + 1)); done
-        printf '\033]10;ffffff\033\\\033]11;242424\033\\\033]112\033\\' >> "$TMP/osc"; return 0
-    fi
-    _f=$(palette_file "$1") || return 1
-    : > "$TMP/osc"
+osc_render() {   # osc_render plain|foot|dialog -> $TMP/osc.KIND: the look loaded now (theme_load) as one kind of terminal's codes, each ended by ST (ESC \)
+    _o=$TMP/osc.$1; : > "$_o"
     _i=0
     while [ "$_i" -le 15 ]; do
-        printf '\033]4;%d;%s\033\\' "$_i" "$(palette_get "$_f" "THEME_ANSI_$_i" | tr 'A-F' 'a-f')" >> "$TMP/osc"
+        eval "_h=\$HEX_ANSI_$_i"
+        printf '\033]4;%d;#%s\033\\' "$_i" "$_h" >> "$_o"
         _i=$((_i + 1))
     done
-    printf '\033]10;%s\033\\\033]11;%s\033\\' "$(palette_get "$_f" THEME_FG | tr 'A-F' 'a-f')" "$(palette_get "$_f" THEME_BG | tr 'A-F' 'a-f')" >> "$TMP/osc"
-    _c=$(palette_get "$_f" THEME_CURSOR)
-    if hex_rgb "$_c" >/dev/null; then printf '\033]12;%s\033\\' "$(printf '%s' "$_c" | tr 'A-F' 'a-f')" >> "$TMP/osc"; fi
+    [ "$1" = plain ] || printf '\033]4;16;#%s\033\\\033]4;17;#%s\033\\\033]4;18;#%s\033\\\033]4;19;#%s\033\\\033]4;20;#%s\033\\' "$HEX_ACCENT" "$HEX_MUTED" "$PANEL_BG" "$PANEL_HI" "$PANEL_MUTED" >> "$_o"
+    case $1 in
+        foot) _bg="[$(awk -v a="$FOOT_ALPHA" 'BEGIN { printf "%d", a * 100 + 0.5 }')]#$HEX_BG" ;;   # foot's own words: the opacity in percent before the color
+        dialog) _bg="#$PANEL_BG" ;;   # the dialog's surface, opaque as its window is
+        *) _bg="#$HEX_BG" ;;
+    esac
+    printf '\033]10;#%s\033\\\033]11;%s\033\\' "$HEX_FG" "$_bg" >> "$_o"
+    _c=''; if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && _pf=$(palette_file "$THEME"); then _c=$(palette_get "$_pf" THEME_CURSOR); fi
+    if hex_rgb "$_c" >/dev/null; then printf '\033]12;%s\033\\' "$(printf '%s' "$_c" | tr 'A-F' 'a-f')" >> "$_o"
+    else printf '\033]112\033\\' >> "$_o"; fi   # no cursor color of its own: the terminal's
 }
 pts_mine() {   # -> the ptys to paint, one a line: yours, writable, not a tmux pane
     _me=$(id -u)
@@ -1686,20 +1882,84 @@ pts_mine() {   # -> the ptys to paint, one a line: yours, writable, not a tmux p
         printf '%s\n' "$_p"
     done
 }
-pts_write() {   # pts_write PTY -- the codes to one terminal, given 2 seconds (a stopped terminal never hangs the verb)
-    if command -v timeout >/dev/null 2>&1; then timeout 2 sh -c 'cat "$1" > "$2"' sh "$TMP/osc" "$1" 2>/dev/null
-    else cat "$TMP/osc" > "$1" 2>/dev/null; fi
+pts_write() {   # pts_write PTY FILE -- the codes to one terminal, given 2 seconds (a stopped terminal never hangs the verb)
+    if command -v timeout >/dev/null 2>&1; then timeout 2 sh -c 'cat "$1" > "$2"' sh "$2" "$1" 2>/dev/null
+    else cat "$2" > "$1" 2>/dev/null; fi
 }
-theme_repaint() {   # theme_repaint NAME|none -- every open terminal takes it now; one line when any did
-    [ "$MODE" = apply ] && [ "$OS" != Darwin ] && [ -d "$PTS_DIR" ] || return 0
-    osc_render "$1" || return 0
+pts_kinds() {   # -> "PTY<tab>KIND" for each terminal to paint: dialog (the dialog's own window), foot (a window of the desktop: its foot.ini has the five slots), plain (any other terminal of yours)
     pts_mine > "$TMP/pts"
-    _n=0
-    while IFS= read -r _p; do
-        if pts_write "$_p"; then _n=$((_n + 1)); fi
-    done < "$TMP/pts"
-    if [ "$_n" -eq 1 ]; then echo "Repainted 1 open terminal."
-    elif [ "$_n" -gt 1 ]; then echo "Repainted $_n open terminals."; fi
+    [ -s "$TMP/pts" ] || return 0
+    _fk=plain; ! desktop_wanted || _fk=foot
+    ps -eo pid=,ppid=,tty=,comm= > "$TMP/ps" 2>/dev/null || : > "$TMP/ps"   # whose each pty is: one look at the processes
+    awk -v d="$PTS_DIR" -v fk="$_fk" 'NR == FNR { pp[$1] = $2; cm[$1] = $4; next }
+        $3 ~ /^pts\/[0-9]+$/ { t = d "/" substr($3, 5)
+            if ($4 == "spark-dialog") { k[t] = "dialog"; next }
+            if (t in k) next
+            p = $2; n = 0   # up the parents: a process under foot is in a window of the desktop, however deep (a shell in a shell, sudo)
+            while (p != "" && p > 1 && n < 16) { if (cm[p] == "foot") { k[t] = fk; break }; p = pp[p]; n++ } }
+        END { while ((getline l < pts) > 0) printf "%s\t%s\n", l, (l in k) ? k[l] : "plain" }' pts="$TMP/pts" "$TMP/ps" "$TMP/ps"
+}
+look_terms() {   # look_terms prepare|send -- every open terminal takes the look: prepare finds them and writes their codes, send writes to all at once, side by side (#33, #34); _painted says how many took it
+    case $1 in
+        prepare)
+            : > "$TMP/pts.todo"
+            [ "$MODE" = apply ] && [ "$OS" != Darwin ] && [ -d "$PTS_DIR" ] || return 0
+            pts_kinds > "$TMP/pts.todo"
+            for _k in plain foot dialog; do ! grep -q "$TAB$_k\$" "$TMP/pts.todo" || osc_render "$_k"; done ;;
+        send)
+            _painted=0; _pids=''
+            [ -s "$TMP/pts.todo" ] || return 0
+            while IFS="$TAB" read -r _p _k; do
+                pts_write "$_p" "$TMP/osc.$_k" & _pids="$_pids $!"   # a terminal that hangs holds no other
+            done < "$TMP/pts.todo"
+            for _lw in $_pids; do if wait "$_lw"; then _painted=$((_painted + 1)); fi; done ;;   # _lw: sh has no locals, and theme_apply's _w is the drawing
+    esac
+}
+# The wallpaper under a running sway, with no black frame (#33). sway stops its swaybg before the
+# new one draws, and the screen is black between, about 100 ms on the box. So a swaybg of ours
+# shows the new picture first, on top; sway then takes the same picture under it, and ours goes
+# once sway's own has drawn.
+WALL_COVER=''
+wall_cover() {   # the wallpaper about to be (WALL_BG) on top of what shows now; the rest of the look follows it into the same frame
+    WALL_COVER=''
+    [ "$MODE" = apply ] && [ -n "${SWAYSOCK:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ] && command -v swaybg >/dev/null 2>&1 || return 0
+    case $WALL_BG in
+        *' solid_color') set -- -c "${WALL_BG% solid_color}" ;;
+        *) _wp=${WALL_BG% fill}; _wp=${_wp#\"}; _wp=${_wp%\"}; set -- -i "$_wp" -m fill ;;
+    esac
+    swaybg -o '*' "$@" >/dev/null 2>&1 </dev/null & WALL_COVER=$!   # it draws in 100 to 200 ms: the caller gets the rest ready meanwhile
+}
+wall_uncover() {   # wall_uncover [WALL_BG] -- sway takes the picture under ours once ours is drawn, then ours goes once sway's own is
+    [ -n "$WALL_COVER" ] || return 0
+    ( sleep 0.25; [ -z "${1:-}" ] || swaymsg -- "output * bg $1" >/dev/null 2>&1; sleep 0.6; kill "$WALL_COVER" 2>/dev/null ) >/dev/null 2>&1 </dev/null &
+    WALL_COVER=''
+}
+wall_shown() { sed -n 's/^output \* bg //p' "$HOME/.config/sway/config" 2>/dev/null | head -1; }   # -> the wallpaper a running sway shows: the config's, which the renders after the switch rewrite
+sway_live_cmd() {   # sway_live_cmd [WALLPAPER] -> the one swaymsg command that gives a running sway the look, with no reload (#33): the edges' colors, the bar's colors, font and mode, the pointer and, given a word, the wallpaper (under wall_cover's)
+    [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 0
+    _c="client.focused #$BORDER_HEX #$PANEL_HI #$HEX_FG #$BORDER_HEX #$BORDER_HEX; client.focused_inactive #$BORDER_HEX #$PANEL_BG #$HEX_FG #$BORDER_HEX #$BORDER_HEX"
+    _c="$_c; client.unfocused #$BORDER_HEX #$HEX_BG #$HEX_MUTED #$BORDER_HEX #$BORDER_HEX; client.urgent #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG #$HEX_ANSI_1 #$HEX_ANSI_1"
+    _c="$_c; seat * xcursor_theme $POINTER_NAME $POINTER_SIZE; gaps inner all set $GAPS_INNER; gaps outer all set $GAPS_OUTER; [tiling] border $BORDER"
+    [ -z "${1:-}" ] || _c="$_c; output * bg $WALL_BG"
+    _b=$(swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | cut -d, -f1)   # the bar's id, bar-0
+    [ -z "$_b" ] || _c="$_c; bar $_b mode $(bar_mode); bar $_b font pango:$(bar_font "$(font_spec)"); bar $_b colors background #$HEX_BG$BAR_ALPHA; bar $_b colors statusline #$HEX_FG; bar $_b colors separator #$HEX_MUTED; bar $_b colors focused_workspace #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG; bar $_b colors active_workspace #$HEX_MUTED #$HEX_MUTED #$HEX_BG; bar $_b colors inactive_workspace #$HEX_BG$BAR_ALPHA #$HEX_BG$BAR_ALPHA #$HEX_MUTED; bar $_b colors urgent_workspace #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG; bar $_b colors binding_mode #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG"
+    printf '%s' "$_c"
+}
+look_burst() {   # the look on the screen at once (#33): everything made ready first; then a new wallpaper, which takes about 90 ms to draw, and in that moment sway, the bar and the open terminals, which take theirs at once
+    _painted=0
+    [ "$MODE" = apply ] && [ "$OS" != Darwin ] || return 0
+    _wn=''; ! desktop_wanted || [ -z "${SWAYSOCK:-}" ] || [ "$WALL_BG" = "$(wall_shown)" ] || _wn=1
+    look_terms prepare
+    ! desktop_wanted || bar_palette
+    _sc=''; ! desktop_wanted || _sc=$(sway_live_cmd)   # the wallpaper is not in it: sway takes it under the cover, later (wall_uncover)
+    [ -z "$_wn" ] || wall_cover
+    if [ -n "$WALL_COVER" ]; then sleep 0.09   # the new picture draws meanwhile
+    elif [ -n "$_wn" ]; then _sc="$_sc; output * bg $WALL_BG"; fi   # no swaybg of ours to cover it: sway's own way, black frame and all
+    _sw=''
+    if [ -n "$_sc" ]; then swaymsg -- "$_sc" >/dev/null 2>&1 & _sw=$!; bar_redraw; fi   # bar_redraw: the status line in its new colors, from the line it drew last
+    look_terms send
+    [ -z "$_sw" ] || wait "$_sw" 2>/dev/null || :   # that one alone: the cover's swaybg is a child too, and runs on
+    wall_uncover "$WALL_BG"
 }
 
 # --------------------------------------------------------- the console font
@@ -1814,13 +2074,134 @@ console_fonts() {   # -> "FACE SIZE" lines, sorted; nothing when the fonts dir i
         done
     fi | sort -u
 }
-MAC_FACES="Menlo-Regular Monaco SFMono-Regular Courier CourierNewPSMT AndaleMono JetBrainsMono-Regular FiraCode-Regular Hack-Regular SourceCodePro-Regular CascadiaCode-Regular UbuntuMono-Regular DejaVuSansMono IBMPlexMono"
+MAC_FACES="MonaspaceNeon-Regular Menlo-Regular Monaco SFMono-Regular Courier CourierNewPSMT AndaleMono JetBrainsMono-Regular FiraCode-Regular Hack-Regular SourceCodePro-Regular CascadiaCode-Regular UbuntuMono-Regular DejaVuSansMono IBMPlexMono"
 MAC_SYSTEM_FACES="Menlo-Regular Monaco SFMono-Regular Courier CourierNewPSMT AndaleMono"
-mac_face_here() {   # a face every Mac ships, one Spotlight finds, else the helper's word (SPARK_SHELL_MAC_FONTS pins them in tests)
+mac_face_here() {   # a face every Mac ships, a file of its name in a Fonts folder (one just installed), one Spotlight finds, else the helper's word (SPARK_SHELL_MAC_FONTS pins them in tests)
     if [ -n "${SPARK_SHELL_MAC_FONTS:-}" ]; then case " $SPARK_SHELL_MAC_FONTS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; fi
     case " $MAC_SYSTEM_FACES " in *" $1 "*) return 0 ;; esac
+    for _d in "$HOME/Library/Fonts" /Library/Fonts; do for _x in otf ttf ttc; do [ ! -f "$_d/$1.$_x" ] || return 0; done; done
     [ -n "$(mdfind "kMDItemFonts == '$1'" 2>/dev/null | head -1)" ] && return 0
     python3 "$REPO/lib/terminal_profile.py" has-font "$1" >/dev/null 2>&1   # Spotlight off: the helper does not refuse on no evidence
+}
+
+# ---------------------------------------------------- the terminal's font
+# Monaspace Neon, by GitHub Next (SIL OFL 1.1), the type of spark's page,
+# is the terminal's: foot and all the desktop draws in FONT, and
+# Terminal.app on a Mac. `on` installs it where foot is wanted (the
+# desktop or the login screen) and on a Mac: the distro's own package
+# where its PKG_DESKTOP has one (Arch's otf-monaspace), else the
+# release's zip, fetched to TMP and refused unless its sha256 is the one
+# pinned here, the four faces foot uses copied to your fonts. Offline or
+# refused, nothing is installed and a todo row says so; FONT keeps the
+# old face until it is there (font_spec), since fontconfig draws a
+# missing face in a proportional one. A FONT, or a Mac's CONSOLE_FONT,
+# on the old default face is the default, not a choice: `on` moves it to
+# Monaspace Neon at its size, once (neon_move). The Linux console keeps
+# its bitmap font: an OTF cannot go there. off leaves the font, as it
+# leaves the packages.
+NEON='Monaspace Neon'                      # the family: fontconfig's word, FONT's face
+NEON_PS=MonaspaceNeon-Regular              # its PostScript name: Terminal.app's word
+NEON_OLD='DejaVu Sans Mono'                # FONT's default face before v0.89
+NEON_PS_OLD=Menlo-Regular                  # Terminal.app's default face before v0.89
+NEON_VERSION=1.400
+NEON_URL=${SPARK_SHELL_FONT_URL:-https://github.com/githubnext/monaspace/releases/download/v1.400/monaspace-static-v1.400.zip}   # the release's static OTF zip; the tests point it at a file:// zip, or none
+NEON_SHA256=ab66d71be751495f679727332a3345597943bd4d7beebca03f5cde04bf994de7   # that zip's sha256, the one GitHub lists for it
+NEON_STYLES='Regular Bold Italic BoldItalic'   # the four faces foot uses, of the zip's 42
+NEON_MOVED=$STATE_DIR/font.moved           # the move is done: an old face in FONT after it is a choice
+if [ "$OS" = Darwin ]; then NEON_DIR=$HOME/Library/Fonts; else NEON_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/fonts/monaspace-neon; fi
+NEON_WOULD=0                               # a dry run's would row for the fetch: the move is said too
+neon_ours() { for _s in $NEON_STYLES; do [ -f "$NEON_DIR/MonaspaceNeon-$_s.otf" ] || return 1; done; }   # the four faces in NEON_DIR
+neon_here() {   # can the terminal draw Monaspace Neon? the four faces in NEON_DIR; else a Mac's other Fonts folder, or fontconfig finds the family (a package's, or yours)
+    neon_ours && return 0
+    if [ "$OS" = Darwin ]; then [ -f "/Library/Fonts/$NEON_PS.otf" ]; return; fi
+    [ ! -d "$NEON_DIR" ] || return 1   # spark-shell's own folder with a face missing: installed again
+    command -v fc-list >/dev/null 2>&1 && [ -n "$(fc-list "$NEON" family 2>/dev/null)" ]
+}
+neon_pkg() { for _p in $PKG_DESKTOP; do case $_p in *monaspace*) printf '%s' "$_p"; return 0 ;; esac; done; return 1; }   # -> the distro's package of the font, when its list has one (after pm_detect)
+font_spec() {   # -> FONT as foot can draw it: a FONT on Monaspace Neon before it is installed is the old face at its size
+    case $FONT in "$NEON"|"$NEON":*) neon_here || { printf '%s%s' "$NEON_OLD" "${FONT#"$NEON"}"; return 0; } ;; esac
+    printf '%s' "$FONT"
+}
+term_font() {   # -> Terminal.app's "FACE SIZE": CONSOLE_FONT, else Monaspace Neon at 13 once it is installed, Menlo before
+    # shellcheck disable=SC2086   # FACE SIZE, split on purpose
+    set -- $CONSOLE_FONT
+    if [ -n "${1:-}" ]; then printf '%s %s' "$1" "${2:-13}"
+    elif neon_here; then printf '%s 13' "$NEON_PS"
+    else printf '%s 13' "$NEON_PS_OLD"; fi
+}
+neon_unzip() {   # neon_unzip ZIP DIR -- the four faces out of the release's zip into DIR: unzip where it is (every Mac), else python3 (spark needs it; Void has no unzip); judged by the files
+    _nmiss=0
+    if command -v unzip >/dev/null 2>&1; then
+        for _s in $NEON_STYLES; do unzip -p "$1" "Static Fonts/Monaspace Neon/MonaspaceNeon-$_s.otf" > "$2/MonaspaceNeon-$_s.otf" 2>/dev/null || :; done
+    fi
+    for _s in $NEON_STYLES; do [ -s "$2/MonaspaceNeon-$_s.otf" ] || _nmiss=1; done
+    if [ "$_nmiss" = 1 ] && command -v python3 >/dev/null 2>&1; then
+        # shellcheck disable=SC2086   # the four styles, one word each
+        python3 -I -c 'import sys, zipfile
+z = zipfile.ZipFile(sys.argv[1])
+for s in sys.argv[3:]:
+    n = "MonaspaceNeon-%s.otf" % s
+    with open(sys.argv[2] + "/" + n, "wb") as f:
+        f.write(z.read("Static Fonts/Monaspace Neon/" + n))' "$1" "$2" $NEON_STYLES >/dev/null 2>&1 || :
+    fi
+    for _s in $NEON_STYLES; do [ -s "$2/MonaspaceNeon-$_s.otf" ] || return 1; done
+}
+neon_wanted() {   # does the terminal take Monaspace Neon? FONT, or Terminal.app's face, is it, or the old default face the move takes to it
+    if [ "$OS" = Darwin ]; then
+        # shellcheck disable=SC2086   # FACE SIZE, split on purpose
+        set -- $CONSOLE_FONT
+        case ${1:-} in ''|"$NEON_PS") return 0 ;; "$NEON_PS_OLD") [ ! -e "$NEON_MOVED" ]; return ;; *) return 1 ;; esac
+    fi
+    case $FONT in "$NEON"|"$NEON":*) return 0 ;; "$NEON_OLD"|"$NEON_OLD":*) [ ! -e "$NEON_MOVED" ]; return ;; *) return 1 ;; esac
+}
+neon_install() {   # the font row of `on`: Monaspace Neon where foot is wanted, and on a Mac
+    if [ "$OS" != Darwin ] && ! desktop_wanted && ! login_wanted; then skip font "DESKTOP=none: Monaspace Neon is for foot, the desktop's terminal"; return 0; fi
+    if neon_ours; then ok font "$NEON is in $NEON_DIR"; return 0; fi
+    if ! neon_wanted; then
+        if [ "$OS" = Darwin ]; then skip font "CONSOLE_FONT=$CONSOLE_FONT is yours: $NEON is not fetched"; else skip font "FONT=$FONT is yours: $NEON is not fetched"; fi
+        return 0
+    fi
+    if neon_here; then ok font "$NEON is installed$(_np=$(neon_pkg) && printf ' (%s)' "$_np")"; return 0; fi
+    if [ "$OS" = Darwin ]; then _nkeep="Terminal.app keeps its font"; else _nkeep="foot draws $NEON_OLD"; fi
+    [ "$NEON_URL" != none ] || { skip font "no release to fetch $NEON from (SPARK_SHELL_FONT_URL=none): $_nkeep"; return 0; }
+    command -v curl >/dev/null 2>&1 || { row todo font "curl is not installed, so $NEON cannot be fetched: $_nkeep -- spark-shell on desktop installs curl"; return 0; }
+    need font "fetch $NEON $NEON_VERSION from GitHub (56 MB), check its sha256 and put its four faces in $NEON_DIR" || { NEON_WOULD=1; return 0; }
+    _nz=$TMP/monaspace.zip; _nd=$TMP/monaspace; mkdir -p "$_nd"
+    if ! curl -fsSL --proto '=https,file' --proto-redir '=https' --connect-timeout 30 -o "$_nz" "$NEON_URL" 2>/dev/null; then
+        rm -f "$_nz"; row todo font "could not fetch $NEON: $_nkeep until spark-shell on fetches it"; acting=0; return 0
+    fi
+    if [ "$(sha256_of "$_nz")" != "$NEON_SHA256" ]; then
+        rm -f "$_nz"; row todo font "the file fetched is not the $NEON $NEON_VERSION spark-shell pins: nothing installed, $_nkeep"; acting=0; return 0
+    fi
+    neon_unzip "$_nz" "$_nd" || { row todo font "could not open $NEON's zip (python3 or unzip): nothing installed, $_nkeep"; acting=0; return 0; }
+    mkdir -p "$NEON_DIR"
+    for _s in $NEON_STYLES; do
+        cp "$_nd/MonaspaceNeon-$_s.otf" "$NEON_DIR/MonaspaceNeon-$_s.otf.new" && chmod 0644 "$NEON_DIR/MonaspaceNeon-$_s.otf.new" && mv -f "$NEON_DIR/MonaspaceNeon-$_s.otf.new" "$NEON_DIR/MonaspaceNeon-$_s.otf" \
+            || { row todo font "could not write $NEON_DIR -- spark-shell on again"; acting=0; return 0; }
+    done
+    [ "$OS" = Darwin ] || ! command -v fc-cache >/dev/null 2>&1 || fc-cache -f "$NEON_DIR" >/dev/null 2>&1 || :
+    ok font "$NEON $NEON_VERSION installed in $NEON_DIR, its sha256 checked"
+}
+neon_move() {   # once, at the first on with the font wanted: a FONT on DejaVu Sans Mono, or a Mac's CONSOLE_FONT on Menlo-Regular, the old default faces, moves to Monaspace Neon at its size when it is installed (until then it waits)
+    [ ! -e "$NEON_MOVED" ] || return 0
+    if [ "$OS" = Darwin ]; then
+        # shellcheck disable=SC2086   # FACE SIZE, split on purpose
+        set -- $CONSOLE_FONT
+        _nold=$NEON_PS_OLD
+        if [ "${1:-}" = "$NEON_PS_OLD" ]; then _nkey=CONSOLE_FONT; _nval="$NEON_PS ${2:-13}"; else _nkey=''; fi
+    else
+        desktop_wanted || login_wanted || return 0
+        _nwas=$(sed -n 's/^FONT=//p' "$CONFIG" 2>/dev/null | tail -1); _nwas=${_nwas#\"}; _nwas=${_nwas%\"}; _nold=$NEON_OLD
+        case $_nwas in "$NEON_OLD"|"$NEON_OLD":*) _nkey=FONT; _nval="$NEON${_nwas#"$NEON_OLD"}" ;; *) _nkey='' ;; esac
+    fi
+    if [ -n "$_nkey" ]; then
+        neon_here || [ "$NEON_WOULD" = 1 ] || return 0   # not installed: the old face stays, and the move waits for it
+        need font "$_nkey=$_nval, the new default face at your size ($_nold was the old one)" || return 0
+        config_set "$_nkey" "$_nval" >/dev/null
+        eval "$_nkey=\$_nval"; export "${_nkey?}"
+        ok font "$_nkey=$_nval, the new default face at your size ($_nold was the old one)"
+    fi
+    [ "$MODE" = dry ] || { mkdir -p "$STATE_DIR"; printf '%s\n' "${_nkey:-nothing}${_nkey:+ moved to $_nval}" > "$NEON_MOVED"; }
 }
 
 # --------------------------------------------------------- a quiet login
@@ -2133,8 +2514,8 @@ on_warning() {   # on_warning [desktop|login] -- at the very start of on: what i
     fi
     ask_terminal
     if [ "$OS" = Darwin ]; then
-        printf '%s\n' 'spark-shell replaces your shell files, installs packages' \
-            'and changes the Terminal.app colors.' 'spark-shell on --dry-run shows every change.'
+        printf '%s\n' 'spark-shell replaces your shell files, installs packages and' \
+            'a font, and changes the Terminal.app colors and font.' 'spark-shell on --dry-run shows every change.'
     elif [ "${1:-}" = desktop ]; then
         printf '%s\n' 'spark-shell replaces your shell files, installs packages' \
             'and changes the console colors.' 'spark-shell on desktop --dry-run shows every change.'
@@ -2146,12 +2527,14 @@ on_warning() {   # on_warning [desktop|login] -- at the very start of on: what i
         printf '\nspark-shell changes how this machine works:\n\n'
         # shellcheck disable=SC2086
         [ -z "$PKG_DESKTOP$PKG_SOUND" ] || warn_wrap packages $PKG_DESKTOP $PKG_SOUND '(sudo)'
+        neon_pkg >/dev/null || warn_wrap font "Monaspace Neon $NEON_VERSION from GitHub to your fonts, sha256 checked"
         warn_wrap login 'logging in on tty1 starts the desktop'
         warn_wrap '' 'Alt+F2 is a plain shell'
         if [ "$DISTRO" = void ]; then
             warn_wrap groups 'adds you to _seatd and audio (sudo)'
             warn_wrap services 'turns on seatd at boot (sudo)'
-            warn_wrap sound 'PipeWire starts with the desktop, and ALSA programs play through it (sudo)'
+            if [ -d "$SPARK_CONFIG_DIR/sv" ]; then warn_wrap sound "PipeWire runs from boot, under spark's supervisor, and ALSA programs play through it (sudo)"
+            else warn_wrap sound 'PipeWire starts with the desktop, and ALSA programs play through it (sudo)'; fi
         fi
         printf '\n%s\n%s\n' 'spark-shell off desktop puts the login back.' 'Packages stay.'
     fi
@@ -2241,6 +2624,10 @@ cmd_on() {   # cmd_on [desktop|login]
     elif ! desktop_wanted; then
         skip desktop "DESKTOP=none (the config)"
     fi
+    # the terminal's font after the packages (a distro's own first), and
+    # the old default face moved to it, before anything renders FONT
+    neon_install
+    neon_move
     # the prompt: starship from the package manager where one has it
     # (pacman, Homebrew); where none does, the rc files draw the shell's
     # own prompt. Nothing is downloaded. A skip, not a todo: Debian's
@@ -2308,7 +2695,7 @@ cmd_off() {   # cmd_off [desktop|login]
     if [ "${1:-}" = desktop ]; then
         config_set DESKTOP none
         DESKTOP=none; export DESKTOP
-        hand_back $DESKTOP_RENDERED .config/alsa/asoundrc
+        hand_back $DESKTOP_RENDERED .config/starship-foot.toml .config/alsa/asoundrc
         pointer_off
         old_greetd_off
         seat_off
@@ -2326,7 +2713,7 @@ cmd_off() {   # cmd_off [desktop|login]
             case $(readlink "$p") in "$REPO"/*) restore_one "$p" ;; esac
         fi
     done
-    hand_back $RENDERED .config/starship.toml .config/yazi/theme.toml $DESKTOP_RENDERED .config/alsa/asoundrc   # alsa: the bar's default card; yazi: a render v0.35 left, its .bak yours
+    hand_back $RENDERED .config/starship.toml .config/starship-foot.toml .config/yazi/theme.toml $DESKTOP_RENDERED .config/alsa/asoundrc   # alsa: the bar's default card; yazi: a render v0.35 left, its .bak yours
     [ "$OS" = Darwin ] || pointer_off
     old_greetd_off
     login_screen_off
@@ -2416,7 +2803,7 @@ cmd_follow() {
     theme_load
     EXPR=$(render_expr)
     for rel in $RENDERED; do render_one "$REPO/templates/$rel" "$HOME/$rel" >/dev/null; done
-    [ "$PROMPT" = starship ] && render_one "$REPO/templates/.config/starship.toml.$PROMPT_STYLE" "$HOME/.config/starship.toml" >/dev/null
+    prompt_render >/dev/null
     if desktop_wanted; then
         for rel in $DESKTOP_RENDERED; do render_one "$REPO/templates/$rel" "$HOME/$rel" >/dev/null; done
         sway_reload >/dev/null
@@ -2469,7 +2856,7 @@ cmd_status() {
     elif [ "$DESKTOP" = none ]; then s="none (spark-shell on desktop)"
     elif [ -n "$(desktop_tools)" ]; then s="sway: not installed --$(desktop_tools) (spark-shell on desktop)"
     elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then s="sway: settings not written (spark-shell on)"
-    else s="sway: ready, foot uses $(fc-match -f '%{family}' "$FONT" 2>/dev/null || printf '%s' "${FONT%%:*}") (log in on tty1 to start it)"; fi
+    else _fs=$(font_spec); s="sway: ready, foot uses $(fc-match -f '%{family}' "$_fs" 2>/dev/null || printf '%s' "${_fs%%:*}") (log in on tty1 to start it)"; fi
     printf '  desktop %-14s %s\n' "$DESKTOP" "$s"
     status_login
     n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' ')   # a saved layout opens as tmux windows anywhere
@@ -2550,6 +2937,7 @@ cmd_check() {
         elif ! command -v jq >/dev/null 2>&1; then chk desktop fail "jq is missing (a layout reads the model's answer with it)" "spark-shell on"
         elif seat_needed && ! seatd_on; then chk desktop fail "seatd does not start at boot (Void has no logind)" "spark-shell on desktop"
         elif seat_needed && ! in_group _seatd "$(id -un)"; then chk desktop fail "$(id -un) is not in the _seatd group" "spark-shell on desktop"
+        elif [ "$(font_spec)" != "$FONT" ]; then chk desktop warn "$NEON is not installed, so foot draws $NEON_OLD" "spark-shell on"
         else chk desktop ok "sway and foot are installed and up to date"; fi
     fi
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk pointer ok "na (no desktop)"
@@ -3043,9 +3431,16 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
     trap 'redraw=1; kill ${sleeper:-} 2>/dev/null || :' USR1   # redraw: a click while a line is drawn draws again at once
     exec 3<&0; bar_clicks <&3 &   # an explicit stdin: a background job's own would be /dev/null in dash (POSIX)
     reader=$!
+    _ts=$(theme_sum); _bp=$({ cksum < "$BAR_PALETTE"; } 2>/dev/null || :); _line=''
     while :; do
         redraw=0
-        bar_line || break
+        if [ -n "$_line" ] && [ "$({ cksum < "$BAR_PALETTE"; } 2>/dev/null || :)" != "$_bp" ]; then   # a new look: the line just drawn, in its colors at once (#33); the probes follow
+            _bp=$({ cksum < "$BAR_PALETTE"; } 2>/dev/null || :); _old="$HEX_FG $HEX_ACCENT $HEX_MUTED $HEX_ANSI_1 $HEX_ANSI_3"
+            if load_env "$BAR_PALETTE" 2>/dev/null; then bar_recolor "$_line"; fi
+        fi
+        [ "$(theme_sum)" = "$_ts" ] || { _ts=$(theme_sum); config_load; for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; }   # a palette changed outside a look change (spark theme): read again
+        _line=$(bar_line) || break
+        printf '%s\n' "$_line"
         t=0   # 15 one-second sleeps: a signal ends the current one, and a click that fell between two is seen within 1 s
         while [ "$t" -lt 15 ] && [ "$redraw" = 0 ]; do
             sleep 1 & sleeper=$!
@@ -3056,6 +3451,15 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
     kill ${reader:-} 2>/dev/null || :; rm -f "$BAR_PID"
 }
 bar_redraw() { [ -f "$BAR_PID" ] && read -r p < "$BAR_PID" && kill -USR1 "$p" 2>/dev/null || :; }   # the running bar draws again now
+BAR_PALETTE=$STATE_DIR/bar.palette   # the colors of the bar's line, written by a look change for the bar to take at once (#33)
+bar_palette() { mkdir -p "$STATE_DIR" && printf 'HEX_FG=%s\nHEX_ACCENT=%s\nHEX_MUTED=%s\nHEX_ANSI_1=%s\nHEX_ANSI_3=%s\n' "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_ANSI_1" "$HEX_ANSI_3" > "$BAR_PALETTE"; }
+bar_recolor() {   # bar_recolor LINE -> the line drawn last, its colors the new palette's: each old color (_old, in BAR_PALETTE's order) a token, then each token the new color, one pass
+    _e=''; _i=0
+    for _h in $_old; do _e="${_e}s/#$_h'/#@$_i@'/g;"; _i=$((_i + 1)); done
+    _i=0
+    for _h in "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_ANSI_1" "$HEX_ANSI_3"; do _e="${_e}s/#@$_i@'/#$_h'/g;"; _i=$((_i + 1)); done
+    printf '%s\n' "$1" | sed -e "$_e"
+}
 bar_volume_key() {   # bar_volume_key up|down|mute|mic -- the keyboard's volume keys
     case $1 in up) snd_set out +5 ;; down) snd_set out -5 ;; mute) snd_set out mute ;; mic) snd_set mic mute ;;
         *) refuse_in bar "volume takes up, down, mute or mic" ;; esac
@@ -3478,8 +3882,7 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
             _cap=${_b%% *}; _st=$(panel_lower "${_b#* }"); _w=''; [ "$_cap" -ge 15 ] 2>/dev/null || [ "$_st" = charging ] || _w="$PANEL_WARN "
             _s="$(panel_col bat)$_w$_cap% $PANEL_SEP $_st"; _left=$(bat_left); [ -z "$_left" ] || _s="$_s $PANEL_SEP $_left"; echo "$_s" ;;
         clock) date '+%A %d %B %Y' ;;   # the time and the month are drawn under it (clock_view)
-        theme) if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then echo "$(panel_col theme)$(theme_words_of "${THEME:-none}") $PANEL_SEP $(look_font_size) $PANEL_SEP $(wall_now)"
-            else echo "$(panel_col theme)$(theme_words_of "${THEME:-none}") $PANEL_SEP $(look_font_size)"; fi ;;   # the look: the theme, the text size, the wallpaper; the transparency is named in its row
+        theme) echo "$(panel_col theme)$(theme_words_of "${THEME:-none}")" ;;   # the palette or the theme alone (#27): the wallpaper, the text size and the transparency are rows of their own
         window) echo "$(panel_col window)$(win_words "$WINDOWS")" ;;
         notes) _n=$(notes_list | grep -c . || :); echo "$(panel_col notes)${_n:-0} in ~/notes" ;;
         reminders) _now=$(date +%Y%m%d%H%M); rem_list > "$TMP/rem.t"; _d=$(awk -F '\t' -v n="$_now" '$1 <= n {t = $3} END {print t}' "$TMP/rem.t")
@@ -3591,43 +3994,39 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             _cy=$(bat_num cycle_count); [ -z "$_cy" ] || printf -- '-\tcycles %s\tshow\n' "$_cy"
             _r=$(bat_num power_now); [ -z "$_r" ] || [ "$_r" -le 0 ] 2>/dev/null || printf -- '-\tpower %s W\tshow\n' "$(awk -v r="$_r" 'BEGIN { printf "%.1f", r / 1000000 }')" ;;
         clock) : ;;   # nothing to pick: the face under the title holds the time and the month
-        theme) _sz=$(look_font_size); _wn=$(wall_now)   # the look (#24): saved, back, the palettes, the wallpaper, the text size, the transparency
+        theme) _sz=$(look_font_size)   # the look (#36): its values first (the wallpaper, the text size, the transparency), then the palettes, dark and light, each with its colors as a chip (provide_rows), then yours: the saved themes, the look in use when it is not saved, keep this look, a theme from a picture, the terminal's own colors
             [ "${2:-}" = full ] || { printf -- '-\t%s %s more\tmore\n' "$(panel_title theme | sed "s/^theme *//")" "$PANEL_SEP"; return 0; }   # one row in the list: the look is a rare pick; typing finds every row below
-            for n in $(theme_saved_names); do   # saved: the themes kept as folders, the one in use a check; then the row that keeps this look
+            [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\tWallpaper\twallpaper\t|%s\n' "$(wall_now)"   # opens the wallpaper list
+            [ -z "$_sz" ] || printf -- '-\tText size\tshow\n'   # a value left and right change (provide_rows)
+            printf -- '-\tTransparency\tshow\n'
+            palette_names > "$TMP/pal.names"; palette_darks > "$TMP/pal.dark"
+            for _g in dark light; do
+                while IFS= read -r n; do
+                    if grep -qxF "$n" "$TMP/pal.dark"; then [ "$_g" = dark ] || continue; else [ "$_g" = light ] || continue; fi
+                    _dw=''; wall_yours || _dw=$(wall_for_palette "$n") || _dw=''   # the drawing it brings; none named over a picture of yours, which stays
+                    [ ! -f "$PALETTE_DIR/$n.env" ] || _dw=yours
+                    if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\tshow\t%s|%s\n' "$PANEL_TICK" "$n" "$_g" "$_dw"; else printf -- '-\t%s\t%s\t%s|%s\n' "$n" "$n" "$_g" "$_dw"; fi
+                done < "$TMP/pal.names"
+            done
+            for n in $(theme_saved_names); do   # yours: the themes kept as folders, the one in use a check
                 _td=$PALETTE_DIR/$n; _wl=$(look_get "$_td" WALLPAPER); [ "$_wl" != picture ] || _wl=$(look_get "$_td" PICTURE)
-                if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\tshow\tsaved|%s %s %s\n' "$PANEL_TICK" "$n" "$(theme_source_of "$_td")" "$PANEL_SEP" "${_wl:-default}"
-                else printf -- '-\t%s\t%s\tsaved|%s %s %s\n' "$n" "$n" "$(theme_source_of "$_td")" "$PANEL_SEP" "${_wl:-default}"; fi
+                if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\tshow\tyours|%s %s %s\n' "$PANEL_TICK" "$n" "$(theme_source_of "$_td")" "$PANEL_SEP" "${_wl:-default}"
+                else printf -- '-\t%s\t%s\tyours|%s %s %s\n' "$n" "$n" "$(theme_source_of "$_td")" "$PANEL_SEP" "${_wl:-default}"; fi
             done
-            printf -- '-\tsave this look as\tsave\tsaved\n'
-            kept_history theme | awk -F '\t' -v t="${THEME:-}" '$2 != t' | head -n 9 | while IFS="$TAB" read -r _e _n; do   # back: the looks before this one, when each was chosen
-                [ "$_n" != none ] && palette_file "$_n" >/dev/null || continue
-                printf -- '-\t%s\t%s\tback|%s||%s\n' "$(theme_words_of "$_n")" "$_n" "$(kept_when "$_e")" "$_e"
-            done
-            { echo none; palette_names; } | while IFS= read -r n; do   # palettes: each with the drawing it brings (none named over a picture of yours, which stays); a palette's step is its name alone
-                _dw=''; wall_yours || _dw=$(wall_for_palette "$n") || _dw=''
-                if [ "$n" = "${THEME:-none}" ]; then printf '%s\t%s\tshow\tpalettes|%s\n' "$PANEL_TICK" "$n" "$_dw"; else printf -- '-\t%s\t%s\tpalettes|%s\n' "$n" "$n" "$_dw"; fi
-            done
-            if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then
-                printf -- '-\ta theme from a picture\tpicture\tpalettes\n'   # the files, to pick a picture from (the dialog's)
-                printf -- '-\twallpaper %s %s\twallpaper\n' "$PANEL_SEP" "$_wn"   # opens the wallpaper list
-            fi
-            [ -z "$_sz" ] || printf -- '-\ttext bigger %s %s now\ttext bigger\n-\ttext smaller\ttext smaller\n' "$PANEL_SEP" "$_sz"
-            _st=$(transparency_of "$ALPHA")
-            if [ "$_st" -eq 0 ]; then printf '%s\ttransparency off\tshow\n' "$PANEL_TICK"; else printf '%s\ttransparency %s%%\tshow\n' "$PANEL_TICK" "$_st"; fi
-            printf -- '-\tmore transparency\ttransparency more\n-\tless transparency\ttransparency less\n' ;;
-        wallpapers) _cur=$(wall_name)   # the theme's wallpaper list (no section of its own): default and none first (as none leads the palettes), the drawings, a picture of yours, the colors; a step is theme wallpaper NAME
-            [ -n "$_cur" ] || printf '%s\tpicture %s\tshow\n' "$PANEL_TICK" "$(basename "$(wall_path)")"
-            for w in default none; do
-                if [ "$w" = "$_cur" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$w"; else printf -- '-\t%s\twallpaper %s\n' "$w" "$w"; fi
-            done
+            [ "$(theme_kind "${THEME:-}")" != look ] || printf '%s\t%s\tshow\tyours|not saved\n' "$PANEL_TICK" "$(theme_words_of "$THEME")"   # a look from words or a picture stays here until it is saved
+            printf -- '-\tsave this look as\tsave\tyours\n'
+            [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\ta theme from a picture\tpicture\tyours\n'   # the files, to pick a picture from (the dialog's)
+            if [ "${THEME:-none}" = none ]; then printf '%s\t%s\tshow\tyours\n' "$PANEL_TICK" "$PALETTE_NONE"; else printf -- '-\t%s\tnone\tyours\n' "$PALETTE_NONE"; fi ;;
+        wallpapers) _cur=$(wall_name)   # the theme's wallpaper list (no section of its own, #36): the drawings, each with the palette it was drawn for and its picture in the palette in use (provide_wall_rows); then yours: a picture of yours, a color, the ground
             for w in $(wall_shipped_names); do
-                _pw=$(wall_palette_of "$w"); [ "$_pw" != any ] || _pw='any dark palette'
+                _pw=$(wall_palette_of "$w"); if [ "$_pw" = any ]; then _pw='for any dark palette'; else _pw="for $_pw"; fi   # the caption under its picture: 24 cells
                 if [ "$w" = "$_cur" ]; then printf '%s\t%s\tshow\tdrawings|%s\n' "$PANEL_TICK" "$w" "$_pw"; else printf -- '-\t%s\twallpaper %s\tdrawings|%s\n' "$w" "$w" "$_pw"; fi
             done
-            printf -- '-\ta picture of yours\twallpaper-picture\tdrawings\n'   # the files, to pick a picture from (the dialog's)
-            for w in $WALL_NAMES; do
-                if [ "$w" = "$_cur" ]; then printf '%s\t%s\tshow\tcolors\n' "$PANEL_TICK" "$w"; else printf -- '-\t%s\twallpaper %s\tcolors\n' "$w" "$w"; fi
-            done ;;
+            [ -n "$_cur" ] || printf '%s\tpicture %s\tshow\tyours\n' "$PANEL_TICK" "$(basename "$(wall_path)")"
+            printf -- '-\ta picture of yours\twallpaper-picture\tyours\n'   # the files, to pick a picture from (the dialog's)
+            ! wall_color || printf '%s\t%s\tshow\tyours|a color\n' "$PANEL_TICK" "$_cur"
+            printf -- '-\ta color\twallpaper-color\tyours|a name or #rrggbb\n'   # it asks for one (provide_wall_rows)
+            if [ "$_cur" = default ]; then printf '%s\tthe ground\tshow\tyours|%s\n' "$PANEL_TICK" "$WALL_GROUND_SAID"; else printf -- '-\tthe ground\twallpaper default\tyours|%s\n' "$WALL_GROUND_SAID"; fi ;;
         about) printf '%s\tspark-shell %s\topen\n' "$PANEL_GO" "$(panel_version)" ;;   # the splash, in this window
         window) for _w in split tabs stacked; do
                 if [ "$_w" = "${WINDOWS:-split}" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$(win_words "$_w")"; else printf -- '-\t%s\t%s\n' "$(win_words "$_w")" "$_w"; fi
@@ -4023,8 +4422,12 @@ panel_recent_first() {   # panel_recent_first ROWS -- the rows you picked most r
         cat "$TMP/rest.rows"
     else cat "$1"; fi
 }
-look_apply() {   # the look's renders and a running sway, quietly
-    theme_load; EXPR=$(render_expr); desktop_look_apply >/dev/null 2>&1 || :
+look_apply() {   # a look setter's change (text size, transparency, the wallpaper, the bar, the windows, the display, the keyboard): on the screen at once, with no reload (#33), then the desktop's files for new windows
+    for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; EXPR=$(render_expr)
+    wall_missing >/dev/null
+    wall_follow >/dev/null
+    look_burst
+    desktop_files >/dev/null 2>&1 || :
 }
 panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or why not); exit 1 when it was not done
     _p=$1; _a=$2; shift 2; _arg=$*
@@ -4049,6 +4452,8 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
         theme) case $_a in
                 text|font) text_step "$_arg" ;;   # font: the word before v0.85
                 wallpaper) _r=$(cmd_theme wallpaper "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "wallpaper $_arg" ;;
+                wallpaper-color) _h=$(wall_hex "$_arg") || { echo "a color is a name ($(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')) or #rrggbb"; return 1; }
+                    _r=$(cmd_theme wallpaper "$_h" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "wallpaper $_arg" ;;
                 wallpaper-picture) _pp=$(wall_picture_ok "$_arg") || { echo "$_pp"; return 1; }
                     _r=$(cmd_theme wallpaper "$_pp" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "wallpaper ${_pp##*/}" ;;
                 save) _r=$(cmd_theme save "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "saved $(desk_name_of "$_arg") $PANEL_SEP spark-shell theme $(desk_name_of "$_arg") brings it back" ;;
@@ -4197,7 +4602,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         window:*) printf '%s\twindows %s\n' "${WINDOWS:-split}" "$(win_words "$WINDOWS")" ;;
         bar:off) printf 'on\tbar shown\n' ;;
         bar:on) printf 'off\tbar hidden\n' ;;
-        theme:wallpaper|theme:wallpaper-picture) _cur=$(wall_name); if [ -n "$_cur" ]; then printf 'wallpaper %s\twallpaper %s\n' "$_cur" "$_cur"; else printf 'wallpaper-picture %s\twallpaper %s\n' "$WALLPAPER" "${WALLPAPER##*/}"; fi ;;
+        theme:wallpaper|theme:wallpaper-picture|theme:wallpaper-color) _cur=$(wall_name); if [ -n "$_cur" ]; then printf 'wallpaper %s\twallpaper %s\n' "$_cur" "$_cur"; else printf 'wallpaper-picture %s\twallpaper %s\n' "$WALLPAPER" "${WALLPAPER##*/}"; fi ;;
         theme:theme) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
         theme:*) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
         wifi:connect) _c=$(wifi_connected); if [ -n "$_c" ]; then printf 'connect %s\twifi %s\n' "$_c" "$_c"; else printf 'disconnect\twifi off\n'; fi ;;
@@ -4297,6 +4702,10 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         out:level|mic:level) case $3 in [0-9]|[1-9][0-9]|100) snd_settable "$1" || return 1; echo "$3"; return 0 ;; *) echo "$1: level takes 0 to 100"; return 1 ;; esac ;;
         out:mute|out:unmute|mic:mute|mic:unmute) snd_settable "$1" || return 1; echo ''; return 0 ;;   # the state is the gate, not a row: mute when muted is a receipt (the step sets, never toggles)
         theme:picture|theme:wallpaper-picture) _pp=$(wall_picture_ok "${3:-}") && { echo "$_pp"; return 0; }; echo "$_pp"; return 1 ;;
+        theme:wallpaper) case ${3:-} in default) echo default; return 0 ;; esac; ! wall_shipped "${3:-}" || { echo "$3"; return 0; } ;;   # a drawing or the ground: the wallpaper list holds every one
+        theme:wallpaper-color) wall_hex "${3:-}" >/dev/null && { echo "$3"; return 0; }; echo "theme: a color is a name ($(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')) or #rrggbb"; return 1 ;;
+        theme:text|theme:font) case ${3:-} in bigger|smaller) echo "$3"; return 0 ;; *) echo "theme: text takes bigger or smaller"; return 1 ;; esac ;;   # a value's own step (#36): no row names it, the row's left and right do
+        theme:transparency) case ${3:-} in more|less) echo "$3"; return 0 ;; *) echo "theme: transparency takes more or less"; return 1 ;; esac ;;
         theme:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "theme: save takes a name"; return 1 ;;
         theme:delete) case $(theme_kind "${3:-}") in saved|look) [ "$3" != "${THEME:-}" ] && { echo "$3"; return 0; }; echo "theme: $3 is the theme in use"; return 1 ;; *) echo "theme: no saved theme named ${3:-?}"; return 1 ;; esac ;;
         theme:back) [ -s "$(kept_hist theme)" ] && { echo ''; return 0; }; echo "theme: no look before this one"; return 1 ;;
@@ -4312,6 +4721,9 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         display:brightness) case $3 in up|down|[1-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "display: brightness takes 1 to 100, up or down"; return 1 ;; esac ;;
         display:idle|display:lock) case $3 in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) echo "$3"; return 0 ;; *) echo "display: $2 takes minutes, 0 to 999"; return 1 ;; esac ;;
     esac
+    if [ "$1" = theme ] && [ -z "${3:-}" ]; then   # a palette's step is its name alone: every palette and saved theme is a row, a kept look while in use
+        case $(theme_kind "$2") in shipped|yours|saved|none) echo ''; return 0 ;; look) [ "$2" != "${THEME:-}" ] || { echo ''; return 0; } ;; esac
+    fi
     _want=$(panel_lower "$2 $3" | sed 's/ *$//')
     _m=$(panel_rows "$1" full | cut -f3 | awk -v w="$_want" 'tolower($0) == w { print; exit }')
     [ "$1" != theme ] || [ -n "$_m" ] || _m=$(panel_rows wallpapers full | cut -f3 | awk -v w="$_want" 'tolower($0) == w { print; exit }')   # the wallpaper list is the theme's too
@@ -4346,7 +4758,7 @@ panel_brief() {   # -> "section: action ARG, ...; section: ..." -- what spark ma
             _acts=$(panel_apps_known | sed 's/^/open /' | paste -sd, - | sed 's/,/, /g')
         else
             _acts=$(panel_rows "$p" full | cut -f3 | grep -vx show | awk '!seen[$0]++' | paste -sd, - | sed 's/,/, /g')
-            case $p in out|mic) _acts="${_acts:+$_acts, }level N" ;; esac
+            case $p in out|mic) _acts="${_acts:+$_acts, }level N" ;; theme) _acts="${_acts:+$_acts, }text bigger, text smaller, transparency more, transparency less" ;; esac   # a value's own steps: its row changes it in place (#36)
         fi
         [ -z "$_acts" ] || printf '%s: %s; ' "$p" "$_acts"
     done | sed 's/; $//'
@@ -4578,7 +4990,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window display keyboard notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_brightness keyboard_use keyboard_next bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_brightness keyboard_use keyboard_next bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -4623,7 +5035,8 @@ tool_spec() {
         theme_delete)      _ts=theme _ta=delete _tp=name _tk=string _th=dif _tt='theme delete NAME' _td='Delete a saved theme.' ;;
         theme_back)        _ts=theme _ta=back _th=f _tt='theme back' _td='The look before this one.' ;;   # free: no row carries it, the gate asks the history
         theme_text)        _ts=theme _ta=text _tp=size _tk='bigger|smaller' _th='' _tt='theme text SIZE' _td='The text one size bigger or smaller, on every surface.' ;;
-        theme_wallpaper)   _ts=theme _ta=wallpaper _tp=name _tk=string _th=i _tt='theme wallpaper NAME' _td='The wallpaper: one of the drawings, a color by its name, default (the ground) or none.' ;;
+        theme_wallpaper)   _ts=theme _ta=wallpaper _tp=name _tk=string _th=i _tt='theme wallpaper NAME' _td='The wallpaper: one of the drawings, or default (the ground, the palette a shade darker).' ;;
+        theme_wallpaper_color) _ts=theme _ta=wallpaper-color _tp=color _tk=string _th=if _tt='theme wallpaper color COLOR' _td='A plain color as the wallpaper: a name (teal, navy, olive, maroon...) or #rrggbb.' ;;
         theme_wallpaper_picture) _ts=theme _ta=wallpaper-picture _tp=path _tk=path _th=if _tt='theme wallpaper picture PATH' _td='A picture of yours as the wallpaper.' ;;
         theme_picture)     _ts=theme _ta=picture _tp=path _tk=path _th=f _tt='theme picture PATH' _td='A theme from a picture of yours: its colors as the palette, the picture as the wallpaper.' ;;
         theme_words)       _ts=theme _ta=words _tp=hue _tk='red|orange|yellow|green|teal|blue|violet|pink|grey' _te='accent:red|orange|yellow|green|teal|blue|violet|pink|grey|same warmth:warm|neutral|cool contrast:soft|normal|high light:dark|light name:text' _th=f _tt='theme words HUE' _td='One look for one request: the hue of the ground, the hue of the accent (same when the words name one color), how warm, how much contrast, dark or light, and a short name from the words. A flag or a brand is one step with two hues, never two steps. The wallpaper in use is drawn again in the new palette.' ;;
@@ -4724,8 +5137,13 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 children: (if .[0] == ($s + ":more") then $u else null end), group: ((.[5] // "") | split("|") | .[0] | if . == "" or . == null then null else . end)}
                 + ((.[5] // "") | split("|") | .[2] // "" | if . == "" then {} else {date: .} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" '
+        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$(theme_chips "$1")" --arg size "$(look_font_size)" --arg tr "$(_t=$(transparency_of "$ALPHA"); if [ "$_t" -eq 0 ]; then echo off; else echo "$_t%"; fi)" '
             .rows |= map(
+                (if $s == "theme" and ((.group // "") | test("^(dark|light|yours)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
+                | (if $s == "theme" and .id == "theme:show:Text size" then .step = {value: $size, less: {name: "theme_text", arguments: {size: "smaller"}}, more: {name: "theme_text", arguments: {size: "bigger"}}, words: ["smaller", "bigger"]}
+                   elif $s == "theme" and .id == "theme:show:Transparency" then .step = {value: $tr, less: {name: "theme_transparency", arguments: {amount: "less"}}, more: {name: "theme_transparency", arguments: {amount: "more"}}, words: ["less", "more"]}
+                   else . end))
+            | .rows |= map(
                 if $s == "theme" and (.tool.name // "") == "theme_save" then .tool.ask = ["name"]
                 elif $s == "theme" and .id == "theme:picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_picture", types: ($types | split(" "))}
                 elif $s == "theme" and .id == "theme:wallpaper" then .children = "spark-shell://theme/rows/wallpapers" | .tool = null
@@ -4736,16 +5154,24 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif (.tool.name // "") == "wifi_connect" and (.tool.arguments.name as $n | $asks | index([$n])) then .tool.ask = ["password"]
                 else . end)'
 }
-provide_wall_rows() {   # -> the theme's wallpaper list as a rows resource (spark-shell://theme/rows/wallpapers): default and none, the drawings with the palette each was drawn for and a sample, a picture of yours (the files, to pick from), the colors with a sample
-    _sw=$({ for w in $WALL_NAMES; do printf '%s\t%s\n' "$w" "$(wall_hex "$w")"; done; for e in $WALL_SHIPPED; do printf '%s\t#%s\n' "${e%%:*}" "${e##*:}"; done; } | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add')
+provide_wall_rows() {   # -> the theme's wallpaper list as a rows resource (spark-shell://theme/rows/wallpapers, #36): the drawings with the palette each was drawn for and its picture in the palette in use (drawn after this answers, wall_thumbs), a picture of yours (the files, to pick from), a color (asked for), the ground with its color
+    _tp=$(thumb_palette)
+    ( TMP=$(mktemp -d) && { wall_thumbs; rm -rf "$TMP"; } ) >/dev/null 2>&1 </dev/null 3>&- 4<&- 5>&- &   # the small pictures, while the list is shown: a row without one yet draws none
+    _gr=$(wall_ground); _cc=''; ! wall_color || _cc=$(wall_hex "$WALLPAPER")
     panel_rows wallpapers full | while IFS="$TAB" read -r _m _t _a _x; do provide_row_line theme "$_m" "$_t" "$_a" "$_x"; done \
-        | jq -Rn --argjson sw "$_sw" --arg types "$WALL_TYPES" '
+        | jq -Rn --arg types "$WALL_TYPES" --arg dir "$THUMB_DIR" --arg tp "$_tp" --arg ground "$_gr" --arg color "$_cc" '
             [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [],
                 columns: ((.[5] // "") | split("|") | .[1:2] | map(select(. != ""))), children: null, group: ((.[5] // "") | split("|") | .[0] | if . == "" or . == null then null else . end)}
-             | (.tool.arguments.name // (if (.id | startswith("theme:show:")) then .text else "" end)) as $n
-             | if $sw[$n] != null then .swatch = $sw[$n] else . end
+             | if .group == "drawings" then .preview = ($dir + "/" + .text + "-" + $tp + ".png") else . end
+             | if .text == "the ground" then .chip = [$ground] elif .id == ("theme:show:" + .text) and .group == "yours" and $color != "" and .columns == ["a color"] then .chip = [$color] else . end
+             | if .id == "theme:wallpaper-color" then .tool.ask = ["color"] else . end
              | if .id == "theme:wallpaper-picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_wallpaper_picture", types: ($types | split(" "))} else . end]
             | {title: "wallpaper", state: "", rows: ., short: []}'
+}
+theme_chips() {   # theme_chips SECTION -> {NAME: [nine colors]} for the theme's palettes and saved themes, {} for any other section
+    [ "$1" = theme ] || { printf '{}'; return 0; }
+    { palette_names; theme_saved_names; } | sort -u | while IFS= read -r _n; do _c=$(palette_chip "$_n") && printf '%s\t%s\n' "$_n" "$_c"; done \
+        | jq -Rn '[inputs | split("\t") | {(.[0]): (.[1] | split(" ") | map(select(test("^#[0-9A-Fa-f]{6}$"))))}] | add // {}'
 }
 provide_in_use() {   # provide_in_use SECTION TOOL ARG -> 0 when ARG names what is in use: the check row shows it with no tool, and choosing it again is a receipt, not a refusal (#29)
     [ -n "$3" ] || return 1
@@ -4812,6 +5238,7 @@ provide_main() {   # provide_main SECTION -- serve it until stdin ends
     exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in; whatever a step prints goes to stderr
     WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; : > "$PROOTS"
     trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
+    trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # the dialog stops a provider with TERM: the EXIT trap still runs, the watcher, the reader and the temp folder go (#37)
     mkfifo "$TMP/in"
     ( while IFS= read -r _l || [ -n "$_l" ]; do fifo_put "in $_l"; _l=''; done; fifo_put eof ) <&6 5>"$TMP/in" 3>&- & READER=$!
     exec 4<"$TMP/in" 6<&-
@@ -4901,9 +5328,10 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_v"; return 0; }   # files: the four lines, not the panel's gate
     _act=$_ta; _arg=$_v; [ "$_ta" != '=' ] || { _act=$_v; _arg=''; }   # a palette's step is its name alone
     case $_th in *f*) ;; *)   # the argument must be a row's own, exactly: the rows are the allowlist
-        provide_rows "$sec" > "$TMP/rows.json"
-        [ "$sec" != theme ] || provide_wall_rows >> "$TMP/rows.json"   # the wallpaper list opens from the theme section: its rows are the theme's too
-        jq -e -s --arg n "$_name" --argjson a "$_plain" 'any(.[].rows[] | .tool, (.more // [])[] | select(. != null); .name == $n and .arguments == $a)' "$TMP/rows.json" >/dev/null 2>&1 \
+        provide_quick "$sec" "$_name" "$_v" && _quick=1 || _quick=''
+        [ -n "$_quick" ] || provide_rows "$sec" > "$TMP/rows.json"
+        [ -n "$_quick" ] || [ "$sec" != theme ] || provide_wall_rows >> "$TMP/rows.json"   # the wallpaper list opens from the theme section: its rows are the theme's too
+        [ -n "$_quick" ] || jq -e -s --arg n "$_name" --argjson a "$_plain" 'any(.[].rows[] | .tool, (.more // [])[], .step.less, .step.more | select(. != null); .name == $n and .arguments == $a)' "$TMP/rows.json" >/dev/null 2>&1 \
             || provide_in_use "$sec" "$_name" "${_arg:-$_act}" \
             || { provide_refuse "$1" "$sec: $_act${_arg:+ $_arg} is not on the panel now"; return 0; } ;;
     esac
@@ -4926,6 +5354,16 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     else _sc=$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" '{receipt: $r} + (if $u == null then {} else {undo: $u} end) + (if $p == null then {} else {palette: $p} end)'); fi
     rpc_result "$1" "$(printf '%s' "$_sc" | jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
     [ -z "$SUBSCRIBED" ] || rpc_note notifications/resources/updated "$(jq -cn --arg u "spark-shell://$sec/rows" '{uri: $u}')"
+}
+provide_quick() {   # provide_quick SECTION TOOL VALUE -> 0 for a pick the rows of its kind always list, said without drawing them all (#33): every palette and saved theme by its name (a kept look only while in use), every drawing and the ground, a value's own step
+    [ "$1" = theme ] || return 1
+    case $2 in
+        theme_palette) case $(theme_kind "$3") in shipped|yours|saved|none) return 0 ;; look) [ "$3" = "${THEME:-}" ] ;; *) return 1 ;; esac ;;
+        theme_wallpaper) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && { wall_shipped "$3" || [ "$3" = default ]; } ;;
+        theme_text) case $3 in bigger|smaller) [ -n "$(look_font_size)" ] ;; *) return 1 ;; esac ;;
+        theme_transparency) case $3 in more|less) return 0 ;; *) return 1 ;; esac ;;
+        *) return 1 ;;
+    esac
 }
 provide_refuse() { rpc_result "$1" "$(jq -cn --arg t "$2" '{content: [{type: "text", text: $t}], isError: true}')"; }   # provide_refuse ID SENTENCE -- a tool's refusal, in the result
 cmd_provide() {   # cmd_provide SECTION -- the verb
@@ -5180,6 +5618,7 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     _dc=''; [ "$DIALOG_ATTACH" != yes ] || _dc=plus; [ "$DIALOG_MODEL" != yes ] || _dc="${_dc:+$_dc,}model"; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
     _sp=$(spark_bin); [ -z "$_sp" ] || set -- "$@" --spark "$_sp"
     FULL_ID=''; ! panel_own_window || panel_full_aside
+    ! desktop_wanted || case ${TERM:-} in foot*) SPARK_DIALOG_SLOTS=1; export SPARK_DIALOG_SLOTS ;; esac   # its foot.ini sets the five slots: the dialog draws in them, and a new look recolors it in place (#34)
     st=0; "$DIALOG_BIN" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?
     [ "$st" -eq 3 ] || panel_full_back   # 3: a step put a window on the screen, and the window is the receipt
     [ "$st" -eq 3 ] || [ "$st" -eq 0 ] || return "$st"
@@ -5214,7 +5653,7 @@ panel_reload() {   # the settings again, as a pick may have changed them (a pale
     theme_load; panel_colors
 }
 panel_paint() {   # the panel's own window takes the palette and the surface as the settings say now: a theme step repaints every terminal flat, this one included
-    ! osc_render "${THEME:-none}" || cat "$TMP/osc"
+    osc_render plain; cat "$TMP/osc.plain"
     printf '\033]11;#%s\033\\' "$PANEL_BG"
 }
 panel_pulse_kill() { [ -f "$TMP/pulse.pid" ] && kill "$(cat "$TMP/pulse.pid")" 2>/dev/null; rm -f "$TMP/pulse.pid"; :; }   # a march left by a list that fzf stopped reading
@@ -5440,10 +5879,24 @@ bar_panel_open() {   # bar_panel_open BLOCK -- from a click: the panel with that
 # exit 1, before the config is touched.
 refuse_in() { echo "spark-shell $1: $2"; exit 1; }   # refuse_in VERB SENTENCE
 seat_on() { _r=$(rc_files); _r=${_r%% *}; [ -L "$HOME/$_r" ] && [ "$(readlink "$HOME/$_r")" = "$(rc_tree)/$_r" ]; }
-look_follow() {   # after a palette change: the renders follow while the seat is on
-    seat_on || return 0
-    render_all
+look_now() {   # a palette change in three parts (#33): prepare (the palette loaded, the drawing drawn in it), the switch (look_burst), then the files for new windows and the next login; no desktop setup step and no reload
+    for _k in $THEME_KEYS; do unset "$_k"; done; theme_load   # the palette just written, never the one before (none leaves no file to read)
+    wall_follow
+    look_burst
+    EXPR=$(render_expr)   # the files after the switch: nothing on screen waits for them
+    seat_on || return 0   # the renders follow while the seat is on
+    for rel in $RENDERED; do render_one "$REPO/templates/$rel" "$HOME/$rel"; done
+    prompt_render
+    ! desktop_wanted || { wall_missing; desktop_files; }
     [ "$MODE" = dry ] || { tmux_reload; theme_seen; }
+}
+prompt_render() {   # starship's config from the style, the sixteen by name; on the desktop also its foot twin, which names the slots 16 and 17 for the accent and the muted color (#34)
+    [ "$PROMPT" = starship ] || return 0
+    render_one "$REPO/templates/.config/starship.toml.$PROMPT_STYLE" "$HOME/.config/starship.toml"
+    desktop_wanted || return 0
+    _ex=$EXPR; EXPR="s|@ACCENT_STAR@|16|g${NL}s|@MUTED_STAR@|17|g${NL}$EXPR"
+    render_one "$REPO/templates/.config/starship.toml.$PROMPT_STYLE" "$HOME/.config/starship-foot.toml"
+    EXPR=$_ex
 }
 verb_close() {   # the last line of a verb: the count on a dry run, the sentence when all of it held
     if [ "$MODE" = dry ]; then dry_close
@@ -5471,12 +5924,14 @@ cmd_theme() {   # theme [NAME|none|list|show] | save [NAME] | delete NAME | back
 theme_apply() {   # theme_apply NAME|none [back] -- the whole look follows: a saved theme or a kept look brings its own wallpaper, text size, transparency and pointer; a palette with a drawing of its own brings the drawing unless a picture of yours is on; `back` leaves the history as it is
     name=$1; _w=''
     [ "$name" = none ] || palette_render "$name" || refuse_in theme "$(cat "$TMP/palette.why")"
+    PALETTE_RENDERED=$name   # theme_files takes these files as they are
     pm_detect
     _td=$(theme_dir "$name")
     if [ -n "$_td" ]; then
         for _k in WALLPAPER FONT ALPHA POINTER; do
             _v=$(look_get "$_td" "$_k")
             [ "$_k:$_v" != WALLPAPER:picture ] || _v=$_td/$(look_get "$_td" PICTURE)
+            [ "$_k" != FONT ] || case $_v:$FONT in "$NEON_OLD"*:"$NEON"*) _v="$NEON${_v#"$NEON_OLD"}" ;; esac   # a theme saved on the old face keeps its size, in the face in use (#26)
             [ -n "$_v" ] || [ "$_k" = POINTER ] || continue
             eval "_cur=\$$_k"
             # shellcheck disable=SC2154   # _cur is set by the eval above
@@ -5490,13 +5945,14 @@ theme_apply() {   # theme_apply NAME|none [back] -- the whole look follows: a sa
     [ "$MODE" = dry ] || [ "$THEME" = "$name" ] || config_set THEME "$name"
     THEME=$name; export THEME
     theme_files
-    wall_follow
-    look_follow
+    _painted=0
+    look_now   # on the screen at once, then the files (#33)
     if [ "$name" = none ]; then palette_off all; terminal_off
     else palette_boot; terminal_apply; fi
     login_follow
     console_now
-    theme_repaint "$name"
+    if [ "$_painted" -eq 1 ]; then echo "Repainted 1 open terminal."
+    elif [ "$_painted" -gt 1 ]; then echo "Repainted $_painted open terminals."; fi
     [ "${2:-}" = back ] || [ "$MODE" = dry ] || [ "$name" = none ] || kept_note theme "$name"   # none is no look to come back to
     if [ "$name" = none ]; then verb_close "No palette: the console and the terminal use their own colors."
     elif [ -n "$_td" ]; then verb_close "The theme is $(theme_words_of "$name"): $(theme_look_words). A program that is already running, such as btop, takes it when it starts again."
@@ -5598,32 +6054,30 @@ theme_back() {   # the look before this one, one step further each time; a new c
     echo "back to $(theme_words_of "$_n")"
     theme_apply "$_n" back
 }
-theme_wallpaper() {   # theme_wallpaper [X] -- the wallpaper: a drawing, a picture of yours, a color, default or none; bare, what it is now
+theme_wallpaper() {   # theme_wallpaper [X] -- the wallpaper: a drawing, a picture of yours, a color, or the ground (default; none says the same); bare, what it is now
     [ "$OS" != Darwin ] || refuse_in theme "not on macOS, which has its own desktop"
     theme_load   # the ground's hex, said back
     if [ -z "${1:-}" ]; then
-        if [ "$WALLPAPER" = none ]; then echo "wallpaper none -- the palette's background (spark-shell theme wallpaper PATH|default)"
+        if [ "$WALLPAPER" = default ] || [ "$WALLPAPER" = none ]; then echo "wallpaper default -- the ground, the palette's background a shade darker ($(wall_ground)); it follows the palette"
         elif wall_color; then echo "wallpaper $WALLPAPER -- a plain color; a palette with a drawing of its own replaces it"
-        elif [ "$WALLPAPER" = default ]; then echo "wallpaper default -- the ground, the palette's background a shade darker ($(wall_ground)); it follows the palette"
         elif wall_there; then case $(wall_path) in "$REPO"/*|"$WALLPAPER") echo "wallpaper $WALLPAPER" ;; *) echo "wallpaper $WALLPAPER -- drawn in $THEME" ;; esac
-        else echo "wallpaper $(wall_path) -- missing, the palette's background color instead"; fi
+        else echo "wallpaper $(wall_path) -- missing, the ground instead"; fi
         return
     fi
     [ $# -eq 1 ] || refuse_in theme "one wallpaper at a time: spark-shell theme wallpaper X"
     want=$(wall_word "$1")
-    [ -n "$want" ] || refuse_in theme "$1 is not a readable file or a color. Give a picture's path, default, none, one of the drawings ($(wall_shipped_names | paste -sd ' ' - | sed 's/ /, /g')), #rrggbb or one of these colors: $(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')"
+    [ -n "$want" ] || refuse_in theme "$1 is not a readable file or a color. Give a picture's path, default (the ground), one of the drawings ($(wall_shipped_names | paste -sd ' ' - | sed 's/ /, /g')), #rrggbb or one of these colors: $(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')"
     [ "$DESKTOP" = sway ] || refuse_in theme "DESKTOP=$DESKTOP -- spark-shell on desktop first"
     config_set WALLPAPER "$want"
     WALLPAPER=$want; export WALLPAPER
-    wall_follow
-    theme_load; EXPR=$(render_expr)
-    desktop_look_apply
+    look_apply
     login_follow
-    if [ "$want" = none ]; then echo "the palette's background is back -- a new foot window is opaque again"
+    _tr="the windows keep their transparency, $(transparency_of "$ALPHA")%"; [ "$(transparency_of "$ALPHA")" -ne 0 ] || _tr="the windows are solid (spark-shell theme transparency N)"
+    if [ "$1" = none ]; then echo "the ground is back: none is the ground now, and $_tr"
     elif [ "$want" = default ]; then echo "the ground is back -- the palette's background a shade darker, and it follows the palette"
-    elif wall_color; then echo "a running sway shows $want now -- a new foot window is translucent over it, as over a picture; a palette with a drawing of its own replaces it"
+    elif wall_color; then echo "a running sway shows $want now, and $_tr; a palette with a drawing of its own replaces it"
     elif wall_shipped "$want"; then case $(wall_path) in "$REPO"/*) _dr='' ;; *) _dr=", drawn in $THEME" ;; esac; echo "a running sway shows $want now$_dr -- it follows the palette: a palette with a drawing of its own brings that one"
-    else echo "a running sway shows it now -- the next foot window is translucent (Super+Return)"; fi
+    else echo "a running sway shows it now, and $_tr"; fi
 }
 theme_text() {   # theme_text [N|bigger|smaller] -- the text size, one number for every surface: foot, the bar, the dialog, the login, the lock and the idle screen; the pointer's size follows it
     _sz=$(look_font_size); [ -n "$_sz" ] || refuse_in theme "FONT=$FONT has no size to change (the config)"
@@ -5637,7 +6091,7 @@ text_step() {   # text_step N|bigger|smaller -> the receipt, or the refusal and 
     [ "$_new" -ge 6 ] && [ "$_new" -le 40 ] || { echo "text size $_sz stays (6 to 40)"; return 1; }
     _f=$(printf '%s' "$FONT" | sed "s/size=$_sz/size=$_new/")
     config_set FONT "$_f" >/dev/null; FONT=$_f; export FONT; look_apply; login_follow >/dev/null 2>&1 || :
-    echo "text $_new $PANEL_SEP new windows take it; the pointer $(pointer_size_for "$_new") pixels"
+    echo "text $_new $PANEL_SEP new windows and the bar take it; the pointer $(pointer_size_for "$_new") pixels"
 }
 theme_transparency() {   # theme_transparency [N|more|less] -- the windows' transparency, a percent, 0 (off) to 50; more and less step by 10
     _st=$(transparency_of "$ALPHA")
@@ -5653,7 +6107,7 @@ alpha_step() {   # alpha_step N|more|less -> the receipt, or the refusal and exi
     _new=$(awk -v a="$ALPHA" -v d="$_d" 'BEGIN { v = a + d; if (v > 1) v = 1; if (v < 0.5) v = 0.5; s = sprintf("%.2f", v); sub(/0$/, "", s); print s }')
     [ "$_new" != "$ALPHA" ] || { if [ "$1" = less ]; then echo "transparency is off already"; elif [ "$1" = more ]; then echo "transparency stops at 50%"; else echo "transparency is $(transparency_of "$ALPHA")% already"; fi; return 1; }
     config_set ALPHA "$_new" >/dev/null; ALPHA=$_new; export ALPHA; look_apply
-    _st=$(transparency_of "$_new"); if [ "$_st" -eq 0 ]; then echo "transparency off"; else echo "transparency $_st% $PANEL_SEP new windows take it"; fi
+    _st=$(transparency_of "$_new"); if [ "$_st" -eq 0 ]; then echo "transparency off"; else echo "transparency $_st%"; fi   # the open windows take it at once (#35)
 }
 # A theme from a picture (#24): the picture read small through gdk-pixbuf-thumbnailer (a PNG is
 # read as it is without it), its colors made a palette by lib/look.py with the contrast rules,
@@ -5753,8 +6207,7 @@ cmd_font() {   # font [FACE SIZE|list|none]
 }
 font_show() {
     if [ "$OS" = Darwin ]; then
-        set -- $CONSOLE_FONT
-        echo "font  ${1:-Menlo-Regular} ${2:-13}: Terminal.app's profile$([ -n "$CONSOLE_FONT" ] || printf ' (the default)')"
+        echo "font  $(term_font): Terminal.app's profile$([ -n "$CONSOLE_FONT" ] || printf ' (the default)')"
     elif is_wsl; then echo "font  WSL has no console: the font is Windows Terminal's"
     elif [ -z "$(console_shape)" ]; then echo "font  there is no console-setup, vconsole.conf or rc.conf here"
     elif [ -z "$CONSOLE_FONT" ]; then echo "font  unset: the console keeps its font (spark-shell font list shows the faces)"
@@ -5837,8 +6290,7 @@ check_theme() {
     if ! palette_render "$THEME"; then chk theme fail "THEME=$THEME: $(cat "$TMP/palette.why")" "spark-shell theme list"; return; fi
     cmp -s "$TMP/theme.env" "$THEME_ENV" || { chk theme fail "$THEME: theme.env is not the palette's" "spark-shell on"; return; }
     if [ "$OS" = Darwin ]; then
-        set -- $CONSOLE_FONT
-        if [ "$(cat "$TERMINAL_SEEN" 2>/dev/null)" != "$(cksum < "$THEME_ENV" | cut -d' ' -f1) ${1:-Menlo-Regular} ${2:-13}" ]; then
+        if [ "$(cat "$TERMINAL_SEEN" 2>/dev/null)" != "$(cksum < "$THEME_ENV" | cut -d' ' -f1) $(term_font)" ]; then
             chk theme warn "$THEME: Terminal.app's profile is not the palette's yet" "spark-shell on"; return
         fi
         terminal_has || { chk theme warn "$THEME: Terminal.app has no spark-shell profile" "spark-shell on"; return; }
@@ -5901,7 +6353,7 @@ check_quiet() {
     esac
 }
 status_console() {   # the font and quiet rows of status (the theme row is the look's)
-    if [ "$OS" = Darwin ]; then set -- $CONSOLE_FONT; printf '  font  %-16s %s\n' "${1:-Menlo-Regular} ${2:-13}" "Terminal.app's profile (spark-shell font FACE SIZE)"
+    if [ "$OS" = Darwin ]; then printf '  font  %-16s %s\n' "$(term_font)" "Terminal.app's profile (spark-shell font FACE SIZE)"
     elif is_wsl; then printf '  font  %-16s %s\n' na "WSL has no console"
     elif [ -z "$CONSOLE_FONT" ]; then printf '  font  %-16s %s\n' unset "the console keeps its font (spark-shell font list)"
     else printf '  font  %-16s %s\n' "$CONSOLE_FONT" "$(font_file "$(console_shape)")"; fi
@@ -6784,7 +7236,7 @@ desk_idle() {   # desk_idle [off|--clock] -- the idle screen up; down; or the cl
     _sz=$(look_font_size); : "${_sz:=12}"; _fc=$(foot_colors)
     swaymsg -- "bar mode invisible" >/dev/null 2>&1 || :
     swaymsg -- "workspace idle" >/dev/null 2>&1 || :
-    swaymsg -- exec "foot --app-id $IDLE_APP -o 'font=${FONT%%:*}:size=$((_sz * 2))' -o $_fc.alpha=$IDLE_ALPHA -o $_fc.background=$HEX_BG -o pad=0x0 -e $REPO/spark-shell desktop idle --clock" >/dev/null 2>&1 || refuse "could not open the idle screen"
+    _fs=$(font_spec); swaymsg -- exec "foot --app-id $IDLE_APP -o 'font=${_fs%%:*}:size=$((_sz * 2))' -o $_fc.alpha=$IDLE_ALPHA -o $_fc.background=$HEX_BG -o pad=0x0 -e $REPO/spark-shell desktop idle --clock" >/dev/null 2>&1 || refuse "could not open the idle screen"
 }
 idle_up() { swaymsg -t get_tree 2>/dev/null | jq -e --arg a "$IDLE_APP" '[.. | objects | select(.app_id? == $a)] | length > 0' >/dev/null 2>&1; }   # the idle window is on the screen
 idle_clock() {   # in the idle window: the time at the lower left in the muted color, the date under it in dim, drawn again as each minute turns, until the window goes
@@ -6930,8 +7382,8 @@ desk_lock() {
     # a wrong password and backspace the red, caps lock the yellow
     _in=${HEX_BG}e6
     rm -rf "$TMP"; trap - EXIT
-    _sz=$(look_font_size); : "${_sz:=12}"
-    exec swaylock --daemonize "$@" --font "${FONT%%:*}" --font-size $((_sz * 5 / 3)) --indicator-radius 72 --indicator-thickness 6 --show-failed-attempts \
+    _sz=$(look_font_size); : "${_sz:=12}"; _fs=$(font_spec)
+    exec swaylock --daemonize "$@" --font "${_fs%%:*}" --font-size $((_sz * 5 / 3)) --indicator-radius 72 --indicator-thickness 6 --show-failed-attempts \
         --inside-color "$_in" --ring-color "$HEX_ACCENT" --key-hl-color "$HEX_FG" --bs-hl-color "$HEX_ANSI_1" --text-color "$HEX_FG" \
         --line-color 00000000 --separator-color 00000000 --line-clear-color 00000000 --line-ver-color 00000000 --line-wrong-color 00000000 \
         --inside-clear-color "$_in" --ring-clear-color "$HEX_MUTED" --text-clear-color "$HEX_FG" \

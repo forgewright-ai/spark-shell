@@ -77,7 +77,7 @@ pub fn ordinary(label: &str, v: &Value, tools: &Value, rows: &Value) -> Option<V
             id,
             json!({"contents": [{"uri": format!("spark-shell://{}/rows", label), "mimeType": "application/json", "text": rows.to_string()}]}),
         )),
-        "resources/subscribe" => Some(result(id, json!({}))),
+        "resources/subscribe" | "resources/unsubscribe" => Some(result(id, json!({}))),
         _ => None,
     }
 }

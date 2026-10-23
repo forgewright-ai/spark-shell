@@ -51,9 +51,36 @@ impl Palette {
         }
     }
 
-    pub fn from_env() -> Palette {
-        Palette::from(|k| std::env::var(k).ok())
+    /// The same palette drawn in the terminal's own slots (#34): spark-shell's foot.ini gives 16 to 20
+    /// the accent, the muted color, the surface, the lit row and the quiet text, and a new look sends
+    /// them to the open windows, so a cell drawn in a slot changes color in place, with no redraw.
+    pub fn slots(self) -> Palette {
+        Palette {
+            fg: Color::Reset,
+            accent: Color::Indexed(16),
+            muted: Color::Indexed(20),
+            surface: Color::Indexed(18),
+            lit: Color::Indexed(19),
+            alarm: Color::Indexed(1),
+            ok: Color::Indexed(2),
+            dark: self.dark,
+        }
     }
+
+    /// The environment's palette; in slots where spark-shell says the window has them (SPARK_DIALOG_SLOTS=1).
+    pub fn from_env() -> Palette {
+        let p = Palette::from(|k| std::env::var(k).ok());
+        if slots_here() {
+            p.slots()
+        } else {
+            p
+        }
+    }
+}
+
+/// The window's foot.ini sets the five slots: spark-shell says so in the environment.
+pub fn slots_here() -> bool {
+    std::env::var("SPARK_DIALOG_SLOTS").as_deref() == Ok("1")
 }
 
 #[cfg(test)]
@@ -72,5 +99,16 @@ mod tests {
         assert_eq!(p.accent, Color::Rgb(0x26, 0x8b, 0xd2));
         assert_eq!(p.fg, Color::Rgb(0xaa, 0xaa, 0xaa));
         assert!(!p.dark);
+    }
+
+    #[test]
+    fn in_slots_every_color_is_a_slot_and_dark_stays_the_palettes() {
+        let p = Palette::from(|k| (k == "PANEL_BG").then(|| "fdf6e3".into())).slots();
+        assert_eq!(
+            (p.accent, p.muted, p.surface, p.lit),
+            (Color::Indexed(16), Color::Indexed(20), Color::Indexed(18), Color::Indexed(19))
+        );
+        assert_eq!((p.fg, p.alarm, p.ok), (Color::Reset, Color::Indexed(1), Color::Indexed(2)));
+        assert!(!p.dark, "a light surface is still light");
     }
 }

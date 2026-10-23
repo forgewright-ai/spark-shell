@@ -28,6 +28,21 @@ pub struct Row {
     pub pick: Option<Pick>,
     /// The day a row is for, "YYYY-MM-DD" (only that shape is read): the Calendar marks it.
     pub date: Option<String>,
+    /// A palette's chip: its ground, its text, its accent and up to five hues, drawn as a small terminal.
+    pub chip: Vec<[u8; 3]>,
+    /// A value that left and right change: the value as shown, the step down and the step up.
+    pub step: Option<Step>,
+    /// A picture of what the row brings (a wallpaper), drawn beside the list while the row is lit.
+    pub preview: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Step {
+    pub value: String,
+    pub less: Call,
+    pub more: Call,
+    /// What left and right do, in a word each: smaller and bigger, less and more.
+    pub words: (String, String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -45,6 +60,39 @@ fn swatch(v: Option<&Value>) -> Option<[u8; 3]> {
     }
     let n = |i: usize| u8::from_str_radix(&h[i..i + 2], 16).ok();
     Some([n(0)?, n(2)?, n(4)?])
+}
+
+/// A chip is a list of "#rrggbb", nine at most (the ground, the text, the accent, six hues); anything else ends it.
+fn chip(v: Option<&Value>) -> Vec<[u8; 3]> {
+    v.and_then(Value::as_array)
+        .map(|a| a.iter().take(9).map_while(|c| swatch(Some(c))).collect())
+        .unwrap_or_default()
+}
+
+/// A step: its value as shown, and a call each way.
+fn step(v: Option<&Value>) -> Option<Step> {
+    let v = v?;
+    let word = |k: usize, d: &str| {
+        v.get("words")
+            .and_then(Value::as_array)
+            .and_then(|a| a.get(k))
+            .and_then(Value::as_str)
+            .map(scrub)
+            .filter(|w| !w.is_empty() && w.len() <= 12)
+            .unwrap_or_else(|| d.to_string())
+    };
+    Some(Step {
+        value: scrub(v.get("value")?.as_str()?),
+        less: call(v.get("less")?)?,
+        more: call(v.get("more")?)?,
+        words: (word(0, "less"), word(1, "more")),
+    })
+}
+
+/// A preview is a path to a PNG, absolute, with no parent step in it; the dialog checks where it lies.
+fn preview(v: Option<&Value>) -> Option<String> {
+    let p = v?.as_str()?;
+    (p.starts_with('/') && p.ends_with(".png") && !p.split('/').any(|c| c == "..") && !p.chars().any(char::is_control)).then(|| p.to_string())
 }
 
 /// A pick names a tool in the offered shape and file types of a few lower-case letters or digits.
@@ -179,6 +227,9 @@ pub fn rows(text: &str) -> Option<Rows> {
                 .and_then(Value::as_str)
                 .filter(|d| crate::calendar::ymd(d).is_some())
                 .map(str::to_string),
+            chip: chip(r.get("chip")),
+            step: step(r.get("step")),
+            preview: preview(r.get("preview")),
         })
         .collect();
     let short = v
@@ -226,6 +277,28 @@ mod tests {
         assert_eq!(r.rows[0].text, "ev[2Jil");
         assert_eq!(r.rows[0].tool.as_ref().unwrap().ask, vec!["password".to_string()]);
         assert_eq!(r.short, vec!["wifi:connect a".to_string()]);
+    }
+
+    #[test]
+    fn a_chip_a_step_and_a_picture_are_read_in_their_shapes() {
+        let r = rows(r##"{"rows":[
+            {"id":"a","chip":["#282a36","#f8f8f2","#bd93f9","nonsense","#ff5555"],"step":{"value":"11\u001b[2J","less":{"name":"theme_text","arguments":{"size":"smaller"}},"more":{"name":"theme_text","arguments":{"size":"bigger"}},"words":["smaller","a word far too long"]},"preview":"/srv/look/thumbs/fjord-nord.png"},
+            {"id":"b","chip":["#000000","#111111","#222222","#333333","#444444","#555555","#666666","#777777","#888888","#999999"],"step":{"value":"1"},"preview":"/srv/look/../../etc/x.png"},
+            {"id":"c","preview":"thumbs/fjord.png"},{"id":"d","preview":"/tmp/fjord.svg"}]}"##).unwrap();
+        assert_eq!(r.rows[0].chip.len(), 3, "a chip ends at its first bad color");
+        assert_eq!(r.rows[1].chip.len(), 9, "nine colors at most");
+        let st = r.rows[0].step.as_ref().unwrap();
+        assert_eq!(
+            (st.value.as_str(), st.more.name.as_str(), st.words.0.as_str(), st.words.1.as_str()),
+            ("11[2J", "theme_text", "smaller", "more"),
+            "scrubbed; a word over twelve letters is the default"
+        );
+        assert!(r.rows[1].step.is_none(), "a step needs both its calls");
+        assert_eq!(r.rows[0].preview.as_deref(), Some("/srv/look/thumbs/fjord-nord.png"));
+        assert!(
+            r.rows[1].preview.is_none() && r.rows[2].preview.is_none() && r.rows[3].preview.is_none(),
+            "a picture is a whole path to a PNG, no step up"
+        );
     }
 
     #[test]

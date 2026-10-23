@@ -1,0 +1,5 @@
+#!/bin/sh
+# rendered by spark-shell from templates/.config/spark/sv/spark-shell-sound/log/run -- spark-shell off desktop removes it
+# The sound service's log, rotated by svlogd.
+mkdir -p "@SOUND_LOG@"
+exec svlogd -tt "@SOUND_LOG@"
