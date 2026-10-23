@@ -12,15 +12,16 @@ The want path from a login outside the desktop (#31).
   when it is a real directory of yours at 0700. It is never made or
   changed there.
 - Fixed: mute, unmute and a level go by the sound's state, not by the
-  rows. Mute when muted is a receipt, and an output with no volume
-  control says so in one line. Before, `out level 50` on it said "out
-  at 50%" while nothing took it.
+  rows. Mute when muted is a receipt that leaves the undo as it was,
+  and an output with no volume control says so in one line. Before,
+  `out level 50` on it said "out at 50%" while nothing took it.
 - Fixed: the brightness tool takes the words its gate takes: up, down
-  (5 from the level now) or 1 to 100. Its schema said 0 to 100 and no
-  step, so a planner sent 0 for "mute everything and turn the screen
-  down" and the gate refused it; now that is `display brightness down`.
-  A call with up or down, as the dialog's brighter and dimmer rows
-  make, was refused as no number.
+  (5 from the level now) or 1 to 100, as text, its schema's type. Its
+  schema said 0 to 100 and no step, so a planner sent 0 for "mute
+  everything and turn the screen down" and the gate refused it; now
+  that is `display brightness down`. A want and an MCP call take up,
+  down or a number. The dialog takes up and down, its brighter and
+  dimmer rows; a number there waits for a change to the dialog.
 
 ## v0.87
 

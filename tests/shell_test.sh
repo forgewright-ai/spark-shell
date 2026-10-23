@@ -3044,8 +3044,11 @@ STUB
     m1=$(sh "$SH" bar panel mic --list | sed -n 1p); un=$(sh "$SH" bar panel mic unmute); m2=$(sh "$SH" bar panel mic --list | sed -n 1p)
     [ "$m1" = "mic        Jabra $SEP 50% $SEP muted" ] && [ "$un" = 'mic unmuted' ] && [ "$m2" = "mic        Jabra $SEP 50%" ] \
         && ok "panel mic mute then unmute: the state read back from amixer, the title says muted in between" || bad "panel mic read back" "$m1 | $un | $m2"
-    touch "$H/muted"; st=0; out=$(sh "$SH" bar panel out mute 2>&1) || st=$?; rm -f "$H/muted"
-    [ "$st" -eq 0 ] && [ "$out" = 'out muted' ] && ok "panel out mute when it is muted already: a receipt, never 'not on the panel now' (#31)" || bad "mute again" "st=$st $out"
+    sh "$SH" bar panel out level 35 >/dev/null; u1=$(cat "$journal/undo" 2>/dev/null)
+    touch "$H/muted"; st=0; out=$(sh "$SH" bar panel out mute 2>&1) || st=$?; u2=$(cat "$journal/undo" 2>/dev/null)
+    rm -f "$H/muted"; st3=0; out3=$(sh "$SH" bar panel out unmute 2>&1) || st3=$?; u3=$(cat "$journal/undo" 2>/dev/null); rm -f "$amlog"
+    [ "$st" -eq 0 ] && [ "$out" = 'out muted' ] && [ "$st3" -eq 0 ] && [ "$out3" = 'out unmuted' ] && [ -n "$u1" ] && [ "$u2" = "$u1" ] && [ "$u3" = "$u1" ] \
+        && ok "panel out mute when muted already, unmute when not: a receipt, never 'not on the panel now', and the undo before it stays (#31)" || bad "mute again" "st=$st $out | st3=$st3 $out3 | $u1 | $u2 | $u3"
     sh "$SH" bar panel out use HDMI >/dev/null
     st=0; out=$(sh "$SH" bar panel out mute 2>&1) || st=$?; st2=0; out2=$(sh "$SH" bar panel out level 50 2>&1) || st2=$?
     sh "$SH" bar panel out use Jabra >/dev/null; rm -f "$amlog"
@@ -3168,7 +3171,8 @@ n=$(cat "$HOME/fzf.calls" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$HO
 cat > "$HOME/fzf.in.$n"; printf '%s\n' "$*" > "$HOME/fzf.args.$n"
 if [ "$n" -eq 1 ]; then printf '\n  out        mute\tout mute\n'; exit 0; else exit 130; fi
 STUB
-    chmod +x "$H/.local/bin/fzf"; rm -f "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$amlog" "$journal/undo" "$journal/recent"
+    # unmuted first: the want above muted the output, and a mute when muted is a receipt that keeps no undo (#31)
+    chmod +x "$H/.local/bin/fzf"; rm -f "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$amlog" "$journal/undo" "$journal/recent" "$H/muted"
     st=0; out=$(SPARK_SHELL_TEST_TTY=1 sh "$SH" panel 2>&1 </dev/null) || st=$?
     [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && sed "s/$(printf '\033')\[[0-9;]*m//g" "$H/fzf.in.2" | grep -q "^  $TICK out muted$" && printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g" | grep -q "^    $(date '+%A %d %B') *$(printf '\342\235\257')$" && ! printf '%s\n' "$out" | grep -q 'not found' && grep -q "undo.*out unmute	undo all$" "$H/fzf.in.2" && grep -q -- "--highlight-line --pointer  --marker  --padding 1,0,0,2 --header-lines=[0-9]* --bind change:reload(cat .*/head; if \[ -n {q} \]; then cat .*/rows.full; else cat .*/rows.short; fi) --bind resize:reload(cat .*/head; " "$H/fzf.args.2" && grep -q -- 'click-header:transform(if \[ "$FZF_CLICK_HEADER_LINE" = 1 \] && \[ "$FZF_CLICK_HEADER_COLUMN" -ge [0-9]* \]; then echo abort; fi)' "$H/fzf.args.2" && grep -qx -- '-c 0 sset Master mute' "$amlog" \
         && ok "the window: Enter on out mute plays the step, the receipt rides in fzf's first lines with a check, the next list opens with the undo row, fzf holds the glance (header lines, a reload with the head on a change and on a resize, the corner's click told by line and column); Esc ends it" || bad "window pick" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) out=$(printf '%s' "$out" | tr -d '\033' | tr '\n' '|' | tail -c 400) in2=$(grep undo "$H/fzf.in.2" 2>&1)"
@@ -3453,8 +3457,8 @@ if [ "$(uname -s)" != Darwin ]; then
         && [ "$st2" -eq 0 ] && printf '%s' "$out2" | jq -e --arg x "$x" '.steps == [] and .refused == [$x + " out: HDMI has no volume control here, so it cannot be muted or set"]' >/dev/null \
         && ok "want with spark steps: out_mute is planned where the output has a volume, and said why where it has none (#31)" || bad "want mute" "st=$st $out | st2=$st2 $out2"
     st=0; out=$(sh "$SH" want --json dim the room 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e '.steps == [{name: "display_brightness", arguments: {level: "down"}, line: "display brightness down"}, {name: "display_brightness", arguments: {level: 30}, line: "display brightness 30"}] and .refused == []' >/dev/null \
-        && ok "want with spark steps: the brightness planned as the step word down, and a number the grammar wrote as text comes back a number (#31)" || bad "want brightness" "st=$st $out"
+    [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e '.steps == [{name: "display_brightness", arguments: {level: "down"}, line: "display brightness down"}, {name: "display_brightness", arguments: {level: "30"}, line: "display brightness 30"}] and .refused == []' >/dev/null \
+        && ok "want with spark steps: the brightness planned as the step word down, and a number as the text its schema publishes, for a host that holds a call to the schema (#31)" || bad "want brightness" "st=$st $out"
 fi
 st=0; out=$(sh "$SH" want --json what time is it 2>&1) || st=$?; st2=0; out2=$(sh "$SH" want --json zebra stripes 2>&1) || st2=$?; st3=0; out3=$(sh "$SH" want --json make me a sandwich please 2>&1) || st3=$?
 [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e '.answer == "It is noon." and .steps == []' >/dev/null && [ "$st2" -eq 0 ] && printf '%s' "$out2" | jq -e --arg x "$x" '.steps == [] and .refused == [$x + " no step on the panel does that"]' >/dev/null \

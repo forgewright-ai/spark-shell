@@ -4186,8 +4186,8 @@ panel_undo() {   # the last group's inverse steps, played newest first, then for
 panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORDS" that takes the step back, or nothing when it cannot be taken back
     _p=$1; _a=$2; shift 2; _arg=$*
     case $_p:$_a in
-        out:mute|mic:mute) printf 'unmute\t%s unmute\n' "$_p" ;;
-        out:unmute|mic:unmute) printf 'mute\t%s mute\n' "$_p" ;;
+        out:mute|mic:mute|out:unmute|mic:unmute) SND=${SND:-$(snd_tool)}; if [ "$_p" = out ]; then _mu=$(snd_out | sed -n 3p); else _mu=$(snd_mic | sed -n 3p); fi
+            case $_a:$_mu in mute:0) printf 'unmute\t%s unmute\n' "$_p" ;; unmute:1) printf 'mute\t%s mute\n' "$_p" ;; esac ;;   # the state already as asked: a receipt takes nothing back, so it never replaces the undo before it
         out:level|mic:level) if [ "$_p" = out ]; then _lv=$(snd_out | sed -n 2p); else _lv=$(snd_mic | sed -n 4p); fi
             case $_lv in ''|-) ;; *) printf 'level %s\t%s at %s%%\n' "$_lv" "$_p" "$_lv" ;; esac ;;
         out:use|mic:use) _cur=$(snd_devices "$_p" | awk -F '\t' '$2 == 1 && !d {print $1; d = 1}'); [ -z "$_cur" ] || printf 'use %s\t%s %s\n' "$_cur" "$_p" "$_cur" ;;   # the whole list read: no broken pipe
@@ -4674,11 +4674,11 @@ action_tool() {   # action_tool SECTION "ACTION [ARG]" -> sets _tool and _tv, th
     [ "$1" = theme ] && [ -z "$_tv" ] && tool_spec theme_palette || return 1   # a palette's step is its name alone
     _tool=theme_palette; _tv=$_av
 }
-tool_call_json() {   # tool_call_json TOOL VALUE [LINE] -> {"name", "arguments", "line"}: VALUE under the tool's argument, typed as its kind
+tool_call_json() {   # tool_call_json TOOL VALUE [LINE] -> {"name", "arguments", "line"}: VALUE under the tool's argument, typed as its kind (bright stays text, its schema's type)
     tool_spec "$1" || return 1
     jq -cn --arg n "$1" --arg p "$_tp" --arg k "$_tk" --arg v "$2" --arg l "${3:-}" --arg x "$_te" \
         '{name: $n, arguments: (if $p == "" then {} elif $x != "" then (($v | split(" ")) as $ws | {($p): $ws[0]} + ([$ws[1:][] | select(. != "") | split("=") | {(.[0]): .[1]}] | add // {}))
-            elif ($k == "level" or $k == "bright" or $k == "alpha" or $k == "minutes") then {($p): ($v | tonumber? // $v)} else {($p): $v} end)} + (if $l == "" then {} else {line: $l} end)'
+            elif ($k == "level" or $k == "alpha" or $k == "minutes") then {($p): ($v | tonumber? // $v)} else {($p): $v} end)} + (if $l == "" then {} else {line: $l} end)'
 }
 # bright is one string enum, up, down and the numbers as text: spark's
 # grammar types an argument one way, and the tens come first because its
