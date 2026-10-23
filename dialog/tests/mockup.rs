@@ -7,7 +7,7 @@ use ratatui::buffer::{Buffer, CellDiffOption};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
 use serde_json::{json, Value};
-use spark_dialog::app::{App, Config, Provider, View, HEIGHT, SETTINGS_DEST, WIDTH};
+use spark_dialog::app::{App, Config, Provider, View, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
 use spark_dialog::model;
 use spark_dialog::palette::Palette;
 use spark_dialog::scrub::cells;
@@ -515,4 +515,33 @@ fn design_system_preview() {
     frames.push(ds_frame(&b, &pal, "the wallpaper list, skyline lit: its picture in the palette in use", pic));
     let head = "<!-- @dsCard group=\"Dialog\" height=2560 width=1420 subtitle=\"the dialog from v0.89's own render, bound to the tokens: the home with each place's state, a palette named and Ask spark, the theme section, a value lit, the wallpaper list with its picture\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
     std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n", head, frames.join(""))).unwrap();
+}
+
+/// The design system's Calendar preview, from this code's own render (DS_CALENDAR=FILE): the time in large
+/// figures, the two months, the reminders in their groups (#41).
+#[test]
+fn design_system_calendar_preview() {
+    let Ok(file) = std::env::var("DS_CALENDAR") else { return };
+    let pal = common::palette("tokyonight-night");
+    let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    let r = |id: &str, sign: &str, text: &str, when: &str, group: &str, date: &str| json!({"id": id, "sign": sign, "text": text, "tool": null, "more": [], "columns": [when], "children": null, "group": group, "date": date});
+    let rows = json!({"title": "reminders", "rows": [
+        row("reminders:new", "opens", "new reminder", Some(("reminders_new", json!({}))), None),
+        r("reminders:show:bread", "dot", "take the bread out", "18:30", "due", "2026-10-20"),
+        r("reminders:show:gym", "ring", "gym", "19:00", "today", "2026-10-20"),
+        r("reminders:show:dentist", "ring", "call the dentist", "09:00", "tomorrow", "2026-10-21"),
+        r("reminders:show:dinner", "ring", "dinner with ada", "Fri 20:00", "this week", "2026-10-23"),
+        r("reminders:show:vet", "ring", "the vet", "Tue 3 Nov 16:30", "later", "2026-11-03")
+    ], "short": []});
+    if let Some(p) = a.providers.iter_mut().find(|p| p.label == "reminders") {
+        p.rows = model::rows(&rows.to_string()).unwrap();
+    }
+    a.view = View::Dest(CALENDAR_DEST);
+    a.came_from = vec![View::Home];
+    a.today = Some((2026, 10, 20));
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    spark_dialog::ui::draw(&a, &pal, "Tue 20 Oct \u{b7} 18:40", &mut b);
+    let frame = ds_frame(&b, &pal, "calendar: the time in large figures, the months, the reminders", None);
+    let head = "<!-- @dsCard group=\"Calendar\" height=860 width=720 subtitle=\"the Calendar from v0.90's own render: the time in large figures, the months, then the reminders as rows\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
+    std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n<script></script>\n", head, frame)).unwrap();
 }
