@@ -2862,6 +2862,14 @@ snd_set() {   # snd_set out|mic LEVEL|+5|-5|mute|muted|unmuted -- the change ask
             esac ;;
     esac >/dev/null 2>&1 || :
 }
+snd_settable() {   # snd_settable out|mic -> exit 0 when its level and mute can be set; else one line saying why (no audio system, no device, a device with no volume control), exit 1
+    SND=${SND:-$(snd_tool)}
+    [ -n "$SND" ] || { echo "$1: no audio system found"; return 1; }
+    if [ "$1" = out ]; then _so=$(snd_out); _sl=$(printf '%s\n' "$_so" | sed -n 2p); else _so=$(snd_mic); _sl=$(printf '%s\n' "$_so" | sed -n 4p); fi
+    [ -n "$_so" ] || { if [ "$1" = out ]; then echo "out: no output found"; else echo "mic: no microphone found"; fi; return 1; }
+    [ "$_sl" = - ] || [ -z "$_sl" ] || return 0
+    echo "$1: $(printf '%s\n' "$_so" | sed -n 1p) has no volume control here, so it cannot be muted or set"; return 1
+}
 snd_said() {   # snd_said out|mic muted|unmuted -> the state read back, one line; exit 1 when the audio system did not take it
     if [ "$1" = out ]; then _m=$(snd_out | sed -n 3p); else _m=$(snd_mic | sed -n 3p); fi
     case $2:$_m in muted:1|unmuted:0) echo "$1 $2" ;; *) echo "$1 is not $2: the audio system did not take it"; return 1 ;; esac
@@ -4286,7 +4294,8 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         layout:new) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: new takes the words for it"; return 1 ;;
         apps:pick|apps:terminal) echo ''; return 0 ;;
         window:close|window:focus|apps:close|apps:focus) _n=$(win_named "${3:-}"); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "window: no window named ${3:-?} is open"; return 1 ;;   # apps close NAME is read as window close: the window, not the app
-        out:level|mic:level) case $3 in [0-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "$1: level takes 0 to 100"; return 1 ;; esac ;;
+        out:level|mic:level) case $3 in [0-9]|[1-9][0-9]|100) snd_settable "$1" || return 1; echo "$3"; return 0 ;; *) echo "$1: level takes 0 to 100"; return 1 ;; esac ;;
+        out:mute|out:unmute|mic:mute|mic:unmute) snd_settable "$1" || return 1; echo ''; return 0 ;;   # the state is the gate, not a row: mute when muted is a receipt (the step sets, never toggles)
         theme:picture|theme:wallpaper-picture) _pp=$(wall_picture_ok "${3:-}") && { echo "$_pp"; return 0; }; echo "$_pp"; return 1 ;;
         theme:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "theme: save takes a name"; return 1 ;;
         theme:delete) case $(theme_kind "${3:-}") in saved|look) [ "$3" != "${THEME:-}" ] && { echo "$3"; return 0; }; echo "theme: $3 is the theme in use"; return 1 ;; *) echo "theme: no saved theme named ${3:-?}"; return 1 ;; esac ;;
@@ -4584,7 +4593,7 @@ scrub_text() {   # stdin -> the same lines scrubbed; C0 and DEL alone where ther
 
 # The tools, a named line each: tool_spec NAME sets _ts the section, _ta
 # the panel's action, _tp the argument and _tk its kind (string, level
-# 0-100, alpha 0-1, a|b for a closed set), _tw what the argument says,
+# 0-100, bright 1-100, alpha 0-1, a|b for a closed set), _tw what the argument says,
 # when a person is asked for it, _tq a secret argument, _th the
 # hints (r read only, d destructive, i idempotent, f free: the argument
 # names no row), _tt the title, the sentence the model may say, and _td
@@ -4603,12 +4612,12 @@ tool_spec() {
         bt_power)          _ts=bt _ta=power _tp=state _tk='on|off' _th=i _tt='bt power STATE' _td='Turn Bluetooth on or off.' ;;
         out_use)           _ts=out _ta=use _tp=name _tk=string _th=i _tt='out use NAME' _td='Play the sound on another output.' ;;
         out_level)         _ts=out _ta=level _tp=level _tk=level _th=if _tt='out level N' _td='Set the volume, 0 to 100.' ;;
-        out_mute)          _ts=out _ta=mute _th=i _tt='out mute' _td='Mute the sound.' ;;
-        out_unmute)        _ts=out _ta=unmute _th=i _tt='out unmute' _td='Unmute the sound.' ;;
+        out_mute)          _ts=out _ta=mute _th=if _tt='out mute' _td='Mute the sound.' ;;
+        out_unmute)        _ts=out _ta=unmute _th=if _tt='out unmute' _td='Unmute the sound.' ;;
         mic_use)           _ts=mic _ta=use _tp=name _tk=string _th=i _tt='mic use NAME' _td='Listen on another microphone.' ;;
         mic_level)         _ts=mic _ta=level _tp=level _tk=level _th=if _tt='mic level N' _td='Set the microphone level, 0 to 100.' ;;
-        mic_mute)          _ts=mic _ta=mute _th=i _tt='mic mute' _td='Mute the microphone.' ;;
-        mic_unmute)        _ts=mic _ta=unmute _th=i _tt='mic unmute' _td='Unmute the microphone.' ;;
+        mic_mute)          _ts=mic _ta=mute _th=if _tt='mic mute' _td='Mute the microphone.' ;;
+        mic_unmute)        _ts=mic _ta=unmute _th=if _tt='mic unmute' _td='Unmute the microphone.' ;;
         theme_palette)     _ts=theme _ta='=' _tp=name _tk=string _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none.' ;;
         theme_save)        _ts=theme _ta=save _tp=name _tk=string _th=f _tt='theme save NAME' _td='Keep the look in use under a name: the palette, the wallpaper, the text size, the transparency. After the look is made, never before it.' ;;
         theme_delete)      _ts=theme _ta=delete _tp=name _tk=string _th=dif _tt='theme delete NAME' _td='Delete a saved theme.' ;;
@@ -4636,7 +4645,7 @@ tool_spec() {
         reminders_snooze)  _ts=reminders _ta=snooze _tp=name _tk=string _th='' _tt='reminders snooze NAME' _td='The reminder again in 10 minutes.' ;;
         display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=i _tt='display idle N' _td='Turn the display off after N idle minutes; 0 never.' ;;
         display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=i _tt='display lock N' _td='Lock the screen after N idle minutes; 0 never.' ;;
-        display_brightness) _ts=display _ta=brightness _tp=level _tk=level _th=if _tt='display brightness N' _td='Set the screen brightness, 1 to 100.' ;;
+        display_brightness) _ts=display _ta=brightness _tp=level _tk=bright _th=if _tt='display brightness N' _td='Set the screen brightness, 1 to 100.' ;;
         keyboard_use)      _ts=keyboard _ta=use _tp=name _tk=string _th=i _tt='keyboard use NAME' _td='Type in another of the keyboard layouts.' ;;
         keyboard_next)     _ts=keyboard _ta=next _th='' _tt='keyboard next' _td='Go to the next keyboard layout.' ;;
         bar_on)            _ts=bar _ta=on _th=i _tt='bar on' _td='Show the bar at the top of the screen.' ;;
@@ -4669,7 +4678,7 @@ tool_call_json() {   # tool_call_json TOOL VALUE [LINE] -> {"name", "arguments",
     tool_spec "$1" || return 1
     jq -cn --arg n "$1" --arg p "$_tp" --arg k "$_tk" --arg v "$2" --arg l "${3:-}" --arg x "$_te" \
         '{name: $n, arguments: (if $p == "" then {} elif $x != "" then (($v | split(" ")) as $ws | {($p): $ws[0]} + ([$ws[1:][] | select(. != "") | split("=") | {(.[0]): .[1]}] | add // {}))
-            elif ($k == "level" or $k == "alpha" or $k == "minutes") then {($p): ($v | tonumber? // $v)} else {($p): $v} end)} + (if $l == "" then {} else {line: $l} end)'
+            elif ($k == "level" or $k == "bright" or $k == "alpha" or $k == "minutes") then {($p): ($v | tonumber? // $v)} else {($p): $v} end)} + (if $l == "" then {} else {line: $l} end)'
 }
 tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, the words, the input schema, the hints with the spec's defaults spelled out
     tool_spec "$1" || return 1
@@ -4679,6 +4688,7 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
          inputSchema: {type: "object",
             properties: ((if $p == "" then {} else {($p): ((
                 if $k == "level" then {type: "integer", minimum: 0, maximum: 100}
+                elif $k == "bright" then {type: "integer", minimum: 1, maximum: 100}
                 elif $k == "minutes" then {type: "integer", minimum: 0, maximum: 999}
                 elif $k == "alpha" then {type: "number", minimum: 0, maximum: 1}
                 elif $k == "path" then {type: "string", minLength: 2, maxLength: 4096}
@@ -4873,6 +4883,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif ([$xs[] | select(.[1] == "text") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text") | .[0]][0]) + " is plain text, 40 characters at most"
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
+        elif $k == "bright" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 1 and .[$p] <= 100 then "" else $p + " is a whole number, 1 to 100" end)
         elif $k == "minutes" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 999 then "" else $p + " is a whole number of minutes, 0 to 999" end)
         elif $k == "alpha" then (if (.[$p] | type) == "number" and .[$p] >= 0 and .[$p] <= 1 then "" else $p + " is a number, 0 to 1" end)
         elif $k == "path" then (if (.[$p] | type) == "string" and (.[$p] | startswith("/")) and (.[$p] | length) <= 4096 and (.[$p] | test("[\u0000-\u001f\u007f]") | not) then "" else $p + " is a whole path, plain text" end)
@@ -6679,6 +6690,17 @@ runtime_dir() {
     fi
     refuse "$_rd is not a private directory of yours, and sway needs one (XDG_RUNTIME_DIR)"
 }
+# A login outside the desktop (ssh, a service, spark's own MCP host) has
+# no XDG_RUNTIME_DIR either, while the desktop's sound lives in the one
+# runtime_dir made: taken when it is there, a real directory of yours and
+# private (0700), never made or changed here. Without it PipeWire did not
+# answer, and the sound was read through plain ALSA (#31).
+runtime_adopt() {
+    [ -z "${XDG_RUNTIME_DIR:-}" ] && [ "$OS" != Darwin ] || return 0
+    _uid=$(id -u); _rd=${TMPDIR:-/tmp}; _rd=${_rd%/}/$_uid-runtime-dir
+    [ -d "$_rd" ] && [ ! -L "$_rd" ] || return 0
+    case $(ls -ldn "$_rd" | awk '{print $1, $3}') in "drwx------ $_uid"|"drwx------. $_uid") XDG_RUNTIME_DIR=$_rd; export XDG_RUNTIME_DIR ;; esac
+}
 
 # The desktop verb. `desktop on|off` are spellings of `on desktop` and
 # `off desktop` (one path, cmd_on and cmd_off). Alone: start sway now,
@@ -7014,6 +7036,7 @@ main() {
         esac
     done
     case ${1:-} in -h|--help) usage; return 0 ;; esac   # a verb's -h answers first
+    runtime_adopt
     case $sub in
         -h|--help|help) usage ;;
         on) cmd_on "$@" ;;

@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.88
+
+The want path from a login outside the desktop (#31).
+
+- Fixed: a login outside the desktop (ssh, a service, the MCP host of
+  spark) has no `XDG_RUNTIME_DIR` on Void, so PipeWire did not answer
+  it and the sound was read through plain ALSA: the wrong output, no
+  volume, no mute, and `want "mute the sound"` said "out: mute is not
+  on the panel now". The private directory the desktop made is taken
+  when it is a real directory of yours at 0700. It is never made or
+  changed there.
+- Fixed: mute, unmute and a level go by the sound's state, not by the
+  rows. Mute when muted is a receipt, and an output with no volume
+  control says so in one line. Before, `out level 50` on it said "out
+  at 50%" while nothing took it.
+- Fixed: the brightness takes 1 to 100 in its tool's schema, as its
+  gate does. A planner told 0 to 100 sent 0 for "mute everything and
+  turn the screen down", and the gate refused the step.
+
 ## v0.87
 
 His live test of v0.86, the same night (#29).

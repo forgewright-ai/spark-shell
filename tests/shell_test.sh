@@ -2911,6 +2911,20 @@ STUB
     out=$(WAYLAND_DISPLAY=wayland-1 sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^warn   sound        PipeWire does not answer -- leave the desktop and log in again$' && ok "check: PipeWire silent inside a desktop: a warn, log in again" || bad "check wp silent" "$(printf '%s\n' "$out" | grep sound)"
     rm -f "$H/wp-down"
     rm -f "$wplog" "$H/wp-sink"
+    # a login outside the desktop (ssh, a service, spark's MCP host) has no XDG_RUNTIME_DIR, and PipeWire's socket is in
+    # the private directory the desktop made (#31): taken when it is a real directory of yours at 0700, never made here
+    mv "$H/.local/bin/wpctl" "$H/wpctl.real"
+    printf '#!/bin/sh\n[ -e "${XDG_RUNTIME_DIR:-/nonexistent}/pipewire-0" ] || { echo "Could not connect to PipeWire" >&2; exit 1; }\nexec "$HOME/wpctl.real" "$@"\n' > "$H/.local/bin/wpctl"; chmod +x "$H/.local/bin/wpctl"
+    rd=$H/rt/$(id -u)-runtime-dir; mkdir -p "$H/rt"; mkdir -m 0700 "$rd"; : > "$rd/pipewire-0"
+    out=$(env -u XDG_RUNTIME_DIR TMPDIR="$H/rt" sh "$SH" bar panel out --list 2>&1)
+    printf '%s\n' "$out" | grep -q "^$(printf '\342\227\217') out        Jabra SPEAK 410 USB Analog Stereo	out show$" && printf '%s\n' "$out" | grep -q "^  out        mute	out mute$" \
+        && ok "no XDG_RUNTIME_DIR (ssh, a service): the desktop's private one is taken, so the sound is PipeWire's and mute is offered" || bad "runtime adopt" "$out"
+    chmod 0755 "$rd"; out=$(env -u XDG_RUNTIME_DIR TMPDIR="$H/rt" sh "$SH" bar panel out --list 2>&1); chmod 0700 "$rd"
+    rm -rf "$rd"; mkdir -p "$H/rt-elsewhere"; : > "$H/rt-elsewhere/pipewire-0"; ln -s "$H/rt-elsewhere" "$rd"
+    out2=$(env -u XDG_RUNTIME_DIR TMPDIR="$H/rt" sh "$SH" bar panel out --list 2>&1)
+    ! printf '%s\n' "$out" | grep -q 'Analog Stereo	out show$' && ! printf '%s\n' "$out2" | grep -q 'Analog Stereo	out show$' && [ "$(ls -ld "$H/rt-elsewhere" | cut -c1-10)" != drwx------ ] \
+        && ok "no XDG_RUNTIME_DIR: a directory others can read, or a symlink in its place, is not taken, and nothing is changed" || bad "runtime adopt refused" "$out | $out2"
+    rm -rf "$H/rt" "$H/rt-elsewhere"; mv "$H/wpctl.real" "$H/.local/bin/wpctl"
     printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/wpctl"; rm -f "$H/.local/bin/pw-dump" "$H/.local/bin/pipewire"; chmod +x "$H/.local/bin/wpctl"
     # the verb: both halves, one of them, the config key, the render, a running sway
     export SWAYSOCK=$H/sway.sock
@@ -3027,6 +3041,13 @@ STUB
     m1=$(sh "$SH" bar panel mic --list | sed -n 1p); un=$(sh "$SH" bar panel mic unmute); m2=$(sh "$SH" bar panel mic --list | sed -n 1p)
     [ "$m1" = "mic        Jabra $SEP 50% $SEP muted" ] && [ "$un" = 'mic unmuted' ] && [ "$m2" = "mic        Jabra $SEP 50%" ] \
         && ok "panel mic mute then unmute: the state read back from amixer, the title says muted in between" || bad "panel mic read back" "$m1 | $un | $m2"
+    touch "$H/muted"; st=0; out=$(sh "$SH" bar panel out mute 2>&1) || st=$?; rm -f "$H/muted"
+    [ "$st" -eq 0 ] && [ "$out" = 'out muted' ] && ok "panel out mute when it is muted already: a receipt, never 'not on the panel now' (#31)" || bad "mute again" "st=$st $out"
+    sh "$SH" bar panel out use HDMI >/dev/null
+    st=0; out=$(sh "$SH" bar panel out mute 2>&1) || st=$?; st2=0; out2=$(sh "$SH" bar panel out level 50 2>&1) || st2=$?
+    sh "$SH" bar panel out use Jabra >/dev/null; rm -f "$amlog"
+    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: out: HDMI has no volume control here, so it cannot be muted or set' ] && [ "$st2" -eq 1 ] && [ "$out2" = "$out" ] \
+        && ok "panel out mute and level on an output with no volume control (HDMI): why, in one line; never 'not on the panel now', never a level said that nothing took (#31)" || bad "no mixer" "st=$st $out | st2=$st2 $out2"
     out=$(sh "$SH" bar panel bat --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "bat        80% $SEP discharging $SEP 2:00 left" ] && printf '%s\n' "$out" | grep -q "^  bat        health 83% of new	bat show$" && printf '%s\n' "$out" | grep -q "^  bat        cycles 123	bat show$" && printf '%s\n' "$out" | grep -q "^  bat        power 20.0 W	bat show$" \
         && ok "panel bat: the charge, the time left from the kernel's numbers, the health, the cycles" || bad "panel bat" "$out"
@@ -3261,6 +3282,11 @@ done
 for s in lan wifi bt out mic bat clock theme window display keyboard notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
 [ "$(grep -c '' "$H/tools.all")" = 61 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
     && ok "provide: the nineteen sections hold the 61 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+# the brightness takes 1 to 100 in its schema, as its gate does: a planner told 0 to 100 sent a 0 the gate refused (#31)
+mcp display "$init" "$(call 2 display_brightness '{"level":0}')"
+jq -e -s 'map(select(.name == "display_brightness" or .name == "out_level") | {(.name): (.inputSchema.properties.level | [.minimum, .maximum])}) | add == {display_brightness: [1, 100], out_level: [0, 100]}' "$H/tools.all" >/dev/null \
+    && [ "$(ans 2 | jq -r .error.message)" = 'display_brightness: level is a whole number, 1 to 100' ] \
+    && ok "provide: display_brightness takes 1 to 100, in its schema and its arguments' check, as its gate does; out_level 0 to 100 (#31)" || bad "brightness schema" "$(jq -c 'select(.name == "display_brightness") | .inputSchema' "$H/tools.all") $(ans 2)"
 # the rows carry the section's state, the dialog's subtitle, read again with every rows read
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows"}')"
 ans 2 | jq -r '.result.contents[0].text' | jq -e '.title == "theme" and (.state | type == "string" and length > 0)' >/dev/null \
@@ -3398,6 +3424,7 @@ case $1 in
         case "$*" in
             *'what time'*) printf '{"answer": "It is noon.", "steps": [], "refused": []}\n' ;;
             *zebra*|*sandwich*) printf '{"answer": "", "steps": [], "refused": []}\n' ;;
+            *'hush the room'*) printf '{"answer": "", "steps": [{"name": "out_mute", "arguments": {}}], "refused": []}\n' ;;
             *) printf '{"answer": "", "steps": [{"name": "theme_palette", "arguments": {"name": "dracula"}}, {"name": "out_level", "arguments": {"level": 30}}, {"name": "theme_palette", "arguments": {"name": "rainbow"}}, {"name": "rm_rf", "arguments": {}}], "refused": ["out_use: no argument loud"]}\n' ;;
         esac ;;
     *) printf '%s\n' "$@" > "$HOME/spark.argv"; cat > "$HOME/spark.stdin"; case "$*" in *--source*) echo 'the notes say to buy bread.' ;; *) echo '{"steps": []}' ;; esac ;;
@@ -3412,6 +3439,12 @@ x=$(printf '\342\234\227')
     && ok "want with spark steps: the tools on stdin (notes and reminders among them, the about and undo, never the files'), the names each tool takes now as the about; each step mapped back and gated, spark's refusals and the gate's as lines" || bad "want steps" "st=$st $out $(cat "$HOME/spark.argv")"
 if [ "$(uname -s)" != Darwin ]; then
     printf '%s' "$out" | jq -e '.steps[1] == {name: "out_level", arguments: {level: 30}, line: "out level 30"}' >/dev/null && ok "want with spark steps: a level comes back a number" || bad "want steps level" "$out"
+    st=0; out=$(sh "$SH" want --json hush the room 2>&1) || st=$?
+    sh "$SH" bar panel out use HDMI >/dev/null; st2=0; out2=$(sh "$SH" want --json hush the room 2>&1) || st2=$?
+    sh "$SH" bar panel out use Jabra >/dev/null; rm -f "$HOME/.config/alsa/asoundrc"
+    [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e '.steps == [{name: "out_mute", arguments: {}, line: "out mute"}] and .refused == []' >/dev/null \
+        && [ "$st2" -eq 0 ] && printf '%s' "$out2" | jq -e --arg x "$x" '.steps == [] and .refused == [$x + " out: HDMI has no volume control here, so it cannot be muted or set"]' >/dev/null \
+        && ok "want with spark steps: out_mute is planned where the output has a volume, and said why where it has none (#31)" || bad "want mute" "st=$st $out | st2=$st2 $out2"
 fi
 st=0; out=$(sh "$SH" want --json what time is it 2>&1) || st=$?; st2=0; out2=$(sh "$SH" want --json zebra stripes 2>&1) || st2=$?; st3=0; out3=$(sh "$SH" want --json make me a sandwich please 2>&1) || st3=$?
 [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e '.answer == "It is noon." and .steps == []' >/dev/null && [ "$st2" -eq 0 ] && printf '%s' "$out2" | jq -e --arg x "$x" '.steps == [] and .refused == [$x + " no step on the panel does that"]' >/dev/null \
