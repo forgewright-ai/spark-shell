@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.91
+
+- Changed: the idle screen draws the time in the Calendar's large
+  figures, in the accent, at the lower left, and the date under it in
+  the dialog's muted color, which reads on the dimmed wallpaper. A
+  window too small for the figures keeps the time on one line (#42)
+
 ## v0.90
 
 What his first morning on v0.89 found (#39, #40, #41).

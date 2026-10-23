@@ -7208,8 +7208,8 @@ idle_exec() {   # -> the swayidle command the template and a live change run
     printf " before-sleep '%s'" "$_l"
 }
 # The idle screen (#24): after the idle minutes the wallpaper dims to the ground and the time
-# sits at the lower left, small, in the palette's muted color, the date under it; no logo, no
-# window. It is one foot window at twice the text size, tiled alone on a workspace of its own
+# sits at the lower left in the Calendar's large figures, in the accent (#42), the date under it;
+# no logo, no window. It is one foot window at twice the text size, tiled alone on a workspace of its own
 # named idle with no gaps and no border (a fullscreen window would be solid: foot's own rule),
 # the background at 80% over the wallpaper, the bar out of the way. A key or a move takes it
 # down and the workspace before comes back; the lock and the display off come at the lock
@@ -7238,13 +7238,20 @@ desk_idle() {   # desk_idle [off|--clock] -- the idle screen up; down; or the cl
     _fs=$(font_spec); swaymsg -- exec "foot --app-id $IDLE_APP -o 'font=${_fs%%:*}:size=$((_sz * 2))' -o $_fc.alpha=$IDLE_ALPHA -o $_fc.background=$HEX_BG -o pad=0x0 -e $REPO/spark-shell desktop idle --clock" >/dev/null 2>&1 || refuse "could not open the idle screen"
 }
 idle_up() { swaymsg -t get_tree 2>/dev/null | jq -e --arg a "$IDLE_APP" '[.. | objects | select(.app_id? == $a)] | length > 0' >/dev/null 2>&1; }   # the idle window is on the screen
-idle_clock() {   # in the idle window: the time at the lower left in the muted color, the date under it in dim, drawn again as each minute turns, until the window goes
-    theme_load
+idle_clock() {   # in the idle window: the time in the Calendar's large figures at the lower left, in the accent (#42), a row of air, the date in the dialog's muted color; drawn again as each minute turns, until the window goes. A window under 9 rows or 38 columns has the time on one line
     printf '\033[?25l'; trap 'printf "\033[?25h\033[0m"; exit 0' INT TERM HUP
+    _a='38;5;16'; _m='38;5;20'   # the desktop's foot.ini slots, as the dialog draws them: the accent, and the muted color that reads on a panel (#34)
     while :; do
         # shellcheck disable=SC2046   # two numbers, split on purpose
         set -- $(stty size 2>/dev/null || echo 24 80)
-        printf '\033[2J\033[%s;3H\033[%sm%s\033[%s;3H\033[2m%s\033[0m' $(( ${1:-24} - 2 )) "$MUTED_SGR" "$(date '+%H:%M')" $(( ${1:-24} - 1 )) "$(date '+%A %e %B' | tr -s ' ')"
+        _h=${1:-24}; _d=$(date '+%A %e %B' | tr -s ' ')
+        printf '\033[2J'
+        if [ "$_h" -ge 9 ] && [ "${2:-80}" -ge 38 ]; then
+            clock_rows | { _y=$((_h - 7)); while IFS= read -r _l; do printf '\033[%s;3H\033[%sm%s' "$_y" "$_a" "$_l"; _y=$((_y + 1)); done; }
+            printf '\033[0m\033[%s;3H\033[%sm%s\033[0m' $((_h - 1)) "$_m" "$_d"
+        else
+            printf '\033[%s;3H\033[%sm%s\033[%s;3H\033[%sm%s\033[0m' $((_h - 2)) "$_a" "$(date '+%H:%M')" $((_h - 1)) "$_m" "$_d"
+        fi
         _s=$(date +%S); _s=${_s#0}; sleep $((60 - ${_s:-0})) & wait $! || break
     done
 }

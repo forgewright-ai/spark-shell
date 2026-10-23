@@ -4335,6 +4335,16 @@ STUB
     rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle off 2>&1) || rc=$?
     [ "$rc" = 0 ] && grep -qxF -- '-- [app_id=spark-idle] kill' "$HOME/swaymsg.log" && grep -qx -- '-- workspace back_and_forth' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
         && ok "desktop idle off: the window killed, the workspace before back, the bar back" || bad "idle off" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
+    # the idle window's drawing (#42): the Calendar's large figures at the lower left in the accent's slot, the date in the panel's muted one; one frame, then a sleep that fails ends the loop
+    mkdir -p "$H/ic"; printf '#!/bin/sh\necho "${IC_SIZE:-28 100}"\n' > "$H/ic/stty"; printf '#!/bin/sh\nexit 1\n' > "$H/ic/sleep"; chmod +x "$H/ic/stty" "$H/ic/sleep"
+    esc=$(printf '\033'); blk=$(printf '\342\226\210'); day=$(date '+%A %e %B' | tr -s ' ')   # blk: the full block's bytes, for the C locale of CI's containers
+    rc=0; out=$(PATH="$H/ic:$PATH" sh "$SH" desktop idle --clock 2>&1) || rc=$?
+    [ "$rc" = 0 ] && printf '%s' "$out" | grep -q "${esc}\[21;3H${esc}\[38;5;16m" && printf '%s' "$out" | grep -q "${esc}\[25;3H${esc}\[38;5;16m" && ! printf '%s' "$out" | grep -q "${esc}\[26;3H${esc}\[38;5;16m" \
+        && printf '%s' "$out" | grep -qF "${esc}[27;3H${esc}[38;5;20m$day" && [ "$(printf '%s' "$out" | grep -o "$blk" | wc -l | tr -d ' ')" -ge 20 ] \
+        && ok "desktop idle --clock: the time in five rows of large figures at the lower left in the accent (slot 16), a row of air, the date in the muted color (slot 20) (#42)" || bad "idle clock" "rc=$rc $(printf '%s' "$out" | od -c | head -8)"
+    rc=0; out=$(IC_SIZE='8 30' PATH="$H/ic:$PATH" sh "$SH" desktop idle --clock 2>&1) || rc=$?
+    [ "$rc" = 0 ] && printf '%s' "$out" | grep -q "${esc}\[6;3H${esc}\[38;5;16m[0-9][0-9]:[0-9][0-9]" && printf '%s' "$out" | grep -qF "${esc}[7;3H${esc}[38;5;20m$day" \
+        && ok "desktop idle --clock in a window under 9 rows: the time on one line, the date under it" || bad "idle clock small" "rc=$rc $(printf '%s' "$out" | od -c | head -6)"
     # the pointer's size follows the text size
     sh "$SH" theme text 20 >/dev/null 2>&1; grep -qx 'seat \* xcursor_theme spark-white 48' "$sway" && ok "theme text 20: the pointer at 48" || bad "pointer 48" "$(grep xcursor "$sway")"
     sh "$SH" theme text 12 >/dev/null 2>&1; grep -qx 'seat \* xcursor_theme spark-white 24' "$sway" && ok "theme text 12: the pointer at 24 again" || bad "pointer 24" "$(grep xcursor "$sway")"

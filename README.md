@@ -376,8 +376,9 @@ it. Done takes the reminder away; again in 10 minutes moves it on.
 ## Lock and capture
 
 After the idle minutes (10) the idle screen: the wallpaper dims to the
-ground and the time sits at the lower left, small, in the palette's
-muted color, the date under it; a key or a mouse move takes it down.
+ground and the time sits at the lower left in large figures, in the
+accent, as the Calendar draws it, the date under it; a key or a mouse
+move takes it down.
 After the lock minutes (15) the screen locks and the display turns off.
 Where logind runs (Debian, Arch), it locks before the machine sleeps
 too; Void has no logind to say so. Super+Escape, or `spark-shell
