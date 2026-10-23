@@ -318,7 +318,6 @@ impl Provider {
 pub struct Config {
     pub home: Option<String>,
     pub title: Option<String>,
-    pub mark: bool,
     pub close: bool,
     pub progress: bool,
     pub plus: bool,
@@ -334,7 +333,6 @@ impl Default for Config {
         Config {
             home: None,
             title: None,
-            mark: false,
             close: true,
             progress: true,
             plus: false,
@@ -1236,7 +1234,8 @@ impl App {
         }
     }
 
-    /// The pick lit as words are typed: the one they name best; the request when they name none (#28).
+    /// The pick lit as words are typed: the one they name best; the request when they name none (#28),
+    /// wherever it sits: the exchange's undo and proposals come before it and run only when picked (#39).
     pub fn best(&self) -> usize {
         let picks = self.picks();
         let mut best: Option<(u8, usize)> = None;
@@ -1246,7 +1245,7 @@ impl App {
                 best = Some((sc, i));
             }
         }
-        best.map(|(_, i)| i).unwrap_or(0)
+        best.map(|(_, i)| i).or_else(|| picks.iter().position(|it| *it == Item::Ask)).unwrap_or(0)
     }
 
     /// The words changed: the lit row follows them; with no words, nothing is lit.

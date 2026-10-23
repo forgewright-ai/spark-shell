@@ -5613,7 +5613,6 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     case " $* " in *" provide files "*) ;; *) set -- "$@" --provider "$REPO/spark-shell provide files" ;; esac
     case " $* " in *" provide clock "*) ;; *) set -- "$@" --provider "$REPO/spark-shell provide clock" ;; esac   # the Calendar, there to open from any view: it has no rows on the home dialog
     case $_first in '') ;; *) set -- "$@" --home "$_first" ;; esac
-    set -- "$@" --mark on   # the logo on the about however it is reached; the dialog draws it only where the terminal draws sixel
     _dc=''; [ "$DIALOG_ATTACH" != yes ] || _dc=plus; [ "$DIALOG_MODEL" != yes ] || _dc="${_dc:+$_dc,}model"; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
     _sp=$(spark_bin); [ -z "$_sp" ] || set -- "$@" --spark "$_sp"
     FULL_ID=''; ! panel_own_window || panel_full_aside

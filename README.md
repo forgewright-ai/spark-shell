@@ -295,8 +295,8 @@ no list, any app with a desktop entry is allowed.
 ## Keys
 
 Type `spark-shell desktop keys`. You get these lines. The first
-desktop start shows them in the about dialog, and the dialog's `about`
-row shows them again.
+desktop start shows the keys in the about dialog, one line each, and
+the dialog's `about` row shows them again.
 
     Super+Return opens a terminal window.
     Super+d opens the dialog: a place to go, or say what you would like.
@@ -560,9 +560,10 @@ and Page Down scroll it.
   name or `#rrggbb`; and the ground. The header names the palette. At
   the home, Esc clears what the last request left on the screen, its
   receipts and refusals; the next Esc closes the dialog.
-- Calendar: this month and the next side by side, today lit and a day
-  with a reminder in the accent; the left and right arrows move the
-  months while nothing is typed. Under them, the reminders.
+- Calendar: the time in large figures, then this month and the next
+  side by side, today lit and a day with a reminder in the accent; the
+  left and right arrows move the months while nothing is typed. Under
+  them, the reminders.
 - `notes`: a new note, then your notes, the newest first, each with its
   date. Enter opens one in your editor in a terminal window. Said in
   words, `note buy oat milk` makes a note, `groceries: buy oat milk`
@@ -578,9 +579,10 @@ and Page Down scroll it.
   windows sit on a workspace: side by side, in tabs or stacked.
 - `bar`: hide the bar at the top of the screen, or show it again.
 - `apps`: a terminal window, then a row per app a layout may open.
-- `about`: the version, the keys, the licence and the address. It opens
-  by itself the first time the desktop starts, and Esc gives the list
-  back.
+- `about`: the version, the licence and the address, then each key on
+  one line, its sentence up to the first comma; `spark-shell desktop
+  keys` has every sentence whole. It opens by itself the first time the
+  desktop starts, and Esc gives the list back.
 - `files`: your home folder. Enter on a folder opens it, `..` goes back
   up, and Esc walks back the way you came; a folder lists its folders,
   then its files with the size and the date. Enter on a file opens it
@@ -748,10 +750,7 @@ The logo, in `assets/`: spark's block-letter S, then the prompt sign and
 a cursor cell. `logo.svg` is for a dark ground and `logo-light.svg` for
 a light one; `favicon.svg` and `favicon-light.svg` are the same with no
 ground of their own, and `favicon-16.png` to `favicon-26.png`, with
-their `-light` twins, are those at the height of a terminal row. The
-dialog draws the logo as a pixel grid snapped from `favicon.svg`, a
-block 2 by 3 pixels and a shadow line 1, at a whole multiple of its 18
-rows.
+their `-light` twins, are those at the height of a terminal row.
 The S keeps spark's colors and is never recolored.
 
 Uninstall: `spark-shell off`, then delete `~/.spark-shell`.

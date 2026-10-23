@@ -849,6 +849,39 @@ fn words_that_name_no_row_are_a_request() {
 }
 
 #[test]
+fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
+    // his report (#39): "change theme to nord" worked, and the next request ran its undo
+    let (mut app, rx, calls, _r) = started();
+    app.cfg.spark_shell = "/bin/spark-shell".into();
+    app.plan(r#"{"answer": "The terminal is open.", "question": true, "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
+    app.undo = Some(spark_dialog::app::Step {
+        prov: 0,
+        call: spark_dialog::model::Call {
+            name: "window_close".into(),
+            arguments: json!({"name": "terminal"}).as_object().unwrap().clone(),
+            ask: vec![],
+        },
+        who: spark_dialog::app::Who::Undo,
+        line: "undo terminal".into(),
+    });
+    typed(&mut app, "change theme to dracula");
+    assert_eq!(app.picks().first(), Some(&Item::Undo), "the undo and the proposal come before Ask spark");
+    assert_eq!(app.picks().get(app.sel), Some(&Item::Ask), "words that name no row light Ask spark");
+    app.enter();
+    assert!(
+        app.jobs
+            .iter()
+            .any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, a) if a.last().map(String::as_str) == Some("change theme to dracula"))),
+        "Enter asks spark"
+    );
+    assert!(
+        !pump(&mut app, &rx, |_| !calls.lock().unwrap().is_empty()),
+        "and runs neither the undo nor the proposal"
+    );
+    assert!(app.undo.is_some(), "the undo is still there to pick");
+}
+
+#[test]
 fn words_that_name_a_row_run_that_row_with_no_model_call() {
     let (mut app, rx, calls, _r) = started();
     app.cfg.spark_shell = "/bin/spark-shell".into();

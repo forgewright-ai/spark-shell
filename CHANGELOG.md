@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.90
+
+What his first morning on v0.89 found (#39, #40, #41).
+
+- Fixed: after a step, words typed that named no row lit the step's
+  Undo, so Enter undid the step: "change theme to nord" worked, and the
+  next request put the theme before it back. Words that name no row
+  light Ask spark, wherever it sits, and Enter sends them; the Undo and
+  a proposal run only when picked (#39)
+- Changed: the about page has no logo, and the dialog draws none
+  anywhere now. It starts with the version, the licence and the
+  address, then each key on one line, its sentence up to the first
+  comma, in their groups. A group is drawn whole or not at all, so no
+  key is cut at the window's edge, and the last line names
+  `spark-shell desktop keys`, which has every sentence whole (#40)
+- Changed: the Calendar shows the time in large figures again, above
+  the months, as it did before v0.80, with its am or pm on a
+  twelve-hour clock (#41)
+
 ## v0.89
 
 The home and the look, from his review of 2026-10-23: a look change is

@@ -67,7 +67,7 @@ fn base() -> App {
     );
     let about_rows: serde_json::Value = serde_json::from_str(include_str!("golden/about-rows.json")).unwrap();
     let mut about = provider("about", "", about_rows, json!([]));
-    about.version = "0.64".into();
+    about.version = "0.90".into();
     app.providers = vec![window, theme, bt, about];
     app.about_idx = Some(3);
     app.model_name = Some("gemma4-26b-a4b".into());
@@ -88,7 +88,7 @@ fn render_at(app: &App, name: &str, w: u16, h: u16) {
         assert_eq!(app.size, (w, h), "{}: the app is told the size it is drawn at", name);
         spark_dialog::ui::draw(app, &p, CLOCK, &mut b);
         if let Ok(dir) = std::env::var("RENDER_HTML") {
-            let page = format!("<!doctype html><meta charset=utf-8><body style=\"margin:0;padding:28px;background:#111;font:16px 'DejaVu Sans Mono',Menlo,monospace\">{}</body>", common::html_runs(&b, &p, &format!("{} \u{b7} {} \u{b7} {}x{}", name, pal, w, h), "MARKBLOB"));
+            let page = format!("<!doctype html><meta charset=utf-8><body style=\"margin:0;padding:28px;background:#111;font:16px 'DejaVu Sans Mono',Menlo,monospace\">{}</body>", common::html_runs(&b, &p, &format!("{} \u{b7} {} \u{b7} {}x{}", name, pal, w, h), "PICTURE"));
             std::fs::write(format!("{}/{}-{}.html", dir, name, pal), page).unwrap();
         }
         let s = spark_dialog::ui::snapshot(&b, &p);
@@ -293,7 +293,6 @@ fn a_long_list_says_how_many_rows_sit_below() {
 #[test]
 fn about() {
     let mut app = base();
-    app.cfg.mark = true;
     app.view = View::About;
     app.came_from = vec![View::Home];
     app.exchange = vec![Line {
@@ -438,10 +437,30 @@ fn at(row: &str, needle: &str) -> Option<usize> {
 }
 
 #[test]
+fn the_calendar_shows_the_time_in_large_figures() {
+    // his word (#41): the calendar screen is missing the clock
+    let app = calendar_app(true);
+    let (b, p, rows) = drawn(&app);
+    let block = "\u{2588}";
+    assert!(rows[7..12].iter().all(|r| r.contains(block)), "five rows of figures under the hint");
+    assert!(!rows[6].contains(block) && !rows[12].contains(block), "a row of air above and below them");
+    assert_eq!(b[(2, 7)].fg, p.accent, "in the accent");
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    spark_dialog::ui::draw(&app, &p, "Sun 18 Oct \u{b7} 9:05 PM", &mut b);
+    let row = |y: u16| (0..WIDTH).map(|x| b[(x, y)].symbol().to_string()).collect::<String>();
+    assert!(
+        row(11).trim_end().ends_with("PM"),
+        "a twelve-hour clock says PM beside the figures: {}",
+        row(11)
+    );
+    assert_eq!((7..12).filter_map(|y| at(&row(y), block)).min(), Some(2), "a 9 starts at the months' left edge");
+}
+
+#[test]
 fn the_calendar_draws_this_month_and_the_next_side_by_side() {
     let (_, _, rows) = drawn(&calendar_app(true));
     let y = rows.iter().position(|r| r.starts_with("  October 2026")).expect("this month");
-    assert_eq!(y, 7, "under the prompt and the hint");
+    assert_eq!(y, 13, "under the prompt, the hint and the time's five rows of figures");
     assert_eq!(at(&rows[y], "November 2026"), Some(32), "the next month on the same row");
     assert_eq!(at(&rows[y + 1], "Su"), Some(2));
     assert_eq!(rows[y + 1].matches("Su").count(), 2, "a weekday line under each month");

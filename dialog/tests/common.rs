@@ -110,9 +110,9 @@ pub fn pump(app: &mut App, rx: &Receiver<Incoming>, done: impl Fn(&App) -> bool)
 
 /// A rendered buffer as HTML in its real colors, for a person to look at
 /// before a golden is kept and for the design system's preview: one span
-/// per run of one style, a glyph outside ASCII held to one cell, the
-/// mark's cells one image (`mark`, its URL).
-pub fn html_runs(buf: &Buffer, pal: &Palette, caption: &str, mark: &str) -> String {
+/// per run of one style, a glyph outside ASCII held to one cell, a
+/// picture's cells one image (`picture`, its URL).
+pub fn html_runs(buf: &Buffer, pal: &Palette, caption: &str, picture: &str) -> String {
     let hex = |c: Color, d: Color| match if c == Color::Reset { d } else { c } {
         Color::Rgb(r, g, b) => format!("#{:02x}{:02x}{:02x}", r, g, b),
         _ => "inherit".into(),
@@ -143,7 +143,7 @@ pub fn html_runs(buf: &Buffer, pal: &Palette, caption: &str, mark: &str) -> Stri
                     out.push_str(&format!("<span style=\"{}\">{}</span>", style, run));
                     run.clear();
                 }
-                out.push_str(&format!("<img src=\"{}\" alt=\"\" style=\"display:inline-block;width:{}ch;height:19px;vertical-align:bottom;object-fit:contain;object-position:left\">", esc(mark), n));
+                out.push_str(&format!("<img src=\"{}\" alt=\"\" style=\"display:inline-block;width:{}ch;height:19px;vertical-align:bottom;object-fit:contain;object-position:left\">", esc(picture), n));
                 continue;
             }
             if skip > 0 {

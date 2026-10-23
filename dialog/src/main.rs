@@ -25,7 +25,7 @@ mod login_run;
 const USAGE: &str = "spark-dialog -- the spark dialog, one window for every domain (run by spark-shell dialog)
 
   spark-dialog [--provider \"PATH WORDS\"]... [--home SECTION] [--title TEXT]
-               [--mark on|off] [--close on|off] [--progress on|off]
+               [--close on|off] [--progress on|off]
                [--composer plus,model,talk] [--attach \"txt md\"]
                [--spark-shell PATH] [--spark PATH]
   spark-dialog login ...   the login screen on tty1 (spark-dialog login -h)
@@ -69,7 +69,6 @@ fn args() -> Result<Args, String> {
             }
             "--home" => cfg.home = Some(val("--home")?),
             "--title" => cfg.title = Some(val("--title")?),
-            "--mark" => cfg.mark = onoff(&val("--mark")?)?,
             "--close" => cfg.close = onoff(&val("--close")?)?,
             "--progress" => cfg.progress = onoff(&val("--progress")?)?,
             "--composer" => {
@@ -332,7 +331,6 @@ fn main() {
     };
     let listening = Arc::new(Mutex::new(None));
     let sixel_ok = sixel::terminal_draws_it(&std::env::var("TERM").unwrap_or_default());
-    let mut mark_drawn = false;
     // the picture beside a list (a wallpaper's): where it is drawn now, when one was last tried, the last one made
     let mut shown_preview: Option<(u16, u16, u16, u16, String)> = None;
     let mut preview_tried = Instant::now();
@@ -344,28 +342,17 @@ fn main() {
         for j in std::mem::take(&mut app.jobs) {
             run_job(j, tx.clone(), listening.clone());
         }
-        if let Some(m) = app.palette.take() {
-            let next = Palette::from(|k| m.get(k).and_then(serde_json::Value::as_str).map(String::from));
-            if slots {
-                // the switch recolored this window with every other one: its slots and its ground (#33, #34);
-                // only the logo's ink follows a palette from dark to light
-                if next.dark != pal.dark {
-                    pal.dark = next.dark;
-                    mark_drawn = false;
-                    dirty = true;
-                }
-            } else {
-                // a theme step: the new palette, and the window's ground with it (the cells keep the terminal's own)
-                pal = next;
-                if let ratatui::style::Color::Rgb(r, g, b) = pal.surface {
-                    let _ = write!(out, "\x1b]11;#{:02x}{:02x}{:02x}\x1b\\", r, g, b);
-                    let _ = out.flush();
-                }
-                mark_drawn = false;
-                shown_preview = None;
-                let _ = term.clear();
-                dirty = true;
+        // in slots, the switch recolored this window with every other one, its slots and its ground (#33, #34);
+        // elsewhere a theme step brings the new palette, and the window's ground with it
+        if let Some(m) = app.palette.take().filter(|_| !slots) {
+            pal = Palette::from(|k| m.get(k).and_then(serde_json::Value::as_str).map(String::from));
+            if let ratatui::style::Color::Rgb(r, g, b) = pal.surface {
+                let _ = write!(out, "\x1b]11;#{:02x}{:02x}{:02x}\x1b\\", r, g, b);
+                let _ = out.flush();
             }
+            shown_preview = None;
+            let _ = term.clear();
+            dirty = true;
         }
         let now_clock = clock(twelve);
         if now_clock != last_clock {
@@ -389,37 +376,6 @@ fn main() {
                 }
                 f.set_cursor_position(drawn.cursor);
             });
-            match ui::mark_at(&app) {
-                Some((mx, my)) if !mark_drawn => {
-                    // the buffer skips the logo's cells, so what the last view drew there stays: blank them first,
-                    // or the old text shows through the logo's transparent ground
-                    let ground = term_color(pal.surface);
-                    let _ = queue!(
-                        out,
-                        ratatui::crossterm::cursor::SavePosition,
-                        ratatui::crossterm::cursor::MoveTo(mx, my),
-                        ratatui::crossterm::style::SetBackgroundColor(ground),
-                        ratatui::crossterm::style::Print(" ".repeat(ui::MARK_CELLS as usize)),
-                        ratatui::crossterm::style::ResetColor,
-                        ratatui::crossterm::cursor::RestorePosition
-                    );
-                    let _ = out.flush();
-                    let cell_h = terminal::window_size()
-                        .ok()
-                        .filter(|w| w.rows > 0 && w.height > 0)
-                        .map(|w| (w.height / w.rows) as u32)
-                        .unwrap_or(0);
-                    if let Some(s) = sixel::mark(cell_h, pal.dark).filter(|_| sixel_ok) {
-                        let _ = queue!(out, ratatui::crossterm::cursor::SavePosition, ratatui::crossterm::cursor::MoveTo(mx, my));
-                        let _ = out.write_all(s.as_bytes());
-                        let _ = queue!(out, ratatui::crossterm::cursor::RestorePosition);
-                        let _ = out.flush();
-                    }
-                    mark_drawn = true;
-                }
-                Some(_) => {}
-                None => mark_drawn = false,
-            }
             // the picture beside a list: drawn when it changed, its cells blanked first (the buffer skips them);
             // a picture gone is the buffer's again, which writes its cells over it
             let want = drawn.preview.clone();
@@ -461,7 +417,6 @@ fn main() {
                 dirty = true;
             }
             Ev::Term(Event::Resize(_, _)) => {
-                mark_drawn = false;
                 shown_preview = None;
                 let _ = term.clear();
                 dirty = true;

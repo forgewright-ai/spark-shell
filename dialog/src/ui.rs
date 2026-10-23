@@ -42,10 +42,6 @@ pub const CHIP: u16 = 9;
 pub const PREVIEW_W: u16 = 24;
 pub const PREVIEW_H: u16 = 7;
 pub const LESS: &str = "\u{2039}";
-/// The cells the mark takes in the header: it is one row tall and about 1.4 rows wide.
-pub const MARK_CELLS: u16 = 3;
-/// The about's sentence column, past the longest key chip.
-pub const ABOUT_COL: u16 = 21;
 /// The march, ten cells, while a step runs or a provider reads.
 pub fn march(frame: u64) -> String {
     let i = (frame % 8) as usize;
@@ -166,11 +162,6 @@ pub fn wrap(text: &str, w: usize) -> Vec<String> {
     out
 }
 
-/// The cells the mark takes in the header, for main.rs to draw the sixel into.
-pub fn mark_at(app: &App) -> Option<(u16, u16)> {
-    (app.cfg.mark && app.view == View::About).then_some((2, 0))
-}
-
 /// Where things landed, for a click: the cursor, each pickable row's line and its index, each
 /// control's cells and row, close, the prompt's rows.
 #[derive(Clone, Debug, Default)]
@@ -237,12 +228,6 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
 
     // the header: the title, its state; then the march, the date and the time, close
     let mut x = 2;
-    if let Some((mx, my)) = mark_at(app) {
-        for dx in 0..MARK_CELLS {
-            pen.buf[(mx + dx, my)].set_diff_option(CellDiffOption::Skip);
-        }
-        x = mx + MARK_CELLS + 1;
-    }
     let right = if app.cfg.close { w - 3 } else { w - 1 };
     if app.cfg.close {
         pen.put(w - 3, 0, CLOSE, pal.muted, false, false);
@@ -263,8 +248,7 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let sub = app.subtitle();
     if !sub.is_empty() && end > x + 5 {
         // two cells of air before the date: a long state is cut, never run into it
-        let sep = if app.view == View::About { " " } else { SEP };
-        pen.put(x, 0, &cut_words(&format!("{}{}", sep, sub), (end - x - 2) as usize), pal.muted, false, false);
+        pen.put(x, 0, &cut_words(&format!("{}{}", SEP, sub), (end - x - 2) as usize), pal.muted, false, false);
     }
     match march_x {
         Some(mx) => {
@@ -340,7 +324,7 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     } else {
         let mut top = content_y;
         if app.is_calendar() {
-            top = calendar(app, &mut pen, content_y, bottom) + 1;
+            top = calendar(app, &mut pen, clock, content_y, bottom) + 1;
         }
         let (picks, preview) = content(app, &mut pen, top, bottom);
         drawn.picks = picks;
@@ -736,12 +720,37 @@ fn chip(pen: &mut Pen, x: u16, y: u16, c: &[[u8; 3]]) {
 /// Where the Calendar's two months start.
 const MONTH_X: [u16; 2] = [2, 32];
 
-/// The Calendar's months: this month and the next side by side, today a chip and a day with a
-/// reminder in the accent; left and right move both. The time is the header's. The reminders, to add,
-/// mark done or snooze, are the content's rows below. Returns the row after the months.
-fn calendar(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> u16 {
-    use crate::calendar::{shift, weeks, ymd, DAYS, MONTHS};
+/// The time at the end of the header's clock, after the middle dot ("10:24", or "9:05 AM" on a
+/// twelve-hour clock): its figures, and AM or PM.
+fn time_of(clock: &str) -> Option<(&str, Option<&str>)> {
+    let t = clock.rsplit('\u{b7}').next()?.trim();
+    let (hm, half) = match t.split_once(' ') {
+        Some((a, b)) => (a, Some(b)),
+        None => (t, None),
+    };
+    (hm.contains(':') && hm.chars().all(|c| c.is_ascii_digit() || c == ':')).then_some((hm, half))
+}
+
+/// The Calendar: the time in large figures, from the header's clock (#41); then this month and the
+/// next side by side, today a chip and a day with a reminder in the accent; left and right move both.
+/// The reminders, to add, mark done or snooze, are the content's rows below. Returns the row after
+/// the months.
+fn calendar(app: &App, pen: &mut Pen, clock: &str, top: u16, bottom: u16) -> u16 {
+    use crate::calendar::{shift, strokes, weeks, ymd, DAYS, MONTHS};
     let pal = pen.pal.clone();
+    let mut top = top;
+    // the figures where they leave room for a month under them, with a row of air between
+    if let Some((hm, half)) = time_of(clock).filter(|_| bottom >= top + 6 + 8) {
+        let rows = strokes(hm);
+        let wide = rows.first().map(|r| cells(r)).unwrap_or(0) as u16;
+        for (k, l) in rows.iter().enumerate() {
+            pen.put(2, top + k as u16, l, pal.accent, false, false);
+        }
+        if let Some(h) = half {
+            pen.put(2 + wide + 2, top + rows.len() as u16 - 1, h, pal.muted, false, false);
+        }
+        top += rows.len() as u16 + 1;
+    }
     // the reminders provider's rows that are for a day
     let dated: Vec<(i32, u32, u32)> = app
         .providers
@@ -785,50 +794,65 @@ fn calendar(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> u16 {
     low
 }
 
-/// The about: the keys, each a chip and its sentence, in their groups; under them the version with
-/// its licence, and the address. A sentence with no key (the media keys, typing exit) stays in
-/// `spark-shell desktop keys` and the README, not here.
+/// A key's sentence up to its first comma, colon or semicolon, with no period: the part the about
+/// shows on one line (#40). "moves the focus, as h, j, k, l do; Shift moves the window." is "moves
+/// the focus".
+fn first_part(s: &str) -> &str {
+    s[..s.find([',', ':', ';']).unwrap_or(s.len())].trim_end_matches('.').trim()
+}
+
+/// The about (#40): spark-shell, its version and licence, and its address; then the keys, each a chip
+/// and the first part of its sentence on one line, in their groups, a group whole or not at all; then
+/// the command that shows every sentence whole, with the ones that have no key (the media keys,
+/// typing exit).
 fn about(app: &App, pen: &mut Pen, top: u16, bottom: u16) {
     let pal = pen.pal.clone();
     let w = pen.w;
     let Some(i) = app.about_idx else { return };
     let p = &app.providers[i];
-    let keys_end = bottom.saturating_sub(3); // a blank row, the version, the address
-    let mut y = top;
-    let mut group: Option<String> = None;
+    let x = pen.put(2, top, &format!("spark-shell {}", p.version), pal.fg, false, false);
+    pen.put(x, top, &format!("{}MIT", SEP), pal.muted, false, false);
+    if let Some(addr) = p.rows.rows.iter().find(|r| r.id == "about:address") {
+        pen.put(2, top + 1, &addr.text, pal.accent, false, false);
+    }
+    let mut groups: Vec<Vec<(&str, &str)>> = vec![];
+    let mut group: Option<&Option<String>> = None;
     for r in &p.rows.rows {
         let Some(key) = r.columns.first() else { continue };
-        if r.tool.is_some() || r.children.is_some() || y >= keys_end {
+        if r.tool.is_some() || r.children.is_some() {
             continue;
         }
-        if r.group != group && group.is_some() {
-            y += 1;
+        if group != Some(&r.group) {
+            groups.push(vec![]);
+            group = Some(&r.group);
         }
-        group = r.group.clone();
-        pen.chip(2, y, key, false);
-        for (k, part) in wrap(&r.text, (w - ABOUT_COL - 2) as usize).into_iter().enumerate() {
-            if k > 0 {
-                y += 1;
-            }
-            if y >= keys_end {
-                break;
-            }
-            pen.put(ABOUT_COL, y, &part, pal.fg, false, false);
+        if let Some(g) = groups.last_mut() {
+            g.push((key, first_part(&r.text)));
+        }
+    }
+    // the sentences line up one cell past the widest chip, and keep 20 cells at least
+    let widest = groups.iter().flatten().map(|(k, _)| cells(k) as u16 + 2).max().unwrap_or(0);
+    let col = (2 + widest + 1).min(w.saturating_sub(22));
+    let last = bottom.saturating_sub(1); // the command's line, a blank row above it
+    let mut y = top + 3;
+    for g in &groups {
+        if y + g.len() as u16 + 1 > last {
+            break;
+        }
+        for (key, said) in g {
+            pen.chip(2, y, key, false);
+            pen.put(col, y, &cut_words(said, w.saturating_sub(col + 2) as usize), pal.fg, false, false);
+            y += 1;
         }
         y += 1;
     }
-    let y = (y + 1).min(keys_end + 1);
-    let x = pen.put(2, y, &format!("spark-shell {}", p.version), pal.fg, false, false);
-    pen.put(x, y, &format!("{}MIT", SEP), pal.muted, false, false);
-    if let Some(addr) = p.rows.rows.iter().find(|r| r.id == "about:address") {
-        pen.put(2, y + 1, &addr.text, pal.accent, false, false);
-    }
+    pen.put(2, y, "More on the keys: spark-shell desktop keys", pal.muted, false, false);
 }
 
 /// A rendered buffer as text and tokens: the 60 characters of each row,
 /// then one line of two codes a cell -- the text's slot (f fg, m muted,
 /// a accent, r alarm, s surface, l lit: the rule; upper case when bold) and the ground
-/// (. the surface, l lit, a accent). A cell the mark takes is #.
+/// (. the surface, l lit, a accent). A cell a picture takes is #.
 pub fn snapshot(buf: &Buffer, pal: &Palette) -> String {
     let slot = |c: Color| -> char {
         if c == pal.fg || c == Color::Reset {
