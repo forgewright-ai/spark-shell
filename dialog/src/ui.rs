@@ -406,6 +406,10 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             let x = pen.put(6, y, "Undo", pal.fg, false, lit);
             pen.put(x, y, &format!("  {}", line), pal.muted, false, lit);
         }
+        Item::Proposed => {
+            // under the question that made them, where the steps' signs stand (#44)
+            pen.put(4, y, "proposed, not run", pal.muted, false, false);
+        }
         Item::Proposal(i) => {
             if let Some(s) = app.proposals.get(*i) {
                 pen.put(4, y, OPENS, pal.accent, false, lit);

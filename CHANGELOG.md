@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.93
+
+- Fixed: a question's proposals sat at the end of the exchange, under
+  older steps and their Undo, far from the question that made them.
+  Each request now carries what it left to pick: a question's
+  proposals right under it, under "proposed, not run", and the Undo
+  right under the step it takes back. A blank row parts one request
+  from the next (#44)
+- Fixed: a layout asked for "zen, micro, a terminal window" opened zen
+  and micro, and only suggested the terminal: "terminal" and "window"
+  ground no window on their own, so the shell the model tied to them
+  counted as padding. A shell is grounded by the words that name a
+  terminal (terminal, shell, console); every other window keeps the
+  rule, and "btop in a terminal" still opens btop alone (#45)
+
 ## v0.92
 
 - Fixed: the wifi bars on the status bar ended at uneven heights, while

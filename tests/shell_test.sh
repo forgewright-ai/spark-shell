@@ -1006,6 +1006,11 @@ EOF
     : > "$swlog"; st=0; out=$(sh "$SH" layout "notes and Firefox fullscreen" 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q '^exec firefox' "$swlog" && grep -q '^exec foot -e micro' "$swlog" && ! grep -q 'btop\|player\|exec foot$' "$swlog" && printf '%s\n' "$out" | grep -q 'also suggested: shell and player' \
         && ok "layout: a window tied to words of the need opens (micro for notes); one tied to the layout's own word, to nothing, or to words the need lacks is padding, only suggested (btop is not even on this list)" || bad "grounded" "st=$st $out $(cat "$swlog")"
+    # his layout (#45): "a terminal window" asks for a terminal, so the shell the model ties to those words opens; terminal grounds a shell and no other window
+    printf '#!/bin/sh\nprintf "{\\"why\\": \\"three side by side\\", \\"main\\": {\\"app\\": \\"firefox\\", \\"quote\\": \\"firefox\\", \\"args\\": \\"\\"}, \\"side\\": [{\\"app\\": \\"micro\\", \\"quote\\": \\"micro\\", \\"args\\": \\"\\"}, {\\"app\\": \\"shell\\", \\"quote\\": \\"a terminal window\\", \\"args\\": \\"\\"}]}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
+    : > "$swlog"; st=0; out=$(sh "$SH" layout "firefox, micro, a terminal window" 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -q '^exec firefox' "$swlog" && grep -q '^exec foot -e micro' "$swlog" && grep -q '^exec foot$' "$swlog" && ! printf '%s\n' "$out" | grep -q 'also suggested' \
+        && ok "layout: \"a terminal window\" grounds the shell the model ties to it, so a terminal opens beside firefox and micro (#45)" || bad "terminal grounds a shell" "st=$st $out $(cat "$swlog")"
     # what spark also suggested is one Enter away: a row per app, opening it on this workspace, gone once taken
     printf '#!/bin/sh\nprintf "{\\"why\\": \\"notes beside the browser\\", \\"main\\": {\\"app\\": \\"firefox\\", \\"args\\": \\"\\"}, \\"side\\": [{\\"app\\": \\"micro\\", \\"args\\": \\"\\"}]}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
     : > "$swlog"; st=0; out=$(sh "$SH" layout "notes and firefox" 2>&1) || st=$?

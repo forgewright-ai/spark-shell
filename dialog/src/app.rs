@@ -364,6 +364,8 @@ pub enum Item {
     Said(Sign, String, bool),
     /// A step the model proposed for a question: it runs only when picked.
     Proposal(usize),
+    /// "proposed, not run", over a question's proposals at the end of its turn (#44).
+    Proposed,
     /// A way to talk.
     TalkOpt(Talk),
     /// A section's name over its rows, where a view holds more than one section.
@@ -415,6 +417,8 @@ pub struct App {
     pub queue: VecDeque<Step>,
     /// Steps the model proposed for a question: run only when picked.
     pub proposals: Vec<Step>,
+    /// The exchange line the proposals were made at: they are drawn at the end of its turn (#44).
+    pub proposals_at: Option<usize>,
     pub running: Option<(usize, u64, Step, usize)>,
     pub busy_since: Option<Instant>,
     pub frame: u64,
@@ -483,6 +487,7 @@ impl App {
             undo: None,
             queue: VecDeque::new(),
             proposals: vec![],
+            proposals_at: None,
             running: None,
             busy_since: None,
             frame: 0,
@@ -517,6 +522,7 @@ impl App {
         let n = self.exchange.len();
         if n > 200 {
             self.exchange.drain(..n - 200);
+            self.proposals_at = self.proposals_at.and_then(|p| p.checked_sub(n - 200));
         }
     }
 
@@ -918,7 +924,9 @@ impl App {
     }
 
     /// The exchange as content lines: the newest turn first (a turn starts at what was asked), each in
-    /// its own order; older turns while EXCHANGE_MAX lines hold them. Then the undo, then the proposals.
+    /// its own order with what it left to pick: the Undo right under the receipt it takes back, a
+    /// question's proposals at the end of that question's turn (#44); a blank row between turns; older
+    /// turns while EXCHANGE_MAX lines hold them. What a turn left that is no longer drawn comes last.
     fn said(&self, out: &mut Vec<Item>) {
         let w = self.size.0.saturating_sub(8).max(10) as usize; // the sign at 2, the words at 4, air at the right
         let mut turns: Vec<Vec<usize>> = vec![];
@@ -930,30 +938,54 @@ impl App {
                 t.push(i);
             }
         }
+        let undo_at = if self.undo.is_some() {
+            self.exchange.iter().rposition(|l| l.undo)
+        } else {
+            None
+        };
+        let props_at = if self.proposals.is_empty() {
+            None
+        } else {
+            Some(self.proposals_at.unwrap_or(usize::MAX))
+        };
+        // a question changed nothing: what the model would do, offered, run only when picked
+        let proposed = |out: &mut Vec<Item>| {
+            out.push(Item::Proposed);
+            out.extend((0..self.proposals.len()).map(Item::Proposal));
+        };
+        let (mut undo_drawn, mut props_drawn) = (false, false);
         let mut lines = 0;
         for (k, t) in turns.iter().rev().enumerate() {
             let mut turn = vec![];
+            if k > 0 {
+                turn.push(Item::Blank); // a turn is a group: a blank row parts it from the newer one
+            }
             for &i in t {
                 let l = &self.exchange[i];
                 for (j, part) in crate::ui::wrap(&l.text, w).into_iter().enumerate() {
                     turn.push(Item::Said(l.sign.clone(), part, j == 0));
                 }
+                if Some(i) == undo_at {
+                    turn.push(Item::Undo);
+                }
+            }
+            let props_here = props_at.is_some_and(|p| t.contains(&p));
+            if props_here {
+                proposed(&mut turn);
             }
             if k > 0 && lines + turn.len() > EXCHANGE_MAX {
                 break;
             }
             lines += turn.len();
+            undo_drawn |= undo_at.is_some_and(|u| t.contains(&u));
+            props_drawn |= props_here;
             out.extend(turn);
         }
-        if self.undo.is_some() {
+        if self.undo.is_some() && !undo_drawn {
             out.push(Item::Undo);
         }
-        if !self.proposals.is_empty() {
-            // a question changed nothing: what the model would do, offered, run only when picked
-            out.push(Item::Heading("proposed, not run".into()));
-            for i in 0..self.proposals.len() {
-                out.push(Item::Proposal(i));
-            }
+        if props_at.is_some() && !props_drawn {
+            proposed(out);
         }
     }
 
@@ -1588,6 +1620,7 @@ impl App {
                     self.exchange.clear();
                     self.undo = None;
                     self.proposals.clear();
+                    self.proposals_at = None;
                     self.sel = 0;
                 } else {
                     self.quit = Some(0);
@@ -2085,6 +2118,7 @@ impl App {
     fn want(&mut self, words: &str) {
         self.say(Sign::You, words);
         self.proposals.clear();
+        self.proposals_at = None;
         if self.cfg.spark_shell.is_empty() {
             self.set_input(words.to_string());
             return self.say(Sign::Refused, "no spark-shell to read the words");
@@ -2196,6 +2230,9 @@ impl App {
                     Err(e) => self.say(Sign::Refused, &format!("{}: {}", line, e)),
                 },
             }
+        }
+        if !self.proposals.is_empty() {
+            self.proposals_at = self.exchange.len().checked_sub(1); // the question's turn, as it stands now
         }
         if self.running.is_none() && self.mode == Mode::Normal {
             self.next_step();

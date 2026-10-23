@@ -590,9 +590,12 @@ and Page Down scroll it.
   with the app for its kind. A hidden file, a link and anything outside
   your home are never read.
 
-Above the list, what was said and done, the newest first: a check is
-a step done, a cross one refused, and an Undo row takes the last step
-back while it can be. At the bottom, under a rule, the controls in plain
+Above the list, what was said and done, the newest first, a blank row
+between one request and the next: a check is a step done, a cross one
+refused, and an Undo row under a step takes it back while it can be. A
+question changes nothing: what spark would do comes under it, as
+proposed, not run, and runs when you pick it. At the bottom, under a
+rule, the controls in plain
 text: Attach, the model, and the mic at the right. Tab moves
 through them and the one in focus is lit; Shift+Tab goes back.
 

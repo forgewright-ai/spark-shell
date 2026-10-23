@@ -865,7 +865,13 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
         line: "undo terminal".into(),
     });
     typed(&mut app, "change theme to dracula");
-    assert_eq!(app.picks().first(), Some(&Item::Undo), "the undo and the proposal come before Ask spark");
+    let picks = app.picks();
+    let ask = picks.iter().position(|i| *i == Item::Ask).expect("Ask spark");
+    assert!(
+        picks[..ask].contains(&Item::Undo) && picks[..ask].contains(&Item::Proposal(0)),
+        "the undo and the proposal come before Ask spark: {:?}",
+        picks
+    );
     assert_eq!(app.picks().get(app.sel), Some(&Item::Ask), "words that name no row light Ask spark");
     app.enter();
     assert!(
@@ -915,6 +921,41 @@ fn a_question_changes_nothing_its_steps_are_proposals_run_when_picked() {
     assert!(app.hint().iter().any(|(t, _)| t == "Run "), "{:?}", app.hint());
     app.enter();
     assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["name"] == "window_focus")));
+}
+
+#[test]
+fn a_questions_proposals_sit_under_it_and_an_undo_under_its_step() {
+    // his photo (#44): the proposal of the newest question came after two older turns and their Undo
+    let (mut app, _rx, _calls, _r) = started();
+    let line = |sign: Sign, text: &str, undo: bool| spark_dialog::app::Line { sign, text: text.into(), undo };
+    app.exchange = vec![line(Sign::You, "close the terminal", false), line(Sign::Done, "terminal closed", true)];
+    app.undo = Some(spark_dialog::app::Step {
+        prov: 0,
+        call: spark_dialog::model::Call {
+            name: "window_focus".into(),
+            arguments: json!({"name": "terminal"}).as_object().unwrap().clone(),
+            ask: vec![],
+        },
+        who: spark_dialog::app::Who::Undo,
+        line: "undo terminal".into(),
+    });
+    app.exchange.push(line(Sign::You, "can you bring the terminal to the front?", false));
+    app.plan(r#"{"answer": "", "question": true, "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
+    let items = app.items();
+    let at = |it: &Item| items.iter().position(|x| x == it).unwrap_or_else(|| panic!("no {:?} in {:?}", it, items));
+    let q = items
+        .iter()
+        .position(|x| matches!(x, Item::Said(Sign::You, t, true) if t.starts_with("can you bring")))
+        .expect("the question");
+    assert_eq!(q, 0, "the newest turn first");
+    assert_eq!(at(&Item::Proposed), q + 1, "proposed, not run right under the question that made it");
+    assert_eq!(at(&Item::Proposal(0)), q + 2);
+    let r = items
+        .iter()
+        .position(|x| matches!(x, Item::Said(Sign::Done, t, true) if t == "terminal closed"))
+        .expect("the older receipt");
+    assert!(r > q + 2, "the older turn after the question and its proposal");
+    assert_eq!(at(&Item::Undo), r + 1, "the Undo right under the receipt it takes back");
 }
 
 #[test]

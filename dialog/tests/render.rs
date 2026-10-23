@@ -215,8 +215,24 @@ fn a_section_with_its_groups_and_the_exchange() {
 
 #[test]
 fn a_question_s_steps_are_proposals() {
+    // his photo (#44): an older step with its Undo, then the newest turn, a question, with its proposal
     let mut app = full();
     app.exchange = vec![
+        Line {
+            sign: Sign::You,
+            text: "set the theme to gruvbox-dark please".into(),
+            undo: false,
+        },
+        Line {
+            sign: Sign::Step,
+            text: "theme gruvbox-dark".into(),
+            undo: false,
+        },
+        Line {
+            sign: Sign::Done,
+            text: "theme gruvbox-dark".into(),
+            undo: true,
+        },
         Line {
             sign: Sign::You,
             text: "is firefox open?".into(),
@@ -228,6 +244,17 @@ fn a_question_s_steps_are_proposals() {
             undo: false,
         },
     ];
+    app.undo = Some(Step {
+        prov: 1,
+        call: model::Call {
+            name: "theme_palette".into(),
+            arguments: json!({"name": "everforest-dark"}).as_object().unwrap().clone(),
+            ask: vec![],
+        },
+        who: Who::Undo,
+        line: "undo theme everforest-dark".into(),
+    });
+    app.proposals_at = Some(4);
     app.proposals = vec![Step {
         prov: 0,
         call: model::Call {

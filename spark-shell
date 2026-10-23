@@ -6859,8 +6859,10 @@ desk_named() {   # desk_named JSONFILE NEED -> JSONFILE narrowed to the windows 
             | ($w | contains(" " + $a + " "))
               or ($a == "editor" and $ed != "" and ($w | contains(" " + $ed + " ")))
               or ($ed != "" and $a == $ed and ($w | contains(" editor ")));
-        def grounded: ((.quote // "") | ascii_downcase | gsub("[^a-z0-9_.+-]+"; " ") | split(" ") | map(select(. != "" and (. as $x | $small | index($x) | not)))) as $fw
-            | ($fw | length) > 0 and all($fw[]; . as $x | $w | contains(" " + $x + " "));
+        def grounded: ((.app // "") | ascii_downcase) as $app
+            | ((.quote // "") | ascii_downcase | gsub("[^a-z0-9_.+-]+"; " ") | split(" ")
+               | map(select(. != "" and (. as $x | ($small | index($x) | not) or ($app == "shell" and (["terminal", "shell", "console"] | index($x)))))) ) as $fw
+            | ($fw | length) > 0 and all($fw[]; . as $x | $w | contains(" " + $x + " "));   # a shell is grounded by the words that name a terminal, which ground no other window (#45)
         ([.main] + (.side // [])) as $all
         | (any($all[]; has("quote"))) as $tied
         | ([$all[] | select(named or ($tied and grounded))] | reduce .[] as $x ([]; if any(.[]; (.app | ascii_downcase) == ($x.app | ascii_downcase) and (.args // "") == ($x.args // "")) then . else . + [$x] end)) as $k
