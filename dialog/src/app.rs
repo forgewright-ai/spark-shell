@@ -1308,11 +1308,22 @@ impl App {
                     self.sel = 0;
                 } else if let Some(v) = self.came_from.pop() {
                     self.go_back(v);
+                } else if self.exchange_up() {
+                    // at the home with an exchange showing, Esc clears it first; the next Esc closes (#25)
+                    self.exchange.clear();
+                    self.undo = None;
+                    self.proposals.clear();
+                    self.sel = 0;
                 } else {
                     self.quit = Some(0);
                 }
             }
         }
+    }
+
+    /// Whether the content area shows an exchange, an undo or proposals that Esc would clear.
+    pub fn exchange_up(&self) -> bool {
+        self.running.is_none() && (!self.exchange.is_empty() || self.undo.is_some() || !self.proposals.is_empty())
     }
 
     fn go_back(&mut self, v: View) {
@@ -2291,12 +2302,21 @@ impl App {
                 _ => "Open",
             };
             let mut v = key(word, "Enter");
-            v.extend(esc(if self.came_from.is_empty() { "Close" } else { "Back" }));
+            v.extend(esc(if !self.came_from.is_empty() {
+                "Back"
+            } else if self.exchange_up() {
+                "Clear"
+            } else {
+                "Close"
+            }));
             return v;
         }
         let mut v = key("Send", "Enter");
         v.push(gap());
         v.extend(key("New line", "Shift+Enter"));
+        if self.came_from.is_empty() && self.exchange_up() {
+            v.extend(esc("Clear")); // at the home an exchange is up: Esc clears it (#25)
+        }
         if self.input.is_empty() && self.is_calendar() {
             v.push(gap());
             v.extend(key("Month", "\u{2190} \u{2192}"));

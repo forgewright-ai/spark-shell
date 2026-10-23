@@ -149,13 +149,14 @@ that is already running, such as btop, changes when it starts again.
 
 On the desktop a theme is the whole look, and one choice brings the
 rest: the palette brings the wallpaper drawn for it (`theme nord` puts
-fjord behind the windows; a picture or a color of your own stays), the
-pointer in white or black, and the login, the lock and the idle screen
-in its colors. `theme wallpaper skyline` picks a drawing for the palette
-in use, drawn again in that palette's colors. `theme text 14` is the one
-text size, on foot, the bar, the dialog, the login, the lock and the
-idle screen; the pointer grows with it (24, 32 or 48 pixels). `theme
-transparency 15` is the windows' transparency, 0 to 50.
+fjord behind the windows, over a drawing, a color or the ground; only
+a picture of your own stays), the pointer in white or black, and the
+login, the lock and the idle screen in its colors. `theme wallpaper
+skyline` picks a drawing for the palette in use, drawn again in that
+palette's colors. `theme text 14` is the one text size, on foot, the
+bar, the dialog, the login, the lock and the idle screen; the pointer
+grows with it (24, 32 or 48 pixels). `theme transparency 15` is the
+windows' transparency, 0 to 50.
 
 `theme save winter` keeps the look in use as a theme: a folder
 `~/.config/spark-shell/themes/winter/` with the palette, the
@@ -170,10 +171,13 @@ same way, so `layout back` opens the one before.
 yours: its colors become the palette, with the text at 7 to 1 on the
 background and every other color at 3 to 1, dark or light as the
 picture is, and the picture is the wallpaper. `theme "warm dark
-winter"` asks spark for four words, a hue, how warm, how much contrast,
-dark or light, and makes the palette from them; the drawing you have is
-drawn again in it. Both apply at once and sit in the last ten under the
-picture's or the words' name until you save them.
+winter"` asks spark for five words and a name, the hue of the ground,
+the hue of the accent, how warm, how much contrast, dark or light, and
+makes the palette from them; a flag or a brand is one look with two
+hues, never two. The drawing you have is drawn again in it. Both apply
+at once and sit in the last ten under the picture's or the words' name
+until you save them. `theme none` leaves the terminal its own colors:
+foot's own sixteen on the desktop, the console's own at the console.
 
 ## Font
 
@@ -386,8 +390,8 @@ drawn again in that palette's colors (gdk-pixbuf renders it; the PNG
 lands under `~/.local/state/spark-shell/wallpapers/`), and a palette
 with a drawing of its own brings that one.
 
-Type `spark-shell theme wallpaper navy`. You get a plain color, and
-it stays the same when you change the palette. Give `#rrggbb`, or one
+Type `spark-shell theme wallpaper navy`. You get a plain color, until
+a palette with a drawing of its own replaces it. Give `#rrggbb`, or one
 of these names: black, white, gray (or grey), silver, navy, blue, teal,
 green, olive, maroon, red, purple, brown, orange. The ground, a
 picture and a color are drawn the same way: the windows stand apart,
@@ -516,7 +520,9 @@ and Page Down scroll it.
   with a sample of its color; the text bigger or smaller; the windows'
   transparency. A row applies at once: the desktop is the preview, and
   a look in the last ten brings the one before back. The header names
-  the look: the theme, the text size, the wallpaper.
+  the look: the theme, the text size, the wallpaper. At the home, Esc
+  clears what the last request left on the screen, its receipts and
+  refusals; the next Esc closes the dialog.
 - Calendar: this month and the next side by side, today lit and a day
   with a reminder in the accent; the left and right arrows move the
   months while nothing is typed. Under them, the reminders.

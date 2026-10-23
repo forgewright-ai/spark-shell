@@ -2,8 +2,8 @@
 """look.py -- a palette by color math (spark-shell issue 24). Python's standard library only.
 
   look.py palette PNG [--dark|--light]   the twenty palette keys from a picture's colors
-  look.py words --hue HUE --warmth WARMTH --contrast CONTRAST --light dark|light
-                                        the twenty keys from four words
+  look.py words --hue HUE --accent HUE|same --warmth WARMTH --contrast CONTRAST --light dark|light
+                                        the twenty keys from five words
   look.py --version
 
 The picture is a PNG (spark-shell makes a small one with gdk-pixbuf-thumbnailer first; a PNG
@@ -23,7 +23,7 @@ import struct
 import sys
 import zlib
 
-VERSION = "1"
+VERSION = "2"
 
 HUES = {"red": 0, "orange": 30, "yellow": 55, "green": 130, "teal": 175, "blue": 220, "violet": 270, "pink": 335, "grey": None}
 WARMTHS = ("warm", "neutral", "cool")
@@ -281,10 +281,12 @@ def palette_from_picture(pixels, light=None):
 
 # --- a palette from words
 
-def palette_from_words(hue, warmth, contrast_word, light):
+def palette_from_words(hue, warmth, contrast_word, light, accent_word="same"):
     dark = light == "dark"
     base_h = HUES[hue]
     grey = base_h is None
+    accent_h = HUES.get(accent_word) if accent_word != "same" else None
+    accent_grey = accent_word == "grey"
     tint_h = {"warm": 38, "neutral": base_h if base_h is not None else 220, "cool": 222}[warmth]
     tint_s = {"warm": 0.14, "neutral": 0.05 if grey else 0.10, "cool": 0.12}[warmth]
     bg_l = {"soft": 0.14, "normal": 0.11, "high": 0.07}[contrast_word] if dark else {"soft": 0.92, "normal": 0.95, "high": 0.985}[contrast_word]
@@ -292,7 +294,9 @@ def palette_from_words(hue, warmth, contrast_word, light):
     want = {"soft": 7.0, "normal": 9.0, "high": 13.0}[contrast_word]
     bg = rgb(tint_h, tint_s, bg_l)
     fg = lift(rgb(tint_h, tint_s * 0.8, fg_l), bg, want, dark)
-    if grey:
+    if accent_h is not None:
+        accent = lift(rgb(accent_h, 0.78, 0.62 if dark else 0.40), bg, 3.0, dark)   # the second hue the words name: a flag, a brand
+    elif grey or accent_grey:
         accent = lift(rgb(tint_h, 0.10, 0.70 if dark else 0.35), bg, 4.5, dark)
     else:
         accent = lift(rgb(base_h, 0.72, 0.64 if dark else 0.42), bg, 3.0, dark)
@@ -355,13 +359,14 @@ def main(argv):
             opts[args[0][2:]] = args[1].lower()
             args = args[2:]
         hue, warmth, con, light = opts.get("hue", ""), opts.get("warmth", "neutral"), opts.get("contrast", "normal"), opts.get("light", "dark")
-        if hue not in HUES:
-            sys.stderr.write("a hue is one of %s\n" % ", ".join(HUES))
+        accent = opts.get("accent", "same")
+        if hue not in HUES or (accent != "same" and accent not in HUES):
+            sys.stderr.write("a hue is one of %s; the accent one of them or same\n" % ", ".join(HUES))
             return 1
         if warmth not in WARMTHS or con not in CONTRASTS or light not in ("dark", "light"):
             sys.stderr.write("warmth is warm, neutral or cool; contrast is soft, normal or high; light is dark or light\n")
             return 1
-        sys.stdout.write(palette_from_words(hue, warmth, con, light))
+        sys.stdout.write(palette_from_words(hue, warmth, con, light, accent))
         return 0
     sys.stderr.write("look.py palette PNG | words --hue H --warmth W --contrast C --light dark|light\n")
     return 1

@@ -85,11 +85,13 @@ pub fn step(tools: &[Tool], rows: &Rows, c: &Call) -> Result<(), String> {
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect())
         .unwrap_or_default();
+    // a row that asks the person for the argument (a name to save under) names nothing: what is
+    // typed there is free, so a step from the model with its own name passes the same way (#25)
     let naming: Vec<&Call> = rows
         .rows
         .iter()
         .flat_map(|r| r.tool.iter().chain(r.more.iter()))
-        .filter(|x| x.name == c.name && required.iter().all(|k| x.arguments.contains_key(k)))
+        .filter(|x| x.name == c.name && required.iter().all(|k| x.arguments.contains_key(k) && !x.ask.contains(k)))
         .collect();
     if naming.is_empty() {
         return Ok(());
@@ -206,6 +208,24 @@ mod tests {
             ask: vec![],
         };
         assert!(step(&t, &r, &free).is_ok(), "a level names no row");
+    }
+
+    #[test]
+    fn a_row_that_asks_for_the_name_binds_no_name() {
+        let tools = vec![Tool {
+            name: "theme_save".into(),
+            title: "theme save NAME".into(),
+            schema: json!({"type": "object", "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 256}}, "required": ["name"], "additionalProperties": false}),
+            destructive: false,
+            read_only: false,
+        }];
+        let r = crate::model::rows(r#"{"title":"theme","rows":[{"id":"theme:save","sign":"blank","text":"save this look as","tool":{"name":"theme_save","arguments":{"name":""},"ask":["name"]},"more":[],"columns":[],"children":null}]}"#).unwrap();
+        let c = Call {
+            name: "theme_save".into(),
+            arguments: args(json!({"name": "brazilian flag"})),
+            ask: vec![],
+        };
+        assert!(step(&tools, &r, &c).is_ok(), "the save row asks for its name, so a typed one is free");
     }
 
     #[test]

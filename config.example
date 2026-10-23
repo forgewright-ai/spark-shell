@@ -70,7 +70,8 @@ KEYBOARD=
 # on|off --desktop sets this.
 DESKTOP_BAR=yes
 
-# The theme: none (the terminal's own colors), a palette's name, or a
+# The theme: none (the terminal's own colors: foot's own sixteen on the
+# desktop, the console's at the console), a palette's name, or a
 # saved theme's (a folder under ~/.config/spark-shell/themes, the whole
 # look), as spark-shell theme list shows them. spark-shell theme NAME
 # sets this; theme save NAME keeps the look in use.

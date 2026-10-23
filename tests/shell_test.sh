@@ -391,14 +391,14 @@ else
     rm -f "$foot"
     out=$(env -u WAYLAND_DISPLAY TEST_TTY=/dev/tty1 sh "$SH" desktop 2>&1 || true)
     printf '%s\n' "$out" | grep -q 'the sway and foot settings are missing (spark-shell on)' && ok "desktop: refused when a render is missing" || bad "desktop not rendered" "$out"
-    # no theme.env: the VGA sixteen, what spark-shell theme none programs
+    # no theme.env: foot's own sixteen on the desktop (the starlight set, v0.86); the console keeps VGA
     fresh
     desktop_stubs
     mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on --yes >/dev/null
-    grep -q '^regular4=0000aa$' "$HOME/.config/foot/foot.ini" && grep -q '^background=000000$' "$HOME/.config/foot/foot.ini" && grep -q '^foreground=aaaaaa$' "$HOME/.config/foot/foot.ini" \
-        && ok "no theme.env: foot.ini takes the VGA sixteen (regular4 0000aa, bg 000000, fg aaaaaa)" || bad "vga foot" "$(grep -n '=' "$HOME/.config/foot/foot.ini" | head -6)"
-    grep -q '^client.focused *#00000000 #1e1e1e ' "$HOME/.config/sway/config" && ok "no theme.env: the focused title is the surface shade of the VGA ground and text (#1e1e1e)" || bad "vga focused" "$(grep -n client "$HOME/.config/sway/config")"
+    grep -q '^regular4=24acd4$' "$HOME/.config/foot/foot.ini" && grep -q '^background=242424$' "$HOME/.config/foot/foot.ini" && grep -q '^foreground=ffffff$' "$HOME/.config/foot/foot.ini" && grep -q '^bright0=616161$' "$HOME/.config/foot/foot.ini" \
+        && ok "no theme.env: foot.ini takes foot's own sixteen (regular4 24acd4, bg 242424, fg ffffff), never the console's VGA (#25)" || bad "foot own colors" "$(grep -n '=' "$HOME/.config/foot/foot.ini" | head -6)"
+    grep -q '^client.focused *#00000000 #4b4b4b ' "$HOME/.config/sway/config" && ok "no theme.env: the focused title is the surface shade of foot's ground and text (#4b4b4b)" || bad "foot focused" "$(grep -n client "$HOME/.config/sway/config")"
 fi
 
 # --- follow: the login hook re-renders the look when theme.env changed
@@ -469,16 +469,16 @@ if [ "$(uname -s)" != Darwin ]; then
     rc2=0; out2=$(sh "$SH" theme wallpaper "$HOME/pictures" 2>&1) || rc2=$?
     [ $rc = 1 ] && [ $rc2 = 1 ] && printf '%s\n' "$out" "$out2" | grep -c 'is not a readable file' | grep -qx 2 && ok "theme wallpaper: a directory is not a picture (~ alone too)" || bad "wallpaper dir" "$out $out2"
     rm -f "$pic"
-    # a plain color: #rrggbb or a name, saved as #rrggbb; it never follows the palette
+    # a plain color: #rrggbb or a name, saved as #rrggbb; a palette with a drawing of its own replaces it (#25)
     out=$(sh "$SH" theme wallpaper navy)
     grep -qx 'WALLPAPER=#000080' "$HOME/.config/spark-shell/config" && grep -q '^output \* bg #000080 solid_color$' "$sway" && grep -q '^gaps inner 0$' "$sway" && grep -q '^gaps outer 16$' "$sway" && grep -q '^alpha=0.85$' "$foot" && grep -q '^        background #000000d9$' "$sway" \
         && ok "theme wallpaper navy: #000080 in the config, sway paints it solid, with the gaps and the translucent foot and bar a picture has" || bad "wallpaper navy" "$out $(grep -n 'bg\|gaps\|background' "$sway"; grep -n alpha "$foot")"
-    [ "$(printf '%s\n' "$out" | tail -1)" = "a running sway shows #000080 now, and it stays when the palette changes -- a new foot window is translucent over it, as over a picture" ] && ok "theme wallpaper navy: says what happens" || bad "wallpaper navy words" "$out"
-    [ "$(sh "$SH" theme wallpaper)" = "wallpaper #000080 -- a plain color, it stays when the palette changes" ] && ok "theme wallpaper (bare): names the color" || bad "wallpaper bare color" "$(sh "$SH" theme wallpaper)"
-    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  wall  color  *#000080, a plain color that stays when the palette changes$' && ok "status: the wall row names the color" || bad "status wall color" "$(printf '%s\n' "$st" | grep wall)"
+    [ "$(printf '%s\n' "$out" | tail -1)" = "a running sway shows #000080 now -- a new foot window is translucent over it, as over a picture; a palette with a drawing of its own replaces it" ] && ok "theme wallpaper navy: says what happens" || bad "wallpaper navy words" "$out"
+    [ "$(sh "$SH" theme wallpaper)" = "wallpaper #000080 -- a plain color; a palette with a drawing of its own replaces it" ] && ok "theme wallpaper (bare): names the color" || bad "wallpaper bare color" "$(sh "$SH" theme wallpaper)"
+    st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  wall  color  *#000080, a plain color; a palette with a drawing of its own replaces it$' && ok "status: the wall row names the color" || bad "status wall color" "$(printf '%s\n' "$st" | grep wall)"
     printf '%s\n' "$(sh "$SH" on --yes)" | grep -q '^todo   wallpaper' && bad "a color is reported missing" || ok "on: a color is never a missing picture"
     sh "$SH" theme dracula >/dev/null
-    grep -q '^output \* bg #000080 solid_color$' "$sway" && grep -q '^background=282a36$' "$foot" && ok "a color stays when the palette changes (foot takes dracula, sway keeps #000080)" || bad "color follows the palette" "$(grep -n 'output' "$sway"; grep -n '^background' "$foot")"
+    grep -qx 'WALLPAPER=dunes' "$HOME/.config/spark-shell/config" && grep -qF "output * bg \"$REPO/wallpaper/dunes.png\" fill" "$sway" && grep -q '^background=282a36$' "$foot" && ok "a palette with a drawing of its own replaces a color (dracula brings dunes, foot takes dracula) (#25)" || bad "color under a palette" "$(grep WALLPAPER "$HOME/.config/spark-shell/config"; grep -n 'output' "$sway"; grep -n '^background' "$foot")"
     sh "$SH" theme wallpaper default >/dev/null
     grep -q '^output \* bg #1c1e26 solid_color$' "$sway" && grep -q '^gaps outer 16$' "$sway" && grep -q '^alpha=0.85$' "$foot" && ok "theme wallpaper default: the ground follows the palette (dracula's background a shade darker, #1c1e26)" || bad "ground dracula" "$(grep -n 'bg\|gaps' "$sway")"
     [ "$(sh "$SH" theme wallpaper)" = "wallpaper default -- the ground, the palette's background a shade darker (#1c1e26); it follows the palette" ] && ok "theme wallpaper (bare): names the ground and its hex" || bad "wallpaper bare ground" "$(sh "$SH" theme wallpaper)"
@@ -3235,7 +3235,7 @@ bar_fixture
 theme_fixture '#ff5555'
 mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 rq() { jq -cn --argjson i "$1" --arg m "$2" --argjson p "${3:-null}" '{jsonrpc: "2.0", id: $i, method: $m} + (if $p == null then {} else {params: $p} end)'; }   # rq ID METHOD [PARAMS] -> one request
-call() { rq "$1" tools/call "$(jq -cn --arg n "$2" --argjson a "${3:-{\}}" '{name: $n, arguments: $a}')"; }   # call ID TOOL [ARGUMENTS]
+call() { rq "$1" tools/call "$(jq -cn --arg n "$2" --argjson a "${3:-"{}"}" '{name: $n, arguments: $a}')"; }   # call ID TOOL [ARGUMENTS] (a quoted {} default: /bin/sh leaves {\} as it is, and jq refused it)
 mcp() { _s=$1; shift; printf '%s\n' "$@" | sh "$SH" provide "$_s" > "$H/mcp.out" 2> "$H/mcp.err"; }   # mcp SECTION LINE... -> $H/mcp.out, its stderr apart
 ans() { jq -c --argjson i "$1" 'select(.id == $i)' "$H/mcp.out"; }   # ans ID -> that answer
 init=$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{"elicitation":{}},"clientInfo":{"name":"test","version":"0"}}')
@@ -3778,11 +3778,11 @@ rc=0; out=$(sh "$SH" theme save nord 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell theme: nord is a palette's name -- give the theme another" ] && ok "theme save nord: a palette's name is refused" || bad "theme save palette name" "rc=$rc $out"
 out=$(sh "$SH" theme save Winter Desk 2>&1)
 [ "$(printf '%s\n' "$out" | sed -n 1p)" = "saved winter-desk ($th_dir/winter-desk) -- spark-shell theme winter-desk brings the look back" ] && [ -f "$th_dir/winter-desk/palette.env" ] && cmp -s "$th_dir/winter-desk/palette.env" "$REPO/themes/nord.env" \
-    && grep -qx 'PALETTE=nord' "$th_dir/winter-desk/look.env" && grep -qx 'WALLPAPER=default' "$th_dir/winter-desk/look.env" && grep -qx 'FONT=DejaVu Sans Mono:size=12' "$th_dir/winter-desk/look.env" && grep -qx 'ALPHA=0.85' "$th_dir/winter-desk/look.env" \
+    && grep -qx 'PALETTE=nord' "$th_dir/winter-desk/look.env" && grep -qx "WALLPAPER=$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" "$th_dir/winter-desk/look.env" && grep -qx 'FONT=DejaVu Sans Mono:size=12' "$th_dir/winter-desk/look.env" && grep -qx 'ALPHA=0.85' "$th_dir/winter-desk/look.env" \
     && grep -qx 'THEME=winter-desk' "$cfg" \
     && ok "theme save WORDS: a folder named by the words with the palette and the look, the theme in use now, said in one line" || bad "theme save" "$out $(ls "$th_dir" 2>&1; cat "$th_dir/winter-desk/look.env" 2>&1)"
 out=$(sh "$SH" theme list)
-printf '%s\n' "$out" | grep -q "^Saved themes (folders in $th_dir):$" && printf '%s\n' "$out" | grep -q "^  winter-desk  *nord $SEP default, current$" && printf '%s\n' "$out" | grep -q '^  nord  *fjord$' && printf '%s\n' "$out" | grep -q '^  tokyonight-night  *skyline$' \
+printf '%s\n' "$out" | grep -q "^Saved themes (folders in $th_dir):$" && printf '%s\n' "$out" | grep -q "^  winter-desk  *nord $SEP $([ "$(uname -s)" = Darwin ] && echo default || echo fjord), current$" && printf '%s\n' "$out" | grep -q '^  nord  *fjord$' && printf '%s\n' "$out" | grep -q '^  tokyonight-night  *skyline$' \
     && printf '%s\n' "$out" | grep -q '^The last looks (spark-shell theme back steps through them):$' && [ "$(printf '%s\n' "$out" | grep -c '^  winter-desk  *today ')" = 1 ] && printf '%s\n' "$out" | grep -q '^  nord  *today ' \
     && ok "theme list: the saved themes first with the palette and the wallpaper each holds, the palettes with the drawing made for each, then the last looks with the time" || bad "theme list" "$out"
 sh "$SH" theme tokyonight-night >/dev/null 2>&1
@@ -3836,7 +3836,7 @@ x,y=sorted([lum(rgb(sys.argv[1])),lum(rgb(sys.argv[2]))],reverse=True); print("%
     python3 -I "$REPO/lib/look.py" words --hue blue --warmth cool --contrast normal --light light > "$H/light.env"
     awk -v l="$(python3 -c 'import sys; h=sys.argv[1].lstrip("#"); print(sum(int(h[i:i+2],16) for i in (0,2,4)))' "$(sed -n 's/^THEME_BG=//p' "$H/light.env")")" 'BEGIN { exit !(l > 600) }' && ok "look.py words --light light: a light background" || bad "look.py light" "$(sed -n 's/^THEME_BG=//p' "$H/light.env")"
     rc=0; out=$(python3 -I "$REPO/lib/look.py" words --hue mauve --warmth cool --contrast normal --light dark 2>&1) || rc=$?
-    [ "$rc" = 1 ] && [ "$out" = 'a hue is one of red, orange, yellow, green, teal, blue, violet, pink, grey' ] && ok "look.py words: a hue off the list is refused in one line" || bad "look.py hue" "rc=$rc $out"
+    [ "$rc" = 1 ] && [ "$out" = 'a hue is one of red, orange, yellow, green, teal, blue, violet, pink, grey; the accent one of them or same' ] && ok "look.py words: a hue off the list is refused in one line" || bad "look.py hue" "rc=$rc $out"
     # a small PNG written here: 8 by 8, two colors, no zlib tricks; its palette is light (white wins) and its accent the orange
     python3 - "$H/pic.png" <<'EOF'
 import struct, sys, zlib
@@ -3863,26 +3863,57 @@ EOF
     [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a picture comes from under your home' ] && ok "theme picture: a file outside home is refused in one line" || bad "theme picture outside" "rc=$rc $out"
     # a theme from words, the engine's half: the four words make a look named by the words, applied, kept in the history
     printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=default\n' > "$cfg"; rm -rf "$st_dir/theme.history" "$st_dir/looks"; sh "$SH" theme nord >/dev/null 2>&1
-    out=$(sh "$SH" panel theme words 'teal warmth=warm contrast=soft light=dark' 2>&1)
-    [ "$out" = "theme teal, warm, soft, dark $SEP spark-shell theme save NAME keeps it, theme back returns" ] && grep -qx 'THEME=teal-warm-soft-dark' "$cfg" && [ -f "$st_dir/looks/teal-warm-soft-dark/palette.env" ] \
-        && grep -qx 'WORDS=teal, warm, soft, dark' "$st_dir/looks/teal-warm-soft-dark/look.env" && [ "$(sed -n 1p "$st_dir/theme.history" | cut -f2)" = teal-warm-soft-dark ] \
-        && ok "panel theme words HUE warmth= contrast= light=: the palette made from the four, a look named by them, applied and first in the history" || bad "theme words" "$out $(grep THEME= "$cfg"; ls "$st_dir/looks" 2>&1)"
-    out=$(sh "$SH" panel theme --list); printf '%s\n' "$out" | grep -q "^  theme      nord	theme nord$" && printf '%s\n' "$out" | sed -n 1p | grep -q "^theme      teal, warm, soft, dark $SEP 12" && ok "the panel's theme title names a look by its words" || bad "theme words title" "$(printf '%s\n' "$out" | head -3)"
-    rc=0; out=$(sh "$SH" panel theme words 'teal warmth=hot contrast=soft light=dark' 2>&1) || rc=$?
-    [ "$rc" = 1 ] && [ "$out" = 'theme: words take a hue, then warmth, contrast and light' ] || [ "$out" = 'no palette from those words: warmth is warm, neutral or cool; contrast is soft, normal or high; light is dark or light' ] && ok "panel theme words with a word off the list: refused in one line" || bad "theme words bad" "rc=$rc $out"
-    out=$(sh "$SH" theme back 2>&1 | sed -n 1p); [ "$out" = 'back to nord' ] && grep -qx 'THEME=nord' "$cfg" && ok "theme back from a look made from words: the palette before" || bad "back from words" "$out"
+    out=$(sh "$SH" panel theme words 'teal accent=same warmth=warm contrast=soft light=dark' 2>&1)
+    [ "$out" = "theme teal, dark $SEP spark-shell theme save NAME keeps it, theme back returns" ] && grep -qx 'THEME=teal-dark' "$cfg" && [ -f "$st_dir/looks/teal-dark/palette.env" ] \
+        && grep -qx 'WORDS=teal, dark' "$st_dir/looks/teal-dark/look.env" && [ "$(sed -n 1p "$st_dir/theme.history" | cut -f2)" = teal-dark ] \
+        && ok "panel theme words HUE accent= warmth= contrast= light=: the palette made from the five, a look named by the hue and the light, applied and first in the history" || bad "theme words" "$out $(grep THEME= "$cfg"; ls "$st_dir/looks" 2>&1)"
+    out=$(sh "$SH" panel theme --list); printf '%s\n' "$out" | grep -q "^  theme      nord	theme nord$" && printf '%s\n' "$out" | sed -n 1p | grep -q "^theme      teal, dark $SEP 12" && ok "the panel's theme title names a look by its words" || bad "theme words title" "$(printf '%s\n' "$out" | head -3)"
+    out=$(sh "$SH" panel theme words 'green accent=yellow warmth=neutral contrast=normal light=light name=brazilian-flag' 2>&1)
+    [ "$out" = "theme brazilian flag $SEP spark-shell theme save NAME keeps it, theme back returns" ] && grep -qx 'THEME=brazilian-flag' "$cfg" && grep -qx 'WORDS=brazilian flag' "$st_dir/looks/brazilian-flag/look.env" \
+        && python3 -c 'import sys; h=sys.argv[1].lstrip("#"); r,g,b=(int(h[i:i+2],16) for i in (0,2,4)); sys.exit(0 if r>b and g>b and abs(r-g)<70 else 1)' "$(sed -n 's/^THEME_ACCENT=//p' "$st_dir/looks/brazilian-flag/palette.env")" \
+        && ok "theme words with an accent and a name: green ground, a yellow accent, the look named by the name" || bad "theme words accent" "$out $(cat "$st_dir/looks/brazilian-flag/palette.env" 2>&1 | head -4)"
+    rc=0; out=$(sh "$SH" panel theme words 'teal accent=same warmth=hot contrast=soft light=dark' 2>&1) || rc=$?
+    [ "$rc" = 1 ] && [ "$out" = 'theme: words take a hue, then accent, warmth, contrast and light' ] || [ "$out" = 'no palette from those words: warmth is warm, neutral or cool; contrast is soft, normal or high; light is dark or light' ] && ok "panel theme words with a word off the list: refused in one line" || bad "theme words bad" "rc=$rc $out"
+    out=$(sh "$SH" theme back 2>&1 | sed -n 1p); [ "$out" = 'back to teal, dark' ] && grep -qx 'THEME=teal-dark' "$cfg" && ok "theme back from a look made from words: the look before, named by its words" || bad "back from words" "$out"
+    out=$(sh "$SH" theme back 2>&1 | sed -n 1p); [ "$out" = 'back to nord' ] && grep -qx 'THEME=nord' "$cfg" && ok "theme back again: the palette before the looks" || bad "back from words twice" "$out"
+    sh "$SH" theme none >/dev/null 2>&1; sh "$SH" theme nord >/dev/null 2>&1
+    ! grep -q '	none$' "$st_dir/theme.history" && ! sh "$SH" theme list | sed -n '/last looks/,$p' | grep -q '^  none ' && ok "theme none is no look to come back to: not in the history, not in the list (#25)" || bad "none in history" "$(cat "$st_dir/theme.history")"
+    sh "$SH" theme none >/dev/null 2>&1; out=$(sh "$SH" theme back 2>&1 | sed -n 1p)
+    [ "$out" = 'back to nord' ] && grep -qx 'THEME=nord' "$cfg" && ok "theme back from none: the look before none, not the one before that (#25)" || bad "back from none" "$out $(grep THEME= "$cfg")"
+    # one look a request: of two words steps the second is refused, and a save the model put first runs after the look
+    cat > "$H/.local/bin/spark" <<'STUB'
+#!/bin/sh
+case $1 in
+    help) echo ' spark steps <words> < TOOLS  the tool calls that do what you say (-h)' ;;
+    steps) cat > /dev/null; printf '{"answer": "", "steps": [{"name": "theme_save", "arguments": {"name": "flag"}}, {"name": "theme_words", "arguments": {"hue": "green", "accent": "yellow", "warmth": "neutral", "contrast": "normal", "light": "light", "name": "Brazilian flag"}}, {"name": "theme_words", "arguments": {"hue": "blue", "accent": "same", "warmth": "cool", "contrast": "normal", "light": "dark"}}], "refused": []}\n' ;;
+    *) cat > /dev/null; echo '{"steps": []}' ;;
+esac
+STUB
+    chmod +x "$H/.local/bin/spark"
+    st=0; out=$(sh "$SH" want --json a theme like the brazilian flag 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$(printf '\342\234\227')" '.steps[0] == {name: "theme_words", arguments: {hue: "green", accent: "yellow", warmth: "neutral", contrast: "normal", light: "light", name: "brazilian-flag"}, line: "theme words green accent=yellow warmth=neutral contrast=normal light=light name=brazilian-flag"} and .steps[1].name == "theme_save" and .steps[1].arguments == {name: "flag"} and (.steps | length) == 2 and (.refused | index($x + " one look a request: the first words step made it, blue accent=same warmth=cool contrast=normal light=dark was not") != null)' >/dev/null \
+        && ok "want: the words step first with its name a slug, the save after it, the second words step refused in one line" || bad "want one look" "st=$st $out"
+    st=0; out=$(sh "$SH" want a theme like the brazilian flag 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "theme brazilian flag $SEP" && printf '%s\n' "$out" | grep -q 'saved flag' && grep -qx 'THEME=flag' "$cfg" && [ -f "$th_dir/flag/palette.env" ] && grep -qx 'WORDS=brazilian flag' "$th_dir/flag/look.env" \
+        && ok "want played: the look made, then saved as flag with its words kept" || bad "want one look played" "st=$st $out $(ls "$th_dir" 2>&1)"
+    sh "$SH" theme nord >/dev/null 2>&1; rm -f "$H/.local/bin/spark"
 else
     ok "look.py: skipped, no python3 here (the CI containers)"
 fi
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=default\n' > "$cfg"; rm -rf "$st_dir/theme.history" "$st_dir/looks" "$th_dir"
 if [ "$(uname -s)" != Darwin ]; then
     sway=$HOME/.config/sway/config
-    # one choice brings the rest: the palette carries the drawing made for it; a picture or a color of yours stays; another drawing is drawn again in the palette
+    # one choice brings the rest: the palette brings the drawing made for it over a drawing, a color, the ground or none; a picture of yours stays; another drawing is drawn again in the palette
     sh "$SH" theme wallpaper fjord >/dev/null 2>&1
     sh "$SH" theme tokyonight-night >/dev/null 2>&1
     grep -qx 'WALLPAPER=skyline' "$cfg" && grep -qF "output * bg \"$REPO/wallpaper/skyline.png\" fill" "$sway" && ok "theme tokyonight-night under fjord: skyline comes with the palette, the clone's own picture" || bad "palette brings drawing" "$(grep WALLPAPER "$cfg"; grep ' bg ' "$sway")"
     sh "$SH" theme wallpaper navy >/dev/null 2>&1; sh "$SH" theme nord >/dev/null 2>&1
-    grep -qx 'WALLPAPER=#000080' "$cfg" && ok "theme nord under a color: the color stays" || bad "color stays" "$(grep WALLPAPER "$cfg")"
+    grep -qx 'WALLPAPER=fjord' "$cfg" && grep -qF "output * bg \"$REPO/wallpaper/fjord.png\" fill" "$sway" && ok "theme nord under a color: fjord replaces the color, as the row says (#25)" || bad "color under nord" "$(grep WALLPAPER "$cfg"; grep ' bg ' "$sway")"
+    mkdir -p "$HOME/pictures"; printf x > "$HOME/pictures/mine.png"
+    sh "$SH" theme wallpaper "$HOME/pictures/mine.png" >/dev/null 2>&1; sh "$SH" theme tokyonight-night >/dev/null 2>&1
+    grep -qxF "WALLPAPER=$HOME/pictures/mine.png" "$cfg" && ! sh "$SH" theme list | grep -q '^  nord  *fjord' && sh "$SH" panel theme --list | grep -q "^  theme      nord	theme nord$" \
+        && ok "theme tokyonight-night under a picture of yours: the picture stays, and the list names no drawing then" || bad "picture stays" "$(grep WALLPAPER "$cfg"; sh "$SH" theme list | grep nord)"
+    sh "$SH" theme wallpaper navy >/dev/null 2>&1; sh "$SH" theme nord >/dev/null 2>&1
     rc=0; out=$(sh "$SH" theme wallpaper skyline 2>&1) || rc=$?
     if command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1; then
         [ "$rc" = 0 ] && [ -f "$st_dir/wallpapers/skyline-nord.svg" ] && [ -f "$st_dir/wallpapers/skyline-nord.png" ] && grep -qF "output * bg \"$st_dir/wallpapers/skyline-nord.png\" fill" "$sway" \
@@ -3936,29 +3967,29 @@ printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=default\n' > "$cfg"; rm -rf "$st_dir
 sh "$SH" theme nord >/dev/null 2>&1; sh "$SH" theme save desk >/dev/null 2>&1; sh "$SH" theme dracula >/dev/null 2>&1
 mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/wallpapers"}')"
 ans 1 | jq -r '.result.contents[0].text' > "$H/trows.json"; ans 2 | jq -r '.result.contents[0].text' > "$H/wrows.json"
-jq -e '(.rows[] | select(.id == "theme:desk") | .group == "saved" and .columns == ["nord \u00b7 default"] and .tool == {name: "theme_palette", arguments: {name: "desk"}})
+jq -e --arg dw "$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" '(.rows[] | select(.id == "theme:desk") | .group == "saved" and .columns == ["nord \u00b7 " + $dw] and .tool == {name: "theme_palette", arguments: {name: "desk"}})
     and (.rows[] | select(.id == "theme:save") | .group == "saved" and .text == "save this look as" and .tool.name == "theme_save" and .tool.ask == ["name"])
     and ([.rows[] | select(.group == "back")] | length == 2) and ([.rows[] | select(.group == "back")] | .[0].text == "desk" and (.[0].columns[0] | startswith("today ")) and .[0].tool.arguments.name == "desk")
     and (.rows[] | select(.id == "theme:nord") | .group == "palettes" and .columns == ["fjord"]) and (.rows[] | select(.id == "theme:show:dracula") | .sign == "check" and .columns == ["dunes"])
     and (.rows[] | select(.id == "theme:text bigger") | .tool == {name: "theme_text", arguments: {size: "bigger"}}) and (.short == ["theme:more"])' "$H/trows.json" >/dev/null \
     && ok "provide theme rows: saved with the palette and the wallpaper each holds and the save row that asks a name, back with the time, the palettes with their drawings, the text size" || bad "theme rows" "$(head -c 900 "$H/trows.json")"
 if [ "$(uname -s)" != Darwin ]; then
-    jq -e '(.rows[] | select(.id == "theme:wallpaper") | .text == "wallpaper \u00b7 default" and .tool == null and .children == "spark-shell://theme/rows/wallpapers")
+    jq -e '(.rows[] | select(.id == "theme:wallpaper") | .text == "wallpaper \u00b7 dunes" and .tool == null and .children == "spark-shell://theme/rows/wallpapers")
         and (.rows[] | select(.id == "theme:picture") | .text == "a theme from a picture" and .children == "spark-shell://files/rows" and .pick == {tool: "theme_picture", types: ["jpg", "jpeg", "png", "webp"]})' "$H/trows.json" >/dev/null \
         && jq -e '.title == "wallpaper" and (.rows[] | select(.id == "theme:wallpaper skyline") | .group == "drawings" and .columns == ["tokyonight-night"] and .swatch == "#7aa2f7" and .tool == {name: "theme_wallpaper", arguments: {name: "skyline"}})
             and (.rows[] | select(.id == "theme:wallpaper-picture") | .children == "spark-shell://files/rows" and .pick.tool == "theme_wallpaper_picture") and (.rows[] | select(.id == "theme:wallpaper navy") | .group == "colors" and .swatch == "#000080")
-            and (.rows[] | select(.id == "theme:show:default") | .sign == "check") and (.rows[] | select(.id == "theme:wallpaper none") | .tool.arguments.name == "none")' "$H/wrows.json" >/dev/null \
-        && ok "provide theme: the wallpaper row opens the list resource; the list has the drawings with their palettes and samples, a picture of yours to pick, the colors, default checked, none" || bad "wallpaper rows" "$(head -c 700 "$H/trows.json"; head -c 900 "$H/wrows.json")"
+            and (.rows[] | select(.id == "theme:show:dunes") | .sign == "check") and (.rows[] | select(.id == "theme:wallpaper default") | .tool.arguments.name == "default") and (.rows[] | select(.id == "theme:wallpaper none") | .tool.arguments.name == "none")' "$H/wrows.json" >/dev/null \
+        && ok "provide theme: the wallpaper row opens the list resource; the list has the drawings with their palettes and samples, a picture of yours to pick, the colors, dunes (dracula's drawing) checked, default, none" || bad "wallpaper rows" "$(head -c 700 "$H/trows.json"; head -c 900 "$H/wrows.json")"
     mcp theme "$(call 1 theme_wallpaper '{"name":"sunset"}')" "$(call 2 theme_wallpaper '{"name":"nowhere"}')"
-    [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'wallpaper sunset' ] && grep -qx 'WALLPAPER=sunset' "$cfg" && [ "$(ans 1 | jq -c '.result.structuredContent.undo')" = '{"name":"theme_wallpaper","arguments":{"name":"default"}}' ] \
+    [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'wallpaper sunset' ] && grep -qx 'WALLPAPER=sunset' "$cfg" && [ "$(ans 1 | jq -c '.result.structuredContent.undo')" = '{"name":"theme_wallpaper","arguments":{"name":"dunes"}}' ] \
         && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'theme: wallpaper nowhere is not on the panel now' ] \
         && ok "provide theme_wallpaper: a row of the list is a step with its undo; a name no row holds is refused" || bad "theme_wallpaper call" "$(cat "$H/mcp.out")"
 fi
-mcp theme "$(rq 1 tools/list)" "$(call 2 theme_words '{"hue":"blue","warmth":"cool","contrast":"normal"}')" "$(call 3 theme_words '{"hue":"blue","warmth":"cool","contrast":"normal","light":"dim"}')" "$(call 4 theme_delete '{"name":"nord"}')" "$(call 5 theme_back '{}')"
-ans 1 | jq -e '.result.tools[] | select(.name == "theme_words") | .inputSchema.required == ["hue", "warmth", "contrast", "light"] and .inputSchema.properties.light.enum == ["dark", "light"] and .inputSchema.properties.hue.enum[0] == "red"' >/dev/null \
-    && [ "$(ans 2 | jq -r .error.message)" = 'theme_words: missing light' ] && [ "$(ans 3 | jq -r .error.message)" = 'theme_words: light is one of dark, light' ] \
+mcp theme "$(rq 1 tools/list)" "$(call 2 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal"}')" "$(call 3 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal","light":"dim"}')" "$(call 4 theme_delete '{"name":"nord"}')" "$(call 5 theme_back '{}')" "$(call 6 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal","light":"dark","name":"a name that runs on and on past forty letters"}')"
+ans 1 | jq -e '.result.tools[] | select(.name == "theme_words") | .inputSchema.required == ["hue", "accent", "warmth", "contrast", "light"] and .inputSchema.properties.light.enum == ["dark", "light"] and .inputSchema.properties.hue.enum[0] == "red" and .inputSchema.properties.accent.enum[-1] == "same" and .inputSchema.properties.name.maxLength == 40' >/dev/null \
+    && [ "$(ans 2 | jq -r .error.message)" = 'theme_words: missing light' ] && [ "$(ans 3 | jq -r .error.message)" = 'theme_words: light is one of dark, light' ] && [ "$(ans 6 | jq -r .error.message)" = 'theme_words: name is plain text, 40 characters at most' ] \
     && [ "$(ans 4 | jq -r '.result.content[0].text')" = 'theme: no saved theme named nord' ] && [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'back to desk' ] && grep -qx 'THEME=desk' "$cfg" \
-    && ok "provide theme: theme_words takes four closed words, each required; a palette is no saved theme to delete; theme_back steps back with the receipt" || bad "theme tools" "$(cat "$H/mcp.out" | cut -c1-300)"
+    && ok "provide theme: theme_words takes five closed words, each required, and a short name; a palette is no saved theme to delete; theme_back steps back with the receipt" || bad "theme tools" "$(cat "$H/mcp.out" | cut -c1-300)"
 # layouts keep the same history: a layout made from words is kept, layout back opens it again with no model call
 printf 'DESKTOP=sway\n' > "$cfg"
 if [ "$(uname -s)" != Darwin ]; then

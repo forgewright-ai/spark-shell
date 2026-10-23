@@ -3,7 +3,7 @@
   ❯ Type a request.                                         
                                                             
                                                             
-  Run  Enter    Close  Esc                                  
+  Run  Enter    Clear  Esc                                  
                                                             
   ❯ is firefox open?                                        
     * No. Firefox is installed, and no window of it is      

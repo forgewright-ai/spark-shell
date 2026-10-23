@@ -317,7 +317,9 @@ fn an_undo_that_carries_a_secret_is_not_kept_and_esc_closes() {
     app.escape();
     assert_eq!(app.view, View::Home, "Esc goes back to the home");
     app.escape();
-    assert_eq!(app.quit, Some(0), "and from the home it closes");
+    assert!(app.exchange.is_empty() && app.quit.is_none(), "at the home the first Esc clears the exchange");
+    app.escape();
+    assert_eq!(app.quit, Some(0), "and the next one closes");
 }
 
 #[test]
@@ -1130,4 +1132,47 @@ fn typing_a_section_s_name_lists_the_section_once() {
         items
     );
     assert!(items.contains(&Item::Row(0, 0)), "its steps are");
+}
+
+#[test]
+fn esc_at_the_home_clears_the_exchange_then_closes() {
+    let (mut app, rx, tx) = app_with(&["wifi"]);
+    let tools = json!([{"name": "wifi_disconnect", "title": "wifi disconnect", "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false}, "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}}]);
+    let rows = json!({"title": "wifi", "rows": [{"id": "wifi:disconnect", "sign": "dot", "text": "cafe", "tool": {"name": "wifi_disconnect", "arguments": {}}, "more": [], "columns": [], "children": null}], "short": ["wifi:disconnect"]});
+    let script: Script = Box::new(move |v, send| {
+        if let Some(r) = ordinary("wifi", v, &tools, &rows) {
+            return send(r);
+        }
+        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+            send(result(
+                &v["id"],
+                json!({"content": [], "structuredContent": {"receipt": "wifi off", "undo": {"name": "wifi_connect", "arguments": {"name": "cafe"}}}, "isError": false}),
+            ));
+        }
+    });
+    app.servers.push(stub(0, "wifi", script, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    at_row(&mut app, View::Section(0), 0);
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text == "wifi off")));
+    app.escape();
+    assert_eq!(app.view, View::Home, "Esc goes back to the home");
+    assert!(app.exchange_up(), "the receipt is still up at the home");
+    assert!(
+        app.hint().iter().any(|(w, _)| w == "Clear "),
+        "the key row says Clear while an exchange is up: {:?}",
+        app.hint()
+    );
+    app.escape();
+    assert_eq!(app.view, View::Home, "the first Esc at the home clears, it does not close");
+    assert_eq!(app.quit, None);
+    assert!(app.exchange.is_empty() && app.undo.is_none(), "the exchange and the undo are gone");
+    assert!(
+        !app.hint().iter().any(|(w, _)| w == "Clear "),
+        "the key row no longer says Clear: {:?}",
+        app.hint()
+    );
+    app.escape();
+    assert_eq!(app.quit, Some(0), "the next Esc closes");
 }

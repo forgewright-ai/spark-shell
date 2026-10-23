@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.86
+
+A theme from words that name two colors, the save from words, the
+dialog's exchange and the look of none (#25, his reports of the evening
+v0.85 landed).
+
+- Changed: `theme "WORDS"` and the theme_words tool take the hue of the
+  accent beside the hue of the ground (same when the words name one
+  color), and a short name from the words. A flag or a brand is one
+  look with two hues; the tool's words say one request is one look, and
+  a second words step in one plan is refused. A theme save that the
+  model orders before the words step runs after it. lib/look.py takes
+  `--accent`.
+- Fixed: the dialog's gate took the save row, which asks the person for
+  the name, as naming things, so a save from words could never pass. A
+  row whose tool asks for the argument binds no name now; `theme save
+  NAME` and `layout save NAME` from words work.
+- Added: at the dialog's home, Esc clears what the last request left on
+  the screen, the receipts, the refusals, the undo and the proposals;
+  the key row says `Clear Esc` while they are up, and the next Esc
+  closes. Before, only closing the dialog cleared them.
+- Changed: `theme none` on the desktop is foot's own sixteen, the
+  starlight set foot draws with no config, with its text on its ground;
+  the console keeps its own. Before, the desktop took the console's VGA
+  sixteen, black windows and grey text, which read as broken one click
+  from the sixteen palettes.
+- Changed: `none` is no look to come back to: it is not noted in the
+  history, so the dialog's back list and `theme back` skip it (it showed
+  twice in a filtered list).
+- Changed: a palette with a drawing of its own brings it over a plain
+  color, the ground or none too, as its row says; only a picture of
+  yours stays. The palette rows and `theme list` name the drawing only
+  when it would come. Before, a plain color stayed when the palette
+  changed, a rule from before the drawings: gruvbox-dark, whose row
+  says sunset, picked over teal kept the teal.
+
 ## v0.85
 
 The theme end to end (#24): one choice brings the rest, saved and

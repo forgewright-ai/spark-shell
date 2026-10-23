@@ -67,7 +67,9 @@ def main(binary):
     ok(rec.count("\n") == 1 and "\ttheme\ttheme_palette\t" in rec and "nord" not in rec and (os.stat(audit).st_mode & 0o777) == 0o600,
        "one audit line, 0600, numbers and names: the tool, never the argument", rec)
     time.sleep(0.3)
-    os.write(fd, b"\x1b")
+    os.write(fd, b"\x1b")   # the receipt is up at the home: the first Esc clears it (#25)
+    time.sleep(0.5)
+    os.write(fd, b"\x1b")   # the next closes
     status = None
     end = time.time() + 10
     while time.time() < end:
@@ -76,7 +78,7 @@ def main(binary):
         if p:
             status = st
             break
-    ok(status is not None and os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0, "Esc closes the dialog, exit 0", repr(status))
+    ok(status is not None and os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0, "Esc clears the receipt, the next Esc closes the dialog, exit 0", repr(status))
     time.sleep(0.5)
     ps = subprocess.run(["ps", "-A", "-o", "command="], capture_output=True, text=True).stdout
     ok(not any((SS + " provide") in l for l in ps.splitlines()), "no provider outlives the window")

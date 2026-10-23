@@ -296,11 +296,14 @@ theme_load() {
 # console gets them from `spark theme NAME`), so it, and sway's borders
 # beside it, take the palette's own rrggbb -- every other render keeps
 # naming slots. A THEME_* that is #rrggbb is stripped of its `#`; a
-# color word (no theme.env) is the VGA sixteen, what `spark theme none`
-# programs. HEX_BG and HEX_FG fall back to slots 0 and 7, HEX_ACCENT and
-# HEX_MUTED to their slot's hex.
+# color word (no theme.env) is foot's own sixteen, the starlight set foot
+# draws with no config, so `theme none` on the desktop is the terminal's
+# own colors there as the console keeps its own (#25; the VGA sixteen
+# before v0.86). HEX_BG and HEX_FG fall back to foot's ground and text,
+# HEX_ACCENT and HEX_MUTED to their slot's hex.
 HEX_KEYS="HEX_BG HEX_FG HEX_ACCENT HEX_MUTED HEX_ANSI_0 HEX_ANSI_1 HEX_ANSI_2 HEX_ANSI_3 HEX_ANSI_4 HEX_ANSI_5 HEX_ANSI_6 HEX_ANSI_7 HEX_ANSI_8 HEX_ANSI_9 HEX_ANSI_10 HEX_ANSI_11 HEX_ANSI_12 HEX_ANSI_13 HEX_ANSI_14 HEX_ANSI_15"
 VGA_HEX="000000 aa0000 00aa00 aa5500 0000aa aa00aa 00aaaa aaaaaa 555555 ff5555 55ff55 ffff55 5555ff ff55ff 55ffff ffffff"
+FOOT_HEX="242424 f62b5a 47b413 e3c401 24acd4 f2affd 13c299 e6e6e6 616161 ff4d51 35d450 e9e836 5dc5f8 feabf2 24dfc4 ffffff"   # foot's defaults (the starlight theme, foot.ini(5)); its text ffffff on its ground 242424"
 hex_or() {   # hex_or COLOR FALLBACK -> rrggbb, lowercase
     case $1 in
         \#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]) printf '%s' "${1#\#}" | tr 'A-F' 'a-f' ;;
@@ -309,15 +312,15 @@ hex_or() {   # hex_or COLOR FALLBACK -> rrggbb, lowercase
 }
 hex_load() {
     i=0
-    for h in $VGA_HEX; do
+    for h in $FOOT_HEX; do
         eval "c=\$THEME_ANSI_$i"
         eval "HEX_ANSI_$i=\$(hex_or \"\$c\" \"$h\")"
         i=$((i + 1))
     done
     # shellcheck disable=SC2034   # read by render_expr through HEX_KEYS
-    HEX_BG=$(hex_or "$THEME_BG" "$HEX_ANSI_0")
+    HEX_BG=$(hex_or "$THEME_BG" 242424)
     # shellcheck disable=SC2034
-    HEX_FG=$(hex_or "$THEME_FG" "$HEX_ANSI_7")
+    HEX_FG=$(hex_or "$THEME_FG" ffffff)
     eval "HEX_ACCENT=\$(hex_or \"\$THEME_ACCENT\" \"\$HEX_ANSI_$ACCENT_SLOT\")"
     eval "HEX_MUTED=\$(hex_or \"\$THEME_MUTED\" \"\$HEX_ANSI_$MUTED_SLOT\")"
     for k in $HEX_KEYS; do export "${k?}"; done
@@ -390,6 +393,7 @@ wall_follow() {   # the drawing in use, rendered in the palette in use when that
     else row todo wallpaper "$WALLPAPER as drawn for $(wall_palette_of "$WALLPAPER"): gdk-pixbuf-thumbnailer is not installed to draw it in $THEME (the gdk-pixbuf package)"; fi
 }
 wall_color() { hex_rgb "$WALLPAPER" >/dev/null; }   # WALLPAPER is a plain color, #rrggbb
+wall_yours() { case ${WALLPAPER:-} in ''|none|default) return 1 ;; esac; ! wall_color && ! wall_shipped "$WALLPAPER"; }   # WALLPAPER is a picture of yours (a path, there or not): the one wallpaper a palette never replaces; false before the config is read
 wall_name() {   # -> default, none, a shipped wallpaper's name, the name of a color WALL_NAMES has (or its hex), or nothing for a picture of yours
     case $WALLPAPER in default|none) echo "$WALLPAPER"; return ;; esac
     if wall_shipped "$WALLPAPER"; then echo "$WALLPAPER"; return; fi
@@ -1417,9 +1421,12 @@ kept_prune() {   # kept_prune KIND -- the looks and the layouts kept only for th
         rm -rf "$_f"
     done
 }
-kept_back() {   # kept_back KIND -> the name before the one in use, one step further each call until a new one is applied; exit 1 at the end of the ten
+kept_back() {   # kept_back KIND [CURRENT] -> the name before the one in use, one step further each call until a new one is applied; exit 1 at the end of the ten. When CURRENT is not the newest line (none, which is never noted), the newest line itself comes first (#25)
     _kh=$(kept_hist "$1"); [ -f "$_kh" ] || return 1
-    _i=$(cat "$_kh.back" 2>/dev/null || echo 1); _i=$((_i + 1))
+    if [ -f "$_kh.back" ]; then _i=$(cat "$_kh.back")
+    elif [ $# -ge 2 ] && [ "$(sed -n 1p "$_kh" | cut -f2)" != "$2" ]; then _i=0
+    else _i=1; fi
+    _i=$((_i + 1))
     _n=$(sed -n "${_i}p" "$_kh" | cut -f2); [ -n "$_n" ] || return 1
     printf '%s' "$_i" > "$_kh.back"; printf '%s' "$_n"
 }
@@ -2458,7 +2465,7 @@ cmd_status() {
         if apps_marked; then printf '  apps  %-16s %s\n' "$(grep -c '^[A-Za-z0-9]' "$APPS") allowed" "$(grep '^[A-Za-z0-9]' "$APPS" | sed 's/[: ].*//' | paste -sd',' - | sed 's/,/, /g') (spark-shell apps)"
         else printf '  apps  %-16s %s\n' all "every app with a desktop entry (spark-shell apps picks the allowed apps)"; fi
         if [ "$WALLPAPER" = none ]; then printf '  wall  %-16s %s\n' none "the palette's background (spark-shell theme wallpaper PATH|default)"
-        elif wall_color; then printf '  wall  %-16s %s\n' color "$WALLPAPER, a plain color that stays when the palette changes"
+        elif wall_color; then printf '  wall  %-16s %s\n' color "$WALLPAPER, a plain color; a palette with a drawing of its own replaces it"
         elif [ "$WALLPAPER" = default ]; then printf '  wall  %-16s %s\n' default "the ground, the palette's background a shade darker ($(wall_ground)); it follows the palette"
         elif wall_there; then printf '  wall  %-16s %s\n' picture "$WALLPAPER"
         else printf '  wall  %-16s %s\n' missing "$(wall_path) is missing -- the palette's background color instead"; fi
@@ -3571,11 +3578,11 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             done
             printf -- '-\tsave this look as\tsave\tsaved\n'
             kept_history theme | awk -F '\t' -v t="${THEME:-}" '$2 != t' | head -n 9 | while IFS="$TAB" read -r _e _n; do   # back: the looks before this one, when each was chosen
-                [ "$_n" = none ] || palette_file "$_n" >/dev/null || continue
+                [ "$_n" != none ] && palette_file "$_n" >/dev/null || continue
                 printf -- '-\t%s\t%s\tback|%s||%s\n' "$(theme_words_of "$_n")" "$_n" "$(kept_when "$_e")" "$_e"
             done
-            { echo none; palette_names; } | while IFS= read -r n; do   # palettes: each with the drawing made for it; a palette's step is its name alone
-                _dw=$(wall_for_palette "$n") || _dw=''
+            { echo none; palette_names; } | while IFS= read -r n; do   # palettes: each with the drawing it brings (none named over a picture of yours, which stays); a palette's step is its name alone
+                _dw=''; wall_yours || _dw=$(wall_for_palette "$n") || _dw=''
                 if [ "$n" = "${THEME:-none}" ]; then printf '%s\t%s\tshow\tpalettes|%s\n' "$PANEL_TICK" "$n" "$_dw"; else printf -- '-\t%s\t%s\tpalettes|%s\n' "$n" "$n" "$_dw"; fi
             done
             if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then
@@ -4026,7 +4033,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 delete) _r=$(cmd_theme delete "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "deleted $_arg" ;;
                 back) _r=$(cmd_theme back 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | sed -n 1p ;;
                 picture) _r=$(cmd_theme picture "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | sed -n 1p ;;
-                words) set -- $_arg; theme_words_apply "$1" "${2#warmth=}" "${3#contrast=}" "${4#light=}" "${PANEL_WORDS:-}" ;;
+                words) set -- $_arg; theme_words_apply "$1" "${2#accent=}" "${3#warmth=}" "${4#contrast=}" "${5#light=}" "${6#name=}" "${PANEL_WORDS:-}" ;;
                 alpha) case $_arg in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) ;; *) echo "alpha is 0 to 1, as 0.85"; return 1 ;; esac
                     config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply
                     echo "alpha $_arg" ;;
@@ -4270,7 +4277,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         theme:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "theme: save takes a name"; return 1 ;;
         theme:delete) case $(theme_kind "${3:-}") in saved|look) [ "$3" != "${THEME:-}" ] && { echo "$3"; return 0; }; echo "theme: $3 is the theme in use"; return 1 ;; *) echo "theme: no saved theme named ${3:-?}"; return 1 ;; esac ;;
         theme:back) [ -s "$(kept_hist theme)" ] && { echo ''; return 0; }; echo "theme: no look before this one"; return 1 ;;
-        theme:words) case $3 in [a-z]*' warmth='[a-z]*' contrast='[a-z]*' light='[a-z]*) echo "$3"; return 0 ;; *) echo "theme: words take a hue, then warmth, contrast and light"; return 1 ;; esac ;;
+        theme:words) case $3 in [a-z]*' accent='[a-z]*' warmth='[a-z]*' contrast='[a-z]*' light='[a-z]*|[a-z]*' accent='[a-z]*' warmth='[a-z]*' contrast='[a-z]*' light='[a-z]*' name='*) echo "$3"; return 0 ;; *) echo "theme: words take a hue, then accent, warmth, contrast and light"; return 1 ;; esac ;;
         layout:delete) [ -f "$LAYOUTS_DIR/${3:-}" ] && { echo "$3"; return 0; }; echo "layout: no saved layout named ${3:-?}"; return 1 ;;
         layout:back) [ -s "$(kept_hist layout)" ] && { echo ''; return 0; }; echo "layout: no layout before this one"; return 1 ;;
         theme:alpha) case $3 in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) echo "$3"; return 0 ;; *) echo "theme: alpha takes 0 to 1"; return 1 ;; esac ;;
@@ -4421,9 +4428,18 @@ want_steps() {   # want_steps WORDS -> $TMP/plan from spark steps; exit 1 when s
         _sn=$(jq -r --argjson i "$_i" '.steps[$i].name // "" | tostring' "$TMP/want.json"); _i=$((_i + 1))
         if ! tool_spec "$_sn"; then want_put no "$PANEL_CROSS $_sn is not a step the panel takes"; continue; fi
         _sv=''; [ -z "$_tp" ] || _sv=$(jq -r --argjson i "$((_i - 1))" --arg p "$_tp" '.steps[$i].arguments[$p] // "" | tostring' "$TMP/want.json")
-        [ -z "$_te" ] || _sv="$_sv $(jq -r --argjson i "$((_i - 1))" --arg x "$_te" '.steps[$i].arguments as $a | [$x | split(" ")[] | select(. != "") | split(":")[0] | . + "=" + (($a[.] // "") | tostring)] | join(" ")' "$TMP/want.json")"
+        [ -z "$_te" ] || _sv="$_sv $(jq -r --argjson i "$((_i - 1))" --arg x "$_te" '.steps[$i].arguments as $a | [$x | split(" ")[] | select(. != "") | split(":") | . as $e | select(($a[$e[0]] // "") != "" or $e[1] != "text") | $e[0] + "=" + (($a[$e[0]] // "" | tostring) | if $e[1] == "text" then ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-+|-+$"; "") | .[0:40] else . end)] | join(" ")' "$TMP/want.json")"
+        printf '%s\n' "$_sn$US$_sv"
+    done > "$TMP/steps.raw"
+    # one look a request: a second theme_words step is refused; a theme save that came before the words step moves after it (#25)
+    awk -F "$US" -v us="$US" '{ n[NR] = $1; v[NR] = $2; if ($1 == "theme_words") { w++; if (w == 1) last = NR } }
+        END { for (i = 1; i <= NR; i++) if (!(n[i] == "theme_save" && last && i < last)) print n[i] us v[i] us (n[i] == "theme_words" && i != last ? "again" : "");
+              for (i = 1; i < last; i++) if (n[i] == "theme_save") print n[i] us v[i] us "" }' "$TMP/steps.raw" > "$TMP/steps.ordered"
+    while IFS="$US" read -r _sn _sv _again; do
+        tool_spec "$_sn" || continue
+        [ "$_again" != again ] || { want_put no "$PANEL_CROSS one look a request: the first words step made it, $_sv was not"; continue; }
         case $_sn in theme_palette) want_step theme "$_sv" '' ;; *) want_step "$_ts" "$_ta" "$_sv" ;; esac   # a palette's step is its name alone
-    done
+    done < "$TMP/steps.ordered"
 }
 want_step() {   # want_step SECTION ACTION ARG -- into the plan when panel_gate takes it, else its refusal
     if _g=$(panel_gate "$1" "$2" "$3"); then want_put step "$1" "$2" "$3" "$_g"; else want_put no "$PANEL_CROSS $_g"; fi
@@ -4575,14 +4591,14 @@ tool_spec() {
         mic_mute)          _ts=mic _ta=mute _th=i _tt='mic mute' _td='Mute the microphone.' ;;
         mic_unmute)        _ts=mic _ta=unmute _th=i _tt='mic unmute' _td='Unmute the microphone.' ;;
         theme_palette)     _ts=theme _ta='=' _tp=name _tk=string _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none.' ;;
-        theme_save)        _ts=theme _ta=save _tp=name _tk=string _th=f _tt='theme save NAME' _td='Keep the look in use under a name: the palette, the wallpaper, the text size, the transparency.' ;;
+        theme_save)        _ts=theme _ta=save _tp=name _tk=string _th=f _tt='theme save NAME' _td='Keep the look in use under a name: the palette, the wallpaper, the text size, the transparency. After the look is made, never before it.' ;;
         theme_delete)      _ts=theme _ta=delete _tp=name _tk=string _th=dif _tt='theme delete NAME' _td='Delete a saved theme.' ;;
         theme_back)        _ts=theme _ta=back _th=f _tt='theme back' _td='The look before this one.' ;;   # free: no row carries it, the gate asks the history
         theme_text)        _ts=theme _ta=text _tp=size _tk='bigger|smaller' _th='' _tt='theme text SIZE' _td='The text one size bigger or smaller, on every surface.' ;;
         theme_wallpaper)   _ts=theme _ta=wallpaper _tp=name _tk=string _th=i _tt='theme wallpaper NAME' _td='The wallpaper: one of the drawings, a color by its name, default (the ground) or none.' ;;
         theme_wallpaper_picture) _ts=theme _ta=wallpaper-picture _tp=path _tk=path _th=if _tt='theme wallpaper picture PATH' _td='A picture of yours as the wallpaper.' ;;
         theme_picture)     _ts=theme _ta=picture _tp=path _tk=path _th=f _tt='theme picture PATH' _td='A theme from a picture of yours: its colors as the palette, the picture as the wallpaper.' ;;
-        theme_words)       _ts=theme _ta=words _tp=hue _tk='red|orange|yellow|green|teal|blue|violet|pink|grey' _te='warmth:warm|neutral|cool contrast:soft|normal|high light:dark|light' _th=f _tt='theme words HUE' _td='A look from words: the hue the words ask for, how warm, how much contrast, dark or light. The palette is made from these four, and the wallpaper in use is drawn again in it.' ;;
+        theme_words)       _ts=theme _ta=words _tp=hue _tk='red|orange|yellow|green|teal|blue|violet|pink|grey' _te='accent:red|orange|yellow|green|teal|blue|violet|pink|grey|same warmth:warm|neutral|cool contrast:soft|normal|high light:dark|light name:text' _th=f _tt='theme words HUE' _td='One look for one request: the hue of the ground, the hue of the accent (same when the words name one color), how warm, how much contrast, dark or light, and a short name from the words. A flag or a brand is one step with two hues, never two steps. The wallpaper in use is drawn again in the new palette.' ;;
         theme_transparency) _ts=theme _ta=transparency _tp=amount _tk='more|less' _th='' _tt='theme transparency AMOUNT' _td='The windows more or less transparent.' ;;
         theme_alpha)       _ts=theme _ta=alpha _tp=value _tk=alpha _th=if _tt='theme alpha N' _td='How solid the windows are, 0 to 1.' ;;
         window_split)      _ts=window _ta=split _th=i _tt='window split' _td='New windows side by side.' ;;
@@ -4650,8 +4666,8 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
                 else {type: "string", minLength: 1, maxLength: 256} end) + (if $w == "" then {} else {description: $w} end))} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)
-              + ([$xs[] | {(.[0]): {type: "string", enum: (.[1] | split("|"))}}] | add // {})),
-            required: ((if $p == "" then [] else [$p] end) + [$xs[] | .[0]]), additionalProperties: false},
+              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
+            required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text") | .[0]]), additionalProperties: false},
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
             palette: {type: "object", additionalProperties: {type: "string"}}}, additionalProperties: false},
@@ -4828,8 +4844,9 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         if type != "object" then "arguments are an object"
         elif (keys - [$p, $q] - $xk - [""]) != [] then "no argument " + ((keys - [$p, $q] - $xk)[0])
         elif $p != "" and (has($p) | not) then "missing " + $p
-        elif ([$xs[] | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | . as $e | select(($a | has($e[0])) | not)][0][0])
-        elif ([$xs[] | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
+        elif ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)][0][0])
+        elif ([$xs[] | select(.[1] != "text") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
+        elif ([$xs[] | select(.[1] == "text") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text") | .[0]][0]) + " is plain text, 40 characters at most"
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
         elif $k == "minutes" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 999 then "" else $p + " is a whole number of minutes, 0 to 999" end)
@@ -4840,7 +4857,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         else "" end
         + (if $q != "" and has($q) and ((.[$q] | type) != "string" or (.[$q] | length) > 256) then "; " + $q + " is text, 256 characters at most" else "" end)')
     [ -z "$_bad" ] || { rpc_error "$1" -32602 "$_name: $_bad"; return 0; }
-    _v=''; [ -z "$_tp" ] || _v=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg x "$_te" '. as $a | [$a[$p] | tostring] + [$x | split(" ")[] | select(. != "") | split(":")[0] | . + "=" + ($a[.] | tostring)] | join(" ")')
+    _v=''; [ -z "$_tp" ] || _v=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg x "$_te" '. as $a | [$a[$p] | tostring] + [$x | split(" ")[] | select(. != "") | split(":") | . as $e | select($a[$e[0]] != null) | $e[0] + "=" + (($a[$e[0]] | tostring) | if $e[1] == "text" then ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-+|-+$"; "") | .[0:40] else . end)] | join(" ")')   # a text extra travels as its slug
     PANEL_PASS=''; [ -z "$_tq" ] || PANEL_PASS=$(printf '%s' "$_args" | jq -r --arg q "$_tq" '.[$q] // ""')   # a password: a shell variable for the step, never a file, never a line out
     _plain=$(printf '%s' "$_args" | jq -c --arg q "$_tq" 'if $q == "" then . else del(.[$q]) end')   # the arguments without the secret: what a row is matched against
     [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_v"; return 0; }   # files: the four lines, not the panel's gate
@@ -5380,7 +5397,7 @@ cmd_theme() {   # theme [NAME|none|list|show] | save [NAME] | delete NAME | back
     [ -n "$(theme_kind "$1")" ] || refuse_in theme "no palette named $1 -- spark-shell theme list shows them"
     theme_apply "$1"
 }
-theme_apply() {   # theme_apply NAME|none [back] -- the whole look follows: a saved theme or a kept look brings its own wallpaper, text size, transparency and pointer; a palette with a drawing of its own brings the drawing when a shipped one was on; `back` leaves the history as it is
+theme_apply() {   # theme_apply NAME|none [back] -- the whole look follows: a saved theme or a kept look brings its own wallpaper, text size, transparency and pointer; a palette with a drawing of its own brings the drawing unless a picture of yours is on; `back` leaves the history as it is
     name=$1; _w=''
     [ "$name" = none ] || palette_render "$name" || refuse_in theme "$(cat "$TMP/palette.why")"
     pm_detect
@@ -5395,7 +5412,7 @@ theme_apply() {   # theme_apply NAME|none [back] -- the whole look follows: a sa
             [ "$MODE" = dry ] || [ "$_cur" = "$_v" ] || config_set "$_k" "$_v" >/dev/null
             eval "$_k=\$_v"; export "${_k?}"
         done
-    elif [ "$name" != none ] && wall_shipped "$WALLPAPER" && _w=$(wall_for_palette "$name") && [ "$_w" != "$WALLPAPER" ]; then   # the palette carries the drawing made for it
+    elif [ "$name" != none ] && [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && ! wall_yours && _w=$(wall_for_palette "$name") && [ "$_w" != "$WALLPAPER" ]; then   # on the desktop the palette brings the drawing made for it, as its row says; only a picture of yours stays (#25)
         [ "$MODE" = dry ] || config_set WALLPAPER "$_w" >/dev/null
         WALLPAPER=$_w; export WALLPAPER
     else _w=''; fi
@@ -5409,7 +5426,7 @@ theme_apply() {   # theme_apply NAME|none [back] -- the whole look follows: a sa
     login_follow
     console_now
     theme_repaint "$name"
-    [ "${2:-}" = back ] || [ "$MODE" = dry ] || kept_note theme "$name"
+    [ "${2:-}" = back ] || [ "$MODE" = dry ] || [ "$name" = none ] || kept_note theme "$name"   # none is no look to come back to
     if [ "$name" = none ]; then verb_close "No palette: the console and the terminal use their own colors."
     elif [ -n "$_td" ]; then verb_close "The theme is $(theme_words_of "$name"): $(theme_look_words). A program that is already running, such as btop, takes it when it starts again."
     else verb_close "The palette is $name${_w:+, with $_w}. A program that is already running, such as btop, takes it when it starts again."; fi
@@ -5445,13 +5462,13 @@ theme_list() {
         note=''
         case $n in none) note="the console's and the terminal's own colors" ;; esac
         [ ! -f "$PALETTE_DIR/$n.env" ] || note=yours
-        [ -n "$note" ] || note=$(wall_for_palette "$n") || note=''
+        [ -n "$note" ] || wall_yours || note=$(wall_for_palette "$n") || note=''
         [ "$n" != "${THEME:-}" ] || note="${note:+$note, }current"
         printf '  %-20s %s\n' "$n" "$note"
     done
     if [ -s "$(kept_hist theme)" ]; then
         echo "The last looks (spark-shell theme back steps through them):"
-        kept_history theme | while IFS="$TAB" read -r _e _n; do printf '  %-20s %s\n' "$(theme_words_of "$_n")" "$(kept_when "$_e")"; done
+        kept_history theme | while IFS="$TAB" read -r _e _n; do [ "$_n" = none ] || printf '  %-20s %s\n' "$(theme_words_of "$_n")" "$(kept_when "$_e")"; done
     fi
     echo "spark-shell theme NAME uses one everywhere; theme save NAME keeps the look in use."
 }
@@ -5504,8 +5521,8 @@ theme_delete() {   # theme_delete NAME... -- a saved theme's folder gone, with i
 }
 theme_back() {   # the look before this one, one step further each time; a new choice starts the steps over
     while :; do
-        _n=$(kept_back theme) || refuse_in theme "no look before this one in the last ten"
-        [ "$_n" = none ] || palette_file "$_n" >/dev/null && break   # a look that is gone is skipped
+        _n=$(kept_back theme "${THEME:-}") || refuse_in theme "no look before this one in the last ten"
+        [ "$_n" != none ] && palette_file "$_n" >/dev/null && break   # a look that is gone is skipped, and none
     done
     echo "back to $(theme_words_of "$_n")"
     theme_apply "$_n" back
@@ -5515,7 +5532,7 @@ theme_wallpaper() {   # theme_wallpaper [X] -- the wallpaper: a drawing, a pictu
     theme_load   # the ground's hex, said back
     if [ -z "${1:-}" ]; then
         if [ "$WALLPAPER" = none ]; then echo "wallpaper none -- the palette's background (spark-shell theme wallpaper PATH|default)"
-        elif wall_color; then echo "wallpaper $WALLPAPER -- a plain color, it stays when the palette changes"
+        elif wall_color; then echo "wallpaper $WALLPAPER -- a plain color; a palette with a drawing of its own replaces it"
         elif [ "$WALLPAPER" = default ]; then echo "wallpaper default -- the ground, the palette's background a shade darker ($(wall_ground)); it follows the palette"
         elif wall_there; then case $(wall_path) in "$REPO"/*|"$WALLPAPER") echo "wallpaper $WALLPAPER" ;; *) echo "wallpaper $WALLPAPER -- drawn in $THEME" ;; esac
         else echo "wallpaper $(wall_path) -- missing, the palette's background color instead"; fi
@@ -5533,7 +5550,7 @@ theme_wallpaper() {   # theme_wallpaper [X] -- the wallpaper: a drawing, a pictu
     login_follow
     if [ "$want" = none ]; then echo "the palette's background is back -- a new foot window is opaque again"
     elif [ "$want" = default ]; then echo "the ground is back -- the palette's background a shade darker, and it follows the palette"
-    elif wall_color; then echo "a running sway shows $want now, and it stays when the palette changes -- a new foot window is translucent over it, as over a picture"
+    elif wall_color; then echo "a running sway shows $want now -- a new foot window is translucent over it, as over a picture; a palette with a drawing of its own replaces it"
     elif wall_shipped "$want"; then case $(wall_path) in "$REPO"/*) _dr='' ;; *) _dr=", drawn in $THEME" ;; esac; echo "a running sway shows $want now$_dr -- it follows the palette: a palette with a drawing of its own brings that one"
     else echo "a running sway shows it now -- the next foot window is translucent (Super+Return)"; fi
 }
@@ -5607,12 +5624,14 @@ theme_from_words() {   # theme_from_words WORDS
     WANT_ONLY=theme_words want_steps "$1" || :
     want_run
 }
-theme_words_apply() {   # theme_words_apply HUE WARMTH CONTRAST LIGHT [WORDS] -> the receipt; exit 1 and why when no palette came
+theme_words_apply() {   # theme_words_apply HUE ACCENT WARMTH CONTRAST LIGHT [NAME] [WORDS] -> the receipt; exit 1 and why when no palette came. The look's words: the name the model gave (a slug), else the words typed at the prompt, else the hues and the light
     command -v python3 >/dev/null 2>&1 || { echo "python3 is not installed, and it makes the palette"; return 1; }
-    _words=${5:-"$1, $2, $3, $4"}
+    if [ -n "${6:-}" ]; then _words=$(printf '%s' "$6" | tr '-' ' ')
+    elif [ -n "${7:-}" ]; then _words=$7
+    else _words="$1$([ "$2" = same ] || printf ' and %s' "$2"), $5"; fi
     name=$(look_name "$_words")
     _d=$LOOKS_DIR/$name; rm -rf "$_d.new"; mkdir -p "$_d.new"
-    python3 -I "$REPO/lib/look.py" words --hue "$1" --warmth "$2" --contrast "$3" --light "$4" > "$_d.new/palette.env" 2>"$TMP/look.err" || { echo "no palette from those words: $(head -1 "$TMP/look.err")"; rm -rf "$_d.new"; return 1; }
+    python3 -I "$REPO/lib/look.py" words --hue "$1" --accent "$2" --warmth "$3" --contrast "$4" --light "$5" > "$_d.new/palette.env" 2>"$TMP/look.err" || { echo "no palette from those words: $(head -1 "$TMP/look.err")"; rm -rf "$_d.new"; return 1; }
     { printf 'PALETTE=words\nWORDS=%s\n' "$(printf '%s' "$_words" | tr -cd 'A-Za-z0-9 ,.-' | cut -c1-80)"
       printf 'WALLPAPER=%s\nFONT=%s\nALPHA=%s\nPOINTER=%s\n' "$WALLPAPER" "$FONT" "$ALPHA" "${POINTER:-}"; } > "$_d.new/look.env"
     rm -rf "$_d"; mv "$_d.new" "$_d"
@@ -6820,7 +6839,7 @@ desk_lock() {
     [ -n "${WAYLAND_DISPLAY:-}" ] || refuse "locks the desktop: run it inside it (Super+Escape)"
     command -v swaylock >/dev/null 2>&1 || refuse "swaylock is not installed (spark-shell on desktop)"
     ! pgrep -u "$(id -u)" -x swaylock >/dev/null 2>&1 || return 0
-    : "${HEX_BG:=000000}" "${HEX_FG:=aaaaaa}" "${HEX_ACCENT:=5555ff}" "${HEX_MUTED:=555555}" "${HEX_ANSI_1:=aa0000}" "${HEX_ANSI_3:=aa5500}"   # the VGA's, when the palette did not load
+    : "${HEX_BG:=242424}" "${HEX_FG:=ffffff}" "${HEX_ACCENT:=24acd4}" "${HEX_MUTED:=616161}" "${HEX_ANSI_1:=f62b5a}" "${HEX_ANSI_3:=e3c401}"   # foot's own, when the palette did not load
     if wall_there; then set -- --image "$(wall_path)" --scaling fill
     elif [ "$WALLPAPER" = default ]; then set -- --color "$(wall_ground | tr -d '#')"
     elif wall_color; then set -- --color "$(wall_hex "$WALLPAPER" | tr -d '#')"
