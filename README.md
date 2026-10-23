@@ -31,7 +31,9 @@ first. `--dry-run` shows every change and changes nothing.
     git clone https://github.com/forgewright-ai/spark-shell ~/.spark-shell
     ~/.spark-shell/spark-shell on
 
-To update, run `git -C ~/.spark-shell pull`, then `spark-shell on`.
+To update, run `spark-shell update`: the clone moves to the newest
+release signed by a key in its `allowed-signers`, never to a commit
+nobody signed, and `on` runs again from it.
 spark is optional.
 Without it, layouts and spark chat are unavailable. The tmux
 status line still shows the machine and your reminders.
@@ -71,6 +73,7 @@ explain each part. If something fails, run `spark-shell check` and
     spark-shell on --yes              do not ask first
     spark-shell status                show what is set up
     spark-shell check                 test the setup (exit 0 when all is ok)
+    spark-shell update                move to the newest signed release, then on
     spark-shell theme NAME|none       set the colors and the look, or none
     spark-shell theme [list]          show the look in use, or list them all
     spark-shell theme save [NAME]     keep the look in use as a saved theme

@@ -11,6 +11,7 @@
 #   spark-shell on --yes              do not ask first
 #   spark-shell status                show what is set up
 #   spark-shell check                 test the setup (exit 0 when all is ok)
+#   spark-shell update                move to the newest signed release, then on
 #   spark-shell theme NAME|none       set the colors and the look, or none
 #   spark-shell theme [list]          show the look in use, or list them all
 #   spark-shell theme save [NAME]     keep the look in use as a saved theme
@@ -5056,6 +5057,38 @@ tag_signed() {   # tag_signed TAG -> 0 when a key in the tree's allowed-signers 
     git -C "$REPO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$REPO/allowed-signers" verify-tag "$1" >/dev/null 2>&1 || return 1
     [ "$(git -C "$REPO" cat-file tag "$1" 2>/dev/null | sed -n 's/^tag //p' | sed -n 1p)" = "$1" ]
 }
+cmd_update() {   # the clone moves to the newest tag past its own that a key in this tree's allowed-signers signed (tag_signed), the newer tags it skipped named; then on --yes from the new tree when the seat is on. A plain pull takes main as it is; this takes a release, forward only
+    REFUSE_AS=update
+    config_load
+    command -v git >/dev/null 2>&1 || refuse "git is not installed"
+    command -v ssh-keygen >/dev/null 2>&1 || refuse "ssh-keygen is not installed: a release tag's signature cannot be read (the openssh package)"
+    [ -f "$REPO/allowed-signers" ] || refuse "no allowed-signers beside spark-shell: not a clone of spark-shell"
+    git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || refuse "$REPO is not a git clone"
+    _here=$(git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo none)
+    git -C "$REPO" fetch -q origin 'refs/tags/*:refs/tags/*' 2>/dev/null || refuse "could not fetch the tags from origin"
+    _to=''; _skipped=''
+    for _t in $(git -C "$REPO" tag -l 'v[0-9]*' --sort=-v:refname); do
+        [ "$_t" != "$_here" ] || break        # newest first: at the clone's own tag, the rest are behind it
+        if tag_signed "$_t"; then _to=$_t; break; fi
+        _skipped="$_skipped $_t"
+    done
+    if [ -z "$_to" ]; then
+        [ -n "$_skipped" ] || { echo "spark-shell update: at $_here, the newest release"; return 0; }
+        refuse "the releases past $_here are not signed by a key in allowed-signers:$_skipped -- nothing moved"
+    fi
+    _by=$(git -C "$REPO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$REPO/allowed-signers" verify-tag "$_to" 2>&1 | sed -n 's/.*signature for \([^ ]*\) with.*/\1/p' | sed -n 1p)
+    _note=''; [ -z "$_skipped" ] || _note=" (skipped, not a signed release:$_skipped)"
+    if [ "$MODE" = dry ]; then
+        echo "spark-shell update: would move $_here -> $_to, signed by ${_by:-a key in allowed-signers}$_note"
+        ! seat_on || echo "spark-shell update: then spark-shell on --yes, from $_to"
+        return 0
+    fi
+    [ -z "$(git -C "$REPO" status --porcelain --untracked-files=no 2>/dev/null)" ] || refuse "the clone has changes of its own (git -C $REPO status) -- nothing moved"
+    git -C "$REPO" -c advice.detachedHead=false checkout -q --detach "$_to" 2>/dev/null || refuse "could not move the clone to $_to"
+    echo "spark-shell update: $_to, signed by ${_by:-a key in allowed-signers} (was $_here)$_note"
+    seat_on || return 0
+    exec "$REPO/spark-shell" on --yes     # the new tree applies itself
+}
 dialog_install() {   # the dialog's row of `on`: in place as the tree pins it, or fetched for the signed release tag and checked
     _dt=$(dialog_target) || { skip dialog "no build for $(uname -m) yet: the desktop keys open nothing"; return 0; }
     _rt=$(release_tag) || { row todo dialog "this clone is past its release: the dialog comes with the next tag"; return 0; }
@@ -6988,6 +7021,7 @@ main() {
         apply) cmd_on "$@" ;;
         follow) cmd_follow ;;
         check) cmd_check ;;
+        update) cmd_update ;;
         bar) cmd_bar "$@" ;;
         panel) cmd_panel "$@" ;;
         dialog) cmd_dialog "$@" ;;

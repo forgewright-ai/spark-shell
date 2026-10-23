@@ -4008,6 +4008,70 @@ if [ "$(uname -s)" != Darwin ]; then
     out=$(sh "$SH" layout delete studio </dev/null 2>&1); [ "$out" = 'deleted studio' ] && ! grep -q studio "$st_dir/layout.history" && ok "layout delete: the file and its history lines gone" || bad "layout delete history" "$out $(cat "$st_dir/layout.history")"
 fi
 
+# --- update: the clone moves to the newest signed tag, never a plain pull (#30)
+# A bare origin and a scratch key stand in for GitHub and the release key;
+# the user's clone is at v9.0. Newer tags: one signed by the key, one
+# unsigned, one signed by a key the file does not hold, one whose object
+# names another tag. ssh-keygen reads the signatures; without it the
+# section is a note.
+if command -v ssh-keygen >/dev/null 2>&1; then
+    fresh
+    U=$(mktemp -d)
+    export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t GIT_CONFIG_NOSYSTEM=1
+    ssh-keygen -q -t ed25519 -N '' -C t -f "$U/key"
+    ssh-keygen -q -t ed25519 -N '' -C o -f "$U/other"
+    git init -q --bare -b main "$U/origin.git"
+    git init -q -b main "$U/w"
+    # the whole tree, on --yes needs the templates: a tar copy owned by this
+    # user (CI's containers run as root over a checkout another user owns:
+    # git archive refuses it, and tar as root would keep that owner, which
+    # git then refuses as dubious); the dialog's build dir left out
+    (cd "$REPO" && tar -cf - --exclude=.git --exclude=dialog/target .) | tar -xf - --no-same-owner -C "$U/w"
+    cp "$SH" "$U/w/spark-shell"
+    printf 'spark-shell-release namespaces="git" %s\n' "$(cut -d' ' -f1,2 "$U/key.pub")" > "$U/w/allowed-signers"
+    git -C "$U/w" config gpg.format ssh
+    git -C "$U/w" config user.signingkey "$U/key"
+    git -C "$U/w" remote add origin "$U/origin.git"
+    git -C "$U/w" add -A && git -C "$U/w" commit -q -m v9.0 && git -C "$U/w" tag -s -m v9.0 v9.0 && git -C "$U/w" push -q origin main v9.0
+    git clone -q "$U/origin.git" "$U/c"
+    C=$U/c/spark-shell
+    out=$(sh "$C" update 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 0 ] && [ "$out" = "spark-shell update: at v9.0, the newest release" ] && ok "update: nothing newer: one line, exit 0" || bad "update: nothing newer" "$rc $out"
+    echo one > "$U/w/one"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v9.1; git -C "$U/w" tag -s -m v9.1 v9.1
+    echo two > "$U/w/two"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v9.2; git -C "$U/w" tag -a -m v9.2 v9.2
+    echo three > "$U/w/three"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v9.3; git -C "$U/w" -c user.signingkey="$U/other" tag -s -m v9.3 v9.3
+    git -C "$U/w" tag -s -m v9.4 v9.4
+    git -C "$U/w" push -q origin main v9.1 v9.2 v9.3 refs/tags/v9.4:refs/tags/v9.5
+    out=$(sh "$C" update --dry-run 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 0 ] && [ "$out" = "spark-shell update: would move v9.0 -> v9.1, signed by spark-shell-release (skipped, not a signed release: v9.5 v9.3 v9.2)" ] \
+        && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.0^{commit}')" ] \
+        && ok "update --dry-run: names the move and the tags skipped (unsigned, another key, another name), moves nothing" || bad "update --dry-run" "$rc $out"
+    echo x >> "$U/c/spark-shell"
+    out=$(sh "$C" update 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 1 ] && [ "$out" = "spark-shell update: the clone has changes of its own (git -C $U/c status) -- nothing moved" ] && ok "update: a clone with changes of its own is refused, nothing moved" || bad "update: dirty clone" "$rc $out"
+    git -C "$U/c" checkout -q -- spark-shell
+    out=$(sh "$C" update 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 0 ] && [ "$out" = "spark-shell update: v9.1, signed by spark-shell-release (was v9.0) (skipped, not a signed release: v9.5 v9.3 v9.2)" ] \
+        && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.1^{commit}')" ] && [ ! -e "$HOME/.tmux.conf" ] \
+        && ok "update: moves to the newest signed tag, says who signed it, runs no on while the seat is off" || bad "update: the move" "$rc $out"
+    out=$(sh "$C" update 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 1 ] && [ "$out" = "spark-shell update: the releases past v9.1 are not signed by a key in allowed-signers: v9.5 v9.3 v9.2 -- nothing moved" ] \
+        && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.1^{commit}')" ] \
+        && ok "update: newer tags none of which is a signed release: refused, named, nothing moved" || bad "update: none signed" "$rc $out"
+    # the seat on: on --yes runs from the new tree after the move
+    sh "$C" on --yes >/dev/null 2>&1 || :
+    echo six > "$U/w/six"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v9.6; git -C "$U/w" tag -s -m v9.6 v9.6; git -C "$U/w" push -q origin main v9.6
+    out=$(sh "$C" update 2>&1) && rc=0 || rc=$?
+    first=$(printf '%s\n' "$out" | sed -n 1p)
+    [ "$rc" -eq 0 ] && [ "$first" = "spark-shell update: v9.6, signed by spark-shell-release (was v9.1)" ] \
+        && [ "$(printf '%s\n' "$out" | wc -l)" -gt 1 ] && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.6^{commit}')" ] \
+        && ok "update with the seat on: the move, then on --yes from the new tree" || bad "update: seat on" "$rc $out"
+    unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_CONFIG_NOSYSTEM
+    rm -rf "$U"
+else
+    printf '  note update: ssh-keygen not found; the section is skipped\n'
+fi
+
 # --- the voice: the docs and the help hold to it -------------------------
 # README.md, the top entry of CHANGELOG.md, CREDITS.md, config.example, the
 # help (sh spark-shell -h) and the comment lines of the sway template are

@@ -16,6 +16,12 @@ His live test of v0.86, the same night (#29).
   started with. On the desktop the repaint says foot's sixteen outright.
 - Changed: the wallpaper list starts with default and none, as the
   palettes start with none.
+- Added: `spark-shell update` moves the clone to the newest release
+  signed by a key in its own `allowed-signers`, names the newer tags it
+  skipped, and runs `on --yes` from the new tree when the terminal is
+  set up; `--dry-run` says the move. The README said `git pull`, which
+  takes main as it is, signed or not; the dialog was held to a signed
+  tag and the shell that installs it was not (#30)
 
 ## v0.86
 
