@@ -1390,7 +1390,16 @@ look_get() { sed -n "s/^$2=//p" "$1/look.env" 2>/dev/null | head -1; }   # look_
 look_set() {   # look_set DIR KEY VALUE -- that line of look.env set (added when absent), the others kept
     mkdir -p "$1"; { [ ! -f "$1/look.env" ] || grep -v "^$2=" "$1/look.env"; printf '%s=%s\n' "$2" "$3"; } > "$1/look.env.new" && mv "$1/look.env.new" "$1/look.env"
 }
-theme_words_of() { _tw=$(look_get "$(theme_dir "$1")" WORDS); printf '%s' "${_tw:-$1}"; }   # theme_words_of NAME -> the words that made a look, else its name: what a row shows
+theme_source_of() {   # theme_source_of DIR -> what a saved theme's palette came from, for its row: the palette's name, the words that made it, or the picture's file
+    _ps=$(look_get "$1" PALETTE)
+    case $_ps in words) _ps=$(look_get "$1" WORDS) ;; picture) _ps=$(look_get "$1" PICTURE) ;; esac
+    printf '%s' "${_ps:-palette}"
+}
+theme_words_of() {   # theme_words_of NAME -> the words that made a kept look, else its name: what a row shows. A saved theme goes by the name you gave it, whatever words made it
+    _td=$(theme_dir "$1"); _tw=''
+    case $_td in "$LOOKS_DIR"/*) _tw=$(look_get "$_td" WORDS) ;; esac
+    printf '%s' "${_tw:-$1}"
+}
 # The kept kinds (#24): a theme and a layout are kept the same way, by the same words. Saved
 # under a name in ~/.config/spark-shell (themes/NAME/, layouts/NAME); the last ten applied in a
 # history under the state, KIND.history, EPOCH TAB NAME a line, newest first; and the verbs
@@ -3573,8 +3582,8 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ "${2:-}" = full ] || { printf -- '-\t%s %s more\tmore\n' "$(panel_title theme | sed "s/^theme *//")" "$PANEL_SEP"; return 0; }   # one row in the list: the look is a rare pick; typing finds every row below
             for n in $(theme_saved_names); do   # saved: the themes kept as folders, the one in use a check; then the row that keeps this look
                 _td=$PALETTE_DIR/$n; _wl=$(look_get "$_td" WALLPAPER); [ "$_wl" != picture ] || _wl=$(look_get "$_td" PICTURE)
-                if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\tshow\tsaved|%s %s %s\n' "$PANEL_TICK" "$n" "$(look_get "$_td" PALETTE)" "$PANEL_SEP" "${_wl:-default}"
-                else printf -- '-\t%s\t%s\tsaved|%s %s %s\n' "$n" "$n" "$(look_get "$_td" PALETTE)" "$PANEL_SEP" "${_wl:-default}"; fi
+                if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\tshow\tsaved|%s %s %s\n' "$PANEL_TICK" "$n" "$(theme_source_of "$_td")" "$PANEL_SEP" "${_wl:-default}"
+                else printf -- '-\t%s\t%s\tsaved|%s %s %s\n' "$n" "$n" "$(theme_source_of "$_td")" "$PANEL_SEP" "${_wl:-default}"; fi
             done
             printf -- '-\tsave this look as\tsave\tsaved\n'
             kept_history theme | awk -F '\t' -v t="${THEME:-}" '$2 != t' | head -n 9 | while IFS="$TAB" read -r _e _n; do   # back: the looks before this one, when each was chosen
@@ -4033,7 +4042,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 delete) _r=$(cmd_theme delete "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "deleted $_arg" ;;
                 back) _r=$(cmd_theme back 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | sed -n 1p ;;
                 picture) _r=$(cmd_theme picture "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | sed -n 1p ;;
-                words) set -- $_arg; theme_words_apply "$1" "${2#accent=}" "${3#warmth=}" "${4#contrast=}" "${5#light=}" "${6#name=}" "${PANEL_WORDS:-}" ;;
+                words) set -- $_arg; _n6=${6:-}; theme_words_apply "$1" "${2#accent=}" "${3#warmth=}" "${4#contrast=}" "${5#light=}" "${_n6#name=}" "${PANEL_WORDS:-}" ;;
                 alpha) case $_arg in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) ;; *) echo "alpha is 0 to 1, as 0.85"; return 1 ;; esac
                     config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply
                     echo "alpha $_arg" ;;
@@ -4431,9 +4440,10 @@ want_steps() {   # want_steps WORDS -> $TMP/plan from spark steps; exit 1 when s
         [ -z "$_te" ] || _sv="$_sv $(jq -r --argjson i "$((_i - 1))" --arg x "$_te" '.steps[$i].arguments as $a | [$x | split(" ")[] | select(. != "") | split(":") | . as $e | select(($a[$e[0]] // "") != "" or $e[1] != "text") | $e[0] + "=" + (($a[$e[0]] // "" | tostring) | if $e[1] == "text" then ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-+|-+$"; "") | .[0:40] else . end)] | join(" ")' "$TMP/want.json")"
         printf '%s\n' "$_sn$US$_sv"
     done > "$TMP/steps.raw"
-    # one look a request: a second theme_words step is refused; a theme save that came before the words step moves after it (#25)
-    awk -F "$US" -v us="$US" '{ n[NR] = $1; v[NR] = $2; if ($1 == "theme_words") { w++; if (w == 1) last = NR } }
-        END { for (i = 1; i <= NR; i++) if (!(n[i] == "theme_save" && last && i < last)) print n[i] us v[i] us (n[i] == "theme_words" && i != last ? "again" : "");
+    # one look a request: a second theme_words step is refused; a theme save that came before the words step moves after it; a palette step
+    # naming the theme the same plan saves is the save said twice, dropped (the model "applies" what it just saved) (#25)
+    awk -F "$US" -v us="$US" '{ n[NR] = $1; v[NR] = $2; if ($1 == "theme_words") { w++; if (w == 1) last = NR } if ($1 == "theme_save") sv[$2] = 1 }
+        END { for (i = 1; i <= NR; i++) if (!(n[i] == "theme_save" && last && i < last) && !(n[i] == "theme_palette" && (v[i] in sv))) print n[i] us v[i] us (n[i] == "theme_words" && i != last ? "again" : "");
               for (i = 1; i < last; i++) if (n[i] == "theme_save") print n[i] us v[i] us "" }' "$TMP/steps.raw" > "$TMP/steps.ordered"
     while IFS="$US" read -r _sn _sv _again; do
         tool_spec "$_sn" || continue
@@ -5453,7 +5463,7 @@ theme_list() {
         echo "Saved themes (folders in $PALETTE_DIR):"
         for n in $_saved; do
             _td=$PALETTE_DIR/$n; _wl=$(look_get "$_td" WALLPAPER); [ "$_wl" != picture ] || _wl=$(look_get "$_td" PICTURE)
-            note="$(look_get "$_td" PALETTE) $PANEL_SEP ${_wl:-default}"; [ "$n" != "${THEME:-}" ] || note="$note, current"
+            note="$(theme_source_of "$_td") $PANEL_SEP ${_wl:-default}"; [ "$n" != "${THEME:-}" ] || note="$note, current"
             printf '  %-20s %s\n' "$n" "$note"
         done
     fi

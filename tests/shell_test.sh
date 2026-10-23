@@ -3885,17 +3885,18 @@ EOF
 #!/bin/sh
 case $1 in
     help) echo ' spark steps <words> < TOOLS  the tool calls that do what you say (-h)' ;;
-    steps) cat > /dev/null; printf '{"answer": "", "steps": [{"name": "theme_save", "arguments": {"name": "flag"}}, {"name": "theme_words", "arguments": {"hue": "green", "accent": "yellow", "warmth": "neutral", "contrast": "normal", "light": "light", "name": "Brazilian flag"}}, {"name": "theme_words", "arguments": {"hue": "blue", "accent": "same", "warmth": "cool", "contrast": "normal", "light": "dark"}}], "refused": []}\n' ;;
+    steps) cat > /dev/null; printf '{"answer": "", "steps": [{"name": "theme_save", "arguments": {"name": "flag"}}, {"name": "theme_words", "arguments": {"hue": "green", "accent": "yellow", "warmth": "neutral", "contrast": "normal", "light": "light", "name": "Brazilian flag"}}, {"name": "theme_words", "arguments": {"hue": "blue", "accent": "same", "warmth": "cool", "contrast": "normal", "light": "dark"}}, {"name": "theme_palette", "arguments": {"name": "flag"}}], "refused": []}\n' ;;
     *) cat > /dev/null; echo '{"steps": []}' ;;
 esac
 STUB
     chmod +x "$H/.local/bin/spark"
     st=0; out=$(sh "$SH" want --json a theme like the brazilian flag 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$(printf '\342\234\227')" '.steps[0] == {name: "theme_words", arguments: {hue: "green", accent: "yellow", warmth: "neutral", contrast: "normal", light: "light", name: "brazilian-flag"}, line: "theme words green accent=yellow warmth=neutral contrast=normal light=light name=brazilian-flag"} and .steps[1].name == "theme_save" and .steps[1].arguments == {name: "flag"} and (.steps | length) == 2 and (.refused | index($x + " one look a request: the first words step made it, blue accent=same warmth=cool contrast=normal light=dark was not") != null)' >/dev/null \
-        && ok "want: the words step first with its name a slug, the save after it, the second words step refused in one line" || bad "want one look" "st=$st $out"
+    [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$(printf '\342\234\227')" '.steps[0] == {name: "theme_words", arguments: {hue: "green", accent: "yellow", warmth: "neutral", contrast: "normal", light: "light", name: "brazilian-flag"}, line: "theme words green accent=yellow warmth=neutral contrast=normal light=light name=brazilian-flag"} and .steps[1].name == "theme_save" and .steps[1].arguments == {name: "flag"} and (.steps | length) == 2 and (.refused | length) == 1 and (.refused | index($x + " one look a request: the first words step made it, blue accent=same warmth=cool contrast=normal light=dark was not") != null)' >/dev/null \
+        && ok "want: the words step first with its name a slug, the save after it, the second words step refused in one line, the palette step naming the saved theme dropped" || bad "want one look" "st=$st $out"
     st=0; out=$(sh "$SH" want a theme like the brazilian flag 2>&1) || st=$?
     [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "theme brazilian flag $SEP" && printf '%s\n' "$out" | grep -q 'saved flag' && grep -qx 'THEME=flag' "$cfg" && [ -f "$th_dir/flag/palette.env" ] && grep -qx 'WORDS=brazilian flag' "$th_dir/flag/look.env" \
-        && ok "want played: the look made, then saved as flag with its words kept" || bad "want one look played" "st=$st $out $(ls "$th_dir" 2>&1)"
+        && sh "$SH" panel theme --list | sed -n 1p | grep -q "^theme      flag $SEP" && sh "$SH" theme list | grep -q "^  flag  *brazilian flag $SEP \(default\|fjord\), current$" && [ "$(sh "$SH" theme nord >/dev/null 2>&1; sh "$SH" theme back 2>&1 | sed -n 1p)" = 'back to flag' ] \
+        && ok "want played: the look made, then saved as flag with its words kept; the saved theme goes by its name in the title and in back" || bad "want one look played" "st=$st $out $(ls "$th_dir" 2>&1) $(sh "$SH" panel theme --list | sed -n 1p)"
     sh "$SH" theme nord >/dev/null 2>&1; rm -f "$H/.local/bin/spark"
 else
     ok "look.py: skipped, no python3 here (the CI containers)"

@@ -35,6 +35,11 @@ v0.85 landed).
   when it would come. Before, a plain color stayed when the palette
   changed, a rule from before the drawings: gruvbox-dark, whose row
   says sunset, picked over teal kept the teal.
+- Changed: a saved theme goes by the name you gave it in the back rows,
+  the receipts and the dialog's title, whatever words made it; its row
+  names what the palette came from (the words, or the picture's file).
+  A plan that saves a theme and then applies it by name said the save
+  twice: that palette step is dropped, not refused.
 
 ## v0.85
 
