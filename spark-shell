@@ -743,7 +743,7 @@ rc_tree() { if [ "$OS" = Darwin ]; then echo "$REPO/templates/macos"; else echo 
 # The desktop: sway and foot, rendered only when asked for (DESKTOP=sway)
 # and only on Linux -- macOS has its own desktop. `off` hands both back
 # whatever the config says.
-DESKTOP_RENDERED=".config/foot/foot.ini .config/foot/dialog.ini .config/sway/config .local/share/applications/spark-shell-tmux.desktop"
+DESKTOP_RENDERED=".config/foot/foot.ini .config/foot/dialog.ini .config/sway/config .local/share/applications/spark-shell-tmux.desktop .config/fontconfig/conf.d/50-spark-shell.conf"   # the last: the wifi bars' family, unhinted (#43)
 foot_colors() {   # the name of foot's color section: [colors] before 1.26, [colors-dark] from it
     _v=$(PATH=$HOME/.local/bin:$PATH foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
     set -- ${_v:-1 26}
@@ -3012,6 +3012,7 @@ BAR_FULL=$(printf '\342\226\210')     # U+2588 full block: the gauge's level
 BAR_SHADE=$(printf '\342\226\221')    # U+2591 light shade: the gauge's rest
 BAR_DIV=$(printf '\342\224\202')      # U+2502 light vertical line: between groups
 BAR_STEPS='\342\226\202 \342\226\204 \342\226\206 \342\226\210'   # U+2582 2584 2586 2588: the wifi bars
+BAR_BARS_FAMILY='spark-shell bars'   # the family the wifi bars ask for: no font has it, and fontconfig's rule of ours draws it unhinted (#43)
 
 bar_esc() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\\/\\\\/g; s/"/\\"/g'; }   # a name: pango, then JSON
 bar_span() { printf "<span foreground='#%s'>%s</span>" "$1" "$2"; }   # bar_span RRGGBB MARKUP
@@ -3028,13 +3029,14 @@ bar_gauge() {   # bar_gauge LEVEL MUTED -> 10 cells, the level in the accent (mu
     c=$HEX_ACCENT; [ "$2" != 1 ] || c=$HEX_MUTED
     printf '%s%s' "$(bar_span "$c" "$full")" "$(bar_span "$HEX_MUTED" "$rest")"
 }
-bar_bars() {   # bar_bars LEVEL (0-4) -> the four rising bars, LEVEL of them lit
+bar_bars() {   # bar_bars LEVEL (0-4) -> the four rising bars, LEVEL of them lit, in the bar's face with no hinting: hinting moves each block glyph by its own fraction of a pixel, and the bars' bottoms stepped (#43)
     i=1; out=''
     for s in $BAR_STEPS; do
         g=$(printf "$s"); c=$HEX_MUTED; [ "$i" -gt "$1" ] || c=$HEX_ACCENT
         out="$out$(bar_span "$c" "$g")"; i=$((i + 1))
     done
-    printf '%s' "$out"
+    _bf=$(font_spec); _bf=${_bf%%:*}
+    case $_bf in ''|*"'"*|*'"'*) printf '%s' "$out" ;; *) printf "<span font_family='%s,%s'>%s</span>" "$BAR_BARS_FAMILY" "$_bf" "$out" ;; esac   # a quote in the face would end the markup or the JSON: the bars as they are
 }
 bar_timeout() { if command -v timeout >/dev/null 2>&1; then timeout 3 "$@"; else "$@"; fi; }
 

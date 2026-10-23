@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.92
+
+- Fixed: the wifi bars on the status bar ended at uneven heights, while
+  the same bars on the dialog's home lined up. Font hinting moved each
+  block glyph by its own fraction of a pixel. The bar now draws the
+  bars in a family of their own, `spark-shell bars`, which a fontconfig
+  rule of spark-shell's draws without hinting
+  (`~/.config/fontconfig/conf.d/50-spark-shell.conf`). The text and the
+  gauges keep their hinting, and `off desktop` removes the rule (#43)
+
 ## v0.91
 
 - Changed: the idle screen draws the time in the Calendar's large

@@ -750,6 +750,7 @@ else
     out=$(sh "$SH" off desktop)
     grep -q '^DESKTOP=none$' "$HOME/.config/spark-shell/config" && grep -q '^PROMPT_STYLE=full$' "$HOME/.config/spark-shell/config" && ok "off desktop: DESKTOP=none written, the other line kept" || bad "off desktop config" "$(cat "$HOME/.config/spark-shell/config")"
     [ ! -e "$HOME/.config/foot/foot.ini" ] && [ ! -e "$HOME/.config/sway/config" ] && ok "off desktop: the two user renders are gone" || bad "off desktop user renders" "$(ls -R "$HOME/.config")"
+    [ ! -e "$HOME/.config/fontconfig/conf.d/50-spark-shell.conf" ] && ok "off desktop: the wifi bars' fontconfig rule is gone too (#43)" || bad "off desktop fontconfig" "$(ls -R "$HOME/.config/fontconfig" 2>&1)"
     printf '%s\n' "$out" | grep -q 'packages stay installed' && ok "off desktop: packages stay, said so" || bad "off desktop closing" "$out"
     out=$(sh "$SH" desktop off)
     printf '%s\n' "$out" | grep -Eq '^ok +(login|desktop|restore) ' && bad "desktop off (a spelling of off desktop) twice acts twice" "$out" || ok "desktop off, the spelling, twice: nothing to undo, nothing said"
@@ -3055,6 +3056,9 @@ else
     [ "$(t lan)" = "<span foreground='#555555'>lan</span>" ] && ok "lan: the word alone, muted, when the wire is up (no address on screen)" || bad "lan block" "$(t lan)"
     w=$(t wifi); [ "$(count "$w" "'#ff5555'")" = 3 ] && [ "$(count "$w" "'#555555'")" = 2 ] && ! printf '%s' "$w" | grep -q '192\.' \
         && ok "wifi: four rising bars, 3 lit in the accent at 49/70 (70%), the word muted, no address" || bad "wifi block" "$w"
+    printf '%s' "$w" | grep -q "<span font_family='spark-shell bars,[^',]*'><span foreground=" && grep -qF '<string>spark-shell bars</string>' "$HOME/.config/fontconfig/conf.d/50-spark-shell.conf" \
+        && grep -q '<edit name="hinting" mode="assign"><bool>false</bool></edit>' "$HOME/.config/fontconfig/conf.d/50-spark-shell.conf" && grep -q 'rendered by spark-shell' "$HOME/.config/fontconfig/conf.d/50-spark-shell.conf" \
+        && ok "wifi: the bars in the family spark-shell bars, then the bar's face; on desktop's fontconfig rule draws that family alone unhinted, so the four end on one line (#43)" || bad "wifi bars family" "$w $(cat "$HOME/.config/fontconfig/conf.d/50-spark-shell.conf" 2>&1)"
     [ "$(t bt)" = "<span foreground='#555555'>bt</span> <span foreground='#ff5555'>$(printf '\342\227\217')</span> major v" ] && ok "bt: the word muted, a dot in the accent, the connected device's name in the text color, lowercase" || bad "bt block" "$(t bt)"
     [ "$(t out name)" = "<span foreground='#555555'>out</span> jabra" ] && ok "out: the word muted, the card's ALSA id in the text color, lowercase (jabra)" || bad "out name" "$(t out name)"
     g=$(t out gauge); [ "$(count "$g" "$full")" = 4 ] && [ "$(count "$g" "$shade")" = 6 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" \

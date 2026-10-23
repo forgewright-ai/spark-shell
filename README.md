@@ -716,7 +716,9 @@ drawing rendered in another palette, the drawings' small pictures for
 the wallpaper list),
 `~/.local/bin/spark-shell`, and for the desktop `~/.config/sway/`,
 `~/.config/foot/` (foot.ini and the dialog's own dialog.ini),
-`~/.config/starship-foot.toml`, the two cursor themes in
+`~/.config/starship-foot.toml`, a rule that draws the bar's wifi bars
+without hinting in `~/.config/fontconfig/conf.d/50-spark-shell.conf`,
+the two cursor themes in
 `~/.local/share/icons/`, on Void with spark the sound's service in
 `~/.config/spark/sv/spark-shell-sound` and two links in
 `~/.config/pipewire/pipewire.conf.d`, and, after a change of output on
