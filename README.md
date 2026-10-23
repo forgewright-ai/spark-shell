@@ -448,7 +448,11 @@ or `POINTER=Adwaita` for a theme installed on the machine.
 The edge of a window is where the mouse resizes it. Every window has a
 four-pixel edge, so two windows are parted by an eight-pixel strip: the
 pointer shows the resize arrows over it, and a drag resizes. The edge
-is transparent, so the wallpaper shows there.
+is transparent, so the wallpaper shows there. A window alone on its
+workspace has no edge. Super+right-drag shows the corner arrow it
+pulls; Super+left-drag shows the closed hand, and where a tiled window
+would land shows in the accent, at half strength. The accent also colors
+the side of a window left alone in a split, where the next one opens.
 
 ## Bar
 

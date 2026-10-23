@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.94
+
+- Fixed: moving a window showed the pointing hand. sway asks for the
+  image named grab while a window moves, and the spark pointer had
+  given that name to the pointing hand. grab is the closed hand now,
+  drawn since v0.84 and never shown until today (#46)
+- Fixed: dragging a tiled window showed no place to drop it. sway
+  draws that place in the focused window's indicator color, at half
+  strength, and the indicator had the edge's color, clear over a
+  wallpaper. The focused indicator is the accent now. sway also colors
+  with it the side of a window left alone in a split, where the next
+  window opens; a window alone on its workspace has no edge any more
+  (smart_borders), so it never shows that line (#47)
+
 ## v0.93
 
 - Fixed: a question's proposals sat at the end of the exchange, under

@@ -15,7 +15,7 @@ import os
 import struct
 import sys
 
-VERSION = "1"          # bump when a shape changes: on desktop writes the themes again
+VERSION = "2"          # bump when a shape or an alias changes: on desktop writes the themes again
 SIZES = (24, 32, 48, 64, 96)
 WHITE = ((255, 255, 255), (14, 14, 16))
 BLACK = ((0, 0, 0), (255, 255, 255))
@@ -179,8 +179,8 @@ def shapes():
 # the same image under the names the cursor-shape protocol and X apps ask for
 ALIASES = {
     "default": ["left_ptr", "arrow", "top_left_arrow"],
-    "pointer": ["hand1", "hand2", "pointing_hand", "grab", "openhand", "alias", "copy", "context-menu", "help", "cell", "dnd-copy", "dnd-link", "dnd-ask", "dnd-none"],
-    "grabbing": ["closedhand", "fleur_grab", "dnd-move"],
+    "pointer": ["hand1", "hand2", "pointing_hand", "openhand", "alias", "copy", "context-menu", "help", "cell", "dnd-copy", "dnd-link", "dnd-ask", "dnd-none"],
+    "grabbing": ["grab", "closedhand", "fleur_grab", "dnd-move"],   # grab: what sway asks for while a window moves (#46)
     "text": ["xterm", "ibeam", "vertical-text"],
     "wait": ["watch", "progress", "left_ptr_watch", "half-busy"],
     "col-resize": ["sb_h_double_arrow", "split_h", "ew-resize", "h_double_arrow", "size_hor"],

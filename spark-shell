@@ -1937,7 +1937,7 @@ wall_uncover() {   # wall_uncover [WALL_BG] -- sway takes the picture under ours
 wall_shown() { sed -n 's/^output \* bg //p' "$HOME/.config/sway/config" 2>/dev/null | head -1; }   # -> the wallpaper a running sway shows: the config's, which the renders after the switch rewrite
 sway_live_cmd() {   # -> the one swaymsg command that gives a running sway the look, with no reload (#33): the edges' colors, the bar's colors, font and mode, and the pointer; the wallpaper is look_burst's (under wall_cover's)
     [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 0
-    _c="client.focused #$BORDER_HEX #$PANEL_HI #$HEX_FG #$BORDER_HEX #$BORDER_HEX; client.focused_inactive #$BORDER_HEX #$PANEL_BG #$HEX_FG #$BORDER_HEX #$BORDER_HEX"
+    _c="client.focused #$BORDER_HEX #$PANEL_HI #$HEX_FG #$HEX_ACCENT #$BORDER_HEX; client.focused_inactive #$BORDER_HEX #$PANEL_BG #$HEX_FG #$BORDER_HEX #$BORDER_HEX"   # the focused indicator: the drop area (#47)
     _c="$_c; client.unfocused #$BORDER_HEX #$HEX_BG #$HEX_MUTED #$BORDER_HEX #$BORDER_HEX; client.urgent #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG #$HEX_ANSI_1 #$HEX_ANSI_1"
     _c="$_c; seat * xcursor_theme $POINTER_NAME $POINTER_SIZE; gaps inner all set $GAPS_INNER; gaps outer all set $GAPS_OUTER; [tiling] border $BORDER"
     _b=$(swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | cut -d, -f1)   # the bar's id, bar-0
