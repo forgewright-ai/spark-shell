@@ -407,6 +407,23 @@ else
     printf '%s\n' "$out" | grep -q '^ok     sway         reloaded' && ok "on: swaymsg reload when SWAYSOCK is set and sway's file changed" || bad "sway reload" "$out"
     out=$(SWAYSOCK=/nonexistent sh "$SH" on --yes)
     ! printf '%s\n' "$out" | grep -q 'reloaded' && ok "on: no reload when sway's file is as it was (#33: a reload restarts the wallpaper and the bar)" || bad "sway no reload" "$out"
+    # a new drawing of the pointer reaches a running sway once: sway loads a cursor theme again only for a new name or size (#48)
+    pd=$HOME/.local/share/icons; seen=$HOME/.local/state/spark-shell/pointer.seen; cmds=$H/swaymsg.cmds
+    printf '#!/bin/sh\n[ "$1" != -- ] || { shift; echo "$*" >> "%s"; }\n' "$cmds" > "$H/.local/bin/swaymsg"
+    for t in spark-white spark-black; do mkdir -p "$pd/$t"; sed -n 's/^VERSION = "\(.*\)".*/\1/p' "$REPO/lib/pointer.py" > "$pd/$t/version"; done   # drawn, as far as on can tell: no python3 needed
+    sz=$(sed -n 's/^seat \* xcursor_theme spark-white //p' "$sway"); rm -f "$cmds" "$seen"
+    SWAYSOCK=/nonexistent sh "$SH" on --yes >/dev/null
+    grep -q "; seat \* xcursor_theme spark-white $((sz + 1)); seat \* xcursor_theme spark-white $sz; " "$cmds" && [ "$(cat "$seen" 2>&1)" = "$(cat "$pd/spark-white/version")" ] \
+        && ok "on: a drawing sway has not loaded reaches it, the pointer one pixel up, then back, its version kept (#48)" || bad "pointer fresh" "sz=$sz $(cat "$cmds" "$seen" 2>&1)"
+    : > "$cmds"; SWAYSOCK=/nonexistent sh "$SH" on --yes >/dev/null
+    grep -q "; seat \* xcursor_theme spark-white $sz; " "$cmds" && ! grep -q "xcursor_theme spark-white $((sz + 1))" "$cmds" && ok "on: a drawing sway loaded goes once, the size alone after" || bad "pointer fresh again" "$(cat "$cmds")"
+    printf 'DESKTOP=sway\nDESKTOP_BAR=no\nPOINTER=Adwaita 32\n' > "$HOME/.config/spark-shell/config"; rm -f "$seen"; : > "$cmds"
+    SWAYSOCK=/nonexistent sh "$SH" on --yes >/dev/null
+    grep -q '; seat \* xcursor_theme Adwaita 32; ' "$cmds" && ! grep -q 'Adwaita 33' "$cmds" && [ ! -e "$seen" ] && ok "on: a cursor theme of yours, never drawn here, is not loaded again" || bad "pointer fresh theirs" "$(cat "$cmds")"
+    printf 'DESKTOP=sway\nDESKTOP_BAR=no\n' > "$HOME/.config/spark-shell/config"; SWAYSOCK=/nonexistent sh "$SH" on --yes >/dev/null; had=0; [ ! -e "$seen" ] || had=1
+    sh "$SH" off desktop >/dev/null 2>&1 || true
+    [ "$had" = 1 ] && [ ! -e "$seen" ] && [ ! -d "$pd/spark-white" ] && ok "off desktop: the version sway loaded is forgotten with the two themes" || bad "pointer seen off" "had=$had $(ls "$pd" "$seen" 2>&1)"
+    desktop_stubs
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"; sh "$SH" on --yes >/dev/null
     rm -f "$H/.local/bin/sway"
     out=$(sh "$SH" check || true)

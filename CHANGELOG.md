@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.95
+
+- Fixed: a new drawing of the pointer showed only after the next
+  login. sway loads a cursor theme when it starts, and again only for
+  a new name or size, so the closed hand of v0.94 stayed unseen on a
+  desktop already running. on, and so update, now sets the pointer
+  one pixel bigger and back when the drawing is newer than the one
+  sway loaded, once per drawing (#48)
+
 ## v0.94
 
 - Fixed: moving a window showed the pointing hand. sway asks for the
