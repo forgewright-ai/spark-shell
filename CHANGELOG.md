@@ -15,9 +15,12 @@ The want path from a login outside the desktop (#31).
   rows. Mute when muted is a receipt, and an output with no volume
   control says so in one line. Before, `out level 50` on it said "out
   at 50%" while nothing took it.
-- Fixed: the brightness takes 1 to 100 in its tool's schema, as its
-  gate does. A planner told 0 to 100 sent 0 for "mute everything and
-  turn the screen down", and the gate refused the step.
+- Fixed: the brightness tool takes the words its gate takes: up, down
+  (5 from the level now) or 1 to 100. Its schema said 0 to 100 and no
+  step, so a planner sent 0 for "mute everything and turn the screen
+  down" and the gate refused it; now that is `display brightness down`.
+  A call with up or down, as the dialog's brighter and dimmer rows
+  make, was refused as no number.
 
 ## v0.87
 

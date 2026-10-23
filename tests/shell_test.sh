@@ -2293,6 +2293,9 @@ full=$(printf '\342\226\210'); g=$(printf '%s' "$line" | jq -r '.[] | select(.na
 [ "$(printf '%s' "$g" | LC_ALL=C grep -o "$full" | wc -l | tr -d ' ')" = 5 ] && [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "name") | .full_text')" = "<span foreground='#555555'>light</span>" ] && [ "$k" = "<span foreground='#555555'>kb</span> us+intl" ] \
     && ok "bar: light with its gauge (47, five cells), and kb with the layout in use (sway's second, us+intl)" || bad "bar light kb" "$line"
 SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" bar light down; grep -qx -- '-q -c backlight set 42%' "$HOME/bctl.log" && ok "bar light down: the brightness keys, 5 down" || bad "bar light down" "$(cat "$HOME/bctl.log")"
+rm -f "$HOME/bctl.log"; rc=0; out=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display brightness down 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'brightness 42%' ] && grep -qx -- '-q -c backlight set 42%' "$HOME/bctl.log" \
+    && ok "panel display brightness down, the step a want plans: 5 down from the level now (47 to 42), never straight to 1 (#31)" || bad "panel brightness down" "rc=$rc $out $(cat "$HOME/bctl.log" 2>&1)"
 # a screen over DDC/CI: no backlight, ddcutil on the screen's bus
 cat > "$H/lx/ddcutil" <<'STUB'
 #!/bin/sh
@@ -3282,11 +3285,14 @@ done
 for s in lan wifi bt out mic bat clock theme window display keyboard notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
 [ "$(grep -c '' "$H/tools.all")" = 61 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
     && ok "provide: the nineteen sections hold the 61 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
-# the brightness takes 1 to 100 in its schema, as its gate does: a planner told 0 to 100 sent a 0 the gate refused (#31)
-mcp display "$init" "$(call 2 display_brightness '{"level":0}')"
-jq -e -s 'map(select(.name == "display_brightness" or .name == "out_level") | {(.name): (.inputSchema.properties.level | [.minimum, .maximum])}) | add == {display_brightness: [1, 100], out_level: [0, 100]}' "$H/tools.all" >/dev/null \
-    && [ "$(ans 2 | jq -r .error.message)" = 'display_brightness: level is a whole number, 1 to 100' ] \
-    && ok "provide: display_brightness takes 1 to 100, in its schema and its arguments' check, as its gate does; out_level 0 to 100 (#31)" || bad "brightness schema" "$(jq -c 'select(.name == "display_brightness") | .inputSchema' "$H/tools.all") $(ans 2)"
+# the brightness takes the gate's own words, up, down or 1 to 100: a planner told 0 to 100 and no step sent a 0 the gate
+# refused, and the dialog's brighter and dimmer rows send up and down (#31). spark's grammar types an argument one
+# way, so a string enum holds both, the tens first: a brief names an enum's first twelve
+mcp display "$init" "$(call 2 display_brightness '{"level":0}')" "$(call 3 display_brightness '{"level":"down"}')" "$(call 4 display_brightness '{"level":"30"}')"
+jq -e -s '(map(select(.name == "display_brightness"))[0].inputSchema.properties.level | .type == "string" and .enum[0:12] == ["up", "down", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"] and (.enum | length) == 102 and (.enum | index("1") != null and index("99") != null and index("0") == null))
+    and (map(select(.name == "out_level"))[0].inputSchema.properties.level | [.minimum, .maximum]) == [0, 100]' "$H/tools.all" >/dev/null \
+    && [ "$(ans 2 | jq -r .error.message)" = 'display_brightness: level is up, down or a whole number, 1 to 100' ] && [ "$(ans 3 | jq -c .error)" = null ] && [ "$(ans 4 | jq -c .error)" = null ] \
+    && ok "provide: display_brightness takes up, down or 1 to 100, in its schema and its arguments' check, as its gate does; out_level 0 to 100 (#31)" || bad "brightness schema" "$(jq -c 'select(.name == "display_brightness") | .inputSchema' "$H/tools.all" | cut -c1-200) $(ans 2) $(ans 3) $(ans 4)"
 # the rows carry the section's state, the dialog's subtitle, read again with every rows read
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows"}')"
 ans 2 | jq -r '.result.contents[0].text' | jq -e '.title == "theme" and (.state | type == "string" and length > 0)' >/dev/null \
@@ -3425,6 +3431,7 @@ case $1 in
             *'what time'*) printf '{"answer": "It is noon.", "steps": [], "refused": []}\n' ;;
             *zebra*|*sandwich*) printf '{"answer": "", "steps": [], "refused": []}\n' ;;
             *'hush the room'*) printf '{"answer": "", "steps": [{"name": "out_mute", "arguments": {}}], "refused": []}\n' ;;
+            *'dim the room'*) printf '{"answer": "", "steps": [{"name": "display_brightness", "arguments": {"level": "down"}}, {"name": "display_brightness", "arguments": {"level": "30"}}], "refused": []}\n' ;;
             *) printf '{"answer": "", "steps": [{"name": "theme_palette", "arguments": {"name": "dracula"}}, {"name": "out_level", "arguments": {"level": 30}}, {"name": "theme_palette", "arguments": {"name": "rainbow"}}, {"name": "rm_rf", "arguments": {}}], "refused": ["out_use: no argument loud"]}\n' ;;
         esac ;;
     *) printf '%s\n' "$@" > "$HOME/spark.argv"; cat > "$HOME/spark.stdin"; case "$*" in *--source*) echo 'the notes say to buy bread.' ;; *) echo '{"steps": []}' ;; esac ;;
@@ -3445,6 +3452,9 @@ if [ "$(uname -s)" != Darwin ]; then
     [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e '.steps == [{name: "out_mute", arguments: {}, line: "out mute"}] and .refused == []' >/dev/null \
         && [ "$st2" -eq 0 ] && printf '%s' "$out2" | jq -e --arg x "$x" '.steps == [] and .refused == [$x + " out: HDMI has no volume control here, so it cannot be muted or set"]' >/dev/null \
         && ok "want with spark steps: out_mute is planned where the output has a volume, and said why where it has none (#31)" || bad "want mute" "st=$st $out | st2=$st2 $out2"
+    st=0; out=$(sh "$SH" want --json dim the room 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e '.steps == [{name: "display_brightness", arguments: {level: "down"}, line: "display brightness down"}, {name: "display_brightness", arguments: {level: 30}, line: "display brightness 30"}] and .refused == []' >/dev/null \
+        && ok "want with spark steps: the brightness planned as the step word down, and a number the grammar wrote as text comes back a number (#31)" || bad "want brightness" "st=$st $out"
 fi
 st=0; out=$(sh "$SH" want --json what time is it 2>&1) || st=$?; st2=0; out2=$(sh "$SH" want --json zebra stripes 2>&1) || st2=$?; st3=0; out3=$(sh "$SH" want --json make me a sandwich please 2>&1) || st3=$?
 [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e '.answer == "It is noon." and .steps == []' >/dev/null && [ "$st2" -eq 0 ] && printf '%s' "$out2" | jq -e --arg x "$x" '.steps == [] and .refused == [$x + " no step on the panel does that"]' >/dev/null \

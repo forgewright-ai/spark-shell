@@ -4593,7 +4593,7 @@ scrub_text() {   # stdin -> the same lines scrubbed; C0 and DEL alone where ther
 
 # The tools, a named line each: tool_spec NAME sets _ts the section, _ta
 # the panel's action, _tp the argument and _tk its kind (string, level
-# 0-100, bright 1-100, alpha 0-1, a|b for a closed set), _tw what the argument says,
+# 0-100, bright up, down or 1-100, alpha 0-1, a|b for a closed set), _tw what the argument says,
 # when a person is asked for it, _tq a secret argument, _th the
 # hints (r read only, d destructive, i idempotent, f free: the argument
 # names no row), _tt the title, the sentence the model may say, and _td
@@ -4645,7 +4645,7 @@ tool_spec() {
         reminders_snooze)  _ts=reminders _ta=snooze _tp=name _tk=string _th='' _tt='reminders snooze NAME' _td='The reminder again in 10 minutes.' ;;
         display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=i _tt='display idle N' _td='Turn the display off after N idle minutes; 0 never.' ;;
         display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=i _tt='display lock N' _td='Lock the screen after N idle minutes; 0 never.' ;;
-        display_brightness) _ts=display _ta=brightness _tp=level _tk=bright _th=if _tt='display brightness N' _td='Set the screen brightness, 1 to 100.' ;;
+        display_brightness) _ts=display _ta=brightness _tp=level _tk=bright _th=if _tt='display brightness N' _td='Set the screen brightness, 1 to 100, or up or down a step.' ;;
         keyboard_use)      _ts=keyboard _ta=use _tp=name _tk=string _th=i _tt='keyboard use NAME' _td='Type in another of the keyboard layouts.' ;;
         keyboard_next)     _ts=keyboard _ta=next _th='' _tt='keyboard next' _td='Go to the next keyboard layout.' ;;
         bar_on)            _ts=bar _ta=on _th=i _tt='bar on' _td='Show the bar at the top of the screen.' ;;
@@ -4680,6 +4680,9 @@ tool_call_json() {   # tool_call_json TOOL VALUE [LINE] -> {"name", "arguments",
         '{name: $n, arguments: (if $p == "" then {} elif $x != "" then (($v | split(" ")) as $ws | {($p): $ws[0]} + ([$ws[1:][] | select(. != "") | split("=") | {(.[0]): .[1]}] | add // {}))
             elif ($k == "level" or $k == "bright" or $k == "alpha" or $k == "minutes") then {($p): ($v | tonumber? // $v)} else {($p): $v} end)} + (if $l == "" then {} else {line: $l} end)'
 }
+# bright is one string enum, up, down and the numbers as text: spark's
+# grammar types an argument one way, and the tens come first because its
+# brief names an enum's first twelve (#31)
 tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, the words, the input schema, the hints with the spec's defaults spelled out
     tool_spec "$1" || return 1
     jq -cn --arg n "$1" --arg t "$_tt" --arg d "$_td" --arg p "$_tp" --arg k "$_tk" --arg q "$_tq" --arg w "$_tw" --arg h "$_th" --arg x "$_te" '
@@ -4688,7 +4691,7 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
          inputSchema: {type: "object",
             properties: ((if $p == "" then {} else {($p): ((
                 if $k == "level" then {type: "integer", minimum: 0, maximum: 100}
-                elif $k == "bright" then {type: "integer", minimum: 1, maximum: 100}
+                elif $k == "bright" then {type: "string", enum: (["up", "down"] + [range(10; 101; 10) | tostring] + [range(1; 101) | select(. % 10 != 0) | tostring])}
                 elif $k == "minutes" then {type: "integer", minimum: 0, maximum: 999}
                 elif $k == "alpha" then {type: "number", minimum: 0, maximum: 1}
                 elif $k == "path" then {type: "string", minLength: 2, maxLength: 4096}
@@ -4883,7 +4886,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif ([$xs[] | select(.[1] == "text") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text") | .[0]][0]) + " is plain text, 40 characters at most"
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
-        elif $k == "bright" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 1 and .[$p] <= 100 then "" else $p + " is a whole number, 1 to 100" end)
+        elif $k == "bright" then (if ((.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 1 and .[$p] <= 100) or ((.[$p] | type) == "string" and (.[$p] | test("^(up|down|[1-9][0-9]?|100)$"))) then "" else $p + " is up, down or a whole number, 1 to 100" end)
         elif $k == "minutes" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 999 then "" else $p + " is a whole number of minutes, 0 to 999" end)
         elif $k == "alpha" then (if (.[$p] | type) == "number" and .[$p] >= 0 and .[$p] <= 1 then "" else $p + " is a number, 0 to 1" end)
         elif $k == "path" then (if (.[$p] | type) == "string" and (.[$p] | startswith("/")) and (.[$p] | length) <= 4096 and (.[$p] | test("[\u0000-\u001f\u007f]") | not) then "" else $p + " is a whole path, plain text" end)
