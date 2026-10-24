@@ -7,7 +7,7 @@ use ratatui::buffer::{Buffer, CellDiffOption};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
 use serde_json::{json, Value};
-use spark_dialog::app::{App, Config, Provider, View, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
+use spark_dialog::app::{App, Config, Line, Provider, Sign, Staged, Step, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
 use spark_dialog::model;
 use spark_dialog::palette::Palette;
 use spark_dialog::scrub::cells;
@@ -455,7 +455,8 @@ fn ds_frame(buf: &Buffer, pal: &Palette, caption: &str, picture: Picture) -> Str
 }
 
 /// The design system's Dialog preview, from this code's own render (DS_PREVIEW=FILE, DS_PICTURE=a PNG of skyline):
-/// the home with each place's state, a palette named and Ask spark, the theme section, a value lit, the wallpaper list.
+/// the home with each place's state, a palette named and Ask spark, spark's commands in the prompt and a turn with its
+/// Undo (#53), the theme section, a value lit, the wallpaper list.
 #[test]
 fn design_system_preview() {
     let Ok(file) = std::env::var("DS_PREVIEW") else { return };
@@ -492,6 +493,44 @@ fn design_system_preview() {
     let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
     type_words(&mut a, "mute everything and turn the screen down");
     frames.push(ds_frame(&draw(&a).0, &pal, "home, a request: no row has that name, Ask spark lit", None));
+    // what spark planned for it, in the prompt where the words were typed: Enter runs it, Esc drops it (#53)
+    let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    let text = "out mute\ndisplay brightness 30".to_string();
+    a.input = text.clone();
+    a.cursor = text.chars().count();
+    a.staged = Some(Staged {
+        text,
+        steps: vec![],
+        draft: String::new(),
+    });
+    frames.push(ds_frame(
+        &draw(&a).0,
+        &pal,
+        "spark's commands in the prompt: Enter runs them, Esc drops them",
+        None,
+    ));
+    // the turn: the command as it ran, then the reply; Undo at the end of the result it takes back (#53)
+    let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    let said = |sign: Sign, text: &str, undo: bool| Line { sign, text: text.into(), undo };
+    a.exchange = vec![
+        said(Sign::You, "theme rainbow", false),
+        said(Sign::Refused, "rainbow is not in the list now", false),
+        said(Sign::You, "theme nord", false),
+        said(Sign::Done, "nord is on", true),
+    ];
+    a.undo = Some(Step {
+        prov: th,
+        call: model::Call {
+            name: "theme_palette".into(),
+            arguments: json!({"name": "tokyonight-night"}).as_object().unwrap().clone(),
+            ask: vec![],
+        },
+        who: Who::Undo,
+        line: "undo theme nord".into(),
+    });
+    a.in_list = true;
+    a.sel = 0;
+    frames.push(ds_frame(&draw(&a).0, &pal, "a turn: the command, then the reply; Undo lit at its end", None));
     let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
     a.view = View::Section(th);
     a.came_from = vec![View::Home, View::Dest(SETTINGS_DEST)];
@@ -513,7 +552,7 @@ fn design_system_preview() {
         _ => None,
     };
     frames.push(ds_frame(&b, &pal, "the wallpaper list, skyline lit: its picture in the palette in use", pic));
-    let head = "<!-- @dsCard group=\"Dialog\" height=2560 width=1420 subtitle=\"the dialog from v0.89's own render, bound to the tokens: the home with each place's state, a palette named and Ask spark, the theme section, a value lit, the wallpaper list with its picture\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
+    let head = "<!-- @dsCard group=\"Dialog\" height=3420 width=1420 subtitle=\"the dialog from v0.97's own render, bound to the tokens: the home with each place's state, a palette named and Ask spark, spark's commands in the prompt, a turn with its Undo, the theme section, a value lit, the wallpaper list with its picture\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
     std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n", head, frames.join(""))).unwrap();
 }
 

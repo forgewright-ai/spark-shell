@@ -117,8 +117,8 @@ def keys(binary, env):
         if r:
             seen.extend(os.read(fd, 65536))
     text = seen.decode("utf-8", "replace")
-    # three lines in the draft (one, twothree, four): the prompt shows the last two and the arrow for the one above
-    ok("twothree" in text and "four" in text and "\u2191" in text and "No such file" not in text and "not found" not in text,
+    # three lines in the draft (one, twothree, four): the prompt grows to show all three, no arrow (#53)
+    ok("twothree" in text and "four" in text and "\u2191" not in text and "No such file" not in text and "not found" not in text,
        "Shift+Enter starts a new line and a pasted newline stays in the draft: nothing was sent", text[-400:])
     os.write(fd, b"\x03")
     status = None
