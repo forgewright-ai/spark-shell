@@ -180,7 +180,7 @@ jobs:
           - family: opensuse
             distro: opensuse
             image: opensuse/tumbleweed:latest   # zizmor: ignore[unpinned-images] a rolling distro
-            prep: zypper --non-interactive install git jq diffutils findutils gawk tar gzip libstdc++6 shadow
+            prep: zypper --non-interactive refresh >/dev/null; zypper --non-interactive install git jq diffutils findutils gawk tar gzip libstdc++6 shadow || zypper --non-interactive install git jq diffutils findutils gawk tar gzip libstdc++6 shadow
             install: zypper --non-interactive --quiet install
     container: ${{ matrix.image }}   # zizmor: ignore[unpinned-images] the matrix above pins each versioned image by digest; the rolling ones are latest by nature
     env:
@@ -196,13 +196,17 @@ jobs:
       - name: the family's packages, every list but the login screen's
         run: sh -c "$INSTALL $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' "distro/$DISTRO.env" | tr '\n' ' ') >/dev/null"
       - name: spark-shell on as a plain user, the config read by sway, a headless sway with a foot in it
+        # sway's package on Arch, Void and Fedora sets cap_sys_nice on the
+        # binary; a container's bounding set lacks it, so a plain user's
+        # execve of that file says EPERM. A copy carries no capability.
         run: |
           set -eu
           useradd -m -s /bin/bash ada
           chmod -R a+rX "$GITHUB_WORKSPACE"
+          mkdir -p /opt/nocap && cp "$(command -v sway)" /opt/nocap/sway && chmod 755 /opt/nocap/sway
           cp tests/desktop_proof.sh /tmp/desktop_proof.sh
           chmod 755 /tmp/desktop_proof.sh
-          su ada -c "REPO='$GITHUB_WORKSPACE' sh /tmp/desktop_proof.sh"
+          su ada -c "REPO='$GITHUB_WORKSPACE' SWAY_NOCAP=/opt/nocap sh /tmp/desktop_proof.sh"
   macos:
     runs-on: macos-latest
     timeout-minutes: 15

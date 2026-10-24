@@ -30,7 +30,7 @@ awk -F: -v g="\$2" -v u="\$3" 'BEGIN { OFS = ":" } \$1 == g { \$4 = (\$4 == "" ?
 EOF
 printf '#!/bin/sh\necho "gpasswd $*" >> "%s/root-tools.log"\n' "$HOME" > "$HOME/bin/gpasswd"
 chmod 755 "$HOME/bin/usermod" "$HOME/bin/gpasswd"
-export PATH=$HOME/bin:$PATH
+export PATH=$HOME/bin:${SWAY_NOCAP:+$SWAY_NOCAP:}$PATH   # SWAY_NOCAP: a folder with a copy of sway that carries no file capability (see ci.yml)
 printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=skyline\nDISPLAY_IDLE=0\nDISPLAY_LOCK=0\n' > "$HOME/.config/spark-shell/config"
 cd "$HOME"
 distro=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release | tr -d '"')
@@ -72,13 +72,13 @@ export SWAYSOCK=$sock
 sleep 2
 swaymsg -t get_version | jq -r '"sway " + .human_readable'
 swaymsg -t get_outputs | jq -r '.[] | "output " + .name + " " + (.current_mode.width|tostring) + "x" + (.current_mode.height|tostring)'
-swaymsg exec 'foot -T proof-window' >/dev/null
+swaymsg exec 'foot --app-id proof-window' >/dev/null   # by its app id: the rc's prompt hook retitles a foot window to terminal at once
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-    swaymsg -t get_tree | jq -e '.. | objects | select(.app_id? == "foot" and .name? == "proof-window")' >/dev/null 2>&1 && break
+    swaymsg -t get_tree | jq -e '.. | objects | select(.app_id? == "proof-window")' >/dev/null 2>&1 && break
     sleep 1
 done
-swaymsg -t get_tree | jq -e '.. | objects | select(.app_id? == "foot" and .name? == "proof-window")' >/dev/null || { echo "FAIL: no foot window in sway's tree"; tail -40 "$HOME/sway.log"; exit 1; }
-echo "ok: a foot window is open in the headless sway"
+swaymsg -t get_tree | jq -e '.. | objects | select(.app_id? == "proof-window")' >/dev/null || { echo "FAIL: no foot window in sway's tree"; tail -40 "$HOME/sway.log"; exit 1; }
+echo "ok: a foot window is open in the headless sway ($(swaymsg -t get_tree | jq -r '[.. | objects | select(.app_id? != null) | .app_id] | unique | join(", ")'))"
 for b in $(swaymsg -t get_bar_config | jq -r '.[]'); do swaymsg -t get_bar_config "$b" | jq -r '"bar " + .id + ": mode " + .mode + ", at the " + .position'; done
 swaymsg exit >/dev/null 2>&1 || true
 wait "$swaypid" 2>/dev/null || true
