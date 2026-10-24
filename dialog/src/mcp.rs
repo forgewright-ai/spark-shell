@@ -6,7 +6,8 @@
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::os::unix::process::CommandExt;
+use std::process::{ChildStdin, Command, Stdio};
 use std::sync::mpsc::SyncSender;
 use std::time::{Duration, Instant};
 
@@ -77,7 +78,6 @@ pub struct Pending {
 pub struct Server {
     pub idx: usize,
     pub label: String,
-    child: Option<Child>,
     stdin: Option<Box<dyn Write + Send>>,
     next: u64,
     pub pending: HashMap<u64, Pending>,
@@ -102,7 +102,10 @@ impl Server {
             .env_clear()
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::null())
+            // a process group of its own: the window closing (a hangup to the terminal's group) never
+            // reaches a provider in the middle of a step; it ends when its input does (#60)
+            .process_group(0);
         for (k, v) in std::env::vars() {
             if env_kept(&k) {
                 cmd.env(k, v);
@@ -111,6 +114,7 @@ impl Server {
         if let Ok(h) = std::env::var("HOME") {
             cmd.current_dir(h);
         }
+        // the child's pipes are kept, the handle itself is not: nothing waits for a provider (#60)
         let mut child = cmd.spawn().map_err(|e| format!("{}: {}", label, e))?;
         let out = child.stdout.take().ok_or("no stdout")?;
         let stdin: Option<Box<dyn Write + Send>> = child.stdin.take().map(|w: ChildStdin| Box::new(w) as Box<dyn Write + Send>);
@@ -118,7 +122,6 @@ impl Server {
         Ok(Server {
             idx,
             label: label.to_string(),
-            child: Some(child),
             stdin,
             next: 1,
             pending: HashMap::new(),
@@ -132,7 +135,6 @@ impl Server {
         Server {
             idx,
             label: label.to_string(),
-            child: None,
             stdin: Some(Box::new(to)),
             next: 1,
             pending: HashMap::new(),
@@ -214,38 +216,12 @@ impl Server {
         self.pending.values().any(|p| p.token.as_deref() == Some(token))
     }
 
-    /// Close stdin, 2 s; SIGTERM, 2 s; SIGKILL.
+    /// Its input closed: the provider ends the request it is answering, reads the end of its input
+    /// and leaves through its own EXIT trap, its temporary folder with it. Nothing waits for it (#60).
     pub fn close_stdin(&mut self) {
         self.stdin = None;
         self.alive = false;
     }
-
-    pub fn shutdown(&mut self) {
-        self.close_stdin();
-        let Some(child) = self.child.as_mut() else { return };
-        if wait_for(child, Duration::from_secs(2)) {
-            return;
-        }
-        unsafe {
-            libc::kill(child.id() as libc::pid_t, libc::SIGTERM);
-        }
-        if wait_for(child, Duration::from_secs(2)) {
-            return;
-        }
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-}
-
-fn wait_for(child: &mut Child, d: Duration) -> bool {
-    let end = Instant::now() + d;
-    while Instant::now() < end {
-        if let Ok(Some(_)) = child.try_wait() {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    false
 }
 
 fn read_lines(idx: usize, out: impl Read, tx: SyncSender<Incoming>) {

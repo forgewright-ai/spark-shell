@@ -82,9 +82,51 @@ def main(binary):
     time.sleep(0.5)
     ps = subprocess.run(["ps", "-A", "-o", "command="], capture_output=True, text=True).stdout
     ok(not any((SS + " provide") in l for l in ps.splitlines()), "no provider outlives the window")
+    busy(binary, env, home)
     keys(binary, env)
     print("dialog_pty: %d failed" % failed)
     return 1 if failed else 0
+
+
+def busy(binary, env, home):
+    """A provider that stays busy 2 s after its input ends: Esc closes the dialog at once, nothing
+    waits for it (the wait held the window open as a bare terminal, #60), and it ends by itself."""
+    slow = os.path.join(home, "slow-provider")
+    with open(slow, "w") as f:
+        f.write("#!/bin/sh\ncat > /dev/null\nsleep 2\n")
+    os.chmod(slow, 0o755)
+    argv = [binary, "--provider", SS + " provide theme", "--provider", slow, "--composer", "", "--spark-shell", SS]
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.execve(binary, argv, env)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
+    seen = bytearray()
+    end = time.time() + 15
+    while time.time() < end and b"Type a request." not in seen:
+        r, _, _ = select.select([fd], [], [], 0.1)
+        if r:
+            seen.extend(os.read(fd, 65536))
+    os.write(fd, b"\x1b")
+    t_esc = time.time()
+    status, t_exit = None, None
+    while time.time() < t_esc + 10:
+        r, _, _ = select.select([fd], [], [], 0.01)
+        if r:
+            try:
+                seen.extend(os.read(fd, 65536))
+            except OSError:
+                pass
+        p, st = os.waitpid(pid, os.WNOHANG)
+        if p:
+            status, t_exit = st, time.time()
+            break
+    took = (t_exit - t_esc) if t_exit else None
+    ps = lambda: subprocess.run(["ps", "-A", "-o", "command="], capture_output=True, text=True).stdout
+    still = any(slow in l for l in ps().splitlines())
+    ok(status is not None and took < 0.5 and still, "Esc closes the dialog at once while a provider is still busy, nothing waits for it (#60)",
+       "took %s s, the busy one still there: %s" % (took, still))
+    time.sleep(3)
+    ok(not any(slow in l for l in ps().splitlines()), "the busy provider ends by itself once its work is done")
 
 
 def keys(binary, env):

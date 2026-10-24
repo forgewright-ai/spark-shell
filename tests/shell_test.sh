@@ -3800,6 +3800,23 @@ st=0; out=$(sh "$SH" provide spark 2>&1 >/dev/null) || st=$?
 [ "$st" -eq 1 ] && [ "$out" = 'spark-shell provide: spark is not one: lan, wifi, bt, out, mic, bat, clock, theme, window, display, keyboard, notes, reminders, bar, layout, apps, about, undo, files' ] && ok "provide spark: no provider (the dialog holds the chat itself), the list on stderr, exit 1" || bad "provide spark" "st=$st $out"
 st=0; out=$(sh "$SH" provide theme wifi 2>&1 >/dev/null) || st=$?
 [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell provide: one section: lan, ' && ok "provide with two words: one section, refused on stderr" || bad "provide two" "st=$st $out"
+# the dialog exits without waiting for its providers (#60): an answer that finds the reader gone (SIGPIPE)
+# never ends a provider mid-request, an error the shell writes itself included; it ends at the end of its
+# input, exit 0, through its EXIT trap (dash runs no EXIT trap for a signal that kills it: the box's sh).
+# SIGPIPE goes back to its default first, as the dialog's children have it: a shell started with it ignored
+# (from Node, say) cannot undo that itself. GNU env does it, else python3; neither, the case is not tried
+if env --default-signal=PIPE true 2>/dev/null; then printf '#!/bin/sh\nexec env --default-signal=PIPE "$@"\n' > "$H/dflpipe"
+elif command -v python3 >/dev/null 2>&1; then printf '#!/usr/bin/env python3\nimport os, signal, sys\nsignal.signal(signal.SIGPIPE, signal.SIG_DFL)\nos.execvp(sys.argv[1], sys.argv[1:])\n' > "$H/dflpipe"
+else rm -f "$H/dflpipe"; fi
+if [ -f "$H/dflpipe" ]; then
+    chmod +x "$H/dflpipe"; pt=$(mktemp -d); rm -f "$H/prov.rc"
+    { rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}'; sleep 1; rq 2 no/such '{}'; sleep 1; rq 3 ping '{}'; sleep 1; } \
+        | { TMPDIR="$pt" "$H/dflpipe" sh "$SH" provide theme 2>/dev/null; echo $? > "$H/prov.rc"; } | head -c 1 > /dev/null
+    sleep 1
+    [ "$(cat "$H/prov.rc" 2>/dev/null)" = 0 ] && [ -z "$(ls -A "$pt")" ] \
+        && ok "provide: an answer that finds its reader gone never ends the provider mid-request; it leaves at the end of its input, exit 0, nothing left (#60)" || bad "provide sigpipe" "exit $(cat "$H/prov.rc" 2>/dev/null) left: $(ls -A "$pt")"
+    rm -rf "$pt"
+else ok "provide: no GNU env and no python3 to give SIGPIPE back its default here, the closed wire is not tried"; fi
 # the files provider: the host's roots, a folder's rows, three read-only tools held to four lines
 F=$H/files; mkdir -p "$F/docs/deep/x" "$F/.secret"; printf 'hello\nworld\n' > "$F/notes.md"; printf 'x\000y' > "$F/blob.txt"; printf 'p' > "$F/pic.png"
 ln -s /etc "$F/etc-link"; printf 'k' > "$F/.secret/key"; mkfifo "$F/pipe"; printf 'a\n' > "$F/docs/a.txt"

@@ -5291,7 +5291,7 @@ provide_about_rows() {   # -> the about's rows: the template's `# key:` sentence
 # fd 3, the loop. Two writers feed the loop through one FIFO, each line
 # under a lock: the reader copies stdin a line at a time ("in LINE"), the
 # watcher says "poke" when the rows changed.
-rpc_send() { printf '%s\n' "$1" >&3; }
+rpc_send() { ( printf '%s\n' "$1" >&3 ) 2>/dev/null || :; }   # from a subshell, as rpc_result's jq writes: the dialog gone (it exits without waiting, #60), a closed wire ends the subshell, never the provider in the middle of a request; it ends at the end of its input, through its EXIT trap
 rpc_result() { printf '%s' "$2" | jq -c --argjson id "$1" '{jsonrpc: "2.0", id: $id, result: .}' >&3; }   # rpc_result ID JSON (the result on stdin to jq: no argument grows past a limit)
 rpc_error() { rpc_send "$(jq -cn --argjson id "$1" --argjson c "$2" --arg m "$3" '{jsonrpc: "2.0", id: $id, error: {code: $c, message: $m}}')"; }   # rpc_error ID CODE MESSAGE
 rpc_note() { rpc_send "$(jq -cn --arg m "$1" --argjson p "$2" '{jsonrpc: "2.0", method: $m, params: $p}')"; }   # rpc_note METHOD PARAMS -- a notification
@@ -5320,7 +5320,7 @@ provide_main() {   # provide_main SECTION -- serve it until stdin ends
     exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in; whatever a step prints goes to stderr
     WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; : > "$PROOTS"
     trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
-    trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # the dialog stops a provider with TERM: the EXIT trap still runs, the watcher, the reader and the temp folder go (#37)
+    trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # a signal ends a provider through the EXIT trap: the watcher, the reader and the temp folder go (#37)
     mkfifo "$TMP/in"
     ( while IFS= read -r _l || [ -n "$_l" ]; do fifo_put "in $_l"; _l=''; done; fifo_put eof ) <&6 5>"$TMP/in" 3>&- & READER=$!
     exec 4<"$TMP/in" 6<&-

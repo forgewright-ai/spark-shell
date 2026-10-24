@@ -1465,3 +1465,35 @@ fn left_and_right_change_a_value_in_place() {
         "a second right steps the same value again"
     );
 }
+
+#[test]
+fn a_provider_runs_in_a_process_group_of_its_own_and_ends_when_its_input_does() {
+    // the window closing hangs up the terminal's process group: a provider is never in it, so it is
+    // never cut short mid-step, and nothing waits for it; it ends when its input does (#60)
+    let dir = std::env::temp_dir().join(format!("spark-dialog-pg-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = dir.join("pg");
+    let script = format!(
+        "ps -o pgid= -p $$ > {0}.new; echo $$ >> {0}.new; mv {0}.new {0}; cat > /dev/null; echo done >> {0}",
+        f.display()
+    );
+    let (tx, _rx) = std::sync::mpsc::sync_channel(64);
+    let argv = vec!["/bin/sh".to_string(), "-c".to_string(), script];
+    let mut s = spark_dialog::mcp::Server::spawn(0, "pg", &argv, tx).unwrap();
+    let read = || std::fs::read_to_string(&f).unwrap_or_default();
+    let end = Instant::now() + Duration::from_secs(5);
+    while read().lines().count() < 2 && Instant::now() < end {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let lines: Vec<i64> = read().lines().take(2).map(|l| l.trim().parse().unwrap()).collect();
+    assert_eq!(lines.len(), 2, "the provider wrote its group and its pid: {:?}", read());
+    assert_eq!(lines[0], lines[1], "a process group of its own, its pid its group");
+    assert_ne!(lines[0], unsafe { libc::getpgrp() } as i64, "never the window's group");
+    s.close_stdin();
+    let end = Instant::now() + Duration::from_secs(5);
+    while !read().contains("done") && Instant::now() < end {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(read().contains("done"), "its input closed, it ends by itself");
+    let _ = std::fs::remove_dir_all(&dir);
+}

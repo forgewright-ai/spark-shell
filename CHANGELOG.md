@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.100
+
+- Fixed: after Esc, the dialog's window sometimes stayed open a moment
+  as a plain terminal, its cursor blinking, and a key pressed then was
+  printed in it. The dialog gave the terminal back first, then waited for
+  each of its providers to stop, and a provider busy with a request held
+  the window open: about half a second right after opening, and once 1.5 s
+  with 18 providers. The dialog now closes each provider's input and exits
+  at once, and the window goes with it: 1 to 2 ms where it took up to half
+  a second, timed at a terminal. Each provider ends the request it is
+  answering and leaves on its own, its temporary folder with it. A
+  provider runs in a process group of its own, so the window closing never
+  cuts one short in the middle of a step, and an answer that finds the
+  dialog gone no longer ends one mid-request (#60)
+
 ## v0.99
 
 - Fixed: on the lock screen, the keyboard's layout under the ring sat

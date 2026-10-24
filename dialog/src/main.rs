@@ -494,15 +494,12 @@ fn main() {
     );
     let _ = terminal::disable_raw_mode();
     let _ = term.show_cursor();
+    // the providers: each one's input closed, none waited for. Each ends the request it is answering,
+    // reads the end of its input and leaves through its own EXIT trap; its process group of its own keeps
+    // the window's closing from cutting one short. Waiting here held the window open as a bare terminal,
+    // the cursor blinking and keys echoed, for as long as the slowest took: 1.5 s once on the box (#60)
     for s in app.servers.iter_mut() {
         s.close_stdin();
-    }
-    let handles: Vec<_> = std::mem::take(&mut app.servers)
-        .into_iter()
-        .map(|mut s| std::thread::spawn(move || s.shutdown()))
-        .collect();
-    for h in handles {
-        let _ = h.join();
     }
     std::process::exit(code);
 }
