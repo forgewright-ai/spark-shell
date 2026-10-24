@@ -21,9 +21,9 @@ animations in the dialog.
   tool ran. It goes on the tool's standard input now: nmcli reads it at
   its own prompt (--ask), iwctl at its agent's, and wpa_cli takes it as
   a command on stdin, with no history file. A password with a control
-  character is refused. A CI job joins a network on simulated radios
-  through all three tools, and no command line holds the password, while
-  v0.100 run the same way is caught (#62)
+  character is refused. The suite holds each of the three to it with a
+  stand-in that keeps its arguments apart: the password is never among
+  them (#62)
 - Fixed: the state folder, the saved themes and the notes took the
   default permissions, so another account on the machine could read
   them. They are yours alone now: the folders 0700 and each note

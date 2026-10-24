@@ -2678,15 +2678,15 @@ rc=0; out=$(PATH="$H/lx:$PATH" sh "$SH" status 2>&1) || rc=$?
 [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'DISPLAY_IDLE=ten in .*: minutes, 0 to 999 (0: never)$' && ok "config: DISPLAY_IDLE=ten is refused" || bad "display key" "rc=$rc $out"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 # the idle screen's saver (DISPLAY_SAVER, #66): the default reads as it always did, the command, the window, the dialog and the check
-mkdir -p "$H/svx" "$H/nopy" "$H/pyl" "$H/clk"
-ln -sf "$py3" "$H/svx/python3"                                       # a python3 that runs the savers
-printf '#!/bin/sh\nexit 127\n' > "$H/nopy/python3"                   # one that cannot
-printf '#!/bin/sh\ncase "$2" in --version) exec %s "$@" ;; esac\necho "python3 $*" >> "$HOME/py.log"\nexit 0\n' "$py3" > "$H/pyl/python3"   # logs the saver it was asked to run
-printf '#!/bin/sh\ncase "$2" in --version) exec %s "$@" ;; esac\nexit 3\n' "$py3" > "$H/clk/python3"                                          # a saver that fails
-printf '#!/bin/sh\nexit 1\n' > "$H/clk/sleep"; printf '#!/bin/sh\necho "30 100"\n' > "$H/clk/stty"   # so the clock's loop ends after one drawing
-chmod +x "$H/nopy/python3" "$H/pyl/python3" "$H/clk/python3" "$H/clk/sleep" "$H/clk/stty"
 dot=$(printf '\302\267'); tb=$(printf '\t')
-if [ -n "$py3" ]; then
+if [ -n "$py3" ]; then   # a bare container has no python3 (debian, arch, void): the section is a note there
+    mkdir -p "$H/svx" "$H/nopy" "$H/pyl" "$H/clk"
+    ln -sf "$py3" "$H/svx/python3"                                       # a python3 that runs the savers
+    printf '#!/bin/sh\nexit 127\n' > "$H/nopy/python3"                   # one that cannot
+    printf '#!/bin/sh\ncase "$2" in --version) exec %s "$@" ;; esac\necho "python3 $*" >> "$HOME/py.log"\nexit 0\n' "$py3" > "$H/pyl/python3"   # logs the saver it was asked to run
+    printf '#!/bin/sh\ncase "$2" in --version) exec %s "$@" ;; esac\nexit 3\n' "$py3" > "$H/clk/python3"                                          # a saver that fails
+    printf '#!/bin/sh\nexit 1\n' > "$H/clk/sleep"; printf '#!/bin/sh\necho "30 100"\n' > "$H/clk/stty"   # so the clock's loop ends after one drawing
+    chmod +x "$H/nopy/python3" "$H/pyl/python3" "$H/clk/python3" "$H/clk/sleep" "$H/clk/stty"
     out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display 2>&1 | sed -n 1p)
     [ "$out" = "idle screen after 10 minutes $dot lock and display off after 15 minutes" ] && ok "desktop display: with no saver chosen the line reads as it always did" || bad "display default line" "$out"
     out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 2>&1)

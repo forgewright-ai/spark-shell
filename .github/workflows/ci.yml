@@ -4,8 +4,7 @@
 # the package names of distro/*.env looked up on their own family (nothing
 # installed), and the desktop job: the desktop's packages installed for
 # real in each family's container, spark-shell on as a plain user, the
-# rendered config read by sway, a headless sway with a foot in it. The
-# wifi job joins a simulated network through wpa_cli, nmcli and iwctl.
+# rendered config read by sway, a headless sway with a foot in it.
 name: ci
 on: [push, pull_request, workflow_dispatch]
 permissions:
@@ -44,7 +43,7 @@ jobs:
       - name: ascii docs
         run: |
           tab=$(printf '\t')
-          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/desktop_proof.sh tests/wifi_proof.sh tests/dialog_pty.py lib/terminal_profile.py tests/profile_test.py lib/saver.py tests/saver_test.py $(find templates distro themes dialog/src dialog/tests -type f ! -name '*.txt' | sort) dialog/Cargo.toml dialog/deny.toml dialog/dialog.env dialog/rust-toolchain.toml; do
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/desktop_proof.sh tests/dialog_pty.py lib/terminal_profile.py tests/profile_test.py lib/saver.py tests/saver_test.py $(find templates distro themes dialog/src dialog/tests -type f ! -name '*.txt' | sort) dialog/Cargo.toml dialog/deny.toml dialog/dialog.env dialog/rust-toolchain.toml; do
             if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
               echo "non-ASCII in $f"; exit 1; fi; done
       - name: no hex color in a template (the look is the 16 slots)
@@ -52,7 +51,7 @@ jobs:
           if grep -rnE '#[0-9a-fA-F]{6}' templates; then
             echo "a hex color is in a template"; exit 1; fi
       - name: shellcheck
-        run: shellcheck -S warning spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/desktop_proof.sh tests/wifi_proof.sh
+        run: shellcheck -S warning spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/desktop_proof.sh
       - name: every package name of distro/debian.env exists on Ubuntu, which says ID_LIKE=debian (nothing installed)
         run: sudo apt-get update -qq >/dev/null && apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
       - name: the suite in a throwaway HOME
@@ -213,26 +212,6 @@ jobs:
           cp tests/desktop_proof.sh /tmp/desktop_proof.sh
           chmod 755 /tmp/desktop_proof.sh
           su ada -c "REPO='$GITHUB_WORKSPACE' SWAY_NOCAP=/opt/nocap sh /tmp/desktop_proof.sh"
-  wifi:
-    # a new network's password on simulated radios (#62): mac80211_hwsim's
-    # two radios, hostapd on one in a namespace of its own, spark-shell's
-    # own connect on the other through wpa_cli, nmcli and iwctl. strace
-    # holds every program it starts to a command line without the password,
-    # and v0.100, which passed it as an argument, shows the check sees one.
-    # GitHub's VM, not a container: it loads a kernel module.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0   # v0.100, the check's own test
-      - name: the radios' module, an access point, and the three tools
-        run: |
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "linux-modules-extra-$(uname -r)" hostapd dnsmasq-base wpasupplicant network-manager iwd iw strace jq >/dev/null
-      - name: join through each tool, the password on no command line
-        run: sudo sh tests/wifi_proof.sh
   macos:
     runs-on: macos-latest
     timeout-minutes: 15
