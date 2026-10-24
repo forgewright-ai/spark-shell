@@ -90,15 +90,18 @@
 # (Monaspace Neon), each checked against its sha256. A layout, and a want
 # at the bar, ask spark on this machine (spark edit).
 #
-# POSIX sh on both OSes: the Debian, Arch and Void families, and macOS. The choices live in ~/.config/spark-shell/
-# config, one KEY=value a line. PROMPT is starship|plain, PROMPT_STYLE
-# minimal|full, DESKTOP none|sway, FONT foot's spec (Monaspace
-# Neon:size=11), WALLPAPER default|none|PATH|#rrggbb, ALPHA foot over a
-# picture (0.85) and DESKTOP_BAR yes|no (the bar at the top). THEME is a
-# palette's name or none, CONSOLE_FONT "FACE SIZE" (empty: the console
-# keeps its font), QUIET_LOGIN and QUIET_BOOT yes|no. starship comes
-# from pacman, xbps or Homebrew. Debian has no
-# package, so there the rc files draw the shell's own prompt.
+# POSIX sh on both OSes: the Debian (Ubuntu too), Arch, Void, Fedora and
+# openSUSE families, each a file of package names in distro/, and macOS;
+# on Windows, Ubuntu under WSL 2 gets the terminal alone. The choices live
+# in ~/.config/spark-shell/config, one KEY=value a line. PROMPT is
+# starship|plain, PROMPT_STYLE minimal|full, DESKTOP none|sway, FONT
+# foot's spec (Monaspace Neon:size=11), WALLPAPER default|none|PATH|#rrggbb,
+# ALPHA foot over a picture (0.85) and DESKTOP_BAR yes|no (the bar at the
+# top). THEME is a palette's name or none, CONSOLE_FONT "FACE SIZE" (empty:
+# the console keeps its font), QUIET_LOGIN and QUIET_BOOT yes|no. starship
+# comes with the packages where the family's list names it (pacman, xbps,
+# zypper, Homebrew). Debian and Fedora have no package, so there the rc
+# files draw the shell's own prompt.
 #
 # The root files are the console's (the palette at boot, the font, the
 # login screen, the boot's kernel line), written with sudo only when
@@ -208,10 +211,11 @@ config_load() {
     export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK LOGIN DISPLAY_IDLE DISPLAY_LOCK KEYBOARD POINTER
 }
 KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}$'   # one to eight layouts, a variant after a plus: us us+intl
-config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept
+config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept. A value load_env would refuse at the next read is refused here, before the file is touched
+    case $2 in *[';`$()|&<>']*) printf 'spark-shell: %s=%s cannot be kept: a value holds none of ; ` $ ( ) | & < >\n' "$1" "$2" >&2; exit 1 ;; esac
     mkdir -p "$CONFIG_DIR"
     if [ -f "$CONFIG" ] && grep -q "^$1=" "$CONFIG"; then
-        sed "s|^$1=.*|$1=$2|" "$CONFIG" > "$TMP/config"
+        sed "s|^$1=.*|$1=$(esc "$2")|" "$CONFIG" > "$TMP/config"
         cp "$TMP/config" "$CONFIG"
     else
         [ -f "$CONFIG" ] || printf '# spark-shell config -- KEY=value (config.example shows the keys)\n' > "$CONFIG"
@@ -384,11 +388,39 @@ wall_recolor() {   # wall_recolor SVG PALETTE_FILE -> the drawing on stdout in t
     done > "$TMP/recolor.sed"
     sed -f "$TMP/recolor.sed" "$1"
 }
-wall_render() {   # wall_render DRAWING PALETTE_FILE OUT_BASE -- OUT_BASE.svg in that palette and, where gdk-pixbuf-thumbnailer is here, OUT_BASE.png at 3840 by 2160; silent, exit 1 with no PNG
+# The drawings are drawn by rsvg-convert, librsvg's own; gdk-pixbuf's
+# thumbnailer stands in where a distro still ships it (gdk-pixbuf 2.44
+# dropped it: Arch, Fedora and Tumbleweed have none). A picture of yours
+# is read small the same way: the thumbnailer scales it, or it goes
+# inside an SVG rsvg-convert draws (librsvg reads the picture beside the
+# SVG; a copy sits there, never your file).
+svg_tool() {   # -> the tool that draws an SVG here, or nothing (SPARK_SHELL_NO_SVG, tests: none)
+    [ -z "${SPARK_SHELL_NO_SVG:-}" ] || return 0
+    if command -v rsvg-convert >/dev/null 2>&1; then echo rsvg-convert; elif command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1; then echo gdk-pixbuf-thumbnailer; fi
+}
+svg_pkg() {   # -> the package that brings rsvg-convert on this family: what a todo row names
+    case $PM in apt) echo librsvg2-bin ;; pacman) echo librsvg ;; xbps) echo librsvg-utils ;; dnf) echo librsvg2-tools ;; zypper) echo rsvg-convert ;; brew) echo librsvg ;; *) echo librsvg ;; esac
+}
+svg_png() {   # svg_png SVG OUT WIDTH -- OUT, a PNG WIDTH wide (the drawing's own ratio), whole or not there; false when no tool is here or it failed
+    case $(svg_tool) in
+        rsvg-convert) rsvg-convert -w "$3" -o "$2.new" "$1" 2>/dev/null ;;
+        gdk-pixbuf-thumbnailer) gdk-pixbuf-thumbnailer -s "$3" "$1" "$2.new" 2>/dev/null ;;
+        *) false ;;
+    esac && mv "$2.new" "$2" || { rm -f "$2.new"; return 1; }
+}
+pic_small() {   # pic_small PICTURE OUT -- OUT, a PNG of PICTURE 256 wide at most, the margins clear; false when nothing here can read the picture (SPARK_SHELL_NO_THUMB and SPARK_SHELL_NO_SVG, tests: one tool or none)
+    if [ -z "${SPARK_SHELL_NO_THUMB:-}" ] && command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1 && gdk-pixbuf-thumbnailer -s 256 "$1" "$2.new" 2>/dev/null; then mv "$2.new" "$2"; return 0; fi
+    rm -f "$2.new"
+    [ -z "${SPARK_SHELL_NO_SVG:-}" ] && command -v rsvg-convert >/dev/null 2>&1 || return 1
+    _pe=$(printf '%s' "${1##*.}" | tr 'A-Z' 'a-z'); case $_pe in jpg|jpeg|png|webp) ;; *) return 1 ;; esac
+    _pd=$TMP/pic; rm -rf "$_pd"; mkdir -p "$_pd"; cp "$1" "$_pd/picture.$_pe" || return 1
+    printf '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><image href="picture.%s" width="256" height="256" preserveAspectRatio="xMidYMid meet"/></svg>\n' "$_pe" > "$_pd/wrap.svg"
+    rsvg-convert -w 256 -h 256 -o "$2.new" "$_pd/wrap.svg" 2>/dev/null && mv "$2.new" "$2" || { rm -f "$2.new"; return 1; }
+}
+wall_render() {   # wall_render DRAWING PALETTE_FILE OUT_BASE -- OUT_BASE.svg in that palette and, where a tool draws it, OUT_BASE.png at 3840 by 2160; silent, exit 1 with no PNG
     mkdir -p "$(dirname "$3")"
     wall_recolor "$REPO/wallpaper/$1.svg" "$2" > "$3.svg.new" && mv "$3.svg.new" "$3.svg"
-    command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1 || { rm -f "$3.png"; return 1; }
-    gdk-pixbuf-thumbnailer -s 3840 "$3.svg" "$3.png.new" 2>/dev/null && mv "$3.png.new" "$3.png" || { rm -f "$3.png.new"; return 1; }
+    svg_png "$3.svg" "$3.png" 3840 || { rm -f "$3.png"; return 1; }
 }
 wall_follow() {   # the drawing in use, rendered in the palette in use when that is not its own and the picture is not there yet; a row when it cannot be
     wall_shipped "$WALLPAPER" || return 0
@@ -403,7 +435,7 @@ wall_follow() {   # the drawing in use, rendered in the palette in use when that
         [ -z "$_td" ] || look_set "$_td" DRAWING "$WALLPAPER"
         wall_load; EXPR=$(render_expr)   # the renders after this name the picture just drawn
         row render wallpaper "$WALLPAPER drawn in $THEME ($_wb.png)"
-    else row todo wallpaper "$WALLPAPER as drawn for $(wall_palette_of "$WALLPAPER"): gdk-pixbuf-thumbnailer is not installed to draw it in $THEME (the gdk-pixbuf package)"; fi
+    else row todo wallpaper "$WALLPAPER as drawn for $(wall_palette_of "$WALLPAPER"): rsvg-convert is not installed to draw it in $THEME (the $(svg_pkg) package)"; fi
 }
 wall_color() { hex_rgb "$WALLPAPER" >/dev/null; }   # WALLPAPER is a plain color, #rrggbb
 wall_yours() { case ${WALLPAPER:-} in ''|none|default) return 1 ;; esac; ! wall_color && ! wall_shipped "$WALLPAPER"; }   # WALLPAPER is a picture of yours (a path, there or not): the one wallpaper a palette never replaces; false before the config is read
@@ -421,22 +453,22 @@ wall_picture_ok() {   # wall_picture_ok PATH -> its real path when it is a pictu
     case ${_rp#"$_hr"/} in .*|*/.*) echo "wallpaper: a hidden file is not offered"; return 1 ;; esac
     [ -f "$_rp" ] && [ -r "$_rp" ] || { echo "wallpaper: $1 is not a file that can be read"; return 1; }
     case " $WALL_TYPES " in *" $(printf '%s' "${_rp##*.}" | tr 'A-Z' 'a-z') "*) ;; *) echo "wallpaper: a picture is $WALL_TYPES"; return 1 ;; esac
+    case $_rp in *[';`$()|&<>']*) echo "wallpaper: a path with one of ; \` \$ ( ) | & < > cannot be kept in the config -- rename the picture"; return 1 ;; esac   # the config refuses these at the next read (load_env): said now, nothing written
     printf '%s\n' "$_rp"
 }
 WALL_TYPES='jpg jpeg png webp'   # the pictures the wallpaper picker offers and takes
 WALL_GROUND_SAID="the palette's own, darker"   # the ground's column in the wallpaper list
 THUMB_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/thumbs   # the drawings' small pictures in a palette, DRAWING-PALETTE.png, for the wallpaper list (#36)
 thumb_palette() { if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && palette_file "$THEME" >/dev/null; then printf '%s' "$THEME"; else printf none; fi; }   # -> the palette the small pictures are drawn in: the one in use, else none (the drawings' own colors)
-wall_thumbs() {   # the drawings' small pictures in the palette in use (#36): each one missing or older than its drawing, from the big picture when one is drawn, else from the drawing itself; quiet
-    command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1 || return 0
+wall_thumbs() {   # the drawings' small pictures in the palette in use (#36): each one missing or older than its drawing, drawn from the drawing itself, as it is or recolored; quiet
+    [ -n "$(svg_tool)" ] || return 0
     mkdir -p "$THUMB_DIR"; _tp=$(thumb_palette); _pf=''; [ "$_tp" = none ] || _pf=$(palette_file "$_tp")
     for _w in $(wall_shipped_names); do
         _t=$THUMB_DIR/$_w-$_tp.png
         [ ! -f "$_t" ] || [ -n "$(find "$REPO/wallpaper/$_w.svg" -newer "$_t" 2>/dev/null)" ] || continue   # find -newer: test's -nt is not in every POSIX sh
-        if [ -z "$_pf" ] || [ "$(wall_palette_of "$_w")" = "$_tp" ]; then _src=$REPO/wallpaper/$_w.png   # its own palette, or none: the clone's picture
-        elif [ -f "$WALL_CACHE/$_w-$_tp.png" ]; then _src=$WALL_CACHE/$_w-$_tp.png
+        if [ -z "$_pf" ] || [ "$(wall_palette_of "$_w")" = "$_tp" ]; then _src=$REPO/wallpaper/$_w.svg   # its own palette, or none: the drawing as shipped
         else wall_recolor "$REPO/wallpaper/$_w.svg" "$_pf" > "$TMP/thumb.svg" || continue; _src=$TMP/thumb.svg; fi
-        if gdk-pixbuf-thumbnailer -s 480 "$_src" "$TMP/thumb.png" 2>/dev/null; then cp "$TMP/thumb.png" "$_t.${TMP##*/}" && mv "$_t.${TMP##*/}" "$_t"; fi   # a whole file or none: the dialog may read it meanwhile
+        if svg_png "$_src" "$TMP/thumb.png" 480; then cp "$TMP/thumb.png" "$_t.${TMP##*/}" && mv "$_t.${TMP##*/}" "$_t"; fi   # a whole file or none: the dialog may read it meanwhile
     done
 }
 wall_there() { [ "$WALLPAPER" != none ] && [ "$WALLPAPER" != default ] && ! wall_color && [ -f "$(wall_path)" ] && [ -r "$(wall_path)" ]; }
@@ -644,29 +676,45 @@ pm_detect() {
     if [ "$OS" = Darwin ] && [ -z "${SPARK_OS_RELEASE:-}" ]; then PM=brew; return; fi
     _f=${SPARK_OS_RELEASE:-/etc/os-release}
     for w in $(sed -n 's/^ID=//p; s/^ID_LIKE=//p' "$_f" 2>/dev/null | tr -d '"'); do
-        case $w in debian|arch|void) DISTRO=$w; break ;; esac
+        case " $FAMILIES " in *" $w "*) DISTRO=$w; break ;; esac
     done
     [ -z "$DISTRO" ] || load_env "$REPO/distro/$DISTRO.env" env || exit 1
     : "${PM:=}" "${PKG_SHELL:=}" "${PKG_CLI:=}" "${PKG_CONSOLE:=}" "${PKG_DESKTOP:=}" "${PKG_SOUND:=}" "${PKG_LOGIN:=}" "${LOGIN_ACCOUNT:=}"
+}
+# The families, one distro/NAME.env each: ID first, then each ID_LIKE
+# word (Ubuntu says debian, Tumbleweed says opensuse). The sentence is
+# what a todo row says of a Linux none of them match.
+FAMILIES='debian arch void fedora opensuse'
+FAMILIES_SAID='Debian, Ubuntu, Arch, Void, Fedora and openSUSE'
+pkg_listed() { case " $PKG_SHELL $PKG_CLI $PKG_CONSOLE $PKG_DESKTOP $PKG_SOUND $PKG_LOGIN " in *" $1 "*) return 0 ;; esac; return 1; }   # pkg_listed NAME -- the family's lists name the package (after pm_detect)
+starship_listed() { [ "$PM" = brew ] || pkg_listed starship; }   # the prompt comes with the packages: the Brewfile has it, a family's list may (Debian's has none)
+pkg_update_said() {   # -> the family's own step when an install is refused: a rolling distro wants the whole upgrade first
+    case $PM in
+        pacman) echo 'sudo pacman -Syu' ;; xbps) echo 'sudo xbps-install -Su' ;;
+        dnf) echo 'sudo dnf upgrade --refresh' ;; zypper) echo 'sudo zypper dup' ;;
+    esac
 }
 tool_here() {   # tool_here NAME -- on PATH or in ~/.local/bin; under apt by Debian's name (fdfind, batcat), after pm_detect
     _n=$1
     if [ "$PM" = apt ]; then case $1 in fd) _n=fdfind ;; bat) _n=batcat ;; esac; fi
     command -v "$_n" >/dev/null 2>&1 || [ -x "$HOME/.local/bin/$_n" ]
 }
-pkg_installed() {
+pkg_installed() {   # pkg_installed NAME -- the manager's own database; rpm counts a provider (python3 is python313's capability on Tumbleweed)
     case $PM in
         apt) dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed' ;;
         pacman) pacman -Qq "$1" >/dev/null 2>&1 ;;
         xbps) xbps-query "$1" >/dev/null 2>&1 ;;
+        dnf|zypper) rpm -q --whatprovides "$1" >/dev/null 2>&1 ;;
         *) return 1 ;;
     esac
 }
-pkg_install() {
+pkg_install() {   # pkg_install NAME... -- as root, the manager's own way (the twin of spark bootstrap.sh's)
     case $PM in
         apt) as_root apt-get update -qq && as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$@" ;;
-        pacman) as_root pacman -S --needed --noconfirm "$@" ;;
-        xbps) as_root xbps-install -Sy "$@" ;;
+        pacman) as_root pacman -S --needed --noconfirm "$@" ;;      # never -Sy alone: a rolling distro forbids the partial upgrade
+        xbps) as_root xbps-install -Sy "$@" ;;                     # -S syncs the index; a stale xbps refuses (the todo names the upgrade)
+        dnf) as_root dnf install -y "$@" ;;                        # dnf refreshes its own index when it is old
+        zypper) as_root zypper --non-interactive install "$@" ;;   # the same: zypper refreshes first
         *) return 1 ;;
     esac
 }
@@ -761,7 +809,11 @@ foot_colors() {   # the name of foot's color section: [colors] before 1.26, [col
     set -- ${_v:-1 26}
     if [ "$1" -gt 1 ] || [ "$2" -ge 26 ]; then echo colors-dark; else echo colors; fi
 }
-desktop_wanted() { [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; }
+desktop_na() {   # -> why this machine has no desktop of spark-shell's, or nothing: macOS draws its own, WSL has no seat and Windows draws it
+    if [ "$OS" = Darwin ]; then echo "not on macOS, which has its own desktop"; elif is_wsl; then echo "not on WSL, where Windows draws the desktop"; fi
+}
+login_na() { if [ "$OS" = Darwin ]; then echo "not on macOS, which has its own login screen"; elif is_wsl; then echo "not on WSL, which has no tty1 for a login screen"; fi; }   # -> why no login screen here, or nothing
+desktop_wanted() { [ -z "$(desktop_na)" ] && [ "$DESKTOP" = sway ]; }
 desktop_tools() {   # -> the missing ones, if any (PATH or ~/.local/bin)
     _miss=''
     for t in sway foot; do
@@ -1212,7 +1264,7 @@ GREETD_CONF=etc/greetd/config.toml
 LOGIN_SUDOERS=etc/sudoers.d/spark-shell-login
 LOGIN_MARK=' #spark-shell-login#'
 LOGIN_FILES="session window run sway.conf foot.ini"
-login_wanted() { [ "$OS" != Darwin ] && [ "$LOGIN" = yes ]; }
+login_wanted() { [ -z "$(login_na)" ] && [ "$LOGIN" = yes ]; }
 login_rec() { [ -e "$ROOT/$LOGIN_ETC/$1" ]; }                       # login_rec NAME -- a record of a change spark-shell made
 login_record() { root_do touch "$ROOT/$LOGIN_ETC/$1"; }
 login_unrecord() { root_do rm -f "$ROOT/$LOGIN_ETC/$1"; }
@@ -1284,7 +1336,7 @@ login_files_differ() {   # -> the screen's files that differ from what spark-she
 # password asked for is the write's, after the would row)
 sudoers_same() { if [ -n "$ROOT" ]; then cmp -s "$TMP/login/sudoers" "$ROOT/$LOGIN_SUDOERS"; else sudo -n cmp -s "$TMP/login/sudoers" "/$LOGIN_SUDOERS" 2>/dev/null; fi; }
 status_login() {   # the login row of status
-    if [ "$OS" = Darwin ]; then _w=na; _s="not on macOS, which has its own login screen"
+    if _s=$(login_na) && [ -n "$_s" ]; then _w=na
     elif [ "$LOGIN" != yes ]; then _w=console; _s="the console login on tty1 (spark-shell on login shows the login screen)"
     elif ! greetd_here; then _w=screen; _s="greetd is not installed (spark-shell on login)"
     elif ! login_switched; then _w=screen; _s="not set up yet (spark-shell on login)"
@@ -1298,7 +1350,7 @@ login_root() {   # login_root VERB -- a root to write with, asked once; else a t
 }
 login_screen_apply() {   # the login rows of `on` with LOGIN=yes
     login_wanted || return 0
-    case $DISTRO in debian|arch|void) ;; *) row todo login "the login screen knows Debian, Arch and Void"; acting=0; return 0 ;; esac
+    [ -n "$LOGIN_ACCOUNT" ] || { row todo login "the login screen knows $FAMILIES_SAID"; acting=0; return 0; }   # the family's file names greetd's account; without one, no screen
     console_linux || { skip login "WSL has no console: no login screen"; return 0; }
     [ "$(init_shape)" != none ] || { skip login "no systemd or runit here: nothing starts a login screen"; return 0; }
     if ! greetd_here; then
@@ -1489,7 +1541,10 @@ CURSOR_ON=$(printf '\033[?25h')
 # a cursor during a quiet boot is harmless, a console without one is not
 QUIET_WORDS='quiet splash loglevel=3 systemd.show_status=false udev.log_level=3 fbcon=nodefer'
 
-is_wsl() { [ "$OS" != Darwin ] && { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qis microsoft "$ROOT/proc/version"; }; }
+is_wsl() {   # Windows Subsystem for Linux, read once: WSL names its distro in the environment, and its kernel says microsoft
+    if [ -z "${_WSL:-}" ]; then if [ "$OS" != Darwin ] && { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qis microsoft "$ROOT/proc/version"; }; then _WSL=yes; else _WSL=no; fi; fi
+    [ "$_WSL" = yes ]
+}
 init_shape() {   # -> systemd | runit | none: what boots this Linux
     if [ -d "$ROOT/run/systemd/system" ]; then echo systemd
     elif [ -d "$ROOT/etc/runit" ]; then echo runit
@@ -2319,13 +2374,15 @@ GETTY_CONF=etc/sv/agetty-tty1/conf
 have_update_grub() { command -v update-grub >/dev/null 2>&1 || [ -x "$ROOT/usr/sbin/update-grub" ]; }
 uki_here() { grep -qs '^[a-z_]*_uki=' "$ROOT"/etc/mkinitcpio.d/*.preset; }
 splash_live() { grep -qs '^[a-z_]*_options=.*--splash' "$ROOT"/etc/mkinitcpio.d/*.preset; }
-boot_shape() {   # -> grub | void | uki, or a refusal word: mac | wsl | arch | nogrub
+have_grub2_mkconfig() { command -v grub2-mkconfig >/dev/null 2>&1 || [ -x "$ROOT/usr/sbin/grub2-mkconfig" ]; }   # Fedora's and openSUSE's GRUB 2, whose boot entries are not update-grub's
+boot_shape() {   # -> grub | void | uki, or a refusal word: mac | wsl | arch | grub2 | nogrub
     if [ "$OS" = Darwin ]; then echo mac
     elif is_wsl; then echo wsl
     elif uki_here; then echo uki
     elif [ "$DISTRO" = arch ]; then echo arch
     elif [ -f "$ROOT/etc/default/grub" ] && have_update_grub; then
         if [ "$DISTRO" = void ]; then echo void; else echo grub; fi
+    elif [ -f "$ROOT/etc/default/grub" ] && have_grub2_mkconfig; then echo grub2
     else echo nogrub; fi
 }
 boot_refusal() {   # boot_refusal SHAPE -> the one sentence, or nothing when spark-shell may quiet it
@@ -2333,6 +2390,7 @@ boot_refusal() {   # boot_refusal SHAPE -> the one sentence, or nothing when spa
         mac) echo "macOS has no boot menu or kernel line to quiet." ;;
         wsl) echo "WSL has no boot of its own: Windows boots it." ;;
         arch) echo "This Arch has no unified kernel image, so its kernel line is the boot loader's and stays as it is." ;;
+        grub2) echo "This Linux boots through grub2-mkconfig, whose boot entries spark-shell does not edit, so the boot stays as it is (Fedora and openSUSE boot quiet already)." ;;
         nogrub) echo "There is no GRUB with update-grub here, so the boot loader stays as it is." ;;
     esac
 }
@@ -2505,7 +2563,7 @@ on_warning() {   # on_warning [desktop|login] -- at the very start of on: what i
     noun_ok on "$@"
     asks || return 0
     if [ "${1:-}" = login ]; then
-        [ "$OS" != Darwin ] || return 0   # refused next, before anything
+        [ -z "$(desktop_na)" ] || return 0   # refused next, before anything
         pm_detect
         ask_terminal
         printf '%s\n' 'spark-shell on login changes how this machine starts:' ''
@@ -2523,7 +2581,7 @@ on_warning() {   # on_warning [desktop|login] -- at the very start of on: what i
         return 0
     fi
     if [ "${1:-}" = desktop ]; then
-        [ "$OS" != Darwin ] || return 0   # refused next, before anything
+        [ -z "$(desktop_na)" ] || return 0   # refused next, before anything
         pm_detect
     fi
     ask_terminal
@@ -2570,8 +2628,8 @@ boot_warning() {   # boot_warning SHAPE -- before quiet boot on: what it changes
 cmd_on() {   # cmd_on [desktop|login]
     on_warning "$@"
     noun_ok on "$@"
-    [ "${1:-}" != desktop ] || [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
-    [ "${1:-}" != login ] || [ "$OS" != Darwin ] || refuse_in login "not on macOS, which has its own login screen"
+    [ "${1:-}" != desktop ] || [ -z "$(desktop_na)" ] || refuse "$(desktop_na)"
+    [ "${1:-}" != login ] || [ -z "$(login_na)" ] || refuse_in login "$(login_na)"
     config_load
     if [ "${1:-}" = login ]; then
         # the config first, as on desktop: everything on does with LOGIN=yes follows
@@ -2604,7 +2662,7 @@ cmd_on() {   # cmd_on [desktop|login]
             ok packages "Brewfile satisfied"
         fi
     elif [ -z "$PM" ]; then
-        row todo packages "no package list for this Linux: spark-shell knows Debian, Arch and Void"
+        row todo packages "no package list for this Linux: spark-shell knows $FAMILIES_SAID"
     else
         missing=''
         pkgs="$PKG_SHELL $PKG_CLI $PKG_CONSOLE"
@@ -2627,14 +2685,14 @@ cmd_on() {   # cmd_on [desktop|login]
         elif need packages "install$missing ($PM, sudo)"; then
             # shellcheck disable=SC2086
             if pkg_install $missing; then ok packages "installed"
-            elif [ "$PM" = xbps ]; then row todo packages "xbps failed: update Void first (sudo xbps-install -Su), then spark-shell on"; acting=0
+            elif _up=$(pkg_update_said) && [ -n "$_up" ]; then row todo packages "$PM could not install:$missing -- $_up, then spark-shell on"; acting=0
             else row todo packages "$PM failed (see above) -- run spark-shell on again"; acting=0; fi
         fi
     fi
     # the desktop's packages ride the row above when DESKTOP=sway; say
     # why they are not there otherwise
-    if [ "$OS" = Darwin ]; then
-        [ "$DESKTOP" != sway ] || skip desktop "not on macOS, which has its own desktop"
+    if _dna=$(desktop_na) && [ -n "$_dna" ]; then
+        [ "$DESKTOP" != sway ] || skip desktop "$_dna"
     elif ! desktop_wanted; then
         skip desktop "DESKTOP=none (the config)"
     fi
@@ -2642,16 +2700,16 @@ cmd_on() {   # cmd_on [desktop|login]
     # the old default face moved to it, before anything renders FONT
     neon_install
     neon_move
-    # the prompt: starship from the package manager where one has it
-    # (pacman, Homebrew); where none does, the rc files draw the shell's
-    # own prompt. Nothing is downloaded. A skip, not a todo: Debian's
-    # dry-run still ends in Nothing to do.
+    # the prompt: starship from the package manager where the family's
+    # list names it (pacman, xbps, zypper, Homebrew); where none does, the
+    # rc files draw the shell's own prompt. Nothing is downloaded. A skip,
+    # not a todo: Debian's dry-run still ends in Nothing to do.
     loud && printf '\n== prompt\n'
     if [ "$PROMPT" != starship ]; then skip prompt "PROMPT=$PROMPT (the config): the shell's own"
     elif command -v starship >/dev/null 2>&1 || [ -x "$HOME/.local/bin/starship" ]; then
         v=$(PATH=$HOME/.local/bin:$PATH starship --version 2>/dev/null | head -1)
         ok prompt "${v:-starship} draws the prompt"
-    elif [ "$PM" = pacman ] || [ "$PM" = xbps ] || [ "$PM" = brew ]; then skip prompt "starship comes with the packages above"
+    elif starship_listed; then skip prompt "starship comes with the packages above"
     else skip prompt "no starship package here: the shell's own prompt (the rc files draw it)"
     fi
     # terminfo: tmux-256color must know modified arrow keys
@@ -2694,8 +2752,8 @@ cmd_on() {   # cmd_on [desktop|login]
 
 cmd_off() {   # cmd_off [desktop|login]
     noun_ok off "$@"
-    [ "${1:-}" != desktop ] || [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
-    [ "${1:-}" != login ] || [ "$OS" != Darwin ] || refuse_in login "not on macOS, which has its own login screen"
+    [ "${1:-}" != desktop ] || [ -z "$(desktop_na)" ] || refuse "$(desktop_na)"
+    [ "${1:-}" != login ] || [ -z "$(login_na)" ] || refuse_in login "$(login_na)"
     config_load
     [ "$OS" = Darwin ] || pm_detect
     if [ "$MODE" = dry ]; then off_would "${1:-}"; return 0; fi
@@ -2837,7 +2895,7 @@ DESK_SEEN=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desktop.seen
 desk_keys() { sed -n 's/^# key: //p' "$REPO/templates/.config/sway/config"; }
 status_next() {   # the first sentence that applies, as a next row; nothing off, no row
     if [ -z "$(spark_bin)" ]; then n=spark; s="Install spark, the local AI: github.com/forgewright-ai/spark."
-    elif [ "$OS" = Darwin ]; then return 0
+    elif [ -n "$(desktop_na)" ]; then return 0
     elif [ "$DESKTOP" = none ]; then [ -d /dev/dri ] || return 0; n=desktop; s="spark-shell on desktop adds the desktop."
     elif [ -n "$(desktop_tools)" ]; then n=desktop; s="spark-shell on installs sway and foot."
     elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then n=desktop; s="spark-shell on writes the sway and foot settings."
@@ -2866,7 +2924,7 @@ cmd_status() {
         printf '  tool  %-16s %s\n' "$t" "$s"
     done
     theme_load || true   # the wall row below names the ground's hex
-    if [ "$OS" = Darwin ]; then s="not on macOS, which has its own desktop"
+    if s=$(desktop_na) && [ -n "$s" ]; then :
     elif [ "$DESKTOP" = none ]; then s="none (spark-shell on desktop)"
     elif [ -n "$(desktop_tools)" ]; then s="sway: not installed --$(desktop_tools) (spark-shell on desktop)"
     elif [ ! -f "$HOME/.config/sway/config" ] || [ ! -f "$HOME/.config/foot/foot.ini" ]; then s="sway: settings not written (spark-shell on)"
@@ -2917,7 +2975,7 @@ cmd_check() {
     # (and spark): a non-login ssh shell has no such PATH, so look there too
     pm_detect
     tools="tmux fzf zoxide eza bat btop fd"
-    if [ "$PROMPT" = starship ] && { [ "$PM" = pacman ] || [ "$PM" = xbps ] || [ "$PM" = brew ]; }; then tools="$tools starship"; fi
+    if [ "$PROMPT" = starship ] && starship_listed; then tools="$tools starship"; fi
     for t in $tools; do
         tool_here "$t" || miss="$miss $t"
     done
@@ -2938,6 +2996,7 @@ cmd_check() {
     check_font
     check_quiet
     if [ "$OS" = Darwin ]; then chk desktop ok "na (macOS)"
+    elif is_wsl; then chk desktop ok "na (WSL)"
     elif [ "$DESKTOP" = none ]; then chk desktop ok "na (DESKTOP=none)"
     elif [ -n "$(desktop_tools)" ]; then chk desktop fail "missing:$(desktop_tools)" "spark-shell on"
     else
@@ -2954,7 +3013,7 @@ cmd_check() {
         elif [ "$(font_spec)" != "$FONT" ]; then chk desktop warn "$NEON is not installed, so foot draws $NEON_OLD" "spark-shell on"
         else chk desktop ok "sway and foot are installed and up to date"; fi
     fi
-    if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk pointer ok "na (no desktop)"
+    if [ -n "$(desktop_na)" ] || [ "$DESKTOP" = none ]; then chk pointer ok "na (no desktop)"
     elif pointer_drawn; then chk pointer ok "spark-white and spark-black are drawn; sway shows $POINTER_NAME at $POINTER_SIZE"
     elif ! pointer_can; then chk pointer warn "python3 cannot draw the spark pointer here" "install python3, then spark-shell on desktop"
     else chk pointer fail "the spark pointer is not drawn" "spark-shell on desktop"; fi
@@ -2963,7 +3022,7 @@ cmd_check() {
     else _mn=$(mcp_mine | wc -w | tr -d ' '); _mt=$(printf '%s' "$PROVIDE_SECTIONS" | wc -w | tr -d ' ')
         if [ "$_mn" = "$_mt" ]; then chk mcp ok "the $_mt providers are on spark's MCP list"; else chk mcp warn "$_mn of $_mt providers on spark's MCP list" "spark-shell on desktop"; fi
     fi
-    if [ "$OS" = Darwin ] || [ "$LOGIN" != yes ]; then chk login ok "na (the console login, LOGIN=no)"
+    if [ -n "$(login_na)" ] || [ "$LOGIN" != yes ]; then chk login ok "na (the console login, LOGIN=no)"
     elif ! greetd_here; then chk login fail "greetd is not installed" "spark-shell on login"
     else
         login_render; _f=$(login_files_differ)
@@ -5572,7 +5631,7 @@ dialog_install() {   # the dialog's row of `on`: in place as the tree pins it, o
     command -v curl >/dev/null 2>&1 || { row todo dialog "curl is not installed: the dialog cannot be fetched (spark-shell on installs it)"; return 0; }
     need dialog "fetch spark-dialog for $_rt and check its sha256" || return 0
     _df=$TMP/spark-dialog
-    curl -fsSL --proto '=https,file' -o "$_df" "$DIALOG_URL/$_rt/spark-dialog-$_dt" 2>/dev/null || { rm -f "$_df"; row todo dialog "could not fetch spark-dialog for $_rt -- spark-shell on again"; return 0; }
+    curl -fsSL --proto '=https,file' --proto-redir '=https' -o "$_df" "$DIALOG_URL/$_rt/spark-dialog-$_dt" 2>/dev/null || { rm -f "$_df"; row todo dialog "could not fetch spark-dialog for $_rt -- spark-shell on again"; return 0; }
     [ "$(sha256_of "$_df")" = "$_dw" ] || { rm -f "$_df"; row todo dialog "the spark-dialog fetched for $_rt is not the one the tree pins: not installed"; return 0; }
     mkdir -p "$(dirname "$DIALOG_BIN")" && cp "$_df" "$DIALOG_BIN.new" && chmod 755 "$DIALOG_BIN.new" && mv "$DIALOG_BIN.new" "$DIALOG_BIN"
     row ok dialog "installed for $_rt ($DIALOG_BIN), sha256 checked"
@@ -6088,6 +6147,7 @@ theme_wallpaper() {   # theme_wallpaper [X] -- the wallpaper: a drawing, a pictu
     want=$(wall_word "$1")
     [ -n "$want" ] || refuse_in theme "$1 is not a readable file or a color. Give a picture's path, default (the ground), one of the drawings ($(wall_shipped_names | paste -sd ' ' - | sed 's/ /, /g')), #rrggbb or one of these colors: $(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')"
     [ "$DESKTOP" = sway ] || refuse_in theme "DESKTOP=$DESKTOP -- spark-shell on desktop first"
+    case $want in *[';`$()|&<>']*) refuse_in theme "a path with one of ; \` \$ ( ) | & < > cannot be kept in the config -- rename the picture" ;; esac   # the config refuses these at the next read (load_env)
     config_set WALLPAPER "$want"
     WALLPAPER=$want; export WALLPAPER
     wall_follow   # its row: the drawing drawn in the palette, or why it cannot be (look_apply is quiet; the dialog keeps its own receipt)
@@ -6135,9 +6195,9 @@ alpha_step() {   # alpha_step N|more|less -> the receipt, or the refusal and exi
 # dark or light as the picture is; the picture is the wallpaper; the look is a folder under the
 # state named after the picture, in the history until `theme save` keeps it.
 look_small() {   # look_small PICTURE -> a small PNG of it in TMP, or the PNG itself; one line and exit 1 when neither can be
-    if [ -z "${SPARK_SHELL_NO_THUMB:-}" ] && command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1 && gdk-pixbuf-thumbnailer -s 256 "$1" "$TMP/small.png" 2>/dev/null; then printf '%s' "$TMP/small.png"; return 0; fi   # SPARK_SHELL_NO_THUMB (tests): the PNG read as it is
+    if pic_small "$1" "$TMP/small.png"; then printf '%s' "$TMP/small.png"; return 0; fi
     case $(printf '%s' "${1##*.}" | tr 'A-Z' 'a-z') in png) printf '%s' "$1"; return 0 ;; esac
-    echo "a picture is read through gdk-pixbuf-thumbnailer (the gdk-pixbuf package), which is not installed; a PNG is read without it"; return 1
+    echo "a picture is read through rsvg-convert (the $(svg_pkg) package), which is not installed; a PNG is read without it"; return 1
 }
 look_name() {   # look_name WORDS -> a name for a kept look that is no palette's and no saved theme's
     _ln=$(desk_name_of "$1"); [ -n "$_ln" ] || _ln=look
@@ -6354,6 +6414,7 @@ check_quiet() {
         case $shape in
             wsl) say="$say, boot na (WSL)" ;;
             arch) say="$say, boot na (no unified kernel image)" ;;
+            grub2) say="$say, boot na (grub2-mkconfig)" ;;
             nogrub) say="$say, boot na (no GRUB)" ;;
             *)
                 if ! boot_quiet "$shape"; then say="$say, boot loud"; st=fail
@@ -6474,6 +6535,13 @@ sbom_collect() {   # -> $TMP/sbom: NAME VERSION LICENSE REASON DESCRIPTION COMMA
                 printf '%s\t%s\t%s\t%s\t%s\n' "$n" "${pv##*-}" "${lic:-?}" "$r" "$d"
                 grep -oE '/usr/bin/[^<]+|/usr/share/applications/[^<]+\.desktop' "$ROOT/var/db/xbps/.$n-files.plist" 2>/dev/null \
                     | awk -v n="$n" '{print n "\t" $0}' >> "$TMP/files"
+            done > "$TMP/pkgs" ;;
+        dnf|zypper)   # one rpm database under both; dnf keeps who asked for a package, zypper does not
+            if [ "$PM" = dnf ]; then dnf -q repoquery --userinstalled --qf '%{name}\n' 2>/dev/null | sort > "$TMP/manual"; else : > "$TMP/manual"; fi
+            rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}\t%{LICENSE}\t?\t%{SUMMARY}\n' 2>/dev/null | while IFS='	' read -r n v l _ d; do
+                if grep -qx "$n" "$TMP/manual"; then r=chosen; elif [ "$PM" = dnf ]; then r=dependency; else r='?'; fi
+                printf '%s\t%s\t%s\t%s\t%s\n' "$n" "$v" "${l:-?}" "$r" "$d"
+                rpm -ql "$n" 2>/dev/null | grep -E '^/usr/bin/[^/]+$|/applications/[^/]+\.desktop$' | sed "s/^/$n\t/" >> "$TMP/files"
             done > "$TMP/pkgs" ;;
         brew)
             brew info --json=v2 --installed 2>/dev/null | jq -r '
@@ -7476,7 +7544,7 @@ desk_capture() {   # desk_capture screen|area|window [--wait N]
 # PENDING is words a layout waits with for the sway about to start.
 desk_start() {   # desk_start PENDING
     pending=$1
-    [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
+    [ -z "$(desktop_na)" ] || refuse "$(desktop_na)"
     # the desktop off, asked from a console (the old login screen, still
     # running until the next boot, runs this on Enter): your shell, never
     # a dead end

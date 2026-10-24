@@ -6,6 +6,9 @@
 # With SPARK=/path/to/spark's clone, section 13 renders its palettes too.
 set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
+# on a Mac the suite builds Terminal.app's profile and prints it, never
+# applying it: the developer's own terminal and profiles stay as they are
+[ "$(uname -s)" != Darwin ] || export SPARK_SHELL_NO_APPLY=1
 pass=0; fail=0
 ok() { pass=$((pass + 1)); printf '  ok   %s\n' "$1"; }
 bad() { fail=$((fail + 1)); printf '  FAIL %s   %s\n' "$1" "${2:-}"; }
@@ -182,7 +185,7 @@ printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "on: a prompt skip still 
 mv "$H/starship.aside" "$H/.local/bin/starship"
 out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^ok     prompt       starship 0.0-stub draws the prompt$' && ok "on: the prompt row names the starship it found" || bad "prompt ok" "$out"
-! grep -q 'STARSHIP_VERSION' "$SH" && [ "$(grep -c 'curl -' "$SH")" = 2 ] && grep -q '^    curl -fsSL --proto .=https,file. -o "$_df" "$DIALOG_URL/$_rt/spark-dialog-$_dt"' "$SH" \
+! grep -q 'STARSHIP_VERSION' "$SH" && [ "$(grep -c 'curl -' "$SH")" = 2 ] && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_df" "$DIALOG_URL/$_rt/spark-dialog-$_dt"' "$SH" \
     && grep -q '^    if ! curl -fsSL --proto .=https,file. --proto-redir .=https. --connect-timeout 30 -o "$_nz" "$NEON_URL"' "$SH" && grep -q '^NEON_SHA256=[0-9a-f]\{64\} ' "$SH" \
     && ok "spark-shell: two downloads, the dialog's release file and the font's, each checked against the sha256 pinned for it; no pinned version of anything else" || bad "a download survives" "$(grep -n 'STARSHIP_VERSION\|curl ' "$SH")"
 
@@ -644,7 +647,7 @@ if [ "$(uname -s)" != Darwin ]; then
     [ ! -s "$H/names.bad" ] && ok "theme wallpaper NAME: the 15 names are the CSS colors" || bad "wallpaper names" "$(cat "$H/names.bad")"
     # the wallpapers spark-shell ships (issue 10): stored by name, drawn from the clone's own file
     sh "$SH" theme wallpaper skyline >/dev/null
-    if command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1; then skypic="$HOME/.local/state/spark-shell/wallpapers/skyline-dracula.png"; skysaid="wallpaper skyline -- drawn in dracula"; else skypic="$REPO/wallpaper/skyline.png"; skysaid="wallpaper skyline"; fi   # under dracula: drawn in dracula where gdk-pixbuf is, the clone's picture where it is not
+    if command -v rsvg-convert >/dev/null 2>&1 || command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1; then skypic="$HOME/.local/state/spark-shell/wallpapers/skyline-dracula.png"; skysaid="wallpaper skyline -- drawn in dracula"; else skypic="$REPO/wallpaper/skyline.png"; skysaid="wallpaper skyline"; fi   # under dracula: drawn in dracula where gdk-pixbuf is, the clone's picture where it is not
     grep -qx 'WALLPAPER=skyline' "$HOME/.config/spark-shell/config" && grep -qF "output * bg \"$skypic\" fill" "$sway" && grep -q '^gaps outer 16$' "$sway" \
         && [ "$(sh "$SH" theme wallpaper)" = "$skysaid" ] \
         && ok "theme wallpaper skyline: the name in the config, sway draws the drawing (in the palette in use where gdk-pixbuf is) with the gaps a picture has" || bad "wallpaper shipped" "$(grep WALLPAPER "$HOME/.config/spark-shell/config"); $(grep -n ' bg ' "$sway")"
@@ -1320,6 +1323,27 @@ else
 fi
 grep -q '^Exec=tmux$' "$REPO/templates/.local/share/applications/spark-shell-tmux.desktop" && grep -q '^Terminal=true$' "$REPO/templates/.local/share/applications/spark-shell-tmux.desktop" \
     && ok "template: spark-shell-tmux.desktop runs tmux in a terminal" || bad "tmux template"
+# the same table through rpm, the one database under Fedora's dnf and openSUSE's zypper: rpm -qa the rows, rpm -ql the files, dnf alone remembers who asked for a package
+if [ "$(uname -s)" != Darwin ]; then
+    fresh; desktop_stubs
+    cat > "$H/.local/bin/rpm" <<'EOF'
+#!/bin/sh
+case ${1:-} in
+    -qa) printf 'reader\t1.0-1\tMIT\t?\tText-based Web browser\nlibfoo\t2.1-3\tLGPL-2.1\t?\tA library other packages need\n' ;;
+    -ql) case $2 in reader) echo /usr/bin/reader ;; libfoo) echo /usr/lib64/libfoo.so ;; esac ;;
+esac
+EOF
+    printf '#!/bin/sh\ncase "$*" in *--userinstalled*) echo reader ;; esac\n' > "$H/.local/bin/dnf"
+    chmod +x "$H/.local/bin/rpm" "$H/.local/bin/dnf"
+    printf 'ID=fedora\n' > "$H/os-fedora"; printf 'ID=opensuse-tumbleweed\nID_LIKE="suse opensuse"\n' > "$H/os-opensuse"
+    st=0; out=$(SPARK_OS_RELEASE=$H/os-fedora sh "$SH" sbom 2>&1) || st=$?
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^tool  reader  *1.0-1  *MIT  *Text-based Web browser$' && printf '%s\n' "$out" | grep -q '^part  libfoo  *2.1-3  *LGPL-2.1 ' \
+        && ok "sbom (Fedora): the rows through rpm -qa and rpm -ql, a command a tool, a library a part" || bad "sbom rpm" "st=$st $out"
+    out=$(SPARK_OS_RELEASE=$H/os-fedora sh "$SH" sbom reader 2>&1 || :); printf '%s\n' "$out" | grep -q '^  reason    chosen$' && ok "sbom (Fedora): dnf remembers that reader was asked for" || bad "sbom dnf reason" "$out"
+    out=$(SPARK_OS_RELEASE=$H/os-fedora sh "$SH" sbom libfoo 2>&1 || :); printf '%s\n' "$out" | grep -q '^  reason    dependency$' && ok "sbom (Fedora): the rest came as dependencies" || bad "sbom dnf dep" "$out"
+    out=$(SPARK_OS_RELEASE=$H/os-opensuse sh "$SH" sbom reader 2>&1 || :); printf '%s\n' "$out" | grep -q '^  reason    ?$' && ok "sbom (openSUSE): zypper keeps no reason, so the row says ?" || bad "sbom zypper reason" "$out"
+    SPARK_OS_RELEASE=$H/os-opensuse sh "$SH" sbom --json >/dev/null 2>&1; [ "$(jq -r '.components[0].purl' "$HOME/.local/state/spark-shell/sbom.cdx.json")" = 'pkg:zypper/opensuse/libfoo@2.1-3' ] && ok "sbom --json (openSUSE): the purl names zypper and the family" || bad "sbom purl" "$(cat "$HOME/.local/state/spark-shell/sbom.cdx.json" 2>&1 | head -c 400)"
+fi
 
 # --- 18. rooms: the same desk as a tmux session --------------------------
 # No sway here (SWAYSOCK unset): a desk plays as rooms through a fake
@@ -2003,6 +2027,38 @@ rc=0; out=$(L quiet boot on 2>&1) || rc=$?
     && ok "quiet boot on (Arch, no UKI): one sentence, the config untouched" || bad "arch no uki" "rc=$rc $out"
 rc=0; out=$(WSL_DISTRO_NAME=Debian L quiet boot on 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell quiet: WSL has no boot of its own: Windows boots it." ] && ok "quiet boot on (WSL): one sentence" || bad "wsl boot" "rc=$rc $out"
+# Fedora and openSUSE boot through GRUB 2 with grub2-mkconfig, which spark-shell does not run: one sentence, nothing run, status says na
+# (the system's tools alone on PATH: an Ubuntu runner has update-grub under /usr/sbin)
+fresh
+console_stubs Linux
+rm -f "$H/lx/update-grub"; printf '#!/bin/sh\necho "grub2-mkconfig $*" >> "%s/log"\n' "$H" > "$H/lx/grub2-mkconfig"; chmod +x "$H/lx/grub2-mkconfig"
+printf 'ID=fedora\n' > "$H/os-release"
+mkdir -p "$H/root/etc/default"; printf 'GRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX="rhgb quiet"\n' > "$H/root/etc/default/grub"; cp "$H/root/etc/default/grub" "$H/grub.orig"
+rc=0; out=$(PATH=$H/lx:$sys sh "$SH" quiet boot on 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "spark-shell quiet: This Linux boots through grub2-mkconfig, whose boot entries spark-shell does not edit, so the boot stays as it is (Fedora and openSUSE boot quiet already)." ] \
+    && cmp -s "$H/root/etc/default/grub" "$H/grub.orig" && ! grep -q grub2-mkconfig "$H/log" && ok "quiet boot on (Fedora, grub2-mkconfig): one sentence, nothing run, nothing written" || bad "grub2 boot" "rc=$rc $out"
+out=$(PATH=$H/lx:$sys sh "$SH" quiet); printf '%s\n' "$out" | grep -q '^boot   na: This Linux boots through grub2-mkconfig' && ok "quiet (Fedora): boot na, the sentence" || bad "grub2 quiet" "$out"
+st=$(PATH=$H/lx:$sys sh "$SH" status); printf '%s\n' "$st" | grep -q '^  quiet login off  *boot na ' && ok "status (Fedora): boot na" || bad "grub2 status" "$(printf '%s\n' "$st" | grep quiet)"
+# WSL 2 (Ubuntu): the terminal seat alone; the desktop and the login screen are refused in one sentence, nothing written
+fresh
+console_stubs Linux
+printf 'ID=ubuntu\nID_LIKE=debian\n' > "$H/os-release"
+rc=0; out=$(WSL_DISTRO_NAME=Ubuntu L on desktop --yes 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: not on WSL, where Windows draws the desktop" ] && [ ! -e "$HOME/.config/spark-shell/config" ] && ok "on desktop (WSL): one sentence, the config untouched" || bad "wsl on desktop" "rc=$rc $out"
+rc=0; out=$(WSL_DISTRO_NAME=Ubuntu L on login --yes 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "spark-shell login: not on WSL, which has no tty1 for a login screen" ] && [ ! -e "$HOME/.config/spark-shell/config" ] && ok "on login (WSL): one sentence, the config untouched" || bad "wsl on login" "rc=$rc $out"
+rc=0; out=$(WSL_DISTRO_NAME=Ubuntu L desktop 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = "spark-shell desktop: not on WSL, where Windows draws the desktop" ] && ok "desktop (WSL): one sentence" || bad "wsl desktop" "rc=$rc $out"
+mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\nLOGIN=yes\n' > "$HOME/.config/spark-shell/config"   # a config carried over from a Linux machine
+out=$(WSL_DISTRO_NAME=Ubuntu L on --dry-run 2>&1)
+printf '%s\n' "$out" | grep -q '^skip   desktop      not on WSL, where Windows draws the desktop$' && ! printf '%s\n' "$out" | grep -q 'sway/config' && ! printf '%s\n' "$out" | grep -q '^would  login' \
+    && ok "on (WSL) with DESKTOP=sway and LOGIN=yes: a skip row, no desktop render, no login screen" || bad "wsl on sway" "$out"
+st=$(WSL_DISTRO_NAME=Ubuntu L status)
+printf '%s\n' "$st" | grep -q '^  desktop sway  *not on WSL, where Windows draws the desktop$' && printf '%s\n' "$st" | grep -q '^  login na  *not on WSL, which has no tty1 for a login screen$' \
+    && ok "status (WSL): the desktop and login rows say na" || bad "wsl status" "$(printf '%s\n' "$st" | grep -E 'desktop|login')"
+ck=$(WSL_DISTRO_NAME=Ubuntu L check || true)
+printf '%s\n' "$ck" | grep -q '^ok     desktop      na (WSL)$' && printf '%s\n' "$ck" | grep -q '^ok     pointer      na (no desktop)$' && printf '%s\n' "$ck" | grep -q '^ok     login        na (' \
+    && ok "check (WSL): the desktop, pointer and login rows are na" || bad "wsl check" "$(printf '%s\n' "$ck" | grep -E 'desktop|pointer|login')"
 
 # on and off: every key applied from the config, then everything handed back byte for byte
 fresh
@@ -2382,7 +2438,7 @@ printf '%s\n' "$out" | grep -q '^todo   sound        pulseaudio is installed, an
     && ok "Arch with pulseaudio: pipewire-pulse is left out of the install, one todo says how to take it" || bad "arch pulseaudio" "$out"
 grep -q '^PKG_SOUND=pipewire wireplumber alsa-pipewire libspa-bluetooth$' "$REPO/distro/void.env" && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa libspa-0.2-bluetooth$' "$REPO/distro/debian.env" \
     && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa$' "$REPO/distro/arch.env" && ok "distro: the sound's packages, each family's names" || bad "PKG_SOUND" "$(grep -h PKG_SOUND "$REPO"/distro/*.env)"
-grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd and librsvg among them" || bad "void.env desktop"
+grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert among them" || bad "void.env desktop"
 
 # the login screen of v0.41 (greetd on tty1, spark-shell's files in
 # /etc/greetd): handed back to getty at the next boot by on, on desktop,
@@ -4068,7 +4124,7 @@ else
         printf 'ID=%s\n' "$1" > "$H/os-release"
         mkdir -p "$H/root/etc/greetd" "$H/root/usr/bin" "$H/root/usr/sbin"
         printf '[terminal]\nvt = 1\n# agreety, the package'"'"'s\n' > "$H/root/etc/greetd/config.toml"
-        printf 'root:x:0:0::/root:/bin/sh\n_greeter:x:900:900::/var/lib/_greeter:/sbin/nologin\n_greetd:x:901:901::/var/lib/greetd:/bin/false\n' > "$H/root/etc/passwd"
+        printf 'root:x:0:0::/root:/bin/sh\n_greeter:x:900:900::/var/lib/_greeter:/sbin/nologin\n_greetd:x:901:901::/var/lib/greetd:/bin/false\ngreetd:x:902:902::/var/lib/greetd:/sbin/nologin\ngreeter:x:903:903::/var/lib/greeter:/sbin/nologin\n' > "$H/root/etc/passwd"
         printf 'root:x:0:\n_seatd:x:990:\n' > "$H/root/etc/group"
         printf '#!/bin/sh\necho "visudo $*" >> "$HOME/log"\n! grep -q BAD "$2"\n' > "$H/lx/visudo"
         printf '#!/bin/sh\n[ "$2" = greetd ] && [ -e "$HOME/greetd-running" ]\n' > "$H/lx/pgrep"
@@ -4162,14 +4218,33 @@ else
     [ -e "$H/root/units/getty@tty1.service" ] && [ ! -e "$H/root/units/greetd.service" ] && [ "$(grep -n 'enable getty@tty1' "$H/log" | cut -d: -f1)" -lt "$(grep -n 'disable greetd' "$H/log" | cut -d: -f1)" ] \
         && [ ! -e "$le" ] && grep -q agreety "$H/root/etc/greetd/config.toml" && ok "Debian: off login: getty@tty1 enabled first, greetd disabled, the files gone" || bad "debian off" "$out $(cat "$H/log")"
     [ ! -e "$lf" ] && [ -f "$nf/MonaspaceNeon-Regular.otf" ] && ok "Debian: off login removes the login screen's copy of the font; yours stays" || bad "login font off" "$(ls -la "$lf" "$nf" 2>&1)"
+    # Fedora: systemd as Debian, the account greetd's package makes is greetd; openSUSE: greeter
+    login_root fedora
+    le=$H/root/etc/spark-shell/login; ll=$H/root/usr/local/lib/spark-shell
+    mkdir -p "$H/root/run/systemd/system" "$H/root/units"; : > "$H/root/units/getty@tty1.service"; : > "$H/root/usr/bin/greetd"
+    st=0; out=$(LC on login --yes 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -q '^user = "greetd"$' "$H/root/etc/greetd/config.toml" && [ -e "$H/root/units/greetd.service" ] && [ ! -e "$H/root/units/getty@tty1.service" ] \
+        && [ ! -e "$ll/login-boot" ] && [ ! -e "$H/root/etc/sudoers.d/spark-shell-login" ] && ! grep -q usermod "$H/log" \
+        && ok "Fedora: the login screen as the greetd account, systemd's switch, no runit file, no sudoers, no group" || bad "fedora login" "st=$st $out $(cat "$H/log")"
+    out=$(LC check 2>&1 || :); printf '%s\n' "$out" | grep -q '^ok     login        the login screen takes tty1 at boot, tty2 keeps the console login$' && ok "Fedora: check says the login screen is set up" || bad "fedora check" "$(printf '%s\n' "$out" | grep login)"
+    login_root opensuse
+    mkdir -p "$H/root/run/systemd/system" "$H/root/units"; : > "$H/root/units/getty@tty1.service"; : > "$H/root/usr/bin/greetd"
+    st=0; out=$(LC on login --yes 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -q '^user = "greeter"$' "$H/root/etc/greetd/config.toml" && [ -e "$H/root/units/greetd.service" ] && ok "openSUSE: the login screen as the greeter account" || bad "opensuse login" "st=$st $out"
     # a family the screen does not know, and no greetd yet
     login_root fixture
-    out=$(LC on login --yes 2>&1 || :); printf '%s\n' "$out" | grep -q '^todo   login        the login screen knows Debian, Arch and Void$' && ok "an unknown family: a todo row, nothing written" || bad "login unknown" "$out"
+    out=$(LC on login --yes 2>&1 || :); printf '%s\n' "$out" | grep -q '^todo   login        the login screen knows Debian, Ubuntu, Arch, Void, Fedora and openSUSE$' && ok "an unknown family: a todo row, nothing written" || bad "login unknown" "$out"
     login_root void; mkdir -p "$H/root/etc/runit"
     out=$(LC on login --yes 2>&1 || :); printf '%s\n' "$out" | grep -q '^todo   login        greetd is not installed -- spark-shell on login (the packages)$' && [ ! -e "$H/root/etc/spark-shell" ] && ok "Void without greetd: a todo row, nothing written" || bad "login no greetd" "$out"
 fi
-[ "$(grep -h '^PKG_LOGIN=' "$REPO"/distro/*.env | sort -u)" = 'PKG_LOGIN=greetd swayidle' ] && grep -q '^LOGIN_ACCOUNT=_greeter$' "$REPO/distro/void.env" && grep -q '^LOGIN_ACCOUNT=greeter$' "$REPO/distro/arch.env" && grep -q '^LOGIN_ACCOUNT=_greetd$' "$REPO/distro/debian.env" \
+[ "$(grep -h '^PKG_LOGIN=' "$REPO"/distro/*.env | sort -u)" = 'PKG_LOGIN=greetd swayidle' ] && grep -q '^LOGIN_ACCOUNT=_greeter$' "$REPO/distro/void.env" && grep -q '^LOGIN_ACCOUNT=greeter$' "$REPO/distro/arch.env" && grep -q '^LOGIN_ACCOUNT=greetd$' "$REPO/distro/fedora.env" && grep -q '^LOGIN_ACCOUNT=greeter$' "$REPO/distro/opensuse.env" && grep -q '^LOGIN_ACCOUNT=_greetd$' "$REPO/distro/debian.env" \
     && ok "distro/*.env: greetd, swayidle and each package's account for the login screen" || bad "distro login keys"
+keys_bad=''
+for f in "$REPO"/distro/*.env; do
+    [ "$(grep -o '^[A-Z_]*=' "$f" | sort | paste -sd' ' -)" = 'LOGIN_ACCOUNT= PKG_CLI= PKG_CONSOLE= PKG_DESKTOP= PKG_LOGIN= PKG_SHELL= PKG_SOUND= PM=' ] || keys_bad="$keys_bad ${f##*/}"
+    grep -q '^PKG_DESKTOP=.*\(librsvg\|rsvg-convert\)' "$f" || keys_bad="$keys_bad ${f##*/}:rsvg"
+done
+[ -z "$keys_bad" ] && [ "$(ls "$REPO"/distro/*.env | wc -l | tr -d ' ')" = 5 ] && ok "distro/*.env: five families, the same eight keys in each, every desktop list with rsvg-convert's package" || bad "distro keys" "$keys_bad"
 ! grep -v '^#' "$REPO/templates/login/sway.conf" | grep -q fullscreen && grep -q '^gaps outer 0$' "$REPO/templates/login/sway.conf" && grep -q '^alpha=0.0$' "$REPO/templates/login/foot.ini" \
     && ok "templates/login: the window fills the screen tiled, never fullscreen (foot draws a fullscreen background solid), clear over the wallpaper" || bad "login sway fullscreen"
 sw=$(grep '^exec swayidle ' "$REPO/templates/login/sway.conf"); [ "$sw" = "exec swayidle timeout 300 'swaymsg \"output * power off\"' resume 'swaymsg \"output * power on\"'" ] \
@@ -4285,7 +4360,7 @@ EOF
     [ "$(grep -c '^THEME_' "$H/pic.env")" = 20 ] && awk -v l="$(python3 -c 'import sys; h=sys.argv[1].lstrip("#"); print(sum(int(h[i:i+2],16) for i in (0,2,4)))' "$(sed -n 's/^THEME_BG=//p' "$H/pic.env")")" 'BEGIN { exit !(l > 600) }' \
         && ok "look.py palette PNG: the picture read by its own decoder, a light palette from a light picture" || bad "look.py palette" "$(cat "$H/pic.err" "$H/pic.env")"
     mkdir -p "$HOME/pictures"; cp "$H/pic.png" "$HOME/pictures/sunny.png"
-    out=$(SPARK_SHELL_NO_THUMB=1 sh "$SH" theme picture ~/pictures/sunny.png 2>&1)
+    out=$(SPARK_SHELL_NO_THUMB=1 SPARK_SHELL_NO_SVG=1 sh "$SH" theme picture ~/pictures/sunny.png 2>&1)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = 'a theme from sunny.png: sunny -- spark-shell theme save NAME keeps it, theme back returns' ] && [ -f "$st_dir/looks/sunny/palette.env" ] && [ -f "$st_dir/looks/sunny/sunny.png" ] \
         && grep -qx 'PALETTE=picture' "$st_dir/looks/sunny/look.env" && grep -qx 'WALLPAPER=picture' "$st_dir/looks/sunny/look.env" && grep -qx 'THEME=sunny' "$cfg" && grep -qx "WALLPAPER=$st_dir/looks/sunny/sunny.png" "$cfg" \
         && [ "$(sed -n 1p "$st_dir/theme.history" | cut -f2)" = sunny ] \
@@ -4295,6 +4370,15 @@ EOF
         && ok "theme save (bare) on a look: kept under its own name, the picture copied into the folder, the wallpaper now the folder's copy" || bad "theme save look" "$out $(ls "$th_dir/sunny" 2>&1; grep WALLPAPER "$cfg")"
     rc=0; out=$(sh "$SH" theme picture /etc/hosts 2>&1) || rc=$?
     [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a picture comes from under your home' ] && ok "theme picture: a file outside home is refused in one line" || bad "theme picture outside" "rc=$rc $out"
+    printf 'x' > "$HOME/pictures/a&b.jpg"; cp "$cfg" "$H/cfg.before"
+    if [ "$(uname -s)" != Darwin ]; then   # the wallpaper is the desktop's: a Mac refuses it before the path is read
+        rc=0; out=$(sh "$SH" theme wallpaper "$HOME/pictures/a&b.jpg" 2>&1) || rc=$?
+        [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a path with one of ; ` $ ( ) | & < > cannot be kept in the config -- rename the picture' ] && cmp -s "$cfg" "$H/cfg.before" \
+            && ok "theme wallpaper PATH with a character the config refuses: one line, the config untouched (it would refuse the next read)" || bad "wallpaper path chars" "rc=$rc $out"
+    fi
+    rc=0; out=$(sh "$SH" theme picture "$HOME/pictures/a&b.jpg" 2>&1) || rc=$?
+    [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a path with one of ; ` $ ( ) | & < > cannot be kept in the config -- rename the picture' ] && cmp -s "$cfg" "$H/cfg.before" \
+        && ok "theme picture PATH with such a character: the same line, nothing written" || bad "picture path chars" "rc=$rc $out"
     # a theme from words, the engine's half: the four words make a look named by the words, applied, kept in the history
     printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=default\n' > "$cfg"; rm -rf "$st_dir/theme.history" "$st_dir/looks"; sh "$SH" theme nord >/dev/null 2>&1
     out=$(sh "$SH" panel theme words 'teal accent=same warmth=warm contrast=soft light=dark' 2>&1)
@@ -4350,15 +4434,33 @@ if [ "$(uname -s)" != Darwin ]; then
         && ok "theme tokyonight-night under a picture of yours: the picture stays, and the list names no drawing then" || bad "picture stays" "$(grep WALLPAPER "$cfg"; sh "$SH" theme list | grep nord)"
     sh "$SH" theme wallpaper navy >/dev/null 2>&1; sh "$SH" theme nord >/dev/null 2>&1
     rc=0; out=$(sh "$SH" theme wallpaper skyline 2>&1) || rc=$?
-    if command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1; then
+    if command -v rsvg-convert >/dev/null 2>&1 || command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1; then
         [ "$rc" = 0 ] && [ -f "$st_dir/wallpapers/skyline-nord.svg" ] && [ -f "$st_dir/wallpapers/skyline-nord.png" ] && grep -qF "output * bg \"$st_dir/wallpapers/skyline-nord.png\" fill" "$sway" \
             && grep -q "^<rect .*fill=\"#2e3440\"" "$st_dir/wallpapers/skyline-nord.svg" && ! grep -q '#1a1b26' "$st_dir/wallpapers/skyline-nord.svg" \
             && [ "$(printf '%s\n' "$out" | tail -1)" = 'a running sway shows skyline now, drawn in nord -- it follows the palette: a palette with a drawing of its own brings that one' ] \
             && ok "theme wallpaper skyline under nord: the drawing drawn again in nord (its background nord's), the PNG under the state, sway shows it" || bad "drawing recolored" "rc=$rc $out $(ls "$st_dir/wallpapers" 2>&1; grep ' bg ' "$sway")"
     else
-        [ "$rc" = 0 ] && [ -f "$st_dir/wallpapers/skyline-nord.svg" ] && [ ! -f "$st_dir/wallpapers/skyline-nord.png" ] && grep -qF "output * bg \"$REPO/wallpaper/skyline.png\" fill" "$sway" && printf '%s\n' "$out" | grep -q '^todo   wallpaper .*gdk-pixbuf-thumbnailer is not installed' \
-            && ok "theme wallpaper skyline under nord with no gdk-pixbuf: the SVG recolored, a todo row, the clone's picture meanwhile" || bad "drawing no thumbnailer" "rc=$rc $out $(ls "$st_dir/wallpapers" 2>&1)"
+        [ "$rc" = 0 ] && [ -f "$st_dir/wallpapers/skyline-nord.svg" ] && [ ! -f "$st_dir/wallpapers/skyline-nord.png" ] && grep -qF "output * bg \"$REPO/wallpaper/skyline.png\" fill" "$sway" && printf '%s\n' "$out" | grep -q '^todo   wallpaper .*rsvg-convert is not installedmbnailer is not installed' \
+            && ok "theme wallpaper skyline under nord with no renderer: the SVG recolored, a todo row, the clone's picture meanwhile" || bad "drawing no renderer" "rc=$rc $out $(ls "$st_dir/wallpapers" 2>&1)"
     fi
+    # the drawing through rsvg-convert alone (gdk-pixbuf 2.44 ships no thumbnailer: Arch, Fedora, Tumbleweed): a stub logs the call and writes a picture
+    mkdir -p "$H/rsvg"; printf '#!/bin/sh\necho "rsvg-convert $*" >> "$HOME/rsvg.log"\nwhile [ $# -gt 0 ]; do case $1 in -o) cp "%s" "$2"; shift ;; esac; shift; done\n' "$REPO/wallpaper/skyline.png" > "$H/rsvg/rsvg-convert"; chmod +x "$H/rsvg/rsvg-convert"
+    rm -rf "$st_dir/wallpapers"; : > "$H/rsvg.log"
+    rc=0; out=$(SPARK_SHELL_NO_THUMB=1 PATH=$H/rsvg:$H/.local/bin:$sys sh "$SH" theme wallpaper skyline 2>&1) || rc=$?
+    [ "$rc" = 0 ] && grep -qx "rsvg-convert -w 3840 -o $st_dir/wallpapers/skyline-nord.png.new $st_dir/wallpapers/skyline-nord.svg" "$H/rsvg.log" && [ -f "$st_dir/wallpapers/skyline-nord.png" ] \
+        && grep -qF "output * bg \"$st_dir/wallpapers/skyline-nord.png\" fill" "$sway" && ok "theme wallpaper skyline under nord through rsvg-convert: drawn 3840 wide from the recolored SVG, sway shows it" || bad "rsvg drawing" "rc=$rc $out $(cat "$H/rsvg.log")"
+    rm -rf "$st_dir/wallpapers"
+    rc=0; out=$(SPARK_SHELL_NO_SVG=1 sh "$SH" theme wallpaper skyline 2>&1) || rc=$?
+    [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^todo   wallpaper    skyline as drawn for tokyonight-night: rsvg-convert is not installed to draw it in nord (the librsvg package)$' && grep -qF "output * bg \"$REPO/wallpaper/skyline.png\" fill" "$sway" \
+        && ok "theme wallpaper skyline with no renderer: the todo row names the package, the clone's picture meanwhile" || bad "no renderer row" "rc=$rc $out"
+    # a picture of yours read small through rsvg-convert when the thumbnailer is gone: the picture inside a square SVG, its margins clear
+    mkdir -p "$HOME/pictures"; printf 'not really a jpeg' > "$HOME/pictures/photo.jpg"; : > "$H/rsvg.log"
+    rc=0; out=$(SPARK_SHELL_NO_THUMB=1 PATH=$H/rsvg:$H/.local/bin:$sys sh "$SH" theme picture ~/pictures/photo.jpg 2>&1) || rc=$?
+    [ "$rc" = 0 ] && grep -q '^rsvg-convert -w 256 -h 256 -o .*/small.png.new .*/pic/wrap.svg$' "$H/rsvg.log" && [ -f "$st_dir/looks/photo/palette.env" ] && grep -qx 'THEME=photo' "$cfg" \
+        && ok "theme picture PATH through rsvg-convert: the picture drawn 256 wide inside an SVG, a look made from it" || bad "rsvg picture" "rc=$rc $out $(cat "$H/rsvg.log")"
+    rc=0; out=$(SPARK_SHELL_NO_THUMB=1 SPARK_SHELL_NO_SVG=1 sh "$SH" theme picture ~/pictures/photo.jpg 2>&1) || rc=$?
+    [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a picture is read through rsvg-convert (the librsvg package), which is not installed; a PNG is read without it' ] && ok "theme picture PATH with no reader: one line names the package" || bad "no reader" "rc=$rc $out"
+    sh "$SH" theme nord >/dev/null 2>&1; sh "$SH" theme wallpaper skyline >/dev/null 2>&1   # the look the tests below expect: nord, skyline drawn in it
     [ "$(sh "$SH" theme wallpaper | sed -n 1p | cut -d' ' -f1-2)" = 'wallpaper skyline' ] && ok "theme wallpaper (bare): the drawing's name" || bad "wallpaper bare drawing" "$(sh "$SH" theme wallpaper)"
     # the idle screen: its lines in the render, the verb's refusals away from a desktop, and its window through the stub
     grep -qxF 'for_window [app_id="spark-idle"] border none' "$sway" && grep -qx 'workspace idle gaps inner 0' "$sway" && grep -qx 'workspace idle gaps outer 0' "$sway" && ok "sway render: the idle workspace has no gaps and the idle window no border" || bad "idle render" "$(grep -n idle "$sway")"
@@ -4547,7 +4649,7 @@ sh "$SH" -h > "$voice/help"
 grep '^ *#' "$REPO/templates/.config/sway/config" > "$voice/sway-config-comments"
 out_words="colours?|desks?|rooms?|seat|login box|marks?|marked|player|this machine's cycles|the forge wallpaper|greeter|the box|stranger|newcomer|founder|inventory|the hands|shell layer|monitors?"
 contractions="[A-Za-z]*n't\b|\bit's\b|\byou'll\b|\bwe're\b|\bthat's\b|\bthere's\b|\blet's\b"
-caps_ok='DAY|TIME|KEYBOARD|POINTER|ASCII|ALSA|A2DP|POSIX|JSON|SGR|SBOM|PATH|NAME|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|LOGIN|WALLPAPER|ALPHA|WINDOWS|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
+caps_ok='DAY|TIME|KEYBOARD|POINTER|ASCII|ALSA|A2DP|POSIX|JSON|SGR|SBOM|PATH|NAME|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|LGPL|GNOME|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|LOGIN|WALLPAPER|ALPHA|WINDOWS|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
 for n in README.md CHANGELOG.md CREDITS.md config.example help sway-config-comments; do
     f=$voice/$n
     # (a) the words that are out, as whole words in any case

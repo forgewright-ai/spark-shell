@@ -6,8 +6,8 @@
                                         the twenty keys from five words
   look.py --version
 
-The picture is a PNG (spark-shell makes a small one with gdk-pixbuf-thumbnailer first; a PNG
-of any size is read as it is). Its colors are gathered into a few clusters; the heaviest dark
+The picture is a PNG (spark-shell makes a small one first, through gdk-pixbuf-thumbnailer or
+rsvg-convert; a PNG of any size is read as it is, and a clear pixel is skipped). Its colors are gathered into a few clusters; the heaviest dark
 one is the background of a dark palette, the heaviest light one of a light palette, the most
 saturated one the accent, and each of the six terminal hues takes the cluster nearest it,
 or is made at that hue in the picture's own saturation.
@@ -201,6 +201,8 @@ def read_png(path):
             if k % step:
                 continue
             o = x * bpp
+            if channels in (2, 4) and line[o + (channels - 1) * bps] < 128:
+                continue   # a clear pixel (the margins of a picture drawn small inside a square) is no color of the picture
             if ctype == 3:
                 out.append(plte[line[o]] if plte and line[o] < len(plte) else (0, 0, 0))
             elif channels <= 2:
