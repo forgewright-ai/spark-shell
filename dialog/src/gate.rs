@@ -118,11 +118,14 @@ pub fn step(tools: &[Tool], rows: &Rows, c: &Call) -> Result<(), String> {
         return Ok(());
     }
     if naming.iter().any(|x| names.iter().all(|k| x.arguments.get(*k) == c.arguments.get(*k))) {
-        Ok(())
-    } else {
-        let said = names.iter().find_map(|k| c.arguments.get(*k).and_then(Value::as_str)).unwrap_or("that");
-        Err(format!("{} is not in the list now", said))
+        return Ok(());
     }
+    let said = names.iter().find_map(|k| c.arguments.get(*k).and_then(Value::as_str)).unwrap_or("that");
+    // the one in use is a state row, no step (theme:show:nord): asked for again, its provider says it is on
+    if rows.rows.iter().any(|r| r.tool.is_none() && r.id == format!("{}:show:{}", rows.title, said)) {
+        return Ok(());
+    }
+    Err(format!("{} is not in the list now", said))
 }
 
 #[cfg(test)]
@@ -232,6 +235,31 @@ mod tests {
             ask: vec![],
         };
         assert!(step(&t, &r, &free).is_ok(), "a level names no row");
+    }
+
+    #[test]
+    fn the_one_in_use_is_named_by_its_state_row() {
+        // "theme gruvbox-dark" while gruvbox-dark is on: its row is a state, no step; asked again it is no
+        // stranger to the list, and its provider answers that it is on
+        let tools = vec![Tool {
+            name: "theme_palette".into(),
+            title: "theme NAME".into(),
+            schema: json!({"type": "object", "properties": {"name": {"type": "string", "minLength": 1}}, "required": ["name"], "additionalProperties": false}),
+            destructive: false,
+            read_only: false,
+        }];
+        let r = crate::model::rows(r#"{"title":"theme","rows":[
+            {"id":"theme:show:gruvbox-dark","sign":"check","text":"gruvbox-dark","tool":null,"more":[],"columns":[],"children":null},
+            {"id":"theme:nord","sign":"ring","text":"nord","tool":{"name":"theme_palette","arguments":{"name":"nord"}},"more":[],"columns":[],"children":null}]}"#)
+        .unwrap();
+        let named = |n: &str| Call {
+            name: "theme_palette".into(),
+            arguments: args(json!({"name": n})),
+            ask: vec![],
+        };
+        assert!(step(&tools, &r, &named("gruvbox-dark")).is_ok(), "the one in use");
+        assert!(step(&tools, &r, &named("nord")).is_ok(), "a listed one");
+        assert_eq!(step(&tools, &r, &named("rainbow")).unwrap_err(), "rainbow is not in the list now");
     }
 
     #[test]
