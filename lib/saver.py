@@ -17,7 +17,8 @@ draws its lines in braille dots; foot draws all of those itself. --ascii keeps e
 three roles the palette gives: the accent, the muted color and the bold of the
 text. A saver never reads a file, never opens a socket and never starts a program.
 
-The savers are sparks (bursts that arc and fade, embers rising), starfield (the
+The savers are spark (bursts that arc and fade, embers rising), matrix (digital
+rain, in your palette's colors), starfield (the
 Windows 3.1 one), drift (the clock bounces off the edges), fire (the demo scene's),
 and mystify (two ribbons of lines). All but drift
 keep the time at the lower left, in the figures the idle screen draws.
@@ -129,8 +130,8 @@ class Saver:
         raise NotImplementedError
 
 
-class Sparks(Saver):
-    name = "sparks"
+class Spark(Saver):
+    name = "spark"
     about = "sparks all over: bursts that arc and fade, and embers rising from below"
     BURST = 0.2              # the chance a new burst goes off each frame
     EMBER = 0.7              # the chance a new ember leaves the bottom each frame
@@ -192,6 +193,57 @@ class Sparks(Saver):
             else:
                 c, role = ".", MUTED
             g.put(x, y, c, role)
+
+
+class Matrix(Saver):
+    name = "matrix"
+    about = "digital rain: columns of glyphs falling, a bright head and a trail that dims"
+    GLYPHS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:.=*+-<>|"   # plain ASCII: the console and every font have it
+    START = 0.04             # the chance a quiet column starts a new drop each frame
+    FLICKER = 0.06           # the chance a lit cell changes its glyph each frame
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        r = self.rng
+        self.cells = [[r.choice(self.GLYPHS) for _ in range(self.w)] for _ in range(self.h)]
+        self.drops = [None] * self.w                 # a column's drop: [head, speed, tail length]
+        for _ in range(2 * self.h):                  # the rain is already falling at the first frame
+            self._step()
+
+    def _step(self):
+        r = self.rng
+        for x in range(self.w):
+            d = self.drops[x]
+            if d is None:
+                if r.random() < self.START:
+                    self.drops[x] = [-r.uniform(0, self.h * 0.4), r.uniform(0.35, 1.1),
+                                     r.randint(max(3, self.h // 3), max(4, self.h))]
+                continue
+            d[0] += d[1]
+            hy = int(d[0])
+            if 0 <= hy < self.h:
+                self.cells[hy][x] = r.choice(self.GLYPHS)   # the head is always a new glyph
+            if hy - d[2] >= self.h:
+                self.drops[x] = None
+        for y in range(self.h):                      # the glyphs behind a head flicker
+            row = self.cells[y]
+            for x in range(self.w):
+                if r.random() < self.FLICKER / 4:
+                    row[x] = r.choice(self.GLYPHS)
+
+    def draw(self, g, _t):
+        self._step()
+        for x, d in enumerate(self.drops):
+            if d is None:
+                continue
+            hy = int(d[0])
+            for back in range(d[2]):
+                y = hy - back
+                if not 0 <= y < self.h:
+                    continue
+                f = back / d[2]
+                role = BOLD if back == 0 else ACCENT if f < 0.35 else MUTED
+                g.put(x, y, self.cells[y][x], role)
 
 
 class Starfield(Saver):
@@ -411,7 +463,7 @@ class Mystify(Saver):
                         g.put(x, y, c, role)
 
 
-SAVERS = {c.name: c for c in (Sparks, Starfield, Drift, Fire, Mystify)}
+SAVERS = {c.name: c for c in (Spark, Matrix, Starfield, Drift, Fire, Mystify)}
 
 
 def render(g, home=True):

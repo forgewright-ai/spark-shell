@@ -31,8 +31,8 @@ def run(*args):
     return subprocess.run([sys.executable, "-I", SAVER] + list(args), capture_output=True, text=True)
 
 
-ok(sorted(saver.SAVERS) == ["drift", "fire", "mystify", "sparks", "starfield"], "the five savers")
-ok(run("list").stdout.count("\n") == 5, "list names one a line")
+ok(sorted(saver.SAVERS) == ["drift", "fire", "matrix", "mystify", "spark", "starfield"], "the six savers")
+ok(run("list").stdout.count("\n") == 6, "list names one a line")
 
 BLOCKS = set("\u2588\u2591\u2592\u2593") | set(chr(c) for c in range(0x2801, 0x2900))   # the idle clock's block, fire's shades, mystify's braille
 for name, cls in saver.SAVERS.items():
@@ -84,17 +84,25 @@ ok(any(0x2801 <= ord(c) < 0x2900 for c in txt) and not any(c in "/\\" for c in t
 m = saver.SAVERS["mystify"](80, 24, seed=4, ascii=True)
 txt = "".join("".join(m.frame("14:32").text()) for _ in range(40))
 ok(any(c in "/\\|-" for c in txt) and all(ord(c) < 127 for c in txt), "mystify --ascii draws strokes")
-# sparks: a burst is many sparks at once, and the screen opens with some in the air
-sp = saver.SAVERS["sparks"](80, 24, seed=7)
-ok(len(sp.sparks) > 30, "sparks opens with sparks in the air (%d)" % len(sp.sparks))
+# spark: a burst is many sparks at once, and the screen opens with some in the air
+sp = saver.SAVERS["spark"](80, 24, seed=7)
+ok(len(sp.sparks) > 30, "spark opens with sparks in the air (%d)" % len(sp.sparks))
 peak = max(len(sp.sparks) for _ in range(200) if sp.frame("14:32"))
-ok(peak > 100 and peak <= sp.MAX + 60, "sparks fills the screen without passing its cap (%d)" % peak)
-sp = saver.SAVERS["sparks"](80, 24, seed=7)
+ok(peak > 100 and peak <= sp.MAX + 60, "spark fills the screen without passing its cap (%d)" % peak)
+sp = saver.SAVERS["spark"](80, 24, seed=7)
 gone = 0
 for _ in range(400):
     sp.frame("14:32")
     gone = max(gone, len(sp.sparks))
-ok(all(-1 <= x <= 80 and -1 <= y <= 24 for x, y, *_ in sp.sparks), "sparks leave the list when they leave the screen")
+ok(all(-1 <= x <= 80 and -1 <= y <= 24 for x, y, *_ in sp.sparks), "spark leave the list when they leave the screen")
+# matrix: columns of rain, heads in bold, glyphs from its own set, the rain already falling at frame one
+mx = saver.SAVERS["matrix"](80, 24, seed=7)
+g = mx.frame("14:32")
+heads = sum(r.count("b") for r in g.roles())
+lit = sum(1 for r in g.roles() for c in r if c != " ")
+ok(heads >= 8 and lit > 200, "matrix opens with rain falling (%d heads, %d lit)" % (heads, lit))
+body = [c for n in range(100) for row in mx.frame("14:32").text() for c in row if c not in " \u2588"]
+ok(all(c in saver.Matrix.GLYPHS for c in body), "matrix draws only its own glyphs")
 # a screen too small for the figures has the time on one line
 g = saver.SAVERS["starfield"](30, 8, seed=1).frame("14:32")
 ok("14:32" in "".join(g.text()), "a small screen has the time on one line")
