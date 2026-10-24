@@ -7,7 +7,7 @@ use common::palette;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use serde_json::json;
-use spark_dialog::app::{App, Config, Line, Mode, Provider, Sign, Step, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
+use spark_dialog::app::{App, Config, Line, Mode, Provider, Sign, Staged, Step, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
 use spark_dialog::model;
 
 const CLOCK: &str = "Sun 18 Oct \u{b7} 12:04";
@@ -191,7 +191,7 @@ fn a_section_with_its_groups_and_the_exchange() {
     app.exchange = vec![
         Line {
             sign: Sign::You,
-            text: "close the mail window".into(),
+            text: "window close aerc".into(),
             undo: false,
         },
         Line {
@@ -214,23 +214,19 @@ fn a_section_with_its_groups_and_the_exchange() {
 }
 
 #[test]
-fn a_question_s_steps_are_proposals() {
-    // his photo (#44): an older step with its Undo, then the newest turn, a question, with its proposal
+fn a_turn_is_the_command_then_what_came_of_it() {
+    // #53: a step's turn is its command as it ran and its result, Undo at the end of that result;
+    // a question's turn is the words and the answer; the newest turn first
     let mut app = full();
     app.exchange = vec![
         Line {
             sign: Sign::You,
-            text: "set the theme to gruvbox-dark please".into(),
-            undo: false,
-        },
-        Line {
-            sign: Sign::Step,
             text: "theme gruvbox-dark".into(),
             undo: false,
         },
         Line {
             sign: Sign::Done,
-            text: "theme gruvbox-dark".into(),
+            text: "gruvbox-dark is on".into(),
             undo: true,
         },
         Line {
@@ -252,22 +248,27 @@ fn a_question_s_steps_are_proposals() {
             ask: vec![],
         },
         who: Who::Undo,
-        line: "undo theme everforest-dark".into(),
+        line: "undo theme gruvbox-dark".into(),
     });
-    app.proposals_at = Some(4);
-    app.proposals = vec![Step {
-        prov: 0,
-        call: model::Call {
-            name: "window_focus".into(),
-            arguments: json!({"name": "firefox"}).as_object().unwrap().clone(),
-            ask: vec![],
-        },
-        who: Who::Model,
-        line: "apps open firefox".into(),
-    }];
     app.in_list = true;
     app.sel = 0;
-    render(&app, "proposal");
+    render(&app, "turn");
+}
+
+#[test]
+fn commands_from_spark_wait_in_the_box_for_enter() {
+    // #53: "movie time: connect the jabra, volume 60, dim the screen" came back as three commands,
+    // one a line, in the box where the words were typed; Enter runs them, Esc drops them
+    let mut app = full();
+    let text = "bt connect jabra speak 410\nout level 60\ndisplay brightness 30".to_string();
+    app.input = text.clone();
+    app.cursor = text.chars().count();
+    app.staged = Some(Staged {
+        text,
+        steps: vec![],
+        draft: String::new(),
+    });
+    render(&app, "staged");
 }
 
 #[test]

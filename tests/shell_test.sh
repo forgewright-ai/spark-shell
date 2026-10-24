@@ -1000,14 +1000,26 @@ EOF
     [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^on workspace [0-9]*$' && ok "a fresh layout asked from the panel: the closing line names the workspace alone (the panel has its save row)" || bad "asked closing" "st=$st $out"
     rm -f "$argv"   # that one asked spark; the replay tests below must see no call
     out=$(SWAYSOCK=/tmp/x sh "$SH" panel layout --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "layout     1 saved $SEP last: $need" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO layout     $need	layout open studio" ] \
-        && ok "panel layout --list: the count and the last one on the title, a saved layout as a row that opens it by name" || bad "panel layout list" "$out"
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "layout     1 saved $SEP last: $need" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO layout     studio	layout open studio" ] \
+        && [ "$(printf '%s\n' "$out" | sed -n 3p)" = "  layout     rename studio	layout rename studio" ] \
+        && ok "panel layout --list: the count and the last one on the title, a saved layout by the name it was saved under (#51) and its rename row (#54)" || bad "panel layout list" "$out"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel layout open nowhere 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: layout: no saved layout named nowhere' ] && ok "panel layout open NAME: a name that is not saved is refused in one line" || bad "layout open gate" "st=$st $out"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel layout new 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: layout: new takes the words for it' ] && ok "panel layout new: without words, refused in one line" || bad "layout new gate" "st=$st $out"
     [ ! -e "$argv" ] && ok "layout NAME: no model call" || bad "replay called spark" "$(cat "$argv")"
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  layouts 1 saved  *studio (spark-shell layout NAME)$' && ok "status: the layouts row counts and names the saved ones" || bad "status layouts" "$(printf '%s\n' "$st" | grep layouts)"
+    # a new name for a saved layout, made as a save makes one; its lines in the history follow it (#54)
+    kh=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/layout.history; mkdir -p "$(dirname "$kh")"; printf '%s\tstudio\n' "$(date +%s)" >> "$kh"
+    out=$(sh "$SH" layout rename studio Photo Studio)
+    [ "$out" = "studio is photo-studio now -- spark-shell layout photo-studio opens it" ] && [ -f "$desks/photo-studio" ] && [ ! -e "$desks/studio" ] \
+        && grep -q '	photo-studio$' "$kh" && ! grep -q '	studio$' "$kh" \
+        && ok "layout rename NAME NEW: the file and its history lines under the new name, said in one line (#54)" || bad "rename" "$out $(ls "$desks") $(cat "$kh")"
+    st=0; out=$(sh "$SH" layout rename studio x 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = "spark-shell layout: no saved layout named studio" ] && ok "layout rename: a name not saved is refused in one line" || bad "rename missing" "st=$st $out"
+    st=0; out=$(sh "$SH" layout rename photo-studio Photo Studio 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = "spark-shell layout: photo-studio is its name already" ] && ok "layout rename to its own name: refused" || bad "rename same" "st=$st $out"
+    sh "$SH" layout rename photo-studio studio >/dev/null
     out=$(sh "$SH" layout delete studio)
     [ "$out" = "deleted studio" ] && [ ! -e "$desks/studio" ] && ok "layout delete NAME: gone, one line" || bad "delete" "$out"
     # a named app twice with the same args is the model's padding: once; main fullscreen fills the screen once the window is there
@@ -2636,14 +2648,14 @@ rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1
 mkdir -p "$H/sysb/class/backlight/amdgpu_bl1"
 printf '#!/bin/sh\necho "$*" >> "$HOME/bctl.log"\ncase "$*" in "-m -c backlight info") echo "amdgpu_bl1,backlight,120,47%%,255" ;; esac\n' > "$H/lx/brightnessctl"; chmod +x "$H/lx/brightnessctl"
 rc=0; out=$(SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" desktop display brightness up 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$out" = 'brightness 52%' ] && grep -qx -- '-q -c backlight set 52%' "$HOME/bctl.log" && ok "desktop display brightness up: the backlight 5 up, through brightnessctl" || bad "brightness backlight" "rc=$rc $out $(cat "$HOME/bctl.log" 2>&1)"
+[ "$rc" = 0 ] && [ "$out" = 'brightness at 52%' ] && grep -qx -- '-q -c backlight set 52%' "$HOME/bctl.log" && ok "desktop display brightness up: the backlight 5 up, through brightnessctl" || bad "brightness backlight" "rc=$rc $out $(cat "$HOME/bctl.log" 2>&1)"
 line=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null)
 full=$(printf '\342\226\210'); g=$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "gauge") | .full_text'); k=$(printf '%s' "$line" | jq -r '.[] | select(.name == "kb") | .full_text')
 [ "$(printf '%s' "$g" | LC_ALL=C grep -o "$full" | wc -l | tr -d ' ')" = 5 ] && [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "name") | .full_text')" = "<span foreground='#555555'>light</span>" ] && [ "$k" = "<span foreground='#555555'>kb</span> us+intl" ] \
     && ok "bar: light with its gauge (47, five cells), and kb with the layout in use (sway's second, us+intl)" || bad "bar light kb" "$line"
 SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" bar light down; grep -qx -- '-q -c backlight set 42%' "$HOME/bctl.log" && ok "bar light down: the brightness keys, 5 down" || bad "bar light down" "$(cat "$HOME/bctl.log")"
 rm -f "$HOME/bctl.log"; rc=0; out=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display brightness down 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$out" = 'brightness 42%' ] && grep -qx -- '-q -c backlight set 42%' "$HOME/bctl.log" \
+[ "$rc" = 0 ] && [ "$out" = 'brightness at 42%' ] && grep -qx -- '-q -c backlight set 42%' "$HOME/bctl.log" \
     && ok "panel display brightness down, the step a want plans: 5 down from the level now (47 to 42), never straight to 1 (#31)" || bad "panel brightness down" "rc=$rc $out $(cat "$HOME/bctl.log" 2>&1)"
 # a screen over DDC/CI: no backlight, ddcutil on the screen's bus
 cat > "$H/lx/ddcutil" <<'STUB'
@@ -2659,7 +2671,7 @@ rc=0; out=$(SPARK_SHELL_DEV=$H/dev SPARK_SHELL_SYS=$H/sysnone PATH="$H/lx:$PATH"
 [ "$rc" = 1 ] && [ ! -e "$HOME/ddc.log" ] && [ ! -e "$H/rt/spark-shell/ddc.bus" ] && ok "brightness with no i2c device open to you: ddcutil never asked, nothing kept (the group comes at the next login)" || bad "ddc no device" "rc=$rc $out"
 mkdir -p "$H/dev"; : > "$H/dev/i2c-5"
 rc=0; out=$(SPARK_SHELL_DEV=$H/dev SPARK_SHELL_SYS=$H/sysnone PATH="$H/lx:$PATH" sh "$SH" desktop display brightness 80 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$out" = 'brightness 80%' ] && grep -qx -- '--bus 5 setvcp 10 80 --noverify' "$HOME/ddc.log" && ok "desktop display brightness 80: the screen's DDC/CI on its own bus (5, the first display that answers), no read back" || bad "brightness ddc" "rc=$rc $out $(cat "$HOME/ddc.log")"
+[ "$rc" = 0 ] && [ "$out" = 'brightness at 80%' ] && grep -qx -- '--bus 5 setvcp 10 80 --noverify' "$HOME/ddc.log" && ok "desktop display brightness 80: the screen's DDC/CI on its own bus (5, the first display that answers), no read back" || bad "brightness ddc" "rc=$rc $out $(cat "$HOME/ddc.log")"
 rm -f "$HOME/.local/state/spark-shell/light"
 out=$(SPARK_SHELL_DEV=$H/dev SPARK_SHELL_SYS=$H/sysnone PATH="$H/lx:$PATH" sh "$SH" desktop display 2>&1)
 [ "$(printf '%s\n' "$out" | sed -n 2p)" = 'brightness 60%' ] && [ "$(grep -c '^detect' "$HOME/ddc.log")" = 1 ] && ok "desktop display: the brightness read from the screen (30 of 50, 60%); which screen answers is kept, asked once" || bad "display show" "$out $(cat "$HOME/ddc.log")"
@@ -2675,7 +2687,7 @@ rows=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel keyboard --list 2>
 printf '%s\n' "$rows" | grep -q 'br	keyboard use br$' && printf '%s\n' "$rows" | grep -q 'the next layout	keyboard next$' && ok "the dialog's keyboard section: the layouts, the one in use ticked, the others one Enter away, and the next" || bad "keyboard rows" "$rows"
 rm -f "$HOME/swaymsg.log"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel keyboard use br 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$out" = 'keyboard br' ] && grep -qx -- '-- input type:keyboard xkb_switch_layout 2' "$HOME/swaymsg.log" && ok "the dialog: keyboard use br switches to its index (2)" || bad "keyboard use" "rc=$rc $out $(cat "$HOME/swaymsg.log")"
+[ "$rc" = 0 ] && [ "$out" = 'the keyboard is br' ] && grep -qx -- '-- input type:keyboard xkb_switch_layout 2' "$HOME/swaymsg.log" && ok "the dialog: keyboard use br switches to its index (2)" || bad "keyboard use" "rc=$rc $out $(cat "$HOME/swaymsg.log")"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display idle 5 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'display off after 5 minutes' ] && grep -qx 'DISPLAY_IDLE=5' "$HOME/.config/spark-shell/config" && ok "the dialog: display idle 5 sets it" || bad "display idle from dialog" "rc=$rc $out"
 # notes: one Markdown file a note in ~/notes, the first line its name
@@ -3358,9 +3370,9 @@ STUB
     rm -f "$journal/undo" "$journal/recent"
     mkdir -p "$HOME/.config/spark-shell/layouts"; printf '{"words": "news and music", "why": "the feeds and a player", "main": {"app": "newsboat"}}\n' > "$HOME/.config/spark-shell/layouts/news"
     out=$(sh "$SH" panel --list)
-    _ln=$(printf '%s\n' "$out" | grep -nxF "$GO layout     news and music	layout open news" | cut -d: -f1); _an=$(printf '%s\n' "$out" | grep -n "^$GO apps " | tail -1 | cut -d: -f1)
+    _ln=$(printf '%s\n' "$out" | grep -nxF "$GO layout     news	layout open news" | cut -d: -f1); _an=$(printf '%s\n' "$out" | grep -n "^$GO apps " | tail -1 | cut -d: -f1)
     [ -n "$_ln" ] && [ -n "$_an" ] && [ "$_ln" -gt "$_an" ] && [ "$(sh "$SH" panel layout --list | sed -n 1p)" = "layout     1 saved" ] \
-        && ok "panel: a saved layout comes after the apps, by its words, opening it by name; the layout title counts it" || bad "panel layout row" "$out"
+        && ok "panel: a saved layout comes after the apps, by the name it was saved under (#51), opening it by name; the layout title counts it" || bad "panel layout row" "$out"
     rm -rf "$HOME/.config/spark-shell/layouts"
     [ ! -e "$H/.local/bin/spark" ] || mv "$H/.local/bin/spark" "$H/spark.away"   # no spark for a moment: the want is refused, not asked
     st=0; out=$(PATH=$H/.local/bin:$sys sh "$SH" panel sideways --list 2>&1) || st=$?
@@ -3382,7 +3394,7 @@ STUB
     st=0; out=$(sh "$SH" bar panel wifi forget old 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'forgot old' ] && grep -qx 'remove_network 1' "$wlog" && grep -qx save_config "$wlog" && ok "panel wifi forget: the saved network removed, the config saved" || bad "wifi forget" "st=$st $out; $(cat "$wlog" 2>&1)"
     st=0; out=$(sh "$SH" bar panel wifi connect nowhere 2>&1) || st=$?
-    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: wifi: connect nowhere is not on the panel now' ] && ok "panel: an action the section does not offer is refused in one line" || bad "panel gate" "st=$st $out"
+    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: nowhere is not in the list now' ] && ok "panel: an action the section does not offer is refused in one line" || bad "panel gate" "st=$st $out"
     out=$(sh "$SH" bar panel bt --list); blog=$H/.local/state/bt.log
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "bt         $DOT MAJOR V" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT bt         MAJOR V	bt disconnect MAJOR V" ] && printf '%s\n' "$out" | grep -q "^$RING bt         Buds $SEP new	bt pair Buds$" && printf '%s\n' "$out" | grep -q "^  bt         find new devices	bt scan$" && printf '%s\n' "$out" | grep -q "^  bt         turn off	bt power off$" \
         && ok "panel bt: the connected device, a new one to pair, a row that scans, and off" || bad "panel bt" "$out"
@@ -3423,14 +3435,14 @@ STUB
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "theme      none" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  theme      Wallpaper	theme wallpaper" ] && printf '%s\n' "$out" | grep -q "^$TICK theme      the terminal's own colors	theme show$" && printf '%s\n' "$out" | grep -q "^  theme      dracula	theme dracula$" && printf '%s\n' "$out" | grep -q "^  theme      save this look as	theme save$" && printf '%s\n' "$out" | grep -q "^  theme      Text size	theme show$" && printf '%s\n' "$out" | grep -q "^  theme      Transparency	theme show$" \
         && ok "panel theme (look, the old word, still opens it): the wallpaper, the text size and the transparency first, the palettes by name, none as the terminal's own colors, save this look as" || bad "panel look" "$out"
     st=0; out=$(sh "$SH" panel theme text bigger 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = "text 13 $SEP new windows and the bar take it; the pointer 24 pixels" ] && grep -q '^FONT=DejaVu Sans Mono:size=13$' "$HOME/.config/spark-shell/config" && grep -q '^    font pango:DejaVu Sans Mono 13$' "$sway" \
+    [ "$st" -eq 0 ] && [ "$out" = "text at 13 $SEP new windows and the bar take it; the pointer 24 pixels" ] && grep -q '^FONT=DejaVu Sans Mono:size=13$' "$HOME/.config/spark-shell/config" && grep -q '^    font pango:DejaVu Sans Mono 13$' "$sway" \
         && ok "panel theme text bigger: FONT in the config, the bar's font rendered, the receipt names the pointer's size" || bad "look text" "st=$st $out $(grep -n 'FONT\|font' "$HOME/.config/spark-shell/config" "$sway")"
     st=0; out=$(sh "$SH" panel theme alpha 0.5 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q '^ALPHA=0.5$' "$HOME/.config/spark-shell/config" && grep -q '^        background #00000080$' "$sway" && ok "panel look alpha 0.5: ALPHA in the config, the bar's background rendered with it (80)" || bad "look alpha" "st=$st $out $(grep -n 'background' "$sway")"
     st=0; out=$(sh "$SH" panel theme see-through more 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'transparency stops at 50%' ] && grep -q '^ALPHA=0.5$' "$HOME/.config/spark-shell/config" && ok "panel theme see-through more (the word before v0.71) at 50%: transparency refused in one line, nothing written" || bad "transparency floor" "st=$st $out"
     st=0; out=$(sh "$SH" panel theme transparency less 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = "transparency 40%" ] && grep -q '^ALPHA=0.6$' "$HOME/.config/spark-shell/config" \
+    [ "$st" -eq 0 ] && [ "$out" = "transparency at 40%" ] && grep -q '^ALPHA=0.6$' "$HOME/.config/spark-shell/config" \
         && ok "panel theme transparency less: a tenth less, said as a percent (the open windows take it at once, #35)" || bad "transparency less" "st=$st $out $(grep ALPHA "$HOME/.config/spark-shell/config")"
     sh "$SH" panel --list | grep -q "^  undo       transparency 50%	undo all$" && ok "undo: the transparency step's inverse names the percent it was" || bad "transparency undo" "$(sh "$SH" panel --list | grep undo)"
     # the bar: hide and show from the panel, remembered in the config and the render
@@ -3449,7 +3461,7 @@ STUB
     [ "$st" -eq 0 ] && [ "$out" = 'windows side by side' ] && grep -q '^WINDOWS=split$' "$HOME/.config/spark-shell/config" && grep -q '^workspace_layout default$' "$sway" && grep -qxF '[workspace=__focused__ tiling] layout splith' "$H/.local/state/swaymsg.log" \
         && ok "panel window split: side by side again, workspace_layout default" || bad "window split" "st=$st $out"
     st=0; out=$(sh "$SH" panel window sideways 2>&1) || st=$?
-    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: window: sideways is not on the panel now' ] && ok "panel window WORD: a way that is not a row is refused" || bad "window refuse" "st=$st $out"
+    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: sideways is not in the list now' ] && ok "panel window WORD: a way that is not a row is refused" || bad "window refuse" "st=$st $out"
     # the windows open now: a row that puts one in front, a close row, the steps by name; the tree shows a firefox window while $HOME/fullscreen is there
     touch "$HOME/fullscreen" "$HOME/aerc"; rm -f "$H/.local/state/swaymsg.log"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window close firefox 2>&1) || st=$?
@@ -3479,7 +3491,7 @@ printf '{"why": "quiet: no sound out, no mic, no bluetooth", "steps": [{"page": 
 EOF
     chmod +x "$H/.local/bin/spark"; rm -f "$amlog" "$blog"
     st=0; out=$(sh "$SH" bar quiet please 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> quiet please' "  $TICK out muted" "  $TICK mic muted" "  $TICK bluetooth off" "  $CROSS bt: dance x is not on the panel now" "  $CROSS theme: alpha takes 0 to 1" "  $CROSS no desktop here")" ] \
+    [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> quiet please' "  $TICK out muted" "  $TICK mic muted" "  $TICK bluetooth off" "  $CROSS x is not in the list now" "  $CROSS theme: alpha takes 0 to 1" "  $CROSS no desktop here")" ] \
         && ok "bar WORDS: one line per step with its sign and no why line; a step the panel does not offer, or a section it does not have, is refused in a few words, the rest played" || bad "bar want" "st=$st $out"
     [ "$(cat "$amlog")" = "$(printf '%s\n' '-c 0 sset Master mute' '-c 0 sset Capture nocap')" ] && grep -qx 'power off' "$blog" && ok "bar WORDS: the steps reached amixer and bluetoothctl" || bad "want steps" "$(cat "$amlog" "$blog" 2>&1)"
     grep -q '^do this on the desktop: quiet please$' "$H/spark.argv" && grep -q 'bt: disconnect MAJOR V, pair Buds, scan, power off' "$H/spark.argv" && grep -q 'out: use HDMI, mute, level N' "$H/spark.argv" && grep -q 'layout: new TASK' "$H/spark.argv" && grep -q 'theme: .*dracula, .*text bigger' "$H/spark.argv" && grep -q "What the bar shows now: lan up $SEP 192.0.2.10; wifi .* home $SEP 192.0.2.20; bt $DOT MAJOR V; out Jabra $SEP 40%" "$H/spark.argv" \
@@ -3563,7 +3575,7 @@ STUB
     chmod +x "$H/.local/bin/fzf"; rm -f "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent"
     st=0; out=$(SPARK_SHELL_TEST_TTY=1 sh "$SH" panel 2>&1 </dev/null) || st=$?
     plain=$(printf '%s\n' "$out" | sed "s/$(printf '\033')\[[0-9;]*m//g")
-    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && sed "s/$(printf '\033')\[[0-9;]*m//g" "$H/fzf.in.2" | grep -q "$TICK theme nord" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" && grep -q 'bg+:#4c525e,hl:#88c0d0' "$H/fzf.args.2" && ! grep -q 'bg+:#4c525e' "$H/fzf.args.1" && grep -q "undo.*theme none	undo all$" "$H/fzf.in.2" \
+    [ "$st" -eq 0 ] && [ "$(cat "$H/fzf.calls")" = 2 ] && sed "s/$(printf '\033')\[[0-9;]*m//g" "$H/fzf.in.2" | grep -q "$TICK nord is on" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" && grep -q 'bg+:#4c525e,hl:#88c0d0' "$H/fzf.args.2" && ! grep -q 'bg+:#4c525e' "$H/fzf.args.1" && grep -q "undo.*theme none	undo all$" "$H/fzf.in.2" \
         && ok "the window: a palette picked is read anew -- the next list is lit and marked in nord's shades (bg+ a fifth of the way to the text, hl the accent), the undo row goes back to none" || bad "window theme reload" "st=$st calls=$(cat "$H/fzf.calls" 2>&1) a1=$(grep -o 'color=[^ ]*' "$H/fzf.args.1" 2>&1) a2=$(grep -o 'color=[^ ]*' "$H/fzf.args.2" 2>&1) out=$(printf '%s' "$plain" | tr '\n' '|' | tail -c 200)"
     sh "$SH" theme none >/dev/null 2>&1 || true; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"   # as before the pick
     rm -f "$H/.local/bin/fzf" "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent"
@@ -3645,8 +3657,8 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt out mic bat clock theme window display keyboard notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 62 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the nineteen sections hold the 62 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 63 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the nineteen sections hold the 63 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 # the brightness takes the gate's own words, up, down or 1 to 100: a planner told 0 to 100 and no step sent a 0 the gate
 # refused, and the dialog's brighter and dimmer rows send up and down (#31). spark's grammar types an argument one
 # way, so a string enum holds both, the tens first: a brief names an enum's first twelve
@@ -3683,12 +3695,12 @@ ans 2 | jq -r '.result.contents[0].text' > "$H/rows.json"
     && jq -e '.short == ["theme:more"] and (.rows[] | select(.id == "theme:more") | .children == "spark-shell://theme/rows" and .tool == null)' "$H/rows.json" >/dev/null \
     && ok "provide: the rows resource: the palette in use (none, the terminal's own colors) a check with no tool, every other a row whose tool takes it by name, with its chip; the short form the one row that opens the section" || bad "provide rows" "$(cat "$H/rows.json" | head -c 600)"
 mcp theme "$(call 1 theme_palette '{"name":"nord"}')" "$(call 2 theme_palette '{"name":"nowhere"}')" "$(call 3 theme_text '{"size":"huge"}')" "$(call 4 theme_alpha '{"value":0.9,"x":1}')" "$(call 5 wifi_connect '{"name":"home"}')" "$(call 6 'Theme_Font')" "$(call 7 theme_alpha '{"value":2}')"
-[ "$(ans 1 | jq -c '.result.structuredContent | del(.palette)')" = '{"receipt":"theme nord","undo":{"name":"theme_palette","arguments":{"name":"none"}}}' ] && ans 1 | jq -e '.result.isError == false and (.result.content[0].text | fromjson) == .result.structuredContent' >/dev/null && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
+[ "$(ans 1 | jq -c '.result.structuredContent | del(.palette)')" = '{"receipt":"nord is on","undo":{"name":"theme_palette","arguments":{"name":"none"}}}' ] && ans 1 | jq -e '.result.isError == false and (.result.content[0].text | fromjson) == .result.structuredContent' >/dev/null && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
     && ok "provide tools/call: the palette set, the receipt in the present tense, the undo the step that takes it back, the same JSON in a text block" || bad "provide call" "$(ans 1) $(cat "$H/mcp.err")"
 nfg=$(sed -n 's/^THEME_FG=#//p' "$REPO/themes/nord.env"); nbg=$(sed -n 's/^THEME_BG=#//p' "$REPO/themes/nord.env")
 ans 1 | jq -e --arg f "$nfg" --arg b "$nbg" '.result.structuredContent.palette | (.HEX_FG | ascii_downcase) == ($f | ascii_downcase) and (.PANEL_BG | test("^[0-9a-fA-F]{6}$")) and (.PANEL_BG | ascii_downcase) != ($b | ascii_downcase) and (keys == ["HEX_ACCENT", "HEX_ANSI_1", "HEX_ANSI_2", "HEX_FG", "PANEL_BG", "PANEL_HI", "PANEL_MUTED"])' >/dev/null \
     && ok "provide theme: a step's result carries the palette as it is now, the dialog's surface a shade off the background, so the dialog repaints itself" || bad "theme palette in result" "$(ans 1 | jq -c .result.structuredContent.palette) fg=$nfg bg=$nbg"
-[ "$(ans 2 | jq -c .result)" = '{"content":[{"type":"text","text":"theme: nowhere is not on the panel now"}],"isError":true}' ] && [ "$(ans 3 | jq -r .error.message)" = 'theme_text: size is one of bigger, smaller' ] && [ "$(ans 4 | jq -r .error.message)" = 'theme_alpha: no argument x' ] \
+[ "$(ans 2 | jq -c .result)" = '{"content":[{"type":"text","text":"nowhere is not in the list now"}],"isError":true}' ] && [ "$(ans 3 | jq -r .error.message)" = 'theme_text: size is one of bigger, smaller' ] && [ "$(ans 4 | jq -r .error.message)" = 'theme_alpha: no argument x' ] \
     && [ "$(ans 5 | jq -r .error.message)" = 'no tool wifi_connect in theme' ] && [ "$(ans 6 | jq -r .error.code)" = -32602 ] && [ "$(ans 7 | jq -r .error.message)" = 'theme_alpha: value is a number, 0 to 1' ] \
     && ok "provide: a step no row offers is refused in the result, one sentence; an argument outside its schema, an argument it lacks, another section's tool and a name of another shape are -32602" || bad "provide refusals" "$(cat "$H/mcp.out")"
 mcp theme "$(call 1 theme_palette '{"name":"none"}')"; grep -q '^THEME=none$' "$HOME/.config/spark-shell/config" && ok "provide: the undo, called as a tool, puts the palette back" || bad "provide undo" "$(cat "$H/mcp.out")"
@@ -3774,15 +3786,15 @@ esac
 STUB
 chmod +x "$H/.local/bin/spark"
 st=0; out=$(sh "$SH" want --json the nord palette and quieter 2>&1) || st=$?
-[ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg c "$(printf '\342\234\227')" '.answer == "" and .steps[0] == {name: "theme_palette", arguments: {name: "nord"}, line: "theme nord"} and .refused[0] == ($c + " theme: rainbow is not on the panel now")' >/dev/null \
+[ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg c "$(printf '\342\234\227')" '.answer == "" and .steps[0] == {name: "theme_palette", arguments: {name: "nord"}, line: "theme nord"} and .refused[0] == ($c + " rainbow is not in the list now")' >/dev/null \
     && ! grep -q '^THEME=nord' "$HOME/.config/spark-shell/config" && grep -q '^do this on the desktop: the nord palette and quieter$' "$HOME/spark.argv" \
     && ok "want --json: the steps spark picked, each gated and named as a tool with its arguments and its line, the refused ones as lines; nothing run" || bad "want json" "st=$st $out"
 if [ "$(uname -s)" != Darwin ]; then
     printf '%s' "$out" | jq -e '.steps[1] == {name: "out_level", arguments: {level: 30}, line: "out level 30"}' >/dev/null && ok "want --json: a level is a number in the arguments, as the tool's schema says" || bad "want json level" "$out"
 fi
 st=0; out=$(sh "$SH" want the nord palette 2>&1) || st=$?
-[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^$(printf '\342\234\223') theme nord$" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
-    && ok "want WORDS: the same steps run, one line each with its sign, as the panel's prompt does" || bad "want run" "st=$st $out"
+[ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^$(printf '\342\234\223') nord is on$" && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
+    && ok "want WORDS: the same steps run, one line each with its sign and a reply, never the command again (#53)" || bad "want run" "st=$st $out"
 # spark 1.90's planner (issue 7): the desktop's tools on stdin, the names each tool takes now as the about; each step mapped back and gated here
 cat > "$H/.local/bin/spark" <<'STUB'
 #!/bin/sh
@@ -3802,7 +3814,7 @@ STUB
 chmod +x "$H/.local/bin/spark"
 st=0; out=$(sh "$SH" want --json the nord palette and quieter 2>&1) || st=$?
 x=$(printf '\342\234\227')
-[ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$x" '.steps[0] == {name: "theme_palette", arguments: {name: "dracula"}, line: "theme dracula"} and (.refused | index($x + " out_use: no argument loud") != null and index($x + " theme: rainbow is not on the panel now") != null and index($x + " rm_rf is not a step the panel takes") != null)' >/dev/null \
+[ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$x" '.steps[0] == {name: "theme_palette", arguments: {name: "dracula"}, line: "theme dracula"} and (.refused | index($x + " out_use: no argument loud") != null and index($x + " rainbow is not in the list now") != null and index($x + " spark planned a step this desktop does not have") != null)' >/dev/null \
     && [ "$(sed -n 1p "$HOME/spark.argv")" = steps ] && [ "$(sed -n 2p "$HOME/spark.argv")" = --about ] && sed -n 3p "$HOME/spark.argv" | grep -q 'The names each tool takes now -- .*out_use: HDMI.*whole and exactly as written here' && ! sed -n 3p "$HOME/spark.argv" | grep -q 'theme_palette:' && [ "$(sed -n '4,5p' "$HOME/spark.argv" | paste -sd ' ' -)" = '-- the nord palette and quieter' ] \
     && jq -e '[.tools[].name] as $n | ($n | index("theme_palette") != null and index("undo_all") != null and index("about_open") != null and index("files_open") == null and index("reminders_add") != null and index("notes_add") != null) and (.tools[0].inputSchema.type == "object")' "$HOME/spark.stdin" >/dev/null \
     && ok "want with spark steps: the tools on stdin (notes and reminders among them, the about and undo, never the files'), the names each tool takes now as the about; each step mapped back and gated, spark's refusals and the gate's as lines" || bad "want steps" "st=$st $out $(cat "$HOME/spark.argv")"
@@ -3866,7 +3878,7 @@ if [ "$(uname -s)" != Darwin ]; then
     mcp wifi "$(rq 3 resources/read '{"uri":"spark-shell://wifi/rows"}')" "$(call 2 wifi_forget '{"name":"nowhere"}')"
     ans 3 | jq -r '.result.contents[0].text' | jq -e '.rows[] | select(.text == "home") | .sign == "dot" and .tool == {name: "wifi_disconnect", arguments: {}}' >/dev/null \
         && ok "provide wifi rows: the network in use a dot, its tool disconnects" || bad "provide wifi rows" "$(ans 3 | head -c 400)"
-    [ "$(ans 2 | jq -r '.result.content[0].text')" = 'wifi: forget nowhere is not on the panel now' ] && ok "provide wifi: forget names a saved network or nothing" || bad "provide forget" "$(ans 2)"
+    [ "$(ans 2 | jq -r '.result.content[0].text')" = 'nowhere is not in the list now' ] && ok "provide wifi: forget names a saved network or nothing" || bad "provide forget" "$(ans 2)"
     rm -f "$H/.local/state/wpa.log"; mcp wifi "$(call 1 wifi_connect '{"name":"cafe","password":"s3cret-pass"}')"
     grep -q 'set_network 2 psk "s3cret-pass"' "$H/.local/state/wpa.log" && ans 1 | jq -e '.result.content[0].text | startswith("could not connect to cafe")' >/dev/null && ! grep -rq 's3cret-pass' "$H/mcp.out" "$H/mcp.err" "$H/.local/state/spark-shell" \
         && ok "provide wifi: a new secured network takes its password as the tool's argument, straight to the Wi-Fi tool (this stub cannot join it); it is in no answer, no log and no journal" || bad "provide wifi connect" "$(ans 1) $(cat "$H/.local/state/wpa.log") $(grep -rl s3cret "$H/.local/state/spark-shell" 2>&1)"
@@ -3891,6 +3903,14 @@ if [ "$(uname -s)" != Darwin ]; then
         && ok "provide window rows: the open windows under open now, split, tabs and stacked under layout" || bad "window groups" "$(jq -c '.rows[] | [.id, .group]' "$H/window.rows")"
     mcp layout "$(rq 1 resources/read '{"uri":"spark-shell://layout/rows"}')"
     ans 1 | jq -r '.result.contents[0].text' | jq -e '.rows[] | select(.tool.name == "layout_save") | .tool.ask == ["name"]' >/dev/null && ok "provide layout rows: save what is open asks a name" || bad "layout ask" "$(ans 1 | head -c 300)"
+    # a layout by the name it was saved under, a rename row that asks the new name, made as a save makes one (#51, #54)
+    mkdir -p "$HOME/.config/spark-shell/layouts"; printf '{"words":"zen and micro","main":{"app":"zen"}}' > "$HOME/.config/spark-shell/layouts/webdev"
+    mcp layout "$(rq 1 resources/read '{"uri":"spark-shell://layout/rows"}')" "$(call 2 layout_rename '{"name":"webdev","to":"Web Dev"}')" "$(call 3 layout_rename '{"name":"nowhere","to":"x"}')"
+    ans 1 | jq -r '.result.contents[0].text' | jq -e '(.rows[] | select(.text == "webdev") | .tool == {name: "layout_open", arguments: {name: "webdev"}}) and (.rows[] | select(.text == "rename webdev") | .tool.ask == ["to"])' >/dev/null \
+        && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = "webdev is web-dev now -- spark-shell layout web-dev opens it" ] && [ -f "$HOME/.config/spark-shell/layouts/web-dev" ] \
+        && [ "$(ans 3 | jq -r '.result.content[0].text')" = "layout: no saved layout named nowhere" ] \
+        && ok "provide layout: a layout by its name, its rename row asks the new name, and the call renames it (#51, #54)" || bad "provide layout rename" "$(cut -c1-300 "$H/mcp.out")"
+    rm -f "$HOME/.config/spark-shell/layouts/web-dev"
     # the undo journal plays an ARG as it is: a glob in a name never expands against the folder it runs in
     mkdir -p "$H/globdir"; : > "$H/globdir/Jx"; printf 'out\tuse J*\tout J*\n' > "$H/.local/state/spark-shell/panel/undo"
     out=$(cd "$H/globdir" && sh "$SH" panel undo all 2>&1 || :)
@@ -4221,13 +4241,13 @@ rc=0; out=$(sh "$SH" theme delete winter-desk 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: no saved theme named winter-desk -- spark-shell theme list shows them' ] && ok "theme delete of nothing: refused in one line" || bad "theme delete none" "rc=$rc $out"
 # the text size and the transparency, one number each; the pointer follows the text
 out=$(sh "$SH" theme text); [ "$out" = "text 12 $SEP the pointer 24 pixels" ] && ok "theme text (bare): the size and the pointer's pixels" || bad "theme text bare" "$out"
-out=$(sh "$SH" theme text 16); [ "$out" = "text 16 $SEP new windows and the bar take it; the pointer 32 pixels" ] && grep -qx 'FONT=DejaVu Sans Mono:size=16' "$cfg" && ok "theme text 16: FONT's size, the pointer 32 from 14 points" || bad "theme text 16" "$out $(grep FONT "$cfg")"
+out=$(sh "$SH" theme text 16); [ "$out" = "text at 16 $SEP new windows and the bar take it; the pointer 32 pixels" ] && grep -qx 'FONT=DejaVu Sans Mono:size=16' "$cfg" && ok "theme text 16: FONT's size, the pointer 32 from 14 points" || bad "theme text 16" "$out $(grep FONT "$cfg")"
 rc=0; out=$(sh "$SH" theme text 99 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: text takes a size, 6 to 40, or bigger or smaller' ] && grep -qx 'FONT=DejaVu Sans Mono:size=16' "$cfg" && ok "theme text 99: refused in one line, FONT kept" || bad "theme text 99" "rc=$rc $out"
-out=$(sh "$SH" theme text smaller); [ "$out" = "text 15 $SEP new windows and the bar take it; the pointer 32 pixels" ] && ok "theme text smaller: one point less" || bad "theme text smaller" "$out"
+out=$(sh "$SH" theme text smaller); [ "$out" = "text at 15 $SEP new windows and the bar take it; the pointer 32 pixels" ] && ok "theme text smaller: one point less" || bad "theme text smaller" "$out"
 sh "$SH" theme text 12 >/dev/null
 out=$(sh "$SH" theme transparency); [ "$out" = 'transparency 15%' ] && ok "theme transparency (bare): the percent" || bad "transparency bare" "$out"
-out=$(sh "$SH" theme transparency 30); [ "$out" = "transparency 30%" ] && grep -qx 'ALPHA=0.7' "$cfg" && ok "theme transparency 30: ALPHA 0.7" || bad "transparency 30" "$out $(grep ALPHA "$cfg")"
+out=$(sh "$SH" theme transparency 30); [ "$out" = "transparency at 30%" ] && grep -qx 'ALPHA=0.7' "$cfg" && ok "theme transparency 30: ALPHA 0.7" || bad "transparency 30" "$out $(grep ALPHA "$cfg")"
 out=$(sh "$SH" theme transparency 0); [ "$out" = 'transparency off' ] && grep -qx 'ALPHA=1.0' "$cfg" && ok "theme transparency 0: off, ALPHA 1.0" || bad "transparency 0" "$out $(grep ALPHA "$cfg")"
 rc=0; out=$(sh "$SH" theme transparency 60 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: transparency takes a percent, 0 to 50, or more or less' ] && ok "theme transparency 60: refused in one line" || bad "transparency 60" "rc=$rc $out"
@@ -4278,12 +4298,12 @@ EOF
     # a theme from words, the engine's half: the four words make a look named by the words, applied, kept in the history
     printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=default\n' > "$cfg"; rm -rf "$st_dir/theme.history" "$st_dir/looks"; sh "$SH" theme nord >/dev/null 2>&1
     out=$(sh "$SH" panel theme words 'teal accent=same warmth=warm contrast=soft light=dark' 2>&1)
-    [ "$out" = "theme teal, dark $SEP spark-shell theme save NAME keeps it, theme back returns" ] && grep -qx 'THEME=teal-dark' "$cfg" && [ -f "$st_dir/looks/teal-dark/palette.env" ] \
+    [ "$out" = "teal, dark is on $SEP spark-shell theme save NAME keeps it, theme back returns" ] && grep -qx 'THEME=teal-dark' "$cfg" && [ -f "$st_dir/looks/teal-dark/palette.env" ] \
         && grep -qx 'WORDS=teal, dark' "$st_dir/looks/teal-dark/look.env" && [ "$(sed -n 1p "$st_dir/theme.history" | cut -f2)" = teal-dark ] \
         && ok "panel theme words HUE accent= warmth= contrast= light=: the palette made from the five, a look named by the hue and the light, applied and first in the history" || bad "theme words" "$out $(grep THEME= "$cfg"; ls "$st_dir/looks" 2>&1)"
     out=$(sh "$SH" panel theme --list); printf '%s\n' "$out" | grep -q "^  theme      nord	theme nord$" && printf '%s\n' "$out" | sed -n 1p | grep -q "^theme      teal, dark$" && ok "the panel's theme title names a look by its words, alone (#27)" || bad "theme words title" "$(printf '%s\n' "$out" | head -3)"
     out=$(sh "$SH" panel theme words 'green accent=yellow warmth=neutral contrast=normal light=light name=brazilian-flag' 2>&1)
-    [ "$out" = "theme brazilian flag $SEP spark-shell theme save NAME keeps it, theme back returns" ] && grep -qx 'THEME=brazilian-flag' "$cfg" && grep -qx 'WORDS=brazilian flag' "$st_dir/looks/brazilian-flag/look.env" \
+    [ "$out" = "brazilian flag is on $SEP spark-shell theme save NAME keeps it, theme back returns" ] && grep -qx 'THEME=brazilian-flag' "$cfg" && grep -qx 'WORDS=brazilian flag' "$st_dir/looks/brazilian-flag/look.env" \
         && python3 -c 'import sys; h=sys.argv[1].lstrip("#"); r,g,b=(int(h[i:i+2],16) for i in (0,2,4)); sys.exit(0 if r>b and g>b and abs(r-g)<70 else 1)' "$(sed -n 's/^THEME_ACCENT=//p' "$st_dir/looks/brazilian-flag/palette.env")" \
         && ok "theme words with an accent and a name: green ground, a yellow accent, the look named by the name" || bad "theme words accent" "$out $(cat "$st_dir/looks/brazilian-flag/palette.env" 2>&1 | head -4)"
     rc=0; out=$(sh "$SH" panel theme words 'teal accent=same warmth=hot contrast=soft light=dark' 2>&1) || rc=$?
@@ -4308,7 +4328,7 @@ STUB
     [ "$st" -eq 0 ] && printf '%s' "$out" | jq -e --arg x "$(printf '\342\234\227')" '.steps[0] == {name: "theme_words", arguments: {hue: "green", accent: "yellow", warmth: "neutral", contrast: "normal", light: "light", name: "brazilian-flag"}, line: "theme words green accent=yellow warmth=neutral contrast=normal light=light name=brazilian-flag"} and .steps[1].name == "theme_save" and .steps[1].arguments == {name: "flag"} and (.steps | length) == 2 and (.refused | length) == 1 and (.refused | index($x + " one look a request: the first words step made it, blue accent=same warmth=cool contrast=normal light=dark was not") != null)' >/dev/null \
         && ok "want: the words step first with its name a slug, the save after it, the second words step refused in one line, the palette step naming the saved theme dropped" || bad "want one look" "st=$st $out"
     st=0; out=$(sh "$SH" want a theme like the brazilian flag 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "theme brazilian flag $SEP" && printf '%s\n' "$out" | grep -q 'saved flag' && grep -qx 'THEME=flag' "$cfg" && [ -f "$th_dir/flag/palette.env" ] && grep -qx 'WORDS=brazilian flag' "$th_dir/flag/look.env" \
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "brazilian flag is on $SEP" && printf '%s\n' "$out" | grep -q 'saved flag' && grep -qx 'THEME=flag' "$cfg" && [ -f "$th_dir/flag/palette.env" ] && grep -qx 'WORDS=brazilian flag' "$th_dir/flag/look.env" \
         && sh "$SH" panel theme --list | sed -n 1p | grep -q "^theme      flag$" && sh "$SH" theme list | grep -q "^  flag  *brazilian flag $SEP \(default\|fjord\), current$" && [ "$(sh "$SH" theme nord >/dev/null 2>&1; sh "$SH" theme back 2>&1 | sed -n 1p)" = 'back to flag' ] \
         && ok "want played: the look made, then saved as flag with its words kept; the saved theme goes by its name in the title and in back" || bad "want one look played" "st=$st $out $(ls "$th_dir" 2>&1) $(sh "$SH" panel theme --list | sed -n 1p)"
     sh "$SH" theme nord >/dev/null 2>&1; rm -f "$H/.local/bin/spark"
@@ -4402,7 +4422,7 @@ jq -e --arg dw "$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" '(.
     and ([.rows[] | select(.text | test("^(text bigger|text smaller|more transparency|less transparency)"))] | length == 0) and (.short == ["theme:more"])' "$H/trows.json" >/dev/null \
     && ok "provide theme rows (#36): the text size and the transparency one row each, a value left and right change; dark and light, each palette with its drawing and its chip; yours: the saved theme with its palette and wallpaper, the save row that asks a name; no back rows" || bad "theme rows" "$(head -c 900 "$H/trows.json")"
 mcp theme "$(call 1 theme_text '{"size":"bigger"}')" "$(call 2 theme_transparency '{"amount":"more"}')"
-[ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = "text 13 $SEP new windows and the bar take it; the pointer 24 pixels" ] && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'transparency 25%' ] \
+[ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = "text at 13 $SEP new windows and the bar take it; the pointer 24 pixels" ] && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'transparency at 25%' ] \
     && ok "provide theme: a value's step passes without the rows drawn (#33), a step with its receipt" || bad "theme quick steps" "$(cat "$H/mcp.out" | cut -c1-300)"
 sh "$SH" theme text 12 >/dev/null 2>&1; sh "$SH" theme transparency 15 >/dev/null 2>&1
 if [ "$(uname -s)" != Darwin ]; then
@@ -4415,13 +4435,13 @@ if [ "$(uname -s)" != Darwin ]; then
             and (.rows[] | select(.id == "theme:show:dunes") | .sign == "check") and .rows[0].id == "theme:wallpaper skyline"' "$H/wrows.json" >/dev/null \
         && ok "provide theme: the wallpaper row opens the list resource (#36): the drawings first, each with the palette it was drawn for and its picture in this palette; yours: a picture to pick, a color asked for, the ground with its color; no none, no color rows; dunes checked" || bad "wallpaper rows" "$(head -c 700 "$H/trows.json"; head -c 900 "$H/wrows.json")"
     mcp theme "$(call 1 theme_wallpaper_color '{"color":"teal"}')" "$(call 2 theme_wallpaper_color '{"color":"chartreuse"}')"
-    [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'wallpaper teal' ] && grep -qx 'WALLPAPER=#008080' "$cfg" && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'theme: a color is a name (black, white, gray, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange) or #rrggbb' ] \
+    [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'the wallpaper is teal' ] && grep -qx 'WALLPAPER=#008080' "$cfg" && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'theme: a color is a name (black, white, gray, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange) or #rrggbb' ] \
         && ok "provide theme_wallpaper_color: a color by its name or #rrggbb, a word that is no color refused" || bad "wallpaper color call" "$(cat "$H/mcp.out" | cut -c1-300)"
     sh "$SH" theme wallpaper dunes >/dev/null 2>&1
     mcp theme "$(call 1 theme_wallpaper '{"name":"sunset"}')" "$(call 2 theme_wallpaper '{"name":"nowhere"}')" "$(call 3 theme_wallpaper '{"name":"sunset"}')" "$(call 4 theme_palette '{"name":"dracula"}')"
-    [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'wallpaper sunset' ] && grep -qx 'WALLPAPER=dunes' "$cfg" && [ "$(ans 1 | jq -c '.result.structuredContent.undo')" = '{"name":"theme_wallpaper","arguments":{"name":"dunes"}}' ] \
-        && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'theme: wallpaper nowhere is not on the panel now' ] \
-        && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'wallpaper sunset' ] && [ "$(ans 4 | jq -r '.result.structuredContent.receipt')" = 'theme dracula' ] \
+    [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'the wallpaper is sunset' ] && grep -qx 'WALLPAPER=dunes' "$cfg" && [ "$(ans 1 | jq -c '.result.structuredContent.undo')" = '{"name":"theme_wallpaper","arguments":{"name":"dunes"}}' ] \
+        && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'nowhere is not in the list now' ] \
+        && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'the wallpaper is sunset' ] && [ "$(ans 4 | jq -r '.result.structuredContent.receipt')" = 'dracula is on' ] \
         && ok "provide theme_wallpaper: a row of the list is a step with its undo; a name no row holds is refused; what is in use, chosen again, is a receipt (#29), and dracula chosen again brings dunes back over sunset" || bad "theme_wallpaper call" "$(cat "$H/mcp.out")"
 fi
 mcp theme "$(rq 1 tools/list)" "$(call 2 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal"}')" "$(call 3 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal","light":"dim"}')" "$(call 4 theme_delete '{"name":"nord"}')" "$(call 5 theme_back '{}')" "$(call 6 theme_words '{"hue":"blue","accent":"same","warmth":"cool","contrast":"normal","light":"dark","name":"a name that runs on and on past forty letters"}')"

@@ -31,6 +31,8 @@
 #   spark-shell layout save [NAME]    save the last layout
 #   spark-shell layout [NAME]         list the saved layouts, or open one
 #   spark-shell layout delete NAME    delete a saved layout
+#   spark-shell layout rename NAME NEW
+#                                     give a saved layout a new name
 #   spark-shell layout back           the layout before this one, again
 #   spark-shell apps                  choose the apps a layout may open
 #   spark-shell notes                 list your notes, the newest first
@@ -3327,7 +3329,7 @@ light_set() {   # light_set N|up|down|+5|-5 -> one line; exit 1 when nothing too
             mkdir -p "$STATE_DIR"; echo "$_to" > "$STATE_DIR/light" ;;
     esac
     bar_redraw
-    echo "brightness $_to%"
+    echo "brightness at $_to%"
 }
 kb_active() {   # -> the layout in use, by its KEYBOARD word; nothing with one layout or none
     [ "$(printf '%s\n' $KEYBOARD | grep -c .)" -gt 1 ] || return 0
@@ -4082,12 +4084,12 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             done < "$TMP/rem.rows" ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then printf -- '-\thide\toff\n'; else printf -- '-\tshow\ton\n'; fi ;;   # on and off, as the verb: show is the panel's look-only word
         layout) if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then
-                for f in "$LAYOUTS_DIR"/*; do _w=$(desk_words "$f"); [ -n "$_w" ] || _w=${f##*/}; printf '%s\t%s\topen %s\n' "$PANEL_GO" "$_w" "${f##*/}"; done
+                for f in "$LAYOUTS_DIR"/*; do _w=$(desk_label "$f"); printf '%s\t%s\topen %s\n-\trename %s\trename %s\n' "$PANEL_GO" "$_w" "${f##*/}" "$_w" "${f##*/}"; done   # by the name it was saved under (#51), and a new name for it (#54)
             else printf -- '-\tnone saved yet: say what you want to do at the prompt\tshow\n'; fi
             [ ! -f "$DESK_LAST" ] || jq -r '.suggested // [] | .[]' "$DESK_LAST" 2>/dev/null | while IFS= read -r a; do printf '%s\talso open %s\tadd %s\n' "$PANEL_GO" "$a" "$a"; done   # what spark also suggested for the last layout, one Enter away
             kept_history layout | while IFS="$TAB" read -r _e _n; do   # back: the last ten opened, when each was; a layout not saved is kept for it
                 _f=$(desk_kept_file "$_n") || continue
-                _w=$(desk_words "$_f"); printf '%s\t%s\topen %s\tback|%s||%s\n' "$PANEL_GO" "${_w:-$_n}" "$_n" "$(kept_when "$_e")" "$_e"
+                printf '%s\t%s\topen %s\tback|%s||%s\n' "$PANEL_GO" "$(desk_label "$_f")" "$_n" "$(kept_when "$_e")" "$_e"
             done
             [ -z "${SWAYSOCK:-}" ] || printf '%s\tsave what is open now\tsave\n' "$PANEL_GO" ;;
         apps) printf '%s\tterminal\tterminal\n' "$PANEL_GO"   # a terminal window, as Super+Return
@@ -4465,11 +4467,11 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
             esac ;;
         theme) case $_a in
                 text|font) text_step "$_arg" ;;   # font: the word before v0.85
-                wallpaper) _r=$(cmd_theme wallpaper "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "wallpaper $_arg" ;;
+                wallpaper) _r=$(cmd_theme wallpaper "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "the wallpaper is $_arg" ;;
                 wallpaper-color) _h=$(wall_hex "$_arg") || { echo "a color is a name ($(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')) or #rrggbb"; return 1; }
-                    _r=$(cmd_theme wallpaper "$_h" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "wallpaper $_arg" ;;
+                    _r=$(cmd_theme wallpaper "$_h" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "the wallpaper is $_arg" ;;
                 wallpaper-picture) _pp=$(wall_picture_ok "$_arg") || { echo "$_pp"; return 1; }
-                    _r=$(cmd_theme wallpaper "$_pp" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "wallpaper ${_pp##*/}" ;;
+                    _r=$(cmd_theme wallpaper "$_pp" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "the wallpaper is ${_pp##*/}" ;;
                 save) _r=$(cmd_theme save "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "saved $(desk_name_of "$_arg") $PANEL_SEP spark-shell theme $(desk_name_of "$_arg") brings it back" ;;
                 delete) _r=$(cmd_theme delete "$_arg" 2>&1 </dev/null) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "deleted $_arg" ;;
                 back) _r=$(cmd_theme back 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; printf '%s\n' "$_r" | sed -n 1p ;;
@@ -4477,15 +4479,17 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 words) set -- $_arg; _n6=${6:-}; theme_words_apply "$1" "${2#accent=}" "${3#warmth=}" "${4#contrast=}" "${5#light=}" "${_n6#name=}" "${PANEL_WORDS:-}" ;;
                 alpha) case $_arg in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) ;; *) echo "alpha is 0 to 1, as 0.85"; return 1 ;; esac
                     config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply
-                    echo "alpha $_arg" ;;
+                    echo "alpha at $_arg" ;;
                 transparency|see-through) case $_arg in more|less) alpha_step "$_arg" ;; *) echo "transparency takes more or less"; return 1 ;; esac ;;   # see-through: the word before v0.71
-                theme) _r=$(cmd_theme "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "theme $_arg" ;;   # the old spelling of a step
-                *) _r=$(cmd_theme "$_a" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "theme $_a" ;;   # a palette, by its name
+                theme) _r=$(cmd_theme "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "$_arg is on" ;;   # the old spelling of a step
+                *) _r=$(cmd_theme "$_a" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "$_a is on" ;;   # a palette, by its name: the reply says it is on, never the command again (#53)
             esac ;;
         layout) case $_a in
                 open) desk_kept_file "$_arg" >/dev/null || { echo "no saved layout named $_arg"; return 1; }
                     ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; KEPT_ALSO=1 desk_need "$_arg" ) ;;
                 delete) ( REFUSE_AS=layout; desk_delete "$_arg" ) </dev/null ;;
+                rename) _rn=''; case $_arg in *' to='*) _rn=${_arg#* to=} ;; esac
+                    ( REFUSE_AS=layout; desk_rename "${_arg%% *}" "$_rn" ) </dev/null ;;
                 back) ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; desk_back ) ;;
                 new) [ -n "$_arg" ] || { echo "say what you want to do"; return 1; }
                     ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; desk_need "$_arg" ) ;;
@@ -4531,11 +4535,11 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
         keyboard) case $_a in
                 next) desk_in_sway || { echo "a layout switch needs the desktop"; return 1; }
                     swaymsg -- input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || { echo "sway took no layout switch"; return 1; }
-                    bar_redraw; echo "keyboard $(kb_active)" ;;
+                    bar_redraw; echo "the keyboard is $(kb_active)" ;;
                 use) desk_in_sway || { echo "a layout switch needs the desktop"; return 1; }
                     _i=$(printf '%s\n' $KEYBOARD | awk -v n="$(panel_lower "$_arg")" 'tolower($0) == n {print NR - 1; exit}'); [ -n "$_i" ] || { echo "no layout $_arg in KEYBOARD ($KEYBOARD)"; return 1; }
                     swaymsg -- input type:keyboard xkb_switch_layout "$_i" >/dev/null 2>&1 || { echo "sway took no layout switch"; return 1; }
-                    bar_redraw; echo "keyboard $_arg" ;;
+                    bar_redraw; echo "the keyboard is $_arg" ;;
                 *) echo "$_a is not something keyboard does"; return 1 ;;
             esac ;;
         about) case $_a in open) panel_about 72 ;; *) echo "$_a is not something about does"; return 1 ;; esac ;;   # on a pipe: the splash as text
@@ -4725,6 +4729,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         theme:back) [ -s "$(kept_hist theme)" ] && { echo ''; return 0; }; echo "theme: no look before this one"; return 1 ;;
         theme:words) case $3 in [a-z]*' accent='[a-z]*' warmth='[a-z]*' contrast='[a-z]*' light='[a-z]*|[a-z]*' accent='[a-z]*' warmth='[a-z]*' contrast='[a-z]*' light='[a-z]*' name='*) echo "$3"; return 0 ;; *) echo "theme: words take a hue, then accent, warmth, contrast and light"; return 1 ;; esac ;;
         layout:delete) [ -f "$LAYOUTS_DIR/${3:-}" ] && { echo "$3"; return 0; }; echo "layout: no saved layout named ${3:-?}"; return 1 ;;
+        layout:rename) _ro=${3%% *}; [ -n "$_ro" ] && [ -f "$LAYOUTS_DIR/$_ro" ] && { echo "$3"; return 0; }; echo "layout: no saved layout named ${_ro:-?}"; return 1 ;;
         layout:back) [ -s "$(kept_hist layout)" ] && { echo ''; return 0; }; echo "layout: no layout before this one"; return 1 ;;
         theme:alpha) case $3 in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) echo "$3"; return 0 ;; *) echo "theme: alpha takes 0 to 1"; return 1 ;; esac ;;
         notes:new) echo ''; return 0 ;;
@@ -4745,7 +4750,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         _tx=$(panel_lower "${3:-$2}")
         { panel_rows "$1" full; [ "$1" != theme ] || panel_rows wallpapers full; } | awk -F '\t' -v t="$_tx" '$3 == "show" && tolower($2) == t { f = 1; exit } END { exit !f }' && { echo "${3:-}"; return 0; }
     fi
-    [ -n "$_m" ] && [ "$_m" != show ] || { echo "$1: $2${3:+ $3} is not on the panel now"; return 1; }
+    [ -n "$_m" ] && [ "$_m" != show ] || { echo "${3:-$2} is not in the list now"; return 1; }   # plain words, never a rule's (#53)
     printf '%s\n' "${_m#* }" | awk -v a="$2" '$0 == a { print ""; exit } { print }'
 }
 panel_list() {   # panel_list [SECTION] -> the glance (the clock's view under it), then the one list as text (tests, no terminal)
@@ -4879,7 +4884,7 @@ want_steps() {   # want_steps WORDS -> $TMP/plan from spark steps; exit 1 when s
     _i=0
     while [ "$_i" -lt "$_n" ]; do
         _sn=$(jq -r --argjson i "$_i" '.steps[$i].name // "" | tostring' "$TMP/want.json"); _i=$((_i + 1))
-        if ! tool_spec "$_sn"; then want_put no "$PANEL_CROSS $_sn is not a step the panel takes"; continue; fi
+        if ! tool_spec "$_sn"; then want_put no "$PANEL_CROSS spark planned a step this desktop does not have"; continue; fi   # never the name it made up (#53)
         _sv=''; [ -z "$_tp" ] || _sv=$(jq -r --argjson i "$((_i - 1))" --arg p "$_tp" '.steps[$i].arguments[$p] // "" | tostring' "$TMP/want.json")
         [ -z "$_te" ] || _sv="$_sv $(jq -r --argjson i "$((_i - 1))" --arg x "$_te" '.steps[$i].arguments as $a | [$x | split(" ")[] | select(. != "") | split(":") | . as $e | select(($a[$e[0]] // "") != "" or $e[1] != "text") | $e[0] + "=" + (($a[$e[0]] // "" | tostring) | if $e[1] == "text" then ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-+|-+$"; "") | .[0:40] else . end)] | join(" ")' "$TMP/want.json")"
         printf '%s\n' "$_sn$US$_sv"
@@ -5004,7 +5009,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window display keyboard notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_brightness keyboard_use keyboard_next bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_brightness keyboard_use keyboard_next bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -5082,6 +5087,7 @@ tool_spec() {
         layout_save)       _ts=layout _ta=save _tp=name _tk=string _th=df _tt='layout save NAME' _td='Save what is open on this workspace as a layout.' ;;
         layout_add)        _ts=layout _ta=add _tp=name _tk=string _th='' _tt='layout add NAME' _td='Open an app spark also suggested for the last layout.' ;;
         layout_delete)     _ts=layout _ta=delete _tp=name _tk=string _th=dif _tt='layout delete NAME' _td='Delete a saved layout.' ;;
+        layout_rename)     _ts=layout _ta=rename _tp=name _tk=string _te='to:name' _th=f _tt='layout rename NAME' _td='Give a saved layout a new name.' ;;
         layout_back)       _ts=layout _ta=back _th=f _tt='layout back' _td='The layout before this one, opened again.' ;;
         apps_open)         _ts=apps _ta=open _tp=name _tk=string _th='' _tt='apps open NAME' _td='Open an app on this workspace.' ;;
         apps_terminal)     _ts=apps _ta=terminal _th='' _tt='apps terminal' _td='Open a terminal window.' ;;
@@ -5125,7 +5131,7 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
                 else {type: "string", minLength: 1, maxLength: 256} end) + (if $w == "" then {} else {description: $w} end))} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)
-              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
+              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
             required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text") | .[0]]), additionalProperties: false},
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
@@ -5164,6 +5170,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif $s == "window" and ((.tool.name // "") | test("^window_(focus|close)$")) then .group = "open now"
                 elif $s == "window" and (((.tool.name // "") | test("^window_(split|tabs|stacked)$")) or (.id | startswith("window:show:"))) then .group = "layout"
                 elif (.tool.name // "") == "layout_save" then .tool.ask = ["name"]
+                elif (.tool.name // "") == "layout_rename" then .tool.ask = ["to"]
                 elif (.tool.name // "") == "reminders_add" then .tool.ask = ["words"]
                 elif (.tool.name // "") == "wifi_connect" and (.tool.arguments.name as $n | $asks | index([$n])) then .tool.ask = ["password"]
                 else . end)'
@@ -5323,8 +5330,8 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif (keys - [$p, $q] - $xk - [""]) != [] then "no argument " + ((keys - [$p, $q] - $xk)[0])
         elif $p != "" and (has($p) | not) then "missing " + $p
         elif ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)][0][0])
-        elif ([$xs[] | select(.[1] != "text") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
-        elif ([$xs[] | select(.[1] == "text") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text") | .[0]][0]) + " is plain text, 40 characters at most"
+        elif ([$xs[] | select(.[1] != "text" and .[1] != "name") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
+        elif ([$xs[] | select(.[1] == "text" or .[1] == "name") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text" or .[1] == "name") | .[0]][0]) + " is plain text, 40 characters at most"
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
         elif $k == "bright" then (if ((.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 1 and .[$p] <= 100) or ((.[$p] | type) == "string" and (.[$p] | test("^(up|down|[1-9][0-9]?|100)$"))) then "" else $p + " is up, down or a whole number, 1 to 100" end)
@@ -5336,7 +5343,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         else "" end
         + (if $q != "" and has($q) and ((.[$q] | type) != "string" or (.[$q] | length) > 256) then "; " + $q + " is text, 256 characters at most" else "" end)')
     [ -z "$_bad" ] || { rpc_error "$1" -32602 "$_name: $_bad"; return 0; }
-    _v=''; [ -z "$_tp" ] || _v=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg x "$_te" '. as $a | [$a[$p] | tostring] + [$x | split(" ")[] | select(. != "") | split(":") | . as $e | select($a[$e[0]] != null) | $e[0] + "=" + (($a[$e[0]] | tostring) | if $e[1] == "text" then ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-+|-+$"; "") | .[0:40] else . end)] | join(" ")')   # a text extra travels as its slug
+    _v=''; [ -z "$_tp" ] || _v=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg x "$_te" '. as $a | [$a[$p] | tostring] + [$x | split(" ")[] | select(. != "") | split(":") | . as $e | select($a[$e[0]] != null) | $e[0] + "=" + (($a[$e[0]] | tostring) | if $e[1] == "text" or $e[1] == "name" then ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-+|-+$"; "") | .[0:40] else . end)] | join(" ")')   # a text extra travels as its slug
     PANEL_PASS=''; [ -z "$_tq" ] || PANEL_PASS=$(printf '%s' "$_args" | jq -r --arg q "$_tq" '.[$q] // ""')   # a password: a shell variable for the step, never a file, never a line out
     _plain=$(printf '%s' "$_args" | jq -c --arg q "$_tq" 'if $q == "" then . else del(.[$q]) end')   # the arguments without the secret: what a row is matched against
     [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_v"; return 0; }   # files: the four lines, not the panel's gate
@@ -5347,7 +5354,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         [ -n "$_quick" ] || [ "$sec" != theme ] || provide_wall_rows >> "$TMP/rows.json"   # the wallpaper list opens from the theme section: its rows are the theme's too
         [ -n "$_quick" ] || jq -e -s --arg n "$_name" --argjson a "$_plain" 'any(.[].rows[] | .tool, (.more // [])[], .step.less, .step.more | select(. != null); .name == $n and .arguments == $a)' "$TMP/rows.json" >/dev/null 2>&1 \
             || provide_in_use "$sec" "$_name" "${_arg:-$_act}" \
-            || { provide_refuse "$1" "$sec: $_act${_arg:+ $_arg} is not on the panel now"; return 0; } ;;
+            || { provide_refuse "$1" "${_arg:-$_act} is not in the list now"; return 0; } ;;
     esac
     _g=$(panel_gate "$sec" "$_act" "$_arg") || { provide_refuse "$1" "$(printf '%s' "$_g" | scrub_text)"; return 0; }
     _undo='null'; _inv=$(panel_inverse "$sec" "$_act" "$_g" | cut -f1)   # read before the step: the state now is what undo puts back
@@ -6105,7 +6112,7 @@ text_step() {   # text_step N|bigger|smaller -> the receipt, or the refusal and 
     [ "$_new" -ge 6 ] && [ "$_new" -le 40 ] || { echo "text size $_sz stays (6 to 40)"; return 1; }
     _f=$(printf '%s' "$FONT" | sed "s/size=$_sz/size=$_new/")
     config_set FONT "$_f" >/dev/null; FONT=$_f; export FONT; look_apply; login_follow >/dev/null 2>&1 || :
-    echo "text $_new $PANEL_SEP new windows and the bar take it; the pointer $(pointer_size_for "$_new") pixels"
+    echo "text at $_new $PANEL_SEP new windows and the bar take it; the pointer $(pointer_size_for "$_new") pixels"
 }
 theme_transparency() {   # theme_transparency [N|more|less] -- the windows' transparency, a percent, 0 (off) to 50; more and less step by 10
     _st=$(transparency_of "$ALPHA")
@@ -6121,7 +6128,7 @@ alpha_step() {   # alpha_step N|more|less -> the receipt, or the refusal and exi
     _new=$(awk -v a="$ALPHA" -v d="$_d" 'BEGIN { v = a + d; if (v > 1) v = 1; if (v < 0.5) v = 0.5; s = sprintf("%.2f", v); sub(/0$/, "", s); print s }')
     [ "$_new" != "$ALPHA" ] || { if [ "$1" = less ]; then echo "transparency is off already"; elif [ "$1" = more ]; then echo "transparency stops at 50%"; else echo "transparency is $(transparency_of "$ALPHA")% already"; fi; return 1; }
     config_set ALPHA "$_new" >/dev/null; ALPHA=$_new; export ALPHA; look_apply
-    _st=$(transparency_of "$_new"); if [ "$_st" -eq 0 ]; then echo "transparency off"; else echo "transparency $_st%"; fi   # the open windows take it at once (#35)
+    _st=$(transparency_of "$_new"); if [ "$_st" -eq 0 ]; then echo "transparency off"; else echo "transparency at $_st%"; fi   # the open windows take it at once (#35)
 }
 # A theme from a picture (#24): the picture read small through gdk-pixbuf-thumbnailer (a PNG is
 # read as it is without it), its colors made a palette by lib/look.py with the contrast rules,
@@ -6175,7 +6182,7 @@ theme_words_apply() {   # theme_words_apply HUE ACCENT WARMTH CONTRAST LIGHT [NA
       printf 'WALLPAPER=%s\nFONT=%s\nALPHA=%s\nPOINTER=%s\n' "$WALLPAPER" "$FONT" "$ALPHA" "${POINTER:-}"; } > "$_d.new/look.env"
     rm -rf "$_d"; mv "$_d.new" "$_d"
     theme_apply "$name" >/dev/null
-    echo "theme $(theme_words_of "$name") $PANEL_SEP spark-shell theme save NAME keeps it, theme back returns"
+    echo "$(theme_words_of "$name") is on $PANEL_SEP spark-shell theme save NAME keeps it, theme back returns"
 }
 
 cmd_font() {   # font [FACE SIZE|list|none]
@@ -7104,6 +7111,21 @@ desk_delete() {   # desk_delete NAME...
     _kh=$(kept_hist layout); [ ! -f "$_kh" ] || { awk -F '\t' -v n="$name" '$2 != n' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; }; kept_prune layout
     echo "deleted $name"
 }
+desk_rename() {   # desk_rename NAME NEW... -- a saved layout under a new name, made as a save makes one; its lines in the history follow it (#54)
+    _ro=$(desk_name_of "${1:-}"); [ $# -eq 0 ] || shift
+    _rn=$(desk_name_of "$*")
+    [ -n "$_ro" ] && [ -n "$_rn" ] || refuse "rename NAME NEW -- the layout and its new name"
+    [ -f "$LAYOUTS_DIR/$_ro" ] || refuse "no saved layout named $_ro"
+    [ "$_rn" != "$_ro" ] || refuse "$_ro is its name already"
+    [ ! -e "$LAYOUTS_DIR/$_rn" ] || refuse "a layout named $_rn is saved already"
+    mv "$LAYOUTS_DIR/$_ro" "$LAYOUTS_DIR/$_rn"
+    _kh=$(kept_hist layout); [ ! -f "$_kh" ] || { awk -F '\t' -v o="$_ro" -v n="$_rn" 'BEGIN { OFS = "\t" } $2 == o { $2 = n } { print }' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; }
+    echo "$_ro is $_rn now -- spark-shell layout $_rn opens it"
+}
+desk_label() {   # desk_label FILE -> how a layout is listed: the name it was saved under, or its words when that name is only its words with dashes (#51)
+    _dw=$(desk_words "$1"); _dn=${1##*/}
+    if [ -n "$_dw" ] && [ "$(desk_name_of "$_dw")" = "$_dn" ]; then printf '%s' "$_dw"; else printf '%s' "$_dn"; fi
+}
 # Words: a saved layout by that name first, else words for the model. The
 # player is where you ask from: sway windows inside sway, tmux windows
 # anywhere else; --desktop from a console starts sway first, the words
@@ -7123,7 +7145,7 @@ desk_need() {   # desk_need WORDS...
 # The layout verb: the same layouts under their own name. Bare, the saved
 # ones; save, delete, a name or words. --ask is the old Super+d (the panel
 # with the layouts first now); --pending is the desktop's first start's.
-cmd_layout() {   # cmd_layout [save [NAME] | delete NAME | NAME | WORDS | --ask | --pending]
+cmd_layout() {   # cmd_layout [save [NAME] | delete NAME | rename NAME NEW | NAME | WORDS | --ask | --pending]
     config_load
     [ "$OS" = Darwin ] || pm_detect
     REFUSE_AS=layout
@@ -7131,6 +7153,7 @@ cmd_layout() {   # cmd_layout [save [NAME] | delete NAME | NAME | WORDS | --ask 
         '') desk_list ;;
         save) shift; desk_save "$@" ;;
         delete) shift; desk_delete "$@" ;;
+        rename) shift; desk_rename "$@" ;;
         back) [ $# -le 1 ] || refuse "back takes no word"; desk_back ;;
         --ask) cmd_panel layout ;;
         --pending) desk_pending ;;

@@ -17,6 +17,8 @@ pub const MIN_WIDTH: u16 = 36;
 pub const MIN_HEIGHT: u16 = 20;
 /// The newest lines of the exchange the content area shows, newest turn first.
 pub const EXCHANGE_MAX: usize = 10;
+/// The cells the Undo at the end of a result takes, with the air before it.
+pub const UNDO_ROOM: usize = 7;
 /// The draft's length, in characters.
 pub const INPUT_MAX: usize = 2000;
 /// What the prompt says while it is empty.
@@ -116,6 +118,40 @@ pub fn verb_of(tool: &str) -> &'static str {
 }
 
 /// HOME, the one root the dialog hands the files provider; an attachment must sit under it.
+/// The one argument a command line gives a tool: its one required argument that is no secret, else
+/// its one argument. None when it takes more, or none.
+fn one_argument(schema: &Value) -> Option<String> {
+    let props = schema.get("properties").and_then(Value::as_object)?;
+    let open: Vec<&String> = props.keys().filter(|k| !gate::secret(k, props.get(*k))).collect();
+    let required: Vec<&str> = schema
+        .get("required")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).filter(|k| !gate::secret(k, props.get(*k))).collect())
+        .unwrap_or_default();
+    match (required.as_slice(), open.as_slice()) {
+        ([k], _) => Some(k.to_string()),
+        ([], [k]) => Some(k.to_string()),
+        _ => None,
+    }
+}
+
+/// A command line's value as the schema types it: a number for a number, a whole number for an integer
+/// (a percent sign after it is the number's), the words for a string.
+fn typed_value(schema: &Value, k: &str, value: &str) -> Option<Value> {
+    let ty = schema.pointer(&format!("/properties/{}/type", k)).and_then(Value::as_str).unwrap_or("string");
+    let bare = value.strip_suffix('%').filter(|n| !n.is_empty() && n.bytes().all(|c| c.is_ascii_digit()));
+    match ty {
+        "integer" => bare.unwrap_or(value).parse::<i64>().ok().map(Value::from),
+        "number" => value.parse::<f64>().ok().and_then(|n| serde_json::Number::from_f64(n).map(Value::Number)),
+        "boolean" => match value {
+            "on" | "true" | "yes" => Some(Value::Bool(true)),
+            "off" | "false" | "no" => Some(Value::Bool(false)),
+            _ => None,
+        },
+        _ => Some(Value::String(bare.unwrap_or(value).to_string())),
+    }
+}
+
 pub fn home() -> Option<String> {
     std::env::var("HOME").ok().filter(|h| h.starts_with('/') && h.len() > 1)
 }
@@ -161,13 +197,13 @@ fn talk_keep(t: Talk) {
     let _ = std::fs::write(d.join("talk"), if t == Talk::Off { "off\n" } else { "click\n" });
 }
 
+/// A line of the exchange: the command as it ran (or the words of a question), then what came of it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Sign {
     You,
     Done,
     Refused,
     Says,
-    Step,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -235,6 +271,16 @@ pub struct Step {
     pub call: Call,
     pub who: Who,
     pub line: String,
+}
+
+/// The commands spark planned for words, in the input box where the words were typed, as spark's own
+/// prompt puts a command in the line (#53): Enter runs them as they stand, a change makes them typed
+/// words again, Esc drops them and gives back what was in the box.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Staged {
+    pub text: String,
+    pub steps: Vec<Step>,
+    pub draft: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -351,7 +397,9 @@ pub enum Item {
     Ask,
     Heading(String),
     Blank,
-    Undo,
+    /// The last line of the result the undo at hand takes back, with Undo at its end: the line, as
+    /// Said, and picking it runs the undo (#53).
+    Undo(Sign, String, bool),
     Row(usize, usize),
     /// A row of the folder shown now.
     Folder(usize),
@@ -362,10 +410,6 @@ pub enum Item {
     Setting(usize),
     /// A line of the exchange as drawn: its sign, the words, the first of its lines.
     Said(Sign, String, bool),
-    /// A step the model proposed for a question: it runs only when picked.
-    Proposal(usize),
-    /// "proposed, not run", over a question's proposals at the end of its turn (#44).
-    Proposed,
     /// A way to talk.
     TalkOpt(Talk),
     /// A section's name over its rows, where a view holds more than one section.
@@ -415,10 +459,11 @@ pub struct App {
     pub exchange: Vec<Line>,
     pub undo: Option<Step>,
     pub queue: VecDeque<Step>,
-    /// Steps the model proposed for a question: run only when picked.
-    pub proposals: Vec<Step>,
-    /// The exchange line the proposals were made at: they are drawn at the end of its turn (#44).
-    pub proposals_at: Option<usize>,
+    /// The commands spark planned, waiting in the input box for Enter (#53).
+    pub staged: Option<Staged>,
+    /// The value row left or right last changed, and where its turn starts: the next change of the
+    /// same value takes that turn's place, so a run of presses is one turn.
+    pub value_turn: Option<(String, usize)>,
     pub running: Option<(usize, u64, Step, usize)>,
     pub busy_since: Option<Instant>,
     pub frame: u64,
@@ -486,8 +531,8 @@ impl App {
             exchange: vec![],
             undo: None,
             queue: VecDeque::new(),
-            proposals: vec![],
-            proposals_at: None,
+            staged: None,
+            value_turn: None,
             running: None,
             busy_since: None,
             frame: 0,
@@ -522,7 +567,21 @@ impl App {
         let n = self.exchange.len();
         if n > 200 {
             self.exchange.drain(..n - 200);
-            self.proposals_at = self.proposals_at.and_then(|p| p.checked_sub(n - 200));
+            self.value_turn = self.value_turn.take().and_then(|(id, at)| at.checked_sub(n - 200).map(|a| (id, a)));
+        }
+    }
+
+    /// The commands spark planned are in the box as they came: Enter runs them (#53).
+    pub fn staged_now(&self) -> bool {
+        self.staged.as_ref().is_some_and(|s| s.text == self.input)
+    }
+
+    /// What the list is searched by: the words typed, never the commands spark put in the box.
+    fn query(&self) -> &str {
+        if self.staged_now() {
+            ""
+        } else {
+            &self.input
         }
     }
 
@@ -632,14 +691,14 @@ impl App {
         if let Some(s) = self.servers.iter_mut().find(|s| s.idx == idx) {
             s.close_stdin();
         }
-        if let Some((p, _, step, _)) = self.running.clone() {
+        if let Some((p, _, _, _)) = self.running.clone() {
             if p == idx {
                 self.running = None;
                 self.say(
                     Sign::Refused,
-                    &format!("{}: {} stopped before it answered, so it may or may not have happened", step.line, label),
+                    &format!("{} stopped before it answered, so it may or may not have happened", label),
                 );
-                self.stop_queue("not run");
+                self.stop_queue();
                 self.next_step();
             }
         }
@@ -855,17 +914,16 @@ impl App {
         for (idx, kind) in late {
             match kind {
                 Kind::Call(_) => {
-                    if let Some((_, _, step, _)) = self.running.take() {
+                    if self.running.take().is_some() {
                         // no answer is no proof either way: say so, and run nothing that depends on it
                         self.say(
                             Sign::Refused,
                             &format!(
-                                "{}: no answer in {} s, so it may or may not have happened: look before you try again",
-                                step.line,
+                                "no answer in {} s, so it may or may not have happened: look before you try again",
                                 mcp::T_CALL.as_secs()
                             ),
                         );
-                        self.stop_queue("not run");
+                        self.stop_queue();
                         self.next_step();
                     }
                 }
@@ -892,7 +950,7 @@ impl App {
 
     fn matches(&self, prov: usize, row: &model::Row) -> bool {
         let hay = format!("{} {}", self.providers[prov].label, row.text).to_lowercase();
-        self.input.to_lowercase().split_whitespace().all(|w| hay.contains(w))
+        self.query().to_lowercase().split_whitespace().all(|w| hay.contains(w))
     }
 
     fn pickable(row: &model::Row) -> bool {
@@ -923,10 +981,10 @@ impl App {
         (0..DESTS.len()).filter(|d| *d == SETTINGS_DEST || !self.dest_sections(*d).is_empty()).collect()
     }
 
-    /// The exchange as content lines: the newest turn first (a turn starts at what was asked), each in
-    /// its own order with what it left to pick: the Undo right under the receipt it takes back, a
-    /// question's proposals at the end of that question's turn (#44); a blank row between turns; older
-    /// turns while EXCHANGE_MAX lines hold them. What a turn left that is no longer drawn comes last.
+    /// The exchange as content lines: the newest turn first, a turn the command as it ran (or the words
+    /// of a question) and what came of it; the undo at hand is Undo at the end of the result it takes
+    /// back, never a row of its own (#53); a blank row between turns; older turns while EXCHANGE_MAX
+    /// lines hold them.
     fn said(&self, out: &mut Vec<Item>) {
         let w = self.size.0.saturating_sub(8).max(10) as usize; // the sign at 2, the words at 4, air at the right
         let mut turns: Vec<Vec<usize>> = vec![];
@@ -943,17 +1001,6 @@ impl App {
         } else {
             None
         };
-        let props_at = if self.proposals.is_empty() {
-            None
-        } else {
-            Some(self.proposals_at.unwrap_or(usize::MAX))
-        };
-        // a question changed nothing: what the model would do, offered, run only when picked
-        let proposed = |out: &mut Vec<Item>| {
-            out.push(Item::Proposed);
-            out.extend((0..self.proposals.len()).map(Item::Proposal));
-        };
-        let (mut undo_drawn, mut props_drawn) = (false, false);
         let mut lines = 0;
         for (k, t) in turns.iter().rev().enumerate() {
             let mut turn = vec![];
@@ -962,30 +1009,23 @@ impl App {
             }
             for &i in t {
                 let l = &self.exchange[i];
-                for (j, part) in crate::ui::wrap(&l.text, w).into_iter().enumerate() {
-                    turn.push(Item::Said(l.sign.clone(), part, j == 0));
+                // the line Undo ends keeps its room: the words wrap short of the chip
+                let room = if Some(i) == undo_at { w.saturating_sub(UNDO_ROOM).max(10) } else { w };
+                let parts = crate::ui::wrap(&l.text, room);
+                let last = parts.len().saturating_sub(1);
+                for (j, part) in parts.into_iter().enumerate() {
+                    if Some(i) == undo_at && j == last {
+                        turn.push(Item::Undo(l.sign.clone(), part, j == 0));
+                    } else {
+                        turn.push(Item::Said(l.sign.clone(), part, j == 0));
+                    }
                 }
-                if Some(i) == undo_at {
-                    turn.push(Item::Undo);
-                }
-            }
-            let props_here = props_at.is_some_and(|p| t.contains(&p));
-            if props_here {
-                proposed(&mut turn);
             }
             if k > 0 && lines + turn.len() > EXCHANGE_MAX {
                 break;
             }
             lines += turn.len();
-            undo_drawn |= undo_at.is_some_and(|u| t.contains(&u));
-            props_drawn |= props_here;
             out.extend(turn);
-        }
-        if self.undo.is_some() && !undo_drawn {
-            out.push(Item::Undo);
-        }
-        if props_at.is_some() && !props_drawn {
-            proposed(out);
         }
     }
 
@@ -998,7 +1038,7 @@ impl App {
             if r.children.as_deref() == Some(&format!("spark-shell://{}/rows", self.providers[p].label)) {
                 continue;
             }
-            if !self.input.is_empty() && !self.matches(p, r) {
+            if !self.query().is_empty() && !self.matches(p, r) {
                 continue;
             }
             if r.group != group {
@@ -1024,8 +1064,8 @@ impl App {
         out.extend(rows);
     }
 
-    /// The content area's items, in order: the exchange (the newest turn first), the undo and the
-    /// proposals, then the view's list.
+    /// The content area's items, in order: the exchange (the newest turn first, the undo at the end of
+    /// its result), then the view's list.
     pub fn items(&self) -> Vec<Item> {
         let mut out = vec![];
         if self.view != View::About {
@@ -1077,7 +1117,7 @@ impl App {
             View::Folder(..) => {
                 let Some((p, _, rows)) = &self.folder else { return out };
                 for (i, r) in rows.rows.iter().enumerate() {
-                    if !self.input.is_empty() && !self.matches(*p, r) {
+                    if !self.query().is_empty() && !self.matches(*p, r) {
                         continue;
                     }
                     // attaching or picking, the files offered are of the types asked; the summary goes
@@ -1104,7 +1144,7 @@ impl App {
                     let prev = rows.rows[..i]
                         .iter()
                         .rev()
-                        .find(|q| self.input.is_empty() || self.matches(*p, q))
+                        .find(|q| self.query().is_empty() || self.matches(*p, q))
                         .map(|q| q.group.clone());
                     if r.group.is_some() && prev.as_ref() != Some(&r.group) {
                         if !list.is_empty() {
@@ -1118,7 +1158,7 @@ impl App {
             View::Section(p) => self.section_rows(*p, &mut list, false),
             View::Dest(d) if *d == SETTINGS_DEST => {
                 for i in self.settings() {
-                    if self.input.is_empty() || self.word_in(SETTINGS[i].1) {
+                    if self.query().is_empty() || self.word_in(SETTINGS[i].1) {
                         list.push(Item::Setting(i));
                     }
                 }
@@ -1137,7 +1177,7 @@ impl App {
                 }
             }
             View::Home => {
-                if self.input.trim().is_empty() {
+                if self.query().trim().is_empty() {
                     // the six places with air between them, as the approved home has them
                     for (k, d) in self.dests().into_iter().enumerate() {
                         if k > 0 {
@@ -1204,7 +1244,7 @@ impl App {
     /// Every word typed is in these words.
     fn word_in(&self, words: &str) -> bool {
         let hay = words.to_lowercase();
-        self.input.to_lowercase().split_whitespace().all(|w| hay.contains(w))
+        self.query().to_lowercase().split_whitespace().all(|w| hay.contains(w))
     }
 
     pub fn pickable_item(&self, i: &Item) -> bool {
@@ -1218,7 +1258,7 @@ impl App {
                 .unwrap_or(false),
             Item::Model(i) => self.models.get(*i).map(|(_, s)| s == "serving" || s == "downloaded").unwrap_or(false),
             Item::TalkOpt(_) => self.voice_on,
-            Item::Ask | Item::Undo | Item::Dest(_) | Item::Setting(_) | Item::Proposal(_) | Item::OpenModels => true,
+            Item::Ask | Item::Undo(..) | Item::Dest(_) | Item::Setting(_) | Item::OpenModels => true,
             _ => false,
         }
     }
@@ -1230,7 +1270,7 @@ impl App {
     /// Words are typed where a list is shown, in no question: they can go to spark as a request.
     pub fn asks_spark(&self) -> bool {
         self.mode == Mode::Normal
-            && !self.input.trim().is_empty()
+            && !self.query().trim().is_empty()
             && self.attaching.is_none()
             && self.picking.is_none()
             && matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..))
@@ -1251,7 +1291,7 @@ impl App {
     /// How well the words typed name a pick: 3 the name itself, 2 the start of it, 1 the start of a
     /// word in it, 0 not by name (the words may still be found in it).
     fn name_score(&self, it: &Item) -> u8 {
-        let typed = self.input.trim().to_lowercase();
+        let typed = self.query().trim().to_lowercase();
         let Some(name) = self.name_of(it) else { return 0 };
         if typed.is_empty() || typed.contains('\n') {
             0
@@ -1267,7 +1307,7 @@ impl App {
     }
 
     /// The pick lit as words are typed: the one they name best; the request when they name none (#28),
-    /// wherever it sits: the exchange's undo and proposals come before it and run only when picked (#39).
+    /// wherever it sits: the exchange's undo comes before it and runs only when picked (#39).
     pub fn best(&self) -> usize {
         let picks = self.picks();
         let mut best: Option<(u8, usize)> = None;
@@ -1286,7 +1326,7 @@ impl App {
             return;
         }
         self.scroll = 0;
-        if self.asks_spark() || (!self.input.trim().is_empty() && !self.picks().is_empty()) {
+        if self.asks_spark() || (!self.query().trim().is_empty() && !self.picks().is_empty()) {
             self.in_list = true;
             self.sel = self.best();
         } else {
@@ -1576,17 +1616,18 @@ impl App {
     pub fn escape(&mut self) {
         self.keep_lit = None;
         match std::mem::replace(&mut self.mode, Mode::Normal) {
-            Mode::Confirm(step) => {
-                self.say(Sign::Refused, &format!("{}: kept, not done", step.line));
+            Mode::Confirm(_) => {
+                self.say(Sign::Refused, "not done");
                 self.input.clear();
                 self.unstash();
-                self.stop_queue("the steps after it were not run");
+                self.stop_queue();
             }
             Mode::Ask { step, .. } => {
-                self.say(Sign::Refused, &format!("{}: not done", step.line));
+                self.say(Sign::You, &step.line);
+                self.say(Sign::Refused, "not done");
                 self.input.clear();
                 self.unstash();
-                self.stop_queue("the steps after it were not run");
+                self.stop_queue();
             }
             Mode::Elicit { prov, id, .. } => {
                 if let Some(s) = self.server(prov) {
@@ -1609,6 +1650,12 @@ impl App {
             Mode::Normal => {
                 if self.chip_focus.is_some() {
                     self.chip_focus = None;
+                } else if let Some(st) = self.staged.take() {
+                    // the commands spark planned are dropped: what was in the box before them comes back
+                    let back = if self.input == st.text { st.draft } else { String::new() };
+                    self.set_input(back);
+                    self.in_list = false;
+                    self.sel = 0;
                 } else if !self.input.is_empty() {
                     self.set_input(String::new());
                     self.in_list = false;
@@ -1619,8 +1666,7 @@ impl App {
                     // at the home with an exchange showing, Esc clears it first; the next Esc closes (#25)
                     self.exchange.clear();
                     self.undo = None;
-                    self.proposals.clear();
-                    self.proposals_at = None;
+                    self.value_turn = None;
                     self.sel = 0;
                 } else {
                     self.quit = Some(0);
@@ -1629,9 +1675,9 @@ impl App {
         }
     }
 
-    /// Whether the content area shows an exchange, an undo or proposals that Esc would clear.
+    /// Whether the content area shows an exchange or an undo that Esc would clear.
     pub fn exchange_up(&self) -> bool {
-        self.running.is_none() && (!self.exchange.is_empty() || self.undo.is_some() || !self.proposals.is_empty())
+        self.running.is_none() && (!self.exchange.is_empty() || self.undo.is_some())
     }
 
     fn go_back(&mut self, v: View) {
@@ -1725,8 +1771,8 @@ impl App {
                 if typed.trim() == "yes" {
                     self.approved(step);
                 } else {
-                    self.say(Sign::Refused, &format!("{}: kept, not done (it takes yes)", step.line));
-                    self.stop_queue("the steps after it were not run");
+                    self.say(Sign::Refused, "not done: it takes the word yes");
+                    self.stop_queue();
                 }
                 return;
             }
@@ -1734,8 +1780,9 @@ impl App {
                 let typed = std::mem::take(&mut self.input);
                 self.unstash();
                 if typed.trim().is_empty() {
-                    self.say(Sign::Refused, &format!("{}: not done, no {}", step.line, field));
-                    self.stop_queue("the steps after it were not run");
+                    self.say(Sign::You, &step.line);
+                    self.say(Sign::Refused, &format!("not done: no {}", field));
+                    self.stop_queue();
                     return;
                 }
                 step.call.arguments.insert(field.clone(), Value::String(typed));
@@ -1776,7 +1823,7 @@ impl App {
             Mode::Apply(name) => {
                 self.input.clear();
                 self.unstash();
-                self.say(Sign::Step, &format!("model {}", name));
+                self.say(Sign::You, &format!("model {}", name));
                 self.thinking = true;
                 self.jobs.push(Job::Run(Helper::ModelSet, vec![self.cfg.spark.clone(), "model".into(), name]));
                 return;
@@ -1791,24 +1838,24 @@ impl App {
             self.chip(c);
             return;
         }
+        // the commands spark planned, as they stand in the box: Enter runs them, in order (#53)
+        if self.staged_now() && !self.in_list {
+            if let Some(st) = self.staged.take() {
+                self.set_input(st.draft); // what was typed while spark planned comes back
+                self.sel = 0;
+                self.queue.extend(st.steps);
+                return self.next_step();
+            }
+        }
         if !self.in_list {
-            // the prompt: a place's name alone opens it; any other words are a request, never a row
-            // that happens to match them (a question that names an app does not open it)
+            // the prompt: a place's name alone opens it, a command runs, any other words are a request,
+            // never a row that happens to match them (a question that names an app does not open it)
             let typed = self.input.trim().to_string();
             if typed.is_empty() {
                 return;
             }
-            if !typed.contains('\n') {
-                if let Some(v) = self.place(&typed) {
-                    self.set_input(String::new());
-                    if self.view != v {
-                        self.go(v);
-                    }
-                    return;
-                }
-            }
             self.set_input(String::new());
-            return self.want(&typed);
+            return self.request(&typed);
         }
         let picks = self.picks();
         let sel = self.sel.min(picks.len().saturating_sub(1));
@@ -1822,29 +1869,16 @@ impl App {
         self.in_list = false;
         match item {
             Item::Ask => {
-                // words that name no row: a place's name alone opens it (Window, Settings, about); any other words are a request
+                // words that name no row: a place's name alone opens it (Window, Settings, about), a command
+                // runs, any other words are a request
                 if words.is_empty() {
                     return;
                 }
-                if !words.contains('\n') {
-                    if let Some(v) = self.place(&words) {
-                        if self.view != v {
-                            self.go(v);
-                        }
-                        return;
-                    }
-                }
-                self.want(&words);
+                self.request(&words);
             }
-            Item::Undo => {
+            Item::Undo(..) => {
                 if let Some(u) = self.undo.take() {
                     self.run(u);
-                }
-            }
-            Item::Proposal(i) => {
-                if i < self.proposals.len() {
-                    let s = self.proposals.remove(i);
-                    self.run(s);
                 }
             }
             Item::Dest(d) => {
@@ -2115,12 +2149,101 @@ impl App {
 
     // ---- the want and the steps
 
+    /// Words from the prompt: a place's name alone opens it; commands in the dialog's own words run at
+    /// once, with no model; any other words go to spark, and the commands it plans come back to the
+    /// box (#53).
+    fn request(&mut self, words: &str) {
+        if !words.contains('\n') {
+            if let Some(v) = self.place(words) {
+                if self.view != v {
+                    self.go(v);
+                }
+                return;
+            }
+        }
+        if let Some(steps) = self.commands(words) {
+            self.queue.extend(steps);
+            return self.next_step();
+        }
+        self.want(words);
+    }
+
+    /// Lines in the dialog's own words, each a step: None when any line is not one.
+    pub fn commands(&self, text: &str) -> Option<Vec<Step>> {
+        let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+        if lines.is_empty() {
+            return None;
+        }
+        lines.iter().map(|l| self.command(l)).collect()
+    }
+
+    /// A line in the dialog's own words, as a step: a tool's title with a value in place of its capital
+    /// word at the end ("display brightness 30"), the title with the most words of its own winning
+    /// ("theme text bigger" over "theme NAME"); "undo" is the undo at hand. The value is read as its
+    /// schema types it, and must fit it.
+    fn command(&self, line: &str) -> Option<Step> {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        if words.is_empty() {
+            return None;
+        }
+        if words.len() == 1 && words[0].eq_ignore_ascii_case("undo") {
+            return self.undo.clone();
+        }
+        let capital = |w: &str| !w.is_empty() && w.bytes().all(|c| c.is_ascii_uppercase());
+        let mut best: Option<(usize, Step)> = None;
+        for (p, prov) in self.providers.iter().enumerate() {
+            if !prov.ready || prov.dead.is_some() {
+                continue;
+            }
+            for t in &prov.tools {
+                if t.title.is_empty() || !model::title_ok(&t.title) || t.name == "about_open" || t.name == "undo_all" {
+                    continue;
+                }
+                let tw: Vec<&str> = t.title.split(' ').collect();
+                let caps = tw.iter().filter(|w| capital(w)).count();
+                let own = tw.len() - caps;
+                if best.as_ref().is_some_and(|(o, _)| own <= *o) {
+                    continue;
+                }
+                let fits = |n: usize| tw[..n].iter().zip(&words).all(|(a, b)| a.eq_ignore_ascii_case(b));
+                let mut arguments = Map::new();
+                match caps {
+                    0 if words.len() == tw.len() && fits(tw.len()) => {}
+                    1 if capital(tw[tw.len() - 1]) && words.len() >= tw.len() && fits(tw.len() - 1) => {
+                        let Some(k) = one_argument(&t.schema) else { continue };
+                        let Some(v) = typed_value(&t.schema, &k, &words[tw.len() - 1..].join(" ")) else {
+                            continue;
+                        };
+                        arguments.insert(k, v);
+                    }
+                    _ => continue,
+                }
+                if gate::schema_ok(&t.schema, &arguments).is_err() {
+                    continue;
+                }
+                let call = Call {
+                    name: t.name.clone(),
+                    arguments,
+                    ask: vec![],
+                };
+                best = Some((
+                    own,
+                    Step {
+                        prov: p,
+                        call,
+                        who: Who::Person,
+                        line: words.join(" "),
+                    },
+                ));
+            }
+        }
+        best.map(|(_, s)| s)
+    }
+
     fn want(&mut self, words: &str) {
-        self.say(Sign::You, words);
-        self.proposals.clear();
-        self.proposals_at = None;
         if self.cfg.spark_shell.is_empty() {
             self.set_input(words.to_string());
+            self.say(Sign::You, words);
             return self.say(Sign::Refused, "no spark-shell to read the words");
         }
         self.thinking = true;
@@ -2150,21 +2273,20 @@ impl App {
         }
     }
 
-    /// The plan from `spark-shell want --json`: each step gated here too, then run in order. A question
-    /// changes nothing: its steps are proposals, run only when picked.
+    /// The plan from `spark-shell want --json`: each step gated here too. The steps come back to the
+    /// box as commands, one a line, to run with Enter, a question's alike (#52, #53): nothing spark
+    /// plans runs before that. Words that were the commands already run at once. An answer, or a step
+    /// refused, is said under the words that asked.
     pub fn plan(&mut self, text: &str) {
         self.thinking = false;
+        let words = self.pending.as_ref().map(|(w, _)| w.clone()).unwrap_or_default();
         let Ok(v) = serde_json::from_str::<Value>(text) else {
+            self.say(Sign::You, &words);
             self.give_back();
-            return self.say(Sign::Refused, "the answer was not a plan");
+            return self.say(Sign::Refused, "spark answered with nothing to run");
         };
-        let question = v.get("question").and_then(Value::as_bool).unwrap_or(false);
-        if let Some(a) = v.get("answer").and_then(Value::as_str) {
-            if !a.trim().is_empty() {
-                self.say(Sign::Says, a);
-            }
-        }
-        let refused: Vec<String> = v
+        let answer = v.get("answer").and_then(Value::as_str).unwrap_or("").trim().to_string();
+        let mut no: Vec<String> = v
             .get("refused")
             .and_then(Value::as_array)
             .map(|r| {
@@ -2174,27 +2296,16 @@ impl App {
                     .collect()
             })
             .unwrap_or_default();
-        for t in &refused {
-            self.say(Sign::Refused, t);
-        }
-        let steps = v.get("steps").and_then(Value::as_array).cloned().unwrap_or_default();
-        if steps.is_empty() && v.get("answer").and_then(Value::as_str).unwrap_or("").trim().is_empty() && !refused.is_empty() {
-            self.give_back(); // refused whole: the words come back to be said again
-        } else {
-            self.pending = None;
-        }
-        for s in steps {
+        let mut steps: Vec<Step> = vec![];
+        for s in v.get("steps").and_then(Value::as_array).cloned().unwrap_or_default() {
             let Some(name) = s.get("name").and_then(Value::as_str) else { continue };
             let arguments = s.get("arguments").and_then(Value::as_object).cloned().unwrap_or_default();
             let line = scrub(s.get("line").and_then(Value::as_str).unwrap_or(name));
-            // two steps are the dialog's own: undo is its undo row, about opens its about
+            // two steps are the dialog's own: undo is the undo at hand, about opens its about
             if name == "undo_all" {
-                match self.undo.take() {
-                    Some(u) if question => {
-                        self.undo = Some(u);
-                    }
-                    Some(u) => self.queue.push_back(u),
-                    None => self.say(Sign::Refused, "nothing to undo"),
+                match self.undo.clone() {
+                    Some(u) => steps.push(Step { line: "undo".into(), ..u }),
+                    None => no.push("nothing to undo".into()),
                 }
                 continue;
             }
@@ -2202,7 +2313,7 @@ impl App {
                 if self.about_idx.is_some() {
                     self.go(View::About);
                 } else {
-                    self.say(Sign::Refused, &format!("{}: not a step here now", line));
+                    no.push(format!("{} is not offered here now", line));
                 }
                 continue;
             }
@@ -2212,31 +2323,62 @@ impl App {
                 ask: vec![],
             };
             match self.providers.iter().position(|p| p.tools.iter().any(|t| t.name == name)) {
-                None => self.say(Sign::Refused, &format!("{}: not a step here now", line)),
+                None => no.push(format!("{} is not offered here now", line)),
                 Some(p) => match gate::step(&self.providers[p].tools, &self.providers[p].rows, &call) {
-                    Ok(()) => {
-                        let step = Step {
-                            prov: p,
-                            call,
-                            who: Who::Model,
-                            line,
-                        };
-                        if question {
-                            self.proposals.push(step);
-                        } else {
-                            self.queue.push_back(step);
-                        }
-                    }
-                    Err(e) => self.say(Sign::Refused, &format!("{}: {}", line, e)),
+                    Ok(()) => steps.push(Step {
+                        prov: p,
+                        call,
+                        who: Who::Model,
+                        line,
+                    }),
+                    Err(e) => no.push(format!("{} did not run: {}", line, e)),
                 },
             }
         }
-        if !self.proposals.is_empty() {
-            self.proposals_at = self.exchange.len().checked_sub(1); // the question's turn, as it stands now
+        // the words asked something spark answered, or it refused a step: those lines stay, under the words
+        if !answer.is_empty() || !no.is_empty() {
+            self.say(Sign::You, &words);
+            if !answer.is_empty() {
+                self.say(Sign::Says, &answer);
+            }
+            for t in &no {
+                self.say(Sign::Refused, t);
+            }
         }
-        if self.running.is_none() && self.mode == Mode::Normal {
-            self.next_step();
+        if steps.is_empty() {
+            if answer.is_empty() {
+                if no.is_empty() {
+                    self.say(Sign::You, &words);
+                    self.say(Sign::Refused, "spark found nothing to do for that");
+                }
+                return self.give_back(); // the words come back to be said again
+            }
+            self.pending = None;
+            return;
         }
+        self.pending = None;
+        let lines: Vec<String> = steps.iter().map(|s| s.line.clone()).collect();
+        let said = |t: &str| {
+            t.lines()
+                .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase())
+                .filter(|l| !l.is_empty())
+                .collect::<Vec<_>>()
+        };
+        if said(&words) == said(&lines.join("\n")) {
+            // the words were the commands: they run, as typed ones do
+            self.queue
+                .extend(steps.into_iter().map(|s| if s.who == Who::Model { Step { who: Who::Person, ..s } } else { s }));
+            if self.running.is_none() && self.mode == Mode::Normal {
+                self.next_step();
+            }
+            return;
+        }
+        let draft = std::mem::take(&mut self.input);
+        let text = lines.join("\n");
+        self.set_input(text.clone());
+        self.in_list = false;
+        self.sel = 0;
+        self.staged = Some(Staged { text, steps, draft });
     }
 
     fn next_step(&mut self) {
@@ -2251,12 +2393,12 @@ impl App {
     }
 
     /// A step failed, was refused or kept: the steps planned after it depend on it, and are not run.
-    fn stop_queue(&mut self, why: &str) {
+    fn stop_queue(&mut self) {
         if self.queue.is_empty() {
             return;
         }
         let left: Vec<String> = self.queue.drain(..).map(|s| s.line).collect();
-        self.say(Sign::Refused, &format!("{}: {}", why, left.join(", ")));
+        self.say(Sign::Refused, &format!("so these did not run: {}", left.join(", ")));
     }
 
     /// Whether a step waits for the typed yes: the provider's destructive hint, or this machine's own
@@ -2265,7 +2407,8 @@ impl App {
         tool.destructive || LOCAL_RISK.contains(&tool.name.as_str())
     }
 
-    /// A step: an argument asked when it lacks one, a typed yes when it is risky, then the call.
+    /// A step: an argument asked when it lacks one; then its turn starts, the command as it runs (#53);
+    /// a typed yes when it is risky, then the call.
     pub fn run(&mut self, step: Step) {
         if let Some(field) = step.call.ask.first().cloned() {
             let masked = gate::secret(&field, self.tool_of(&step).and_then(|t| t.schema.pointer(&format!("/properties/{}", field))));
@@ -2273,16 +2416,17 @@ impl App {
             self.mode = Mode::Ask { step, field, masked };
             return;
         }
+        if step.who == Who::Undo {
+            self.undo = None; // the undo at hand is taken, wherever it came from (its row, "undo", spark)
+        }
+        self.say(Sign::You, &step.line);
         let Some(tool) = self.tool_of(&step).cloned() else {
-            self.say(Sign::Refused, &format!("{}: not a step here now", step.line));
-            return self.stop_queue("the steps after it were not run");
+            self.say(Sign::Refused, "this is not offered here now");
+            return self.stop_queue();
         };
         if let Err(e) = self.checked(&step) {
-            self.say(Sign::Refused, &format!("{}: {}", step.line, e));
-            return self.stop_queue("the steps after it were not run");
-        }
-        if step.who == Who::Model {
-            self.say(Sign::Step, &step.line);
+            self.say(Sign::Refused, &e);
+            return self.stop_queue();
         }
         if self.risky(&tool) {
             self.stash_draft();
@@ -2297,7 +2441,7 @@ impl App {
     /// undo planned names only what the rows list now.
     fn checked(&self, step: &Step) -> Result<(), String> {
         if self.tool_of(step).is_none() {
-            return Err("not a step here now".into());
+            return Err("this is not offered here now".into());
         }
         if step
             .call
@@ -2319,8 +2463,8 @@ impl App {
         match self.checked(&step) {
             Ok(()) => self.call(step),
             Err(e) => {
-                self.say(Sign::Refused, &format!("{}: not done, {}", step.line, e));
-                self.stop_queue("the steps after it were not run");
+                self.say(Sign::Refused, &format!("not done: {}", e));
+                self.stop_queue();
             }
         }
     }
@@ -2343,8 +2487,8 @@ impl App {
                 self.running = Some((idx, id, step, self.exchange.len()));
             }
             None => {
-                self.say(Sign::Refused, &format!("{}: not done, its provider is gone", step.line));
-                self.stop_queue("the steps after it were not run");
+                self.say(Sign::Refused, "not done: the part of the desktop that does it stopped");
+                self.stop_queue();
             }
         }
     }
@@ -2366,13 +2510,13 @@ impl App {
             refused,
         );
         if let Some(e) = error {
-            self.say(Sign::Refused, &format!("{}: {}", step.line, e));
-            self.stop_queue("not run, for the step before failed");
+            self.say(Sign::Refused, &e);
+            self.stop_queue();
         } else if let Some(r) = result {
             let text = r.pointer("/content/0/text").and_then(Value::as_str).unwrap_or("");
             if refused {
                 self.say(Sign::Refused, text);
-                self.stop_queue("not run, for the step before failed");
+                self.stop_queue();
             } else {
                 let sc = r.get("structuredContent").cloned().unwrap_or(Value::Null);
                 if let Some(path) = sc.get("attach").and_then(Value::as_str) {
@@ -2450,6 +2594,10 @@ impl App {
                     match serde_json::from_str::<Value>(&e) {
                         Ok(_) => self.plan(&e),
                         Err(_) => {
+                            if let Some((w, _)) = &self.pending {
+                                let w = w.clone();
+                                self.say(Sign::You, &w);
+                            }
                             self.give_back();
                             self.say(Sign::Refused, e.lines().next().unwrap_or("spark did not answer"))
                         }
@@ -2630,6 +2778,12 @@ impl App {
             v.extend(key("Next", "Tab"));
             return v;
         }
+        // the commands spark planned wait in the box: Enter runs them, Esc drops them (#53)
+        if self.staged_now() && !self.in_list {
+            let mut v = key("Run", "Enter");
+            v.extend(esc("Discard"));
+            return v;
+        }
         // what Esc does now: the words typed go first, then back a view, then what was said, then the dialog
         let esc_word = if !self.input.is_empty() {
             "Clear"
@@ -2655,7 +2809,7 @@ impl App {
             }
             let word = match &lit {
                 Some(Item::Ask) => "Ask",
-                Some(Item::Proposal(_)) | Some(Item::Undo) => "Run",
+                Some(Item::Undo(..)) => "Undo",
                 Some(Item::Model(_)) | Some(Item::TalkOpt(_)) => "Choose",
                 Some(it) => match self.row_ref(it) {
                     Some(r) if r.children.is_none() && r.pick.is_none() => r.tool.as_ref().map(|t| verb_of(&t.name)).unwrap_or("Open"),
@@ -2697,22 +2851,29 @@ impl App {
         }
     }
 
-    /// A step's line as people read it: its tool's title with the arguments in place of the capital
-    /// words (theme wallpaper NAME gives theme wallpaper none), else the section and the row (#32).
+    /// A step's line as people read it, the command as typed: its tool's title with the arguments in
+    /// place of the capital words (theme wallpaper NAME gives theme wallpaper none, out level N gives
+    /// out level 60), never a secret; else the section and the row (#32).
     fn step_line(&self, p: usize, call: &Call, row_text: &str) -> String {
-        let title = self.providers[p]
-            .tools
-            .iter()
-            .find(|t| t.name == call.name)
-            .map(|t| t.title.clone())
-            .unwrap_or_default();
+        let tool = self.providers[p].tools.iter().find(|t| t.name == call.name);
+        let title = tool.map(|t| t.title.clone()).unwrap_or_default();
         if !title.is_empty() && model::title_ok(&title) {
-            let mut args = call.arguments.values().filter_map(Value::as_str);
+            let schema = tool.map(|t| t.schema.clone()).unwrap_or(Value::Null);
+            let mut args = call
+                .arguments
+                .iter()
+                .filter(|(k, _)| !gate::secret(k, schema.pointer(&format!("/properties/{}", k))))
+                .filter_map(|(_, v)| match v {
+                    Value::String(s) => Some(s.clone()),
+                    Value::Number(n) => Some(n.to_string()),
+                    Value::Bool(b) => Some(if *b { "on" } else { "off" }.to_string()),
+                    _ => None,
+                });
             let words: Vec<String> = title
                 .split(' ')
                 .map(|w| {
                     if w.bytes().all(|c| c.is_ascii_uppercase()) {
-                        args.next().map(str::to_string).unwrap_or_else(|| row_text.to_string())
+                        args.next().unwrap_or_else(|| row_text.to_string())
                     } else {
                         w.to_string()
                     }
@@ -2741,6 +2902,13 @@ impl App {
         let Some(st) = row.step else { return false };
         let call = if up { st.more } else { st.less };
         self.keep_lit = Some(row.id.clone());
+        // a run of presses on one value is one turn: this change takes the place of the last one's
+        if let Some((id, at)) = self.value_turn.clone() {
+            if id == row.id && self.running.is_none() && at < self.exchange.len() && self.exchange[at + 1..].iter().all(|l| l.sign != Sign::You) {
+                self.exchange.truncate(at);
+            }
+        }
+        self.value_turn = Some((row.id.clone(), self.exchange.len()));
         let line = self.step_line(prov, &call, &row.text);
         self.run(Step {
             prov,

@@ -135,6 +135,12 @@ fn a_destructive_step_takes_the_typed_yes() {
     // a draft typed while a plan comes back: the yes it asks for does not eat it
     typed(&mut app, "my draft");
     app.plan(r#"{"answer": "", "steps": [{"name": "window_close", "arguments": {"name": "terminal"}, "line": "window close terminal"}], "refused": []}"#);
+    // spark's command waits in the box (#53), the draft aside; Enter runs it, and a destructive one asks
+    assert!(app.staged_now() && app.input == "window close terminal", "{:?}", app.input);
+    let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
+    assert!(hint.contains(&"Run ".to_string()) && hint.contains(&"Discard ".to_string()), "{:?}", hint);
+    assert!(calls.lock().unwrap().is_empty(), "nothing spark planned runs before Enter");
+    app.enter();
     assert!(matches!(app.mode, Mode::Confirm(_)), "{:?}", app.mode);
     assert!(app.input.is_empty(), "the prompt takes the yes; the draft waits aside");
     typed(&mut app, "y");
@@ -213,22 +219,27 @@ fn a_plan_is_gated_step_by_step() {
         {"name": "rm_everything", "arguments": {}, "line": "rm everything"}
     ], "refused": ["\u2717 theme: rainbow is not on the panel now"]}"#,
     );
-    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text == "terminal in front")));
+    assert_eq!(app.input, "window focus terminal", "the one step the gate took waits in the box");
     let lines: Vec<String> = app.exchange.iter().map(|l| format!("{:?} {}", l.sign, l.text)).collect();
     assert!(lines.contains(&"Refused theme: rainbow is not on the panel now".to_string()), "{:?}", lines);
+    // a refusal says what did not run and why, in plain words, never a tool's name (#53)
     assert!(
-        lines.contains(&"Refused window focus evil twin: window_focus names nothing listed now".to_string()),
+        lines.contains(&"Refused window focus evil twin did not run: evil twin is not in the list now".to_string()),
         "{:?}",
         lines
     );
-    assert!(lines.contains(&"Refused window focus x: no argument x".to_string()), "{:?}", lines);
-    assert!(lines.contains(&"Refused rm everything: not a step here now".to_string()), "{:?}", lines);
+    assert!(lines.contains(&"Refused window focus x did not run: it takes no x".to_string()), "{:?}", lines);
+    assert!(lines.contains(&"Refused rm everything is not offered here now".to_string()), "{:?}", lines);
+    assert!(!lines.iter().any(|l| l.contains('_')), "no tool's name: {:?}", lines);
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text == "terminal in front")));
+    let lines: Vec<String> = app.exchange.iter().map(|l| format!("{:?} {}", l.sign, l.text)).collect();
     let step = lines
         .iter()
-        .position(|l| l == "Step window focus terminal")
-        .expect("the step's line is drawn before it runs");
+        .position(|l| l == "You window focus terminal")
+        .expect("the turn starts with the command as it ran");
     let done = lines.iter().position(|l| l == "Done terminal in front").unwrap();
-    assert!(step < done);
+    assert_eq!(step + 1, done, "and what came of it right under it");
     assert_eq!(calls.lock().unwrap().len(), 1, "only the gated step ran");
 }
 
@@ -621,13 +632,15 @@ fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
         line: "undo terminal".into(),
     });
     app.plan(r#"{"answer": "", "steps": [{"name": "undo_all", "arguments": {}, "line": "undo"}], "refused": []}"#);
+    assert_eq!(app.input, "undo", "the undo waits in the box as the word undo");
+    app.enter();
     assert!(
         pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["name"] == "window_focus")),
         "the undo ran"
     );
     assert!(app.undo.is_none());
     app.plan(r#"{"answer": "", "steps": [{"name": "about_open", "arguments": {}, "line": "about"}], "refused": []}"#);
-    assert_eq!(app.exchange.last().unwrap().text, "about: not a step here now", "no about provider here");
+    assert_eq!(app.exchange.last().unwrap().text, "about is not offered here now", "no about provider here");
     let (mut app, rx, tx) = app_with(&["about"]);
     app.servers.push(stub(0, "about", about_stub(), tx));
     app.start();
@@ -853,23 +866,24 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
     // his report (#39): "change theme to nord" worked, and the next request ran its undo
     let (mut app, rx, calls, _r) = started();
     app.cfg.spark_shell = "/bin/spark-shell".into();
-    app.plan(r#"{"answer": "The terminal is open.", "question": true, "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
+    let line = |sign: Sign, text: &str, undo: bool| spark_dialog::app::Line { sign, text: text.into(), undo };
+    app.exchange = vec![line(Sign::You, "window close terminal", false), line(Sign::Done, "terminal closed", true)];
     app.undo = Some(spark_dialog::app::Step {
         prov: 0,
         call: spark_dialog::model::Call {
-            name: "window_close".into(),
+            name: "window_focus".into(),
             arguments: json!({"name": "terminal"}).as_object().unwrap().clone(),
             ask: vec![],
         },
         who: spark_dialog::app::Who::Undo,
-        line: "undo terminal".into(),
+        line: "undo window close terminal".into(),
     });
     typed(&mut app, "change theme to dracula");
     let picks = app.picks();
     let ask = picks.iter().position(|i| *i == Item::Ask).expect("Ask spark");
     assert!(
-        picks[..ask].contains(&Item::Undo) && picks[..ask].contains(&Item::Proposal(0)),
-        "the undo and the proposal come before Ask spark: {:?}",
+        picks[..ask].iter().any(|i| matches!(i, Item::Undo(..))),
+        "the undo comes before Ask spark: {:?}",
         picks
     );
     assert_eq!(app.picks().get(app.sel), Some(&Item::Ask), "words that name no row light Ask spark");
@@ -880,10 +894,7 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
             .any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, a) if a.last().map(String::as_str) == Some("change theme to dracula"))),
         "Enter asks spark"
     );
-    assert!(
-        !pump(&mut app, &rx, |_| !calls.lock().unwrap().is_empty()),
-        "and runs neither the undo nor the proposal"
-    );
+    assert!(!pump(&mut app, &rx, |_| !calls.lock().unwrap().is_empty()), "and runs no undo");
     assert!(app.undo.is_some(), "the undo is still there to pick");
 }
 
@@ -909,26 +920,84 @@ fn words_that_name_a_row_run_that_row_with_no_model_call() {
 }
 
 #[test]
-fn a_question_changes_nothing_its_steps_are_proposals_run_when_picked() {
+fn spark_s_steps_wait_in_the_box_a_question_s_alike_and_run_on_enter() {
+    // his photo (#52): "can you change the theme to gruvbox-dark?" read as a question and changed nothing.
+    // Now every step spark plans comes back to the box as a command, and Enter runs it (#53)
     let (mut app, rx, calls, _r) = started();
     app.plan(r#"{"answer": "The terminal is open.", "question": true, "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
     std::thread::sleep(Duration::from_millis(200));
-    assert!(calls.lock().unwrap().is_empty(), "a question runs no step");
-    assert_eq!(app.proposals.len(), 1);
-    assert!(app.items().contains(&Item::Proposal(0)));
-    let k = app.picks().iter().position(|i| *i == Item::Proposal(0)).unwrap();
-    at_row(&mut app, View::Home, k);
-    assert!(app.hint().iter().any(|(t, _)| t == "Run "), "{:?}", app.hint());
+    assert!(calls.lock().unwrap().is_empty(), "nothing runs before Enter");
+    assert_eq!(
+        app.exchange.last().map(|l| l.text.as_str()),
+        Some("The terminal is open."),
+        "the answer is said"
+    );
+    assert!(app.staged_now() && app.input == "window focus terminal", "{:?}", app.input);
+    assert!(!app.items().contains(&Item::Ask), "the list is not searched for spark's own command");
     app.enter();
     assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["name"] == "window_focus")));
+    assert!(app.input.is_empty() && app.staged.is_none());
 }
 
 #[test]
-fn a_questions_proposals_sit_under_it_and_an_undo_under_its_step() {
-    // his photo (#44): the proposal of the newest question came after two older turns and their Undo
+fn esc_drops_spark_s_commands_and_a_change_makes_them_typed_words() {
+    let (mut app, rx, calls, _r) = started();
+    app.cfg.spark_shell = "/bin/spark-shell".into();
+    app.plan(r#"{"answer": "", "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
+    app.escape();
+    assert!(app.input.is_empty() && app.staged.is_none(), "Esc drops them: {:?}", app.input);
+    app.plan(r#"{"answer": "", "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
+    for _ in 0.."terminal".len() {
+        app.backspace();
+    }
+    typed(&mut app, "firefox");
+    assert!(!app.staged_now(), "a change makes them typed words again");
+    app.in_list = false;
+    app.enter();
+    // "window focus firefox" is a command in the dialog's own words: it runs as changed, no model
+    assert!(pump(&mut app, &rx, |_| calls
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|c| c["name"] == "window_focus" && c["arguments"]["name"] == "firefox")));
+    assert!(!app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, _))));
+}
+
+#[test]
+fn a_command_typed_in_the_dialog_s_own_words_runs_with_no_model() {
+    let (mut app, rx, calls, _r) = started();
+    app.cfg.spark_shell = "/bin/spark-shell".into();
+    typed(&mut app, "Window Focus terminal");
+    app.in_list = false;
+    app.enter();
+    assert!(pump(&mut app, &rx, |_| calls
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|c| c["name"] == "window_focus" && c["arguments"]["name"] == "terminal")));
+    assert!(!app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, _))), "no model");
+    // words that are no command go to spark
+    typed(&mut app, "window focus");
+    app.in_list = false;
+    app.enter();
+    assert!(
+        app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, _))),
+        "a title with its value left out is no command"
+    );
+}
+
+#[test]
+fn the_undo_is_at_the_end_of_the_result_it_takes_back() {
+    // his photo (#52): "Undo theme text bigger" stood under a newer question. The undo is no row of its
+    // own now: it is Undo at the end of the result it takes back (#53)
     let (mut app, _rx, _calls, _r) = started();
     let line = |sign: Sign, text: &str, undo: bool| spark_dialog::app::Line { sign, text: text.into(), undo };
-    app.exchange = vec![line(Sign::You, "close the terminal", false), line(Sign::Done, "terminal closed", true)];
+    app.exchange = vec![
+        line(Sign::You, "window close terminal", false),
+        line(Sign::Done, "terminal closed", true),
+        line(Sign::You, "is the terminal open?", false),
+        line(Sign::Says, "No.", false),
+    ];
     app.undo = Some(spark_dialog::app::Step {
         prov: 0,
         call: spark_dialog::model::Call {
@@ -937,25 +1006,26 @@ fn a_questions_proposals_sit_under_it_and_an_undo_under_its_step() {
             ask: vec![],
         },
         who: spark_dialog::app::Who::Undo,
-        line: "undo terminal".into(),
+        line: "undo window close terminal".into(),
     });
-    app.exchange.push(line(Sign::You, "can you bring the terminal to the front?", false));
-    app.plan(r#"{"answer": "", "question": true, "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
     let items = app.items();
-    let at = |it: &Item| items.iter().position(|x| x == it).unwrap_or_else(|| panic!("no {:?} in {:?}", it, items));
     let q = items
         .iter()
-        .position(|x| matches!(x, Item::Said(Sign::You, t, true) if t.starts_with("can you bring")))
+        .position(|x| matches!(x, Item::Said(Sign::You, t, true) if t == "is the terminal open?"))
         .expect("the question");
     assert_eq!(q, 0, "the newest turn first");
-    assert_eq!(at(&Item::Proposed), q + 1, "proposed, not run right under the question that made it");
-    assert_eq!(at(&Item::Proposal(0)), q + 2);
-    let r = items
+    let c = items
         .iter()
-        .position(|x| matches!(x, Item::Said(Sign::Done, t, true) if t == "terminal closed"))
-        .expect("the older receipt");
-    assert!(r > q + 2, "the older turn after the question and its proposal");
-    assert_eq!(at(&Item::Undo), r + 1, "the Undo right under the receipt it takes back");
+        .position(|x| matches!(x, Item::Said(Sign::You, t, true) if t == "window close terminal"))
+        .expect("the older turn's command");
+    assert!(c > q + 1);
+    assert_eq!(
+        items[c + 1],
+        Item::Undo(Sign::Done, "terminal closed".into(), true),
+        "Undo ends the result it takes back"
+    );
+    assert_eq!(items.iter().filter(|x| matches!(x, Item::Undo(..))).count(), 1, "and nowhere else");
+    assert!(matches!(app.picks().first(), Some(Item::Undo(..))), "it is the first pick");
 }
 
 #[test]
@@ -996,7 +1066,7 @@ fn risk_is_decided_here_a_hint_that_says_safe_does_not_skip_the_yes() {
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(*seen.lock().unwrap(), 0, "a yes for a step no longer offered runs nothing");
     assert!(
-        app.exchange.last().unwrap().text.contains("not done, not a step here now"),
+        app.exchange.last().unwrap().text.contains("not done: this is not offered here now"),
         "{:?}",
         app.exchange
     );
@@ -1033,14 +1103,12 @@ fn a_failed_step_stops_the_steps_that_depend_on_it() {
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
     app.plan(r#"{"answer": "", "steps": [{"name": "out_mute", "arguments": {}, "line": "out mute"}, {"name": "out_unmute", "arguments": {}, "line": "out unmute"}], "refused": []}"#);
-    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.starts_with("not run"))));
+    assert_eq!(app.input, "out mute\nout unmute", "two steps, one command a line");
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.starts_with("so these did not run"))));
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(calls.lock().unwrap().len(), 1, "the step after the failure did not run");
-    assert!(
-        app.exchange.iter().any(|l| l.text == "not run, for the step before failed: out unmute"),
-        "{:?}",
-        app.exchange
-    );
+    assert!(app.exchange.iter().any(|l| l.text == "so these did not run: out unmute"), "{:?}", app.exchange);
 }
 
 #[test]
@@ -1051,6 +1119,7 @@ fn a_step_with_no_answer_is_neither_done_nor_failed_and_stops_the_rest() {
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
     app.plan(r#"{"answer": "", "steps": [{"name": "out_mute", "arguments": {}, "line": "out mute"}, {"name": "out_unmute", "arguments": {}, "line": "out unmute"}], "refused": []}"#);
+    app.enter();
     assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 1));
     app.tick(Instant::now() + spark_dialog::mcp::T_CALL + Duration::from_secs(1));
     assert!(
@@ -1058,7 +1127,7 @@ fn a_step_with_no_answer_is_neither_done_nor_failed_and_stops_the_rest() {
         "{:?}",
         app.exchange
     );
-    assert!(app.exchange.iter().any(|l| l.text == "not run: out unmute"), "{:?}", app.exchange);
+    assert!(app.exchange.iter().any(|l| l.text == "so these did not run: out unmute"), "{:?}", app.exchange);
     assert!(app.queue.is_empty() && app.running.is_none());
 }
 
@@ -1068,6 +1137,7 @@ fn an_argument_with_a_control_character_is_never_a_step() {
     app.plan("{\"answer\": \"\", \"steps\": [{\"name\": \"window_focus\", \"arguments\": {\"name\": \"terminal\\nrm -rf ~\"}, \"line\": \"window focus\"}], \"refused\": []}");
     std::thread::sleep(Duration::from_millis(200));
     assert!(calls.lock().unwrap().is_empty());
+    assert!(app.staged.is_none(), "refused at the gate, never in the box");
 }
 
 #[test]

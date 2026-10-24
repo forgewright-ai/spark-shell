@@ -29,6 +29,9 @@ pub const SEP: &str = " \u{b7} ";
 /// The rows: the prompt's two, the attachment's (air above and below it), what a key does, where the
 /// content starts (the last two two rows lower while a file is attached).
 pub const PROMPT_Y: u16 = 2;
+/// The rows the prompt grows to for a longer draft: commands spark planned are all in sight before
+/// Enter runs them (#53); past this the draft scrolls inside them.
+pub const PROMPT_MAX: usize = 5;
 pub const ATTACH_Y: u16 = 5;
 pub const HINT_Y: u16 = 5;
 pub const CONTENT_Y: u16 = 7;
@@ -262,7 +265,7 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
         }
     }
 
-    // the prompt: two rows; a longer draft scrolls inside them
+    // the prompt: two rows, up to PROMPT_MAX for a longer draft; past that it scrolls inside them
     let tx = 4;
     let tw = (w - tx - 3) as usize;
     pen.put(2, PROMPT_Y, PROMPT, pal.accent, true, false);
@@ -273,19 +276,21 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
         app.input.clone()
     };
     let (rows, (cr, cc)) = draft_rows(&shown, app.cursor, tw);
-    let top = cr.saturating_sub(1).min(rows.len().saturating_sub(2));
-    drawn.prompt = (PROMPT_Y, PROMPT_Y + 1);
+    let n = rows.len().clamp(2, PROMPT_MAX);
+    let grow = (n - 2) as u16;
+    let top = cr.saturating_sub(n - 1).min(rows.len().saturating_sub(n));
+    drawn.prompt = (PROMPT_Y, PROMPT_Y + n as u16 - 1);
     if app.input.is_empty() && app.mode == Mode::Normal {
         pen.put(tx, PROMPT_Y, PLACEHOLDER, pal.muted, false, false);
     } else {
-        for (k, r) in rows.iter().skip(top).take(2).enumerate() {
+        for (k, r) in rows.iter().skip(top).take(n).enumerate() {
             pen.put(tx, PROMPT_Y + k as u16, r, pal.fg, false, false);
         }
         if top > 0 {
             pen.put(w - 2, PROMPT_Y, ABOVE, pal.muted, false, false);
         }
-        if top + 2 < rows.len() {
-            pen.put(w - 2, PROMPT_Y + 1, BELOW, pal.muted, false, false);
+        if top + n < rows.len() {
+            pen.put(w - 2, PROMPT_Y + n as u16 - 1, BELOW, pal.muted, false, false);
         }
     }
     drawn.cursor = (tx + cc as u16, PROMPT_Y + (cr - top) as u16);
@@ -293,19 +298,20 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     // the file attached, for the next question alone, and its Remove
     if let Some(a) = &app.attachment {
         let name = cut(a.rsplit('/').next().unwrap_or(""), (w / 3) as usize);
-        let x = pen.put(tx, ATTACH_Y, &name, pal.fg, false, false);
+        let ay = ATTACH_Y + grow;
+        let x = pen.put(tx, ay, &name, pal.fg, false, false);
         let x0 = x + 2;
-        let e = pen.control(x0, ATTACH_Y, "Remove", app.chip_focus == Some(4), false, false);
-        drawn.chips.push((x0, e, ATTACH_Y, 4));
+        let e = pen.control(x0, ay, "Remove", app.chip_focus == Some(4), false, false);
+        drawn.chips.push((x0, e, ay, 4));
         let said = "Text or Markdown, next question only";
         let said = if e + 3 + cells(said) as u16 <= w - 2 { said } else { "next question only" };
         if e + 3 + cells(said) as u16 <= w - 2 {
-            pen.put(w - 2 - cells(said) as u16, ATTACH_Y, said, pal.muted, false, false);
+            pen.put(w - 2 - cells(said) as u16, ay, said, pal.muted, false, false);
         }
     }
 
     // what a key does now; a row lower when a file is attached, so air stays between them
-    let shift = if app.attachment.is_some() { 2 } else { 0 };
+    let shift = (if app.attachment.is_some() { 2 } else { 0 }) + grow;
     let hint_y = HINT_Y + shift;
     let mut x = 2;
     for (t, key) in app.hint() {
@@ -370,6 +376,22 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     }
 }
 
+/// A line of the exchange: the command as it ran at the left, in muted after its prompt sign; what came
+/// of it under it, after its sign (#53).
+fn said_line(pen: &mut Pen, s: &Sign, text: &str, first: bool, y: u16, lit: bool) {
+    let pal = pen.pal.clone();
+    let (ind, sg, sc, tc) = match s {
+        Sign::You => (2, PROMPT, pal.muted, pal.muted),
+        Sign::Done => (4, CHECK, pal.accent, pal.fg),
+        Sign::Refused => (4, CROSS, pal.alarm, pal.fg),
+        Sign::Says => (4, "*", pal.accent, pal.fg),
+    };
+    if first {
+        pen.put(ind, y, sg, sc, false, lit);
+    }
+    pen.put(ind + 2, y, text, tc, false, lit);
+}
+
 /// One content row: what it shows, lit when it is the row picked.
 /// A list's columns: their widths, which line up on their right edge, whether rows carry a sample.
 type Cols<'a> = (&'a [usize], &'a [bool], bool, bool);
@@ -388,33 +410,11 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             pen.put(2, y, h, pal.muted, false, false);
         }
         Item::Blank => {}
-        Item::Said(s, text, first) => {
-            let (ind, sg, sc, tc) = match s {
-                Sign::You => (2, PROMPT, pal.muted, pal.muted),
-                Sign::Done => (4, CHECK, pal.accent, pal.fg),
-                Sign::Refused => (4, CROSS, pal.alarm, pal.fg),
-                Sign::Says => (4, "*", pal.accent, pal.fg),
-                Sign::Step => (4, OPENS, pal.muted, pal.muted),
-            };
-            if *first {
-                pen.put(ind, y, sg, sc, false, false);
-            }
-            pen.put(ind + 2, y, text, tc, false, false);
-        }
-        Item::Undo => {
-            let line = app.undo.as_ref().map(|u| u.line.trim_start_matches("undo ").to_string()).unwrap_or_default();
-            let x = pen.put(6, y, "Undo", pal.fg, false, lit);
-            pen.put(x, y, &format!("  {}", line), pal.muted, false, lit);
-        }
-        Item::Proposed => {
-            // under the question that made them, where the steps' signs stand (#44)
-            pen.put(4, y, "proposed, not run", pal.muted, false, false);
-        }
-        Item::Proposal(i) => {
-            if let Some(s) = app.proposals.get(*i) {
-                pen.put(4, y, OPENS, pal.accent, false, lit);
-                pen.put(6, y, &s.line, pal.fg, false, lit);
-            }
+        Item::Said(s, text, first) => said_line(pen, s, text, *first, y, false),
+        Item::Undo(s, text, first) => {
+            // the result the undo at hand takes back, with Undo at its end where the rows' signs end (#53)
+            said_line(pen, s, text, *first, y, lit);
+            pen.put(w.saturating_sub(6), y, "Undo", if lit { pal.fg } else { pal.muted }, false, lit);
         }
         Item::Dest(d) => {
             pen.put(2, y, DESTS[*d].name, pal.fg, false, lit);

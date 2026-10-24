@@ -7,17 +7,18 @@ use serde_json::{Map, Value};
 
 /// A call's arguments against its tool's input schema: an object, no
 /// argument the schema lacks, every required one there, each of its type.
+/// Each refusal is plain words about the argument, never the tool.
 pub fn schema_ok(schema: &Value, args: &Map<String, Value>) -> Result<(), String> {
     let props = schema.get("properties").and_then(Value::as_object).cloned().unwrap_or_default();
     for k in args.keys() {
         if !props.contains_key(k) {
-            return Err(format!("no argument {}", k));
+            return Err(format!("it takes no {}", k));
         }
     }
     for r in schema.get("required").and_then(Value::as_array).cloned().unwrap_or_default() {
         if let Some(k) = r.as_str() {
             if !args.contains_key(k) {
-                return Err(format!("missing {}", k));
+                return Err(format!("it needs a {}", k));
             }
         }
     }
@@ -41,7 +42,12 @@ pub fn schema_ok(schema: &Value, args: &Map<String, Value>) -> Result<(), String
             _ => Some(false),
         };
         if ok != Some(true) {
-            return Err(format!("{} is not what the tool takes", k));
+            let said = v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string());
+            return Err(if secret(k, Some(p)) || said.chars().any(char::is_control) {
+                format!("that is not a {} it takes", k)
+            } else {
+                format!("{} is not a {} it takes", crate::scrub::cut_words(&crate::scrub::scrub(&said), 40), k)
+            });
         }
     }
     Ok(())
@@ -69,15 +75,26 @@ pub fn secret(name: &str, prop: Option<&Value>) -> bool {
     prop.and_then(|p| p.get("format")).and_then(Value::as_str) == Some("password") || CREDENTIAL_WORDS.iter().any(|w| n.contains(w))
 }
 
+/// A name the rows hold the step to: a free string (a network, a device, a window, a layout).
+/// A value the schema bounds, an enum or a number, is held by the schema alone (#50).
+fn is_name(schema: &Value, k: &str) -> bool {
+    let Some(p) = schema.pointer(&format!("/properties/{}", k)) else {
+        return false;
+    };
+    p.get("type").and_then(Value::as_str) == Some("string") && p.get("enum").is_none() && !secret(k, Some(p))
+}
+
 /// A step from the model (or an undo from a result), before it runs:
 /// the tool is in the provider's tools now, its arguments fit the schema,
 /// and where the provider's rows name things with that tool, the step
-/// names one of them exactly.
+/// names one of them exactly. A level, a size or minutes are no names:
+/// the rows' few steps of a value (brighter, dimmer) are not all it takes.
+/// What it says is plain words, never a tool's name.
 pub fn step(tools: &[Tool], rows: &Rows, c: &Call) -> Result<(), String> {
     let t = tools
         .iter()
         .find(|t| t.name == c.name)
-        .ok_or_else(|| format!("{} is not a step here now", c.name))?;
+        .ok_or_else(|| "this is not offered here now".to_string())?;
     schema_ok(&t.schema, &c.arguments)?;
     let required: Vec<String> = t
         .schema
@@ -85,6 +102,10 @@ pub fn step(tools: &[Tool], rows: &Rows, c: &Call) -> Result<(), String> {
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect())
         .unwrap_or_default();
+    let names: Vec<&String> = required.iter().filter(|k| is_name(&t.schema, k)).collect();
+    if names.is_empty() {
+        return Ok(());
+    }
     // a row that asks the person for the argument (a name to save under) names nothing: what is
     // typed there is free, so a step from the model with its own name passes the same way (#25)
     let naming: Vec<&Call> = rows
@@ -96,11 +117,11 @@ pub fn step(tools: &[Tool], rows: &Rows, c: &Call) -> Result<(), String> {
     if naming.is_empty() {
         return Ok(());
     }
-    let mine = plain(&t.schema, &c.arguments);
-    if naming.iter().any(|x| plain(&t.schema, &x.arguments) == mine) {
+    if naming.iter().any(|x| names.iter().all(|k| x.arguments.get(*k) == c.arguments.get(*k))) {
         Ok(())
     } else {
-        Err(format!("{} names nothing listed now", c.name))
+        let said = names.iter().find_map(|k| c.arguments.get(*k).and_then(Value::as_str)).unwrap_or("that");
+        Err(format!("{} is not in the list now", said))
     }
 }
 
@@ -164,7 +185,7 @@ mod tests {
             arguments: Map::new(),
             ask: vec![],
         };
-        assert_eq!(step(&t, &r, &c).unwrap_err(), "wifi_forget is not a step here now");
+        assert_eq!(step(&t, &r, &c).unwrap_err(), "this is not offered here now");
     }
 
     #[test]
@@ -175,19 +196,19 @@ mod tests {
             arguments: args(json!({"name": "cafe", "x": 1})),
             ask: vec![],
         };
-        assert_eq!(step(&t, &r, &c).unwrap_err(), "no argument x");
+        assert_eq!(step(&t, &r, &c).unwrap_err(), "it takes no x");
         let c = Call {
             name: "out_level".into(),
             arguments: args(json!({"level": 300})),
             ask: vec![],
         };
-        assert_eq!(step(&t, &r, &c).unwrap_err(), "level is not what the tool takes");
+        assert_eq!(step(&t, &r, &c).unwrap_err(), "300 is not a level it takes");
         let c = Call {
             name: "out_level".into(),
             arguments: Map::new(),
             ask: vec![],
         };
-        assert_eq!(step(&t, &r, &c).unwrap_err(), "missing level");
+        assert_eq!(step(&t, &r, &c).unwrap_err(), "it needs a level");
     }
 
     #[test]
@@ -204,13 +225,41 @@ mod tests {
             arguments: args(json!({"name": "evil twin"})),
             ask: vec![],
         };
-        assert_eq!(step(&t, &r, &no).unwrap_err(), "wifi_connect names nothing listed now");
+        assert_eq!(step(&t, &r, &no).unwrap_err(), "evil twin is not in the list now");
         let free = Call {
             name: "out_level".into(),
             arguments: args(json!({"level": 30})),
             ask: vec![],
         };
         assert!(step(&t, &r, &free).is_ok(), "a level names no row");
+    }
+
+    #[test]
+    fn a_value_the_schema_bounds_is_no_name_even_where_rows_list_its_steps() {
+        // the screen's rows list brighter and dimmer; "dim display 25%" asks for 25 (#50)
+        let tools = vec![Tool {
+            name: "display_brightness".into(),
+            title: "display brightness N".into(),
+            schema: json!({"type": "object", "properties": {"level": {"type": "string", "enum": ["up", "down", "10", "25", "30"]}}, "required": ["level"], "additionalProperties": false}),
+            destructive: false,
+            read_only: false,
+        }];
+        let r = crate::model::rows(r#"{"title":"display","rows":[
+            {"id":"display:brighter","sign":"blank","text":"brighter","tool":{"name":"display_brightness","arguments":{"level":"up"}},"more":[],"columns":[],"children":null},
+            {"id":"display:dimmer","sign":"blank","text":"dimmer","tool":{"name":"display_brightness","arguments":{"level":"down"}},"more":[],"columns":[],"children":null}]}"#)
+        .unwrap();
+        let c = Call {
+            name: "display_brightness".into(),
+            arguments: args(json!({"level": "25"})),
+            ask: vec![],
+        };
+        assert!(step(&tools, &r, &c).is_ok(), "25 is the schema's to hold, not the rows'");
+        let bad = Call {
+            name: "display_brightness".into(),
+            arguments: args(json!({"level": "200"})),
+            ask: vec![],
+        };
+        assert_eq!(step(&tools, &r, &bad).unwrap_err(), "200 is not a level it takes", "the schema still holds it");
     }
 
     #[test]

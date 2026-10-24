@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.97
+
+- Changed: the dialog follows spark's own prompt. Words that go to
+  spark come back as commands, one a line, in the prompt where they were
+  typed: read them, change or take out a line, and Enter runs them in
+  order; Esc drops them. Nothing spark plans runs before that Enter,
+  and a step that cannot be taken back still asks for the typed yes. A
+  command typed in the dialog's own words, as display brightness 30,
+  runs at once with no model. The prompt grows to five rows, so every
+  command is in sight before Enter (#53)
+- Changed: a turn is the command as it ran, then what came of it. The
+  line about to run and the Undo row are gone: Undo is at the end of
+  the result it takes back. A result reads like a reply, as dracula is
+  on, never the command again, and a refusal says why in plain words,
+  never a tool's name (#53)
+- Fixed: a request worded as a question, as can you change the theme
+  to gruvbox-dark, only listed its step as proposed, not run. Its step
+  comes back to the prompt now, as every step does (#52)
+- Fixed: dim display 25% was refused before it ran. The dialog held a
+  level to the rows on screen, which list only brighter and dimmer. A
+  value the step's own range bounds passes on that range; a name (a
+  network, a window, a layout) is still held to the list (#50)
+- Fixed: a layout saved under a name showed by the words it was made
+  from, in the Workspace and in its back list. It shows by its name now
+  (#51)
+- New: spark-shell layout rename NAME NEW, and a rename row under each
+  saved layout in the dialog, which asks for the new name (#54)
+
 ## v0.96
 
 - Changed: where a moving window would land shows as a soft tint of

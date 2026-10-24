@@ -93,6 +93,8 @@ explain each part. If something fails, run `spark-shell check` and
     spark-shell layout save [NAME]    save the last layout
     spark-shell layout [NAME]         list the saved layouts, or open one
     spark-shell layout delete NAME    delete a saved layout
+    spark-shell layout rename NAME NEW
+                                      give a saved layout a new name
     spark-shell layout back           the layout before this one, again
     spark-shell apps                  choose the apps a layout may open
     spark-shell notes                 list your notes, the newest first
@@ -596,13 +598,13 @@ and Page Down scroll it.
   your home are never read.
 
 Above the list, what was said and done, the newest first, a blank row
-between one request and the next: a check is a step done, a cross one
-refused, and an Undo row under a step takes it back while it can be. A
-question changes nothing: what spark would do comes under it, as
-proposed, not run, and runs when you pick it. At the bottom, under a
-rule, the controls in plain
-text: Attach, the model, and the mic at the right. Tab moves
-through them and the one in focus is lit; Shift+Tab goes back.
+between one turn and the next. A turn is the command as it ran, then
+what came of it in plain words: a check for a step done, a cross and
+the reason for one refused. Undo at the end of a result takes that step
+back while it can be: pick it, or type undo. At the bottom, under a
+rule, the controls in plain text: Attach, the model, and the mic at the
+right. Tab moves through them and the one in focus is lit; Shift+Tab
+goes back.
 
 - Attach picks one text or Markdown file from your home (the types
   `DIALOG_ATTACH_TYPES` names), for the next question only: its name
@@ -630,14 +632,18 @@ Type, and the list shows what matches: places, settings, and every step
 the dialog can take, shown or not. The row your words name is lit, and
 Enter runs it with no model call: `nord` and Enter is the palette nord
 (`drac` lights dracula). Words that name no row light `Ask spark`, the
-first row while you type, and Enter sends them. A place's name alone,
-as `settings` or `calendar`, opens it. A request goes to spark, the way
-`spark-shell want --json` reads it. With spark 1.90 or newer, `spark
-steps` plans with the desktop's own tools and what each section offers
-now; each step is checked against the list again, drawn, then played. A question
-is answered and changes nothing: the steps spark would take are listed
-as proposals, run only when you pick one, and naming an app in a
-question does not open it. A step that cannot be taken back, as
+first row while you type. A place's name alone, as `settings` or
+`calendar`, opens it. A command in the dialog's own words, as `display
+brightness 30` or `theme dracula`, runs at once, with no model. Other
+words go to spark, the way `spark-shell want --json` reads them; with
+spark 1.90 or newer, `spark steps` plans with the desktop's own tools
+and what each section offers now. What spark plans comes back as
+commands, one a line, in the prompt where you typed, the way spark's
+prompt puts a command in your line. Read them, change a line or take
+one out, then Enter runs them in order; Esc drops them. Nothing spark
+plans runs before that Enter. A question is answered above, and its
+steps come back the same way; naming an app in a question does not open
+it. A step that cannot be taken back, as
 closing a window or forgetting a network, waits for you to type yes,
 whatever its provider says of it; the yes is checked again against what
 is offered then. A step that fails or gets no answer stops the steps
