@@ -193,8 +193,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
-      - name: the family's packages, every list but the login screen's
-        run: sh -c "$INSTALL $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' "distro/$DISTRO.env" | tr '\n' ' ') >/dev/null"
+      - name: the family's packages, every list but the login screen's (quiet; a refusal is shown by a second try)
+        run: |
+          pkgs=$(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' "distro/$DISTRO.env" | tr '\n' ' ')
+          sh -c "$INSTALL $pkgs >/dev/null" || sh -c "$INSTALL $pkgs"
       - name: spark-shell on as a plain user, the config read by sway, a headless sway with a foot in it
         # sway's package on Arch, Void and Fedora sets cap_sys_nice on the
         # binary; a container's bounding set lacks it, so a plain user's
