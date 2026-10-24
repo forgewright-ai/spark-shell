@@ -12,8 +12,8 @@
 
 A saver is a small machine: a size, a seed, and a frame each tick. The same seed
 draws the same frames, so a test can hold them. The clock's figures are the idle
-screen's own solid blocks (U+2588), and fire shades with U+2591 to U+2593; foot
-draws those itself. --ascii keeps every frame to ASCII. Every color is one of
+screen's own solid blocks (U+2588), fire shades with U+2591 to U+2593, and mystify
+draws its lines in braille dots; foot draws all of those itself. --ascii keeps every frame to ASCII. Every color is one of
 three roles the palette gives: the accent, the muted color and the bold of the
 text. A saver never reads a file, never opens a socket and never starts a program.
 
@@ -262,21 +262,39 @@ def _stroke(a, b):
     return "/" if (dx > 0) != (dy > 0) else "\\"
 
 
+# braille's eight dots: BRAILLE[column][row] is the bit of the dot at that place in a cell
+BRAILLE = ((0x01, 0x02, 0x04, 0x40), (0x08, 0x10, 0x20, 0x80))
+
+
 class Mystify(Saver):
     name = "mystify"
     about = "two ribbons of lines, each point bouncing, the old trails fading"
-    TRAIL = 4
+    TRAIL = 3                # echoes behind the live shape
+    GAP = 4                  # frames between two echoes: close ones smear into one shape
 
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
         self.ribbons = []
         for _ in range(2):
-            pts = [[self.rng.uniform(0, self.w - 1), self.rng.uniform(0, self.h - 1)] for _ in range(4)]
-            vel = [[self.rng.choice((-1, 1)) * self.rng.uniform(1.4, 2.6),
-                    self.rng.choice((-1, 1)) * self.rng.uniform(0.7, 1.3)] for _ in range(4)]
+            # one point in each quarter of the screen, so a ribbon opens wide, never a sliver
+            pts = [[self.rng.uniform(qx * (self.w - 1) / 2, (qx + 1) * (self.w - 1) / 2),
+                    self.rng.uniform(qy * (self.h - 1) / 2, (qy + 1) * (self.h - 1) / 2)]
+                   for qx, qy in ((0, 0), (1, 0), (1, 1), (0, 1))]
+            vel = [[self.rng.choice((-1, 1)) * self.rng.uniform(0.9, 1.7),
+                    self.rng.choice((-1, 1)) * self.rng.uniform(0.45, 0.85)] for _ in range(4)]
             self.ribbons.append((pts, vel, deque(maxlen=self.TRAIL)))
+        self.tick = 0
+        for _ in range(self.TRAIL * self.GAP):       # the echoes are whole before the first frame
+            self._move()
 
     def draw(self, g, _t):
+        self._move()
+        if self.ascii:
+            self._draw_strokes(g)
+        else:
+            self._draw_braille(g)
+
+    def _move(self):
         for pts, vel, trail in self.ribbons:
             for p, v in zip(pts, vel):
                 p[0] += v[0]
@@ -287,11 +305,38 @@ class Mystify(Saver):
                 if p[1] < 0 or p[1] > self.h - 1:
                     v[1] = -v[1]
                     p[1] = min(max(p[1], 0), self.h - 1)
-            trail.append([(round(p[0]), round(p[1])) for p in pts])
-        for k, (_p, _v, trail) in enumerate(self.ribbons):
-            for age, shape in enumerate(trail):      # oldest first, so the newest ribbon is on top
-                newest = age == len(trail) - 1
+            if self.tick % self.GAP == 0:
+                trail.append([(p[0], p[1]) for p in pts])
+        self.tick += 1
+
+    def _shapes(self, trail, pts):
+        """The echoes, oldest first, then the live shape."""
+        return list(trail) + [[(p[0], p[1]) for p in pts]]
+
+    def _draw_braille(self, g):
+        """Lines in a grid of dots, two across and four down a cell: a line keeps its angle."""
+        bits, who = {}, {}
+        for k, (pts, _v, trail) in enumerate(self.ribbons):
+            shapes = self._shapes(trail, pts)
+            for age, shape in enumerate(shapes):     # oldest first, so the live shape is on top
+                newest = age == len(shapes) - 1
                 role = (ACCENT if k == 0 else BOLD) if newest else MUTED
+                dots = [(min(2 * self.w - 1, int(x * 2 + 1)), min(4 * self.h - 1, int(y * 4 + 2))) for x, y in shape]
+                for i in range(len(dots)):
+                    for dx, dy in _line(dots[i], dots[(i + 1) % len(dots)]):
+                        cell = (dx // 2, dy // 4)
+                        bits[cell] = bits.get(cell, 0) | BRAILLE[dx % 2][dy % 4]
+                        who[cell] = role
+        for (cx, cy), b in bits.items():
+            g.put(cx, cy, chr(0x2800 + b), who[(cx, cy)])
+
+    def _draw_strokes(self, g):
+        for k, (pts, _v, trail) in enumerate(self.ribbons):
+            shapes = self._shapes(trail, pts)
+            for age, shape in enumerate(shapes):     # oldest first, so the live shape is on top
+                newest = age == len(shapes) - 1
+                role = (ACCENT if k == 0 else BOLD) if newest else MUTED
+                shape = [(round(x), round(y)) for x, y in shape]
                 for i in range(len(shape)):
                     a, b = shape[i], shape[(i + 1) % len(shape)]
                     c = _stroke(a, b)

@@ -34,7 +34,7 @@ def run(*args):
 ok(sorted(saver.SAVERS) == ["drift", "fire", "mystify", "starfield"], "the four savers")
 ok(run("list").stdout.count("\n") == 4, "list names one a line")
 
-BLOCKS = set("\u2588\u2591\u2592\u2593")      # the full block the idle clock draws, and fire's shades
+BLOCKS = set("\u2588\u2591\u2592\u2593") | set(chr(c) for c in range(0x2801, 0x2900))   # the idle clock's block, fire's shades, mystify's braille
 for name, cls in saver.SAVERS.items():
     for plain in (False, True):
         for w, h in ((80, 24), (40, 12), (20, 6), (1, 1), (200, 60)):
@@ -77,6 +77,13 @@ for name in ("starfield", "mystify"):
 g = saver.SAVERS["fire"](80, 24, seed=1).frame("14:32")
 ok("a" in g.role[1], "fire: the clock moves to the top")
 ok("".join(g.text()[1])[2:8].strip() != "", "fire: the clock is drawn")
+# mystify in braille: its lines are dots, never a stroke character; with --ascii they are strokes
+m = saver.SAVERS["mystify"](80, 24, seed=4)
+txt = "".join("".join(m.frame("14:32").text()) for _ in range(40))
+ok(any(0x2801 <= ord(c) < 0x2900 for c in txt) and not any(c in "/\\" for c in txt), "mystify draws in braille")
+m = saver.SAVERS["mystify"](80, 24, seed=4, ascii=True)
+txt = "".join("".join(m.frame("14:32").text()) for _ in range(40))
+ok(any(c in "/\\|-" for c in txt) and all(ord(c) < 127 for c in txt), "mystify --ascii draws strokes")
 # a screen too small for the figures has the time on one line
 g = saver.SAVERS["starfield"](30, 8, seed=1).frame("14:32")
 ok("14:32" in "".join(g.text()), "a small screen has the time on one line")
