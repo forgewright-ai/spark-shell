@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.96
+
+- Changed: where a moving window would land shows as a soft tint of
+  the accent, a quarter of it, instead of a block at half strength.
+  The shapes are sway's own (the middle of a window swaps, a strip at
+  an edge splits there, a bar at the edge of a row moves the window out
+  of it) and stay; the tint keeps the text under them readable. The
+  line on the side of a window alone in a split takes the same tint
+  and becomes a quiet hint. sway halves the color it is given and
+  draws it premultiplied, so the accent goes in with each channel
+  halved and alpha 80: a plain alpha drew the area brighter, not
+  softer (#49)
+
 ## v0.95
 
 - Fixed: a new drawing of the pointer showed only after the next

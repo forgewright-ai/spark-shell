@@ -451,8 +451,9 @@ pointer shows the resize arrows over it, and a drag resizes. The edge
 is transparent, so the wallpaper shows there. A window alone on its
 workspace has no edge. Super+right-drag shows the corner arrow it
 pulls; Super+left-drag shows the closed hand, and where a tiled window
-would land shows in the accent, at half strength. The accent also colors
-the side of a window left alone in a split, where the next one opens.
+would land shows as a soft tint of the accent, a quarter of it, so the
+text under it stays readable. The same tint draws a quiet line on the
+side of a window left alone in a split, where the next one opens.
 
 ## Bar
 

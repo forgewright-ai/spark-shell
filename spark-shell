@@ -351,7 +351,7 @@ hex_load() {
 # the palette changes. A path that is not there falls back to the
 # palette's color (the render says so in a row), never to a black
 # screen.
-WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA BORDER BORDER_HEX"   # BAR_ALPHA: two hex digits after the bar background over a picture, else nothing; BORDER_HEX: the edge's color, rrggbbaa
+WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA BORDER BORDER_HEX DROP_HEX"   # BAR_ALPHA: two hex digits after the bar background over a picture, else nothing; BORDER_HEX: the edge's color, rrggbbaa; DROP_HEX: sway's focused indicator, the drop area (drop_hex)
 WALL_NAMES="black white gray silver navy blue teal green olive maroon red purple brown orange"   # one name a color: grey is still read as gray, never listed twice
 # the wallpapers spark-shell ships in wallpaper/, each NAME:PALETTE:SAMPLE, the palette it was drawn
 # for and its main color for the sample on its row; WALLPAPER stores the name, so it follows the clone
@@ -469,6 +469,10 @@ hex_mix() {   # hex_mix RRGGBB RRGGBB PERCENT -> rrggbb: the first color moved P
     set -- $(hex_rgb "#$1") $(hex_rgb "#$2") "$3"
     printf '%02x%02x%02x' $(( $1 + ($4 - $1) * $7 / 100 )) $(( $2 + ($5 - $2) * $7 / 100 )) $(( $3 + ($6 - $3) * $7 / 100 ))
 }
+drop_hex() {   # drop_hex RRGGBB -> rrggbbaa: the color at a quarter as sway's focused indicator takes it (#49): sway halves all four channels and draws them premultiplied, so each goes in halved, alpha 80
+    rgb_of "#$1" || { printf '%s' "$1"; return 0; }
+    printf '%02x%02x%02x80' $(((_R + 1) / 2)) $(((_G + 1) / 2)) $(((_B + 1) / 2))
+}
 wall_load() {   # every wallpaper alike: the windows stand apart over it, as transparent as ALPHA says, their edge clear (#35: no wallpaper changes the transparency)
     # shellcheck disable=SC2034   # read by render_expr through WALL_KEYS
     if wall_there; then WALL_BG="\"$(wall_path)\" fill"
@@ -476,6 +480,7 @@ wall_load() {   # every wallpaper alike: the windows stand apart over it, as tra
     else WALL_BG="$(wall_ground) solid_color"; fi   # the ground, a shade darker than the windows, drawn like a picture: default, none before v0.89, a picture that is not there
     # shellcheck disable=SC2034
     GAPS_INNER=0; GAPS_OUTER=16; FOOT_ALPHA=$ALPHA; BAR_ALPHA=$(alpha_hex "$ALPHA"); BORDER="pixel 4"; BORDER_HEX=00000000
+    DROP_HEX=$(drop_hex "$HEX_ACCENT")   # where a moving window would land: a soft tint of the accent, not a block (#49)
     for k in $WALL_KEYS; do export "${k?}"; done
 }
 
@@ -1944,7 +1949,7 @@ wall_uncover() {   # wall_uncover [WALL_BG] -- sway takes the picture under ours
 wall_shown() { sed -n 's/^output \* bg //p' "$HOME/.config/sway/config" 2>/dev/null | head -1; }   # -> the wallpaper a running sway shows: the config's, which the renders after the switch rewrite
 sway_live_cmd() {   # -> the one swaymsg command that gives a running sway the look, with no reload (#33): the edges' colors, the bar's colors, font and mode, and the pointer, a new drawing of it loaded (#48); the wallpaper is look_burst's (under wall_cover's)
     [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 0
-    _c="client.focused #$BORDER_HEX #$PANEL_HI #$HEX_FG #$HEX_ACCENT #$BORDER_HEX; client.focused_inactive #$BORDER_HEX #$PANEL_BG #$HEX_FG #$BORDER_HEX #$BORDER_HEX"   # the focused indicator: the drop area (#47)
+    _c="client.focused #$BORDER_HEX #$PANEL_HI #$HEX_FG #$DROP_HEX #$BORDER_HEX; client.focused_inactive #$BORDER_HEX #$PANEL_BG #$HEX_FG #$BORDER_HEX #$BORDER_HEX"   # the focused indicator: the drop area, the accent at a quarter (#47, #49)
     _c="$_c; client.unfocused #$BORDER_HEX #$HEX_BG #$HEX_MUTED #$BORDER_HEX #$BORDER_HEX; client.urgent #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG #$HEX_ANSI_1 #$HEX_ANSI_1"
     _c="$_c; $(pointer_fresh)seat * xcursor_theme $POINTER_NAME $POINTER_SIZE; gaps inner all set $GAPS_INNER; gaps outer all set $GAPS_OUTER; [tiling] border $BORDER"
     _b=$(swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | cut -d, -f1)   # the bar's id, bar-0
