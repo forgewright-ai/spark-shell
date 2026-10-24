@@ -40,7 +40,7 @@ jobs:
       - name: ascii docs
         run: |
           tab=$(printf '\t')
-          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/dialog_pty.py lib/terminal_profile.py tests/profile_test.py $(find templates distro themes dialog/src dialog/tests -type f ! -name '*.txt' | sort) dialog/Cargo.toml dialog/deny.toml dialog/dialog.env dialog/rust-toolchain.toml; do
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/dialog_pty.py lib/terminal_profile.py tests/profile_test.py lib/saver.py tests/saver_test.py $(find templates distro themes dialog/src dialog/tests -type f ! -name '*.txt' | sort) dialog/Cargo.toml dialog/deny.toml dialog/dialog.env dialog/rust-toolchain.toml; do
             if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
               echo "non-ASCII in $f"; exit 1; fi; done
       - name: no hex color in a template (the look is the 16 slots)
@@ -51,6 +51,8 @@ jobs:
         run: shellcheck -S warning spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
+      - name: the idle savers
+        run: python3 tests/saver_test.py
   debian:
     # the same suite on Debian itself, where distro/debian.env's names are
     # looked up. The privacy and ascii gates ran once, on linux.
