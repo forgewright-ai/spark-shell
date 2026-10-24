@@ -14,25 +14,26 @@ prompt sign and the cursor cell.
 
 - starship -- https://github.com/starship/starship -- ISC, (c) Starship
   Contributors. From Arch's extra repository (pacman), from Void's
-  (xbps) and from Homebrew.
+  (xbps), from openSUSE's (zypper) and from Homebrew.
 
 ## The tools
 
-Installed from apt's, pacman's, xbps's or Homebrew's own
-repositories, unpinned. The editor you use is yours, and its spark
+Installed from apt's, pacman's, xbps's, dnf's, zypper's or Homebrew's
+own repositories, unpinned. The editor you use is yours, and its spark
 plugin is its own repository with its own credits.
 
 - bash -- GPL-3.0-or-later.
 - tmux -- ISC.
 - ncurses-bin -- MIT-style (ncurses).
-- ncurses -- MIT-style (ncurses-bin, on Arch and Homebrew).
-- diffutils -- GPL-3.0-or-later (on Arch).
+- ncurses -- MIT-style (ncurses-bin, on Arch, Void, Fedora and Homebrew;
+  ncurses-utils on openSUSE).
+- diffutils -- GPL-3.0-or-later (on Arch, Void, Fedora and openSUSE).
 - bat -- MIT/Apache-2.0.
 - eza -- MIT.
 - fzf -- MIT.
 - zoxide -- MIT.
 - fd-find -- MIT/Apache-2.0 (fd).
-- fd -- MIT/Apache-2.0 (fd-find, on Arch and Homebrew).
+- fd -- MIT/Apache-2.0 (fd-find, on Arch, Void, openSUSE and Homebrew).
 - jq -- MIT.
 - btop -- Apache-2.0.
 - kbd -- https://kbd-project.org/ -- GPL-2.0-or-later. `setvtrgb` for
@@ -40,17 +41,19 @@ plugin is its own repository with its own credits.
 
 ## The desktop
 
-With DESKTOP=sway, from apt, pacman or xbps.
+With DESKTOP=sway, from apt, pacman, xbps, dnf or zypper.
 
 - sway -- https://github.com/swaywm/sway -- MIT.
 - wlroots -- https://gitlab.freedesktop.org/wlroots/wlroots -- MIT.
   sway's library, pulled by the package.
 - swaybg -- https://github.com/swaywm/swaybg -- MIT. The background:
-  its own package on Arch and Void, pulled by sway on Debian.
+  its own package on Arch, Void, Fedora and openSUSE, pulled by sway on
+  Debian.
 - foot, foot-terminfo -- https://codeberg.org/dnkl/foot -- MIT.
 - DejaVu fonts -- https://dejavu-fonts.github.io -- Bitstream Vera
   licence (ttf-dejavu on Arch, fonts-dejavu-core on Debian,
-  dejavu-fonts-ttf on Void).
+  dejavu-fonts-ttf on Void, dejavu-sans-mono-fonts on Fedora,
+  dejavu-fonts on openSUSE).
 - seatd -- https://git.sr.ht/~kennylevinsen/seatd -- MIT. On Void,
   which has no logind, it gives sway the screen and keyboard.
 - greetd -- https://git.sr.ht/~kennylevinsen/greetd -- GPL-3.0. With
@@ -61,8 +64,16 @@ With DESKTOP=sway, from apt, pacman or xbps.
   dialog's release file.
 - OpenSSH (openssh, openssh-client on Debian) -- https://www.openssh.com --
   BSD-style. ssh-keygen checks a release tag's signature.
-- Mesa -- https://mesa3d.org -- MIT. mesa-dri on Void, the graphics
-  drivers sway draws with.
+- Mesa -- https://mesa3d.org -- MIT. mesa-dri on Void, mesa-dri-drivers
+  on Fedora and Mesa-dri on openSUSE, the graphics drivers sway draws
+  with.
+- librsvg -- https://gitlab.gnome.org/GNOME/librsvg -- LGPL-2.1-or-later.
+  rsvg-convert draws a wallpaper drawing again in another palette, and a
+  picture of yours small for a theme: librsvg2-bin on Debian, librsvg on
+  Arch, librsvg-utils on Void, librsvg2-tools on Fedora, rsvg-convert on
+  openSUSE. Where a distro still ships gdk-pixbuf's thumbnailer
+  (https://gitlab.gnome.org/GNOME/gdk-pixbuf -- LGPL-2.1-or-later), it
+  stands in.
 
 ## The font
 

@@ -1,5 +1,50 @@
 # Changelog
 
+## v0.98
+
+The revamp arc (#55): the Linux families spark supports, the drawings
+without gdk-pixbuf's thumbnailer, a proof of the desktop per family.
+
+- New: Fedora and openSUSE Tumbleweed, each a file of package names in
+  distro/ checked against its own repository (dnf and zypper over rpm,
+  where a provider counts as installed, as spark's bootstrap reads it),
+  and Ubuntu as the Debian family it is, its names looked up in CI. The
+  login screen knows the account greetd's package makes on each, named
+  in the family's file, and dnf brings greetd's SELinux policy with
+  greetd. A refused install names the family's own upgrade step (#55)
+- Fixed: on Arch the wallpaper drawings could not be drawn in another
+  palette, nor a picture of yours read for a theme: gdk-pixbuf 2.44
+  dropped its thumbnailer, which drew them, and Fedora and Tumbleweed
+  ship none either. rsvg-convert, librsvg's own, draws them now, and the
+  thumbnailer stands in where a distro still has it (Debian, Ubuntu,
+  Void). A picture of yours goes inside a square SVG that rsvg-convert
+  draws small, its margins clear, and look.py skips a clear pixel. Each
+  family's file names the package (librsvg2-bin, librsvg, librsvg-utils,
+  librsvg2-tools, rsvg-convert), and a todo row names it when it is
+  missing (#55)
+- Fixed: on WSL 2, on desktop and on login wrote DESKTOP=sway and
+  LOGIN=yes where no tty1 and no desktop can come. Both refuse in one
+  line now, as they do on macOS, and status and check say na. The
+  terminal is what WSL gets (#55)
+- Changed: quiet boot on Fedora and openSUSE says why it does not: they
+  boot through grub2-mkconfig, whose entries spark-shell does not edit,
+  and both boot quiet already (#55)
+- Changed: the prompt row reads the family's package list for starship
+  instead of naming managers; the todo for an unknown Linux names every
+  family; the sbom reads rpm on Fedora and openSUSE, with dnf's memory
+  of what was asked for (#55)
+- Fixed: a wallpaper or picture path with one of ; ` $ ( ) | & < > was
+  written to the config, which refuses such a value at its next read, so
+  every later run stopped at the config. The path is refused in one line
+  now, before anything is written, and no such value is ever written.
+  The dialog's release file is fetched with --proto-redir =https, as the
+  font's is (#55)
+- CI: fedora, opensuse and ubuntu jobs look every package name up on
+  their own family, and a desktop job installs the desktop's packages in
+  each family's container, runs spark-shell on as a plain user, reads
+  the sway config with sway -C and starts a headless sway with a foot
+  in it (tests/desktop_proof.sh): a proof without a screen, said so (#55)
+
 ## v0.97
 
 - Changed: the dialog follows spark's own prompt. Words that go to

@@ -3,8 +3,8 @@
 # Plain KEY=value, one per line. Every key is optional. A missing key
 # uses the default shown here.
 
-# The prompt: starship, or plain (the shell's own). Debian has no
-# starship package, so there the prompt is always the shell's own.
+# The prompt: starship, or plain (the shell's own). Debian, Ubuntu and
+# Fedora have no starship package, so there the prompt is the shell's own.
 PROMPT=starship
 
 # The starship prompt: minimal (one short line) or full.

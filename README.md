@@ -5,12 +5,14 @@
 <img src="assets/logo-light.svg" alt="spark-shell" width="150">
 </picture>
 
-spark-shell sets up your terminal on Debian, Arch, Void or macOS. It
-adds tmux, a prompt, everyday tools and a color theme. On Linux, it
+spark-shell sets up your terminal on Debian, Ubuntu, Arch, Void,
+Fedora, openSUSE or macOS, and on Windows inside Ubuntu under WSL 2.
+It adds tmux, a prompt, everyday tools and a color theme. On Linux, it
 can also set up a sway desktop and an optional login screen. With
 [spark](https://github.com/forgewright-ai/spark), the local AI, you can
 ask it to open apps for a task. The terminal, desktop, notes and
-reminders also work without spark.
+reminders also work without spark. [Where it runs](#where-it-runs)
+says what each system gets.
 
 ## Before you install
 
@@ -37,6 +39,33 @@ nobody signed, and `on` runs again from it.
 spark is optional.
 Without it, layouts and spark chat are unavailable. The tmux
 status line still shows the machine and your reminders.
+
+## Where it runs
+
+| system                   | terminal | desktop              | login screen    |
+| ------------------------ | -------- | -------------------- | --------------- |
+| Debian 13                | yes      | yes                  | yes             |
+| Ubuntu 24.04 or newer    | yes      | yes, proven headless | yes, not proven |
+| Arch                     | yes      | yes                  | yes             |
+| Void (glibc)             | yes      | yes                  | yes             |
+| Fedora                   | yes      | yes, proven headless | yes, not proven |
+| openSUSE Tumbleweed      | yes      | yes, proven headless | yes, not proven |
+| macOS                    | yes      | no, its own          | no, its own     |
+| Windows, Ubuntu on WSL 2 | yes      | no                   | no              |
+
+The terminal is `spark-shell on`: the tools, the prompt, the colors.
+The desktop is `spark-shell on desktop`, sway and foot in your palette,
+and the login screen `spark-shell on login`, greetd on tty1. Each
+family has a file of package names in `distro/`, and CI looks every
+name up on that family and installs the desktop's in a container of
+it, where `spark-shell on` renders the settings and a headless sway
+runs them. "Proven headless" means that and no more: a screen, a
+keyboard and sound are a machine's proof, and Debian, Arch and Void
+have had theirs. On WSL 2 there is no console and no tty1, so `on
+desktop` and `on login` say so in one line, the console font, palette
+and quiet steps skip, and Windows Terminal draws the terminal. Fedora
+and openSUSE boot quiet already, and spark-shell does not edit their
+GRUB 2 entries, so `quiet boot on` says so there.
 
 ## First task
 
@@ -137,10 +166,10 @@ explain each part. If something fails, run `spark-shell check` and
 ## Terminal setup
 
 Type `spark-shell on`. You get tmux, starship, fzf, zoxide, eza, bat,
-btop, fd and jq, and shell files that use them. Debian has no starship
-package, so there the prompt is the shell's own. Your own settings go
-in `~/.config/spark-shell/rc`, which spark-shell reads last and never
-writes.
+btop, fd and jq, and shell files that use them. Debian, Ubuntu and
+Fedora have no starship package, so there the prompt is the shell's
+own. Your own settings go in `~/.config/spark-shell/rc`, which
+spark-shell reads last and never writes.
 
 ## Colors (theme)
 
@@ -215,15 +244,18 @@ Monaco 14`.
 Type `spark-shell quiet login on`. You get only the login prompt, with
 no notice before it. Type `spark-shell quiet boot on`. You get a boot
 with no menu and no kernel messages (hold Shift or Space for the menu).
-It edits boot files, so it asks first. Linux only.
+It edits boot files, so it asks first. Linux only. Fedora and openSUSE
+boot quiet already, and spark-shell does not edit their GRUB 2 entries:
+`quiet boot on` says so there.
 
 ## Desktop
 
 Type `spark-shell on desktop`. You get sway (a window manager that
 tiles windows) and foot (a terminal), in your palette, and the sound:
-PipeWire with WirePlumber, for every program and Bluetooth too. Debian,
-Arch and Void only. On Debian and Arch, PipeWire's own user services
-run it from login. On Void it runs from boot, desktop or not, so a
+PipeWire with WirePlumber, for every program and Bluetooth too. Linux
+only, every family in [Where it runs](#where-it-runs). Where systemd
+runs, PipeWire's own user services run it from login. On Void it runs
+from boot, desktop or not, so a
 console login has sound too: a service of yours under spark's
 supervisor, `~/.config/spark/sv/spark-shell-sound`. PipeWire starts
 WirePlumber and its PulseAudio server itself, from two links in
@@ -258,7 +290,8 @@ five idle minutes the screen turns off; a key or a mouse move turns it
 back on. Nothing else prints on tty1 before the login screen.
 
 greetd runs the login screen, and swayidle turns it off when idle
-(Debian, Arch and Void; sudo). tty2 keeps the
+(sudo; on Fedora, dnf brings greetd's SELinux policy with it). tty2
+keeps the
 console login, so Alt+F2 always lets you in. tty1 changes hands only
 at a boot, never under a login that is running. On Void the screen's
 account joins the `_seatd` group, and it may run reboot and poweroff,
@@ -382,8 +415,8 @@ ground and the time sits at the lower left in large figures, in the
 accent, as the Calendar draws it, the date under it; a key or a mouse
 move takes it down.
 After the lock minutes (15) the screen locks and the display turns off.
-Where logind runs (Debian, Arch), it locks before the machine sleeps
-too; Void has no logind to say so. Super+Escape, or `spark-shell
+Where logind runs (every family but Void), it locks before the machine
+sleeps too; Void has no logind to say so. Super+Escape, or `spark-shell
 desktop lock`, locks it now; `spark-shell desktop idle` shows the idle
 screen now. The lock is swaylock over your wallpaper, in the palette:
 at rest the picture alone, and a ring comes up with the first key you
@@ -420,7 +453,7 @@ name, so it follows the clone. A drawing follows the palette: the second
 line of each SVG names the role of every color it uses (the background,
 the accent, a terminal color, a mix of two), so a drawing picked for
 another palette, or for a palette made from a picture or from words, is
-drawn again in that palette's colors (gdk-pixbuf renders it; the PNG
+drawn again in that palette's colors (rsvg-convert draws it; the PNG
 lands under `~/.local/state/spark-shell/wallpapers/`), and a palette
 with a drawing of its own brings that one.
 
