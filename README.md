@@ -420,7 +420,8 @@ sleeps too; Void has no logind to say so. Super+Escape, or `spark-shell
 desktop lock`, locks it now; `spark-shell desktop idle` shows the idle
 screen now. The lock is swaylock over your wallpaper, in the palette:
 at rest the picture alone, and a ring comes up with the first key you
-type.
+type. With more than one keyboard layout, the one in use shows under
+the ring, in the ring's own colors.
 
 Print takes a picture of the screen, Shift+Print of an area you drag,
 and Super+Print of the window in front; `spark-shell desktop capture

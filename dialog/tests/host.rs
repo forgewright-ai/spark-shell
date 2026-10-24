@@ -685,6 +685,17 @@ fn left_and_right_move_the_month_in_the_calendar_and_nowhere_else() {
     assert_eq!(app.month_offset, 1);
     let said = app.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
     assert!(said.ends_with("Month \u{2190} \u{2192}"), "{}", said);
+    // the focus down in the reminders under the months: the arrows still move them, and the key row says so (#59)
+    app.in_list = true;
+    app.right();
+    app.right();
+    assert_eq!(app.month_offset, 3, "from the list, right moves the months on");
+    app.left();
+    assert_eq!(app.month_offset, 2, "and left moves them back");
+    let said = app.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
+    assert!(said.ends_with("Month \u{2190} \u{2192}"), "the key row in the list: {}", said);
+    app.in_list = false;
+    app.month_offset = 1;
     typed(&mut app, "ab");
     app.left();
     assert_eq!((app.month_offset, app.cursor), (1, 1), "with words typed, left moves the cursor");

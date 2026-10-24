@@ -159,10 +159,12 @@ load_env() {
 # starts for you gets them unset, so nothing stale is handed on.
 CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u KEYBOARD'
 
-# This machine's short name (the twin of spark lib/env.sh short_host)
+# This machine's short name (the twin of spark lib/env.sh short_host). On
+# a Mac, LocalHostName, by scutil's full path: /usr/sbin is not on every
+# PATH, and hostname -s is the network's name, which moves (#58)
 short_host() {
     _host=
-    [ "$OS" != Darwin ] || _host=$(scutil --get LocalHostName 2>/dev/null || true)
+    [ "$OS" != Darwin ] || _host=$(/usr/sbin/scutil --get LocalHostName 2>/dev/null || true)
     [ -n "$_host" ] || _host=$(hostname -s 2>/dev/null || uname -n | cut -d. -f1)
     printf '%s' "$_host"
 }
@@ -7493,7 +7495,10 @@ desk_lock() {
     elif wall_color; then set -- --color "$(wall_hex "$WALLPAPER" | tr -d '#')"
     else set -- --color "$HEX_BG"; fi
     # the inside 90% of the background; no lines; the key the text color,
-    # a wrong password and backspace the red, caps lock the yellow
+    # a wrong password and backspace the red, caps lock the yellow; the
+    # keyboard's layout under the ring (two layouts or more) on that same
+    # inside, in the text color: swaylock's own box is black, and a light
+    # palette's dark text vanished on it (#57)
     _in=${HEX_BG}e6
     rm -rf "$TMP"; trap - EXIT
     _sz=$(look_font_size); : "${_sz:=12}"; _fs=$(font_spec)
@@ -7503,7 +7508,8 @@ desk_lock() {
         --inside-clear-color "$_in" --ring-clear-color "$HEX_MUTED" --text-clear-color "$HEX_FG" \
         --inside-ver-color "$_in" --ring-ver-color "$HEX_FG" --text-ver-color "$HEX_FG" \
         --inside-wrong-color "$_in" --ring-wrong-color "$HEX_ANSI_1" --text-wrong-color "$HEX_ANSI_1" \
-        --layout-text-color "$HEX_FG" --caps-lock-key-hl-color "$HEX_ANSI_3" --text-caps-lock-color "$HEX_ANSI_3" \
+        --layout-text-color "$HEX_FG" --layout-bg-color "$_in" --layout-border-color 00000000 \
+        --caps-lock-key-hl-color "$HEX_ANSI_3" --text-caps-lock-color "$HEX_ANSI_3" \
         --ring-caps-lock-color "$HEX_ANSI_3" --inside-caps-lock-color "$_in" --line-caps-lock-color 00000000 --caps-lock-bs-hl-color "$HEX_ANSI_1"
 }
 # Screen capture (Print, Shift+Print, Super+Print, the dialog's window

@@ -182,6 +182,17 @@ out=$(PATH=$H/.local/bin:$sys sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q 'would  starship' && bad "a starship download survives" "$out" || ok "on: no starship row would fetch anything"
 printf '%s\n' "$out" | grep -q '^skip   prompt       no starship package here' && ok "on: no starship package here is a skip (the shell's own prompt)" || bad "prompt skip" "$out"
 printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "on: a prompt skip still ends in Nothing to do" || bad "prompt skip count" "$out"
+# the machine's name on the tmux line: on a Mac LocalHostName, read by scutil's full path whatever the PATH,
+# never hostname -s, the network's name (#58); here hostname says another name, and /usr/sbin is off the PATH
+if [ "$(uname -s)" = Darwin ]; then
+    lhn=$(/usr/sbin/scutil --get LocalHostName 2>/dev/null || :)
+    if [ -n "$lhn" ]; then
+        printf '#!/bin/sh\necho elsewhere\n' > "$H/.local/bin/hostname"; chmod +x "$H/.local/bin/hostname"
+        PATH=$H/.local/bin:/usr/bin:/bin sh "$SH" on --yes >/dev/null 2>&1 || :
+        grep -qF "]$lhn#[default]" "$HOME/.tmux.conf" && ok "on (macOS) with no /usr/sbin on the PATH: the tmux line names the machine by LocalHostName, never the network's name (#58)" || bad "mac host name" "$(grep status-left "$HOME/.tmux.conf")"
+        rm -f "$H/.local/bin/hostname"
+    fi
+fi
 mv "$H/starship.aside" "$H/.local/bin/starship"
 out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^ok     prompt       starship 0.0-stub draws the prompt$' && ok "on: the prompt row names the starship it found" || bad "prompt ok" "$out"
@@ -2578,6 +2589,7 @@ args=$(paste -sd ' ' - < "$HOME/swaylock.args" 2>/dev/null)
     && case " $args " in *" --ring-color ff5555 "*) true ;; *) false ;; esac && case " $args " in *" --ring-wrong-color aa0000 "*) true ;; *) false ;; esac \
     && ! case " $args " in *indicator-idle-visible*) true ;; *) false ;; esac \
     && ok "desktop lock: swaylock, daemonized, over the ground, the ring in the accent, wrong in the red, no ring at rest" || bad "lock args" "rc=$rc $out $args"
+case " $args " in *" --inside-color 000000e6 "*" --layout-text-color aaaaaa --layout-bg-color 000000e6 --layout-border-color 00000000 "*) ok "desktop lock: the keyboard's layout under the ring sits on the ring's own inside, in the text color, no border (#57)" ;; *) bad "lock layout label" "$args" ;; esac
 printf 'DESKTOP=sway\nWALLPAPER=ripples\n' > "$HOME/.config/spark-shell/config"; rm -f "$HOME/swaylock.args"
 WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop lock >/dev/null 2>&1 || :
 args=$(paste -sd ' ' - < "$HOME/swaylock.args" 2>/dev/null)

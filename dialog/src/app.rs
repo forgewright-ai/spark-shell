@@ -1557,12 +1557,14 @@ impl App {
         self.input.replace_range(a..b, "");
     }
 
-    /// Left and right: the cursor in the draft; in the Calendar with nothing typed, the months.
+    /// Left and right: a lit row's own value first; in the Calendar with nothing typed, the months,
+    /// whether the focus is in the prompt or in the reminders under them (#59); else the cursor in
+    /// the draft.
     pub fn left(&mut self) {
         if self.step_value(false) {
             return;
         }
-        if self.input.is_empty() && !self.in_list {
+        if self.input.is_empty() && (!self.in_list || self.is_calendar()) {
             return self.month(-1);
         }
         self.cursor = self.cursor.saturating_sub(1);
@@ -1572,7 +1574,7 @@ impl App {
         if self.step_value(true) {
             return;
         }
-        if self.input.is_empty() && !self.in_list {
+        if self.input.is_empty() && (!self.in_list || self.is_calendar()) {
             return self.month(1);
         }
         self.cursor = (self.cursor + 1).min(self.input.chars().count());
@@ -2823,6 +2825,11 @@ impl App {
                 v.extend(key("New line", "Shift+Enter"));
             }
             v.extend(esc(esc_word));
+            if self.is_calendar() && self.input.is_empty() {
+                // the months move from the reminders too (#59)
+                v.push(gap());
+                v.extend(key("Month", "\u{2190} \u{2192}"));
+            }
             return v;
         }
         if !self.input.trim().is_empty() {

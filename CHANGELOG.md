@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.99
+
+- Fixed: on the lock screen, the keyboard's layout under the ring sat
+  on swaylock's own black, and on a light palette its dark text could
+  not be read: the lock gave swaylock the label's text color and
+  nothing more. The label's ground is the ring's own inside now, the
+  palette's background at 90%, with the text in the text color and no
+  border, in every palette (#57)
+- Fixed: on a Mac, the machine's name on the tmux line came from
+  scutil when /usr/sbin was on the PATH of the run, and from the
+  network's name when it was not, so check called the look out of date
+  and on wrote it again. scutil is called by its full path now (#58)
+- Fixed: in the dialog's Calendar, left and right moved the months only
+  while the focus was in the prompt. Once the down arrow went into the
+  reminders under the months, they did nothing, and the key row lost
+  Month. With nothing typed, they move the months wherever the focus is
+  now, and the key row says so there too (#59)
+
 ## v0.98
 
 The revamp arc (#55): the Linux families spark supports, the drawings
