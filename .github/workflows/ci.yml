@@ -180,7 +180,8 @@ jobs:
           - family: opensuse
             distro: opensuse
             image: opensuse/tumbleweed:latest   # zizmor: ignore[unpinned-images] a rolling distro
-            prep: zypper --non-interactive refresh >/dev/null; zypper --non-interactive install git jq diffutils findutils gawk tar gzip libstdc++6 shadow || zypper --non-interactive install git jq diffutils findutils gawk tar gzip libstdc++6 shadow
+            # a rolling distro: the image is one snapshot, the repository another, and foot's terminfo refused to meet the image's terminfo-base until zypper dup put the two on one snapshot (what spark's distro file says of Tumbleweed)
+            prep: zypper --non-interactive refresh >/dev/null; zypper --non-interactive dup >/dev/null; zypper --non-interactive install git jq diffutils findutils gawk tar gzip libstdc++6 shadow
             install: zypper --non-interactive --quiet install
     container: ${{ matrix.image }}   # zizmor: ignore[unpinned-images] the matrix above pins each versioned image by digest; the rolling ones are latest by nature
     env:
