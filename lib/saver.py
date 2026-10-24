@@ -17,11 +17,13 @@ draws its lines in braille dots; foot draws all of those itself. --ascii keeps e
 three roles the palette gives: the accent, the muted color and the bold of the
 text. A saver never reads a file, never opens a socket and never starts a program.
 
-The savers are starfield (the Windows 3.1 one), drift (the clock bounces off the
-edges), fire (the demo scene's), and mystify (two ribbons of lines). All but drift
+The savers are sparks (bursts that arc and fade, embers rising), starfield (the
+Windows 3.1 one), drift (the clock bounces off the edges), fire (the demo scene's),
+and mystify (two ribbons of lines). All but drift
 keep the time at the lower left, in the figures the idle screen draws.
 """
 import json
+import math
 import os
 import random
 import signal
@@ -125,6 +127,71 @@ class Saver:
 
     def draw(self, g, clock_text):
         raise NotImplementedError
+
+
+class Sparks(Saver):
+    name = "sparks"
+    about = "sparks all over: bursts that arc and fade, and embers rising from below"
+    BURST = 0.2              # the chance a new burst goes off each frame
+    EMBER = 0.7              # the chance a new ember leaves the bottom each frame
+    MAX = 900                # the most sparks alive at once
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.sparks = []     # [x, y, vx, vy, age, life, kind, hue]
+        for _ in range(45):                          # a screen opens with sparks already in the air
+            self._step()
+
+    def _burst(self):
+        r = self.rng
+        cx, cy = r.uniform(self.w * 0.1, self.w * 0.9), r.uniform(self.h * 0.1, self.h * 0.6)
+        hue = r.random() < 0.5                       # one burst is white hot, the next stays orange
+        for _ in range(r.randint(28, 56)):
+            a, v = r.uniform(0, 6.2832), r.uniform(0.4, 1.9)
+            self.sparks.append([cx, cy, math.cos(a) * v * 2, math.sin(a) * v,    # a cell is twice as tall as wide
+                                0, r.randint(14, 26), "burst", hue])
+
+    def _ember(self):
+        r = self.rng
+        self.sparks.append([r.uniform(0, self.w - 1), self.h - 1, r.uniform(-0.25, 0.25), -r.uniform(0.35, 0.9),
+                            0, r.randint(int(self.h * 0.6), int(self.h * 1.6)) + 4, "ember", False])
+
+    def _step(self):
+        r = self.rng
+        if r.random() < self.BURST and len(self.sparks) < self.MAX:
+            self._burst()
+        if r.random() < self.EMBER and len(self.sparks) < self.MAX:
+            self._ember()
+        alive = []
+        for sp in self.sparks:
+            sp[4] += 1
+            if sp[4] > sp[5]:
+                continue
+            if sp[6] == "burst":
+                sp[2] *= 0.93
+                sp[3] = sp[3] * 0.93 + 0.07          # drag, and gravity pulling down
+            else:
+                sp[2] += r.uniform(-0.12, 0.12)      # an ember sways as it rises
+                sp[3] *= 0.985
+            sp[0] += sp[2]
+            sp[1] += sp[3]
+            if -1 <= sp[0] <= self.w and -1 <= sp[1] <= self.h:
+                alive.append(sp)
+        self.sparks = alive
+
+    def draw(self, g, _t):
+        self._step()
+        for x, y, vx, vy, age, life, kind, hue in self.sparks:
+            f = age / life                           # 0 when it leaves, 1 when it dies
+            if f < 0.5:
+                g.put(x - vx * 0.7, y - vy * 0.7, ".", MUTED)    # a short tail: young sparks streak
+            if f < 0.35:
+                c, role = "*", (BOLD if hue or kind == "ember" else ACCENT)
+            elif f < 0.7:
+                c, role = "+", ACCENT
+            else:
+                c, role = ".", MUTED
+            g.put(x, y, c, role)
 
 
 class Starfield(Saver):
@@ -344,7 +411,7 @@ class Mystify(Saver):
                         g.put(x, y, c, role)
 
 
-SAVERS = {c.name: c for c in (Starfield, Drift, Fire, Mystify)}
+SAVERS = {c.name: c for c in (Sparks, Starfield, Drift, Fire, Mystify)}
 
 
 def render(g, home=True):
