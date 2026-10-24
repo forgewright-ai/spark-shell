@@ -4680,18 +4680,27 @@ echo "$*" >> "$HOME/swaymsg.log"
 case "$*" in
     "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
     "-t get_tree") echo '{"nodes":[]}' ;;
-    "-t get_workspaces") echo '[{"name":"idle","focused":true}]' ;;
+    "-t get_workspaces") printf '[{"name":"%s","focused":true}]\n' "$(cat "$HOME/ws.focused" 2>/dev/null || echo idle)" ;;   # the workspace in front: idle, unless a test says another
 esac
 STUB
     chmod +x "$H/ix/swaymsg"; printf '#!/bin/sh\necho "jq-stub"\n' > /dev/null
-    rm -f "$HOME/swaymsg.log"
+    rm -f "$HOME/swaymsg.log" "$HOME/.local/state/spark-shell/idle.from"; printf '2 webdev\n' > "$HOME/ws.focused"
     rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle 2>&1) || rc=$?
+    [ "$rc" = 0 ] && [ "$(cat "$HOME/.local/state/spark-shell/idle.from" 2>/dev/null)" = '2 webdev' ] && ok "desktop idle: the workspace it leaves is kept by name, the way back (#70)" || bad "idle from" "rc=$rc $(cat "$HOME/.local/state/spark-shell/idle.from" 2>&1)"
+    rm -f "$HOME/ws.focused"
     [ "$rc" = 0 ] && grep -qx -- '-- bar mode invisible' "$HOME/swaymsg.log" && grep -qx -- '-- workspace idle' "$HOME/swaymsg.log" && grep -q "^-- exec foot --app-id spark-idle -o 'font=DejaVu Sans Mono:size=24' -o colors.*\.alpha=0.8 -o colors.*\.background=2e3440 -o pad=0x0 -e $REPO/spark-shell desktop idle --clock$" "$HOME/swaymsg.log" \
         && ok "desktop idle: the bar away, the idle workspace, one foot at twice the text size, the background at 80% over the wallpaper, running the clock" || bad "idle on" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
     rm -f "$HOME/swaymsg.log"
     rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle off 2>&1) || rc=$?
-    [ "$rc" = 0 ] && grep -qxF -- '-- [app_id=spark-idle] kill' "$HOME/swaymsg.log" && grep -qx -- '-- workspace back_and_forth' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
-        && ok "desktop idle off: the window killed, the workspace before back, the bar back" || bad "idle off" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
+    [ "$rc" = 0 ] && grep -qxF -- '-- [app_id=spark-idle] kill' "$HOME/swaymsg.log" && grep -qxF -- '-- workspace "2 webdev"' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
+        && ok "desktop idle off: the window killed, the workspace it left back by name (never a toggle, #70), the bar back" || bad "idle off" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
+    rm -f "$HOME/swaymsg.log"; printf '2 webdev\n' > "$HOME/ws.focused"
+    SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle off >/dev/null 2>&1 || :
+    ! grep -q -- '-- workspace' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" && ok "desktop idle off a second time, the idle workspace gone: nothing moves, the bar stays (#70)" || bad "idle off twice" "$(cat "$HOME/swaymsg.log" 2>&1)"
+    rm -f "$HOME/swaymsg.log" "$HOME/ws.focused" "$HOME/.local/state/spark-shell/idle.from"
+    SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle off >/dev/null 2>&1 || :
+    grep -qx -- '-- workspace back_and_forth' "$HOME/swaymsg.log" && ok "desktop idle off with no name kept (a window from before v0.102): back and forth, as it was" || bad "idle off no name" "$(cat "$HOME/swaymsg.log" 2>&1)"
+    printf '2 webdev\n' > "$HOME/.local/state/spark-shell/idle.from"
     # the idle window's drawing (#42): the Calendar's large figures at the lower left in the accent's slot, the date in the panel's muted one; one frame, then a sleep that fails ends the loop
     mkdir -p "$H/ic"; printf '#!/bin/sh\necho "${IC_SIZE:-28 100}"\n' > "$H/ic/stty"; printf '#!/bin/sh\nexit 1\n' > "$H/ic/sleep"; chmod +x "$H/ic/stty" "$H/ic/sleep"
     esc=$(printf '\033'); blk=$(printf '\342\226\210'); day=$(date '+%A %e %B' | tr -s ' ')   # blk: the full block's bytes, for the C locale of CI's containers
@@ -4702,6 +4711,39 @@ STUB
     rc=0; out=$(IC_SIZE='8 30' PATH="$H/ic:$PATH" sh "$SH" desktop idle --clock 2>&1) || rc=$?
     [ "$rc" = 0 ] && printf '%s' "$out" | grep -q "${esc}\[6;3H${esc}\[38;5;16m[0-9][0-9]:[0-9][0-9]" && printf '%s' "$out" | grep -qF "${esc}[7;3H${esc}[38;5;20m$day" \
         && ok "desktop idle --clock in a window under 9 rows: the time on one line, the date under it" || bad "idle clock small" "rc=$rc $(printf '%s' "$out" | od -c | head -6)"
+    # whatever ends the idle window brings the desktop back (#70): the clock's end, here its sleep failing; and in its own terminal, a key
+    rm -f "$HOME/swaymsg.log"
+    rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/ix:$H/ic:$PATH" sh "$SH" desktop idle --clock 2>&1) || rc=$?
+    [ "$rc" = 0 ] && grep -qxF -- '-- workspace "2 webdev"' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
+        && ok "desktop idle --clock: when the clock ends, the workspace it left and the bar come back (#70)" || bad "idle clock end" "rc=$rc $(cat "$HOME/swaymsg.log" 2>&1)"
+    if [ -n "$py3" ]; then   # the real python3 (CI's bare containers have none)
+        cat > "$H/keypty.py" <<'PY'
+import os, pty, select, sys, time
+# keypty.py CMD... -- CMD at a pty; after 1.5 s an x is typed; exit 0 when CMD ended within 3 s of it
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(sys.argv[1], sys.argv[1:])
+t0, typed = time.time(), None
+while time.time() - t0 < 8:
+    if select.select([fd], [], [], 0.05)[0]:
+        try:
+            os.read(fd, 65536)
+        except OSError:
+            pass
+    if typed is None and time.time() - t0 > 1.5:
+        os.write(fd, b"x"); typed = time.time()
+    p, st = os.waitpid(pid, os.WNOHANG)
+    if p:
+        sys.exit(0 if typed and time.time() - typed < 3 else 1)
+os.kill(pid, 9); sys.exit(1)
+PY
+        rm -f "$HOME/swaymsg.log"; printf 'DESKTOP=sway\nDISPLAY_SAVER=clock\n' > "$HOME/.config/spark-shell/config"
+        rc=0; SWAYSOCK=$H/sock PATH="$H/ix:$PATH" "$py3" "$H/keypty.py" sh "$SH" desktop idle --clock || rc=$?
+        [ "$rc" = 0 ] && grep -qxF -- '-- workspace "2 webdev"' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
+            && ok "desktop idle --clock in its terminal: a key ends the clock within a second or two, and the desktop comes back (#70)" || bad "idle clock key" "rc=$rc $(cat "$HOME/swaymsg.log" 2>&1)"
+        printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+    fi
+    rm -f "$HOME/.local/state/spark-shell/idle.from"
     # the pointer's size follows the text size
     sh "$SH" theme text 20 >/dev/null 2>&1; grep -qx 'seat \* xcursor_theme spark-white 48' "$sway" && ok "theme text 20: the pointer at 48" || bad "pointer 48" "$(grep xcursor "$sway")"
     sh "$SH" theme text 12 >/dev/null 2>&1; grep -qx 'seat \* xcursor_theme spark-white 24' "$sway" && ok "theme text 12: the pointer at 24 again" || bad "pointer 24" "$(grep xcursor "$sway")"

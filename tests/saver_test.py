@@ -192,4 +192,49 @@ ok(run("spark").returncode == 2, "play with no terminal is exit 2, nothing drawn
 ok(run("spark", "--frames", "4", "--size", "40x10").stdout == run("spark", "--frames", "4", "--size", "40x10").stdout, "with no --seed, a look at frames is the same each time (seed 0); a played saver takes the time")
 ok(run("--version").stdout.strip() == saver.VERSION, "--version")
 
+# played in a terminal, a key or a mouse move ends it as a signal does (#70), after a moment's
+# grace; the mouse is reported only while it plays, and the cursor comes back
+import fcntl
+import pty
+import struct
+import termios as tio
+
+
+def played(events, until=6.0):
+    """drift at a pty of 80x24; events: (seconds, bytes) to type. -> the output, the seconds from
+    the last bytes typed to its end (None when it never ended), its exit status."""
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.execv(sys.executable, [sys.executable, "-I", SAVER, "drift"])
+    fcntl.ioctl(fd, tio.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
+    out, t0, last, todo = b"", time.time(), None, list(events)
+    while time.time() - t0 < until:
+        if select.select([fd], [], [], 0.02)[0]:
+            try:
+                out += os.read(fd, 65536)
+            except OSError:
+                pass
+        while todo and time.time() - t0 >= todo[0][0]:
+            os.write(fd, todo.pop(0)[1])
+            last = time.time()
+        p, st = os.waitpid(pid, os.WNOHANG)
+        if p:
+            played.left = len(todo)                  # keys never typed: it ended before them
+            return out, (time.time() - last) if last else None, st
+    os.kill(pid, 9)
+    os.waitpid(pid, 0)
+    played.left = len(todo)
+    return out, None, None
+
+
+import select  # noqa: E402
+import time  # noqa: E402
+out, took, st = played([(1.0, b"x")])
+ok(took is not None and took < 1.0 and st == 0, "a key ends a played saver within a second, a clean end (#70)")
+ok(b"\x1b[?1003h" in out and out.endswith(b"\x1b[?1003l\x1b[0m\x1b[?25h"), "the mouse is reported while it plays and not after; the cursor comes back")
+out, took, st = played([(1.0, b"\x1b[M#!!")])
+ok(took is not None and took < 1.0, "a mouse move, as the terminal reports it, ends it too")
+out, took, st = played([(0.05, b"x"), (1.5, b"y")])
+ok(played.left == 0 and took is not None and took < 1.0, "a key in its first moment is not the person coming back: it plays on, and the next one ends it")
+
 print("saver_test: %d checks passed" % passed)

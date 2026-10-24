@@ -422,7 +422,9 @@ it. Done takes the reminder away; again in 10 minutes moves it on.
 After the idle minutes (10) the idle screen: the wallpaper dims to the
 ground and the time sits at the lower left in large figures, in the
 accent, as the Calendar draws it, the date under it; a key or a mouse
-move takes it down.
+move takes it down, and so does Ctrl-C, whether it came by itself or by
+`spark-shell desktop idle`. However it goes, the workspace you were on
+and the bar come back.
 
 Type `spark-shell desktop display saver spark`. You get an animation
 behind the clock on the idle screen, in your palette: spark (bursts and

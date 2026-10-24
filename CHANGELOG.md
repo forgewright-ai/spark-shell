@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.102
+
+- Fixed: the idle screen started by hand (`spark-shell desktop idle`) had
+  no way out. A key did nothing, and Ctrl-C ended the saver or the clock
+  but left an empty workspace in front with no bar: only swayidle, when
+  it had brought the idle screen up itself, put them back. The idle
+  screen now keeps the name of the workspace it left, and whatever ends
+  its window (a key, a mouse move, Ctrl-C, the window closed, or
+  `desktop idle off`) brings that workspace and the bar back, by name,
+  so two ways out at once land in the same place. The saver and the
+  clock read their terminal, the mouse's moves included (#70)
+
 ## v0.101
 
 Security fixes, the idle screen's saver, and spark's progress

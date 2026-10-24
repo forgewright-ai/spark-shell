@@ -7428,13 +7428,13 @@ idle_exec() {   # -> the swayidle command the template and a live change run
 # window, its size, its colors and the way out are the same, and it goes at the lock.
 IDLE_APP="spark-idle"
 IDLE_ALPHA=0.8
+IDLE_FROM=$STATE_DIR/idle.from   # the workspace the idle screen left, by name: what every way out goes back to (#70)
 desk_idle() {   # desk_idle [off|--clock] -- the idle screen up; down; or the clock drawn in its window (what the window runs)
     case ${1:-} in
-        --clock) idle_clock; return ;;
+        --clock) trap 'idle_back; exit 0' INT TERM HUP; idle_clock; idle_back; return ;;   # whatever ends the window brings the desktop back: Ctrl-C, a key, the window closed (#70)
         off) desk_in_sway || return 0
             swaymsg -- "[app_id=$IDLE_APP] kill" >/dev/null 2>&1 || :
-            ! swaymsg -t get_workspaces 2>/dev/null | jq -e '.[] | select(.focused) | .name == "idle"' >/dev/null 2>&1 || swaymsg -- "workspace back_and_forth" >/dev/null 2>&1 || :
-            [ "$DESKTOP_BAR" != yes ] || swaymsg -- "bar mode dock" >/dev/null 2>&1 || :
+            idle_back
             return 0 ;;
         '') ;;
         *) refuse "idle takes off, or nothing: the idle screen now" ;;
@@ -7445,11 +7445,33 @@ desk_idle() {   # desk_idle [off|--clock] -- the idle screen up; down; or the cl
     ! idle_up || return 0
     theme_load
     _sz=$(look_font_size); : "${_sz:=12}"; _fc=$(foot_colors)
+    _wf=$(swaymsg -t get_workspaces 2>/dev/null | jq -r '.[] | select(.focused) | .name' 2>/dev/null) || _wf=''
+    [ -z "$_wf" ] || [ "$_wf" = idle ] || { mkdir_private "$STATE_DIR"; printf '%s\n' "$_wf" > "$IDLE_FROM"; }   # the way back, by name
     swaymsg -- "bar mode invisible" >/dev/null 2>&1 || :
     swaymsg -- "workspace idle" >/dev/null 2>&1 || :
     _fs=$(font_spec); swaymsg -- exec "foot --app-id $IDLE_APP -o 'font=${_fs%%:*}:size=$((_sz * 2))' -o $_fc.alpha=$IDLE_ALPHA -o $_fc.background=$HEX_BG -o pad=0x0 -e $REPO/spark-shell desktop idle --clock" >/dev/null 2>&1 || refuse "could not open the idle screen"
 }
 idle_up() { swaymsg -t get_tree 2>/dev/null | jq -e --arg a "$IDLE_APP" '[.. | objects | select(.app_id? == $a)] | length > 0' >/dev/null 2>&1; }   # the idle window is on the screen
+idle_back() {   # the desktop the idle screen left (#70): its workspace by name while the idle one is in front, and the bar; by name, never a toggle, so `idle off` and the window's own end may both run it, in any order
+    desk_in_sway || return 0
+    if swaymsg -t get_workspaces 2>/dev/null | jq -e '.[] | select(.focused) | .name == "idle"' >/dev/null 2>&1; then
+        _wf=$(cat "$IDLE_FROM" 2>/dev/null || :)
+        case $_wf in
+            ''|idle|*[\"\\]*) swaymsg -- "workspace back_and_forth" >/dev/null 2>&1 || : ;;   # no name kept (a window from before v0.102), or one sway could not take in quotes
+            *) swaymsg -- "workspace \"$_wf\"" >/dev/null 2>&1 || : ;;
+        esac
+    fi
+    [ "$DESKTOP_BAR" != yes ] || swaymsg -- "bar mode dock" >/dev/null 2>&1 || :
+}
+idle_wait() {   # idle_wait SECONDS -- 0 when a key or a mouse move came first, 1 when the time ran out; the terminal reads one byte or nothing a second (stty min 0 time 10)
+    _iw=0
+    while [ "$_iw" -lt "$1" ]; do
+        [ -z "$(dd bs=1 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')" ] || return 0
+        _iw=$((_iw + 1))
+    done
+    return 1
+}
+idle_clock_end() { { printf '\033[?1003l\033[?25h\033[0m'; [ -z "${_ist:-}" ] || stty "$_ist"; } 2>/dev/null || :; }   # the mouse unreported, the cursor and the terminal as they were
 saver_version() { sed -n 's/^VERSION = "\(.*\)".*/\1/p' "$REPO/lib/saver.py" 2>/dev/null; }   # read without python3
 saver_can() { _sver=$(saver_version); [ -n "$_sver" ] && [ "$(python3 "$REPO/lib/saver.py" --version 2>/dev/null)" = "$_sver" ]; }   # a python3 that runs the savers (not a stub, not missing)
 saver_known() { for _sn in clock $SAVER_NAMES; do [ "$_sn" != "$1" ] || return 0; done; return 1; }   # saver_known NAME -> a whole word of the list, never a part of one
@@ -7460,8 +7482,10 @@ saver_problem() {   # saver_problem NAME -> why it cannot be the idle screen's, 
 }
 idle_clock() {   # in the idle window: the time in the Calendar's large figures at the lower left, in the accent (#42), a row of air, the date in the dialog's muted color; drawn again as each minute turns, until the window goes. A window under 9 rows or 38 columns has the time on one line
     if [ "${DISPLAY_SAVER:-clock}" != clock ] && saver_can; then python3 "$REPO/lib/saver.py" "$DISPLAY_SAVER" && return 0; fi   # the window ends it with a signal, a clean end; a failure falls through to the clock
-    printf '\033[?25l'; trap 'printf "\033[?25h\033[0m"; exit 0' INT TERM HUP
+    printf '\033[?25l'; trap 'idle_clock_end; idle_back; exit 0' INT TERM HUP
     _a='38;5;16'; _m='38;5;20'   # the desktop's foot.ini slots, as the dialog draws them: the accent, and the muted color that reads on a panel (#34)
+    _ist=''   # in its window, a key or a mouse move ends the clock (#70): the terminal read a byte at a time, every move of the mouse reported
+    if [ -t 0 ]; then _ist=$(stty -g 2>/dev/null) && stty -icanon -echo min 0 time 10 2>/dev/null && printf '\033[?1003h' || _ist=''; fi
     while :; do
         # shellcheck disable=SC2046   # two numbers, split on purpose
         set -- $(stty size 2>/dev/null || echo 24 80)
@@ -7473,8 +7497,11 @@ idle_clock() {   # in the idle window: the time in the Calendar's large figures 
         else
             printf '\033[%s;3H\033[%sm%s\033[%s;3H\033[%sm%s\033[0m' $((_h - 2)) "$_a" "$(date '+%H:%M')" $((_h - 1)) "$_m" "$_d"
         fi
-        _s=$(date +%S); _s=${_s#0}; sleep $((60 - ${_s:-0})) & wait $! || break
+        _s=$(date +%S); _s=${_s#0}
+        if [ -n "$_ist" ]; then ! idle_wait $((60 - ${_s:-0})) || break
+        else sleep $((60 - ${_s:-0})) & wait $! || break; fi
     done
+    idle_clock_end
 }
 idle_restart() {   # the running desktop's swayidle, again with the settings now
     desk_in_sway || return 0

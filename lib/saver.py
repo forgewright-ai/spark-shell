@@ -2,7 +2,7 @@
 """saver.py -- the idle screen's old-school animations. Python's standard library only.
 
   saver.py list                         the savers, one a line
-  saver.py NAME                         play one in this terminal until a signal ends it
+  saver.py NAME                         play one in this terminal until a key, a mouse move or a signal
   saver.py NAME --frames N [--size WxH] [--seed N] [--time HH:MM] [--date TEXT] [--color]
                                         run N frames at once, print the last (a test, a look)
   saver.py NAME --json [--frames N] [--size WxH] [--seed N] [--time HH:MM] [--date TEXT]
@@ -30,8 +30,10 @@ import locale
 import math
 import os
 import random
+import select
 import signal
 import sys
+import termios
 import time
 
 VERSION = "1"
@@ -317,6 +319,7 @@ def render(g, home=True):
     return "".join(out)
 
 
+GRACE = 0.3              # seconds at the start whose input is not a key for the saver: it came before the saver did
 GAP = 8                  # unchanged cells written over rather than jumped: a cursor move costs about as much
 
 
@@ -385,7 +388,9 @@ def usage():
 
 
 def play(name, seed, block, ascii, fade=FADE):
-    """In this terminal until SIGINT or SIGTERM: the window's size is read each frame."""
+    """In this terminal until a key, a mouse move or a signal ends it (#70): the window's size is
+    read each frame, the terminal a byte at a time with no echo, and every move of the mouse is
+    reported to it, so whatever a person does at the screen ends the saver as Ctrl-C does."""
     out = sys.stdout
     stop = []
 
@@ -394,8 +399,20 @@ def play(name, seed, block, ascii, fade=FADE):
     signal.signal(signal.SIGINT, bye)
     signal.signal(signal.SIGTERM, bye)
     signal.signal(signal.SIGHUP, bye)
+    fd, kept = sys.stdin.fileno(), None
+    if sys.stdin.isatty():
+        try:
+            kept = termios.tcgetattr(fd)
+            raw = termios.tcgetattr(fd)
+            raw[3] &= ~(termios.ICANON | termios.ECHO)
+            raw[6][termios.VMIN], raw[6][termios.VTIME] = 0, 0
+            termios.tcsetattr(fd, termios.TCSANOW, raw)
+            out.write("\033[?1003h")              # every move of the mouse over the window, reported
+        except termios.error:
+            kept = None
     out.write("\033[?25l\033[2J")
     size, saver, prev = None, None, None
+    started = time.monotonic()
     try:
         while not stop:
             t0 = time.monotonic()
@@ -414,15 +431,25 @@ def play(name, seed, block, ascii, fade=FADE):
             out.write(render_changes(g, prev))
             out.flush()
             prev = g
-            time.sleep(max(0.0, 1.0 / FPS - (time.monotonic() - t0)))
-    except BrokenPipeError:
+            wait = max(0.0, 1.0 / FPS - (time.monotonic() - t0))
+            if kept is None:
+                time.sleep(wait)
+                continue
+            if select.select([fd], [], [], wait)[0] and os.read(fd, 64) and time.monotonic() - started > GRACE:
+                break                                # a key, or the mouse moved: the person is back
+    except (BrokenPipeError, InterruptedError):
         pass
     finally:
         try:
-            out.write("\033[0m\033[?25h")
+            out.write("\033[?1003l\033[0m\033[?25h")
             out.flush()
         except OSError:
             pass
+        if kept is not None:
+            try:
+                termios.tcsetattr(fd, termios.TCSANOW, kept)
+            except termios.error:
+                pass
 
 
 def main(argv):
