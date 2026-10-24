@@ -122,12 +122,14 @@ jobs:
         run: sh tests/shell_test.sh
   opensuse:
     # the fifth family: zypper over rpm, the names of distro/opensuse.env
-    # looked up on Tumbleweed itself. libstdc++6 is the runner's node (checkout)
+    # looked up on Tumbleweed itself. libstdc++6 is the runner's node
+    # (checkout); findutils: the image has no find, and the files provider
+    # and the reminders' prune are find
     runs-on: ubuntu-latest
     container: opensuse/tumbleweed:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Tumbleweed there is, and zypper dup moves it to today anyway
     timeout-minutes: 15
     steps:
-      - run: zypper --non-interactive --quiet install git ShellCheck diffutils jq openssh-clients curl gawk tar gzip libstdc++6 >/dev/null
+      - run: zypper --non-interactive --quiet install git ShellCheck diffutils findutils jq openssh-clients curl gawk tar gzip libstdc++6 >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
@@ -151,32 +153,39 @@ jobs:
       matrix:
         include:
           - family: debian
+            distro: debian
             image: debian:13@sha256:4c25275446ca371766b8b093c696782eabce06263fccacb8d5d813b3dc44b308
             prep: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git jq diffutils >/dev/null
             install: DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
-          - family: ubuntu
+          - family: ubuntu   # the Debian family's file: Ubuntu says ID_LIKE=debian
+            distro: debian
             image: ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
             prep: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git jq diffutils >/dev/null
             install: DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
           - family: arch
+            distro: arch
             image: archlinux:latest   # zizmor: ignore[unpinned-images] a rolling distro
             prep: pacman -Syu --noconfirm --needed git jq diffutils >/dev/null
             install: pacman -S --needed --noconfirm
           - family: void
+            distro: void
             image: ghcr.io/void-linux/void-glibc-full:latest   # zizmor: ignore[unpinned-images] a rolling distro
             prep: xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null; xbps-install -Sy git bash jq gawk gzip libstdc++ shadow >/dev/null
             install: xbps-install -Sy
           - family: fedora
+            distro: fedora
             image: fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80
             prep: dnf install -y -q git jq diffutils shadow-utils util-linux >/dev/null
             install: dnf install -y -q
           - family: opensuse
+            distro: opensuse
             image: opensuse/tumbleweed:latest   # zizmor: ignore[unpinned-images] a rolling distro
-            prep: zypper --non-interactive --quiet install git jq diffutils gawk tar gzip libstdc++6 shadow util-linux >/dev/null
+            prep: zypper --non-interactive install git jq diffutils findutils gawk tar gzip libstdc++6 shadow
             install: zypper --non-interactive --quiet install
     container: ${{ matrix.image }}   # zizmor: ignore[unpinned-images] the matrix above pins each versioned image by digest; the rolling ones are latest by nature
     env:
       FAMILY: ${{ matrix.family }}
+      DISTRO: ${{ matrix.distro }}
       PREP: ${{ matrix.prep }}
       INSTALL: ${{ matrix.install }}
     steps:
@@ -185,7 +194,7 @@ jobs:
         with:
           persist-credentials: false
       - name: the family's packages, every list but the login screen's
-        run: sh -c "$INSTALL $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' "distro/$FAMILY.env" | tr '\n' ' ') >/dev/null"
+        run: sh -c "$INSTALL $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' "distro/$DISTRO.env" | tr '\n' ' ') >/dev/null"
       - name: spark-shell on as a plain user, the config read by sway, a headless sway with a foot in it
         run: |
           set -eu

@@ -35,8 +35,8 @@ printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=skyline\nDISPLAY_IDLE=0\nDISPLAY_LOC
 cd "$HOME"
 distro=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release | tr -d '"')
 
-echo "== spark-shell on --yes ($distro, as $me)"
-sh "$REPO/spark-shell" on --yes 2>&1 | tee "$HOME/on.out"
+echo "== spark-shell on --yes -v ($distro, as $me)"
+sh "$REPO/spark-shell" on --yes -v 2>&1 | tee "$HOME/on.out"
 grep -q '^ok     packages     installed$' "$HOME/on.out" || { echo "FAIL: the packages row is not ok"; exit 1; }
 grep -q '^render wallpaper    skyline drawn in nord ' "$HOME/on.out" || { echo "FAIL: skyline was not drawn in nord (rsvg-convert)"; exit 1; }
 for f in .config/sway/config .config/foot/foot.ini .config/foot/dialog.ini .tmux.conf .config/spark-shell/sgr.sh; do
@@ -51,6 +51,7 @@ echo "== spark-shell check"
 sh "$REPO/spark-shell" check 2>&1 | tee "$HOME/check.out" || true
 grep -Eq '^(ok|warn) +desktop +' "$HOME/check.out" || { echo "FAIL: check's desktop row is not ok or warn"; exit 1; }
 grep -q '^ok     look ' "$HOME/check.out" || { echo "FAIL: check's look row is not ok"; exit 1; }
+grep -q '^ok     tools ' "$HOME/check.out" || { echo "FAIL: check's tools row is not ok"; exit 1; }
 
 echo "== sway -C: the rendered config reads"
 if sway -C -c "$HOME/.config/sway/config" > "$HOME/sway-C.out" 2>&1; then echo "ok: sway -C accepts the config"; else cat "$HOME/sway-C.out"; echo "FAIL: sway -C refused the config"; exit 1; fi

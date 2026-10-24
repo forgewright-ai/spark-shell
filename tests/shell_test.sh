@@ -4440,7 +4440,7 @@ if [ "$(uname -s)" != Darwin ]; then
             && [ "$(printf '%s\n' "$out" | tail -1)" = 'a running sway shows skyline now, drawn in nord -- it follows the palette: a palette with a drawing of its own brings that one' ] \
             && ok "theme wallpaper skyline under nord: the drawing drawn again in nord (its background nord's), the PNG under the state, sway shows it" || bad "drawing recolored" "rc=$rc $out $(ls "$st_dir/wallpapers" 2>&1; grep ' bg ' "$sway")"
     else
-        [ "$rc" = 0 ] && [ -f "$st_dir/wallpapers/skyline-nord.svg" ] && [ ! -f "$st_dir/wallpapers/skyline-nord.png" ] && grep -qF "output * bg \"$REPO/wallpaper/skyline.png\" fill" "$sway" && printf '%s\n' "$out" | grep -q '^todo   wallpaper .*rsvg-convert is not installedmbnailer is not installed' \
+        [ "$rc" = 0 ] && [ -f "$st_dir/wallpapers/skyline-nord.svg" ] && [ ! -f "$st_dir/wallpapers/skyline-nord.png" ] && grep -qF "output * bg \"$REPO/wallpaper/skyline.png\" fill" "$sway" && printf '%s\n' "$out" | grep -q '^todo   wallpaper .*rsvg-convert is not installed to draw it in nord (the librsvg package)$' \
             && ok "theme wallpaper skyline under nord with no renderer: the SVG recolored, a todo row, the clone's picture meanwhile" || bad "drawing no renderer" "rc=$rc $out $(ls "$st_dir/wallpapers" 2>&1)"
     fi
     # the drawing through rsvg-convert alone (gdk-pixbuf 2.44 ships no thumbnailer: Arch, Fedora, Tumbleweed): a stub logs the call and writes a picture
@@ -4453,13 +4453,15 @@ if [ "$(uname -s)" != Darwin ]; then
     rc=0; out=$(SPARK_SHELL_NO_SVG=1 sh "$SH" theme wallpaper skyline 2>&1) || rc=$?
     [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^todo   wallpaper    skyline as drawn for tokyonight-night: rsvg-convert is not installed to draw it in nord (the librsvg package)$' && grep -qF "output * bg \"$REPO/wallpaper/skyline.png\" fill" "$sway" \
         && ok "theme wallpaper skyline with no renderer: the todo row names the package, the clone's picture meanwhile" || bad "no renderer row" "rc=$rc $out"
-    # a picture of yours read small through rsvg-convert when the thumbnailer is gone: the picture inside a square SVG, its margins clear
-    mkdir -p "$HOME/pictures"; printf 'not really a jpeg' > "$HOME/pictures/photo.jpg"; : > "$H/rsvg.log"
-    rc=0; out=$(SPARK_SHELL_NO_THUMB=1 PATH=$H/rsvg:$H/.local/bin:$sys sh "$SH" theme picture ~/pictures/photo.jpg 2>&1) || rc=$?
-    [ "$rc" = 0 ] && grep -q '^rsvg-convert -w 256 -h 256 -o .*/small.png.new .*/pic/wrap.svg$' "$H/rsvg.log" && [ -f "$st_dir/looks/photo/palette.env" ] && grep -qx 'THEME=photo' "$cfg" \
-        && ok "theme picture PATH through rsvg-convert: the picture drawn 256 wide inside an SVG, a look made from it" || bad "rsvg picture" "rc=$rc $out $(cat "$H/rsvg.log")"
-    rc=0; out=$(SPARK_SHELL_NO_THUMB=1 SPARK_SHELL_NO_SVG=1 sh "$SH" theme picture ~/pictures/photo.jpg 2>&1) || rc=$?
-    [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a picture is read through rsvg-convert (the librsvg package), which is not installed; a PNG is read without it' ] && ok "theme picture PATH with no reader: one line names the package" || bad "no reader" "rc=$rc $out"
+    # a picture of yours read small through rsvg-convert when the thumbnailer is gone: the picture inside a square SVG, its margins clear (python3 reads the colors: CI's bare containers have none)
+    if command -v python3 >/dev/null 2>&1; then
+        mkdir -p "$HOME/pictures"; printf 'not really a jpeg' > "$HOME/pictures/photo.jpg"; : > "$H/rsvg.log"
+        rc=0; out=$(SPARK_SHELL_NO_THUMB=1 PATH=$H/rsvg:$H/.local/bin:$sys sh "$SH" theme picture ~/pictures/photo.jpg 2>&1) || rc=$?
+        [ "$rc" = 0 ] && grep -q '^rsvg-convert -w 256 -h 256 -o .*/small.png.new .*/pic/wrap.svg$' "$H/rsvg.log" && [ -f "$st_dir/looks/photo/palette.env" ] && grep -qx 'THEME=photo' "$cfg" \
+            && ok "theme picture PATH through rsvg-convert: the picture drawn 256 wide inside an SVG, a look made from it" || bad "rsvg picture" "rc=$rc $out $(cat "$H/rsvg.log")"
+        rc=0; out=$(SPARK_SHELL_NO_THUMB=1 SPARK_SHELL_NO_SVG=1 sh "$SH" theme picture ~/pictures/photo.jpg 2>&1) || rc=$?
+        [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a picture is read through rsvg-convert (the librsvg package), which is not installed; a PNG is read without it' ] && ok "theme picture PATH with no reader: one line names the package" || bad "no reader" "rc=$rc $out"
+    fi
     sh "$SH" theme nord >/dev/null 2>&1; sh "$SH" theme wallpaper skyline >/dev/null 2>&1   # the look the tests below expect: nord, skyline drawn in it
     [ "$(sh "$SH" theme wallpaper | sed -n 1p | cut -d' ' -f1-2)" = 'wallpaper skyline' ] && ok "theme wallpaper (bare): the drawing's name" || bad "wallpaper bare drawing" "$(sh "$SH" theme wallpaper)"
     # the idle screen: its lines in the render, the verb's refusals away from a desktop, and its window through the stub
