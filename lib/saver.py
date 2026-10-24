@@ -7,13 +7,15 @@
                                         run N frames at once, print the last (a test, a look)
   saver.py NAME --json [--frames N] [--size WxH] [--seed N] [--time HH:MM]
                                         every frame as JSON, for a preview
+  saver.py ... --ascii                  plain ASCII only, for a console with no block glyphs
   saver.py --version
 
 A saver is a small machine: a size, a seed, and a frame each tick. The same seed
-draws the same frames, so a test can hold them. Every frame is ASCII, the Linux
-console draws all of it, and every color is one of three roles the palette gives:
-the accent, the muted color and the bold of the text. A saver never reads a file,
-never opens a socket and never starts a program.
+draws the same frames, so a test can hold them. The clock's figures are the idle
+screen's own solid blocks (U+2588), and fire shades with U+2591 to U+2593; foot
+draws those itself. --ascii keeps every frame to ASCII. Every color is one of
+three roles the palette gives: the accent, the muted color and the bold of the
+text. A saver never reads a file, never opens a socket and never starts a program.
 
 The savers are starfield (the Windows 3.1 one), drift (the clock bounces off the
 edges), fire (the demo scene's), and mystify (two ribbons of lines). All but drift
@@ -27,8 +29,10 @@ import sys
 import time
 from collections import deque
 
-VERSION = "1"
+VERSION = "2"
 FPS = 10                 # frames a second; a saver is a light, not a load
+BLOCK = "\u2588"         # the idle clock's figures: U+2588 full block
+BLOCK_ASCII = "#"
 
 # the roles a cell wears: plain text, the accent, the muted color, bold text
 PLAIN, ACCENT, MUTED, BOLD = " ", "a", "m", "b"
@@ -104,10 +108,11 @@ class Saver:
     about = ""
     clock_at = "bl"          # "bl", "tl", or None when the saver draws the time itself
 
-    def __init__(self, w, h, seed=0, block="#"):
+    def __init__(self, w, h, seed=0, block=None, ascii=False):
         self.w, self.h = max(1, w), max(1, h)
         self.rng = random.Random(seed)
-        self.block = block
+        self.ascii = ascii
+        self.block = block or (BLOCK_ASCII if ascii else BLOCK)
         self.n = 0
 
     def frame(self, clock_text):
@@ -188,11 +193,13 @@ class Fire(Saver):
     name = "fire"
     about = "the demo scene's fire, burning up from the bottom edge"
     clock_at = "tl"
-    RAMP = " .:^*sS#%@"
+    RAMP_ASCII = " .:^*sS#%@"
+    RAMP_BLOCKS = " \u2591\u2592\u2593\u2588"
     TOP = 30                 # the heat of the bottom row
 
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
+        self.ramp = self.RAMP_ASCII if self.ascii else self.RAMP_BLOCKS
         self.heat = [[0] * self.w for _ in range(self.h)]
         # a flame reaches about half the screen: the most a row cools follows from that
         self.cool = max(2, round(2 * self.TOP / (0.5 * self.h)))
@@ -212,13 +219,13 @@ class Fire(Saver):
     def draw(self, g, _t):
         h, w = self.h, self.w
         self._burn()
-        top = len(self.RAMP) - 1
+        top = len(self.ramp) - 1
         for y in range(h):
             for x in range(w):
                 v = self.heat[y][x]
                 if v:
                     role = BOLD if v > self.TOP * 2 // 3 else ACCENT if v > self.TOP // 3 else MUTED
-                    g.put(x, y, self.RAMP[max(1, v * top // self.TOP)], role)
+                    g.put(x, y, self.ramp[max(1, v * top // self.TOP)], role)
 
 
 def _line(a, b):
@@ -333,7 +340,7 @@ def usage():
     print(__doc__.strip().split("\n\n")[0])
 
 
-def play(name, seed, block):
+def play(name, seed, block, ascii):
     """In this terminal until SIGINT or SIGTERM: the window's size is read each frame."""
     out = sys.stdout
     stop = []
@@ -355,7 +362,7 @@ def play(name, seed, block):
                 now = (80, 24)
             if now != size:
                 size = now
-                saver = SAVERS[name](size[0], size[1], seed, block)
+                saver = SAVERS[name](size[0], size[1], seed, block, ascii)
                 out.write("\033[2J")
             out.write(render(saver.frame(clock_now())))
             out.flush()
@@ -385,8 +392,8 @@ def main(argv):
     if name not in SAVERS:
         print("saver: no saver named %s; saver.py list names them" % name, file=sys.stderr)
         return 2
-    opts = {"--size": None, "--frames": None, "--seed": "0", "--time": None, "--block": "#"}
-    flags = {"--json": False, "--color": False}
+    opts = {"--size": None, "--frames": None, "--seed": "0", "--time": None, "--block": None}
+    flags = {"--json": False, "--color": False, "--ascii": False}
     i = 0
     while i < len(rest):
         a = rest[i]
@@ -406,14 +413,14 @@ def main(argv):
         print("saver: --seed and --frames take a number", file=sys.stderr)
         return 2
     block = opts["--block"]
-    if len(block) != 1 or not (32 < ord(block) < 127):
-        print("saver: --block takes one printable ASCII character", file=sys.stderr)
+    if block is not None and (len(block) != 1 or ord(block) < 33 or (flags["--ascii"] and ord(block) > 126)):
+        print("saver: --block takes one printable character, ASCII with --ascii", file=sys.stderr)
         return 2
     if frames is None and not flags["--json"]:
         if not sys.stdout.isatty():
             print("saver: not a terminal: --frames N prints the last frame of N", file=sys.stderr)
             return 2
-        play(name, seed, block)
+        play(name, seed, block, flags["--ascii"])
         return 0
     frames = 100 if frames is None else frames
     if not 1 <= frames <= 5000:
@@ -421,7 +428,7 @@ def main(argv):
         return 2
     w, h = parse_size(opts["--size"] or "80x24")
     t = opts["--time"] or clock_now()
-    saver = SAVERS[name](w, h, seed, block)
+    saver = SAVERS[name](w, h, seed, block, flags["--ascii"])
     grids = [saver.frame(t) for _ in range(frames)]
     if flags["--json"]:
         json.dump({"name": name, "w": w, "h": h, "fps": FPS,

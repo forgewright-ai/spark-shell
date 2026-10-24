@@ -34,18 +34,27 @@ def run(*args):
 ok(sorted(saver.SAVERS) == ["drift", "fire", "mystify", "starfield"], "the four savers")
 ok(run("list").stdout.count("\n") == 4, "list names one a line")
 
+BLOCKS = set("\u2588\u2591\u2592\u2593")      # the full block the idle clock draws, and fire's shades
 for name, cls in saver.SAVERS.items():
-    for w, h in ((80, 24), (40, 12), (20, 6), (1, 1), (200, 60)):
-        s = cls(w, h, seed=5)
-        for n in range(150):
-            g = s.frame("14:32")
-            for row, rl in zip(g.text(), g.roles()):
-                if len(row) != w or len(rl) != w:
-                    ok(False, "%s %dx%d frame %d: a row is not %d cells" % (name, w, h, n, w))
-            ok(len(g.text()) == h, "%s %dx%d: %d rows" % (name, w, h, h))
-        txt = "".join(g.text())
-        ok(all(32 <= ord(c) < 127 for c in txt), "%s %dx%d: every cell is printable ASCII" % (name, w, h))
-        ok(set("".join(g.roles())) <= set(" amb"), "%s %dx%d: only the three roles" % (name, w, h))
+    for plain in (False, True):
+        for w, h in ((80, 24), (40, 12), (20, 6), (1, 1), (200, 60)):
+            s = cls(w, h, seed=5, ascii=plain)
+            seen = set()
+            for n in range(150):
+                g = s.frame("14:32")
+                for row, rl in zip(g.text(), g.roles()):
+                    if len(row) != w or len(rl) != w:
+                        ok(False, "%s %dx%d frame %d: a row is not %d cells" % (name, w, h, n, w))
+                    seen |= set(row)
+                ok(len(g.text()) == h, "%s %dx%d: %d rows" % (name, w, h, h))
+            what = "ascii" if plain else "blocks"
+            ok(all(32 <= ord(c) < 127 for c in seen) if plain else all(32 <= ord(c) < 127 or c in BLOCKS for c in seen),
+               "%s %dx%d %s: only the glyphs the mode allows" % (name, w, h, what))
+            ok(set("".join(g.roles())) <= set(" amb"), "%s %dx%d: only the three roles" % (name, w, h))
+    # the clock is solid blocks by default and # with --ascii
+    big = cls(80, 24, seed=5)
+    txt = "".join("".join(big.frame("14:32").text()) for _ in range(3))
+    ok("\u2588" in txt, "%s: the clock is drawn in full blocks" % name)
 
     a = cls(80, 24, seed=9).frame("09:05").text()
     b = cls(80, 24, seed=9).frame("09:05").text()
@@ -102,6 +111,12 @@ ok(run("nope").returncode == 2, "an unknown saver is exit 2")
 ok(run("fire", "--size", "9").returncode == 2, "a bad size is exit 2")
 ok(run("fire", "--frames", "0").returncode == 2, "a frame count under 1 is exit 2")
 ok(run("fire", "--block", "xy", "--frames", "1").returncode == 2, "a block is one character")
+r = run("drift", "--ascii", "--frames", "3", "--size", "60x12")
+ok(r.returncode == 0 and all(ord(c) < 127 for c in r.stdout) and "#" in r.stdout, "--ascii prints ASCII, the clock in #")
+r = run("drift", "--frames", "3", "--size", "60x12")
+ok("\u2588" in r.stdout, "by default the clock is full blocks")
+r = run("fire", "--ascii", "--block", "\u2588", "--frames", "1")
+ok(r.returncode == 2, "--ascii refuses a block that is not ASCII")
 ok(run("fire").returncode == 2, "play with no terminal is exit 2, nothing drawn")
 ok(run("--version").stdout.strip() == saver.VERSION, "--version")
 
