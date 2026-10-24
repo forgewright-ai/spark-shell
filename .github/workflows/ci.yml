@@ -1,7 +1,10 @@
 # spark-shell CI: the render, link and hand-back machinery in a throwaway
-# HOME and a throwaway root -- on Ubuntu, Debian, Arch, Void and macOS. Plus the
-# privacy patterns, ASCII docs, shellcheck, and the package names of
-# distro/*.env looked up on their own family (nothing installed).
+# HOME and a throwaway root -- on Ubuntu, Debian, Arch, Void, Fedora,
+# openSUSE and macOS. Plus the privacy patterns, ASCII docs, shellcheck,
+# the package names of distro/*.env looked up on their own family (nothing
+# installed), and the desktop job: the desktop's packages installed for
+# real in each family's container, spark-shell on as a plain user, the
+# rendered config read by sway, a headless sway with a foot in it.
 name: ci
 on: [push, pull_request, workflow_dispatch]
 permissions:
@@ -40,7 +43,7 @@ jobs:
       - name: ascii docs
         run: |
           tab=$(printf '\t')
-          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/dialog_pty.py lib/terminal_profile.py tests/profile_test.py $(find templates distro themes dialog/src dialog/tests -type f ! -name '*.txt' | sort) dialog/Cargo.toml dialog/deny.toml dialog/dialog.env dialog/rust-toolchain.toml; do
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/desktop_proof.sh tests/dialog_pty.py lib/terminal_profile.py tests/profile_test.py $(find templates distro themes dialog/src dialog/tests -type f ! -name '*.txt' | sort) dialog/Cargo.toml dialog/deny.toml dialog/dialog.env dialog/rust-toolchain.toml; do
             if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
               echo "non-ASCII in $f"; exit 1; fi; done
       - name: no hex color in a template (the look is the 16 slots)
@@ -48,7 +51,9 @@ jobs:
           if grep -rnE '#[0-9a-fA-F]{6}' templates; then
             echo "a hex color is in a template"; exit 1; fi
       - name: shellcheck
-        run: shellcheck -S warning spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh
+        run: shellcheck -S warning spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/desktop_proof.sh
+      - name: every package name of distro/debian.env exists on Ubuntu, which says ID_LIKE=debian (nothing installed)
+        run: sudo apt-get update -qq >/dev/null && apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
   debian:
@@ -63,7 +68,7 @@ jobs:
         with:
           persist-credentials: false
       - name: every package name of distro/debian.env exists on Debian (nothing installed)
-        run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' distro/debian.env) >/dev/null
+        run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
       - name: shellcheck
         run: shellcheck -S warning spark-shell tests/shell_test.sh
       - name: the suite in a throwaway HOME
@@ -79,7 +84,7 @@ jobs:
         with:
           persist-credentials: false
       - name: every package name of distro/arch.env exists on Arch (nothing installed)
-        run: pacman -Sp --needed $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' distro/arch.env) >/dev/null
+        run: pacman -Sp --needed $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/arch.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
   void:
@@ -95,9 +100,100 @@ jobs:
         with:
           persist-credentials: false
       - name: every package name of distro/void.env exists on Void (nothing installed)
-        run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' distro/void.env); do xbps-query -R "$p" >/dev/null || { echo "no package $p"; exit 1; }; done
+        run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/void.env); do xbps-query -R "$p" >/dev/null || { echo "no package $p"; exit 1; }; done
       - name: the suite in a throwaway HOME
         run: sh tests/shell_test.sh
+  fedora:
+    # the fourth family: dnf over rpm, the names of distro/fedora.env looked
+    # up with repoquery (a provider counts, as rpm -q --whatprovides does)
+    runs-on: ubuntu-latest
+    container: fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80   # a versioned release: pinned, bump the digest with the next Fedora
+    timeout-minutes: 15
+    steps:
+      - run: dnf install -y -q git ShellCheck diffutils jq openssh-clients curl >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: every package name of distro/fedora.env exists on Fedora (nothing installed)
+        run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/fedora.env); do dnf -q repoquery --whatprovides "$p" 2>/dev/null | grep -q . || { echo "no package $p"; exit 1; }; done
+      - name: shellcheck
+        run: shellcheck -S warning spark-shell tests/shell_test.sh
+      - name: the suite in a throwaway HOME
+        run: sh tests/shell_test.sh
+  opensuse:
+    # the fifth family: zypper over rpm, the names of distro/opensuse.env
+    # looked up on Tumbleweed itself. libstdc++6 is the runner's node (checkout)
+    runs-on: ubuntu-latest
+    container: opensuse/tumbleweed:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Tumbleweed there is, and zypper dup moves it to today anyway
+    timeout-minutes: 15
+    steps:
+      - run: zypper --non-interactive --quiet install git ShellCheck diffutils jq openssh-clients curl gawk tar gzip libstdc++6 >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: every package name of distro/opensuse.env exists on Tumbleweed (nothing installed)
+        run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/opensuse.env); do zypper --non-interactive --no-refresh search --match-exact --provides "$p" >/dev/null 2>&1 || { echo "no package $p"; exit 1; }; done
+      - name: shellcheck
+        run: shellcheck -S warning spark-shell tests/shell_test.sh
+      - name: the suite in a throwaway HOME
+        run: sh tests/shell_test.sh
+  desktop:
+    # the desktop for real, per family: its packages installed in the
+    # family's container, spark-shell on as a plain user (the renders, the
+    # palette, a drawing drawn again in it through rsvg-convert), the sway
+    # config read by sway -C, then a headless sway with a foot in it, asked
+    # through swaymsg. No seat, no GPU, no sound card: a proof of the
+    # install and the render, said so; a screen is a machine's proof.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - family: debian
+            image: debian:13@sha256:4c25275446ca371766b8b093c696782eabce06263fccacb8d5d813b3dc44b308
+            prep: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git jq diffutils >/dev/null
+            install: DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
+          - family: ubuntu
+            image: ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
+            prep: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git jq diffutils >/dev/null
+            install: DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
+          - family: arch
+            image: archlinux:latest   # zizmor: ignore[unpinned-images] a rolling distro
+            prep: pacman -Syu --noconfirm --needed git jq diffutils >/dev/null
+            install: pacman -S --needed --noconfirm
+          - family: void
+            image: ghcr.io/void-linux/void-glibc-full:latest   # zizmor: ignore[unpinned-images] a rolling distro
+            prep: xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null; xbps-install -Sy git bash jq gawk gzip libstdc++ shadow >/dev/null
+            install: xbps-install -Sy
+          - family: fedora
+            image: fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80
+            prep: dnf install -y -q git jq diffutils shadow-utils util-linux >/dev/null
+            install: dnf install -y -q
+          - family: opensuse
+            image: opensuse/tumbleweed:latest   # zizmor: ignore[unpinned-images] a rolling distro
+            prep: zypper --non-interactive --quiet install git jq diffutils gawk tar gzip libstdc++6 shadow util-linux >/dev/null
+            install: zypper --non-interactive --quiet install
+    container: ${{ matrix.image }}   # zizmor: ignore[unpinned-images] the matrix above pins each versioned image by digest; the rolling ones are latest by nature
+    env:
+      FAMILY: ${{ matrix.family }}
+      PREP: ${{ matrix.prep }}
+      INSTALL: ${{ matrix.install }}
+    steps:
+      - run: sh -c "$PREP"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the family's packages, every list but the login screen's
+        run: sh -c "$INSTALL $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' "distro/$FAMILY.env" | tr '\n' ' ') >/dev/null"
+      - name: spark-shell on as a plain user, the config read by sway, a headless sway with a foot in it
+        run: |
+          set -eu
+          useradd -m -s /bin/bash ada
+          chmod -R a+rX "$GITHUB_WORKSPACE"
+          cp tests/desktop_proof.sh /tmp/desktop_proof.sh
+          chmod 755 /tmp/desktop_proof.sh
+          su ada -c "REPO='$GITHUB_WORKSPACE' sh /tmp/desktop_proof.sh"
   macos:
     runs-on: macos-latest
     timeout-minutes: 15
