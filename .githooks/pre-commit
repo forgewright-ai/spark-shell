@@ -68,7 +68,7 @@ fi
 
 # --- 3. docs, script and templates stay ASCII (read on a console) -----
 tab=$(printf '\t')
-for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example spark-shell tests/shell_test.sh lib/terminal_profile.py tests/profile_test.py $(find templates distro themes -type f | sort); do
+for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example spark-shell tests/shell_test.sh lib/terminal_profile.py tests/profile_test.py lib/saver.py tests/saver_test.py tests/wifi_proof.sh $(find templates distro themes -type f | sort); do
     hit=$(LC_ALL=C grep -n "[^ -~${tab}]" "$f" | head -3 || true)
     [ -z "$hit" ] || bad "non-ASCII in $f:
 $hit"

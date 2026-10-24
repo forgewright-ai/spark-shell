@@ -1,0 +1,38 @@
+# spark-shell codeql -- GitHub reads the code (#65). CodeQL runs on
+# GitHub's runners over the dialog's Rust (dialog/), the Python helpers
+# and tests (lib/, tests/) and the workflows themselves: static analysis
+# with no tool in the tree and nothing on a user's machine. Every push to
+# main, every pull request, and once a week for the queries that land
+# between them. Findings show under Security, Code scanning.
+name: codeql
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '41 6 * * 1'   # Mondays, 06:41 UTC
+permissions:
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, python, rust]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d   # v4.38.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d   # v4.38.3
+        with:
+          category: /language:${{ matrix.language }}

@@ -5,6 +5,7 @@ use common::*;
 use serde_json::{json, Value};
 use spark_dialog::app::{App, Item, Job, Mode, Sign, View, CALENDAR_DEST, SETTINGS_DEST};
 use spark_dialog::mcp::Incoming;
+use spark_dialog::progress::{self, Work};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -1496,4 +1497,95 @@ fn a_provider_runs_in_a_process_group_of_its_own_and_ends_when_its_input_does() 
     }
     assert!(read().contains("done"), "its input closed, it ends by itself");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The first row of the dialog drawn now: the header, where the bar shows.
+fn header(app: &App) -> String {
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+    let (w, h) = (spark_dialog::app::WIDTH, spark_dialog::app::HEIGHT);
+    let mut b = Buffer::empty(Rect::new(0, 0, w, h));
+    spark_dialog::ui::draw(app, &palette("tokyonight-night"), "Sun 18 Oct \u{b7} 12:04", &mut b);
+    (0..w).map(|x| b[(x, 0)].symbol().to_string()).collect()
+}
+
+#[test]
+fn the_bar_says_what_kind_of_work_is_going_on() {
+    let (mut app, rx, _c, _r) = started();
+    assert!(!app.busy(), "nothing asked, nothing shown");
+    assert!(!header(&app).contains('['), "{:?}", header(&app));
+
+    // one step alone: marks moving right
+    app.plan(r#"{"answer": "", "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
+    app.enter();
+    assert!(app.running.is_some() && app.queue.is_empty());
+    assert_eq!(app.work(), Work::March, "one step alone");
+    app.frame = 1;
+    assert!(header(&app).contains(&progress::bar(Work::March, 1)), "{:?}", header(&app));
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()));
+    assert!(!app.busy(), "the step is done: the bar goes");
+
+    // two steps: one after another while the second waits
+    app.plan(r#"{"answer": "", "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}, {"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
+    app.enter();
+    assert!(app.running.is_some() && !app.queue.is_empty(), "the first runs, the second waits");
+    assert_eq!(app.work(), Work::Steps, "a step with more behind it");
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.queue.is_empty()));
+
+    // words that go to spark: a light bouncing, until the plan comes
+    app.cfg.spark_shell = "/bin/spark-shell".into();
+    typed(&mut app, "is anything open");
+    app.enter();
+    assert!(app.busy());
+    assert_eq!(app.work(), Work::Think, "spark is asked");
+    app.frame = 3;
+    assert!(header(&app).contains(&progress::bar(Work::Think, 3)), "{:?}", header(&app));
+    app.helper(spark_dialog::app::Helper::Want, Err("no answer".into()));
+    assert!(!app.busy(), "the answer, or the lack of one, ends it");
+}
+
+#[test]
+fn a_model_that_loads_is_a_swell_and_a_recording_waits_like_a_thought() {
+    let (mut app, _rx, _c, _r) = started();
+    app.cfg.model = true;
+    app.helper(
+        spark_dialog::app::Helper::Models,
+        Ok("gemma\trepo\t1\t1\tx\tline\t-\tserving\nqwen\trepo\t1\t1\tx\tline\t-\tdownloaded\n".into()),
+    );
+    app.chip(1);
+    let k = app.picks().iter().position(|i| *i == Item::Model(1)).unwrap();
+    app.in_list = true;
+    app.sel = k;
+    app.enter();
+    app.enter();
+    assert!(app.busy());
+    assert_eq!(app.work(), Work::Swell, "switching the model: spark's server loads it, no estimate");
+    app.frame = 3;
+    assert!(header(&app).contains("[========]"), "{:?}", header(&app));
+    app.helper(spark_dialog::app::Helper::ModelSet, Ok(String::new()));
+    assert!(!app.busy());
+
+    app.cfg.talk = true;
+    app.voice_on = true;
+    app.talk = spark_dialog::app::Talk::Click;
+    app.chip(3);
+    assert_eq!(app.mode, Mode::Listening);
+    assert_eq!(app.work(), Work::Think, "a recording waits as spark thinks does");
+}
+
+#[test]
+fn the_rows_of_a_place_being_read_are_an_arrow() {
+    let (mut app, rx, tx) = app_with(&["window"]);
+    let script: common::Script = Box::new(move |v, send| {
+        if let Some(r) = ordinary("window", v, &window_tools(), &window_rows()) {
+            send(r);
+        }
+    });
+    app.servers.push(stub(0, "window", script, tx));
+    app.start();
+    app.view = View::Section(0);
+    assert!(app.busy());
+    assert_eq!(app.work(), Work::Read, "a place opened while its rows come");
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
+    assert!(!app.busy());
 }

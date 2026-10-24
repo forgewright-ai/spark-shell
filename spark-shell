@@ -53,6 +53,8 @@
 #   spark-shell desktop display       the idle and lock minutes, the brightness
 #   spark-shell desktop display idle|lock N
 #                                     idle screen or lock after N idle minutes
+#   spark-shell desktop display saver [NAME]
+#                                     list the idle screen's savers, or pick one
 #   spark-shell desktop display brightness N|up|down
 #                                     the screen's brightness, 1 to 100
 #   spark-shell desktop keyboard [us br|next]
@@ -157,7 +159,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u KEYBOARD'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD'
 
 # This machine's short name (the twin of spark lib/env.sh short_host). On
 # a Mac, LocalHostName, by scutil's full path: /usr/sbin is not on every
@@ -168,6 +170,24 @@ short_host() {
     [ -n "$_host" ] || _host=$(hostname -s 2>/dev/null || uname -n | cut -d. -f1)
     printf '%s' "$_host"
 }
+
+# The shapes a look's values take, in the config and in a saved theme's
+# look.env alike (#61). Each lands in a line another program parses: FONT
+# in foot's ini, sway's bar font and the idle screen's command; WALLPAPER
+# in sway's `output * bg "PATH" fill`, which sway reads again through
+# wordexp; POINTER in `seat * xcursor_theme`. So each is held to what it
+# is: no quote, comma, backslash or control character gets through.
+font_ok() { case $1 in [A-Za-z0-9]*) ;; *) return 1 ;; esac; case $1 in *[!A-Za-z0-9\ :=.+_-]*) return 1 ;; esac; [ ${#1} -le 128 ]; }   # font_ok FONT -> 0 for a face and foot's options (Monaspace Neon:size=11)
+alpha_ok() { case $1 in 0|1|0.[0-9]|0.[0-9][0-9]|1.0) return 0 ;; *) return 1 ;; esac; }   # alpha_ok ALPHA -> 0 for 0 to 1, two places at most
+pointer_ok() { [ -z "$1" ] || printf '%s\n' "$1" | grep -qE '^[A-Za-z0-9._-]+( [1-9][0-9]{0,2})?$'; }   # pointer_ok POINTER -> 0 for nothing, or a cursor theme's NAME and its SIZE in pixels
+path_ok() {   # path_ok PATH -> 0 for a full path a wallpaper may name: PATH_SAID's shape
+    case $1 in /*) ;; *) return 1 ;; esac
+    case $1 in *[';`$()|&<>']*|*\"*|*\'*|*\\*) return 1 ;; esac
+    [ "$(printf '%s' "$1" | tr -d '\001-\037\177')" = "$1" ]
+}
+PATH_SAID="none of ; \` \$ ( ) | & < >, no quote, no backslash, no control character"
+PATH_REFUSED='a path with one of ; ` $ ( ) | & < >, a quote, a backslash or a control character cannot be a wallpaper -- rename the picture'
+wall_value_ok() { case $1 in default|none) return 0 ;; esac; wall_shipped "$1" || hex_rgb "$1" >/dev/null || path_ok "$1"; }   # wall_value_ok WALLPAPER -> 0 for default, none, a drawing's name, #rrggbb or a picture's full path in path_ok's shape
 
 config_load() {
     load_env "$CONFIG" || exit 1
@@ -183,8 +203,9 @@ config_load() {
     : "${LOGIN:=no}"                       # the login screen on tty1 (greetd): yes or no
     case $WINDOWS in split|tabs|stacked) ;;
         *) echo "spark-shell: WINDOWS=$WINDOWS in $CONFIG: split, tabs or stacked" >&2; exit 1 ;; esac
-    case $ALPHA in 0|1|0.[0-9]|0.[0-9][0-9]|1.0) ;;
-        *) echo "spark-shell: ALPHA=$ALPHA in $CONFIG: 0 to 1 (0.85)" >&2; exit 1 ;; esac
+    alpha_ok "$ALPHA" || { echo "spark-shell: ALPHA=$ALPHA in $CONFIG: 0 to 1 (0.85)" >&2; exit 1; }
+    font_ok "$FONT" || { echo "spark-shell: FONT=$FONT in $CONFIG: a face and its size as foot takes them (Monaspace Neon:size=11): letters, digits, spaces and : = . + _ -" >&2; exit 1; }
+    wall_value_ok "$WALLPAPER" || { echo "spark-shell: WALLPAPER=$WALLPAPER in $CONFIG: default, a drawing's name, #rrggbb or a picture's full path, with $PATH_SAID" >&2; exit 1; }
     case $DESKTOP in none|sway) ;;
         *) echo "spark-shell: DESKTOP=$DESKTOP in $CONFIG: none or sway" >&2; exit 1 ;; esac
     # the console's four: a palette's name, "FACE SIZE", and two switches
@@ -193,9 +214,7 @@ config_load() {
     if [ -n "$CONSOLE_FONT" ] && ! printf '%s' "$CONSOLE_FONT" | grep -qE '^[A-Za-z0-9._-]+ [0-9][0-9x.]*$'; then
         echo "spark-shell: CONSOLE_FONT=$CONSOLE_FONT in $CONFIG: FACE SIZE (spark-shell font list)" >&2; exit 1
     fi
-    if [ -n "$POINTER" ] && ! printf '%s' "$POINTER" | grep -qE '^[A-Za-z0-9._-]+( [1-9][0-9]{0,2})?$'; then
-        echo "spark-shell: POINTER=$POINTER in $CONFIG: a cursor theme's NAME and, after a space, its SIZE in pixels (spark-white 24, spark-black 32, Adwaita)" >&2; exit 1
-    fi
+    pointer_ok "$POINTER" || { echo "spark-shell: POINTER=$POINTER in $CONFIG: a cursor theme's NAME and, after a space, its SIZE in pixels (spark-white 24, spark-black 32, Adwaita)" >&2; exit 1; }
     # the dialog's composer: plus and the file types it attaches, the model chip, talk
     : "${DIALOG_ATTACH:=yes}" "${DIALOG_ATTACH_TYPES:=txt md}" "${DIALOG_MODEL:=yes}" "${DIALOG_TALK:=yes}"
     for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK LOGIN; do
@@ -203,18 +222,25 @@ config_load() {
         case $v in yes|no) ;; *) echo "spark-shell: $k=$v in $CONFIG: yes or no" >&2; exit 1 ;; esac
     done
     # the display (minutes, 0 never) and the keyboard's layouts (xkb names, a variant after a plus)
-    : "${DISPLAY_IDLE:=10}" "${DISPLAY_LOCK:=15}" "${KEYBOARD:=}"
+    : "${DISPLAY_IDLE:=10}" "${DISPLAY_LOCK:=15}" "${DISPLAY_SAVER:=clock}" "${KEYBOARD:=}"
     for k in DISPLAY_IDLE DISPLAY_LOCK; do
         eval "v=\$$k"
         case $v in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "spark-shell: $k=$v in $CONFIG: minutes, 0 to 999 (0: never)" >&2; exit 1 ;; esac
     done
+    saver_known "$DISPLAY_SAVER" || { echo "spark-shell: DISPLAY_SAVER=$DISPLAY_SAVER in $CONFIG: clock, or one of $SAVER_NAMES" >&2; exit 1; }
     [ -z "$KEYBOARD" ] || printf '%s\n' "$KEYBOARD" | grep -qE "$KB_RE" || { echo "spark-shell: KEYBOARD=$KEYBOARD in $CONFIG: layouts by their xkb names, a space between, a variant after a plus (us us+intl)" >&2; exit 1; }
     printf '%s\n' "$DIALOG_ATTACH_TYPES" | grep -qE '^[a-z0-9]{1,8}( [a-z0-9]{1,8})*$' || { echo "spark-shell: DIALOG_ATTACH_TYPES=$DIALOG_ATTACH_TYPES in $CONFIG: file types in lower case, a space between (txt md)" >&2; exit 1; }
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK LOGIN DISPLAY_IDLE DISPLAY_LOCK KEYBOARD POINTER
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER
 }
+SAVER_NAMES='spark starfield drift'   # lib/saver.py's list, in its order: what DISPLAY_SAVER takes besides clock (#66)
 KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}$'   # one to eight layouts, a variant after a plus: us us+intl
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept. A value load_env would refuse at the next read is refused here, before the file is touched
     case $2 in *[';`$()|&<>']*) printf 'spark-shell: %s=%s cannot be kept: a value holds none of ; ` $ ( ) | & < >\n' "$1" "$2" >&2; exit 1 ;; esac
+    [ "$(printf '%s' "$2" | tr -d '\001-\037\177')" = "$2" ] || { printf 'spark-shell: %s cannot be kept: a value holds no control character, a new line included\n' "$1" >&2; exit 1; }   # a new line would be a second line of the config
+    case $1 in
+        FONT) font_ok "$2" || { printf 'spark-shell: FONT=%s cannot be kept: letters, digits, spaces and : = . + _ -\n' "$2" >&2; exit 1; } ;;
+        WALLPAPER) wall_value_ok "$2" || { printf 'spark-shell: WALLPAPER=%s cannot be kept: %s\n' "$2" "$PATH_SAID" >&2; exit 1; } ;;
+    esac
     mkdir -p "$CONFIG_DIR"
     if [ -f "$CONFIG" ] && grep -q "^$1=" "$CONFIG"; then
         sed "s|^$1=.*|$1=$(esc "$2")|" "$CONFIG" > "$TMP/config"
@@ -420,7 +446,7 @@ pic_small() {   # pic_small PICTURE OUT -- OUT, a PNG of PICTURE 256 wide at mos
     rsvg-convert -w 256 -h 256 -o "$2.new" "$_pd/wrap.svg" 2>/dev/null && mv "$2.new" "$2" || { rm -f "$2.new"; return 1; }
 }
 wall_render() {   # wall_render DRAWING PALETTE_FILE OUT_BASE -- OUT_BASE.svg in that palette and, where a tool draws it, OUT_BASE.png at 3840 by 2160; silent, exit 1 with no PNG
-    mkdir -p "$(dirname "$3")"
+    mkdir_state "$(dirname "$3")"
     wall_recolor "$REPO/wallpaper/$1.svg" "$2" > "$3.svg.new" && mv "$3.svg.new" "$3.svg"
     svg_png "$3.svg" "$3.png" 3840 || { rm -f "$3.png"; return 1; }
 }
@@ -455,7 +481,7 @@ wall_picture_ok() {   # wall_picture_ok PATH -> its real path when it is a pictu
     case ${_rp#"$_hr"/} in .*|*/.*) echo "wallpaper: a hidden file is not offered"; return 1 ;; esac
     [ -f "$_rp" ] && [ -r "$_rp" ] || { echo "wallpaper: $1 is not a file that can be read"; return 1; }
     case " $WALL_TYPES " in *" $(printf '%s' "${_rp##*.}" | tr 'A-Z' 'a-z') "*) ;; *) echo "wallpaper: a picture is $WALL_TYPES"; return 1 ;; esac
-    case $_rp in *[';`$()|&<>']*) echo "wallpaper: a path with one of ; \` \$ ( ) | & < > cannot be kept in the config -- rename the picture"; return 1 ;; esac   # the config refuses these at the next read (load_env): said now, nothing written
+    path_ok "$_rp" || { echo "wallpaper: $PATH_REFUSED"; return 1; }   # the config's shape for a wallpaper (#61): said now, nothing written
     printf '%s\n' "$_rp"
 }
 WALL_TYPES='jpg jpeg png webp'   # the pictures the wallpaper picker offers and takes
@@ -464,7 +490,7 @@ THUMB_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/thumbs   # the drawi
 thumb_palette() { if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && palette_file "$THEME" >/dev/null; then printf '%s' "$THEME"; else printf none; fi; }   # -> the palette the small pictures are drawn in: the one in use, else none (the drawings' own colors)
 wall_thumbs() {   # the drawings' small pictures in the palette in use (#36): each one missing or older than its drawing, drawn from the drawing itself, as it is or recolored; quiet
     [ -n "$(svg_tool)" ] || return 0
-    mkdir -p "$THUMB_DIR"; _tp=$(thumb_palette); _pf=''; [ "$_tp" = none ] || _pf=$(palette_file "$_tp")
+    mkdir_state "$THUMB_DIR"; _tp=$(thumb_palette); _pf=''; [ "$_tp" = none ] || _pf=$(palette_file "$_tp")
     for _w in $(wall_shipped_names); do
         _t=$THUMB_DIR/$_w-$_tp.png
         [ ! -f "$_t" ] || [ -n "$(find "$REPO/wallpaper/$_w.svg" -newer "$_t" 2>/dev/null)" ] || continue   # find -newer: test's -nt is not in every POSIX sh
@@ -550,7 +576,7 @@ pointer_fresh() {   # -> "seat * xcursor_theme NAME SIZE+1; " when the drawing o
     _pv=$(cat "$POINTER_DIR/$POINTER_NAME/version" 2>/dev/null || :)
     [ -z "$_pv" ] || [ "$_pv" = "$(cat "$POINTER_SEEN" 2>/dev/null || :)" ] || printf 'seat * xcursor_theme %s %s; ' "$POINTER_NAME" $((POINTER_SIZE + 1))
 }
-pointer_seen() { _pv=$(cat "$POINTER_DIR/$POINTER_NAME/version" 2>/dev/null || :); [ -z "$_pv" ] || { mkdir -p "$STATE_DIR" && printf '%s\n' "$_pv" > "$POINTER_SEEN"; }; }   # the drawing a running sway was just given (a theme of yours has no version: nothing kept)
+pointer_seen() { _pv=$(cat "$POINTER_DIR/$POINTER_NAME/version" 2>/dev/null || :); [ -z "$_pv" ] || { mkdir_private "$STATE_DIR" && printf '%s\n' "$_pv" > "$POINTER_SEEN"; }; }   # the drawing a running sway was just given (a theme of yours has no version: nothing kept)
 
 # How new windows sit: WINDOWS in the config, sway's workspace_layout in the template.
 WIN_KEYS="WS_LAYOUT"
@@ -911,7 +937,7 @@ seat_apply() {
     if seatd_on; then ok desktop "seatd starts at every boot (/$SEATD_LINK)"
     elif need desktop "seatd: link /$SEATD_SV into /var/service, it starts now and at every boot (sudo)" && seat_root on; then
         if root_do ln -s "/$SEATD_SV" "$ROOT/$SEATD_LINK"; then
-            mkdir -p "$STATE_DIR"; : > "$STATE_DIR/seatd.linked"
+            mkdir_private "$STATE_DIR"; : > "$STATE_DIR/seatd.linked"
             ok desktop "seatd runs now and at every boot"
         else row todo desktop "the link /$SEATD_LINK failed -- spark-shell on desktop again"; acting=0; fi
     fi
@@ -919,7 +945,7 @@ seat_apply() {
     elif ! grep -q '^_seatd:' "$ROOT/etc/group" 2>/dev/null; then row todo desktop "there is no _seatd group: the seatd package makes it -- spark-shell on desktop"
     elif need desktop "add $_me to the _seatd group (sudo)" && seat_root on; then
         if root_do usermod -aG _seatd "$_me"; then
-            mkdir -p "$STATE_DIR"; : > "$STATE_DIR/seatd.group"
+            mkdir_private "$STATE_DIR"; : > "$STATE_DIR/seatd.group"
             ok desktop "$_me is in the _seatd group now: it takes effect at your next login"
         else row todo desktop "usermod could not add $_me to _seatd -- spark-shell on desktop again"; acting=0; fi
     fi
@@ -975,7 +1001,7 @@ sound_apply() {
     [ "$OS" != Darwin ] || return 0
     _miss=$(sound_links_missing)
     if [ -n "$_miss" ] && need sound "ALSA programs play through PipeWire: link$_miss into /$SOUND_CONF (sudo)" && seat_root on "the sound"; then
-        _ok=1; mkdir -p "$STATE_DIR"
+        _ok=1; mkdir_private "$STATE_DIR"
         root_do mkdir -p "$ROOT/$SOUND_CONF" || _ok=0
         for f in $_miss; do   # the record names each link made, and only those
             if root_do ln -s "/$SOUND_SHARE/$f" "$ROOT/$SOUND_CONF/$f"; then echo "$f" >> "$STATE_DIR/sound.alsa"; else _ok=0; fi
@@ -987,7 +1013,7 @@ sound_apply() {
     _me=$(id -un)
     if sound_group_needed && ! in_group audio "$_me" && need sound "add $_me to the audio group: the sound devices open to you (sudo)" && seat_root on "the sound"; then
         if root_do usermod -aG audio "$_me"; then
-            mkdir -p "$STATE_DIR"; : > "$STATE_DIR/sound.group"
+            mkdir_private "$STATE_DIR"; : > "$STATE_DIR/sound.group"
             ok sound "$_me is in the audio group now: it takes effect at your next login"
         else row todo sound "usermod could not add $_me to audio -- spark-shell on desktop again"; acting=0; fi
     fi
@@ -1149,7 +1175,7 @@ light_apply() {
         grep -q "^$_g:" "$ROOT/etc/group" 2>/dev/null && ! in_group "$_g" "$_me" || continue
         need light "add $_me to the $_g group: the screen's brightness opens to you (sudo)" && seat_root on "the brightness" || continue
         if root_do usermod -aG "$_g" "$_me"; then
-            mkdir -p "$STATE_DIR"; echo "$_g" >> "$STATE_DIR/light.groups"
+            mkdir_private "$STATE_DIR"; echo "$_g" >> "$STATE_DIR/light.groups"
             ok light "$_me is in the $_g group now: it takes effect at your next login"
         else row todo light "usermod could not add $_me to $_g -- spark-shell on desktop again"; acting=0; fi
     done
@@ -1353,7 +1379,7 @@ login_root() {   # login_root VERB -- a root to write with, asked once; else a t
 login_screen_apply() {   # the login rows of `on` with LOGIN=yes
     login_wanted || return 0
     [ -n "$LOGIN_ACCOUNT" ] || { row todo login "the login screen knows $FAMILIES_SAID"; acting=0; return 0; }   # the family's file names greetd's account; without one, no screen
-    console_linux || { skip login "WSL has no console: no login screen"; return 0; }
+    console_linux || { skip login "$(login_na)"; return 0; }   # the system it skips, by name: macOS or WSL (#38)
     [ "$(init_shape)" != none ] || { skip login "no systemd or runit here: nothing starts a login screen"; return 0; }
     if ! greetd_here; then
         need login "the login screen on tty1, once greetd is installed (the packages)" || return 0
@@ -1528,6 +1554,25 @@ PALETTE_DIR=$CONFIG_DIR/themes                     # yours: NAME.env wins over t
 CONSOLE_COLORS=$CONFIG_DIR/console-colors          # the escapes, sent at a console login
 CONSOLE_RGB=$CONFIG_DIR/console-colors.rgb         # setvtrgb's three lines, read by root at boot
 STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell
+# The folders that hold what is yours (#63): the state (the looks, the layouts, the journal and
+# the audit), the saved themes with their pictures, and the notes are yours alone, as spark's
+# own state is. A folder spark-shell makes is made so, and `on` makes one already there so, with
+# a row; a link is left as it is (it may point where you share on purpose).
+mkdir_private() { [ -d "$1" ] || (umask 077 && mkdir -p "$1"); }   # mkdir_private DIR -- made yours alone when it is not there
+mkdir_state() { mkdir_private "$STATE_DIR" && mkdir -p "$@"; }     # mkdir_state DIR... -- folders under the state, the state made yours alone first
+private_dirs() {   # on's step: each of the three that is there, yours, not a link and open to others, made 0700
+    _pd=''
+    for _d in "$STATE_DIR" "$PALETTE_DIR" "$NOTES_DIR"; do
+        [ -d "$_d" ] && [ ! -L "$_d" ] || continue
+        # shellcheck disable=SC2086   # the mode, the links, the owner's number: split on purpose
+        _pl=$(ls -ldn "$_d"); set -- $_pl
+        [ "$3" = "$(id -u)" ] || continue
+        case $1 in ????------*) continue ;; esac   # nothing for the group or the others: private already
+        if [ "$MODE" = dry ]; then row would private "${_d#"$HOME"/} yours alone (0700)"; continue; fi
+        chmod go-rwx "$_d" 2>/dev/null && _pd="$_pd ${_d#"$HOME"/}"
+    done
+    [ -z "$_pd" ] || row ok private "yours alone now (0700):$_pd"
+}
 REBUILD=$STATE_DIR/boot-rebuild                    # a boot rebuild that has not held yet: grub | uki, one a line
 TERMINAL_SEEN=$STATE_DIR/terminal.seen             # macOS: the palette and font Terminal.app's profile has
 POINTER_SEEN=$STATE_DIR/pointer.seen               # the spark pointer's version a running sway last loaded (#48)
@@ -1637,9 +1682,33 @@ theme_kind() {   # theme_kind NAME -> saved | look | yours | shipped | none | no
     elif [ -f "$REPO/themes/$1.env" ]; then echo shipped; fi
 }
 theme_saved_names() { for _d in "$PALETTE_DIR"/*/; do [ -f "${_d}palette.env" ] || continue; _d=${_d%/}; printf '%s\n' "${_d##*/}"; done | sort; }   # -> the saved themes, by name
-look_get() { sed -n "s/^$2=//p" "$1/look.env" 2>/dev/null | head -1; }   # look_get DIR KEY -> a line of the folder's look.env
+look_get() { sed -n "s/^$2=//p" "$1/look.env" 2>/dev/null | head -1 | tr -d '\001-\037\177'; }   # look_get DIR KEY -> a line of the folder's look.env, no control character in it
 look_set() {   # look_set DIR KEY VALUE -- that line of look.env set (added when absent), the others kept
     mkdir -p "$1"; { [ ! -f "$1/look.env" ] || grep -v "^$2=" "$1/look.env"; printf '%s=%s\n' "$2" "$3"; } > "$1/look.env.new" && mv "$1/look.env.new" "$1/look.env"
+}
+# A saved theme is a folder that may come from another machine (#61): its look.env is read the
+# way the config is, and every value is held to the shape the config holds it to before
+# anything is kept. The palette is held by palette_render (twenty #rrggbb).
+look_ok() {   # look_ok DIR -> 0 when the folder's look.env may be used; else one line, the key and why, and 1
+    _lf=$1/look.env
+    [ -f "$_lf" ] || return 0   # a palette alone: colors only
+    _lb=$(grep -nEv '^[[:space:]]*(#|$)|^[A-Z_0-9]+=[^;`$()|&<>]*$' "$_lf" | head -1 | cut -d: -f1)
+    [ -z "$_lb" ] || { echo "line $_lb of its look.env is not KEY=value"; return 1; }
+    ! LC_ALL=C grep -q '[[:cntrl:]]' "$_lf" || { echo "its look.env holds a control character"; return 1; }
+    _lv=$(look_get "$1" FONT); [ -z "$_lv" ] || font_ok "$_lv" || { echo "its FONT is not a face and a size (letters, digits, spaces and : = . + _ -)"; return 1; }
+    _lv=$(look_get "$1" ALPHA); [ -z "$_lv" ] || alpha_ok "$_lv" || { echo "its ALPHA is not 0 to 1"; return 1; }
+    _lv=$(look_get "$1" POINTER); pointer_ok "$_lv" || { echo "its POINTER is not a cursor theme's NAME and SIZE"; return 1; }
+    _lv=$(look_get "$1" DRAWING); [ -z "$_lv" ] || wall_shipped "$_lv" || { echo "its DRAWING is not one of the drawings"; return 1; }
+    _lv=$(look_get "$1" PALETTE); case $_lv in .*|*[!A-Za-z0-9._-]*) echo "its PALETTE is not a palette's name"; return 1 ;; esac
+    _lv=$(look_get "$1" WALLPAPER)
+    case $_lv in
+        '') ;;
+        picture) _lp=$(look_get "$1" PICTURE)
+            case $_lp in ''|.*|*/*) echo "its PICTURE is not a file name in the folder"; return 1 ;; esac
+            path_ok "$1/$_lp" && [ -f "$1/$_lp" ] && [ ! -L "$1/$_lp" ] || { echo "its PICTURE is not a file of the folder's own"; return 1; }
+            case " $WALL_TYPES " in *" $(printf '%s' "${_lp##*.}" | tr 'A-Z' 'a-z') "*) ;; *) echo "its PICTURE is not a picture ($WALL_TYPES)"; return 1 ;; esac ;;
+        *) wall_value_ok "$_lv" || { echo "its WALLPAPER is not default, a drawing's name, #rrggbb or a picture's full path with $PATH_SAID"; return 1; } ;;
+    esac
 }
 theme_source_of() {   # theme_source_of DIR -> what a saved theme's palette came from, for its row: the palette's name, the words that made it, or the picture's file
     _ps=$(look_get "$1" PALETTE)
@@ -1664,7 +1733,7 @@ kept_hist() { printf '%s/%s.history' "$STATE_DIR" "$1"; }   # kept_hist KIND -> 
 kept_history() { [ ! -f "$(kept_hist "$1")" ] || cat "$(kept_hist "$1")"; }   # kept_history KIND -> "EPOCH<tab>NAME" lines, newest first
 kept_names() { kept_history "$1" | cut -f2; }
 kept_note() {   # kept_note KIND NAME -- NAME is the newest of the kind's history, once; ten lines kept; the back cursor starts over; what the history no longer names is gone
-    _kh=$(kept_hist "$1"); mkdir -p "$STATE_DIR"
+    _kh=$(kept_hist "$1"); mkdir_private "$STATE_DIR"
     { printf '%s\t%s\n' "$(date +%s)" "$2"; [ ! -f "$_kh" ] || awk -F '\t' -v n="$2" '$2 != n' "$_kh"; } | head -n "$KEPT_MAX" > "$_kh.new" && mv "$_kh.new" "$_kh"
     rm -f "$_kh.back"
     kept_prune "$1"
@@ -1789,7 +1858,11 @@ theme_files() {   # before the renders: theme.env and the console's two files, a
 
 palette_boot() {   # Linux: the palette at boot, root's; the kernel's defaults set now
     [ -n "$THEME" ] && [ "$THEME" != none ] && [ -f "$CONSOLE_RGB" ] || return 0
-    console_linux || { skip palette "WSL has no console: the palette is Windows Terminal's"; return 0; }
+    if ! console_linux; then   # the system it skips, by name (#38): a Mac is not WSL
+        if [ "$OS" = Darwin ]; then skip palette "macOS has no Linux console: Terminal.app takes the palette"
+        else skip palette "WSL has no console: the palette is Windows Terminal's"; fi
+        return 0
+    fi
     shape=$(init_shape)
     if [ "$shape" = none ]; then skip palette "no systemd or runit here: nothing sets the palette at boot"; return 0; fi
     command -v setvtrgb >/dev/null 2>&1 || { row todo palette "setvtrgb is missing: the kbd package has it (spark-shell on)"; return 0; }
@@ -1889,7 +1962,7 @@ terminal_apply() {
     fi
     need terminal "$_why" || return 0
     if python3 "$REPO/lib/terminal_profile.py" apply "$THEME_ENV" "$_face" "$_size"; then
-        mkdir -p "$STATE_DIR"; printf '%s\n' "$_want" > "$TERMINAL_SEEN"
+        mkdir_private "$STATE_DIR"; printf '%s\n' "$_want" > "$TERMINAL_SEEN"
         ok terminal "Terminal.app's profile is the palette, in $_face $_size"
     else
         row todo terminal "the helper could not write Terminal.app's profile -- spark-shell on again"; acting=0
@@ -2272,7 +2345,7 @@ neon_move() {   # once, at the first on with the font wanted: a FONT on DejaVu S
         eval "$_nkey=\$_nval"; export "${_nkey?}"
         ok font "$_nkey=$_nval, the new default face at your size ($_nold was the old one)"
     fi
-    [ "$MODE" = dry ] || { mkdir -p "$STATE_DIR"; printf '%s\n' "${_nkey:-nothing}${_nkey:+ moved to $_nval}" > "$NEON_MOVED"; }
+    [ "$MODE" = dry ] || { mkdir_private "$STATE_DIR"; printf '%s\n' "${_nkey:-nothing}${_nkey:+ moved to $_nval}" > "$NEON_MOVED"; }
 }
 
 # --------------------------------------------------------- a quiet login
@@ -2301,7 +2374,7 @@ login_apply() {
     _mo=$ROOT/etc/motd; _is=$ROOT/etc/issue; _un=$ROOT/etc/update-motd.d/10-uname
     if [ -s "$_mo" ] && [ ! -e "$_mo.spark-shell-orig" ]; then root_do cp "$_mo" "$_mo.spark-shell-orig"; fi
     [ ! -s "$_mo" ] || { : > "$TMP/empty"; root_put "$TMP/empty" "$_mo"; }
-    if [ -x "$_un" ]; then root_do chmod -x "$_un"; mkdir -p "$STATE_DIR"; : > "$UNAME_OFF"; fi
+    if [ -x "$_un" ]; then root_do chmod -x "$_un"; mkdir_private "$STATE_DIR"; : > "$UNAME_OFF"; fi
     if [ "$(cat "$_is" 2>/dev/null)" != "$CURSOR_ON" ]; then   # an issue that is the escape already is not taken over
         if [ -e "$_is.spark-shell-orig" ]; then :
         elif [ -e "$_is" ]; then root_do cp "$_is" "$_is.spark-shell-orig"
@@ -2397,7 +2470,7 @@ boot_refusal() {   # boot_refusal SHAPE -> the one sentence, or nothing when spa
     esac
 }
 pending_has() { grep -qx "$1" "$REBUILD" 2>/dev/null; }
-pending_add() { pending_has "$1" && return 0; mkdir -p "$STATE_DIR"; printf '%s\n' "$1" >> "$REBUILD"; }
+pending_add() { pending_has "$1" && return 0; mkdir_private "$STATE_DIR"; printf '%s\n' "$1" >> "$REBUILD"; }
 pending_drop() { [ -f "$REBUILD" ] || return 0; grep -vx "$1" "$REBUILD" > "$TMP/pending" || true; if [ -s "$TMP/pending" ]; then cp "$TMP/pending" "$REBUILD"; else rm -f "$REBUILD"; fi; }
 boot_rebuild() {   # boot_rebuild grub|uki -- update-grub or mkinitcpio -P as root; the pending mark goes when it held
     case $1 in grub) set -- grub update-grub ;; *) set -- uki mkinitcpio -P ;; esac
@@ -2702,6 +2775,7 @@ cmd_on() {   # cmd_on [desktop|login]
     # the old default face moved to it, before anything renders FONT
     neon_install
     neon_move
+    private_dirs
     # the prompt: starship from the package manager where the family's
     # list names it (pacman, xbps, zypper, Homebrew); where none does, the
     # rc files draw the shell's own prompt. Nothing is downloaded. A skip,
@@ -2870,7 +2944,7 @@ off_would() {   # off_would [desktop|login]
 # theme NAME` alone reaches the next login; on is for now.
 SEEN=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/theme.seen
 theme_sum() { if [ -f "$THEME_ENV" ]; then cksum < "$THEME_ENV" | cut -d' ' -f1; else echo none; fi; }
-theme_seen() { mkdir -p "$(dirname "$SEEN")"; theme_sum > "$SEEN"; }
+theme_seen() { mkdir_private "$(dirname "$SEEN")"; theme_sum > "$SEEN"; }
 cmd_follow() {
     config_load
     [ "$(theme_sum)" != "$(cat "$SEEN" 2>/dev/null)" ] || return 0
@@ -3019,6 +3093,10 @@ cmd_check() {
     elif pointer_drawn; then chk pointer ok "spark-white and spark-black are drawn; sway shows $POINTER_NAME at $POINTER_SIZE"
     elif ! pointer_can; then chk pointer warn "python3 cannot draw the spark pointer here" "install python3, then spark-shell on desktop"
     else chk pointer fail "the spark pointer is not drawn" "spark-shell on desktop"; fi
+    if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk saver ok "na (no desktop)"
+    elif [ "$DISPLAY_SAVER" = clock ]; then chk saver ok "the idle screen shows the clock alone"
+    elif saver_can; then chk saver ok "the idle screen shows the $DISPLAY_SAVER saver"
+    else chk saver warn "python3 cannot run the $DISPLAY_SAVER saver: the idle screen shows the clock" "install python3, or spark-shell desktop display saver clock"; fi
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk mcp ok "na (no desktop)"
     elif ! mcp_spark >/dev/null; then chk mcp ok "na (spark has no MCP list before 1.90)"
     else _mn=$(mcp_mine | wc -w | tr -d ' '); _mt=$(printf '%s' "$PROVIDE_SECTIONS" | wc -w | tr -d ' ')
@@ -3349,7 +3427,7 @@ light_tool() {   # -> backlight | ddc | nothing
 }
 light_ddc() {   # light_ddc ARGS... -- ddcutil on the screen's own bus (the fast path), one at a time (a held key would race the bus)
     _b=$(light_ddc_bus); [ -n "$_b" ] || return 1
-    if command -v flock >/dev/null 2>&1; then mkdir -p "$STATE_DIR"; flock -w 3 "$STATE_DIR/ddc.lock" ddcutil --bus "$_b" "$@"; else ddcutil --bus "$_b" "$@"; fi
+    if command -v flock >/dev/null 2>&1; then mkdir_private "$STATE_DIR"; flock -w 3 "$STATE_DIR/ddc.lock" ddcutil --bus "$_b" "$@"; else ddcutil --bus "$_b" "$@"; fi
 }
 light_ddc_bus() {   # -> the i2c bus of the first screen ddcutil drives; nothing when none answers
     _rw=''; for _d in "$BAR_DEV"/i2c-*; do [ ! -r "$_d" ] || [ ! -w "$_d" ] || { _rw=1; break; }; done
@@ -3387,7 +3465,7 @@ light_set() {   # light_set N|up|down|+5|-5 -> one line; exit 1 when nothing too
     case $_t in
         backlight) brightnessctl -q -c backlight set "$_to%" >/dev/null 2>&1 || { echo "brightnessctl could not set it (the video group, a login again)"; return 1; } ;;
         ddc) light_ddc setvcp 10 "$_to" --noverify >/dev/null 2>&1 || { echo "the screen took no brightness over DDC/CI"; return 1; }
-            mkdir -p "$STATE_DIR"; echo "$_to" > "$STATE_DIR/light" ;;
+            mkdir_private "$STATE_DIR"; echo "$_to" > "$STATE_DIR/light" ;;
     esac
     bar_redraw
     echo "brightness at $_to%"
@@ -3500,7 +3578,7 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
     theme_load; al_mend_file
     if [ "${1:-}" = --once ]; then bar_line | sed 's/,$//'; return 0; fi
     command -v jq >/dev/null 2>&1 || echo "spark-shell bar status: jq is not installed, so the bar takes no clicks (spark-shell on)" >&2
-    mkdir -p "$STATE_DIR"; printf '%s\n' "$$" > "$BAR_PID"
+    mkdir_private "$STATE_DIR"; printf '%s\n' "$$" > "$BAR_PID"
     printf '{"version":1,"click_events":true}\n[\n'
     # the traps first: the reader's first SIGUSR1 may come before it is read here
     reader=''; sleeper=''
@@ -3529,7 +3607,7 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
 }
 bar_redraw() { [ -f "$BAR_PID" ] && read -r p < "$BAR_PID" && kill -USR1 "$p" 2>/dev/null || :; }   # the running bar draws again now
 BAR_PALETTE=$STATE_DIR/bar.palette   # the colors of the bar's line, written by a look change for the bar to take at once (#33)
-bar_palette() { mkdir -p "$STATE_DIR" && printf 'HEX_FG=%s\nHEX_ACCENT=%s\nHEX_MUTED=%s\nHEX_ANSI_1=%s\nHEX_ANSI_3=%s\n' "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_ANSI_1" "$HEX_ANSI_3" > "$BAR_PALETTE"; }
+bar_palette() { mkdir_private "$STATE_DIR" && printf 'HEX_FG=%s\nHEX_ACCENT=%s\nHEX_MUTED=%s\nHEX_ANSI_1=%s\nHEX_ANSI_3=%s\n' "$HEX_FG" "$HEX_ACCENT" "$HEX_MUTED" "$HEX_ANSI_1" "$HEX_ANSI_3" > "$BAR_PALETTE"; }
 bar_recolor() {   # bar_recolor LINE -> the line drawn last, its colors the new palette's: each old color (_old, in BAR_PALETTE's order) a token, then each token the new color, one pass
     _e=''; _i=0
     for _h in $_old; do _e="${_e}s/#$_h'/#@$_i@'/g;"; _i=$((_i + 1)); done
@@ -3704,7 +3782,7 @@ panel_cache() {   # panel_cache NAME AGE CMD... -> CMD's output, from the cache 
     sed 1d "$_pc_file"
 }
 panel_forget() { rm -f "$PANEL_CACHE/$1"; }   # panel_forget NAME -- after a change the probe must see
-panel_dir() { mkdir -p "$PANEL_CACHE" && chmod 700 "$PANEL_CACHE"; }   # the cache and the journal: names of networks, devices and apps, for you alone
+panel_dir() { mkdir_state "$PANEL_CACHE" && chmod 700 "$PANEL_CACHE"; }   # the cache and the journal: names of networks, devices and apps, for you alone
 panel_age() {   # panel_age NAME SECONDS -- an answer made older by that much, so it is asked again sooner
     _pc_file=$PANEL_CACHE/$1; [ -f "$_pc_file" ] || return 0
     { echo $(( $(sed -n 1p "$_pc_file") - $2 )); sed 1d "$_pc_file"; } > "$_pc_file.new" && mv "$_pc_file.new" "$_pc_file"
@@ -3793,7 +3871,7 @@ wifi_connected() {   # -> the network in use, or nothing
 }
 wifi_known() {   # -> ID<tab>NAME per saved network (ID is the tool's handle: a name for nmcli and iwctl, a number for wpa_cli)
     case $(wifi_tool) in
-        nmcli) nmcli -t -e yes -f NAME,TYPE con show 2>/dev/null | awk -F: '$NF ~ /wireless/ { $NF = ""; sub(/:$/, ""); gsub(/\\:/, ":"); print $0 "\t" $0 }' ;;
+        nmcli) nmcli -t -e yes -f NAME,TYPE con show 2>/dev/null | awk -F: -v OFS=: '$NF ~ /wireless/ { $NF = ""; sub(/:$/, ""); gsub(/\\:/, ":"); print $0 "\t" $0 }' ;;   # OFS=:: a field set rebuilds the line with it (a space would end every name in one)
         iwctl) iwctl known-networks list 2>/dev/null | wifi_strip | awk 'NR > 4 && NF >= 3 { n = ""; for (i = 1; i <= NF - 3; i++) n = n (n == "" ? "" : " ") $i; if (n != "") print n "\t" n }' ;;
         wpa_cli) wpa_cli -i "$(wifi_if)" list_networks 2>/dev/null | awk -F '\t' 'NR > 1 && $2 != "" { print $1 "\t" $2 }' ;;
     esac | scrub_text
@@ -3805,7 +3883,7 @@ wifi_scan() {   # -> NAME<tab>LEVEL<tab>SECURED per network around, strongest fi
 wifi_scan_now() {
     case $(wifi_tool) in
         nmcli) nmcli -t -e yes -f SIGNAL,SECURITY,SSID dev wifi list --rescan auto 2>/dev/null \
-            | awk -F: '{ sig = $1; sec = ($2 == "" || $2 == "--") ? 0 : 1; $1 = ""; $2 = ""; sub(/^::/, ""); gsub(/\\:/, ":"); if ($0 != "") print $0 "\t" int((sig + 12) / 25) "\t" sec }' ;;
+            | awk -F: -v OFS=: '{ sig = $1; sec = ($2 == "" || $2 == "--") ? 0 : 1; $1 = ""; $2 = ""; sub(/^::/, ""); gsub(/\\:/, ":"); if ($0 != "") print $0 "\t" int((sig + 12) / 25) "\t" sec }' ;;   # OFS=:: the two fields cleared leave ::NAME, never two spaces before it
         iwctl) iwctl station "$(wifi_if)" scan >/dev/null 2>&1; sleep 2
             iwctl station "$(wifi_if)" get-networks 2>/dev/null | wifi_strip | awk 'NR > 4 && NF >= 3 { s = $NF; l = gsub(/\*/, "*", s); sec = ($(NF - 1) == "open") ? 0 : 1; n = ""; for (i = 1; i <= NF - 2; i++) n = n (n == "" ? "" : " ") $i; if (n != "") print n "\t" l "\t" sec }' ;;
         wpa_cli) wpa_cli -i "$(wifi_if)" scan >/dev/null 2>&1; sleep 2
@@ -3814,17 +3892,25 @@ wifi_scan_now() {
     esac | awk -F '\t' '!seen[$1]++ || $2 > best[$1] { best[$1] = $2; sec[$1] = $3 } END { for (n in best) print n "\t" best[n] "\t" sec[n] }' | scrub_text | sort -t "$TAB" -k2,2nr -k1,1
 }
 wifi_known_id() { wifi_known | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($2) == n && !done { print $1; done = 1 }'; }   # wifi_known_id NAME -> its handle, or nothing
+wifi_said() { sed 's/\x1b\[[0-9;?]*[A-Za-z]//g; s/^[ >]*//; s/^Password[^:]*: *//; s/^Passphrase[^:]*: *//; s/ *$//' | grep -v -e '^$' -e '^Type the network passphrase' | tail -1 | scrub_text; }   # a tool's answer -> its last line that says something: no escapes, no prompt of its own
+# A new network's password reaches the tool on its standard input, never as an argument (#62):
+# a command line is anyone's to read in /proc while it runs. nmcli takes it at its own prompt
+# (--ask), iwctl at its agent's prompt, wpa_cli as a command on stdin, with no history file.
 wifi_connect() {   # wifi_connect NAME [PASSWORD] -> one line
     _i=$(wifi_if); _id=$(wifi_known_id "$1"); _r=''
+    [ "$(printf '%s' "${2:-}" | tr -d '\001-\037\177')" = "${2:-}" ] || { echo "a password holds no control character, so not connected"; return 1; }   # a new line would be a second command to wpa_cli
     case $(wifi_tool) in
-        nmcli) if [ -n "$_id" ]; then _r=$(nmcli con up id "$_id" 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_r" | tail -1)"; return 1; }
-               else _r=$(nmcli dev wifi connect "$1" ${2:+password "$2"} 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_r" | tail -1)"; return 1; }; fi ;;
-        iwctl) _r=$(iwctl ${2:+--passphrase "$2"} station "$_i" connect "$1" 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_r" | wifi_strip | tail -1)"; return 1; } ;;
+        nmcli) if [ -n "$_id" ]; then _o=$(nmcli con up id "$_id" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
+               elif [ -n "${2:-}" ]; then _o=$(printf '%s\n' "$2" | nmcli --ask dev wifi connect "$1" 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
+               else _o=$(nmcli dev wifi connect "$1" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }; fi ;;
+        iwctl) if [ -n "${2:-}" ]; then _o=$(printf '%s\n' "$2" | iwctl station "$_i" connect "$1" 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
+               else _o=$(iwctl station "$_i" connect "$1" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }; fi ;;
         wpa_cli) if [ -z "$_id" ]; then
                 _id=$(wpa_cli -i "$_i" add_network 2>/dev/null | tail -1)
                 case $_id in ''|*[!0-9]*) echo "could not connect to $1: wpa_cli did not add it"; return 1 ;; esac
                 wpa_cli -i "$_i" set_network "$_id" ssid "\"$1\"" >/dev/null 2>&1
-                if [ -n "${2:-}" ]; then wpa_cli -i "$_i" set_network "$_id" psk "\"$2\"" >/dev/null 2>&1; else wpa_cli -i "$_i" set_network "$_id" key_mgmt NONE >/dev/null 2>&1; fi
+                if [ -n "${2:-}" ]; then printf 'set_network %s psk "%s"\n' "$_id" "$2" | env -u HOME wpa_cli -i "$_i" >/dev/null 2>&1   # printf is the shell's own: the password is in no process's arguments
+                else wpa_cli -i "$_i" set_network "$_id" key_mgmt NONE >/dev/null 2>&1; fi
                 wpa_cli -i "$_i" enable_network "$_id" >/dev/null 2>&1
                 wpa_cli -i "$_i" save_config 2>/dev/null | grep -q OK || _r="(kept until the next boot: wpa_supplicant.conf is not writable from here)"
             fi
@@ -4116,6 +4202,10 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                 [ "${2:-}" = full ] || continue
                 for _m in 5 10 15 30 60 0; do [ "$_m" = "$_v" ] || printf -- '-\t%s %s\t%s %s\n' "$_w" "$(idle_words "$_m")" "$_k" "$_m"; done
             done
+            if saver_can; then   # the saver rows where python3 runs one: the one in use, then the others in a full list
+                printf '%s\tsaver %s\tshow\n' "$PANEL_TICK" "$DISPLAY_SAVER"
+                if [ "${2:-}" = full ]; then for _n in clock $SAVER_NAMES; do [ "$_n" = "$DISPLAY_SAVER" ] || printf -- '-\tsaver %s\tsaver %s\n' "$_n" "$_n"; done; fi
+            fi
             _b=$(light_get); [ -z "$_b" ] || printf -- '-\tbrightness %s%%\tshow\n-\tbrighter\tbrightness up\n-\tdimmer\tbrightness down\n' "$_b"
             [ -z "${SWAYSOCK:-}" ] || screen_rows | while IFS="$TAB" read -r _n _id _on _md _sc _x _y _w _h _mo; do   # short, for the dialog's width: the port, the model, the mode, the scale
                 if [ "$_on" = on ]; then printf -- '-\tscreen %s %s %s%s %s scale %s\tshow\n' "$_n" "$PANEL_SEP" "${_mo:+$_mo $PANEL_SEP }" "$_md" "$PANEL_SEP" "$_sc"; else printf -- '-\tscreen %s %s off\tshow\n' "$_n" "$PANEL_SEP"; fi
@@ -4203,17 +4293,17 @@ note_open_file() {   # note_open_file FILE NAME -> one line: the note in the edi
 }
 notes_act() {   # notes_act new|open|add|find [ARG]
     case $1 in
-        new) mkdir -p "$NOTES_DIR"; _f=$NOTES_DIR/$(date +%Y-%m-%d-%H%M%S).md
-            [ -e "$_f" ] || printf '# \n' > "$_f"
+        new) mkdir_private "$NOTES_DIR"; _f=$NOTES_DIR/$(date +%Y-%m-%d-%H%M%S).md
+            [ -e "$_f" ] || (umask 077 && printf '# \n' > "$_f")
             note_open_file "$_f" "a new note" ;;
         open) _f=$(note_file "$2"); [ -n "$_f" ] || { echo "no note named $2"; return 1; }; note_open_file "$_f" "$2" ;;
         add) [ -n "$2" ] || { echo "add takes the words of the note"; return 1; }
-            mkdir -p "$NOTES_DIR"
+            mkdir_private "$NOTES_DIR"
             case $2 in *": "*) _f=$(note_file "${2%%: *}") ;; *) _f='' ;; esac
             if [ -n "$_f" ]; then printf -- '- %s\n' "${2#*: }" >> "$_f"; echo "added to ${2%%: *}: ${2#*: }"; return 0; fi
             _s=$(note_slug "$2"); [ -n "$_s" ] || _s=$(date +%Y-%m-%d-%H%M%S); _f=$NOTES_DIR/$_s.md; _n=2
             while [ -e "$_f" ]; do _f=$NOTES_DIR/$_s-$_n.md; _n=$((_n + 1)); done
-            printf '# %s\n' "$2" > "$_f"; echo "new note: $2" ;;
+            (umask 077 && printf '# %s\n' "$2" > "$_f"); echo "new note: $2" ;;
         find) [ -n "$2" ] || { echo "find takes the words to look for"; return 1; }
             notes_list | while IFS="$TAB" read -r _e _n _f; do   # the line that says it, the body before the name
                 _l=$({ tail -n +2 "$_f" | grep -i -m1 -F -- "$2" || head -1 "$_f" | grep -i -F -- "$2"; } 2>/dev/null | sed 's/^[#*-]*[[:space:]]*//' | scrub_text | cut -c1-120) || continue
@@ -4282,7 +4372,7 @@ rem_all() {   # -> START<tab>UID<tab>SUMMARY<tab>FILE per event of ~/calendar, k
         _l=$(rem_local "$_s" "$_z"); [ -n "$_l" ] || continue
         printf '%s\t%s\t%s\t%s\n' "$_l" "$_u" "$_t" "$_f"
     done < "$TMP/rem.raw" | scrub_text | sort -t "$TAB" -k1,1 > "$TMP/rem.all"
-    mkdir -p "$(dirname "$_rc")"; { echo "$_key"; cat "$TMP/rem.all"; } > "$_rc.new" && mv "$_rc.new" "$_rc"
+    mkdir_private "$(dirname "$_rc")"; { echo "$_key"; cat "$TMP/rem.all"; } > "$_rc.new" && mv "$_rc.new" "$_rc"
     cat "$TMP/rem.all"
 }
 rem_list() {   # -> the events from a day ago on, soonest first: an older one is no reminder
@@ -4449,7 +4539,7 @@ rem_act() {   # rem_act add|done|snooze|restore ARG
 rem_due() {   # -> UID<tab>SUMMARY of the latest reminder due now (in the last day), and one chime when any is due for the first time
     _now=$(date +%Y%m%d%H%M)
     rem_list | awk -F '\t' -v n="$_now" '$1 <= n' > "$TMP/rem.due"
-    mkdir -p "$STATE_DIR"; touch "$REM_FIRED"
+    mkdir_private "$STATE_DIR"; touch "$REM_FIRED"
     awk -F '\t' '{print $2 " " $1}' "$TMP/rem.due" > "$TMP/rem.keys"
     [ -z "$(find "$REM_FIRED.lock" -maxdepth 0 -mmin +1 2>/dev/null)" ] || rmdir "$REM_FIRED.lock" 2>/dev/null || :   # a lock left by a pass that was killed
     # REM_LOOK: a look at the bar (check, status) rings nothing and marks nothing, or the one chime is spent where no one hears it
@@ -4589,7 +4679,10 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 idle|lock) case $_arg in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "$_a takes minutes, 0 to 999 (0: never)"; return 1 ;; esac
                     _k=DISPLAY_IDLE; [ "$_a" = idle ] || _k=DISPLAY_LOCK
                     config_set "$_k" "$_arg" >/dev/null; eval "$_k=\$_arg"; export "${_k?}"; look_apply; idle_restart
-                    if [ "$_a" = idle ]; then echo "display off $(idle_words "$_arg")"; else echo "lock $(idle_words "$_arg")"; fi ;;
+                    if [ "$_a" = idle ]; then echo "idle screen $(idle_words "$_arg")"; else echo "lock and display off $(idle_words "$_arg")"; fi ;;
+                saver) _p=$(saver_problem "$_arg"); [ -z "$_p" ] || { echo "$_p"; return 1; }
+                    config_set DISPLAY_SAVER "$_arg" >/dev/null; DISPLAY_SAVER=$_arg; export DISPLAY_SAVER
+                    echo "idle screen shows $(saver_words "$_arg")" ;;
                 brightness) light_set "$_arg" ;;
                 *) echo "$_a is not something display does"; return 1 ;;
             esac ;;
@@ -5070,7 +5163,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window display keyboard notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_brightness keyboard_use keyboard_next bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness keyboard_use keyboard_next bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -5136,8 +5229,9 @@ tool_spec() {
         reminders_done)    _ts=reminders _ta='done' _tp=name _tk=string _th='' _tt='reminders done NAME' _td='A reminder done: it is put aside for 30 days, and undo brings it back.' ;;
         reminders_restore) _ts=reminders _ta=restore _tp=name _tk=string _th=f _tt='reminders restore NAME' _td='Bring back a reminder marked done in the last 30 days.' ;;
         reminders_snooze)  _ts=reminders _ta=snooze _tp=name _tk=string _th='' _tt='reminders snooze NAME' _td='The reminder again in 10 minutes.' ;;
-        display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=i _tt='display idle N' _td='Turn the display off after N idle minutes; 0 never.' ;;
-        display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=i _tt='display lock N' _td='Lock the screen after N idle minutes; 0 never.' ;;
+        display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=i _tt='display idle N' _td='Show the idle screen after N idle minutes; 0 never.' ;;
+        display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=i _tt='display lock N' _td='Lock the screen and turn the display off after N idle minutes; 0 never.' ;;
+        display_saver)     _ts=display _ta=saver _tp=name _tk="clock|$(printf '%s' "$SAVER_NAMES" | tr ' ' '|')" _th=i _tt='display saver NAME' _td='What the idle screen shows: the clock alone, or an animation behind it.' ;;
         display_brightness) _ts=display _ta=brightness _tp=level _tk=bright _th=if _tt='display brightness N' _td='Set the screen brightness, 1 to 100, or up or down a step.' ;;
         keyboard_use)      _ts=keyboard _ta=use _tp=name _tk=string _th=i _tt='keyboard use NAME' _td='Type in another of the keyboard layouts.' ;;
         keyboard_next)     _ts=keyboard _ta=next _th='' _tt='keyboard next' _td='Go to the next keyboard layout.' ;;
@@ -6004,6 +6098,8 @@ cmd_theme() {   # theme [NAME|none|list|show] | save [NAME] | delete NAME | back
 }
 theme_apply() {   # theme_apply NAME|none [back] -- the whole look follows: a saved theme or a kept look brings its own wallpaper, text size, transparency and pointer; a palette with a drawing of its own brings the drawing unless a picture of yours is on; `back` leaves the history as it is
     name=$1; _w=''
+    _td=$(theme_dir "$name")
+    if [ -n "$_td" ]; then _lw=$(look_ok "$_td") || refuse_in theme "$name cannot be used: $_lw. Nothing was changed"; fi
     [ "$name" = none ] || palette_render "$name" || refuse_in theme "$(cat "$TMP/palette.why")"
     PALETTE_RENDERED=$name   # theme_files takes these files as they are
     pm_detect
@@ -6095,7 +6191,7 @@ theme_save() {   # theme_save [NAME...] -- the look in use kept as a folder unde
     fi
     theme_load
     _src=$(theme_dir "$THEME")
-    rm -rf "$_d.new"; mkdir -p "$_d.new"
+    mkdir_private "$PALETTE_DIR"; rm -rf "$_d.new"; mkdir -p "$_d.new"
     cp "$_pf" "$_d.new/palette.env"
     _origin=$THEME; [ -z "$_src" ] || _origin=$(look_get "$_src" PALETTE)
     {
@@ -6149,7 +6245,7 @@ theme_wallpaper() {   # theme_wallpaper [X] -- the wallpaper: a drawing, a pictu
     want=$(wall_word "$1")
     [ -n "$want" ] || refuse_in theme "$1 is not a readable file or a color. Give a picture's path, default (the ground), one of the drawings ($(wall_shipped_names | paste -sd ' ' - | sed 's/ /, /g')), #rrggbb or one of these colors: $(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')"
     [ "$DESKTOP" = sway ] || refuse_in theme "DESKTOP=$DESKTOP -- spark-shell on desktop first"
-    case $want in *[';`$()|&<>']*) refuse_in theme "a path with one of ; \` \$ ( ) | & < > cannot be kept in the config -- rename the picture" ;; esac   # the config refuses these at the next read (load_env)
+    wall_value_ok "$want" || refuse_in theme "$PATH_REFUSED"   # the config would refuse it at the next read (#61)
     config_set WALLPAPER "$want"
     WALLPAPER=$want; export WALLPAPER
     wall_follow   # its row: the drawing drawn in the palette, or why it cannot be (look_apply is quiet; the dialog keeps its own receipt)
@@ -6212,7 +6308,7 @@ theme_picture() {   # theme_picture PATH -- a theme from a picture of yours: its
     command -v python3 >/dev/null 2>&1 || refuse_in theme "python3 is not installed, and it reads the picture's colors"
     _small=$(look_small "$_pp") || refuse_in theme "$_small"
     name=$(look_name "$(basename "${_pp%.*}")")
-    _d=$LOOKS_DIR/$name; rm -rf "$_d.new"; mkdir -p "$_d.new"
+    _d=$LOOKS_DIR/$name; rm -rf "$_d.new"; mkdir_state "$_d.new"
     python3 -I "$REPO/lib/look.py" palette "$_small" > "$_d.new/palette.env" 2>"$TMP/look.err" || refuse_in theme "the picture's colors could not be read: $(head -1 "$TMP/look.err")"
     cp "$_pp" "$_d.new/${_pp##*/}"
     printf 'PALETTE=picture\nPICTURE=%s\nWALLPAPER=picture\nFONT=%s\nALPHA=%s\nPOINTER=%s\n' "${_pp##*/}" "$FONT" "$ALPHA" "${POINTER:-}" > "$_d.new/look.env"
@@ -6238,7 +6334,7 @@ theme_words_apply() {   # theme_words_apply HUE ACCENT WARMTH CONTRAST LIGHT [NA
     elif [ -n "${7:-}" ]; then _words=$7
     else _words="$1$([ "$2" = same ] || printf ' and %s' "$2"), $5"; fi
     name=$(look_name "$_words")
-    _d=$LOOKS_DIR/$name; rm -rf "$_d.new"; mkdir -p "$_d.new"
+    _d=$LOOKS_DIR/$name; rm -rf "$_d.new"; mkdir_state "$_d.new"
     python3 -I "$REPO/lib/look.py" words --hue "$1" --accent "$2" --warmth "$3" --contrast "$4" --light "$5" > "$_d.new/palette.env" 2>"$TMP/look.err" || { echo "no palette from those words: $(head -1 "$TMP/look.err")"; rm -rf "$_d.new"; return 1; }
     { printf 'PALETTE=words\nWORDS=%s\n' "$(printf '%s' "$_words" | tr -cd 'A-Za-z0-9 ,.-' | cut -c1-80)"
       printf 'WALLPAPER=%s\nFONT=%s\nALPHA=%s\nPOINTER=%s\n' "$WALLPAPER" "$FONT" "$ALPHA" "${POINTER:-}"; } > "$_d.new/look.env"
@@ -6590,7 +6686,7 @@ cmd_sbom() {   # sbom [apps|tools|parts|NAME] [--json]
     sbom_collect
     [ -s "$TMP/sbom" ] || { echo "spark-shell sbom: no package manager here that this repo knows (pacman, apt, xbps, brew)"; return 1; }
     if [ "$json" = 1 ]; then
-        mkdir -p "$(dirname "$SBOM_JSON")"
+        mkdir_private "$(dirname "$SBOM_JSON")"
         sbom_json > "$SBOM_JSON"
         echo "$SBOM_JSON -- CycloneDX 1.5, $(wc -l < "$TMP/sbom" | tr -d ' ') components"
         return 0
@@ -6709,7 +6805,7 @@ cmd_notes() {   # spark-shell notes [new | NAME | open NAME | add WORDS | find W
             [ -s "$TMP/notes.l" ] || { echo "no notes yet in ~/notes (spark-shell notes new writes one)"; return 0; }
             while IFS="$TAB" read -r _e _nm _f; do printf '  %-14s %s\n' "$(note_when "$_e")" "$_nm"; done < "$TMP/notes.l" ;;
         new) [ $# -eq 1 ] || refuse_in notes "new takes no words (spark-shell notes add WORDS writes them)"
-            mkdir -p "$NOTES_DIR"; _f=$NOTES_DIR/$(date +%Y-%m-%d-%H%M%S).md; [ -e "$_f" ] || printf '# \n' > "$_f"
+            mkdir_private "$NOTES_DIR"; _f=$NOTES_DIR/$(date +%Y-%m-%d-%H%M%S).md; [ -e "$_f" ] || (umask 077 && printf '# \n' > "$_f")
             note_here "$_f" "a new note" ;;
         add|find) _a=$1; shift; [ $# -gt 0 ] || refuse_in notes "$_a takes the words"
             _l=$(notes_act "$_a" "$*") || refuse_in notes "$_l"; echo "$_l" ;;
@@ -7074,7 +7170,7 @@ desk_make() {   # desk_make NEED -> the desk laid out, the model's answer in DES
         else echo "  $a is not on this machine -- laid out without it"; fi
     done
     cat "$TMP/named.say"
-    mkdir -p "$(dirname "$DESK_LAST")"   # what opened; a why only when that is the answer
+    mkdir_private "$(dirname "$DESK_LAST")"   # what opened; a why only when that is the answer
     jq --arg w "$1" --arg ch "$changed" --argjson full "$(desk_words_full "$1")" '{words: $w} + . | if $ch == "" then . else del(.why) end | if $full then .main.fullscreen = true else . end' "$TMP/desk.json" > "$DESK_LAST"
     desk_render "$DESK_LAST"
     desk_keep "$1"
@@ -7082,7 +7178,7 @@ desk_make() {   # desk_make NEED -> the desk laid out, the model's answer in DES
 }
 desk_keep() {   # desk_keep WORDS -- the layout just made, kept under its words' name in the state and noted in the history (#24): layout back and the dialog's back rows open it again with no model call
     _kn=$(desk_name_of "$1"); [ -n "$_kn" ] || return 0
-    mkdir -p "$KEPT_LAYOUTS"; jq 'del(.suggested)' "$DESK_LAST" > "$KEPT_LAYOUTS/$_kn.new" 2>/dev/null && mv "$KEPT_LAYOUTS/$_kn.new" "$KEPT_LAYOUTS/$_kn"
+    mkdir_state "$KEPT_LAYOUTS"; jq 'del(.suggested)' "$DESK_LAST" > "$KEPT_LAYOUTS/$_kn.new" 2>/dev/null && mv "$KEPT_LAYOUTS/$_kn.new" "$KEPT_LAYOUTS/$_kn"
     kept_note layout "$_kn"
 }
 desk_kept_file() { if [ -f "$LAYOUTS_DIR/$1" ]; then printf '%s' "$LAYOUTS_DIR/$1"; elif [ -f "$KEPT_LAYOUTS/$1" ]; then printf '%s' "$KEPT_LAYOUTS/$1"; else return 1; fi; }   # desk_kept_file NAME -> a saved layout's file, else one kept for the history; false when neither
@@ -7294,7 +7390,7 @@ cmd_desktop() {
         capture) shift; desk_capture "$@"; return ;;
         --first)   # the desktop's first window: the splash once, over it (the stamp first, so never twice), then your shell, always
             if [ ! -f "$DESK_SEEN" ]; then
-                { mkdir -p "$(dirname "$DESK_SEEN")" && : > "$DESK_SEEN"; } 2>/dev/null || true
+                { mkdir_private "$(dirname "$DESK_SEEN")" && : > "$DESK_SEEN"; } 2>/dev/null || true
                 if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v foot >/dev/null 2>&1; then theme_load; lead=''; ! command -v setsid >/dev/null 2>&1 || lead=setsid; PANEL_LEAD=$lead panel_foot about >/dev/null 2>&1 </dev/null & fi
             fi
             # the config's exports are ours, not the shell's (PROMPT would be zsh's prompt string)
@@ -7309,12 +7405,14 @@ cmd_desktop() {
 # lock and the display off (0: never), swayidle in the sway template; where logind runs it
 # locks before the machine sleeps too. `desktop display idle N` and `lock N` set them, and a
 # running desktop takes the new swayidle at once. Plain swaylock when spark-shell cannot run:
-# it locks anyway. With the lock at 0 the display stays on, the idle screen its clock.
+# it locks anyway. With the lock at 0 the display stays on, the idle screen its clock. The idle
+# window goes once the lock is up (swaylock --daemonize returns then), so a saver never runs
+# behind the lock or a dark screen, and nothing of the desktop shows between the two (#66).
 idle_exec() {   # -> the swayidle command the template and a live change run
     _l="$REPO/spark-shell desktop lock || swaylock -f"
     printf 'swayidle -w'
     [ "${DISPLAY_IDLE:-10}" = 0 ] || printf " timeout %s '%s desktop idle' resume '%s desktop idle off'" "$((DISPLAY_IDLE * 60))" "$REPO/spark-shell" "$REPO/spark-shell"
-    [ "${DISPLAY_LOCK:-15}" = 0 ] || printf " timeout %s '%s' timeout %s 'swaymsg \"output * power off\"' resume 'swaymsg \"output * power on\"'" "$((DISPLAY_LOCK * 60))" "$_l" "$((DISPLAY_LOCK * 60))"
+    [ "${DISPLAY_LOCK:-15}" = 0 ] || printf " timeout %s '%s; %s desktop idle off' timeout %s 'swaymsg \"output * power off\"' resume 'swaymsg \"output * power on\"'" "$((DISPLAY_LOCK * 60))" "$_l" "$REPO/spark-shell" "$((DISPLAY_LOCK * 60))"
     printf " before-sleep '%s'" "$_l"
 }
 # The idle screen (#24): after the idle minutes the wallpaper dims to the ground and the time
@@ -7323,7 +7421,11 @@ idle_exec() {   # -> the swayidle command the template and a live change run
 # named idle with no gaps and no border (a fullscreen window would be solid: foot's own rule),
 # the background at 80% over the wallpaper, the bar out of the way. A key or a move takes it
 # down and the workspace before comes back; the lock and the display off come at the lock
-# minutes. `desktop idle` shows it now, as `desktop lock` locks now.
+# minutes. `desktop idle` shows it now, as `desktop lock` locks now. With DISPLAY_SAVER set to
+# a saver (lib/saver.py, #66) the same window runs it in the clock's place: its own clock, drawn
+# as this one is, with a calm animation behind it, only the cells that change written ten times
+# a second; python3 that cannot run it, or a saver that fails, leaves the clock below. The
+# window, its size, its colors and the way out are the same, and it goes at the lock.
 IDLE_APP="spark-idle"
 IDLE_ALPHA=0.8
 desk_idle() {   # desk_idle [off|--clock] -- the idle screen up; down; or the clock drawn in its window (what the window runs)
@@ -7348,7 +7450,16 @@ desk_idle() {   # desk_idle [off|--clock] -- the idle screen up; down; or the cl
     _fs=$(font_spec); swaymsg -- exec "foot --app-id $IDLE_APP -o 'font=${_fs%%:*}:size=$((_sz * 2))' -o $_fc.alpha=$IDLE_ALPHA -o $_fc.background=$HEX_BG -o pad=0x0 -e $REPO/spark-shell desktop idle --clock" >/dev/null 2>&1 || refuse "could not open the idle screen"
 }
 idle_up() { swaymsg -t get_tree 2>/dev/null | jq -e --arg a "$IDLE_APP" '[.. | objects | select(.app_id? == $a)] | length > 0' >/dev/null 2>&1; }   # the idle window is on the screen
+saver_version() { sed -n 's/^VERSION = "\(.*\)".*/\1/p' "$REPO/lib/saver.py" 2>/dev/null; }   # read without python3
+saver_can() { _sver=$(saver_version); [ -n "$_sver" ] && [ "$(python3 "$REPO/lib/saver.py" --version 2>/dev/null)" = "$_sver" ]; }   # a python3 that runs the savers (not a stub, not missing)
+saver_known() { for _sn in clock $SAVER_NAMES; do [ "$_sn" != "$1" ] || return 0; done; return 1; }   # saver_known NAME -> a whole word of the list, never a part of one
+saver_words() { if [ "$1" = clock ]; then echo "the clock alone"; else echo "the $1 saver"; fi; }   # saver_words NAME
+saver_problem() {   # saver_problem NAME -> why it cannot be the idle screen's, in one line; nothing when it can
+    if ! saver_known "$1"; then echo "saver takes clock, spark, starfield or drift"; return 0; fi
+    [ "$1" = clock ] || saver_can || echo "saver $1 needs python3, which cannot run it here"
+}
 idle_clock() {   # in the idle window: the time in the Calendar's large figures at the lower left, in the accent (#42), a row of air, the date in the dialog's muted color; drawn again as each minute turns, until the window goes. A window under 9 rows or 38 columns has the time on one line
+    if [ "${DISPLAY_SAVER:-clock}" != clock ] && saver_can; then python3 "$REPO/lib/saver.py" "$DISPLAY_SAVER" && return 0; fi   # the window ends it with a signal, a clean end; a failure falls through to the clock
     printf '\033[?25l'; trap 'printf "\033[?25h\033[0m"; exit 0' INT TERM HUP
     _a='38;5;16'; _m='38;5;20'   # the desktop's foot.ini slots, as the dialog draws them: the accent, and the muted color that reads on a panel (#34)
     while :; do
@@ -7371,9 +7482,10 @@ idle_restart() {   # the running desktop's swayidle, again with the settings now
     swaymsg -- exec "$(idle_exec)" >/dev/null 2>&1 || :
 }
 idle_words() { if [ "$1" = 0 ]; then echo never; elif [ "$1" = 1 ]; then echo "after 1 minute"; else echo "after $1 minutes"; fi; }   # idle_words MINUTES
-desk_display() {   # desk_display [idle|lock N | brightness N|up|down]
+desk_display() {   # desk_display [idle|lock N | saver [NAME] | brightness N|up|down]
     case ${1:-} in
-        '') echo "idle screen $(idle_words "$DISPLAY_IDLE") $PANEL_SEP lock and display off $(idle_words "$DISPLAY_LOCK")"
+        '') _sv=''; [ "$DISPLAY_SAVER" = clock ] || _sv=" $PANEL_SEP $DISPLAY_SAVER saver"   # a saver is said only when one is chosen: the default reads as it always did
+            echo "idle screen $(idle_words "$DISPLAY_IDLE")$_sv $PANEL_SEP lock and display off $(idle_words "$DISPLAY_LOCK")"
             [ "$OS" = Darwin ] || { _b=$(light_get); [ -z "$_b" ] || echo "brightness ${_b%% *}%"; } ;;
         idle|lock) _k=DISPLAY_IDLE; [ "$1" = idle ] || _k=DISPLAY_LOCK
             case ${2:-} in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; never) set -- "$1" 0 ;; *) refuse "display $1 takes minutes, 0 to 999 (0: never)" ;; esac
@@ -7381,8 +7493,14 @@ desk_display() {   # desk_display [idle|lock N | brightness N|up|down]
             config_set "$_k" "$2" >/dev/null; eval "$_k=\$2"; export "${_k?}"
             look_apply; idle_restart
             if [ "$1" = idle ]; then echo "idle screen $(idle_words "$2")"; else echo "lock and display off $(idle_words "$2")"; fi ;;
+        saver) if [ -z "${2:-}" ]; then   # the savers, the one in use ticked, as the keyboard lists its layouts
+                for _x in clock $SAVER_NAMES; do if [ "$_x" = "$DISPLAY_SAVER" ]; then echo "$PANEL_TICK $_x"; else echo "  $_x"; fi; done; return 0; fi
+            _p=$(saver_problem "$2"); [ -z "$_p" ] || refuse "display $_p"
+            [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
+            config_set DISPLAY_SAVER "$2" >/dev/null; DISPLAY_SAVER=$2; export DISPLAY_SAVER   # the idle window reads it as it starts: nothing to restart
+            echo "idle screen shows $(saver_words "$2")" ;;
         brightness) light_set "${2:-}" ;;
-        *) refuse "display takes idle N, lock N or brightness N|up|down" ;;
+        *) refuse "display takes idle N, lock N, saver NAME or brightness N|up|down" ;;
     esac
 }
 
@@ -7569,7 +7687,7 @@ desk_start() {   # desk_start PENDING
     on_console || refuse "needs a console login (tty1 to tty9): ssh and terminal windows cannot start sway"
     runtime_dir
     log_dir=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell
-    mkdir -p "$log_dir"
+    mkdir_private "$log_dir"
     [ -z "${pending:-}" ] || printf '%s\n' "$pending" > "$DESK_PENDING"
     st=0
     sound_start "$log_dir/sound.log"

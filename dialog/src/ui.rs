@@ -6,6 +6,7 @@
 
 use crate::app::{App, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, PLACEHOLDER, SETTINGS};
 use crate::palette::Palette;
+use crate::progress;
 use crate::scrub::{cells, cut, cut_words};
 use ratatui::buffer::{Buffer, CellDiffOption};
 use ratatui::layout::Rect;
@@ -45,14 +46,6 @@ pub const CHIP: u16 = 9;
 pub const PREVIEW_W: u16 = 24;
 pub const PREVIEW_H: u16 = 7;
 pub const LESS: &str = "\u{2039}";
-/// The march, ten cells, while a step runs or a provider reads.
-pub fn march(frame: u64) -> String {
-    let i = (frame % 8) as usize;
-    let mut cells = [' '; 8];
-    cells[i] = '=';
-    format!("[{}]", cells.iter().collect::<String>())
-}
-
 struct Pen<'a> {
     buf: &'a mut Buffer,
     pal: &'a Palette,
@@ -255,7 +248,7 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     }
     match march_x {
         Some(mx) => {
-            pen.put(mx, 0, &march(app.frame), pal.muted, false, false);
+            pen.put(mx, 0, &progress::bar(app.work(), app.frame), pal.muted, false, false);
             if !narrow {
                 pen.put(clock_x, 0, clock, pal.muted, false, false);
             }

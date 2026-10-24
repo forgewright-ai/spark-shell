@@ -2656,15 +2656,15 @@ chmod +x "$H/lx/swaymsg" "$H/lx/pkill"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 L on --yes >/dev/null 2>&1 </dev/null || :
 swc=$HOME/.config/sway/config
-grep -qx "exec swayidle -w timeout 600 '$REPO/spark-shell desktop idle' resume '$REPO/spark-shell desktop idle off' timeout 900 '$REPO/spark-shell desktop lock || swaylock -f' timeout 900 'swaymsg \"output \* power off\"' resume 'swaymsg \"output \* power on\"' before-sleep '$REPO/spark-shell desktop lock || swaylock -f'" "$swc" \
+grep -qx "exec swayidle -w timeout 600 '$REPO/spark-shell desktop idle' resume '$REPO/spark-shell desktop idle off' timeout 900 '$REPO/spark-shell desktop lock || swaylock -f; $REPO/spark-shell desktop idle off' timeout 900 'swaymsg \"output \* power off\"' resume 'swaymsg \"output \* power on\"' before-sleep '$REPO/spark-shell desktop lock || swaylock -f'" "$swc" \
     && grep -qx "include \"$HOME/.config/spark-shell/screens.conf\"" "$swc" && [ -f "$HOME/.config/spark-shell/screens.conf" ] \
     && grep -qx "# the keyboard: sway's own layout (spark-shell desktop keyboard us br sets some)" "$swc" \
     && grep -qxF 'for_window [app_id="spark-idle"] border none' "$swc" && grep -qx 'workspace idle gaps outer 0' "$swc" \
-    && ok "sway render: swayidle brings the idle screen at 10 minutes and the lock with the display off at 15 by default; the idle workspace has no gaps and no border; the screens file included (and there), no keyboard line without KEYBOARD" || bad "display render" "$(grep -n 'swayidle\|include\|keyboard' "$swc")"
+    && ok "sway render: swayidle brings the idle screen at 10 minutes and the lock with the display off at 15 by default, the idle window taken down behind the lock (#66); the idle workspace has no gaps and no border; the screens file included (and there), no keyboard line without KEYBOARD" || bad "display render" "$(grep -n 'swayidle\|include\|keyboard' "$swc")"
 rm -f "$HOME/swaymsg.log"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop display idle 0 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'idle screen never' ] && grep -qx 'DISPLAY_IDLE=0' "$HOME/.config/spark-shell/config" \
-    && grep -qx "exec swayidle -w timeout 900 '$REPO/spark-shell desktop lock || swaylock -f' timeout 900 'swaymsg \"output \* power off\"' resume 'swaymsg \"output \* power on\"' before-sleep '$REPO/spark-shell desktop lock || swaylock -f'" "$swc" \
+    && grep -qx "exec swayidle -w timeout 900 '$REPO/spark-shell desktop lock || swaylock -f; $REPO/spark-shell desktop idle off' timeout 900 'swaymsg \"output \* power off\"' resume 'swaymsg \"output \* power on\"' before-sleep '$REPO/spark-shell desktop lock || swaylock -f'" "$swc" \
     && grep -qx "pkill -u $(id -u) -x swayidle" "$HOME/swaymsg.log" && grep -q "^-- exec swayidle -w timeout 900 " "$HOME/swaymsg.log" \
     && ok "desktop display idle 0: no idle screen; the render and the running desktop's swayidle (restarted) follow" || bad "display idle 0" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop display lock 30 2>&1) || rc=$?
@@ -2677,6 +2677,82 @@ printf 'DESKTOP=sway\nDISPLAY_IDLE=ten\n' > "$HOME/.config/spark-shell/config"
 rc=0; out=$(PATH="$H/lx:$PATH" sh "$SH" status 2>&1) || rc=$?
 [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'DISPLAY_IDLE=ten in .*: minutes, 0 to 999 (0: never)$' && ok "config: DISPLAY_IDLE=ten is refused" || bad "display key" "rc=$rc $out"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+# the idle screen's saver (DISPLAY_SAVER, #66): the default reads as it always did, the command, the window, the dialog and the check
+mkdir -p "$H/svx" "$H/nopy" "$H/pyl" "$H/clk"
+ln -sf "$py3" "$H/svx/python3"                                       # a python3 that runs the savers
+printf '#!/bin/sh\nexit 127\n' > "$H/nopy/python3"                   # one that cannot
+printf '#!/bin/sh\ncase "$2" in --version) exec %s "$@" ;; esac\necho "python3 $*" >> "$HOME/py.log"\nexit 0\n' "$py3" > "$H/pyl/python3"   # logs the saver it was asked to run
+printf '#!/bin/sh\ncase "$2" in --version) exec %s "$@" ;; esac\nexit 3\n' "$py3" > "$H/clk/python3"                                          # a saver that fails
+printf '#!/bin/sh\nexit 1\n' > "$H/clk/sleep"; printf '#!/bin/sh\necho "30 100"\n' > "$H/clk/stty"   # so the clock's loop ends after one drawing
+chmod +x "$H/nopy/python3" "$H/pyl/python3" "$H/clk/python3" "$H/clk/sleep" "$H/clk/stty"
+dot=$(printf '\302\267'); tb=$(printf '\t')
+if [ -n "$py3" ]; then
+    out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display 2>&1 | sed -n 1p)
+    [ "$out" = "idle screen after 10 minutes $dot lock and display off after 15 minutes" ] && ok "desktop display: with no saver chosen the line reads as it always did" || bad "display default line" "$out"
+    out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 2>&1)
+    [ "$out" = "$(printf '\342\234\223 clock\n  spark\n  starfield\n  drift')" ] && ok "desktop display saver: the savers listed, the one in use ticked, as the keyboard lists its layouts" || bad "saver list" "$out"
+    rc=0; out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver spark 2>&1) || rc=$?
+    [ "$rc" = 0 ] && [ "$out" = 'idle screen shows the spark saver' ] && grep -qx 'DISPLAY_SAVER=spark' "$HOME/.config/spark-shell/config" \
+        && ok "desktop display saver spark: said in one line, kept in the config" || bad "saver set" "rc=$rc $out"
+    out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display 2>&1 | sed -n 1p)
+    [ "$out" = "idle screen after 10 minutes $dot spark saver $dot lock and display off after 15 minutes" ] && ok "desktop display: a chosen saver is named between the idle and the lock" || bad "display with saver" "$out"
+    [ "$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 2>&1 | sed -n 2p)" = "$(printf '\342\234\223 spark')" ] && ok "desktop display saver: the tick moves to the one chosen" || bad "saver tick" "$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 2>&1)"
+    rc=0; out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver nope 2>&1) || rc=$?
+    [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: display saver takes clock, spark, starfield or drift' ] && grep -qx 'DISPLAY_SAVER=spark' "$HOME/.config/spark-shell/config" \
+        && ok "desktop display saver: a wrong name refused in one line, the config left as it was" || bad "saver word" "rc=$rc $out"
+    rc=0; out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" desktop display saver 'spark drift' 2>&1) || rc=$?
+    [ "$rc" = 1 ] && grep -qx 'DISPLAY_SAVER=spark' "$HOME/.config/spark-shell/config" && ok "desktop display saver: two names in one word are no name" || bad "saver two words" "rc=$rc $out"
+    rc=0; out=$(PATH="$H/nopy:$H/lx:$PATH" sh "$SH" desktop display saver starfield 2>&1) || rc=$?
+    [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: display saver starfield needs python3, which cannot run it here' ] && grep -qx 'DISPLAY_SAVER=spark' "$HOME/.config/spark-shell/config" \
+        && ok "desktop display saver: without a python3 that runs it, a saver is refused, the config left" || bad "saver no python" "rc=$rc $out"
+    rc=0; out=$(PATH="$H/nopy:$H/lx:$PATH" sh "$SH" desktop display saver clock 2>&1) || rc=$?
+    [ "$rc" = 0 ] && [ "$out" = 'idle screen shows the clock alone' ] && grep -qx 'DISPLAY_SAVER=clock' "$HOME/.config/spark-shell/config" && ok "desktop display saver clock: always possible, python3 or not" || bad "saver clock" "rc=$rc $out"
+    # the dialog's rows: one row for the saver in use, the others in a full list, none where no saver can run
+    rows=$(SWAYSOCK=$H/sock PATH="$H/svx:$H/lx:$PATH" sh "$SH" bar panel display --list 2>&1)
+    printf '%s\n' "$rows" | grep -q "saver clock${tb}display show\$" && printf '%s\n' "$rows" | grep -q "idle screen after 10 minutes${tb}display show\$" && printf '%s\n' "$rows" | grep -q "lock after 15 minutes${tb}display show\$" \
+        && ok "the dialog's display section: the saver in use ticked beside the idle and lock rows, which read as they did" || bad "saver rows" "$rows"
+    rows=$(SWAYSOCK=$H/sock PATH="$H/svx:$H/lx:$PATH" sh "$SH" bar panel display --list full 2>&1)
+    [ "$(printf '%s\n' "$rows" | grep -c "${tb}display saver ")" = 3 ] && printf '%s\n' "$rows" | grep -q "saver spark${tb}display saver spark\$" && ! printf '%s\n' "$rows" | grep -q "saver clock${tb}display saver clock" \
+        && ok "the dialog's display section, full: the three other choices one Enter away, never the one in use" || bad "saver rows full" "$rows"
+    rows=$(SWAYSOCK=$H/sock PATH="$H/nopy:$H/lx:$PATH" sh "$SH" bar panel display --list full 2>&1)
+    ! printf '%s\n' "$rows" | grep -q 'saver' && ok "the dialog's display section: no saver rows where python3 cannot run one" || bad "saver rows no python" "$rows"
+    rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/svx:$H/lx:$PATH" sh "$SH" bar panel display saver starfield 2>&1) || rc=$?
+    [ "$rc" = 0 ] && [ "$out" = 'idle screen shows the starfield saver' ] && grep -qx 'DISPLAY_SAVER=starfield' "$HOME/.config/spark-shell/config" && ok "the dialog: display saver starfield sets it, and says so" || bad "saver from dialog" "rc=$rc $out"
+    rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/svx:$H/lx:$PATH" sh "$SH" bar panel display saver fire 2>&1) || rc=$?
+    [ "$rc" = 1 ] && grep -qx 'DISPLAY_SAVER=starfield' "$HOME/.config/spark-shell/config" && ok "the dialog: a saver that is not in the list (fire) is refused, the config left" || bad "saver from dialog bad" "rc=$rc $out"
+    # the window: the saver in the clock's place; the clock when it cannot run or fails
+    rm -f "$HOME/py.log"
+    rc=0; out=$(PATH="$H/pyl:$H/lx:$PATH" sh "$SH" desktop idle --clock 2>&1) || rc=$?
+    [ "$rc" = 0 ] && [ "$(grep -v -e ' --version$' "$HOME/py.log")" = "python3 $REPO/lib/saver.py starfield" ] && [ -z "$out" ] \
+        && ok "desktop idle --clock: with a saver chosen the window runs it, and draws nothing else" || bad "idle runs saver" "rc=$rc $out $(cat "$HOME/py.log" 2>&1)"
+    out=$(PATH="$H/clk:$H/lx:$PATH" sh "$SH" desktop idle --clock 2>&1)
+    printf '%s' "$out" | grep -q '38;5;16m' && ok "desktop idle --clock: a saver that fails leaves the clock in its window" || bad "idle saver fails" "$out"
+    out=$(PATH="$H/nopy:$H/clk:$H/lx:$PATH" sh "$SH" desktop idle --clock 2>&1)
+    printf '%s' "$out" | grep -q '38;5;16m' && ok "desktop idle --clock: with no python3 the clock, as before the savers" || bad "idle no python" "$out"
+    printf 'DESKTOP=sway\nDISPLAY_SAVER=clock\n' > "$HOME/.config/spark-shell/config"
+    rm -f "$HOME/py.log"; out=$(PATH="$H/pyl:$H/clk:$H/lx:$PATH" sh "$SH" desktop idle --clock 2>&1)
+    [ ! -s "$HOME/py.log" ] && printf '%s' "$out" | grep -q '38;5;16m' && ok "desktop idle --clock: DISPLAY_SAVER=clock never starts python3" || bad "idle clock default" "$out $(cat "$HOME/py.log" 2>&1)"
+    # check: a row for it, a warn with a remedy where a chosen saver cannot run
+    out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" check 2>&1) || :
+    printf '%s\n' "$out" | grep -q '^ok     saver  *the idle screen shows the clock alone$' && ok "check: the saver row says the idle screen shows the clock alone" || bad "check saver clock" "$(printf '%s\n' "$out" | grep saver)"
+    printf 'DESKTOP=sway\nDISPLAY_SAVER=drift\n' > "$HOME/.config/spark-shell/config"
+    out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" check 2>&1) || :
+    printf '%s\n' "$out" | grep -q '^ok     saver  *the idle screen shows the drift saver$' && ok "check: the saver row names the saver in use" || bad "check saver drift" "$(printf '%s\n' "$out" | grep saver)"
+    out=$(PATH="$H/nopy:$H/lx:$PATH" sh "$SH" check 2>&1) || :
+    printf '%s\n' "$out" | grep -q '^warn   saver  *python3 cannot run the drift saver: the idle screen shows the clock -- install python3, or spark-shell desktop display saver clock$' && ok "check: a chosen saver python3 cannot run is a warn with its remedy" || bad "check saver warn" "$(printf '%s\n' "$out" | grep saver)"
+    # the key
+    printf 'DESKTOP=sway\nDISPLAY_SAVER=mystery\n' > "$HOME/.config/spark-shell/config"
+    rc=0; out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" status 2>&1) || rc=$?
+    [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'DISPLAY_SAVER=mystery in .*: clock, or one of spark starfield drift$' && ok "config: DISPLAY_SAVER=mystery is refused, with the names" || bad "saver key" "rc=$rc $out"
+    printf 'DESKTOP=sway\nDISPLAY_SAVER=spark drift\n' > "$HOME/.config/spark-shell/config"
+    rc=0; out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" status 2>&1) || rc=$?
+    [ "$rc" = 1 ] && ok "config: DISPLAY_SAVER=spark drift (two words) is refused, never read as the first" || bad "saver key two" "rc=$rc $out"
+    printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+else
+    printf '  note saver: python3 not found; the saver section is skipped\n'
+fi
+grep -q '^DISPLAY_SAVER=clock$' "$REPO/config.example" && grep -qF 'spark-shell desktop display saver [NAME]' "$REPO/README.md" && sh "$SH" -h | grep -qF 'spark-shell desktop display saver [NAME]' \
+    && ok "docs: config.example shows DISPLAY_SAVER, the README and the help list the saver command" || bad "saver docs" "$(grep -n SAVER "$REPO/config.example")"
 # the keyboard
 mkdir -p "$H/xkb"; printf '! model\n  pc105  Generic\n\n! layout\n  us              English (US)\n  br              Portuguese (Brazil)\n\n! variant\n  intl            us: English (US, intl.)\n' > "$H/xkb/evdev.lst"
 rc=0; out=$(SPARK_SHELL_XKB_LST=$H/xkb/evdev.lst PATH="$H/lx:$PATH" sh "$SH" desktop keyboard us us+intl br 2>&1) || rc=$?
@@ -2757,11 +2833,15 @@ rm -f "$HOME/swaymsg.log"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel keyboard use br 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'the keyboard is br' ] && grep -qx -- '-- input type:keyboard xkb_switch_layout 2' "$HOME/swaymsg.log" && ok "the dialog: keyboard use br switches to its index (2)" || bad "keyboard use" "rc=$rc $out $(cat "$HOME/swaymsg.log")"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display idle 5 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$out" = 'display off after 5 minutes' ] && grep -qx 'DISPLAY_IDLE=5' "$HOME/.config/spark-shell/config" && ok "the dialog: display idle 5 sets it" || bad "display idle from dialog" "rc=$rc $out"
+[ "$rc" = 0 ] && [ "$out" = 'idle screen after 5 minutes' ] && grep -qx 'DISPLAY_IDLE=5' "$HOME/.config/spark-shell/config" && ok "the dialog: display idle 5 sets it, and says the idle screen, as the command does (#68)" || bad "display idle from dialog" "rc=$rc $out"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display lock 20 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'lock and display off after 20 minutes' ] && grep -qx 'DISPLAY_LOCK=20' "$HOME/.config/spark-shell/config" && ok "the dialog: display lock 20 says the lock and the display off (#68)" || bad "display lock from dialog" "rc=$rc $out"
 # notes: one Markdown file a note in ~/notes, the first line its name
 NL() { SWAYSOCK=$H/sock EDITOR=true PATH="$H/lx:$PATH" sh "$SH" bar panel "$@" 2>&1; }
 [ "$(NL notes add 'groceries for the weekend')" = 'new note: groceries for the weekend' ] && [ "$(cat "$HOME/notes/groceries-for-the-weekend.md")" = '# groceries for the weekend' ] \
     && ok "notes add: a new note, its words the first line, a file named from them in ~/notes" || bad "notes add" "$(ls "$HOME/notes" 2>&1)"
+[ "$(ls -ld "$HOME/notes" | cut -c1-10)" = drwx------ ] && [ "$(ls -l "$HOME/notes/groceries-for-the-weekend.md" | cut -c1-10)" = -rw------- ] \
+    && ok "notes: ~/notes and a note spark-shell writes are yours alone, 0700 and 0600 (#63)" || bad "notes modes" "$(ls -ld "$HOME/notes" "$HOME/notes/groceries-for-the-weekend.md")"
 [ "$(NL notes add 'groceries for the weekend: buy oat milk')" = 'added to groceries for the weekend: buy oat milk' ] && [ "$(sed -n 2p "$HOME/notes/groceries-for-the-weekend.md")" = '- buy oat milk' ] \
     && ok "notes add NAME: TEXT: a line added to the note NAME" || bad "notes add to" "$(cat "$HOME/notes/groceries-for-the-weekend.md")"
 printf '# the jabra mic levels\ncapture at 60%%, an arm'"'"'s length away\n' > "$HOME/notes/jabra.md"; touch -t 202601010900 "$HOME/notes/jabra.md"
@@ -2860,6 +2940,16 @@ rm -f "$HOME/chime.log"; out=$(PATH="$H/lx:$PATH" sh "$SH" bar due 2>&1); PATH="
 rm -f "$HOME/calendar/bread.ics"; [ -z "$(PATH="$H/lx:$PATH" sh "$SH" bar due 2>&1)" ] && ok "bar due: nothing due, nothing on the line" || bad "bar due empty"
 rm -rf "$HOME/notes" "$HOME/calendar" "$H/lx/pw-play"
 rm -rf "$H/lx/swaymsg" "$H/lx/pkill" "$H/lx/brightnessctl" "$H/lx/ddcutil" "$H/sysb" "$H/xkb"
+# the folders that hold what is yours (#63): on makes the ones already there private, with a row; a link is left as it is
+mkdir -p "$HOME/.local/state/spark-shell" "$HOME/.config/spark-shell/themes" "$H/shared"; chmod 755 "$HOME/.local/state/spark-shell" "$HOME/.config/spark-shell/themes" "$H/shared"; ln -s "$H/shared" "$HOME/notes"
+out=$(L on --dry-run 2>&1)
+printf '%s\n' "$out" | grep -qx 'would  private      .local/state/spark-shell yours alone (0700)' && printf '%s\n' "$out" | grep -qx 'would  private      .config/spark-shell/themes yours alone (0700)' && [ "$(ls -ld "$HOME/.local/state/spark-shell" | cut -c1-10)" = drwxr-xr-x ] \
+    && ok "on --dry-run: a state or themes folder open to others is a would row, nothing changed (#63)" || bad "private dry" "$(printf '%s\n' "$out" | grep private)"
+out=$(L on --yes 2>&1)
+printf '%s\n' "$out" | grep -qx 'ok     private      yours alone now (0700): .local/state/spark-shell .config/spark-shell/themes' && [ "$(ls -ld "$HOME/.local/state/spark-shell" | cut -c1-10)" = drwx------ ] && [ "$(ls -ld "$HOME/.config/spark-shell/themes" | cut -c1-10)" = drwx------ ] && [ "$(ls -ld "$H/shared" | cut -c1-10)" = drwxr-xr-x ] \
+    && ok "on: the two made yours alone in one row; ~/notes as a link to a shared folder left as it is (#63)" || bad "private on" "$(printf '%s\n' "$out" | grep private; ls -ld "$HOME/.local/state/spark-shell" "$HOME/.config/spark-shell/themes" "$H/shared")"
+out=$(L on --yes 2>&1); ! printf '%s\n' "$out" | grep -q 'private' && ok "on again: nothing to say about them" || bad "private again" "$(printf '%s\n' "$out" | grep private)"
+rm -f "$HOME/notes"; rm -rf "$H/shared"
 
 # macOS: the palette and the font are Terminal.app's profile, through the helper
 fresh
@@ -3063,10 +3153,13 @@ esac
 STUB
     cat > "$H/.local/bin/wpa_cli" <<'STUB'
 #!/bin/sh
+[ -n "${HOME:-}" ] || { HOME=${XDG_STATE_HOME%/.local/state}; touch "$HOME/wpa.nohome"; }   # run with HOME unset, as spark-shell runs it for a password (no history file)
 log=${XDG_STATE_HOME:-$HOME/.local/state}/wpa.log; mkdir -p "$(dirname "$log")"
+printf '%s\n' "$*" >> "${log%.log}.argv"   # every call's arguments, apart: a password is never among them (#62)
 [ "$1" != -i ] || shift 2
+if [ $# -eq 0 ]; then while IFS= read -r line; do printf '%s\n' "$line" >> "$log"; done; exit 0; fi   # interactive: a command a line on stdin
 sel=$(cat "$HOME/wpa.sel" 2>/dev/null || echo 0)
-name() { case $1 in 0) echo home ;; 1) echo old ;; 2) echo open ;; esac; }
+name() { case $1 in 0) echo home ;; 1) echo old ;; 2) cat "$HOME/wpa.name2" 2>/dev/null || echo open ;; esac; }
 case "$*" in
     status) [ -e "$HOME/wpa.down" ] || printf 'bssid=00:11:22:33:44:55\nssid=%s\nwpa_state=COMPLETED\n' "$(name "$sel")" ;;
     scan) echo OK ;;
@@ -3076,6 +3169,31 @@ case "$*" in
     "select_network "*) echo "$*" >> "$log"; echo "$2" > "$HOME/wpa.sel"; rm -f "$HOME/wpa.down"; echo OK ;;
     disconnect) echo "$*" >> "$log"; touch "$HOME/wpa.down"; echo OK ;;
     *) echo "$*" >> "$log"; echo OK ;;
+esac
+STUB
+    # NetworkManager and iwd, off unless a test turns one on ($HOME/nm.on, $HOME/iw.on): no machine's own nmcli or iwctl is reached from here
+    cat > "$H/.local/bin/nmcli" <<'STUB'
+#!/bin/sh
+[ -e "$HOME/nm.on" ] || exit 1
+log=$XDG_STATE_HOME/nmcli.log; printf '%s\n' "$*" >> "$log.argv"
+case "$*" in
+    "-t -f RUNNING general") echo running ;;
+    "-t -e yes -f SIGNAL,SECURITY,SSID dev wifi list --rescan auto") printf '80:WPA2:cafe\n' ;;
+    "--ask dev wifi connect cafe") IFS= read -r pw || exit 4; printf '%s\n' "$pw" >> "$log"; printf 'Password (802-11-wireless-security.psk): \n'
+        [ "$pw" != wrong ] || { echo 'Error: Connection activation failed: Secrets were required, but not provided.'; exit 4; }
+        echo "Device 'wlan0' successfully activated with 'f00d'." ;;
+    *) exit 0 ;;
+esac
+STUB
+    cat > "$H/.local/bin/iwctl" <<'STUB'
+#!/bin/sh
+[ -e "$HOME/iw.on" ] || exit 1
+log=$XDG_STATE_HOME/iwctl.log; printf '%s\n' "$*" >> "$log.argv"
+case "$*" in
+    "station wlan0 show") printf '  Station: wlan0\n  State  disconnected\n' ;;
+    "station wlan0 get-networks") printf '  Available networks\n----\n  Network name  Security  Signal\n----\n  cafe  psk  ****\n' ;;
+    "station wlan0 connect cafe") IFS= read -r pw || { echo 'Operation failed'; exit 1; }; printf '%s\n' "$pw" >> "$log"; printf 'Type the network passphrase for cafe psk.\nPassphrase: \n' ;;
+    *) exit 0 ;;
 esac
 STUB
     printf '#!/bin/sh\nprintf "%%s | %%s\\n" "$*" "${SPARK_SHELL_PANEL_AT:-}" >> "${XDG_STATE_HOME:-$HOME/.local/state}/foot.log"\n' > "$H/.local/bin/foot"
@@ -3116,7 +3234,7 @@ STUB
     chmod +x "$H/.local/bin/bluealsa-aplay"
     printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/wpctl"; cp "$H/.local/bin/wpctl" "$H/.local/bin/pactl"
     cp "$H/.local/bin/wpctl" "$H/.local/bin/tmux"   # a tmux that is not running (this machine may run one)
-    chmod +x "$H/.local/bin/ip" "$H/.local/bin/bluetoothctl" "$H/.local/bin/amixer" "$H/.local/bin/wpctl" "$H/.local/bin/pactl" "$H/.local/bin/tmux" "$H/.local/bin/wpa_cli" "$H/.local/bin/foot"
+    chmod +x "$H/.local/bin/ip" "$H/.local/bin/bluetoothctl" "$H/.local/bin/amixer" "$H/.local/bin/wpctl" "$H/.local/bin/pactl" "$H/.local/bin/tmux" "$H/.local/bin/wpa_cli" "$H/.local/bin/foot" "$H/.local/bin/nmcli" "$H/.local/bin/iwctl"
 }
 full=$(printf '\342\226\210'); shade=$(printf '\342\226\221')
 count() { printf '%s' "$1" | LC_ALL=C grep -o "$2" | wc -l | tr -d ' '; }   # count TEXT GLYPH -> how many
@@ -3461,6 +3579,27 @@ STUB
     echo 0 > "$H/wpa.sel"; rm -f "$H/wpa.down" "$wlog"
     st=0; out=$(sh "$SH" bar panel wifi forget old 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'forgot old' ] && grep -qx 'remove_network 1' "$wlog" && grep -qx save_config "$wlog" && ok "panel wifi forget: the saved network removed, the config saved" || bad "wifi forget" "st=$st $out; $(cat "$wlog" 2>&1)"
+    # a new network's password reaches the tool on its stdin, never as an argument (#62)
+    rm -f "$wlog" "${wlog%.log}.argv" "$H/wpa.nohome" "$cache/wifi.scan"; echo cafe > "$H/wpa.name2"
+    st=0; out=$(PANEL_PASS='s3cret "pass" word' sh "$SH" bar panel wifi connect cafe 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'connected to cafe' ] && grep -qxF 'set_network 2 psk "s3cret "pass" word"' "$wlog" && ! grep -q s3cret "${wlog%.log}.argv" && [ -e "$H/wpa.nohome" ] && [ ! -e "$H/.wpa_cli_history" ] \
+        && ok "panel wifi connect, wpa_cli: the password goes in as a command on stdin, with HOME unset (no history file), in no call's arguments (#62)" || bad "wpa psk stdin" "st=$st $out; $(cat "$wlog" "${wlog%.log}.argv" 2>&1)"
+    rm -f "$wlog" "$H/wpa.name2"; echo 0 > "$H/wpa.sel"
+    st=0; out=$(PANEL_PASS="$(printf 'two\nlines')" sh "$SH" bar panel wifi connect cafe 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = 'a password holds no control character, so not connected' ] && [ ! -s "$wlog" ] \
+        && ok "panel wifi connect: a password with a new line is refused before any tool hears it (it would be a second command)" || bad "wifi psk newline" "st=$st $out; $(cat "$wlog" 2>&1)"
+    touch "$H/nm.on"; nlog=$H/.local/state/nmcli.log; rm -f "$nlog" "$nlog.argv" "$cache/wifi.scan"
+    st=0; out=$(PANEL_PASS='s3cret "pass" word' sh "$SH" bar panel wifi connect cafe 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'connected to cafe' ] && grep -qxF 's3cret "pass" word' "$nlog" && grep -qx -- '--ask dev wifi connect cafe' "$nlog.argv" && ! grep -q s3cret "$nlog.argv" \
+        && ok "panel wifi connect, nmcli: --ask, the password at nmcli's own prompt on stdin, in no argument (#62)" || bad "nmcli stdin" "st=$st $out; $(cat "$nlog" "$nlog.argv" 2>&1)"
+    rm -f "$cache/wifi.scan"; st=0; out=$(PANEL_PASS=wrong sh "$SH" bar panel wifi connect cafe 2>&1) || st=$?
+    [ "$st" -eq 1 ] && [ "$out" = 'could not connect to cafe: Error: Connection activation failed: Secrets were required, but not provided.' ] \
+        && ok "panel wifi connect, nmcli refuses: its error line, never its prompt" || bad "nmcli refused" "st=$st $out"
+    rm -f "$H/nm.on"; touch "$H/iw.on"; ilog=$H/.local/state/iwctl.log; rm -f "$ilog" "$ilog.argv" "$cache/wifi.scan"
+    st=0; out=$(PANEL_PASS='s3cret "pass" word' sh "$SH" bar panel wifi connect cafe 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'connected to cafe' ] && grep -qxF 's3cret "pass" word' "$ilog" && grep -qx 'station wlan0 connect cafe' "$ilog.argv" && ! grep -q -e s3cret -e passphrase "$ilog.argv" \
+        && ok "panel wifi connect, iwctl: the passphrase at its agent's prompt on stdin, no --passphrase (#62)" || bad "iwctl stdin" "st=$st $out; $(cat "$ilog" "$ilog.argv" 2>&1)"
+    rm -f "$H/iw.on" "$cache/wifi.scan"
     st=0; out=$(sh "$SH" bar panel wifi connect nowhere 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: nowhere is not in the list now' ] && ok "panel: an action the section does not offer is refused in one line" || bad "panel gate" "st=$st $out"
     out=$(sh "$SH" bar panel bt --list); blog=$H/.local/state/bt.log
@@ -3725,8 +3864,8 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt out mic bat clock theme window display keyboard notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 63 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the nineteen sections hold the 63 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 64 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the nineteen sections hold the 64 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 # the brightness takes the gate's own words, up, down or 1 to 100: a planner told 0 to 100 and no step sent a 0 the gate
 # refused, and the dialog's brighter and dimmer rows send up and down (#31). spark's grammar types an argument one
 # way, so a string enum holds both, the tens first: a brief names an enum's first twelve
@@ -3858,7 +3997,7 @@ for kv in DIALOG_ATTACH=maybe DIALOG_MODEL=1 DIALOG_TALK=off 'DIALOG_ATTACH_TYPE
 done
 ok "config: DIALOG_ATTACH, DIALOG_MODEL and DIALOG_TALK take yes or no, DIALOG_ATTACH_TYPES lower-case types; anything else is refused in one line"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u KEYBOARD'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" \
+grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" \
     && ok "config: the four keys are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
 # the want verb: one entry for words, the plan as JSON, a file asked about
 cat > "$H/.local/bin/spark" <<'STUB'
@@ -4402,12 +4541,48 @@ EOF
     printf 'x' > "$HOME/pictures/a&b.jpg"; cp "$cfg" "$H/cfg.before"
     if [ "$(uname -s)" != Darwin ]; then   # the wallpaper is the desktop's: a Mac refuses it before the path is read
         rc=0; out=$(sh "$SH" theme wallpaper "$HOME/pictures/a&b.jpg" 2>&1) || rc=$?
-        [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a path with one of ; ` $ ( ) | & < > cannot be kept in the config -- rename the picture' ] && cmp -s "$cfg" "$H/cfg.before" \
+        [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a path with one of ; ` $ ( ) | & < >, a quote, a backslash or a control character cannot be a wallpaper -- rename the picture' ] && cmp -s "$cfg" "$H/cfg.before" \
             && ok "theme wallpaper PATH with a character the config refuses: one line, the config untouched (it would refuse the next read)" || bad "wallpaper path chars" "rc=$rc $out"
+        printf 'x' > "$HOME/pictures/a\"b.jpg"; rc=0; out=$(sh "$SH" theme wallpaper "$HOME/pictures/a\"b.jpg" 2>&1) || rc=$?
+        [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a path with one of ; ` $ ( ) | & < >, a quote, a backslash or a control character cannot be a wallpaper -- rename the picture' ] && cmp -s "$cfg" "$H/cfg.before" \
+            && ok "theme wallpaper PATH with a double quote: refused, since sway reads the path inside quotes (#61)" || bad "wallpaper quote" "rc=$rc $out"
     fi
     rc=0; out=$(sh "$SH" theme picture "$HOME/pictures/a&b.jpg" 2>&1) || rc=$?
-    [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a path with one of ; ` $ ( ) | & < > cannot be kept in the config -- rename the picture' ] && cmp -s "$cfg" "$H/cfg.before" \
+    [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a path with one of ; ` $ ( ) | & < >, a quote, a backslash or a control character cannot be a wallpaper -- rename the picture' ] && cmp -s "$cfg" "$H/cfg.before" \
         && ok "theme picture PATH with such a character: the same line, nothing written" || bad "picture path chars" "rc=$rc $out"
+    nl='
+'   # a new line; $(printf '\n') would be nothing, command substitution drops it
+    printf 'x' > "$HOME/pictures/two${nl}lines.jpg"; rc=0; out=$(sh "$SH" theme picture "$HOME/pictures/two${nl}lines.jpg" 2>&1) || rc=$?
+    [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: a path with one of ; ` $ ( ) | & < >, a quote, a backslash or a control character cannot be a wallpaper -- rename the picture' ] && cmp -s "$cfg" "$H/cfg.before" \
+        && ok "theme picture PATH with a new line in it: refused, never a second line of the config (#61)" || bad "picture path newline" "rc=$rc $out"
+    # a saved theme from elsewhere (#61): its look.env is held to the config's shapes before anything changes, every key
+    bent() {   # bent KEY=VALUE -- a copy of sunny named bent, that one line of its look.env in place of its own
+        rm -rf "$th_dir/bent"; cp -R "$th_dir/sunny" "$th_dir/bent"
+        grep -v "^${1%%=*}=" "$th_dir/sunny/look.env" > "$th_dir/bent/look.env"; printf '%s\n' "$1" >> "$th_dir/bent/look.env"
+    }
+    bent_refused() {   # bent_refused WHY WHAT -- theme bent refused with WHY, the config and the screen as they were
+        rm -f "$H/pwned"; rc=0; out=$(sh "$SH" theme bent 2>&1) || rc=$?
+        [ "$rc" = 1 ] && [ "$out" = "spark-shell theme: bent cannot be used: $1. Nothing was changed" ] && cmp -s "$cfg" "$H/cfg.before" && [ ! -e "$H/pwned" ] \
+            && ok "theme folder (#61): $2" || bad "theme folder: $2" "rc=$rc $out"
+    }
+    bent "FONT=x' -e touch $H/pwned '"; bent_refused 'its FONT is not a face and a size (letters, digits, spaces and : = . + _ -)' "a FONT with a quote is refused (the idle screen's sh -c)"
+    bent "FONT=Monaspace Neon:size=11, exec touch $H/pwned"; bent_refused 'its FONT is not a face and a size (letters, digits, spaces and : = . + _ -)' "a FONT with a comma is refused (a second sway command in the bar's font)"
+    bent 'WALLPAPER=/tmp/a".png'; bent_refused "its WALLPAPER is not default, a drawing's name, #rrggbb or a picture's full path with none of ; \` \$ ( ) | & < >, no quote, no backslash, no control character" "a WALLPAPER with a quote is refused (sway's output bg line)"
+    bent 'PICTURE=../../../etc/hosts'; bent_refused 'its PICTURE is not a file name in the folder' "a PICTURE outside the folder is refused"
+    bent 'PICTURE=link.png'; ln -s "$HOME/pictures/sunny.png" "$th_dir/bent/link.png"; bent_refused "its PICTURE is not a file of the folder's own" "a PICTURE that is a link is refused"
+    bent "POINTER=spark-white 24, exec touch $H/pwned"; bent_refused "its POINTER is not a cursor theme's NAME and SIZE" "a POINTER with a comma is refused (seat xcursor_theme)"
+    bent 'ALPHA=2'; bent_refused 'its ALPHA is not 0 to 1' "an ALPHA out of range is refused"
+    bent 'DRAWING=elsewhere'; bent_refused 'its DRAWING is not one of the drawings' "a DRAWING that is not one of the drawings is refused"
+    bent "WORDS=sun$(printf '\033')[2Jny"; bent_refused 'its look.env holds a control character' "a control character anywhere in look.env is refused (a row would redraw the screen)"
+    bent 'WORDS=sunny'; printf 'touch %s/pwned\n' "$H" >> "$th_dir/bent/look.env"; bent_refused "line $(grep -c '' "$th_dir/bent/look.env") of its look.env is not KEY=value" "a line that is not KEY=value is refused, by its number"
+    rm -rf "$th_dir/bent"
+    # the config itself takes the same shapes for FONT and WALLPAPER, and status says which key
+    for kv in "FONT=x' -e y" 'FONT=Neon:size=11, exec y' 'WALLPAPER=/tmp/a".png' 'WALLPAPER=a/relative/path.png'; do
+        printf 'DESKTOP=sway\n%s\n' "$kv" > "$cfg"; rc=0; out=$(sh "$SH" status 2>&1) || rc=$?
+        [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -qF "${kv%%=*}=" || bad "config shape ${kv%%=*}" "rc=$rc $out"
+    done
+    ok "config (#61): a FONT with a quote or a comma, a WALLPAPER with a quote or not a full path: refused at the read, by key"
+    cp "$H/cfg.before" "$cfg"
     # a theme from words, the engine's half: the four words make a look named by the words, applied, kept in the history
     printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=default\n' > "$cfg"; rm -rf "$st_dir/theme.history" "$st_dir/looks"; sh "$SH" theme nord >/dev/null 2>&1
     out=$(sh "$SH" panel theme words 'teal accent=same warmth=warm contrast=soft light=dark' 2>&1)

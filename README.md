@@ -144,6 +144,8 @@ explain each part. If something fails, run `spark-shell check` and
     spark-shell desktop display       the idle and lock minutes, the brightness
     spark-shell desktop display idle|lock N
                                       idle screen or lock after N idle minutes
+    spark-shell desktop display saver [NAME]
+                                      list the idle screen's savers, or pick one
     spark-shell desktop display brightness N|up|down
                                       the screen's brightness, 1 to 100
     spark-shell desktop keyboard [us br|next]
@@ -202,8 +204,12 @@ windows' transparency, 0 to 50; the open windows take it at once.
 `theme save winter` keeps the look in use as a theme: a folder
 `~/.config/spark-shell/themes/winter/` with the palette, the
 wallpaper's files, the text size, the transparency and the pointer. It
-copies to another machine. `theme winter` brings it back, `theme list`
-shows the saved themes, `theme delete winter` removes one. The last ten
+copies to another machine, and a folder from elsewhere is read the way
+the config is: each value is held to its shape, and a folder with one
+that is not is refused in a line that names it, with nothing changed.
+The themes folder is yours alone (0700). `theme winter` brings it
+back, `theme list` shows the saved themes, `theme delete winter`
+removes one. The last ten
 looks you chose are kept, with the time: `theme back` steps through
 them. Layouts are kept the same way, so `layout back` opens the one
 before.
@@ -360,7 +366,8 @@ the dialog's `about` row shows them again.
 brightness. `display idle 10` brings the idle screen after 10 idle
 minutes, `display lock 15` locks the screen and turns the display off
 after 15, and 0 means never; a running desktop takes the change at
-once. `display
+once. `display saver NAME` picks what the idle screen shows behind its
+clock (Lock and capture says what). `display
 brightness 70` (or `up`, `down`, and the brightness keys) sets a
 laptop's backlight through brightnessctl, or a screen's own through
 DDC/CI and ddcutil; the bar's `light` gauge sets it with a click or the
@@ -383,6 +390,8 @@ a `keyboard` section for the same.
 ## Notes and reminders
 
 A note is a Markdown file in `~/notes`. Its first line is its name.
+The folder is yours alone (0700), and so is each note spark-shell
+writes (0600).
 You can edit or sync it with other tools. [First task](#first-task)
 shows how to add one. A reminder is an iCalendar event with an alarm.
 Each has an `.ics` file in `~/calendar`. khal and calendar apps on a
@@ -414,6 +423,22 @@ After the idle minutes (10) the idle screen: the wallpaper dims to the
 ground and the time sits at the lower left in large figures, in the
 accent, as the Calendar draws it, the date under it; a key or a mouse
 move takes it down.
+
+Type `spark-shell desktop display saver spark`. You get an animation
+behind the clock on the idle screen, in your palette: spark (bursts and
+rising embers), starfield, or drift (the clock bounces). `desktop
+display saver` lists them with the one in use ticked, and `saver clock`
+brings back the clock alone, which is what you have until you pick one.
+The clock, its place, the date and the way out do not change, and
+`spark-shell desktop idle` shows the screen now. A saver needs python3:
+without it, or if the saver fails, the idle screen shows the clock. It
+comes in over its first second or two, with the clock whole from the
+start, writes only the cells that change, ten times a second, and goes
+when the lock comes: nothing runs behind the lock or a dark screen. The
+dialog's display section has a row for it. The savers are
+`lib/saver.py`, and `python3 lib/saver.py NAME` plays one in any
+terminal; `--ascii` keeps it to plain characters.
+
 After the lock minutes (15) the screen locks and the display turns off.
 Where logind runs (every family but Void), it locks before the machine
 sleeps too; Void has no logind to say so. Super+Escape, or `spark-shell
@@ -557,7 +582,12 @@ dialog closes with nothing opened.
 
 The top row says where you are (`home`, a place, a section and its
 state; a long one is cut at a word), then the date and the time as your
-locale writes them, and a small march while a step runs. Under it is
+locale writes them, and a small bar while work runs. The bar is one of
+the five animations spark draws at its prompt, and it says what is
+going on: a light bouncing while spark thinks, an arrow crossing while
+the rows of a place are read, arrows moving right while a step runs,
+one step after another when more steps wait behind it, and a bar
+growing and shrinking while a model loads. Under it is
 the prompt, two rows tall:
 type a request, Enter sends it, and Shift+Enter starts a new line (Alt+Enter
 where a terminal cannot tell the two apart). A longer draft scrolls
@@ -723,7 +753,9 @@ with its title `wifi connect NAME`; the rows are the resource
 change. A tool runs only a step the section offers now, with a row's
 own argument, checked as the dialog checks a pick. A tool that cannot be
 taken back says so, and a result carries the step that takes it back
-when there is one. A password is the tool's own argument: it is never
+when there is one. A password is the tool's own argument, and it
+reaches the Wi-Fi tool on its standard input, never on a command line,
+which any user of the machine can read while it runs. It is never
 written down. `spark-shell want --json "WORDS"` prints the steps spark
 picks for the words as JSON, each checked the same way, and runs none.
 `spark-shell want --attach FILE "WORDS"` asks spark about a text file:
@@ -753,15 +785,15 @@ the spark pointer), `ALPHA` (how solid foot is, 0.85: 15% transparency),
 `DESKTOP_BAR` (yes or no), `THEME`, `CONSOLE_FONT`, `QUIET_LOGIN`, `QUIET_BOOT`,
 `DIALOG_ATTACH` (yes or no), `DIALOG_ATTACH_TYPES` (txt md),
 `DIALOG_MODEL` and `DIALOG_TALK` (yes or no), `DISPLAY_IDLE` and
-`DISPLAY_LOCK` (minutes, 0 never), `KEYBOARD` (layouts). The commands
-write them.
+`DISPLAY_LOCK` (minutes, 0 never), `DISPLAY_SAVER` (clock, or a saver's
+name), `KEYBOARD` (layouts). The commands write them.
 
 Files it writes: the shell files, `~/.tmux.conf`, `~/.config/btop/`,
 `~/.config/starship.toml`, `~/.config/spark-shell/` (a saved theme a
 folder under its `themes/`), `~/.config/spark/theme.env`,
-`~/.local/state/spark-shell/` (the last ten looks and layouts, a
-drawing rendered in another palette, the drawings' small pictures for
-the wallpaper list),
+`~/.local/state/spark-shell/` (yours alone, 0700: the last ten looks
+and layouts, a drawing rendered in another palette, the drawings' small
+pictures for the wallpaper list),
 `~/.local/bin/spark-shell`, and for the desktop `~/.config/sway/`,
 `~/.config/foot/` (foot.ini and the dialog's own dialog.ini),
 `~/.config/starship-foot.toml`, a rule that draws the bar's wifi bars

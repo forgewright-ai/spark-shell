@@ -61,6 +61,12 @@ LOGIN=no
 DISPLAY_IDLE=10
 DISPLAY_LOCK=15
 
+# What the idle screen shows behind its clock: clock (the clock alone), or
+# a calm animation: spark, starfield or drift. A saver needs python3, and
+# it stops when the lock comes. spark-shell desktop display saver NAME sets
+# this, and spark-shell desktop idle shows the idle screen now.
+DISPLAY_SAVER=clock
+
 # The keyboard's layouts on the desktop, by their xkb names, a space
 # between, a variant after a plus (us us+intl); the first is the one in
 # use at start, and Super+Ctrl+space goes to the next. Empty keeps

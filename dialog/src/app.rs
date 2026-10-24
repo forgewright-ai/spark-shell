@@ -4,6 +4,7 @@
 use crate::gate;
 use crate::mcp::{self, Incoming, Kind, Server};
 use crate::model::{self, Call, Rows, Tool};
+use crate::progress::Work;
 use crate::scrub::scrub;
 use serde_json::{json, Map, Value};
 use std::collections::VecDeque;
@@ -478,7 +479,8 @@ pub struct App {
     pub listen_cancelled: bool,
     /// The window's size in cells, as the terminal says.
     pub size: (u16, u16),
-    pub thinking: bool,
+    /// What spark or the machine is asked for and has not answered: the words (think), a model switch (swell).
+    pub wait: Option<Work>,
     pub jobs: Vec<Job>,
     pub quit: Option<i32>,
     pub opened: bool,
@@ -543,7 +545,7 @@ impl App {
             talk: talk_kept(),
             listen_cancelled: false,
             size: (WIDTH, HEIGHT),
-            thinking: false,
+            wait: None,
             jobs: vec![],
             quit: None,
             opened: false,
@@ -589,9 +591,28 @@ impl App {
     /// they come. The providers' first rows at open come quietly (#37).
     pub fn busy(&self) -> bool {
         self.running.is_some()
-            || self.thinking
+            || self.wait.is_some()
             || matches!(self.mode, Mode::Listening)
             || self.shown().iter().any(|&p| self.providers[p].reading && !self.providers[p].ready)
+    }
+
+    /// What kind of work the header's bar shows, one of spark's five animations: a step that runs
+    /// alone is a march, one with more behind it is steps, spark's reply is think, a model loading
+    /// is swell, and the rows of a place being read are read. A recording waits as spark thinks does.
+    pub fn work(&self) -> Work {
+        if self.running.is_some() {
+            if self.queue.is_empty() {
+                Work::March
+            } else {
+                Work::Steps
+            }
+        } else if let Some(w) = self.wait {
+            w
+        } else if matches!(self.mode, Mode::Listening) {
+            Work::Think
+        } else {
+            Work::Read
+        }
     }
 
     /// The providers whose rows the view on screen shows: they check for changes while it does (#37).
@@ -1826,7 +1847,7 @@ impl App {
                 self.input.clear();
                 self.unstash();
                 self.say(Sign::You, &format!("model {}", name));
-                self.thinking = true;
+                self.wait = Some(Work::Swell); // spark's server restarts and loads the model: no estimate of how long
                 self.jobs.push(Job::Run(Helper::ModelSet, vec![self.cfg.spark.clone(), "model".into(), name]));
                 return;
             }
@@ -2248,7 +2269,7 @@ impl App {
             self.say(Sign::You, words);
             return self.say(Sign::Refused, "no spark-shell to read the words");
         }
-        self.thinking = true;
+        self.wait = Some(Work::Think);
         let mut argv = vec![self.cfg.spark_shell.clone(), "want".into(), "--json".into()];
         // the file goes with this request alone; it comes back if the request fails
         let file = self.attachment.take();
@@ -2280,7 +2301,7 @@ impl App {
     /// plans runs before that. Words that were the commands already run at once. An answer, or a step
     /// refused, is said under the words that asked.
     pub fn plan(&mut self, text: &str) {
-        self.thinking = false;
+        self.wait = None;
         let words = self.pending.as_ref().map(|(w, _)| w.clone()).unwrap_or_default();
         let Ok(v) = serde_json::from_str::<Value>(text) else {
             self.say(Sign::You, &words);
@@ -2592,7 +2613,7 @@ impl App {
             Helper::Want => match out {
                 Ok(t) => self.plan(&t),
                 Err(e) => {
-                    self.thinking = false;
+                    self.wait = None;
                     match serde_json::from_str::<Value>(&e) {
                         Ok(_) => self.plan(&e),
                         Err(_) => {
@@ -2629,7 +2650,7 @@ impl App {
                 }
             }
             Helper::ModelSet => {
-                self.thinking = false;
+                self.wait = None;
                 match out {
                     Ok(_) => {
                         self.say(Sign::Done, "model changed");

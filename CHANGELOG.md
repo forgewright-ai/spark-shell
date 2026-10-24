@@ -1,5 +1,66 @@
 # Changelog
 
+## v0.101
+
+Security fixes, the idle screen's saver, and spark's progress
+animations in the dialog.
+
+- Fixed: a saved theme is a folder that can come from another machine,
+  and `theme NAME` kept its look.env values as they were, in lines that
+  sway and sh read again: a folder could carry a command. look.env is
+  read the way the config is now, and each value is held to its shape
+  before anything changes: the font, the wallpaper, the picture (a file
+  of the folder's own, not a link), the transparency and the pointer. A
+  folder that fails is refused in one line that names the key, and
+  nothing changes. The config's own FONT and WALLPAPER get the same
+  checks, no value with a control character is written to it, and a
+  picture with a quote or a backslash in its path is refused when it is
+  picked (#61)
+- Fixed: a new network's password went to nmcli, iwctl or wpa_cli as an
+  argument, where any account on the machine could read it while the
+  tool ran. It goes on the tool's standard input now: nmcli reads it at
+  its own prompt (--ask), iwctl at its agent's, and wpa_cli takes it as
+  a command on stdin, with no history file. A password with a control
+  character is refused. A CI job joins a network on simulated radios
+  through all three tools, and no command line holds the password, while
+  v0.100 run the same way is caught (#62)
+- Fixed: the state folder, the saved themes and the notes took the
+  default permissions, so another account on the machine could read
+  them. They are yours alone now: the folders 0700 and each note
+  spark-shell writes 0600, and `on` makes the folders already there
+  private, with a row (#63)
+- Fixed: the release workflow checked a tag against the allowed-signers
+  file inside that same tag, so a tag could vouch for itself. It checks
+  a tag against the release before it now, and walks the chain of
+  releases behind it, as spark's does (#64)
+- New: CodeQL reads the dialog's Rust, the Python helpers and the
+  workflows on every push to main, every pull request and once a week
+  (#65)
+- New: the idle screen can show a saver behind its clock: spark,
+  starfield or drift, from lib/saver.py (python3 and its standard
+  library). `desktop display saver NAME` picks one, and `saver clock`,
+  the default, is the clock alone; the dialog's display section has a
+  row for it, and check says which is in use. A saver writes only the
+  cells that change, ten times a second, and the idle screen goes when
+  the lock comes, so nothing runs behind the lock or a dark screen. No
+  python3, or a saver that fails, leaves the clock (#66)
+- New: the dialog's bar shows spark's own five progress animations, by
+  the kind of work: a light bouncing while spark thinks, an arrow while
+  a place's rows come, arrows moving right while a step runs, one step
+  after another when more wait behind it, and a bar growing and
+  shrinking while a model loads (#67)
+- Fixed: the dialog's display section said "display off" for the idle
+  minutes and "lock" alone for the lock minutes, while the command said
+  idle screen, and lock and display off. The receipts and the tools'
+  words say what each setting does now (#68)
+- Fixed: with NetworkManager, the wifi section read every network around
+  with two spaces before its name and every saved one with a space after
+  it, so a connect from the dialog named a network that was not in the
+  list. The names come through as they are now, a colon in one included
+  (#69)
+- Fixed: on a Mac, `on --dry-run` said WSL has no console, for the
+  palette and for the login screen. It names macOS now (#38)
+
 ## v0.100
 
 - Fixed: after Esc, the dialog's window sometimes stayed open a moment

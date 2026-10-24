@@ -11,6 +11,7 @@ pub mod login_ui;
 pub mod mcp;
 pub mod model;
 pub mod palette;
+pub mod progress;
 pub mod scrub;
 pub mod sha256;
 pub mod sixel;
