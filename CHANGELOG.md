@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.104
+
+- Changed: the workflows run github/codeql-action 4.39.1 (dependabot #81
+  and #82). The action refuses an init and an analyze of two versions,
+  so dependabot now moves the two pins in one pull request (#83).
+
 ## v0.103
 
 The system foundation, first part (Priority I of the product
