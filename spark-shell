@@ -1229,14 +1229,14 @@ sound_by_pipewire() {   # sound_by_pipewire NAME -- PipeWire starts NAME itself:
 # shellcheck disable=SC2086   # the pids, split on purpose
 sound_stop() { [ -z "${SOUND_PIDS:-}" ] || { kill $SOUND_PIDS 2>/dev/null; wait $SOUND_PIDS 2>/dev/null; } || :; }   # wait: gone before the next desktop asks wpctl
 notify_check() {   # the notify row of check, on a desktop machine (#71)
-    if ! command -v mako >/dev/null 2>&1; then chk notify warn "mako is not installed, so no notification shows" "spark-shell on desktop"
+    if ! mako_here; then chk notify warn "mako is not installed, so no notification shows" "spark-shell on desktop"
     elif ! command -v notify-send >/dev/null 2>&1; then chk notify warn "notify-send is not installed, so a reminder or a drive plugged in says nothing" "spark-shell on desktop"
     elif [ -z "${WAYLAND_DISPLAY:-}" ]; then chk notify ok "mako shows the notifications on the desktop"
     elif notify_up; then _nw=''; ! notify_dnd || _nw=', do not disturb on'; chk notify ok "mako shows the notifications$_nw"
     else chk notify warn "$(notify_why)" "log out and in again"; fi
 }
 storage_check() {   # the storage row of check (#73)
-    if ! command -v udisksctl >/dev/null 2>&1; then chk storage warn "udisks2 is not installed, so no drive shows" "spark-shell on desktop"
+    if ! udisks_here; then chk storage warn "udisks2 is not installed, so no drive shows" "spark-shell on desktop"
     elif [ "$(init_shape)" = runit ] && [ ! -s "$STATE_DIR/storage.polkit" ]; then chk storage warn "with no logind, a drive mounts only with the polkit rule" "spark-shell on desktop"
     else chk storage ok "udisks2 mounts and ejects drives for you"; fi
 }
@@ -4100,7 +4100,7 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
         display) _b=$(light_get); if [ -n "$_b" ]; then echo "$(panel_col display)brightness $_b%"; else echo "$(panel_col display)idle $(idle_words "$DISPLAY_IDLE")"; fi ;;   # short: the header holds it; the rows say the minutes
         keyboard) _k=$(kb_active); if [ -n "$_k" ]; then echo "$(panel_col keyboard)$_k $PANEL_SEP $(printf '%s\n' $KEYBOARD | grep -c .) layouts"; elif [ -n "$KEYBOARD" ]; then echo "$(panel_col keyboard)$KEYBOARD"; else echo "$(panel_col keyboard)sway's own layout"; fi ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown at the top of the screen"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys Super+d) opens the dialog"; fi ;;
-        notifications) if ! command -v mako >/dev/null 2>&1; then echo "$(panel_col notifications)mako is not installed"
+        notifications) if ! mako_here; then echo "$(panel_col notifications)mako is not installed"
             elif ! notify_up; then echo "$(panel_col notifications)not running yet"
             elif notify_dnd; then echo "$(panel_col notifications)do not disturb"
             else _nn=$(notify_list list | grep -c . || :); if [ "${_nn:-0}" -gt 0 ]; then echo "$(panel_col notifications)$_nn on the screen"; else echo "$(panel_col notifications)on"; fi; fi ;;   # short: the header has the section's name beside it
@@ -4278,7 +4278,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                 printf -- '-\t%s\tshow\tearlier|%s||%s\n' "$(printf '%s' "${_ns:-$_na}" | cut_chars 44)" "$(printf '%s' "$_na" | cut_chars 14)" "$_ni"
             done < "$TMP/notify.rows"
             [ "${2:-}" = full ] || [ "$_n" -le 5 ] || printf -- '-\t%s more\tmore\tearlier||\n' $((_n - 5)) ;;
-        storage) command -v udisksctl >/dev/null 2>&1 || printf -- '-\tudisksctl is not installed (spark-shell on desktop)\tshow\n'
+        storage) udisks_here || printf -- '-\tudisksctl is not installed (spark-shell on desktop)\tshow\n'
             storage_list > "$TMP/storage.l"
             [ -s "$TMP/storage.l" ] || printf -- '-\tno drive plugged in\tshow\n'
             awk -F '\037' '$1 == "drive" { print $2 }' "$TMP/storage.l" > "$TMP/storage.d"
@@ -4656,6 +4656,7 @@ rem_due_line() {   # -> "due: WORDS  " for tmux's status line while a reminder i
 # A program reaches mako through the session's D-Bus: where no logind
 # makes one (Void), the desktop starts inside dbus-run-session (desk_start).
 NOTIFY_MODE=do-not-disturb
+mako_here() { [ -z "${SPARK_SHELL_NO_MAKO:-}" ] && command -v mako >/dev/null 2>&1; }   # mako is installed (SPARK_SHELL_NO_MAKO, tests: as if it were not)
 notify_up() { command -v makoctl >/dev/null 2>&1 && makoctl mode >/dev/null 2>&1; }   # mako answers on this session's bus
 notify_reload() { ! notify_up || makoctl reload >/dev/null 2>&1 || :; }   # a mako that runs reads its file again
 notify_dnd() { makoctl mode 2>/dev/null | grep -qx "$NOTIFY_MODE"; }   # do not disturb is on now
@@ -4666,27 +4667,30 @@ notify_keep() {   # at the desktop's start: do not disturb as the config left it
     makoctl mode -a "$NOTIFY_MODE" >/dev/null 2>&1 || :
 }
 notify_start() {   # the notify row of on desktop: inside a desktop with a session bus, mako now when it is not running (the template starts it at the next login)
-    [ "$MODE" = apply ] && command -v mako >/dev/null 2>&1 && notify_bus && desk_in_sway || return 0
+    [ "$MODE" = apply ] && mako_here && notify_bus && desk_in_sway || return 0
     ! notify_up || return 0
     swaymsg -- exec mako >/dev/null 2>&1 || return 0
     ok notify "mako shows the notifications now"
 }
-notify_list() {   # notify_list list|history -> ID US APP US SUMMARY, newest first (an app with no name stays a field): makoctl's own lines (mako 1.9 on), or busctl's JSON (mako 1.7 and 1.8)
-    makoctl "$1" > "$TMP/notify.$1" 2>/dev/null || return 0
-    if [ "$(head -c 1 "$TMP/notify.$1")" = '{' ]; then
-        jq -r '.data[0][]? | [(.id.data // 0 | tostring), (."app-name".data // ""), (.summary.data // "")] | @tsv' "$TMP/notify.$1" 2>/dev/null || :
-    else
+notify_list() {   # notify_list list|history -> ID US APP US SUMMARY, newest first (an app with no name stays a field): makoctl's own lines (mako 1.9 on), or busctl's JSON (mako 1.7 and 1.8); no file, as a section's rows and its title ask at once
+    _nlo=$(makoctl "$1" 2>/dev/null) || return 0
+    case $_nlo in
+        '{'*) printf '%s\n' "$_nlo" | jq -r '.data[0][]? | [(.id.data // 0 | tostring), (."app-name".data // ""), (.summary.data // "")] | @tsv' 2>/dev/null || : ;;
+        *)
         awk '/^Notification [0-9]+:/ { if (id != "") print id "\t" app "\t" sum; id = $2; sub(/:$/, "", id); sum = $0; sub(/^Notification [0-9]+: ?/, "", sum); gsub(/\t/, " ", sum); app = ""; next }
             /^  App name: / { app = $0; sub(/^  App name: /, "", app); gsub(/\t/, " ", app) }
-            END { if (id != "") print id "\t" app "\t" sum }' "$TMP/notify.$1"
-    fi | scrub_text | awk -F '\t' -v OFS='\037' '{ $1 = $1; print }'   # scrubbed first: the scrubber drops US
+            END { if (id != "") print id "\t" app "\t" sum }' <<NOTIFY
+$_nlo
+NOTIFY
+        ;;
+    esac | scrub_text | awk -F '\t' -v OFS='\037' '{ $1 = $1; print }'   # scrubbed first: the scrubber drops US
 }
 notify_send() {   # notify_send CATEGORY SUMMARY [BODY] -- one notification of spark-shell's own, on the desktop; nothing where nothing would show it
     [ -n "${WAYLAND_DISPLAY:-}" ] && command -v notify-send >/dev/null 2>&1 || return 0
     notify-send -a spark-shell -c "$1" -- "$2" "${3:-}" >/dev/null 2>&1 </dev/null || :
 }
 notify_why() {   # -> why no notification shows here, in a few words
-    if ! command -v mako >/dev/null 2>&1; then echo "mako is not installed (spark-shell on desktop)"
+    if ! mako_here; then echo "mako is not installed (spark-shell on desktop)"
     elif ! notify_bus; then echo "no session bus yet: notifications start at your next login"
     else echo "mako is not running: notifications start at your next login"; fi
 }
@@ -4732,6 +4736,7 @@ storage_list() {   # -> "drive NAME DEV SIZE" a drive, then "fs NAME DEV SIZE MO
         $1 == "drive" { n = $2; if (dn[$2]++) n = n " " dn[$2]; $2 = n; cur = n; print; next }
         { n = $2; if (n == "") n = cur " " hs($4); if (fn[n]++) n = n " " fn[n]; $2 = n; $6 = cur; print }'
 }
+udisks_here() { [ -z "${SPARK_SHELL_NO_UDISKS:-}" ] && command -v udisksctl >/dev/null 2>&1; }   # udisks2 is installed (SPARK_SHELL_NO_UDISKS, tests: as if it were not)
 storage_free() { df -Pk "$1" 2>/dev/null | awk 'NR == 2 { printf "%s", $4 }'; }   # storage_free MOUNT -> the KB free there
 storage_kb() { files_size $(( ${1:-0} * 1024 )); }   # storage_kb KB -> 3.1 GB
 storage_here() {   # -> "476.9 GB, 120.3 GB free": the disk the system runs from; nothing when df cannot tell
@@ -4742,7 +4747,7 @@ storage_here() {   # -> "476.9 GB, 120.3 GB free": the disk the system runs from
 storage_said() { sed 's/.*: //' | grep -v '^$' | tail -1 | scrub_text; }   # udisksctl's error -> its last clause (Not authorized to perform operation, target is busy)
 storage_find() { awk -F '\037' -v k="$1" -v n="$(panel_lower "$2")" '$1 == k && tolower($2) == n { print; exit }' "$TMP/storage.l"; }   # storage_find drive|fs NAME -> its line of the list just read
 storage_act() {   # storage_act mount|unmount|open|eject NAME -> one line
-    command -v udisksctl >/dev/null 2>&1 || { echo "udisksctl is not installed (spark-shell on desktop)"; return 1; }
+    udisks_here || { echo "udisksctl is not installed (spark-shell on desktop)"; return 1; }
     storage_list > "$TMP/storage.l"
     if [ "$1" = eject ]; then _sl=$(storage_find drive "$2"); else _sl=$(storage_find fs "$2"); fi
     [ -n "$_sl" ] || { echo "no drive named $2 is plugged in"; return 1; }

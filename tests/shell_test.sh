@@ -4947,9 +4947,8 @@ STUB
     mcp() { _s=$1; shift; printf '%s\n' "$@" | sh "$SH" provide "$_s" > "$H/mcp.out" 2> "$H/mcp.err"; }
     ans() { jq -c --argjson i "$1" 'select(.id == $i)' "$H/mcp.out"; }
     rows() { mcp "$1" "$(rq 1 resources/read "{\"uri\":\"spark-shell://$1/rows\"}")"; ans 1 | jq -r '.result.contents[0].text'; }
-    out=$(env -u DBUS_SESSION_BUS_ADDRESS PATH="$H/.local/bin:$sys" sh -c 'rm -f "$1/.local/bin/mako"; sh "$2" panel notifications --list' _ "$H" "$SH" 2>&1 | sed -n 2p)
+    out=$(env -u DBUS_SESSION_BUS_ADDRESS SPARK_SHELL_NO_MAKO=1 sh "$SH" panel notifications --list 2>&1 | sed -n 2p)   # a runner may have a mako of its own: the switch, never PATH
     [ "$out" = "  notifications  mako is not installed (spark-shell on desktop)	notifications show" ] && ok "notifications: no mako, said as the section's one row" || bad "notifications no mako" "$out"
-    printf '#!/bin/sh\nexit 0\n' > "$H/.local/bin/mako"; chmod +x "$H/.local/bin/mako"
     out=$(env -u DBUS_SESSION_BUS_ADDRESS sh "$SH" panel notifications --list 2>&1 | sed -n 2p)
     [ "$out" = "  notifications  no session bus yet: notifications start at your next login	notifications show" ] && ok "notifications: no session bus, the next login says when" || bad "notifications no bus" "$out"
     out=$(DBUS_SESSION_BUS_ADDRESS=unix:path=/nowhere sh "$SH" panel notifications --list 2>&1 | sed -n 2p)
@@ -5041,9 +5040,8 @@ JSON
     out=$(sh "$SH" desktop storage 2>&1 || :)
     [ "$out" = "$(printf 'SanDisk Ultra  28.9 GB\n  BACKUP  28.9 GB\n  SanDisk Ultra 1.0 MB  1.0 MB\ndrive  59.5 GB\n  cam/era  59.5 GB\nthis computer  465.7 GB, 190.7 GB free')" ] && ok "desktop storage: each drive, its parts, this computer's free space" || bad "storage cli" "$out"
     out=$(sh "$SH" desktop storage open BACKUP 2>&1 || :); [ "$out" = 'BACKUP is at /run/media/ada/BACKUP' ] && grep -qx 'mount -b /dev/sdb1 --no-user-interaction' "$HOME/udisks.log" && ok "desktop storage open: a part not mounted is mounted first; away from the desktop, where it is" || bad "storage open" "$out"
-    out=$(PATH="$H/.local/bin:$sys" sh -c 'rm -f "$1/.local/bin/udisksctl"; sh "$2" panel storage --list' _ "$H" "$SH" 2>&1 | sed -n 2p)
+    out=$(SPARK_SHELL_NO_UDISKS=1 sh "$SH" panel storage --list 2>&1 | sed -n 2p)   # GitHub's Ubuntu runner has a udisksctl of its own: the switch, never PATH
     [ "$out" = "  storage    udisksctl is not installed (spark-shell on desktop)	storage show" ] && ok "storage: no udisks2, said first" || bad "storage no udisks" "$out"
-    printf '#!/bin/sh\necho "$*" >> "$HOME/udisks.log"\n' > "$H/.local/bin/udisksctl"; chmod +x "$H/.local/bin/udisksctl"
     # a drive plugged in while the bar runs: one notification within a second or two, none for what was there at its start
     S=$H/sys; mkdir -p "$S/block/nvme0n1"; rm -f "$nlog"
     cp "$HOME/lsblk.json" "$H/lsblk.full"; jq '.blockdevices |= map(select(.name != "sdb"))' "$H/lsblk.full" > "$HOME/lsblk.json"
