@@ -79,6 +79,9 @@ done
 [ -n "$sock" ] || { echo "FAIL: no sway socket after 15 s"; cat "$HOME/sway.log"; exit 1; }
 export SWAYSOCK=$sock
 sleep 2
+WAYLAND_DISPLAY=''   # grim speaks Wayland to the same sway: its socket in the runtime dir, never the .lock beside it
+for w in "$XDG_RUNTIME_DIR"/wayland-[0-9]*; do [ -S "$w" ] && { WAYLAND_DISPLAY=${w##*/}; break; }; done
+export WAYLAND_DISPLAY
 swaymsg -t get_version | jq -r '"sway " + .human_readable'
 swaymsg -t get_outputs | jq -r '.[] | "output " + .name + " " + (.current_mode.width|tostring) + "x" + (.current_mode.height|tostring)'
 swaymsg exec 'foot --app-id proof-window' >/dev/null   # by its app id: the rc's prompt hook retitles a foot window to terminal at once
