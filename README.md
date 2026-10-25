@@ -152,6 +152,12 @@ explain each part. If something fails, run `spark-shell check` and
                                       the keyboard's layouts, or the next one
     spark-shell desktop screen [NAME scale N|mode WxH|on|off|left-of NAME]
                                       list the screens, or set one
+    spark-shell desktop notifications [do-not-disturb on|off|dismiss|restore]
+                                      do not disturb, and the last few
+    spark-shell desktop storage [mount|unmount|open|eject NAME]
+                                      the drives plugged in, the free space
+    spark-shell desktop power [lock|suspend|logout|restart|shutdown]
+                                      lock, log out, suspend, restart, shut down
     spark-shell bar on|off            show or hide the status line and the bar
     spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
     spark-shell want "WORDS"          ask for it, "mute everything": steps run;
@@ -271,7 +277,11 @@ leave the desktop, and then the service takes over. Without spark,
 PipeWire starts with the desktop and stops when you leave it.
 `on desktop` also turns on the seatd service, adds you to the `_seatd`
 and `audio` groups, and links PipeWire's two ALSA files into
-`/etc/alsa/conf.d`, so ALSA programs play through it (sudo).
+`/etc/alsa/conf.d`, so ALSA programs play through it (sudo). The
+notifications, the drives and the power come with it: mako, notify-send
+and udisks2, and on Void two rules (sudo), one that lets you mount and
+eject a USB drive and one that lets you suspend, restart and shut down
+([Notifications, drives and power](#notifications-drives-and-power)).
 `spark-shell check` says where PipeWire runs from: boot, login or the
 desktop. `off desktop` stops the service and removes it, with the links.
 
@@ -412,8 +422,10 @@ kept.
 
 When a reminder comes due, the bar shows a `due` block with its words,
 a click opens the reminders, and a short sound plays once (PipeWire,
-else ALSA; afplay on a Mac). The tmux status line shows it too, in the
-accent, so a terminal outside the desktop and a Mac hear and see it.
+else ALSA; afplay on a Mac). On the desktop it comes as a notification
+too, once, and a click on it opens the reminders in the dialog. The
+tmux status line shows it too, in the accent, so a terminal outside the
+desktop and a Mac hear and see it.
 Both lines check the time every 15 seconds, so nothing more runs for
 it. Done takes the reminder away; again in 10 minutes moves it on.
 
@@ -456,6 +468,49 @@ screen|area|window` does the same, and the dialog's `window` section
 has the screen and an area. Each picture is a PNG named by the time in
 `~/pictures/screenshots`, and it is on the clipboard too (grim, slurp
 and wl-clipboard).
+
+## Notifications, drives and power
+
+A notification comes in the top right corner, under the bar, in your
+palette and text face: the app's name muted, what it says in bold, the
+words under it. The newest is on top, three at most, and each goes
+after eight seconds into the history, which keeps the last ten. A
+critical one stays until you dismiss it and has a red edge. A click
+does what its app offers; a right click dismisses it. mako draws them,
+from `~/.config/mako/config`, and a new look reaches the next one at
+once. Type `spark-shell desktop notifications do-not-disturb on`. They
+stay out of sight, a critical one still shows, the bar says `do not
+disturb`, and it holds until you turn it off, logins included.
+`desktop notifications` lists the last few, `dismiss` clears the
+screen, and `restore` shows the last one again; the dialog's
+Notifications has the same. A program reaches mako through the
+session's D-Bus. Where logind makes none (Void), the desktop starts
+inside `dbus-run-session`, so the notifications start at the login
+after `on desktop`.
+
+A drive you plug in (a USB stick, a card) comes as a notification, and
+a click on it opens the dialog's Storage, where Enter mounts it and,
+once mounted, opens it in your file manager (or a terminal in it when
+there is none). Nothing mounts by itself. `spark-shell desktop storage`
+lists the drives with their parts and this computer's free space;
+`mount NAME`, `unmount NAME`, `open NAME` and `eject NAME` do the rest,
+eject unmounting every part first and powering the drive off. udisks2
+mounts with no root where logind says you sit at the screen. On Void,
+with no logind, `on desktop` writes a polkit rule that lets you mount,
+eject and power off a removable drive, nothing more (sudo). An
+encrypted drive is unlocked in a terminal (`udisksctl unlock -b DEV`).
+The disk the system runs from, and a disk the system mounts itself, is
+never listed.
+
+Type `spark-shell desktop power suspend`. The screen locks first, then
+the machine sleeps, from the dialog's Power too, where lock, log out,
+restart and shut down sit beside it; log out, restart and shut down ask
+for a typed yes there. Where logind runs, it does them for you; logind
+refuses a restart while another login is open, and spark-shell says
+so. On Void `on desktop` writes a sudo rule that lets you run zzz,
+reboot and poweroff, each with no argument, and nothing else (sudo).
+What the power button and the lid do is logind's or acpid's: the
+section says it, and changes nothing.
 
 ## Wallpaper
 
@@ -524,7 +579,8 @@ On the desktop, a bar sits at the top of the screen. The workspaces are
 on the left. A workspace a layout opened carries the layout's words, so
 `2 news` reads from a distance. On the right, in groups parted by a thin
 line: `lan`, `wifi` and `bt`; `out` and `mic`, each with its gauge;
-`due`, a reminder due; `light`, the brightness with its gauge, and `kb`,
+`due`, a reminder due; `do not disturb`, while it is on; `light`, the
+brightness with its gauge, and `kb`,
 the keyboard's layout; `bat`; the date and time; and last, spark-shell's
 own sign, the prompt sign in the palette's yellow. The palette has no
 block: it is picked in the dialog, where a click on any block leads.
@@ -602,8 +658,9 @@ The home lists six places, each with what it holds now: Apps (the
 apps by name), Files (your home folder), Workspace (the windows open
 and the layouts saved), Notes (how many, and the newest), Calendar (the
 next reminder, or none ahead) and Settings (the network and the theme;
-inside, sound, microphone, Wi-Fi, Bluetooth, display, keyboard, theme,
-the bar, Talk, Connections and About). A place shows only where this
+inside, sound, microphone, Wi-Fi, Bluetooth, storage, display,
+keyboard, notifications, theme, the bar, power, Talk, Connections and
+About). A place shows only where this
 machine has it. The down arrow moves from the prompt into the
 list, and up from the first row comes back. A row wears a sign where
 there is a state: a dot is in use or connected, a ring is available, a
@@ -619,6 +676,14 @@ and Page Down scroll it.
 - `bt`: connect or disconnect your devices, look for new ones, pair a
   new one, turn Bluetooth off and on.
 - `out` and `mic`: use another device, mute and unmute.
+- `notifications`: turn do not disturb on or off, dismiss what is on
+  the screen, show the last one again; under them the last few.
+- `storage`: each drive plugged in, with its parts: Enter mounts one,
+  and on one that is mounted opens it in your file manager; unmount
+  one, eject the drive; then this computer's free space.
+- `power`: lock the screen, suspend, log out, restart, shut down; the
+  last three ask for a typed yes. What the power button does is said
+  under them, never changed.
 - `theme`: first the wallpaper, the text size and the transparency, a
   row each; on the text size and the transparency, left and right
   change the value in place. Then the palettes, dark and light, each
@@ -788,7 +853,8 @@ the spark pointer), `ALPHA` (how solid foot is, 0.85: 15% transparency),
 `DIALOG_ATTACH` (yes or no), `DIALOG_ATTACH_TYPES` (txt md),
 `DIALOG_MODEL` and `DIALOG_TALK` (yes or no), `DISPLAY_IDLE` and
 `DISPLAY_LOCK` (minutes, 0 never), `DISPLAY_SAVER` (clock, or a saver's
-name), `KEYBOARD` (layouts). The commands write them.
+name), `KEYBOARD` (layouts), `DO_NOT_DISTURB` (yes or no). The commands
+write them.
 
 Files it writes: the shell files, `~/.tmux.conf`, `~/.config/btop/`,
 `~/.config/starship.toml`, `~/.config/spark-shell/` (a saved theme a
@@ -798,8 +864,9 @@ and layouts, a drawing rendered in another palette, the drawings' small
 pictures for the wallpaper list),
 `~/.local/bin/spark-shell`, and for the desktop `~/.config/sway/`,
 `~/.config/foot/` (foot.ini and the dialog's own dialog.ini),
-`~/.config/starship-foot.toml`, a rule that draws the bar's wifi bars
-without hinting in `~/.config/fontconfig/conf.d/50-spark-shell.conf`,
+`~/.config/starship-foot.toml`, `~/.config/mako/config`, a rule that
+draws the bar's wifi bars without hinting in
+`~/.config/fontconfig/conf.d/50-spark-shell.conf`,
 the two cursor themes in
 `~/.local/share/icons/`, on Void with spark the sound's service in
 `~/.config/spark/sv/spark-shell-sound` and two links in
@@ -809,11 +876,14 @@ plain ALSA, `~/.config/alsa/asoundrc`, and
 root: the console colors at boot (a systemd unit or a line in
 `/etc/rc.local`), the console font, the login notice and boot files for
 quiet, and on Void PipeWire's two links in `/etc/alsa/conf.d` and your
-place in the `audio` group, and your place in `video` and `i2c` for the
-brightness. `off` restores or removes each one. The font stays, as the
-packages do: four files in `~/.local/share/fonts/monaspace-neon/`, or
-`MonaspaceNeon-*.otf` in `~/Library/Fonts` on a Mac. `off login`
-removes the login screen's copy, in `/usr/share/fonts/spark-shell/`.
+place in the `audio` group, the polkit rule for your drives in
+`/etc/polkit-1/rules.d/50-spark-shell-storage.rules` and the sudo rule
+for the power in `/etc/sudoers.d/spark-shell-power`, and your place in
+`video` and `i2c` for the brightness. `off` restores or removes each
+one. The font stays, as the packages do: four files in
+`~/.local/share/fonts/monaspace-neon/`, or `MonaspaceNeon-*.otf` in
+`~/Library/Fonts` on a Mac. `off login` removes the login screen's
+copy, in `/usr/share/fonts/spark-shell/`.
 
 What leaves the machine: only what the package manager downloads and,
 for the desktop, the dialog's release file from GitHub, checked against

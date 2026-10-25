@@ -146,8 +146,10 @@ jobs:
     # family's container, spark-shell on as a plain user (the renders, the
     # palette, a drawing drawn again in it through rsvg-convert), the sway
     # config read by sway -C, then a headless sway with a foot in it, asked
-    # through swaymsg. No seat, no GPU, no sound card: a proof of the
-    # install and the render, said so; a screen is a machine's proof.
+    # through swaymsg, on a session bus of its own; mako's notifications
+    # drawn in it in two palettes, the pictures kept for a look. No seat,
+    # no GPU, no sound card: a proof of the install and the render, said
+    # so; a screen is a machine's proof.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -159,38 +161,45 @@ jobs:
             image: debian:13@sha256:4c25275446ca371766b8b093c696782eabce06263fccacb8d5d813b3dc44b308
             prep: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git jq diffutils >/dev/null
             install: DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
+            proof: dbus
           - family: ubuntu   # the Debian family's file: Ubuntu says ID_LIKE=debian
             distro: debian
             image: ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
             prep: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git jq diffutils >/dev/null
             install: DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
+            proof: dbus systemd   # mako 1.8's makoctl asks the bus through systemd's busctl, which a real Ubuntu always has
           - family: arch
             distro: arch
             image: archlinux:latest   # zizmor: ignore[unpinned-images] a rolling distro
             prep: pacman -Syu --noconfirm --needed git jq diffutils >/dev/null
             install: pacman -S --needed --noconfirm
+            proof: dbus
           - family: void
             distro: void
             image: ghcr.io/void-linux/void-glibc-full:latest   # zizmor: ignore[unpinned-images] a rolling distro
             prep: xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null; xbps-install -Sy git bash jq gawk gzip libstdc++ shadow >/dev/null
             install: xbps-install -Sy
+            proof: dbus
           - family: fedora
             distro: fedora
             image: fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80
             prep: dnf install -y -q git jq diffutils shadow-utils util-linux >/dev/null
             install: dnf install -y -q
+            proof: dbus-daemon
           - family: opensuse
             distro: opensuse
             image: opensuse/tumbleweed:latest   # zizmor: ignore[unpinned-images] a rolling distro
             # a rolling distro: the image is one snapshot, the repository another, and foot's terminfo refused to meet the image's terminfo-base until zypper dup put the two on one snapshot (what spark's distro file says of Tumbleweed)
             prep: zypper --non-interactive refresh >/dev/null; zypper --non-interactive dup >/dev/null; zypper --non-interactive install git jq diffutils findutils gawk tar gzip libstdc++6 shadow
             install: zypper --non-interactive --quiet install
+            proof: dbus-1-daemon dbus-1-tools
     container: ${{ matrix.image }}   # zizmor: ignore[unpinned-images] the matrix above pins each versioned image by digest; the rolling ones are latest by nature
     env:
       FAMILY: ${{ matrix.family }}
       DISTRO: ${{ matrix.distro }}
       PREP: ${{ matrix.prep }}
       INSTALL: ${{ matrix.install }}
+      PROOF: ${{ matrix.proof }}
     steps:
       - run: sh -c "$PREP"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
@@ -200,6 +209,8 @@ jobs:
         run: |
           pkgs=$(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p' "distro/$DISTRO.env" | tr '\n' ' ')
           sh -c "$INSTALL $pkgs >/dev/null" || sh -c "$INSTALL $pkgs"
+      - name: the proof's own (a session bus for the headless sway, which a machine's login makes)
+        run: sh -c "$INSTALL $PROOF >/dev/null" || sh -c "$INSTALL $PROOF"
       - name: spark-shell on as a plain user, the config read by sway, a headless sway with a foot in it
         # sway's package on Arch, Void and Fedora sets cap_sys_nice on the
         # binary; a container's bounding set lacks it, so a plain user's
@@ -212,6 +223,16 @@ jobs:
           cp tests/desktop_proof.sh /tmp/desktop_proof.sh
           chmod 755 /tmp/desktop_proof.sh
           su ada -c "REPO='$GITHUB_WORKSPACE' SWAY_NOCAP=/opt/nocap sh /tmp/desktop_proof.sh"
+      - name: the notifications as drawn, kept for a look
+        if: always()
+        run: mkdir -p proof && cp -R ~ada/proof/. proof/ 2>/dev/null || true   # ~ada: the proof user's home, by its name
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        if: always()
+        with:
+          name: notifications-${{ matrix.family }}
+          path: proof
+          retention-days: 14
+          if-no-files-found: ignore
   macos:
     runs-on: macos-latest
     timeout-minutes: 15

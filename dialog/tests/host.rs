@@ -860,6 +860,74 @@ fn the_home_is_six_places_and_settings_holds_the_sections_that_run() {
 }
 
 #[test]
+fn settings_holds_the_drives_the_notifications_and_the_power_and_their_keys_say_what_enter_does() {
+    let labels = ["out", "storage", "notifications", "power", "bat"];
+    let (mut app, rx, tx) = app_with(&labels);
+    for (i, l) in labels.iter().enumerate() {
+        let label = l.to_string();
+        let rows = json!({"title": label, "rows": [], "short": []});
+        app.servers.push(stub(
+            i,
+            l,
+            Box::new(move |v, send| {
+                if let Some(r) = ordinary(&label, v, &json!([]), &rows) {
+                    send(r);
+                }
+            }),
+            tx.clone(),
+        ));
+    }
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers.iter().all(|p| p.ready)));
+    typed(&mut app, "settings");
+    app.enter();
+    assert_eq!(app.view, View::Dest(SETTINGS_DEST));
+    let names: Vec<&str> = app
+        .items()
+        .iter()
+        .filter_map(|i| match i {
+            Item::Setting(k) => Some(spark_dialog::app::SETTINGS[*k].1),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        names,
+        vec!["Sound", "Storage", "Notifications", "Power", "Battery", "Connections"],
+        "the drives beside the connections, the power beside the battery (#71, #72, #73)"
+    );
+    let verbs: Vec<&str> = [
+        "storage_mount",
+        "storage_unmount",
+        "storage_eject",
+        "notifications_dismiss",
+        "notifications_restore",
+        "power_lock",
+        "power_suspend",
+        "power_logout",
+        "power_restart",
+        "power_shutdown",
+    ]
+    .iter()
+    .map(|t| spark_dialog::app::verb_of(t))
+    .collect();
+    assert_eq!(
+        verbs,
+        vec![
+            "Mount",
+            "Unmount",
+            "Eject",
+            "Dismiss",
+            "Show",
+            "Lock",
+            "Suspend",
+            "Log out",
+            "Restart",
+            "Shut down"
+        ]
+    );
+}
+
+#[test]
 fn words_that_name_no_row_are_a_request() {
     let (mut app, _rx, calls, _r) = started();
     app.cfg.spark_shell = "/bin/spark-shell".into();

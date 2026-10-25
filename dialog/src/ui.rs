@@ -38,8 +38,8 @@ pub const HINT_Y: u16 = 5;
 pub const CONTENT_Y: u16 = 7;
 /// The bottom: air, the rule, the footer, air.
 pub const BOTTOM: u16 = 4;
-/// Where a destination's purpose starts, past the longest name (Connections).
-pub const PURPOSE_X: u16 = 16;
+/// Where a destination's purpose starts: past the longest name (Notifications) and two cells of air.
+pub const PURPOSE_X: u16 = 17;
 /// A palette's chip: a small terminal in the palette's own colors, this many cells wide.
 pub const CHIP: u16 = 9;
 /// A picture beside a list (a wallpaper's), in cells: about 16 by 9 in a 9 by 18 pixel cell.

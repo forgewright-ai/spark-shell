@@ -1,0 +1,44 @@
+# rendered by spark-shell from templates/.config/mako/config -- edit the template, then spark-shell on
+# The notifications (#71): mako draws them in the top right corner, under
+# the bar, on the dialog's surface, in the palette and the text face: the
+# app's name muted, the summary bold, the words under it. The newest is on
+# top, three at most, each gone after eight seconds into the history (the
+# last ten: spark-shell desktop notifications, or the dialog's
+# Notifications). A critical one stays until it is dismissed and has a red
+# edge, as an urgent window does. A click does what its app offers, a right
+# click dismisses it. With do not disturb on they stay out of sight, but a
+# critical one still shows.
+font=@BAR_FONT@
+background-color=#@PANEL_BG@
+text-color=#@HEX_FG@
+border-size=0
+border-radius=0
+progress-color=over #@PANEL_HI@
+padding=@NOTIFY_PAD@
+margin=8
+outer-margin=8
+width=@NOTIFY_WIDTH@
+height=@NOTIFY_HEIGHT@
+anchor=top-right
+icons=0
+max-visible=3
+max-history=10
+default-timeout=8000
+format=<span foreground="#@PANEL_MUTED@">%a</span>\n<b>%s</b>\n%b
+
+[urgency=critical]
+default-timeout=0
+border-size=2
+border-color=#@HEX_ANSI_1@
+
+# spark-shell's own: a click on a reminder opens it in the dialog, on a
+# drive plugged in the dialog's Storage, where it mounts
+[app-name=spark-shell category=x-spark-shell.reminder]
+on-button-left=exec makoctl dismiss -n "$id"; foot --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog reminders
+[app-name=spark-shell category=device.added]
+on-button-left=exec makoctl dismiss -n "$id"; foot --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog storage
+
+[mode=do-not-disturb]
+invisible=1
+[mode=do-not-disturb urgency=critical]
+invisible=0

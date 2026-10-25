@@ -1,5 +1,65 @@
 # Changelog
 
+## v0.103
+
+The system foundation, first part (Priority I of the product
+guidelines): the notifications, the drives and the power.
+
+- New: the notifications. Until now nothing showed them, so an app's
+  notification was lost. mako shows them now, in the top right corner
+  under the bar, on the dialog's surface, in the palette and the text
+  face: the app's name muted, what it says in bold, the words under it.
+  The newest is on top, three at most, each gone after eight seconds
+  into a history of ten; a critical one stays until it is dismissed and
+  has a red edge. Do not disturb keeps them out of sight (a critical one
+  still shows), the bar says so, and it holds across logins
+  (DO_NOT_DISTURB in the config). The dialog's Notifications turns it on
+  and off, dismisses what is on the screen, shows the last one again and
+  lists the last few, and so does `spark-shell desktop notifications`. A
+  reminder due comes as a notification too, once, and a click on it
+  opens the reminders. A new look reaches the next notification at once;
+  check has a notify row (#71)
+- Fixed: on Void the desktop ran with no session bus, as no logind makes
+  one, so no program's notification could reach mako or anything else.
+  sway starts inside dbus-run-session where there is no session bus;
+  the families with logind keep their own (#71)
+- New: the drives. A USB stick or a card you plug in comes as a
+  notification, and a click on it opens the dialog's Storage: each drive
+  with its parts, Enter mounts one and opens one that is mounted in your
+  file manager (a terminal in it where there is none), then unmount,
+  eject (every part unmounted, the drive powered off) and this
+  computer's free space. Nothing mounts by itself. udisks2 mounts with
+  no root where logind says you sit at the screen; on Void `on desktop`
+  writes a polkit rule that lets you mount, eject and power off a
+  removable drive, nothing more. The disk the system runs from and a
+  disk the system mounts itself are never listed, and an encrypted drive
+  says how to unlock it. `spark-shell desktop storage` does the same in
+  a terminal; check has a storage row (#73)
+- New: the power. The dialog's Power locks the screen, suspends, logs
+  out, restarts and shuts down, and log out, restart and shut down ask
+  for a typed yes. Suspend locks the screen first, whoever asks. Where
+  logind runs it does them for you, and a restart it refuses while
+  another login is open says why. On Void `on desktop` writes a sudo
+  rule, checked by visudo, that lets you run zzz, reboot and poweroff,
+  each with no argument, and nothing else. What the power button and the
+  lid do is said, from logind's settings or acpid's handler, and never
+  changed. `spark-shell desktop power` does the same; check has a power
+  row (#72)
+- The dialog's Settings has Storage beside the network, Notifications
+  after the keyboard and Power before the battery, and Enter's key says
+  Mount, Unmount, Eject, Dismiss, Show, Lock, Suspend, Log out, Restart
+  or Shut down. The column of states moves one cell right, on the home
+  too, so the longest name, Notifications, keeps two cells of air
+- Fixed: a state too long for the dialog's header was cut with the space
+  before its dot gone, the dot against the section's name: the cut keeps
+  it now
+- Packages: mako, notify-send (libnotify) and udisks2 in every family's
+  desktop list, dbus-user-session on Debian and Ubuntu, dbus on Void,
+  each name looked up on its family's own index first
+- Decided: the Priority I assessment (2026-10-24) found ten gaps, one
+  issue each (#71 to #80); these three come first, as a new desktop
+  meets them on its first day, and the other seven wait for triage
+
 ## v0.102
 
 - Fixed: the idle screen started by hand (`spark-shell desktop idle`) had

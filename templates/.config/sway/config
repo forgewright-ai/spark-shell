@@ -165,6 +165,11 @@ workspace idle gaps inner 0
 workspace idle gaps outer 0
 exec @IDLE_EXEC@
 
+# The notifications (#71): mako draws them in the top right corner, under the bar, in the
+# palette (~/.config/mako/config); spark-shell desktop --pending, below, keeps do not
+# disturb as it was left.
+exec mako
+
 # key: Print captures the screen, Shift+Print an area, Super+Print the window.
 bindsym Print exec @REPO@/spark-shell desktop capture screen
 bindsym Shift+Print exec @REPO@/spark-shell desktop capture area

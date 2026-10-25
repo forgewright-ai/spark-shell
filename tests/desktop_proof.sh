@@ -4,7 +4,10 @@
 # against a throwaway root, the renders in place, a drawing drawn again in
 # the palette through rsvg-convert, the sway config read by sway -C, then a
 # headless sway (no seat, no GPU: wlroots' headless backend and the pixman
-# renderer) with a foot window in it, asked through swaymsg. Every step
+# renderer) with a foot window in it, asked through swaymsg, on a session
+# bus of its own as the desktop has where no logind makes one; then mako's
+# notifications in it, drawn in two palettes and with do not disturb on,
+# each captured into $HOME/proof for a look (CI keeps them). Every step
 # prints what it found; the first failure ends it. REPO is the clone.
 # The root tools a plain user cannot run (usermod, gpasswd) are shims that
 # edit the throwaway root's group file, as the suite's do.
@@ -39,7 +42,7 @@ echo "== spark-shell on --yes -v ($distro, as $me)"
 sh "$REPO/spark-shell" on --yes -v 2>&1 | tee "$HOME/on.out"
 grep -q '^ok     packages     installed$' "$HOME/on.out" || { echo "FAIL: the packages row is not ok"; exit 1; }
 grep -q '^render wallpaper    skyline drawn in nord ' "$HOME/on.out" || { echo "FAIL: skyline was not drawn in nord (rsvg-convert)"; exit 1; }
-for f in .config/sway/config .config/foot/foot.ini .config/foot/dialog.ini .tmux.conf .config/spark-shell/sgr.sh; do
+for f in .config/sway/config .config/foot/foot.ini .config/foot/dialog.ini .config/mako/config .tmux.conf .config/spark-shell/sgr.sh; do
     [ -f "$HOME/$f" ] || { echo "FAIL: $f was not rendered"; exit 1; }
 done
 png=$HOME/.local/state/spark-shell/wallpapers/skyline-nord.png
@@ -57,7 +60,13 @@ echo "== sway -C: the rendered config reads"
 if sway -C -c "$HOME/.config/sway/config" > "$HOME/sway-C.out" 2>&1; then echo "ok: sway -C accepts the config"; else cat "$HOME/sway-C.out"; echo "FAIL: sway -C refused the config"; exit 1; fi
 cat "$HOME/sway-C.out"
 
-echo "== a headless sway, then a foot window in it"
+echo "== a session bus, then a headless sway on it, then a foot window in it"
+# a container has no logind, as Void has none: the bus is the desktop's own (desk_start runs sway
+# inside dbus-run-session); here one bus for sway and for this script's notify-send and makoctl
+command -v dbus-daemon >/dev/null 2>&1 || { echo "FAIL: no dbus-daemon for a session bus"; exit 1; }
+dbus-daemon --session --fork --print-address=1 --print-pid=1 > "$HOME/bus.out" || { echo "FAIL: dbus-daemon gave no session bus"; exit 1; }
+DBUS_SESSION_BUS_ADDRESS=$(sed -n 1p "$HOME/bus.out"); buspid=$(sed -n 2p "$HOME/bus.out"); export DBUS_SESSION_BUS_ADDRESS
+echo "ok: a session bus at $DBUS_SESSION_BUS_ADDRESS"
 sway -c "$HOME/.config/sway/config" > "$HOME/sway.log" 2>&1 &
 swaypid=$!
 sock=''
@@ -80,7 +89,37 @@ done
 swaymsg -t get_tree | jq -e '.. | objects | select(.app_id? == "proof-window")' >/dev/null || { echo "FAIL: no foot window in sway's tree"; tail -40 "$HOME/sway.log"; exit 1; }
 echo "ok: a foot window is open in the headless sway ($(swaymsg -t get_tree | jq -r '[.. | objects | select(.app_id? != null) | .app_id] | unique | join(", ")'))"
 for b in $(swaymsg -t get_bar_config | jq -r '.[]'); do swaymsg -t get_bar_config "$b" | jq -r '"bar " + .id + ": mode " + .mode + ", at the " + .position'; done
+
+echo "== the notifications: mako started by the sway config, three drawn, in two palettes, then do not disturb (#71)"
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do makoctl mode >/dev/null 2>&1 && break; sleep 1; done
+makoctl mode >/dev/null 2>&1 || { echo "FAIL: mako does not answer on the session bus"; tail -20 "$HOME/sway.log"; exit 1; }
+proof=$HOME/proof; mkdir -p "$proof"
+corner=$(swaymsg -t get_outputs | jq -r '.[0] | "\(.rect.width - 560),0 560x420"')
+shot() {   # shot NAME [LINES]: notifications sent, the screen's top right corner captured into proof/NAME.png, what mako lists said
+    notify-send -a firefox "Download finished" "report.pdf, 2.4 MB, in your downloads"
+    notify-send -a spark-shell -c x-spark-shell.reminder "call the vet" "due now"
+    notify-send -u critical -a power "Battery at 5%" "Plug the charger in"
+    sleep 2
+    grim -g "$corner" "$proof/$1.png" || { echo "FAIL: grim took no picture"; exit 1; }
+    _n=$(makoctl list | grep -c '^Notification' || :)
+    [ "$_n" = 3 ] || [ "$(makoctl list | head -c 1)" = '{' ] || { echo "FAIL: mako lists $_n notifications, not 3"; makoctl list; exit 1; }
+    echo "ok: $1, the corner in $proof/$1.png ($(wc -c < "$proof/$1.png" | tr -d ' ') bytes)"
+    makoctl dismiss -a >/dev/null 2>&1 || :
+}
+for pal in tokyonight-night solarized-light; do
+    sh "$REPO/spark-shell" theme "$pal" > "$HOME/theme.out" 2>&1 || { cat "$HOME/theme.out"; echo "FAIL: theme $pal"; exit 1; }
+    grep -q "^background-color=#" "$HOME/.config/mako/config" || { echo "FAIL: mako's config has no background"; exit 1; }
+    sleep 1
+    shot "notifications-$pal"
+done
+sh "$REPO/spark-shell" desktop notifications do-not-disturb on
+makoctl mode | grep -qx do-not-disturb || { echo "FAIL: do not disturb is not mako's mode"; exit 1; }
+grep -qx 'DO_NOT_DISTURB=yes' "$HOME/.config/spark-shell/config" || { echo "FAIL: do not disturb is not in the config"; exit 1; }
+shot "notifications-do-not-disturb"   # a look: only the critical one shows
+sh "$REPO/spark-shell" desktop notifications do-not-disturb off
+sh "$REPO/spark-shell" panel notifications --list | sed -n '1,4p'
 swaymsg exit >/dev/null 2>&1 || true
 wait "$swaypid" 2>/dev/null || true
+kill "$buspid" 2>/dev/null || true
 grep -i 'error' "$HOME/sway.log" | head -5 || true
 echo "== done: $distro installs the desktop, renders it, and sway runs it headless"

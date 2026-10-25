@@ -61,6 +61,12 @@
 #                                     the keyboard's layouts, or the next one
 #   spark-shell desktop screen [NAME scale N|mode WxH|on|off|left-of NAME]
 #                                     list the screens, or set one
+#   spark-shell desktop notifications [do-not-disturb on|off|dismiss|restore]
+#                                     do not disturb, and the last few
+#   spark-shell desktop storage [mount|unmount|open|eject NAME]
+#                                     the drives plugged in, the free space
+#   spark-shell desktop power [lock|suspend|logout|restart|shutdown]
+#                                     lock, log out, suspend, restart, shut down
 #   spark-shell bar on|off            show or hide the status line and the bar
 #   spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
 #   spark-shell dialog [SECTION]      open the dialog (Super+d), SECTION first
@@ -159,7 +165,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB'
 
 # This machine's short name (the twin of spark lib/env.sh short_host). On
 # a Mac, LocalHostName, by scutil's full path: /usr/sbin is not on every
@@ -217,7 +223,8 @@ config_load() {
     pointer_ok "$POINTER" || { echo "spark-shell: POINTER=$POINTER in $CONFIG: a cursor theme's NAME and, after a space, its SIZE in pixels (spark-white 24, spark-black 32, Adwaita)" >&2; exit 1; }
     # the dialog's composer: plus and the file types it attaches, the model chip, talk
     : "${DIALOG_ATTACH:=yes}" "${DIALOG_ATTACH_TYPES:=txt md}" "${DIALOG_MODEL:=yes}" "${DIALOG_TALK:=yes}"
-    for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK LOGIN; do
+    : "${DO_NOT_DISTURB:=no}"   # the notifications kept out of sight, as mako's do-not-disturb mode, across logins (#71)
+    for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK LOGIN DO_NOT_DISTURB; do
         eval "v=\$$k"
         case $v in yes|no) ;; *) echo "spark-shell: $k=$v in $CONFIG: yes or no" >&2; exit 1 ;; esac
     done
@@ -230,7 +237,7 @@ config_load() {
     saver_known "$DISPLAY_SAVER" || { echo "spark-shell: DISPLAY_SAVER=$DISPLAY_SAVER in $CONFIG: clock, or one of $SAVER_NAMES" >&2; exit 1; }
     [ -z "$KEYBOARD" ] || printf '%s\n' "$KEYBOARD" | grep -qE "$KB_RE" || { echo "spark-shell: KEYBOARD=$KEYBOARD in $CONFIG: layouts by their xkb names, a space between, a variant after a plus (us us+intl)" >&2; exit 1; }
     printf '%s\n' "$DIALOG_ATTACH_TYPES" | grep -qE '^[a-z0-9]{1,8}( [a-z0-9]{1,8})*$' || { echo "spark-shell: DIALOG_ATTACH_TYPES=$DIALOG_ATTACH_TYPES in $CONFIG: file types in lower case, a space between (txt md)" >&2; exit 1; }
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB
 }
 SAVER_NAMES='spark starfield drift'   # lib/saver.py's list, in its order: what DISPLAY_SAVER takes besides clock (#66)
 KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}$'   # one to eight layouts, a variant after a plus: us us+intl
@@ -592,10 +599,13 @@ transparency_of() { awk -v a="${1:-1}" 'BEGIN { printf "%d", (1 - a) * 100 + 0.5
 # towards the text, the picked row a shade more, with air around the
 # text from the font size; no frame, so it reads as a surface of the
 # desktop, not a window with a border. The sway template takes the keys.
-PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_BG PANEL_HI PANEL_MUTED"
+PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_BG PANEL_HI PANEL_MUTED NOTIFY_PAD NOTIFY_WIDTH NOTIFY_HEIGHT"   # NOTIFY_*: a notification's air, width and most height in pixels, from the text size (mako's config, #71)
 panel_load() {
     # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
     PANEL_BG=$(hex_mix "$HEX_BG" "$HEX_FG" 9); PANEL_HI=$(hex_mix "$HEX_BG" "$HEX_FG" 18); PANEL_PAD=$(panel_pad)
+    _ns=$(look_font_size); : "${_ns:=12}"
+    # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
+    { NOTIFY_PAD="$((_ns * 16 / 10)),$((_ns * 2))"; NOTIFY_WIDTH=$((_ns * 36)); NOTIFY_HEIGHT=$((_ns * 12)); }   # the dialog's air (a row tall, two cells wide), about forty cells, six lines
     # the palette's muted, lifted a third of the way to the text, then further, 5% at a time, until it
     # reads at 4.5 to 1 on the surface (#18): spark-shell's own shade; the palette's colors stay its author's
     _pl=35; PANEL_MUTED=$(hex_mix "$HEX_MUTED" "$HEX_FG" "$_pl")
@@ -831,7 +841,7 @@ rc_tree() { if [ "$OS" = Darwin ]; then echo "$REPO/templates/macos"; else echo 
 # The desktop: sway and foot, rendered only when asked for (DESKTOP=sway)
 # and only on Linux -- macOS has its own desktop. `off` hands both back
 # whatever the config says.
-DESKTOP_RENDERED=".config/foot/foot.ini .config/foot/dialog.ini .config/sway/config .local/share/applications/spark-shell-tmux.desktop .config/fontconfig/conf.d/50-spark-shell.conf"   # the last: the wifi bars' family, unhinted (#43)
+DESKTOP_RENDERED=".config/foot/foot.ini .config/foot/dialog.ini .config/sway/config .local/share/applications/spark-shell-tmux.desktop .config/fontconfig/conf.d/50-spark-shell.conf .config/mako/config"   # fontconfig: the wifi bars' family, unhinted (#43); mako: the notifications (#71)
 foot_colors() {   # the name of foot's color section: [colors] before 1.26, [colors-dark] from it
     _v=$(PATH=$HOME/.local/bin:$PATH foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
     set -- ${_v:-1 26}
@@ -882,11 +892,13 @@ wall_missing() {   # a todo row when the picture the config names is not there: 
         row todo wallpaper "$(wall_path) is missing -- the ground instead (spark-shell theme wallpaper PATH)"
     fi
 }
-desktop_files() {   # the desktop's renders: foot's, the dialog's, sway's, the tmux entry, the screens' file
+desktop_files() {   # the desktop's renders: foot's, the dialog's, sway's, the tmux entry, mako's, the screens' file; a mako that runs reads its new file
+    _mk=$({ cksum < "$HOME/.config/mako/config"; } 2>/dev/null || :)
     for rel in $DESKTOP_RENDERED; do
         render_one "$REPO/templates/$rel" "$HOME/$rel"
     done
     [ "$MODE" = dry ] || [ -f "$SCREENS_CONF" ] || { mkdir -p "$CONFIG_DIR" && echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them' > "$SCREENS_CONF"; }   # the template includes it
+    [ "$MODE" = dry ] || [ "$({ cksum < "$HOME/.config/mako/config"; } 2>/dev/null || :)" = "$_mk" ] || notify_reload   # a new look reaches the next notification, with no login
 }
 desktop_look_apply() {   # on and on desktop: the renders, the pointer, and a running sway reloaded when its file changed (its keys may have)
     wall_missing
@@ -902,8 +914,11 @@ desktop_apply() {
     seat_apply
     sound_apply
     light_apply
+    storage_apply
+    power_apply
     dialog_install
     mcp_apply
+    notify_start
 }
 
 # The desktop on Void. Void has no logind, so sway takes the screen and
@@ -1213,6 +1228,23 @@ sound_by_pipewire() {   # sound_by_pipewire NAME -- PipeWire starts NAME itself:
 }
 # shellcheck disable=SC2086   # the pids, split on purpose
 sound_stop() { [ -z "${SOUND_PIDS:-}" ] || { kill $SOUND_PIDS 2>/dev/null; wait $SOUND_PIDS 2>/dev/null; } || :; }   # wait: gone before the next desktop asks wpctl
+notify_check() {   # the notify row of check, on a desktop machine (#71)
+    if ! command -v mako >/dev/null 2>&1; then chk notify warn "mako is not installed, so no notification shows" "spark-shell on desktop"
+    elif ! command -v notify-send >/dev/null 2>&1; then chk notify warn "notify-send is not installed, so a reminder or a drive plugged in says nothing" "spark-shell on desktop"
+    elif [ -z "${WAYLAND_DISPLAY:-}" ]; then chk notify ok "mako shows the notifications on the desktop"
+    elif notify_up; then _nw=''; ! notify_dnd || _nw=', do not disturb on'; chk notify ok "mako shows the notifications$_nw"
+    else chk notify warn "$(notify_why)" "log out and in again"; fi
+}
+storage_check() {   # the storage row of check (#73)
+    if ! command -v udisksctl >/dev/null 2>&1; then chk storage warn "udisks2 is not installed, so no drive shows" "spark-shell on desktop"
+    elif [ "$(init_shape)" = runit ] && [ ! -s "$STATE_DIR/storage.polkit" ]; then chk storage warn "with no logind, a drive mounts only with the polkit rule" "spark-shell on desktop"
+    else chk storage ok "udisks2 mounts and ejects drives for you"; fi
+}
+power_check() {   # the power row of check (#72)
+    if [ -z "$(power_tool)" ]; then chk power warn "$(power_why)" "spark-shell on desktop"
+    elif power_sleeps; then chk power ok "lock, log out, suspend, restart and shut down from the dialog"
+    else chk power ok "lock, log out, restart and shut down from the dialog (this machine cannot suspend)"; fi
+}
 sound_check() {   # the sound rows of check, on a desktop machine
     if ! command -v pipewire >/dev/null 2>&1; then
         case $(snd_tool) in
@@ -2682,6 +2714,8 @@ on_warning() {   # on_warning [desktop|login] -- at the very start of on: what i
             warn_wrap services 'turns on seatd at boot (sudo)'
             if [ -d "$SPARK_CONFIG_DIR/sv" ]; then warn_wrap sound "PipeWire runs from boot, under spark's supervisor, and ALSA programs play through it (sudo)"
             else warn_wrap sound 'PipeWire starts with the desktop, and ALSA programs play through it (sudo)'; fi
+            warn_wrap power 'lets you suspend, restart and shut down, nothing else (sudo)'
+            warn_wrap drives 'lets you mount and eject USB drives (polkit, sudo)'
         fi
         printf '\n%s\n%s\n' 'spark-shell off desktop puts the login back.' 'Packages stay.'
     fi
@@ -2849,6 +2883,8 @@ cmd_off() {   # cmd_off [desktop|login]
         seat_off
         sound_off
         light_off
+        storage_off
+        power_off
         mcp_off
         echo "packages stay installed -- the package manager removes them if you want"
         return 0
@@ -2868,6 +2904,8 @@ cmd_off() {   # cmd_off [desktop|login]
     seat_off
     sound_off
     light_off
+    storage_off
+    power_off
     mcp_off
     pm_detect
     console_off   # the palette, the font, the login screen and the boot, as they were
@@ -2933,6 +2971,8 @@ off_would() {   # off_would [desktop|login]
     seat_off
     sound_off
     light_off
+    storage_off
+    power_off
     if [ "${1:-}" != desktop ]; then pm_detect; console_off; fi
     dry_close
 }
@@ -3130,7 +3170,7 @@ cmd_check() {
     elif line=$(REM_LOOK=1 bar_status --once 2>/dev/null) && printf '%s' "$line" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
         chk top ok "the bar draws $(printf '%s' "$line" | jq -r '[.[] | select(.name != "div" and .name != "logo") | .name] | unique | join(", ")')"
     else chk top fail "spark-shell bar status draws nothing" "spark-shell on"; fi
-    if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then sound_check; fi
+    if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then sound_check; notify_check; storage_check; power_check; fi
     [ "$fails" = 0 ]
 }
 
@@ -3522,6 +3562,8 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by a di
     # a reminder due: its own group, before the seat (a click opens the reminders)
     due=$(rem_due 2>/dev/null || :)
     [ -z "$due" ] || { bar_add "$(bar_block due '' "$(bar_span "$HEX_MUTED" due) $(bar_span "$HEX_ACCENT" "$PANEL_DOT") $(bar_esc "$(printf '%s' "${due#*"$TAB"}" | cut_chars 28)")")"; bar_group; }
+    # do not disturb: said while it is on, so no notification waits out of sight unsaid (#71); a click opens its section
+    if command -v makoctl >/dev/null 2>&1 && notify_dnd; then bar_add "$(bar_block notifications '' "$(bar_span "$HEX_MUTED" 'do not disturb')")"; bar_group; fi
     # the seat: the brightness, the keyboard's layout
     lt=$(light_get)
     if [ -n "$lt" ]; then
@@ -3587,8 +3629,10 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
     exec 3<&0; bar_clicks <&3 &   # an explicit stdin: a background job's own would be /dev/null in dash (POSIX)
     reader=$!
     _ts=$(theme_sum); _bp=$({ cksum < "$BAR_PALETTE"; } 2>/dev/null || :); _line=''
+    storage_sig; _bseen=$_bsg
     while :; do
         redraw=0
+        storage_notice   # a drive plugged in since the last look: one notification (#73)
         if [ -n "$_line" ] && [ "$({ cksum < "$BAR_PALETTE"; } 2>/dev/null || :)" != "$_bp" ]; then   # a new look: the line just drawn, in its colors at once (#33); the probes follow
             _bp=$({ cksum < "$BAR_PALETTE"; } 2>/dev/null || :); _old="$HEX_FG $HEX_ACCENT $HEX_MUTED $HEX_ANSI_1 $HEX_ANSI_3"
             if load_env "$BAR_PALETTE" 2>/dev/null; then bar_recolor "$_line"; fi
@@ -3601,6 +3645,7 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
             sleep 1 & sleeper=$!
             wait "$sleeper" 2>/dev/null || :
             t=$((t + 1))
+            storage_sig; [ "$_bsg" = "$_bseen" ] || { _bseen=$_bsg; redraw=1; }   # a disk came or went: a look now, not in 15 s
         done
     done
     kill ${reader:-} 2>/dev/null || :; rm -f "$BAR_PID"
@@ -3709,7 +3754,7 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | due 
 # --- the signs and the sizes
 PANEL_APP='spark-dialog'              # the desktop window's app id: the dialog's since v0.64 (the sway template floats and centres it)
 PANEL_SIZE=60x40                      # columns x rows of the desktop window: the dialog's size, a design token
-PANEL_COL=9                           # the section column: as wide as the longest section's name
+PANEL_COL=9                           # the section column: as wide as reminders; notifications runs over it by four in this text form (the dialog names it in full)
 PANEL_IN=4                            # the glance's indent: the section column, where every row's text begins
 PULSE_W=32                            # the corner: the march's place at the top right of the window, on the date's row, this many cells from the right margin
 panel_col() { printf "%-${PANEL_COL}s  " "$1"; }   # panel_col SECTION -> the name in its column, two cells before the text
@@ -3743,7 +3788,7 @@ panel_colors() {   # the three SGRs from our own render, when there is one (a pi
 }
 
 # --- the sections: their order by use, which of them this machine has, what each costs
-PANEL_ORDER="undo spark apps layout notes reminders window display keyboard out mic bt wifi theme bar about"   # grouped by what you do: what is on the screen, the sound, the connections, the look, then about; undo only while there is one
+PANEL_ORDER="undo spark apps layout notes reminders window display keyboard notifications out mic bt wifi storage theme bar power about"   # grouped by what you do: what is on the screen, the sound, the connections and the drives, the look, the power, then about; undo only while there is one
 PANEL_BLOCKS="lan wifi bt out mic bat clock theme"      # the bar's blocks in the bar's order, and the palette: the facts, and what a click may open
 PANEL_LOOKS="lan bat clock"                            # blocks with nothing to set: shown only when they opened the panel
 panel_blocks_here() {   # -> the bar's blocks this machine has, in the bar's order
@@ -3763,12 +3808,12 @@ panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on
     [ "$_f" = glance ] || echo "$_f"
     for s in $PANEL_ORDER; do
         [ "$s" != "$_f" ] || continue
-        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|notes|reminders) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
+        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|notes|reminders|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
         echo "$s"
     done
 }
 panel_cost() {   # panel_cost SECTION -> instant | fast | slow: what its rows cost to know
-    case $1 in wifi) echo slow ;; bt|out|mic|apps|display) echo fast ;; *) echo instant ;; esac
+    case $1 in wifi) echo slow ;; bt|out|mic|apps|display|notifications|storage) echo fast ;; *) echo instant ;; esac
 }
 panel_section_ok() { case " glance chat $PANEL_ORDER $PANEL_BLOCKS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }   # panel_section_ok WORD
 
@@ -4055,6 +4100,13 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
         display) _b=$(light_get); if [ -n "$_b" ]; then echo "$(panel_col display)brightness $_b%"; else echo "$(panel_col display)idle $(idle_words "$DISPLAY_IDLE")"; fi ;;   # short: the header holds it; the rows say the minutes
         keyboard) _k=$(kb_active); if [ -n "$_k" ]; then echo "$(panel_col keyboard)$_k $PANEL_SEP $(printf '%s\n' $KEYBOARD | grep -c .) layouts"; elif [ -n "$KEYBOARD" ]; then echo "$(panel_col keyboard)$KEYBOARD"; else echo "$(panel_col keyboard)sway's own layout"; fi ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown at the top of the screen"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys Super+d) opens the dialog"; fi ;;
+        notifications) if ! command -v mako >/dev/null 2>&1; then echo "$(panel_col notifications)mako is not installed"
+            elif ! notify_up; then echo "$(panel_col notifications)not running yet"
+            elif notify_dnd; then echo "$(panel_col notifications)do not disturb"
+            else _nn=$(notify_list list | grep -c . || :); if [ "${_nn:-0}" -gt 0 ]; then echo "$(panel_col notifications)$_nn on the screen"; else echo "$(panel_col notifications)on"; fi; fi ;;   # short: the header has the section's name beside it
+        storage) _sn=$(storage_drives | grep -c . || :)   # the drives alone: this computer's free space is a row, and the header has no room for both
+            case ${_sn:-0} in 0) echo "$(panel_col storage)no drive plugged in" ;; 1) echo "$(panel_col storage)1 drive" ;; *) echo "$(panel_col storage)$_sn drives" ;; esac ;;
+        power) _pu=$(power_up); echo "$(panel_col power)${_pu:-lock, suspend, restart}" ;;
         about) echo "$(panel_col about)spark-shell $(panel_version) $PANEL_SEP the keys, the licence, the address" ;;
         layout) _n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' '); _last=''; [ ! -f "$DESK_LAST" ] || _last=$(desk_words "$DESK_LAST")
             if [ "$_n" -eq 0 ]; then echo "$(panel_col layout)none saved yet"
@@ -4214,6 +4266,37 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             _a=$(kb_active)
             for _x in $KEYBOARD; do if [ "$_x" = "$_a" ] || [ -z "$_a" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$_x"; else printf -- '-\t%s\tuse %s\n' "$_x" "$_x"; fi; done
             [ -z "$_a" ] || printf '%s\tthe next layout\tnext\n' "$PANEL_GO" ;;
+        notifications) if ! notify_up; then printf -- '-\t%s\tshow\n' "$(notify_why)"; return 0; fi
+            if notify_dnd; then printf '%s\tturn off do not disturb\tdo-not-disturb off\n' "$PANEL_DOT"; else printf -- '-\tturn on do not disturb\tdo-not-disturb on\n'; fi
+            _nn=$(notify_list list | grep -c . || :)
+            case ${_nn:-0} in 0) ;; 1) printf -- '-\tdismiss the one on the screen\tdismiss\n' ;; *) printf -- '-\tdismiss the %s on the screen\tdismiss\n' "$_nn" ;; esac
+            notify_list history > "$TMP/notify.rows"
+            [ ! -s "$TMP/notify.rows" ] || printf -- '-\tshow the last one again\trestore\n'
+            _n=0
+            while IFS="$US" read -r _ni _na _ns; do   # the history, newest first: what each said, its app a column; five unless full
+                _n=$((_n + 1)); if [ "${2:-}" != full ] && [ "$_n" -gt 5 ]; then continue; fi
+                printf -- '-\t%s\tshow\tearlier|%s||%s\n' "$(printf '%s' "${_ns:-$_na}" | cut_chars 44)" "$(printf '%s' "$_na" | cut_chars 14)" "$_ni"
+            done < "$TMP/notify.rows"
+            [ "${2:-}" = full ] || [ "$_n" -le 5 ] || printf -- '-\t%s more\tmore\tearlier||\n' $((_n - 5)) ;;
+        storage) command -v udisksctl >/dev/null 2>&1 || printf -- '-\tudisksctl is not installed (spark-shell on desktop)\tshow\n'
+            storage_list > "$TMP/storage.l"
+            [ -s "$TMP/storage.l" ] || printf -- '-\tno drive plugged in\tshow\n'
+            awk -F '\037' '$1 == "drive" { print $2 }' "$TMP/storage.l" > "$TMP/storage.d"
+            while IFS= read -r _sdn; do   # a drive is a group: its filesystems, mounted (Enter opens it) or not (Enter mounts it), then eject
+                awk -F '\037' -v d="$_sdn" '$1 == "fs" && $6 == d' "$TMP/storage.l" | while IFS="$US" read -r _sk _sn _sd _ss _sm _sdr _sf; do
+                    if [ "$_sf" = crypto_LUKS ]; then printf -- '-\t%s is encrypted: udisksctl unlock -b %s\tshow\t%s|%s|\n' "$_sn" "$_sd" "$_sdr" "$(files_size "$_ss")"
+                    elif [ -n "$_sm" ]; then printf '%s\t%s\topen %s\t%s|%s free|\n-\tunmount %s\tunmount %s\t%s||\n' "$PANEL_DOT" "$_sn" "$_sn" "$_sdr" "$(storage_kb "$(storage_free "$_sm")")" "$_sn" "$_sn" "$_sdr"
+                    else printf '%s\t%s\tmount %s\t%s|%s|\n' "$PANEL_RING" "$_sn" "$_sn" "$_sdr" "$(files_size "$_ss")"; fi
+                done
+                printf -- '-\teject %s\teject %s\t%s||\n' "$_sdn" "$_sdn" "$_sdn"
+            done < "$TMP/storage.d"
+            _sh=$(storage_here); [ -z "$_sh" ] || printf -- '-\t%s\tshow\tthis computer||\n' "$_sh" ;;
+        power) _pt=$(power_tool)
+            [ -z "${WAYLAND_DISPLAY:-}" ] || printf -- '-\tlock the screen\tlock\n'
+            [ -z "$_pt" ] || ! power_sleeps || printf -- '-\tsuspend\tsuspend\n'
+            [ -z "${SWAYSOCK:-}" ] || printf -- '-\tlog out\tlogout\n'
+            if [ -n "$_pt" ]; then printf -- '-\trestart\trestart\n-\tshut down\tshutdown\n'; else printf -- '-\t%s\tshow\n' "$(power_why)"; fi
+            power_keys | while IFS= read -r _pk; do printf -- '-\t%s\tshow\tthe buttons||\n' "$_pk"; done ;;   # said apart, under a heading of their own: nothing to press
         notes) printf '%s\tnew note\tnew\n' "$PANEL_GO"   # the newest five, and a more row; a full list, all of them; the date a column, the group recent
             notes_list > "$TMP/notes.l"; _n=0
             while IFS="$TAB" read -r _e _nm _f; do
@@ -4548,6 +4631,7 @@ rem_due() {   # -> UID<tab>SUMMARY of the latest reminder due now (in the last d
         cp "$TMP/rem.keys" "$REM_FIRED"   # the ones due now, and no more: the file never grows
         rmdir "$REM_FIRED.lock" 2>/dev/null || :
         [ "${_new:-0}" -eq 0 ] || [ -n "${SPARK_SHELL_NO_CHIME:-}" ] || rem_chime
+        [ "${_new:-0}" -eq 0 ] || notify_send x-spark-shell.reminder "$(tail -1 "$TMP/rem.due" | cut -f3)" "due now"   # and once as a notification: a click opens the reminders (#71)
     fi
     [ -s "$TMP/rem.due" ] || return 0
     tail -1 "$TMP/rem.due" | cut -f2,3
@@ -4561,6 +4645,255 @@ rem_chime() {   # the short sound, once, never waited for: PipeWire, else ALSA, 
 rem_due_line() {   # -> "due: WORDS  " for tmux's status line while a reminder is due, else nothing; the chime as on the bar
     _dl=$(rem_due 2>/dev/null || :); [ -n "$_dl" ] || return 0
     printf 'due: %s  ' "$(printf '%s' "${_dl#*"$TAB"}" | tr -d '#' | cut_chars 28)"   # no # for tmux to read as a format
+}
+
+# --- the notifications (#71): mako shows them, started by the sway
+# template and drawn by ~/.config/mako/config; makoctl is the one tool. Do
+# not disturb is mako's mode of that name, kept in the config
+# (DO_NOT_DISTURB) so it holds across logins. What spark-shell says itself,
+# a reminder due or a drive plugged in, goes out through notify-send under
+# the app name spark-shell, its category telling mako what a click opens.
+# A program reaches mako through the session's D-Bus: where no logind
+# makes one (Void), the desktop starts inside dbus-run-session (desk_start).
+NOTIFY_MODE=do-not-disturb
+notify_up() { command -v makoctl >/dev/null 2>&1 && makoctl mode >/dev/null 2>&1; }   # mako answers on this session's bus
+notify_reload() { ! notify_up || makoctl reload >/dev/null 2>&1 || :; }   # a mako that runs reads its file again
+notify_dnd() { makoctl mode 2>/dev/null | grep -qx "$NOTIFY_MODE"; }   # do not disturb is on now
+notify_bus() { [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]; }   # this login has a session bus: its own, or the one logind made
+notify_keep() {   # at the desktop's start: do not disturb as the config left it, once mako answers (it starts beside this)
+    [ "$DO_NOT_DISTURB" = yes ] && command -v makoctl >/dev/null 2>&1 || return 0
+    _nk=0; while [ "$_nk" -lt 20 ] && ! makoctl mode >/dev/null 2>&1; do sleep 0.25; _nk=$((_nk + 1)); done
+    makoctl mode -a "$NOTIFY_MODE" >/dev/null 2>&1 || :
+}
+notify_start() {   # the notify row of on desktop: inside a desktop with a session bus, mako now when it is not running (the template starts it at the next login)
+    [ "$MODE" = apply ] && command -v mako >/dev/null 2>&1 && notify_bus && desk_in_sway || return 0
+    ! notify_up || return 0
+    swaymsg -- exec mako >/dev/null 2>&1 || return 0
+    ok notify "mako shows the notifications now"
+}
+notify_list() {   # notify_list list|history -> ID US APP US SUMMARY, newest first (an app with no name stays a field): makoctl's own lines (mako 1.9 on), or busctl's JSON (mako 1.7 and 1.8)
+    makoctl "$1" > "$TMP/notify.$1" 2>/dev/null || return 0
+    if [ "$(head -c 1 "$TMP/notify.$1")" = '{' ]; then
+        jq -r '.data[0][]? | [(.id.data // 0 | tostring), (."app-name".data // ""), (.summary.data // "")] | @tsv' "$TMP/notify.$1" 2>/dev/null || :
+    else
+        awk '/^Notification [0-9]+:/ { if (id != "") print id "\t" app "\t" sum; id = $2; sub(/:$/, "", id); sum = $0; sub(/^Notification [0-9]+: ?/, "", sum); gsub(/\t/, " ", sum); app = ""; next }
+            /^  App name: / { app = $0; sub(/^  App name: /, "", app); gsub(/\t/, " ", app) }
+            END { if (id != "") print id "\t" app "\t" sum }' "$TMP/notify.$1"
+    fi | scrub_text | awk -F '\t' -v OFS='\037' '{ $1 = $1; print }'   # scrubbed first: the scrubber drops US
+}
+notify_send() {   # notify_send CATEGORY SUMMARY [BODY] -- one notification of spark-shell's own, on the desktop; nothing where nothing would show it
+    [ -n "${WAYLAND_DISPLAY:-}" ] && command -v notify-send >/dev/null 2>&1 || return 0
+    notify-send -a spark-shell -c "$1" -- "$2" "${3:-}" >/dev/null 2>&1 </dev/null || :
+}
+notify_why() {   # -> why no notification shows here, in a few words
+    if ! command -v mako >/dev/null 2>&1; then echo "mako is not installed (spark-shell on desktop)"
+    elif ! notify_bus; then echo "no session bus yet: notifications start at your next login"
+    else echo "mako is not running: notifications start at your next login"; fi
+}
+notify_act() {   # notify_act do-not-disturb on|off | dismiss | restore -> one line
+    notify_up || { notify_why; return 1; }
+    case $1 in
+        do-not-disturb) case ${2:-} in
+                on) makoctl mode -a "$NOTIFY_MODE" >/dev/null 2>&1 || { echo "mako did not take do not disturb"; return 1; }; config_set DO_NOT_DISTURB yes >/dev/null; DO_NOT_DISTURB=yes
+                    echo "do not disturb on: notifications wait out of sight" ;;
+                off) makoctl mode -r "$NOTIFY_MODE" >/dev/null 2>&1 || { echo "mako did not take do not disturb"; return 1; }; config_set DO_NOT_DISTURB no >/dev/null; DO_NOT_DISTURB=no
+                    echo "do not disturb off" ;;
+                *) echo "do-not-disturb takes on or off"; return 1 ;;
+            esac
+            bar_redraw ;;
+        dismiss) makoctl dismiss -a >/dev/null 2>&1 || { echo "nothing to dismiss"; return 1; }; echo "dismissed" ;;
+        restore) [ -n "$(notify_list history)" ] || { echo "nothing in the history"; return 1; }
+            makoctl restore >/dev/null 2>&1 || { echo "mako did not show it again"; return 1; }; echo "the last one is on the screen again" ;;
+        *) echo "$1 is not something notifications does"; return 1 ;;
+    esac
+}
+
+# --- the storage (#73): the drives plugged in, through udisks2's udisksctl,
+# which mounts and unmounts with no root (logind's session says who sits at
+# the screen; with no logind, the polkit rule on desktop writes does); lsblk
+# lists them. A drive is a whole disk that is removable or plugged in while
+# the machine runs (USB, a card), never one the system runs from, nor one
+# the system mounts itself (fstab). Nothing mounts by itself (his pick): a
+# notification says a drive arrived, and a click opens the dialog here.
+STORAGE_SEEN=$STATE_DIR/storage.seen   # the drives the bar saw at its last look, so a new one is said once
+STORAGE_RULE=etc/polkit-1/rules.d/50-spark-shell-storage.rules
+storage_list() {   # -> "drive NAME DEV SIZE" a drive, then "fs NAME DEV SIZE MOUNT DRIVE FSTYPE" per filesystem on it, parted by US (an empty mount stays a field); names as a person reads them, each once
+    command -v lsblk >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
+    lsblk -J -b -o NAME,PATH,TYPE,RM,HOTPLUG,SIZE,MODEL,VENDOR,LABEL,FSTYPE,MOUNTPOINT 2>/dev/null | jq -r '
+        def yes: . == true or . == "1" or . == 1;
+        def system: [.. | objects | .mountpoint? // empty | select(. != "" and ((startswith("/run/media/") or startswith("/media/")) | not))] | length > 0;
+        .blockdevices[]? | select(.type == "disk" and ((.rm | yes) or (.hotplug | yes)) and (system | not))
+        | . as $d | ([(.vendor // ""), (.model // "")] | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != "")) | join(" ")) as $m
+        | ["drive", (if $m == "" then "drive" else $m end), .path, (.size | tostring)],
+          ([$d] + ($d.children // []) | .[] | select((.fstype // "") != "") | ["fs", (.label // ""), .path, (.size | tostring), (.mountpoint // ""), "", .fstype])
+        | @tsv' 2>/dev/null | scrub_text | awk -F '\t' -v OFS='\037' '
+        function hs(n) { if (n < 1024) return sprintf("%d B", n); if (n < 1048576) return sprintf("%d KB", n / 1024); if (n < 1073741824) return sprintf("%.1f MB", n / 1048576); return sprintf("%.1f GB", n / 1073741824) }   # files_size, so a name and its size column agree
+        { gsub(/\|/, "/", $2) }   # a name is a column of a row, where | parts the extras
+        $1 == "drive" { n = $2; if (dn[$2]++) n = n " " dn[$2]; $2 = n; cur = n; print; next }
+        { n = $2; if (n == "") n = cur " " hs($4); if (fn[n]++) n = n " " fn[n]; $2 = n; $6 = cur; print }'
+}
+storage_free() { df -Pk "$1" 2>/dev/null | awk 'NR == 2 { printf "%s", $4 }'; }   # storage_free MOUNT -> the KB free there
+storage_kb() { files_size $(( ${1:-0} * 1024 )); }   # storage_kb KB -> 3.1 GB
+storage_here() {   # -> "476.9 GB, 120.3 GB free": the disk the system runs from; nothing when df cannot tell
+    df -Pk / 2>/dev/null | awk 'NR == 2 { print $2, $4 }' > "$TMP/df.here"
+    read -r _st _sf < "$TMP/df.here" 2>/dev/null && [ -n "${_sf:-}" ] || return 0
+    printf '%s, %s free\n' "$(storage_kb "$_st")" "$(storage_kb "$_sf")"
+}
+storage_said() { sed 's/.*: //' | grep -v '^$' | tail -1 | scrub_text; }   # udisksctl's error -> its last clause (Not authorized to perform operation, target is busy)
+storage_find() { awk -F '\037' -v k="$1" -v n="$(panel_lower "$2")" '$1 == k && tolower($2) == n { print; exit }' "$TMP/storage.l"; }   # storage_find drive|fs NAME -> its line of the list just read
+storage_act() {   # storage_act mount|unmount|open|eject NAME -> one line
+    command -v udisksctl >/dev/null 2>&1 || { echo "udisksctl is not installed (spark-shell on desktop)"; return 1; }
+    storage_list > "$TMP/storage.l"
+    if [ "$1" = eject ]; then _sl=$(storage_find drive "$2"); else _sl=$(storage_find fs "$2"); fi
+    [ -n "$_sl" ] || { echo "no drive named $2 is plugged in"; return 1; }
+    _sd=$(printf '%s\n' "$_sl" | cut -d "$US" -f3); _sm=$(printf '%s\n' "$_sl" | cut -d "$US" -f5)
+    case $1 in
+        mount|open) if [ -z "$_sm" ]; then
+                [ "$(printf '%s\n' "$_sl" | cut -d "$US" -f7)" != crypto_LUKS ] || { echo "$2 is encrypted: udisksctl unlock -b $_sd opens it"; return 1; }
+                _so=$(udisksctl mount -b "$_sd" --no-user-interaction 2>&1) || { echo "could not mount $2: $(printf '%s\n' "$_so" | storage_said)"; return 1; }
+                _sm=$(printf '%s\n' "$_so" | sed -n 's/^Mounted [^ ]* at \(.*\)$/\1/p' | sed 's/\.$//' | head -1)
+                [ "$1" = open ] || { echo "$2 mounted at $_sm"; return 0; }
+            elif [ "$1" = mount ]; then echo "$2 is mounted at $_sm"; return 0; fi
+            storage_open "$_sm" "$2" ;;
+        unmount) [ -n "$_sm" ] || { echo "$2 is not mounted"; return 0; }
+            _so=$(udisksctl unmount -b "$_sd" --no-user-interaction 2>&1) || { echo "could not unmount $2: $(printf '%s\n' "$_so" | storage_said)"; return 1; }
+            echo "$2 unmounted" ;;
+        eject) _sn=$(printf '%s\n' "$_sl" | cut -d "$US" -f2)
+            awk -F '\037' -v d="$_sn" '$1 == "fs" && $6 == d && $5 != "" { print $3 "\t" $2 }' "$TMP/storage.l" | while IFS="$TAB" read -r _fd _fn; do
+                udisksctl unmount -b "$_fd" --no-user-interaction > "$TMP/storage.out" 2>&1 || { echo "could not unmount $_fn: $(storage_said < "$TMP/storage.out")"; exit 1; }
+            done || return 1   # the subshell's own exit: one of them held on, so the drive stays
+            if udisksctl power-off -b "$_sd" --no-user-interaction > "$TMP/storage.out" 2>&1; then echo "$2 can be taken out"
+            else echo "$2 is unmounted and can be taken out"; fi ;;   # a card reader that cannot power off: its filesystems are safe all the same
+        *) echo "$1 is not something storage does"; return 1 ;;
+    esac
+}
+storage_open() {   # storage_open DIR NAME -> the folder in your file manager, else a terminal in it; the window is the receipt
+    desk_in_sway || { echo "$2 is at $1"; return 0; }
+    case $1 in *[,\;\'\"]*) echo "$2 is at $1 (a comma, a quote or a semicolon in it, which sway would split)"; return 0 ;; esac
+    _before=$(desk_windows_all)
+    if command -v xdg-open >/dev/null 2>&1 && [ -n "$(xdg-mime query default inode/directory 2>/dev/null)" ]; then swaymsg -- exec "xdg-open '$1'" >/dev/null 2>&1 || { echo "could not open $2"; return 1; }
+    else swaymsg -- exec "foot --working-directory='$1'" >/dev/null 2>&1 || { echo "could not open $2"; return 1; }; fi
+    panel_open_wait "$_before" || { echo "$2 is at $1"; return 0; }
+    : > "$TMP/opened"; echo "opened $2"
+}
+storage_drives() { storage_list | awk -F '\037' '$1 == "drive" { print $3 "\t" $4 "\t" $2 }'; }   # -> DEV<tab>SIZE<tab>NAME per drive
+storage_sig() { _bsg=''; for _b in "$BAR_SYS"/block/sd* "$BAR_SYS"/block/mmcblk* "$BAR_SYS"/block/nvme*; do [ ! -e "$_b" ] || _bsg="$_bsg ${_b##*/}"; done; }   # _bsg: the disks the kernel shows now, read with no new process (the bar asks every second)
+storage_notice() {   # the bar's loop: a drive that was not there at its last look is said once, as a notification; the bar's first look only keeps what is there
+    command -v lsblk >/dev/null 2>&1 || return 0
+    storage_drives > "$TMP/drives.now"
+    if [ -n "${_storage_seen:-}" ] && [ -f "$STORAGE_SEEN" ]; then
+        grep -vxF -f "$STORAGE_SEEN" "$TMP/drives.now" | while IFS="$TAB" read -r _d _s _n; do
+            notify_send device.added "$_n plugged in" "$(files_size "$_s"). A click opens Storage, where it mounts."
+        done || :
+    fi
+    _storage_seen=1
+    mkdir_private "$STATE_DIR" && cp "$TMP/drives.now" "$STORAGE_SEEN"
+}
+storage_rule() { render_sed "s|@USER@|$(esc "$(id -un)")|g" "$REPO/templates/etc/polkit-1/rules.d/50-spark-shell-storage.rules"; }   # -> the polkit rule for you
+storage_apply() {   # the storage row of on desktop, where no logind says who sits at the screen (runit): the polkit rule that lets you mount and eject drives, written once and recorded with its sum
+    [ "$(init_shape)" = runit ] || return 0
+    storage_rule > "$TMP/storage.rules"; _rs=$(cksum < "$TMP/storage.rules")
+    if [ "$(cat "$STATE_DIR/storage.polkit" 2>/dev/null)" = "$_rs" ]; then ok storage "you mount and eject drives (/$STORAGE_RULE)"; return 0; fi
+    need storage "let $(id -un) mount and eject USB drives: /$STORAGE_RULE (polkit, sudo)" && seat_root on "the drives" || return 0
+    if root_do mkdir -p "$ROOT/${STORAGE_RULE%/*}" && root_put "$TMP/storage.rules" "$ROOT/$STORAGE_RULE" 0644; then
+        mkdir_private "$STATE_DIR"; printf '%s\n' "$_rs" > "$STATE_DIR/storage.polkit"
+        ok storage "you mount and eject drives (/$STORAGE_RULE)"
+    else row todo storage "the polkit rule could not be written -- spark-shell on desktop again"; acting=0; fi
+}
+storage_off() {   # by the record alone: the rule spark-shell wrote
+    [ -e "$STATE_DIR/storage.polkit" ] || return 0
+    need storage "the polkit rule for your drives removed, as spark-shell wrote it (sudo)" || return 0
+    seat_root off "the drives" || return 0
+    if root_do rm -f "$ROOT/$STORAGE_RULE"; then rm -f "$STATE_DIR/storage.polkit"; row ok storage "the polkit rule for your drives is gone"
+    else row todo storage "/$STORAGE_RULE stays -- spark-shell off desktop again"; fi
+}
+
+# --- the power (#72): lock, log out, suspend, restart and shut down. Where
+# logind runs, systemctl asks it for the person at the screen; on runit
+# (Void) a narrow sudo rule of on desktop lets you run zzz, reboot and
+# poweroff, each with no argument, and nothing else. Suspend locks the
+# screen first, whoever asks. What the power button and the lid do stays
+# logind's or acpid's: the section says it and changes nothing.
+POWER_SUDOERS=etc/sudoers.d/spark-shell-power
+power_tool() {   # -> systemd | sudo | nothing: who restarts, shuts down and suspends this machine for you
+    if [ "$(init_shape)" = systemd ] && command -v systemctl >/dev/null 2>&1; then echo systemd
+    elif [ -s "$STATE_DIR/power.sudoers" ] && command -v sudo >/dev/null 2>&1; then echo sudo; fi
+}
+power_sleeps() { grep -qwE 'mem|freeze' "$BAR_SYS/power/state" 2>/dev/null; }   # the kernel offers a sleep
+power_why() { if [ "$(init_shape)" = runit ]; then echo "restart and shut down: spark-shell on desktop at a terminal sets them up (sudo once)"; else echo "restart and shut down: no logind or sudo rule here"; fi; }
+power_up() {   # -> "up 3 days", "up 5 hours", "up 12 minutes": since the machine started
+    awk '{ s = int($1); if (s >= 172800) printf "up %d days\n", s / 86400; else if (s >= 86400) print "up 1 day"; else if (s >= 7200) printf "up %d hours\n", s / 3600; else if (s >= 3600) print "up 1 hour"; else printf "up %d minutes\n", s / 60 }' "$BAR_PROC/uptime" 2>/dev/null
+}
+power_logind() {   # power_logind KEY DEFAULT -> logind's setting: its file, then its drop-ins, the last word wins
+    _pv=$2
+    for _pf in "$ROOT/etc/systemd/logind.conf" "$ROOT/usr/lib/systemd/logind.conf.d"/*.conf "$ROOT/run/systemd/logind.conf.d"/*.conf "$ROOT/etc/systemd/logind.conf.d"/*.conf; do
+        [ -f "$_pf" ] || continue
+        _px=$(sed -n "s/^[[:space:]]*$1=[[:space:]]*\([a-z-]*\).*/\1/p" "$_pf" | tail -1); [ -z "$_px" ] || _pv=$_px
+    done
+    printf '%s' "$_pv"
+}
+power_words() { case $1 in poweroff|halt) echo "shuts down" ;; reboot|kexec) echo restarts ;; suspend|sleep|hybrid-sleep|suspend-then-hibernate) echo suspends ;; hibernate) echo hibernates ;; lock) echo "locks the screen" ;; ignore) echo "does nothing" ;; *) echo "does $1" ;; esac; }   # power_words ACTION -> what it does, in words
+power_keys() {   # -> what the power button does, and the lid where there is one: logind's setting, or acpid's handler named; nothing when neither runs
+    if [ "$(init_shape)" = systemd ]; then
+        echo "the power button $(power_words "$(power_logind HandlePowerKey poweroff)")"
+        ! ls "$BAR_PROC"/acpi/button/lid/*/state >/dev/null 2>&1 || echo "closing the lid $(power_words "$(power_logind HandleLidSwitch suspend)")"
+    elif pgrep -x acpid >/dev/null 2>&1; then echo "the power button and the lid: acpid decides (/etc/acpi/handler.sh)"; fi
+}
+power_lock_first() {   # the desktop locked before the machine sleeps, whoever asks: from inside it at once; from outside (ssh) through its own socket; false when a desktop runs and stays open
+    if [ -n "${WAYLAND_DISPLAY:-}" ]; then "$REPO/spark-shell" desktop lock >/dev/null 2>&1; return; fi
+    _pp=$(pgrep -u "$(id -u)" -x sway 2>/dev/null | head -1 || :); [ -n "$_pp" ] || return 0   # no desktop: nothing on a screen to lock
+    _pk=${XDG_RUNTIME_DIR:-/nonexistent}/sway-ipc.$(id -u).$_pp.sock; [ -S "$_pk" ] || return 1
+    SWAYSOCK=$_pk swaymsg -- exec "$REPO/spark-shell desktop lock" >/dev/null 2>&1 || return 1
+    _pl=0; while [ "$_pl" -lt 12 ]; do pgrep -u "$(id -u)" -x swaylock >/dev/null 2>&1 && return 0; sleep 0.25; _pl=$((_pl + 1)); done
+    return 1
+}
+power_now() {   # power_now lock|suspend|logout|restart|shutdown -> it happens now, one line first; exit 1 with why not
+    case $1 in
+        lock) "$REPO/spark-shell" desktop lock || return 1; echo "locked" ;;
+        suspend) power_sleeps || { echo "this machine cannot suspend"; return 1; }
+            _pt=$(power_tool); [ -n "$_pt" ] || { power_why; return 1; }
+            power_lock_first || { echo "the desktop could not be locked, so the machine did not suspend"; return 1; }   # the screen comes back locked, or the machine stays up
+            echo "suspending"
+            if [ "$_pt" = systemd ]; then systemctl suspend >/dev/null 2>&1; else sudo -n /usr/bin/zzz >/dev/null 2>&1; fi || { echo "the machine did not suspend"; return 1; } ;;
+        logout) desk_in_sway || { echo "log out is the desktop's: Super+Shift+e, or exit in its first window"; return 1; }
+            echo "logging out"; swaymsg exit >/dev/null 2>&1 || { echo "sway did not exit"; return 1; } ;;
+        restart|shutdown) _pt=$(power_tool); [ -n "$_pt" ] || { power_why; return 1; }
+            _pc=reboot; _pw=restarting; [ "$1" = restart ] || { _pc=poweroff; _pw="shutting down"; }
+            if [ "$_pt" = systemd ]; then _po=$(systemctl "$_pc" 2>&1) || { echo "could not: $(printf '%s\n' "$_po" | grep . | tail -1 | scrub_text)"; return 1; }   # logind refuses while another login is open: it says so
+            else _po=$(sudo -n "/usr/bin/$_pc" 2>&1) || { echo "could not: $(printf '%s\n' "$_po" | grep . | tail -1 | scrub_text)"; return 1; }; fi
+            echo "$_pw" ;;
+        *) echo "$1 is not something power does"; return 1 ;;
+    esac
+}
+power_act() {   # power_act ACTION -> the dialog's step: the lock and suspend after the dialog closes (the lock is the receipt), the rest now
+    case $1 in
+        lock|suspend) desk_in_sway || { power_now "$1"; return; }
+            [ "$1" != suspend ] || power_sleeps || { echo "this machine cannot suspend"; return 1; }
+            [ "$1" != suspend ] || [ -n "$(power_tool)" ] || { power_why; return 1; }
+            swaymsg -- exec "$REPO/spark-shell desktop power $1" >/dev/null 2>&1 || { echo "could not $1"; return 1; }
+            : > "$TMP/opened"; if [ "$1" = lock ]; then echo "locked"; else echo "suspending"; fi ;;
+        *) power_now "$1" ;;
+    esac
+}
+power_rule() { render_sed "s|@USER@|$(esc "$(id -un)")|g" "$REPO/templates/etc/sudoers.d/spark-shell-power"; }   # -> the sudoers file for you
+power_apply() {   # the power row of on desktop (runit): the sudo rule for suspend, restart and shut down, checked by visudo, written once and recorded with its sum
+    [ "$(init_shape)" = runit ] || return 0
+    [ -x "$ROOT/usr/bin/zzz" ] && [ -x "$ROOT/usr/bin/reboot" ] && command -v sudo >/dev/null 2>&1 || { skip power "no zzz, reboot or sudo here: the dialog cannot restart or shut down"; return 0; }
+    power_rule > "$TMP/power.sudoers"; _ps=$(cksum < "$TMP/power.sudoers")
+    if [ "$(cat "$STATE_DIR/power.sudoers" 2>/dev/null)" = "$_ps" ]; then ok power "you suspend, restart and shut down from the dialog (/$POWER_SUDOERS)"; return 0; fi
+    need power "let $(id -un) suspend, restart and shut down with no password, nothing else: /$POWER_SUDOERS (sudo)" && seat_root on "the power" || return 0
+    root_do visudo -cf "$TMP/power.sudoers" >/dev/null 2>&1 || { row todo power "visudo refused the sudoers file -- nothing written"; acting=0; return 0; }
+    if root_put "$TMP/power.sudoers" "$ROOT/$POWER_SUDOERS" 0440; then
+        mkdir_private "$STATE_DIR"; printf '%s\n' "$_ps" > "$STATE_DIR/power.sudoers"
+        ok power "you suspend, restart and shut down from the dialog (/$POWER_SUDOERS)"
+    else row todo power "the sudoers file could not be written -- spark-shell on desktop again"; acting=0; fi
+}
+power_off() {   # by the record alone: the sudoers file spark-shell wrote
+    [ -e "$STATE_DIR/power.sudoers" ] || return 0
+    need power "the sudo rule for suspend, restart and shut down removed, as spark-shell wrote it (sudo)" || return 0
+    seat_root off "the power" || return 0
+    if root_do rm -f "$ROOT/$POWER_SUDOERS"; then rm -f "$STATE_DIR/power.sudoers"; row ok power "the sudo rule for suspend, restart and shut down is gone"
+    else row todo power "/$POWER_SUDOERS stays -- spark-shell off desktop again"; fi
 }
 
 panel_apps_known() {   # -> the apps a layout may open (your allowed list, else every desktop entry), one name per line; never the desktop's own
@@ -4675,6 +5008,9 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
             esac ;;
         notes) notes_act "$_a" "$_arg" ;;
         reminders) rem_act "$_a" "$_arg" ;;
+        notifications) notify_act "$_a" "$_arg" ;;
+        storage) storage_act "$_a" "$_arg" ;;
+        power) power_act "$_a" ;;
         display) case $_a in
                 idle|lock) case $_arg in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "$_a takes minutes, 0 to 999 (0: never)"; return 1 ;; esac
                     _k=DISPLAY_IDLE; [ "$_a" = idle ] || _k=DISPLAY_LOCK
@@ -4782,6 +5118,9 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         bt:connect) printf 'disconnect %s\tbt %s off\n' "$_arg" "$_arg" ;;
         bt:disconnect) printf 'connect %s\tbt %s\n' "$_arg" "$_arg" ;;
         bt:power) if [ "$_arg" = off ]; then printf 'power on\tbt on\n'; else printf 'power off\tbt off\n'; fi ;;
+        notifications:do-not-disturb) _nd=off; ! notify_dnd || _nd=on; [ "$_nd" = "$_arg" ] || printf 'do-not-disturb %s\tdo not disturb %s\n' "$_nd" "$_nd" ;;   # as it was; asked as it is, a receipt takes nothing back
+        storage:mount|storage:unmount) storage_list > "$TMP/storage.l"; _im=$(storage_find fs "$_arg" | cut -d "$US" -f5)
+            case $_a:$_im in mount:) printf 'unmount %s\t%s unmounted\n' "$_arg" "$_arg" ;; unmount:?*) printf 'mount %s\t%s mounted\n' "$_arg" "$_arg" ;; esac ;;
         reminders:done) _rl=$(rem_find "$_arg"); [ -z "$_rl" ] || printf 'restore %s\treminder %s\n' "$(printf '%s' "$_rl" | cut -f2)" "$(printf '%s' "$_rl" | cut -f3)" ;;   # by its uid: the one put aside, not another of that name
     esac
 }
@@ -4892,6 +5231,8 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         reminders:restore) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo "reminders: restore takes the reminder's name"; return 1 ;;   # one put aside: no row lists it
         notes:add|notes:find|reminders:add) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo "$1: $2 takes the words"; return 1 ;;   # free words, as layout new
         display:brightness) case $3 in up|down|[1-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "display: brightness takes 1 to 100, up or down"; return 1 ;; esac ;;
+        notifications:do-not-disturb) case ${3:-} in on|off) echo "$3"; return 0 ;; *) echo "notifications: do-not-disturb takes on or off"; return 1 ;; esac ;;   # both, whatever the row says now: the step sets, never toggles
+        storage:open) storage_list > "$TMP/storage.l"; [ -n "$(storage_find fs "${3:-}")" ] && { echo "$3"; return 0; }; echo "storage: no drive named ${3:-?} is plugged in"; return 1 ;;   # a drive not mounted yet opens too: it mounts first
         display:idle|display:lock) case $3 in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) echo "$3"; return 0 ;; *) echo "display: $2 takes minutes, 0 to 999"; return 1 ;; esac ;;
     esac
     if [ "$1" = theme ] && [ -z "${3:-}" ]; then   # a palette's step is its name alone: every palette and saved theme is a row, a kept look while in use
@@ -4916,8 +5257,8 @@ panel_list() {   # panel_list [SECTION] -> the glance (the clock's view under it
 
 # --- the router and the want: a row is fzf's; an app named is a layout; the rest is spark's
 panel_brief_sections() {   # -> the sections the want path offers here, in the brief's order: every one the dialog has (notes and reminders are files, so a Mac has them too)
-    for p in layout apps window bar notes reminders display keyboard $(panel_blocks_here); do
-        case $p in lan|bat|clock) continue ;; window|bar|display|keyboard) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
+    for p in layout apps window bar notes reminders display keyboard notifications storage power $(panel_blocks_here); do
+        case $p in lan|bat|clock) continue ;; window|bar|display|keyboard|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
         printf '%s\n' "$p"
     done
 }
@@ -5161,9 +5502,9 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 # JSON value is built by jq with --arg, every request is parsed by jq,
 # and a method or a tool name is matched by case, never run as a name.
 PROVIDE_PROTOCOL=2025-06-18
-PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window display keyboard notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
+PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window display keyboard notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness keyboard_use keyboard_next bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness keyboard_use keyboard_next notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -5235,6 +5576,18 @@ tool_spec() {
         display_brightness) _ts=display _ta=brightness _tp=level _tk=bright _th=if _tt='display brightness N' _td='Set the screen brightness, 1 to 100, or up or down a step.' ;;
         keyboard_use)      _ts=keyboard _ta=use _tp=name _tk=string _th=i _tt='keyboard use NAME' _td='Type in another of the keyboard layouts.' ;;
         keyboard_next)     _ts=keyboard _ta=next _th='' _tt='keyboard next' _td='Go to the next keyboard layout.' ;;
+        notifications_do_not_disturb) _ts=notifications _ta=do-not-disturb _tp=state _tk='on|off' _th=if _tt='notifications do-not-disturb STATE' _td='Keep notifications out of sight, or show them again; a critical one always shows.' ;;
+        notifications_dismiss) _ts=notifications _ta=dismiss _th=i _tt='notifications dismiss' _td='Dismiss the notifications on the screen.' ;;
+        notifications_restore) _ts=notifications _ta=restore _th='' _tt='notifications restore' _td='Show the last notification again.' ;;
+        storage_mount)     _ts=storage _ta=mount _tp=name _tk=string _th=i _tt='storage mount NAME' _td='Mount a drive that is plugged in.' ;;
+        storage_unmount)   _ts=storage _ta=unmount _tp=name _tk=string _th=i _tt='storage unmount NAME' _td='Unmount a drive.' ;;
+        storage_open)      _ts=storage _ta=open _tp=name _tk=string _th=f _tt='storage open NAME' _td='Open a drive in the file manager, mounted first when it is not.' ;;
+        storage_eject)     _ts=storage _ta=eject _tp=name _tk=string _th='' _tt='storage eject NAME' _td='Unmount every part of a drive and power it off, so it can be taken out.' ;;
+        power_lock)        _ts=power _ta=lock _th='' _tt='power lock' _td='Lock the screen.' ;;
+        power_suspend)     _ts=power _ta=suspend _th='' _tt='power suspend' _td='Lock the screen and suspend the machine.' ;;
+        power_logout)      _ts=power _ta=logout _th=d _tt='power logout' _td='Log out: every window closes.' ;;
+        power_restart)     _ts=power _ta=restart _th=d _tt='power restart' _td='Restart the machine.' ;;
+        power_shutdown)    _ts=power _ta=shutdown _th=d _tt='power shutdown' _td='Shut the machine down.' ;;
         bar_on)            _ts=bar _ta=on _th=i _tt='bar on' _td='Show the bar at the top of the screen.' ;;
         bar_off)           _ts=bar _ta=off _th=i _tt='bar off' _td='Hide the bar.' ;;
         layout_open)       _ts=layout _ta=open _tp=name _tk=string _th='' _tt='layout open NAME' _td='Open a saved layout.' ;;
@@ -7327,7 +7680,8 @@ cmd_layout() {   # cmd_layout [save [NAME] | delete NAME | rename NAME NEW | NAM
         *) desk_need "$@" ;;
     esac
 }
-desk_pending() {   # the words left by a console start: laid out once, then gone
+desk_pending() {   # at the desktop's start: do not disturb as it was left (#71), beside it; then the words left by a console start, laid out once, then gone
+    ( notify_keep ) </dev/null >/dev/null 2>&1 &
     [ -f "$DESK_PENDING" ] || return 0
     need=$(head -1 "$DESK_PENDING"); rm -f "$DESK_PENDING"
     [ -z "$need" ] || desk_need "$need"
@@ -7388,6 +7742,9 @@ cmd_desktop() {
         keyboard) shift; desk_keyboard "$@"; return ;;
         screen|screens) shift; desk_screen "$@"; return ;;
         capture) shift; desk_capture "$@"; return ;;
+        notifications) shift; desk_notifications "$@"; return ;;
+        storage) shift; desk_storage "$@"; return ;;
+        power) shift; desk_power "$@"; return ;;
         --first)   # the desktop's first window: the splash once, over it (the stamp first, so never twice), then your shell, always
             if [ ! -f "$DESK_SEEN" ]; then
                 { mkdir_private "$(dirname "$DESK_SEEN")" && : > "$DESK_SEEN"; } 2>/dev/null || true
@@ -7625,6 +7982,51 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | on | off | left-of|r
     echo "$_said"
 }
 
+# The notifications, the drives and the power from the command line: the
+# dialog's three sections, the same steps (notify_act, storage_act,
+# power_now). Bare, each says what is there.
+desk_notifications() {   # desk_notifications [do-not-disturb on|off | dismiss | restore]
+    [ "$OS" != Darwin ] || refuse "not on macOS, which has its own notifications"
+    case ${1:-} in
+        '') notify_up || { notify_why; return 0; }
+            if notify_dnd; then echo "do not disturb on"; else echo "do not disturb off"; fi
+            notify_list history | while IFS="$US" read -r _ni _na _ns; do echo "  ${_na:-an app}: $_ns"; done ;;
+        do-not-disturb) case ${2:-} in on|off) ;; *) refuse "do-not-disturb takes on or off" ;; esac
+            notify_act do-not-disturb "$2" || exit 1 ;;
+        dismiss|restore) notify_act "$1" || exit 1 ;;
+        *) refuse "notifications takes do-not-disturb on|off, dismiss or restore" ;;
+    esac
+}
+desk_storage() {   # desk_storage [mount|unmount|open|eject NAME]
+    [ "$OS" != Darwin ] || refuse "not on macOS, which has its own Finder"
+    case ${1:-} in
+        '') storage_list > "$TMP/storage.l"
+            [ -s "$TMP/storage.l" ] || echo "no drive plugged in"
+            while IFS="$US" read -r _sk _sn _sd _ss _sm _sdr _sf; do
+                if [ "$_sk" = drive ]; then echo "$_sn  $(files_size "$_ss")"
+                elif [ -n "$_sm" ]; then echo "  $_sn  mounted at $_sm"
+                else echo "  $_sn  $(files_size "$_ss")"; fi
+            done < "$TMP/storage.l"
+            _sh=$(storage_here); [ -z "$_sh" ] || echo "this computer  $_sh" ;;
+        mount|unmount|open|eject) [ -n "${2:-}" ] || refuse "$1 takes a drive's name (spark-shell desktop storage lists them)"
+            _sa=$1; shift; storage_act "$_sa" "$*" || exit 1 ;;
+        *) refuse "storage takes mount, unmount, open or eject, and a drive's name" ;;
+    esac
+}
+desk_power() {   # desk_power [lock|suspend|logout|restart|shutdown]
+    [ "$OS" != Darwin ] || refuse "not on macOS, which has its own power menu"
+    case ${1:-} in
+        '') _pu=$(power_up); [ -z "$_pu" ] || echo "$_pu"
+            _pt=$(power_tool)
+            if [ -z "$_pt" ]; then power_why
+            elif power_sleeps; then echo "suspend, restart and shut down from the dialog"
+            else echo "restart and shut down from the dialog; this machine cannot suspend"; fi
+            power_keys ;;
+        lock|suspend|logout|restart|shutdown) power_now "$1" || exit 1 ;;
+        *) refuse "power takes lock, suspend, logout, restart or shutdown" ;;
+    esac
+}
+
 # The lock (Super+Escape; swayidle after 15 idle minutes and before the
 # machine sleeps): swaylock over the desktop's own wallpaper, in the
 # palette. At rest it draws the wallpaper alone, so a picture stands as
@@ -7718,8 +8120,11 @@ desk_start() {   # desk_start PENDING
     [ -z "${pending:-}" ] || printf '%s\n' "$pending" > "$DESK_PENDING"
     st=0
     sound_start "$log_dir/sound.log"
-    # shellcheck disable=SC2086   # the -u words, split on purpose: sway and all it starts read the file, never a key from this login
-    PATH=$HOME/.local/bin:$PATH env $CONFIG_UNSET sway 2>"$log_dir/sway.log" || st=$?
+    # a session bus for what the desktop runs (#71): where no logind made one (Void), sway runs inside
+    # dbus-run-session, so a program's notification reaches mako and the bus ends with the desktop
+    _bus=''; notify_bus || ! command -v dbus-run-session >/dev/null 2>&1 || _bus=dbus-run-session
+    # shellcheck disable=SC2086   # the -u words and the bus, split on purpose: sway and all it starts read the file, never a key from this login
+    PATH=$HOME/.local/bin:$PATH env $CONFIG_UNSET $_bus sway 2>"$log_dir/sway.log" || st=$?
     sound_stop
     [ "${TERM:-}" != linux ] || printf '\033[?25h'
     exit "$st"

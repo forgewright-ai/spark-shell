@@ -71,17 +71,20 @@ pub const DESTS: [Dest; 6] = [
 pub const SETTINGS_DEST: usize = 5;
 pub const CALENDAR_DEST: usize = 4;
 /// Settings: a section each, then Connections and About, in this order.
-pub const SETTINGS: [(&str, &str, &str); 14] = [
+pub const SETTINGS: [(&str, &str, &str); 17] = [
     ("out", "Sound", "Output and volume"),
     ("mic", "Microphone", "Input and level"),
     ("wifi", "Wi-Fi", "Networks"),
     ("bt", "Bluetooth", "Devices nearby"),
     ("lan", "Network", "The wired connection"),
+    ("storage", "Storage", "Drives and free space"),
     ("display", "Display", "Screens, brightness, lock"),
     ("keyboard", "Keyboard", "Layouts"),
+    ("notifications", "Notifications", "Do not disturb, the last few"),
     ("theme", "Theme", "Palette, wallpaper and text"),
     ("wallpaper", "Wallpaper", "The desktop picture"),
     ("bar", "Bar", "The status bar"),
+    ("power", "Power", "Lock, suspend, restart"),
     ("bat", "Battery", "Charge"),
     ("talk", "Talk", "Click the mic, or off"),
     ("connections", "Connections", "Tools and the model"),
@@ -114,6 +117,16 @@ pub fn verb_of(tool: &str) -> &'static str {
         "done" => "Done",
         "snooze" => "Snooze",
         "capture" => "Capture",
+        "mount" => "Mount",
+        "unmount" => "Unmount",
+        "eject" => "Eject",
+        "dismiss" => "Dismiss",
+        "restore" => "Show",
+        "lock" => "Lock",
+        "suspend" => "Suspend",
+        "logout" => "Log out",
+        "restart" => "Restart",
+        "shutdown" => "Shut down",
         _ => "Use",
     }
 }

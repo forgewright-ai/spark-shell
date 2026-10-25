@@ -73,6 +73,11 @@ DISPLAY_SAVER=clock
 # sway's own. spark-shell desktop keyboard sets this.
 KEYBOARD=
 
+# Do not disturb: yes keeps the desktop's notifications out of sight (a
+# critical one still shows) until you turn it off, logins included.
+# spark-shell desktop notifications do-not-disturb on or off sets this.
+DO_NOT_DISTURB=no
+
 # The bar at the top of the desktop's screen: yes or no. It shows the
 # workspaces, then lan, wifi, bluetooth, sound out and mic, battery, and
 # the date and time, each only when this machine has it. spark-shell bar

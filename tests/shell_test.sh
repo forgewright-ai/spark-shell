@@ -2449,7 +2449,7 @@ printf '%s\n' "$out" | grep -q '^todo   sound        pulseaudio is installed, an
     && ok "Arch with pulseaudio: pipewire-pulse is left out of the install, one todo says how to take it" || bad "arch pulseaudio" "$out"
 grep -q '^PKG_SOUND=pipewire wireplumber alsa-pipewire libspa-bluetooth$' "$REPO/distro/void.env" && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa libspa-0.2-bluetooth$' "$REPO/distro/debian.env" \
     && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa$' "$REPO/distro/arch.env" && ok "distro: the sound's packages, each family's names" || bad "PKG_SOUND" "$(grep -h PKG_SOUND "$REPO"/distro/*.env)"
-grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert among them" || bad "void.env desktop"
+grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils mako libnotify udisks2 dbus$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, mako, notify-send, udisks2 and the session bus among them" || bad "void.env desktop"
 
 # the login screen of v0.41 (greetd on tty1, spark-shell's files in
 # /etc/greetd): handed back to getty at the next boot by on, on desktop,
@@ -3028,8 +3028,8 @@ spark-shell changes how this machine works:
 
   packages     sway swaybg foot foot-terminfo ttf-dejavu curl openssh swayidle
                swaylock grim slurp wl-clipboard brightnessctl ddcutil librsvg
-               otf-monaspace pipewire wireplumber pipewire-pulse pipewire-alsa
-               (sudo)
+               otf-monaspace mako libnotify udisks2 pipewire wireplumber
+               pipewire-pulse pipewire-alsa (sudo)
   login        logging in on tty1 starts the desktop
                Alt+F2 is a plain shell
 
@@ -3042,7 +3042,8 @@ printf 'ID=void\n' > "$H/os-release"
 rc=0; out=$(printf 'n\n' | A on desktop 2>&1) || rc=$?
 printf '%s\n' "$out" | grep -qx '  groups       adds you to _seatd and audio (sudo)' && printf '%s\n' "$out" | grep -qx '  services     turns on seatd at boot (sudo)' \
     && printf '%s\n' "$out" | grep -qx '  sound        PipeWire starts with the desktop, and ALSA programs play through' && printf '%s\n' "$out" | grep -qx '               it (sudo)' \
-    && ok "warning: on desktop on Void adds the _seatd and audio groups, the seatd service, and says PipeWire starts with the desktop" || bad "warning void" "rc=$rc $out"
+    && printf '%s\n' "$out" | grep -qx '  power        lets you suspend, restart and shut down, nothing else (sudo)' && printf '%s\n' "$out" | grep -qx '  drives       lets you mount and eject USB drives (polkit, sudo)' \
+    && ok "warning: on desktop on Void adds the _seatd and audio groups, the seatd service, says PipeWire starts with the desktop, and names the power and the drives' rules" || bad "warning void" "rc=$rc $out"
 mkdir -p "$HOME/.config/spark/sv"
 rc=0; out2=$(printf 'n\n' | A on desktop 2>&1) || rc=$?
 printf '%s\n' "$out2" | grep -qxF "  sound        PipeWire runs from boot, under spark's supervisor, and ALSA" && printf '%s\n' "$out2" | grep -qxF '               programs play through it (sudo)' \
@@ -3863,9 +3864,9 @@ done
 [ -z "$_wb" ] && [ "$(ls "$REPO/wallpaper" | wc -l | tr -d ' ')" = 34 ] && ok "wallpaper/: the 17 shipped wallpapers, each its SVG and a 3840 by 2160 PNG, nothing else" || bad "wallpaper files" "$_wb $(ls "$REPO/wallpaper")"
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
-for s in lan wifi bt out mic bat clock theme window display keyboard notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 64 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the nineteen sections hold the 64 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+for s in lan wifi bt out mic bat clock theme window display keyboard notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
+[ "$(grep -c '' "$H/tools.all")" = 76 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-two sections hold the 76 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 # the brightness takes the gate's own words, up, down or 1 to 100: a planner told 0 to 100 and no step sent a 0 the gate
 # refused, and the dialog's brighter and dimmer rows send up and down (#31). spark's grammar types an argument one
 # way, so a string enum holds both, the tens first: a brief names an enum's first twelve
@@ -3887,9 +3888,9 @@ mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},
 jq -e -s 'all(.[]; (.name | test("^[a-z][a-z0-9_]{0,63}$")) and (.title | test("^[a-z][a-z-]*( [a-z-]+| [A-Z]+)*$")) and (.title | length) <= 60)' "$H/tools.all" >/dev/null \
     && ok "provide: every tool name is lower case with underscores, every title a sentence of plain words with its argument in capitals, 60 at most" || bad "tool shapes" "$(jq -r '.name + " | " + .title' "$H/tools.all")"
 jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.destructiveHint | type) == "boolean" and (.idempotentHint | type) == "boolean" and .openWorldHint == false)' "$H/tools.all" >/dev/null \
-    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'layout_delete layout_save theme_delete wifi_forget window_close' ] \
+    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'layout_delete layout_save power_logout power_restart power_shutdown theme_delete wifi_forget window_close' ] \
     && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find about_open files_show files_attach' ] \
-    && ok "provide: every hint spelled out (the spec's default is destructive); destructive: wifi forget, window close, layout save, layout delete, theme delete; read only: notes find, about, files show and attach" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
+    && ok "provide: every hint spelled out (the spec's default is destructive); destructive: wifi forget, window close, layout save, layout delete, theme delete, log out, restart, shut down; read only: notes find, about, files show and attach" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
 jq -e -s 'all(.[]; .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .outputSchema.type == "object")' "$H/tools.all" >/dev/null \
     && [ "$(jq -c 'select(.name == "wifi_connect") | .inputSchema.properties.password' "$H/tools.all")" = '{"type":"string","format":"password","maxLength":256}' ] \
     && [ "$(jq -c 'select(.name == "bt_power") | .inputSchema.properties.state.enum' "$H/tools.all")" = '["on","off"]' ] && [ "$(jq -c 'select(.name == "out_level") | .inputSchema.properties.level' "$H/tools.all")" = '{"type":"integer","minimum":0,"maximum":100}' ] \
@@ -3936,7 +3937,7 @@ case $order in "r1 notifications/progress r2 notifications/resources/updated r3"
     && ok "provide: the watcher saw the palette change made outside it; progress only grows" || bad "provide watcher" "$(cat "$H/mcp.out")"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 st=0; out=$(sh "$SH" provide spark 2>&1 >/dev/null) || st=$?
-[ "$st" -eq 1 ] && [ "$out" = 'spark-shell provide: spark is not one: lan, wifi, bt, out, mic, bat, clock, theme, window, display, keyboard, notes, reminders, bar, layout, apps, about, undo, files' ] && ok "provide spark: no provider (the dialog holds the chat itself), the list on stderr, exit 1" || bad "provide spark" "st=$st $out"
+[ "$st" -eq 1 ] && [ "$out" = 'spark-shell provide: spark is not one: lan, wifi, bt, out, mic, bat, clock, theme, window, display, keyboard, notifications, storage, power, notes, reminders, bar, layout, apps, about, undo, files' ] && ok "provide spark: no provider (the dialog holds the chat itself), the list on stderr, exit 1" || bad "provide spark" "st=$st $out"
 st=0; out=$(sh "$SH" provide theme wifi 2>&1 >/dev/null) || st=$?
 [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell provide: one section: lan, ' && ok "provide with two words: one section, refused on stderr" || bad "provide two" "st=$st $out"
 # the dialog exits without waiting for its providers (#60): an answer that finds the reader gone (SIGPIPE)
@@ -3997,7 +3998,7 @@ for kv in DIALOG_ATTACH=maybe DIALOG_MODEL=1 DIALOG_TALK=off 'DIALOG_ATTACH_TYPE
 done
 ok "config: DIALOG_ATTACH, DIALOG_MODEL and DIALOG_TALK take yes or no, DIALOG_ATTACH_TYPES lower-case types; anything else is refused in one line"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" \
+grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" \
     && ok "config: the four keys are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
 # the want verb: one entry for words, the plan as JSON, a file asked about
 cat > "$H/.local/bin/spark" <<'STUB'
@@ -4218,19 +4219,19 @@ STUB
     chmod +x "$H/.local/bin/spark"; mcpf=$HOME/.config/spark/mcp.env; mkdir -p "$HOME/.config/spark"; rm -f "$HOME/mcp.log"
     printf 'MCP_SERVER_FILES="/opt/mine/files-server"\nMCP_SERVER_WIFI="/old/clone/spark-shell provide wifi"\n' > "$mcpf"
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes 2>&1 || :)
-    printf '%s\n' "$out" | grep -q "^ok     mcp          18 providers on spark's MCP list: the prompt line and spark do know the desktop's tools$" \
+    printf '%s\n' "$out" | grep -q "^ok     mcp          21 providers on spark's MCP list: the prompt line and spark do know the desktop's tools$" \
         && printf '%s\n' "$out" | grep -q "^todo   mcp          already on spark's MCP list as servers of yours, left as they are: files$" \
         && grep -qx 'MCP_SERVER_FILES="/opt/mine/files-server"' "$mcpf" && grep -qx "MCP_SERVER_WIFI=\"$C/spark-shell provide wifi\"" "$mcpf" && grep -qx "MCP_SERVER_CLOCK=\"$C/spark-shell provide clock\"" "$mcpf" \
-        && [ "$(grep -c '^MCP_SERVER_' "$mcpf")" = 19 ] && grep -qx 'mcp rm wifi' "$HOME/mcp.log" && ! grep -q 'mcp add files' "$HOME/mcp.log" \
+        && [ "$(grep -c '^MCP_SERVER_' "$mcpf")" = 22 ] && grep -qx 'mcp rm wifi' "$HOME/mcp.log" && ! grep -q 'mcp add files' "$HOME/mcp.log" \
         && ok "on desktop: each provider on spark's MCP list through spark mcp add; a server of yours under one of the names stays; an older clone's line replaced" || bad "mcp add" "$(printf '%s\n' "$out" | grep mcp); $(cat "$mcpf")"
     rm -f "$HOME/mcp.log"; SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes >/dev/null 2>&1 || :
-    [ ! -e "$HOME/mcp.log" ] && sh "$C/spark-shell" check 2>&1 | grep -q "^warn   mcp          18 of 19 providers on spark's MCP list -- spark-shell on desktop$" \
+    [ ! -e "$HOME/mcp.log" ] && sh "$C/spark-shell" check 2>&1 | grep -q "^warn   mcp          21 of 22 providers on spark's MCP list -- spark-shell on desktop$" \
         && ok "on desktop again: nothing asked of spark; check counts the providers on the list" || bad "mcp again" "$(cat "$HOME/mcp.log" 2>&1); $(sh "$C/spark-shell" check 2>&1 | grep mcp)"
     out=$(sh "$C/spark-shell" off desktop --dry-run 2>&1 || :)
-    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt out mic bat clock theme window display keyboard notes reminders bar layout apps about undo off spark's MCP list$" \
+    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt out mic bat clock theme window display keyboard notifications storage power notes reminders bar layout apps about undo off spark's MCP list$" \
         && ok "off desktop --dry-run: the lines that are ours, by name; a server of yours is not among them" || bad "mcp off would" "$(printf '%s\n' "$out" | grep mcp)"
     st=0; out=$(sh "$C/spark-shell" off desktop 2>&1) || st=$?
-    printf '%s\n' "$out" | grep -q "^ok     mcp          18 providers off spark's MCP list$" && [ "$(cat "$mcpf")" = 'MCP_SERVER_FILES="/opt/mine/files-server"' ] \
+    printf '%s\n' "$out" | grep -q "^ok     mcp          21 providers off spark's MCP list$" && [ "$(cat "$mcpf")" = 'MCP_SERVER_FILES="/opt/mine/files-server"' ] \
         && ok "off desktop: spark-shell's lines off spark's MCP list through spark mcp rm, a server of yours left" || bad "mcp off" "st=$st $(printf '%s\n' "$out" | grep mcp); $(cat "$mcpf")"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"; rm -f "$mcpf" "$H/.local/bin/spark"
     SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes >/dev/null 2>&1 || :
@@ -4876,6 +4877,239 @@ if command -v ssh-keygen >/dev/null 2>&1; then
     rm -rf "$U"
 else
     printf '  note update: ssh-keygen not found; the section is skipped\n'
+fi
+
+# --- 25. the notifications, the drives and the power (#71, #72, #73) ------
+# mako's config from the palette, the session bus at the desktop's start,
+# then the three sections as providers against stand-ins for makoctl,
+# notify-send, lsblk, udisksctl, df, systemctl, sudo and zzz, and the two
+# rules of runit written once and taken back. The Linux half is guarded
+# by uname like 14.
+fresh
+desktop_stubs
+theme_fixture '#ff5555'
+mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+if [ "$(uname -s)" = Darwin ]; then
+    _nb=''
+    for v in notifications storage power; do
+        rc=0; out=$(sh "$SH" desktop "$v" 2>&1) || rc=$?
+        [ "$rc" = 1 ] && case $out in "spark-shell desktop: not on macOS, which has its own "*) true ;; *) false ;; esac || _nb="$_nb $v:$out"
+    done
+    [ -z "$_nb" ] && ok "macOS: desktop notifications, storage and power are refused, the Mac has its own" || bad "macOS desktop verbs" "$_nb"
+    out=$(sh "$SH" panel --list 2>&1 || :)
+    printf '%s\n' "$out" | grep -qE '^. (notifications|storage|power) ' && bad "macOS: a desktop section is listed" "$out" || ok "macOS: the panel lists no notifications, storage or power"
+else
+    nlog=$HOME/notify.log
+    cat > "$H/.local/bin/makoctl" <<'STUB'
+#!/bin/sh
+[ -e "$HOME/mako.up" ] || exit 1
+printf '%s\n' "$*" >> "$HOME/mako.log"
+case $1 in
+    mode) shift; if [ $# -eq 0 ]; then echo default; [ ! -e "$HOME/mako.dnd" ] || echo do-not-disturb; exit 0; fi
+        case $1 in -a) touch "$HOME/mako.dnd" ;; -r) rm -f "$HOME/mako.dnd" ;; esac ;;
+    list|history) cat "$HOME/mako.$1" 2>/dev/null || : ;;
+esac
+STUB
+    printf '#!/bin/sh\nexit 0\n' > "$H/.local/bin/mako"
+    printf '#!/bin/sh\nprintf "%%s|" "$@" >> "$HOME/notify.log"; echo >> "$HOME/notify.log"\n' > "$H/.local/bin/notify-send"
+    chmod +x "$H/.local/bin/makoctl" "$H/.local/bin/mako" "$H/.local/bin/notify-send"
+    # the render: mako's config in the palette and the text size, a click on spark-shell's own opening the dialog
+    sh "$SH" on --yes >/dev/null 2>&1 || :
+    mk=$HOME/.config/mako/config
+    grep -q '^# rendered by spark-shell from templates/.config/mako/config' "$mk" && ! grep -q '@[A-Z_0-9]*@' "$mk" \
+        && grep -qx 'font=DejaVu Sans Mono 12' "$mk" && grep -qx 'background-color=#0f0f0f' "$mk" && grep -qx 'text-color=#aaaaaa' "$mk" && grep -qx 'progress-color=over #1e1e1e' "$mk" \
+        && grep -qx 'padding=19,24' "$mk" && grep -qx 'width=432' "$mk" && grep -qx 'height=144' "$mk" && grep -qx 'border-color=#aa0000' "$mk" && grep -qx 'anchor=top-right' "$mk" \
+        && ok "mako's config: the dialog's surface and the text color, the bar's face, the air and the width from the text size, red for a critical one (#71)" || bad "mako config" "$(cat "$mk" 2>&1)"
+    grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog reminders" "$mk" \
+        && grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog storage" "$mk" \
+        && grep -qx '\[app-name=spark-shell category=x-spark-shell.reminder\]' "$mk" && grep -qx '\[app-name=spark-shell category=device.added\]' "$mk" \
+        && [ "$(sed -n '/^\[mode=do-not-disturb\]$/,$p' "$mk" | grep -c .)" = 4 ] && tail -1 "$mk" | grep -qx 'invisible=0' \
+        && ok "mako's config: a click on a reminder or a drive opens the dialog there; do not disturb last, a critical one through it" || bad "mako criteria" "$(cat "$mk")"
+    grep -qx 'exec mako' "$HOME/.config/sway/config" && ok "sway config: mako starts with the desktop" || bad "sway exec mako" "$(grep -n mako "$HOME/.config/sway/config")"
+    # a new look: the file again, and a mako that runs reads it at once
+    touch "$HOME/mako.up"; rm -f "$HOME/mako.log"
+    sh "$SH" theme nord >/dev/null 2>&1 || :
+    grep -qx 'reload' "$HOME/mako.log" && ! grep -qx 'background-color=#0f0f0f' "$mk" && ok "theme NAME: mako's config in the new palette, and mako told to read it (#71)" || bad "mako reload" "$(cat "$HOME/mako.log" 2>&1)"
+    sh "$SH" theme none >/dev/null 2>&1 || :; theme_fixture '#ff5555'; sh "$SH" on --yes >/dev/null 2>&1 || :; rm -f "$HOME/mako.up"
+    # the session bus: sway inside dbus-run-session where there is none, never where logind made one
+    printf '#!/bin/sh\necho "dbus-run-session $*" >> "%s/bus.log"\nexec "$@"\n' "$H" > "$H/.local/bin/dbus-run-session"
+    printf '#!/bin/sh\necho "sway $*" >> "%s/bus.log"\n' "$H" > "$H/.local/bin/sway"
+    chmod +x "$H/.local/bin/dbus-run-session" "$H/.local/bin/sway"
+    rm -f "$H/bus.log"; env -u WAYLAND_DISPLAY -u DBUS_SESSION_BUS_ADDRESS TEST_TTY=/dev/tty1 sh "$SH" desktop >/dev/null 2>&1 || :
+    [ "$(sed -n 1p "$H/bus.log" 2>/dev/null)" = 'dbus-run-session sway' ] && [ "$(sed -n 2p "$H/bus.log")" = 'sway ' ] \
+        && ok "desktop: with no session bus, sway starts inside dbus-run-session, so a program reaches mako (#71)" || bad "desktop bus" "$(cat "$H/bus.log" 2>&1)"
+    rm -f "$H/bus.log"; env -u WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1/bus TEST_TTY=/dev/tty1 sh "$SH" desktop >/dev/null 2>&1 || :
+    [ "$(cat "$H/bus.log" 2>/dev/null)" = 'sway ' ] && ok "desktop: a session bus there already (logind's), sway starts as it was" || bad "desktop own bus" "$(cat "$H/bus.log" 2>&1)"
+    desktop_stubs
+    # the notifications section: mako not there, not running, then running
+    rq() { jq -cn --argjson i "$1" --arg m "$2" --argjson p "${3:-null}" '{jsonrpc: "2.0", id: $i, method: $m} + (if $p == null then {} else {params: $p} end)'; }
+    call() { rq "$1" tools/call "$(jq -cn --arg n "$2" --argjson a "${3:-"{}"}" '{name: $n, arguments: $a}')"; }
+    mcp() { _s=$1; shift; printf '%s\n' "$@" | sh "$SH" provide "$_s" > "$H/mcp.out" 2> "$H/mcp.err"; }
+    ans() { jq -c --argjson i "$1" 'select(.id == $i)' "$H/mcp.out"; }
+    rows() { mcp "$1" "$(rq 1 resources/read "{\"uri\":\"spark-shell://$1/rows\"}")"; ans 1 | jq -r '.result.contents[0].text'; }
+    out=$(env -u DBUS_SESSION_BUS_ADDRESS PATH="$H/.local/bin:$sys" sh -c 'rm -f "$1/.local/bin/mako"; sh "$2" panel notifications --list' _ "$H" "$SH" 2>&1 | sed -n 2p)
+    [ "$out" = "  notifications  mako is not installed (spark-shell on desktop)	notifications show" ] && ok "notifications: no mako, said as the section's one row" || bad "notifications no mako" "$out"
+    printf '#!/bin/sh\nexit 0\n' > "$H/.local/bin/mako"; chmod +x "$H/.local/bin/mako"
+    out=$(env -u DBUS_SESSION_BUS_ADDRESS sh "$SH" panel notifications --list 2>&1 | sed -n 2p)
+    [ "$out" = "  notifications  no session bus yet: notifications start at your next login	notifications show" ] && ok "notifications: no session bus, the next login says when" || bad "notifications no bus" "$out"
+    out=$(DBUS_SESSION_BUS_ADDRESS=unix:path=/nowhere sh "$SH" panel notifications --list 2>&1 | sed -n 2p)
+    [ "$out" = "  notifications  mako is not running: notifications start at your next login	notifications show" ] && ok "notifications: a bus but no mako answering, said so" || bad "notifications not running" "$out"
+    touch "$HOME/mako.up"
+    printf 'Notification 9: Download complete\n  App name: firefox\n  Urgency: normal\n' > "$HOME/mako.list"
+    printf 'Notification 5: Build passed\n  App name: \nNotification 4: New mail from Ada\n  App name: aerc\n  Category: email\nNotification 3: New mail from Ada\n  App name: aerc\n' > "$HOME/mako.history"
+    rows notifications > "$H/n.json"
+    jq -e '.state == "1 on the screen"
+        and ([.rows[] | .text] == ["turn on do not disturb", "dismiss the one on the screen", "show the last one again", "Build passed", "New mail from Ada", "New mail from Ada"])
+        and (.rows[0].tool == {name: "notifications_do_not_disturb", arguments: {state: "on"}}) and (.rows[1].tool.name == "notifications_dismiss") and (.rows[2].tool.name == "notifications_restore")
+        and ([.rows[3:][] | .group] == ["earlier", "earlier", "earlier"]) and (.rows[4].columns == ["aerc"]) and (.rows[3].columns == []) and ([.rows[] | .id] | unique | length) == 6' "$H/n.json" >/dev/null \
+        && ok "notifications rows: do not disturb, dismiss what is on the screen, the last one again, then the history, newest first, each its app a column, two alike apart by mako's id (#71)" || bad "notifications rows" "$(cat "$H/n.json")"
+    printf '{"type":"aa{sv}","data":[[{"id":{"type":"u","data":12},"app-name":{"type":"s","data":"firefox"},"summary":{"type":"s","data":"Saved"}}]]}\n' > "$HOME/mako.history"
+    [ "$(rows notifications | jq -c '[.rows[] | select(.group == "earlier") | [.text, .columns]]')" = '[["Saved",["firefox"]]]' ] && ok "notifications rows: mako 1.7 and 1.8's history, busctl's JSON, read the same" || bad "mako 1.7 history" "$(rows notifications)"
+    rm -f "$HOME/mako.log"
+    mcp notifications "$(call 1 notifications_do_not_disturb '{"state":"on"}')" "$(call 2 notifications_do_not_disturb '{"state":"on"}')" "$(call 3 notifications_do_not_disturb '{"state":"maybe"}')"
+    [ "$(ans 1 | jq -c .result.structuredContent)" = '{"receipt":"do not disturb on: notifications wait out of sight","undo":{"name":"notifications_do_not_disturb","arguments":{"state":"off"}}}' ] \
+        && [ "$(ans 2 | jq -c .result.structuredContent)" = '{"receipt":"do not disturb on: notifications wait out of sight"}' ] && [ "$(ans 3 | jq -r .error.message)" = 'notifications_do_not_disturb: state is one of on, off' ] \
+        && [ -e "$HOME/mako.dnd" ] && grep -qx 'DO_NOT_DISTURB=yes' "$HOME/.config/spark-shell/config" \
+        && ok "notifications do-not-disturb on: mako's mode and the config, undo puts it off; asked again, a receipt with nothing to undo (#71)" || bad "dnd on" "$(cat "$H/mcp.out")"
+    [ "$(rows notifications | jq -r '.state + " | " + .rows[0].text + " | " + .rows[0].sign')" = 'do not disturb | turn off do not disturb | dot' ] && ok "notifications: with do not disturb on, the row in use turns it off" || bad "dnd row" "$(rows notifications | head -c 300)"
+    REM_LOOK=1 sh "$SH" bar status --once 2>/dev/null | jq -e 'any(.[]; .name == "notifications" and (.full_text | test("do not disturb")))' >/dev/null && ok "bar: do not disturb is said while it is on, a click opens its section" || bad "bar dnd" "$(REM_LOOK=1 sh "$SH" bar status --once 2>&1 | head -c 400)"
+    rm -f "$HOME/mako.dnd"; sh "$SH" desktop --pending >/dev/null 2>&1 || :; _i=0; while [ "$_i" -lt 20 ] && [ ! -e "$HOME/mako.dnd" ]; do sleep 0.25; _i=$((_i + 1)); done
+    [ -e "$HOME/mako.dnd" ] && ok "desktop --pending (the desktop's start): do not disturb as the config left it" || bad "dnd kept" "$(cat "$HOME/mako.log")"
+    out=$(sh "$SH" desktop notifications do-not-disturb off 2>&1 || :); [ "$out" = 'do not disturb off' ] && [ ! -e "$HOME/mako.dnd" ] && grep -qx 'DO_NOT_DISTURB=no' "$HOME/.config/spark-shell/config" \
+        && ok "desktop notifications do-not-disturb off: said, mako's mode gone, the config too" || bad "dnd off cli" "$out"
+    out=$(sh "$SH" desktop notifications 2>&1 || :); [ "$out" = "$(printf 'do not disturb off\n  firefox: Saved')" ] && ok "desktop notifications: do not disturb, then the last few with their app" || bad "notifications cli" "$out"
+    rc=0; out=$(sh "$SH" desktop notifications loud 2>&1) || rc=$?; [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: notifications takes do-not-disturb on|off, dismiss or restore' ] && ok "desktop notifications WORD: refused in one line" || bad "notifications refuse" "rc=$rc $out"
+    # a reminder due comes as a notification once, on the desktop alone
+    mkdir -p "$HOME/calendar"; rm -f "$nlog"
+    printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:spark-shell-test-n@box\r\nDTSTART:%s\r\nSUMMARY:call the vet\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' "$(ago 1)" > "$HOME/calendar/vet.ics"
+    SPARK_SHELL_NO_CHIME=1 WAYLAND_DISPLAY=wayland-1 sh "$SH" bar due >/dev/null 2>&1 || :; SPARK_SHELL_NO_CHIME=1 WAYLAND_DISPLAY=wayland-1 sh "$SH" bar due >/dev/null 2>&1 || :
+    [ "$(cat "$nlog" 2>/dev/null)" = '-a|spark-shell|-c|x-spark-shell.reminder|--|call the vet|due now|' ] && ok "a reminder due: one notification, spark-shell's, its category for a click to open the reminders (#71)" || bad "reminder notification" "$(cat "$nlog" 2>&1)"
+    rm -f "$HOME/calendar/vet.ics"
+    # the drives: what lsblk and df say, a stand-in udisksctl
+    cat > "$H/.local/bin/lsblk" <<'STUB'
+#!/bin/sh
+cat "$HOME/lsblk.json"
+STUB
+    cat > "$H/.local/bin/df" <<'STUB'
+#!/bin/sh
+echo 'Filesystem 1024-blocks Used Available Capacity Mounted on'
+case "$*" in *" /") echo '/dev/nvme0n1p2 488281250 288281250 200000000 60% /' ;; *) echo '/dev/sdb1 30000000 27000000 3000000 90% /run/media/ada/BACKUP' ;; esac
+STUB
+    cat > "$H/.local/bin/udisksctl" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$HOME/udisks.log"
+[ ! -e "$HOME/udisks.no" ] || { echo "Error mounting $3: GDBus.Error:org.freedesktop.UDisks2.Error.NotAuthorizedCanObtain: Not authorized to perform operation"; exit 1; }
+case $1 in mount) echo "Mounted $3 at /run/media/ada/BACKUP" ;; unmount) echo "Unmounted $3." ;; esac
+STUB
+    chmod +x "$H/.local/bin/lsblk" "$H/.local/bin/df" "$H/.local/bin/udisksctl"
+    blk() {   # blk MOUNT -> the fixture: the system's disk, a stick (BACKUP, mounted at MOUNT or not, and a small part with no label), a disk the system mounts (fstab), an encrypted card
+        _m=null; [ -z "${1:-}" ] || _m="\"$1\""
+        cat > "$HOME/lsblk.json" <<JSON
+{"blockdevices": [
+ {"name":"nvme0n1","path":"/dev/nvme0n1","type":"disk","rm":false,"hotplug":false,"size":512110190592,"model":"WD SN770","vendor":null,"label":null,"fstype":null,"mountpoint":null,
+  "children":[{"name":"nvme0n1p2","path":"/dev/nvme0n1p2","type":"part","rm":false,"hotplug":false,"size":511000000000,"label":null,"fstype":"ext4","mountpoint":"/"}]},
+ {"name":"sdb","path":"/dev/sdb","type":"disk","rm":true,"hotplug":true,"size":31004295168,"model":"Ultra","vendor":"SanDisk ","label":null,"fstype":null,"mountpoint":null,
+  "children":[{"name":"sdb1","path":"/dev/sdb1","type":"part","rm":true,"hotplug":true,"size":31003246592,"label":"BACKUP","fstype":"exfat","mountpoint":$_m},
+              {"name":"sdb2","path":"/dev/sdb2","type":"part","rm":true,"hotplug":true,"size":1048576,"label":null,"fstype":"vfat","mountpoint":null}]},
+ {"name":"sdc","path":"/dev/sdc","type":"disk","rm":"0","hotplug":"1","size":1000204886016,"model":"Elements","vendor":"WD","label":null,"fstype":null,"mountpoint":null,
+  "children":[{"name":"sdc1","path":"/dev/sdc1","type":"part","rm":"0","hotplug":"1","size":1000202273280,"label":"data","fstype":"ext4","mountpoint":"/mnt/data"}]},
+ {"name":"mmcblk0","path":"/dev/mmcblk0","type":"disk","rm":false,"hotplug":true,"size":63864569856,"model":null,"vendor":null,"label":null,"fstype":null,"mountpoint":null,
+  "children":[{"name":"mmcblk0p1","path":"/dev/mmcblk0p1","type":"part","rm":false,"hotplug":true,"size":63863521280,"label":"cam|era","fstype":"crypto_LUKS","mountpoint":null}]}
+]}
+JSON
+    }
+    blk ''
+    rows storage > "$H/s.json"
+    jq -e '.state == "2 drives"
+        and ([.rows[] | .text] == ["BACKUP", "SanDisk Ultra 1.0 MB", "eject SanDisk Ultra", "cam/era is encrypted: udisksctl unlock -b /dev/mmcblk0p1", "eject drive", "465.7 GB, 190.7 GB free"])
+        and (.rows[0] | .sign == "ring" and .tool == {name: "storage_mount", arguments: {name: "BACKUP"}} and .group == "SanDisk Ultra" and .columns == ["28.9 GB"])
+        and (.rows[2].tool == {name: "storage_eject", arguments: {name: "SanDisk Ultra"}}) and (.rows[3].tool == null) and (.rows[5].group == "this computer")' "$H/s.json" >/dev/null \
+        && ok "storage rows: a drive a group, its parts (Enter mounts), eject; an encrypted part says how to unlock it; never the system's disk or one it mounts itself (fstab); this computer's free space (#73)" || bad "storage rows" "$(cat "$H/s.json")"
+    rm -f "$HOME/udisks.log"
+    mcp storage "$(call 1 storage_mount '{"name":"BACKUP"}')" "$(call 2 storage_mount '{"name":"nothing"}')"
+    [ "$(ans 1 | jq -c .result.structuredContent)" = '{"receipt":"BACKUP mounted at /run/media/ada/BACKUP","undo":{"name":"storage_unmount","arguments":{"name":"BACKUP"}}}' ] && [ "$(sed -n 1p "$HOME/udisks.log")" = 'mount -b /dev/sdb1 --no-user-interaction' ] \
+        && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'nothing is not in the list now' ] \
+        && ok "storage mount: udisksctl mounts the part by its device, with no question; undo unmounts it; a name not listed is refused" || bad "storage mount" "$(cat "$H/mcp.out") $(cat "$HOME/udisks.log" 2>&1)"
+    blk /run/media/ada/BACKUP
+    [ "$(rows storage | jq -c '[.rows[0] | .sign, .tool, .columns], [.rows[1] | .text, .tool.name]')" = "$(printf '%s\n%s' '["dot",{"name":"storage_open","arguments":{"name":"BACKUP"}},["2.9 GB free"]]' '["unmount BACKUP","storage_unmount"]')" ] \
+        && ok "storage rows: a part that is mounted opens on Enter, its free space a column, and unmounts" || bad "storage mounted rows" "$(rows storage)"
+    rm -f "$HOME/udisks.log"; out=$(sh "$SH" desktop storage eject SanDisk Ultra 2>&1 || :)
+    [ "$out" = 'SanDisk Ultra can be taken out' ] && [ "$(cat "$HOME/udisks.log")" = "$(printf 'unmount -b /dev/sdb1 --no-user-interaction\npower-off -b /dev/sdb --no-user-interaction')" ] \
+        && ok "desktop storage eject: every mounted part unmounted, then the drive powered off" || bad "storage eject" "$out $(cat "$HOME/udisks.log" 2>&1)"
+    blk ''; touch "$HOME/udisks.no"; out=$(sh "$SH" desktop storage mount BACKUP 2>&1 || :); rm -f "$HOME/udisks.no"
+    [ "$out" = 'could not mount BACKUP: Not authorized to perform operation' ] && ok "desktop storage mount: udisks2's refusal said in its own last words" || bad "storage refused" "$out"
+    out=$(sh "$SH" desktop storage 2>&1 || :)
+    [ "$out" = "$(printf 'SanDisk Ultra  28.9 GB\n  BACKUP  28.9 GB\n  SanDisk Ultra 1.0 MB  1.0 MB\ndrive  59.5 GB\n  cam/era  59.5 GB\nthis computer  465.7 GB, 190.7 GB free')" ] && ok "desktop storage: each drive, its parts, this computer's free space" || bad "storage cli" "$out"
+    out=$(sh "$SH" desktop storage open BACKUP 2>&1 || :); [ "$out" = 'BACKUP is at /run/media/ada/BACKUP' ] && grep -qx 'mount -b /dev/sdb1 --no-user-interaction' "$HOME/udisks.log" && ok "desktop storage open: a part not mounted is mounted first; away from the desktop, where it is" || bad "storage open" "$out"
+    out=$(PATH="$H/.local/bin:$sys" sh -c 'rm -f "$1/.local/bin/udisksctl"; sh "$2" panel storage --list' _ "$H" "$SH" 2>&1 | sed -n 2p)
+    [ "$out" = "  storage    udisksctl is not installed (spark-shell on desktop)	storage show" ] && ok "storage: no udisks2, said first" || bad "storage no udisks" "$out"
+    printf '#!/bin/sh\necho "$*" >> "$HOME/udisks.log"\n' > "$H/.local/bin/udisksctl"; chmod +x "$H/.local/bin/udisksctl"
+    # a drive plugged in while the bar runs: one notification within a second or two, none for what was there at its start
+    S=$H/sys; mkdir -p "$S/block/nvme0n1"; rm -f "$nlog"
+    cp "$HOME/lsblk.json" "$H/lsblk.full"; jq '.blockdevices |= map(select(.name != "sdb"))' "$H/lsblk.full" > "$HOME/lsblk.json"
+    ( SPARK_SHELL_SYS=$S WAYLAND_DISPLAY=wayland-1 SPARK_SHELL_NO_CHIME=1 sh "$SH" bar status < /dev/null > "$H/bar.out" 2>/dev/null ) & bp=$!
+    _i=0; while [ "$_i" -lt 40 ] && [ "$(grep -c '^\[{' "$H/bar.out" 2>/dev/null)" = 0 ]; do sleep 0.25; _i=$((_i + 1)); done
+    cp "$H/lsblk.full" "$HOME/lsblk.json"; mkdir -p "$S/block/sdb"
+    _i=0; while [ "$_i" -lt 40 ] && [ ! -s "$nlog" ]; do sleep 0.25; _i=$((_i + 1)); done
+    pkill -P "$bp" 2>/dev/null || :; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :   # its own bar alone, by its parent: another suite's may run beside it
+    [ "$(cat "$nlog" 2>/dev/null)" = '-a|spark-shell|-c|device.added|--|SanDisk Ultra plugged in|28.9 GB. A click opens Storage, where it mounts.|' ] && ! grep -q 'Elements\|drive plugged' "$nlog" \
+        && ok "bar: a drive plugged in while it runs is said once, within its second's look; what was there at its start is not (#73)" || bad "drive notice" "$(cat "$nlog" 2>&1) $(head -c 300 "$H/bar.out")"
+    # the power: what logind does, or the sudo rule of runit; the keys and the lid said, never changed
+    printf '#!/bin/sh\necho "systemctl $*" >> "$HOME/power.log"\n' > "$H/.local/bin/systemctl"
+    printf '#!/bin/sh\n[ "$1" != -n ] || shift; echo "sudo $*" >> "$HOME/power.log"\n' > "$H/.local/bin/sudo"
+    printf '#!/bin/sh\necho "swaylock" >> "$HOME/power.log"\n' > "$H/.local/bin/swaylock"
+    cat > "$H/.local/bin/swaymsg" <<'STUB'
+#!/bin/sh
+case "$*" in "-t get_version") echo '{"human_readable":"stub"}' ;; "-t get_tree") echo '{}' ;; *) echo "$*" >> "$HOME/swaymsg.log" ;; esac
+STUB
+    chmod +x "$H/.local/bin/systemctl" "$H/.local/bin/sudo" "$H/.local/bin/swaylock" "$H/.local/bin/swaymsg"
+    mkdir -p "$S/power" "$H/proc"; echo 'freeze mem disk' > "$S/power/state"; echo '273000.12 100.0' > "$H/proc/uptime"
+    pw() { SPARK_SHELL_SYS=$S SPARK_SHELL_PROC=$H/proc WAYLAND_DISPLAY=wayland-1 SWAYSOCK=$H/sock "$@"; }
+    out=$(pw sh "$SH" panel power --list 2>&1 | sed -n '1,3p')
+    [ "$out" = "$(printf 'power      up 3 days\n  power      lock the screen\tpower lock\n  power      log out\tpower logout')" ] && pw sh "$SH" panel power --list 2>&1 | grep -qF 'restart and shut down: no logind or sudo rule here' \
+        && ok "power: up 3 days; lock and log out always, restart and shut down where something does them, said when nothing does (#72)" || bad "power none" "$(pw sh "$SH" panel power --list 2>&1 | head -6)"
+    mkdir -p "$H/root/run/systemd/system" "$H/root/etc/systemd" "$H/proc/acpi/button/lid/LID0"; printf '[Login]\nHandlePowerKey=ignore\n' > "$H/root/etc/systemd/logind.conf"; echo 'state: open' > "$H/proc/acpi/button/lid/LID0/state"
+    pw sh -c 'sh "$1" provide power' _ "$SH" > "$H/mcp.out" 2>/dev/null <<EOF
+$(rq 1 resources/read '{"uri":"spark-shell://power/rows"}')
+EOF
+    [ "$(ans 1 | jq -r '.result.contents[0].text' | jq -c '[.rows[] | .text]')" = '["lock the screen","suspend","log out","restart","shut down","the power button does nothing","closing the lid suspends"]' ] \
+        && ok "power rows with logind: lock, suspend, log out, restart, shut down; logind's word for the power button, its default for the lid" || bad "power systemd rows" "$(cat "$H/mcp.out")"
+    rm -f "$HOME/power.log" "$HOME/swaymsg.log"
+    pw sh -c 'sh "$1" provide power' _ "$SH" > "$H/mcp.out" 2>/dev/null <<EOF
+$(call 1 power_restart)
+$(call 2 power_suspend)
+EOF
+    [ "$(ans 1 | jq -c .result.structuredContent)" = '{"receipt":"restarting"}' ] && grep -qx 'systemctl reboot' "$HOME/power.log" \
+        && [ "$(ans 2 | jq -c .result.structuredContent)" = '{"opened":true}' ] && grep -qxF -- "-- exec $REPO/spark-shell desktop power suspend" "$HOME/swaymsg.log" \
+        && ok "power restart: logind restarts it; power suspend: after the dialog closes, the lock its receipt" || bad "power calls" "$(cat "$H/mcp.out") $(cat "$HOME/power.log" "$HOME/swaymsg.log" 2>&1)"
+    rm -rf "$H/root/run/systemd" "$HOME/power.log"; mkdir -p "$H/root/etc/runit" "$H/root/usr/bin"
+    printf '#!/bin/sh\n' > "$H/root/usr/bin/zzz"; printf '#!/bin/sh\n' > "$H/root/usr/bin/reboot"; chmod +x "$H/root/usr/bin/zzz" "$H/root/usr/bin/reboot"
+    printf '#!/bin/sh\necho "visudo $*" >> "$HOME/root.log"\n[ ! -e "$HOME/visudo.no" ]\n' > "$H/.local/bin/visudo"; chmod +x "$H/.local/bin/visudo"
+    touch "$HOME/visudo.no"; out1=$(sh "$SH" on desktop --yes 2>&1 || :); rm -f "$HOME/visudo.no"
+    printf '%s\n' "$out1" | grep -q '^todo   power        visudo refused the sudoers file -- nothing written$' && [ ! -e "$H/root/etc/sudoers.d/spark-shell-power" ] \
+        && ok "runit: a sudoers file visudo refuses is never written (#72)" || bad "power visudo" "$out1"
+    out=$(sh "$SH" on desktop --yes 2>&1 || :); me=$(id -un); sud=$H/root/etc/sudoers.d/spark-shell-power; pol=$H/root/etc/polkit-1/rules.d/50-spark-shell-storage.rules
+    printf '%s\n' "$out" | grep -q '^ok     power        you suspend, restart and shut down from the dialog (/etc/sudoers.d/spark-shell-power)$' && printf '%s\n' "$out1" | grep -q '^ok     storage      you mount and eject drives (/etc/polkit-1/rules.d/50-spark-shell-storage.rules)$' \
+        && grep -qxF "$me ALL=(root) NOPASSWD: /usr/bin/zzz \"\", /usr/bin/reboot \"\", /usr/bin/poweroff \"\"" "$sud" && [ "$(ls -l "$sud" | cut -c1-10)" = '-r--r-----' ] \
+        && grep -qF "subject.user == \"$me\"" "$pol" && grep -qF '"org.freedesktop.udisks2.filesystem-mount"' "$pol" && ! grep -q 'filesystem-mount-system\|encrypted-unlock' "$pol" \
+        && ok "runit: on desktop writes the sudo rule (zzz, reboot, poweroff, no argument, 0440, checked by visudo) and the polkit rule for your drives alone (#72, #73)" || bad "runit rules" "$out $(cat "$sud" "$pol" 2>&1)"
+    _vs=$(grep -c . "$HOME/root.log"); out=$(sh "$SH" on desktop --yes -v 2>&1 || :)
+    [ "$(grep -c . "$HOME/root.log")" = "$_vs" ] && printf '%s\n' "$out" | grep -q '^ok     power ' && ok "runit: on again finds both rules as written and writes neither" || bad "runit rules again" "$out"
+    out=$(pw sh "$SH" panel power --list 2>&1 | sed -n '2,6p' | cut -f2)
+    [ "$out" = "$(printf 'power lock\npower suspend\npower logout\npower restart\npower shutdown')" ] && ok "power rows on runit with the rule: suspend, restart and shut down through sudo" || bad "power runit rows" "$out"
+    rm -f "$HOME/power.log"; out=$(pw sh "$SH" desktop power suspend 2>&1 || :)
+    [ "$out" = 'suspending' ] && [ "$(cat "$HOME/power.log")" = "$(printf 'swaylock\nsudo /usr/bin/zzz')" ] && ok "desktop power suspend: the screen locks first, then zzz through the rule (#72)" || bad "power suspend" "$out $(cat "$HOME/power.log" 2>&1)"
+    printf '#!/bin/sh\ncase "$*" in *"-x sway") echo 4242 ;; *) exit 1 ;; esac\n' > "$H/.local/bin/pgrep"; chmod +x "$H/.local/bin/pgrep"
+    rm -f "$HOME/power.log"; out=$(SPARK_SHELL_SYS=$S env -u WAYLAND_DISPLAY sh "$SH" desktop power suspend 2>&1 || :); rm -f "$H/.local/bin/pgrep"
+    [ "$out" = 'the desktop could not be locked, so the machine did not suspend' ] && ! grep -q zzz "$HOME/power.log" 2>/dev/null \
+        && ok "desktop power suspend from outside the desktop (ssh): a desktop it cannot lock keeps the machine up" || bad "power suspend unlocked" "$out $(cat "$HOME/power.log" 2>&1)"
+    out=$(sh "$SH" check 2>&1 || :)
+    printf '%s\n' "$out" | grep -q '^ok     storage      udisks2 mounts and ejects drives for you$' && printf '%s\n' "$out" | grep -q '^ok     power        lock, log out' && printf '%s\n' "$out" | grep -q '^ok     notify       mako shows the notifications on the desktop$' \
+        && ok "check: the notify, storage and power rows" || bad "check rows" "$out"
+    sh "$SH" off desktop >/dev/null 2>&1 || :
+    [ ! -e "$sud" ] && [ ! -e "$pol" ] && [ ! -e "$HOME/.local/state/spark-shell/power.sudoers" ] && [ ! -e "$HOME/.local/state/spark-shell/storage.polkit" ] && [ ! -e "$mk" ] \
+        && ok "off desktop: both rules gone, by spark-shell's records, and mako's config with them" || bad "off rules" "$(ls -R "$H/root/etc" 2>&1)"
+    rm -rf "$H/root/etc/runit"
 fi
 
 # --- the voice: the docs and the help hold to it -------------------------

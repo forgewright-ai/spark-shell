@@ -48,13 +48,16 @@ pub fn cut_words(s: &str, n: usize) -> String {
     if n == 0 {
         return String::new();
     }
+    // the first word taken, not an empty one: a state that opens with the separator's space keeps it
     let mut out = String::new();
+    let mut first = true;
     for w in s.split(' ') {
-        let next = if out.is_empty() { w.to_string() } else { format!("{} {}", out, w) };
+        let next = if first { w.to_string() } else { format!("{} {}", out, w) };
         if cells(&next) + 1 > n {
             break;
         }
         out = next;
+        first = false;
     }
     let out = out.trim_end_matches([' ', '\u{b7}']).trim_end().to_string();
     if out.is_empty() {
@@ -87,6 +90,15 @@ mod tests {
         assert_eq!(scrub("caf\u{e9} \u{25cf} 5 GHz"), "caf\u{e9} \u{25cf} 5 GHz");
         assert_eq!(scrub("a\tb"), "a b");
         assert_eq!(scrub("\u{1b}[2Jev\u{202e}il"), "[2Jevil");
+    }
+
+    #[test]
+    fn a_long_state_cut_keeps_the_space_before_its_dot() {
+        assert_eq!(
+            cut_words(" \u{b7} 2 drives \u{b7} 190.7 GB free on this computer", 20),
+            " \u{b7} 2 drives \u{b7} 190.7\u{2026}"
+        );
+        assert_eq!(cut_words("on \u{b7} 3 on the screen", 6), "on\u{2026}", "a separator at the cut goes with it");
     }
 
     #[test]
