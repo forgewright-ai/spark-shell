@@ -55,9 +55,13 @@ pub fn ymd(s: &str) -> Option<(i32, u32, u32)> {
 
 /// The month as weeks of seven, a day or none.
 pub fn weeks(y: i32, m: u32) -> Vec<[Option<u32>; 7]> {
+    weeks_from(y, m, false)
+}
+
+pub fn weeks_from(y: i32, m: u32, monday: bool) -> Vec<[Option<u32>; 7]> {
     let mut out = vec![];
     let mut wk = [None; 7];
-    let mut col = weekday(y, m, 1) as usize;
+    let mut col = ((weekday(y, m, 1) + if monday { 6 } else { 0 }) % 7) as usize;
     for d in 1..=days_in(y, m) {
         wk[col] = Some(d);
         col += 1;
@@ -110,6 +114,7 @@ mod tests {
 
     #[test]
     fn october_2026_starts_on_a_thursday_and_has_five_weeks() {
+        assert_eq!(weeks_from(2026, 10, true)[0], [None, None, None, Some(1), Some(2), Some(3), Some(4)]);
         assert_eq!(weekday(2026, 10, 1), 4);
         let w = weeks(2026, 10);
         assert_eq!(w.len(), 5);

@@ -130,3 +130,7 @@ DIALOG_MODEL=yes
 # Talk, which speaks to spark through its own voice: yes or no. It is
 # hidden while spark's voice is off.
 DIALOG_TALK=yes
+
+# Clock presentation on the bar, Calendar and idle screen.
+CLOCK_FORMAT=24
+WEEK_START=sunday

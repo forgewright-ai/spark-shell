@@ -3934,7 +3934,7 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 88 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+[ "$(grep -c '' "$H/tools.all")" = 91 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
     && ok "provide: the twenty-three sections hold the 82 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
@@ -3977,7 +3977,7 @@ mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},
 jq -e -s 'all(.[]; (.name | test("^[a-z][a-z0-9_]{0,63}$")) and (.title | test("^[a-z][a-z-]*( [a-z-]+| [A-Z]+)*$")) and (.title | length) <= 60)' "$H/tools.all" >/dev/null \
     && ok "provide: every tool name is lower case with underscores, every title a sentence of plain words with its argument in capitals, 60 at most" || bad "tool shapes" "$(jq -r '.name + " | " + .title' "$H/tools.all")"
 jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.destructiveHint | type) == "boolean" and (.idempotentHint | type) == "boolean" and .openWorldHint == false)' "$H/tools.all" >/dev/null \
-    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'layout_delete layout_save power_logout power_restart power_shutdown theme_delete wifi_forget window_close' ] \
+    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'clock_zone layout_delete layout_save power_logout power_restart power_shutdown theme_delete wifi_forget window_close' ] \
     && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find about_open files_show files_attach' ] \
     && ok "provide: every hint spelled out (the spec's default is destructive); destructive: wifi forget, window close, layout save, layout delete, theme delete, log out, restart, shut down; read only: notes find, about, files show and attach" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
 jq -e -s 'all(.[]; .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .outputSchema.type == "object")' "$H/tools.all" >/dev/null \
@@ -4098,7 +4098,7 @@ for kv in DIALOG_ATTACH=maybe DIALOG_MODEL=1 DIALOG_TALK=off 'DIALOG_ATTACH_TYPE
 done
 ok "config: DIALOG_ATTACH, DIALOG_MODEL and DIALOG_TALK take yes or no, DIALOG_ATTACH_TYPES lower-case types; anything else is refused in one line"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" \
+grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" \
     && ok "config: the four keys are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
 # the want verb: one entry for words, the plan as JSON, a file asked about
 cat > "$H/.local/bin/spark" <<'STUB'
@@ -5257,6 +5257,36 @@ DBUS_SESSION_BUS_ADDRESS=fixture L theme nord --dry-run >/dev/null
 L on --yes >/dev/null 2>&1 || :
 f=$HOME/.config/xdg-desktop-portal/sway-portals.conf
 grep -qx 'default=gtk' "$f" && grep -qx 'org.freedesktop.impl.portal.ScreenCast=wlr' "$f" && grep -qx 'org.freedesktop.impl.portal.Screenshot=wlr' "$f"     && ok "portals: the desktop renders the native backend choices" || bad "portals config"
+rm -rf "$H"
+
+# Native time settings: isolated files, root prefix and time service stubs.
+fresh
+console_stubs Linux
+mkdir -p "$HOME/.config/spark-shell" "$H/root/etc" "$H/root/usr/share/zoneinfo/Etc"
+printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+printf TZif > "$H/root/usr/share/zoneinfo/Etc/UTC"
+printf TZif > "$H/root/usr/share/zoneinfo/Etc/GMT"
+ln -s "$H/root/usr/share/zoneinfo/Etc/UTC" "$H/root/etc/localtime"
+L desktop time format 12 >/dev/null
+L desktop time week monday >/dev/null
+out=$(L desktop time)
+printf '%s' "$out" | grep -qx 'format 12' && printf '%s' "$out" | grep -qx 'week monday' && grep -qx 'CLOCK_FORMAT=12' "$HOME/.config/spark-shell/config"     && ok "time: clock format and first weekday are saved and read together" || bad "time preferences" "$out"
+rc=0; out=$(L desktop time format 13 2>&1) || rc=$?
+[ "$rc" = 1 ] && grep -qx 'CLOCK_FORMAT=12' "$HOME/.config/spark-shell/config" && ok "time: invalid presentation values leave preferences alone" || bad "time invalid format" "$out"
+rc=0; out=$(L desktop time zone Etc/GMT </dev/null 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$(readlink "$H/root/etc/localtime")" = "$H/root/usr/share/zoneinfo/Etc/UTC" ]     && ok "time: a native zone change needs confirmation" || bad "time confirmation" "$out"
+# No systemd tools here: the native link is the contract on runit.
+printf '#!/bin/sh\nexit 1\n' > "$H/lx/timedatectl"; chmod +x "$H/lx/timedatectl"
+mkdir -p "$H/root/etc/runit"
+L desktop time zone Etc/GMT --yes >/dev/null
+[ "$(readlink "$H/root/etc/localtime")" = "$H/root/usr/share/zoneinfo/Etc/GMT" ]     && ok "time: a confirmed runit zone uses the native localtime link" || bad "time runit zone"
+rc=0; out=$(L desktop time zone ../passwd --yes 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$(readlink "$H/root/etc/localtime")" = "$H/root/usr/share/zoneinfo/Etc/GMT" ]     && ok "time: paths outside zoneinfo are refused" || bad "time invalid zone" "$out"
+printf '#!/bin/sh\necho "Leap status     : Normal"\n' > "$H/lx/chronyc"; chmod +x "$H/lx/chronyc"
+out=$(L desktop time)
+printf '%s' "$out" | grep -qx 'clock synced by chrony' && ok "time: native sync is read from chrony" || bad "time sync" "$out"
+L desktop time zone Etc/UTC --yes --dry-run >/dev/null
+[ "$(readlink "$H/root/etc/localtime")" = "$H/root/usr/share/zoneinfo/Etc/GMT" ] && ok "time: dry-run does not change the native zone" || bad "time dry-run"
 rm -rf "$H"
 
 voice=$(mktemp -d)

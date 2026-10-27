@@ -987,3 +987,9 @@ Display rows open the connected screen's scales, resolutions and arrangement.
 Each change has undo. A screen kept off stays off at login; the last active
 screen cannot be switched off. If the connected screens change and all are
 off, the desktop enables the first connected screen.
+
+`spark-shell desktop time format 12` selects a 12 hour clock everywhere;
+`format 24` selects 24 hours. `time week monday` starts the week on Monday;
+`sunday` restores Sunday. `time zone America/Chicago` changes the native
+time zone after confirmation and system permission. The clock section
+reports sync status without changing the time service.

@@ -94,6 +94,9 @@ def clock_rows(text, block="#"):
         for r in range(5):
             part = "".join(block * 2 if p == "#" else "  " for p in glyph[r])
             rows[r] += ("  " if i else "") + part
+    half = text.split(" ", 1)[1] if " " in text else ""
+    if half:
+        rows[-1] += " " + half
     return rows
 
 
@@ -362,7 +365,17 @@ def render_changes(g, prev):
 
 
 def clock_now():
-    return time.strftime("%H:%M")
+    time.tzset()
+    path = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "spark-shell", "config")
+    twelve = False
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                if line.strip() in ("CLOCK_FORMAT=12", "CLOCK_FORMAT=24"):
+                    twelve = line.strip() == "CLOCK_FORMAT=12"
+    except (OSError, UnicodeError):
+        pass
+    return time.strftime("%I:%M %p").lstrip("0") if twelve else time.strftime("%H:%M")
 
 
 def date_now():

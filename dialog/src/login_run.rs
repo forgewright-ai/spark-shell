@@ -95,6 +95,7 @@ fn distro() -> String {
 /// "Sunday, October 18 \u{b7} 14:32", by the machine's own clock and zone.
 fn clock() -> String {
     unsafe {
+        spark_dialog::preferences::refresh_zone();
         let t = libc::time(std::ptr::null_mut());
         let mut tm: libc::tm = std::mem::zeroed();
         libc::localtime_r(&t, &mut tm);
@@ -104,7 +105,16 @@ fn clock() -> String {
             String::from_utf8_lossy(&b[..n]).into_owned()
         };
         // the day's number with no leading zero: %-d is not every libc's
-        format!("{} {} \u{b7} {}", f(b"%A, %B\0"), tm.tm_mday, f(b"%H:%M\0"))
+        format!(
+            "{} {} \u{b7} {}",
+            f(b"%A, %B\0"),
+            tm.tm_mday,
+            f(if spark_dialog::preferences::read().twelve {
+                b"%I:%M %p\0"
+            } else {
+                b"%H:%M\0"
+            })
+        )
     }
 }
 

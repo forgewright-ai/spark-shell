@@ -755,7 +755,7 @@ fn time_of(clock: &str) -> Option<(&str, Option<&str>)> {
 /// The reminders, to add, mark done or snooze, are the content's rows below. Returns the row after
 /// the months.
 fn calendar(app: &App, pen: &mut Pen, clock: &str, top: u16, bottom: u16) -> u16 {
-    use crate::calendar::{shift, strokes, weeks, ymd, DAYS, MONTHS};
+    use crate::calendar::{shift, strokes, weeks_from, ymd, DAYS, MONTHS};
     let pal = pen.pal.clone();
     let mut top = top;
     // the figures where they leave room for a month under them, with a row of air between
@@ -786,11 +786,12 @@ fn calendar(app: &App, pen: &mut Pen, clock: &str, top: u16, bottom: u16) -> u16
         let mut y = top;
         pen.put(*x0, y, &format!("{} {}", MONTHS[(mo - 1) as usize], yr), pal.muted, false, false);
         y += 1;
-        for (i, d) in DAYS.iter().enumerate() {
+        for i in 0..7 {
+            let d = DAYS[(i + usize::from(app.monday_first)) % 7];
             pen.put(x0 + i as u16 * 4, y, d, pal.muted, false, false);
         }
         y += 1;
-        for wk in weeks(yr, mo) {
+        for wk in weeks_from(yr, mo, app.monday_first) {
             if y >= bottom {
                 break;
             }

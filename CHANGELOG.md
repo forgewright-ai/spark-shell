@@ -6,6 +6,10 @@
   arrangement and power, all with undo. On and off persist across login;
   the last active screen stays on, and login recovers an all-off layout.
 
+- Time preferences share a 12 or 24 hour clock and the first weekday across
+  the desktop. The clock section reports native sync status and offers a
+  time zone change through the system, with confirmation and permission.
+
 - A click on a dialog key chip takes the same action as the key. The
   Calendar's arrow chip moves each way; destructive steps still need yes.
 - The login address walk checks each pointer through an optional reference.

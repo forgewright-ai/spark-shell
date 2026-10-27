@@ -64,6 +64,8 @@
 #   spark-shell desktop pointer [tap on|off|scroll on|off|speed N]
 #                                     tap to click, natural scroll and speed
 #   spark-shell desktop portals       refresh the desktop portal environment
+#   spark-shell desktop time [format 12|24|week sunday|monday|zone NAME]
+#                                     clock preferences and native time zone
 #   spark-shell desktop screen [NAME scale N|mode WxH|on|off|left-of NAME]
 #                                     list the screens, or set one
 #   spark-shell desktop notifications [do-not-disturb on|off|dismiss|restore]
@@ -170,7 +172,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'
 
 # This machine's short name (the twin of spark lib/env.sh short_host). On
 # a Mac, LocalHostName, by scutil's full path: /usr/sbin is not on every
@@ -242,6 +244,10 @@ config_load() {
     saver_known "$DISPLAY_SAVER" || { echo "spark-shell: DISPLAY_SAVER=$DISPLAY_SAVER in $CONFIG: clock, or one of $SAVER_NAMES" >&2; exit 1; }
     [ -z "$KEYBOARD" ] || printf '%s\n' "$KEYBOARD" | grep -qE "$KB_RE" || { echo "spark-shell: KEYBOARD=$KEYBOARD in $CONFIG: layouts by their xkb names, a space between, a variant after a plus (us us+intl)" >&2; exit 1; }
     printf '%s\n' "$DIALOG_ATTACH_TYPES" | grep -qE '^[a-z0-9]{1,8}( [a-z0-9]{1,8})*$' || { echo "spark-shell: DIALOG_ATTACH_TYPES=$DIALOG_ATTACH_TYPES in $CONFIG: file types in lower case, a space between (txt md)" >&2; exit 1; }
+    : "${CLOCK_FORMAT:=24}" "${WEEK_START:=sunday}"
+    case $CLOCK_FORMAT in 12|24) ;; *) refuse "CLOCK_FORMAT is 12 or 24" ;; esac
+    case $WEEK_START in sunday|monday) ;; *) refuse "WEEK_START is sunday or monday" ;; esac
+    export CLOCK_FORMAT WEEK_START
     : "${POINTER_TAP:=on}" "${POINTER_SCROLL:=off}" "${POINTER_SPEED:=0}"
     : "${KEY_REPEAT_DELAY:=600}" "${KEY_REPEAT_RATE:=25}" "${KEY_CAPS:=caps}"
     for k in POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE KEY_CAPS; do
@@ -3661,7 +3667,7 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by a di
     fi
     bar_group
     # time
-    bar_add "$(bar_block clock '' "$(bar_span "$HEX_MUTED" "$(date '+%a %d %b')") $(date '+%H:%M')")"
+    bar_add "$(bar_block clock '' "$(bar_span "$HEX_MUTED" "$(date '+%a %d %b')") $(clock_text)")"
     bar_add "$(bar_block logo '' "$(bar_span "$HEX_ANSI_3" "$PANEL_PROMPT")")"   # spark-shell's own sign, last: the prompt sign in the palette's yellow; a click opens the panel as Super+d does
     bar_group   # the palette has no block: it is picked in the panel, where every click leads
     printf '[%s],\n' "$line"
@@ -4198,7 +4204,7 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
             _a=$(panel_alarms); [ -z "$_a" ] || echo "$_a" ;;
     esac
 }
-panel_glance_line() { echo "$(date '+%A %d %B') $PANEL_SEP $(date '+%H:%M')"; }   # -> the date and the time on a pipe (the window draws the clock instead)
+panel_glance_line() { echo "$(date '+%A %d %B') $PANEL_SEP $(clock_text)"; }   # -> the date and the time on a pipe (the window draws the clock instead)
 panel_glance() {   # panel_glance WIDTH -> the lines over the list in the window, the same behind every door: the date, the clock beside the month, an alarm in red under them when there is one (the facts are on the bar)
     date '+%A %d %B'; echo
     clock_view "$PANEL_MARK" "$PANEL_UNMARK"
@@ -4287,7 +4293,10 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ -z "$_f" ] || [ -z "$_fd" ] || [ "$_fd" -le 0 ] 2>/dev/null || printf -- '-\thealth %s%% of new\tshow\n' $(( _f * 100 / _fd ))
             _cy=$(bat_num cycle_count); [ -z "$_cy" ] || printf -- '-\tcycles %s\tshow\n' "$_cy"
             _r=$(bat_num power_now); [ -z "$_r" ] || [ "$_r" -le 0 ] 2>/dev/null || printf -- '-\tpower %s W\tshow\n' "$(awk -v r="$_r" 'BEGIN { printf "%.1f", r / 1000000 }')" ;;
-        clock) : ;;   # nothing to pick: the face under the title holds the time and the month
+        clock) printf -- '-\tzone %s\tshow\n-\t%s\tshow\n' "$(time_zone)" "$(time_sync)"
+            for _v in 12 24; do printf -- '-\t%s hour clock\tformat %s\n' "$_v" "$_v"; done
+            for _v in sunday monday; do printf -- '-\tweek starts on %s\tweek %s\n' "$_v" "$_v"; done
+            [ "$OS" = Darwin ] || printf -- '-\tchange time zone\tzone\n' ;;
         theme) _sz=$(look_font_size)   # the look (#36): its values first (the wallpaper, the text size, the transparency), then the palettes, dark and light, each with its colors as a chip (provide_rows), then yours: the saved themes, the look in use when it is not saved, keep this look, a theme from a picture, the terminal's own colors
             [ "${2:-}" = full ] || { printf -- '-\t%s %s more\tmore\n' "$(panel_title theme | sed "s/^theme *//")" "$PANEL_SEP"; return 0; }   # one row in the list: the look is a rare pick; typing finds every row below
             [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\tWallpaper\twallpaper\t|%s\n' "$(wall_now)"   # opens the wallpaper list
@@ -5116,6 +5125,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 scale|mode|position|place|screen-on|screen-off) screen_action "$_a" "$_arg" ;;
                 *) echo "$_a is not something display does"; return 1 ;;
             esac ;;
+        clock) time_setting "$_a" "$_arg" ;;
         pointer) input_setting pointer "$_a" "$_arg" ;;
         keyboard) case $_a in
                 repeat-delay|repeat-rate|caps) input_setting keyboard "$_a" "$_arg" ;;
@@ -5205,6 +5215,9 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
                 *) _back="screen-$(printf '%s' "$_row" | cut -f3) $_name" ;;
             esac
             printf '%s\t%s restored\n' "$_back" "$_name" ;;
+        clock:format) printf 'format %s\tclock format restored\n' "$(time_pref CLOCK_FORMAT 24)" ;;
+        clock:week) printf 'week %s\tfirst weekday restored\n' "$(time_pref WEEK_START sunday)" ;;
+        clock:zone) _z=$(time_zone); time_zone_valid "$_z" && printf 'zone %s\ttime zone restored\n' "$_z" ;;
         pointer:*|keyboard:repeat-delay|keyboard:repeat-rate|keyboard:caps)
             input_spec "$_p" "$_a" || return 0
             eval "_old=\$$input_key"
@@ -5255,15 +5268,83 @@ bat_left() {   # -> "H:MM left" or "H:MM to full", from the kernel's energy or c
         Charging) [ -n "$_full" ] && [ "$_full" -gt "$_now" ] || return 0; _m=$(( (_full - _now) * 60 / _rate )); printf '%d:%02d to full\n' $((_m / 60)) $((_m % 60)) ;;
     esac
 }
+# Read presentation preferences anew for long-running bars and idle clocks.
+time_pref() {   # KEY DEFAULT: a literal config value, never sourced
+    _pref=$(awk -F= -v k="$1" '$1 == k {v=substr($0,index($0,"=")+1)} END {print v}' "$CONFIG" 2>/dev/null) || _pref=''
+    case $1:$_pref in CLOCK_FORMAT:12|CLOCK_FORMAT:24|WEEK_START:sunday|WEEK_START:monday) printf '%s' "$_pref" ;; *) printf '%s' "$2" ;; esac
+}
+clock_text() { if [ "$(time_pref CLOCK_FORMAT "${CLOCK_FORMAT:-24}")" = 12 ]; then date '+%I:%M %p' | sed 's/^0//'; else date '+%H:%M'; fi; }
+time_zone() {
+    _zone=$(readlink "$ROOT/etc/localtime" 2>/dev/null || :)
+    case $_zone in */zoneinfo/*) printf '%s\n' "${_zone#*/zoneinfo/}" ;; *) if command -v timedatectl >/dev/null 2>&1; then timedatectl show -p Timezone --value 2>/dev/null || date +%Z; else date +%Z; fi ;; esac
+}
+time_zone_valid() {
+    case $1 in ''|/*|*..*|*[!A-Za-z0-9_+/-]*) return 1 ;; esac
+    [ -f "$ROOT/usr/share/zoneinfo/$1" ] && [ "$(head -c 4 "$ROOT/usr/share/zoneinfo/$1")" = TZif ]
+}
+time_valid() {
+    case $1:$2 in format:12|format:24|week:sunday|week:monday) return 0 ;; zone:*) [ "$OS" != Darwin ] && time_zone_valid "$2" ;; *) return 1 ;; esac
+}
+time_sync() {
+    if command -v timedatectl >/dev/null 2>&1; then
+        _sync=$(timedatectl show -p NTPSynchronized --value 2>/dev/null || :)
+        case $_sync in yes) echo 'clock synced'; return ;; no) echo 'clock not synced'; return ;; esac
+    fi
+    if command -v chronyc >/dev/null 2>&1; then
+        _sync=$(LC_ALL=C chronyc tracking 2>/dev/null || :)
+        if printf '%s\n' "$_sync" | grep -q '^Leap status'; then
+            if printf '%s\n' "$_sync" | grep -qE '^Leap status *: Normal'; then echo 'clock synced by chrony'; else echo 'clock not synced by chrony'; fi; return
+        fi
+    fi
+    if command -v ntpctl >/dev/null 2>&1; then
+        _sync=$(LC_ALL=C ntpctl -s status 2>/dev/null || :)
+        case $_sync in *'clock synced'*) echo 'clock synced by ntpd'; return ;; *'clock unsynced'*) echo 'clock not synced by ntpd'; return ;; esac
+    fi
+    if command -v ntpq >/dev/null 2>&1; then
+        _sync=$(LC_ALL=C ntpq -pn 2>/dev/null || :)
+        if printf '%s\n' "$_sync" | grep -q '^\*'; then echo 'clock synced by ntpd'; return; fi
+        [ -z "$_sync" ] || { echo 'clock not synced by ntpd'; return; }
+    fi
+    echo 'clock sync is not reported'
+}
+time_setting() {
+    time_valid "$1" "$2" || { echo "invalid time $1: $2"; return 1; }
+    if [ "$MODE" = dry ]; then echo "would set time $1 $2"; return; fi
+    case $1 in
+        format) config_set CLOCK_FORMAT "$2" ;;
+        week) config_set WEEK_START "$2" ;;
+        zone)
+            root_can || { echo 'changing the time zone needs system permission: run spark-shell desktop time zone at a terminal'; return 1; }
+            if [ "$(init_shape)" = systemd ] && command -v timedatectl >/dev/null 2>&1; then
+                root_do timedatectl set-timezone "$2" || return 1
+            else root_do ln -sfn "$ROOT/usr/share/zoneinfo/$2" "$ROOT/etc/localtime" || return 1; fi ;;
+    esac
+    bar_redraw
+    echo "time $1 $2"
+}
+desk_time() {
+    case ${1:-} in
+        '') printf 'zone %s\nformat %s\nweek %s\n%s\n' "$(time_zone)" "$(time_pref CLOCK_FORMAT 24)" "$(time_pref WEEK_START sunday)" "$(time_sync)" ;;
+        format|week|zone)
+            [ "$#" = 2 ] || refuse "time $1 takes one value"
+            time_valid "$1" "$2" || refuse "invalid time $1: $2"
+            if [ "$1" = zone ] && [ "$MODE" != dry ] && [ "$YES" != 1 ]; then
+                step_yes "change the system time zone to $2" || refuse "time zone unchanged (use --yes to confirm)"
+            fi
+            time_setting "$1" "$2" ;;
+        *) refuse "time takes format, week or zone" ;;
+    esac
+}
+
 cal_rows() {   # cal_rows [MARK UNMARK] -> this month, 28 cells wide: its name over the week, Sunday first, each day a cell four wide, today between MARK and UNMARK (awk: no cal, no GNU date needed)
-    date '+%Y %m %d' | awk -v mark="${1:-}" -v unmark="${2:-}" '{
+    date '+%Y %m %d' | awk -v start="$(time_pref WEEK_START sunday)" -v mark="${1:-}" -v unmark="${2:-}" '{
         y = $1; m = $2 + 0; d = $3 + 0
         split("31 28 31 30 31 30 31 31 30 31 30 31", dim, " "); if ((y % 4 == 0 && y % 100 != 0) || y % 400 == 0) dim[2] = 29
         mm = m; yy = y; if (mm < 3) { mm += 12; yy-- }; k = yy % 100; j = int(yy / 100)
         h = (1 + int(13 * (mm + 1) / 5) + k + int(k / 4) + int(j / 4) + 5 * j) % 7; w = (h + 6) % 7
         split("January February March April May June July August September October November December", mon, " ")
         title = mon[m] " " y; pad = ""; for (i = 0; i < int((28 - length(title)) / 2); i++) pad = pad " "
-        print pad title; print " Su  Mo  Tu  We  Th  Fr  Sa"
+        print pad title; if (start == "monday") {print " Mo  Tu  We  Th  Fr  Sa  Su"; w = (w + 6) % 7} else print " Su  Mo  Tu  We  Th  Fr  Sa"
         line = ""; for (i = 0; i < w; i++) line = line "    "
         for (day = 1; day <= dim[m]; day++) {
             cell = sprintf(" %2d ", day); if (day == d) cell = mark cell unmark
@@ -5286,12 +5367,13 @@ clock_digit() {   # clock_digit D -> five rows of a figure six cells wide in ful
     esac | sed "s/ /  /g; s/#/$BAR_FULL$BAR_FULL/g"
 }
 clock_rows() {   # -> the time, five rows tall and 34 cells wide, the figures two cells apart
-    _t=$(date '+%H:%M')
+    _t=$(clock_text | cut -d' ' -f1)
     for _r in 1 2 3 4 5; do
         _line=''; _k=0
         while [ "$_k" -lt ${#_t} ]; do
             _c=$(printf '%s' "$_t" | cut -c$((_k + 1))); _line="$_line${_line:+  }$(clock_digit "$_c" | sed -n "${_r}p")"; _k=$((_k + 1))
         done
+        [ "$_r" != 5 ] || [ "$(time_pref CLOCK_FORMAT 24)" != 12 ] || _line="$_line $(date +%p)"
         printf '%s\n' "$_line"
     done
 }
@@ -5315,6 +5397,9 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         display:scale|display:mode|display:position|display:place|display:screen-on|display:screen-off)
             screen_action "$2" "${3:-}" check || return 1
             printf '%s\n' "$3"; return 0 ;;
+        clock:format|clock:week|clock:zone)
+            time_valid "$2" "${3:-}" || { echo "invalid time $2"; return 1; }
+            echo "$3"; return 0 ;;
         pointer:*|keyboard:repeat-delay|keyboard:repeat-rate|keyboard:caps)
             if input_spec "$1" "$2" && input_valid "$input_key" "${3:-}"; then echo "$3"; return 0; fi
             echo "$1: invalid $2 value"; return 1 ;;
@@ -5620,7 +5705,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -5696,6 +5781,9 @@ tool_spec() {
         display_place) _ts=display _ta=place _tp=screen _tk=string _te='side:left-of|right-of|above|below other:port' _th=if _tt='screen arrangement' _td='Place a connected screen beside another active screen.' ;;
         display_on) _ts=display _ta=screen-on _tp=screen _tk=string _th=if _tt='screen on' _td='Enable a connected screen now and at the next login.' ;;
         display_off) _ts=display _ta=screen-off _tp=screen _tk=string _th=if _tt='screen off' _td='Disable a connected screen now and at the next login; the last active screen stays on.' ;;
+        clock_format) _ts=clock _ta=format _tp=format _tk='12|24' _th=if _tt='clock format' _td='Show a 12 or 24 hour clock on the bar, Calendar and idle screen.' ;;
+        clock_week) _ts=clock _ta=week _tp=day _tk='sunday|monday' _th=if _tt='first weekday' _td='Start the Calendar week on Sunday or Monday.' ;;
+        clock_zone) _ts=clock _ta=zone _tp=zone _tk=string _th=idf _tt='time zone' _td='Change the machine time zone through its native settings. Requires system permission.' ;;
         keyboard_use)      _ts=keyboard _ta=use _tp=name _tk=string _th=i _tt='keyboard use NAME' _td='Type in another of the keyboard layouts.' ;;
         pointer_tap)       _ts=pointer _ta=tap _tp=state _tk='on|off' _th=if _tt='pointer tap STATE' _td='Enable or disable tap to click on touchpads.' ;;
         pointer_scroll)    _ts=pointer _ta=scroll _tp=state _tk='on|off' _th=if _tt='pointer scroll STATE' _td='Set natural scrolling for mouse and touchpad.' ;;
@@ -5781,6 +5869,7 @@ provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON a
     for _n in $PROVIDE_TOOLS; do tool_spec "$_n" && [ "$_ts" = "$1" ] && tool_json "$_n"; done | jq -cs .
 }
 provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state" (the section's state now, the dialog's subtitle), "rows": [{"id", "sign", "text", "tool", "more", "columns", "children", "group"}], "short": [ID]}; a tool may carry `ask`, the arguments the host asks the person for
+    [ "$1" != clock ] || [ "${2:-}" = settings ] || { provide_clock_rows; return; }
     [ "$1" != about ] || { provide_about_rows; return; }
     [ "$1" != files ] || { provide_files_rows; return; }
     _asks='[]'
@@ -5811,6 +5900,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif $s == "window" and (((.tool.name // "") | test("^window_(split|tabs|stacked)$")) or (.id | startswith("window:show:"))) then .group = "layout"
                 elif (.tool.name // "") == "layout_save" then .tool.ask = ["name"]
                 elif (.tool.name // "") == "layout_rename" then .tool.ask = ["to"]
+                elif (.tool.name // "") == "clock_zone" then .tool.ask = ["zone"]
                 elif (.tool.name // "") == "reminders_add" then .tool.ask = ["words"]
                 elif (.tool.name // "") == "wifi_connect" and (.tool.arguments.name as $n | $asks | index([$n])) then .tool.ask = ["password"]
                 else . end)'
@@ -5850,6 +5940,9 @@ provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION [GROUP|COLUMN
     [ -z "$_dt" ] || _id="$_id:$_dt"   # a dated row's id is its own (two reminders may share a name)
     [ -z "$_sx" ] || _id="$_id:$_sx"
     printf '%s\n' "$_id$US$_sg$US$_tx$US$_tn$US$_ag$US$(printf '%s' "${5:-}" | scrub_text)"   # the parts scrubbed, never the line: the scrubber drops US
+}
+provide_clock_rows() {
+    jq -cn --arg state "$(time_zone), $(time_sync)" '{title: "clock", state: $state, rows: [{id: "clock:settings", sign: "opens", text: "time settings", tool: null, more: [], columns: [], children: "spark-shell://clock/rows/settings", group: null}], short: ["clock:settings"]}'
 }
 provide_title() { [ "$1" != about ] || return 0; [ "$1" != files ] || { echo "your home folder"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
 provide_about_rows() {   # -> the about's rows: the template's `# key:` sentences, a combo (or Print) as a column, in five groups; the licence and the address; the row that opens it
@@ -5953,6 +6046,9 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
                 if provide_screen_rows "${_uri##*/}" > "$TMP/screen.json"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/screen.json")"
                 else rpc_error "$_id" -32002 "no screen at that uri"; fi
                 return 0
+            fi
+            if [ "$sec" = clock ] && [ "$_method" = resources/read ] && [ "$_uri" = "spark-shell://clock/rows/settings" ]; then
+                rpc_result "$_id" "$(provide_rows clock settings | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
             fi
             [ "$_uri" = "spark-shell://$sec/rows" ] || { rpc_error "$_id" -32002 "no resource at that uri"; return 0; }
             case $_method in
@@ -7895,6 +7991,7 @@ cmd_desktop() {
         keys) desk_keys; return ;;   # the template's sentences, anywhere (documentation)
         lock) theme_load 2>/dev/null || :; desk_lock; return ;;
         idle) shift; theme_load 2>/dev/null || :; desk_idle "$@"; return ;;   # the idle screen now, or off (swayidle runs both)   # a palette that will not load never keeps the lock away
+        time) shift; desk_time "$@"; return ;;
         display) shift; desk_display "$@"; return ;;
         keyboard) shift; desk_keyboard "$@"; return ;;
         pointer) shift
@@ -8014,7 +8111,7 @@ idle_clock() {   # in the idle window: the time in the Calendar's large figures 
             clock_rows | { _y=$((_h - 7)); while IFS= read -r _l; do printf '\033[%s;3H\033[%sm%s' "$_y" "$_a" "$_l"; _y=$((_y + 1)); done; }
             printf '\033[0m\033[%s;3H\033[%sm%s\033[0m' $((_h - 1)) "$_m" "$_d"
         else
-            printf '\033[%s;3H\033[%sm%s\033[%s;3H\033[%sm%s\033[0m' $((_h - 2)) "$_a" "$(date '+%H:%M')" $((_h - 1)) "$_m" "$_d"
+            printf '\033[%s;3H\033[%sm%s\033[%s;3H\033[%sm%s\033[0m' $((_h - 2)) "$_a" "$(clock_text)" $((_h - 1)) "$_m" "$_d"
         fi
         _s=$(date +%S); _s=${_s#0}
         if [ -n "$_ist" ]; then ! idle_wait $((60 - ${_s:-0})) || break

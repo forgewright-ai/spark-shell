@@ -473,6 +473,7 @@ pub struct App {
     pub today: Option<(i32, u32, u32)>,
     /// The calendar's month, as months from this one.
     pub month_offset: i32,
+    pub monday_first: bool,
     pub mode: Mode,
     /// The draft; a newline in it is Shift+Enter's, never a send.
     pub input: String,
@@ -553,6 +554,7 @@ impl App {
             picking: None,
             today: None,
             month_offset: 0,
+            monday_first: false,
             mode: Mode::Normal,
             input: String::new(),
             cursor: 0,
@@ -1234,7 +1236,10 @@ impl App {
                 }
             }
             View::Dest(d) if *d == CALENDAR_DEST => {
-                // the months are drawn above; the reminders, to add, mark done or snooze, below them
+                // the months are drawn above; clock preferences and reminders below them
+                if let Some(p) = self.providers.iter().position(|p| p.label == "clock" && p.dead.is_none()) {
+                    self.section_rows(p, &mut list, false);
+                }
                 if let Some(p) = self.providers.iter().position(|p| p.label == "reminders" && p.dead.is_none()) {
                     self.section_rows(p, &mut list, false);
                 }

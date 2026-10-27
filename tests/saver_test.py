@@ -238,3 +238,22 @@ out, took, st = played([(0.05, b"x"), (1.5, b"y")])
 ok(played.left == 0 and took is not None and took < 1.0, "a key in its first moment is not the person coming back: it plays on, and the next one ends it")
 
 print("saver_test: %d checks passed" % passed)
+
+# The time preference is read live, including the half-day on large figures.
+import tempfile
+from unittest.mock import patch
+with tempfile.TemporaryDirectory() as folder:
+    os.makedirs(os.path.join(folder, "spark-shell"))
+    config = os.path.join(folder, "spark-shell", "config")
+    with patch.dict(os.environ, {"XDG_CONFIG_HOME": folder}):
+        with open(config, "w") as f:
+            f.write("CLOCK_FORMAT=12\n")
+        with patch.object(saver.time, "strftime", return_value="01:05 PM"):
+            assert saver.clock_now() == "1:05 PM"
+        assert saver.clock_rows("1:05 PM")[-1].endswith(" PM")
+        with open(config, "w") as f:
+            f.write("CLOCK_FORMAT=24\n")
+        with patch.object(saver.time, "strftime", return_value="13:05") as fmt:
+            assert saver.clock_now() == "13:05"
+            fmt.assert_called_once_with("%H:%M")
+print("saver time preferences: live clock format and half-day passed")

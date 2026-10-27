@@ -90,22 +90,11 @@ fn args() -> Result<Args, String> {
     Ok(Args { cfg, providers })
 }
 
-/// How the person's locale writes the time: twelve hours when its own format says so, else 24.
-fn twelve_hours() -> bool {
-    unsafe {
-        let p = libc::nl_langinfo(libc::T_FMT);
-        if p.is_null() {
-            return false;
-        }
-        let f = std::ffi::CStr::from_ptr(p).to_string_lossy();
-        f.contains("%I") || f.contains("%r") || f.contains("%p") || f.contains("%l")
-    }
-}
-
 /// The date and the time, the header's right: the machine's own clock and zone, in the person's
-/// locale (the day and the month in its words, 12 or 24 hours as it says), as "Tue 20 Oct, 11:18" with a middle dot.
+/// locale for the day and month, with the saved 12 or 24 hour preference, as "Tue 20 Oct, 11:18" with a middle dot.
 fn clock(twelve: bool) -> String {
     unsafe {
+        spark_dialog::preferences::refresh_zone();
         let t = libc::time(std::ptr::null_mut());
         let mut tm: libc::tm = std::mem::zeroed();
         libc::localtime_r(&t, &mut tm);
@@ -130,6 +119,7 @@ fn clock(twelve: bool) -> String {
 /// Today, (year, month, day), by the machine's own clock and zone.
 fn today() -> (i32, u32, u32) {
     unsafe {
+        spark_dialog::preferences::refresh_zone();
         let t = libc::time(std::ptr::null_mut());
         let mut tm: libc::tm = std::mem::zeroed();
         libc::localtime_r(&t, &mut tm);
@@ -262,7 +252,6 @@ fn main() {
     unsafe {
         libc::setlocale(libc::LC_TIME, c"".as_ptr());
     }
-    let twelve = twelve_hours();
     let (tx, rx) = mpsc::channel::<Ev>();
     let (mtx, mrx) = mpsc::sync_channel::<Incoming>(256);
     for (i, (label, argv)) in a.providers.iter().enumerate() {
@@ -360,7 +349,12 @@ fn main() {
             let _ = term.clear();
             dirty = true;
         }
-        let now_clock = clock(twelve);
+        let prefs = spark_dialog::preferences::read();
+        if app.monday_first != prefs.monday {
+            app.monday_first = prefs.monday;
+            dirty = true;
+        }
+        let now_clock = clock(prefs.twelve);
         if now_clock != last_clock {
             last_clock = now_clock;
             app.today = Some(today());
