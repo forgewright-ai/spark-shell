@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.104
 
 - IPv4 and DNS settings also use an existing dhcpcd 10.3 owner. Basic native
   interface sections have guarded undo and failure recovery. A fresh native
@@ -93,6 +93,9 @@
   review. Reminders show an explicit date and time; a past time asks for
   clarification without creating an event or calling the model again.
 
+- Changed: the workflows run github/codeql-action 4.39.1 (dependabot #81
+  and #82). The action refuses an init and an analyze of two versions,
+  so dependabot now moves the two pins in one pull request (#83).
 
 ## v0.103
 
