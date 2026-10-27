@@ -208,7 +208,7 @@ sh "$SH" on --yes >/dev/null
     && plain "$HOME/.config/starship.toml" && ok "PROMPT_STYLE=full renders the full style, plain" || bad "full style"
 # no starship and no package for it (the fixture family): the shell's own prompt, a skip, never a download
 mv "$H/.local/bin/starship" "$H/starship.aside"
-PATH=$H/.local/bin:$sys without_tools "$H/no-starship" starship
+( PATH=$H/.local/bin:$sys without_tools "$H/no-starship" starship )
 out=$(PATH=$H/no-starship sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q 'would  starship' && bad "a starship download survives" "$out" || ok "on: no starship row would fetch anything"
 printf '%s\n' "$out" | grep -q '^skip   prompt       no starship package here' && ok "on: no starship package here is a skip (the shell's own prompt)" || bad "prompt skip" "$out"
@@ -2086,7 +2086,7 @@ console_stubs Linux
 rm -f "$H/lx/update-grub"; printf '#!/bin/sh\necho "grub2-mkconfig $*" >> "%s/log"\n' "$H" > "$H/lx/grub2-mkconfig"; chmod +x "$H/lx/grub2-mkconfig"
 printf 'ID=fedora\n' > "$H/os-release"
 mkdir -p "$H/root/etc/default"; printf 'GRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX="rhgb quiet"\n' > "$H/root/etc/default/grub"; cp "$H/root/etc/default/grub" "$H/grub.orig"
-PATH=$H/lx:$sys without_tools "$H/grub2-only" update-grub grub-mkconfig
+( PATH=$H/lx:$sys without_tools "$H/grub2-only" update-grub grub-mkconfig )
 rc=0; out=$(PATH=$H/grub2-only sh "$SH" quiet boot on 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell quiet: This Linux boots through grub2-mkconfig, whose boot entries spark-shell does not edit, so the boot stays as it is (Fedora and openSUSE boot quiet already)." ] \
     && cmp -s "$H/root/etc/default/grub" "$H/grub.orig" && ! grep -q grub2-mkconfig "$H/log" && ok "quiet boot on (Fedora, grub2-mkconfig): one sentence, nothing run, nothing written" || bad "grub2 boot" "rc=$rc $out"
