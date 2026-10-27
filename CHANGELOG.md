@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Printers expose the configured CUPS queues and your pending jobs. Choose
+  a default, pause or resume a queue, or confirm cancellation of one job.
+  Native permissions still apply; no service or queue is added implicitly.
+
 - Battery details on macOS read the native power status and time estimate.
   A laptop no longer reports no battery because Linux files are absent.
 - A closed output pipe now runs cleanup, including the first bar header.

@@ -1004,3 +1004,10 @@ The native pairing wire uses the experimental `spark-shell/pairing`
 capability and method. The dialog accepts it only while its configured
 spark-shell provider runs `bt_pair`. PINs are masked and excluded from the
 exchange, task context and audit. Generic elicitation still refuses secrets.
+
+The printers section reads the configured native CUPS queues and your pending
+jobs. It can select a default printer, pause or resume a queue, and cancel a
+chosen job after confirmation. Queue state changes offer undo, as does a
+default change when the prior default is known. Cancelled jobs stay cancelled.
+CUPS owns permission and configuration.
+No printer, server or service is added by opening the section.

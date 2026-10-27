@@ -3886,7 +3886,7 @@ panel_colors() {   # the three SGRs from our own render, when there is one (a pi
 }
 
 # --- the sections: their order by use, which of them this machine has, what each costs
-PANEL_ORDER="undo spark apps layout notes reminders window display keyboard pointer notifications out mic bt wifi storage theme bar power about"   # grouped by what you do: what is on the screen, the sound, the connections and the drives, the look, the power, then about; undo only while there is one
+PANEL_ORDER="undo spark apps printers layout notes reminders window display keyboard pointer notifications out mic bt wifi storage theme bar power about"   # grouped by what you do: what is on the screen, the sound, the connections and the drives, the look, the power, then about; undo only while there is one
 PANEL_BLOCKS="lan wifi bt out mic bat clock theme"      # the bar's blocks in the bar's order, and the palette: the facts, and what a click may open
 PANEL_LOOKS="lan bat clock"                            # blocks with nothing to set: shown only when they opened the panel
 panel_blocks_here() {   # -> the bar's blocks this machine has, in the bar's order
@@ -3906,12 +3906,12 @@ panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on
     [ "$_f" = glance ] || echo "$_f"
     for s in $PANEL_ORDER; do
         [ "$s" != "$_f" ] || continue
-        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|pointer|notes|reminders|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
+        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; printers) command -v lpstat >/dev/null 2>&1 && printer_status >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|pointer|notes|reminders|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
         echo "$s"
     done
 }
 panel_cost() {   # panel_cost SECTION -> instant | fast | slow: what its rows cost to know
-    case $1 in wifi) echo slow ;; bt|out|mic|apps|display|notifications|storage) echo fast ;; *) echo instant ;; esac
+    case $1 in wifi) echo slow ;; bt|printers|out|mic|apps|display|notifications|storage) echo fast ;; *) echo instant ;; esac
 }
 panel_section_ok() { case " glance chat $PANEL_ORDER $PANEL_BLOCKS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }   # panel_section_ok WORD
 
@@ -4209,6 +4209,8 @@ snd_use() {   # snd_use out|mic NAME -> one line; on plain ALSA the output's car
 # the one that opened the panel: a `more` row opens it in full.
 panel_title() {   # panel_title SECTION -> the line(s) that say what opened the panel, as text, the section in its column; `glance` is the date and time, the facts, an alarm line when there is one
     case $1 in
+        printers) if _ps=$(printer_status); then echo "$(panel_col printers)$(printf '%s' "$_ps" | jq '.queues | length') native print queues"
+            else echo "$(panel_col printers)native print service unavailable"; fi ;;
         lan) _l=$(bar_lan); case $_l in up*) echo "$(panel_col lan)up $PANEL_SEP ${_l#up }" ;; down) echo "$(panel_col lan)$PANEL_WARN down: no carrier on the wire" ;; *) echo "$(panel_col lan)no wire" ;; esac ;;
         wifi) _t=$(wifi_tool); _c=$(wifi_connected); _w=$(bar_wifi)
             if [ -z "$_t" ]; then echo "$(panel_col wifi)no tool answers (nmcli, iwctl or wpa_cli)"
@@ -4295,6 +4297,15 @@ panel_facts() {   # -> what the bar shows now, one title per block, for a questi
 }
 panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long section shows what matters and a `more` row
     case $1 in
+        printers)
+            if printer_status > "$TMP/printers.json" 2> "$TMP/printers.error"; then
+                jq -r 'if (.queues | length) == 0 then ["-", "no printers configured in CUPS", "show"] | @tsv else
+                    .default as $default | (.queues[] | . as $q |
+                        (["-", ($q.name + ": " + $q.state), "show"] | @tsv),
+                        (["-", (if $q.name == $default then "default printer " else "use as default " end) + $q.name, (if $q.name == $default then "show" else "default " + $q.name end)] | @tsv),
+                        (["-", (if $q.enabled then "pause " else "resume " end) + $q.name, (if $q.enabled then "pause " else "resume " end) + $q.name] | @tsv)),
+                    (.jobs[] | ["-", ("cancel job " + .id), ("cancel " + .id)] | @tsv) end' "$TMP/printers.json"
+            else printf -- '-\t%s\tshow\n' "$(cat "$TMP/printers.error" | scrub_text)"; fi ;;
         lan) for i in $(bar_wired); do
                 [ "$(cat "$BAR_SYS/class/net/$i/carrier" 2>/dev/null)" = 1 ] || { printf -- '-\twire %s: no carrier\tshow\n' "$i"; continue; }
                 printf -- '-\taddress %s\tshow\n' "$(bar_addr "$i")"
@@ -4803,6 +4814,11 @@ rem_due_line() {   # -> "due: WORDS  " for tmux's status line while a reminder i
     printf 'due: %s  ' "$(printf '%s' "${_dl#*"$TAB"}" | tr -d '#' | cut_chars 28)"   # no # for tmux to read as a format
 }
 
+# Printing stays with the configured CUPS service. No server discovery,
+# package install or queue creation is implicit in looking at these rows.
+printer_status_now() { python3 "$REPO/lib/printers.py" status; }
+printer_status() { panel_cache printers.status 2 printer_status_now; }
+
 # --- the notifications (#71): mako shows them, started by the sway
 # template and drawn by ~/.config/mako/config; makoctl is the one tool. Do
 # not disturb is mako's mode of that name, kept in the config
@@ -5103,6 +5119,9 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 *) echo "$_a is not something wifi does"; return 1 ;;
             esac ;;
         bt) bt_act "$_a" "$_arg" ;;
+        printers) panel_forget printers.status
+            if python3 "$REPO/lib/printers.py" "$_a" "$_arg" > "$TMP/printers.result" 2> "$TMP/printers.error"; then jq -r .receipt "$TMP/printers.result"
+            else cat "$TMP/printers.error"; return 1; fi ;;
         out|mic) case $_a in
                 use) snd_use "$_p" "$_arg" ;;
                 level) snd_set "$_p" "$_arg" && echo "$_p at $_arg%" ;;
@@ -5297,6 +5316,10 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         theme:*) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
         wifi:connect) _c=$(wifi_connected); if [ -n "$_c" ]; then printf 'connect %s\twifi %s\n' "$_c" "$_c"; else printf 'disconnect\twifi off\n'; fi ;;
         wifi:disconnect) _c=$(wifi_connected); [ -z "$_c" ] || printf 'connect %s\twifi %s\n' "$_c" "$_c" ;;
+        printers:default) _pd=$(printer_status_now | jq -r '.default // empty'); [ -z "$_pd" ] || [ "$_pd" = "$_arg" ] || printf 'default %s\tprevious default printer restored\n' "$_pd" ;;
+        printers:pause|printers:resume)
+            _pe=$(printer_status_now | jq -r --arg n "$_arg" '.queues[] | select(.name == $n) | .enabled')
+            case $_a:$_pe in pause:true) printf 'resume %s\tprinter enabled\n' "$_arg" ;; resume:false) printf 'pause %s\tprinter paused\n' "$_arg" ;; esac ;;
         bt:connect) printf 'disconnect %s\tbt %s off\n' "$_arg" "$_arg" ;;
         bt:disconnect) printf 'connect %s\tbt %s\n' "$_arg" "$_arg" ;;
         bt:power) if [ "$_arg" = off ]; then printf 'power on\tbt on\n'; else printf 'power off\tbt off\n'; fi ;;
@@ -5521,8 +5544,8 @@ panel_list() {   # panel_list [SECTION] -> the glance (the clock's view under it
 
 # --- the router and the want: a row is fzf's; an app named is a layout; the rest is spark's
 panel_brief_sections() {   # -> the sections the want path offers here, in the brief's order: every one the dialog has (notes and reminders are files, so a Mac has them too)
-    for p in layout apps window bar notes reminders display keyboard notifications storage power $(panel_blocks_here); do
-        case $p in lan|bat|clock) continue ;; window|bar|display|keyboard|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
+    for p in layout apps printers window bar notes reminders display keyboard notifications storage power $(panel_blocks_here); do
+        case $p in lan|bat|clock) continue ;; window|bar|display|keyboard|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; printers) command -v lpstat >/dev/null 2>&1 && printer_status >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
         printf '%s\n' "$p"
     done
 }
@@ -5766,9 +5789,9 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 # JSON value is built by jq with --arg, every request is parsed by jq,
 # and a method or a tool name is matched by case, never run as a name.
 PROVIDE_PROTOCOL=2025-06-18
-PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
+PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -5795,6 +5818,10 @@ tool_spec() {
         wifi_connect)      _ts=wifi _ta=connect _tp=name _tk=string _tq=password _th=i _tt='wifi connect NAME' _td='Connect to a network around, or a saved one.' ;;
         wifi_disconnect)   _ts=wifi _ta=disconnect _th=i _tt='wifi disconnect' _td='Leave the network in use.' ;;
         wifi_forget)       _ts=wifi _ta=forget _tp=name _tk=string _th=di _tt='wifi forget NAME' _td='Forget a saved network and its password.' ;;
+        printers_default) _ts=printers _ta=default _tp=name _tk=string _th=i _tt='printers default NAME' _td='Choose a configured native printer as the default.' ;;
+        printers_pause) _ts=printers _ta=pause _tp=name _tk=string _th=di _tt='printers pause NAME' _td='Pause the configured print queue. Native administrative permission may be needed.' ;;
+        printers_resume) _ts=printers _ta=resume _tp=name _tk=string _th=i _tt='printers resume NAME' _td='Enable the configured print queue. Pending jobs may print.' ;;
+        printers_cancel) _ts=printers _ta=cancel _tp=job _tk=string _th=d _tt='printers cancel JOB' _td='Cancel one pending job owned by the current user. The job cannot be restored.' ;;
         bt_connect)        _ts=bt _ta=connect _tp=name _tk=string _th=i _tt='bt connect NAME' _td='Connect a paired device.' ;;
         bt_disconnect)     _ts=bt _ta=disconnect _tp=name _tk=string _th=i _tt='bt disconnect NAME' _td='Disconnect a device.' ;;
         bt_remove)         _ts=bt _ta=remove _tp=name _tk=string _th=id _tt='bt remove NAME' _td='Remove a paired device and its saved trust. Pair it again to reconnect.' ;;
