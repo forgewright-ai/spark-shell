@@ -1041,4 +1041,16 @@ Other network managers keep ownership; their IP settings are not edited yet.
 `spark-shell desktop network` has the same controls. On a bare system, setup
 offers the distro's native network manager. An installed or configured manager
 is never replaced, including a stopped one. Native services stay installed
-and enabled when the desktop is off. No real-radio proof is claimed yet.
+and enabled when the desktop is off.
+
+`tests/wifi_proof.sh` exercises native NetworkManager, iwd and wpa_supplicant
+with two simulated kernel radios and a private access point. It checks a
+password with quotes and spaces, process arguments, IPv4, DNS and undo.
+The older password leak is the negative control. The test requires root in
+an explicitly disposable systemd VM, `mac80211_hwsim`, hostapd, dnsmasq,
+strace and all three native backends. It refuses an existing radio. Run it
+with `SPARK_SHELL_DISPOSABLE_VM=1`; this is not a physical-radio test.
+
+iwd entry uses a private terminal. Its masked prompt must acknowledge the
+password before Enter; no terminal output or password is logged or returned.
+Opening Wi-Fi never starts iwd just to check whether it owns the interface.

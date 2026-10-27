@@ -3996,10 +3996,15 @@ panel_secret() {   # panel_secret PROMPT -> what was typed, unseen; nothing when
 
 # --- wifi: the tool that answers for this machine's wireless interface
 wifi_if() { bar_wireless | sed -n 1p; }
+wifi_iwd_running() {   # probing iwctl itself can activate iwd and take a radio
+    if command -v dbus-send >/dev/null 2>&1; then
+        dbus-send --system --print-reply --reply-timeout=2000 --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner string:net.connman.iwd 2>/dev/null | grep -q 'boolean true'
+    else pgrep -x iwd >/dev/null 2>&1; fi
+}
 wifi_tool() {   # -> nmcli | iwctl | wpa_cli | nothing
     _i=$(wifi_if); [ -n "$_i" ] || return 0
-    if command -v nmcli >/dev/null 2>&1 && nmcli -t -f RUNNING general 2>/dev/null | grep -q running; then echo nmcli
-    elif command -v iwctl >/dev/null 2>&1 && iwctl station "$_i" show >/dev/null 2>&1; then echo iwctl
+    if command -v nmcli >/dev/null 2>&1 && nmcli -t -f RUNNING general 2>/dev/null | grep -qx running && [ "$(nmcli -g GENERAL.NM-MANAGED device show "$_i" 2>/dev/null)" = yes ]; then echo nmcli
+    elif command -v iwctl >/dev/null 2>&1 && wifi_iwd_running && iwctl station "$_i" show 2>/dev/null | wifi_strip | grep -q '^State[[:space:]]'; then echo iwctl
     elif command -v wpa_cli >/dev/null 2>&1 && wpa_cli -i "$_i" status >/dev/null 2>&1; then echo wpa_cli
     fi
 }
@@ -4085,7 +4090,7 @@ wifi_connect() {   # wifi_connect NAME [PASSWORD] [hidden] -> one line
         nmcli) if [ -n "$_id" ]; then _o=$(nmcli con up id "$_id" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
                elif [ -n "${2:-}" ]; then _o=$(printf '%s\n' "$2" | nmcli --ask dev wifi connect "$1" ifname "$_i" hidden "$(if [ "$_hidden" = hidden ]; then echo yes; else echo no; fi)" 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
                else _o=$(nmcli dev wifi connect "$1" ifname "$_i" hidden "$(if [ "$_hidden" = hidden ]; then echo yes; else echo no; fi)" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }; fi ;;
-        iwctl) if [ -n "${2:-}" ]; then _o=$(printf '%s\n' "$2" | iwctl station "$_i" "$_join" "$1" 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
+        iwctl) if [ -n "${2:-}" ]; then _o=$(printf '%s\n' "$2" | python3 "$REPO/lib/wifi_connect.py" "$_i" "$1" ${_hidden:+--hidden} 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
                else _o=$(iwctl station "$_i" "$_join" "$1" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }; fi ;;
         wpa_cli) if [ -z "$_id" ]; then
                 _psk=''

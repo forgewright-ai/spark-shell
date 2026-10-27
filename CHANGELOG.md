@@ -3,6 +3,11 @@
 ## Unreleased
 
 - Display undo preserves custom scale values and exact native refresh rates.
+- Wi-Fi manager detection no longer starts iwd while another manager owns
+  the radio. iwd password entry uses a private terminal and waits for its
+  masked prompt before Enter. The password stays off command arguments.
+  Native simulated-radio checks cover all three backends, IPv4 and DNS
+  changes, and undo; the older password leak is the negative control.
 
 - Printers expose the configured CUPS queues and your pending jobs. Choose
   a default, pause or resume a queue, or confirm cancellation of one job.

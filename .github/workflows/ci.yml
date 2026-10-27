@@ -68,6 +68,7 @@ jobs:
           python3 -I tests/network_test.py
           python3 -I tests/display_test.py
           python3 -I tests/layout_terminal_test.py
+          python3 -I tests/wifi_connect_test.py
   debian:
     # the same suite on Debian itself, where distro/debian.env's names are
     # looked up. The privacy and ascii gates ran once, on linux.

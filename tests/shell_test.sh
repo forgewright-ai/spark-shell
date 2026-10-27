@@ -3266,6 +3266,7 @@ STUB
 log=$XDG_STATE_HOME/nmcli.log; printf '%s\n' "$*" >> "$log.argv"
 case "$*" in
     "-t -f RUNNING general") echo running ;;
+    "-g GENERAL.NM-MANAGED device show wlan0") echo yes ;;
     "-t -e yes -f SIGNAL,SECURITY,SSID dev wifi list --rescan auto") printf '80:WPA2:cafe\n' ;;
     "--ask dev wifi connect cafe ifname wlan0 hidden no"|"--ask dev wifi connect cafe ifname wlan0 hidden yes") IFS= read -r pw || exit 4; printf '%s\n' "$pw" >> "$log"; printf 'Password (802-11-wireless-security.psk): \n'
         [ "$pw" != wrong ] || { echo 'Error: Connection activation failed: Secrets were required, but not provided.'; exit 4; }
@@ -3280,7 +3281,20 @@ log=$XDG_STATE_HOME/iwctl.log; printf '%s\n' "$*" >> "$log.argv"
 case "$*" in
     "station wlan0 show") printf '  Station: wlan0\n  State  disconnected\n' ;;
     "station wlan0 get-networks") printf '  Available networks\n----\n  Network name  Security  Signal\n----\n  cafe  psk  ****\n' ;;
-    "station wlan0 connect cafe"|"station wlan0 connect-hidden cafe") IFS= read -r pw || { echo 'Operation failed'; exit 1; }; printf '%s\n' "$pw" >> "$log"; printf 'Type the network passphrase for cafe psk.\nPassphrase: \n' ;;
+    "station wlan0 connect cafe"|"station wlan0 connect-hidden cafe")
+        python3 -c 'import os,sys,tty
+assert sys.stdin.isatty()
+tty.setraw(0)
+os.write(1,b"Passphrase: ")
+pw=b""
+while True:
+    chunk=os.read(0,256)
+    if b"\n" in chunk:
+        assert chunk == b"\n"
+        break
+    pw += chunk
+    os.write(1,b"*"*len(chunk))
+with open(sys.argv[1],"ab") as f: f.write(pw+b"\n")' "$log" ;;
     *) exit 0 ;;
 esac
 STUB

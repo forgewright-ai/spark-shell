@@ -162,6 +162,7 @@ class Provider(unittest.TestCase):
                 (root / "sys/class/net/wlan0/wireless").mkdir(parents=True)
                 (root / "os-release").write_text("ID=fixture\n")
                 (bin_dir / "uname").write_text("#!/bin/sh\necho Linux\n")
+                (bin_dir / "dbus-send").write_text('#!/bin/sh\nif [ "$NETWORK_TEST_BACKEND" = iwctl ]; then echo boolean true; else echo boolean false; fi\n')
                 stub = "#!" + sys.executable + "\n" + '''import json, os, sys
 from pathlib import Path
 r=Path(os.environ["NETWORK_TEST_ROOT"]); name=Path(sys.argv[0]).name; a=sys.argv[1:]
@@ -171,11 +172,26 @@ if name=="wpa_passphrase":
 if name != os.environ["NETWORK_TEST_BACKEND"]: sys.exit(1)
 if name=="nmcli":
     if a==["-t","-f","RUNNING","general"]: print("running")
+    elif a==["-g","GENERAL.NM-MANAGED","device","show","wlan0"]: print("yes")
     elif a[:5]==["--ask","dev","wifi","connect","hidden cafe"]:
         (r/"received").write_text(sys.stdin.read()); print("connected")
 elif name=="iwctl":
-    if a==["station","wlan0","show"]: print("Station wlan0")
-    elif a==["station","wlan0","connect-hidden","hidden cafe"]: (r/"received").write_text(sys.stdin.read())
+    if a==["station","wlan0","show"]: print("Station wlan0\\nState disconnected")
+    elif a==["station","wlan0","connect-hidden","hidden cafe"]:
+        if not sys.stdin.isatty(): sys.exit(5)
+        import termios, tty
+        tty.setraw(sys.stdin.fileno())
+        print("Passphrase: ", end="", flush=True)
+        received=b""
+        while True:
+            chunk=os.read(sys.stdin.fileno(), 256)
+            if b"\\n" in chunk:
+                # Native readline cannot mask and submit in one input batch.
+                if chunk != b"\\n": sys.exit(6)
+                break
+            received += chunk
+            os.write(sys.stdout.fileno(), b"*" * len(chunk))
+        (r/"received").write_bytes(received)
 elif name=="wpa_cli":
     if a[:2]==["-i","wlan0"]: a=a[2:]
     if not a: (r/"wire").write_text(sys.stdin.read()); print("OK")
@@ -204,6 +220,7 @@ elif name=="wpa_cli":
                 self.assertNotIn(password, argv + out.stdout + out.stderr)
                 self.assertNotIn("a" * 64, argv + out.stdout + out.stderr)
                 if backend == "wpa_cli":
+                    self.assertNotIn('"iwctl"', argv)
                     self.assertEqual((root / "wire").read_text(), "set_network 2 psk " + "a" * 64 + "\n")
                     self.assertIn('"scan_ssid", "1"', argv)
                 else:
