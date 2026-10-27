@@ -85,6 +85,19 @@ class Network(unittest.TestCase):
         with self.assertRaisesRegex(network.Refused, "changed since"):
             network.run(self.folder, "restore", result["undo"], [])
 
+    def test_native_edit_during_apply_never_becomes_our_undo_state(self):
+        original_native = self.native
+        def changed(*args):
+            result = original_native(*args)
+            if args[:2] == ("device", "reapply"):
+                self.settings["ipv4.dns"] = "198.51.100.53"
+            return result
+        with patch.object(network, "native", changed):
+            with self.assertRaisesRegex(network.Refused, "connection changed again"):
+                network.run(self.folder, "dns", "eth0", ["192.0.2.53"])
+        self.assertEqual(self.settings["ipv4.dns"], "198.51.100.53")
+        self.assertFalse(any(json.loads(p.read_text())["ready"] for p in self.folder.glob("*.json")))
+
     def test_invalid_values_and_unmanaged_interfaces_never_write(self):
         for action, values in [("address", ["192.0.2.8", "192.0.2.1"]), ("address", ["192.0.2.8/24", "198.51.100.1"]), ("dns", ["192.0.2.53;exec"]), ("dns", ["224.0.0.1"]), ("auto", ["extra"])]:
             with self.subTest(action=action, values=values), self.assertRaises(network.Refused):

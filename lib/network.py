@@ -114,6 +114,8 @@ def apply(folder, device, uuid, before, after):
         write(uuid, after)
         attempted = read(uuid)  # native serialization may normalize address lists
         native("device", "reapply", device)
+        if profile(device) != uuid or read(uuid) != attempted:
+            raise Refused("the native connection changed during apply")
     except Refused as exc:
         # Restore only fields still equal to our attempted write. External edits win.
         try:
@@ -127,7 +129,7 @@ def apply(folder, device, uuid, before, after):
         except Refused as recovery:
             raise Refused(str(recovery)) from exc
         raise Refused(str(exc) + "; previous settings restored") from exc
-    record["after"] = read(uuid)
+    record["after"] = attempted
     record["ready"] = True
     save(folder, token, record)
     return {"receipt": "native network settings applied to " + device, "undo": token}
