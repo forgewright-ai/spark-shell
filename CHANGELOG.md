@@ -15,6 +15,12 @@
 - A closed output pipe now runs cleanup, including the first bar header.
   Temporary folders and the bar PID file no longer remain after that exit.
 
+- Network rows join hidden networks through the existing native tool.
+  Passwords stay on stdin; the WPA tool derives a key before sending it.
+  A bare system offers native setup without replacing another manager.
+  Active NetworkManager connections expose IPv4 and DNS settings with undo
+  and failure recovery. IP settings for other managers remain pending.
+
 - Display rows open each screen's native choices: scale, resolution,
   arrangement and power, all with undo. On and off persist across login;
   the last active screen stays on, and login recovers an all-off layout.

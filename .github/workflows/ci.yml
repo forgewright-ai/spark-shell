@@ -65,6 +65,7 @@ jobs:
           python3 -I tests/cleanup_test.py
           python3 -I tests/printers_test.py
           python3 -I tests/open_path_test.py
+          python3 -I tests/network_test.py
   debian:
     # the same suite on Debian itself, where distro/debian.env's names are
     # looked up. The privacy and ascii gates ran once, on linux.

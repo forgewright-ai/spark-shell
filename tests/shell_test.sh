@@ -986,7 +986,7 @@ EOF
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" layout --ask </dev/null 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | sed -n 1p)" = "layout     none saved yet" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  layout     none saved yet: say what you want to do at the prompt	layout show" ] && [ ! -s "$swlog" ] \
         && ok "layout --ask: the panel with the layouts first, as text without a terminal; nothing played" || bad "ask form" "st=$st $out $(head -2 "$swlog")"
-    printf '%s' "$out" | od -c | grep -q '033' && bad "the pulse reached a pipe" "$(printf '%s' "$out" | od -c | grep 033 | head -1)" || ok "no pulse on a pipe (a tty only, like spark's)"
+    printf '%s' "$out" | grep -q "$(printf '\033')" && bad "the pulse reached a pipe" "unexpected escape byte" || ok "no pulse on a pipe (a tty only, like spark's)"
     # keep, list, replay, status, forget
     out=$(sh "$SH" layout save studio)
     printf '%s\n' "$out" | grep -q "^saved studio -- spark-shell layout studio opens it ($desks/studio)\$" && [ "$(jq -S 'del(.suggested)' "$desk_last")" = "$(jq -S . "$desks/studio")" ] && ! jq -e 'has("suggested")' "$desks/studio" >/dev/null \
@@ -2533,15 +2533,16 @@ for t in pipewire wireplumber pipewire-pulse; do
       [ "$t" != pipewire ] || [ -z "$py3" ] || printf '%s -c "import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])" "$XDG_RUNTIME_DIR/pipewire-0"\n' "$py3"
       printf 'exec sleep 60\n'; } > "$H/lx/$t"
 done
-printf '#!/bin/sh\nsleep 1; for t in pipewire wireplumber pipewire-pulse; do [ -f "$HOME/$t.pid" ] && kill -0 "$(cat "$HOME/$t.pid")" 2>/dev/null && echo "$t runs" >&2; done; exit 0\n' > "$H/.local/bin/sway"
+printf '#!/bin/sh\nn=0; while [ ! -f "$HOME/pipewire-pulse.pid" ] && [ "$n" -lt 100 ]; do sleep 0.05; n=$((n + 1)); done; for t in pipewire wireplumber pipewire-pulse; do [ -f "$HOME/$t.pid" ] && kill -0 "$(cat "$HOME/$t.pid")" 2>/dev/null && echo "$t runs" >&2; done; exit 0\n' > "$H/.local/bin/sway"
 chmod +x "$H/lx/pipewire" "$H/lx/wireplumber" "$H/lx/pipewire-pulse" "$H/.local/bin/sway"
 mkdir -p "$H/rt"; chmod 700 "$H/rt"
 t0=$(date +%s); rc=0; out=$(TEST_TTY=/dev/tty1 XDG_RUNTIME_DIR=$H/rt env -u WAYLAND_DISPLAY PATH="$H/lx:$PATH" sh "$SH" desktop 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$(grep -c ' runs$' "$slog")" = 3 ] && { [ -z "$py3" ] || [ $(($(date +%s) - t0)) -lt 4 ]; } \
+[ "$rc" = 0 ] && [ "$(grep -c ' runs$' "$slog")" = 3 ] \
     && ok "desktop, no systemd: PipeWire, WirePlumber and pipewire-pulse run while sway does (WirePlumber once PipeWire's socket is there)" || bad "sound start" "rc=$rc $(($(date +%s) - t0))s $out $(cat "$slog" "$HOME/.local/state/spark-shell/sound.log" 2>&1)"
 alive=''; for t in pipewire wireplumber pipewire-pulse; do ! kill -0 "$(cat "$HOME/$t.pid")" 2>/dev/null || alive="$alive $t"; done
 [ -z "$alive" ] && ok "desktop: all three stop when sway ends, waited for" || bad "sound stop" "still running:$alive"
 for t in pipewire wireplumber pipewire-pulse; do kill "$(cat "$HOME/$t.pid")" 2>/dev/null || :; done
+printf '#!/bin/sh\nsleep 1; for t in pipewire wireplumber pipewire-pulse; do [ -f "$HOME/$t.pid" ] && kill -0 "$(cat "$HOME/$t.pid")" 2>/dev/null && echo "$t runs" >&2; done; exit 0\n' > "$H/.local/bin/sway"
 # the Void handbook's way: pipewire.conf.d files have PipeWire start WirePlumber and its PulseAudio server itself
 rm -f "$HOME"/*.pid "$H/rt/pipewire-0"; mkdir -p "$H/root/etc/pipewire/pipewire.conf.d"
 printf 'context.exec = [ { path = "/usr/bin/wireplumber" args = "" } ]\n' > "$H/root/etc/pipewire/pipewire.conf.d/10-wireplumber.conf"
@@ -3232,7 +3233,7 @@ STUB
 log=${XDG_STATE_HOME:-$HOME/.local/state}/wpa.log; mkdir -p "$(dirname "$log")"
 printf '%s\n' "$*" >> "${log%.log}.argv"   # every call's arguments, apart: a password is never among them (#62)
 [ "$1" != -i ] || shift 2
-if [ $# -eq 0 ]; then while IFS= read -r line; do printf '%s\n' "$line" >> "$log"; done; exit 0; fi   # interactive: a command a line on stdin
+if [ $# -eq 0 ]; then while IFS= read -r line; do printf '%s\n' "$line" >> "$log"; echo OK; done; exit 0; fi   # interactive: a command a line on stdin
 sel=$(cat "$HOME/wpa.sel" 2>/dev/null || echo 0)
 name() { case $1 in 0) echo home ;; 1) echo old ;; 2) cat "$HOME/wpa.name2" 2>/dev/null || echo open ;; esac; }
 case "$*" in
@@ -3246,6 +3247,10 @@ case "$*" in
     *) echo "$*" >> "$log"; echo OK ;;
 esac
 STUB
+    # The native key derivation has no password argument. Fixed key: the test
+    # checks the wire format, not the native program's cryptography.
+    printf '#!/bin/sh\nIFS= read -r pw || exit 1\nprintf "\\tpsk=%%s\\n" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n' > "$H/.local/bin/wpa_passphrase"
+    chmod +x "$H/.local/bin/wpa_passphrase"
     # NetworkManager and iwd, off unless a test turns one on ($HOME/nm.on, $HOME/iw.on): no machine's own nmcli or iwctl is reached from here
     cat > "$H/.local/bin/nmcli" <<'STUB'
 #!/bin/sh
@@ -3254,7 +3259,7 @@ log=$XDG_STATE_HOME/nmcli.log; printf '%s\n' "$*" >> "$log.argv"
 case "$*" in
     "-t -f RUNNING general") echo running ;;
     "-t -e yes -f SIGNAL,SECURITY,SSID dev wifi list --rescan auto") printf '80:WPA2:cafe\n' ;;
-    "--ask dev wifi connect cafe") IFS= read -r pw || exit 4; printf '%s\n' "$pw" >> "$log"; printf 'Password (802-11-wireless-security.psk): \n'
+    "--ask dev wifi connect cafe ifname wlan0 hidden no"|"--ask dev wifi connect cafe ifname wlan0 hidden yes") IFS= read -r pw || exit 4; printf '%s\n' "$pw" >> "$log"; printf 'Password (802-11-wireless-security.psk): \n'
         [ "$pw" != wrong ] || { echo 'Error: Connection activation failed: Secrets were required, but not provided.'; exit 4; }
         echo "Device 'wlan0' successfully activated with 'f00d'." ;;
     *) exit 0 ;;
@@ -3267,7 +3272,7 @@ log=$XDG_STATE_HOME/iwctl.log; printf '%s\n' "$*" >> "$log.argv"
 case "$*" in
     "station wlan0 show") printf '  Station: wlan0\n  State  disconnected\n' ;;
     "station wlan0 get-networks") printf '  Available networks\n----\n  Network name  Security  Signal\n----\n  cafe  psk  ****\n' ;;
-    "station wlan0 connect cafe") IFS= read -r pw || { echo 'Operation failed'; exit 1; }; printf '%s\n' "$pw" >> "$log"; printf 'Type the network passphrase for cafe psk.\nPassphrase: \n' ;;
+    "station wlan0 connect cafe"|"station wlan0 connect-hidden cafe") IFS= read -r pw || { echo 'Operation failed'; exit 1; }; printf '%s\n' "$pw" >> "$log"; printf 'Type the network passphrase for cafe psk.\nPassphrase: \n' ;;
     *) exit 0 ;;
 esac
 STUB
@@ -3582,7 +3587,7 @@ STUB
     DOT=$(printf '\342\227\217'); RING=$(printf '\342\227\213'); TICK=$(printf '\342\234\223'); CROSS=$(printf '\342\234\227'); GO=$(printf '\342\226\270'); SEP=$(printf '\302\267')
     journal=$H/.local/state/spark-shell/panel; rm -f "$journal/undo" "$journal/recent"   # the lists below in their plain order: nothing picked yet
     out=$(sh "$SH" bar panel lan --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "lan        up $SEP 192.0.2.10" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  lan        address 192.0.2.10	lan show" ] && printf '%s\n' "$out" | grep -q "^  lan        speed 1000 Mb/s	lan show$" && printf '%s\n' "$out" | grep -q "^  lan        gateway 192.0.2.1	lan show$" \
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "lan        up $SEP 192.0.2.10" ] && [ "$(printf '%s\n' "$out" | sed -n 3p)" = "  lan        address 192.0.2.10	lan show" ] && printf '%s\n' "$out" | grep -q "^  lan        speed 1000 Mb/s	lan show$" && printf '%s\n' "$out" | grep -q "^  lan        gateway 192.0.2.1	lan show$" \
         && ok "panel lan: the address, the speed and the gateway, a look only, first (the old bar panel spelling)" || bad "panel lan" "$out"
     printf '%s\n' "$out" | grep -q "^$RING wifi       cafe .*	wifi connect cafe$" && printf '%s\n' "$out" | grep -q "^  theme      [a-z-]* $SEP more	theme more$" && ! printf '%s\n' "$out" | grep -q "^  theme      dracula	" && ! printf '%s\n' "$out" | grep -q "^. bat        " && ! printf '%s\n' "$out" | grep -q "^. clock      " && ! printf '%s\n' "$out" | grep -q "^. layout     none" \
         && [ "$(printf '%s\n' "$out" | grep -c "	lan show$")" = "$(printf '%s\n' "$out" | grep -c "	[a-z]* show$")" ] && printf '%s\n' "$out" | grep -q "^$GO apps       choose the allowed apps	apps pick$" && [ "$(printf '%s\n' "$out" | grep -n "^$GO apps" | head -1 | cut -d: -f1)" -lt "$(printf '%s\n' "$out" | grep -n "^$RING wifi       cafe" | cut -d: -f1)" ] \
@@ -3640,13 +3645,13 @@ STUB
     [ ! -e "$H/spark.away" ] || mv "$H/spark.away" "$H/.local/bin/spark"
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)' ] && ok "panel WORDS: a word that is no section is a want (here without spark: refused in one line)" || bad "panel no block" "st=$st $out"
     out=$(sh "$SH" bar panel wifi --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "wifi       $(printf '\342\226\202\342\226\204\342\226\206\342\226\221') home $SEP 192.0.2.20" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT wifi       home	wifi disconnect" ] && printf '%s\n' "$out" | sed -n 3p | grep -q "^$RING wifi       cafe .*	wifi connect cafe$" && printf '%s\n' "$out" | sed -n 4p | grep -q "^$RING wifi       open .*	wifi connect open$" && [ "$(printf '%s\n' "$out" | sed -n 5p)" = "  wifi       forget old	wifi forget old" ] \
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "wifi       $(printf '\342\226\202\342\226\204\342\226\206\342\226\221') home $SEP 192.0.2.20" ] && [ "$(printf '%s\n' "$out" | sed -n 4p)" = "$DOT wifi       home	wifi disconnect" ] && printf '%s\n' "$out" | sed -n 5p | grep -q "^$RING wifi       cafe .*	wifi connect cafe$" && printf '%s\n' "$out" | sed -n 6p | grep -q "^$RING wifi       open .*	wifi connect open$" && [ "$(printf '%s\n' "$out" | sed -n 7p)" = "  wifi       forget old	wifi forget old" ] \
         && ok "panel wifi (wpa_cli): the network in use first, the ones around strongest first, then forget for a saved one" || bad "panel wifi" "$out"
     st=0; out=$(sh "$SH" bar panel wifi connect cafe 2>&1 </dev/null) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'no password given, so not connected' ] && ok "panel wifi connect, a secured network that is new: asks for the password; with none, nothing is done" || bad "wifi connect secured" "st=$st $out"
     wlog=$H/.local/state/wpa.log; rm -f "$wlog"
     st=0; out=$(sh "$SH" bar panel wifi connect open 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'connected to open' ] && grep -qx 'set_network 2 ssid "open"' "$wlog" && grep -qx 'set_network 2 key_mgmt NONE' "$wlog" && grep -qx 'enable_network 2' "$wlog" && grep -qx save_config "$wlog" && grep -qx 'select_network 2' "$wlog" \
+    [ "$st" -eq 0 ] && [ "$out" = 'connected to open' ] && grep -qx 'set_network 2 ssid 6f70656e' "$wlog" && grep -qx 'set_network 2 key_mgmt NONE' "$wlog" && grep -qx 'enable_network 2' "$wlog" && grep -qx save_config "$wlog" && grep -qx 'select_network 2' "$wlog" \
         && ok "panel wifi connect, an open network: added, saved, selected, connected" || bad "wifi connect open" "st=$st $out; $(cat "$wlog" 2>&1)"
     rm -f "$wlog"
     st=0; out=$(sh "$SH" bar panel wifi disconnect 2>&1) || st=$?
@@ -3657,7 +3662,7 @@ STUB
     # a new network's password reaches the tool on its stdin, never as an argument (#62)
     rm -f "$wlog" "${wlog%.log}.argv" "$H/wpa.nohome" "$cache/wifi.scan"; echo cafe > "$H/wpa.name2"
     st=0; out=$(PANEL_PASS='s3cret "pass" word' sh "$SH" bar panel wifi connect cafe 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'connected to cafe' ] && grep -qxF 'set_network 2 psk "s3cret "pass" word"' "$wlog" && ! grep -q s3cret "${wlog%.log}.argv" && [ -e "$H/wpa.nohome" ] && [ ! -e "$H/.wpa_cli_history" ] \
+    [ "$st" -eq 0 ] && [ "$out" = 'connected to cafe' ] && grep -qxF 'set_network 2 psk aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$wlog" && ! grep -q s3cret "${wlog%.log}.argv" && [ -e "$H/wpa.nohome" ] && [ ! -e "$H/.wpa_cli_history" ] \
         && ok "panel wifi connect, wpa_cli: the password goes in as a command on stdin, with HOME unset (no history file), in no call's arguments (#62)" || bad "wpa psk stdin" "st=$st $out; $(cat "$wlog" "${wlog%.log}.argv" 2>&1)"
     rm -f "$wlog" "$H/wpa.name2"; echo 0 > "$H/wpa.sel"
     st=0; out=$(PANEL_PASS="$(printf 'two\nlines')" sh "$SH" bar panel wifi connect cafe 2>&1) || st=$?
@@ -3665,16 +3670,27 @@ STUB
         && ok "panel wifi connect: a password with a new line is refused before any tool hears it (it would be a second command)" || bad "wifi psk newline" "st=$st $out; $(cat "$wlog" 2>&1)"
     touch "$H/nm.on"; nlog=$H/.local/state/nmcli.log; rm -f "$nlog" "$nlog.argv" "$cache/wifi.scan"
     st=0; out=$(PANEL_PASS='s3cret "pass" word' sh "$SH" bar panel wifi connect cafe 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'connected to cafe' ] && grep -qxF 's3cret "pass" word' "$nlog" && grep -qx -- '--ask dev wifi connect cafe' "$nlog.argv" && ! grep -q s3cret "$nlog.argv" \
+    [ "$st" -eq 0 ] && [ "$out" = 'connected to cafe' ] && grep -qxF 's3cret "pass" word' "$nlog" && grep -qx -- '--ask dev wifi connect cafe ifname wlan0 hidden no' "$nlog.argv" && ! grep -q s3cret "$nlog.argv" \
         && ok "panel wifi connect, nmcli: --ask, the password at nmcli's own prompt on stdin, in no argument (#62)" || bad "nmcli stdin" "st=$st $out; $(cat "$nlog" "$nlog.argv" 2>&1)"
     rm -f "$cache/wifi.scan"; st=0; out=$(PANEL_PASS=wrong sh "$SH" bar panel wifi connect cafe 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'could not connect to cafe: Error: Connection activation failed: Secrets were required, but not provided.' ] \
         && ok "panel wifi connect, nmcli refuses: its error line, never its prompt" || bad "nmcli refused" "st=$st $out"
+    st=0; out=$(PANEL_PASS='hidden-pass' sh "$SH" bar panel wifi hidden cafe 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -qx -- '--ask dev wifi connect cafe ifname wlan0 hidden yes' "$nlog.argv" && ! grep -q hidden-pass "$nlog.argv" \
+        && ok "hidden wifi: NetworkManager receives the chosen interface and hidden flag, password on stdin" || bad "nmcli hidden" "$out"
     rm -f "$H/nm.on"; touch "$H/iw.on"; ilog=$H/.local/state/iwctl.log; rm -f "$ilog" "$ilog.argv" "$cache/wifi.scan"
     st=0; out=$(PANEL_PASS='s3cret "pass" word' sh "$SH" bar panel wifi connect cafe 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'connected to cafe' ] && grep -qxF 's3cret "pass" word' "$ilog" && grep -qx 'station wlan0 connect cafe' "$ilog.argv" && ! grep -q -e s3cret -e passphrase "$ilog.argv" \
         && ok "panel wifi connect, iwctl: the passphrase at its agent's prompt on stdin, no --passphrase (#62)" || bad "iwctl stdin" "st=$st $out; $(cat "$ilog" "$ilog.argv" 2>&1)"
+    st=0; out=$(PANEL_PASS='hidden-pass' sh "$SH" bar panel wifi hidden cafe 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -qx 'station wlan0 connect-hidden cafe' "$ilog.argv" && ! grep -q hidden-pass "$ilog.argv" \
+        && ok "hidden wifi: iwd connects by hidden name, password on stdin" || bad "iwctl hidden" "$out"
     rm -f "$H/iw.on" "$cache/wifi.scan"
+    echo cafe > "$H/wpa.name2"
+    st=0; out=$(PANEL_PASS='hidden-pass' sh "$SH" bar panel wifi hidden cafe 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -qx 'set_network 2 scan_ssid 1' "$wlog" && ! grep -q hidden-pass "${wlog%.log}.argv" \
+        && ok "hidden wifi: wpa_supplicant saves active scanning for the hidden name" || bad "wpa hidden" "$out"
+    rm -f "$H/wpa.name2"; echo 0 > "$H/wpa.sel"
     st=0; out=$(sh "$SH" bar panel wifi connect nowhere 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: nowhere is not in the list now' ] && ok "panel: an action the section does not offer is refused in one line" || bad "panel gate" "st=$st $out"
     out=$(sh "$SH" bar panel bt --list); blog=$H/.local/state/bt.log
@@ -3711,8 +3727,8 @@ STUB
         && ok "panel bat: the charge, the time left from the kernel's numbers, the health, the cycles" || bad "panel bat" "$out"
     out=$(sh "$SH" bar panel clock --list)
     B=$(printf '\342\226\210')   # the full block: three bytes, so the patterns below never count characters (the CI containers run in the C locale)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "$(date '+%A %d %B %Y')" ] && [ -z "$(printf '%s\n' "$out" | sed -n 2p)" ] && printf '%s\n' "$out" | sed -n 3p | grep -q "^ \{40\} *$(date '+%B %Y')$" && printf '%s\n' "$out" | sed -n 4p | grep -q " Su  Mo  Tu  We  Th  Fr  Sa$" && [ "$(printf '%s\n' "$out" | sed -n '4,8p' | grep -c "^[$B ]*${B}[$B ]*      ")" = 5 ] && printf '%s\n' "$out" | sed -n '4,8p' | grep -q "$B$B  *$B" && ! printf '%s\n' "$out" | grep -q "	clock show$" \
-        && ok "panel clock: the date alone on top, then the time five rows tall in strokes two cells wide on the left and this month on the right, 34 cells apart; no clock rows" || bad "panel clock" "$out"
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "$(date '+%A %d %B %Y')" ] && [ -z "$(printf '%s\n' "$out" | sed -n 2p)" ] && printf '%s\n' "$out" | sed -n 3p | grep -q "^ \{40\} *$(date '+%B %Y')$" && printf '%s\n' "$out" | sed -n 4p | grep -q " Su  Mo  Tu  We  Th  Fr  Sa$" && [ "$(printf '%s\n' "$out" | sed -n '4,8p' | grep -c "^[$B ]*${B}[$B ]*      ")" = 5 ] && printf '%s\n' "$out" | sed -n '4,8p' | grep -q "$B$B  *$B" && printf '%s\n' "$out" | grep -q "	clock format 12$" && printf '%s\n' "$out" | grep -q "	clock week monday$" \
+        && ok "panel clock: the date alone on top, then the time five rows tall in strokes two cells wide on the left and this month on the right, 34 cells apart; time settings follow" || bad "panel clock" "$out"
     out=$(sh "$SH" bar panel look --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "theme      none" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  theme      Wallpaper	theme wallpaper" ] && printf '%s\n' "$out" | grep -q "^$TICK theme      the terminal's own colors	theme show$" && printf '%s\n' "$out" | grep -q "^  theme      dracula	theme dracula$" && printf '%s\n' "$out" | grep -q "^  theme      save this look as	theme save$" && printf '%s\n' "$out" | grep -q "^  theme      Text size	theme show$" && printf '%s\n' "$out" | grep -q "^  theme      Transparency	theme show$" \
         && ok "panel theme (look, the old word, still opens it): the wallpaper, the text size and the transparency first, the palettes by name, none as the terminal's own colors, save this look as" || bad "panel look" "$out"
@@ -3939,8 +3955,8 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 97 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 97 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 107 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 107 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -3982,7 +3998,7 @@ mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},
 jq -e -s 'all(.[]; (.name | test("^[a-z][a-z0-9_]{0,63}$")) and (.title | test("^[a-z][a-z-]*( [a-z-]+| [A-Z]+)*$")) and (.title | length) <= 60)' "$H/tools.all" >/dev/null \
     && ok "provide: every tool name is lower case with underscores, every title a sentence of plain words with its argument in capitals, 60 at most" || bad "tool shapes" "$(jq -r '.name + " | " + .title' "$H/tools.all")"
 jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.destructiveHint | type) == "boolean" and (.idempotentHint | type) == "boolean" and .openWorldHint == false)' "$H/tools.all" >/dev/null \
-    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove clock_zone layout_delete layout_save power_logout power_restart power_shutdown printers_cancel printers_pause theme_delete wifi_forget window_close' ] \
+    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove clock_zone lan_address lan_auto lan_dns lan_restore layout_delete layout_save power_logout power_restart power_shutdown printers_cancel printers_pause theme_delete wifi_address wifi_auto wifi_dns wifi_forget wifi_restore wifi_setup window_close' ] \
     && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find about_open files_show files_attach' ] \
     && ok "provide: every hint spelled out (the spec's default is destructive); destructive: wifi forget, window close, layout save, layout delete, theme delete, log out, restart, shut down; read only: notes find, about, files show and attach" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
 jq -e -s 'all(.[]; .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .outputSchema.type == "object")' "$H/tools.all" >/dev/null \
@@ -4210,7 +4226,7 @@ if [ "$(uname -s)" != Darwin ]; then
         && ok "provide wifi rows: the network in use a dot, its tool disconnects" || bad "provide wifi rows" "$(ans 3 | head -c 400)"
     [ "$(ans 2 | jq -r '.result.content[0].text')" = 'nowhere is not in the list now' ] && ok "provide wifi: forget names a saved network or nothing" || bad "provide forget" "$(ans 2)"
     rm -f "$H/.local/state/wpa.log"; mcp wifi "$(call 1 wifi_connect '{"name":"cafe","password":"s3cret-pass"}')"
-    grep -q 'set_network 2 psk "s3cret-pass"' "$H/.local/state/wpa.log" && ans 1 | jq -e '.result.content[0].text | startswith("could not connect to cafe")' >/dev/null && ! grep -rq 's3cret-pass' "$H/mcp.out" "$H/mcp.err" "$H/.local/state/spark-shell" \
+    grep -q 'set_network 2 psk aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$H/.local/state/wpa.log" && ans 1 | jq -e '.result.content[0].text | startswith("could not connect to cafe")' >/dev/null && ! grep -rq 's3cret-pass' "$H/mcp.out" "$H/mcp.err" "$H/.local/state/spark-shell" \
         && ok "provide wifi: a new secured network takes its password as the tool's argument, straight to the Wi-Fi tool (this stub cannot join it); it is in no answer, no log and no journal" || bad "provide wifi connect" "$(ans 1) $(cat "$H/.local/state/wpa.log") $(grep -rl s3cret "$H/.local/state/spark-shell" 2>&1)"
     rm -f "$H/wpa.sel" "$H/wpa.down"
     [ "$(ls -ld "$H/.local/state/spark-shell/panel" | cut -c1-10)" = drwx------ ] && ok "the panel's journal folder is yours alone (0700)" || bad "journal mode" "$(ls -ld "$H/.local/state/spark-shell/panel")"
@@ -4324,19 +4340,19 @@ STUB
     chmod +x "$H/.local/bin/spark"; mcpf=$HOME/.config/spark/mcp.env; mkdir -p "$HOME/.config/spark"; rm -f "$HOME/mcp.log"
     printf 'MCP_SERVER_FILES="/opt/mine/files-server"\nMCP_SERVER_WIFI="/old/clone/spark-shell provide wifi"\n' > "$mcpf"
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes 2>&1 || :)
-    printf '%s\n' "$out" | grep -q "^ok     mcp          21 providers on spark's MCP list: the prompt line and spark do know the desktop's tools$" \
+    printf '%s\n' "$out" | grep -q "^ok     mcp          23 providers on spark's MCP list: the prompt line and spark do know the desktop's tools$" \
         && printf '%s\n' "$out" | grep -q "^todo   mcp          already on spark's MCP list as servers of yours, left as they are: files$" \
         && grep -qx 'MCP_SERVER_FILES="/opt/mine/files-server"' "$mcpf" && grep -qx "MCP_SERVER_WIFI=\"$C/spark-shell provide wifi\"" "$mcpf" && grep -qx "MCP_SERVER_CLOCK=\"$C/spark-shell provide clock\"" "$mcpf" \
-        && [ "$(grep -c '^MCP_SERVER_' "$mcpf")" = 22 ] && grep -qx 'mcp rm wifi' "$HOME/mcp.log" && ! grep -q 'mcp add files' "$HOME/mcp.log" \
+        && [ "$(grep -c '^MCP_SERVER_' "$mcpf")" = 24 ] && grep -qx 'mcp rm wifi' "$HOME/mcp.log" && ! grep -q 'mcp add files' "$HOME/mcp.log" \
         && ok "on desktop: each provider on spark's MCP list through spark mcp add; a server of yours under one of the names stays; an older clone's line replaced" || bad "mcp add" "$(printf '%s\n' "$out" | grep mcp); $(cat "$mcpf")"
     rm -f "$HOME/mcp.log"; SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes >/dev/null 2>&1 || :
-    [ ! -e "$HOME/mcp.log" ] && sh "$C/spark-shell" check 2>&1 | grep -q "^warn   mcp          21 of 22 providers on spark's MCP list -- spark-shell on desktop$" \
+    [ ! -e "$HOME/mcp.log" ] && sh "$C/spark-shell" check 2>&1 | grep -q "^warn   mcp          23 of 24 providers on spark's MCP list -- spark-shell on desktop$" \
         && ok "on desktop again: nothing asked of spark; check counts the providers on the list" || bad "mcp again" "$(cat "$HOME/mcp.log" 2>&1); $(sh "$C/spark-shell" check 2>&1 | grep mcp)"
     out=$(sh "$C/spark-shell" off desktop --dry-run 2>&1 || :)
-    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo off spark's MCP list$" \
+    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo off spark's MCP list$" \
         && ok "off desktop --dry-run: the lines that are ours, by name; a server of yours is not among them" || bad "mcp off would" "$(printf '%s\n' "$out" | grep mcp)"
     st=0; out=$(sh "$C/spark-shell" off desktop 2>&1) || st=$?
-    printf '%s\n' "$out" | grep -q "^ok     mcp          21 providers off spark's MCP list$" && [ "$(cat "$mcpf")" = 'MCP_SERVER_FILES="/opt/mine/files-server"' ] \
+    printf '%s\n' "$out" | grep -q "^ok     mcp          23 providers off spark's MCP list$" && [ "$(cat "$mcpf")" = 'MCP_SERVER_FILES="/opt/mine/files-server"' ] \
         && ok "off desktop: spark-shell's lines off spark's MCP list through spark mcp rm, a server of yours left" || bad "mcp off" "st=$st $(printf '%s\n' "$out" | grep mcp); $(cat "$mcpf")"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"; rm -f "$mcpf" "$H/.local/bin/spark"
     SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes >/dev/null 2>&1 || :

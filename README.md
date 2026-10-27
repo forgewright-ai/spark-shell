@@ -1016,3 +1016,17 @@ Each folder in files has an action to open the system file manager. Native
 file operations stay there; spark-shell keeps its own browser read only.
 Opening uses the host platform, including macOS. A failed native launch is
 reported as a refusal; a launch request alone never claims a file was opened.
+
+Network rows can join a hidden network by name and a masked password. The
+password reaches the native tool on stdin. The WPA tool derives a key before
+the control command, so quotes in a password cannot change that command.
+
+Connection settings expose fixed IPv4 addresses and DNS through an active
+NetworkManager profile. Each successful change has undo; a later native edit
+or profile switch prevents stale undo from replacing it. A failed live apply
+restores the prior settings when the connection still matches our write.
+Other network managers keep ownership; their IP settings are not edited yet.
+`spark-shell desktop network` has the same controls. On a bare system, setup
+offers the distro's native network manager. An installed or configured manager
+is never replaced, including a stopped one. Native services stay installed
+and enabled when the desktop is off. No real-radio proof is claimed yet.

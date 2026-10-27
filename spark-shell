@@ -4003,6 +4003,44 @@ wifi_tool() {   # -> nmcli | iwctl | wpa_cli | nothing
     elif command -v wpa_cli >/dev/null 2>&1 && wpa_cli -i "$_i" status >/dev/null 2>&1; then echo wpa_cli
     fi
 }
+wifi_owner() {   # installed or configured native managers are never replaced
+    for _cmd in nmcli iwctl wpa_cli NetworkManager iwd wpa_supplicant dhcpcd connmand wicked; do
+        if command -v "$_cmd" >/dev/null 2>&1; then echo "$_cmd"; return; fi
+    done
+    for _file in "$ROOT"/etc/systemd/network/*.network "$ROOT"/usr/lib/systemd/network/*.network; do
+        [ ! -f "$_file" ] || { echo systemd-networkd; return; }
+    done
+    if grep -Eq '^iface[[:space:]]+[^[:space:]]+[[:space:]]+inet[[:space:]]+(dhcp|static)' "$ROOT/etc/network/interfaces" 2>/dev/null; then echo ifupdown; fi
+}
+wifi_offer() {
+    [ "$OS" != Darwin ] && [ -z "$(wifi_owner)" ] || return 1
+    case $DISTRO in
+        debian) echo network-manager ;; arch) echo networkmanager ;;
+        void|fedora|opensuse) echo NetworkManager ;; *) return 1 ;;
+    esac
+}
+wifi_setup() {
+    _package=$(wifi_offer) || { echo 'an existing native network manager keeps control; no replacement is installed'; return 1; }
+    if [ "$MODE" = dry ]; then echo "would install $_package and enable its native service"; return; fi
+    root_can || { echo 'network setup needs system permission: run spark-shell desktop network setup at a terminal'; return 1; }
+    pkg_install "$_package" || { echo 'the native network package could not be installed'; return 1; }
+    case $(init_shape) in
+        systemd) root_do systemctl enable --now NetworkManager || return 1 ;;
+        runit)
+            for _service in dbus NetworkManager; do
+                [ -d "$ROOT/etc/sv/$_service" ] || { echo "native $_service service is missing"; return 1; }
+                root_do mkdir -p "$ROOT/var/service" || return 1
+                [ -e "$ROOT/var/service/$_service" ] || root_do ln -s "$ROOT/etc/sv/$_service" "$ROOT/var/service/$_service" || return 1
+                root_do sv up "$ROOT/var/service/$_service" || return 1
+            done
+            if grep -q '^network:' "$ROOT/etc/group" 2>/dev/null && ! in_group network "$(id -un)"; then
+                root_do usermod -aG network "$(id -un)" || return 1
+                echo 'network group membership takes effect at the next login'
+            fi ;;
+        *) echo 'installed; enable NetworkManager with the native service manager'; return 1 ;;
+    esac
+    echo 'the native network manager is installed and running'
+}
 wifi_level() { _l=$(( ($1 + 100) * 2 )); [ "$_l" -ge 0 ] || _l=0; [ "$_l" -le 100 ] || _l=100; echo $(( (_l + 12) / 25 )); }   # wifi_level DBM -> 0..4
 wifi_strip() { sed 's/\x1b\[[0-9;]*m//g; s/^[ >]*//; s/ *$//'; }   # iwctl's colors and marks off
 wifi_connected() {   # -> the network in use, or nothing
@@ -4039,23 +4077,37 @@ wifi_said() { sed 's/\x1b\[[0-9;?]*[A-Za-z]//g; s/^[ >]*//; s/^Password[^:]*: */
 # A new network's password reaches the tool on its standard input, never as an argument (#62):
 # a command line is anyone's to read in /proc while it runs. nmcli takes it at its own prompt
 # (--ask), iwctl at its agent's prompt, wpa_cli as a command on stdin, with no history file.
-wifi_connect() {   # wifi_connect NAME [PASSWORD] -> one line
-    _i=$(wifi_if); _id=$(wifi_known_id "$1"); _r=''
+wifi_connect() {   # wifi_connect NAME [PASSWORD] [hidden] -> one line
+    _i=$(wifi_if); _id=$(wifi_known_id "$1"); _r=''; _hidden=${3:-}
+    _join=connect; [ "$_hidden" != hidden ] || _join=connect-hidden
     [ "$(printf '%s' "${2:-}" | tr -d '\001-\037\177')" = "${2:-}" ] || { echo "a password holds no control character, so not connected"; return 1; }   # a new line would be a second command to wpa_cli
     case $(wifi_tool) in
         nmcli) if [ -n "$_id" ]; then _o=$(nmcli con up id "$_id" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
-               elif [ -n "${2:-}" ]; then _o=$(printf '%s\n' "$2" | nmcli --ask dev wifi connect "$1" 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
-               else _o=$(nmcli dev wifi connect "$1" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }; fi ;;
-        iwctl) if [ -n "${2:-}" ]; then _o=$(printf '%s\n' "$2" | iwctl station "$_i" connect "$1" 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
-               else _o=$(iwctl station "$_i" connect "$1" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }; fi ;;
+               elif [ -n "${2:-}" ]; then _o=$(printf '%s\n' "$2" | nmcli --ask dev wifi connect "$1" ifname "$_i" hidden "$(if [ "$_hidden" = hidden ]; then echo yes; else echo no; fi)" 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
+               else _o=$(nmcli dev wifi connect "$1" ifname "$_i" hidden "$(if [ "$_hidden" = hidden ]; then echo yes; else echo no; fi)" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }; fi ;;
+        iwctl) if [ -n "${2:-}" ]; then _o=$(printf '%s\n' "$2" | iwctl station "$_i" "$_join" "$1" 2>&1) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }
+               else _o=$(iwctl station "$_i" "$_join" "$1" 2>&1 </dev/null) || { echo "could not connect to $1: $(printf '%s\n' "$_o" | wifi_said)"; return 1; }; fi ;;
         wpa_cli) if [ -z "$_id" ]; then
+                _psk=''
+                if [ -n "${2:-}" ]; then
+                    if [ "${#2}" = 64 ] && case $2 in *[!a-fA-F0-9]*) false ;; *) true ;; esac; then _psk=$2
+                    else _psk=$(printf '%s\n' "$2" | wpa_passphrase "$1" 2>/dev/null | sed -n 's/^[[:space:]]*psk=\([a-f0-9]\{64\}\)$/\1/p'); fi
+                    [ -n "$_psk" ] || { echo 'the native WPA tool could not derive a key (use an 8 to 63 character password)'; return 1; }
+                fi
                 _id=$(wpa_cli -i "$_i" add_network 2>/dev/null | tail -1)
                 case $_id in ''|*[!0-9]*) echo "could not connect to $1: wpa_cli did not add it"; return 1 ;; esac
-                wpa_cli -i "$_i" set_network "$_id" ssid "\"$1\"" >/dev/null 2>&1
-                if [ -n "${2:-}" ]; then printf 'set_network %s psk "%s"\n' "$_id" "$2" | env -u HOME wpa_cli -i "$_i" >/dev/null 2>&1   # printf is the shell's own: the password is in no process's arguments
+                _ssid=$(printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n')
+                if ! wpa_cli -i "$_i" set_network "$_id" ssid "$_ssid" 2>/dev/null | grep -q '^OK$'; then wpa_cli -i "$_i" remove_network "$_id" >/dev/null 2>&1; echo 'the native tool refused the network name'; return 1; fi
+                if [ -n "$_psk" ]; then
+                    if ! printf 'set_network %s psk %s\n' "$_id" "$_psk" | env -u HOME wpa_cli -i "$_i" 2>/dev/null | grep -q 'OK'; then wpa_cli -i "$_i" remove_network "$_id" >/dev/null 2>&1; echo 'the native tool refused the network key'; return 1; fi
+                    _psk=''
                 else wpa_cli -i "$_i" set_network "$_id" key_mgmt NONE >/dev/null 2>&1; fi
                 wpa_cli -i "$_i" enable_network "$_id" >/dev/null 2>&1
                 wpa_cli -i "$_i" save_config 2>/dev/null | grep -q OK || _r="(kept until the next boot: wpa_supplicant.conf is not writable from here)"
+            fi
+            if [ "$_hidden" = hidden ]; then
+                wpa_cli -i "$_i" set_network "$_id" scan_ssid 1 2>/dev/null | grep -q OK || { echo "could not mark $1 as hidden"; return 1; }
+                wpa_cli -i "$_i" save_config >/dev/null 2>&1 || :
             fi
             wpa_cli -i "$_i" select_network "$_id" >/dev/null 2>&1
             wpa_cli -i "$_i" enable_network all >/dev/null 2>&1   # select_network puts the other saved networks aside
@@ -4085,6 +4137,59 @@ wifi_forget() {   # wifi_forget NAME -> one line
         wpa_cli) wpa_cli -i "$_i" remove_network "$_id" >/dev/null 2>&1 && wpa_cli -i "$_i" save_config >/dev/null 2>&1 ;;
     esac || { echo "could not forget $1"; return 1; }
     echo "forgot $1"
+}
+
+# Basic network settings stay with the active native manager.
+network_action() (   # ACTION "DEVICE key=value ..." [check]
+    _action=$1; _value=$2; _check=${3:-}
+    set -f
+    # shellcheck disable=SC2086   # validated tokens; never evaluated as shell
+    set -- $_value
+    [ "$#" -ge 1 ] || { echo 'choose a native network interface'; return 1; }
+    _device=$1; shift
+    case $_action in
+        address) [ "$#" = 2 ] && case $1:$2 in address=*:gateway=*) true ;; *) false ;; esac || { echo 'address takes a prefix and gateway'; return 1; }; set -- "${1#address=}" "${2#gateway=}" ;;
+        dns) [ "$#" = 1 ] && case $1 in servers=*) true ;; *) false ;; esac || { echo 'dns takes servers'; return 1; }; set -- "${1#servers=}" ;;
+        auto|restore) [ "$#" = 0 ] || return 1 ;;
+        *) return 1 ;;
+    esac
+    if [ "$_check" = check ]; then python3 "$REPO/lib/network.py" --state "$STATE_DIR/network" --check "$_action" "$_device" "$@"; return; fi
+    if [ "$MODE" = dry ]; then echo "would change native network settings for $_device"; return; fi
+    python3 "$REPO/lib/network.py" --state "$STATE_DIR/network" "$_action" "$_device" "$@" > "$TMP/network.result" 2> "$TMP/network.error" || { cat "$TMP/network.error"; return 1; }
+    jq -r .receipt "$TMP/network.result"
+    jq -r '.undo // empty' "$TMP/network.result" > "$TMP/network.undo"
+)
+provide_network_rows() {   # SECTION DEVICE -> settings of one native connection
+    _ns=$1; _ni=$2
+    case $_ns in lan) _interfaces=$(bar_wired) ;; wifi) _interfaces=$(bar_wireless) ;; *) return 1 ;; esac
+    printf '%s\n' "$_interfaces" | grep -qxF -- "$_ni" || return 1
+    if python3 "$REPO/lib/network.py" --state "$STATE_DIR/network" show "$_ni" > "$TMP/network.show" 2> "$TMP/network.error"; then
+        jq -c --arg s "$_ns" --arg i "$_ni" '
+            .settings as $v | {title: ("network " + $i), state: "native connection settings", rows: [
+                {id: "method", text: ("IPv4 " + $v["ipv4.method"])},
+                {id: "address", text: ("address " + $v["ipv4.addresses"])},
+                {id: "gateway", text: ("gateway " + $v["ipv4.gateway"])},
+                {id: "dns", text: ("DNS " + (if $v["ipv4.ignore-auto-dns"] == "yes" then $v["ipv4.dns"] else "automatic " + $v["ipv4.dns"] end))},
+                {id: "set-address", text: "set a fixed IPv4 address", tool: {name: ($s + "_address"), arguments: {device: $i, address: "", gateway: "none"}, ask: ["address", "gateway"]}},
+                {id: "automatic", text: "use automatic IPv4 address", tool: {name: ($s + "_auto"), arguments: {device: $i}}},
+                {id: "set-dns", text: "set DNS servers", tool: {name: ($s + "_dns"), arguments: {device: $i, servers: "auto"}, ask: ["servers"]}}]} | .short = [.rows[].id]' "$TMP/network.show"
+    else jq -cn --arg i "$_ni" --arg text "$(cat "$TMP/network.error" | scrub_text)" '{title: ("network " + $i), state: $text, rows: [], short: []}'; fi
+}
+desk_network() {
+    [ "$OS" != Darwin ] || refuse 'macOS owns its network settings'
+    case ${1:-} in
+        setup)
+            if [ "$MODE" != dry ] && [ "$YES" != 1 ]; then step_yes "install the native network manager" || refuse 'network setup unchanged (use --yes to confirm)'; fi
+            wifi_setup; return ;;
+        show) [ "$#" = 2 ] || refuse 'network show takes an interface'; python3 "$REPO/lib/network.py" --state "$STATE_DIR/network" show "$2"; return ;;
+        address) [ "$#" = 4 ] || refuse 'network address takes an interface, address with prefix and gateway (or none)'; _nv="$2 address=$3 gateway=$4" ;;
+        dns) [ "$#" = 3 ] || refuse 'network dns takes an interface and servers (comma separated, or auto)'; _nv="$2 servers=$3" ;;
+        auto|restore) [ "$#" = 2 ] || refuse "network $1 takes one value"; _nv=$2 ;;
+        *) refuse 'network takes setup, show, address, auto, dns or restore' ;;
+    esac
+    network_action "$1" "$_nv" check || return 1
+    if [ "$MODE" != dry ] && [ "$YES" != 1 ]; then step_yes "change native network settings (the connection may drop)" || refuse 'network settings unchanged (use --yes to confirm)'; fi
+    panel_group_begin; panel_step lan "$1" "$_nv"; _rc=$?; panel_group_end; return "$_rc"
 }
 
 # --- bluetooth: bluetoothctl, the one tool
@@ -4307,6 +4412,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                     (.jobs[] | ["-", ("cancel job " + .id), ("cancel " + .id)] | @tsv) end' "$TMP/printers.json"
             else printf -- '-\t%s\tshow\n' "$(cat "$TMP/printers.error" | scrub_text)"; fi ;;
         lan) for i in $(bar_wired); do
+                printf -- '-\tsettings for %s\tnetwork-settings %s\n' "$i" "$i"
                 [ "$(cat "$BAR_SYS/class/net/$i/carrier" 2>/dev/null)" = 1 ] || { printf -- '-\twire %s: no carrier\tshow\n' "$i"; continue; }
                 printf -- '-\taddress %s\tshow\n' "$(bar_addr "$i")"
                 _sp=$(cat "$BAR_SYS/class/net/$i/speed" 2>/dev/null); [ -z "$_sp" ] || [ "$_sp" -le 0 ] 2>/dev/null || printf -- '-\tspeed %s Mb/s\tshow\n' "$_sp"
@@ -4314,7 +4420,13 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                 _ns=$(awk '$1 == "nameserver" {print $2; exit}' /etc/resolv.conf 2>/dev/null); [ -z "$_ns" ] || printf -- '-\tname server %s\tshow\n' "$_ns"
                 break
             done ;;
-        wifi) [ -n "$(wifi_tool)" ] || { printf -- '-\tno tool answers for wifi (nmcli, iwctl or wpa_cli)\tshow\n'; return 0; }
+        wifi) [ -n "$(wifi_tool)" ] || {
+                if _package=$(wifi_offer); then printf -- '-\tinstall the native network manager\tsetup\n'
+                else printf -- '-\tno tool answers for wifi (nmcli, iwctl or wpa_cli)\tshow\n'; fi
+                return 0
+            }
+            printf -- '-\tjoin a hidden network\thidden network\n'
+            [ -z "$(wifi_if)" ] || printf -- '-\tconnection settings\tnetwork-settings %s\n' "$(wifi_if)"
             _c=$(wifi_connected); wifi_known | cut -f2 > "$TMP/wifi.known"
             [ -z "$_c" ] || printf '%s\t%s\tdisconnect\n' "$PANEL_DOT" "$_c"
             # around: the saved ones and, unless full, the strongest three of the rest; what is left counts in a `more` row
@@ -5109,8 +5221,11 @@ look_apply() {   # a look setter's change (text size, transparency, the wallpape
 panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or why not); exit 1 when it was not done
     _p=$1; _a=$2; shift 2; _arg=$*
     case $_a in show) return 0 ;; esac
+    case $_p:$_a in lan:address|lan:auto|lan:dns|lan:restore|wifi:address|wifi:auto|wifi:dns|wifi:restore) network_action "$_a" "$_arg"; return ;; esac
     case $_p in
         wifi) case $_a in
+                setup) wifi_setup ;;
+                hidden) _pw=${PANEL_PASS:-}; [ -n "$_pw" ] || _pw=$(panel_secret "password for $_arg (empty for an open network): "); wifi_connect "$_arg" "$_pw" hidden ;;
                 connect) _sec=$(wifi_scan | awk -F '\t' -v n="$(panel_lower "$_arg")" 'tolower($1) == n && !done {print $3; done = 1}')
                     if [ -n "$(wifi_known_id "$_arg")" ] || [ "${_sec:-0}" = 0 ]; then wifi_connect "$_arg"
                     else _pw=${PANEL_PASS:-}; [ -n "$_pw" ] || _pw=$(panel_secret "password for $_arg: "); [ -n "$_pw" ] || { echo "no password given, so not connected"; return 1; }; wifi_connect "$_arg" "$_pw"; fi ;;
@@ -5314,7 +5429,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         theme:wallpaper|theme:wallpaper-picture|theme:wallpaper-color) _cur=$(wall_name); if [ -n "$_cur" ]; then printf 'wallpaper %s\twallpaper %s\n' "$_cur" "$_cur"; else printf 'wallpaper-picture %s\twallpaper %s\n' "$WALLPAPER" "${WALLPAPER##*/}"; fi ;;
         theme:theme) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
         theme:*) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
-        wifi:connect) _c=$(wifi_connected); if [ -n "$_c" ]; then printf 'connect %s\twifi %s\n' "$_c" "$_c"; else printf 'disconnect\twifi off\n'; fi ;;
+        wifi:connect|wifi:hidden) _c=$(wifi_connected); if [ -n "$_c" ]; then printf 'connect %s\twifi %s\n' "$_c" "$_c"; else printf 'disconnect\twifi off\n'; fi ;;
         wifi:disconnect) _c=$(wifi_connected); [ -z "$_c" ] || printf 'connect %s\twifi %s\n' "$_c" "$_c" ;;
         printers:default) _pd=$(printer_status_now | jq -r '.default // empty'); [ -z "$_pd" ] || [ "$_pd" = "$_arg" ] || printf 'default %s\tprevious default printer restored\n' "$_pd" ;;
         printers:pause|printers:resume)
@@ -5331,7 +5446,9 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
 }
 panel_step() {   # panel_step SECTION ACTION [ARG] -> panel_act's line; a step that worked is remembered as recent, and its inverse kept for undo
     _inv=$(panel_inverse "$@")
+    rm -f "$TMP/network.undo"
     if panel_act "$@"; then
+        if [ -s "$TMP/network.undo" ]; then _inv="restore $(cat "$TMP/network.undo")$TAB network settings restored"; fi
         case $2 in show|all|pick|chat|more|save|close|focus) ;; *) panel_recent_add "$1" "$(printf '%s' "$2${3:+ $3}${4:+ $4}${5:+ $5}" | sed 's/ *$//')" ;; esac
         [ -z "$_inv" ] || printf '%s\t%s\n' "$1" "$_inv" >> "$TMP/group"
         return 0
@@ -5489,6 +5606,16 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         pointer:*|keyboard:repeat-delay|keyboard:repeat-rate|keyboard:caps)
             if input_spec "$1" "$2" && input_valid "$input_key" "${3:-}"; then echo "$3"; return 0; fi
             echo "$1: invalid $2 value"; return 1 ;;
+        lan:address|lan:auto|lan:dns|lan:restore|wifi:address|wifi:auto|wifi:dns|wifi:restore)
+            if [ "$2" != restore ]; then
+                case $1 in lan) _ifs=$(bar_wired) ;; wifi) _ifs=$(bar_wireless) ;; esac
+                printf '%s\n' "$_ifs" | grep -qxF -- "${3%% *}" || { echo 'that interface is not here'; return 1; }
+            fi
+            network_action "$2" "${3:-}" check || return 1
+            echo "$3"; return 0 ;;
+        wifi:hidden)
+            [ -n "${3:-}" ] && [ "$(printf '%s' "$3" | wc -c)" -le 32 ] && [ "$(printf '%s' "$3" | tr -d '\001-\037\177')" = "$3" ] || { echo 'a network name is 1 to 32 bytes, without control characters'; return 1; }
+            echo "$3"; return 0 ;;
         spark:chat|undo:all|about:open) echo ''; return 0 ;;
         layout:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: save takes a name"; return 1 ;;
         layout:add) _n=$(jq -r '.suggested // [] | .[]' "$DESK_LAST" 2>/dev/null | awk -v w="$(panel_lower "$3")" 'tolower($0) == w && !d {print; d = 1}'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "layout: $3 was not suggested for the last layout"; return 1 ;;
@@ -5791,7 +5918,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -5815,6 +5942,12 @@ scrub_text() {   # stdin -> the same lines scrubbed; C0 and DEL alone where ther
 tool_spec() {
     _tp=''; _tk=''; _tq=''; _tw=''; _te=''
     case $1 in
+        lan_address|wifi_address) _ts=${1%%_*} _ta=address _tp=device _tk=string _te='address:net gateway:net' _th=df _tt="$_ts address DEVICE" _td='Set a fixed IPv4 address with prefix and gateway (or none) through the active native manager. The connection may drop.' ;;
+        lan_auto|wifi_auto) _ts=${1%%_*} _ta=auto _tp=device _tk=string _th=df _tt="$_ts auto DEVICE" _td='Use an automatic IPv4 address through the active native manager. The connection may drop.' ;;
+        lan_dns|wifi_dns) _ts=${1%%_*} _ta=dns _tp=device _tk=string _te='servers:net' _th=df _tt="$_ts dns DEVICE" _td='Set IPv4 DNS servers (comma separated), or auto for the native default.' ;;
+        lan_restore|wifi_restore) _ts=${1%%_*} _ta=restore _tp=receipt _tk=string _th=df _tt="$_ts restore RECEIPT" _td='Restore the native IPv4 settings from a network undo receipt, unless they changed since.' ;;
+        wifi_setup)        _ts=wifi _ta=setup _th=d _tt='wifi setup' _td='Install and enable the native network manager only when none is already installed or configured.' ;;
+        wifi_hidden)       _ts=wifi _ta=hidden _tp=name _tk=string _tq=password _th=if _tt='wifi hidden NAME' _td='Join a hidden network by its exact name. An empty password is an open network.' ;;
         wifi_connect)      _ts=wifi _ta=connect _tp=name _tk=string _tq=password _th=i _tt='wifi connect NAME' _td='Connect to a network around, or a saved one.' ;;
         wifi_disconnect)   _ts=wifi _ta=disconnect _th=i _tt='wifi disconnect' _td='Leave the network in use.' ;;
         wifi_forget)       _ts=wifi _ta=forget _tp=name _tk=string _th=di _tt='wifi forget NAME' _td='Forget a saved network and its password.' ;;
@@ -5949,7 +6082,7 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
                 else {type: "string", minLength: 1, maxLength: 256} end) + (if $w == "" then {} else {description: $w} end))} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)
-              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}$"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
+              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
             required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text") | .[0]]), additionalProperties: false},
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
@@ -5987,6 +6120,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 if $s == "theme" and (.tool.name // "") == "theme_save" then .tool.ask = ["name"]
                 elif $s == "theme" and .id == "theme:picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_picture", types: ($types | split(" "))}
                 elif $s == "theme" and .id == "theme:wallpaper" then .children = "spark-shell://theme/rows/wallpapers" | .tool = null
+                elif ($s == "lan" or $s == "wifi") and (.id | startswith($s + ":network-settings")) then .sign = "opens" | .children = ("spark-shell://" + $s + "/rows/network/" + (.id | split(":network-settings ")[1]))
                 elif $s == "display" and (.text | startswith("screen ")) then .sign = "opens" | .children = ("spark-shell://display/rows/screen/" + (.text | split(" ")[1]))
                 elif $s == "window" and ((.tool.name // "") | test("^window_(focus|close)$")) then .group = "open now"
                 elif $s == "window" and (((.tool.name // "") | test("^window_(split|tabs|stacked)$")) or (.id | startswith("window:show:"))) then .group = "layout"
@@ -5994,6 +6128,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif (.tool.name // "") == "layout_rename" then .tool.ask = ["to"]
                 elif (.tool.name // "") == "clock_zone" then .tool.ask = ["zone"]
                 elif (.tool.name // "") == "reminders_add" then .tool.ask = ["words"]
+                elif (.tool.name // "") == "wifi_hidden" then .tool.ask = ["name", "password"]
                 elif (.tool.name // "") == "wifi_connect" and (.tool.arguments.name as $n | $asks | index([$n])) then .tool.ask = ["password"]
                 else . end)'
 }
@@ -6157,6 +6292,11 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
                 else rpc_error "$_id" -32002 "no screen at that uri"; fi
                 return 0
             fi
+            if { [ "$sec" = lan ] || [ "$sec" = wifi ]; } && [ "$_method" = resources/read ] && case $_uri in spark-shell://"$sec"/rows/network/?*) true ;; *) false ;; esac; then
+                if provide_network_rows "$sec" "${_uri##*/}" > "$TMP/network.rows"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/network.rows")"
+                else rpc_error "$_id" -32002 "no network interface at that uri"; fi
+                return 0
+            fi
             if [ "$sec" = clock ] && [ "$_method" = resources/read ] && [ "$_uri" = "spark-shell://clock/rows/settings" ]; then
                 rpc_result "$_id" "$(provide_rows clock settings | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
             fi
@@ -6196,10 +6336,11 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif (keys - [$p, $q] - $xk - [""]) != [] then "no argument " + ((keys - [$p, $q] - $xk)[0])
         elif $p != "" and (has($p) | not) then "missing " + $p
         elif ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)][0][0])
-        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "coordinate" and .[1] != "mode" and .[1] != "port") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "coordinate" and .[1] != "mode" and .[1] != "port") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
+        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "coordinate" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "coordinate" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
         elif ([$xs[] | select(.[1] == "text" or .[1] == "name") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text" or .[1] == "name") | .[0]][0]) + " is plain text, 40 characters at most"
         elif any($xs[]; . as $e | .[1] == "coordinate" and (($a[$e[0]] | type) != "number" or $a[$e[0]] < -65535 or $a[$e[0]] > 65535 or $a[$e[0]] != ($a[$e[0]] | floor))) then "coordinates are whole numbers, -65535 to 65535"
         elif any($xs[]; . as $e | .[1] == "mode" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[0-9]{2,5}x[0-9]{2,5}$") | not))) then "mode is WIDTHxHEIGHT"
+        elif any($xs[]; . as $e | .[1] == "net" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9.,:/-]{1,80}$") | not))) then "network values are addresses, none or auto"
         elif any($xs[]; . as $e | .[1] == "port" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9_.:-]{1,80}$") | not))) then "other is a connected screen port"
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
@@ -6257,6 +6398,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     if [ "$_rc" -ne 0 ]; then provide_refuse "$1" "${_out:-$sec: $_tt did not work}"; return 0; fi
     _pal='null'   # a theme step: the palette as it is now, so the dialog repaints itself with it (its colors came in its environment at start)
     [ "$sec" != theme ] || { panel_load; _pal=$(jq -cn --arg f "$HEX_FG" --arg a "$HEX_ACCENT" --arg m "$PANEL_MUTED" --arg b "$PANEL_BG" --arg h "$PANEL_HI" --arg r "${HEX_ANSI_1:-}" --arg g "${HEX_ANSI_2:-}" '{HEX_FG: $f, HEX_ACCENT: $a, PANEL_MUTED: $m, PANEL_BG: $b, PANEL_HI: $h, HEX_ANSI_1: $r, HEX_ANSI_2: $g}'); }
+    if [ -s "$TMP/network.undo" ]; then _undo=$(tool_call_json "${sec}_restore" "$(cat "$TMP/network.undo")"); fi
     if [ -f "$TMP/opened" ]; then _sc=$(jq -cn '{opened: true}')
     else _sc=$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" '{receipt: $r} + (if $u == null then {} else {undo: $u} end) + (if $p == null then {} else {palette: $p} end)'); fi
     rpc_result "$1" "$(printf '%s' "$_sc" | jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
@@ -8121,6 +8263,7 @@ cmd_desktop() {
         keys) desk_keys; return ;;   # the template's sentences, anywhere (documentation)
         lock) theme_load 2>/dev/null || :; desk_lock; return ;;
         idle) shift; theme_load 2>/dev/null || :; desk_idle "$@"; return ;;   # the idle screen now, or off (swayidle runs both)   # a palette that will not load never keeps the lock away
+        network) shift; desk_network "$@"; return ;;
         time) shift; desk_time "$@"; return ;;
         display) shift; desk_display "$@"; return ;;
         keyboard) shift; desk_keyboard "$@"; return ;;
