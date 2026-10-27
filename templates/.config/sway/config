@@ -18,6 +18,8 @@ exec @REPO@/spark-shell desktop portals
 output * bg @WALL_BG@
 # The screens as spark-shell desktop screen set them (scale, mode, place, on or off)
 include "@SCREENS_CONF@"
+# A disconnected second screen must never leave the remaining one off.
+exec_always @REPO@/spark-shell desktop screen --ensure-visible
 # The keyboard's layouts, as spark-shell desktop keyboard set them
 @KB_LAYOUT@
 @KB_VARIANT@

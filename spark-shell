@@ -5113,6 +5113,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                     config_set DISPLAY_SAVER "$_arg" >/dev/null; DISPLAY_SAVER=$_arg; export DISPLAY_SAVER
                     echo "idle screen shows $(saver_words "$_arg")" ;;
                 brightness) light_set "$_arg" ;;
+                scale|mode|position|place|screen-on|screen-off) screen_action "$_a" "$_arg" ;;
                 *) echo "$_a is not something display does"; return 1 ;;
             esac ;;
         pointer) input_setting pointer "$_a" "$_arg" ;;
@@ -5194,6 +5195,16 @@ panel_undo() {   # the last group's inverse steps, played newest first, then for
 panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORDS" that takes the step back, or nothing when it cannot be taken back
     _p=$1; _a=$2; shift 2; _arg=$*
     case $_p:$_a in
+        display:scale|display:mode|display:position|display:place|display:screen-on|display:screen-off)
+            _name=${_arg%% *}; _row=$(screen_find "$_name"); [ -n "$_row" ] || return 0
+            _name=$(printf '%s' "$_row" | cut -f1)
+            case $_a in
+                scale) _back="scale $_name scale=$(printf '%s' "$_row" | cut -f5)" ;;
+                mode) _mode=$(printf '%s' "$_row" | cut -f4); [ -n "$_mode" ] || return 0; _back="mode $_name mode=$_mode" ;;
+                position|place) _back="position $_name x=$(printf '%s' "$_row" | cut -f6) y=$(printf '%s' "$_row" | cut -f7)" ;;
+                *) _back="screen-$(printf '%s' "$_row" | cut -f3) $_name" ;;
+            esac
+            printf '%s\t%s restored\n' "$_back" "$_name" ;;
         pointer:*|keyboard:repeat-delay|keyboard:repeat-rate|keyboard:caps)
             input_spec "$_p" "$_a" || return 0
             eval "_old=\$$input_key"
@@ -5301,6 +5312,9 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
     case $1:$2 in out:use|mic:use) SND=${SND:-$(snd_tool)}; if [ "$SND" = alsa ] && _tf=$(al_theirs); then echo "$(al_theirs_said "$_tf"): spark-shell leaves it to that file"; return 1; fi ;; esac   # your own file picks the device: said, not "not on the panel"
     if ! panel_section_ok "$1" || [ "$1" = glance ] || [ "$1" = chat ]; then if [ -n "$1" ]; then echo "no $1 here"; else echo "a step with no section"; fi; return 1; fi
     case $1:$2 in
+        display:scale|display:mode|display:position|display:place|display:screen-on|display:screen-off)
+            screen_action "$2" "${3:-}" check || return 1
+            printf '%s\n' "$3"; return 0 ;;
         pointer:*|keyboard:repeat-delay|keyboard:repeat-rate|keyboard:caps)
             if input_spec "$1" "$2" && input_valid "$input_key" "${3:-}"; then echo "$3"; return 0; fi
             echo "$1: invalid $2 value"; return 1 ;;
@@ -5606,7 +5620,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -5676,6 +5690,12 @@ tool_spec() {
         display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=i _tt='display lock N' _td='Lock the screen and turn the display off after N idle minutes; 0 never.' ;;
         display_saver)     _ts=display _ta=saver _tp=name _tk="clock|$(printf '%s' "$SAVER_NAMES" | tr ' ' '|')" _th=i _tt='display saver NAME' _td='What the idle screen shows: the clock alone, or an animation behind it.' ;;
         display_brightness) _ts=display _ta=brightness _tp=level _tk=bright _th=if _tt='display brightness N' _td='Set the screen brightness, 1 to 100, or up or down a step.' ;;
+        display_scale) _ts=display _ta=scale _tp=screen _tk=string _te='scale:0.5|0.75|1|1.25|1.5|1.75|2|2.5|3' _th=if _tt='screen scale' _td='Set the scale on one connected screen; larger means larger text.' ;;
+        display_mode) _ts=display _ta=mode _tp=screen _tk=string _te='mode:mode' _th=if _tt='screen mode' _td='Set one of the resolutions offered by the connected screen.' ;;
+        display_position) _ts=display _ta=position _tp=screen _tk=string _te='x:coordinate y:coordinate' _th=if _tt='screen position' _td='Place a connected screen at absolute layout coordinates.' ;;
+        display_place) _ts=display _ta=place _tp=screen _tk=string _te='side:left-of|right-of|above|below other:port' _th=if _tt='screen arrangement' _td='Place a connected screen beside another active screen.' ;;
+        display_on) _ts=display _ta=screen-on _tp=screen _tk=string _th=if _tt='screen on' _td='Enable a connected screen now and at the next login.' ;;
+        display_off) _ts=display _ta=screen-off _tp=screen _tk=string _th=if _tt='screen off' _td='Disable a connected screen now and at the next login; the last active screen stays on.' ;;
         keyboard_use)      _ts=keyboard _ta=use _tp=name _tk=string _th=i _tt='keyboard use NAME' _td='Type in another of the keyboard layouts.' ;;
         pointer_tap)       _ts=pointer _ta=tap _tp=state _tk='on|off' _th=if _tt='pointer tap STATE' _td='Enable or disable tap to click on touchpads.' ;;
         pointer_scroll)    _ts=pointer _ta=scroll _tp=state _tk='on|off' _th=if _tt='pointer scroll STATE' _td='Set natural scrolling for mouse and touchpad.' ;;
@@ -5726,7 +5746,7 @@ action_tool() {   # action_tool SECTION "ACTION [ARG]" -> sets _tool and _tv, th
 tool_call_json() {   # tool_call_json TOOL VALUE [LINE] -> {"name", "arguments", "line"}: VALUE under the tool's argument, typed as its kind (bright stays text, its schema's type)
     tool_spec "$1" || return 1
     jq -cn --arg n "$1" --arg p "$_tp" --arg k "$_tk" --arg v "$2" --arg l "${3:-}" --arg x "$_te" \
-        '{name: $n, arguments: (if $p == "" then {} elif $x != "" then (($v | split(" ")) as $ws | {($p): $ws[0]} + ([$ws[1:][] | select(. != "") | split("=") | {(.[0]): .[1]}] | add // {}))
+        '{name: $n, arguments: (if $p == "" then {} elif $x != "" then (($v | split(" ")) as $ws | {($p): $ws[0]} + ([$ws[1:][] | select(. != "") | split("=") | {(.[0]): (if .[0] == "x" or .[0] == "y" then (.[1] | tonumber) else .[1] end)}] | add // {}))
             elif ($k == "level" or $k == "alpha" or $k == "minutes" or $k == "speed" or $k == "delay") then {($p): ($v | tonumber? // $v)} else {($p): $v} end)} + (if $l == "" then {} else {line: $l} end)'
 }
 # bright is one string enum, up, down and the numbers as text: spark's
@@ -5749,7 +5769,7 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
                 else {type: "string", minLength: 1, maxLength: 256} end) + (if $w == "" then {} else {description: $w} end))} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)
-              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
+              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}$"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
             required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text") | .[0]]), additionalProperties: false},
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
@@ -5786,6 +5806,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 if $s == "theme" and (.tool.name // "") == "theme_save" then .tool.ask = ["name"]
                 elif $s == "theme" and .id == "theme:picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_picture", types: ($types | split(" "))}
                 elif $s == "theme" and .id == "theme:wallpaper" then .children = "spark-shell://theme/rows/wallpapers" | .tool = null
+                elif $s == "display" and (.text | startswith("screen ")) then .sign = "opens" | .children = ("spark-shell://display/rows/screen/" + (.text | split(" ")[1]))
                 elif $s == "window" and ((.tool.name // "") | test("^window_(focus|close)$")) then .group = "open now"
                 elif $s == "window" and (((.tool.name // "") | test("^window_(split|tabs|stacked)$")) or (.id | startswith("window:show:"))) then .group = "layout"
                 elif (.tool.name // "") == "layout_save" then .tool.ask = ["name"]
@@ -5928,6 +5949,11 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
             if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/wallpapers" ] && [ "$_method" = resources/read ]; then   # the wallpaper list, opened from the theme's wallpaper row
                 rpc_result "$_id" "$(provide_wall_rows | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
             fi
+            if [ "$sec" = display ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://display/rows/screen/?*) true ;; *) false ;; esac; then
+                if provide_screen_rows "${_uri##*/}" > "$TMP/screen.json"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/screen.json")"
+                else rpc_error "$_id" -32002 "no screen at that uri"; fi
+                return 0
+            fi
             [ "$_uri" = "spark-shell://$sec/rows" ] || { rpc_error "$_id" -32002 "no resource at that uri"; return 0; }
             case $_method in
                 resources/read) provide_rows "$sec" | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' > "$TMP/read.json"
@@ -5964,8 +5990,11 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif (keys - [$p, $q] - $xk - [""]) != [] then "no argument " + ((keys - [$p, $q] - $xk)[0])
         elif $p != "" and (has($p) | not) then "missing " + $p
         elif ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)][0][0])
-        elif ([$xs[] | select(.[1] != "text" and .[1] != "name") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
+        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "coordinate" and .[1] != "mode" and .[1] != "port") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "coordinate" and .[1] != "mode" and .[1] != "port") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
         elif ([$xs[] | select(.[1] == "text" or .[1] == "name") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text" or .[1] == "name") | .[0]][0]) + " is plain text, 40 characters at most"
+        elif any($xs[]; . as $e | .[1] == "coordinate" and (($a[$e[0]] | type) != "number" or $a[$e[0]] < -65535 or $a[$e[0]] > 65535 or $a[$e[0]] != ($a[$e[0]] | floor))) then "coordinates are whole numbers, -65535 to 65535"
+        elif any($xs[]; . as $e | .[1] == "mode" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[0-9]{2,5}x[0-9]{2,5}$") | not))) then "mode is WIDTHxHEIGHT"
+        elif any($xs[]; . as $e | .[1] == "port" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9_.:-]{1,80}$") | not))) then "other is a connected screen port"
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
         elif $k == "bright" then (if ((.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 1 and .[$p] <= 100) or ((.[$p] | type) == "string" and (.[$p] | test("^(up|down|[1-9][0-9]?|100)$"))) then "" else $p + " is up, down or a whole number, 1 to 100" end)
@@ -8117,6 +8146,35 @@ desk_keyboard() {   # desk_keyboard [next | LAYOUT...]
 # which the sway template includes. A change is sway's at once and the
 # file's for the next start. The last screen on is never turned off.
 SCREENS_CONF=$CONFIG_DIR/screens.conf
+screen_action() (   # ACTION encoded-arguments [check]
+    action=$1; value=$2; check=${3:-}
+    set -f; set -- $value
+    [ "$#" -ge 1 ] || { echo "a screen is required"; exit 1; }
+    name=$1; shift
+    printf '%s\n' "$name" | grep -qE '^[A-Za-z0-9_.:-]{1,80}$' && [ -n "$(screen_find "$name")" ] || { echo "no connected screen $name"; exit 1; }
+    case $action in
+        scale) [ "$#" = 1 ] && case $1 in scale=0.5|scale=0.75|scale=1|scale=1.25|scale=1.5|scale=1.75|scale=2|scale=2.5|scale=3) true ;; *) false ;; esac || exit 1; set -- scale "${1#*=}" ;;
+        mode) [ "$#" = 1 ] && printf '%s\n' "$1" | grep -qE '^mode=[0-9]{2,5}x[0-9]{2,5}$' || exit 1; set -- mode "${1#*=}" ;;
+        position) [ "$#" = 2 ] && printf '%s\n' "$1 $2" | grep -qE '^x=-?[0-9]{1,5} y=-?[0-9]{1,5}$' || exit 1; set -- position "${1#*=}" "${2#*=}" ;;
+        place) [ "$#" = 2 ] && printf '%s\n' "$1 $2" | grep -qE '^side=(left-of|right-of|above|below) other=[A-Za-z0-9_.:-]{1,80}$' || exit 1; set -- "${1#*=}" "${2#*=}" ;;
+        screen-on|screen-off) [ "$#" = 0 ] || exit 1; set -- "${action#screen-}" ;;
+        *) exit 1 ;;
+    esac
+    [ "$check" != check ] || exit 0
+    desk_screen "$name" "$@"
+)
+provide_screen_rows() {   # connected screen choices, all through the same typed tools
+    printf '%s\n' "$1" | grep -qE '^[A-Za-z0-9_.:-]{1,80}$' || return 1
+    screens_json | jq -ce --arg n "$1" '
+        . as $screens | [.[] | select(.name == $n)][0] | select(. != null) | . as $screen |
+        def row($key; $text; $args; $group): {id: ($n + ":" + $key + ":" + ($args | tojson)), sign: "blank", text: $text, tool: {name: ("display_" + $key), arguments: ({screen: $n} + $args)}, more: [], columns: [], children: null, group: $group};
+        [row((if .active then "off" else "on" end); (if .active then "turn off" else "turn on" end); {}; "power")]
+        + ["0.5", "0.75", "1", "1.25", "1.5", "1.75", "2", "2.5", "3" | row("scale"; ("scale " + .); {scale: .}; "scale")]
+        + [($screen.modes // [] | map("\(.width)x\(.height)") | unique)[] | row("mode"; .; {mode: .}; "resolution")]
+        + [$screens[] | select(.name != $n and .active) | .name as $other | ["left-of", "right-of", "above", "below"][] | row("place"; (. + " " + $other); {side: ., other: $other}; "arrangement")]
+        | {title: $n, state: ($screen.model // ""), rows: ., short: []}'
+}
+
 screens_json() { swaymsg -t get_outputs 2>/dev/null || echo '[]'; }
 screen_rows() {   # -> NAME<tab>ID<tab>ON<tab>MODE<tab>SCALE<tab>X<tab>Y<tab>W<tab>H<tab>MODEL per screen (W, H: its place in layout pixels)
     screens_json | jq -r '.[] | [.name, ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")), (if .active then "on" else "off" end),
@@ -8125,7 +8183,7 @@ screen_rows() {   # -> NAME<tab>ID<tab>ON<tab>MODE<tab>SCALE<tab>X<tab>Y<tab>W<t
 screen_find() { screen_rows | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($1) == n || (n != "" && index(tolower($2), n) > 0) { print; exit }'; }   # screen_find NAME -> its row: by the port's name, or words of its make and model
 screen_save() {   # screen_save ID WORDS -- the screen's line of that kind (scale, mode, position, on or off) in screens.conf, every other kept
     mkdir -p "$CONFIG_DIR"
-    _kd=${2%% *}
+    _kd=${2%% *}; case $_kd in enable|disable) _kd="enable disable" ;; esac
     { [ -f "$SCREENS_CONF" ] && grep -v '^# rendered' "$SCREENS_CONF" | while IFS= read -r _ln; do
             _drop=''; for _k in $_kd; do case $_ln in "output \"$1\" $_k"|"output \"$1\" $_k "*) _drop=1 ;; esac; done
             [ -n "$_drop" ] || printf '%s\n' "$_ln"
@@ -8135,6 +8193,13 @@ screen_save() {   # screen_save ID WORDS -- the screen's line of that kind (scal
 desk_screen() {   # desk_screen [NAME [scale N | mode WxH | on | off | left-of|right-of|above|below OTHER]]
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own display settings"
     desk_in_sway || refuse "changes the desktop's screens: run it inside it"
+    if [ "${1:-}" = --ensure-visible ]; then
+        if [ "$(screens_json | jq '[.[] | select(.active)] | length')" = 0 ]; then
+            _first=$(screens_json | jq -r '.[0].name // empty')
+            [ -z "$_first" ] || desk_screen "$_first" on
+        fi
+        return 0
+    fi
     if [ -z "${1:-}" ]; then
         screen_rows | while IFS="$TAB" read -r n id on m sc x y w h _mo; do
             if [ "$on" = on ]; then echo "$n  ${id:-a screen}  $m  scale $sc  at $x,$y"; else echo "$n  ${id:-a screen}  off"; fi
@@ -8148,11 +8213,14 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | on | off | left-of|r
             _cmd="scale $3"; _said="$_n scale $3" ;;
         mode) screens_json | jq -e --arg n "$_n" --arg m "${3:-}" '.[] | select(.name == $n) | .modes[] | select("\(.width)x\(.height)" == $m)' >/dev/null 2>&1 || refuse "$_n has no mode ${3:-}: $(screens_json | jq -r --arg n "$_n" '[.[] | select(.name == $n) | .modes[] | "\(.width)x\(.height)"] | unique | join(", ")')"
             _cmd="mode ${3}"; _said="$_n $3" ;;
-        on) _cmd=enable; _said="$_n on" ;;   # on and off hold until sway starts again: a screen kept off could leave a later start with none
+        on) _cmd=enable; _said="$_n on" ;;
         off) [ "$(screen_rows | awk -F '\t' '$3 == "on"' | grep -c .)" -gt 1 ] || refuse "$_n is the only screen on: it stays on"
-            _cmd=disable; _said="$_n off until the desktop starts again" ;;
+            _cmd=disable; _said="$_n off" ;;
+        position) printf '%s\n' "${3:-}" "${4:-}" | awk 'BEGIN {ok=1} !/^-?[0-9]+$/ || $0 < -65535 || $0 > 65535 {ok=0} END {exit !ok}' || refuse "position takes two whole coordinates, -65535 to 65535"
+            _cmd="position $3 $4"; _said="$_n at $3,$4" ;;
         left-of|right-of|above|below)
             _o=$(screen_find "${3:-}"); [ -n "$_o" ] || refuse "no screen named ${3:-} (spark-shell desktop screen lists them)"
+            [ "$(printf '%s' "$_o" | cut -f3)" = on ] || refuse "the other screen is off"
             [ "$(printf '%s' "$_o" | cut -f1)" != "$_n" ] || refuse "a screen is not placed beside itself"
             # shellcheck disable=SC2046   # six numbers, split on purpose
             set -- "$2" $(printf '%s' "$_o" | cut -f6-9) $(printf '%s' "$_r" | cut -f8-9)   # SIDE OX OY OW OH W H
@@ -8161,7 +8229,7 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | on | off | left-of|r
         *) refuse "screen NAME takes scale N, mode WxH, on, off, or left-of, right-of, above or below another screen" ;;
     esac
     swaymsg -- output "\"$_id\"" "$_cmd" >/dev/null 2>&1 || swaymsg -- output "$_n" "$_cmd" >/dev/null 2>&1 || refuse "sway refused: output $_n $_cmd"
-    case $_cmd in enable|disable) ;; *) screen_save "$_id" "$_cmd" ;; esac
+    screen_save "$_id" "$_cmd"
     echo "$_said"
 }
 

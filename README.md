@@ -982,3 +982,8 @@ The suite runs in a throwaway HOME. It checks the docs and help too:
 - Capitals only for acronyms and placeholders (`NAME`, `PATH`).
 
 MIT licence (LICENSE). Credits in CREDITS.md. Built with Claude.
+
+Display rows open the connected screen's scales, resolutions and arrangement.
+Each change has undo. A screen kept off stays off at login; the last active
+screen cannot be switched off. If the connected screens change and all are
+off, the desktop enables the first connected screen.

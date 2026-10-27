@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Display rows open each screen's native choices: scale, resolution,
+  arrangement and power, all with undo. On and off persist across login;
+  the last active screen stays on, and login recovers an all-off layout.
+
 - A click on a dialog key chip takes the same action as the key. The
   Calendar's arrow chip moves each way; destructive steps still need yes.
 - The login address walk checks each pointer through an optional reference.

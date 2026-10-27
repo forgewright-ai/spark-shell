@@ -2814,10 +2814,42 @@ SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 scale 1 >/d
     && [ "$(grep -c 'T24i-30' "$HOME/.config/spark-shell/screens.conf")" = 2 ] && grep -qxF 'output "Lenovo Group Limited T24i-30 V30A1" scale 1' "$HOME/.config/spark-shell/screens.conf" \
     && ok "desktop screen left-of: placed by the other's edge; the file keeps one line per kind (the scale replaced, the place kept)" || bad "screen place" "rc=$rc $out $(cat "$HOME/.config/spark-shell/screens.conf")"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 off 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$out" = 'eDP-1 off until the desktop starts again' ] && grep -qxF -- '-- output "BOE 0x0BCA Unknown" disable' "$HOME/swaymsg.log" && ! grep -q 'disable' "$HOME/.config/spark-shell/screens.conf" \
-    && ok "desktop screen off: sway's at once, by sway's own name (Unknown for no serial), never kept (a later start never comes up with no screen)" || bad "screen off" "rc=$rc $out $(cat "$HOME/.config/spark-shell/screens.conf")"
+[ "$rc" = 0 ] && [ "$out" = 'eDP-1 off' ] && grep -qxF -- '-- output "BOE 0x0BCA Unknown" disable' "$HOME/swaymsg.log" && grep -q 'disable' "$HOME/.config/spark-shell/screens.conf" \
+    && ok "desktop screen off: applied and saved for the next login" || bad "screen off" "rc=$rc $out $(cat "$HOME/.config/spark-shell/screens.conf")"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 mode 800x600 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: eDP-1 has no mode 800x600: 1280x720, 1920x1080' ] && ok "desktop screen mode: a mode the screen lacks refused, naming those it has" || bad "screen mode" "rc=$rc $out"
+# The same settings through MCP, including the undo receipt and children.
+screen_mcp() {
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}' "$1" | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide display 2>/dev/null | jq -c 'select(.id == 2)'
+}
+j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://display/rows"}}')
+printf '%s' "$j" | jq -e '.result.contents[0].text | fromjson | any(.rows[]; .children == "spark-shell://display/rows/screen/HDMI-A-1")' >/dev/null     && ok "display: each screen opens its choices" || bad "display child" "$j"
+j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://display/rows/screen/HDMI-A-1"}}')
+printf '%s' "$j" | jq -e '.result.contents[0].text | fromjson | any(.rows[]; .tool.name == "display_mode" and .tool.arguments.mode == "1920x1080") and any(.rows[]; .tool.name == "display_place" and .tool.arguments.other == "eDP-1")' >/dev/null     && ok "display: native modes and connected neighbors are offered" || bad "display choices" "$j"
+j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"display_scale","arguments":{"screen":"HDMI-A-1","scale":"1.5"}}}')
+printf '%s' "$j" | jq -e '.result.isError == false and .result.structuredContent.undo == {name:"display_scale",arguments:{screen:"HDMI-A-1",scale:"1"}}' >/dev/null     && ok "display: scale runs through the native action with its prior value as undo" || bad "display scale tool" "$j"
+j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"display_position","arguments":{"screen":"HDMI-A-1","x":-100,"y":200}}}')
+printf '%s' "$j" | jq -e '.result.isError == false and .result.structuredContent.undo.arguments == {screen:"HDMI-A-1",x:1920,y:0}' >/dev/null     && ok "display: absolute placement has typed coordinates and undo" || bad "display position tool" "$j"
+before=$(cksum < "$HOME/swaymsg.log")
+j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"display_position","arguments":{"screen":"HDMI-A-1","x":"0; exec bad","y":0}}}')
+printf '%s' "$j" | jq -e '.error.code == -32602' >/dev/null && [ "$before" = "$(cksum < "$HOME/swaymsg.log")" ]     && ok "display: invalid coordinate text is refused before a native call" || bad "display invalid coordinate" "$j"
+SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 on >/dev/null
+! grep -q 'disable' "$HOME/.config/spark-shell/screens.conf" && grep -q 'enable' "$HOME/.config/spark-shell/screens.conf"     && ok "display: on replaces a saved off, with no conflicting power line" || bad "display saved power"
+# A single active screen stays on; a login with none recovers one.
+mkdir -p "$H/screens-one"
+cat > "$H/screens-one/swaymsg" <<'SCREEN_STUB'
+#!/bin/sh
+case "$*" in
+    '-t get_version') echo '{}' ;;
+    '-t get_outputs') printf '[{"name":"HDMI-A-1","make":"Test","model":"Screen","serial":"1","active":%s,"scale":1,"rect":{"x":0,"y":0,"width":1920,"height":1080},"current_mode":{"width":1920,"height":1080},"modes":[]}]\n' "${SCREEN_ACTIVE:-true}" ;;
+    *) echo "$*" >> "$HOME/one-screen.log" ;;
+esac
+SCREEN_STUB
+chmod +x "$H/screens-one/swaymsg"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/screens-one:$H/lx:$PATH" sh "$SH" desktop screen HDMI-A-1 off 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ ! -e "$H/one-screen.log" ] && ok "display: the last active screen cannot be disabled" || bad "display last screen" "$out"
+SCREEN_ACTIVE=false SWAYSOCK=$H/sock PATH="$H/screens-one:$H/lx:$PATH" sh "$SH" desktop screen --ensure-visible >/dev/null
+grep -q 'enable' "$H/one-screen.log" && ok "display: login recovers an all-off set of connected screens" || bad "display recovery"
 # two screens with one name (no serial, the same model): each by its port, never both at once
 sed -i.bak 's/"make":"BOE","model":"0x0BCA","serial":""/"make":"Lenovo Group Limited","model":"T24i-30","serial":"V30A1"/' "$H/lx/swaymsg"; rm -f "$H/lx/swaymsg.bak" "$HOME/swaymsg.log"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 scale 2 2>&1) || rc=$?
@@ -3902,7 +3934,7 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 82 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+[ "$(grep -c '' "$H/tools.all")" = 88 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
     && ok "provide: the twenty-three sections hold the 82 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
