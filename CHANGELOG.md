@@ -4,6 +4,8 @@
 
 - Battery details on macOS read the native power status and time estimate.
   A laptop no longer reports no battery because Linux files are absent.
+- A closed output pipe now runs cleanup, including the first bar header.
+  Temporary folders and the bar PID file no longer remain after that exit.
 
 - Display rows open each screen's native choices: scale, resolution,
   arrangement and power, all with undo. On and off persist across login;

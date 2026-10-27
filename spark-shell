@@ -720,6 +720,7 @@ spark_bin() {   # -> spark's path, or nothing: PATH, then ~/.local/bin (a non-lo
 TMP=$(mktemp -d)
 PULSE=''
 trap 'rm -rf "$TMP"; [ -z "$PULSE" ] || kill "$PULSE" 2>/dev/null' EXIT
+trap 'exit 141' PIPE   # dash otherwise skips EXIT when a caller closes stdout
 trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # a signal ends it through the EXIT trap: TMP never stays behind (#37)
 
 # -------------------------------------------------------------- packages
@@ -3718,11 +3719,11 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
     if [ "${1:-}" = --once ]; then bar_line | sed 's/,$//'; return 0; fi
     command -v jq >/dev/null 2>&1 || echo "spark-shell bar status: jq is not installed, so the bar takes no clicks (spark-shell on)" >&2
     mkdir_private "$STATE_DIR"; printf '%s\n' "$$" > "$BAR_PID"
-    printf '{"version":1,"click_events":true}\n[\n'
     # the traps first: the reader's first SIGUSR1 may come before it is read here
     reader=''; sleeper=''
     trap 'kill ${reader:-} ${sleeper:-} 2>/dev/null || :; rm -f "$BAR_PID"; exit 0' INT TERM HUP PIPE   # || : -- a failing kill inside a trap would end the shell under set -e
     trap 'redraw=1; kill ${sleeper:-} 2>/dev/null || :' USR1   # redraw: a click while a line is drawn draws again at once
+    printf '{"version":1,"click_events":true}\n[\n'
     exec 3<&0; bar_clicks <&3 &   # an explicit stdin: a background job's own would be /dev/null in dash (POSIX)
     reader=$!
     _ts=$(theme_sum); _bp=$({ cksum < "$BAR_PALETTE"; } 2>/dev/null || :); _line=''
