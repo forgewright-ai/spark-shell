@@ -1649,3 +1649,98 @@ fn asks_for(j: &Job, words: &str) -> bool {
         _ => false,
     }
 }
+
+#[test]
+fn native_pairing_is_bound_to_the_running_native_provider_and_never_echoes_codes() {
+    use spark_dialog::app::{Step, Who};
+    use spark_dialog::model::Call;
+    for (native, active) in [(true, true), (false, true), (true, false)] {
+        let (mut app, rx, tx) = app_with(&["bt"]);
+        app.cfg.spark_shell = "/test/spark-shell".into();
+        let replies = Arc::new(Mutex::new(Vec::new()));
+        let saved = replies.clone();
+        let mut server = stub(0, "bt", Box::new(move |v, _| saved.lock().unwrap().push(v.clone())), tx);
+        server.argv = vec![
+            if native { "/test/spark-shell" } else { "/test/unrelated" }.into(),
+            "provide".into(),
+            "bt".into(),
+        ];
+        app.servers.push(server);
+        if active {
+            app.running = Some((
+                0,
+                7,
+                Step {
+                    prov: 0,
+                    call: Call {
+                        name: "bt_pair".into(),
+                        arguments: json!({"name": "Buds"}).as_object().unwrap().clone(),
+                        ask: vec![],
+                    },
+                    who: Who::Person,
+                    line: "bt pair Buds".into(),
+                },
+                0,
+            ));
+        }
+        app.incoming(Incoming::Msg(
+            0,
+            json!({"jsonrpc": "2.0", "id": "bt-pair-1", "method": "spark-shell/pairing", "params": {"kind": "pin", "message": "device PIN"}}),
+        ));
+        if native && active {
+            assert!(matches!(app.mode, Mode::Pair { .. }));
+            typed(&mut app, "aB12");
+            app.enter();
+            assert!(!app.exchange.iter().any(|line| line.text.contains("aB12")));
+        } else {
+            assert_eq!(app.mode, Mode::Normal);
+        }
+        assert!(pump(&mut app, &rx, |_| !replies.lock().unwrap().is_empty()));
+        let reply = replies.lock().unwrap()[0].clone();
+        assert_eq!(reply["result"]["action"], if native && active { "accept" } else { "decline" });
+        if native && active {
+            assert_eq!(reply["result"]["content"]["answer"], "aB12");
+            app.incoming(Incoming::Msg(
+                0,
+                json!({"id": "bt-pair-display", "method": "spark-shell/pairing", "params": {"kind": "display", "message": "Type 000042 on the device"}}),
+            ));
+            app.enter();
+            assert!(matches!(&app.mode, Mode::Pair { kind, .. } if kind == "display"));
+            app.incoming(Incoming::Msg(
+                0,
+                json!({"id": "bt-pair-dismiss", "method": "spark-shell/pairing", "params": {"kind": "dismiss"}}),
+            ));
+            assert_eq!(app.mode, Mode::Normal);
+            assert!(app.running.is_some());
+        }
+    }
+}
+
+#[test]
+fn native_pairing_confirmation_is_boolean_and_a_dead_provider_clears_its_prompt() {
+    let (mut app, rx, tx) = app_with(&["bt"]);
+    let replies = Arc::new(Mutex::new(Vec::new()));
+    let saved = replies.clone();
+    app.servers.push(stub(0, "bt", Box::new(move |v, _| saved.lock().unwrap().push(v.clone())), tx));
+    app.mode = Mode::Pair {
+        prov: 0,
+        id: json!("bt-pair-2"),
+        message: "device shows 123456".into(),
+        kind: "confirm".into(),
+    };
+    typed(&mut app, "yes");
+    app.enter();
+    assert!(pump(&mut app, &rx, |_| !replies.lock().unwrap().is_empty()));
+    assert_eq!(replies.lock().unwrap()[0]["result"]["content"]["answer"], true);
+    app.mode = Mode::Pair {
+        prov: 0,
+        id: json!("bt-pair-3"),
+        message: "PIN".into(),
+        kind: "pin".into(),
+    };
+    typed(&mut app, "1234");
+    app.incoming(Incoming::Gone(0, "closed".into()));
+    assert_eq!(app.mode, Mode::Normal);
+    assert!(app.input.is_empty());
+    assert!(!app.exchange.iter().any(|line| line.text.contains("1234")));
+}

@@ -937,6 +937,7 @@ desktop_apply() {
     desktop_look_apply
     seat_apply
     sound_apply
+    bt_apply
     light_apply
     storage_apply
     power_apply
@@ -3254,7 +3255,7 @@ cmd_check() {
     elif line=$(REM_LOOK=1 bar_status --once 2>/dev/null) && printf '%s' "$line" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
         chk top ok "the bar draws $(printf '%s' "$line" | jq -r '[.[] | select(.name != "div" and .name != "logo") | .name] | unique | join(", ")')"
     else chk top fail "spark-shell bar status draws nothing" "spark-shell on"; fi
-    if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then sound_check; notify_check; portal_check; storage_check; power_check; fi
+    if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then sound_check; notify_check; portal_check; bt_check; storage_check; power_check; fi
     [ "$fails" = 0 ]
 }
 
@@ -4074,6 +4075,40 @@ wifi_forget() {   # wifi_forget NAME -> one line
 }
 
 # --- bluetooth: bluetoothctl, the one tool
+bt_running() {
+    if command -v dbus-send >/dev/null 2>&1; then
+        dbus-send --system --print-reply --reply-timeout=2000 --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner string:org.bluez 2>/dev/null | grep -q 'boolean true'
+    else pgrep -x bluetoothd >/dev/null 2>&1; fi
+}
+bt_check() {
+    if ! command -v bluetoothctl >/dev/null 2>&1; then chk bluetooth warn "bluez is not installed" "spark-shell on desktop"
+    elif ! bt_running; then chk bluetooth warn "bluetoothd is not running" "spark-shell on desktop"
+    elif ! python3 -c 'import dbus; from gi.repository import GLib' >/dev/null 2>&1; then chk bluetooth warn "pairing needs the native Python D-Bus bindings" "spark-shell on desktop"
+    else chk bluetooth ok "bluetoothd runs; native pairing questions are available"; fi
+}
+bt_apply() {   # use the distribution's shared native services, never our own daemon
+    command -v bluetoothctl >/dev/null 2>&1 || { skip bluetooth "bluez is not installed yet"; return; }
+    if [ "$(init_shape)" = systemd ]; then
+        if systemctl is-enabled bluetooth >/dev/null 2>&1 && systemctl is-active bluetooth >/dev/null 2>&1; then ok bluetooth "the native service is enabled and running"; return; fi
+        need bluetooth "enable and start the native bluetooth service (sudo)" && seat_root on bluetooth || return 0
+        root_do systemctl enable --now bluetooth || { row todo bluetooth "the native service could not start"; acting=0; return; }
+    elif [ "$(init_shape)" = runit ]; then
+        for _svc in dbus bluetoothd; do
+            [ -d "$ROOT/etc/sv/$_svc" ] || { row todo bluetooth "the native $_svc service is missing"; continue; }
+            if [ ! -e "$ROOT/var/service/$_svc" ]; then
+                need bluetooth "enable the native $_svc service (sudo)" && seat_root on bluetooth || continue
+                root_do mkdir -p "$ROOT/var/service" && root_do ln -s "$ROOT/etc/sv/$_svc" "$ROOT/var/service/$_svc" || return 1
+            fi
+            [ "$MODE" = dry ] || root_do sv up "$ROOT/var/service/$_svc" || return 1
+        done
+        if grep -q '^bluetooth:' "$ROOT/etc/group" 2>/dev/null && ! in_group bluetooth "$(id -un)"; then
+            need bluetooth "add $(id -un) to the native bluetooth group (sudo; next login)" && seat_root on bluetooth || return 0
+            root_do usermod -aG bluetooth "$(id -un)" || return 1
+        fi
+    else skip bluetooth "enable bluetoothd with the system service manager"; return; fi
+    ok bluetooth "the native services are enabled; shared services stay when the desktop is off"
+}
+
 bt_powered() { bar_timeout bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; }
 bt_list() { panel_cache bt.list 30 bt_list_now; }   # -> MAC<tab>NAME<tab>PAIRED<tab>CONNECTED per device bluez knows; kept for half a minute
 bt_list_now() {
@@ -4089,13 +4124,16 @@ bt_list_now() {
 bt_mac() { bt_list | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($2) == n && !done { print $1; done = 1 }'; }   # bt_mac NAME -> its address, or nothing (the whole list read: no broken pipe)
 bt_act() {   # bt_act connect|disconnect|pair NAME | scan | power on|off -> one line; the device list is read afresh after
     panel_forget bt.list
+    bt_running || { echo "bluetoothd is not running (spark-shell on desktop)"; return 1; }
     case $1 in
-        connect|disconnect|pair)
+        connect|disconnect|pair|remove)
             _m=$(bt_mac "$2"); [ -n "$_m" ] || { echo "no device named $2"; return 1; }
             case $1 in
                 connect) bar_timeout bluetoothctl connect "$_m" 2>&1 | grep -q 'successful' && echo "connected $2" || { echo "could not connect $2 (is it on, and near?)"; return 1; } ;;
                 disconnect) bar_timeout bluetoothctl disconnect "$_m" 2>&1 | grep -q 'Successful' && echo "disconnected $2" || { echo "could not disconnect $2"; return 1; } ;;
-                pair) timeout 25 bluetoothctl pair "$_m" 2>&1 | grep -q 'Pairing successful' || { echo "could not pair $2 (put it in pairing mode, then try again)"; return 1; }
+                remove) bar_timeout bluetoothctl remove "$_m" 2>&1 | grep -q 'removed' && echo "removed $2" || { echo "could not remove $2"; return 1; } ;;
+                pair) if [ -n "${BT_BRIDGE:-}" ]; then python3 "$REPO/lib/bt_agent.py" "$_m" --bridge "$BT_BRIDGE" || return 1
+                      else python3 "$REPO/lib/bt_agent.py" "$_m" || return 1; fi
                       bar_timeout bluetoothctl trust "$_m" >/dev/null 2>&1
                       bar_timeout bluetoothctl connect "$_m" >/dev/null 2>&1 && echo "paired and connected $2" || echo "paired $2" ;;
             esac ;;
@@ -4267,11 +4305,13 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ "$_left" -eq 0 ] || printf -- '-\t%s more\tmore\n' "$_left"
             while IFS= read -r n; do [ -n "$n" ] && [ "$n" != "$_c" ] && printf -- '-\tforget %s\tforget %s\n' "$n" "$n"; done < "$TMP/wifi.known" ;;
         bt) command -v bluetoothctl >/dev/null 2>&1 || { printf -- '-\tbluetoothctl is not installed\tshow\n'; return 0; }
+            bt_running || { printf -- '-\tbluetoothd is not running (spark-shell on desktop)\tshow\n'; return 0; }
             if bt_powered; then
                 bt_list | while IFS="$TAB" read -r mac n p c; do
                     if [ "$c" = 1 ]; then printf '%s\t%s\tdisconnect %s\n' "$PANEL_DOT" "$n" "$n"
                     elif [ "$p" = 1 ]; then printf '%s\t%s\tconnect %s\n' "$PANEL_RING" "$n" "$n"
                     else printf '%s\t%s %s new\tpair %s\n' "$PANEL_RING" "$n" "$PANEL_SEP" "$n"; fi
+                    [ "$p" != 1 ] || printf -- '-\tremove %s\tremove %s\n' "$n" "$n"
                 done
                 printf -- '-\tfind new devices\tscan\n-\tturn off\tpower off\n'
             else printf -- '-\tturn on\tpower on\n'; fi ;;
@@ -5705,7 +5745,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -5734,6 +5774,7 @@ tool_spec() {
         wifi_forget)       _ts=wifi _ta=forget _tp=name _tk=string _th=di _tt='wifi forget NAME' _td='Forget a saved network and its password.' ;;
         bt_connect)        _ts=bt _ta=connect _tp=name _tk=string _th=i _tt='bt connect NAME' _td='Connect a paired device.' ;;
         bt_disconnect)     _ts=bt _ta=disconnect _tp=name _tk=string _th=i _tt='bt disconnect NAME' _td='Disconnect a device.' ;;
+        bt_remove)         _ts=bt _ta=remove _tp=name _tk=string _th=id _tt='bt remove NAME' _td='Remove a paired device and its saved trust. Pair it again to reconnect.' ;;
         bt_pair)           _ts=bt _ta=pair _tp=name _tk=string _th='' _tt='bt pair NAME' _td='Pair a new device and connect it.' ;;
         bt_scan)           _ts=bt _ta=scan _th='' _tt='bt scan' _td='Look for new devices nearby.' ;;
         bt_power)          _ts=bt _ta=power _tp=state _tk='on|off' _th=i _tt='bt power STATE' _td='Turn Bluetooth on or off.' ;;
@@ -5983,6 +6024,23 @@ provide_watch() {   # the rows looked at again every few seconds while a host is
         [ "$_now" = "$_last" ] || { _last=$_now; fifo_put poke; }
     done
 }
+provide_input() {   # answers reach a pairing agent while the tool call runs
+    while IFS= read -r _l || [ -n "$_l" ]; do
+        if [ -S "$TMP/bt.sock" ] && [ "${#_l}" -le "$PROVIDE_LINE_MAX" ]; then
+            if printf '%s' "$_l" | jq -e '(.id | type) == "string" and (.id | startswith("bt-pair-")) and (has("method") | not)' >/dev/null 2>&1; then
+                printf '%s\n' "$_l" | python3 "$REPO/lib/bt_agent.py" --reply "$TMP" || :
+                _l=''; continue
+            fi
+            if printf '%s' "$_l" | jq -e --slurpfile id "$TMP/bt.call-id" '.method == "notifications/cancelled" and .params.requestId == $id[0]' >/dev/null 2>&1; then
+                : > "$TMP/bt.cancel"; _l=''; continue
+            fi
+        fi
+        fifo_put "in $_l"; _l=''
+    done
+    [ ! -S "$TMP/bt.sock" ] || : > "$TMP/bt.cancel"
+    fifo_put eof
+}
+
 provide_main() {   # provide_main SECTION -- serve it until stdin ends
     sec=$1
     case " $PROVIDE_SECTIONS " in *" $sec "*) ;; *) refuse_in provide "${sec:-a section} is not one: $(printf '%s' "$PROVIDE_SECTIONS" | sed 's/ /, /g')" >&2 ;; esac   # a refusal on stderr: stdout is the wire
@@ -5990,11 +6048,11 @@ provide_main() {   # provide_main SECTION -- serve it until stdin ends
     command -v mkfifo >/dev/null 2>&1 || refuse_in provide "mkfifo is not installed" >&2
     config_load; [ "$OS" = Darwin ] || pm_detect; theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)
     exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in; whatever a step prints goes to stderr
-    WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; : > "$PROOTS"
+    WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; CLIENT_PAIRING=''; : > "$PROOTS"
     trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
     trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # a signal ends a provider through the EXIT trap: the watcher, the reader and the temp folder go (#37)
     mkfifo "$TMP/in"
-    ( while IFS= read -r _l || [ -n "$_l" ]; do fifo_put "in $_l"; _l=''; done; fifo_put eof ) <&6 5>"$TMP/in" 3>&- & READER=$!
+    ( provide_input ) <&6 5>"$TMP/in" 3>&- & READER=$!
     exec 4<"$TMP/in" 6<&-
     while IFS= read -r _msg <&4; do
         case $_msg in
@@ -6023,6 +6081,7 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
     _params=$(printf '%s' "$1" | jq -c '.params // {}')
     case $_method in
         initialize)
+            [ "$(printf '%s' "$_params" | jq -r '.capabilities.experimental["spark-shell/pairing"] == true')" != true ] || CLIENT_PAIRING=1
             [ "$(printf '%s' "$_params" | jq -r '.capabilities.roots != null')" != true ] || CLIENT_ROOTS=1
             rpc_result "$_id" "$(jq -cn --arg v "$PROVIDE_PROTOCOL" --arg n "$sec" --arg t "$(provide_title "$sec")" --arg ver "$(panel_version)" \
                 '{protocolVersion: $v, capabilities: {tools: {listChanged: true}, resources: {subscribe: true, listChanged: true}, logging: {}}, serverInfo: {name: $n, title: $t, version: $ver}}')" ;;
@@ -6120,12 +6179,27 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     _g=$(panel_gate "$sec" "$_act" "$_arg") || { provide_refuse "$1" "$(printf '%s' "$_g" | scrub_text)"; return 0; }
     _undo='null'; _inv=$(panel_inverse "$sec" "$_act" "$_g" | cut -f1)   # read before the step: the state now is what undo puts back
     if [ -n "$_inv" ] && action_tool "$sec" "$_inv"; then _undo=$(tool_call_json "$_tool" "$_tv") || _undo='null'; fi
+    BT_BRIDGE=''
+    if [ "$_name" = bt_pair ]; then
+        [ -n "$CLIENT_PAIRING" ] || { provide_refuse "$1" "pairing needs a client that supports native pairing questions"; return 0; }
+        BT_BRIDGE=$TMP
+        rm -f "$TMP/bt.cancel" "$TMP/bt.ask"
+        printf '%s\n' "$1" > "$TMP/bt.call-id"
+    fi
+    export BT_BRIDGE
     _tok=$(printf '%s' "$2" | jq -c '._meta.progressToken // empty')
     rm -f "$TMP/opened"; panel_group_begin
     ( set +e; panel_step "$sec" "$_act" "$_g" > "$TMP/call.out" 2>&1; echo $? > "$TMP/call.rc" ) 3>&- 4<&- 5>&- & _w=$!
-    if [ -n "$_tok" ]; then _i=0; while kill -0 "$_w" 2>/dev/null; do _i=$((_i + 1)); rpc_note notifications/progress "$(jq -cn --argjson t "$_tok" --argjson p "$_i" --arg s "$sec" '{progressToken: $t, progress: $p, message: ($s + ": working")}')"; sleep 0.5; done; fi
+    if [ -n "$_tok$BT_BRIDGE" ]; then
+        _i=0
+        while kill -0 "$_w" 2>/dev/null; do
+            if [ -f "$TMP/bt.ask" ]; then rpc_send "$(cat "$TMP/bt.ask")"; rm -f "$TMP/bt.ask"; fi
+            if [ -n "$_tok" ]; then _i=$((_i + 1)); rpc_note notifications/progress "$(jq -cn --argjson t "$_tok" --argjson p "$_i" --arg s "$sec" '{progressToken: $t, progress: $p, message: ($s + ": working")}')"; fi
+            if [ -n "$BT_BRIDGE" ]; then sleep 0.1; else sleep 0.5; fi
+        done
+    fi
     wait "$_w" 2>/dev/null || :
-    PANEL_PASS=''
+    PANEL_PASS=''; BT_BRIDGE=''; rm -f "$TMP/bt.call-id" "$TMP/bt.ask"
     panel_group_end
     _rc=$(cat "$TMP/call.rc" 2>/dev/null || echo 1); _out=$(scrub_text < "$TMP/call.out")
     for _k in $THEME_KEYS; do unset "$_k"; done; config_load; theme_load   # a step may have changed the settings: the rows read them anew

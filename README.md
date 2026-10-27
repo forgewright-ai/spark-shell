@@ -993,3 +993,14 @@ off, the desktop enables the first connected screen.
 `sunday` restores Sunday. `time zone America/Chicago` changes the native
 time zone after confirmation and system permission. The clock section
 reports sync status without changing the time service.
+
+Bluetooth uses the native BlueZ service. Pairing asks for the device's code
+or confirmation in the dialog; only the chosen device can use that agent.
+A paired device can be removed after typed confirmation. The shared native
+services stay enabled when the desktop is off. On Void, a new bluetooth
+group membership takes effect at the next login.
+
+The native pairing wire uses the experimental `spark-shell/pairing`
+capability and method. The dialog accepts it only while its configured
+spark-shell provider runs `bt_pair`. PINs are masked and excluded from the
+exchange, task context and audit. Generic elicitation still refuses secrets.

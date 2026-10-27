@@ -77,6 +77,7 @@ pub struct Pending {
 }
 
 pub struct Server {
+    pub argv: Vec<String>,
     pub idx: usize,
     pub label: String,
     stdin: Option<Box<dyn Write + Send>>,
@@ -121,6 +122,7 @@ impl Server {
         let stdin: Option<Box<dyn Write + Send>> = child.stdin.take().map(|w: ChildStdin| Box::new(w) as Box<dyn Write + Send>);
         std::thread::spawn(move || read_lines(idx, out, tx));
         Ok(Server {
+            argv: argv.to_vec(),
             idx,
             label: label.to_string(),
             stdin,
@@ -134,6 +136,7 @@ impl Server {
     pub fn on_pipes(idx: usize, label: &str, from: impl Read + Send + 'static, to: impl Write + Send + 'static, tx: SyncSender<Incoming>) -> Server {
         std::thread::spawn(move || read_lines(idx, from, tx));
         Server {
+            argv: vec![],
             idx,
             label: label.to_string(),
             stdin: Some(Box::new(to)),
@@ -265,7 +268,7 @@ fn read_lines(idx: usize, out: impl Read, tx: SyncSender<Incoming>) {
 pub fn init_params() -> Value {
     json!({
         "protocolVersion": PROTOCOL,
-        "capabilities": {"elicitation": {}, "roots": {"listChanged": false}},
+        "capabilities": {"elicitation": {}, "roots": {"listChanged": false}, "experimental": {"spark-shell/pairing": true}},
         "clientInfo": {"name": "spark-dialog", "title": "the spark dialog", "version": env!("CARGO_PKG_VERSION")}
     })
 }

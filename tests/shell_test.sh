@@ -2449,7 +2449,7 @@ printf '%s\n' "$out" | grep -q '^todo   sound        pulseaudio is installed, an
     && ok "Arch with pulseaudio: pipewire-pulse is left out of the install, one todo says how to take it" || bad "arch pulseaudio" "$out"
 grep -q '^PKG_SOUND=pipewire wireplumber alsa-pipewire libspa-bluetooth$' "$REPO/distro/void.env" && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa libspa-0.2-bluetooth$' "$REPO/distro/debian.env" \
     && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa$' "$REPO/distro/arch.env" && ok "distro: the sound's packages, each family's names" || bad "PKG_SOUND" "$(grep -h PKG_SOUND "$REPO"/distro/*.env)"
-grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils mako libnotify udisks2 dbus xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk gsettings-desktop-schemas$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, mako, notify-send, udisks2 and the session bus among them" || bad "void.env desktop"
+grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils mako libnotify udisks2 dbus xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk gsettings-desktop-schemas bluez python3-dbus python3-gobject$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, mako, notify-send, udisks2 and the session bus among them" || bad "void.env desktop"
 
 # the login screen of v0.41 (greetd on tty1, spark-shell's files in
 # /etc/greetd): handed back to getty at the next boot by on, on desktop,
@@ -3097,8 +3097,9 @@ spark-shell changes how this machine works:
                swaylock grim slurp wl-clipboard brightnessctl ddcutil librsvg
                otf-monaspace mako libnotify udisks2 xdg-desktop-portal
                xdg-desktop-portal-wlr xdg-desktop-portal-gtk
-               gsettings-desktop-schemas pipewire wireplumber pipewire-pulse
-               pipewire-alsa (sudo)
+               gsettings-desktop-schemas bluez bluez-utils python-dbus
+               python-gobject pipewire wireplumber pipewire-pulse pipewire-alsa
+               (sudo)
   login        logging in on tty1 starts the desktop
                Alt+F2 is a plain shell
 
@@ -3208,6 +3209,8 @@ case "$*" in
     *"dev wlan0"*) echo '3: wlan0    inet 192.0.2.20/24 brd 192.0.2.255 scope global wlan0' ;;
 esac
 STUB
+    printf '#!/bin/sh\necho "boolean true"\n' > "$H/.local/bin/dbus-send"
+    chmod +x "$H/.local/bin/dbus-send"
     cat > "$H/.local/bin/bluetoothctl" <<'STUB'
 #!/bin/sh
 log=${XDG_STATE_HOME:-$HOME/.local/state}/bt.log; mkdir -p "$(dirname "$log")"
@@ -3771,7 +3774,7 @@ EOF
     [ "$st" -eq 0 ] && [ "$out" = "$(printf '%s\n' 'panel> quiet please' "  $TICK out muted" "  $TICK mic muted" "  $TICK bluetooth off" "  $CROSS x is not in the list now" "  $CROSS theme: alpha takes 0 to 1" "  $CROSS no desktop here")" ] \
         && ok "bar WORDS: one line per step with its sign and no why line; a step the panel does not offer, or a section it does not have, is refused in a few words, the rest played" || bad "bar want" "st=$st $out"
     [ "$(cat "$amlog")" = "$(printf '%s\n' '-c 0 sset Master mute' '-c 0 sset Capture nocap')" ] && grep -qx 'power off' "$blog" && ok "bar WORDS: the steps reached amixer and bluetoothctl" || bad "want steps" "$(cat "$amlog" "$blog" 2>&1)"
-    grep -q '^do this on the desktop: quiet please$' "$H/spark.argv" && grep -q 'bt: disconnect MAJOR V, pair Buds, scan, power off' "$H/spark.argv" && grep -q 'out: use HDMI, mute, level N' "$H/spark.argv" && grep -q 'layout: new TASK' "$H/spark.argv" && grep -q 'theme: .*dracula, .*text bigger' "$H/spark.argv" && grep -q "What the bar shows now: lan up $SEP 192.0.2.10; wifi .* home $SEP 192.0.2.20; bt $DOT MAJOR V; out Jabra $SEP 40%" "$H/spark.argv" \
+    grep -q '^do this on the desktop: quiet please$' "$H/spark.argv" && grep -q 'bt: disconnect MAJOR V, remove MAJOR V, pair Buds, scan, power off' "$H/spark.argv" && grep -q 'out: use HDMI, mute, level N' "$H/spark.argv" && grep -q 'layout: new TASK' "$H/spark.argv" && grep -q 'theme: .*dracula, .*text bigger' "$H/spark.argv" && grep -q "What the bar shows now: lan up $SEP 192.0.2.10; wifi .* home $SEP 192.0.2.20; bt $DOT MAJOR V; out Jabra $SEP 40%" "$H/spark.argv" \
         && ok "bar WORDS: spark gets the words, what the bar shows now (a question has its facts) and what each section offers, a new layout among them" || bad "want brief" "$(cat "$H/spark.argv")"
     printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/spark.argv"; printf "{\\"why\\": \\"a question\\", \\"answer\\": \\"192.0.2.10 on the wire, 192.0.2.20 on wifi.\\", \\"steps\\": []}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
     rm -f "$H/spark.argv"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel Firefox please 2>&1) || st=$?
@@ -3934,8 +3937,8 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 91 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-three sections hold the 82 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 92 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-three sections hold the 92 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -3977,7 +3980,7 @@ mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},
 jq -e -s 'all(.[]; (.name | test("^[a-z][a-z0-9_]{0,63}$")) and (.title | test("^[a-z][a-z-]*( [a-z-]+| [A-Z]+)*$")) and (.title | length) <= 60)' "$H/tools.all" >/dev/null \
     && ok "provide: every tool name is lower case with underscores, every title a sentence of plain words with its argument in capitals, 60 at most" || bad "tool shapes" "$(jq -r '.name + " | " + .title' "$H/tools.all")"
 jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.destructiveHint | type) == "boolean" and (.idempotentHint | type) == "boolean" and .openWorldHint == false)' "$H/tools.all" >/dev/null \
-    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'clock_zone layout_delete layout_save power_logout power_restart power_shutdown theme_delete wifi_forget window_close' ] \
+    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove clock_zone layout_delete layout_save power_logout power_restart power_shutdown theme_delete wifi_forget window_close' ] \
     && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find about_open files_show files_attach' ] \
     && ok "provide: every hint spelled out (the spec's default is destructive); destructive: wifi forget, window close, layout save, layout delete, theme delete, log out, restart, shut down; read only: notes find, about, files show and attach" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
 jq -e -s 'all(.[]; .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .outputSchema.type == "object")' "$H/tools.all" >/dev/null \
@@ -5287,6 +5290,26 @@ out=$(L desktop time)
 printf '%s' "$out" | grep -qx 'clock synced by chrony' && ok "time: native sync is read from chrony" || bad "time sync" "$out"
 L desktop time zone Etc/UTC --yes --dry-run >/dev/null
 [ "$(readlink "$H/root/etc/localtime")" = "$H/root/usr/share/zoneinfo/Etc/GMT" ] && ok "time: dry-run does not change the native zone" || bad "time dry-run"
+rm -rf "$H"
+
+# Bluetooth uses the native services. Dry-run writes nothing; a service
+# already linked is kept, and check distinguishes a stopped daemon.
+fresh
+console_stubs Linux
+mkdir -p "$H/root/etc/runit" "$H/root/etc/sv/dbus" "$H/root/etc/sv/bluetoothd" "$H/root/var/service" "$HOME/.config/spark-shell"
+printf 'DESKTOP=sway\nTHEME=nord\n' > "$HOME/.config/spark-shell/config"
+printf 'bluetooth:x:900:\n' > "$H/root/etc/group"
+printf '#!/bin/sh\nexit 0\n' > "$H/lx/bluetoothctl"
+printf '#!/bin/sh\necho "$*" >> "$HOME/bt.service.log"\n' > "$H/lx/sv"
+printf '#!/bin/sh\necho "$*" >> "$HOME/bt.group.log"\n' > "$H/lx/usermod"
+printf '#!/bin/sh\n[ ! -e "$HOME/bt.up" ] || echo "boolean true"\n' > "$H/lx/dbus-send"
+chmod +x "$H/lx/bluetoothctl" "$H/lx/sv" "$H/lx/usermod" "$H/lx/dbus-send"
+L on desktop --dry-run >/dev/null
+[ ! -e "$H/root/var/service/dbus" ] && [ ! -e "$H/bt.service.log" ] && [ ! -e "$H/bt.group.log" ]     && ok "bluetooth: service and group dry-run writes nothing" || bad "bluetooth dry-run"
+L on desktop --yes >/dev/null 2>&1
+[ "$(readlink "$H/root/var/service/dbus")" = "$H/root/etc/sv/dbus" ] && [ "$(readlink "$H/root/var/service/bluetoothd")" = "$H/root/etc/sv/bluetoothd" ]     && grep -q 'bluetoothd' "$H/bt.service.log" && grep -q -- '-aG bluetooth' "$H/bt.group.log"     && ok "bluetooth: native runit services and group are enabled" || bad "bluetooth native setup"
+out=$(L check || :)
+printf '%s' "$out" | grep -q '^warn *bluetooth *bluetoothd is not running'     && ok "bluetooth: check names a stopped daemon" || bad "bluetooth check stopped" "$out"
 rm -rf "$H"
 
 voice=$(mktemp -d)

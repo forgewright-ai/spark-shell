@@ -10,6 +10,11 @@
   the desktop. The clock section reports native sync status and offers a
   time zone change through the system, with confirmation and permission.
 
+- Bluetooth setup installs and enables the native services. Pairing uses
+  a temporary agent for the chosen device, with codes and confirmation
+  carried by the dialog. Submitted codes stay in memory. Removing a paired
+  device requires typed confirmation; check reports the native service.
+
 - A click on a dialog key chip takes the same action as the key. The
   Calendar's arrow chip moves each way; destructive steps still need yes.
 - The login address walk checks each pointer through an optional reference.

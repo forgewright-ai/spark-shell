@@ -263,7 +263,7 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let tx = 4;
     let tw = (w - tx - 3) as usize;
     pen.put(2, PROMPT_Y, PROMPT, pal.accent, true, false);
-    let masked = matches!(&app.mode, Mode::Ask { masked: true, .. });
+    let masked = matches!(&app.mode, Mode::Ask { masked: true, .. }) || matches!(&app.mode, Mode::Pair { kind, .. } if kind == "pin" || kind == "passkey");
     let shown: String = if masked {
         "\u{2022}".repeat(app.input.chars().count())
     } else {

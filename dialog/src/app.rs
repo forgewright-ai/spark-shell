@@ -319,6 +319,13 @@ pub enum Mode {
         field: String,
         masked: bool,
     },
+    /// A code for the native pairing already started by the person.
+    Pair {
+        prov: usize,
+        id: Value,
+        message: String,
+        kind: String,
+    },
     /// A provider's elicitation: one flat field at a time.
     Elicit {
         prov: usize,
@@ -737,7 +744,17 @@ impl App {
         }
     }
 
+    fn clear_pair(&mut self, idx: usize) {
+        if matches!(&self.mode, Mode::Pair { prov, .. } if *prov == idx) {
+            self.mode = Mode::Normal;
+            self.input.clear();
+            self.cursor = 0;
+            self.unstash();
+        }
+    }
+
     fn lose(&mut self, idx: usize, why: &str) {
+        self.clear_pair(idx);
         if self.providers[idx].dead.is_some() {
             return;
         }
@@ -830,6 +847,7 @@ impl App {
                 }
             }
             "elicitation/create" => self.elicit(idx, id, p),
+            "spark-shell/pairing" => self.pair_question(idx, id, p),
             "roots/list" => {
                 let roots: Vec<Value> = home().map(|h| json!({"uri": format!("file://{}", h), "name": "home"})).into_iter().collect();
                 if let Some(s) = self.server(idx) {
@@ -842,6 +860,44 @@ impl App {
                 }
             }
         }
+    }
+
+    fn pair_question(&mut self, idx: usize, id: Value, p: Value) {
+        let active = self
+            .running
+            .as_ref()
+            .is_some_and(|(provider, _, step, _)| *provider == idx && step.call.name == "bt_pair");
+        let native = !self.cfg.spark_shell.is_empty()
+            && self
+                .servers
+                .iter()
+                .any(|s| s.idx == idx && s.argv == [self.cfg.spark_shell.clone(), "provide".into(), "bt".into()]);
+        let kind = p.get("kind").and_then(Value::as_str).unwrap_or("");
+        if active && native && kind == "dismiss" {
+            if matches!(&self.mode, Mode::Pair { prov, kind, .. } if *prov == idx && kind == "display") {
+                self.clear_pair(idx);
+            }
+            if let Some(s) = self.server(idx) {
+                s.answer(&id, json!({"action": "accept"}));
+            }
+            return;
+        }
+        if !active || !native || self.mode != Mode::Normal || self.asks_this_call >= ASK_PER_CALL || !matches!(kind, "pin" | "passkey" | "confirm" | "display")
+        {
+            if let Some(s) = self.server(idx) {
+                s.answer(&id, json!({"action": "decline"}));
+            }
+            return;
+        }
+        self.asks_this_call += 1;
+        self.input.clear();
+        self.cursor = 0;
+        self.mode = Mode::Pair {
+            prov: idx,
+            id,
+            message: scrub(p.get("message").and_then(Value::as_str).unwrap_or("pairing")),
+            kind: kind.to_string(),
+        };
     }
 
     fn elicit(&mut self, idx: usize, id: Value, p: Value) {
@@ -961,7 +1017,10 @@ impl App {
                     }
                 }
             }
-            Kind::Call(_) => self.called(idx, n, result, error),
+            Kind::Call(_) => {
+                self.clear_pair(idx);
+                self.called(idx, n, result, error)
+            }
             Kind::Prepare(serial) => self.task_prepared(idx, serial, result, error),
         }
     }
@@ -981,6 +1040,7 @@ impl App {
         for (idx, kind) in late {
             match kind {
                 Kind::Call(_) => {
+                    self.clear_pair(idx);
                     if self.running.take().is_some() {
                         self.task_cancel();
                         // no answer is no proof either way: say so, and run nothing that depends on it
@@ -1721,7 +1781,7 @@ impl App {
                 self.unstash();
                 self.stop_queue();
             }
-            Mode::Elicit { prov, id, .. } => {
+            Mode::Pair { prov, id, .. } | Mode::Elicit { prov, id, .. } => {
                 if let Some(s) = self.server(prov) {
                     s.answer(&id, json!({"action": "cancel"}));
                 }
@@ -1881,6 +1941,43 @@ impl App {
                 step.call.arguments.insert(field.clone(), Value::String(typed));
                 step.call.ask.retain(|a| a != &field);
                 self.run(step);
+                return;
+            }
+            Mode::Pair { prov, id, message, kind } => {
+                if kind == "display" {
+                    self.input.clear();
+                    self.cursor = 0;
+                    self.mode = Mode::Pair { prov, id, message, kind };
+                    return;
+                }
+                let typed = std::mem::take(&mut self.input);
+                self.cursor = 0;
+                let answer = match kind.as_str() {
+                    "confirm" | "display" => match typed.trim() {
+                        "yes" => Some(Value::Bool(true)),
+                        "no" => Some(Value::Bool(false)),
+                        _ => None,
+                    },
+                    "passkey" if !typed.is_empty() && typed.len() <= 6 && typed.bytes().all(|c| c.is_ascii_digit()) => Some(Value::String(typed)),
+                    "pin" if !typed.is_empty() && typed.len() <= 16 && typed.bytes().all(|c| (32..=126).contains(&c)) => Some(Value::String(typed)),
+                    _ => None,
+                };
+                if let Some(answer) = answer {
+                    if let Some(s) = self.server(prov) {
+                        s.answer(&id, json!({"action": "accept", "content": {"answer": answer}}));
+                    }
+                    self.unstash();
+                } else {
+                    self.say(
+                        Sign::Refused,
+                        if kind == "confirm" || kind == "display" {
+                            "type yes or no"
+                        } else {
+                            "enter the device code in the requested form"
+                        },
+                    );
+                    self.mode = Mode::Pair { prov, id, message, kind };
+                }
                 return;
             }
             Mode::Elicit {
@@ -2886,6 +2983,18 @@ impl App {
                     format!("the {} for {}", field, step.line)
                 };
                 let mut v = vec![(what, false)];
+                v.extend(esc("Cancel"));
+                return v;
+            }
+            Mode::Pair { message, kind, .. } => {
+                let suffix = if kind == "display" {
+                    "waiting for the device"
+                } else if kind == "confirm" {
+                    "type yes or no"
+                } else {
+                    "code hidden"
+                };
+                let mut v = vec![(format!("{} ({})", message, suffix), false)];
                 v.extend(esc("Cancel"));
                 return v;
             }

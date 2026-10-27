@@ -55,7 +55,9 @@ jobs:
       - name: every package name of distro/debian.env exists on Ubuntu, which says ID_LIKE=debian (nothing installed)
         run: sudo apt-get update -qq >/dev/null && apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
       - name: the suite in a throwaway HOME
-        run: sh tests/shell_test.sh
+        run: |
+          sh tests/shell_test.sh
+          python3 tests/bt_agent_test.py
       - name: the idle screen's savers
         run: python3 -I tests/saver_test.py
   debian:
@@ -65,7 +67,7 @@ jobs:
     container: debian:13@sha256:9cc080028c43b27d2074d63a5f9caf7166d731494965616c1a6d2827a004585c   # a stable release: pinned, bump the digest with a point release
     timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
     steps:
-      - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git shellcheck diffutils jq openssh-client curl >/dev/null   # jq: a desk reads the model's answer with it; ssh-keygen: a release tag's signature
+      - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 git shellcheck diffutils jq openssh-client curl >/dev/null   # jq: a desk reads the model's answer with it; ssh-keygen: a release tag's signature
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
@@ -74,21 +76,25 @@ jobs:
       - name: shellcheck
         run: shellcheck -S warning spark-shell tests/shell_test.sh
       - name: the suite in a throwaway HOME
-        run: sh tests/shell_test.sh
+        run: |
+          sh tests/shell_test.sh
+          python3 tests/bt_agent_test.py
   arch:
     # the same suite where the tools come from pacman
     runs-on: ubuntu-latest
     container: archlinux:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Arch there is, and -Syu moves it to today anyway
     timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
     steps:
-      - run: pacman -Syu --noconfirm --needed git diffutils jq openssh >/dev/null   # ssh-keygen: a release tag's signature
+      - run: pacman -Syu --noconfirm --needed python git diffutils jq openssh >/dev/null   # ssh-keygen: a release tag's signature
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
       - name: every package name of distro/arch.env exists on Arch (nothing installed)
         run: pacman -Sp --needed $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/arch.env) >/dev/null
       - name: the suite in a throwaway HOME
-        run: sh tests/shell_test.sh
+        run: |
+          sh tests/shell_test.sh
+          python3 tests/bt_agent_test.py
   void:
     # the third family: xbps (glibc), the desktop's names too. xbps itself
     # first: a rolling distro refuses every install while xbps is behind.
@@ -97,14 +103,16 @@ jobs:
     container: ghcr.io/void-linux/void-glibc-full:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Void there is, and -Su moves it to today anyway
     timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
     steps:
-      - run: xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null; xbps-install -Sy git bash diffutils jq gawk gzip libstdc++ openssh curl >/dev/null
+      - run: xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null; xbps-install -Sy python3 git bash diffutils jq gawk gzip libstdc++ openssh curl >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
       - name: every package name of distro/void.env exists on Void (nothing installed)
         run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/void.env); do xbps-query -R "$p" >/dev/null || { echo "no package $p"; exit 1; }; done
       - name: the suite in a throwaway HOME
-        run: sh tests/shell_test.sh
+        run: |
+          sh tests/shell_test.sh
+          python3 tests/bt_agent_test.py
   fedora:
     # the fourth family: dnf over rpm, the names of distro/fedora.env looked
     # up with repoquery (a provider counts, as rpm -q --whatprovides does)
@@ -112,7 +120,7 @@ jobs:
     container: fedora:44@sha256:43b29f65a41eb9c35e1cd5323e3bdf3b655c2357a9f4f1ff2f9c2798e5045d80   # a versioned release: pinned, bump the digest with the next Fedora
     timeout-minutes: 15
     steps:
-      - run: dnf install -y -q git ShellCheck diffutils jq openssh-clients curl >/dev/null
+      - run: dnf install -y -q python3 git ShellCheck diffutils jq openssh-clients curl >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
@@ -121,7 +129,9 @@ jobs:
       - name: shellcheck
         run: shellcheck -S warning spark-shell tests/shell_test.sh
       - name: the suite in a throwaway HOME
-        run: sh tests/shell_test.sh
+        run: |
+          sh tests/shell_test.sh
+          python3 tests/bt_agent_test.py
   opensuse:
     # the fifth family: zypper over rpm, the names of distro/opensuse.env
     # looked up on Tumbleweed itself. libstdc++6 is the runner's node
@@ -131,7 +141,7 @@ jobs:
     container: opensuse/tumbleweed:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Tumbleweed there is, and zypper dup moves it to today anyway
     timeout-minutes: 15
     steps:
-      - run: zypper --non-interactive --quiet install git ShellCheck diffutils findutils jq openssh-clients curl gawk tar gzip libstdc++6 >/dev/null
+      - run: zypper --non-interactive --quiet install python3 git ShellCheck diffutils findutils jq openssh-clients curl gawk tar gzip libstdc++6 >/dev/null
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
@@ -140,7 +150,9 @@ jobs:
       - name: shellcheck
         run: shellcheck -S warning spark-shell tests/shell_test.sh
       - name: the suite in a throwaway HOME
-        run: sh tests/shell_test.sh
+        run: |
+          sh tests/shell_test.sh
+          python3 tests/bt_agent_test.py
   desktop:
     # the desktop for real, per family: its packages installed in the
     # family's container, spark-shell on as a plain user (the renders, the
@@ -241,7 +253,9 @@ jobs:
         with:
           persist-credentials: false
       - name: the suite in a throwaway HOME (Apple's sh)
-        run: sh tests/shell_test.sh
+        run: |
+          sh tests/shell_test.sh
+          python3 tests/bt_agent_test.py
       - name: the Terminal.app helper, built and never applied
         run: SPARK_SHELL_NO_APPLY=1 /usr/bin/python3 tests/profile_test.py
   dialog:
