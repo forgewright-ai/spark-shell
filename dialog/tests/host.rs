@@ -1042,6 +1042,8 @@ fn a_command_typed_in_the_dialog_s_own_words_runs_with_no_model() {
         .iter()
         .any(|c| c["name"] == "window_focus" && c["arguments"]["name"] == "terminal")));
     assert!(!app.jobs.iter().any(inference), "no model");
+    // The stub records the call before the host receives its result.
+    assert!(pump(&mut app, &rx, |a| !a.busy()), "the direct action did not finish");
     // words that are no command go to spark
     typed(&mut app, "window focus");
     app.in_list = false;
