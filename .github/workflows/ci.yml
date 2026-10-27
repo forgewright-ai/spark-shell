@@ -243,6 +243,7 @@ jobs:
           mkdir -p /opt/nocap && cp "$(command -v sway)" /opt/nocap/sway && chmod 755 /opt/nocap/sway
           cp tests/desktop_proof.sh /tmp/desktop_proof.sh
           chmod 755 /tmp/desktop_proof.sh
+          su ada -c "PATH=/opt/nocap:\$PATH python3 -I '$GITHUB_WORKSPACE/tests/layout_desktop_proof.py'"
           su ada -c "REPO='$GITHUB_WORKSPACE' SWAY_NOCAP=/opt/nocap sh /tmp/desktop_proof.sh"
       - name: the notifications as drawn, kept for a look
         if: always()

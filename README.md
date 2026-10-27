@@ -353,8 +353,9 @@ unapplied. They do not leave rules affecting later windows.
 A saved terminal window may set `min_columns` (20 to 240) and `min_rows`
 (5 to 100, default 24). btop starts with at least 80 columns and 24 rows.
 The app waits for the layout, then reads the terminal's actual cell count.
-If a split cannot fit it, that window floats. A screen that
-still cannot fit it produces a refusal. No font size is guessed or changed.
+If a split cannot fit it, that window floats and measures again. If native
+floating limits still prevent a fit, that app uses fullscreen. A screen
+that still cannot fit it produces a refusal. No font size is guessed or changed.
 `--terminal` uses one full tmux window per app, inside foot on the desktop.
 
 ## Allowed apps

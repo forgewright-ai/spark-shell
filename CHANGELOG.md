@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Terminal minimums measure again after native sizing and can use fullscreen
+  for that app when floating limits prevent a fit. Native headless Sway and
+  foot checks cover normal and fractional scale, with other windows intact.
+- Shell fixtures isolate missing tools from installed desktop programs and
+  model x86 release packaging explicitly on other Linux architectures.
+
 - Display undo preserves custom scale values and exact native refresh rates.
 - Wi-Fi manager detection no longer starts iwd while another manager owns
   the radio. iwd password entry uses a private terminal and waits for its

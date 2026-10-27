@@ -74,7 +74,30 @@ def fit(columns, rows):
         size = os.get_terminal_size(0)
         if size.columns >= columns and size.lines >= rows:
             return
-    raise Refused(f"this screen cannot provide {columns} columns and {rows} rows")
+    # Decorations and a resize still in flight can change the cell estimate.
+    # Measure again before taking more screen space than the app needs.
+    for _ in range(3):
+        current = next((n for n in nodes(sway("-t", "get_tree")) if n.get("id") == con), None)
+        if current is None:
+            raise Refused("the terminal window closed while sizing it")
+        width = math.ceil(current["rect"]["width"] * max(1, (columns + 1) / max(1, size.columns)))
+        height = math.ceil(current["rect"]["height"] * max(1, (rows + 1) / max(1, size.lines)))
+        sway("--", f"[con_id={con}] resize set width {width} px height {height} px")
+        for _ in range(10):
+            time.sleep(0.05)
+            size = os.get_terminal_size(0)
+            if size.columns >= columns and size.lines >= rows:
+                return
+    # Sway can cap a floating window below the screen's usable size. A
+    # fullscreen view of this terminal respects that limit without changing
+    # the compositor's global limits or any other window's geometry.
+    sway("--", f"[con_id={con}] fullscreen enable")
+    for _ in range(20):
+        time.sleep(0.05)
+        size = os.get_terminal_size(0)
+        if size.columns >= columns and size.lines >= rows:
+            return
+    raise Refused(f"this screen cannot provide {columns} columns and {rows} rows (got {size.columns}x{size.lines})")
 
 
 def main():

@@ -443,9 +443,22 @@ else
     desktop_stubs
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"; sh "$SH" on --yes >/dev/null
     rm -f "$H/.local/bin/sway"
-    out=$(sh "$SH" check || true)
+    # Exclude sway from every PATH entry, even on a desktop developer's host.
+    python3 - "$H/no-sway" <<'PYTHON'
+import os, pathlib, sys
+out = pathlib.Path(sys.argv[1])
+out.mkdir()
+for folder in os.environ["PATH"].split(os.pathsep):
+    if not folder:
+        continue
+    for path in pathlib.Path(folder).glob("*"):
+        dest = out / path.name
+        if path.name != "sway" and path.is_file() and os.access(path, os.X_OK) and not dest.exists():
+            dest.symlink_to(path.absolute())
+PYTHON
+    out=$(PATH="$H/no-sway" sh "$SH" check || true)
     printf '%s\n' "$out" | grep -q '^FAIL   desktop      missing: sway -- spark-shell on' && ok "check: FAIL without sway, the remedy is spark-shell on" || bad "check no sway" "$out"
-    out=$(env -u WAYLAND_DISPLAY TEST_TTY=/dev/tty1 sh "$SH" desktop 2>&1 || true)
+    out=$(env -u WAYLAND_DISPLAY PATH="$H/no-sway" TEST_TTY=/dev/tty1 sh "$SH" desktop 2>&1 || true)
     printf '%s\n' "$out" | grep -q 'not installed: sway' && ok "desktop: refused without sway" || bad "desktop no sway" "$out"
     desktop_stubs
     sh "$SH" off >/dev/null
@@ -4307,6 +4320,16 @@ if [ "$(uname -s)" = Darwin ]; then
     st=0; out=$(sh "$SH" dialog 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell dialog: the dialog is the Linux desktop'"'"'s; in a terminal here, spark-shell panel' ] && ok "macOS: dialog refuses in one line, the panel named" || bad "macOS dialog" "st=$st $out"
 else
+    # The release fixture is a shell script, packaged as x86_64. Keep this
+    # packaging test useful on ARM too, without pretending its host is x86.
+    if [ "$(uname -m)" != x86_64 ]; then
+        mkdir -p "$HOME/.config/spark-shell"
+        printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+        out=$(sh "$SH" on --dry-run 2>&1 || :)
+        printf '%s\n' "$out" | grep -q 'no build for .* yet' && ok "dialog: this architecture has no release" || bad "dialog architecture" "$out"
+    fi
+    printf '#!/bin/sh\ncase $1 in -m) echo x86_64 ;; *) exec /usr/bin/uname "$@" ;; esac\n' > "$H/.local/bin/uname"
+    chmod +x "$H/.local/bin/uname"
     C=$H/clone; mkdir -p "$C"
     (cd "$REPO" && tar --exclude=.git --exclude=target --exclude=target2 -cf - .) | (cd "$C" && tar --no-same-owner -xf -)   # the files ours: git refuses a clone another user owns
     printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/dialog.argv"\nexit "${DIALOG_EXIT:-0}"\n' > "$H/stub-dialog"
@@ -4399,6 +4422,7 @@ STUB
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell dialog: nonsense is not a section of the dialog' ] && ok "dialog WORD: a word that is no section, refused" || bad "dialog nonsense" "st=$st $out"
     printf 'x' >> "$bin"; st=0; out=$(sh "$C/spark-shell" dialog 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell dialog: the dialog is not installed, or not the release'"'"'s -- spark-shell on' ] && ok "dialog: a binary changed since it was installed is not run" || bad "dialog changed" "st=$st $out"
+    rm -f "$H/.local/bin/uname"
 fi
 unset SPARK_SHELL_SYS SPARK_SHELL_PROC SWAYSOCK
 
@@ -4432,6 +4456,8 @@ else
     login_root() {   # login_root ID -- a root with greetd installed, its package config, its account
         fresh
         console_stubs Linux
+        # Like the dialog fixture, this is an x86 package with a shell stub.
+        printf '#!/bin/sh\ncase $1 in -m) echo x86_64 ;; -s) echo Linux ;; *) exec /usr/bin/uname "$@" ;; esac\n' > "$H/lx/uname"
         desktop_stubs
         printf 'ID=%s\n' "$1" > "$H/os-release"
         mkdir -p "$H/root/etc/greetd" "$H/root/usr/bin" "$H/root/usr/sbin"
