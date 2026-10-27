@@ -57,7 +57,7 @@ class WifiPrompt(unittest.TestCase):
 
     def test_unsupported_password_never_starts_iwctl(self):
         root, env = self.fixture("from pathlib import Path\nimport os\nPath(os.environ['WIFI_TEST_ROOT'], 'started').touch()\n")
-        for password in (b"x" * 64, b"first\nsecond\n", b"\n"):
+        for password in (b"x" * 64, b"first\nsecond\n", b"\n", b"short", b"caf\xc3\xa9-password"):
             run = subprocess.run([sys.executable, str(REPO / "lib/wifi_connect.py"), "wlan0", "cafe"],
                                  input=password, capture_output=True, env=env, timeout=5)
             self.assertEqual(run.returncode, 1)

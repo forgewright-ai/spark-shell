@@ -1054,6 +1054,8 @@ with `SPARK_SHELL_DISPOSABLE_VM=1`; this is not a physical-radio test.
 
 iwd entry uses a private terminal. Its masked prompt must acknowledge the
 password before Enter; no terminal output or password is logged or returned.
+iwd passphrases require 8 to 63 printable ASCII characters; unsupported input
+is refused before opening its prompt.
 Opening Wi-Fi never starts iwd just to check whether it owns the interface.
 
 `tests/greetd_upgrade_proof.sh` checks the old login hand-back on a disposable

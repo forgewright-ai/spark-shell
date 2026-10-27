@@ -96,8 +96,8 @@ def main():
     password = sys.stdin.buffer.read(258)
     if password.endswith(b"\n"):
         password = password[:-1]
-    if not password or len(password) > 63 or any(c < 32 or c == 127 for c in password):
-        print("iwd needs a password of at most 63 bytes without control characters", file=sys.stderr)
+    if not 8 <= len(password) <= 63 or any(c < 32 or c > 126 for c in password):
+        print("iwd requires 8 to 63 printable ASCII characters for this passphrase", file=sys.stderr)
         return 1
     try:
         if connect(args.device, args.name, password, args.hidden):
