@@ -611,10 +611,7 @@ fn a_search_finds_the_about_and_a_section_name_opens_its_section() {
     }
     app.enter();
     assert_eq!(app.view, View::Section(0), "a section's name typed alone opens its section");
-    assert!(
-        !app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, _))),
-        "a section's name never goes to the model"
-    );
+    assert!(!app.jobs.iter().any(inference), "a section's name never goes to the model");
 }
 
 #[test]
@@ -935,10 +932,7 @@ fn words_that_name_no_row_are_a_request() {
     assert_eq!(app.picks().first(), Some(&Item::Ask), "Ask spark leads while words are typed");
     app.enter();
     assert!(calls.lock().unwrap().is_empty(), "words that name no row run no row");
-    assert!(app
-        .jobs
-        .iter()
-        .any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, a) if a.last().map(String::as_str) == Some("is anything open"))));
+    assert!(app.jobs.iter().any(|j| asks_for(j, "is anything open")));
 }
 
 #[test]
@@ -968,12 +962,7 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
     );
     assert_eq!(app.picks().get(app.sel), Some(&Item::Ask), "words that name no row light Ask spark");
     app.enter();
-    assert!(
-        app.jobs
-            .iter()
-            .any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, a) if a.last().map(String::as_str) == Some("change theme to dracula"))),
-        "Enter asks spark"
-    );
+    assert!(app.jobs.iter().any(|j| asks_for(j, "change theme to dracula")), "Enter asks spark");
     assert!(!pump(&mut app, &rx, |_| !calls.lock().unwrap().is_empty()), "and runs no undo");
     assert!(app.undo.is_some(), "the undo is still there to pick");
 }
@@ -993,10 +982,7 @@ fn words_that_name_a_row_run_that_row_with_no_model_call() {
         pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["name"] == "window_focus")),
         "Enter runs the lit row"
     );
-    assert!(
-        !app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, _))),
-        "and spark is not asked"
-    );
+    assert!(!app.jobs.iter().any(inference), "and spark is not asked");
 }
 
 #[test]
@@ -1040,7 +1026,7 @@ fn esc_drops_spark_s_commands_and_a_change_makes_them_typed_words() {
         .unwrap()
         .iter()
         .any(|c| c["name"] == "window_focus" && c["arguments"]["name"] == "firefox")));
-    assert!(!app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, _))));
+    assert!(!app.jobs.iter().any(inference));
 }
 
 #[test]
@@ -1055,15 +1041,12 @@ fn a_command_typed_in_the_dialog_s_own_words_runs_with_no_model() {
         .unwrap()
         .iter()
         .any(|c| c["name"] == "window_focus" && c["arguments"]["name"] == "terminal")));
-    assert!(!app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, _))), "no model");
+    assert!(!app.jobs.iter().any(inference), "no model");
     // words that are no command go to spark
     typed(&mut app, "window focus");
     app.in_list = false;
     app.enter();
-    assert!(
-        app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, _))),
-        "a title with its value left out is no command"
-    );
+    assert!(app.jobs.iter().any(inference), "a title with its value left out is no command");
 }
 
 #[test]
@@ -1229,10 +1212,7 @@ fn the_draft_takes_new_lines_and_a_paste_never_sends() {
     typed(&mut app, "two");
     app.paste("three\r\nfour\tfive\u{1b}[2J");
     assert_eq!(app.input, "one\ntwothree\nfour five[2J");
-    assert!(
-        app.jobs.is_empty() || !app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, _))),
-        "nothing sent"
-    );
+    assert!(app.jobs.is_empty() || !app.jobs.iter().any(inference), "nothing sent");
     // the cursor moves within the lines; a newline is no send
     app.up();
     assert_eq!(app.cursor, 12, "up keeps the column, held to the shorter line above");
@@ -1242,10 +1222,7 @@ fn the_draft_takes_new_lines_and_a_paste_never_sends() {
     app.delete();
     assert_eq!(app.input, "onetwothree\nfour five[2J");
     app.enter();
-    assert!(app
-        .jobs
-        .iter()
-        .any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want, a) if a.last().map(String::as_str) == Some("onetwothree\nfour five[2J"))));
+    assert!(app.jobs.iter().any(|j| asks_for(j, "onetwothree\nfour five[2J")));
 }
 
 #[test]
@@ -1656,4 +1633,19 @@ fn the_rows_of_a_place_being_read_are_an_arrow() {
     assert_eq!(app.work(), Work::Read, "a place opened while its rows come");
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
     assert!(!app.busy());
+}
+
+// Both the attachment reader and the task adapter are inference requests.
+fn inference(j: &Job) -> bool {
+    matches!(
+        j,
+        Job::Run(spark_dialog::app::Helper::Want, _) | Job::RunInput(spark_dialog::app::Helper::Task(_), _, _)
+    )
+}
+fn asks_for(j: &Job, words: &str) -> bool {
+    match j {
+        Job::Run(spark_dialog::app::Helper::Want, a) => a.last().map(String::as_str) == Some(words),
+        Job::RunInput(spark_dialog::app::Helper::Task(_), _, data) => serde_json::from_str::<Value>(data).ok().is_some_and(|v| v["goal"] == words),
+        _ => false,
+    }
 }

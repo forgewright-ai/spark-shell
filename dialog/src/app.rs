@@ -324,6 +324,7 @@ pub enum Mode {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Helper {
+    Task(u64),
     Want,
     Models,
     ModelSet,
@@ -335,6 +336,7 @@ pub enum Helper {
 /// What the app asks the outside world to do; main.rs runs each in a thread.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Job {
+    RunInput(Helper, Vec<String>, String),
     Run(Helper, Vec<String>),
     StopListening,
 }
@@ -440,6 +442,8 @@ pub enum Item {
 }
 
 pub struct App {
+    pub task: Option<crate::task::Task>,
+    pub task_serial: u64,
     pub cfg: Config,
     pub providers: Vec<Provider>,
     pub servers: Vec<Server>,
@@ -525,6 +529,8 @@ impl App {
         };
         let came_from: Vec<View> = if view == View::About { vec![View::Home] } else { vec![] }; // opened on the about (the first desktop start): Esc gives the list back
         App {
+            task: None,
+            task_serial: 0,
             cfg,
             providers,
             servers: vec![],
@@ -698,18 +704,23 @@ impl App {
         }
     }
 
-    fn server(&mut self, idx: usize) -> Option<&mut Server> {
+    pub(crate) fn server(&mut self, idx: usize) -> Option<&mut Server> {
         self.servers.iter_mut().find(|s| s.idx == idx && s.alive)
     }
 
-    fn read(&mut self, idx: usize) {
+    pub(crate) fn read(&mut self, idx: usize) {
         let uri = format!("spark-shell://{}/rows", self.providers[idx].label);
-        if let Some(s) = self.server(idx) {
-            if s.request("resources/read", json!({"uri": uri}), Kind::Read, mcp::T_READ).is_some() {
-                self.providers[idx].reading = true;
-                self.providers[idx].dirty = false;
-                self.providers[idx].last_read = Some(Instant::now());
-            }
+        let sent = self
+            .server(idx)
+            .and_then(|s| s.request("resources/read", json!({"uri": uri}), Kind::Read, mcp::T_READ))
+            .is_some();
+        if sent {
+            self.providers[idx].reading = true;
+            self.providers[idx].dirty = false;
+            self.providers[idx].last_read = Some(Instant::now());
+        } else {
+            self.providers[idx].reading = false;
+            self.task_read(idx, false);
         }
     }
 
@@ -722,12 +733,18 @@ impl App {
         self.providers[idx].rows = Rows::default();
         self.providers[idx].tools.clear();
         self.providers[idx].reading = false;
+        self.task_read(idx, false);
+        if self.task.as_ref().is_some_and(|t| t.phase == crate::task::Phase::Prepare(idx)) {
+            self.task_cancel();
+            self.say(Sign::Refused, "the provider stopped while preparing; nothing was executed");
+        }
         if let Some(s) = self.servers.iter_mut().find(|s| s.idx == idx) {
             s.close_stdin();
         }
         if let Some((p, _, _, _)) = self.running.clone() {
             if p == idx {
                 self.running = None;
+                self.task_cancel();
                 self.say(
                     Sign::Refused,
                     &format!("{} stopped before it answered, so it may or may not have happened", label),
@@ -897,6 +914,7 @@ impl App {
                 if text.len() > mcp::RESOURCE_MAX {
                     return self.lose(idx, "its rows are over 256 kB");
                 }
+                let valid = model::rows(text).is_some();
                 if let Some(rows) = model::rows(text) {
                     if let Some(st) = &rows.state {
                         self.providers[idx].title = st.clone(); // the subtitle follows the section's state, step by step
@@ -910,6 +928,7 @@ impl App {
                         }
                     }
                 }
+                self.task_read(idx, valid);
             }
             Kind::Folder => {
                 let text = result
@@ -930,6 +949,7 @@ impl App {
                 }
             }
             Kind::Call(_) => self.called(idx, n, result, error),
+            Kind::Prepare(serial) => self.task_prepared(idx, serial, result, error),
         }
     }
 
@@ -949,6 +969,7 @@ impl App {
             match kind {
                 Kind::Call(_) => {
                     if self.running.take().is_some() {
+                        self.task_cancel();
                         // no answer is no proof either way: say so, and run nothing that depends on it
                         self.say(
                             Sign::Refused,
@@ -961,8 +982,12 @@ impl App {
                         self.next_step();
                     }
                 }
-                Kind::Read => self.providers[idx].reading = false,
+                Kind::Read => {
+                    self.providers[idx].reading = false;
+                    self.task_read(idx, false);
+                }
                 Kind::Init => self.lose(idx, "it did not answer"),
+                Kind::Prepare(serial) => self.task_prepared(idx, serial, None, Some("preparation timed out; nothing was executed".into())),
                 _ => {}
             }
         }
@@ -1566,7 +1591,7 @@ impl App {
         self.set_input(s.to_string());
     }
 
-    fn set_input(&mut self, s: String) {
+    pub(crate) fn set_input(&mut self, s: String) {
         self.cursor = s.chars().count();
         self.input = s;
     }
@@ -1650,6 +1675,21 @@ impl App {
     /// Esc: a question waiting is answered no (the draft comes back); the focus on a control or the
     /// draft goes first; then back one view; from the first view the dialog closes.
     pub fn escape(&mut self) {
+        let task_draft = self.staged.as_ref().map(|s| s.draft.clone());
+        let had_task = self.task.is_some();
+        self.task_cancel();
+        if had_task && self.mode == Mode::Normal {
+            self.set_input(task_draft.unwrap_or_default());
+            self.say(
+                Sign::Says,
+                if self.running.is_some() {
+                    "task stopped; the current action may still finish"
+                } else {
+                    "task stopped"
+                },
+            );
+            return;
+        }
         self.keep_lit = None;
         match std::mem::replace(&mut self.mode, Mode::Normal) {
             Mode::Confirm(_) => {
@@ -1808,6 +1848,7 @@ impl App {
                     self.approved(step);
                 } else {
                     self.say(Sign::Refused, "not done: it takes the word yes");
+                    self.task_cancel();
                     self.stop_queue();
                 }
                 return;
@@ -2189,6 +2230,15 @@ impl App {
     /// once, with no model; any other words go to spark, and the commands it plans come back to the
     /// box (#53).
     fn request(&mut self, words: &str) {
+        if self.running.is_some() {
+            self.set_input(words.into());
+            return self.say(Sign::Says, "wait for the current action's result");
+        }
+        if self.task.as_ref().is_some_and(|t| t.phase == crate::task::Phase::Question) {
+            self.say(Sign::You, words);
+            return self.task_advance(json!({"answer": words}));
+        }
+        self.task_cancel();
         if !words.contains('\n') {
             if let Some(v) = self.place(words) {
                 if self.view != v {
@@ -2277,6 +2327,10 @@ impl App {
     }
 
     fn want(&mut self, words: &str) {
+        if self.attachment.is_none() && !self.cfg.spark.is_empty() {
+            self.say(Sign::You, words);
+            return self.task_start(words);
+        }
         if self.cfg.spark_shell.is_empty() {
             self.set_input(words.to_string());
             self.say(Sign::You, words);
@@ -2314,6 +2368,7 @@ impl App {
     /// plans runs before that. Words that were the commands already run at once. An answer, or a step
     /// refused, is said under the words that asked.
     pub fn plan(&mut self, text: &str) {
+        self.task_cancel(); // legacy one-shot plans have no continuation
         self.wait = None;
         let words = self.pending.as_ref().map(|(w, _)| w.clone()).unwrap_or_default();
         let Ok(v) = serde_json::from_str::<Value>(text) else {
@@ -2423,7 +2478,7 @@ impl App {
         }
         if let Some(s) = self.queue.pop_front() {
             self.run(s);
-        } else if self.opened {
+        } else if self.opened && self.task.is_none() {
             self.quit = Some(3);
         }
     }
@@ -2446,6 +2501,9 @@ impl App {
     /// A step: an argument asked when it lacks one; then its turn starts, the command as it runs (#53);
     /// a typed yes when it is risky, then the call.
     pub fn run(&mut self, step: Step) {
+        if step.who != Who::Model {
+            self.task_cancel();
+        }
         if let Some(field) = step.call.ask.first().cloned() {
             let masked = gate::secret(&field, self.tool_of(&step).and_then(|t| t.schema.pointer(&format!("/properties/{}", field))));
             self.stash_draft();
@@ -2462,6 +2520,7 @@ impl App {
         };
         if let Err(e) = self.checked(&step) {
             self.say(Sign::Refused, &e);
+            self.task_observe("error", json!({"isError": true, "message": e}));
             return self.stop_queue();
         }
         if self.risky(&tool) {
@@ -2500,6 +2559,7 @@ impl App {
             Ok(()) => self.call(step),
             Err(e) => {
                 self.say(Sign::Refused, &format!("not done: {}", e));
+                self.task_observe("error", json!({"isError": true, "message": e}));
                 self.stop_queue();
             }
         }
@@ -2524,6 +2584,7 @@ impl App {
             }
             None => {
                 self.say(Sign::Refused, "not done: the part of the desktop that does it stopped");
+                self.task_observe("error", json!({"isError": true, "message": "the provider stopped before the call was sent"}));
                 self.stop_queue();
             }
         }
@@ -2535,8 +2596,21 @@ impl App {
             _ => return,
         }
         let Some((_, _, step, _)) = self.running.take() else { return };
+        let task_result = result
+            .clone()
+            .unwrap_or_else(|| json!({"isError": true, "message": error.clone().unwrap_or_else(|| "no result".into())}));
+        let mut output_error = if result.is_none() && error.is_none() {
+            Some("no result; the action may have happened".to_string())
+        } else {
+            None
+        };
+        if error.is_none() && result.as_ref().is_some_and(|r| r.get("isError") != Some(&Value::Bool(true))) {
+            if let Some(output) = self.tool_of(&step).and_then(|t| t.output_schema.as_ref()) {
+                output_error = gate::result_ok(output, &task_result["structuredContent"]).err();
+            }
+        }
         let schema = self.tool_of(&step).map(|t| t.schema.clone()).unwrap_or(Value::Null);
-        let refused = error.is_some() || result.as_ref().and_then(|r| r.get("isError")).and_then(Value::as_bool).unwrap_or(false);
+        let refused = output_error.is_some() || error.is_some() || result.as_ref().and_then(|r| r.get("isError")).and_then(Value::as_bool).unwrap_or(false);
         crate::audit::record(
             step.who.word(),
             &self.providers[idx].label,
@@ -2545,6 +2619,13 @@ impl App {
             &step.call.arguments,
             refused,
         );
+        if let Some(e) = output_error {
+            self.task_cancel();
+            self.say(Sign::Refused, &e);
+            self.stop_queue();
+            self.providers[idx].dirty = true;
+            return;
+        }
         if let Some(e) = error {
             self.say(Sign::Refused, &e);
             self.stop_queue();
@@ -2616,6 +2697,9 @@ impl App {
             }
         }
         self.providers[idx].dirty = true;
+        if step.who == Who::Model && self.task.is_some() {
+            self.task_observe(if refused { "error" } else { "ok" }, task_result);
+        }
         self.next_step();
     }
 
@@ -2623,6 +2707,7 @@ impl App {
     /// where the model runs.
     pub fn helper(&mut self, h: Helper, out: Result<String, String>) {
         match h {
+            Helper::Task(serial) => self.task_reply(serial, out),
             Helper::Want => match out {
                 Ok(t) => self.plan(&t),
                 Err(e) => {
@@ -2895,7 +2980,7 @@ impl App {
     /// A step's line as people read it, the command as typed: its tool's title with the arguments in
     /// place of the capital words (theme wallpaper NAME gives theme wallpaper none, out level N gives
     /// out level 60), never a secret; else the section and the row (#32).
-    fn step_line(&self, p: usize, call: &Call, row_text: &str) -> String {
+    pub(crate) fn step_line(&self, p: usize, call: &Call, row_text: &str) -> String {
         let tool = self.providers[p].tools.iter().find(|t| t.name == call.name);
         let title = tool.map(|t| t.title.clone()).unwrap_or_default();
         if !title.is_empty() && model::title_ok(&title) {

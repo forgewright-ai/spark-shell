@@ -124,6 +124,9 @@ pub struct Rows {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tool {
+    pub prepare: bool,
+    pub description: String,
+    pub output_schema: Option<Value>,
     pub name: String,
     pub title: String,
     pub schema: Value,
@@ -184,6 +187,9 @@ pub fn tools(v: &Value) -> Vec<Tool> {
                     let read_only = ann.get("readOnlyHint").and_then(Value::as_bool).unwrap_or(false);
                     let destructive = !read_only && ann.get("destructiveHint").and_then(Value::as_bool).unwrap_or(true);
                     Some(Tool {
+                        prepare: t.pointer("/_meta/spark-shell~1prepare") == Some(&Value::Bool(true)),
+                        description: s(t, "description").chars().take(800).collect(),
+                        output_schema: t.get("outputSchema").cloned(),
                         name: name.to_string(),
                         title: s(t, "title"),
                         schema: t.get("inputSchema").cloned().unwrap_or(Value::Null),

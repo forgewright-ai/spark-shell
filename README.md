@@ -766,19 +766,16 @@ Enter runs it with no model call: `nord` and Enter is the palette nord
 first row while you type. A place's name alone, as `settings` or
 `calendar`, opens it. A command in the dialog's own words, as `display
 brightness 30` or `theme dracula`, runs at once, with no model. Other
-words go to spark, the way `spark-shell want --json` reads them; with
-spark 1.90 or newer, `spark steps` plans with the desktop's own tools
-and what each section offers now. What spark plans comes back as
-commands, one a line, in the prompt where you typed, the way spark's
-prompt puts a command in your line. Read them, change a line or take
-one out, then Enter runs them in order; Esc drops them. Nothing spark
-plans runs before that Enter. A question is answered above, and its
-steps come back the same way; naming an app in a question does not open
-it. A step that cannot be taken back, as
-closing a window or forgetting a network, waits for you to type yes,
-whatever its provider says of it; the yes is checked again against what
-is offered then. A step that fails or gets no answer stops the steps
-after it, and no answer is said as no answer, not as done.
+words start a task in spark with the current view and available tools.
+Spark proposes one action, shown in the prompt for you to read. Enter
+runs it; Esc stops the task. Changing the proposal starts a new request.
+After execution, the actual result goes back to spark before it chooses
+another action. A clarification keeps the same goal and earlier results.
+An action such as closing a window or forgetting a network still waits
+for a typed yes, checked again against what is offered then. A timeout
+or lost provider stops the task: its outcome is unknown and it is not
+retried. A reported error can lead to inspection or a different proposal,
+which again waits for Enter. The Providers section describes the adapter.
 
 The dialog is a terminal program: keyboard, focus and contrast are its
 own, but a screen reader sees text, not controls with names.
@@ -810,6 +807,49 @@ runs one of its steps. Day to day, the dialog and commands such as
 `spark-shell notes` are the way in.
 
 ## Providers
+
+The dialog's language prompt uses the tool adapter of `spark do`. It sends
+the current view, selected row, local clock and visible state with that
+view's capabilities. Dates, columns and exact row actions are retained,
+including the selected row's action arguments. Existing-item arguments
+are narrowed to their actual row values when one name identifies the item.
+Other providers are listed by name; spark can request their current state
+when the task needs it. Hidden rows are not volunteered.
+Tool descriptions and typed arguments retain their meaning across the
+interface. The protocol is owned by spark's `CLAUDE.md`, contract 16.
+
+One proposed action waits for Enter. The dialog checks the current tools,
+arguments and rows again, and consequential actions still require `yes`.
+The actual MCP result goes back to spark before another action is proposed.
+A question continues the same task. Esc drops the continuation; an action
+already sent may still finish. Late model replies cannot restart it.
+A lost provider or timeout stops the task without retrying the action.
+Declared structured output schemas are checked before a result is accepted.
+Model completion prose is separate from the native success receipt.
+
+The continuation lives only in this window. The adapter adds no service,
+model download or runtime dependency. A current spark build with
+`spark do --tools` is required for this prompt; unsupported builds report
+an error. The client's existing spark connection can supply inference from
+another machine; no model needs to run on the desktop client. Execution
+stays with the provider that owns the capability. Direct controls and
+explicit commands remain usable without AI.
+The terminal `want --json` interface and attachment reader below retain
+their existing one-shot behavior during migration.
+
+A tool can advertise `_meta["spark-shell/prepare"]: true`. Before showing
+its proposal, the dialog calls the read-only `spark/prepare` method with
+the same name and arguments. `{ready:true, arguments:{...}}` supplies
+canonical arguments; these are checked and shown before execution.
+`{ready:false, question:"..."}` requests clarification without execution
+or another model call. Preparation failure, timeout or cancellation
+never falls through to execution. This extension is optional; providers
+without the flag keep their existing path. It grants no permission.
+
+`reminders_add` uses preparation to resolve relative times to an explicit
+local date and time. A past or unreadable time asks for clarification.
+Preparation writes no calendar event. The reviewed explicit date survives
+midnight; execution still checks that the time has not passed meanwhile.
 
 Every section of the dialog is a provider: `spark-shell provide wifi`
 serves the section as an MCP server on stdin and stdout (the Model

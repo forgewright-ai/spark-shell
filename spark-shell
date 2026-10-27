@@ -5567,11 +5567,11 @@ tool_spec() {
         window_focus)      _ts=window _ta=focus _tp=name _tk=string _th=i _tt='window focus NAME' _td='Put an open window in front.' ;;
         window_close)      _ts=window _ta=close _tp=name _tk=string _th=d _tt='window close NAME' _td='Close an open window.' ;;
         window_capture)    _ts=window _ta=capture _tp=what _tk='screen|area' _th='' _tt='window capture WHAT' _td='A picture of the screen, or of an area you drag, in ~/pictures/screenshots.' ;;
-        notes_new)         _ts=notes _ta=new _th='' _tt='notes new' _td='Open a new note in the editor.' ;;
+        notes_new)         _ts=notes _ta=new _th='' _tt='notes new' _td='Open a blank note in the editor for the person to write. No supplied text is saved.' ;;
         notes_open)        _ts=notes _ta=open _tp=name _tk=string _th='' _tt='notes open NAME' _td='Open a note in the editor.' ;;
-        notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='A new note of TEXT; with "NAME: TEXT", a line added to the note NAME.' ;;
+        notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='Save the supplied text in a new note without opening an editor. With "NAME: TEXT", append a line to the existing note NAME.' ;;
         notes_find)        _ts=notes _ta=find _tp=words _tk=string _th=rf _tt='notes find WORDS' _td='Which notes say these words, and the line that does.' ;;
-        reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _tw='when and what: fri 9am call the vet' _th=f _tt='reminders add WHEN TEXT' _td='A reminder: WHEN is today, tomorrow, a weekday or YYYY-MM-DD, then HH:MM, then what to remember; or in N minutes, in N hours, before the words or after them.' ;;
+        reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _tw='when and what: fri 9am call the vet' _th=f _tt='reminders add WORDS' _td='Save a reminder at a future local time. words is today, tomorrow, a weekday or YYYY-MM-DD, then HH:MM, then the title; or in N minutes/hours before or after the title. A past time is refused; choosing another date requires the person to clarify.' ;;
         reminders_done)    _ts=reminders _ta='done' _tp=name _tk=string _th='' _tt='reminders done NAME' _td='A reminder done: it is put aside for 30 days, and undo brings it back.' ;;
         reminders_restore) _ts=reminders _ta=restore _tp=name _tk=string _th=f _tt='reminders restore NAME' _td='Bring back a reminder marked done in the last 30 days.' ;;
         reminders_snooze)  _ts=reminders _ta=snooze _tp=name _tk=string _th='' _tt='reminders snooze NAME' _td='The reminder again in 10 minutes.' ;;
@@ -5649,7 +5649,8 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
             palette: {type: "object", additionalProperties: {type: "string"}}}, additionalProperties: false},
-         annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}'
+         annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}
+         + (if $n == "reminders_add" then {_meta: {"spark-shell/prepare": true}} else {} end)'
 }
 provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON array
     for _n in $PROVIDE_TOOLS; do tool_spec "$_n" && [ "$_ts" = "$1" ] && tool_json "$_n"; done | jq -cs .
@@ -5809,6 +5810,7 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
         ping|logging/setLevel) rpc_result "$_id" '{}' ;;
         tools/list) rpc_result "$_id" "$(provide_tools "$sec" | jq -c '{tools: .}')" ;;
         tools/call) provide_call "$_id" "$_params" ;;
+        spark/prepare) provide_prepare "$_id" "$_params" ;;
         resources/list) rpc_result "$_id" "$(jq -cn --arg u "spark-shell://$sec/rows" --arg s "$sec" '{resources: [{uri: $u, name: "rows", title: ($s + " rows"), mimeType: "application/json"}]}')" ;;
         resources/templates/list) if [ "$sec" = files ]; then rpc_result "$_id" '{"resourceTemplates":[{"uriTemplate":"spark-shell://files/rows/{folder}","name":"folder","title":"a folder under the roots","mimeType":"application/json"}]}'; else rpc_result "$_id" '{"resourceTemplates":[]}'; fi ;;
         resources/read|resources/subscribe|resources/unsubscribe)
@@ -5830,6 +5832,20 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
             esac ;;
         *) rpc_error "$_id" -32601 "no method $_method here" ;;
     esac
+}
+provide_prepare() {   # read-only preparation: canonical arguments or a question; never calls panel_step
+    [ "$sec" = reminders ] && [ "$(printf '%s' "$2" | jq -r '.name // ""')" = reminders_add ] || { rpc_error "$1" -32601 "this tool has no preparation"; return 0; }
+    _pw=$(printf '%s' "$2" | jq -er '.arguments | select(type == "object" and keys == ["words"]) | .words | select(type == "string" and length > 0 and length <= 256 and (test("[\u0000-\u001f\u007f]") | not))') || { rpc_error "$1" -32602 "reminder words are plain text, 256 characters at most"; return 0; }
+    _pq='What future day and time should this reminder use?'
+    if _pp=$(rem_parse "$_pw"); then
+        _ps=${_pp%%"$TAB"*}; _pt=${_pp#*"$TAB"}
+        if [ "$_ps" -gt "$(date +%Y%m%d%H%M)" ]; then
+            _pc=$(printf '%s' "$_ps" | sed 's/^\(....\)\(..\)\(..\)\(..\)\(..\)$/\1-\2-\3 \4:\5/')
+            rpc_result "$1" "$(jq -cn --arg w "$_pc $_pt" '{ready: true, arguments: {words: $w}}')"; return 0
+        fi
+        _pq="$(rem_said "$_ps") has passed. What future day and time should I use?"
+    fi
+    rpc_result "$1" "$(jq -cn --arg q "$_pq" '{ready: false, question: $q}')"
 }
 provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its arguments by its schema, the row it names, panel_gate, then the step itself
     _name=$(printf '%s' "$2" | jq -r '.name // "" | tostring')

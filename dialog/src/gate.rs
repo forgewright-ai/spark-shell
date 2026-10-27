@@ -57,6 +57,80 @@ fn in_range(p: &Value, n: f64) -> bool {
     p.get("minimum").and_then(Value::as_f64).map(|m| n >= m).unwrap_or(true) && p.get("maximum").and_then(Value::as_f64).map(|m| n <= m).unwrap_or(true)
 }
 
+/// Check the structured result against the provider's declared output schema.
+/// Results are data: text may contain newlines. Unsupported schema constructs
+/// fail explicitly instead of silently pretending to validate them.
+pub fn result_ok(schema: &Value, value: &Value) -> Result<(), String> {
+    fn valid(s: &Value, v: &Value, depth: usize) -> bool {
+        if depth > 12 || !s.is_object() {
+            return false;
+        }
+        if s.as_object().unwrap().keys().any(|k| {
+            ![
+                "type",
+                "title",
+                "description",
+                "properties",
+                "required",
+                "additionalProperties",
+                "items",
+                "minItems",
+                "maxItems",
+                "minLength",
+                "maxLength",
+                "minimum",
+                "maximum",
+                "enum",
+            ]
+            .contains(&k.as_str())
+        }) {
+            return false;
+        }
+        if s.get("enum").and_then(Value::as_array).is_some_and(|a| !a.contains(v)) {
+            return false;
+        }
+        match s["type"].as_str() {
+            Some("object") => v.as_object().is_some_and(|o| {
+                if s["required"]
+                    .as_array()
+                    .is_some_and(|a| a.iter().any(|k| !k.as_str().is_some_and(|k| o.contains_key(k))))
+                {
+                    return false;
+                }
+                o.iter().all(|(k, x)| {
+                    if let Some(p) = s["properties"].get(k) {
+                        return valid(p, x, depth + 1);
+                    }
+                    match s.get("additionalProperties") {
+                        Some(Value::Bool(false)) => false,
+                        Some(p) if p.is_object() => valid(p, x, depth + 1),
+                        Some(Value::Bool(true)) | None => true,
+                        _ => false,
+                    }
+                })
+            }),
+            Some("array") => v.as_array().is_some_and(|a| {
+                a.len() >= s["minItems"].as_u64().unwrap_or(0) as usize
+                    && a.len() <= s["maxItems"].as_u64().unwrap_or(1024) as usize
+                    && a.iter().all(|x| s.get("items").is_some_and(|p| valid(p, x, depth + 1)))
+            }),
+            Some("string") => v.as_str().is_some_and(|x| {
+                x.chars().count() >= s["minLength"].as_u64().unwrap_or(0) as usize && x.chars().count() <= s["maxLength"].as_u64().unwrap_or(65536) as usize
+            }),
+            Some("integer") => v.as_i64().is_some_and(|n| in_range(s, n as f64)),
+            Some("number") => v.as_f64().is_some_and(|n| in_range(s, n)),
+            Some("boolean") => v.is_boolean(),
+            Some("null") => v.is_null(),
+            _ => false,
+        }
+    }
+    if valid(schema, value, 0) {
+        Ok(())
+    } else {
+        Err("the structured result does not match its declared schema; the action may have happened".into())
+    }
+}
+
 /// The arguments with every password field gone: what a row is matched
 /// against, what a record digests, what the exchange may show.
 pub fn plain(schema: &Value, args: &Map<String, Value>) -> Map<String, Value> {
@@ -82,6 +156,46 @@ fn is_name(schema: &Value, k: &str) -> bool {
         return false;
     };
     p.get("type").and_then(Value::as_str) == Some("string") && p.get("enum").is_none() && !secret(k, Some(p))
+}
+
+/// Narrow a single existing-item argument to the exact values displayed by
+/// its rows. This carries the host's name gate into generation; labels are
+/// never substituted for opaque identifiers. Creation and numeric controls
+/// retain their schemas. The execution gate still checks fresh rows later.
+pub fn task_schema(tool: &Tool, rows: &Rows) -> Value {
+    let mut schema = tool.schema.clone();
+    let required: Vec<&str> = tool.schema["required"]
+        .as_array()
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let names: Vec<&str> = required.iter().copied().filter(|k| is_name(&tool.schema, k)).collect();
+    if names.len() != 1 {
+        return schema;
+    }
+    let name = names[0];
+    let mut values: Vec<Value> = rows
+        .rows
+        .iter()
+        .take(100)
+        .flat_map(|r| r.tool.iter().chain(r.more.iter()).chain(r.step.iter().flat_map(|s| [&s.less, &s.more])))
+        .filter(|c| c.name == tool.name && required.iter().all(|k| c.arguments.contains_key(*k) && !c.ask.iter().any(|a| a == k)))
+        .filter_map(|c| c.arguments.get(name).filter(|v| v.is_string()).cloned())
+        .collect();
+    if values.is_empty() {
+        return schema;
+    }
+    let prefix = format!("{}:show:", rows.title);
+    values.extend(
+        rows.rows
+            .iter()
+            .take(100)
+            .filter(|r| r.tool.is_none())
+            .filter_map(|r| r.id.strip_prefix(&prefix).map(|s| Value::String(s.into()))),
+    );
+    values.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
+    values.dedup();
+    schema["properties"][name]["enum"] = Value::Array(values);
+    schema
 }
 
 /// A step from the model (or an undo from a result), before it runs:
@@ -136,6 +250,9 @@ mod tests {
 
     fn tool(name: &str, schema: Value) -> Tool {
         Tool {
+            prepare: false,
+            description: String::new(),
+            output_schema: None,
             name: name.into(),
             title: String::new(),
             schema,
@@ -242,6 +359,9 @@ mod tests {
         // "theme gruvbox-dark" while gruvbox-dark is on: its row is a state, no step; asked again it is no
         // stranger to the list, and its provider answers that it is on
         let tools = vec![Tool {
+            prepare: false,
+            description: String::new(),
+            output_schema: None,
             name: "theme_palette".into(),
             title: "theme NAME".into(),
             schema: json!({"type": "object", "properties": {"name": {"type": "string", "minLength": 1}}, "required": ["name"], "additionalProperties": false}),
@@ -266,6 +386,9 @@ mod tests {
     fn a_value_the_schema_bounds_is_no_name_even_where_rows_list_its_steps() {
         // the screen's rows list brighter and dimmer; "dim display 25%" asks for 25 (#50)
         let tools = vec![Tool {
+            prepare: false,
+            description: String::new(),
+            output_schema: None,
             name: "display_brightness".into(),
             title: "display brightness N".into(),
             schema: json!({"type": "object", "properties": {"level": {"type": "string", "enum": ["up", "down", "10", "25", "30"]}}, "required": ["level"], "additionalProperties": false}),
@@ -293,6 +416,9 @@ mod tests {
     #[test]
     fn a_row_that_asks_for_the_name_binds_no_name() {
         let tools = vec![Tool {
+            prepare: false,
+            description: String::new(),
+            output_schema: None,
             name: "theme_save".into(),
             title: "theme save NAME".into(),
             schema: json!({"type": "object", "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 256}}, "required": ["name"], "additionalProperties": false}),

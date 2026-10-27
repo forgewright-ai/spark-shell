@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- The dialog's language prompt carries view and selection context into a
+  bounded spark task. One typed action is confirmed and executed before
+  its actual result drives the next decision. Questions keep the goal;
+  cancellation and uncertain outcomes stop continuation. Direct controls
+  require no model. Provider output schemas are checked when declared.
+  This adapter requires spark's `do --tools` support.
+- Task context retains visible dates, times and exact row actions.
+  Provider descriptions distinguish saving note text from opening an
+  editor and state the reminder provider's future-time requirement.
+- Optional native preparation validates and resolves an action before
+  review. Reminders show an explicit date and time; a past time asks for
+  clarification without creating an event or calling the model again.
+
+
 ## v0.103
 
 The system foundation, first part (Priority I of the product

@@ -66,6 +66,7 @@ pub enum Kind {
     Folder,
     Subscribe,
     Call(u64),
+    Prepare(u64),
 }
 
 #[derive(Debug)]

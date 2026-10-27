@@ -15,4 +15,5 @@ pub mod progress;
 pub mod scrub;
 pub mod sha256;
 pub mod sixel;
+pub mod task;
 pub mod ui;

@@ -3867,6 +3867,22 @@ done
 for s in lan wifi bt out mic bat clock theme window display keyboard notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
 [ "$(grep -c '' "$H/tools.all")" = 76 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
     && ok "provide: the twenty-two sections hold the 76 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+# Native preparation is read-only, before an action is shown for approval.
+jq -e -s '[.[] | select(._meta["spark-shell/prepare"] == true) | .name] == ["reminders_add"]' "$H/tools.all" >/dev/null \
+    && ok "prepare: the reminder tool advertises native preparation" || bad "prepare capability"
+mkdir -p "$H/calendar"
+_prep_before=$(ls -A "$H/calendar" | cksum)
+mcp reminders "$(rq 1 spark/prepare '{"name":"reminders_add","arguments":{"words":"2099-01-01 10am fixture event"}}')" \
+    "$(rq 2 spark/prepare '{"name":"reminders_add","arguments":{"words":"2000-01-01 10am fixture event"}}')" \
+    "$(rq 3 spark/prepare '{"name":"reminders_add","arguments":{"words":12}}')" \
+    "$(rq 4 spark/prepare '{"name":"reminders_done","arguments":{"name":"fixture"}}')"
+[ "$(ans 1 | jq -c .result)" = '{"ready":true,"arguments":{"words":"2099-01-01 10:00 fixture event"}}' ] \
+    && [ "$(ls -A "$H/calendar" | cksum)" = "$_prep_before" ] \
+    && ok "prepare: a future reminder is canonical before review, with no event written" || bad "prepare future" "$(ans 1)"
+ans 2 | jq -e '.result.ready == false and (.result.question | contains("has passed"))' >/dev/null \
+    && ok "prepare: a past time requests clarification, never another date" || bad "prepare past" "$(ans 2)"
+[ "$(ans 3 | jq -r .error.code)" = -32602 ] && [ "$(ans 4 | jq -r .error.code)" = -32601 ] \
+    && ok "prepare: invalid arguments and unsupported tools are refused" || bad "prepare refusals" "$(ans 3) $(ans 4)"
 # the brightness takes the gate's own words, up, down or 1 to 100: a planner told 0 to 100 and no step sent a 0 the gate
 # refused, and the dialog's brighter and dimmer rows send up and down (#31). spark's grammar types an argument one
 # way, so a string enum holds both, the tens first: a brief names an enum's first twelve

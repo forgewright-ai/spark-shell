@@ -139,6 +139,12 @@ fn today() -> (i32, u32, u32) {
 
 fn run_job(job: Job, tx: mpsc::Sender<Ev>, listening: Arc<Mutex<Option<u32>>>) {
     match job {
+        Job::RunInput(h, argv, input) => {
+            std::thread::spawn(move || {
+                let result = spark_dialog::task::invoke(&argv, input);
+                let _ = tx.send(Ev::Helper(h, result));
+            });
+        }
         Job::StopListening => {
             if let Some(pid) = *listening.lock().unwrap() {
                 unsafe {
