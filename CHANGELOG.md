@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- IPv4 and DNS settings also use an existing dhcpcd 10.3 owner. Basic native
+  interface sections have guarded undo and failure recovery. A fresh native
+  event confirms apply; profiles and shared static settings stay native.
+  An isolated namespace proof checks the actual daemon, kernel and resolver.
+
 - The updated dialog binary is pinned after two matching clean x86 Linux
   builds. The build environment also reproduced v0.103's published hash.
 
@@ -43,7 +48,7 @@
   Passwords stay on stdin; the WPA tool derives a key before sending it.
   A bare system offers native setup without replacing another manager.
   Active NetworkManager connections expose IPv4 and DNS settings with undo
-  and failure recovery. IP settings for other managers remain pending.
+  and failure recovery. Other owners are detected and preserved.
 
 - Display rows open each screen's native choices: scale, resolution,
   arrangement and power, all with undo. On and off persist across login;

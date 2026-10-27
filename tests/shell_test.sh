@@ -6,6 +6,7 @@
 # With SPARK=/path/to/spark's clone, section 13 renders its palettes too.
 set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
+fixture_python=$(command -v python3)
 # on a Mac the suite builds Terminal.app's profile and prints it, never
 # applying it: the developer's own terminal and profiles stay as they are
 [ "$(uname -s)" != Darwin ] || export SPARK_SHELL_NO_APPLY=1
@@ -25,6 +26,12 @@ fresh() {   # a new throwaway HOME with the stubs in place
     chmod +x "$H/.local/bin/starship"
     printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/lpstat"   # no native print service is reached by the suite
     chmod +x "$H/.local/bin/lpstat"
+    # Native audio clients can block on the real host. Tests replace these
+    # refusals with their own working backends where audio is exercised.
+    for client in amixer wpctl pactl; do
+        printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/$client"
+        chmod +x "$H/.local/bin/$client"
+    done
     printf 'ID=fixture\n' > "$H/os-release"
     export SPARK_OS_RELEASE=$H/os-release
     # the root files land under a throwaway root, never in this
@@ -33,6 +40,9 @@ fresh() {   # a new throwaway HOME with the stubs in place
     # the open terminals theme repaints: plain files under $H/pts, never
     # this machine's /dev/pts (a test must not repaint the terminal it runs in)
     export SPARK_SHELL_PTS_DIR=$H/pts
+    # Device discovery must not reach the host's display or sound buses.
+    export SPARK_SHELL_DEV=$H/dev
+    mkdir -p "$H/dev"
     # no release to fetch the dialog from: on a tag the checkout is at its release, and a download
     # would race the release job (the dialog's own tests point it at a file:// folder)
     export SPARK_SHELL_DIALOG_URL=none
@@ -53,6 +63,24 @@ fresh() {   # a new throwaway HOME with the stubs in place
     chmod +x "$H/.local/bin/tty"
     export XDG_RUNTIME_DIR=$H/run
     PATH=$H/.local/bin:$PATH
+}
+
+without_tools() {   # a PATH with explicit absences, even on a desktop host
+    "$fixture_python" - "$@" <<'PYTHON'
+import os, pathlib, sys
+out = pathlib.Path(sys.argv[1])
+out.mkdir()
+exclude = set(sys.argv[2:])
+for folder in os.environ["PATH"].split(os.pathsep):
+    try:
+        paths = pathlib.Path(folder).iterdir()
+        for path in paths:
+            dest = out / path.name
+            if path.name not in exclude and path.is_file() and os.access(path, os.X_OK) and not dest.exists():
+                dest.symlink_to(path.absolute())
+    except (FileNotFoundError, NotADirectoryError):
+        continue
+PYTHON
 }
 
 theme_fixture() {   # theme_fixture ACCENT [MUTED] -- a theme.env as today's spark writes it (THEME_BTOP too) over the VGA sixteen
@@ -180,7 +208,8 @@ sh "$SH" on --yes >/dev/null
     && plain "$HOME/.config/starship.toml" && ok "PROMPT_STYLE=full renders the full style, plain" || bad "full style"
 # no starship and no package for it (the fixture family): the shell's own prompt, a skip, never a download
 mv "$H/.local/bin/starship" "$H/starship.aside"
-out=$(PATH=$H/.local/bin:$sys sh "$SH" on --dry-run)
+PATH=$H/.local/bin:$sys without_tools "$H/no-starship" starship
+out=$(PATH=$H/no-starship sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q 'would  starship' && bad "a starship download survives" "$out" || ok "on: no starship row would fetch anything"
 printf '%s\n' "$out" | grep -q '^skip   prompt       no starship package here' && ok "on: no starship package here is a skip (the shell's own prompt)" || bad "prompt skip" "$out"
 printf '%s\n' "$out" | grep -q '^Nothing to do$' && ok "on: a prompt skip still ends in Nothing to do" || bad "prompt skip count" "$out"
@@ -444,18 +473,7 @@ else
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"; sh "$SH" on --yes >/dev/null
     rm -f "$H/.local/bin/sway"
     # Exclude sway from every PATH entry, even on a desktop developer's host.
-    python3 - "$H/no-sway" <<'PYTHON'
-import os, pathlib, sys
-out = pathlib.Path(sys.argv[1])
-out.mkdir()
-for folder in os.environ["PATH"].split(os.pathsep):
-    if not folder:
-        continue
-    for path in pathlib.Path(folder).glob("*"):
-        dest = out / path.name
-        if path.name != "sway" and path.is_file() and os.access(path, os.X_OK) and not dest.exists():
-            dest.symlink_to(path.absolute())
-PYTHON
+    without_tools "$H/no-sway" sway
     out=$(PATH="$H/no-sway" sh "$SH" check || true)
     printf '%s\n' "$out" | grep -q '^FAIL   desktop      missing: sway -- spark-shell on' && ok "check: FAIL without sway, the remedy is spark-shell on" || bad "check no sway" "$out"
     out=$(env -u WAYLAND_DISPLAY PATH="$H/no-sway" TEST_TTY=/dev/tty1 sh "$SH" desktop 2>&1 || true)
@@ -2068,11 +2086,12 @@ console_stubs Linux
 rm -f "$H/lx/update-grub"; printf '#!/bin/sh\necho "grub2-mkconfig $*" >> "%s/log"\n' "$H" > "$H/lx/grub2-mkconfig"; chmod +x "$H/lx/grub2-mkconfig"
 printf 'ID=fedora\n' > "$H/os-release"
 mkdir -p "$H/root/etc/default"; printf 'GRUB_TIMEOUT=5\nGRUB_CMDLINE_LINUX="rhgb quiet"\n' > "$H/root/etc/default/grub"; cp "$H/root/etc/default/grub" "$H/grub.orig"
-rc=0; out=$(PATH=$H/lx:$sys sh "$SH" quiet boot on 2>&1) || rc=$?
+PATH=$H/lx:$sys without_tools "$H/grub2-only" update-grub grub-mkconfig
+rc=0; out=$(PATH=$H/grub2-only sh "$SH" quiet boot on 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell quiet: This Linux boots through grub2-mkconfig, whose boot entries spark-shell does not edit, so the boot stays as it is (Fedora and openSUSE boot quiet already)." ] \
     && cmp -s "$H/root/etc/default/grub" "$H/grub.orig" && ! grep -q grub2-mkconfig "$H/log" && ok "quiet boot on (Fedora, grub2-mkconfig): one sentence, nothing run, nothing written" || bad "grub2 boot" "rc=$rc $out"
-out=$(PATH=$H/lx:$sys sh "$SH" quiet); printf '%s\n' "$out" | grep -q '^boot   na: This Linux boots through grub2-mkconfig' && ok "quiet (Fedora): boot na, the sentence" || bad "grub2 quiet" "$out"
-st=$(PATH=$H/lx:$sys sh "$SH" status); printf '%s\n' "$st" | grep -q '^  quiet login off  *boot na ' && ok "status (Fedora): boot na" || bad "grub2 status" "$(printf '%s\n' "$st" | grep quiet)"
+out=$(PATH=$H/grub2-only sh "$SH" quiet); printf '%s\n' "$out" | grep -q '^boot   na: This Linux boots through grub2-mkconfig' && ok "quiet (Fedora): boot na, the sentence" || bad "grub2 quiet" "$out"
+st=$(PATH=$H/grub2-only sh "$SH" status); printf '%s\n' "$st" | grep -q '^  quiet login off  *boot na ' && ok "status (Fedora): boot na" || bad "grub2 status" "$(printf '%s\n' "$st" | grep quiet)"
 # WSL 2 (Ubuntu): the terminal seat alone; the desktop and the login screen are refused in one sentence, nothing written
 fresh
 console_stubs Linux
@@ -2152,6 +2171,10 @@ void_desktop() {   # void_desktop -- a fresh Void root: runit, seatd's service d
     console_stubs Linux
     desktop_stubs
     printf 'NAME="Void"\nID="void"\n' > "$H/os-release"
+    # Membership takes effect only at the fixture's next login. The host may
+    # already be in _seatd; keep that session state outside this test.
+    printf '#!/bin/sh\ncase "$*" in -Gn|-nG) echo users ;; *) exec "%s" "$@" ;; esac\n' "$(command -v id)" > "$H/lx/id"
+    chmod +x "$H/lx/id"
     mkdir -p "$H/root/etc/runit" "$H/root/etc/sv/seatd" "$H/root/var/service"
     printf 'root:x:0:\nwheel:x:4:%s\n_seatd:x:990:\n' "$(id -un)" > "$H/root/etc/group"
     printf '#!/bin/sh\nexit 0\n' > "$H/lx/xbps-query"
@@ -3615,7 +3638,8 @@ STUB
     st=0; out=$(sh "$SH" bar on --desktop 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q '^DESKTOP_BAR=yes$' "$HOME/.config/spark-shell/config" && grep -q '^    mode dock$' "$sway" && ok "bar on --desktop: DESKTOP_BAR=yes, dock mode again" || bad "bar on" "st=$st $out"
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  bar   shown .*at the top of the screen: bat, bt, clock, lan, mic, out, wifi' && ok "status: the bar row names the blocks present" || bad "status bar shown" "$(printf '%s\n' "$st" | grep '^  bar')"
-    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     top          the bar draws bat, bt, clock, lan, mic, out, wifi$' \
+    without_tools "$H/no-pipewire" pipewire wireplumber pipewire-pulse
+    out=$(PATH=$H/.local/bin:$H/no-pipewire sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     top          the bar draws bat, bt, clock, lan, mic, out, wifi$' \
         && [ "$(printf '%s\n' "$out" | grep '^[a-zA-Z]* *sound ')" = 'warn   sound        PipeWire is not installed: the bar reads plain ALSA -- spark-shell on desktop' ] \
         && ok "check: the top row names the blocks; on plain ALSA one sound warn, PipeWire missing, the remedy on desktop" || bad "check top" "$out"
     # the panel as text (no terminal): the title line restates what opened it, then ONE list in sections -- the first section's rows, then what every other section can do; each row wears a sign, names its section and carries its action
@@ -3939,7 +3963,7 @@ STUB
     rm -rf "$H/fullscreen" "$H/panel.ppid" "$H/ft" "$H/.local/bin/fzf" "$H/fzf.calls" "$H/fzf.in."* "$H/fzf.args."* "$journal/undo" "$journal/recent" "$swlog"
     rm -f "$H/.local/bin/spark"
     rm -f "$H/.local/bin/amixer" "$P/asound/cards"
-    out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^warn   sound        no audio system found, so no out or mic block -- spark-shell on desktop$' \
+    out=$(PATH=$H/.local/bin:$H/no-pipewire sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^warn   sound        no audio system found, so no out or mic block -- spark-shell on desktop$' \
         && ok "check: no audio system is a warn with the package to install, never a FAIL" || bad "check sound warn" "$out"
     printf 'DESKTOP_BAR=maybe\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" status >/dev/null 2>&1 && bad "DESKTOP_BAR=maybe accepted" || ok "config: DESKTOP_BAR=maybe is refused"
@@ -5222,6 +5246,9 @@ JSON
     [ "$(cat "$nlog" 2>/dev/null)" = '-a|spark-shell|-c|device.added|--|SanDisk Ultra plugged in|28.9 GB. A click opens Storage, where it mounts.|' ] && ! grep -q 'Elements\|drive plugged' "$nlog" \
         && ok "bar: a drive plugged in while it runs is said once, within its second's look; what was there at its start is not (#73)" || bad "drive notice" "$(cat "$nlog" 2>&1) $(head -c 300 "$H/bar.out")"
     # the power: what logind does, or the sudo rule of runit; the keys and the lid said, never changed
+    # No lock is running in this fixture, even if the host is locked.
+    printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/pgrep"
+    chmod +x "$H/.local/bin/pgrep"
     printf '#!/bin/sh\necho "systemctl $*" >> "$HOME/power.log"\n' > "$H/.local/bin/systemctl"
     printf '#!/bin/sh\n[ "$1" != -n ] || shift; echo "sudo $*" >> "$HOME/power.log"\n' > "$H/.local/bin/sudo"
     printf '#!/bin/sh\necho "swaylock" >> "$HOME/power.log"\n' > "$H/.local/bin/swaylock"

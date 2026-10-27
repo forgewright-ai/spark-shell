@@ -31,6 +31,9 @@ class Network(unittest.TestCase):
         self.mock = patch.object(network, "native", self.native)
         self.mock.start()
         self.addCleanup(self.mock.stop)
+        sockets = patch.object(Path, "is_socket", return_value=False)
+        sockets.start()
+        self.addCleanup(sockets.stop)
 
     def native(self, *args):
         self.calls.append(args)

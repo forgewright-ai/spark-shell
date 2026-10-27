@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Basic IPv4 settings through the active native NetworkManager profile.
+"""Basic IPv4 settings through the active native network manager.
 
 No passwords are read. Undo holds only the five IPv4 fields changed here.
 Other managers retain ownership; an unsupported owner is a refusal.
@@ -135,12 +135,35 @@ def apply(folder, device, uuid, before, after):
     return {"receipt": "native network settings applied to " + device, "undo": token}
 
 
+def dhcpcd(folder, action, device, values):
+    helper = Path(__file__).with_name("network_dhcpcd.py")
+    command = [sys.executable, "-I", str(helper), action, device, *values]
+    if action != "show" and os.geteuid() != 0:
+        command = ["sudo", "-n", *command]
+    try:
+        result = subprocess.run(command, text=True, capture_output=True,
+                                stdin=subprocess.DEVNULL, timeout=50)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise Refused("the native dhcpcd helper did not answer") from exc
+    if result.returncode:
+        raise Refused(result.stderr.strip() or "native dhcpcd permission is required")
+    try:
+        output = json.loads(result.stdout)
+        if "undo" in output:
+            save(folder, output["undo"], {"backend": "dhcpcd"})
+        return output
+    except (ValueError, TypeError, KeyError) as exc:
+        raise Refused("the native dhcpcd helper returned an invalid receipt") from exc
+
+
 def run(folder, action, device, values):
     if action == "restore":
         if values or not re.fullmatch(r"[0-9a-f]{64}", device):
             raise Refused("choose an undo receipt from a network change")
         try:
             record = json.loads((folder / (device + ".json")).read_text())
+            if record.get("backend") == "dhcpcd":
+                return dhcpcd(folder, action, device, values)
             if not record["ready"] or set(record["before"]) != set(FIELDS) or set(record["after"]) != set(FIELDS):
                 raise ValueError()
             old = record["before"]
@@ -154,7 +177,12 @@ def run(folder, action, device, values):
         return apply(folder, device, uuid, now, old)
     device_name(device)
     update = None if action == "show" else changes(action, values)
-    uuid = profile(device)
+    try:
+        uuid = profile(device)
+    except Refused:
+        if sys.platform == "linux" and Path("/run/dhcpcd/unpriv.sock").is_socket():
+            return dhcpcd(folder, action, device, values)
+        raise
     before = read(uuid)
     if action == "show":
         return {"device": device, "profile": uuid, "settings": before}

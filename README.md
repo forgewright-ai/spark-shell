@@ -1035,10 +1035,18 @@ password reaches the native tool on stdin. The WPA tool derives a key before
 the control command, so quotes in a password cannot change that command.
 
 Connection settings expose fixed IPv4 addresses and DNS through an active
-NetworkManager profile. Each successful change has undo; a later native edit
-or profile switch prevents stale undo from replacing it. A failed live apply
-restores the prior settings when the connection still matches our write.
+NetworkManager profile or the existing dhcpcd 10.3 owner. Each successful
+change has undo; a later native edit prevents stale undo from replacing it.
+A failed live apply restores prior settings when they still match our write.
 Other network managers keep ownership; their IP settings are not edited yet.
+
+dhcpcd uses its native control socket and /etc/dhcpcd.conf. Basic
+interface sections are supported. Shared static settings, profiles, scopes
+for network names and special modes stay with the native administrator.
+Changes require native administrator permission. Root keeps the private
+undo records; the user gets an opaque receipt. A fresh native event must
+confirm each apply. Static IP needs explicit DNS when there is no other
+resolver. No service is started.
 `spark-shell desktop network` has the same controls. On a bare system, setup
 offers the distro's native network manager. An installed or configured manager
 is never replaced, including a stopped one. Native services stay installed
@@ -1052,6 +1060,12 @@ an explicitly disposable systemd VM, `mac80211_hwsim`, hostapd, dnsmasq,
 strace and all three native backends. It refuses an existing radio. Run it
 with `SPARK_SHELL_DISPOSABLE_VM=1`; this is not a physical-radio test.
 
+`sudo tests/dhcpcd_proof.sh` checks dhcpcd on Linux in separate mount, network
+and PID namespaces, with a virtual interface and a server issuing test leases.
+It checks kernel addresses and routes, native DNS, lease recovery, exact undo
+and later edits. Host interfaces, config, leases and resolver stay outside
+the test. It needs dhcpcd 10.3, Python, iproute2, mount and unshare.
+
 iwd entry uses a private terminal. Its masked prompt must acknowledge the
 password before Enter; no terminal output or password is logged or returned.
 iwd passphrases require 8 to 63 printable ASCII characters; unsupported input
@@ -1062,5 +1076,5 @@ Opening Wi-Fi never starts iwd just to check whether it owns the interface.
 Debian or Arch systemd VM. As root with `SPARK_SHELL_DISPOSABLE_VM=1`, run
 `prepare OLD_CHECKOUT` using v0.41, then `apply`. Reboot the VM and run
 `verify`. The test seeds the old owned files over the native package config,
-checks the running greeter is not stopped during migration, and verifies
+checks the running login service stays up during migration, and verifies
 that getty starts on tty1 after reboot. It does not test graphical login.
