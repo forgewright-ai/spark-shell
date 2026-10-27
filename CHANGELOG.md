@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The updated dialog binary is pinned after two matching clean x86 Linux
+  builds. The build environment also reproduced v0.103's published hash.
+
+- A guarded native VM proof checks the v0.41 greeter hand-back: the package
+  config returns, the running greeter stays up, and the next boot starts
+  the native console login on tty1. It covers owned files and service state.
+
 - Terminal minimums measure again after native sizing and can use fullscreen
   for that app when floating limits prevent a fit. Native headless Sway and
   foot checks cover normal and fractional scale, with other windows intact.

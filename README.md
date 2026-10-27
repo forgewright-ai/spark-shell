@@ -1055,3 +1055,10 @@ with `SPARK_SHELL_DISPOSABLE_VM=1`; this is not a physical-radio test.
 iwd entry uses a private terminal. Its masked prompt must acknowledge the
 password before Enter; no terminal output or password is logged or returned.
 Opening Wi-Fi never starts iwd just to check whether it owns the interface.
+
+`tests/greetd_upgrade_proof.sh` checks the old login hand-back on a disposable
+Debian or Arch systemd VM. As root with `SPARK_SHELL_DISPOSABLE_VM=1`, run
+`prepare OLD_CHECKOUT` using v0.41, then `apply`. Reboot the VM and run
+`verify`. The test seeds the old owned files over the native package config,
+checks the running greeter is not stopped during migration, and verifies
+that getty starts on tty1 after reboot. It does not test graphical login.

@@ -66,6 +66,19 @@ def main(binary):
     rec = open(audit).read() if os.path.exists(audit) else ""
     ok(rec.count("\n") == 1 and "\ttheme\ttheme_palette\t" in rec and "nord" not in rec and (os.stat(audit).st_mode & 0o777) == 0o600,
        "one audit line, 0600, numbers and names: the tool, never the argument", rec)
+    def processes():
+        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,command="], capture_output=True, text=True).stdout
+        return {int(parts[0]): (int(parts[1]), parts[2]) for line in out.splitlines()
+                if len(parts := line.split(None, 2)) == 3}
+    before = processes()
+    descendants = {pid}
+    while True:
+        added = {p for p, (parent, _) in before.items() if parent in descendants}
+        if added <= descendants:
+            break
+        descendants |= added
+    providers = {p for p in descendants if p in before and (SS + " provide") in before[p][1]}
+    ok(len(providers) >= 2, "the cleanup check observes this dialog's providers")
     time.sleep(0.3)
     os.write(fd, b"\x1b")   # the receipt is up at the home: the first Esc clears it (#25)
     time.sleep(0.5)
@@ -79,9 +92,12 @@ def main(binary):
             status = st
             break
     ok(status is not None and os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0, "Esc clears the receipt, the next Esc closes the dialog, exit 0", repr(status))
-    time.sleep(0.5)
-    ps = subprocess.run(["ps", "-A", "-o", "command="], capture_output=True, text=True).stdout
-    ok(not any((SS + " provide") in l for l in ps.splitlines()), "no provider outlives the window")
+    # The window closes without waiting for native providers. Observe their
+    # cleanup with a bound, not a fixed scheduling delay or unrelated dialogs.
+    deadline = time.monotonic() + 5
+    while providers & processes().keys() and time.monotonic() < deadline:
+        time.sleep(0.1)
+    ok(not providers & processes().keys(), "this dialog's providers exit after the window closes")
     busy(binary, env, home)
     keys(binary, env)
     print("dialog_pty: %d failed" % failed)
