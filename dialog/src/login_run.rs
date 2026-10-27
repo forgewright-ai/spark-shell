@@ -134,16 +134,17 @@ fn addresses() -> Vec<Ipv4Addr> {
             return out;
         }
         let mut p = head;
-        while !p.is_null() {
-            let a = (*p).ifa_addr;
-            if !a.is_null() && (*a).sa_family as i32 == libc::AF_INET {
-                let sin = a as *const libc::sockaddr_in;
-                let ip = Ipv4Addr::from(u32::from_be((*sin).sin_addr.s_addr));
-                if !out.contains(&ip) {
-                    out.push(ip);
+        while let Some(node) = p.as_ref() {
+            if let Some(address) = node.ifa_addr.as_ref().filter(|a| a.sa_family as i32 == libc::AF_INET) {
+                let sin = (address as *const libc::sockaddr).cast::<libc::sockaddr_in>();
+                if let Some(sin) = sin.as_ref() {
+                    let ip = Ipv4Addr::from(u32::from_be(sin.sin_addr.s_addr));
+                    if !out.contains(&ip) {
+                        out.push(ip);
+                    }
                 }
             }
-            p = (*p).ifa_next;
+            p = node.ifa_next;
         }
         libc::freeifaddrs(head);
     }

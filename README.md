@@ -150,6 +150,10 @@ explain each part. If something fails, run `spark-shell check` and
                                       the screen's brightness, 1 to 100
     spark-shell desktop keyboard [us br|next]
                                       the keyboard's layouts, or the next one
+    spark-shell desktop keyboard repeat-delay N|repeat-rate N|caps KEY
+                                     key repeat and caps, control or escape
+    spark-shell desktop pointer [tap on|off|scroll on|off|speed N]
+                                     tap to click, natural scroll and speed
     spark-shell desktop screen [NAME scale N|mode WxH|on|off|left-of NAME]
                                       list the screens, or set one
     spark-shell desktop notifications [do-not-disturb on|off|dismiss|restore]
@@ -805,6 +809,17 @@ For scripts and tests, `spark-shell panel SECTION --list` prints a
 section's list as text, and `spark-shell panel SECTION ACTION WORDS`
 runs one of its steps. Day to day, the dialog and commands such as
 `spark-shell notes` are the way in.
+
+Mouse and touchpad preferences live in the Pointer section. Tap to click
+starts on for touchpads; natural scroll starts off. Speed is -1 to 1, with
+0 the default. Keyboard also sets repeat delay (100 to 2000 milliseconds),
+repeat rate (0 to 100 per second, 0 disables repeat), and Caps Lock as itself,
+Control or Escape. The settings apply live and remain for the next login.
+The command line and the dialog use the same native controls, with no AI.
+
+The dialog's key chips are clickable. A click takes the same action as the
+key; each half of the Calendar's arrow chip moves in that direction.
+Destructive operations still require a typed yes.
 
 ## Providers
 

@@ -2765,6 +2765,41 @@ rc=0; out=$(SPARK_SHELL_XKB_LST=$H/xkb/evdev.lst PATH="$H/lx:$PATH" sh "$SH" des
 rm -f "$HOME/swaymsg.log"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop keyboard next 2>&1) || rc=$?
 [ "$rc" = 0 ] && grep -qx -- '-- input type:keyboard xkb_switch_layout next' "$HOME/swaymsg.log" && ok "desktop keyboard next: sway goes to the next layout" || bad "keyboard next" "rc=$rc $out $(cat "$HOME/swaymsg.log")"
+# native input preferences: applied, kept, bounded, and reversible
+[ "$(grep -c '^input type:touchpad tap enabled$' "$swc")" = 1 ] && grep -qx 'input type:keyboard repeat_rate 25' "$swc" \
+    && ok "input defaults: tap to click on touchpads, repeat at 25 per second" || bad "input defaults" "$(grep '^input' "$swc")"
+rm -f "$HOME/swaymsg.log"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop pointer speed 0.5 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'pointer speed 0.5' ] && grep -qx 'POINTER_SPEED=0.5' "$HOME/.config/spark-shell/config" \
+    && grep -qx -- '-- input type:pointer pointer_accel 0.5' "$HOME/swaymsg.log" && grep -qx -- '-- input type:touchpad pointer_accel 0.5' "$HOME/swaymsg.log" \
+    && grep -qx 'input type:pointer pointer_accel 0.5' "$swc" && ok "pointer speed: mouse and touchpad take it now and at login" || bad "pointer speed" "rc=$rc $out"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop pointer tap off 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx 'POINTER_TAP=off' "$HOME/.config/spark-shell/config" && grep -qx 'input type:touchpad tap disabled' "$swc" \
+    && ok "pointer tap: disabled on touchpads, saved for the next login" || bad "pointer tap" "rc=$rc $out"
+before=$(cksum < "$HOME/.config/spark-shell/config")
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop pointer speed 2 2>&1) || rc=$?
+[ "$rc" != 0 ] && [ "$before" = "$(cksum < "$HOME/.config/spark-shell/config")" ] && ok "pointer speed: an out of range value leaves settings alone" || bad "pointer bounds" "rc=$rc $out"
+mkdir -p "$H/inputfail"
+printf '#!/bin/sh\ncase "$*" in "-- input type:pointer pointer_accel 1") exit 1 ;; esac\nexec "%s" "$@"\n' "$H/lx/swaymsg" > "$H/inputfail/swaymsg"
+chmod +x "$H/inputfail/swaymsg"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/inputfail:$H/lx:$PATH" sh "$SH" desktop pointer speed 1 2>&1) || rc=$?
+[ "$rc" != 0 ] && [ "$before" = "$(cksum < "$HOME/.config/spark-shell/config")" ] && printf '%s' "$out" | grep -q 'saved setting is unchanged' \
+    && ok "pointer: native refusal leaves the saved preference alone" || bad "pointer native refusal" "rc=$rc $out"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop keyboard repeat-delay 400 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx 'KEY_REPEAT_DELAY=400' "$HOME/.config/spark-shell/config" && grep -qx 'input type:keyboard repeat_delay 400' "$swc" \
+    && ok "keyboard delay: applied and saved without changing layouts" || bad "keyboard delay" "rc=$rc $out"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop keyboard repeat-rate 0 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx 'input type:keyboard repeat_rate 0' "$swc" && ok "keyboard repeat: zero disables repeat" || bad "keyboard repeat zero" "rc=$rc $out"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop keyboard caps escape 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx 'input type:keyboard xkb_options caps:escape' "$swc" && grep -qx -- '-- input type:keyboard xkb_options caps:escape' "$HOME/swaymsg.log" \
+    && ok "keyboard caps: escape is live and kept" || bad "keyboard caps" "rc=$rc $out"
+before=$(cksum < "$HOME/.config/spark-shell/config")
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop keyboard repeat-delay 99 2>&1) || rc=$?
+[ "$rc" != 0 ] && [ "$before" = "$(cksum < "$HOME/.config/spark-shell/config")" ] && ok "keyboard delay: refuses too small a delay before a write" || bad "keyboard delay bounds" "rc=$rc $out"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel pointer speed -0.5 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx 'POINTER_SPEED=-0.5' "$HOME/.config/spark-shell/config" && ok "pointer: the dialog uses the same setting" || bad "pointer panel" "rc=$rc $out"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel undo all 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qx 'POINTER_SPEED=0.5' "$HOME/.config/spark-shell/config" && ok "pointer: undo restores the prior value" || bad "pointer undo" "rc=$rc $out"
 # the screens
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen 2>&1) || rc=$?
 [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -qx 'HDMI-A-1  Lenovo Group Limited T24i-30 V30A1  1920x1080  scale 1  at 1920,0' && ok "desktop screen: each screen by port, make, model and serial, its mode, scale and place" || bad "screen list" "rc=$rc $out"
@@ -3864,9 +3899,13 @@ done
 [ -z "$_wb" ] && [ "$(ls "$REPO/wallpaper" | wc -l | tr -d ' ')" = 34 ] && ok "wallpaper/: the 17 shipped wallpapers, each its SVG and a 3840 by 2160 PNG, nothing else" || bad "wallpaper files" "$_wb $(ls "$REPO/wallpaper")"
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
-for s in lan wifi bt out mic bat clock theme window display keyboard notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 76 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-two sections hold the 76 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+for s in lan wifi bt out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
+[ "$(grep -c '' "$H/tools.all")" = 82 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-three sections hold the 82 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
+    && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
+mcp pointer "$(call 1 pointer_speed '{"value":2}')"
+[ "$(ans 1 | jq -r .error.code)" = -32602 ] && ok "pointer MCP: an invalid speed is refused before native execution" || bad "pointer MCP bounds" "$(cat "$H/mcp.out")"
 # Native preparation is read-only, before an action is shown for approval.
 jq -e -s '[.[] | select(._meta["spark-shell/prepare"] == true) | .name] == ["reminders_add"]' "$H/tools.all" >/dev/null \
     && ok "prepare: the reminder tool advertises native preparation" || bad "prepare capability"
@@ -3942,9 +3981,20 @@ for env in "$REPO"/themes/*.env; do
 done
 [ ! -s "$H/contrast.bad" ] && ok "every palette: the dialog's quiet words read at 4.5 to 1, or as the author's own text where that reads lower" || bad "panel-muted contrast" "$(cat "$H/contrast.bad")"
 mcp theme "$(call 1 theme_palette '{"name":"none"}')"
-# subscribe: an updated notification after a step, and from the watcher when the rows change under it
+# subscribe: wait for the step and its update before changing the palette outside it.
+# Slow runners must observe two distinct changes, not two racing writes.
+: > "$H/mcp.out"
 { rq 1 resources/subscribe '{"uri":"spark-shell://theme/rows"}'; rq 2 tools/call '{"name":"theme_transparency","arguments":{"amount":"more"},"_meta":{"progressToken":"p1"}}'
-  sleep 2; printf 'THEME=dracula\n' >> "$HOME/.config/spark-shell/config"; sleep 3; rq 3 resources/unsubscribe '{"uri":"spark-shell://theme/rows"}'; } \
+  tries=0
+  until jq -e -s 'any(.id == 2) and any(.method == "notifications/resources/updated")' "$H/mcp.out" >/dev/null 2>&1; do
+      tries=$((tries + 1)); [ "$tries" -lt 300 ] || break; sleep 0.1
+  done
+  printf 'THEME=dracula\n' >> "$HOME/.config/spark-shell/config"
+  tries=0
+  until jq -e -s '[.[] | select(.method == "notifications/resources/updated")] | length >= 2' "$H/mcp.out" >/dev/null 2>&1; do
+      tries=$((tries + 1)); [ "$tries" -lt 300 ] || break; sleep 0.1
+  done
+  rq 3 resources/unsubscribe '{"uri":"spark-shell://theme/rows"}'; } \
     | SPARK_SHELL_PROVIDE_POLL=1 sh "$SH" provide theme > "$H/mcp.out" 2> "$H/mcp.err"
 order=$(jq -r 'if .id then "r" + (.id | tostring) else .method end' "$H/mcp.out" | uniq | paste -sd ' ' -)
 case $order in "r1 notifications/progress r2 notifications/resources/updated r3") ok "provide: progress against the token while a step runs, then its result, then the rows updated (after the step, and from the watcher), unsubscribed" ;;
@@ -3953,7 +4003,7 @@ case $order in "r1 notifications/progress r2 notifications/resources/updated r3"
     && ok "provide: the watcher saw the palette change made outside it; progress only grows" || bad "provide watcher" "$(cat "$H/mcp.out")"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 st=0; out=$(sh "$SH" provide spark 2>&1 >/dev/null) || st=$?
-[ "$st" -eq 1 ] && [ "$out" = 'spark-shell provide: spark is not one: lan, wifi, bt, out, mic, bat, clock, theme, window, display, keyboard, notifications, storage, power, notes, reminders, bar, layout, apps, about, undo, files' ] && ok "provide spark: no provider (the dialog holds the chat itself), the list on stderr, exit 1" || bad "provide spark" "st=$st $out"
+[ "$st" -eq 1 ] && [ "$out" = 'spark-shell provide: spark is not one: lan, wifi, bt, out, mic, bat, clock, theme, window, display, keyboard, pointer, notifications, storage, power, notes, reminders, bar, layout, apps, about, undo, files' ] && ok "provide spark: no provider (the dialog holds the chat itself), the list on stderr, exit 1" || bad "provide spark" "st=$st $out"
 st=0; out=$(sh "$SH" provide theme wifi 2>&1 >/dev/null) || st=$?
 [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell provide: one section: lan, ' && ok "provide with two words: one section, refused on stderr" || bad "provide two" "st=$st $out"
 # the dialog exits without waiting for its providers (#60): an answer that finds the reader gone (SIGPIPE)
@@ -4244,7 +4294,7 @@ STUB
     [ ! -e "$HOME/mcp.log" ] && sh "$C/spark-shell" check 2>&1 | grep -q "^warn   mcp          21 of 22 providers on spark's MCP list -- spark-shell on desktop$" \
         && ok "on desktop again: nothing asked of spark; check counts the providers on the list" || bad "mcp again" "$(cat "$HOME/mcp.log" 2>&1); $(sh "$C/spark-shell" check 2>&1 | grep mcp)"
     out=$(sh "$C/spark-shell" off desktop --dry-run 2>&1 || :)
-    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt out mic bat clock theme window display keyboard notifications storage power notes reminders bar layout apps about undo off spark's MCP list$" \
+    printf '%s\n' "$out" | grep -q "^would  mcp          take lan wifi bt out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo off spark's MCP list$" \
         && ok "off desktop --dry-run: the lines that are ours, by name; a server of yours is not among them" || bad "mcp off would" "$(printf '%s\n' "$out" | grep mcp)"
     st=0; out=$(sh "$C/spark-shell" off desktop 2>&1) || st=$?
     printf '%s\n' "$out" | grep -q "^ok     mcp          21 providers off spark's MCP list$" && [ "$(cat "$mcpf")" = 'MCP_SERVER_FILES="/opt/mine/files-server"' ] \

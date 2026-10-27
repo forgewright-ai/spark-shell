@@ -592,3 +592,47 @@ fn a_long_state_in_the_header_stops_short_of_the_date() {
     let before: String = rows[0].chars().skip(at_clock - 2).take(2).collect();
     assert_eq!(before, "  ", "two cells of air before the date: {}", rows[0]);
 }
+
+#[test]
+fn calendar_arrow_chips_click_each_direction_without_changing_focus() {
+    use spark_dialog::app::HintKey;
+    let mut app = calendar_app(true);
+    let p = palette("tokyonight-night");
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
+    let left = drawn.keys.iter().find(|k| k.3 == HintKey::Left).unwrap();
+    let right = drawn.keys.iter().find(|k| k.3 == HintKey::Right).unwrap();
+    assert_eq!(left.1, right.0);
+    assert_eq!(left.2, right.2);
+    assert!(left.0 < left.1 && right.0 < right.1);
+    let focus = app.in_list;
+    app.hint_key(right.3);
+    assert_eq!(app.month_offset, 1);
+    app.hint_key(left.3);
+    assert_eq!(app.month_offset, 0);
+    assert_eq!(app.in_list, focus);
+}
+
+#[test]
+fn key_chips_preserve_the_typed_confirmation_for_destructive_actions() {
+    use spark_dialog::app::HintKey;
+    let mut app = base();
+    app.mode = Mode::Confirm(Step {
+        prov: 0,
+        call: model::Call {
+            name: "window_close".into(),
+            arguments: json!({"name":"terminal"}).as_object().unwrap().clone(),
+            ask: vec![],
+        },
+        who: Who::Person,
+        line: "close terminal".into(),
+    });
+    let p = palette("tokyonight-night");
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
+    assert!(drawn.keys.iter().all(|k| k.3 == HintKey::Escape));
+    app.hint_key(HintKey::Enter);
+    assert!(matches!(app.mode, Mode::Normal));
+    assert!(app.running.is_none() && app.queue.is_empty(), "without a typed yes, Enter keeps the window");
+    assert!(app.jobs.is_empty(), "a click never bypasses the native confirmation");
+}

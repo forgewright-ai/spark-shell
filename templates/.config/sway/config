@@ -19,6 +19,15 @@ include "@SCREENS_CONF@"
 # The keyboard's layouts, as spark-shell desktop keyboard set them
 @KB_LAYOUT@
 @KB_VARIANT@
+input type:keyboard repeat_delay @KEY_REPEAT_DELAY@
+input type:keyboard repeat_rate @KEY_REPEAT_RATE@
+input type:keyboard xkb_options @KEY_CAPS@
+# Pointer preferences follow new devices and the next login too.
+input type:touchpad tap @POINTER_TAP@
+input type:touchpad natural_scroll @POINTER_SCROLL@
+input type:pointer natural_scroll @POINTER_SCROLL@
+input type:touchpad pointer_accel @POINTER_SPEED@
+input type:pointer pointer_accel @POINTER_SPEED@
 gaps inner @GAPS_INNER@
 gaps outer @GAPS_OUTER@
 workspace_layout @WS_LAYOUT@

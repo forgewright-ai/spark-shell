@@ -4,7 +4,7 @@
 //! turn first, then the view's list), scrolled as it needs; a rule; the footer's controls (Attach, the
 //! model, the mic).
 
-use crate::app::{App, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, PLACEHOLDER, SETTINGS};
+use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, PLACEHOLDER, SETTINGS};
 use crate::palette::Palette;
 use crate::progress;
 use crate::scrub::{cells, cut, cut_words};
@@ -165,6 +165,7 @@ pub struct Drawn {
     pub cursor: (u16, u16),
     pub picks: Vec<(u16, usize)>,
     pub chips: Vec<(u16, u16, u16, usize)>,
+    pub keys: Vec<(u16, u16, u16, HintKey)>,
     pub close: Option<(u16, u16)>,
     pub prompt: (u16, u16),
     /// A picture to draw beside the list: its cells (x, y, w, h) and its file.
@@ -308,11 +309,32 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let hint_y = HINT_Y + shift;
     let mut x = 2;
     for (t, key) in app.hint() {
+        let start = x;
         x = if key {
             pen.chip(x, hint_y, &t, false)
         } else {
             pen.put(x, hint_y, &t, pal.muted, false, false)
         };
+        if key && start < x && x <= w && hint_y < h {
+            if t == "\u{2190} \u{2192}" {
+                let middle = start + (x - start) / 2;
+                drawn.keys.push((start, middle, hint_y, HintKey::Left));
+                drawn.keys.push((middle, x, hint_y, HintKey::Right));
+            } else {
+                let action = match t.as_str() {
+                    "Enter" => Some(HintKey::Enter),
+                    "Esc" => Some(HintKey::Escape),
+                    "Shift+Enter" => Some(HintKey::Newline),
+                    "Tab" => Some(HintKey::Tab),
+                    "\u{2190}" => Some(HintKey::Left),
+                    "\u{2192}" => Some(HintKey::Right),
+                    _ => None,
+                };
+                if let Some(action) = action {
+                    drawn.keys.push((start, x, hint_y, action));
+                }
+            }
+        }
     }
 
     // the content

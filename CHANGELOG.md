@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- A click on a dialog key chip takes the same action as the key. The
+  Calendar's arrow chip moves each way; destructive steps still need yes.
+- The login address walk checks each pointer through an optional reference.
+
+- Pointer controls set touchpad tap to click, natural scrolling and
+  mouse/touchpad speed, live and for the next login (#74).
+- Keyboard controls set repeat delay, repeat rate and Caps Lock as
+  itself, Control or Escape. Direct controls and typed tools share the
+  native settings, validation and undo (#80).
+
+- The provider watcher test waits for the action and its update before
+  changing the palette outside it. Slow runners observe both changes.
+
 - The dialog's language prompt carries view and selection context into a
   bounded spark task. One typed action is confirmed and executed before
   its actual result drives the next decision. Questions keep the goal;

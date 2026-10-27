@@ -73,6 +73,18 @@ DISPLAY_SAVER=clock
 # sway's own. spark-shell desktop keyboard sets this.
 KEYBOARD=
 
+# Key repeat: delay in milliseconds (100 to 2000), rate per second
+# (0 to 100, 0 disables repeat). Caps Lock can be caps, control or escape.
+KEY_REPEAT_DELAY=600
+KEY_REPEAT_RATE=25
+KEY_CAPS=caps
+
+# Mouse and touchpad: tap to click on touchpads, natural scrolling for
+# both, and acceleration from -1 to 1 (0 keeps the default speed).
+POINTER_TAP=on
+POINTER_SCROLL=off
+POINTER_SPEED=0
+
 # Do not disturb: yes keeps the desktop's notifications out of sight (a
 # critical one still shows) until you turn it off, logins included.
 # spark-shell desktop notifications do-not-disturb on or off sets this.

@@ -1,6 +1,16 @@
 //! The dialog's state and what moves it: a key, a provider's message, a
 //! helper's answer, the clock. Drawing is ui.rs; the terminal is main.rs.
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HintKey {
+    Enter,
+    Escape,
+    Newline,
+    Tab,
+    Left,
+    Right,
+}
+
 use crate::gate;
 use crate::mcp::{self, Incoming, Kind, Server};
 use crate::model::{self, Call, Rows, Tool};
@@ -71,7 +81,7 @@ pub const DESTS: [Dest; 6] = [
 pub const SETTINGS_DEST: usize = 5;
 pub const CALENDAR_DEST: usize = 4;
 /// Settings: a section each, then Connections and About, in this order.
-pub const SETTINGS: [(&str, &str, &str); 17] = [
+pub const SETTINGS: [(&str, &str, &str); 18] = [
     ("out", "Sound", "Output and volume"),
     ("mic", "Microphone", "Input and level"),
     ("wifi", "Wi-Fi", "Networks"),
@@ -79,7 +89,8 @@ pub const SETTINGS: [(&str, &str, &str); 17] = [
     ("lan", "Network", "The wired connection"),
     ("storage", "Storage", "Drives and free space"),
     ("display", "Display", "Screens, brightness, lock"),
-    ("keyboard", "Keyboard", "Layouts"),
+    ("keyboard", "Keyboard", "Layouts and key repeat"),
+    ("pointer", "Pointer", "Mouse and touchpad"),
     ("notifications", "Notifications", "Do not disturb, the last few"),
     ("theme", "Theme", "Palette, wallpaper and text"),
     ("wallpaper", "Wallpaper", "The desktop picture"),
@@ -2833,6 +2844,18 @@ impl App {
     }
 
     /// The row under the prompt: what a key does now, a key named as a chip and nothing else as one.
+    /// A visible key chip follows the same action as that key on the keyboard.
+    pub fn hint_key(&mut self, key: HintKey) {
+        match key {
+            HintKey::Enter => self.enter(),
+            HintKey::Escape => self.escape(),
+            HintKey::Newline => self.newline(),
+            HintKey::Tab => self.tab(false),
+            HintKey::Left => self.left(),
+            HintKey::Right => self.right(),
+        }
+    }
+
     pub fn hint(&self) -> Vec<(String, bool)> {
         let key = |w: &str, k: &str| vec![(format!("{} ", w), false), (k.to_string(), true)];
         let gap = || ("   ".to_string(), false);

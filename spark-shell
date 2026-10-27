@@ -59,6 +59,10 @@
 #                                     the screen's brightness, 1 to 100
 #   spark-shell desktop keyboard [us br|next]
 #                                     the keyboard's layouts, or the next one
+#   spark-shell desktop keyboard repeat-delay N|repeat-rate N|caps KEY
+#                                     key repeat and caps, control or escape
+#   spark-shell desktop pointer [tap on|off|scroll on|off|speed N]
+#                                     tap to click, natural scroll and speed
 #   spark-shell desktop screen [NAME scale N|mode WxH|on|off|left-of NAME]
 #                                     list the screens, or set one
 #   spark-shell desktop notifications [do-not-disturb on|off|dismiss|restore]
@@ -165,7 +169,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB'
 
 # This machine's short name (the twin of spark lib/env.sh short_host). On
 # a Mac, LocalHostName, by scutil's full path: /usr/sbin is not on every
@@ -237,6 +241,13 @@ config_load() {
     saver_known "$DISPLAY_SAVER" || { echo "spark-shell: DISPLAY_SAVER=$DISPLAY_SAVER in $CONFIG: clock, or one of $SAVER_NAMES" >&2; exit 1; }
     [ -z "$KEYBOARD" ] || printf '%s\n' "$KEYBOARD" | grep -qE "$KB_RE" || { echo "spark-shell: KEYBOARD=$KEYBOARD in $CONFIG: layouts by their xkb names, a space between, a variant after a plus (us us+intl)" >&2; exit 1; }
     printf '%s\n' "$DIALOG_ATTACH_TYPES" | grep -qE '^[a-z0-9]{1,8}( [a-z0-9]{1,8})*$' || { echo "spark-shell: DIALOG_ATTACH_TYPES=$DIALOG_ATTACH_TYPES in $CONFIG: file types in lower case, a space between (txt md)" >&2; exit 1; }
+    : "${POINTER_TAP:=on}" "${POINTER_SCROLL:=off}" "${POINTER_SPEED:=0}"
+    : "${KEY_REPEAT_DELAY:=600}" "${KEY_REPEAT_RATE:=25}" "${KEY_CAPS:=caps}"
+    for k in POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE KEY_CAPS; do
+        eval "v=\$$k"
+        input_valid "$k" "$v" || { echo "spark-shell: invalid $k in $CONFIG" >&2; exit 1; }
+    done
+    export POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE KEY_CAPS
     export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB
 }
 SAVER_NAMES='spark starfield drift'   # lib/saver.py's list, in its order: what DISPLAY_SAVER takes besides clock (#66)
@@ -810,6 +821,12 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
     e="$e${NL}s|@FOOT_COLORS@|$(foot_colors)|g"
     if desktop_wanted; then e="$e${NL}s|@DESK_SLOTS@|yes|g"; else e="$e${NL}s|@DESK_SLOTS@|no|g"; fi   # sgr.sh: the five slots in foot only where the desktop's foot.ini sets them (#34)
     e="$e${NL}s|@SCREENS_CONF@|$(esc "$SCREENS_CONF")|g${NL}s|@IDLE_EXEC@|$(esc "$(idle_exec)")|g${NL}s|@KB_LAYOUT@|$(esc "$(kb_line layout)")|g${NL}s|@KB_VARIANT@|$(esc "$(kb_line variant)")|g"
+    for k in POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE; do
+        eval "v=\$$k"
+        case $v in on) v=enabled ;; off) v=disabled ;; esac
+        e="$e${NL}s|@$k@|$(esc "$v")|g"
+    done
+    e="$e${NL}s|@KEY_CAPS@|$(input_caps "$KEY_CAPS")|g"
     printf '%s' "$e"
 }
 render_sed() { printf '%s\n' "$1" > "$TMP/render.sed"; sed -f "$TMP/render.sed" "$2"; }   # render_sed SCRIPT SRC -> SRC through the script, from a file (never one -e line)
@@ -3788,7 +3805,7 @@ panel_colors() {   # the three SGRs from our own render, when there is one (a pi
 }
 
 # --- the sections: their order by use, which of them this machine has, what each costs
-PANEL_ORDER="undo spark apps layout notes reminders window display keyboard notifications out mic bt wifi storage theme bar power about"   # grouped by what you do: what is on the screen, the sound, the connections and the drives, the look, the power, then about; undo only while there is one
+PANEL_ORDER="undo spark apps layout notes reminders window display keyboard pointer notifications out mic bt wifi storage theme bar power about"   # grouped by what you do: what is on the screen, the sound, the connections and the drives, the look, the power, then about; undo only while there is one
 PANEL_BLOCKS="lan wifi bt out mic bat clock theme"      # the bar's blocks in the bar's order, and the palette: the facts, and what a click may open
 PANEL_LOOKS="lan bat clock"                            # blocks with nothing to set: shown only when they opened the panel
 panel_blocks_here() {   # -> the bar's blocks this machine has, in the bar's order
@@ -3808,7 +3825,7 @@ panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on
     [ "$_f" = glance ] || echo "$_f"
     for s in $PANEL_ORDER; do
         [ "$s" != "$_f" ] || continue
-        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|notes|reminders|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
+        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|pointer|notes|reminders|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
         echo "$s"
     done
 }
@@ -4098,6 +4115,7 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
             else _td=$(awk -F '\t' -v n="$_now" -v d="$(date +%Y%m%d)" '$1 > n && substr($1, 1, 8) == d' "$TMP/rem.t" | grep -c . || :); _all=$(grep -c . "$TMP/rem.t" || :)
                 if [ "${_all:-0}" -eq 0 ]; then echo "$(panel_col reminders)none ahead"; else echo "$(panel_col reminders)${_td:-0} today, $((_all - ${_td:-0})) after"; fi; fi ;;
         display) _b=$(light_get); if [ -n "$_b" ]; then echo "$(panel_col display)brightness $_b%"; else echo "$(panel_col display)idle $(idle_words "$DISPLAY_IDLE")"; fi ;;   # short: the header holds it; the rows say the minutes
+        pointer) echo "$(panel_col pointer)tap $POINTER_TAP $PANEL_SEP scroll $POINTER_SCROLL $PANEL_SEP speed $POINTER_SPEED" ;;
         keyboard) _k=$(kb_active); if [ -n "$_k" ]; then echo "$(panel_col keyboard)$_k $PANEL_SEP $(printf '%s\n' $KEYBOARD | grep -c .) layouts"; elif [ -n "$KEYBOARD" ]; then echo "$(panel_col keyboard)$KEYBOARD"; else echo "$(panel_col keyboard)sway's own layout"; fi ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown at the top of the screen"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys Super+d) opens the dialog"; fi ;;
         notifications) if ! mako_here; then echo "$(panel_col notifications)mako is not installed"
@@ -4262,10 +4280,19 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ -z "${SWAYSOCK:-}" ] || screen_rows | while IFS="$TAB" read -r _n _id _on _md _sc _x _y _w _h _mo; do   # short, for the dialog's width: the port, the model, the mode, the scale
                 if [ "$_on" = on ]; then printf -- '-\tscreen %s %s %s%s %s scale %s\tshow\n' "$_n" "$PANEL_SEP" "${_mo:+$_mo $PANEL_SEP }" "$_md" "$PANEL_SEP" "$_sc"; else printf -- '-\tscreen %s %s off\tshow\n' "$_n" "$PANEL_SEP"; fi
             done ;;
-        keyboard) if [ -z "$KEYBOARD" ]; then printf -- "-\tsway's own layout: spark-shell desktop keyboard us br sets some\tshow\n"; return 0; fi
-            _a=$(kb_active)
-            for _x in $KEYBOARD; do if [ "$_x" = "$_a" ] || [ -z "$_a" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$_x"; else printf -- '-\t%s\tuse %s\n' "$_x" "$_x"; fi; done
-            [ -z "$_a" ] || printf '%s\tthe next layout\tnext\n' "$PANEL_GO" ;;
+        keyboard) if [ -z "$KEYBOARD" ]; then printf -- "-\tsway's own layout: spark-shell desktop keyboard us br sets some\tshow\n"
+            else
+                _a=$(kb_active)
+                for _x in $KEYBOARD; do if [ "$_x" = "$_a" ] || [ -z "$_a" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$_x"; else printf -- '-\t%s\tuse %s\n' "$_x" "$_x"; fi; done
+                [ -z "$_a" ] || printf '%s\tthe next layout\tnext\n' "$PANEL_GO"
+            fi
+            printf -- '-\trepeat delay %s ms\tshow\n-\trepeat rate %s per second\tshow\n-\tcaps key %s\tshow\n' "$KEY_REPEAT_DELAY" "$KEY_REPEAT_RATE" "$KEY_CAPS"
+            for _v in 250 400 600 1000; do printf -- '-\trepeat after %s ms\trepeat-delay %s\n' "$_v" "$_v"; done
+            for _v in 0 15 25 40; do printf -- '-\trepeat %s per second\trepeat-rate %s\n' "$_v" "$_v"; done
+            for _v in caps control escape; do printf -- '-\tcaps key as %s\tcaps %s\n' "$_v" "$_v"; done ;;
+        pointer)
+            for _v in on off; do printf -- '-\ttap to click %s\ttap %s\n-\tnatural scroll %s\tscroll %s\n' "$_v" "$_v" "$_v" "$_v"; done
+            for _v in -1 -0.5 0 0.5 1; do printf -- '-\tpointer speed %s\tspeed %s\n' "$_v" "$_v"; done ;;
         notifications) if ! notify_up; then printf -- '-\t%s\tshow\n' "$(notify_why)"; return 0; fi
             if notify_dnd; then printf '%s\tturn off do not disturb\tdo-not-disturb off\n' "$PANEL_DOT"; else printf -- '-\tturn on do not disturb\tdo-not-disturb on\n'; fi
             _nn=$(notify_list list | grep -c . || :)
@@ -5027,7 +5054,9 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 brightness) light_set "$_arg" ;;
                 *) echo "$_a is not something display does"; return 1 ;;
             esac ;;
+        pointer) input_setting pointer "$_a" "$_arg" ;;
         keyboard) case $_a in
+                repeat-delay|repeat-rate|caps) input_setting keyboard "$_a" "$_arg" ;;
                 next) desk_in_sway || { echo "a layout switch needs the desktop"; return 1; }
                     swaymsg -- input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || { echo "sway took no layout switch"; return 1; }
                     bar_redraw; echo "the keyboard is $(kb_active)" ;;
@@ -5104,6 +5133,10 @@ panel_undo() {   # the last group's inverse steps, played newest first, then for
 panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORDS" that takes the step back, or nothing when it cannot be taken back
     _p=$1; _a=$2; shift 2; _arg=$*
     case $_p:$_a in
+        pointer:*|keyboard:repeat-delay|keyboard:repeat-rate|keyboard:caps)
+            input_spec "$_p" "$_a" || return 0
+            eval "_old=\$$input_key"
+            printf '%s %s\t%s %s %s\n' "$_a" "$_old" "$_p" "$_a" "$_old" ;;
         out:mute|mic:mute|out:unmute|mic:unmute) SND=${SND:-$(snd_tool)}; if [ "$_p" = out ]; then _mu=$(snd_out | sed -n 3p); else _mu=$(snd_mic | sed -n 3p); fi
             case $_a:$_mu in mute:0) printf 'unmute\t%s unmute\n' "$_p" ;; unmute:1) printf 'mute\t%s mute\n' "$_p" ;; esac ;;   # the state already as asked: a receipt takes nothing back, so it never replaces the undo before it
         out:level|mic:level) if [ "$_p" = out ]; then _lv=$(snd_out | sed -n 2p); else _lv=$(snd_mic | sed -n 4p); fi
@@ -5207,6 +5240,9 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
     case $1:$2 in out:use|mic:use) SND=${SND:-$(snd_tool)}; if [ "$SND" = alsa ] && _tf=$(al_theirs); then echo "$(al_theirs_said "$_tf"): spark-shell leaves it to that file"; return 1; fi ;; esac   # your own file picks the device: said, not "not on the panel"
     if ! panel_section_ok "$1" || [ "$1" = glance ] || [ "$1" = chat ]; then if [ -n "$1" ]; then echo "no $1 here"; else echo "a step with no section"; fi; return 1; fi
     case $1:$2 in
+        pointer:*|keyboard:repeat-delay|keyboard:repeat-rate|keyboard:caps)
+            if input_spec "$1" "$2" && input_valid "$input_key" "${3:-}"; then echo "$3"; return 0; fi
+            echo "$1: invalid $2 value"; return 1 ;;
         spark:chat|undo:all|about:open) echo ''; return 0 ;;
         layout:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: save takes a name"; return 1 ;;
         layout:add) _n=$(jq -r '.suggested // [] | .[]' "$DESK_LAST" 2>/dev/null | awk -v w="$(panel_lower "$3")" 'tolower($0) == w && !d {print; d = 1}'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "layout: $3 was not suggested for the last layout"; return 1 ;;
@@ -5507,9 +5543,9 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 # JSON value is built by jq with --arg, every request is parsed by jq,
 # and a method or a tool name is matched by case, never run as a name.
 PROVIDE_PROTOCOL=2025-06-18
-PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window display keyboard notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
+PROVIDE_SECTIONS="lan wifi bt out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness keyboard_use keyboard_next notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -5580,6 +5616,12 @@ tool_spec() {
         display_saver)     _ts=display _ta=saver _tp=name _tk="clock|$(printf '%s' "$SAVER_NAMES" | tr ' ' '|')" _th=i _tt='display saver NAME' _td='What the idle screen shows: the clock alone, or an animation behind it.' ;;
         display_brightness) _ts=display _ta=brightness _tp=level _tk=bright _th=if _tt='display brightness N' _td='Set the screen brightness, 1 to 100, or up or down a step.' ;;
         keyboard_use)      _ts=keyboard _ta=use _tp=name _tk=string _th=i _tt='keyboard use NAME' _td='Type in another of the keyboard layouts.' ;;
+        pointer_tap)       _ts=pointer _ta=tap _tp=state _tk='on|off' _th=if _tt='pointer tap STATE' _td='Enable or disable tap to click on touchpads.' ;;
+        pointer_scroll)    _ts=pointer _ta=scroll _tp=state _tk='on|off' _th=if _tt='pointer scroll STATE' _td='Set natural scrolling for mouse and touchpad.' ;;
+        pointer_speed)     _ts=pointer _ta=speed _tp=value _tk=speed _th=if _tt='pointer speed N' _td='Set mouse and touchpad acceleration, -1 to 1; 0 is the default.' ;;
+        keyboard_repeat_delay) _ts=keyboard _ta=repeat-delay _tp=value _tk=delay _th=if _tt='keyboard repeat-delay N' _td='Milliseconds before a held key repeats, 100 to 2000.' ;;
+        keyboard_repeat_rate) _ts=keyboard _ta=repeat-rate _tp=value _tk=level _th=if _tt='keyboard repeat-rate N' _td='Key repeats per second, 0 to 100; 0 disables repeat.' ;;
+        keyboard_caps)     _ts=keyboard _ta=caps _tp=key _tk='caps|control|escape' _th=if _tt='keyboard caps KEY' _td='Use Caps Lock as itself, Control or Escape.' ;;
         keyboard_next)     _ts=keyboard _ta=next _th='' _tt='keyboard next' _td='Go to the next keyboard layout.' ;;
         notifications_do_not_disturb) _ts=notifications _ta=do-not-disturb _tp=state _tk='on|off' _th=if _tt='notifications do-not-disturb STATE' _td='Keep notifications out of sight, or show them again; a critical one always shows.' ;;
         notifications_dismiss) _ts=notifications _ta=dismiss _th=i _tt='notifications dismiss' _td='Dismiss the notifications on the screen.' ;;
@@ -5624,7 +5666,7 @@ tool_call_json() {   # tool_call_json TOOL VALUE [LINE] -> {"name", "arguments",
     tool_spec "$1" || return 1
     jq -cn --arg n "$1" --arg p "$_tp" --arg k "$_tk" --arg v "$2" --arg l "${3:-}" --arg x "$_te" \
         '{name: $n, arguments: (if $p == "" then {} elif $x != "" then (($v | split(" ")) as $ws | {($p): $ws[0]} + ([$ws[1:][] | select(. != "") | split("=") | {(.[0]): .[1]}] | add // {}))
-            elif ($k == "level" or $k == "alpha" or $k == "minutes") then {($p): ($v | tonumber? // $v)} else {($p): $v} end)} + (if $l == "" then {} else {line: $l} end)'
+            elif ($k == "level" or $k == "alpha" or $k == "minutes" or $k == "speed" or $k == "delay") then {($p): ($v | tonumber? // $v)} else {($p): $v} end)} + (if $l == "" then {} else {line: $l} end)'
 }
 # bright is one string enum, up, down and the numbers as text: spark's
 # grammar types an argument one way, and the tens come first because its
@@ -5639,6 +5681,8 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
                 if $k == "level" then {type: "integer", minimum: 0, maximum: 100}
                 elif $k == "bright" then {type: "string", enum: (["up", "down"] + [range(10; 101; 10) | tostring] + [range(1; 101) | select(. % 10 != 0) | tostring])}
                 elif $k == "minutes" then {type: "integer", minimum: 0, maximum: 999}
+                elif $k == "speed" then {type: "number", minimum: -1, maximum: 1}
+                elif $k == "delay" then {type: "integer", minimum: 100, maximum: 2000}
                 elif $k == "alpha" then {type: "number", minimum: 0, maximum: 1}
                 elif $k == "path" then {type: "string", minLength: 2, maxLength: 4096}
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
@@ -5865,6 +5909,8 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
         elif $k == "bright" then (if ((.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 1 and .[$p] <= 100) or ((.[$p] | type) == "string" and (.[$p] | test("^(up|down|[1-9][0-9]?|100)$"))) then "" else $p + " is up, down or a whole number, 1 to 100" end)
         elif $k == "minutes" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 999 then "" else $p + " is a whole number of minutes, 0 to 999" end)
+        elif $k == "speed" then (if (.[$p] | type) == "number" and .[$p] >= -1 and .[$p] <= 1 then "" else $p + " is a number, -1 to 1" end)
+        elif $k == "delay" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 100 and .[$p] <= 2000 then "" else $p + " is a whole number, 100 to 2000" end)
         elif $k == "alpha" then (if (.[$p] | type) == "number" and .[$p] >= 0 and .[$p] <= 1 then "" else $p + " is a number, 0 to 1" end)
         elif $k == "path" then (if (.[$p] | type) == "string" and (.[$p] | startswith("/")) and (.[$p] | length) <= 4096 and (.[$p] | test("[\u0000-\u001f\u007f]") | not) then "" else $p + " is a whole path, plain text" end)
         elif (.[$p] | type) != "string" or ((.[$p]) | plain | not) then $p + " is plain text, 256 characters at most"
@@ -7761,6 +7807,10 @@ cmd_desktop() {
         idle) shift; theme_load 2>/dev/null || :; desk_idle "$@"; return ;;   # the idle screen now, or off (swayidle runs both)   # a palette that will not load never keeps the lock away
         display) shift; desk_display "$@"; return ;;
         keyboard) shift; desk_keyboard "$@"; return ;;
+        pointer) shift
+            [ "$OS" != Darwin ] || refuse "not on macOS, which has its own pointer settings"
+            if [ "$#" = 0 ]; then panel_title pointer; else [ "$#" = 2 ] || refuse "pointer takes tap on|off, scroll on|off or speed N"; input_setting pointer "$1" "$2"; fi
+            return ;;
         screen|screens) shift; desk_screen "$@"; return ;;
         capture) shift; desk_capture "$@"; return ;;
         notifications) shift; desk_notifications "$@"; return ;;
@@ -7909,6 +7959,55 @@ desk_display() {   # desk_display [idle|lock N | saver [NAME] | brightness N|up|
     esac
 }
 
+# Native input settings, shared by the CLI, rows and typed tools.
+input_spec() {
+    case $1:$2 in
+        pointer:tap) input_key=POINTER_TAP; input_targets=touchpad; input_command=tap ;;
+        pointer:scroll) input_key=POINTER_SCROLL; input_targets='pointer touchpad'; input_command=natural_scroll ;;
+        pointer:speed) input_key=POINTER_SPEED; input_targets='pointer touchpad'; input_command=pointer_accel ;;
+        keyboard:repeat-delay) input_key=KEY_REPEAT_DELAY; input_targets=keyboard; input_command=repeat_delay ;;
+        keyboard:repeat-rate) input_key=KEY_REPEAT_RATE; input_targets=keyboard; input_command=repeat_rate ;;
+        keyboard:caps) input_key=KEY_CAPS; input_targets=keyboard; input_command=xkb_options ;;
+        *) return 1 ;;
+    esac
+}
+input_valid() {
+    case $1 in
+        POINTER_TAP|POINTER_SCROLL) case $2 in on|off) return 0 ;; esac ;;
+        KEY_CAPS) case $2 in caps|control|escape) return 0 ;; esac ;;
+        POINTER_SPEED) [ ${#2} -le 32 ] && printf '%s\n' "$2" | awk '/^-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/ { if ($0 + 0 >= -1 && $0 + 0 <= 1) ok = 1 } END { exit !ok }' && return 0 ;;
+        KEY_REPEAT_DELAY|KEY_REPEAT_RATE)
+            case $2 in ''|*[!0-9]*|0[0-9]*) return 1 ;; esac
+            if [ "$1" = KEY_REPEAT_DELAY ]; then [ "$2" -ge 100 ] && [ "$2" -le 2000 ] && return 0
+            else [ "$2" -le 100 ] && return 0; fi ;;
+    esac
+    return 1
+}
+input_caps() { case $1 in control) echo ctrl:nocaps ;; escape) echo caps:escape ;; *) echo caps:capslock ;; esac; }
+input_live() {
+    _input_value=$2
+    case $1 in POINTER_TAP|POINTER_SCROLL) if [ "$2" = on ]; then _input_value=enabled; else _input_value=disabled; fi ;; KEY_CAPS) _input_value=$(input_caps "$2") ;; esac
+    for _input_type in $input_targets; do
+        swaymsg -- input "type:$_input_type" "$input_command" "$_input_value" >/dev/null 2>&1 || return 1
+    done
+}
+input_setting() {
+    [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || { echo "input settings need the sway desktop"; return 1; }
+    input_spec "$1" "$2" && input_valid "$input_key" "$3" || { echo "$1: invalid $2 value"; return 1; }
+    input_old=
+    eval "input_old=\$$input_key"
+    if [ -n "${SWAYSOCK:-}" ]; then
+        if ! input_live "$input_key" "$3"; then
+            input_live "$input_key" "$input_old" || :
+            echo "sway did not apply $1 $2; the saved setting is unchanged"; return 1
+        fi
+    fi
+    config_set "$input_key" "$3" >/dev/null
+    export "$input_key=$3"
+    look_apply
+    echo "$1 $2 $3"
+}
+
 # The keyboard: KEYBOARD is its layouts by their xkb names (us br, a
 # variant after a plus: us+intl), the first the one in use at start;
 # empty leaves sway's own. Super+Ctrl+space, a click on the bar's kb
@@ -7934,6 +8033,7 @@ kb_known() {   # kb_known LAYOUT -> 0 when xkb lists it (no list to read: every 
 desk_keyboard() {   # desk_keyboard [next | LAYOUT...]
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own keyboard settings"
     case ${1:-} in
+        repeat-delay|repeat-rate|caps) [ "$#" = 2 ] || refuse "keyboard $1 takes one value"; input_setting keyboard "$1" "$2" ;;
         '') if [ -z "$KEYBOARD" ]; then echo "keyboard: sway's own layout (spark-shell desktop keyboard us br sets some)"; return 0; fi
             _a=$(kb_names | cut -f1); _i=0
             for _x in $KEYBOARD; do if [ "$_i" = "${_a:-0}" ]; then echo "$PANEL_TICK $_x"; else echo "  $_x"; fi; _i=$((_i + 1)); done ;;
