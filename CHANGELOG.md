@@ -12,6 +12,10 @@
   opener. A failed launch is a refusal; a request is not reported as proof
   that an application opened the file.
 
+- Saved layouts apply native window rules to newly opened containers only.
+  Terminal minimums use real cell counts after the split is sized; btop
+  waits for 80 columns and 24 rows, floating if the split cannot fit it.
+
 - Battery details on macOS read the native power status and time estimate.
   A laptop no longer reports no battery because Linux files are absent.
 - A closed output pipe now runs cleanup, including the first bar header.

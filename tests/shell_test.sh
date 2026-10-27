@@ -884,7 +884,7 @@ case ${1:-} in
                 # with $HOME/fullscreen: a fullscreen window (77) on the workspace, and the panel floating under it with the pid the test wrote
                 [ ! -e "$HOME/aerc" ] || { printf '{"type":"con","id":79,"pid":300,"app_id":"foot","name":"aerc"}'; { [ -e "$HOME/fullscreen" ] || [ "$n" -gt 0 ]; } && printf ','; }   # a terminal running aerc
                 [ ! -e "$HOME/fullscreen" ] || { printf '{"type":"con","id":77,"pid":200,"app_id":"firefox","fullscreen_mode":1}'; [ "$n" -eq 0 ] || printf ','; }
-                while [ "$i" -lt "$n" ]; do [ "$i" -eq 0 ] || printf ','; printf '{"type":"con","pid":%d}' $((100 + i)); i=$((i + 1)); done
+                while [ "$i" -lt "$n" ]; do [ "$i" -eq 0 ] || printf ','; printf '{"type":"con","pid":%d,"id":%d}' $((100 + i)) $((1000 + i)); i=$((i + 1)); done
                 printf ']'
                 [ ! -e "$HOME/fullscreen" ] || printf ',"floating_nodes":[{"type":"floating_con","id":78,"app_id":"spark-dialog","pid":%s,"fullscreen_mode":0}]' "$(cat "$HOME/panel.ppid" 2>/dev/null || echo 1)"
                 echo '}]}' ;;
@@ -1133,6 +1133,14 @@ EOF
     cmp -s "$swlog" "$H/expected.gone" && ok "a window that never comes: sway never got the splitv" || bad "gone lines" "$(cat "$swlog" 2>&1)"
     # two screens: the brief says them and the rule; each screen its own workspace, the main's first,
     # focus output before each; the outputs' make, model and serial never leave the machine
+    printf '{"words":"ruled", "main":{"app":"micro","floating":true,"border":"pixel"},"side":[]}\n' > "$desks/ruled"
+    : > "$swlog"; out=$(sh "$SH" layout ruled 2>&1)
+    grep -qxF '[con_id=1000] floating enable' "$swlog" && grep -qxF '[con_id=1000] border pixel' "$swlog" && ! grep -q for_window "$swlog" \
+        && ok "saved window rules: native actions target only the new container, no lasting rule" || bad "window rules" "$out $(cat "$swlog")"
+    printf '{"words":"missing rule", "main":{"app":"gone","floating":true},"side":[]}\n' > "$desks/missing-rule"
+    : > "$swlog"; out=$(sh "$SH" layout missing-rule 2>&1)
+    ! grep -q floating "$swlog" && printf '%s\n' "$out" | grep -q 'window rule skipped' \
+        && ok "saved window rules: no new window means no setting on an existing one" || bad "missing window rule" "$out $(cat "$swlog")"
     touch "$H/two-screens"; rm -f "$argv" "$swlog"
     st=0; out=$(sh "$SH" layout "$need" 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q 'on screens: left 2560x1440, right 1920x1080\. ' "$argv" && grep -q ' A window is on one screen; screen is left or right; one screen unless the need names two or the work needs two\. ' "$argv" \

@@ -7447,7 +7447,7 @@ status_console() {   # the font and quiet rows of status (the theme row is the l
 LAYOUTS_DIR=$CONFIG_DIR/layouts   # the saved layouts; the old desks/ folder beside it is never read
 DESK_LAST=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desk.last
 DESK_PENDING=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desk.pending
-DESK_VERBS="workspace rename splith splitv layout resize focus move floating fullscreen exec session window"   # session and window: the tmux lines; rename: the workspace takes the layout's words
+DESK_VERBS="workspace rename splith splitv layout resize focus move floating fullscreen exec session window window-rule"   # session and window: the tmux lines; rename: the workspace takes the layout's words
 DESK_NOT_APPS="sh bash zsh dash fish ksh sudo doas su pkexec"   # a shell or a way to root is not an app
 DESK_WAIT=30                                                    # seconds for a window to map (gimp, a browser)
 
@@ -7741,7 +7741,7 @@ desk_launch() {   # desk_launch NAME ARGS -> how the machine says to open it: th
 desk_screens() {
     [ ! -f "$TMP/screens" ] || return 0
     swaymsg -t get_outputs 2>/dev/null | jq -r '[.[] | select(.active != false)] | sort_by(.rect.x) | length as $n | to_entries[]
-        | "\(.value.name) \(.value.current_mode.width)x\(.value.current_mode.height) \(if .key == 0 then "left" elif .key == $n - 1 then "right" else "middle" end)"' > "$TMP/screens" 2>/dev/null || true
+        | "\(.value.name) \(.value.rect.width // .value.current_mode.width)x\(.value.rect.height // .value.current_mode.height) \(if .key == 0 then "left" elif .key == $n - 1 then "right" else "middle" end)"' > "$TMP/screens" 2>/dev/null || true
     [ -s "$TMP/screens" ] || echo "- 1920x1080 left" > "$TMP/screens"
 }
 desk_said() { paste -sd, - | sed "s/,\([^,]*\)\$/ $1 \1/; s/,/, /g"; }   # desk_said and|or, one per line on stdin -> "a, b and c"
@@ -7764,6 +7764,9 @@ desk_windows() {   # desk_windows N -> how many windows workspace N has
 # from a kept desk you edited by hand.
 desk_gate() {   # desk_gate LINE -> '' when it may run, else why not
     verb=${1%% *}
+    if [ "$verb" = window-rule ]; then
+        case $1 in 'window-rule floating enable'|'window-rule floating disable'|'window-rule border normal'|'window-rule border none'|'window-rule border pixel') return ;; *) echo 'invalid window rule'; return ;; esac
+    fi
     case " $DESK_VERBS " in *" $verb "*) ;; *) echo "$verb is not a layout command"; return ;; esac
     bad=$(printf '%s' "$1" | LC_ALL=C tr -d 'A-Za-z0-9 _.:/=,%~@#+?[]"-' | head -c 1)   # what a sway line may hold; the rest is sh's
     [ -z "$bad" ] || { echo "shell syntax or a control character"; return; }
@@ -7779,6 +7782,13 @@ desk_gate() {   # desk_gate LINE -> '' when it may run, else why not
     elif [ "${1:-}" = foot ]; then   # exec foot alone is a shell; exec foot -e CMD is the CMD
         [ $# -gt 1 ] || return 0
         [ "${2:-}" != -e ] || shift 2
+    fi
+    if [ "${1:-}" = python3 ] && [ "${2:-}" = "$REPO/lib/layout_terminal.py" ]; then
+        [ "$#" -ge 6 ] || { echo "invalid terminal launch"; return; }
+        case $3 in "$TMP"/term.*) ;; *) echo "invalid terminal lease"; return ;; esac
+        case $4:$5 in *[!0-9:]*) echo "invalid terminal size"; return ;; esac
+        [ "$4" -ge 20 ] && [ "$4" -le 240 ] && [ "$5" -ge 5 ] && [ "$5" -le 100 ] || { echo "invalid terminal size"; return; }
+        shift 5
     fi
     app=${1:-}; app=${app##*/}
     [ -n "$app" ] || { echo "exec of nothing"; return; }
@@ -7801,13 +7811,13 @@ desk_gate() {   # desk_gate LINE -> '' when it may run, else why not
 # stacked at the right (a new window lands beside the focused one; splitv
 # turns the side column vertical), then main sized. A terminal app opens
 # in foot, and so does a program with no desktop entry (a kept desk's).
-desk_windows_of() {   # desk_windows_of JSONFILE -> $TMP/windows: SCREEN<tab>APP<tab>ARGS, the main first
+desk_windows_of() {   # desk_windows_of JSONFILE -> $TMP/windows: SCREEN<tab>APP<tab>INDEX<tab>ARGS, the main first
     jq -r --rawfile s "$TMP/screens" '
         ($s | split("\n") | map(select(. != "") | split(" "))) as $scr
         | def out(w; dflt): (w.screen // "") as $n | ([$scr[] | select(.[0] == $n or .[2] == $n)] | first // [dflt]) | .[0];
         out(.main; $scr[0][0]) as $mo | ([.main] + (.side // [])) as $all
         | ([$all[] | (.screen // "") | select(. != "" and (. as $n | [$scr[] | .[0], .[2]] | index($n)) == null)] | first // "") as $miss
-        | $mo, $miss, ($all[] | "\(out(.; $mo))\t\(.app)\t\(.args // "")")' "$1" > "$TMP/windows.all"
+        | $mo, $miss, ($all | to_entries[] | "\(out(.value; $mo))\t\(.value.app)\t\(.key)\t\(.value.args // "")")' "$1" > "$TMP/windows.all"
     # the main's output on line 1, the screen missed (or nothing) on line 2, one line each: a
     # tab-split read would drop an empty first field (a leading tab is IFS whitespace)
     mo=$(sed -n 1p "$TMP/windows.all"); miss=$(sed -n 2p "$TMP/windows.all")
@@ -7816,6 +7826,30 @@ desk_windows_of() {   # desk_windows_of JSONFILE -> $TMP/windows: SCREEN<tab>APP
 }
 desk_words_full() { case " $(panel_lower "$1") " in *' fullscreen '*|*' full screen '*|*' full-screen '*) echo true ;; *) echo false ;; esac; }   # desk_words_full WORDS -> the words ask for fullscreen (the machine reads that, not the model)
 desk_words_ws() { printf '%s' "$1" | tr 'A-Z' 'a-z' | sed -n 's/.*workspace \([1-9][0-9]*\).*/\1/p' | sed -n 1p; }   # desk_words_ws WORDS -> the workspace the words name, or nothing
+desk_term_line() {   # JSON INDEX APP ARGS -> a terminal launch with an optional minimum
+    _min=$(jq -r --argjson n "$2" --arg app "$3" '[.main] + (.side // []) | .[$n] |
+        [(.min_columns // (if $app == "btop" then 80 else 0 end)), (.min_rows // 24)] |
+        if all(.[]; type == "number" and . == floor) and .[0] >= 20 and .[0] <= 240 and .[1] >= 5 and .[1] <= 100 then "\(.[0]) \(.[1])" else empty end' "$1")
+    if [ -n "$_min" ]; then
+        _lease=$(mktemp "$TMP/term.XXXXXX"); echo wait > "$_lease"
+        printf 'exec foot -e python3 %s/lib/layout_terminal.py %s %s %s\n' "$REPO" "$_lease" "$_min" "$(desk_launch "$3" "$4")"
+    else printf 'exec foot -e %s\n' "$(desk_launch "$3" "$4")"; fi
+}
+desk_terminal_ready() {   # the final split sizes are now in place
+    for _lease in "$TMP"/term.*; do
+        [ -f "$_lease" ] || continue
+        case $_lease in *.result) continue ;; esac
+        echo ready > "$_lease"
+    done
+    for _lease in "$TMP"/term.*; do
+        [ -f "$_lease" ] || continue
+        case $_lease in *.result) continue ;; esac
+        _wait=0
+        while [ ! -s "$_lease.result" ] && [ "$_wait" -lt 100 ]; do sleep 0.05; _wait=$((_wait + 1)); done
+        if [ ! -s "$_lease.result" ]; then echo '  terminal app did not confirm its minimum size'
+        elif [ "$(cat "$_lease.result")" != ready ]; then printf '  %s\n' "$(cat "$_lease.result" | scrub_text)"; fi
+    done
+}
 desk_lines() {   # desk_lines WS JSONFILE -> the lines, after desk_windows_of: one group per screen, the main's on WS
     w=$1; used=''; main=1; many=$(wc -l < "$TMP/screens" | tr -d ' ')
     for scr in $(cut -f1 "$TMP/windows" | awk '!seen[$0]++'); do
@@ -7826,14 +7860,17 @@ desk_lines() {   # desk_lines WS JSONFILE -> the lines, after desk_windows_of: o
         [ -z "${DESK_LABEL:-}" ] || printf 'rename workspace to "%s %s"\n' "$w" "$DESK_LABEL"   # the bar reads "3 writing"
         grep "^$scr	" "$TMP/windows" | {
             i=0
-            while IFS='	' read -r _ app args; do
+            while IFS='	' read -r _ app index args; do
                 [ "$app" != editor ] || [ -n "$ED" ] || continue   # no editor here: that window skipped (said in desk_render)
                 case $i in 1) echo splith ;; 2) echo splitv ;; esac   # the split the next window lands in
                 case $app in
                     shell) echo "exec foot" ;;
-                    editor) printf 'exec foot -e %s\n' "$(desk_launch "$ED" "$args")" ;;
-                    *) if desk_app_term "$app" || { ! desk_app_known "$app" && desk_on_path "$app"; }; then printf 'exec foot -e %s\n' "$(desk_launch "$app" "$args")"; else printf 'exec %s\n' "$(desk_launch "$app" "$args")"; fi ;;
+                    editor) desk_term_line "$2" "$index" "$ED" "$args" ;;
+                    *) if desk_app_term "$app" || { ! desk_app_known "$app" && desk_on_path "$app"; }; then desk_term_line "$2" "$index" "$app" "$args"; else printf 'exec %s\n' "$(desk_launch "$app" "$args")"; fi ;;
                 esac
+                jq -r --argjson n "$index" '[.main] + (.side // []) | .[$n] |
+                    (if (.floating | type) == "boolean" then "window-rule floating " + (if .floating then "enable" else "disable" end) else empty end),
+                    (if (.border as $b | ["normal", "none", "pixel"] | index($b)) != null then "window-rule border " + .border else empty end)' "$2"
                 [ "$i" -ne 0 ] || [ -z "$main" ] || [ "$(jq -r '.main.fullscreen // false' "$2")" != true ] || echo "fullscreen enable"   # the main window, once it is there, fills the screen
                 i=$((i + 1))
             done
@@ -7988,9 +8025,9 @@ desk_show() {   # desk_show WHOSE -- the rendered desk played, then the closing 
 }
 
 desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec waited for
-    sent=0; nowin=0; _ws=''
+    sent=0; nowin=0; _ws=''; _new_id=''
     while IFS= read -r line || [ -n "$line" ]; do
-        case $line in ''|'#'*) continue ;; esac
+        case $line in ''|'#'*) continue ;; exec*) _new_id='' ;; esac
         why=$(desk_gate "$line")
         if [ -n "$why" ]; then echo "  refused  $line  ($why)"; case $line in exec*) nowin=1 ;; esac; continue; fi
         # a split meant for a window that never came (or was refused) would cut
@@ -7998,6 +8035,12 @@ desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec w
         case $line in split*) [ "$nowin" = 0 ] || { [ "$VERBOSE" != 1 ] || echo "  skipped  $line  (no window to split)"; nowin=0; continue; } ;; esac
         [ "$VERBOSE" != 1 ] || echo "  $line"   # the sway grammar is for the kept file, not the screen
         case $line in 'workspace number '*) _ws=${line#workspace number } ;; esac
+        case $line in 'window-rule '*)
+            if [ -n "$_new_id" ]; then swaymsg -- "[con_id=$_new_id] ${line#window-rule }" >/dev/null || echo "  window rule refused"
+            else echo "  window rule skipped: no single new window"; fi
+            continue ;;
+        esac
+        case $line in exec*) swaymsg -t get_tree 2>/dev/null | jq '[.. | objects | select(.pid? != null) | .id]' > "$TMP/old.windows" ;; esac
         before=$(desk_windows "$_ws")
         swaymsg -- "$line" >/dev/null || { echo "  sway refused: $line"; continue; }
         sent=$((sent + 1))
@@ -8006,6 +8049,7 @@ desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec w
             # nothing to play) is not waited for past a 3 s grace. What a
             # person reads: the app and its args, and whether it came
             set -- $line; shift; [ "${1:-}" = foot ] && [ "${2:-}" = -e ] && shift 2
+            if [ "${1:-}" = python3 ] && [ "${2:-}" = "$REPO/lib/layout_terminal.py" ]; then shift 5; fi
             prog=${1##*/}; shown=$*; t=0
             desk_pulse   # a sign of life while the window is on its way
             while [ "$(desk_windows "$_ws")" -le "$before" ] && [ "$t" -lt $((DESK_WAIT * 4)) ]; do
@@ -8013,9 +8057,13 @@ desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec w
                 sleep 0.25; t=$((t + 1))
             done
             desk_pulse_stop
+            _new_id=$(swaymsg -t get_tree 2>/dev/null | jq -r --slurpfile old "$TMP/old.windows" --argjson ws "$_ws" '
+                [.. | objects | select(.type? == "workspace" and .num? == $ws) | .. | objects | select(.pid? != null) | .id | select(. as $id | $old[0] | index($id) | not)] |
+                if length == 1 and (.[0] | type) == "number" then .[0] else empty end' 2>/dev/null)
             if [ "$(desk_windows "$_ws")" -gt "$before" ]; then nowin=0; echo "  $shown"; else nowin=1; echo "  $shown -- no window"; fi ;;
         esac
     done < "$1"
+    desk_terminal_ready
     [ "$sent" -gt 0 ]
 }
 
@@ -8034,6 +8082,9 @@ desk_make() {   # desk_make NEED -> the desk laid out, the model's answer in DES
     desk_pulse_stop
     [ "$st" -eq 0 ] || refuse "spark did not answer: $(head -1 "$TMP/desk.err")"
     jq -e '.main.app | strings' "$TMP/desk.json" >/dev/null 2>&1 || refuse "the answer was not a layout (spark-shell layout -v shows it)"
+    # Window rules and custom minimums are saved preferences, not model powers.
+    jq '.main |= del(.floating, .border, .min_columns, .min_rows) | .side = ((.side // []) | map(del(.floating, .border, .min_columns, .min_rows)))' "$TMP/desk.json" > "$TMP/desk.clean"
+    mv "$TMP/desk.clean" "$TMP/desk.json"
     # what opens is what the words name, when they name any; the model's why is
     # said only when what opens is its answer, unchanged
     ED=$(desk_editor) || ED=''
