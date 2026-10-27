@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Display undo preserves custom scale values and exact native refresh rates.
+
 - Printers expose the configured CUPS queues and your pending jobs. Choose
   a default, pause or resume a queue, or confirm cancellation of one job.
   Native permissions still apply; no service or queue is added implicitly.

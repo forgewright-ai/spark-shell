@@ -5999,7 +5999,7 @@ tool_spec() {
         display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=i _tt='display lock N' _td='Lock the screen and turn the display off after N idle minutes; 0 never.' ;;
         display_saver)     _ts=display _ta=saver _tp=name _tk="clock|$(printf '%s' "$SAVER_NAMES" | tr ' ' '|')" _th=i _tt='display saver NAME' _td='What the idle screen shows: the clock alone, or an animation behind it.' ;;
         display_brightness) _ts=display _ta=brightness _tp=level _tk=bright _th=if _tt='display brightness N' _td='Set the screen brightness, 1 to 100, or up or down a step.' ;;
-        display_scale) _ts=display _ta=scale _tp=screen _tk=string _te='scale:0.5|0.75|1|1.25|1.5|1.75|2|2.5|3' _th=if _tt='screen scale' _td='Set the scale on one connected screen; larger means larger text.' ;;
+        display_scale) _ts=display _ta=scale _tp=screen _tk=string _te='scale:scale' _th=if _tt='screen scale' _td='Set the scale on one connected screen; larger means larger text.' ;;
         display_mode) _ts=display _ta=mode _tp=screen _tk=string _te='mode:mode' _th=if _tt='screen mode' _td='Set one of the resolutions offered by the connected screen.' ;;
         display_position) _ts=display _ta=position _tp=screen _tk=string _te='x:coordinate y:coordinate' _th=if _tt='screen position' _td='Place a connected screen at absolute layout coordinates.' ;;
         display_place) _ts=display _ta=place _tp=screen _tk=string _te='side:left-of|right-of|above|below other:port' _th=if _tt='screen arrangement' _td='Place a connected screen beside another active screen.' ;;
@@ -6082,7 +6082,7 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
                 else {type: "string", minLength: 1, maxLength: 256} end) + (if $w == "" then {} else {description: $w} end))} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)
-              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
+              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
             required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text") | .[0]]), additionalProperties: false},
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
@@ -6336,10 +6336,11 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif (keys - [$p, $q] - $xk - [""]) != [] then "no argument " + ((keys - [$p, $q] - $xk)[0])
         elif $p != "" and (has($p) | not) then "missing " + $p
         elif ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)][0][0])
-        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "coordinate" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "coordinate" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
+        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
         elif ([$xs[] | select(.[1] == "text" or .[1] == "name") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text" or .[1] == "name") | .[0]][0]) + " is plain text, 40 characters at most"
         elif any($xs[]; . as $e | .[1] == "coordinate" and (($a[$e[0]] | type) != "number" or $a[$e[0]] < -65535 or $a[$e[0]] > 65535 or $a[$e[0]] != ($a[$e[0]] | floor))) then "coordinates are whole numbers, -65535 to 65535"
-        elif any($xs[]; . as $e | .[1] == "mode" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[0-9]{2,5}x[0-9]{2,5}$") | not))) then "mode is WIDTHxHEIGHT"
+        elif any($xs[]; . as $e | .[1] == "scale" and (if ($a[$e[0]] | type) != "string" then true else ($a[$e[0]] | length) > 16 or ($a[$e[0]] | test("^[0-9]+([.][0-9]+)?$") | not) or (($a[$e[0]] | tonumber? // 0) <= 0) end)) then "scale is a positive decimal"
+        elif any($xs[]; . as $e | .[1] == "mode" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$") | not))) then "mode is WIDTHxHEIGHT or WIDTHxHEIGHT@REFRESHHz"
         elif any($xs[]; . as $e | .[1] == "net" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9.,:/-]{1,80}$") | not))) then "network values are addresses, none or auto"
         elif any($xs[]; . as $e | .[1] == "port" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9_.:-]{1,80}$") | not))) then "other is a connected screen port"
         elif $p == "" then ""
@@ -8516,6 +8517,7 @@ desk_keyboard() {   # desk_keyboard [next | LAYOUT...]
 # which the sway template includes. A change is sway's at once and the
 # file's for the next start. The last screen on is never turned off.
 SCREENS_CONF=$CONFIG_DIR/screens.conf
+screen_scale_valid() { [ "${#1}" -le 16 ] && printf '%s\n' "$1" | awk '/^[0-9]+([.][0-9]+)?$/ && $0 + 0 > 0 {ok=1} END {exit !ok}'; }
 screen_action() (   # ACTION encoded-arguments [check]
     action=$1; value=$2; check=${3:-}
     set -f; set -- $value
@@ -8523,8 +8525,8 @@ screen_action() (   # ACTION encoded-arguments [check]
     name=$1; shift
     printf '%s\n' "$name" | grep -qE '^[A-Za-z0-9_.:-]{1,80}$' && [ -n "$(screen_find "$name")" ] || { echo "no connected screen $name"; exit 1; }
     case $action in
-        scale) [ "$#" = 1 ] && case $1 in scale=0.5|scale=0.75|scale=1|scale=1.25|scale=1.5|scale=1.75|scale=2|scale=2.5|scale=3) true ;; *) false ;; esac || exit 1; set -- scale "${1#*=}" ;;
-        mode) [ "$#" = 1 ] && printf '%s\n' "$1" | grep -qE '^mode=[0-9]{2,5}x[0-9]{2,5}$' || exit 1; set -- mode "${1#*=}" ;;
+        scale) [ "$#" = 1 ] && [ "${1%%=*}" = scale ] && screen_scale_valid "${1#*=}" || exit 1; set -- scale "${1#*=}" ;;
+        mode) [ "$#" = 1 ] && printf '%s\n' "$1" | grep -qE '^mode=[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$' || exit 1; set -- mode "${1#*=}" ;;
         position) [ "$#" = 2 ] && printf '%s\n' "$1 $2" | grep -qE '^x=-?[0-9]{1,5} y=-?[0-9]{1,5}$' || exit 1; set -- position "${1#*=}" "${2#*=}" ;;
         place) [ "$#" = 2 ] && printf '%s\n' "$1 $2" | grep -qE '^side=(left-of|right-of|above|below) other=[A-Za-z0-9_.:-]{1,80}$' || exit 1; set -- "${1#*=}" "${2#*=}" ;;
         screen-on|screen-off) [ "$#" = 0 ] || exit 1; set -- "${action#screen-}" ;;
@@ -8540,15 +8542,15 @@ provide_screen_rows() {   # connected screen choices, all through the same typed
         def row($key; $text; $args; $group): {id: ($n + ":" + $key + ":" + ($args | tojson)), sign: "blank", text: $text, tool: {name: ("display_" + $key), arguments: ({screen: $n} + $args)}, more: [], columns: [], children: null, group: $group};
         [row((if .active then "off" else "on" end); (if .active then "turn off" else "turn on" end); {}; "power")]
         + ["0.5", "0.75", "1", "1.25", "1.5", "1.75", "2", "2.5", "3" | row("scale"; ("scale " + .); {scale: .}; "scale")]
-        + [($screen.modes // [] | map("\(.width)x\(.height)") | unique)[] | row("mode"; .; {mode: .}; "resolution")]
+        + [($screen.modes // [] | map("\(.width)x\(.height)" + (if (.refresh // 0) > 0 then "@\(.refresh / 1000)Hz" else "" end)) | unique)[] | row("mode"; .; {mode: .}; "resolution")]
         + [$screens[] | select(.name != $n and .active) | .name as $other | ["left-of", "right-of", "above", "below"][] | row("place"; (. + " " + $other); {side: ., other: $other}; "arrangement")]
-        | {title: $n, state: ($screen.model // ""), rows: ., short: []}'
+        | {title: $n, state: ($screen.model // ""), rows: .} | .short = [.rows[].id]'
 }
 
 screens_json() { swaymsg -t get_outputs 2>/dev/null || echo '[]'; }
 screen_rows() {   # -> NAME<tab>ID<tab>ON<tab>MODE<tab>SCALE<tab>X<tab>Y<tab>W<tab>H<tab>MODEL per screen (W, H: its place in layout pixels)
     screens_json | jq -r '.[] | [.name, ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")), (if .active then "on" else "off" end),
-        (if .current_mode then "\(.current_mode.width)x\(.current_mode.height)" else "" end), ((.scale // 1) * 100 | round / 100 | tostring), (.rect.x | tostring), (.rect.y | tostring), (.rect.width | tostring), (.rect.height | tostring), (.model // "")] | @tsv' 2>/dev/null || :
+        (if .current_mode then "\(.current_mode.width)x\(.current_mode.height)" + (if (.current_mode.refresh // 0) > 0 then "@\(.current_mode.refresh / 1000)Hz" else "" end) else "" end), (.scale // 1 | tostring), (.rect.x | tostring), (.rect.y | tostring), (.rect.width | tostring), (.rect.height | tostring), (.model // "")] | @tsv' 2>/dev/null || :
 }
 screen_find() { screen_rows | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($1) == n || (n != "" && index(tolower($2), n) > 0) { print; exit }'; }   # screen_find NAME -> its row: by the port's name, or words of its make and model
 screen_save() {   # screen_save ID WORDS -- the screen's line of that kind (scale, mode, position, on or off) in screens.conf, every other kept
@@ -8579,9 +8581,9 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | on | off | left-of|r
     _n=$(printf '%s' "$_r" | cut -f1); _id=$(printf '%s' "$_r" | cut -f2)
     [ "$(screen_rows | awk -F '\t' -v i="$_id" '$2 == i' | grep -c .)" -eq 1 ] || _id=$_n   # a name two screens share (no serial, the same model) would set both: the port's name instead
     case ${2:-} in
-        scale) case ${3:-} in 0.5|0.75|1|1.25|1.5|1.75|2|2.5|3) ;; *) refuse "scale takes 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5 or 3" ;; esac
+        scale) screen_scale_valid "${3:-}" || refuse "scale takes a positive decimal"
             _cmd="scale $3"; _said="$_n scale $3" ;;
-        mode) screens_json | jq -e --arg n "$_n" --arg m "${3:-}" '.[] | select(.name == $n) | .modes[] | select("\(.width)x\(.height)" == $m)' >/dev/null 2>&1 || refuse "$_n has no mode ${3:-}: $(screens_json | jq -r --arg n "$_n" '[.[] | select(.name == $n) | .modes[] | "\(.width)x\(.height)"] | unique | join(", ")')"
+        mode) screens_json | jq -e --arg n "$_n" --arg m "${3:-}" '.[] | select(.name == $n) | .modes[] | select("\(.width)x\(.height)" == $m or ("\(.width)x\(.height)@\((.refresh // 0) / 1000)Hz" == $m))' >/dev/null 2>&1 || refuse "$_n has no mode ${3:-}: $(screens_json | jq -r --arg n "$_n" '[.[] | select(.name == $n) | .modes[] | "\(.width)x\(.height)"] | unique | join(", ")')"
             _cmd="mode ${3}"; _said="$_n $3" ;;
         on) _cmd=enable; _said="$_n on" ;;
         off) [ "$(screen_rows | awk -F '\t' '$3 == "on"' | grep -c .)" -gt 1 ] || refuse "$_n is the only screen on: it stays on"
