@@ -8601,7 +8601,7 @@ provide_screen_rows() {   # connected screen choices, all through the same typed
 screens_json() { swaymsg -t get_outputs 2>/dev/null || echo '[]'; }
 screen_rows() {   # -> NAME<tab>ID<tab>ON<tab>MODE<tab>SCALE<tab>X<tab>Y<tab>W<tab>H<tab>MODEL per screen (W, H: its place in layout pixels)
     screens_json | jq -r '.[] | [.name, ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")), (if .active then "on" else "off" end),
-        (if .current_mode then "\(.current_mode.width)x\(.current_mode.height)" + (if (.current_mode.refresh // 0) > 0 then "@\(.current_mode.refresh / 1000)Hz" else "" end) else "" end), (.scale // 1 | tostring), (.rect.x | tostring), (.rect.y | tostring), (.rect.width | tostring), (.rect.height | tostring), (.model // "")] | @tsv' 2>/dev/null || :
+        (if .current_mode then "\(.current_mode.width)x\(.current_mode.height)" + (if (.current_mode.refresh // 0) > 0 then "@\(.current_mode.refresh / 1000)Hz" else "" end) else "" end), ((.scale // 1) + 0 | tostring), (.rect.x | tostring), (.rect.y | tostring), (.rect.width | tostring), (.rect.height | tostring), (.model // "")] | @tsv' 2>/dev/null || :
 }
 screen_find() { screen_rows | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($1) == n || (n != "" && index(tolower($2), n) > 0) { print; exit }'; }   # screen_find NAME -> its row: by the port's name, or words of its make and model
 screen_save() {   # screen_save ID WORDS -- the screen's line of that kind (scale, mode, position, on or off) in screens.conf, every other kept
