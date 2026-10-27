@@ -77,6 +77,31 @@ assert native.CONFIG.read_text() == before_failure
 check('192.0.2.20', '192.0.2.53')
 print('PASS: native duplicate-address failure and verified recovery', flush=True)
 
+caller = int(os.environ.get('SUDO_UID', '0'))
+if caller:
+    client_state = Path('/run/proof-client')
+    client_state.mkdir(mode=0o700)
+    os.chown(client_state, caller, -1)
+    command = ['sudo', '-n', '-u', '#' + str(caller), sys.executable, '-I',
+               str(Path(network.__file__)), '--state', str(client_state)]
+    before_permission = native.CONFIG.read_text()
+    result = subprocess.run(command + ['dns', 'proof0', '198.51.100.53'],
+                            capture_output=True, text=True, timeout=50)
+    if result.returncode:
+        assert ('password is required' in result.stderr or
+                'not allowed to execute' in result.stderr), result.stderr
+        assert native.CONFIG.read_text() == before_permission
+        print('PASS: native permission refusal leaves config intact', flush=True)
+    else:
+        receipt = json.loads(result.stdout)
+        check('192.0.2.20', '198.51.100.53')
+        result = subprocess.run(command + ['restore', receipt['undo']],
+                                capture_output=True, text=True, timeout=50)
+        assert result.returncode == 0, result.stderr
+        assert native.CONFIG.read_text() == before_permission
+        check('192.0.2.20', '192.0.2.53')
+        print('PASS: ordinary user, native sudo permission and undo', flush=True)
+
 native.CONFIG.write_text(native.CONFIG.read_text() + '# later native edit\n')
 try:
     action('restore', auto['undo'])
