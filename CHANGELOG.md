@@ -6,6 +6,10 @@
   a default, pause or resume a queue, or confirm cancellation of one job.
   Native permissions still apply; no service or queue is added implicitly.
 
+- Files can hand a folder to the native file manager. macOS uses its own
+  opener. A failed launch is a refusal; a request is not reported as proof
+  that an application opened the file.
+
 - Battery details on macOS read the native power status and time estimate.
   A laptop no longer reports no battery because Linux files are absent.
 - A closed output pipe now runs cleanup, including the first bar header.

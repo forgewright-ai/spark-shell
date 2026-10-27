@@ -5791,7 +5791,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_open files_show files_attach"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -5908,6 +5908,7 @@ tool_spec() {
         apps_terminal)     _ts=apps _ta=terminal _th='' _tt='apps terminal' _td='Open a terminal window.' ;;
         about_open)        _ts=about _ta=open _th=ri _tt='about' _td='The version, the keys, the licence and the address.' ;;
         undo_all)          _ts=undo _ta=all _th='' _tt='undo' _td='Take the last thing done back.' ;;
+        files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=if _tt='files browse PATH' _td='Open an approved folder in the system file manager for file operations.' ;;
         files_open)        _ts=files _ta=open _tp=path _tk=path _th=if _tt='files open PATH' _td='Open a file with the app that opens its kind.' ;;
         files_show)        _ts=files _ta=show _tp=path _tk=path _th=rif _tt='files show PATH' _td='The first lines of a text file.' ;;
         files_attach)      _ts=files _ta=attach _tp=path _tk=path _th=rif _tt='files attach PATH' _td='A text file to ask spark about, with the next words.' ;;
@@ -6348,25 +6349,30 @@ provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows, or one f
         elif [ "$_fd" -gt 0 ]; then _fw="folders"; [ "$_fd" != 1 ] || _fw="folder"; _fw="$_fd $_fw"
         else _fw=empty; fi
         printf 'files:total\037blank\037%s\037\037\037\037\n' "$_fw" >> "$TMP/files.rows"
+        printf 'files:browse\037opens\037open folder in system file manager\037\037%s\037\037\n' "$(jq -cn --arg p "$_fp" '{path: $p}')" >> "$TMP/files.rows"
     fi
     jq -Rn --arg t "$_ft" '
         [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end),
-            tool: (if .[4] == "" then null else {name: "files_open", arguments: (.[4] | fromjson)} end),
-            more: (if .[4] == "" then [] else [{name: "files_show", arguments: (.[4] | fromjson)}, {name: "files_attach", arguments: (.[4] | fromjson)}] end),
+            tool: (if .[4] == "" then null else {name: (if .[0] == "files:browse" then "files_browse" else "files_open" end), arguments: (.[4] | fromjson)} end),
+            more: (if .[4] == "" or .[0] == "files:browse" then [] else [{name: "files_show", arguments: (.[4] | fromjson)}, {name: "files_attach", arguments: (.[4] | fromjson)}] end),
             columns: ([.[5], .[6]] | map(select(. != null and . != ""))), group: null}] as $rows
         | {title: $t, rows: $rows, short: [$rows[] | select(.id | startswith("files:root:")) | .id]}' "$TMP/files.rows"
 }
 provide_files_call() {   # provide_files_call ID TOOL PATH -- open, show or attach a file that holds to the four lines
-    _ff=$(files_ok "$3" file) || { provide_refuse "$1" "files: that is not a file in the folders given"; return 0; }
+    if [ "$2" = files_browse ]; then _ff=$(files_ok "$3" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; }
+    else _ff=$(files_ok "$3" file) || { provide_refuse "$1" "files: that is not a file in the folders given"; return 0; }; fi
     _fname=$(printf '%s' "${_ff##*/}" | scrub_text)
     case $2 in
-        files_open)
-            command -v xdg-open >/dev/null 2>&1 || { provide_refuse "$1" "files: xdg-open is not installed, so nothing opens files"; return 0; }
-            [ -n "${WAYLAND_DISPLAY:-}" ] || { provide_refuse "$1" "files: opening a file needs the desktop"; return 0; }
-            _before=$(desk_windows_all); _lead=''; ! command -v setsid >/dev/null 2>&1 || _lead=setsid
-            ( $_lead xdg-open "$_ff" </dev/null >/dev/null 2>&1 & ) 3>&- 4<&- 5>&-
+        files_open|files_browse)
+            if [ "$OS" != Darwin ]; then
+                command -v xdg-open >/dev/null 2>&1 || { provide_refuse "$1" "files: xdg-open is not installed, so nothing opens files"; return 0; }
+                [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ] || { provide_refuse "$1" "files: opening a file needs the desktop"; return 0; }
+                if [ "$2" = files_browse ] && [ -z "$(xdg-mime query default inode/directory 2>/dev/null)" ]; then provide_refuse "$1" "files: no system file manager is configured; folders can still be browsed here"; return 0; fi
+            fi
+            _before=''; [ -z "${SWAYSOCK:-}" ] || _before=$(desk_windows_all)
+            if ! python3 "$REPO/lib/open_path.py" "$OS" "$_ff" > "$TMP/open.result" 2> "$TMP/open.error"; then provide_refuse "$1" "$(cat "$TMP/open.error" | scrub_text)"; return 0; fi
             if [ -n "${SWAYSOCK:-}" ] && panel_open_wait "$_before"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
-            else rpc_result "$1" "$(jq -cn --arg r "opened $_fname" '{receipt: $r} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"; fi ;;
+            else rpc_result "$1" "$(jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}' "$TMP/open.result")"; fi ;;
         files_show|files_attach)
             set -- "$1" "$2" "$(files_stat "$_ff" | cut -d' ' -f1)"
             [ "$3" -le "$FILES_SHOW_MAX" ] || { provide_refuse "$1" "files: $_fname is larger than $((FILES_SHOW_MAX / 1024)) kB"; return 0; }

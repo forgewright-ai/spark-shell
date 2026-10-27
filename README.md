@@ -1011,3 +1011,8 @@ chosen job after confirmation. Queue state changes offer undo, as does a
 default change when the prior default is known. Cancelled jobs stay cancelled.
 CUPS owns permission and configuration.
 No printer, server or service is added by opening the section.
+
+Each folder in files has an action to open the system file manager. Native
+file operations stay there; spark-shell keeps its own browser read only.
+Opening uses the host platform, including macOS. A failed native launch is
+reported as a refusal; a launch request alone never claims a file was opened.
