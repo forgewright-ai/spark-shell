@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Battery details on macOS read the native power status and time estimate.
+  A laptop no longer reports no battery because Linux files are absent.
+
 - Display rows open each screen's native choices: scale, resolution,
   arrangement and power, all with undo. On and off persist across login;
   the last active screen stays on, and login recovers an all-off layout.

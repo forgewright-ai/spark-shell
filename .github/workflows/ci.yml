@@ -59,7 +59,9 @@ jobs:
           sh tests/shell_test.sh
           python3 tests/bt_agent_test.py
       - name: the idle screen's savers
-        run: python3 -I tests/saver_test.py
+        run: |
+          python3 -I tests/saver_test.py
+          python3 -I tests/battery_test.py
   debian:
     # the same suite on Debian itself, where distro/debian.env's names are
     # looked up. The privacy and ascii gates ran once, on linux.

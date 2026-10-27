@@ -3364,7 +3364,19 @@ bar_bt() {   # -> "name NAME", "on", "off", or nothing (no controller)
     dev=$(bar_timeout bluetoothctl devices Connected 2>/dev/null | awk '$1 == "Device" { $1 = ""; $2 = ""; sub(/^ +/, ""); print; exit }')
     if [ -n "$dev" ]; then printf 'name %s\n' "$dev"; else echo on; fi
 }
+mac_battery() {   # pmset owns the Mac's battery facts; no Linux sysfs fallback
+    LC_ALL=C pmset -g batt 2>/dev/null | awk -F ';' '
+        /[0-9]+%/ {
+            n=$1; sub(/^.*[[:space:]]/, "", n); sub(/%$/, "", n)
+            if (n !~ /^[0-9]+$/ || (n + 0) > 100) next
+            state=$2; sub(/^[[:space:]]*/, "", state); sub(/[[:space:]]*$/, "", state)
+            left=$3; sub(/^[[:space:]]*/, "", left); sub(/ remaining.*$/, "", left)
+            if (left !~ /^[0-9]+:[0-9][0-9]$/ || left == "0:00") left=""
+            printf "%s\t%s\t%s\n", n, state, left; exit
+        }'
+}
 bar_power() {   # -> "CAPACITY STATUS" of the first battery, or nothing
+    if [ "$OS" = Darwin ]; then mac_battery | awk -F '\t' '{print $1 " " $2}'; return; fi
     for b in "$BAR_SYS"/class/power_supply/*; do
         [ -f "$b/capacity" ] || continue
         [ ! -f "$b/type" ] || [ "$(cat "$b/type")" = Battery ] || continue
@@ -4326,7 +4338,13 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             if [ "$1" = out ]; then _o=$(snd_out); _m=$(printf '%s\n' "$_o" | sed -n 3p); _lv=$(printf '%s\n' "$_o" | sed -n 2p)
             else _o=$(snd_mic); _m=$(printf '%s\n' "$_o" | sed -n 3p); _lv=$(printf '%s\n' "$_o" | sed -n 4p); fi
             [ "$_lv" = - ] || [ -z "$_lv" ] || { if [ "$_m" = 1 ]; then printf -- '-\tunmute\tunmute\n'; else printf -- '-\tmute\tmute\n'; fi; } ;;
-        bat) _d=$(bat_dir); [ -n "$_d" ] || { printf -- '-\tno battery\tshow\n'; return 0; }
+        bat) if [ "$OS" = Darwin ]; then
+                _b=$(bar_power); [ -n "$_b" ] || { printf -- '-\tno battery reported by macOS\tshow\n'; return 0; }
+                printf -- '-\tcharge %s%% %s %s\tshow\n' "${_b%% *}" "$PANEL_SEP" "${_b#* }"
+                _left=$(bat_left); [ -z "$_left" ] || printf -- '-\t%s\tshow\n' "$_left"
+                return 0
+            fi
+            _d=$(bat_dir); [ -n "$_d" ] || { printf -- '-\tno battery\tshow\n'; return 0; }
             printf -- '-\tcharge %s%% %s %s\tshow\n' "$(bat_num capacity)" "$PANEL_SEP" "$(panel_lower "$(bat_num status)")"
             _left=$(bat_left); [ -z "$_left" ] || printf -- '-\t%s\tshow\n' "$_left"
             _f=$(bat_num energy_full); _fd=$(bat_num energy_full_design); [ -n "$_f" ] || { _f=$(bat_num charge_full); _fd=$(bat_num charge_full_design); }
@@ -5299,6 +5317,10 @@ panel_step() {   # panel_step SECTION ACTION [ARG] -> panel_act's line; a step t
 bat_dir() { for b in "$BAR_SYS"/class/power_supply/*; do [ -f "$b/capacity" ] && { [ ! -f "$b/type" ] || [ "$(cat "$b/type")" = Battery ]; } && { echo "$b"; return; }; done; }
 bat_num() { cat "$(bat_dir)/$1" 2>/dev/null || :; }
 bat_left() {   # -> "H:MM left" or "H:MM to full", from the kernel's energy or charge numbers; nothing when it cannot tell
+    if [ "$OS" = Darwin ]; then
+        mac_battery | awk -F '\t' '$3 != "" {if ($2 == "charging") print $3 " to full"; else if ($2 == "discharging") print $3 " left"}'
+        return
+    fi
     _d=$(bat_dir); [ -n "$_d" ] || return 0
     _now=$(bat_num energy_now); _full=$(bat_num energy_full); _rate=$(bat_num power_now)
     [ -n "$_now" ] || { _now=$(bat_num charge_now); _full=$(bat_num charge_full); _rate=$(bat_num current_now); }
