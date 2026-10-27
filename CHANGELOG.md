@@ -14,6 +14,10 @@
 
 - The provider watcher test waits for the action and its update before
   changing the palette outside it. Slow runners observe both changes.
+- The desktop shares the palette's dark or light preference through native
+  settings and restores its prior value on off. Native desktop portals
+  provide file pickers and screen sharing, with the session environment
+  handed to them when sway starts. App themes stay under their own control.
 
 - The dialog's language prompt carries view and selection context into a
   bounded spark task. One typed action is confirmed and executed before

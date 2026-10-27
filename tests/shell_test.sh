@@ -2449,7 +2449,7 @@ printf '%s\n' "$out" | grep -q '^todo   sound        pulseaudio is installed, an
     && ok "Arch with pulseaudio: pipewire-pulse is left out of the install, one todo says how to take it" || bad "arch pulseaudio" "$out"
 grep -q '^PKG_SOUND=pipewire wireplumber alsa-pipewire libspa-bluetooth$' "$REPO/distro/void.env" && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa libspa-0.2-bluetooth$' "$REPO/distro/debian.env" \
     && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa$' "$REPO/distro/arch.env" && ok "distro: the sound's packages, each family's names" || bad "PKG_SOUND" "$(grep -h PKG_SOUND "$REPO"/distro/*.env)"
-grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils mako libnotify udisks2 dbus$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, mako, notify-send, udisks2 and the session bus among them" || bad "void.env desktop"
+grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils mako libnotify udisks2 dbus xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk gsettings-desktop-schemas$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, mako, notify-send, udisks2 and the session bus among them" || bad "void.env desktop"
 
 # the login screen of v0.41 (greetd on tty1, spark-shell's files in
 # /etc/greetd): handed back to getty at the next boot by on, on desktop,
@@ -3063,8 +3063,10 @@ spark-shell changes how this machine works:
 
   packages     sway swaybg foot foot-terminfo ttf-dejavu curl openssh swayidle
                swaylock grim slurp wl-clipboard brightnessctl ddcutil librsvg
-               otf-monaspace mako libnotify udisks2 pipewire wireplumber
-               pipewire-pulse pipewire-alsa (sudo)
+               otf-monaspace mako libnotify udisks2 xdg-desktop-portal
+               xdg-desktop-portal-wlr xdg-desktop-portal-gtk
+               gsettings-desktop-schemas pipewire wireplumber pipewire-pulse
+               pipewire-alsa (sudo)
   login        logging in on tty1 starts the desktop
                Alt+F2 is a plain shell
 
@@ -5186,6 +5188,45 @@ fi
 # each, verbatim in README). Not uname-guarded: the words are the same on
 # both OSes. Each check names the file and the words it found. Runs last:
 # a red row here belongs to a document, not to the program.
+# Native settings and portals: a fake bus and settings store, never the
+# developer's desktop preference. Exercise the command and the theme path.
+fresh
+console_stubs Linux
+mkdir -p "$HOME/.config/spark-shell"
+printf 'DESKTOP=sway\nTHEME=nord\n' > "$HOME/.config/spark-shell/config"
+printf "'default'\n" > "$H/scheme"
+cat > "$H/lx/gsettings" <<'PORTAL_STUB'
+#!/bin/sh
+case $1 in
+    list-keys) echo color-scheme ;;
+    get) cat "$HOME/scheme" ;;
+    set) printf '%s\n' "$4" > "$HOME/scheme"; echo "$4" >> "$HOME/scheme.log" ;;
+esac
+PORTAL_STUB
+printf '#!/bin/sh\necho "$XDG_CURRENT_DESKTOP $*" > "$HOME/portal.env"\n' > "$H/lx/dbus-update-activation-environment"
+chmod +x "$H/lx/gsettings" "$H/lx/dbus-update-activation-environment"
+DBUS_SESSION_BUS_ADDRESS=fixture WAYLAND_DISPLAY=fixture L desktop portals >/dev/null
+[ "$(cat "$H/scheme")" = "'prefer-dark'" ] && grep -qx 'sway WAYLAND_DISPLAY XDG_CURRENT_DESKTOP SWAYSOCK' "$H/portal.env"     && ok "portals: the session imports its environment and shares a dark preference" || bad "portals dark environment"
+DBUS_SESSION_BUS_ADDRESS=fixture WAYLAND_DISPLAY=fixture L desktop portals >/dev/null
+[ "$(wc -l < "$H/scheme.log" | tr -d ' ')" = 1 ] && ok "portals: the same preference needs no write" || bad "portals repeat"
+DBUS_SESSION_BUS_ADDRESS=fixture L theme gruvbox-light >/dev/null
+[ "$(cat "$H/scheme")" = "'prefer-light'" ] && [ "$(sed -n 1p "$H/.local/state/spark-shell/portal-color-scheme")" = "'default'" ]     && ok "portals: a light palette changes the preference and keeps the original" || bad "portals light"
+DBUS_SESSION_BUS_ADDRESS=fixture L off desktop >/dev/null
+[ "$(cat "$H/scheme")" = "'default'" ] && [ ! -e "$H/.local/state/spark-shell/portal-color-scheme" ]     && ok "portals: off restores the original preference" || bad "portals restore"
+printf 'DESKTOP=sway\nTHEME=nord\n' > "$HOME/.config/spark-shell/config"
+DBUS_SESSION_BUS_ADDRESS=fixture L theme nord >/dev/null
+DBUS_SESSION_BUS_ADDRESS=fixture WAYLAND_DISPLAY=fixture L desktop portals >/dev/null
+printf "'prefer-light'\n" > "$H/scheme"
+DBUS_SESSION_BUS_ADDRESS=fixture L off desktop >/dev/null
+[ "$(cat "$H/scheme")" = "'prefer-light'" ] && ok "portals: off keeps a preference changed by another program" || bad "portals external change"
+printf 'DESKTOP=sway\nTHEME=nord\n' > "$HOME/.config/spark-shell/config"
+DBUS_SESSION_BUS_ADDRESS=fixture L theme nord --dry-run >/dev/null
+[ "$(cat "$H/scheme")" = "'prefer-light'" ] && ok "portals: dry-run leaves native settings alone" || bad "portals dry-run"
+L on --yes >/dev/null 2>&1 || :
+f=$HOME/.config/xdg-desktop-portal/sway-portals.conf
+grep -qx 'default=gtk' "$f" && grep -qx 'org.freedesktop.impl.portal.ScreenCast=wlr' "$f" && grep -qx 'org.freedesktop.impl.portal.Screenshot=wlr' "$f"     && ok "portals: the desktop renders the native backend choices" || bad "portals config"
+rm -rf "$H"
+
 voice=$(mktemp -d)
 awk '/^```/ {fence = !fence; next} fence {next} /^    / {next} {print}' "$REPO/README.md" > "$voice/README.md"
 awk '/^## v/ {n++} n == 1' "$REPO/CHANGELOG.md" > "$voice/CHANGELOG.md"

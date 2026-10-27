@@ -63,6 +63,7 @@
 #                                     key repeat and caps, control or escape
 #   spark-shell desktop pointer [tap on|off|scroll on|off|speed N]
 #                                     tap to click, natural scroll and speed
+#   spark-shell desktop portals       refresh the desktop portal environment
 #   spark-shell desktop screen [NAME scale N|mode WxH|on|off|left-of NAME]
 #                                     list the screens, or set one
 #   spark-shell desktop notifications [do-not-disturb on|off|dismiss|restore]
@@ -858,7 +859,7 @@ rc_tree() { if [ "$OS" = Darwin ]; then echo "$REPO/templates/macos"; else echo 
 # The desktop: sway and foot, rendered only when asked for (DESKTOP=sway)
 # and only on Linux -- macOS has its own desktop. `off` hands both back
 # whatever the config says.
-DESKTOP_RENDERED=".config/foot/foot.ini .config/foot/dialog.ini .config/sway/config .local/share/applications/spark-shell-tmux.desktop .config/fontconfig/conf.d/50-spark-shell.conf .config/mako/config"   # fontconfig: the wifi bars' family, unhinted (#43); mako: the notifications (#71)
+DESKTOP_RENDERED=".config/foot/foot.ini .config/foot/dialog.ini .config/sway/config .local/share/applications/spark-shell-tmux.desktop .config/fontconfig/conf.d/50-spark-shell.conf .config/mako/config .config/xdg-desktop-portal/sway-portals.conf"   # fontconfig: the wifi bars' family, unhinted (#43); mako: the notifications (#71)
 foot_colors() {   # the name of foot's color section: [colors] before 1.26, [colors-dark] from it
     _v=$(PATH=$HOME/.local/bin:$PATH foot --version 2>/dev/null | sed -n 's/^foot version: \([0-9]*\)\.\([0-9]*\).*/\1 \2/p')
     set -- ${_v:-1 26}
@@ -1245,6 +1246,63 @@ sound_by_pipewire() {   # sound_by_pipewire NAME -- PipeWire starts NAME itself:
 }
 # shellcheck disable=SC2086   # the pids, split on purpose
 sound_stop() { [ -z "${SOUND_PIDS:-}" ] || { kill $SOUND_PIDS 2>/dev/null; wait $SOUND_PIDS 2>/dev/null; } || :; }   # wait: gone before the next desktop asks wpctl
+# The old native preference belongs to the user. Restore it only while
+# our last value still holds; an outside change takes ownership back.
+portal_ready() {
+    [ "$OS" != Darwin ] && notify_bus && command -v gsettings >/dev/null 2>&1 &&
+        gsettings list-keys org.gnome.desktop.interface 2>/dev/null | grep -qx color-scheme
+}
+portal_look() (
+    [ "$MODE" = apply ] && [ "$DESKTOP" = sway ] && portal_ready || exit 0
+    wanted="'prefer-light'"; ! theme_is_dark || wanted="'prefer-dark'"
+    current=$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null) || exit 0
+    [ "$current" != "$wanted" ] || exit 0
+    saved=$STATE_DIR/portal-color-scheme
+    prior=$current
+    if [ -f "$saved" ] && [ "$(sed -n 2p "$saved")" = "$current" ]; then prior=$(sed -n 1p "$saved"); fi
+    if gsettings set org.gnome.desktop.interface color-scheme "$wanted" 2>/dev/null; then
+        mkdir_private "$STATE_DIR"
+        (umask 077; printf '%s\n%s\n' "$prior" "$wanted" > "$saved")
+    fi
+)
+portal_off() (
+    [ "$MODE" = apply ] && [ -f "$STATE_DIR/portal-color-scheme" ] || exit 0
+    portal_ready || exit 0
+    saved=$STATE_DIR/portal-color-scheme
+    current=$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null) || exit 0
+    if [ "$current" = "$(sed -n 2p "$saved")" ]; then
+        gsettings set org.gnome.desktop.interface color-scheme "$(sed -n 1p "$saved")" 2>/dev/null || exit 0
+    fi
+    rm -f "$saved"
+)
+desk_portals() {
+    [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || refuse "portals need the sway desktop"
+    [ -n "${WAYLAND_DISPLAY:-}" ] && notify_bus || refuse "portals need the running desktop and its session bus"
+    command -v dbus-update-activation-environment >/dev/null 2>&1 || refuse "the desktop bus tools are missing (spark-shell on desktop)"
+    XDG_CURRENT_DESKTOP=sway; export XDG_CURRENT_DESKTOP
+    dbus-update-activation-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP SWAYSOCK || return 1
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP SWAYSOCK 2>/dev/null || :
+    fi
+    theme_load
+    portal_look
+    echo "the desktop portal environment is ready"
+}
+portal_check() {
+    missing=''
+    for package in xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk gsettings-desktop-schemas; do
+        pkg_installed "$package" || missing="$missing $package"
+    done
+    if [ -n "$missing" ]; then chk portals warn "not installed:$missing" "spark-shell on desktop"; return; fi
+    if ! command -v dbus-update-activation-environment >/dev/null 2>&1 || ! command -v gsettings >/dev/null 2>&1; then
+        chk portals warn "the desktop bus or settings tools are missing" "spark-shell on desktop"
+    elif [ -n "${WAYLAND_DISPLAY:-}" ] && ! notify_bus; then
+        chk portals warn "the desktop has no session bus" "log out and in again"
+    elif [ ! -f "$HOME/.config/xdg-desktop-portal/sway-portals.conf" ]; then
+        chk portals warn "the desktop portal choices are missing" "spark-shell on desktop"
+    else chk portals ok "native settings and file picker via gtk, screen sharing via wlr"; fi
+}
+
 notify_check() {   # the notify row of check, on a desktop machine (#71)
     if ! mako_here; then chk notify warn "mako is not installed, so no notification shows" "spark-shell on desktop"
     elif ! command -v notify-send >/dev/null 2>&1; then chk notify warn "notify-send is not installed, so a reminder or a drive plugged in says nothing" "spark-shell on desktop"
@@ -2140,6 +2198,7 @@ sway_live_cmd() {   # -> the one swaymsg command that gives a running sway the l
 look_burst() {   # the look on the screen at once (#33): everything made ready first; then a new wallpaper, which takes about 90 ms to draw, and in that moment sway, the bar and the open terminals, which take theirs at once
     _painted=0
     [ "$MODE" = apply ] && [ "$OS" != Darwin ] || return 0
+    portal_look
     _wn=''; ! desktop_wanted || [ -z "${SWAYSOCK:-}" ] || [ "$WALL_BG" = "$(wall_shown)" ] || _wn=1
     look_terms prepare
     ! desktop_wanted || bar_palette
@@ -2895,6 +2954,7 @@ cmd_off() {   # cmd_off [desktop|login]
         config_set DESKTOP none
         DESKTOP=none; export DESKTOP
         hand_back $DESKTOP_RENDERED .config/starship-foot.toml .config/alsa/asoundrc
+        portal_off
         pointer_off
         old_greetd_off
         seat_off
@@ -2915,6 +2975,7 @@ cmd_off() {   # cmd_off [desktop|login]
         fi
     done
     hand_back $RENDERED .config/starship.toml .config/starship-foot.toml .config/yazi/theme.toml $DESKTOP_RENDERED .config/alsa/asoundrc   # alsa: the bar's default card; yazi: a render v0.35 left, its .bak yours
+    portal_off
     [ "$OS" = Darwin ] || pointer_off
     old_greetd_off
     login_screen_off
@@ -3187,7 +3248,7 @@ cmd_check() {
     elif line=$(REM_LOOK=1 bar_status --once 2>/dev/null) && printf '%s' "$line" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
         chk top ok "the bar draws $(printf '%s' "$line" | jq -r '[.[] | select(.name != "div" and .name != "logo") | .name] | unique | join(", ")')"
     else chk top fail "spark-shell bar status draws nothing" "spark-shell on"; fi
-    if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then sound_check; notify_check; storage_check; power_check; fi
+    if [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ]; then sound_check; notify_check; portal_check; storage_check; power_check; fi
     [ "$fails" = 0 ]
 }
 
@@ -7811,6 +7872,7 @@ cmd_desktop() {
             [ "$OS" != Darwin ] || refuse "not on macOS, which has its own pointer settings"
             if [ "$#" = 0 ]; then panel_title pointer; else [ "$#" = 2 ] || refuse "pointer takes tap on|off, scroll on|off or speed N"; input_setting pointer "$1" "$2"; fi
             return ;;
+        portals) desk_portals; return ;;
         screen|screens) shift; desk_screen "$@"; return ;;
         capture) shift; desk_capture "$@"; return ;;
         notifications) shift; desk_notifications "$@"; return ;;
@@ -8245,7 +8307,7 @@ desk_start() {   # desk_start PENDING
     # dbus-run-session, so a program's notification reaches mako and the bus ends with the desktop
     _bus=''; notify_bus || ! command -v dbus-run-session >/dev/null 2>&1 || _bus=dbus-run-session
     # shellcheck disable=SC2086   # the -u words and the bus, split on purpose: sway and all it starts read the file, never a key from this login
-    PATH=$HOME/.local/bin:$PATH env $CONFIG_UNSET $_bus sway 2>"$log_dir/sway.log" || st=$?
+    XDG_CURRENT_DESKTOP=sway PATH=$HOME/.local/bin:$PATH env $CONFIG_UNSET $_bus sway 2>"$log_dir/sway.log" || st=$?
     sound_stop
     [ "${TERM:-}" != linux ] || printf '\033[?25h'
     exit "$st"

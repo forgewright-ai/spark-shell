@@ -13,6 +13,8 @@ set $mod Mod4
 set $term foot
 
 xwayland disable
+# Give services started by the session bus the running desktop environment.
+exec @REPO@/spark-shell desktop portals
 output * bg @WALL_BG@
 # The screens as spark-shell desktop screen set them (scale, mode, place, on or off)
 include "@SCREENS_CONF@"

@@ -185,6 +185,11 @@ spark-shell reads last and never writes.
 
 ## Colors (theme)
 
+The desktop shares a native dark or light preference with apps that follow
+it. The palette does not replace an app's own theme. Native desktop portals
+provide file pickers and screen sharing under sway. `off desktop` restores
+the previous preference if no other program has changed it.
+
 Type `spark-shell theme gruvbox-dark`. You get one palette in tmux, the
 prompt, btop, the desktop and the Linux console, also at boot. On a Mac
 it is a Terminal.app profile named `spark-shell`. `theme list` shows
