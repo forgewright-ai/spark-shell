@@ -340,6 +340,7 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
                     "Tab" => Some(HintKey::Tab),
                     "\u{2190}" => Some(HintKey::Left),
                     "\u{2192}" => Some(HintKey::Right),
+                    "\u{2191}" => Some(HintKey::Up),
                     _ => None,
                 };
                 if let Some(action) = action {

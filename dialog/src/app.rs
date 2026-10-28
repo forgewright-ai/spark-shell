@@ -9,6 +9,7 @@ pub enum HintKey {
     Tab,
     Left,
     Right,
+    Up,
 }
 
 use crate::gate;
@@ -489,6 +490,10 @@ pub struct App {
     pub input: String,
     /// The cursor in the draft, in characters.
     pub cursor: usize,
+    /// Requests from this window only. Forms and confirmations never enter here.
+    prompt_history: VecDeque<String>,
+    history_at: Option<usize>,
+    history_draft: Option<(String, usize, Option<crate::task::Target>)>,
     /// The draft kept while the prompt takes a yes, an argument or an answer for a provider.
     pub stash: Option<String>,
     /// The words and the file of the request in flight, given back if it fails.
@@ -569,6 +574,9 @@ impl App {
             mode: Mode::Normal,
             input: String::new(),
             cursor: 0,
+            prompt_history: VecDeque::new(),
+            history_at: None,
+            history_draft: None,
             stash: None,
             pending: None,
             in_list: false,
@@ -1629,6 +1637,8 @@ impl App {
             let (l, c) = self.at();
             if l > 0 {
                 self.put_at(l - 1, c);
+            } else {
+                self.recall_prompt(true);
             }
         }
     }
@@ -1644,9 +1654,63 @@ impl App {
         let (l, c) = self.at();
         if l + 1 < self.lines() {
             self.put_at(l + 1, c);
+        } else if self.history_at.is_some() && self.recall_prompt(false) {
+            // Down restores the unfinished draft before it can enter the list.
         } else if !self.picks().is_empty() && self.chip_focus.is_none() {
             self.in_list = true;
             self.sel = 0;
+        }
+    }
+
+    fn recall_prompt(&mut self, older: bool) -> bool {
+        if self.mode != Mode::Normal
+            || self.task.is_some()
+            || self.running.is_some()
+            || self.staged.is_some()
+            || self.chip_focus.is_some()
+            || self.prompt_history.is_empty()
+        {
+            return false;
+        }
+        let next = match (self.history_at, older) {
+            (None, true) => {
+                self.history_draft = Some((self.input.clone(), self.cursor, self.target.clone()));
+                Some(self.prompt_history.len() - 1)
+            }
+            (Some(i), true) => Some(i.saturating_sub(1)),
+            (Some(i), false) if i + 1 < self.prompt_history.len() => Some(i + 1),
+            (_, false) => None,
+        };
+        if let Some(i) = next {
+            self.input = self.prompt_history[i].clone();
+            self.cursor = self.input.chars().count();
+            self.target = None;
+        } else if let Some((draft, cursor, target)) = self.history_draft.take() {
+            self.input = draft;
+            self.cursor = cursor;
+            self.target = target;
+        }
+        self.history_at = next;
+        self.in_list = false;
+        self.sel = 0;
+        true
+    }
+
+    fn leave_history(&mut self) {
+        self.history_at = None;
+        self.history_draft = None;
+    }
+
+    fn remember_prompt(&mut self, words: &str) {
+        self.leave_history();
+        if words.is_empty() || words.chars().count() > INPUT_MAX {
+            return;
+        }
+        if self.prompt_history.back().is_none_or(|last| last != words) {
+            if self.prompt_history.len() == 50 {
+                self.prompt_history.pop_front();
+            }
+            self.prompt_history.push_back(words.to_string());
         }
     }
 
@@ -1694,6 +1758,7 @@ impl App {
     }
 
     fn insert(&mut self, t: &str) {
+        self.leave_history();
         let room = INPUT_MAX.saturating_sub(self.input.chars().count());
         if self.plain_text_input() && t.chars().count() > room {
             self.say(
@@ -1730,6 +1795,7 @@ impl App {
     }
 
     pub(crate) fn set_input(&mut self, s: String) {
+        self.leave_history();
         self.cursor = s.chars().count();
         self.input = s;
     }
@@ -1738,6 +1804,7 @@ impl App {
         if self.cursor == 0 {
             return;
         }
+        self.leave_history();
         let a = self.byte_at(self.cursor - 1);
         let b = self.byte_at(self.cursor);
         self.input.replace_range(a..b, "");
@@ -1752,6 +1819,7 @@ impl App {
         if self.cursor >= self.input.chars().count() {
             return;
         }
+        self.leave_history();
         let a = self.byte_at(self.cursor);
         let b = self.byte_at(self.cursor + 1);
         self.input.replace_range(a..b, "");
@@ -2467,6 +2535,7 @@ impl App {
             self.set_input(words.into());
             return self.say(Sign::Says, "the controls are still loading; press Enter when they appear");
         }
+        self.remember_prompt(words);
         let target = self.target.take();
         self.task_cancel();
         self.target = target;
@@ -3138,6 +3207,7 @@ impl App {
             HintKey::Tab => self.tab(false),
             HintKey::Left => self.left(),
             HintKey::Right => self.right(),
+            HintKey::Up => self.up(),
         }
     }
 
@@ -3301,6 +3371,10 @@ impl App {
         }
         // nothing typed and nothing lit: Esc, and the down arrow into the list
         let mut v = vec![(format!("{} ", esc_word), false), ("Esc".to_string(), true)];
+        if !self.prompt_history.is_empty() {
+            v.push(gap());
+            v.extend(key("History", "\u{2191}"));
+        }
         if self.is_calendar() {
             v.push(gap());
             v.extend(key("Month", "\u{2190} \u{2192}"));

@@ -841,7 +841,11 @@ Destructive operations still require a typed yes.
 
 ## Providers
 
-The dialog's language prompt uses the tool adapter of `spark do`. It sends
+The dialog's language prompt uses Pi through the tool adapter of
+`spark do`. Home is the native host: it owns the prompt, domain controls,
+review, execution and receipts. Pi handles the model conversation, and
+Spark supplies the model connection and its security and storage rules.
+Each domain exposes its own typed MCP capabilities. The dialog sends
 the current view, selected row, local clock and visible state with that
 view's capabilities. Dates, columns and exact row actions are retained,
 including the selected row's action arguments. Existing-item arguments
@@ -880,13 +884,25 @@ fields is not sent back to inference.
 Closing the window loses the task; opening another does not resume it.
 Earlier completed actions stay completed, with their native receipts.
 Undo, where offered, reverses its one action rather than the whole task.
-The continuation lives only in this window. The adapter adds no service,
-model download or runtime dependency. A current spark build with
-`spark do --tools` is required for this prompt; unsupported builds report
-an error. The client's existing spark connection can supply inference from
+The continuation lives only in this window. Run `spark do --agent on`
+once with Spark v1.104 or newer to install its pinned Pi and Node runtime.
+It adds no background service or model download. `spark do --agent status`
+reports readiness; `spark do --agent off` removes it. The client's existing
+spark connection can supply inference from
 another machine; no model needs to run on the desktop client. Execution
-stays with the provider that owns the capability. Direct controls and
-explicit commands remain usable without AI.
+stays with the provider that owns the capability. Native controls retain
+their usual behavior without Pi. Model-backed commands, such as layout
+generation, still need their model connection.
+
+At the prompt, Up recalls earlier requests from this window. Down walks
+forward and restores the unfinished draft and its selected target. Within
+a multiline draft, arrows move between lines before entering history;
+inside the list they navigate rows. Recall never submits or executes a
+request. Editing a recalled request makes a new draft. The last 50
+requests are kept in memory, with consecutive duplicates collapsed.
+Provider forms, device codes, confirmations and task-clarification answers
+are excluded. History is unavailable during an active task or review and
+is forgotten when the window closes.
 The terminal `want --json` interface and attachment reader below retain
 their existing one-shot behavior. An attachment goes with one request;
 it does not start a continuing task. The dialog says so when it is sent.

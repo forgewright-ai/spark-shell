@@ -102,10 +102,16 @@ def helper(folder):
     case = json.loads((folder / "case.json").read_text())
     started = time.monotonic()
     inferences = []
+    failure = None
     if os.environ.get("AX_SPARK"):
         sys.path.insert(0, str(Path(os.environ["AX_SPARK"]) / "lib"))
         from spark import tool_run
         if "AX_TEMPERATURE" in os.environ:
+            if hasattr(tool_run, "agent"):
+                native_options = tool_run.agent.options
+                def options(*args, **kwargs):
+                    return dict(native_options(*args, **kwargs), temperature=float(os.environ["AX_TEMPERATURE"]))
+                tool_run.agent.options = options
             native_chat = tool_run.wire.chat_grammar
             def chat(*args, **kwargs):
                 kwargs["temperature"] = float(os.environ["AX_TEMPERATURE"])
@@ -119,12 +125,13 @@ def helper(folder):
                 inferences.append(round(time.monotonic() - began, 3))
         try:
             result = tool_run.advance(request, decide)
-        except Exception:
+        except Exception as error:
+            failure = {"type": type(error).__name__, "detail": str(error)}
             result = {"version": 1, "status": "blocked", "summary": "The decision backend failed."}
     else:
         result = scripted(request, case, records(folder / "providers.jsonl"))
     append(folder / "decisions.jsonl", {"request": request, "result": result,
-           "seconds": round(time.monotonic() - started, 3), "inferences": inferences})
+           "seconds": round(time.monotonic() - started, 3), "inferences": inferences, "failure": failure})
     print(json.dumps(result), flush=True)
 
 
@@ -490,6 +497,9 @@ else: sys.exit(1)
         finished = time.monotonic()
         if capture:
             (capture / (case["id"] + "-final.txt")).write_text(dialog.screen.text() + "\n")
+            trace = capture / (case["id"] + "-decisions.json")
+            trace.write_text(json.dumps(records(folder / "decisions.jsonl"), indent=2) + "\n")
+            trace.chmod(0o600)
         dialog.close()
     events = records(folder / "providers.jsonl")
     decisions = records(folder / "decisions.jsonl")
@@ -529,7 +539,7 @@ def main():
     parser.add_argument("--set", choices=("development", "held-out"), default="development",
                         help="reserve held-out live cases until implementation is frozen")
     parser.add_argument("--report", type=Path)
-    parser.add_argument("--capture", type=Path, help="save synthetic terminal text for inspection")
+    parser.add_argument("--capture", type=Path, help="save private terminal text and decision traces for inspection")
     args = parser.parse_args()
     if args.temperature is not None and (not args.spark or not 0 <= args.temperature <= 1):
         parser.error("--temperature needs --spark and a value from 0 to 1")
@@ -554,13 +564,21 @@ def main():
             backend = ["unavailable"]
         live_env["AX_SPARK"] = str(args.spark)
         live_env.update(SPARK_BASE_URL=brain.url, SPARK_CTX=str(cfg.ctx))
+        try:
+            from spark import agent
+        except ImportError:
+            pass  # a historical Spark baseline predates the optional runtime
+        else:
+            live_env["SPARK_AGENT_DIR"] = agent.runtime_dir()
         if brain.forge:
             live_env["SPARK_FORGE_TOKEN"] = wire.forge_token(cfg)
         else:
             live_env["SPARK_API_KEY"] = wire.api_key(cfg)
         if args.temperature is not None:
             live_env["AX_TEMPERATURE"] = str(args.temperature)
-    if args.capture: args.capture.mkdir(parents=True, exist_ok=True)
+    if args.capture:
+        args.capture.mkdir(parents=True, exist_ok=True)
+        args.capture.chmod(0o700)
     binary = str(Path(args.binary).resolve())
     if any(c.isspace() for c in str(REPO) + sys.executable):
         parser.error("the dialog's provider argv requires a path without whitespace")

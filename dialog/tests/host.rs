@@ -1227,6 +1227,131 @@ fn the_draft_takes_new_lines_and_a_paste_never_sends() {
     assert!(app.jobs.iter().any(|j| asks_for(j, "onetwothree\nfour five[2J")));
 }
 
+fn history_request(app: &mut App, words: &str) {
+    app.set_draft(words);
+    app.in_list = false;
+    app.enter();
+    app.task_cancel();
+    app.jobs.clear();
+    app.wait = None;
+    app.set_draft("");
+}
+
+#[test]
+fn prompt_history_restores_a_unicode_draft_without_dispatching() {
+    let (mut app, _, _) = app_with(&[]);
+    history_request(&mut app, "remember this request");
+    app.set_draft("unfinished café");
+    app.cursor = 5;
+    app.up();
+    assert_eq!(app.input, "remember this request");
+    assert!(!app.in_list);
+    assert!(app.jobs.is_empty());
+    app.down();
+    assert_eq!((app.input.as_str(), app.cursor), ("unfinished café", 5));
+    assert!(app.jobs.is_empty());
+    let (mut other, _, _) = app_with(&[]);
+    other.up();
+    assert!(other.input.is_empty(), "history belongs to this window only");
+}
+
+#[test]
+fn prompt_history_is_bounded_and_consecutive_duplicates_collapse() {
+    let (mut app, _, _) = app_with(&[]);
+    for n in 0..55 {
+        history_request(&mut app, &format!("request {}", n));
+    }
+    history_request(&mut app, "request 54");
+    app.up();
+    assert_eq!(app.input, "request 54");
+    app.up();
+    assert_eq!(app.input, "request 53");
+    for _ in 0..60 {
+        app.up();
+    }
+    assert_eq!(app.input, "request 5");
+    for _ in 0..50 {
+        app.down();
+    }
+    assert!(app.input.is_empty());
+    assert!(app.jobs.is_empty());
+}
+
+#[test]
+fn history_respects_multiline_and_list_navigation_and_edits() {
+    let (mut app, _, _) = app_with(&[]);
+    history_request(&mut app, "first\nsecond");
+    app.set_draft("new\ndraft");
+    app.up();
+    assert_eq!(app.input, "new\ndraft");
+    app.up();
+    assert_eq!(app.input, "first\nsecond");
+    app.up();
+    assert_eq!(app.cursor, 5, "Up moves within a recalled multiline request");
+    app.down();
+    app.down();
+    assert_eq!(app.input, "new\ndraft");
+    app.set_draft("");
+    app.in_list = true;
+    app.sel = 1;
+    app.up();
+    assert_eq!(app.sel, 0);
+    assert!(app.input.is_empty());
+    app.up();
+    assert!(!app.in_list);
+    app.up();
+    app.typed('!');
+    let edited = app.input.clone();
+    app.in_list = false;
+    app.cursor = 0;
+    app.up();
+    app.down();
+    assert_eq!(app.input, edited, "editing becomes the new unfinished draft");
+    assert!(app.jobs.is_empty());
+}
+
+#[test]
+fn history_does_not_change_an_active_task_or_a_form() {
+    let (mut app, _, _) = app_with(&[]);
+    history_request(&mut app, "an earlier request");
+    app.task_start("a current task");
+    app.set_draft("keep this draft");
+    let serial = app.task_serial;
+    let target = spark_dialog::task::Target {
+        view: View::Home,
+        provider: 0,
+        id: "selected".into(),
+        text: "row".into(),
+    };
+    app.target = Some(target.clone());
+    app.up();
+    assert_eq!(app.input, "keep this draft");
+    assert_eq!(app.target.as_ref().unwrap().id, "selected");
+    assert_eq!(app.task_serial, serial);
+    app.task_cancel();
+    app.jobs.clear();
+    app.target = Some(target);
+    app.set_draft("targeted draft");
+    app.up();
+    assert!(app.target.is_none());
+    app.down();
+    assert_eq!(app.target.as_ref().unwrap().id, "selected");
+    app.mode = Mode::Pair {
+        prov: 0,
+        id: json!("fixture"),
+        message: "device code".into(),
+        kind: "pin".into(),
+    };
+    app.set_draft("fixture-pin");
+    app.up();
+    assert_eq!(app.input, "fixture-pin");
+    app.enter();
+    app.mode = Mode::Normal;
+    app.set_draft("");
+    app.up();
+    assert_eq!(app.input, "an earlier request", "the form answer was not retained");
+}
+
 #[test]
 fn a_native_plain_text_field_keeps_lines_tabs_and_trailing_whitespace() {
     let (mut app, rx, tx) = app_with(&["notes"]);

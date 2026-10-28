@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.107
+
+- Home uses Spark's shared Pi session runtime for task proposals while
+  retaining native review, execution, fresh state and receipts. Enable it
+  with `spark do --agent on` on Spark v1.104 or newer. Direct controls and
+  explicit commands remain available without it.
+- Up recalls up to 50 requests from the current window. Down restores the
+  unfinished draft and selected target. Multiline editing and list
+  navigation keep their arrow behavior; recall never executes a request.
+  Forms, device codes, confirmations and clarification answers are not
+  retained. Active tasks and proposals cannot be changed by recall.
+- Live task checks use the same isolated native fixture setup with the
+  configured Pi runtime. Reports continue to distinguish scripted host
+  checks from actual model outcomes and latency.
+
 ## v0.106
 
 - Complete tasks are checked through the real dialog with isolated native
