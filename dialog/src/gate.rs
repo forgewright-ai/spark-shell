@@ -34,7 +34,7 @@ pub fn schema_ok(schema: &Value, args: &Map<String, Value>) -> Result<(), String
                         .and_then(Value::as_array)
                         .map(|e| e.iter().any(|x| x.as_str() == Some(s)))
                         .unwrap_or(true)
-                    && !s.chars().any(char::is_control)
+                    && text_controls_ok(p, s)
             }),
             "integer" => v.as_i64().map(|n| in_range(p, n as f64)),
             "number" => v.as_f64().map(|n| in_range(p, n)),
@@ -51,6 +51,17 @@ pub fn schema_ok(schema: &Value, args: &Map<String, Value>) -> Result<(), String
         }
     }
     Ok(())
+}
+
+/// Literal text fields may carry ordinary text whitespace. Names, commands
+/// and other strings keep the original no-controls rule.
+pub fn plain_text(prop: &Value) -> bool {
+    prop.get("type").and_then(Value::as_str) == Some("string") && prop.get("contentMediaType").and_then(Value::as_str) == Some("text/plain")
+}
+
+pub fn text_controls_ok(prop: &Value, text: &str) -> bool {
+    let plain = plain_text(prop);
+    text.chars().all(|c| !c.is_control() || (plain && matches!(c, '\n' | '\r' | '\t')))
 }
 
 fn in_range(p: &Value, n: f64) -> bool {
@@ -339,6 +350,23 @@ mod tests {
     }
     fn args(v: Value) -> Map<String, Value> {
         v.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn literal_text_whitespace_requires_an_explicit_schema_marker() {
+        let ordinary = json!({"type":"object","properties":{"text":{"type":"string","maxLength":16384}},"required":["text"]});
+        let mut literal = ordinary.clone();
+        literal["properties"]["text"]["contentMediaType"] = json!("text/plain");
+        for code in (0..32).chain(127..160) {
+            let c = char::from_u32(code).unwrap();
+            let value = args(json!({"text":format!("first{}second", c)}));
+            assert!(schema_ok(&ordinary, &value).is_err());
+            assert_eq!(schema_ok(&literal, &value).is_ok(), matches!(c, '\n' | '\r' | '\t'));
+        }
+        assert!(schema_ok(&literal, &args(json!({"text":"x".repeat(16384)}))).is_ok());
+        assert!(schema_ok(&literal, &args(json!({"text":"x".repeat(16385)}))).is_err());
+        literal["properties"]["text"]["contentMediaType"] = json!("text/html");
+        assert!(schema_ok(&literal, &args(json!({"text":"first\nsecond"}))).is_err());
     }
     fn wifi() -> (Vec<Tool>, Rows) {
         let s = json!({"type": "object", "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 256}, "password": {"type": "string", "format": "password"}}, "required": ["name"], "additionalProperties": false});

@@ -10,9 +10,14 @@
   coincide. Ambiguous names are refused; a selected item is never replaced
   by the first item with the same title. Future reminders expose their
   done and snooze actions, with the saved identity in each result.
+- Appending a note takes its exact filename and separate literal text.
+  Spaces, tabs and line breaks survive; direct controls need no inference.
+  New reminder identities are random UUIDs without a machine name.
 - Reminder preparation checks local civil time. A nonexistent or repeated
   time, an explicit time-zone suffix, or an unavailable time verifier
   asks for a usable local time or reports why it cannot proceed.
+  A minimal container without zone files uses UTC only when its native
+  clock confirms UTC without daylight changes.
 - Sound changes report the native level and mute state. Failed writes and
   unchanged requested settings are refused. Window actions verify the
   native tree; a layout that cannot open every required app reports its

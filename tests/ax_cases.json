@@ -62,9 +62,10 @@
     "goal": "Append Second item to the existing Checklist note.",
     "script": [
       {
-        "name": "p0_notes_add",
+        "name": "p0_notes_append",
         "arguments": {
-          "text": "checklist.md: Second item"
+          "name": "checklist.md",
+          "text": "Second item"
         }
       }
     ],
@@ -77,9 +78,18 @@
       }
     },
     "calls": [
-      "notes_add"
+      "notes_append"
     ],
-    "questions": 0
+    "questions": 0,
+    "alternate_calls": [
+      [
+        "notes_add"
+      ]
+    ],
+    "permitted": [
+      "notes_append",
+      "notes_add"
+    ]
   },
   {
     "id": "reminder-relative",
@@ -529,9 +539,10 @@
     "goal": "Append Packed to this note.",
     "script": [
       {
-        "name": "p0_notes_add",
+        "name": "p0_notes_append",
         "arguments": {
-          "text": "checklist.md: Packed"
+          "name": "checklist.md",
+          "text": "Packed"
         }
       }
     ],
@@ -544,8 +555,17 @@
       }
     },
     "calls": [
-      "notes_add"
+      "notes_append"
     ],
-    "questions": 0
+    "questions": 0,
+    "alternate_calls": [
+      [
+        "notes_add"
+      ]
+    ],
+    "permitted": [
+      "notes_append",
+      "notes_add"
+    ]
   }
 ]

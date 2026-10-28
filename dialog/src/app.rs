@@ -1660,9 +1660,20 @@ impl App {
         self.follow_words();
     }
 
-    /// Shift+Enter: a new line in the draft; never in a yes, an argument or an answer, which are one line.
+    fn plain_text_input(&self) -> bool {
+        match &self.mode {
+            Mode::Ask { step, field, masked: false } => self
+                .tool_of(step)
+                .and_then(|t| t.schema.get("properties"))
+                .and_then(|p| p.get(field))
+                .is_some_and(gate::plain_text),
+            _ => false,
+        }
+    }
+
+    /// Shift+Enter: a new line in a draft or an explicitly literal text field.
     pub fn newline(&mut self) {
-        if self.mode == Mode::Normal {
+        if self.mode == Mode::Normal || self.plain_text_input() {
             self.insert("\n");
         }
     }
@@ -1670,13 +1681,14 @@ impl App {
     /// Pasted text goes into the draft as it is, its lines kept: a newline in it never sends. Where the
     /// prompt takes one line, the lines are joined by spaces.
     pub fn paste(&mut self, text: &str) {
-        let one = self.mode != Mode::Normal;
+        let plain = self.plain_text_input();
+        let one = self.mode != Mode::Normal && !plain;
         let t: String = text
             .replace("\r\n", "\n")
             .replace('\r', "\n")
             .chars()
-            .map(|c| if c == '\t' || (one && c == '\n') { ' ' } else { c })
-            .filter(|c| *c == '\n' || !c.is_control())
+            .map(|c| if (c == '\t' && !plain) || (one && c == '\n') { ' ' } else { c })
+            .filter(|c| *c == '\n' || (plain && *c == '\t') || !c.is_control())
             .collect();
         self.insert(&t);
     }
@@ -1998,7 +2010,12 @@ impl App {
             Mode::Ask { mut step, field, .. } => {
                 let typed = std::mem::take(&mut self.input);
                 self.unstash();
-                if typed.trim().is_empty() {
+                let plain = self
+                    .tool_of(&step)
+                    .and_then(|t| t.schema.get("properties"))
+                    .and_then(|p| p.get(&field))
+                    .is_some_and(gate::plain_text);
+                if if plain { typed.is_empty() } else { typed.trim().is_empty() } {
                     self.say(Sign::You, &step.line);
                     self.say(Sign::Refused, &format!("not done: no {}", field));
                     self.stop_queue();
@@ -2747,22 +2764,20 @@ impl App {
         self.call(step);
     }
 
-    /// What every step passes, now and again at its yes: its tool is still offered, no argument holds a
-    /// control character (a pasted or spoken newline is never a step's), and a step the model or the
+    /// What every step passes, now and again at its yes: its tool is still offered, only explicit
+    /// text/plain fields can hold text whitespace, and a step the model or the
     /// undo planned names only what the rows list now.
     fn checked(&self, step: &Step) -> Result<(), String> {
         if step.who == Who::Model && self.target.is_some() && self.target_row().is_none() {
             return Err("the selected item is no longer available; select it again".into());
         }
-        if self.tool_of(step).is_none() {
+        let Some(tool) = self.tool_of(step) else {
             return Err("this is not offered here now".into());
-        }
-        if step
-            .call
-            .arguments
-            .values()
-            .any(|v| v.as_str().is_some_and(|s| s.chars().any(char::is_control)))
-        {
+        };
+        if step.call.arguments.iter().any(|(key, v)| {
+            let prop = tool.schema.get("properties").and_then(|p| p.get(key)).unwrap_or(&Value::Null);
+            v.as_str().is_some_and(|text| !gate::text_controls_ok(prop, text))
+        }) {
             return Err("an argument holds a control character".into());
         }
         if step.who != Who::Person {

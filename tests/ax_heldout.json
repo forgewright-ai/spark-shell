@@ -37,9 +37,10 @@
     "goal": "Append Tested to the note whose filename is alpha.md. Leave beta.md unchanged.",
     "script": [
       {
-        "name": "p0_notes_add",
+        "name": "p0_notes_append",
         "arguments": {
-          "text": "alpha.md: Tested"
+          "name": "alpha.md",
+          "text": "Tested"
         }
       }
     ],
@@ -55,11 +56,20 @@
       }
     },
     "calls": [
-      "notes_add"
+      "notes_append"
     ],
     "questions": 0,
     "unchanged": [
       "notes/beta.md"
+    ],
+    "alternate_calls": [
+      [
+        "notes_add"
+      ]
+    ],
+    "permitted": [
+      "notes_append",
+      "notes_add"
     ]
   },
   {

@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -18,8 +19,16 @@ def local_zone():
             with open(name, "rb") as stream:
                 return ZoneInfo.from_file(stream)
         return ZoneInfo(name)
-    with Path("/etc/localtime").open("rb") as stream:
-        return ZoneInfo.from_file(stream)
+    try:
+        with Path("/etc/localtime").open("rb") as stream:
+            return ZoneInfo.from_file(stream)
+    except FileNotFoundError:
+        # Minimal containers may have no zone file. libc still defines their
+        # local clock: accept only an explicitly UTC/GMT, zero-offset clock
+        # with no daylight variation. Other missing zones remain unverified.
+        if time.timezone == 0 and time.altzone == 0 and not time.daylight and time.tzname and set(time.tzname) <= {"UTC", "GMT"}:
+            return dt.timezone.utc
+        raise
 
 
 def problem(value, title=""):

@@ -1228,6 +1228,57 @@ fn the_draft_takes_new_lines_and_a_paste_never_sends() {
 }
 
 #[test]
+fn a_native_plain_text_field_keeps_lines_tabs_and_trailing_whitespace() {
+    let (mut app, rx, tx) = app_with(&["notes"]);
+    let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let captured = calls.clone();
+    let tools = json!([{"name":"notes_append","title":"notes append NAME TEXT",
+        "inputSchema":{"type":"object","properties":{"name":{"type":"string","maxLength":255},
+            "text":{"type":"string","contentMediaType":"text/plain","minLength":1,"maxLength":16384}},"required":["name","text"]},
+        "annotations":{"destructiveHint":false}}]);
+    let rows = json!({"title":"Notes","rows":[{"id":"append","text":"append to fixture",
+        "tool":{"name":"notes_append","arguments":{"name":"fixture.md"},"ask":["text"]}}]});
+    app.servers.push(stub(
+        0,
+        "notes",
+        Box::new(move |v, send| {
+            if let Some(answer) = ordinary("notes", v, &tools, &rows) {
+                return send(answer);
+            }
+            if v["method"] == "tools/call" {
+                captured.lock().unwrap().push(v["params"].clone());
+                send(result(&v["id"], json!({"content":[{"type":"text","text":"appended"}]})));
+            }
+        }),
+        tx,
+    ));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    app.view = View::Section(0);
+    app.in_list = true;
+    app.sel = 0;
+    app.enter();
+    assert!(matches!(app.mode, Mode::Ask { .. }));
+    app.paste("  first\tfield\r\nsecond\rthird\n  ");
+    app.newline();
+    let expected = "  first\tfield\nsecond\nthird\n  \n";
+    assert_eq!(app.input, expected);
+    let (drawn, cursor) = spark_dialog::ui::draft_rows(&app.input, app.cursor, 50);
+    assert!(drawn[0].contains("first\\tfield"));
+    assert!(!drawn.iter().any(|row| row.chars().any(char::is_control)));
+    assert_eq!(cursor, (4, 0));
+    assert!(calls.lock().unwrap().is_empty(), "a paste or Shift+Enter never sends");
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && !calls.lock().unwrap().is_empty()));
+    assert_eq!(calls.lock().unwrap()[0]["arguments"], json!({"name":"fixture.md","text":expected}));
+    assert!(!app.jobs.iter().any(inference));
+
+    let (drawn, cursor) = spark_dialog::ui::draft_rows("a\rb\tc", 5, 50);
+    assert_eq!(drawn, ["a\\rb\\tc"]);
+    assert_eq!(cursor, (0, 7));
+}
+
+#[test]
 fn talk_puts_what_was_heard_in_the_draft_and_esc_keeps_the_draft() {
     let (mut app, _rx, _c, _r) = started();
     app.cfg.talk = true;

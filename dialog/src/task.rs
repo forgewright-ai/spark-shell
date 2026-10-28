@@ -429,7 +429,12 @@ impl App {
             .unwrap_or(&call.name);
         let placeholders = title.split_whitespace().filter(|w| w.bytes().all(|c| c.is_ascii_uppercase())).count();
         let simple = call.arguments.is_empty()
-            || (call.arguments.len() == 1 && placeholders == 1 && call.arguments.values().all(|v| v.is_string() || v.is_number() || v.is_boolean()));
+            || (call.arguments.len() == 1
+                && placeholders == 1
+                && call
+                    .arguments
+                    .values()
+                    .all(|v| v.as_str().is_some_and(|s| !s.chars().any(char::is_control)) || v.is_number() || v.is_boolean()));
         let line = if simple {
             self.step_line(prov, &call, &call.name)
         } else {

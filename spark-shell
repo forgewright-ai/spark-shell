@@ -4732,6 +4732,13 @@ note_effect() {   # the provider's result names only the file just written, neve
     jq -cn --arg id "${1##*/}" --arg title "$(note_name "$1")" --arg operation "$2" \
         '{kind: "note", id: $id, title: $title, operation: $operation}' > "$TMP/action.effect"
 }
+note_append() {   # exact filename, private payload file: preserve the supplied text inside one bullet
+    _nap=$(note_file "$1") || { echo 'select an existing note by its exact filename'; return 1; }
+    [ "${_nap##*/}" = "$1" ] && [ -f "$_nap" ] && [ ! -L "$_nap" ] || { echo 'select an existing note by its exact filename'; return 1; }
+    { printf '%s' '- '; cat "$2"; printf '\n'; } >> "$_nap" || { echo 'could not finish appending; check the note before trying again'; return 1; }
+    note_effect "$_nap" appended
+    printf 'added to %s\n' "$1"
+}
 
 # --- reminders: one iCalendar file an event in ~/calendar, its alarm at
 # its time (an event, not a to-do: Apple's Reminders left CalDAV, while
@@ -6028,7 +6035,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -6100,8 +6107,9 @@ tool_spec() {
         window_close)      _ts=window _ta=close _tp=name _tk=string _th=d _tt='window close NAME' _td='Close one open window by its native container ID from the row. It cannot be undone.' ;;
         window_capture)    _ts=window _ta=capture _tp=what _tk='screen|area' _th='' _tt='window capture WHAT' _td='A picture of the screen, or of an area you drag, in ~/pictures/screenshots.' ;;
         notes_new)         _ts=notes _ta=new _th='' _tt='notes new' _td='Open a blank note in the editor for the person to write. No supplied text is saved.' ;;
-        notes_open)        _ts=notes _ta=open _tp=name _tk=string _th='' _tt='notes open NAME' _td='Only open a note in the editor; this does not append or save supplied text. To append text, use notes_add with FILE.md: TEXT. Use the filename from the row; duplicate titles are not identities.' ;;
-        notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='Create a note with the complete text as its heading and filename source. With "FILE.md: TEXT", append a line to that existing file. A unique existing title also works; ambiguous titles are refused. A title and body take two actions: create the title, then append using the returned filename.' ;;
+        notes_open)        _ts=notes _ta=open _tp=name _tk=string _th='' _tt='notes open NAME' _td='Only open a note in the editor; this does not append or save supplied text. To append text, use notes_append. Use the filename from the row; duplicate titles are not identities.' ;;
+        notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='Create a new note: text is the literal heading, never an invented filename or filename prefix. The result gives the actual filename. To add a body or append to an existing note, use notes_append with that filename and separate text. The legacy NAME: TEXT syntax still appends when NAME already exists.' ;;
+        notes_append)      _ts=notes _ta=append _tp=name _tk=string _th=f _tt='notes append NAME' _td='Append a bullet to an existing note. name is its exact filename from the row or a prior result, never a guessed title or a new filename. text is saved verbatim inside the bullet, including spaces and line breaks; a final newline follows. This saves text without opening an editor.' ;;
         notes_find)        _ts=notes _ta=find _tp=words _tk=string _th=rf _tt='notes find WORDS' _td='Which notes say these words, and the line that does.' ;;
         reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _tw='when and what: fri 9am call the vet' _th=f _tt='reminders add WORDS' _td='Save a reminder at a future local time. words is today, tomorrow, a weekday or YYYY-MM-DD, then HH:MM, then the title; or in N minutes/hours before or after the title. Preserve the requested day and time; never invent missing timing. Send the original words to native preparation when timing is missing or invalid, or ask the person. Past, nonexistent or repeated local times require clarification; no time-zone suffix is accepted.' ;;
         reminders_done)    _ts=reminders _ta='done' _tp=name _tk=string _th='' _tt='reminders done NAME' _td='Put aside one due or future reminder by its UID from the row. Undo brings that exact event back for 30 days.' ;;
@@ -6201,9 +6209,10 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
             effect: {type: "object", properties: {kind: {type: "string"}, operation: {type: "string"}, id: {type: "string"}, title: {type: "string"}, localTime: {type: "string"}, level: {type: "integer"}, muted: {type: "boolean"}}, required: ["kind", "operation", "id", "title"], additionalProperties: false},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
             palette: {type: "object", additionalProperties: {type: "string"}}},
-            required: (if $n == "notes_add" or ($n | startswith("reminders_")) or ($n | test("^(out|mic)_(level|adjust|mute|unmute)$")) then ["receipt", "effect"] elif $n == "window_focus" or $n == "window_close" then ["effect"] else [] end), additionalProperties: false},
+            required: (if $n == "notes_add" or $n == "notes_append" or ($n | startswith("reminders_")) or ($n | test("^(out|mic)_(level|adjust|mute|unmute)$")) then ["receipt", "effect"] elif $n == "window_focus" or $n == "window_close" then ["effect"] else [] end), additionalProperties: false},
          annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}
-         + (if $n == "reminders_add" then {_meta: {"spark-shell/prepare": true}} else {} end)'
+         + (if $n == "reminders_add" then {_meta: {"spark-shell/prepare": true}} else {} end)
+         | if $n == "notes_append" then .inputSchema = {type:"object", properties:{name:{type:"string", minLength:1, maxLength:255, description:"Exact existing Markdown filename"}, text:{type:"string", minLength:1, maxLength:16384, contentMediaType:"text/plain", description:"Text to append; spaces and line breaks are preserved"}}, required:["name","text"], additionalProperties:false} else . end'
 }
 provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON array
     for _n in $PROVIDE_TOOLS; do tool_spec "$_n" && [ "$_ts" = "$1" ] && tool_json "$_n"; done | jq -cs .
@@ -6248,7 +6257,11 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif (.tool.name // "") == "reminders_add" then .tool.ask = ["words"]
                 elif (.tool.name // "") == "wifi_hidden" then .tool.ask = ["name", "password"]
                 elif (.tool.name // "") == "wifi_connect" and (.tool.arguments.name as $n | $asks | index([$n])) then .tool.ask = ["password"]
-                else . end)'
+                else . end)
+            | .rows |= map(if $s == "notes" and (.tool.name // "") == "notes_open" then
+                {name:"notes_append", arguments:{name:.tool.arguments.name}, ask:["text"]} as $append |
+                [. + {more:(.more + [$append])}, {id:("notes:append " + .tool.arguments.name), sign:"blank", text:("append to " + .text), tool:$append, more:[], columns:[.tool.arguments.name], children:null, group:"recent"}]
+              else [.] end) | .rows |= (add // [])'
 }
 provide_wall_rows() {   # -> the theme's wallpaper list as a rows resource (spark-shell://theme/rows/wallpapers, #36): the drawings with the palette each was drawn for and its picture in the palette in use (drawn after this answers, wall_thumbs), a picture of yours (the files, to pick from), a color (asked for), the ground with its color
     _tp=$(thumb_palette)
@@ -6445,11 +6458,30 @@ provide_prepare() {   # read-only preparation: canonical arguments or a question
     fi
     rpc_result "$1" "$(jq -cn --arg q "$_pq" '{ready: false, question: $q}')"
 }
+provide_notes_append() {   # two typed arguments; note contents never travel through the panel's token grammar
+    printf '%s' "$2" | jq -e 'type == "object" and keys == ["name","text"]
+        and (.name | type == "string" and length > 0 and length <= 255 and (test("[\u0000-\u001f\u007f-\u009f/]") | not))
+        and (.text | type == "string" and length > 0 and length <= 16384 and (test("[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]") | not))' >/dev/null 2>&1 \
+        || { rpc_error "$1" -32602 'notes_append takes an exact filename and text of 1 to 16384 characters; only tabs and line breaks are allowed controls'; return 0; }
+    _pna_name=$(printf '%s' "$2" | jq -r .name)
+    printf '%s' "$2" | jq -j .text > "$TMP/note.append" || { provide_refuse "$1" 'the text could not be prepared; nothing appended'; return 0; }
+    rm -f "$TMP/action.effect"
+    if _pna_out=$(PROVIDE_EFFECT=1 note_append "$_pna_name" "$TMP/note.append" 2>/dev/null); then
+        rm -f "$TMP/note.append"
+        [ -s "$TMP/action.effect" ] || { provide_refuse "$1" 'the text may have been appended, but the note could not be read back; check it before trying again'; return 0; }
+        rpc_result "$1" "$(jq -cn --arg r "$_pna_out" --slurpfile e "$TMP/action.effect" '{receipt:$r,effect:$e[0]}' | jq -c '{content:[{type:"text",text:tojson}],structuredContent:.,isError:false}')"
+        [ -z "$SUBSCRIBED" ] || rpc_note notifications/resources/updated '{"uri":"spark-shell://notes/rows"}'
+    else
+        rm -f "$TMP/note.append"
+        provide_refuse "$1" "${_pna_out:-could not append the text; check the note before trying again}"
+    fi
+}
 provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its arguments by its schema, the row it names, panel_gate, then the step itself
     _name=$(printf '%s' "$2" | jq -r '.name // "" | tostring')
     case $_name in *[!a-z0-9_]*|[!a-z]*|'') rpc_error "$1" -32602 "no tool by that name"; return 0 ;; esac
     { tool_spec "$_name" && [ "$_ts" = "$sec" ]; } || { rpc_error "$1" -32602 "no tool $_name in $sec"; return 0; }
     _args=$(printf '%s' "$2" | jq -c '.arguments // {}')
+    [ "$_name" != notes_append ] || { provide_notes_append "$1" "$_args"; return 0; }
     _bad=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg k "$_tk" --arg q "$_tq" --arg x "$_te" '
         def plain: test("^[^\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff\u2028\u2029]{1,256}$");
         ($x | split(" ") | map(select(. != "") | split(":"))) as $xs | ($xs | map(.[0])) as $xk | . as $a |

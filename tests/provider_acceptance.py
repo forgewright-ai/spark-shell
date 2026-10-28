@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Native provider contracts in isolated homes; no desktop or personal data."""
 import datetime as dt
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,8 @@ import sys
 import tempfile
 import unittest
 import uuid
+from unittest.mock import patch
+from types import SimpleNamespace
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -149,6 +152,61 @@ else: os.execv(''' + repr(shutil.which("stat")) + ''', ['stat']+a)
         self.assertEqual(result[1]["result"]["structuredContent"]["effect"]["id"], identities[0])
         self.assertEqual(files[identities[0]].read_bytes(), before[files[identities[0]].name])
         self.assertTrue((done / files[identities[1]].name).exists())
+
+    def test_typed_note_append_preserves_payload_and_only_exact_existing_file(self):
+        notes = self.home / "notes"
+        notes.mkdir()
+        original = b"# Fixture\nExisting body.\n"
+        for filename in ("first.md", "second.md"):
+            (notes / filename).write_bytes(original)
+        rows = self.rows("notes")
+        direct = [r for r in rows if r.get("tool") and r["tool"]["name"] == "notes_append"]
+        self.assertEqual({r["tool"]["arguments"]["name"] for r in direct}, {"first.md", "second.md"})
+        self.assertTrue(all(r["tool"]["ask"] == ["text"] for r in direct))
+        tools = self.provider("notes", rpc(1, "tools/list"))[1]["result"]["tools"]
+        typed = next(t for t in tools if t["name"] == "notes_append")
+        self.assertEqual(typed["inputSchema"]["required"], ["name", "text"])
+        self.assertEqual(typed["inputSchema"]["properties"]["text"]["contentMediaType"], "text/plain")
+        marker = self.home / "must-not-run"
+        payload = '  Preserve  spaces\tand "quotes"; colon: value\\path\r\n$(touch ' + str(marker) + ')\n\n'
+        result = self.provider("notes", call(1, "notes_append", name="second.md", text=payload))
+        self.assertFalse(result[1]["result"]["isError"])
+        self.assertEqual(result[1]["result"]["structuredContent"]["effect"],
+                         {"kind":"note", "operation":"appended", "id":"second.md", "title":"Fixture"})
+        self.assertNotIn("Preserve", json.dumps(result))
+        self.assertEqual((notes / "second.md").read_bytes(), original + b"- " + payload.encode() + b"\n")
+        self.assertEqual((notes / "first.md").read_bytes(), original)
+        self.assertFalse(marker.exists())
+        before = {p.name: p.read_bytes() for p in notes.iterdir()}
+        for name in ("Fixture", "missing.md"):
+            result = self.provider("notes", call(1, "notes_append", name=name, text="Refused body"))
+            self.assertTrue(result[1]["result"]["isError"])
+        for invalid in ("", "\x1bclear", "\x00", "x" * 16385):
+            result = self.provider("notes", call(1, "notes_append", name="second.md", text=invalid))
+            self.assertEqual(result[1]["error"]["code"], -32602)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in notes.iterdir()})
+        (notes / "second.md").unlink()
+        result = self.provider("notes", call(1, "notes_append", name="second.md", text="Stale body"))
+        self.assertTrue(result[1]["result"]["isError"])
+        self.assertEqual({p.name: p.read_bytes() for p in notes.iterdir()}, {"first.md":original})
+
+    def test_missing_zone_file_accepts_only_native_utc_without_dst(self):
+        spec = importlib.util.spec_from_file_location("reminder_time", REPO / "lib/reminder_time.py")
+        helper = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(helper)
+        with patch.dict(os.environ, {}, clear=True), patch.object(helper.Path, "open", side_effect=FileNotFoundError):
+            for names in (("UTC", "UTC"), ("GMT", "GMT")):
+                with patch.object(helper, "time", SimpleNamespace(timezone=0, altzone=0, daylight=0, tzname=names)):
+                    self.assertEqual(helper.problem("209901011000"), "")
+                    self.assertEqual(helper.local_zone().utcoffset(None), dt.timedelta(0))
+            for settings in ({"timezone":21600, "altzone":18000, "daylight":1, "tzname":("CST","CDT")},
+                             {"timezone":0, "altzone":-3600, "daylight":1, "tzname":("GMT","BST")},
+                             {"timezone":0, "altzone":0, "daylight":0, "tzname":("unknown","unknown")}):
+                with patch.object(helper, "time", SimpleNamespace(**settings)):
+                    self.assertIn("could not be verified", helper.problem("209901011000"))
+        with patch.dict(os.environ, {}, clear=True), patch.object(helper.Path, "open", side_effect=PermissionError), \
+                patch.object(helper, "time", SimpleNamespace(timezone=0, altzone=0, daylight=0, tzname=("UTC","UTC"))):
+            self.assertIn("could not be verified", helper.problem("209901011000"))
 
     def test_legacy_reminder_uid_stays_exact_through_done_restore_and_snooze(self):
         calendar = self.home / "calendar"

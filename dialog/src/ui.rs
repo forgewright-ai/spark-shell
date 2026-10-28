@@ -183,7 +183,14 @@ pub fn draft_rows(text: &str, cursor: usize, w: usize) -> (Vec<String>, (usize, 
         let mut row = String::new();
         let mut row_start = n;
         for c in line.chars() {
-            let cw = cells(&c.to_string());
+            // Literal text fields retain tabs and may carry CR from a native
+            // value. Draw their escapes, never terminal control characters.
+            let shown = match c {
+                '\t' => "\\t".to_string(),
+                '\r' => "\\r".to_string(),
+                _ => c.to_string(),
+            };
+            let cw = cells(&shown);
             if cells(&row) + cw > w {
                 rows.push(std::mem::take(&mut row));
                 row_start = n;
@@ -191,7 +198,7 @@ pub fn draft_rows(text: &str, cursor: usize, w: usize) -> (Vec<String>, (usize, 
             if n == cursor {
                 at = (rows.len(), cells(&row));
             }
-            row.push(c);
+            row.push_str(&shown);
             n += 1;
         }
         if n == cursor {

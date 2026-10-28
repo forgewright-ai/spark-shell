@@ -781,6 +781,44 @@ fn confirmation_shows_a_value_even_when_the_title_has_no_placeholder() {
 }
 
 #[test]
+fn literal_text_proposals_show_escaped_fields_and_send_exact_arguments() {
+    for single in [false, true] {
+        let (mut app, rx, calls) = started(false);
+        let text = "first\nsecond\tlast\r";
+        let tool = &mut app.providers[0].tools[0];
+        tool.name = "notes_append".into();
+        tool.title = if single { "notes append TEXT" } else { "notes append NAME TEXT" }.into();
+        tool.schema = json!({"type":"object","properties":{
+            "text":{"type":"string","contentMediaType":"text/plain","maxLength":16384}},"required":["text"]});
+        let mut arguments = json!({"text":text});
+        if !single {
+            tool.schema["properties"]["name"] = json!({"type":"string","maxLength":255});
+            tool.schema["required"].as_array_mut().unwrap().push(json!("name"));
+            arguments["name"] = json!("fixture.md");
+        }
+        app.task_start("append literal text");
+        let (serial, _) = request(&app);
+        let step = json!({"name":"p0_notes_append","arguments":arguments});
+        app.task_reply(
+            serial,
+            Ok(json!({"version":1,"status":"step","id":1,"step":step,
+            "state":{"pending":{"id":1,"kind":"step","step":step}}})
+            .to_string()),
+        );
+        let staged = app.staged.as_ref().unwrap();
+        assert!(staged.text.contains("text: \"first\\nsecond\\tlast\\r\""));
+        assert!(!staged.text.contains(['\t', '\r']));
+        assert_eq!(staged.steps[0].call.arguments["text"], text);
+        assert!(calls.lock().unwrap().is_empty());
+        app.enter();
+        assert!(pump(&mut app, &rx, |a| a.running.is_none()
+            && a.task.as_ref().is_some_and(|t| t.phase == Phase::Thinking)));
+        assert_eq!(calls.lock().unwrap().len(), 1);
+        assert_eq!(calls.lock().unwrap()[0]["arguments"], arguments);
+    }
+}
+
+#[test]
 fn malformed_and_protocol_results_stop_without_losing_prior_receipts() {
     let replies = [
         json!({"result":null}),
