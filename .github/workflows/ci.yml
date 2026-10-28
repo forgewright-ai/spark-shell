@@ -95,7 +95,7 @@ jobs:
     # the same suite where the tools come from pacman
     runs-on: ubuntu-latest
     container: archlinux:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Arch there is, and -Syu moves it to today anyway
-    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
+    timeout-minutes: 20   # the full shell and native provider suites need time for cleanup too
     steps:
       - run: pacman -Syu --noconfirm --needed python git diffutils jq openssh >/dev/null   # ssh-keygen: a release tag's signature
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
