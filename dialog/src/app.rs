@@ -371,6 +371,7 @@ pub struct Provider {
     pub dirty: bool,
     pub reading: bool,
     pub last_read: Option<Instant>,
+    pub read_id: Option<u64>,
     /// It checks its rows for changes: only while its rows are on screen (#37).
     pub subscribed: bool,
 }
@@ -388,6 +389,7 @@ impl Provider {
             dirty: false,
             reading: false,
             last_read: None,
+            read_id: None,
             subscribed: false,
         }
     }
@@ -734,10 +736,10 @@ impl App {
         let uri = format!("spark-shell://{}/rows", self.providers[idx].label);
         let sent = self
             .server(idx)
-            .and_then(|s| s.request("resources/read", json!({"uri": uri}), Kind::Read, mcp::T_READ))
-            .is_some();
-        if sent {
+            .and_then(|s| s.request("resources/read", json!({"uri": uri}), Kind::Read, mcp::T_READ));
+        if let Some(id) = sent {
             self.providers[idx].reading = true;
+            self.providers[idx].read_id = Some(id);
             self.providers[idx].dirty = false;
             self.providers[idx].last_read = Some(Instant::now());
         } else {
@@ -767,7 +769,7 @@ impl App {
         self.providers[idx].tools.clear();
         self.providers[idx].reading = false;
         if self.task.is_some()
-            && (self.target.as_ref().is_some_and(|t| t.provider == idx) || self.task.as_ref().is_some_and(|t| t.scope == Some(idx)) || was_shown)
+            && (self.target.as_ref().is_some_and(|t| t.provider == idx) || self.task.as_ref().is_some_and(|t| t.scope.contains(&idx)) || was_shown)
         {
             self.task_cancel();
         }
@@ -783,6 +785,7 @@ impl App {
             if p == idx {
                 self.running = None;
                 self.task_cancel();
+                self.opened = false;
                 self.say(
                     Sign::Refused,
                     &format!("{} stopped before it answered, so it may or may not have happened", label),
@@ -918,7 +921,7 @@ impl App {
         let credential = props
             .iter()
             .any(|(k, v)| gate::secret(k, Some(v)) || v.get("title").and_then(Value::as_str).map(|t| gate::secret(t, None)).unwrap_or(false));
-        let busy = !matches!(self.mode, Mode::Normal);
+        let busy = !matches!(self.mode, Mode::Normal) || !self.running.as_ref().is_some_and(|(provider, _, _, _)| *provider == idx);
         if credential || busy || self.asks_this_call >= ASK_PER_CALL || self.asks.len() >= ASK_PER_MINUTE || props.is_empty() {
             if credential {
                 self.say(Sign::Refused, &format!("{} asked for a secret: declined", self.providers[idx].label));
@@ -951,8 +954,15 @@ impl App {
         let Some(p) = self.servers.iter_mut().find(|s| s.idx == idx).and_then(|s| s.pending.remove(&n)) else {
             return;
         };
-        let result = v.get("result").cloned();
-        let error = v.get("error").and_then(|e| e.get("message")).and_then(Value::as_str).map(scrub);
+        let has_result = v.get("result").is_some();
+        let has_error = v.get("error").is_some();
+        let valid = v["jsonrpc"] == "2.0" && has_result != has_error && (!has_error || (v["error"]["code"].is_i64() && v["error"]["message"].is_string()));
+        let result = if valid { v.get("result").cloned() } else { None };
+        let error = if valid {
+            v.get("error").and_then(|e| e.get("message")).and_then(Value::as_str).map(scrub)
+        } else {
+            Some("the provider returned an invalid protocol reply".into())
+        };
         match p.kind {
             Kind::Init => match result {
                 Some(r) => {
@@ -981,7 +991,10 @@ impl App {
                 }
             }
             Kind::Subscribe => {}
-            Kind::Read => {
+            Kind::Read | Kind::Refresh(_) => {
+                if self.providers[idx].read_id != Some(n) {
+                    return;
+                }
                 self.providers[idx].reading = false;
                 let text = result
                     .as_ref()
@@ -1005,7 +1018,11 @@ impl App {
                         }
                     }
                 }
-                self.task_read(idx, valid);
+                if let Kind::Refresh(serial) = p.kind {
+                    self.task_refreshed(idx, serial, valid);
+                } else {
+                    self.task_read(idx, valid);
+                }
             }
             Kind::Folder => {
                 let text = result
@@ -1041,16 +1058,18 @@ impl App {
         self.follow_view(now);
         let mut late = vec![];
         for s in self.servers.iter_mut() {
-            for (_, p) in s.expired(now) {
-                late.push((s.idx, p.kind));
+            for (id, p) in s.expired(now) {
+                late.push((s.idx, id, p.kind));
             }
         }
-        for (idx, kind) in late {
+        for (idx, id, kind) in late {
             match kind {
                 Kind::Call(_) => {
                     self.clear_pair(idx);
-                    if self.running.take().is_some() {
+                    if self.running.as_ref().is_some_and(|(p, n, _, _)| *p == idx && *n == id) {
+                        self.running = None;
                         self.task_cancel();
+                        self.opened = false;
                         // no answer is no proof either way: say so, and run nothing that depends on it
                         self.say(
                             Sign::Refused,
@@ -1064,8 +1083,16 @@ impl App {
                     }
                 }
                 Kind::Read => {
-                    self.providers[idx].reading = false;
-                    self.task_read(idx, false);
+                    if self.providers[idx].read_id == Some(id) {
+                        self.providers[idx].reading = false;
+                        self.task_read(idx, false);
+                    }
+                }
+                Kind::Refresh(serial) => {
+                    if self.providers[idx].read_id == Some(id) {
+                        self.providers[idx].reading = false;
+                    }
+                    self.task_refreshed(idx, serial, false);
                 }
                 Kind::Init => self.lose(idx, "it did not answer"),
                 Kind::Prepare(serial) => self.task_prepared(idx, serial, None, Some("preparation timed out; nothing was executed".into())),
@@ -2405,6 +2432,17 @@ impl App {
             self.say(Sign::You, words);
             return self.task_advance(json!({"answer": words}));
         }
+        let visible = self.shown();
+        let first = words.split_whitespace().next().unwrap_or("");
+        let loading = self.providers.iter().enumerate().any(|(idx, provider)| {
+            provider.dead.is_none()
+                && (visible.contains(&idx) || provider.label.eq_ignore_ascii_case(first))
+                && ((!provider.ready && provider.reading) || self.servers.iter().any(|s| s.idx == idx && s.pending.values().any(|p| p.kind == Kind::Tools)))
+        });
+        if loading {
+            self.set_input(words.into());
+            return self.say(Sign::Says, "the controls are still loading; press Enter when they appear");
+        }
         let target = self.target.take();
         self.task_cancel();
         self.target = target;
@@ -2671,6 +2709,9 @@ impl App {
     /// A step: an argument asked when it lacks one; then its turn starts, the command as it runs (#53);
     /// a typed yes when it is risky, then the call.
     pub fn run(&mut self, step: Step) {
+        if self.running.is_some() {
+            return self.say(Sign::Says, "wait for the current action's result");
+        }
         if step.who != Who::Model {
             self.task_cancel();
             self.target = None;
@@ -2751,6 +2792,17 @@ impl App {
     }
 
     fn call(&mut self, step: Step) {
+        if self.running.is_some() {
+            return self.say(Sign::Says, "wait for the current action's result");
+        }
+        if step.who == Who::Model {
+            if self.task_repeat(step.prov, &step.call) {
+                return;
+            }
+            if let Some(task) = &mut self.task {
+                task.attempted.push((step.prov, step.call.clone()));
+            }
+        }
         let params = json!({"name": step.call.name, "arguments": Value::Object(step.call.arguments.clone())});
         let idx = step.prov;
         let n = self
@@ -2780,12 +2832,30 @@ impl App {
         let task_result = result
             .clone()
             .unwrap_or_else(|| json!({"isError": true, "message": error.clone().unwrap_or_else(|| "no result".into())}));
-        let mut output_error = if result.is_none() && error.is_none() {
-            Some("no result; the action may have happened".to_string())
+        let mut output_error = if error.is_some() {
+            Some("the provider could not report the result; the action may have happened".to_string())
+        } else if !result.as_ref().is_some_and(mcp::tool_result_ok) {
+            Some("the provider returned an invalid tool result; the action may have happened".to_string())
         } else {
             None
         };
-        if error.is_none() && result.as_ref().is_some_and(|r| r.get("isError") != Some(&Value::Bool(true))) {
+        let privacy = result
+            .as_ref()
+            .filter(|_| output_error.is_none())
+            .map(|r| {
+                let mut privacy = gate::result_privacy(None, r);
+                if let Some(schema) = self.tool_of(&step).and_then(|t| t.output_schema.as_ref()) {
+                    privacy.extend(gate::result_privacy(Some(schema), &r["structuredContent"]));
+                }
+                if let Some(undo) = r.pointer("/structuredContent/undo") {
+                    if let Some(tool) = self.providers[idx].tools.iter().find(|t| Some(t.name.as_str()) == undo["name"].as_str()) {
+                        privacy.extend(gate::result_privacy(Some(&tool.schema), &undo["arguments"]));
+                    }
+                }
+                privacy
+            })
+            .unwrap_or_default();
+        if output_error.is_none() && result.as_ref().is_some_and(|r| r.get("isError") != Some(&Value::Bool(true))) {
             if let Some(output) = self.tool_of(&step).and_then(|t| t.output_schema.as_ref()) {
                 output_error = gate::result_ok(output, &task_result["structuredContent"]).err();
             }
@@ -2802,24 +2872,29 @@ impl App {
         );
         if let Some(e) = output_error {
             self.task_cancel();
+            self.opened = false;
             self.say(Sign::Refused, &e);
             self.stop_queue();
             self.providers[idx].dirty = true;
             return;
         }
-        if let Some(e) = error {
-            self.say(Sign::Refused, &e);
-            self.stop_queue();
-        } else if let Some(r) = result {
+        if let Some(r) = result {
             let text = r.pointer("/content/0/text").and_then(Value::as_str).unwrap_or("");
             if refused {
-                self.say(Sign::Refused, text);
+                self.say(
+                    Sign::Refused,
+                    if text.is_empty() || !privacy.text_safe(text) {
+                        "the action did not complete"
+                    } else {
+                        text
+                    },
+                );
                 self.stop_queue();
             } else {
                 let sc = r.get("structuredContent").cloned().unwrap_or(Value::Null);
                 if let Some(path) = sc.get("attach").and_then(Value::as_str) {
                     let under = home().map(|h| path.starts_with(&format!("{}/", h))).unwrap_or(false);
-                    if under && !path.split('/').any(|c| c == ".." || c.starts_with('.')) {
+                    if privacy.text_safe(path) && under && !path.split('/').any(|c| c == ".." || c.starts_with('.')) {
                         self.attachment = Some(path.to_string());
                         if let Some((v, depth)) = self.attaching.take() {
                             self.came_from.truncate(depth);
@@ -2837,19 +2912,25 @@ impl App {
                 // the theme section's own palette, never another provider's
                 if self.providers[idx].label == "theme" {
                     if let Some(p) = sc.get("palette").and_then(Value::as_object) {
-                        self.palette = Some(p.clone());
+                        if p.values().all(|v| v.as_str().is_some_and(|s| privacy.text_safe(s))) {
+                            self.palette = Some(p.clone());
+                        }
                     }
                 }
                 if sc.get("opened").and_then(Value::as_bool) == Some(true) {
                     self.opened = true;
                 } else {
                     let receipt = sc.get("receipt").and_then(Value::as_str).unwrap_or(text).to_string();
-                    for (i, l) in receipt.lines().enumerate() {
-                        if i == 0 {
-                            self.say(Sign::Done, l);
-                        } else {
-                            self.say(Sign::Says, l);
+                    if privacy.text_safe(&receipt) {
+                        for (i, l) in receipt.lines().enumerate() {
+                            if i == 0 {
+                                self.say(Sign::Done, l);
+                            } else {
+                                self.say(Sign::Says, l);
+                            }
                         }
+                    } else {
+                        self.say(Sign::Done, "the action completed; private details withheld");
                     }
                 }
                 self.undo = None;
@@ -2860,7 +2941,11 @@ impl App {
                             arguments: args.clone(),
                             ask: vec![],
                         };
-                        let carries_secret = args.keys().any(|k| gate::secret(k, schema.pointer(&format!("/properties/{}", k))));
+                        let undo_schema = self.providers[idx].tools.iter().find(|t| t.name == name).map(|t| &t.schema);
+                        let carries_secret = args.iter().any(|(k, v)| {
+                            gate::secret(k, undo_schema.and_then(|s| s.get("properties")).and_then(|p| p.get(k)))
+                                || !privacy.text_safe(v.as_str().unwrap_or(&v.to_string()))
+                        });
                         if !carries_secret {
                             let line = format!("undo {}", step.line);
                             self.undo = Some(Step {
@@ -2879,7 +2964,15 @@ impl App {
         }
         self.providers[idx].dirty = true;
         if step.who == Who::Model && self.task.is_some() {
-            self.task_observe(if refused { "error" } else { "ok" }, task_result);
+            if privacy.private {
+                self.task_cancel();
+                self.say(Sign::Refused, "the result contains private fields; task stopped without sending it to spark");
+                self.stop_queue();
+            } else if refused {
+                self.task_observe("error", task_result);
+            } else {
+                self.task_refresh(idx, task_result);
+            }
         }
         self.next_step();
     }
@@ -3097,6 +3190,7 @@ impl App {
                 } else {
                     match self.task.as_ref().map(|t| &t.phase) {
                         Some(crate::task::Phase::Inspect(_)) => "Reading",
+                        Some(crate::task::Phase::Refresh(_)) => "Reading",
                         Some(crate::task::Phase::Prepare(_)) => "Checking",
                         Some(crate::task::Phase::Proposed) => "Edit the request",
                         _ => "Thinking",

@@ -920,7 +920,8 @@ case ${1:-} in
                 [ ! -e "$HOME/fullscreen" ] || printf ',"floating_nodes":[{"type":"floating_con","id":78,"app_id":"spark-dialog","pid":%s,"fullscreen_mode":0}]' "$(cat "$HOME/panel.ppid" 2>/dev/null || echo 1)"
                 echo '}]}' ;;
         esac ;;
-    --) shift; echo "$*" >> "$log" ;;
+    --) shift; echo "$*" >> "$log"
+        case "$*" in '[con_id=77] kill') rm -f "$HOME/fullscreen" ;; '[con_id=79] kill') rm -f "$HOME/aerc" ;; esac ;;
 esac
 EOF
     for t in gimp-3.0 firefox micro gone player; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done   # gone: an app that opens no window
@@ -961,11 +962,11 @@ else
     printf '%s\n' "$out" | grep -q '^no saved layouts yet -- try: spark-shell layout "' && ok "layout (bare): no saved layouts yet, a try line" || bad "layout list empty" "$out"
     # the need: spark asked once, the lines played, the missing app named
     st=0; out=$(sh "$SH" layout "$need" 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^layout> $need\$" && printf '%s\n' "$out" | grep -q '^  photo work in gimp with the two feeds' \
-        && ok "layout WORDS: exit 0, the layout> line, the why line" || bad "desk need" "st=$st $out"
+    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q "^layout> $need\$" && printf '%s\n' "$out" | grep -q '^  photo work in gimp with the two feeds' \
+        && ok "layout WORDS: partial failure for the missing app, the layout> line and why line" || bad "desk need" "st=$st $out"
     printf '%s\n' "$out" | grep -q '^  ghostapp is not on this machine -- laid out without it$' && ok "desktop WORDS: an app the model named that is not here is said" || bad "ghostapp line" "$out"
     printf '%s\n' "$out" | grep -q '^  refused  exec ghostapp  (ghostapp is not on this machine)$' && ok "desktop WORDS: its exec line is refused with the reason" || bad "ghostapp refused" "$out"
-    printf '%s\n' "$out" | grep -q '^on workspace 3 -- spark-shell layout save NAME saves it$' && ok "layout WORDS: on workspace 3 (1 and 2 are in use), save named" || bad "on workspace" "$out"
+    printf '%s\n' "$out" | grep -q '^spark-shell layout: the layout did not finish; some windows may already be open$' && ok "layout WORDS: missing app leaves an honest partial failure" || bad "on workspace" "$out"
     printf '%s\n' "$out" | grep -q 'no window after\|sway refused' && bad "desktop WORDS: a wait ran out or sway refused" "$out" || ok "desktop WORDS: every window came up, sway took every line"
     [ -f "$argv" ] && [ "$(sed -n '1,3p' "$argv" | paste -sd ' ' -)" = 'edit --type json' ] && grep -qx -- '--name' "$argv" && grep -qx layout.json "$argv" && grep -qx -- '--about' "$argv" \
         && ok "spark: asked as spark edit --type json --name layout.json --about" || bad "spark argv" "$(cat "$argv" 2>&1)"
@@ -1033,18 +1034,18 @@ EOF
         && ok "layout (bare): lists the saved layout with its words" || bad "desk list" "$out"
     rm -f "$argv" "$swlog"
     st=0; out=$(sh "$SH" layout studio 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "^layout> $need\$" && printf '%s\n' "$out" | grep -q '^  photo work in gimp' && printf '%s\n' "$out" | grep -q '^on workspace 3 -- the saved layout studio$' && cmp -s "$swlog" "$H/expected.studio" \
+    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q "^layout> $need\$" && printf '%s\n' "$out" | grep -q '^  photo work in gimp' && printf '%s\n' "$out" | grep -q 'the layout did not finish' && cmp -s "$swlog" "$H/expected.studio" \
         && ok "layout NAME: replays the same lines on the next free workspace (3), named studio, with its why" || bad "replay" "st=$st $out $(cat "$swlog" 2>&1)"
     : > "$swlog"
     st=0; out=$(sh "$SH" layout Studio 2>&1) || st=$?
-    [ "$st" -eq 0 ] && head -1 "$swlog" | grep -q '^workspace number 3$' && [ ! -e "$argv" ] && ok "layout WORDS that name a saved layout (any case): a replay, no model" || bad "replay by words" "st=$st $out"
+    [ "$st" -eq 1 ] && head -1 "$swlog" | grep -q '^workspace number 3$' && [ ! -e "$argv" ] && ok "layout WORDS that name a saved layout (any case): a replay, no model" || bad "replay by words" "st=$st $out"
     : > "$swlog"
     st=0; out=$(ASKED=1 SWAYSOCK=/tmp/x sh "$SH" panel layout open studio 2>&1) || st=$?
-    [ "$st" -eq 0 ] && head -1 "$swlog" | grep -q '^\[app_id=spark-dialog\] move container to workspace number 3$' && tail -1 "$swlog" | grep -q '^\[app_id=spark-dialog\] focus$' \
+    [ "$st" -eq 1 ] && head -1 "$swlog" | grep -q '^\[app_id=spark-dialog\] move container to workspace number 3$' && ! tail -1 "$swlog" | grep -q '^\[app_id=spark-dialog\] focus$' \
         && printf '%s\n' "$out" | grep -q 'photo work in gimp' && ! printf '%s\n' "$out" | grep -q 'layout> ' \
-        && ok "a saved layout as a panel step (asked): the panel window follows it and is focused again, the why said, no layout> line" || bad "replay ask" "st=$st $out $(cat "$swlog")"
+        && ok "a partial saved layout keeps the panel open with the failure, the why said, no layout> line" || bad "replay ask" "st=$st $out $(cat "$swlog")"
     st=0; out=$(ASKED=1 SWAYSOCK=/tmp/x sh "$SH" layout "$need" 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^on workspace [0-9]*$' && ok "a fresh layout asked from the panel: the closing line names the workspace alone (the panel has its save row)" || bad "asked closing" "st=$st $out"
+    [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q 'the layout did not finish' && ok "a partial layout asked from the panel reports failure" || bad "asked closing" "st=$st $out"
     rm -f "$argv"   # that one asked spark; the replay tests below must see no call
     out=$(SWAYSOCK=/tmp/x sh "$SH" panel layout --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "layout     1 saved $SEP last: $need" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO layout     studio	layout open studio" ] \
@@ -1131,7 +1132,7 @@ EOF
 EOF
     rm -f "$swlog"
     st=0; out=$(sh "$SH" layout gate 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | grep -c '^  refused  ')" -eq 4 ] && ok "gate: four lines refused, the desk still runs (exit 0)" || bad "gate count" "st=$st $out"
+    [ "$st" -eq 1 ] && [ "$(printf '%s\n' "$out" | grep -c '^  refused  ')" -eq 4 ] && ok "gate: four lines refused, remaining windows open with partial failure" || bad "gate count" "st=$st $out"
     printf '%s\n' "$out" | grep -q '^  rm x$' && ok "gate: a kept desk you edited may open a program the machine has (rm x ran; it is yours)" || bad "gate rm" "$out"
     printf '%s\n' "$out" | grep -qF '  refused  exec gimp-3.0 $(id)  (shell syntax' && printf '%s\n' "$out" | grep -qF '  refused  exec firefox a|b  (shell syntax' \
         && ok "gate: shell syntax (\$(id), a pipe) never reaches sh -c" || bad "gate syntax" "$out"
@@ -1145,7 +1146,7 @@ EOF
     printf '{"words": "a reader you kept", "main": {"app": "reader"}, "side": [{"app": "sudo", "args": "ls"}]}\n' > "$desks/kept-reader"
     : > "$swlog"
     st=0; out=$(sh "$SH" layout kept-reader 2>&1) || st=$?
-    [ "$st" -eq 0 ] && grep -q '^exec foot -e reader$' "$swlog" && printf '%s\n' "$out" | grep -qE '^  refused  exec (foot -e )?sudo ls  \(sudo is not an app\)$' \
+    [ "$st" -eq 1 ] && grep -q '^exec foot -e reader$' "$swlog" && printf '%s\n' "$out" | grep -qE '^  refused  exec (foot -e )?sudo ls  \(sudo is not an app\)$' \
         && ok "a kept desk: a program on the machine but not in the inventory opens; sudo never" || bad "kept gate" "st=$st $out $(cat "$swlog")"
     rm -f "$desks/kept-reader" "$H/.local/bin/reader"
     # a window that never comes (mpv with nothing to play): the split meant for it is skipped,
@@ -1169,8 +1170,8 @@ EOF
     grep -qxF '[con_id=1000] floating enable' "$swlog" && grep -qxF '[con_id=1000] border pixel' "$swlog" && ! grep -q for_window "$swlog" \
         && ok "saved window rules: native actions target only the new container, no lasting rule" || bad "window rules" "$out $(cat "$swlog")"
     printf '{"words":"missing rule", "main":{"app":"gone","floating":true},"side":[]}\n' > "$desks/missing-rule"
-    : > "$swlog"; out=$(sh "$SH" layout missing-rule 2>&1)
-    ! grep -q floating "$swlog" && printf '%s\n' "$out" | grep -q 'window rule skipped' \
+    : > "$swlog"; st=0; out=$(sh "$SH" layout missing-rule 2>&1) || st=$?
+    [ "$st" -eq 1 ] && ! grep -q floating "$swlog" && printf '%s\n' "$out" | grep -q 'window rule skipped' \
         && ok "saved window rules: no new window means no setting on an existing one" || bad "missing window rule" "$out $(cat "$swlog")"
     touch "$H/two-screens"; rm -f "$argv" "$swlog"
     st=0; out=$(sh "$SH" layout "$need" 2>&1) || st=$?
@@ -1620,6 +1621,7 @@ st=0; out=$(sh "$SH" layout as-is 2>&1) || st=$?
 rm -f "$H/answer.json" "$desks/as-is" "$desks/named-one"
 if [ "$(uname -s)" != Darwin ]; then
     # --desktop from a console: the words wait, sway starts, --pending lays them out once
+    printf '{"main":{"app":"micro"},"side":[{"app":"firefox"}]}\n' > "$H/answer.json"   # every required app exists in this positive pending proof
     theme_fixture '#ff5555'; mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on --yes >/dev/null
     desk_pending=$H/.local/state/spark-shell/desk.pending; rm -f "$argv" "$swlog"
@@ -1628,7 +1630,7 @@ if [ "$(uname -s)" != Darwin ]; then
         && ok "layout WORDS --desktop from a console: the words wait in desk.pending, sway starts, no model call yet" || bad "pending write" "st=$st $out $(cat "$desk_pending" 2>&1)"
     st=0; out=$(SWAYSOCK=$H/sway.sock sh "$SH" layout --pending 2>&1) || st=$?
     [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^layout> news and music$' && printf '%s\n' "$out" | grep -q '^on workspace 3' && [ ! -e "$desk_pending" ] \
-        && [ "$(tail -1 "$argv")" = 'write the layout for this need: news and music' ] \
+        && [ "$(tail -1 "$argv")" = 'write the layout for this need: news and music' ] && grep -qx 'exec foot -e micro' "$swlog" && grep -qx 'exec firefox' "$swlog" \
         && ok "layout --pending: lays the waiting words out as sway windows, the file is gone" || bad "pending play" "st=$st $out"
     st=0; out=$(SWAYSOCK=$H/sway.sock sh "$SH" layout --pending 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ -z "$out" ] && ok "layout --pending twice: a quiet no-op" || bad "pending twice" "st=$st $out"
@@ -1639,6 +1641,7 @@ if [ "$(uname -s)" != Darwin ]; then
     st=0; out=$(SWAYSOCK=$H/sway.sock sh "$SH" desktop --pending 2>&1) || st=$?
     [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^layout> news and music$' && [ ! -e "$desk_pending" ] \
         && ok "old spellings: desktop --pending (the sway config's line) lays them out" || bad "alias pending" "st=$st $out"
+    rm -f "$H/answer.json"
 fi
 grep -q '^## Allowed apps$' "$REPO/README.md" && ok "README: Allowed apps" || bad "README allowed apps section"
 
@@ -1670,7 +1673,7 @@ else echo 'linux /vmlinuz' > "$H/root/boot/grub/grub.cfg"; fi
 EOF
     printf '#!/bin/sh\necho "mkinitcpio $*" >> "%s/log"\n[ ! -e "%s/fail" ]\n' "$H" "$H" > "$H/lx/mkinitcpio"
     # the helper: has-profile fails once $H/gone is there, remove once $H/stuck is
-    printf '#!/bin/sh\necho "python3 $*" >> "%s/log"\ncase $2 in has-profile) [ ! -e "%s/gone" ] ;; remove) [ ! -e "%s/stuck" ] ;; esac\n' "$H" "$H" "$H" > "$H/lx/python3"
+    printf '#!/bin/sh\ncase $1 in */lib/reminder_time.py) exec "%s" "$@" ;; esac\necho "python3 $*" >> "%s/log"\ncase $2 in has-profile) [ ! -e "%s/gone" ] ;; remove) [ ! -e "%s/stuck" ] ;; esac\n' "$fixture_python" "$H" "$H" "$H" > "$H/lx/python3"
     cat > "$H/lx/systemctl" <<'EOF'
 #!/bin/sh
 st=${SPARK_SHELL_ROOT:-$HOME/root}/units
@@ -2991,9 +2994,9 @@ line=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/nul
 [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "due") | .full_text')" = "<span foreground='#555555'>due</span> <span foreground='#ff5555'>$(printf '\342\227\217')</span> a long title from another ca" ] && [ "$(grep -c . "$HOME/chime.log" 2>/dev/null)" = 1 ] \
     && ok "bar: the latest reminder due (another tool's, in UTC, its folded title joined), cut at 28 characters, and one chime for the two due, not at every line" || bad "due block" "$(printf '%s' "$line" | jq -c '.[] | select(.name == "due")') chimes=$(cat "$HOME/chime.log" 2>&1)"
 rows=$(NL reminders --list)
-printf '%s\n' "$rows" | grep -q "a long title from another calendar, folded across two lines; done	reminders done " && ! printf '%s\n' "$rows" | grep -q 'an old meeting\|a weekly one' \
+printf '%s\n' "$rows" | grep -q "a long title from another calendar, folded across two lines; done	reminders show" && ! printf '%s\n' "$rows" | grep -q 'an old meeting\|a weekly one' \
     && printf '%s\n' "$rows" | grep -q 'again in 10 minutes	reminders snooze ' \
-    && ok "reminders: a folded title joined and unescaped; an old event and a repeating one left out; the due ones with done and again in 10 minutes" || bad "due rows" "$rows"
+    && ok "reminders: a folded title joined and unescaped; old and repeating events left out; external events read only and owned events have done and snooze" || bad "due rows" "$rows"
 out=$(NL reminders snooze a long title from another calendar, folded across two lines\; 'done' || :); [ "$out" = "a long title from another calendar, folded across two lines; done is an event another calendar wrote: change it there" ] && grep -q 'UID:khal-old' "$HOME/calendar/other.ics" \
     && ok "reminders snooze on another calendar's event: refused, its file untouched" || bad "foreign snooze" "$out"
 out=$(NL reminders snooze water the plants); printf '%s' "$out" | grep -q '^water the plants again at [0-9][0-9]:[0-9][0-9]$' \
@@ -3010,7 +3013,7 @@ j=$(mcp_rem reminders_done 'check the oven'); u=$(printf '%s' "$j" | jq -c '.str
 rm -f "$HOME/calendar/oven.ics"
 out=$(NL reminders 'done' water the plants) && touch -t 202001010000 "$HOME/calendar/done/ours.ics" && NL reminders add 'tomorrow 08:00 a later one' >/dev/null && NL reminders 'done' a later one >/dev/null && [ ! -e "$HOME/calendar/done/ours.ics" ] \
     && ok "reminders done: one put aside more than 30 days ago is gone at the next done" || bad "done prune" "$out $(ls -l "$HOME/calendar/done")"
-out=$(NL reminders restore nothing like it || :); [ "$out" = 'no reminder done named nothing like it' ] && ok "reminders restore: no such one, said" || bad "restore none" "$out"
+out=$(NL reminders restore nothing like it || :); [ "$out" = 'no unique reminder done named nothing like it; use its UID' ] && ok "reminders restore: no such one, said" || bad "restore none" "$out"
 [ "$(NL reminders add 'tomorrow 09:00 semi; colon, comma' | tail -1)" != '' ] && f=$(grep -l 'semi' "$HOME"/calendar/*.ics 2>/dev/null | head -1) && tr -d '\r' < "${f:-/dev/null}" | grep -qxF 'SUMMARY:semi\; colon\, comma' \
     && ok "reminders add: a semicolon and a comma escaped as iCalendar text" || bad "ics escape" "$(cat "${f:-/dev/null}" 2>&1) $(ls "$HOME/calendar")"
 out=$(NL reminders add '2026-19-39 10:00 nothing' || :); [ "$out" = 'a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), or a while from now (gym in 10 minutes)' ] && ok "reminders add: a day the calendar lacks is refused" || bad "bad date" "$out"
@@ -3039,7 +3042,7 @@ out=$(SWAYSOCK=$H/sock EDITOR=true PATH="$H/lx:$PATH" sh "$SH" notes 2>&1); prin
     && ok "spark-shell notes add and find" || bad "notes add/find command" "$(sh "$SH" notes find eggs 2>&1)"
 rm -f "$HOME/swaymsg.log"; out=$(SWAYSOCK=$H/sock EDITOR=true PATH="$H/lx:$PATH" sh "$SH" notes the jabra mic levels </dev/null 2>&1)
 [ "$out" = 'opened the jabra mic levels' ] && grep -qxF -- "-- exec foot -e true '$HOME/notes/jabra.md'" "$HOME/swaymsg.log" && ok "spark-shell notes NAME: away from a terminal, the note opens in the desktop's" || bad "notes open command" "$out"
-rc=0; out=$(sh "$SH" notes nothing like it 2>&1) || rc=$?; [ "$rc" = 1 ] && [ "$out" = 'spark-shell notes: no note named nothing like it (spark-shell notes lists them)' ] && ok "spark-shell notes NAME: no such note, refused" || bad "notes refuse" "rc=$rc $out"
+rc=0; out=$(sh "$SH" notes nothing like it 2>&1) || rc=$?; [ "$rc" = 1 ] && [ "$out" = 'spark-shell notes: no unique note named nothing like it; use its filename (spark-shell notes lists them)' ] && ok "spark-shell notes NAME: no such note, refused" || bad "notes refuse" "rc=$rc $out"
 out=$(sh "$SH" reminders add tomorrow 7:30pm feed the cat 2>&1); [ "$out" = 'reminder tomorrow 19:30 feed the cat' ] && ok "spark-shell reminders add: the day, the time, the words" || bad "reminders add command" "$out"
 out=$(sh "$SH" reminders 2>&1); printf '%s\n' "$out" | grep -q '^tomorrow$' && printf '%s\n' "$out" | grep -q '^  19:30  *feed the cat$' && printf '%s\n' "$out" | grep -q '^later$' \
     && ok "spark-shell reminders: the ones ahead under their groups, each its time" || bad "reminders command" "$out"
@@ -3342,14 +3345,14 @@ log=${XDG_STATE_HOME:-$HOME/.local/state}/amixer.log; mkdir -p "$(dirname "$log"
 case "$*" in *scontrols) [ ! -e "$HOME/amixer-refuse" ] || exit 1 ;; esac   # amixer-refuse: ALSA cannot read its configuration
 case "$*" in
     "-D default info") exit 1 ;;
-    "-D bluealsa sget MAJOR V - A2DP") m=on; [ ! -e "$HOME/bmuted" ] || m=off; printf "Simple mixer control 'MAJOR V - A2DP',0\n  Limits: Playback 0 - 127\n  Front Left: Playback 76 [60%%] [0.00dB] [%s]\n" "$m" ;;
+    "-D bluealsa sget MAJOR V - A2DP") m=on; [ ! -e "$HOME/bmuted" ] || m=off; level=$(cat "$HOME/blevel" 2>/dev/null || echo 60); printf "Simple mixer control 'MAJOR V - A2DP',0\n  Limits: Playback 0 - 127\n  Front Left: Playback 76 [%s%%] [0.00dB] [%s]\n" "$level" "$m" ;;
     "-D bluealsa sget MAJOR V - SCO") m=on; [ ! -e "$HOME/bcmuted" ] || m=off; printf "Simple mixer control 'MAJOR V - SCO',0\n  Mono: Playback 10 [67%%] [-5.82dB] [on] Capture 9 [60%%] [0.00dB] [%s]\n" "$m" ;;
     "-D bluealsa sset "*) echo "$*" >> "$log"
-        case "$*" in *"A2DP mute") touch "$HOME/bmuted" ;; *"A2DP unmute") rm -f "$HOME/bmuted" ;; *"SCO nocap") touch "$HOME/bcmuted" ;; *"SCO cap") rm -f "$HOME/bcmuted" ;; esac ;;
+        case "$*" in *"A2DP mute") touch "$HOME/bmuted" ;; *"A2DP unmute") rm -f "$HOME/bmuted" ;; *"SCO nocap") touch "$HOME/bcmuted" ;; *"SCO cap") rm -f "$HOME/bcmuted" ;; *"A2DP "*%) level=${5%%%}; echo "$level" > "$HOME/blevel" ;; esac ;;
     "-c 0 scontrols") printf "Simple mixer control 'Master',0\nSimple mixer control 'PCM',0\nSimple mixer control 'Capture',0\n" ;;
     "-c 1 scontrols") printf "Simple mixer control 'IEC958',0\n" ;;
-    "-c 0 sget Master") m=on; [ ! -e "$HOME/muted" ] || m=off; printf "Simple mixer control 'Master',0\n  Front Left: Playback 26214 [40%%] [%s]\n  Front Right: Playback 26214 [40%%] [%s]\n" "$m" "$m" ;;
-    "-c 0 sget Capture") m=on; [ ! -e "$HOME/cmuted" ] || m=off; printf "Simple mixer control 'Capture',0\n  Front Left: Capture 1000 [50%%] [%s]\n" "$m" ;;
+    "-c 0 sget Master") m=on; [ ! -e "$HOME/muted" ] || m=off; level=$(cat "$HOME/level" 2>/dev/null || echo 40); printf "Simple mixer control 'Master',0\n  Front Left: Playback 26214 [%s%%] [%s]\n  Front Right: Playback 26214 [%s%%] [%s]\n" "$level" "$m" "$level" "$m" ;;
+    "-c 0 sget Capture") m=on; [ ! -e "$HOME/cmuted" ] || m=off; level=$(cat "$HOME/clevel" 2>/dev/null || echo 50); printf "Simple mixer control 'Capture',0\n  Front Left: Capture 1000 [%s%%] [%s]\n" "$level" "$m" ;;
     "-c "*" sset "*) echo "$*" >> "$log"   # the switches, as amixer keeps them: mute/unmute/toggle for a playback switch, cap/nocap/toggle for a capture one
         case "$*" in
             "-c 0 sset Master mute") touch "$HOME/muted" ;; "-c 0 sset Master unmute") rm -f "$HOME/muted" ;;
@@ -3357,6 +3360,8 @@ case "$*" in
             "-c 0 sset Capture nocap") touch "$HOME/cmuted" ;; "-c 0 sset Capture cap") rm -f "$HOME/cmuted" ;;
             "-c 0 sset Capture toggle") if [ -e "$HOME/cmuted" ]; then rm -f "$HOME/cmuted"; else touch "$HOME/cmuted"; fi ;;
             "-c 0 sset Capture mute"|"-c 0 sset Capture unmute") echo "amixer: Invalid command!" >&2; exit 1 ;;
+            "-c 0 sset Master "*%) level=${5%%%}; echo "$level" > "$HOME/level" ;;
+            "-c 0 sset Capture "*%) level=${5%%%}; echo "$level" > "$HOME/clevel" ;;
         esac ;;
 esac
 STUB
@@ -3485,6 +3490,7 @@ else
         && ok "bar volume up|mute|mic: the key's change, and the running bar redrawn after each" || bad "volume keys" "$(cat "$amlog" 2>&1); $(grep -c '^\[{' "$H/bar.out") lines"
     st=0; out=$(sh "$SH" bar volume louder 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell bar: volume takes up, down, mute or mic' ] && ok "bar volume: a wrong word is refused in one line" || bad "volume refuse" "st=$st $out"
+    rm -f "$HOME/level" "$HOME/clevel"   # restore this fixture's baseline after the volume-key tests
     # the out page switches the card: ALSA's default for new programs, in spark-shell's own marked file, the ! form alsa.conf takes for a name
     st=0; out=$(sh "$SH" bar panel out use hdmi 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'out HDMI for programs started from now' ] && [ "$(sed -n '2,3p' "$H/.config/alsa/asoundrc" 2>/dev/null | paste -sd ' ' -)" = 'defaults.pcm.!card HDMI defaults.ctl.!card HDMI' ] && head -1 "$H/.config/alsa/asoundrc" | grep -q '^# rendered by spark-shell' \
@@ -3778,7 +3784,7 @@ STUB
         && ok "panel out mute when muted already, unmute when not: a receipt, never 'not on the panel now', and the undo before it stays (#31)" || bad "mute again" "st=$st $out | st3=$st3 $out3 | $u1 | $u2 | $u3"
     sh "$SH" bar panel out use HDMI >/dev/null
     st=0; out=$(sh "$SH" bar panel out mute 2>&1) || st=$?; st2=0; out2=$(sh "$SH" bar panel out level 50 2>&1) || st2=$?
-    sh "$SH" bar panel out use Jabra >/dev/null; rm -f "$amlog"
+    sh "$SH" bar panel out use Jabra >/dev/null; rm -f "$amlog" "$HOME/level"
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: out: HDMI has no volume control here, so it cannot be muted or set' ] && [ "$st2" -eq 1 ] && [ "$out2" = "$out" ] \
         && ok "panel out mute and level on an output with no volume control (HDMI): why, in one line; never 'not on the panel now', never a level said that nothing took (#31)" || bad "no mixer" "st=$st $out | st2=$st2 $out2"
     out=$(sh "$SH" bar panel bat --list)
@@ -3827,13 +3833,13 @@ STUB
     rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window close aerc 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'aerc closed' ] && grep -qxF '[con_id=79] kill' "$H/.local/state/swaymsg.log" && ! grep -q 'foot' "$H/.local/state/swaymsg.log" \
         && ok "panel window close aerc: a terminal window goes by what runs in it, and only that terminal is told to close" || bad "window close aerc" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
-    rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps close aerc 2>&1) || st=$?
+    touch "$HOME/aerc"; rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps close aerc 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'aerc closed' ] && grep -qxF '[con_id=79] kill' "$H/.local/state/swaymsg.log" && ok "panel apps close NAME: read as window close, the way spark tends to say it" || bad "apps close" "st=$st $out"
-    SWAYSOCK=/tmp/x sh "$SH" panel window --list > "$H/win.list"
-    grep -q "^$(printf '\342\226\270') window     firefox	window focus firefox$" "$H/win.list" && grep -q "^  window     close firefox	window close firefox$" "$H/win.list" && grep -q "^$(printf '\342\226\270') window     aerc	window focus aerc$" "$H/win.list" && ! grep -q 'spark-dialog\|window     foot' "$H/win.list" \
+    touch "$HOME/fullscreen" "$HOME/aerc"; SWAYSOCK=/tmp/x sh "$SH" panel window --list > "$H/win.list"
+    grep -q "^$(printf '\342\226\270') window     firefox	window focus 77$" "$H/win.list" && grep -q "^  window     close firefox	window close 77$" "$H/win.list" && grep -q "^$(printf '\342\226\270') window     aerc	window focus 79$" "$H/win.list" && ! grep -q 'spark-dialog\|window     foot' "$H/win.list" \
         && ok "panel window --list: each open window by its name is a row that puts it in front, and a close row; the terminal by what runs in it; the panel's own window not listed" || bad "window rows" "$(cat "$H/win.list")"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window close nothing 2>&1) || st=$?
-    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: window: no window named nothing is open' ] && ok "panel window close NAME: a window that is not open is refused" || bad "window close refuse" "st=$st $out"
+    [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: window: no unique window named nothing is open; select it in Workspace' ] && ok "panel window close NAME: a window that is not open is refused" || bad "window close refuse" "st=$st $out"
     rm -f "$HOME/fullscreen" "$HOME/aerc" "$H/win.list"
     printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
     line=$(sh "$SH" bar status --once)
@@ -3880,7 +3886,7 @@ EOF
     st=0; out0=$(SWAYSOCK=/tmp/x sh "$SH" panel close the window with firefox </dev/null 2>&1) || st=$?
     printf '%s\n' "$out0" | grep -q "window close firefox: kept, not done (it takes a typed yes)$" && [ ! -s "$H/.local/state/swaymsg.log" ] || bad "want close no yes" "$out0"
     st=0; out=$(echo yes | SPARK_SHELL_TEST_TTY=1 SWAYSOCK=/tmp/x sh "$SH" panel close the window with firefox 2>&1) || st=$?
-    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "type yes to window close firefox: $TICK firefox closed$" && grep -qxF '[con_id=77] kill' "$H/.local/state/swaymsg.log" && ! grep -q '^exec firefox' "$H/.local/state/swaymsg.log" && grep -q 'close firefox' "$HOME/spark.argv" \
+    [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q "type yes to window close firefox: $TICK firefox closed$" && grep -qxF '[con_id=77] kill' "$H/.local/state/swaymsg.log" && ! grep -q '^exec firefox' "$H/.local/state/swaymsg.log" && grep -q 'close 77' "$HOME/spark.argv" \
         && ok "panel WORDS about closing an app: never the app opened or a layout; spark picks window close firefox from the list; with no yes it is kept, and after a typed yes the window is told to close" || bad "want close" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
     printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$HOME/spark.argv"\nprintf "{\\"why\\": \\"no\\", \\"steps\\": []}\\n"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"; rm -f "$H/.local/state/swaymsg.log"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel quit firefox 2>&1) || st=$?
@@ -4014,8 +4020,8 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 107 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 107 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 109 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 109 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -5018,15 +5024,17 @@ ans 1 | jq -e '.result.tools[] | select(.name == "theme_words") | .inputSchema.r
 printf 'DESKTOP=sway\n' > "$cfg"
 if [ "$(uname -s)" != Darwin ]; then
     desk_stubs
-    out=$(SWAYSOCK=$H/sock sh "$SH" layout "photo editing for instagram" 2>&1) || :
-    [ -f "$st_dir/layouts/photo-editing-for-instagram" ] && [ "$(sed -n 1p "$st_dir/layout.history" | cut -f2)" = photo-editing-for-instagram ] && ok "layout WORDS: kept under the words' name in the state, first in the layout history" || bad "layout kept" "$out $(ls "$st_dir/layouts" 2>&1; cat "$st_dir/layout.history" 2>&1)"
+    printf '{"main":{"app":"gimp-3.0"},"side":[{"app":"firefox"}]}\n' > "$H/answer.json"
+    st=0; out=$(SWAYSOCK=$H/sock sh "$SH" layout "photo editing for instagram" 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ -f "$st_dir/layouts/photo-editing-for-instagram" ] && [ "$(sed -n 1p "$st_dir/layout.history" | cut -f2)" = photo-editing-for-instagram ] && ok "layout WORDS: kept under the words' name in the state, first in the layout history" || bad "layout kept" "$out $(ls "$st_dir/layouts" 2>&1; cat "$st_dir/layout.history" 2>&1)"
     sh "$SH" layout save studio >/dev/null 2>&1
-    rm -f "$st_dir/spark.argv"; out=$(SWAYSOCK=$H/sock sh "$SH" layout photo-editing-for-instagram 2>&1) || :
-    [ ! -e "$st_dir/spark.argv" ] && printf '%s\n' "$out" | grep -q 'the layout photo-editing-for-instagram again' && ok "layout NAME of a kept one: opened again from the kept copy, no model call" || bad "layout kept open" "$out"
-    out=$(SWAYSOCK=$H/sock sh "$SH" layout back 2>&1) || :
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = 'back to studio' ] && [ ! -e "$st_dir/spark.argv" ] && ok "layout back: the layout before, opened again, no model call" || bad "layout back" "$out $(cat "$st_dir/layout.history")"
+    rm -f "$st_dir/spark.argv"; st=0; out=$(SWAYSOCK=$H/sock sh "$SH" layout photo-editing-for-instagram 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ ! -e "$st_dir/spark.argv" ] && printf '%s\n' "$out" | grep -q 'the layout photo-editing-for-instagram again' && ok "layout NAME of a kept one: opened again from the kept copy, no model call" || bad "layout kept open" "$out"
+    st=0; out=$(SWAYSOCK=$H/sock sh "$SH" layout back 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | sed -n 1p)" = 'back to studio' ] && [ ! -e "$st_dir/spark.argv" ] && ok "layout back: the layout before, opened again, no model call" || bad "layout back" "$out $(cat "$st_dir/layout.history")"
     out=$(sh "$SH" panel layout --list); printf '%s\n' "$out" | grep -q "	layout open studio$" && [ "$(printf '%s\n' "$out" | grep -c 'layout open photo-editing-for-instagram')" -ge 1 ] && ok "panel layout: the back rows open the kept layouts by name" || bad "layout back rows" "$out"
     out=$(sh "$SH" layout delete studio </dev/null 2>&1); [ "$out" = 'deleted studio' ] && ! grep -q studio "$st_dir/layout.history" && ok "layout delete: the file and its history lines gone" || bad "layout delete history" "$out $(cat "$st_dir/layout.history")"
+    rm -f "$H/answer.json"
 fi
 
 # --- update: the clone moves to the newest signed tag, never a plain pull (#30)

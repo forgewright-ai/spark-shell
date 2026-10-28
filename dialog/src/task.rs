@@ -14,6 +14,7 @@ pub enum Phase {
     Proposed,
     Question,
     Inspect(usize),
+    Refresh(usize),
     Prepare(usize),
 }
 
@@ -33,8 +34,11 @@ pub struct Task {
     pub serial: u64,
     pub id: u64,
     pub phase: Phase,
-    pub scope: Option<usize>,
+    pub scope: Vec<usize>,
+    pub offered: Vec<(usize, String)>,
     pub preparing: Option<Call>,
+    pub observation: Option<Value>,
+    pub attempted: Vec<(usize, Call)>,
 }
 
 /// Credentials stay in the native tool host, including schema-marked fields.
@@ -91,6 +95,7 @@ impl App {
             self.target = None;
             self.task_serial += 1; // any late inference reply belongs to the old task
             self.wait = None;
+            self.opened = false;
             self.staged = None;
             self.queue.clear();
             self.jobs.retain(|j| !matches!(j, Job::RunInput(Helper::Task(_), _, _)));
@@ -113,8 +118,11 @@ impl App {
             serial: 0,
             id: 0,
             phase: Phase::Thinking,
-            scope: None,
+            scope: vec![],
+            offered: vec![],
             preparing: None,
+            observation: None,
+            attempted: vec![],
         });
         self.task_advance(json!({}));
     }
@@ -129,7 +137,12 @@ impl App {
             .collect();
         // Only visible state is volunteered. More is read through an explicit
         // inspect decision; hidden notes, directories and networks stay out.
-        let visible: Vec<Value> = self.shown().iter().map(|i| self.task_rows(*i)).collect();
+        let visible: Vec<Value> = self
+            .shown()
+            .iter()
+            .filter(|i| self.providers[**i].label != "files")
+            .map(|i| self.task_rows(*i))
+            .collect();
         let selected = self.target_row().map(|(p, row)| {
             let mut value = self.task_row(p, row);
             value["provider"] = json!(p);
@@ -173,10 +186,11 @@ impl App {
             request["state"] = task.state.clone();
         }
         let mut tools = vec![];
+        let mut offered = vec![];
         let mut scope = self.shown();
-        if let Some(i) = task.scope {
-            if !scope.contains(&i) {
-                scope.push(i);
+        for i in &task.scope {
+            if !scope.contains(i) {
+                scope.push(*i);
             }
         }
         for (i, p) in self.providers.iter().enumerate().filter(|(_, p)| p.ready && p.dead.is_none()) {
@@ -190,6 +204,7 @@ impl App {
                 }
                 tools.push(json!({"name": format!("p{}_{}", i, t.name), "title": t.title,
                     "description": t.description, "inputSchema": gate::task_schema(t, &p.rows)}));
+                offered.push((i, t.name.clone()));
             }
         }
         request["tools"] = json!(tools);
@@ -207,6 +222,7 @@ impl App {
         if let Some(task) = &mut self.task {
             task.serial = self.task_serial;
             task.phase = Phase::Thinking;
+            task.offered = offered;
         }
         self.wait = Some(Work::Think);
         self.jobs.push(Job::RunInput(
@@ -234,12 +250,14 @@ impl App {
         };
         let status = value["status"].as_str().unwrap_or("");
         if !["step", "ask", "inspect"].contains(&status) {
+            let opened = self.opened;
             self.task_cancel();
             let message = scrub(value["summary"].as_str().unwrap_or("the task stopped without a result"));
             // A model's completion statement is prose. Native receipts alone
             // carry the Done mark, so a fluent claim cannot impersonate proof.
             self.say(if status == "done" || status == "answer" { Sign::Says } else { Sign::Refused }, &message);
             if status == "done" {
+                self.opened = opened;
                 self.next_step();
             } else {
                 self.opened = false;
@@ -280,7 +298,9 @@ impl App {
                 if let Some(idx) = idx.filter(|i| self.providers.get(*i).is_some_and(|p| p.ready && p.dead.is_none() && p.label != "files")) {
                     if let Some(t) = &mut self.task {
                         t.phase = Phase::Inspect(idx);
-                        t.scope = Some(idx);
+                        if !t.scope.contains(&idx) {
+                            t.scope.push(idx);
+                        }
                     }
                     self.wait = Some(Work::Read);
                     self.read(idx);
@@ -300,11 +320,24 @@ impl App {
                     self.task_cancel();
                     return self.say(Sign::Refused, "spark proposed an unknown capability");
                 };
+                if !self.task.as_ref().is_some_and(|t| t.offered.contains(&(prov, name.clone()))) {
+                    self.task_cancel();
+                    return self.say(Sign::Refused, "spark proposed a capability that was not offered for this turn");
+                }
                 let Some(arguments) = value["step"]["arguments"].as_object().cloned() else {
                     self.task_cancel();
                     return;
                 };
                 let call = Call { name, arguments, ask: vec![] };
+                let schema = self.providers[prov].tools.iter().find(|t| t.name == call.name).map(|t| &t.schema);
+                if call
+                    .arguments
+                    .keys()
+                    .any(|k| gate::secret(k, schema.and_then(|s| s.pointer(&format!("/properties/{}", k)))))
+                {
+                    self.task_cancel();
+                    return self.say(Sign::Refused, "enter credentials through the native control");
+                }
                 if let Err(e) = gate::step(&self.providers[prov].tools, &self.providers[prov].rows, &call) {
                     self.say(Sign::Refused, &e);
                     return self.task_observe("error", json!({"isError": true, "message": e}));
@@ -381,6 +414,9 @@ impl App {
     }
 
     fn task_stage(&mut self, prov: usize, call: Call) {
+        if self.task_repeat(prov, &call) {
+            return;
+        }
         if self.target.is_some() && self.target_row().is_none() {
             self.task_cancel();
             return self.say(Sign::Refused, "the selected item is no longer available; select it again");
@@ -438,6 +474,59 @@ impl App {
     pub fn task_observe(&mut self, status: &str, result: Value) {
         let Some(t) = &self.task else { return };
         self.task_advance(json!({"observation": {"id": t.id, "status": status, "result": result}}));
+    }
+
+    /// Native preparation can turn different words into the same operation.
+    /// Compare what would actually run, including attempts that returned an
+    /// error. Earlier receipts stay visible; a fresh task can try again.
+    pub fn task_repeat(&mut self, prov: usize, call: &Call) -> bool {
+        if !self.task.as_ref().is_some_and(|t| {
+            t.attempted
+                .iter()
+                .any(|(p, c)| *p == prov && c.name == call.name && c.arguments == call.arguments)
+        }) {
+            return false;
+        }
+        self.task_cancel();
+        self.say(Sign::Refused, "this task already tried that action; stopped without repeating it");
+        true
+    }
+
+    /// Read after a successful action before offering row-bound capabilities
+    /// again. The result is already shown; a read failure cannot undo it.
+    pub fn task_refresh(&mut self, idx: usize, result: Value) {
+        let Some(t) = &mut self.task else { return };
+        let serial = t.serial;
+        t.observation = Some(json!({"observation":{"id":t.id,"status":"ok","result":result}}));
+        t.phase = Phase::Refresh(idx);
+        self.wait = Some(Work::Read);
+        let uri = format!("spark-shell://{}/rows", self.providers[idx].label);
+        let sent = self
+            .server(idx)
+            .and_then(|s| s.request("resources/read", json!({"uri":uri}), crate::mcp::Kind::Refresh(serial), crate::mcp::T_READ));
+        if let Some(id) = sent {
+            let p = &mut self.providers[idx];
+            p.read_id = Some(id);
+            p.reading = true;
+            p.dirty = false;
+            p.last_read = Some(std::time::Instant::now());
+        } else {
+            self.task_refreshed(idx, serial, false);
+        }
+    }
+
+    pub fn task_refreshed(&mut self, idx: usize, serial: u64, ok: bool) {
+        if !self.task.as_ref().is_some_and(|t| t.serial == serial && t.phase == Phase::Refresh(idx)) {
+            return;
+        }
+        self.wait = None;
+        if !ok {
+            self.task_cancel();
+            return self.say(Sign::Refused, "the action completed, but its current state could not be read; task stopped");
+        }
+        if let Some(observation) = self.task.as_mut().and_then(|t| t.observation.take()) {
+            self.task_advance(observation);
+        }
     }
 
     pub fn task_read(&mut self, idx: usize, ok: bool) {

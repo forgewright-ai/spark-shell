@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.106
+
+- Complete tasks are checked through the real dialog with isolated native
+  notes, reminders and settings. Fixed development and held-out scenarios
+  record native outcomes, questions, inference calls and elapsed time.
+  Scripted decisions run without a network in CI.
+- Notes, reminders and windows keep their native identifiers when names
+  coincide. Ambiguous names are refused; a selected item is never replaced
+  by the first item with the same title. Future reminders expose their
+  done and snooze actions, with the saved identity in each result.
+- Reminder preparation checks local civil time. A nonexistent or repeated
+  time, an explicit time-zone suffix, or an unavailable time verifier
+  asks for a usable local time or reports why it cannot proceed.
+- Sound changes report the native level and mute state. Failed writes and
+  unchanged requested settings are refused. Window actions verify the
+  native tree; a layout that cannot open every required app reports its
+  partial result.
+- Relative sound changes use a typed amount and fresh native state, with
+  exact undo. Natural reminder wording keeps its requested date and title;
+  a reminder changed twice in one second still returns its current time.
+- The dialog waits for controls to load, keeps one native action in flight,
+  and refreshes state before continuing a task. Inspected capabilities stay
+  available to the task. Each proposed action still waits for Enter.
+- Malformed results and unknown outcomes stop continuation. Private result
+  fields are kept out of inference, and unoffered capabilities cannot be
+  proposed. Earlier native receipts remain visible when work stops.
+  Equivalent prepared operations cannot repeat within the same task.
+
 ## v0.105
 
 - A dialog request keeps the explicitly selected row while typing or

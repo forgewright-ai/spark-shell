@@ -3397,12 +3397,12 @@ snd_tool() {   # -> wpctl | pactl | alsa | nothing
 wp_rows() { wpctl status 2>/dev/null | awk -v sec="$1:" 'index($0, sec) {on = 1; next} on && !/[0-9]+\. / {exit} on { star = index($0, "*") ? 1 : 0; id = $0; sub(/^[^0-9]*/, "", id); sub(/\..*$/, "", id); d = $0; sub(/^.*[0-9]+\. /, "", d); sub(/[ \t]+\[vol:.*$/, "", d); sub(/[ \t]+$/, "", d); print star "\t" id "\t" d }'; }   # wp_rows Sinks|Sources -> STAR<tab>ID<tab>DESCRIPTION
 wp_default() { wp_rows "$1" | awk -F '\t' '$1 == 1 {print $3; exit}'; }
 wp_level() { wpctl get-volume "$1" 2>/dev/null | awk '{printf "%d", $2 * 100 + 0.5}'; }   # wp_level @DEFAULT_AUDIO_SINK@|SOURCE@
-wp_muted() { wpctl get-volume "$1" 2>/dev/null | grep -q MUTED && echo 1 || echo 0; }
+wp_muted() { _wm=$(wpctl get-volume "$1" 2>/dev/null) || return 1; case $_wm in 'Volume: '*) case $_wm in *MUTED*) echo 1 ;; *) echo 0 ;; esac ;; *) return 1 ;; esac; }
 wp_live() { command -v pw-dump >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && pw-dump 2>/dev/null | jq -e 'any(.[]; .info.props["media.class"]? == "Stream/Input/Audio" and .info.state? == "running")' >/dev/null 2>&1 && echo 1 || echo 0; }
 # pactl: names and descriptions in the long list, the default by name
 pa_desc() { pactl list "$1" 2>/dev/null | awk -v n="$2" '/^\tName: / {cur = $2} /^\tDescription: / && cur == n {sub(/^\tDescription: /, ""); print; exit}'; }   # pa_desc sinks|sources NAME
 pa_level() { pactl "get-$1-volume" "$2" 2>/dev/null | grep -o '[0-9]*%' | head -1 | tr -d %; }   # pa_level sink|source @DEFAULT_SINK@|@DEFAULT_SOURCE@
-pa_muted() { pactl "get-$1-mute" "$2" 2>/dev/null | grep -q 'yes' && echo 1 || echo 0; }
+pa_muted() { _pm=$(pactl "get-$1-mute" "$2" 2>/dev/null) || return 1; case $_pm in 'Mute: yes') echo 1 ;; 'Mute: no') echo 0 ;; *) return 1 ;; esac; }
 pa_live() { [ -n "$(pactl list short source-outputs 2>/dev/null)" ] && echo 1 || echo 0; }
 # plain ALSA: the cards in /proc/asound, their mixers through amixer
 al_cards() { awk '/^ *[0-9]+ \[/ { n = $1; id = $0; sub(/^[^[]*\[/, "", id); sub(/ *\].*$/, "", id); long = $0; sub(/^[^:]*: [^ ]* - /, "", long); print n "\t" id "\t" long }' "$BAR_PROC/asound/cards" 2>/dev/null; }   # -> N<tab>ID<tab>LONG NAME (past "DRIVER - ": a driver's own hyphen, as USB-Audio, is not the dash)
@@ -3524,24 +3524,25 @@ snd_set() {   # snd_set out|mic LEVEL|+5|-5|mute|muted|unmuted -- the change ask
             esac ;;
         alsa) k=p; [ "$t" = out ] || k=c
             if [ -n "$(al_bt_routed "$k")" ]; then   # a Bluetooth way: bluez-alsa's mixer, the same words
-                ctl=$(al_bt_ctl "$k") || return 0
+                ctl=$(al_bt_ctl "$k") || return 1
                 off=mute; on=unmute; [ "$k" = p ] || { off=nocap; on=cap; }
                 case $1 in
                     mute) amixer -q -D bluealsa sset "$ctl" toggle ;; muted) amixer -q -D bluealsa sset "$ctl" "$off" ;; unmuted) amixer -q -D bluealsa sset "$ctl" "$on" ;;
                     +*|-*) amixer -q -D bluealsa sset "$ctl" "${1#[+-]}%${1%"${1#?}"}" ;;
                     *) amixer -q -D bluealsa sset "$ctl" "$1%" ;;
                 esac
-                return 0
+                return $?
             fi
             if [ "$t" = out ]; then c=$(al_out); else c=$(al_mic); fi
-            [ -n "$c" ] && ctl=$(al_control "$c" "$k") || return 0
+            [ -n "$c" ] && ctl=$(al_control "$c" "$k") || return 1
             off=mute; on=unmute; [ "$k" = p ] || { off=nocap; on=cap; }   # a capture control has a capture switch: amixer's words for it are cap and nocap (mute is refused)
             case $1 in
                 mute) amixer -q -c "$c" sset "$ctl" toggle ;; muted) amixer -q -c "$c" sset "$ctl" "$off" ;; unmuted) amixer -q -c "$c" sset "$ctl" "$on" ;;
                 +*|-*) amixer -q -c "$c" sset "$ctl" "${1#[+-]}%${1%"${1#?}"}" ;;
                 *) amixer -q -c "$c" sset "$ctl" "$1%" ;;
             esac ;;
-    esac >/dev/null 2>&1 || :
+        *) return 1 ;;
+    esac >/dev/null 2>&1
 }
 snd_settable() {   # snd_settable out|mic -> exit 0 when its level and mute can be set; else one line saying why (no audio system, no device, a device with no volume control), exit 1
     SND=${SND:-$(snd_tool)}
@@ -3554,6 +3555,34 @@ snd_settable() {   # snd_settable out|mic -> exit 0 when its level and mute can 
 snd_said() {   # snd_said out|mic muted|unmuted -> the state read back, one line; exit 1 when the audio system did not take it
     if [ "$1" = out ]; then _m=$(snd_out | sed -n 3p); else _m=$(snd_mic | sed -n 3p); fi
     case $2:$_m in muted:1|unmuted:0) echo "$1 $2" ;; *) echo "$1 is not $2: the audio system did not take it"; return 1 ;; esac
+}
+snd_apply() {   # set, then report native state; a failed setter or missing readback is never success
+    snd_set "$1" "$2" || { echo "$1 could not be changed; check its current state"; return 1; }
+    if [ "$1" = out ]; then _sa=$(snd_out); _sl=$(printf '%s\n' "$_sa" | sed -n 2p)
+    else _sa=$(snd_mic); _sl=$(printf '%s\n' "$_sa" | sed -n 4p); fi
+    _sn=$(printf '%s\n' "$_sa" | sed -n 1p); _sm=$(printf '%s\n' "$_sa" | sed -n 3p)
+    case $_sl:$_sm in *:0|*:1) ;; *) echo "$1 changed, but its current state could not be verified"; return 1 ;; esac
+    case $_sl in ''|*[!0-9]*) echo "$1 changed, but its level could not be read back"; return 1 ;; esac
+    case $2:$_sm in muted:0|unmuted:1) echo "$1 is not $2: the audio system did not take it"; return 1 ;; esac
+    case $2 in muted|unmuted) ;; *)
+        # Native mixers quantize levels: accept at most one percentage point,
+        # while always reporting the actual reading. A no-op is not completion.
+        _sd=$((_sl - $2)); [ "$_sd" -ge -1 ] && [ "$_sd" -le 1 ] || {
+            echo "$1 is at $_sl%, not the requested $2%; the audio system did not take that level"; return 1;
+        } ;;
+    esac
+    case $2 in muted|unmuted) echo "$1 $2" ;; *) echo "$1 at $_sl%" ;; esac
+    [ -z "${PROVIDE_EFFECT:-}" ] || jq -cn --arg id "$1" --arg title "$_sn" --arg operation "$2" --argjson level "$_sl" --argjson muted "$_sm" \
+        '{kind:"sound", id:$id, title:$title, operation:$operation, level:$level, muted:($muted == 1)}' > "$TMP/action.effect"
+}
+snd_adjust() {   # a percentage-point change from the current native level, bounded to 0..100
+    if [ "$1" = out ]; then _sad_now=$(snd_out | sed -n 2p); else _sad_now=$(snd_mic | sed -n 4p); fi
+    case $_sad_now in ''|*[!0-9]*) echo "$1: the current level could not be read; nothing changed"; return 1 ;; esac
+    _sad_target=$((_sad_now + $2))
+    [ "$_sad_target" -ge 0 ] || _sad_target=0
+    [ "$_sad_target" -le 100 ] || _sad_target=100
+    snd_apply "$1" "$_sad_target" || return 1
+    printf '%s\n' "$_sad_now" > "$TMP/sound.undo"
 }
 
 # --- brightness: a laptop's backlight through brightnessctl, else a
@@ -4522,7 +4551,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                 if [ "$_w" = "${WINDOWS:-split}" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$(win_words "$_w")"; else printf -- '-\t%s\t%s\n' "$(win_words "$_w")" "$_w"; fi
             done
             printf '%s\tcapture the screen\tcapture screen\n%s\tcapture an area\tcapture area\n' "$PANEL_GO" "$PANEL_GO"   # a picture, the dialog closed first
-            [ "${2:-}" != full ] || win_label | awk -F '\t' '!s[$1]++' | while IFS="$TAB" read -r _l _i; do printf '%s\t%s\tfocus %s\n-\tclose %s\tclose %s\n' "$PANEL_GO" "$_l" "$_l" "$_l" "$_l"; done ;;   # the windows open now, by name: in front, or closed; typing a name finds them
+            [ "${2:-}" != full ] || win_label | while IFS="$TAB" read -r _l _i; do printf '%s\t%s\tfocus %s\n-\tclose %s\tclose %s\n' "$PANEL_GO" "$_l" "$_i" "$_l" "$_i"; done ;;   # each window keeps its native ID even when labels coincide
         display) for _k in idle lock; do   # the minutes now, then the other picks in a full list
                 if [ "$_k" = idle ]; then _v=$DISPLAY_IDLE; _w='idle screen'; else _v=$DISPLAY_LOCK; _w=lock; fi
                 printf '%s\t%s %s\tshow\n' "$PANEL_TICK" "$_w" "$(idle_words "$_v")"
@@ -4585,18 +4614,20 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             notes_list > "$TMP/notes.l"; _n=0
             while IFS="$TAB" read -r _e _nm _f; do
                 _n=$((_n + 1)); if [ "${2:-}" != full ] && [ "$_n" -gt 5 ]; then continue; fi
-                printf -- '-\t%s\topen %s\trecent|%s|\n' "$_nm" "$_nm" "$(note_when "$_e")"
+                printf -- '-\t%s\topen %s\trecent|%s|\n' "$_nm" "${_f##*/}" "$(note_when "$_e")"
             done < "$TMP/notes.l"
             [ "${2:-}" = full ] || [ "$_n" -le 5 ] || printf -- '-\t%s more\tmore\trecent||\n' $((_n - 5)) ;;
         reminders) printf '%s\tnew reminder\tadd\n' "$PANEL_GO"   # its words asked for; then the ones due, the first with done and a snooze; then the ones ahead in their groups, each its time a column and its day for the Calendar
             _now=$(date +%Y%m%d%H%M); _first=1; _next=1
             rem_list > "$TMP/rem.rows"
             while IFS="$TAB" read -r _s _u _t _f; do
-                _g=$(rem_group "$_s" "$_now"); _x="$_g|$(rem_column "$_s" "$_g")|$(printf '%s' "$_s" | sed 's/^\(....\)\(..\)\(..\).*/\1-\2-\3/')"
+                _g=$(rem_group "$_s" "$_now"); _x="$_g|$(rem_column "$_s" "$_g")|$(printf '%s' "$_s" | sed 's/^\(....\)\(..\)\(..\).*/\1-\2-\3/')|$_u"
                 if [ "$_g" = due ]; then
-                    printf '%s\t%s\tdone %s\t%s\n' "$PANEL_DOT" "$_t" "$_t" "$_x"
-                    [ -z "$_first" ] || printf -- '-\tdone\tdone %s\tdue||\n-\tagain in 10 minutes\tsnooze %s\tdue||\n' "$_t" "$_t"
-                    _first=''
+                    if rem_ours "$_s$TAB$_u$TAB$_t$TAB$_f"; then
+                        printf '%s\t%s\tdone %s\t%s\n' "$PANEL_DOT" "$_t" "$_u" "$_x"
+                        [ -z "$_first" ] || printf -- '-\tdone\tdone %s\tdue||\n-\tagain in 10 minutes\tsnooze %s\tdue||\n' "$_u" "$_u"
+                        _first=''
+                    else printf '%s\t%s\tshow\t%s\n' "$PANEL_DOT" "$_t" "$_x"; fi
                 elif [ "${2:-}" = full ]; then printf '%s\t%s\tshow\t%s\n' "$PANEL_RING" "$_t" "$_x"
                 elif [ -n "$_next" ]; then printf '%s\t%s\tmore\t|%s|\n' "$PANEL_RING" "$_t" "$(rem_said "$_s")"; _next=''; fi   # short: the next one ahead, its day and time; Enter opens the rest
             done < "$TMP/rem.rows" ;;
@@ -4638,7 +4669,12 @@ notes_list() {   # -> EPOCH<tab>NAME<tab>FILE per note, the newest first
     [ -d "$NOTES_DIR" ] || return 0
     for _f in "$NOTES_DIR"/*.md; do [ -f "$_f" ] && [ ! -L "$_f" ] || continue; printf '%s\t%s\t%s\n' "$(mtime_of "$_f")" "$(note_name "$_f")" "$_f"; done | sort -t "$TAB" -k1,1nr
 }
-note_file() { notes_list | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($2) == n { print $3; exit }'; }   # note_file NAME -> its file, or nothing
+note_file() {   # a filename is the identity; a legacy title must name exactly one note
+    notes_list | awk -F '\t' -v n="$(panel_lower "$1")" -v id="$1" '
+        { f=$3; sub(/^.*\//,"",f); if (f == id) { exact=$3; ne++ }; if (tolower($2) == n) { title=$3; nt++ } }
+        END { if (ne == 1) print exact; else if (ne > 1) exit 2;
+              else if (id ~ /[.]md$/) exit 1; else if (nt == 1) print title; else if (nt > 1) exit 2; else exit 1 }'
+}
 note_when() {   # note_when EPOCH -> today 09:12, yesterday, Oct 17, or the year
     _d=$(when_of "$1" %Y%m%d); _now=$(date +%s)
     if [ "$_d" = "$(date +%Y%m%d)" ]; then echo "today $(when_of "$1" %H:%M)"
@@ -4663,10 +4699,13 @@ notes_act() {   # notes_act new|open|add|find [ARG]
         new) mkdir_private "$NOTES_DIR"; _f=$NOTES_DIR/$(date +%Y-%m-%d-%H%M%S).md
             [ -e "$_f" ] || (umask 077 && printf '# \n' > "$_f")
             note_open_file "$_f" "a new note" ;;
-        open) _f=$(note_file "$2"); [ -n "$_f" ] || { echo "no note named $2"; return 1; }; note_open_file "$_f" "$2" ;;
+        open) _f=$(note_file "$2") || { echo "no unique note named $2; select its file in Notes"; return 1; }; note_open_file "$_f" "$(note_name "$_f")" ;;
         add) [ -n "$2" ] || { echo "add takes the words of the note"; return 1; }
             mkdir_private "$NOTES_DIR"
-            case $2 in *": "*) _f=$(note_file "${2%%: *}") ;; *) _f='' ;; esac
+            case $2 in *": "*) _f=$(note_file "${2%%: *}") || {
+                    _nf=$?; [ "$_nf" -ne 2 ] || { echo "more than one note has that title; use its filename before the colon"; return 1; }
+                    case ${2%%: *} in *.md) echo "that note file is no longer available"; return 1 ;; esac
+                } ;; *) _f='' ;; esac
             if [ -n "$_f" ]; then
                 printf -- '- %s\n' "${2#*: }" >> "$_f" || { echo "could not write the note"; return 1; }
                 note_effect "$_f" appended
@@ -4797,6 +4836,7 @@ rem_parse() {   # rem_parse WORDS -> START<tab>TEXT: today|tomorrow|a weekday|YY
     # shellcheck disable=SC2046   # the words, split on purpose; no glob
     set -- $1
     set +f
+    case $(printf '%s %s' "${1:-}" "${2:-}" | tr 'A-Z' 'a-z') in 'remind me') shift 2 ;; esac
     _mins=''
     if [ "$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z')" = in ] && [ $# -ge 4 ] && _mins=$(rem_in "$2" "$3"); then shift 3
     else   # the words, then "in N UNIT" at their end
@@ -4809,6 +4849,7 @@ rem_parse() {   # rem_parse WORDS -> START<tab>TEXT: today|tomorrow|a weekday|YY
         fi
     fi
     if [ -n "$_mins" ]; then   # from now, rounded up to the minute
+        [ "$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z')" != to ] || shift
         [ $# -gt 0 ] || return 1
         _e=$(( $(date +%s) + _mins * 60 + 59 )); _e=$((_e - _e % 60))
         printf '%s	%s
@@ -4843,6 +4884,7 @@ rem_parse() {   # rem_parse WORDS -> START<tab>TEXT: today|tomorrow|a weekday|YY
             [ "$(date -d "$_w1" +%Y%m%d 2>/dev/null || date -j -f %Y%m%d%H%M "${_date}1200" +%Y%m%d 2>/dev/null)" = "$_date" ] || return 1   # a day the calendar has
             shift ;;
     esac
+    [ "$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z')" != at ] || shift
     _t=$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z'); _h=''; _m=00
     case $_t in
         [0-9]:[0-5][0-9]|[0-2][0-9]:[0-5][0-9]) _h=${_t%%:*}; _m=${_t#*:} ;;
@@ -4852,19 +4894,36 @@ rem_parse() {   # rem_parse WORDS -> START<tab>TEXT: today|tomorrow|a weekday|YY
     esac
     _h=$(printf '%s' "$_h" | sed 's/^0\([0-9]\)$/\1/')   # 09 is no octal: nine
     [ -n "$_h" ] && [ "$_h" -le 23 ] 2>/dev/null || return 1
-    shift; [ $# -gt 0 ] || return 1
+    shift
+    [ "$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z')" != to ] || shift
+    [ $# -gt 0 ] || return 1
     [ -n "$_date" ] || _date=$(rem_day "$_off")
     _st=$(printf '%s%02d%s' "$_date" "$_h" "$_m")
     if [ -n "$_wd" ] && [ "$_st" -le "$(date +%Y%m%d%H%M)" ]; then _st=$(printf '%s%02d%s' "$(rem_day $((_off + 7)))" "$_h" "$_m"); fi   # today's weekday at a time gone: next week
     printf '%s\t%s\n' "$_st" "$*"
 }
 ics_text() { printf '%s' "$1" | awk '{ o = ""; for (i = 1; i <= length($0); i++) { c = substr($0, i, 1); o = o ((c == "\\" || c == "," || c == ";") ? "\\" c : c) } printf "%s", o }'; }   # ics_text WORDS -> a TEXT value (RFC 5545 3.3.11): backslash, comma and semicolon escaped (one pass: BSD sed drops the backslash before ;)
+rem_forget() { _rfc=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; rm -f "${_rfc:-$STATE_DIR}/reminders.list"; }
 rem_write() {   # rem_write FILE UID START SUMMARY -- one event with its alarm at its time, CRLF lines
     _st="$(printf '%s' "$3" | cut -c1-8)T$(printf '%s' "$3" | cut -c9-12)00"
     printf 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//forgewright-ai//spark-shell//EN\r\nBEGIN:VEVENT\r\nUID:%s\r\nDTSTAMP:%s\r\nDTSTART:%s\r\nDURATION:PT10M\r\nSUMMARY:%s\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:%s\r\nTRIGGER:PT0M\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' \
-        "$2" "$(TZ=UTC0 date +%Y%m%dT%H%M%SZ)" "$_st" "$(ics_text "$4")" "$(ics_text "$4")" > "$1.new" && mv "$1.new" "$1"
+        "$2" "$(TZ=UTC0 date +%Y%m%dT%H%M%SZ)" "$_st" "$(ics_text "$4")" "$(ics_text "$4")" > "$1.new" && mv "$1.new" "$1" || return 1
+    rem_forget   # resolution by UID may have cached the old event in this same second
 }
-rem_find() { rem_list | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($3) == n || $2 == n { print; exit }'; }   # rem_find NAME|UID -> its line
+rem_match() {   # a UID binds the item; a legacy title must be unique
+    awk -F '\t' -v n="$(panel_lower "$1")" -v id="$1" '
+        { if ($2 == id) { exact=$0; ne++ }; if (tolower($3) == n) { title=$0; nt++ } }
+        END { if (ne == 1) print exact; else if (ne > 1) exit 2;
+              else if (id ~ /^spark-shell-/ || index(id,"@")) exit 1;
+              else if (nt == 1) print title; else if (nt > 1) exit 2; else exit 1 }'
+}
+rem_find() { rem_list | rem_match "$1"; }   # NAME|UID -> one line, never a guessed duplicate
+rem_time_check() {   # one unambiguous local civil time, at preparation and again before writing
+    command -v python3 >/dev/null 2>&1 || { echo 'Reminders need Python 3 to verify the local time before saving.'; return 1; }
+    if _rtc=$(python3 "$REPO/lib/reminder_time.py" "$1" "${2:-}" 2>/dev/null) && [ "$_rtc" = ok ]; then return 0; fi
+    printf '%s\n' "${_rtc:-The local time could not be verified; check the time settings before saving.}"
+    return 1
+}
 rem_said() {   # rem_said START -> today 18:30, tomorrow 09:00, Fri 20:00, Tue 3 Nov 16:30
     _g=$(rem_group "$1" "$(date +%Y%m%d%H%M)")
     case $_g in due|today) echo "today $(rem_hm "$1")" ;; tomorrow) echo "tomorrow $(rem_hm "$1")" ;; *) rem_column "$1" "$_g" ;; esac
@@ -4874,45 +4933,46 @@ rem_ours() {   # rem_ours LINE -> 0 when spark-shell wrote that event (its uid, 
     [ "$(grep -c '^BEGIN:VEVENT' "$(printf '%s' "$1" | cut -f4)")" = 1 ]
 }
 REM_DONE_DAYS=30   # a reminder done is kept this long in ~/calendar/done, so undo can bring it back
-rem_restore() {   # rem_restore UID|NAME -> the newest reminder done with that uid or name, back in ~/calendar
+rem_restore() {   # UID or unique title from the done folder, never a different duplicate
     [ -d "$CAL_DIR/done" ] || { echo "no reminder done to bring back"; return 1; }
-    _rn=$(panel_lower "$1")
-    ls -t "$CAL_DIR/done" > "$TMP/rem.done" 2>/dev/null || :   # the newest first: the one put aside last comes back
-    while IFS= read -r _f; do
-        case $_f in *.ics) ;; *) continue ;; esac
-        _p=$CAL_DIR/done/$_f; [ -f "$_p" ] && [ ! -L "$_p" ] || continue
-        _u=$(tr -d '\r' < "$_p" | sed -n 's/^UID://p' | head -1); _t=$(tr -d '\r' < "$_p" | sed -n 's/^SUMMARY://p' | head -1)
-        [ "$_u" = "$1" ] || [ "$(panel_lower "$_t")" = "$_rn" ] || continue
-        [ ! -e "$CAL_DIR/$_f" ] || { echo "$_t is in your reminders already"; return 1; }
-        mv "$_p" "$CAL_DIR/$_f" || { echo "could not bring $_t back"; return 1; }
-        bar_redraw; echo "$_t is back"; return 0
-    done < "$TMP/rem.done"
-    echo "no reminder done named $1"; return 1
+    _rr=$( ( CAL_DIR=$CAL_DIR/done; rem_all ) | rem_match "$1") || { echo "no unique reminder done named $1; use its UID"; return 1; }
+    rem_ours "$_rr" || { echo 'another calendar owns that event'; return 1; }
+    _rp=$(printf '%s' "$_rr" | cut -f4); _rf=${_rp##*/}; _rt=$(printf '%s' "$_rr" | cut -f3)
+    [ ! -e "$CAL_DIR/$_rf" ] && [ ! -L "$CAL_DIR/$_rf" ] || { echo "$_rt is in your reminders already"; return 1; }
+    mv "$_rp" "$CAL_DIR/$_rf" || { echo "could not bring $_rt back"; return 1; }
+    rem_effect "$(printf '%s' "$_rr" | cut -f2)" restored
+    bar_redraw; echo "$_rt is back"
 }
 rem_act() {   # rem_act add|done|snooze|restore ARG
-    _rc=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; rm -f "${_rc:-$STATE_DIR}/reminders.list"   # the list made again after this step
+    rem_forget
     case $1 in
         add) _p=$(rem_parse "$2") || { echo "a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), or a while from now (gym in 10 minutes)"; return 1; }
             _s=${_p%%"$TAB"*}; _t=${_p#*"$TAB"}
+            rem_time_check "$_s" "$_t" || return 1
             [ "$_s" -gt "$(date +%Y%m%d%H%M)" ] || { echo "$(rem_said "$_s") has passed: say a time to come"; return 1; }
+            _u=$(python3 "$REPO/lib/reminder_time.py" --uid 2>/dev/null) || { echo 'could not create a private reminder identity; nothing saved'; return 1; }
+            [ "${#_u}" = 48 ] && printf '%s\n' "$_u" | LC_ALL=C grep -Eq '^spark-shell-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' || { echo 'could not create a private reminder identity; nothing saved'; return 1; }
             mkdir_private "$CAL_DIR"
             _rb=$CAL_DIR/$(date +%s)-$$; _f=$_rb.ics; _rn=2
             while [ -e "$_f" ] || [ -L "$_f" ]; do _f=$_rb-$_rn.ics; _rn=$((_rn + 1)); done
-            _u="spark-shell-${_f##*/}@$(short_host)"
             rem_write "$_f" "$_u" "$_s" "$_t" || { rm -f "$_f.new"; echo "could not write the reminder in ${CAL_DIR#"$HOME"/}"; return 1; }
             rem_effect "$_u"
             bar_redraw; echo "reminder $(rem_said "$_s") $_t" ;;
-        done|snooze) _l=$(rem_find "$2"); [ -n "$_l" ] || { echo "no reminder named $2"; return 1; }
+        done|snooze) _l=$(rem_find "$2") || { echo "no unique reminder named $2; select it in Calendar"; return 1; }
             _t=$(printf '%s' "$_l" | cut -f3)
             rem_ours "$_l" || { echo "$_t is an event another calendar wrote: change it there"; return 1; }
             if [ "$1" = 'done' ]; then   # done is put aside, not deleted: undo brings it back for REM_DONE_DAYS
                 mkdir -p "$CAL_DIR/done"; _f=$(printf '%s' "$_l" | cut -f4)
+                [ ! -e "$CAL_DIR/done/${_f##*/}" ] && [ ! -L "$CAL_DIR/done/${_f##*/}" ] || { echo "could not mark $_t done: that saved filename is already in use"; return 1; }
                 mv "$_f" "$CAL_DIR/done/" && touch "$CAL_DIR/done/${_f##*/}" || { echo "could not mark $_t done"; return 1; }
                 find "$CAL_DIR/done" -name '*.ics' -mtime +"$REM_DONE_DAYS" -exec rm -f {} + 2>/dev/null || :
+                rem_effect "$(printf '%s' "$_l" | cut -f2)" 'done' "$CAL_DIR/done"
                 bar_redraw; echo "done: $_t"; return 0
             fi
             _e=$(( $(date +%s) + 600 )); _s=$(when_of "$_e" %Y%m%d%H%M)
-            rem_write "$(printf '%s' "$_l" | cut -f4)" "$(printf '%s' "$_l" | cut -f2)" "$_s" "$_t"
+            rem_time_check "$_s" || return 1
+            rem_write "$(printf '%s' "$_l" | cut -f4)" "$(printf '%s' "$_l" | cut -f2)" "$_s" "$_t" || { echo "could not move the reminder; check its time before trying again"; return 1; }
+            rem_effect "$(printf '%s' "$_l" | cut -f2)" rescheduled
             bar_redraw; echo "$_t again at $(rem_hm "$_s")" ;;
         restore) rem_restore "$2" ;;
         *) echo "$1 is not something reminders does"; return 1 ;;
@@ -4920,8 +4980,8 @@ rem_act() {   # rem_act add|done|snooze|restore ARG
 }
 rem_effect() {   # read the saved event through the native reader; only this event leaves the provider
     [ -n "${PROVIDE_EFFECT:-}" ] || return 0
-    rem_all | jq -Rsc --arg id "$1" 'split("\n") | map(split("\t")) | map(select(.[1] == $id)) | first |
-        if . == null then empty else {kind: "reminder", operation: "created", id: .[1], title: .[2],
+    ( [ -z "${3:-}" ] || CAL_DIR=$3; rem_all ) | jq -Rsc --arg id "$1" --arg operation "${2:-created}" 'split("\n") | map(split("\t")) | map(select(.[1] == $id)) | first |
+        if . == null then empty else {kind: "reminder", operation: $operation, id: .[1], title: .[2],
         localTime: (.[0] | "\(.[0:4])-\(.[4:6])-\(.[6:8]) \(.[8:10]):\(.[10:12])")} end' > "$TMP/action.effect"
 }
 rem_due() {   # -> UID<tab>SUMMARY of the latest reminder due now (in the last day), and one chime when any is due for the first time
@@ -5265,9 +5325,10 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
             else cat "$TMP/printers.error"; return 1; fi ;;
         out|mic) case $_a in
                 use) snd_use "$_p" "$_arg" ;;
-                level) snd_set "$_p" "$_arg" && echo "$_p at $_arg%" ;;
-                mute) snd_set "$_p" muted; snd_said "$_p" muted ;;
-                unmute) snd_set "$_p" unmuted; snd_said "$_p" unmuted ;;
+                level) snd_apply "$_p" "$_arg" ;;
+                adjust) snd_adjust "$_p" "$_arg" ;;
+                mute) snd_apply "$_p" muted ;;
+                unmute) snd_apply "$_p" unmuted ;;
                 *) echo "$_a is not something $_p does"; return 1 ;;
             esac ;;
         theme) case $_a in
@@ -5319,12 +5380,12 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                     case $_a in tabs) _l=tabbed ;; stacked) _l=stacking ;; *) _l=splith ;; esac
                     [ -z "${SWAYSOCK:-}" ] || swaymsg -- "[workspace=__focused__ tiling] layout $_l" >/dev/null 2>&1 || :
                     echo "windows $(win_words "$_a")" ;;
-                close) _nm=$(win_name_of "$_arg"); swaymsg -- "[con_id=$_arg] kill" >/dev/null 2>&1 || { echo "${_nm:-$_arg} did not close"; return 1; }; echo "${_nm:-$_arg} closed" ;;   # one window, by its id: never every window of an app
+                close) win_change close "$_arg" ;;
                 capture) case $_arg in screen|area) ;; *) echo "capture takes screen or area"; return 1 ;; esac
                     desk_in_sway || { echo "a capture needs the desktop"; return 1; }
                     swaymsg -- exec "$REPO/spark-shell desktop capture $_arg --wait 1" >/dev/null 2>&1 || { echo "could not capture"; return 1; }   # after the dialog closes, so it is not in the picture
                     : > "$TMP/opened"; echo "capture: the $_arg, in ~/pictures/screenshots" ;;
-                focus) _nm=$(win_name_of "$_arg"); swaymsg -- "[con_id=$_arg] focus" >/dev/null 2>&1 || { echo "no window named ${_nm:-$_arg}"; return 1; }; : > "$TMP/opened"; echo "${_nm:-$_arg} in front" ;;   # the window is the receipt
+                focus) win_change focus "$_arg" ;;
                 *) echo "$_a is not something window does"; return 1 ;;
             esac ;;
         notes) notes_act "$_a" "$_arg" ;;
@@ -5384,9 +5445,30 @@ panel_open_wait() {   # panel_open_wait COUNT -- until sway shows more windows t
 win_open() {   # -> the windows sway shows, one a line: APP<tab>TITLE<tab>ID; the panel's own left out
     swaymsg -t get_tree 2>/dev/null | jq -r --arg me "$PANEL_APP" '.. | objects | select(.pid? != null and (.type? == "con" or .type? == "floating_con")) | select(((.app_id // .window_properties.class // "") != "") and .app_id != $me) | "\(.app_id // .window_properties.class)\t\(.name // "" | gsub("\t"; " "))\t\(.id)"' 2>/dev/null | scrub_text || :   # a title is any program's words: scrubbed
 }
-win_label() { win_open | awk -F '\t' '{ l = $1; if (($1 == "foot" || $1 == "footclient") && $2 != "") l = $2; print l "\t" $3 }'; }   # -> NAME<tab>ID: a terminal window goes by what runs in it (its title: aerc, btop, terminal), every other by its app
-win_named() { win_label | awk -F '\t' -v w="$(panel_lower "$1")" 'w != "" && (tolower($1) == w || index(tolower($1), w) > 0) { print $2; exit }'; }   # win_named WORD -> the id of the first open window named so
+win_label() { win_open | awk -F '\t' '{ l = $1; if ($2 != "" && $2 != $1) { if ($1 == "foot" || $1 == "footclient") l=$2; else l=l ": " $2 }; print l "\t" $3 }'; }   # -> display label and native container ID
+win_named() {   # an ID stays exact; legacy words must identify one open window
+    win_label | awk -F '\t' -v w="$(panel_lower "$1")" '
+        $2 == w { exact=$2; ne++ }
+        w != "" && index(tolower($1),w) { matchid=$2; nm++ }
+        END { if (ne == 1) print exact; else if (w ~ /^[0-9]+$/) exit 1; else if (nm == 1) print matchid; else exit 1 }'
+}
 win_name_of() { win_label | awk -F '\t' -v i="$1" '$2 == i { print $1; exit }'; }   # win_name_of ID -> its name
+win_change() {   # the command receipt alone cannot prove focus or a close an app may decline
+    _wc_name=$(win_name_of "$2"); [ -n "$_wc_name" ] || { echo 'that window is no longer open'; return 1; }
+    _wc_cmd=focus; [ "$1" != close ] || _wc_cmd='kill'
+    swaymsg -- "[con_id=$2] $_wc_cmd" >/dev/null 2>&1 || { echo "$_wc_name did not $1"; return 1; }
+    _wc_tries=0; _wc_ok=''
+    while [ "$_wc_tries" -lt 40 ]; do
+        _wc_state=$(swaymsg -t get_tree 2>/dev/null | jq -ce --argjson id "$2" '
+            if type != "object" or .type != "root" or (.nodes | type) != "array" then error("no tree") else [.. | objects | select(.id? == $id)] | {exists:(length > 0), focused:any(.[]; .focused == true)} end') || break
+        if printf '%s' "$_wc_state" | jq -e --arg action "$1" 'if $action == "close" then .exists == false else .exists and .focused end' >/dev/null; then _wc_ok=1; break; fi
+        sleep 0.05; _wc_tries=$((_wc_tries + 1))
+    done
+    [ -n "$_wc_ok" ] || { echo "$1 was requested, but the window state did not confirm it; check the window before trying again"; return 1; }
+    if [ "$1" = close ]; then echo "$_wc_name closed"; else : > "$TMP/opened"; echo "$_wc_name in front"; fi
+    [ -z "${PROVIDE_EFFECT:-}" ] || jq -cn --arg id "$2" --arg title "$_wc_name" --arg operation "$1" \
+        '{kind:"window", id:$id, title:$title, operation:$operation}' > "$TMP/action.effect"
+}
 desk_windows_all() { swaymsg -t get_tree 2>/dev/null | jq '[.. | objects | select(.pid? != null)] | length' 2>/dev/null || echo 0; }   # -> how many windows sway shows, on every workspace
 panel_layout_save() {   # panel_layout_save NAME -> what is open on the focused workspace, saved as a layout under NAME
     desk_in_sway || { echo "saving what is open needs the desktop"; return 1; }
@@ -5443,7 +5525,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
             printf '%s %s\t%s %s %s\n' "$_a" "$_old" "$_p" "$_a" "$_old" ;;
         out:mute|mic:mute|out:unmute|mic:unmute) SND=${SND:-$(snd_tool)}; if [ "$_p" = out ]; then _mu=$(snd_out | sed -n 3p); else _mu=$(snd_mic | sed -n 3p); fi
             case $_a:$_mu in mute:0) printf 'unmute\t%s unmute\n' "$_p" ;; unmute:1) printf 'mute\t%s mute\n' "$_p" ;; esac ;;   # the state already as asked: a receipt takes nothing back, so it never replaces the undo before it
-        out:level|mic:level) if [ "$_p" = out ]; then _lv=$(snd_out | sed -n 2p); else _lv=$(snd_mic | sed -n 4p); fi
+        out:level|mic:level|out:adjust|mic:adjust) if [ "$_p" = out ]; then _lv=$(snd_out | sed -n 2p); else _lv=$(snd_mic | sed -n 4p); fi
             case $_lv in ''|-) ;; *) printf 'level %s\t%s at %s%%\n' "$_lv" "$_p" "$_lv" ;; esac ;;
         out:use|mic:use) _cur=$(snd_devices "$_p" | awk -F '\t' '$2 == 1 && !d {print $1; d = 1}'); [ -z "$_cur" ] || printf 'use %s\t%s %s\n' "$_cur" "$_p" "$_cur" ;;   # the whole list read: no broken pipe
         theme:text|theme:font) case $_arg in bigger) printf 'text smaller\ttext smaller\n' ;; smaller) printf 'text bigger\ttext bigger\n' ;; *) printf 'text %s\ttext %s\n' "$(look_font_size)" "$(look_font_size)" ;; esac ;;
@@ -5472,9 +5554,10 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
 }
 panel_step() {   # panel_step SECTION ACTION [ARG] -> panel_act's line; a step that worked is remembered as recent, and its inverse kept for undo
     _inv=$(panel_inverse "$@")
-    rm -f "$TMP/network.undo"
+    rm -f "$TMP/network.undo" "$TMP/sound.undo"
     if panel_act "$@"; then
         if [ -s "$TMP/network.undo" ]; then _inv="restore $(cat "$TMP/network.undo")$TAB network settings restored"; fi
+        if [ -s "$TMP/sound.undo" ]; then _snd_old=$(cat "$TMP/sound.undo"); _inv="level $_snd_old$TAB$1 at $_snd_old%"; fi
         case $2 in show|all|pick|chat|more|save|close|focus) ;; *) panel_recent_add "$1" "$(printf '%s' "$2${3:+ $3}${4:+ $4}${5:+ $5}" | sed 's/ *$//')" ;; esac
         [ -z "$_inv" ] || printf '%s\t%s\n' "$1" "$_inv" >> "$TMP/group"
         return 0
@@ -5649,8 +5732,9 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         layout:open) _n=$(desk_name_of "$3"); if [ -n "$_n" ] && desk_kept_file "$_n" >/dev/null; then echo "$_n"; return 0; fi; echo "layout: no saved layout named $3"; return 1 ;;
         layout:new) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: new takes the words for it"; return 1 ;;
         apps:pick|apps:terminal) echo ''; return 0 ;;
-        window:close|window:focus|apps:close|apps:focus) _n=$(win_named "${3:-}"); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "window: no window named ${3:-?} is open"; return 1 ;;   # apps close NAME is read as window close: the window, not the app
+        window:close|window:focus|apps:close|apps:focus) if _n=$(win_named "${3:-}"); then echo "$_n"; return 0; fi; echo "window: no unique window named ${3:-?} is open; select it in Workspace"; return 1 ;;
         out:level|mic:level) case $3 in [0-9]|[1-9][0-9]|100) snd_settable "$1" || return 1; echo "$3"; return 0 ;; *) echo "$1: level takes 0 to 100"; return 1 ;; esac ;;
+        out:adjust|mic:adjust) case $3 in [0-9]|[1-9][0-9]|100|-[0-9]|-[1-9][0-9]|-100) snd_settable "$1" || return 1; echo "$3"; return 0 ;; *) echo "$1: adjust takes a whole number of percentage points, -100 to 100"; return 1 ;; esac ;;
         out:mute|out:unmute|mic:mute|mic:unmute) snd_settable "$1" || return 1; echo ''; return 0 ;;   # the state is the gate, not a row: mute when muted is a receipt (the step sets, never toggles)
         theme:picture|theme:wallpaper-picture) _pp=$(wall_picture_ok "${3:-}") && { echo "$_pp"; return 0; }; echo "$_pp"; return 1 ;;
         theme:wallpaper) case ${3:-} in default) echo default; return 0 ;; esac; ! wall_shipped "${3:-}" || { echo "$3"; return 0; } ;;   # a drawing or the ground: the wallpaper list holds every one
@@ -5666,8 +5750,8 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         layout:back) [ -s "$(kept_hist layout)" ] && { echo ''; return 0; }; echo "layout: no layout before this one"; return 1 ;;
         theme:alpha) case $3 in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) echo "$3"; return 0 ;; *) echo "theme: alpha takes 0 to 1"; return 1 ;; esac ;;
         notes:new) echo ''; return 0 ;;
-        notes:open) _n=$(notes_list | awk -F '\t' -v w="$(panel_lower "${3:-}")" 'tolower($2) == w { print $2; exit }'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "notes: no note named ${3:-?}"; return 1 ;;   # any note, not only the five shown
-        reminders:done|reminders:snooze) _n=$(rem_find "${3:-}" | cut -f3); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "reminders: no reminder named ${3:-?}"; return 1 ;;   # any reminder, due or ahead
+        notes:open) _n=$(note_file "${3:-}") && { echo "${_n##*/}"; return 0; }; echo "notes: no unique note named ${3:-?}; select its file in Notes"; return 1 ;;
+        reminders:done|reminders:snooze) _n=$(rem_find "${3:-}" | cut -f2); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "reminders: no unique reminder named ${3:-?}; select it in Calendar"; return 1 ;;
         reminders:restore) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo "reminders: restore takes the reminder's name"; return 1 ;;   # one put aside: no row lists it
         notes:add|notes:find|reminders:add) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo "$1: $2 takes the words"; return 1 ;;   # free words, as layout new
         display:brightness) case $3 in up|down|[1-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "display: brightness takes 1 to 100, up or down"; return 1 ;; esac ;;
@@ -5712,7 +5796,7 @@ panel_brief() {   # -> "section: action ARG, ...; section: ..." -- what spark ma
             _acts=$(panel_apps_known | sed 's/^/open /' | paste -sd, - | sed 's/,/, /g')
         else
             _acts=$(panel_rows "$p" full | cut -f3 | grep -vx show | awk '!seen[$0]++' | paste -sd, - | sed 's/,/, /g')
-            case $p in out|mic) _acts="${_acts:+$_acts, }level N" ;; theme) _acts="${_acts:+$_acts, }text bigger, text smaller, transparency more, transparency less" ;; esac   # a value's own steps: its row changes it in place (#36)
+            case $p in out|mic) _acts="${_acts:+$_acts, }level N, adjust DELTA" ;; theme) _acts="${_acts:+$_acts, }text bigger, text smaller, transparency more, transparency less" ;; esac   # a value's own steps: its row changes it in place (#36)
         fi
         [ -z "$_acts" ] || printf '%s: %s; ' "$p" "$_acts"
     done | sed 's/; $//'
@@ -5944,7 +6028,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_mute out_unmute mic_use mic_level mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -5988,11 +6072,13 @@ tool_spec() {
         bt_scan)           _ts=bt _ta=scan _th='' _tt='bt scan' _td='Look for new devices nearby.' ;;
         bt_power)          _ts=bt _ta=power _tp=state _tk='on|off' _th=i _tt='bt power STATE' _td='Turn Bluetooth on or off.' ;;
         out_use)           _ts=out _ta=use _tp=name _tk=string _th=i _tt='out use NAME' _td='Play the sound on another output.' ;;
-        out_level)         _ts=out _ta=level _tp=level _tk=level _th=if _tt='out level N' _td='Set the volume, 0 to 100.' ;;
+        out_level)         _ts=out _ta=level _tp=level _tk=level _th=if _tt='out level N' _td='Set the volume, 0 to 100. Native readback must match within one percentage point for mixer rounding; the result reports the actual level.' ;;
+        out_adjust)        _ts=out _ta=adjust _tp=delta _tk=delta _th=f _tt='out adjust DELTA' _td='Change the volume by delta percentage points from its fresh native level. Negative lowers and positive raises; the result is bounded to 0 to 100 and read back. Use this for relative requests; no arithmetic from a remembered level is needed.' ;;
         out_mute)          _ts=out _ta=mute _th=if _tt='out mute' _td='Mute the sound.' ;;
         out_unmute)        _ts=out _ta=unmute _th=if _tt='out unmute' _td='Unmute the sound.' ;;
         mic_use)           _ts=mic _ta=use _tp=name _tk=string _th=i _tt='mic use NAME' _td='Listen on another microphone.' ;;
-        mic_level)         _ts=mic _ta=level _tp=level _tk=level _th=if _tt='mic level N' _td='Set the microphone level, 0 to 100.' ;;
+        mic_level)         _ts=mic _ta=level _tp=level _tk=level _th=if _tt='mic level N' _td='Set the microphone level, 0 to 100. Native readback must match within one percentage point for mixer rounding; the result reports the actual level.' ;;
+        mic_adjust)        _ts=mic _ta=adjust _tp=delta _tk=delta _th=f _tt='mic adjust DELTA' _td='Change the microphone level by delta percentage points from its fresh native level. Negative lowers and positive raises; the result is bounded to 0 to 100 and read back. Use this for relative requests; no arithmetic from a remembered level is needed.' ;;
         mic_mute)          _ts=mic _ta=mute _th=if _tt='mic mute' _td='Mute the microphone.' ;;
         mic_unmute)        _ts=mic _ta=unmute _th=if _tt='mic unmute' _td='Unmute the microphone.' ;;
         theme_palette)     _ts=theme _ta='=' _tp=name _tk=string _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none.' ;;
@@ -6010,17 +6096,17 @@ tool_spec() {
         window_split)      _ts=window _ta=split _th=i _tt='window split' _td='New windows side by side.' ;;
         window_tabs)       _ts=window _ta=tabs _th=i _tt='window tabs' _td='New windows in tabs.' ;;
         window_stacked)    _ts=window _ta=stacked _th=i _tt='window stacked' _td='New windows stacked.' ;;
-        window_focus)      _ts=window _ta=focus _tp=name _tk=string _th=i _tt='window focus NAME' _td='Put an open window in front.' ;;
-        window_close)      _ts=window _ta=close _tp=name _tk=string _th=d _tt='window close NAME' _td='Close an open window.' ;;
+        window_focus)      _ts=window _ta=focus _tp=name _tk=string _th=i _tt='window focus NAME' _td='Put one open window in front. Use its native container ID from the row, not its display label.' ;;
+        window_close)      _ts=window _ta=close _tp=name _tk=string _th=d _tt='window close NAME' _td='Close one open window by its native container ID from the row. It cannot be undone.' ;;
         window_capture)    _ts=window _ta=capture _tp=what _tk='screen|area' _th='' _tt='window capture WHAT' _td='A picture of the screen, or of an area you drag, in ~/pictures/screenshots.' ;;
         notes_new)         _ts=notes _ta=new _th='' _tt='notes new' _td='Open a blank note in the editor for the person to write. No supplied text is saved.' ;;
-        notes_open)        _ts=notes _ta=open _tp=name _tk=string _th='' _tt='notes open NAME' _td='Open a note in the editor.' ;;
-        notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='Save the supplied text in a new note without opening an editor. With "NAME: TEXT", append a line to the existing note NAME.' ;;
+        notes_open)        _ts=notes _ta=open _tp=name _tk=string _th='' _tt='notes open NAME' _td='Only open a note in the editor; this does not append or save supplied text. To append text, use notes_add with FILE.md: TEXT. Use the filename from the row; duplicate titles are not identities.' ;;
+        notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='Create a note with the complete text as its heading and filename source. With "FILE.md: TEXT", append a line to that existing file. A unique existing title also works; ambiguous titles are refused. A title and body take two actions: create the title, then append using the returned filename.' ;;
         notes_find)        _ts=notes _ta=find _tp=words _tk=string _th=rf _tt='notes find WORDS' _td='Which notes say these words, and the line that does.' ;;
-        reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _tw='when and what: fri 9am call the vet' _th=f _tt='reminders add WORDS' _td='Save a reminder at a future local time. words is today, tomorrow, a weekday or YYYY-MM-DD, then HH:MM, then the title; or in N minutes/hours before or after the title. A past time is refused; choosing another date requires the person to clarify.' ;;
-        reminders_done)    _ts=reminders _ta='done' _tp=name _tk=string _th='' _tt='reminders done NAME' _td='A reminder done: it is put aside for 30 days, and undo brings it back.' ;;
+        reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _tw='when and what: fri 9am call the vet' _th=f _tt='reminders add WORDS' _td='Save a reminder at a future local time. words is today, tomorrow, a weekday or YYYY-MM-DD, then HH:MM, then the title; or in N minutes/hours before or after the title. Preserve the requested day and time; never invent missing timing. Send the original words to native preparation when timing is missing or invalid, or ask the person. Past, nonexistent or repeated local times require clarification; no time-zone suffix is accepted.' ;;
+        reminders_done)    _ts=reminders _ta='done' _tp=name _tk=string _th='' _tt='reminders done NAME' _td='Put aside one due or future reminder by its UID from the row. Undo brings that exact event back for 30 days.' ;;
         reminders_restore) _ts=reminders _ta=restore _tp=name _tk=string _th=f _tt='reminders restore NAME' _td='Bring back a reminder marked done in the last 30 days.' ;;
-        reminders_snooze)  _ts=reminders _ta=snooze _tp=name _tk=string _th='' _tt='reminders snooze NAME' _td='The reminder again in 10 minutes.' ;;
+        reminders_snooze)  _ts=reminders _ta=snooze _tp=name _tk=string _th='' _tt='reminders snooze NAME' _td='Move one reminder, identified by its UID from the row, to 10 minutes from now.' ;;
         display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=i _tt='display idle N' _td='Show the idle screen after N idle minutes; 0 never.' ;;
         display_lock)      _ts=display _ta=lock _tp=minutes _tk=minutes _th=i _tt='display lock N' _td='Lock the screen and turn the display off after N idle minutes; 0 never.' ;;
         display_saver)     _ts=display _ta=saver _tp=name _tk="clock|$(printf '%s' "$SAVER_NAMES" | tr ' ' '|')" _th=i _tt='display saver NAME' _td='What the idle screen shows: the clock alone, or an animation behind it.' ;;
@@ -6086,7 +6172,7 @@ tool_call_json() {   # tool_call_json TOOL VALUE [LINE] -> {"name", "arguments",
     tool_spec "$1" || return 1
     jq -cn --arg n "$1" --arg p "$_tp" --arg k "$_tk" --arg v "$2" --arg l "${3:-}" --arg x "$_te" \
         '{name: $n, arguments: (if $p == "" then {} elif $x != "" then (($v | split(" ")) as $ws | {($p): $ws[0]} + ([$ws[1:][] | select(. != "") | split("=") | {(.[0]): (if .[0] == "x" or .[0] == "y" then (.[1] | tonumber) else .[1] end)}] | add // {}))
-            elif ($k == "level" or $k == "alpha" or $k == "minutes" or $k == "speed" or $k == "delay") then {($p): ($v | tonumber? // $v)} else {($p): $v} end)} + (if $l == "" then {} else {line: $l} end)'
+            elif ($k == "level" or $k == "delta" or $k == "alpha" or $k == "minutes" or $k == "speed" or $k == "delay") then {($p): ($v | tonumber? // $v)} else {($p): $v} end)} + (if $l == "" then {} else {line: $l} end)'
 }
 # bright is one string enum, up, down and the numbers as text: spark's
 # grammar types an argument one way, and the tens come first because its
@@ -6099,6 +6185,7 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
          inputSchema: {type: "object",
             properties: ((if $p == "" then {} else {($p): ((
                 if $k == "level" then {type: "integer", minimum: 0, maximum: 100}
+                elif $k == "delta" then {type: "integer", minimum: -100, maximum: 100}
                 elif $k == "bright" then {type: "string", enum: (["up", "down"] + [range(10; 101; 10) | tostring] + [range(1; 101) | select(. % 10 != 0) | tostring])}
                 elif $k == "minutes" then {type: "integer", minimum: 0, maximum: 999}
                 elif $k == "speed" then {type: "number", minimum: -1, maximum: 1}
@@ -6111,10 +6198,10 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
               + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
             required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text") | .[0]]), additionalProperties: false},
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"},
-            effect: {type: "object", properties: {kind: {type: "string"}, operation: {type: "string"}, id: {type: "string"}, title: {type: "string"}, localTime: {type: "string"}}, required: ["kind", "operation", "id", "title"], additionalProperties: false},
+            effect: {type: "object", properties: {kind: {type: "string"}, operation: {type: "string"}, id: {type: "string"}, title: {type: "string"}, localTime: {type: "string"}, level: {type: "integer"}, muted: {type: "boolean"}}, required: ["kind", "operation", "id", "title"], additionalProperties: false},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
             palette: {type: "object", additionalProperties: {type: "string"}}},
-            required: (if $n == "notes_add" or $n == "reminders_add" then ["receipt", "effect"] else [] end), additionalProperties: false},
+            required: (if $n == "notes_add" or ($n | startswith("reminders_")) or ($n | test("^(out|mic)_(level|adjust|mute|unmute)$")) then ["receipt", "effect"] elif $n == "window_focus" or $n == "window_close" then ["effect"] else [] end), additionalProperties: false},
          annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}
          + (if $n == "reminders_add" then {_meta: {"spark-shell/prepare": true}} else {} end)'
 }
@@ -6136,7 +6223,10 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
             [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [],
                 columns: ((.[5] // "") | split("|") | .[1:2] | map(select(. != ""))),
                 children: (if .[0] == ($s + ":more") then $u else null end), group: ((.[5] // "") | split("|") | .[0] | if . == "" or . == null then null else . end)}
-                + ((.[5] // "") | split("|") | .[2] // "" | if . == "" then {} else {date: .} end)] as $rows
+                + ((.[5] // "") | split("|") | .[2] // "" | if . == "" then {} else {date: .} end)
+                + (if $s == "reminders" then ((.[5] // "") | split("|") | .[3] // "") as $id |
+                    if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}}, {name:"reminders_snooze", arguments:{name:$id}}]} else {} end
+                   else {} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
         | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$(theme_chips "$1")" --arg size "$(look_font_size)" --arg tr "$(_t=$(transparency_of "$ALPHA"); if [ "$_t" -eq 0 ]; then echo off; else echo "$_t%"; fi)" '
             .rows |= map(
@@ -6344,6 +6434,9 @@ provide_prepare() {   # read-only preparation: canonical arguments or a question
     _pq='What future day and time should this reminder use?'
     if _pp=$(rem_parse "$_pw"); then
         _ps=${_pp%%"$TAB"*}; _pt=${_pp#*"$TAB"}
+        if ! _pq=$(rem_time_check "$_ps" "$_pt"); then
+            rpc_result "$1" "$(jq -cn --arg q "$_pq" '{ready:false, question:$q}')"; return 0
+        fi
         if [ "$_ps" -gt "$(date +%Y%m%d%H%M)" ]; then
             _pc=$(printf '%s' "$_ps" | sed 's/^\(....\)\(..\)\(..\)\(..\)\(..\)$/\1-\2-\3 \4:\5/')
             rpc_result "$1" "$(jq -cn --arg w "$_pc $_pt" '{ready: true, arguments: {words: $w}}')"; return 0
@@ -6373,6 +6466,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif any($xs[]; . as $e | .[1] == "port" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9_.:-]{1,80}$") | not))) then "other is a connected screen port"
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
+        elif $k == "delta" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= -100 and .[$p] <= 100 then "" else $p + " is a whole number of percentage points, -100 to 100" end)
         elif $k == "bright" then (if ((.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 1 and .[$p] <= 100) or ((.[$p] | type) == "string" and (.[$p] | test("^(up|down|[1-9][0-9]?|100)$"))) then "" else $p + " is up, down or a whole number, 1 to 100" end)
         elif $k == "minutes" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 999 then "" else $p + " is a whole number of minutes, 0 to 999" end)
         elif $k == "speed" then (if (.[$p] | type) == "number" and .[$p] >= -1 and .[$p] <= 1 then "" else $p + " is a number, -1 to 1" end)
@@ -6387,6 +6481,12 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     _v=''; [ -z "$_tp" ] || _v=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg x "$_te" '. as $a | [$a[$p] | tostring] + [$x | split(" ")[] | select(. != "") | split(":") | . as $e | select($a[$e[0]] != null) | $e[0] + "=" + (($a[$e[0]] | tostring) | if $e[1] == "text" or $e[1] == "name" then ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-+|-+$"; "") | .[0:40] else . end)] | join(" ")')   # a text extra travels as its slug
     PANEL_PASS=''; [ -z "$_tq" ] || PANEL_PASS=$(printf '%s' "$_args" | jq -r --arg q "$_tq" '.[$q] // ""')   # a password: a shell variable for the step, never a file, never a line out
     _plain=$(printf '%s' "$_args" | jq -c --arg q "$_tq" 'if $q == "" then . else del(.[$q]) end')   # the arguments without the secret: what a row is matched against
+    case $_name in
+        notes_open) _resolved=$(note_file "$_v") || { provide_refuse "$1" 'select one note by its filename; that name is missing or ambiguous'; return 0; }; _v=${_resolved##*/} ;;
+        reminders_done|reminders_snooze) _resolved=$(rem_find "$_v") || { provide_refuse "$1" 'select one reminder by its UID; that name is missing or ambiguous'; return 0; }; _v=$(printf '%s' "$_resolved" | cut -f2) ;;
+        window_focus|window_close) _v=$(win_named "$_v") || { provide_refuse "$1" 'select one open window by its ID; that name is missing or ambiguous'; return 0; } ;;
+    esac
+    case $_name in notes_open|reminders_done|reminders_snooze|window_focus|window_close) _plain=$(jq -cn --arg n "$_v" '{name:$n}') ;; esac
     [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_v"; return 0; }   # files: the four lines, not the panel's gate
     _act=$_ta; _arg=$_v; [ "$_ta" != '=' ] || { _act=$_v; _arg=''; }   # a palette's step is its name alone
     case $_th in *f*) ;; *)   # the argument must be a row's own, exactly: the rows are the allowlist
@@ -6426,12 +6526,13 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     _rc=$(cat "$TMP/call.rc" 2>/dev/null || echo 1); _out=$(scrub_text < "$TMP/call.out")
     for _k in $THEME_KEYS; do unset "$_k"; done; config_load; theme_load   # a step may have changed the settings: the rows read them anew
     if [ "$_rc" -ne 0 ]; then provide_refuse "$1" "${_out:-$sec: $_tt did not work}"; return 0; fi
-    case $_name in notes_add|reminders_add)
-        [ -s "$TMP/action.effect" ] || { provide_refuse "$1" 'the item may have been saved, but could not be read back; check the list before trying again'; return 0; } ;;
+    case $_name in notes_add|reminders_*|out_level|out_adjust|out_mute|out_unmute|mic_level|mic_adjust|mic_mute|mic_unmute|window_focus|window_close)
+        [ -s "$TMP/action.effect" ] || { provide_refuse "$1" 'the action may have happened, but its result could not be read back; check the current state before trying again'; return 0; } ;;
     esac
     _pal='null'   # a theme step: the palette as it is now, so the dialog repaints itself with it (its colors came in its environment at start)
     [ "$sec" != theme ] || { panel_load; _pal=$(jq -cn --arg f "$HEX_FG" --arg a "$HEX_ACCENT" --arg m "$PANEL_MUTED" --arg b "$PANEL_BG" --arg h "$PANEL_HI" --arg r "${HEX_ANSI_1:-}" --arg g "${HEX_ANSI_2:-}" '{HEX_FG: $f, HEX_ACCENT: $a, PANEL_MUTED: $m, PANEL_BG: $b, PANEL_HI: $h, HEX_ANSI_1: $r, HEX_ANSI_2: $g}'); }
     if [ -s "$TMP/network.undo" ]; then _undo=$(tool_call_json "${sec}_restore" "$(cat "$TMP/network.undo")"); fi
+    if [ -s "$TMP/sound.undo" ]; then _undo=$(tool_call_json "${sec}_level" "$(cat "$TMP/sound.undo")"); fi
     if [ -f "$TMP/opened" ]; then _sc=$(jq -cn '{opened: true}')
     else _sc=$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" '{receipt: $r} + (if $u == null then {} else {undo: $u} end) + (if $p == null then {} else {palette: $p} end)'); fi
     if [ -s "$TMP/action.effect" ]; then _sc=$(printf '%s' "$_sc" | jq -c --slurpfile e "$TMP/action.effect" '. + {effect: $e[0]}'); fi
@@ -7723,7 +7824,7 @@ cmd_notes() {   # spark-shell notes [new | NAME | open NAME | add WORDS | find W
             _l=$(notes_act "$_a" "$*") || refuse_in notes "$_l"; echo "$_l" ;;
         -*) refuse_in notes "$1 is not an option here: new, a note's name, add WORDS or find WORDS" ;;
         *) [ "$1" != open ] || shift; [ $# -gt 0 ] || refuse_in notes "open takes a note's name"
-            _f=$(note_file "$*"); [ -n "$_f" ] || refuse_in notes "no note named $* (spark-shell notes lists them)"
+            _f=$(note_file "$*") || refuse_in notes "no unique note named $*; use its filename (spark-shell notes lists them)"
             note_here "$_f" "$*" ;;
     esac
 }
@@ -7869,6 +7970,7 @@ desk_term_line() {   # JSON INDEX APP ARGS -> a terminal launch with an optional
     else printf 'exec foot -e %s\n' "$(desk_launch "$3" "$4")"; fi
 }
 desk_terminal_ready() {   # the final split sizes are now in place
+    _dtr_failed=0
     for _lease in "$TMP"/term.*; do
         [ -f "$_lease" ] || continue
         case $_lease in *.result) continue ;; esac
@@ -7879,9 +7981,10 @@ desk_terminal_ready() {   # the final split sizes are now in place
         case $_lease in *.result) continue ;; esac
         _wait=0
         while [ ! -s "$_lease.result" ] && [ "$_wait" -lt 100 ]; do sleep 0.05; _wait=$((_wait + 1)); done
-        if [ ! -s "$_lease.result" ]; then echo '  terminal app did not confirm its minimum size'
-        elif [ "$(cat "$_lease.result")" != ready ]; then printf '  %s\n' "$(cat "$_lease.result" | scrub_text)"; fi
+        if [ ! -s "$_lease.result" ]; then echo '  terminal app did not confirm its minimum size'; _dtr_failed=1
+        elif [ "$(cat "$_lease.result")" != ready ]; then printf '  %s\n' "$(cat "$_lease.result" | scrub_text)"; _dtr_failed=1; fi
     done
+    [ "$_dtr_failed" = 0 ]
 }
 desk_lines() {   # desk_lines WS JSONFILE -> the lines, after desk_windows_of: one group per screen, the main's on WS
     w=$1; used=''; main=1; many=$(wc -l < "$TMP/screens" | tr -d ' ')
@@ -8045,37 +8148,37 @@ desk_show() {   # desk_show WHOSE -- the rendered desk played, then the closing 
         echo "tmux session $name -- $1"
         if desk_in_sway; then   # asked inside the desktop with --terminal: the session in a foot window of its own
             _w=$(desk_next_ws); printf 'workspace number %s\nrename workspace to "%s %s"\nexec foot -e tmux attach-session -t =%s\n' "$_w" "$_w" "$(desk_ws_label "$name")" "$name" > "$TMP/desk.win"
-            KEPT=1 desk_play "$TMP/desk.win" >/dev/null || true; : > "$TMP/opened"
+            KEPT=1 desk_play "$TMP/desk.win" >/dev/null || refuse 'the layout workspace could not be opened'; : > "$TMP/opened"
         else desk_join "$name"; fi
         return
     fi
     # asked at the prompt: its window goes with the desk, on top, to be read
     [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=$PANEL_APP] move container to workspace number $ws" >/dev/null 2>&1 || true
-    desk_play "$TMP/desk" || refuse "nothing ran"
+    desk_play "$TMP/desk" || refuse "the layout did not finish; some windows may already be open"
     : > "$TMP/opened"   # the mark the panel's window reads: it closes, the layout has the screen
     echo "on workspace $(desk_ws_said "$TMP/desk")${1:+ -- $1}"
     [ -z "${ASKED:-}" ] || swaymsg -- "[app_id=$PANEL_APP] focus" >/dev/null 2>&1 || true   # the panel's keys are ours, not the app's
 }
 
 desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec waited for
-    sent=0; nowin=0; _ws=''; _new_id=''
+    sent=0; nowin=0; _ws=''; _new_id=''; _dp_failed=0
     while IFS= read -r line || [ -n "$line" ]; do
         case $line in ''|'#'*) continue ;; exec*) _new_id='' ;; esac
         why=$(desk_gate "$line")
-        if [ -n "$why" ]; then echo "  refused  $line  ($why)"; case $line in exec*) nowin=1 ;; esac; continue; fi
+        if [ -n "$why" ]; then echo "  refused  $line  ($why)"; _dp_failed=1; case $line in exec*) nowin=1 ;; esac; continue; fi
         # a split meant for a window that never came (or was refused) would cut
         # the one before it instead: skipped, the next window lands where that one would have
         case $line in split*) [ "$nowin" = 0 ] || { [ "$VERBOSE" != 1 ] || echo "  skipped  $line  (no window to split)"; nowin=0; continue; } ;; esac
         [ "$VERBOSE" != 1 ] || echo "  $line"   # the sway grammar is for the kept file, not the screen
         case $line in 'workspace number '*) _ws=${line#workspace number } ;; esac
         case $line in 'window-rule '*)
-            if [ -n "$_new_id" ]; then swaymsg -- "[con_id=$_new_id] ${line#window-rule }" >/dev/null || echo "  window rule refused"
-            else echo "  window rule skipped: no single new window"; fi
+            if [ -n "$_new_id" ]; then swaymsg -- "[con_id=$_new_id] ${line#window-rule }" >/dev/null || { echo "  window rule refused"; _dp_failed=1; }
+            else echo "  window rule skipped: no single new window"; _dp_failed=1; fi
             continue ;;
         esac
         case $line in exec*) swaymsg -t get_tree 2>/dev/null | jq '[.. | objects | select(.pid? != null) | .id]' > "$TMP/old.windows" ;; esac
         before=$(desk_windows "$_ws")
-        swaymsg -- "$line" >/dev/null || { echo "  sway refused: $line"; continue; }
+        swaymsg -- "$line" >/dev/null || { echo "  sway refused: $line"; _dp_failed=1; continue; }
         sent=$((sent + 1))
         case $line in exec*)
             # until its window maps; a program that ends first (mpv with
@@ -8093,11 +8196,11 @@ desk_play() {   # desk_play FILE -> the lines sent, a refused line named, exec w
             _new_id=$(swaymsg -t get_tree 2>/dev/null | jq -r --slurpfile old "$TMP/old.windows" --argjson ws "$_ws" '
                 [.. | objects | select(.type? == "workspace" and .num? == $ws) | .. | objects | select(.pid? != null) | .id | select(. as $id | $old[0] | index($id) | not)] |
                 if length == 1 and (.[0] | type) == "number" then .[0] else empty end' 2>/dev/null)
-            if [ "$(desk_windows "$_ws")" -gt "$before" ]; then nowin=0; echo "  $shown"; else nowin=1; echo "  $shown -- no window"; fi ;;
+            if [ "$(desk_windows "$_ws")" -gt "$before" ]; then nowin=0; echo "  $shown"; else nowin=1; _dp_failed=1; echo "  $shown -- no window"; fi ;;
         esac
     done < "$1"
-    desk_terminal_ready
-    [ "$sent" -gt 0 ]
+    desk_terminal_ready || _dp_failed=1
+    [ "$sent" -gt 0 ] && [ "$_dp_failed" = 0 ]
 }
 
 desk_make() {   # desk_make NEED -> the desk laid out, the model's answer in DESK_LAST

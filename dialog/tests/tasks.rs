@@ -420,6 +420,25 @@ fn typed_command_needs_no_inference() {
 }
 
 #[test]
+fn an_early_direct_command_waits_for_its_provider_instead_of_using_ai() {
+    let (mut app, rx, calls) = started(false);
+    app.view = View::Home;
+    let tools = std::mem::take(&mut app.providers[0].tools);
+    app.providers[0].ready = false;
+    app.providers[0].reading = true;
+    type_words(&mut app, "out level 30");
+    app.enter();
+    assert_eq!(app.input, "out level 30");
+    assert!(app.task.is_none() && app.jobs.is_empty() && calls.lock().unwrap().is_empty());
+    app.providers[0].tools = tools;
+    app.providers[0].ready = true;
+    app.providers[0].reading = false;
+    app.enter();
+    assert!(pump(&mut app, &rx, |_| !calls.lock().unwrap().is_empty()));
+    assert!(app.task.is_none() && app.jobs.is_empty());
+}
+
+#[test]
 fn model_cannot_bypass_destructive_confirmation() {
     let (mut app, _, calls) = started(true);
     app.task_start("make it quieter");
@@ -614,6 +633,93 @@ fn native_preparation_finishes_before_review_and_execution() {
 }
 
 #[test]
+fn canonical_preparation_stops_repeated_attempts_and_allows_distinct_actions() {
+    for (repeat, native_error) in [(true, false), (true, true), (false, false)] {
+        let (mut app, rx, tx) = app_with(&["reminders"]);
+        let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let captured = calls.clone();
+        let tools = json!([{"name":"reminder_add","title":"remind WHEN TITLE",
+            "inputSchema":{"type":"object","properties":{"when":{"type":"string"},"title":{"type":"string"}},"required":["when","title"]},
+            "annotations":{"destructiveHint":false},"_meta":{"spark-shell/prepare":true}}]);
+        let rows = json!({"title":"reminders","rows":[]});
+        let script: Script = Box::new(move |v, send| {
+            if let Some(answer) = ordinary("reminders", v, &tools, &rows) {
+                return send(answer);
+            }
+            if v["method"] == "spark/prepare" {
+                let mut args = v["params"]["arguments"].clone();
+                args["when"] = json!(if args["when"] == "the following day at nine" {
+                    "2026-10-30 09:00"
+                } else {
+                    "2026-10-29 09:00"
+                });
+                return send(result(&v["id"], json!({"ready":true,"arguments":args})));
+            }
+            if v["method"] == "tools/call" {
+                captured.lock().unwrap().push(v["params"].clone());
+                send(result(
+                    &v["id"],
+                    json!({"isError":native_error,"content":[{"type":"text",
+                    "text":if native_error {"reminder unavailable"} else {"reminder saved"}}]}),
+                ));
+            }
+        });
+        app.servers.push(stub(0, "reminders", script, tx));
+        app.start();
+        assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+        app.view = View::Section(0);
+        app.task_start("remind me to water the garden");
+        let propose = |app: &mut App, when: &str, id: u64| {
+            let (serial, _) = request(app);
+            let step = json!({"name":"p0_reminder_add","arguments":{"when":when,"title":"water garden"}});
+            app.task_reply(
+                serial,
+                Ok(json!({"version":1,"status":"step","id":id,"step":step,
+                "state":{"pending":{"id":id,"kind":"step","step":step}}})
+                .to_string()),
+            );
+        };
+        propose(&mut app, "tomorrow at nine", 1);
+        assert!(pump(&mut app, &rx, |a| a.staged.is_some()));
+        assert!(app.task.as_ref().unwrap().attempted.is_empty(), "review is not an attempted action");
+        app.enter();
+        assert!(pump(&mut app, &rx, |a| a.running.is_none()
+            && a.task.as_ref().is_some_and(|t| t.phase == Phase::Thinking)));
+        assert_eq!(app.task.as_ref().unwrap().attempted.len(), 1);
+        let prior_receipt = app.exchange.last().unwrap().clone();
+        propose(&mut app, if repeat { "tomorrow morning 9" } else { "the following day at nine" }, 2);
+        if repeat {
+            assert!(pump(&mut app, &rx, |a| a.task.is_none()));
+            assert!(app.staged.is_none() && app.running.is_none() && app.jobs.is_empty());
+            assert_eq!(calls.lock().unwrap().len(), 1);
+            assert!(app
+                .exchange
+                .iter()
+                .any(|line| line.text == prior_receipt.text && line.sign == prior_receipt.sign));
+            assert!(app.exchange.last().unwrap().text.contains("without repeating it"));
+            if !native_error {
+                app.task_start("create another reminder for the same time");
+                propose(&mut app, "tomorrow at nine", 1);
+                assert!(pump(&mut app, &rx, |a| a.staged.is_some()));
+                app.enter();
+                assert!(pump(&mut app, &rx, |a| a.running.is_none()
+                    && a.task.as_ref().is_some_and(|t| t.phase == Phase::Thinking)));
+                assert_eq!(calls.lock().unwrap().len(), 2, "a fresh user task has its own attempt history");
+            }
+        } else {
+            assert!(pump(&mut app, &rx, |a| a.staged.is_some()));
+            assert_eq!(calls.lock().unwrap().len(), 1, "a distinct action still waits for Enter");
+            app.enter();
+            assert!(pump(&mut app, &rx, |a| a.running.is_none()
+                && a.task.as_ref().is_some_and(|t| t.phase == Phase::Thinking)));
+            let calls = calls.lock().unwrap();
+            assert_eq!(calls.len(), 2);
+            assert_ne!(calls[0]["arguments"], calls[1]["arguments"]);
+        }
+    }
+}
+
+#[test]
 fn native_preparation_can_request_input_and_late_replies_are_ignored() {
     let (mut app, rx, calls) = started(false);
     app.providers[0].tools[0].prepare = true;
@@ -672,4 +778,418 @@ fn confirmation_shows_a_value_even_when_the_title_has_no_placeholder() {
     );
     assert!(app.staged.as_ref().unwrap().text.contains("level: 30"));
     assert!(calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn malformed_and_protocol_results_stop_without_losing_prior_receipts() {
+    let replies = [
+        json!({"result":null}),
+        json!({"result":[]}),
+        json!({"result":{}}),
+        json!({"result":{"content":[],"isError":"true","structuredContent":{"receipt":"not evidence"}}}),
+        json!({"result":{"content":"not a list"}}),
+        json!({"result":{"content":[{"type":"text","text":12}]}}),
+        json!({"result":{"content":[],"structuredContent":[]}}),
+        json!({"error":{"code":-32603,"message":"provider failed"}}),
+        // Protocol diagnostics can repeat private values: spark:allow-secret.
+        json!({"error":{"code":-32603,"message":"fixture private value","data":{"password":"fixture private value"}}}),
+        json!({"error":{"code":"wrong","message":"provider failed"}}),
+        json!({"result":{"content":[]},"error":{"code":-32603,"message":"both"}}),
+    ];
+    for reply in replies {
+        let (mut app, rx, _) = started(false);
+        app.task_start("change the output in two steps");
+        propose(&mut app);
+        app.enter();
+        assert!(pump(&mut app, &rx, |a| a.running.is_none()
+            && a.task.as_ref().is_some_and(|t| t.phase == Phase::Thinking)));
+        let undo = app.undo.clone();
+        let (serial, _) = request(&app);
+        let step = json!({"name":"p0_out_level","arguments":{"level":40}});
+        app.task_reply(
+            serial,
+            Ok(json!({"version":1,"status":"step","id":2,"step":step,
+            "state":{"pending":{"id":2,"kind":"step","step":step}}})
+            .to_string()),
+        );
+        app.enter();
+        app.jobs.clear();
+        app.opened = true;
+        let (provider, id, _, _) = app.running.clone().unwrap();
+        let mut response = reply;
+        response["jsonrpc"] = json!("2.0");
+        response["id"] = json!(id);
+        app.incoming(spark_dialog::mcp::Incoming::Msg(provider, response));
+        assert!(app.task.is_none() && app.running.is_none());
+        assert!(app.jobs.is_empty(), "unknown outcomes do not ask for a retry");
+        assert_eq!(app.undo, undo);
+        assert!(!app.opened && app.quit.is_none());
+        assert!(app
+            .exchange
+            .iter()
+            .any(|line| line.sign == spark_dialog::app::Sign::Done && line.text == "volume 30"));
+        assert!(app.exchange.last().unwrap().text.contains("may have happened"));
+        assert!(!app.exchange.iter().any(|line| line.text.contains("fixture private value")));
+    }
+}
+
+#[test]
+fn a_row_click_and_value_key_cannot_replace_a_running_action() {
+    let (mut app, rx, calls) = started(false);
+    app.task_start("make it quieter");
+    propose(&mut app);
+    app.enter();
+    let running = app.running.clone();
+    let task_serial = app.task.as_ref().unwrap().serial;
+    app.in_list = true;
+    app.sel = 0;
+    app.enter();
+    assert_eq!(app.running, running);
+    assert_eq!(app.task.as_ref().unwrap().serial, task_serial);
+    app.in_list = true;
+    app.sel = 0;
+    app.right();
+    assert_eq!(app.running, running);
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()));
+    assert_eq!(calls.lock().unwrap().len(), 1);
+    assert!(app.exchange.iter().any(|line| line.text == "volume 30"));
+}
+
+#[test]
+fn an_old_timeout_cannot_cancel_a_different_running_call() {
+    let (mut app, rx, calls) = started(false);
+    app.task_start("make it quieter");
+    propose(&mut app);
+    app.enter();
+    let running = app.running.clone();
+    app.servers[0].pending.insert(
+        9999,
+        spark_dialog::mcp::Pending {
+            kind: spark_dialog::mcp::Kind::Call(0),
+            deadline: Instant::now(),
+            token: None,
+        },
+    );
+    app.tick(Instant::now() + Duration::from_secs(1));
+    assert_eq!(app.running, running);
+    assert!(app.task.is_some());
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()));
+    assert_eq!(calls.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn timeout_and_provider_loss_keep_a_partial_task_visible() {
+    for lost in [false, true] {
+        let (mut app, _, _) = started(false);
+        app.task_start("open something then change the output");
+        propose(&mut app);
+        app.enter();
+        app.opened = true;
+        if lost {
+            app.incoming(spark_dialog::mcp::Incoming::Gone(0, "closed".into()));
+        } else {
+            app.tick(Instant::now() + spark_dialog::mcp::T_CALL + Duration::from_secs(1));
+        }
+        assert!(app.task.is_none() && app.quit.is_none() && !app.opened);
+    }
+}
+
+#[test]
+fn an_unrelated_provider_cannot_take_over_a_native_question() {
+    let (mut app, _, _) = started(false);
+    app.task_start("make it quieter");
+    propose(&mut app);
+    app.enter();
+    app.incoming(spark_dialog::mcp::Incoming::Msg(
+        1,
+        json!({"jsonrpc":"2.0","id":"other",
+        "method":"elicitation/create","params":{"message":"unrelated", "requestedSchema":{
+        "type":"object","properties":{"choice":{"type":"string"}}}}}),
+    ));
+    assert_eq!(app.mode, Mode::Normal);
+    assert!(app.running.is_some());
+}
+
+#[test]
+fn a_proposal_cannot_reach_an_unoffered_provider_or_supply_credentials() {
+    for credentials in [false, true] {
+        let (mut app, _, calls) = started(false);
+        app.providers[0].tools[0].schema["properties"]["password"] = json!({"type":"string","format":"password"});
+        if !credentials {
+            app.view = View::Home;
+        }
+        app.task_start("make it quieter");
+        let (serial, _) = request(&app);
+        let args = if credentials {
+            json!({"level":30,"password":"fixture value"})
+        } else {
+            json!({"level":30})
+        };
+        let step = json!({"name":"p0_out_level","arguments":args});
+        app.task_reply(
+            serial,
+            Ok(json!({"version":1,"status":"step","id":1,"step":step,
+            "state":{"pending":{"id":1,"kind":"step","step":step}}})
+            .to_string()),
+        );
+        assert!(app.task.is_none() && app.staged.is_none());
+        assert!(calls.lock().unwrap().is_empty());
+        assert!(!app.exchange.iter().any(|line| line.text.contains("fixture value")));
+    }
+}
+
+#[test]
+fn a_multi_provider_task_uses_native_results_and_keeps_discovered_capabilities() {
+    let (mut app, rx, tx) = app_with(&["notes", "reminders", "wifi"]);
+    let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let notes = json!([
+        {"name":"notes_create","title":"notes create","inputSchema":{"type":"object","properties":{},"required":[]},"annotations":{"destructiveHint":false}},
+        {"name":"notes_open","title":"notes open NAME","inputSchema":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]},"annotations":{"destructiveHint":false}},
+        {"name":"notes_link","title":"notes link NOTE REMINDER","inputSchema":{"type":"object","properties":{"note":{"type":"string"},"reminder":{"type":"string"}},"required":["note","reminder"]},"annotations":{"destructiveHint":false}}
+    ]);
+    let reminders = json!([
+        {"name":"reminders_create","title":"reminders create SOURCE","inputSchema":{"type":"object","properties":{"source":{"type":"string"}},"required":["source"]},"annotations":{"destructiveHint":false}}
+    ]);
+    for (provider, label, tools) in [(0, "notes", notes), (1, "reminders", reminders)] {
+        let captured = calls.clone();
+        let mut rows = if provider == 0 {
+            json!({"title":label,"rows":[{"id":"existing","text":"Existing note",
+                "tool":{"name":"notes_open","arguments":{"name":"existing"}}}]})
+        } else {
+            json!({"title":label,"rows":[]})
+        };
+        let script: Script = Box::new(move |v, send| {
+            if let Some(r) = ordinary(label, v, &tools, &rows) {
+                return send(r);
+            }
+            if v["method"] == "tools/call" {
+                let mut calls = captured.lock().unwrap();
+                calls.push(v["params"].clone());
+                // This identity exists only after execution, and differs for each write.
+                let identity = format!("{}-{}", label, calls.len());
+                if v["params"]["name"] == "notes_create" {
+                    rows["rows"].as_array_mut().unwrap().push(json!({"id":identity,"text":"Created note",
+                        "tool":{"name":"notes_open","arguments":{"name":identity}}}));
+                }
+                send(result(
+                    &v["id"],
+                    json!({"isError":false,"content":[{"type":"text","text":"saved"}],
+                    "structuredContent":{"receipt":format!("saved {}", identity),"id":identity}}),
+                ));
+            }
+        });
+        app.servers.push(stub(provider, label, script, tx.clone()));
+    }
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[..2].iter().all(|p| p.ready && !p.tools.is_empty())));
+    app.providers[2].ready = true;
+    app.providers[2].rows = spark_dialog::model::rows(r#"{"title":"wifi","rows":[{"id":"private","text":"private unrelated network"}]}"#).unwrap();
+    app.jobs.clear();
+    app.task_start("create a note and a reminder, then link the saved items");
+    assert!(request(&app).1["tools"].as_array().unwrap().is_empty());
+    let inspect = |app: &mut App, provider: usize, id: u64| {
+        let (serial, _) = request(app);
+        app.task_reply(
+            serial,
+            Ok(json!({"version":1,"status":"inspect","id":id,"provider":provider,
+            "state":{"pending":{"id":id,"kind":"inspect","provider":provider}}})
+            .to_string()),
+        );
+    };
+    let step = |app: &mut App, name: &str, arguments: Value, id: u64| {
+        let (serial, _) = request(app);
+        let call = json!({"name":name,"arguments":arguments});
+        app.task_reply(
+            serial,
+            Ok(json!({"version":1,"status":"step","id":id,"step":call,
+            "state":{"pending":{"id":id,"kind":"step","step":call}}})
+            .to_string()),
+        );
+    };
+    inspect(&mut app, 0, 1);
+    assert!(pump(&mut app, &rx, |a| a.task.as_ref().is_some_and(|t| t.phase == Phase::Thinking)));
+    step(&mut app, "p0_notes_create", json!({}), 2);
+    assert!(calls.lock().unwrap().is_empty());
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()
+        && a.task.as_ref().is_some_and(|t| t.phase == Phase::Thinking)));
+    let note_id = request(&app).1["observation"]["result"]["structuredContent"]["id"].clone();
+    assert!(note_id.is_string());
+    let open_schema = request(&app).1["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "p0_notes_open")
+        .unwrap()["inputSchema"]
+        .clone();
+    assert!(
+        open_schema["properties"]["name"]["enum"].as_array().unwrap().contains(&note_id),
+        "the next turn sees the new identity without another model inspection"
+    );
+    step(&mut app, "p0_notes_open", json!({"name":note_id}), 3);
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()
+        && a.task.as_ref().is_some_and(|t| t.phase == Phase::Thinking)));
+    inspect(&mut app, 1, 4);
+    assert!(pump(&mut app, &rx, |a| a.task.as_ref().is_some_and(|t| t.phase == Phase::Thinking)));
+    let tools = request(&app).1["tools"].as_array().unwrap().clone();
+    assert!(tools.iter().any(|t| t["name"] == "p0_notes_link"));
+    assert!(tools.iter().any(|t| t["name"] == "p1_reminders_create"));
+    step(&mut app, "p1_reminders_create", json!({"source":note_id}), 5);
+    assert_eq!(calls.lock().unwrap().len(), 2, "the second provider also waits for review");
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()
+        && a.task.as_ref().is_some_and(|t| t.phase == Phase::Thinking)));
+    let reminder_id = request(&app).1["observation"]["result"]["structuredContent"]["id"].clone();
+    assert!(reminder_id.is_string() && reminder_id != note_id);
+    step(&mut app, "p0_notes_link", json!({"note":note_id,"reminder":reminder_id}), 6);
+    assert_eq!(calls.lock().unwrap().len(), 3);
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()
+        && a.task.as_ref().is_some_and(|t| t.phase == Phase::Thinking)));
+    let recorded = calls.lock().unwrap();
+    assert_eq!(recorded.len(), 4);
+    assert_eq!(recorded[1]["arguments"]["name"], note_id);
+    assert_eq!(recorded[2]["arguments"]["source"], note_id);
+    assert_eq!(recorded[3]["arguments"], json!({"note":note_id,"reminder":reminder_id}));
+    for job in &app.jobs {
+        if let Job::RunInput(Helper::Task(_), _, body) = job {
+            assert!(!body.contains("private unrelated network"));
+        }
+    }
+    drop(recorded);
+    let (serial, _) = request(&app);
+    app.task_reply(serial, Ok(json!({"version":1,"status":"done","summary":"saved and linked"}).to_string()));
+    assert!(app.task.is_none());
+    assert_eq!(app.exchange.iter().filter(|l| l.sign == spark_dialog::app::Sign::Done).count(), 4);
+}
+
+#[test]
+fn a_failed_refresh_preserves_the_completed_action_and_stops_continuation() {
+    for timeout in [false, true] {
+        let (mut app, rx, calls) = started(false);
+        app.task_start("make it quieter then continue");
+        propose(&mut app);
+        app.enter();
+        app.jobs.clear();
+        assert!(pump(&mut app, &rx, |a| a.task.as_ref().is_some_and(|t| t.phase == Phase::Refresh(0))));
+        let undo = app.undo.clone();
+        assert!(undo.is_some());
+        app.opened = true;
+        if timeout {
+            app.tick(Instant::now() + spark_dialog::mcp::T_READ + Duration::from_secs(1));
+        } else {
+            let id = app.providers[0].read_id.unwrap();
+            app.incoming(spark_dialog::mcp::Incoming::Msg(0, result(&json!(id), json!({"contents":[]}))));
+        }
+        assert!(app.task.is_none() && app.jobs.is_empty() && app.quit.is_none());
+        assert_eq!(app.undo, undo);
+        assert_eq!(calls.lock().unwrap().len(), 1);
+        assert!(app.exchange.iter().any(|l| l.sign == spark_dialog::app::Sign::Done && l.text == "volume 30"));
+        assert!(app.exchange.last().unwrap().text.contains("current state could not be read"));
+    }
+}
+
+#[test]
+fn private_native_results_keep_safe_receipts_but_never_continue_the_model() {
+    // Synthetic credential fields only: spark:allow-secret.
+    let private = "fixture private value";
+    let cases = [
+        (
+            json!({"content":[],"structuredContent":{"receipt":"saved safely",
+                "undo":{"name":"out_level","arguments":{"password":private}}}}),
+            None,
+            false,
+        ),
+        (
+            json!({"content":[],"structuredContent":{"receipt":"saved safely",
+                "details":[{"value":private}]}}),
+            Some(json!({"type":"object","properties":{"details":{"type":"array","items":{
+                "type":"object","properties":{"value":{"type":"string","format":"password"}}}}}})),
+            false,
+        ),
+        (
+            json!({"content":[],"structuredContent":{"receipt":private}}),
+            Some(json!({"type":"object","properties":{"receipt":{"type":"string","format":"password"}}})),
+            false,
+        ),
+        (
+            json!({"content":[{"type":"text","text":json!({"token":private}).to_string()}],
+                "structuredContent":{"receipt":"saved safely"}}),
+            None,
+            false,
+        ),
+        (
+            json!({"isError":true,"content":[{"type":"text","text":private}],
+                "structuredContent":{"password":private}}),
+            None,
+            false,
+        ),
+        (
+            json!({"content":[],"structuredContent":{"receipt":"saved safely",
+                "undo":{"name":"out_restore","arguments":{"value":private}}}}),
+            None,
+            true,
+        ),
+    ];
+    for (response, output_schema, inverse) in cases {
+        let (mut app, rx, _) = started(false);
+        app.task_start("change the output in two steps");
+        propose(&mut app);
+        app.enter();
+        assert!(pump(&mut app, &rx, |a| a.running.is_none()
+            && a.task.as_ref().is_some_and(|t| t.phase == Phase::Thinking)));
+        app.providers[0].tools[0].output_schema = output_schema;
+        if inverse {
+            let mut tool = app.providers[0].tools[0].clone();
+            tool.name = "out_restore".into();
+            tool.schema = json!({"type":"object","properties":{"value":{"type":"string","format":"password"}},"required":["value"]});
+            app.providers[0].tools.push(tool);
+        }
+        let (serial, _) = request(&app);
+        let step = json!({"name":"p0_out_level","arguments":{"level":40}});
+        app.task_reply(
+            serial,
+            Ok(json!({"version":1,"status":"step","id":2,"step":step,
+                "state":{"pending":{"id":2,"kind":"step","step":step}}})
+            .to_string()),
+        );
+        app.enter();
+        app.jobs.clear();
+        let (provider, id, _, _) = app.running.clone().unwrap();
+        let safe_receipt = response.pointer("/structuredContent/receipt").and_then(Value::as_str) == Some("saved safely");
+        let refused = response["isError"] == true;
+        app.incoming(spark_dialog::mcp::Incoming::Msg(provider, result(&json!(id), response)));
+        assert!(app.task.is_none() && app.running.is_none() && app.jobs.is_empty());
+        assert!(app.quit.is_none() && !app.opened);
+        assert!(app.exchange.iter().any(|line| line.text == "volume 30"), "prior native receipts survive");
+        assert!(!app.exchange.iter().any(|line| line.text.contains(private)));
+        assert!(app.exchange.last().unwrap().text.contains("without sending it to spark"));
+        if safe_receipt {
+            assert!(app
+                .exchange
+                .iter()
+                .any(|line| line.sign == spark_dialog::app::Sign::Done && line.text == "saved safely"));
+        }
+        if !refused {
+            assert!(app.undo.is_none(), "a private inverse is never retained");
+        }
+    }
+}
+
+#[test]
+fn private_result_scanning_has_a_bound_and_keeps_ordinary_native_data() {
+    use spark_dialog::gate::result_privacy;
+    let ordinary = json!({"content":[{"type":"text","text":"saved"}],"structuredContent":{
+        "receipt":"saved note","name":"garden.md","uid":"runtime-id","due":"2026-10-29T09:00",
+        "undo":{"name":"notes_delete","arguments":{"name":"garden.md"}}}});
+    assert!(!result_privacy(None, &ordinary).private);
+    let mut deep = json!("ordinary");
+    for _ in 0..14 {
+        deep = json!({"nested":deep});
+    }
+    let bounded = result_privacy(None, &deep);
+    assert!(bounded.private && !bounded.text_safe("a receipt"));
+    let wide = Value::Array(vec![json!(0); 4097]);
+    assert!(result_privacy(None, &wide).private);
 }

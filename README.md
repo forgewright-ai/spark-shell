@@ -848,6 +848,9 @@ including the selected row's action arguments. Existing-item arguments
 are narrowed to their actual row values when one name identifies the item.
 Other providers are listed by name; spark can request their current state
 when the task needs it. Hidden rows are not volunteered.
+Capabilities inspected during a task remain available for its later steps.
+After a successful action, the provider's rows are read again before the
+next decision, so a newly created item's identity can be used immediately.
 Tool descriptions and typed arguments retain their meaning across the
 interface. The protocol is owned by spark's `CLAUDE.md`, contract 16.
 
@@ -868,6 +871,11 @@ already sent may still finish. Late model replies cannot restart it.
 A lost provider or timeout stops the task without retrying the action.
 Declared structured output schemas are checked before a result is accepted.
 Model completion prose is separate from the native success receipt.
+Only one native action runs at a time. While a provider is loading, the
+prompt retains the request until its controls are available. Malformed
+results or an unknown execution outcome stop the task; the dialog never
+reports them as successful observations. A result with recognized private
+fields is not sent back to inference.
 
 Closing the window loses the task; opening another does not resume it.
 Earlier completed actions stay completed, with their native receipts.
@@ -894,6 +902,10 @@ without the flag keep their existing path. It grants no permission.
 
 `reminders_add` uses preparation to resolve relative times to an explicit
 local date and time. A past or unreadable time asks for clarification.
+The local time must occur exactly once: a skipped or repeated hour during
+a clock change asks for another time. A time-zone suffix is not silently
+treated as part of the title. Reminders use this computer's local time;
+Python's native timezone data verifies it before any event is written.
 Preparation writes no calendar event. The reviewed explicit date survives
 midnight; execution still checks that the time has not passed meanwhile.
 Note writes return an `effect` with the actual filename, title and whether
@@ -901,6 +913,21 @@ it was created or appended. A new reminder returns its saved UID, title
 and explicit local time. These fields come from native reads of the saved
 item. They describe that operation only; unrelated personal items are
 not added to its result.
+Note actions use the Markdown filename, reminder actions use the event UID,
+and window actions use the compositor's container ID. A display name still
+works when it identifies exactly one item. Duplicate names require the exact
+item instead of choosing one. Reminder completion, restoration and snoozing
+return the saved identity too. Sound results carry the measured native level
+and mute state, including the native mixer's one-point rounding tolerance.
+`out adjust -20` lowers output volume by 20 percentage points; `mic adjust 10`
+raises microphone level by 10 points. The native provider reads the current
+level and clamps the result from 0 to 100. Undo restores the prior level.
+After preparation, an identical attempted operation cannot be proposed again
+in the same task, even when its original words differed.
+
+The reproducible task checks and live evaluation instructions are in
+[tests/AX.md](tests/AX.md). They distinguish native files, controlled backends,
+headless desktop checks and physical-device evidence.
 
 Every section of the dialog is a provider: `spark-shell provide wifi`
 serves the section as an MCP server on stdin and stdout (the Model

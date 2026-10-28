@@ -63,10 +63,31 @@ pub enum Kind {
     Init,
     Tools,
     Read,
+    Refresh(u64),
     Folder,
     Subscribe,
     Call(u64),
     Prepare(u64),
+}
+
+/// A tool result has its own envelope even when its tool declares no output
+/// schema. A malformed reply is an unknown outcome, never evidence of success.
+pub fn tool_result_ok(value: &Value) -> bool {
+    let string = |v: &Value, k: &str| v.get(k).is_some_and(Value::is_string);
+    value.is_object()
+        && value.get("isError").is_none_or(Value::is_boolean)
+        && value.get("structuredContent").is_none_or(Value::is_object)
+        && value.get("content").and_then(Value::as_array).is_some_and(|items| {
+            items.iter().all(|item| match item.get("type").and_then(Value::as_str) {
+                Some("text") => string(item, "text"),
+                Some("image" | "audio") => string(item, "data") && string(item, "mimeType"),
+                Some("resource_link") => string(item, "uri") && string(item, "name"),
+                Some("resource") => item
+                    .get("resource")
+                    .is_some_and(|r| string(r, "uri") && (string(r, "text") || string(r, "blob"))),
+                _ => false,
+            })
+        })
 }
 
 #[derive(Debug)]

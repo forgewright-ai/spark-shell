@@ -38,6 +38,11 @@ def main():
         config.write_text('output HEADLESS-1 mode 1280x720\nxwayland disable\n'
                           'for_window [app_id="proof-target"] floating enable, resize set 300 200\n'
                           'for_window [app_id="proof-sibling"] floating enable, resize set 400 300\n')
+        settings = root / "spark-shell"
+        settings.mkdir()
+        (settings / "config").write_text("DESKTOP=sway\nTHEME=none\n")
+        env.update(XDG_DATA_HOME=str(root / "data"), XDG_STATE_HOME=str(root / "state"),
+                   SPARK_SHELL_NO_APPLY="1", SPARK_SHELL_PTS_DIR=str(root / "ptys"))
         log = open(root / "sway.log", "w")
         compositor = subprocess.Popen(["sway", "-c", str(config)], env=env,
                                       stdout=log, stderr=log, start_new_session=True)
@@ -59,6 +64,24 @@ def main():
                     return None
                 return find(sway("-t", "get_tree"))
 
+            def call(name, ident):
+                packets = [
+                    {"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {
+                        "protocolVersion": "2025-06-18", "capabilities": {}}},
+                    {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+                        "name": name, "arguments": {"name": str(ident)}}},
+                ]
+                process = subprocess.run([str(REPO / "spark-shell"), "provide", "window"], env=env,
+                                         input="".join(json.dumps(p) + "\n" for p in packets),
+                                         capture_output=True, text=True, timeout=20)
+                assert process.returncode == 0, "native window provider failed"
+                response = next(p for line in process.stdout.splitlines()
+                                if (p := json.loads(line)).get("id") == 1)
+                result = response["result"]
+                assert result["isError"] is False, "native window operation was refused"
+                assert result["structuredContent"]["effect"]["id"] == str(ident)
+                return result
+
             for scale in (1, 1.25):
                 sway("output", "HEADLESS-1", "scale", str(scale))
                 sibling = subprocess.Popen(["foot", "--app-id", "proof-sibling", "sleep", "30"], env=env, stdout=log, stderr=log)
@@ -68,7 +91,7 @@ def main():
                 result = root / "cells.json"
                 lease.write_text("wait\n")
                 result.unlink(missing_ok=True)
-                app = "import os,json,time; from pathlib import Path; Path('" + str(result) + "').write_text(json.dumps(list(os.get_terminal_size(0)))); time.sleep(5)"
+                app = "import os,json,time; from pathlib import Path; Path('" + str(result) + "').write_text(json.dumps(list(os.get_terminal_size(0)))); time.sleep(30)"
                 target = subprocess.Popen(["foot", "--app-id", "proof-target", "python3", str(REPO / "lib/layout_terminal.py"), str(lease), "80", "24", "python3", "-c", app], env=env, stdout=log, stderr=log)
                 children.append(target)
                 wait_for(lambda: window("proof-target"), "target")
@@ -78,8 +101,16 @@ def main():
                 assert columns >= 80 and rows >= 24, (columns, rows)
                 assert window("proof-sibling")["rect"] == before["rect"], "another window was resized"
                 print(f"ok: real foot at scale {scale}: {columns}x{rows}, fullscreen={window('proof-target')['fullscreen_mode']}, sibling unchanged", flush=True)
+                ident = window("proof-target")["id"]
+                call("window_focus", before["id"])
+                assert window("proof-sibling")["focused"], "native focus did not move"
+                call("window_close", ident)
+                wait_for(lambda: not window("proof-target"), "only target window closed")
+                assert window("proof-sibling")["id"] == before["id"], "another window was closed"
+                print(f"ok: native provider focus and close at scale {scale}: exact container, sibling intact", flush=True)
                 for child in (target, sibling):
-                    child.terminate()
+                    if child.poll() is None:
+                        child.terminate()
                     child.wait(timeout=5)
                 wait_for(lambda: not window("proof-target") and not window("proof-sibling"), "windows closed")
         except Exception:

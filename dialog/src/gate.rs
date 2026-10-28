@@ -81,9 +81,14 @@ pub fn result_ok(schema: &Value, value: &Value) -> Result<(), String> {
                 "minimum",
                 "maximum",
                 "enum",
+                "format",
             ]
             .contains(&k.as_str())
         }) {
+            return false;
+        }
+        // Password is a privacy annotation; other formats are not validated here.
+        if s.get("format").is_some_and(|f| f.as_str() != Some("password") || s["type"] != "string") {
             return false;
         }
         if s.get("enum").and_then(Value::as_array).is_some_and(|a| !a.contains(v)) {
@@ -147,6 +152,78 @@ pub const CREDENTIAL_WORDS: &[&str] = &["password", "passphrase", "psk", "token"
 pub fn secret(name: &str, prop: Option<&Value>) -> bool {
     let n = name.to_ascii_lowercase();
     prop.and_then(|p| p.get("format")).and_then(Value::as_str) == Some("password") || CREDENTIAL_WORDS.iter().any(|w| n.contains(w))
+}
+
+/// A provider result stays local if it carries a named credential. Keep
+/// safe native receipts, but never forward a partly stripped success as
+/// though it were the provider's complete result. The walk is bounded;
+/// unfamiliar depth or size stops continuation too.
+#[derive(Default)]
+pub struct ResultPrivacy {
+    pub private: bool,
+    incomplete: bool,
+    values: Vec<String>,
+}
+
+impl ResultPrivacy {
+    pub fn extend(&mut self, other: Self) {
+        self.private |= other.private;
+        self.incomplete |= other.incomplete;
+        self.values.extend(other.values);
+    }
+
+    pub fn text_safe(&self, text: &str) -> bool {
+        !self.incomplete && !self.values.iter().any(|v| text.contains(v)) && !result_privacy(None, &Value::String(text.into())).private
+    }
+}
+
+pub fn result_privacy(schema: Option<&Value>, result: &Value) -> ResultPrivacy {
+    fn scan(value: &Value, schema: Option<&Value>, marked: bool, depth: usize, left: &mut usize, found: &mut ResultPrivacy) {
+        if depth > 12 || *left == 0 {
+            found.private = true;
+            found.incomplete = true;
+            return;
+        }
+        *left -= 1;
+        let marked = marked || schema.and_then(|s| s.get("format")).and_then(Value::as_str) == Some("password");
+        found.private |= marked;
+        match value {
+            Value::Object(object) => {
+                for (key, value) in object {
+                    let prop = schema.and_then(|s| s.get("properties")).and_then(|p| p.get(key));
+                    let prop = prop.or_else(|| schema.and_then(|s| s.get("additionalProperties")).filter(|s| s.is_object()));
+                    scan(value, prop, marked || secret(key, prop), depth + 1, left, found);
+                    if found.incomplete {
+                        break;
+                    }
+                }
+            }
+            Value::Array(array) => {
+                for value in array {
+                    scan(value, schema.and_then(|s| s.get("items")), marked, depth + 1, left, found);
+                    if found.incomplete {
+                        break;
+                    }
+                }
+            }
+            Value::String(text) if marked => {
+                if !text.is_empty() {
+                    found.values.push(text.clone());
+                }
+            }
+            Value::String(text) if text.trim_start().starts_with(['{', '[']) => {
+                if let Ok(value) = serde_json::from_str::<Value>(text) {
+                    scan(&value, None, false, depth + 1, left, found);
+                }
+            }
+            Value::Bool(_) | Value::Number(_) if marked => found.values.push(value.to_string()),
+            _ => {}
+        }
+    }
+    let mut found = ResultPrivacy::default();
+    let mut left = 4096;
+    scan(result, schema, false, 0, &mut left, &mut found);
+    found
 }
 
 /// A name the rows hold the step to: a free string (a network, a device, a window, a layout).
