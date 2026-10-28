@@ -190,6 +190,37 @@ else: os.execv(''' + repr(shutil.which("stat")) + ''', ['stat']+a)
         self.assertTrue(result[1]["result"]["isError"])
         self.assertEqual({p.name: p.read_bytes() for p in notes.iterdir()}, {"first.md":original})
 
+    def test_note_append_partial_payload_failure_never_reports_success(self):
+        notes = self.home / "notes"
+        notes.mkdir()
+        original = b"# Fixture\nExisting body.\n"
+        for filename in ("first.md", "second.md"):
+            (notes / filename).write_bytes(original)
+        bindir = self.home / "bin"
+        bindir.mkdir()
+        marker = self.home / "append-read-failed"
+        fixture = bindir / "cat"
+        fixture.write_text("#!" + sys.executable + "\n" + '''import os,pathlib,sys
+a=sys.argv[1:]
+if len(a)==1 and pathlib.Path(a[0]).name=='note.append':
+ pathlib.Path(''' + repr(str(marker)) + ''').write_text('injected')
+ os.write(1,pathlib.Path(a[0]).read_bytes()[:7])
+ sys.exit(1)
+os.execv(''' + repr(shutil.which("cat")) + ''', ['cat']+a)
+''')
+        fixture.chmod(0o755)
+        self.env["PATH"] = str(bindir) + os.pathsep + self.env["PATH"]
+        payload = "Private full payload must never appear in the failure receipt."
+        result = self.provider("notes", call(1, "notes_append", name="second.md", text=payload))[1]["result"]
+        self.assertTrue(marker.exists(), "the payload copy fault must actually execute")
+        self.assertTrue((notes / "second.md").read_bytes().startswith(original + b"- " + payload[:7].encode()))
+        self.assertNotIn(payload.encode(), (notes / "second.md").read_bytes())
+        self.assertEqual((notes / "first.md").read_bytes(), original, "a partial write must not touch another note")
+        self.assertTrue(result["isError"], "a partial payload copy must never report success")
+        self.assertNotIn("effect", result.get("structuredContent", {}))
+        self.assertIn("check the note", json.dumps(result))
+        self.assertNotIn(payload, json.dumps(result))
+
     def test_missing_zone_file_accepts_only_native_utc_without_dst(self):
         spec = importlib.util.spec_from_file_location("reminder_time", REPO / "lib/reminder_time.py")
         helper = importlib.util.module_from_spec(spec)

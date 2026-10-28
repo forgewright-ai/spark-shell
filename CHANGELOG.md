@@ -12,6 +12,8 @@
   done and snooze actions, with the saved identity in each result.
 - Appending a note takes its exact filename and separate literal text.
   Spaces, tabs and line breaks survive; direct controls need no inference.
+  An oversized paste is refused without changing the draft. An interrupted
+  append reports its failure and asks for a check before retrying.
   New reminder identities are random UUIDs without a machine name.
 - Reminder preparation checks local civil time. A nonexistent or repeated
   time, an explicit time-zone suffix, or an unavailable time verifier

@@ -912,7 +912,9 @@ Note writes return an `effect` with the actual filename, title and whether
 it was created or appended. Appending uses the exact filename and a separate
 literal text field, preserving spaces, tabs and line breaks inside a bullet.
 In that field, Shift+Enter inserts a line; pasted carriage returns become
-line breaks. A new reminder returns its saved UID, title
+line breaks. The prompt holds 2,000 characters and refuses an oversized
+addition without changing the draft. MCP accepts up to 16,384 characters.
+A new reminder returns its saved UID, title
 and explicit local time. These fields come from native reads of the saved
 item. They describe that operation only; unrelated personal items are
 not added to its result.

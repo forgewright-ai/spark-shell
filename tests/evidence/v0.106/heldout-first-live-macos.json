@@ -1,0 +1,193 @@
+{
+  "schema": 1,
+  "mode": "live",
+  "set": "held-out",
+  "date": "2026-10-28T16:02:23.936844+00:00",
+  "shell_ref": "v0.105-1-g044e631",
+  "spark_ref": "v1.102",
+  "backend": [
+    "google_gemma-4-26B-A4B-it-Q4_K_M"
+  ],
+  "temperature_override": null,
+  "binary_sha256": "36d89e193f2acfdd52d3d2cf4ef092f18c0f761b00d07bbd1e8223006e4b51bc",
+  "source_sha256": "654dbe96e24db1993327bf0bf09f466ae3ef0fa7dd903ac39ae970d63750c694",
+  "runner_sha256": "1b927d974aa88df7065d11ae0a5d9c0388c99b8e032e0809f58fcdbf1a68c39c",
+  "platform": "Darwin",
+  "cases_sha256": "84c68b4caa8736b303078a1de04c0707bf130cd6f56e7ee094c9408e60ced869",
+  "scope": "real terminal and native isolated files/settings; sound uses a backend fixture; no physical-device claim",
+  "cases": [
+    {
+      "id": "held-note",
+      "passed": false,
+      "problems": [
+        "note identity or count",
+        "operation sequence",
+        "provider refused operation",
+        "task did not complete"
+      ],
+      "terminal": "blocked",
+      "native_calls": 2,
+      "wrong_actions": 1,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 3,
+      "inference_calls": 3,
+      "inference_seconds": [
+        4.52,
+        4.07,
+        5.103
+      ],
+      "startup_seconds": 2.203,
+      "seconds": 15.663
+    },
+    {
+      "id": "held-exact-note",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        3.832
+      ],
+      "startup_seconds": 2.322,
+      "seconds": 5.083
+    },
+    {
+      "id": "held-reminder",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        3.911
+      ],
+      "startup_seconds": 2.203,
+      "seconds": 5.192
+    },
+    {
+      "id": "held-question",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 1,
+      "decision_processes": 3,
+      "inference_calls": 2,
+      "inference_seconds": [
+        3.571,
+        3.478
+      ],
+      "startup_seconds": 2.19,
+      "seconds": 8.467
+    },
+    {
+      "id": "held-sound",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        4.613
+      ],
+      "startup_seconds": 2.418,
+      "seconds": 6.021
+    },
+    {
+      "id": "held-palette",
+      "passed": false,
+      "problems": [
+        "task did not complete"
+      ],
+      "terminal": "blocked",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 2,
+      "inference_seconds": [
+        8.62,
+        9.302
+      ],
+      "startup_seconds": 2.589,
+      "seconds": 21.15
+    },
+    {
+      "id": "held-dependent",
+      "passed": false,
+      "problems": [
+        "operation sequence",
+        "reminder count",
+        "reminder title, time or alarm",
+        "task did not complete"
+      ],
+      "terminal": "blocked",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 2,
+      "inference_seconds": [
+        3.793,
+        4.032
+      ],
+      "startup_seconds": 2.224,
+      "seconds": 9.08
+    },
+    {
+      "id": "held-unavailable",
+      "passed": false,
+      "problems": [
+        "task did not complete",
+        "unexpected question"
+      ],
+      "terminal": "unanswered",
+      "native_calls": 0,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 7,
+      "inference_calls": 7,
+      "inference_seconds": [
+        3.562,
+        3.396,
+        3.313,
+        3.351,
+        3.488,
+        5.689,
+        6.33
+      ],
+      "startup_seconds": 2.186,
+      "seconds": 30.529
+    }
+  ],
+  "passed": 4,
+  "total": 8,
+  "wrong_actions": 1
+}

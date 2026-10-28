@@ -1,0 +1,184 @@
+{
+  "schema": 1,
+  "mode": "live",
+  "set": "held-out",
+  "date": "2026-10-28T16:26:54.133309+00:00",
+  "shell_ref": "v0.105-2-g74330c3-dirty",
+  "spark_ref": "v1.102",
+  "backend": [
+    "google_gemma-4-26B-A4B-it-Q4_K_M"
+  ],
+  "temperature_override": null,
+  "binary_sha256": "a2d606f17c515547a2ca4fe8732a1924f1106174151d555cb53a376fb138e621",
+  "source_sha256": "70937658539da8c6128686ea2267b3c0a980dbe7c7e731a0c4536a3bbe7b3778",
+  "runner_sha256": "1b927d974aa88df7065d11ae0a5d9c0388c99b8e032e0809f58fcdbf1a68c39c",
+  "platform": "Darwin",
+  "cases_sha256": "3883a0369e46e8ad05fb6b7e94bf9689706be41e1e6721879cd27e7268b8877b",
+  "scope": "real terminal and native isolated files/settings; sound uses a backend fixture; no physical-device claim",
+  "cases": [
+    {
+      "id": "held-note",
+      "passed": false,
+      "problems": [
+        "note content"
+      ],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 1,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        3.731
+      ],
+      "startup_seconds": 2.175,
+      "seconds": 4.88
+    },
+    {
+      "id": "held-exact-note",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        4.823
+      ],
+      "startup_seconds": 2.301,
+      "seconds": 5.489
+    },
+    {
+      "id": "held-reminder",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 2,
+      "inference_seconds": [
+        4.24,
+        6.046
+      ],
+      "startup_seconds": 2.186,
+      "seconds": 11.526
+    },
+    {
+      "id": "held-question",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 1,
+      "decision_processes": 3,
+      "inference_calls": 2,
+      "inference_seconds": [
+        4.966,
+        3.481
+      ],
+      "startup_seconds": 2.185,
+      "seconds": 9.803
+    },
+    {
+      "id": "held-sound",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        4.578
+      ],
+      "startup_seconds": 2.402,
+      "seconds": 5.978
+    },
+    {
+      "id": "held-palette",
+      "passed": false,
+      "problems": [
+        "task did not complete"
+      ],
+      "terminal": "blocked",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 2,
+      "inference_seconds": [
+        8.54,
+        9.173
+      ],
+      "startup_seconds": 2.608,
+      "seconds": 20.855
+    },
+    {
+      "id": "held-dependent",
+      "passed": false,
+      "problems": [
+        "operation sequence",
+        "reminder count",
+        "reminder title, time or alarm",
+        "task did not complete"
+      ],
+      "terminal": "blocked",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 2,
+      "inference_seconds": [
+        3.748,
+        4.766
+      ],
+      "startup_seconds": 2.198,
+      "seconds": 9.661
+    },
+    {
+      "id": "held-unavailable",
+      "passed": false,
+      "problems": [
+        "task did not complete",
+        "unexpected question"
+      ],
+      "terminal": "unanswered",
+      "native_calls": 0,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 2,
+      "inference_seconds": [
+        3.588,
+        5.383
+      ],
+      "startup_seconds": 2.173,
+      "seconds": 9.378
+    }
+  ],
+  "passed": 4,
+  "total": 8,
+  "wrong_actions": 1
+}

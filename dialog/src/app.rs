@@ -1694,11 +1694,18 @@ impl App {
     }
 
     fn insert(&mut self, t: &str) {
+        let room = INPUT_MAX.saturating_sub(self.input.chars().count());
+        if self.plain_text_input() && t.chars().count() > room {
+            self.say(
+                Sign::Refused,
+                &format!("this prompt holds at most {} characters; the text was not added", INPUT_MAX),
+            );
+            return;
+        }
         if self.mode == Mode::Normal {
             self.remember_target();
         }
         self.chip_focus = None;
-        let room = INPUT_MAX.saturating_sub(self.input.chars().count());
         let t: String = t.chars().take(room).collect();
         if t.is_empty() {
             return;

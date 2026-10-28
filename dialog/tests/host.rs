@@ -1279,6 +1279,64 @@ fn a_native_plain_text_field_keeps_lines_tabs_and_trailing_whitespace() {
 }
 
 #[test]
+fn an_overlong_literal_addition_refuses_without_changing_the_draft() {
+    use spark_dialog::app::{Step, Who, INPUT_MAX};
+    use spark_dialog::model::Call;
+    let (mut app, rx, calls, _) = started();
+    app.providers[0].tools[0].schema = json!({"type":"object","properties":{
+        "text":{"type":"string","contentMediaType":"text/plain","maxLength":16384}},"required":["text"]});
+    app.run(Step {
+        prov: 0,
+        call: Call {
+            name: "window_focus".into(),
+            arguments: serde_json::Map::new(),
+            ask: vec!["text".into()],
+        },
+        who: Who::Person,
+        line: "enter literal text".into(),
+    });
+    assert!(matches!(app.mode, Mode::Ask { .. }));
+    app.paste("existing draft");
+    app.cursor = 3;
+    app.paste(&"x".repeat(INPUT_MAX));
+    assert_eq!(app.input, "existing draft");
+    assert_eq!(app.cursor, 3);
+    assert!(matches!(app.mode, Mode::Ask { .. }));
+    assert_eq!(app.exchange.last().unwrap().sign, Sign::Refused);
+    assert!(app.exchange.last().unwrap().text.contains("2000 characters; the text was not added"));
+    let mut buffer = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 60, 44));
+    spark_dialog::ui::draw(&app, &palette("tokyonight-night"), "", &mut buffer);
+    let visible = buffer.content.iter().map(|cell| cell.symbol()).collect::<String>();
+    assert!(visible.contains("2000 characters"), "the refusal is visible while the text field stays open");
+
+    app.set_draft("");
+    app.paste(&"é".repeat(INPUT_MAX - 1));
+    let before = app.input.clone();
+    app.paste("ab");
+    assert_eq!(app.input, before, "even a one-character overflow rejects the whole paste");
+    assert_eq!(app.cursor, INPUT_MAX - 1);
+    app.paste("\t");
+    let full = app.input.clone();
+    assert_eq!(full.chars().count(), INPUT_MAX, "the bound counts characters, not UTF-8 bytes");
+    for add in [App::newline as fn(&mut App), |a| a.typed('z'), |a| a.paste("z")] {
+        add(&mut app);
+        assert_eq!(app.input, full);
+        assert_eq!(app.cursor, INPUT_MAX);
+        assert_eq!(app.exchange.last().unwrap().sign, Sign::Refused);
+    }
+    assert!(calls.lock().unwrap().is_empty());
+    assert!(!app.jobs.iter().any(inference));
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && !calls.lock().unwrap().is_empty()));
+    assert_eq!(calls.lock().unwrap()[0]["arguments"]["text"], full);
+
+    app.set_draft(&"x".repeat(INPUT_MAX - 1));
+    app.paste("yz");
+    assert_eq!(app.input.chars().count(), INPUT_MAX);
+    assert!(app.input.ends_with('y'), "unmarked draft behavior is unchanged");
+}
+
+#[test]
 fn talk_puts_what_was_heard_in_the_draft_and_esc_keeps_the_draft() {
     let (mut app, _rx, _c, _r) = started();
     app.cfg.talk = true;

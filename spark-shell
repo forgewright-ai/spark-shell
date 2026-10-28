@@ -4735,7 +4735,7 @@ note_effect() {   # the provider's result names only the file just written, neve
 note_append() {   # exact filename, private payload file: preserve the supplied text inside one bullet
     _nap=$(note_file "$1") || { echo 'select an existing note by its exact filename'; return 1; }
     [ "${_nap##*/}" = "$1" ] && [ -f "$_nap" ] && [ ! -L "$_nap" ] || { echo 'select an existing note by its exact filename'; return 1; }
-    { printf '%s' '- '; cat "$2"; printf '\n'; } >> "$_nap" || { echo 'could not finish appending; check the note before trying again'; return 1; }
+    { printf '%s' '- ' && cat "$2" && printf '\n'; } >> "$_nap" || { echo 'could not finish appending; check the note before trying again'; return 1; }
     note_effect "$_nap" appended
     printf 'added to %s\n' "$1"
 }

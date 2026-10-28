@@ -104,3 +104,45 @@ repeat a completed operation or choose an editor when asked to append text.
 The host's duplicate guard and the evaluation's operation allowlist hold those
 choices; this is a failed task, even when its earlier native work succeeded.
 Do not treat a safe stop as proof that a multi-operation goal was completed.
+
+## v0.106 release evidence
+
+| Live evaluation | Complete goals | Wrong-action cases |
+| --- | ---: | ---: |
+| [macOS development regression](evidence/v0.106/live-development-macos.json) | 14/19 | 0 |
+| [First held-out run, macOS](evidence/v0.106/heldout-first-live-macos.json) | 4/8 | 1 |
+| [Held-out regression, macOS](evidence/v0.106/heldout-regression-macos.json) | 4/8 | 1 |
+
+Reports identify their source, binary, runner and case digests. The macOS
+regression uses commit `74330c3`, before the later interrupted-write and
+oversized-paste failure-path fixes. The wrong write in that regression omitted
+the requested final punctuation. A goal that stops after its first correct
+write is incomplete, but does not count as an incorrect write. The driver
+holds an unexpected operation before execution; these held proposals are
+reported separately, so these numbers are not unguarded-agent safety rates.
+
+The [first live held-out result](evidence/v0.106/heldout-first-live-macos.json)
+is retained unchanged: 4 of 8 completed, with one incorrect native write.
+It used Spark v1.102 and the configured Gemma 4 26B A4B Q4_K_M backend at its
+default parameters. The note case invented a filename and did not preserve
+the requested content. Other failures included unfinished work, a repeated
+operation and an unnecessary question. Typed note append and clearer native
+semantics followed this evaluation; reruns are regression evidence.
+
+These results do not establish general live-model acceptance. The adapter's
+observations reached inference intact in captured-request checks. Diagnostic
+temperature and message-framing probes did not prove dependable completion
+across capabilities, so Spark and its configured backend remain unchanged.
+Every model-proposed operation requires review; a failed continuation keeps its
+earlier receipt and stops before repeating the same prepared operation.
+
+The [dark](evidence/v0.106/notes-dark.png) and
+[light](evidence/v0.106/notes-light.png) captures show the actual dialog with
+the native Notes provider and a scripted multiline append proposal. Tabs and
+newlines are escaped in review, and the exact filename is visible. These are
+terminal captures, not drawings or evidence of model interpretation.
+
+Physical radio, monitor/input, audio-device and printing acceptance is still
+tracked in the board's domain issues. Headless Sway proves compositor state
+and terminal dimensions only. Existing external design records also await
+their connector; they were not recreated as part of this release.
