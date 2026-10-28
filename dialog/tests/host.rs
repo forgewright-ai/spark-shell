@@ -1241,14 +1241,14 @@ fn history_request(app: &mut App, words: &str) {
 fn prompt_history_restores_a_unicode_draft_without_dispatching() {
     let (mut app, _, _) = app_with(&[]);
     history_request(&mut app, "remember this request");
-    app.set_draft("unfinished café");
+    app.set_draft("unfinished caf\u{e9}");
     app.cursor = 5;
     app.up();
     assert_eq!(app.input, "remember this request");
     assert!(!app.in_list);
     assert!(app.jobs.is_empty());
     app.down();
-    assert_eq!((app.input.as_str(), app.cursor), ("unfinished café", 5));
+    assert_eq!((app.input.as_str(), app.cursor), ("unfinished caf\u{e9}", 5));
     assert!(app.jobs.is_empty());
     let (mut other, _, _) = app_with(&[]);
     other.up();

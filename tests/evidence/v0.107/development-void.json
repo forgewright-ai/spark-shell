@@ -1,0 +1,373 @@
+{
+  "schema": 1,
+  "mode": "live",
+  "set": "development",
+  "date": "2026-10-28T20:23:23.992370+00:00",
+  "shell_ref": "unknown",
+  "spark_ref": "unknown",
+  "backend": [
+    "google_gemma-4-26B-A4B-it-Q4_K_M"
+  ],
+  "temperature_override": null,
+  "binary_sha256": "566d860c8c9148144d2dc743b624781fa8785ad96669819b6bd04464923529fc",
+  "source_sha256": "070813610d1faa5ff8c352cc51d29c4bafb038e9e10a7020760122316f3b6c67",
+  "runner_sha256": "f3ca0d0af370ee3d52332dfea60691f29561619ec1184a2ebd8c16a1d247171d",
+  "platform": "Linux",
+  "cases_sha256": "a7968cdf994b2f4dbdeafb891cb53447fcd50797cddff2f0d8f37194ace793a3",
+  "scope": "real terminal and native isolated files/settings; sound uses a backend fixture; no physical-device claim",
+  "cases": [
+    {
+      "id": "note-create",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        7.326
+      ],
+      "startup_seconds": 2.169,
+      "seconds": 8.325
+    },
+    {
+      "id": "note-paraphrase",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        4.252
+      ],
+      "startup_seconds": 2.168,
+      "seconds": 5.229
+    },
+    {
+      "id": "note-append",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 2,
+      "inference_seconds": [
+        6.938,
+        5.217
+      ],
+      "startup_seconds": 2.22,
+      "seconds": 12.578
+    },
+    {
+      "id": "reminder-relative",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        6.851
+      ],
+      "startup_seconds": 2.184,
+      "seconds": 7.941
+    },
+    {
+      "id": "reminder-paraphrase",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        3.109
+      ],
+      "startup_seconds": 2.174,
+      "seconds": 4.179
+    },
+    {
+      "id": "native-clarification",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 1,
+      "decision_processes": 4,
+      "inference_calls": 2,
+      "inference_seconds": [
+        6.754,
+        13.37
+      ],
+      "startup_seconds": 2.181,
+      "seconds": 21.566
+    },
+    {
+      "id": "clarify-missing-time",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 1,
+      "decision_processes": 4,
+      "inference_calls": 2,
+      "inference_seconds": [
+        4.346,
+        3.937
+      ],
+      "startup_seconds": 2.177,
+      "seconds": 9.638
+    },
+    {
+      "id": "note-to-reminder",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 2,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 4,
+      "inference_calls": 3,
+      "inference_seconds": [
+        6.017,
+        8.217,
+        16.069
+      ],
+      "startup_seconds": 2.16,
+      "seconds": 32.432
+    },
+    {
+      "id": "reminder-to-note",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 2,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 4,
+      "inference_calls": 3,
+      "inference_seconds": [
+        6.312,
+        8.594,
+        18.42
+      ],
+      "startup_seconds": 2.161,
+      "seconds": 35.46
+    },
+    {
+      "id": "appearance",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        14.384
+      ],
+      "startup_seconds": 2.642,
+      "seconds": 17.871
+    },
+    {
+      "id": "clock-format",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        6.273
+      ],
+      "startup_seconds": 7.254,
+      "seconds": 12.191
+    },
+    {
+      "id": "unavailable-capability",
+      "passed": true,
+      "problems": [],
+      "terminal": "answer",
+      "native_calls": 0,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 1,
+      "inference_calls": 1,
+      "inference_seconds": [
+        9.821
+      ],
+      "startup_seconds": 2.172,
+      "seconds": 9.943
+    },
+    {
+      "id": "direct-without-ai",
+      "passed": true,
+      "problems": [],
+      "terminal": "direct",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 0,
+      "inference_calls": 0,
+      "inference_seconds": [],
+      "startup_seconds": 2.641,
+      "seconds": 2.714
+    },
+    {
+      "id": "cancel-proposal",
+      "passed": true,
+      "problems": [],
+      "terminal": "cancelled",
+      "native_calls": 0,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 2,
+      "inference_seconds": [
+        6.278,
+        3.635
+      ],
+      "startup_seconds": 2.178,
+      "seconds": 10.457
+    },
+    {
+      "id": "partial-cancel",
+      "passed": true,
+      "problems": [],
+      "terminal": "cancelled",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 3,
+      "inference_calls": 3,
+      "inference_seconds": [
+        6.373,
+        13.048,
+        19.364
+      ],
+      "startup_seconds": 2.166,
+      "seconds": 40.368
+    },
+    {
+      "id": "sound-absolute",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        8.292
+      ],
+      "startup_seconds": 2.461,
+      "seconds": 9.514
+    },
+    {
+      "id": "sound-relative",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        2.71
+      ],
+      "startup_seconds": 2.389,
+      "seconds": 3.929
+    },
+    {
+      "id": "sound-mute",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        2.542
+      ],
+      "startup_seconds": 2.405,
+      "seconds": 3.77
+    },
+    {
+      "id": "focused-note",
+      "passed": true,
+      "problems": [],
+      "terminal": "done",
+      "native_calls": 1,
+      "wrong_actions": 0,
+      "wrong_proposals": 0,
+      "native_reads": 0,
+      "questions": 0,
+      "decision_processes": 2,
+      "inference_calls": 1,
+      "inference_seconds": [
+        7.031
+      ],
+      "startup_seconds": 2.219,
+      "seconds": 7.433
+    }
+  ],
+  "passed": 19,
+  "total": 19,
+  "wrong_actions": 0
+}

@@ -67,7 +67,7 @@ def main(binary):
     ok(rec.count("\n") == 1 and "\ttheme\ttheme_palette\t" in rec and "nord" not in rec and (os.stat(audit).st_mode & 0o777) == 0o600,
        "one audit line, 0600, numbers and names: the tool, never the argument", rec)
     def processes():
-        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,command="], capture_output=True, text=True).stdout
+        out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,command="], capture_output=True, text=True, errors="replace").stdout
         return {int(parts[0]): (int(parts[1]), parts[2]) for line in out.splitlines()
                 if len(parts := line.split(None, 2)) == 3}
     before = processes()
@@ -235,7 +235,7 @@ def busy(binary, env, home):
             status, t_exit = st, time.time()
             break
     took = (t_exit - t_esc) if t_exit else None
-    ps = lambda: subprocess.run(["ps", "-A", "-o", "command="], capture_output=True, text=True).stdout
+    ps = lambda: subprocess.run(["ps", "-A", "-o", "command="], capture_output=True, text=True, errors="replace").stdout
     still = any(slow in l for l in ps().splitlines())
     ok(status is not None and took < 0.5 and still, "Esc closes the dialog at once while a provider is still busy, nothing waits for it (#60)",
        "took %s s, the busy one still there: %s" % (took, still))

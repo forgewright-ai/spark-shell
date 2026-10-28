@@ -46,7 +46,10 @@ answers the case's clarification and presses Enter for reviewed actions.
 It never supplies destructive confirmation. Cancellation cases stop before
 the next action. Reports contain case IDs, outcomes, counts and timings; raw
 requests and native replies stay in disposable files. `--capture DIRECTORY`
-retains synthetic terminal text locally for inspection.
+retains terminal text and decision traces locally in a private directory.
+Live reports also identify the Spark source digest, including Pi's worker
+and dependency pins. Traces can contain connection-error details; publish
+the aggregate reports after the privacy check, not the traces.
 
 ## Coverage and evidence
 
@@ -104,6 +107,51 @@ repeat a completed operation or choose an editor when asked to append text.
 The host's duplicate guard and the evaluation's operation allowlist hold those
 choices; this is a failed task, even when its earlier native work succeeded.
 Do not treat a safe stop as proof that a multi-operation goal was completed.
+
+## v0.107 Pi candidate evidence
+
+Pi's AgentSession SDK now supplies task proposals through Spark v1.104.
+The native host still owns preparation, confirmation, execution and receipts.
+The Home prompt retains up to 50 requests in this window only. From the
+prompt, Up recalls a request and Down restores the unfinished draft; list
+navigation and multiline cursor movement retain their existing behavior.
+
+Deterministic checks passed 190 Rust tests, 13 native provider tests,
+762 macOS shell checks and 1,289 Linux shell checks. The actual dialog
+passed PTY interaction on both platforms. All 27 scripted native scenarios
+passed on [macOS development](evidence/v0.107/scripted-development-macos.json),
+[macOS held-out](evidence/v0.107/scripted-heldout-macos.json),
+[Void development](evidence/v0.107/scripted-development-void.json) and
+[Void held-out](evidence/v0.107/scripted-heldout-void.json).
+Home recall and draft restoration were also exercised in native foot/Sway
+at scale 1 and 1.25, beside the live desktop. The
+[dark](evidence/v0.107/home-dark.png) and
+[light](evidence/v0.107/home-light.png) captures show the actual dialog.
+
+The retained live candidate runs use the configured local Gemma backend.
+These cases have been exposed before; they are regression evidence, not
+an unseen benchmark or a guarantee of general language accuracy.
+
+| Live candidate regression | Complete goals | Wrong-action cases |
+| --- | ---: | ---: |
+| [macOS development](evidence/v0.107/development-macos.json) | 19/19 | 0 |
+| [Void development](evidence/v0.107/development-void.json) | 19/19 | 0 |
+| [macOS held-out regression](evidence/v0.107/heldout-regression-macos.json) | 7/8 | 1 |
+| [Void held-out regression](evidence/v0.107/heldout-regression-void.json) | 6/8 | 1 |
+
+Both held-out regressions omitted the final period from a requested note.
+Void also asked an unnecessary question for an unavailable capability.
+Its [first held-out attempt](evidence/v0.107/heldout-interrupted-void.json)
+was interrupted by a backend restart: 0/8 complete, including connection
+and loading errors. It remains separate from the subsequent regression.
+No goals or expected results were changed to make these runs pass.
+
+Live model acceptance therefore remains open. Review literal text before
+confirming a write; native validation cannot infer punctuation omitted
+from an otherwise valid proposal. The v0.107 release assets retain final
+candidate reports with the Spark source digest as well as host, binary,
+runner and case digests. Runtime and security checks establish different
+properties from these language outcomes.
 
 ## v0.106 release evidence
 

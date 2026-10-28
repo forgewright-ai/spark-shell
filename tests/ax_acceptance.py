@@ -597,12 +597,21 @@ def main():
     for path in sorted([REPO / "spark-shell", REPO / "dialog/Cargo.toml", REPO / "dialog/Cargo.lock"]
                        + list((REPO / "dialog/src").glob("*.rs")) + list((REPO / "lib").glob("*.py"))):
         source.update(str(path.relative_to(REPO)).encode() + b"\0" + path.read_bytes())
+    spark_source = None
+    if args.spark:
+        digest = hashlib.sha256()
+        files = [args.spark / "bin/spark"] + list((args.spark / "lib/spark").glob("*.py"))
+        files += list((args.spark / "agent").glob("*.mjs")) + list((args.spark / "agent").glob("*.json"))
+        for path in sorted(files):
+            digest.update(str(path.relative_to(args.spark)).encode() + b"\0" + path.read_bytes())
+        spark_source = digest.hexdigest()
     report = {"schema": 1, "mode": "live" if args.spark else "scripted", "set": args.set,
               "date": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "shell_ref": revision(REPO), "spark_ref": revision(args.spark) if args.spark else None,
               "backend": backend, "temperature_override": args.temperature,
               "binary_sha256": hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
               "source_sha256": source.hexdigest(),
+              "spark_source_sha256": spark_source,
               "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
               "platform": platform.system(), "cases_sha256": hashlib.sha256(case_path.read_bytes()).hexdigest(),
               "scope": "real terminal and native isolated files/settings; sound uses a backend fixture; no physical-device claim",
