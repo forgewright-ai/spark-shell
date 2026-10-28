@@ -1310,7 +1310,7 @@ fn an_overlong_literal_addition_refuses_without_changing_the_draft() {
     assert!(visible.contains("2000 characters"), "the refusal is visible while the text field stays open");
 
     app.set_draft("");
-    app.paste(&"é".repeat(INPUT_MAX - 1));
+    app.paste(&"\u{e9}".repeat(INPUT_MAX - 1));
     let before = app.input.clone();
     app.paste("ab");
     assert_eq!(app.input, before, "even a one-character overflow rejects the whole paste");

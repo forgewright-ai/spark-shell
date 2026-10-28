@@ -107,6 +107,20 @@ Do not treat a safe stop as proof that a multi-operation goal was completed.
 
 ## v0.106 release evidence
 
+Deterministic validation passed 186 Rust tests, 13 native provider tests,
+762 macOS shell checks, 1,289 Linux shell checks, and actual PTY interaction.
+The final macOS scripted runs completed
+[19 development cases](evidence/v0.106/scripted-development-macos.json) and
+[8 held-out cases](evidence/v0.106/scripted-heldout-macos.json), with no
+incorrect writes. Direct-control cases make zero inference calls.
+The release also retains the final Void reports for
+[scripted development](https://github.com/forgewright-ai/spark-shell/releases/download/v0.106/scripted-development-void.json),
+[scripted held-out](https://github.com/forgewright-ai/spark-shell/releases/download/v0.106/scripted-heldout-void.json),
+[live development](https://github.com/forgewright-ai/spark-shell/releases/download/v0.106/live-development-void.json) and
+[held-out regression](https://github.com/forgewright-ai/spark-shell/releases/download/v0.106/heldout-regression-void.json).
+Independent host/provider reviews added fault-injection regressions for an
+interrupted note write and a paste exceeding the literal-input limit.
+
 | Live evaluation | Complete goals | Wrong-action cases |
 | --- | ---: | ---: |
 | [macOS development regression](evidence/v0.106/live-development-macos.json) | 14/19 | 0 |
