@@ -39,6 +39,14 @@ class Pairing(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             bridge = agent.Bridge(folder)
             result = []
+            unrelated_read = threading.Event()
+            receive = bridge.receive
+            def observed_receive():
+                value = receive()
+                if value and value.get("id") == "bt-pair-unrelated":
+                    unrelated_read.set()
+                return value
+            bridge.receive = observed_receive
             def ask():
                 result.append(bridge.ask("pin", "Enter the device PIN"))
             thread = threading.Thread(target=ask)
@@ -54,6 +62,11 @@ class Pairing(unittest.TestCase):
                 with socket.socket(socket.AF_UNIX) as peer:
                     peer.connect(str(Path(folder) / "bt.sock"))
                     peer.sendall((json.dumps({"id": request_id, "result": {"action": "accept", "content": {"answer": value}}}) + "\n").encode())
+                if request_id == "bt-pair-unrelated":
+                    # A backlog of one need not accept the second connection
+                    # until the first reply has been consumed (macOS).
+                    self.assertTrue(unrelated_read.wait(3))
+                    self.assertTrue(thread.is_alive())
             thread.join(3)
             self.assertFalse(thread.is_alive())
             self.assertEqual(result, ["aB12"])
