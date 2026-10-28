@@ -4036,6 +4036,27 @@ ans 2 | jq -e '.result.ready == false and (.result.question | contains("has pass
     && ok "prepare: a past time requests clarification, never another date" || bad "prepare past" "$(ans 2)"
 [ "$(ans 3 | jq -r .error.code)" = -32602 ] && [ "$(ans 4 | jq -r .error.code)" = -32601 ] \
     && ok "prepare: invalid arguments and unsupported tools are refused" || bad "prepare refusals" "$(ans 3) $(ans 4)"
+mcp notes "$(call 1 notes_add '{"text":"AX result fixture"}')" "$(call 2 notes_add '{"text":"AX result fixture: one more line"}')" "$(call 3 notes_find '{"words":"AX result fixture"}')"
+ans 1 | jq -e '.result.isError == false and .result.structuredContent.effect == {kind:"note",operation:"created",id:"ax-result-fixture.md",title:"AX result fixture"}' >/dev/null \
+    && ans 2 | jq -e '.result.structuredContent.effect.operation == "appended" and .result.structuredContent.effect.id == "ax-result-fixture.md"' >/dev/null \
+    && ans 3 | jq -e '.result.structuredContent | has("effect") | not' >/dev/null \
+    && grep -qx -- '- one more line' "$H/notes/ax-result-fixture.md" \
+    && ok "provide notes: results identify the actual created or appended file, with no stale effect on the next call" || bad "note result" "$(ans 1) $(ans 2) $(ans 3)"
+printf '#!/bin/sh\ncase "$1" in +%%s) echo 1234567890 ;; *) exec %s "$@" ;; esac\n' "$(command -v date)" > "$H/.local/bin/date"
+chmod +x "$H/.local/bin/date"
+mcp reminders "$(call 1 reminders_add '{"words":"2099-01-01 10:00 AX result fixture"}')" "$(call 2 reminders_add '{"words":"2099-01-02 10:00 AX second fixture"}')"
+rm -f "$H/.local/bin/date"
+_effect_id=$(ans 1 | jq -r '.result.structuredContent.effect.id')
+_effect_id2=$(ans 2 | jq -r '.result.structuredContent.effect.id')
+ans 1 | jq -e '.result.isError == false and (.result.structuredContent.effect | .kind == "reminder" and .operation == "created" and .title == "AX result fixture" and .localTime == "2099-01-01 10:00")' >/dev/null \
+    && grep -lF "UID:$_effect_id" "$H/calendar/"*.ics >/dev/null \
+    && ok "provide reminders: the result carries the saved event identity and local time" || bad "reminder result" "$(ans 1)"
+[ "$_effect_id" != "$_effect_id2" ] && grep -lF "UID:$_effect_id2" "$H/calendar/"*.ics >/dev/null \
+    && ok "provide reminders: two additions in the same second keep both events with distinct identities" || bad "reminder identity" "$(ans 1) $(ans 2)"
+rm -f "$H/notes/ax-result-fixture.md"
+for _effect_file in "$H/calendar/"*.ics; do
+    if grep -qF "UID:$_effect_id" "$_effect_file" || grep -qF "UID:$_effect_id2" "$_effect_file"; then rm -f "$_effect_file"; fi
+done
 # the brightness takes the gate's own words, up, down or 1 to 100: a planner told 0 to 100 and no step sent a 0 the gate
 # refused, and the dialog's brighter and dimmer rows send up and down (#31). spark's grammar types an argument one
 # way, so a string enum holds both, the tens first: a brief names an enum's first twelve
@@ -4352,7 +4373,7 @@ else
         out=$(sh "$SH" on --dry-run 2>&1 || :)
         printf '%s\n' "$out" | grep -q 'no build for .* yet' && ok "dialog: this architecture has no release" || bad "dialog architecture" "$out"
     fi
-    printf '#!/bin/sh\ncase $1 in -m) echo x86_64 ;; *) exec /usr/bin/uname "$@" ;; esac\n' > "$H/.local/bin/uname"
+    printf '#!/bin/sh\ncase $1 in -m) echo x86_64 ;; *) exec "%s" "$@" ;; esac\n' "$(command -v uname)" > "$H/.local/bin/uname"
     chmod +x "$H/.local/bin/uname"
     C=$H/clone; mkdir -p "$C"
     (cd "$REPO" && tar --exclude=.git --exclude=target --exclude=target2 -cf - .) | (cd "$C" && tar --no-same-owner -xf -)   # the files ours: git refuses a clone another user owns

@@ -307,6 +307,11 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     // what a key does now; a row lower when a file is attached, so air stays between them
     let shift = (if app.attachment.is_some() { 2 } else { 0 }) + grow;
     let hint_y = HINT_Y + shift;
+    let target = app.target_label();
+    if let Some(t) = &target {
+        pen.put(2, hint_y + 2, &cut_words(t, (w - 4) as usize), pal.muted, false, false);
+    }
+    let shift = shift + if target.is_some() { 2 } else { 0 };
     let mut x = 2;
     for (t, key) in app.hint() {
         let start = x;

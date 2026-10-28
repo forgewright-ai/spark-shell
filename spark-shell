@@ -4667,10 +4667,16 @@ notes_act() {   # notes_act new|open|add|find [ARG]
         add) [ -n "$2" ] || { echo "add takes the words of the note"; return 1; }
             mkdir_private "$NOTES_DIR"
             case $2 in *": "*) _f=$(note_file "${2%%: *}") ;; *) _f='' ;; esac
-            if [ -n "$_f" ]; then printf -- '- %s\n' "${2#*: }" >> "$_f"; echo "added to ${2%%: *}: ${2#*: }"; return 0; fi
+            if [ -n "$_f" ]; then
+                printf -- '- %s\n' "${2#*: }" >> "$_f" || { echo "could not write the note"; return 1; }
+                note_effect "$_f" appended
+                echo "added to ${2%%: *}: ${2#*: }"; return 0
+            fi
             _s=$(note_slug "$2"); [ -n "$_s" ] || _s=$(date +%Y-%m-%d-%H%M%S); _f=$NOTES_DIR/$_s.md; _n=2
             while [ -e "$_f" ]; do _f=$NOTES_DIR/$_s-$_n.md; _n=$((_n + 1)); done
-            (umask 077 && printf '# %s\n' "$2" > "$_f"); echo "new note: $2" ;;
+            (umask 077 && printf '# %s\n' "$2" > "$_f") || { echo "could not write the note"; return 1; }
+            note_effect "$_f" created
+            echo "new note: $2" ;;
         find) [ -n "$2" ] || { echo "find takes the words to look for"; return 1; }
             notes_list | while IFS="$TAB" read -r _e _n _f; do   # the line that says it, the body before the name
                 _l=$({ tail -n +2 "$_f" | grep -i -m1 -F -- "$2" || head -1 "$_f" | grep -i -F -- "$2"; } 2>/dev/null | sed 's/^[#*-]*[[:space:]]*//' | scrub_text | cut -c1-120) || continue
@@ -4681,6 +4687,11 @@ notes_act() {   # notes_act new|open|add|find [ARG]
             else _w='notes say'; [ "$_c" != 1 ] || _w='note says'; IFS="$TAB" read -r _n _l < "$TMP/notes.found"; echo "$_c $_w $2 $PANEL_SEP $_n: $_l"; fi ;;
         *) echo "$1 is not something notes does"; return 1 ;;
     esac
+}
+note_effect() {   # the provider's result names only the file just written, never other notes
+    [ -n "${PROVIDE_EFFECT:-}" ] || return 0
+    jq -cn --arg id "${1##*/}" --arg title "$(note_name "$1")" --arg operation "$2" \
+        '{kind: "note", id: $id, title: $title, operation: $operation}' > "$TMP/action.effect"
 }
 
 # --- reminders: one iCalendar file an event in ~/calendar, its alarm at
@@ -4884,8 +4895,12 @@ rem_act() {   # rem_act add|done|snooze|restore ARG
         add) _p=$(rem_parse "$2") || { echo "a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), or a while from now (gym in 10 minutes)"; return 1; }
             _s=${_p%%"$TAB"*}; _t=${_p#*"$TAB"}
             [ "$_s" -gt "$(date +%Y%m%d%H%M)" ] || { echo "$(rem_said "$_s") has passed: say a time to come"; return 1; }
-            mkdir -p "$CAL_DIR"; _u="spark-shell-$(date +%s)-$$@$(short_host)"
-            rem_write "$CAL_DIR/$(date +%s)-$$.ics" "$_u" "$_s" "$_t" || { echo "could not write the reminder in ${CAL_DIR#"$HOME"/}"; return 1; }
+            mkdir_private "$CAL_DIR"
+            _rb=$CAL_DIR/$(date +%s)-$$; _f=$_rb.ics; _rn=2
+            while [ -e "$_f" ] || [ -L "$_f" ]; do _f=$_rb-$_rn.ics; _rn=$((_rn + 1)); done
+            _u="spark-shell-${_f##*/}@$(short_host)"
+            rem_write "$_f" "$_u" "$_s" "$_t" || { rm -f "$_f.new"; echo "could not write the reminder in ${CAL_DIR#"$HOME"/}"; return 1; }
+            rem_effect "$_u"
             bar_redraw; echo "reminder $(rem_said "$_s") $_t" ;;
         done|snooze) _l=$(rem_find "$2"); [ -n "$_l" ] || { echo "no reminder named $2"; return 1; }
             _t=$(printf '%s' "$_l" | cut -f3)
@@ -4902,6 +4917,12 @@ rem_act() {   # rem_act add|done|snooze|restore ARG
         restore) rem_restore "$2" ;;
         *) echo "$1 is not something reminders does"; return 1 ;;
     esac
+}
+rem_effect() {   # read the saved event through the native reader; only this event leaves the provider
+    [ -n "${PROVIDE_EFFECT:-}" ] || return 0
+    rem_all | jq -Rsc --arg id "$1" 'split("\n") | map(split("\t")) | map(select(.[1] == $id)) | first |
+        if . == null then empty else {kind: "reminder", operation: "created", id: .[1], title: .[2],
+        localTime: (.[0] | "\(.[0:4])-\(.[4:6])-\(.[6:8]) \(.[8:10]):\(.[10:12])")} end' > "$TMP/action.effect"
 }
 rem_due() {   # -> UID<tab>SUMMARY of the latest reminder due now (in the last day), and one chime when any is due for the first time
     _now=$(date +%Y%m%d%H%M)
@@ -6090,8 +6111,10 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
               + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
             required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text") | .[0]]), additionalProperties: false},
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"},
+            effect: {type: "object", properties: {kind: {type: "string"}, operation: {type: "string"}, id: {type: "string"}, title: {type: "string"}, localTime: {type: "string"}}, required: ["kind", "operation", "id", "title"], additionalProperties: false},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
-            palette: {type: "object", additionalProperties: {type: "string"}}}, additionalProperties: false},
+            palette: {type: "object", additionalProperties: {type: "string"}}},
+            required: (if $n == "notes_add" or $n == "reminders_add" then ["receipt", "effect"] else [] end), additionalProperties: false},
          annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}
          + (if $n == "reminders_add" then {_meta: {"spark-shell/prepare": true}} else {} end)'
 }
@@ -6386,7 +6409,8 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     fi
     export BT_BRIDGE
     _tok=$(printf '%s' "$2" | jq -c '._meta.progressToken // empty')
-    rm -f "$TMP/opened"; panel_group_begin
+    rm -f "$TMP/opened" "$TMP/action.effect"; panel_group_begin
+    PROVIDE_EFFECT=1
     ( set +e; panel_step "$sec" "$_act" "$_g" > "$TMP/call.out" 2>&1; echo $? > "$TMP/call.rc" ) 3>&- 4<&- 5>&- & _w=$!
     if [ -n "$_tok$BT_BRIDGE" ]; then
         _i=0
@@ -6402,11 +6426,15 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     _rc=$(cat "$TMP/call.rc" 2>/dev/null || echo 1); _out=$(scrub_text < "$TMP/call.out")
     for _k in $THEME_KEYS; do unset "$_k"; done; config_load; theme_load   # a step may have changed the settings: the rows read them anew
     if [ "$_rc" -ne 0 ]; then provide_refuse "$1" "${_out:-$sec: $_tt did not work}"; return 0; fi
+    case $_name in notes_add|reminders_add)
+        [ -s "$TMP/action.effect" ] || { provide_refuse "$1" 'the item may have been saved, but could not be read back; check the list before trying again'; return 0; } ;;
+    esac
     _pal='null'   # a theme step: the palette as it is now, so the dialog repaints itself with it (its colors came in its environment at start)
     [ "$sec" != theme ] || { panel_load; _pal=$(jq -cn --arg f "$HEX_FG" --arg a "$HEX_ACCENT" --arg m "$PANEL_MUTED" --arg b "$PANEL_BG" --arg h "$PANEL_HI" --arg r "${HEX_ANSI_1:-}" --arg g "${HEX_ANSI_2:-}" '{HEX_FG: $f, HEX_ACCENT: $a, PANEL_MUTED: $m, PANEL_BG: $b, PANEL_HI: $h, HEX_ANSI_1: $r, HEX_ANSI_2: $g}'); }
     if [ -s "$TMP/network.undo" ]; then _undo=$(tool_call_json "${sec}_restore" "$(cat "$TMP/network.undo")"); fi
     if [ -f "$TMP/opened" ]; then _sc=$(jq -cn '{opened: true}')
     else _sc=$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" '{receipt: $r} + (if $u == null then {} else {undo: $u} end) + (if $p == null then {} else {palette: $p} end)'); fi
+    if [ -s "$TMP/action.effect" ]; then _sc=$(printf '%s' "$_sc" | jq -c --slurpfile e "$TMP/action.effect" '. + {effect: $e[0]}'); fi
     rpc_result "$1" "$(printf '%s' "$_sc" | jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
     [ -z "$SUBSCRIBED" ] || rpc_note notifications/resources/updated "$(jq -cn --arg u "spark-shell://$sec/rows" '{uri: $u}')"
 }

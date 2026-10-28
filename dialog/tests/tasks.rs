@@ -13,7 +13,9 @@ fn started(risky: bool) -> (App, std::sync::mpsc::Receiver<spark_dialog::mcp::In
     let tools = json!([{"name": "out_level", "title": "out level N", "description": "Set output volume from 0 to 100.",
         "inputSchema": {"type": "object", "properties": {"level": {"type": "integer", "minimum": 0, "maximum": 100}}, "required": ["level"]},
         "annotations": {"destructiveHint": risky}}]);
-    let rows = json!({"title": "Sound", "state": "volume 70", "rows": [{"id": "volume", "sign": "check", "text": "volume 70", "tool": {"name": "out_level", "arguments": {"level": 70}}}]});
+    let rows = json!({"title": "Sound", "state": "volume 70", "rows": [{"id": "volume", "sign": "check", "text": "volume 70",
+        "tool": {"name": "out_level", "arguments": {"level": 70}},
+        "step": {"value":70,"less":{"name":"out_level","arguments":{"level":60}},"more":{"name":"out_level","arguments":{"level":80}}}}]});
     let script: Script = Box::new(move |v, send| {
         if let Some(r) = ordinary("out", v, &tools, &rows) {
             return send(r);
@@ -23,10 +25,17 @@ fn started(risky: bool) -> (App, std::sync::mpsc::Receiver<spark_dialog::mcp::In
         }
         if v["method"] == "tools/call" {
             captured.lock().unwrap().push(v["params"].clone());
+            if v["params"]["arguments"]["level"] == 40 {
+                return send(result(
+                    &v["id"],
+                    json!({"isError":true,"content":[{"type":"text","text":"output unavailable"}]}),
+                ));
+            }
             send(result(
                 &v["id"],
                 json!({"isError": false, "content": [{"type": "text", "text": "volume 30"}],
-                "structuredContent": {"receipt": "volume 30", "actual_level": 30}}),
+                "structuredContent": {"receipt": "volume 30", "actual_level": 30,
+                "undo":{"name":"out_level","arguments":{"level":70}}}}),
             ));
         }
     });
@@ -63,6 +72,313 @@ fn propose(app: &mut App) {
         serial,
         Ok(json!({"version": 1, "id": 1, "status": "step", "step": step, "state": state}).to_string()),
     );
+}
+
+fn type_words(app: &mut App, words: &str) {
+    for c in words.chars() {
+        app.typed(c);
+    }
+}
+
+fn ask_output(app: &mut App) {
+    let (id, _) = request(app);
+    app.task_reply(
+        id,
+        Ok(json!({"version": 1, "status": "ask", "id": 1,
+        "question": "Which output?", "state": {"version": 1, "goal": "make it quieter",
+        "pending": {"id": 1, "kind": "ask", "question": "Which output?"}}})
+        .to_string()),
+    );
+}
+
+#[test]
+fn keyboard_request_keeps_the_explicit_target() {
+    let (mut app, _, _) = started(false);
+    app.down();
+    assert!(app.in_list);
+    type_words(&mut app, "make this quieter");
+    app.enter();
+    assert_eq!(request(&app).1["context"]["selected"]["id"], "volume");
+}
+
+#[test]
+fn editing_a_proposal_keeps_the_target_for_the_replacement_request() {
+    let (mut app, _, calls) = started(false);
+    app.down();
+    type_words(&mut app, "make this quieter");
+    app.enter();
+    propose(&mut app);
+    while !app.input.is_empty() {
+        app.backspace();
+    }
+    type_words(&mut app, "make that a little quieter instead");
+    app.enter();
+    assert_eq!(request(&app).1["context"]["selected"]["id"], "volume");
+    assert!(app.staged.is_none());
+    assert!(calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn keyboard_answer_cannot_run_a_matching_row() {
+    let (mut app, rx, calls) = started(false);
+    app.task_start("make it quieter");
+    ask_output(&mut app);
+    app.jobs.clear();
+    type_words(&mut app, "volume 70");
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| !a.jobs.is_empty() || !calls.lock().unwrap().is_empty()));
+    assert!(calls.lock().unwrap().is_empty(), "an answer must not run the matching row");
+    assert_eq!(request(&app).1["answer"], "volume 70");
+}
+
+#[test]
+fn task_hints_describe_answering_and_stopping() {
+    let (mut app, _, _) = started(false);
+    app.task_start("make it quieter");
+    assert!(app.hint().iter().any(|(s, _)| s.trim() == "Stop"));
+    ask_output(&mut app);
+    assert!(app.hint().iter().any(|(s, _)| s.trim() == "Answer"));
+    assert!(app.hint().iter().any(|(s, _)| s.trim() == "Stop"));
+}
+
+#[test]
+fn pasted_answer_and_pointer_pick_belong_to_the_question() {
+    for pointer in [false, true] {
+        let (mut app, _, calls) = started(false);
+        app.task_start("make it quieter");
+        ask_output(&mut app);
+        app.jobs.clear();
+        if pointer {
+            app.down();
+            assert!(app.in_list);
+            app.left();
+            app.right();
+        } else {
+            app.paste("volume 70");
+            assert!(app.jobs.is_empty());
+        }
+        app.hint_key(spark_dialog::app::HintKey::Enter);
+        assert_eq!(request(&app).1["answer"], "volume 70");
+        assert!(calls.lock().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn target_survives_reordering_but_not_removal_or_navigation() {
+    let (mut app, _, _) = started(false);
+    app.down();
+    app.focus_prompt();
+    app.paste("make this quieter");
+    let mut other = app.providers[0].rows.rows[0].clone();
+    other.id = "other".into();
+    app.providers[0].rows.rows.insert(0, other);
+    app.enter();
+    assert_eq!(request(&app).1["context"]["selected"]["id"], "volume");
+    app.providers[0].rows.rows.retain(|r| r.id != "volume");
+    propose(&mut app);
+    assert!(app.task.is_none());
+    assert!(app.staged.is_none());
+    assert!(app.exchange.last().unwrap().text.contains("no longer available"));
+    let (mut app, _, _) = started(false);
+    app.down();
+    type_words(&mut app, "notes");
+    app.enter();
+    assert_eq!(app.view, View::Section(1));
+    assert!(app.target.is_none());
+}
+
+#[test]
+fn disappearing_target_is_checked_again_on_enter() {
+    let (mut app, _, calls) = started(false);
+    app.down();
+    type_words(&mut app, "make this quieter");
+    app.enter();
+    propose(&mut app);
+    app.providers[0].rows.rows.clear();
+    app.enter();
+    assert!(calls.lock().unwrap().is_empty());
+    assert!(app.task.is_none());
+}
+
+#[test]
+fn disappearing_target_is_checked_again_after_yes() {
+    let (mut app, _, calls) = started(true);
+    app.down();
+    type_words(&mut app, "make this quieter");
+    app.enter();
+    propose(&mut app);
+    app.enter();
+    app.providers[0].rows.rows.clear();
+    type_words(&mut app, "yes");
+    app.enter();
+    assert!(calls.lock().unwrap().is_empty());
+    assert!(app.task.is_none());
+}
+
+#[test]
+fn navigation_stops_the_task_and_ignores_its_late_proposal() {
+    for confirming in [false, true] {
+        let (mut app, _, calls) = started(confirming);
+        app.cfg.model = true;
+        app.down();
+        type_words(&mut app, "make this quieter");
+        app.enter();
+        let (serial, _) = request(&app);
+        if confirming {
+            propose(&mut app);
+            app.enter();
+            assert!(matches!(app.mode, Mode::Confirm(_)));
+        }
+        app.chip(1);
+        assert_eq!(app.view, View::Models);
+        assert!(app.task.is_none());
+        assert_eq!(app.mode, Mode::Normal);
+        app.task_reply(
+            serial,
+            Ok(json!({"version":1,"status":"ask","id":1,"question":"late","state":{"pending":{"id":1}}}).to_string()),
+        );
+        assert!(app.task.is_none());
+        assert!(calls.lock().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn stopping_during_an_action_keeps_its_receipt_without_continuing() {
+    let (mut app, rx, calls) = started(false);
+    app.task_start("make it quieter");
+    propose(&mut app);
+    app.enter();
+    app.escape();
+    assert!(app.exchange.last().unwrap().text.contains("may still finish"));
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()));
+    assert_eq!(calls.lock().unwrap().len(), 1);
+    assert!(app.task.is_none());
+    assert!(app.exchange.iter().any(|l| l.sign == spark_dialog::app::Sign::Done && l.text == "volume 30"));
+    assert!(!app.jobs.iter().any(|j| matches!(j, Job::RunInput(..))));
+}
+
+#[test]
+fn an_opened_window_closes_the_dialog_when_the_task_finishes() {
+    let (mut app, _, _) = started(false);
+    app.task_start("open the app");
+    app.opened = true;
+    let (id, _) = request(&app);
+    app.task_reply(id, Ok(json!({"version":1,"status":"done","summary":"opened"}).to_string()));
+    assert_eq!(app.quit, Some(3));
+}
+
+#[test]
+fn a_partial_failure_stays_visible_after_an_earlier_open() {
+    let (mut app, _, _) = started(false);
+    app.task_start("open the app then finish the task");
+    app.opened = true;
+    let (id, _) = request(&app);
+    app.task_reply(
+        id,
+        Ok(json!({"version":1,"status":"blocked","summary":"the next action is unavailable"}).to_string()),
+    );
+    assert_eq!(app.quit, None);
+    assert!(!app.opened);
+    assert_eq!(app.exchange.last().unwrap().sign, spark_dialog::app::Sign::Refused);
+}
+
+#[test]
+fn partial_completion_keeps_the_first_receipt_and_its_undo() {
+    let (mut app, rx, calls) = started(false);
+    app.task_start("change the output in two steps");
+    propose(&mut app);
+    app.jobs.clear();
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && !a.jobs.is_empty()));
+    assert_eq!(app.undo.as_ref().unwrap().call.arguments["level"], 70);
+    let (serial, _) = request(&app);
+    let step = json!({"name":"p0_out_level","arguments":{"level":40}});
+    app.task_reply(
+        serial,
+        Ok(json!({"version":1,"status":"step","id":2,"step":step,
+        "state":{"pending":{"id":2,"kind":"step","step":step}}})
+        .to_string()),
+    );
+    assert_eq!(calls.lock().unwrap().len(), 1);
+    app.jobs.clear();
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && !a.jobs.is_empty()));
+    assert_eq!(request(&app).1["observation"]["status"], "error");
+    let (serial, _) = request(&app);
+    app.task_reply(serial, Ok(json!({"version":1,"status":"blocked","summary":"output unavailable"}).to_string()));
+    assert!(app.exchange.iter().any(|l| l.sign == spark_dialog::app::Sign::Done && l.text == "volume 30"));
+    assert_eq!(app.undo.as_ref().unwrap().call.arguments["level"], 70);
+    app.paste("undo");
+    app.enter();
+    assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 3));
+    assert_eq!(calls.lock().unwrap()[2]["arguments"]["level"], 70);
+}
+
+#[test]
+fn a_lost_target_provider_cancels_thinking_without_another_request() {
+    let (mut app, _, _) = started(false);
+    app.down();
+    type_words(&mut app, "make this quieter");
+    app.enter();
+    let (serial, _) = request(&app);
+    app.incoming(spark_dialog::mcp::Incoming::Gone(0, "closed".into()));
+    app.task_reply(
+        serial,
+        Ok(json!({"version":1,"status":"ask","id":1,"question":"late","state":{"pending":{"id":1}}}).to_string()),
+    );
+    assert!(app.task.is_none());
+    assert!(!app.jobs.iter().any(|j| matches!(j, Job::RunInput(..))));
+}
+
+#[test]
+fn a_lost_unselected_provider_cancels_a_calendar_task() {
+    let (mut app, _, _) = started(false);
+    app.providers[0].label = "clock".into();
+    app.view = View::Dest(spark_dialog::app::CALENDAR_DEST);
+    app.task_start("what is next");
+    assert!(app.target.is_none());
+    app.incoming(spark_dialog::mcp::Incoming::Gone(0, "closed".into()));
+    assert!(app.task.is_none());
+    assert!(!app.jobs.iter().any(|j| matches!(j, Job::RunInput(..))));
+}
+
+fn render_task(app: &App, name: &str) {
+    let Ok(dir) = std::env::var("TASK_RENDER_DIR") else { return };
+    for look in ["tokyonight-night", "solarized-light"] {
+        let pal = palette(look);
+        let mut b = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, app.size.0, app.size.1));
+        spark_dialog::ui::draw(app, &pal, "Wed 28 Oct  10:00", &mut b);
+        let html = format!(
+            "<!doctype html><meta charset=\"utf-8\"><style>body{{margin:20px;background:#808080;font:16px Menlo,monospace}}</style>{}",
+            html_runs(&b, &pal, name, "")
+        );
+        std::fs::write(format!("{dir}/{name}-{look}.html"), html).unwrap();
+    }
+}
+
+#[test]
+fn task_interaction_renders() {
+    if std::env::var("TASK_RENDER_DIR").is_err() {
+        return;
+    }
+    let (mut app, _, _) = started(false);
+    app.down();
+    type_words(&mut app, "make this quieter");
+    render_task(&app, "target");
+    app.enter();
+    render_task(&app, "thinking");
+    ask_output(&mut app);
+    type_words(&mut app, "volume 70");
+    render_task(&app, "question");
+    app.size = (36, 20);
+    render_task(&app, "question-small");
+    app.size = (60, 40);
+    app.escape();
+    app.task_start("make it quieter");
+    propose(&mut app);
+    render_task(&app, "proposal");
+    app.escape();
+    render_task(&app, "stopped");
 }
 
 #[test]
@@ -336,8 +652,9 @@ fn confirmation_shows_every_argument_even_when_the_title_has_one_placeholder() {
         .to_string()),
     );
     let display = &app.staged.as_ref().unwrap().text;
-    assert!(display.contains("level=30") && display.contains("balance=70"));
+    assert!(display.contains("level: 30") && display.contains("balance: 70"));
     assert!(calls.lock().unwrap().is_empty());
+    render_task(&app, "proposal-fields");
 }
 
 #[test]
@@ -353,6 +670,6 @@ fn confirmation_shows_a_value_even_when_the_title_has_no_placeholder() {
         "state":{"pending":{"id":1,"kind":"step","step":step}}})
         .to_string()),
     );
-    assert!(app.staged.as_ref().unwrap().text.contains("level=30"));
+    assert!(app.staged.as_ref().unwrap().text.contains("level: 30"));
     assert!(calls.lock().unwrap().is_empty());
 }

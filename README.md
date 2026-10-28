@@ -853,13 +853,25 @@ interface. The protocol is owned by spark's `CLAUDE.md`, contract 16.
 
 One proposed action waits for Enter. The dialog checks the current tools,
 arguments and rows again, and consequential actions still require `yes`.
+Select a row before typing or clicking the prompt to use it as the target.
+The `For:` line keeps that choice visible while search results change.
+An item that disappears stops the proposal; select the item again.
+This also ends a task that removed its own selected item; start a new
+request for further work. Moving to another view stops the current task.
+Proposals with several arguments show each field and its value.
 The actual MCP result goes back to spark before another action is proposed.
-A question continues the same task. Esc drops the continuation; an action
+A question continues the same task. Typed or pasted answers, and a click
+on a row while answering, answer the question without running that row.
+The hint says Answer or Stop while the task owns the prompt.
+Esc drops the continuation; an action
 already sent may still finish. Late model replies cannot restart it.
 A lost provider or timeout stops the task without retrying the action.
 Declared structured output schemas are checked before a result is accepted.
 Model completion prose is separate from the native success receipt.
 
+Closing the window loses the task; opening another does not resume it.
+Earlier completed actions stay completed, with their native receipts.
+Undo, where offered, reverses its one action rather than the whole task.
 The continuation lives only in this window. The adapter adds no service,
 model download or runtime dependency. A current spark build with
 `spark do --tools` is required for this prompt; unsupported builds report
@@ -868,7 +880,8 @@ another machine; no model needs to run on the desktop client. Execution
 stays with the provider that owns the capability. Direct controls and
 explicit commands remain usable without AI.
 The terminal `want --json` interface and attachment reader below retain
-their existing one-shot behavior during migration.
+their existing one-shot behavior. An attachment goes with one request;
+it does not start a continuing task. The dialog says so when it is sent.
 
 A tool can advertise `_meta["spark-shell/prepare"]: true`. Before showing
 its proposal, the dialog calls the read-only `spark/prepare` method with
@@ -883,6 +896,11 @@ without the flag keep their existing path. It grants no permission.
 local date and time. A past or unreadable time asks for clarification.
 Preparation writes no calendar event. The reviewed explicit date survives
 midnight; execution still checks that the time has not passed meanwhile.
+Note writes return an `effect` with the actual filename, title and whether
+it was created or appended. A new reminder returns its saved UID, title
+and explicit local time. These fields come from native reads of the saved
+item. They describe that operation only; unrelated personal items are
+not added to its result.
 
 Every section of the dialog is a provider: `spark-shell provide wifi`
 serves the section as an MCP server on stdin and stdout (the Model

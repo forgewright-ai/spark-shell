@@ -465,8 +465,7 @@ fn main() {
                         } else if let Some((_, _, _, key)) = drawn.keys.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.hint_key(*key);
                         } else if m.row >= drawn.prompt.0 && m.row <= drawn.prompt.1 {
-                            app.in_list = false;
-                            app.chip_focus = None;
+                            app.focus_prompt();
                         } else if let Some((_, n)) = drawn.picks.iter().find(|(y, _)| *y == m.row) {
                             app.in_list = true;
                             app.sel = *n;

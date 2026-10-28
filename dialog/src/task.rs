@@ -1,7 +1,7 @@
 //! The desktop host of spark do's tool adapter. No model runs an OS action.
 //! The continuation lives in this window, and results keep their MCP shape.
 
-use crate::app::{App, Helper, Item, Job, Sign, Staged, Step, Who};
+use crate::app::{App, Helper, Item, Job, Sign, Staged, Step, View, Who};
 use crate::gate;
 use crate::model::Call;
 use crate::progress::Work;
@@ -15,6 +15,15 @@ pub enum Phase {
     Question,
     Inspect(usize),
     Prepare(usize),
+}
+
+/// An explicit row selection, independent of the search results while typing.
+#[derive(Clone, Debug)]
+pub struct Target {
+    pub view: View,
+    pub provider: usize,
+    pub id: String,
+    pub text: String,
 }
 
 #[derive(Clone, Debug)]
@@ -40,8 +49,46 @@ fn public_args(call: &Call, schema: &Value) -> Value {
 }
 
 impl App {
+    pub fn answering(&self) -> bool {
+        self.task.as_ref().is_some_and(|t| t.phase == Phase::Question)
+    }
+
+    pub fn remember_target(&mut self) {
+        if self.target.is_some() || self.task.is_some() || !self.input.is_empty() || !self.in_list {
+            return;
+        }
+        if let Some(Item::Row(p, r)) = self.picks().get(self.sel) {
+            let row = &self.providers[*p].rows.rows[*r];
+            if self.providers[*p].label != "files" {
+                self.target = Some(Target {
+                    view: self.view.clone(),
+                    provider: *p,
+                    id: row.id.clone(),
+                    text: row.text.clone(),
+                });
+            }
+        }
+    }
+
+    pub fn target_row(&self) -> Option<(usize, &crate::model::Row)> {
+        let t = self.target.as_ref()?;
+        let p = self.providers.get(t.provider)?;
+        if self.view != t.view || !p.ready || p.dead.is_some() {
+            return None;
+        }
+        p.rows.rows.iter().find(|r| r.id == t.id).map(|r| (t.provider, r))
+    }
+
+    pub fn target_label(&self) -> Option<String> {
+        self.target.as_ref().map(|t| match self.target_row() {
+            Some((_, r)) => format!("For: {}", r.text),
+            None => format!("No longer available: {}", t.text),
+        })
+    }
+
     pub fn task_cancel(&mut self) {
         if self.task.take().is_some() {
+            self.target = None;
             self.task_serial += 1; // any late inference reply belongs to the old task
             self.wait = None;
             self.staged = None;
@@ -51,7 +98,15 @@ impl App {
     }
 
     pub fn task_start(&mut self, words: &str) {
+        self.remember_target();
+        let target = self.target.take();
         self.task_cancel();
+        self.target = target;
+        if self.target.is_some() && self.target_row().is_none() {
+            self.target = None;
+            self.set_input(words.to_string());
+            return self.say(Sign::Refused, "the selected item is no longer available; select it again");
+        }
         self.task = Some(Task {
             state: Value::Null,
             goal: words.into(),
@@ -75,13 +130,10 @@ impl App {
         // Only visible state is volunteered. More is read through an explicit
         // inspect decision; hidden notes, directories and networks stay out.
         let visible: Vec<Value> = self.shown().iter().map(|i| self.task_rows(*i)).collect();
-        let selected = self.picks().get(self.sel).filter(|_| self.in_list).and_then(|it| match it {
-            Item::Row(p, r) => self.providers.get(*p).and_then(|pr| pr.rows.rows.get(*r)).map(|row| {
-                let mut value = self.task_row(*p, row);
-                value["provider"] = json!(p);
-                value
-            }),
-            _ => None,
+        let selected = self.target_row().map(|(p, row)| {
+            let mut value = self.task_row(p, row);
+            value["provider"] = json!(p);
+            value
         });
         json!({"view": self.title(), "selected": selected, "providers": providers, "visible": visible,
                "clock": clock_context()})
@@ -186,7 +238,17 @@ impl App {
             let message = scrub(value["summary"].as_str().unwrap_or("the task stopped without a result"));
             // A model's completion statement is prose. Native receipts alone
             // carry the Done mark, so a fluent claim cannot impersonate proof.
-            return self.say(if status == "done" || status == "answer" { Sign::Says } else { Sign::Refused }, &message);
+            self.say(if status == "done" || status == "answer" { Sign::Says } else { Sign::Refused }, &message);
+            if status == "done" {
+                self.next_step();
+            } else {
+                self.opened = false;
+            }
+            return;
+        }
+        if self.target.is_some() && self.target_row().is_none() {
+            self.task_cancel();
+            return self.say(Sign::Refused, "the selected item is no longer available; select it again");
         }
         let Some(id) = value["id"].as_u64() else {
             self.task_cancel();
@@ -319,6 +381,10 @@ impl App {
     }
 
     fn task_stage(&mut self, prov: usize, call: Call) {
+        if self.target.is_some() && self.target_row().is_none() {
+            self.task_cancel();
+            return self.say(Sign::Refused, "the selected item is no longer available; select it again");
+        }
         let title = self.providers[prov]
             .tools
             .iter()
@@ -338,8 +404,13 @@ impl App {
                 .filter(|w| !w.bytes().all(|c| c.is_ascii_uppercase()))
                 .collect::<Vec<_>>()
                 .join(" ");
-            let args = call.arguments.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join(", ");
-            format!("{}: {}", label, args)
+            let args = call
+                .arguments
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k.replace('_', " "), v))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!("{}\n{}", label, args)
         };
         if line.chars().count() > crate::app::INPUT_MAX {
             self.task_cancel();

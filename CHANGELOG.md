@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.105
+
+- A dialog request keeps the explicitly selected row while typing or
+  pasting. Its target stays visible; a removed item stops the request
+  before execution, including after destructive confirmation.
+- Clarification answers own the prompt. Typing, pasting or clicking a
+  matching row answers the question without invoking the row's action.
+  The hint names Answer, Stop, Reading or Checking as appropriate.
+- Proposals with several arguments show every field on its own line.
+  Completed actions keep their native receipts if a task is stopped.
+  A completed task that opened an app now closes the dialog.
+- Note writes identify the saved file and whether it was created or
+  appended. New reminders return their saved identity and local time.
+  The results describe the written item alone.
+- Several reminders created in one second get separate files and
+  identities, preserving every event.
+- Attachment requests explain that the file goes with one request.
+  The dialog's task, partial completion and undo limits are documented.
+
 ## v0.104
 
 - IPv4 and DNS settings also use an existing dhcpcd 10.3 owner. Basic native

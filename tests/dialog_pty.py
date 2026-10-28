@@ -6,7 +6,7 @@ moves into the list and Enter sets it (Enter in the prompt alone would
 send the words as a request), Esc closes, and no provider outlives the
 window. CI runs it with no
 network (unshare -n). Linux and macOS, python3 stdlib only."""
-import fcntl, os, pty, select, signal, struct, subprocess, sys, tempfile, termios, time
+import fcntl, json, os, pty, select, signal, struct, subprocess, sys, tempfile, termios, time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SS = os.path.join(REPO, "spark-shell")
@@ -28,7 +28,7 @@ def main(binary):
     env = {"HOME": home, "XDG_CONFIG_HOME": home + "/.config", "XDG_STATE_HOME": home + "/.local/state", "XDG_DATA_HOME": home + "/.local/share",
            "PATH": os.environ.get("PATH", "/usr/bin:/bin"), "TERM": "xterm-256color", "LANG": "C.UTF-8",
            "HEX_FG": "c0caf5", "HEX_ACCENT": "7aa2f7", "PANEL_BG": "282a38", "PANEL_HI": "373a4b", "PANEL_MUTED": "7b84ae",
-           "SPARK_SHELL_PROVIDE_POLL": "1"}
+           "SPARK_SHELL_PROVIDE_POLL": "1", "SPARK_SHELL_NO_APPLY": "1", "SPARK_SHELL_PTS_DIR": home + "/pts"}
     argv = [binary, "--provider", SS + " provide theme", "--provider", SS + " provide about", "--composer", "", "--spark-shell", SS]
     pid, fd = pty.fork()
     if pid == 0:
@@ -100,8 +100,106 @@ def main(binary):
     ok(not providers & processes().keys(), "this dialog's providers exit after the window closes")
     busy(binary, env, home)
     keys(binary, env)
+    tasks(binary, env, home)
     print("dialog_pty: %d failed" % failed)
     return 1 if failed else 0
+
+
+def tasks(binary, base_env, home):
+    """Real terminal keys, paste and pointer events cross the task boundary.
+    The model and provider are fixtures; a tools/call records an effect."""
+    provider = os.path.join(home, "task-provider")
+    helper = os.path.join(home, "task-helper")
+    with open(provider, "w") as f:
+        f.write("#!" + sys.executable + "\n" + r'''
+import json, os, sys
+tool = {"name":"notes_pick","title":"notes pick NAME","inputSchema":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}}
+rows = {"title":"Notes","rows":[{"id":"target","text":"Fixture target","tool":{"name":"notes_pick","arguments":{"name":"Fixture target"}}}]}
+for line in sys.stdin:
+    v = json.loads(line)
+    if "id" not in v: continue
+    method = v["method"]
+    result = {}
+    if method == "initialize": result = {"protocolVersion":"2025-06-18","capabilities":{"tools":{},"resources":{}},"serverInfo":{"name":"notes","version":"1"}}
+    elif method == "tools/list": result = {"tools":[tool]}
+    elif method == "resources/read": result = {"contents":[{"uri":"spark-shell://notes/rows","mimeType":"application/json","text":json.dumps(rows)}]}
+    elif method == "tools/call":
+        with open(sys.argv[1], "a") as f: f.write(json.dumps(v["params"])+"\n")
+        result = {"isError":False,"structuredContent":{"receipt":"fixture completed"},"content":[{"type":"text","text":"fixture completed"}]}
+    print(json.dumps({"jsonrpc":"2.0","id":v["id"],"result":result}), flush=True)
+''')
+    with open(helper, "w") as f:
+        f.write("#!" + sys.executable + "\n" + r'''
+import json, os, sys
+if sys.argv[1:] != ["do", "--tools"]: sys.exit(0)
+v = json.load(sys.stdin)
+with open(os.environ["TASK_REQUESTS"], "a") as f: f.write(json.dumps(v)+"\n")
+if "observation" in v:
+    result = {"version":1,"status":"done","summary":"task complete"}
+elif "answer" in v:
+    step = {"name":"p0_notes_pick","arguments":{"name":"Fixture target"}}
+    result = {"version":1,"status":"step","id":2,"step":step,"state":{"pending":{"id":2,"kind":"step","step":step}}}
+else:
+    result = {"version":1,"status":"ask","id":1,"question":"Which note?","state":{"pending":{"id":1,"kind":"ask"}}}
+print(json.dumps(result))
+''')
+    os.chmod(provider, 0o700)
+    os.chmod(helper, 0o700)
+    for pointer in (False, True):
+        requests, calls = (os.path.join(home, name + str(pointer)) for name in ("task-requests", "task-calls"))
+        env = dict(base_env, TASK_REQUESTS=requests)
+        argv = [binary, "--provider", provider + " " + calls + " notes", "--home", "notes", "--composer", "", "--spark", helper]
+        pid, fd = pty.fork()
+        if pid == 0:
+            os.execve(binary, argv, env)
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
+        seen = bytearray()
+        def wait_for(test, secs=10):
+            end = time.monotonic() + secs
+            while time.monotonic() < end:
+                if test(): return True
+                if select.select([fd], [], [], .1)[0]:
+                    try: seen.extend(os.read(fd, 65536))
+                    except OSError: break
+            return test()
+        def records(path):
+            if not os.path.exists(path): return []
+            with open(path) as f: return [json.loads(line) for line in f if line.endswith("\n")]
+        try:
+            assert wait_for(lambda: b"Fixture" in seen and b"target" in seen), "task provider did not draw"
+            os.write(fd, b"\x1b[B")
+            time.sleep(.1)
+            os.write(fd, b"use this\r")
+            assert wait_for(lambda: b"Which" in seen), "question did not draw"
+            ok(records(requests)[0]["context"]["selected"]["id"] == "target", "terminal typing preserves the selected target")
+            if pointer:
+                os.write(fd, b"\x1b[200~Fixture target\x1b[201~")
+            else:
+                os.write(fd, b"Fixture target")
+            time.sleep(.1)
+            if pointer:
+                # Answer Enter is at row 6; click its visible chip.
+                os.write(fd, b"\x1b[<0;12;6M\x1b[<0;12;6m")
+            else:
+                os.write(fd, b"\r")
+            assert wait_for(lambda: len(records(requests)) >= 2 and b"Discard" in seen), "answer did not produce a reviewed proposal"
+            ok(records(requests)[1].get("answer") == "Fixture target" and not records(calls),
+               ("paste and pointer" if pointer else "typing and Enter") + ": answer the question without executing its matching row")
+            os.write(fd, b"\r")
+            assert wait_for(lambda: b"type yes" in seen), "confirmation did not draw"
+            ok(not records(calls), "review Enter still waits for typed destructive confirmation")
+            os.write(fd, b"yes\r")
+            assert wait_for(lambda: len(records(requests)) >= 3 and b"complete" in seen), "task did not finish"
+            ok(len(records(calls)) == 1 and records(requests)[2]["observation"]["result"]["structuredContent"]["receipt"] == "fixture completed",
+               "confirmed action executes once and returns the native result")
+        except (AssertionError, KeyError, IndexError) as e:
+            ok(False, "task terminal interaction", str(e) + " " + repr(bytes(seen[-1000:])))
+        finally:
+            os.write(fd, b"\x03")
+            if not wait_for(lambda: os.waitpid(pid, os.WNOHANG)[0] != 0, 5):
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+            os.close(fd)
 
 
 def busy(binary, env, home):

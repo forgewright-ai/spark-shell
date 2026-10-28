@@ -462,6 +462,7 @@ pub enum Item {
 pub struct App {
     pub task: Option<crate::task::Task>,
     pub task_serial: u64,
+    pub target: Option<crate::task::Target>,
     pub cfg: Config,
     pub providers: Vec<Provider>,
     pub servers: Vec<Server>,
@@ -550,6 +551,7 @@ impl App {
         App {
             task: None,
             task_serial: 0,
+            target: None,
             cfg,
             providers,
             servers: vec![],
@@ -619,7 +621,7 @@ impl App {
 
     /// What the list is searched by: the words typed, never the commands spark put in the box.
     fn query(&self) -> &str {
-        if self.staged_now() {
+        if self.staged_now() || self.answering() {
             ""
         } else {
             &self.input
@@ -759,10 +761,16 @@ impl App {
             return;
         }
         let label = self.providers[idx].label.clone();
+        let was_shown = self.shown().contains(&idx);
         self.providers[idx].dead = Some(why.to_string());
         self.providers[idx].rows = Rows::default();
         self.providers[idx].tools.clear();
         self.providers[idx].reading = false;
+        if self.task.is_some()
+            && (self.target.as_ref().is_some_and(|t| t.provider == idx) || self.task.as_ref().is_some_and(|t| t.scope == Some(idx)) || was_shown)
+        {
+            self.task_cancel();
+        }
         self.task_read(idx, false);
         if self.task.as_ref().is_some_and(|t| t.phase == crate::task::Phase::Prepare(idx)) {
             self.task_cancel();
@@ -1460,6 +1468,11 @@ impl App {
         if self.mode != Mode::Normal {
             return;
         }
+        if self.answering() {
+            self.in_list = false;
+            self.sel = 0;
+            return;
+        }
         self.scroll = 0;
         if self.asks_spark() || (!self.query().trim().is_empty() && !self.picks().is_empty()) {
             self.in_list = true;
@@ -1642,6 +1655,9 @@ impl App {
     }
 
     fn insert(&mut self, t: &str) {
+        if self.mode == Mode::Normal {
+            self.remember_target();
+        }
         self.chip_focus = None;
         let room = INPUT_MAX.saturating_sub(self.input.chars().count());
         let t: String = t.chars().take(room).collect();
@@ -1680,6 +1696,9 @@ impl App {
         let b = self.byte_at(self.cursor);
         self.input.replace_range(a..b, "");
         self.cursor -= 1;
+        if self.input.is_empty() && self.task.is_none() {
+            self.target = None;
+        }
         self.follow_words();
     }
 
@@ -1690,6 +1709,17 @@ impl App {
         let a = self.byte_at(self.cursor);
         let b = self.byte_at(self.cursor + 1);
         self.input.replace_range(a..b, "");
+        if self.input.is_empty() && self.task.is_none() {
+            self.target = None;
+        }
+        self.follow_words();
+    }
+
+    /// A click in the prompt keeps an explicit row as the request's target.
+    pub fn focus_prompt(&mut self) {
+        self.remember_target();
+        self.in_list = false;
+        self.chip_focus = None;
     }
 
     /// Left and right: a lit row's own value first; in the Calendar with nothing typed, the months,
@@ -1751,6 +1781,7 @@ impl App {
     /// Esc: a question waiting is answered no (the draft comes back); the focus on a control or the
     /// draft goes first; then back one view; from the first view the dialog closes.
     pub fn escape(&mut self) {
+        self.target = None;
         let task_draft = self.staged.as_ref().map(|s| s.draft.clone());
         let had_task = self.task.is_some();
         self.task_cancel();
@@ -1833,6 +1864,10 @@ impl App {
     }
 
     fn go_back(&mut self, v: View) {
+        if self.task.is_some() {
+            self.escape();
+        }
+        self.target = None;
         self.keep_lit = None;
         self.view = v;
         self.sel = 0;
@@ -1852,6 +1887,10 @@ impl App {
     }
 
     fn go(&mut self, v: View) {
+        if self.task.is_some() {
+            self.escape();
+        }
+        self.target = None;
         self.keep_lit = None;
         // the files section is its home folder: its one row, ~, is no stop of its own
         if let View::Section(p) = v {
@@ -2026,6 +2065,21 @@ impl App {
         }
         if let Some(c) = self.chip_focus {
             self.chip(c);
+            return;
+        }
+        if self.answering() {
+            if self.in_list {
+                if let Some(Item::Row(p, r)) = self.picks().get(self.sel) {
+                    self.set_input(self.providers[*p].rows.rows[*r].text.clone());
+                }
+            }
+            let typed = self.input.trim().to_string();
+            if !typed.is_empty() {
+                self.set_input(String::new());
+                self.in_list = false;
+                self.sel = 0;
+                self.request(&typed);
+            }
             return;
         }
         // the commands spark planned, as they stand in the box: Enter runs them, in order (#53)
@@ -2351,7 +2405,9 @@ impl App {
             self.say(Sign::You, words);
             return self.task_advance(json!({"answer": words}));
         }
+        let target = self.target.take();
         self.task_cancel();
+        self.target = target;
         if !words.contains('\n') {
             if let Some(v) = self.place(words) {
                 if self.view != v {
@@ -2454,6 +2510,7 @@ impl App {
         // the file goes with this request alone; it comes back if the request fails
         let file = self.attachment.take();
         if let Some(a) = &file {
+            self.say(Sign::Says, "This file is used for this request only.");
             argv.push("--attach".into());
             argv.push(a.clone());
         }
@@ -2585,7 +2642,7 @@ impl App {
         self.staged = Some(Staged { text, steps, draft });
     }
 
-    fn next_step(&mut self) {
+    pub(crate) fn next_step(&mut self) {
         if self.running.is_some() || self.mode != Mode::Normal {
             return;
         }
@@ -2616,6 +2673,7 @@ impl App {
     pub fn run(&mut self, step: Step) {
         if step.who != Who::Model {
             self.task_cancel();
+            self.target = None;
         }
         if let Some(field) = step.call.ask.first().cloned() {
             let masked = gate::secret(&field, self.tool_of(&step).and_then(|t| t.schema.pointer(&format!("/properties/{}", field))));
@@ -2629,10 +2687,14 @@ impl App {
         self.say(Sign::You, &step.line);
         let Some(tool) = self.tool_of(&step).cloned() else {
             self.say(Sign::Refused, "this is not offered here now");
+            self.task_cancel();
             return self.stop_queue();
         };
         if let Err(e) = self.checked(&step) {
             self.say(Sign::Refused, &e);
+            if self.target.is_some() && self.target_row().is_none() {
+                self.task_cancel();
+            }
             self.task_observe("error", json!({"isError": true, "message": e}));
             return self.stop_queue();
         }
@@ -2648,6 +2710,9 @@ impl App {
     /// control character (a pasted or spoken newline is never a step's), and a step the model or the
     /// undo planned names only what the rows list now.
     fn checked(&self, step: &Step) -> Result<(), String> {
+        if step.who == Who::Model && self.target.is_some() && self.target_row().is_none() {
+            return Err("the selected item is no longer available; select it again".into());
+        }
         if self.tool_of(step).is_none() {
             return Err("this is not offered here now".into());
         }
@@ -2672,6 +2737,9 @@ impl App {
             Ok(()) => self.call(step),
             Err(e) => {
                 self.say(Sign::Refused, &format!("not done: {}", e));
+                if self.target.is_some() && self.target_row().is_none() {
+                    self.task_cancel();
+                }
                 self.task_observe("error", json!({"isError": true, "message": e}));
                 self.stop_queue();
             }
@@ -3020,6 +3088,25 @@ impl App {
             }
             Mode::Normal => {}
         }
+        if self.task.is_some() && !self.staged_now() {
+            let mut v = if self.answering() {
+                key("Answer", "Enter")
+            } else {
+                let state = if self.running.is_some() {
+                    "Running"
+                } else {
+                    match self.task.as_ref().map(|t| &t.phase) {
+                        Some(crate::task::Phase::Inspect(_)) => "Reading",
+                        Some(crate::task::Phase::Prepare(_)) => "Checking",
+                        Some(crate::task::Phase::Proposed) => "Edit the request",
+                        _ => "Thinking",
+                    }
+                };
+                vec![(state.to_string(), false)]
+            };
+            v.extend(esc("Stop"));
+            return v;
+        }
         if self.attaching.is_some() {
             let mut v = vec![(format!("Pick a file to attach ({})", self.cfg.attach.join(" ")), false)];
             v.extend(esc("Cancel"));
@@ -3149,7 +3236,7 @@ impl App {
 
     /// Left or right on a value row: its step down or up, run as a pick is.
     fn step_value(&mut self, up: bool) -> bool {
-        if !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal {
+        if !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal || self.answering() {
             return false;
         }
         let Some(it) = self.picks().get(self.sel).cloned() else { return false };
