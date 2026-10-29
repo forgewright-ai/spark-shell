@@ -3338,7 +3338,7 @@ bar_ws_names() {   # each workspace named by its number ("3"), or a layout's "3 
 bar_ws_watch() {   # swaymsg's workspace events, each a rename pass: a new workspace takes its glyph at once
     bar_ws_names
     swaymsg -r -t subscribe -m '["workspace"]' 2>/dev/null | while IFS= read -r _e; do   # -r: one event a line
-        case $_e in *'"change":"init"'*|*'"change":"rename"'*) bar_ws_names ;; esac   # a layout's rename to "3 writing" takes the glyph back
+        case $_e in *'"change": "init"'*|*'"change":"init"'*|*'"change": "rename"'*|*'"change":"rename"'*) bar_ws_names ;; esac   # sway spaces its JSON; a layout's rename to "3 writing" takes the glyph back
     done
 }
 bar_bars() {   # bar_bars LEVEL (0-4) -> the four rising bars, LEVEL of them lit, in the bar's face with no hinting: hinting moves each block glyph by its own fraction of a pixel, and the bars' bottoms stepped (#43)
