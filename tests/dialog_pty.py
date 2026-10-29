@@ -187,6 +187,66 @@ print(json.dumps({"answer": "", "steps": [{"name": "notes_pick", "arguments": {"
         os.close(fd)
 
 
+class Screen:
+    """The cells a 60 by 40 terminal would hold from the bytes a program wrote: the cursor moves applied, the
+    colors dropped. A capture of the bytes alone misses a cell the terminal's diff left as it was ("rename"
+    drawn over "hello.txt" keeps its e unsent), and this does not."""
+    def __init__(self, rows=40, cols=60):
+        self.rows, self.cols = rows, cols
+        self.cells = [[" "] * cols for _ in range(rows)]
+        self.r = self.c = 0
+        self.rest = b""
+    def feed(self, data):
+        data = self.rest + data
+        try:
+            s = data.decode("utf-8")
+            self.rest = b""
+        except UnicodeDecodeError as e:
+            s = data[:e.start].decode("utf-8", "replace")
+            self.rest = data[e.start:] if len(data) - e.start < 4 else b""
+        i = 0
+        while i < len(s):
+            ch = s[i]
+            if ch == "\x1b" and i + 1 < len(s) and s[i + 1] == "[":
+                j = i + 2
+                while j < len(s) and not ("@" <= s[j] <= "~"):
+                    j += 1
+                if j >= len(s):
+                    self.rest = s[i:].encode("utf-8") + self.rest
+                    return
+                params, final = s[i + 2:j].lstrip("?>"), s[j]
+                nums = [int(x) if x.isdigit() else 0 for x in params.split(";")] if params else []
+                n = nums[0] if nums and nums[0] else 1
+                if final in "Hf":
+                    self.r = min(self.rows - 1, max(0, n - 1))
+                    self.c = min(self.cols - 1, max(0, (nums[1] if len(nums) > 1 and nums[1] else 1) - 1))
+                elif final == "A": self.r = max(0, self.r - n)
+                elif final == "B": self.r = min(self.rows - 1, self.r + n)
+                elif final == "C": self.c = min(self.cols - 1, self.c + n)
+                elif final == "D": self.c = max(0, self.c - n)
+                elif final == "G": self.c = min(self.cols - 1, max(0, n - 1))
+                elif final == "d": self.r = min(self.rows - 1, max(0, n - 1))
+                elif final == "J" and nums and nums[0] == 2: self.cells = [[" "] * self.cols for _ in range(self.rows)]
+                elif final == "K":
+                    row = self.cells[self.r]
+                    for k in range(self.c, self.cols): row[k] = " "
+                i = j + 1
+                continue
+            if ch == "\x1b":
+                i += 2
+                continue
+            if ch == "\r": self.c = 0
+            elif ch == "\n": self.r = min(self.rows - 1, self.r + 1)
+            elif ch == "\x08": self.c = max(0, self.c - 1)
+            elif ch >= " ":
+                if self.c < self.cols:
+                    self.cells[self.r][self.c] = ch
+                self.c += 1
+            i += 1
+    def text(self):
+        return "\n".join("".join(row).rstrip() for row in self.cells)
+
+
 def files(binary, env, home):
     """The files as a file manager (#112), against the real provider on a fixture home: Files opens
     the home folder with its rows, Right on a file opens its steps, Esc comes back, Esc leaves."""
@@ -199,16 +259,21 @@ def files(binary, env, home):
         os.execve(binary, argv, dict(env, SPARK_SHELL_NO_UDISKS="1"))
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
     seen = bytearray()
+    screen = Screen()
     def wait_for(test, secs=15):
         end = time.monotonic() + secs
         while time.monotonic() < end:
             if test(): return True
             if select.select([fd], [], [], .1)[0]:
-                try: seen.extend(os.read(fd, 65536))
+                try:
+                    chunk = os.read(fd, 65536)
                 except OSError: break
+                seen.extend(chunk)
+                screen.feed(chunk)
         return test()
     plain = lambda: re.sub(rb"\x1b\[[0-9;?]*[A-Za-z]", b"", bytes(seen)).decode("utf-8", "replace")
     tight = lambda: re.sub(r"\s+", "", plain())   # the terminal's cursor moves split words: compared with no spaces
+    shown = lambda: re.sub(r"\s+", "", screen.text())   # the screen as the terminal holds it, with no spaces
     try:
         assert wait_for(lambda: "Type a request." in plain() and "your home folder" in plain()), "the home did not draw with the files ready"
         os.write(fd, b"files")
@@ -220,14 +285,8 @@ def files(binary, env, home):
         assert wait_for(lambda: "Steps" in plain()), "the key row did not offer the steps: " + plain()[-400:]
         seen.clear()
         os.write(fd, b"\x1b[C")       # Right: its steps
-        time.sleep(0.6)
-        # a cell the row before held too is not written again (the terminal's diff: "rename" over "hello.txt" keeps its e),
-        # so the capture is read after a resize, which draws the whole frame
-        seen.clear()
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 41, 60, 0, 0))
-        time.sleep(0.4)
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
-        assert wait_for(lambda: "movetoafolder" in tight() and "trash" in tight() and "rename" in tight()), "the steps did not draw: " + plain()[-600:]
+        # read from the screen, not the bytes: a cell the row before held too is not sent again ("rename" over "hello.txt" keeps its e)
+        assert wait_for(lambda: "movetoafolder" in shown() and "trash" in shown() and "rename" in shown() and "Back" in shown()), "the steps did not draw: " + screen.text()[-900:]
         ok(True, "Down lights the file and the key row offers Steps; Right opens them in the provider's words: open, show, attach, reveal, rename, move, copy, trash")
         seen.clear()
         os.write(fd, b"\x1b")          # back to the folder
