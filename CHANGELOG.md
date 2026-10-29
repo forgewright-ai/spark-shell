@@ -2,7 +2,6 @@
 
 ## v0.109
 
-
 - Home is a launcher. Fuzzy search over every place, setting and step,
   slots typed inline, Enter runs the lit row, no model. Words that name
   no row are one request to spark: the words, the view, the selected
