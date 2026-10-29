@@ -497,19 +497,22 @@ and wl-clipboard).
 A notification comes in the top right corner, under the bar, as a
 small surface of the desktop like the dialog: its ground, your palette
 and text face, no frame and no icon. The first line opens with spark's
-mark, the heavy angle of the prompt in the accent, then the app's name
-muted; what it says is bold under it; the words follow. The glyphs are
-the dialog's: the mark, a small triangle before what a click opens, a
-warning sign in red on a critical one. Its edge lines up with the
-windows' content, and the cards stand a little apart. The newest is on
-top, three at most, and under them one line says how many more wait.
-Those from one app stand together, and the app's line counts them
-(`aerc`, a middle dot, `3`). Each goes after six seconds into the
-history, which keeps the last ten. A low one is muted through, its
-mark too, and goes after four. A critical one stays until you dismiss
-it and shows over a full-screen window too. A click does what its app
-offers; a right click dismisses it; a middle click dismisses them all.
-mako draws them, from
+angle, the heavy angle of the prompt in the accent, then the app's
+name muted; what it says is bold under it, and before it a glyph tells
+the kind where the app names one: an envelope for mail, a check or a
+cross for a transfer done or failed, a square for a drive, a clock
+face for a reminder, a warning sign in red on a critical one; the
+words follow. The glyphs are the dialog's, the small triangle before
+what a click opens among them. Its edge lines up with the windows'
+content, and the cards stand a little apart. The newest is on top,
+three at most, and under them one line says how many more wait. Those
+from one app stand together, and the app's line counts them (`aerc`,
+a middle dot, `3`). Each goes after six seconds into the history,
+which keeps the last ten. A low one is muted through, its angle too,
+and goes after four. A critical one stays until you dismiss it and
+shows over a full-screen window too. A click does what its app offers;
+a right click dismisses it; a middle click dismisses them all. mako
+draws them, from
 `~/.config/mako/config`, and a new look reaches the next one at once.
 Type `spark-shell desktop notifications do-not-disturb on`. They
 stay out of sight, a critical one still shows, the bar says `do not

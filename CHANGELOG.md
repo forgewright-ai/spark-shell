@@ -1,24 +1,28 @@
 # Changelog
 
-## next, the notifications (numbered at landing: v0.1NN by landing order)
+## v0.1NN, the notifications (numbered at landing, by landing order)
 
 - The notifications, a new look (#71). A card is a small surface of the
   desktop like the dialog: half the dialog's air, about thirty cells
   wide, four lines at most, its edge on the windows' content (the gaps
   and the clear border), the cards 8 pixels apart. The first line opens
-  with spark's mark, the heavy angle in the accent, then the app's name
-  muted; the glyphs are the dialog's, a small triangle before what a
-  click opens, a warning sign in red on a critical one, which has no
-  frame any more and shows over a full-screen window too. Under the
-  three on the screen, one line says how many more wait. Those from one
-  app stand together, the app's line counting them. Six seconds, not
-  eight; a low one is muted through and goes after four. A middle click
-  dismisses them all. A progress is the accent at a quarter, as the drop
-  area is. spark-shell's own say what they are and what a click opens on
-  their first line (`reminder`, `drive`) in place of the app's name, so
-  a drive plugged in says only its size and that it is not mounted. The
-  template is the one file; `spark-shell on` renders it and a mako that
-  runs reads it at once, as before.
+  with spark's angle, the heavy angle of the prompt in the accent, then
+  the app's name muted; before what the card says a glyph tells the
+  kind where the app names one, an envelope for mail, a check or a
+  cross for a transfer done or failed, a square for a drive, a clock
+  face for a reminder, a warning sign in red on a critical one, which
+  has no frame any more and shows over a full-screen window too. The
+  glyphs are the dialog's, the small triangle before what a click opens
+  among them. Under the three on the screen, one line says how many
+  more wait. Those from one app stand together, the app's line counting
+  them. Six seconds, not eight; a low one is muted through and goes
+  after four. A middle click dismisses them all. A progress is the
+  accent at a quarter, as the drop area is. spark-shell's own say what
+  they are and what a click opens on their first line (`reminder`,
+  `drive`) in place of the app's name, so a drive plugged in says only
+  its size and that it is not mounted. The template is the one file;
+  `spark-shell on` renders it and a mako that runs reads it at once, as
+  before.
 
 ## v0.108
 
