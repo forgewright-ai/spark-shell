@@ -2,6 +2,7 @@
 
 ## v0.109
 
+
 - Home is a launcher. Fuzzy search over every place, setting and step,
   slots typed inline, Enter runs the lit row, no model. Words that name
   no row are one request to spark: the words, the view, the selected
@@ -18,6 +19,32 @@
   nowhere, and a request that gets no answer comes back as typed (#90).
 - Needs spark v1.107 or newer for the whole tree in one call: an older
   spark offers 64 of the tools and drops the rest.
+- The notifications, a new look (#71). A card is a small surface of the
+  desktop like the dialog: half the dialog's air, about thirty cells
+  wide, four lines at most, its edge on the windows' content (the gaps
+  and the clear border), the cards 8 pixels apart. The first line opens
+  with spark's angle, the heavy angle of the prompt in the accent, then
+  the app's name muted; before what the card says a glyph tells the
+  kind, a filled dot for any one, and where the app names the kind a
+  three lines for mail (a message), a check or a cross for
+  a transfer done or failed, a hollow stick for a drive not yet
+  mounted, the bar's flag for a reminder due, a warning sign in red on
+  a critical one, which has no frame any more and shows over a
+  full-screen window too. The glyphs are the bar's and the dialog's,
+  each one Monaspace Neon's own, filled for on and hollow for off as
+  the bar has them, the small triangle before what a click opens among
+  them.
+  Under the three on the screen, one line says how many more wait.
+  Those from one app stand together, the app's line counting
+  them. Six seconds, not eight; a low one is muted through and goes
+  after four. A middle click dismisses them all. A progress is the
+  accent at a quarter, as the drop area is. spark-shell's own say what
+  they are and what a click opens on their first line (`reminder`,
+  `drive`) in place of the app's name, so a drive plugged in says only
+  its size and that it is not mounted. The template is the one file;
+  `spark-shell on` renders it and a mako that runs reads it at once, as
+  before.
+
 
 ## v0.108
 

@@ -5139,14 +5139,31 @@ STUB
     sh "$SH" on --yes >/dev/null 2>&1 || :
     mk=$HOME/.config/mako/config
     grep -q '^# rendered by spark-shell from templates/.config/mako/config' "$mk" && ! grep -q '@[A-Z_0-9]*@' "$mk" \
-        && grep -qx 'font=DejaVu Sans Mono 12' "$mk" && grep -qx 'background-color=#0f0f0f' "$mk" && grep -qx 'text-color=#aaaaaa' "$mk" && grep -qx 'progress-color=over #1e1e1e' "$mk" \
-        && grep -qx 'padding=19,24' "$mk" && grep -qx 'width=432' "$mk" && grep -qx 'height=144' "$mk" && grep -qx 'border-color=#aa0000' "$mk" && grep -qx 'anchor=top-right' "$mk" \
-        && ok "mako's config: the dialog's surface and the text color, the bar's face, the air and the width from the text size, red for a critical one (#71)" || bad "mako config" "$(cat "$mk" 2>&1)"
+        && grep -qx 'font=DejaVu Sans Mono 12' "$mk" && grep -qx 'background-color=#0f0f0f' "$mk" && grep -qx 'text-color=#aaaaaa' "$mk" && grep -qx 'progress-color=over #ff555540' "$mk" \
+        && grep -qx 'padding=12,18' "$mk" && grep -qx 'width=360' "$mk" && grep -qx 'height=96' "$mk" && grep -qx 'border-size=0' "$mk" && ! grep -q '^border-color=' "$mk" && grep -qx 'anchor=top-right' "$mk" \
+        && ok "mako's config: the dialog's surface and the text color, the bar's face, half the dialog's air and thirty cells from the text size, the accent at a quarter for a progress, no frame on any (#71)" || bad "mako config" "$(cat "$mk" 2>&1)"
+    # the look: spark's angle in the accent before the app's name, the edge on the windows' content (gaps 16 and the clear border 4), 8 between, an app's own together and counted, one line for the rest, a low one muted through, a glyph before what a card says where its category names the kind, a critical one's a red warning sign, a middle click clears
+    _pm=$(sed -n 's/^format=<span foreground="#ff5555">&#x276F;<\/span> <span foreground="#\([0-9a-f]*\)">%a<\/span>\\n&#x25CF; <b>%s<\/b>\\n%b$/\1/p' "$mk" | head -1)
+    _a='<span foreground="#ff5555">&#x276F;</span> <span foreground="#'"$_pm"'">'   # the first line's head: the angle, then the muted span open
+    _t='</span>\n&#x25CF; <b>%s</b>\n%b'   # the plain tail, the filled dot before the summary (a literal backslash-n, as the file has it)
+    glyph() { printf '</span>\\n&#x%s; <b>%%s</b>\\n%%b' "$1"; }   # glyph HEX -> the tail with that glyph before the summary
+    after() { sed -n "/^\\[$1\\]\$/{n;p;}" "$mk"; }   # after CRITERIA -> the line under that section's header
+    block() { sed -n "/^\\[$1\\]\$/,/^\$/p" "$mk" | sed -n '2,4p'; }   # block CRITERIA -> the three lines under the header
+    [ -n "$_pm" ] && [ "$_pm" != aaaaaa ] && grep -qx 'margin=8' "$mk" && grep -qx 'outer-margin=12' "$mk" && grep -qx 'group-by=app-name' "$mk" && grep -qx 'on-button-middle=dismiss-all' "$mk" && grep -qx 'icons=0' "$mk" && grep -qx 'default-timeout=6000' "$mk" \
+        && [ "$(after grouped)" = "format=$_a%a &#183; %g$_t" ] \
+        && [ "$(after hidden)" = "format=<span foreground=\"#$_pm\">&#x25B8; and %h more</span>" ] \
+        && [ "$(block 'urgency=low')" = "$(printf '%s\n' "text-color=#$_pm" 'default-timeout=4000' "format=<span foreground=\"#$_pm\">&#x276F; %a$_t")" ] \
+        && [ "$(after 'category=email.arrived')" = "format=$_a%a$(glyph 2261)" ] && [ "$(after 'category=email')" = "format=$_a%a$(glyph 2261)" ] \
+        && [ "$(after 'grouped category=email.arrived')" = "format=$_a%a &#183; %g$(glyph 2261)" ] && [ "$(after 'grouped category=email')" = "format=$_a%a &#183; %g$(glyph 2261)" ] \
+        && [ "$(after 'category=transfer.complete')" = "format=$_a%a$(glyph 2713)" ] && [ "$(after 'category=transfer.error')" = "format=$_a%a$(glyph 2717)" ] && [ "$(after 'category=device.added')" = "format=$_a%a$(glyph 25AD)" ] \
+        && [ "$(block 'urgency=critical')" = "$(printf '%s\n' 'default-timeout=0' 'layer=overlay' "format=$_a%a</span>\n<span foreground=\"#aa0000\">&#x26A0;</span> <b>%s</b>\n%b")" ] && ! grep -q '^border-color=' "$mk" \
+        && ok "mako's config: the angle in the accent, the edge on the windows' content and 8 between, an app's own together with their count, 'and N more' under three, a low one muted through and gone in four seconds, a filled dot before what any card says, a low one's too (quiet is not off), three lines, a check or a cross and a hollow stick before what mail, a transfer and a drive say, a red warning sign before a critical one with no frame and over a full-screen window, a middle click dismisses all (#71)" || bad "mako look" "$(cat "$mk")"
     grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog reminders" "$mk" \
         && grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog storage" "$mk" \
-        && grep -qx '\[app-name=spark-shell category=x-spark-shell.reminder\]' "$mk" && grep -qx '\[app-name=spark-shell category=device.added\]' "$mk" \
+        && [ "$(after 'app-name=spark-shell category=x-spark-shell.reminder')" = "format=${_a}reminder &#x25B8; a click opens it$(glyph 2691)" ] \
+        && [ "$(after 'app-name=spark-shell category=device.added')" = "format=${_a}drive &#x25B8; a click opens Storage$(glyph 25AD)" ] \
         && [ "$(sed -n '/^\[mode=do-not-disturb\]$/,$p' "$mk" | grep -c .)" = 4 ] && tail -1 "$mk" | grep -qx 'invisible=0' \
-        && ok "mako's config: a click on a reminder or a drive opens the dialog there; do not disturb last, a critical one through it" || bad "mako criteria" "$(cat "$mk")"
+        && ok "mako's config: a reminder or a drive says so on its first line, the bar's flag or a hollow stick before what it says, and a click opens the dialog there; do not disturb last, a critical one through it" || bad "mako criteria" "$(cat "$mk")"
     grep -qx 'exec mako' "$HOME/.config/sway/config" && ok "sway config: mako starts with the desktop" || bad "sway exec mako" "$(grep -n mako "$HOME/.config/sway/config")"
     # a new look: the file again, and a mako that runs reads it at once
     touch "$HOME/mako.up"; rm -f "$HOME/mako.log"
@@ -5272,7 +5289,7 @@ JSON
     cp "$H/lsblk.full" "$HOME/lsblk.json"; mkdir -p "$S/block/sdb"
     _i=0; while [ "$_i" -lt 40 ] && [ ! -s "$nlog" ]; do sleep 0.25; _i=$((_i + 1)); done
     pkill -P "$bp" 2>/dev/null || :; kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :   # its own bar alone, by its parent: another suite's may run beside it
-    [ "$(cat "$nlog" 2>/dev/null)" = '-a|spark-shell|-c|device.added|--|SanDisk Ultra plugged in|28.9 GB. A click opens Storage, where it mounts.|' ] && ! grep -q 'Elements\|drive plugged' "$nlog" \
+    [ "$(cat "$nlog" 2>/dev/null)" = '-a|spark-shell|-c|device.added|--|SanDisk Ultra plugged in|28.9 GB, not mounted|' ] && ! grep -q 'Elements\|drive plugged' "$nlog" \
         && ok "bar: a drive plugged in while it runs is said once, within its second's look; what was there at its start is not (#73)" || bad "drive notice" "$(cat "$nlog" 2>&1) $(head -c 300 "$H/bar.out")"
     # the power: what logind does, or the sudo rule of runit; the keys and the lid said, never changed
     # No lock is running in this fixture, even if the host is locked.
