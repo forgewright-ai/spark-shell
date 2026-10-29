@@ -70,11 +70,9 @@ bar {
     mode @BAR_MODE@
     font pango:@BAR_FONT@
     status_command @REPO@/spark-shell bar status
-    # the wifi bars ask for the family "spark-shell bars", which fontconfig
-    # draws with no hinting (~/.config/fontconfig/conf.d/50-spark-shell.conf),
-    # so the four bars end on one line, as foot draws them (#43)
     workspace_buttons yes
-    strip_workspace_numbers no
+    # workspaces are named number:glyph (spark-shell bar status names them): the glyph alone
+    strip_workspace_numbers yes
     status_padding 2
     status_edge_padding 10
     colors {

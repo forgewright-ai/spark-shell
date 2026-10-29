@@ -43,6 +43,26 @@
   its size and that it is not mounted. The template is the one file;
   `spark-shell on` renders it and a mako that runs reads it at once, as
   before.
+- The bar speaks in glyphs instead of words, each one Monaspace Neon's
+  own: up and down arrows for the wire (U+21C5), a four-pointed star for
+  bluetooth (U+2726, in the accent with a device connected; hollow,
+  U+2727, when off), a triangle for sound (U+25C0; hollow, U+25C1, when
+  muted), a fisheye for the mic (U+25C9; a hollow circle when muted, a
+  red dot while a program records), a sun for brightness (U+263C), a key
+  grid for the keyboard's layout (U+2317), a flag for a reminder due
+  (U+2691) and the moon for do not disturb (U+23FE). Filled is on, hollow
+  is off or muted.
+- Wifi is a half circle (U+25E0) and a gauge of its signal, as sound and
+  brightness are, after bluetooth; with wifi off the half circle stays,
+  alone and muted. The panel keeps its rising bars.
+- Device names leave the bar for the panel a click opens. The gauges are
+  five cells (U+25B0 and U+25B1), the battery four with its number, and
+  the groups are parted by air instead of dividers.
+- Workspaces wear APL's symbols, one each for 1 to 10 (U+235F, 2362,
+  236B, 2371, 2372, 2366, 236C, 2339, 2364, 235C): `bar status` names
+  each one `N:GLYPH` as sway makes it, and the bar strips the number.
+  `Super+1` to `0` still go by number, and a layout's workspace keeps its
+  words after its glyph.
 
 
 ## v0.108
