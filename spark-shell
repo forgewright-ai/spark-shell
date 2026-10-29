@@ -3326,7 +3326,7 @@ bar_gauge() {   # bar_gauge LEVEL MUTED [CELLS] [COLOR] -> CELLS cells (5), the 
     c=${4:-$HEX_ACCENT}; [ "$2" != 1 ] || c=$HEX_MUTED
     printf '%s%s' "$(bar_span "$c" "$full")" "$(bar_span "$HEX_MUTED" "$rest")"
 }
-bar_ws_glyph() { set -- "$1" $BAR_WS; _n=$1; shift; [ "$_n" -ge 1 ] 2>/dev/null && [ "$_n" -le $# ] || return 1; eval "printf \"\$$_n\""; }   # bar_ws_glyph N -> workspace N's glyph; nothing past the tenth
+bar_ws_glyph() { set -- "$1" $BAR_WS; _n=$1; shift; [ "$_n" -ge 1 ] 2>/dev/null && [ "$_n" -le $# ] || return 1; eval "printf \"\${$_n}\""; }   # bar_ws_glyph N -> workspace N's glyph; nothing past the tenth (${10}: $10 would be $1 and a 0)
 bar_ws_names() {   # each workspace named by its number ("3"), or a layout's "3 writing", becomes "3:GLYPH" or "3:GLYPH writing"
     command -v jq >/dev/null 2>&1 || return 0
     swaymsg -t get_workspaces 2>/dev/null | jq -r '.[] | select(.name | test("^[0-9]+( |$)")) | "\(.num)\t\(.name)"' 2>/dev/null |

@@ -2700,7 +2700,7 @@ case "$*" in
     "-t get_inputs") echo '[{"type":"keyboard","xkb_layout_names":["English (US)","Portuguese (Brazil)"],"xkb_active_layout_index":1}]' ;;
     "-t get_workspaces") [ -e "$HOME/ws-test" ] || exit 0   # only the workspace glyphs' test asks
         if [ -e "$HOME/ws-later" ]; then echo '[{"num":1,"name":"1:x"},{"num":5,"name":"5"}]'
-        else echo '[{"num":1,"name":"1"},{"num":2,"name":"2:x"},{"num":3,"name":"3 writing"},{"num":11,"name":"11"}]'; touch "$HOME/ws-later"; fi ;;
+        else echo '[{"num":1,"name":"1"},{"num":2,"name":"2:x"},{"num":3,"name":"3 writing"},{"num":10,"name":"10"},{"num":11,"name":"11"}]'; touch "$HOME/ws-later"; fi ;;
     "-r -t subscribe -m [\"workspace\"]") echo '{ "change": "init", "old": null, "current": { "num": 5, "name": "5" } }' ;;   # as sway writes it: spaced
     "-t get_outputs") echo '[{"name":"eDP-1","make":"BOE","model":"0x0BCA","serial":"","active":true,"scale":1.0,"current_mode":{"width":1920,"height":1080},"rect":{"x":0,"y":0,"width":1920,"height":1080},"modes":[{"width":1920,"height":1080},{"width":1280,"height":720}]},{"name":"HDMI-A-1","make":"Lenovo Group Limited","model":"T24i-30","serial":"V30A1","active":true,"scale":1.0,"current_mode":{"width":1920,"height":1080},"rect":{"x":1920,"y":0,"width":1920,"height":1080},"modes":[{"width":1920,"height":1080}]}]' ;;
 esac
@@ -2921,9 +2921,9 @@ pip=$(printf '\342\226\260'); pipoff=$(printf '\342\226\261'); g=$(printf '%s' "
 # the workspaces' glyphs: a workspace named by its number, or a layout's "3 writing", takes its glyph; one named already, or past the tenth, is left
 rm -f "$HOME/swaymsg.log" "$HOME/ws-later"; touch "$HOME/ws-test"
 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status </dev/null >/dev/null 2>&1 & bp=$!
-i=0; while [ "$i" -lt 50 ] && [ "$(cat "$HOME/swaymsg.log" 2>/dev/null | grep -c '^-- rename')" -lt 3 ]; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null; wait "$bp" 2>/dev/null
-[ "$(grep '^-- rename' "$HOME/swaymsg.log" 2>/dev/null)" = "$(printf '%s\n' "-- rename workspace \"1\" to \"1:$(printf '\342\215\235')\"" "-- rename workspace \"3 writing\" to \"3:$(printf '\342\215\253') writing\"" "-- rename workspace \"5\" to \"5:$(printf '\342\215\262')\"")" ] \
-    && ok "bar status: workspace 1 becomes 1:GLYPH, a layout's 3 writing keeps its words after the glyph, 2:x and 11 are left; a workspace sway makes later (its event spaced, as sway writes it) takes its glyph too" || bad "workspace glyphs" "$(cat "$HOME/swaymsg.log" 2>&1)"
+i=0; while [ "$i" -lt 50 ] && [ "$(cat "$HOME/swaymsg.log" 2>/dev/null | grep -c '^-- rename')" -lt 4 ]; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null; wait "$bp" 2>/dev/null
+[ "$(grep '^-- rename' "$HOME/swaymsg.log" 2>/dev/null)" = "$(printf '%s\n' "-- rename workspace \"1\" to \"1:$(printf '\342\215\235')\"" "-- rename workspace \"3 writing\" to \"3:$(printf '\342\215\253') writing\"" "-- rename workspace \"10\" to \"10:$(printf '\342\215\234')\"" "-- rename workspace \"5\" to \"5:$(printf '\342\215\262')\"")" ] \
+    && ok "bar status: workspace 1 becomes 1:GLYPH, a layout's 3 writing keeps its words after the glyph, 10 takes the tenth glyph alone, 2:x and 11 are left; a workspace sway makes later (its event spaced, as sway writes it) takes its glyph too" || bad "workspace glyphs" "$(cat "$HOME/swaymsg.log" 2>&1)"
 rm -f "$HOME/ws-test" "$HOME/ws-later"
 SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" bar light down; grep -qx -- '-q -c backlight set 42%' "$HOME/bctl.log" && ok "bar light down: the brightness keys, 5 down" || bad "bar light down" "$(cat "$HOME/bctl.log")"
 rm -f "$HOME/bctl.log"; rc=0; out=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display brightness down 2>&1) || rc=$?
