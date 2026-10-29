@@ -143,6 +143,8 @@ want() {   # want SECTION -- whether this run holds the section
 # (each was defined in the section that first needed it; a part that
 # skips that section still needs them, so they stand here)
 esc=$(printf '\033')
+me=$(id -un)
+py3=$(command -v python3 || :)   # the real one (console_stubs put a fake in $H/lx); a container without it: the stub makes no socket, and the start waits its 5 s
 desktop_stubs() {
     for t in sway swaymsg foot; do
         printf '#!/bin/sh\necho "%s-stub $*" >&2\n' "$t" > "$H/.local/bin/$t"; chmod +x "$H/.local/bin/$t"
@@ -2517,7 +2519,6 @@ fi
 # /var/service and adds you to _seatd, each with a record of its own, and
 # off desktop undoes exactly what the records say. The package manager,
 # usermod, gpasswd and pgrep are stubs; /etc/group is the root's.
-me=$(id -un)
 void_desktop
 out=$(L on desktop --dry-run </dev/null)
 printf '%s\n' "$out" | grep -q '^would  desktop      seatd: link /etc/sv/seatd into /var/service' && printf '%s\n' "$out" | grep -q "^would  desktop      add $me to the _seatd group (sudo)\$" \
@@ -2854,7 +2855,6 @@ rc=0; out=$(TEST_TTY=/dev/tty1 XDG_RUNTIME_DIR=$H/run env -u WAYLAND_DISPLAY PAT
 # no systemd: PipeWire, WirePlumber and the PulseAudio server start before
 # sway and stop after it; with systemd (its user units) or one already
 # answering, none is started
-py3=$(command -v python3 || :)   # the real one (console_stubs put a fake in $H/lx); a container without it: the stub makes no socket, and the start waits its 5 s
 for t in pipewire wireplumber pipewire-pulse; do
     { printf '#!/bin/sh\necho $$ > "$HOME/%s.pid"\n' "$t"
       [ "$t" != pipewire ] || [ -z "$py3" ] || printf '%s -c "import socket,sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])" "$XDG_RUNTIME_DIR/pipewire-0"\n' "$py3"
