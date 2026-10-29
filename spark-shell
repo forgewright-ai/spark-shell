@@ -6558,8 +6558,8 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     case $_name in notes_open|reminders_done|reminders_snooze|window_focus|window_close) _plain=$(jq -cn --arg n "$_v" '{name:$n}') ;; esac
     [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_v"; return 0; }   # files: the four lines, not the panel's gate
     _act=$_ta; _arg=$_v; [ "$_ta" != '=' ] || { _act=$_v; _arg=''; }   # a palette's step is its name alone
-    if [ "$_name" = reminders_add ] && ! rem_parse "$_v" >/dev/null 2>&1; then   # no day and time in the words: one question, then the step with the answer in front (#95)
-        _when=$(provide_ask "$1" "When? 5pm, tomorrow 9:00, in 20 minutes" when "a day and a time") || { provide_refuse "$1" "not done: no time given"; return 0; }
+    if [ "$_name" = reminders_add ] && ! rem_parse "$_v" >/dev/null 2>&1; then   # no day and time in the words: one question (the dialog's hint row shows "reminders asks: When: 5pm, ..."), then the step with the answer in front (#95)
+        _when=$(provide_ask "$1" "When" when "5pm, tomorrow 9:00, in 20 min") || { provide_refuse "$1" "not done: no time given"; return 0; }
         _v="$_when $_v"; _arg=$_v
     fi
     case $_th in *f*) ;; *)   # the argument must be a row's own, exactly: the rows are the allowlist
