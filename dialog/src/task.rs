@@ -1,7 +1,7 @@
 //! The desktop host of spark do's tool adapter. No model runs an OS action.
 //! The continuation lives in this window, and results keep their MCP shape.
 
-use crate::app::{App, Helper, Item, Job, Sign, Staged, Step, View, Who};
+use crate::app::{section_name, App, Helper, Item, Job, Sign, Staged, Step, View, Who, DESTS, SETTINGS};
 use crate::gate;
 use crate::model::Call;
 use crate::progress::Work;
@@ -133,7 +133,17 @@ impl App {
             .iter()
             .enumerate()
             .filter(|(_, p)| p.ready && p.dead.is_none() && p.label != "files")
-            .map(|(i, p)| json!({"id": i, "name": p.label}))
+            .map(|(i, p)| {
+                // Discovery needs the same meaning as the native navigation.
+                // A provider's title/state can name a private device or item;
+                // use only the host's static domain descriptions here.
+                let description = SETTINGS
+                    .iter()
+                    .find(|(label, _, _)| *label == p.label)
+                    .map(|(_, _, purpose)| *purpose)
+                    .or_else(|| DESTS.iter().find(|d| d.sections.contains(&p.label.as_str())).map(|d| d.purpose));
+                json!({"id": i, "name": p.label, "title": section_name(&p.label), "description": description})
+            })
             .collect();
         // Only visible state is volunteered. More is read through an explicit
         // inspect decision; hidden notes, directories and networks stay out.
