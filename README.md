@@ -495,18 +495,21 @@ and wl-clipboard).
 ## Notifications, drives and power
 
 A notification comes in the top right corner, under the bar, as a
-surface of the desktop like the dialog: its ground, your palette and
-text face, no frame and no icon. The first line is muted, the app's
-name; what it says is bold under it; the words follow. Its edge lines
-up with the windows' content, and the cards stand a little apart. The
-newest is on top, three at most, and under them one card says how many
-more wait. Those from one app stand together, and the app's line
-counts them (`aerc`, a middle dot, `3`). Each goes after eight seconds
-into the history, which keeps the last ten. A low one is muted and
-goes after five. A critical one stays until you dismiss it, has a red
-edge as an urgent window does, and shows over a full-screen window
-too. A click does what its app offers; a right click dismisses it; a
-middle click dismisses them all. mako draws them, from
+small surface of the desktop like the dialog: its ground, your palette
+and text face, no frame and no icon. The first line opens with spark's
+mark, the heavy angle of the prompt in the accent, then the app's name
+muted; what it says is bold under it; the words follow. The glyphs are
+the dialog's: the mark, a small triangle before what a click opens, a
+warning sign in red on a critical one. Its edge lines up with the
+windows' content, and the cards stand a little apart. The newest is on
+top, three at most, and under them one line says how many more wait.
+Those from one app stand together, and the app's line counts them
+(`aerc`, a middle dot, `3`). Each goes after six seconds into the
+history, which keeps the last ten. A low one is muted through, its
+mark too, and goes after four. A critical one stays until you dismiss
+it and shows over a full-screen window too. A click does what its app
+offers; a right click dismisses it; a middle click dismisses them all.
+mako draws them, from
 `~/.config/mako/config`, and a new look reaches the next one at once.
 Type `spark-shell desktop notifications do-not-disturb on`. They
 stay out of sight, a critical one still shows, the bar says `do not

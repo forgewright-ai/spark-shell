@@ -1,19 +1,21 @@
 # rendered by spark-shell from templates/.config/mako/config -- edit the template, then spark-shell on
 # The notifications (#71): mako draws them in the top right corner, under
-# the bar, as a surface of the desktop like the dialog: the dialog's
+# the bar, as a small surface of the desktop like the dialog: the dialog's
 # ground, the palette's text, the bar's face, no frame and no icon. The
-# first line is muted, the app's name; the summary is bold under it; the
-# words follow. The edge lines up with the windows' content (gaps outer
-# plus the clear border, 16 and 4), and the cards stand 8 apart. The
-# newest is on top, three at most, and under them one card says how many
-# more wait. Those from one app stand together, the app's line counting
-# them. Each is gone after eight seconds into the history (the last ten:
-# spark-shell desktop notifications, or the dialog's Notifications). A
-# low one is muted and gone sooner. A critical one stays until it is
-# dismissed, has a red edge as an urgent window does, and shows over a
-# full-screen window too. A click does what its app offers, a right click
-# dismisses it, a middle click dismisses them all. With do not disturb on
-# they stay out of sight, but a critical one still shows.
+# first line opens with spark's mark, the heavy angle in the accent, then
+# the app's name muted; the summary is bold under it; the words follow.
+# The glyphs are the dialog's: the mark, a small triangle before what a
+# click opens, a warning sign in red on a critical one. The edge lines up
+# with the windows' content (gaps outer plus the clear border, 16 and 4),
+# and the cards stand 8 apart. The newest is on top, three at most, and
+# under them one line says how many more wait. Those from one app stand
+# together, the app's line counting them. Each is gone after six seconds
+# into the history (the last ten: spark-shell desktop notifications, or
+# the dialog's Notifications). A low one is muted through, its mark too,
+# and gone after four. A critical one stays until it is dismissed and
+# shows over a full-screen window too. A click does what its app offers,
+# a right click dismisses it, a middle click dismisses them all. With do
+# not disturb on they stay out of sight, but a critical one still shows.
 font=@BAR_FONT@
 background-color=#@PANEL_BG@
 text-color=#@HEX_FG@
@@ -29,35 +31,35 @@ anchor=top-right
 icons=0
 max-visible=3
 max-history=10
-default-timeout=8000
+default-timeout=6000
 group-by=app-name
 on-button-middle=dismiss-all
-format=<span foreground="#@PANEL_MUTED@">%a</span>\n<b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n<b>%s</b>\n%b
 
 [grouped]
-format=<span foreground="#@PANEL_MUTED@">%a &#183; %g</span>\n<b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a &#183; %g</span>\n<b>%s</b>\n%b
 
 [hidden]
-format=<span foreground="#@PANEL_MUTED@">and %h more</span>
+format=<span foreground="#@PANEL_MUTED@">&#x25B8; and %h more</span>
 
 [urgency=low]
 text-color=#@PANEL_MUTED@
-default-timeout=5000
+default-timeout=4000
+format=<span foreground="#@PANEL_MUTED@">&#x276F; %a</span>\n<b>%s</b>\n%b
 
 [urgency=critical]
 default-timeout=0
-border-size=2
-border-color=#@HEX_ANSI_1@
 layer=overlay
+format=<span foreground="#@HEX_ANSI_1@">&#x26A0;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n<b>%s</b>\n%b
 
-# spark-shell's own: the first line says what it is and what a click
-# opens, a reminder in the dialog's Reminders, a drive plugged in the
-# dialog's Storage, where it mounts
+# spark-shell's own: the first line says what it is and, after the
+# triangle, what a click opens: a reminder in the dialog's Reminders, a
+# drive plugged in the dialog's Storage, where it mounts
 [app-name=spark-shell category=x-spark-shell.reminder]
-format=<span foreground="#@PANEL_MUTED@">reminder &#183; a click opens it</span>\n<b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">reminder &#x25B8; a click opens it</span>\n<b>%s</b>\n%b
 on-button-left=exec makoctl dismiss -n "$id"; foot --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog reminders
 [app-name=spark-shell category=device.added]
-format=<span foreground="#@PANEL_MUTED@">drive &#183; a click opens Storage</span>\n<b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">drive &#x25B8; a click opens Storage</span>\n<b>%s</b>\n%b
 on-button-left=exec makoctl dismiss -n "$id"; foot --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog storage
 
 [mode=do-not-disturb]

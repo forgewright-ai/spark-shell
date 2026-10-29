@@ -623,7 +623,7 @@ panel_load() {
     PANEL_BG=$(hex_mix "$HEX_BG" "$HEX_FG" 9); PANEL_HI=$(hex_mix "$HEX_BG" "$HEX_FG" 18); PANEL_PAD=$(panel_pad)
     _ns=$(look_font_size); : "${_ns:=12}"
     # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
-    { NOTIFY_PAD="$((_ns * 16 / 10)),$((_ns * 2))"; NOTIFY_WIDTH=$((_ns * 36)); NOTIFY_HEIGHT=$((_ns * 12)); }   # the dialog's air (a row tall, two cells wide), about forty cells, six lines
+    { NOTIFY_PAD="$_ns,$((_ns * 3 / 2))"; NOTIFY_WIDTH=$((_ns * 30)); NOTIFY_HEIGHT=$((_ns * 8)); }   # a small card: half the dialog's air, about thirty cells, four lines at most
     # the palette's muted, lifted a third of the way to the text, then further, 5% at a time, until it
     # reads at 4.5 to 1 on the surface (#18): spark-shell's own shade; the palette's colors stay its author's
     _pl=35; PANEL_MUTED=$(hex_mix "$HEX_MUTED" "$HEX_FG" "$_pl")

@@ -5140,21 +5140,22 @@ STUB
     mk=$HOME/.config/mako/config
     grep -q '^# rendered by spark-shell from templates/.config/mako/config' "$mk" && ! grep -q '@[A-Z_0-9]*@' "$mk" \
         && grep -qx 'font=DejaVu Sans Mono 12' "$mk" && grep -qx 'background-color=#0f0f0f' "$mk" && grep -qx 'text-color=#aaaaaa' "$mk" && grep -qx 'progress-color=over #ff555540' "$mk" \
-        && grep -qx 'padding=19,24' "$mk" && grep -qx 'width=432' "$mk" && grep -qx 'height=144' "$mk" && grep -qx 'border-color=#aa0000' "$mk" && grep -qx 'anchor=top-right' "$mk" \
-        && ok "mako's config: the dialog's surface and the text color, the bar's face, the air and the width from the text size, the accent at a quarter for a progress, red for a critical one (#71)" || bad "mako config" "$(cat "$mk" 2>&1)"
-    # the look: the edge on the windows' content (gaps 16 and the clear border 4), 8 between, an app's own together and counted, one card for the rest, a low one muted and short, a critical one over everything, a middle click clears
-    _pm=$(sed -n 's/^format=<span foreground="#\([0-9a-f]*\)">%a<\/span>\\n<b>%s<\/b>\\n%b$/\1/p' "$mk" | head -1)
-    [ -n "$_pm" ] && [ "$_pm" != aaaaaa ] && grep -qx 'margin=8' "$mk" && grep -qx 'outer-margin=12' "$mk" && grep -qx 'group-by=app-name' "$mk" && grep -qx 'on-button-middle=dismiss-all' "$mk" && grep -qx 'icons=0' "$mk" \
-        && [ "$(sed -n '/^\[grouped\]$/{n;p;}' "$mk")" = "format=<span foreground=\"#$_pm\">%a &#183; %g</span>\\n<b>%s</b>\\n%b" ] \
-        && [ "$(sed -n '/^\[hidden\]$/{n;p;}' "$mk")" = "format=<span foreground=\"#$_pm\">and %h more</span>" ] \
-        && [ "$(sed -n '/^\[urgency=low\]$/{n;p;n;p;}' "$mk")" = "$(printf 'text-color=#%s\ndefault-timeout=5000' "$_pm")" ] \
-        && [ "$(sed -n '/^\[urgency=critical\]$/,/^$/p' "$mk" | grep -c .)" = 5 ] && [ "$(sed -n '/^\[urgency=critical\]$/,/^$/p' "$mk" | sed -n '2p;5p')" = "$(printf 'default-timeout=0\nlayer=overlay')" ] \
-        && ok "mako's config: the edge on the windows' content and 8 between, an app's own together with their count, 'and N more' under three, a low one muted and gone in five seconds, a critical one over a full-screen window, a middle click dismisses all (#71)" || bad "mako look" "$(cat "$mk")"
+        && grep -qx 'padding=12,18' "$mk" && grep -qx 'width=360' "$mk" && grep -qx 'height=96' "$mk" && grep -qx 'border-size=0' "$mk" && ! grep -q '^border-color=' "$mk" && grep -qx 'anchor=top-right' "$mk" \
+        && ok "mako's config: the dialog's surface and the text color, the bar's face, half the dialog's air and thirty cells from the text size, the accent at a quarter for a progress, no frame on any (#71)" || bad "mako config" "$(cat "$mk" 2>&1)"
+    # the look: spark's mark in the accent before the app's name, the edge on the windows' content (gaps 16 and the clear border 4), 8 between, an app's own together and counted, one line for the rest, a low one muted through, a critical one under a red warning sign and over everything, a middle click clears
+    _pm=$(sed -n 's/^format=<span foreground="#ff5555">&#x276F;<\/span> <span foreground="#\([0-9a-f]*\)">%a<\/span>\\n<b>%s<\/b>\\n%b$/\1/p' "$mk" | head -1)
+    _mk1='<span foreground="#ff5555">&#x276F;</span> <span foreground="#'"$_pm"'">'; _mk2='</span>\\n<b>%s</b>\\n%b'
+    [ -n "$_pm" ] && [ "$_pm" != aaaaaa ] && grep -qx 'margin=8' "$mk" && grep -qx 'outer-margin=12' "$mk" && grep -qx 'group-by=app-name' "$mk" && grep -qx 'on-button-middle=dismiss-all' "$mk" && grep -qx 'icons=0' "$mk" && grep -qx 'default-timeout=6000' "$mk" \
+        && [ "$(sed -n '/^\[grouped\]$/{n;p;}' "$mk")" = "format=$_mk1%a &#183; %g$_mk2" ] \
+        && [ "$(sed -n '/^\[hidden\]$/{n;p;}' "$mk")" = "format=<span foreground=\"#$_pm\">&#x25B8; and %h more</span>" ] \
+        && [ "$(sed -n '/^\[urgency=low\]$/,/^$/p' "$mk" | sed -n '2,4p')" = "$(printf 'text-color=#%s\ndefault-timeout=4000\nformat=<span foreground="#%s">&#x276F; %%a</span>%s' "$_pm" "$_pm" "$_mk2")" ] \
+        && [ "$(sed -n '/^\[urgency=critical\]$/,/^$/p' "$mk" | sed -n '2,4p')" = "$(printf 'default-timeout=0\nlayer=overlay\nformat=<span foreground="#aa0000">&#x26A0;</span> <span foreground="#%s">%%a%s' "$_pm" "$_mk2")" ] \
+        && ok "mako's config: the mark in the accent, the edge on the windows' content and 8 between, an app's own together with their count, 'and N more' under three, a low one muted through and gone in four seconds, a critical one under a red warning sign with no frame and over a full-screen window, a middle click dismisses all (#71)" || bad "mako look" "$(cat "$mk")"
     grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog reminders" "$mk" \
         && grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog storage" "$mk" \
         && grep -qx '\[app-name=spark-shell category=x-spark-shell.reminder\]' "$mk" && grep -qx '\[app-name=spark-shell category=device.added\]' "$mk" \
-        && [ "$(sed -n '/^\[app-name=spark-shell category=x-spark-shell.reminder\]$/{n;p;}' "$mk")" = "format=<span foreground=\"#$_pm\">reminder &#183; a click opens it</span>\\n<b>%s</b>\\n%b" ] \
-        && [ "$(sed -n '/^\[app-name=spark-shell category=device.added\]$/{n;p;}' "$mk")" = "format=<span foreground=\"#$_pm\">drive &#183; a click opens Storage</span>\\n<b>%s</b>\\n%b" ] \
+        && [ "$(sed -n '/^\[app-name=spark-shell category=x-spark-shell.reminder\]$/{n;p;}' "$mk")" = "format=${_mk1}reminder &#x25B8; a click opens it$_mk2" ] \
+        && [ "$(sed -n '/^\[app-name=spark-shell category=device.added\]$/{n;p;}' "$mk")" = "format=${_mk1}drive &#x25B8; a click opens Storage$_mk2" ] \
         && [ "$(sed -n '/^\[mode=do-not-disturb\]$/,$p' "$mk" | grep -c .)" = 4 ] && tail -1 "$mk" | grep -qx 'invisible=0' \
         && ok "mako's config: a reminder or a drive says so on its first line, and a click opens the dialog there; do not disturb last, a critical one through it" || bad "mako criteria" "$(cat "$mk")"
     grep -qx 'exec mako' "$HOME/.config/sway/config" && ok "sway config: mako starts with the desktop" || bad "sway exec mako" "$(grep -n mako "$HOME/.config/sway/config")"
