@@ -74,7 +74,8 @@ bar {
     # draws with no hinting (~/.config/fontconfig/conf.d/50-spark-shell.conf),
     # so the four bars end on one line, as foot draws them (#43)
     workspace_buttons yes
-    strip_workspace_numbers no
+    # workspaces are named N:GLYPH (spark-shell bar status names them): the glyph alone
+    strip_workspace_numbers yes
     status_padding 2
     status_edge_padding 10
     colors {

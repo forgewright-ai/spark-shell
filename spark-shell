@@ -3288,9 +3288,26 @@ BAR_DEV=${SPARK_SHELL_DEV:-/dev}      # tests: the i2c devices a DDC/CI screen i
 BAR_PID=$STATE_DIR/bar.pid            # the running `bar status`, for the redraw signal
 BAR_ASOUNDRC=$HOME/.config/alsa/asoundrc   # ALSA reads it after ~/.asoundrc; ours only with the marker line
 BAR_GAP=14                            # px between blocks of a group
-BAR_FULL=$(printf '\342\226\210')     # U+2588 full block: the gauge's level
-BAR_SHADE=$(printf '\342\226\221')    # U+2591 light shade: the gauge's rest
-BAR_DIV=$(printf '\342\224\202')      # U+2502 light vertical line: between groups
+BAR_GROUP_GAP=28                      # px between groups: air, no divider
+BAR_FULL=$(printf '\342\226\210')     # U+2588 full block: the glance's level
+BAR_SHADE=$(printf '\342\226\221')    # U+2591 light shade: the glance's rest
+# The bar's words are glyphs, every one Monaspace Neon's own: filled is
+# on, hollow is off or muted, the accent is connected, red wants you.
+BAR_LAN=$(printf '\342\207\205')      # U+21C5 up and down arrows: the wire
+BAR_BT=$(printf '\342\234\246')       # U+2726 black four-pointed star: bluetooth on
+BAR_BT_OFF=$(printf '\342\234\247')   # U+2727 white four-pointed star: bluetooth off
+BAR_OUT=$(printf '\342\227\200')      # U+25C0 black left-pointing triangle: sound out
+BAR_OUT_OFF=$(printf '\342\227\201')  # U+25C1 white left-pointing triangle: sound out, muted
+BAR_MIC=$(printf '\342\227\211')      # U+25C9 fisheye: the mic, open
+BAR_MIC_OFF=$(printf '\342\227\213')  # U+25CB white circle: the mic, muted (recording: PANEL_DOT in red)
+BAR_LIGHT=$(printf '\342\230\274')    # U+263C white sun with rays: brightness
+BAR_KB=$(printf '\342\214\227')       # U+2317 viewdata square: the keyboard's layout
+BAR_DUE=$(printf '\342\232\221')      # U+2691 black flag: a reminder due
+BAR_DND=$(printf '\342\217\276')      # U+23FE power sleep symbol: do not disturb
+BAR_PIP=$(printf '\342\226\260')      # U+25B0 black parallelogram: a gauge's cell, lit
+BAR_PIP_OFF=$(printf '\342\226\261')  # U+25B1 white parallelogram: a gauge's cell, unlit
+# workspaces 1 to 10, named N:GLYPH by bar_ws_names; the bar strips the number
+BAR_WS='\342\237\201 \342\215\231 \342\213\224 \342\247\226 \342\215\246 \342\250\263 \342\253\232 \342\215\255 \342\214\275 \342\215\237'   # U+27C1 2359 22D4 29D6 2366 2A33 2ADA 236D 233D 235F
 BAR_STEPS='\342\226\202 \342\226\204 \342\226\206 \342\226\210'   # U+2582 2584 2586 2588: the wifi bars
 BAR_BARS_FAMILY='spark-shell bars'   # the family the wifi bars ask for: no font has it, and fontconfig's rule of ours draws it unhinted (#43)
 
@@ -3302,12 +3319,27 @@ bar_block() {   # bar_block NAME INSTANCE MARKUP [GAP] -> one block; swaybar's o
 bar_short() {   # bar_short NAME -> lowercase, whole words up to 12 characters
     printf '%s' "$1" | tr 'A-Z' 'a-z' | awk '{ s = ""; for (i = 1; i <= NF; i++) { t = (s == "" ? $i : s " " $i); if (length(t) > 12 && s != "") break; s = t } print s }' | cut -c1-12
 }
-bar_gauge() {   # bar_gauge LEVEL MUTED -> 10 cells, the level in the accent (muted when MUTED=1), the rest muted
-    n=$(( ($1 + 5) / 10 )); [ "$1" -le 0 ] || [ "$n" -gt 0 ] || n=1; [ "$n" -le 10 ] || n=10
-    full=''; i=0; while [ "$i" -lt "$n" ]; do full="$full$BAR_FULL"; i=$((i + 1)); done
-    rest=''; while [ "$i" -lt 10 ]; do rest="$rest$BAR_SHADE"; i=$((i + 1)); done
-    c=$HEX_ACCENT; [ "$2" != 1 ] || c=$HEX_MUTED
+bar_gauge() {   # bar_gauge LEVEL MUTED [CELLS] [COLOR] -> CELLS cells (5), the level lit in COLOR (the accent; muted when MUTED=1), the rest unlit and muted
+    cells=${3:-5}; n=$(( ($1 * cells + 50) / 100 )); [ "$1" -le 0 ] || [ "$n" -gt 0 ] || n=1; [ "$n" -le "$cells" ] || n=$cells
+    full=''; i=0; while [ "$i" -lt "$n" ]; do full="$full$BAR_PIP"; i=$((i + 1)); done
+    rest=''; while [ "$i" -lt "$cells" ]; do rest="$rest$BAR_PIP_OFF"; i=$((i + 1)); done
+    c=${4:-$HEX_ACCENT}; [ "$2" != 1 ] || c=$HEX_MUTED
     printf '%s%s' "$(bar_span "$c" "$full")" "$(bar_span "$HEX_MUTED" "$rest")"
+}
+bar_ws_glyph() { set -- "$1" $BAR_WS; _n=$1; shift; [ "$_n" -ge 1 ] 2>/dev/null && [ "$_n" -le $# ] || return 1; eval "printf \"\$$_n\""; }   # bar_ws_glyph N -> workspace N's glyph; nothing past the tenth
+bar_ws_names() {   # each workspace named by its number ("3"), or a layout's "3 writing", becomes "3:GLYPH" or "3:GLYPH writing"
+    command -v jq >/dev/null 2>&1 || return 0
+    swaymsg -t get_workspaces 2>/dev/null | jq -r '.[] | select(.name | test("^[0-9]+( |$)")) | "\(.num)\t\(.name)"' 2>/dev/null |
+        while IFS="$TAB" read -r n name; do
+            g=$(bar_ws_glyph "$n") || continue
+            swaymsg -- "rename workspace \"$name\" to \"$n:$g${name#"$n"}\"" >/dev/null 2>&1 || :
+        done
+}
+bar_ws_watch() {   # swaymsg's workspace events, each a rename pass: a new workspace takes its glyph at once
+    bar_ws_names
+    swaymsg -r -t subscribe -m '["workspace"]' 2>/dev/null | while IFS= read -r _e; do   # -r: one event a line
+        case $_e in *'"change":"init"'*|*'"change":"rename"'*) bar_ws_names ;; esac   # a layout's rename to "3 writing" takes the glyph back
+    done
 }
 bar_bars() {   # bar_bars LEVEL (0-4) -> the four rising bars, LEVEL of them lit, in the bar's face with no hinting: hinting moves each block glyph by its own fraction of a pixel, and the bars' bottoms stepped (#43)
     i=1; out=''
@@ -3644,69 +3676,68 @@ kb_active() {   # -> the layout in use, by its KEYBOARD word; nothing with one l
 }
 
 # --- the line, the clicks, the loop
-bar_line() {   # one JSON array of the blocks present now; groups parted by a divider
+bar_line() {   # one JSON array of the blocks present now; groups parted by air
     line=''; group=''
     bar_add() { group="${group:+$group,}$1"; }
-    bar_group() { [ -z "$group" ] || { [ -z "$line" ] || line="$line,$(bar_block div '' "$(bar_span "$HEX_MUTED" "$BAR_DIV")")"; line="${line:+$line,}$group"; group=''; }; }
+    bar_group() { [ -z "$group" ] || { line="${line:+$line,}${group%\"separator_block_width\":*}\"separator_block_width\":$BAR_GROUP_GAP}"; group=''; }; }   # the group's last block takes the wider air
     SND=$(snd_tool)
     # connections
     lan=$(bar_lan)
     case $lan in
-        up*) bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" lan)")" ;;
-        down) bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" lan) $(bar_span "$HEX_ANSI_1" "$PANEL_WARN down")")" ;;
+        up*) bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" "$BAR_LAN")")" ;;
+        down) bar_add "$(bar_block lan '' "$(bar_span "$HEX_ANSI_1" "$BAR_LAN $PANEL_WARN")")" ;;
     esac
     wifi=$(bar_wifi)
-    [ -z "$wifi" ] || bar_add "$(bar_block wifi '' "$(bar_span "$HEX_MUTED" wifi) $(bar_bars "${wifi%% *}")")"
+    [ -z "$wifi" ] || bar_add "$(bar_block wifi '' "$(bar_bars "${wifi%% *}")")"
     bt=$(bar_bt)
     case $bt in
-        name*) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" bt) $(bar_span "$HEX_ACCENT" "$PANEL_DOT") $(bar_esc "$(bar_short "${bt#name }")")")" ;;
-        on) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" bt)")" ;;
-        off) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" 'bt off')")" ;;
+        name*) bar_add "$(bar_block bt '' "$(bar_span "$HEX_ACCENT" "$BAR_BT")")" ;;   # connected: the device's name is the panel's
+        on) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" "$BAR_BT")")" ;;
+        off) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" "$BAR_BT_OFF")")" ;;
     esac
     bar_group
     # sound
     out=$(snd_out)
     if [ -n "$out" ]; then
-        n=$(printf '%s\n' "$out" | sed -n 1p); lvl=$(printf '%s\n' "$out" | sed -n 2p); m=$(printf '%s\n' "$out" | sed -n 3p)
-        shown=$(bar_esc "$(bar_short "$n")")
-        gap=$BAR_GAP; [ "$lvl" = - ] || [ -z "$lvl" ] || gap=6   # the gauge sits close to its name
-        bar_add "$(bar_block out name "$(bar_span "$HEX_MUTED" out) $shown" "$gap")"
+        lvl=$(printf '%s\n' "$out" | sed -n 2p); m=$(printf '%s\n' "$out" | sed -n 3p)
+        k=$BAR_OUT; [ "$m" != 1 ] || k=$BAR_OUT_OFF
+        gap=$BAR_GAP; [ "$lvl" = - ] || [ -z "$lvl" ] || gap=6   # the gauge sits close to its sign
+        bar_add "$(bar_block out name "$(bar_span "$HEX_MUTED" "$k")" "$gap")"
         [ "$lvl" = - ] || [ -z "$lvl" ] || bar_add "$(bar_block out gauge "$(bar_gauge "$lvl" "$m")")"
     fi
     mic=$(snd_mic)
     if [ -n "$mic" ]; then
-        n=$(printf '%s\n' "$mic" | sed -n 1p); live=$(printf '%s\n' "$mic" | sed -n 2p); m=$(printf '%s\n' "$mic" | sed -n 3p); lvl=$(printf '%s\n' "$mic" | sed -n 4p)
-        c=$HEX_MUTED; k=mic; [ "$live" != 1 ] || { c=$HEX_ANSI_1; k="mic $PANEL_DOT"; }   # red, with a dot, while a program records
-        if [ "$lvl" = - ] || [ -z "$lvl" ]; then   # no level control: the word says muted
-            if [ "$m" = 1 ]; then bar_add "$(bar_block mic name "$(bar_span "$HEX_MUTED" 'mic off')")"
-            else bar_add "$(bar_block mic name "$(bar_span "$c" "$k") $(bar_esc "$(bar_short "$n")")")"; fi
+        live=$(printf '%s\n' "$mic" | sed -n 2p); m=$(printf '%s\n' "$mic" | sed -n 3p); lvl=$(printf '%s\n' "$mic" | sed -n 4p)
+        c=$HEX_MUTED; k=$BAR_MIC; [ "$m" != 1 ] || k=$BAR_MIC_OFF
+        [ "$live" != 1 ] || { c=$HEX_ANSI_1; k=$PANEL_DOT; }   # red, a dot, while a program records
+        if [ "$lvl" = - ] || [ -z "$lvl" ]; then bar_add "$(bar_block mic name "$(bar_span "$c" "$k")")"
         else
-            bar_add "$(bar_block mic name "$(bar_span "$c" "$k") $(bar_esc "$(bar_short "$n")")" 6)"
+            bar_add "$(bar_block mic name "$(bar_span "$c" "$k")" 6)"
             bar_add "$(bar_block mic gauge "$(bar_gauge "$lvl" "$m")")"
         fi
     fi
     bar_group
     # a reminder due: its own group, before the seat (a click opens the reminders)
     due=$(rem_due 2>/dev/null || :)
-    [ -z "$due" ] || { bar_add "$(bar_block due '' "$(bar_span "$HEX_MUTED" due) $(bar_span "$HEX_ACCENT" "$PANEL_DOT") $(bar_esc "$(printf '%s' "${due#*"$TAB"}" | cut_chars 28)")")"; bar_group; }
+    [ -z "$due" ] || { bar_add "$(bar_block due '' "$(bar_span "$HEX_ACCENT" "$BAR_DUE") $(bar_esc "$(printf '%s' "${due#*"$TAB"}" | cut_chars 28)")")"; bar_group; }
     # do not disturb: said while it is on, so no notification waits out of sight unsaid (#71); a click opens its section
-    if command -v makoctl >/dev/null 2>&1 && notify_dnd; then bar_add "$(bar_block notifications '' "$(bar_span "$HEX_MUTED" 'do not disturb')")"; bar_group; fi
+    if command -v makoctl >/dev/null 2>&1 && notify_dnd; then bar_add "$(bar_block notifications '' "$(bar_span "$HEX_MUTED" "$BAR_DND")")"; bar_group; fi
     # the seat: the brightness, the keyboard's layout
     lt=$(light_get)
     if [ -n "$lt" ]; then
-        bar_add "$(bar_block light name "$(bar_span "$HEX_MUTED" light)" 6)"
+        bar_add "$(bar_block light name "$(bar_span "$HEX_MUTED" "$BAR_LIGHT")" 6)"
         bar_add "$(bar_block light gauge "$(bar_gauge "$lt" 0)")"
     fi
     kb=$(kb_active)
-    [ -z "$kb" ] || bar_add "$(bar_block kb '' "$(bar_span "$HEX_MUTED" kb) $(bar_esc "$kb")")"
+    [ -z "$kb" ] || bar_add "$(bar_block kb '' "$(bar_span "$HEX_MUTED" "$BAR_KB") $(bar_esc "$kb")")"
     bar_group
-    # power
+    # power: four cells and the number
     bat=$(bar_power)
     if [ -n "$bat" ]; then
         cap=${bat%% *}; stt=${bat#* }; plus=''; c=$HEX_FG
         [ "$stt" != Charging ] || plus=$(bar_span "$HEX_ACCENT" +)
-        [ "$cap" -ge 15 ] || [ "$stt" = Charging ] || { c=$HEX_ANSI_1; cap="$PANEL_WARN $cap"; }
-        bar_add "$(bar_block bat '' "$(bar_span "$HEX_MUTED" bat) $(bar_span "$c" "$cap")$plus")"
+        [ "$cap" -ge 15 ] || [ "$stt" = Charging ] || c=$HEX_ANSI_1
+        bar_add "$(bar_block bat '' "$(bar_gauge "$cap" 0 4 "$c") $(bar_span "$c" "$cap")$plus")"
     fi
     bar_group
     # time
@@ -3749,12 +3780,13 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
     command -v jq >/dev/null 2>&1 || echo "spark-shell bar status: jq is not installed, so the bar takes no clicks (spark-shell on)" >&2
     mkdir_private "$STATE_DIR"; printf '%s\n' "$$" > "$BAR_PID"
     # the traps first: the reader's first SIGUSR1 may come before it is read here
-    reader=''; sleeper=''
-    trap 'kill ${reader:-} ${sleeper:-} 2>/dev/null || :; rm -f "$BAR_PID"; exit 0' INT TERM HUP PIPE   # || : -- a failing kill inside a trap would end the shell under set -e
+    reader=''; sleeper=''; watcher=''
+    trap 'kill ${reader:-} ${sleeper:-} ${watcher:-} 2>/dev/null || :; rm -f "$BAR_PID"; exit 0' INT TERM HUP PIPE   # || : -- a failing kill inside a trap would end the shell under set -e
     trap 'redraw=1; kill ${sleeper:-} 2>/dev/null || :' USR1   # redraw: a click while a line is drawn draws again at once
     printf '{"version":1,"click_events":true}\n[\n'
     exec 3<&0; bar_clicks <&3 &   # an explicit stdin: a background job's own would be /dev/null in dash (POSIX)
     reader=$!
+    [ -z "${SWAYSOCK:-}" ] || { bar_ws_watch </dev/null & watcher=$!; }   # the workspaces' glyphs
     _ts=$(theme_sum); _bp=$({ cksum < "$BAR_PALETTE"; } 2>/dev/null || :); _line=''
     storage_sig; _bseen=$_bsg
     while :; do
@@ -3775,7 +3807,7 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
             storage_sig; [ "$_bsg" = "$_bseen" ] || { _bseen=$_bsg; redraw=1; }   # a disk came or went: a look now, not in 15 s
         done
     done
-    kill ${reader:-} 2>/dev/null || :; rm -f "$BAR_PID"
+    kill ${reader:-} ${watcher:-} 2>/dev/null || :; rm -f "$BAR_PID"
 }
 bar_redraw() { [ -f "$BAR_PID" ] && read -r p < "$BAR_PID" && kill -USR1 "$p" 2>/dev/null || :; }   # the running bar draws again now
 BAR_PALETTE=$STATE_DIR/bar.palette   # the colors of the bar's line, written by a look change for the bar to take at once (#33)

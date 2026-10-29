@@ -2698,6 +2698,7 @@ echo "$*" >> "$HOME/swaymsg.log"
 case "$*" in
     "-t get_version") echo '{"major":1}' ;;
     "-t get_inputs") echo '[{"type":"keyboard","xkb_layout_names":["English (US)","Portuguese (Brazil)"],"xkb_active_layout_index":1}]' ;;
+    "-t get_workspaces") echo '[{"num":1,"name":"1"},{"num":2,"name":"2:x"},{"num":3,"name":"3 writing"},{"num":11,"name":"11"}]' ;;
     "-t get_outputs") echo '[{"name":"eDP-1","make":"BOE","model":"0x0BCA","serial":"","active":true,"scale":1.0,"current_mode":{"width":1920,"height":1080},"rect":{"x":0,"y":0,"width":1920,"height":1080},"modes":[{"width":1920,"height":1080},{"width":1280,"height":720}]},{"name":"HDMI-A-1","make":"Lenovo Group Limited","model":"T24i-30","serial":"V30A1","active":true,"scale":1.0,"current_mode":{"width":1920,"height":1080},"rect":{"x":1920,"y":0,"width":1920,"height":1080},"modes":[{"width":1920,"height":1080}]}]' ;;
 esac
 STUB
@@ -2911,9 +2912,15 @@ printf '#!/bin/sh\necho "$*" >> "$HOME/bctl.log"\ncase "$*" in "-m -c backlight 
 rc=0; out=$(SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" desktop display brightness up 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'brightness at 52%' ] && grep -qx -- '-q -c backlight set 52%' "$HOME/bctl.log" && ok "desktop display brightness up: the backlight 5 up, through brightnessctl" || bad "brightness backlight" "rc=$rc $out $(cat "$HOME/bctl.log" 2>&1)"
 line=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null)
-full=$(printf '\342\226\210'); g=$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "gauge") | .full_text'); k=$(printf '%s' "$line" | jq -r '.[] | select(.name == "kb") | .full_text')
-[ "$(printf '%s' "$g" | LC_ALL=C grep -o "$full" | wc -l | tr -d ' ')" = 5 ] && [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "name") | .full_text')" = "<span foreground='#555555'>light</span>" ] && [ "$k" = "<span foreground='#555555'>kb</span> us+intl" ] \
-    && ok "bar: light with its gauge (47, five cells), and kb with the layout in use (sway's second, us+intl)" || bad "bar light kb" "$line"
+pip=$(printf '\342\226\260'); pipoff=$(printf '\342\226\261'); g=$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "gauge") | .full_text'); k=$(printf '%s' "$line" | jq -r '.[] | select(.name == "kb") | .full_text')
+[ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pip" | wc -l | tr -d ' ')" = 2 ] && [ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pipoff" | wc -l | tr -d ' ')" = 3 ] && [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "name") | .full_text')" = "<span foreground='#555555'>$(printf '\342\230\274')</span>" ] && [ "$k" = "<span foreground='#555555'>$(printf '\342\214\227')</span> us+intl" ] \
+    && ok "bar: light, a sun with its gauge (47: two of five cells), and kb, a key grid with the layout in use (sway's second, us+intl)" || bad "bar light kb" "$line"
+# the workspaces' glyphs: a workspace named by its number, or a layout's "3 writing", takes its glyph; one named already, or past the tenth, is left
+rm -f "$HOME/swaymsg.log"
+SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status </dev/null >/dev/null 2>&1 & bp=$!
+i=0; while [ "$i" -lt 50 ] && ! grep -q '^-r -t subscribe' "$HOME/swaymsg.log" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null; wait "$bp" 2>/dev/null
+[ "$(grep '^-- rename' "$HOME/swaymsg.log" 2>/dev/null)" = "$(printf '%s\n' "-- rename workspace \"1\" to \"1:$(printf '\342\237\201')\"" "-- rename workspace \"3 writing\" to \"3:$(printf '\342\213\224') writing\"")" ] \
+    && ok "bar status: workspace 1 becomes 1:GLYPH, a layout's 3 writing keeps its words after the glyph; 2:x and 11 are left" || bad "workspace glyphs" "$(cat "$HOME/swaymsg.log" 2>&1)"
 SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" bar light down; grep -qx -- '-q -c backlight set 42%' "$HOME/bctl.log" && ok "bar light down: the brightness keys, 5 down" || bad "bar light down" "$(cat "$HOME/bctl.log")"
 rm -f "$HOME/bctl.log"; rc=0; out=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display brightness down 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'brightness at 42%' ] && grep -qx -- '-q -c backlight set 42%' "$HOME/bctl.log" \
@@ -2991,7 +2998,7 @@ printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:spark-shell-test-1@box\r\nDTSTART
 printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:khal-1\r\nDTSTART:%s\r\nSUMMARY:a long title from another calendar\\, folded\r\n  across two lines\; done\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:khal-old\r\nDTSTART:20200101T080000Z\r\nSUMMARY:an old meeting\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:khal-weekly\r\nDTSTART:%s\r\nRRULE:FREQ=WEEKLY\r\nSUMMARY:a weekly one\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' "$(ago_utc 30)" "$(ago 10)" > "$HOME/calendar/other.ics"
 printf '#!/bin/sh\necho "$*" >> "$HOME/chime.log"\n' > "$H/lx/pw-play"; chmod +x "$H/lx/pw-play"; rm -f "$HOME/chime.log"
 line=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null); SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once >/dev/null 2>&1; sleep 1
-[ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "due") | .full_text')" = "<span foreground='#555555'>due</span> <span foreground='#ff5555'>$(printf '\342\227\217')</span> a long title from another ca" ] && [ "$(grep -c . "$HOME/chime.log" 2>/dev/null)" = 1 ] \
+[ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "due") | .full_text')" = "<span foreground='#ff5555'>$(printf '\342\232\221')</span> a long title from another ca" ] && [ "$(grep -c . "$HOME/chime.log" 2>/dev/null)" = 1 ] \
     && ok "bar: the latest reminder due (another tool's, in UTC, its folded title joined), cut at 28 characters, and one chime for the two due, not at every line" || bad "due block" "$(printf '%s' "$line" | jq -c '.[] | select(.name == "due")') chimes=$(cat "$HOME/chime.log" 2>&1)"
 rows=$(NL reminders --list)
 printf '%s\n' "$rows" | grep -q "a long title from another calendar, folded across two lines; done	reminders show" && ! printf '%s\n' "$rows" | grep -q 'an old meeting\|a weekly one' \
@@ -3412,52 +3419,54 @@ else
     grep -q '^    font pango:Test Mono 14px$' "$sway" && grep -q '^        background #000000d9$' "$sway" && ok "sway: a pixelsize font is Npx in pango; none is the ground, the bar as translucent as over any wallpaper" || bad "bar font px" "$(grep -n 'font\|background' "$sway")"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on --yes >/dev/null
-    # one line: every block present, in its group, parted by dividers
+    # one line: every block present, in its group, groups parted by air
     st=0; line=$(sh "$SH" bar status --once 2>&1) || st=$?
     names=$(printf '%s' "$line" | jq -r '[.[] | .name + ":" + .instance] | join(" ")' 2>/dev/null || :)
-    [ "$st" -eq 0 ] && [ "$names" = 'lan: wifi: bt: div: out:name out:gauge mic:name mic:gauge div: bat: div: clock: logo:' ] \
-        && ok "bar status --once: lan, wifi, bt | out (name, gauge), mic (name, gauge) | bat | clock, one JSON array; no theme block (the palette is the panel's)" || bad "bar line" "st=$st $names $line"
+    [ "$st" -eq 0 ] && [ "$names" = 'lan: wifi: bt: out:name out:gauge mic:name mic:gauge bat: clock: logo:' ] \
+        && ok "bar status --once: lan, wifi, bt | out (sign, gauge), mic (sign, gauge) | bat | clock, one JSON array; no theme block (the palette is the panel's)" || bad "bar line" "st=$st $names $line"
     printf '%s' "$line" | jq -e 'all(.[]; .markup == "pango" and .separator == false)' >/dev/null 2>&1 && ok "bar: every block is pango markup with swaybar's own separator off" || bad "bar markup" "$line"
     t() { printf '%s' "$line" | jq -r --arg n "$1" --arg i "${2:-}" '.[] | select(.name == $n and .instance == $i) | .full_text'; }   # t NAME [INSTANCE] -> its text
-    [ "$(t lan)" = "<span foreground='#555555'>lan</span>" ] && ok "lan: the word alone, muted, when the wire is up (no address on screen)" || bad "lan block" "$(t lan)"
-    w=$(t wifi); [ "$(count "$w" "'#ff5555'")" = 3 ] && [ "$(count "$w" "'#555555'")" = 2 ] && ! printf '%s' "$w" | grep -q '192\.' \
-        && ok "wifi: four rising bars, 3 lit in the accent at 49/70 (70%), the word muted, no address" || bad "wifi block" "$w"
+    pip=$(printf '\342\226\260'); pipoff=$(printf '\342\226\261')
+    cur() { sh "$SH" bar panel "$1" --list 2>&1 | sed -n 1p | tr 'A-Z' 'a-z'; }   # cur out|mic -> the panel's title, the device in use: the bar shows its sign alone
+    [ "$(t lan)" = "<span foreground='#555555'>$(printf '\342\207\205')</span>" ] && ok "lan: the arrows alone, muted, when the wire is up (no address on screen)" || bad "lan block" "$(t lan)"
+    w=$(t wifi); [ "$(count "$w" "'#ff5555'")" = 3 ] && [ "$(count "$w" "'#555555'")" = 1 ] && ! printf '%s' "$w" | grep -q '192\.' \
+        && ok "wifi: four rising bars, 3 lit in the accent at 49/70 (70%), no word, no address" || bad "wifi block" "$w"
     printf '%s' "$w" | grep -q "<span font_family='spark-shell bars,[^',]*'><span foreground=" && grep -qF '<string>spark-shell bars</string>' "$HOME/.config/fontconfig/conf.d/50-spark-shell.conf" \
         && grep -q '<edit name="hinting" mode="assign"><bool>false</bool></edit>' "$HOME/.config/fontconfig/conf.d/50-spark-shell.conf" && grep -q 'rendered by spark-shell' "$HOME/.config/fontconfig/conf.d/50-spark-shell.conf" \
         && ok "wifi: the bars in the family spark-shell bars, then the bar's face; on desktop's fontconfig rule draws that family alone unhinted, so the four end on one line (#43)" || bad "wifi bars family" "$w $(cat "$HOME/.config/fontconfig/conf.d/50-spark-shell.conf" 2>&1)"
-    [ "$(t bt)" = "<span foreground='#555555'>bt</span> <span foreground='#ff5555'>$(printf '\342\227\217')</span> major v" ] && ok "bt: the word muted, a dot in the accent, the connected device's name in the text color, lowercase" || bad "bt block" "$(t bt)"
-    [ "$(t out name)" = "<span foreground='#555555'>out</span> jabra" ] && ok "out: the word muted, the card's ALSA id in the text color, lowercase (jabra)" || bad "out name" "$(t out name)"
-    g=$(t out gauge); [ "$(count "$g" "$full")" = 4 ] && [ "$(count "$g" "$shade")" = 6 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" \
-        && ok "out: the gauge is 10 cells, 4 full blocks in the accent at 40%, 6 light shades muted" || bad "out gauge" "$g"
-    [ "$(t mic name)" = "<span foreground='#555555'>mic</span> jabra" ] && ok "mic: muted while idle, with the card's name" || bad "mic block" "$(t mic name)"
-    g=$(t mic gauge); [ "$(count "$g" "$full")" = 5 ] && [ "$(count "$g" "$shade")" = 5 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" \
-        && ok "mic: its own gauge, 5 full blocks in the accent at 50% (the Capture level)" || bad "mic gauge" "$g"
-    [ "$(t bat)" = "<span foreground='#555555'>bat</span> <span foreground='#aaaaaa'>80</span>" ] && ok "bat: the word muted, the number in the text color, no gauge" || bad "bat block" "$(t bat)"
+    [ "$(t bt)" = "<span foreground='#ff5555'>$(printf '\342\234\246')</span>" ] && ok "bt: a device connected, the star in the accent; its name is the panel's" || bad "bt block" "$(t bt)"
+    [ "$(t out name)" = "<span foreground='#555555'>$(printf '\342\227\200')</span>" ] && ok "out: the speaker's triangle, muted" || bad "out name" "$(t out name)"
+    g=$(t out gauge); [ "$(count "$g" "$pip")" = 2 ] && [ "$(count "$g" "$pipoff")" = 3 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" \
+        && ok "out: the gauge is 5 cells, 2 lit in the accent at 40%, 3 unlit muted" || bad "out gauge" "$g"
+    [ "$(t mic name)" = "<span foreground='#555555'>$(printf '\342\227\211')</span>" ] && ok "mic: the fisheye, muted while idle" || bad "mic block" "$(t mic name)"
+    g=$(t mic gauge); [ "$(count "$g" "$pip")" = 3 ] && [ "$(count "$g" "$pipoff")" = 2 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" \
+        && ok "mic: its own gauge, 3 of 5 cells in the accent at 50% (the Capture level)" || bad "mic gauge" "$g"
+    [ "$(t bat)" = "<span foreground='#aaaaaa'>$pip$pip$pip</span><span foreground='#555555'>$pipoff</span> <span foreground='#aaaaaa'>80</span>" ] && ok "bat: four cells, three lit, and the number in the text color" || bad "bat block" "$(t bat)"
     printf '%s' "$(t clock)" | grep -Eq "^<span foreground='#555555'>[A-Za-z]+ [0-9]{2} [A-Za-z]+</span> [0-9]{2}:[0-9]{2}$" && ok "clock: the date muted, the time in the text color" || bad "clock block" "$(t clock)"
     printf '%s' "$(t logo)" | grep -Eq "^<span foreground='#[0-9a-f]{6}'>$(printf '\342\235\257')</span>$" && ok "logo: spark-shell's sign, the prompt sign in the palette's yellow, one cell" || bad "logo block" "$(t logo)"
-    [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "div")] | length')" = 3 ] && [ "$(printf '%s' "$line" | jq -r '.[3].full_text')" = "<span foreground='#555555'>$(printf '\342\224\202')</span>" ] && [ "$(printf '%s' "$line" | jq -r '.[-1].name')" = logo ] \
-        && ok "bar: three thin dividers in the muted color, one between each pair of groups, the sign last" || bad "dividers" "$line"
+    [ "$(printf '%s' "$line" | jq -r '[.[] | select(.separator_block_width == 28) | .name + ":" + .instance] | join(" ")')" = 'bt: mic:gauge bat: logo:' ] && [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "div")] | length')" = 0 ] && [ "$(printf '%s' "$line" | jq -r '.[-1].name')" = logo ] \
+        && ok "bar: no dividers, each group's last block takes 28 px of air, the sign last" || bad "group air" "$line"
     LC_ALL=C grep -q "[^ -~${tab}]" "$SH" && bad "the script holds a byte outside ASCII (the glyphs must be built from their bytes)" || ok "the script stays ASCII: the glyphs are built from their bytes"
     # the states: mute, a recording mic, a low battery, a charging one, sound on another card
     touch "$H/muted"; line=$(sh "$SH" bar status --once)
-    g=$(t out gauge); [ "$(count "$g" "'#ff5555'")" = 0 ] && [ "$(count "$g" "$full")" = 4 ] && ok "out muted: the level stays, the whole gauge turns muted" || bad "muted gauge" "$g"
+    g=$(t out gauge); [ "$(count "$g" "'#ff5555'")" = 0 ] && [ "$(count "$g" "$pip")" = 2 ] && [ "$(t out name)" = "<span foreground='#555555'>$(printf '\342\227\201')</span>" ] && ok "out muted: the triangle turns hollow, the level stays, the whole gauge turns muted" || bad "muted gauge" "$(t out name) $g"
     rm -f "$H/muted"
     echo 'state: RUNNING' > "$P/asound/card0/pcm0c/sub0/status"; line=$(sh "$SH" bar status --once)
-    [ "$(t mic name)" = "<span foreground='#aa0000'>mic $(printf '\342\227\217')</span> jabra" ] && ok "mic recording: the word turns red, with a dot" || bad "mic live" "$(t mic name)"
+    [ "$(t mic name)" = "<span foreground='#aa0000'>$(printf '\342\227\217')</span>" ] && ok "mic recording: a red dot" || bad "mic live" "$(t mic name)"
     echo closed > "$P/asound/card0/pcm0c/sub0/status"
     echo 10 > "$S/class/power_supply/BAT0/capacity"; line=$(sh "$SH" bar status --once)
-    [ "$(t bat)" = "<span foreground='#555555'>bat</span> <span foreground='#aa0000'>$(printf '\342\232\240') 10</span>" ] && ok "bat under 15: a warning sign and the number, red" || bad "bat low" "$(t bat)"
+    [ "$(t bat)" = "<span foreground='#aa0000'>$pip</span><span foreground='#555555'>$pipoff$pipoff$pipoff</span> <span foreground='#aa0000'>10</span>" ] && ok "bat under 15: one cell and the number, red" || bad "bat low" "$(t bat)"
     echo Charging > "$S/class/power_supply/BAT0/status"; line=$(sh "$SH" bar status --once)
-    [ "$(t bat)" = "<span foreground='#555555'>bat</span> <span foreground='#aaaaaa'>10</span><span foreground='#ff5555'>+</span>" ] && ok "bat charging: a plus in the accent, and no red while it charges" || bad "bat charging" "$(t bat)"
+    [ "$(t bat)" = "<span foreground='#aaaaaa'>$pip</span><span foreground='#555555'>$pipoff$pipoff$pipoff</span> <span foreground='#aaaaaa'>10</span><span foreground='#ff5555'>+</span>" ] && ok "bat charging: a plus in the accent, and no red while it charges" || bad "bat charging" "$(t bat)"
     echo 80 > "$S/class/power_supply/BAT0/capacity"; echo Discharging > "$S/class/power_supply/BAT0/status"
     echo 'state: RUNNING' > "$P/asound/card1/pcm0p/sub0/status"; line=$(sh "$SH" bar status --once)
-    [ "$(t out name)" = "<span foreground='#555555'>out</span> hdmi" ] && [ -z "$(t out gauge)" ] && ok "sound playing on the HDMI card: out follows it; no volume control there, so no gauge" || bad "out follows" "$(t out name) / $(t out gauge)"
+    [ "$(t out name)" = "<span foreground='#555555'>$(printf '\342\227\200')</span>" ] && [ -z "$(t out gauge)" ] && ok "sound playing on the HDMI card: out follows it; no volume control there, so no gauge" || bad "out follows" "$(t out name) / $(t out gauge)"
     echo closed > "$P/asound/card1/pcm0p/sub0/status"
     touch "$H/bt-none"; line=$(sh "$SH" bar status --once)
-    [ "$(t bt)" = "<span foreground='#555555'>bt</span>" ] && ok "bt with nothing connected: the word alone, muted" || bad "bt idle" "$(t bt)"
+    [ "$(t bt)" = "<span foreground='#555555'>$(printf '\342\234\246')</span>" ] && ok "bt with nothing connected: the star alone, muted" || bad "bt idle" "$(t bt)"
     rm -f "$H/bt-none"
     echo 0 > "$S/class/net/eth0/carrier"; line=$(sh "$SH" bar status --once)
-    [ "$(t lan)" = "<span foreground='#555555'>lan</span> <span foreground='#aa0000'>$(printf '\342\232\240') down</span>" ] && ok "lan with no carrier: a warning sign and down, in red" || bad "lan down" "$(t lan)"
+    [ "$(t lan)" = "<span foreground='#aa0000'>$(printf '\342\207\205') $(printf '\342\232\240')</span>" ] && ok "lan with no carrier: the arrows and a warning sign, in red" || bad "lan down" "$(t lan)"
     echo 1 > "$S/class/net/eth0/carrier"
     # present-only: a machine with none of it shows the clock alone, and no divider
     mv "$S" "$S.full"; mv "$P" "$P.full"; mkdir -p "$S" "$P"
@@ -3511,8 +3520,8 @@ else
     # the file v0.45 wrote (the card by name without !) is mended when the bar starts, and read
     printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.card HDMI\ndefaults.ctl.card HDMI\n' > "$H/.config/alsa/asoundrc"
     line=$(sh "$SH" bar status --once)
-    [ "$(sed -n '2,3p' "$H/.config/alsa/asoundrc" | paste -sd ' ' -)" = 'defaults.pcm.!card HDMI defaults.ctl.!card HDMI' ] && head -1 "$H/.config/alsa/asoundrc" | grep -q '^# rendered by spark-shell' && [ "$(t out name)" = "<span foreground='#555555'>out</span> hdmi" ] \
-        && ok "bar status: a file v0.45 wrote is mended to the ! form at the start, and the out block reads it (hdmi)" || bad "asoundrc mend" "$(cat "$H/.config/alsa/asoundrc"); $(t out name)"
+    [ "$(sed -n '2,3p' "$H/.config/alsa/asoundrc" | paste -sd ' ' -)" = 'defaults.pcm.!card HDMI defaults.ctl.!card HDMI' ] && head -1 "$H/.config/alsa/asoundrc" | grep -q '^# rendered by spark-shell' && cur out | grep -q hdmi \
+        && ok "bar status: a file v0.45 wrote is mended to the ! form at the start, and out reads it (hdmi)" || bad "asoundrc mend" "$(cat "$H/.config/alsa/asoundrc"); $(cur out)"
     rm -f "$H/.config/alsa/asoundrc"
     # Bluetooth on plain ALSA (issue 6): bluez-alsa's devices beside the cards, a pick routed through spark-shell's file, its level bluez-alsa's mixer
     touch "$HOME/bt-audio"; rm -f "$amlog"
@@ -3524,9 +3533,9 @@ else
         && grep -qxF '    capture.pcm "sysdefault"' "$H/.config/alsa/asoundrc" && grep -qx '# bluetooth out: MAJOR V' "$H/.config/alsa/asoundrc" && head -1 "$H/.config/alsa/asoundrc" | grep -q '^# rendered by spark-shell' \
         && ok "out use a headset: playing goes through bluez-alsa's A2DP for programs started from now, listening stays the card's, in spark-shell's own file" || bad "bt out use" "st=$st $out; $(cat "$H/.config/alsa/asoundrc" 2>&1)"
     line=$(sh "$SH" bar status --once)
-    [ "$(t out name)" = "<span foreground='#555555'>out</span> major v" ] && sh "$SH" bar panel out level 35 >/dev/null && sh "$SH" bar panel out mute >/dev/null \
+    [ "$(t out name)" = "<span foreground='#555555'>$(printf '\342\227\200')</span>" ] && cur out | grep -q 'major v' && sh "$SH" bar panel out level 35 >/dev/null && sh "$SH" bar panel out mute >/dev/null \
         && [ "$(cat "$amlog")" = "$(printf '%s\n' '-D bluealsa sset MAJOR V - A2DP 35%' '-D bluealsa sset MAJOR V - A2DP mute')" ] \
-        && ok "out on a headset: the bar names it, and the level and mute are bluez-alsa's mixer" || bad "bt out level" "$(t out name); $(cat "$amlog" 2>&1)"
+        && ok "out on a headset: the panel names it, and the level and mute are bluez-alsa's mixer" || bad "bt out level" "$(t out name) $(cur out); $(cat "$amlog" 2>&1)"
     rm -f "$amlog" "$HOME/bmuted"
     st=0; out=$(sh "$SH" bar panel mic use major v 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -qxF '    capture.pcm { type plug slave.pcm "bluealsa:DEV=00:25:D1:4A:C2:AA,PROFILE=sco" }' "$H/.config/alsa/asoundrc" && grep -q 'PROFILE=a2dp' "$H/.config/alsa/asoundrc" \
@@ -3537,9 +3546,8 @@ else
     [ "$st" -eq 0 ] && ! grep -q 'PROFILE=a2dp' "$H/.config/alsa/asoundrc" && grep -q 'PROFILE=sco' "$H/.config/alsa/asoundrc" && grep -qx 'defaults.pcm.!card HDMI' "$H/.config/alsa/asoundrc" \
         && ok "out use a card after a headset: playing back on the card, the headset's mic kept" || bad "bt back to card" "st=$st $out; $(cat "$H/.config/alsa/asoundrc" 2>&1)"
     rm -f "$HOME/bt-audio"
-    line=$(sh "$SH" bar status --once)
-    printf '%s' "$line" | grep -q 'major v' \
-        && ok "a headset gone: the bar still names the device the file sends listening to" || bad "bt gone" "$line"
+    cur mic | grep -q 'major v' \
+        && ok "a headset gone: the panel still names the device the file sends listening to" || bad "bt gone" "$(cur mic)"
     rm -f "$H/.config/alsa/asoundrc"
     # your own ~/.asoundrc setting the default (here through a file it includes): spark-shell says so and writes nothing
     mkdir -p "$HOME/.config/box"; printf 'pcm.!default { type hw card 1 }\n' > "$HOME/.config/box/box.conf"; printf '<~/.config/box/box.conf>\n' > "$HOME/.asoundrc"
@@ -3577,11 +3585,11 @@ STUB
     printf '#!/bin/sh\n[ "$*" = "-x bluealsa" ] && [ -e "$HOME/bluealsa-runs" ]\n' > "$H/.local/bin/pgrep"
     chmod +x "$H/.local/bin/wpctl" "$H/.local/bin/pw-dump" "$H/.local/bin/pipewire" "$H/.local/bin/pgrep"
     line=$(sh "$SH" bar status --once)
-    [ "$(t out name)" = "<span foreground='#555555'>out</span> jabra speak" ] && [ "$(t mic name)" = "<span foreground='#555555'>mic</span> jabra speak" ] \
-        && ok "PipeWire: out and mic name WirePlumber's defaults, whole words up to 12 characters" || bad "wp names" "$(t out name) / $(t mic name)"
-    g=$(t out gauge); m=$(t mic gauge); [ "$(count "$g" "$full")" = 4 ] && [ "$(count "$m" "$full")" = 5 ] && ok "PipeWire: the gauges are wpctl's volumes (40, 50)" || bad "wp gauges" "$g / $m"
+    [ "$(t out name)" = "<span foreground='#555555'>$(printf '\342\227\200')</span>" ] && [ "$(t mic name)" = "<span foreground='#555555'>$(printf '\342\227\211')</span>" ] && cur out | grep -q 'jabra speak' && cur mic | grep -q 'jabra speak' \
+        && ok "PipeWire: out and mic are WirePlumber's defaults (the panel names them)" || bad "wp names" "$(t out name) / $(t mic name) / $(cur out) / $(cur mic)"
+    g=$(t out gauge); m=$(t mic gauge); [ "$(count "$g" "$pip")" = 2 ] && [ "$(count "$m" "$pip")" = 3 ] && ok "PipeWire: the gauges are wpctl's volumes (40, 50: 2 and 3 of 5)" || bad "wp gauges" "$g / $m"
     touch "$H/wp-rec"; line=$(sh "$SH" bar status --once)
-    [ "$(t mic name)" = "<span foreground='#aa0000'>mic $(printf '\342\227\217')</span> jabra speak" ] && ok "PipeWire: a running capture stream turns the mic red, with a dot" || bad "wp mic live" "$(t mic name)"
+    [ "$(t mic name)" = "<span foreground='#aa0000'>$(printf '\342\227\217')</span>" ] && ok "PipeWire: a running capture stream turns the mic a red dot" || bad "wp mic live" "$(t mic name)"
     rm -f "$H/wp-rec"
     sh "$SH" bar volume up; sh "$SH" bar volume down; sh "$SH" bar volume mute; sh "$SH" bar volume mic
     [ "$(cat "$wplog" 2>/dev/null)" = "$(printf '%s\n' 'set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+' 'set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%-' 'set-mute @DEFAULT_AUDIO_SINK@ toggle' 'set-mute @DEFAULT_AUDIO_SOURCE@ toggle')" ] \
@@ -3591,8 +3599,8 @@ STUB
     rm -f "$wplog" "$H/wp-muted" "$H/wp-cmuted"
     st=0; out=$(sh "$SH" bar panel out use built-in audio digital stereo '(hdmi)' 2>&1) || st=$?
     line=$(sh "$SH" bar status --once)
-    [ "$st" -eq 0 ] && [ "$(cat "$wplog")" = 'set-default 51' ] && [ "$(t out name)" = "<span foreground='#555555'>out</span> built-in" ] && [ ! -e "$H/.config/alsa/asoundrc" ] \
-        && ok "PipeWire: out use moves sound at once (wpctl set-default), no ALSA file written" || bad "wp out use" "st=$st $out; $(cat "$wplog" 2>&1); $(t out name)"
+    [ "$st" -eq 0 ] && [ "$(cat "$wplog")" = 'set-default 51' ] && cur out | grep -q 'built-in' && [ ! -e "$H/.config/alsa/asoundrc" ] \
+        && ok "PipeWire: out use moves sound at once (wpctl set-default), no ALSA file written" || bad "wp out use" "st=$st $out; $(cat "$wplog" 2>&1); $(cur out)"
     out=$(sh "$SH" check || true); printf '%s\n' "$out" | grep -q '^ok     sound        PipeWire runs from the desktop: out Built-in Audio Digital Stereo (HDMI), mic Jabra SPEAK 410 USB Mono$' \
         && [ "$(printf '%s\n' "$out" | grep -c '^[a-zA-Z]* *sound ')" = 1 ] \
         && ok "check: one sound row, PipeWire answers, where it runs from (no systemd, no service: the desktop), the output and the mic" || bad "check wp" "$(printf '%s\n' "$out" | grep sound)"
@@ -5193,7 +5201,7 @@ STUB
         && [ -e "$HOME/mako.dnd" ] && grep -qx 'DO_NOT_DISTURB=yes' "$HOME/.config/spark-shell/config" \
         && ok "notifications do-not-disturb on: mako's mode and the config, undo puts it off; asked again, a receipt with nothing to undo (#71)" || bad "dnd on" "$(cat "$H/mcp.out")"
     [ "$(rows notifications | jq -r '.state + " | " + .rows[0].text + " | " + .rows[0].sign')" = 'do not disturb | turn off do not disturb | dot' ] && ok "notifications: with do not disturb on, the row in use turns it off" || bad "dnd row" "$(rows notifications | head -c 300)"
-    REM_LOOK=1 sh "$SH" bar status --once 2>/dev/null | jq -e 'any(.[]; .name == "notifications" and (.full_text | test("do not disturb")))' >/dev/null && ok "bar: do not disturb is said while it is on, a click opens its section" || bad "bar dnd" "$(REM_LOOK=1 sh "$SH" bar status --once 2>&1 | head -c 400)"
+    REM_LOOK=1 sh "$SH" bar status --once 2>/dev/null | jq -e 'any(.[]; .name == "notifications" and (.full_text | test("\u23fe")))' >/dev/null && ok "bar: do not disturb is said while it is on, a click opens its section" || bad "bar dnd" "$(REM_LOOK=1 sh "$SH" bar status --once 2>&1 | head -c 400)"
     rm -f "$HOME/mako.dnd"; sh "$SH" desktop --pending >/dev/null 2>&1 || :; _i=0; while [ "$_i" -lt 20 ] && [ ! -e "$HOME/mako.dnd" ]; do sleep 0.25; _i=$((_i + 1)); done
     [ -e "$HOME/mako.dnd" ] && ok "desktop --pending (the desktop's start): do not disturb as the config left it" || bad "dnd kept" "$(cat "$HOME/mako.log")"
     out=$(sh "$SH" desktop notifications do-not-disturb off 2>&1 || :); [ "$out" = 'do not disturb off' ] && [ ! -e "$HOME/mako.dnd" ] && grep -qx 'DO_NOT_DISTURB=no' "$HOME/.config/spark-shell/config" \
