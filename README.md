@@ -791,7 +791,7 @@ brightness 30` or `theme dracula`, runs at once, with no model. Other
 words are one request to spark: the words, the view, the selected row
 and the names the open view's steps take go with every ready provider's
 tools, and spark answers with the steps that do it, under a grammar, in
-one call. The steps come back as commands in the box, one a line: Enter
+one call. The steps come back as commands in the prompt, one a line: Enter
 runs them in order, and a step that writes to or removes something of
 yours still asks for a typed yes, checked again against what is offered
 then. Esc drops them, and a change makes them typed words. An answer to

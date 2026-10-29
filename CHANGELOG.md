@@ -7,10 +7,10 @@
   no row are one request to spark: the words, the view, the selected
   row and the names the open view's steps take, with every ready
   provider's tools on stdin, answered by `spark steps` under a grammar
-  in one call: on the box, with gemma4-26b-a4b and 105 tools, 3 to 6 s,
-  the list served from the cache after the first call. The steps come
-  back as commands in the box, each on Enter; a step that writes or
-  removes still asks for yes. The twelve-turn task loop of v0.104 to
+  in one call: on one Linux machine with gemma4-26b-a4b and 105 tools, 3
+  to 6 s, the list served from the cache after the first call. The steps
+  come back as commands in the prompt, each on Enter; a step that writes
+  or removes still asks for yes. The twelve-turn task loop of v0.104 to
   v0.108 goes, with its inspect step, its finish rule, its continuation,
   its scenario harness and its sets. The list keeps filtering while
   spark reads the words: a row picked meanwhile runs at once and drops
