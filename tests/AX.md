@@ -47,8 +47,7 @@ It never supplies destructive confirmation. Cancellation cases stop before
 the next action. Reports contain case IDs, outcomes, counts and timings; raw
 requests and native replies stay in disposable files. `--capture DIRECTORY`
 retains terminal text and decision traces locally in a private directory.
-Live reports also identify the Spark source digest, including Pi's worker
-and dependency pins. Traces can contain connection-error details; publish
+Live reports also identify the Spark source digest. Traces can contain connection-error details; publish
 the aggregate reports after the privacy check, not the traces.
 
 ## Coverage and evidence
@@ -123,6 +122,12 @@ choices; this is a failed task, even when its earlier native work succeeded.
 Do not treat a safe stop as proof that a multi-operation goal was completed.
 
 ## v0.107 Pi candidate evidence
+
+Historical since v0.108: spark v1.106 took Pi out of core. Home's
+requests go through the same `spark do --tools` contract on spark's own
+model path. The numbers below were recorded through Pi with the task
+brief changed in the same spark commit, so they do not isolate the
+runtime; the native path is measured again on the same scenarios.
 
 Pi's AgentSession SDK now supplies task proposals through Spark v1.104.
 The native host still owns preparation, confirmation, execution and receipts.

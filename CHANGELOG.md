@@ -6,12 +6,16 @@
   volume request from the model screen could miss the opaque `out`
   provider and select brightness or claim sound was unavailable. Sound,
   microphone and display remain distinct; hidden state still requires
-  inspection, and every generated action retains native review. Use
-  Spark v1.105.2 or newer for deferred domain discovery through Pi (#88).
+  inspection, and every generated action retains native review (#88).
 - Typing on the model screen sends a request instead of selecting a model
   row. Explicit keyboard and pointer model selection remain available.
 - Add cross-domain acceptance with competing sound, microphone and
   display controls, including ambiguity and unavailable capabilities.
+- Home no longer uses a Pi runtime. spark v1.106 took Pi out of core;
+  the dialog's requests go through `spark do --tools` as before, served
+  by spark's own model path, and no `spark do --agent` step exists. The
+  v0.107 live results stay as history; the native path is measured
+  again on the same scenarios (#89).
 
 ## v0.107
 
