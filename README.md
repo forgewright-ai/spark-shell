@@ -786,9 +786,10 @@ and Page Down scroll it.
 - `files`: your home folder, as a file manager of its own. Enter on a
   folder opens it, `..` goes back up, and Esc walks back the way you
   came; a folder lists its folders, then its files with the size and
-  the date. Enter on a file opens it with the app for its kind. The
-  right arrow opens the lit row's steps as a list: open, show the first
-  lines, attach, reveal in the system file manager, rename (it asks the
+  the date. Enter on a text file opens it in your editor, in a terminal
+  window; any other file opens with the app for its kind. The right
+  arrow opens the lit row's steps as a list: open, show the first lines,
+  attach, reveal in the system file manager, rename (it asks the
   name), move to a folder and copy to a folder (the folder is picked
   here: open folders until the right one, then Enter on `move NAME
   here`), and trash. Trash is the delete: the file goes to the
@@ -798,7 +799,9 @@ and Page Down scroll it.
   yes. Every folder ends with its total, `new folder` and `new text
   file` (each asks a name; the text file opens in your editor), and
   `open in the system file manager`, for anything beyond these steps
-  (permissions, archives, remote places). Your home folder starts with
+  (permissions, archives, remote places); where no file manager is
+  configured, that row and the reveal step are not offered. Your home
+  folder starts with
   `recent`, the files touched in the last 7 days wherever they are,
   each with its folder's name, and ends with `drives`, a row per drive
   mounted (Storage mounts them), a root beside your home. A picture lit
@@ -1164,8 +1167,9 @@ default change when the prior default is known. Cancelled jobs stay cancelled.
 CUPS owns permission and configuration.
 No printer, server or service is added by opening the section.
 
-Each folder in files has an action to open the system file manager. Native
-file operations stay there; spark-shell keeps its own browser read only.
+Each folder in files has an action to open the system file manager, where
+one is configured. Native file operations beyond the dialog's steps stay
+there.
 Opening uses the host platform, including macOS. A failed native launch is
 reported as a refusal; a launch request alone never claims a file was opened.
 

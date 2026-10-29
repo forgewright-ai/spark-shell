@@ -6868,6 +6868,7 @@ files_thumbs() {   # the pictures' small pictures, PATH<tab>THUMB a line on stdi
 }
 provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one folder's, with your home's recent files at its top, its own steps at its end and the drives beside your home; a search's; false when the uri names no folder that holds to the lines
     _fu=${1:-spark-shell://files/rows}; _fhere=''; : > "$TMP/files.thumbs"; FILES_N=0; FILES_B=0; FILES_D=0
+    _ffm=''; ! files_manager_ok || _ffm=1   # the browse row, the reveal step and a folder's own tool only where a system file manager is configured (#114)
     case $_fu in
         spark-shell://files/rows)
             files_roots | while IFS= read -r _fr; do [ -n "$_fr" ] && printf 'files:root:%s\037opens\037%s\037%s\037\037\037\037\037\037root\037\n' "$(files_b64 "$_fr")" "$(files_home "$_fr" | scrub_text)" "$(files_uri "$_fr")"; done > "$TMP/files.rows"
@@ -6889,21 +6890,21 @@ provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one fold
             { printf 'files:total\037blank\037%s\037\037\037\037\037this folder\037\037total\037\n' "$_fw"
               printf 'files:new-folder\037opens\037new folder\037\037%s\037\037\037this folder\037\037new-folder\037\n' "$_fp"
               printf 'files:new-text\037opens\037new text file\037\037%s\037\037\037this folder\037\037new-text\037\n' "$_fp"
-              printf 'files:browse\037opens\037open in the system file manager\037\037%s\037\037\037this folder\037\037browse\037\n' "$_fp"; } >> "$TMP/files.rows"
+              [ -z "$_ffm" ] || printf 'files:browse\037opens\037open in the system file manager\037\037%s\037\037\037this folder\037\037browse\037\n' "$_fp"; } >> "$TMP/files.rows"
             [ "$_fp" != "$(files_home_root)" ] || files_drives | while IFS="$TAB" read -r _fdn _fdm _fdf; do printf 'files:drive:%s\037opens\037%s\037%s\037\037%s\037\037drives\037\037drive\037\n' "$(files_b64 "$_fdm")" "$(printf '%s' "$_fdn" | scrub_text)" "$(files_uri "$_fdm")" "$_fdf"; done >> "$TMP/files.rows" ;;
     esac
     if [ -s "$TMP/files.thumbs" ]; then   # the small pictures, while the list is shown: a row without one yet draws none
         FILES_TN=$((${FILES_TN:-0} + 1)); cp "$TMP/files.thumbs" "$TMP/files.thumbs.$FILES_TN"
         ( _fl=$TMP/files.thumbs.$FILES_TN; TMP=$(mktemp -d) && { files_thumbs < "$_fl"; rm -rf "$TMP" "$_fl"; } ) >/dev/null 2>&1 </dev/null 3>&- 4<&- 5>&- &
     fi
-    jq -Rn --arg t "$_ft" --arg here "$_fhere" '
-        def steps($a): [{name: "files_reveal", arguments: $a, said: "reveal in the system file manager"}, {name: "files_rename", arguments: $a, ask: ["name"], said: "rename"},
+    jq -Rn --arg t "$_ft" --arg here "$_fhere" --arg fm "$_ffm" '
+        def steps($a): (if $fm != "" then [{name: "files_reveal", arguments: $a, said: "reveal in the system file manager"}] else [] end) + [{name: "files_rename", arguments: $a, ask: ["name"], said: "rename"},
             {name: "files_move", arguments: $a, pick: "to", said: "move to a folder"}, {name: "files_copy", arguments: $a, pick: "to", said: "copy to a folder"}, {name: "files_trash", arguments: $a, said: "trash"}];
         [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end), path: .[4], c1: .[5], c2: .[6], group: (if .[7] == "" then null else .[7] end), c3: .[8], kind: .[9], preview: .[10]}
             | {path: .path} as $a
             | {id, sign, text, children, group, columns: ([.c1, .c2, .c3] | map(select(. != null and . != ""))),
                tool: (if .kind == "file" then {name: "files_open", arguments: $a, said: "open"}
-                      elif .kind == "dir" or .kind == "browse" then {name: "files_browse", arguments: $a, said: "open in the system file manager"}
+                      elif (.kind == "dir" or .kind == "browse") and $fm != "" then {name: "files_browse", arguments: $a, said: "open in the system file manager"}
                       elif .kind == "new-folder" then {name: "files_new_folder", arguments: $a, ask: ["name"], said: "new folder"}
                       elif .kind == "new-text" then {name: "files_new_text", arguments: $a, ask: ["name"], said: "new text file"}
                       else null end),
@@ -6960,6 +6961,16 @@ files_opened() {   # files_opened ID BEFORE RECEIPT-FILE -- the result of a step
     if [ -n "${SWAYSOCK:-}" ] && panel_open_wait "$2"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
     else rpc_result "$1" "$(jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}' "$3")"; fi
 }
+files_manager_ok() { [ "$OS" = Darwin ] || { command -v xdg-open >/dev/null 2>&1 && [ -n "$(xdg-mime query default inode/directory 2>/dev/null)" ]; }; }   # a system file manager is configured (Finder on macOS); without one the browse row and the reveal step are not offered (#114)
+files_text() { [ -f "$1" ] && { [ ! -s "$1" ] || LC_ALL=C grep -qI . "$1" 2>/dev/null; }; }   # a text file: grep reads it as text; an empty file is one
+files_open_text() {   # files_open_text ID PATH -- a text file in the editor, in a terminal window, the window the receipt (#113: the system's handler for text is a terminal editor, which xdg-open starts with no terminal); 1 where this is not the way: macOS (open knows), no sway, no editor, a path sway would split
+    [ "$OS" != Darwin ] && files_text "$2" && desk_in_sway && _fed=$(note_editor) || return 1
+    case $2 in *[,\;\'\"]*) return 1 ;; esac
+    _before=$(desk_windows_all)
+    swaymsg -- exec "foot -e $_fed '$2'" >/dev/null 2>&1 || { provide_refuse "$1" "files: could not start the editor"; return 0; }
+    if panel_open_wait "$_before"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+    else files_result "$1" "$(printf '%s' "${2##*/}" | scrub_text) opens in ${_fed%% *}"; fi
+}
 files_open_with() {   # files_open_with ID PATH [--reveal] -- the path through the system's opener (xdg-open, open; a reveal selects it in the file manager)
     if [ "$OS" != Darwin ]; then
         command -v xdg-open >/dev/null 2>&1 || { provide_refuse "$1" "files: xdg-open is not installed, so nothing opens files"; return 0; }
@@ -7006,7 +7017,8 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
     _fname=$(printf '%s' "${_ff##*/}" | scrub_text)
     case $2 in files_rename|files_move|files_copy|files_trash) ! files_is_root "$_ff" || { provide_refuse "$1" "files: your home and a drive stay as they are"; return 0; } ;; esac
     case $2 in
-        files_open|files_browse) files_open_with "$1" "$_ff" ;;
+        files_open) files_open_text "$1" "$_ff" || files_open_with "$1" "$_ff" ;;
+        files_browse) files_open_with "$1" "$_ff" ;;
         files_reveal) files_open_with "$1" "$_ff" --reveal ;;
         files_show|files_attach)
             set -- "$1" "$2" "$(files_stat "$_ff" | cut -d' ' -f1)"

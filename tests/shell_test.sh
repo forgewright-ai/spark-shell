@@ -4366,6 +4366,10 @@ else ok "provide: no GNU env and no python3 to give SIGPIPE back its default her
 F=$H/files; mkdir -p "$F/docs/deep/x" "$F/.secret"; printf 'hello\nworld\n' > "$F/notes.md"; printf 'x\000y' > "$F/blob.txt"; printf 'p' > "$F/pic.png"
 ln -s /etc "$F/etc-link"; printf 'k' > "$F/.secret/key"; mkfifo "$F/pipe"; printf 'a\n' > "$F/docs/a.txt"
 FR=$(realpath "$F"); uri() { printf 'spark-shell://files/rows/%s' "$(printf '%s' "$1" | base64 | tr -d '\n=' | tr '+/' '-_')"; }
+# a system file manager configured (xdg-open there, xdg-mime naming one for a folder) for the files block, as macOS has Finder; and a PATH with none (#114)
+mkdir -p "$H/fm" "$H/nofm"; printf '#!/bin/sh\necho "$*" >> "$HOME/xdg-open.log"\n' > "$H/fm/xdg-open"; printf '#!/bin/sh\n[ "$*" != "query default inode/directory" ] || echo thunar.desktop\n' > "$H/fm/xdg-mime"
+cp "$H/fm/xdg-open" "$H/nofm/xdg-open"; printf '#!/bin/sh\n' > "$H/nofm/xdg-mime"; chmod +x "$H/fm/xdg-open" "$H/fm/xdg-mime" "$H/nofm/xdg-open" "$H/nofm/xdg-mime"
+_fpath=$PATH; PATH="$H/fm:$PATH"
 rinit=$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{"roots":{}},"clientInfo":{"name":"test","version":"0"}}')
 roots=$(jq -cn --arg u "file://$FR" '{jsonrpc: "2.0", id: "roots", result: {roots: [{uri: $u}, {uri: "file:///"}]}}')
 mcp files "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots" "$(rq 2 resources/read '{"uri":"spark-shell://files/rows"}')" \
@@ -4445,6 +4449,34 @@ mcp2 "$(call 2 files_find '{"words":"invoice"}')" "$(call 3 files_find '{"words"
     && [ "$(ans 5 | jq -c '.result.structuredContent')" = '{"receipt":"no text file under your home says nothing like it"}' ] && [ "$(ans 6 | jq -r '.result.content[0].text')" = 'files: find takes the words to look for' ] \
     && [ "$(ans 7 | jq -r '.result.contents[0].text' | jq -r '.title + "|" + ([.rows[] | .text + " " + (.columns | join(","))] | join("|"))')" = "find invoice|invoice.txt 18 B,$(date -d '-3 day' '+%d %b' 2>/dev/null || date -v-3d '+%d %b'),docs|invoice.txt 18 B,$(date -d '-3 day' '+%d %b' 2>/dev/null || date -v-3d '+%d %b'),pictures" ] \
     && ok "provide files: find walks the roots for a name that holds every word, whatever the case, node_modules and the hidden left out, and answers the list to open, each row with its folder (the copy kept its date); say greps the text files for the words; nothing found is said; empty words refused" || bad "files find say" "$(ans 2) $(ans 3) $(ans 4) $(ans 5) $(ans 6) $(ans 7 | head -c 400)"
+if [ "$(uname -s)" = Linux ]; then   # the Linux half (the uname stub): xdg-open is a stub here, so a file may be opened
+    # #114: no system file manager configured: no browse row, no reveal step, a folder's row has no tool (Enter still opens it)
+    PATH="$H/nofm:$_fpath" mcp2 "$(rq 2 resources/read "$(jq -cn --arg u "$(uri "$F2R")" '{uri: $u}')")" "$(rq 3 resources/read "$(jq -cn --arg u "$(uri "$F2R/docs")" '{uri: $u}')")"
+    ans 2 | jq -r '.result.contents[0].text' > "$H/home3.json"; ans 3 | jq -r '.result.contents[0].text' > "$H/docs3.json"
+    [ "$(jq -r '[.rows[] | select(.group == "this folder") | .text] | join("|")' "$H/home3.json")" = "$(jq -r '[.rows[] | select(.group == "this folder") | .text] | join("|")' "$H/home2.json" | sed 's/|open in the system file manager$//')" ] \
+        && jq -e '(.rows[] | select(.text == "docs") | .tool == null and .children != null and ([.more[].name] == ["files_rename", "files_move", "files_copy", "files_trash"]))' "$H/home3.json" >/dev/null \
+        && jq -e '(.rows[] | select(.text == "invoice.txt") | [.more[].name] == ["files_show", "files_attach", "files_rename", "files_move", "files_copy", "files_trash"])' "$H/docs3.json" >/dev/null \
+        && ok "provide files: with no system file manager configured the browse row and the reveal step are not offered, and a folder's row keeps its steps and its opening (#114)" || bad "files no file manager" "$(cat "$H/home3.json") $(cat "$H/docs3.json")"
+    # #113: a text file opens in the editor in a terminal window, the window the receipt; a picture goes to the system's opener
+    mkdir -p "$H/lxo"; cat > "$H/lxo/swaymsg" <<'EOF'
+#!/bin/sh
+case "$*" in "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
+    "-t get_tree") if [ -e "$HOME/opened" ]; then echo '{"nodes":[{"pid":1},{"pid":2}]}'; else echo '{"nodes":[{"pid":1}]}'; fi ;;
+    "-- exec "*) echo "$*" >> "$HOME/swaymsg.log"; : > "$HOME/opened" ;; *) echo "$*" >> "$HOME/swaymsg.log" ;; esac
+EOF
+    printf '#!/bin/sh\n' > "$H/lxo/ed-stub"; chmod +x "$H/lxo/swaymsg" "$H/lxo/ed-stub"; rm -f "$F2/opened" "$F2/swaymsg.log" "$F2/xdg-open.log"
+    printf 'plain words\n' > "$F2/plain.txt"; printf '\211PNG\000x' > "$F2/photo.png"
+    SWAYSOCK=$F2/sock WAYLAND_DISPLAY=w EDITOR=ed-stub PATH="$H/lxo:$H/nofm:$_fpath" mcp2 "$(fc2 2 files_open "$F2R/plain.txt")"
+    [ "$(ans 2 | jq -c '.result.structuredContent')" = '{"opened":true}' ] && grep -qxF -- "-- exec foot -e ed-stub '$F2R/plain.txt'" "$F2/swaymsg.log" \
+        && ok "provide files: a text file opens in the editor in a terminal window, the window the receipt, as a new text file does (#113)" || bad "files open text" "$(ans 2) $(cat "$F2/swaymsg.log" 2>&1)"
+    if command -v python3 >/dev/null 2>&1; then
+        SWAYSOCK='' WAYLAND_DISPLAY=w PATH="$H/nofm:$_fpath" mcp2 "$(fc2 2 files_open "$F2R/photo.png")"
+        [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'opening requested for photo.png' ] && grep -qF "$F2R/photo.png" "$F2/xdg-open.log" \
+            && ok "provide files: a file that is not text keeps the system's opener (#113)" || bad "files open picture" "$(ans 2) $(cat "$F2/xdg-open.log" 2>&1)"
+    fi
+    rm -f "$F2/plain.txt" "$F2/photo.png"
+fi
+PATH=$_fpath
 mkdir -p "$H/gio"; cat > "$H/gio/gio" <<'STUB'
 #!/bin/sh
 echo "gio $*" >> "$HOME/gio.log"
@@ -5548,7 +5580,8 @@ JSON
     roots=$(jq -cn --arg u "file://$(realpath "$HOME")" '{jsonrpc: "2.0", id: "roots", result: {roots: [{uri: $u}]}}')
     uri() { printf 'spark-shell://files/rows/%s' "$(printf '%s' "$1" | base64 | tr -d '\n=' | tr '+/' '-_')"; }
     SR=$(realpath "$H/stick")
-    files2() { printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots" "$@" | SPARK_SHELL_MEDIA=$H/stick SPARK_SHELL_NO_GIO=1 SPARK_SHELL_NO_THUMB=1 SPARK_SHELL_NO_SVG=1 sh "$SH" provide files 2> "$H/mcp.err"; }   # SPARK_SHELL_MEDIA: the stick's mount counts as a drive's (udisks2 mounts under /run/media)
+    mkdir -p "$H/fm"; printf '#!/bin/sh\n' > "$H/fm/xdg-open"; printf '#!/bin/sh\n[ "$*" != "query default inode/directory" ] || echo thunar.desktop\n' > "$H/fm/xdg-mime"; chmod +x "$H/fm/xdg-open" "$H/fm/xdg-mime"   # a file manager configured, so the browse row is offered on Linux (#114)
+    files2() { printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots" "$@" | PATH="$H/fm:$PATH" SPARK_SHELL_MEDIA=$H/stick SPARK_SHELL_NO_GIO=1 SPARK_SHELL_NO_THUMB=1 SPARK_SHELL_NO_SVG=1 sh "$SH" provide files 2> "$H/mcp.err"; }   # SPARK_SHELL_MEDIA: the stick's mount counts as a drive's (udisks2 mounts under /run/media)
     files2 "$(rq 2 resources/read "$(jq -cn --arg u "$(uri "$(realpath "$HOME")")" '{uri: $u}')")" "$(rq 3 resources/read "$(jq -cn --arg u "$(uri "$SR")" '{uri: $u}')")" "$(call 4 files_trash "$(jq -cn --arg p "$SR/photos/trip.txt" '{path: $p}')")" > "$H/mcp.out"
     _tin=''; [ ! -f "$H/stick/.Trash-$(id -u)/files/trip.txt" ] || ! grep -qx 'Path=photos/trip.txt' "$H/stick/.Trash-$(id -u)/info/trip.txt.trashinfo" || _tin=1   # the two files of the spec on the drive, before the restore
     files2 "$(call 5 files_restore "$(jq -cn --arg p "$SR/photos/trip.txt" '{path: $p}')")" >> "$H/mcp.out"

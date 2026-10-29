@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.111.1
+
+- Fixed: Enter on a text file in Files opened nothing on the Linux
+  machine (#113). The system's handler for text there is a terminal
+  editor, and xdg-open starts it with no terminal, so it died at once
+  while the dialog waited for a window. A text file now opens in your
+  editor in a terminal window, the window the receipt, as a new text
+  file does; a picture, a PDF and the rest keep the system's opener.
+- Fixed: the row "open in the system file manager" and the step "reveal
+  in the system file manager" were offered where no file manager is
+  configured, and Enter on them was a refusal (#114). They are offered
+  only where one is configured; a folder's row keeps its steps and
+  opens as before.
+
 ## v0.111
 
 - Files is a file manager of its own (#112, the guidelines' Priority II:
