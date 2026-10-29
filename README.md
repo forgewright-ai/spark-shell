@@ -1078,6 +1078,10 @@ Uninstall: `spark-shell off`, then delete `~/.spark-shell`.
     git config core.hooksPath .githooks
     sh tests/shell_test.sh
 
+A Claude Code cloud session does the first line itself when it starts
+(`.claude/hooks/session-start.sh`). It also installs the tools the suite
+uses: shellcheck, diff, jq, curl and ssh-keygen.
+
 The suite runs in a throwaway HOME. It checks the docs and help too:
 
 - Plain English: short sentences, common words, no made-up terms.
