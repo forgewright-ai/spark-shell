@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.108
+
+- Describe discoverable domains by their readable name and purpose. A
+  volume request from the model screen could miss the opaque `out`
+  provider and select brightness or claim sound was unavailable. Sound,
+  microphone and display remain distinct; hidden state still requires
+  inspection, and every generated action retains native review. Use
+  Spark v1.105.2 or newer for deferred domain discovery through Pi (#88).
+- Typing on the model screen sends a request instead of selecting a model
+  row. Explicit keyboard and pointer model selection remain available.
+- Add cross-domain acceptance with competing sound, microphone and
+  display controls, including ambiguity and unavailable capabilities.
+
 ## v0.107
 
 - Home uses Spark's shared Pi session runtime for task proposals while

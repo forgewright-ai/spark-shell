@@ -98,6 +98,13 @@ def scripted(request, case, events):
 
 
 def helper(folder):
+    # A fixture model menu opens the real model view without changing a model.
+    if sys.argv[3:] == ["model", "list", "--porcelain"]:
+        print("fixture-model\tserving")
+        return
+    if sys.argv[3:] == ["client"]:
+        print("off")
+        return
     request = json.load(sys.stdin)
     case = json.loads((folder / "case.json").read_text())
     started = time.monotonic()
@@ -312,6 +319,13 @@ def native_errors(case, home, events, now):
         errors.append("saved setting")
     if "sound" in expected and json.loads((home / "sound.json").read_text()) != expected["sound"]:
         errors.append("sound state")
+    if "sound_range" in expected:
+        actual = json.loads((home / "sound.json").read_text())
+        low, high = expected["sound_range"]
+        if not low <= actual["level"] <= high or actual["muted"]:
+            errors.append("sound state")
+    if "microphone" in expected and json.loads((home / "microphone.json").read_text()) != expected["microphone"]:
+        errors.append("microphone state")
     read_only = {t["name"] for e in events if e["method"] == "tools/list"
                  for t in e.get("result", {}).get("tools", [])
                  if t.get("annotations", {}).get("readOnlyHint") is True}
@@ -322,7 +336,7 @@ def native_errors(case, home, events, now):
     wrong_sequence = not any(calls == option[:len(calls)] for option in alternatives)
     if any(e.get("error") or e.get("result", {}).get("isError") for e in events if e["method"] == "tools/call"):
         errors.append("provider refused operation")
-    if calls and any(p in errors for p in ("saved setting", "sound state")):
+    if calls and any(p in errors for p in ("saved setting", "sound state", "microphone state")):
         wrong_state = True
     return sorted(set(errors)), int(wrong_state or wrong_sequence)
 
@@ -342,18 +356,19 @@ def run_case(case, binary, root, live_env, capture):
     uname = home / "bin/uname"
     uname.write_text("#!/bin/sh\ncase ${1:-} in -n) echo fixture ;; *) /usr/bin/uname \"$@\" ;; esac\n")
     uname.chmod(0o700)
-    if "out" in case["providers"]:
+    if any(p in case["providers"] for p in ("out", "mic")):
         # The provider is production code; only the hardware owner is a fixture.
         # This cannot claim a real PipeWire graph or audible sound.
         (home / "sound.json").write_text(json.dumps({"level": 70, "muted": False}))
+        (home / "microphone.json").write_text(json.dumps({"level": 40, "muted": False}))
         stub = home / "bin/wpctl"
         stub.write_text("#!" + sys.executable + "\n" + '''import json, os, sys
 from pathlib import Path
-p = Path(os.environ["HOME"]) / "sound.json"
-s = json.loads(p.read_text())
 a = sys.argv[1:]
+p = Path(os.environ["HOME"]) / ("microphone.json" if "@DEFAULT_AUDIO_SOURCE@" in a else "sound.json")
+s = json.loads(p.read_text())
 if a == ["status"]:
- print("Audio\\n Sinks:\\n * 42. Desk speakers [vol: %.2f]\\n Sources:\\n" % (s["level"] / 100))
+ print("Audio\\n Sinks:\\n * 42. Desk speakers [vol: %.2f]\\n Sources:\\n * 43. Desk microphone [vol: 0.40]\\n" % (s["level"] / 100))
 elif a[:1] == ["get-volume"]:
  print("Volume: %.2f%s" % (s["level"] / 100, " [MUTED]" if s["muted"] else ""))
 elif a[:1] == ["set-volume"]:
@@ -373,7 +388,7 @@ else: sys.exit(1)
     (folder / "case.json").write_text(json.dumps(case))
     helper_path = folder / "decision"
     helper_path.write_text("#!" + sys.executable + "\nimport runpy, sys\nsys.argv = " +
-                           repr([str(Path(__file__).resolve()), "--helper", str(folder)]) +
+                           repr([str(Path(__file__).resolve()), "--helper", str(folder)]) + " + sys.argv[1:]" +
                            "\nrunpy.run_path(sys.argv[0], run_name='__main__')\n")
     helper_path.chmod(0o700)
     env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(home),
@@ -386,7 +401,9 @@ else: sys.exit(1)
            "PANEL_HI": "373a4b", "PANEL_MUTED": "7b84ae"}
     env.update(live_env)
     env["PATH"] = str(home / "bin") + os.pathsep + env["PATH"]
-    argv = ["--home", case["providers"][0], "--composer", "", "--spark", str(helper_path),
+    entry = case.get("entry")
+    argv = ["--home", "home" if entry in ("home", "settings") else case["providers"][0],
+            "--composer", "model" if entry == "model" else "", "--spark", str(helper_path),
             "--spark-shell", str(REPO / "spark-shell")]
     for section in case["providers"]:
         argv += ["--provider", " ".join([sys.executable, str(Path(__file__).resolve()), "--provider", str(folder), section])]
@@ -402,17 +419,25 @@ else: sys.exit(1)
             available = {(e["section"], e["method"]) for e in events}
             reads = [e for e in events if e["method"] == "resources/read"
                      and e["section"] == case["providers"][0]]
-            rendered = False
+            rendered = entry in ("home", "settings") and dialog.screen.text().splitlines()[0].strip().startswith("home")
             if reads:
                 rows = json.loads(reads[-1]["result"]["contents"][0]["text"]).get("rows", [])
                 screen = " ".join(dialog.screen.text().split()).lower()
-                rendered = any(" ".join(row["text"][:24].split()).lower() in screen
-                               for row in rows[:4] if row.get("text"))
+                rendered = rendered or any(" ".join(row["text"][:24].split()).lower() in screen
+                                          for row in rows[:4] if row.get("text"))
             return (all((p, method) in available for p in case["providers"]
                         for method in ("tools/list", "resources/read"))
                     and rendered and "Type a request" in dialog.screen.text())
         if not dialog.wait(ready, 30):
             raise RuntimeError("dialog startup")
+        if entry == "model":
+            if not dialog.wait(lambda: "fixture-model" in dialog.screen.text()):
+                raise RuntimeError("fixture model footer")
+            dialog.send("\t\r")
+        elif entry == "settings":
+            dialog.send("settings\r")
+        if entry and not dialog.wait(lambda: dialog.screen.text().splitlines()[0].strip().startswith(entry)):
+            raise RuntimeError("entry view navigation")
         if case.get("select"):
             reads = [e for e in records(folder / "providers.jsonl") if e["method"] == "resources/read"
                      and e["section"] == case["providers"][0]]
@@ -514,6 +539,8 @@ else: sys.exit(1)
         problems.append("focused reference was lost")
     if answers != case["questions"]: problems.append("clarification count")
     if case.get("direct") and decisions: problems.append("direct control requested AI")
+    if case.get("entry") and (not decisions or decisions[0]["request"]["context"]["view"] != case["entry"]):
+        problems.append("wrong entry view")
     if not case.get("direct") and not cancelled and terminal != case.get("terminal", "done"):
         problems.append("task did not complete")
     permitted = set(case.get("permitted", case["calls"]))
@@ -536,14 +563,14 @@ def main():
     parser.add_argument("--temperature", type=float,
                         help="explicit evaluation override; does not change Spark configuration")
     parser.add_argument("--only", help="comma-separated fixed case IDs")
-    parser.add_argument("--set", choices=("development", "held-out"), default="development",
+    parser.add_argument("--set", choices=("development", "held-out", "discovery"), default="development",
                         help="reserve held-out live cases until implementation is frozen")
     parser.add_argument("--report", type=Path)
     parser.add_argument("--capture", type=Path, help="save private terminal text and decision traces for inspection")
     args = parser.parse_args()
     if args.temperature is not None and (not args.spark or not 0 <= args.temperature <= 1):
         parser.error("--temperature needs --spark and a value from 0 to 1")
-    case_path = CASES if args.set == "development" else CASES.with_name("ax_heldout.json")
+    case_path = CASES if args.set == "development" else CASES.with_name("ax_discovery.json" if args.set == "discovery" else "ax_heldout.json")
     cases = json.loads(case_path.read_text())
     if args.only:
         wanted = set(args.only.split(","))

@@ -78,6 +78,20 @@ device or the appearance of the owner's live desktop.
 
 ## Reading the results
 
+The separate `--set discovery` regressions start requests from the model
+screen, Home, Settings and Display with competing native providers. They
+cover relative speaker volume, microphone input, an ambiguous request and
+a missing sound provider. The fixture model menu opens the real view but
+cannot switch the live model. Sound and microphone have separate synthetic
+backend state, and every accepted operation and unchanged setting is checked.
+Run these in addition to the existing development and held-out regressions;
+their case sets and historical scores remain unchanged.
+
+```sh
+python3 tests/ax_acceptance.py PATH_TO_DIALOG --set discovery
+python3 tests/ax_acceptance.py PATH_TO_DIALOG --set discovery --spark PATH_TO_SPARK
+```
+
 Require every deterministic case and regression check to pass. For live
 evaluation, report every fixed case, including failures, and inspect wrong
 actions before accepting a release. A refusal or unanswered question is not a

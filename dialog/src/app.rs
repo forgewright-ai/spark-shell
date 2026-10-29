@@ -1509,7 +1509,9 @@ impl App {
             return;
         }
         self.scroll = 0;
-        if self.asks_spark() || (!self.query().trim().is_empty() && !self.picks().is_empty()) {
+        // Only searchable rows follow typing. Model/connection/voice controls
+        // keep their explicit keyboard selection; a request must not pick one.
+        if self.asks_spark() || (!self.query().trim().is_empty() && self.picks().iter().any(|it| self.name_of(it).is_some())) {
             self.in_list = true;
             self.sel = self.best();
         } else {

@@ -393,6 +393,79 @@ fn contextual_request_preserves_semantics_and_does_not_volunteer_hidden_data() {
 }
 
 #[test]
+fn discovery_describes_domains_from_home_models_and_unrelated_views() {
+    for view in [View::Home, View::Models, View::Dest(spark_dialog::app::SETTINGS_DEST), View::Section(1)] {
+        let (mut app, _, calls) = started(false);
+        app.view = view;
+        // Dynamic provider titles and rows can contain private native state.
+        app.providers[0].title = "private output device".into();
+        app.providers[0].rows.state = Some("private volume state".into());
+        app.task_start("Increase the volume a little bit please.");
+        let (_, req) = request(&app);
+        let sound = &req["context"]["providers"][0];
+        assert_eq!(sound["name"], "out");
+        assert_eq!(sound["title"], "Sound");
+        assert_eq!(sound["description"], "Output and volume");
+        assert!(!req.to_string().contains("private output device"));
+        assert!(!req.to_string().contains("private volume state"));
+        assert!(req["tools"].as_array().unwrap().is_empty(), "discovery grants no native tool");
+        assert!(calls.lock().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn typing_a_request_in_models_sends_it_instead_of_picking_a_model() {
+    let (mut app, _, _) = started(false);
+    app.view = View::Models;
+    app.models = vec![("local-model".into(), "downloaded".into())];
+    type_words(&mut app, "Increase the volume a little bit please.");
+    app.enter();
+    assert_eq!(request(&app).1["context"]["view"], "model");
+    assert_eq!(app.mode, Mode::Normal);
+    assert!(!app.jobs.iter().any(|j| matches!(j, Job::Run(Helper::ModelSet, _))));
+}
+
+#[test]
+fn keyboard_model_selection_still_requires_explicit_choice_and_confirmation() {
+    let (mut app, _, _) = started(false);
+    app.view = View::Models;
+    app.models = vec![("local-model".into(), "downloaded".into())];
+    app.down();
+    app.enter();
+    assert!(matches!(app.mode, Mode::Apply(_)));
+    assert!(!app.jobs.iter().any(|j| matches!(j, Job::Run(Helper::ModelSet, _))));
+    app.enter();
+    assert!(app
+        .jobs
+        .iter()
+        .any(|j| matches!(j, Job::Run(Helper::ModelSet, argv) if argv.last().is_some_and(|v| v == "local-model"))));
+    assert!(app.task.is_none());
+}
+
+#[test]
+fn discovery_distinguishes_sound_microphone_and_display_and_omits_unavailable_domains() {
+    let (mut app, _, _) = app_with(&["out", "mic", "display", "files", "wifi", "bt", "custom"]);
+    for p in &mut app.providers {
+        p.ready = true;
+    }
+    app.providers[4].ready = false;
+    app.providers[5].dead = Some("gone".into());
+    app.providers[6].title = "private custom state".into();
+    app.view = View::Models;
+    app.task_start("Increase the volume a little bit please.");
+    let (_, req) = request(&app);
+    let providers = req["context"]["providers"].as_array().unwrap();
+    assert_eq!(providers.len(), 4);
+    assert_eq!(providers[0]["title"], "Sound");
+    assert_eq!(providers[1]["title"], "Microphone");
+    assert_eq!(providers[2]["description"], "Screens, brightness, lock");
+    assert_eq!(providers[3]["title"], "Custom");
+    assert!(providers[3]["description"].is_null());
+    assert!(!req.to_string().contains("private custom state"));
+    assert!(req["context"]["visible"].as_array().unwrap().is_empty());
+}
+
+#[test]
 fn action_waits_for_enter_and_actual_structured_result_drives_next_turn() {
     let (mut app, rx, calls) = started(false);
     app.task_start("make it quieter");
