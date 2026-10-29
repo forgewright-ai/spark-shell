@@ -788,16 +788,19 @@ Enter runs it with no model call: `nord` and Enter is the palette nord
 first row while you type. A place's name alone, as `settings` or
 `calendar`, opens it. A command in the dialog's own words, as `display
 brightness 30` or `theme dracula`, runs at once, with no model. Other
-words start a task in spark with the current view and available tools.
-Spark proposes one action, shown in the prompt for you to read. Enter
-runs it; Esc stops the task. Changing the proposal starts a new request.
-After execution, the actual result goes back to spark before it chooses
-another action. A clarification keeps the same goal and earlier results.
-An action such as closing a window or forgetting a network still waits
-for a typed yes, checked again against what is offered then. A timeout
-or lost provider stops the task: its outcome is unknown and it is not
-retried. A reported error can lead to inspection or a different proposal,
-which again waits for Enter. The Providers section describes the adapter.
+words are one request to spark: the words, the view, the selected row
+and the names the open view's steps take go with every ready provider's
+tools, and spark answers with the steps that do it, under a grammar, in
+one call. The steps come back as commands in the box, one a line: Enter
+runs them in order, and a step that writes to or removes something of
+yours still asks for a typed yes, checked again against what is offered
+then. Esc drops them, and a change makes them typed words. An answer to
+a question is said in place. While spark reads the words the list keeps
+filtering: a row picked meanwhile runs at once and drops the request,
+Esc drops it and the words come back, and a request that gets no answer
+comes back as typed. Nothing spark plans runs before Enter, and spark is
+not asked again after a step: a request is one call. The Providers
+section says what goes to spark.
 
 The dialog is a terminal program: keyboard, focus and contrast are its
 own, but a screen reader sees text, not controls with names.
@@ -841,62 +844,45 @@ Destructive operations still require a typed yes.
 
 ## Providers
 
-The dialog's language prompt uses the tool adapter of `spark do`. Home
-is the native host: it owns the prompt, the domain controls, review,
-execution and receipts. spark supplies the model connection and its
-security and storage rules. Each domain exposes its own typed MCP
-capabilities. The dialog sends the current view, selected row, local
-clock and visible state with that view's capabilities. Dates, columns
-and exact row actions are retained, including the selected row's
-action arguments. Existing-item arguments are narrowed to their actual
-row values when one name identifies the item.
-Other providers are listed with their readable domain name and purpose,
-such as Sound / Output and volume, even from the model screen or another
-domain. Spark can request their current state when the task needs it.
-Discovery uses static navigation descriptions, not device names or hidden rows.
-Typing a request on the model screen keeps the prompt active; choosing a
-model still requires an explicit row selection.
-Capabilities inspected during a task remain available for its later steps.
-After a successful action, the provider's rows are read again before the
-next decision, so a newly created item's identity can be used immediately.
-Tool descriptions and typed arguments retain their meaning across the
-interface. The protocol is owned by spark's `CLAUDE.md`, contract 16.
+The dialog's language prompt asks spark one bounded question through
+`spark steps`: these words, this tool list, which steps. Home is the
+native host: it owns the prompt, the domain controls, review, execution
+and receipts. spark supplies the model connection and its security and
+storage rules. Each domain exposes its own typed MCP capabilities. The
+request carries the words, the view, the selected row's text, the names
+the open view's steps take (a window, a note, a network, exactly as
+written) and the local time, and on stdin every ready provider's tools
+but the files', each with its name, title, description and schema, in
+provider order and the same bytes from one request to the next, so
+spark's served prompt keeps the list cached and a request pays its own
+words. Hidden rows, note contents, directories and device names are not
+sent. spark answers `{"answer", "steps", "refused"}` under a grammar
+made from the tools. The dialog checks each step again against what the
+provider lists now and its schema; a step that fails is said in one
+line. The protocol is owned by spark's `CLAUDE.md`, contract 16.
 
-One proposed action waits for Enter. The dialog checks the current tools,
-arguments and rows again, and consequential actions still require `yes`.
-Select a row before typing or clicking the prompt to use it as the target.
-The `For:` line keeps that choice visible while search results change.
-An item that disappears stops the proposal; select the item again.
-This also ends a task that removed its own selected item; start a new
-request for further work. Moving to another view stops the current task.
-Proposals with several arguments show each field and its value.
-The actual MCP result goes back to spark before another action is proposed.
-A question continues the same task. Typed or pasted answers, and a click
-on a row while answering, answer the question without running that row.
-The hint says Answer or Stop while the task owns the prompt.
-Esc drops the continuation; an action
-already sent may still finish. Late model replies cannot restart it.
-A lost provider or timeout stops the task without retrying the action.
-Declared structured output schemas are checked before a result is accepted.
-Model completion prose is separate from the native success receipt.
-Only one native action runs at a time. While a provider is loading, the
-prompt retains the request until its controls are available. Malformed
-results or an unknown execution outcome stop the task; the dialog never
-reports them as successful observations. A result with recognized private
-fields is not sent back to inference.
+One proposed step waits for Enter, a plan of several steps one after
+another; consequential steps still require `yes`. Select a row before
+typing or clicking the prompt to use it as the target. The `For:` line
+keeps that choice visible while search results change. An item that
+disappears stops the proposal; select the item again. Proposals with
+several arguments show each field and its value. The actual MCP result
+is the receipt; spark is not asked again after a step. Esc drops the
+proposals; an action already sent may still finish. A late reply lands
+nowhere: a newer request, a row picked or Esc supersedes it. A lost
+provider or a step that does not answer stops the steps that depend on
+it, without retrying.
 
-Closing the window loses the task; opening another does not resume it.
-Earlier completed actions stay completed, with their native receipts.
-Undo, where offered, reverses its one action rather than the whole task.
-The continuation lives only in this window. The adapter adds no service,
-model download or runtime dependency. A spark build with `spark do
---tools` is required for this prompt, v1.106 or newer; unsupported builds
-report an error. The client's existing spark connection can supply
-inference from another machine; no model needs to run on the desktop
-client. Execution stays with the provider that owns the capability.
-Direct controls and explicit commands remain usable without AI.
-Model-backed commands, such as layout generation, still need their model
-connection.
+Closing the window loses the request. Earlier completed steps stay
+completed, with their native receipts. Undo, where offered, reverses its
+one step. The adapter adds no service, model download or runtime
+dependency. A spark build with `spark steps` and its 128-tool list is
+required, v1.107 or newer; an older spark offers 64 tools and drops the
+rest. The client's existing spark connection can supply inference from
+another machine; no model needs to run on the desktop client. Execution
+stays with the provider that owns the capability. Direct controls and
+explicit commands remain usable without AI. Model-backed commands, such
+as layout generation, still need their model connection.
 
 At the prompt, Up recalls earlier requests from this window. Down walks
 forward and restores the unfinished draft and its selected target. Within

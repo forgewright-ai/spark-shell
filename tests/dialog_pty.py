@@ -6,6 +6,7 @@ moves into the list and Enter sets it (Enter in the prompt alone would
 send the words as a request), Esc closes, and no provider outlives the
 window. CI runs it with no
 network (unshare -n). Linux and macOS, python3 stdlib only."""
+import re
 import fcntl, json, os, pty, select, signal, struct, subprocess, sys, tempfile, termios, time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -112,7 +113,7 @@ def tasks(binary, base_env, home):
     helper = os.path.join(home, "task-helper")
     with open(provider, "w") as f:
         f.write("#!" + sys.executable + "\n" + r'''
-import json, os, sys
+import json, re, os, sys
 tool = {"name":"notes_pick","title":"notes pick NAME","inputSchema":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}}
 rows = {"title":"Notes","rows":[{"id":"target","text":"Fixture target","tool":{"name":"notes_pick","arguments":{"name":"Fixture target"}}}]}
 for line in sys.stdin:
@@ -131,75 +132,58 @@ for line in sys.stdin:
     with open(helper, "w") as f:
         f.write("#!" + sys.executable + "\n" + r'''
 import json, os, sys
-if sys.argv[1:] != ["do", "--tools"]: sys.exit(0)
-v = json.load(sys.stdin)
-with open(os.environ["TASK_REQUESTS"], "a") as f: f.write(json.dumps(v)+"\n")
-if "observation" in v:
-    result = {"version":1,"status":"done","summary":"task complete"}
-elif "answer" in v:
-    step = {"name":"p0_notes_pick","arguments":{"name":"Fixture target"}}
-    result = {"version":1,"status":"step","id":2,"step":step,"state":{"pending":{"id":2,"kind":"step","step":step}}}
-else:
-    result = {"version":1,"status":"ask","id":1,"question":"Which note?","state":{"pending":{"id":1,"kind":"ask"}}}
-print(json.dumps(result))
+if sys.argv[1:2] != ["steps"]: sys.exit(0)
+tools = json.load(sys.stdin)
+with open(os.environ["TASK_REQUESTS"], "a") as f: f.write(json.dumps({"argv": sys.argv[1:], "tools": tools})+"\n")
+print(json.dumps({"answer": "", "steps": [{"name": "notes_pick", "arguments": {"name": "Fixture target"}}], "refused": []}))
 ''')
     os.chmod(provider, 0o700)
     os.chmod(helper, 0o700)
-    for pointer in (False, True):
-        requests, calls = (os.path.join(home, name + str(pointer)) for name in ("task-requests", "task-calls"))
-        env = dict(base_env, TASK_REQUESTS=requests)
-        argv = [binary, "--provider", provider + " " + calls + " notes", "--home", "notes", "--composer", "", "--spark", helper]
-        pid, fd = pty.fork()
-        if pid == 0:
-            os.execve(binary, argv, env)
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
-        seen = bytearray()
-        def wait_for(test, secs=10):
-            end = time.monotonic() + secs
-            while time.monotonic() < end:
-                if test(): return True
-                if select.select([fd], [], [], .1)[0]:
-                    try: seen.extend(os.read(fd, 65536))
-                    except OSError: break
-            return test()
-        def records(path):
-            if not os.path.exists(path): return []
-            with open(path) as f: return [json.loads(line) for line in f if line.endswith("\n")]
-        try:
-            assert wait_for(lambda: b"Fixture" in seen and b"target" in seen), "task provider did not draw"
-            os.write(fd, b"\x1b[B")
-            time.sleep(.1)
-            os.write(fd, b"use this\r")
-            assert wait_for(lambda: b"Which" in seen), "question did not draw"
-            ok(records(requests)[0]["context"]["selected"]["id"] == "target", "terminal typing preserves the selected target")
-            if pointer:
-                os.write(fd, b"\x1b[200~Fixture target\x1b[201~")
-            else:
-                os.write(fd, b"Fixture target")
-            time.sleep(.1)
-            if pointer:
-                # Answer Enter is at row 6; click its visible chip.
-                os.write(fd, b"\x1b[<0;12;6M\x1b[<0;12;6m")
-            else:
-                os.write(fd, b"\r")
-            assert wait_for(lambda: len(records(requests)) >= 2 and b"Discard" in seen), "answer did not produce a reviewed proposal"
-            ok(records(requests)[1].get("answer") == "Fixture target" and not records(calls),
-               ("paste and pointer" if pointer else "typing and Enter") + ": answer the question without executing its matching row")
-            os.write(fd, b"\r")
-            assert wait_for(lambda: b"type yes" in seen), "confirmation did not draw"
-            ok(not records(calls), "review Enter still waits for typed destructive confirmation")
-            os.write(fd, b"yes\r")
-            assert wait_for(lambda: len(records(requests)) >= 3 and b"complete" in seen), "task did not finish"
-            ok(len(records(calls)) == 1 and records(requests)[2]["observation"]["result"]["structuredContent"]["receipt"] == "fixture completed",
-               "confirmed action executes once and returns the native result")
-        except (AssertionError, KeyError, IndexError) as e:
-            ok(False, "task terminal interaction", str(e) + " " + repr(bytes(seen[-1000:])))
-        finally:
-            os.write(fd, b"\x03")
-            if not wait_for(lambda: os.waitpid(pid, os.WNOHANG)[0] != 0, 5):
-                os.kill(pid, signal.SIGKILL)
-                os.waitpid(pid, 0)
-            os.close(fd)
+    requests, calls = (os.path.join(home, name) for name in ("task-requests", "task-calls"))
+    env = dict(base_env, TASK_REQUESTS=requests)
+    argv = [binary, "--provider", provider + " " + calls + " notes", "--home", "notes", "--composer", "", "--spark", helper]
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.execve(binary, argv, env)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
+    seen = bytearray()
+    def wait_for(test, secs=10):
+        end = time.monotonic() + secs
+        while time.monotonic() < end:
+            if test(): return True
+            if select.select([fd], [], [], .1)[0]:
+                try: seen.extend(os.read(fd, 65536))
+                except OSError: break
+        return test()
+    def records(path):
+        if not os.path.exists(path): return []
+        with open(path) as f: return [json.loads(line) for line in f if line.endswith("\n")]
+    try:
+        assert wait_for(lambda: b"Fixture" in seen and b"target" in seen), "the provider did not draw"
+        os.write(fd, b"\x1b[B")
+        time.sleep(.1)
+        os.write(fd, b"use this\r")
+        assert wait_for(lambda: b"notes pick Fixture" in seen and b"Discard" in seen), "the proposal did not draw"   # the line wraps across a cursor move
+        req = records(requests)
+        ok(len(req) == 1 and req[0]["argv"][:3] == ["steps", "--about", req[0]["argv"][2]] and "The selected row: Fixture target" in req[0]["argv"][2]
+           and [t["name"] for t in req[0]["tools"]["tools"]] == ["notes_pick"],
+           "the words go to spark steps once, with the selected row in the about and the providers' tools on stdin")
+        ok(not records(calls), "nothing runs before Enter")
+        os.write(fd, b"\r")
+        assert wait_for(lambda: b"type yes" in seen), "the confirmation did not draw"
+        ok(not records(calls), "Enter on a step that is not read-only still waits for the typed yes")
+        os.write(fd, b"yes\r")
+        assert wait_for(lambda: len(records(calls)) == 1 and b"completed" in seen), "the step did not run"   # the receipt wraps across a cursor move
+        ok(records(calls)[0]["arguments"]["name"] == "Fixture target" and len(records(requests)) == 1,
+           "Enter runs the proposal as proposed, and spark is not asked again")
+    except (AssertionError, KeyError, IndexError) as e:
+        ok(False, "task terminal interaction", str(e) + " " + repr(re.sub(rb"\x1b\[[0-9;?]*[A-Za-z]", b"", bytes(seen[-2500:]))))
+    finally:
+        os.write(fd, b"\x03")
+        if not wait_for(lambda: os.waitpid(pid, os.WNOHANG)[0] != 0, 5):
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+        os.close(fd)
 
 
 def busy(binary, env, home):

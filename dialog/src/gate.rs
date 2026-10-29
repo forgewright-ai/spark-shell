@@ -250,42 +250,6 @@ fn is_name(schema: &Value, k: &str) -> bool {
 /// its rows. This carries the host's name gate into generation; labels are
 /// never substituted for opaque identifiers. Creation and numeric controls
 /// retain their schemas. The execution gate still checks fresh rows later.
-pub fn task_schema(tool: &Tool, rows: &Rows) -> Value {
-    let mut schema = tool.schema.clone();
-    let required: Vec<&str> = tool.schema["required"]
-        .as_array()
-        .map(|a| a.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
-    let names: Vec<&str> = required.iter().copied().filter(|k| is_name(&tool.schema, k)).collect();
-    if names.len() != 1 {
-        return schema;
-    }
-    let name = names[0];
-    let mut values: Vec<Value> = rows
-        .rows
-        .iter()
-        .take(100)
-        .flat_map(|r| r.tool.iter().chain(r.more.iter()).chain(r.step.iter().flat_map(|s| [&s.less, &s.more])))
-        .filter(|c| c.name == tool.name && required.iter().all(|k| c.arguments.contains_key(*k) && !c.ask.iter().any(|a| a == k)))
-        .filter_map(|c| c.arguments.get(name).filter(|v| v.is_string()).cloned())
-        .collect();
-    if values.is_empty() {
-        return schema;
-    }
-    let prefix = format!("{}:show:", rows.title);
-    values.extend(
-        rows.rows
-            .iter()
-            .take(100)
-            .filter(|r| r.tool.is_none())
-            .filter_map(|r| r.id.strip_prefix(&prefix).map(|s| Value::String(s.into()))),
-    );
-    values.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
-    values.dedup();
-    schema["properties"][name]["enum"] = Value::Array(values);
-    schema
-}
-
 /// A step from the model (or an undo from a result), before it runs:
 /// the tool is in the provider's tools now, its arguments fit the schema,
 /// and where the provider's rows name things with that tool, the step

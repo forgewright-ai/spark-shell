@@ -63,11 +63,9 @@ pub enum Kind {
     Init,
     Tools,
     Read,
-    Refresh(u64),
     Folder,
     Subscribe,
     Call(u64),
-    Prepare(u64),
 }
 
 /// A tool result has its own envelope even when its tool declares no output

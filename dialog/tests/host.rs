@@ -450,12 +450,7 @@ fn plus_opens_the_files_attaches_one_and_the_want_carries_it() {
         app.typed(c);
     }
     app.enter();
-    let Some(Job::Run(_, argv)) = app
-        .jobs
-        .iter()
-        .rev()
-        .find(|j| matches!(j, Job::Run(h, _) if *h == spark_dialog::app::Helper::Want))
-    else {
+    let Some(Job::Run(_, argv)) = app.jobs.iter().rev().find(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want(_), _))) else {
         panic!("no want")
     };
     assert_eq!(
@@ -464,7 +459,10 @@ fn plus_opens_the_files_attaches_one_and_the_want_carries_it() {
     );
     assert!(app.attachment.is_none(), "an attachment rides one want");
     // the want failed: the words and the file come back, nothing lost
-    app.helper(spark_dialog::app::Helper::Want, Err("spark did not answer: the model is loading".into()));
+    app.helper(
+        spark_dialog::app::Helper::Want(app.want_serial),
+        Err("spark did not answer: the model is loading".into()),
+    );
     assert_eq!(app.input, "what do these say");
     assert_eq!(app.attachment.as_deref(), Some(format!("{}/notes.md", home).as_str()));
     // Remove takes it off before the next question
@@ -1231,7 +1229,7 @@ fn history_request(app: &mut App, words: &str) {
     app.set_draft(words);
     app.in_list = false;
     app.enter();
-    app.task_cancel();
+    app.want_cancel();
     app.jobs.clear();
     app.wait = None;
     app.set_draft("");
@@ -1311,13 +1309,17 @@ fn history_respects_multiline_and_list_navigation_and_edits() {
 }
 
 #[test]
-fn history_does_not_change_an_active_task_or_a_form() {
+fn history_does_not_change_a_request_spark_is_reading_or_a_form() {
     let (mut app, _, _) = app_with(&[]);
     history_request(&mut app, "an earlier request");
-    app.task_start("a current task");
+    app.cfg.spark = "/bin/sh".into();
+    app.set_draft("a current request");
+    app.in_list = false;
+    app.enter();
+    assert!(app.pending.is_some(), "spark is reading the request");
     app.set_draft("keep this draft");
-    let serial = app.task_serial;
-    let target = spark_dialog::task::Target {
+    let serial = app.want_serial;
+    let target = spark_dialog::app::Target {
         view: View::Home,
         provider: 0,
         id: "selected".into(),
@@ -1327,8 +1329,8 @@ fn history_does_not_change_an_active_task_or_a_form() {
     app.up();
     assert_eq!(app.input, "keep this draft");
     assert_eq!(app.target.as_ref().unwrap().id, "selected");
-    assert_eq!(app.task_serial, serial);
-    app.task_cancel();
+    assert_eq!(app.want_serial, serial);
+    app.want_cancel();
     app.jobs.clear();
     app.target = Some(target);
     app.set_draft("targeted draft");
@@ -1349,7 +1351,7 @@ fn history_does_not_change_an_active_task_or_a_form() {
     app.mode = Mode::Normal;
     app.set_draft("");
     app.up();
-    assert_eq!(app.input, "an earlier request", "the form answer was not retained");
+    assert_eq!(app.input, "a current request", "the form answer was not retained");
 }
 
 #[test]
@@ -1821,7 +1823,7 @@ fn the_bar_says_what_kind_of_work_is_going_on() {
     assert_eq!(app.work(), Work::Think, "spark is asked");
     app.frame = 3;
     assert!(header(&app).contains(&progress::bar(Work::Think, 3)), "{:?}", header(&app));
-    app.helper(spark_dialog::app::Helper::Want, Err("no answer".into()));
+    app.helper(spark_dialog::app::Helper::Want(app.want_serial), Err("no answer".into()));
     assert!(!app.busy(), "the answer, or the lack of one, ends it");
 }
 
@@ -1875,13 +1877,14 @@ fn the_rows_of_a_place_being_read_are_an_arrow() {
 fn inference(j: &Job) -> bool {
     matches!(
         j,
-        Job::Run(spark_dialog::app::Helper::Want, _) | Job::RunInput(spark_dialog::app::Helper::Task(_), _, _)
+        Job::Run(spark_dialog::app::Helper::Want(_), _) | Job::RunInput(spark_dialog::app::Helper::Want(_), _, _)
     )
 }
 fn asks_for(j: &Job, words: &str) -> bool {
     match j {
-        Job::Run(spark_dialog::app::Helper::Want, a) => a.last().map(String::as_str) == Some(words),
-        Job::RunInput(spark_dialog::app::Helper::Task(_), _, data) => serde_json::from_str::<Value>(data).ok().is_some_and(|v| v["goal"] == words),
+        Job::Run(spark_dialog::app::Helper::Want(_), a) | Job::RunInput(spark_dialog::app::Helper::Want(_), a, _) => {
+            a.last().map(String::as_str) == Some(words)
+        }
         _ => false,
     }
 }

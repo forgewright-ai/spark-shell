@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.109
+
+- Home is a launcher. Fuzzy search over every place, setting and step,
+  slots typed inline, Enter runs the lit row, no model. Words that name
+  no row are one request to spark: the words, the view, the selected
+  row and the names the open view's steps take, with every ready
+  provider's tools on stdin, answered by `spark steps` under a grammar
+  in one call: on the box, with gemma4-26b-a4b and 105 tools, 3 to 6 s,
+  the list served from the cache after the first call. The steps come
+  back as commands in the box, each on Enter; a step that writes or
+  removes still asks for yes. The twelve-turn task loop of v0.104 to
+  v0.108 goes, with its inspect step, its finish rule, its continuation,
+  its scenario harness and its sets. The list keeps filtering while
+  spark reads the words: a row picked meanwhile runs at once and drops
+  the request, Esc drops it and the words come back, a late reply lands
+  nowhere, and a request that gets no answer comes back as typed (#90).
+- Needs spark v1.107 or newer for the whole tree in one call: an older
+  spark offers 64 of the tools and drops the rest.
+
 ## v0.108
 
 - Describe discoverable domains by their readable name and purpose. A

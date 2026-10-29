@@ -343,8 +343,8 @@ pub enum Mode {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Helper {
-    Task(u64),
-    Want,
+    /// spark's answer to a request, with the request's serial: an older one is dropped.
+    Want(u64),
     Models,
     ModelSet,
     Listen,
@@ -360,7 +360,15 @@ pub enum Job {
     StopListening,
 }
 
+/// An explicit row selection, independent of the search results while typing.
 #[derive(Clone, Debug)]
+pub struct Target {
+    pub view: View,
+    pub provider: usize,
+    pub id: String,
+    pub text: String,
+}
+
 pub struct Provider {
     pub label: String,
     pub title: String,
@@ -463,9 +471,9 @@ pub enum Item {
 }
 
 pub struct App {
-    pub task: Option<crate::task::Task>,
-    pub task_serial: u64,
-    pub target: Option<crate::task::Target>,
+    /// The request spark is answering now; an older reply is dropped.
+    pub want_serial: u64,
+    pub target: Option<Target>,
     pub cfg: Config,
     pub providers: Vec<Provider>,
     pub servers: Vec<Server>,
@@ -493,7 +501,7 @@ pub struct App {
     /// Requests from this window only. Forms and confirmations never enter here.
     prompt_history: VecDeque<String>,
     history_at: Option<usize>,
-    history_draft: Option<(String, usize, Option<crate::task::Target>)>,
+    history_draft: Option<(String, usize, Option<Target>)>,
     /// The draft kept while the prompt takes a yes, an argument or an answer for a provider.
     pub stash: Option<String>,
     /// The words and the file of the request in flight, given back if it fails.
@@ -556,8 +564,7 @@ impl App {
         };
         let came_from: Vec<View> = if view == View::About { vec![View::Home] } else { vec![] }; // opened on the about (the first desktop start): Esc gives the list back
         App {
-            task: None,
-            task_serial: 0,
+            want_serial: 0,
             target: None,
             cfg,
             providers,
@@ -631,7 +638,7 @@ impl App {
 
     /// What the list is searched by: the words typed, never the commands spark put in the box.
     fn query(&self) -> &str {
-        if self.staged_now() || self.answering() {
+        if self.staged_now() {
             ""
         } else {
             &self.input
@@ -752,7 +759,6 @@ impl App {
             self.providers[idx].last_read = Some(Instant::now());
         } else {
             self.providers[idx].reading = false;
-            self.task_read(idx, false);
         }
     }
 
@@ -776,15 +782,8 @@ impl App {
         self.providers[idx].rows = Rows::default();
         self.providers[idx].tools.clear();
         self.providers[idx].reading = false;
-        if self.task.is_some()
-            && (self.target.as_ref().is_some_and(|t| t.provider == idx) || self.task.as_ref().is_some_and(|t| t.scope.contains(&idx)) || was_shown)
-        {
-            self.task_cancel();
-        }
-        self.task_read(idx, false);
-        if self.task.as_ref().is_some_and(|t| t.phase == crate::task::Phase::Prepare(idx)) {
-            self.task_cancel();
-            self.say(Sign::Refused, "the provider stopped while preparing; nothing was executed");
+        if self.target.as_ref().is_some_and(|t| t.provider == idx) || was_shown {
+            self.want_cancel();
         }
         if let Some(s) = self.servers.iter_mut().find(|s| s.idx == idx) {
             s.close_stdin();
@@ -792,7 +791,7 @@ impl App {
         if let Some((p, _, _, _)) = self.running.clone() {
             if p == idx {
                 self.running = None;
-                self.task_cancel();
+                self.want_cancel();
                 self.opened = false;
                 self.say(
                     Sign::Refused,
@@ -999,7 +998,7 @@ impl App {
                 }
             }
             Kind::Subscribe => {}
-            Kind::Read | Kind::Refresh(_) => {
+            Kind::Read => {
                 if self.providers[idx].read_id != Some(n) {
                     return;
                 }
@@ -1012,7 +1011,6 @@ impl App {
                 if text.len() > mcp::RESOURCE_MAX {
                     return self.lose(idx, "its rows are over 256 kB");
                 }
-                let valid = model::rows(text).is_some();
                 if let Some(rows) = model::rows(text) {
                     if let Some(st) = &rows.state {
                         self.providers[idx].title = st.clone(); // the subtitle follows the section's state, step by step
@@ -1025,11 +1023,6 @@ impl App {
                             self.read_folder(idx, &root);
                         }
                     }
-                }
-                if let Kind::Refresh(serial) = p.kind {
-                    self.task_refreshed(idx, serial, valid);
-                } else {
-                    self.task_read(idx, valid);
                 }
             }
             Kind::Folder => {
@@ -1054,7 +1047,6 @@ impl App {
                 self.clear_pair(idx);
                 self.called(idx, n, result, error)
             }
-            Kind::Prepare(serial) => self.task_prepared(idx, serial, result, error),
         }
     }
 
@@ -1076,7 +1068,7 @@ impl App {
                     self.clear_pair(idx);
                     if self.running.as_ref().is_some_and(|(p, n, _, _)| *p == idx && *n == id) {
                         self.running = None;
-                        self.task_cancel();
+                        self.want_cancel();
                         self.opened = false;
                         // no answer is no proof either way: say so, and run nothing that depends on it
                         self.say(
@@ -1093,17 +1085,9 @@ impl App {
                 Kind::Read => {
                     if self.providers[idx].read_id == Some(id) {
                         self.providers[idx].reading = false;
-                        self.task_read(idx, false);
                     }
-                }
-                Kind::Refresh(serial) => {
-                    if self.providers[idx].read_id == Some(id) {
-                        self.providers[idx].reading = false;
-                    }
-                    self.task_refreshed(idx, serial, false);
                 }
                 Kind::Init => self.lose(idx, "it did not answer"),
-                Kind::Prepare(serial) => self.task_prepared(idx, serial, None, Some("preparation timed out; nothing was executed".into())),
                 _ => {}
             }
         }
@@ -1503,11 +1487,6 @@ impl App {
         if self.mode != Mode::Normal {
             return;
         }
-        if self.answering() {
-            self.in_list = false;
-            self.sel = 0;
-            return;
-        }
         self.scroll = 0;
         // Only searchable rows follow typing. Model/connection/voice controls
         // keep their explicit keyboard selection; a request must not pick one.
@@ -1666,7 +1645,7 @@ impl App {
 
     fn recall_prompt(&mut self, older: bool) -> bool {
         if self.mode != Mode::Normal
-            || self.task.is_some()
+            || self.pending.is_some()
             || self.running.is_some()
             || self.staged.is_some()
             || self.chip_focus.is_some()
@@ -1811,7 +1790,7 @@ impl App {
         let b = self.byte_at(self.cursor);
         self.input.replace_range(a..b, "");
         self.cursor -= 1;
-        if self.input.is_empty() && self.task.is_none() {
+        if self.input.is_empty() {
             self.target = None;
         }
         self.follow_words();
@@ -1825,7 +1804,7 @@ impl App {
         let a = self.byte_at(self.cursor);
         let b = self.byte_at(self.cursor + 1);
         self.input.replace_range(a..b, "");
-        if self.input.is_empty() && self.task.is_none() {
+        if self.input.is_empty() {
             self.target = None;
         }
         self.follow_words();
@@ -1898,19 +1877,14 @@ impl App {
     /// draft goes first; then back one view; from the first view the dialog closes.
     pub fn escape(&mut self) {
         self.target = None;
-        let task_draft = self.staged.as_ref().map(|s| s.draft.clone());
-        let had_task = self.task.is_some();
-        self.task_cancel();
-        if had_task && self.mode == Mode::Normal {
-            self.set_input(task_draft.unwrap_or_default());
-            self.say(
-                Sign::Says,
-                if self.running.is_some() {
-                    "task stopped; the current action may still finish"
-                } else {
-                    "task stopped"
-                },
-            );
+        // a request spark is still reading: Esc drops it, and the words come back
+        if self.pending.is_some() && self.mode == Mode::Normal && !self.staged_now() {
+            let words = self.pending.as_ref().map(|(w, _)| w.clone()).unwrap_or_default();
+            self.want_cancel();
+            if self.input.is_empty() {
+                self.set_input(words);
+            }
+            self.say(Sign::Says, "stopped");
             return;
         }
         self.keep_lit = None;
@@ -1980,9 +1954,7 @@ impl App {
     }
 
     fn go_back(&mut self, v: View) {
-        if self.task.is_some() {
-            self.escape();
-        }
+        self.want_cancel();
         self.target = None;
         self.keep_lit = None;
         self.view = v;
@@ -2003,9 +1975,7 @@ impl App {
     }
 
     fn go(&mut self, v: View) {
-        if self.task.is_some() {
-            self.escape();
-        }
+        self.want_cancel();
         self.target = None;
         self.keep_lit = None;
         // the files section is its home folder: its one row, ~, is no stop of its own
@@ -2079,7 +2049,6 @@ impl App {
                     self.approved(step);
                 } else {
                     self.say(Sign::Refused, "not done: it takes the word yes");
-                    self.task_cancel();
                     self.stop_queue();
                 }
                 return;
@@ -2186,21 +2155,6 @@ impl App {
         }
         if let Some(c) = self.chip_focus {
             self.chip(c);
-            return;
-        }
-        if self.answering() {
-            if self.in_list {
-                if let Some(Item::Row(p, r)) = self.picks().get(self.sel) {
-                    self.set_input(self.providers[*p].rows.rows[*r].text.clone());
-                }
-            }
-            let typed = self.input.trim().to_string();
-            if !typed.is_empty() {
-                self.set_input(String::new());
-                self.in_list = false;
-                self.sel = 0;
-                self.request(&typed);
-            }
             return;
         }
         // the commands spark planned, as they stand in the box: Enter runs them, in order (#53)
@@ -2522,10 +2476,6 @@ impl App {
             self.set_input(words.into());
             return self.say(Sign::Says, "wait for the current action's result");
         }
-        if self.task.as_ref().is_some_and(|t| t.phase == crate::task::Phase::Question) {
-            self.say(Sign::You, words);
-            return self.task_advance(json!({"answer": words}));
-        }
         let visible = self.shown();
         let first = words.split_whitespace().next().unwrap_or("");
         let loading = self.providers.iter().enumerate().any(|(idx, provider)| {
@@ -2539,7 +2489,7 @@ impl App {
         }
         self.remember_prompt(words);
         let target = self.target.take();
-        self.task_cancel();
+        self.want_cancel();
         self.target = target;
         if !words.contains('\n') {
             if let Some(v) = self.place(words) {
@@ -2629,28 +2579,94 @@ impl App {
     }
 
     fn want(&mut self, words: &str) {
-        if self.attachment.is_none() && !self.cfg.spark.is_empty() {
-            self.say(Sign::You, words);
-            return self.task_start(words);
-        }
-        if self.cfg.spark_shell.is_empty() {
+        if self.cfg.spark.is_empty() && self.cfg.spark_shell.is_empty() {
             self.set_input(words.to_string());
             self.say(Sign::You, words);
-            return self.say(Sign::Refused, "no spark-shell to read the words");
+            return self.say(Sign::Refused, "no spark to read the words");
         }
+        self.want_cancel();
         self.wait = Some(Work::Think);
-        let mut argv = vec![self.cfg.spark_shell.clone(), "want".into(), "--json".into()];
         // the file goes with this request alone; it comes back if the request fails
         let file = self.attachment.take();
-        if let Some(a) = &file {
+        if file.is_some() {
             self.say(Sign::Says, "This file is used for this request only.");
-            argv.push("--attach".into());
-            argv.push(a.clone());
         }
-        self.pending = Some((words.to_string(), file));
-        argv.push("--".into());
-        argv.push(words.to_string());
-        self.jobs.push(Job::Run(Helper::Want, argv));
+        self.pending = Some((words.to_string(), file.clone()));
+        let serial = self.want_serial;
+        if file.is_some() || self.cfg.spark.is_empty() {
+            // a file goes the terminal's way: spark-shell want reads it with the words
+            let mut argv = vec![self.cfg.spark_shell.clone(), "want".into(), "--json".into()];
+            if let Some(a) = &file {
+                argv.push("--attach".into());
+                argv.push(a.clone());
+            }
+            argv.push("--".into());
+            argv.push(words.to_string());
+            self.jobs.push(Job::Run(Helper::Want(serial), argv));
+            return;
+        }
+        // the one bounded call: these words, this tool list, which steps. The
+        // list is every ready provider's tools but the files', in provider
+        // order, the same bytes from one request to the next, so spark's
+        // served prompt keeps it cached and a request pays its own words.
+        let tools: Vec<Value> = self
+            .providers
+            .iter()
+            .filter(|p| p.ready && p.dead.is_none() && p.label != "files")
+            .flat_map(|p| {
+                p.tools
+                    .iter()
+                    .map(|t| json!({"name": t.name, "title": t.title, "description": t.description, "inputSchema": t.schema}))
+            })
+            .collect();
+        let payload = json!({"tools": tools}).to_string();
+        let argv = vec![
+            self.cfg.spark.clone(),
+            "steps".into(),
+            "--about".into(),
+            self.want_about(),
+            "--".into(),
+            words.to_string(),
+        ];
+        self.jobs.push(Job::RunInput(Helper::Want(serial), argv, payload));
+    }
+
+    /// What the caller knows now, for spark steps: the view, the selected row, the
+    /// names the open view's steps take (a window, a note, a network, exactly as
+    /// written), and the clock last. Nothing a row hides.
+    fn want_about(&self) -> String {
+        let mut about = format!("A desktop dialog. The view: {}.", self.title());
+        if let Some((_, row)) = self.target_row() {
+            about.push_str(&format!(" The selected row: {}.", row.text));
+        }
+        let mut names: Vec<String> = vec![];
+        for i in self.shown() {
+            if self.providers[i].label == "files" {
+                continue;
+            }
+            for r in 0..self.providers[i].rows.rows.len() {
+                if let Some(n) = self.name_of(&Item::Row(i, r)) {
+                    if !names.contains(&n) {
+                        names.push(n);
+                    }
+                }
+            }
+        }
+        if !names.is_empty() {
+            let mut list = String::new();
+            for n in names {
+                if list.len() + n.len() > 1000 {
+                    break;
+                }
+                if !list.is_empty() {
+                    list.push_str(", ");
+                }
+                list.push_str(&n);
+            }
+            about.push_str(&format!(" The names a step takes now, each exactly as written here: {}.", list));
+        }
+        about.push_str(&format!(" The local time: {}.", crate::helper::clock()));
+        about
     }
 
     /// A request that did not get its answer: the words and the file come back, unless something new
@@ -2671,7 +2687,6 @@ impl App {
     /// plans runs before that. Words that were the commands already run at once. An answer, or a step
     /// refused, is said under the words that asked.
     pub fn plan(&mut self, text: &str) {
-        self.task_cancel(); // legacy one-shot plans have no continuation
         self.wait = None;
         let words = self.pending.as_ref().map(|(w, _)| w.clone()).unwrap_or_default();
         let Ok(v) = serde_json::from_str::<Value>(text) else {
@@ -2694,7 +2709,8 @@ impl App {
         for s in v.get("steps").and_then(Value::as_array).cloned().unwrap_or_default() {
             let Some(name) = s.get("name").and_then(Value::as_str) else { continue };
             let arguments = s.get("arguments").and_then(Value::as_object).cloned().unwrap_or_default();
-            let line = scrub(s.get("line").and_then(Value::as_str).unwrap_or(name));
+            let said = s.get("line").and_then(Value::as_str).map(scrub);
+            let line = said.clone().unwrap_or_else(|| name.to_string());
             // two steps are the dialog's own: undo is the undo at hand, about opens its about
             if name == "undo_all" {
                 match self.undo.clone() {
@@ -2719,12 +2735,17 @@ impl App {
             match self.providers.iter().position(|p| p.tools.iter().any(|t| t.name == name)) {
                 None => no.push(format!("{} is not offered here now", line)),
                 Some(p) => match gate::step(&self.providers[p].tools, &self.providers[p].rows, &call) {
-                    Ok(()) => steps.push(Step {
-                        prov: p,
-                        call,
-                        who: Who::Model,
-                        line,
-                    }),
+                    Ok(()) => {
+                        // spark steps sends no line: the step reads as the tool's title with the
+                        // values in its capitals' places, or every field when it has more
+                        let line = said.unwrap_or_else(|| self.proposal_line(p, &call));
+                        steps.push(Step {
+                            prov: p,
+                            call,
+                            who: Who::Model,
+                            line,
+                        })
+                    }
                     Err(e) => no.push(format!("{} did not run: {}", line, e)),
                 },
             }
@@ -2781,7 +2802,7 @@ impl App {
         }
         if let Some(s) = self.queue.pop_front() {
             self.run(s);
-        } else if self.opened && self.task.is_none() {
+        } else if self.opened {
             self.quit = Some(3);
         }
     }
@@ -2808,7 +2829,7 @@ impl App {
             return self.say(Sign::Says, "wait for the current action's result");
         }
         if step.who != Who::Model {
-            self.task_cancel();
+            self.want_cancel();
             self.target = None;
         }
         if let Some(field) = step.call.ask.first().cloned() {
@@ -2823,15 +2844,10 @@ impl App {
         self.say(Sign::You, &step.line);
         let Some(tool) = self.tool_of(&step).cloned() else {
             self.say(Sign::Refused, "this is not offered here now");
-            self.task_cancel();
             return self.stop_queue();
         };
         if let Err(e) = self.checked(&step) {
             self.say(Sign::Refused, &e);
-            if self.target.is_some() && self.target_row().is_none() {
-                self.task_cancel();
-            }
-            self.task_observe("error", json!({"isError": true, "message": e}));
             return self.stop_queue();
         }
         if self.risky(&tool) {
@@ -2871,10 +2887,6 @@ impl App {
             Ok(()) => self.call(step),
             Err(e) => {
                 self.say(Sign::Refused, &format!("not done: {}", e));
-                if self.target.is_some() && self.target_row().is_none() {
-                    self.task_cancel();
-                }
-                self.task_observe("error", json!({"isError": true, "message": e}));
                 self.stop_queue();
             }
         }
@@ -2887,14 +2899,6 @@ impl App {
     fn call(&mut self, step: Step) {
         if self.running.is_some() {
             return self.say(Sign::Says, "wait for the current action's result");
-        }
-        if step.who == Who::Model {
-            if self.task_repeat(step.prov, &step.call) {
-                return;
-            }
-            if let Some(task) = &mut self.task {
-                task.attempted.push((step.prov, step.call.clone()));
-            }
         }
         let params = json!({"name": step.call.name, "arguments": Value::Object(step.call.arguments.clone())});
         let idx = step.prov;
@@ -2910,7 +2914,6 @@ impl App {
             }
             None => {
                 self.say(Sign::Refused, "not done: the part of the desktop that does it stopped");
-                self.task_observe("error", json!({"isError": true, "message": "the provider stopped before the call was sent"}));
                 self.stop_queue();
             }
         }
@@ -2964,7 +2967,6 @@ impl App {
             refused,
         );
         if let Some(e) = output_error {
-            self.task_cancel();
             self.opened = false;
             self.say(Sign::Refused, &e);
             self.stop_queue();
@@ -3056,17 +3058,6 @@ impl App {
             }
         }
         self.providers[idx].dirty = true;
-        if step.who == Who::Model && self.task.is_some() {
-            if privacy.private {
-                self.task_cancel();
-                self.say(Sign::Refused, "the result contains private fields; task stopped without sending it to spark");
-                self.stop_queue();
-            } else if refused {
-                self.task_observe("error", task_result);
-            } else {
-                self.task_refresh(idx, task_result);
-            }
-        }
         self.next_step();
     }
 
@@ -3074,8 +3065,8 @@ impl App {
     /// where the model runs.
     pub fn helper(&mut self, h: Helper, out: Result<String, String>) {
         match h {
-            Helper::Task(serial) => self.task_reply(serial, out),
-            Helper::Want => match out {
+            Helper::Want(serial) if serial != self.want_serial => self.wait = None, // an older request's reply
+            Helper::Want(_) => match out {
                 Ok(t) => self.plan(&t),
                 Err(e) => {
                     self.wait = None;
@@ -3275,23 +3266,8 @@ impl App {
             }
             Mode::Normal => {}
         }
-        if self.task.is_some() && !self.staged_now() {
-            let mut v = if self.answering() {
-                key("Answer", "Enter")
-            } else {
-                let state = if self.running.is_some() {
-                    "Running"
-                } else {
-                    match self.task.as_ref().map(|t| &t.phase) {
-                        Some(crate::task::Phase::Inspect(_)) => "Reading",
-                        Some(crate::task::Phase::Refresh(_)) => "Reading",
-                        Some(crate::task::Phase::Prepare(_)) => "Checking",
-                        Some(crate::task::Phase::Proposed) => "Edit the request",
-                        _ => "Thinking",
-                    }
-                };
-                vec![(state.to_string(), false)]
-            };
+        if self.pending.is_some() && !self.staged_now() {
+            let mut v = vec![("Thinking".to_string(), false)];
             v.extend(esc("Stop"));
             return v;
         }
@@ -3426,9 +3402,44 @@ impl App {
         format!("{} {}", self.providers[p].label, row_text)
     }
 
+    /// A step spark proposed, as a person reads it before Enter: the tool's title with the
+    /// value in its capital's place when the step has one simple value; every field on its
+    /// own line (`level: 30`) when it has more, so each value is seen before it runs.
+    pub(crate) fn proposal_line(&self, p: usize, call: &Call) -> String {
+        let title = self.providers[p]
+            .tools
+            .iter()
+            .find(|t| t.name == call.name)
+            .map(|t| t.title.as_str())
+            .unwrap_or(&call.name);
+        let placeholders = title.split_whitespace().filter(|w| w.bytes().all(|c| c.is_ascii_uppercase())).count();
+        let simple = call.arguments.is_empty()
+            || (call.arguments.len() == 1
+                && placeholders == 1
+                && call
+                    .arguments
+                    .values()
+                    .all(|v| v.as_str().is_some_and(|s| !s.chars().any(char::is_control)) || v.is_number() || v.is_boolean()));
+        if simple {
+            return self.step_line(p, call, &call.name);
+        }
+        let label = title
+            .split_whitespace()
+            .filter(|w| !w.bytes().all(|c| c.is_ascii_uppercase()))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let args = call
+            .arguments
+            .iter()
+            .map(|(k, v)| format!("{}: {}", k.replace('_', " "), v))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("{}\n{}", label, args)
+    }
+
     /// Left or right on a value row: its step down or up, run as a pick is.
     fn step_value(&mut self, up: bool) -> bool {
-        if !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal || self.answering() {
+        if !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal {
             return false;
         }
         let Some(it) = self.picks().get(self.sel).cloned() else { return false };
@@ -3471,5 +3482,51 @@ impl App {
         if self.is_calendar() {
             self.month_offset += d;
         }
+    }
+}
+
+impl App {
+    pub fn remember_target(&mut self) {
+        if self.target.is_some() || !self.input.is_empty() || !self.in_list {
+            return;
+        }
+        if let Some(Item::Row(p, r)) = self.picks().get(self.sel) {
+            let row = &self.providers[*p].rows.rows[*r];
+            if self.providers[*p].label != "files" {
+                self.target = Some(Target {
+                    view: self.view.clone(),
+                    provider: *p,
+                    id: row.id.clone(),
+                    text: row.text.clone(),
+                });
+            }
+        }
+    }
+
+    pub fn target_row(&self) -> Option<(usize, &crate::model::Row)> {
+        let t = self.target.as_ref()?;
+        let p = self.providers.get(t.provider)?;
+        if self.view != t.view || !p.ready || p.dead.is_some() {
+            return None;
+        }
+        p.rows.rows.iter().find(|r| r.id == t.id).map(|r| (t.provider, r))
+    }
+
+    pub fn target_label(&self) -> Option<String> {
+        self.target.as_ref().map(|t| match self.target_row() {
+            Some((_, r)) => format!("For: {}", r.text),
+            None => format!("No longer available: {}", t.text),
+        })
+    }
+
+    /// The pending request's reply, when it comes, belongs to nobody: a newer
+    /// request, a row picked or Esc moved on.
+    pub fn want_cancel(&mut self) {
+        self.want_serial += 1;
+        self.pending = None;
+        if self.wait == Some(Work::Think) {
+            self.wait = None;
+        }
+        self.jobs.retain(|j| !matches!(j, Job::RunInput(Helper::Want(_), _, _)));
     }
 }

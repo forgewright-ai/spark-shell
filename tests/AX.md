@@ -1,5 +1,11 @@
 # Task acceptance
 
+Historical since v0.109: the scenario harness (`tests/ax_acceptance.py`
+and its case sets) and the task loop it drove left in v0.109, when Home
+became a launcher with one `spark steps` call on top. The request path
+is covered by `dialog/tests/requests.rs` and `tests/dialog_pty.py`; the
+evidence folders stay as the record of v0.106 to v0.108.
+
 The task host, decision backend and native operation are different boundaries.
 An accepted proposal is not proof of an effect. A successful receipt describes
 one operation; the final native state determines whether the goal was met.
