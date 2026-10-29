@@ -4,13 +4,14 @@
 # ground, the palette's text, the bar's face, no frame and no icon. The
 # first line opens with spark's angle, the heavy angle of the prompt in
 # the accent, then the app's name muted; the summary is bold under it,
-# and before it a glyph tells the kind: a filled dot for any one, hollow
-# on a low one; where the app names the kind (its category), a sealed
-# envelope for mail, a check or a cross for a transfer done or failed, a
+# and before it a glyph tells the kind: a filled dot for any one, and
+# where the app names the kind (its category) a sealed envelope for
+# mail, a check or a cross for a transfer done or failed, a
 # hollow stick for a drive plugged in and not yet mounted, the bar's flag
 # for a reminder due; a warning sign in red on a critical one. The words
 # follow. The glyphs are the bar's and the dialog's, each one Monaspace
-# Neon's own, filled for on and hollow for off as the bar has them, the
+# Neon's own, filled for on and hollow for off as the bar has them (a
+# low one is quiet, not off: its dot stays filled, its color says it), the
 # small triangle before what a click opens among them. The edge lines up
 # with the windows' content (gaps outer plus the clear border, 16 and
 # 4), and the cards stand 8 apart. The newest is on top, three at most,
@@ -52,7 +53,7 @@ format=<span foreground="#@PANEL_MUTED@">&#x25B8; and %h more</span>
 [urgency=low]
 text-color=#@PANEL_MUTED@
 default-timeout=4000
-format=<span foreground="#@PANEL_MUTED@">&#x276F; %a</span>\n&#x25CB; <b>%s</b>\n%b
+format=<span foreground="#@PANEL_MUTED@">&#x276F; %a</span>\n&#x25CF; <b>%s</b>\n%b
 
 # the kind's glyph, where the app names one: mail (U+22A0), a transfer
 # done or failed (U+2713, U+2717), a drive plugged in (U+25AD, hollow:

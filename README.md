@@ -499,14 +499,14 @@ small surface of the desktop like the dialog: its ground, your palette
 and text face, no frame and no icon. The first line opens with spark's
 angle, the heavy angle of the prompt in the accent, then the app's
 name muted; what it says is bold under it, and before it a glyph tells
-the kind: a filled dot for any one, hollow on a low one; where the app
-names the kind, a sealed envelope for mail, a check or a cross for a
-transfer done or failed, a hollow stick for a drive not yet mounted,
-the bar's flag for a reminder due; a warning sign in red on a critical
-one. The words follow. The glyphs are the bar's and the dialog's,
-filled for on and hollow for off as the bar has them, the small
-triangle before what a click opens among them. Its edge lines up with
-the windows' content, and the cards stand a little apart. The
+the kind: a filled dot for any one, and where the app names the kind
+a sealed envelope for mail, a check or a cross for a transfer done or
+failed, a hollow stick for a drive not yet mounted, the bar's flag for
+a reminder due; a warning sign in red on a critical one. The words
+follow. The glyphs are the bar's and the dialog's, filled for on and
+hollow for off as the bar has them, the small triangle before what a
+click opens among them. Its edge lines up with the windows' content,
+and the cards stand a little apart. The
 newest is on top, three at most, and under them one line says how many
 more wait. Those from one app stand together, and the app's line counts
 them (`aerc`, a middle dot, `3`). Each goes after six seconds into the
