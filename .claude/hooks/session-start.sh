@@ -2,8 +2,10 @@
 # spark-shell's session start, in a Claude Code cloud session only: the
 # repository's hooks on, so a commit runs .githooks/pre-commit, and the
 # tools tests/shell_test.sh uses, installed when apt-get can (the debian
-# job's list in ci.yml). A local clone is left as it is. Every start says
-# one line: what is on, or what is missing.
+# job's list in ci.yml). The session is root; a user of its own, gate,
+# runs the suite without root, as ci.yml's linux and macos jobs do. A
+# local clone is left as it is. Every start says one line: what is on,
+# or what is missing.
 set -eu
 [ "${CLAUDE_CODE_REMOTE:-}" = true ] || exit 0
 cd "${CLAUDE_PROJECT_DIR:-$(dirname "$0")/../..}"
@@ -29,9 +31,23 @@ if [ -n "$pkgs" ] && [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null 2>&1; t
     # shellcheck disable=SC2086 # one word a package
     { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $pkgs; } >/dev/null 2>&1 || :
 fi
+# the user the suite runs as, and this clone trusted for it: git refuses
+# a repository another user owns, and the suite isolates HOME, so the
+# trust is the system's
+if [ "$(id -u)" = 0 ]; then
+    id gate >/dev/null 2>&1 || useradd -m -s /bin/sh gate >/dev/null 2>&1 || :
+    for d in "$PWD" "$PWD/.git"; do    # a clone of the path is checked at its .git
+        git config --system --get-all safe.directory 2>/dev/null | grep -qxF "$d" \
+            || git config --system --add safe.directory "$d"
+    done
+fi
+suite="sh tests/shell_test.sh"
+if [ "$(id -u)" = 0 ] && id gate >/dev/null 2>&1; then
+    suite="runuser -u gate -- sh -c 'PYTHONPYCACHEPREFIX=\$HOME/.cache/pycache exec sh tests/shell_test.sh'"
+fi
 tools=$(missing tools)
 if [ -n "$tools" ]; then
-    echo "! the suite is missing ${tools}-- tests/shell_test.sh skips what needs them"
+    echo "! the suite is missing ${tools}-- tests/shell_test.sh skips what needs them; the suite: $suite"
 else
-    echo "* hooks on (.githooks); the suite's tools are here: shellcheck, diff, jq, curl, ssh-keygen"
+    echo "* hooks on (.githooks); the suite's tools are here; the suite: $suite"
 fi
