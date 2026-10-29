@@ -5,15 +5,16 @@
 # first line opens with spark's angle, the heavy angle of the prompt in
 # the accent, then the app's name muted; the summary is bold under it,
 # and before it a glyph tells the kind where the app names one (its
-# category): an envelope for mail, a check or a cross for a transfer
-# done or failed, a square for a drive, a clock face for a reminder, a
-# warning sign in red on a critical one; the words follow. The glyphs
-# are the dialog's, the small triangle before what a click opens among
-# them. The edge lines up with the windows' content (gaps outer plus the
-# clear border, 16 and 4), and the cards stand 8 apart. The newest is on
-# top, three at most, and under them one line says how many more wait.
-# Those from one app stand together, the app's line counting them. Each
-# is gone after six seconds into the history (the last ten: spark-shell
+# category): a sealed envelope for mail, a check or a cross for a
+# transfer done or failed, a square for a drive, the bar's flag for a
+# reminder due, a warning sign in red on a critical one; the words
+# follow. The glyphs are the bar's and the dialog's, each one Monaspace
+# Neon's own, the small triangle before what a click opens among them.
+# The edge lines up with the windows' content (gaps outer plus the clear
+# border, 16 and 4), and the cards stand 8 apart. The newest is on top,
+# three at most, and under them one line says how many more wait. Those
+# from one app stand together, the app's line counting them. Each is
+# gone after six seconds into the history (the last ten: spark-shell
 # desktop notifications, or the dialog's Notifications). A low one is
 # muted through, its angle too, and gone after four. A critical one
 # stays until it is dismissed and shows over a full-screen window too. A
@@ -51,15 +52,16 @@ text-color=#@PANEL_MUTED@
 default-timeout=4000
 format=<span foreground="#@PANEL_MUTED@">&#x276F; %a</span>\n<b>%s</b>\n%b
 
-# the kind's glyph, where the app names one: mail, a transfer, a drive
+# the kind's glyph, where the app names one: mail (U+22A0), a transfer
+# done or failed (U+2713, U+2717), a drive (U+25A3)
 [category=email.arrived]
-format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n&#x2709; <b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n&#x22A0; <b>%s</b>\n%b
 [category=email]
-format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n&#x2709; <b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n&#x22A0; <b>%s</b>\n%b
 [grouped category=email.arrived]
-format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a &#183; %g</span>\n&#x2709; <b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a &#183; %g</span>\n&#x22A0; <b>%s</b>\n%b
 [grouped category=email]
-format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a &#183; %g</span>\n&#x2709; <b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a &#183; %g</span>\n&#x22A0; <b>%s</b>\n%b
 [category=transfer.complete]
 format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n&#x2713; <b>%s</b>\n%b
 [category=transfer.error]
@@ -68,10 +70,11 @@ format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANE
 format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n&#x25A3; <b>%s</b>\n%b
 
 # spark-shell's own: the first line says what it is and, after the
-# triangle, what a click opens: a reminder in the dialog's Reminders, a
-# drive plugged in the dialog's Storage, where it mounts
+# triangle, what a click opens: a reminder in the dialog's Reminders,
+# under the bar's flag (U+2691); a drive plugged in the dialog's
+# Storage, where it mounts
 [app-name=spark-shell category=x-spark-shell.reminder]
-format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">reminder &#x25B8; a click opens it</span>\n&#x25F7; <b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">reminder &#x25B8; a click opens it</span>\n&#x2691; <b>%s</b>\n%b
 on-button-left=exec makoctl dismiss -n "$id"; foot --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog reminders
 [app-name=spark-shell category=device.added]
 format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">drive &#x25B8; a click opens Storage</span>\n&#x25A3; <b>%s</b>\n%b

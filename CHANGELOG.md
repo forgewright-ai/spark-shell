@@ -8,13 +8,14 @@
   and the clear border), the cards 8 pixels apart. The first line opens
   with spark's angle, the heavy angle of the prompt in the accent, then
   the app's name muted; before what the card says a glyph tells the
-  kind where the app names one, an envelope for mail, a check or a
-  cross for a transfer done or failed, a square for a drive, a clock
-  face for a reminder, a warning sign in red on a critical one, which
-  has no frame any more and shows over a full-screen window too. The
-  glyphs are the dialog's, the small triangle before what a click opens
-  among them. Under the three on the screen, one line says how many
-  more wait. Those from one app stand together, the app's line counting
+  kind where the app names one, a sealed envelope for mail, a check or
+  a cross for a transfer done or failed, a square for a drive, the
+  bar's flag for a reminder due, a warning sign in red on a critical
+  one, which has no frame any more and shows over a full-screen window
+  too. The glyphs are the bar's and the dialog's, each one Monaspace
+  Neon's own, the small triangle before what a click opens among them.
+  Under the three on the screen, one line says how many more wait.
+  Those from one app stand together, the app's line counting
   them. Six seconds, not eight; a low one is muted through and goes
   after four. A middle click dismisses them all. A progress is the
   accent at a quarter, as the drop area is. spark-shell's own say what

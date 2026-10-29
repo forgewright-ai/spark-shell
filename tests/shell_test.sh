@@ -5153,17 +5153,17 @@ STUB
         && [ "$(after grouped)" = "format=$_a%a &#183; %g$_t" ] \
         && [ "$(after hidden)" = "format=<span foreground=\"#$_pm\">&#x25B8; and %h more</span>" ] \
         && [ "$(block 'urgency=low')" = "$(printf '%s\n' "text-color=#$_pm" 'default-timeout=4000' "format=<span foreground=\"#$_pm\">&#x276F; %a$_t")" ] \
-        && [ "$(after 'category=email.arrived')" = "format=$_a%a$(glyph 2709)" ] && [ "$(after 'category=email')" = "format=$_a%a$(glyph 2709)" ] \
-        && [ "$(after 'grouped category=email.arrived')" = "format=$_a%a &#183; %g$(glyph 2709)" ] && [ "$(after 'grouped category=email')" = "format=$_a%a &#183; %g$(glyph 2709)" ] \
+        && [ "$(after 'category=email.arrived')" = "format=$_a%a$(glyph 22A0)" ] && [ "$(after 'category=email')" = "format=$_a%a$(glyph 22A0)" ] \
+        && [ "$(after 'grouped category=email.arrived')" = "format=$_a%a &#183; %g$(glyph 22A0)" ] && [ "$(after 'grouped category=email')" = "format=$_a%a &#183; %g$(glyph 22A0)" ] \
         && [ "$(after 'category=transfer.complete')" = "format=$_a%a$(glyph 2713)" ] && [ "$(after 'category=transfer.error')" = "format=$_a%a$(glyph 2717)" ] && [ "$(after 'category=device.added')" = "format=$_a%a$(glyph 25A3)" ] \
         && [ "$(block 'urgency=critical')" = "$(printf '%s\n' 'default-timeout=0' 'layer=overlay' "format=$_a%a</span>\n<span foreground=\"#aa0000\">&#x26A0;</span> <b>%s</b>\n%b")" ] && ! grep -q '^border-color=' "$mk" \
-        && ok "mako's config: the angle in the accent, the edge on the windows' content and 8 between, an app's own together with their count, 'and N more' under three, a low one muted through and gone in four seconds, a glyph before what mail, a transfer and a drive say, a red warning sign before a critical one with no frame and over a full-screen window, a middle click dismisses all (#71)" || bad "mako look" "$(cat "$mk")"
+        && ok "mako's config: the angle in the accent, the edge on the windows' content and 8 between, an app's own together with their count, 'and N more' under three, a low one muted through and gone in four seconds, a sealed envelope, a check or a cross and a square before what mail, a transfer and a drive say, a red warning sign before a critical one with no frame and over a full-screen window, a middle click dismisses all (#71)" || bad "mako look" "$(cat "$mk")"
     grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog reminders" "$mk" \
         && grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog storage" "$mk" \
-        && [ "$(after 'app-name=spark-shell category=x-spark-shell.reminder')" = "format=${_a}reminder &#x25B8; a click opens it$(glyph 25F7)" ] \
+        && [ "$(after 'app-name=spark-shell category=x-spark-shell.reminder')" = "format=${_a}reminder &#x25B8; a click opens it$(glyph 2691)" ] \
         && [ "$(after 'app-name=spark-shell category=device.added')" = "format=${_a}drive &#x25B8; a click opens Storage$(glyph 25A3)" ] \
         && [ "$(sed -n '/^\[mode=do-not-disturb\]$/,$p' "$mk" | grep -c .)" = 4 ] && tail -1 "$mk" | grep -qx 'invisible=0' \
-        && ok "mako's config: a reminder or a drive says so on its first line, a clock face or a square before what it says, and a click opens the dialog there; do not disturb last, a critical one through it" || bad "mako criteria" "$(cat "$mk")"
+        && ok "mako's config: a reminder or a drive says so on its first line, the bar's flag or a square before what it says, and a click opens the dialog there; do not disturb last, a critical one through it" || bad "mako criteria" "$(cat "$mk")"
     grep -qx 'exec mako' "$HOME/.config/sway/config" && ok "sway config: mako starts with the desktop" || bad "sway exec mako" "$(grep -n mako "$HOME/.config/sway/config")"
     # a new look: the file again, and a mako that runs reads it at once
     touch "$HOME/mako.up"; rm -f "$HOME/mako.log"
