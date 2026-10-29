@@ -313,6 +313,10 @@ fn a_proposal_with_several_fields_shows_each_before_enter() {
     let display = &app.staged.as_ref().unwrap().text;
     assert!(display.contains("level: 30") && display.contains("balance: 70"), "{}", display);
     assert!(calls.lock().unwrap().is_empty());
+    // run, the turn reads the fields on one line, parted by spaces: never "levelbalance" (#112's proof)
+    app.enter();
+    let said = app.exchange.iter().map(|l| l.text.clone()).collect::<Vec<_>>().join("|");
+    assert!(said.contains(" level: 30") && said.contains(" balance: 70"), "{}", said);
 }
 
 #[test]

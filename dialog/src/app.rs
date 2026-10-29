@@ -643,7 +643,9 @@ impl App {
     }
 
     pub fn say(&mut self, sign: Sign, text: &str) {
-        let text = scrub(text);
+        // a text of several lines (a proposal with every field on its own line) reads as one line, parted by spaces
+        let one = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ");
+        let text = scrub(&one);
         if text.is_empty() {
             return;
         }
