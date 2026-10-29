@@ -431,6 +431,11 @@ Mac or phone can read them, including through CalDAV sync. Apple's
 Reminders no longer accepts to-dos over CalDAV, so spark-shell uses
 events.
 
+A reminder takes a day and a time, then the words (tomorrow 09:00 call
+the dentist), a time alone for today or else tomorrow (5pm gym), or a
+while from now (gym in 10 minutes). In the dialog, words with no time
+get one question, when, and the answer goes in front of them.
+
 Reminders work in a terminal, on the desktop and on a Mac:
 
     spark-shell reminders add tomorrow 9:00 call the dentist
@@ -806,17 +811,24 @@ first row while you type. A place's name alone, as `settings` or
 `calendar`, opens it. A command in the dialog's own words, as `display
 brightness 30` or `theme dracula`, runs at once, with no model. Other
 words are one request to spark: the words, the view, the selected row
-and the names the open view's steps take go with every ready provider's
-tools, and spark answers with the steps that do it, under a grammar, in
-one call. The steps come back as commands in the prompt, one a line: Enter
-runs them in order, and a step that writes to or removes something of
-yours still asks for a typed yes, checked again against what is offered
-then. Esc drops them, and a change makes them typed words. An answer to
-a question is said in place. While spark reads the words the list keeps
-filtering: a row picked meanwhile runs at once and drops the request,
-Esc drops it and the words come back, and a request that gets no answer
-comes back as typed. Nothing spark plans runs before Enter, and spark is
-not asked again after a step: a request is one call. The Providers
+and the names the steps take now (the open view's rows, then every
+ready provider's layouts, networks, windows and notes, as written) go
+with every ready provider's tools, and spark answers with the steps that
+do it, under a grammar, in one call. The steps come back as commands in
+the prompt, one a line: Enter runs them in order, and a step that writes
+to or removes something of yours still asks for a typed yes, checked
+again against what is offered then. A step that names a row by a near
+miss ("everforest light" for everforest-light) takes the row's own name
+when one row alone fits, and the proposal shows it; a miss with no one
+fit is refused in the step's own words. Esc drops them, and a change
+makes them typed words. An answer to a question is said in place. A
+provider that needs one more thing asks for it in the prompt (a
+reminder with no time asks when), and Esc there is not done. While
+spark reads the words the list keeps filtering: a row picked meanwhile
+runs at once and drops the request, Esc drops it and the words come
+back, and a request that gets no answer comes back as typed. Nothing
+spark plans runs before Enter, and spark is not asked again after a
+step: a request is one call. The Providers
 section says what goes to spark.
 
 The dialog is a terminal program: keyboard, focus and contrast are its
@@ -867,16 +879,21 @@ native host: it owns the prompt, the domain controls, review, execution
 and receipts. spark supplies the model connection and its security and
 storage rules. Each domain exposes its own typed MCP capabilities. The
 request carries the words, the view, the selected row's text, the names
-the open view's steps take (a window, a note, a network, exactly as
-written) and the local time, and on stdin every ready provider's tools
+the steps take now (the open view's rows, then each other provider's
+tool that names one of your things, its title's words and its rows'
+values exactly as written, 1500 characters at most) and the local time,
+and on stdin every ready provider's tools
 but the files', each with its name, title, description and schema, in
 provider order and the same bytes from one request to the next, so
 spark's served prompt keeps the list cached and a request pays its own
 words. Hidden rows, note contents, directories and device names are not
 sent. spark answers `{"answer", "steps", "refused"}` under a grammar
-made from the tools. The dialog checks each step again against what the
-provider lists now and its schema; a step that fails is said in one
-line. The protocol is owned by spark's `CLAUDE.md`, contract 16.
+made from the tools; a tool whose argument is one of a fixed list (the
+theme's palettes) says so in its schema as an enum, and the grammar
+holds the model to it. The dialog checks each step again against what
+the provider lists now and its schema, after taking a near miss to the
+one row that fits; a step that fails is said in one line. The protocol
+is owned by spark's `CLAUDE.md`, contract 16.
 
 One proposed step waits for Enter, a plan of several steps one after
 another; consequential steps still require `yes`. Select a row before
@@ -1089,7 +1106,8 @@ group membership takes effect at the next login.
 The native pairing wire uses the experimental `spark-shell/pairing`
 capability and method. The dialog accepts it only while its configured
 spark-shell provider runs `bt_pair`. PINs are masked and excluded from the
-exchange, task context and audit. Generic elicitation still refuses secrets.
+exchange, task context and audit. Generic elicitation still refuses
+secrets; the reminders provider uses it to ask when.
 
 The printers section reads the configured native CUPS queues and your pending
 jobs. It can select a default printer, pause or resume a queue, and cancel a

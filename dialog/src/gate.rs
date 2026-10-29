@@ -239,7 +239,16 @@ pub fn result_privacy(schema: Option<&Value>, result: &Value) -> ResultPrivacy {
 
 /// A name the rows hold the step to: a free string (a network, a device, a window, a layout).
 /// A value the schema bounds, an enum or a number, is held by the schema alone (#50).
-fn is_name(schema: &Value, k: &str) -> bool {
+/// The required arguments a tool names one of the rows by: free strings, no enum, no secret.
+pub(crate) fn name_keys(schema: &Value) -> Vec<String> {
+    schema
+        .get("required")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).filter(|k| is_name(schema, k)).map(String::from).collect())
+        .unwrap_or_default()
+}
+
+pub(crate) fn is_name(schema: &Value, k: &str) -> bool {
     let Some(p) = schema.pointer(&format!("/properties/{}", k)) else {
         return false;
     };
@@ -302,7 +311,6 @@ mod tests {
 
     fn tool(name: &str, schema: Value) -> Tool {
         Tool {
-            prepare: false,
             description: String::new(),
             output_schema: None,
             name: name.into(),
@@ -428,7 +436,6 @@ mod tests {
         // "theme gruvbox-dark" while gruvbox-dark is on: its row is a state, no step; asked again it is no
         // stranger to the list, and its provider answers that it is on
         let tools = vec![Tool {
-            prepare: false,
             description: String::new(),
             output_schema: None,
             name: "theme_palette".into(),
@@ -455,7 +462,6 @@ mod tests {
     fn a_value_the_schema_bounds_is_no_name_even_where_rows_list_its_steps() {
         // the screen's rows list brighter and dimmer; "dim display 25%" asks for 25 (#50)
         let tools = vec![Tool {
-            prepare: false,
             description: String::new(),
             output_schema: None,
             name: "display_brightness".into(),
@@ -485,7 +491,6 @@ mod tests {
     #[test]
     fn a_row_that_asks_for_the_name_binds_no_name() {
         let tools = vec![Tool {
-            prepare: false,
             description: String::new(),
             output_schema: None,
             name: "theme_save".into(),

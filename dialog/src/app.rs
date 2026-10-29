@@ -38,7 +38,7 @@ pub const PLACEHOLDER: &str = "Type a request.";
 /// Steps this machine counts as risky whatever their provider says (the hint is the provider's word,
 /// the risk is decided here): a saved password gone, a window closed with its work, a layout written
 /// over, a new device trusted.
-pub const LOCAL_RISK: [&str; 4] = ["wifi_forget", "window_close", "layout_save", "bt_pair"];
+pub const LOCAL_RISK: [&str; 3] = ["wifi_forget", "window_close", "bt_pair"];
 
 /// The home's destinations: a name, what it is for, the sections it holds. Home rows are places;
 /// commands are verbs; AI is what the prompt does, not a place.
@@ -1087,6 +1087,7 @@ impl App {
                         self.providers[idx].reading = false;
                     }
                 }
+                Kind::Folder => self.say(Sign::Refused, "the list did not come in time: Esc goes back"),
                 Kind::Init => self.lose(idx, "it did not answer"),
                 _ => {}
             }
@@ -1890,14 +1891,14 @@ impl App {
         self.keep_lit = None;
         match std::mem::replace(&mut self.mode, Mode::Normal) {
             Mode::Confirm(_) => {
-                self.say(Sign::Refused, "not done");
+                self.say(Sign::Refused, "not done: no yes");
                 self.input.clear();
                 self.unstash();
                 self.stop_queue();
             }
-            Mode::Ask { step, .. } => {
+            Mode::Ask { step, field, .. } => {
                 self.say(Sign::You, &step.line);
-                self.say(Sign::Refused, "not done");
+                self.say(Sign::Refused, &format!("not done: no {} given", field.replace('_', " ")));
                 self.input.clear();
                 self.unstash();
                 self.stop_queue();
@@ -2665,8 +2666,118 @@ impl App {
             }
             about.push_str(&format!(" The names a step takes now, each exactly as written here: {}.", list));
         }
+        // the names other steps take: each tool that names one of the machine's own things (a
+        // layout, a network, a window, a note), its title's words, then its rows' values as written,
+        // so a request from any view names them exactly; 1500 characters at most (#95)
+        let shown = self.shown();
+        let mut others = String::new();
+        for (i, prov) in self.providers.iter().enumerate() {
+            if shown.contains(&i) || !prov.ready || prov.dead.is_some() || prov.label == "files" || Some(i) == self.about_idx {
+                continue;
+            }
+            for t in &prov.tools {
+                let keys = gate::name_keys(&t.schema);
+                let [k] = keys.as_slice() else { continue };
+                let mut vals: Vec<&str> = vec![];
+                for r in &prov.rows.rows {
+                    for c in r.tool.iter().chain(r.more.iter()) {
+                        if c.name == t.name {
+                            if let Some(v) = c.arguments.get(k).and_then(Value::as_str) {
+                                if !vals.contains(&v) {
+                                    vals.push(v);
+                                }
+                            }
+                        }
+                    }
+                }
+                if vals.is_empty() {
+                    continue;
+                }
+                let label = t
+                    .title
+                    .split_whitespace()
+                    .filter(|w| !w.bytes().all(|c| c.is_ascii_uppercase()))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let part = format!("{}: {}", label, vals.join(", "));
+                if others.len() + part.len() > 1500 {
+                    continue; // a list too long for the room goes without; the shorter ones still fit
+                }
+                if !others.is_empty() {
+                    others.push_str("; ");
+                }
+                others.push_str(&part);
+            }
+        }
+        if !others.is_empty() {
+            about.push_str(&format!(" The names other steps take now, each exactly as written here: {}.", others));
+        }
         about.push_str(&format!(" The local time: {}.", crate::helper::clock()));
         about
+    }
+
+    /// A step from spark that names a row by a near miss ("everforest light" for everforest-light,
+    /// "hail mary" for a note's whole title) takes the row's own value when one row alone fits: the
+    /// same letters and digits, else the one name that starts with the words, else the one name that
+    /// holds every word. An exact name, an enum, or no one fit changes nothing: the gate decides then,
+    /// and the proposal still waits for Enter (#95).
+    fn nearest_name(&self, p: usize, call: &mut Call) {
+        let Some(tool) = self.providers[p].tools.iter().find(|t| t.name == call.name) else {
+            return;
+        };
+        let rows = &self.providers[p].rows;
+        for k in gate::name_keys(&tool.schema) {
+            let Some(typed) = call.arguments.get(&k).and_then(Value::as_str).map(str::to_string) else {
+                continue;
+            };
+            let mut names: Vec<&str> = vec![];
+            for r in &rows.rows {
+                for c in r.tool.iter().chain(r.more.iter()).chain(r.step.iter().flat_map(|st| [&st.less, &st.more])) {
+                    if c.name == call.name {
+                        if let Some(v) = c.arguments.get(&k).and_then(Value::as_str) {
+                            if !names.contains(&v) {
+                                names.push(v);
+                            }
+                        }
+                    }
+                }
+            }
+            if names.contains(&typed.as_str()) {
+                continue;
+            }
+            let slug = |s: &str| {
+                s.to_lowercase()
+                    .chars()
+                    .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+                    .collect::<String>()
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            };
+            let t = slug(&typed);
+            if t.is_empty() {
+                continue;
+            }
+            let same: Vec<&str> = names.iter().copied().filter(|n| slug(n) == t).collect();
+            let starts: Vec<&str> = names.iter().copied().filter(|n| slug(n).starts_with(&t)).collect();
+            let holds: Vec<&str> = names
+                .iter()
+                .copied()
+                .filter(|n| {
+                    let s = slug(n);
+                    t.split(' ').all(|w| s.split(' ').any(|x| x == w))
+                })
+                .collect();
+            let pick = match (same.as_slice(), starts.as_slice(), holds.as_slice()) {
+                ([one], _, _) => Some(*one),
+                ([], [one], _) => Some(*one),
+                ([], [], [one]) => Some(*one),
+                _ => None,
+            };
+            if let Some(n) = pick {
+                call.arguments.insert(k.clone(), Value::String(n.to_string()));
+            }
+        }
     }
 
     /// A request that did not get its answer: the words and the file come back, unless something new
@@ -2727,12 +2838,16 @@ impl App {
                 }
                 continue;
             }
-            let call = Call {
+            let mut call = Call {
                 name: name.to_string(),
                 arguments,
                 ask: vec![],
             };
-            match self.providers.iter().position(|p| p.tools.iter().any(|t| t.name == name)) {
+            let at = self.providers.iter().position(|p| p.tools.iter().any(|t| t.name == name));
+            if let Some(p) = at {
+                self.nearest_name(p, &mut call);
+            }
+            match at {
                 None => no.push(format!("{} is not offered here now", line)),
                 Some(p) => match gate::step(&self.providers[p].tools, &self.providers[p].rows, &call) {
                     Ok(()) => {
@@ -2746,7 +2861,7 @@ impl App {
                             line,
                         })
                     }
-                    Err(e) => no.push(format!("{} did not run: {}", line, e)),
+                    Err(e) => no.push(format!("{} did not run: {}", said.unwrap_or_else(|| self.proposal_line(p, &call)), e)),
                 },
             }
         }

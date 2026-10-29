@@ -93,7 +93,6 @@ fn a_dead_or_unready_provider_and_the_files_are_not_offered() {
     for p in &mut app.providers {
         p.ready = true;
         p.tools = vec![spark_dialog::model::Tool {
-            prepare: false,
             description: "d".into(),
             output_schema: None,
             name: format!("{}_x", p.label),
@@ -356,4 +355,120 @@ fn the_helper_feeds_stdin_keeps_json_on_a_nonzero_exit_and_bounds_its_input() {
     .unwrap();
     assert_eq!(serde_json::from_str::<Value>(&output).unwrap()["refused"][0], "x");
     assert!(spark_dialog::helper::invoke(&["/bin/cat".into()], "x".repeat(262145)).is_err());
+}
+
+/// A theme provider beside the sound one: palettes by their exact names, and a layout provider
+/// whose rows name layouts, for the names a request from another view carries.
+fn with_names() -> (App, std::sync::mpsc::Receiver<spark_dialog::mcp::Incoming>) {
+    let (mut app, rx, tx) = app_with(&["out", "theme", "layout"]);
+    app.cfg.spark = "/bin/sh".into();
+    let out_tools = json!([{"name": "out_level", "title": "out level N", "description": "Set output volume.",
+        "inputSchema": {"type": "object", "properties": {"level": {"type": "integer", "minimum": 0, "maximum": 100}}, "required": ["level"]},
+        "annotations": {"destructiveHint": false}}]);
+    let out_rows = json!({"title": "Sound", "state": "volume 70", "rows": [{"id": "volume", "sign": "check", "text": "volume 70",
+        "tool": {"name": "out_level", "arguments": {"level": 70}}}]});
+    let theme_tools = json!([{"name": "theme_palette", "title": "theme NAME", "description": "Use a palette everywhere.",
+        "inputSchema": {"type": "object", "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 256}}, "required": ["name"]},
+        "annotations": {"destructiveHint": false, "idempotentHint": true}}]);
+    let theme_rows = json!({"title": "theme", "state": "everforest-dark", "rows": [
+        {"id": "theme:selenized-dark", "sign": "check", "text": "selenized-dark", "tool": null},
+        {"id": "theme:everforest-dark", "sign": "blank", "text": "everforest-dark", "tool": {"name": "theme_palette", "arguments": {"name": "everforest-dark"}}},
+        {"id": "theme:everforest-light", "sign": "blank", "text": "everforest-light", "tool": {"name": "theme_palette", "arguments": {"name": "everforest-light"}}},
+        {"id": "theme:gruvbox-light", "sign": "blank", "text": "gruvbox-light", "tool": {"name": "theme_palette", "arguments": {"name": "gruvbox-light"}}},
+        {"id": "theme:nord", "sign": "blank", "text": "nord", "tool": {"name": "theme_palette", "arguments": {"name": "nord"}}}]});
+    let layout_tools = json!([{"name": "layout_open", "title": "layout open NAME", "description": "Open a saved layout.",
+        "inputSchema": {"type": "object", "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 256}}, "required": ["name"]},
+        "annotations": {"destructiveHint": false}}]);
+    let layout_rows = json!({"title": "layout", "state": "", "rows": [
+        {"id": "layout:webdev", "sign": "blank", "text": "webdev", "tool": {"name": "layout_open", "arguments": {"name": "webdev"}}},
+        {"id": "layout:zen", "sign": "blank", "text": "zen, micro and a terminal", "tool": {"name": "layout_open", "arguments": {"name": "zen-micro-and-a-terminal"}}}]});
+    let out: Script = Box::new(move |v, send| {
+        if let Some(r) = ordinary("out", v, &out_tools, &out_rows) {
+            send(r);
+        }
+    });
+    let theme: Script = Box::new(move |v, send| {
+        if let Some(r) = ordinary("theme", v, &theme_tools, &theme_rows) {
+            send(r);
+        }
+    });
+    let layout: Script = Box::new(move |v, send| {
+        if let Some(r) = ordinary("layout", v, &layout_tools, &layout_rows) {
+            send(r);
+        }
+    });
+    app.servers.push(stub(0, "out", out, tx.clone()));
+    app.servers.push(stub(1, "theme", theme, tx.clone()));
+    app.servers.push(stub(2, "layout", layout, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a
+        .providers
+        .iter()
+        .all(|p| p.ready && !p.tools.is_empty() && !p.rows.rows.is_empty())));
+    app.view = View::Section(0);
+    app.jobs.clear();
+    (app, rx)
+}
+
+#[test]
+fn a_step_that_names_a_row_by_a_near_miss_takes_the_rows_own_name() {
+    let (mut app, _) = with_names();
+    type_words(&mut app, "change theme to everforest light");
+    app.enter();
+    let (serial, _, _) = request(&app);
+    propose(&mut app, serial, json!([{"name": "theme_palette", "arguments": {"name": "everforest light"}}]));
+    assert!(
+        app.staged_now() && app.input == "theme everforest-light",
+        "the proposal names the row: {:?} {:?}",
+        app.input,
+        app.exchange
+    );
+    // a unique start of a name, and a unique name holding every word, fit the same way
+    for (said, want) in [("gruvbox", "theme gruvbox-light"), ("light everforest", "theme everforest-light")] {
+        app.escape();
+        app.input.clear();
+        type_words(&mut app, "use the other one");
+        app.enter();
+        let (serial, _, _) = request(&app);
+        propose(&mut app, serial, json!([{"name": "theme_palette", "arguments": {"name": said}}]));
+        assert!(app.staged_now() && app.input == want, "{}: {:?} {:?}", said, app.input, app.exchange);
+    }
+}
+
+#[test]
+fn a_step_that_names_no_row_is_refused_in_the_steps_own_words() {
+    let (mut app, _) = with_names();
+    type_words(&mut app, "change theme to rainbow");
+    app.enter();
+    let (serial, _, _) = request(&app);
+    propose(&mut app, serial, json!([{"name": "theme_palette", "arguments": {"name": "rainbow"}}]));
+    assert!(!app.staged_now(), "{:?}", app.input);
+    let last = app.exchange.last().map(|l| l.text.clone()).unwrap_or_default();
+    assert_eq!(last, "theme rainbow did not run: rainbow is not in the list now");
+    // two names start with the word: no guess, the gate decides
+    app.input.clear();
+    type_words(&mut app, "everforest please");
+    app.enter();
+    let (serial, _, _) = request(&app);
+    propose(&mut app, serial, json!([{"name": "theme_palette", "arguments": {"name": "everforest"}}]));
+    assert!(!app.staged_now(), "{:?}", app.input);
+}
+
+#[test]
+fn a_request_carries_the_names_other_steps_take_from_every_ready_provider() {
+    let (mut app, _) = with_names();
+    type_words(&mut app, "open the web layout");
+    app.enter();
+    let (_, about, _) = request(&app);
+    assert!(about.contains("The view: sound"), "{}", about);
+    assert!(
+        about.contains("The names other steps take now, each exactly as written here: theme: everforest-dark, everforest-light, gruvbox-light, nord; layout open: webdev, zen-micro-and-a-terminal."),
+        "{}",
+        about
+    );
+    assert!(
+        about.find("names other steps").unwrap() < about.find("The local time").unwrap(),
+        "the clock stays last: {}",
+        about
+    );
 }

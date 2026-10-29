@@ -1797,6 +1797,7 @@ theme_kind() {   # theme_kind NAME -> saved | look | yours | shipped | none | no
     elif [ -f "$REPO/themes/$1.env" ]; then echo shipped; fi
 }
 theme_saved_names() { for _d in "$PALETTE_DIR"/*/; do [ -f "${_d}palette.env" ] || continue; _d=${_d%/}; printf '%s\n' "${_d##*/}"; done | sort; }   # -> the saved themes, by name
+theme_enum() { { palette_names; theme_saved_names; echo none; } | LC_ALL=C grep -E '^[A-Za-z0-9._-]+$' | sort -u | paste -sd'|' -; }   # -> every name theme NAME takes now, as a|b|c: the schema's enum, so a model writes a real name or none (#95)
 look_get() { sed -n "s/^$2=//p" "$1/look.env" 2>/dev/null | head -1 | tr -d '\001-\037\177'; }   # look_get DIR KEY -> a line of the folder's look.env, no control character in it
 look_set() {   # look_set DIR KEY VALUE -- that line of look.env set (added when absent), the others kept
     mkdir -p "$1"; { [ ! -f "$1/look.env" ] || grep -v "^$2=" "$1/look.env"; printf '%s=%s\n' "$2" "$3"; } > "$1/look.env.new" && mv "$1/look.env.new" "$1/look.env"
@@ -4859,7 +4860,7 @@ rem_reorder() {   # rem_reorder WORDS -> "DAY TIME WORDS" when the day and the t
           if (tm == "" || e < 1) exit 1
           if (tm ~ /^[0-9]+$/) { if (!at) exit 1; tm = tm ":00" }   # a bare number is a time only after "at"
           w = t[1]; for (i = 2; i <= e; i++) w = w " " t[i]
-          print (day == "" ? "today" : day) " " tm " " w }'
+          print (day == "" ? "" : day " ") tm " " w }'
 }
 rem_in() {   # rem_in N UNIT -> the minutes "in N UNIT" says (minutes or hours, an or a for one), or false
     case $1 in a|an) _n=1 ;; [1-9]|[1-9][0-9]|[1-9][0-9][0-9]) _n=$1 ;; *) return 1 ;; esac
@@ -4904,19 +4905,19 @@ rem_parse() {   # rem_parse WORDS -> START<tab>TEXT: today|tomorrow|a weekday|YY
     # shellcheck disable=SC2046   # the words, split on purpose; no glob
     set -- $(cat "$TMP/rem.w")
     set +f
-    _off=0; _date=''; _wd=''
+    _off=0; _date=''; _wd=''; _dayless=1   # no day said: today, or tomorrow once today's time has passed
     _w1=$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z')   # the day and the time are read in lower case; the words stay as said
     case $_w1 in
-        today) shift ;;
-        tomorrow) _off=1; shift ;;
+        today) shift; _dayless='' ;;
+        tomorrow) _off=1; shift; _dayless='' ;;
         mon|monday|tue|tuesday|wed|wednesday|thu|thursday|fri|friday|sat|saturday|sun|sunday)
             _wd=$(printf '%s' "$_w1" | cut -c1-3 | awk '{print toupper(substr($0,1,1)) substr($0,2)}'); _i=0
             while [ "$_i" -le 6 ]; do [ "$(LC_ALL=C date -d "+$_i days" +%a 2>/dev/null || LC_ALL=C date -v+"$_i"d +%a 2>/dev/null)" != "$_wd" ] || break; _i=$((_i + 1)); done
-            _off=$_i; shift ;;
+            _off=$_i; shift; _dayless='' ;;
         [0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9])
             _date=$(printf '%s' "$_w1" | tr -d -)
             [ "$(date -d "$_w1" +%Y%m%d 2>/dev/null || date -j -f %Y%m%d%H%M "${_date}1200" +%Y%m%d 2>/dev/null)" = "$_date" ] || return 1   # a day the calendar has
-            shift ;;
+            shift; _dayless='' ;;
     esac
     [ "$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z')" != at ] || shift
     _t=$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z'); _h=''; _m=00
@@ -4933,6 +4934,7 @@ rem_parse() {   # rem_parse WORDS -> START<tab>TEXT: today|tomorrow|a weekday|YY
     [ $# -gt 0 ] || return 1
     [ -n "$_date" ] || _date=$(rem_day "$_off")
     _st=$(printf '%s%02d%s' "$_date" "$_h" "$_m")
+    if [ -n "$_dayless" ] && [ "$_st" -le "$(date +%Y%m%d%H%M)" ]; then _st=$(printf '%s%02d%s' "$(rem_day 1)" "$_h" "$_m"); fi   # 5pm said after five: tomorrow's
     if [ -n "$_wd" ] && [ "$_st" -le "$(date +%Y%m%d%H%M)" ]; then _st=$(printf '%s%02d%s' "$(rem_day $((_off + 7)))" "$_h" "$_m"); fi   # today's weekday at a time gone: next week
     printf '%s\t%s\n' "$_st" "$*"
 }
@@ -4980,7 +4982,7 @@ rem_restore() {   # UID or unique title from the done folder, never a different 
 rem_act() {   # rem_act add|done|snooze|restore ARG
     rem_forget
     case $1 in
-        add) _p=$(rem_parse "$2") || { echo "a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), or a while from now (gym in 10 minutes)"; return 1; }
+        add) _p=$(rem_parse "$2") || { echo "a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), a time alone for today or else tomorrow (5pm gym), or a while from now (gym in 10 minutes)"; return 1; }
             _s=${_p%%"$TAB"*}; _t=${_p#*"$TAB"}
             rem_time_check "$_s" "$_t" || return 1
             [ "$_s" -gt "$(date +%Y%m%d%H%M)" ] || { echo "$(rem_said "$_s") has passed: say a time to come"; return 1; }
@@ -5523,6 +5525,7 @@ panel_layout_save() {   # panel_layout_save NAME -> what is open on the focused 
     [ -s "$TMP/open.apps" ] || { echo "nothing is open on this workspace"; return 1; }
     _main=$(sed -n 1p "$TMP/open.apps"); _side=$(sed 1d "$TMP/open.apps" | jq -R '{app: .}' | jq -s -c .)
     _name=$(desk_name_of "$1"); [ -n "$_name" ] || { echo "a name for it, in letters"; return 1; }
+    [ ! -e "$LAYOUTS_DIR/$_name" ] || { echo "$_name is a layout already: rename it, or delete it first"; return 1; }   # a save never writes over a layout, so it needs no yes (#96)
     mkdir -p "$LAYOUTS_DIR"
     jq -n --arg w "$1" --arg why "saved from the screen on $(date '+%d %B %Y')" --arg m "$_main" --argjson side "${_side:-[]}" '{words: $w, why: $why, main: {app: $m}, side: $side}' > "$LAYOUTS_DIR/$_name"
     echo "saved $_name: $(paste -sd, "$TMP/open.apps" | sed 's/,/, /g')"
@@ -5551,6 +5554,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
                 *) _back="screen-$(printf '%s' "$_row" | cut -f3) $_name" ;;
             esac
             printf '%s\t%s restored\n' "$_back" "$_name" ;;
+        layout:save) _n=$(desk_name_of "$_arg"); [ -z "$_n" ] || [ -e "$LAYOUTS_DIR/$_n" ] || printf 'delete %s\t%s deleted again\n' "$_n" "$_n" ;;   # a new layout's undo takes it away again
         clock:format) printf 'format %s\tclock format restored\n' "$(time_pref CLOCK_FORMAT 24)" ;;
         clock:week) printf 'week %s\tfirst weekday restored\n' "$(time_pref WEEK_START sunday)" ;;
         clock:zone) _z=$(time_zone); time_zone_valid "$_z" && printf 'zone %s\ttime zone restored\n' "$_z" ;;
@@ -5632,13 +5636,14 @@ time_zone_valid() {
 time_valid() {
     case $1:$2 in format:12|format:24|week:sunday|week:monday) return 0 ;; zone:*) [ "$OS" != Darwin ] && time_zone_valid "$2" ;; *) return 1 ;; esac
 }
-time_sync() {
+time_sync() { panel_cache time_sync 60 time_sync_probe; }   # once a minute: every clock row read it, and a probe can wait on the network (#97)
+time_sync_probe() {
     if command -v timedatectl >/dev/null 2>&1; then
         _sync=$(timedatectl show -p NTPSynchronized --value 2>/dev/null || :)
         case $_sync in yes) echo 'clock synced'; return ;; no) echo 'clock not synced'; return ;; esac
     fi
     if command -v chronyc >/dev/null 2>&1; then
-        _sync=$(LC_ALL=C chronyc tracking 2>/dev/null || :)
+        _sync=$(LC_ALL=C chronyc -n tracking 2>/dev/null || :)   # -n: no name lookup of the reference server; one that times out held every clock row 5 s (#97)
         if printf '%s\n' "$_sync" | grep -q '^Leap status'; then
             if printf '%s\n' "$_sync" | grep -qE '^Leap status *: Normal'; then echo 'clock synced by chrony'; else echo 'clock not synced by chrony'; fi; return
         fi
@@ -5959,9 +5964,10 @@ want_step() {   # want_step SECTION ACTION ARG -- into the plan when panel_gate 
 }
 # The steps this machine counts as risky whatever a tool's hint says (the
 # hint is the provider's word; the risk is decided here): a saved password
-# gone, a window closed with its work, a layout written over, a new device
-# trusted. The dialog holds the same list (dialog/src/app.rs LOCAL_RISK).
-LOCAL_RISK="wifi_forget window_close layout_save bt_pair"
+# gone, a window closed with its work, a new device trusted; a layout save
+# never writes over one (it refuses a name in use), so it asks no yes. The
+# dialog holds the same list (dialog/src/app.rs LOCAL_RISK).
+LOCAL_RISK="wifi_forget window_close bt_pair"
 step_risky() {   # step_risky SECTION ACTION [ARG] -> 0 when the step waits for a typed yes: its tool's destructive hint, or LOCAL_RISK
     action_tool "$1" "$2${3:+ $3}" || return 1
     case " $LOCAL_RISK " in *" $_tool "*) return 0 ;; esac
@@ -6116,7 +6122,7 @@ tool_spec() {
         mic_adjust)        _ts=mic _ta=adjust _tp=delta _tk=delta _th=f _tt='mic adjust DELTA' _td='Change the microphone level by delta percentage points from its fresh native level. Negative lowers and positive raises; the result is bounded to 0 to 100 and read back. Use this for relative requests; no arithmetic from a remembered level is needed.' ;;
         mic_mute)          _ts=mic _ta=mute _th=if _tt='mic mute' _td='Mute the microphone.' ;;
         mic_unmute)        _ts=mic _ta=unmute _th=if _tt='mic unmute' _td='Unmute the microphone.' ;;
-        theme_palette)     _ts=theme _ta='=' _tp=name _tk=string _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none.' ;;
+        theme_palette)     _ts=theme _ta='=' _tp=name _tk=$(theme_enum) _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none.' ;;
         theme_save)        _ts=theme _ta=save _tp=name _tk=string _th=f _tt='theme save NAME' _td='Keep the look in use under a name: the palette, the wallpaper, the text size, the transparency. After the look is made, never before it.' ;;
         theme_delete)      _ts=theme _ta=delete _tp=name _tk=string _th=dif _tt='theme delete NAME' _td='Delete a saved theme.' ;;
         theme_back)        _ts=theme _ta=back _th=f _tt='theme back' _td='The look before this one.' ;;   # free: no row carries it, the gate asks the history
@@ -6139,7 +6145,7 @@ tool_spec() {
         notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='Create a new note: text is the literal heading, never an invented filename or filename prefix. The result gives the actual filename. To add a body or append to an existing note, use notes_append with that filename and separate text. The legacy NAME: TEXT syntax still appends when NAME already exists.' ;;
         notes_append)      _ts=notes _ta=append _tp=name _tk=string _th=f _tt='notes append NAME' _td='Append a bullet to an existing note. name is its exact filename from the row or a prior result, never a guessed title or a new filename. text is saved verbatim inside the bullet, including spaces and line breaks; a final newline follows. This saves text without opening an editor.' ;;
         notes_find)        _ts=notes _ta=find _tp=words _tk=string _th=rf _tt='notes find WORDS' _td='Which notes say these words, and the line that does.' ;;
-        reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _tw='when and what: fri 9am call the vet' _th=f _tt='reminders add WORDS' _td='Save a reminder at a future local time. words is today, tomorrow, a weekday or YYYY-MM-DD, then HH:MM, then the title; or in N minutes/hours before or after the title. Preserve the requested day and time; never invent missing timing. Send the original words to native preparation when timing is missing or invalid, or ask the person. Past, nonexistent or repeated local times require clarification; no time-zone suffix is accepted.' ;;
+        reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _tw='when and what: fri 9am call the vet' _th=f _tt='reminders add WORDS' _td='Save a reminder at a local time to come. words: a day and a time then the title (tomorrow 09:00 call the dentist), a time alone for today or else tomorrow (5pm gym), or in N minutes or hours before or after the title. Keep the words as the person said them; never invent a time. With no time in the words the provider asks for one.' ;;
         reminders_done)    _ts=reminders _ta='done' _tp=name _tk=string _th='' _tt='reminders done NAME' _td='Put aside one due or future reminder by its UID from the row. Undo brings that exact event back for 30 days.' ;;
         reminders_restore) _ts=reminders _ta=restore _tp=name _tk=string _th=f _tt='reminders restore NAME' _td='Bring back a reminder marked done in the last 30 days.' ;;
         reminders_snooze)  _ts=reminders _ta=snooze _tp=name _tk=string _th='' _tt='reminders snooze NAME' _td='Move one reminder, identified by its UID from the row, to 10 minutes from now.' ;;
@@ -6180,7 +6186,7 @@ tool_spec() {
         bar_off)           _ts=bar _ta=off _th=i _tt='bar off' _td='Hide the bar.' ;;
         layout_open)       _ts=layout _ta=open _tp=name _tk=string _th='' _tt='layout open NAME' _td='Open a saved layout.' ;;
         layout_new)        _ts=layout _ta=new _tp=words _tk=string _th=f _tt='layout new WORDS' _td='Open the apps for a task, picked by spark.' ;;
-        layout_save)       _ts=layout _ta=save _tp=name _tk=string _th=df _tt='layout save NAME' _td='Save what is open on this workspace as a layout.' ;;
+        layout_save)       _ts=layout _ta=save _tp=name _tk=string _th=f _tt='layout save NAME' _td='Save what is open on this workspace as a layout.' ;;
         layout_add)        _ts=layout _ta=add _tp=name _tk=string _th='' _tt='layout add NAME' _td='Open an app spark also suggested for the last layout.' ;;
         layout_delete)     _ts=layout _ta=delete _tp=name _tk=string _th=dif _tt='layout delete NAME' _td='Delete a saved layout.' ;;
         layout_rename)     _ts=layout _ta=rename _tp=name _tk=string _te='to:name' _th=f _tt='layout rename NAME' _td='Give a saved layout a new name.' ;;
@@ -6239,7 +6245,6 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
             palette: {type: "object", additionalProperties: {type: "string"}}},
             required: (if $n == "notes_add" or $n == "notes_append" or ($n | startswith("reminders_")) or ($n | test("^(out|mic)_(level|adjust|mute|unmute)$")) then ["receipt", "effect"] elif $n == "window_focus" or $n == "window_close" then ["effect"] else [] end), additionalProperties: false},
          annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}
-         + (if $n == "reminders_add" then {_meta: {"spark-shell/prepare": true}} else {} end)
          | if $n == "notes_append" then .inputSchema = {type:"object", properties:{name:{type:"string", minLength:1, maxLength:255, description:"Exact existing Markdown filename"}, text:{type:"string", minLength:1, maxLength:16384, contentMediaType:"text/plain", description:"Text to append; spaces and line breaks are preserved"}}, required:["name","text"], additionalProperties:false} else . end'
 }
 provide_tools() {   # provide_tools SECTION -> the section's tools as one JSON array
@@ -6433,7 +6438,6 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
         ping|logging/setLevel) rpc_result "$_id" '{}' ;;
         tools/list) rpc_result "$_id" "$(provide_tools "$sec" | jq -c '{tools: .}')" ;;
         tools/call) provide_call "$_id" "$_params" ;;
-        spark/prepare) provide_prepare "$_id" "$_params" ;;
         resources/list) rpc_result "$_id" "$(jq -cn --arg u "spark-shell://$sec/rows" --arg s "$sec" '{resources: [{uri: $u, name: "rows", title: ($s + " rows"), mimeType: "application/json"}]}')" ;;
         resources/templates/list) if [ "$sec" = files ]; then rpc_result "$_id" '{"resourceTemplates":[{"uriTemplate":"spark-shell://files/rows/{folder}","name":"folder","title":"a folder under the roots","mimeType":"application/json"}]}'; else rpc_result "$_id" '{"resourceTemplates":[]}'; fi ;;
         resources/read|resources/subscribe|resources/unsubscribe)
@@ -6469,23 +6473,6 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
         *) rpc_error "$_id" -32601 "no method $_method here" ;;
     esac
 }
-provide_prepare() {   # read-only preparation: canonical arguments or a question; never calls panel_step
-    [ "$sec" = reminders ] && [ "$(printf '%s' "$2" | jq -r '.name // ""')" = reminders_add ] || { rpc_error "$1" -32601 "this tool has no preparation"; return 0; }
-    _pw=$(printf '%s' "$2" | jq -er '.arguments | select(type == "object" and keys == ["words"]) | .words | select(type == "string" and length > 0 and length <= 256 and (test("[\u0000-\u001f\u007f]") | not))') || { rpc_error "$1" -32602 "reminder words are plain text, 256 characters at most"; return 0; }
-    _pq='What future day and time should this reminder use?'
-    if _pp=$(rem_parse "$_pw"); then
-        _ps=${_pp%%"$TAB"*}; _pt=${_pp#*"$TAB"}
-        if ! _pq=$(rem_time_check "$_ps" "$_pt"); then
-            rpc_result "$1" "$(jq -cn --arg q "$_pq" '{ready:false, question:$q}')"; return 0
-        fi
-        if [ "$_ps" -gt "$(date +%Y%m%d%H%M)" ]; then
-            _pc=$(printf '%s' "$_ps" | sed 's/^\(....\)\(..\)\(..\)\(..\)\(..\)$/\1-\2-\3 \4:\5/')
-            rpc_result "$1" "$(jq -cn --arg w "$_pc $_pt" '{ready: true, arguments: {words: $w}}')"; return 0
-        fi
-        _pq="$(rem_said "$_ps") has passed. What future day and time should I use?"
-    fi
-    rpc_result "$1" "$(jq -cn --arg q "$_pq" '{ready: false, question: $q}')"
-}
 provide_notes_append() {   # two typed arguments; note contents never travel through the panel's token grammar
     printf '%s' "$2" | jq -e 'type == "object" and keys == ["name","text"]
         and (.name | type == "string" and length > 0 and length <= 255 and (test("[\u0000-\u001f\u007f-\u009f/]") | not))
@@ -6503,6 +6490,28 @@ provide_notes_append() {   # two typed arguments; note contents never travel thr
         rm -f "$TMP/note.append"
         provide_refuse "$1" "${_pna_out:-could not append the text; check the note before trying again}"
     fi
+}
+provide_ask() {   # provide_ask CALL-ID MESSAGE FIELD TITLE -> what the person typed for FIELD (MCP elicitation, one flat field); false when the host declined, the person cancelled, or nobody answered in five minutes
+    _aid="ask-$1"
+    rpc_send "$(jq -cn --arg i "$_aid" --arg m "$2" --arg f "$3" --arg t "$4" '{jsonrpc: "2.0", id: $i, method: "elicitation/create", params: {message: $m, requestedSchema: {type: "object", properties: {($f): {type: "string", title: $t, maxLength: 256}}, required: [$f]}}}')"
+    ( sleep 300; fifo_put "in $(jq -cn --arg i "$_aid" '{jsonrpc: "2.0", id: $i, result: {action: "cancel"}}')" ) 3>&- 4<&- & _ag=$!
+    _ans=''; _ast=1
+    while IFS= read -r _am <&4; do   # the loop's own lines, until the answer: a poke is dropped (the rows are read again after the step), another request is told to wait, the wire's end ends the provider
+        case $_am in
+            eof) kill "$_ag" 2>/dev/null || :; exit 0 ;;
+            poke) continue ;;
+            "in "*) _al=${_am#in }
+                case $(printf '%s' "$_al" | jq -r --arg i "$_aid" 'if .id == $i and (has("method") | not) then "mine" elif has("method") and has("id") then "request" else "other" end' 2>/dev/null) in
+                    mine) _ans=$(printf '%s' "$_al" | jq -r --arg f "$3" 'select(.result.action == "accept") | .result.content[$f] // "" | tostring' 2>/dev/null | scrub_text | tr -d '\n' | cut -c1-256)
+                        [ -z "$_ans" ] || _ast=0
+                        break ;;
+                    request) rpc_error "$(printf '%s' "$_al" | jq -c '.id')" -32000 "a question is open: answer it, or Esc" ;;
+                esac ;;
+        esac
+    done
+    kill "$_ag" 2>/dev/null || :
+    [ "$_ast" -eq 0 ] || return 1
+    printf '%s' "$_ans"
 }
 provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its arguments by its schema, the row it names, panel_gate, then the step itself
     _name=$(printf '%s' "$2" | jq -r '.name // "" | tostring')
@@ -6549,6 +6558,10 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     case $_name in notes_open|reminders_done|reminders_snooze|window_focus|window_close) _plain=$(jq -cn --arg n "$_v" '{name:$n}') ;; esac
     [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_v"; return 0; }   # files: the four lines, not the panel's gate
     _act=$_ta; _arg=$_v; [ "$_ta" != '=' ] || { _act=$_v; _arg=''; }   # a palette's step is its name alone
+    if [ "$_name" = reminders_add ] && ! rem_parse "$_v" >/dev/null 2>&1; then   # no day and time in the words: one question, then the step with the answer in front (#95)
+        _when=$(provide_ask "$1" "When? A day and a time (tomorrow 9:00), a time today (5pm), or a while from now (in 20 minutes)." when "the day and the time") || { provide_refuse "$1" "not done: no time given"; return 0; }
+        _v="$_when $_v"; _arg=$_v
+    fi
     case $_th in *f*) ;; *)   # the argument must be a row's own, exactly: the rows are the allowlist
         provide_quick "$sec" "$_name" "$_v" && _quick=1 || _quick=''
         [ -n "$_quick" ] || provide_rows "$sec" > "$TMP/rows.json"

@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.110
+
+- A request right but for one word is no longer a refusal. A step from
+  spark that names a row by a near miss ("everforest light" for
+  everforest-light, the first words of a note's title) takes the row's
+  own name when one row alone fits: the same letters and digits, else
+  the one name that starts with the words, else the one name that holds
+  every word; the proposal shows the real name and still waits for
+  Enter. A miss with no one fit is refused in the step's own words
+  ("theme rainbow did not run"), never a tool's name. The request now
+  carries the names other steps take from every ready provider (a
+  layout, a network, a window, a note, each tool's title words then its
+  rows' values, 1500 characters at most), not only the open view's. The
+  theme's step takes an enum of every palette, every saved theme and
+  none, so under the grammar a model writes a real name or no step
+  (#95).
+- A reminder with no day and time asks for one. The reminders provider
+  sends one question over the wire (MCP elicitation, the field when:
+  "tomorrow 9:00", "5pm", "in 20 minutes"), the dialog puts it in the
+  prompt, and the answer goes in front of the words; Esc is not done,
+  no time given. A time alone is today, or tomorrow once today's has
+  passed ("5pm gym", "walk the dog at 23:59"). The preparation hook of
+  v0.103 to v0.108 goes: the dialog stopped calling it in v0.109, and
+  the tool's description said it still would (#95).
+- A layout save asks a name and nothing more. It is no longer on the
+  risk list and carries no destructive hint, since it never writes over
+  a layout: a name in use is refused ("webdev is a layout already:
+  rename it, or delete it first"), and a new layout's result carries
+  its undo, layout delete. Esc at a question says what was missing
+  ("not done: no name given", "not done: no yes") (#96).
+- The Calendar's time settings opened an empty list. The clock's sync
+  probe ran `chronyc tracking`, whose reverse name lookup of the
+  reference server timed out at 5 s on a machine whose resolver did not
+  answer, on every clock row read and every watcher tick; the settings
+  read came after the dialog's 10 s and the dialog said nothing. Now
+  `chronyc -n tracking` (no lookup), the sync state probed once a
+  minute, and a list that does not come in time is said ("the list did
+  not come in time: Esc goes back") (#97).
+
 ## v0.109
 
 - Home is a launcher. Fuzzy search over every place, setting and step,

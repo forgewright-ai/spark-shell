@@ -2990,11 +2990,14 @@ vd=$(LC_ALL=C date -d 2030-01-02 '+%a %d %b' 2>/dev/null || LC_ALL=C date -j -f 
 [ "$(NL reminders add 'tomorrow 9am standup with the team')" = 'reminder tomorrow 09:00 standup with the team' ] && ok "reminders add: tomorrow, 9am read as 09:00, the words as said" || bad "reminders tomorrow" "$(NL reminders --list)"
 for w in 'gym in 10 minutes' 'in 10 minutes gym' 'gym in an hour'; do out=$(NL reminders add "$w"); printf '%s\n' "$out" | grep -Eq '^reminder (today|tomorrow) [0-2][0-9]:[0-5][0-9] gym$' || bad "reminders add $w" "$out"; done
 ok "reminders add: a while from now, before the words or after them (gym in 10 minutes, in an hour), the time from now"
+[ "$(NL reminders add '23:59 a late one')" = 'reminder today 23:59 a late one' ] && [ "$(NL reminders add '00:00 an early one')" = 'reminder tomorrow 00:00 an early one' ] && [ "$(NL reminders add 'walk the dog at 23:59')" = 'reminder today 23:59 walk the dog' ] \
+    && ok "reminders add: a time alone is today, or tomorrow once today's has passed (23:59 a late one, 00:00 an early one, walk the dog at 23:59)" || bad "reminders time alone" "$(NL reminders add '00:00 an early one' 2>&1) | $(NL reminders add 'walk the dog at 23:59' 2>&1)"
+for f in "$HOME"/calendar/*.ics; do grep -q 'SUMMARY:\(a late one\|an early one\|walk the dog\)' "$f" 2>/dev/null && rm -f "$f"; done; rm -f "$HOME/.local/state/spark-shell/reminders.list"   # the three go: the rows tests below count the fixture's own
 NL reminders add 'call the bank 2030-01-03 at 9' | grep -Eq '^reminder [A-Za-z]+ 3 [A-Za-z]+ 09:00 call the bank$' \
     && [ "$(NL reminders add 'pay rent on 2030-01-04 at 10:30' | sed 's/^reminder [A-Za-z]* [0-9]* [A-Za-z]* //')" = '10:30 pay rent' ] && ! NL reminders add 'buy 2 apples' >/dev/null \
     && ok "reminders add: the day and the time last, as spoken (call the bank 2030-01-03 at 9, on ... at 10:30); a bare number is a time only after at" || bad "reminders spoken order" "$(NL reminders add 'call the bank 2030-01-03 at 9')"
 grep -l '^SUMMARY:gym' "$HOME"/calendar/*.ics 2>/dev/null | while IFS= read -r f; do rm -f "$f"; done   # the later checks read the next one ahead
-out=$(NL reminders add 'yesterday call the bank' || :); [ "$out" = 'a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), or a while from now (gym in 10 minutes)' ] && ok "reminders add: no day and time, refused with an example" || bad "reminders refuse" "$out"
+out=$(NL reminders add 'yesterday call the bank' || :); [ "$out" = 'a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), a time alone for today or else tomorrow (5pm gym), or a while from now (gym in 10 minutes)' ] && ok "reminders add: no day and time, refused with an example" || bad "reminders refuse" "$out"
 # a reminder due: the bar's due block, one chime, done and a snooze in the section; another tool's events read, never changed
 ago() { date -d "-$1 min" "+%Y%m%dT%H%M00" 2>/dev/null || date -v-"$1"M "+%Y%m%dT%H%M00"; }   # ago MINUTES -> a local time that long ago
 ago_utc() { date -u -d "-$1 min" "+%Y%m%dT%H%M00Z" 2>/dev/null || date -u -v-"$1"M "+%Y%m%dT%H%M00Z"; }
@@ -3027,7 +3030,7 @@ out=$(NL reminders 'done' water the plants) && touch -t 202001010000 "$HOME/cale
 out=$(NL reminders restore nothing like it || :); [ "$out" = 'no unique reminder done named nothing like it; use its UID' ] && ok "reminders restore: no such one, said" || bad "restore none" "$out"
 [ "$(NL reminders add 'tomorrow 09:00 semi; colon, comma' | tail -1)" != '' ] && f=$(grep -l 'semi' "$HOME"/calendar/*.ics 2>/dev/null | head -1) && tr -d '\r' < "${f:-/dev/null}" | grep -qxF 'SUMMARY:semi\; colon\, comma' \
     && ok "reminders add: a semicolon and a comma escaped as iCalendar text" || bad "ics escape" "$(cat "${f:-/dev/null}" 2>&1) $(ls "$HOME/calendar")"
-out=$(NL reminders add '2026-19-39 10:00 nothing' || :); [ "$out" = 'a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), or a while from now (gym in 10 minutes)' ] && ok "reminders add: a day the calendar lacks is refused" || bad "bad date" "$out"
+out=$(NL reminders add '2026-19-39 10:00 nothing' || :); [ "$out" = 'a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), a time alone for today or else tomorrow (5pm gym), or a while from now (gym in 10 minutes)' ] && ok "reminders add: a day the calendar lacks is refused" || bad "bad date" "$out"
 rm -f "$HOME/calendar/other.ics"
 j=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://reminders/rows"}}' | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide reminders 2>/dev/null | jq -r 'select(.id == 2) | .result.contents[0].text')
 printf '%s' "$j" | jq -e '[.rows[] | select(.text | startswith("the vet"))][0] | .date == "2030-01-02" and .group == "later" and (.columns[0] | endswith("10:00"))' >/dev/null \
@@ -4038,22 +4041,6 @@ jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type ==
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
 [ "$(ans 1 | jq -r .error.code)" = -32602 ] && ok "pointer MCP: an invalid speed is refused before native execution" || bad "pointer MCP bounds" "$(cat "$H/mcp.out")"
-# Native preparation is read-only, before an action is shown for approval.
-jq -e -s '[.[] | select(._meta["spark-shell/prepare"] == true) | .name] == ["reminders_add"]' "$H/tools.all" >/dev/null \
-    && ok "prepare: the reminder tool advertises native preparation" || bad "prepare capability"
-mkdir -p "$H/calendar"
-_prep_before=$(ls -A "$H/calendar" | cksum)
-mcp reminders "$(rq 1 spark/prepare '{"name":"reminders_add","arguments":{"words":"2099-01-01 10am fixture event"}}')" \
-    "$(rq 2 spark/prepare '{"name":"reminders_add","arguments":{"words":"2000-01-01 10am fixture event"}}')" \
-    "$(rq 3 spark/prepare '{"name":"reminders_add","arguments":{"words":12}}')" \
-    "$(rq 4 spark/prepare '{"name":"reminders_done","arguments":{"name":"fixture"}}')"
-[ "$(ans 1 | jq -c .result)" = '{"ready":true,"arguments":{"words":"2099-01-01 10:00 fixture event"}}' ] \
-    && [ "$(ls -A "$H/calendar" | cksum)" = "$_prep_before" ] \
-    && ok "prepare: a future reminder is canonical before review, with no event written" || bad "prepare future" "$(ans 1)"
-ans 2 | jq -e '.result.ready == false and (.result.question | contains("has passed"))' >/dev/null \
-    && ok "prepare: a past time requests clarification, never another date" || bad "prepare past" "$(ans 2)"
-[ "$(ans 3 | jq -r .error.code)" = -32602 ] && [ "$(ans 4 | jq -r .error.code)" = -32601 ] \
-    && ok "prepare: invalid arguments and unsupported tools are refused" || bad "prepare refusals" "$(ans 3) $(ans 4)"
 mcp notes "$(call 1 notes_add '{"text":"AX result fixture"}')" "$(call 2 notes_add '{"text":"AX result fixture: one more line"}')" "$(call 3 notes_find '{"words":"AX result fixture"}')"
 ans 1 | jq -e '.result.isError == false and .result.structuredContent.effect == {kind:"note",operation:"created",id:"ax-result-fixture.md",title:"AX result fixture"}' >/dev/null \
     && ans 2 | jq -e '.result.structuredContent.effect.operation == "appended" and .result.structuredContent.effect.id == "ax-result-fixture.md"' >/dev/null \
@@ -4096,7 +4083,7 @@ mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},
 jq -e -s 'all(.[]; (.name | test("^[a-z][a-z0-9_]{0,63}$")) and (.title | test("^[a-z][a-z-]*( [a-z-]+| [A-Z]+)*$")) and (.title | length) <= 60)' "$H/tools.all" >/dev/null \
     && ok "provide: every tool name is lower case with underscores, every title a sentence of plain words with its argument in capitals, 60 at most" || bad "tool shapes" "$(jq -r '.name + " | " + .title' "$H/tools.all")"
 jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.destructiveHint | type) == "boolean" and (.idempotentHint | type) == "boolean" and .openWorldHint == false)' "$H/tools.all" >/dev/null \
-    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove clock_zone lan_address lan_auto lan_dns lan_restore layout_delete layout_save power_logout power_restart power_shutdown printers_cancel printers_pause theme_delete wifi_address wifi_auto wifi_dns wifi_forget wifi_restore wifi_setup window_close' ] \
+    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove clock_zone lan_address lan_auto lan_dns lan_restore layout_delete power_logout power_restart power_shutdown printers_cancel printers_pause theme_delete wifi_address wifi_auto wifi_dns wifi_forget wifi_restore wifi_setup window_close' ] \
     && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find about_open files_show files_attach' ] \
     && ok "provide: every hint spelled out (the spec's default is destructive); destructive: wifi forget, window close, layout save, layout delete, theme delete, log out, restart, shut down; read only: notes find, about, files show and attach" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
 jq -e -s 'all(.[]; .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .outputSchema.type == "object")' "$H/tools.all" >/dev/null \
@@ -4116,10 +4103,32 @@ mcp theme "$(call 1 theme_palette '{"name":"nord"}')" "$(call 2 theme_palette '{
 nfg=$(sed -n 's/^THEME_FG=#//p' "$REPO/themes/nord.env"); nbg=$(sed -n 's/^THEME_BG=#//p' "$REPO/themes/nord.env")
 ans 1 | jq -e --arg f "$nfg" --arg b "$nbg" '.result.structuredContent.palette | (.HEX_FG | ascii_downcase) == ($f | ascii_downcase) and (.PANEL_BG | test("^[0-9a-fA-F]{6}$")) and (.PANEL_BG | ascii_downcase) != ($b | ascii_downcase) and (keys == ["HEX_ACCENT", "HEX_ANSI_1", "HEX_ANSI_2", "HEX_FG", "PANEL_BG", "PANEL_HI", "PANEL_MUTED"])' >/dev/null \
     && ok "provide theme: a step's result carries the palette as it is now, the dialog's surface a shade off the background, so the dialog repaints itself" || bad "theme palette in result" "$(ans 1 | jq -c .result.structuredContent.palette) fg=$nfg bg=$nbg"
-[ "$(ans 2 | jq -c .result)" = '{"content":[{"type":"text","text":"nowhere is not in the list now"}],"isError":true}' ] && [ "$(ans 3 | jq -r .error.message)" = 'theme_text: size is one of bigger, smaller' ] && [ "$(ans 4 | jq -r .error.message)" = 'theme_alpha: no argument x' ] \
+[ "$(ans 2 | jq -r .error.code)" = -32602 ] && ans 2 | jq -e '.error.message | startswith("theme_palette: name is one of ") and contains("nord") and contains("none")' >/dev/null && [ "$(ans 3 | jq -r .error.message)" = 'theme_text: size is one of bigger, smaller' ] && [ "$(ans 4 | jq -r .error.message)" = 'theme_alpha: no argument x' ] \
     && [ "$(ans 5 | jq -r .error.message)" = 'no tool wifi_connect in theme' ] && [ "$(ans 6 | jq -r .error.code)" = -32602 ] && [ "$(ans 7 | jq -r .error.message)" = 'theme_alpha: value is a number, 0 to 1' ] \
-    && ok "provide: a step no row offers is refused in the result, one sentence; an argument outside its schema, an argument it lacks, another section's tool and a name of another shape are -32602" || bad "provide refusals" "$(cat "$H/mcp.out")"
+    && ok "provide: a palette no row offers is outside the schema's enum, -32602 with the names; an argument outside its schema, an argument it lacks, another section's tool and a name of another shape are -32602" || bad "provide refusals" "$(cat "$H/mcp.out")"
 mcp theme "$(call 1 theme_palette '{"name":"none"}')"; grep -q '^THEME=none$' "$HOME/.config/spark-shell/config" && ok "provide: the undo, called as a tool, puts the palette back" || bad "provide undo" "$(cat "$H/mcp.out")"
+mcp theme "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 2 tools/list)"
+ans 2 | jq -e '.result.tools[] | select(.name == "theme_palette") | .inputSchema.properties.name.enum | index("nord") != null and index("none") != null and length > 10 and (map(select(test("^[A-Za-z0-9._-]+$"))) | length) == length' >/dev/null \
+    && ok "provide theme: theme NAME takes an enum of every palette, every saved theme and none, so a model under the grammar writes a real name only (#95)" || bad "theme enum" "$(ans 2 | jq -c '.result.tools[] | select(.name == "theme_palette") | .inputSchema')"
+# a reminder with no day and time: one question over the wire (elicitation), the answer in front of the words; cancelled, not done
+mcp reminders "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(call 2 reminders_add '{"words":"test the network later today"}')" '{"jsonrpc":"2.0","id":"ask-2","result":{"action":"accept","content":{"when":"tomorrow 9:00"}}}' "$(call 3 reminders_add '{"words":"water the plants"}')" '{"jsonrpc":"2.0","id":"ask-3","result":{"action":"cancel"}}' "$(call 4 reminders_add '{"words":"tomorrow 10:00 no question here"}')"
+q=$(jq -c 'select(.method == "elicitation/create")' "$H/mcp.out" | head -1)
+[ "$(printf '%s' "$q" | jq -r '.id')" = ask-2 ] && printf '%s' "$q" | jq -e '.params.message | startswith("When? ")' >/dev/null && [ "$(printf '%s' "$q" | jq -c '.params.requestedSchema.required')" = '["when"]' ] \
+    && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'reminder tomorrow 09:00 test the network later today' ] && [ "$(ans 3 | jq -c '.result')" = '{"content":[{"type":"text","text":"not done: no time given"}],"isError":true}' ] \
+    && [ "$(ans 4 | jq -r '.result.structuredContent.receipt')" = 'reminder tomorrow 10:00 no question here' ] && [ "$(jq -c 'select(.method == "elicitation/create")' "$H/mcp.out" | wc -l | tr -d ' ')" = 2 ] \
+    && ok "provide reminders_add: words with no day and time get one question over the wire (elicitation, the field when); the answer goes in front of the words and the reminder is saved; cancelled is not done, no time given; words with a time ask nothing (#95)" || bad "reminders ask" "$(cat "$H/mcp.out" "$H/mcp.err")"
+# a layout save: no yes, a new name saved with its undo, a name in use refused
+mkdir -p "$H/ls"; cat > "$H/ls/swaymsg" <<'EOF'
+#!/bin/sh
+case "$*" in "-t get_version") echo '{"human_readable":"sway-stub"}' ;; "-t get_tree") echo '{"type":"root","nodes":[{"type":"workspace","num":1,"focused":true,"nodes":[{"type":"con","id":79,"pid":1,"app_id":"firefox","focused":true}]}]}' ;; *) : ;; esac
+EOF
+chmod +x "$H/ls/swaymsg"; _lp=$PATH; PATH="$H/ls:$PATH"; export SWAYSOCK=/nowhere/sway.sock   # a sway with one window open on the focused workspace
+mcp layout "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 9 tools/list)" "$(call 2 layout_save '{"name":"webdev"}')" "$(call 3 layout_save '{"name":"webdev"}')"
+ans 9 | jq -e '.result.tools[] | select(.name == "layout_save") | .annotations.destructiveHint == false' >/dev/null \
+    && [ "$(ans 2 | jq -c '.result.structuredContent.undo')" = '{"name":"layout_delete","arguments":{"name":"webdev"}}' ] && [ -f "$HOME/.config/spark-shell/layouts/webdev" ] \
+    && [ "$(ans 3 | jq -r '.result.content[0].text')" = 'webdev is a layout already: rename it, or delete it first' ] && [ "$(ans 3 | jq -r '.result.isError')" = true ] \
+    && ok "provide layout_save: not destructive, so no yes; a new name is saved with its undo (layout delete); a name in use is refused, nothing written over (#96)" || bad "layout save" "$(cat "$H/mcp.out" "$H/mcp.err")"
+unset SWAYSOCK; PATH=$_lp
 # every palette: the dialog's quiet words read at 4.5 to 1 on its surface, or as its author's own text where that reads lower (#18)
 _cw=''
 for env in "$REPO"/themes/*.env; do
@@ -4286,17 +4295,19 @@ cat > "$H/.local/bin/spark" <<'STUB'
 #!/bin/sh
 case $1 in
     help) echo ' spark steps <words> < TOOLS  the tool calls that do what you say (-h)' ;;
-    steps) cat > /dev/null; printf '{"answer": "", "steps": [{"name": "layout_save", "arguments": {"name": "work"}}, {"name": "theme_palette", "arguments": {"name": "dracula"}}], "refused": []}\n' ;;
+    steps) cat > /dev/null; printf '{"answer": "", "steps": [{"name": "layout_delete", "arguments": {"name": "work"}}, {"name": "theme_palette", "arguments": {"name": "dracula"}}], "refused": []}\n' ;;
     *) printf '%s\n' "$@" > "$HOME/spark.argv"; cat > "$HOME/spark.stdin"; case "$*" in *--source*) echo 'the notes say to buy bread.' ;; *) echo '{"steps": []}' ;; esac ;;
 esac
 STUB
 chmod +x "$H/.local/bin/spark"
-st=0; out=$(echo no | SPARK_SHELL_TEST_TTY=1 sh "$SH" want keep this as work and go dracula 2>&1) || st=$?; st2=0; out2=$(sh "$SH" want keep this as work and go dracula </dev/null 2>&1) || st2=$?
+mkdir -p "$HOME/.config/spark-shell/layouts"; printf '{"words": "work", "why": "a fixture", "main": {"app": "shell"}, "side": []}\n' > "$HOME/.config/spark-shell/layouts/work"
+st=0; out=$(echo no | SPARK_SHELL_TEST_TTY=1 sh "$SH" want drop work and go dracula 2>&1) || st=$?; st2=0; out2=$(sh "$SH" want drop work and go dracula </dev/null 2>&1) || st2=$?
 x=$(printf '\342\234\227')
-printf '%s\n' "$out" | grep -q "type yes to layout save work: $x layout save work: kept, not done (it takes a typed yes)" && printf '%s\n' "$out" | grep -qx "$x not run, for the step before was not done: theme dracula" \
-    && printf '%s\n' "$out2" | grep -qx "$x layout save work: kept, not done (it takes a typed yes)" && ! grep -q '^THEME=dracula' "$HOME/.config/spark-shell/config" && [ ! -e "$HOME/.config/spark-shell/layouts/work" ] \
-    && ok "want at the terminal: a risky step (this machine's list, whatever its hint) asks for yes, and with no terminal is kept; the steps after it are not run" || bad "want risky" "$out | $out2"
-grep -q '^LOCAL_RISK="wifi_forget window_close layout_save bt_pair"$' "$SH" && grep -q 'pub const LOCAL_RISK: \[&str; 4\] = \["wifi_forget", "window_close", "layout_save", "bt_pair"\];' "$REPO/dialog/src/app.rs" \
+printf '%s\n' "$out" | grep -q "type yes to layout delete work: $x layout delete work: kept, not done (it takes a typed yes)" && printf '%s\n' "$out" | grep -qx "$x not run, for the step before was not done: theme dracula" \
+    && printf '%s\n' "$out2" | grep -qx "$x layout delete work: kept, not done (it takes a typed yes)" && ! grep -q '^THEME=dracula' "$HOME/.config/spark-shell/config" && [ -e "$HOME/.config/spark-shell/layouts/work" ] \
+    && ok "want at the terminal: a risky step (its destructive hint, or this machine's list) asks for yes, and with no terminal is kept; the steps after it are not run" || bad "want risky" "$out | $out2"
+rm -f "$HOME/.config/spark-shell/layouts/work"
+grep -q '^LOCAL_RISK="wifi_forget window_close bt_pair"$' "$SH" && grep -q 'pub const LOCAL_RISK: \[&str; 3\] = \["wifi_forget", "window_close", "bt_pair"\];' "$REPO/dialog/src/app.rs" \
     && ok "the shell and the dialog hold one list of risky steps" || bad "risk lists" "$(grep -n LOCAL_RISK "$SH" "$REPO/dialog/src/app.rs")"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 printf 'buy bread\n' > "$H/notes.md"; printf 'x\000y' > "$H/blob.txt"; printf 'a' > "$H/pic.png"
@@ -5436,9 +5447,11 @@ L desktop time zone Etc/GMT --yes >/dev/null
 [ "$(readlink "$H/root/etc/localtime")" = "$H/root/usr/share/zoneinfo/Etc/GMT" ]     && ok "time: a confirmed runit zone uses the native localtime link" || bad "time runit zone"
 rc=0; out=$(L desktop time zone ../passwd --yes 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$(readlink "$H/root/etc/localtime")" = "$H/root/usr/share/zoneinfo/Etc/GMT" ]     && ok "time: paths outside zoneinfo are refused" || bad "time invalid zone" "$out"
-printf '#!/bin/sh\necho "Leap status     : Normal"\n' > "$H/lx/chronyc"; chmod +x "$H/lx/chronyc"
-out=$(L desktop time)
-printf '%s' "$out" | grep -qx 'clock synced by chrony' && ok "time: native sync is read from chrony" || bad "time sync" "$out"
+printf '#!/bin/sh\necho "$*" >> "$HOME/chronyc.args"; echo "Leap status     : Normal"\n' > "$H/lx/chronyc"; chmod +x "$H/lx/chronyc"
+rm -f "$HOME/.local/state/spark-shell/panel/time_sync"   # the probe's minute, from before the stub
+out=$(L desktop time); L desktop time >/dev/null
+printf '%s' "$out" | grep -qx 'clock synced by chrony' && [ "$(cat "$HOME/chronyc.args")" = '-n tracking' ] \
+    && ok "time: native sync is read from chrony with no name lookup (-n), once a minute: a lookup that times out held every clock row 5 s (#97)" || bad "time sync" "$out $(cat "$HOME/chronyc.args" 2>&1)"
 L desktop time zone Etc/UTC --yes --dry-run >/dev/null
 [ "$(readlink "$H/root/etc/localtime")" = "$H/root/usr/share/zoneinfo/Etc/GMT" ] && ok "time: dry-run does not change the native zone" || bad "time dry-run"
 rm -rf "$H"
