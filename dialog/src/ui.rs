@@ -592,7 +592,20 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> (Vec<(u16, usize)
             .and_then(|r| r.preview.clone());
         let lit_row = selected.and_then(|k| row_of(app, &items[k])).filter(|r| r.preview.is_some());
         let used_row = items.iter().filter_map(|it| row_of(app, it)).find(|r| r.sign == "check" && r.preview.is_some());
-        let caption = lit_row.or(used_row).and_then(|r| r.columns.first().cloned());
+        // under the picture, the row's columns: a drawing's palette on one line; a file's size and date, then
+        // its folder on a second line, since the rows beside the picture have no room for them (#112)
+        let caption: Vec<String> = lit_row
+            .or(used_row)
+            .map(|r| match r.columns.as_slice() {
+                [] => vec![],
+                [one] => vec![one.clone()],
+                [a, b, rest @ ..] => {
+                    let mut lines = vec![format!("{}{}{}", a, SEP, b)];
+                    lines.extend(rest.iter().take(1).cloned());
+                    lines
+                }
+            })
+            .unwrap_or_default();
         // beside the list, from its first row: what was said above it keeps the whole width
         let k0 = items
             .iter()
@@ -609,11 +622,11 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> (Vec<(u16, usize)
                 }
             }
             pen.stop = Some((top, top + PREVIEW_H + 2, x - 2));
-            if let Some(c) = caption {
-                let stop = pen.stop.take();
-                pen.put(x, top + PREVIEW_H, &cut_words(&c, PREVIEW_W as usize), pal_muted(pen), false, false);
-                pen.stop = stop;
+            let stop = pen.stop.take();
+            for (k, c) in caption.iter().enumerate() {
+                pen.put(x, top + PREVIEW_H + k as u16, &cut_words(c, PREVIEW_W as usize), pal_muted(pen), false, false);
             }
+            pen.stop = stop;
         }
     }
     let pal = pen.pal.clone();
@@ -717,7 +730,8 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &
     if !row.chip.is_empty() {
         chip(pen, name_end + 2, y, &row.chip);
     }
-    if !row.columns.is_empty() && !widths.is_empty() && row.preview.is_none() {
+    // a row's columns, unless its one column is its picture's caption (the wallpaper list); a file with a picture keeps its size and date (#112)
+    if !row.columns.is_empty() && !widths.is_empty() && (row.preview.is_none() || row.columns.len() > 1) {
         x = if chips { name_end + CHIP + 2 } else { name_end };
         for (k, col) in row.columns.iter().enumerate() {
             let w = widths.get(k + 1).copied().unwrap_or(0) as u16;
@@ -732,6 +746,11 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &
                 x + 3
             };
             let room = pen.end(y).saturating_sub(at) as usize;
+            // a number cut is no number: a size, a count or a time that cannot fit whole (beside a picture) is not drawn, nor
+            // what follows it; words are cut at a word
+            if numeric && cw as usize > room {
+                break;
+            }
             pen.put(at, y, &cut_words(col, room), pal.muted, false, lit);
             x = if k == 0 { x + 2 + w } else { x + 3 + w };
         }

@@ -455,9 +455,12 @@ fn manager_app() -> App {
         let p = format!("/data/me/{}", name);
         json!({"id": format!("files:dir:{}", name), "sign": "opens", "text": name, "tool": {"name": "files_browse", "arguments": {"path": p}, "said": "open in the system file manager"}, "more": steps(&p), "columns": [items], "children": format!("spark-shell://files/rows/{}", name), "group": "home"})
     };
+    // the picture's row carries its small picture (drawn at the top right) and keeps its size, date and folder (#112)
+    let mut photo = file("photo-0412.jpg", "4.8 MB", "yesterday", "recent", Some("camera"));
+    photo["preview"] = json!("/data/me/.cache/thumbs/photo-0412.png");
     let rows = model::rows(&json!({"title": "~", "here": "/data/me", "rows": [
         file("invoice-0412.pdf", "120 KB", "today", "recent", Some("downloads")),
-        file("photo-0412.jpg", "4.8 MB", "yesterday", "recent", Some("camera")),
+        photo,
         file("notes.md", "2 KB", "18 Oct", "recent", Some("~")),
         dir("documents", "12 items"),
         dir("downloads", "3 items"),
@@ -476,6 +479,15 @@ fn manager_app() -> App {
     app.in_list = true;
     app.sel = 0;
     app
+}
+
+/// The picture's row lit: its small picture at the top right with no caption, the rows beside it ending
+/// before it, and the row itself keeping its size, date and folder (#112).
+#[test]
+fn a_picture_lit_shows_it_at_the_top_right_and_keeps_its_columns() {
+    let mut app = manager_app();
+    app.sel = 1;
+    render(&app, "picture");
 }
 
 #[test]

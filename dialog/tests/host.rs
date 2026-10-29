@@ -2135,6 +2135,9 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
     assert!(matches!(app.view, View::Folder(0, _)), "back to the folder: {:?}", app.view);
     assert!(app.steps_row.is_none());
     assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("in the trash"))));
+    // the turn names the file, never its whole path (#112)
+    assert!(app.exchange.iter().any(|l| l.text == "files trash notes.md"), "{:?}", app.exchange);
+    assert!(!app.exchange.iter().any(|l| l.text.contains(&home)), "{:?}", app.exchange);
     let c = tool_calls(&calls);
     assert_eq!(c[0]["name"], "files_trash");
     assert_eq!(c[0]["arguments"]["path"], format!("{}/notes.md", home));

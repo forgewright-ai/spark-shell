@@ -3673,7 +3673,9 @@ impl App {
                 .arguments
                 .iter()
                 .filter(|(k, _)| !gate::secret(k, schema.pointer(&format!("/properties/{}", k))))
-                .filter_map(|(_, v)| match v {
+                .filter_map(|(k, v)| match v {
+                    // a path reads by its last part: files rename photo.png, never the whole path (#112)
+                    Value::String(s) if gate::is_path(&schema, k) => Some(s.rsplit('/').next().unwrap_or(s).to_string()),
                     Value::String(s) => Some(s.clone()),
                     Value::Number(n) => Some(n.to_string()),
                     Value::Bool(b) => Some(if *b { "on" } else { "off" }.to_string()),

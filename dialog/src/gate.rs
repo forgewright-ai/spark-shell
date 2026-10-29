@@ -249,7 +249,7 @@ pub(crate) fn name_keys(schema: &Value) -> Vec<String> {
 }
 
 /// A path argument: the rows' paths are its allowlist, not the name gate's.
-pub(crate) fn is_path(schema: &Value, k: &str) -> bool {
+pub fn is_path(schema: &Value, k: &str) -> bool {
     schema.pointer(&format!("/properties/{}/format", k)).and_then(Value::as_str) == Some("path")
 }
 

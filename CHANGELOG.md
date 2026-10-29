@@ -28,7 +28,8 @@
   text files under a megabyte for the words, node_modules and the like
   left out, 200 rows at most; the result opens as a list to act on. A
   picture lit is drawn small at the top right where the terminal draws
-  pictures, its small picture made beside the list. The request path
+  pictures, its size and date under it, the rows beside it showing
+  their names; its small picture is made beside the list. The request path
   now carries the files' tools and, from the Files place, the paths of
   the folder on screen: a path reaches a step only through a row (the
   dialog's gate holds every path argument to a path a row holds, or
