@@ -746,9 +746,10 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &
                 x + 3
             };
             let room = pen.end(y).saturating_sub(at) as usize;
-            // a number cut is no number: a size, a count or a time that cannot fit whole (beside a picture) is not drawn, nor
-            // what follows it; words are cut at a word
-            if numeric && cw as usize > room {
+            // a number cut is no number, and beside the picture a column is whole or not drawn at all (nor what follows it);
+            // elsewhere words are cut at a word
+            let beside = pen.stop.is_some_and(|(y0, y1, _)| y >= y0 && y < y1);
+            if (numeric || beside) && cw as usize > room {
                 break;
             }
             pen.put(at, y, &cut_words(col, room), pal.muted, false, lit);

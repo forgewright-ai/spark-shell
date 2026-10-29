@@ -490,6 +490,34 @@ fn a_picture_lit_shows_it_at_the_top_right_and_keeps_its_columns() {
     render(&app, "picture");
 }
 
+/// Beside the picture a column is whole or not drawn (#112): with short names the size fits and the date does
+/// not, so a row beside the picture shows its size and no cut date; a row below keeps both.
+#[test]
+fn beside_the_picture_a_column_is_whole_or_not_drawn() {
+    let mut app = manager_app();
+    let (f, uri, _) = app.folder.clone().unwrap();
+    let file = |name: &str, size: &str, when: &str, group: &str, folder: Option<&str>| {
+        let mut columns = vec![size.to_string(), when.to_string()];
+        columns.extend(folder.map(str::to_string));
+        json!({"id": format!("files:file:{}:{}", group, name), "sign": "blank", "text": name, "tool": {"name": "files_open", "arguments": {"path": format!("/data/me/{}", name)}, "said": "open"}, "more": [], "columns": columns, "children": null, "group": group})
+    };
+    let mut cat = file("cat.png", "4.8 MB", "yesterday", "recent", Some("camera"));
+    cat["preview"] = json!("/data/me/.cache/thumbs/cat.png");
+    let rows = model::rows(&json!({"title": "~", "here": "/data/me", "rows": [
+        cat,
+        file("memo.txt", "2 KB", "18 Oct", "recent", Some("~")),
+        {"id": "files:dir:docs", "sign": "opens", "text": "docs", "tool": null, "more": [], "columns": ["12 items"], "children": "spark-shell://files/rows/ZG9jcw", "group": "home"},
+        file("memo.txt", "2 KB", "18 Oct", "home", None),
+        file("todo.txt", "1 KB", "2025", "home", None),
+        {"id": "files:total", "sign": "blank", "text": "2 files \u{b7} 3 KB", "tool": null, "more": [], "columns": [], "children": null, "group": "this folder"}
+    ], "short": []})
+    .to_string())
+    .unwrap();
+    app.folder = Some((f, uri, rows));
+    app.sel = 0;
+    render(&app, "picture-short");
+}
+
 #[test]
 fn the_home_folder_is_the_recent_files_the_folders_and_files_and_the_folders_own_steps() {
     let app = manager_app();
