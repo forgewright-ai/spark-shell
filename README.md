@@ -1078,6 +1078,10 @@ Uninstall: `spark-shell off`, then delete `~/.spark-shell`.
     git config core.hooksPath .githooks
     sh tests/shell_test.sh
 
+The suite is five parts, cut by time. `sh tests/shell_test.sh --parallel`
+runs them side by side, a process each, as CI does; `--part NAME` runs
+one (base, console, screen, providers, theme).
+
 A Claude Code cloud session does the first line itself when it starts
 (`.claude/hooks/session-start.sh`). It also installs the tools the suite
 uses: shellcheck, diff, jq, curl and ssh-keygen.

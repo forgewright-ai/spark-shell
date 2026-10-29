@@ -2,7 +2,7 @@
 # spark-shell tests -- a throwaway HOME, no network, no packages: the
 # package row is forced to `todo` by an unknown distro fixture, and the
 # prompt row is satisfied by a stub, so `on` exercises the render and
-# link machinery only. Run: sh tests/shell_test.sh
+# link machinery only. Run: sh tests/shell_test.sh (or --parallel, below)
 # With SPARK=/path/to/spark's clone, section 13 renders its palettes too.
 set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -97,7 +97,452 @@ RENDERS=".tmux.conf .config/btop/btop.conf .config/starship.toml .config/spark-s
 SH=$REPO/spark-shell
 sys=$(dirname "$(command -v uname)"):/usr/bin:/bin   # the system's tools alone; a uname put first on PATH (the Linux halves on a Mac) stays
 
+# --- the parts --------------------------------------------------------------
+# sh tests/shell_test.sh              every section, in a row
+# sh tests/shell_test.sh --part NAME  one part, the sections it holds alone
+# sh tests/shell_test.sh --parallel   every part at once, a process each, the
+#                                     logs printed whole as they end: CI's way
+# The parts are cut by time (section 19 in two, at the login screen), so the
+# longest takes a quarter of the whole; a section's state carries only to
+# the next section of the same part.
+PARTS="base console screen providers theme"
+sections_of() {   # sections_of PART -- the sections a part holds
+    case $1 in
+        base) echo "1 2 3 4 5 8 9 10 13 14 15 16 17 18" ;;
+        console) echo "19" ;;
+        screen) echo "19b" ;;
+        providers) echo "20 21 22 23" ;;
+        theme) echo "24 25" ;;
+        *) return 1 ;;
+    esac
+}
+case ${1:-} in
+    '') SECTIONS=all ;;
+    --part)
+        SECTIONS=$(sections_of "${2:-}") || { echo "shell_test: no part named '${2:-}' (the parts: $PARTS)" >&2; exit 2; } ;;
+    --parallel)
+        logs=$(mktemp -d); pids=
+        for p in $PARTS; do
+            sh "$0" --part "$p" > "$logs/$p.log" 2>&1 &
+            pids="$pids $!"
+        done
+        rc=0
+        for pid in $pids; do wait "$pid" || rc=1; done
+        for p in $PARTS; do printf '== %s\n' "$p"; cat "$logs/$p.log"; done
+        awk -F'[ ,]+' '/^shell_test: [0-9]+ ok, [0-9]+ failed$/ { ok += $2; bad += $4; n++ }
+             END { printf "shell_test: %d ok, %d failed (%d parts side by side)\n", ok, bad, n }' "$logs"/*.log
+        rm -rf "$logs"
+        exit $rc ;;
+    *) echo "usage: sh tests/shell_test.sh [--part NAME | --parallel]" >&2; exit 2 ;;
+esac
+want() {   # want SECTION -- whether this run holds the section
+    [ "$SECTIONS" = all ] || case " $SECTIONS " in *" $1 "*) ;; *) return 1 ;; esac
+}
+
+# --- the helpers the sections share, defined before any part runs --------
+# (each was defined in the section that first needed it; a part that
+# skips that section still needs them, so they stand here)
+esc=$(printf '\033')
+desktop_stubs() {
+    for t in sway swaymsg foot; do
+        printf '#!/bin/sh\necho "%s-stub $*" >&2\n' "$t" > "$H/.local/bin/$t"; chmod +x "$H/.local/bin/$t"
+    done
+}
+
+desk_stubs() {   # after desktop_stubs: its swaymsg is replaced
+    cat > "$H/.local/bin/spark" <<'EOF'
+#!/bin/sh
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}"; printf '%s\n' "$@" > "${XDG_STATE_HOME:-$HOME/.local/state}/spark.argv"
+if [ -e "$HOME/answer.json" ]; then cat "$HOME/answer.json"   # a test's own answer
+elif [ -e "$HOME/two-screens" ]; then cat <<'JSON'
+{"why": "photo work in gimp at the left, the feed at the right, notes beside the photo",
+ "main": {"app": "gimp-3.0", "args": "", "width": 70, "screen": "left"},
+ "side": [{"app": "firefox", "args": "https://instagram.com", "screen": "right"}, {"app": "micro", "args": ""}]}
+JSON
+else cat <<'JSON'
+{"why": "photo work in gimp with the two feeds beside it and a notes file",
+ "main": {"app": "gimp-3.0", "args": "", "width": 70},
+ "side": [{"app": "firefox", "args": "https://instagram.com"}, {"app": "firefox", "args": "https://x.com"},
+          {"app": "micro", "args": ""}, {"app": "player", "args": ""}, {"app": "ghostapp", "args": ""}]}
+JSON
+fi
+EOF
+    # the outputs carry make, model and serial like sway's (never to reach the model); two when $HOME/two-screens exists
+    cat > "$H/.local/bin/swaymsg" <<'EOF'
+#!/bin/sh
+log=${XDG_STATE_HOME:-$HOME/.local/state}/swaymsg.log; mkdir -p "$(dirname "$log")"
+case ${1:-} in
+    -t) case $2 in
+            get_version) echo '{"human_readable":"sway-stub"}' ;;
+            get_outputs) o1='{"name":"DP-1","active":true,"make":"Fakemake","model":"Fakemodel","serial":"SN0001","rect":{"x":0,"y":0},"current_mode":{"width":2560,"height":1440}}'
+                o2='{"name":"HDMI-A-1","active":true,"make":"Fakemake","model":"Fakemodel","serial":"SN0002","rect":{"x":2560,"y":0},"current_mode":{"width":1920,"height":1080}}'
+                if [ -e "$HOME/two-screens" ]; then echo "[$o2,$o1]"; else echo "[$o1]"; fi ;;
+            get_workspaces) echo '[{"num":1},{"num":2}]' ;;
+            get_tree) ws=$(grep -n '^workspace number' "$log" 2>/dev/null | tail -1); from=${ws%%:*}; num=${ws##* }; [ -n "$from" ] || { from=0; num=3; }
+                n=$({ if [ "$from" -gt 0 ]; then sed "1,${from}d" "$log"; else cat "$log"; fi; } 2>/dev/null | grep '^exec' | grep -vc 'exec gone' || :); [ -n "$n" ] || n=0; i=0
+                printf '{"type":"root","nodes":[{"type":"workspace","num":%s,"fullscreen_mode":0,"nodes":[' "$num"
+                # with $HOME/fullscreen: a fullscreen window (77) on the workspace, and the panel floating under it with the pid the test wrote
+                [ ! -e "$HOME/aerc" ] || { printf '{"type":"con","id":79,"pid":300,"app_id":"foot","name":"aerc"}'; { [ -e "$HOME/fullscreen" ] || [ "$n" -gt 0 ]; } && printf ','; }   # a terminal running aerc
+                [ ! -e "$HOME/fullscreen" ] || { printf '{"type":"con","id":77,"pid":200,"app_id":"firefox","fullscreen_mode":1}'; [ "$n" -eq 0 ] || printf ','; }
+                while [ "$i" -lt "$n" ]; do [ "$i" -eq 0 ] || printf ','; printf '{"type":"con","pid":%d,"id":%d}' $((100 + i)) $((1000 + i)); i=$((i + 1)); done
+                printf ']'
+                [ ! -e "$HOME/fullscreen" ] || printf ',"floating_nodes":[{"type":"floating_con","id":78,"app_id":"spark-dialog","pid":%s,"fullscreen_mode":0}]' "$(cat "$HOME/panel.ppid" 2>/dev/null || echo 1)"
+                echo '}]}' ;;
+        esac ;;
+    --) shift; echo "$*" >> "$log"
+        case "$*" in '[con_id=77] kill') rm -f "$HOME/fullscreen" ;; '[con_id=79] kill') rm -f "$HOME/aerc" ;; esac ;;
+esac
+EOF
+    for t in gimp-3.0 firefox micro gone player; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done   # gone: an app that opens no window
+    chmod +x "$H/.local/bin/spark" "$H/.local/bin/swaymsg" "$H/.local/bin/gimp-3.0" "$H/.local/bin/firefox" "$H/.local/bin/micro" "$H/.local/bin/gone" "$H/.local/bin/player"
+    apps=$XDG_DATA_HOME/applications; mkdir -p "$apps" "$H/share"
+    export XDG_DATA_DIRS=$H/share
+    printf '[Desktop Entry]\nName=GNU Image Manipulation Program\nComment=Create images and edit photographs\nExec=gimp-3.0 %%U\nTerminal=false\nType=Application\n' > "$apps/gimp.desktop"
+    printf '[Desktop Entry]\nName=Firefox\nGenericName=Web Browser\nExec=firefox %%u\nType=Application\n' > "$apps/firefox.desktop"
+    printf '[Desktop Entry]\nName=Micro\nExec=micro %%F\nTerminal=true\nType=Application\n' > "$apps/micro.desktop"
+    printf '[Desktop Entry]\nName=Hidden\nExec=hidden\nNoDisplay=true\nType=Application\n' > "$apps/hidden.desktop"
+    printf '[Desktop Entry]\nName=Gone\nComment=Ends at once, no window\nExec=gone\nType=Application\n' > "$apps/gone.desktop"
+    # an entry with its own flags and a file field (mpv's shape): opened as the entry says, the field dropped without args
+    printf '[Desktop Entry]\nName=Player\nComment=Play music\nExec=/usr/bin/player --idle -- %%U\nType=Application\n' > "$apps/player.desktop"
+}
+
+sbom_stubs() {
+    cat > "$H/.local/bin/pacman" <<'EOF'
+#!/bin/sh
+case ${1:-} in
+    -Qi) printf 'Name            : gimp\nVersion         : 3.0.4-1\nLicenses        : GPL3\nDescription     : GNU Image Manipulation Program\nInstall Reason  : Explicitly installed\n\n'
+         printf 'Name            : reader\nVersion         : 1.0-1\nLicenses        : MIT\nDescription     : Text-based Web browser\nInstall Reason  : Explicitly installed\n\n'
+         printf 'Name            : libfoo\nVersion         : 2.1-3\nLicenses        : LGPL2.1\nDescription     : A library other packages need\nInstall Reason  : Installed as a dependency for another package\n\n' ;;
+    -Ql) printf 'gimp %s/applications/gimp.desktop\ngimp /usr/bin/gimp-3.0\nreader /usr/bin/reader\nlibfoo /usr/lib/libfoo.so\n' "${XDG_DATA_HOME:-$HOME/.local/share}" ;;
+esac
+EOF
+    printf '#!/bin/sh\n:\n' > "$H/.local/bin/reader"
+    # fzf: its rows and its arguments logged; it answers the rows in $HOME/fzf.pick, or leaves (Esc, 130)
+    printf '#!/bin/sh\ncat > "$HOME/fzf.rows"; printf "%%s\\n" "$@" > "$HOME/fzf.args"\n[ -f "$HOME/fzf.pick" ] || exit 130\ncat "$HOME/fzf.pick"\n' > "$H/.local/bin/fzf"
+    chmod +x "$H/.local/bin/pacman" "$H/.local/bin/reader" "$H/.local/bin/fzf"
+    printf 'ID=arch\n' > "$H/os-arch"
+}
+
+rooms_stubs() {
+    cat > "$H/.local/bin/tmux" <<'EOF'
+#!/bin/sh
+log=${XDG_STATE_HOME:-$HOME/.local/state}/tmux.log; mkdir -p "$(dirname "$log")"
+printf '%s\n' "$*" >> "$log"
+case ${1:-} in has-session) [ -e "$HOME/tmux.has" ] ;; esac
+EOF
+    for t in newsboat w3m aerc; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done
+    chmod +x "$H/.local/bin/tmux" "$H/.local/bin/newsboat" "$H/.local/bin/w3m" "$H/.local/bin/aerc"
+}
+
+console_stubs() {   # console_stubs Linux|Darwin
+    mkdir -p "$H/lx" "$H/root/sys/module/vt/parameters"
+    printf '#!/bin/sh\nif [ "$1" = -s ]; then echo %s; else exec %s "$@"; fi\n' "$1" "$(command -v uname)" > "$H/lx/uname"
+    vga_red='0,170,0,170,0,170,0,170,85,255,85,255,85,255,85,255'
+    printf '%s\n' "$vga_red" > "$H/root/sys/module/vt/parameters/default_red"
+    cat > "$H/lx/setvtrgb" <<EOF
+#!/bin/sh
+echo "setvtrgb \$*" >> "$H/log"
+if [ "\$1" = vga ]; then echo '$vga_red'; else head -1 "\$1"; fi > "$H/root/sys/module/vt/parameters/default_red"
+EOF
+    for t in setfont setupcon; do printf '#!/bin/sh\necho "%s $*" >> "%s/log"\n' "$t" "$H" > "$H/lx/$t"; done
+    cat > "$H/lx/update-grub" <<EOF
+#!/bin/sh
+echo "update-grub" >> "$H/log"
+[ ! -e "$H/fail" ] || exit 1
+mkdir -p "$H/root/boot/grub"
+if [ -e "$H/root/etc/default/grub.d/zz-spark-shell-quiet.cfg" ] || grep -q 'spark-shell-quiet' "$H/root/etc/default/grub" 2>/dev/null; then
+    echo 'linux /vmlinuz quiet loglevel=3' > "$H/root/boot/grub/grub.cfg"
+else echo 'linux /vmlinuz' > "$H/root/boot/grub/grub.cfg"; fi
+EOF
+    printf '#!/bin/sh\necho "mkinitcpio $*" >> "%s/log"\n[ ! -e "%s/fail" ]\n' "$H" "$H" > "$H/lx/mkinitcpio"
+    # the helper: has-profile fails once $H/gone is there, remove once $H/stuck is
+    printf '#!/bin/sh\ncase $1 in */lib/reminder_time.py) exec "%s" "$@" ;; esac\necho "python3 $*" >> "%s/log"\ncase $2 in has-profile) [ ! -e "%s/gone" ] ;; remove) [ ! -e "%s/stuck" ] ;; esac\n' "$fixture_python" "$H" "$H" "$H" > "$H/lx/python3"
+    cat > "$H/lx/systemctl" <<'EOF'
+#!/bin/sh
+st=${SPARK_SHELL_ROOT:-$HOME/root}/units
+mkdir -p "$st"
+echo "systemctl $*" >> "$HOME/log"
+case $1 in
+    enable) touch "$st/$2" ;;
+    disable) rm -f "$st/$2" ;;
+    is-enabled) [ -e "$st/$2" ] ;;
+    is-active) [ -e "$st/active-$2" ] ;;
+esac
+EOF
+    chmod +x "$H/lx"/*
+    : > "$H/log"
+}
+
+L() { PATH=$H/lx:$PATH sh "$SH" "$@"; }   # spark-shell as the uname stub says
+
+palette_fixture() {   # palette_fixture NAME ACCENT -- a palette of yours, gruvbox's sixteen
+    mkdir -p "$HOME/.config/spark-shell/themes"
+    {
+        printf '# a test palette\nTHEME_BG=#282828\nTHEME_FG=#ebdbb2\nTHEME_ACCENT=%s\nTHEME_MUTED=#928374\n' "$2"
+        i=0
+        for c in 282828 cc241d 98971a d79921 458588 b16286 689d6a a89984 928374 fb4934 b8bb26 fabd2f 83a598 d3869b 8ec07c ebdbb2; do
+            printf 'THEME_ANSI_%d=#%s\n' "$i" "$c"; i=$((i + 1))
+        done
+    } > "$HOME/.config/spark-shell/themes/$1.env"
+}
+
+psf2() { printf '\162\265\112\206\0\0\0\0\040\0\0\0\0\0\0\0\0\1\0\0\100\0\0\0\040\0\0\0\020\0\0\0' | gzip -c > "$1"; }   # a 16x32 PSF2 header, gzipped
+
+psf1() { printf '\066\004\000\020' > "$1"; }                                                                          # an 8x16 PSF1 header
+
+void_desktop() {   # void_desktop -- a fresh Void root: runit, seatd's service dir, /var/service, /etc/group
+    fresh
+    console_stubs Linux
+    desktop_stubs
+    printf 'NAME="Void"\nID="void"\n' > "$H/os-release"
+    # Membership takes effect only at the fixture's next login. The host may
+    # already be in _seatd; keep that session state outside this test.
+    printf '#!/bin/sh\ncase "$*" in -Gn|-nG) echo users ;; *) exec "%s" "$@" ;; esac\n' "$(command -v id)" > "$H/lx/id"
+    chmod +x "$H/lx/id"
+    mkdir -p "$H/root/etc/runit" "$H/root/etc/sv/seatd" "$H/root/var/service"
+    printf 'root:x:0:\nwheel:x:4:%s\n_seatd:x:990:\n' "$(id -un)" > "$H/root/etc/group"
+    printf '#!/bin/sh\nexit 0\n' > "$H/lx/xbps-query"
+    cat > "$H/lx/usermod" <<'EOF'
+#!/bin/sh
+echo "usermod $*" >> "$HOME/log"
+[ "$1" = -aG ] || exit 2
+awk -F: -v OFS=: -v g="$2" -v u="$3" '$1 == g { $4 = ($4 == "" ? u : $4 "," u) } { print }' "$SPARK_SHELL_ROOT/etc/group" > "$HOME/group.new" && cat "$HOME/group.new" > "$SPARK_SHELL_ROOT/etc/group"
+EOF
+    cat > "$H/lx/gpasswd" <<'EOF'
+#!/bin/sh
+echo "gpasswd $*" >> "$HOME/log"
+[ "$1" = -d ] || exit 2
+awk -F: -v OFS=: -v u="$2" -v g="$3" '$1 == g { n = split($4, m, ","); s = ""; for (i = 1; i <= n; i++) if (m[i] != u) s = (s == "" ? m[i] : s "," m[i]); $4 = s } { print }' "$SPARK_SHELL_ROOT/etc/group" > "$HOME/group.new" && cat "$HOME/group.new" > "$SPARK_SHELL_ROOT/etc/group"
+EOF
+    printf '#!/bin/sh\n[ -e "%s/sway-running" ]\n' "$H" > "$H/lx/pgrep"
+    chmod +x "$H/lx"/*
+}
+
+void_sound() {   # void_sound -- a Void root with PipeWire installed, an audio group, the bar's old ALSA file
+    void_desktop
+    printf 'audio:x:12:\n' >> "$H/root/etc/group"
+    mkdir -p "$H/root/usr/share/alsa/alsa.conf.d"; for f in 50-pipewire.conf 99-pipewire-default.conf; do : > "$H/root/usr/share/alsa/alsa.conf.d/$f"; done
+    printf '#!/bin/sh\nexit 0\n' > "$H/lx/pipewire"; chmod +x "$H/lx/pipewire"
+    share=/usr/share/alsa/alsa.conf.d; conf=$H/root/etc/alsa/conf.d
+    mkdir -p "$HOME/.config/alsa"; printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.!card HDMI\ndefaults.ctl.!card HDMI\n' > "$HOME/.config/alsa/asoundrc"
+}
+
+void_svc() {   # void_svc -- void_sound, spark's supervisor dir, PipeWire's two examples; stubs: pipewire-pulse, wpctl (answers while ~/wp-up is there), sv (a log; status from ~/sv-status)
+    void_sound
+    mkdir -p "$HOME/.config/spark/sv/spark-check" "$H/root/usr/share/examples/wireplumber" "$H/root/usr/share/examples/pipewire" "$H/tmp"
+    printf 'context.exec = [ { path = "/usr/bin/wireplumber" args = "" } ]\n' > "$H/root/usr/share/examples/wireplumber/10-wireplumber.conf"
+    printf 'context.exec = [ { path = "/usr/bin/pipewire" args = "-c pipewire-pulse.conf" } ]\n' > "$H/root/usr/share/examples/pipewire/20-pipewire-pulse.conf"
+    printf '#!/bin/sh\nexit 0\n' > "$H/lx/pipewire-pulse"
+    printf '#!/bin/sh\n[ -e "$HOME/wp-up" ]\n' > "$H/lx/wpctl"
+    cat > "$H/lx/sv" <<'EOF'
+#!/bin/sh
+echo "sv $*" >> "$HOME/sv.log"
+[ "$3" != force-stop ] || [ ! -e "$4/down" ] || echo "down: there" >> "$HOME/sv.log"
+[ "$1" != status ] || { [ -s "$HOME/sv-status" ] && cat "$HOME/sv-status"; }
+EOF
+    chmod +x "$H/lx/pipewire-pulse" "$H/lx/wpctl" "$H/lx/sv"
+    svc=$HOME/.config/spark/sv/spark-shell-sound; pwc=$HOME/.config/pipewire/pipewire.conf.d; ex=$H/root/usr/share/examples
+}
+
+SV() { env -u XDG_RUNTIME_DIR TMPDIR="$H/tmp" PATH="$H/lx:$PATH" sh "$SH" "$@"; }   # spark-shell from a login with no runtime dir (ssh, a console on Void)
+
+svrun() { rm -f "$HOME/wp.n" "$HOME/pw.ran" "$HOME/chpst.ran"; echo "$1" > "$HOME/wp.answers"; ( cd "$svc" && exec env -u XDG_RUNTIME_DIR TMPDIR="$H/rt" PATH="$rb:$sys" sh ./run 2>&1 ); }   # svrun ANSWERS -- the service's run, a wpctl that answers ANSWERS times
+
+waitfor() { _i=0; while [ "$_i" -lt 10 ] && ! grep -qF "$1" "$2" 2>/dev/null; do sleep 1; _i=$((_i + 1)); done; }   # waitfor TEXT FILE -- up to 10 s for a line to show
+
+fin() { rm -f "$HOME/sleep.ran" "$svc/pipewire.pid"; ( cd "$svc" && PATH="$rb:$sys" sh ./finish "$@" ); cat "$HOME/sleep.ran" 2>/dev/null || :; }   # fin CODE SIGNAL -> the sleep it took, if any (no pid kept: a stub's pid is long gone, and may be another's now)
+
+old_greetd() {   # old_greetd [ORIG] -- a root as v0.41 left it; ORIG: a config.toml of the package's kept as .spark-orig
+    fresh
+    console_stubs Linux
+    printf 'ID=debian\n' > "$H/os-release"
+    printf '#!/bin/sh\necho "install ok installed"\n' > "$H/lx/dpkg-query"; chmod +x "$H/lx/dpkg-query"
+    mkdir -p "$H/root/run/systemd/system" "$H/root/etc/greetd/spark-shell" "$H/root/etc/systemd/system/greetd.service.d" "$H/root/units"
+    printf '# rendered by spark-shell from templates/etc/greetd/config.toml\n[terminal]\nvt = 1\n' > "$H/root/etc/greetd/config.toml"
+    [ -z "${1:-}" ] || printf '[terminal]\nvt = 1\n# agreety\n' > "$H/root/etc/greetd/config.toml.spark-orig"
+    for f in desktop console; do printf '# rendered by spark-shell\n' > "$H/root/etc/greetd/spark-shell/$f.desktop"; done
+    printf '# rendered by spark-shell\n[Unit]\nAfter=spark-shell-console.service\n' > "$H/root/etc/systemd/system/greetd.service.d/spark-shell.conf"
+    : > "$H/root/units/greetd.service"; : > "$H/log"
+}
+
+old_gone() {   # old_gone -- spark-shell's greetd files gone, getty@tty1 on, greetd off, nothing stopped
+    [ ! -e "$H/root/etc/greetd/spark-shell" ] && [ ! -e "$H/root/etc/systemd/system/greetd.service.d" ] \
+        && [ -e "$H/root/units/getty@tty1.service" ] && [ ! -e "$H/root/units/greetd.service" ] \
+        && grep -qx 'systemctl enable getty@tty1.service' "$H/log" && grep -qx 'systemctl disable greetd.service' "$H/log" \
+        && ! grep -Eq '^systemctl (start|stop|restart|kill)' "$H/log"
+}
+
+screen_mcp() {
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}' "$1" | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide display 2>/dev/null | jq -c 'select(.id == 2)'
+}
+
+NL() { SWAYSOCK=$H/sock EDITOR=true PATH="$H/lx:$PATH" sh "$SH" bar panel "$@" 2>&1; }
+
+ago() { date -d "-$1 min" "+%Y%m%dT%H%M00" 2>/dev/null || date -v-"$1"M "+%Y%m%dT%H%M00"; }   # ago MINUTES -> a local time that long ago
+
+ago_utc() { date -u -d "-$1 min" "+%Y%m%dT%H%M00Z" 2>/dev/null || date -u -v-"$1"M "+%Y%m%dT%H%M00Z"; }
+
+mcp_rem() { printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"$1\",\"arguments\":{\"name\":\"$2\"}}}" | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide reminders 2>/dev/null | jq -c 'select(.id == 2) | .result'; }
+
+snap() { ( cd "$H" && find . -print | LC_ALL=C sort && find . -type f -exec cksum {} + | LC_ALL=C sort ); }
+
+A() { SPARK_SHELL_TEST_TTY=1 PATH=$H/lx:$PATH sh "$SH" "$@"; }   # spark-shell with an answer on stdin (the assignments on sh, never kept)
+
+bar_fixture() {   # a wire up, wifi up at 49/70, a bluetooth controller with a device, a battery at 80, two ALSA cards (0 plays and captures, 1 plays)
+    S=$H/sys; P=$H/proc; export SPARK_SHELL_SYS=$S SPARK_SHELL_PROC=$P
+    mkdir -p "$S/class/net/eth0" "$S/class/net/wlan0/wireless" "$S/class/net/lo" "$S/class/bluetooth/hci0" "$S/class/power_supply/BAT0" "$P/net" "$P/asound/card0/pcm0p/sub0" "$P/asound/card0/pcm0c/sub0" "$P/asound/card1/pcm0p/sub0"
+    : > "$S/class/net/eth0/device"; echo 1 > "$S/class/net/eth0/type"; echo 1 > "$S/class/net/eth0/carrier"; echo up > "$S/class/net/eth0/operstate"; echo 1000 > "$S/class/net/eth0/speed"
+    : > "$S/class/net/wlan0/device"; echo 1 > "$S/class/net/wlan0/type"; echo up > "$S/class/net/wlan0/operstate"
+    echo 772 > "$S/class/net/lo/type"
+    echo Battery > "$S/class/power_supply/BAT0/type"; echo 80 > "$S/class/power_supply/BAT0/capacity"; echo Discharging > "$S/class/power_supply/BAT0/status"
+    echo 40000000 > "$S/class/power_supply/BAT0/energy_now"; echo 50000000 > "$S/class/power_supply/BAT0/energy_full"; echo 60000000 > "$S/class/power_supply/BAT0/energy_full_design"
+    echo 20000000 > "$S/class/power_supply/BAT0/power_now"; echo 123 > "$S/class/power_supply/BAT0/cycle_count"
+    printf 'Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE\n face | tus | link level noise |  nwid  crypt   frag  retry   misc | beacon | 22\n wlan0: 0000   49.  -61.  -256        0      0      0      0      0        0\n' > "$P/net/wireless"
+    printf ' 0 [Jabra          ]: USB-Audio - Jabra SPEAK 410 USB\n                      Jabra SPEAK 410 USB at usb-0000:00:14.0-2, full speed\n 1 [HDMI           ]: HDA-Intel - HD-Audio Generic\n                      HD-Audio Generic at 0xdc5c8000 irq 104\n' > "$P/asound/cards"
+    for s in card0/pcm0p card0/pcm0c card1/pcm0p; do echo closed > "$P/asound/$s/sub0/status"; done
+    cat > "$H/.local/bin/ip" <<'STUB'
+#!/bin/sh
+case "$*" in
+    *route*) echo 'default via 192.0.2.1 dev eth0 proto dhcp src 192.0.2.10 metric 100' ;;
+    *"dev eth0"*) echo '2: eth0    inet 192.0.2.10/24 brd 192.0.2.255 scope global eth0' ;;
+    *"dev wlan0"*) echo '3: wlan0    inet 192.0.2.20/24 brd 192.0.2.255 scope global wlan0' ;;
+esac
+STUB
+    printf '#!/bin/sh\necho "boolean true"\n' > "$H/.local/bin/dbus-send"
+    chmod +x "$H/.local/bin/dbus-send"
+    cat > "$H/.local/bin/bluetoothctl" <<'STUB'
+#!/bin/sh
+log=${XDG_STATE_HOME:-$HOME/.local/state}/bt.log; mkdir -p "$(dirname "$log")"
+case "$*" in
+    show) printf 'Controller 00:11:22:33:44:55 (public)\n\tPowered: yes\n' ;;
+    "devices Connected") [ -e "$HOME/bt-none" ] || echo 'Device 00:25:D1:4A:C2:AA MAJOR V' ;;
+    "devices Paired") echo 'Device 00:25:D1:4A:C2:AA MAJOR V' ;;
+    devices) printf 'Device 00:25:D1:4A:C2:AA MAJOR V\nDevice 11:22:33:44:55:66 Buds\n' ;;
+    "connect "*) echo "$*" >> "$log"; echo 'Connection successful' ;;
+    "disconnect "*) echo "$*" >> "$log"; echo 'Successful disconnected' ;;
+    *) echo "$*" >> "$log" ;;
+esac
+STUB
+    cat > "$H/.local/bin/wpa_cli" <<'STUB'
+#!/bin/sh
+[ -n "${HOME:-}" ] || { HOME=${XDG_STATE_HOME%/.local/state}; touch "$HOME/wpa.nohome"; }   # run with HOME unset, as spark-shell runs it for a password (no history file)
+log=${XDG_STATE_HOME:-$HOME/.local/state}/wpa.log; mkdir -p "$(dirname "$log")"
+printf '%s\n' "$*" >> "${log%.log}.argv"   # every call's arguments, apart: a password is never among them (#62)
+[ "$1" != -i ] || shift 2
+if [ $# -eq 0 ]; then while IFS= read -r line; do printf '%s\n' "$line" >> "$log"; echo OK; done; exit 0; fi   # interactive: a command a line on stdin
+sel=$(cat "$HOME/wpa.sel" 2>/dev/null || echo 0)
+name() { case $1 in 0) echo home ;; 1) echo old ;; 2) cat "$HOME/wpa.name2" 2>/dev/null || echo open ;; esac; }
+case "$*" in
+    status) [ -e "$HOME/wpa.down" ] || printf 'bssid=00:11:22:33:44:55\nssid=%s\nwpa_state=COMPLETED\n' "$(name "$sel")" ;;
+    scan) echo OK ;;
+    scan_results) printf 'bssid / frequency / signal level / flags / ssid\n00:11:22:33:44:55\t2412\t-55\t[WPA2-PSK-CCMP][ESS]\thome\n00:11:22:33:44:66\t2437\t-80\t[WPA2-PSK-CCMP][ESS]\tcafe\n00:11:22:33:44:77\t2462\t-70\t[ESS]\topen\n' ;;
+    list_networks) printf 'network id / ssid / bssid / flags\n0\thome\tany\t[CURRENT]\n1\told\tany\t\n' ;;
+    add_network) echo 2 ;;
+    "select_network "*) echo "$*" >> "$log"; echo "$2" > "$HOME/wpa.sel"; rm -f "$HOME/wpa.down"; echo OK ;;
+    disconnect) echo "$*" >> "$log"; touch "$HOME/wpa.down"; echo OK ;;
+    *) echo "$*" >> "$log"; echo OK ;;
+esac
+STUB
+    # The native key derivation has no password argument. Fixed key: the test
+    # checks the wire format, not the native program's cryptography.
+    printf '#!/bin/sh\nIFS= read -r pw || exit 1\nprintf "\\tpsk=%%s\\n" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n' > "$H/.local/bin/wpa_passphrase"
+    chmod +x "$H/.local/bin/wpa_passphrase"
+    # NetworkManager and iwd, off unless a test turns one on ($HOME/nm.on, $HOME/iw.on): no machine's own nmcli or iwctl is reached from here
+    cat > "$H/.local/bin/nmcli" <<'STUB'
+#!/bin/sh
+[ -e "$HOME/nm.on" ] || exit 1
+log=$XDG_STATE_HOME/nmcli.log; printf '%s\n' "$*" >> "$log.argv"
+case "$*" in
+    "-t -f RUNNING general") echo running ;;
+    "-g GENERAL.NM-MANAGED device show wlan0") echo yes ;;
+    "-t -e yes -f SIGNAL,SECURITY,SSID dev wifi list --rescan auto") printf '80:WPA2:cafe\n' ;;
+    "--ask dev wifi connect cafe ifname wlan0 hidden no"|"--ask dev wifi connect cafe ifname wlan0 hidden yes") IFS= read -r pw || exit 4; printf '%s\n' "$pw" >> "$log"; printf 'Password (802-11-wireless-security.psk): \n'
+        [ "$pw" != wrong ] || { echo 'Error: Connection activation failed: Secrets were required, but not provided.'; exit 4; }
+        echo "Device 'wlan0' successfully activated with 'f00d'." ;;
+    *) exit 0 ;;
+esac
+STUB
+    cat > "$H/.local/bin/iwctl" <<'STUB'
+#!/bin/sh
+[ -e "$HOME/iw.on" ] || exit 1
+log=$XDG_STATE_HOME/iwctl.log; printf '%s\n' "$*" >> "$log.argv"
+case "$*" in
+    "station wlan0 show") printf '  Station: wlan0\n  State  disconnected\n' ;;
+    "station wlan0 get-networks") printf '  Available networks\n----\n  Network name  Security  Signal\n----\n  cafe  psk  ****\n' ;;
+    "station wlan0 connect cafe"|"station wlan0 connect-hidden cafe")
+        python3 -c 'import os,sys,tty
+assert sys.stdin.isatty()
+tty.setraw(0)
+os.write(1,b"Passphrase: ")
+pw=b""
+while True:
+    chunk=os.read(0,256)
+    if b"\n" in chunk:
+        assert chunk == b"\n"
+        break
+    pw += chunk
+    os.write(1,b"*"*len(chunk))
+with open(sys.argv[1],"ab") as f: f.write(pw+b"\n")' "$log" ;;
+    *) exit 0 ;;
+esac
+STUB
+    printf '#!/bin/sh\nprintf "%%s | %%s\\n" "$*" "${SPARK_SHELL_PANEL_AT:-}" >> "${XDG_STATE_HOME:-$HOME/.local/state}/foot.log"\n' > "$H/.local/bin/foot"
+    cat > "$H/.local/bin/amixer" <<'STUB'
+#!/bin/sh
+log=${XDG_STATE_HOME:-$HOME/.local/state}/amixer.log; mkdir -p "$(dirname "$log")"
+[ "$1" != -q ] || shift
+case "$*" in *scontrols) [ ! -e "$HOME/amixer-refuse" ] || exit 1 ;; esac   # amixer-refuse: ALSA cannot read its configuration
+case "$*" in
+    "-D default info") exit 1 ;;
+    "-D bluealsa sget MAJOR V - A2DP") m=on; [ ! -e "$HOME/bmuted" ] || m=off; level=$(cat "$HOME/blevel" 2>/dev/null || echo 60); printf "Simple mixer control 'MAJOR V - A2DP',0\n  Limits: Playback 0 - 127\n  Front Left: Playback 76 [%s%%] [0.00dB] [%s]\n" "$level" "$m" ;;
+    "-D bluealsa sget MAJOR V - SCO") m=on; [ ! -e "$HOME/bcmuted" ] || m=off; printf "Simple mixer control 'MAJOR V - SCO',0\n  Mono: Playback 10 [67%%] [-5.82dB] [on] Capture 9 [60%%] [0.00dB] [%s]\n" "$m" ;;
+    "-D bluealsa sset "*) echo "$*" >> "$log"
+        case "$*" in *"A2DP mute") touch "$HOME/bmuted" ;; *"A2DP unmute") rm -f "$HOME/bmuted" ;; *"SCO nocap") touch "$HOME/bcmuted" ;; *"SCO cap") rm -f "$HOME/bcmuted" ;; *"A2DP "*%) level=${5%%%}; echo "$level" > "$HOME/blevel" ;; esac ;;
+    "-c 0 scontrols") printf "Simple mixer control 'Master',0\nSimple mixer control 'PCM',0\nSimple mixer control 'Capture',0\n" ;;
+    "-c 1 scontrols") printf "Simple mixer control 'IEC958',0\n" ;;
+    "-c 0 sget Master") m=on; [ ! -e "$HOME/muted" ] || m=off; level=$(cat "$HOME/level" 2>/dev/null || echo 40); printf "Simple mixer control 'Master',0\n  Front Left: Playback 26214 [%s%%] [%s]\n  Front Right: Playback 26214 [%s%%] [%s]\n" "$level" "$m" "$level" "$m" ;;
+    "-c 0 sget Capture") m=on; [ ! -e "$HOME/cmuted" ] || m=off; level=$(cat "$HOME/clevel" 2>/dev/null || echo 50); printf "Simple mixer control 'Capture',0\n  Front Left: Capture 1000 [%s%%] [%s]\n" "$level" "$m" ;;
+    "-c "*" sset "*) echo "$*" >> "$log"   # the switches, as amixer keeps them: mute/unmute/toggle for a playback switch, cap/nocap/toggle for a capture one
+        case "$*" in
+            "-c 0 sset Master mute") touch "$HOME/muted" ;; "-c 0 sset Master unmute") rm -f "$HOME/muted" ;;
+            "-c 0 sset Master toggle") if [ -e "$HOME/muted" ]; then rm -f "$HOME/muted"; else touch "$HOME/muted"; fi ;;
+            "-c 0 sset Capture nocap") touch "$HOME/cmuted" ;; "-c 0 sset Capture cap") rm -f "$HOME/cmuted" ;;
+            "-c 0 sset Capture toggle") if [ -e "$HOME/cmuted" ]; then rm -f "$HOME/cmuted"; else touch "$HOME/cmuted"; fi ;;
+            "-c 0 sset Capture mute"|"-c 0 sset Capture unmute") echo "amixer: Invalid command!" >&2; exit 1 ;;
+            "-c 0 sset Master "*%) level=${5%%%}; echo "$level" > "$HOME/level" ;;
+            "-c 0 sset Capture "*%) level=${5%%%}; echo "$level" > "$HOME/clevel" ;;
+        esac ;;
+esac
+STUB
+    cat > "$H/.local/bin/bluealsa-aplay" <<'STUB'
+#!/bin/sh
+# bluez-alsa's list, as 3.1 prints it: a headset that plays on A2DP and plays and listens on SCO (only while bt-audio is there)
+[ "$1" = -L ] && [ -e "$HOME/bt-audio" ] || exit 0
+printf 'bluealsa:SRV=org.bluealsa,DEV=00:25:D1:4A:C2:AA,PROFILE=sco\n    MAJOR V, trusted audio-headset, playback\n    SCO (CVSD): S16_LE 1 channel 8000 Hz\n'
+printf 'bluealsa:SRV=org.bluealsa,DEV=00:25:D1:4A:C2:AA,PROFILE=sco\n    MAJOR V, trusted audio-headset, capture\n    SCO (CVSD): S16_LE 1 channel 8000 Hz\n'
+printf 'bluealsa:SRV=org.bluealsa,DEV=00:25:D1:4A:C2:AA,PROFILE=a2dp\n    MAJOR V, trusted audio-headset, playback\n    A2DP (AAC): S16_LE 2 channels 48000 Hz\n'
+printf 'bluealsa:SRV=org.bluealsa,DEV=bad;dev,PROFILE=a2dp\n    Crafted, trusted audio-headset, playback\n'
+STUB
+    chmod +x "$H/.local/bin/bluealsa-aplay"
+    printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/wpctl"; cp "$H/.local/bin/wpctl" "$H/.local/bin/pactl"
+    cp "$H/.local/bin/wpctl" "$H/.local/bin/tmux"   # a tmux that is not running (this machine may run one)
+    chmod +x "$H/.local/bin/ip" "$H/.local/bin/bluetoothctl" "$H/.local/bin/amixer" "$H/.local/bin/wpctl" "$H/.local/bin/pactl" "$H/.local/bin/tmux" "$H/.local/bin/wpa_cli" "$H/.local/bin/foot" "$H/.local/bin/nmcli" "$H/.local/bin/iwctl"
+}
+
+count() { printf '%s' "$1" | LC_ALL=C grep -o "$2" | wc -l | tr -d ' '; }   # count TEXT GLYPH -> how many
+
+rq() { jq -cn --argjson i "$1" --arg m "$2" --argjson p "${3:-null}" '{jsonrpc: "2.0", id: $i, method: $m} + (if $p == null then {} else {params: $p} end)'; }   # rq ID METHOD [PARAMS] -> one request
+
+call() { rq "$1" tools/call "$(jq -cn --arg n "$2" --argjson a "${3:-"{}"}" '{name: $n, arguments: $a}')"; }   # call ID TOOL [ARGUMENTS] (a quoted {} default: /bin/sh leaves {\} as it is, and jq refused it)
+
+mcp() { _s=$1; shift; printf '%s\n' "$@" | sh "$SH" provide "$_s" > "$H/mcp.out" 2> "$H/mcp.err"; }   # mcp SECTION LINE... -> $H/mcp.out, its stderr apart
+
+ans() { jq -c --argjson i "$1" 'select(.id == $i)' "$H/mcp.out"; }   # ans ID -> that answer
+
+fcall() { call "$1" "$2" "$(jq -cn --arg p "$3" '{path: $p}')"; }
+
 # --- 1. dry-run: rows, nothing touched -----------------------------------
+if want 1; then
 fresh
 out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^would  rc' && ok "dry-run: would link the rc files" || bad "dry-run rc rows" "$out"
@@ -120,7 +565,10 @@ rc=0; out=$(sh "$SH" desktop on extra 2>&1) || rc=$?
 rc=0; out=$(sh "$SH" on "" 2>&1) || rc=$?
 [ "$rc" -eq 1 ] && [ "$out" = "spark-shell on: an empty word is not known here (only desktop and login are)" ] && [ ! -e "$HOME/.tmux.conf" ] && ok "on '': an empty word is refused (every word byte-exact)" || bad "on empty" "rc=$rc $out"
 
+fi
+
 # --- 2. on: links, renders, idempotence, the plain look ------------------
+if want 2; then
 theme_fixture '#ff5555'
 printf 'yours\n' > "$HOME/.bashrc"     # a pre-existing rc file of the user's
 out=$(sh "$SH" on --yes)
@@ -178,7 +626,10 @@ printf '%s\n' "$ck" | grep -q '^ok     tools        tmux, fzf, zoxide, eza, bat,
 st=$(SPARK_OS_RELEASE=$H/os-debian PATH=$H/apt-bin:$sys sh "$SH" status)
 printf '%s\n' "$st" | grep -q '^  tool  fd  *yes$' && printf '%s\n' "$st" | grep -q '^  tool  bat  *yes$' && ok "status under apt: the fd and bat rows say yes" || bad "status apt tools" "$(printf '%s\n' "$st" | grep tool)"
 
+fi
+
 # --- 3. on again follows the palette --------------------------------------
+if want 3; then
 theme_fixture '#ee8800'
 sh "$SH" on --yes >/dev/null
 grep -q 'fg=colour3,bold' "$HOME/.tmux.conf" && ok "on again: a new accent lands as its nearest slot (colour3)" || bad "on rerender" "$(grep -n color "$HOME/.tmux.conf" | head -2)"
@@ -196,7 +647,10 @@ sh "$SH" apply --yes >/dev/null
 grep -q "SPARK_ACCENT_SGR='1;94'" "$HOME/.config/spark-shell/sgr.sh" && ok "apply: the accent lands in sgr.sh (1;94)" || bad "apply sgr" "$(cat "$HOME/.config/spark-shell/sgr.sh")"
 theme_fixture '#ee8800'; sh "$SH" on --yes >/dev/null   # the palette section 4 reads
 
+fi
+
 # --- 4. the prompt choices ------------------------------------------------
+if want 4; then
 mkdir -p "$HOME/.config/spark-shell"
 printf 'PROMPT=plain\n' > "$HOME/.config/spark-shell/config"
 rm -f "$HOME/.config/starship.toml"
@@ -231,7 +685,10 @@ printf '%s\n' "$out" | grep -q '^ok     prompt       starship 0.0-stub draws the
     && grep -q '^    if ! curl -fsSL --proto .=https,file. --proto-redir .=https. --connect-timeout 30 -o "$_nz" "$NEON_URL"' "$SH" && grep -q '^NEON_SHA256=[0-9a-f]\{64\} ' "$SH" \
     && ok "spark-shell: two downloads, the dialog's release file and the font's, each checked against the sha256 pinned for it; no pinned version of anything else" || bad "a download survives" "$(grep -n 'STARSHIP_VERSION\|curl ' "$SH")"
 
+fi
+
 # --- 5. off hands back ----------------------------------------------------
+if want 5; then
 # a yazi theme v0.35 rendered over one of yours (.bak): off hands yours back
 mkdir -p "$HOME/.config/yazi"; printf '# rendered by spark-shell\n' > "$HOME/.config/yazi/theme.toml"; printf 'mine\n' > "$HOME/.config/yazi/theme.toml.bak"
 : > "$HOME/.config/spark/hook.bash"; : > "$HOME/.config/spark/hook.zsh"   # spark installed here: off keeps its hook line
@@ -250,7 +707,10 @@ fi
 [ ! -e "$HOME/.config/spark-shell/sgr.sh" ] && ok "off: sgr.sh is gone (the prompt goes plain)" || bad "sgr removal"
 printf '%s\n' "$out" | grep -q 'packages stay installed' && ok "off: packages stay, said so" || bad "off closing" "$out"
 
+fi
+
 # --- 8. invoked through a symlink (~/.local/bin): the repo still found --
+if want 8; then
 fresh
 theme_fixture '#ff55ff'
 ln -s "$SH" "$H/.local/bin/spark-shell"
@@ -260,7 +720,10 @@ sh -c '"$0" on --yes' "$H/.local/bin/spark-shell" >/dev/null 2>&1 || true
 case $(uname -s) in Darwin) r8=.zshrc ;; *) r8=.bashrc ;; esac
 [ -L "$HOME/$r8" ] && [ -e "$HOME/$r8" ] && ok "the rc link resolves (no dangling target)" || bad "rc link dangles" "$(readlink "$HOME/$r8" 2>&1)"
 
+fi
+
 # --- 9. no theme.env: the color words, each its own slot -----------------
+if want 9; then
 fresh
 sh "$SH" on --yes >/dev/null
 grep -q 'fg=colour4,bold' "$HOME/.tmux.conf" && grep -q 'pane-border-style "fg=colour7"' "$HOME/.tmux.conf" \
@@ -269,7 +732,10 @@ grep -q "SPARK_ACCENT_SGR='1;34'" "$HOME/.config/spark-shell/sgr.sh" && grep -q 
     && ok "no theme.env: sgr.sh says blue (1;34) and white (37)" || bad "sgr defaults" "$(cat "$HOME/.config/spark-shell/sgr.sh")"
 st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q "none: the terminal's own 16 colors -- accent slot 4, muted slot 7 (SGR 1;34 / 37)" && ok "status: no theme.env, the slots still named" || bad "status none" "$(printf '%s\n' "$st" | grep theme)"
 
+fi
+
 # --- 10. the templates themselves: no truecolor flag, ASCII fzf ----------
+if want 10; then
 grep -q MICRO_TRUECOLOR "$REPO/templates/linux/.bashrc" "$REPO/templates/macos/.zshrc" && bad "MICRO_TRUECOLOR still exported" || ok "rc files: no MICRO_TRUECOLOR"
 grep -q -- '--no-unicode' "$REPO/templates/linux/.bashrc" && grep -q -- '--no-unicode' "$REPO/templates/macos/.zshrc" && ok "rc files: fzf asked for ASCII" || bad "fzf opts"
 grep -rEq '#[0-9a-fA-F]{6}' "$REPO/templates" && bad "a template names a hex color" "$(grep -rnE '#[0-9a-fA-F]{6}' "$REPO/templates" | head -2)" || ok "templates: no hex color anywhere"
@@ -290,7 +756,10 @@ for t in minimal full; do
     grep -q 'custom' "$st_t" && bad "starship $t: a segment of spark's" || ok "starship $t: no spark segment on the prompt"
 done
 
+fi
+
 # --- 13. spark's own palettes, when its clone is at hand -------------------
+if want 13; then
 if [ -n "${SPARK:-}" ] && ls "$SPARK"/themes/*.env >/dev/null 2>&1; then
     for env in "$SPARK"/themes/*.env; do
         name=${env##*/}; name=${name%.env}
@@ -322,14 +791,12 @@ st=0; out=$(sh "$SH" on --yes 2>&1) || st=$?
     && sh "$SH" status | grep 'in use: accent slot 1, muted slot 8' >/dev/null \
     && ok "theme.env without THEME_BTOP: the same render, no color_theme line in btop.conf" || bad "theme.env without THEME_BTOP" "st=$st $out"
 
+fi
+
 # --- 14. the desktop: sway and foot, asked for by DESKTOP=sway ---------
+if want 14; then
 # stubs stand in for sway, swaymsg and foot; the Linux half is guarded by
 # uname (macOS has its own desktop) and runs in CI's linux and arch jobs
-desktop_stubs() {
-    for t in sway swaymsg foot; do
-        printf '#!/bin/sh\necho "%s-stub $*" >&2\n' "$t" > "$H/.local/bin/$t"; chmod +x "$H/.local/bin/$t"
-    done
-}
 fresh
 desktop_stubs
 theme_fixture '#ff5555'
@@ -769,7 +1236,10 @@ printf '#!/bin/sh\necho "${PROMPT-unset} ${DESKTOP-unset} ${FONT-unset}"\n' > "$
 out=$(SHELL=$H/.local/bin/envstub sh "$SH" desktop --first)
 [ "$out" = 'unset unset unset' ] && ok "desktop --first: the config's exports (PROMPT, DESKTOP, FONT) never reach your shell" || bad "desktop --first env" "$out"
 
+fi
+
 # --- 15. the login screen: getty's own, a login on tty1 starts the desktop
+if want 15; then
 # No root file and no unit for the desktop on Debian or Arch: on desktop
 # writes DESKTOP=sway and renders sway and foot, and the rc file starts
 # the desktop at a login on tty1. systemctl is a stub that logs (it must
@@ -871,7 +1341,10 @@ if command -v bash >/dev/null 2>&1; then
     [ "$(autostart /dev/tty1 sway | paste -sd' ' -)" = 'after spark-shell desktop' ] && ok ".bash_profile: a desktop that cannot start leaves its reason and the shell goes on" || bad "autostart fails" "$(autostart /dev/tty1 sway)"
 fi
 
+fi
+
 # --- 16. desks: a desk from your words -----------------------------------
+if want 16; then
 # stubs: spark logs its argv and answers one fixed desk (main gimp-3.0 at
 # 70, two firefox pages, micro in a terminal, and ghostapp, which this machine
 # lacks); swaymsg logs every line it is sent and answers the queries --
@@ -880,62 +1353,6 @@ fi
 # of desktop entries under XDG_DATA_HOME; XDG_DATA_DIRS points at an empty
 # dir so the machine's own entries stay out. The Linux half is guarded by
 # uname like 14 and 15.
-desk_stubs() {   # after desktop_stubs: its swaymsg is replaced
-    cat > "$H/.local/bin/spark" <<'EOF'
-#!/bin/sh
-mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}"; printf '%s\n' "$@" > "${XDG_STATE_HOME:-$HOME/.local/state}/spark.argv"
-if [ -e "$HOME/answer.json" ]; then cat "$HOME/answer.json"   # a test's own answer
-elif [ -e "$HOME/two-screens" ]; then cat <<'JSON'
-{"why": "photo work in gimp at the left, the feed at the right, notes beside the photo",
- "main": {"app": "gimp-3.0", "args": "", "width": 70, "screen": "left"},
- "side": [{"app": "firefox", "args": "https://instagram.com", "screen": "right"}, {"app": "micro", "args": ""}]}
-JSON
-else cat <<'JSON'
-{"why": "photo work in gimp with the two feeds beside it and a notes file",
- "main": {"app": "gimp-3.0", "args": "", "width": 70},
- "side": [{"app": "firefox", "args": "https://instagram.com"}, {"app": "firefox", "args": "https://x.com"},
-          {"app": "micro", "args": ""}, {"app": "player", "args": ""}, {"app": "ghostapp", "args": ""}]}
-JSON
-fi
-EOF
-    # the outputs carry make, model and serial like sway's (never to reach the model); two when $HOME/two-screens exists
-    cat > "$H/.local/bin/swaymsg" <<'EOF'
-#!/bin/sh
-log=${XDG_STATE_HOME:-$HOME/.local/state}/swaymsg.log; mkdir -p "$(dirname "$log")"
-case ${1:-} in
-    -t) case $2 in
-            get_version) echo '{"human_readable":"sway-stub"}' ;;
-            get_outputs) o1='{"name":"DP-1","active":true,"make":"Fakemake","model":"Fakemodel","serial":"SN0001","rect":{"x":0,"y":0},"current_mode":{"width":2560,"height":1440}}'
-                o2='{"name":"HDMI-A-1","active":true,"make":"Fakemake","model":"Fakemodel","serial":"SN0002","rect":{"x":2560,"y":0},"current_mode":{"width":1920,"height":1080}}'
-                if [ -e "$HOME/two-screens" ]; then echo "[$o2,$o1]"; else echo "[$o1]"; fi ;;
-            get_workspaces) echo '[{"num":1},{"num":2}]' ;;
-            get_tree) ws=$(grep -n '^workspace number' "$log" 2>/dev/null | tail -1); from=${ws%%:*}; num=${ws##* }; [ -n "$from" ] || { from=0; num=3; }
-                n=$({ if [ "$from" -gt 0 ]; then sed "1,${from}d" "$log"; else cat "$log"; fi; } 2>/dev/null | grep '^exec' | grep -vc 'exec gone' || :); [ -n "$n" ] || n=0; i=0
-                printf '{"type":"root","nodes":[{"type":"workspace","num":%s,"fullscreen_mode":0,"nodes":[' "$num"
-                # with $HOME/fullscreen: a fullscreen window (77) on the workspace, and the panel floating under it with the pid the test wrote
-                [ ! -e "$HOME/aerc" ] || { printf '{"type":"con","id":79,"pid":300,"app_id":"foot","name":"aerc"}'; { [ -e "$HOME/fullscreen" ] || [ "$n" -gt 0 ]; } && printf ','; }   # a terminal running aerc
-                [ ! -e "$HOME/fullscreen" ] || { printf '{"type":"con","id":77,"pid":200,"app_id":"firefox","fullscreen_mode":1}'; [ "$n" -eq 0 ] || printf ','; }
-                while [ "$i" -lt "$n" ]; do [ "$i" -eq 0 ] || printf ','; printf '{"type":"con","pid":%d,"id":%d}' $((100 + i)) $((1000 + i)); i=$((i + 1)); done
-                printf ']'
-                [ ! -e "$HOME/fullscreen" ] || printf ',"floating_nodes":[{"type":"floating_con","id":78,"app_id":"spark-dialog","pid":%s,"fullscreen_mode":0}]' "$(cat "$HOME/panel.ppid" 2>/dev/null || echo 1)"
-                echo '}]}' ;;
-        esac ;;
-    --) shift; echo "$*" >> "$log"
-        case "$*" in '[con_id=77] kill') rm -f "$HOME/fullscreen" ;; '[con_id=79] kill') rm -f "$HOME/aerc" ;; esac ;;
-esac
-EOF
-    for t in gimp-3.0 firefox micro gone player; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done   # gone: an app that opens no window
-    chmod +x "$H/.local/bin/spark" "$H/.local/bin/swaymsg" "$H/.local/bin/gimp-3.0" "$H/.local/bin/firefox" "$H/.local/bin/micro" "$H/.local/bin/gone" "$H/.local/bin/player"
-    apps=$XDG_DATA_HOME/applications; mkdir -p "$apps" "$H/share"
-    export XDG_DATA_DIRS=$H/share
-    printf '[Desktop Entry]\nName=GNU Image Manipulation Program\nComment=Create images and edit photographs\nExec=gimp-3.0 %%U\nTerminal=false\nType=Application\n' > "$apps/gimp.desktop"
-    printf '[Desktop Entry]\nName=Firefox\nGenericName=Web Browser\nExec=firefox %%u\nType=Application\n' > "$apps/firefox.desktop"
-    printf '[Desktop Entry]\nName=Micro\nExec=micro %%F\nTerminal=true\nType=Application\n' > "$apps/micro.desktop"
-    printf '[Desktop Entry]\nName=Hidden\nExec=hidden\nNoDisplay=true\nType=Application\n' > "$apps/hidden.desktop"
-    printf '[Desktop Entry]\nName=Gone\nComment=Ends at once, no window\nExec=gone\nType=Application\n' > "$apps/gone.desktop"
-    # an entry with its own flags and a file field (mpv's shape): opened as the entry says, the field dropped without args
-    printf '[Desktop Entry]\nName=Player\nComment=Play music\nExec=/usr/bin/player --idle -- %%U\nType=Application\n' > "$apps/player.desktop"
-}
 fresh
 desktop_stubs
 desk_stubs
@@ -1230,7 +1647,10 @@ grep -q '^## Layouts$' "$REPO/README.md" && ok "README: Layouts" || bad "README 
 grep -q '^## v0.23$' "$REPO/CHANGELOG.md" && ok "CHANGELOG: v0.23" || bad "CHANGELOG v0.23"
 grep -q '^## v0.38$' "$REPO/CHANGELOG.md" && ok "CHANGELOG: v0.38" || bad "CHANGELOG v0.38"
 
+fi
+
 # --- 17. sbom and the apps a desk may open --------------------------------
+if want 17; then
 # a fake pacman answers -Qi (three packages) and -Ql (their files); the
 # entries are the fixture's (desk_stubs) plus the tmux entry that `on`
 # renders with DESKTOP=sway; fzf is a stub (the picker is asked with no
@@ -1238,22 +1658,6 @@ grep -q '^## v0.38$' "$REPO/CHANGELOG.md" && ok "CHANGELOG: v0.38" || bad "CHANG
 # call, so `on` keeps the fixture's todo packages row. Linux-guarded like
 # 14-16. The fake -Ql maps gimp's entry to the fixture's applications dir,
 # so gimp is the one app, reader the tool, libfoo the part.
-sbom_stubs() {
-    cat > "$H/.local/bin/pacman" <<'EOF'
-#!/bin/sh
-case ${1:-} in
-    -Qi) printf 'Name            : gimp\nVersion         : 3.0.4-1\nLicenses        : GPL3\nDescription     : GNU Image Manipulation Program\nInstall Reason  : Explicitly installed\n\n'
-         printf 'Name            : reader\nVersion         : 1.0-1\nLicenses        : MIT\nDescription     : Text-based Web browser\nInstall Reason  : Explicitly installed\n\n'
-         printf 'Name            : libfoo\nVersion         : 2.1-3\nLicenses        : LGPL2.1\nDescription     : A library other packages need\nInstall Reason  : Installed as a dependency for another package\n\n' ;;
-    -Ql) printf 'gimp %s/applications/gimp.desktop\ngimp /usr/bin/gimp-3.0\nreader /usr/bin/reader\nlibfoo /usr/lib/libfoo.so\n' "${XDG_DATA_HOME:-$HOME/.local/share}" ;;
-esac
-EOF
-    printf '#!/bin/sh\n:\n' > "$H/.local/bin/reader"
-    # fzf: its rows and its arguments logged; it answers the rows in $HOME/fzf.pick, or leaves (Esc, 130)
-    printf '#!/bin/sh\ncat > "$HOME/fzf.rows"; printf "%%s\\n" "$@" > "$HOME/fzf.args"\n[ -f "$HOME/fzf.pick" ] || exit 130\ncat "$HOME/fzf.pick"\n' > "$H/.local/bin/fzf"
-    chmod +x "$H/.local/bin/pacman" "$H/.local/bin/reader" "$H/.local/bin/fzf"
-    printf 'ID=arch\n' > "$H/os-arch"
-}
 fresh
 desktop_stubs
 desk_stubs
@@ -1398,23 +1802,16 @@ EOF
     SPARK_OS_RELEASE=$H/os-opensuse sh "$SH" sbom --json >/dev/null 2>&1; [ "$(jq -r '.components[0].purl' "$HOME/.local/state/spark-shell/sbom.cdx.json")" = 'pkg:zypper/opensuse/libfoo@2.1-3' ] && ok "sbom --json (openSUSE): the purl names zypper and the family" || bad "sbom purl" "$(cat "$HOME/.local/state/spark-shell/sbom.cdx.json" 2>&1 | head -c 400)"
 fi
 
+fi
+
 # --- 18. rooms: the same desk as a tmux session --------------------------
+if want 18; then
 # No sway here (SWAYSOCK unset): a desk plays as rooms through a fake
 # tmux that logs each call as one line; has-session finds a session
 # only while $H/tmux.has exists. newsboat, w3m and aerc are stubs, mpv
 # is absent on purpose, the spark and swaymsg stubs are 16's. Not
 # uname-guarded: rooms run on macOS too; only the two forms that start
 # or address sway are Linux's.
-rooms_stubs() {
-    cat > "$H/.local/bin/tmux" <<'EOF'
-#!/bin/sh
-log=${XDG_STATE_HOME:-$HOME/.local/state}/tmux.log; mkdir -p "$(dirname "$log")"
-printf '%s\n' "$*" >> "$log"
-case ${1:-} in has-session) [ -e "$HOME/tmux.has" ] ;; esac
-EOF
-    for t in newsboat w3m aerc; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done
-    chmod +x "$H/.local/bin/tmux" "$H/.local/bin/newsboat" "$H/.local/bin/w3m" "$H/.local/bin/aerc"
-}
 fresh
 desktop_stubs
 desk_stubs
@@ -1645,62 +2042,15 @@ if [ "$(uname -s)" != Darwin ]; then
 fi
 grep -q '^## Allowed apps$' "$REPO/README.md" && ok "README: Allowed apps" || bad "README allowed apps section"
 
+fi
+
 # --- 19. the console: theme, font, quiet (spark 1.62 handed them over) ----
+if want 19; then
 # Every Linux shape runs on any OS: a uname stub says Linux (or Darwin),
 # root paths live under SPARK_SHELL_ROOT, and stubs stand in for
 # setvtrgb, setfont, setupcon, update-grub, mkinitcpio, systemctl and
 # python3, each logging its arguments to $H/log. A fixture file is
 # compared byte for byte with its copy after the hand-back.
-console_stubs() {   # console_stubs Linux|Darwin
-    mkdir -p "$H/lx" "$H/root/sys/module/vt/parameters"
-    printf '#!/bin/sh\nif [ "$1" = -s ]; then echo %s; else exec %s "$@"; fi\n' "$1" "$(command -v uname)" > "$H/lx/uname"
-    vga_red='0,170,0,170,0,170,0,170,85,255,85,255,85,255,85,255'
-    printf '%s\n' "$vga_red" > "$H/root/sys/module/vt/parameters/default_red"
-    cat > "$H/lx/setvtrgb" <<EOF
-#!/bin/sh
-echo "setvtrgb \$*" >> "$H/log"
-if [ "\$1" = vga ]; then echo '$vga_red'; else head -1 "\$1"; fi > "$H/root/sys/module/vt/parameters/default_red"
-EOF
-    for t in setfont setupcon; do printf '#!/bin/sh\necho "%s $*" >> "%s/log"\n' "$t" "$H" > "$H/lx/$t"; done
-    cat > "$H/lx/update-grub" <<EOF
-#!/bin/sh
-echo "update-grub" >> "$H/log"
-[ ! -e "$H/fail" ] || exit 1
-mkdir -p "$H/root/boot/grub"
-if [ -e "$H/root/etc/default/grub.d/zz-spark-shell-quiet.cfg" ] || grep -q 'spark-shell-quiet' "$H/root/etc/default/grub" 2>/dev/null; then
-    echo 'linux /vmlinuz quiet loglevel=3' > "$H/root/boot/grub/grub.cfg"
-else echo 'linux /vmlinuz' > "$H/root/boot/grub/grub.cfg"; fi
-EOF
-    printf '#!/bin/sh\necho "mkinitcpio $*" >> "%s/log"\n[ ! -e "%s/fail" ]\n' "$H" "$H" > "$H/lx/mkinitcpio"
-    # the helper: has-profile fails once $H/gone is there, remove once $H/stuck is
-    printf '#!/bin/sh\ncase $1 in */lib/reminder_time.py) exec "%s" "$@" ;; esac\necho "python3 $*" >> "%s/log"\ncase $2 in has-profile) [ ! -e "%s/gone" ] ;; remove) [ ! -e "%s/stuck" ] ;; esac\n' "$fixture_python" "$H" "$H" "$H" > "$H/lx/python3"
-    cat > "$H/lx/systemctl" <<'EOF'
-#!/bin/sh
-st=${SPARK_SHELL_ROOT:-$HOME/root}/units
-mkdir -p "$st"
-echo "systemctl $*" >> "$HOME/log"
-case $1 in
-    enable) touch "$st/$2" ;;
-    disable) rm -f "$st/$2" ;;
-    is-enabled) [ -e "$st/$2" ] ;;
-    is-active) [ -e "$st/active-$2" ] ;;
-esac
-EOF
-    chmod +x "$H/lx"/*
-    : > "$H/log"
-}
-L() { PATH=$H/lx:$PATH sh "$SH" "$@"; }   # spark-shell as the uname stub says
-palette_fixture() {   # palette_fixture NAME ACCENT -- a palette of yours, gruvbox's sixteen
-    mkdir -p "$HOME/.config/spark-shell/themes"
-    {
-        printf '# a test palette\nTHEME_BG=#282828\nTHEME_FG=#ebdbb2\nTHEME_ACCENT=%s\nTHEME_MUTED=#928374\n' "$2"
-        i=0
-        for c in 282828 cc241d 98971a d79921 458588 b16286 689d6a a89984 928374 fb4934 b8bb26 fabd2f 83a598 d3869b 8ec07c ebdbb2; do
-            printf 'THEME_ANSI_%d=#%s\n' "$i" "$c"; i=$((i + 1))
-        done
-    } > "$HOME/.config/spark-shell/themes/$1.env"
-}
-esc=$(printf '\033')
 
 # theme, systemd: the three files, the unit, the kernel's defaults, then none
 fresh
@@ -1901,8 +2251,6 @@ L on --yes >/dev/null; L off >/dev/null
 [ -f "$HOME/.config/spark/theme.env" ] && ok "off: a theme.env spark-shell did not write stays" || bad "foreign theme.env removed"
 
 # font: console-setup (Debian), vconsole.conf (Arch), rc.conf (Void)
-psf2() { printf '\162\265\112\206\0\0\0\0\040\0\0\0\0\0\0\0\0\1\0\0\100\0\0\0\040\0\0\0\020\0\0\0' | gzip -c > "$1"; }   # a 16x32 PSF2 header, gzipped
-psf1() { printf '\066\004\000\020' > "$1"; }                                                                          # an 8x16 PSF1 header
 fresh
 console_stubs Linux
 mkdir -p "$H/root/etc/default" "$H/root/usr/share/consolefonts"
@@ -2169,33 +2517,6 @@ fi
 # /var/service and adds you to _seatd, each with a record of its own, and
 # off desktop undoes exactly what the records say. The package manager,
 # usermod, gpasswd and pgrep are stubs; /etc/group is the root's.
-void_desktop() {   # void_desktop -- a fresh Void root: runit, seatd's service dir, /var/service, /etc/group
-    fresh
-    console_stubs Linux
-    desktop_stubs
-    printf 'NAME="Void"\nID="void"\n' > "$H/os-release"
-    # Membership takes effect only at the fixture's next login. The host may
-    # already be in _seatd; keep that session state outside this test.
-    printf '#!/bin/sh\ncase "$*" in -Gn|-nG) echo users ;; *) exec "%s" "$@" ;; esac\n' "$(command -v id)" > "$H/lx/id"
-    chmod +x "$H/lx/id"
-    mkdir -p "$H/root/etc/runit" "$H/root/etc/sv/seatd" "$H/root/var/service"
-    printf 'root:x:0:\nwheel:x:4:%s\n_seatd:x:990:\n' "$(id -un)" > "$H/root/etc/group"
-    printf '#!/bin/sh\nexit 0\n' > "$H/lx/xbps-query"
-    cat > "$H/lx/usermod" <<'EOF'
-#!/bin/sh
-echo "usermod $*" >> "$HOME/log"
-[ "$1" = -aG ] || exit 2
-awk -F: -v OFS=: -v g="$2" -v u="$3" '$1 == g { $4 = ($4 == "" ? u : $4 "," u) } { print }' "$SPARK_SHELL_ROOT/etc/group" > "$HOME/group.new" && cat "$HOME/group.new" > "$SPARK_SHELL_ROOT/etc/group"
-EOF
-    cat > "$H/lx/gpasswd" <<'EOF'
-#!/bin/sh
-echo "gpasswd $*" >> "$HOME/log"
-[ "$1" = -d ] || exit 2
-awk -F: -v OFS=: -v u="$2" -v g="$3" '$1 == g { n = split($4, m, ","); s = ""; for (i = 1; i <= n; i++) if (m[i] != u) s = (s == "" ? m[i] : s "," m[i]); $4 = s } { print }' "$SPARK_SHELL_ROOT/etc/group" > "$HOME/group.new" && cat "$HOME/group.new" > "$SPARK_SHELL_ROOT/etc/group"
-EOF
-    printf '#!/bin/sh\n[ -e "%s/sway-running" ]\n' "$H" > "$H/lx/pgrep"
-    chmod +x "$H/lx"/*
-}
 me=$(id -un)
 void_desktop
 out=$(L on desktop --dry-run </dev/null)
@@ -2256,14 +2577,6 @@ printf '%s\n' "$out" | grep -q '^todo   desktop      seatd is not installed -- s
 # the sound on Void: PipeWire's two ALSA files linked into /etc/alsa/conf.d
 # (Void's package leaves them in /usr/share) and you in the audio group (no
 # logind), each recorded; off desktop undoes exactly those
-void_sound() {   # void_sound -- a Void root with PipeWire installed, an audio group, the bar's old ALSA file
-    void_desktop
-    printf 'audio:x:12:\n' >> "$H/root/etc/group"
-    mkdir -p "$H/root/usr/share/alsa/alsa.conf.d"; for f in 50-pipewire.conf 99-pipewire-default.conf; do : > "$H/root/usr/share/alsa/alsa.conf.d/$f"; done
-    printf '#!/bin/sh\nexit 0\n' > "$H/lx/pipewire"; chmod +x "$H/lx/pipewire"
-    share=/usr/share/alsa/alsa.conf.d; conf=$H/root/etc/alsa/conf.d
-    mkdir -p "$HOME/.config/alsa"; printf '# rendered by spark-shell (bar): the sound card for programs started from now -- spark-shell off removes it\ndefaults.pcm.!card HDMI\ndefaults.ctl.!card HDMI\n' > "$HOME/.config/alsa/asoundrc"
-}
 void_sound
 out=$(L on desktop --dry-run </dev/null)
 printf '%s\n' "$out" | grep -q '^would  sound        ALSA programs play through PipeWire: link 50-pipewire.conf 99-pipewire-default.conf into /etc/alsa/conf.d (sudo)$' \
@@ -2319,23 +2632,6 @@ L on desktop --yes </dev/null >/dev/null 2>&1; L off desktop >/dev/null 2>&1
 # supervisor (~/.config/spark/sv/spark-shell-sound) and PipeWire's own links that
 # start WirePlumber and its PulseAudio server; off desktop stops it through its
 # runsv and removes both; check says where PipeWire runs from
-void_svc() {   # void_svc -- void_sound, spark's supervisor dir, PipeWire's two examples; stubs: pipewire-pulse, wpctl (answers while ~/wp-up is there), sv (a log; status from ~/sv-status)
-    void_sound
-    mkdir -p "$HOME/.config/spark/sv/spark-check" "$H/root/usr/share/examples/wireplumber" "$H/root/usr/share/examples/pipewire" "$H/tmp"
-    printf 'context.exec = [ { path = "/usr/bin/wireplumber" args = "" } ]\n' > "$H/root/usr/share/examples/wireplumber/10-wireplumber.conf"
-    printf 'context.exec = [ { path = "/usr/bin/pipewire" args = "-c pipewire-pulse.conf" } ]\n' > "$H/root/usr/share/examples/pipewire/20-pipewire-pulse.conf"
-    printf '#!/bin/sh\nexit 0\n' > "$H/lx/pipewire-pulse"
-    printf '#!/bin/sh\n[ -e "$HOME/wp-up" ]\n' > "$H/lx/wpctl"
-    cat > "$H/lx/sv" <<'EOF'
-#!/bin/sh
-echo "sv $*" >> "$HOME/sv.log"
-[ "$3" != force-stop ] || [ ! -e "$4/down" ] || echo "down: there" >> "$HOME/sv.log"
-[ "$1" != status ] || { [ -s "$HOME/sv-status" ] && cat "$HOME/sv-status"; }
-EOF
-    chmod +x "$H/lx/pipewire-pulse" "$H/lx/wpctl" "$H/lx/sv"
-    svc=$HOME/.config/spark/sv/spark-shell-sound; pwc=$HOME/.config/pipewire/pipewire.conf.d; ex=$H/root/usr/share/examples
-}
-SV() { env -u XDG_RUNTIME_DIR TMPDIR="$H/tmp" PATH="$H/lx:$PATH" sh "$SH" "$@"; }   # spark-shell from a login with no runtime dir (ssh, a console on Void)
 void_svc
 out=$(SV on desktop --dry-run </dev/null)
 printf '%s\n' "$out" | grep -qxF "would  sound        PipeWire starts WirePlumber and its PulseAudio server itself: link 10-wireplumber.conf 20-pipewire-pulse.conf into $pwc" \
@@ -2396,7 +2692,6 @@ printf '#!/bin/sh\necho "chpst $*" > "$HOME/chpst.ran"\n[ "$1" != -P ] || shift\
 printf '#!/bin/sh\necho "$$ $XDG_RUNTIME_DIR" > "$HOME/pw.ran"\n' > "$rb/pipewire"
 printf '#!/bin/sh\nn=$(cat "$HOME/wp.n" 2>/dev/null || echo 0); echo $((n + 1)) > "$HOME/wp.n"\n[ "$n" -lt "$(cat "$HOME/wp.answers")" ]\n' > "$rb/wpctl"
 chmod +x "$rb/chpst" "$rb/pipewire" "$rb/wpctl"
-svrun() { rm -f "$HOME/wp.n" "$HOME/pw.ran" "$HOME/chpst.ran"; echo "$1" > "$HOME/wp.answers"; ( cd "$svc" && exec env -u XDG_RUNTIME_DIR TMPDIR="$H/rt" PATH="$rb:$sys" sh ./run 2>&1 ); }   # svrun ANSWERS -- the service's run, a wpctl that answers ANSWERS times
 mkdir -p "$H/rt"
 rc=0; out=$(svrun 0) || rc=$?
 [ "$rc" = 0 ] && [ -z "$out" ] && [ -d "$rrd" ] && [ ! -L "$rrd" ] && [ "$(ls -ld "$rrd" | cut -c1-10)" = drwx------ ] && [ "$(cut -d' ' -f2- "$HOME/pw.ran")" = "$rrd" ] \
@@ -2405,7 +2700,6 @@ rc=0; out=$(svrun 0) || rc=$?
 rc=0; out=$(svrun 1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = "a PipeWire answers in $rrd already: this waits until it is gone" ] && [ -s "$HOME/pw.ran" ] \
     && ok "the service's run: a PipeWire that answers is left as it is, and once it is gone this one starts" || bad "svc run takeover" "rc=$rc $out"
-waitfor() { _i=0; while [ "$_i" -lt 10 ] && ! grep -qF "$1" "$2" 2>/dev/null; do sleep 1; _i=$((_i + 1)); done; }   # waitfor TEXT FILE -- up to 10 s for a line to show
 rm -f "$HOME/wp.n" "$HOME/pw.ran"; echo 1000 > "$HOME/wp.answers"   # the run itself in the background (exec: its pid is the one runsv signals)
 ( cd "$svc" && exec env -u XDG_RUNTIME_DIR TMPDIR="$H/rt" PATH="$rb:$sys" sh ./run ) > "$H/run.out" 2>&1 & rp=$!
 waitfor 'this waits until it is gone' "$H/run.out"; kill -TERM "$rp" 2>/dev/null || :; rc=0; wait "$rp" || rc=$?
@@ -2428,7 +2722,6 @@ if [ "$(id -u)" != 0 ]; then   # root opens every device, so a closed one is a u
     rm -f "$rb/sg" "$rb/id"; chmod 600 "$H/root/dev/snd/controlC0"
 fi
 printf '#!/bin/sh\necho "sleep $*" >> "$HOME/sleep.ran"\n' > "$rb/sleep"; chmod +x "$rb/sleep"
-fin() { rm -f "$HOME/sleep.ran" "$svc/pipewire.pid"; ( cd "$svc" && PATH="$rb:$sys" sh ./finish "$@" ); cat "$HOME/sleep.ran" 2>/dev/null || :; }   # fin CODE SIGNAL -> the sleep it took, if any (no pid kept: a stub's pid is long gone, and may be another's now)
 [ -z "$(fin 0 0)" ] && [ -z "$(fin -1 15)" ] && [ "$(fin 1 0)" = 'sleep 10' ] && [ "$(fin -1 11)" = 'sleep 10' ] \
     && ok "the service's finish: a clean exit or sv down's TERM starts again at once; a failed start or a crash waits 10 seconds, never a loop" || bad "svc finish wait" "$(fin 1 0)"
 rm -f "$rb/sleep"
@@ -2500,27 +2793,14 @@ grep -q '^PKG_SOUND=pipewire wireplumber alsa-pipewire libspa-bluetooth$' "$REPO
     && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa$' "$REPO/distro/arch.env" && ok "distro: the sound's packages, each family's names" || bad "PKG_SOUND" "$(grep -h PKG_SOUND "$REPO"/distro/*.env)"
 grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils mako libnotify udisks2 dbus xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk gsettings-desktop-schemas bluez python3-dbus python3-gobject$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, mako, notify-send, udisks2 and the session bus among them" || bad "void.env desktop"
 
+fi
+
+# --- 19b. the console, continued: the login screen, the lock, the display and
+#          the keyboard, notes and reminders, the warnings, macOS ----------
+if want 19b; then
 # the login screen of v0.41 (greetd on tty1, spark-shell's files in
 # /etc/greetd): handed back to getty at the next boot by on, on desktop,
 # off desktop and off -- greetd is disabled, never stopped
-old_greetd() {   # old_greetd [ORIG] -- a root as v0.41 left it; ORIG: a config.toml of the package's kept as .spark-orig
-    fresh
-    console_stubs Linux
-    printf 'ID=debian\n' > "$H/os-release"
-    printf '#!/bin/sh\necho "install ok installed"\n' > "$H/lx/dpkg-query"; chmod +x "$H/lx/dpkg-query"
-    mkdir -p "$H/root/run/systemd/system" "$H/root/etc/greetd/spark-shell" "$H/root/etc/systemd/system/greetd.service.d" "$H/root/units"
-    printf '# rendered by spark-shell from templates/etc/greetd/config.toml\n[terminal]\nvt = 1\n' > "$H/root/etc/greetd/config.toml"
-    [ -z "${1:-}" ] || printf '[terminal]\nvt = 1\n# agreety\n' > "$H/root/etc/greetd/config.toml.spark-orig"
-    for f in desktop console; do printf '# rendered by spark-shell\n' > "$H/root/etc/greetd/spark-shell/$f.desktop"; done
-    printf '# rendered by spark-shell\n[Unit]\nAfter=spark-shell-console.service\n' > "$H/root/etc/systemd/system/greetd.service.d/spark-shell.conf"
-    : > "$H/root/units/greetd.service"; : > "$H/log"
-}
-old_gone() {   # old_gone -- spark-shell's greetd files gone, getty@tty1 on, greetd off, nothing stopped
-    [ ! -e "$H/root/etc/greetd/spark-shell" ] && [ ! -e "$H/root/etc/systemd/system/greetd.service.d" ] \
-        && [ -e "$H/root/units/getty@tty1.service" ] && [ ! -e "$H/root/units/greetd.service" ] \
-        && grep -qx 'systemctl enable getty@tty1.service' "$H/log" && grep -qx 'systemctl disable greetd.service' "$H/log" \
-        && ! grep -Eq '^systemctl (start|stop|restart|kill)' "$H/log"
-}
 old_greetd
 out=$(L on --dry-run </dev/null)
 printf '%s\n' "$out" | grep -q "^would  login        the normal console login on tty1 from the next boot: greetd turned off, its spark-shell files removed (sudo)\$" \
@@ -2873,9 +3153,6 @@ rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 of
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 mode 800x600 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: eDP-1 has no mode 800x600: 1280x720, 1920x1080' ] && ok "desktop screen mode: a mode the screen lacks refused, naming those it has" || bad "screen mode" "rc=$rc $out"
 # The same settings through MCP, including the undo receipt and children.
-screen_mcp() {
-    printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}' "$1" | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide display 2>/dev/null | jq -c 'select(.id == 2)'
-}
 j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://display/rows"}}')
 printf '%s' "$j" | jq -e '.result.contents[0].text | fromjson | any(.rows[]; .children == "spark-shell://display/rows/screen/HDMI-A-1")' >/dev/null     && ok "display: each screen opens its choices" || bad "display child" "$j"
 j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://display/rows/screen/HDMI-A-1"}}')
@@ -2965,7 +3242,6 @@ rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display idle 
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display lock 20 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'lock and display off after 20 minutes' ] && grep -qx 'DISPLAY_LOCK=20' "$HOME/.config/spark-shell/config" && ok "the dialog: display lock 20 says the lock and the display off (#68)" || bad "display lock from dialog" "rc=$rc $out"
 # notes: one Markdown file a note in ~/notes, the first line its name
-NL() { SWAYSOCK=$H/sock EDITOR=true PATH="$H/lx:$PATH" sh "$SH" bar panel "$@" 2>&1; }
 [ "$(NL notes add 'groceries for the weekend')" = 'new note: groceries for the weekend' ] && [ "$(cat "$HOME/notes/groceries-for-the-weekend.md")" = '# groceries for the weekend' ] \
     && ok "notes add: a new note, its words the first line, a file named from them in ~/notes" || bad "notes add" "$(ls "$HOME/notes" 2>&1)"
 [ "$(ls -ld "$HOME/notes" | cut -c1-10)" = drwx------ ] && [ "$(ls -l "$HOME/notes/groceries-for-the-weekend.md" | cut -c1-10)" = -rw------- ] \
@@ -2999,8 +3275,6 @@ NL reminders add 'call the bank 2030-01-03 at 9' | grep -Eq '^reminder [A-Za-z]+
 grep -l '^SUMMARY:gym' "$HOME"/calendar/*.ics 2>/dev/null | while IFS= read -r f; do rm -f "$f"; done   # the later checks read the next one ahead
 out=$(NL reminders add 'yesterday call the bank' || :); [ "$out" = 'a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), a time alone for today or else tomorrow (5pm gym), or a while from now (gym in 10 minutes)' ] && ok "reminders add: no day and time, refused with an example" || bad "reminders refuse" "$out"
 # a reminder due: the bar's due block, one chime, done and a snooze in the section; another tool's events read, never changed
-ago() { date -d "-$1 min" "+%Y%m%dT%H%M00" 2>/dev/null || date -v-"$1"M "+%Y%m%dT%H%M00"; }   # ago MINUTES -> a local time that long ago
-ago_utc() { date -u -d "-$1 min" "+%Y%m%dT%H%M00Z" 2>/dev/null || date -u -v-"$1"M "+%Y%m%dT%H%M00Z"; }
 printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:spark-shell-test-1@box\r\nDTSTART:%s\r\nSUMMARY:water the plants\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' "$(ago 60)" > "$HOME/calendar/ours.ics"
 printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:khal-1\r\nDTSTART:%s\r\nSUMMARY:a long title from another calendar\\, folded\r\n  across two lines\; done\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:khal-old\r\nDTSTART:20200101T080000Z\r\nSUMMARY:an old meeting\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:khal-weekly\r\nDTSTART:%s\r\nRRULE:FREQ=WEEKLY\r\nSUMMARY:a weekly one\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' "$(ago_utc 30)" "$(ago 10)" > "$HOME/calendar/other.ics"
 printf '#!/bin/sh\necho "$*" >> "$HOME/chime.log"\n' > "$H/lx/pw-play"; chmod +x "$H/lx/pw-play"; rm -f "$HOME/chime.log"
@@ -3020,7 +3294,6 @@ out=$(NL reminders 'done' water the plants); [ "$out" = 'done: water the plants'
 out=$(NL reminders restore water the plants); [ "$out" = 'water the plants is back' ] && [ -f "$HOME/calendar/ours.ics" ] && [ ! -e "$HOME/calendar/done/ours.ics" ] \
     && ok "reminders restore: the one put aside is back where it was" || bad "restore" "$out $(ls -R "$HOME/calendar")"
 printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:spark-shell-test-3@box\r\nDTSTART:%s\r\nSUMMARY:check the oven\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' "$(ago 5)" > "$HOME/calendar/oven.ics"
-mcp_rem() { printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"$1\",\"arguments\":{\"name\":\"$2\"}}}" | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide reminders 2>/dev/null | jq -c 'select(.id == 2) | .result'; }
 j=$(mcp_rem reminders_done 'check the oven'); u=$(printf '%s' "$j" | jq -c '.structuredContent.undo'); j2=$(mcp_rem reminders_restore spark-shell-test-3@box)
 [ "$u" = '{"name":"reminders_restore","arguments":{"name":"spark-shell-test-3@box"}}' ] && printf '%s' "$j2" | jq -e '.isError == false' >/dev/null && [ -f "$HOME/calendar/oven.ics" ] && [ ! -e "$HOME/calendar/done/oven.ics" ] \
     && ok "provide reminders: done is put aside, its undo names that one by its uid, and the undo brings it back: a real undo" || bad "done undo" "$j | $j2"
@@ -3116,8 +3389,6 @@ rc=0; out=$(L theme -h 2>&1) || rc=$?
 # The question is asked at a terminal only; the suite has none, so it
 # drives the answer through stdin with SPARK_SHELL_TEST_TTY set. A
 # sudo stub logs every call: a refused or stopped run makes none.
-snap() { ( cd "$H" && find . -print | LC_ALL=C sort && find . -type f -exec cksum {} + | LC_ALL=C sort ); }
-A() { SPARK_SHELL_TEST_TTY=1 PATH=$H/lx:$PATH sh "$SH" "$@"; }   # spark-shell with an answer on stdin (the assignments on sh, never kept)
 fresh
 console_stubs Linux
 printf '#!/bin/sh\necho "sudo $*" >> "%s/sudo.log"\n' "$H" > "$H/lx/sudo"; chmod +x "$H/lx/sudo"
@@ -3247,154 +3518,16 @@ spark-shell on --dry-run shows every change.
 
 Continue? [y/N] spark-shell: nothing was changed." ] && ok "warning (macOS): the font, the Terminal.app colors and font" || bad "warning mac" "rc=$rc $out"
 
+fi
+
 # --- 20. the bar at the top of the screen --------------------------------
+if want 20; then
 # a fixture tree in place of /sys and /proc (SPARK_SHELL_SYS, SPARK_SHELL_PROC),
 # stubs for ip, bluetoothctl and amixer (wpctl and pactl stubs that fail, so
 # plain ALSA is the audio system), jq the real one. The theme fixture's
 # accent is #ff5555, its muted #555555, its red #aa0000. The Linux half is
 # guarded by uname like 14.
-bar_fixture() {   # a wire up, wifi up at 49/70, a bluetooth controller with a device, a battery at 80, two ALSA cards (0 plays and captures, 1 plays)
-    S=$H/sys; P=$H/proc; export SPARK_SHELL_SYS=$S SPARK_SHELL_PROC=$P
-    mkdir -p "$S/class/net/eth0" "$S/class/net/wlan0/wireless" "$S/class/net/lo" "$S/class/bluetooth/hci0" "$S/class/power_supply/BAT0" "$P/net" "$P/asound/card0/pcm0p/sub0" "$P/asound/card0/pcm0c/sub0" "$P/asound/card1/pcm0p/sub0"
-    : > "$S/class/net/eth0/device"; echo 1 > "$S/class/net/eth0/type"; echo 1 > "$S/class/net/eth0/carrier"; echo up > "$S/class/net/eth0/operstate"; echo 1000 > "$S/class/net/eth0/speed"
-    : > "$S/class/net/wlan0/device"; echo 1 > "$S/class/net/wlan0/type"; echo up > "$S/class/net/wlan0/operstate"
-    echo 772 > "$S/class/net/lo/type"
-    echo Battery > "$S/class/power_supply/BAT0/type"; echo 80 > "$S/class/power_supply/BAT0/capacity"; echo Discharging > "$S/class/power_supply/BAT0/status"
-    echo 40000000 > "$S/class/power_supply/BAT0/energy_now"; echo 50000000 > "$S/class/power_supply/BAT0/energy_full"; echo 60000000 > "$S/class/power_supply/BAT0/energy_full_design"
-    echo 20000000 > "$S/class/power_supply/BAT0/power_now"; echo 123 > "$S/class/power_supply/BAT0/cycle_count"
-    printf 'Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE\n face | tus | link level noise |  nwid  crypt   frag  retry   misc | beacon | 22\n wlan0: 0000   49.  -61.  -256        0      0      0      0      0        0\n' > "$P/net/wireless"
-    printf ' 0 [Jabra          ]: USB-Audio - Jabra SPEAK 410 USB\n                      Jabra SPEAK 410 USB at usb-0000:00:14.0-2, full speed\n 1 [HDMI           ]: HDA-Intel - HD-Audio Generic\n                      HD-Audio Generic at 0xdc5c8000 irq 104\n' > "$P/asound/cards"
-    for s in card0/pcm0p card0/pcm0c card1/pcm0p; do echo closed > "$P/asound/$s/sub0/status"; done
-    cat > "$H/.local/bin/ip" <<'STUB'
-#!/bin/sh
-case "$*" in
-    *route*) echo 'default via 192.0.2.1 dev eth0 proto dhcp src 192.0.2.10 metric 100' ;;
-    *"dev eth0"*) echo '2: eth0    inet 192.0.2.10/24 brd 192.0.2.255 scope global eth0' ;;
-    *"dev wlan0"*) echo '3: wlan0    inet 192.0.2.20/24 brd 192.0.2.255 scope global wlan0' ;;
-esac
-STUB
-    printf '#!/bin/sh\necho "boolean true"\n' > "$H/.local/bin/dbus-send"
-    chmod +x "$H/.local/bin/dbus-send"
-    cat > "$H/.local/bin/bluetoothctl" <<'STUB'
-#!/bin/sh
-log=${XDG_STATE_HOME:-$HOME/.local/state}/bt.log; mkdir -p "$(dirname "$log")"
-case "$*" in
-    show) printf 'Controller 00:11:22:33:44:55 (public)\n\tPowered: yes\n' ;;
-    "devices Connected") [ -e "$HOME/bt-none" ] || echo 'Device 00:25:D1:4A:C2:AA MAJOR V' ;;
-    "devices Paired") echo 'Device 00:25:D1:4A:C2:AA MAJOR V' ;;
-    devices) printf 'Device 00:25:D1:4A:C2:AA MAJOR V\nDevice 11:22:33:44:55:66 Buds\n' ;;
-    "connect "*) echo "$*" >> "$log"; echo 'Connection successful' ;;
-    "disconnect "*) echo "$*" >> "$log"; echo 'Successful disconnected' ;;
-    *) echo "$*" >> "$log" ;;
-esac
-STUB
-    cat > "$H/.local/bin/wpa_cli" <<'STUB'
-#!/bin/sh
-[ -n "${HOME:-}" ] || { HOME=${XDG_STATE_HOME%/.local/state}; touch "$HOME/wpa.nohome"; }   # run with HOME unset, as spark-shell runs it for a password (no history file)
-log=${XDG_STATE_HOME:-$HOME/.local/state}/wpa.log; mkdir -p "$(dirname "$log")"
-printf '%s\n' "$*" >> "${log%.log}.argv"   # every call's arguments, apart: a password is never among them (#62)
-[ "$1" != -i ] || shift 2
-if [ $# -eq 0 ]; then while IFS= read -r line; do printf '%s\n' "$line" >> "$log"; echo OK; done; exit 0; fi   # interactive: a command a line on stdin
-sel=$(cat "$HOME/wpa.sel" 2>/dev/null || echo 0)
-name() { case $1 in 0) echo home ;; 1) echo old ;; 2) cat "$HOME/wpa.name2" 2>/dev/null || echo open ;; esac; }
-case "$*" in
-    status) [ -e "$HOME/wpa.down" ] || printf 'bssid=00:11:22:33:44:55\nssid=%s\nwpa_state=COMPLETED\n' "$(name "$sel")" ;;
-    scan) echo OK ;;
-    scan_results) printf 'bssid / frequency / signal level / flags / ssid\n00:11:22:33:44:55\t2412\t-55\t[WPA2-PSK-CCMP][ESS]\thome\n00:11:22:33:44:66\t2437\t-80\t[WPA2-PSK-CCMP][ESS]\tcafe\n00:11:22:33:44:77\t2462\t-70\t[ESS]\topen\n' ;;
-    list_networks) printf 'network id / ssid / bssid / flags\n0\thome\tany\t[CURRENT]\n1\told\tany\t\n' ;;
-    add_network) echo 2 ;;
-    "select_network "*) echo "$*" >> "$log"; echo "$2" > "$HOME/wpa.sel"; rm -f "$HOME/wpa.down"; echo OK ;;
-    disconnect) echo "$*" >> "$log"; touch "$HOME/wpa.down"; echo OK ;;
-    *) echo "$*" >> "$log"; echo OK ;;
-esac
-STUB
-    # The native key derivation has no password argument. Fixed key: the test
-    # checks the wire format, not the native program's cryptography.
-    printf '#!/bin/sh\nIFS= read -r pw || exit 1\nprintf "\\tpsk=%%s\\n" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n' > "$H/.local/bin/wpa_passphrase"
-    chmod +x "$H/.local/bin/wpa_passphrase"
-    # NetworkManager and iwd, off unless a test turns one on ($HOME/nm.on, $HOME/iw.on): no machine's own nmcli or iwctl is reached from here
-    cat > "$H/.local/bin/nmcli" <<'STUB'
-#!/bin/sh
-[ -e "$HOME/nm.on" ] || exit 1
-log=$XDG_STATE_HOME/nmcli.log; printf '%s\n' "$*" >> "$log.argv"
-case "$*" in
-    "-t -f RUNNING general") echo running ;;
-    "-g GENERAL.NM-MANAGED device show wlan0") echo yes ;;
-    "-t -e yes -f SIGNAL,SECURITY,SSID dev wifi list --rescan auto") printf '80:WPA2:cafe\n' ;;
-    "--ask dev wifi connect cafe ifname wlan0 hidden no"|"--ask dev wifi connect cafe ifname wlan0 hidden yes") IFS= read -r pw || exit 4; printf '%s\n' "$pw" >> "$log"; printf 'Password (802-11-wireless-security.psk): \n'
-        [ "$pw" != wrong ] || { echo 'Error: Connection activation failed: Secrets were required, but not provided.'; exit 4; }
-        echo "Device 'wlan0' successfully activated with 'f00d'." ;;
-    *) exit 0 ;;
-esac
-STUB
-    cat > "$H/.local/bin/iwctl" <<'STUB'
-#!/bin/sh
-[ -e "$HOME/iw.on" ] || exit 1
-log=$XDG_STATE_HOME/iwctl.log; printf '%s\n' "$*" >> "$log.argv"
-case "$*" in
-    "station wlan0 show") printf '  Station: wlan0\n  State  disconnected\n' ;;
-    "station wlan0 get-networks") printf '  Available networks\n----\n  Network name  Security  Signal\n----\n  cafe  psk  ****\n' ;;
-    "station wlan0 connect cafe"|"station wlan0 connect-hidden cafe")
-        python3 -c 'import os,sys,tty
-assert sys.stdin.isatty()
-tty.setraw(0)
-os.write(1,b"Passphrase: ")
-pw=b""
-while True:
-    chunk=os.read(0,256)
-    if b"\n" in chunk:
-        assert chunk == b"\n"
-        break
-    pw += chunk
-    os.write(1,b"*"*len(chunk))
-with open(sys.argv[1],"ab") as f: f.write(pw+b"\n")' "$log" ;;
-    *) exit 0 ;;
-esac
-STUB
-    printf '#!/bin/sh\nprintf "%%s | %%s\\n" "$*" "${SPARK_SHELL_PANEL_AT:-}" >> "${XDG_STATE_HOME:-$HOME/.local/state}/foot.log"\n' > "$H/.local/bin/foot"
-    cat > "$H/.local/bin/amixer" <<'STUB'
-#!/bin/sh
-log=${XDG_STATE_HOME:-$HOME/.local/state}/amixer.log; mkdir -p "$(dirname "$log")"
-[ "$1" != -q ] || shift
-case "$*" in *scontrols) [ ! -e "$HOME/amixer-refuse" ] || exit 1 ;; esac   # amixer-refuse: ALSA cannot read its configuration
-case "$*" in
-    "-D default info") exit 1 ;;
-    "-D bluealsa sget MAJOR V - A2DP") m=on; [ ! -e "$HOME/bmuted" ] || m=off; level=$(cat "$HOME/blevel" 2>/dev/null || echo 60); printf "Simple mixer control 'MAJOR V - A2DP',0\n  Limits: Playback 0 - 127\n  Front Left: Playback 76 [%s%%] [0.00dB] [%s]\n" "$level" "$m" ;;
-    "-D bluealsa sget MAJOR V - SCO") m=on; [ ! -e "$HOME/bcmuted" ] || m=off; printf "Simple mixer control 'MAJOR V - SCO',0\n  Mono: Playback 10 [67%%] [-5.82dB] [on] Capture 9 [60%%] [0.00dB] [%s]\n" "$m" ;;
-    "-D bluealsa sset "*) echo "$*" >> "$log"
-        case "$*" in *"A2DP mute") touch "$HOME/bmuted" ;; *"A2DP unmute") rm -f "$HOME/bmuted" ;; *"SCO nocap") touch "$HOME/bcmuted" ;; *"SCO cap") rm -f "$HOME/bcmuted" ;; *"A2DP "*%) level=${5%%%}; echo "$level" > "$HOME/blevel" ;; esac ;;
-    "-c 0 scontrols") printf "Simple mixer control 'Master',0\nSimple mixer control 'PCM',0\nSimple mixer control 'Capture',0\n" ;;
-    "-c 1 scontrols") printf "Simple mixer control 'IEC958',0\n" ;;
-    "-c 0 sget Master") m=on; [ ! -e "$HOME/muted" ] || m=off; level=$(cat "$HOME/level" 2>/dev/null || echo 40); printf "Simple mixer control 'Master',0\n  Front Left: Playback 26214 [%s%%] [%s]\n  Front Right: Playback 26214 [%s%%] [%s]\n" "$level" "$m" "$level" "$m" ;;
-    "-c 0 sget Capture") m=on; [ ! -e "$HOME/cmuted" ] || m=off; level=$(cat "$HOME/clevel" 2>/dev/null || echo 50); printf "Simple mixer control 'Capture',0\n  Front Left: Capture 1000 [%s%%] [%s]\n" "$level" "$m" ;;
-    "-c "*" sset "*) echo "$*" >> "$log"   # the switches, as amixer keeps them: mute/unmute/toggle for a playback switch, cap/nocap/toggle for a capture one
-        case "$*" in
-            "-c 0 sset Master mute") touch "$HOME/muted" ;; "-c 0 sset Master unmute") rm -f "$HOME/muted" ;;
-            "-c 0 sset Master toggle") if [ -e "$HOME/muted" ]; then rm -f "$HOME/muted"; else touch "$HOME/muted"; fi ;;
-            "-c 0 sset Capture nocap") touch "$HOME/cmuted" ;; "-c 0 sset Capture cap") rm -f "$HOME/cmuted" ;;
-            "-c 0 sset Capture toggle") if [ -e "$HOME/cmuted" ]; then rm -f "$HOME/cmuted"; else touch "$HOME/cmuted"; fi ;;
-            "-c 0 sset Capture mute"|"-c 0 sset Capture unmute") echo "amixer: Invalid command!" >&2; exit 1 ;;
-            "-c 0 sset Master "*%) level=${5%%%}; echo "$level" > "$HOME/level" ;;
-            "-c 0 sset Capture "*%) level=${5%%%}; echo "$level" > "$HOME/clevel" ;;
-        esac ;;
-esac
-STUB
-    cat > "$H/.local/bin/bluealsa-aplay" <<'STUB'
-#!/bin/sh
-# bluez-alsa's list, as 3.1 prints it: a headset that plays on A2DP and plays and listens on SCO (only while bt-audio is there)
-[ "$1" = -L ] && [ -e "$HOME/bt-audio" ] || exit 0
-printf 'bluealsa:SRV=org.bluealsa,DEV=00:25:D1:4A:C2:AA,PROFILE=sco\n    MAJOR V, trusted audio-headset, playback\n    SCO (CVSD): S16_LE 1 channel 8000 Hz\n'
-printf 'bluealsa:SRV=org.bluealsa,DEV=00:25:D1:4A:C2:AA,PROFILE=sco\n    MAJOR V, trusted audio-headset, capture\n    SCO (CVSD): S16_LE 1 channel 8000 Hz\n'
-printf 'bluealsa:SRV=org.bluealsa,DEV=00:25:D1:4A:C2:AA,PROFILE=a2dp\n    MAJOR V, trusted audio-headset, playback\n    A2DP (AAC): S16_LE 2 channels 48000 Hz\n'
-printf 'bluealsa:SRV=org.bluealsa,DEV=bad;dev,PROFILE=a2dp\n    Crafted, trusted audio-headset, playback\n'
-STUB
-    chmod +x "$H/.local/bin/bluealsa-aplay"
-    printf '#!/bin/sh\nexit 1\n' > "$H/.local/bin/wpctl"; cp "$H/.local/bin/wpctl" "$H/.local/bin/pactl"
-    cp "$H/.local/bin/wpctl" "$H/.local/bin/tmux"   # a tmux that is not running (this machine may run one)
-    chmod +x "$H/.local/bin/ip" "$H/.local/bin/bluetoothctl" "$H/.local/bin/amixer" "$H/.local/bin/wpctl" "$H/.local/bin/pactl" "$H/.local/bin/tmux" "$H/.local/bin/wpa_cli" "$H/.local/bin/foot" "$H/.local/bin/nmcli" "$H/.local/bin/iwctl"
-}
 full=$(printf '\342\226\210')
-count() { printf '%s' "$1" | LC_ALL=C grep -o "$2" | wc -l | tr -d ' '; }   # count TEXT GLYPH -> how many
 fresh
 desktop_stubs
 desk_stubs
@@ -4001,7 +4134,10 @@ STUB
 fi
 unset SPARK_SHELL_SYS SPARK_SHELL_PROC SWAYSOCK
 
+fi
+
 # --- 21. the providers: a section as an MCP server, the want verb, the dialog's keys
+if want 21; then
 # `spark-shell provide SECTION` driven on a pipe by a scripted client:
 # each request a jq line, every line out parsed. The Linux half reads
 # the bar's fixture (wpa_cli, bluetoothctl, amixer stubs).
@@ -4011,10 +4147,6 @@ desk_stubs
 bar_fixture
 theme_fixture '#ff5555'
 mkdir -p "$HOME/.config/spark-shell"; printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-rq() { jq -cn --argjson i "$1" --arg m "$2" --argjson p "${3:-null}" '{jsonrpc: "2.0", id: $i, method: $m} + (if $p == null then {} else {params: $p} end)'; }   # rq ID METHOD [PARAMS] -> one request
-call() { rq "$1" tools/call "$(jq -cn --arg n "$2" --argjson a "${3:-"{}"}" '{name: $n, arguments: $a}')"; }   # call ID TOOL [ARGUMENTS] (a quoted {} default: /bin/sh leaves {\} as it is, and jq refused it)
-mcp() { _s=$1; shift; printf '%s\n' "$@" | sh "$SH" provide "$_s" > "$H/mcp.out" 2> "$H/mcp.err"; }   # mcp SECTION LINE... -> $H/mcp.out, its stderr apart
-ans() { jq -c --argjson i "$1" 'select(.id == $i)' "$H/mcp.out"; }   # ans ID -> that answer
 init=$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{"elicitation":{}},"clientInfo":{"name":"test","version":"0"}}')
 mcp theme "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 2 tools/list)" "$(rq 3 ping)"
 st=$?; [ "$st" -eq 0 ] && [ "$(ans 1 | jq -r '.result.protocolVersion + " " + .result.serverInfo.name')" = '2025-06-18 theme' ] && ans 1 | jq -e '.result.capabilities == {tools: {listChanged: true}, resources: {subscribe: true, listChanged: true}, logging: {}}' >/dev/null \
@@ -4191,7 +4323,6 @@ ln -s /etc "$F/etc-link"; printf 'k' > "$F/.secret/key"; mkfifo "$F/pipe"; print
 FR=$(realpath "$F"); uri() { printf 'spark-shell://files/rows/%s' "$(printf '%s' "$1" | base64 | tr -d '\n=' | tr '+/' '-_')"; }
 rinit=$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{"roots":{}},"clientInfo":{"name":"test","version":"0"}}')
 roots=$(jq -cn --arg u "file://$FR" '{jsonrpc: "2.0", id: "roots", result: {roots: [{uri: $u}, {uri: "file:///"}]}}')
-fcall() { call "$1" "$2" "$(jq -cn --arg p "$3" '{path: $p}')"; }
 mcp files "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots" "$(rq 2 resources/read '{"uri":"spark-shell://files/rows"}')" \
     "$(rq 3 resources/read "$(jq -cn --arg u "$(uri "$FR")" '{uri: $u}')")" \
     "$(fcall 4 files_show "$FR/notes.md")" "$(fcall 5 files_attach "$FR/notes.md")" "$(fcall 6 files_show "$FR/.secret/key")" "$(fcall 7 files_show "$FR/blob.txt")" \
@@ -4372,7 +4503,10 @@ if [ "$(uname -s)" != Darwin ]; then
     [ "$out" = "$(printf '\342\234\227') no output named J*" ] && ok "undo: a step's ARG with a glob is played as written, never as the files it matches" || bad "undo glob" "$out"
     unset SWAYSOCK
 fi
+fi
+
 # --- 22. the dialog: its binary from a signed tag, the verb, its rows -------
+if want 22; then
 # A fixture clone of this tree: a stub spark-dialog whose sha256 the
 # clone's dialog/dialog.env pins, a tag signed with a scratch key that the
 # clone's allowed-signers names, the release assets in a file:// folder.
@@ -4500,7 +4634,10 @@ STUB
 fi
 unset SPARK_SHELL_SYS SPARK_SHELL_PROC SWAYSOCK
 
+fi
+
 # --- 23. the login screen: greetd on tty1, its own switch -----------------
+if want 23; then
 # on login writes the screen's root files under a throwaway root and
 # hands tty1 to greetd at the next boot only: systemd enables and
 # disables, never starts or stops; Void's line in rc.local runs
@@ -4672,7 +4809,10 @@ rm -rf "$ls_d"
 bp=$REPO/templates/linux/.bash_profile
 grep -q 'SPARK_SHELL_SESSION:-}" != shell' "$bp" && ok ".bash_profile: the login screen's shell session never starts the desktop" || bad ".bash_profile shell session"
 
+fi
+
 # --- 24. the theme end to end (#24): one choice brings the rest, saved and tracked like layouts, from a picture and from words
+if want 24; then
 # On a Mac the palette reaches Terminal.app through the helper: here it builds and prints, never touching Terminal.app (SPARK_SHELL_NO_APPLY), with Menlo pinned as installed
 fresh
 desktop_stubs
@@ -5124,7 +5264,10 @@ else
     printf '  note update: ssh-keygen not found; the section is skipped\n'
 fi
 
+fi
+
 # --- 25. the notifications, the drives and the power (#71, #72, #73) ------
+if want 25; then
 # mako's config from the palette, the session bus at the desktop's start,
 # then the three sections as providers against stand-ins for makoctl,
 # notify-send, lsblk, udisksctl, df, systemctl, sudo and zzz, and the two
@@ -5506,6 +5649,8 @@ wide=$(awk 'length > 80 {print FNR ": " length}' "$voice/help" | head -3 | paste
 wide=$(awk 'length > 80 {print FNR ": " length}' "$REPO/README.md" | head -3 | paste -sd, -)
 [ -z "$wide" ] && ok "voice: every README line is 80 columns or fewer" || bad "voice: a README line is wider than 80 (line: width)" "$wide"
 rm -rf "$voice"
+
+fi
 
 printf '%s\n' "shell_test: $pass ok, $fail failed"
 [ "$fail" -eq 0 ]

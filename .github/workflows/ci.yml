@@ -89,7 +89,7 @@ jobs:
         run: sudo apt-get update -qq >/dev/null && apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: |
-          sh tests/shell_test.sh
+          sh tests/shell_test.sh --parallel
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
       - name: the idle screen's savers
@@ -120,7 +120,7 @@ jobs:
         run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: |
-          sh tests/shell_test.sh
+          sh tests/shell_test.sh --parallel
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   arch:
@@ -138,7 +138,7 @@ jobs:
         run: pacman -Sp --needed $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/arch.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: |
-          sh tests/shell_test.sh
+          sh tests/shell_test.sh --parallel
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   void:
@@ -158,7 +158,7 @@ jobs:
         run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/void.env); do xbps-query -R "$p" >/dev/null || { echo "no package $p"; exit 1; }; done
       - name: the suite in a throwaway HOME
         run: |
-          sh tests/shell_test.sh
+          sh tests/shell_test.sh --parallel
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   fedora:
@@ -177,7 +177,7 @@ jobs:
         run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/fedora.env); do dnf -q repoquery --whatprovides "$p" 2>/dev/null | grep -q . || { echo "no package $p"; exit 1; }; done
       - name: the suite in a throwaway HOME
         run: |
-          sh tests/shell_test.sh
+          sh tests/shell_test.sh --parallel
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   opensuse:
@@ -198,7 +198,7 @@ jobs:
         run: for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/opensuse.env); do zypper --non-interactive --no-refresh search --match-exact --provides "$p" >/dev/null 2>&1 || { echo "no package $p"; exit 1; }; done
       - name: the suite in a throwaway HOME
         run: |
-          sh tests/shell_test.sh
+          sh tests/shell_test.sh --parallel
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   desktop:
@@ -305,7 +305,7 @@ jobs:
           persist-credentials: false
       - name: the suite in a throwaway HOME (Apple's sh)
         run: |
-          sh tests/shell_test.sh
+          sh tests/shell_test.sh --parallel
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
       - name: the Terminal.app helper, built and never applied
