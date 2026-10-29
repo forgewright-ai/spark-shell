@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.109
+
+- The notifications, a new look (#71). A card reads as a surface of the
+  desktop like the dialog: its edge lines up with the windows' content
+  (the gaps and the clear border), and the cards stand 8 pixels apart.
+  Under the three on the screen, one card says how many more wait.
+  Those from one app stand together, the app's line counting them. A
+  low one is muted and goes after five seconds; a critical one shows
+  over a full-screen window too. A middle click dismisses them all. A
+  progress is the accent at a quarter, as the drop area is. spark-shell's
+  own say what they are and what a click opens on their first line
+  (`reminder`, `drive`) in place of the app's name, so a drive plugged
+  in says only its size and that it is not mounted. The template is the
+  one file; `spark-shell on` renders it and a mako that runs reads it at
+  once, as before.
+
 ## v0.108
 
 - Describe discoverable domains by their readable name and purpose. A

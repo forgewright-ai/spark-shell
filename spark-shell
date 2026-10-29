@@ -5029,7 +5029,8 @@ printer_status() { panel_cache printers.status 2 printer_status_now; }
 # not disturb is mako's mode of that name, kept in the config
 # (DO_NOT_DISTURB) so it holds across logins. What spark-shell says itself,
 # a reminder due or a drive plugged in, goes out through notify-send under
-# the app name spark-shell, its category telling mako what a click opens.
+# the app name spark-shell, its category telling mako what a click opens,
+# which its first line says in place of the app's name.
 # A program reaches mako through the session's D-Bus: where no logind
 # makes one (Void), the desktop starts inside dbus-run-session (desk_start).
 NOTIFY_MODE=do-not-disturb
@@ -5165,7 +5166,7 @@ storage_notice() {   # the bar's loop: a drive that was not there at its last lo
     storage_drives > "$TMP/drives.now"
     if [ -n "${_storage_seen:-}" ] && [ -f "$STORAGE_SEEN" ]; then
         grep -vxF -f "$STORAGE_SEEN" "$TMP/drives.now" | while IFS="$TAB" read -r _d _s _n; do
-            notify_send device.added "$_n plugged in" "$(files_size "$_s"). A click opens Storage, where it mounts."
+            notify_send device.added "$_n plugged in" "$(files_size "$_s"), not mounted"   # mako's config says what a click opens: the dialog's Storage, where it mounts (#71)
         done || :
     fi
     _storage_seen=1

@@ -445,7 +445,8 @@ kept.
 When a reminder comes due, the bar shows a `due` block with its words,
 a click opens the reminders, and a short sound plays once (PipeWire,
 else ALSA; afplay on a Mac). On the desktop it comes as a notification
-too, once, and a click on it opens the reminders in the dialog. The
+too, once, its first line saying a click opens it, and the click opens
+the reminders in the dialog. The
 tmux status line shows it too, in the accent, so a terminal outside the
 desktop and a Mac hear and see it.
 Both lines check the time every 15 seconds, so nothing more runs for
@@ -493,14 +494,21 @@ and wl-clipboard).
 
 ## Notifications, drives and power
 
-A notification comes in the top right corner, under the bar, in your
-palette and text face: the app's name muted, what it says in bold, the
-words under it. The newest is on top, three at most, and each goes
-after eight seconds into the history, which keeps the last ten. A
-critical one stays until you dismiss it and has a red edge. A click
-does what its app offers; a right click dismisses it. mako draws them,
-from `~/.config/mako/config`, and a new look reaches the next one at
-once. Type `spark-shell desktop notifications do-not-disturb on`. They
+A notification comes in the top right corner, under the bar, as a
+surface of the desktop like the dialog: its ground, your palette and
+text face, no frame and no icon. The first line is muted, the app's
+name; what it says is bold under it; the words follow. Its edge lines
+up with the windows' content, and the cards stand a little apart. The
+newest is on top, three at most, and under them one card says how many
+more wait. Those from one app stand together, and the app's line
+counts them (`aerc`, a middle dot, `3`). Each goes after eight seconds
+into the history, which keeps the last ten. A low one is muted and
+goes after five. A critical one stays until you dismiss it, has a red
+edge as an urgent window does, and shows over a full-screen window
+too. A click does what its app offers; a right click dismisses it; a
+middle click dismisses them all. mako draws them, from
+`~/.config/mako/config`, and a new look reaches the next one at once.
+Type `spark-shell desktop notifications do-not-disturb on`. They
 stay out of sight, a critical one still shows, the bar says `do not
 disturb`, and it holds until you turn it off, logins included.
 `desktop notifications` lists the last few, `dismiss` clears the
@@ -510,8 +518,9 @@ session's D-Bus. Where logind makes none (Void), the desktop starts
 inside `dbus-run-session`, so the notifications start at the login
 after `on desktop`.
 
-A drive you plug in (a USB stick, a card) comes as a notification, and
-a click on it opens the dialog's Storage, where Enter mounts it and,
+A drive you plug in (a USB stick, a card) comes as a notification
+whose first line says a click opens the dialog's Storage, where Enter
+mounts it and,
 once mounted, opens it in your file manager (or a terminal in it when
 there is none). Nothing mounts by itself. `spark-shell desktop storage`
 lists the drives with their parts and this computer's free space;
