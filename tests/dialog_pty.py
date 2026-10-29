@@ -102,6 +102,7 @@ def main(binary):
     busy(binary, env, home)
     keys(binary, env)
     tasks(binary, env, home)
+    files(binary, env, home)
     print("dialog_pty: %d failed" % failed)
     return 1 if failed else 0
 
@@ -178,6 +179,55 @@ print(json.dumps({"answer": "", "steps": [{"name": "notes_pick", "arguments": {"
            "Enter runs the proposal as proposed, and spark is not asked again")
     except (AssertionError, KeyError, IndexError) as e:
         ok(False, "task terminal interaction", str(e) + " " + repr(re.sub(rb"\x1b\[[0-9;?]*[A-Za-z]", b"", bytes(seen[-2500:]))))
+    finally:
+        os.write(fd, b"\x03")
+        if not wait_for(lambda: os.waitpid(pid, os.WNOHANG)[0] != 0, 5):
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+        os.close(fd)
+
+
+def files(binary, env, home):
+    """The files as a file manager (#112), against the real provider on a fixture home: Files opens
+    the home folder with its rows, Right on a file opens its steps, Esc comes back, Esc leaves."""
+    with open(os.path.join(home, "hello.txt"), "w") as f:
+        f.write("hello\n")
+    os.makedirs(os.path.join(home, "docs"), exist_ok=True)
+    argv = [binary, "--provider", SS + " provide files", "--provider", SS + " provide about", "--composer", "", "--spark-shell", SS]
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.execve(binary, argv, dict(env, SPARK_SHELL_NO_UDISKS="1"))
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
+    seen = bytearray()
+    def wait_for(test, secs=15):
+        end = time.monotonic() + secs
+        while time.monotonic() < end:
+            if test(): return True
+            if select.select([fd], [], [], .1)[0]:
+                try: seen.extend(os.read(fd, 65536))
+                except OSError: break
+        return test()
+    plain = lambda: re.sub(rb"\x1b\[[0-9;?]*[A-Za-z]", b"", bytes(seen)).decode("utf-8", "replace")
+    tight = lambda: re.sub(r"\s+", "", plain())   # the terminal's cursor moves split words: compared with no spaces
+    try:
+        assert wait_for(lambda: "Type a request." in plain() and "your home folder" in plain()), "the home did not draw with the files ready"
+        os.write(fd, b"files")
+        time.sleep(0.3)
+        os.write(fd, b"\r")
+        assert wait_for(lambda: "hello.txt" in tight() and "thisfolder" in tight() and "newfolder" in tight()), "the home folder did not draw: " + plain()[-600:]
+        ok(True, "Files opens the home folder: the fixture file with its size, the folder, and the folder's own steps")
+        os.write(fd, b"\x1b[B")       # Down: the first row, the file, lit
+        assert wait_for(lambda: "Steps" in plain()), "the key row did not offer the steps: " + plain()[-400:]
+        seen.clear()
+        os.write(fd, b"\x1b[C")       # Right: its steps
+        assert wait_for(lambda: "movetoafolder" in tight() and "trash" in tight() and "rename" in tight()), "the steps did not draw: " + plain()[-600:]
+        ok(True, "Down lights the file and the key row offers Steps; Right opens them in the provider's words: open, show, attach, reveal, rename, move, copy, trash")
+        seen.clear()
+        os.write(fd, b"\x1b")          # back to the folder
+        assert wait_for(lambda: "hello.txt" in tight() and "newfolder" in tight()), "Esc did not come back: " + plain()[-600:]
+        ok(True, "Esc comes back to the folder")
+    except AssertionError as e:
+        ok(False, "files terminal interaction", str(e))
     finally:
         os.write(fd, b"\x03")
         if not wait_for(lambda: os.waitpid(pid, os.WNOHANG)[0] != 0, 5):

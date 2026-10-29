@@ -206,6 +206,8 @@ fn a_section_with_its_groups_and_the_exchange() {
             name: "window_focus".into(),
             arguments: json!({"name": "aerc"}).as_object().unwrap().clone(),
             ask: vec![],
+            said: None,
+            pick: None,
         },
         who: Who::Undo,
         line: "undo aerc".into(),
@@ -246,6 +248,8 @@ fn a_turn_is_the_command_then_what_came_of_it() {
             name: "theme_palette".into(),
             arguments: json!({"name": "everforest-dark"}).as_object().unwrap().clone(),
             ask: vec![],
+            said: None,
+            pick: None,
         },
         who: Who::Undo,
         line: "undo theme gruvbox-dark".into(),
@@ -344,6 +348,8 @@ fn a_destructive_step_waits_for_yes() {
             name: "window_close".into(),
             arguments: json!({"name": "terminal"}).as_object().unwrap().clone(),
             ask: vec![],
+            said: None,
+            pick: None,
         },
         who: Who::Person,
         line: "window close terminal".into(),
@@ -407,6 +413,94 @@ fn a_folder_with_its_columns_and_an_attachment() {
         undo: false,
     }];
     render(&app, "folder");
+}
+
+/// The file manager (#112): the home folder as the provider lists it (the recent files, the folders and files, the folder's own steps).
+fn manager_app() -> App {
+    let mut app = base();
+    app.cfg.plus = true;
+    let files = provider(
+        "files",
+        "your home folder",
+        json!({"title": "files", "rows": [
+        {"id": "files:root:a", "sign": "opens", "text": "~", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null}
+    ], "short": ["files:root:a"]}),
+        json!([]),
+    );
+    app.providers.push(files);
+    let f = app.providers.len() - 1;
+    let steps = |p: &str| {
+        json!([
+            {"name": "files_reveal", "arguments": {"path": p}, "said": "reveal in the system file manager"},
+            {"name": "files_rename", "arguments": {"path": p}, "ask": ["name"], "said": "rename"},
+            {"name": "files_move", "arguments": {"path": p}, "pick": "to", "said": "move to a folder"},
+            {"name": "files_copy", "arguments": {"path": p}, "pick": "to", "said": "copy to a folder"},
+            {"name": "files_trash", "arguments": {"path": p}, "said": "trash"}
+        ])
+    };
+    let file = |name: &str, size: &str, when: &str, group: &str, folder: Option<&str>| {
+        let p = format!("/data/me/{}", name);
+        let mut more = vec![
+            json!({"name": "files_show", "arguments": {"path": p}, "said": "show the first lines"}),
+            json!({"name": "files_attach", "arguments": {"path": p}, "said": "attach to the next request"}),
+        ];
+        more.extend(steps(&p).as_array().unwrap().iter().cloned());
+        let mut columns = vec![size.to_string(), when.to_string()];
+        if let Some(fo) = folder {
+            columns.push(fo.to_string());
+        }
+        json!({"id": format!("files:file:{}:{}", group, name), "sign": "blank", "text": name, "tool": {"name": "files_open", "arguments": {"path": p}, "said": "open"}, "more": more, "columns": columns, "children": null, "group": group})
+    };
+    let dir = |name: &str, items: &str| {
+        let p = format!("/data/me/{}", name);
+        json!({"id": format!("files:dir:{}", name), "sign": "opens", "text": name, "tool": {"name": "files_browse", "arguments": {"path": p}, "said": "open in the system file manager"}, "more": steps(&p), "columns": [items], "children": format!("spark-shell://files/rows/{}", name), "group": "home"})
+    };
+    let rows = model::rows(&json!({"title": "~", "here": "/data/me", "rows": [
+        file("invoice-0412.pdf", "120 KB", "today", "recent", Some("downloads")),
+        file("photo-0412.jpg", "4.8 MB", "yesterday", "recent", Some("camera")),
+        file("notes.md", "2 KB", "18 Oct", "recent", Some("~")),
+        dir("documents", "12 items"),
+        dir("downloads", "3 items"),
+        dir("pictures", "40 items"),
+        file("notes.md", "2 KB", "18 Oct", "home", None),
+        file("todo.txt", "1 KB", "2025", "home", None),
+        {"id": "files:total", "sign": "blank", "text": "2 files \u{b7} 3 KB", "tool": null, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:new-folder", "sign": "opens", "text": "new folder", "tool": {"name": "files_new_folder", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new folder"}, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:new-text", "sign": "opens", "text": "new text file", "tool": {"name": "files_new_text", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new text file"}, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:browse", "sign": "opens", "text": "open in the system file manager", "tool": {"name": "files_browse", "arguments": {"path": "/data/me"}, "said": "open in the system file manager"}, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:drive:s", "sign": "opens", "text": "STICK", "tool": null, "more": [], "columns": ["14.2 GB free"], "children": "spark-shell://files/rows/c3RpY2s", "group": "drives"}
+    ], "short": []}).to_string()).unwrap();
+    app.view = View::Folder(f, "spark-shell://files/rows/aG9tZQ".into());
+    app.came_from = vec![View::Home];
+    app.folder = Some((f, "spark-shell://files/rows/aG9tZQ".into(), rows));
+    app.in_list = true;
+    app.sel = 0;
+    app
+}
+
+#[test]
+fn the_home_folder_is_the_recent_files_the_folders_and_files_and_the_folders_own_steps() {
+    let app = manager_app();
+    render(&app, "manager");
+}
+
+#[test]
+fn right_on_a_file_lists_its_steps_in_the_providers_words() {
+    let mut app = manager_app();
+    app.right();
+    assert!(matches!(app.view, View::Steps(_)));
+    app.sel = 5;
+    render(&app, "steps");
+}
+
+#[test]
+fn a_move_picks_its_folder_among_the_folders_with_the_row_that_lands_it_here() {
+    let mut app = manager_app();
+    app.right();
+    app.sel = 5; // move to a folder
+    app.enter();
+    assert!(app.picking.as_ref().is_some_and(|pk| pk.step.is_some()));
+    render(&app, "pick");
 }
 
 /// The reminders a provider labelled "reminders" offers: a row with no day, then rows for days in groups.
@@ -623,6 +717,8 @@ fn key_chips_preserve_the_typed_confirmation_for_destructive_actions() {
             name: "window_close".into(),
             arguments: json!({"name":"terminal"}).as_object().unwrap().clone(),
             ask: vec![],
+            said: None,
+            pick: None,
         },
         who: Who::Person,
         line: "close terminal".into(),

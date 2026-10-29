@@ -534,6 +534,19 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
                 row_line(pen, row, y, lit, widths, right, samples, chips);
             }
         }
+        Item::StepOf(k) => {
+            // one of a row's steps, in the provider's words: a row of its own, no sign
+            if let Some(c) = app.steps_row.as_ref().and_then(|r| r.tool.iter().chain(r.more.iter()).nth(*k)) {
+                pen.put(6, y, &app.step_words(c), pal.fg, false, lit);
+            }
+        }
+        Item::Here => {
+            // the row that lands a step in the folder shown (#112): it opens nothing, it does
+            let (g, c) = sign(&pal, "opens");
+            pen.put(4, y, g, c, false, lit);
+            let what = app.picking.as_ref().map(|pk| pk.what.clone()).unwrap_or_default();
+            pen.put(6, y, &what, pal.fg, false, lit);
+        }
     }
 }
 

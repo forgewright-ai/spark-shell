@@ -248,6 +248,11 @@ pub(crate) fn name_keys(schema: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// A path argument: the rows' paths are its allowlist, not the name gate's.
+pub(crate) fn is_path(schema: &Value, k: &str) -> bool {
+    schema.pointer(&format!("/properties/{}/format", k)).and_then(Value::as_str) == Some("path")
+}
+
 pub(crate) fn is_name(schema: &Value, k: &str) -> bool {
     let Some(p) = schema.pointer(&format!("/properties/{}", k)) else {
         return false;
@@ -277,7 +282,27 @@ pub fn step(tools: &[Tool], rows: &Rows, c: &Call) -> Result<(), String> {
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect())
         .unwrap_or_default();
-    let names: Vec<&String> = required.iter().filter(|k| is_name(&t.schema, k)).collect();
+    // a path: the rows are the allowlist (#112). Every argument the schema marks as a path, required
+    // or not, is a path some row's step holds, or the folder on screen itself; the four lines hold
+    // in the provider besides
+    let paths: Vec<&str> = rows
+        .rows
+        .iter()
+        .flat_map(|r| r.tool.iter().chain(r.more.iter()))
+        .flat_map(|x| x.arguments.values().filter_map(Value::as_str))
+        .chain(rows.here.as_deref())
+        .collect();
+    for (k, v) in &c.arguments {
+        if t.schema.pointer(&format!("/properties/{}/format", k)).and_then(Value::as_str) != Some("path") {
+            continue;
+        }
+        let Some(p) = v.as_str() else { continue };
+        if !paths.contains(&p) {
+            let name = p.rsplit('/').next().unwrap_or(p);
+            return Err(format!("{} is not in the list now", crate::scrub::cut_words(&crate::scrub::scrub(name), 40)));
+        }
+    }
+    let names: Vec<&String> = required.iter().filter(|k| is_name(&t.schema, k) && !is_path(&t.schema, k)).collect();
     if names.is_empty() {
         return Ok(());
     }
@@ -351,6 +376,8 @@ mod tests {
                 name: "wifi_connect".into(),
                 arguments: args(json!({"name": "cafe"})),
                 ask: vec![],
+                said: None,
+                pick: None,
             }),
             more: vec![],
             columns: vec![],
@@ -367,6 +394,7 @@ mod tests {
             vec![tool("wifi_connect", s), tool("out_level", lv)],
             Rows {
                 title: "wifi".into(),
+                here: None,
                 state: None,
                 rows: vec![row],
                 short: vec![],
@@ -381,6 +409,8 @@ mod tests {
             name: "wifi_forget".into(),
             arguments: Map::new(),
             ask: vec![],
+            said: None,
+            pick: None,
         };
         assert_eq!(step(&t, &r, &c).unwrap_err(), "this is not offered here now");
     }
@@ -392,18 +422,24 @@ mod tests {
             name: "wifi_connect".into(),
             arguments: args(json!({"name": "cafe", "x": 1})),
             ask: vec![],
+            said: None,
+            pick: None,
         };
         assert_eq!(step(&t, &r, &c).unwrap_err(), "it takes no x");
         let c = Call {
             name: "out_level".into(),
             arguments: args(json!({"level": 300})),
             ask: vec![],
+            said: None,
+            pick: None,
         };
         assert_eq!(step(&t, &r, &c).unwrap_err(), "300 is not a level it takes");
         let c = Call {
             name: "out_level".into(),
             arguments: Map::new(),
             ask: vec![],
+            said: None,
+            pick: None,
         };
         assert_eq!(step(&t, &r, &c).unwrap_err(), "it needs a level");
     }
@@ -415,18 +451,24 @@ mod tests {
             name: "wifi_connect".into(),
             arguments: args(json!({"name": "cafe", "password": "x"})),
             ask: vec![],
+            said: None,
+            pick: None,
         };
         assert!(step(&t, &r, &ok).is_ok(), "the password is not part of the match");
         let no = Call {
             name: "wifi_connect".into(),
             arguments: args(json!({"name": "evil twin"})),
             ask: vec![],
+            said: None,
+            pick: None,
         };
         assert_eq!(step(&t, &r, &no).unwrap_err(), "evil twin is not in the list now");
         let free = Call {
             name: "out_level".into(),
             arguments: args(json!({"level": 30})),
             ask: vec![],
+            said: None,
+            pick: None,
         };
         assert!(step(&t, &r, &free).is_ok(), "a level names no row");
     }
@@ -452,6 +494,8 @@ mod tests {
             name: "theme_palette".into(),
             arguments: args(json!({"name": n})),
             ask: vec![],
+            said: None,
+            pick: None,
         };
         assert!(step(&tools, &r, &named("gruvbox-dark")).is_ok(), "the one in use");
         assert!(step(&tools, &r, &named("nord")).is_ok(), "a listed one");
@@ -478,12 +522,16 @@ mod tests {
             name: "display_brightness".into(),
             arguments: args(json!({"level": "25"})),
             ask: vec![],
+            said: None,
+            pick: None,
         };
         assert!(step(&tools, &r, &c).is_ok(), "25 is the schema's to hold, not the rows'");
         let bad = Call {
             name: "display_brightness".into(),
             arguments: args(json!({"level": "200"})),
             ask: vec![],
+            said: None,
+            pick: None,
         };
         assert_eq!(step(&tools, &r, &bad).unwrap_err(), "200 is not a level it takes", "the schema still holds it");
     }
@@ -504,6 +552,8 @@ mod tests {
             name: "theme_save".into(),
             arguments: args(json!({"name": "brazilian flag"})),
             ask: vec![],
+            said: None,
+            pick: None,
         };
         assert!(step(&tools, &r, &c).is_ok(), "the save row asks for its name, so a typed one is free");
     }
@@ -520,5 +570,69 @@ mod tests {
             &args(json!({"name": "a", "password": "b", "token": "c"})),
         );
         assert_eq!(Value::Object(p), json!({"name": "a"}));
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+    use crate::model::{Call, Row, Tool};
+    use serde_json::json;
+
+    #[test]
+    fn a_path_argument_must_be_a_path_a_row_holds_or_the_folder_itself() {
+        let path = json!({"type": "string", "minLength": 2, "maxLength": 4096, "format": "path"});
+        let schema = json!({"type": "object", "properties": {"path": path, "to": path}, "required": ["path", "to"], "additionalProperties": false});
+        let tools = vec![Tool {
+            description: String::new(),
+            output_schema: None,
+            name: "files_move".into(),
+            title: "files move PATH".into(),
+            schema,
+            read_only: false,
+            destructive: false,
+        }];
+        let call = |p: &str| Call {
+            name: "files_move".into(),
+            arguments: json!({"path": p}).as_object().unwrap().clone(),
+            ask: vec![],
+            said: None,
+            pick: Some("to".into()),
+        };
+        let rows = Rows {
+            title: "~".into(),
+            state: None,
+            here: Some("/h".into()),
+            rows: vec![Row {
+                id: "f".into(),
+                sign: "blank".into(),
+                text: "a.txt".into(),
+                tool: None,
+                more: vec![call("/h/a.txt")],
+                columns: vec![],
+                children: None,
+                group: None,
+                swatch: None,
+                pick: None,
+                date: None,
+                chip: vec![],
+                step: None,
+                preview: None,
+            }],
+            short: vec![],
+        };
+        let step_with = |p: &str, to: &str| Call {
+            name: "files_move".into(),
+            arguments: json!({"path": p, "to": to}).as_object().unwrap().clone(),
+            ask: vec![],
+            said: None,
+            pick: None,
+        };
+        assert!(step(&tools, &rows, &step_with("/h/a.txt", "/h")).is_ok(), "a row's path, and the folder itself");
+        assert_eq!(
+            step(&tools, &rows, &step_with("/etc/passwd", "/h")).unwrap_err(),
+            "passwd is not in the list now"
+        );
+        assert_eq!(step(&tools, &rows, &step_with("/h/a.txt", "/tmp")).unwrap_err(), "tmp is not in the list now");
     }
 }

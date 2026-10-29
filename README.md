@@ -133,7 +133,7 @@ explain each part. If something fails, run `spark-shell check` and
     spark-shell reminders             the reminders ahead, in their groups
     spark-shell reminders add DAY TIME WORDS
                                       tomorrow 9:00 call the dentist
-    spark-shell reminders done|snooze|restore NAME
+    spark-shell reminders done|snooze|delete|restore NAME
                                       done (kept 30 days), in 10 minutes, back
     spark-shell desktop               start the desktop now (from a console)
     spark-shell desktop keys          list the desktop's keys
@@ -411,13 +411,16 @@ bar's `kb` block and `desktop keyboard next` go to the next one. The
 `kb` block shows only with more than one layout.
 
 `spark-shell desktop screen` lists the screens. `desktop screen NAME
-scale 1.5`, `mode 2560x1440`, or `left-of`, `right-of`, `above` and
-`below` another screen set one, by its port or words of its make and
+scale 1.5`, `mode 2560x1440`, `transform 90` (normal, 90, 180 or 270,
+clockwise; no mirrored orientation), or `left-of`, `right-of`, `above`
+and `below` another screen set one, by its port or words of its make and
 model; each is sway's at once and kept, by the screen's make, model and
-serial, in `~/.config/spark-shell/screens.conf`. `on` and `off` hold
-until the desktop starts again, so a later start never comes up with no
-screen, and the last screen on stays on. The dialog has a `display` and
-a `keyboard` section for the same.
+serial, in `~/.config/spark-shell/screens.conf`. A screen placed beside
+another is placed again after a turn, since its width changed. `on` and
+`off` hold until the desktop starts again, so a later start never comes
+up with no screen, and the last screen on stays on. The dialog has a
+`display` and a `keyboard` section for the same; a screen's rows offer
+its orientation beside its scale, resolution and arrangement.
 
 ## Notes and reminders
 
@@ -455,7 +458,13 @@ the reminders in the dialog. The
 tmux status line shows it too, in the accent, so a terminal outside the
 desktop and a Mac hear and see it.
 Both lines check the time every 15 seconds, so nothing more runs for
-it. Done takes the reminder away; again in 10 minutes moves it on.
+it. Done takes the reminder away; again in 10 minutes moves it on. A
+reminder ahead has done and delete too: in the dialog the right arrow
+opens its steps, and `spark-shell reminders delete NAME` at the prompt
+takes its file away. Two reminders of one name are told apart by the
+UID the list shows beside each, which done, delete and snooze take too.
+The same words at the same minute are one reminder: a second add is
+refused with the one that exists.
 
 ## Lock and capture
 
@@ -620,8 +629,13 @@ side of a window left alone in a split, where the next one opens.
 ## Bar
 
 On the desktop, a bar sits at the top of the screen. The workspaces are
-on the left. A workspace a layout opened carries the layout's words, so
-`2 news` reads from a distance. On the right, in groups parted by a thin
+on the left, each wearing a symbol: workspace 1 always the same one, the
+others one each from an order drawn when the desktop starts, from APL's
+block first, then Miscellaneous Technical, Geometric Shapes,
+Mathematical Operators and Arrows, as the bar's font has them, so a
+workspace past the tenth wears one too. A workspace a layout opened
+carries the layout's words after its symbol, so `2 news` reads from a
+distance. On the right, in groups parted by a thin
 line: `lan`, `wifi` and `bt`; `out` and `mic`, each with its gauge;
 `due`, a reminder due; `do not disturb`, while it is on; `light`, the
 brightness with its gauge, and `kb`,
@@ -755,9 +769,12 @@ and Page Down scroll it.
 - `reminders`: a new reminder, then the reminders in their groups,
   due, today, tomorrow, this week and later. Enter on new reminder asks
   for when and what, as `tomorrow 9:00 call the dentist`; said in
-  words, `remind me to call the dentist tomorrow at 9`. One due has
-  done and again in 10 minutes. Done puts the reminder aside in
-  `~/calendar/done` for 30 days, and undo brings it back.
+  words, `remind me to call the dentist tomorrow at 9`. Every reminder
+  of spark-shell's own has done, again in 10 minutes and delete as its
+  steps (the right arrow opens them), and Enter on one is done. Done
+  puts the reminder aside in `~/calendar/done` for 30 days, and undo
+  brings it back; delete takes the file away, and undo brings it back
+  while the dialog is open.
 - `window`: the windows open now, in front or closed, and how new
   windows sit on a workspace: side by side, in tabs or stacked.
 - `bar`: hide the bar at the top of the screen, or show it again.
@@ -766,11 +783,31 @@ and Page Down scroll it.
   one line, its sentence up to the first comma; `spark-shell desktop
   keys` has every sentence whole. It opens by itself the first time the
   desktop starts, and Esc gives the list back.
-- `files`: your home folder. Enter on a folder opens it, `..` goes back
-  up, and Esc walks back the way you came; a folder lists its folders,
-  then its files with the size and the date. Enter on a file opens it
-  with the app for its kind. A hidden file, a link and anything outside
-  your home are never read.
+- `files`: your home folder, as a file manager of its own. Enter on a
+  folder opens it, `..` goes back up, and Esc walks back the way you
+  came; a folder lists its folders, then its files with the size and
+  the date. Enter on a file opens it with the app for its kind. The
+  right arrow opens the lit row's steps as a list: open, show the first
+  lines, attach, reveal in the system file manager, rename (it asks the
+  name), move to a folder and copy to a folder (the folder is picked
+  here: open folders until the right one, then Enter on `move NAME
+  here`), and trash. Trash is the delete: the file goes to the
+  freedesktop trash (`gio trash` where it is, else the spec by hand),
+  and Undo brings it back; a rename and a move come back the same way,
+  and a copy's Undo trashes the copy. Nothing here asks for a typed
+  yes. Every folder ends with its total, `new folder` and `new text
+  file` (each asks a name; the text file opens in your editor), and
+  `open in the system file manager`, for anything beyond these steps
+  (permissions, archives, remote places). Your home folder starts with
+  `recent`, the files touched in the last 7 days wherever they are,
+  each with its folder's name, and ends with `drives`, a row per drive
+  mounted (Storage mounts them), a root beside your home. A picture lit
+  shows small at the top right where the terminal draws pictures. Typed
+  words filter the folder; `files find NAME` lists what has the words
+  in its name under your home and your drives, and `files say WORDS`
+  the text files that hold the words, each as a list to act on. A
+  hidden file, a link and anything outside your home and your drives
+  are never read, and never written.
 
 Above the list, what was said and done, the newest first, a blank row
 between one turn and the next. A turn is the command as it ran, then
@@ -815,9 +852,11 @@ and the names the steps take now (the open view's rows, then every
 ready provider's layouts, networks, windows and notes, as written) go
 with every ready provider's tools, and spark answers with the steps that
 do it, under a grammar, in one call. The steps come back as commands in
-the prompt, one a line: Enter runs them in order, and a step that writes
-to or removes something of yours still asks for a typed yes, checked
-again against what is offered then. A step that names a row by a near
+the prompt, one a line: Enter runs them in order, and a step that loses
+something (forget a network, close a window, remove a device, delete a
+layout or a theme, log out, restart, shut down) still asks for a typed
+yes, checked again against what is offered then; every other step
+carries its Undo. A step that names a row by a near
 miss ("everforest light" for everforest-light) takes the row's own name
 when one row alone fits, and the proposal shows it; a miss with no one
 fit is refused in the step's own words. Esc drops them, and a change
@@ -867,9 +906,9 @@ repeat rate (0 to 100 per second, 0 disables repeat), and Caps Lock as itself,
 Control or Escape. The settings apply live and remain for the next login.
 The command line and the dialog use the same native controls, with no AI.
 
-The dialog's key chips are clickable. A click takes the same action as the
-key; each half of the Calendar's arrow chip moves in that direction.
-Destructive operations still require a typed yes.
+The dialog's key chips take a click. A click takes the same action as
+the key; each half of the Calendar's arrow chip moves in that direction.
+A step that loses something still takes the typed yes.
 
 ## Providers
 
@@ -882,12 +921,13 @@ request carries the words, the view, the selected row's text, the names
 the steps take now (the open view's rows, then each other provider's
 tool that names one of your things, its title's words and its rows'
 values exactly as written, 1500 characters at most) and the local time,
-and on stdin every ready provider's tools
-but the files', each with its name, title, description and schema, in
-provider order and the same bytes from one request to the next, so
-spark's served prompt keeps the list cached and a request pays its own
-words. Hidden rows, note contents, directories and device names are not
-sent. spark answers `{"answer", "steps", "refused"}` under a grammar
+and on stdin every ready provider's tools, each with its name, title,
+description and schema, in provider order and the same bytes from one
+request to the next, so spark's served prompt keeps the list cached and
+a request pays its own words. Hidden rows, note contents and device
+names are not sent; from the Files place, the paths of the folder on
+screen go, since a files step takes a path and the rows are its
+allowlist. spark answers `{"answer", "steps", "refused"}` under a grammar
 made from the tools; a tool whose argument is one of a fixed list (the
 theme's palettes) says so in its schema as an enum, and the grammar
 holds the model to it. The dialog checks each step again against what

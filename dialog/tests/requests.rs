@@ -70,7 +70,7 @@ fn type_words(app: &mut App, words: &str) {
 }
 
 #[test]
-fn a_request_carries_the_view_the_selected_row_and_every_ready_tool_but_the_files() {
+fn a_request_carries_the_view_the_selected_row_and_every_ready_tool() {
     let (mut app, _, _) = started(false);
     app.down();
     assert!(app.in_list);
@@ -87,7 +87,7 @@ fn a_request_carries_the_view_the_selected_row_and_every_ready_tool_but_the_file
 }
 
 #[test]
-fn a_dead_or_unready_provider_and_the_files_are_not_offered() {
+fn a_dead_or_unready_provider_is_not_offered_and_the_files_are() {
     let (mut app, _, _) = app_with(&["out", "files", "wifi"]);
     app.cfg.spark = "/bin/sh".into();
     for p in &mut app.providers {
@@ -108,7 +108,7 @@ fn a_dead_or_unready_provider_and_the_files_are_not_offered() {
     app.enter();
     let (_, _, tools) = request(&app);
     let names: Vec<&str> = tools["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec!["out_x"]);
+    assert_eq!(names, vec!["out_x", "files_x"], "the files' tools go too since #112");
 }
 
 #[test]
@@ -470,5 +470,105 @@ fn a_request_carries_the_names_other_steps_take_from_every_ready_provider() {
         about.find("names other steps").unwrap() < about.find("The local time").unwrap(),
         "the clock stays last: {}",
         about
+    );
+}
+
+/// The files as a file manager (#112): a folder on screen, its rows' paths the names a step takes.
+fn in_a_folder() -> (App, std::sync::mpsc::Receiver<spark_dialog::mcp::Incoming>) {
+    let (mut app, rx, tx) = app_with(&["files"]);
+    app.cfg.spark = "/bin/sh".into();
+    let path_prop = json!({"type": "string", "minLength": 2, "maxLength": 4096, "format": "path"});
+    let tools = json!([
+        {"name": "files_trash", "title": "files trash PATH", "description": "Trash.", "inputSchema": {"type": "object", "properties": {"path": path_prop}, "required": ["path"]}, "annotations": {"destructiveHint": false}},
+        {"name": "files_move", "title": "files move PATH", "description": "Move.", "inputSchema": {"type": "object", "properties": {"path": path_prop, "to": path_prop}, "required": ["path", "to"]}, "annotations": {"destructiveHint": false}}
+    ]);
+    let root = json!({"title": "files", "rows": [{"id": "files:root:a", "sign": "opens", "text": "~", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null}], "short": ["files:root:a"]});
+    let folder = json!({"title": "~", "here": "/data/me", "rows": [
+        {"id": "files:dir:d", "sign": "opens", "text": "documents", "tool": {"name": "files_browse", "arguments": {"path": "/data/me/documents"}}, "more": [{"name": "files_trash", "arguments": {"path": "/data/me/documents"}}], "columns": [], "children": "spark-shell://files/rows/ZG9jcw", "group": null},
+        {"id": "files:file:i", "sign": "blank", "text": "invoice.pdf", "tool": {"name": "files_open", "arguments": {"path": "/data/me/invoice.pdf"}}, "more": [{"name": "files_move", "arguments": {"path": "/data/me/invoice.pdf"}, "pick": "to"}, {"name": "files_trash", "arguments": {"path": "/data/me/invoice.pdf"}}], "columns": ["2 MB", "today"], "children": null, "group": null}
+    ], "short": []});
+    let script: Script = Box::new(move |v, send| {
+        if v.get("method").and_then(Value::as_str) == Some("resources/read") && v.pointer("/params/uri") != Some(&json!("spark-shell://files/rows")) {
+            return send(result(
+                &v["id"],
+                json!({"contents": [{"uri": v["params"]["uri"], "mimeType": "application/json", "text": folder.to_string()}]}),
+            ));
+        }
+        if let Some(r) = ordinary("files", v, &tools, &root) {
+            send(r);
+        }
+    });
+    app.servers.push(stub(0, "files", script, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    app.came_from.push(View::Home);
+    app.view = View::Section(0);
+    app.down();
+    app.up();
+    let root_uri = "spark-shell://files/rows/aG9tZQ".to_string();
+    app.view = View::Folder(0, root_uri);
+    app.folder = None;
+    app.tick(std::time::Instant::now());
+    // the folder's rows, read as the view opens
+    app.providers[0].dirty = true;
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "the folder's rows come");
+    app.jobs.clear();
+    (app, rx)
+}
+
+#[test]
+fn a_request_from_a_folder_carries_its_paths_and_the_files_tools() {
+    let (mut app, _) = in_a_folder();
+    type_words(&mut app, "move the invoice to documents");
+    app.enter();
+    let (_, about, tools) = request(&app);
+    assert!(about.contains("The view: files"), "{}", about);
+    assert!(
+        about.contains("/data/me/invoice.pdf") && about.contains("/data/me/documents"),
+        "the folder's paths are the names: {}",
+        about
+    );
+    let names: Vec<&str> = tools["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["files_trash", "files_move"]);
+}
+
+#[test]
+fn a_step_with_a_path_no_row_holds_is_refused_and_a_rows_own_path_passes() {
+    let (mut app, _) = in_a_folder();
+    type_words(&mut app, "trash the password file");
+    app.enter();
+    let (serial, _, _) = request(&app);
+    propose(&mut app, serial, json!([{"name": "files_trash", "arguments": {"path": "/etc/passwd"}}]));
+    assert!(
+        app.exchange.iter().any(|l| l.text.contains("passwd is not in the list now")),
+        "{:?}",
+        app.exchange
+    );
+    assert!(app.staged.is_none());
+    type_words(&mut app, "move the invoice to documents");
+    app.enter();
+    let (serial, _, _) = request(&app);
+    propose(
+        &mut app,
+        serial,
+        json!([{"name": "files_move", "arguments": {"path": "/data/me/invoice.pdf", "to": "/data/me/documents"}}]),
+    );
+    assert!(app.staged.is_some(), "a move between two rows' paths waits in the box: {:?}", app.exchange);
+    // a near miss on the name resolves to the row's own path, and a folder named by its path alone passes the gate
+    type_words(&mut app, "move invoice.pdf to documents");
+    app.enter();
+    let (serial, _, _) = request(&app);
+    propose(
+        &mut app,
+        serial,
+        json!([{"name": "files_move", "arguments": {"path": "invoice.pdf", "to": "/data/me/documents"}}]),
+    );
+    assert!(
+        app.staged
+            .as_ref()
+            .is_some_and(|st| st.steps[0].call.arguments["path"] == "/data/me/invoice.pdf"),
+        "{:?} {:?}",
+        app.staged,
+        app.exchange
     );
 }

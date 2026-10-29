@@ -931,6 +931,7 @@ desktop_look_apply() {   # on and on desktop: the renders, the pointer, and a ru
     _sc=$({ cksum < "$HOME/.config/sway/config"; } 2>/dev/null || :)
     desktop_files
     pointer_apply
+    ws_pool_apply
     [ "$({ cksum < "$HOME/.config/sway/config"; } 2>/dev/null || :)" = "$_sc" ] || sway_reload
     look_burst   # the open terminals take the look too: after an upgrade, the slots their new shells draw in
 }
@@ -3308,8 +3309,45 @@ BAR_DUE=$(printf '\342\232\221')      # U+2691 black flag: a reminder due
 BAR_DND=$(printf '\342\217\276')      # U+23FE power sleep symbol: do not disturb
 BAR_PIP=$(printf '\342\226\260')      # U+25B0 black parallelogram: a gauge's cell, lit
 BAR_PIP_OFF=$(printf '\342\226\261')  # U+25B1 white parallelogram: a gauge's cell, unlit
-# workspaces 1 to 10, named N:GLYPH by bar_ws_names; the bar strips the number
-BAR_WS='\342\215\237 \342\215\242 \342\215\253 \342\215\261 \342\215\262 \342\215\246 \342\215\254 \342\214\271 \342\215\244 \342\215\234'   # U+235F 2362 236B 2371 2372 2366 236C 2339 2364 235C: APL's symbols
+# the workspaces, named N:GLYPH by bar_ws_names; the bar strips the number. Workspace 1 wears
+# U+235F always; 2 and on take a glyph each from an order drawn once per desktop start (#110):
+# APL's block first, then Miscellaneous Technical, Geometric Shapes, Mathematical Operators and
+# Arrows, each family shuffled, of the glyphs the bar's font has (ws_pool_apply, at on desktop)
+# less the bar's own, the dialog's signs and the wide ones; without the pool, APL's block alone
+BAR_WS_FIRST='\342\215\237'   # U+235F, workspace 1
+WS_FAMILIES='2336-237a 2300-23ff 25a0-25ff 2200-22ff 2190-21ff'
+WS_NOT='235f 2317 23fe 25b0 25b1 25b8 25c0 25c1 25c9 25cb 25cf 25e0 21c5 231a 231b 23e9 23ea 23eb 23ec 23f0 23f3 25fd 25fe'   # the bar's blocks and the dialog's signs, and the ones East Asian Width calls wide
+WS_POOL=$STATE_DIR/ws-pool   # FAMILY HEX a line, from the font, written at on desktop
+BAR_WS_ORDER=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; BAR_WS_ORDER=${BAR_WS_ORDER:-$STATE_DIR}/ws-order   # the session's order, one octal-escaped glyph a line, written at the bar's start
+ws_pool_lines() {   # -> FAMILY HEX per glyph the families hold, less WS_NOT, within the charset ranges on stdin (fc-query's "20-7e a0-148 ..."); every family when stdin is empty
+    tr -s ' \n' '\n' | awk -v fam="$WS_FAMILIES" -v not="$WS_NOT" '
+        function hex(h,   i, v) { v = 0; for (i = 1; i <= length(h); i++) v = v * 16 + index("0123456789abcdef", substr(h, i, 1)) - 1; return v }
+        BEGIN { nf = split(fam, f, " "); nn = split(not, x, " "); for (i = 1; i <= nn; i++) out[hex(x[i])] = 1 }
+        NF { if (split($1, r, "-") == 2) { lo = hex(r[1]); hi = hex(r[2]) } else { lo = hex($1); hi = lo } for (c = lo; c <= hi && c <= 65535; c++) has[c] = 1; any = 1 }
+        END { for (i = 1; i <= nf; i++) { split(f[i], r, "-"); for (c = hex(r[1]); c <= hex(r[2]); c++) if (!out[c] && !seen[c] && (!any || has[c])) { seen[c] = 1; printf "%d %x\n", i, c } } }'   # a glyph goes with its first family: APL sits inside Miscellaneous Technical
+}
+ws_pool_apply() {   # the glyphs row of on desktop: the pool from the bar's font (fc-query on Monaspace Neon's regular face), written when the font or spark-shell is newer than it
+    _wf=''; for _wd in "$NEON_DIR" /usr/share/fonts/spark-shell; do [ ! -f "$_wd/MonaspaceNeon-Regular.otf" ] || { _wf=$_wd/MonaspaceNeon-Regular.otf; break; }; done
+    if [ -z "$_wf" ] || ! command -v fc-query >/dev/null 2>&1; then skip glyphs "no Monaspace Neon face or no fc-query to read it: the workspaces wear APL's symbols alone"; return 0; fi
+    [ ! -f "$WS_POOL" ] || [ -n "$(find "$_wf" "$REPO/spark-shell" -newer "$WS_POOL" 2>/dev/null)" ] || { ok glyphs "the workspaces' glyphs are read from the font"; return 0; }
+    need glyphs "read the glyphs the workspaces may wear from Monaspace Neon" || return 0
+    mkdir_state "$STATE_DIR"
+    if fc-query --format '%{charset}' "$_wf" 2>/dev/null | ws_pool_lines > "$WS_POOL.new" && [ -s "$WS_POOL.new" ]; then mv "$WS_POOL.new" "$WS_POOL"; ok glyphs "$(grep -c . "$WS_POOL") glyphs the workspaces may wear, read from Monaspace Neon"
+    else rm -f "$WS_POOL.new"; row todo glyphs "fc-query could not read Monaspace Neon: the workspaces wear APL's symbols alone"; fi
+}
+ws_order_write() {   # the session's order to BAR_WS_ORDER: workspace 1's glyph, then each family of the pool (APL's block alone without one) shuffled, from a seed of /dev/urandom (SPARK_SHELL_WS_SEED in a test); one octal-escaped glyph a line
+    _ws=${SPARK_SHELL_WS_SEED:-}; [ -n "$_ws" ] || _ws=$(od -An -tu4 -N4 /dev/urandom 2>/dev/null | tr -d ' ') || :; [ -n "$_ws" ] || _ws=$(date +%s)
+    mkdir -p "$(dirname "$BAR_WS_ORDER")" 2>/dev/null || return 0
+    { if [ -s "$WS_POOL" ]; then cat "$WS_POOL"; else printf '' | ws_pool_lines | awk '$1 == 1'; fi; } > "$TMP/ws.pool"
+    { printf '%s\n' "$BAR_WS_FIRST"
+      awk -v seed="$_ws" '
+        function hex(h,   i, v) { v = 0; for (i = 1; i <= length(h); i++) v = v * 16 + index("0123456789abcdef", substr(h, i, 1)) - 1; return v }
+        function shuffle(fam,   i, j, t) { for (i = n[fam]; i > 1; i--) { s = (s * 1664525 + 1013904223) % 4294967296; j = int(s / 65536) % i + 1; t = a[fam, i]; a[fam, i] = a[fam, j]; a[fam, j] = t } }
+        BEGIN { s = seed % 4294967296 }
+        { n[$1]++; a[$1, n[$1]] = hex($2) }
+        END { for (f = 1; f <= 5; f++) { shuffle(f); for (i = 1; i <= n[f]; i++) { c = a[f, i]; printf "\\%03o\\%03o\\%03o\n", 224 + int(c / 4096), 128 + int(c / 64) % 64, 128 + c % 64 } } }' "$TMP/ws.pool"
+    } > "$BAR_WS_ORDER.new" && mv "$BAR_WS_ORDER.new" "$BAR_WS_ORDER"
+}
 BAR_STEPS='\342\226\202 \342\226\204 \342\226\206 \342\226\210'   # U+2582 2584 2586 2588: the wifi bars
 
 bar_esc() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\\/\\\\/g; s/"/\\"/g'; }   # a name: pango, then JSON
@@ -3327,7 +3365,13 @@ bar_gauge() {   # bar_gauge LEVEL MUTED [CELLS] [COLOR] -> CELLS cells (5), the 
     c=${4:-$HEX_ACCENT}; [ "$2" != 1 ] || c=$HEX_MUTED
     printf '%s%s' "$(bar_span "$c" "$full")" "$(bar_span "$HEX_MUTED" "$rest")"
 }
-bar_ws_glyph() { set -- "$1" $BAR_WS; _n=$1; shift; [ "$_n" -ge 1 ] 2>/dev/null && [ "$_n" -le $# ] || return 1; eval "printf \"\${$_n}\""; }   # bar_ws_glyph N -> workspace N's glyph; nothing past the tenth (${10}: $10 would be $1 and a 0)
+bar_ws_glyph() {   # bar_ws_glyph N -> workspace N's glyph: line N of the session's order (1 is U+235F); nothing past the order's end
+    [ "$1" -ge 1 ] 2>/dev/null || return 1
+    [ -s "$BAR_WS_ORDER" ] || ws_order_write
+    _wg=$(sed -n "${1}p" "$BAR_WS_ORDER" 2>/dev/null); [ -n "$_wg" ] || return 1
+    # shellcheck disable=SC2059   # the line is the octal escapes
+    printf "$_wg"
+}
 bar_ws_names() {   # each workspace named by its number ("3"), or a layout's "3 writing", becomes "3:GLYPH" or "3:GLYPH writing"
     command -v jq >/dev/null 2>&1 || return 0
     swaymsg -t get_workspaces 2>/dev/null | jq -r '.[] | select(.name | test("^[0-9]+( |$)")) | "\(.num)\t\(.name)"' 2>/dev/null |
@@ -3336,7 +3380,8 @@ bar_ws_names() {   # each workspace named by its number ("3"), or a layout's "3 
             swaymsg -- "rename workspace \"$name\" to \"$n:$g${name#"$n"}\"" >/dev/null 2>&1 || :
         done
 }
-bar_ws_watch() {   # swaymsg's workspace events, each a rename pass: a new workspace takes its glyph at once
+bar_ws_watch() {   # swaymsg's workspace events, each a rename pass: a new workspace takes its glyph at once; the session's order drawn first, once (the desktop's start clears the last one)
+    [ -s "$BAR_WS_ORDER" ] && [ -z "${SPARK_SHELL_WS_SEED:-}" ] || ws_order_write
     bar_ws_names
     swaymsg -r -t subscribe -m '["workspace"]' 2>/dev/null | while IFS= read -r _e; do   # -r: one event a line
         case $_e in *'"change": "init"'*|*'"change":"init"'*|*'"change": "rename"'*|*'"change":"rename"'*) bar_ws_names ;; esac   # sway spaces its JSON; a layout's rename to "3 writing" takes the glyph back
@@ -4591,7 +4636,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                 if [ "${2:-}" = full ]; then for _n in clock $SAVER_NAMES; do [ "$_n" = "$DISPLAY_SAVER" ] || printf -- '-\tsaver %s\tsaver %s\n' "$_n" "$_n"; done; fi
             fi
             _b=$(light_get); [ -z "$_b" ] || printf -- '-\tbrightness %s%%\tshow\n-\tbrighter\tbrightness up\n-\tdimmer\tbrightness down\n' "$_b"
-            [ -z "${SWAYSOCK:-}" ] || screen_rows | while IFS="$TAB" read -r _n _id _on _md _sc _x _y _w _h _mo; do   # short, for the dialog's width: the port, the model, the mode, the scale
+            [ -z "${SWAYSOCK:-}" ] || screen_rows | while IFS="$TAB" read -r _n _id _on _md _sc _x _y _w _h _mo _tr; do   # short, for the dialog's width: the port, the model, the mode, the scale
                 if [ "$_on" = on ]; then printf -- '-\tscreen %s %s %s%s %s scale %s\tshow\n' "$_n" "$PANEL_SEP" "${_mo:+$_mo $PANEL_SEP }" "$_md" "$PANEL_SEP" "$_sc"; else printf -- '-\tscreen %s %s off\tshow\n' "$_n" "$PANEL_SEP"; fi
             done ;;
         keyboard) if [ -z "$KEYBOARD" ]; then printf -- "-\tsway's own layout: spark-shell desktop keyboard us br sets some\tshow\n"
@@ -4656,7 +4701,8 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                         [ -z "$_first" ] || printf -- '-\tdone\tdone %s\tdue||\n-\tagain in 10 minutes\tsnooze %s\tdue||\n' "$_u" "$_u"
                         _first=''
                     else printf '%s\t%s\tshow\t%s\n' "$PANEL_DOT" "$_t" "$_x"; fi
-                elif [ "${2:-}" = full ]; then printf '%s\t%s\tshow\t%s\n' "$PANEL_RING" "$_t" "$_x"
+                elif [ "${2:-}" = full ]; then   # one ahead: done on Enter, delete and again in its steps, when spark-shell wrote it; another calendar's is shown alone (#111)
+                    if rem_ours "$_s$TAB$_u$TAB$_t$TAB$_f"; then printf '%s\t%s\tdone %s\t%s\n' "$PANEL_RING" "$_t" "$_u" "$_x"; else printf '%s\t%s\tshow\t%s\n' "$PANEL_RING" "$_t" "$_x"; fi
                 elif [ -n "$_next" ]; then printf '%s\t%s\tmore\t|%s|\n' "$PANEL_RING" "$_t" "$(rem_said "$_s")"; _next=''; fi   # short: the next one ahead, its day and time; Enter opens the rest
             done < "$TMP/rem.rows" ;;
         bar) if [ "$DESKTOP_BAR" = yes ]; then printf -- '-\thide\toff\n'; else printf -- '-\tshow\ton\n'; fi ;;   # on and off, as the verb: show is the panel's look-only word
@@ -4969,9 +5015,10 @@ rem_ours() {   # rem_ours LINE -> 0 when spark-shell wrote that event (its uid, 
     [ "$(grep -c '^BEGIN:VEVENT' "$(printf '%s' "$1" | cut -f4)")" = 1 ]
 }
 REM_DONE_DAYS=30   # a reminder done is kept this long in ~/calendar/done, so undo can bring it back
-rem_restore() {   # UID or unique title from the done folder, never a different duplicate
-    [ -d "$CAL_DIR/done" ] || { echo "no reminder done to bring back"; return 1; }
-    _rr=$( ( CAL_DIR=$CAL_DIR/done; rem_all ) | rem_match "$1") || { echo "no unique reminder done named $1; use its UID"; return 1; }
+rem_restore() {   # UID or unique title from the done folder, or from the keep of this provider's deletes while it lives, never a different duplicate
+    _rrd=''; [ -z "${REM_DELETED:-}" ] || [ ! -d "$REM_DELETED" ] || _rrd=$( ( CAL_DIR=$REM_DELETED; rem_all ) | rem_match "$1" 2>/dev/null) || :
+    [ -n "$_rrd" ] || [ -d "$CAL_DIR/done" ] || { echo "no reminder done to bring back"; return 1; }
+    _rr=$_rrd; [ -n "$_rr" ] || _rr=$( ( CAL_DIR=$CAL_DIR/done; rem_all ) | rem_match "$1") || { echo "no unique reminder done named $1; use its UID"; return 1; }
     rem_ours "$_rr" || { echo 'another calendar owns that event'; return 1; }
     _rp=$(printf '%s' "$_rr" | cut -f4); _rf=${_rp##*/}; _rt=$(printf '%s' "$_rr" | cut -f3)
     [ ! -e "$CAL_DIR/$_rf" ] && [ ! -L "$CAL_DIR/$_rf" ] || { echo "$_rt is in your reminders already"; return 1; }
@@ -4986,6 +5033,7 @@ rem_act() {   # rem_act add|done|snooze|restore ARG
             _s=${_p%%"$TAB"*}; _t=${_p#*"$TAB"}
             rem_time_check "$_s" "$_t" || return 1
             [ "$_s" -gt "$(date +%Y%m%d%H%M)" ] || { echo "$(rem_said "$_s") has passed: say a time to come"; return 1; }
+            _rd=$(rem_list | awk -F '\t' -v s="$_s" -v t="$(panel_lower "$_t")" '$1 == s && tolower($3) == t { print $3; exit }'); [ -z "$_rd" ] || { echo "$(rem_said "$_s") $_rd is a reminder already"; return 1; }   # the same words at the same minute: once (#111)
             _u=$(python3 "$REPO/lib/reminder_time.py" --uid 2>/dev/null) || { echo 'could not create a private reminder identity; nothing saved'; return 1; }
             [ "${#_u}" = 48 ] && printf '%s\n' "$_u" | LC_ALL=C grep -Eq '^spark-shell-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' || { echo 'could not create a private reminder identity; nothing saved'; return 1; }
             mkdir_private "$CAL_DIR"
@@ -4994,9 +5042,16 @@ rem_act() {   # rem_act add|done|snooze|restore ARG
             rem_write "$_f" "$_u" "$_s" "$_t" || { rm -f "$_f.new"; echo "could not write the reminder in ${CAL_DIR#"$HOME"/}"; return 1; }
             rem_effect "$_u"
             bar_redraw; echo "reminder $(rem_said "$_s") $_t" ;;
-        done|snooze) _l=$(rem_find "$2") || { echo "no unique reminder named $2; select it in Calendar"; return 1; }
+        done|snooze|delete) _l=$(rem_find "$2") || { echo "no unique reminder named $2; select it in Calendar"; return 1; }
             _t=$(printf '%s' "$_l" | cut -f3)
             rem_ours "$_l" || { echo "$_t is an event another calendar wrote: change it there"; return 1; }
+            if [ "$1" = delete ]; then   # the file goes; a provider keeps it in its own temp folder, so undo brings it back while the window is open (#111)
+                _f=$(printf '%s' "$_l" | cut -f4)
+                if [ -n "${REM_DELETED:-}" ]; then mkdir -p "$REM_DELETED" && mv "$_f" "$REM_DELETED/${_f##*/}" || { echo "could not delete $_t"; return 1; }
+                else rm -f "$_f" || { echo "could not delete $_t"; return 1; }; fi
+                rem_effect "$(printf '%s' "$_l" | cut -f2)" deleted "${REM_DELETED:-}"
+                bar_redraw; echo "deleted: $_t"; return 0
+            fi
             if [ "$1" = 'done' ]; then   # done is put aside, not deleted: undo brings it back for REM_DONE_DAYS
                 mkdir -p "$CAL_DIR/done"; _f=$(printf '%s' "$_l" | cut -f4)
                 [ ! -e "$CAL_DIR/done/${_f##*/}" ] && [ ! -L "$CAL_DIR/done/${_f##*/}" ] || { echo "could not mark $_t done: that saved filename is already in use"; return 1; }
@@ -5014,8 +5069,9 @@ rem_act() {   # rem_act add|done|snooze|restore ARG
         *) echo "$1 is not something reminders does"; return 1 ;;
     esac
 }
-rem_effect() {   # read the saved event through the native reader; only this event leaves the provider
+rem_effect() {   # read the saved event through the native reader; only this event leaves the provider (a delete with no keep: its identity alone)
     [ -n "${PROVIDE_EFFECT:-}" ] || return 0
+    if [ "${2:-}" = deleted ] && [ -z "${3:-}" ]; then jq -cn --arg id "$1" '{kind: "reminder", operation: "deleted", id: $id, title: ""}' > "$TMP/action.effect"; return 0; fi
     ( [ -z "${3:-}" ] || CAL_DIR=$3; rem_all ) | jq -Rsc --arg id "$1" --arg operation "${2:-created}" 'split("\n") | map(split("\t")) | map(select(.[1] == $id)) | first |
         if . == null then empty else {kind: "reminder", operation: $operation, id: .[1], title: .[2],
         localTime: (.[0] | "\(.[0:4])-\(.[4:6])-\(.[6:8]) \(.[8:10]):\(.[10:12])")} end' > "$TMP/action.effect"
@@ -5130,9 +5186,9 @@ STORAGE_SEEN=$STATE_DIR/storage.seen   # the drives the bar saw at its last look
 STORAGE_RULE=etc/polkit-1/rules.d/50-spark-shell-storage.rules
 storage_list() {   # -> "drive NAME DEV SIZE" a drive, then "fs NAME DEV SIZE MOUNT DRIVE FSTYPE" per filesystem on it, parted by US (an empty mount stays a field); names as a person reads them, each once
     command -v lsblk >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
-    lsblk -J -b -o NAME,PATH,TYPE,RM,HOTPLUG,SIZE,MODEL,VENDOR,LABEL,FSTYPE,MOUNTPOINT 2>/dev/null | jq -r '
+    lsblk -J -b -o NAME,PATH,TYPE,RM,HOTPLUG,SIZE,MODEL,VENDOR,LABEL,FSTYPE,MOUNTPOINT 2>/dev/null | jq -r --arg media "${SPARK_SHELL_MEDIA:-/nowhere/}" '
         def yes: . == true or . == "1" or . == 1;
-        def system: [.. | objects | .mountpoint? // empty | select(. != "" and ((startswith("/run/media/") or startswith("/media/")) | not))] | length > 0;
+        def system: [.. | objects | .mountpoint? // empty | select(. != "" and ((startswith("/run/media/") or startswith("/media/") or startswith($media)) | not))] | length > 0;
         .blockdevices[]? | select(.type == "disk" and ((.rm | yes) or (.hotplug | yes)) and (system | not))
         | . as $d | ([(.vendor // ""), (.model // "")] | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != "")) | join(" ")) as $m
         | ["drive", (if $m == "" then "drive" else $m end), .path, (.size | tostring)],
@@ -5439,7 +5495,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                     config_set DISPLAY_SAVER "$_arg" >/dev/null; DISPLAY_SAVER=$_arg; export DISPLAY_SAVER
                     echo "idle screen shows $(saver_words "$_arg")" ;;
                 brightness) light_set "$_arg" ;;
-                scale|mode|position|place|screen-on|screen-off) screen_action "$_a" "$_arg" ;;
+                scale|mode|position|place|transform|screen-on|screen-off) screen_action "$_a" "$_arg" ;;
                 *) echo "$_a is not something display does"; return 1 ;;
             esac ;;
         clock) time_setting "$_a" "$_arg" ;;
@@ -5544,11 +5600,12 @@ panel_undo() {   # the last group's inverse steps, played newest first, then for
 panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORDS" that takes the step back, or nothing when it cannot be taken back
     _p=$1; _a=$2; shift 2; _arg=$*
     case $_p:$_a in
-        display:scale|display:mode|display:position|display:place|display:screen-on|display:screen-off)
+        display:scale|display:mode|display:position|display:place|display:transform|display:screen-on|display:screen-off)
             _name=${_arg%% *}; _row=$(screen_find "$_name"); [ -n "$_row" ] || return 0
             _name=$(printf '%s' "$_row" | cut -f1)
             case $_a in
                 scale) _back="scale $_name scale=$(printf '%s' "$_row" | cut -f5)" ;;
+                transform) _back="transform $_name transform=$(printf '%s' "$_row" | cut -f11)"; [ -n "${_back##* transform=}" ] || _back="transform $_name transform=normal" ;;
                 mode) _mode=$(printf '%s' "$_row" | cut -f4); [ -n "$_mode" ] || return 0; _back="mode $_name mode=$_mode" ;;
                 position|place) _back="position $_name x=$(printf '%s' "$_row" | cut -f6) y=$(printf '%s' "$_row" | cut -f7)" ;;
                 *) _back="screen-$(printf '%s' "$_row" | cut -f3) $_name" ;;
@@ -5588,7 +5645,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         notifications:do-not-disturb) _nd=off; ! notify_dnd || _nd=on; [ "$_nd" = "$_arg" ] || printf 'do-not-disturb %s\tdo not disturb %s\n' "$_nd" "$_nd" ;;   # as it was; asked as it is, a receipt takes nothing back
         storage:mount|storage:unmount) storage_list > "$TMP/storage.l"; _im=$(storage_find fs "$_arg" | cut -d "$US" -f5)
             case $_a:$_im in mount:) printf 'unmount %s\t%s unmounted\n' "$_arg" "$_arg" ;; unmount:?*) printf 'mount %s\t%s mounted\n' "$_arg" "$_arg" ;; esac ;;
-        reminders:done) _rl=$(rem_find "$_arg"); [ -z "$_rl" ] || printf 'restore %s\treminder %s\n' "$(printf '%s' "$_rl" | cut -f2)" "$(printf '%s' "$_rl" | cut -f3)" ;;   # by its uid: the one put aside, not another of that name
+        reminders:done|reminders:delete) _rl=$(rem_find "$_arg"); [ -z "$_rl" ] || printf 'restore %s\treminder %s\n' "$(printf '%s' "$_rl" | cut -f2)" "$(printf '%s' "$_rl" | cut -f3)" ;;   # by its uid: the one put aside or deleted, not another of that name
     esac
 }
 panel_step() {   # panel_step SECTION ACTION [ARG] -> panel_act's line; a step that worked is remembered as recent, and its inverse kept for undo
@@ -5746,7 +5803,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
     case $1:$2 in out:use|mic:use) SND=${SND:-$(snd_tool)}; if [ "$SND" = alsa ] && _tf=$(al_theirs); then echo "$(al_theirs_said "$_tf"): spark-shell leaves it to that file"; return 1; fi ;; esac   # your own file picks the device: said, not "not on the panel"
     if ! panel_section_ok "$1" || [ "$1" = glance ] || [ "$1" = chat ]; then if [ -n "$1" ]; then echo "no $1 here"; else echo "a step with no section"; fi; return 1; fi
     case $1:$2 in
-        display:scale|display:mode|display:position|display:place|display:screen-on|display:screen-off)
+        display:scale|display:mode|display:position|display:place|display:transform|display:screen-on|display:screen-off)
             screen_action "$2" "${3:-}" check || return 1
             printf '%s\n' "$3"; return 0 ;;
         clock:format|clock:week|clock:zone)
@@ -5791,7 +5848,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         theme:alpha) case $3 in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) echo "$3"; return 0 ;; *) echo "theme: alpha takes 0 to 1"; return 1 ;; esac ;;
         notes:new) echo ''; return 0 ;;
         notes:open) _n=$(note_file "${3:-}") && { echo "${_n##*/}"; return 0; }; echo "notes: no unique note named ${3:-?}; select its file in Notes"; return 1 ;;
-        reminders:done|reminders:snooze) _n=$(rem_find "${3:-}" | cut -f2); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "reminders: no unique reminder named ${3:-?}; select it in Calendar"; return 1 ;;
+        reminders:done|reminders:snooze|reminders:delete) _n=$(rem_find "${3:-}" | cut -f2); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "reminders: no unique reminder named ${3:-?}; select it in Calendar"; return 1 ;;
         reminders:restore) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo "reminders: restore takes the reminder's name"; return 1 ;;   # one put aside: no row lists it
         notes:add|notes:find|reminders:add) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo "$1: $2 takes the words"; return 1 ;;   # free words, as layout new
         display:brightness) case $3 in up|down|[1-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "display: brightness takes 1 to 100, up or down"; return 1 ;; esac ;;
@@ -6069,7 +6126,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find reminders_add reminders_done reminders_snooze reminders_restore display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_new_folder files_new_text files_find files_say lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -6093,17 +6150,17 @@ scrub_text() {   # stdin -> the same lines scrubbed; C0 and DEL alone where ther
 tool_spec() {
     _tp=''; _tk=''; _tq=''; _tw=''; _te=''
     case $1 in
-        lan_address|wifi_address) _ts=${1%%_*} _ta=address _tp=device _tk=string _te='address:net gateway:net' _th=df _tt="$_ts address DEVICE" _td='Set a fixed IPv4 address with prefix and gateway (or none) through the active native manager. The connection may drop.' ;;
-        lan_auto|wifi_auto) _ts=${1%%_*} _ta=auto _tp=device _tk=string _th=df _tt="$_ts auto DEVICE" _td='Use an automatic IPv4 address through the active native manager. The connection may drop.' ;;
-        lan_dns|wifi_dns) _ts=${1%%_*} _ta=dns _tp=device _tk=string _te='servers:net' _th=df _tt="$_ts dns DEVICE" _td='Set IPv4 DNS servers (comma separated), or auto for the native default.' ;;
-        lan_restore|wifi_restore) _ts=${1%%_*} _ta=restore _tp=receipt _tk=string _th=df _tt="$_ts restore RECEIPT" _td='Restore the native IPv4 settings from a network undo receipt, unless they changed since.' ;;
+        lan_address|wifi_address) _ts=${1%%_*} _ta=address _tp=device _tk=string _te='address:net gateway:net' _th=f _tt="$_ts address DEVICE" _td='Set a fixed IPv4 address with prefix and gateway (or none) through the active native manager. The connection may drop.' ;;
+        lan_auto|wifi_auto) _ts=${1%%_*} _ta=auto _tp=device _tk=string _th=f _tt="$_ts auto DEVICE" _td='Use an automatic IPv4 address through the active native manager. The connection may drop.' ;;
+        lan_dns|wifi_dns) _ts=${1%%_*} _ta=dns _tp=device _tk=string _te='servers:net' _th=f _tt="$_ts dns DEVICE" _td='Set IPv4 DNS servers (comma separated), or auto for the native default.' ;;
+        lan_restore|wifi_restore) _ts=${1%%_*} _ta=restore _tp=receipt _tk=string _th=f _tt="$_ts restore RECEIPT" _td='Restore the native IPv4 settings from a network undo receipt, unless they changed since.' ;;
         wifi_setup)        _ts=wifi _ta=setup _th=d _tt='wifi setup' _td='Install and enable the native network manager only when none is already installed or configured.' ;;
         wifi_hidden)       _ts=wifi _ta=hidden _tp=name _tk=string _tq=password _th=if _tt='wifi hidden NAME' _td='Join a hidden network by its exact name. An empty password is an open network.' ;;
         wifi_connect)      _ts=wifi _ta=connect _tp=name _tk=string _tq=password _th=i _tt='wifi connect NAME' _td='Connect to a network around, or a saved one.' ;;
         wifi_disconnect)   _ts=wifi _ta=disconnect _th=i _tt='wifi disconnect' _td='Leave the network in use.' ;;
         wifi_forget)       _ts=wifi _ta=forget _tp=name _tk=string _th=di _tt='wifi forget NAME' _td='Forget a saved network and its password.' ;;
         printers_default) _ts=printers _ta=default _tp=name _tk=string _th=i _tt='printers default NAME' _td='Choose a configured native printer as the default.' ;;
-        printers_pause) _ts=printers _ta=pause _tp=name _tk=string _th=di _tt='printers pause NAME' _td='Pause the configured print queue. Native administrative permission may be needed.' ;;
+        printers_pause) _ts=printers _ta=pause _tp=name _tk=string _th=i _tt='printers pause NAME' _td='Pause the configured print queue; resume takes it back. Native administrative permission may be needed.' ;;
         printers_resume) _ts=printers _ta=resume _tp=name _tk=string _th=i _tt='printers resume NAME' _td='Enable the configured print queue. Pending jobs may print.' ;;
         printers_cancel) _ts=printers _ta=cancel _tp=job _tk=string _th=d _tt='printers cancel JOB' _td='Cancel one pending job owned by the current user. The job cannot be restored.' ;;
         bt_connect)        _ts=bt _ta=connect _tp=name _tk=string _th=i _tt='bt connect NAME' _td='Connect a paired device.' ;;
@@ -6147,6 +6204,7 @@ tool_spec() {
         notes_find)        _ts=notes _ta=find _tp=words _tk=string _th=rf _tt='notes find WORDS' _td='Which notes say these words, and the line that does.' ;;
         reminders_add)     _ts=reminders _ta=add _tp=words _tk=string _tw='when and what: fri 9am call the vet' _th=f _tt='reminders add WORDS' _td='Save a reminder at a local time to come. words: a day and a time then the title (tomorrow 09:00 call the dentist), a time alone for today or else tomorrow (5pm gym), or in N minutes or hours before or after the title. Keep the words as the person said them; never invent a time. With no time in the words the provider asks for one.' ;;
         reminders_done)    _ts=reminders _ta='done' _tp=name _tk=string _th='' _tt='reminders done NAME' _td='Put aside one due or future reminder by its UID from the row. Undo brings that exact event back for 30 days.' ;;
+        reminders_delete)  _ts=reminders _ta=delete _tp=name _tk=string _th='' _tt='reminders delete NAME' _td='Delete one reminder by its UID from the row: the event goes. Undo brings it back while this window is open.' ;;
         reminders_restore) _ts=reminders _ta=restore _tp=name _tk=string _th=f _tt='reminders restore NAME' _td='Bring back a reminder marked done in the last 30 days.' ;;
         reminders_snooze)  _ts=reminders _ta=snooze _tp=name _tk=string _th='' _tt='reminders snooze NAME' _td='Move one reminder, identified by its UID from the row, to 10 minutes from now.' ;;
         display_idle)      _ts=display _ta=idle _tp=minutes _tk=minutes _th=i _tt='display idle N' _td='Show the idle screen after N idle minutes; 0 never.' ;;
@@ -6157,11 +6215,12 @@ tool_spec() {
         display_mode) _ts=display _ta=mode _tp=screen _tk=string _te='mode:mode' _th=if _tt='screen mode' _td='Set one of the resolutions offered by the connected screen.' ;;
         display_position) _ts=display _ta=position _tp=screen _tk=string _te='x:coordinate y:coordinate' _th=if _tt='screen position' _td='Place a connected screen at absolute layout coordinates.' ;;
         display_place) _ts=display _ta=place _tp=screen _tk=string _te='side:left-of|right-of|above|below other:port' _th=if _tt='screen arrangement' _td='Place a connected screen beside another active screen.' ;;
+        display_transform) _ts=display _ta=transform _tp=screen _tk=string _te='transform:normal|90|180|270' _th=if _tt='screen orientation' _td='Turn a connected screen: normal, or 90, 180 or 270 degrees clockwise. No mirrored orientation.' ;;
         display_on) _ts=display _ta=screen-on _tp=screen _tk=string _th=if _tt='screen on' _td='Enable a connected screen now and at the next login.' ;;
         display_off) _ts=display _ta=screen-off _tp=screen _tk=string _th=if _tt='screen off' _td='Disable a connected screen now and at the next login; the last active screen stays on.' ;;
         clock_format) _ts=clock _ta=format _tp=format _tk='12|24' _th=if _tt='clock format' _td='Show a 12 or 24 hour clock on the bar, Calendar and idle screen.' ;;
         clock_week) _ts=clock _ta=week _tp=day _tk='sunday|monday' _th=if _tt='first weekday' _td='Start the Calendar week on Sunday or Monday.' ;;
-        clock_zone) _ts=clock _ta=zone _tp=zone _tk=string _th=idf _tt='time zone' _td='Change the machine time zone through its native settings. Requires system permission.' ;;
+        clock_zone) _ts=clock _ta=zone _tp=zone _tk=string _th=if _tt='time zone' _td='Change the machine time zone through its native settings; undo puts the one before back. Requires system permission.' ;;
         keyboard_use)      _ts=keyboard _ta=use _tp=name _tk=string _th=i _tt='keyboard use NAME' _td='Type in another of the keyboard layouts.' ;;
         pointer_tap)       _ts=pointer _ta=tap _tp=state _tk='on|off' _th=if _tt='pointer tap STATE' _td='Enable or disable tap to click on touchpads.' ;;
         pointer_scroll)    _ts=pointer _ta=scroll _tp=state _tk='on|off' _th=if _tt='pointer scroll STATE' _td='Set natural scrolling for mouse and touchpad.' ;;
@@ -6195,10 +6254,20 @@ tool_spec() {
         apps_terminal)     _ts=apps _ta=terminal _th='' _tt='apps terminal' _td='Open a terminal window.' ;;
         about_open)        _ts=about _ta=open _th=ri _tt='about' _td='The version, the keys, the licence and the address.' ;;
         undo_all)          _ts=undo _ta=all _th='' _tt='undo' _td='Take the last thing done back.' ;;
-        files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=if _tt='files browse PATH' _td='Open an approved folder in the system file manager for file operations.' ;;
-        files_open)        _ts=files _ta=open _tp=path _tk=path _th=if _tt='files open PATH' _td='Open a file with the app that opens its kind.' ;;
-        files_show)        _ts=files _ta=show _tp=path _tk=path _th=rif _tt='files show PATH' _td='The first lines of a text file.' ;;
-        files_attach)      _ts=files _ta=attach _tp=path _tk=path _th=rif _tt='files attach PATH' _td='A text file to ask spark about, with the next words.' ;;
+        files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=if _tt='files browse PATH' _td='Open a folder in the system file manager, for anything beyond the steps here. path is a row'"'"'s own path, exactly as written.' ;;
+        files_open)        _ts=files _ta=open _tp=path _tk=path _th=if _tt='files open PATH' _td='Open a file with the app that opens its kind. path is a row'"'"'s own path, exactly as written.' ;;
+        files_show)        _ts=files _ta=show _tp=path _tk=path _th=rif _tt='files show PATH' _td='The first lines of a text file. path is a row'"'"'s own path, exactly as written.' ;;
+        files_attach)      _ts=files _ta=attach _tp=path _tk=path _th=rif _tt='files attach PATH' _td='A text file to ask spark about, with the next words. path is a row'"'"'s own path, exactly as written.' ;;
+        files_reveal)      _ts=files _ta=reveal _tp=path _tk=path _th=if _tt='files reveal PATH' _td='Show a file or folder in the system file manager, its folder opened. path is a row'"'"'s own path, exactly as written.' ;;
+        files_rename)      _ts=files _ta=rename _tp=path _tk=path _te='name:filename' _th='' _tt='files rename PATH' _td='Give a file or folder a new name, in its folder. path is a row'"'"'s own path, exactly as written; name the new name alone, no folder in it. Undo puts the old name back.' ;;
+        files_move)        _ts=files _ta=move _tp=path _tk=path _te='to:path' _th='' _tt='files move PATH' _td='Move a file or folder into another folder. path and to are rows'"'"' own paths, exactly as written; to is a folder. Undo moves it back.' ;;
+        files_copy)        _ts=files _ta=copy _tp=path _tk=path _te='to:path' _th='' _tt='files copy PATH' _td='Copy a file or folder into another folder. path and to are rows'"'"' own paths, exactly as written; to is a folder. Undo trashes the copy.' ;;
+        files_trash)       _ts=files _ta=trash _tp=path _tk=path _th='' _tt='files trash PATH' _td='Put a file or folder in the trash: the delete here. path is a row'"'"'s own path, exactly as written. Undo brings it back.' ;;
+        files_restore)     _ts=files _ta=restore _tp=path _tk=path _th=f _tt='files restore PATH' _td='Bring a file or folder back from the trash to the path it had.' ;;
+        files_new_folder)  _ts=files _ta=new-folder _tp=path _tk=path _te='name:filename' _th='' _tt='files new-folder PATH' _td='Make a folder inside the folder path names, with the name given. Undo trashes it.' ;;
+        files_new_text)    _ts=files _ta=new-text _tp=path _tk=path _te='name:filename' _th='' _tt='files new-text PATH' _td='Make an empty text file inside the folder path names, with the name given, and open it in the editor. Undo trashes it.' ;;
+        files_find)        _ts=files _ta=find _tp=words _tk=string _th=rf _tt='files find WORDS' _td='Which files and folders under your home and your drives have these words in their name; the list opens.' ;;
+        files_say)         _ts=files _ta=say _tp=words _tk=string _th=rf _tt='files say WORDS' _td='Which text files under your home and your drives hold these words; the list opens.' ;;
         *) return 1 ;;
     esac
 }
@@ -6233,13 +6302,13 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
                 elif $k == "speed" then {type: "number", minimum: -1, maximum: 1}
                 elif $k == "delay" then {type: "integer", minimum: 100, maximum: 2000}
                 elif $k == "alpha" then {type: "number", minimum: 0, maximum: 1}
-                elif $k == "path" then {type: "string", minLength: 2, maxLength: 4096}
+                elif $k == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"}
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
                 else {type: "string", minLength: 1, maxLength: 256} end) + (if $w == "" then {} else {description: $w} end))} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)
-              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
+              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} elif .[1] == "filename" then {type: "string", minLength: 1, maxLength: 255, description: "one name, no slash"} elif .[1] == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
             required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text") | .[0]]), additionalProperties: false},
-         outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"},
+         outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"}, open: {type: "string"},
             effect: {type: "object", properties: {kind: {type: "string"}, operation: {type: "string"}, id: {type: "string"}, title: {type: "string"}, localTime: {type: "string"}, level: {type: "integer"}, muted: {type: "boolean"}}, required: ["kind", "operation", "id", "title"], additionalProperties: false},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
             palette: {type: "object", additionalProperties: {type: "string"}}},
@@ -6267,7 +6336,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 children: (if .[0] == ($s + ":more") then $u else null end), group: ((.[5] // "") | split("|") | .[0] | if . == "" or . == null then null else . end)}
                 + ((.[5] // "") | split("|") | .[2] // "" | if . == "" then {} else {date: .} end)
                 + (if $s == "reminders" then ((.[5] // "") | split("|") | .[3] // "") as $id |
-                    if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}}, {name:"reminders_snooze", arguments:{name:$id}}]} else {} end
+                    if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}, said:"done"}, {name:"reminders_snooze", arguments:{name:$id}, said:"again in 10 minutes"}, {name:"reminders_delete", arguments:{name:$id}, said:"delete"}]} else {} end
                    else {} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
         | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$(theme_chips "$1")" --arg size "$(look_font_size)" --arg tr "$(_t=$(transparency_of "$ALPHA"); if [ "$_t" -eq 0 ]; then echo off; else echo "$_t%"; fi)" '
@@ -6399,6 +6468,7 @@ provide_main() {   # provide_main SECTION -- serve it until stdin ends
     config_load; [ "$OS" = Darwin ] || pm_detect; theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)
     exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in; whatever a step prints goes to stderr
     WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; CLIENT_PAIRING=''; : > "$PROOTS"
+    REM_DELETED=$TMP/deleted   # a reminder deleted here is kept until the provider ends: its undo (#111)
     trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
     trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # a signal ends a provider through the EXIT trap: the watcher, the reader and the temp folder go (#37)
     mkfifo "$TMP/in"
@@ -6526,7 +6596,9 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif (keys - [$p, $q] - $xk - [""]) != [] then "no argument " + ((keys - [$p, $q] - $xk)[0])
         elif $p != "" and (has($p) | not) then "missing " + $p
         elif ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)][0][0])
-        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
+        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
+        elif any($xs[]; . as $e | .[1] == "filename" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | length) < 1 or ($a[$e[0]] | length) > 255 or ($a[$e[0]] | test("[\u0000-\u001f\u007f/]")))) then "name is one name, no slash, 255 characters at most"
+        elif any($xs[]; . as $e | .[1] == "path" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | startswith("/") | not) or ($a[$e[0]] | length) > 4096 or ($a[$e[0]] | test("[\u0000-\u001f\u007f]")))) then "to is a whole path, plain text"
         elif ([$xs[] | select(.[1] == "text" or .[1] == "name") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text" or .[1] == "name") | .[0]][0]) + " is plain text, 40 characters at most"
         elif any($xs[]; . as $e | .[1] == "coordinate" and (($a[$e[0]] | type) != "number" or $a[$e[0]] < -65535 or $a[$e[0]] > 65535 or $a[$e[0]] != ($a[$e[0]] | floor))) then "coordinates are whole numbers, -65535 to 65535"
         elif any($xs[]; . as $e | .[1] == "scale" and (if ($a[$e[0]] | type) != "string" then true else ($a[$e[0]] | length) > 16 or ($a[$e[0]] | test("^[0-9]+([.][0-9]+)?$") | not) or (($a[$e[0]] | tonumber? // 0) <= 0) end)) then "scale is a positive decimal"
@@ -6547,16 +6619,16 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         else "" end
         + (if $q != "" and has($q) and ((.[$q] | type) != "string" or (.[$q] | length) > 256) then "; " + $q + " is text, 256 characters at most" else "" end)')
     [ -z "$_bad" ] || { rpc_error "$1" -32602 "$_name: $_bad"; return 0; }
+    [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_args"; return 0; }   # files: the four lines, not the panel's gate; a name whole, never its slug
     _v=''; [ -z "$_tp" ] || _v=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg x "$_te" '. as $a | [$a[$p] | tostring] + [$x | split(" ")[] | select(. != "") | split(":") | . as $e | select($a[$e[0]] != null) | $e[0] + "=" + (($a[$e[0]] | tostring) | if $e[1] == "text" or $e[1] == "name" then ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-+|-+$"; "") | .[0:40] else . end)] | join(" ")')   # a text extra travels as its slug
     PANEL_PASS=''; [ -z "$_tq" ] || PANEL_PASS=$(printf '%s' "$_args" | jq -r --arg q "$_tq" '.[$q] // ""')   # a password: a shell variable for the step, never a file, never a line out
     _plain=$(printf '%s' "$_args" | jq -c --arg q "$_tq" 'if $q == "" then . else del(.[$q]) end')   # the arguments without the secret: what a row is matched against
     case $_name in
         notes_open) _resolved=$(note_file "$_v") || { provide_refuse "$1" 'select one note by its filename; that name is missing or ambiguous'; return 0; }; _v=${_resolved##*/} ;;
-        reminders_done|reminders_snooze) _resolved=$(rem_find "$_v") || { provide_refuse "$1" 'select one reminder by its UID; that name is missing or ambiguous'; return 0; }; _v=$(printf '%s' "$_resolved" | cut -f2) ;;
+        reminders_done|reminders_snooze|reminders_delete) _resolved=$(rem_find "$_v") || { provide_refuse "$1" 'select one reminder by its UID; that name is missing or ambiguous'; return 0; }; _v=$(printf '%s' "$_resolved" | cut -f2) ;;
         window_focus|window_close) _v=$(win_named "$_v") || { provide_refuse "$1" 'select one open window by its ID; that name is missing or ambiguous'; return 0; } ;;
     esac
-    case $_name in notes_open|reminders_done|reminders_snooze|window_focus|window_close) _plain=$(jq -cn --arg n "$_v" '{name:$n}') ;; esac
-    [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_v"; return 0; }   # files: the four lines, not the panel's gate
+    case $_name in notes_open|reminders_done|reminders_snooze|reminders_delete|window_focus|window_close) _plain=$(jq -cn --arg n "$_v" '{name:$n}') ;; esac
     _act=$_ta; _arg=$_v; [ "$_ta" != '=' ] || { _act=$_v; _arg=''; }   # a palette's step is its name alone
     if [ "$_name" = reminders_add ] && ! rem_parse "$_v" >/dev/null 2>&1; then   # no day and time in the words: one question (the dialog's hint row shows "reminders asks: When: 5pm, ..."), then the step with the answer in front (#95)
         case $(printf '%s' "$_v" | tr 'A-Z' 'a-z') in "remind me to "*) _v=$(printf '%s' "$_v" | cut -c14-) ;; "remind me "*) _v=$(printf '%s' "$_v" | cut -c11-) ;; esac   # the title is what follows
@@ -6629,35 +6701,80 @@ cmd_provide() {   # cmd_provide SECTION -- the verb
     provide_main "$1"
 }
 
-# --- the files provider (v0.65): the folders the host hands over as its
-# roots (MCP roots/list) and the folders under them, a rows resource a
+# --- the files provider (v0.65; a file manager of its own since v0.111,
+# #112): the folders the host hands over as its roots (MCP roots/list)
+# and the drives mounted, and the folders under them, a rows resource a
 # folder: the name, the size and the date as columns, a folder's own
-# rows as its children. Read-only: open, show and attach. Every path is
-# held to four named lines before anything reads it:
+# rows as its children, the row's steps in its more (open, show, attach,
+# reveal, rename, move, copy, trash), the folder's own at its end (new
+# folder, new text file, the system file manager), the files touched in
+# the last days at the top of your home, a drive a root beside it. A
+# search is a rows resource too (find NAME by the name, say WORDS by the
+# contents): the tool answers with the uri to open. Every path is held
+# to four named lines before anything reads or writes it:
 #   it resolves to itself          (realpath: no link is followed, ever)
-#   it sits under a root           (the host's folders, never / itself)
-#   no part of it starts with a dot (a hidden file or folder: not listed, not read)
+#   it sits under a root           (your home and the drives, never / itself)
+#   no part of it starts with a dot (a hidden file or folder: not listed, not read, not made)
 #   it is a regular file or folder  (no device, socket or pipe)
+# Every write comes back: the trash is the delete (the freedesktop trash,
+# gio trash where it is, else the spec by hand: files/ and info/ with a
+# .trashinfo), a rename and a move are undone by the same step back, a
+# copy and a new file or folder by the trash. Nothing here asks for the
+# typed yes.
 FILES_SHOW_MAX=1048576   # a file shown or attached: a megabyte at most
 FILES_SHOW_LINES=12      # the lines a show puts in the exchange
-files_roots() { [ -z "${PROOTS:-}" ] || cat "$PROOTS" 2>/dev/null || :; }   # -> the roots, one folder a line, each its own realpath
+FILES_RECENT_DAYS=7      # the files touched in the last days, at the top of your home
+FILES_RECENT_MAX=8
+FILES_FOUND_MAX=200      # a search lists this many at most
+FILES_DEPTH=12           # a search and the recent list walk this deep
+FILES_SKIP='node_modules target __pycache__ build dist venv Library'   # the folders a search and the recent list walk past (a hidden one, the lines skip)
+FILES_PICS='jpg jpeg png webp'   # a picture: a small picture beside the list while its row is lit, where the terminal draws it
+FILES_THUMB_DIR=$THUMB_DIR/files   # the pictures' small pictures, by a sum of the path and its time
+files_roots() {   # -> the roots, one folder a line, each its own realpath: the host's, then every drive mounted (the udisks2 rows of #73)
+    [ -z "${PROOTS:-}" ] || cat "$PROOTS" 2>/dev/null || :
+    files_drives | cut -f2
+}
+files_drives() {   # -> NAME<tab>MOUNT<tab>FREE per drive mounted now, each its own realpath
+    [ "$OS" != Darwin ] && udisks_here || return 0
+    storage_list | awk -F '\037' '$1 == "fs" && $5 != "" { print $2 "\t" $5 }' | while IFS="$TAB" read -r _dn _dm; do
+        _dm=$(realpath "$_dm" 2>/dev/null) && [ "$_dm" != / ] && [ -d "$_dm" ] && printf '%s\t%s\t%s\n' "$_dn" "$_dm" "$(storage_kb "$(storage_free "$_dm")") free" || :
+    done
+}
+files_home_root() { realpath "$HOME" 2>/dev/null || printf '%s\n' "$HOME"; }   # -> your home as a root names it
 files_b64() { printf '%s' "$1" | base64 | tr -d '\n=' | tr '+/' '-_'; }   # files_b64 PATH -> the folder's part of its uri
 files_unb64() {   # files_unb64 PART -> the path, or false
     _fx=$(printf '%s' "$1" | tr -- '-_' '+/'); case $(( ${#_fx} % 4 )) in 2) _fx="$_fx==" ;; 3) _fx="$_fx=" ;; 1) return 1 ;; esac
     printf '%s' "$_fx" | base64 -d 2>/dev/null || printf '%s' "$_fx" | base64 -D 2>/dev/null
 }
 files_uri() { printf 'spark-shell://files/rows/%s' "$(files_b64 "$1")"; }
-files_ok() {   # files_ok PATH dir|file -> the path when it holds to the four lines, else false
-    _fp=$(realpath "$1" 2>/dev/null) || return 1
-    [ "$_fp" = "$1" ] || return 1   # resolves to itself
-    _froot=''; while IFS= read -r _fr; do [ -n "$_fr" ] || continue; case $_fp in "$_fr"|"$_fr"/*) _froot=$_fr; break ;; esac; done <<ROOTS
+files_root_of() {   # files_root_of PATH -> the root PATH sits under, the deepest when one holds another (a drive mounted under your home is the drive's), or false
+    _fro=''
+    while IFS= read -r _fr; do [ -n "$_fr" ] || continue; case $1 in "$_fr"|"$_fr"/*) [ "${#_fr}" -le "${#_fro}" ] || _fro=$_fr ;; esac; done <<ROOTS
 $(files_roots)
 ROOTS
-    [ -n "$_froot" ] || return 1   # under a root
+    [ -n "$_fro" ] || return 1
+    printf '%s\n' "$_fro"
+}
+files_ok() {   # files_ok PATH dir|file|any -> the path when it holds to the four lines, else false
+    _fp=$(realpath "$1" 2>/dev/null) || return 1
+    [ "$_fp" = "$1" ] || return 1   # resolves to itself
+    _froot=$(files_root_of "$_fp") || return 1   # under a root
     case /${_fp#"$_froot"}/ in */.*/*) return 1 ;; esac   # no part of it hidden
-    case $2 in dir) [ -d "$_fp" ] && [ ! -L "$_fp" ] ;; *) [ -f "$_fp" ] && [ ! -L "$_fp" ] ;; esac || return 1
+    case $2 in dir) [ -d "$_fp" ] && [ ! -L "$_fp" ] ;; file) [ -f "$_fp" ] && [ ! -L "$_fp" ] ;; *) { [ -d "$_fp" ] || [ -f "$_fp" ]; } && [ ! -L "$_fp" ] ;; esac || return 1
     printf '%s\n' "$_fp"
 }
+files_name_ok() {   # files_name_ok NAME -> 0 for a name a file or folder may take here: one name, not hidden, no slash, no control character, 255 bytes at most
+    [ -n "$1" ] && [ "${#1}" -le 255 ] || return 1
+    case $1 in .*|*/*) return 1 ;; esac
+    [ "$(printf '%s' "$1" | tr -d '\000-\037\177')" = "$1" ] && [ "$(printf '%s' "$1" | wc -c | tr -d ' ')" -le 255 ]
+}
+files_new_ok() {   # files_new_ok FOLDER NAME -> FOLDER/NAME when it is a path a file may be made at: the folder holds to the lines, the name is one, nothing is there
+    _fnd=$(files_ok "$1" dir) || { echo "that is not a folder in the folders given"; return 1; }
+    files_name_ok "$2" || { echo "a name is one plain name: no slash, not hidden, 255 characters at most"; return 1; }
+    [ ! -e "$_fnd/$2" ] && [ ! -L "$_fnd/$2" ] || { echo "$2 is there already"; return 1; }
+    printf '%s\n' "$_fnd/$2"
+}
+files_is_root() { files_roots | grep -qxF -- "$1"; }   # files_is_root PATH -> 0 for your home or a drive itself: never renamed, moved, copied or trashed here
 files_stat() {   # files_stat PATH -> "SIZE EPOCH" (GNU stat, else BSD's)
     stat -c '%s %Y' "$1" 2>/dev/null || stat -f '%z %m' "$1" 2>/dev/null || echo '0 0'
 }
@@ -6669,61 +6786,228 @@ files_when() {   # files_when EPOCH -> today, yesterday, 18 Oct, or the year
     elif [ "${_fd%????}" = "$(date +%Y)" ]; then date -d "@$1" '+%d %b' 2>/dev/null || date -r "$1" '+%d %b' 2>/dev/null
     else echo "${_fd%????}"; fi
 }
-files_home() { _tl='~'; case $1 in "$HOME") echo "$_tl" ;; "$HOME"/*) echo "$_tl/${1#"$HOME"/}" ;; *) echo "$1" ;; esac; }   # files_home PATH -> as a person writes it
-provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows, or one folder's; false when the uri names no folder that holds to the lines
-    _fu=${1:-spark-shell://files/rows}
-    if [ "$_fu" = spark-shell://files/rows ]; then
-        files_roots | while IFS= read -r _fr; do [ -n "$_fr" ] && printf 'files:root:%s\037opens\037%s\037%s\037\037\037\n' "$(files_b64 "$_fr")" "$(files_home "$_fr" | scrub_text)" "$(files_uri "$_fr")"; done > "$TMP/files.rows"
-        _ft='files'
+files_home() { _tl='~'; _fhr=$(files_home_root); case $1 in "$HOME"|"$_fhr") echo "$_tl" ;; "$HOME"/*) echo "$_tl/${1#"$HOME"/}" ;; "$_fhr"/*) echo "$_tl/${1#"$_fhr"/}" ;; *) echo "$1" ;; esac; }   # files_home PATH -> as a person writes it (your home by its own path or its realpath)
+files_folder_of() { _ffo=$(dirname "$1"); if [ "$_ffo" = "$(files_home_root)" ]; then echo '~'; else printf '%s\n' "${_ffo##*/}" | scrub_text; fi; }   # files_folder_of PATH -> the folder it is in, by its name alone (~ for your home): a column of the recent files and a search's rows
+files_pic() { case " $FILES_PICS " in *" $(printf '%s' "${1##*.}" | tr 'A-Z' 'a-z') "*) [ "${1##*.}" != "$1" ] ;; *) return 1 ;; esac; }   # files_pic PATH -> 0 for a picture by its type
+files_thumb() { printf '%s/%s.png' "$FILES_THUMB_DIR" "$(printf '%s %s' "$1" "$2" | cksum | cut -d' ' -f1)"; }   # files_thumb PATH EPOCH -> its small picture's path, there or not yet
+files_line() {   # files_line KIND PATH [GROUP] [COLUMN3] -> one row line for a file or a folder: ID US SIGN US TEXT US CHILDREN US PATH US SIZE US DATE US GROUP US COLUMN3 US KIND US PREVIEW; a line feed in a name is not listed
+    case $2 in *"$NL"*) return 0 ;; esac
+    _fln=$(printf '%s' "${2##*/}" | scrub_text)
+    if [ "$1" = dir ]; then
+        _flc=$(find "$2" -mindepth 1 -maxdepth 1 ! -name '.*' 2>/dev/null | wc -l | tr -d ' '); _fli=items; [ "$_flc" != 1 ] || _fli=item
+        printf 'files:dir:%s\037opens\037%s\037%s\037%s\037%s %s\037\037%s\037%s\037dir\037\n' "$(files_b64 "$2")" "$_fln" "$(files_uri "$2")" "$2" "$_flc" "$_fli" "${3:-}" "${4:-}"
     else
-        _fp=$(files_unb64 "${_fu#spark-shell://files/rows/}") && _fp=$(files_ok "$_fp" dir) || return 1
-        _ft=$(files_home "$_fp" | scrub_text); : > "$TMP/files.rows"
-        files_roots | grep -qxF "$_fp" || printf 'files:up\037opens\037..\037%s\037\037\037\n' "$(files_uri "$(dirname "$_fp")")" >> "$TMP/files.rows"
-        _fn=0; _fb=0; _fd=0
-        find "$_fp" -mindepth 1 -maxdepth 1 ! -name '.*' -print0 2>/dev/null | tr '\n\000' '\001\n' | sort > "$TMP/files.list"
-        while IFS= read -r _fe; do
-            case $_fe in *"$(printf '\001')"*) continue ;; esac   # a name with a line feed in it: not listed
-            _fname=$(printf '%s' "${_fe##*/}" | scrub_text)
-            if [ -L "$_fe" ]; then printf '2\037files:link:%s\037blank\037%s -> %s\037\037\037\037\n' "$(files_b64 "$_fe")" "$_fname" "$(readlink "$_fe" | scrub_text)"   # a link: shown, never followed
-            elif [ -d "$_fe" ]; then _fd=$((_fd + 1)); _fc=$(find "$_fe" -mindepth 1 -maxdepth 1 ! -name '.*' 2>/dev/null | wc -l | tr -d ' ')
-                _fi=items; [ "$_fc" != 1 ] || _fi=item
-                printf '0\037files:dir:%s\037opens\037%s\037%s\037\037%s %s\037\n' "$(files_b64 "$_fe")" "$_fname" "$(files_uri "$_fe")" "$_fc" "$_fi"
-            elif [ -f "$_fe" ]; then
-                # shellcheck disable=SC2046   # two numbers, split on purpose
-                set -- $(files_stat "$_fe"); _fn=$((_fn + 1)); _fb=$((_fb + $1))
-                printf '1\037files:file:%s\037blank\037%s\037\037%s\037%s\037%s\n' "$(files_b64 "$_fe")" "$_fname" "$(jq -cn --arg p "$_fe" '{path: $p}')" "$(files_size "$1")" "$(files_when "$2")"
-            fi   # a device, a socket, a pipe: not listed
-        done < "$TMP/files.list" > "$TMP/files.unsorted"   # no pipe: the counts stay in this shell
-        sort -t "$(printf '\037')" -k1,1 -k4,4 "$TMP/files.unsorted" | cut -d "$(printf '\037')" -f2- >> "$TMP/files.rows"
-        # the total: the files and their size; a folder of folders counts its folders; nothing listed is empty
-        if [ "$_fn" -gt 0 ]; then _fw="files"; [ "$_fn" != 1 ] || _fw="file"; _fw="$_fn $_fw $PANEL_SEP $(files_size "$_fb")"
-        elif [ "$_fd" -gt 0 ]; then _fw="folders"; [ "$_fd" != 1 ] || _fw="folder"; _fw="$_fd $_fw"
-        else _fw=empty; fi
-        printf 'files:total\037blank\037%s\037\037\037\037\n' "$_fw" >> "$TMP/files.rows"
-        printf 'files:browse\037opens\037open folder in system file manager\037\037%s\037\037\n' "$(jq -cn --arg p "$_fp" '{path: $p}')" >> "$TMP/files.rows"
+        # shellcheck disable=SC2046   # two numbers, split on purpose
+        set -- "$1" "$2" "${3:-}" "${4:-}" $(files_stat "$2")
+        _flp=''; ! files_pic "$2" || { _flp=$(files_thumb "$2" "$6"); printf '%s\t%s\n' "$2" "$_flp" >> "$TMP/files.thumbs"; }
+        printf 'files:file:%s\037blank\037%s\037\037%s\037%s\037%s\037%s\037%s\037file\037%s\n' "$(files_b64 "$2")" "$_fln" "$2" "$(files_size "$5")" "$(files_when "$6")" "$3" "$4" "$_flp"
+        FILES_N=$((FILES_N + 1)); FILES_B=$((FILES_B + $5))
     fi
-    jq -Rn --arg t "$_ft" '
-        [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end),
-            tool: (if .[4] == "" then null else {name: (if .[0] == "files:browse" then "files_browse" else "files_open" end), arguments: (.[4] | fromjson)} end),
-            more: (if .[4] == "" or .[0] == "files:browse" then [] else [{name: "files_show", arguments: (.[4] | fromjson)}, {name: "files_attach", arguments: (.[4] | fromjson)}] end),
-            columns: ([.[5], .[6]] | map(select(. != null and . != ""))), group: null}] as $rows
-        | {title: $t, rows: $rows, short: [$rows[] | select(.id | startswith("files:root:")) | .id]}' "$TMP/files.rows"
 }
-provide_files_call() {   # provide_files_call ID TOOL PATH -- open, show or attach a file that holds to the four lines
-    if [ "$2" = files_browse ]; then _ff=$(files_ok "$3" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; }
-    else _ff=$(files_ok "$3" file) || { provide_refuse "$1" "files: that is not a file in the folders given"; return 0; }; fi
-    _fname=$(printf '%s' "${_ff##*/}" | scrub_text)
+files_list() {   # files_list FOLDER [GROUP] -> the folder's rows: its folders, then its files, each by name; a link shown and never followed; FILES_N, FILES_B and FILES_D counted in this shell
+    FILES_N=0; FILES_B=0; FILES_D=0
+    find "$1" -mindepth 1 -maxdepth 1 ! -name '.*' -print0 2>/dev/null | tr '\n\000' '\001\n' | sort > "$TMP/files.list"
+    while IFS= read -r _fe; do
+        case $_fe in *"$(printf '\001')"*) continue ;; esac   # a name with a line feed in it: not listed
+        if [ -L "$_fe" ]; then printf '2\037files:link:%s\037blank\037%s -> %s\037\037\037\037\037%s\037\037link\037\n' "$(files_b64 "$_fe")" "$(printf '%s' "${_fe##*/}" | scrub_text)" "$(readlink "$_fe" | scrub_text)" "${2:-}"
+        elif [ -d "$_fe" ]; then FILES_D=$((FILES_D + 1)); printf '0\037'; files_line dir "$_fe" "${2:-}"
+        elif [ -f "$_fe" ]; then printf '1\037'; files_line file "$_fe" "${2:-}"
+        fi   # a device, a socket, a pipe: not listed
+    done < "$TMP/files.list" > "$TMP/files.unsorted"   # no pipe: the counts stay in this shell
+    sort -t "$(printf '\037')" -k1,1 -k4,4 "$TMP/files.unsorted" | cut -d "$(printf '\037')" -f2-
+}
+files_walk() {   # files_walk ROOT f|fd [FIND-TESTS...] -> the files (f) or the files and folders (fd) under ROOT, no hidden or skipped folder entered, no link, FILES_DEPTH deep at most
+    _fwr=$1; _fwk=$2; shift 2
+    if [ "$_fwk" = f ]; then set -- -type f "$@" -print; else set -- '(' -type f -o -type d ')' "$@" -print; fi
+    set -- ')' ')' -prune -o ! -name '.*' ! -type l "$@"
+    for _fws in $FILES_SKIP; do set -- -o -name "$_fws" "$@"; done
+    set -- "$_fwr" -mindepth 1 -maxdepth "$FILES_DEPTH" '(' -type d '(' -name '.*' "$@"
+    find "$@"
+}
+files_recent() {   # -> the files under your home touched in the last FILES_RECENT_DAYS days, the newest first, FILES_RECENT_MAX at most, each with its folder as a column (no database: the folders' own times)
+    _frh=$(files_home_root)
+    files_walk "$_frh" f -mtime "-$FILES_RECENT_DAYS" 2>/dev/null | while IFS= read -r _frf; do
+        [ -f "$_frf" ] && [ ! -L "$_frf" ] || continue
+        printf '%s\t%s\n' "$(files_stat "$_frf" | cut -d' ' -f2)" "$_frf"
+    done | sort -rn | head -n "$FILES_RECENT_MAX" | cut -f2 | while IFS= read -r _frf; do
+        files_line file "$_frf" recent "$(files_folder_of "$_frf")"
+    done
+}
+files_search() {   # files_search find|say WORDS -> the rows of a search over every root: find, a name that holds every word; say, a text file (a megabyte at most) that holds the words; FILES_FOUND_MAX at most, each with its folder as a column
+    _fsw=$(printf '%s' "$2" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//'); [ -n "$_fsw" ] && [ "${#_fsw}" -le 256 ] || return 1
+    [ "$(printf '%s' "$_fsw" | tr -d '\000-\037\177')" = "$_fsw" ] || return 1
+    : > "$TMP/files.found"
+    files_roots | while IFS= read -r _fsr; do
+        [ -n "$_fsr" ] || continue
+        if [ "$1" = find ]; then
+            _fs1=${_fsw%% *}
+            files_walk "$_fsr" fd -iname "*$(printf '%s' "$_fs1" | sed 's/[][*?\\]/\\&/g')*" 2>/dev/null | while IFS= read -r _fsf; do
+                _fsn=$(printf '%s' "${_fsf##*/}" | tr 'A-Z' 'a-z'); _fsk=1
+                for _fsq in $_fsw; do case $_fsn in *"$(printf '%s' "$_fsq" | tr 'A-Z' 'a-z')"*) ;; *) _fsk='' ;; esac; done
+                [ -z "$_fsk" ] || printf '%s\n' "$_fsf"
+            done
+        else
+            files_walk "$_fsr" f -size -1024k 2>/dev/null | tr '\n' '\000' | xargs -0 grep -lisFI -- "$_fsw" 2>/dev/null || :
+        fi
+    done | sort | head -n "$FILES_FOUND_MAX" > "$TMP/files.found"
+    while IFS= read -r _fsf; do
+        _fsp=$(files_ok "$_fsf" any) || continue
+        if [ -d "$_fsp" ]; then printf '0\037'; files_line dir "$_fsp" '' "$(files_folder_of "$_fsp")"; else printf '1\037'; files_line file "$_fsp" '' "$(files_folder_of "$_fsp")"; fi
+    done < "$TMP/files.found" > "$TMP/files.unsorted"
+    sort -t "$(printf '\037')" -k1,1 -k4,4 -k6,6 "$TMP/files.unsorted" | cut -d "$(printf '\037')" -f2-   # by kind, name, then path: two of one name in a fixed order
+    _fsc=$(grep -c . "$TMP/files.unsorted" || :)
+    if [ "${_fsc:-0}" -eq 0 ]; then printf 'files:total\037blank\037%s\037\037\037\037\037\037\037total\037\n' "nothing found"; fi
+}
+files_thumbs() {   # the pictures' small pictures, PATH<tab>THUMB a line on stdin: each made where it is not there yet; a week-old one goes; quiet
+    mkdir_state "$FILES_THUMB_DIR" 2>/dev/null || return 0
+    find "$FILES_THUMB_DIR" -name '*.png' -mtime +7 -exec rm -f {} + 2>/dev/null || :
+    while IFS="$TAB" read -r _ftp _ftt; do
+        [ -n "$_ftt" ] && [ ! -f "$_ftt" ] || continue
+        pic_small "$_ftp" "$TMP/thumb.png" 2>/dev/null && cp "$TMP/thumb.png" "$_ftt.${TMP##*/}" && mv "$_ftt.${TMP##*/}" "$_ftt" || :   # a whole file or none: the dialog may read it meanwhile
+    done
+}
+provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one folder's, with your home's recent files at its top, its own steps at its end and the drives beside your home; a search's; false when the uri names no folder that holds to the lines
+    _fu=${1:-spark-shell://files/rows}; _fhere=''; : > "$TMP/files.thumbs"; FILES_N=0; FILES_B=0; FILES_D=0
+    case $_fu in
+        spark-shell://files/rows)
+            files_roots | while IFS= read -r _fr; do [ -n "$_fr" ] && printf 'files:root:%s\037opens\037%s\037%s\037\037\037\037\037\037root\037\n' "$(files_b64 "$_fr")" "$(files_home "$_fr" | scrub_text)" "$(files_uri "$_fr")"; done > "$TMP/files.rows"
+            _ft='files' ;;
+        spark-shell://files/rows/find/?*|spark-shell://files/rows/say/?*)
+            _fk=${_fu#spark-shell://files/rows/}; _fk=${_fk%%/*}; _fw=$(files_unb64 "${_fu##*/}") || return 1
+            files_search "$_fk" "$_fw" > "$TMP/files.rows" || return 1
+            _ft="$_fk $(printf '%s' "$_fw" | scrub_text)" ;;
+        *)
+            _fp=$(files_unb64 "${_fu#spark-shell://files/rows/}") && _fp=$(files_ok "$_fp" dir) || return 1
+            _ft=$(files_home "$_fp" | scrub_text); _fhere=$_fp; _fg=''; : > "$TMP/files.rows"
+            files_is_root "$_fp" || printf 'files:up\037opens\037..\037%s\037\037\037\037\037\037up\037\n' "$(files_uri "$(dirname "$_fp")")" >> "$TMP/files.rows"
+            if [ "$_fp" = "$(files_home_root)" ]; then files_recent > "$TMP/files.recent"; [ ! -s "$TMP/files.recent" ] || { cat "$TMP/files.recent" >> "$TMP/files.rows"; _fg=home; }; fi
+            files_list "$_fp" "$_fg" >> "$TMP/files.rows"
+            # the total: the files and their size; a folder of folders counts its folders; nothing listed is empty
+            if [ "$FILES_N" -gt 0 ]; then _fw="files"; [ "$FILES_N" != 1 ] || _fw="file"; _fw="$FILES_N $_fw $PANEL_SEP $(files_size "$FILES_B")"
+            elif [ "$FILES_D" -gt 0 ]; then _fw="folders"; [ "$FILES_D" != 1 ] || _fw="folder"; _fw="$FILES_D $_fw"
+            else _fw=empty; fi
+            { printf 'files:total\037blank\037%s\037\037\037\037\037this folder\037\037total\037\n' "$_fw"
+              printf 'files:new-folder\037opens\037new folder\037\037%s\037\037\037this folder\037\037new-folder\037\n' "$_fp"
+              printf 'files:new-text\037opens\037new text file\037\037%s\037\037\037this folder\037\037new-text\037\n' "$_fp"
+              printf 'files:browse\037opens\037open in the system file manager\037\037%s\037\037\037this folder\037\037browse\037\n' "$_fp"; } >> "$TMP/files.rows"
+            [ "$_fp" != "$(files_home_root)" ] || files_drives | while IFS="$TAB" read -r _fdn _fdm _fdf; do printf 'files:drive:%s\037opens\037%s\037%s\037\037%s\037\037drives\037\037drive\037\n' "$(files_b64 "$_fdm")" "$(printf '%s' "$_fdn" | scrub_text)" "$(files_uri "$_fdm")" "$_fdf"; done >> "$TMP/files.rows" ;;
+    esac
+    if [ -s "$TMP/files.thumbs" ]; then   # the small pictures, while the list is shown: a row without one yet draws none
+        FILES_TN=$((${FILES_TN:-0} + 1)); cp "$TMP/files.thumbs" "$TMP/files.thumbs.$FILES_TN"
+        ( _fl=$TMP/files.thumbs.$FILES_TN; TMP=$(mktemp -d) && { files_thumbs < "$_fl"; rm -rf "$TMP" "$_fl"; } ) >/dev/null 2>&1 </dev/null 3>&- 4<&- 5>&- &
+    fi
+    jq -Rn --arg t "$_ft" --arg here "$_fhere" '
+        def steps($a): [{name: "files_reveal", arguments: $a, said: "reveal in the system file manager"}, {name: "files_rename", arguments: $a, ask: ["name"], said: "rename"},
+            {name: "files_move", arguments: $a, pick: "to", said: "move to a folder"}, {name: "files_copy", arguments: $a, pick: "to", said: "copy to a folder"}, {name: "files_trash", arguments: $a, said: "trash"}];
+        [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end), path: .[4], c1: .[5], c2: .[6], group: (if .[7] == "" then null else .[7] end), c3: .[8], kind: .[9], preview: .[10]}
+            | {path: .path} as $a
+            | {id, sign, text, children, group, columns: ([.c1, .c2, .c3] | map(select(. != null and . != ""))),
+               tool: (if .kind == "file" then {name: "files_open", arguments: $a, said: "open"}
+                      elif .kind == "dir" or .kind == "browse" then {name: "files_browse", arguments: $a, said: "open in the system file manager"}
+                      elif .kind == "new-folder" then {name: "files_new_folder", arguments: $a, ask: ["name"], said: "new folder"}
+                      elif .kind == "new-text" then {name: "files_new_text", arguments: $a, ask: ["name"], said: "new text file"}
+                      else null end),
+               more: (if .kind == "file" then [{name: "files_show", arguments: $a, said: "show the first lines"}, {name: "files_attach", arguments: $a, said: "attach to the next request"}] + steps($a)
+                      elif .kind == "dir" then steps($a) else [] end)}
+              + (if .preview != "" then {preview: .preview} else {} end)] as $rows
+        | {title: $t, rows: $rows, short: [$rows[] | select(.id | startswith("files:root:")) | .id]} + (if $here == "" then {} else {here: $here} end)' "$TMP/files.rows"
+}
+files_urlenc() { printf '%s' "$1" | od -An -tx1 -v | tr -s ' \n' ' ' | awk '{ o = ""; for (i = 1; i <= NF; i++) { h = tolower($i); d = (index("0123456789abcdef", substr(h, 1, 1)) - 1) * 16 + index("0123456789abcdef", substr(h, 2, 1)) - 1; if ((d >= 48 && d <= 57) || (d >= 65 && d <= 90) || (d >= 97 && d <= 122) || d == 45 || d == 46 || d == 95 || d == 126 || d == 47) o = o sprintf("%c", d); else o = o "%" toupper(h) } printf "%s", o }'; }   # files_urlenc PATH -> the path as a .trashinfo writes it (RFC 2396: the unreserved and the slash as they are, every other byte %XX)
+files_urldec() { printf '%s' "$1" | awk '{ o = ""; s = $0; while (match(s, /%[0-9A-Fa-f][0-9A-Fa-f]/)) { o = o substr(s, 1, RSTART - 1) "\\" sprintf("%03o", (index("0123456789abcdef", tolower(substr(s, RSTART + 1, 1))) - 1) * 16 + index("0123456789abcdef", tolower(substr(s, RSTART + 2, 1))) - 1); s = substr(s, RSTART + 3) } printf "%s", o s }' | { IFS= read -r _fud || :; printf "$_fud"; }; }   # files_urldec TEXT -> the path a .trashinfo holds (%XX bytes back, through octal escapes: awk's %c is a character, not a byte, under gawk)
+files_trash_dir() {   # files_trash_dir PATH -> the trash its files go to by the spec: your home's (XDG_DATA_HOME/Trash) for a path under your home, the drive's own (.Trash-UID at its top) for a path on a drive; made yours alone, with files and info; false when it cannot be
+    _ftr=$(files_root_of "$1") || return 1
+    if [ "$_ftr" = "$(files_home_root)" ]; then _ftd=${XDG_DATA_HOME:-$HOME/.local/share}/Trash; else _ftd=$_ftr/.Trash-$(id -u); fi
+    (umask 077 && mkdir -p "$_ftd/files" "$_ftd/info") 2>/dev/null || return 1
+    printf '%s\n' "$_ftd"
+}
+files_trash() {   # files_trash PATH -> one line: PATH in the trash, by gio where it is (its files are the spec's), else by hand: a free name under files/, its .trashinfo under info/ first
+    _ftd=$(files_trash_dir "$1") || { echo "no trash can be made for ${1##*/}"; return 1; }
+    if [ -z "${SPARK_SHELL_NO_GIO:-}" ] && command -v gio >/dev/null 2>&1; then
+        gio trash -- "$1" >/dev/null 2>&1 || { echo "could not trash ${1##*/}"; return 1; }
+    else
+        _ftn=${1##*/}; _ftk=2
+        while [ -e "$_ftd/files/$_ftn" ] || [ -L "$_ftd/files/$_ftn" ] || [ -e "$_ftd/info/$_ftn.trashinfo" ]; do _ftn="${1##*/}.$_ftk"; _ftk=$((_ftk + 1)); done
+        _ftp=$1; [ "$_ftd" = "${XDG_DATA_HOME:-$HOME/.local/share}/Trash" ] || _ftp=${1#"${_ftd%/.Trash-*}"/}   # on a drive the spec keeps the path from the drive's top
+        printf '[Trash Info]\nPath=%s\nDeletionDate=%s\n' "$(files_urlenc "$_ftp")" "$(date +%Y-%m-%dT%H:%M:%S)" > "$_ftd/info/$_ftn.trashinfo" && mv "$1" "$_ftd/files/$_ftn" \
+            || { rm -f "$_ftd/info/$_ftn.trashinfo"; echo "could not trash ${1##*/}"; return 1; }
+    fi
+    echo "${1##*/} is in the trash"
+}
+files_restore() {   # files_restore PATH -> one line: the newest file the trash holds from PATH put back where it was, by the spec's own records (so gio's are read too)
+    _ftd=$(files_trash_dir "$1") || { echo "no trash holds ${1##*/}"; return 1; }
+    _ftr=$(files_root_of "$1")
+    [ ! -e "$1" ] && [ ! -L "$1" ] || { echo "${1##*/} is there already"; return 1; }
+    ls -t "$_ftd/info" 2>/dev/null | while IFS= read -r _fri; do
+        case $_fri in *.trashinfo) ;; *) continue ;; esac
+        _frp=$(files_urldec "$(sed -n 's/^Path=//p' "$_ftd/info/$_fri" | head -1)")
+        case $_frp in /*) ;; *) _frp=${_ftd%/.Trash-*}/$_frp ;; esac
+        [ "$_frp" = "$1" ] && [ -e "$_ftd/files/${_fri%.trashinfo}" ] || continue
+        printf '%s\n' "${_fri%.trashinfo}"; break
+    done > "$TMP/files.restore"
+    _frn=$(cat "$TMP/files.restore"); [ -n "$_frn" ] || { echo "the trash holds nothing from ${1##*/}"; return 1; }
+    mv "$_ftd/files/$_frn" "$1" || { echo "could not bring ${1##*/} back"; return 1; }
+    rm -f "$_ftd/info/$_frn.trashinfo"
+    echo "${1##*/} is back"
+}
+files_result() {   # files_result ID RECEIPT [UNDO-TOOL UNDO-ARGS-JSON] [open=URI] -- a step's result: the receipt, its undo, the uri to open
+    _fr=$(jq -cn --arg r "$2" '{receipt: $r}')
+    [ -z "${3:-}" ] || _fr=$(printf '%s' "$_fr" | jq -c --arg n "$3" --argjson a "$4" '. + {undo: {name: $n, arguments: $a}}')
+    case ${5:-} in open=*) _fr=$(printf '%s' "$_fr" | jq -c --arg u "${5#open=}" '. + {open: $u}') ;; esac
+    rpc_result "$1" "$(printf '%s' "$_fr" | jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+    [ -z "$SUBSCRIBED" ] || rpc_note notifications/resources/updated '{"uri":"spark-shell://files/rows"}'
+}
+files_opened() {   # files_opened ID BEFORE RECEIPT-FILE -- the result of a step that opened a window: opened when sway shows one more, else the opener's own line
+    if [ -n "${SWAYSOCK:-}" ] && panel_open_wait "$2"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+    else rpc_result "$1" "$(jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}' "$3")"; fi
+}
+files_open_with() {   # files_open_with ID PATH [--reveal] -- the path through the system's opener (xdg-open, open; a reveal selects it in the file manager)
+    if [ "$OS" != Darwin ]; then
+        command -v xdg-open >/dev/null 2>&1 || { provide_refuse "$1" "files: xdg-open is not installed, so nothing opens files"; return 0; }
+        [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ] || { provide_refuse "$1" "files: opening a file needs the desktop"; return 0; }
+        if { [ -d "$2" ] || [ "${3:-}" = --reveal ]; } && [ -z "$(xdg-mime query default inode/directory 2>/dev/null)" ]; then provide_refuse "$1" "files: no system file manager is configured; folders can still be browsed here"; return 0; fi
+    fi
+    _before=''; [ -z "${SWAYSOCK:-}" ] || _before=$(desk_windows_all)
+    if ! python3 "$REPO/lib/open_path.py" "$OS" "$2" ${3:-} > "$TMP/open.result" 2> "$TMP/open.error"; then provide_refuse "$1" "$(scrub_text < "$TMP/open.error")"; return 0; fi
+    files_opened "$1" "$_before" "$TMP/open.result"
+}
+provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a file or a folder that holds to the four lines (the dialog's rows are the allowlist for a step the model plans; the lines hold for every step); a write answers with its undo
+    _fa=$(printf '%s' "$3" | jq -r '.path // ""'); _fto=$(printf '%s' "$3" | jq -r '.to // ""'); _fnm=$(printf '%s' "$3" | jq -r '.name // ""'); _fws=$(printf '%s' "$3" | jq -r '.words // ""')
     case $2 in
-        files_open|files_browse)
-            if [ "$OS" != Darwin ]; then
-                command -v xdg-open >/dev/null 2>&1 || { provide_refuse "$1" "files: xdg-open is not installed, so nothing opens files"; return 0; }
-                [ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ] || { provide_refuse "$1" "files: opening a file needs the desktop"; return 0; }
-                if [ "$2" = files_browse ] && [ -z "$(xdg-mime query default inode/directory 2>/dev/null)" ]; then provide_refuse "$1" "files: no system file manager is configured; folders can still be browsed here"; return 0; fi
+        files_find|files_say)
+            _fk=${2#files_}; _fsw=$(printf '%s' "$_fws" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')
+            [ -n "$_fsw" ] || { provide_refuse "$1" "files: $_fk takes the words to look for"; return 0; }
+            _fsu="spark-shell://files/rows/$_fk/$(files_b64 "$_fsw")"
+            provide_files_rows "$_fsu" > "$TMP/files.search" || { provide_refuse "$1" "files: $_fk takes plain words, 256 characters at most"; return 0; }
+            _fsc=$(jq '[.rows[] | select(.id != "files:total")] | length' "$TMP/files.search")
+            if [ "$_fsc" -eq 0 ]; then if [ "$_fk" = find ]; then files_result "$1" "nothing under your home is named $_fsw"; else files_result "$1" "no text file under your home says $_fsw"; fi; return 0; fi
+            if [ "$_fk" = find ]; then files_result "$1" "$_fsc named $_fsw" '' '' "open=$_fsu"; else files_result "$1" "$_fsc say $_fsw" '' '' "open=$_fsu"; fi
+            return 0 ;;
+        files_restore)
+            _ff=$_fa; case $_ff in /*) ;; *) provide_refuse "$1" "files: that is not a path in the folders given"; return 0 ;; esac
+            _ffd=$(files_ok "$(dirname "$_ff")" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; }
+            files_name_ok "${_ff##*/}" || { provide_refuse "$1" "files: that is not a name in the folders given"; return 0; }
+            _fo=$(files_restore "$_ffd/${_ff##*/}") || { provide_refuse "$1" "files: $_fo"; return 0; }
+            files_result "$1" "$_fo" files_trash "$(jq -cn --arg p "$_ffd/${_ff##*/}" '{path: $p}')"; return 0 ;;
+        files_new_folder|files_new_text)
+            _fn=$(files_new_ok "$_fa" "$_fnm") || { provide_refuse "$1" "files: $_fn"; return 0; }
+            if [ "$2" = files_new_folder ]; then mkdir "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not make $_fnm"; return 0; }
+                files_result "$1" "folder $_fnm made in $(files_home "${_fn%/*}")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"; return 0; fi
+            : > "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not make $_fnm"; return 0; }
+            if desk_in_sway && _fed=$(note_editor); then   # in the editor, in a terminal window: the window is the receipt
+                case $_fn in *[,\;\'\"]*) ;; *) _before=$(desk_windows_all)
+                    if swaymsg -- exec "foot -e $_fed '$_fn'" >/dev/null 2>&1 && panel_open_wait "$_before"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"; return 0; fi ;;
+                esac
             fi
-            _before=''; [ -z "${SWAYSOCK:-}" ] || _before=$(desk_windows_all)
-            if ! python3 "$REPO/lib/open_path.py" "$OS" "$_ff" > "$TMP/open.result" 2> "$TMP/open.error"; then provide_refuse "$1" "$(cat "$TMP/open.error" | scrub_text)"; return 0; fi
-            if [ -n "${SWAYSOCK:-}" ] && panel_open_wait "$_before"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
-            else rpc_result "$1" "$(jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}' "$TMP/open.result")"; fi ;;
+            files_result "$1" "$_fnm made in $(files_home "${_fn%/*}")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"; return 0 ;;
+        files_browse) _ff=$(files_ok "$_fa" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; } ;;
+        files_open|files_show|files_attach) _ff=$(files_ok "$_fa" file) || { provide_refuse "$1" "files: that is not a file in the folders given"; return 0; } ;;
+        *) _ff=$(files_ok "$_fa" any) || { provide_refuse "$1" "files: that is not a file or a folder in the folders given"; return 0; } ;;
+    esac
+    _fname=$(printf '%s' "${_ff##*/}" | scrub_text)
+    case $2 in files_rename|files_move|files_copy|files_trash) ! files_is_root "$_ff" || { provide_refuse "$1" "files: your home and a drive stay as they are"; return 0; } ;; esac
+    case $2 in
+        files_open|files_browse) files_open_with "$1" "$_ff" ;;
+        files_reveal) files_open_with "$1" "$_ff" --reveal ;;
         files_show|files_attach)
             set -- "$1" "$2" "$(files_stat "$_ff" | cut -d' ' -f1)"
             [ "$3" -le "$FILES_SHOW_MAX" ] || { provide_refuse "$1" "files: $_fname is larger than $((FILES_SHOW_MAX / 1024)) kB"; return 0; }
@@ -6735,6 +7019,25 @@ provide_files_call() {   # provide_files_call ID TOOL PATH -- open, show or atta
                 case " $DIALOG_ATTACH_TYPES " in *" ${_fx:-.} "*) ;; *) provide_refuse "$1" "files: $_fname is not a type plus attaches ($DIALOG_ATTACH_TYPES)"; return 0 ;; esac
                 rpc_result "$1" "$(jq -cn --arg r "attached $_fname" --arg p "$_ff" '{receipt: $r, attach: $p} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
             fi ;;
+        files_rename)
+            _fn=$(files_new_ok "${_ff%/*}" "$_fnm") || { provide_refuse "$1" "files: $_fn"; return 0; }
+            mv "$_ff" "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not rename $_fname"; return 0; }
+            files_result "$1" "$_fname renamed to $_fnm" files_rename "$(jq -cn --arg p "$_fn" --arg n "${_ff##*/}" '{path: $p, name: $n}')" ;;
+        files_move|files_copy)
+            _fd=$(files_ok "$_fto" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; }
+            [ "$_fd" != "${_ff%/*}" ] || { provide_refuse "$1" "files: $_fname is in $(files_home "$_fd") already"; return 0; }
+            case $_fd in "$_ff"|"$_ff"/*) provide_refuse "$1" "files: a folder does not go inside itself"; return 0 ;; esac
+            _fn=$(files_new_ok "$_fd" "${_ff##*/}") || { provide_refuse "$1" "files: $_fn"; return 0; }
+            if [ "$2" = files_move ]; then
+                mv "$_ff" "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not move $_fname"; return 0; }
+                files_result "$1" "$_fname moved to $(files_home "$_fd")" files_move "$(jq -cn --arg p "$_fn" --arg t "${_ff%/*}" '{path: $p, to: $t}')"
+            else
+                cp -Rp "$_ff" "$_fn" 2>/dev/null || { rm -rf "$_fn"; provide_refuse "$1" "files: could not copy $_fname"; return 0; }
+                files_result "$1" "$_fname copied to $(files_home "$_fd")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"
+            fi ;;
+        files_trash)
+            _fo=$(files_trash "$_ff") || { provide_refuse "$1" "files: $_fo"; return 0; }
+            files_result "$1" "$_fo" files_restore "$(jq -cn --arg p "$_ff" '{path: $p}')" ;;
     esac
 }
 provide_roots() {   # provide_roots RESULT -- the host's roots, each a folder that resolves to itself, never / itself; kept for the steps and the watcher
@@ -6742,6 +7045,7 @@ provide_roots() {   # provide_roots RESULT -- the host's roots, each a folder th
         | [match("%[0-9A-Fa-f]{2}|[^%]+|%"; "g").string | if (startswith("%") and length == 3) then ([.[1:] | ascii_downcase | explode | map(if . >= 97 then . - 87 else . - 48 end) | .[0] * 16 + .[1]] | implode) else . end] | add // ""' 2>/dev/null \
         | while IFS= read -r _fr; do _fr=$(realpath "$_fr" 2>/dev/null) && [ "$_fr" != / ] && [ -d "$_fr" ] && printf '%s\n' "$_fr"; done > "$PROOTS.new" || :
     mv "$PROOTS.new" "$PROOTS"
+    rpc_note notifications/resources/updated '{"uri":"spark-shell://files/rows"}'   # a read that came before the roots answered with none: the host reads again now
 }
 
 # --- the dialog: the desktop's window (spark-shell issue 1). spark-dialog
@@ -7910,21 +8214,22 @@ note_here() {   # note_here FILE NAME -- the note in your editor: in this termin
         [ "$2" != "a new note" ] || [ "$(cat "$1" 2>/dev/null)" != '# ' ] || { rm -f "$1"; echo "nothing written, so no new note"; }   # an empty new note is not kept
     else _l=$(note_open_file "$1" "$2") || refuse_in notes "$_l"; echo "$_l"; fi
 }
-cmd_reminders() {   # spark-shell reminders [add DAY TIME WORDS | done NAME | snooze NAME | restore NAME]: the dialog's reminders, at the prompt
+cmd_reminders() {   # spark-shell reminders [add DAY TIME WORDS | done NAME | snooze NAME | delete NAME|UID | restore NAME]: the dialog's reminders, at the prompt
     config_load
     case ${1:-} in
         '') _now=$(date +%Y%m%d%H%M); rem_list > "$TMP/rem.l"
             [ -s "$TMP/rem.l" ] || { echo "no reminders ahead (spark-shell reminders add tomorrow 9:00 call the dentist sets one)"; return 0; }
             _gp=''
-            while IFS="$TAB" read -r _s _u _t _f; do   # soonest first, so each group comes once
+            while IFS="$TAB" read -r _s _u _t _f; do   # soonest first, so each group comes once; a name two reminders share carries its UID, so the prompt can name one (#111)
                 _g=$(rem_group "$_s" "$_now")
                 [ "$_g" = "$_gp" ] || { [ -z "$_gp" ] || echo; if [ "$_g" = due ]; then echo 'due now'; else echo "$_g"; fi; _gp=$_g; }
-                printf '  %-16s %s\n' "$(rem_column "$_s" "$_g")" "$_t"
+                _tw=''; [ "$(awk -F '\t' -v t="$(panel_lower "$_t")" 'tolower($3) == t' "$TMP/rem.l" | grep -c .)" -le 1 ] || _tw="  $_u"
+                printf '  %-16s %s%s\n' "$(rem_column "$_s" "$_g")" "$_t" "$_tw"
             done < "$TMP/rem.l" ;;
-        add|done|snooze|restore) _a=$1; shift
+        add|done|snooze|delete|restore) _a=$1; shift
             [ $# -gt 0 ] || [ "$_a" = add ] || refuse_in reminders "$_a takes the reminder's name (spark-shell reminders lists them)"
             _l=$(rem_act "$_a" "$*") || refuse_in reminders "$_l"; echo "$_l" ;;
-        *) refuse_in reminders "$1 is not something reminders does: add, done, snooze or restore" ;;
+        *) refuse_in reminders "$1 is not something reminders does: add, done, snooze, delete or restore" ;;
     esac
 }
 cmd_apps_verb() {   # spark-shell apps (and the old desktop apps|tools): the picker, where there is a desktop
@@ -8790,6 +9095,7 @@ screen_action() (   # ACTION encoded-arguments [check]
         mode) [ "$#" = 1 ] && printf '%s\n' "$1" | grep -qE '^mode=[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$' || exit 1; set -- mode "${1#*=}" ;;
         position) [ "$#" = 2 ] && printf '%s\n' "$1 $2" | grep -qE '^x=-?[0-9]{1,5} y=-?[0-9]{1,5}$' || exit 1; set -- position "${1#*=}" "${2#*=}" ;;
         place) [ "$#" = 2 ] && printf '%s\n' "$1 $2" | grep -qE '^side=(left-of|right-of|above|below) other=[A-Za-z0-9_.:-]{1,80}$' || exit 1; set -- "${1#*=}" "${2#*=}" ;;
+        transform) [ "$#" = 1 ] && printf '%s\n' "$1" | grep -qE '^transform=(normal|90|180|270)$' || exit 1; set -- transform "${1#*=}" ;;
         screen-on|screen-off) [ "$#" = 0 ] || exit 1; set -- "${action#screen-}" ;;
         *) exit 1 ;;
     esac
@@ -8805,25 +9111,39 @@ provide_screen_rows() {   # connected screen choices, all through the same typed
         + ["0.5", "0.75", "1", "1.25", "1.5", "1.75", "2", "2.5", "3" | row("scale"; ("scale " + .); {scale: .}; "scale")]
         + [($screen.modes // [] | map("\(.width)x\(.height)" + (if (.refresh // 0) > 0 then "@\(.refresh / 1000)Hz" else "" end)) | unique)[] | row("mode"; .; {mode: .}; "resolution")]
         + [$screens[] | select(.name != $n and .active) | .name as $other | ["left-of", "right-of", "above", "below"][] | row("place"; (. + " " + $other); {side: ., other: $other}; "arrangement")]
+        + ["normal", "90", "180", "270" | row("transform"; (if . == "normal" then "upright" else "turned " + . end); {transform: .}; "orientation")]
         | {title: $n, state: ($screen.model // ""), rows: .} | .short = [.rows[].id]'
 }
 
 screens_json() { swaymsg -t get_outputs 2>/dev/null || echo '[]'; }
-screen_rows() {   # -> NAME<tab>ID<tab>ON<tab>MODE<tab>SCALE<tab>X<tab>Y<tab>W<tab>H<tab>MODEL per screen (W, H: its place in layout pixels)
+screen_rows() {   # -> NAME<tab>ID<tab>ON<tab>MODE<tab>SCALE<tab>X<tab>Y<tab>W<tab>H<tab>MODEL<tab>TRANSFORM per screen (W, H: its place in layout pixels; TRANSFORM normal, 90, 180 or 270)
     screens_json | jq -r '.[] | [.name, ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")), (if .active then "on" else "off" end),
-        (if .current_mode then "\(.current_mode.width)x\(.current_mode.height)" + (if (.current_mode.refresh // 0) > 0 then "@\(.current_mode.refresh / 1000)Hz" else "" end) else "" end), ((.scale // 1) + 0 | tostring), (.rect.x | tostring), (.rect.y | tostring), (.rect.width | tostring), (.rect.height | tostring), (.model // "")] | @tsv' 2>/dev/null || :
+        (if .current_mode then "\(.current_mode.width)x\(.current_mode.height)" + (if (.current_mode.refresh // 0) > 0 then "@\(.current_mode.refresh / 1000)Hz" else "" end) else "" end), ((.scale // 1) + 0 | tostring), (.rect.x | tostring), (.rect.y | tostring), (.rect.width | tostring), (.rect.height | tostring), (.model // ""), (.transform // "normal")] | @tsv' 2>/dev/null || :
 }
 screen_find() { screen_rows | awk -F '\t' -v n="$(panel_lower "$1")" 'tolower($1) == n || (n != "" && index(tolower($2), n) > 0) { print; exit }'; }   # screen_find NAME -> its row: by the port's name, or words of its make and model
-screen_save() {   # screen_save ID WORDS -- the screen's line of that kind (scale, mode, position, on or off) in screens.conf, every other kept
+screen_save() {   # screen_save ID WORDS [SIDE OTHER-ID] -- the screen's line of that kind (scale, mode, position, transform, on or off) in screens.conf, every other kept; a place beside another screen keeps the two as a comment, so a turn places it again (#109)
     mkdir -p "$CONFIG_DIR"
     _kd=${2%% *}; case $_kd in enable|disable) _kd="enable disable" ;; esac
     { [ -f "$SCREENS_CONF" ] && grep -v '^# rendered' "$SCREENS_CONF" | while IFS= read -r _ln; do
             _drop=''; for _k in $_kd; do case $_ln in "output \"$1\" $_k"|"output \"$1\" $_k "*) _drop=1 ;; esac; done
+            [ "$_kd" != position ] || case $_ln in "# beside \"$1\" "*) _drop=1 ;; esac
             [ -n "$_drop" ] || printf '%s\n' "$_ln"
         done || :; } > "$TMP/screens"
-    { echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them'; grep . "$TMP/screens" || :; printf 'output "%s" %s\n' "$1" "$2"; } > "$SCREENS_CONF"
+    { echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them'; grep . "$TMP/screens" || :; printf 'output "%s" %s\n' "$1" "$2"
+      [ -z "${3:-}" ] || printf '# beside "%s" %s "%s"\n' "$1" "$3" "$4"; } > "$SCREENS_CONF"
 }
-desk_screen() {   # desk_screen [NAME [scale N | mode WxH | on | off | left-of|right-of|above|below OTHER]]
+screen_beside_again() {   # screen_beside_again ID -- every screen placed beside ID, and ID placed beside another, placed again from the comment lines: a turned screen's width changed
+    [ -f "$SCREENS_CONF" ] || return 0
+    grep '^# beside "' "$SCREENS_CONF" | while IFS= read -r _bl; do
+        _bi=${_bl#\# beside \"}; _bi=${_bi%%\"*}; _bs=${_bl#*\" }; _bs=${_bs%% *}; _bo=${_bl##* \"}; _bo=${_bo%\"}
+        [ "$_bi" = "$1" ] || [ "$_bo" = "$1" ] || continue
+        _bn=$(screen_rows | awk -F '\t' -v i="$_bi" '$2 == i || $1 == i { print $1; exit }'); _bon=$(screen_rows | awk -F '\t' -v i="$_bo" '$2 == i || $1 == i { print $1; exit }')
+        [ -n "$_bn" ] && [ -n "$_bon" ] || continue
+        printf '%s\t%s\t%s\n' "$_bn" "$_bs" "$_bon"
+    done > "$TMP/beside"
+    while IFS="$TAB" read -r _bn _bs _bon; do ( desk_screen "$_bn" "$_bs" "$_bon" ) >/dev/null 2>&1 || :; done < "$TMP/beside"   # its own shell: the turn's receipt stays the turn's
+}
+desk_screen() {   # desk_screen [NAME [scale N | mode WxH | transform normal|90|180|270 | on | off | left-of|right-of|above|below OTHER]]
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own display settings"
     desk_in_sway || refuse "changes the desktop's screens: run it inside it"
     if [ "${1:-}" = --ensure-visible ]; then
@@ -8834,18 +9154,21 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | on | off | left-of|r
         return 0
     fi
     if [ -z "${1:-}" ]; then
-        screen_rows | while IFS="$TAB" read -r n id on m sc x y w h _mo; do
-            if [ "$on" = on ]; then echo "$n  ${id:-a screen}  $m  scale $sc  at $x,$y"; else echo "$n  ${id:-a screen}  off"; fi
+        screen_rows | while IFS="$TAB" read -r n id on m sc x y w h _mo tr; do
+            _tw=''; [ "${tr:-normal}" = normal ] || _tw="  turned $tr"
+            if [ "$on" = on ]; then echo "$n  ${id:-a screen}  $m  scale $sc  at $x,$y$_tw"; else echo "$n  ${id:-a screen}  off"; fi
         done; return 0
     fi
     _r=$(screen_find "$1"); [ -n "$_r" ] || refuse "no screen named $1 (spark-shell desktop screen lists them)"
-    _n=$(printf '%s' "$_r" | cut -f1); _id=$(printf '%s' "$_r" | cut -f2)
+    _n=$(printf '%s' "$_r" | cut -f1); _id=$(printf '%s' "$_r" | cut -f2); _kind=${2:-}   # the kind, kept: a place replaces the positional parameters
     [ "$(screen_rows | awk -F '\t' -v i="$_id" '$2 == i' | grep -c .)" -eq 1 ] || _id=$_n   # a name two screens share (no serial, the same model) would set both: the port's name instead
     case ${2:-} in
         scale) screen_scale_valid "${3:-}" || refuse "scale takes a positive decimal"
             _cmd="scale $3"; _said="$_n scale $3" ;;
         mode) screens_json | jq -e --arg n "$_n" --arg m "${3:-}" '.[] | select(.name == $n) | .modes[] | select("\(.width)x\(.height)" == $m or ("\(.width)x\(.height)@\((.refresh // 0) / 1000)Hz" == $m))' >/dev/null 2>&1 || refuse "$_n has no mode ${3:-}: $(screens_json | jq -r --arg n "$_n" '[.[] | select(.name == $n) | .modes[] | "\(.width)x\(.height)"] | unique | join(", ")')"
             _cmd="mode ${3}"; _said="$_n $3" ;;
+        transform) case ${3:-} in normal|90|180|270) ;; *) refuse "transform takes normal, 90, 180 or 270 (clockwise); no mirrored orientation" ;; esac
+            _cmd="transform $3"; if [ "$3" = normal ]; then _said="$_n upright"; else _said="$_n turned $3"; fi ;;
         on) _cmd=enable; _said="$_n on" ;;
         off) [ "$(screen_rows | awk -F '\t' '$3 == "on"' | grep -c .)" -gt 1 ] || refuse "$_n is the only screen on: it stays on"
             _cmd=disable; _said="$_n off" ;;
@@ -8859,10 +9182,12 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | on | off | left-of|r
             set -- "$2" $(printf '%s' "$_o" | cut -f6-9) $(printf '%s' "$_r" | cut -f8-9)   # SIDE OX OY OW OH W H
             case $1 in left-of) _x=$(($2 - $6)); _y=$3 ;; right-of) _x=$(($2 + $4)); _y=$3 ;; above) _x=$2; _y=$(($3 - $7)) ;; *) _x=$2; _y=$(($3 + $5)) ;; esac
             _cmd="position $_x $_y"; _said="$_n $1 $(printf '%s' "$_o" | cut -f1)" ;;
-        *) refuse "screen NAME takes scale N, mode WxH, on, off, or left-of, right-of, above or below another screen" ;;
+        *) refuse "screen NAME takes scale N, mode WxH, transform normal|90|180|270, on, off, or left-of, right-of, above or below another screen" ;;
     esac
     swaymsg -- output "\"$_id\"" "$_cmd" >/dev/null 2>&1 || swaymsg -- output "$_n" "$_cmd" >/dev/null 2>&1 || refuse "sway refused: output $_n $_cmd"
-    screen_save "$_id" "$_cmd"
+    case $_kind in left-of|right-of|above|below) _oi=$(printf '%s' "$_o" | cut -f2); [ "$(screen_rows | awk -F '\t' -v i="$_oi" '$2 == i' | grep -c .)" -eq 1 ] || _oi=$(printf '%s' "$_o" | cut -f1); screen_save "$_id" "$_cmd" "$_kind" "$_oi" ;;
+        *) screen_save "$_id" "$_cmd" ;; esac
+    [ "$_kind" != transform ] || screen_beside_again "$_id"   # its width changed: the screens placed beside it, and it beside another, placed again
     echo "$_said"
 }
 
@@ -9002,6 +9327,7 @@ desk_start() {   # desk_start PENDING
     log_dir=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell
     mkdir_private "$log_dir"
     [ -z "${pending:-}" ] || printf '%s\n' "$pending" > "$DESK_PENDING"
+    rm -f "$BAR_WS_ORDER"   # the workspaces' glyphs: a new order for this login (#110)
     st=0
     sound_start "$log_dir/sound.log"
     # a session bus for what the desktop runs (#71): where no logind made one (Void), sway runs inside

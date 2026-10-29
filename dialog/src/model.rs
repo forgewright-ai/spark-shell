@@ -10,6 +10,10 @@ pub struct Call {
     pub arguments: Map<String, Value>,
     /// The arguments the dialog asks for before it calls (a password, a name).
     pub ask: Vec<String>,
+    /// The step in a person's words, for a row's list of steps ("move to a folder"); the tool's verb when none.
+    pub said: Option<String>,
+    /// The argument a folder picked in the files fills before the call (a move's "to").
+    pub pick: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -118,6 +122,8 @@ pub struct Rows {
     pub title: String,
     /// The section's state now, read again with every rows read: the dialog's subtitle.
     pub state: Option<String>,
+    /// The folder these rows list, as a path: where a new file goes, and where a move or a copy lands when picked here.
+    pub here: Option<String>,
     pub rows: Vec<Row>,
     pub short: Vec<String>,
 }
@@ -163,10 +169,22 @@ fn call(v: &Value) -> Option<Call> {
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).map(scrub).collect())
         .unwrap_or_default();
+    let said = v
+        .get("said")
+        .and_then(Value::as_str)
+        .map(scrub)
+        .filter(|t| !t.is_empty() && t.chars().count() <= 40);
+    let pick = v
+        .get("pick")
+        .and_then(Value::as_str)
+        .filter(|k| !k.is_empty() && k.len() <= 32 && k.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'))
+        .map(str::to_string);
     Some(Call {
         name: name.to_string(),
         arguments,
         ask,
+        said,
+        pick,
     })
 }
 
@@ -244,6 +262,11 @@ pub fn rows(text: &str) -> Option<Rows> {
     Some(Rows {
         title: s(&v, "title"),
         state: v.get("state").and_then(Value::as_str).map(scrub).filter(|t| !t.is_empty()),
+        here: v
+            .get("here")
+            .and_then(Value::as_str)
+            .filter(|h| h.starts_with('/') && !h.split('/').any(|c| c == "..") && !h.chars().any(char::is_control))
+            .map(str::to_string),
         rows,
         short,
     })

@@ -134,6 +134,16 @@ pub fn verb_of(tool: &str) -> &'static str {
         "eject" => "Eject",
         "dismiss" => "Dismiss",
         "restore" => "Show",
+        "reveal" => "Reveal",
+        "rename" => "Rename",
+        "move" => "Move",
+        "copy" => "Copy",
+        "trash" => "Trash",
+        "show" => "Show",
+        "attach" => "Attach",
+        "find" | "say" => "Find",
+        "browse" => "Open",
+        "folder" | "text" => "Make",
         "lock" => "Lock",
         "suspend" => "Suspend",
         "logout" => "Log out",
@@ -240,7 +250,9 @@ pub struct Line {
 }
 
 /// A pick in progress: the view to go back to and how deep the stack was,
-/// the provider and tool the file goes to, and the types offered.
+/// the provider and tool the file goes to, and the types offered. A folder
+/// pick (#112) carries the step waiting for it, the argument it fills and
+/// the words of the row that ends it ("move photo.png here").
 #[derive(Clone, Debug, PartialEq)]
 pub struct Picking {
     pub back: View,
@@ -248,6 +260,9 @@ pub struct Picking {
     pub prov: usize,
     pub tool: String,
     pub types: Vec<String>,
+    pub step: Option<Step>,
+    pub field: String,
+    pub what: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -258,6 +273,8 @@ pub enum View {
     Section(usize),
     /// A folder (or any rows resource) under a provider: its uri.
     Folder(usize, String),
+    /// The steps of one row of a provider (its tool and its more), as a list: Right on the row opens it (#112).
+    Steps(usize),
     About,
     Models,
     /// How talk works: click to talk, or off.
@@ -448,6 +465,10 @@ pub enum Item {
     Row(usize, usize),
     /// A row of the folder shown now.
     Folder(usize),
+    /// A step of the row whose steps are shown: its index among the row's tool and its more.
+    StepOf(usize),
+    /// The row that ends a folder pick: the step lands in the folder shown (#112).
+    Here,
     Model(usize),
     /// A destination of the home.
     Dest(usize),
@@ -482,6 +503,8 @@ pub struct App {
     pub came_from: Vec<View>,
     /// The folder shown now: its provider, its uri, its rows once read.
     pub folder: Option<(usize, String, Rows)>,
+    /// The row whose steps are shown (View::Steps), as it was when Right opened them.
+    pub steps_row: Option<model::Row>,
     /// Plus is picking a file: the view to go back to and how deep the stack was.
     pub attaching: Option<(View, usize)>,
     /// The file the next want carries (`spark-shell want --attach`).
@@ -615,6 +638,7 @@ impl App {
             palette: None,
             last_view: None,
             keep_lit: None,
+            steps_row: None,
         }
     }
 
@@ -676,7 +700,7 @@ impl App {
     /// The providers whose rows the view on screen shows: they check for changes while it does (#37).
     pub fn shown(&self) -> Vec<usize> {
         match &self.view {
-            View::Section(p) | View::Folder(p, _) => vec![*p],
+            View::Section(p) | View::Folder(p, _) | View::Steps(p) => vec![*p],
             View::Dest(d) if *d != SETTINGS_DEST => self.dest_sections(*d),
             _ => vec![],
         }
@@ -1034,8 +1058,10 @@ impl App {
                 if text.len() > mcp::RESOURCE_MAX {
                     return self.say(Sign::Refused, "that folder holds too much to show");
                 }
+                // the rows of the folder on screen alone: an answer for a folder left meanwhile lands nowhere (#112)
+                let of = result.as_ref().and_then(|r| r.pointer("/contents/0/uri")).and_then(Value::as_str).map(scrub);
                 if let View::Folder(p, uri) = self.view.clone() {
-                    if p == idx {
+                    if p == idx && of.as_deref().is_none_or(|u| u == uri) {
                         match model::rows(text) {
                             Some(rows) => self.folder = Some((p, uri, rows)),
                             None => self.say(Sign::Refused, &error.unwrap_or_else(|| "that folder could not be read".into())),
@@ -1274,10 +1300,24 @@ impl App {
                 list.push(Item::OpenModels);
             }
             View::About => {}
+            View::Steps(_) => {
+                let n = self.steps_row.as_ref().map(|r| r.tool.iter().count() + r.more.len()).unwrap_or(0);
+                for k in 0..n {
+                    list.push(Item::StepOf(k));
+                }
+            }
             View::Folder(..) => {
                 let Some((p, _, rows)) = &self.folder else { return out };
+                // a folder being picked for a step: the row that lands it here first, then the folders alone
+                let folder_pick = self.picking.as_ref().is_some_and(|pk| pk.step.is_some());
+                if folder_pick && rows.here.is_some() {
+                    list.push(Item::Here);
+                }
                 for (i, r) in rows.rows.iter().enumerate() {
                     if !self.query().is_empty() && !self.matches(*p, r) {
+                        continue;
+                    }
+                    if folder_pick && r.children.is_none() {
                         continue;
                     }
                     // attaching or picking, the files offered are of the types asked; the summary goes
@@ -1421,7 +1461,7 @@ impl App {
                 .unwrap_or(false),
             Item::Model(i) => self.models.get(*i).map(|(_, s)| s == "serving" || s == "downloaded").unwrap_or(false),
             Item::TalkOpt(_) => self.voice_on,
-            Item::Ask | Item::Undo(..) | Item::Dest(_) | Item::Setting(_) | Item::OpenModels => true,
+            Item::Ask | Item::Undo(..) | Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::StepOf(_) | Item::Here => true,
             _ => false,
         }
     }
@@ -1444,6 +1484,8 @@ impl App {
         match it {
             Item::Row(p, r) => Some(self.providers[*p].rows.rows[*r].text.clone()),
             Item::Folder(i) => self.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)).map(|r| r.text.clone()),
+            Item::StepOf(k) => self.step_call(*k).map(|c| self.step_words(&c)),
+            Item::Here => self.picking.as_ref().map(|pk| pk.what.clone()),
             Item::Dest(d) => Some(DESTS[*d].name.to_string()),
             Item::Setting(i) => Some(SETTINGS[*i].1.to_string()),
             _ => None,
@@ -1835,6 +1877,9 @@ impl App {
         if self.step_value(true) {
             return;
         }
+        if self.open_steps() {
+            return;
+        }
         if self.input.is_empty() && (!self.in_list || self.is_calendar()) {
             return self.month(1);
         }
@@ -1968,10 +2013,18 @@ impl App {
         if self.picking.as_ref().map(|pk| self.came_from.len() < pk.depth + 1).unwrap_or(false) {
             self.picking = None;
         }
+        if !matches!(self.view, View::Steps(_)) {
+            self.steps_row = None;
+        }
         if !matches!(self.view, View::Folder(..)) {
             self.folder = None;
         } else if let View::Folder(p, uri) = self.view.clone() {
-            self.read_folder(p, &uri);
+            // the same folder's rows stay on screen while fresh ones come (back from a row's steps); another folder's go first
+            if self.folder.as_ref().is_some_and(|(fp, fu, _)| *fp == p && *fu == uri) {
+                self.refresh_folder(p, &uri);
+            } else {
+                self.read_folder(p, &uri);
+            }
         }
     }
 
@@ -1979,6 +2032,7 @@ impl App {
         self.want_cancel();
         self.target = None;
         self.keep_lit = None;
+        self.steps_row = None;
         // the files section is its home folder: its one row, ~, is no stop of its own
         if let View::Section(p) = v {
             if let Some(root) = self.files_root(p) {
@@ -2201,6 +2255,36 @@ impl App {
                     self.run(u);
                 }
             }
+            Item::StepOf(k) => {
+                // one of the lit row's steps: back to its list, then the step as a pick of its own
+                let (Some(row), View::Steps(p)) = (self.steps_row.clone(), self.view.clone()) else {
+                    return;
+                };
+                let Some(call) = self.step_call(k) else { return };
+                if let Some(v) = self.came_from.pop() {
+                    self.go_back(v);
+                }
+                let line = self.step_line(p, &call, &row.text);
+                self.run(Step {
+                    prov: p,
+                    call,
+                    who: Who::Person,
+                    line,
+                });
+            }
+            Item::Here => {
+                // the folder shown is the one picked: the step waiting for it runs with it, and the list stays here
+                let Some(pk) = self.picking.take() else { return };
+                let Some(mut step) = pk.step else { return };
+                let Some(here) = self.folder.as_ref().and_then(|(_, _, r)| r.here.clone()) else {
+                    return;
+                };
+                step.call.arguments.insert(pk.field.clone(), Value::String(here));
+                step.call.pick = None;
+                self.came_from.truncate(pk.depth);
+                self.sel = 0;
+                self.run(step);
+            }
             Item::Dest(d) => {
                 let v = self.dest_view(d);
                 self.go(v);
@@ -2265,6 +2349,9 @@ impl App {
                         prov: p,
                         tool: pk.tool.clone(),
                         types: pk.types.clone(),
+                        step: None,
+                        field: String::new(),
+                        what: String::new(),
                     });
                     self.open_children(f, &root);
                 } else if let Some(c) = row.children {
@@ -2308,6 +2395,8 @@ impl App {
                             name: pk.tool,
                             arguments,
                             ask: vec![],
+                            said: None,
+                            pick: None,
                         },
                         who: Who::Person,
                         line,
@@ -2564,6 +2653,8 @@ impl App {
                     name: t.name.clone(),
                     arguments,
                     ask: vec![],
+                    said: None,
+                    pick: None,
                 };
                 best = Some((
                     own,
@@ -2607,13 +2698,13 @@ impl App {
             return;
         }
         // the one bounded call: these words, this tool list, which steps. The
-        // list is every ready provider's tools but the files', in provider
-        // order, the same bytes from one request to the next, so spark's
-        // served prompt keeps it cached and a request pays its own words.
+        // list is every ready provider's tools, in provider order, the same
+        // bytes from one request to the next, so spark's served prompt keeps
+        // it cached and a request pays its own words.
         let tools: Vec<Value> = self
             .providers
             .iter()
-            .filter(|p| p.ready && p.dead.is_none() && p.label != "files")
+            .filter(|p| p.ready && p.dead.is_none())
             .flat_map(|p| {
                 p.tools
                     .iter()
@@ -2643,6 +2734,21 @@ impl App {
         let mut names: Vec<String> = vec![];
         for i in self.shown() {
             if self.providers[i].label == "files" {
+                // the folder on screen: the paths its rows hold are the names a files step takes, and the
+                // only ones (#112); the home's own rows name nothing
+                if let Some((p, _, rows)) = &self.folder {
+                    if *p == i {
+                        for r in &rows.rows {
+                            for c in r.tool.iter().chain(r.more.iter()) {
+                                if let Some(v) = c.arguments.get("path").and_then(Value::as_str) {
+                                    if !names.iter().any(|n| n == v) {
+                                        names.push(v.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 continue;
             }
             for r in 0..self.providers[i].rows.rows.len() {
@@ -2725,7 +2831,7 @@ impl App {
         let Some(tool) = self.providers[p].tools.iter().find(|t| t.name == call.name) else {
             return;
         };
-        let rows = &self.providers[p].rows;
+        let rows = self.rows_for_gate(p);
         for k in gate::name_keys(&tool.schema) {
             let Some(typed) = call.arguments.get(&k).and_then(Value::as_str).map(str::to_string) else {
                 continue;
@@ -2842,6 +2948,8 @@ impl App {
                 name: name.to_string(),
                 arguments,
                 ask: vec![],
+                said: None,
+                pick: None,
             };
             let at = self.providers.iter().position(|p| p.tools.iter().any(|t| t.name == name));
             if let Some(p) = at {
@@ -2849,7 +2957,7 @@ impl App {
             }
             match at {
                 None => no.push(format!("{} is not offered here now", line)),
-                Some(p) => match gate::step(&self.providers[p].tools, &self.providers[p].rows, &call) {
+                Some(p) => match gate::step(&self.providers[p].tools, self.rows_for_gate(p), &call) {
                     Ok(()) => {
                         // spark steps sends no line: the step reads as the tool's title with the
                         // values in its capitals' places, or every field when it has more
@@ -2953,6 +3061,44 @@ impl App {
             self.mode = Mode::Ask { step, field, masked };
             return;
         }
+        if let Some(field) = step.call.pick.clone().filter(|f| !step.call.arguments.contains_key(f)) {
+            // a folder picked in the files for the step's argument (a move's to): the list stays where it
+            // is with a row that lands the step here, and only folders open; Esc cancels (#112)
+            let Some(f) = self.files() else {
+                return self.say(Sign::Refused, "no files to pick a folder from");
+            };
+            let name = step
+                .call
+                .arguments
+                .get("path")
+                .and_then(Value::as_str)
+                .and_then(|p| p.rsplit('/').next())
+                .unwrap_or("it")
+                .to_string();
+            let what = format!("{} {} here", verb_of(&step.call.name).to_lowercase(), name);
+            if !matches!(&self.view, View::Folder(p, _) if *p == f) {
+                let Some(root) = self.files_root(f) else {
+                    return self.say(Sign::Refused, "no folder to pick from");
+                };
+                self.go(View::Folder(f, root.clone()));
+                self.read_folder(f, &root);
+            } else {
+                self.came_from.push(self.view.clone());
+            }
+            self.picking = Some(Picking {
+                back: self.view.clone(),
+                depth: self.came_from.len(),
+                prov: step.prov,
+                tool: step.call.name.clone(),
+                types: vec![],
+                step: Some(step),
+                field,
+                what,
+            });
+            self.in_list = true;
+            self.sel = 0;
+            return;
+        }
         if step.who == Who::Undo {
             self.undo = None; // the undo at hand is taken, wherever it came from (its row, "undo", spark)
         }
@@ -2989,8 +3135,12 @@ impl App {
         }) {
             return Err("an argument holds a control character".into());
         }
-        if step.who != Who::Person {
-            gate::step(&self.providers[step.prov].tools, &self.providers[step.prov].rows, &step.call)?;
+        match step.who {
+            Who::Model => gate::step(&self.providers[step.prov].tools, self.rows_for_gate(step.prov), &step.call)?,
+            // an undo names what its own result gave back (a file moved into another folder, a palette
+            // not on the list): the schema holds, and the provider's own lines hold again when it runs
+            Who::Undo => gate::schema_ok(&tool.schema, &step.call.arguments)?,
+            Who::Person => {}
         }
         Ok(())
     }
@@ -3119,6 +3269,13 @@ impl App {
                         self.say(Sign::Refused, "that file is not under your home: not attached");
                     }
                 }
+                // a list of the provider's own to open (a search's rows): opened as a row's children are
+                if let Some(u) = sc.get("open").and_then(Value::as_str) {
+                    if u.starts_with(&format!("spark-shell://{}/rows/", self.providers[idx].label)) && privacy.text_safe(u) && !u.chars().any(char::is_control)
+                    {
+                        self.open_children(idx, u);
+                    }
+                }
                 // the theme section's own palette, never another provider's
                 if self.providers[idx].label == "theme" {
                     if let Some(p) = sc.get("palette").and_then(Value::as_object) {
@@ -3150,6 +3307,8 @@ impl App {
                             name: name.to_string(),
                             arguments: args.clone(),
                             ask: vec![],
+                            said: None,
+                            pick: None,
                         };
                         let undo_schema = self.providers[idx].tools.iter().find(|t| t.name == name).map(|t| &t.schema);
                         let carries_secret = args.iter().any(|(k, v)| {
@@ -3289,7 +3448,7 @@ impl App {
         match &self.view {
             View::Home => "home".into(),
             View::Dest(d) => DESTS[*d].name.to_lowercase(),
-            View::Section(p) | View::Folder(p, _) => section_name(&self.providers[*p].label).to_lowercase(),
+            View::Section(p) | View::Folder(p, _) | View::Steps(p) => section_name(&self.providers[*p].label).to_lowercase(),
             View::About => "about".into(),
             View::Models => "model".into(),
             View::Talk => "talk".into(),
@@ -3301,6 +3460,7 @@ impl App {
         match &self.view {
             View::Section(p) => self.providers[*p].title.clone(),
             View::Folder(..) => self.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default(),
+            View::Steps(_) => self.steps_row.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
             _ => String::new(),
         }
     }
@@ -3392,7 +3552,17 @@ impl App {
             return v;
         }
         if let Some(pk) = &self.picking {
-            let mut v = vec![(format!("Pick a picture ({})", pk.types.join(" ")), false)];
+            let mut v = if pk.step.is_some() {
+                // a folder for a step: open folders, Enter on the first row lands it here
+                let lit = self.in_list.then(|| self.picks().get(self.sel).cloned()).flatten();
+                if lit == Some(Item::Here) {
+                    key("Here", "Enter")
+                } else {
+                    vec![(format!("A folder for {}", pk.what.split(' ').nth(1).unwrap_or("it")), false)]
+                }
+            } else {
+                vec![(format!("Pick a picture ({})", pk.types.join(" ")), false)]
+            };
             v.extend(esc("Cancel"));
             return v;
         }
@@ -3435,6 +3605,8 @@ impl App {
                 Some(Item::Ask) => "Ask",
                 Some(Item::Undo(..)) => "Undo",
                 Some(Item::Model(_)) | Some(Item::TalkOpt(_)) => "Choose",
+                Some(Item::Here) => "Here",
+                Some(Item::StepOf(k)) => self.step_call(*k).map(|c| verb_of(&c.name)).unwrap_or("Use"),
                 Some(it) => match self.row_ref(it) {
                     Some(r) if r.children.is_none() && r.pick.is_none() => r.tool.as_ref().map(|t| verb_of(&t.name)).unwrap_or("Open"),
                     _ => "Open",
@@ -3445,6 +3617,11 @@ impl App {
             if lit == Some(Item::Ask) {
                 v.push(gap());
                 v.extend(key("New line", "Shift+Enter"));
+            }
+            // a row with steps of its own: the right arrow opens them (#112)
+            if lit.as_ref().and_then(|it| self.row_ref(it)).is_some_and(|r| !r.more.is_empty()) && self.picking.is_none() && self.attaching.is_none() {
+                v.push(gap());
+                v.extend(key("Steps", "\u{2192}"));
             }
             v.extend(esc(esc_word));
             if self.is_calendar() && self.input.is_empty() {
@@ -3585,6 +3762,63 @@ impl App {
             line,
         });
         true
+    }
+
+    /// The lit row's steps, when it has steps of its own (its more): Right opens them as a list of
+    /// their own, Enter runs one, Esc comes back (#112). The row is kept as it was, so the list stands
+    /// while its folder is read again.
+    fn open_steps(&mut self) -> bool {
+        if !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal || self.picking.is_some() || self.attaching.is_some() {
+            return false;
+        }
+        let Some(it) = self.picks().get(self.sel).cloned() else { return false };
+        let prov = match &it {
+            Item::Row(p, _) => *p,
+            Item::Folder(_) => match &self.folder {
+                Some((p, _, _)) => *p,
+                None => return false,
+            },
+            _ => return false,
+        };
+        let Some(row) = self.row_ref(&it).cloned() else { return false };
+        if row.more.is_empty() {
+            return false;
+        }
+        self.want_cancel();
+        self.target = None;
+        self.keep_lit = None;
+        self.steps_row = Some(row);
+        self.came_from.push(self.view.clone());
+        self.view = View::Steps(prov);
+        self.sel = 0;
+        self.in_list = true;
+        self.scroll = 0;
+        true
+    }
+
+    /// The k-th step of the row whose steps are shown: its tool first, then its more.
+    fn step_call(&self, k: usize) -> Option<Call> {
+        let row = self.steps_row.as_ref()?;
+        row.tool.iter().chain(row.more.iter()).nth(k).cloned()
+    }
+
+    /// A step's words in a list of steps: the provider's own ("move to a folder"), else its verb.
+    pub fn step_words(&self, call: &Call) -> String {
+        call.said.clone().unwrap_or_else(|| verb_of(&call.name).to_lowercase())
+    }
+
+    /// The words of the k-th step shown (the tests read them).
+    pub fn step_call_words(&self, k: usize) -> Option<String> {
+        self.step_call(k).map(|c| self.step_words(&c))
+    }
+
+    /// The rows a step from the model or an undo is held to: the folder on screen when it is the
+    /// provider's (the files: a path a row holds), else the provider's own rows.
+    fn rows_for_gate(&self, p: usize) -> &Rows {
+        match &self.folder {
+            Some((fp, _, rows)) if *fp == p => rows,
+            _ => &self.providers[p].rows,
+        }
     }
 
     /// The Calendar: its months, then the reminders.

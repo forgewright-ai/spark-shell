@@ -193,6 +193,8 @@ fn an_elicitation_is_asked_in_the_composer_and_a_secret_is_declined() {
             name: "window_ask".into(),
             arguments: json!({"secret": 1}).as_object().unwrap().clone(),
             ask: vec![],
+            said: None,
+            pick: None,
         },
         who: spark_dialog::app::Who::Person,
         line: "window ask".into(),
@@ -623,6 +625,8 @@ fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
             name: "window_focus".into(),
             arguments: json!({"name": "terminal"}).as_object().unwrap().clone(),
             ask: vec![],
+            said: None,
+            pick: None,
         },
         who: spark_dialog::app::Who::Undo,
         line: "undo terminal".into(),
@@ -946,6 +950,8 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
             name: "window_focus".into(),
             arguments: json!({"name": "terminal"}).as_object().unwrap().clone(),
             ask: vec![],
+            said: None,
+            pick: None,
         },
         who: spark_dialog::app::Who::Undo,
         line: "undo window close terminal".into(),
@@ -1067,6 +1073,8 @@ fn the_undo_is_at_the_end_of_the_result_it_takes_back() {
             name: "window_focus".into(),
             arguments: json!({"name": "terminal"}).as_object().unwrap().clone(),
             ask: vec![],
+            said: None,
+            pick: None,
         },
         who: spark_dialog::app::Who::Undo,
         line: "undo window close terminal".into(),
@@ -1418,6 +1426,8 @@ fn an_overlong_literal_addition_refuses_without_changing_the_draft() {
             name: "window_focus".into(),
             arguments: serde_json::Map::new(),
             ask: vec!["text".into()],
+            said: None,
+            pick: None,
         },
         who: Who::Person,
         line: "enter literal text".into(),
@@ -1915,6 +1925,8 @@ fn native_pairing_is_bound_to_the_running_native_provider_and_never_echoes_codes
                         name: "bt_pair".into(),
                         arguments: json!({"name": "Buds"}).as_object().unwrap().clone(),
                         ask: vec![],
+                        said: None,
+                        pick: None,
                     },
                     who: Who::Person,
                     line: "bt pair Buds".into(),
@@ -1982,4 +1994,253 @@ fn native_pairing_confirmation_is_boolean_and_a_dead_provider_clears_its_prompt(
     assert_eq!(app.mode, Mode::Normal);
     assert!(app.input.is_empty());
     assert!(!app.exchange.iter().any(|line| line.text.contains("1234")));
+}
+
+/// A stub file manager (#112): a home folder with a folder, a text file and a picture, each file with its
+/// steps in its more (show, attach, reveal, rename, move to a folder, copy to a folder, trash); the folder
+/// opens with its own rows and `here`; a move, a trash and a find answer as the real provider does.
+fn manager_stub(calls: Arc<Mutex<Vec<Value>>>, home: String) -> Script {
+    let root = json!({"title": "files", "rows": [{"id": "files:root:a", "sign": "opens", "text": "~", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null}], "short": ["files:root:a"]});
+    let steps = |p: &str| {
+        json!([
+            {"name": "files_reveal", "arguments": {"path": p}, "said": "reveal in the system file manager"},
+            {"name": "files_rename", "arguments": {"path": p}, "ask": ["name"], "said": "rename"},
+            {"name": "files_move", "arguments": {"path": p}, "pick": "to", "said": "move to a folder"},
+            {"name": "files_copy", "arguments": {"path": p}, "pick": "to", "said": "copy to a folder"},
+            {"name": "files_trash", "arguments": {"path": p}, "said": "trash"}
+        ])
+    };
+    let note = format!("{}/notes.md", home);
+    let docs = format!("{}/docs", home);
+    let mut home_more = vec![
+        json!({"name": "files_show", "arguments": {"path": note}, "said": "show the first lines"}),
+        json!({"name": "files_attach", "arguments": {"path": note}, "said": "attach to the next request"}),
+    ];
+    home_more.extend(steps(&note).as_array().unwrap().iter().cloned());
+    let folder = json!({"title": "~", "here": home, "rows": [
+        {"id": "files:dir:d", "sign": "opens", "text": "docs", "tool": {"name": "files_browse", "arguments": {"path": docs}, "said": "open in the system file manager"}, "more": steps(&docs), "columns": ["3 items"], "children": "spark-shell://files/rows/ZG9jcw", "group": null},
+        {"id": "files:file:n", "sign": "blank", "text": "notes.md", "tool": {"name": "files_open", "arguments": {"path": note}, "said": "open"}, "more": home_more, "columns": ["12 B", "today"], "children": null, "group": null},
+        {"id": "files:total", "sign": "blank", "text": "1 file \u{b7} 12 B", "tool": null, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:new-folder", "sign": "opens", "text": "new folder", "tool": {"name": "files_new_folder", "arguments": {"path": home}, "ask": ["name"], "said": "new folder"}, "more": [], "columns": [], "children": null, "group": "this folder"}
+    ], "short": []});
+    let inside = json!({"title": "~/docs", "here": docs, "rows": [
+        {"id": "files:up", "sign": "opens", "text": "..", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null},
+        {"id": "files:file:r", "sign": "blank", "text": "report.pdf", "tool": {"name": "files_open", "arguments": {"path": format!("{}/report.pdf", docs)}, "said": "open"}, "more": steps(&format!("{}/report.pdf", docs)), "columns": ["2 MB", "today"], "children": null, "group": null}
+    ], "short": []});
+    let found = json!({"title": "find notes", "rows": [
+        {"id": "files:file:n", "sign": "blank", "text": "notes.md", "tool": {"name": "files_open", "arguments": {"path": note}, "said": "open"}, "more": [], "columns": ["12 B", "today", "~"], "children": null, "group": null}
+    ], "short": []});
+    let path_prop = json!({"type": "string", "minLength": 2, "maxLength": 4096, "format": "path"});
+    let tools = json!([
+        {"name": "files_open", "title": "files open PATH", "inputSchema": {"type": "object", "properties": {"path": path_prop}, "required": ["path"]}, "annotations": {"destructiveHint": false}},
+        {"name": "files_browse", "title": "files browse PATH", "inputSchema": {"type": "object", "properties": {"path": path_prop}, "required": ["path"]}, "annotations": {"destructiveHint": false}},
+        {"name": "files_show", "title": "files show PATH", "inputSchema": {"type": "object", "properties": {"path": path_prop}, "required": ["path"]}, "annotations": {"readOnlyHint": true}},
+        {"name": "files_attach", "title": "files attach PATH", "inputSchema": {"type": "object", "properties": {"path": path_prop}, "required": ["path"]}, "annotations": {"readOnlyHint": true}},
+        {"name": "files_reveal", "title": "files reveal PATH", "inputSchema": {"type": "object", "properties": {"path": path_prop}, "required": ["path"]}, "annotations": {"destructiveHint": false}},
+        {"name": "files_rename", "title": "files rename PATH", "inputSchema": {"type": "object", "properties": {"path": path_prop, "name": {"type": "string", "minLength": 1, "maxLength": 255}}, "required": ["path", "name"]}, "annotations": {"destructiveHint": false}},
+        {"name": "files_move", "title": "files move PATH", "inputSchema": {"type": "object", "properties": {"path": path_prop, "to": path_prop}, "required": ["path", "to"]}, "annotations": {"destructiveHint": false}},
+        {"name": "files_copy", "title": "files copy PATH", "inputSchema": {"type": "object", "properties": {"path": path_prop, "to": path_prop}, "required": ["path", "to"]}, "annotations": {"destructiveHint": false}},
+        {"name": "files_trash", "title": "files trash PATH", "inputSchema": {"type": "object", "properties": {"path": path_prop}, "required": ["path"]}, "annotations": {"destructiveHint": false}},
+        {"name": "files_restore", "title": "files restore PATH", "inputSchema": {"type": "object", "properties": {"path": path_prop}, "required": ["path"]}, "annotations": {"destructiveHint": false}},
+        {"name": "files_new_folder", "title": "files new-folder PATH", "inputSchema": {"type": "object", "properties": {"path": path_prop, "name": {"type": "string", "minLength": 1, "maxLength": 255}}, "required": ["path", "name"]}, "annotations": {"destructiveHint": false}},
+        {"name": "files_find", "title": "files find WORDS", "inputSchema": {"type": "object", "properties": {"words": {"type": "string", "minLength": 1, "maxLength": 256}}, "required": ["words"]}, "annotations": {"readOnlyHint": true}}
+    ]);
+    Box::new(move |v, send| {
+        if v.get("method").and_then(Value::as_str) == Some("resources/read") {
+            let uri = v.pointer("/params/uri").and_then(Value::as_str).unwrap_or("");
+            let rows = match uri {
+                "spark-shell://files/rows/aG9tZQ" => Some(&folder),
+                "spark-shell://files/rows/ZG9jcw" => Some(&inside),
+                "spark-shell://files/rows/find/bm90ZXM" => Some(&found),
+                _ => None,
+            };
+            if let Some(rows) = rows {
+                calls.lock().unwrap().push(json!({"read": uri}));
+                return send(result(
+                    &v["id"],
+                    json!({"contents": [{"uri": uri, "mimeType": "application/json", "text": rows.to_string()}]}),
+                ));
+            }
+        }
+        if let Some(r) = ordinary("files", v, &tools, &root) {
+            return send(r);
+        }
+        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+            calls.lock().unwrap().push(v["params"].clone());
+            let name = v.pointer("/params/name").and_then(Value::as_str).unwrap_or("");
+            let path = v.pointer("/params/arguments/path").and_then(Value::as_str).unwrap_or("").to_string();
+            let file = path.rsplit('/').next().unwrap_or("").to_string();
+            let sc = match name {
+                "files_move" => {
+                    let to = v.pointer("/params/arguments/to").and_then(Value::as_str).unwrap_or("").to_string();
+                    let from = path.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_default();
+                    json!({"receipt": format!("{} moved to {}", file, to), "undo": {"name": "files_move", "arguments": {"path": format!("{}/{}", to, file), "to": from}}})
+                }
+                "files_trash" => json!({"receipt": format!("{} is in the trash", file), "undo": {"name": "files_restore", "arguments": {"path": path}}}),
+                "files_find" => json!({"receipt": "1 named notes", "open": "spark-shell://files/rows/find/bm90ZXM"}),
+                _ => json!({"receipt": format!("{} {}", name, file)}),
+            };
+            send(result(
+                &v["id"],
+                json!({"content": [{"type": "text", "text": sc.to_string()}], "structuredContent": sc, "isError": false}),
+            ));
+        }
+    })
+}
+
+fn manager() -> (App, std::sync::mpsc::Receiver<Incoming>, Arc<Mutex<Vec<Value>>>, String) {
+    let home = std::env::var("HOME").unwrap();
+    let (mut app, rx, tx) = app_with(&["files"]);
+    let calls = Arc::new(Mutex::new(vec![]));
+    app.servers.push(stub(0, "files", manager_stub(calls.clone(), home.clone()), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    at_row(&mut app, View::Home, 0);
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "Files opens the home folder");
+    app.in_list = true;
+    (app, rx, calls, home)
+}
+
+fn tool_calls(calls: &Arc<Mutex<Vec<Value>>>) -> Vec<Value> {
+    calls.lock().unwrap().iter().filter(|c| c.get("name").is_some()).cloned().collect()
+}
+
+#[test]
+fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
+    let (mut app, rx, calls, home) = manager();
+    app.sel = 1; // notes.md
+    let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
+    assert!(hint.iter().any(|t| t == "Steps "), "the key row says the arrow opens the steps: {:?}", hint);
+    app.right();
+    assert!(matches!(app.view, View::Steps(0)), "{:?}", app.view);
+    assert_eq!(app.subtitle(), "notes.md");
+    let words = app.items().iter().filter(|it| matches!(it, Item::StepOf(_))).count();
+    assert_eq!(words, 8, "the tool and its seven more steps, each a row");
+    let texts: Vec<String> = app
+        .picks()
+        .iter()
+        .filter_map(|it| match it {
+            Item::StepOf(k) => app.step_call_words(*k),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(texts[0], "open");
+    assert_eq!(texts[2], "attach to the next request");
+    assert_eq!(texts[7], "trash");
+    app.sel = 7;
+    let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
+    assert_eq!(hint[0], "Trash ");
+    app.enter();
+    assert!(matches!(app.view, View::Folder(0, _)), "back to the folder: {:?}", app.view);
+    assert!(app.steps_row.is_none());
+    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("in the trash"))));
+    let c = tool_calls(&calls);
+    assert_eq!(c[0]["name"], "files_trash");
+    assert_eq!(c[0]["arguments"]["path"], format!("{}/notes.md", home));
+    assert_eq!(
+        app.undo.as_ref().map(|u| u.call.name.as_str()),
+        Some("files_restore"),
+        "the trash comes back with its undo"
+    );
+    // the undo names a path no row holds now (the file is in the trash): the schema holds, not the rows
+    let v = app.view.clone();
+    at_row(&mut app, v, 0);
+    let undo = app.undo.clone().unwrap();
+    app.run(undo);
+    assert!(
+        pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("files_restore notes.md"))),
+        "{:?}",
+        app.exchange
+    );
+    assert!(!app.exchange.iter().any(|l| l.text.contains("not in the list")), "{:?}", app.exchange);
+}
+
+#[test]
+fn a_move_picks_its_folder_in_the_files_and_lands_the_step_here() {
+    let (mut app, rx, calls, home) = manager();
+    app.sel = 1;
+    app.right();
+    app.sel = 5; // move to a folder
+    app.enter();
+    assert!(
+        app.picking.as_ref().is_some_and(|pk| pk.step.is_some() && pk.field == "to"),
+        "a folder pick is on: {:?}",
+        app.picking
+    );
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
+    let items = app.picks();
+    assert_eq!(items[0], Item::Here, "the row that lands it here comes first");
+    assert!(
+        !items.iter().any(|it| matches!(it, Item::Folder(1))),
+        "the files stay out of a folder pick: {:?}",
+        items
+    );
+    assert!(items.iter().any(|it| matches!(it, Item::Folder(0))), "the folders show: {:?}", items);
+    let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
+    assert!(hint[0].starts_with("A folder for notes.md") || hint[0] == "Here ", "{:?}", hint);
+    // into docs, then Enter on the first row: the step runs with that folder, and the list stays there
+    app.sel = 1;
+    app.enter();
+    assert!(
+        pump(&mut app, &rx, |a| a.folder.as_ref().is_some_and(|(_, u, _)| u.ends_with("ZG9jcw"))),
+        "docs opened"
+    );
+    assert!(app.picking.is_some(), "the pick goes on into the folder");
+    app.in_list = true;
+    app.sel = 0;
+    assert_eq!(app.picks()[0], Item::Here);
+    app.enter();
+    assert!(app.picking.is_none());
+    assert!(
+        pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("moved to"))),
+        "{:?}",
+        app.exchange
+    );
+    let c = tool_calls(&calls);
+    assert_eq!(c[0]["name"], "files_move");
+    assert_eq!(c[0]["arguments"]["path"], format!("{}/notes.md", home));
+    assert_eq!(c[0]["arguments"]["to"], format!("{}/docs", home));
+    assert!(
+        app.folder.as_ref().is_some_and(|(_, u, _)| u.ends_with("ZG9jcw")),
+        "the list stays where the file went"
+    );
+    assert_eq!(app.undo.as_ref().map(|u| u.call.name.as_str()), Some("files_move"));
+}
+
+#[test]
+fn esc_cancels_a_folder_pick_and_leaves_the_list_where_it_was() {
+    let (mut app, rx, calls, _) = manager();
+    app.sel = 1;
+    app.right();
+    app.sel = 6; // copy to a folder
+    app.enter();
+    assert!(app.picking.is_some());
+    app.escape();
+    assert!(app.picking.is_none(), "Esc cancels the pick");
+    assert!(matches!(app.view, View::Folder(0, _)), "{:?}", app.view);
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
+    assert!(tool_calls(&calls).is_empty(), "nothing ran");
+    assert!(!app.picks().contains(&Item::Here));
+}
+
+#[test]
+fn a_search_opens_the_rows_it_found() {
+    let (mut app, rx, calls, _) = manager();
+    app.in_list = false;
+    typed(&mut app, "files find notes");
+    app.enter();
+    assert!(
+        pump(&mut app, &rx, |a| matches!(&a.view, View::Folder(0, u) if u.ends_with("find/bm90ZXM"))),
+        "{:?}",
+        app.view
+    );
+    assert!(pump(&mut app, &rx, |a| a.folder.as_ref().is_some_and(|(_, _, r)| r.title == "find notes")));
+    assert_eq!(tool_calls(&calls)[0]["name"], "files_find");
+    app.escape();
+    assert!(
+        matches!(&app.view, View::Folder(0, u) if u.ends_with("aG9tZQ")),
+        "Esc goes back to the folder: {:?}",
+        app.view
+    );
 }

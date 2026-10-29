@@ -1,5 +1,76 @@
 # Changelog
 
+## v0.111
+
+- Files is a file manager of its own (#112, the guidelines' Priority II:
+  Own for the essentials, Delegate for the rest). Every row is a file or
+  a folder with its size and its date; the right arrow opens the lit
+  row's steps as a list of their own, in plain words: open, show the
+  first lines, attach to the next request, reveal in the system file
+  manager, rename (the name asked in the prompt), move to a folder and
+  copy to a folder (the folder picked in the list itself: the folders
+  alone show, and Enter on `move NAME here` lands it), trash. Every
+  write comes back: the trash is the delete, the freedesktop trash by
+  its spec (`gio trash` where it is, else the two files by hand, a
+  drive's own `.Trash-UID` on a drive), and its Undo restores the newest
+  from that path; a rename and a move are undone by the same step back,
+  a copy and a new folder or file by the trash. Nothing in Files asks
+  for the typed yes. Every folder ends with its total, `new folder` and
+  `new text file` (each asks a name, the file opens in the editor) and
+  `open in the system file manager`, for permissions, archives and
+  remote places. Your home folder opens with `recent`, the files touched
+  in the last 7 days, the newest first, 8 at most, each with its
+  folder's name, from the folders' own times, no database; and ends
+  with `drives`, a row per drive mounted, a root beside your home with
+  the same four lines (its own realpath, under a root, nothing hidden,
+  a file or a folder). `files find NAME` walks your home and your
+  drives for a name that holds the words, `files say WORDS` greps the
+  text files under a megabyte for the words, node_modules and the like
+  left out, 200 rows at most; the result opens as a list to act on. A
+  picture lit is drawn small at the top right where the terminal draws
+  pictures, its small picture made beside the list. The request path
+  now carries the files' tools and, from the Files place, the paths of
+  the folder on screen: a path reaches a step only through a row (the
+  dialog's gate holds every path argument to a path a row holds, or
+  the folder shown; the provider's lines hold besides), and a step from
+  spark that names a file by its name alone takes the row's own path
+  when one fits. A read of a folder that lands before the host's roots
+  answered with none and stayed so: the provider now says its rows
+  changed once the roots come. The dialog drops a folder's answer for
+  a folder left meanwhile.
+- A reminder ahead is reachable (#111): one of spark-shell's own is a
+  row with done on Enter and done, again in 10 minutes and delete as its
+  steps; delete takes the file away, and its Undo brings it back while
+  the dialog is open (the provider keeps it until it ends). At the
+  prompt, `spark-shell reminders delete NAME|UID`; the list shows each
+  reminder's UID beside a name two share, so the prompt can name one.
+  The same words at the same minute are one reminder: a second add is
+  refused with the one that exists, so a retry makes no two.
+- The typed yes only where something is lost (#112): forget a network,
+  close a window, remove a device, delete a layout or a theme, log out,
+  restart, shut down, cancel a print job, and the network manager's
+  install. The network settings (an address, DNS, automatic, restore),
+  the time zone and a printer paused carry their Undo and ask no more.
+- A screen's orientation (#109): `spark-shell desktop screen NAME
+  transform normal|90|180|270`, sway's own words, clockwise, no mirrored
+  orientation; kept in `screens.conf` like the scale, the list says
+  `turned 90`, and the dialog's screen rows offer the four under
+  `orientation`, with Undo to the one before. A screen placed beside
+  another is placed again after a turn, since its width changed: the
+  place is kept as a comment beside its position line.
+- The bar's workspaces past the tenth wear a symbol too (#110):
+  workspace 1 keeps U+235F, and every other takes one from an order
+  drawn once at the bar's start, from `/dev/urandom`: APL's block first,
+  then Miscellaneous Technical, Geometric Shapes, Mathematical Operators
+  and Arrows, each family shuffled, of the glyphs the bar's font has
+  (`on desktop` reads them with fc-query), less the bar's own, the
+  dialog's signs and the wide ones; a glyph goes with its first family.
+  Without the font's list, APL's block alone. The desktop's start draws
+  a new order, so a workspace keeps its face until the next login.
+- The records: Files is reborn as a component of the design system and
+  the AX/UX/UI document, with its previews in two palettes; the Key and
+  the Dialog records say a chip takes a click, as it has since v0.104.
+
 ## v0.110
 
 - A request right but for one word is no longer a refusal. A step from

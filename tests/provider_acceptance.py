@@ -82,6 +82,51 @@ class Providers(unittest.TestCase):
         self.assertTrue(result[1]["result"]["isError"])
         self.assertEqual(set(p.name for p in notes.iterdir()), {"first.md"})
 
+    def test_files_rename_move_copy_trash_and_restore_on_a_fixture_home(self):
+        home = self.home   # the root is the home itself: its trash is the home's (a folder under it would be a drive's)
+        (home / "docs").mkdir(parents=True)
+        (home / "notes.md").write_text("hello\n")
+        root = home.resolve()
+        self.env["SPARK_SHELL_NO_UDISKS"] = "1"
+        self.env["SPARK_SHELL_NO_GIO"] = "1"
+        roots = {"jsonrpc": "2.0", "id": "roots", "result": {"roots": [{"uri": "file://" + str(root)}]}}
+        init = rpc(0, "initialize", protocolVersion="2025-06-18", capabilities={"roots": {}})
+        initialized = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+        def session(*calls):
+            packets = [init, initialized, roots] + list(calls)
+            result = subprocess.run(["sh", str(PROGRAM), "provide", "files"], env=self.env,
+                                    input="".join(json.dumps(p) + "\n" for p in packets), text=True, capture_output=True, timeout=45)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return {p["id"]: p for p in map(json.loads, result.stdout.splitlines()) if "id" in p and p["id"] != "roots"}
+        replies = session(call(1, "files_rename", path=str(root / "notes.md"), name="Notes 2026.md"),
+                          call(2, "files_move", path=str(root / "Notes 2026.md"), to=str(root / "docs")),
+                          call(3, "files_copy", path=str(root / "docs" / "Notes 2026.md"), to=str(root)),
+                          call(4, "files_trash", path=str(root / "Notes 2026.md")))
+        done = lambda n: replies[n]["result"]["structuredContent"]
+        self.assertEqual(done(1)["undo"], {"name": "files_rename", "arguments": {"path": str(root / "Notes 2026.md"), "name": "notes.md"}})
+        self.assertEqual(done(2)["undo"], {"name": "files_move", "arguments": {"path": str(root / "docs" / "Notes 2026.md"), "to": str(root)}})
+        self.assertEqual(done(3)["undo"]["name"], "files_trash")
+        self.assertEqual((root / "docs" / "Notes 2026.md").read_text(), "hello\n")
+        self.assertEqual(done(4)["undo"], {"name": "files_restore", "arguments": {"path": str(root / "Notes 2026.md")}})
+        trash = Path(self.env["XDG_DATA_HOME"]) / "Trash"
+        self.assertFalse((root / "Notes 2026.md").exists(), "the copy went to the trash")
+        self.assertEqual(sorted(p.name for p in (trash / "info").iterdir()), ["Notes 2026.md.trashinfo"])
+        self.assertIn("Path=" + str(root).replace(" ", "%20") + "/Notes%202026.md", (trash / "info" / "Notes 2026.md.trashinfo").read_text())
+        self.assertEqual((trash / "files" / "Notes 2026.md").read_text(), "hello\n")
+        replies = session(call(5, "files_restore", path=str(root / "Notes 2026.md")),
+                          call(6, "files_new_folder", path=str(root), name="new one"),
+                          call(7, "files_trash", path=str(root)),
+                          call(8, "files_rename", path=str(root / "docs"), name="../escape"))
+        self.assertEqual(done(5)["receipt"], "Notes 2026.md is back")
+        self.assertEqual((root / "Notes 2026.md").read_text(), "hello\n")
+        self.assertFalse((trash / "files" / "Notes 2026.md").exists())
+        self.assertFalse((trash / "info" / "Notes 2026.md.trashinfo").exists())
+        self.assertTrue((root / "new one").is_dir())
+        self.assertEqual(done(6)["undo"]["name"], "files_trash")
+        self.assertTrue(replies[7]["result"]["isError"], "the home itself is never trashed")
+        self.assertIn("error", replies[8], "a name with a slash never passes the schema")
+        self.assertTrue((root / "docs").is_dir())
+
     def test_duplicate_reminders_done_undo_and_snooze_use_the_returned_uid(self):
         # Force equal second-resolution metadata, so a same-size reschedule
         # must invalidate the earlier lookup before reporting native evidence.
@@ -299,15 +344,20 @@ else: os.execv(sys.executable, [sys.executable]+sys.argv[1:])
 
     def test_spoken_reminder_timing_preserves_requested_time_and_title(self):
         tomorrow = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)).strftime("%Y-%m-%d")
-        for phrase in ("tomorrow at 10:00 to review the checklist", "Remind me tomorrow at 10:00 to review the checklist"):
+        for phrase, minute in (("tomorrow at 10:00 to review the checklist", "10:00"), ("Remind me tomorrow at 10:30 to review the checklist", "10:30")):
             result = self.provider("reminders", call(1, "reminders_add", words=phrase))
             effect = result[1]["result"]["structuredContent"]["effect"]
-            self.assertEqual((effect["localTime"], effect["title"]), (f"{tomorrow} 10:00", "review the checklist"), phrase)
+            self.assertEqual((effect["localTime"], effect["title"]), (f"{tomorrow} {minute}", "review the checklist"), phrase)
         saved = [p.read_text() for p in (self.home / "calendar").glob("*.ics")]
         self.assertEqual(len(saved), 2)
         for text in saved:
-            self.assertIn("DTSTART:" + tomorrow.replace("-", "") + "T100000", text)
+            self.assertIn("DTSTART:" + tomorrow.replace("-", "") + "T10", text)
             self.assertIn("SUMMARY:review the checklist\n", text)
+        # the same words at the same minute again: refused with the one that exists, so a retry makes no second (#111)
+        result = self.provider("reminders", call(2, "reminders_add", words="tomorrow at 10:00 to review the checklist"))
+        self.assertTrue(result[2]["result"]["isError"])
+        self.assertEqual(result[2]["result"]["content"][0]["text"], "tomorrow 10:00 review the checklist is a reminder already")
+        self.assertEqual(len(list((self.home / "calendar").glob("*.ics"))), 2)
         # words with no time: one question over the wire (elicitation, the field when); cancelled, nothing is written
         answer = {"jsonrpc": "2.0", "id": "ask-3", "result": {"action": "cancel"}}
         result = self.provider("reminders", call(3, "reminders_add", words="Remind me to review the checklist"), answer)
@@ -318,10 +368,10 @@ else: os.execv(sys.executable, [sys.executable]+sys.argv[1:])
         self.assertEqual(result[3]["result"]["content"][0]["text"], "not done: no time given")
         self.assertEqual(len(list((self.home / "calendar").glob("*.ics"))), 2)
         # answered, the time goes in front and the title is what the person asked to be reminded of
-        answer = {"jsonrpc": "2.0", "id": "ask-4", "result": {"action": "accept", "content": {"when": "tomorrow 10:00"}}}
+        answer = {"jsonrpc": "2.0", "id": "ask-4", "result": {"action": "accept", "content": {"when": "tomorrow 10:45"}}}
         result = self.provider("reminders", call(4, "reminders_add", words="Remind me to review the checklist"), answer)
         effect = result[4]["result"]["structuredContent"]["effect"]
-        self.assertEqual((effect["localTime"], effect["title"]), (f"{tomorrow} 10:00", "review the checklist"))
+        self.assertEqual((effect["localTime"], effect["title"]), (f"{tomorrow} 10:45", "review the checklist"))
         self.assertEqual(len(list((self.home / "calendar").glob("*.ics"))), 3)
 
     def desktop_fixture(self):

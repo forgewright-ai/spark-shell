@@ -456,6 +456,110 @@ fn ds_frame(buf: &Buffer, pal: &Palette, caption: &str, picture: Picture) -> Str
 
 /// The design system's Dialog preview, from this code's own render (DS_PREVIEW=FILE, DS_PICTURE=a PNG of skyline):
 /// the home with each place's state, a palette named and Ask spark, spark's commands in the prompt and a turn with its
+/// The file manager's preview for the design system (#112): the home folder (the recent files, the folders and files, the folder's
+/// own steps, a drive), a file's steps, a folder picked for a move. DS_FILES_PREVIEW names the file to write.
+#[test]
+fn design_system_files_preview() {
+    let Ok(file) = std::env::var("DS_FILES_PREVIEW") else { return };
+    let pal = common::palette("tokyonight-night");
+    let draw = |a: &App| -> Buffer {
+        let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+        spark_dialog::ui::draw(a, &pal, CLOCK, &mut b);
+        b
+    };
+    let mut frames = vec![];
+    let a = files_app();
+    frames.push(ds_frame(
+        &draw(&a),
+        &pal,
+        "files: the recent files, the folders and files, the folder's own steps, a drive",
+        None,
+    ));
+    let mut a = files_app();
+    a.right();
+    a.sel = 5;
+    frames.push(ds_frame(
+        &draw(&a),
+        &pal,
+        "a file's steps, opened with the right arrow: Enter runs one, Esc comes back",
+        None,
+    ));
+    let mut a = files_app();
+    a.right();
+    a.sel = 5;
+    a.enter();
+    frames.push(ds_frame(
+        &draw(&a),
+        &pal,
+        "move to a folder: the folders alone, and the row that lands it here",
+        None,
+    ));
+    let head = "<!-- @dsCard group=\"Files\" height=1740 width=1420 subtitle=\"the file manager from v0.111's own render, bound to the tokens: your home folder with the recent files, a file's steps, a folder picked for a move\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
+    std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n<script></script>\n", head, frames.join(""))).unwrap();
+}
+
+/// The dialog at the files, as the provider lists a home folder in v0.111 (#112).
+fn files_app() -> App {
+    let mut app = app("tokyonight-night", "skyline", "/srv/look/thumbs");
+    app.cfg.plus = true;
+    let mut files = Provider::new("files");
+    files.title = "your home folder".into();
+    files.version = "0.111".into();
+    files.ready = true;
+    files.rows = model::rows(&json!({"title": "files", "rows": [
+        {"id": "files:root:a", "sign": "opens", "text": "~", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null}
+    ], "short": ["files:root:a"]}).to_string()).unwrap();
+    app.providers.push(files);
+    let f = app.providers.len() - 1;
+    let steps = |p: &str| {
+        json!([
+            {"name": "files_reveal", "arguments": {"path": p}, "said": "reveal in the system file manager"},
+            {"name": "files_rename", "arguments": {"path": p}, "ask": ["name"], "said": "rename"},
+            {"name": "files_move", "arguments": {"path": p}, "pick": "to", "said": "move to a folder"},
+            {"name": "files_copy", "arguments": {"path": p}, "pick": "to", "said": "copy to a folder"},
+            {"name": "files_trash", "arguments": {"path": p}, "said": "trash"}
+        ])
+    };
+    let file = |name: &str, size: &str, when: &str, group: &str, folder: Option<&str>| {
+        let p = format!("/data/me/{}", name);
+        let mut more = vec![
+            json!({"name": "files_show", "arguments": {"path": p}, "said": "show the first lines"}),
+            json!({"name": "files_attach", "arguments": {"path": p}, "said": "attach to the next request"}),
+        ];
+        more.extend(steps(&p).as_array().unwrap().iter().cloned());
+        let mut columns = vec![size.to_string(), when.to_string()];
+        if let Some(fo) = folder {
+            columns.push(fo.to_string());
+        }
+        json!({"id": format!("files:file:{}:{}", group, name), "sign": "blank", "text": name, "tool": {"name": "files_open", "arguments": {"path": p}, "said": "open"}, "more": more, "columns": columns, "children": null, "group": group})
+    };
+    let dir = |name: &str, items: &str| {
+        let p = format!("/data/me/{}", name);
+        json!({"id": format!("files:dir:{}", name), "sign": "opens", "text": name, "tool": {"name": "files_browse", "arguments": {"path": p}, "said": "open in the system file manager"}, "more": steps(&p), "columns": [items], "children": format!("spark-shell://files/rows/{}", name), "group": "home"})
+    };
+    let rows = model::rows(&json!({"title": "~", "here": "/data/me", "rows": [
+        file("invoice-0412.pdf", "120 KB", "today", "recent", Some("downloads")),
+        file("photo-0412.jpg", "4.8 MB", "yesterday", "recent", Some("camera")),
+        file("notes.md", "2 KB", "18 Oct", "recent", Some("~")),
+        dir("documents", "12 items"),
+        dir("downloads", "3 items"),
+        dir("pictures", "40 items"),
+        file("notes.md", "2 KB", "18 Oct", "home", None),
+        file("todo.txt", "1 KB", "2025", "home", None),
+        {"id": "files:total", "sign": "blank", "text": "2 files \u{b7} 3 KB", "tool": null, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:new-folder", "sign": "opens", "text": "new folder", "tool": {"name": "files_new_folder", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new folder"}, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:new-text", "sign": "opens", "text": "new text file", "tool": {"name": "files_new_text", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new text file"}, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:browse", "sign": "opens", "text": "open in the system file manager", "tool": {"name": "files_browse", "arguments": {"path": "/data/me"}, "said": "open in the system file manager"}, "more": [], "columns": [], "children": null, "group": "this folder"},
+        {"id": "files:drive:s", "sign": "opens", "text": "STICK", "tool": null, "more": [], "columns": ["14.2 GB free"], "children": "spark-shell://files/rows/c3RpY2s", "group": "drives"}
+    ], "short": []}).to_string()).unwrap();
+    app.view = View::Folder(f, "spark-shell://files/rows/aG9tZQ".into());
+    app.came_from = vec![View::Home];
+    app.folder = Some((f, "spark-shell://files/rows/aG9tZQ".into(), rows));
+    app.in_list = true;
+    app.sel = 0;
+    app
+}
+
 /// Undo (#53), the theme section, a value lit, the wallpaper list.
 #[test]
 fn design_system_preview() {
@@ -524,6 +628,8 @@ fn design_system_preview() {
             name: "theme_palette".into(),
             arguments: json!({"name": "tokyonight-night"}).as_object().unwrap().clone(),
             ask: vec![],
+            said: None,
+            pick: None,
         },
         who: Who::Undo,
         line: "undo theme nord".into(),

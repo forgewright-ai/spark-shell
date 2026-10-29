@@ -2865,8 +2865,8 @@ rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen t24i sca
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 left-of edp-1 2>&1) || rc=$?
 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 scale 1 >/dev/null 2>&1 || :
 [ "$rc" = 0 ] && [ "$out" = 'HDMI-A-1 left-of eDP-1' ] && grep -qxF 'output "Lenovo Group Limited T24i-30 V30A1" position -1920 0' "$HOME/.config/spark-shell/screens.conf" \
-    && [ "$(grep -c 'T24i-30' "$HOME/.config/spark-shell/screens.conf")" = 2 ] && grep -qxF 'output "Lenovo Group Limited T24i-30 V30A1" scale 1' "$HOME/.config/spark-shell/screens.conf" \
-    && ok "desktop screen left-of: placed by the other's edge; the file keeps one line per kind (the scale replaced, the place kept)" || bad "screen place" "rc=$rc $out $(cat "$HOME/.config/spark-shell/screens.conf")"
+    && [ "$(grep -c 'T24i-30' "$HOME/.config/spark-shell/screens.conf")" = 3 ] && grep -qxF 'output "Lenovo Group Limited T24i-30 V30A1" scale 1' "$HOME/.config/spark-shell/screens.conf" && grep -qxF '# beside "Lenovo Group Limited T24i-30 V30A1" left-of "BOE 0x0BCA Unknown"' "$HOME/.config/spark-shell/screens.conf" \
+    && ok "desktop screen left-of: placed by the other's edge; the file keeps one line per kind (the scale replaced, the place kept) and the two screens as a comment, for a turn to place it again (#109)" || bad "screen place" "rc=$rc $out $(cat "$HOME/.config/spark-shell/screens.conf")"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 off 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'eDP-1 off' ] && grep -qxF -- '-- output "BOE 0x0BCA Unknown" disable' "$HOME/swaymsg.log" && grep -q 'disable' "$HOME/.config/spark-shell/screens.conf" \
     && ok "desktop screen off: applied and saved for the next login" || bad "screen off" "rc=$rc $out $(cat "$HOME/.config/spark-shell/screens.conf")"
@@ -2889,6 +2889,22 @@ j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"
 printf '%s' "$j" | jq -e '.error.code == -32602' >/dev/null && [ "$before" = "$(cksum < "$HOME/swaymsg.log")" ]     && ok "display: invalid coordinate text is refused before a native call" || bad "display invalid coordinate" "$j"
 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 on >/dev/null
 ! grep -q 'disable' "$HOME/.config/spark-shell/screens.conf" && grep -q 'enable' "$HOME/.config/spark-shell/screens.conf"     && ok "display: on replaces a saved off, with no conflicting power line" || bad "display saved power"
+# the orientation (#109): sway's transform, kept like the others; a screen placed beside another is placed again after a turn; the dialog offers the four
+rm -f "$HOME/swaymsg.log"; SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 left-of edp-1 >/dev/null 2>&1
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 transform 90 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'HDMI-A-1 turned 90' ] && grep -qxF -- '-- output "Lenovo Group Limited T24i-30 V30A1" transform 90' "$HOME/swaymsg.log" && grep -qxF 'output "Lenovo Group Limited T24i-30 V30A1" transform 90' "$HOME/.config/spark-shell/screens.conf" \
+    && grep -qxF '# beside "Lenovo Group Limited T24i-30 V30A1" left-of "BOE 0x0BCA Unknown"' "$HOME/.config/spark-shell/screens.conf" && [ "$(grep -c '^-- output "Lenovo Group Limited T24i-30 V30A1" position' "$HOME/swaymsg.log")" = 2 ] \
+    && ok "desktop screen transform 90: sway's own word, kept in screens.conf; the place beside the other screen is a comment there, and the turn places it again" || bad "screen transform" "rc=$rc $out $(cat "$HOME/swaymsg.log") $(cat "$HOME/.config/spark-shell/screens.conf")"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 transform flipped 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: transform takes normal, 90, 180 or 270 (clockwise); no mirrored orientation' ] && ok "desktop screen transform: a mirrored orientation is refused" || bad "screen transform flipped" "rc=$rc $out"
+j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://display/rows/screen/HDMI-A-1"}}')
+printf '%s' "$j" | jq -e '.result.contents[0].text | fromjson | [.rows[] | select(.group == "orientation") | .text + ":" + .tool.name + ":" + .tool.arguments.transform] == ["upright:display_transform:normal", "turned 90:display_transform:90", "turned 180:display_transform:180", "turned 270:display_transform:270"]' >/dev/null \
+    && ok "display: a screen's rows offer the orientation, upright and three turns, through one typed tool" || bad "display orientation rows" "$j"
+j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"display_transform","arguments":{"screen":"HDMI-A-1","transform":"180"}}}')
+printf '%s' "$j" | jq -e '.result.isError == false and .result.structuredContent.receipt == "HDMI-A-1 turned 180" and .result.structuredContent.undo == {name:"display_transform",arguments:{screen:"HDMI-A-1",transform:"normal"}}' >/dev/null \
+    && ok "display: the orientation tool turns the screen, its undo the orientation it had (sway says none: upright)" || bad "display transform tool" "$j"
+j=$(screen_mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"display_transform","arguments":{"screen":"HDMI-A-1","transform":"flipped-90"}}}')
+[ "$(printf '%s' "$j" | jq -r '.error.code')" = -32602 ] && ok "display: a mirrored orientation never reaches sway" || bad "display transform refused" "$j"
 # A single active screen stays on; a login with none recovers one.
 mkdir -p "$H/screens-one"
 cat > "$H/screens-one/swaymsg" <<'SCREEN_STUB'
@@ -2919,11 +2935,24 @@ pip=$(printf '\342\226\260'); pipoff=$(printf '\342\226\261'); g=$(printf '%s' "
 [ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pip" | wc -l | tr -d ' ')" = 2 ] && [ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pipoff" | wc -l | tr -d ' ')" = 3 ] && [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "name") | .full_text')" = "<span foreground='#555555'>$(printf '\342\230\274')</span>" ] && [ "$k" = "<span foreground='#555555'>$(printf '\342\214\227')</span> us+intl" ] \
     && ok "bar: light, a sun with its gauge (47: two of five cells), and kb, a key grid with the layout in use (sway's second, us+intl)" || bad "bar light kb" "$line"
 # the workspaces' glyphs: a workspace named by its number, or a layout's "3 writing", takes its glyph; one named already, or past the tenth, is left
-rm -f "$HOME/swaymsg.log" "$HOME/ws-later"; touch "$HOME/ws-test"
-SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status </dev/null >/dev/null 2>&1 & bp=$!
-i=0; while [ "$i" -lt 50 ] && [ "$(cat "$HOME/swaymsg.log" 2>/dev/null | grep -c '^-- rename')" -lt 4 ]; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null; wait "$bp" 2>/dev/null
-[ "$(grep '^-- rename' "$HOME/swaymsg.log" 2>/dev/null)" = "$(printf '%s\n' "-- rename workspace \"1\" to \"1:$(printf '\342\215\237')\"" "-- rename workspace \"3 writing\" to \"3:$(printf '\342\215\253') writing\"" "-- rename workspace \"10\" to \"10:$(printf '\342\215\234')\"" "-- rename workspace \"5\" to \"5:$(printf '\342\215\262')\"")" ] \
-    && ok "bar status: workspace 1 becomes 1:GLYPH, a layout's 3 writing keeps its words after the glyph, 10 takes the tenth glyph alone, 2:x and 11 are left; a workspace sway makes later (its event spaced, as sway writes it) takes its glyph too" || bad "workspace glyphs" "$(cat "$HOME/swaymsg.log" 2>&1)"
+WSO=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; WSO=${WSO:-$HOME/.local/state/spark-shell}/ws-order; WSP=$HOME/.local/state/spark-shell/ws-pool   # the order lives in the runtime dir when a login has one
+rm -f "$HOME/swaymsg.log" "$HOME/ws-later" "$WSO"; touch "$HOME/ws-test"
+SPARK_SHELL_WS_SEED=7 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status </dev/null >/dev/null 2>&1 & bp=$!
+i=0; while [ "$i" -lt 50 ] && [ "$(cat "$HOME/swaymsg.log" 2>/dev/null | grep -c '^-- rename')" -lt 5 ]; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null; wait "$bp" 2>/dev/null
+[ "$(grep '^-- rename' "$HOME/swaymsg.log" 2>/dev/null)" = "$(printf '%s\n' "-- rename workspace \"1\" to \"1:$(printf '\342\215\237')\"" "-- rename workspace \"3 writing\" to \"3:$(printf '\342\215\252') writing\"" "-- rename workspace \"10\" to \"10:$(printf '\342\215\234')\"" "-- rename workspace \"11\" to \"11:$(printf '\342\215\216')\"" "-- rename workspace \"5\" to \"5:$(printf '\342\215\261')\"")" ] \
+    && [ "$(sed -n 1p "$WSO")" = '\342\215\237' ] && [ "$(grep -c . "$WSO")" = 69 ] && [ "$(sort "$WSO" | uniq -d | wc -l | tr -d ' ')" = 0 ] \
+    && ok "bar status: workspace 1 is always U+235F; the others take APL's symbols in an order drawn once at the bar's start (seed 7 here: 3, 5, 10 and 11 each their own, 11 past the tenth too), a layout's 3 writing keeps its words after the glyph, 2:x is left; 69 lines, none twice (#110)" || bad "workspace glyphs" "$(cat "$HOME/swaymsg.log" 2>&1) $(head -3 "$WSO" 2>&1)"
+printf '2336-237a 2308-230b 2317 23e8-23ef 23fe 24ff-25ff 2200-2214 2190-2199 21c5\n' > "$H/charset"
+printf '#!/bin/sh\ncat "%s/charset"\n' "$H" > "$H/lx/fc-query"; chmod +x "$H/lx/fc-query"; mkdir -p "$HOME/.local/share/fonts/monaspace-neon"; : > "$HOME/.local/share/fonts/monaspace-neon/MonaspaceNeon-Regular.otf"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" on desktop --yes -v 2>&1 </dev/null) || rc=$?
+printf '%s\n' "$out" | grep -q 'glyphs .*read from Monaspace Neon' && [ "$(awk '$1 == 1' "$WSP" | wc -l | tr -d ' ')" = 68 ] && [ "$(awk '$1 == 2' "$WSP" | wc -l | tr -d ' ')" = 8 ] && ! grep -qx '2 2317' "$WSP" && ! grep -qx '2 23e9' "$WSP" && grep -qx '3 25a0' "$WSP" && ! grep -qx '3 25b0' "$WSP" && ! grep -qx '5 21c5' "$WSP" \
+    && ok "on desktop: the glyph pool is read from the font (fc-query's charset): APL's 68 after workspace 1's, then the other families the font has (Miscellaneous Technical's 8 here: APL's own block inside it is not counted again), less the bar's own (the keyboard, the wire, the gauge cells) and the wide ones" || bad "ws pool" "rc=$rc $(printf '%s\n' "$out" | grep glyphs) $(sort "$WSP" 2>&1 | head -5)"
+rm -f "$HOME/swaymsg.log" "$HOME/ws-later" "$WSO"; touch "$HOME/ws-test"
+SPARK_SHELL_WS_SEED=7 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status </dev/null >/dev/null 2>&1 & bp=$!
+i=0; while [ "$i" -lt 50 ] && [ "$(cat "$HOME/swaymsg.log" 2>/dev/null | grep -c '^-- rename')" -lt 5 ]; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null; wait "$bp" 2>/dev/null
+grep -qF -- "-- rename workspace \"11\" to \"11:$(printf '\342\215\216')\"" "$HOME/swaymsg.log" && [ "$(grep -c . "$WSO")" -gt 69 ] \
+    && ok "bar status: with the pool, the same seed gives the same APL order (the families are shuffled apart), and the order goes on past APL" || bad "ws pool order" "$(cat "$HOME/swaymsg.log" 2>&1)"
+rm -f "$H/lx/fc-query" "$WSP"
 rm -f "$HOME/ws-test" "$HOME/ws-later"
 SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" bar light down; grep -qx -- '-q -c backlight set 42%' "$HOME/bctl.log" && ok "bar light down: the brightness keys, 5 down" || bad "bar light down" "$(cat "$HOME/bctl.log")"
 rm -f "$HOME/bctl.log"; rc=0; out=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display brightness down 2>&1) || rc=$?
@@ -2988,7 +3017,7 @@ vd=$(LC_ALL=C date -d 2030-01-02 '+%a %d %b' 2>/dev/null || LC_ALL=C date -j -f 
     && f=$(ls "$HOME"/calendar/*.ics) && tr -d '\r' < "$f" | grep -qx 'DTSTART:20300102T100000' && tr -d '\r' < "$f" | grep -qxF "SUMMARY:the vet\\, Luna's shots" && tr -d '\r' < "$f" | grep -qx 'TRIGGER:PT0M' && [ "$(grep -c "$(printf '\r')$" "$f")" = "$(wc -l < "$f" | tr -d ' ')" ] \
     && ok "reminders add: an iCalendar event in ~/calendar, its local time, its alarm at that time, the comma escaped, every line CRLF" || bad "reminders add" "$(cat "$HOME"/calendar/*.ics 2>&1)"
 [ "$(NL reminders add 'tomorrow 9am standup with the team')" = 'reminder tomorrow 09:00 standup with the team' ] && ok "reminders add: tomorrow, 9am read as 09:00, the words as said" || bad "reminders tomorrow" "$(NL reminders --list)"
-for w in 'gym in 10 minutes' 'in 10 minutes gym' 'gym in an hour'; do out=$(NL reminders add "$w"); printf '%s\n' "$out" | grep -Eq '^reminder (today|tomorrow) [0-2][0-9]:[0-5][0-9] gym$' || bad "reminders add $w" "$out"; done
+for w in 'gym in 10 minutes' 'in 10 minutes swim' 'gym in an hour'; do out=$(NL reminders add "$w"); printf '%s\n' "$out" | grep -Eq '^reminder (today|tomorrow) [0-2][0-9]:[0-5][0-9] (gym|swim)$' || bad "reminders add $w" "$out"; done   # three titles: the same words at the same minute would be one (#111)
 ok "reminders add: a while from now, before the words or after them (gym in 10 minutes, in an hour), the time from now"
 [ "$(NL reminders add '23:59 a late one')" = 'reminder today 23:59 a late one' ] && [ "$(NL reminders add '00:00 an early one')" = 'reminder tomorrow 00:00 an early one' ] && [ "$(NL reminders add 'walk the dog at 23:59')" = 'reminder today 23:59 walk the dog' ] \
     && ok "reminders add: a time alone is today, or tomorrow once today's has passed (23:59 a late one, 00:00 an early one, walk the dog at 23:59)" || bad "reminders time alone" "$(NL reminders add '00:00 an early one' 2>&1) | $(NL reminders add 'walk the dog at 23:59' 2>&1)"
@@ -2996,7 +3025,7 @@ for f in "$HOME"/calendar/*.ics; do grep -q 'SUMMARY:\(a late one\|an early one\
 NL reminders add 'call the bank 2030-01-03 at 9' | grep -Eq '^reminder [A-Za-z]+ 3 [A-Za-z]+ 09:00 call the bank$' \
     && [ "$(NL reminders add 'pay rent on 2030-01-04 at 10:30' | sed 's/^reminder [A-Za-z]* [0-9]* [A-Za-z]* //')" = '10:30 pay rent' ] && ! NL reminders add 'buy 2 apples' >/dev/null \
     && ok "reminders add: the day and the time last, as spoken (call the bank 2030-01-03 at 9, on ... at 10:30); a bare number is a time only after at" || bad "reminders spoken order" "$(NL reminders add 'call the bank 2030-01-03 at 9')"
-grep -l '^SUMMARY:gym' "$HOME"/calendar/*.ics 2>/dev/null | while IFS= read -r f; do rm -f "$f"; done   # the later checks read the next one ahead
+grep -l '^SUMMARY:\(gym\|swim\)' "$HOME"/calendar/*.ics 2>/dev/null | while IFS= read -r f; do rm -f "$f"; done   # the later checks read the next one ahead
 out=$(NL reminders add 'yesterday call the bank' || :); [ "$out" = 'a reminder takes a day and a time, then the words (tomorrow 09:00 call the dentist), a time alone for today or else tomorrow (5pm gym), or a while from now (gym in 10 minutes)' ] && ok "reminders add: no day and time, refused with an example" || bad "reminders refuse" "$out"
 # a reminder due: the bar's due block, one chime, done and a snooze in the section; another tool's events read, never changed
 ago() { date -d "-$1 min" "+%Y%m%dT%H%M00" 2>/dev/null || date -v-"$1"M "+%Y%m%dT%H%M00"; }   # ago MINUTES -> a local time that long ago
@@ -3040,6 +3069,22 @@ printf '%s' "$j" | jq -e '(.rows[0] | .id == "reminders:add" and .text == "new r
 j=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide reminders 2>/dev/null | jq -c 'select(.id == 2) | .result.tools')
 printf '%s' "$j" | jq -e '.[] | select(.name == "reminders_add") | .inputSchema.properties.words.description == "when and what: fri 9am call the vet"' >/dev/null \
     && ok "provide reminders: the words of reminders_add say what they are, for the dialog's hint when it asks" || bad "reminders_add description" "$j"
+# a reminder ahead (#111): its steps reachable, a delete at the prompt, the UID shown when a name repeats, a double add refused
+NL reminders add '2099-03-01 09:00 test the garden hose' >/dev/null; NL reminders add '2099-03-02 09:00 test the garden hose' >/dev/null
+out=$(NL reminders add '2099-03-01 09:00 Test the Garden Hose' || :); [ "$out" = 'Sun 1 Mar 09:00 test the garden hose is a reminder already' ] && [ "$(grep -l 'garden hose' "$HOME"/calendar/*.ics | wc -l | tr -d ' ')" = 2 ] \
+    && ok "reminders add: the same words at the same minute, whatever the case, is refused with the one that exists; two at different times are two" || bad "reminders double add" "$out"
+u1=$(grep -l '20990301T090000' "$HOME"/calendar/*.ics | head -1 | xargs grep '^UID:' | cut -c5- | tr -d '\r'); u2=$(grep -l '20990302T090000' "$HOME"/calendar/*.ics | head -1 | xargs grep '^UID:' | cut -c5- | tr -d '\r')
+out=$(sh "$SH" reminders 2>&1); printf '%s\n' "$out" | grep -q "^  Sun 1 Mar 09:00  test the garden hose  $u1\$" && printf '%s\n' "$out" | grep -q "^  Mon 2 Mar 09:00  test the garden hose  $u2\$" && ! printf '%s\n' "$out" | grep -q "feed the cat  spark-shell" \
+    && ok "spark-shell reminders: a name two reminders share carries each one's UID, a name alone does not" || bad "reminders uid column" "$out"
+rc=0; out=$(sh "$SH" reminders delete test the garden hose 2>&1) || rc=$?; [ "$rc" = 1 ] && [ "$out" = 'spark-shell reminders: no unique reminder named test the garden hose; select it in Calendar' ] \
+    && [ "$(sh "$SH" reminders delete "$u1" 2>&1)" = 'deleted: test the garden hose' ] && [ "$(grep -l 'garden hose' "$HOME"/calendar/*.ics | wc -l | tr -d ' ')" = 1 ] && ! grep -rq "$u1" "$HOME/calendar" \
+    && ok "spark-shell reminders delete: a name two share is refused, the UID names one, and its file goes" || bad "reminders delete" "rc=$rc $out $(ls "$HOME/calendar")"
+j=$(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://reminders/rows"}}' "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"reminders_delete\",\"arguments\":{\"name\":\"$u2\"}}}" "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"reminders_restore\",\"arguments\":{\"name\":\"$u2\"}}}" | SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" provide reminders 2>/dev/null)
+printf '%s\n' "$j" | jq -r 'select(.id == 2) | .result.contents[0].text' | jq -e --arg u "$u2" '.rows[] | select(.text == "test the garden hose") | .sign == "ring" and .tool == {name: "reminders_done", arguments: {name: $u}} and ([.more[] | .name + ":" + .said] == ["reminders_done:done", "reminders_snooze:again in 10 minutes", "reminders_delete:delete"])' >/dev/null \
+    && [ "$(printf '%s\n' "$j" | jq -c --arg u "$u2" 'select(.id == 3) | .result.structuredContent | [.receipt, .undo, .effect.operation]')" = "[\"deleted: test the garden hose\",{\"name\":\"reminders_restore\",\"arguments\":{\"name\":\"$u2\"}},\"deleted\"]" ] \
+    && [ "$(printf '%s\n' "$j" | jq -r 'select(.id == 4) | .result.structuredContent.receipt')" = 'test the garden hose is back' ] && grep -rq "$u2" "$HOME/calendar" \
+    && ok "provide reminders: one ahead is a row with done on Enter and done, again in 10 minutes and delete as its steps, each in a person's words; delete says its undo, and restore brings the deleted one back while the provider lives" || bad "provide reminders ahead" "$(printf '%s\n' "$j" | head -c 1200)"
+sh "$SH" reminders delete "$u2" >/dev/null 2>&1; rm -f "$HOME/.local/state/spark-shell/reminders.list"
 rows=$(NL --list)
 printf '%s\n' "$rows" | grep -q 'new reminder	reminders add$' && printf '%s\n' "$rows" | grep -q 'reminders  [a-z].*	reminders more$' \
     && ok "the home list: new reminder, and the next reminder ahead, which opens the rest" || bad "home reminders" "$rows"
@@ -4035,8 +4080,8 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 110 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 110 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 122 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 122 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -4083,9 +4128,9 @@ mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},
 jq -e -s 'all(.[]; (.name | test("^[a-z][a-z0-9_]{0,63}$")) and (.title | test("^[a-z][a-z-]*( [a-z-]+| [A-Z]+)*$")) and (.title | length) <= 60)' "$H/tools.all" >/dev/null \
     && ok "provide: every tool name is lower case with underscores, every title a sentence of plain words with its argument in capitals, 60 at most" || bad "tool shapes" "$(jq -r '.name + " | " + .title' "$H/tools.all")"
 jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.destructiveHint | type) == "boolean" and (.idempotentHint | type) == "boolean" and .openWorldHint == false)' "$H/tools.all" >/dev/null \
-    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove clock_zone lan_address lan_auto lan_dns lan_restore layout_delete power_logout power_restart power_shutdown printers_cancel printers_pause theme_delete wifi_address wifi_auto wifi_dns wifi_forget wifi_restore wifi_setup window_close' ] \
-    && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find about_open files_show files_attach' ] \
-    && ok "provide: every hint spelled out (the spec's default is destructive); destructive: wifi forget, window close, layout save, layout delete, theme delete, log out, restart, shut down; read only: notes find, about, files show and attach" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
+    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove layout_delete power_logout power_restart power_shutdown printers_cancel theme_delete wifi_forget wifi_setup window_close' ] \
+    && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find about_open files_show files_attach files_find files_say' ] \
+    && ok "provide: every hint spelled out (the spec's default is destructive); destructive only where something is lost (#112): forget, close, remove, delete, the power steps, a print job cancelled, the network manager installed; the network, clock and printer settings carry undo instead; read only: notes find, about, files show, attach, find and say" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
 jq -e -s 'all(.[]; .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .outputSchema.type == "object")' "$H/tools.all" >/dev/null \
     && [ "$(jq -c 'select(.name == "wifi_connect") | .inputSchema.properties.password' "$H/tools.all")" = '{"type":"string","format":"password","maxLength":256}' ] \
     && [ "$(jq -c 'select(.name == "bt_power") | .inputSchema.properties.state.enum' "$H/tools.all")" = '["on","off"]' ] && [ "$(jq -c 'select(.name == "out_level") | .inputSchema.properties.level' "$H/tools.all")" = '{"type":"integer","minimum":0,"maximum":100}' ] \
@@ -4203,9 +4248,9 @@ mcp files "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$ro
 ans 2 | jq -r '.result.contents[0].text' | jq -e --arg u "$(uri "$FR")" '.rows | length == 1 and .[0].children == $u and .[0].sign == "opens"' >/dev/null \
     && ok "provide files: the roots are the rows at the top, each opening its folder; / is never a root" || bad "files root rows" "$(ans 2)"
 ans 3 | jq -r '.result.contents[0].text' > "$H/folder.json"
-[ "$(jq -r '[.rows[] | .text] | join("|")' "$H/folder.json")" = "docs|blob.txt|notes.md|pic.png|etc-link -> /etc|3 files $(printf '\302\267') 16 B|open folder in system file manager" ] \
-    && jq -e '(.rows[] | select(.text == "docs") | .children != null and .columns == ["2 items"]) and (.rows[] | select(.text == "notes.md") | .tool.name == "files_open" and .columns[0] == "12 B" and ([.more[].name] == ["files_show", "files_attach"])) and (.rows[] | select(.text | startswith("etc-link")) | .tool == null and .children == null)' "$H/folder.json" >/dev/null \
-    && ok "provide files: a folder lists its folders, then its files with the size and the date; a link is shown and never followed; a hidden file and a pipe are not listed" || bad "files folder" "$(jq -c '.rows[] | [.text, .columns, .tool.name]' "$H/folder.json")"
+[ "$(jq -r '[.rows[] | .text] | join("|")' "$H/folder.json")" = "docs|blob.txt|notes.md|pic.png|etc-link -> /etc|3 files $(printf '\302\267') 16 B|new folder|new text file|open in the system file manager" ] \
+    && jq -e '(.rows[] | select(.text == "docs") | .children != null and .columns == ["2 items"] and .tool.name == "files_browse") and (.rows[] | select(.text == "notes.md") | .tool.name == "files_open" and .columns[0] == "12 B" and ([.more[].name] == ["files_show", "files_attach", "files_reveal", "files_rename", "files_move", "files_copy", "files_trash"])) and (.rows[] | select(.text | startswith("etc-link")) | .tool == null and .children == null)' "$H/folder.json" >/dev/null \
+    && ok "provide files: a folder lists its folders, then its files with the size and the date, then its own steps; a link is shown and never followed; a hidden file and a pipe are not listed" || bad "files folder" "$(jq -c '.rows[] | [.text, .columns, .tool.name]' "$H/folder.json")"
 [ "$(ans 4 | jq -r .result.structuredContent.receipt)" = "$(printf 'notes.md\nhello\nworld')" ] && [ "$(ans 5 | jq -r .result.structuredContent.attach)" = "$FR/notes.md" ] \
     && ok "provide files: show gives a text file's first lines; attach gives its path for the next want" || bad "files show attach" "$(ans 4) $(ans 5)"
 for i in 6 8 9; do [ "$(ans $i | jq -r '.result.content[0].text')" = 'files: that is not a file in the folders given' ] || bad "files refusal $i" "$(ans $i)"; done
@@ -4214,11 +4259,71 @@ for i in 6 8 9; do [ "$(ans $i | jq -r '.result.content[0].text')" = 'files: tha
     && ok "provide files: a hidden file, a path through a link and a file outside the roots are refused; a binary and a type plus does not take too; a hidden folder and / are no resource" || bad "files refusals" "$(ans 7) $(ans 10) $(ans 11) $(ans 12)"
 ans 13 | jq -r '.result.contents[0].text' | jq -e --arg u "$(uri "$FR")" '.rows[0].text == ".." and .rows[0].children == $u and (.rows[] | select(.text == "deep") | .children != null)' >/dev/null \
     && ok "provide files: a folder under a root opens with .. back to its parent" || bad "files up" "$(ans 13 | head -c 300)"
-[ "$(ans 14 | jq -r '.result.contents[0].text' | jq -r '.rows[-2].text')" = '1 folder' ] && [ "$(ans 15 | jq -r '.result.contents[0].text' | jq -r '[.rows[].text] | join("|")')" = '..|empty|open folder in system file manager' ] \
+[ "$(ans 14 | jq -r '.result.contents[0].text' | jq -r '.rows[] | select(.id == "files:total") | .text')" = '1 folder' ] && [ "$(ans 15 | jq -r '.result.contents[0].text' | jq -r '[.rows[].text] | join("|")')" = '..|empty|new folder|new text file|open in the system file manager' ] \
     && ok "provide files: a folder of folders counts its folders, and an empty folder says empty" || bad "files totals" "$(ans 14 | head -c 300) $(ans 15 | head -c 300)"
 mcp files "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}')" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 2 resources/read '{"uri":"spark-shell://files/rows"}')" "$(fcall 3 files_show "$FR/notes.md")"
 ! grep -q roots/list "$H/mcp.out" && [ "$(ans 2 | jq -r '.result.contents[0].text' | jq -c .rows)" = '[]' ] && [ "$(ans 3 | jq -r '.result.content[0].text')" = 'files: that is not a file in the folders given' ] \
     && ok "provide files: a host with no roots is never asked, and no file is reachable" || bad "files no roots" "$(cat "$H/mcp.out")"
+# the file manager (#112): a home of its own as the root, so the recent files and the trash are its own
+F2=$H/home2; mkdir -p "$F2/docs/deep" "$F2/pictures" "$F2/node_modules/x"; printf 'hello\nworld\n' > "$F2/notes.md"; printf 'invoice text here\n' > "$F2/docs/invoice.txt"; printf 'p' > "$F2/pictures/photo.png"; printf 'invoice text here too\n' > "$F2/node_modules/x/invoice.js"
+touch -t "$(date -d '-3 day' +%Y%m%d%H%M 2>/dev/null || date -v-3d +%Y%m%d%H%M)" "$F2/docs/invoice.txt"; touch -t 202001010000 "$F2/pictures/photo.png" "$F2/node_modules/x/invoice.js"
+F2R=$(realpath "$F2"); roots2=$(jq -cn --arg u "file://$F2R" '{jsonrpc: "2.0", id: "roots", result: {roots: [{uri: $u}]}}')
+mcp2() { printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots2" "$@" | HOME=$F2 XDG_DATA_HOME=$F2/.local/share SPARK_SHELL_NO_UDISKS=1 SPARK_SHELL_NO_GIO=${NO_GIO-1} SPARK_SHELL_NO_THUMB=1 SPARK_SHELL_NO_SVG=1 sh "$SH" provide files > "$H/mcp.out" 2> "$H/mcp.err"; }
+fc2() { call "$1" "$2" "$(jq -cn --arg p "$3" --arg k "${4:-}" --arg v "${5:-}" '{path: $p} + (if $k == "" then {} else {($k): $v} end)')"; }   # fc2 ID TOOL PATH [KEY VALUE]
+mcp2 "$(rq 2 resources/read "$(jq -cn --arg u "$(uri "$F2R")" '{uri: $u}')")" "$(rq 3 resources/read "$(jq -cn --arg u "$(uri "$F2R/docs")" '{uri: $u}')")"
+ans 2 | jq -r '.result.contents[0].text' > "$H/home2.json"; ans 3 | jq -r '.result.contents[0].text' > "$H/docs2.json"
+[ "$(jq -r '.here' "$H/home2.json")" = "$F2R" ] && [ "$(jq -r '[.rows[] | select(.group == "recent") | .text + " " + (.columns | join(","))] | join("|")' "$H/home2.json")" = "notes.md 12 B,today,~|invoice.txt 18 B,$(date -d '-3 day' '+%d %b' 2>/dev/null || date -v-3d '+%d %b'),docs" ] \
+    && [ "$(jq -r '[.rows[] | select(.group == "home") | .text] | join("|")' "$H/home2.json")" = 'docs|node_modules|pictures|notes.md' ] \
+    && [ "$(jq -r '[.rows[] | select(.group == "this folder") | .text + ":" + (.tool.name // "-") + ":" + ((.tool.ask // []) | join(","))] | join("|")' "$H/home2.json")" = "1 file $(printf '\302\267') 12 B:-:|new folder:files_new_folder:name|new text file:files_new_text:name|open in the system file manager:files_browse:" ] \
+    && jq -e --arg p "$F2R" '[.rows[] | select(.group == "this folder") | .tool.arguments.path // $p] | all(. == $p)' "$H/home2.json" >/dev/null \
+    && ok "provide files: your home folder: the files touched in the last days first (today, 3 days ago; a 2020 picture is not recent), each with its folder's name, then the folders and files, then the folder's own: the total, new folder and new text file (each asking a name), the system file manager; here is the folder" || bad "files home rows" "$(jq -c '{here, rows: [.rows[] | [.text, .group, .columns, .tool.name]]}' "$H/home2.json")"
+[ "$(jq -r '[.rows[] | .text] | join("|")' "$H/docs2.json")" = "..|deep|invoice.txt|1 file $(printf '\302\267') 18 B|new folder|new text file|open in the system file manager" ] && [ "$(jq -r .here "$H/docs2.json")" = "$F2R/docs" ] \
+    && [ "$(jq -r '.rows[] | select(.text == "deep") | .tool.name + ":" + .tool.said + "|" + ([.more[] | .said] | join(","))' "$H/docs2.json")" = 'files_browse:open in the system file manager|reveal in the system file manager,rename,move to a folder,copy to a folder,trash' ] \
+    && [ "$(jq -r '.rows[] | select(.text == "invoice.txt") | .tool.name + "|" + ([.more[] | .name + ":" + ((.ask // []) | join(",")) + ":" + (.pick // "")] | join(" "))' "$H/docs2.json")" = 'files_open|files_show:: files_attach:: files_reveal:: files_rename:name: files_move::to files_copy::to files_trash::' ] \
+    && [ "$(jq -r '.rows[] | select(.text == "deep") | .columns[0]' "$H/docs2.json")" = '0 items' ] \
+    && ok "provide files: a folder's rows: .. first, a folder with its steps (reveal, rename, move, copy, trash, each in a person's words), a file with show and attach before them; rename asks a name, move and copy pick a folder (to); no recent group below your home" || bad "files docs rows" "$(jq -c '{here, rows: [.rows[] | [.text, .group, .tool.name, [.more[]?.said]]]}' "$H/docs2.json")"
+mcp2 "$(fc2 2 files_rename "$F2R/notes.md" name 'Notes 2026.md')" "$(fc2 3 files_move "$F2R/Notes 2026.md" to "$F2R/docs")" "$(fc2 4 files_copy "$F2R/docs/invoice.txt" to "$F2R/pictures")" "$(fc2 5 files_trash "$F2R/pictures/invoice.txt")" \
+    "$(fc2 6 files_copy "$F2R/docs/invoice.txt" to "$F2R/pictures")" "$(fc2 7 files_trash "$F2R/pictures/invoice.txt")" "$(fc2 11 files_move "$F2R/docs/Notes 2026.md" to "$F2R")"
+cp "$H/mcp.out" "$H/mcp.first"   # the two trashed, before the restore
+mcp2 "$(fc2 8 files_restore "$F2R/pictures/invoice.txt")" "$(fc2 9 files_new_folder "$F2R/docs" name 'new one')" "$(fc2 10 files_new_text "$F2R/docs" name todo.txt)"
+cat "$H/mcp.first" >> "$H/mcp.out"
+[ "$(ans 2 | jq -c '.result.structuredContent')" = "$(jq -cn --arg p "$F2R/Notes 2026.md" '{receipt: "notes.md renamed to Notes 2026.md", undo: {name: "files_rename", arguments: {path: $p, name: "notes.md"}}}')" ] \
+    && [ "$(ans 3 | jq -c '.result.structuredContent')" = "$(jq -cn --arg p "$F2R/docs/Notes 2026.md" --arg t "$F2R" '{receipt: "Notes 2026.md moved to ~/docs", undo: {name: "files_move", arguments: {path: $p, to: $t}}}')" ] \
+    && [ "$(ans 11 | jq -r '.result.structuredContent.receipt')" = 'Notes 2026.md moved to ~' ] && [ -f "$F2/Notes 2026.md" ] && [ ! -e "$F2/docs/Notes 2026.md" ] \
+    && ok "provide files: rename keeps the name whole (a space, a capital), its undo is the old name; move says the folder as a person writes it, its undo moves it back, and does" || bad "files rename move" "$(ans 2) $(ans 3) $(ans 11)"
+[ "$(ans 4 | jq -c '.result.structuredContent')" = "$(jq -cn --arg p "$F2R/pictures/invoice.txt" '{receipt: "invoice.txt copied to ~/pictures", undo: {name: "files_trash", arguments: {path: $p}}}')" ] && [ -f "$F2/docs/invoice.txt" ] \
+    && [ "$(ans 5 | jq -c '.result.structuredContent')" = "$(jq -cn --arg p "$F2R/pictures/invoice.txt" '{receipt: "invoice.txt is in the trash", undo: {name: "files_restore", arguments: {path: $p}}}')" ] \
+    && [ -f "$F2/.local/share/Trash/files/invoice.txt" ] && grep -qx "Path=$(printf '%s' "$F2R" | sed 's/ /%20/g')/pictures/invoice.txt" "$F2/.local/share/Trash/info/invoice.txt.trashinfo" && grep -q '^DeletionDate=20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]$' "$F2/.local/share/Trash/info/invoice.txt.trashinfo" && [ "$(sed -n 1p "$F2/.local/share/Trash/info/invoice.txt.trashinfo")" = '[Trash Info]' ] \
+    && [ "$(ans 7 | jq -r '.result.structuredContent.receipt')" = 'invoice.txt is in the trash' ] \
+    && [ "$(ans 8 | jq -r '.result.structuredContent.receipt')" = 'invoice.txt is back' ] && [ -f "$F2/pictures/invoice.txt" ] && [ ! -e "$F2/.local/share/Trash/files/invoice.txt.2" ] && [ ! -e "$F2/.local/share/Trash/info/invoice.txt.2.trashinfo" ] && [ -f "$F2/.local/share/Trash/files/invoice.txt" ] \
+    && ok "provide files: a copy's undo is the trash; the trash is the freedesktop spec by hand (files/ and info/NAME.trashinfo with the path and the date), a second of one name is NAME.2, and restore brings the newest from that path back, the other kept" || bad "files copy trash restore" "$(ans 4) $(ans 5) $(ans 7) $(ans 8) $(ls -R "$F2/.local/share/Trash" 2>&1)"
+[ "$(ans 9 | jq -c '.result.structuredContent')" = "$(jq -cn --arg p "$F2R/docs/new one" '{receipt: "folder new one made in ~/docs", undo: {name: "files_trash", arguments: {path: $p}}}')" ] && [ -d "$F2/docs/new one" ] \
+    && [ "$(ans 10 | jq -c '.result.structuredContent')" = "$(jq -cn --arg p "$F2R/docs/todo.txt" '{receipt: "todo.txt made in ~/docs", undo: {name: "files_trash", arguments: {path: $p}}}')" ] && [ -f "$F2/docs/todo.txt" ] && [ ! -s "$F2/docs/todo.txt" ] \
+    && ok "provide files: a new folder and a new text file are made in the folder named, each with the trash as its undo (the editor opens on the desktop alone)" || bad "files new" "$(ans 9) $(ans 10)"
+mcp2 "$(fc2 2 files_trash "$F2R")" "$(fc2 3 files_rename "$F2R/docs" name .hidden)" "$(fc2 4 files_rename "$F2R/docs" name 'a/b')" "$(fc2 5 files_move "$F2R/docs" to "$F2R/docs/deep")" "$(fc2 6 files_move "$F2R/docs/invoice.txt" to "$F2R/docs")" \
+    "$(fc2 7 files_restore "$F2R/docs/nothing.txt")" "$(fc2 8 files_trash "$H/notes.md")" "$(fc2 9 files_new_folder "$F2R" name docs)" "$(fc2 10 files_move "$F2R/docs/invoice.txt" to "$F2R/etc-link")" "$(fc2 11 files_rename "$F2R/docs/deep" name "$(printf 'a\tb')")"
+[ "$(ans 2 | jq -r '.result.content[0].text')" = 'files: your home and a drive stay as they are' ] && [ "$(ans 3 | jq -r '.result.content[0].text')" = 'files: a name is one plain name: no slash, not hidden, 255 characters at most' ] && [ "$(ans 4 | jq -r '.error.message')" = 'files_rename: name is one name, no slash, 255 characters at most' ] \
+    && [ "$(ans 5 | jq -r '.result.content[0].text')" = 'files: a folder does not go inside itself' ] && [ "$(ans 6 | jq -r '.result.content[0].text')" = 'files: invoice.txt is in ~/docs already' ] && [ "$(ans 7 | jq -r '.result.content[0].text')" = 'files: the trash holds nothing from nothing.txt' ] \
+    && [ "$(ans 8 | jq -r '.result.content[0].text')" = 'files: that is not a file or a folder in the folders given' ] && [ "$(ans 9 | jq -r '.result.content[0].text')" = 'files: docs is there already' ] && [ "$(ans 10 | jq -r '.result.content[0].text')" = 'files: that is not a folder in the folders given' ] \
+    && [ "$(ans 11 | jq -r '.error.code')" = -32602 ] && [ -d "$F2/docs/deep" ] \
+    && ok "provide files: refused in one line each: the home itself, a hidden name (the provider) or a slashed one (the schema), a folder into itself, a move to where it is, a restore of nothing, a path outside the roots, a name taken, a folder that is no folder, a control character in a name" || bad "files refusals" "$(for i in 2 3 4 5 6 7 8 9 10 11; do ans $i | jq -c '.result.content[0].text // .error.message'; done)"
+mcp2 "$(call 2 files_find '{"words":"invoice"}')" "$(call 3 files_find '{"words":"INV txt"}')" "$(call 4 files_say '{"words":"invoice text"}')" "$(call 5 files_say '{"words":"nothing like it"}')" "$(call 6 files_find '{"words":"  "}')" \
+    "$(rq 7 resources/read "$(jq -cn --arg u "spark-shell://files/rows/find/$(printf 'invoice' | base64 | tr -d '\n=' | tr '+/' '-_')" '{uri: $u}')")"
+[ "$(ans 2 | jq -c '.result.structuredContent')" = "{\"receipt\":\"2 named invoice\",\"open\":\"spark-shell://files/rows/find/$(printf 'invoice' | base64 | tr -d '\n=' | tr '+/' '-_')\"}" ] \
+    && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = '2 named INV txt' ] && [ "$(ans 4 | jq -r '.result.structuredContent.receipt')" = '2 say invoice text' ] && [ "$(ans 4 | jq -r '.result.structuredContent.open')" = "spark-shell://files/rows/say/$(printf 'invoice text' | base64 | tr -d '\n=' | tr '+/' '-_')" ] \
+    && [ "$(ans 5 | jq -c '.result.structuredContent')" = '{"receipt":"no text file under your home says nothing like it"}' ] && [ "$(ans 6 | jq -r '.result.content[0].text')" = 'files: find takes the words to look for' ] \
+    && [ "$(ans 7 | jq -r '.result.contents[0].text' | jq -r '.title + "|" + ([.rows[] | .text + " " + (.columns | join(","))] | join("|"))')" = "find invoice|invoice.txt 18 B,$(date -d '-3 day' '+%d %b' 2>/dev/null || date -v-3d '+%d %b'),docs|invoice.txt 18 B,$(date -d '-3 day' '+%d %b' 2>/dev/null || date -v-3d '+%d %b'),pictures" ] \
+    && ok "provide files: find walks the roots for a name that holds every word, whatever the case, node_modules and the hidden left out, and answers the list to open, each row with its folder (the copy kept its date); say greps the text files for the words; nothing found is said; empty words refused" || bad "files find say" "$(ans 2) $(ans 3) $(ans 4) $(ans 5) $(ans 6) $(ans 7 | head -c 400)"
+mkdir -p "$H/gio"; cat > "$H/gio/gio" <<'STUB'
+#!/bin/sh
+echo "gio $*" >> "$HOME/gio.log"
+[ "$1" = trash ] || exit 1; p=$3; t=${XDG_DATA_HOME:-$HOME/.local/share}/Trash; mkdir -p "$t/files" "$t/info"
+printf '[Trash Info]\nPath=%s\nDeletionDate=2026-01-01T00:00:00\n' "$p" > "$t/info/${p##*/}.trashinfo" && mv "$p" "$t/files/${p##*/}"
+STUB
+chmod +x "$H/gio/gio"; rm -f "$F2/gio.log"
+NO_GIO='' PATH="$H/gio:$PATH" mcp2 "$(fc2 2 files_trash "$F2R/docs/todo.txt")" "$(fc2 3 files_restore "$F2R/docs/todo.txt")"
+[ "$(cat "$F2/gio.log" 2>/dev/null)" = "gio trash -- $F2R/docs/todo.txt" ] && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'todo.txt is in the trash' ] && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'todo.txt is back' ] && [ -f "$F2/docs/todo.txt" ] \
+    && ok "provide files: where gio is, it trashes (the system's own trash view agrees), and restore reads the spec's record it wrote" || bad "files gio" "$(cat "$F2/gio.log" 2>&1) $(ans 2) $(ans 3)"
 # the dialog's keys
 for kv in DIALOG_ATTACH=maybe DIALOG_MODEL=1 DIALOG_TALK=off 'DIALOG_ATTACH_TYPES=.exe' 'DIALOG_ATTACH_TYPES=TXT'; do
     printf 'DESKTOP=sway\n%s\n' "$kv" > "$HOME/.config/spark-shell/config"; st=0; out=$(sh "$SH" status 2>&1) || st=$?
@@ -5294,6 +5399,22 @@ JSON
     blk /run/media/ada/BACKUP
     [ "$(rows storage | jq -c '[.rows[0] | .sign, .tool, .columns], [.rows[1] | .text, .tool.name]')" = "$(printf '%s\n%s' '["dot",{"name":"storage_open","arguments":{"name":"BACKUP"}},["2.9 GB free"]]' '["unmount BACKUP","storage_unmount"]')" ] \
         && ok "storage rows: a part that is mounted opens on Enter, its free space a column, and unmounts" || bad "storage mounted rows" "$(rows storage)"
+    # a mounted drive is a root of the files beside your home (#112): its row in the home folder, its folder opened, a path on it held to the lines, its trash its own (.Trash-UID at its top)
+    mkdir -p "$H/stick/photos"; printf 'on the stick\n' > "$H/stick/photos/trip.txt"; blk "$H/stick"
+    rinit=$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{"roots":{}},"clientInfo":{"name":"test","version":"0"}}')
+    roots=$(jq -cn --arg u "file://$(realpath "$HOME")" '{jsonrpc: "2.0", id: "roots", result: {roots: [{uri: $u}]}}')
+    uri() { printf 'spark-shell://files/rows/%s' "$(printf '%s' "$1" | base64 | tr -d '\n=' | tr '+/' '-_')"; }
+    SR=$(realpath "$H/stick")
+    files2() { printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots" "$@" | SPARK_SHELL_MEDIA=$H/stick SPARK_SHELL_NO_GIO=1 SPARK_SHELL_NO_THUMB=1 SPARK_SHELL_NO_SVG=1 sh "$SH" provide files 2> "$H/mcp.err"; }   # SPARK_SHELL_MEDIA: the stick's mount counts as a drive's (udisks2 mounts under /run/media)
+    files2 "$(rq 2 resources/read "$(jq -cn --arg u "$(uri "$(realpath "$HOME")")" '{uri: $u}')")" "$(rq 3 resources/read "$(jq -cn --arg u "$(uri "$SR")" '{uri: $u}')")" "$(call 4 files_trash "$(jq -cn --arg p "$SR/photos/trip.txt" '{path: $p}')")" > "$H/mcp.out"
+    _tin=''; [ ! -f "$H/stick/.Trash-$(id -u)/files/trip.txt" ] || ! grep -qx 'Path=photos/trip.txt' "$H/stick/.Trash-$(id -u)/info/trip.txt.trashinfo" || _tin=1   # the two files of the spec on the drive, before the restore
+    files2 "$(call 5 files_restore "$(jq -cn --arg p "$SR/photos/trip.txt" '{path: $p}')")" >> "$H/mcp.out"
+    [ "$(ans 2 | jq -r '.result.contents[0].text' | jq -r --arg u "$(uri "$SR")" '[.rows[] | select(.group == "drives") | .text + " " + (.columns | join(",")) + " " + (if .children == $u then "opens" else "no" end)] | join("|")')" = 'BACKUP 2.9 GB free opens' ] \
+        && [ "$(ans 3 | jq -r '.result.contents[0].text' | jq -r '.title + "|" + ([.rows[] | .text] | join(","))')" = "$(printf '~')/stick|photos,1 folder,new folder,new text file,open in the system file manager" ] \
+        && [ "$(ans 4 | jq -r '.result.structuredContent.receipt')" = 'trip.txt is in the trash' ] && [ -n "$_tin" ] \
+        && [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'trip.txt is back' ] && [ -f "$H/stick/photos/trip.txt" ] && [ ! -e "$H/stick/.Trash-$(id -u)/files/trip.txt" ] \
+        && ok "provide files: a drive mounted is a root beside your home: its row under drives opens it (no .. at its top), a file on it is trashed into the drive's own .Trash-UID with the path from the drive's top, as the spec says, and comes back" || bad "files drive root" "$(ans 2 | head -c 300) $(ans 3 | head -c 300) $(ans 4) $(ans 5) $(ls -R "$H/stick" 2>&1)"
+    blk /run/media/ada/BACKUP; rm -rf "$H/stick"   # the fixture as the eject test below expects it: the stick mounted
     rm -f "$HOME/udisks.log"; out=$(sh "$SH" desktop storage eject SanDisk Ultra 2>&1 || :)
     [ "$out" = 'SanDisk Ultra can be taken out' ] && [ "$(cat "$HOME/udisks.log")" = "$(printf 'unmount -b /dev/sdb1 --no-user-interaction\npower-off -b /dev/sdb --no-user-interaction')" ] \
         && ok "desktop storage eject: every mounted part unmounted, then the drive powered off" || bad "storage eject" "$out $(cat "$HOME/udisks.log" 2>&1)"
