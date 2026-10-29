@@ -2922,7 +2922,7 @@ pip=$(printf '\342\226\260'); pipoff=$(printf '\342\226\261'); g=$(printf '%s' "
 rm -f "$HOME/swaymsg.log" "$HOME/ws-later"; touch "$HOME/ws-test"
 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status </dev/null >/dev/null 2>&1 & bp=$!
 i=0; while [ "$i" -lt 50 ] && [ "$(cat "$HOME/swaymsg.log" 2>/dev/null | grep -c '^-- rename')" -lt 4 ]; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null; wait "$bp" 2>/dev/null
-[ "$(grep '^-- rename' "$HOME/swaymsg.log" 2>/dev/null)" = "$(printf '%s\n' "-- rename workspace \"1\" to \"1:$(printf '\342\215\235')\"" "-- rename workspace \"3 writing\" to \"3:$(printf '\342\215\253') writing\"" "-- rename workspace \"10\" to \"10:$(printf '\342\215\234')\"" "-- rename workspace \"5\" to \"5:$(printf '\342\215\262')\"")" ] \
+[ "$(grep '^-- rename' "$HOME/swaymsg.log" 2>/dev/null)" = "$(printf '%s\n' "-- rename workspace \"1\" to \"1:$(printf '\342\215\237')\"" "-- rename workspace \"3 writing\" to \"3:$(printf '\342\215\253') writing\"" "-- rename workspace \"10\" to \"10:$(printf '\342\215\234')\"" "-- rename workspace \"5\" to \"5:$(printf '\342\215\262')\"")" ] \
     && ok "bar status: workspace 1 becomes 1:GLYPH, a layout's 3 writing keeps its words after the glyph, 10 takes the tenth glyph alone, 2:x and 11 are left; a workspace sway makes later (its event spaced, as sway writes it) takes its glyph too" || bad "workspace glyphs" "$(cat "$HOME/swaymsg.log" 2>&1)"
 rm -f "$HOME/ws-test" "$HOME/ws-later"
 SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" bar light down; grep -qx -- '-q -c backlight set 42%' "$HOME/bctl.log" && ok "bar light down: the brightness keys, 5 down" || bad "bar light down" "$(cat "$HOME/bctl.log")"

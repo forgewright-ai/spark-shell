@@ -17,7 +17,7 @@
 - Device names leave the bar for the panel a click opens. The gauges are
   five cells (U+25B0 and U+25B1), the battery four with its number, and
   the groups are parted by air instead of dividers.
-- Workspaces wear APL's symbols, one each for 1 to 10 (U+235D, 2362,
+- Workspaces wear APL's symbols, one each for 1 to 10 (U+235F, 2362,
   236B, 2371, 2372, 2366, 236C, 2339, 2364, 235C): `bar status` names
   each one `N:GLYPH` as sway makes it, and the bar strips the number.
   `Super+1` to `0` still go by number, and a layout's workspace keeps its
