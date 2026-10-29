@@ -500,7 +500,7 @@ and text face, no frame and no icon. The first line opens with spark's
 angle, the heavy angle of the prompt in the accent, then the app's
 name muted; what it says is bold under it, and before it a glyph tells
 the kind: a filled dot for any one, and where the app names the kind
-a lined page for mail, a letter, a check or a cross for a transfer
+three lines for mail, a message, a check or a cross for a transfer
 done or failed, a hollow stick for a drive not yet mounted, the bar's
 flag for a reminder due; a warning sign in red on a critical one. The
 words follow. The glyphs are the bar's and the dialog's, filled for on

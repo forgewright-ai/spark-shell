@@ -5,8 +5,8 @@
 # first line opens with spark's angle, the heavy angle of the prompt in
 # the accent, then the app's name muted; the summary is bold under it,
 # and before it a glyph tells the kind: a filled dot for any one, and
-# where the app names the kind (its category) a lined page for mail,
-# a letter, a check or a cross for a transfer done or failed, a
+# where the app names the kind (its category) three lines for mail, a
+# message, a check or a cross for a transfer done or failed, a
 # hollow stick for a drive plugged in and not yet mounted, the bar's flag
 # for a reminder due; a warning sign in red on a critical one. The words
 # follow. The glyphs are the bar's and the dialog's, each one Monaspace
@@ -55,17 +55,17 @@ text-color=#@PANEL_MUTED@
 default-timeout=4000
 format=<span foreground="#@PANEL_MUTED@">&#x276F; %a</span>\n&#x25CF; <b>%s</b>\n%b
 
-# the kind's glyph, where the app names one: mail (U+25A4), a transfer
+# the kind's glyph, where the app names one: mail (U+2261), a transfer
 # done or failed (U+2713, U+2717), a drive plugged in (U+25AD, hollow:
 # not mounted yet)
 [category=email.arrived]
-format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n&#x25A4; <b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n&#x2261; <b>%s</b>\n%b
 [category=email]
-format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n&#x25A4; <b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n&#x2261; <b>%s</b>\n%b
 [grouped category=email.arrived]
-format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a &#183; %g</span>\n&#x25A4; <b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a &#183; %g</span>\n&#x2261; <b>%s</b>\n%b
 [grouped category=email]
-format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a &#183; %g</span>\n&#x25A4; <b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a &#183; %g</span>\n&#x2261; <b>%s</b>\n%b
 [category=transfer.complete]
 format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n&#x2713; <b>%s</b>\n%b
 [category=transfer.error]
