@@ -9,7 +9,7 @@
   with spark's angle, the heavy angle of the prompt in the accent, then
   the app's name muted; before what the card says a glyph tells the
   kind, a filled dot for any one, and where the app names the kind a
-  sealed envelope for mail, a check or a cross for
+  lined page for mail (a letter), a check or a cross for
   a transfer done or failed, a hollow stick for a drive not yet
   mounted, the bar's flag for a reminder due, a warning sign in red on
   a critical one, which has no frame any more and shows over a
