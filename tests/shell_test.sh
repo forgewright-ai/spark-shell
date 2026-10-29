@@ -2919,7 +2919,7 @@ pip=$(printf '\342\226\260'); pipoff=$(printf '\342\226\261'); g=$(printf '%s' "
 rm -f "$HOME/swaymsg.log"
 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status </dev/null >/dev/null 2>&1 & bp=$!
 i=0; while [ "$i" -lt 50 ] && ! grep -q '^-r -t subscribe' "$HOME/swaymsg.log" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null; wait "$bp" 2>/dev/null
-[ "$(grep '^-- rename' "$HOME/swaymsg.log" 2>/dev/null)" = "$(printf '%s\n' "-- rename workspace \"1\" to \"1:$(printf '\342\237\201')\"" "-- rename workspace \"3 writing\" to \"3:$(printf '\342\213\224') writing\"")" ] \
+[ "$(grep '^-- rename' "$HOME/swaymsg.log" 2>/dev/null)" = "$(printf '%s\n' "-- rename workspace \"1\" to \"1:$(printf '\342\215\235')\"" "-- rename workspace \"3 writing\" to \"3:$(printf '\342\215\253') writing\"")" ] \
     && ok "bar status: workspace 1 becomes 1:GLYPH, a layout's 3 writing keeps its words after the glyph; 2:x and 11 are left" || bad "workspace glyphs" "$(cat "$HOME/swaymsg.log" 2>&1)"
 SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" bar light down; grep -qx -- '-q -c backlight set 42%' "$HOME/bctl.log" && ok "bar light down: the brightness keys, 5 down" || bad "bar light down" "$(cat "$HOME/bctl.log")"
 rm -f "$HOME/bctl.log"; rc=0; out=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel display brightness down 2>&1) || rc=$?

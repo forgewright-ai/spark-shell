@@ -3307,7 +3307,7 @@ BAR_DND=$(printf '\342\217\276')      # U+23FE power sleep symbol: do not distur
 BAR_PIP=$(printf '\342\226\260')      # U+25B0 black parallelogram: a gauge's cell, lit
 BAR_PIP_OFF=$(printf '\342\226\261')  # U+25B1 white parallelogram: a gauge's cell, unlit
 # workspaces 1 to 10, named N:GLYPH by bar_ws_names; the bar strips the number
-BAR_WS='\342\237\201 \342\215\231 \342\213\224 \342\247\226 \342\215\246 \342\250\263 \342\253\232 \342\215\255 \342\214\275 \342\215\237'   # U+27C1 2359 22D4 29D6 2366 2A33 2ADA 236D 233D 235F
+BAR_WS='\342\215\235 \342\215\242 \342\215\253 \342\215\261 \342\215\262 \342\215\246 \342\215\254 \342\214\271 \342\215\244 \342\215\234'   # U+235D 2362 236B 2371 2372 2366 236C 2339 2364 235C: APL's symbols
 BAR_STEPS='\342\226\202 \342\226\204 \342\226\206 \342\226\210'   # U+2582 2584 2586 2588: the wifi bars
 BAR_BARS_FAMILY='spark-shell bars'   # the family the wifi bars ask for: no font has it, and fontconfig's rule of ours draws it unhinted (#43)
 
