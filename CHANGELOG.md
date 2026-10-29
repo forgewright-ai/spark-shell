@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.109
+## next, the notifications (numbered at landing: v0.1NN by landing order)
 
 - The notifications, a new look (#71). A card is a small surface of the
   desktop like the dialog: half the dialog's air, about thirty cells
