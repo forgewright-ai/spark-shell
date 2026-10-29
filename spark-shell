@@ -6494,11 +6494,11 @@ provide_notes_append() {   # two typed arguments; note contents never travel thr
 provide_ask() {   # provide_ask CALL-ID MESSAGE FIELD TITLE -> what the person typed for FIELD (MCP elicitation, one flat field); false when the host declined, the person cancelled, or nobody answered in five minutes
     _aid="ask-$1"
     rpc_send "$(jq -cn --arg i "$_aid" --arg m "$2" --arg f "$3" --arg t "$4" '{jsonrpc: "2.0", id: $i, method: "elicitation/create", params: {message: $m, requestedSchema: {type: "object", properties: {($f): {type: "string", title: $t, maxLength: 256}}, required: [$f]}}}')"
-    ( sleep 300; fifo_put "in $(jq -cn --arg i "$_aid" '{jsonrpc: "2.0", id: $i, result: {action: "cancel"}}')" ) 3>&- 4<&- & _ag=$!
+    ( sleep 300; fifo_put "in $(jq -cn --arg i "$_aid" '{jsonrpc: "2.0", id: $i, result: {action: "cancel"}}')" ) >/dev/null 2>&1 3>&- 4<&- & _ag=$!   # its own fds: this function runs in a command substitution, and a child holding its stdout would hold the answer five minutes
     _ans=''; _ast=1
     while IFS= read -r _am <&4; do   # the loop's own lines, until the answer: a poke is dropped (the rows are read again after the step), another request is told to wait, the wire's end ends the provider
         case $_am in
-            eof) kill "$_ag" 2>/dev/null || :; exit 0 ;;
+            eof) kill "$_ag" 2>/dev/null || :; exit 0 ;;   # the wire ended: the provider with it
             poke) continue ;;
             "in "*) _al=${_am#in }
                 case $(printf '%s' "$_al" | jq -r --arg i "$_aid" 'if .id == $i and (has("method") | not) then "mine" elif has("method") and has("id") then "request" else "other" end' 2>/dev/null) in
@@ -6509,7 +6509,7 @@ provide_ask() {   # provide_ask CALL-ID MESSAGE FIELD TITLE -> what the person t
                 esac ;;
         esac
     done
-    kill "$_ag" 2>/dev/null || :
+    { ! command -v pgrep >/dev/null 2>&1 || kill $(pgrep -P "$_ag") 2>/dev/null; kill "$_ag" 2>/dev/null; } || :   # the sleeper and its sleep
     [ "$_ast" -eq 0 ] || return 1
     printf '%s' "$_ans"
 }
@@ -6559,7 +6559,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_v"; return 0; }   # files: the four lines, not the panel's gate
     _act=$_ta; _arg=$_v; [ "$_ta" != '=' ] || { _act=$_v; _arg=''; }   # a palette's step is its name alone
     if [ "$_name" = reminders_add ] && ! rem_parse "$_v" >/dev/null 2>&1; then   # no day and time in the words: one question, then the step with the answer in front (#95)
-        _when=$(provide_ask "$1" "When? A day and a time (tomorrow 9:00), a time today (5pm), or a while from now (in 20 minutes)." when "the day and the time") || { provide_refuse "$1" "not done: no time given"; return 0; }
+        _when=$(provide_ask "$1" "When? 5pm, tomorrow 9:00, in 20 minutes" when "a day and a time") || { provide_refuse "$1" "not done: no time given"; return 0; }
         _v="$_when $_v"; _arg=$_v
     fi
     case $_th in *f*) ;; *)   # the argument must be a row's own, exactly: the rows are the allowlist
