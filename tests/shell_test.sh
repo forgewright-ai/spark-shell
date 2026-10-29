@@ -3426,18 +3426,15 @@ else
     # one line: every block present, in its group, groups parted by air
     st=0; line=$(sh "$SH" bar status --once 2>&1) || st=$?
     names=$(printf '%s' "$line" | jq -r '[.[] | .name + ":" + .instance] | join(" ")' 2>/dev/null || :)
-    [ "$st" -eq 0 ] && [ "$names" = 'lan: wifi: bt: out:name out:gauge mic:name mic:gauge bat: clock: logo:' ] \
-        && ok "bar status --once: lan, wifi, bt | out (sign, gauge), mic (sign, gauge) | bat | clock, one JSON array; no theme block (the palette is the panel's)" || bad "bar line" "st=$st $names $line"
+    [ "$st" -eq 0 ] && [ "$names" = 'lan: bt: wifi:name wifi:gauge out:name out:gauge mic:name mic:gauge bat: clock: logo:' ] \
+        && ok "bar status --once: lan, bt, wifi (sign, gauge) | out (sign, gauge), mic (sign, gauge) | bat | clock, one JSON array; no theme block (the palette is the panel's)" || bad "bar line" "st=$st $names $line"
     printf '%s' "$line" | jq -e 'all(.[]; .markup == "pango" and .separator == false)' >/dev/null 2>&1 && ok "bar: every block is pango markup with swaybar's own separator off" || bad "bar markup" "$line"
     t() { printf '%s' "$line" | jq -r --arg n "$1" --arg i "${2:-}" '.[] | select(.name == $n and .instance == $i) | .full_text'; }   # t NAME [INSTANCE] -> its text
     pip=$(printf '\342\226\260'); pipoff=$(printf '\342\226\261')
     cur() { sh "$SH" bar panel "$1" --list 2>&1 | sed -n 1p | tr 'A-Z' 'a-z'; }   # cur out|mic -> the panel's title, the device in use: the bar shows its sign alone
     [ "$(t lan)" = "<span foreground='#555555'>$(printf '\342\207\205')</span>" ] && ok "lan: the arrows alone, muted, when the wire is up (no address on screen)" || bad "lan block" "$(t lan)"
-    w=$(t wifi); [ "$(count "$w" "'#ff5555'")" = 3 ] && [ "$(count "$w" "'#555555'")" = 1 ] && ! printf '%s' "$w" | grep -q '192\.' \
-        && ok "wifi: four rising bars, 3 lit in the accent at 49/70 (70%), no word, no address" || bad "wifi block" "$w"
-    printf '%s' "$w" | grep -q "<span font_family='spark-shell bars,[^',]*'><span foreground=" && grep -qF '<string>spark-shell bars</string>' "$HOME/.config/fontconfig/conf.d/50-spark-shell.conf" \
-        && grep -q '<edit name="hinting" mode="assign"><bool>false</bool></edit>' "$HOME/.config/fontconfig/conf.d/50-spark-shell.conf" && grep -q 'rendered by spark-shell' "$HOME/.config/fontconfig/conf.d/50-spark-shell.conf" \
-        && ok "wifi: the bars in the family spark-shell bars, then the bar's face; on desktop's fontconfig rule draws that family alone unhinted, so the four end on one line (#43)" || bad "wifi bars family" "$w $(cat "$HOME/.config/fontconfig/conf.d/50-spark-shell.conf" 2>&1)"
+    [ "$(t wifi name)" = "<span foreground='#555555'>$(printf '\342\227\240')</span>" ] && g=$(t wifi gauge) && [ "$(count "$g" "$pip")" = 4 ] && [ "$(count "$g" "$pipoff")" = 1 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" && ! printf '%s' "$line" | grep -q '192\.' \
+        && ok "wifi: the half circle muted, then a gauge as sound's, 4 of 5 cells in the accent at 49/70 (70%); no address" || bad "wifi block" "$(t wifi name) $(t wifi gauge)"
     [ "$(t bt)" = "<span foreground='#ff5555'>$(printf '\342\234\246')</span>" ] && ok "bt: a device connected, the star in the accent; its name is the panel's" || bad "bt block" "$(t bt)"
     [ "$(t out name)" = "<span foreground='#555555'>$(printf '\342\227\200')</span>" ] && ok "out: the speaker's triangle, muted" || bad "out name" "$(t out name)"
     g=$(t out gauge); [ "$(count "$g" "$pip")" = 2 ] && [ "$(count "$g" "$pipoff")" = 3 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" \
@@ -3448,7 +3445,7 @@ else
     [ "$(t bat)" = "<span foreground='#aaaaaa'>$pip$pip$pip</span><span foreground='#555555'>$pipoff</span> <span foreground='#aaaaaa'>80</span>" ] && ok "bat: four cells, three lit, and the number in the text color" || bad "bat block" "$(t bat)"
     printf '%s' "$(t clock)" | grep -Eq "^<span foreground='#555555'>[A-Za-z]+ [0-9]{2} [A-Za-z]+</span> [0-9]{2}:[0-9]{2}$" && ok "clock: the date muted, the time in the text color" || bad "clock block" "$(t clock)"
     printf '%s' "$(t logo)" | grep -Eq "^<span foreground='#[0-9a-f]{6}'>$(printf '\342\235\257')</span>$" && ok "logo: spark-shell's sign, the prompt sign in the palette's yellow, one cell" || bad "logo block" "$(t logo)"
-    [ "$(printf '%s' "$line" | jq -r '[.[] | select(.separator_block_width == 28) | .name + ":" + .instance] | join(" ")')" = 'bt: mic:gauge bat: logo:' ] && [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "div")] | length')" = 0 ] && [ "$(printf '%s' "$line" | jq -r '.[-1].name')" = logo ] \
+    [ "$(printf '%s' "$line" | jq -r '[.[] | select(.separator_block_width == 28) | .name + ":" + .instance] | join(" ")')" = 'wifi:gauge mic:gauge bat: logo:' ] && [ "$(printf '%s' "$line" | jq -r '[.[] | select(.name == "div")] | length')" = 0 ] && [ "$(printf '%s' "$line" | jq -r '.[-1].name')" = logo ] \
         && ok "bar: no dividers, each group's last block takes 28 px of air, the sign last" || bad "group air" "$line"
     LC_ALL=C grep -q "[^ -~${tab}]" "$SH" && bad "the script holds a byte outside ASCII (the glyphs must be built from their bytes)" || ok "the script stays ASCII: the glyphs are built from their bytes"
     # the states: mute, a recording mic, a low battery, a charging one, sound on another card
@@ -3472,6 +3469,9 @@ else
     echo 0 > "$S/class/net/eth0/carrier"; line=$(sh "$SH" bar status --once)
     [ "$(t lan)" = "<span foreground='#aa0000'>$(printf '\342\207\205') $(printf '\342\232\240')</span>" ] && ok "lan with no carrier: the arrows and a warning sign, in red" || bad "lan down" "$(t lan)"
     echo 1 > "$S/class/net/eth0/carrier"
+    echo down > "$S/class/net/wlan0/operstate"; line=$(sh "$SH" bar status --once)
+    [ "$(t wifi name)" = "<span foreground='#555555'>$(printf '\342\227\240')</span>" ] && [ -z "$(t wifi gauge)" ] && ok "wifi off: the half circle alone, muted, no gauge" || bad "wifi off" "$(t wifi name) / $(t wifi gauge)"
+    echo up > "$S/class/net/wlan0/operstate"
     # present-only: a machine with none of it shows the clock alone, and no divider
     mv "$S" "$S.full"; mv "$P" "$P.full"; mkdir -p "$S" "$P"
     line=$(sh "$SH" bar status --once)

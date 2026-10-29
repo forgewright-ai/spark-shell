@@ -3294,6 +3294,7 @@ BAR_SHADE=$(printf '\342\226\221')    # U+2591 light shade: the glance's rest
 # The bar's words are glyphs, every one Monaspace Neon's own: filled is
 # on, hollow is off or muted, the accent is connected, red wants you.
 BAR_LAN=$(printf '\342\207\205')      # U+21C5 up and down arrows: the wire
+BAR_WIFI=$(printf '\342\227\240')     # U+25E0 upper half circle: wifi, the top of a radio wave
 BAR_BT=$(printf '\342\234\246')       # U+2726 black four-pointed star: bluetooth on
 BAR_BT_OFF=$(printf '\342\234\247')   # U+2727 white four-pointed star: bluetooth off
 BAR_OUT=$(printf '\342\227\200')      # U+25C0 black left-pointing triangle: sound out
@@ -3309,7 +3310,6 @@ BAR_PIP_OFF=$(printf '\342\226\261')  # U+25B1 white parallelogram: a gauge's ce
 # workspaces 1 to 10, named N:GLYPH by bar_ws_names; the bar strips the number
 BAR_WS='\342\215\235 \342\215\242 \342\215\253 \342\215\261 \342\215\262 \342\215\246 \342\215\254 \342\214\271 \342\215\244 \342\215\234'   # U+235D 2362 236B 2371 2372 2366 236C 2339 2364 235C: APL's symbols
 BAR_STEPS='\342\226\202 \342\226\204 \342\226\206 \342\226\210'   # U+2582 2584 2586 2588: the wifi bars
-BAR_BARS_FAMILY='spark-shell bars'   # the family the wifi bars ask for: no font has it, and fontconfig's rule of ours draws it unhinted (#43)
 
 bar_esc() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/\\/\\\\/g; s/"/\\"/g'; }   # a name: pango, then JSON
 bar_span() { printf "<span foreground='#%s'>%s</span>" "$1" "$2"; }   # bar_span RRGGBB MARKUP
@@ -3341,15 +3341,6 @@ bar_ws_watch() {   # swaymsg's workspace events, each a rename pass: a new works
         case $_e in *'"change": "init"'*|*'"change":"init"'*|*'"change": "rename"'*|*'"change":"rename"'*) bar_ws_names ;; esac   # sway spaces its JSON; a layout's rename to "3 writing" takes the glyph back
     done
 }
-bar_bars() {   # bar_bars LEVEL (0-4) -> the four rising bars, LEVEL of them lit, in the bar's face with no hinting: hinting moves each block glyph by its own fraction of a pixel, and the bars' bottoms stepped (#43)
-    i=1; out=''
-    for s in $BAR_STEPS; do
-        g=$(printf "$s"); c=$HEX_MUTED; [ "$i" -gt "$1" ] || c=$HEX_ACCENT
-        out="$out$(bar_span "$c" "$g")"; i=$((i + 1))
-    done
-    _bf=$(font_spec); _bf=${_bf%%:*}
-    case $_bf in ''|*"'"*|*'"'*) printf '%s' "$out" ;; *) printf "<span font_family='%s,%s'>%s</span>" "$BAR_BARS_FAMILY" "$_bf" "$out" ;; esac   # a quote in the face would end the markup or the JSON: the bars as they are
-}
 bar_timeout() { if command -v timeout >/dev/null 2>&1; then timeout 3 "$@"; else "$@"; fi; }
 
 # --- what the hardware says
@@ -3372,7 +3363,7 @@ bar_lan() {   # -> "up ADDR", "down", or nothing (no wired interface)
     [ -n "$any" ] || return 0
     if [ -n "$up" ]; then printf '%s\n' "$up"; else echo down; fi
 }
-bar_wifi() {   # -> "LEVEL ADDR" (0-4) for the first wireless interface that is up, else nothing
+bar_wifi_pct() {   # -> "PERCENT ADDR" (0-100) for the first wireless interface that is up, else nothing
     for i in $(bar_wireless); do
         [ "$(cat "$BAR_SYS/class/net/$i/operstate" 2>/dev/null)" = up ] || continue
         lvl=''
@@ -3385,11 +3376,12 @@ bar_wifi() {   # -> "LEVEL ADDR" (0-4) for the first wireless interface that is 
             [ -z "$q" ] || lvl=$(( q * 100 / 70 ))
         fi
         [ -n "$lvl" ] || lvl=0; [ "$lvl" -ge 0 ] || lvl=0; [ "$lvl" -le 100 ] || lvl=100
-        printf '%s %s\n' "$(( (lvl + 12) / 25 ))" "$(bar_addr "$i")"
+        printf '%s %s\n' "$lvl" "$(bar_addr "$i")"
         return
     done
     return 0
 }
+bar_wifi() { _wp=$(bar_wifi_pct); [ -z "$_wp" ] || printf '%s %s\n' "$(( (${_wp%% *} + 12) / 25 ))" "${_wp#* }"; }   # -> "LEVEL ADDR" (0-4), the panel's bars, else nothing
 bar_bt() {   # -> "name NAME", "on", "off", or nothing (no controller)
     ls -d "$BAR_SYS"/class/bluetooth/hci* >/dev/null 2>&1 || return 0
     command -v bluetoothctl >/dev/null 2>&1 || { echo on; return; }
@@ -3687,14 +3679,17 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by air
         up*) bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" "$BAR_LAN")")" ;;
         down) bar_add "$(bar_block lan '' "$(bar_span "$HEX_ANSI_1" "$BAR_LAN $PANEL_WARN")")" ;;
     esac
-    wifi=$(bar_wifi)
-    [ -z "$wifi" ] || bar_add "$(bar_block wifi '' "$(bar_bars "${wifi%% *}")")"
     bt=$(bar_bt)
     case $bt in
         name*) bar_add "$(bar_block bt '' "$(bar_span "$HEX_ACCENT" "$BAR_BT")")" ;;   # connected: the device's name is the panel's
         on) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" "$BAR_BT")")" ;;
         off) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" "$BAR_BT_OFF")")" ;;
     esac
+    wifi=$(bar_wifi_pct)
+    if [ -n "$wifi" ]; then   # the signal, a gauge as sound's
+        bar_add "$(bar_block wifi name "$(bar_span "$HEX_MUTED" "$BAR_WIFI")" 6)"
+        bar_add "$(bar_block wifi gauge "$(bar_gauge "${wifi%% *}" 0)")"
+    elif [ -n "$(bar_wireless)" ]; then bar_add "$(bar_block wifi name "$(bar_span "$HEX_MUTED" "$BAR_WIFI")")"; fi   # off, or no network: the sign alone
     bar_group
     # sound
     out=$(snd_out)

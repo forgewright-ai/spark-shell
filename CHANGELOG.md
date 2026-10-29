@@ -10,7 +10,10 @@
   red dot while a program records), a sun for brightness (U+263C), a key
   grid for the keyboard's layout (U+2317), a flag for a reminder due
   (U+2691) and the moon for do not disturb (U+23FE). Filled is on, hollow
-  is off or muted. The wifi bars lose their word.
+  is off or muted.
+- Wifi is a half circle (U+25E0) and a gauge of its signal, as sound and
+  brightness are, after bluetooth; with wifi off the half circle stays,
+  alone and muted. The panel keeps its rising bars.
 - Device names leave the bar for the panel a click opens. The gauges are
   five cells (U+25B0 and U+25B1), the battery four with its number, and
   the groups are parted by air instead of dividers.
