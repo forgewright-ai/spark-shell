@@ -47,7 +47,7 @@ class Providers(unittest.TestCase):
                                 text=True, capture_output=True, timeout=45)
         self.assertEqual(result.returncode, 0, "provider process failed")
         replies = {p["id"]: p for p in map(json.loads, result.stdout.splitlines()) if "id" in p}
-        self.assertTrue(all(p["id"] in replies for p in requests), "provider missed a reply")
+        self.assertTrue(all(p["id"] in replies for p in requests if "method" in p), "provider missed a reply")
         return replies
 
     def rows(self, section):
@@ -268,9 +268,7 @@ os.execv(''' + repr(shutil.which("cat")) + ''', ['cat']+a)
         executable.chmod(0o755)
         self.env["PATH"] = str(bindir) + os.pathsep + self.env["PATH"]
         words = "2099-01-01 10:00 Fixture"
-        result = self.provider("reminders", rpc(1, "spark/prepare", name="reminders_add", arguments={"words":words}),
-                               call(2, "reminders_add", words=words))
-        self.assertFalse(result[1]["result"]["ready"])
+        result = self.provider("reminders", call(2, "reminders_add", words=words))
         self.assertTrue(result[2]["result"]["isError"])
         self.assertFalse(list((self.home / "calendar").glob("*.ics")))
 
@@ -291,28 +289,40 @@ else: os.execv(sys.executable, [sys.executable]+sys.argv[1:])
                  f"{year}-11-{sunday(11):02d} 01:30 fold fixture",
                  f"{year}-01-10 10:00 UTC zone fixture"]
         for text in words:
-            result = self.provider("reminders", rpc(1, "spark/prepare", name="reminders_add", arguments={"words": text}),
-                                   call(2, "reminders_add", words=text))
-            self.assertFalse(result[1]["result"]["ready"])
-            self.assertTrue(result[2]["result"]["isError"])
+            result = self.provider("reminders", call(2, "reminders_add", words=text))
+            self.assertTrue(result[2]["result"]["isError"], text)
+            self.assertNotIn("ask-2", result, "a time that exists but cannot be kept is refused with its reason, not asked for")
             self.assertFalse(list((self.home / "calendar").glob("*.ics")))
-        result = self.provider("reminders", rpc(1, "spark/prepare", name="reminders_add", arguments={"words":f"{year}-01-10 10:00 valid fixture"}))
-        self.assertTrue(result[1]["result"]["ready"])
+        result = self.provider("reminders", call(1, "reminders_add", words=f"{year}-01-10 10:00 valid fixture"))
+        self.assertFalse(result[1]["result"]["isError"])
+        self.assertEqual(len(list((self.home / "calendar").glob("*.ics"))), 1)
 
     def test_spoken_reminder_timing_preserves_requested_time_and_title(self):
         tomorrow = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=1)).strftime("%Y-%m-%d")
         for phrase in ("tomorrow at 10:00 to review the checklist", "Remind me tomorrow at 10:00 to review the checklist"):
-            result = self.provider("reminders", rpc(1, "spark/prepare", name="reminders_add", arguments={"words":phrase}))
-            self.assertEqual(result[1]["result"], {"ready":True, "arguments":{"words":f"{tomorrow} 10:00 review the checklist"}})
-        result = self.provider("reminders", call(1, "reminders_add", words="Remind me tomorrow at 10:00 to review the checklist"))
-        effect = result[1]["result"]["structuredContent"]["effect"]
+            result = self.provider("reminders", call(1, "reminders_add", words=phrase))
+            effect = result[1]["result"]["structuredContent"]["effect"]
+            self.assertEqual((effect["localTime"], effect["title"]), (f"{tomorrow} 10:00", "review the checklist"), phrase)
+        saved = [p.read_text() for p in (self.home / "calendar").glob("*.ics")]
+        self.assertEqual(len(saved), 2)
+        for text in saved:
+            self.assertIn("DTSTART:" + tomorrow.replace("-", "") + "T100000", text)
+            self.assertIn("SUMMARY:review the checklist\n", text)
+        # words with no time: one question over the wire (elicitation, the field when); cancelled, nothing is written
+        answer = {"jsonrpc": "2.0", "id": "ask-3", "result": {"action": "cancel"}}
+        result = self.provider("reminders", call(3, "reminders_add", words="Remind me to review the checklist"), answer)
+        self.assertEqual(result["ask-3"]["method"], "elicitation/create")
+        self.assertEqual(result["ask-3"]["params"]["message"], "When")
+        self.assertEqual(result["ask-3"]["params"]["requestedSchema"]["required"], ["when"])
+        self.assertTrue(result[3]["result"]["isError"])
+        self.assertEqual(result[3]["result"]["content"][0]["text"], "not done: no time given")
+        self.assertEqual(len(list((self.home / "calendar").glob("*.ics"))), 2)
+        # answered, the time goes in front and the title is what the person asked to be reminded of
+        answer = {"jsonrpc": "2.0", "id": "ask-4", "result": {"action": "accept", "content": {"when": "tomorrow 10:00"}}}
+        result = self.provider("reminders", call(4, "reminders_add", words="Remind me to review the checklist"), answer)
+        effect = result[4]["result"]["structuredContent"]["effect"]
         self.assertEqual((effect["localTime"], effect["title"]), (f"{tomorrow} 10:00", "review the checklist"))
-        saved = next((self.home / "calendar").glob("*.ics")).read_text()
-        self.assertIn("DTSTART:" + tomorrow.replace("-", "") + "T100000", saved)
-        self.assertIn("SUMMARY:review the checklist\n", saved)
-        result = self.provider("reminders", rpc(1, "spark/prepare", name="reminders_add", arguments={"words":"Remind me to review the checklist"}))
-        self.assertFalse(result[1]["result"]["ready"])
-        self.assertEqual(len(list((self.home / "calendar").glob("*.ics"))), 1)
+        self.assertEqual(len(list((self.home / "calendar").glob("*.ics"))), 3)
 
     def desktop_fixture(self):
         bindir = self.home / "bin"

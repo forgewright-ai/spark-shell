@@ -6559,6 +6559,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_v"; return 0; }   # files: the four lines, not the panel's gate
     _act=$_ta; _arg=$_v; [ "$_ta" != '=' ] || { _act=$_v; _arg=''; }   # a palette's step is its name alone
     if [ "$_name" = reminders_add ] && ! rem_parse "$_v" >/dev/null 2>&1; then   # no day and time in the words: one question (the dialog's hint row shows "reminders asks: When: 5pm, ..."), then the step with the answer in front (#95)
+        case $(printf '%s' "$_v" | tr 'A-Z' 'a-z') in "remind me to "*) _v=$(printf '%s' "$_v" | cut -c14-) ;; "remind me "*) _v=$(printf '%s' "$_v" | cut -c11-) ;; esac   # the title is what follows
         _when=$(provide_ask "$1" "When" when "5pm, tomorrow 9:00, in 20 min") || { provide_refuse "$1" "not done: no time given"; return 0; }
         _v="$_when $_v"; _arg=$_v
     fi
