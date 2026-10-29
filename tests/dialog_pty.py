@@ -220,6 +220,13 @@ def files(binary, env, home):
         assert wait_for(lambda: "Steps" in plain()), "the key row did not offer the steps: " + plain()[-400:]
         seen.clear()
         os.write(fd, b"\x1b[C")       # Right: its steps
+        time.sleep(0.6)
+        # a cell the row before held too is not written again (the terminal's diff: "rename" over "hello.txt" keeps its e),
+        # so the capture is read after a resize, which draws the whole frame
+        seen.clear()
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 41, 60, 0, 0))
+        time.sleep(0.4)
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
         assert wait_for(lambda: "movetoafolder" in tight() and "trash" in tight() and "rename" in tight()), "the steps did not draw: " + plain()[-600:]
         ok(True, "Down lights the file and the key row offers Steps; Right opens them in the provider's words: open, show, attach, reveal, rename, move, copy, trash")
         seen.clear()
