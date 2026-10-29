@@ -150,7 +150,15 @@ jobs:
     container: ghcr.io/void-linux/void-glibc-full:latest   # zizmor: ignore[unpinned-images] a rolling distro: latest is the only Void there is, and -Su moves it to today anyway
     timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
     steps:
-      - run: xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null; xbps-install -Sy python3 git bash diffutils jq gawk gzip libstdc++ openssh curl >/dev/null
+      # the Void mirror drops out for minutes at a time (reposync timeouts
+      # cost two runs on 2026-10-29): three tries, 30 s apart, then the
+      # job fails as it would
+      - run: |
+          for i in 1 2 3; do
+            xbps-install -Syu xbps >/dev/null 2>&1 || true
+            xbps-install -Syu >/dev/null && xbps-install -Sy python3 git bash diffutils jq gawk gzip libstdc++ openssh curl >/dev/null && break
+            [ "$i" -lt 3 ] && sleep 30 || exit 1
+          done
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
           persist-credentials: false
@@ -238,7 +246,7 @@ jobs:
           - family: void
             distro: void
             image: ghcr.io/void-linux/void-glibc-full:latest   # zizmor: ignore[unpinned-images] a rolling distro
-            prep: xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null; xbps-install -Sy git bash jq gawk gzip libstdc++ shadow >/dev/null
+            prep: for i in 1 2 3; do xbps-install -Syu xbps >/dev/null 2>&1 || true; xbps-install -Syu >/dev/null && xbps-install -Sy git bash jq gawk gzip libstdc++ shadow >/dev/null && break; [ "$i" -lt 3 ] && sleep 30 || exit 1; done
             install: xbps-install -Sy
             proof: dbus
           - family: fedora
