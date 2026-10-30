@@ -377,8 +377,24 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
         drawn.preview = preview;
     }
 
+    // the key row keeps to the content's width: where it would pass the margin (Open, Preview,
+    // Actions and Back on a file, #127) the gaps between its keys close to two cells
+    let mut hint = app.hint_with(drawn.pages.max(1));
+    let span = |v: &[(String, bool)]| v.iter().map(|(t, k)| cells(t) + if *k { 2 } else { 0 }).sum::<usize>();
+    while span(&hint) > w.saturating_sub(4) as usize {
+        let mut closed = false;
+        for (t, k) in hint.iter_mut() {
+            if !*k && t.len() > 2 && t.chars().all(|c| c == ' ') {
+                t.pop();
+                closed = true;
+            }
+        }
+        if !closed {
+            break;
+        }
+    }
     let mut x = 2;
-    for (t, key) in app.hint_with(drawn.pages.max(1)) {
+    for (t, key) in hint {
         let start = x;
         x = if key {
             pen.chip(x, hint_y, &t, false)
@@ -654,7 +670,7 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     let Some(pv) = app.preview.as_ref() else { return (picks, None, 1) };
     let Some(pg) = pv.shown.as_ref() else {
         // a page slow to come: the wait, after a moment, so a quick one never flashes it (#122)
-        if app.films && pv.asked.elapsed() >= std::time::Duration::from_millis(300) && y + 4 < bottom {
+        if app.films && !pv.failed && pv.asked.elapsed() >= std::time::Duration::from_millis(300) && y + 4 < bottom {
             let (x, w, h) = (2, pen.w.saturating_sub(4), bottom - y);
             skip(
                 pen,
@@ -704,6 +720,14 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         let at = pv.position(now);
         facts.push(format!("{} of {}", clock_of(at), clock_of(pg.seconds)));
         picture = sound(pen, pv, pg, heard, at, (x0, y, w, rows), file, drawn);
+    } else if pg.sound.is_some() {
+        // a long sound's waveform, still being drawn: its length now, the picture the moment it is there (#124)
+        facts.push(format!("{} of {}", clock_of(pv.position(std::time::Instant::now())), clock_of(pg.seconds)));
+        for (k, l) in pg.lines.iter().take(rows.saturating_sub(3) as usize).enumerate() {
+            pen.put(x0, y + k as u16, &cut_words(l, w as usize), pal.fg, pg.bold.contains(&k), false);
+        }
+        let t = "drawing the waveform";
+        pen.put(x0 + w.saturating_sub(cells(t) as u16) / 2, y + rows / 2, t, pal.muted, false, false);
     } else if let Some(say) = &pg.say {
         // no preview: why, in the middle of the area
         let t = cut_words(say, w as usize);
@@ -965,7 +989,8 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> (Vec<(u16, usize)
 
 /// A cell that starts or ends with a figure: a size, a count, a time.
 fn figure(col: &str) -> bool {
-    col.chars().next().is_some_and(|c| c.is_ascii_digit()) || col.chars().last().is_some_and(|c| c.is_ascii_digit())
+    // an empty folder's count is one too: an empty trash keeps the sizes beside it on their right edge (#130)
+    col == "empty" || col.chars().next().is_some_and(|c| c.is_ascii_digit()) || col.chars().last().is_some_and(|c| c.is_ascii_digit())
 }
 
 /// The widths of a list's columns: the name, then each column, so they line up (the name 26 cells at most);

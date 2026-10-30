@@ -120,6 +120,10 @@ pub const HOME_STATES: [&str; 7] = ["apps", "window", "layout", "notes", "remind
 /// What Enter does to a row, in a word, from its tool's name: the hint says it (Use dracula, Connect a
 /// network). A row that opens more is Open.
 pub fn verb_of(tool: &str) -> &'static str {
+    // a trashed file comes back (#130); a notification restored is shown again
+    if tool == "files_restore" {
+        return "Restore";
+    }
     let last = tool.rsplit('_').next().unwrap_or("");
     match last {
         "open" | "terminal" | "focus" | "new" => "Open",
@@ -144,6 +148,8 @@ pub fn verb_of(tool: &str) -> &'static str {
         "move" => "Move",
         "copy" => "Copy",
         "trash" => "Trash",
+        "purge" => "Delete",
+        "empty" => "Empty",
         "show" => "Show",
         "attach" => "Attach",
         "find" | "say" => "Find",
@@ -591,6 +597,8 @@ pub struct App {
     pub motion: Option<(Reel, Instant)>,
     /// The transitions are loaded: Esc that closes the dialog plays the close first.
     pub films: bool,
+    /// The transitions to read again, a theme step having changed them (#126): a folder, or None for none.
+    pub films_want: Option<Option<String>>,
     /// A text page's count as last drawn: how far right goes (the area decides it, so ui.rs does).
     pub preview_pages: usize,
 }
@@ -662,6 +670,7 @@ impl App {
             quiet: None,
             motion: None,
             films: false,
+            films_want: None,
             preview_pages: 1,
             steps_row: None,
         }
@@ -1115,6 +1124,7 @@ impl App {
                 match preview::page(&want, text).filter(|_| text.len() <= mcp::RESOURCE_MAX) {
                     Some(pg) => pv.shown = Some(pg),
                     None => {
+                        pv.failed = true;
                         let name = pv.row().text.clone();
                         self.say(Sign::Refused, &error.unwrap_or_else(|| format!("{} could not be shown", name)));
                     }
@@ -1198,7 +1208,12 @@ impl App {
                     }
                 }
                 Kind::Folder => self.say(Sign::Refused, "the list did not come in time: Esc goes back"),
-                Kind::Page => self.say(Sign::Refused, "the preview did not come in time: Enter opens the file"),
+                Kind::Page => {
+                    if let Some(pv) = self.preview.as_mut() {
+                        pv.failed = true; // the wait ends with the words (#124)
+                    }
+                    self.say(Sign::Refused, "the preview did not come in time: Enter opens the file")
+                }
                 Kind::Quiet => {
                     self.quiet = None;
                     if let Some(pv) = self.preview.as_mut() {
@@ -1698,11 +1713,14 @@ impl App {
             }
             "Files" => "your home folder".to_string(),
             "Settings" => {
-                let parts: Vec<String> = ["wifi", "theme"]
-                    .iter()
-                    .filter_map(|l| prov(l).map(|p| p.title.split(crate::ui::SEP).next().unwrap_or("").trim().to_string()))
-                    .filter(|t| !t.is_empty())
-                    .collect();
+                let first = |l: &str| prov(l).map(|p| p.title.split(crate::ui::SEP).next().unwrap_or("").trim().to_string());
+                // the network: Wi-Fi's own words while it is joined, else wired when the cable is up (#128)
+                let net = match (first("wifi"), first("lan")) {
+                    (Some(w), Some(l)) if w.starts_with("not connected") && l == "up" => Some("wired".to_string()),
+                    (None, Some(l)) if l == "up" => Some("wired".to_string()),
+                    (w, _) => w,
+                };
+                let parts: Vec<String> = [net, first("theme")].into_iter().flatten().filter(|t| !t.is_empty()).collect();
                 if parts.is_empty() {
                     return None;
                 }
@@ -2600,6 +2618,9 @@ impl App {
                         who: Who::Person,
                         line,
                     });
+                } else if !row.more.is_empty() {
+                    // a row that is only its actions (this folder, #127): Enter opens them, as Right does
+                    self.open_steps();
                 }
             }
             _ => {}
@@ -3482,6 +3503,17 @@ impl App {
                             self.palette = Some(p.clone());
                         }
                     }
+                    // and its animation now: read again at once, so the next wait and the close are the new look's (#126)
+                    if let Some(t) = sc.get("transitions").and_then(Value::as_str) {
+                        let whole = t.starts_with('/') && !t.split('/').any(|c| c == "..") && !t.chars().any(char::is_control);
+                        if t.is_empty() || whole {
+                            let want = (!t.is_empty()).then(|| t.to_string());
+                            if want != self.cfg.transitions {
+                                self.cfg.transitions = want.clone();
+                                self.films_want = Some(want);
+                            }
+                        }
+                    }
                 }
                 if sc.get("opened").and_then(Value::as_bool) == Some(true) {
                     self.opened = true;
@@ -3830,10 +3862,16 @@ impl App {
                 v.push(gap());
                 v.extend(key("New line", "Shift+Enter"));
             }
-            // a row with steps of its own: the right arrow opens them (#112)
-            if lit.as_ref().and_then(|it| self.row_ref(it)).is_some_and(|r| !r.more.is_empty()) && self.picking.is_none() && self.attaching.is_none() {
+            let free = self.picking.is_none() && self.attaching.is_none();
+            // a file with a page of its own: Space shows it, nothing typed (#120, named in the row since #127)
+            if lit.as_ref().and_then(|it| self.row_ref(it)).is_some_and(|r| r.page.is_some()) && free && self.input.is_empty() {
                 v.push(gap());
-                v.extend(key("Steps", "\u{2192}"));
+                v.extend(key("Preview", "Space"));
+            }
+            // a row with steps of its own: the right arrow opens them (#112), named actions (#127)
+            if lit.as_ref().and_then(|it| self.row_ref(it)).is_some_and(|r| !r.more.is_empty()) && free {
+                v.push(gap());
+                v.extend(key("Actions", "\u{2192}"));
             }
             v.extend(esc(esc_word));
             if self.is_calendar() && self.input.is_empty() {
@@ -4125,6 +4163,7 @@ impl App {
     fn read_page(&mut self) {
         let Some(pv) = self.preview.as_mut() else { return };
         pv.asked = Instant::now();
+        pv.failed = false;
         let (p, uri) = (pv.prov, pv.uri());
         if let Some(s) = self.server(p) {
             s.request("resources/read", json!({"uri": uri}), Kind::Page, mcp::T_READ);
@@ -4269,6 +4308,14 @@ impl App {
             });
         }
         play.arguments.insert("at".into(), json!((at * 10.0).round() / 10.0));
+        // a video: the box its frame was drawn in, where the player is laid (#125)
+        if pv.shown.as_ref().is_some_and(|pg| pg.sound.is_none()) {
+            if let Some((x, y, w, h)) = pv.frame {
+                for (k, v) in [("x", x), ("y", y), ("w", w), ("h", h)] {
+                    play.arguments.insert(k.into(), json!(v));
+                }
+            }
+        }
         pv.played = at;
         pv.playing = Some(Instant::now());
         self.transport(p, play);
@@ -4292,6 +4339,18 @@ impl App {
         let params = json!({"name": call.name, "arguments": Value::Object(call.arguments.clone())});
         if let Some(n) = self.server(p).and_then(|s| s.request("tools/call", params, Kind::Quiet, mcp::T_CALL)) {
             self.quiet = Some((n, p, call));
+        }
+    }
+
+    /// A video playing over its frame stops where it is: a click raises the dialog over the player, a new
+    /// size moves the frame (#125).
+    pub fn stop_video(&mut self) {
+        if self
+            .preview
+            .as_ref()
+            .is_some_and(|pv| pv.playing.is_some() && pv.shown.as_ref().is_some_and(|pg| pg.sound.is_none()))
+        {
+            self.stop_sound();
         }
     }
 

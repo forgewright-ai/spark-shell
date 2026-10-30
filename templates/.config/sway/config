@@ -100,6 +100,9 @@ bindsym $mod+d exec $term --config @HOME@/.config/foot/dialog.ini --app-id spark
 # key: Super+s opens the dialog in spark chat, and Ctrl-D closes it.
 bindsym $mod+s exec $term --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog chat
 for_window [app_id="spark-dialog"] floating enable, border none, move position center
+# a video a preview plays (#125): laid over its frame, never taking the keys from the dialog
+for_window [app_id="spark-preview"] floating enable, border none
+no_focus [app_id="spark-preview"]
 # key: Super+Shift+q closes the window.
 bindsym $mod+Shift+q kill
 # key: Super+Shift+c reloads sway after spark-shell on.

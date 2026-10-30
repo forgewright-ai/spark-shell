@@ -415,8 +415,9 @@ bar's `kb` block and `desktop keyboard next` go to the next one. The
 
 `spark-shell desktop screen` lists the screens. `desktop screen NAME
 scale 1.5`, `mode 2560x1440`, `transform 90` (normal, 90, 180 or 270,
-clockwise; no mirrored orientation), or `left-of`, `right-of`, `above`
-and `below` another screen set one, by its port or words of its make and
+clockwise; no mirrored orientation), `main` (workspace 1, the focus at
+the start and the login screen go to it), or `left-of`, `right-of`,
+`above` and `below` another screen set one, by its port or words of its make and
 model; each is sway's at once and kept, by the screen's make, model and
 serial, in `~/.config/spark-shell/screens.conf`. A screen placed beside
 another is placed again after a turn, since its width changed. `on` and
@@ -805,7 +806,7 @@ its first and its last row.
   last row, `the next page`, says how many more there are and opens
   them. Enter on a text file opens it in your editor, in a terminal
   window; any other file opens with the app for its kind. The right
-  arrow opens the lit row's steps as a list: open, preview, attach,
+  arrow opens the lit row's actions as a list: open, preview, attach,
   reveal in the system file manager, rename (it asks the name), move to
   a folder and copy to a folder (the folder is picked
   here: open folders until the right one, then Enter on `move NAME
@@ -813,17 +814,20 @@ its first and its last row.
   freedesktop trash (`gio trash` where it is, else the spec by hand),
   and Undo brings it back; a rename and a move come back the same way,
   and a copy's Undo trashes the copy. Nothing here asks for a typed
-  yes. Every folder ends with its total, `new folder` and `new text
+  yes. Every folder ends with one row for itself, `this folder` with
+  what it holds and its size, its actions behind it: `new folder` and `new text
   file` (each asks a name; the text file opens in your editor), and
   `open in the system file manager`, for anything beyond these steps
   (permissions, archives, remote places); where no file manager is
-  configured, that row and the reveal step are not offered. Space on a
-  lit file, with nothing typed, opens its preview, described below. Your home
-  folder starts with
-  `recent`, the files touched in the last 7 days wherever they are,
-  each with its folder's name, and ends with `drives`, a row per drive
-  mounted (Storage mounts them), a root beside your home. A picture lit
-  shows small at the top right where the terminal draws pictures. Typed
+  configured, that action and the reveal step are not offered. Space on
+  a lit file, with nothing typed, opens its preview, described below. Your
+  home folder starts with its folders and files, then `recent`, the
+  files touched in the last 7 days wherever they are, each with its
+  folder's name, then `drives`, a row per drive mounted (Storage mounts
+  them), a root beside your home. Its `trash` opens the trash: each file
+  in it with its size, the day it was trashed and the folder it came
+  from; Enter restores one, its actions restore it or delete it for good
+  (a yes first), and the trash's own row empties it (a yes first). Typed
   words filter the folder; `files find NAME` lists what has the words
   in its name under your home and your drives, and `files say WORDS`
   the text files that hold the words, each as a list to act on. A
@@ -846,7 +850,9 @@ its first and its last row.
   and album, its waveform (the part played in the accent; a click plays
   from there), a spectrum that moves while it plays, its spectrogram, and
   its rate, bits, channels and format; right plays and pauses it, left
-  goes back to its start. A video's right plays it in its app. A Word,
+  goes back to its start. A video's right plays it over its frame, in a
+  window of its own with no border, the keys still the dialog's; full
+  screen, or where sway is not, Enter opens it in its app. A Word,
   PowerPoint, Excel or OpenDocument file shows its text, read by Python's
   own zip and XML readers (no LibreOffice). Anything else says that it
   has no preview. A PDF needs poppler (installed with the desktop); a

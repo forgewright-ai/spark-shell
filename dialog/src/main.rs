@@ -252,6 +252,55 @@ fn rgb(c: ratatui::style::Color) -> [u8; 3] {
     }
 }
 
+/// The transitions' piece (#122), decoded aside so the window draws at once; @2x where a cell is
+/// twice the usual height. Again when a theme step changes the look (#126).
+fn spawn_films(dir: String, tx: mpsc::Sender<Ev>) {
+    let double = cell_px().is_some_and(|(_, ch)| ch >= 30);
+    std::thread::spawn(move || {
+        let one = |reel: &str| {
+            let f = format!("{}/{}{}.gif", dir, reel, if double { "@2x" } else { "" });
+            let bytes = std::fs::read(&f).ok().filter(|b| b.len() <= 4 << 20)?;
+            transition::film(&bytes)
+        };
+        let films = (|| {
+            Some(transition::Films {
+                open: one("open")?,
+                wait: one("wait")?,
+                close: one("close")?,
+            })
+        })();
+        let _ = tx.send(Ev::Films(films));
+    });
+}
+
+/// A drag's pictures, this far apart at least (#129).
+const DRAG_GAP: Duration = Duration::from_millis(40);
+
+/// The pointer foot draws over the window (OSC 22, its cursor theme's names): a hand where a click acts,
+/// the closed hand over a picture that moves and while it moves, the text cursor on the prompt (#129).
+fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) -> &'static str {
+    let on = |(x, y, w, h): (u16, u16, u16, u16)| row >= y && row < y + h && col >= x && col < x + w;
+    let span = |a: u16, b: u16, y: u16| row == y && col >= a && col < b;
+    // where a click acts: the x, a chip, a key, the waveform (it seeks), a row of the list
+    let clicks = (row == 0 && drawn.close.is_some_and(|(a, b)| span(a, b, 0)))
+        || drawn.chips.iter().any(|(a, b, y, _)| span(*a, *b, *y))
+        || drawn.keys.iter().any(|(a, b, y, _)| span(*a, *b, *y))
+        || drawn.wave.is_some_and(on);
+    if dragging {
+        "grabbing"
+    } else if clicks {
+        "pointer"
+    } else if drawn.preview.as_ref().is_some_and(|p| app.zoomed() && on((p.x, p.y, p.w, p.h))) {
+        "grab"
+    } else if row >= drawn.prompt.0 && row <= drawn.prompt.1 {
+        "text"
+    } else if drawn.picks.iter().any(|(y, _)| *y == row) {
+        "pointer"
+    } else {
+        "default"
+    }
+}
+
 fn main() {
     if std::env::args().nth(1).as_deref() == Some("login") {
         login_run::main();
@@ -275,6 +324,7 @@ fn main() {
         libc::setlocale(libc::LC_TIME, c"".as_ptr());
     }
     let (tx, rx) = mpsc::channel::<Ev>();
+    let films_tx = tx.clone();
     let (mtx, mrx) = mpsc::sync_channel::<Incoming>(256);
     for (i, (label, argv)) in a.providers.iter().enumerate() {
         match Server::spawn(i, label, argv, mtx.clone()) {
@@ -337,28 +387,12 @@ fn main() {
         });
     }
     app.start();
-    // the transitions' piece (#122), decoded aside so the window draws at once; @2x where a cell is
-    // twice the usual height
     if let Some(dir) = app.cfg.transitions.clone() {
-        let tx = tx.clone();
-        let double = cell_px().is_some_and(|(_, ch)| ch >= 30);
-        std::thread::spawn(move || {
-            let one = |reel: &str| {
-                let f = format!("{}/{}{}.gif", dir, reel, if double { "@2x" } else { "" });
-                let bytes = std::fs::read(&f).ok().filter(|b| b.len() <= 4 << 20)?;
-                transition::film(&bytes)
-            };
-            let films = (|| {
-                Some(transition::Films {
-                    open: one("open")?,
-                    wait: one("wait")?,
-                    close: one("close")?,
-                })
-            })();
-            let _ = tx.send(Ev::Films(films));
-        });
+        spawn_films(dir, tx.clone());
     }
     let started = Instant::now();
+    let (mut drag_drawn, mut drag_owed) = (Instant::now(), false);
+    let mut pointer = "";
     let mut films: Option<transition::Films> = None;
     // the transition drawn now: its box, which one, its frame
     let mut shown_film: Option<ShownFilm> = None;
@@ -446,6 +480,8 @@ fn main() {
             if want != shown_preview {
                 shown_preview = None;
                 if let (Some(p), Some((cw, chh)), true) = (&want, cell_px(), sixel_ok) {
+                    // one synchronized update: the old picture stays on screen until the new one is whole (#129)
+                    let _ = out.write_all(b"\x1b[?2026h");
                     blank(&mut out, (p.x, p.y, p.w, p.h), term_color(pal.surface));
                     let (bw, bh) = (p.w as u32 * cw, p.h as u32 * chh);
                     let img = if p.spectrogram {
@@ -469,6 +505,10 @@ fn main() {
                         if let Some((s, pw, ph)) = sixel::show(img, bw, bh, &p.view) {
                             // in the middle of its box, by whole cells
                             let (dx, dy) = ((bw.saturating_sub(pw) / 2 / cw) as u16, (bh.saturating_sub(ph) / 2 / chh) as u16);
+                            // where it is, in pixels: a video plays over it (#125)
+                            if let Some(pv) = app.preview.as_mut().filter(|_| app.view == View::Preview && !p.spectrogram) {
+                                pv.frame = Some(((p.x + dx) as u32 * cw, (p.y + dy) as u32 * chh, pw, ph));
+                            }
                             let _ = queue!(
                                 out,
                                 ratatui::crossterm::cursor::SavePosition,
@@ -479,6 +519,7 @@ fn main() {
                             shown_preview = want.clone();
                         }
                     }
+                    let _ = out.write_all(b"\x1b[?2026l");
                     let _ = out.flush();
                 }
                 preview_tried = Instant::now();
@@ -524,11 +565,22 @@ fn main() {
         if app.quit.is_some() {
             break;
         }
-        // a transition playing wakes for its next frame; else the next event
-        let ev = match film_due {
+        // a transition playing wakes for its next frame, a drag for its next picture; else the next event
+        let due = match (
+            film_due,
+            drag_owed.then(|| DRAG_GAP.saturating_sub(drag_drawn.elapsed()).max(Duration::from_millis(1))),
+        ) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        let ev = match due {
             Some(d) => match rx.recv_timeout(d) {
                 Ok(ev) => ev,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if drag_owed && drag_drawn.elapsed() >= DRAG_GAP {
+                        drag_owed = false;
+                        drag_drawn = Instant::now();
+                    }
                     dirty = true;
                     continue;
                 }
@@ -558,9 +610,24 @@ fn main() {
                 dirty |= drawn.preview.is_some() && shown_preview.is_none() && preview_tried.elapsed() >= Duration::from_millis(400);
                 // a sound playing: its waveform and its spectrum move
                 dirty |= app.preview.as_ref().is_some_and(|pv| pv.playing.is_some());
+                // a long sound's waveform drawn aside: read the moment it is there (#124)
+                dirty |= app
+                    .preview
+                    .as_ref()
+                    .is_some_and(|pv| pv.heard.is_none() && pv.shown.as_ref().is_some_and(|pg| pg.sound.is_some()));
             }
             Ev::Mcp(m) => {
                 app.incoming(m);
+                // a theme step changed the animation: the new piece read aside, none at once (#126)
+                match app.films_want.take() {
+                    Some(Some(dir)) => spawn_films(dir, films_tx.clone()),
+                    Some(None) => {
+                        films = None;
+                        app.films = false;
+                        app.motion = None;
+                    }
+                    None => {}
+                }
                 dirty = true;
             }
             Ev::Helper(h, r) => {
@@ -568,6 +635,7 @@ fn main() {
                 dirty = true;
             }
             Ev::Term(Event::Resize(_, _)) => {
+                app.stop_video(); // the frame moves: the player would stand where it was (#125)
                 shown_preview = None;
                 let _ = term.clear();
                 dirty = true;
@@ -608,9 +676,24 @@ fn main() {
             }
             Ev::Term(Event::Mouse(m)) => {
                 dirty = true;
+                // the pointer says what a click does where it is (#129)
+                let dragging = drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_));
+                let want = pointer_at(&app, &drawn, m.column, m.row, dragging);
+                if want != pointer {
+                    pointer = want;
+                    let _ = write!(out, "\x1b]22;{}\x1b\\", want);
+                    let _ = out.flush();
+                }
+                if matches!(m.kind, MouseEventKind::Moved) {
+                    dirty = false;
+                }
                 match m.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
                         app.cut_motion();
+                        // a click raises the dialog over a video's player: it stops, unless the click is the key that pauses it (#125)
+                        if !drawn.keys.iter().any(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
+                            app.stop_video();
+                        }
                         if m.row == 0 && drawn.close.is_some_and(|(a, b)| m.column >= a && m.column < b) {
                             if matches!(app.motion, Some((Reel::Close, _))) {
                                 app.quit = Some(0);
@@ -644,9 +727,19 @@ fn main() {
                         if let (Some((c0, r0)), Some((cw, chh))) = (drag, cell_px()) {
                             app.preview_drag((m.column as f64 - c0 as f64) * cw as f64, (m.row as f64 - r0 as f64) * chh as f64);
                             drag = Some((m.column, m.row));
+                            // the picture follows at most every DRAG_GAP, at the latest place: never a picture a motion (#129)
+                            if drag_drawn.elapsed() < DRAG_GAP {
+                                drag_owed = true;
+                                dirty = false;
+                            } else {
+                                drag_drawn = Instant::now();
+                            }
                         }
                     }
-                    MouseEventKind::Up(_) => drag = None,
+                    MouseEventKind::Up(_) => {
+                        drag = None;
+                        drag_owed = false;
+                    }
                     MouseEventKind::ScrollUp if app.view == View::Preview => app.preview_wheel(-1, m.modifiers.contains(KeyModifiers::CONTROL)),
                     MouseEventKind::ScrollDown if app.view == View::Preview => app.preview_wheel(1, m.modifiers.contains(KeyModifiers::CONTROL)),
                     MouseEventKind::ScrollUp => app.page(-1),

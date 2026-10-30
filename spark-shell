@@ -265,6 +265,10 @@ ANIMATION_NAMES='moon ripple tide embers sun flight'   # assets/transitions' pie
 ANIM_PAIRED="tokyonight-night:moon nord:tide everforest-dark:embers gruvbox-dark:sun catppuccin-mocha:moon dracula:embers rose-pine:ripple selenized-dark:tide solarized-light:sun catppuccin-latte:flight tokyonight-day:flight gruvbox-light:sun everforest-light:ripple rose-pine-dawn:sun selenized-light:tide one-light:flight"
 anim_for_palette() { for _e in $ANIM_PAIRED; do [ "${_e%%:*}" != "$1" ] || { printf '%s' "${_e#*:}"; return 0; }; done; echo embers; }   # anim_for_palette PALETTE -> the piece it brings; embers for one with none
 anim_palette() { _apd=$(theme_dir "${THEME:-}"); if [ -n "$_apd" ]; then look_get "$_apd" PALETTE; else printf '%s' "${THEME:-}"; fi; }   # -> the shipped palette under the theme in use: a saved theme's own, else the theme
+dialog_transitions() {   # -> the folder of the piece in the palette in use, a saved theme's in its own; nothing where it plays none (none, or a palette with no set of its own) (#122, #126)
+    _dta=$REPO/assets/transitions/$(anim_now)/$(anim_palette)
+    [ "$(anim_now)" = none ] || [ -z "$(anim_palette)" ] || [ ! -f "$_dta/open.gif" ] || printf '%s\n' "$_dta"
+}
 anim_now() { if [ -n "${DIALOG_ANIMATION:-}" ]; then printf '%s' "$DIALOG_ANIMATION"; else anim_for_palette "$(anim_palette)"; fi; }   # -> the piece the dialog plays: the one set, else the palette's
 SAVER_NAMES='spark starfield drift'   # lib/saver.py's list, in its order: what DISPLAY_SAVER takes besides clock (#66)
 KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}$'   # one to eight layouts, a variant after a plus: us us+intl
@@ -1501,7 +1505,7 @@ login_render() {   # -> the screen's files in $TMP/login, from templates/login i
 }
 login_screens() {   # -> the login screen's screens.conf: the output lines of yours, so its screens sit and turn as the desktop's do (#116)
     echo '# rendered by spark-shell from your screens.conf -- the screens as the desktop has them; spark-shell off login removes it'
-    [ ! -f "$SCREENS_CONF" ] || grep '^output ' "$SCREENS_CONF" || :
+    [ ! -f "$SCREENS_CONF" ] || grep -e '^output ' -e '^workspace 1 output ' "$SCREENS_CONF" || :   # the main screen too: its form goes there (#135)
 }
 login_screens_follow() {   # after a screen setting: the login screen's copy now when root asks no password, else said in one line (#116)
     login_wanted && [ -f "$ROOT/$LOGIN_ETC/sway.conf" ] || return 0
@@ -5610,7 +5614,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                     config_set DISPLAY_SAVER "$_arg" >/dev/null; DISPLAY_SAVER=$_arg; export DISPLAY_SAVER
                     echo "idle screen shows $(saver_words "$_arg")" ;;
                 brightness) light_set "$_arg" ;;
-                scale|mode|position|place|transform|screen-on|screen-off) screen_action "$_a" "$_arg" ;;
+                scale|mode|position|place|transform|screen-on|screen-off|main) screen_action "$_a" "$_arg" ;;
                 *) echo "$_a is not something display does"; return 1 ;;
             esac ;;
         clock) time_setting "$_a" "$_arg" ;;
@@ -5919,7 +5923,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
     case $1:$2 in out:use|mic:use) SND=${SND:-$(snd_tool)}; if [ "$SND" = alsa ] && _tf=$(al_theirs); then echo "$(al_theirs_said "$_tf"): spark-shell leaves it to that file"; return 1; fi ;; esac   # your own file picks the device: said, not "not on the panel"
     if ! panel_section_ok "$1" || [ "$1" = glance ] || [ "$1" = chat ]; then if [ -n "$1" ]; then echo "no $1 here"; else echo "a step with no section"; fi; return 1; fi
     case $1:$2 in
-        display:scale|display:mode|display:position|display:place|display:transform|display:screen-on|display:screen-off)
+        display:scale|display:mode|display:position|display:place|display:transform|display:screen-on|display:screen-off|display:main)
             screen_action "$2" "${3:-}" check || return 1
             printf '%s\n' "$3"; return 0 ;;
         clock:format|clock:week|clock:zone)
@@ -6245,7 +6249,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_animation theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_animation theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -6336,6 +6340,7 @@ tool_spec() {
         display_position) _ts=display _ta=position _tp=screen _tk=string _te='x:coordinate y:coordinate' _th=if _tt='screen position' _td='Place a connected screen at absolute layout coordinates.' ;;
         display_place) _ts=display _ta=place _tp=screen _tk=string _te='side:left-of|right-of|above|below other:port' _th=if _tt='screen arrangement' _td='Place a connected screen beside another active screen.' ;;
         display_transform) _ts=display _ta=transform _tp=screen _tk=string _te='transform:normal|90|180|270' _th=if _tt='screen orientation' _td='Turn a connected screen: normal, or 90, 180 or 270 degrees clockwise. No mirrored orientation.' ;;
+        display_main) _ts=display _ta=main _tp=screen _tk=string _th=if _tt='screen main' _td='Make a connected screen the main one: workspace 1, the focus at the start and the login screen go to it.' ;;
         display_on) _ts=display _ta=screen-on _tp=screen _tk=string _th=if _tt='screen on' _td='Enable a connected screen now and at the next login.' ;;
         display_off) _ts=display _ta=screen-off _tp=screen _tk=string _th=if _tt='screen off' _td='Disable a connected screen now and at the next login; the last active screen stays on.' ;;
         clock_format) _ts=clock _ta=format _tp=format _tk='12|24' _th=if _tt='clock format' _td='Show a 12 or 24 hour clock on the bar, Calendar and idle screen.' ;;
@@ -6377,7 +6382,7 @@ tool_spec() {
         files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=if _tt='files browse PATH' _td='Open a folder in the system file manager, for anything beyond the steps here. path is a row'"'"'s own path, exactly as written.' ;;
         files_open)        _ts=files _ta=open _tp=path _tk=path _th=if _tt='files open PATH' _td='Open a file with the app that opens its kind. path is a row'"'"'s own path, exactly as written.' ;;
         files_show)        _ts=files _ta=show _tp=path _tk=path _th=rif _tt='files show PATH' _td='The first lines of a text file. path is a row'"'"'s own path, exactly as written.' ;;
-        files_play)        _ts=files _ta=play _tp=path _tk=path _te='at:seconds' _th='' _tt='files play PATH' _td='Play a sound here, with no window, from at seconds (the start when none), until it ends or files stop. path is a row'"'"'s own path, exactly as written.' ;;
+        files_play)        _ts=files _ta=play _tp=path _tk=path _te='at:seconds x:pixels y:pixels w:pixels h:pixels' _th='' _tt='files play PATH' _td='Play a sound here, with no window, from at seconds (the start when none), until it ends or files stop; a video over the box x, y, w, h of the dialog the preview drew it in. path is a row'"'"'s own path, exactly as written.' ;;
         files_stop)        _ts=files _ta=stop _th=i _tt='files stop' _td='Stop the sound files play started.' ;;
         files_attach)      _ts=files _ta=attach _tp=path _tk=path _th=rif _tt='files attach PATH' _td='A text file to ask spark about, with the next words. path is a row'"'"'s own path, exactly as written.' ;;
         files_reveal)      _ts=files _ta=reveal _tp=path _tk=path _th=if _tt='files reveal PATH' _td='Show a file or folder in the system file manager, its folder opened. path is a row'"'"'s own path, exactly as written.' ;;
@@ -6386,6 +6391,8 @@ tool_spec() {
         files_copy)        _ts=files _ta=copy _tp=path _tk=path _te='to:path' _th='' _tt='files copy PATH' _td='Copy a file or folder into another folder. path and to are rows'"'"' own paths, exactly as written; to is a folder. Undo trashes the copy.' ;;
         files_trash)       _ts=files _ta=trash _tp=path _tk=path _th='' _tt='files trash PATH' _td='Put a file or folder in the trash: the delete here. path is a row'"'"'s own path, exactly as written. Undo brings it back.' ;;
         files_restore)     _ts=files _ta=restore _tp=path _tk=path _th=f _tt='files restore PATH' _td='Bring a file or folder back from the trash to the path it had.' ;;
+        files_purge)       _ts=files _ta=purge _tp=path _tk=path _th=d _tt='files purge PATH' _td='Delete for good the newest file or folder the trash holds from path, the path it had: it cannot be brought back.' ;;
+        files_empty)       _ts=files _ta=empty _th=d _tt='files empty' _td='Empty the trash of your home folder: every file and folder in it is deleted for good.' ;;
         files_new_folder)  _ts=files _ta=new-folder _tp=path _tk=path _te='name:filename' _th='' _tt='files new-folder PATH' _td='Make a folder inside the folder path names, with the name given. Undo trashes it.' ;;
         files_new_text)    _ts=files _ta=new-text _tp=path _tk=path _te='name:filename' _th='' _tt='files new-text PATH' _td='Make an empty text file inside the folder path names, with the name given, and open it in the editor. Undo trashes it.' ;;
         files_find)        _ts=files _ta=find _tp=words _tk=string _th=rf _tt='files find WORDS' _td='Which files and folders under your home and your drives have these words in their name; the list opens.' ;;
@@ -6428,12 +6435,12 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
                 else {type: "string", minLength: 1, maxLength: 256} end) + (if $w == "" then {} else {description: $w} end))} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)
-              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} elif .[1] == "filename" then {type: "string", minLength: 1, maxLength: 255, description: "one name, no slash"} elif .[1] == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"} elif .[1] == "seconds" then {type: "number", minimum: 0, maximum: 86400, description: "where to start, in seconds"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
-            required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text" and .[1] != "seconds") | .[0]]), additionalProperties: false},
+              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} elif .[1] == "filename" then {type: "string", minLength: 1, maxLength: 255, description: "one name, no slash"} elif .[1] == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"} elif .[1] == "seconds" then {type: "number", minimum: 0, maximum: 86400, description: "where to start, in seconds"} elif .[1] == "pixels" then {type: "integer", minimum: 0, maximum: 65535, description: "pixels from the corner of the dialog"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
+            required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text" and .[1] != "seconds" and .[1] != "pixels") | .[0]]), additionalProperties: false},
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"}, open: {type: "string"},
             effect: {type: "object", properties: {kind: {type: "string"}, operation: {type: "string"}, id: {type: "string"}, title: {type: "string"}, localTime: {type: "string"}, level: {type: "integer"}, muted: {type: "boolean"}}, required: ["kind", "operation", "id", "title"], additionalProperties: false},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
-            palette: {type: "object", additionalProperties: {type: "string"}}},
+            palette: {type: "object", additionalProperties: {type: "string"}}, transitions: {type: "string"}},
             required: (if $n == "notes_add" or $n == "notes_append" or ($n | startswith("reminders_")) or ($n | test("^(out|mic)_(level|adjust|mute|unmute)$")) then ["receipt", "effect"] elif $n == "window_focus" or $n == "window_close" then ["effect"] else [] end), additionalProperties: false},
          annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}
          | if $n == "notes_append" then .inputSchema = {type:"object", properties:{name:{type:"string", minLength:1, maxLength:255, description:"Exact existing Markdown filename"}, text:{type:"string", minLength:1, maxLength:16384, contentMediaType:"text/plain", description:"Text to append; spaces and line breaks are preserved"}}, required:["name","text"], additionalProperties:false} else . end'
@@ -6592,7 +6599,7 @@ provide_main() {   # provide_main SECTION -- serve it until stdin ends
     exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in; whatever a step prints goes to stderr
     WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; CLIENT_PAIRING=''; : > "$PROOTS"
     REM_DELETED=$TMP/deleted   # a reminder deleted here is kept until the provider ends: its undo (#111)
-    trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; files_stop; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
+    trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; files_stop; files_sound_stop; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
     trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # a signal ends a provider through the EXIT trap: the watcher, the reader and the temp folder go (#37)
     mkfifo "$TMP/in"
     ( provide_input ) <&6 5>"$TMP/in" 3>&- & READER=$!
@@ -6635,7 +6642,7 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
         resources/templates/list) if [ "$sec" = files ]; then rpc_result "$_id" '{"resourceTemplates":[{"uriTemplate":"spark-shell://files/rows/{folder}{?from}","name":"folder","title":"a folder under the roots, a page of it from an entry","mimeType":"application/json"},{"uriTemplate":"spark-shell://files/preview/{file}{?page}","name":"preview","title":"a file shown as a page","mimeType":"application/json"}]}'; else rpc_result "$_id" '{"resourceTemplates":[]}'; fi ;;
         resources/read|resources/subscribe|resources/unsubscribe)
             _uri=$(printf '%s' "$_params" | jq -r '.uri // "" | tostring')
-            if [ "$sec" = files ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://files/rows/?*) true ;; *) false ;; esac; then   # a folder under the roots
+            if [ "$sec" = files ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://files/rows/?*) true ;; *) false ;; esac; then   # a folder under the roots, or the trash (#130)
                 if provide_files_rows "$_uri" > "$TMP/folder.json"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/folder.json")"
                 else rpc_error "$_id" -32002 "no folder at that uri"; fi
                 return 0
@@ -6728,8 +6735,8 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         if type != "object" then "arguments are an object"
         elif (keys - [$p, $q] - $xk - [""]) != [] then "no argument " + ((keys - [$p, $q] - $xk)[0])
         elif $p != "" and (has($p) | not) then "missing " + $p
-        elif ([$xs[] | select(.[1] != "text" and .[1] != "seconds") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text" and .[1] != "seconds") | . as $e | select(($a | has($e[0])) | not)][0][0])
-        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
+        elif ([$xs[] | select(.[1] != "text" and .[1] != "seconds" and .[1] != "pixels") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text" and .[1] != "seconds" and .[1] != "pixels") | . as $e | select(($a | has($e[0])) | not)][0][0])
+        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds" and .[1] != "pixels") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds" and .[1] != "pixels") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
         elif any($xs[]; . as $e | .[1] == "filename" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | length) < 1 or ($a[$e[0]] | length) > 255 or ($a[$e[0]] | test("[\u0000-\u001f\u007f/]")))) then "name is one name, no slash, 255 characters at most"
         elif any($xs[]; . as $e | .[1] == "path" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | startswith("/") | not) or ($a[$e[0]] | length) > 4096 or ($a[$e[0]] | test("[\u0000-\u001f\u007f]")))) then "to is a whole path, plain text"
         elif ([$xs[] | select(.[1] == "text" or .[1] == "name") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text" or .[1] == "name") | .[0]][0]) + " is plain text, 40 characters at most"
@@ -6738,6 +6745,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif any($xs[]; . as $e | .[1] == "mode" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$") | not))) then "mode is WIDTHxHEIGHT or WIDTHxHEIGHT@REFRESHHz"
         elif any($xs[]; . as $e | .[1] == "net" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9.,:/-]{1,80}$") | not))) then "network values are addresses, none or auto"
         elif any($xs[]; . as $e | .[1] == "seconds" and ($a | has($e[0])) and (($a[$e[0]] | type) != "number" or $a[$e[0]] < 0 or $a[$e[0]] > 86400)) then "at is a number of seconds, 0 to 86400"
+        elif any($xs[]; . as $e | .[1] == "pixels" and ($a | has($e[0])) and (($a[$e[0]] | type) != "number" or $a[$e[0]] < 0 or $a[$e[0]] > 65535 or $a[$e[0]] != ($a[$e[0]] | floor))) then "x, y, w and h are whole numbers of pixels, 0 to 65535"
         elif any($xs[]; . as $e | .[1] == "port" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9_.:-]{1,80}$") | not))) then "other is a connected screen port"
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
@@ -6809,12 +6817,13 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     case $_name in notes_add|reminders_*|out_level|out_adjust|out_mute|out_unmute|mic_level|mic_adjust|mic_mute|mic_unmute|window_focus|window_close)
         [ -s "$TMP/action.effect" ] || { provide_refuse "$1" 'the action may have happened, but its result could not be read back; check the current state before trying again'; return 0; } ;;
     esac
-    _pal='null'   # a theme step: the palette as it is now, so the dialog repaints itself with it (its colors came in its environment at start)
+    _pal='null'; _trn='null'   # a theme step: the palette as it is now, so the dialog repaints itself with it (its colors came in its environment at start)
+    [ "$sec" != theme ] || { _trn=$(dialog_transitions); _trn=$(jq -cn --arg t "$_trn" '$t'); }   # and its animation now, read again by an open dialog (#126): "" plays none
     [ "$sec" != theme ] || { panel_load; _pal=$(jq -cn --arg f "$HEX_FG" --arg a "$HEX_ACCENT" --arg m "$PANEL_MUTED" --arg b "$PANEL_BG" --arg h "$PANEL_HI" --arg r "${HEX_ANSI_1:-}" --arg g "${HEX_ANSI_2:-}" '{HEX_FG: $f, HEX_ACCENT: $a, PANEL_MUTED: $m, PANEL_BG: $b, PANEL_HI: $h, HEX_ANSI_1: $r, HEX_ANSI_2: $g}'); }
     if [ -s "$TMP/network.undo" ]; then _undo=$(tool_call_json "${sec}_restore" "$(cat "$TMP/network.undo")"); fi
     if [ -s "$TMP/sound.undo" ]; then _undo=$(tool_call_json "${sec}_level" "$(cat "$TMP/sound.undo")"); fi
     if [ -f "$TMP/opened" ]; then _sc=$(jq -cn '{opened: true}')
-    else _sc=$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" '{receipt: $r} + (if $u == null then {} else {undo: $u} end) + (if $p == null then {} else {palette: $p} end)'); fi
+    else _sc=$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" --argjson t "$_trn" '{receipt: $r} + (if $u == null then {} else {undo: $u} end) + (if $p == null then {} else {palette: $p} end) + (if $t == null then {} else {transitions: $t} end)'); fi
     if [ -s "$TMP/action.effect" ]; then _sc=$(printf '%s' "$_sc" | jq -c --slurpfile e "$TMP/action.effect" '. + {effect: $e[0]}'); fi
     rpc_result "$1" "$(printf '%s' "$_sc" | jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
     [ -z "$SUBSCRIBED" ] || rpc_note notifications/resources/updated "$(jq -cn --arg u "spark-shell://$sec/rows" '{uri: $u}')"
@@ -6863,8 +6872,7 @@ FILES_RECENT_MAX=8
 FILES_FOUND_MAX=200      # a search lists this many at most
 FILES_DEPTH=12           # a search and the recent list walk this deep
 FILES_SKIP='node_modules target __pycache__ build dist venv Library'   # the folders a search and the recent list walk past (a hidden one, the lines skip)
-FILES_PICS='jpg jpeg png webp'   # a picture: a small picture beside the list while its row is lit, where the terminal draws it
-FILES_THUMB_DIR=$THUMB_DIR/files   # the pictures' small pictures, by a sum of the path and its time
+FILES_THUMB_DIR=$THUMB_DIR/files   # where v0.111 to v0.113 kept the pictures' small pictures: removed, Space shows a file whole (#127)
 files_roots() {   # -> the roots, one folder a line, each its own realpath: the host's, then every drive mounted (the udisks2 rows of #73)
     [ -z "${PROOTS:-}" ] || cat "$PROOTS" 2>/dev/null || :
     files_drives | cut -f2
@@ -6927,7 +6935,6 @@ files_home() { _tl='~'; _fhr=$(files_home_root); case $1 in "$HOME"|"$_fhr") ech
 # lists a page at a time.
 FILES_ROWS_MAX=1000      # a folder lists this many at a time, its last row opening the next
 FILES_ROWS_BYTES=400000  # and a page ends before its rows come near the 512 kB of a resource the dialog reads
-FILES_THUMBS_MAX=200     # a page's small pictures, drawn at an idle priority: a folder of thousands of photos never holds the CPU
 FILES_WALK_T=4           # the recent list and a folder's item counts walk this many seconds at most: what they found by then is shown
 FILES_SEARCH_T=8         # a search walks this many seconds at most, and says so when it stops
 files_num() { awk -v n="$1" 'BEGIN { s = sprintf("%d", n); r = ""; while (length(s) > 3) { r = "," substr(s, length(s) - 2) r; s = substr(s, 1, length(s) - 3) } print s r }'; }   # files_num N -> 12,345
@@ -6953,7 +6960,7 @@ files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' line
     _frs=''; [ ! -e "$TMP/walk.stopped" ] || _frs=1
     LC_ALL=C awk -F "$US" -v us="$US" -v group="$1" -v folders="$2" -v counts="${3:-}" -v cstop="$_frs" -v home="$(files_home_root)" \
         -v today="$(date +%Y%m%d)" -v yday="$(date -d "@$(( $(date +%s) - 86400 ))" +%Y%m%d 2>/dev/null || date -r "$(( $(date +%s) - 86400 ))" +%Y%m%d)" \
-        -v year="$(date +%Y)" -v pics=" $FILES_PICS " -v thumbs="$FILES_THUMB_DIR" -v sum="$TMP/files.sum" -v links="$TMP/files.links" '
+        -v year="$(date +%Y)" -v sum="$TMP/files.sum" -v links="$TMP/files.links" '
         function b64(s,   r, i, n, t) {   # base64url, no padding: files_b64
             r = ""; n = length(s)
             for (i = 1; i <= n; i += 3) {
@@ -6964,7 +6971,6 @@ files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' line
             }
             return r
         }
-        function hash(s,   i, a, b, c) { a = 0; b = 0; for (i = 1; i <= length(s); i++) { c = ord[substr(s, i, 1)]; a = (a * 31 + c) % 2147483647; b = (b * 131 + c) % 1000000007 } return sprintf("%08x%08x", a, b) }
         function clean(s) { gsub(/[\001-\037\177]|\302[\200-\237]|\342\200[\213-\217\250-\256]|\342\201[\240\246-\251]|\357\273\277/, "", s); return s }   # SCRUB_JQ, on bytes
         function size(n) { if (n < 1024) return sprintf("%d B", n); if (n < 1048576) return sprintf("%d KB", n / 1024); if (n < 1073741824) return sprintf("%.1f MB", n / 1048576); return sprintf("%.1f GB", n / 1073741824) }
         function when(d) { if (d == today) return "today"; if (d == yday) return "yesterday"; if (substr(d, 1, 4) == year) return substr(d, 7, 2) " " mon[substr(d, 5, 2) + 0]; return substr(d, 1, 4) }
@@ -6983,21 +6989,20 @@ files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' line
                 nd++; c = (p in cnt) ? cnt[p] : (counts != "" && !cstop ? 0 : "")
                 print "0" us "files:dir:" id us "opens" us text us "spark-shell://files/rows/" id us p us (c == "" ? "" : c " " (c == 1 ? "item" : "items")) us "" us group us c3 us "dir" us ""
             } else if (t ~ /^regular/) {
-                nf++; nb += $2; pv = ""; e = tolower(name)
-                if (e ~ /.\./) { sub(/.*\./, "", e); if (index(pics, " " e " ")) pv = thumbs "/" hash(p " " $3) ".png" }
-                print "1" us "files:file:" id us "blank" us text us "" us p us size($2) us when(substr($4, 1, 4) substr($4, 6, 2) substr($4, 9, 2)) us group us c3 us "file" us pv
+                nf++; nb += $2
+                print "1" us "files:file:" id us "blank" us text us "" us p us size($2) us when(substr($4, 1, 4) substr($4, 6, 2) substr($4, 9, 2)) us group us c3 us "file" us ""
             } else if (t ~ /^symbolic/) {
                 print "2" us "files:link:" id us "blank" us text " -> " clean(to[p]) us "" us "" us "" us "" us group us "" us "link" us ""
             }   # a device, a socket, a pipe: not listed
         }
         END { printf "%d %d %.0f\n", nf, nd, nb > sum }'
 }
-files_slice() {   # files_slice FROM < row lines -> the page's rows from FROM: FILES_ROWS_MAX at most and about FILES_ROWS_BYTES of JSON, the first FILES_THUMBS_MAX pictures' small pictures asked for ($TMP/files.thumbs); $TMP/files.left "NEXT LEFT"
-    awk -F "$US" -v OFS="$US" -v from="$1" -v max="$FILES_ROWS_MAX" -v bytes="$FILES_ROWS_BYTES" -v pics="$FILES_THUMBS_MAX" -v thumbs="$TMP/files.thumbs" -v left="$TMP/files.left" '
+files_slice() {   # files_slice FROM < row lines -> the page's rows from FROM: FILES_ROWS_MAX at most and about FILES_ROWS_BYTES of JSON; $TMP/files.left "NEXT LEFT"
+    awk -F "$US" -v from="$1" -v max="$FILES_ROWS_MAX" -v bytes="$FILES_ROWS_BYTES" -v left="$TMP/files.left" '
         NR <= from { next }
         !stop { b += length($0) + ($10 == "file" ? length($1) + 150 : 120); if (k > 0 && (k >= max || b > bytes)) { stop = 1; at = NR - 1 } }   # its JSON, near enough (a file repeats its id in its page); a page holds one row at least
         stop { rest++; next }
-        { k++; if ($11 != "") { if (++np <= pics) print $5 "\t" $11 >> thumbs; else $11 = "" } print }
+        { k++; print }
         END { printf "%d %d\n", (stop ? at : NR), rest > left }'
 }
 files_list() {   # files_list FOLDER [GROUP] [FROM] -> the folder's rows from FROM: its folders, then its files, each by name, a page of them; a link shown and never followed; FILES_N, FILES_D and FILES_B count the whole folder, FILES_NEXT and FILES_LEFT what follows the page
@@ -7047,18 +7052,11 @@ files_search() {   # files_search find|say WORDS -> the rows of a search over ev
     if [ $((_fsn + _fsd)) -eq 0 ] && [ ! -e "$TMP/walk.stopped" ]; then printf 'files:total\037blank\037%s\037\037\037\037\037\037\037total\037\n' "nothing found"
     elif [ -e "$TMP/walk.stopped" ]; then printf 'files:total\037blank\037%s\037\037\037\037\037\037\037total\037\n' "the search stopped at $FILES_SEARCH_T seconds: $((_fsn + _fsd)) found"; fi
 }
-files_thumbs() {   # the pictures' small pictures, PATH<tab>THUMB a line on stdin: each made where it is not there yet; a week-old one goes; quiet
-    mkdir_state "$FILES_THUMB_DIR" 2>/dev/null || return 0
-    find "$FILES_THUMB_DIR" -name '*.png' -mtime +7 -exec rm -f {} + 2>/dev/null || :
-    while IFS="$TAB" read -r _ftp _ftt; do
-        [ -n "$_ftt" ] && [ ! -f "$_ftt" ] || continue
-        pic_small "$_ftp" "$TMP/thumb.png" 2>/dev/null && cp "$TMP/thumb.png" "$_ftt.${TMP##*/}" && mv "$_ftt.${TMP##*/}" "$_ftt" || :   # a whole file or none: the dialog may read it meanwhile
-    done
-}
 FILES_TEXT_MAX=131072    # a text's preview, at most: past it the preview says where it ends (Enter opens the whole file)
 FILES_PAGE_PX=1600       # a preview's picture, its long side at most, in pixels: a page at full screen fits under it
 FILES_FULL_PX=4096       # the same drawn larger, once a zoom asks for more than it holds (the dialog decodes 4096 a side at most)
 FILES_TOOL_T=10          # a tool a preview runs on a file, at most this many seconds: a file is untrusted
+FILES_SOUND_T=300        # a sound's waveform, drawn aside: at most this many seconds (a long recording is read whole) (#124)
 # The kinds a preview knows (#120), by a file's type: a line each, the kind, then its types.
 FILES_KINDS='markdown md markdown
 json json
@@ -7177,6 +7175,32 @@ audio_bits() {   # audio_bits FILE -> the bits of a FLAC's, a WAV's or an AIFF's
                     if (id(o) == "COMM") { print be(o + 14, 2); exit } }
         }'
 }
+files_sound_draw() {   # files_sound_draw PATH BASE -- BASE-sound.png, the waveform over the spectrogram, drawn aside by mpv (one at a time: another sound's stops the last), waited for a moment so a short sound's comes with its page (#124)
+    if [ -f "$TMP/sound.job" ]; then
+        read -r _fsj _fsb < "$TMP/sound.job"
+        if [ "$_fsb" = "$2" ] && kill -0 "$_fsj" 2>/dev/null; then files_sound_wait "$2"; return 0; fi
+        files_sound_stop
+    fi
+    (
+        FILES_IDLE=1; FILES_TOOL_T=$FILES_SOUND_T; _fsd=$(mktemp -d) || exit 0
+        # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
+        files_tool mpv $MPV_SAFE --untimed --really-quiet --ao=null --vo=image --vo-image-format=png --vo-image-outdir="$_fsd" \
+            --lavfi-complex="[aid1]asplit[a][b];[a]showwavespic=s=1600x${FILES_WAVE_PX}:split_channels=0:colors=white:scale=sqrt[w];[b]showspectrumpic=s=1600x512:legend=0:fscale=log:scale=log[s];[w][s]vstack=inputs=2[vo]" \
+            -- "$1" </dev/null >/dev/null 2>&1 &
+        echo "$!" > "$2-sound.pid"; wait "$!"
+        mv "$_fsd/00000001.png" "$2-sound.png.new" 2>/dev/null && mv "$2-sound.png.new" "$2-sound.png"   # whole or not there: the dialog reads it as it comes
+        rm -rf "$_fsd" "$2-sound.pid"
+    ) </dev/null >/dev/null 2>&1 &
+    echo "$! $2" > "$TMP/sound.job"
+    files_sound_wait "$2"
+}
+files_sound_wait() { _fsw=0; while [ "$_fsw" -lt 15 ] && [ ! -f "$1-sound.png" ]; do sleep 0.1; _fsw=$((_fsw + 1)); done; }   # files_sound_wait BASE -- a moment, 1.5 s: a short sound's picture comes with its page
+files_sound_stop() {   # the waveform being drawn aside, stopped (another sound's is wanted, or the provider ends)
+    [ -f "$TMP/sound.job" ] || return 0
+    read -r _fsj _fsb < "$TMP/sound.job"
+    [ ! -f "$_fsb-sound.pid" ] || kill "$(cat "$_fsb-sound.pid")" 2>/dev/null || :
+    kill "$_fsj" 2>/dev/null || :; rm -f "$TMP/sound.job"
+}
 files_time() { awk -v s="$1" 'BEGIN { s = int(s + 0.5); h = int(s / 3600); m = int(s % 3600 / 60); if (h > 0) printf "%d:%02d:%02d", h, m, s % 60; else printf "%d:%02d", m, s % 60 }'; }   # files_time SECONDS -> 3:45, 1:02:03
 files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.json: a sound's tags, its waveform over its spectrogram (drawn once, whole, by mpv), what an audio engineer asks first (rate, bits, channels, format, the bitrate of a lossy one), right plays it here; a video's frame, PX wide at most, its length and size, right plays it in its app
     command -v mpv >/dev/null 2>&1 || { files_say "No preview: mpv is not installed. Enter opens it."; return 0; }
@@ -7206,8 +7230,11 @@ files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.jso
                 --start=10% --frames=1 $_fmv -- "$1" </dev/null >/dev/null 2>&1
             mv "$TMP/frame/00000001.png" "$3.png" 2>/dev/null
         } || { files_say "No preview: no frame of this video could be drawn. Enter opens it."; return 0; }
-        jq -cn --arg p "$3.png" --argjson a "$_fma" --argjson z "$_fmz" --argjson f "$_fmu" \
-            '{picture: $p, full: $f, play: {name: "files_open", arguments: $a, said: "play"}} + (if $z == null then {} else {size: $z} end)' > "$TMP/page.json"
+        # played over its frame where sway is (#125), its length the clock; else in its app
+        _fmh=''; ! files_video_here || _fmh=1
+        jq -cn --arg p "$3.png" --argjson a "$_fma" --argjson z "$_fmz" --argjson f "$_fmu" --arg h "$_fmh" --argjson n "${_fms:-0}" \
+            '{picture: $p, full: $f} + (if $h != "" then {play: {name: "files_play", arguments: $a, said: "play"}, stop: {name: "files_stop", arguments: {}, said: "stop"}, seconds: $n}
+               else {play: {name: "files_open", arguments: $a, said: "play"}} end) + (if $z == null then {} else {size: $z} end)' > "$TMP/page.json"
         return 0
     fi
     # what an audio engineer asks first: the rate, the bits of a lossless one, the channels, the format, a lossy one's bitrate
@@ -7218,16 +7245,11 @@ files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.jso
     case $_fmc in 1) echo mono ;; 2) echo stereo ;; ''|0) ;; *) echo "$_fmc channels" ;; esac >> "$TMP/page.lead"
     case $_fmk in pcm_*) echo PCM ;; '') ;; *) printf '%s\n' "$_fmk" | tr 'a-z' 'A-Z' ;; esac >> "$TMP/page.lead"
     [ -z "$_fml" ] || awk -v b="$(wc -c < "$1")" -v s="${_fms:-0}" 'BEGIN { if (s > 0) printf "%d kbps\n", b * 8 / s / 1000 + 0.5 }' >> "$TMP/page.lead"
-    # the waveform over the spectrogram, one picture, the whole sound read once (lavfi, about 0.2 s a few minutes)
-    [ -f "$3-sound.png" ] || {
-        rm -rf "$TMP/frame"; mkdir -p "$TMP/frame"
-        # shellcheck disable=SC2086
-        files_tool mpv $MPV_SAFE --untimed --really-quiet --ao=null --vo=image --vo-image-format=png --vo-image-outdir="$TMP/frame" \
-            --lavfi-complex="[aid1]asplit[a][b];[a]showwavespic=s=1600x${FILES_WAVE_PX}:split_channels=0:colors=white:scale=sqrt[w];[b]showspectrumpic=s=1600x512:legend=0:fscale=log:scale=log[s];[w][s]vstack=inputs=2[vo]" \
-            -- "$1" </dev/null >/dev/null 2>&1
-        mv "$TMP/frame/00000001.png" "$3-sound.png" 2>/dev/null
-    } || rm -f "$3-sound.png"
-    _fmp=''; [ ! -f "$3-sound.png" ] || _fmp=$3-sound.png
+    # the waveform over the spectrogram, one picture, the whole sound read once: drawn aside at an idle priority, as long as a
+    # long recording takes; the page answers at once, a short sound's picture with it, and the dialog draws the picture the
+    # moment it is there (#124)
+    [ -f "$3-sound.png" ] || files_sound_draw "$1" "$3"
+    _fmp=$3-sound.png
     sed -n '8p' "$TMP/page.media" > "$TMP/page.tags"; sed -n '9,10p' "$TMP/page.media" | awk 'NF { s = s (s == "" ? "" : " \302\267 ") $0 } END { if (s != "") print s }' >> "$TMP/page.tags"
     jq -Rn --argjson a "$_fma" --argjson n "${_fms:-0}" --arg p "$_fmp" --argjson h "$FILES_WAVE_PX" '[inputs | select(. != "")] as $l
         | {lines: $l, bold: (if ($l | length) > 0 then [0] else [] end), seconds: $n,
@@ -7247,14 +7269,38 @@ files_play() {   # files_play PATH [AT] -- a sound played here from AT seconds, 
     mpv $MPV_SAFE --no-video --no-terminal --really-quiet --start="+${2:-0}" -- "$1" </dev/null >/dev/null 2>&1 &
     echo "$!" > "$TMP/play.pid"
 }
+files_video_here() { [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 && swaymsg -t get_version >/dev/null 2>&1; }   # a video plays over its preview: sway is here to lay the player over the dialog (#125)
+files_play_video() {   # files_play_video PATH AT X Y W H -- a video played over its preview's frame (#125): mpv with no border at the frame's place on the screen (X Y W H in the terminal's pixels from the corner of the dialog's grid), sway's rules keeping the keys in the dialog; says why not and fails where it cannot
+    _fvt=$(swaymsg -t get_tree 2>/dev/null) || { echo "sway does not answer"; return 1; }
+    _fvd=$(printf '%s' "$_fvt" | jq -r 'first(.. | objects | select(.app_id? == "spark-dialog" and .focused? == true) | "\(.rect.x + .window_rect.x) \(.rect.y + .window_rect.y) \(.fullscreen_mode // 0)") // empty')
+    [ -n "$_fvd" ] || { echo "the dialog's window is not found"; return 1; }
+    case $_fvd in *' 0') ;; *) echo "full screen, Enter opens it in its app"; return 1 ;; esac   # sway draws a full screen window over a floating one
+    _fvo=$(printf '%s' "$_fvt" | jq -r 'first(.nodes[] | select(.type == "output") | select(any(.. | objects; .app_id? == "spark-dialog" and .focused? == true)) | .name) // empty')
+    _fvs=$(swaymsg -t get_outputs 2>/dev/null | jq -r --arg o "$_fvo" 'first(.[] | select(.name == $o) | .scale) // 1')
+    _fvp=$(sed -n 's/^pad=\([0-9]*\)x\([0-9]*\).*/\1 \2/p' "$HOME/.config/foot/dialog.ini" 2>/dev/null | head -1)
+    # the frame on the screen, in sway's units: the window's corner, foot's padding, the dialog's pixels by the screen's scale
+    # shellcheck disable=SC2086   # numbers, split on purpose
+    _fvg=$(printf '%s %s %s %s %s %s\n' "$3 $4 $5 $6" ${_fvd% *} ${_fvp:-0 0} | awk -v s="${_fvs:-1}" '{ if (s <= 0) s = 1; printf "%d %d %d %d", $5 + $7 + $1 / s, $6 + $8 + $2 / s, $3 / s, $4 / s }')
+    files_stop
+    # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
+    mpv $MPV_SAFE --wayland-app-id=spark-preview --no-border --osc=no --osd-level=0 --no-terminal --really-quiet --keep-open=no --start="+$2" -- "$1" </dev/null >/dev/null 2>&1 &
+    echo "$!" > "$TMP/play.pid"
+    # shellcheck disable=SC2086   # four numbers
+    set -- $_fvg
+    _fvi=0; while [ "$_fvi" -lt 30 ] && ! swaymsg -t get_tree 2>/dev/null | jq -e 'any(.. | objects; .app_id? == "spark-preview")' >/dev/null 2>&1; do sleep 0.1; _fvi=$((_fvi + 1)); done
+    swaymsg "[app_id=\"spark-preview\"] floating enable, border none, resize set $3 $4, move absolute position $1 $2" >/dev/null 2>&1 || :
+}
 files_stop() { [ ! -f "$TMP/play.pid" ] || { kill "$(cat "$TMP/play.pid")" 2>/dev/null || :; rm -f "$TMP/play.pid"; }; }   # the sound playing here, stopped; quiet when none plays
 provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one folder's, with your home's recent files at its top, its own steps at its end and the drives beside your home; a search's; false when the uri names no folder that holds to the lines
-    _fu=${1:-spark-shell://files/rows}; _fhere=''; : > "$TMP/files.thumbs"; FILES_N=0; FILES_B=0; FILES_D=0
+    _fu=${1:-spark-shell://files/rows}; _fhere=''; FILES_N=0; FILES_B=0; FILES_D=0
+    [ ! -d "$FILES_THUMB_DIR" ] || rm -rf "$FILES_THUMB_DIR"   # the small pictures of v0.111 to v0.113 go: Space shows a file whole (#127)
     _ffm=''; ! files_manager_ok || _ffm=1   # the browse row, the reveal step and a folder's own tool only where a system file manager is configured (#114)
     case $_fu in
         spark-shell://files/rows)
             files_roots | while IFS= read -r _fr; do [ -n "$_fr" ] && printf 'files:root:%s\037opens\037%s\037%s\037\037\037\037\037\037root\037\n' "$(files_b64 "$_fr")" "$(files_home "$_fr" | scrub_text)" "$(files_uri "$_fr")"; done > "$TMP/files.rows"
             _ft='files' ;;
+        spark-shell://files/rows/trash)   # the trash, a place of its own, a list the dialog opens as a folder's (#130)
+            files_trash_rows > "$TMP/files.rows"; _ft='trash' ;;
         spark-shell://files/rows/find/?*|spark-shell://files/rows/say/?*)
             _fk=${_fu#spark-shell://files/rows/}; _fk=${_fk%%/*}; _fw=$(files_unb64 "${_fu##*/}") || return 1
             files_search "$_fk" "$_fw" > "$TMP/files.rows" || return 1
@@ -7265,38 +7311,32 @@ provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one fold
             _fp=$(files_unb64 "$_fq") && _fp=$(files_ok "$_fp" dir) || return 1
             _ft=$(files_home "$_fp" | scrub_text); _fhere=$_fp; _fg=''; : > "$TMP/files.rows"
             files_is_root "$_fp" || printf 'files:up\037opens\037..\037%s\037\037\037\037\037\037up\037\n' "$(files_uri "$(dirname "$_fp")")" >> "$TMP/files.rows"
-            if [ "$_fp" = "$(files_home_root)" ] && [ "$_ffrom" = 0 ]; then files_recent > "$TMP/files.recent"; [ ! -s "$TMP/files.recent" ] || { cat "$TMP/files.recent" >> "$TMP/files.rows"; _fg=home; }; fi
+            _fr=''; if [ "$_fp" = "$(files_home_root)" ] && [ "$_ffrom" = 0 ]; then files_recent > "$TMP/files.recent"; [ ! -s "$TMP/files.recent" ] || { _fr=1; _fg=home; }; fi
             files_list "$_fp" "$_fg" "$_ffrom" >> "$TMP/files.rows"
             [ "${FILES_LEFT:-0}" -eq 0 ] || printf 'files:more\037opens\037the next page\037%s?from=%s\037\037%s more\037\037%s\037\037more\037\n' "$(files_uri "$_fp")" "$FILES_NEXT" "$(files_num "$FILES_LEFT")" "$_fg" >> "$TMP/files.rows"
-            # the total: the files and their size; a folder of folders counts its folders; nothing listed is empty
-            if [ "$FILES_N" -gt 0 ]; then _fw="files"; [ "$FILES_N" != 1 ] || _fw="file"; _fw="$(files_num "$FILES_N") $_fw $PANEL_SEP $(files_size "$FILES_B")"
-            elif [ "$FILES_D" -gt 0 ]; then _fw="folders"; [ "$FILES_D" != 1 ] || _fw="folder"; _fw="$(files_num "$FILES_D") $_fw"
-            else _fw=empty; fi
-            { printf 'files:total\037blank\037%s\037\037\037\037\037this folder\037\037total\037\n' "$_fw"
-              printf 'files:new-folder\037opens\037new folder\037\037%s\037\037\037this folder\037\037new-folder\037\n' "$_fp"
-              printf 'files:new-text\037opens\037new text file\037\037%s\037\037\037this folder\037\037new-text\037\n' "$_fp"
-              [ -z "$_ffm" ] || printf 'files:browse\037opens\037open in the system file manager\037\037%s\037\037\037this folder\037\037browse\037\n' "$_fp"; } >> "$TMP/files.rows"
-            [ "$_fp" != "$(files_home_root)" ] || files_drives | while IFS="$TAB" read -r _fdn _fdm _fdf; do printf 'files:drive:%s\037opens\037%s\037%s\037\037%s\037\037drives\037\037drive\037\n' "$(files_b64 "$_fdm")" "$(printf '%s' "$_fdn" | scrub_text)" "$(files_uri "$_fdm")" "$_fdf"; done >> "$TMP/files.rows" ;;
+            [ "$_fp" != "$(files_home_root)" ] || [ "$_ffrom" != 0 ] || printf 'files:trash\037opens\037trash\037spark-shell://files/rows/trash\037\037%s\037\037%s\037\037trashdir\037\n' "$(files_trash_count)" "$_fg" >> "$TMP/files.rows"   # the trash, where a trashed file can be seen and brought back (#130)
+            [ -z "$_fr" ] || cat "$TMP/files.recent" >> "$TMP/files.rows"   # your home starts with home, the recent files below it (#127)
+            [ "$_fp" != "$(files_home_root)" ] || files_drives | while IFS="$TAB" read -r _fdn _fdm _fdf; do printf 'files:drive:%s\037opens\037%s\037%s\037\037%s\037\037drives\037\037drive\037\n' "$(files_b64 "$_fdm")" "$(printf '%s' "$_fdn" | scrub_text)" "$(files_uri "$_fdm")" "$_fdf"; done >> "$TMP/files.rows"
+            # this folder, one row at the end: what it holds, and its own actions on Right or Enter (#127)
+            _fw=''; [ "$FILES_D" -eq 0 ] || { _fw="folders"; [ "$FILES_D" != 1 ] || _fw="folder"; _fw="$(files_num "$FILES_D") $_fw"; }
+            [ "$FILES_N" -eq 0 ] || { _fx="files"; [ "$FILES_N" != 1 ] || _fx="file"; _fw="${_fw:+$_fw $PANEL_SEP }$(files_num "$FILES_N") $_fx $PANEL_SEP $(files_size "$FILES_B")"; }
+            printf 'files:here\037opens\037this folder %s %s\037\037%s\037\037\037\037\037here\037\n' "$PANEL_SEP" "${_fw:-empty}" "$_fp" >> "$TMP/files.rows" ;;
     esac
-    if [ -s "$TMP/files.thumbs" ]; then   # the small pictures, while the list is shown: a row without one yet draws none
-        FILES_TN=$((${FILES_TN:-0} + 1)); cp "$TMP/files.thumbs" "$TMP/files.thumbs.$FILES_TN"
-        ( FILES_IDLE=1; _fl=$TMP/files.thumbs.$FILES_TN; TMP=$(mktemp -d) && { files_thumbs < "$_fl"; rm -rf "$TMP" "$_fl"; } ) >/dev/null 2>&1 </dev/null 3>&- 4<&- 5>&- &   # at an idle priority (files_tool)
-    fi
     jq -Rn --arg t "$_ft" --arg here "$_fhere" --arg fm "$_ffm" '
         def steps: (if $fm != "" then [{name: "files_reveal", said: "reveal in the system file manager"}] else [] end) + [{name: "files_rename", ask: ["name"], said: "rename"},
             {name: "files_move", pick: "to", said: "move to a folder"}, {name: "files_copy", pick: "to", said: "copy to a folder"}, {name: "files_trash", said: "trash"}];
         # the steps once a list, by kind: a row of a kind takes them with its own path (#123), so a page of a thousand stays small
         {file: {tool: {name: "files_open", said: "open"}, more: ([{name: "files_preview", said: "preview"}, {name: "files_attach", said: "attach to the next request"}] + steps)},
-         dir: ({more: steps} + (if $fm != "" then {tool: {name: "files_browse", said: "open in the system file manager"}} else {} end))} as $kinds |
+         dir: ({more: steps} + (if $fm != "" then {tool: {name: "files_browse", said: "open in the system file manager"}} else {} end)),
+         trashed: {tool: {name: "files_restore", said: "restore"}, more: [{name: "files_purge", said: "delete for good"}]}} as $kinds |
         [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end), path: .[4], c1: .[5], c2: .[6], group: (if .[7] == "" then null else .[7] end), c3: .[8], kind: .[9], preview: .[10]}
             | {path: .path} as $a
             | {id, sign, text: (.text | '"$SCRUB_JQ"'), children, group, columns: ([.c1, .c2, .c3] | map(select(. != null and . != "") | '"$SCRUB_JQ"')),
                page: (if .kind == "file" then "spark-shell://files/preview/" + (.id | ltrimstr("files:file:")) else null end),
-               kind: (if .kind == "file" or .kind == "dir" then .kind else null end), args: (if .kind == "file" or .kind == "dir" then $a else null end),
-               tool: (if .kind == "browse" and $fm != "" then {name: "files_browse", arguments: $a, said: "open in the system file manager"}
-                      elif .kind == "new-folder" then {name: "files_new_folder", arguments: $a, ask: ["name"], said: "new folder"}
-                      elif .kind == "new-text" then {name: "files_new_text", arguments: $a, ask: ["name"], said: "new text file"}
-                      else null end),
+               kind: (if .kind == "file" or .kind == "dir" or .kind == "trashed" then .kind else null end), args: (if .kind == "file" or .kind == "dir" or .kind == "trashed" then $a else null end),
+               more: (if .kind == "here" then [{name: "files_new_folder", arguments: $a, ask: ["name"], said: "new folder"}, {name: "files_new_text", arguments: $a, ask: ["name"], said: "new text file"}]
+                          + (if $fm != "" then [{name: "files_browse", arguments: $a, said: "open in the system file manager"}] else [] end)
+                      elif .kind == "trash-here" then [{name: "files_empty", arguments: {}, said: "empty the trash"}] else null end),
                preview: (if .preview != "" then .preview else null end)}
               | with_entries(select(.value != null))] as $rows
         | {title: $t, kinds: $kinds, rows: $rows, short: [$rows[] | select(.id | startswith("files:root:")) | .id]} + (if $here == "" then {} else {here: $here} end)' "$TMP/files.rows"
@@ -7322,21 +7362,71 @@ files_trash() {   # files_trash PATH -> one line: PATH in the trash, by gio wher
     fi
     echo "${1##*/} is in the trash"
 }
-files_restore() {   # files_restore PATH -> one line: the newest file the trash holds from PATH put back where it was, by the spec's own records (so gio's are read too)
-    _ftd=$(files_trash_dir "$1") || { echo "no trash holds ${1##*/}"; return 1; }
-    _ftr=$(files_root_of "$1")
-    [ ! -e "$1" ] && [ ! -L "$1" ] || { echo "${1##*/} is there already"; return 1; }
+files_trashed() {   # files_trashed PATH -> the name under the trash's files/ of the newest file it holds from PATH, by the spec's own records (so gio's are read too); nothing when none
     ls -t "$_ftd/info" 2>/dev/null | while IFS= read -r _fri; do
         case $_fri in *.trashinfo) ;; *) continue ;; esac
         _frp=$(files_urldec "$(sed -n 's/^Path=//p' "$_ftd/info/$_fri" | head -1)")
         case $_frp in /*) ;; *) _frp=${_ftd%/.Trash-*}/$_frp ;; esac
-        [ "$_frp" = "$1" ] && [ -e "$_ftd/files/${_fri%.trashinfo}" ] || continue
+        [ "$_frp" = "$1" ] && { [ -e "$_ftd/files/${_fri%.trashinfo}" ] || [ -L "$_ftd/files/${_fri%.trashinfo}" ]; } || continue
         printf '%s\n' "${_fri%.trashinfo}"; break
-    done > "$TMP/files.restore"
-    _frn=$(cat "$TMP/files.restore"); [ -n "$_frn" ] || { echo "the trash holds nothing from ${1##*/}"; return 1; }
+    done
+}
+files_restore() {   # files_restore PATH -> one line: the newest file the trash holds from PATH put back where it was, by the spec's own records (so gio's are read too)
+    _ftd=$(files_trash_dir "$1") || { echo "no trash holds ${1##*/}"; return 1; }
+    [ ! -e "$1" ] && [ ! -L "$1" ] || { echo "${1##*/} is there already"; return 1; }
+    _frn=$(files_trashed "$1"); [ -n "$_frn" ] || { echo "the trash holds nothing from ${1##*/}"; return 1; }
     mv "$_ftd/files/$_frn" "$1" || { echo "could not bring ${1##*/} back"; return 1; }
     rm -f "$_ftd/info/$_frn.trashinfo"
     echo "${1##*/} is back"
+}
+files_purge() {   # files_purge PATH -> one line: the newest file the trash holds from PATH deleted for good, its record with it (#130)
+    _ftd=$(files_trash_dir "$1") || { echo "no trash holds ${1##*/}"; return 1; }
+    _frn=$(files_trashed "$1"); [ -n "$_frn" ] || { echo "the trash holds nothing from ${1##*/}"; return 1; }
+    rm -rf -- "$_ftd/files/$_frn" && rm -f -- "$_ftd/info/$_frn.trashinfo" || { echo "could not delete ${1##*/}"; return 1; }
+    echo "${1##*/} is deleted for good"
+}
+files_empty() {   # -> one line: your home's trash emptied, every file in it deleted for good with its record; a drive's own trash stays (#130)
+    _ftd=${XDG_DATA_HOME:-$HOME/.local/share}/Trash
+    _fen=$(find "$_ftd/files" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')
+    [ "${_fen:-0}" -gt 0 ] || { echo "the trash is empty already"; return 0; }
+    find "$_ftd/files" "$_ftd/info" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + 2>/dev/null || { echo "could not empty the trash"; return 1; }
+    rm -f -- "$_ftd/directorysizes"
+    echo "the trash is empty: $(files_num "$_fen") deleted for good"
+}
+files_trash_count() {   # -> the things in your home's trash, in words: 2 files, empty
+    _ftc=$(find "${XDG_DATA_HOME:-$HOME/.local/share}/Trash/files" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d ' ')
+    case $_ftc in 0|'') echo empty ;; 1) echo '1 item' ;; *) echo "$(files_num "$_ftc") items" ;; esac
+}
+files_trash_rows() {   # -> the rows of your home's trash, the newest first: each with its size, the day it was trashed and the folder it came from; restore and delete for good behind it; then the trash's own row, empty the trash behind it (#130)
+    _ftd=${XDG_DATA_HOME:-$HOME/.local/share}/Trash
+    find "$_ftd/info" -mindepth 1 -maxdepth 1 -name '*.trashinfo' -print0 2>/dev/null | files_nul > "$TMP/trash.infos"
+    # each record: when, its name under files/, the path it had (the spec's percent-encoding read here)
+    xargs -0 awk -F= '/^Path=/ && !p[FILENAME] { p[FILENAME] = substr($0, 6) } /^DeletionDate=/ && !d[FILENAME] { d[FILENAME] = substr($0, 14) }
+        END { for (f in p) { n = f; sub(/.*\//, "", n); sub(/\.trashinfo$/, "", n); print d[f] "\t" n "\t" p[f] } }' < "$TMP/trash.infos" 2>/dev/null | sort -t "$TAB" -k1,1r -k2,2 > "$TMP/trash.list"
+    cut -f2 "$TMP/trash.list" | while IFS= read -r _ftn; do printf '%s/files/%s\0' "$_ftd" "$_ftn"; done | files_stats > "$TMP/trash.stats"
+    LC_ALL=C awk -F '\t' -v us="$US" -v sep="$PANEL_SEP" -v home="$(files_home_root)" -v stats="$TMP/trash.stats" -v sum="$TMP/files.sum" \
+        -v today="$(date +%Y%m%d)" -v yday="$(date -d "@$(( $(date +%s) - 86400 ))" +%Y%m%d 2>/dev/null || date -r "$(( $(date +%s) - 86400 ))" +%Y%m%d)" -v year="$(date +%Y)" '
+        function hex(c) { return index("0123456789abcdef", tolower(c)) - 1 }
+        function dec(s,   r, i) { r = ""; for (i = 1; i <= length(s); i++) if (substr(s, i, 1) == "%" && i + 2 <= length(s)) { r = r sprintf("%c", hex(substr(s, i + 1, 1)) * 16 + hex(substr(s, i + 2, 1))); i += 2 } else r = r substr(s, i, 1); return r }
+        function clean(s) { gsub(/[\001-\037\177]|\302[\200-\237]|\342\200[\213-\217\250-\256]|\342\201[\240\246-\251]|\357\273\277/, "", s); return s }
+        function size(n) { if (n < 1024) return sprintf("%d B", n); if (n < 1048576) return sprintf("%d KB", n / 1024); if (n < 1073741824) return sprintf("%.1f MB", n / 1048576); return sprintf("%.1f GB", n / 1073741824) }
+        function when(d) { if (d == today) return "today"; if (d == yday) return "yesterday"; if (substr(d, 1, 4) == year) return substr(d, 7, 2) " " mon[substr(d, 5, 2) + 0]; return substr(d, 1, 4) }
+        BEGIN {
+            split("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec", mon, " ")
+            while ((getline l < stats) > 0) { split(l, sf, us); q = substr(l, length(sf[1] sf[2] sf[3] sf[4] sf[5]) + 6); k = q; sub(/.*\//, "", k); t[k] = tolower(sf[1]); z[k] = sf[2] }
+        }
+        {
+            if (!($2 in t)) next   # a record with nothing under files/: not listed
+            p = dec($3); if (p !~ /^\//) next; if (p ~ /[\001-\037\177]/) next
+            name = p; sub(/.*\//, "", name); d = p; sub(/\/[^\/]*$/, "", d); f = d; sub(/.*\//, "", f); if (d == home) f = "~"
+            day = substr($1, 1, 4) substr($1, 6, 2) substr($1, 9, 2)
+            n++; if (t[$2] !~ /^dir/) b += z[$2]
+            print "files:trashed:" clean($2) us "blank" us clean(name) us "" us p us (t[$2] ~ /^dir/ ? "folder" : size(z[$2])) us when(day) us "" us clean(f) us "trashed" us ""
+        }
+        END { printf "%d 0 %.0f\n", n, b > sum }' "$TMP/trash.list"
+    read -r _ftn _ftx _ftb < "$TMP/files.sum"
+    _ftw=empty; [ "$_ftn" -eq 0 ] || { _ftw="item"; [ "$_ftn" = 1 ] || _ftw="items"; _ftw="$(files_num "$_ftn") $_ftw $PANEL_SEP $(files_size "$_ftb")"; }
+    printf 'files:here\037opens\037the trash %s %s\037\037\037\037\037\037\037trash-here\037\n' "$PANEL_SEP" "$_ftw"
 }
 files_result() {   # files_result ID RECEIPT [UNDO-TOOL UNDO-ARGS-JSON] [open=URI] -- a step's result: the receipt, its undo, the uri to open
     _fr=$(jq -cn --arg r "$2" '{receipt: $r}')
@@ -7375,6 +7465,7 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
     _fa=$(printf '%s' "$3" | jq -r '.path // ""'); _fto=$(printf '%s' "$3" | jq -r '.to // ""'); _fnm=$(printf '%s' "$3" | jq -r '.name // ""'); _fws=$(printf '%s' "$3" | jq -r '.words // ""')
     case $2 in
         files_stop) files_stop; files_result "$1" "stopped"; return 0 ;;
+        files_empty) _fo=$(files_empty) || { provide_refuse "$1" "files: $_fo"; return 0; }; files_result "$1" "$_fo"; return 0 ;;   # for good: no undo (#130)
         files_find|files_say)
             _fk=${2#files_}; _fsw=$(printf '%s' "$_fws" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')
             [ -n "$_fsw" ] || { provide_refuse "$1" "files: $_fk takes the words to look for"; return 0; }
@@ -7390,6 +7481,12 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
             files_name_ok "${_ff##*/}" || { provide_refuse "$1" "files: that is not a name in the folders given"; return 0; }
             _fo=$(files_restore "$_ffd/${_ff##*/}") || { provide_refuse "$1" "files: $_fo"; return 0; }
             files_result "$1" "$_fo" files_trash "$(jq -cn --arg p "$_ffd/${_ff##*/}" '{path: $p}')"; return 0 ;;
+        files_purge)   # the path it had, held as restore holds it; for good: no undo (#130)
+            _ff=$_fa; case $_ff in /*) ;; *) provide_refuse "$1" "files: that is not a path in the folders given"; return 0 ;; esac
+            _ffd=$(files_ok "$(dirname "$_ff")" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; }
+            files_name_ok "${_ff##*/}" || { provide_refuse "$1" "files: that is not a name in the folders given"; return 0; }
+            _fo=$(files_purge "$_ffd/${_ff##*/}") || { provide_refuse "$1" "files: $_fo"; return 0; }
+            files_result "$1" "$_fo"; return 0 ;;
         files_new_folder|files_new_text)
             _fn=$(files_new_ok "$_fa" "$_fnm") || { provide_refuse "$1" "files: $_fn"; return 0; }
             if [ "$2" = files_new_folder ]; then mkdir "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not make $_fnm"; return 0; }
@@ -7410,8 +7507,15 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
     case $2 in
         files_open) files_open_text "$1" "$_ff" || files_open_with "$1" "$_ff" ;;
         files_play)
-            [ "$(files_kind "$_ff")" = sound ] && command -v mpv >/dev/null 2>&1 || { provide_refuse "$1" "files: $_fname is no sound mpv plays here"; return 0; }
             _fat=$(printf '%s' "$3" | jq -r '.at // 0 | if type == "number" and . >= 0 and . < 86400 then (. * 10 | floor) / 10 else 0 end')
+            if [ "$(files_kind "$_ff")" = video ] && command -v mpv >/dev/null 2>&1 && files_video_here; then   # over its frame (#125)
+                _fbx=$(printf '%s' "$3" | jq -r '[.x, .y, .w, .h] | if all(type == "number" and . >= 0 and . <= 65535) then map(floor | tostring) | join(" ") else "" end')
+                [ -n "$_fbx" ] || { provide_refuse "$1" "files: a video plays over its preview: the dialog gives the box"; return 0; }
+                # shellcheck disable=SC2086   # four numbers, split on purpose
+                _fpv=$(files_play_video "$_ff" "$_fat" $_fbx) || { provide_refuse "$1" "files: ${_fpv:-$_fname could not be played here}"; return 0; }
+                files_result "$1" "playing $_fname"; return 0
+            fi
+            [ "$(files_kind "$_ff")" = sound ] && command -v mpv >/dev/null 2>&1 || { provide_refuse "$1" "files: $_fname is no sound mpv plays here"; return 0; }
             files_play "$_ff" "$_fat"; files_result "$1" "playing $_fname" ;;
         files_browse) files_open_with "$1" "$_ff" ;;
         files_reveal) files_open_with "$1" "$_ff" --reveal ;;
@@ -7591,8 +7695,7 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     case $_first in '') ;; *) set -- "$@" --home "$_first" ;; esac
     _dc=''; [ "$DIALOG_ATTACH" != yes ] || _dc=plus; [ "$DIALOG_MODEL" != yes ] || _dc="${_dc:+$_dc,}model"; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
     _sp=$(spark_bin); [ -z "$_sp" ] || set -- "$@" --spark "$_sp"
-    _ta=$REPO/assets/transitions/$(anim_now)/$(anim_palette)   # the piece in the palette in use, a saved theme's in its own; a palette with no set of its own plays none (#122)
-    [ "$(anim_now)" = none ] || [ -z "$(anim_palette)" ] || [ ! -f "$_ta/open.gif" ] || set -- "$@" --transitions "$_ta"
+    _ta=$(dialog_transitions); [ -z "$_ta" ] || set -- "$@" --transitions "$_ta"
     FULL_ID=''; ! panel_own_window || panel_full_aside
     ! desktop_wanted || case ${TERM:-} in foot*) SPARK_DIALOG_SLOTS=1; export SPARK_DIALOG_SLOTS ;; esac   # its foot.ini sets the five slots: the dialog draws in them, and a new look recolors it in place (#34)
     st=0; "$DIALOG_BIN" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?
@@ -9530,6 +9633,7 @@ screen_action() (   # ACTION encoded-arguments [check]
         place) [ "$#" = 2 ] && printf '%s\n' "$1 $2" | grep -qE '^side=(left-of|right-of|above|below) other=[A-Za-z0-9_.:-]{1,80}$' || exit 1; set -- "${1#*=}" "${2#*=}" ;;
         transform) [ "$#" = 1 ] && printf '%s\n' "$1" | grep -qE '^transform=(normal|90|180|270)$' || exit 1; set -- transform "${1#*=}" ;;
         screen-on|screen-off) [ "$#" = 0 ] || exit 1; set -- "${action#screen-}" ;;
+        main) [ "$#" = 0 ] || exit 1; set -- main ;;
         *) exit 1 ;;
     esac
     [ "$check" != check ] || exit 0
@@ -9537,14 +9641,15 @@ screen_action() (   # ACTION encoded-arguments [check]
 )
 provide_screen_rows() {   # connected screen choices, all through the same typed tools
     printf '%s\n' "$1" | grep -qE '^[A-Za-z0-9_.:-]{1,80}$' || return 1
-    screens_json | jq -ce --arg n "$1" '
-        . as $screens | [.[] | select(.name == $n)][0] | select(. != null) | . as $screen |
+    screens_json | jq -ce --arg n "$1" --arg main "$(screen_main || :)" '
+        . as $screens | [.[] | select(.name == $n)][0] | select(. != null) | . as $screen | ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")) as $id |
         def row($key; $text; $args; $group): {id: ($n + ":" + $key + ":" + ($args | tojson)), sign: "blank", text: $text, tool: {name: ("display_" + $key), arguments: ({screen: $n} + $args)}, more: [], columns: [], children: null, group: $group};
         [row((if .active then "off" else "on" end); (if .active then "turn off" else "turn on" end); {}; "power")]
         + ["0.5", "0.75", "1", "1.25", "1.5", "1.75", "2", "2.5", "3" | row("scale"; ("scale " + .); {scale: .}; "scale")]
         + [($screen.modes // [] | map("\(.width)x\(.height)" + (if (.refresh // 0) > 0 then "@\(.refresh / 1000)Hz" else "" end)) | unique)[] | row("mode"; .; {mode: .}; "resolution")]
         + [$screens[] | select(.name != $n and .active) | .name as $other | ["left-of", "right-of", "above", "below"][] | row("place"; (. + " " + $other); {side: ., other: $other}; "arrangement")]
         + ["normal", "90", "180", "270" | row("transform"; (if . == "normal" then "upright" else "turned " + . end); {transform: .}; "orientation")]
+        + [row("main"; (if $main != "" and ($main == $n or $main == $id) then "the main screen" else "make it the main screen" end); {}; "main") | if $main != "" and ($main == $n or $main == $id) then .sign = "check" | .tool = null else . end]
         | {title: $n, state: ($screen.model // ""), rows: .} | .short = [.rows[].id]'
 }
 
@@ -9565,6 +9670,14 @@ screen_save() {   # screen_save ID WORDS [SIDE OTHER-ID] -- the screen's line of
     { echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them'; grep . "$TMP/screens" || :; printf 'output "%s" %s\n' "$1" "$2"
       [ -z "${3:-}" ] || printf '# beside "%s" %s "%s"\n' "$1" "$3" "$4"; } > "$SCREENS_CONF"
 }
+SCREEN_MAIN_MARK='# the main screen (#135): workspace 1 and the focus at the start'
+screen_main_save() {   # screen_main_save ID -- the main screen in screens.conf: workspace 1 on it and the focus on it when the desktop starts; the one before goes
+    mkdir -p "$CONFIG_DIR"
+    { [ -f "$SCREENS_CONF" ] && grep -v -e '^# rendered' -e "^$SCREEN_MAIN_MARK" -e '^workspace 1 output ' -e '^exec swaymsg focus output ' "$SCREENS_CONF" || :; } > "$TMP/screens"
+    { echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them'; grep . "$TMP/screens" || :
+      printf '%s\nworkspace 1 output "%s"\nexec swaymsg focus output %s\n' "$SCREEN_MAIN_MARK" "$1" "'\"$1\"'"; } > "$SCREENS_CONF"
+}
+screen_main() { [ -f "$SCREENS_CONF" ] && sed -n 's/^workspace 1 output "\(.*\)"$/\1/p' "$SCREENS_CONF" | head -1; }   # -> the main screen's id, as screens.conf names it; nothing when none is set (sway's order decides)
 screen_beside_again() {   # screen_beside_again ID -- every screen placed beside ID, and ID placed beside another, placed again from the comment lines: a turned screen's width changed
     [ -f "$SCREENS_CONF" ] || return 0
     grep '^# beside "' "$SCREENS_CONF" | while IFS= read -r _bl; do
@@ -9602,6 +9715,10 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | transform normal|90|
             _cmd="mode ${3}"; _said="$_n $3" ;;
         transform) case ${3:-} in normal|90|180|270) ;; *) refuse "transform takes normal, 90, 180 or 270 (clockwise); no mirrored orientation" ;; esac
             _cmd="transform $3"; if [ "$3" = normal ]; then _said="$_n upright"; else _said="$_n turned $3"; fi ;;
+        main) [ "$(printf '%s' "$_r" | cut -f3)" = on ] || refuse "$_n is off: a screen off is no main one"
+            screen_main_save "$_id"; swaymsg -- workspace 1 output "\"$_id\"" >/dev/null 2>&1 || :   # the next start's, and sway's now for a workspace 1 made anew
+            login_screens_follow
+            echo "$_n is the main screen: workspace 1 and the login screen go to it from the next start"; return 0 ;;
         on) _cmd=enable; _said="$_n on" ;;
         off) [ "$(screen_rows | awk -F '\t' '$3 == "on"' | grep -c .)" -gt 1 ] || refuse "$_n is the only screen on: it stays on"
             _cmd=disable; _said="$_n off" ;;
@@ -9615,7 +9732,7 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | transform normal|90|
             set -- "$2" $(printf '%s' "$_o" | cut -f6-9) $(printf '%s' "$_r" | cut -f8-9)   # SIDE OX OY OW OH W H
             case $1 in left-of) _x=$(($2 - $6)); _y=$3 ;; right-of) _x=$(($2 + $4)); _y=$3 ;; above) _x=$2; _y=$(($3 - $7)) ;; *) _x=$2; _y=$(($3 + $5)) ;; esac
             _cmd="position $_x $_y"; _said="$_n $1 $(printf '%s' "$_o" | cut -f1)" ;;
-        *) refuse "screen NAME takes scale N, mode WxH, transform normal|90|180|270, on, off, or left-of, right-of, above or below another screen" ;;
+        *) refuse "screen NAME takes scale N, mode WxH, transform normal|90|180|270, on, off, main, or left-of, right-of, above or below another screen" ;;
     esac
     swaymsg -- output "\"$_id\"" "$_cmd" >/dev/null 2>&1 || swaymsg -- output "$_n" "$_cmd" >/dev/null 2>&1 || refuse "sway refused: output $_n $_cmd"
     case $_kind in left-of|right-of|above|below) _oi=$(printf '%s' "$_o" | cut -f2); [ "$(screen_rows | awk -F '\t' -v i="$_oi" '$2 == i' | grep -c .)" -eq 1 ] || _oi=$(printf '%s' "$_o" | cut -f1); screen_save "$_id" "$_cmd" "$_kind" "$_oi" ;;

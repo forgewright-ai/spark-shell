@@ -1244,6 +1244,15 @@ fn history_request(app: &mut App, words: &str) {
 }
 
 #[test]
+fn the_trash_says_restore_delete_and_empty() {
+    let verbs: Vec<&str> = ["files_restore", "files_purge", "files_empty", "notifications_restore"]
+        .iter()
+        .map(|t| spark_dialog::app::verb_of(t))
+        .collect();
+    assert_eq!(verbs, vec!["Restore", "Delete", "Empty", "Show"], "the trash's keys in its own words (#130)");
+}
+
+#[test]
 fn prompt_history_restores_a_unicode_draft_without_dispatching() {
     let (mut app, _, _) = app_with(&[]);
     history_request(&mut app, "remember this request");
@@ -1550,7 +1559,7 @@ fn a_theme_step_hands_the_dialog_its_new_palette_and_no_other_provider_can() {
                     return send(r);
                 }
                 if v.get("method").and_then(Value::as_str) == Some("tools/call") {
-                    send(result(&v["id"], json!({"content": [], "structuredContent": {"receipt": "theme dracula", "palette": {"HEX_FG": "f8f8f2", "PANEL_BG": "30323e"}}, "isError": false})));
+                    send(result(&v["id"], json!({"content": [], "structuredContent": {"receipt": "theme dracula", "palette": {"HEX_FG": "f8f8f2", "PANEL_BG": "30323e"}, "transitions": "/srv/transitions/embers/dracula"}, "isError": false})));
                 }
             }),
             tx,
@@ -1563,6 +1572,17 @@ fn a_theme_step_hands_the_dialog_its_new_palette_and_no_other_provider_can() {
         assert_eq!(
             app.palette.as_ref().and_then(|p| p.get("PANEL_BG")).and_then(Value::as_str),
             if kept { Some("30323e") } else { None },
+            "{}",
+            label
+        );
+        // and its animation now, read again at once (#126)
+        assert_eq!(
+            app.films_want.clone(),
+            if kept {
+                Some(Some("/srv/transitions/embers/dracula".to_string()))
+            } else {
+                None
+            },
             "{}",
             label
         );
@@ -2111,7 +2131,26 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
     let (mut app, rx, calls, home) = manager();
     app.sel = 1; // notes.md
     let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
-    assert!(hint.iter().any(|t| t == "Steps "), "the key row says the arrow opens the steps: {:?}", hint);
+    assert!(
+        hint.iter().any(|t| t == "Actions "),
+        "the key row says the arrow opens the actions (#127): {:?}",
+        hint
+    );
+    assert!(
+        !hint.iter().any(|t| t == "Preview "),
+        "a row with no page of its own names no preview: {:?}",
+        hint
+    );
+    app.folder.as_mut().unwrap().2.rows[1].page = Some("spark-shell://files/preview/bm90ZXM".into());
+    let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
+    assert!(
+        hint.iter().any(|t| t == "Preview "),
+        "a file with a page: Space previews it, named in the row (#127): {:?}",
+        hint
+    );
+    app.input = "words".into();
+    assert!(!app.hint().iter().any(|(t, _)| t == "Preview "), "with words typed, Space is a space");
+    app.input.clear();
     app.right();
     assert!(matches!(app.view, View::Steps(0)), "{:?}", app.view);
     assert_eq!(app.subtitle(), "notes.md");

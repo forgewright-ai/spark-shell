@@ -3173,6 +3173,18 @@ mkdir -p "$H/root/etc/spark-shell/login"; echo '# a login screen' > "$H/root/etc
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 left-of edp-1 2>&1) || rc=$?
 [ "$rc" = 0 ] && grep -qxF 'output "Lenovo Group Limited T24i-30 V30A1" position -1920 0' "$H/root/etc/spark-shell/login/screens.conf" && ! grep -q 'beside' "$H/root/etc/spark-shell/login/screens.conf" \
     && ok "desktop screen: the login screen's screens.conf follows at once (a root with no password), the output lines alone (#116)" || bad "screen login follow" "rc=$rc $out $(cat "$H/root/etc/spark-shell/login/screens.conf" 2>&1)"
+# the main screen (#135): workspace 1 and the focus at the start on it, the login screen's form there too; one main at a time
+SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 main >/dev/null 2>&1 || :
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen t24i main 2>&1) || rc=$?
+_mf=$HOME/.config/spark-shell/screens.conf
+[ "$rc" = 0 ] && [ "$out" = 'HDMI-A-1 is the main screen: workspace 1 and the login screen go to it from the next start' ] \
+    && grep -qxF 'workspace 1 output "Lenovo Group Limited T24i-30 V30A1"' "$_mf" && grep -qxF "exec swaymsg focus output '\"Lenovo Group Limited T24i-30 V30A1\"'" "$_mf" \
+    && [ "$(grep -c '^workspace 1 output' "$_mf")" = 1 ] && [ "$(grep -c '^exec swaymsg focus output' "$_mf")" = 1 ] && grep -qxF 'output "Lenovo Group Limited T24i-30 V30A1" position -1920 0' "$_mf" \
+    && grep -qxF 'workspace 1 output "Lenovo Group Limited T24i-30 V30A1"' "$H/root/etc/spark-shell/login/screens.conf" && ! grep -q '^exec' "$H/root/etc/spark-shell/login/screens.conf" \
+    && grep -qF 'workspace 1 output "Lenovo Group Limited T24i-30 V30A1"' "$HOME/swaymsg.log" \
+    && ok "desktop screen main: workspace 1 and the focus at the start on it, the one before gone, the other lines kept; the login screen's copy names it for its form (#135)" || bad "screen main" "rc=$rc $out $(cat "$_mf") | $(cat "$H/root/etc/spark-shell/login/screens.conf" 2>&1)"
+grep -qF 'sed -n '"'"'s/^workspace 1 output "\(.*\)"$/\1/p'"'"' /@LOGIN_ETC@/screens.conf' "$REPO/templates/login/window" \
+    && ok "login window: its form goes to the main screen screens.conf names, else the one at 0 0 (#135)" || bad "login window main" "$(head -12 "$REPO/templates/login/window")"
 grep -v '^LOGIN=' "$HOME/.config/spark-shell/config" > "$H/cfg.tmp" && cat "$H/cfg.tmp" > "$HOME/.config/spark-shell/config"; rm -rf "$H/root/etc/spark-shell/login"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 off 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'eDP-1 off' ] && grep -qxF -- '-- output "BOE 0x0BCA Unknown" disable' "$HOME/swaymsg.log" && grep -q 'disable' "$HOME/.config/spark-shell/screens.conf" \
@@ -4239,8 +4251,8 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 125 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 125 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 128 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 128 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -4287,9 +4299,9 @@ mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},
 jq -e -s 'all(.[]; (.name | test("^[a-z][a-z0-9_]{0,63}$")) and (.title | test("^[a-z][a-z-]*( [a-z-]+| [A-Z]+)*$")) and (.title | length) <= 60)' "$H/tools.all" >/dev/null \
     && ok "provide: every tool name is lower case with underscores, every title a sentence of plain words with its argument in capitals, 60 at most" || bad "tool shapes" "$(jq -r '.name + " | " + .title' "$H/tools.all")"
 jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.destructiveHint | type) == "boolean" and (.idempotentHint | type) == "boolean" and .openWorldHint == false)' "$H/tools.all" >/dev/null \
-    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove layout_delete power_logout power_restart power_shutdown printers_cancel theme_delete wifi_forget wifi_setup window_close' ] \
+    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove files_empty files_purge layout_delete power_logout power_restart power_shutdown printers_cancel theme_delete wifi_forget wifi_setup window_close' ] \
     && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find about_open files_show files_attach files_find files_say' ] \
-    && ok "provide: every hint spelled out (the spec's default is destructive); destructive only where something is lost (#112): forget, close, remove, delete, the power steps, a print job cancelled, the network manager installed; the network, clock and printer settings carry undo instead; read only: notes find, about, files show, attach, find and say" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
+    && ok "provide: every hint spelled out (the spec's default is destructive); destructive only where something is lost (#112): forget, close, remove, delete, delete for good and empty the trash (#130), the power steps, a print job cancelled, the network manager installed; the network, clock and printer settings carry undo instead; read only: notes find, about, files show, attach, find and say" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
 jq -e -s 'all(.[]; .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .outputSchema.type == "object")' "$H/tools.all" >/dev/null \
     && [ "$(jq -c 'select(.name == "wifi_connect") | .inputSchema.properties.password' "$H/tools.all")" = '{"type":"string","format":"password","maxLength":256}' ] \
     && [ "$(jq -c 'select(.name == "bt_power") | .inputSchema.properties.state.enum' "$H/tools.all")" = '["on","off"]' ] && [ "$(jq -c 'select(.name == "out_level") | .inputSchema.properties.level' "$H/tools.all")" = '{"type":"integer","minimum":0,"maximum":100}' ] \
@@ -4302,8 +4314,8 @@ ans 2 | jq -r '.result.contents[0].text' > "$H/rows.json"
     && jq -e '.short == ["theme:more"] and (.rows[] | select(.id == "theme:more") | .children == "spark-shell://theme/rows" and .tool == null)' "$H/rows.json" >/dev/null \
     && ok "provide: the rows resource: the palette in use (none, the terminal's own colors) a check with no tool, every other a row whose tool takes it by name, with its chip; the short form the one row that opens the section" || bad "provide rows" "$(cat "$H/rows.json" | head -c 600)"
 mcp theme "$(call 1 theme_palette '{"name":"nord"}')" "$(call 2 theme_palette '{"name":"nowhere"}')" "$(call 3 theme_text '{"size":"huge"}')" "$(call 4 theme_alpha '{"value":0.9,"x":1}')" "$(call 5 wifi_connect '{"name":"home"}')" "$(call 6 'Theme_Font')" "$(call 7 theme_alpha '{"value":2}')"
-[ "$(ans 1 | jq -c '.result.structuredContent | del(.palette)')" = '{"receipt":"nord is on","undo":{"name":"theme_palette","arguments":{"name":"none"}}}' ] && ans 1 | jq -e '.result.isError == false and (.result.content[0].text | fromjson) == .result.structuredContent' >/dev/null && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
-    && ok "provide tools/call: the palette set, the receipt in the present tense, the undo the step that takes it back, the same JSON in a text block" || bad "provide call" "$(ans 1) $(cat "$H/mcp.err")"
+[ "$(ans 1 | jq -c '.result.structuredContent | del(.palette, .transitions)')" = '{"receipt":"nord is on","undo":{"name":"theme_palette","arguments":{"name":"none"}}}' ] && [ "$(ans 1 | jq -r '.result.structuredContent.transitions')" = "$REPO/assets/transitions/tide/nord" ] && ans 1 | jq -e '.result.isError == false and (.result.content[0].text | fromjson) == .result.structuredContent' >/dev/null && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
+    && ok "provide tools/call: the palette set, the receipt in the present tense, the undo the step that takes it back, the same JSON in a text block; the animation it brings, for an open dialog to read again (#126)" || bad "provide call" "$(ans 1) $(cat "$H/mcp.err")"
 nfg=$(sed -n 's/^THEME_FG=#//p' "$REPO/themes/nord.env"); nbg=$(sed -n 's/^THEME_BG=#//p' "$REPO/themes/nord.env")
 ans 1 | jq -e --arg f "$nfg" --arg b "$nbg" '.result.structuredContent.palette | (.HEX_FG | ascii_downcase) == ($f | ascii_downcase) and (.PANEL_BG | test("^[0-9a-fA-F]{6}$")) and (.PANEL_BG | ascii_downcase) != ($b | ascii_downcase) and (keys == ["HEX_ACCENT", "HEX_ANSI_1", "HEX_ANSI_2", "HEX_FG", "PANEL_BG", "PANEL_HI", "PANEL_MUTED"])' >/dev/null \
     && ok "provide theme: a step's result carries the palette as it is now, the dialog's surface a shade off the background, so the dialog repaints itself" || bad "theme palette in result" "$(ans 1 | jq -c .result.structuredContent.palette) fg=$nfg bg=$nbg"
@@ -4412,9 +4424,10 @@ mcp files "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$ro
 ans 2 | jq -r '.result.contents[0].text' | jq -e --arg u "$(uri "$FR")" '.rows | length == 1 and .[0].children == $u and .[0].sign == "opens"' >/dev/null \
     && ok "provide files: the roots are the rows at the top, each opening its folder; / is never a root" || bad "files root rows" "$(ans 2)"
 ans 3 | jq -r '.result.contents[0].text' > "$H/folder.raw"; jq "$KX" "$H/folder.raw" > "$H/folder.json"
-[ "$(jq -r '[.rows[] | .text] | join("|")' "$H/folder.json")" = "docs|blob.txt|notes.md|pic.png|etc-link -> /etc|3 files $(printf '\302\267') 16 B|new folder|new text file|open in the system file manager" ] \
+[ "$(jq -r '[.rows[] | .text] | join("|")' "$H/folder.json")" = "docs|blob.txt|notes.md|pic.png|etc-link -> /etc|this folder $(printf '\302\267') 1 folder $(printf '\302\267') 3 files $(printf '\302\267') 16 B" ] \
+    && [ "$(jq -r '.rows[-1] | [.more[].said] | join("|")' "$H/folder.json")" = 'new folder|new text file|open in the system file manager' ] \
     && jq -e '(.rows[] | select(.text == "docs") | .children != null and .columns == ["2 items"] and .tool.name == "files_browse") and (.rows[] | select(.text == "notes.md") | .tool.name == "files_open" and .columns[0] == "12 B" and ([.more[].name] == ["files_preview", "files_attach", "files_reveal", "files_rename", "files_move", "files_copy", "files_trash"]) and (.page | startswith("spark-shell://files/preview/"))) and (.rows[] | select(.text | startswith("etc-link")) | .tool == null and .children == null)' "$H/folder.json" >/dev/null \
-    && ok "provide files: a folder lists its folders, then its files with the size and the date, then its own steps; a link is shown and never followed; a hidden file and a pipe are not listed" || bad "files folder" "$(jq -c '.rows[] | [.text, .columns, .tool.name]' "$H/folder.json")"
+    && ok "provide files: a folder lists its folders, then its files with the size and the date, then one row for itself, its actions behind it (#127); a link is shown and never followed; a hidden file and a pipe are not listed" || bad "files folder" "$(jq -c '.rows[] | [.text, .columns, .tool.name]' "$H/folder.json")"
 [ "$(ans 4 | jq -r .result.structuredContent.receipt)" = "$(printf 'notes.md\nhello\nworld')" ] && [ "$(ans 5 | jq -r .result.structuredContent.attach)" = "$FR/notes.md" ] \
     && ok "provide files: show gives a text file's first lines; attach gives its path for the next want" || bad "files show attach" "$(ans 4) $(ans 5)"
 for i in 6 8 9; do [ "$(ans $i | jq -r '.result.content[0].text')" = 'files: that is not a file in the folders given' ] || bad "files refusal $i" "$(ans $i)"; done
@@ -4423,7 +4436,7 @@ for i in 6 8 9; do [ "$(ans $i | jq -r '.result.content[0].text')" = 'files: tha
     && ok "provide files: a hidden file, a path through a link and a file outside the roots are refused; a binary and a type plus does not take too; a hidden folder and / are no resource" || bad "files refusals" "$(ans 7) $(ans 10) $(ans 11) $(ans 12)"
 ans 13 | jq -r '.result.contents[0].text' | jq -e --arg u "$(uri "$FR")" '.rows[0].text == ".." and .rows[0].children == $u and (.rows[] | select(.text == "deep") | .children != null)' >/dev/null \
     && ok "provide files: a folder under a root opens with .. back to its parent" || bad "files up" "$(ans 13 | head -c 300)"
-[ "$(ans 14 | jq -r '.result.contents[0].text' | jq -r '.rows[] | select(.id == "files:total") | .text')" = '1 folder' ] && [ "$(ans 15 | jq -r '.result.contents[0].text' | jq -r '[.rows[].text] | join("|")')" = '..|empty|new folder|new text file|open in the system file manager' ] \
+[ "$(ans 14 | jq -r '.result.contents[0].text' | jq -r '.rows[] | select(.id == "files:here") | .text')" = "this folder $(printf '\302\267') 1 folder" ] && [ "$(ans 15 | jq -r '.result.contents[0].text' | jq -r '[.rows[].text] | join("|")')" = "..|this folder $(printf '\302\267') empty" ] \
     && ok "provide files: a folder of folders counts its folders, and an empty folder says empty" || bad "files totals" "$(ans 14 | head -c 300) $(ans 15 | head -c 300)"
 mcp files "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}')" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 2 resources/read '{"uri":"spark-shell://files/rows"}')" "$(fcall 3 files_show "$FR/notes.md")"
 ! grep -q roots/list "$H/mcp.out" && [ "$(ans 2 | jq -r '.result.contents[0].text' | jq -c .rows)" = '[]' ] && [ "$(ans 3 | jq -r '.result.content[0].text')" = 'files: that is not a file in the folders given' ] \
@@ -4437,19 +4450,35 @@ fc2() { call "$1" "$2" "$(jq -cn --arg p "$3" --arg k "${4:-}" --arg v "${5:-}" 
 mcp2 "$(rq 2 resources/read "$(jq -cn --arg u "$(uri "$F2R")" '{uri: $u}')")" "$(rq 3 resources/read "$(jq -cn --arg u "$(uri "$F2R/docs")" '{uri: $u}')")"
 ans 2 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/home2.json"; ans 3 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/docs2.json"
 [ "$(jq -r '.here' "$H/home2.json")" = "$F2R" ] && [ "$(jq -r '[.rows[] | select(.group == "recent") | .text + " " + (.columns | join(","))] | join("|")' "$H/home2.json")" = "notes.md 12 B,today,~|invoice.txt 18 B,$(date -d '-3 day' '+%d %b' 2>/dev/null || date -v-3d '+%d %b'),docs" ] \
-    && [ "$(jq -r '[.rows[] | select(.group == "home") | .text] | join("|")' "$H/home2.json")" = 'docs|node_modules|pictures|notes.md' ] \
-    && [ "$(jq -r '[.rows[] | select(.group == "this folder") | .text + ":" + (.tool.name // "-") + ":" + ((.tool.ask // []) | join(","))] | join("|")' "$H/home2.json")" = "1 file $(printf '\302\267') 12 B:-:|new folder:files_new_folder:name|new text file:files_new_text:name|open in the system file manager:files_browse:" ] \
-    && jq -e --arg p "$F2R" '[.rows[] | select(.group == "this folder") | .tool.arguments.path // $p] | all(. == $p)' "$H/home2.json" >/dev/null \
-    && ok "provide files: your home folder: the files touched in the last days first (today, 3 days ago; a 2020 picture is not recent), each with its folder's name, then the folders and files, then the folder's own: the total, new folder and new text file (each asking a name), the system file manager; here is the folder" || bad "files home rows" "$(jq -c '{here, rows: [.rows[] | [.text, .group, .columns, .tool.name]]}' "$H/home2.json")"
-[ "$(jq -r '[.rows[] | .text] | join("|")' "$H/docs2.json")" = "..|deep|invoice.txt|1 file $(printf '\302\267') 18 B|new folder|new text file|open in the system file manager" ] && [ "$(jq -r .here "$H/docs2.json")" = "$F2R/docs" ] \
+    && [ "$(jq -r '[.rows[] | select(.group == "home") | .text] | join("|")' "$H/home2.json")" = 'docs|node_modules|pictures|notes.md|trash' ] \
+    && [ "$(jq -r '[.rows[] | .group // "-"] | reduce .[] as $g ([]; if .[-1] == $g then . else . + [$g] end) | join(",")' "$H/home2.json")" = 'home,recent,-' ] \
+    && [ "$(jq -r '.rows[-1] | .text + "|" + ([.more[] | .said + ":" + .name + ":" + ((.ask // []) | join(","))] | join("|"))' "$H/home2.json")" = "this folder $(printf '\302\267') 3 folders $(printf '\302\267') 1 file $(printf '\302\267') 12 B|new folder:files_new_folder:name|new text file:files_new_text:name|open in the system file manager:files_browse:" ] \
+    && jq -e --arg p "$F2R" '[.rows[-1].more[].arguments.path] | all(. == $p)' "$H/home2.json" >/dev/null \
+    && ok "provide files: your home folder: home first, its folders and files, the trash (#130); the files touched in the last days below it (today, 3 days ago; a 2020 picture is not recent), each with its folder's name; then one row for the folder, its actions behind it: new folder and new text file (each asking a name), the system file manager (#127); here is the folder" || bad "files home rows" "$(jq -c '{here, rows: [.rows[] | [.text, .group, .columns, .tool.name]]}' "$H/home2.json")"
+[ "$(jq -r '[.rows[] | .text] | join("|")' "$H/docs2.json")" = "..|deep|invoice.txt|this folder $(printf '\302\267') 1 folder $(printf '\302\267') 1 file $(printf '\302\267') 18 B" ] && [ "$(jq -r .here "$H/docs2.json")" = "$F2R/docs" ] \
     && [ "$(jq -r '.rows[] | select(.text == "deep") | .tool.name + ":" + .tool.said + "|" + ([.more[] | .said] | join(","))' "$H/docs2.json")" = 'files_browse:open in the system file manager|reveal in the system file manager,rename,move to a folder,copy to a folder,trash' ] \
     && [ "$(jq -r '.rows[] | select(.text == "invoice.txt") | .tool.name + "|" + ([.more[] | .name + ":" + ((.ask // []) | join(",")) + ":" + (.pick // "")] | join(" "))' "$H/docs2.json")" = 'files_open|files_preview:: files_attach:: files_reveal:: files_rename:name: files_move::to files_copy::to files_trash::' ] \
     && [ "$(jq -r '.rows[] | select(.text == "deep") | .columns[0]' "$H/docs2.json")" = '0 items' ] \
     && ok "provide files: a folder's rows: .. first, a folder with its steps (reveal, rename, move, copy, trash, each in a person's words), a file with show and attach before them; rename asks a name, move and copy pick a folder (to); no recent group below your home" || bad "files docs rows" "$(jq -c '{here, rows: [.rows[] | [.text, .group, .tool.name, [.more[]?.said]]]}' "$H/docs2.json")"
+# #130: the trash, a place of its own: what it holds, the folder each came from; restore, delete for good, empty the trash
+TR=$F2/.local/share/Trash; rm -rf "$TR"; mkdir -p "$F2/old dir"; printf 'old' > "$F2/docs/old notes.txt"
+( NO_GIO=1 mcp2 "$(fc2 2 files_trash "$F2R/docs/old notes.txt")" "$(fc2 3 files_trash "$F2R/old dir")" "$(rq 4 resources/read '{"uri":"spark-shell://files/rows/trash"}')" \
+    "$(rq 5 resources/read "$(jq -cn --arg u "$(uri "$F2R")" '{uri: $u}')")" "$(fc2 6 files_purge "$F2R/docs/old notes.txt")" "$(rq 7 tools/list)" )
+ans 4 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/trash.json"
+[ "$(jq -r '[.rows[] | .text + ":" + (.columns | join(","))] | join("|")' "$H/trash.json")" = "old dir:folder,today,~|old notes.txt:3 B,today,docs|the trash $(printf '\302\267') 2 items $(printf '\302\267') 3 B:" ] \
+    && jq -e --arg p "$F2R/docs/old notes.txt" '(.rows[] | select(.text == "old notes.txt") | .tool.name == "files_restore" and .tool.arguments.path == $p and ([.more[].said] == ["delete for good"])) and (.rows[-1] | [.more[].name] == ["files_empty"])' "$H/trash.json" >/dev/null \
+    && [ "$(ans 5 | jq -r '.result.contents[0].text | fromjson | .rows[] | select(.id == "files:trash") | .text + ":" + .columns[0] + ":" + .children')" = 'trash:2 items:spark-shell://files/rows/trash' ] \
+    && [ "$(ans 6 | jq -r '.result.structuredContent | .receipt + ":" + (.undo // "-" | tostring)')" = 'old notes.txt is deleted for good:-' ] && [ ! -e "$TR/files/old notes.txt" ] && [ ! -e "$TR/info/old notes.txt.trashinfo" ] && [ -d "$TR/files/old dir" ] \
+    && [ "$(ans 7 | jq -c '[.result.tools[] | select(.name == "files_purge" or .name == "files_empty" or .name == "files_trash") | [.name, .annotations.destructiveHint]]')" = '[["files_trash",false],["files_purge",true],["files_empty",true]]' ] \
+    && ok "provide files: the trash is a place, each in it with its size, the day and the folder it came from, restore on Enter and delete for good behind it, the trash's own row to empty it; your home lists it; delete for good is gone with its record, no undo, and asks a yes (#130)" \
+    || bad "files trash place" "$(cat "$H/trash.json") $(ans 5 | head -c 300) $(ans 6) $(ans 7 | jq -c '[.result.tools[] | select(.name | test("trash|purge|empty")) | [.name, .annotations]]')"
+( NO_GIO=1 mcp2 "$(call 2 files_empty '{}')" "$(call 3 files_empty '{}')" )
+[ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'the trash is empty: 1 deleted for good' ] && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'the trash is empty already' ] \
+    && [ -z "$(ls -A "$TR/files" 2>/dev/null)" ] && [ -z "$(ls -A "$TR/info" 2>/dev/null)" ] && ok "provide files: empty the trash deletes every file in it for good, its records with them; an empty trash says so (#130)" || bad "files empty" "$(ans 2) $(ans 3) $(ls -A "$TR/files" "$TR/info" 2>&1)"
 # #123: a folder of thousands, gracefully. Each row carries its kind and its path, the steps are the list's once; a large folder
-# lists a page at a time under the 512 kB of a resource the dialog reads, its last row opening the next; 200 small pictures a page at most; one stat
+# lists a page at a time under the 512 kB of a resource the dialog reads, its last row opening the next; no small pictures (#127); one stat
 # for many paths, so a folder of 1,235 answers in moments; a search that reaches its time says so
-BIG=$F2R/big; mkdir -p "$BIG/sub" "$F2R/pics" "$H/tstop"; : > "$BIG/sub/x"
+BIG=$F2R/big; mkdir -p "$BIG/sub" "$F2R/pics" "$H/tstop" "$XDG_STATE_HOME/spark-shell/thumbs/files"; : > "$BIG/sub/x"; : > "$XDG_STATE_HOME/spark-shell/thumbs/files/old.png"
 i=0; while [ $i -lt 1234 ]; do : > "$BIG/file-$(printf %04d $i).txt"; i=$((i + 1)); done
 i=0; while [ $i -lt 205 ]; do : > "$F2R/pics/photo-$(printf %03d $i).png"; i=$((i + 1)); done
 _t0=$(date +%s); mcp2 "$(rq 2 resources/read "$(jq -cn --arg u "$(uri "$BIG")" '{uri: $u}')")" "$(rq 4 resources/read "$(jq -cn --arg u "$(uri "$F2R/pics")" '{uri: $u}')")"; _t1=$(date +%s)
@@ -4460,11 +4489,12 @@ _n1=$(jq '[.rows[] | select(.kind == "file" or .kind == "dir")] | length' "$H/bi
 [ $((_n1 + _n2)) = 1235 ] && [ "$_b1" -lt 524288 ] && [ $((_t1 - _t0)) -le 15 ] && case $_nx in "$(uri "$BIG")?from=$_n1") true ;; *) false ;; esac \
     && jq -e --arg b "$BIG" --arg left "$((1235 - _n1)) more" '(.rows[1] | .text == "sub" and .columns == ["1 item"]) and (.rows[] | select(.id == "files:more") | .text == "the next page" and .columns == [$left])
         and (.rows[] | select(.text == "file-0000.txt") | .kind == "file" and .args == {path: ($b + "/file-0000.txt")} and (has("more") | not) and (has("tool") | not))
-        and (.kinds.file.tool.name == "files_open") and ([.kinds.file.more[].name] | index("files_trash") != null) and (.rows[] | select(.id == "files:total") | .text | startswith("1,234 files"))' "$H/big1.json" >/dev/null \
-    && jq -e '(.rows[0].id == "files:up") and ([.rows[] | select(.id == "files:more")] | length == 0) and (.rows[] | select(.id == "files:total") | .text | startswith("1,234 files"))' "$H/big2.json" >/dev/null \
+        and (.kinds.file.tool.name == "files_open") and ([.kinds.file.more[].name] | index("files_trash") != null) and (.rows[] | select(.id == "files:here") | .text | endswith("1,234 files \u00b7 0 B"))' "$H/big1.json" >/dev/null \
+    && jq -e '(.rows[0].id == "files:up") and ([.rows[] | select(.id == "files:more")] | length == 0) and (.rows[] | select(.id == "files:here") | .text | endswith("1,234 files \u00b7 0 B"))' "$H/big2.json" >/dev/null \
     && ok "provide files: a folder of 1,235 lists a page under the dialog's 512 kB, its last row opening the next with what is left; a row carries its kind and path, the steps are the list's once; in moments ($((_t1 - _t0)) s) (#123)" \
     || bad "files big folder" "$_n1 + $_n2 rows, $_b1 bytes, $((_t1 - _t0)) s, next $_nx $(jq -c '[.rows[] | select(.kind == null)]' "$H/big1.json" 2>&1 | head -c 600)"
-[ "$(jq '[.rows[] | select(.preview != null)] | length' "$H/pics.json")" = 200 ] && ok "provide files: a page asks for 200 small pictures at most, drawn at an idle priority (#123)" || bad "files thumbs cap" "$(jq '[.rows[] | select(.preview != null)] | length' "$H/pics.json")"
+[ "$(jq '[.rows[] | select(.preview != null)] | length' "$H/pics.json")" = 0 ] && [ ! -d "$XDG_STATE_HOME/spark-shell/thumbs/files" ] \
+    && ok "provide files: a picture's row carries no small picture, and the small pictures kept before go: Space shows a file whole (#127)" || bad "files no thumbs" "$(jq -c '[.rows[] | select(.preview != null)] | length' "$H/pics.json") $(ls "$XDG_STATE_HOME/spark-shell/thumbs" 2>&1)"
 printf '#!/bin/sh\nexit 124\n' > "$H/tstop/timeout"; chmod +x "$H/tstop/timeout"   # a walk that reaches its time
 ( PATH="$H/tstop:$PATH" mcp2 "$(rq 5 resources/read "$(jq -cn --arg u "spark-shell://files/rows/find/$(printf 'file-0001' | base64 | tr -d '\n=' | tr '+/' '-_')" '{uri: $u}')")" )
 [ "$(ans 5 | jq -r '.result.contents[0].text | fromjson | .rows[] | select(.id == "files:total") | .text')" = 'the search stopped at 8 seconds: 0 found' ] \
@@ -4506,7 +4536,7 @@ if [ "$(uname -s)" = Linux ]; then   # the Linux half (the uname stub): xdg-open
     # #114: no system file manager configured: no browse row, no reveal step, a folder's row has no tool (Enter still opens it)
     ( PATH="$H/nofm:$_fpath" mcp2 "$(rq 2 resources/read "$(jq -cn --arg u "$(uri "$F2R")" '{uri: $u}')")" "$(rq 3 resources/read "$(jq -cn --arg u "$(uri "$F2R/docs")" '{uri: $u}')")" )
     ans 2 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/home3.json"; ans 3 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/docs3.json"
-    [ "$(jq -r '[.rows[] | select(.group == "this folder") | .text] | join("|")' "$H/home3.json")" = "$(jq -r '[.rows[] | select(.group == "this folder") | .text] | join("|")' "$H/home2.json" | sed 's/|open in the system file manager$//')" ] \
+    [ "$(jq -r '.rows[-1] | [.more[].said] | join("|")' "$H/home3.json")" = 'new folder|new text file' ] \
         && jq -e '(.rows[] | select(.text == "docs") | .tool == null and .children != null and ([.more[].name] == ["files_rename", "files_move", "files_copy", "files_trash"]))' "$H/home3.json" >/dev/null \
         && jq -e '(.rows[] | select(.text == "invoice.txt") | [.more[].name] == ["files_preview", "files_attach", "files_rename", "files_move", "files_copy", "files_trash"])' "$H/docs3.json" >/dev/null \
         && ok "provide files: with no system file manager configured the browse row and the reveal step are not offered, and a folder's row keeps its steps and its opening (#114)" || bad "files no file manager" "$(cat "$H/home3.json") $(cat "$H/docs3.json")"
@@ -4568,6 +4598,7 @@ STUB
 cat > "$H/pvb/mpv" <<'STUB'
 #!/bin/sh
 echo "$*" >> "$HOME/mpv.log"; us=$(printf '\037')
+case $* in *--lavfi-complex=*) [ -z "${SLOW_WAVE:-}" ] || sleep 3 ;; esac   # a long sound's waveform (#124)
 for a; do case $a in --vo-image-outdir=*) cp "$REPO_PNG" "${a#*=}/00000001.png" ;; --no-video) exec sleep 41 ;; esac; done
 for a; do f=$a; done
 case $* in *--term-playing-msg=*) case $f in
@@ -4621,6 +4652,37 @@ mcpv "$(call 2 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: 12.
     && [ "$(ans 4 | jq -r '.result.content[0].text')" = 'files: plan.md is no sound mpv plays here' ] && [ "$(ans 5 | jq -r '.error.message')" = 'files_play: at is a number of seconds, 0 to 86400' ] \
     && ! ps -A -o args= 2>/dev/null | grep -q '^sleep 41$' \
     && ok "provide files: a sound plays here from a point and stops; anything else, or a point that is no time, is refused; nothing plays on past the provider (#120)" || bad "preview play" "$(ans 2) $(ans 3) $(ans 4) $(ans 5) $(cat "$F2/mpv.log" 2>&1)"
+# #124: a long sound's page answers at once, its waveform drawn aside (the stand-in takes 3 s over it), the picture named for the dialog to read when it comes
+_t0=$(date +%s); ( SLOW_WAVE=1 mcpv "$(pvr 2 "$PVR/song.flac")" ); _t1=$(date +%s)
+page 2 | jq -e '(.sound.picture | endswith("-sound.png")) and .sound.wave == 160 and .play.name == "files_play" and .seconds == 20.5' >/dev/null && [ $((_t1 - _t0)) -le 2 ] \
+    && ok "provide files: a long sound's page comes at once with its facts and Play, its waveform drawn aside at an idle priority and named for the dialog to draw when it is there (#124)" || bad "preview sound aside" "$((_t1 - _t0)) s $(page 2)"
+# #125: where sway is, a video plays over its frame: the page offers play and stop; the player laid at the dialog's corner, foot's padding and the frame's box
+mkdir -p "$H/pvsw" "$F2/.config/foot"; printf '[main]\npad=24x19\n' > "$F2/.config/foot/dialog.ini"
+cat > "$H/pvsw/swaymsg" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$HOME/swaymsg.log"
+case "$*" in
+    "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
+    "-t get_outputs") echo '[{"name":"HDMI-A-1","scale":1}]' ;;
+    "-t get_tree") printf '{"nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"app_id":"spark-dialog","focused":true,"fullscreen_mode":%s,"rect":{"x":100,"y":50},"window_rect":{"x":0,"y":0}},{"app_id":"spark-preview"}]}]}\n' "${FULL:-0}" ;;
+esac
+STUB
+chmod +x "$H/pvsw/swaymsg"
+mcpw() { printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots2" "$@" | REPO_PNG=$REPO/assets/favicon-26.png PATH="$H/pvsw:$H/pvb:$_fpath" SWAYSOCK=$H/sock HOME=$F2 XDG_DATA_HOME=$F2/.local/share SPARK_SHELL_NO_UDISKS=1 SPARK_SHELL_NO_GIO=1 sh "$SH" provide files > "$H/mcp.out" 2> "$H/mcp.err"; }   # mcpv with a stand-in sway
+rm -f "$F2/swaymsg.log" "$F2/mpv.log"
+mcpw "$(pvr 2 "$PVR/clip.webm")" "$(call 3 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, at: 1.5, x: 20, y: 200, w: 640, h: 360}')")" "$(call 4 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p}')")"
+_p2=$(page 2); _a3=$(ans 3); _a4=$(ans 4)
+( FULL=1 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" )
+printf '%s' "$_p2" | jq -e '.play.name == "files_play" and .stop.name == "files_stop" and .seconds == 4.5' >/dev/null \
+    && [ "$(printf '%s' "$_a3" | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
+    && grep -qF -- '--wayland-app-id=spark-preview --no-border --osc=no' "$F2/mpv.log" && grep -qF -- '--start=+1.5 -- ' "$F2/mpv.log" \
+    && grep -qxF '[app_id="spark-preview"] floating enable, border none, resize set 640 360, move absolute position 144 269' "$F2/swaymsg.log" \
+    && [ "$(printf '%s' "$_a4" | jq -r '.result.content[0].text')" = 'files: a video plays over its preview: the dialog gives the box' ] \
+    && [ "$(ans 5 | jq -r '.result.content[0].text')" = 'files: full screen, Enter opens it in its app' ] \
+    && ok "provide files: a video plays over its frame where sway is: mpv with no border laid at the window's corner, foot's padding and the frame's box; no box, or the dialog full screen, says why (#125)" \
+    || bad "preview video over" "$_p2 | $_a3 | $_a4 | $(ans 5) | $(cat "$F2/swaymsg.log" 2>&1) | $(grep spark-preview "$F2/mpv.log" 2>&1)"
+grep -qxF 'no_focus [app_id="spark-preview"]' "$REPO/templates/.config/sway/config" && grep -qxF 'for_window [app_id="spark-preview"] floating enable, border none' "$REPO/templates/.config/sway/config" \
+    && ok "sway template: a video a preview plays floats with no border and never takes the focus: the keys stay in the dialog (#125)" || bad "sway preview rules" "$(grep spark-preview "$REPO/templates/.config/sway/config")"
 # the dialog's transitions (#122): the theme's row, the verb, the key the config holds
 printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
 o1=$(sh "$SH" theme animation 2>&1); o2=$(sh "$SH" theme animation next 2>&1); o3=$(sh "$SH" theme animation back 2>&1); o4=$(sh "$SH" theme animation none 2>&1); st=0; o5=$(sh "$SH" theme animation fireworks 2>&1) || st=$?
@@ -5777,7 +5839,7 @@ JSON
     _tin=''; [ ! -f "$H/stick/.Trash-$(id -u)/files/trip.txt" ] || ! grep -qx 'Path=photos/trip.txt' "$H/stick/.Trash-$(id -u)/info/trip.txt.trashinfo" || _tin=1   # the two files of the spec on the drive, before the restore
     files2 "$(call 5 files_restore "$(jq -cn --arg p "$SR/photos/trip.txt" '{path: $p}')")" >> "$H/mcp.out"
     [ "$(ans 2 | jq -r '.result.contents[0].text' | jq -r --arg u "$(uri "$SR")" '[.rows[] | select(.group == "drives") | .text + " " + (.columns | join(",")) + " " + (if .children == $u then "opens" else "no" end)] | join("|")')" = 'BACKUP 2.9 GB free opens' ] \
-        && [ "$(ans 3 | jq -r '.result.contents[0].text' | jq -r '.title + "|" + ([.rows[] | .text] | join(","))')" = "$(printf '~')/stick|photos,1 folder,new folder,new text file,open in the system file manager" ] \
+        && [ "$(ans 3 | jq -r '.result.contents[0].text' | jq -r '.title + "|" + ([.rows[] | .text] | join(","))')" = "$(printf '~')/stick|photos,this folder $(printf '\302\267') 1 folder" ] \
         && [ "$(ans 4 | jq -r '.result.structuredContent.receipt')" = 'trip.txt is in the trash' ] && [ -n "$_tin" ] \
         && [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'trip.txt is back' ] && [ -f "$H/stick/photos/trip.txt" ] && [ ! -e "$H/stick/.Trash-$(id -u)/files/trip.txt" ] \
         && ok "provide files: a drive mounted is a root beside your home: its row under drives opens it (no .. at its top), a file on it is trashed into the drive's own .Trash-UID with the path from the drive's top, as the spec says, and comes back" || bad "files drive root" "$(ans 2 | head -c 300) $(ans 3 | head -c 300) $(ans 4) $(ans 5) $(ls -R "$H/stick" 2>&1)"

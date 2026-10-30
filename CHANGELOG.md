@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.113.1
+
+What the owner's first evening on v0.113 found, fixed (#124 to #130,
+#135).
+
+- A long sound previews at once (#124). Its waveform and spectrogram
+  are drawn aside, at an idle priority, as long as a long recording
+  takes: an interview of two hours said the preview did not come in
+  time. The page comes with its facts and Play, and the picture shows the
+  moment it is there. A preview that does not come ends its wait
+  animation: it stayed under the words.
+- A video plays in the dialog (#125): over its frame, in a window of its
+  own with no border, laid where the frame was drawn; the keys stay the
+  dialog's (Right pauses, Esc stops, the arrows go to the next file), and
+  a click on the dialog or a new size stops it. Full screen, or where
+  sway is not, Enter opens it in its app.
+- The open dialog follows a theme change (#126): its animation is read
+  again at once, so its wait and its close are the new look's.
+- Files (#127). Your home starts with its folders and files, the
+  recent ones below them. Space's preview is named in a folder's key
+  row, and a key row that would pass the margin closes its gaps to two
+  cells. The right arrow's chip says Actions. A folder ends with one row
+  for itself, its actions behind it: new folder, new text file, the
+  system file manager. The small picture beside the list is gone: it hid
+  every row's columns, and Space shows a file whole.
+- Settings on the home says wired when the cable is up and Wi-Fi is not
+  (#128).
+- Zoom and drag no longer blink (#129): a new picture is written in one
+  synchronized update, and a drag draws at most every 40 ms. The pointer
+  says what a click does: a hand over what takes a click, the closed
+  hand over a picture that moves, the text cursor on the prompt.
+- The trash is a place (#130): your home's `trash` lists what it holds,
+  with the day and the folder each came from; restore, delete for good
+  and empty the trash, each permanent step asking a yes; Enter on a file
+  there restores it. Trash stays the delete everywhere else.
+- A main screen (#135): `desktop screen NAME main`, or its row in
+  Settings > Display, sends workspace 1, the focus at the start and the
+  login screen there. Until one is named, sway's order decides.
+
 ## v0.113
 
 A file shown before it is opened, the dialog's opening and closing, the

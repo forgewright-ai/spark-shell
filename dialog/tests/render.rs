@@ -360,6 +360,28 @@ fn a_list_of_a_thousand_pages_and_jumps_by_its_keys() {
 }
 
 #[test]
+fn settings_says_wired_when_the_cable_is_up_and_wi_fi_is_not() {
+    let net = |wifi: &str, lan: &str| {
+        let mut app = base();
+        app.providers
+            .insert(0, provider("wifi", wifi, json!({"title": "wifi", "rows": [], "short": []}), json!([])));
+        app.providers
+            .insert(1, provider("lan", lan, json!({"title": "lan", "rows": [], "short": []}), json!([])));
+        app.about_idx = Some(app.providers.len() - 1);
+        app.dest_state(spark_dialog::app::SETTINGS_DEST).unwrap_or_default()
+    };
+    assert!(
+        net("not connected", "up \u{b7} 192.0.2.9").starts_with("wired"),
+        "#128: the cable up, Wi-Fi not: wired"
+    );
+    assert!(
+        net("\u{2582}\u{2584} home", "up \u{b7} 192.0.2.9").starts_with("\u{2582}\u{2584} home"),
+        "Wi-Fi joined: its own words"
+    );
+    assert!(net("not connected", "no wire").starts_with("not connected"), "neither: not connected");
+}
+
+#[test]
 fn about() {
     let mut app = base();
     app.view = View::About;
@@ -559,6 +581,118 @@ fn beside_the_picture_a_column_is_whole_or_not_drawn() {
 fn the_home_folder_is_the_recent_files_the_folders_and_files_and_the_folders_own_steps() {
     let app = manager_app();
     render(&app, "manager");
+}
+
+/// Files as v0.113.1 lists your home, in the provider's own shape (the actions once a list, by kind; a row's kind and
+/// path): home first with the trash last of it, the recent files below, the drives, then one row for the folder with
+/// its actions behind it (#127, #130).
+fn files_home() -> App {
+    let mut app = base();
+    app.cfg.plus = true;
+    app.providers.push(provider(
+        "files",
+        "your home folder",
+        json!({"title": "files", "rows": [
+        {"id": "files:root:a", "sign": "opens", "text": "~", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null}
+    ], "short": ["files:root:a"]}),
+        json!([]),
+    ));
+    let f = app.providers.len() - 1;
+    let steps = json!([
+        {"name": "files_rename", "ask": ["name"], "said": "rename"},
+        {"name": "files_move", "pick": "to", "said": "move to a folder"},
+        {"name": "files_copy", "pick": "to", "said": "copy to a folder"},
+        {"name": "files_trash", "said": "trash"}
+    ]);
+    let mut more = vec![
+        json!({"name": "files_preview", "said": "preview"}),
+        json!({"name": "files_attach", "said": "attach to the next request"}),
+    ];
+    more.extend(steps.as_array().unwrap().iter().cloned());
+    let kinds = json!({"file": {"tool": {"name": "files_open", "said": "open"}, "more": more}, "dir": {"more": steps}});
+    let dir = |name: &str, items: &str| json!({"id": format!("files:dir:{}", name), "sign": "opens", "text": name, "columns": [items], "children": format!("spark-shell://files/rows/{}", name), "group": "home", "kind": "dir", "args": {"path": format!("/data/me/{}", name)}});
+    let file = |name: &str, cols: &[&str], group: &str| json!({"id": format!("files:file:{}:{}", group, name), "sign": "blank", "text": name, "columns": cols, "group": group, "kind": "file", "args": {"path": format!("/data/me/{}", name)}, "page": format!("spark-shell://files/preview/{}", name)});
+    let rows = model::rows(
+        &json!({"title": "~", "here": "/data/me", "kinds": kinds, "rows": [
+        dir("documents", "12 items"),
+        dir("downloads", "3 items"),
+        dir("pictures", "40 items"),
+        file("notes.md", &["2 KB", "18 Oct"], "home"),
+        file("todo.txt", &["1 KB", "2025"], "home"),
+        {"id": "files:trash", "sign": "opens", "text": "trash", "columns": ["2 items"], "children": "spark-shell://files/rows/trash", "group": "home"},
+        file("invoice-0412.pdf", &["120 KB", "today", "downloads"], "recent"),
+        file("photo-0412.jpg", &["4.8 MB", "yesterday", "camera"], "recent"),
+        file("notes.md", &["2 KB", "18 Oct", "~"], "recent"),
+        {"id": "files:drive:s", "sign": "opens", "text": "STICK", "columns": ["14.2 GB free"], "children": "spark-shell://files/rows/c3RpY2s", "group": "drives"},
+        {"id": "files:here", "sign": "opens", "text": "this folder \u{b7} 3 folders \u{b7} 2 files \u{b7} 3 KB", "columns": [], "more": [
+            {"name": "files_new_folder", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new folder"},
+            {"name": "files_new_text", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new text file"}]}
+    ], "short": []})
+        .to_string(),
+    )
+    .unwrap();
+    app.view = View::Folder(f, "spark-shell://files/rows/aG9tZQ".into());
+    app.came_from = vec![View::Home];
+    app.folder = Some((f, "spark-shell://files/rows/aG9tZQ".into(), rows));
+    app.in_list = true;
+    app.sel = 3; // notes.md: a file with a page
+    app
+}
+
+#[test]
+fn files_your_home_starts_with_home_and_ends_with_its_own_row() {
+    render(&files_home(), "files-home");
+}
+
+#[test]
+fn files_a_files_actions_on_the_right_arrow() {
+    let mut app = files_home();
+    app.right();
+    assert!(matches!(app.view, View::Steps(_)));
+    render(&app, "files-actions");
+}
+
+/// The trash, a place (#130): what it holds, the newest first, each with the day and the folder it came from;
+/// Enter restores, delete for good behind it; its own row last, empty the trash behind it.
+#[test]
+fn files_the_trash_is_a_place() {
+    let mut app = files_home();
+    let (f, _, _) = app.folder.clone().unwrap();
+    let trashed = |name: &str, cols: &[&str], from: &str| json!({"id": format!("files:trashed:{}", name), "sign": "blank", "text": name, "columns": cols, "kind": "trashed", "args": {"path": format!("/data/me/{}/{}", from, name)}});
+    let rows = model::rows(
+        &json!({"title": "trash", "kinds": {"trashed": {"tool": {"name": "files_restore", "said": "restore"}, "more": [{"name": "files_purge", "said": "delete for good"}]}}, "rows": [
+        trashed("old notes.txt", &["3 B", "today", "docs"], "docs"),
+        trashed("draft-0410.md", &["14 KB", "yesterday", "~"], "."),
+        trashed("scan-0402.pdf", &["2.1 MB", "02 Oct", "downloads"], "downloads"),
+        {"id": "files:here", "sign": "opens", "text": "the trash \u{b7} 3 items \u{b7} 2.1 MB", "columns": [], "more": [{"name": "files_empty", "arguments": {}, "said": "empty the trash"}]}
+    ], "short": []})
+        .to_string(),
+    )
+    .unwrap();
+    app.view = View::Folder(f, "spark-shell://files/rows/trash".into());
+    app.came_from = vec![View::Home, View::Folder(f, "spark-shell://files/rows/aG9tZQ".into())];
+    app.folder = Some((f, "spark-shell://files/rows/trash".into(), rows));
+    app.sel = 0;
+    render(&app, "files-trash");
+}
+
+/// A file with a page of its own lit: Open, Preview, Actions and Back keep to the content's width, the gaps
+/// between the keys closing to two cells (#127).
+#[test]
+fn the_key_row_of_a_file_with_a_page_keeps_to_the_margin() {
+    let mut app = manager_app();
+    app.folder.as_mut().unwrap().2.rows[0].page = Some("spark-shell://files/preview/aW52b2ljZQ".into());
+    render(&app, "manager-preview-key");
+}
+
+/// An empty trash in your home says empty, and the sizes of the files beside it keep to their right edge (#130).
+#[test]
+fn an_empty_trash_keeps_the_sizes_on_their_right_edge() {
+    let mut app = manager_app();
+    let trash = json!({"id": "files:trash", "sign": "opens", "text": "trash", "tool": null, "more": [], "columns": ["empty"], "children": "spark-shell://files/rows/trash", "group": "home"});
+    let one = model::rows(&json!({"title": "~", "rows": [trash], "short": []}).to_string()).unwrap();
+    app.folder.as_mut().unwrap().2.rows.insert(8, one.rows[0].clone());
+    render(&app, "manager-empty-trash");
 }
 
 #[test]
@@ -908,6 +1042,48 @@ fn sound_app(playing: bool) -> App {
 #[test]
 fn a_sound_is_its_waveform_its_spectrum_and_its_spectrogram() {
     render(&sound_app(false), "preview-sound");
+}
+
+/// A long sound whose waveform is still being drawn aside (#124): its facts, its tags, its length, the words
+/// that say the picture comes; Play works meanwhile.
+#[test]
+fn a_long_sound_says_its_waveform_is_being_drawn() {
+    let mut app = sound_app(false);
+    app.preview.as_mut().unwrap().heard = None;
+    render(&app, "preview-sound-drawing");
+}
+
+/// The wait plays while a page is slow to come, and ends when it did not come (#124): never under the words.
+#[test]
+fn a_page_that_did_not_come_ends_the_wait() {
+    let mut app = sound_app(false);
+    app.films = true;
+    let pv = app.preview.as_mut().unwrap();
+    pv.shown = None;
+    pv.asked = std::time::Instant::now() - std::time::Duration::from_secs(2);
+    let p = palette("tokyonight-night");
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    assert!(spark_dialog::ui::draw(&app, &p, CLOCK, &mut b).film.is_some(), "a slow page: the wait");
+    app.preview.as_mut().unwrap().failed = true;
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    assert!(
+        spark_dialog::ui::draw(&app, &p, CLOCK, &mut b).film.is_none(),
+        "a page that did not come: no wait"
+    );
+}
+
+/// A video plays over the frame where it was drawn (#125): Right sends the box with the play.
+#[test]
+fn a_video_sends_the_box_of_its_frame_with_its_play() {
+    let page = json!({"title": "clip.webm", "facts": ["0:05", "1280 \u{d7} 720"], "picture": "/run/pages/9-1600.png", "size": [1280, 720], "full": true, "seconds": 5.0,
+        "play": {"name": "files_play", "arguments": {"path": "/data/me/clip.webm"}, "said": "play"}, "stop": {"name": "files_stop", "arguments": {}, "said": "stop"}});
+    let mut app = preview_app("clip.webm", "~/videos", page, WIDTH, HEIGHT);
+    app.preview.as_mut().unwrap().frame = Some((20, 200, 640, 360));
+    app.right();
+    let pv = app.preview.as_ref().unwrap();
+    assert!(pv.playing.is_some(), "Right plays it");
+    app.stop_video();
+    assert!(app.preview.as_ref().unwrap().playing.is_none(), "a click, a new size: the player stops");
 }
 
 #[test]

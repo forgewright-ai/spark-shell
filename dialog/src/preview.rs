@@ -95,6 +95,10 @@ pub struct Preview {
     pub heard: Option<Sound>,
     /// When the page on screen was asked for: one slow to come shows the wait (#122).
     pub asked: std::time::Instant,
+    /// The page asked for did not come (refused, or not in time): the wait ends (#124).
+    pub failed: bool,
+    /// Where the picture was drawn, in the terminal's pixels from the grid's corner: a video plays over it (#125).
+    pub frame: Option<(u32, u32, u32, u32)>,
 }
 
 impl Preview {
@@ -119,6 +123,8 @@ impl Preview {
             src: (0, 0),
             heard: None,
             asked: std::time::Instant::now(),
+            failed: false,
+            frame: None,
         })
     }
 
