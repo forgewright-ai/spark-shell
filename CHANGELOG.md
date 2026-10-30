@@ -2,8 +2,9 @@
 
 ## v0.113
 
-A file shown before it is opened, the dialog's opening and closing, and
-the home's folders named (#120, #122, #119).
+A file shown before it is opened, the dialog's opening and closing, the
+home's folders named, and a folder of thousands handled with ease
+(#120, #122, #119, #123).
 
 - Preview (#120). Space on a lit file in Files, with nothing typed,
   shows it as large as the dialog's content area allows; `preview` takes
@@ -13,8 +14,9 @@ the home's folders named (#120, #122, #119).
   it is, and Attach names it: words at the prompt go to spark with it.
   Text, Markdown (its headings bold), code (its lines numbered) and JSON
   (indented) show read only; a picture, a PDF's page and a video's frame
-  are drawn. A Word, PowerPoint, Excel or OpenDocument file shows its
-  text, read by Python's own zip and XML readers, with no LibreOffice.
+  are drawn, a phone's photo or clip the way it is seen. A Word,
+  PowerPoint, Excel or OpenDocument file shows its text, read by
+  Python's own zip and XML readers, with no LibreOffice.
   Super+F, sway's own key, makes the dialog full screen, the about lists
   it.
 - Zoom and turn, on a picture, a PDF page and a video frame: `+` and
@@ -25,7 +27,8 @@ the home's folders named (#120, #122, #119).
   once for one drawn larger when a zoom needs it.
 - A sound: its tags, its waveform (the part played in the accent, a
   click plays from there), a spectrum that moves while it plays, its
-  spectrogram, and its rate, bits, channels and format. Right plays and
+  spectrogram, and its rate, bits (a lossless 24-bit sound says 24, read
+  from its header), channels and format. Right plays and
   pauses, left goes back to the start. mpv draws the waveform and the
   spectrogram once, from the whole file, and the spectrum is read from
   that picture: nothing listens while it plays. It plays only while its
@@ -49,6 +52,21 @@ the home's folders named (#120, #122, #119).
   missing one made lowercase, a capitalized one alone named as it is; a
   file of yours is kept whole. `off desktop` takes ours back and leaves
   the folders. Screenshots go to the pictures folder it names.
+- A folder of thousands (#123). Files lists a folder of 10,000 in half
+  a second, where it took over two minutes, and a home where thousands
+  of files changed this week in a third of a second, where it took 20
+  (and the dialog had given up after 10). Every entry is read by one
+  `stat` for many and made a row by one `awk`, never a few programs an
+  entry. A large folder lists about a thousand at a time, its last row
+  opening the next page with how many are left; a row carries its kind
+  and its path, and the steps come once a list. Every walk (the recent
+  files, a search, a folder's item counts) runs at a low priority and
+  for a few seconds at most, and a search that stops says so; the
+  pictures' small pictures are drawn at an idle priority, 200 a page.
+  In a list, Page Up and Page Down move the lit row by a screen, Home
+  and End go to its first and its last row. Proven against 10,000 files
+  in one folder, 2,000 folders, the CPython tree and a home of 13,500
+  new files.
 - A text over 16 kB attached to a question goes to `spark read`, which
   reads it by parts, where it was refused before.
 - The footer says Mic, not Mic off. Space is the preview's key: the Talk

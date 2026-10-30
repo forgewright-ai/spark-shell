@@ -323,6 +323,43 @@ fn a_long_list_says_how_many_rows_sit_below() {
 }
 
 #[test]
+fn a_list_of_a_thousand_pages_and_jumps_by_its_keys() {
+    let mut app = base();
+    let rows: Vec<serde_json::Value> = (0..1000)
+        .map(|i| {
+            row(
+                &format!("apps:open {}", i),
+                "opens",
+                &format!("app {}", i),
+                Some(("apps_open", json!({"name": i.to_string()}))),
+                None,
+            )
+        })
+        .collect();
+    app.providers
+        .insert(3, provider("apps", "1000 apps", json!({"title": "apps", "rows": rows, "short": []}), json!([])));
+    app.about_idx = Some(4);
+    app.view = View::Section(3);
+    app.came_from = vec![View::Home];
+    app.in_list = true;
+    let step = app.size.1.saturating_sub(14).max(4) as usize;
+    app.page(1);
+    assert_eq!(app.sel, step, "Page Down: the lit row a screen down");
+    app.line_end();
+    assert_eq!(app.sel, 999, "End: the last row");
+    app.page(1);
+    assert_eq!(app.sel, 999, "never past the last");
+    app.page(-1);
+    assert_eq!(app.sel, 999 - step);
+    app.line_start();
+    assert_eq!(app.sel, 0, "Home: the first row");
+    app.in_list = false;
+    (app.input, app.cursor) = ("words".into(), 5);
+    app.line_start();
+    assert_eq!((app.sel, app.cursor), (0, 0), "at the prompt, Home is the line's start");
+}
+
+#[test]
 fn about() {
     let mut app = base();
     app.view = View::About;

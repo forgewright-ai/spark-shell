@@ -737,8 +737,9 @@ list, and up from the first row comes back. A row wears a sign where
 there is a state: a dot is in use or connected, a ring is available, a
 check is current or saved, a small triangle opens something. A row
 that ends in a small arrow opens more. When the list is longer than
-the window, its last line says how many rows sit below, and Page Up
-and Page Down scroll it.
+the window, its last line says how many rows sit below. In a list,
+Page Up and Page Down move the lit row by a screen, Home and End go to
+its first and its last row.
 
 - `layout`: a saved layout opens on Enter. Words at the prompt make a
   new one. `save what is open now` asks a name for it.
@@ -800,7 +801,9 @@ and Page Down scroll it.
 - `files`: your home folder, as a file manager of its own. Enter on a
   folder opens it, `..` goes back up, and Esc walks back the way you
   came; a folder lists its folders, then its files with the size and
-  the date. Enter on a text file opens it in your editor, in a terminal
+  the date. A folder of thousands lists about a thousand at a time: its
+  last row, `the next page`, says how many more there are and opens
+  them. Enter on a text file opens it in your editor, in a terminal
   window; any other file opens with the app for its kind. The right
   arrow opens the lit row's steps as a list: open, preview, attach,
   reveal in the system file manager, rename (it asks the name), move to

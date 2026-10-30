@@ -67,6 +67,12 @@ with tempfile.TemporaryDirectory() as d:
         '<table:table-cell table:number-columns-repeated="16000"/></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>' % ODF})
     st, out = read(p("a.ods"))
     check("ods: a sheet under its name; a run of empty cells is no text", st == 0 and out["lines"] == ["Sheet1", "x"], out)
+    rows = "".join('<row><c t="inlineStr"><is><t>r%d</t></is></c><c><v>%d</v></c></row>' % (i, i) for i in range(150000))
+    make(p("big.xlsx"), {"xl/workbook.xml": '<workbook %s><sheets><sheet name="Sales"/></sheets></workbook>' % S,
+                         "xl/worksheets/sheet1.xml": '<worksheet %s><sheetData>%s</sheetData></worksheet>' % (S, rows)})
+    st, out = read(p("big.xlsx"))
+    check("xlsx: a sheet's part over 8 MB is read row by row, its first rows shown up to the lines' limit",
+          st == 0 and out["lines"][:3] == ["Sales", "r0 \u00b7 0", "r1 \u00b7 1"] and len(out["lines"]) == 20000, (st, out and out["lines"][:3], out and len(out["lines"])))
     with open(p("bad.docx"), "w") as f:
         f.write("not a zip")
     make(p("big.docx"), {"word/document.xml": "<w:document %s><w:body>%s</w:body></w:document>" % (W, "<w:p/>" * 2000000)})

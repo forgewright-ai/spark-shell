@@ -470,12 +470,20 @@ svg_png() {   # svg_png SVG OUT WIDTH -- OUT, a PNG WIDTH wide (the drawing's ow
         *) false ;;
     esac && mv "$2.new" "$2" || { rm -f "$2.new"; return 1; }
 }
+pic_magic() {   # pic_magic FILE -> 0 when its first bytes are a PNG's, a JPEG's, a GIF's or a WebP's
+    case $(od -An -tx1 -N12 < "$1" 2>/dev/null | tr -d ' \n') in 89504e470d0a1a0a*|ffd8ff*|47494638*|52494646????????57454250) return 0 ;; *) return 1 ;; esac
+}
+png_size() {   # png_size FILE -- "W H" from a PNG's own header (no file(1) needed); nothing for another file
+    [ "$(od -An -tx1 -N8 < "$1" 2>/dev/null | tr -d ' \n')" = 89504e470d0a1a0a ] || return 0
+    od -An -tu1 -j16 -N8 < "$1" 2>/dev/null | awk 'NF == 8 { print $1 * 16777216 + $2 * 65536 + $3 * 256 + $4, $5 * 16777216 + $6 * 65536 + $7 * 256 + $8 }'
+}
 pic_small() { pic_png "$1" "$2" 256; }   # pic_small PICTURE OUT -- OUT, a PNG of PICTURE 256 wide at most (pic_png)
 pic_png() {   # pic_png PICTURE OUT SIZE -- OUT, a PNG of PICTURE SIZE on its long side at most, the margins clear; false when nothing here can read the picture (SPARK_SHELL_NO_THUMB and SPARK_SHELL_NO_SVG, tests: one tool or none)
     if [ -z "${SPARK_SHELL_NO_THUMB:-}" ] && command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1 && files_tool gdk-pixbuf-thumbnailer -s "$3" "$1" "$2.new" 2>/dev/null; then mv "$2.new" "$2"; return 0; fi
     rm -f "$2.new"
     [ -z "${SPARK_SHELL_NO_SVG:-}" ] && command -v rsvg-convert >/dev/null 2>&1 || return 1
     _pe=$(printf '%s' "${1##*.}" | tr 'A-Z' 'a-z'); case $_pe in jpg|jpeg|png|webp|gif) ;; *) return 1 ;; esac
+    pic_magic "$1" || return 1   # rsvg draws an empty square for bytes it cannot read
     _pd=$TMP/pic; rm -rf "$_pd"; mkdir -p "$_pd"; cp "$1" "$_pd/picture.$_pe" || return 1
     printf '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s"><image href="picture.%s" width="%s" height="%s" preserveAspectRatio="xMidYMid meet"/></svg>\n' "$3" "$3" "$_pe" "$3" "$3" > "$_pd/wrap.svg"
     files_tool rsvg-convert -w "$3" -h "$3" -o "$2.new" "$_pd/wrap.svg" 2>/dev/null && mv "$2.new" "$2" || { rm -f "$2.new"; return 1; }
@@ -6624,7 +6632,7 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
         tools/list) rpc_result "$_id" "$(provide_tools "$sec" | jq -c '{tools: .}')" ;;
         tools/call) provide_call "$_id" "$_params" ;;
         resources/list) rpc_result "$_id" "$(jq -cn --arg u "spark-shell://$sec/rows" --arg s "$sec" '{resources: [{uri: $u, name: "rows", title: ($s + " rows"), mimeType: "application/json"}]}')" ;;
-        resources/templates/list) if [ "$sec" = files ]; then rpc_result "$_id" '{"resourceTemplates":[{"uriTemplate":"spark-shell://files/rows/{folder}","name":"folder","title":"a folder under the roots","mimeType":"application/json"},{"uriTemplate":"spark-shell://files/preview/{file}{?page}","name":"preview","title":"a file shown as a page","mimeType":"application/json"}]}'; else rpc_result "$_id" '{"resourceTemplates":[]}'; fi ;;
+        resources/templates/list) if [ "$sec" = files ]; then rpc_result "$_id" '{"resourceTemplates":[{"uriTemplate":"spark-shell://files/rows/{folder}{?from}","name":"folder","title":"a folder under the roots, a page of it from an entry","mimeType":"application/json"},{"uriTemplate":"spark-shell://files/preview/{file}{?page}","name":"preview","title":"a file shown as a page","mimeType":"application/json"}]}'; else rpc_result "$_id" '{"resourceTemplates":[]}'; fi ;;
         resources/read|resources/subscribe|resources/unsubscribe)
             _uri=$(printf '%s' "$_params" | jq -r '.uri // "" | tostring')
             if [ "$sec" = files ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://files/rows/?*) true ;; *) false ;; esac; then   # a folder under the roots
@@ -6914,56 +6922,108 @@ files_when() {   # files_when EPOCH -> today, yesterday, 18 Oct, or the year
     else echo "${_fd%????}"; fi
 }
 files_home() { _tl='~'; _fhr=$(files_home_root); case $1 in "$HOME"|"$_fhr") echo "$_tl" ;; "$HOME"/*) echo "$_tl/${1#"$HOME"/}" ;; "$_fhr"/*) echo "$_tl/${1#"$_fhr"/}" ;; *) echo "$1" ;; esac; }   # files_home PATH -> as a person writes it (your home by its own path or its realpath)
-files_folder_of() { _ffo=$(dirname "$1"); if [ "$_ffo" = "$(files_home_root)" ]; then echo '~'; else printf '%s\n' "${_ffo##*/}" | scrub_text; fi; }   # files_folder_of PATH -> the folder it is in, by its name alone (~ for your home): a column of the recent files and a search's rows
-files_pic() { case " $FILES_PICS " in *" $(printf '%s' "${1##*.}" | tr 'A-Z' 'a-z') "*) [ "${1##*.}" != "$1" ] ;; *) return 1 ;; esac; }   # files_pic PATH -> 0 for a picture by its type
-files_thumb() { printf '%s/%s.png' "$FILES_THUMB_DIR" "$(printf '%s %s' "$1" "$2" | cksum | cut -d' ' -f1)"; }   # files_thumb PATH EPOCH -> its small picture's path, there or not yet
-files_line() {   # files_line KIND PATH [GROUP] [COLUMN3] -> one row line for a file or a folder: ID US SIGN US TEXT US CHILDREN US PATH US SIZE US DATE US GROUP US COLUMN3 US KIND US PREVIEW; a line feed in a name is not listed
-    case $2 in *"$NL"*) return 0 ;; esac
-    _fln=$(printf '%s' "${2##*/}" | scrub_text)
-    if [ "$1" = dir ]; then
-        _flc=$(find "$2" -mindepth 1 -maxdepth 1 ! -name '.*' 2>/dev/null | wc -l | tr -d ' '); _fli=items; [ "$_flc" != 1 ] || _fli=item
-        printf 'files:dir:%s\037opens\037%s\037%s\037%s\037%s %s\037\037%s\037%s\037dir\037\n' "$(files_b64 "$2")" "$_fln" "$(files_uri "$2")" "$2" "$_flc" "$_fli" "${3:-}" "${4:-}"
-    else
-        # shellcheck disable=SC2046   # two numbers, split on purpose
-        set -- "$1" "$2" "${3:-}" "${4:-}" $(files_stat "$2")
-        _flp=''; ! files_pic "$2" || { _flp=$(files_thumb "$2" "$6"); printf '%s\t%s\n' "$2" "$_flp" >> "$TMP/files.thumbs"; }
-        printf 'files:file:%s\037blank\037%s\037\037%s\037%s\037%s\037%s\037%s\037file\037%s\n' "$(files_b64 "$2")" "$_fln" "$2" "$(files_size "$5")" "$(files_when "$6")" "$3" "$4" "$_flp"
-        FILES_N=$((FILES_N + 1)); FILES_B=$((FILES_B + $5))
-    fi
+# A folder of thousands (#123): every entry is read by one stat for many and made a row by one awk,
+# never a fork an entry; a walk runs at a low priority and for a few seconds at most; a large folder
+# lists a page at a time.
+FILES_ROWS_MAX=1000      # a folder lists this many at a time, its last row opening the next
+FILES_ROWS_BYTES=400000  # and a page ends before its rows come near the 512 kB of a resource the dialog reads
+FILES_THUMBS_MAX=200     # a page's small pictures, drawn at an idle priority: a folder of thousands of photos never holds the CPU
+FILES_WALK_T=4           # the recent list and a folder's item counts walk this many seconds at most: what they found by then is shown
+FILES_SEARCH_T=8         # a search walks this many seconds at most, and says so when it stops
+files_num() { awk -v n="$1" 'BEGIN { s = sprintf("%d", n); r = ""; while (length(s) > 3) { r = "," substr(s, length(s) - 2) r; s = substr(s, 1, length(s) - 3) } print s r }'; }   # files_num N -> 12,345
+files_low() {   # files_low CMD... -- CMD at a low priority, the disk's too where ionice is: a big walk never stutters the desktop
+    if command -v ionice >/dev/null 2>&1; then nice -n 10 ionice -c 2 -n 7 "$@"; else nice -n 10 "$@"; fi
 }
-files_list() {   # files_list FOLDER [GROUP] -> the folder's rows: its folders, then its files, each by name; a link shown and never followed; FILES_N, FILES_B and FILES_D counted in this shell
-    FILES_N=0; FILES_B=0; FILES_D=0
-    find "$1" -mindepth 1 -maxdepth 1 ! -name '.*' -print0 2>/dev/null | tr '\n\000' '\001\n' | sort > "$TMP/files.list"
-    while IFS= read -r _fe; do
-        case $_fe in *"$(printf '\001')"*) continue ;; esac   # a name with a line feed in it: not listed
-        if [ -L "$_fe" ]; then printf '2\037files:link:%s\037blank\037%s -> %s\037\037\037\037\037%s\037\037link\037\n' "$(files_b64 "$_fe")" "$(printf '%s' "${_fe##*/}" | scrub_text)" "$(readlink "$_fe" | scrub_text)" "${2:-}"
-        elif [ -d "$_fe" ]; then FILES_D=$((FILES_D + 1)); printf '0\037'; files_line dir "$_fe" "${2:-}"
-        elif [ -f "$_fe" ]; then printf '1\037'; files_line file "$_fe" "${2:-}"
-        fi   # a device, a socket, a pipe: not listed
-    done < "$TMP/files.list" > "$TMP/files.unsorted"   # no pipe: the counts stay in this shell
-    sort -t "$(printf '\037')" -k1,1 -k4,4 "$TMP/files.unsorted" | cut -d "$(printf '\037')" -f2-
+files_timed() {   # files_timed SECONDS CMD... -- CMD at a low priority, stopped after SECONDS where timeout is; $TMP/walk.stopped says it was
+    _ftt=$1; shift
+    if command -v timeout >/dev/null 2>&1; then files_low timeout "$_ftt" "$@" || { [ $? != 124 ] || : > "$TMP/walk.stopped"; }
+    else files_low "$@" || :; fi
 }
-files_walk() {   # files_walk ROOT f|fd [FIND-TESTS...] -> the files (f) or the files and folders (fd) under ROOT, no hidden or skipped folder entered, no link, FILES_DEPTH deep at most
+files_nul() { tr '\n\000' '\001\n' | grep -v "$(printf '\001')" | tr '\n' '\000' || :; }   # NUL-separated paths -> the same, a name with a line feed in it left out (never listed)
+files_stats() {   # NUL-separated paths on stdin -> TYPE US SIZE US EPOCH US DATE US LINK US PATH a line, one stat for many paths (GNU's, else BSD's)
+    if stat --version >/dev/null 2>&1; then QUOTING_STYLE=literal xargs -0 stat --printf='%F\037%s\037%Y\037%y\037%N\037%n\n' 2>/dev/null || :
+    else xargs -0 stat -f "%HT$US%z$US%m$US%Sm$US%Y$US%N" -t '%Y-%m-%d' 2>/dev/null || :; fi
+}
+files_counts() {   # files_counts [FOLDER] -> PATH US COUNT a line: the things not hidden in each folder in FOLDER (one walk, FILES_WALK_T at most), or in each folder named on stdin, NUL-separated
+    if [ -n "${1:-}" ]; then files_timed "$FILES_WALK_T" find "$1" -mindepth 2 -maxdepth 2 ! -name '.*' -print0 2>/dev/null
+    else xargs -0 sh -c 'exec find "$@" -mindepth 1 -maxdepth 1 ! -name ".*" -print0' sh 2>/dev/null || :; fi \
+        | files_nul | tr '\000' '\n' | awk -v us="$US" '{ sub(/\/[^\/]*$/, ""); n[$0]++ } END { for (d in n) print d us n[d] }'
+}
+files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' lines -> KEY US a row line for each file (KEY 1), folder (0) and link (2): ID US SIGN US TEXT US CHILDREN US PATH US SIZE US DATE US GROUP US COLUMN3 US KIND US PREVIEW; FOLDERS yes puts each one's folder in COLUMN3 (~ for your home); $TMP/files.sum "FILES FOLDERS BYTES"
+    _frs=''; [ ! -e "$TMP/walk.stopped" ] || _frs=1
+    LC_ALL=C awk -F "$US" -v us="$US" -v group="$1" -v folders="$2" -v counts="${3:-}" -v cstop="$_frs" -v home="$(files_home_root)" \
+        -v today="$(date +%Y%m%d)" -v yday="$(date -d "@$(( $(date +%s) - 86400 ))" +%Y%m%d 2>/dev/null || date -r "$(( $(date +%s) - 86400 ))" +%Y%m%d)" \
+        -v year="$(date +%Y)" -v pics=" $FILES_PICS " -v thumbs="$FILES_THUMB_DIR" -v sum="$TMP/files.sum" '
+        function b64(s,   r, i, n, t) {   # base64url, no padding: files_b64
+            r = ""; n = length(s)
+            for (i = 1; i <= n; i += 3) {
+                t = ord[substr(s, i, 1)] * 65536 + (i + 1 <= n ? ord[substr(s, i + 1, 1)] * 256 : 0) + (i + 2 <= n ? ord[substr(s, i + 2, 1)] : 0)
+                r = r substr(B, int(t / 262144) + 1, 1) substr(B, int(t / 4096) % 64 + 1, 1)
+                if (i + 1 <= n) r = r substr(B, int(t / 64) % 64 + 1, 1)
+                if (i + 2 <= n) r = r substr(B, t % 64 + 1, 1)
+            }
+            return r
+        }
+        function hash(s,   i, a, b, c) { a = 0; b = 0; for (i = 1; i <= length(s); i++) { c = ord[substr(s, i, 1)]; a = (a * 31 + c) % 2147483647; b = (b * 131 + c) % 1000000007 } return sprintf("%08x%08x", a, b) }
+        function clean(s) { gsub(/[\001-\037\177]|\302[\200-\237]|\342\200[\213-\217\250-\256]|\342\201[\240\246-\251]|\357\273\277/, "", s); return s }   # SCRUB_JQ, on bytes
+        function size(n) { if (n < 1024) return sprintf("%d B", n); if (n < 1048576) return sprintf("%d KB", n / 1024); if (n < 1073741824) return sprintf("%.1f MB", n / 1048576); return sprintf("%.1f GB", n / 1073741824) }
+        function when(d) { if (d == today) return "today"; if (d == yday) return "yesterday"; if (substr(d, 1, 4) == year) return substr(d, 7, 2) " " mon[substr(d, 5, 2) + 0]; return substr(d, 1, 4) }
+        BEGIN {
+            B = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"; for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i
+            split("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec", mon, " ")
+            if (counts != "") while ((getline l < counts) > 0) { k = index(l, us); if (k) cnt[substr(l, 1, k - 1)] = substr(l, k + 1) }
+        }
+        {
+            p = substr($0, length($1 $2 $3 $4 $5) + 6)   # the path, whole: the last field, whatever it holds
+            if (p == "" || p ~ /[\001-\037\177]/) next   # a name with a control character in it is not listed
+            t = tolower($1); name = p; sub(/.*\//, "", name); id = b64(p); text = clean(name); c3 = ""
+            if (folders == "yes") { d = p; sub(/\/[^\/]*$/, "", d); if (d == home) c3 = "~"; else { c3 = d; sub(/.*\//, "", c3); c3 = clean(c3) } }
+            if (t ~ /^dir/) {
+                nd++; c = (p in cnt) ? cnt[p] : (counts != "" && !cstop ? 0 : "")
+                print "0" us "files:dir:" id us "opens" us text us "spark-shell://files/rows/" id us p us (c == "" ? "" : c " " (c == 1 ? "item" : "items")) us "" us group us c3 us "dir" us ""
+            } else if (t ~ /^regular/) {
+                nf++; nb += $2; pv = ""; e = tolower(name)
+                if (e ~ /.\./) { sub(/.*\./, "", e); if (index(pics, " " e " ")) pv = thumbs "/" hash(p " " $3) ".png" }
+                print "1" us "files:file:" id us "blank" us text us "" us p us size($2) us when(substr($4, 1, 4) substr($4, 6, 2) substr($4, 9, 2)) us group us c3 us "file" us pv
+            } else if (t ~ /^symbolic/) {
+                lt = $5; if (substr(lt, 1, length(p) + 4) == p " -> ") lt = substr(lt, length(p) + 5)
+                print "2" us "files:link:" id us "blank" us text " -> " clean(lt) us "" us "" us "" us "" us group us "" us "link" us ""
+            }   # a device, a socket, a pipe: not listed
+        }
+        END { printf "%d %d %.0f\n", nf, nd, nb > sum }'
+}
+files_slice() {   # files_slice FROM < row lines -> the page's rows from FROM: FILES_ROWS_MAX at most and about FILES_ROWS_BYTES of JSON, the first FILES_THUMBS_MAX pictures' small pictures asked for ($TMP/files.thumbs); $TMP/files.left "NEXT LEFT"
+    awk -F "$US" -v OFS="$US" -v from="$1" -v max="$FILES_ROWS_MAX" -v bytes="$FILES_ROWS_BYTES" -v pics="$FILES_THUMBS_MAX" -v thumbs="$TMP/files.thumbs" -v left="$TMP/files.left" '
+        NR <= from { next }
+        !stop { b += length($0) + ($10 == "file" ? length($1) + 150 : 120); if (k > 0 && (k >= max || b > bytes)) { stop = 1; at = NR - 1 } }   # its JSON, near enough (a file repeats its id in its page); a page holds one row at least
+        stop { rest++; next }
+        { k++; if ($11 != "") { if (++np <= pics) print $5 "\t" $11 >> thumbs; else $11 = "" } print }
+        END { printf "%d %d\n", (stop ? at : NR), rest > left }'
+}
+files_list() {   # files_list FOLDER [GROUP] [FROM] -> the folder's rows from FROM: its folders, then its files, each by name, a page of them; a link shown and never followed; FILES_N, FILES_D and FILES_B count the whole folder, FILES_NEXT and FILES_LEFT what follows the page
+    rm -f "$TMP/walk.stopped"
+    find "$1" -mindepth 1 -maxdepth 1 ! -name '.*' -print0 2>/dev/null | files_nul | files_stats > "$TMP/files.stats"
+    files_counts "$1" > "$TMP/files.counts"
+    files_rows_fmt "${2:-}" no "$TMP/files.counts" < "$TMP/files.stats" | sort -t "$US" -k1,1 -k4,4 | cut -d "$US" -f2- | files_slice "${3:-0}"
+    read -r FILES_N FILES_D FILES_B < "$TMP/files.sum"; read -r FILES_NEXT FILES_LEFT < "$TMP/files.left"
+}
+files_walk() {   # files_walk ROOT f|fd [FIND-TESTS...] -> the files (f) or the files and folders (fd) under ROOT, no hidden or skipped folder entered, no link, FILES_DEPTH deep at most, FILES_WALK_LIMIT (else FILES_WALK_T) seconds at most
     _fwr=$1; _fwk=$2; shift 2
     if [ "$_fwk" = f ]; then set -- -type f "$@" -print; else set -- '(' -type f -o -type d ')' "$@" -print; fi
     set -- ')' ')' -prune -o ! -name '.*' ! -type l "$@"
     for _fws in $FILES_SKIP; do set -- -o -name "$_fws" "$@"; done
     set -- "$_fwr" -mindepth 1 -maxdepth "$FILES_DEPTH" '(' -type d '(' -name '.*' "$@"
-    find "$@"
+    files_timed "${FILES_WALK_LIMIT:-$FILES_WALK_T}" find "$@"
 }
-files_recent() {   # -> the files under your home touched in the last FILES_RECENT_DAYS days, the newest first, FILES_RECENT_MAX at most, each with its folder as a column (no database: the folders' own times)
-    _frh=$(files_home_root)
-    files_walk "$_frh" f -mtime "-$FILES_RECENT_DAYS" 2>/dev/null | while IFS= read -r _frf; do
-        [ -f "$_frf" ] && [ ! -L "$_frf" ] || continue
-        printf '%s\t%s\n' "$(files_stat "$_frf" | cut -d' ' -f2)" "$_frf"
-    done | sort -rn | head -n "$FILES_RECENT_MAX" | cut -f2 | while IFS= read -r _frf; do
-        files_line file "$_frf" recent "$(files_folder_of "$_frf")"
-    done
+files_recent() {   # -> the files under your home touched in the last FILES_RECENT_DAYS days, the newest first, FILES_RECENT_MAX at most, each with its folder as a column (no database: the folders' own times; a home too large to walk in FILES_WALK_T gives what the walk found)
+    rm -f "$TMP/walk.stopped"
+    files_walk "$(files_home_root)" f -mtime "-$FILES_RECENT_DAYS" 2>/dev/null | tr '\n' '\000' | files_stats | sort -t "$US" -k3,3nr | head -n "$FILES_RECENT_MAX" > "$TMP/files.rstats"
+    files_rows_fmt recent yes < "$TMP/files.rstats" | cut -d "$US" -f2- | files_slice 0
 }
-files_search() {   # files_search find|say WORDS -> the rows of a search over every root: find, a name that holds every word; say, a text file (a megabyte at most) that holds the words; FILES_FOUND_MAX at most, each with its folder as a column
+files_search() {   # files_search find|say WORDS -> the rows of a search over every root: find, a name that holds every word; say, a text file (a megabyte at most) that holds the words; FILES_FOUND_MAX at most, each with its folder as a column; FILES_SEARCH_T seconds at most, and a row that says so when it stops
     _fsw=$(printf '%s' "$2" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//'); [ -n "$_fsw" ] && [ "${#_fsw}" -le 256 ] || return 1
     [ "$(printf '%s' "$_fsw" | tr -d '\000-\037\177')" = "$_fsw" ] || return 1
-    : > "$TMP/files.found"
+    : > "$TMP/files.found"; rm -f "$TMP/walk.stopped"; FILES_WALK_LIMIT=$FILES_SEARCH_T
     files_roots | while IFS= read -r _fsr; do
         [ -n "$_fsr" ] || continue
         if [ "$1" = find ]; then
@@ -6974,16 +7034,16 @@ files_search() {   # files_search find|say WORDS -> the rows of a search over ev
                 [ -z "$_fsk" ] || printf '%s\n' "$_fsf"
             done
         else
-            files_walk "$_fsr" f -size -1024k 2>/dev/null | tr '\n' '\000' | xargs -0 grep -lisFI -- "$_fsw" 2>/dev/null || :
+            files_walk "$_fsr" f -size -1024k 2>/dev/null | tr '\n' '\000' | files_low xargs -0 grep -lisFI -- "$_fsw" 2>/dev/null || :
         fi
     done | sort | head -n "$FILES_FOUND_MAX" > "$TMP/files.found"
-    while IFS= read -r _fsf; do
-        _fsp=$(files_ok "$_fsf" any) || continue
-        if [ -d "$_fsp" ]; then printf '0\037'; files_line dir "$_fsp" '' "$(files_folder_of "$_fsp")"; else printf '1\037'; files_line file "$_fsp" '' "$(files_folder_of "$_fsp")"; fi
-    done < "$TMP/files.found" > "$TMP/files.unsorted"
-    sort -t "$(printf '\037')" -k1,1 -k4,4 -k6,6 "$TMP/files.unsorted" | cut -d "$(printf '\037')" -f2-   # by kind, name, then path: two of one name in a fixed order
-    _fsc=$(grep -c . "$TMP/files.unsorted" || :)
-    if [ "${_fsc:-0}" -eq 0 ]; then printf 'files:total\037blank\037%s\037\037\037\037\037\037\037total\037\n' "nothing found"; fi
+    unset FILES_WALK_LIMIT
+    while IFS= read -r _fsf; do files_ok "$_fsf" any || :; done < "$TMP/files.found" | tr '\n' '\000' | files_stats > "$TMP/files.stats"
+    awk -F "$US" 'tolower($1) ~ /^dir/ { print substr($0, length($1 $2 $3 $4 $5) + 6) }' "$TMP/files.stats" | tr '\n' '\000' | files_counts > "$TMP/files.counts"
+    files_rows_fmt '' yes "$TMP/files.counts" < "$TMP/files.stats" | sort -t "$US" -k1,1 -k4,4 -k6,6 | cut -d "$US" -f2- | files_slice 0   # by kind, name, then path: two of one name in a fixed order
+    read -r _fsn _fsd _fsb < "$TMP/files.sum"
+    if [ $((_fsn + _fsd)) -eq 0 ] && [ ! -e "$TMP/walk.stopped" ]; then printf 'files:total\037blank\037%s\037\037\037\037\037\037\037total\037\n' "nothing found"
+    elif [ -e "$TMP/walk.stopped" ]; then printf 'files:total\037blank\037%s\037\037\037\037\037\037\037total\037\n' "the search stopped at $FILES_SEARCH_T seconds: $((_fsn + _fsd)) found"; fi
 }
 files_thumbs() {   # the pictures' small pictures, PATH<tab>THUMB a line on stdin: each made where it is not there yet; a week-old one goes; quiet
     mkdir_state "$FILES_THUMB_DIR" 2>/dev/null || return 0
@@ -7001,11 +7061,11 @@ FILES_TOOL_T=10          # a tool a preview runs on a file, at most this many se
 FILES_KINDS='markdown md markdown
 json json
 code sh bash zsh fish py rb pl lua js mjs cjs ts tsx jsx c h cc cpp hpp cs java kt go rs swift sql html htm css scss xml yaml yml toml ini cfg conf env diff patch
-text txt text log csv tsv rst org tex srt vtt
-picture png jpg jpeg webp gif svg bmp
+text txt text log csv tsv jsonl ndjson rst org tex srt vtt
+picture png jpg jpeg webp gif svg bmp tif tiff
 pdf pdf
-sound mp3 wav flac ogg oga opus m4a aac
-video mp4 m4v mov webm mkv avi
+sound mp3 wav flac ogg oga opus m4a aac aif aiff aifc ac3 eac3 dts caf mka wv
+video mp4 m4v mov webm mkv avi mpg mpeg mts m2ts wmv ogv mxf 3gp
 office docx pptx xlsx odt odp ods'
 FILES_WAVE_PX=160        # a sound's waveform, its height in pixels over the spectrogram (512)
 MPV_SAFE='--no-config --no-ytdl --load-scripts=no --demuxer-lavf-o=protocol_whitelist=file'   # mpv on a file: no config of its own, no scripts, no network
@@ -7016,7 +7076,10 @@ files_kind() {   # files_kind PATH -> its kind (FILES_KINDS); text for another t
     elif command -v file >/dev/null 2>&1 && file -b --mime-type -- "$1" 2>/dev/null | grep -q '^text/'; then echo text
     else echo other; fi
 }
-files_tool() { if command -v timeout >/dev/null 2>&1; then timeout "$FILES_TOOL_T" "$@"; else "$@"; fi; }   # files_tool CMD... -- CMD, stopped after FILES_TOOL_T seconds where timeout is here
+files_tool() {   # files_tool CMD... -- CMD, stopped after FILES_TOOL_T seconds where timeout is here; at an idle priority under FILES_IDLE (the small pictures, #123)
+    if [ -n "${FILES_IDLE:-}" ]; then set -- nice -n 19 "$@"; ! command -v ionice >/dev/null 2>&1 || set -- ionice -c 3 "$@"; fi
+    if command -v timeout >/dev/null 2>&1; then timeout "$FILES_TOOL_T" "$@"; else "$@"; fi
+}
 files_say() { jq -cn --arg s "$1" '{say: $s}' > "$TMP/page.json"; }   # files_say WORDS -- page.json: no preview, and why
 files_page() {   # files_page PATH PAGE [full] -> the preview's page of PATH (#120): its name, its facts, then its lines, a picture (full: drawn larger, for a zoom), a sound, or why there is none; false when PATH does not hold to the lines
     _fp=$(files_ok "$1" file) || return 1
@@ -7056,7 +7119,12 @@ files_page_text() {   # files_page_text PATH KIND SIZE BASE -- page.json: the te
            else {lines: $l, numbered: ($k == "code")} end) + {attach: $a}' < "$TMP/page.txt" > "$TMP/page.json"
 }
 files_page_picture() {   # files_page_picture PATH BASE PX -- page.json: the picture, PX on its long side at most, and its size at 100 % (its own pixels, a fact too); full where that is the picture whole
-    _fpd=$(file -b -- "$1" 2>/dev/null | sed -n 's/.*[ ,]\([0-9][0-9]*\) *x *\([0-9][0-9]*\).*/\1 \2/p' | head -1)
+    _fpd=$(png_size "$1")
+    [ -n "$_fpd" ] || _fpd=$(file -b -- "$1" 2>/dev/null | sed -n 's/.*[ ,]\([0-9][0-9]*\) *x *\([0-9][0-9]*\).*/\1 \2/p' | head -1)
+    case $1 in *.svg|*.SVG) ;; *) if [ -z "$_fpd" ] && command -v mpv >/dev/null 2>&1; then   # a TIFF's size: file(1) gives none, mpv reads it
+        # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
+        _fpd=$(files_tool mpv $MPV_SAFE --untimed --vo=null --ao=null --length=0.05 --msg-level=all=no,term-msg=info --term-playing-msg='${width:} ${height:}' -- "$1" </dev/null 2>/dev/null | head -1 | grep -x '[0-9][0-9]* [0-9][0-9]*' || :)
+    fi ;; esac
     _fps=$3; _fpz=null; _fpw=false; [ "$3" != "$FILES_FULL_PX" ] || _fpw=true
     if [ -n "$_fpd" ]; then
         # shellcheck disable=SC2086   # two numbers, split on purpose
@@ -7068,11 +7136,19 @@ files_page_picture() {   # files_page_picture PATH BASE PX -- page.json: the pic
         *.svg|*.SVG) command -v rsvg-convert >/dev/null 2>&1 && files_tool rsvg-convert -a -w "$_fps" -h "$_fps" -o "$2.png" "$1" 2>/dev/null ;;
         *) pic_png "$1" "$2.png" "$_fps" ;;
     esac || { files_say "No preview: nothing here draws this picture. Enter opens it."; return 0; }
+    if [ "$_fpz" != null ]; then   # a phone's photo is drawn turned by its EXIF orientation: its size at 100 % is the drawn one's way round
+        # shellcheck disable=SC2046   # four numbers, split on purpose
+        set -- "$1" "$2" "$3" $_fpd $(png_size "$2.png")
+        if [ $# -eq 7 ] && { { [ "$4" -gt "$5" ] && [ "$7" -gt "$6" ]; } || { [ "$5" -gt "$4" ] && [ "$6" -gt "$7" ]; }; }; then
+            printf '%s \303\227 %s\n' "$5" "$4" > "$TMP/page.lead"; _fpz="[$5,$4]"
+        fi
+    fi
     jq -cn --arg p "$2.png" --argjson z "$_fpz" --argjson f "$_fpw" '{picture: $p, full: $f} + (if $z == null then {} else {size: $z} end)' > "$TMP/page.json"
 }
 files_page_pdf() {   # files_page_pdf PATH PAGE BASE PX -- page.json: the page drawn PX tall at most, of how many, its size at 100 % (96 pixels an inch); its text for spark
     command -v pdftoppm >/dev/null 2>&1 || { files_say "No preview: pdftoppm (poppler) is not installed. Enter opens it."; return 0; }
-    _fpn=$(files_tool pdfinfo "$1" 2>/dev/null | sed -n 's/^Pages: *\([0-9][0-9]*\).*/\1/p')
+    _fpn=$(files_tool pdfinfo "$1" 2>"$TMP/pdf.err" | sed -n 's/^Pages: *\([0-9][0-9]*\).*/\1/p')
+    if [ -z "$_fpn" ] && grep -qi 'password' "$TMP/pdf.err"; then files_say "No preview: this PDF is locked by a password. Enter opens it."; return 0; fi
     [ -n "$_fpn" ] && [ "$_fpn" -gt 0 ] || { files_say "No preview: this PDF could not be read. Enter opens it."; return 0; }
     [ "$2" -le "$_fpn" ] || set -- "$1" "$_fpn" "$3" "$4"
     _fpz=$(files_tool pdfinfo -f "$2" -l "$2" "$1" 2>/dev/null | awk '/^Page +[0-9]+ size:/ { printf "[%d,%d]", $4 * 96 / 72 + 0.5, $6 * 96 / 72 + 0.5; exit }')
@@ -7083,12 +7159,28 @@ files_page_pdf() {   # files_page_pdf PATH PAGE BASE PX -- page.json: the page d
     jq -cn --arg p "$3-$2.png" --argjson n "$2" --argjson m "$_fpn" --arg a "$_fpa" --argjson z "${_fpz:-null}" --argjson f "$([ "$4" = "$FILES_FULL_PX" ] && echo true || echo false)" \
         '{picture: $p, page: $n, pages: $m, full: $f} + (if $a == "" then {} else {attach: $a} end) + (if $z == null then {} else {size: $z} end)' > "$TMP/page.json"
 }
+audio_bits() {   # audio_bits FILE -> the bits of a FLAC's, a WAV's or an AIFF's integer samples from its header (mpv decodes 24 bit to 32); nothing for another
+    od -An -v -tu1 -N 65536 < "$1" 2>/dev/null | awk '
+        { for (i = 1; i <= NF; i++) b[n++] = $i }
+        function id(o,   r, j) { r = ""; for (j = 0; j < 4; j++) r = r sprintf("%c", b[o + j]); return r }
+        function le(o, k,   r, j) { r = 0; for (j = k - 1; j >= 0; j--) r = r * 256 + b[o + j]; return r }
+        function be(o, k,   r, j) { r = 0; for (j = 0; j < k; j++) r = r * 256 + b[o + j]; return r }
+        END {
+            if (id(0) == "fLaC") { print (b[20] % 2) * 16 + int(b[21] / 16) + 1; exit }
+            if (id(0) == "RIFF" && id(8) == "WAVE")
+                for (o = 12; o + 28 <= n; o += 8 + z + z % 2) { z = le(o + 4, 4)
+                    if (id(o) == "fmt ") { f = le(o + 8, 2); v = le(o + 22, 2); if (f == 65534 && z >= 40) { f = le(o + 32, 2); if (le(o + 26, 2) > 0) v = le(o + 26, 2) } if (f == 1) print v; exit } }
+            if (id(0) == "FORM" && (id(8) == "AIFF" || id(8) == "AIFC"))
+                for (o = 12; o + 16 <= n; o += 8 + z + z % 2) { z = be(o + 4, 4)
+                    if (id(o) == "COMM") { print be(o + 14, 2); exit } }
+        }'
+}
 files_time() { awk -v s="$1" 'BEGIN { s = int(s + 0.5); h = int(s / 3600); m = int(s % 3600 / 60); if (h > 0) printf "%d:%02d:%02d", h, m, s % 60; else printf "%d:%02d", m, s % 60 }'; }   # files_time SECONDS -> 3:45, 1:02:03
 files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.json: a sound's tags, its waveform over its spectrogram (drawn once, whole, by mpv), what an audio engineer asks first (rate, bits, channels, format, the bitrate of a lossy one), right plays it here; a video's frame, PX wide at most, its length and size, right plays it in its app
     command -v mpv >/dev/null 2>&1 || { files_say "No preview: mpv is not installed. Enter opens it."; return 0; }
     # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
     _fmf=$(files_tool mpv $MPV_SAFE --untimed --vo=null --ao=null --length=0.05 --msg-level=all=no,term-msg=info \
-        --term-playing-msg="\${=duration:0}$US\${width:}$US\${height:}$US\${audio-params/samplerate:}$US\${audio-params/channel-count:}$US\${audio-params/format:}$US\${audio-codec-name:}$US\${metadata/by-key/title:}$US\${metadata/by-key/artist:}$US\${metadata/by-key/album:}" -- "$1" </dev/null 2>/dev/null | head -1)
+        --term-playing-msg="\${=duration:0}$US\${width:}$US\${height:}$US\${audio-params/samplerate:}$US\${audio-params/channel-count:}$US\${audio-params/format:}$US\${audio-codec-name:}$US\${metadata/by-key/title:}$US\${metadata/by-key/artist:}$US\${metadata/by-key/album:}$US\${video-params/rotate:}" -- "$1" </dev/null 2>/dev/null | head -1)
     [ -n "$_fmf" ] || { files_say "No preview: mpv could not read this file. Enter opens it."; return 0; }
     printf '%s\n' "$_fmf" | tr "$US" '\n' > "$TMP/page.media"
     { read -r _fms; read -r _fmw; read -r _fmh; read -r _fmr; read -r _fmc; read -r _fmb; read -r _fmk; } < "$TMP/page.media"
@@ -7096,12 +7188,20 @@ files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.jso
     if [ "$2" = video ]; then
         files_time "${_fms:-0}" >> "$TMP/page.lead"; echo >> "$TMP/page.lead"
         _fmx=${4:-$FILES_PAGE_PX}; _fmz=null; _fmu=true
-        [ -z "$_fmw" ] || { printf '%s \303\227 %s\n' "$_fmw" "$_fmh" >> "$TMP/page.lead"; _fmz="[$_fmw,$_fmh]"; [ "$_fmw" -le "$_fmx" ] || _fmu=false; [ "$_fmx" != "$FILES_FULL_PX" ] || _fmu=true; }
+        # the frame fits PX on its stored long side (mpv's scale takes plain numbers); the size shown is as it plays, turned by its rotation
+        _fmv=''; _fmo=$(sed -n 11p "$TMP/page.media")
+        if [ -n "$_fmw" ] && [ -n "$_fmh" ]; then
+            if [ "$_fmw" -ge "$_fmh" ]; then _fml=$_fmw; [ "$_fmw" -le "$_fmx" ] || _fmv=--vf=scale=w=$_fmx:h=-2
+            else _fml=$_fmh; [ "$_fmh" -le "$_fmx" ] || _fmv=--vf=scale=w=-2:h=$_fmx; fi
+            case $_fmo in 90|270) set -- "$1" "$2" "$3" "${4:-}" "$_fmh" "$_fmw" ;; *) set -- "$1" "$2" "$3" "${4:-}" "$_fmw" "$_fmh" ;; esac
+            printf '%s \303\227 %s\n' "$5" "$6" >> "$TMP/page.lead"; _fmz="[$5,$6]"
+            [ "$_fml" -le "$_fmx" ] || _fmu=false; [ "$_fmx" != "$FILES_FULL_PX" ] || _fmu=true
+        fi
         rm -rf "$TMP/frame"; mkdir -p "$TMP/frame"
         [ -f "$3.png" ] || {
             # shellcheck disable=SC2086
             files_tool mpv $MPV_SAFE --untimed --really-quiet --no-audio --vo=image --vo-image-format=png --vo-image-outdir="$TMP/frame" \
-                --start=10% --frames=1 --vf=scale=w="'min($_fmx,iw)'":h=-2 -- "$1" </dev/null >/dev/null 2>&1
+                --start=10% --frames=1 $_fmv -- "$1" </dev/null >/dev/null 2>&1
             mv "$TMP/frame/00000001.png" "$3.png" 2>/dev/null
         } || { files_say "No preview: no frame of this video could be drawn. Enter opens it."; return 0; }
         jq -cn --arg p "$3.png" --argjson a "$_fma" --argjson z "$_fmz" --argjson f "$_fmu" \
@@ -7110,8 +7210,9 @@ files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.jso
     fi
     # what an audio engineer asks first: the rate, the bits of a lossless one, the channels, the format, a lossy one's bitrate
     [ -z "$_fmr" ] || awk -v r="$_fmr" 'BEGIN { k = r / 1000; if (k == int(k)) printf "%d kHz\n", k; else printf "%.1f kHz\n", k }' >> "$TMP/page.lead"
-    case $_fmk in mp3|aac|opus|vorbis|wmav2) _fml=lossy ;; *) _fml='' ;; esac
-    [ -n "$_fml" ] || case $_fmb in u8*) echo '8 bit' ;; s16*) echo '16 bit' ;; s24*) echo '24 bit' ;; s32*) echo '32 bit' ;; float*) echo '32-bit float' ;; double*) echo '64-bit float' ;; esac >> "$TMP/page.lead"
+    case $_fmk in mp3|mp2|aac|opus|vorbis|wmav2|ac3|eac3|dca) _fml=lossy ;; *) _fml='' ;; esac
+    [ -n "$_fml" ] || case $_fmb in u8*) echo '8 bit' ;; s16*) echo '16 bit' ;; s24*) echo '24 bit' ;;
+        s32*) _fmn=$(audio_bits "$1"); if [ -n "$_fmn" ]; then echo "$_fmn bit"; elif [ "$_fmk" != alac ]; then echo '32 bit'; fi ;; float*) echo '32-bit float' ;; double*) echo '64-bit float' ;; esac >> "$TMP/page.lead"
     case $_fmc in 1) echo mono ;; 2) echo stereo ;; ''|0) ;; *) echo "$_fmc channels" ;; esac >> "$TMP/page.lead"
     case $_fmk in pcm_*) echo PCM ;; '') ;; *) printf '%s\n' "$_fmk" | tr 'a-z' 'A-Z' ;; esac >> "$TMP/page.lead"
     [ -z "$_fml" ] || awk -v b="$(wc -c < "$1")" -v s="${_fms:-0}" 'BEGIN { if (s > 0) printf "%d kbps\n", b * 8 / s / 1000 + 0.5 }' >> "$TMP/page.lead"
@@ -7157,14 +7258,17 @@ provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one fold
             files_search "$_fk" "$_fw" > "$TMP/files.rows" || return 1
             _ft="$_fk $(printf '%s' "$_fw" | scrub_text)" ;;
         *)
-            _fp=$(files_unb64 "${_fu#spark-shell://files/rows/}") && _fp=$(files_ok "$_fp" dir) || return 1
+            _fq=${_fu#spark-shell://files/rows/}; _ffrom=0   # a page of a large folder: ?from=N (#123)
+            case $_fq in *'?from='*) _ffrom=${_fq##*'?from='}; _fq=${_fq%%'?'*}; case $_ffrom in ''|*[!0-9]*) return 1 ;; esac ;; esac
+            _fp=$(files_unb64 "$_fq") && _fp=$(files_ok "$_fp" dir) || return 1
             _ft=$(files_home "$_fp" | scrub_text); _fhere=$_fp; _fg=''; : > "$TMP/files.rows"
             files_is_root "$_fp" || printf 'files:up\037opens\037..\037%s\037\037\037\037\037\037up\037\n' "$(files_uri "$(dirname "$_fp")")" >> "$TMP/files.rows"
-            if [ "$_fp" = "$(files_home_root)" ]; then files_recent > "$TMP/files.recent"; [ ! -s "$TMP/files.recent" ] || { cat "$TMP/files.recent" >> "$TMP/files.rows"; _fg=home; }; fi
-            files_list "$_fp" "$_fg" >> "$TMP/files.rows"
+            if [ "$_fp" = "$(files_home_root)" ] && [ "$_ffrom" = 0 ]; then files_recent > "$TMP/files.recent"; [ ! -s "$TMP/files.recent" ] || { cat "$TMP/files.recent" >> "$TMP/files.rows"; _fg=home; }; fi
+            files_list "$_fp" "$_fg" "$_ffrom" >> "$TMP/files.rows"
+            [ "${FILES_LEFT:-0}" -eq 0 ] || printf 'files:more\037opens\037the next page\037%s?from=%s\037\037%s more\037\037%s\037\037more\037\n' "$(files_uri "$_fp")" "$FILES_NEXT" "$(files_num "$FILES_LEFT")" "$_fg" >> "$TMP/files.rows"
             # the total: the files and their size; a folder of folders counts its folders; nothing listed is empty
-            if [ "$FILES_N" -gt 0 ]; then _fw="files"; [ "$FILES_N" != 1 ] || _fw="file"; _fw="$FILES_N $_fw $PANEL_SEP $(files_size "$FILES_B")"
-            elif [ "$FILES_D" -gt 0 ]; then _fw="folders"; [ "$FILES_D" != 1 ] || _fw="folder"; _fw="$FILES_D $_fw"
+            if [ "$FILES_N" -gt 0 ]; then _fw="files"; [ "$FILES_N" != 1 ] || _fw="file"; _fw="$(files_num "$FILES_N") $_fw $PANEL_SEP $(files_size "$FILES_B")"
+            elif [ "$FILES_D" -gt 0 ]; then _fw="folders"; [ "$FILES_D" != 1 ] || _fw="folder"; _fw="$(files_num "$FILES_D") $_fw"
             else _fw=empty; fi
             { printf 'files:total\037blank\037%s\037\037\037\037\037this folder\037\037total\037\n' "$_fw"
               printf 'files:new-folder\037opens\037new folder\037\037%s\037\037\037this folder\037\037new-folder\037\n' "$_fp"
@@ -7174,24 +7278,26 @@ provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one fold
     esac
     if [ -s "$TMP/files.thumbs" ]; then   # the small pictures, while the list is shown: a row without one yet draws none
         FILES_TN=$((${FILES_TN:-0} + 1)); cp "$TMP/files.thumbs" "$TMP/files.thumbs.$FILES_TN"
-        ( _fl=$TMP/files.thumbs.$FILES_TN; TMP=$(mktemp -d) && { files_thumbs < "$_fl"; rm -rf "$TMP" "$_fl"; } ) >/dev/null 2>&1 </dev/null 3>&- 4<&- 5>&- &
+        ( FILES_IDLE=1; _fl=$TMP/files.thumbs.$FILES_TN; TMP=$(mktemp -d) && { files_thumbs < "$_fl"; rm -rf "$TMP" "$_fl"; } ) >/dev/null 2>&1 </dev/null 3>&- 4<&- 5>&- &   # at an idle priority (files_tool)
     fi
     jq -Rn --arg t "$_ft" --arg here "$_fhere" --arg fm "$_ffm" '
-        def steps($a): (if $fm != "" then [{name: "files_reveal", arguments: $a, said: "reveal in the system file manager"}] else [] end) + [{name: "files_rename", arguments: $a, ask: ["name"], said: "rename"},
-            {name: "files_move", arguments: $a, pick: "to", said: "move to a folder"}, {name: "files_copy", arguments: $a, pick: "to", said: "copy to a folder"}, {name: "files_trash", arguments: $a, said: "trash"}];
+        def steps: (if $fm != "" then [{name: "files_reveal", said: "reveal in the system file manager"}] else [] end) + [{name: "files_rename", ask: ["name"], said: "rename"},
+            {name: "files_move", pick: "to", said: "move to a folder"}, {name: "files_copy", pick: "to", said: "copy to a folder"}, {name: "files_trash", said: "trash"}];
+        # the steps once a list, by kind: a row of a kind takes them with its own path (#123), so a page of a thousand stays small
+        {file: {tool: {name: "files_open", said: "open"}, more: ([{name: "files_preview", said: "preview"}, {name: "files_attach", said: "attach to the next request"}] + steps)},
+         dir: ({more: steps} + (if $fm != "" then {tool: {name: "files_browse", said: "open in the system file manager"}} else {} end))} as $kinds |
         [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end), path: .[4], c1: .[5], c2: .[6], group: (if .[7] == "" then null else .[7] end), c3: .[8], kind: .[9], preview: .[10]}
             | {path: .path} as $a
-            | {id, sign, text, children, group, columns: ([.c1, .c2, .c3] | map(select(. != null and . != ""))),
+            | {id, sign, text: (.text | '"$SCRUB_JQ"'), children, group, columns: ([.c1, .c2, .c3] | map(select(. != null and . != "") | '"$SCRUB_JQ"')),
                page: (if .kind == "file" then "spark-shell://files/preview/" + (.id | ltrimstr("files:file:")) else null end),
-               tool: (if .kind == "file" then {name: "files_open", arguments: $a, said: "open"}
-                      elif (.kind == "dir" or .kind == "browse") and $fm != "" then {name: "files_browse", arguments: $a, said: "open in the system file manager"}
+               kind: (if .kind == "file" or .kind == "dir" then .kind else null end), args: (if .kind == "file" or .kind == "dir" then $a else null end),
+               tool: (if .kind == "browse" and $fm != "" then {name: "files_browse", arguments: $a, said: "open in the system file manager"}
                       elif .kind == "new-folder" then {name: "files_new_folder", arguments: $a, ask: ["name"], said: "new folder"}
                       elif .kind == "new-text" then {name: "files_new_text", arguments: $a, ask: ["name"], said: "new text file"}
                       else null end),
-               more: (if .kind == "file" then [{name: "files_preview", arguments: $a, said: "preview"}, {name: "files_attach", arguments: $a, said: "attach to the next request"}] + steps($a)
-                      elif .kind == "dir" then steps($a) else [] end)}
-              + (if .preview != "" then {preview: .preview} else {} end)] as $rows
-        | {title: $t, rows: $rows, short: [$rows[] | select(.id | startswith("files:root:")) | .id]} + (if $here == "" then {} else {here: $here} end)' "$TMP/files.rows"
+               preview: (if .preview != "" then .preview else null end)}
+              | with_entries(select(.value != null))] as $rows
+        | {title: $t, kinds: $kinds, rows: $rows, short: [$rows[] | select(.id | startswith("files:root:")) | .id]} + (if $here == "" then {} else {here: $here} end)' "$TMP/files.rows"
 }
 files_urlenc() { printf '%s' "$1" | od -An -tx1 -v | tr -s ' \n' ' ' | awk '{ o = ""; for (i = 1; i <= NF; i++) { h = tolower($i); d = (index("0123456789abcdef", substr(h, 1, 1)) - 1) * 16 + index("0123456789abcdef", substr(h, 2, 1)) - 1; if ((d >= 48 && d <= 57) || (d >= 65 && d <= 90) || (d >= 97 && d <= 122) || d == 45 || d == 46 || d == 95 || d == 126 || d == 47) o = o sprintf("%c", d); else o = o "%" toupper(h) } printf "%s", o }'; }   # files_urlenc PATH -> the path as a .trashinfo writes it (RFC 2396: the unreserved and the slash as they are, every other byte %XX)
 files_urldec() { printf '%s' "$1" | awk '{ o = ""; s = $0; while (match(s, /%[0-9A-Fa-f][0-9A-Fa-f]/)) { o = o substr(s, 1, RSTART - 1) "\\" sprintf("%03o", (index("0123456789abcdef", tolower(substr(s, RSTART + 1, 1))) - 1) * 16 + index("0123456789abcdef", tolower(substr(s, RSTART + 2, 1))) - 1); s = substr(s, RSTART + 3) } printf "%s", o s }' | { IFS= read -r _fud || :; printf "$_fud"; }; }   # files_urldec TEXT -> the path a .trashinfo holds (%XX bytes back, through octal escapes: awk's %c is a character, not a byte, under gawk)

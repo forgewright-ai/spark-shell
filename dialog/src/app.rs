@@ -1061,7 +1061,7 @@ impl App {
                     .and_then(Value::as_str)
                     .unwrap_or("");
                 if text.len() > mcp::RESOURCE_MAX {
-                    return self.lose(idx, "its rows are over 256 kB");
+                    return self.lose(idx, "its rows are over 512 kB");
                 }
                 if let Some(rows) = model::rows(text) {
                     if let Some(st) = &rows.state {
@@ -2008,19 +2008,38 @@ impl App {
         self.cursor = (self.cursor + 1).min(self.input.chars().count());
     }
 
+    /// Home and End: in a list, its first and its last row (a folder of a thousand, #123); else the
+    /// line's start and end.
     pub fn line_start(&mut self) {
+        if self.in_list && !self.preview_key() {
+            self.keep_lit = None;
+            self.sel = 0;
+            return;
+        }
         let (l, _) = self.at();
         self.put_at(l, 0);
     }
 
     pub fn line_end(&mut self) {
+        if self.in_list && !self.preview_key() {
+            self.keep_lit = None;
+            self.sel = self.picks().len().saturating_sub(1);
+            return;
+        }
         let (l, _) = self.at();
         self.put_at(l, usize::MAX);
     }
 
-    /// Page up and down: the content area, by most of its height.
+    /// Page up and down: in a list, the lit row by a screen of rows; else the content area, by most of
+    /// its height.
     pub fn page(&mut self, d: i32) {
         let step = self.size.1.saturating_sub(14).max(4) as usize;
+        if self.in_list && !self.preview_key() {
+            self.keep_lit = None;
+            let last = self.picks().len().saturating_sub(1);
+            self.sel = if d < 0 { self.sel.saturating_sub(step) } else { (self.sel + step).min(last) };
+            return;
+        }
         self.scroll = if d < 0 { self.scroll.saturating_sub(step) } else { self.scroll + step };
     }
 

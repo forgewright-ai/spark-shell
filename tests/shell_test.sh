@@ -4397,6 +4397,8 @@ FR=$(realpath "$F"); uri() { printf 'spark-shell://files/rows/%s' "$(printf '%s'
 mkdir -p "$H/fm" "$H/nofm"; printf '#!/bin/sh\necho "$*" >> "$HOME/xdg-open.log"\n' > "$H/fm/xdg-open"; printf '#!/bin/sh\n[ "$*" != "query default inode/directory" ] || echo thunar.desktop\n' > "$H/fm/xdg-mime"
 cp "$H/fm/xdg-open" "$H/nofm/xdg-open"; printf '#!/bin/sh\n' > "$H/nofm/xdg-mime"; chmod +x "$H/fm/xdg-open" "$H/fm/xdg-mime" "$H/nofm/xdg-open" "$H/nofm/xdg-mime"
 _fpath=$PATH; PATH="$H/fm:$PATH"
+# the rows as the dialog reads them (#123): a row of a kind takes the list's steps for that kind, with its own args
+KX='. as $l | .rows |= map(. as $r | ($l.kinds[$r.kind // ""] // null) as $k | if $k == null then . else . + {tool: ($k.tool | if . == null then null else .arguments = ((.arguments // {}) + $r.args) end), more: ([($k.more // [])[] | .arguments = ((.arguments // {}) + $r.args)])} end)'
 rinit=$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{"roots":{}},"clientInfo":{"name":"test","version":"0"}}')
 roots=$(jq -cn --arg u "file://$FR" '{jsonrpc: "2.0", id: "roots", result: {roots: [{uri: $u}, {uri: "file:///"}]}}')
 mcp files "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots" "$(rq 2 resources/read '{"uri":"spark-shell://files/rows"}')" \
@@ -4409,7 +4411,7 @@ mcp files "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$ro
 [ "$(jq -c 'select(.method == "roots/list") | .id' "$H/mcp.out")" = '"roots"' ] && ok "provide files: a host that has roots is asked for them once initialized" || bad "files roots ask" "$(cat "$H/mcp.out" | head -3)"
 ans 2 | jq -r '.result.contents[0].text' | jq -e --arg u "$(uri "$FR")" '.rows | length == 1 and .[0].children == $u and .[0].sign == "opens"' >/dev/null \
     && ok "provide files: the roots are the rows at the top, each opening its folder; / is never a root" || bad "files root rows" "$(ans 2)"
-ans 3 | jq -r '.result.contents[0].text' > "$H/folder.json"
+ans 3 | jq -r '.result.contents[0].text' > "$H/folder.raw"; jq "$KX" "$H/folder.raw" > "$H/folder.json"
 [ "$(jq -r '[.rows[] | .text] | join("|")' "$H/folder.json")" = "docs|blob.txt|notes.md|pic.png|etc-link -> /etc|3 files $(printf '\302\267') 16 B|new folder|new text file|open in the system file manager" ] \
     && jq -e '(.rows[] | select(.text == "docs") | .children != null and .columns == ["2 items"] and .tool.name == "files_browse") and (.rows[] | select(.text == "notes.md") | .tool.name == "files_open" and .columns[0] == "12 B" and ([.more[].name] == ["files_preview", "files_attach", "files_reveal", "files_rename", "files_move", "files_copy", "files_trash"]) and (.page | startswith("spark-shell://files/preview/"))) and (.rows[] | select(.text | startswith("etc-link")) | .tool == null and .children == null)' "$H/folder.json" >/dev/null \
     && ok "provide files: a folder lists its folders, then its files with the size and the date, then its own steps; a link is shown and never followed; a hidden file and a pipe are not listed" || bad "files folder" "$(jq -c '.rows[] | [.text, .columns, .tool.name]' "$H/folder.json")"
@@ -4433,7 +4435,7 @@ F2R=$(realpath "$F2"); roots2=$(jq -cn --arg u "file://$F2R" '{jsonrpc: "2.0", i
 mcp2() { printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots2" "$@" | HOME=$F2 XDG_DATA_HOME=$F2/.local/share SPARK_SHELL_NO_UDISKS=1 SPARK_SHELL_NO_GIO=${NO_GIO-1} SPARK_SHELL_NO_THUMB=1 SPARK_SHELL_NO_SVG=1 sh "$SH" provide files > "$H/mcp.out" 2> "$H/mcp.err"; }
 fc2() { call "$1" "$2" "$(jq -cn --arg p "$3" --arg k "${4:-}" --arg v "${5:-}" '{path: $p} + (if $k == "" then {} else {($k): $v} end)')"; }   # fc2 ID TOOL PATH [KEY VALUE]
 mcp2 "$(rq 2 resources/read "$(jq -cn --arg u "$(uri "$F2R")" '{uri: $u}')")" "$(rq 3 resources/read "$(jq -cn --arg u "$(uri "$F2R/docs")" '{uri: $u}')")"
-ans 2 | jq -r '.result.contents[0].text' > "$H/home2.json"; ans 3 | jq -r '.result.contents[0].text' > "$H/docs2.json"
+ans 2 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/home2.json"; ans 3 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/docs2.json"
 [ "$(jq -r '.here' "$H/home2.json")" = "$F2R" ] && [ "$(jq -r '[.rows[] | select(.group == "recent") | .text + " " + (.columns | join(","))] | join("|")' "$H/home2.json")" = "notes.md 12 B,today,~|invoice.txt 18 B,$(date -d '-3 day' '+%d %b' 2>/dev/null || date -v-3d '+%d %b'),docs" ] \
     && [ "$(jq -r '[.rows[] | select(.group == "home") | .text] | join("|")' "$H/home2.json")" = 'docs|node_modules|pictures|notes.md' ] \
     && [ "$(jq -r '[.rows[] | select(.group == "this folder") | .text + ":" + (.tool.name // "-") + ":" + ((.tool.ask // []) | join(","))] | join("|")' "$H/home2.json")" = "1 file $(printf '\302\267') 12 B:-:|new folder:files_new_folder:name|new text file:files_new_text:name|open in the system file manager:files_browse:" ] \
@@ -4444,6 +4446,30 @@ ans 2 | jq -r '.result.contents[0].text' > "$H/home2.json"; ans 3 | jq -r '.resu
     && [ "$(jq -r '.rows[] | select(.text == "invoice.txt") | .tool.name + "|" + ([.more[] | .name + ":" + ((.ask // []) | join(",")) + ":" + (.pick // "")] | join(" "))' "$H/docs2.json")" = 'files_open|files_preview:: files_attach:: files_reveal:: files_rename:name: files_move::to files_copy::to files_trash::' ] \
     && [ "$(jq -r '.rows[] | select(.text == "deep") | .columns[0]' "$H/docs2.json")" = '0 items' ] \
     && ok "provide files: a folder's rows: .. first, a folder with its steps (reveal, rename, move, copy, trash, each in a person's words), a file with show and attach before them; rename asks a name, move and copy pick a folder (to); no recent group below your home" || bad "files docs rows" "$(jq -c '{here, rows: [.rows[] | [.text, .group, .tool.name, [.more[]?.said]]]}' "$H/docs2.json")"
+# #123: a folder of thousands, gracefully. Each row carries its kind and its path, the steps are the list's once; a large folder
+# lists a page at a time under the 512 kB of a resource the dialog reads, its last row opening the next; 200 small pictures a page at most; one stat
+# for many paths, so a folder of 1,235 answers in moments; a search that reaches its time says so
+BIG=$F2R/big; mkdir -p "$BIG/sub" "$F2R/pics" "$H/tstop"; : > "$BIG/sub/x"
+i=0; while [ $i -lt 1234 ]; do : > "$BIG/file-$(printf %04d $i).txt"; i=$((i + 1)); done
+i=0; while [ $i -lt 205 ]; do : > "$F2R/pics/photo-$(printf %03d $i).png"; i=$((i + 1)); done
+_t0=$(date +%s); mcp2 "$(rq 2 resources/read "$(jq -cn --arg u "$(uri "$BIG")" '{uri: $u}')")" "$(rq 4 resources/read "$(jq -cn --arg u "$(uri "$F2R/pics")" '{uri: $u}')")"; _t1=$(date +%s)
+ans 2 | jq -r '.result.contents[0].text' > "$H/big1.json"; ans 4 | jq -r '.result.contents[0].text' > "$H/pics.json"; _b1=$(wc -c < "$H/big1.json" | tr -d ' ')
+_nx=$(jq -r '.rows[] | select(.id == "files:more") | .children' "$H/big1.json")
+mcp2 "$(rq 3 resources/read "$(jq -cn --arg u "$_nx" '{uri: $u}')")"; ans 3 | jq -r '.result.contents[0].text' > "$H/big2.json"
+_n1=$(jq '[.rows[] | select(.kind == "file" or .kind == "dir")] | length' "$H/big1.json"); _n2=$(jq '[.rows[] | select(.kind == "file" or .kind == "dir")] | length' "$H/big2.json")
+[ $((_n1 + _n2)) = 1235 ] && [ "$_b1" -lt 524288 ] && [ $((_t1 - _t0)) -le 15 ] && case $_nx in "$(uri "$BIG")?from=$_n1") true ;; *) false ;; esac \
+    && jq -e --arg b "$BIG" --arg left "$((1235 - _n1)) more" '(.rows[1] | .text == "sub" and .columns == ["1 item"]) and (.rows[] | select(.id == "files:more") | .text == "the next page" and .columns == [$left])
+        and (.rows[] | select(.text == "file-0000.txt") | .kind == "file" and .args == {path: ($b + "/file-0000.txt")} and (has("more") | not) and (has("tool") | not))
+        and (.kinds.file.tool.name == "files_open") and ([.kinds.file.more[].name] | index("files_trash") != null) and (.rows[] | select(.id == "files:total") | .text | startswith("1,234 files"))' "$H/big1.json" >/dev/null \
+    && jq -e '(.rows[0].id == "files:up") and ([.rows[] | select(.id == "files:more")] | length == 0) and (.rows[] | select(.id == "files:total") | .text | startswith("1,234 files"))' "$H/big2.json" >/dev/null \
+    && ok "provide files: a folder of 1,235 lists a page under the dialog's 512 kB, its last row opening the next with what is left; a row carries its kind and path, the steps are the list's once; in moments ($((_t1 - _t0)) s) (#123)" \
+    || bad "files big folder" "$_n1 + $_n2 rows, $_b1 bytes, $((_t1 - _t0)) s, next $_nx $(jq -c '[.rows[] | select(.kind == null)]' "$H/big1.json" 2>&1 | head -c 600)"
+[ "$(jq '[.rows[] | select(.preview != null)] | length' "$H/pics.json")" = 200 ] && ok "provide files: a page asks for 200 small pictures at most, drawn at an idle priority (#123)" || bad "files thumbs cap" "$(jq '[.rows[] | select(.preview != null)] | length' "$H/pics.json")"
+printf '#!/bin/sh\nexit 124\n' > "$H/tstop/timeout"; chmod +x "$H/tstop/timeout"   # a walk that reaches its time
+( PATH="$H/tstop:$PATH" mcp2 "$(rq 5 resources/read "$(jq -cn --arg u "spark-shell://files/rows/find/$(printf 'file-0001' | base64 | tr -d '\n=' | tr '+/' '-_')" '{uri: $u}')")" )
+[ "$(ans 5 | jq -r '.result.contents[0].text | fromjson | .rows[] | select(.id == "files:total") | .text')" = 'the search stopped at 8 seconds: 0 found' ] \
+    && ok "provide files: a search that reaches its time says it stopped, and how many it found (#123)" || bad "files search stopped" "$(ans 5)"
+rm -rf "$BIG" "$F2R/pics"
 mcp2 "$(fc2 2 files_rename "$F2R/notes.md" name 'Notes 2026.md')" "$(fc2 3 files_move "$F2R/Notes 2026.md" to "$F2R/docs")" "$(fc2 4 files_copy "$F2R/docs/invoice.txt" to "$F2R/pictures")" "$(fc2 5 files_trash "$F2R/pictures/invoice.txt")" \
     "$(fc2 6 files_copy "$F2R/docs/invoice.txt" to "$F2R/pictures")" "$(fc2 7 files_trash "$F2R/pictures/invoice.txt")" "$(fc2 11 files_move "$F2R/docs/Notes 2026.md" to "$F2R")"
 cp "$H/mcp.out" "$H/mcp.first"   # the two trashed, before the restore
@@ -4478,8 +4504,8 @@ mcp2 "$(call 2 files_find '{"words":"invoice"}')" "$(call 3 files_find '{"words"
     && ok "provide files: find walks the roots for a name that holds every word, whatever the case, node_modules and the hidden left out, and answers the list to open, each row with its folder (the copy kept its date); say greps the text files for the words; nothing found is said; empty words refused" || bad "files find say" "$(ans 2) $(ans 3) $(ans 4) $(ans 5) $(ans 6) $(ans 7 | head -c 400)"
 if [ "$(uname -s)" = Linux ]; then   # the Linux half (the uname stub): xdg-open is a stub here, so a file may be opened
     # #114: no system file manager configured: no browse row, no reveal step, a folder's row has no tool (Enter still opens it)
-    PATH="$H/nofm:$_fpath" mcp2 "$(rq 2 resources/read "$(jq -cn --arg u "$(uri "$F2R")" '{uri: $u}')")" "$(rq 3 resources/read "$(jq -cn --arg u "$(uri "$F2R/docs")" '{uri: $u}')")"
-    ans 2 | jq -r '.result.contents[0].text' > "$H/home3.json"; ans 3 | jq -r '.result.contents[0].text' > "$H/docs3.json"
+    ( PATH="$H/nofm:$_fpath" mcp2 "$(rq 2 resources/read "$(jq -cn --arg u "$(uri "$F2R")" '{uri: $u}')")" "$(rq 3 resources/read "$(jq -cn --arg u "$(uri "$F2R/docs")" '{uri: $u}')")" )
+    ans 2 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/home3.json"; ans 3 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/docs3.json"
     [ "$(jq -r '[.rows[] | select(.group == "this folder") | .text] | join("|")' "$H/home3.json")" = "$(jq -r '[.rows[] | select(.group == "this folder") | .text] | join("|")' "$H/home2.json" | sed 's/|open in the system file manager$//')" ] \
         && jq -e '(.rows[] | select(.text == "docs") | .tool == null and .children != null and ([.more[].name] == ["files_rename", "files_move", "files_copy", "files_trash"]))' "$H/home3.json" >/dev/null \
         && jq -e '(.rows[] | select(.text == "invoice.txt") | [.more[].name] == ["files_preview", "files_attach", "files_rename", "files_move", "files_copy", "files_trash"])' "$H/docs3.json" >/dev/null \
@@ -4493,16 +4519,16 @@ case "$*" in "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
 EOF
     printf '#!/bin/sh\n' > "$H/lxo/ed-stub"; chmod +x "$H/lxo/swaymsg" "$H/lxo/ed-stub"; rm -f "$F2/opened" "$F2/swaymsg.log" "$F2/xdg-open.log"
     printf 'plain words\n' > "$F2/plain.txt"; printf '\211PNG\000x' > "$F2/photo.png"
-    SWAYSOCK=$F2/sock WAYLAND_DISPLAY=w EDITOR=ed-stub PATH="$H/lxo:$H/nofm:$_fpath" mcp2 "$(fc2 2 files_open "$F2R/plain.txt")"
+    ( SWAYSOCK=$F2/sock WAYLAND_DISPLAY=w EDITOR=ed-stub PATH="$H/lxo:$H/nofm:$_fpath" mcp2 "$(fc2 2 files_open "$F2R/plain.txt")" )
     [ "$(ans 2 | jq -c '.result.structuredContent')" = '{"opened":true}' ] && grep -qxF -- "-- exec foot -e ed-stub '$F2R/plain.txt'" "$F2/swaymsg.log" \
         && ok "provide files: a text file opens in the editor in a terminal window, the window the receipt, as a new text file does (#113)" || bad "files open text" "$(ans 2) $(cat "$F2/swaymsg.log" 2>&1)"
     if command -v python3 >/dev/null 2>&1; then
-        SWAYSOCK='' WAYLAND_DISPLAY=w PATH="$H/nofm:$_fpath" mcp2 "$(fc2 2 files_open "$F2R/photo.png")"
+        ( SWAYSOCK='' WAYLAND_DISPLAY=w PATH="$H/nofm:$_fpath" mcp2 "$(fc2 2 files_open "$F2R/photo.png")" )
         [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'opening requested for photo.png' ] && grep -qF "$F2R/photo.png" "$F2/xdg-open.log" \
             && ok "provide files: a file that is not text keeps the system's opener (#113)" || bad "files open picture" "$(ans 2) $(cat "$F2/xdg-open.log" 2>&1)"
         # #117: inside sway, a file the opener took is opened and the dialog closes at once; a browser already open shows no new window, and the old 30 s wait left the dialog open
         rm -f "$F2/opened" "$F2/xdg-open.log"; _t0=$(date +%s)
-        SWAYSOCK=$F2/sock WAYLAND_DISPLAY=w PATH="$H/lxo:$H/nofm:$_fpath" mcp2 "$(fc2 2 files_open "$F2R/photo.png")"
+        ( SWAYSOCK=$F2/sock WAYLAND_DISPLAY=w PATH="$H/lxo:$H/nofm:$_fpath" mcp2 "$(fc2 2 files_open "$F2R/photo.png")" )
         [ "$(ans 2 | jq -c '.result.structuredContent')" = '{"opened":true}' ] && [ $(( $(date +%s) - _t0 )) -le 5 ] && grep -qF "$F2R/photo.png" "$F2/xdg-open.log" \
             && ok "provide files: a file the system's opener took is opened within a moment, so the dialog closes, tab or window alike (#117)" || bad "files open picture sway" "$(ans 2) $(( $(date +%s) - _t0 )) s $(cat "$F2/xdg-open.log" 2>&1)"
     fi
@@ -4512,9 +4538,14 @@ PATH=$_fpath
 # the preview (#120): a file shown as a page, by its kind, behind the files' lines; the tools that draw it are stubs
 PV=$F2/pv; mkdir -p "$PV" "$H/pvb"; PVR=$F2R/pv
 printf '# Plan\n\nsome words\n' > "$PV/plan.md"; printf 'fn main() {\n\tgo();\n}\n' > "$PV/main.rs"; printf '{"a":1,"b":[2]}' > "$PV/x.json"; printf 'x\000y' > "$PV/blob.bin"
-cp "$REPO/assets/favicon-26.png" "$PV/logo.png"; printf '%%PDF-1.4 stub\n' > "$PV/report.pdf"; printf 'flac stub' > "$PV/song.flac"; printf 'webm stub' > "$PV/clip.webm"
+cp "$REPO/assets/favicon-26.png" "$PV/logo.png"; printf '%%PDF-1.4 stub\n' > "$PV/report.pdf"; printf 'flac stub' > "$PV/song.flac"; printf 'webm stub' > "$PV/clip.webm"; printf 'mov stub' > "$PV/phone.mov"; printf 'mp4 stub' > "$PV/tall.mp4"
+# the trial's cases: a 24-bit WAV and AIFF by their headers' bytes, a PDF locked by a password, a photo stored 40 by 20 and drawn turned, an empty picture
+printf 'RIFF\044\000\000\000WAVEfmt \020\000\000\000\001\000\002\000\000\167\001\000\000\312\010\000\006\000\030\000data\000\000\000\000' > "$PV/hi.wav"
+printf 'FORM\000\000\000\056AIFFCOMM\000\000\000\022\000\002\000\000\000\000\000\030\100\016\273\200\000\000\000\000\000\000' > "$PV/take.aif"
+printf '%%PDF-1.4 locked\n' > "$PV/locked.pdf"; printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\050\000\000\000\024' > "$PV/turned.png"; : > "$PV/empty.png"; printf 'MM\000*tiff stub' > "$PV/scan.tif"
 cat > "$H/pvb/pdfinfo" <<'STUB'
 #!/bin/sh
+case $* in *locked.pdf*) echo 'Command Line Error: Incorrect password' >&2; exit 1 ;; esac
 printf 'Pages:          3\nPage    2 size: 612 x 792 pts (letter)\n'
 STUB
 cat > "$H/pvb/pdftoppm" <<'STUB'
@@ -4527,7 +4558,12 @@ for a; do o=$a; done; echo 'the page text' > "$o"
 STUB
 cat > "$H/pvb/gdk-pixbuf-thumbnailer" <<'STUB'
 #!/bin/sh
-echo "$*" >> "$HOME/thumb.log"; cp "$3" "$4"
+echo "$*" >> "$HOME/thumb.log"
+case $3 in *turned.png) printf '\211PNG\r\n\032\n\000\000\000\015IHDR\000\000\000\024\000\000\000\050' > "$4" ;; *empty.png) exit 1 ;; *) cp "$3" "$4" ;; esac
+STUB
+cat > "$H/pvb/rsvg-convert" <<'STUB'
+#!/bin/sh
+for a; do case $p in -o) cp "$REPO_PNG" "$a" ;; esac; p=$a; done
 STUB
 cat > "$H/pvb/mpv" <<'STUB'
 #!/bin/sh
@@ -4536,7 +4572,12 @@ for a; do case $a in --vo-image-outdir=*) cp "$REPO_PNG" "${a#*=}/00000001.png" 
 for a; do f=$a; done
 case $* in *--term-playing-msg=*) case $f in
     *.flac) printf '20.5%s%s%s44100%s2%ss16%sflac%sEvening%sAda%sProofs\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
-    *.webm) printf '4.5%s1280%s720%s%s%s%svp8%s%s%s\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;; esac ;; esac
+    *.webm) printf '4.5%s1280%s720%s%s%s%svp8%s%s%s\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
+    *.mov) printf '12%s1920%s1080%s%s%s%sh264%s%s%s%s270\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
+    *.mp4) printf '15%s1080%s1920%s%s%s%sh264%s%s%s%s0\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
+    *.wav) printf '3%s%s%s96000%s2%ss32%spcm_s24le%s%s%s\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
+    *.aif) printf '3%s%s%s48000%s2%ss32%spcm_s24be%s%s%s\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
+    *.tif) echo '5400 2700' ;; esac ;; esac
 STUB
 chmod +x "$H/pvb/"*
 pvu() { printf 'spark-shell://files/preview/%s%s' "$(printf '%s' "$1" | base64 | tr -d '\n=' | tr '+/' '-_')" "${2:-}"; }   # pvu PATH [?QUERY] -> its page's uri
@@ -4545,7 +4586,8 @@ page() { ans "$1" | jq -r '.result.contents[0].text'; }
 mcpv() { printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots2" "$@" | REPO_PNG=$REPO/assets/favicon-26.png PATH="$H/pvb:$_fpath" HOME=$F2 XDG_DATA_HOME=$F2/.local/share SPARK_SHELL_NO_UDISKS=1 SPARK_SHELL_NO_GIO=1 sh "$SH" provide files > "$H/mcp.out" 2> "$H/mcp.err"; }   # mcp2 with the preview's stub tools, a thumbnailer among them
 mcpv "$(pvr 2 "$PVR/plan.md")" "$(pvr 3 "$PVR/main.rs")" "$(pvr 4 "$PVR/x.json")" "$(pvr 5 "$PVR/blob.bin")" \
     "$(pvr 6 "$PVR/logo.png")" "$(pvr 7 "$PVR/report.pdf" '?page=2')" "$(pvr 8 "$PVR/report.pdf" '?page=2&full=1')" "$(pvr 9 "$PVR/song.flac")" "$(pvr 10 "$PVR/clip.webm")" \
-    "$(pvr 11 "$F2R/.hidden-file")" "$(rq 12 resources/read '{"uri":"spark-shell://files/preview/L2V0Yy9ob3N0cw"}')" "$(rq 13 resources/templates/list)"
+    "$(pvr 11 "$F2R/.hidden-file")" "$(rq 12 resources/read '{"uri":"spark-shell://files/preview/L2V0Yy9ob3N0cw"}')" "$(rq 13 resources/templates/list)" "$(pvr 14 "$PVR/phone.mov")" "$(pvr 15 "$PVR/tall.mp4")" \
+    "$(pvr 16 "$PVR/hi.wav")" "$(pvr 17 "$PVR/take.aif")" "$(pvr 18 "$PVR/locked.pdf")" "$(pvr 19 "$PVR/turned.png")" "$(pvr 20 "$PVR/empty.png")" "$(pvr 21 "$PVR/scan.tif")"
 page 2 | jq -e '.title == "plan.md" and .lines == ["Plan", "", "some words"] and .bold == [0] and (.attach | endswith(".txt")) and (.facts | length) == 2' >/dev/null \
     && page 3 | jq -e '.numbered == true and .lines[1] == "    go();"' >/dev/null && page 4 | jq -e '.lines == ["{", "  \"a\": 1,", "  \"b\": [", "    2", "  ]", "}"]' >/dev/null \
     && page 5 | jq -e '.say == "No preview for this kind of file. Enter opens it." and .lines == null' >/dev/null \
@@ -4560,6 +4602,17 @@ page 9 | jq -e '.lines == ["Evening", "Ada \u00b7 Proofs"] and .seconds == 20.5 
     && ok "provide files: a sound's tags, its waveform over its spectrogram drawn once, what an engineer asks first (rate, bits, channels, format); mpv on local files only (#120)" || bad "preview sound" "$(page 9) | $(cat "$F2/mpv.log" 2>&1)"
 page 10 | jq -e '.facts[0:2] == ["0:05", "1280 \u00d7 720"] and .size == [1280, 720] and .play.name == "files_open" and (.picture | endswith(".png"))' >/dev/null \
     && ok "provide files: a video's frame, its length and size; right plays it in its app (#120)" || bad "preview video" "$(page 10)"
+_vf() { grep -F -- "--vo-image-outdir" "$F2/mpv.log" | grep -F -- "$1" | grep -o -- '--vf=[^ ]*' || :; }   # _vf FILE -> the scale its frame was drawn with
+page 14 | jq -e '.facts[1] == "1080 \u00d7 1920" and .size == [1080, 1920]' >/dev/null && page 15 | jq -e '.size == [1080, 1920]' >/dev/null \
+    && [ "$(_vf phone.mov)" = '--vf=scale=w=1600:h=-2' ] && [ "$(_vf tall.mp4)" = '--vf=scale=w=-2:h=1600' ] && [ -z "$(_vf clip.webm)" ] \
+    && ok "provide files: a phone's clip shows its size as it plays; a frame fits its long side in plain numbers, mpv's own syntax, and one smaller is drawn as it is (#120)" \
+    || bad "preview video turned" "$(page 14) | $(page 15) | $(grep -F -- --vo-image-outdir "$F2/mpv.log" 2>&1)"
+page 16 | jq -e '.facts[0:4] == ["96 kHz", "24 bit", "stereo", "PCM"] and .sound != null' >/dev/null && page 17 | jq -e '.facts[0:2] == ["48 kHz", "24 bit"] and .sound != null' >/dev/null \
+    && ok "provide files: a 24-bit WAV and an AIFF say 24 bit, read from their headers (mpv decodes them to 32); an AIFF is a sound (#120)" || bad "preview bits" "$(page 16) | $(page 17)"
+page 18 | jq -e '.say == "No preview: this PDF is locked by a password. Enter opens it."' >/dev/null && page 19 | jq -e '.size == [20, 40] and .facts[0] == "20 \u00d7 40"' >/dev/null \
+    && page 20 | jq -e '.say == "No preview: nothing here draws this picture. Enter opens it."' >/dev/null && page 21 | jq -e '.size == [5400, 2700] and (.picture | endswith(".png"))' >/dev/null \
+    && ok "provide files: a locked PDF says so; a photo turned by its orientation keeps its size the drawn way round; bytes no tool reads draw no empty square; a TIFF is a picture, its size read by mpv (#120)" \
+    || bad "preview trial cases" "$(page 18) | $(page 19) | $(page 20) | $(page 21)"
 [ "$(ans 11 | jq -r '.error.message')" = 'no file at that uri' ] && [ "$(ans 12 | jq -r '.error.message')" = 'no file at that uri' ] && ans 13 | jq -e '[.result.resourceTemplates[].name] == ["folder", "preview"]' >/dev/null \
     && ok "provide files: a hidden file and a path outside the roots have no page; the template names it (#120)" || bad "preview gate" "$(ans 11) $(ans 12) $(ans 13)"
 rm -f "$F2/mpv.log"
@@ -4593,7 +4646,7 @@ echo "gio $*" >> "$HOME/gio.log"
 printf '[Trash Info]\nPath=%s\nDeletionDate=2026-01-01T00:00:00\n' "$p" > "$t/info/${p##*/}.trashinfo" && mv "$p" "$t/files/${p##*/}"
 STUB
 chmod +x "$H/gio/gio"; rm -f "$F2/gio.log"
-NO_GIO='' PATH="$H/gio:$PATH" mcp2 "$(fc2 2 files_trash "$F2R/docs/todo.txt")" "$(fc2 3 files_restore "$F2R/docs/todo.txt")"
+( NO_GIO='' PATH="$H/gio:$PATH" mcp2 "$(fc2 2 files_trash "$F2R/docs/todo.txt")" "$(fc2 3 files_restore "$F2R/docs/todo.txt")" )
 [ "$(cat "$F2/gio.log" 2>/dev/null)" = "gio trash -- $F2R/docs/todo.txt" ] && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'todo.txt is in the trash' ] && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'todo.txt is back' ] && [ -f "$F2/docs/todo.txt" ] \
     && ok "provide files: where gio is, it trashes (the system's own trash view agrees), and restore reads the spec's record it wrote" || bad "files gio" "$(cat "$F2/gio.log" 2>&1) $(ans 2) $(ans 3)"
 # the dialog's keys
@@ -5318,7 +5371,7 @@ if [ "$(uname -s)" != Darwin ]; then
         && ok "theme wallpaper skyline with no renderer: the todo row names the package, the clone's picture meanwhile" || bad "no renderer row" "rc=$rc $out"
     # a picture of yours read small through rsvg-convert when the thumbnailer is gone: the picture inside a square SVG, its margins clear (python3 reads the colors: CI's bare containers have none)
     if command -v python3 >/dev/null 2>&1; then
-        mkdir -p "$HOME/pictures"; printf 'not really a jpeg' > "$HOME/pictures/photo.jpg"; : > "$H/rsvg.log"
+        mkdir -p "$HOME/pictures"; printf '\377\330\377 a JPEG by its first bytes alone' > "$HOME/pictures/photo.jpg"; : > "$H/rsvg.log"
         rc=0; out=$(SPARK_SHELL_NO_THUMB=1 PATH=$H/rsvg:$H/.local/bin:$sys sh "$SH" theme picture ~/pictures/photo.jpg 2>&1) || rc=$?
         [ "$rc" = 0 ] && grep -q '^rsvg-convert -w 256 -h 256 -o .*/small.png.new .*/pic/wrap.svg$' "$H/rsvg.log" && [ -f "$st_dir/looks/photo/palette.env" ] && grep -qx 'THEME=photo' "$cfg" \
             && ok "theme picture PATH through rsvg-convert: the picture drawn 256 wide inside an SVG, a look made from it" || bad "rsvg picture" "rc=$rc $out $(cat "$H/rsvg.log")"

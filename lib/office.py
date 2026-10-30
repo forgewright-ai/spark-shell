@@ -8,8 +8,8 @@ Reads docx, pptx and xlsx (Office Open XML) and odt, odp and ods (OpenDocument):
 paragraphs, a heading bold, a list's items marked, a table's cells a row a line; a presentation's
 slides, each under its number in bold; a sheet's cells a row a line, each sheet under its name.
 A document is untrusted: it is read for its text alone, never run. No macro, no linked file, no
-external entity (expat resolves none here); a part of it over PART_MAX unpacked is not read, and
-the text stops at LINES_MAX lines.
+external entity (expat resolves none here); a part of it over PART_MAX unpacked is not read (a
+sheet is read row by row instead, up to SHEET_MAX unpacked), and the text stops at LINES_MAX lines.
 """
 import json
 import re
@@ -18,6 +18,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 PART_MAX = 8 << 20
+SHEET_MAX = 64 << 20    # a sheet's part is streamed: a sheet of 100,000 rows shows its first rows
 LINES_MAX = 20000
 CELLS_MAX = 64          # a row's cells at most: a sheet's repeated empty columns are no text
 SEP = " \u00b7 "        # between a table's cells and a sheet's, as the dialog parts its facts
@@ -111,6 +112,32 @@ def pptx(z, doc):
             doc.add(texts(p, A + "t"))
 
 
+class Capped:
+    """A stream that ends after n bytes."""
+
+    def __init__(self, f, n):
+        self.f, self.n = f, n
+
+    def read(self, k=-1):
+        if self.n <= 0:
+            return b""
+        b = self.f.read(self.n if k < 0 else min(k, self.n))
+        self.n -= len(b)
+        return b
+
+
+def sheet_rows(z, name):
+    """A sheet's rows as they are read, never the part whole; a part cut at SHEET_MAX keeps the rows before the cut."""
+    with z.open(name) as f:
+        try:
+            for _, el in ET.iterparse(Capped(f, SHEET_MAX), events=("end",)):
+                if el.tag == S + "row":
+                    yield el
+                    el.clear()
+        except ET.ParseError:
+            return
+
+
 def xlsx(z, doc):
     shared = []
     if "xl/sharedStrings.xml" in z.namelist():
@@ -120,7 +147,9 @@ def xlsx(z, doc):
     for k, name in enumerate(sheets):
         doc.add("")
         doc.add(names[k] if k < len(names) and names[k] else f"Sheet {k + 1}", bold=True)
-        for row in part(z, name).iter(S + "row"):
+        for row in sheet_rows(z, name):
+            if len(doc.lines) >= LINES_MAX:
+                break
             cells = []
             for c in row.findall(S + "c")[:CELLS_MAX]:
                 kind, v = c.get("t", ""), c.find(S + "v")

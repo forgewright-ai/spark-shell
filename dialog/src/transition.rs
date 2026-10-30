@@ -145,7 +145,12 @@ mod tests {
     fn every_piece_is_a_film_in_a_dark_and_a_light_palette() {
         let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/transitions");
         let mut n = 0;
-        for piece in std::fs::read_dir(root).unwrap().flatten().filter(|e| e.path().is_dir()) {
+        // a piece is a folder; one a tool left (__pycache__ beside make.py) is not
+        for piece in std::fs::read_dir(root)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.path().is_dir() && !e.file_name().to_string_lossy().starts_with(['_', '.']))
+        {
             for pal in ["tokyonight-night", "solarized-light"] {
                 for reel in ["open", "wait", "close"] {
                     let bytes = std::fs::read(piece.path().join(pal).join(format!("{}.gif", reel))).unwrap();
