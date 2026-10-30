@@ -63,7 +63,7 @@ done
 if command -v shellcheck >/dev/null 2>&1; then
     shellcheck -S warning spark-shell tests/shell_test.sh tests/wifi_proof.sh tests/greetd_upgrade_proof.sh tests/dhcpcd_proof.sh .claude/hooks/session-start.sh || bad "shellcheck"
 else notice "shellcheck not found; skipped"; fi
-python3 -m py_compile tests/layout_desktop_proof.py lib/wifi_connect.py tests/wifi_connect_test.py lib/layout_terminal.py tests/layout_terminal_test.py tests/display_test.py lib/terminal_profile.py tests/profile_test.py lib/bt_agent.py tests/bt_agent_test.py lib/printers.py tests/printers_test.py lib/open_path.py tests/open_path_test.py lib/network.py tests/network_test.py lib/network_dhcpcd.py tests/network_dhcpcd_test.py tests/dhcpcd_native.py tests/dhcpcd_server.py lib/reminder_time.py tests/provider_acceptance.py || bad "python syntax"
+python3 -m py_compile tests/layout_desktop_proof.py lib/wifi_connect.py tests/wifi_connect_test.py lib/layout_terminal.py tests/layout_terminal_test.py tests/display_test.py lib/terminal_profile.py tests/profile_test.py lib/bt_agent.py tests/bt_agent_test.py lib/printers.py tests/printers_test.py lib/open_path.py tests/open_path_test.py lib/network.py tests/network_test.py lib/network_dhcpcd.py tests/network_dhcpcd_test.py tests/dhcpcd_native.py tests/dhcpcd_server.py lib/reminder_time.py tests/provider_acceptance.py assets/transitions/make.py || bad "python syntax"
 if [ "$(uname)" = Darwin ]; then
     SPARK_SHELL_NO_APPLY=1 /usr/bin/python3 tests/profile_test.py >/dev/null || bad "profile_test"
 fi

@@ -120,6 +120,18 @@ line naming its upstream. The licence is the upstream's:
 - Solarized -- https://ethanschoonover.com/solarized -- MIT.
 - Tokyo Night -- https://github.com/folke/tokyonight.nvim -- Apache-2.0.
 
+## The transitions
+
+The six animations in `assets/transitions/` are spark-shell's own, MIT,
+the repository's licence. `assets/transitions/make.py` draws them with
+Python 3 and two libraries, used only to make the files. Nothing is
+installed for them:
+
+- NumPy -- https://github.com/numpy/numpy -- BSD-3-Clause. The drawing
+  and the colors.
+- Pillow -- https://github.com/python-pillow/Pillow -- MIT-CMU. The
+  paper plane's outline, and the first cut of each file's colors.
+
 ## The Terminal.app profile
 
 `lib/terminal_profile.py` builds it with the Python 3 standard library

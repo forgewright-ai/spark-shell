@@ -1117,6 +1117,22 @@ ground of their own, and `favicon-16.png` to `favicon-26.png`, with
 their `-light` twins, are those at the height of a terminal row.
 The S keeps spark's colors and is never recolored.
 
+The transitions, in `assets/transitions/`: six short animations for the
+home dialog, as GIFs, drawn like the wallpapers. There are six: moon,
+ripple, tide, embers, sun and flight. Each comes as `open.gif`, which
+plays once (about 1.2 seconds) and ends where `wait.gif` begins;
+`wait.gif`, which loops while the dialog loads; and `close.gif`, which
+plays once (about a second) and ends on an empty frame. Each is 180 by
+120, and again at twice that with `@2x` in its name, for each of the 16
+palettes, in `assets/transitions/PIECE/NAME/`. A piece takes its
+palette's own colors (the text, the accent, the muted shade, a few
+terminal colors) and has nothing behind it. A GIF pixel is drawn or
+not, never half, so the soft edges are mixed toward the dialog's
+surface, the color it draws them on. The dialog does not play them yet.
+`python3 assets/transitions/make.py` draws them all again, with Pillow
+and NumPy. Give it a palette file, such as one in
+`~/.config/spark-shell/themes/`, and it draws the set for that palette.
+
 Uninstall: `spark-shell off`, then delete `~/.spark-shell`.
 
 ## Contributing
