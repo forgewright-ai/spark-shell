@@ -181,7 +181,8 @@ Type `spark-shell on`. You get tmux, starship, fzf, zoxide, eza, bat,
 btop, fd and jq, and shell files that use them. Debian, Ubuntu and
 Fedora have no starship package, so there the prompt is the shell's
 own. Your own settings go in `~/.config/spark-shell/rc`, which
-spark-shell reads last and never writes.
+spark-shell reads last and never writes; `export EDITOR=micro` there
+names your editor.
 
 ## Colors (theme)
 
@@ -312,7 +313,9 @@ you type `yes`; a click on a key does what the key does. There is no
 AI on the login screen: nobody is logged in yet. A line at the bottom
 says whether spark is ready, never its address or its model. After
 five idle minutes the screen turns off; a key or a mouse move turns it
-back on. Nothing else prints on tty1 before the login screen.
+back on. With more than one screen, they sit and turn as the desktop
+has them, and the login opens on the main one. Nothing else prints on
+tty1 before the login screen.
 
 greetd runs the login screen, and swayidle turns it off when idle
 (sudo; on Fedora, dnf brings greetd's SELinux policy with it). tty2
@@ -342,8 +345,8 @@ prompt.
 `spark-shell layout save writing` saves the last layout, and
 `spark-shell layout writing` opens it again without asking spark. It is
 a JSON file in `~/.config/spark-shell/layouts/`. The editor is
-`$EDITOR`, else micro, else vi. A missing app is skipped, said in one
-line.
+`$EDITOR`, else the application your system opens text with, else vi.
+A missing app is skipped, said in one line.
 
 A saved window may set `floating` to `true` or `false`, and `border` to
 `normal`, `pixel` or `none`. These native rules apply once, to the new

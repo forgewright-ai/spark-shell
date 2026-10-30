@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.111.2
+
+- The editor is yours, by one rule (#115). A note, a new text file in
+  Files and a layout's `editor` word open `$EDITOR`, else the
+  application your system opens text with (xdg-mime's entry for
+  text/plain, inside a terminal window when it is a terminal program),
+  else vi. The two guesses are gone: a note opened in nano and a layout
+  in micro on the same machine. `export EDITOR=micro` in
+  `~/.config/spark-shell/rc`, or `xdg-mime default micro.desktop
+  text/plain`, sets it.
+- Fixed: with two screens, the login screen opened on the first port's
+  screen, with no place and no orientation (#116). `on login` renders
+  your screens.conf beside the login screen's sway config, which
+  includes it, and the login window opens on the main screen, the one
+  at 0 0. A screen setting on the desktop updates the copy at once when
+  sudo asks no password; else `spark-shell on login` does, and `check`
+  says so.
+- Fixed: Enter on a PDF or a picture in Files waited up to 30 seconds
+  for a new window and left the dialog open saying "opening requested"
+  (#117). A browser already open takes the file as a tab, so no window
+  comes. A file the system's opener took is opened: a moment's wait for
+  a new window, so a fresh application takes the focus, then the dialog
+  closes, tab or window alike. The reveal step the same.
+
 ## v0.111.1
 
 - Fixed: Enter on a text file in Files opened nothing on the Linux

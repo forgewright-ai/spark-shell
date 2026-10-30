@@ -196,6 +196,8 @@ case ${1:-} in
 esac
 EOF
     for t in gimp-3.0 firefox micro gone player; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done   # gone: an app that opens no window
+    # the application the system opens text with, as xdg-mime answers it (#115): micro's entry; $HOME/text-app names another, $HOME/no-text-app none
+    printf '#!/bin/sh\n[ "$*" = "query default text/plain" ] || exit 0\n[ ! -e "$HOME/no-text-app" ] || exit 0\nif [ -e "$HOME/text-app" ]; then cat "$HOME/text-app"; else echo micro.desktop; fi\n' > "$H/.local/bin/xdg-mime"; chmod +x "$H/.local/bin/xdg-mime"
     chmod +x "$H/.local/bin/spark" "$H/.local/bin/swaymsg" "$H/.local/bin/gimp-3.0" "$H/.local/bin/firefox" "$H/.local/bin/micro" "$H/.local/bin/gone" "$H/.local/bin/player"
     apps=$XDG_DATA_HOME/applications; mkdir -p "$apps" "$H/share"
     export XDG_DATA_DIRS=$H/share
@@ -1521,6 +1523,14 @@ EOF
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel layout add gimp 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: layout: gimp was not suggested for the last layout' ] && ok "panel layout add: an app that was not suggested is refused in one line" || bad "suggested gate" "st=$st $out"
     mv "$H/spark.keep" "$H/.local/bin/spark"; : > "$swlog"
+    # the editor the system names may be a windowed application (#115): it opens as itself, no terminal window around it
+    printf '[Desktop Entry]\nName=Text Editor\nExec=gedit %%U\nType=Application\n' > "$apps/gedit.desktop"; printf '#!/bin/sh\n:\n' > "$H/.local/bin/gedit"; chmod +x "$H/.local/bin/gedit"
+    echo gedit.desktop > "$HOME/text-app"
+    printf '{"why": "notes", "main": {"app": "editor", "args": "notes.txt"}, "side": []}\n' > "$HOME/answer.json"
+    : > "$swlog"; st=0; out=$(sh "$SH" layout "notes in the editor" 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -qx 'exec gedit notes.txt' "$swlog" && ! grep -q 'foot -e gedit' "$swlog" \
+        && ok "layout: a windowed editor (the system names gedit's entry, no Terminal=true) opens as itself, no terminal around it (#115)" || bad "windowed editor" "st=$st $out $(cat "$swlog")"
+    rm -f "$HOME/text-app" "$HOME/answer.json" "$apps/gedit.desktop" "$H/.local/bin/gedit"; : > "$swlog"
     st=0; out=$(sh "$SH" layout delete studio 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = "spark-shell layout: no saved layout named studio" ] && ok "layout delete NAME twice: refused in one line" || bad "delete twice" "st=$st $out"
     printf 'workspace number 1\nexec firefox\n' > "$desks/mine"
@@ -1884,7 +1894,7 @@ rm -f "$H/.local/bin/nano"; : > "$tlog"
 st=0; out=$(EDITOR=/usr/bin/nosucheditor sh "$SH" layout studio 2>&1) || st=$?
 [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -q '^  refused  window editor nosucheditor  (nosucheditor is not on this machine)$' && grep -q '^new-window -t =studio -n newsboat newsboat$' "$tlog" \
     && ok "EDITOR naming a program that is not here: its room is refused, the rest opens" || bad "editor absent" "st=$st $out"
-mkdir -p "$H/noed"   # a PATH with everything but micro and vi (this machine may have the real ones)
+mkdir -p "$H/noed"; : > "$HOME/no-text-app"   # a PATH with everything but micro and vi (this machine may have the real ones), and no text application named by the system
 for d in $(printf '%s' "$PATH" | tr ':' ' '); do
     [ -d "$d" ] || continue
     for f in "$d"/*; do n=${f##*/}; if [ "$n" != micro ] && [ "$n" != vi ] && [ -x "$f" ] && [ ! -e "$H/noed/$n" ]; then ln -s "$f" "$H/noed/$n"; fi; done
@@ -1893,12 +1903,16 @@ done
 st=0; out=$(PATH=$H/noed sh "$SH" layout studio 2>&1) || st=$?
 [ "$st" -eq 0 ] && printf '%s\n' "$out" | grep -qx '  editor -- no editor on this machine: set EDITOR in ~/.config/spark-shell/rc' && ! grep -q ' -n editor' "$tlog" \
     && grep -q '^new-session -d -s studio -n shell$' "$tlog" && grep -q '^new-window -t =studio -n newsboat newsboat$' "$tlog" \
-    && ok "no EDITOR, no micro, no vi: that one window is skipped in one line, the rest opens" || bad "no editor" "st=$st $out $(cat "$tlog")"
+    && ok "no EDITOR, no text application, no vi: that one window is skipped in one line, the rest opens" || bad "no editor" "st=$st $out $(cat "$tlog")"
 printf '#!/bin/sh\n:\n' > "$H/noed/vi"; chmod +x "$H/noed/vi"   # a vi of our own: the containers may lack one
 : > "$tlog"
 st=0; out=$(PATH=$H/noed sh "$SH" layout studio 2>&1) || st=$?
 [ "$st" -eq 0 ] && grep -q '^new-window -t =studio -n editor vi$' "$tlog" && ! printf '%s\n' "$out" | grep -q 'no editor' \
-    && ok "no EDITOR and no micro: the editor is vi when vi is here" || bad "editor vi" "st=$st $out $(cat "$tlog")"
+    && ok "no EDITOR and no text application: the editor is vi when vi is here" || bad "editor vi" "st=$st $out $(cat "$tlog")"
+rm -f "$HOME/no-text-app"; : > "$tlog"
+st=0; out=$(PATH=$H/noed sh "$SH" layout studio 2>&1) || st=$?
+[ "$st" -eq 0 ] && grep -q '^new-window -t =studio -n editor micro$' "$tlog" && ! printf '%s\n' "$out" | grep -q 'no editor' \
+    && ok "no EDITOR: the editor is the program your system opens text with (xdg-mime names micro's entry), never a guess (#115)" || bad "editor system" "st=$st $out $(cat "$tlog")"
 st=0; out=$(sh "$SH" layout studio -v 2>&1) || st=$?
 printf '%s\n' "$out" | grep -q '^  window shell$' && printf '%s\n' "$out" | grep -q '^  window editor micro$' && printf '%s\n' "$out" | grep -q '^  window w3m w3m duckduckgo.com$' \
     && ok "-v shows the tmux lines (window NAME [CMD ARGS])" || bad "rooms verbose" "$out"
@@ -3147,6 +3161,12 @@ SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 scale 1 >/d
 [ "$rc" = 0 ] && [ "$out" = 'HDMI-A-1 left-of eDP-1' ] && grep -qxF 'output "Lenovo Group Limited T24i-30 V30A1" position -1920 0' "$HOME/.config/spark-shell/screens.conf" \
     && [ "$(grep -c 'T24i-30' "$HOME/.config/spark-shell/screens.conf")" = 3 ] && grep -qxF 'output "Lenovo Group Limited T24i-30 V30A1" scale 1' "$HOME/.config/spark-shell/screens.conf" && grep -qxF '# beside "Lenovo Group Limited T24i-30 V30A1" left-of "BOE 0x0BCA Unknown"' "$HOME/.config/spark-shell/screens.conf" \
     && ok "desktop screen left-of: placed by the other's edge; the file keeps one line per kind (the scale replaced, the place kept) and the two screens as a comment, for a turn to place it again (#109)" || bad "screen place" "rc=$rc $out $(cat "$HOME/.config/spark-shell/screens.conf")"
+# a placed screen reaches the login screen's own copy at once, when root asks no password (#116)
+mkdir -p "$H/root/etc/spark-shell/login"; echo '# a login screen' > "$H/root/etc/spark-shell/login/sway.conf"; printf 'LOGIN=yes\n' >> "$HOME/.config/spark-shell/config"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 left-of edp-1 2>&1) || rc=$?
+[ "$rc" = 0 ] && grep -qxF 'output "Lenovo Group Limited T24i-30 V30A1" position -1920 0' "$H/root/etc/spark-shell/login/screens.conf" && ! grep -q 'beside' "$H/root/etc/spark-shell/login/screens.conf" \
+    && ok "desktop screen: the login screen's screens.conf follows at once (a root with no password), the output lines alone (#116)" || bad "screen login follow" "rc=$rc $out $(cat "$H/root/etc/spark-shell/login/screens.conf" 2>&1)"
+grep -v '^LOGIN=' "$HOME/.config/spark-shell/config" > "$H/cfg.tmp" && cat "$H/cfg.tmp" > "$HOME/.config/spark-shell/config"; rm -rf "$H/root/etc/spark-shell/login"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen edp-1 off 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'eDP-1 off' ] && grep -qxF -- '-- output "BOE 0x0BCA Unknown" disable' "$HOME/swaymsg.log" && grep -q 'disable' "$HOME/.config/spark-shell/screens.conf" \
     && ok "desktop screen off: applied and saved for the next login" || bad "screen off" "rc=$rc $out $(cat "$HOME/.config/spark-shell/screens.conf")"
@@ -4473,6 +4493,11 @@ EOF
         SWAYSOCK='' WAYLAND_DISPLAY=w PATH="$H/nofm:$_fpath" mcp2 "$(fc2 2 files_open "$F2R/photo.png")"
         [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'opening requested for photo.png' ] && grep -qF "$F2R/photo.png" "$F2/xdg-open.log" \
             && ok "provide files: a file that is not text keeps the system's opener (#113)" || bad "files open picture" "$(ans 2) $(cat "$F2/xdg-open.log" 2>&1)"
+        # #117: inside sway, a file the opener took is opened and the dialog closes at once; a browser already open shows no new window, and the old 30 s wait left the dialog open
+        rm -f "$F2/opened" "$F2/xdg-open.log"; _t0=$(date +%s)
+        SWAYSOCK=$F2/sock WAYLAND_DISPLAY=w PATH="$H/lxo:$H/nofm:$_fpath" mcp2 "$(fc2 2 files_open "$F2R/photo.png")"
+        [ "$(ans 2 | jq -c '.result.structuredContent')" = '{"opened":true}' ] && [ $(( $(date +%s) - _t0 )) -le 5 ] && grep -qF "$F2R/photo.png" "$F2/xdg-open.log" \
+            && ok "provide files: a file the system's opener took is opened within a moment, so the dialog closes, tab or window alike (#117)" || bad "files open picture sway" "$(ans 2) $(( $(date +%s) - _t0 )) s $(cat "$F2/xdg-open.log" 2>&1)"
     fi
     rm -f "$F2/plain.txt" "$F2/photo.png"
 fi
@@ -4828,13 +4853,20 @@ else
     mkdir -p "$H/root/etc/runit/runsvdir/default" "$H/root/etc/sv/greetd" "$H/root/etc/sv/agetty-tty1"
     ln -s /etc/sv/agetty-tty1 "$H/root/etc/runit/runsvdir/default/agetty-tty1"; : > "$H/root/usr/bin/greetd"
     out=$(LC on login --dry-run)
-    printf '%s\n' "$out" | grep -q '^would  config       LOGIN=yes' && printf '%s\n' "$out" | grep -q "^would  login        write the login screen's files: session window run sway.conf foot.ini spark-dialog config.toml sudoers login-boot (sudo)\$" \
+    printf '%s\n' "$out" | grep -q '^would  config       LOGIN=yes' && printf '%s\n' "$out" | grep -q "^would  login        write the login screen's files: session window run sway.conf foot.ini screens.conf spark-dialog config.toml sudoers login-boot (sudo)\$" \
         && [ ! -e "$le" ] && [ ! -e "$HOME/.config/spark-shell/config" ] && ok "Void: on login --dry-run says the config and the files, touches nothing" || bad "void login dry" "$out"
     st=0; out=$(LC on login --yes 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -q '^LOGIN=yes$' "$HOME/.config/spark-shell/config" && ok "Void: on login writes LOGIN=yes" || bad "void login config" "st=$st $out"
-    for f in session window run sway.conf foot.ini; do [ -f "$le/$f" ] || bad "Void: on login: $f missing"; done
+    for f in session window run sway.conf foot.ini screens.conf; do [ -f "$le/$f" ] || bad "Void: on login: $f missing"; done
     [ -x "$le/session" ] && [ -x "$le/window" ] && [ -x "$le/run" ] && [ -x "$ll/spark-dialog" ] && [ -x "$ll/login-boot" ] && cmp -s "$ll/spark-dialog" "$H/stub-dialog" \
         && ok "Void: on login writes the screen's files, the pinned dialog copied for its account" || bad "void login files" "$(ls -la "$le" "$ll" 2>&1)"
+    grep -qx 'include "/etc/spark-shell/login/screens.conf"' "$le/sway.conf" && [ -f "$le/screens.conf" ] && ! grep -q '^output ' "$le/screens.conf" \
+        && ok "Void: the login's sway includes its own screens.conf, no screen placed yet (#116)" || bad "login screens empty" "$(grep -n include "$le/sway.conf"; cat "$le/screens.conf" 2>&1)"
+    printf '%s\n' '# rendered by spark-shell: the screens' 'output "BOE 0x0BCA Unknown" position -1920 0' '# beside "BOE 0x0BCA Unknown" left-of "Lenovo Group Limited T24i-30 V30A1"' > "$HOME/.config/spark-shell/screens.conf"
+    _o=$(LC check 2>&1 || :); printf '%s\n' "$_o" | grep -q '^FAIL   login        out of date: screens.conf -- spark-shell on login$' && ok "Void: check says the login's screens are out of date once a screen was placed" || bad "login screens check" "$(printf '%s\n' "$_o" | grep login)"
+    _st=0; _o=$(LC on login --yes 2>&1) || _st=$?
+    [ "$_st" -eq 0 ] && grep -qxF 'output "BOE 0x0BCA Unknown" position -1920 0' "$le/screens.conf" && ! grep -q beside "$le/screens.conf" \
+        && ok "Void: on login writes your screens into the login's screens.conf, the output lines alone (#116)" || bad "login screens" "st=$_st $_o $(cat "$le/screens.conf" 2>&1)"
     grep -q '^user = "_greeter"$' "$H/root/etc/greetd/config.toml" && grep -q '^command = "/etc/spark-shell/login/session"$' "$H/root/etc/greetd/config.toml" && grep -q agreety "$H/root/etc/greetd/config.toml.spark-shell-orig" \
         && ok "Void: greetd's config.toml is ours (the session as _greeter), the package's kept" || bad "void greetd conf" "$(cat "$H/root/etc/greetd/config.toml")"
     grep -q -- '--desktop off --restart "/usr/bin/sudo -n /usr/bin/reboot" --shutdown "/usr/bin/sudo -n /usr/bin/poweroff"\( --spark-port [0-9]*\)\{0,1\}$' "$le/run" && grep -q '^export PANEL_BG=[0-9a-f]\{6\} ' "$le/run" \
@@ -4943,6 +4975,22 @@ out=$(PATH="$ls_d/bin:$PATH" XDG_RUNTIME_DIR="$ls_d/run" sh "$ls_d/session" 2>&1
 [ "$out" = "$(printf '\033[2J\033[H\033[?25l')" ] && grep -qx 'sway -c /etc/spark-shell/login/sway.conf' "$ls_d/run/login.log" && grep -q 'Found config' "$ls_d/run/login.log" \
     && ok "templates/login/session: tty1 is cleared, its cursor hidden, and sway's words go to login.log, none on the screen" || bad "login session quiet" "$(printf '%s' "$out" | od -c | head -3) $(cat "$ls_d/run/login.log" 2>&1)"
 rm -rf "$ls_d"
+# the login window opens on the main screen (#116): the screen at 0 0 is focused before foot opens it
+lw_d=$(mktemp -d); mkdir -p "$lw_d/bin"
+printf '#!/bin/sh\necho "foot $*" >> "%s/log"\n' "$lw_d" > "$lw_d/bin/foot"
+cat > "$lw_d/bin/swaymsg" <<EOF
+#!/bin/sh
+case "\$*" in
+    '-t get_outputs') echo '[{"name":"DP-3","active":true,"rect":{"x":-1920,"y":0}},{"name":"HDMI-A-1","active":true,"rect":{"x":0,"y":0}}]' ;;
+    *) echo "swaymsg \$*" >> "$lw_d/log" ;;
+esac
+EOF
+chmod +x "$lw_d/bin/foot" "$lw_d/bin/swaymsg"
+sed 's|@LOGIN_ETC@|etc/spark-shell/login|g' "$REPO/templates/login/window" > "$lw_d/window"
+PATH="$lw_d/bin:$PATH" sh "$lw_d/window" >/dev/null 2>&1
+[ "$(cat "$lw_d/log")" = "$(printf 'swaymsg focus output HDMI-A-1\nfoot -c /etc/spark-shell/login/foot.ini -a spark-login /etc/spark-shell/login/run\nswaymsg exit')" ] \
+    && ok "templates/login/window: the screen at 0 0 is focused first, so the login opens on the main screen; then sway ends with the window (#116)" || bad "login window main screen" "$(cat "$lw_d/log" 2>&1)"
+rm -rf "$lw_d"
 bp=$REPO/templates/linux/.bash_profile
 grep -q 'SPARK_SHELL_SESSION:-}" != shell' "$bp" && ok ".bash_profile: the login screen's shell session never starts the desktop" || bad ".bash_profile shell session"
 

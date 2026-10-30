@@ -1407,7 +1407,7 @@ LOGIN_FONTS=usr/share/fonts/spark-shell   # Monaspace Neon for the login screen'
 GREETD_CONF=etc/greetd/config.toml
 LOGIN_SUDOERS=etc/sudoers.d/spark-shell-login
 LOGIN_MARK=' #spark-shell-login#'
-LOGIN_FILES="session window run sway.conf foot.ini"
+LOGIN_FILES="session window run sway.conf foot.ini screens.conf"
 login_wanted() { [ -z "$(login_na)" ] && [ "$LOGIN" = yes ]; }
 login_rec() { [ -e "$ROOT/$LOGIN_ETC/$1" ]; }                       # login_rec NAME -- a record of a change spark-shell made
 login_record() { root_do touch "$ROOT/$LOGIN_ETC/$1"; }
@@ -1438,12 +1438,24 @@ login_render() {   # -> the screen's files in $TMP/login, from templates/login i
     _le="$EXPR${NL}s|@LOGIN_ETC@|$LOGIN_ETC|g${NL}s|@LOGIN_LIB@|$LOGIN_LIB|g${NL}s|@LOGIN_ACCOUNT@|$(esc "$LOGIN_ACCOUNT")|g"
     _le="$_le${NL}s|@LOGIN_DESKTOP@|$_d|g${NL}s|@LOGIN_ARGS@|$(esc "$_pw")|g${NL}s|@LOGIN_BG@|$(esc "$_bg")|g${NL}s|@PANEL_MUTED@|$PANEL_MUTED|g"
     for f in $LOGIN_FILES config.toml sudoers login-boot; do
+        if [ "$f" = screens.conf ]; then login_screens > "$TMP/login/$f"; continue; fi   # no template: the lines of your screens.conf (#116)
         render_sed "$_le" "$REPO/templates/login/$f" > "$TMP/login/$f"
         if grep -q '@[A-Z_0-9]*@' "$TMP/login/$f"; then
             printf 'spark-shell: templates/login/%s: unrendered placeholder: %s\n' "$f" "$(grep -o '@[A-Z_0-9]*@' "$TMP/login/$f" | head -1)" >&2
             exit 1
         fi
     done
+}
+login_screens() {   # -> the login screen's screens.conf: the output lines of yours, so its screens sit and turn as the desktop's do (#116)
+    echo '# rendered by spark-shell from your screens.conf -- the screens as the desktop has them; spark-shell off login removes it'
+    [ ! -f "$SCREENS_CONF" ] || grep '^output ' "$SCREENS_CONF" || :
+}
+login_screens_follow() {   # after a screen setting: the login screen's copy now when root asks no password, else said in one line (#116)
+    login_wanted && [ -f "$ROOT/$LOGIN_ETC/sway.conf" ] || return 0
+    mkdir -p "$TMP/login"; login_screens > "$TMP/login/screens.conf"
+    ! cmp -s "$TMP/login/screens.conf" "$ROOT/$LOGIN_ETC/screens.conf" || return 0
+    if [ -n "$ROOT" ] || [ "$(id -u)" -eq 0 ] || sudo -n true 2>/dev/null; then root_put "$TMP/login/screens.conf" "$ROOT/$LOGIN_ETC/screens.conf"
+    else echo "the login screen takes the screens at spark-shell on login (sudo)"; fi
 }
 login_mode() { case $1 in session|window|run|login-boot) echo 0755 ;; sudoers) echo 0440 ;; *) echo 0644 ;; esac; }
 login_pointer_put() {   # the two spark themes copied under /usr/share/icons, where the login screen's account finds them
@@ -1529,7 +1541,7 @@ login_screen_apply() {   # the login rows of `on` with LOGIN=yes
         fi
         root_put "$TMP/login/config.toml" "$ROOT/$GREETD_CONF"
         if [ "$DISTRO" = void ]; then
-            root_put "$TMP/login/sudoers" "$ROOT/$LOGIN_SUDOERS" 0440
+            sudoers_same || root_put "$TMP/login/sudoers" "$ROOT/$LOGIN_SUDOERS" 0440   # written once; a pass for another file leaves it
             root_swap "$TMP/login/login-boot" "$ROOT/$LOGIN_LIB/login-boot" 0755
         fi
         ok login "the login screen's files are written (/$LOGIN_ETC)"
@@ -4756,16 +4768,47 @@ note_when() {   # note_when EPOCH -> today 09:12, yesterday, Oct 17, or the year
     elif [ "${_d%????}" = "$(date +%Y)" ]; then when_of "$1" '%b %d' | sed 's/ 0/ /'
     else echo "${_d%????}"; fi
 }
-note_editor() {   # -> the editor a note opens in: EDITOR, else nano, else vi
-    for _e in "${EDITOR:-}" nano vi; do [ -n "$_e" ] && command -v "${_e%% *}" >/dev/null 2>&1 && { echo "$_e"; return 0; }; done
-    return 1
+# The editor is yours (#115): EDITOR when its program is here, else the
+# application your system opens text with (xdg-mime's entry for
+# text/plain: its program inside a terminal window when the entry says
+# Terminal=true, a windowed one on its own), else vi. Never a guessed
+# name. One rule for a note, a text file in Files and a layout's `editor`.
+editor_entry() {   # -> PROGRAM<tab>EXEC<tab>yes|no for the text/plain application (the entry's program, its Exec with the field codes out, whether it runs in a terminal), read once; false without one
+    if [ -z "${_EDITOR_ENTRY_SEEN:-}" ]; then
+        _EDITOR_ENTRY_SEEN=yes; _EDITOR_ENTRY=''
+        if command -v xdg-mime >/dev/null 2>&1 && _ee_d=$(xdg-mime query default text/plain 2>/dev/null) && [ -n "$_ee_d" ]; then
+            for _ee_p in "${XDG_DATA_HOME:-$HOME/.local/share}" $(printf '%s' "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" | tr ':' ' '); do
+                _ee_f=$_ee_p/applications/$_ee_d; [ -f "$_ee_f" ] || continue
+                _ee_x=$(sed -n '/^Exec=/{s/^Exec=//p;q;}' "$_ee_f" | sed 's/^env [^ ]* //; s/ *%[a-zA-Z]//g; s/  */ /g; s/^ *//; s/ *$//')
+                [ -n "$_ee_x" ] || break
+                _ee_n=${_ee_x%% *}; _ee_t=no; ! grep -q '^Terminal=true' "$_ee_f" || _ee_t=yes
+                _EDITOR_ENTRY=$(printf '%s\t%s\t%s' "${_ee_n##*/}" "$_ee_x" "$_ee_t")
+                break
+            done
+        fi
+    fi
+    [ -n "$_EDITOR_ENTRY" ] && printf '%s\n' "$_EDITOR_ENTRY"
+}
+editor_pick() {   # -> the editor to run on a file: EDITOR when its program is here, else the text/plain application's Exec, else vi; false with none
+    if [ -n "${EDITOR:-}" ] && command -v "${EDITOR%% *}" >/dev/null 2>&1; then printf '%s\n' "$EDITOR"
+    elif _ep=$(editor_entry); then printf '%s\n' "$_ep" | cut -f2
+    elif command -v vi >/dev/null 2>&1; then echo vi
+    else return 1; fi
+}
+editor_windowed() {   # the editor is a windowed application of its own (the entry says no terminal): nothing wraps it
+    [ -z "${EDITOR:-}" ] || ! command -v "${EDITOR%% *}" >/dev/null 2>&1 || return 1
+    [ "$(editor_entry | cut -f3)" = no ]
+}
+editor_exec() {   # editor_exec FILE -> the line sway runs to open FILE in the editor: its program in a terminal window, or the windowed one itself; false with no editor
+    _ex=$(editor_pick) || return 1
+    if editor_windowed; then printf "%s '%s'\n" "$_ex" "$1"; else printf "foot -e %s '%s'\n" "$_ex" "$1"; fi
 }
 note_slug() { printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -cs 'a-z0-9' '-' | sed 's/^-*//; s/-*$//' | cut -c1-40; }   # note_slug WORDS -> a file name
 note_open_file() {   # note_open_file FILE NAME -> one line: the note in the editor, in a terminal window
     desk_in_sway || { echo "a note opens in the desktop's terminal: ${1#"$HOME"/} is the file"; return 1; }
     case $1 in *[,\;\'\"]*) echo "the file's name holds a comma, a quote or a semicolon, which sway would split: ${1##*/}"; return 1 ;; esac
-    _ed=$(note_editor) || { echo "no editor here: set EDITOR, or install nano"; return 1; }
-    swaymsg -- exec "foot -e $_ed '$1'" >/dev/null 2>&1 || { echo "could not open $2"; return 1; }
+    _ed=$(editor_exec "$1") || { echo "no editor here: set EDITOR in ~/.config/spark-shell/rc"; return 1; }
+    swaymsg -- exec "$_ed" >/dev/null 2>&1 || { echo "could not open $2"; return 1; }
     : > "$TMP/opened"; echo "opened $2"
 }
 notes_act() {   # notes_act new|open|add|find [ARG]
@@ -6957,17 +7000,19 @@ files_result() {   # files_result ID RECEIPT [UNDO-TOOL UNDO-ARGS-JSON] [open=UR
     rpc_result "$1" "$(printf '%s' "$_fr" | jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
     [ -z "$SUBSCRIBED" ] || rpc_note notifications/resources/updated '{"uri":"spark-shell://files/rows"}'
 }
-files_opened() {   # files_opened ID BEFORE RECEIPT-FILE -- the result of a step that opened a window: opened when sway shows one more, else the opener's own line
-    if [ -n "${SWAYSOCK:-}" ] && panel_open_wait "$2"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+files_opened() {   # files_opened ID BEFORE RECEIPT-FILE -- a path the system's opener took is opened, so the dialog closes (#117): a moment's wait for a new window first, so a fresh application takes the focus (a browser already open takes the file as a tab, and no window ever comes); without sway, the opener's own line
+    if [ -n "${SWAYSOCK:-}" ]; then
+        _ow=0; while [ "$(desk_windows_all)" -le "$2" ] && [ "$_ow" -lt 4 ]; do sleep 0.25; _ow=$((_ow + 1)); done
+        rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
     else rpc_result "$1" "$(jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}' "$3")"; fi
 }
 files_manager_ok() { [ "$OS" = Darwin ] || { command -v xdg-open >/dev/null 2>&1 && [ -n "$(xdg-mime query default inode/directory 2>/dev/null)" ]; }; }   # a system file manager is configured (Finder on macOS); without one the browse row and the reveal step are not offered (#114)
 files_text() { [ -f "$1" ] && { [ ! -s "$1" ] || LC_ALL=C grep -qI . "$1" 2>/dev/null; }; }   # a text file: grep reads it as text; an empty file is one
 files_open_text() {   # files_open_text ID PATH -- a text file in the editor, in a terminal window, the window the receipt (#113: the system's handler for text is a terminal editor, which xdg-open starts with no terminal); 1 where this is not the way: macOS (open knows), no sway, no editor, a path sway would split
-    [ "$OS" != Darwin ] && files_text "$2" && desk_in_sway && _fed=$(note_editor) || return 1
+    [ "$OS" != Darwin ] && files_text "$2" && desk_in_sway && _fed=$(editor_pick) || return 1
     case $2 in *[,\;\'\"]*) return 1 ;; esac
     _before=$(desk_windows_all)
-    swaymsg -- exec "foot -e $_fed '$2'" >/dev/null 2>&1 || { provide_refuse "$1" "files: could not start the editor"; return 0; }
+    swaymsg -- exec "$(editor_exec "$2")" >/dev/null 2>&1 || { provide_refuse "$1" "files: could not start the editor"; return 0; }
     if panel_open_wait "$_before"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
     else files_result "$1" "$(printf '%s' "${2##*/}" | scrub_text) opens in ${_fed%% *}"; fi
 }
@@ -7004,9 +7049,9 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
             if [ "$2" = files_new_folder ]; then mkdir "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not make $_fnm"; return 0; }
                 files_result "$1" "folder $_fnm made in $(files_home "${_fn%/*}")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"; return 0; fi
             : > "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not make $_fnm"; return 0; }
-            if desk_in_sway && _fed=$(note_editor); then   # in the editor, in a terminal window: the window is the receipt
+            if desk_in_sway && editor_pick >/dev/null; then   # in the editor (yours, else the system's), in a terminal window when it is a terminal program: the window is the receipt
                 case $_fn in *[,\;\'\"]*) ;; *) _before=$(desk_windows_all)
-                    if swaymsg -- exec "foot -e $_fed '$_fn'" >/dev/null 2>&1 && panel_open_wait "$_before"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"; return 0; fi ;;
+                    if swaymsg -- exec "$(editor_exec "$_fn")" >/dev/null 2>&1 && panel_open_wait "$_before"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"; return 0; fi ;;
                 esac
             fi
             files_result "$1" "$_fnm made in $(files_home "${_fn%/*}")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"; return 0 ;;
@@ -8220,7 +8265,7 @@ cmd_notes() {   # spark-shell notes [new | NAME | open NAME | add WORDS | find W
 }
 note_here() {   # note_here FILE NAME -- the note in your editor: in this terminal when you are at one, else in the desktop's
     if [ -t 0 ] && [ -t 1 ]; then
-        _ed=$(note_editor) || refuse_in notes "no editor here: set EDITOR, or install nano"
+        _ed=$(editor_pick) || refuse_in notes "no editor here: set EDITOR in ~/.config/spark-shell/rc"
         # shellcheck disable=SC2086   # EDITOR may carry its flags
         $_ed "$1"
         [ "$2" != "a new note" ] || [ "$(cat "$1" 2>/dev/null)" != '# ' ] || { rm -f "$1"; echo "nothing written, so no new note"; }   # an empty new note is not kept
@@ -8392,7 +8437,7 @@ desk_lines() {   # desk_lines WS JSONFILE -> the lines, after desk_windows_of: o
                 case $i in 1) echo splith ;; 2) echo splitv ;; esac   # the split the next window lands in
                 case $app in
                     shell) echo "exec foot" ;;
-                    editor) desk_term_line "$2" "$index" "$ED" "$args" ;;
+                    editor) if editor_windowed; then printf 'exec %s\n' "$(desk_launch "$ED" "$args")"; else desk_term_line "$2" "$index" "$ED" "$args"; fi ;;   # a windowed editor opens as itself
                     *) if desk_app_term "$app" || { ! desk_app_known "$app" && desk_on_path "$app"; }; then desk_term_line "$2" "$index" "$app" "$args"; else printf 'exec %s\n' "$(desk_launch "$app" "$args")"; fi ;;
                 esac
                 jq -r --argjson n "$index" '[.main] + (.side // []) | .[$n] |
@@ -8451,9 +8496,9 @@ desk_join() {   # desk_join NAME -- inside tmux: switch to it; at a terminal: at
     elif [ -t 0 ] && [ -t 1 ]; then tmux attach-session -t "=$1"
     else echo "tmux session $1 -- tmux attach-session -t $1 joins it"; fi
 }
-desk_editor() {   # -> what a layout's `editor` word opens: EDITOR's basename, else micro, else vi when here; false when none
+desk_editor() {   # -> what a layout's `editor` word opens: EDITOR's basename, else the program your system opens text with, else vi when here; false when none (#115)
     if [ -n "${EDITOR:-}" ]; then printf '%s\n' "${EDITOR##*/}"
-    elif desk_on_path micro; then echo micro
+    elif _de=$(editor_entry); then printf '%s\n' "$_de" | cut -f1
     elif desk_on_path vi; then echo vi
     else return 1; fi
 }
@@ -9200,6 +9245,7 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | transform normal|90|
     case $_kind in left-of|right-of|above|below) _oi=$(printf '%s' "$_o" | cut -f2); [ "$(screen_rows | awk -F '\t' -v i="$_oi" '$2 == i' | grep -c .)" -eq 1 ] || _oi=$(printf '%s' "$_o" | cut -f1); screen_save "$_id" "$_cmd" "$_kind" "$_oi" ;;
         *) screen_save "$_id" "$_cmd" ;; esac
     [ "$_kind" != transform ] || screen_beside_again "$_id"   # its width changed: the screens placed beside it, and it beside another, placed again
+    login_screens_follow
     echo "$_said"
 }
 
