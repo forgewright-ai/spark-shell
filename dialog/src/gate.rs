@@ -389,6 +389,7 @@ mod tests {
             chip: vec![],
             step: None,
             preview: None,
+            page: None,
         };
         (
             vec![tool("wifi_connect", s), tool("out_level", lv)],
@@ -618,6 +619,7 @@ mod path_tests {
                 chip: vec![],
                 step: None,
                 preview: None,
+                page: None,
             }],
             short: vec![],
         };

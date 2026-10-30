@@ -699,6 +699,16 @@ app or a layout closes it: the window is the receipt. A window that is
 fullscreen steps aside for the dialog and is fullscreen again when the
 dialog closes with nothing opened.
 
+The dialog opens with a short animation in the middle of its content
+area, waits with one while the home's rows load, and closes with one
+when Esc or the x closes it: moon, ripple, tide, embers, sun or flight,
+in your palette's own colors (`assets/transitions/`). Any key, a word
+or a click cuts the opening short, so it never stands between you and
+the dialog; Esc during the closing closes at once. A preview's page that
+takes a moment to draw shows the waiting one too. Settings > theme picks
+the animation, or none for no motion (`DIALOG_ANIMATION`, embers to
+begin with); a palette with no set of its own plays none.
+
 The top row says where you are (`home`, a place, a section and its
 state; a long one is cut at a word), then the date and the time as your
 locale writes them, and a small bar while work runs. The bar is one of
@@ -745,11 +755,12 @@ and Page Down scroll it.
 - `power`: lock the screen, suspend, log out, restart, shut down; the
   last three ask for a typed yes. What the power button does is said
   under them, never changed.
-- `theme`: first the wallpaper, the text size and the transparency, a
-  row each; on the text size and the transparency, left and right
-  change the value in place. Then the palettes, dark and light, each
-  with a chip of its colors (its ground, its accent and six hues) and
-  the drawing it brings. Then yours: your saved themes, `save this look
+- `theme`: first the wallpaper, the text size, the transparency and the
+  dialog's animation, a row each; on the text size, the transparency and
+  the animation, left and right change the value in place. Then the
+  palettes, dark and light, each with a chip of its colors (its ground,
+  its accent and six hues) and the drawing it brings; a palette brings
+  its animation too. Then yours: your saved themes, `save this look
   as`, which asks a name, `a theme from a picture`, which opens your
   home folder, and the terminal's own colors (palette none). Enter on a
   palette applies it, and Undo takes it back; `theme back` on the
@@ -791,9 +802,9 @@ and Page Down scroll it.
   came; a folder lists its folders, then its files with the size and
   the date. Enter on a text file opens it in your editor, in a terminal
   window; any other file opens with the app for its kind. The right
-  arrow opens the lit row's steps as a list: open, show the first lines,
-  attach, reveal in the system file manager, rename (it asks the
-  name), move to a folder and copy to a folder (the folder is picked
+  arrow opens the lit row's steps as a list: open, preview, attach,
+  reveal in the system file manager, rename (it asks the name), move to
+  a folder and copy to a folder (the folder is picked
   here: open folders until the right one, then Enter on `move NAME
   here`), and trash. Trash is the delete: the file goes to the
   freedesktop trash (`gio trash` where it is, else the spec by hand),
@@ -803,7 +814,8 @@ and Page Down scroll it.
   file` (each asks a name; the text file opens in your editor), and
   `open in the system file manager`, for anything beyond these steps
   (permissions, archives, remote places); where no file manager is
-  configured, that row and the reveal step are not offered. Your home
+  configured, that row and the reveal step are not offered. Space on a
+  lit file, with nothing typed, opens its preview, described below. Your home
   folder starts with
   `recent`, the files touched in the last 7 days wherever they are,
   each with its folder's name, and ends with `drives`, a row per drive
@@ -814,6 +826,30 @@ and Page Down scroll it.
   the text files that hold the words, each as a list to act on. A
   hidden file, a link and anything outside your home and your drives
   are never read, and never written.
+- Preview: one file as large as the content area allows, read only. The
+  header names its folder, the facts row at the area's foot says what it
+  is, and Attach in the footer names it: words at the prompt go to spark
+  with it. Up and down go to the previous and next file of the list,
+  left and right turn the page, Enter opens the file in its app, and
+  Esc, or Space with nothing typed, goes back with it lit. A text, a
+  Markdown file (its headings bold), code (its lines numbered) and JSON
+  (indented) show as text, 128 kB of it at most. A picture, a PDF's page
+  and a video's frame are drawn as they are, and zoom and turn: with
+  nothing typed, `+` (or `=`) and `-` zoom along 25 to 800 %, `0` fits,
+  `<` and `>` turn a quarter; zoomed, the arrows and a drag move it and
+  Esc fits it again. 100 % is a picture's own pixels and a PDF page at 96
+  pixels an inch, and past it a picture's pixels stay sharp; a turn is
+  the preview's, never the file's. A sound shows its title, its artist
+  and album, its waveform (the part played in the accent; a click plays
+  from there), a spectrum that moves while it plays, its spectrogram, and
+  its rate, bits, channels and format; right plays and pauses it, left
+  goes back to its start. A video's right plays it in its app. A Word,
+  PowerPoint, Excel or OpenDocument file shows its text, read by Python's
+  own zip and XML readers (no LibreOffice). Anything else says that it
+  has no preview. A PDF needs poppler (installed with the desktop); a
+  sound and a video need mpv where it is installed, and say so where it
+  is not. spark reads text: a PDF goes with your words as the text of its
+  page, a sound or a picture with none.
 
 Above the list, what was said and done, the newest first, a blank row
 between one turn and the next. A turn is the command as it ran, then
@@ -828,10 +864,10 @@ goes back.
   `DIALOG_ATTACH_TYPES` names), for the next question only: its name
   shows under the prompt with Remove. Picking it sends nothing. It
   goes with the next words, and comes back with them if that request
-  fails. A file over 16 kB, empty, or not UTF-8 text is refused with
-  the reason: spark reads 16 kB of a file whole, and a longer one is
-  never cut without a word. What the file says is read as text, never
-  as an instruction.
+  fails. spark reads a file of 16 kB whole; a longer one goes to `spark
+  read`, which reads it by parts and answers from the part your words
+  pick. An empty file, or one not UTF-8 text, is refused with the
+  reason. What the file says is read as text, never as an instruction.
 - The model opens a list: where the model runs (this computer, or the
   spark server this machine is a client of), the models in use,
   installed and not downloaded. Looking changes nothing. Picking one
@@ -842,9 +878,10 @@ goes back.
   Clicking it listens through spark's own voice until a pause and puts
   the words in the draft at the cursor, to read and change; Enter still
   sends. Esc, a click on the mic again, or leaving the window stops it,
-  and nothing is kept. Holding Space to talk waits for a newer spark.
+  and nothing is kept. Holding a key to talk waits for a newer spark.
 
 `DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide the controls.
+`DIALOG_ANIMATION` names the opening and closing animation, or none.
 
 Type, and the list shows what matches: places, settings, and every step
 the dialog can take, shown or not. The row your words name is lit, and
@@ -1036,7 +1073,11 @@ written down. `spark-shell want --json "WORDS"` prints the steps spark
 picks for the words as JSON, each checked the same way, and runs none.
 `spark-shell want --attach FILE "WORDS"` asks spark about a text file:
 the file's text goes to spark as someone else's text, by its name
-alone.
+alone; a file over 16 kB goes to `spark read`. The files section also
+shows a file as a page: `spark-shell://files/preview/{file}{?page,full}`
+answers its title and facts, then its lines, a picture (its size at 100
+%, and `full` when it is drawn whole), a sound (its waveform over its
+spectrogram, its length, play and stop), or why there is none.
 
 ## Status and check
 
@@ -1128,7 +1169,8 @@ palettes, in `assets/transitions/PIECE/NAME/`. A piece takes its
 palette's own colors (the text, the accent, the muted shade, a few
 terminal colors) and has nothing behind it. A GIF pixel is drawn or
 not, never half, so the soft edges are mixed toward the dialog's
-surface, the color it draws them on. The dialog does not play them yet.
+surface, the color it draws them on. The dialog plays the one
+`DIALOG_ANIMATION` names, in the palette in use.
 `python3 assets/transitions/make.py` draws them all again, with Pillow
 and NumPy. Give it a palette file, such as one in
 `~/.config/spark-shell/themes/`, and it draws the set for that palette.

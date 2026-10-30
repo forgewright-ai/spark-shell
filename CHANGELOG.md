@@ -1,5 +1,61 @@
 # Changelog
 
+## v0.113
+
+A file shown before it is opened, the dialog's opening and closing, and
+the home's folders named (#120, #122, #119).
+
+- Preview (#120). Space on a lit file in Files, with nothing typed,
+  shows it as large as the dialog's content area allows; `preview` takes
+  the place of `show the first lines` in its steps. Up and down go to the
+  list's other files, left and right turn its pages, Enter opens it in
+  its app, Esc or Space goes back with it lit. The facts row says what
+  it is, and Attach names it: words at the prompt go to spark with it.
+  Text, Markdown (its headings bold), code (its lines numbered) and JSON
+  (indented) show read only; a picture, a PDF's page and a video's frame
+  are drawn. A Word, PowerPoint, Excel or OpenDocument file shows its
+  text, read by Python's own zip and XML readers, with no LibreOffice.
+  Super+F, sway's own key, makes the dialog full screen, the about lists
+  it.
+- Zoom and turn, on a picture, a PDF page and a video frame: `+` and
+  `-` along 25 to 800 %, `0` fits, `<` and `>` turn a quarter, the arrows
+  and a drag move it, Esc fits it again. 100 % is the picture's own
+  pixels, a PDF page at 96 pixels an inch; past it the pixels stay
+  sharp. The dialog zooms, moves and turns the picture it holds, and asks
+  once for one drawn larger when a zoom needs it.
+- A sound: its tags, its waveform (the part played in the accent, a
+  click plays from there), a spectrum that moves while it plays, its
+  spectrogram, and its rate, bits, channels and format. Right plays and
+  pauses, left goes back to the start. mpv draws the waveform and the
+  spectrogram once, from the whole file, and the spectrum is read from
+  that picture: nothing listens while it plays. It plays only while its
+  preview is up.
+- The transitions (#122), the art of PR #121: the dialog opens with a
+  short animation, waits with one while the home loads (and while a slow
+  page is drawn), and closes with one on Esc or the x. Any key, a word
+  or a click cuts the opening short; Esc during the closing closes at
+  once. Each palette brings its piece as it brings its drawing (dracula's
+  embers, nord's tide, tokyonight-night's moon), a saved theme keeps its
+  own, and Settings > theme changes it or turns motion off (none, which a
+  new palette leaves as it is). The config key is `DIALOG_ANIMATION`.
+- Fixed: the dialog's window showed nothing but a cursor for about a
+  second before most openings. Whether a print service answers is kept
+  ten minutes and asked again aside, and the cursor is hidden while the
+  window starts: the dialog draws in about 0.1 s.
+- The home's folders (#119): `on desktop` writes
+  `~/.config/user-dirs.dirs` where there is none, so a program asked for
+  the downloads folder finds `~/downloads` and makes no `~/Downloads` of
+  its own. Downloads, pictures, documents, music and videos are named, a
+  missing one made lowercase, a capitalized one alone named as it is; a
+  file of yours is kept whole. `off desktop` takes ours back and leaves
+  the folders. Screenshots go to the pictures folder it names.
+- A text over 16 kB attached to a question goes to `spark read`, which
+  reads it by parts, where it was refused before.
+- The footer says Mic, not Mic off. Space is the preview's key: the Talk
+  view says holding a key to talk waits for a newer spark.
+- The desktop installs poppler (pdftoppm), and uses mpv where it is
+  installed. The dialog reads the transitions with the gif crate.
+
 ## v0.112
 
 Keeping up with the distros (#105).

@@ -131,6 +131,13 @@ DIALOG_MODEL=yes
 # hidden while spark's voice is off.
 DIALOG_TALK=yes
 
+# The dialog's animation as it opens, waits and closes: moon, ripple,
+# tide, embers, sun or flight, or none for no motion. Empty, the one the
+# palette brings (dracula's embers, nord's tide); a new palette brings
+# its own, as it brings its drawing, and none stays none. Settings >
+# theme changes it.
+DIALOG_ANIMATION=
+
 # Clock presentation on the bar, Calendar and idle screen.
 CLOCK_FORMAT=24
 WEEK_START=sunday

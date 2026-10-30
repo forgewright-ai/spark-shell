@@ -12,8 +12,9 @@ use std::sync::mpsc::SyncSender;
 use std::time::{Duration, Instant};
 
 pub const PROTOCOL: &str = "2025-06-18";
-/// A line longer than this from a provider closes it; the dialog never writes a longer one.
-pub const LINE_MAX: usize = 65536;
+/// A line longer than this from a provider closes it; the dialog never writes a longer one. Twice
+/// RESOURCE_MAX: a resource's text comes inside one line, its quotes escaped (a preview's page, #120).
+pub const LINE_MAX: usize = 524288;
 /// A resource's text longer than this is not drawn, and the provider is closed.
 pub const RESOURCE_MAX: usize = 262144;
 pub const T_INIT: Duration = Duration::from_secs(5);
@@ -64,6 +65,10 @@ pub enum Kind {
     Tools,
     Read,
     Folder,
+    /// A preview's page (#120).
+    Page,
+    /// A sound's play or stop in a preview: a key, not a turn (#120).
+    Quiet,
     Subscribe,
     Call(u64),
 }
@@ -263,7 +268,7 @@ fn read_lines(idx: usize, out: impl Read, tx: SyncSender<Incoming>) {
             return;
         }
         if buf.last() != Some(&b'\n') && buf.len() > LINE_MAX {
-            let _ = tx.send(Incoming::Gone(idx, "a line over 64 kB".into()));
+            let _ = tx.send(Incoming::Gone(idx, "a line over 512 kB".into()));
             return;
         }
         if buf.iter().all(|b| b.is_ascii_whitespace()) {

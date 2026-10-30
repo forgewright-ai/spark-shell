@@ -275,13 +275,13 @@ fn a_provider_that_dies_floods_or_hangs_is_one_line_and_the_dialog_stays() {
     assert!(pump(&mut app, &rx, |a| a.providers[0].dead.is_some()));
     assert_eq!(app.exchange.last().unwrap().text, "window stopped: it ended");
     assert!(app.quit.is_none());
-    // a line over 64 kB
+    // a line over 512 kB
     let (mut app, rx, tx) = app_with(&["window"]);
-    let script: Script = Box::new(|v, send| send(result(&v["id"], json!({"x": "a".repeat(70000)}))));
+    let script: Script = Box::new(|v, send| send(result(&v["id"], json!({"x": "a".repeat(530000)}))));
     app.servers.push(stub(0, "window", script, tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].dead.is_some()));
-    assert_eq!(app.exchange.last().unwrap().text, "window stopped: a line over 64 kB");
+    assert_eq!(app.exchange.last().unwrap().text, "window stopped: a line over 512 kB");
     // silent: initialize gets no answer within its 5 s
     let (mut app, rx, tx) = app_with(&["window"]);
     app.servers.push(stub(0, "window", Box::new(|_, _| {}), tx));

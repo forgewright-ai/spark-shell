@@ -8,6 +8,8 @@ use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, 
 use crate::palette::Palette;
 use crate::progress;
 use crate::scrub::{cells, cut, cut_words};
+use crate::sixel::Viewport;
+use crate::transition::Reel;
 use ratatui::buffer::{Buffer, CellDiffOption};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -168,8 +170,27 @@ pub struct Drawn {
     pub keys: Vec<(u16, u16, u16, HintKey)>,
     pub close: Option<(u16, u16)>,
     pub prompt: (u16, u16),
-    /// A picture to draw beside the list: its cells (x, y, w, h) and its file.
-    pub preview: Option<(u16, u16, u16, u16, String)>,
+    /// A picture to draw beside the list, or a preview's page.
+    pub preview: Option<Picture>,
+    /// A preview's text, the pages it takes at this size (#120).
+    pub pages: usize,
+    /// A sound's waveform, its cells (x, y, w, h): a click there plays from that point.
+    pub wave: Option<(u16, u16, u16, u16)>,
+    /// A transition playing (#122): its cells (x, y, w, h), which one, and since when.
+    pub film: Option<(u16, u16, u16, u16, Reel, std::time::Instant)>,
+}
+
+/// A picture main.rs draws in sixel over cells the buffer skips: where (x, y, w, h in cells), its file,
+/// how it is shown, and whether it is a sound's spectrogram (the lower part of its file, in the palette).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Picture {
+    pub x: u16,
+    pub y: u16,
+    pub w: u16,
+    pub h: u16,
+    pub file: String,
+    pub view: Viewport,
+    pub spectrogram: bool,
 }
 
 /// The draft as the prompt shows it: its lines, each wrapped to `w` cells, and where the cursor is in
@@ -319,42 +340,33 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
         pen.put(2, hint_y + 2, &cut_words(t, (w - 4) as usize), pal.muted, false, false);
     }
     let shift = shift + if target.is_some() { 2 } else { 0 };
-    let mut x = 2;
-    for (t, key) in app.hint() {
-        let start = x;
-        x = if key {
-            pen.chip(x, hint_y, &t, false)
-        } else {
-            pen.put(x, hint_y, &t, pal.muted, false, false)
-        };
-        if key && start < x && x <= w && hint_y < h {
-            if t == "\u{2190} \u{2192}" {
-                let middle = start + (x - start) / 2;
-                drawn.keys.push((start, middle, hint_y, HintKey::Left));
-                drawn.keys.push((middle, x, hint_y, HintKey::Right));
-            } else {
-                let action = match t.as_str() {
-                    "Enter" => Some(HintKey::Enter),
-                    "Esc" => Some(HintKey::Escape),
-                    "Shift+Enter" => Some(HintKey::Newline),
-                    "Tab" => Some(HintKey::Tab),
-                    "\u{2190}" => Some(HintKey::Left),
-                    "\u{2192}" => Some(HintKey::Right),
-                    "\u{2191}" => Some(HintKey::Up),
-                    _ => None,
-                };
-                if let Some(action) = action {
-                    drawn.keys.push((start, x, hint_y, action));
-                }
-            }
-        }
-    }
 
-    // the content
+    // the content first: a preview's text decides the pages its key row offers
     let bottom = h - BOTTOM;
     let content_y = CONTENT_Y + shift;
-    if app.view == View::About {
+    if let Some((reel, since)) = app.motion {
+        // a transition: the content area is its, in its middle (main.rs draws it)
+        let (x, y, w, h) = (2, content_y, pen.w.saturating_sub(4), bottom.saturating_sub(content_y));
+        skip(
+            &mut pen,
+            Picture {
+                x,
+                y,
+                w,
+                h,
+                file: String::new(),
+                view: Viewport::FIT,
+                spectrogram: false,
+            },
+        );
+        drawn.film = Some((x, y, w, h, reel, since));
+    } else if app.view == View::About {
         about(app, &mut pen, content_y, bottom);
+    } else if app.view == View::Preview {
+        let (picks, picture, pages) = preview(app, &mut pen, content_y, bottom, &mut drawn);
+        drawn.picks = picks;
+        drawn.preview = picture;
+        drawn.pages = pages;
     } else {
         let mut top = content_y;
         if app.is_calendar() {
@@ -365,6 +377,27 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
         drawn.preview = preview;
     }
 
+    let mut x = 2;
+    for (t, key) in app.hint_with(drawn.pages.max(1)) {
+        let start = x;
+        x = if key {
+            pen.chip(x, hint_y, &t, false)
+        } else {
+            pen.put(x, hint_y, &t, pal.muted, false, false)
+        };
+        if key && start < x && x <= w && hint_y < h {
+            // a chip of one key, or of a few (the arrows, + -, < >): each key its share of the chip
+            let parts: Vec<HintKey> = t.split(' ').filter_map(key_of).collect();
+            if parts.len() == t.split(' ').count() {
+                let n = parts.len() as u16;
+                for (k, a) in parts.into_iter().enumerate() {
+                    let k = k as u16;
+                    drawn.keys.push((start + (x - start) * k / n, start + (x - start) * (k + 1) / n, hint_y, a));
+                }
+            }
+        }
+    }
+
     // the rule, then the footer: Attach, the model, Talk at the left; the mic at the right
     for x in 2..w - 2 {
         pen.put(x, h - 3, RULE, pal.lit, false, false);
@@ -373,15 +406,36 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     drawn
 }
 
+/// The action of a key named on a chip.
+fn key_of(k: &str) -> Option<HintKey> {
+    Some(match k {
+        "Enter" => HintKey::Enter,
+        "Esc" => HintKey::Escape,
+        "Shift+Enter" => HintKey::Newline,
+        "Tab" => HintKey::Tab,
+        "\u{2190}" => HintKey::Left,
+        "\u{2192}" => HintKey::Right,
+        "\u{2191}" => HintKey::Up,
+        "\u{2193}" => HintKey::Down,
+        "+" | "-" | "<" | ">" => HintKey::Char(k.chars().next()?),
+        _ => return None,
+    })
+}
+
 fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     let w = pen.w;
     let chips = app.chips();
-    let mic = if app.mode == Mode::Listening { "Listening" } else { "Mic off" };
+    let mic = if app.mode == Mode::Listening { "Listening" } else { "Mic" };
     // the mic while talk is click to talk; how talk works is a setting
     let mic_on = app.cfg.talk && app.talk == Talk::Click;
     let mic_w = if mic_on { cells(mic) as u16 + 2 } else { 0 };
     let mut x = 1;
-    if chips.contains(&0) {
+    if let Some(pv) = app.preview.as_ref().filter(|_| app.view == View::Preview) {
+        // the file shown goes with the words: Attach names it, in the accent where spark can read it (#120)
+        let reads = pv.shown.as_ref().is_some_and(|pg| pg.attach.is_some());
+        let name = cut(&pv.row().text, (w / 2) as usize);
+        x = pen.control(x, y, &name, false, reads, !reads) + 1;
+    } else if chips.contains(&0) {
         let e = pen.control(x, y, "Attach", app.chip_focus == Some(0), app.attachment.is_some(), false);
         drawn.chips.push((x, e, y, 0));
         x = e + 1;
@@ -563,7 +617,243 @@ fn row_of<'a>(app: &'a App, it: &Item) -> Option<&'a crate::model::Row> {
     }
 }
 
-type Preview = Option<(u16, u16, u16, u16, String)>;
+type Preview = Option<Picture>;
+
+/// A line folded to `w` cells for a preview: every character kept, an indent too, broken after the
+/// last space that fits past the indent, else where it must be.
+pub fn fold(text: &str, w: usize) -> Vec<String> {
+    let w = w.max(2);
+    let mut out = vec![];
+    let mut rest = text;
+    while cells(rest) > w {
+        let head = cut(rest, w);
+        if head.is_empty() {
+            break; // a character wider than the room: the line as it is, cut where it is drawn
+        }
+        let indent = head.len() - head.trim_start().len();
+        let at = head[indent..].rfind(' ').map(|i| indent + i + 1).unwrap_or(head.len());
+        out.push(rest[..at].trim_end().to_string());
+        rest = &rest[at..];
+    }
+    out.push(rest.to_string());
+    out
+}
+
+/// The preview (#120): what was said and the Ask row first, as in any view; under them the page as
+/// large as the area allows, and its facts on the area's last row, muted. Returns the rows to click,
+/// the picture to draw, and the pages a text takes at this size.
+fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> (Vec<(u16, usize)>, Preview, usize) {
+    let said = app.items().len() as u16;
+    let (picks, y) = if said > 0 {
+        let end = (top + said).min(bottom.saturating_sub(6));
+        (content(app, pen, top, end).0, end + 1)
+    } else {
+        (vec![], top)
+    };
+    let pal = pen.pal.clone();
+    let Some(pv) = app.preview.as_ref() else { return (picks, None, 1) };
+    let Some(pg) = pv.shown.as_ref() else {
+        // a page slow to come: the wait, after a moment, so a quick one never flashes it (#122)
+        if app.films && pv.asked.elapsed() >= std::time::Duration::from_millis(300) && y + 4 < bottom {
+            let (x, w, h) = (2, pen.w.saturating_sub(4), bottom - y);
+            skip(
+                pen,
+                Picture {
+                    x,
+                    y,
+                    w,
+                    h,
+                    file: String::new(),
+                    view: Viewport::FIT,
+                    spectrogram: false,
+                },
+            );
+            drawn.film = Some((x, y, w, h, Reel::Wait, pv.asked));
+        }
+        return (picks, None, 1);
+    };
+    let (x0, w) = (2u16, pen.w.saturating_sub(4));
+    let foot = bottom.saturating_sub(1);
+    // a blank row between the page and its facts
+    let rows = foot.saturating_sub(y + 1);
+    let mut facts = vec![];
+    let mut pages = 1;
+    let mut picture = None;
+    if let Some(png) = &pg.picture {
+        picture = Some(skip(
+            pen,
+            Picture {
+                x: x0,
+                y,
+                w,
+                h: rows,
+                file: png.clone(),
+                view: pv.viewport(),
+                spectrogram: false,
+            },
+        ));
+        if pg.pages > 1 {
+            facts.push(format!("page {} of {}", pg.page, pg.pages));
+        }
+        facts.extend(pv.percent().map(|p| format!("{}%", p)));
+        if pv.turn > 0 {
+            facts.push(format!("turned {}\u{b0}", pv.turn as u32 * 90));
+        }
+    } else if let (Some((file, _)), Some(heard)) = (&pg.sound, &pv.heard) {
+        let now = std::time::Instant::now();
+        let at = pv.position(now);
+        facts.push(format!("{} of {}", clock_of(at), clock_of(pg.seconds)));
+        picture = sound(pen, pv, pg, heard, at, (x0, y, w, rows), file, drawn);
+    } else if let Some(say) = &pg.say {
+        // no preview: why, in the middle of the area
+        let t = cut_words(say, w as usize);
+        pen.put(x0 + w.saturating_sub(cells(&t) as u16) / 2, y + rows / 2, &t, pal.muted, false, false);
+    } else {
+        // a text: every line folded to the width, a page the area's rows; code numbered in a gutter
+        let gutter = if pg.numbered { pg.lines.len().to_string().len() + 2 } else { 0 };
+        let tw = (w as usize).saturating_sub(gutter);
+        let mut folded = vec![];
+        for (i, l) in pg.lines.iter().enumerate() {
+            for (k, f) in fold(l, tw).into_iter().enumerate() {
+                folded.push((i, f, k == 0));
+            }
+        }
+        let per = (rows as usize).max(1);
+        pages = folded.len().div_ceil(per).max(1);
+        let page = pv.page.min(pages);
+        for (r, (i, f, first)) in folded.iter().skip((page - 1) * per).take(per).enumerate() {
+            let yy = y + r as u16;
+            if pg.numbered && *first {
+                pen.put(x0, yy, &format!("{:>1$}", i + 1, gutter - 2), pal.muted, false, false);
+            }
+            pen.put(x0 + gutter as u16, yy, f, pal.fg, pg.bold.contains(i), false);
+        }
+        if pages > 1 {
+            facts.push(format!("page {} of {}", page, pages));
+        }
+    }
+    facts.extend(pg.facts.iter().cloned());
+    // the facts whole, as many as the row holds, the first ones first
+    let mut row = String::new();
+    for f in facts {
+        let next = if row.is_empty() { f } else { format!("{}{}{}", row, SEP, f) };
+        if cells(&next) > w as usize {
+            break;
+        }
+        row = next;
+    }
+    pen.put(x0, foot, &row, pal.muted, false, false);
+    (picks, picture, pages)
+}
+
+/// A picture's cells are sixel's: the buffer skips them (main.rs draws it).
+fn skip(pen: &mut Pen, p: Picture) -> Picture {
+    for yy in p.y..(p.y + p.h).min(pen.h) {
+        for xx in p.x..(p.x + p.w).min(pen.w) {
+            pen.buf[(xx, yy)].set_diff_option(CellDiffOption::Skip);
+        }
+    }
+    p
+}
+
+/// Seconds as a clock: 3:45, 1:02:03.
+fn clock_of(s: f64) -> String {
+    let s = s.max(0.0) as u64;
+    if s >= 3600 {
+        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
+    } else {
+        format!("{}:{:02}", s / 60, s % 60)
+    }
+}
+
+/// The eighths of a cell, bottom up: a bar's top.
+const EIGHTHS: [&str; 9] = [
+    " ", "\u{2581}", "\u{2582}", "\u{2583}", "\u{2584}", "\u{2585}", "\u{2586}", "\u{2587}", "\u{2588}",
+];
+/// A sound's waveform, its spectrum and the rows between them, in cells.
+const WAVE_ROWS: u16 = 4;
+const BAND_ROWS: u16 = 6;
+
+/// A sound (#120): its lines (the title bold), its waveform (the part played in the accent, the rest
+/// muted), its spectrum at the time played (or the whole sound's, stopped), and its spectrogram where
+/// the area has room for it.
+#[allow(clippy::too_many_arguments)]
+fn sound(
+    pen: &mut Pen,
+    pv: &crate::preview::Preview,
+    pg: &crate::preview::Page,
+    heard: &crate::preview::Sound,
+    at: f64,
+    area: (u16, u16, u16, u16),
+    file: &str,
+    drawn: &mut Drawn,
+) -> Preview {
+    let pal = pen.pal.clone();
+    let (x0, mut y, w, rows) = area;
+    let end = y + rows;
+    for (i, l) in pg.lines.iter().enumerate() {
+        let bold = pg.bold.contains(&i);
+        pen.put(x0, y, &cut_words(l, w as usize), if bold || i == 0 { pal.fg } else { pal.muted }, bold, false);
+        y += 1;
+    }
+    y += 1;
+    // the waveform: each cell a column's loudest, bottom up in eighths; played in the accent
+    let n = heard.wave.len().max(1);
+    let played = if pg.seconds > 0.0 { (at / pg.seconds).clamp(0.0, 1.0) } else { 0.0 };
+    if y + WAVE_ROWS < end {
+        for c in 0..w as usize {
+            let (a, b) = (c * n / w as usize, ((c + 1) * n / w as usize).max(c * n / w as usize + 1).min(n));
+            let loud = heard.wave[a..b].iter().cloned().fold(0.0f32, f32::max);
+            let level = (loud * (WAVE_ROWS * 8) as f32).round().max(1.0) as u16;
+            let color = if (c as f64 + 0.5) / w as f64 <= played { pal.accent } else { pal.muted };
+            for r in 0..WAVE_ROWS {
+                let fill = level.saturating_sub(r * 8).min(8) as usize;
+                pen.put(x0 + c as u16, y + WAVE_ROWS - 1 - r, EIGHTHS[fill], color, false, false);
+            }
+        }
+        drawn.wave = Some((x0, y, w, WAVE_ROWS));
+        y += WAVE_ROWS + 1;
+    }
+    // the spectrum: its bands at the time played while it plays, else the whole sound's, low to high
+    if y + BAND_ROWS < end {
+        let bands: Vec<f32> = if pv.playing.is_some() {
+            let col = ((played * n as f64) as usize).min(heard.bands.len().saturating_sub(1));
+            heard.bands.get(col).map(|b| b.iter().map(|v| *v as f32).collect()).unwrap_or_default()
+        } else {
+            (0..crate::preview::BANDS)
+                .map(|k| heard.bands.iter().map(|b| b[k] as f32).sum::<f32>() / heard.bands.len().max(1) as f32)
+                .collect()
+        };
+        let step = (w as usize / crate::preview::BANDS).max(1);
+        let bar = step.saturating_sub(1).max(1);
+        let left = x0 + (w as usize - (step * crate::preview::BANDS).min(w as usize)) as u16 / 2;
+        for (k, v) in bands.iter().enumerate() {
+            let level = (v / 255.0 * (BAND_ROWS * 8) as f32).round() as u16;
+            for r in 0..BAND_ROWS {
+                let fill = level.saturating_sub(r * 8).min(8) as usize;
+                for dx in 0..bar {
+                    pen.put(left + (k * step + dx) as u16, y + BAND_ROWS - 1 - r, EIGHTHS[fill], pal.accent, false, false);
+                }
+            }
+        }
+        y += BAND_ROWS + 1;
+    }
+    // the spectrogram, where four rows or more are left
+    (y + 4 <= end).then(|| {
+        skip(
+            pen,
+            Picture {
+                x: x0,
+                y,
+                w,
+                h: end - y,
+                file: file.to_string(),
+                view: Viewport::FIT,
+                spectrogram: true,
+            },
+        )
+    })
+}
 
 fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> (Vec<(u16, usize)>, Preview) {
     let mut at = vec![];
@@ -614,7 +904,15 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> (Vec<(u16, usize)
         let top = top + k0.saturating_sub(first) as u16;
         if let Some(file) = lit.or(used).filter(|_| top + PREVIEW_H + 1 < bottom) {
             let x = pen.w - 2 - PREVIEW_W;
-            preview = Some((x, top, PREVIEW_W, PREVIEW_H, file));
+            preview = Some(Picture {
+                x,
+                y: top,
+                w: PREVIEW_W,
+                h: PREVIEW_H,
+                file,
+                view: Viewport::FIT,
+                spectrogram: false,
+            });
             // the picture's cells are sixel's: the buffer skips them, as it does the logo's (main.rs draws it)
             for yy in top..(top + PREVIEW_H).min(pen.h) {
                 for xx in x..(x + PREVIEW_W).min(pen.w) {

@@ -172,7 +172,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'
 
 # This machine's short name (the twin of spark lib/env.sh short_host). On
 # a Mac, LocalHostName, by scutil's full path: /usr/sbin is not on every
@@ -230,6 +230,8 @@ config_load() {
     pointer_ok "$POINTER" || { echo "spark-shell: POINTER=$POINTER in $CONFIG: a cursor theme's NAME and, after a space, its SIZE in pixels (spark-white 24, spark-black 32, Adwaita)" >&2; exit 1; }
     # the dialog's composer: plus and the file types it attaches, the model chip, talk
     : "${DIALOG_ATTACH:=yes}" "${DIALOG_ATTACH_TYPES:=txt md}" "${DIALOG_MODEL:=yes}" "${DIALOG_TALK:=yes}"
+    : "${DIALOG_ANIMATION:=}"   # the dialog's transitions as it opens, waits and closes (#122): a piece of assets/transitions, none, or empty for the one the palette brings
+    [ -z "$DIALOG_ANIMATION" ] || case " none $ANIMATION_NAMES " in *" $DIALOG_ANIMATION "*) ;; *) echo "spark-shell: DIALOG_ANIMATION=$DIALOG_ANIMATION in $CONFIG: none or one of $ANIMATION_NAMES" >&2; exit 1 ;; esac
     : "${DO_NOT_DISTURB:=no}"   # the notifications kept out of sight, as mako's do-not-disturb mode, across logins (#71)
     for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK LOGIN DO_NOT_DISTURB; do
         eval "v=\$$k"
@@ -255,8 +257,15 @@ config_load() {
         input_valid "$k" "$v" || { echo "spark-shell: invalid $k in $CONFIG" >&2; exit 1; }
     done
     export POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE KEY_CAPS
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK DIALOG_ANIMATION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB
 }
+ANIMATION_NAMES='moon ripple tide embers sun flight'   # assets/transitions' pieces, in the order the theme's row steps through them; none is no motion (#122)
+# The piece each palette brings, as it brings its drawing (#122): picked for the drawing's mood, the
+# night skyline's moon, the fjord's tide, the dunes' embers, the sunset's sun, the kites' flight.
+ANIM_PAIRED="tokyonight-night:moon nord:tide everforest-dark:embers gruvbox-dark:sun catppuccin-mocha:moon dracula:embers rose-pine:ripple selenized-dark:tide solarized-light:sun catppuccin-latte:flight tokyonight-day:flight gruvbox-light:sun everforest-light:ripple rose-pine-dawn:sun selenized-light:tide one-light:flight"
+anim_for_palette() { for _e in $ANIM_PAIRED; do [ "${_e%%:*}" != "$1" ] || { printf '%s' "${_e#*:}"; return 0; }; done; echo embers; }   # anim_for_palette PALETTE -> the piece it brings; embers for one with none
+anim_palette() { _apd=$(theme_dir "${THEME:-}"); if [ -n "$_apd" ]; then look_get "$_apd" PALETTE; else printf '%s' "${THEME:-}"; fi; }   # -> the shipped palette under the theme in use: a saved theme's own, else the theme
+anim_now() { if [ -n "${DIALOG_ANIMATION:-}" ]; then printf '%s' "$DIALOG_ANIMATION"; else anim_for_palette "$(anim_palette)"; fi; }   # -> the piece the dialog plays: the one set, else the palette's
 SAVER_NAMES='spark starfield drift'   # lib/saver.py's list, in its order: what DISPLAY_SAVER takes besides clock (#66)
 KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}$'   # one to eight layouts, a variant after a plus: us us+intl
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept. A value load_env would refuse at the next read is refused here, before the file is touched
@@ -461,14 +470,15 @@ svg_png() {   # svg_png SVG OUT WIDTH -- OUT, a PNG WIDTH wide (the drawing's ow
         *) false ;;
     esac && mv "$2.new" "$2" || { rm -f "$2.new"; return 1; }
 }
-pic_small() {   # pic_small PICTURE OUT -- OUT, a PNG of PICTURE 256 wide at most, the margins clear; false when nothing here can read the picture (SPARK_SHELL_NO_THUMB and SPARK_SHELL_NO_SVG, tests: one tool or none)
-    if [ -z "${SPARK_SHELL_NO_THUMB:-}" ] && command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1 && gdk-pixbuf-thumbnailer -s 256 "$1" "$2.new" 2>/dev/null; then mv "$2.new" "$2"; return 0; fi
+pic_small() { pic_png "$1" "$2" 256; }   # pic_small PICTURE OUT -- OUT, a PNG of PICTURE 256 wide at most (pic_png)
+pic_png() {   # pic_png PICTURE OUT SIZE -- OUT, a PNG of PICTURE SIZE on its long side at most, the margins clear; false when nothing here can read the picture (SPARK_SHELL_NO_THUMB and SPARK_SHELL_NO_SVG, tests: one tool or none)
+    if [ -z "${SPARK_SHELL_NO_THUMB:-}" ] && command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1 && files_tool gdk-pixbuf-thumbnailer -s "$3" "$1" "$2.new" 2>/dev/null; then mv "$2.new" "$2"; return 0; fi
     rm -f "$2.new"
     [ -z "${SPARK_SHELL_NO_SVG:-}" ] && command -v rsvg-convert >/dev/null 2>&1 || return 1
-    _pe=$(printf '%s' "${1##*.}" | tr 'A-Z' 'a-z'); case $_pe in jpg|jpeg|png|webp) ;; *) return 1 ;; esac
+    _pe=$(printf '%s' "${1##*.}" | tr 'A-Z' 'a-z'); case $_pe in jpg|jpeg|png|webp|gif) ;; *) return 1 ;; esac
     _pd=$TMP/pic; rm -rf "$_pd"; mkdir -p "$_pd"; cp "$1" "$_pd/picture.$_pe" || return 1
-    printf '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><image href="picture.%s" width="256" height="256" preserveAspectRatio="xMidYMid meet"/></svg>\n' "$_pe" > "$_pd/wrap.svg"
-    rsvg-convert -w 256 -h 256 -o "$2.new" "$_pd/wrap.svg" 2>/dev/null && mv "$2.new" "$2" || { rm -f "$2.new"; return 1; }
+    printf '<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s"><image href="picture.%s" width="%s" height="%s" preserveAspectRatio="xMidYMid meet"/></svg>\n' "$3" "$3" "$_pe" "$3" "$3" > "$_pd/wrap.svg"
+    files_tool rsvg-convert -w "$3" -h "$3" -o "$2.new" "$_pd/wrap.svg" 2>/dev/null && mv "$2.new" "$2" || { rm -f "$2.new"; return 1; }
 }
 wall_render() {   # wall_render DRAWING PALETTE_FILE OUT_BASE -- OUT_BASE.svg in that palette and, where a tool draws it, OUT_BASE.png at 3840 by 2160; silent, exit 1 with no PNG
     mkdir_state "$(dirname "$3")"
@@ -917,11 +927,46 @@ wall_missing() {   # a todo row when the picture the config names is not there: 
         row todo wallpaper "$(wall_path) is missing -- the ground instead (spark-shell theme wallpaper PATH)"
     fi
 }
-desktop_files() {   # the desktop's renders: foot's, the dialog's, sway's, the tmux entry, mako's, the screens' file; a mako that runs reads its new file
+# The home's folders (#119): ~/.config/user-dirs.dirs, the freedesktop file that names them, where
+# there is none, so a program asked for "the downloads folder" finds one and makes no ~/Downloads of
+# its own. A file of yours is kept whole (xdg-user-dirs-update writes its own at every login, with no
+# marker). A folder is named, never moved: one missing is made lowercase, as every folder spark-shell
+# makes; a capitalized one alone is named as it is. The desktop folder is the home: a tiling desktop
+# has none.
+USER_DIRS=$HOME/.config/user-dirs.dirs
+USER_DIRS_ROLES='DOWNLOAD:downloads PICTURES:pictures DOCUMENTS:documents MUSIC:music VIDEOS:videos'
+user_dir_of() {   # user_dir_of NAME -> the folder for its role: ~/NAME, or ~/Name where that one alone is there
+    _uc=$(printf '%s' "$1" | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }')
+    if [ -d "$HOME/$1" ] || [ ! -d "$HOME/$_uc" ]; then echo "$1"; else echo "$_uc"; fi
+}
+user_dirs_apply() {   # on desktop: ours rendered where no file is, its folders made where missing; one of yours kept whole
+    if [ -f "$USER_DIRS" ] && ! grep -q 'rendered by spark-shell' "$USER_DIRS"; then ok folders "$USER_DIRS is yours: kept as it is"; return 0; fi
+    { echo '# rendered by spark-shell: the user folders (#119)'
+      echo 'XDG_DESKTOP_DIR="$HOME"'
+      for _ur in $USER_DIRS_ROLES; do printf 'XDG_%s_DIR="$HOME/%s"\n' "${_ur%%:*}" "$(user_dir_of "${_ur#*:}")"; done
+    } > "$TMP/user-dirs"
+    if [ -f "$USER_DIRS" ] && cmp -s "$TMP/user-dirs" "$USER_DIRS"; then ok folders "$USER_DIRS"; return 0; fi
+    changes=$((changes + 1))
+    if [ "$MODE" = dry ]; then row would folders "$USER_DIRS: the downloads, pictures, documents, music and videos folders named"; return 0; fi
+    for _ur in $USER_DIRS_ROLES; do mkdir -p "$HOME/$(user_dir_of "${_ur#*:}")"; done
+    mkdir -p "$(dirname "$USER_DIRS")" && cp "$TMP/user-dirs" "$USER_DIRS" && chmod 0644 "$USER_DIRS"
+    row render folders "$USER_DIRS: the downloads, pictures, documents, music and videos folders named"
+}
+user_dirs_off() {   # off desktop: ours goes, the folders stay (there was no file before ours); yours stays whole
+    [ -f "$USER_DIRS" ] && grep -q 'rendered by spark-shell' "$USER_DIRS" || return 0
+    if [ "$MODE" = dry ]; then row would folders "$USER_DIRS removed"; return 0; fi
+    rm -f "$USER_DIRS"; row ok folders "$USER_DIRS removed (the folders stay)"
+}
+user_pictures() {   # -> the pictures folder the file names under your home (~/pictures, ~/Pictures), else ~/pictures: a screenshot's
+    _up=$(sed -n 's|^XDG_PICTURES_DIR="\$HOME/\([A-Za-z0-9._ -]*\)"$|\1|p' "$USER_DIRS" 2>/dev/null | head -1)
+    case $_up in ''|.*|*/*) echo "$HOME/pictures" ;; *) echo "$HOME/$_up" ;; esac
+}
+desktop_files() {   # the desktop's renders: foot's, the dialog's, sway's, the tmux entry, mako's, the screens' file, the home's folders; a mako that runs reads its new file
     _mk=$({ cksum < "$HOME/.config/mako/config"; } 2>/dev/null || :)
     for rel in $DESKTOP_RENDERED; do
         render_one "$REPO/templates/$rel" "$HOME/$rel"
     done
+    user_dirs_apply
     [ "$MODE" = dry ] || [ -f "$SCREENS_CONF" ] || { mkdir -p "$CONFIG_DIR" && echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them' > "$SCREENS_CONF"; }   # the template includes it
     [ "$MODE" = dry ] || [ "$({ cksum < "$HOME/.config/mako/config"; } 2>/dev/null || :)" = "$_mk" ] || notify_reload   # a new look reaches the next notification, with no login
 }
@@ -2976,6 +3021,7 @@ cmd_off() {   # cmd_off [desktop|login]
         config_set DESKTOP none
         DESKTOP=none; export DESKTOP
         hand_back $DESKTOP_RENDERED .config/starship-foot.toml .config/alsa/asoundrc
+        user_dirs_off
         portal_off
         pointer_off
         old_greetd_off
@@ -2997,6 +3043,7 @@ cmd_off() {   # cmd_off [desktop|login]
         fi
     done
     hand_back $RENDERED .config/starship.toml .config/starship-foot.toml .config/yazi/theme.toml $DESKTOP_RENDERED .config/alsa/asoundrc   # alsa: the bar's default card; yazi: a render v0.35 left, its .bak yours
+    [ "$OS" = Darwin ] || user_dirs_off
     portal_off
     [ "$OS" = Darwin ] || pointer_off
     old_greetd_off
@@ -4020,7 +4067,7 @@ panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on
     [ "$_f" = glance ] || echo "$_f"
     for s in $PANEL_ORDER; do
         [ "$s" != "$_f" ] || continue
-        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; printers) command -v lpstat >/dev/null 2>&1 && printer_status >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|pointer|notes|reminders|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
+        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; printers) command -v lpstat >/dev/null 2>&1 && printers_here || continue ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|pointer|notes|reminders|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
         echo "$s"
     done
 }
@@ -4603,6 +4650,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\tWallpaper\twallpaper\t|%s\n' "$(wall_now)"   # opens the wallpaper list
             [ -z "$_sz" ] || printf -- '-\tText size\tshow\n'   # a value left and right change (provide_rows)
             printf -- '-\tTransparency\tshow\n'
+            [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\tAnimation\tshow\n'   # the dialog's transitions (#122)
             palette_names > "$TMP/pal.names"; palette_darks > "$TMP/pal.dark"
             for _g in dark light; do
                 while IFS= read -r n; do
@@ -5151,6 +5199,21 @@ rem_due_line() {   # -> "due: WORDS  " for tmux's status line while a reminder i
 # package install or queue creation is implicit in looking at these rows.
 printer_status_now() { python3 "$REPO/lib/printers.py" status; }
 printer_status() { panel_cache printers.status 2 printer_status_now; }
+# Whether a print service answers, for the sections the dialog starts: lpstat can take a second, and the
+# window showed nothing but a cursor while it did (#122). The answer is kept ten minutes and asked again
+# aside when older, so no opening waits on it; only the first ever does.
+PRINTERS_HERE_AGE=600
+printers_here() {   # -> 0 when the print service answered the last time it was asked
+    _phf=$PANEL_CACHE/printers.here
+    [ -f "$_phf" ] || { printers_here_now; return; }
+    [ $(( $(date +%s) - $(sed -n 1p "$_phf") )) -lt "$PRINTERS_HERE_AGE" ] 2>/dev/null || ( printers_here_now >/dev/null 2>&1 </dev/null & )
+    [ "$(sed -n 2p "$_phf")" = yes ]
+}
+printers_here_now() {   # -> 0 when the print service answers now; the answer kept for printers_here
+    if printer_status_now >/dev/null 2>&1; then _pha=yes; else _pha=no; fi
+    panel_dir && printf '%s\n%s\n' "$(date +%s)" "$_pha" > "$PANEL_CACHE/printers.here.$$" && mv "$PANEL_CACHE/printers.here.$$" "$PANEL_CACHE/printers.here"
+    [ "$_pha" = yes ]
+}
 
 # --- the notifications (#71): mako shows them, started by the sway
 # template and drawn by ~/.config/mako/config; makoctl is the one tool. Do
@@ -5483,6 +5546,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                     config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply
                     echo "alpha at $_arg" ;;
                 transparency|see-through) case $_arg in more|less) alpha_step "$_arg" ;; *) echo "transparency takes more or less"; return 1 ;; esac ;;   # see-through: the word before v0.71
+                animation) anim_step "$_arg" ;;
                 theme) _r=$(cmd_theme "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "$_arg is on" ;;   # the old spelling of a step
                 *) _r=$(cmd_theme "$_a" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "$_a is on" ;;   # a palette, by its name: the reply says it is on, never the command again (#53)
             esac ;;
@@ -5669,6 +5733,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         out:use|mic:use) _cur=$(snd_devices "$_p" | awk -F '\t' '$2 == 1 && !d {print $1; d = 1}'); [ -z "$_cur" ] || printf 'use %s\t%s %s\n' "$_cur" "$_p" "$_cur" ;;   # the whole list read: no broken pipe
         theme:text|theme:font) case $_arg in bigger) printf 'text smaller\ttext smaller\n' ;; smaller) printf 'text bigger\ttext bigger\n' ;; *) printf 'text %s\ttext %s\n' "$(look_font_size)" "$(look_font_size)" ;; esac ;;
         theme:alpha|theme:transparency|theme:see-through) printf 'alpha %s\ttransparency %s%%\n' "$ALPHA" "$(transparency_of "$ALPHA")" ;;
+        theme:animation) printf 'animation %s\tanimation %s\n' "$(anim_now)" "$(anim_now)" ;;
         window:close|window:focus) ;;   # a closed window does not come back; a window in front has no inverse worth a row
         window:*) printf '%s\twindows %s\n' "${WINDOWS:-split}" "$(win_words "$WINDOWS")" ;;
         bar:off) printf 'on\tbar shown\n' ;;
@@ -5881,6 +5946,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         theme:wallpaper-color) wall_hex "${3:-}" >/dev/null && { echo "$3"; return 0; }; echo "theme: a color is a name ($(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')) or #rrggbb"; return 1 ;;
         theme:text|theme:font) case ${3:-} in bigger|smaller) echo "$3"; return 0 ;; *) echo "theme: text takes bigger or smaller"; return 1 ;; esac ;;   # a value's own step (#36): no row names it, the row's left and right do
         theme:transparency) case ${3:-} in more|less) echo "$3"; return 0 ;; *) echo "theme: transparency takes more or less"; return 1 ;; esac ;;
+        theme:animation) case " next back none $ANIMATION_NAMES " in *" ${3:-} "*) echo "$3"; return 0 ;; *) echo "theme: animation takes none, $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g'), next or back"; return 1 ;; esac ;;
         theme:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "theme: save takes a name"; return 1 ;;
         theme:delete) case $(theme_kind "${3:-}") in saved|look) [ "$3" != "${THEME:-}" ] && { echo "$3"; return 0; }; echo "theme: $3 is the theme in use"; return 1 ;; *) echo "theme: no saved theme named ${3:-?}"; return 1 ;; esac ;;
         theme:back) [ -s "$(kept_hist theme)" ] && { echo ''; return 0; }; echo "theme: no look before this one"; return 1 ;;
@@ -5922,7 +5988,7 @@ panel_list() {   # panel_list [SECTION] -> the glance (the clock's view under it
 # --- the router and the want: a row is fzf's; an app named is a layout; the rest is spark's
 panel_brief_sections() {   # -> the sections the want path offers here, in the brief's order: every one the dialog has (notes and reminders are files, so a Mac has them too)
     for p in layout apps printers window bar notes reminders display keyboard notifications storage power $(panel_blocks_here); do
-        case $p in lan|bat|clock) continue ;; window|bar|display|keyboard|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; printers) command -v lpstat >/dev/null 2>&1 && printer_status >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
+        case $p in lan|bat|clock) continue ;; window|bar|display|keyboard|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; printers) command -v lpstat >/dev/null 2>&1 && printers_here || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
         printf '%s\n' "$p"
     done
 }
@@ -6115,16 +6181,18 @@ want_attach() {   # want_attach FILE WORDS -> spark's answer about the file, a q
     [ -f "$1" ] && [ -r "$1" ] || { echo "$1 is not a file that can be read"; return 1; }
     _ext=$(printf '%s' "${1##*/}" | sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | tr 'A-Z' 'a-z')
     case " $DIALOG_ATTACH_TYPES " in *" ${_ext:-.} "*) ;; *) echo "${1##*/} is not a type plus attaches ($DIALOG_ATTACH_TYPES)"; return 1 ;; esac
-    _n=$(wc -c < "$1" | tr -d ' '); [ "$_n" -le "$WANT_ATTACH_MAX" ] || { echo "${1##*/} is $((_n / 1000)) kB; spark reads a file of 16 kB at most whole, so attach a shorter one"; return 1; }
+    _n=$(wc -c < "$1" | tr -d ' ')
     [ "$_n" -gt 0 ] || { echo "${1##*/} is empty"; return 1; }
     [ "$(LC_ALL=C tr -d '\000' < "$1" | wc -c | tr -d ' ')" = "$_n" ] || { echo "${1##*/} is not text: spark reads text"; return 1; }
     ! command -v iconv >/dev/null 2>&1 || iconv -f UTF-8 -t UTF-8 < "$1" > /dev/null 2>&1 || { echo "${1##*/} is not UTF-8 text"; return 1; }
     spark=$(spark_bin); [ -n "$spark" ] || { echo "spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)"; return 1; }
-    st=0; "$spark" edit --source --name "${1##*/}" -- '?' "$2" < "$1" > "$TMP/attach.out" 2>"$TMP/attach.err" || st=$?
+    st=0
+    if [ "$_n" -le "$WANT_ATTACH_MAX" ]; then "$spark" edit --source --name "${1##*/}" -- '?' "$2" < "$1" > "$TMP/attach.out" 2>"$TMP/attach.err" || st=$?
+    else "$spark" read --name "${1##*/}" "$2" < "$1" > "$TMP/attach.out" 2>"$TMP/attach.err" || st=$?; fi   # a longer text (a preview's, #120): spark reads it by parts, the part its words pick
     [ "$st" -eq 0 ] || { echo "$PANEL_CROSS spark did not answer: $(head -1 "$TMP/attach.err" | scrub_text)"; return 1; }
     scrub_text < "$TMP/attach.out"
 }
-WANT_ATTACH_MAX=16000   # an attached file, at most what spark reads whole (forge.FILE_MAX characters): a longer one is refused, never cut unseen
+WANT_ATTACH_MAX=16000   # an attached file spark reads whole (forge.FILE_MAX characters); a longer one goes to spark read, which reads it by parts
 cmd_want() {   # cmd_want [--attach FILE] [--json] WORDS -- the one entry to the want path
     _file=''; _json=''
     while [ $# -gt 0 ]; do
@@ -6169,7 +6237,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_new_folder files_new_text files_find files_say lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_animation theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -6232,6 +6300,7 @@ tool_spec() {
         theme_wallpaper_picture) _ts=theme _ta=wallpaper-picture _tp=path _tk=path _th=if _tt='theme wallpaper picture PATH' _td='A picture of yours as the wallpaper.' ;;
         theme_picture)     _ts=theme _ta=picture _tp=path _tk=path _th=f _tt='theme picture PATH' _td='A theme from a picture of yours: its colors as the palette, the picture as the wallpaper.' ;;
         theme_words)       _ts=theme _ta=words _tp=hue _tk='red|orange|yellow|green|teal|blue|violet|pink|grey' _te='accent:red|orange|yellow|green|teal|blue|violet|pink|grey|same warmth:warm|neutral|cool contrast:soft|normal|high light:dark|light name:text' _th=f _tt='theme words HUE' _td='One look for one request: the hue of the ground, the hue of the accent (same when the words name one color), how warm, how much contrast, dark or light, and a short name from the words. A flag or a brand is one step with two hues, never two steps. The wallpaper in use is drawn again in the new palette.' ;;
+        theme_animation)   _ts=theme _ta=animation _tp=to _tk="next|back|none|$(printf '%s' "$ANIMATION_NAMES" | tr ' ' '|')" _th='' _tt='theme animation NAME' _td='The dialog'"'"'s animation as it opens, waits and closes: one by name, none for no motion, or the next or the one before.' ;;
         theme_transparency) _ts=theme _ta=transparency _tp=amount _tk='more|less' _th='' _tt='theme transparency AMOUNT' _td='The windows more or less transparent.' ;;
         theme_alpha)       _ts=theme _ta=alpha _tp=value _tk=alpha _th=if _tt='theme alpha N' _td='How solid the windows are, 0 to 1.' ;;
         window_split)      _ts=window _ta=split _th=i _tt='window split' _td='New windows side by side.' ;;
@@ -6300,6 +6369,8 @@ tool_spec() {
         files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=if _tt='files browse PATH' _td='Open a folder in the system file manager, for anything beyond the steps here. path is a row'"'"'s own path, exactly as written.' ;;
         files_open)        _ts=files _ta=open _tp=path _tk=path _th=if _tt='files open PATH' _td='Open a file with the app that opens its kind. path is a row'"'"'s own path, exactly as written.' ;;
         files_show)        _ts=files _ta=show _tp=path _tk=path _th=rif _tt='files show PATH' _td='The first lines of a text file. path is a row'"'"'s own path, exactly as written.' ;;
+        files_play)        _ts=files _ta=play _tp=path _tk=path _te='at:seconds' _th='' _tt='files play PATH' _td='Play a sound here, with no window, from at seconds (the start when none), until it ends or files stop. path is a row'"'"'s own path, exactly as written.' ;;
+        files_stop)        _ts=files _ta=stop _th=i _tt='files stop' _td='Stop the sound files play started.' ;;
         files_attach)      _ts=files _ta=attach _tp=path _tk=path _th=rif _tt='files attach PATH' _td='A text file to ask spark about, with the next words. path is a row'"'"'s own path, exactly as written.' ;;
         files_reveal)      _ts=files _ta=reveal _tp=path _tk=path _th=if _tt='files reveal PATH' _td='Show a file or folder in the system file manager, its folder opened. path is a row'"'"'s own path, exactly as written.' ;;
         files_rename)      _ts=files _ta=rename _tp=path _tk=path _te='name:filename' _th='' _tt='files rename PATH' _td='Give a file or folder a new name, in its folder. path is a row'"'"'s own path, exactly as written; name the new name alone, no folder in it. Undo puts the old name back.' ;;
@@ -6349,8 +6420,8 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
                 else {type: "string", minLength: 1, maxLength: 256} end) + (if $w == "" then {} else {description: $w} end))} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)
-              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} elif .[1] == "filename" then {type: "string", minLength: 1, maxLength: 255, description: "one name, no slash"} elif .[1] == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
-            required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text") | .[0]]), additionalProperties: false},
+              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} elif .[1] == "filename" then {type: "string", minLength: 1, maxLength: 255, description: "one name, no slash"} elif .[1] == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"} elif .[1] == "seconds" then {type: "number", minimum: 0, maximum: 86400, description: "where to start, in seconds"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
+            required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text" and .[1] != "seconds") | .[0]]), additionalProperties: false},
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"}, open: {type: "string"},
             effect: {type: "object", properties: {kind: {type: "string"}, operation: {type: "string"}, id: {type: "string"}, title: {type: "string"}, localTime: {type: "string"}, level: {type: "integer"}, muted: {type: "boolean"}}, required: ["kind", "operation", "id", "title"], additionalProperties: false},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
@@ -6382,11 +6453,12 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                     if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}, said:"done"}, {name:"reminders_snooze", arguments:{name:$id}, said:"again in 10 minutes"}, {name:"reminders_delete", arguments:{name:$id}, said:"delete"}]} else {} end
                    else {} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$(theme_chips "$1")" --arg size "$(look_font_size)" --arg tr "$(_t=$(transparency_of "$ALPHA"); if [ "$_t" -eq 0 ]; then echo off; else echo "$_t%"; fi)" '
+        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$(theme_chips "$1")" --arg size "$(look_font_size)" --arg anim "$(anim_now)" --arg tr "$(_t=$(transparency_of "$ALPHA"); if [ "$_t" -eq 0 ]; then echo off; else echo "$_t%"; fi)" '
             .rows |= map(
                 (if $s == "theme" and ((.group // "") | test("^(dark|light|yours)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
                 | (if $s == "theme" and .id == "theme:show:Text size" then .step = {value: $size, less: {name: "theme_text", arguments: {size: "smaller"}}, more: {name: "theme_text", arguments: {size: "bigger"}}, words: ["smaller", "bigger"]}
                    elif $s == "theme" and .id == "theme:show:Transparency" then .step = {value: $tr, less: {name: "theme_transparency", arguments: {amount: "less"}}, more: {name: "theme_transparency", arguments: {amount: "more"}}, words: ["less", "more"]}
+                   elif $s == "theme" and .id == "theme:show:Animation" then .step = {value: $anim, less: {name: "theme_animation", arguments: {to: "back"}}, more: {name: "theme_animation", arguments: {to: "next"}}, words: ["back", "next"]}
                    else . end))
             | .rows |= map(
                 if $s == "theme" and (.tool.name // "") == "theme_save" then .tool.ask = ["name"]
@@ -6512,7 +6584,7 @@ provide_main() {   # provide_main SECTION -- serve it until stdin ends
     exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in; whatever a step prints goes to stderr
     WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; CLIENT_PAIRING=''; : > "$PROOTS"
     REM_DELETED=$TMP/deleted   # a reminder deleted here is kept until the provider ends: its undo (#111)
-    trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
+    trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; files_stop; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
     trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # a signal ends a provider through the EXIT trap: the watcher, the reader and the temp folder go (#37)
     mkfifo "$TMP/in"
     ( provide_input ) <&6 5>"$TMP/in" 3>&- & READER=$!
@@ -6552,12 +6624,22 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
         tools/list) rpc_result "$_id" "$(provide_tools "$sec" | jq -c '{tools: .}')" ;;
         tools/call) provide_call "$_id" "$_params" ;;
         resources/list) rpc_result "$_id" "$(jq -cn --arg u "spark-shell://$sec/rows" --arg s "$sec" '{resources: [{uri: $u, name: "rows", title: ($s + " rows"), mimeType: "application/json"}]}')" ;;
-        resources/templates/list) if [ "$sec" = files ]; then rpc_result "$_id" '{"resourceTemplates":[{"uriTemplate":"spark-shell://files/rows/{folder}","name":"folder","title":"a folder under the roots","mimeType":"application/json"}]}'; else rpc_result "$_id" '{"resourceTemplates":[]}'; fi ;;
+        resources/templates/list) if [ "$sec" = files ]; then rpc_result "$_id" '{"resourceTemplates":[{"uriTemplate":"spark-shell://files/rows/{folder}","name":"folder","title":"a folder under the roots","mimeType":"application/json"},{"uriTemplate":"spark-shell://files/preview/{file}{?page}","name":"preview","title":"a file shown as a page","mimeType":"application/json"}]}'; else rpc_result "$_id" '{"resourceTemplates":[]}'; fi ;;
         resources/read|resources/subscribe|resources/unsubscribe)
             _uri=$(printf '%s' "$_params" | jq -r '.uri // "" | tostring')
             if [ "$sec" = files ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://files/rows/?*) true ;; *) false ;; esac; then   # a folder under the roots
                 if provide_files_rows "$_uri" > "$TMP/folder.json"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/folder.json")"
                 else rpc_error "$_id" -32002 "no folder at that uri"; fi
+                return 0
+            fi
+            if [ "$sec" = files ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://files/preview/?*) true ;; *) false ;; esac; then   # a file shown as a page (#120)
+                _pu=${_uri#spark-shell://files/preview/}; _ppg=1; _ppf=''
+                case $_pu in *'?'*) _pq=${_pu#*'?'}; _pu=${_pu%%'?'*}
+                    case "&$_pq&" in *'&page='*) _ppg=${_pq#*page=}; _ppg=${_ppg%%'&'*} ;; esac
+                    case "&$_pq&" in *'&full=1&'*) _ppf=full ;; esac ;;
+                esac
+                if _pp=$(files_unb64 "$_pu") && files_page "$_pp" "$_ppg" "$_ppf" > "$TMP/page.out"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/page.out")"
+                else rpc_error "$_id" -32002 "no file at that uri"; fi
                 return 0
             fi
             if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/wallpapers" ] && [ "$_method" = resources/read ]; then   # the wallpaper list, opened from the theme's wallpaper row
@@ -6638,8 +6720,8 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         if type != "object" then "arguments are an object"
         elif (keys - [$p, $q] - $xk - [""]) != [] then "no argument " + ((keys - [$p, $q] - $xk)[0])
         elif $p != "" and (has($p) | not) then "missing " + $p
-        elif ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)][0][0])
-        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
+        elif ([$xs[] | select(.[1] != "text" and .[1] != "seconds") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text" and .[1] != "seconds") | . as $e | select(($a | has($e[0])) | not)][0][0])
+        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
         elif any($xs[]; . as $e | .[1] == "filename" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | length) < 1 or ($a[$e[0]] | length) > 255 or ($a[$e[0]] | test("[\u0000-\u001f\u007f/]")))) then "name is one name, no slash, 255 characters at most"
         elif any($xs[]; . as $e | .[1] == "path" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | startswith("/") | not) or ($a[$e[0]] | length) > 4096 or ($a[$e[0]] | test("[\u0000-\u001f\u007f]")))) then "to is a whole path, plain text"
         elif ([$xs[] | select(.[1] == "text" or .[1] == "name") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text" or .[1] == "name") | .[0]][0]) + " is plain text, 40 characters at most"
@@ -6647,6 +6729,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         elif any($xs[]; . as $e | .[1] == "scale" and (if ($a[$e[0]] | type) != "string" then true else ($a[$e[0]] | length) > 16 or ($a[$e[0]] | test("^[0-9]+([.][0-9]+)?$") | not) or (($a[$e[0]] | tonumber? // 0) <= 0) end)) then "scale is a positive decimal"
         elif any($xs[]; . as $e | .[1] == "mode" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$") | not))) then "mode is WIDTHxHEIGHT or WIDTHxHEIGHT@REFRESHHz"
         elif any($xs[]; . as $e | .[1] == "net" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9.,:/-]{1,80}$") | not))) then "network values are addresses, none or auto"
+        elif any($xs[]; . as $e | .[1] == "seconds" and ($a | has($e[0])) and (($a[$e[0]] | type) != "number" or $a[$e[0]] < 0 or $a[$e[0]] > 86400)) then "at is a number of seconds, 0 to 86400"
         elif any($xs[]; . as $e | .[1] == "port" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9_.:-]{1,80}$") | not))) then "other is a connected screen port"
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
@@ -6735,6 +6818,7 @@ provide_quick() {   # provide_quick SECTION TOOL VALUE -> 0 for a pick the rows 
         theme_wallpaper) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && { wall_shipped "$3" || [ "$3" = default ]; } ;;
         theme_text) case $3 in bigger|smaller) [ -n "$(look_font_size)" ] ;; *) return 1 ;; esac ;;
         theme_transparency) case $3 in more|less) return 0 ;; *) return 1 ;; esac ;;
+        theme_animation) case " next back none $ANIMATION_NAMES " in *" $3 "*) return 0 ;; *) return 1 ;; esac ;;
         *) return 1 ;;
     esac
 }
@@ -6909,6 +6993,158 @@ files_thumbs() {   # the pictures' small pictures, PATH<tab>THUMB a line on stdi
         pic_small "$_ftp" "$TMP/thumb.png" 2>/dev/null && cp "$TMP/thumb.png" "$_ftt.${TMP##*/}" && mv "$_ftt.${TMP##*/}" "$_ftt" || :   # a whole file or none: the dialog may read it meanwhile
     done
 }
+FILES_TEXT_MAX=131072    # a text's preview, at most: past it the preview says where it ends (Enter opens the whole file)
+FILES_PAGE_PX=1600       # a preview's picture, its long side at most, in pixels: a page at full screen fits under it
+FILES_FULL_PX=4096       # the same drawn larger, once a zoom asks for more than it holds (the dialog decodes 4096 a side at most)
+FILES_TOOL_T=10          # a tool a preview runs on a file, at most this many seconds: a file is untrusted
+# The kinds a preview knows (#120), by a file's type: a line each, the kind, then its types.
+FILES_KINDS='markdown md markdown
+json json
+code sh bash zsh fish py rb pl lua js mjs cjs ts tsx jsx c h cc cpp hpp cs java kt go rs swift sql html htm css scss xml yaml yml toml ini cfg conf env diff patch
+text txt text log csv tsv rst org tex srt vtt
+picture png jpg jpeg webp gif svg bmp
+pdf pdf
+sound mp3 wav flac ogg oga opus m4a aac
+video mp4 m4v mov webm mkv avi
+office docx pptx xlsx odt odp ods'
+FILES_WAVE_PX=160        # a sound's waveform, its height in pixels over the spectrogram (512)
+MPV_SAFE='--no-config --no-ytdl --load-scripts=no --demuxer-lavf-o=protocol_whitelist=file'   # mpv on a file: no config of its own, no scripts, no network
+files_kind() {   # files_kind PATH -> its kind (FILES_KINDS); text for another type file calls text; else other
+    _fke=$(printf '%s' "${1##*/}" | sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | tr 'A-Z' 'a-z')
+    _fkk=$(printf '%s\n' "$FILES_KINDS" | awk -v e="$_fke" 'e != "" { for (i = 2; i <= NF; i++) if ($i == e) { print $1; exit } }')
+    if [ -n "$_fkk" ]; then echo "$_fkk"
+    elif command -v file >/dev/null 2>&1 && file -b --mime-type -- "$1" 2>/dev/null | grep -q '^text/'; then echo text
+    else echo other; fi
+}
+files_tool() { if command -v timeout >/dev/null 2>&1; then timeout "$FILES_TOOL_T" "$@"; else "$@"; fi; }   # files_tool CMD... -- CMD, stopped after FILES_TOOL_T seconds where timeout is here
+files_say() { jq -cn --arg s "$1" '{say: $s}' > "$TMP/page.json"; }   # files_say WORDS -- page.json: no preview, and why
+files_page() {   # files_page PATH PAGE [full] -> the preview's page of PATH (#120): its name, its facts, then its lines, a picture (full: drawn larger, for a zoom), a sound, or why there is none; false when PATH does not hold to the lines
+    _fp=$(files_ok "$1" file) || return 1
+    _fpg=${2:-1}; case $_fpg in ''|*[!0-9]*) _fpg=1 ;; esac; [ "$_fpg" -ge 1 ] || _fpg=1
+    _fpx=$FILES_PAGE_PX; [ "${3:-}" != full ] || _fpx=$FILES_FULL_PX
+    # shellcheck disable=SC2046   # two numbers, split on purpose
+    set -- "$_fp" "$_fpg" $(files_stat "$_fp")
+    mkdir -p "$TMP/pages" || return 1
+    _fpb=$TMP/pages/$(printf '%s %s' "$1" "$4" | cksum | cut -d' ' -f1)   # this file at this time: its pages and its text, gone with the provider
+    : > "$TMP/page.lead"; : > "$TMP/page.json"
+    case $(files_kind "$1") in
+        markdown) files_page_text "$1" markdown "$3" "$_fpb" ;;
+        json) files_page_text "$1" json "$3" "$_fpb" ;;
+        code) files_page_text "$1" code "$3" "$_fpb" ;;
+        text) files_page_text "$1" text "$3" "$_fpb" ;;
+        picture) files_page_picture "$1" "$_fpb-$_fpx" "$_fpx" ;;
+        pdf) files_page_pdf "$1" "$2" "$_fpb-$_fpx" "$_fpx" ;;
+        sound) files_page_media "$1" sound "$_fpb" ;;
+        video) files_page_media "$1" video "$_fpb-$_fpx" "$_fpx" ;;
+        office) files_page_office "$1" "$_fpb" ;;
+        *) file -b -- "$1" 2>/dev/null | cut -d, -f1 | scrub_text | cut -c1-40 >> "$TMP/page.lead"
+           files_say "No preview for this kind of file. Enter opens it." ;;
+    esac
+    printf '%s\n%s\n' "$(files_size "$3")" "$(files_when "$4")" >> "$TMP/page.lead"
+    jq -n --arg t "$(printf '%s' "${1##*/}" | scrub_text)" --rawfile f "$TMP/page.lead" --slurpfile k "$TMP/page.json" \
+        '{title: $t, facts: ($f | split("\n") | map(select(. != "")))} + ($k[0] // {})'
+}
+files_page_text() {   # files_page_text PATH KIND SIZE BASE -- page.json: the text's lines, read only; a heading bold (Markdown), lines numbered (code), indented (JSON); BASE.txt for spark
+    head -c "$FILES_TEXT_MAX" "$1" > "$TMP/page.raw" 2>/dev/null || :
+    [ "$(LC_ALL=C tr -d '\000' < "$TMP/page.raw" | wc -c | tr -d ' ')" = "$(wc -c < "$TMP/page.raw" | tr -d ' ')" ] || { files_say "No preview: this file is not text. Enter opens it."; return 0; }
+    if [ "$2" = json ] && [ "$3" -le "$FILES_TEXT_MAX" ] && jq . "$1" > "$TMP/page.pretty" 2>/dev/null; then mv "$TMP/page.pretty" "$TMP/page.raw"; fi
+    cp "$TMP/page.raw" "$4.txt"
+    expand -t 4 < "$TMP/page.raw" > "$TMP/page.txt" 2>/dev/null || cp "$TMP/page.raw" "$TMP/page.txt"
+    [ "$3" -le "$FILES_TEXT_MAX" ] || printf '\n\nThe preview ends here, at %s of %s. Enter opens the whole file.\n' "$(files_size "$FILES_TEXT_MAX")" "$(files_size "$3")" >> "$TMP/page.txt"
+    jq -Rn --arg k "$2" --arg a "$4.txt" '[inputs] as $l
+        | (if $k == "markdown" then {lines: ($l | map(sub("^#{1,6}[ \t]+"; ""))), bold: [range(0; $l | length) as $i | select($l[$i] | test("^#{1,6}[ \t]")) | $i]}
+           else {lines: $l, numbered: ($k == "code")} end) + {attach: $a}' < "$TMP/page.txt" > "$TMP/page.json"
+}
+files_page_picture() {   # files_page_picture PATH BASE PX -- page.json: the picture, PX on its long side at most, and its size at 100 % (its own pixels, a fact too); full where that is the picture whole
+    _fpd=$(file -b -- "$1" 2>/dev/null | sed -n 's/.*[ ,]\([0-9][0-9]*\) *x *\([0-9][0-9]*\).*/\1 \2/p' | head -1)
+    _fps=$3; _fpz=null; _fpw=false; [ "$3" != "$FILES_FULL_PX" ] || _fpw=true
+    if [ -n "$_fpd" ]; then
+        # shellcheck disable=SC2086   # two numbers, split on purpose
+        set -- "$1" "$2" "$3" $_fpd
+        printf '%s \303\227 %s\n' "$4" "$5" >> "$TMP/page.lead"; _fpz="[$4,$5]"
+        [ "$4" -ge "$5" ] && _fpl=$4 || _fpl=$5; [ "$_fpl" -gt "$_fps" ] || { _fps=$_fpl; _fpw=true; }
+    fi
+    case $1 in
+        *.svg|*.SVG) command -v rsvg-convert >/dev/null 2>&1 && files_tool rsvg-convert -a -w "$_fps" -h "$_fps" -o "$2.png" "$1" 2>/dev/null ;;
+        *) pic_png "$1" "$2.png" "$_fps" ;;
+    esac || { files_say "No preview: nothing here draws this picture. Enter opens it."; return 0; }
+    jq -cn --arg p "$2.png" --argjson z "$_fpz" --argjson f "$_fpw" '{picture: $p, full: $f} + (if $z == null then {} else {size: $z} end)' > "$TMP/page.json"
+}
+files_page_pdf() {   # files_page_pdf PATH PAGE BASE PX -- page.json: the page drawn PX tall at most, of how many, its size at 100 % (96 pixels an inch); its text for spark
+    command -v pdftoppm >/dev/null 2>&1 || { files_say "No preview: pdftoppm (poppler) is not installed. Enter opens it."; return 0; }
+    _fpn=$(files_tool pdfinfo "$1" 2>/dev/null | sed -n 's/^Pages: *\([0-9][0-9]*\).*/\1/p')
+    [ -n "$_fpn" ] && [ "$_fpn" -gt 0 ] || { files_say "No preview: this PDF could not be read. Enter opens it."; return 0; }
+    [ "$2" -le "$_fpn" ] || set -- "$1" "$_fpn" "$3" "$4"
+    _fpz=$(files_tool pdfinfo -f "$2" -l "$2" "$1" 2>/dev/null | awk '/^Page +[0-9]+ size:/ { printf "[%d,%d]", $4 * 96 / 72 + 0.5, $6 * 96 / 72 + 0.5; exit }')
+    [ -f "$3-$2.png" ] || files_tool pdftoppm -f "$2" -l "$2" -png -scale-to "$4" -singlefile "$1" "$3-$2" >/dev/null 2>&1 \
+        || { files_say "No preview: this page could not be drawn. Enter opens it."; return 0; }
+    [ -f "$3-$2.txt" ] || files_tool pdftotext -f "$2" -l "$2" -enc UTF-8 "$1" "$3-$2.txt" >/dev/null 2>&1 || rm -f "$3-$2.txt"
+    _fpa=''; [ ! -s "$3-$2.txt" ] || _fpa=$3-$2.txt
+    jq -cn --arg p "$3-$2.png" --argjson n "$2" --argjson m "$_fpn" --arg a "$_fpa" --argjson z "${_fpz:-null}" --argjson f "$([ "$4" = "$FILES_FULL_PX" ] && echo true || echo false)" \
+        '{picture: $p, page: $n, pages: $m, full: $f} + (if $a == "" then {} else {attach: $a} end) + (if $z == null then {} else {size: $z} end)' > "$TMP/page.json"
+}
+files_time() { awk -v s="$1" 'BEGIN { s = int(s + 0.5); h = int(s / 3600); m = int(s % 3600 / 60); if (h > 0) printf "%d:%02d:%02d", h, m, s % 60; else printf "%d:%02d", m, s % 60 }'; }   # files_time SECONDS -> 3:45, 1:02:03
+files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.json: a sound's tags, its waveform over its spectrogram (drawn once, whole, by mpv), what an audio engineer asks first (rate, bits, channels, format, the bitrate of a lossy one), right plays it here; a video's frame, PX wide at most, its length and size, right plays it in its app
+    command -v mpv >/dev/null 2>&1 || { files_say "No preview: mpv is not installed. Enter opens it."; return 0; }
+    # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
+    _fmf=$(files_tool mpv $MPV_SAFE --untimed --vo=null --ao=null --length=0.05 --msg-level=all=no,term-msg=info \
+        --term-playing-msg="\${=duration:0}$US\${width:}$US\${height:}$US\${audio-params/samplerate:}$US\${audio-params/channel-count:}$US\${audio-params/format:}$US\${audio-codec-name:}$US\${metadata/by-key/title:}$US\${metadata/by-key/artist:}$US\${metadata/by-key/album:}" -- "$1" </dev/null 2>/dev/null | head -1)
+    [ -n "$_fmf" ] || { files_say "No preview: mpv could not read this file. Enter opens it."; return 0; }
+    printf '%s\n' "$_fmf" | tr "$US" '\n' > "$TMP/page.media"
+    { read -r _fms; read -r _fmw; read -r _fmh; read -r _fmr; read -r _fmc; read -r _fmb; read -r _fmk; } < "$TMP/page.media"
+    _fma=$(jq -cn --arg p "$1" '{path: $p}')
+    if [ "$2" = video ]; then
+        files_time "${_fms:-0}" >> "$TMP/page.lead"; echo >> "$TMP/page.lead"
+        _fmx=${4:-$FILES_PAGE_PX}; _fmz=null; _fmu=true
+        [ -z "$_fmw" ] || { printf '%s \303\227 %s\n' "$_fmw" "$_fmh" >> "$TMP/page.lead"; _fmz="[$_fmw,$_fmh]"; [ "$_fmw" -le "$_fmx" ] || _fmu=false; [ "$_fmx" != "$FILES_FULL_PX" ] || _fmu=true; }
+        rm -rf "$TMP/frame"; mkdir -p "$TMP/frame"
+        [ -f "$3.png" ] || {
+            # shellcheck disable=SC2086
+            files_tool mpv $MPV_SAFE --untimed --really-quiet --no-audio --vo=image --vo-image-format=png --vo-image-outdir="$TMP/frame" \
+                --start=10% --frames=1 --vf=scale=w="'min($_fmx,iw)'":h=-2 -- "$1" </dev/null >/dev/null 2>&1
+            mv "$TMP/frame/00000001.png" "$3.png" 2>/dev/null
+        } || { files_say "No preview: no frame of this video could be drawn. Enter opens it."; return 0; }
+        jq -cn --arg p "$3.png" --argjson a "$_fma" --argjson z "$_fmz" --argjson f "$_fmu" \
+            '{picture: $p, full: $f, play: {name: "files_open", arguments: $a, said: "play"}} + (if $z == null then {} else {size: $z} end)' > "$TMP/page.json"
+        return 0
+    fi
+    # what an audio engineer asks first: the rate, the bits of a lossless one, the channels, the format, a lossy one's bitrate
+    [ -z "$_fmr" ] || awk -v r="$_fmr" 'BEGIN { k = r / 1000; if (k == int(k)) printf "%d kHz\n", k; else printf "%.1f kHz\n", k }' >> "$TMP/page.lead"
+    case $_fmk in mp3|aac|opus|vorbis|wmav2) _fml=lossy ;; *) _fml='' ;; esac
+    [ -n "$_fml" ] || case $_fmb in u8*) echo '8 bit' ;; s16*) echo '16 bit' ;; s24*) echo '24 bit' ;; s32*) echo '32 bit' ;; float*) echo '32-bit float' ;; double*) echo '64-bit float' ;; esac >> "$TMP/page.lead"
+    case $_fmc in 1) echo mono ;; 2) echo stereo ;; ''|0) ;; *) echo "$_fmc channels" ;; esac >> "$TMP/page.lead"
+    case $_fmk in pcm_*) echo PCM ;; '') ;; *) printf '%s\n' "$_fmk" | tr 'a-z' 'A-Z' ;; esac >> "$TMP/page.lead"
+    [ -z "$_fml" ] || awk -v b="$(wc -c < "$1")" -v s="${_fms:-0}" 'BEGIN { if (s > 0) printf "%d kbps\n", b * 8 / s / 1000 + 0.5 }' >> "$TMP/page.lead"
+    # the waveform over the spectrogram, one picture, the whole sound read once (lavfi, about 0.2 s a few minutes)
+    [ -f "$3-sound.png" ] || {
+        rm -rf "$TMP/frame"; mkdir -p "$TMP/frame"
+        # shellcheck disable=SC2086
+        files_tool mpv $MPV_SAFE --untimed --really-quiet --ao=null --vo=image --vo-image-format=png --vo-image-outdir="$TMP/frame" \
+            --lavfi-complex="[aid1]asplit[a][b];[a]showwavespic=s=1600x${FILES_WAVE_PX}:split_channels=0:colors=white:scale=sqrt[w];[b]showspectrumpic=s=1600x512:legend=0:fscale=log:scale=log[s];[w][s]vstack=inputs=2[vo]" \
+            -- "$1" </dev/null >/dev/null 2>&1
+        mv "$TMP/frame/00000001.png" "$3-sound.png" 2>/dev/null
+    } || rm -f "$3-sound.png"
+    _fmp=''; [ ! -f "$3-sound.png" ] || _fmp=$3-sound.png
+    sed -n '8p' "$TMP/page.media" > "$TMP/page.tags"; sed -n '9,10p' "$TMP/page.media" | awk 'NF { s = s (s == "" ? "" : " \302\267 ") $0 } END { if (s != "") print s }' >> "$TMP/page.tags"
+    jq -Rn --argjson a "$_fma" --argjson n "${_fms:-0}" --arg p "$_fmp" --argjson h "$FILES_WAVE_PX" '[inputs | select(. != "")] as $l
+        | {lines: $l, bold: (if ($l | length) > 0 then [0] else [] end), seconds: $n,
+           play: {name: "files_play", arguments: $a, said: "play"}, stop: {name: "files_stop", arguments: {}, said: "stop"}}
+          + (if $p == "" then {} else {sound: {picture: $p, wave: $h}} end)' < "$TMP/page.tags" > "$TMP/page.json"
+}
+files_page_office() {   # files_page_office PATH BASE -- page.json: an Office document's text, read by Python's own zip and XML readers (no LibreOffice); BASE.txt for spark
+    command -v python3 >/dev/null 2>&1 || { files_say "No preview: python3 is not installed. Enter opens it."; return 0; }
+    files_tool python3 -I "$REPO/lib/office.py" "$1" > "$TMP/page.office" 2>/dev/null && jq -e '.lines | length > 0' "$TMP/page.office" >/dev/null 2>&1 \
+        || { files_say "No preview: this document could not be read. Enter opens it."; return 0; }
+    jq -r '.lines[]' "$TMP/page.office" > "$2.txt"
+    jq -c --arg a "$2.txt" '. + {attach: $a}' "$TMP/page.office" > "$TMP/page.json"
+}
+files_play() {   # files_play PATH [AT] -- a sound played here from AT seconds, no window, through mpv: the one playing before stops first
+    files_stop
+    # shellcheck disable=SC2086
+    mpv $MPV_SAFE --no-video --no-terminal --really-quiet --start="+${2:-0}" -- "$1" </dev/null >/dev/null 2>&1 &
+    echo "$!" > "$TMP/play.pid"
+}
+files_stop() { [ ! -f "$TMP/play.pid" ] || { kill "$(cat "$TMP/play.pid")" 2>/dev/null || :; rm -f "$TMP/play.pid"; }; }   # the sound playing here, stopped; quiet when none plays
 provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one folder's, with your home's recent files at its top, its own steps at its end and the drives beside your home; a search's; false when the uri names no folder that holds to the lines
     _fu=${1:-spark-shell://files/rows}; _fhere=''; : > "$TMP/files.thumbs"; FILES_N=0; FILES_B=0; FILES_D=0
     _ffm=''; ! files_manager_ok || _ffm=1   # the browse row, the reveal step and a folder's own tool only where a system file manager is configured (#114)
@@ -6946,12 +7182,13 @@ provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one fold
         [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end), path: .[4], c1: .[5], c2: .[6], group: (if .[7] == "" then null else .[7] end), c3: .[8], kind: .[9], preview: .[10]}
             | {path: .path} as $a
             | {id, sign, text, children, group, columns: ([.c1, .c2, .c3] | map(select(. != null and . != ""))),
+               page: (if .kind == "file" then "spark-shell://files/preview/" + (.id | ltrimstr("files:file:")) else null end),
                tool: (if .kind == "file" then {name: "files_open", arguments: $a, said: "open"}
                       elif (.kind == "dir" or .kind == "browse") and $fm != "" then {name: "files_browse", arguments: $a, said: "open in the system file manager"}
                       elif .kind == "new-folder" then {name: "files_new_folder", arguments: $a, ask: ["name"], said: "new folder"}
                       elif .kind == "new-text" then {name: "files_new_text", arguments: $a, ask: ["name"], said: "new text file"}
                       else null end),
-               more: (if .kind == "file" then [{name: "files_show", arguments: $a, said: "show the first lines"}, {name: "files_attach", arguments: $a, said: "attach to the next request"}] + steps($a)
+               more: (if .kind == "file" then [{name: "files_preview", arguments: $a, said: "preview"}, {name: "files_attach", arguments: $a, said: "attach to the next request"}] + steps($a)
                       elif .kind == "dir" then steps($a) else [] end)}
               + (if .preview != "" then {preview: .preview} else {} end)] as $rows
         | {title: $t, rows: $rows, short: [$rows[] | select(.id | startswith("files:root:")) | .id]} + (if $here == "" then {} else {here: $here} end)' "$TMP/files.rows"
@@ -7029,6 +7266,7 @@ files_open_with() {   # files_open_with ID PATH [--reveal] -- the path through t
 provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a file or a folder that holds to the four lines (the dialog's rows are the allowlist for a step the model plans; the lines hold for every step); a write answers with its undo
     _fa=$(printf '%s' "$3" | jq -r '.path // ""'); _fto=$(printf '%s' "$3" | jq -r '.to // ""'); _fnm=$(printf '%s' "$3" | jq -r '.name // ""'); _fws=$(printf '%s' "$3" | jq -r '.words // ""')
     case $2 in
+        files_stop) files_stop; files_result "$1" "stopped"; return 0 ;;
         files_find|files_say)
             _fk=${2#files_}; _fsw=$(printf '%s' "$_fws" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')
             [ -n "$_fsw" ] || { provide_refuse "$1" "files: $_fk takes the words to look for"; return 0; }
@@ -7056,13 +7294,17 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
             fi
             files_result "$1" "$_fnm made in $(files_home "${_fn%/*}")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"; return 0 ;;
         files_browse) _ff=$(files_ok "$_fa" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; } ;;
-        files_open|files_show|files_attach) _ff=$(files_ok "$_fa" file) || { provide_refuse "$1" "files: that is not a file in the folders given"; return 0; } ;;
+        files_open|files_show|files_attach|files_play) _ff=$(files_ok "$_fa" file) || { provide_refuse "$1" "files: that is not a file in the folders given"; return 0; } ;;
         *) _ff=$(files_ok "$_fa" any) || { provide_refuse "$1" "files: that is not a file or a folder in the folders given"; return 0; } ;;
     esac
     _fname=$(printf '%s' "${_ff##*/}" | scrub_text)
     case $2 in files_rename|files_move|files_copy|files_trash) ! files_is_root "$_ff" || { provide_refuse "$1" "files: your home and a drive stay as they are"; return 0; } ;; esac
     case $2 in
         files_open) files_open_text "$1" "$_ff" || files_open_with "$1" "$_ff" ;;
+        files_play)
+            [ "$(files_kind "$_ff")" = sound ] && command -v mpv >/dev/null 2>&1 || { provide_refuse "$1" "files: $_fname is no sound mpv plays here"; return 0; }
+            _fat=$(printf '%s' "$3" | jq -r '.at // 0 | if type == "number" and . >= 0 and . < 86400 then (. * 10 | floor) / 10 else 0 end')
+            files_play "$_ff" "$_fat"; files_result "$1" "playing $_fname" ;;
         files_browse) files_open_with "$1" "$_ff" ;;
         files_reveal) files_open_with "$1" "$_ff" --reveal ;;
         files_show|files_attach)
@@ -7219,6 +7461,7 @@ dialog_sections() {   # dialog_sections [FIRST] -> the providers the dialog star
     panel_sections "${1:-glance}" | grep -vxE 'spark|undo|glance|chat' || :
 }
 cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a click on a bar block, the first desktop start (about)
+    [ ! -t 1 ] || printf '\033[?25l'   # no cursor blinking in the window while it starts (#122): the dialog puts it back at its prompt
     config_load
     [ "$OS" != Darwin ] || refuse_in dialog "the dialog is the Linux desktop's; in a terminal here, spark-shell panel"
     command -v jq >/dev/null 2>&1 || refuse_in dialog "jq is not installed (spark-shell on)"
@@ -7240,6 +7483,8 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     case $_first in '') ;; *) set -- "$@" --home "$_first" ;; esac
     _dc=''; [ "$DIALOG_ATTACH" != yes ] || _dc=plus; [ "$DIALOG_MODEL" != yes ] || _dc="${_dc:+$_dc,}model"; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
     _sp=$(spark_bin); [ -z "$_sp" ] || set -- "$@" --spark "$_sp"
+    _ta=$REPO/assets/transitions/$(anim_now)/$(anim_palette)   # the piece in the palette in use, a saved theme's in its own; a palette with no set of its own plays none (#122)
+    [ "$(anim_now)" = none ] || [ -z "$(anim_palette)" ] || [ ! -f "$_ta/open.gif" ] || set -- "$@" --transitions "$_ta"
     FULL_ID=''; ! panel_own_window || panel_full_aside
     ! desktop_wanted || case ${TERM:-} in foot*) SPARK_DIALOG_SLOTS=1; export SPARK_DIALOG_SLOTS ;; esac   # its foot.ini sets the five slots: the dialog draws in them, and a new look recolors it in place (#34)
     st=0; "$DIALOG_BIN" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?
@@ -7527,7 +7772,7 @@ verb_close() {   # the last line of a verb: the count on a dry run, the sentence
     else echo "$1"; fi
 }
 
-cmd_theme() {   # theme [NAME|none|list|show] | save [NAME] | delete NAME | back | wallpaper [X] | text [N|bigger|smaller] | transparency [N|more|less] | picture PATH | "WORDS"
+cmd_theme() {   # theme [NAME|none|list|show] | save [NAME] | delete NAME | back | wallpaper [X] | text [N|bigger|smaller] | transparency [N|more|less] | animation [NAME|none|next|back] | picture PATH | "WORDS"
     config_load
     case ${1:-show} in
         show) [ $# -le 1 ] || refuse_in theme "show takes no word"; theme_show; return ;;
@@ -7538,11 +7783,17 @@ cmd_theme() {   # theme [NAME|none|list|show] | save [NAME] | delete NAME | back
         wallpaper) shift; theme_wallpaper "$@"; return ;;
         text) shift; theme_text "$@"; return ;;
         transparency) shift; theme_transparency "$@"; return ;;
+        animation) shift; theme_animation "$@"; return ;;
         picture) shift; theme_picture "$@"; return ;;
     esac
     case "$*" in *' '*) theme_from_words "$*"; return ;; esac   # words: the model reads them into a look
     [ -n "$(theme_kind "$1")" ] || refuse_in theme "no palette named $1 -- spark-shell theme list shows them"
     theme_apply "$1"
+}
+anim_follow() {   # anim_follow PIECE -- the dialog's animation follows the look, as the wallpaper does (#122); none, no motion, stays none
+    [ "${DIALOG_ANIMATION:-}" != none ] && [ "${DIALOG_ANIMATION:-}" != "$1" ] || return 0
+    [ "$MODE" = dry ] || config_set DIALOG_ANIMATION "$1" >/dev/null
+    DIALOG_ANIMATION=$1; export DIALOG_ANIMATION
 }
 theme_apply() {   # theme_apply NAME|none [back] -- the whole look follows: a saved theme or a kept look brings its own wallpaper, text size, transparency and pointer; a palette with a drawing of its own brings the drawing unless a picture of yours is on; `back` leaves the history as it is
     name=$1; _w=''
@@ -7563,10 +7814,13 @@ theme_apply() {   # theme_apply NAME|none [back] -- the whole look follows: a sa
             [ "$MODE" = dry ] || [ "$_cur" = "$_v" ] || config_set "$_k" "$_v" >/dev/null
             eval "$_k=\$_v"; export "${_k?}"
         done
+        _an=$(look_get "$_td" ANIMATION); case " $ANIMATION_NAMES " in *" $_an "*) ;; *) _an=$(anim_for_palette "$(look_get "$_td" PALETTE)") ;; esac
+        anim_follow "$_an"
     elif [ "$name" != none ] && [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && ! wall_yours && _w=$(wall_for_palette "$name") && [ "$_w" != "$WALLPAPER" ]; then   # on the desktop the palette brings the drawing made for it, as its row says; only a picture of yours stays (#25)
         [ "$MODE" = dry ] || config_set WALLPAPER "$_w" >/dev/null
         WALLPAPER=$_w; export WALLPAPER
     else _w=''; fi
+    [ -n "$_td" ] || [ "$name" = none ] || anim_follow "$(anim_for_palette "$name")"
     [ "$MODE" = dry ] || [ "$THEME" = "$name" ] || config_set THEME "$name"
     THEME=$name; export THEME
     theme_files
@@ -7624,7 +7878,7 @@ theme_list() {
     fi
     echo "spark-shell theme NAME uses one everywhere; theme save NAME keeps the look in use."
 }
-theme_save() {   # theme_save [NAME...] -- the look in use kept as a folder under that name: the palette, the wallpaper's files, the text size, the transparency, the pointer; a look made from words or a picture keeps its own name when none is given
+theme_save() {   # theme_save [NAME...] -- the look in use kept as a folder under that name: the palette, the wallpaper's files, the text size, the transparency, the pointer, the dialog's animation; a look made from words or a picture keeps its own name when none is given
     [ -n "${THEME:-}" ] && [ "$THEME" != none ] || refuse_in theme "no palette is in use -- spark-shell theme NAME first"
     name=$(desk_name_of "$*")
     if [ -z "$name" ]; then case $(theme_kind "$THEME") in look) name=$THEME ;; *) refuse_in theme "save NAME -- a name for this look" ;; esac; fi
@@ -7651,7 +7905,7 @@ theme_save() {   # theme_save [NAME...] -- the look in use kept as a folder unde
         elif wall_there; then
             _pic=${WALLPAPER##*/}; cp "$WALLPAPER" "$_d.new/$_pic"; printf 'WALLPAPER=picture\nPICTURE=%s\n' "$_pic"
         else printf 'WALLPAPER=%s\n' "$WALLPAPER"; fi
-        printf 'FONT=%s\nALPHA=%s\nPOINTER=%s\n' "$FONT" "$ALPHA" "${POINTER:-}"
+        printf 'FONT=%s\nALPHA=%s\nPOINTER=%s\nANIMATION=%s\n' "$FONT" "$ALPHA" "${POINTER:-}" "$(anim_now)"
     } > "$_d.new/look.env"
     rm -rf "$_d"; mv "$_d.new" "$_d"
     echo "saved $name ($_d) -- spark-shell theme $name brings the look back"
@@ -7719,6 +7973,20 @@ text_step() {   # text_step N|bigger|smaller -> the receipt, or the refusal and 
     _f=$(printf '%s' "$FONT" | sed "s/size=$_sz/size=$_new/")
     config_set FONT "$_f" >/dev/null; FONT=$_f; export FONT; look_apply; login_follow >/dev/null 2>&1 || :
     echo "text at $_new $PANEL_SEP new windows and the bar take it; the pointer $(pointer_size_for "$_new") pixels"
+}
+theme_animation() {   # theme_animation [NAME|none|next|back] -- the dialog's transitions as it opens, waits and closes (#122): a piece by name, none for no motion
+    [ -n "${1:-}" ] || { echo "animation $(anim_now) $PANEL_SEP none, $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g')"; return; }
+    [ $# -eq 1 ] || refuse_in theme "animation takes one word"
+    anim_step "$1" || exit 1
+}
+anim_step() {   # anim_step NAME|none|next|back -> the receipt, or the refusal and exit 1 (the panel's step and the verb share it): from the dialog's next opening
+    # shellcheck disable=SC2086   # the names, a word each, on purpose
+    case $1 in
+        next|back) _an=$(printf '%s\n' none $ANIMATION_NAMES | awk -v c="$(anim_now)" -v d="$1" '{ n[NR] = $0; if ($0 == c) i = NR } END { if (!i) i = 1; print n[d == "next" ? i % NR + 1 : (i + NR - 2) % NR + 1] }') ;;
+        *) case " none $ANIMATION_NAMES " in *" $1 "*) _an=$1 ;; *) echo "animation takes none, $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g'), next or back"; return 1 ;; esac ;;
+    esac
+    config_set DIALOG_ANIMATION "$_an" >/dev/null; DIALOG_ANIMATION=$_an; export DIALOG_ANIMATION
+    if [ "$_an" = none ]; then echo "animation none $PANEL_SEP the dialog opens and closes with no motion"; else echo "animation $_an $PANEL_SEP from the dialog's next opening"; fi
 }
 theme_transparency() {   # theme_transparency [N|more|less] -- the windows' transparency, a percent, 0 (off) to 50; more and less step by 10
     _st=$(transparency_of "$ALPHA")
@@ -9330,9 +9598,10 @@ desk_lock() {
 # section): grim takes the picture, slurp the area you drag, sway's tree
 # the window in front. A PNG named by the time lands in
 # ~/pictures/screenshots (lowercase, as every folder spark-shell makes)
-# and on the clipboard (wl-copy). --wait N first, for the dialog to close.
-CAPTURE_DIR=$HOME/pictures/screenshots
+# and on the clipboard (wl-copy). --wait N first, for the dialog to close. The pictures folder is the
+# one ~/.config/user-dirs.dirs names (#119), so a home whose file says ~/Pictures gets no twin.
 desk_capture() {   # desk_capture screen|area|window [--wait N]
+    CAPTURE_DIR=$(user_pictures)/screenshots
     _what=${1:-screen}; _wait=0
     if [ "${2:-}" = --wait ]; then _wait=${3:-}; fi
     case $_what in screen|area|window) ;; *) refuse "capture takes screen, area or window" ;; esac

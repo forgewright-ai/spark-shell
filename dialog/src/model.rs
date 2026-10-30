@@ -38,6 +38,8 @@ pub struct Row {
     pub step: Option<Step>,
     /// A picture of what the row brings (a wallpaper), drawn beside the list while the row is lit.
     pub preview: Option<String>,
+    /// The uri of the page that shows the row's file (#120): Space opens its preview.
+    pub page: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -158,7 +160,7 @@ fn s(v: &Value, k: &str) -> String {
     scrub(v.get(k).and_then(Value::as_str).unwrap_or(""))
 }
 
-fn call(v: &Value) -> Option<Call> {
+pub fn call(v: &Value) -> Option<Call> {
     let name = v.get("name")?.as_str()?;
     if !name_ok(name) {
         return None;
@@ -252,6 +254,11 @@ pub fn rows(text: &str) -> Option<Rows> {
             chip: chip(r.get("chip")),
             step: step(r.get("step")),
             preview: preview(r.get("preview")),
+            page: r
+                .get("page")
+                .and_then(Value::as_str)
+                .filter(|u| u.starts_with("spark-shell://") && !u.chars().any(char::is_control))
+                .map(str::to_string),
         })
         .collect();
     let short = v

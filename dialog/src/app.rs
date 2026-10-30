@@ -10,13 +10,18 @@ pub enum HintKey {
     Left,
     Right,
     Up,
+    Down,
+    /// A character a key chip stands for (a preview's + - < >), typed as the key is.
+    Char(char),
 }
 
 use crate::gate;
 use crate::mcp::{self, Incoming, Kind, Server};
 use crate::model::{self, Call, Rows, Tool};
+use crate::preview::{self, Preview};
 use crate::progress::Work;
-use crate::scrub::scrub;
+use crate::scrub::{cells, scrub};
+use crate::transition::Reel;
 use serde_json::{json, Map, Value};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -281,10 +286,12 @@ pub enum View {
     Talk,
     /// Settings > Connections: the tools the dialog talks to, and where the model runs.
     Connections,
+    /// One file of a list, as large as the area allows (#120): the state is App::preview.
+    Preview,
 }
 
-/// How the person talks to the prompt. Hold Space waits for a spark that can finish a recording on a
-/// signal; until then it is shown, and not offered.
+/// How the person talks to the prompt. Holding a key waits for a spark that can finish a recording on
+/// a signal (Space is the preview's, #120); until then it is said, and not offered.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Talk {
     Click,
@@ -434,6 +441,8 @@ pub struct Config {
     pub attach: Vec<String>,
     pub spark_shell: String,
     pub spark: String,
+    /// The folder of the transitions' piece in the palette in use (#122): open, wait and close.
+    pub transitions: Option<String>,
 }
 
 impl Default for Config {
@@ -449,6 +458,7 @@ impl Default for Config {
             attach: vec![],
             spark_shell: String::new(),
             spark: "spark".into(),
+            transitions: None,
         }
     }
 }
@@ -573,6 +583,16 @@ pub struct App {
     /// The row a value was just changed on: the light stays on it while the list around it changes
     /// (the receipt and the Undo row come in above it), until a key moves it.
     pub keep_lit: Option<String>,
+    /// The preview shown (View::Preview): the list it came from, the file, its page (#120).
+    pub preview: Option<Preview>,
+    /// A sound's play or stop on its way: its request and its call, audited when it answers.
+    quiet: Option<(u64, usize, Call)>,
+    /// The transition playing, and since when (#122); main.rs moves it on and draws it.
+    pub motion: Option<(Reel, Instant)>,
+    /// The transitions are loaded: Esc that closes the dialog plays the close first.
+    pub films: bool,
+    /// A text page's count as last drawn: how far right goes (the area decides it, so ui.rs does).
+    pub preview_pages: usize,
 }
 
 impl App {
@@ -638,6 +658,11 @@ impl App {
             palette: None,
             last_view: None,
             keep_lit: None,
+            preview: None,
+            quiet: None,
+            motion: None,
+            films: false,
+            preview_pages: 1,
             steps_row: None,
         }
     }
@@ -678,6 +703,7 @@ impl App {
             || self.wait.is_some()
             || matches!(self.mode, Mode::Listening)
             || self.shown().iter().any(|&p| self.providers[p].reading && !self.providers[p].ready)
+            || self.servers.iter().any(|s| s.pending.values().any(|p| p.kind == Kind::Page))
     }
 
     /// What kind of work the header's bar shows, one of spark's five animations: a step that runs
@@ -1071,6 +1097,56 @@ impl App {
                     }
                 }
             }
+            Kind::Page => {
+                let text = result
+                    .as_ref()
+                    .and_then(|r| r.pointer("/contents/0/text"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                // the page of the file and the page on screen alone: one asked for before a key moved on lands nowhere
+                let of = result.as_ref().and_then(|r| r.pointer("/contents/0/uri")).and_then(Value::as_str).map(scrub);
+                let Some(pv) = self.preview.as_mut().filter(|pv| pv.prov == idx) else {
+                    return;
+                };
+                let want = pv.uri();
+                if of.as_deref().is_some_and(|u| u != want) {
+                    return;
+                }
+                match preview::page(&want, text).filter(|_| text.len() <= mcp::RESOURCE_MAX) {
+                    Some(pg) => pv.shown = Some(pg),
+                    None => {
+                        let name = pv.row().text.clone();
+                        self.say(Sign::Refused, &error.unwrap_or_else(|| format!("{} could not be shown", name)));
+                    }
+                }
+            }
+            Kind::Quiet => {
+                let Some((_, p, call)) = self.quiet.take().filter(|(q, p, _)| *q == n && *p == idx) else {
+                    return;
+                };
+                let refused = error.is_some() || result.as_ref().and_then(|r| r.get("isError")).and_then(Value::as_bool).unwrap_or(false);
+                let schema = self.providers[p]
+                    .tools
+                    .iter()
+                    .find(|t| t.name == call.name)
+                    .map(|t| t.schema.clone())
+                    .unwrap_or(Value::Null);
+                crate::audit::record(Who::Person.word(), &self.providers[p].label, &call.name, &schema, &call.arguments, refused);
+                if refused {
+                    if let Some(pv) = self.preview.as_mut() {
+                        pv.playing = None;
+                    }
+                    let said = result
+                        .as_ref()
+                        .and_then(|r| r.pointer("/content/0/text"))
+                        .and_then(Value::as_str)
+                        .map(scrub)
+                        .filter(|t| !t.is_empty())
+                        .or(error)
+                        .unwrap_or_else(|| "not played".into());
+                    self.say(Sign::Refused, &said);
+                }
+            }
             Kind::Call(_) => {
                 self.clear_pair(idx);
                 self.called(idx, n, result, error)
@@ -1082,6 +1158,12 @@ impl App {
     pub fn tick(&mut self, now: Instant) {
         if self.busy() {
             self.frame += 1;
+        }
+        // a sound that has played to its end: the key row says Play again
+        if let Some(pv) = self.preview.as_mut() {
+            if pv.playing.is_some() && !pv.plays(now) {
+                pv.playing = None;
+            }
         }
         self.follow_view(now);
         let mut late = vec![];
@@ -1116,6 +1198,14 @@ impl App {
                     }
                 }
                 Kind::Folder => self.say(Sign::Refused, "the list did not come in time: Esc goes back"),
+                Kind::Page => self.say(Sign::Refused, "the preview did not come in time: Enter opens the file"),
+                Kind::Quiet => {
+                    self.quiet = None;
+                    if let Some(pv) = self.preview.as_mut() {
+                        pv.playing = None;
+                    }
+                    self.say(Sign::Refused, "the sound did not answer in time");
+                }
                 Kind::Init => self.lose(idx, "it did not answer"),
                 _ => {}
             }
@@ -1285,7 +1375,7 @@ impl App {
                 list.push(Item::TalkOpt(Talk::Click));
                 list.push(Item::TalkOpt(Talk::Off));
                 list.push(Item::Blank);
-                self.text(&mut list, "Hold Space to talk needs a newer spark.", true);
+                self.text(&mut list, "Holding a key to talk needs a newer spark.", true);
                 if !self.voice_on {
                     self.text(&mut list, "spark's voice is off: spark voice clear turns it on.", true);
                 }
@@ -1301,7 +1391,7 @@ impl App {
                 list.push(Item::Heading("model".into()));
                 list.push(Item::OpenModels);
             }
-            View::About => {}
+            View::About | View::Preview => {}
             View::Steps(_) => {
                 let n = self.steps_row.as_ref().map(|r| r.tool.iter().count() + r.more.len()).unwrap_or(0);
                 for k in 0..n {
@@ -1652,6 +1742,9 @@ impl App {
     }
 
     pub fn up(&mut self) {
+        if self.preview_key() {
+            return if self.zoomed() { self.preview_pan(0.0, -1.0) } else { self.preview_file(-1) };
+        }
         self.keep_lit = None;
         if self.in_list {
             if self.sel == 0 {
@@ -1670,6 +1763,9 @@ impl App {
     }
 
     pub fn down(&mut self) {
+        if self.preview_key() {
+            return if self.zoomed() { self.preview_pan(0.0, 1.0) } else { self.preview_file(1) };
+        }
         self.keep_lit = None;
         if self.in_list {
             if self.sel + 1 < self.picks().len() {
@@ -1742,6 +1838,18 @@ impl App {
 
     /// A key that types: it goes to the prompt, wherever the focus was.
     pub fn typed(&mut self, c: char) {
+        if self.preview_picture_key(c) {
+            return;
+        }
+        // Space with nothing typed: a lit file's preview, or back from one (#120)
+        if c == ' ' && self.input.is_empty() && self.mode == Mode::Normal && self.chip_focus.is_none() && self.pending.is_none() {
+            if self.view == View::Preview {
+                return self.escape();
+            }
+            if self.open_preview() {
+                return;
+            }
+        }
         self.keep_lit = None;
         if c.is_control() {
             return;
@@ -1866,6 +1974,15 @@ impl App {
     /// whether the focus is in the prompt or in the reminders under them (#59); else the cursor in
     /// the draft.
     pub fn left(&mut self) {
+        if self.preview_key() {
+            if self.zoomed() {
+                return self.preview_pan(-1.0, 0.0);
+            }
+            if self.preview.as_ref().and_then(|pv| pv.shown.as_ref()).is_some_and(|pg| pg.sound.is_some()) {
+                return self.preview_seek(0.0);
+            }
+            return self.preview_page(-1);
+        }
         if self.step_value(false) {
             return;
         }
@@ -1876,6 +1993,9 @@ impl App {
     }
 
     pub fn right(&mut self) {
+        if self.preview_key() {
+            return if self.zoomed() { self.preview_pan(1.0, 0.0) } else { self.preview_right() };
+        }
         if self.step_value(true) {
             return;
         }
@@ -1924,6 +2044,10 @@ impl App {
     /// Esc: a question waiting is answered no (the draft comes back); the focus on a control or the
     /// draft goes first; then back one view; from the first view the dialog closes.
     pub fn escape(&mut self) {
+        if matches!(self.motion, Some((Reel::Close, _))) {
+            self.quit = Some(0);
+            return;
+        }
         self.target = None;
         // a request spark is still reading: Esc drops it, and the words come back
         if self.pending.is_some() && self.mode == Mode::Normal && !self.staged_now() {
@@ -1981,6 +2105,10 @@ impl App {
                     self.set_input(String::new());
                     self.in_list = false;
                     self.sel = 0;
+                } else if self.zoomed() {
+                    if let Some(pv) = self.preview.as_mut() {
+                        pv.fit();
+                    }
                 } else if let Some(v) = self.came_from.pop() {
                     self.go_back(v);
                 } else if self.exchange_up() {
@@ -1990,7 +2118,7 @@ impl App {
                     self.value_turn = None;
                     self.sel = 0;
                 } else {
-                    self.quit = Some(0);
+                    self.close_window();
                 }
             }
         }
@@ -2002,6 +2130,12 @@ impl App {
     }
 
     fn go_back(&mut self, v: View) {
+        let lit = if self.view == View::Preview {
+            self.stop_sound();
+            self.preview.take().map(|pv| pv.row().id.clone())
+        } else {
+            None
+        };
         self.want_cancel();
         self.target = None;
         self.keep_lit = None;
@@ -2027,6 +2161,11 @@ impl App {
             } else {
                 self.read_folder(p, &uri);
             }
+        }
+        if let Some(id) = lit {
+            self.in_list = true;
+            self.keep_lit = Some(id);
+            self.follow_lit();
         }
     }
 
@@ -2098,6 +2237,22 @@ impl App {
     }
 
     pub fn enter(&mut self) {
+        // the preview's Enter, nothing typed: the file opens in its app, as Files opens it
+        if self.preview_key() {
+            let Some(pv) = &self.preview else { return };
+            let (p, row) = (pv.prov, pv.row().clone());
+            self.stop_sound();
+            if let Some(call) = row.tool {
+                let line = self.step_line(p, &call, &row.text);
+                self.run(Step {
+                    prov: p,
+                    call,
+                    who: Who::Person,
+                    line,
+                });
+            }
+            return;
+        }
         match std::mem::replace(&mut self.mode, Mode::Normal) {
             Mode::Confirm(step) => {
                 let typed = std::mem::take(&mut self.input);
@@ -2263,6 +2418,14 @@ impl App {
                     return;
                 };
                 let Some(call) = self.step_call(k) else { return };
+                if call.name.ends_with("_preview") {
+                    self.view = self.came_from.pop().unwrap_or(View::Home);
+                    self.in_list = true;
+                    self.keep_lit = Some(row.id.clone());
+                    self.follow_lit();
+                    self.open_preview();
+                    return;
+                }
                 if let Some(v) = self.came_from.pop() {
                     self.go_back(v);
                 }
@@ -2521,7 +2684,7 @@ impl App {
         if self.attachment.is_some() {
             v.push(4);
         }
-        if self.cfg.plus && self.files().is_some() {
+        if self.cfg.plus && self.files().is_some() && self.view != View::Preview {
             v.push(0);
         }
         if self.cfg.model && self.model_name.is_some() {
@@ -2680,9 +2843,24 @@ impl App {
         }
         self.want_cancel();
         self.wait = Some(Work::Think);
-        // the file goes with this request alone; it comes back if the request fails
-        let file = self.attachment.take();
-        if file.is_some() {
+        // the file goes with this request alone; it comes back if the request fails. In a preview it is
+        // the file shown, as the text spark can read of it (#120): a picture, a sound has none
+        let mut file = self.attachment.take();
+        let picked = file.is_some();
+        if file.is_none() && self.view == View::Preview {
+            let Some(pv) = &self.preview else { return };
+            match pv.shown.as_ref().and_then(|pg| pg.attach.clone()) {
+                Some(a) => file = Some(a),
+                None => {
+                    let name = pv.row().text.clone();
+                    self.wait = None;
+                    self.set_input(words.to_string());
+                    self.say(Sign::You, words);
+                    return self.say(Sign::Refused, &format!("spark reads text, and {} has none to read", name));
+                }
+            }
+        }
+        if picked {
             self.say(Sign::Says, "This file is used for this request only.");
         }
         self.pending = Some((words.to_string(), file.clone()));
@@ -3455,6 +3633,7 @@ impl App {
             View::Models => "model".into(),
             View::Talk => "talk".into(),
             View::Connections => "connections".into(),
+            View::Preview => "preview".into(),
         }
     }
 
@@ -3463,6 +3642,7 @@ impl App {
             View::Section(p) => self.providers[*p].title.clone(),
             View::Folder(..) => self.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default(),
             View::Steps(_) => self.steps_row.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
+            View::Preview => self.preview.as_ref().map(|pv| pv.place.clone()).unwrap_or_default(),
             _ => String::new(),
         }
     }
@@ -3478,10 +3658,18 @@ impl App {
             HintKey::Left => self.left(),
             HintKey::Right => self.right(),
             HintKey::Up => self.up(),
+            HintKey::Down => self.down(),
+            HintKey::Char(c) => self.typed(c),
         }
     }
 
     pub fn hint(&self) -> Vec<(String, bool)> {
+        self.hint_with(self.preview_pages)
+    }
+
+    /// The key row, a preview's text taking `pages` at the size it is drawn now (ui.rs draws the
+    /// content first, so the row offers the pages of this frame, not the last one's).
+    pub fn hint_with(&self, pages: usize) -> Vec<(String, bool)> {
         let key = |w: &str, k: &str| vec![(format!("{} ", w), false), (k.to_string(), true)];
         let gap = || ("   ".to_string(), false);
         let esc = |w: &str| vec![gap(), (format!("{} ", w), false), ("Esc".to_string(), true)];
@@ -3579,6 +3767,9 @@ impl App {
             let mut v = key("Run", "Enter");
             v.extend(esc("Discard"));
             return v;
+        }
+        if self.preview_key() {
+            return self.preview_hint(pages);
         }
         // what Esc does now: the words typed go first, then back a view, then what was said, then the dialog
         let esc_word = if !self.input.is_empty() {
@@ -3881,5 +4072,310 @@ impl App {
             self.wait = None;
         }
         self.jobs.retain(|j| !matches!(j, Job::RunInput(Helper::Want(_), _, _)));
+    }
+}
+
+/// The preview (#120): opened by Space on a lit file, or by the preview step of its list of steps.
+impl App {
+    /// A key that moves the preview: in it, nothing typed, nothing asked, no control in focus.
+    fn preview_key(&self) -> bool {
+        self.view == View::Preview && self.input.is_empty() && self.mode == Mode::Normal && self.chip_focus.is_none() && self.staged.is_none()
+    }
+
+    /// The lit row's preview, where it is a file of the folder shown; false where it is not.
+    fn open_preview(&mut self) -> bool {
+        if !self.in_list || self.picking.is_some() || self.attaching.is_some() {
+            return false;
+        }
+        let Some(Item::Folder(i)) = self.picks().get(self.sel).cloned() else {
+            return false;
+        };
+        let Some((p, _, rows)) = self.folder.clone() else { return false };
+        let Some(row) = rows.rows.get(i) else { return false };
+        let Some(pv) = Preview::new(p, &rows.title, &rows.rows, &row.id) else {
+            return false;
+        };
+        self.preview = Some(pv);
+        self.preview_pages = 1;
+        self.go(View::Preview);
+        self.read_page();
+        true
+    }
+
+    /// The page on screen asked of its provider; the answer replaces what is shown.
+    fn read_page(&mut self) {
+        let Some(pv) = self.preview.as_mut() else { return };
+        pv.asked = Instant::now();
+        let (p, uri) = (pv.prov, pv.uri());
+        if let Some(s) = self.server(p) {
+            s.request("resources/read", json!({"uri": uri}), Kind::Page, mcp::T_READ);
+        }
+    }
+
+    /// Up and down: the list's previous or next file.
+    fn preview_file(&mut self, d: i32) {
+        self.stop_sound();
+        if self.preview.as_mut().is_some_and(|pv| pv.step_file(d)) {
+            self.preview_pages = 1;
+            self.read_page();
+        }
+    }
+
+    /// The pages the file has: a picture's from its provider, a text's as drawn.
+    fn pages(&self) -> usize {
+        match self.preview.as_ref().and_then(|pv| pv.shown.as_ref()) {
+            Some(pg) if pg.picture.is_some() => pg.pages,
+            Some(_) => self.preview_pages.max(1),
+            None => 1,
+        }
+    }
+
+    /// Left and right: the page before or after; a picture's page is asked for, a text's is drawn.
+    fn preview_page(&mut self, d: i32) {
+        let pages = self.pages();
+        let Some(pv) = self.preview.as_mut() else { return };
+        pv.page = pv.page.min(pages);
+        if pv.step_page(d, pages) && pv.shown.as_ref().is_some_and(|pg| pg.picture.is_some()) {
+            self.read_page();
+        }
+    }
+
+    /// A picture shown, the preview's zoom and turn apply to it.
+    fn has_picture(&self) -> bool {
+        self.preview.as_ref().and_then(|pv| pv.shown.as_ref()).is_some_and(|pg| pg.picture.is_some())
+    }
+
+    /// Zoomed: the arrows move the picture, and Esc fits it.
+    pub fn zoomed(&self) -> bool {
+        self.has_picture() && self.preview.as_ref().is_some_and(|pv| pv.zoom.is_some())
+    }
+
+    /// A key of the picture's, nothing typed: + (or =) and - zoom, 0 fits, < and > turn a quarter.
+    /// False for any other key, or with no picture shown: the key is typed.
+    fn preview_picture_key(&mut self, c: char) -> bool {
+        if !self.preview_key() || !self.has_picture() {
+            return false;
+        }
+        let Some(pv) = self.preview.as_mut() else { return false };
+        match c {
+            '+' | '=' => {
+                pv.zoom_step(1);
+            }
+            '-' => {
+                pv.zoom_step(-1);
+            }
+            '0' => pv.fit(),
+            '<' => pv.rotate(-1),
+            '>' => pv.rotate(1),
+            _ => return false,
+        }
+        if pv.needs_full() {
+            pv.full = true;
+            self.read_page();
+        }
+        true
+    }
+
+    /// Ctrl and the wheel, or a key: a zoom stop in or out.
+    pub fn preview_zoom(&mut self, d: i32) {
+        self.preview_picture_key(if d > 0 { '+' } else { '-' });
+    }
+
+    /// A drag or the wheel on a zoomed picture: it moves, by box pixels.
+    pub fn preview_drag(&mut self, dx: f64, dy: f64) {
+        if let Some(pv) = self.preview.as_mut().filter(|pv| pv.zoom.is_some() && pv.px.0 > 0) {
+            pv.pan(-dx / pv.px.0 as f64, -dy / pv.px.1 as f64);
+        }
+    }
+
+    /// The wheel in a preview: with Ctrl a zoom stop; on a zoomed picture it moves it; else a page.
+    pub fn preview_wheel(&mut self, d: i32, ctrl: bool) {
+        if ctrl {
+            self.preview_zoom(-d);
+        } else if self.zoomed() {
+            self.preview_pan(0.0, d as f64);
+        } else if !self.preview.as_ref().and_then(|pv| pv.shown.as_ref()).is_some_and(|pg| pg.sound.is_some()) {
+            self.preview_page(d);
+        }
+    }
+
+    /// The arrows on a zoomed picture: it moves a quarter of what is shown.
+    fn preview_pan(&mut self, dx: f64, dy: f64) {
+        if let Some(pv) = self.preview.as_mut() {
+            pv.pan(dx * preview::PAN, dy * preview::PAN);
+        }
+    }
+
+    /// A sound: Right plays it from where it is, or pauses it there; a video plays in its app; any
+    /// other file, the next page.
+    fn preview_right(&mut self) {
+        let Some(pv) = &self.preview else { return };
+        let Some(play) = pv.shown.as_ref().and_then(|pg| pg.play.clone()) else {
+            return self.preview_page(1);
+        };
+        if pv.playing.is_some() {
+            return self.stop_sound();
+        }
+        let len = pv.shown.as_ref().map(|pg| pg.seconds).unwrap_or(0.0);
+        let at = if len > 0.0 && pv.played >= len { 0.0 } else { pv.played };
+        self.play_from(play, at);
+    }
+
+    /// A sound from `at` seconds: a click on its waveform, Left back to the start.
+    pub fn preview_seek(&mut self, share: f64) {
+        let Some(pv) = &self.preview else { return };
+        let Some(pg) = pv.shown.as_ref().filter(|pg| pg.sound.is_some()) else {
+            return;
+        };
+        let (Some(play), len) = (pg.play.clone(), pg.seconds) else { return };
+        let at = (share.clamp(0.0, 1.0) * len).max(0.0);
+        if pv.playing.is_some() {
+            self.play_from(play, at);
+        } else if let Some(pv) = self.preview.as_mut() {
+            pv.played = at;
+        }
+    }
+
+    fn play_from(&mut self, mut play: Call, at: f64) {
+        let Some(pv) = self.preview.as_mut() else { return };
+        let (p, text) = (pv.prov, pv.row().text.clone());
+        if pv.shown.as_ref().is_none_or(|pg| pg.stop.is_none()) {
+            // a video plays in its app: a step like any, its window the receipt
+            let line = self.step_line(p, &play, &text);
+            return self.run(Step {
+                prov: p,
+                call: play,
+                who: Who::Person,
+                line,
+            });
+        }
+        play.arguments.insert("at".into(), json!((at * 10.0).round() / 10.0));
+        pv.played = at;
+        pv.playing = Some(Instant::now());
+        self.transport(p, play);
+    }
+
+    /// A sound's play or stop: a key of the preview's, as the Calendar's arrows are, so it says no turn
+    /// in the exchange; held to its tool's schema, audited as every step is, and a refusal said.
+    fn transport(&mut self, p: usize, call: Call) {
+        let step = Step {
+            prov: p,
+            call: call.clone(),
+            who: Who::Person,
+            line: String::new(),
+        };
+        if self.tool_of(&step).is_none() {
+            return self.say(Sign::Refused, "this is not offered here now");
+        }
+        if let Err(e) = self.checked(&step) {
+            return self.say(Sign::Refused, &e);
+        }
+        let params = json!({"name": call.name, "arguments": Value::Object(call.arguments.clone())});
+        if let Some(n) = self.server(p).and_then(|s| s.request("tools/call", params, Kind::Quiet, mcp::T_CALL)) {
+            self.quiet = Some((n, p, call));
+        }
+    }
+
+    /// A sound playing here stops where it is: leaving its file, leaving the preview, Right again.
+    fn stop_sound(&mut self) {
+        let now = Instant::now();
+        let Some(pv) = self.preview.as_mut() else { return };
+        if pv.playing.is_none() {
+            return;
+        }
+        pv.played = pv.position(now);
+        pv.playing = None;
+        let Some(stop) = pv.shown.as_ref().and_then(|pg| pg.stop.clone()) else {
+            return;
+        };
+        let p = pv.prov;
+        self.transport(p, stop);
+    }
+
+    /// The preview's key row, nothing typed, each key whole where the row has room, in this order:
+    /// open, back (fit, zoomed), the files (move, zoomed), the pages or play, zoom, turn. The about
+    /// lists them all.
+    fn preview_hint(&self, pages: usize) -> Vec<(String, bool)> {
+        let pv = self.preview.as_ref();
+        let shown = pv.and_then(|pv| pv.shown.as_ref());
+        let mut keys: Vec<(&str, &str)> = vec![];
+        if self.zoomed() {
+            keys.push(("Fit", "Esc"));
+            keys.push(("Move", "\u{2190} \u{2191} \u{2193} \u{2192}"));
+            keys.push(("Zoom", "+ -"));
+            keys.push(("Turn", "< >"));
+        } else {
+            keys.push(("Open", "Enter"));
+            keys.push(("Back", "Esc"));
+            if pv.is_some_and(|pv| pv.files.len() > 1) {
+                keys.push(("File", "\u{2191} \u{2193}"));
+            }
+            if shown.is_some_and(|pg| pg.play.is_some()) {
+                keys.push((if pv.is_some_and(|pv| pv.playing.is_some()) { "Pause" } else { "Play" }, "\u{2192}"));
+                if shown.is_some_and(|pg| pg.sound.is_some()) {
+                    keys.push(("Start", "\u{2190}"));
+                }
+            } else if shown.is_some_and(|pg| if pg.picture.is_some() { pg.pages > 1 } else { pages > 1 }) {
+                keys.push(("Page", "\u{2190} \u{2192}"));
+            }
+            if self.has_picture() {
+                keys.push(("Zoom", "+ -"));
+                keys.push(("Turn", "< >"));
+            }
+        }
+        let room = self.size.0.saturating_sub(4) as usize;
+        let mut v: Vec<(String, bool)> = vec![];
+        let mut used = 0;
+        for (w, k) in keys {
+            let need = if v.is_empty() { 0 } else { 3 } + cells(w) + 1 + cells(k) + 2;
+            if used + need > room {
+                break;
+            }
+            if !v.is_empty() {
+                v.push(("   ".to_string(), false));
+            }
+            v.push((format!("{} ", w), false));
+            v.push((k.to_string(), true));
+            used += need;
+        }
+        v
+    }
+}
+
+/// The transitions (#122): the dialog opens with one, waits with one, and closes with one.
+impl App {
+    /// The window closes: with the close playing first where the transitions are loaded (Esc, the x).
+    pub fn close_window(&mut self) {
+        if self.films {
+            self.motion = Some((Reel::Close, Instant::now()));
+            self.in_list = false;
+        } else {
+            self.quit = Some(0);
+        }
+    }
+
+    /// A key or a click: the open or the wait stops where it is, and the key does what it does.
+    pub fn cut_motion(&mut self) {
+        if matches!(self.motion, Some((Reel::Open | Reel::Wait, _))) {
+            self.motion = None;
+        }
+    }
+
+    /// The home has its rows: every provider has answered, or stopped.
+    pub fn home_ready(&self) -> bool {
+        self.providers.iter().all(|p| p.ready || p.dead.is_some())
+    }
+
+    /// The transition moved on: the open ends in the wait while the home loads, the wait when it has,
+    /// the close in the window going. `open` and `close` are how long they play.
+    pub fn follow_motion(&mut self, now: Instant, open: u128, close: u128) {
+        let Some((reel, since)) = self.motion else { return };
+        let ms = now.duration_since(since).as_millis();
+        match reel {
+            Reel::Open if ms >= open => self.motion = (!self.home_ready()).then_some((Reel::Wait, now)),
+            Reel::Wait if self.home_ready() || ms >= crate::transition::WAIT_MAX_MS => self.motion = None,
+            Reel::Close if ms >= close => self.quit = Some(0),
+            _ => {}
+        }
     }
 }

@@ -74,6 +74,15 @@ With DESKTOP=sway, from apt, pacman, xbps, dnf or zypper.
   openSUSE. Where a distro still ships gdk-pixbuf's thumbnailer
   (https://gitlab.gnome.org/GNOME/gdk-pixbuf -- LGPL-2.1-or-later), it
   stands in.
+- Poppler -- https://gitlab.freedesktop.org/poppler/poppler --
+  GPL-2.0-or-later. pdftoppm draws a PDF's page in a preview, pdfinfo
+  counts its pages and pdftotext reads its text for spark:
+  poppler-utils on Debian and Fedora, poppler on Arch and Void,
+  poppler-tools on openSUSE.
+- mpv -- https://mpv.io -- GPL-2.0-or-later. Where it is installed (never
+  by spark-shell), a sound's preview: its facts, its waveform and
+  spectrogram drawn once, and the sound played; a video's facts and a
+  frame. spark-shell starts it and ships none of its code.
 
 ## The font
 
@@ -88,7 +97,7 @@ With DESKTOP=sway, from apt, pacman, xbps, dnf or zypper.
 
 `spark-dialog`, built from `dialog/` with crates from crates.io, each
 pinned by `dialog/Cargo.lock`. The release's `spark-dialog.cdx.json`
-lists every one with its licence (93 today: MIT, Apache-2.0, Zlib and
+lists every one with its licence (95 today: MIT, Apache-2.0, Zlib and
 Unicode-3.0). The ones it is made of:
 
 - ratatui -- https://github.com/ratatui/ratatui -- MIT. The drawing.
@@ -97,7 +106,10 @@ Unicode-3.0). The ones it is made of:
 - serde_json -- https://github.com/serde-rs/json -- MIT or Apache-2.0.
   The protocol's JSON.
 - png -- https://github.com/image-rs/image-png -- MIT or Apache-2.0.
-  The favicon, read for the logo in the about.
+  The favicon, read for the logo in the about, and a preview's pictures.
+- gif -- https://github.com/image-rs/image-gif -- MIT or Apache-2.0. The
+  transitions, read frame by frame (with weezl, its LZW, MIT or
+  Apache-2.0).
 - unicode-width -- https://github.com/unicode-rs/unicode-width -- MIT or
   Apache-2.0. A character's cells.
 - libc -- https://github.com/rust-lang/libc -- MIT or Apache-2.0. The

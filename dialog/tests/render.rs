@@ -441,7 +441,7 @@ fn manager_app() -> App {
     let file = |name: &str, size: &str, when: &str, group: &str, folder: Option<&str>| {
         let p = format!("/data/me/{}", name);
         let mut more = vec![
-            json!({"name": "files_show", "arguments": {"path": p}, "said": "show the first lines"}),
+            json!({"name": "files_preview", "arguments": {"path": p}, "said": "preview"}),
             json!({"name": "files_attach", "arguments": {"path": p}, "said": "attach to the next request"}),
         ];
         more.extend(steps(&p).as_array().unwrap().iter().cloned());
@@ -771,4 +771,179 @@ fn key_chips_preserve_the_typed_confirmation_for_destructive_actions() {
     assert!(matches!(app.mode, Mode::Normal));
     assert!(app.running.is_none() && app.queue.is_empty(), "without a typed yes, Enter keeps the window");
     assert!(app.jobs.is_empty(), "a click never bypasses the native confirmation");
+}
+
+/// A preview (#120): `name` lit in a folder of three files, its page as its provider answers it.
+fn preview_app(name: &str, place: &str, page: serde_json::Value, w: u16, h: u16) -> App {
+    let mut app = manager_app();
+    app.size = (w, h);
+    let f = app.folder.as_ref().unwrap().0;
+    let file = |n: &str| json!({"id": format!("files:file:{}", n), "sign": "blank", "text": n, "tool": {"name": "files_open", "arguments": {"path": format!("/data/me/{}", n)}, "said": "open"}, "more": [], "columns": [], "children": null, "group": "home", "page": format!("spark-shell://files/preview/{}", n)});
+    let rows = model::rows(&json!({"title": place, "rows": [file("before.txt"), file(name), file("after.txt")]}).to_string()).unwrap();
+    let mut pv = spark_dialog::preview::Preview::new(f, place, &rows.rows, &format!("files:file:{}", name)).unwrap();
+    pv.shown = spark_dialog::preview::page(&pv.uri(), &page.to_string());
+    assert!(pv.shown.is_some(), "the page is read");
+    app.preview = Some(pv);
+    app.came_from.push(app.view.clone());
+    app.view = View::Preview;
+    app.in_list = false;
+    app
+}
+
+fn note() -> serde_json::Value {
+    let text = "# Week of 2 November\n\nThe report goes out on Friday. Ada reviews the numbers on Thursday morning, and the charts follow the same afternoon.\n\n## To do\n\n- send the draft to Ada\n- book the room for Thursday\n- check the third quarter against last year\n\n## Notes\n\nThe new printer is on the second floor. Its queue is called office-2.";
+    let lines: Vec<&str> = text.lines().collect();
+    let bold: Vec<usize> = lines.iter().enumerate().filter(|(_, l)| l.starts_with('#')).map(|(i, _)| i).collect();
+    let shown: Vec<String> = lines.iter().map(|l| l.trim_start_matches('#').trim_start().to_string()).collect();
+    json!({"title": "plan.md", "facts": ["412 B", "today"], "lines": shown, "bold": bold, "attach": "/run/pages/1.txt"})
+}
+
+#[test]
+fn a_preview_shows_a_text_read_only_its_headings_bold() {
+    render(&preview_app("plan.md", "~/notes", note(), WIDTH, HEIGHT), "preview-text");
+}
+
+#[test]
+fn a_preview_at_full_screen_pages_code_with_its_lines_numbered() {
+    let code: Vec<String> = (1..=70)
+        .map(|i| match i % 7 {
+            1 => format!("fn step_{}(app: &mut App) -> bool {{", i),
+            2 => "    let Some(pv) = app.preview.as_mut() else { return false };".to_string(),
+            3 => "    // the page before or after; a picture's page is asked for, a text's is drawn".to_string(),
+            4 => "    pv.step_page(1, app.preview_pages)".to_string(),
+            5 => "}".to_string(),
+            _ => String::new(),
+        })
+        .collect();
+    let page = json!({"title": "preview.rs", "facts": ["6 KB", "today"], "lines": code, "numbered": true, "attach": "/run/pages/2.txt"});
+    render_at(&preview_app("preview.rs", "~/projects/dialog/src", page, 120, 50), "preview-code-full", 120, 50);
+}
+
+#[test]
+fn a_pdf_is_its_page_drawn_and_page_n_of_m() {
+    let page = json!({"title": "invoice-0412.pdf", "facts": ["14 pages", "412 KB", "today"], "picture": "/run/pages/3-3.png", "page": 3, "pages": 14, "attach": "/run/pages/3-3.txt"});
+    render(&preview_app("invoice-0412.pdf", "~/downloads", page, WIDTH, HEIGHT), "preview-pdf");
+}
+
+/// A sound's picture as mpv draws it: a waveform 16 rows tall (loud on the beat), then a spectrogram
+/// of 32 rows (bright low, dark high), 64 columns.
+fn sound_png() -> Vec<u8> {
+    let (w, wave, spec) = (64u32, 16u32, 32u32);
+    let mut px = vec![];
+    for y in 0..wave + spec {
+        for x in 0..w {
+            let on = if y < wave {
+                let reach = if x % 8 == 0 { 8 } else { 2 + (x % 8) / 3 };
+                (y as i32 - 8).unsigned_abs() < reach
+            } else {
+                (y - wave) * 2 > spec - (x % 16) && (x / 4) % 2 == 0
+            };
+            let v = if on { 230 } else { 20 };
+            px.extend([v, v, v, 255]);
+        }
+    }
+    let mut raw = Vec::new();
+    {
+        let mut e = png::Encoder::new(&mut raw, w, wave + spec);
+        e.set_color(png::ColorType::Rgba);
+        e.set_depth(png::BitDepth::Eight);
+        e.write_header().unwrap().write_image_data(&px).unwrap();
+    }
+    raw
+}
+
+fn sound_app(playing: bool) -> App {
+    let page = json!({"title": "evening-sketch.flac", "facts": ["44.1 kHz", "16 bit", "stereo", "FLAC", "866 KB", "today"],
+        "lines": ["Evening sketch", "Ada \u{b7} Proofs"], "bold": [0], "seconds": 20.0, "sound": {"picture": "/run/pages/7-sound.png", "wave": 16},
+        "play": {"name": "files_play", "arguments": {"path": "/data/me/evening-sketch.flac"}, "said": "play"}, "stop": {"name": "files_stop", "arguments": {}, "said": "stop"}});
+    let mut app = preview_app("evening-sketch.flac", "~/music", page, WIDTH, HEIGHT);
+    let pv = app.preview.as_mut().unwrap();
+    pv.heard = spark_dialog::preview::sound(&spark_dialog::sixel::decode(&sound_png()).unwrap(), 16);
+    pv.played = 7.0;
+    if playing {
+        pv.playing = Some(std::time::Instant::now() + std::time::Duration::from_secs(3600));
+    }
+    app
+}
+
+/// Stopped at 0:07 of 0:20: the waveform played to there in the accent, the whole sound's spectrum,
+/// the spectrogram's picture under them, what an audio engineer asks first in the facts.
+#[test]
+fn a_sound_is_its_waveform_its_spectrum_and_its_spectrogram() {
+    render(&sound_app(false), "preview-sound");
+}
+
+#[test]
+fn a_zoomed_picture_moves_with_the_arrows_and_fits_with_esc() {
+    let page =
+        json!({"title": "dunes.png", "facts": ["2400 \u{d7} 1350", "48 KB", "today"], "picture": "/run/pages/4-1600.png", "size": [2400, 1350], "full": false});
+    let mut app = preview_app("dunes.png", "~/pictures", page, WIDTH, HEIGHT);
+    let pv = app.preview.as_mut().unwrap();
+    (pv.src, pv.px) = ((1600, 900), (616, 594));
+    app.typed('>');
+    app.typed('+');
+    app.typed('+');
+    let pv = app.preview.as_ref().unwrap();
+    assert_eq!((pv.turn, pv.zoom, pv.full), (1, Some(50), false), "fitted at 25 %, two stops in");
+    render(&app, "preview-zoom");
+    app.escape();
+    assert!(
+        app.view == View::Preview && app.preview.as_ref().unwrap().zoom.is_none(),
+        "Esc fits it, and the preview stays"
+    );
+}
+
+#[test]
+fn a_file_with_no_preview_says_why_in_the_middle() {
+    let page = json!({"title": "backup.tar.zst", "facts": ["1.2 GB", "18 Oct"], "say": "No preview for this kind of file. Enter opens it."});
+    render(&preview_app("backup.tar.zst", "~", page, WIDTH, HEIGHT), "preview-none");
+}
+
+#[test]
+fn an_answer_about_the_file_sits_above_its_page() {
+    let mut app = preview_app("plan.md", "~/notes", note(), WIDTH, HEIGHT);
+    app.say(Sign::You, "when is the report due?");
+    app.say(Sign::Says, "\"The report goes out on Friday.\"");
+    render(&app, "preview-answer");
+}
+
+#[test]
+fn space_opens_the_lit_files_preview_and_esc_lights_it_again() {
+    let mut app = manager_app();
+    // notes.md, the third row, lit; Space with nothing typed opens its preview
+    let (f, uri, mut rows) = app.folder.clone().unwrap();
+    for r in rows.rows.iter_mut().filter(|r| r.tool.as_ref().is_some_and(|t| t.name == "files_open")) {
+        r.page = Some(format!("spark-shell://files/preview/{}", r.id));
+    }
+    app.folder = Some((f, uri, rows));
+    app.in_list = true;
+    app.sel = 2;
+    app.typed(' ');
+    assert_eq!(app.view, View::Preview);
+    assert_eq!(app.preview.as_ref().unwrap().row().text, "notes.md");
+    assert!(app.input.is_empty(), "the space opened the preview and typed nothing");
+    // up and down move through the list's files
+    app.down();
+    assert_eq!(
+        app.preview.as_ref().unwrap().row().text,
+        "notes.md",
+        "the home folder's notes.md, after recent's"
+    );
+    app.up();
+    app.up();
+    assert_eq!(app.preview.as_ref().unwrap().row().text, "photo-0412.jpg");
+    // Esc goes back with that file lit
+    app.escape();
+    assert!(matches!(app.view, View::Folder(..)) && app.preview.is_none() && app.in_list);
+    assert_eq!(
+        app.picks().get(app.sel).and_then(|it| match it {
+            spark_dialog::app::Item::Folder(i) => app.folder.as_ref().map(|(_, _, r)| r.rows[*i].text.clone()),
+            _ => None,
+        }),
+        Some("photo-0412.jpg".to_string())
+    );
+    // words typed: Space is a space
+    app.typed('a');
+    app.typed(' ');
+    assert_eq!(app.input, "a ");
 }

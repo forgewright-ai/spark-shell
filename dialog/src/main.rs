@@ -11,10 +11,12 @@ use ratatui::crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScr
 use ratatui::crossterm::{execute, queue};
 use ratatui::layout::Rect;
 use ratatui::Terminal;
-use spark_dialog::app::{App, Config, Helper, Job};
+use spark_dialog::app::{App, Config, Helper, Job, View};
 use spark_dialog::mcp::{Incoming, Server};
 use spark_dialog::palette::{slots_here, Palette};
-use spark_dialog::{sixel, ui};
+use spark_dialog::sixel::Image;
+use spark_dialog::transition::{self, Reel};
+use spark_dialog::{preview, sixel, ui};
 use std::io::Write;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -27,7 +29,7 @@ const USAGE: &str = "spark-dialog -- the spark dialog, one window for every doma
   spark-dialog [--provider \"PATH WORDS\"]... [--home SECTION] [--title TEXT]
                [--close on|off] [--progress on|off]
                [--composer plus,model,talk] [--attach \"txt md\"]
-               [--spark-shell PATH] [--spark PATH]
+               [--spark-shell PATH] [--spark PATH] [--transitions DIR]
   spark-dialog login ...   the login screen on tty1 (spark-dialog login -h)
 ";
 
@@ -38,6 +40,8 @@ enum Ev {
     Mcp(Incoming),
     Tick,
     Helper(Helper, Result<String, String>),
+    /// The transitions' piece, decoded (#122): None when it could not be.
+    Films(Option<transition::Films>),
 }
 
 struct Args {
@@ -84,6 +88,13 @@ fn args() -> Result<Args, String> {
             "--attach" => cfg.attach = val("--attach")?.split_whitespace().map(String::from).collect(),
             "--spark-shell" => cfg.spark_shell = val("--spark-shell")?,
             "--spark" => cfg.spark = val("--spark")?,
+            "--transitions" => {
+                let dir = val("--transitions")?;
+                if !dir.starts_with('/') || dir.split('/').any(|c| c == "..") || dir.chars().any(char::is_control) {
+                    return Err(format!("{}: the transitions are a whole path", dir));
+                }
+                cfg.transitions = Some(dir);
+            }
             other => return Err(format!("no option {}", other)),
         }
     }
@@ -215,19 +226,30 @@ fn cell_px() -> Option<(u32, u32)> {
         .map(|w| ((w.width / w.columns) as u32, (w.height / w.rows) as u32))
 }
 
-/// The picture a row brings, as sixel for a box of `bw` by `bh` pixels: a regular PNG of 4 MB at most,
-/// made once for its file, its time and the box (the cache), None while it is not there yet.
-fn picture(file: &str, bw: u32, bh: u32, cache: &mut Option<(String, u32, u32, std::time::SystemTime, String)>) -> Option<String> {
-    let meta = std::fs::metadata(file).ok().filter(|m| m.is_file() && m.len() <= 4 << 20)?;
+/// The picture a row brings, or a preview's page, as sixel for a box of `bw` by `bh` pixels, with its
+/// size in pixels: a regular PNG of 8 MB at most, made once for its file, its time and the box (the
+/// cache), None while it is not there yet.
+/// A picture's file decoded once for its file and its time: a regular PNG of 8 MB at most, None while
+/// it is not there yet. The preview zooms, moves and turns the one kept (#120).
+fn image<'a>(file: &str, cache: &'a mut Option<(String, std::time::SystemTime, Image)>) -> Option<&'a Image> {
+    let meta = std::fs::metadata(file).ok().filter(|m| m.is_file() && m.len() <= 8 << 20)?;
     let when = meta.modified().ok()?;
-    if let Some((f, w, h, t, s)) = cache.as_ref() {
-        if f == file && *w == bw && *h == bh && *t == when {
-            return Some(s.clone());
-        }
+    if !cache.as_ref().is_some_and(|(f, t, _)| f == file && *t == when) {
+        *cache = Some((file.to_string(), when, sixel::decode(&std::fs::read(file).ok()?)?));
     }
-    let s = sixel::picture(&std::fs::read(file).ok()?, bw, bh)?;
-    *cache = Some((file.to_string(), bw, bh, when, s.clone()));
-    Some(s)
+    cache.as_ref().map(|(_, _, i)| i)
+}
+
+/// A transition drawn: its box, which one, its frame.
+type ShownFilm = ((u16, u16, u16, u16), Reel, usize);
+/// A sound's spectrogram in the palette: its file, the palette's ramp, its box, the picture.
+type Tinted = (String, [[u8; 3]; 4], (u32, u32), Image);
+
+fn rgb(c: ratatui::style::Color) -> [u8; 3] {
+    match c {
+        ratatui::style::Color::Rgb(r, g, b) => [r, g, b],
+        _ => [128, 128, 128],
+    }
 }
 
 fn main() {
@@ -315,6 +337,32 @@ fn main() {
         });
     }
     app.start();
+    // the transitions' piece (#122), decoded aside so the window draws at once; @2x where a cell is
+    // twice the usual height
+    if let Some(dir) = app.cfg.transitions.clone() {
+        let tx = tx.clone();
+        let double = cell_px().is_some_and(|(_, ch)| ch >= 30);
+        std::thread::spawn(move || {
+            let one = |reel: &str| {
+                let f = format!("{}/{}{}.gif", dir, reel, if double { "@2x" } else { "" });
+                let bytes = std::fs::read(&f).ok().filter(|b| b.len() <= 4 << 20)?;
+                transition::film(&bytes)
+            };
+            let films = (|| {
+                Some(transition::Films {
+                    open: one("open")?,
+                    wait: one("wait")?,
+                    close: one("close")?,
+                })
+            })();
+            let _ = tx.send(Ev::Films(films));
+        });
+    }
+    let started = Instant::now();
+    let mut films: Option<transition::Films> = None;
+    // the transition drawn now: its box, which one, its frame
+    let mut shown_film: Option<ShownFilm> = None;
+    let mut film_due: Option<Duration> = None;
 
     let mut term = match Terminal::new(CrosstermBackend::new(std::io::stdout())) {
         Ok(t) => t,
@@ -327,9 +375,13 @@ fn main() {
     let listening = Arc::new(Mutex::new(None));
     let sixel_ok = sixel::terminal_draws_it(&std::env::var("TERM").unwrap_or_default());
     // the picture beside a list (a wallpaper's): where it is drawn now, when one was last tried, the last one made
-    let mut shown_preview: Option<(u16, u16, u16, u16, String)> = None;
+    let mut shown_preview: Option<ui::Picture> = None;
     let mut preview_tried = Instant::now();
-    let mut preview_cache = None;
+    let mut images = None;
+    // a sound's spectrogram in the palette's colors, filling its box: made once a sound, a palette and a box
+    let mut tinted: Option<Tinted> = None;
+    // a drag on a picture: where the pointer was
+    let mut drag: Option<(u16, u16)> = None;
     let mut drawn = ui::Drawn::default();
     let mut dirty = true;
     let mut last_clock = String::new();
@@ -360,9 +412,19 @@ fn main() {
             app.today = Some(today());
             dirty = true;
         }
+        if let Some(f) = &films {
+            app.follow_motion(Instant::now(), f.open.length(), f.close.length());
+            dirty |= app.motion.is_some() || shown_film.is_some();
+        }
         if dirty {
             if let Ok(sz) = term.size() {
                 app.size = (sz.width, sz.height);
+            }
+            // a sound's picture read once: its waveform and its spectrum, before it is drawn
+            if let Some(pv) = app.preview.as_mut().filter(|pv| pv.heard.is_none()) {
+                if let Some((file, wave)) = pv.shown.as_ref().and_then(|pg| pg.sound.clone()) {
+                    pv.heard = image(&file, &mut images).and_then(|i| preview::sound(i, wave));
+                }
             }
             let _ = term.draw(|f| {
                 let area = f.area();
@@ -376,37 +438,126 @@ fn main() {
                 }
                 f.set_cursor_position(drawn.cursor);
             });
+            app.preview_pages = drawn.pages.max(1);
             // the picture beside a list: drawn when it changed, its cells blanked first (the buffer skips them);
             // a picture gone is the buffer's again, which writes its cells over it
             let want = drawn.preview.clone();
+            let mut again = false;
             if want != shown_preview {
                 shown_preview = None;
-                if let (Some((x, y, w, h, file)), true) = (&want, sixel_ok) {
-                    blank(&mut out, (*x, *y, *w, *h), term_color(pal.surface));
-                    if let Some(s) = cell_px().and_then(|(cw, chh)| picture(file, *w as u32 * cw, *h as u32 * chh, &mut preview_cache)) {
-                        let _ = queue!(out, ratatui::crossterm::cursor::SavePosition, ratatui::crossterm::cursor::MoveTo(*x, *y));
-                        let _ = out.write_all(s.as_bytes());
-                        let _ = queue!(out, ratatui::crossterm::cursor::RestorePosition);
-                        shown_preview = want.clone();
+                if let (Some(p), Some((cw, chh)), true) = (&want, cell_px(), sixel_ok) {
+                    blank(&mut out, (p.x, p.y, p.w, p.h), term_color(pal.surface));
+                    let (bw, bh) = (p.w as u32 * cw, p.h as u32 * chh);
+                    let img = if p.spectrogram {
+                        let ramp = [rgb(pal.surface), rgb(pal.muted), rgb(pal.accent), rgb(pal.fg)];
+                        let heard = app.preview.as_ref().and_then(|pv| pv.heard.as_ref());
+                        if let Some(h) = heard.filter(|_| !tinted.as_ref().is_some_and(|(f, r, b, _)| *f == p.file && *r == ramp && *b == (bw, bh))) {
+                            tinted = Some((p.file.clone(), ramp, (bw, bh), h.spectrogram.tinted(&ramp).resized(bw, bh)));
+                        }
+                        tinted.as_ref().filter(|(f, _, _, _)| *f == p.file).map(|(_, _, _, i)| i)
+                    } else {
+                        image(&p.file, &mut images)
+                    };
+                    if let Some(img) = img {
+                        // the preview's picture: its box and its pixels, for the zoom and the move (#120)
+                        if let Some(pv) = app.preview.as_mut().filter(|_| app.view == View::Preview && !p.spectrogram) {
+                            if pv.px != (bw, bh) || pv.src != (img.w, img.h) {
+                                (pv.px, pv.src) = ((bw, bh), (img.w, img.h));
+                                again = true;
+                            }
+                        }
+                        if let Some((s, pw, ph)) = sixel::show(img, bw, bh, &p.view) {
+                            // in the middle of its box, by whole cells
+                            let (dx, dy) = ((bw.saturating_sub(pw) / 2 / cw) as u16, (bh.saturating_sub(ph) / 2 / chh) as u16);
+                            let _ = queue!(
+                                out,
+                                ratatui::crossterm::cursor::SavePosition,
+                                ratatui::crossterm::cursor::MoveTo(p.x + dx, p.y + dy)
+                            );
+                            let _ = out.write_all(s.as_bytes());
+                            let _ = queue!(out, ratatui::crossterm::cursor::RestorePosition);
+                            shown_preview = want.clone();
+                        }
                     }
                     let _ = out.flush();
                 }
                 preview_tried = Instant::now();
             }
-            dirty = false;
+            // a transition: its frame now, in the middle of its box, at the GIF's own pace (#122)
+            film_due = None;
+            match (drawn.film, &films, cell_px()) {
+                (Some((x, y, w, h, reel, since)), Some(f), Some((cw, chh))) if sixel_ok => {
+                    let film = f.of(reel);
+                    let (k, left) = film.at(since.elapsed().as_millis(), reel == Reel::Wait);
+                    let at = ((x, y, w, h), reel, k);
+                    if shown_film != Some(at) {
+                        // its cells cleared and the frame drawn in one synchronized update: the ground is
+                        // the window's own, and no frame shows half drawn
+                        let (dx, dy) = (
+                            ((w as u32 * cw).saturating_sub(film.w) / 2 / cw) as u16,
+                            ((h as u32 * chh).saturating_sub(film.h) / 2 / chh) as u16,
+                        );
+                        let (fw, fh) = ((film.w.div_ceil(cw) as u16).min(w - dx), (film.h.div_ceil(chh) as u16).min(h - dy));
+                        let _ = out.write_all(b"\x1b[?2026h");
+                        if shown_film.is_none_or(|(b, _, _)| b != (x, y, w, h)) {
+                            blank(&mut out, (x, y, w, h), term_color(pal.surface));
+                        } else {
+                            blank(&mut out, (x + dx, y + dy, fw, fh), term_color(pal.surface));
+                        }
+                        let _ = queue!(
+                            out,
+                            ratatui::crossterm::cursor::SavePosition,
+                            ratatui::crossterm::cursor::MoveTo(x + dx, y + dy)
+                        );
+                        let _ = out.write_all(film.frames[k].0.as_bytes());
+                        let _ = queue!(out, ratatui::crossterm::cursor::RestorePosition);
+                        let _ = out.write_all(b"\x1b[?2026l");
+                        let _ = out.flush();
+                        shown_film = Some(at);
+                    }
+                    film_due = Some(Duration::from_millis(left.clamp(1, 1000) as u64));
+                }
+                _ => shown_film = None,
+            }
+            dirty = again;
         }
         if app.quit.is_some() {
             break;
         }
-        let Ok(ev) = rx.recv() else { break };
+        // a transition playing wakes for its next frame; else the next event
+        let ev = match film_due {
+            Some(d) => match rx.recv_timeout(d) {
+                Ok(ev) => ev,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    dirty = true;
+                    continue;
+                }
+                Err(_) => break,
+            },
+            None => match rx.recv() {
+                Ok(ev) => ev,
+                Err(_) => break,
+            },
+        };
         match ev {
             Ev::Gone => app.quit = Some(129),
+            Ev::Films(f) => {
+                // the open plays when the dialog opened on its home a moment ago and nothing was pressed
+                app.films = f.is_some();
+                if f.is_some() && app.cfg.home.is_none() && app.view == View::Home && app.input.is_empty() && started.elapsed() < Duration::from_millis(800) {
+                    app.motion = Some((Reel::Open, Instant::now()));
+                }
+                films = f;
+                dirty = true;
+            }
             Ev::Tick => {
                 let was = app.busy();
                 app.tick(Instant::now());
                 dirty |= was || app.busy();
                 // a picture not drawn yet (its small picture is still being made): tried again now and then
                 dirty |= drawn.preview.is_some() && shown_preview.is_none() && preview_tried.elapsed() >= Duration::from_millis(400);
+                // a sound playing: its waveform and its spectrum move
+                dirty |= app.preview.as_ref().is_some_and(|pv| pv.playing.is_some());
             }
             Ev::Mcp(m) => {
                 app.incoming(m);
@@ -423,6 +574,7 @@ fn main() {
             }
             Ev::Term(Event::Key(k)) if k.kind == KeyEventKind::Press => {
                 dirty = true;
+                app.cut_motion();
                 match (k.code, k.modifiers) {
                     (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) => app.quit = Some(130),
                     (KeyCode::Esc, _) => app.escape(),
@@ -458,12 +610,28 @@ fn main() {
                 dirty = true;
                 match m.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
+                        app.cut_motion();
                         if m.row == 0 && drawn.close.is_some_and(|(a, b)| m.column >= a && m.column < b) {
-                            app.quit = Some(0);
+                            if matches!(app.motion, Some((Reel::Close, _))) {
+                                app.quit = Some(0);
+                            } else {
+                                app.close_window();
+                            }
                         } else if let Some((_, _, _, c)) = drawn.chips.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.chip(*c);
                         } else if let Some((_, _, _, key)) = drawn.keys.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.hint_key(*key);
+                        } else if let Some((x, _, w, _)) = drawn
+                            .wave
+                            .filter(|(x, y, w, h)| m.row >= *y && m.row < y + h && m.column >= *x && m.column < x + w)
+                        {
+                            app.preview_seek((m.column - x) as f64 / w as f64);
+                        } else if drawn
+                            .preview
+                            .as_ref()
+                            .is_some_and(|p| app.zoomed() && m.row >= p.y && m.row < p.y + p.h && m.column >= p.x && m.column < p.x + p.w)
+                        {
+                            drag = Some((m.column, m.row));
                         } else if m.row >= drawn.prompt.0 && m.row <= drawn.prompt.1 {
                             app.focus_prompt();
                         } else if let Some((_, n)) = drawn.picks.iter().find(|(y, _)| *y == m.row) {
@@ -472,6 +640,15 @@ fn main() {
                             app.enter();
                         }
                     }
+                    MouseEventKind::Drag(MouseButton::Left) => {
+                        if let (Some((c0, r0)), Some((cw, chh))) = (drag, cell_px()) {
+                            app.preview_drag((m.column as f64 - c0 as f64) * cw as f64, (m.row as f64 - r0 as f64) * chh as f64);
+                            drag = Some((m.column, m.row));
+                        }
+                    }
+                    MouseEventKind::Up(_) => drag = None,
+                    MouseEventKind::ScrollUp if app.view == View::Preview => app.preview_wheel(-1, m.modifiers.contains(KeyModifiers::CONTROL)),
+                    MouseEventKind::ScrollDown if app.view == View::Preview => app.preview_wheel(1, m.modifiers.contains(KeyModifiers::CONTROL)),
                     MouseEventKind::ScrollUp => app.page(-1),
                     MouseEventKind::ScrollDown => app.page(1),
                     _ => {}

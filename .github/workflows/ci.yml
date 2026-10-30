@@ -61,7 +61,7 @@ jobs:
       - name: ascii docs
         run: |
           tab=$(printf '\t')
-          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/desktop_proof.sh tests/dialog_pty.py lib/terminal_profile.py tests/profile_test.py lib/saver.py tests/saver_test.py $(find templates distro themes dialog/src dialog/tests -type f ! -name '*.txt' | sort) dialog/Cargo.toml dialog/deny.toml dialog/dialog.env dialog/rust-toolchain.toml; do
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/desktop_proof.sh tests/dialog_pty.py lib/terminal_profile.py tests/profile_test.py lib/saver.py tests/saver_test.py lib/office.py tests/office_test.py $(find templates distro themes dialog/src dialog/tests -type f ! -name '*.txt' | sort) dialog/Cargo.toml dialog/deny.toml dialog/dialog.env dialog/rust-toolchain.toml; do
             if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
               echo "non-ASCII in $f"; exit 1; fi; done
       - name: no hex color in a template (the look is the 16 slots)
@@ -99,6 +99,7 @@ jobs:
           python3 -I tests/cleanup_test.py
           python3 -I tests/printers_test.py
           python3 -I tests/open_path_test.py
+          python3 -I tests/office_test.py
           python3 -I tests/network_test.py
           python3 -I tests/network_dhcpcd_test.py
           python3 -I tests/display_test.py

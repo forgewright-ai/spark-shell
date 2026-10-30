@@ -232,7 +232,7 @@ fn hex(c: Color, d: Color) -> String {
 }
 
 /// The buffer as one page: the box's font, a 19 px row, the window's own air, the picture where it lies.
-fn page(buf: &Buffer, pal: &Palette, preview: &Option<(u16, u16, u16, u16, String)>) -> String {
+fn page(buf: &Buffer, pal: &Palette, preview: &Option<spark_dialog::ui::Picture>) -> String {
     let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     let (w, h) = (buf.area.width, buf.area.height);
     let mut rows = String::new();
@@ -260,7 +260,7 @@ fn page(buf: &Buffer, pal: &Palette, preview: &Option<(u16, u16, u16, u16, Strin
         rows.push('\n');
     }
     let img = match preview {
-        Some((x, y, pw, ph, file)) => format!(
+        Some(spark_dialog::ui::Picture { x, y, w: pw, h: ph, file, .. }) => format!(
             "<img src=\"file://{}\" style=\"position:absolute;left:calc(2ch + {}ch);top:calc(17px + {}px);width:{}ch;height:{}px;object-fit:cover;border-radius:3px\">",
             file,
             x,
@@ -385,7 +385,7 @@ fn ds_color(c: Color, d: Color, pal: &Palette, data: bool) -> String {
 /// One frame of the preview: a caption, then the window's cells as runs of one style a line, a glyph outside
 /// ASCII held to one cell, the picture beside a list where the dialog draws it.
 /// Where the dialog draws a picture (its cells and its file) and the picture's source in the page.
-type Picture<'a> = Option<(&'a (u16, u16, u16, u16, String), &'a str)>;
+type Picture<'a> = Option<(&'a spark_dialog::ui::Picture, &'a str)>;
 
 fn ds_frame(buf: &Buffer, pal: &Palette, caption: &str, picture: Picture) -> String {
     let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
@@ -435,7 +435,7 @@ fn ds_frame(buf: &Buffer, pal: &Palette, caption: &str, picture: Picture) -> Str
         out.push('\n');
     }
     let img = match picture {
-        Some(((x, y, pw, ph, _), src)) => format!(
+        Some((spark_dialog::ui::Picture { x, y, w: pw, h: ph, .. }, src)) => format!(
             "<img alt=\"the lit drawing\" src=\"{}\" style=\"position:absolute;left:calc(2ch + {}ch);top:{}px;width:{}ch;height:{}px;object-fit:cover\">",
             src,
             x,
@@ -523,7 +523,7 @@ fn files_app() -> App {
     let file = |name: &str, size: &str, when: &str, group: &str, folder: Option<&str>| {
         let p = format!("/data/me/{}", name);
         let mut more = vec![
-            json!({"name": "files_show", "arguments": {"path": p}, "said": "show the first lines"}),
+            json!({"name": "files_preview", "arguments": {"path": p}, "said": "preview"}),
             json!({"name": "files_attach", "arguments": {"path": p}, "said": "attach to the next request"}),
         ];
         more.extend(steps(&p).as_array().unwrap().iter().cloned());
@@ -689,4 +689,78 @@ fn design_system_calendar_preview() {
     let frame = ds_frame(&b, &pal, "calendar: the time in large figures, the months, the reminders", None);
     let head = "<!-- @dsCard group=\"Calendar\" height=860 width=720 subtitle=\"the Calendar from v0.90's own render: the time in large figures, the months, then the reminders as rows\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
     std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n<script></script>\n", head, frame)).unwrap();
+}
+
+/// A PNG's bytes as a data URI, for a card that carries its picture.
+fn data_png(path: &str) -> String {
+    let b = std::fs::read(path).unwrap();
+    let mut s = String::from("data:image/png;base64,");
+    const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    for ch in b.chunks(3) {
+        let n = (ch[0] as u32) << 16 | (*ch.get(1).unwrap_or(&0) as u32) << 8 | *ch.get(2).unwrap_or(&0) as u32;
+        for k in 0..4 {
+            s.push(if k <= ch.len() { T[(n >> (18 - 6 * k) & 63) as usize] as char } else { '=' });
+        }
+    }
+    s
+}
+
+/// The dialog at a preview (#120): `name` lit in a folder of three files, its page as its provider answers it.
+fn preview_app(name: &str, place: &str, page: serde_json::Value) -> App {
+    let mut a = files_app();
+    let file = |n: &str| json!({"id": format!("files:file:{}", n), "sign": "blank", "text": n, "tool": {"name": "files_open", "arguments": {"path": format!("/data/me/{}", n)}, "said": "open"}, "more": [], "columns": [], "children": null, "group": "home", "page": format!("spark-shell://files/preview/{}", n)});
+    let rows = model::rows(&json!({"title": place, "rows": [file("before.txt"), file(name), file("after.txt")]}).to_string()).unwrap();
+    let mut pv = spark_dialog::preview::Preview::new(0, place, &rows.rows, &format!("files:file:{}", name)).unwrap();
+    pv.shown = spark_dialog::preview::page(&pv.uri(), &page.to_string());
+    a.preview = Some(pv);
+    a.came_from.push(a.view.clone());
+    a.view = View::Preview;
+    a.in_list = false;
+    a
+}
+
+/// The preview's card for the design system (#120): a Markdown note, a PDF page, a sound playing, a picture zoomed
+/// and turned. DS_PREVIEW_CARD names the file to write; DS_PAGE and DS_SPECTROGRAM are PNGs cut from the real
+/// window on the Linux machine (a page pdftoppm drew, a spectrogram mpv drew), the pictures sixel draws there;
+/// DS_SOUND is the waveform over the spectrogram mpv drew for that sound, the one the dialog reads.
+#[test]
+fn design_system_preview_card() {
+    let Ok(file) = std::env::var("DS_PREVIEW_CARD") else { return };
+    let (page_png, spectrogram) = (data_png(&std::env::var("DS_PAGE").unwrap()), data_png(&std::env::var("DS_SPECTROGRAM").unwrap()));
+    let pal = common::palette("tokyonight-night");
+    let draw = |a: &App| -> (Buffer, spark_dialog::ui::Drawn) {
+        let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+        let d = spark_dialog::ui::draw(a, &pal, CLOCK, &mut b);
+        (b, d)
+    };
+    let contain = |s: String| s.replace("object-fit:cover", "object-fit:contain");
+    let mut frames = vec![];
+    let note = "# Week of 2 November\n\nThe report goes out on Friday. Ada reviews the numbers on Thursday morning, and the charts follow the same afternoon.\n\n## To do\n\n- send the draft to Ada\n- book the room for Thursday\n\n## Notes\n\nThe new printer is on the second floor.";
+    let lines: Vec<&str> = note.lines().collect();
+    let bold: Vec<usize> = lines.iter().enumerate().filter(|(_, l)| l.starts_with('#')).map(|(i, _)| i).collect();
+    let shown: Vec<String> = lines.iter().map(|l| l.trim_start_matches('#').trim_start().to_string()).collect();
+    let a = preview_app("plan.md", "~/notes", json!({"title": "plan.md", "facts": ["412 B", "today"], "lines": shown, "bold": bold, "attach": "/run/p/1.txt"}));
+    frames.push(ds_frame(&draw(&a).0, &pal, "a Markdown note: read only, its headings bold; Attach names it", None));
+    let a = preview_app("ghostscript.pdf", "~/docs", json!({"title": "ghostscript.pdf", "facts": ["4.5 MB", "today"], "picture": "/run/p/2.png", "page": 1, "pages": 477, "size": [816, 1056], "attach": "/run/p/2.txt"}));
+    let (b, d) = draw(&a);
+    frames.push(contain(ds_frame(&b, &pal, "a PDF: the page drawn, page 1 of 477; left and right turn it", d.preview.as_ref().map(|p| (p, page_png.as_str())))));
+    let mut a = preview_app("evening-sketch.flac", "~/music", json!({"title": "evening-sketch.flac", "facts": ["44.1 kHz", "16 bit", "stereo", "FLAC", "866 KB"],
+        "lines": ["Evening sketch", "Ada \u{b7} Proofs"], "bold": [0], "seconds": 20.0, "sound": {"picture": "/run/p/3-sound.png", "wave": 160},
+        "play": {"name": "files_play", "arguments": {"path": "/data/me/evening-sketch.flac"}, "said": "play"}, "stop": {"name": "files_stop", "arguments": {}, "said": "stop"}}));
+    let sound = std::fs::read(std::env::var("DS_SOUND").unwrap()).unwrap();
+    let pv = a.preview.as_mut().unwrap();
+    pv.heard = spark_dialog::preview::sound(&spark_dialog::sixel::decode(&sound).unwrap(), 160);
+    pv.played = 7.0;
+    pv.playing = Some(std::time::Instant::now());
+    let (b, d) = draw(&a);
+    frames.push(ds_frame(&b, &pal, "a sound playing: its waveform, its spectrum now, its spectrogram", d.preview.as_ref().map(|p| (p, spectrogram.as_str()))));
+    let mut a = preview_app("ghostscript.pdf", "~/docs", json!({"title": "ghostscript.pdf", "facts": ["4.5 MB", "today"], "picture": "/run/p/2.png", "page": 1, "pages": 477, "size": [816, 1056], "full": true}));
+    let pv = a.preview.as_mut().unwrap();
+    (pv.src, pv.px) = ((459, 594), (616, 594));
+    a.typed('+');
+    a.typed('+');
+    let (b, d) = draw(&a);
+    frames.push(ds_frame(&b, &pal, "zoomed: the arrows and a drag move it, Esc fits it again; < and > turn it", d.preview.as_ref().map(|p| (p, page_png.as_str()))));
+    let head = "<!-- @dsCard group=\"Preview\" height=1740 width=1420 subtitle=\"the preview from v0.113's own render, bound to the tokens: a note, a PDF page, a sound playing, a page zoomed; the pictures are the real window's on the Linux machine\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
+    std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n<script></script>\n", head, frames.join(""))).unwrap();
 }

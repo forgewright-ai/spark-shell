@@ -2806,7 +2806,7 @@ printf '%s\n' "$out" | grep -q '^todo   sound        pulseaudio is installed, an
     && ok "Arch with pulseaudio: pipewire-pulse is left out of the install, one todo says how to take it" || bad "arch pulseaudio" "$out"
 grep -q '^PKG_SOUND=pipewire wireplumber alsa-pipewire libspa-bluetooth$' "$REPO/distro/void.env" && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa libspa-0.2-bluetooth$' "$REPO/distro/debian.env" \
     && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa$' "$REPO/distro/arch.env" && ok "distro: the sound's packages, each family's names" || bad "PKG_SOUND" "$(grep -h PKG_SOUND "$REPO"/distro/*.env)"
-grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils mako libnotify udisks2 dbus xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk gsettings-desktop-schemas bluez python3-dbus python3-gobject$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, mako, notify-send, udisks2 and the session bus among them" || bad "void.env desktop"
+grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils poppler mako libnotify udisks2 dbus xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk gsettings-desktop-schemas bluez python3-dbus python3-gobject$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, poppler, mako, notify-send, udisks2 and the session bus among them" || bad "void.env desktop"
 
 fi
 
@@ -2961,6 +2961,13 @@ rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop captur
     && ok "desktop capture area: the area slurp gives; a second picture in the same second gets -2" || bad "capture area" "rc=$rc $out $(tail -1 "$HOME/grim.log")"
 rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture window 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$(tail -1 "$HOME/grim.log")" = "-g 10,40 800x600 $shots/2026-10-19-153012-3.png" ] && ok "desktop capture window: the window in front, by its place on the screen" || bad "capture window" "rc=$rc $out $(tail -1 "$HOME/grim.log")"
+# the pictures folder the home's file names (#119): a home whose file says ~/Pictures gets no lowercase twin
+mkdir -p "$HOME/.config"; printf 'XDG_PICTURES_DIR="$HOME/Pictures"\n' > "$HOME/.config/user-dirs.dirs"
+rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture screen 2>&1) || rc=$?
+_shot=$(tail -1 "$HOME/grim.log" | sed 's/^-o HDMI-A-1 //')   # a numbered name where the folder holds one already: a Mac's folders are one of any case
+[ "$rc" = 0 ] && case $_shot in "$HOME/Pictures/screenshots/2026-10-19-153012"*.png) true ;; *) false ;; esac \
+    && ok "desktop capture: the screenshots go to the pictures folder ~/.config/user-dirs.dirs names (#119)" || bad "capture pictures folder" "rc=$rc $out $_shot"
+rm -f "$HOME/.config/user-dirs.dirs" "$_shot"
 touch "$HOME/slurp-none"; n0=$(ls "$shots" | wc -l)
 rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture area 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'no area picked: nothing captured' ] && [ "$(ls "$shots" | wc -l)" = "$n0" ] && ok "desktop capture area, Esc in slurp: nothing captured, one line" || bad "capture no area" "rc=$rc $out"
@@ -3495,7 +3502,7 @@ spark-shell changes how this machine works:
 
   packages     sway swaybg foot foot-terminfo ttf-dejavu curl openssh swayidle
                swaylock grim slurp wl-clipboard brightnessctl ddcutil librsvg
-               otf-monaspace mako libnotify udisks2 xdg-desktop-portal
+               poppler otf-monaspace mako libnotify udisks2 xdg-desktop-portal
                xdg-desktop-portal-wlr xdg-desktop-portal-gtk
                gsettings-desktop-schemas bluez bluez-utils python-dbus
                python-gobject pipewire wireplumber pipewire-pulse pipewire-alsa
@@ -4232,8 +4239,8 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 122 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 122 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 125 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 125 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -4404,7 +4411,7 @@ ans 2 | jq -r '.result.contents[0].text' | jq -e --arg u "$(uri "$FR")" '.rows |
     && ok "provide files: the roots are the rows at the top, each opening its folder; / is never a root" || bad "files root rows" "$(ans 2)"
 ans 3 | jq -r '.result.contents[0].text' > "$H/folder.json"
 [ "$(jq -r '[.rows[] | .text] | join("|")' "$H/folder.json")" = "docs|blob.txt|notes.md|pic.png|etc-link -> /etc|3 files $(printf '\302\267') 16 B|new folder|new text file|open in the system file manager" ] \
-    && jq -e '(.rows[] | select(.text == "docs") | .children != null and .columns == ["2 items"] and .tool.name == "files_browse") and (.rows[] | select(.text == "notes.md") | .tool.name == "files_open" and .columns[0] == "12 B" and ([.more[].name] == ["files_show", "files_attach", "files_reveal", "files_rename", "files_move", "files_copy", "files_trash"])) and (.rows[] | select(.text | startswith("etc-link")) | .tool == null and .children == null)' "$H/folder.json" >/dev/null \
+    && jq -e '(.rows[] | select(.text == "docs") | .children != null and .columns == ["2 items"] and .tool.name == "files_browse") and (.rows[] | select(.text == "notes.md") | .tool.name == "files_open" and .columns[0] == "12 B" and ([.more[].name] == ["files_preview", "files_attach", "files_reveal", "files_rename", "files_move", "files_copy", "files_trash"]) and (.page | startswith("spark-shell://files/preview/"))) and (.rows[] | select(.text | startswith("etc-link")) | .tool == null and .children == null)' "$H/folder.json" >/dev/null \
     && ok "provide files: a folder lists its folders, then its files with the size and the date, then its own steps; a link is shown and never followed; a hidden file and a pipe are not listed" || bad "files folder" "$(jq -c '.rows[] | [.text, .columns, .tool.name]' "$H/folder.json")"
 [ "$(ans 4 | jq -r .result.structuredContent.receipt)" = "$(printf 'notes.md\nhello\nworld')" ] && [ "$(ans 5 | jq -r .result.structuredContent.attach)" = "$FR/notes.md" ] \
     && ok "provide files: show gives a text file's first lines; attach gives its path for the next want" || bad "files show attach" "$(ans 4) $(ans 5)"
@@ -4434,7 +4441,7 @@ ans 2 | jq -r '.result.contents[0].text' > "$H/home2.json"; ans 3 | jq -r '.resu
     && ok "provide files: your home folder: the files touched in the last days first (today, 3 days ago; a 2020 picture is not recent), each with its folder's name, then the folders and files, then the folder's own: the total, new folder and new text file (each asking a name), the system file manager; here is the folder" || bad "files home rows" "$(jq -c '{here, rows: [.rows[] | [.text, .group, .columns, .tool.name]]}' "$H/home2.json")"
 [ "$(jq -r '[.rows[] | .text] | join("|")' "$H/docs2.json")" = "..|deep|invoice.txt|1 file $(printf '\302\267') 18 B|new folder|new text file|open in the system file manager" ] && [ "$(jq -r .here "$H/docs2.json")" = "$F2R/docs" ] \
     && [ "$(jq -r '.rows[] | select(.text == "deep") | .tool.name + ":" + .tool.said + "|" + ([.more[] | .said] | join(","))' "$H/docs2.json")" = 'files_browse:open in the system file manager|reveal in the system file manager,rename,move to a folder,copy to a folder,trash' ] \
-    && [ "$(jq -r '.rows[] | select(.text == "invoice.txt") | .tool.name + "|" + ([.more[] | .name + ":" + ((.ask // []) | join(",")) + ":" + (.pick // "")] | join(" "))' "$H/docs2.json")" = 'files_open|files_show:: files_attach:: files_reveal:: files_rename:name: files_move::to files_copy::to files_trash::' ] \
+    && [ "$(jq -r '.rows[] | select(.text == "invoice.txt") | .tool.name + "|" + ([.more[] | .name + ":" + ((.ask // []) | join(",")) + ":" + (.pick // "")] | join(" "))' "$H/docs2.json")" = 'files_open|files_preview:: files_attach:: files_reveal:: files_rename:name: files_move::to files_copy::to files_trash::' ] \
     && [ "$(jq -r '.rows[] | select(.text == "deep") | .columns[0]' "$H/docs2.json")" = '0 items' ] \
     && ok "provide files: a folder's rows: .. first, a folder with its steps (reveal, rename, move, copy, trash, each in a person's words), a file with show and attach before them; rename asks a name, move and copy pick a folder (to); no recent group below your home" || bad "files docs rows" "$(jq -c '{here, rows: [.rows[] | [.text, .group, .tool.name, [.more[]?.said]]]}' "$H/docs2.json")"
 mcp2 "$(fc2 2 files_rename "$F2R/notes.md" name 'Notes 2026.md')" "$(fc2 3 files_move "$F2R/Notes 2026.md" to "$F2R/docs")" "$(fc2 4 files_copy "$F2R/docs/invoice.txt" to "$F2R/pictures")" "$(fc2 5 files_trash "$F2R/pictures/invoice.txt")" \
@@ -4475,7 +4482,7 @@ if [ "$(uname -s)" = Linux ]; then   # the Linux half (the uname stub): xdg-open
     ans 2 | jq -r '.result.contents[0].text' > "$H/home3.json"; ans 3 | jq -r '.result.contents[0].text' > "$H/docs3.json"
     [ "$(jq -r '[.rows[] | select(.group == "this folder") | .text] | join("|")' "$H/home3.json")" = "$(jq -r '[.rows[] | select(.group == "this folder") | .text] | join("|")' "$H/home2.json" | sed 's/|open in the system file manager$//')" ] \
         && jq -e '(.rows[] | select(.text == "docs") | .tool == null and .children != null and ([.more[].name] == ["files_rename", "files_move", "files_copy", "files_trash"]))' "$H/home3.json" >/dev/null \
-        && jq -e '(.rows[] | select(.text == "invoice.txt") | [.more[].name] == ["files_show", "files_attach", "files_rename", "files_move", "files_copy", "files_trash"])' "$H/docs3.json" >/dev/null \
+        && jq -e '(.rows[] | select(.text == "invoice.txt") | [.more[].name] == ["files_preview", "files_attach", "files_rename", "files_move", "files_copy", "files_trash"])' "$H/docs3.json" >/dev/null \
         && ok "provide files: with no system file manager configured the browse row and the reveal step are not offered, and a folder's row keeps its steps and its opening (#114)" || bad "files no file manager" "$(cat "$H/home3.json") $(cat "$H/docs3.json")"
     # #113: a text file opens in the editor in a terminal window, the window the receipt; a picture goes to the system's opener
     mkdir -p "$H/lxo"; cat > "$H/lxo/swaymsg" <<'EOF'
@@ -4502,6 +4509,83 @@ EOF
     rm -f "$F2/plain.txt" "$F2/photo.png"
 fi
 PATH=$_fpath
+# the preview (#120): a file shown as a page, by its kind, behind the files' lines; the tools that draw it are stubs
+PV=$F2/pv; mkdir -p "$PV" "$H/pvb"; PVR=$F2R/pv
+printf '# Plan\n\nsome words\n' > "$PV/plan.md"; printf 'fn main() {\n\tgo();\n}\n' > "$PV/main.rs"; printf '{"a":1,"b":[2]}' > "$PV/x.json"; printf 'x\000y' > "$PV/blob.bin"
+cp "$REPO/assets/favicon-26.png" "$PV/logo.png"; printf '%%PDF-1.4 stub\n' > "$PV/report.pdf"; printf 'flac stub' > "$PV/song.flac"; printf 'webm stub' > "$PV/clip.webm"
+cat > "$H/pvb/pdfinfo" <<'STUB'
+#!/bin/sh
+printf 'Pages:          3\nPage    2 size: 612 x 792 pts (letter)\n'
+STUB
+cat > "$H/pvb/pdftoppm" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$HOME/pdftoppm.log"; for a; do o=$a; done; cp "$REPO_PNG" "$o.png"
+STUB
+cat > "$H/pvb/pdftotext" <<'STUB'
+#!/bin/sh
+for a; do o=$a; done; echo 'the page text' > "$o"
+STUB
+cat > "$H/pvb/gdk-pixbuf-thumbnailer" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$HOME/thumb.log"; cp "$3" "$4"
+STUB
+cat > "$H/pvb/mpv" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$HOME/mpv.log"; us=$(printf '\037')
+for a; do case $a in --vo-image-outdir=*) cp "$REPO_PNG" "${a#*=}/00000001.png" ;; --no-video) exec sleep 41 ;; esac; done
+for a; do f=$a; done
+case $* in *--term-playing-msg=*) case $f in
+    *.flac) printf '20.5%s%s%s44100%s2%ss16%sflac%sEvening%sAda%sProofs\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
+    *.webm) printf '4.5%s1280%s720%s%s%s%svp8%s%s%s\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;; esac ;; esac
+STUB
+chmod +x "$H/pvb/"*
+pvu() { printf 'spark-shell://files/preview/%s%s' "$(printf '%s' "$1" | base64 | tr -d '\n=' | tr '+/' '-_')" "${2:-}"; }   # pvu PATH [?QUERY] -> its page's uri
+pvr() { rq "$1" resources/read "$(jq -cn --arg u "$(pvu "$2" "${3:-}")" '{uri: $u}')"; }
+page() { ans "$1" | jq -r '.result.contents[0].text'; }
+mcpv() { printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots2" "$@" | REPO_PNG=$REPO/assets/favicon-26.png PATH="$H/pvb:$_fpath" HOME=$F2 XDG_DATA_HOME=$F2/.local/share SPARK_SHELL_NO_UDISKS=1 SPARK_SHELL_NO_GIO=1 sh "$SH" provide files > "$H/mcp.out" 2> "$H/mcp.err"; }   # mcp2 with the preview's stub tools, a thumbnailer among them
+mcpv "$(pvr 2 "$PVR/plan.md")" "$(pvr 3 "$PVR/main.rs")" "$(pvr 4 "$PVR/x.json")" "$(pvr 5 "$PVR/blob.bin")" \
+    "$(pvr 6 "$PVR/logo.png")" "$(pvr 7 "$PVR/report.pdf" '?page=2')" "$(pvr 8 "$PVR/report.pdf" '?page=2&full=1')" "$(pvr 9 "$PVR/song.flac")" "$(pvr 10 "$PVR/clip.webm")" \
+    "$(pvr 11 "$F2R/.hidden-file")" "$(rq 12 resources/read '{"uri":"spark-shell://files/preview/L2V0Yy9ob3N0cw"}')" "$(rq 13 resources/templates/list)"
+page 2 | jq -e '.title == "plan.md" and .lines == ["Plan", "", "some words"] and .bold == [0] and (.attach | endswith(".txt")) and (.facts | length) == 2' >/dev/null \
+    && page 3 | jq -e '.numbered == true and .lines[1] == "    go();"' >/dev/null && page 4 | jq -e '.lines == ["{", "  \"a\": 1,", "  \"b\": [", "    2", "  ]", "}"]' >/dev/null \
+    && page 5 | jq -e '.say == "No preview for this kind of file. Enter opens it." and .lines == null' >/dev/null \
+    && ok "provide files: a text previews read only, a Markdown heading bold without its #, code numbered with its tabs at four, JSON indented, binary bytes no preview (#120)" || bad "preview text" "$(page 2) | $(page 3) | $(page 4) | $(page 5)"
+page 6 | jq -e '(.picture | endswith(".png")) and .full == true' >/dev/null && grep -q '^-s 26 ' "$F2/thumb.log" \
+    && ok "provide files: a picture previews drawn no larger than itself, the whole of it (#120)" || bad "preview picture" "$(page 6) $(cat "$F2/thumb.log" 2>&1)"
+page 7 | jq -e '.page == 2 and .pages == 3 and .size == [816, 1056] and .full == false and (.picture | endswith("-1600-2.png")) and (.attach | endswith("-2.txt"))' >/dev/null \
+    && page 8 | jq -e '.full == true and (.picture | endswith("-4096-2.png"))' >/dev/null && grep -q -- '-f 2 -l 2 -png -scale-to 1600 ' "$F2/pdftoppm.log" && grep -q -- '-scale-to 4096 ' "$F2/pdftoppm.log" \
+    && ok "provide files: a PDF's page drawn, page 2 of 3, its 100 % the page at 96 pixels an inch, its text for spark; full=1 draws it at 4096 for a zoom (#120)" || bad "preview pdf" "$(page 7) | $(page 8) | $(cat "$F2/pdftoppm.log" 2>&1)"
+page 9 | jq -e '.lines == ["Evening", "Ada \u00b7 Proofs"] and .seconds == 20.5 and .facts[0:4] == ["44.1 kHz", "16 bit", "stereo", "FLAC"] and .sound.wave == 160 and (.sound.picture | endswith("-sound.png")) and .play.name == "files_play" and .stop.name == "files_stop"' >/dev/null \
+    && grep -q -- '--untimed' "$F2/mpv.log" && grep -q -- 'showwavespic' "$F2/mpv.log" && grep -q -- '--demuxer-lavf-o=protocol_whitelist=file' "$F2/mpv.log" \
+    && ok "provide files: a sound's tags, its waveform over its spectrogram drawn once, what an engineer asks first (rate, bits, channels, format); mpv on local files only (#120)" || bad "preview sound" "$(page 9) | $(cat "$F2/mpv.log" 2>&1)"
+page 10 | jq -e '.facts[0:2] == ["0:05", "1280 \u00d7 720"] and .size == [1280, 720] and .play.name == "files_open" and (.picture | endswith(".png"))' >/dev/null \
+    && ok "provide files: a video's frame, its length and size; right plays it in its app (#120)" || bad "preview video" "$(page 10)"
+[ "$(ans 11 | jq -r '.error.message')" = 'no file at that uri' ] && [ "$(ans 12 | jq -r '.error.message')" = 'no file at that uri' ] && ans 13 | jq -e '[.result.resourceTemplates[].name] == ["folder", "preview"]' >/dev/null \
+    && ok "provide files: a hidden file and a path outside the roots have no page; the template names it (#120)" || bad "preview gate" "$(ans 11) $(ans 12) $(ans 13)"
+rm -f "$F2/mpv.log"
+mcpv "$(call 2 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: 12.5}')")" "$(call 3 files_stop)" "$(fc2 4 files_play "$PVR/plan.md")" "$(call 5 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: -1}')")"
+[ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'playing song.flac' ] && grep -q -- '--no-video --no-terminal --really-quiet --start=+12.5 -- ' "$F2/mpv.log" && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = stopped ] \
+    && [ "$(ans 4 | jq -r '.result.content[0].text')" = 'files: plan.md is no sound mpv plays here' ] && [ "$(ans 5 | jq -r '.error.message')" = 'files_play: at is a number of seconds, 0 to 86400' ] \
+    && ! ps -A -o args= 2>/dev/null | grep -q '^sleep 41$' \
+    && ok "provide files: a sound plays here from a point and stops; anything else, or a point that is no time, is refused; nothing plays on past the provider (#120)" || bad "preview play" "$(ans 2) $(ans 3) $(ans 4) $(ans 5) $(cat "$F2/mpv.log" 2>&1)"
+# the dialog's transitions (#122): the theme's row, the verb, the key the config holds
+printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
+o1=$(sh "$SH" theme animation 2>&1); o2=$(sh "$SH" theme animation next 2>&1); o3=$(sh "$SH" theme animation back 2>&1); o4=$(sh "$SH" theme animation none 2>&1); st=0; o5=$(sh "$SH" theme animation fireworks 2>&1) || st=$?
+[ "$o1" = "animation embers $(printf '\302\267') none, moon, ripple, tide, embers, sun, flight" ] && [ "${o2%% *}" = animation ] && printf '%s' "$o2" | grep -q '^animation sun ' && printf '%s' "$o3" | grep -q '^animation embers ' \
+    && printf '%s' "$o4" | grep -q '^animation none ' && grep -qx 'DIALOG_ANIMATION=none' "$HOME/.config/spark-shell/config" && [ "$st" -ne 0 ] \
+    && ok "theme animation: the palette's piece when none is set (dracula's embers), next and back step through the six and none, none is no motion, another word refused (#122)" || bad "theme animation" "$o1 | $o2 | $o3 | $o4 | $st $o5"
+# each palette brings its piece, as it brings its drawing; none stays none (#122)
+printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
+sh "$SH" theme nord >/dev/null 2>&1; a1=$(sed -n 's/^DIALOG_ANIMATION=//p' "$HOME/.config/spark-shell/config"); sh "$SH" theme animation none >/dev/null 2>&1; sh "$SH" theme gruvbox-dark >/dev/null 2>&1; a2=$(sed -n 's/^DIALOG_ANIMATION=//p' "$HOME/.config/spark-shell/config")
+for e in $(sed -n 's/^ANIM_PAIRED="\(.*\)"$/\1/p' "$SH"); do [ -d "$REPO/assets/transitions/${e#*:}/${e%%:*}" ] || a3="${a3:-}${e} "; done
+[ "$a1" = tide ] && [ "$a2" = none ] && [ -z "${a3:-}" ] && [ "$(sed -n 's/^ANIM_PAIRED="\(.*\)"$/\1/p' "$SH" | wc -w | tr -d ' ')" = 16 ] \
+    && ok "theme: a palette brings its piece (nord the tide), none stays none, every one of the 16 palettes paired with a piece it has (#122)" || bad "animation pairs" "$a1 $a2 missing: ${a3:-}"
+printf 'DIALOG_ANIMATION=fireworks\n' >> "$HOME/.config/spark-shell/config"; st=0; o=$(sh "$SH" theme animation 2>&1) || st=$?
+[ "$st" -ne 0 ] && printf '%s' "$o" | grep -q 'DIALOG_ANIMATION=fireworks' && ok "config: DIALOG_ANIMATION holds to none and the six (#122)" || bad "animation config" "$st $o"
+printf 'DESKTOP=sway\nTHEME=tokyonight-night\n' > "$HOME/.config/spark-shell/config"
+_np=0; for _pd in "$REPO"/assets/transitions/*/; do [ -f "$_pd/tokyonight-night/open.gif" ] && [ -f "$_pd/solarized-light/close.gif" ] && _np=$((_np + 1)); done
+[ -f "$REPO/assets/transitions/moon/tokyonight-night/open.gif" ] && grep -q -- '--transitions "$_ta"' "$SH" && [ "$_np" = 6 ] \
+    && ok "the dialog is given the piece in the palette in use, every piece in every palette: open, wait, close, at one and two times (#122)" || bad "transitions given" "$(ls "$REPO/assets/transitions")"
 mkdir -p "$H/gio"; cat > "$H/gio/gio" <<'STUB'
 #!/bin/sh
 echo "gio $*" >> "$HOME/gio.log"
@@ -4519,8 +4603,8 @@ for kv in DIALOG_ATTACH=maybe DIALOG_MODEL=1 DIALOG_TALK=off 'DIALOG_ATTACH_TYPE
 done
 ok "config: DIALOG_ATTACH, DIALOG_MODEL and DIALOG_TALK take yes or no, DIALOG_ATTACH_TYPES lower-case types; anything else is refused in one line"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" \
-    && ok "config: the four keys are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
+grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" && grep -q '^DIALOG_ANIMATION=$' "$REPO/config.example" \
+    && ok "config: the five keys are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
 # the want verb: one entry for words, the plan as JSON, a file asked about
 cat > "$H/.local/bin/spark" <<'STUB'
 #!/bin/sh
@@ -4606,8 +4690,8 @@ printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 printf 'buy bread\n' > "$H/notes.md"; printf 'x\000y' > "$H/blob.txt"; printf 'a' > "$H/pic.png"
 awk 'BEGIN { for (i = 0; i < 1601; i++) printf "0123456789" }' > "$H/long.md"; : > "$H/empty.md"; printf 'caf\351\n' > "$H/latin1.txt"
 st=0; o1=$(sh "$SH" want --attach "$H/long.md" what 2>&1) || st=$?; st2=0; o2=$(sh "$SH" want --attach "$H/empty.md" what 2>&1) || st2=$?; st3=0; o3=$(sh "$SH" want --attach "$H/latin1.txt" what 2>&1) || st3=$?
-[ "$st" -eq 1 ] && [ "$o1" = 'long.md is 16 kB; spark reads a file of 16 kB at most whole, so attach a shorter one' ] && [ "$st2" -eq 1 ] && [ "$o2" = 'empty.md is empty' ] && [ "$st3" -eq 1 ] && [ "$o3" = 'latin1.txt is not UTF-8 text' ] \
-    && ok "want --attach: a file over 16 kB, an empty one, one not UTF-8: refused with the reason, never cut or sent" || bad "want attach limits" "$st $o1 | $st2 $o2 | $st3 $o3"
+[ "$st" -eq 0 ] && [ "$(paste -sd ' ' - < "$HOME/spark.argv")" = 'read --name long.md what' ] && [ "$(wc -c < "$HOME/spark.stdin" | tr -d ' ')" = 16010 ] && [ "$st2" -eq 1 ] && [ "$o2" = 'empty.md is empty' ] && [ "$st3" -eq 1 ] && [ "$o3" = 'latin1.txt is not UTF-8 text' ] \
+    && ok "want --attach: a file over 16 kB goes to spark read, which reads it by parts (#120); an empty one, one not UTF-8: refused with the reason, never cut or sent" || bad "want attach limits" "$st $o1 | $st2 $o2 | $st3 $o3"
 st=0; out=$(sh "$SH" want --attach "$H/notes.md" "what do these say" 2>&1) || st=$?
 [ "$st" -eq 0 ] && [ "$out" = 'the notes say to buy bread.' ] && [ "$(cat "$HOME/spark.stdin")" = 'buy bread' ] && [ "$(paste -sd ' ' - < "$HOME/spark.argv")" = 'edit --source --name notes.md -- ? what do these say' ] \
     && ok "want --attach FILE: the file is the text on stdin of spark edit ? --source, by its name alone, never its path" || bad "want attach" "st=$st $out $(cat "$HOME/spark.argv")"
@@ -4787,6 +4871,12 @@ STUB
         && ok "dialog files: the files first, its provider started once" || bad "dialog files" "$(cat "$HOME/dialog.argv")"
     printf 'DESKTOP=sway\nDIALOG_ATTACH=no\nDIALOG_MODEL=no\nDIALOG_TALK=no\n' > "$HOME/.config/spark-shell/config"
     sh "$C/spark-shell" dialog >/dev/null 2>&1; [ "$(grep -A1 -x -- --composer "$HOME/dialog.argv" | tail -1)" = '' ] && ok "dialog: DIALOG_ATTACH, DIALOG_MODEL and DIALOG_TALK at no leave the composer bare" || bad "dialog keys" "$(cat "$HOME/dialog.argv")"
+    # the transitions (#122): the piece in the palette in use; none, or a palette with no set, plays none
+    printf 'DESKTOP=sway\nTHEME=tokyonight-night\n' > "$HOME/.config/spark-shell/config"; sh "$C/spark-shell" dialog >/dev/null 2>&1; a1=$(grep -A1 -x -- --transitions "$HOME/dialog.argv" | tail -1)
+    printf 'DESKTOP=sway\nTHEME=tokyonight-night\nDIALOG_ANIMATION=none\n' > "$HOME/.config/spark-shell/config"; sh "$C/spark-shell" dialog >/dev/null 2>&1; a2=$(grep -cx -- --transitions "$HOME/dialog.argv" || :)
+    printf 'DESKTOP=sway\nTHEME=none\n' > "$HOME/.config/spark-shell/config"; sh "$C/spark-shell" dialog >/dev/null 2>&1; a3=$(grep -cx -- --transitions "$HOME/dialog.argv" || :)
+    [ "$a1" = "$C/assets/transitions/moon/tokyonight-night" ] && [ "$a2" = 0 ] && [ "$a3" = 0 ] \
+        && ok "dialog: the transitions are the palette's piece in the palette in use (tokyonight-night's moon); none, or no palette, plays none (#122)" || bad "dialog transitions" "$a1 $a2 $a3"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     st=0; out=$(sh "$C/spark-shell" dialog nonsense 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell dialog: nonsense is not a section of the dialog' ] && ok "dialog WORD: a word that is no section, refused" || bad "dialog nonsense" "st=$st $out"
@@ -5767,6 +5857,28 @@ DBUS_SESSION_BUS_ADDRESS=fixture L theme nord --dry-run >/dev/null
 L on --yes >/dev/null 2>&1 || :
 f=$HOME/.config/xdg-desktop-portal/sway-portals.conf
 grep -qx 'default=gtk' "$f" && grep -qx 'org.freedesktop.impl.portal.ScreenCast=wlr' "$f" && grep -qx 'org.freedesktop.impl.portal.Screenshot=wlr' "$f"     && ok "portals: the desktop renders the native backend choices" || bad "portals config"
+rm -rf "$H"
+
+# The home's folders (#119): ours where no file is, a missing folder made lowercase, a capitalized one alone named
+# as it is; on again is quiet; a file of yours is kept whole and off never touches it; off takes ours back
+fresh
+console_stubs Linux
+mkdir -p "$HOME/.config/spark-shell" "$HOME/Music"
+_mu=Music; [ ! -d "$HOME/music" ] || _mu=music   # a Mac's folders are one of any case: there ~/music is ~/Music, and is named so
+printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+L on --yes >/dev/null 2>&1 || :
+u=$HOME/.config/user-dirs.dirs
+[ "$(head -1 "$u" 2>/dev/null)" = '# rendered by spark-shell: the user folders (#119)' ] && grep -qx 'XDG_DESKTOP_DIR="$HOME"' "$u" && grep -qx 'XDG_DOWNLOAD_DIR="$HOME/downloads"' "$u" \
+    && grep -qx 'XDG_PICTURES_DIR="$HOME/pictures"' "$u" && grep -qx 'XDG_DOCUMENTS_DIR="$HOME/documents"' "$u" && grep -qx "XDG_MUSIC_DIR=\"\$HOME/$_mu\"" "$u" && grep -qx 'XDG_VIDEOS_DIR="$HOME/videos"' "$u" \
+    && [ -d "$HOME/downloads" ] && [ -d "$HOME/pictures" ] && [ -d "$HOME/documents" ] && [ -d "$HOME/videos" ] && { [ "$_mu" = music ] || [ ! -d "$HOME/music" ]; } && [ ! -e "$u.bak" ] \
+    && ok "on desktop: ~/.config/user-dirs.dirs names the five folders, a missing one made lowercase, ~/Music alone named as it is, no .bak (#119)" || bad "user dirs" "$(cat "$u" 2>&1)"
+out=$(L on --yes -v 2>&1 || :)
+printf '%s\n' "$out" | grep -q '^ok .*folders' && ! printf '%s\n' "$out" | grep -q '^render .*folders' && ok "on desktop again: the folders' file quiet (#119)" || bad "user dirs again" "$(printf '%s\n' "$out" | grep folders)"
+mkdir -p "$HOME/Downloads2"; L off desktop >/dev/null 2>&1 || :
+[ ! -e "$u" ] && [ -d "$HOME/downloads" ] && [ -d "$HOME/Music" ] && ok "off desktop: ours goes, the folders stay (#119)" || bad "user dirs off" "$(ls -a "$HOME/.config" "$HOME")"
+printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
+printf 'XDG_DOWNLOAD_DIR="$HOME/Stuff"\n' > "$u"; L on --yes >/dev/null 2>&1 || :; m1=$(cat "$u"); L off desktop >/dev/null 2>&1 || :; m2=$(cat "$u" 2>/dev/null)
+[ "$m1" = 'XDG_DOWNLOAD_DIR="$HOME/Stuff"' ] && [ "$m2" = "$m1" ] && [ ! -e "$u.bak" ] && ok "on and off desktop: a folders' file of yours is kept whole, never backed up (#119)" || bad "user dirs yours" "$m1 | $m2"
 rm -rf "$H"
 
 # Native time settings: isolated files, root prefix and time service stubs.
