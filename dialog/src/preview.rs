@@ -26,7 +26,7 @@ pub struct Page {
     /// The uri this page answers: an answer for a file left meanwhile lands nowhere.
     pub uri: String,
     pub title: String,
-    /// The file's facts, each a few words ("412 kB", "4032 × 3024", "3:45").
+    /// The file's facts, each a few words ("412 kB", "4032 by 3024", "3:45").
     pub facts: Vec<String>,
     pub lines: Vec<String>,
     /// The lines drawn bold, by index: a heading.
