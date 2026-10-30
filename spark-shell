@@ -6953,7 +6953,7 @@ files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' line
     _frs=''; [ ! -e "$TMP/walk.stopped" ] || _frs=1
     LC_ALL=C awk -F "$US" -v us="$US" -v group="$1" -v folders="$2" -v counts="${3:-}" -v cstop="$_frs" -v home="$(files_home_root)" \
         -v today="$(date +%Y%m%d)" -v yday="$(date -d "@$(( $(date +%s) - 86400 ))" +%Y%m%d 2>/dev/null || date -r "$(( $(date +%s) - 86400 ))" +%Y%m%d)" \
-        -v year="$(date +%Y)" -v pics=" $FILES_PICS " -v thumbs="$FILES_THUMB_DIR" -v sum="$TMP/files.sum" '
+        -v year="$(date +%Y)" -v pics=" $FILES_PICS " -v thumbs="$FILES_THUMB_DIR" -v sum="$TMP/files.sum" -v links="$TMP/files.links" '
         function b64(s,   r, i, n, t) {   # base64url, no padding: files_b64
             r = ""; n = length(s)
             for (i = 1; i <= n; i += 3) {
@@ -6972,6 +6972,7 @@ files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' line
             B = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"; for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i
             split("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec", mon, " ")
             if (counts != "") while ((getline l < counts) > 0) { k = index(l, us); if (k) cnt[substr(l, 1, k - 1)] = substr(l, k + 1) }
+            while ((getline l < links) > 0) { k = index(l, us); if (k) to[substr(l, 1, k - 1)] = substr(l, k + 1) }   # a link and where it points (readlink: stat quotes its %N its own way)
         }
         {
             p = substr($0, length($1 $2 $3 $4 $5) + 6)   # the path, whole: the last field, whatever it holds
@@ -6986,8 +6987,7 @@ files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' line
                 if (e ~ /.\./) { sub(/.*\./, "", e); if (index(pics, " " e " ")) pv = thumbs "/" hash(p " " $3) ".png" }
                 print "1" us "files:file:" id us "blank" us text us "" us p us size($2) us when(substr($4, 1, 4) substr($4, 6, 2) substr($4, 9, 2)) us group us c3 us "file" us pv
             } else if (t ~ /^symbolic/) {
-                lt = $5; if (substr(lt, 1, length(p) + 4) == p " -> ") lt = substr(lt, length(p) + 5)
-                print "2" us "files:link:" id us "blank" us text " -> " clean(lt) us "" us "" us "" us "" us group us "" us "link" us ""
+                print "2" us "files:link:" id us "blank" us text " -> " clean(to[p]) us "" us "" us "" us "" us group us "" us "link" us ""
             }   # a device, a socket, a pipe: not listed
         }
         END { printf "%d %d %.0f\n", nf, nd, nb > sum }'
@@ -7003,6 +7003,8 @@ files_slice() {   # files_slice FROM < row lines -> the page's rows from FROM: F
 files_list() {   # files_list FOLDER [GROUP] [FROM] -> the folder's rows from FROM: its folders, then its files, each by name, a page of them; a link shown and never followed; FILES_N, FILES_D and FILES_B count the whole folder, FILES_NEXT and FILES_LEFT what follows the page
     rm -f "$TMP/walk.stopped"
     find "$1" -mindepth 1 -maxdepth 1 ! -name '.*' -print0 2>/dev/null | files_nul | files_stats > "$TMP/files.stats"
+    awk -F "$US" 'tolower($1) ~ /^symbolic/ { print substr($0, length($1 $2 $3 $4 $5) + 6) }' "$TMP/files.stats" \
+        | while IFS= read -r _fll; do printf '%s%s%s\n' "$_fll" "$US" "$(readlink "$_fll")"; done > "$TMP/files.links"   # a folder's links are few
     files_counts "$1" > "$TMP/files.counts"
     files_rows_fmt "${2:-}" no "$TMP/files.counts" < "$TMP/files.stats" | sort -t "$US" -k1,1 -k4,4 | cut -d "$US" -f2- | files_slice "${3:-0}"
     read -r FILES_N FILES_D FILES_B < "$TMP/files.sum"; read -r FILES_NEXT FILES_LEFT < "$TMP/files.left"
