@@ -1,0 +1,22 @@
+# The licence of every package in PKG_SHELL, PKG_CLI and PKG_CONSOLE of
+# distro/*.env, as the upstream project's own repository states it. A
+# third word names the CREDITS.md entry when the package is credited
+# under another name. tests/shell_test.sh holds CREDITS.md to this table,
+# and refuses a package in those lists that has no line here.
+bash GPL-3.0-or-later
+tmux ISC
+ncurses-bin MIT-style
+ncurses MIT-style
+ncurses-utils MIT-style ncurses
+ncurses-term MIT-style ncurses
+diffutils GPL-3.0-or-later
+starship ISC
+bat MIT/Apache-2.0
+eza EUPL-1.2
+fzf MIT
+zoxide MIT
+fd-find MIT/Apache-2.0
+fd MIT/Apache-2.0
+jq MIT
+btop Apache-2.0
+kbd GPL-2.0-or-later

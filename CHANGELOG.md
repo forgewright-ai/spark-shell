@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.112
+
+Keeping up with the distros (#105).
+
+- CI runs the suite on Ubuntu 26.04 as well as 24.04 (#107). There sudo
+  is sudo-rs and the coreutils are uutils' (all but cp, mv and rm), and
+  the runners are 24.04, so a container of 26.04, pinned by digest, is
+  the one place spark-shell meets them. The job first checks that the
+  image really has both, then looks every name of distro/debian.env up
+  and runs the suite. The desktop job installs and starts the desktop
+  there too.
+- The dialog is built with Rust 1.99.1, from 1.98.1 (#108). 1.99.1
+  fixes a miscompile of a `bool` returned across FFI on x86_64, and the
+  dialog calls libc. CI builds it twice from clean, the two builds give
+  the same sha256, and dialog/dialog.env pins it.
+- Fixed: CREDITS.md said eza is MIT; eza's own repository says
+  EUPL-1.2 (#106). distro/licenses now holds the licence of every tool
+  package the family files name, and the suite refuses a CREDITS.md
+  entry that says another, or a package with no line there.
+
 ## v0.111.2
 
 - The editor is yours, by one rule (#115). A note, a new text file in

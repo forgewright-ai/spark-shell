@@ -1,13 +1,13 @@
-# spark-shell CI: the render, link and hand-back machinery in a throwaway
-# HOME and a throwaway root -- on Ubuntu, Debian, Arch, Void, Fedora,
-# openSUSE and macOS. The lint job goes first and alone: the privacy
-# patterns, ASCII docs, shellcheck and zizmor, and every other job needs
-# it. Then the package names of distro/*.env looked up on their own
-# family (nothing installed), and the desktop job: the desktop's packages
-# installed for real in each family's container, spark-shell on as a
-# plain user, the rendered config read by sway, a headless sway with a
-# foot in it. The green job needs them all: the one name a ruleset on
-# main can require.
+# spark-shell CI: the render, link and hand-back machinery in a
+# throwaway HOME and a throwaway root -- on Ubuntu 24.04 and 26.04,
+# Debian, Arch, Void, Fedora, openSUSE and macOS. The lint job goes
+# first and alone: the privacy patterns, ASCII docs, shellcheck and
+# zizmor, and every other job needs it. Then the package names of
+# distro/*.env looked up on their own family (nothing installed), and
+# the desktop job: the desktop's packages installed for real in each
+# family's container, spark-shell on as a plain user, the rendered
+# config read by sway, a headless sway with a foot in it. The green job
+# needs them all: the one name a ruleset on main can require.
 name: ci
 on:
   push:
@@ -117,6 +117,31 @@ jobs:
         with:
           persist-credentials: false
       - name: every package name of distro/debian.env exists on Debian (nothing installed)
+        run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
+      - name: the suite in a throwaway HOME
+        run: |
+          sh tests/shell_test.sh --parallel
+          python3 tests/bt_agent_test.py
+          python3 tests/provider_acceptance.py
+  ubuntu:
+    # the same suite on Ubuntu 26.04, where sudo is sudo-rs and the
+    # coreutils are uutils' (all but cp, mv and rm): the runners are 24.04,
+    # so this container is the one place spark-shell meets them (#107).
+    needs: lint
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c   # a stable release: pinned, bump the digest with a point release
+    timeout-minutes: 15   # the suite passed 1000 tests in v0.86, and the arch container ran out at 979 of them in 10
+    steps:
+      - run: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 git shellcheck diffutils jq openssh-client curl sudo >/dev/null   # sudo: the image has none, and 26.04's is sudo-rs
+      - name: the image's sudo is sudo-rs and its coreutils are uutils', or this job proves nothing
+        run: |
+          sudo --version | head -1
+          ls --version | head -1
+          sudo --version | grep -qi 'sudo-rs' && ls --version | grep -qi 'uutils'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: every package name of distro/debian.env exists on Ubuntu 26.04 (nothing installed)
         run: apt-cache show $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/debian.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: |
@@ -243,6 +268,12 @@ jobs:
             prep: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git jq diffutils >/dev/null
             install: DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
             proof: dbus systemd   # mako 1.8's makoctl asks the bus through systemd's busctl, which a real Ubuntu always has
+          - family: ubuntu-26.04   # sudo-rs and uutils' coreutils (#107)
+            distro: debian
+            image: ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
+            prep: apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git jq diffutils >/dev/null
+            install: DEBIAN_FRONTEND=noninteractive apt-get install -y -qq
+            proof: dbus systemd   # makoctl asks the bus through systemd's busctl, as on 24.04
           - family: arch
             distro: arch
             image: archlinux:latest   # zizmor: ignore[unpinned-images] a rolling distro
@@ -379,7 +410,7 @@ jobs:
     # and fails when any of them failed, was cancelled or was skipped. A
     # pull request from this repository's own branch is the one run whose
     # jobs are all skipped on purpose, and green skips with them.
-    needs: [lint, linux, debian, arch, void, fedora, opensuse, desktop, macos, dialog]
+    needs: [lint, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 2

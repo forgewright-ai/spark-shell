@@ -5821,6 +5821,33 @@ out=$(L check || :)
 printf '%s' "$out" | grep -q '^warn *bluetooth *bluetoothd is not running'     && ok "bluetooth: check names a stopped daemon" || bad "bluetooth check stopped" "$out"
 rm -rf "$H"
 
+# --- the credits: each tool's licence is distro/licenses' (#106) ---------
+# Every package of PKG_SHELL, PKG_CLI and PKG_CONSOLE in distro/*.env has a
+# line in distro/licenses, and its CREDITS.md entry (the line that opens
+# "- NAME ", up to the next entry) says that licence after a " -- ". eza
+# read MIT there for months; its own repository says EUPL-1.2.
+lic=$REPO/distro/licenses
+miss=
+for p in $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p' "$REPO"/distro/*.env | tr ' ' '\n' | sort -u); do
+    grep -q "^$p " "$lic" || miss="$miss $p"
+done
+[ -z "$miss" ] && ok "credits: every tool package of distro/*.env has a licence in distro/licenses" || bad "credits: a package with no licence line" "$miss"
+wrong=$(grep -v '^#' "$lic" | while read -r p l c; do
+    awk -v name="${c:-$p}" -v lic="$l" '
+        index($0, "- " name " ") == 1 { on = 1; text = $0; next }
+        on && (/^- / || /^$/ || /^#/) { on = 0 }
+        on { text = text " " $0 }
+        END {
+            n = split(text, part, " -- ")
+            for (i = 2; i <= n; i++) {
+                s = part[i]
+                if (index(s, lic) == 1) { c = substr(s, length(lic) + 1, 1); if (c == "." || c == "," || c == " " || c == "(") found = 1 }
+            }
+            if (!found) printf "%s ", name
+        }' "$REPO/CREDITS.md"
+done)
+[ -z "$wrong" ] && ok "credits: each tool's CREDITS.md entry says the licence distro/licenses holds" || bad "credits: an entry with another licence, or none" "$wrong"
+
 voice=$(mktemp -d)
 awk '/^```/ {fence = !fence; next} fence {next} /^    / {next} {print}' "$REPO/README.md" > "$voice/README.md"
 awk '/^## v/ {n++} n == 1' "$REPO/CHANGELOG.md" > "$voice/CHANGELOG.md"
@@ -5830,7 +5857,7 @@ sh "$SH" -h > "$voice/help"
 grep '^ *#' "$REPO/templates/.config/sway/config" > "$voice/sway-config-comments"
 out_words="colours?|desks?|rooms?|seat|login box|marks?|marked|player|this machine's cycles|the forge wallpaper|greeter|the box|stranger|newcomer|founder|inventory|the hands|shell layer|monitors?"
 contractions="[A-Za-z]*n't\b|\bit's\b|\byou'll\b|\bwe're\b|\bthat's\b|\bthere's\b|\blet's\b"
-caps_ok='CUPS|DAY|TIME|KEYBOARD|POINTER|ASCII|ALSA|A2DP|POSIX|JSON|SGR|SBOM|PATH|NAME|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|GPL|LGPL|GNOME|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|LOGIN|WALLPAPER|ALPHA|WINDOWS|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
+caps_ok='CUPS|DAY|TIME|KEYBOARD|POINTER|ASCII|ALSA|A2DP|POSIX|JSON|SGR|SBOM|PATH|NAME|WORDS|PAGE|SECTION|KEY|VALUE|FILE|DIR|HOME|EDITOR|FACE|SIZE|GRUB|FAIL|WARN|TODO|LICENSE|MIT|ISC|EUPL|GPL|LGPL|GNOME|CC|README|CHANGELOG|CREDITS|VGA|RGB|ANSI|CI|LAN|XDG|PPT|HDMI|URL|HTTP|THEME|SITE|SPARK|DESKTOP|LOGIN|WALLPAPER|ALPHA|WINDOWS|FONT|PROMPT|GIT|PM|PKG|CDX|CP437|UKI|macOS'
 for n in README.md CHANGELOG.md CREDITS.md config.example help sway-config-comments; do
     f=$voice/$n
     # (a) the words that are out, as whole words in any case

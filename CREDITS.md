@@ -29,7 +29,7 @@ plugin is its own repository with its own credits.
   ncurses-utils on openSUSE).
 - diffutils -- GPL-3.0-or-later (on Arch, Void, Fedora and openSUSE).
 - bat -- MIT/Apache-2.0.
-- eza -- MIT.
+- eza -- EUPL-1.2.
 - fzf -- MIT.
 - zoxide -- MIT.
 - fd-find -- MIT/Apache-2.0 (fd).
