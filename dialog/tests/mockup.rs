@@ -726,7 +726,10 @@ fn preview_app(name: &str, place: &str, page: serde_json::Value) -> App {
 #[test]
 fn design_system_preview_card() {
     let Ok(file) = std::env::var("DS_PREVIEW_CARD") else { return };
-    let (page_png, spectrogram) = (data_png(&std::env::var("DS_PAGE").unwrap()), data_png(&std::env::var("DS_SPECTROGRAM").unwrap()));
+    let (page_png, spectrogram) = (
+        data_png(&std::env::var("DS_PAGE").unwrap()),
+        data_png(&std::env::var("DS_SPECTROGRAM").unwrap()),
+    );
     let pal = common::palette("tokyonight-night");
     let draw = |a: &App| -> (Buffer, spark_dialog::ui::Drawn) {
         let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
@@ -739,28 +742,64 @@ fn design_system_preview_card() {
     let lines: Vec<&str> = note.lines().collect();
     let bold: Vec<usize> = lines.iter().enumerate().filter(|(_, l)| l.starts_with('#')).map(|(i, _)| i).collect();
     let shown: Vec<String> = lines.iter().map(|l| l.trim_start_matches('#').trim_start().to_string()).collect();
-    let a = preview_app("plan.md", "~/notes", json!({"title": "plan.md", "facts": ["412 B", "today"], "lines": shown, "bold": bold, "attach": "/run/p/1.txt"}));
-    frames.push(ds_frame(&draw(&a).0, &pal, "a Markdown note: read only, its headings bold; Attach names it", None));
-    let a = preview_app("ghostscript.pdf", "~/docs", json!({"title": "ghostscript.pdf", "facts": ["4.5 MB", "today"], "picture": "/run/p/2.png", "page": 1, "pages": 477, "size": [816, 1056], "attach": "/run/p/2.txt"}));
+    let a = preview_app(
+        "plan.md",
+        "~/notes",
+        json!({"title": "plan.md", "facts": ["412 B", "today"], "lines": shown, "bold": bold, "attach": "/run/p/1.txt"}),
+    );
+    frames.push(ds_frame(
+        &draw(&a).0,
+        &pal,
+        "a Markdown note: read only, its headings bold; Attach names it",
+        None,
+    ));
+    let a = preview_app(
+        "ghostscript.pdf",
+        "~/docs",
+        json!({"title": "ghostscript.pdf", "facts": ["4.5 MB", "today"], "picture": "/run/p/2.png", "page": 1, "pages": 477, "size": [816, 1056], "attach": "/run/p/2.txt"}),
+    );
     let (b, d) = draw(&a);
-    frames.push(contain(ds_frame(&b, &pal, "a PDF: the page drawn, page 1 of 477; left and right turn it", d.preview.as_ref().map(|p| (p, page_png.as_str())))));
-    let mut a = preview_app("evening-sketch.flac", "~/music", json!({"title": "evening-sketch.flac", "facts": ["44.1 kHz", "16 bit", "stereo", "FLAC", "866 KB"],
+    frames.push(contain(ds_frame(
+        &b,
+        &pal,
+        "a PDF: the page drawn, page 1 of 477; left and right turn it",
+        d.preview.as_ref().map(|p| (p, page_png.as_str())),
+    )));
+    let mut a = preview_app(
+        "evening-sketch.flac",
+        "~/music",
+        json!({"title": "evening-sketch.flac", "facts": ["44.1 kHz", "16 bit", "stereo", "FLAC", "866 KB"],
         "lines": ["Evening sketch", "Ada \u{b7} Proofs"], "bold": [0], "seconds": 20.0, "sound": {"picture": "/run/p/3-sound.png", "wave": 160},
-        "play": {"name": "files_play", "arguments": {"path": "/data/me/evening-sketch.flac"}, "said": "play"}, "stop": {"name": "files_stop", "arguments": {}, "said": "stop"}}));
+        "play": {"name": "files_play", "arguments": {"path": "/data/me/evening-sketch.flac"}, "said": "play"}, "stop": {"name": "files_stop", "arguments": {}, "said": "stop"}}),
+    );
     let sound = std::fs::read(std::env::var("DS_SOUND").unwrap()).unwrap();
     let pv = a.preview.as_mut().unwrap();
     pv.heard = spark_dialog::preview::sound(&spark_dialog::sixel::decode(&sound).unwrap(), 160);
     pv.played = 7.0;
     pv.playing = Some(std::time::Instant::now());
     let (b, d) = draw(&a);
-    frames.push(ds_frame(&b, &pal, "a sound playing: its waveform, its spectrum now, its spectrogram", d.preview.as_ref().map(|p| (p, spectrogram.as_str()))));
-    let mut a = preview_app("ghostscript.pdf", "~/docs", json!({"title": "ghostscript.pdf", "facts": ["4.5 MB", "today"], "picture": "/run/p/2.png", "page": 1, "pages": 477, "size": [816, 1056], "full": true}));
+    frames.push(ds_frame(
+        &b,
+        &pal,
+        "a sound playing: its waveform, its spectrum now, its spectrogram",
+        d.preview.as_ref().map(|p| (p, spectrogram.as_str())),
+    ));
+    let mut a = preview_app(
+        "ghostscript.pdf",
+        "~/docs",
+        json!({"title": "ghostscript.pdf", "facts": ["4.5 MB", "today"], "picture": "/run/p/2.png", "page": 1, "pages": 477, "size": [816, 1056], "full": true}),
+    );
     let pv = a.preview.as_mut().unwrap();
     (pv.src, pv.px) = ((459, 594), (616, 594));
     a.typed('+');
     a.typed('+');
     let (b, d) = draw(&a);
-    frames.push(ds_frame(&b, &pal, "zoomed: the arrows and a drag move it, Esc fits it again; < and > turn it", d.preview.as_ref().map(|p| (p, page_png.as_str()))));
+    frames.push(ds_frame(
+        &b,
+        &pal,
+        "zoomed: the arrows and a drag move it, Esc fits it again; < and > turn it",
+        d.preview.as_ref().map(|p| (p, page_png.as_str())),
+    ));
     let head = "<!-- @dsCard group=\"Preview\" height=1740 width=1420 subtitle=\"the preview from v0.113's own render, bound to the tokens: a note, a PDF page, a sound playing, a page zoomed; the pictures are the real window's on the Linux machine\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
     std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n<script></script>\n", head, frames.join(""))).unwrap();
 }
