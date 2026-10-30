@@ -279,18 +279,20 @@ def files(binary, env, home):
         os.write(fd, b"files")
         time.sleep(0.3)
         os.write(fd, b"\r")
-        assert wait_for(lambda: "hello.txt" in tight() and "thisfolder" in tight() and "newfolder" in tight()), "the home folder did not draw: " + plain()[-600:]
-        ok(True, "Files opens the home folder: the fixture file with its size, the folder, and the folder's own steps")
-        os.write(fd, b"\x1b[B")       # Down: the first row, the file, lit
-        assert wait_for(lambda: "Steps" in plain()), "the key row did not offer the steps: " + plain()[-400:]
+        assert wait_for(lambda: "hello.txt" in shown() and "thisfolder" in shown() and "trash" in shown()), "the home folder did not draw: " + screen.text()[-900:]
+        ok(True, "Files opens the home folder: home first, the folder, the fixture file with its size and the trash, then the folder's own row (#127, #130)")
+        os.write(fd, b"\x1b[B")       # Down: the first row, the folder
+        time.sleep(0.3)
+        os.write(fd, b"\x1b[B")       # Down: the file, lit
+        assert wait_for(lambda: "Preview" in shown() and "Actions" in shown()), "the key row did not offer the preview and the actions: " + screen.text()[-600:]
         seen.clear()
-        os.write(fd, b"\x1b[C")       # Right: its steps
+        os.write(fd, b"\x1b[C")       # Right: its actions
         # read from the screen, not the bytes: a cell the row before held too is not sent again ("rename" over "hello.txt" keeps its e)
-        assert wait_for(lambda: "movetoafolder" in shown() and "trash" in shown() and "rename" in shown() and "Back" in shown()), "the steps did not draw: " + screen.text()[-900:]
-        ok(True, "Down lights the file and the key row offers Steps; Right opens them in the provider's words: open, show, attach, reveal, rename, move, copy, trash")
+        assert wait_for(lambda: "movetoafolder" in shown() and "trash" in shown() and "rename" in shown() and "Back" in shown()), "the actions did not draw: " + screen.text()[-900:]
+        ok(True, "Down lights the file and the key row offers Preview and Actions; Right opens the actions in the provider's words: open, preview, attach, rename, move, copy, trash")
         seen.clear()
         os.write(fd, b"\x1b")          # back to the folder
-        assert wait_for(lambda: "hello.txt" in tight() and "newfolder" in tight()), "Esc did not come back: " + plain()[-600:]
+        assert wait_for(lambda: "hello.txt" in shown() and "thisfolder" in shown()), "Esc did not come back: " + screen.text()[-900:]
         ok(True, "Esc comes back to the folder")
     except AssertionError as e:
         ok(False, "files terminal interaction", str(e))

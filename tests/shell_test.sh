@@ -4598,7 +4598,7 @@ STUB
 cat > "$H/pvb/mpv" <<'STUB'
 #!/bin/sh
 echo "$*" >> "$HOME/mpv.log"; us=$(printf '\037')
-case $* in *--lavfi-complex=*) [ -z "${SLOW_WAVE:-}" ] || sleep 3 ;; esac   # a long sound's waveform (#124)
+case $* in *--lavfi-complex=*) [ -z "${SLOW_WAVE:-}" ] || sleep 8 ;; esac   # a long sound's waveform (#124)
 for a; do case $a in --vo-image-outdir=*) cp "$REPO_PNG" "${a#*=}/00000001.png" ;; --no-video) exec sleep 41 ;; esac; done
 for a; do f=$a; done
 case $* in *--term-playing-msg=*) case $f in
@@ -4652,9 +4652,9 @@ mcpv "$(call 2 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: 12.
     && [ "$(ans 4 | jq -r '.result.content[0].text')" = 'files: plan.md is no sound mpv plays here' ] && [ "$(ans 5 | jq -r '.error.message')" = 'files_play: at is a number of seconds, 0 to 86400' ] \
     && ! ps -A -o args= 2>/dev/null | grep -q '^sleep 41$' \
     && ok "provide files: a sound plays here from a point and stops; anything else, or a point that is no time, is refused; nothing plays on past the provider (#120)" || bad "preview play" "$(ans 2) $(ans 3) $(ans 4) $(ans 5) $(cat "$F2/mpv.log" 2>&1)"
-# #124: a long sound's page answers at once, its waveform drawn aside (the stand-in takes 3 s over it), the picture named for the dialog to read when it comes
+# #124: a long sound's page answers at once, its waveform drawn aside (the stand-in takes 8 s over it; the page is in well before, a slow runner's start included), the picture named for the dialog to read when it comes
 _t0=$(date +%s); ( SLOW_WAVE=1 mcpv "$(pvr 2 "$PVR/song.flac")" ); _t1=$(date +%s)
-page 2 | jq -e '(.sound.picture | endswith("-sound.png")) and .sound.wave == 160 and .play.name == "files_play" and .seconds == 20.5' >/dev/null && [ $((_t1 - _t0)) -le 2 ] \
+page 2 | jq -e '(.sound.picture | endswith("-sound.png")) and .sound.wave == 160 and .play.name == "files_play" and .seconds == 20.5' >/dev/null && [ $((_t1 - _t0)) -le 5 ] \
     && ok "provide files: a long sound's page comes at once with its facts and Play, its waveform drawn aside at an idle priority and named for the dialog to draw when it is there (#124)" || bad "preview sound aside" "$((_t1 - _t0)) s $(page 2)"
 # #125: where sway is, a video plays over its frame: the page offers play and stop; the player laid at the dialog's corner, foot's padding and the frame's box
 mkdir -p "$H/pvsw" "$F2/.config/foot"; printf '[main]\npad=24x19\n' > "$F2/.config/foot/dialog.ini"
