@@ -1132,6 +1132,9 @@ surface, the color it draws them on. The dialog does not play them yet.
 `python3 assets/transitions/make.py` draws them all again, with Pillow
 and NumPy. Give it a palette file, such as one in
 `~/.config/spark-shell/themes/`, and it draws the set for that palette.
+`assets/brand-transitions/` keeps the first set, made from the logo's S,
+prompt sign and cursor, with its own `make.py`. It draws the S in each
+palette's colors, so nothing uses it.
 
 Uninstall: `spark-shell off`, then delete `~/.spark-shell`.
 
