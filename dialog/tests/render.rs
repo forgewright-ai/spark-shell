@@ -27,13 +27,25 @@ fn row(id: &str, sign: &str, text: &str, tool: Option<(&str, serde_json::Value)>
 }
 
 fn capture(what: &str, text: &str, key: &str) -> serde_json::Value {
-    let mut r = row(&format!("window:capture {}", what), "opens", text, Some(("window_capture", json!({"what": what}))), None);
+    let mut r = row(
+        &format!("window:capture {}", what),
+        "opens",
+        text,
+        Some(("window_capture", json!({"what": what}))),
+        None,
+    );
     r["key"] = json!(key);
     r
 }
 
 fn open_window(name: &str, title: &str) -> serde_json::Value {
-    let mut r = row(&format!("window:focus {}", name), "opens", name, Some(("window_focus", json!({"name": name}))), Some("open now"));
+    let mut r = row(
+        &format!("window:focus {}", name),
+        "opens",
+        name,
+        Some(("window_focus", json!({"name": name}))),
+        Some("open now"),
+    );
     r["columns"] = json!([title]);
     r["more"] = json!([{"name": "window_close", "arguments": {"name": name}, "said": "close"}]);
     r
