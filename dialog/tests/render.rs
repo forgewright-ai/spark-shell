@@ -26,6 +26,19 @@ fn row(id: &str, sign: &str, text: &str, tool: Option<(&str, serde_json::Value)>
     json!({"id": id, "sign": sign, "text": text, "tool": tool.map(|(n, a)| json!({"name": n, "arguments": a})), "more": [], "columns": [], "children": null, "group": group})
 }
 
+fn capture(what: &str, text: &str, key: &str) -> serde_json::Value {
+    let mut r = row(&format!("window:capture {}", what), "opens", text, Some(("window_capture", json!({"what": what}))), None);
+    r["key"] = json!(key);
+    r
+}
+
+fn open_window(name: &str, title: &str) -> serde_json::Value {
+    let mut r = row(&format!("window:focus {}", name), "opens", name, Some(("window_focus", json!({"name": name}))), Some("open now"));
+    r["columns"] = json!([title]);
+    r["more"] = json!([{"name": "window_close", "arguments": {"name": name}, "said": "close"}]);
+    r
+}
+
 fn base() -> App {
     let cfg = Config {
         model: true,
@@ -38,13 +51,16 @@ fn base() -> App {
         "window",
         "side by side",
         json!({"title": "window", "rows": [
-            row("window:focus terminal", "opens", "terminal", Some(("window_focus", json!({"name": "terminal"}))), Some("open now")),
-            row("window:close terminal", "blank", "close terminal", Some(("window_close", json!({"name": "terminal"}))), Some("open now")),
-            row("window:focus firefox", "opens", "firefox", Some(("window_focus", json!({"name": "firefox"}))), Some("open now")),
-            row("window:close firefox", "blank", "close firefox", Some(("window_close", json!({"name": "firefox"}))), Some("open now")),
+            // as the provider writes them (#144): the layout, the captures with their keys, one row a window with its
+            // title and close behind it
             row("window:show:side by side", "check", "side by side", None, Some("layout")),
             row("window:tabs", "ring", "tabs", Some(("window_tabs", json!({}))), Some("layout")),
-            row("window:stacked", "ring", "stacked", Some(("window_stacked", json!({}))), Some("layout"))
+            row("window:stacked", "ring", "stacked", Some(("window_stacked", json!({}))), Some("layout")),
+            capture("screen", "capture the screen", "Print"),
+            capture("area", "capture an area", "Shift+Print"),
+            capture("window", "capture a window", "Super+Print"),
+            open_window("terminal", "~/projects"),
+            open_window("firefox", "Claude Code")
         ], "short": ["window:tabs", "window:stacked"]}),
         json!([{"name": "window_close", "title": "window close NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}]),
     );
