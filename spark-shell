@@ -8017,7 +8017,7 @@ provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one fold
          trashed: {tool: {name: "files_restore", said: "restore"}, more: [{name: "files_purge", said: "delete for good"}]}} as $kinds |
         [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end), path: .[4], c1: .[5], c2: .[6], group: (if .[7] == "" then null else .[7] end), c3: .[8], kind: .[9], preview: .[10], kw: .[11], stamp: .[12]}
             | {path: .path} as $a
-            | {id, sign, text: (.text | '"$SCRUB_JQ"'), children, group, columns: ([.c1, .c2, .c3] | map(select(. != null and . != "") | '"$SCRUB_JQ"')),
+            | {id, sign, text: (.text | '"$SCRUB_JQ"'), children, group, columns: ([.c1, .c2, .c3] | if (.[2] // "") != "" and (.[0] // "") != "" then map((. // "") | '"$SCRUB_JQ"') else map(select(. != null and . != "") | '"$SCRUB_JQ"') end),   # a folder found keeps its empty date column, its folder under the folders of the files found (#169)
                wide: (if (.kind == "file" or .kind == "dir") and (.kw // "") != "" then ([.kw, .c1, .stamp, .c3] | map((. // "") | '"$SCRUB_JQ"'))
                       elif .kind == "trashdir" or .kind == "drive" then (["", .c1, "", ""] | map((. // "") | '"$SCRUB_JQ"')) else null end),
                page: (if .kind == "file" then "spark-shell://files/preview/" + (.id | ltrimstr("files:file:")) elif .kind == "dir" then "spark-shell://files/preview/" + (.id | ltrimstr("files:dir:")) else null end),

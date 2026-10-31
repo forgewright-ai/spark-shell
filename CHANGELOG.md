@@ -9,7 +9,8 @@ picks from wireframes).
 - Typing at Home finds places, apps, files, notes, reminders, windows,
   layouts and settings, in groups with a heading each, in that order.
   Each group shows its best three: a name's start first, then a word's
-  start, then inside a word, the shorter name on a tie. A row under
+  start, then inside a word, the shorter name on a tie; each group
+  lines up its own columns. A row under
   them, `N more`, opens the rest of that kind as a list of its own, and
   Esc from it brings the search back as it was. A word of four letters
   or more may be one letter off (a letter missing, one too many, a

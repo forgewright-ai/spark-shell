@@ -1173,6 +1173,24 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         pen.put(6, y, &format!("{} more", below), pal.muted, false, false);
     }
     let (widths, right) = widths(app, &items);
+    // found from the home, each group lines up its own columns: a note's time is no file's size (#169)
+    let mut parts: Vec<(usize, Vec<usize>, Vec<bool>)> = vec![];
+    if app.searching() {
+        let mut start = 0;
+        for (k, it) in items.iter().enumerate() {
+            if matches!(it, Item::Heading(_)) && k > start {
+                let (w, r) = self::widths(app, &items[start..k]);
+                parts.push((start, w, r));
+                start = k;
+            }
+        }
+        let (w, r) = self::widths(app, &items[start..]);
+        parts.push((start, w, r));
+    }
+    let cols_at = |k: usize| match parts.iter().rev().find(|(s, _, _)| *s <= k) {
+        Some((_, w, r)) => (w.clone(), r.clone()),
+        None => (widths.clone(), right.clone()),
+    };
     let samples = items.iter().any(|it| row_of(app, it).is_some_and(|r| r.swatch.is_some()));
     // a wide list ends where its words end (#141): its band, its arrows, the toast's Undo
     if wide(pen.w) {
@@ -1195,7 +1213,8 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
             pen.light(y);
         }
         let chips = row_of(app, it).is_some_and(|r| chip_groups.contains(&r.group));
-        item_line(app, pen, it, y, lit, (&widths, &right, samples, chips));
+        let (w, r) = cols_at(k);
+        item_line(app, pen, it, y, lit, (&w, &r, samples, chips));
     }
     pen.stop = None;
     if let (true, Some(t)) = (toast, app.toast.as_ref()) {
