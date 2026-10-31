@@ -4893,10 +4893,10 @@ if [ "$(uname -s)" != Darwin ]; then
     # a layout by the name it was saved under, a rename row that asks the new name, made as a save makes one (#51, #54)
     mkdir -p "$HOME/.config/spark-shell/layouts"; printf '{"words":"zen and micro","main":{"app":"zen"}}' > "$HOME/.config/spark-shell/layouts/webdev"
     mcp layout "$(rq 1 resources/read '{"uri":"spark-shell://layout/rows"}')" "$(call 2 layout_rename '{"name":"webdev","to":"Web Dev"}')" "$(call 3 layout_rename '{"name":"nowhere","to":"x"}')"
-    ans 1 | jq -r '.result.contents[0].text' | jq -e '(.rows[] | select(.text == "webdev") | .tool == {name: "layout_open", arguments: {name: "webdev"}}) and (.rows[] | select(.text == "rename webdev") | .tool.ask == ["to"])' >/dev/null \
+    ans 1 | jq -r '.result.contents[0].text' | jq -e '(.rows[] | select(.text == "webdev") | .tool == {name: "layout_open", arguments: {name: "webdev"}} and .more == [{name: "layout_rename", arguments: {name: "webdev"}, ask: ["to"], said: "rename"}, {name: "layout_delete", arguments: {name: "webdev"}, said: "delete"}]) and ([.rows[] | select(.text | startswith("rename "))] | length == 0)' >/dev/null \
         && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = "webdev is web-dev now -- spark-shell layout web-dev opens it" ] && [ -f "$HOME/.config/spark-shell/layouts/web-dev" ] \
         && [ "$(ans 3 | jq -r '.result.content[0].text')" = "layout: no saved or recent layout named nowhere" ] \
-        && ok "provide layout: a layout by its name, its rename row asks the new name, and the call renames it (#51, #54)" || bad "provide layout rename" "$(cut -c1-300 "$H/mcp.out")"
+        && ok "provide layout: a layout by its name, rename (it asks the new name) and delete behind it, and the call renames it (#51, #54, #145)" || bad "provide layout rename" "$(cut -c1-300 "$H/mcp.out")"
     rm -f "$HOME/.config/spark-shell/layouts/web-dev"
     # recent (#145): the layouts opened lately and not saved, five at most, a saved one under its name alone, a command's words
     # never one; behind each, save as and forget

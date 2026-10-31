@@ -6472,8 +6472,8 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
         wifi_known | cut -f2 > "$TMP/wifi.known.ask"
         _asks=$(wifi_scan | awk -F '\t' '$3 == 1' | cut -f1 | grep -vxFf "$TMP/wifi.known.ask" | jq -R . | jq -cs . 2>/dev/null) || _asks='[]'
     fi
-    panel_rows "$1" | while IFS="$TAB" read -r _m _t _a _x; do provide_row_line "$1" "$_m" "$_t" "$_a" "$_x"; done > "$TMP/rows.short"   # the short form: what matters, and a more row that opens the rest
-    { panel_rows "$1" full | while IFS="$TAB" read -r _m _t _a _x; do case $1:$_a in 'window:close '*) continue ;; esac; provide_row_line "$1" "$_m" "$_t" "$_a" "$_x"; done; grep "^$1:more$US" "$TMP/rows.short" || :; } \
+    panel_rows "$1" | while IFS="$TAB" read -r _m _t _a _x; do case $1:$_a in 'layout:rename '*) continue ;; esac; provide_row_line "$1" "$_m" "$_t" "$_a" "$_x"; done > "$TMP/rows.short"   # the short form: what matters, and a more row that opens the rest
+    { panel_rows "$1" full | while IFS="$TAB" read -r _m _t _a _x; do case $1:$_a in 'window:close '*|'layout:rename '*) continue ;; esac; provide_row_line "$1" "$_m" "$_t" "$_a" "$_x"; done; grep "^$1:more$US" "$TMP/rows.short" || :; } \
         | jq -Rn --arg s "$1" --arg u "spark-shell://$1/rows" --arg st "$(provide_title "$1")" --rawfile short "$TMP/rows.short" '
             [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [],
                 columns: ((.[5] // "") | split("|") | .[1:2] | map(select(. != ""))),
@@ -6502,6 +6502,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif (.tool.name // "") == "layout_save" then .tool.ask = ["name"]
                 elif (.tool.name // "") == "layout_rename" then .tool.ask = ["to"]
                 elif $s == "layout" and .group == "recent" then .more = [{name: "layout_rename", arguments: {name: .tool.arguments.name}, ask: ["to"], said: "save as"}, {name: "layout_delete", arguments: {name: .tool.arguments.name}, said: "forget"}]
+                elif $s == "layout" and (.tool.name // "") == "layout_open" then .more = [{name: "layout_rename", arguments: {name: .tool.arguments.name}, ask: ["to"], said: "rename"}, {name: "layout_delete", arguments: {name: .tool.arguments.name}, said: "delete"}]
                 elif (.tool.name // "") == "clock_zone" then .tool.ask = ["zone"]
                 elif (.tool.name // "") == "reminders_add" then .tool.ask = ["words"]
                 elif (.tool.name // "") == "wifi_hidden" then .tool.ask = ["name", "password"]

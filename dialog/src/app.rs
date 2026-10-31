@@ -1488,7 +1488,8 @@ impl App {
                     .map(|(_, p)| p)
                     .collect();
                 let running: Vec<String> = tools.iter().filter(|p| p.dead.is_none()).map(|p| section_name(&p.label)).collect();
-                list.push(Item::Text(format!("{} tools \u{b7} this computer, from spark-shell", running.len()), false));
+                let n: usize = tools.iter().filter(|p| p.dead.is_none()).map(|p| p.tools.len()).sum();
+                list.push(Item::Text(format!("{} tools \u{b7} this computer, from spark-shell", n), false));
                 self.text(&mut list, &running.join(", "), true);
                 for p in tools.iter().filter(|p| p.dead.is_some()) {
                     list.push(Item::Text(

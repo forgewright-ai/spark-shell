@@ -1347,7 +1347,12 @@ fn connections_say_the_tools_once() {
             _ => None,
         })
         .collect();
-    assert!(texts[0].ends_with("tools \u{b7} this computer, from spark-shell"), "{:?}", texts);
+    let n: usize = app.providers.iter().filter(|p| p.dead.is_none()).map(|p| p.tools.len()).sum();
+    assert_eq!(
+        texts[0],
+        format!("{} tools \u{b7} this computer, from spark-shell", n),
+        "the tools counted, not the sections"
+    );
     assert!(
         texts.iter().any(|t| t.contains("Windows") && t.contains("Theme")),
         "Settings' names: {:?}",

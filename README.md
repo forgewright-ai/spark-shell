@@ -755,10 +755,11 @@ the window, its last line says how many rows sit below. In a list,
 Page Up and Page Down move the lit row by a screen, Home and End go to
 its first and its last row.
 
-- `layout`: a saved layout opens on Enter. Words at the prompt make a
-  new one. `save what is open now` asks a name for it. Under `recent`,
-  the last five opened and not saved, each with when; behind one, `save
-  as` gives it a name and `forget` lets it go.
+- `layout`: a saved layout opens on Enter; rename (it asks the new
+  name) and delete are behind it. Words at the prompt make a new one.
+  `save what is open now` asks a name for it. Under `recent`, the last
+  five opened and not saved, each with when; behind one, `save as`
+  gives it a name and `forget` lets it go.
 - `wifi`: disconnect the network in use; connect one around, and a new
   network asks its password once, masked; forget a saved one.
 - `bt`: connect or disconnect your devices, look for new ones, pair a
@@ -811,9 +812,9 @@ its first and its last row.
   puts one in front and close is behind it; and how new windows sit on
   a workspace: side by side, in tabs or stacked.
 - `bar`: hide the bar at the top of the screen, or show it again.
-- Connections: how many sections give the dialog their tools, all on
-  this computer from spark-shell, by the names Settings gives them; one
-  that stopped says why. Then the model.
+- Connections: how many tools the dialog has, all on this computer
+  from spark-shell, then the sections that give them by the names
+  Settings gives them; one that stopped says why. Then the model.
 - `apps`: a terminal window, then a row per app a layout may open.
 - `about`: the version, the licence and the address, then each key on
   one line, its sentence up to the first comma; `spark-shell desktop

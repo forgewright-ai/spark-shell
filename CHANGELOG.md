@@ -23,12 +23,14 @@ What the owner's first evening on v0.114 found, on his tall screen
   screen and an area, each row with its key as a chip beside it.
 - Layouts (#145): `back` was the last ten opened, saved ones and words
   that were commands among them. It is `recent` now: five at most, none
-  saved, each with when, `save as` and `forget` behind it. A command's
+  saved, each with when, `save as` and `forget` behind it; a saved one
+  keeps rename and delete behind its row, no second row. A command's
   words (`layout delete NAME`, `help`) make no layout any more, and the
   ones they made are cleared at the desktop's start.
-- Connections (#146): what is true of every section's tools is said
-  once (how many, on this computer, from spark-shell), their names as
-  Settings writes them; a section that stopped has a row with why.
+- Connections (#146): what is true of every tool is said once (how
+  many, on this computer, from spark-shell), then the sections that give
+  them, by the names Settings writes; a section that stopped has a row
+  with why.
 - A back arrow in the header (#147): wherever there is a view to go
   back to, a click on it goes back, as Esc does. The mouse's habit is
   a browser's.
