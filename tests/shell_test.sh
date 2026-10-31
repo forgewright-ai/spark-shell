@@ -4687,7 +4687,7 @@ _p2=$(page 2); _a3=$(ans 3); _a4=$(ans 4)
 ( FULL=1 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" )
 printf '%s' "$_p2" | jq -e '.play.name == "files_play" and .stop.name == "files_stop" and .seconds == 4.5' >/dev/null \
     && [ "$(printf '%s' "$_a3" | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
-    && grep -qF -- '--wayland-app-id=spark-preview --no-border --osc=no' "$F2/mpv.log" && grep -qF -- '--start=+1.5 -- ' "$F2/mpv.log" \
+    && grep -qF -- '--wayland-app-id=spark-preview --no-border --osc=no' "$F2/mpv.log" && grep -qF -- '--geometry=640x360 --start=+1.5 -- ' "$F2/mpv.log" \
     && grep -qxF '[app_id="spark-preview"] floating enable, border none, resize set 640 360, move absolute position 144 269, opacity 1' "$F2/swaymsg.log" \
     && [ "$(printf '%s' "$_a4" | jq -r '.result.content[0].text')" = 'files: a video plays over its preview: the dialog gives the box' ] \
     && ok "provide files: a video plays over its frame where sway is: mpv with no border laid at the window's corner, foot's padding and the frame's box, shown in the same command that places it (#157); no box says why (#125)" \

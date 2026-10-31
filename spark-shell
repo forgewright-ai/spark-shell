@@ -7347,7 +7347,9 @@ files_play_video() {   # files_play_video PATH AT X Y W H -- a video played over
     _fvg=$(printf '%s %s %s %s %s %s\n' "$3 $4 $5 $6" ${_fvd% *} ${_fvp:-0 0} | awk -v s="${_fvs:-1}" '{ if (s <= 0) s = 1; printf "%d %d %d %d", $5 + $7 + $1 / s, $6 + $8 + $2 / s, $3 / s, $4 / s }')
     files_stop
     # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
-    mpv $MPV_SAFE --wayland-app-id=spark-preview --no-border --osc=no --osd-level=0 --no-terminal --really-quiet --keep-open=no --start="+$2" -- "$1" </dev/null >/dev/null 2>&1 &
+    # its size from its first frame the frame's: mpv left to itself fits the screen's width and keeps to it (#158)
+    mpv $MPV_SAFE --wayland-app-id=spark-preview --no-border --osc=no --osd-level=0 --no-terminal --really-quiet --keep-open=no \
+        --geometry="$(printf '%s' "$_fvg" | awk '{ printf "%dx%d", $3, $4 }')" --start="+$2" -- "$1" </dev/null >/dev/null 2>&1 &
     _fvm=$!; echo "$_fvm" > "$TMP/play.pid"
     # the full screen given back when this play ends, unless another play took the frame meanwhile (#158)
     [ -z "$_fvsw" ] || ( while kill -0 "$_fvm" 2>/dev/null; do sleep 0.2; done; sleep 0.3
