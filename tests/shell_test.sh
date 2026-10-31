@@ -850,7 +850,8 @@ else
     grep -q "^bindsym \$mod+s exec \$term --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog chat\$" "$sway" && ok "sway: the Super+s line names the clone's spark-shell and the dialog's own foot config" || bad "sway Super+s render" "$(grep -n 'mod+s ' "$sway")"
     dini=$HOME/.config/foot/dialog.ini
     grep -qx "include=$HOME/.config/foot/foot.ini" "$dini" && grep -qx 'initial-window-size-chars=60x40' "$dini" && grep -qx 'pad=24x19' "$dini" && grep -qx 'background=0f0f0f' "$dini" && grep -qx 'alpha=1.0' "$dini" && grep -qx '\[colors-dark\]' "$dini" \
-        && ok "dialog.ini: foot.ini included, then the dialog's size, air and surface, opaque (#33)" || bad "dialog.ini" "$(cat "$dini" 2>&1)"
+        && [ "$(sed -n '/^\[environment\]$/,$p' "$dini" | grep -v '^#' | tr '\n' ' ')" = '[environment] SPARK_DIALOG_WINDOW=1 ' ] \
+        && ok "dialog.ini: foot.ini included, then the dialog's size, air and surface, opaque (#33); the window says it is the dialog's, so its prompt is drawn the moment it maps (#138)" || bad "dialog.ini" "$(cat "$dini" 2>&1)"
     grep -qx '16=ff5555' "$foot" && grep -qx '17=555555' "$foot" && grep -qx '18=0f0f0f' "$foot" && grep -qx '19=1e1e1e' "$foot" && grep -q '^20=[0-9a-f]\{6\}$' "$foot" \
         && ok "foot.ini: the five slots after the sixteen, the accent, the muted color, the surface, the lit row, the quiet text (#34)" || bad "foot slots" "$(grep -n '^[12][0-9]=' "$foot")"
     sgr=$HOME/.config/spark-shell/sgr.sh
@@ -4701,6 +4702,38 @@ printf 'DESKTOP=sway\nTHEME=tokyonight-night\n' > "$HOME/.config/spark-shell/con
 _np=0; for _pd in "$REPO"/assets/transitions/*/; do [ -f "$_pd/tokyonight-night/open.gif" ] && [ -f "$_pd/solarized-light/close.gif" ] && _np=$((_np + 1)); done
 [ -f "$REPO/assets/transitions/moon/tokyonight-night/open.gif" ] && grep -q -- '--transitions "$_ta"' "$SH" && [ "$_np" = 6 ] \
     && ok "the dialog is given the piece in the palette in use, every piece in every palette: open, wait, close, at one and two times (#122)" || bad "transitions given" "$(ls "$REPO/assets/transitions")"
+# #138: in the dialog's own window its prompt is drawn the moment the window maps, before the slow part, in the window's
+# slots and on its own screen; elsewhere (a terminal) nothing is drawn ahead of the dialog
+if command -v python3 >/dev/null 2>&1; then
+    cat > "$H/pty_first.py" <<'PY'
+import os, pty, sys
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp("sh", ["sh", sys.argv[1], "dialog"])
+out = b""
+while True:
+    try:
+        b = os.read(fd, 4096)
+    except OSError:
+        break
+    if not b:
+        break
+    out += b
+os.waitpid(pid, 0)
+sys.stdout.write(repr(out[:160]))
+PY
+    _f1=$(SPARK_DIALOG_WINDOW=1 python3 -I "$H/pty_first.py" "$SH" 2>/dev/null); _f2=$(python3 -I "$H/pty_first.py" "$SH" 2>/dev/null)
+    case $_f1 in b?"\\x1b[?1049h\\x1b[?25l\\x1b[3;3H\\x1b[1;38;5;16m\\xe2\\x9d\\xaf\\x1b[0m\\x1b[3;5H\\x1b[38;5;20mType a request."*) _fo=1 ;; *) _fo='' ;; esac
+    [ -n "$_fo" ] && case $_f2 in *1049h*|*'Type a request.'*) false ;; *) true ;; esac \
+        && ok "dialog: in its own window the prompt is drawn first, in the window's slots on its own screen; in a terminal nothing is drawn ahead (#138)" || bad "dialog first frame" "$_f1 | $_f2"
+fi
+# #132: the theme's animation row opens a list of the pieces, as the wallpaper's opens its drawings: the one in use checked,
+# the palette's own said, each with its folder in the palette in use (none with none), Enter the step that sets it
+mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/animations"}')"
+ans 2 | jq -r '.result.contents[0].text' > "$H/anims.json"
+[ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:the palette's own|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|none:blank:no motion" ] \
+    && jq -e --arg d "$REPO/assets/transitions" '(.rows[0].film == ($d + "/moon/tokyonight-night")) and (.rows[-1] | has("film") | not) and all(.rows[]; .tool.name == "theme_animation" and .tool.arguments.to == .text)' "$H/anims.json" >/dev/null \
+    && ok "provide theme: the animation list: the six and none, the one in use checked, the palette's own said, each piece's folder in the palette in use, Enter sets it (#132)" || bad "animation list" "$(cat "$H/anims.json")"
 mkdir -p "$H/gio"; cat > "$H/gio/gio" <<'STUB'
 #!/bin/sh
 echo "gio $*" >> "$HOME/gio.log"

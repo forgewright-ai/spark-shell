@@ -1,5 +1,53 @@
 # Changelog
 
+## v0.114
+
+The dialog full screen, and what the owner's evening on v0.113.1 asked
+of its home, its Settings, its receipts and its first moment (#131 to
+#133, #136 to #140).
+
+- Full screen keeps the dialog at its own width, top to bottom, and
+  gives the space it brings to a pane that shows what the lit row holds
+  (#131): beside the dialog on a wide screen, under its list on a tall
+  one. A place's rows from the home, a setting's section from Settings,
+  a row's facts and actions, the lit file's page in Files (asked once
+  the row has stayed lit a moment), and a year of the Calendar's months
+  ahead. Nothing stretches across the screen any more: the lit row, the
+  arrows and Undo stay where the dialog draws them. The preview Space
+  opens still takes the whole screen.
+- Settings > theme's animation is a list, as the wallpaper is (#132):
+  the six pieces and none, the one in use checked, the palette's own
+  said, the lit piece playing beside the list in your palette, its
+  opening and then its waiting. The dialog's own animations play at
+  the top of the content area, where the rows land, not in its middle.
+- A step's receipt is a toast (#133): one line at the bottom of the
+  content with Undo and an x, gone after ten seconds, on the x, on Esc,
+  or when the view it was made in is left. The home keeps the undo at
+  hand as its first row after that. What you ask spark and its answers
+  are the exchange above the list, as before.
+- The home holds About and Power, a place each (#136): how to lock,
+  log out, restart or shut down is on the home, and About left
+  Settings.
+- Settings stands in groups under headings, as Files does (#137):
+  sound, network, devices, look, system.
+- The dialog's first moment (#138). Its window shows the prompt the
+  moment it maps, drawn by the shell part before its slow start (a
+  cold start took a second), and keys typed then wait for the dialog
+  unseen. A letter typed while the opening plays lands at the prompt and
+  the opening plays on; Enter, Esc, an arrow or a click still cut it.
+  The home's rows no longer flash before the opening: the content area
+  waits for it, and shows the rows if it does not come.
+- The march is spark's alone (#139): it shows while spark works on
+  your words, whose answer comes back as commands at the prompt, and
+  while its model loads. A step, a page or a place's rows being read
+  show none.
+- Files (#140): a long name is cut in its middle, its end and its type
+  kept, as a file manager cuts one; a click lights a file or a folder
+  and a double-click opens it. Elsewhere a row is a place or an action,
+  done on one click.
+- The bar's pointer stays the arrow (#134): swaybar asks for no other
+  shape, and neither the i3bar protocol nor another bar has a way to.
+
 ## v0.113.1
 
 What the owner's first evening on v0.113 found, fixed (#124 to #130,

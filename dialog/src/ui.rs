@@ -4,7 +4,7 @@
 //! turn first, then the view's list), scrolled as it needs; a rule; the footer's controls (Attach, the
 //! model, the mic).
 
-use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, PLACEHOLDER, SETTINGS};
+use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, HEIGHT, MIN_HEIGHT, MIN_WIDTH, PLACEHOLDER, SETTINGS, SETTINGS_DEST, WIDTH};
 use crate::palette::Palette;
 use crate::progress;
 use crate::scrub::{cells, cut, cut_words};
@@ -178,6 +178,13 @@ pub struct Drawn {
     pub wave: Option<(u16, u16, u16, u16)>,
     /// A transition playing (#122): its cells (x, y, w, h), which one, and since when.
     pub film: Option<(u16, u16, u16, u16, Reel, std::time::Instant)>,
+    /// An animation beside a list (#132): its box (x, y, w, h in cells) and the piece's folder, main.rs plays it.
+    pub side_film: Option<(u16, u16, u16, u16, String)>,
+    /// The toast's Undo and its x (#133): their cells (x0, x1, y), for a click.
+    pub toast_undo: Option<(u16, u16, u16)>,
+    pub toast_close: Option<(u16, u16, u16)>,
+    /// The dialog's own column, its first cell and the cell after its last (#131): a click's row is its list's only there.
+    pub columns: (u16, u16),
 }
 
 /// A picture main.rs draws in sixel over cells the buffer skips: where (x, y, w, h in cells), its file,
@@ -237,8 +244,235 @@ pub fn draft_rows(text: &str, cursor: usize, w: usize) -> (Vec<String>, (usize, 
     (rows, at)
 }
 
+/// How the grid is laid out (#131): the dialog at its own size is its one column; full screen keeps the
+/// column at the dialog's width, header to footer, and gives the room it brings to a pane that shows what
+/// the lit row holds: beside the column on a wide screen, under its list on a tall one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Layout {
+    One,
+    /// The column at the left, the pane beside it from this column to the right edge.
+    Wide {
+        pane_x: u16,
+    },
+    /// The column at `x`, the pane its content area's last `pane_h` rows.
+    Tall {
+        x: u16,
+        pane_h: u16,
+    },
+}
+
+/// A pane this wide at least beside the column, this many rows at least under its list.
+pub const PANE_MIN_W: u16 = 40;
+pub const PANE_MIN_H: u16 = 16;
+
+pub fn layout(w: u16, h: u16) -> Layout {
+    if w >= WIDTH + 2 + PANE_MIN_W && h >= MIN_HEIGHT {
+        Layout::Wide { pane_x: WIDTH + 2 }
+    } else if w >= WIDTH && h >= HEIGHT + PANE_MIN_H {
+        Layout::Tall {
+            x: (w - WIDTH) / 2,
+            pane_h: h - HEIGHT,
+        }
+    } else {
+        Layout::One
+    }
+}
+
+/// The width the dialog's own column has at this size: its words wrap to it.
+pub fn column_width(w: u16, h: u16) -> u16 {
+    match layout(w, h) {
+        Layout::One => w,
+        _ => WIDTH,
+    }
+}
+
+impl Drawn {
+    /// Every place moved right by `dx` cells: the column drawn apart, then laid at its place on the screen.
+    fn shift(&mut self, dx: u16) {
+        self.cursor.0 += dx;
+        for c in &mut self.chips {
+            c.0 += dx;
+            c.1 += dx;
+        }
+        for k in &mut self.keys {
+            k.0 += dx;
+            k.1 += dx;
+        }
+        self.close = self.close.map(|(a, b)| (a + dx, b + dx));
+        if let Some(p) = self.preview.as_mut() {
+            p.x += dx;
+        }
+        self.wave = self.wave.map(|(x, y, w, h)| (x + dx, y, w, h));
+        self.film = self.film.map(|(x, y, w, h, r, t)| (x + dx, y, w, h, r, t));
+        if let Some(s) = self.side_film.as_mut() {
+            s.0 += dx;
+        }
+        self.toast_undo = self.toast_undo.map(|(a, b, y)| (a + dx, b + dx, y));
+        self.toast_close = self.toast_close.map(|(a, b, y)| (a + dx, b + dx, y));
+        self.columns = (self.columns.0 + dx, self.columns.1 + dx);
+    }
+}
+
+/// `part`'s cells laid on `buf` with its corner at (x, y), each as it is, the cells a picture keeps included.
+fn blit(buf: &mut Buffer, part: &Buffer, x: u16, y: u16) {
+    for yy in 0..part.area.height {
+        for xx in 0..part.area.width {
+            if x + xx < buf.area.width && y + yy < buf.area.height {
+                buf[(x + xx, y + yy)] = part[(xx, yy)].clone();
+            }
+        }
+    }
+}
+
 /// The local date and time as the person's locale writes them; main.rs makes it, this draws it.
 pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
+    let (w, h) = (buf.area.width, buf.area.height);
+    buf.set_style(Rect::new(0, 0, w, h), Style::default().fg(pal.fg));
+    // a preview opened on Space keeps the whole screen: its zoom and its drag want the room (#120)
+    let lay = if app.view == View::Preview { Layout::One } else { layout(w, h) };
+    match lay {
+        Layout::One => {
+            let mut d = draw_column(app, pal, clock, buf, 0);
+            d.columns = (0, w);
+            d
+        }
+        Layout::Wide { pane_x } => {
+            let mut col = Buffer::empty(Rect::new(0, 0, WIDTH, h));
+            let mut drawn = draw_column(app, pal, clock, &mut col, 0);
+            drawn.columns = (0, WIDTH);
+            blit(buf, &col, 0, 0);
+            // the column and the pane parted by a line in the lit row's color, from the header to the footer
+            for y in 0..h {
+                buf[(pane_x - 1, y)].set_symbol("\u{2502}").set_fg(pal.lit);
+            }
+            let area = Rect::new(pane_x + 1, 0, w - pane_x - 2, h - 1);
+            pane(app, pal, clock, buf, area, &mut drawn);
+            drawn
+        }
+        Layout::Tall { x, pane_h } => {
+            let mut col = Buffer::empty(Rect::new(0, 0, WIDTH, h));
+            let mut drawn = draw_column(app, pal, clock, &mut col, pane_h);
+            blit(buf, &col, x, 0);
+            drawn.shift(x);
+            drawn.columns = (x, x + WIDTH);
+            // the list's end, a rule in the lit row's color, then the pane down to the bottom's air
+            let rule_y = h - BOTTOM - pane_h;
+            for xx in x + 2..x + WIDTH - 2 {
+                buf[(xx, rule_y)].set_symbol(RULE).set_fg(pal.lit);
+            }
+            let area = Rect::new(x, rule_y + 2, WIDTH, pane_h.saturating_sub(3));
+            pane(app, pal, clock, buf, area, &mut drawn);
+            drawn
+        }
+    }
+}
+
+/// The pane full screen brings (#131): what the lit row holds, under its name and its state. The lit file's page in
+/// Files (its picture, its text); the lit place's or setting's rows; a row's facts and actions; the Calendar's months
+/// after the two the column shows. The row followed is the one lit, or the first while the prompt has the keys.
+fn pane(app: &App, pal: &Palette, _clock: &str, buf: &mut Buffer, area: Rect, drawn: &mut Drawn) {
+    if area.width < 12 || area.height < 6 {
+        return;
+    }
+    let mut part = Buffer::empty(Rect::new(0, 0, area.width, area.height));
+    part.set_style(part.area, Style::default().fg(pal.fg));
+    let mut picture = None;
+    {
+        let mut pen = Pen {
+            buf: &mut part,
+            pal,
+            w: area.width,
+            h: area.height,
+            stop: None,
+        };
+        let (w, h) = (area.width, area.height);
+        if app.is_calendar() {
+            pen.put(2, 0, "the months ahead", pal.muted, false, false);
+            months(app, &mut pen, 2, h, 2);
+        } else if let Some((title, sub, items)) = app.pane_of() {
+            // a file's page brings its own facts (its size as it plays, its pages): they stand under its name
+            let side = app.side.as_ref().filter(|_| app.side_here());
+            let sub = match side.and_then(|pv| pv.shown.as_ref()) {
+                Some(pg) => pg.facts.join(SEP),
+                None => sub,
+            };
+            pen.put(2, 0, &cut_words(&title, w.saturating_sub(4) as usize), pal.fg, true, false);
+            if !sub.is_empty() {
+                pen.put(2, 1, &cut_words(&sub, w.saturating_sub(4) as usize), pal.muted, false, false);
+            }
+            if let Some(pv) = side {
+                picture = side_page(&mut pen, pv, 3, h);
+            } else {
+                rows_in(app, &mut pen, &items, 3, h);
+            }
+        }
+    }
+    blit(buf, &part, area.x, area.y);
+    if let Some(mut p) = picture {
+        p.x += area.x;
+        p.y += area.y;
+        drawn.preview = Some(p);
+    }
+}
+
+/// A list drawn as the content draws one, nothing lit, from `top`; what does not fit is said as how many more.
+fn rows_in(app: &App, pen: &mut Pen, items: &[Item], top: u16, bottom: u16) {
+    let pal = pen.pal.clone();
+    let (widths, right) = widths(app, items);
+    let samples = items.iter().any(|it| row_of(app, it).is_some_and(|r| r.swatch.is_some()));
+    let room = bottom.saturating_sub(top) as usize;
+    let show = if items.len() > room { room.saturating_sub(1) } else { items.len() };
+    for (k, it) in items.iter().take(show).enumerate() {
+        item_line(app, pen, it, top + k as u16, false, (&widths, &right, samples, false));
+    }
+    let left = items[show..].iter().filter(|it| !matches!(it, Item::Heading(_) | Item::Blank)).count();
+    if left > 0 {
+        let y = top + show as u16;
+        pen.put(4, y, BELOW, pal.muted, false, false);
+        pen.put(6, y, &format!("{} more", left), pal.muted, false, false);
+    }
+}
+
+/// The lit file's page in the pane (#131): its picture fit to the room, else its text from its start (its facts stand
+/// under its name); nothing yet while it comes.
+fn side_page(pen: &mut Pen, pv: &crate::preview::Preview, top: u16, bottom: u16) -> Preview {
+    let pal = pen.pal.clone();
+    let pg = pv.shown.as_ref()?;
+    let (x0, w) = (2u16, pen.w.saturating_sub(4));
+    let rows = bottom.saturating_sub(top + 1);
+    let mut picture = None;
+    if let Some(png) = &pg.picture {
+        picture = Some(skip(
+            pen,
+            Picture {
+                x: x0,
+                y: top,
+                w,
+                h: rows,
+                file: png.clone(),
+                view: Viewport::FIT,
+                spectrogram: false,
+            },
+        ));
+    } else if let Some(say) = &pg.say {
+        let t = cut_words(say, w as usize);
+        pen.put(x0 + w.saturating_sub(cells(&t) as u16) / 2, top + rows / 2, &t, pal.muted, false, false);
+    } else {
+        let lines: Vec<(usize, String)> = pg
+            .lines
+            .iter()
+            .enumerate()
+            .flat_map(|(i, l)| fold(l, w as usize).into_iter().map(move |f| (i, f)))
+            .collect();
+        for (r, (i, f)) in lines.iter().take(rows as usize).enumerate() {
+            pen.put(x0, top + r as u16, f, pal.fg, pg.bold.contains(i), false);
+        }
+    }
+    picture
+}
+
+/// The dialog's own column, `reserve` rows at its content's end left to the pane under it (#131).
+fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, reserve: u16) -> Drawn {
     let mut drawn = Drawn::default();
     let (w, h) = (buf.area.width, buf.area.height);
     let area = Rect::new(0, 0, w, h);
@@ -261,7 +495,7 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     // the march sits before the date while something runs; where the window is too narrow for both,
     // it takes the date's place, which comes back when the work is done
     let clock_x = right.saturating_sub(2 + cells(clock) as u16);
-    let busy = app.cfg.progress && app.busy();
+    let busy = app.cfg.progress && app.thinking();
     let title = app.title();
     let narrow = clock_x.saturating_sub(12) < x + cells(&title) as u16 + 1;
     let (end, march_x) = match (busy, narrow) {
@@ -342,7 +576,7 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let shift = shift + if target.is_some() { 2 } else { 0 };
 
     // the content first: a preview's text decides the pages its key row offers
-    let bottom = h - BOTTOM;
+    let bottom = h - BOTTOM - reserve;
     let content_y = CONTENT_Y + shift;
     if let Some((reel, since)) = app.motion {
         // a transition: the content area is its, in its middle (main.rs draws it)
@@ -372,7 +606,7 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
         if app.is_calendar() {
             top = calendar(app, &mut pen, clock, content_y, bottom) + 1;
         }
-        let (picks, preview) = content(app, &mut pen, top, bottom);
+        let (picks, preview) = content(app, &mut pen, top, bottom, &mut drawn);
         drawn.picks = picks;
         drawn.preview = preview;
     }
@@ -507,7 +741,7 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         Item::Heading(h) => {
             pen.put(2, y, h, pal.muted, false, false);
         }
-        Item::Blank => {}
+        Item::Blank | Item::Toast => {}
         Item::Said(s, text, first) => said_line(pen, s, text, *first, y, false),
         Item::Undo(s, text, first) => {
             // the result the undo at hand takes back, with Undo at its end where the rows' signs end (#53)
@@ -523,7 +757,9 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         }
         Item::Setting(i) => {
             let (label, name, purpose) = SETTINGS[*i];
-            pen.put(2, y, name, pal.fg, false, lit);
+            // in Settings the rows sit under their groups' headings, as a folder's do (#137); found from the home, beside the places
+            let ind = if app.view == View::Dest(SETTINGS_DEST) { 2 } else { 0 };
+            pen.put(2 + ind, y, name, pal.fg, false, lit);
             // a section's own state reads better than its purpose where it has one (on, a level, a name)
             let state = if label == "talk" {
                 Some(if app.talk == Talk::Off { "Off" } else { "Click the mic" }.to_string())
@@ -532,10 +768,17 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
                     .iter()
                     .find(|p| p.label == label)
                     .map(|p| p.title.clone())
-                    .filter(|t| !t.is_empty() && label != "about")
+                    .filter(|t| !t.is_empty())
             };
             let words = state.unwrap_or_else(|| purpose.to_string());
-            pen.put(PURPOSE_X, y, &cut_words(&words, (w - PURPOSE_X - 4) as usize), pal.muted, false, lit);
+            pen.put(
+                PURPOSE_X + ind,
+                y,
+                &cut_words(&words, (w - PURPOSE_X - ind - 4) as usize),
+                pal.muted,
+                false,
+                lit,
+            );
             pen.put(w - 3, y, MORE, pal.muted, false, lit);
         }
         Item::Title(t) => {
@@ -662,7 +905,7 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     let said = app.items().len() as u16;
     let (picks, y) = if said > 0 {
         let end = (top + said).min(bottom.saturating_sub(6));
-        (content(app, pen, top, end).0, end + 1)
+        (content(app, pen, top, end, drawn).0, end + 1)
     } else {
         (vec![], top)
     };
@@ -879,17 +1122,21 @@ fn sound(
     })
 }
 
-fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> (Vec<(u16, usize)>, Preview) {
+fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> (Vec<(u16, usize)>, Preview) {
     let mut at = vec![];
     let items = app.items();
     let picks: Vec<usize> = items.iter().enumerate().filter(|(_, it)| app.pickable_item(it)).map(|(i, _)| i).collect();
     let selected = if app.in_list { picks.get(app.sel).copied() } else { None };
+    // the toast, the last item: its own line at the content's bottom with a blank row above it, out of the scroll (#133)
+    let toast = matches!(items.last(), Some(Item::Toast)) && bottom >= top + 4;
+    let n = if toast { items.len() - 1 } else { items.len() };
+    let (end, bottom) = (bottom, if toast { bottom - 2 } else { bottom });
     let all = bottom.saturating_sub(top) as usize;
     // a list longer than the area keeps its last line to say how many rows sit below
-    let room = if items.len() > all { all.saturating_sub(1) } else { all };
+    let room = if n > all { all.saturating_sub(1) } else { all };
     // the picked row in view; else where Page Up and Page Down left it
-    let mut first = app.scroll.min(items.len().saturating_sub(room));
-    if let Some(s) = selected {
+    let mut first = app.scroll.min(n.saturating_sub(room));
+    if let Some(s) = selected.filter(|s| *s < n) {
         first = first.min(s);
         if s >= first + room {
             first = s + 1 - room;
@@ -951,8 +1198,37 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> (Vec<(u16, usize)
             pen.stop = stop;
         }
     }
+    // a list whose rows bring an animation (#132): the lit row's plays where a wallpaper's picture is drawn, else the
+    // one in use; a lit row with none (no motion) leaves the box empty, the rows beside it ending before it either way
+    if preview.is_none() && pen.w >= 2 * PREVIEW_W && items.iter().any(|it| row_of(app, it).is_some_and(|r| r.film.is_some())) {
+        let film = match selected.and_then(|k| row_of(app, &items[k])) {
+            Some(r) => r.film.clone(),
+            None => items
+                .iter()
+                .filter_map(|it| row_of(app, it))
+                .find(|r| r.sign == "check")
+                .and_then(|r| r.film.clone()),
+        };
+        let k0 = items
+            .iter()
+            .position(|it| matches!(it, Item::Heading(_) | Item::Row(..) | Item::Folder(_)))
+            .unwrap_or(0);
+        let top = top + k0.saturating_sub(first) as u16;
+        let x = pen.w - 2 - PREVIEW_W;
+        if top + PREVIEW_H + 1 < bottom {
+            if let Some(f) = film {
+                for yy in top..(top + PREVIEW_H).min(pen.h) {
+                    for xx in x..(x + PREVIEW_W).min(pen.w) {
+                        pen.buf[(xx, yy)].set_diff_option(CellDiffOption::Skip);
+                    }
+                }
+                drawn.side_film = Some((x, top, PREVIEW_W, PREVIEW_H, f));
+            }
+            pen.stop = Some((top, top + PREVIEW_H + 2, x - 2));
+        }
+    }
     let pal = pen.pal.clone();
-    let below = items
+    let below = items[..n]
         .iter()
         .skip(first + room)
         .filter(|it| !matches!(it, Item::Heading(_) | Item::Blank))
@@ -971,7 +1247,7 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> (Vec<(u16, usize)
         .filter(|r| !r.chip.is_empty())
         .map(|r| r.group.clone())
         .collect();
-    for (k, it) in items.iter().enumerate().skip(first).take(room) {
+    for (k, it) in items[..n].iter().enumerate().skip(first).take(room) {
         let y = top + (k - first) as u16;
         let lit = Some(k) == selected;
         if let Some(n) = picks.iter().position(|i| *i == k) {
@@ -984,6 +1260,30 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16) -> (Vec<(u16, usize)
         item_line(app, pen, it, y, lit, (&widths, &right, samples, chips));
     }
     pen.stop = None;
+    if let (true, Some(t)) = (toast, app.toast.as_ref()) {
+        // the receipt's sign at 4 and its words at 6, as a row's; Undo, then the x where the rows' arrows stand
+        let (y, k) = (end - 1, items.len() - 1);
+        let lit = Some(k) == selected;
+        if let Some(i) = picks.iter().position(|i| *i == k) {
+            at.push((y, i));
+        }
+        if lit {
+            pen.light(y);
+        }
+        let (sg, sc) = if t.sign == Sign::Refused { (CROSS, pal.alarm) } else { (CHECK, pal.accent) };
+        let close_x = pen.w - 3;
+        let undo_x = close_x - 6;
+        let undo = t.undo && app.undo.is_some();
+        pen.put(4, y, sg, sc, false, lit);
+        let room = if undo { undo_x } else { close_x }.saturating_sub(8);
+        pen.put(6, y, &cut_words(&t.text, room as usize), pal.fg, false, lit);
+        if undo {
+            pen.put(undo_x, y, "Undo", if lit { pal.fg } else { pal.muted }, false, lit);
+            drawn.toast_undo = Some((undo_x - 1, undo_x + 5, y));
+        }
+        pen.put(close_x, y, CLOSE, pal.muted, false, lit);
+        drawn.toast_close = Some((close_x - 1, close_x + 2, y));
+    }
     (at, preview)
 }
 
@@ -1038,7 +1338,14 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &
     if let Some([r, gr, b]) = row.swatch {
         pen.put(6, y, SAMPLE, Color::Rgb(r, gr, b), false, lit);
     }
-    let name = if row.columns.is_empty() { row.text.clone() } else { cut(&row.text, 26) };
+    // a file's or a folder's name cut in its middle, its type kept (#140); other rows' at their end
+    let name = if row.columns.is_empty() {
+        row.text.clone()
+    } else if row.id.starts_with("files:") {
+        crate::scrub::cut_middle(&row.text, 26)
+    } else {
+        cut(&row.text, 26)
+    };
     let mut x = pen.put(tx, y, &name, pal.fg, false, lit);
     let name_end = tx + widths.first().copied().unwrap_or(0) as u16;
     if let Some(st) = &row.step {
@@ -1124,7 +1431,7 @@ fn time_of(clock: &str) -> Option<(&str, Option<&str>)> {
 /// The reminders, to add, mark done or snooze, are the content's rows below. Returns the row after
 /// the months.
 fn calendar(app: &App, pen: &mut Pen, clock: &str, top: u16, bottom: u16) -> u16 {
-    use crate::calendar::{shift, strokes, weeks_from, ymd, DAYS, MONTHS};
+    use crate::calendar::strokes;
     let pal = pen.pal.clone();
     let mut top = top;
     // the figures where they leave room for a month under them, with a row of air between
@@ -1139,6 +1446,20 @@ fn calendar(app: &App, pen: &mut Pen, clock: &str, top: u16, bottom: u16) -> u16
         }
         top += rows.len() as u16 + 1;
     }
+    // two months side by side where they fit, else this month alone
+    let two = pen.w >= MONTH_X[1] + 28;
+    let mut low = top;
+    for (k, x0) in MONTH_X.iter().enumerate().take(if two { 2 } else { 1 }) {
+        low = low.max(month(app, pen, *x0, top, bottom, k as i32).unwrap_or(top));
+    }
+    low
+}
+
+/// One month as weeks at (x0, top), `k` months after the first the Calendar shows: today a chip, a day with a
+/// reminder in the accent. Returns the row after it; None before the day is known.
+fn month(app: &App, pen: &mut Pen, x0: u16, top: u16, bottom: u16, k: i32) -> Option<u16> {
+    use crate::calendar::{shift, weeks_from, ymd, DAYS, MONTHS};
+    let pal = pen.pal.clone();
     // the reminders provider's rows that are for a day
     let dated: Vec<(i32, u32, u32)> = app
         .providers
@@ -1146,41 +1467,52 @@ fn calendar(app: &App, pen: &mut Pen, clock: &str, top: u16, bottom: u16) -> u16
         .find(|p| p.label == "reminders")
         .map(|p| p.rows.rows.iter().filter_map(|r| ymd(r.date.as_deref()?)).collect())
         .unwrap_or_default();
-    let Some((ty, tm, td)) = app.today else { return top };
-    // two months side by side where they fit, else this month alone
-    let two = pen.w >= MONTH_X[1] + 28;
-    let mut low = top;
-    for (k, x0) in MONTH_X.iter().enumerate().take(if two { 2 } else { 1 }) {
-        let (yr, mo) = shift(ty, tm, app.month_offset + k as i32);
-        let mut y = top;
-        pen.put(*x0, y, &format!("{} {}", MONTHS[(mo - 1) as usize], yr), pal.muted, false, false);
-        y += 1;
-        for i in 0..7 {
-            let d = DAYS[(i + usize::from(app.monday_first)) % 7];
-            pen.put(x0 + i as u16 * 4, y, d, pal.muted, false, false);
+    let (ty, tm, td) = app.today?;
+    let (yr, mo) = shift(ty, tm, app.month_offset + k);
+    let mut y = top;
+    pen.put(x0, y, &format!("{} {}", MONTHS[(mo - 1) as usize], yr), pal.muted, false, false);
+    y += 1;
+    for i in 0..7 {
+        let d = DAYS[(i + usize::from(app.monday_first)) % 7];
+        pen.put(x0 + i as u16 * 4, y, d, pal.muted, false, false);
+    }
+    y += 1;
+    for wk in weeks_from(yr, mo, app.monday_first) {
+        if y >= bottom {
+            break;
+        }
+        for (i, d) in wk.iter().enumerate() {
+            let Some(d) = d else { continue };
+            let x = x0 + i as u16 * 4;
+            let n = format!("{:>2}", d);
+            if (yr, mo, *d) == (ty, tm, td) {
+                pen.chip(x - 1, y, &n, false); // today, a cell of air each side
+            } else if dated.contains(&(yr, mo, *d)) {
+                pen.put(x, y, &n, pal.accent, true, false);
+            } else {
+                pen.put(x, y, &n, pal.fg, false, false);
+            }
         }
         y += 1;
-        for wk in weeks_from(yr, mo, app.monday_first) {
-            if y >= bottom {
+    }
+    Some(y)
+}
+
+/// The months after the column's two, as many as the pane holds, in rows of as many as fit across (#131): a year
+/// ahead on a wide screen, the months down a tall one.
+fn months(app: &App, pen: &mut Pen, top: u16, bottom: u16, from: i32) {
+    let across = (pen.w / 30).max(1); // a month 28 cells and 2 of air, from column 2, as the column's two
+    let (mut y, mut k) = (top, from);
+    while y + 8 <= bottom && k < from + 12 {
+        for c in 0..across {
+            if k >= from + 12 {
                 break;
             }
-            for (i, d) in wk.iter().enumerate() {
-                let Some(d) = d else { continue };
-                let x = x0 + i as u16 * 4;
-                let n = format!("{:>2}", d);
-                if (yr, mo, *d) == (ty, tm, td) {
-                    pen.chip(x - 1, y, &n, false); // today, a cell of air each side
-                } else if dated.contains(&(yr, mo, *d)) {
-                    pen.put(x, y, &n, pal.accent, true, false);
-                } else {
-                    pen.put(x, y, &n, pal.fg, false, false);
-                }
-            }
-            y += 1;
+            month(app, pen, 2 + c * 30, y, bottom, k);
+            k += 1;
         }
-        low = low.max(y);
+        y += 9;
     }
-    low
 }
 
 /// A key's sentence up to its first comma, colon or semicolon, with no period: the part the about

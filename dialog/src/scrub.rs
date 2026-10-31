@@ -39,6 +39,34 @@ pub fn cut(s: &str, cells: usize) -> String {
     out
 }
 
+/// A file's name cut to `n` cells in its middle, its end and its type kept, as a file manager cuts one (#140):
+/// "quarterly-repor\u{2026}nal-v3.pdf". The end kept is the extension and six cells before it, two fifths of the
+/// room at least; a name that fits stays whole.
+pub fn cut_middle(s: &str, n: usize) -> String {
+    if cells(s) <= n {
+        return s.to_string();
+    }
+    if n < 4 {
+        return cut(s, n);
+    }
+    let ext = s.rfind('.').filter(|&i| i > 0 && s.len() - i <= 9).map(|i| cells(&s[i..])).unwrap_or(0);
+    let tail_cells = (ext + 6).max(n * 2 / 5).min(n - 2);
+    // the end: the last characters that fit tail_cells
+    let mut tail: Vec<char> = vec![];
+    let mut w = 0;
+    for c in s.chars().rev() {
+        let cw = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+        if w + cw > tail_cells {
+            break;
+        }
+        w += cw;
+        tail.push(c);
+    }
+    tail.reverse();
+    let head = cut(s, n - 1 - w);
+    format!("{}\u{2026}{}", head, tail.into_iter().collect::<String>())
+}
+
 /// The text cut to `n` cells at a word, with an ellipsis where words were left out; a first word
 /// longer than the room is cut where it must be (#27).
 pub fn cut_words(s: &str, n: usize) -> String {
@@ -74,6 +102,16 @@ pub fn cells(s: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_file_name_is_cut_in_its_middle_and_keeps_its_type() {
+        let c = cut_middle("quarterly-report-for-the-board-final-v3.pdf", 26);
+        assert_eq!(cells(&c), 26, "{}", c);
+        assert!(c.starts_with("quarterly-repor") && c.ends_with("nal-v3.pdf") && c.contains('\u{2026}'), "{}", c);
+        assert_eq!(cut_middle("notes.md", 26), "notes.md", "a name that fits stays whole");
+        let d = cut_middle("a-folder-with-a-very-long-name-and-no-type", 26);
+        assert!(cells(&d) == 26 && d.ends_with("-no-type"), "a folder keeps its end too: {}", d);
+    }
 
     #[test]
     fn every_class_goes() {

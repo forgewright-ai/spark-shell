@@ -68,6 +68,8 @@ pub enum Kind {
     Folder,
     /// A preview's page (#120).
     Page,
+    /// The lit file's page in full screen's pane (#131).
+    Side,
     /// A sound's play or stop in a preview: a key, not a turn (#120).
     Quiet,
     Subscribe,

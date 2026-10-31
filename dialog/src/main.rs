@@ -42,6 +42,8 @@ enum Ev {
     Helper(Helper, Result<String, String>),
     /// The transitions' piece, decoded (#122): None when it could not be.
     Films(Option<transition::Films>),
+    /// A piece lit in the animation list, decoded (#132): its folder, and None when it could not be.
+    Side(String, Option<transition::Films>),
 }
 
 struct Args {
@@ -242,6 +244,8 @@ fn image<'a>(file: &str, cache: &'a mut Option<(String, std::time::SystemTime, I
 
 /// A transition drawn: its box, which one, its frame.
 type ShownFilm = ((u16, u16, u16, u16), Reel, usize);
+/// A piece beside a list drawn (#132): its box, its folder, the wait or the open, its frame.
+type ShownSide = ((u16, u16, u16, u16), String, bool, usize);
 /// A sound's spectrogram in the palette: its file, the palette's ramp, its box, the picture.
 type Tinted = (String, [[u8; 3]; 4], (u32, u32), Image);
 
@@ -252,26 +256,32 @@ fn rgb(c: ratatui::style::Color) -> [u8; 3] {
     }
 }
 
-/// The transitions' piece (#122), decoded aside so the window draws at once; @2x where a cell is
-/// twice the usual height. Again when a theme step changes the look (#126).
-fn spawn_films(dir: String, tx: mpsc::Sender<Ev>) {
+/// A piece's three films from its folder; @2x where a cell is twice the usual height. None where one is
+/// missing or no GIF.
+fn decode_films(dir: &str) -> Option<transition::Films> {
     let double = cell_px().is_some_and(|(_, ch)| ch >= 30);
+    let one = |reel: &str| {
+        let f = format!("{}/{}{}.gif", dir, reel, if double { "@2x" } else { "" });
+        let bytes = std::fs::read(&f).ok().filter(|b| b.len() <= 4 << 20)?;
+        transition::film(&bytes)
+    };
+    Some(transition::Films {
+        open: one("open")?,
+        wait: one("wait")?,
+        close: one("close")?,
+    })
+}
+
+/// The transitions' piece (#122), decoded aside so the window draws at once. Again when a theme step
+/// changes the look (#126).
+fn spawn_films(dir: String, tx: mpsc::Sender<Ev>) {
     std::thread::spawn(move || {
-        let one = |reel: &str| {
-            let f = format!("{}/{}{}.gif", dir, reel, if double { "@2x" } else { "" });
-            let bytes = std::fs::read(&f).ok().filter(|b| b.len() <= 4 << 20)?;
-            transition::film(&bytes)
-        };
-        let films = (|| {
-            Some(transition::Films {
-                open: one("open")?,
-                wait: one("wait")?,
-                close: one("close")?,
-            })
-        })();
-        let _ = tx.send(Ev::Films(films));
+        let _ = tx.send(Ev::Films(decode_films(&dir)));
     });
 }
+
+/// Two clicks on a row this close together are a double-click, the desktop's usual (#140).
+const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 
 /// A drag's pictures, this far apart at least (#129).
 const DRAG_GAP: Duration = Duration::from_millis(40);
@@ -285,7 +295,8 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
     let clicks = (row == 0 && drawn.close.is_some_and(|(a, b)| span(a, b, 0)))
         || drawn.chips.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.keys.iter().any(|(a, b, y, _)| span(*a, *b, *y))
-        || drawn.wave.is_some_and(on);
+        || drawn.wave.is_some_and(on)
+        || [drawn.toast_undo, drawn.toast_close].iter().flatten().any(|(a, b, y)| span(*a, *b, *y));
     if dragging {
         "grabbing"
     } else if clicks {
@@ -294,7 +305,7 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
         "grab"
     } else if row >= drawn.prompt.0 && row <= drawn.prompt.1 {
         "text"
-    } else if drawn.picks.iter().any(|(y, _)| *y == row) {
+    } else if drawn.picks.iter().any(|(y, _)| *y == row) && col >= drawn.columns.0 && col < drawn.columns.1 {
         "pointer"
     } else {
         "default"
@@ -389,14 +400,27 @@ fn main() {
     app.start();
     if let Some(dir) = app.cfg.transitions.clone() {
         spawn_films(dir, tx.clone());
+        // the opening is pending from the first frame: the home's rows wait for it, never a flash of them before it (#138)
+        if app.cfg.home.is_none() && app.view == View::Home {
+            app.motion = Some((Reel::Open, Instant::now()));
+        }
     }
     let started = Instant::now();
     let (mut drag_drawn, mut drag_owed) = (Instant::now(), false);
+    // the last click on a row of Files: where, which, when (#140)
+    let mut last_click: Option<(u16, usize, Instant)> = None;
     let mut pointer = "";
     let mut films: Option<transition::Films> = None;
     // the transition drawn now: its box, which one, its frame
     let mut shown_film: Option<ShownFilm> = None;
     let mut film_due: Option<Duration> = None;
+    // an animation beside a list (#132): the piece lit, decoded aside, and since when it plays; the one being decoded;
+    // the frame drawn now (its box, its folder, the wait or the open, the frame)
+    let mut side: Option<(String, Option<transition::Films>, Instant)> = None;
+    let mut side_loading: Option<String> = None;
+    let mut shown_side: Option<ShownSide> = None;
+    let mut side_due: Option<Duration> = None;
+    let side_tx = tx.clone();
 
     let mut term = match Terminal::new(CrosstermBackend::new(std::io::stdout())) {
         Ok(t) => t,
@@ -524,7 +548,8 @@ fn main() {
                 }
                 preview_tried = Instant::now();
             }
-            // a transition: its frame now, in the middle of its box, at the GIF's own pace (#122)
+            // a transition: its frame now, at the top left of its box, where the rows land and give way to it (#132), at
+            // the GIF's own pace (#122)
             film_due = None;
             match (drawn.film, &films, cell_px()) {
                 (Some((x, y, w, h, reel, since)), Some(f), Some((cw, chh))) if sixel_ok => {
@@ -534,10 +559,7 @@ fn main() {
                     if shown_film != Some(at) {
                         // its cells cleared and the frame drawn in one synchronized update: the ground is
                         // the window's own, and no frame shows half drawn
-                        let (dx, dy) = (
-                            ((w as u32 * cw).saturating_sub(film.w) / 2 / cw) as u16,
-                            ((h as u32 * chh).saturating_sub(film.h) / 2 / chh) as u16,
-                        );
+                        let (dx, dy) = (0u16, 0u16);
                         let (fw, fh) = ((film.w.div_ceil(cw) as u16).min(w - dx), (film.h.div_ceil(chh) as u16).min(h - dy));
                         let _ = out.write_all(b"\x1b[?2026h");
                         if shown_film.is_none_or(|(b, _, _)| b != (x, y, w, h)) {
@@ -560,19 +582,71 @@ fn main() {
                 }
                 _ => shown_film = None,
             }
+            // an animation beside a list (#132): the lit piece's open, then its wait looped, from when it was lit, in the
+            // middle of the box a wallpaper's picture takes
+            side_due = None;
+            match (&drawn.side_film, cell_px()) {
+                (Some((x, y, w, h, dir)), Some((cw, chh))) if sixel_ok => {
+                    let bx = (*x, *y, *w, *h);
+                    if side.as_ref().is_none_or(|(d, _, _)| d != dir) && side_loading.as_deref() != Some(dir.as_str()) {
+                        side_loading = Some(dir.clone());
+                        let (tx, dir) = (side_tx.clone(), dir.clone());
+                        std::thread::spawn(move || {
+                            let f = decode_films(&dir);
+                            let _ = tx.send(Ev::Side(dir, f));
+                        });
+                    }
+                    if shown_side.as_ref().is_some_and(|(b, d, _, _)| *b != bx || d != dir) {
+                        // another piece lit: the box is cleared while it comes
+                        let _ = out.write_all(b"\x1b[?2026h");
+                        blank(&mut out, bx, term_color(pal.surface));
+                        let _ = out.write_all(b"\x1b[?2026l");
+                        let _ = out.flush();
+                        shown_side = None;
+                    }
+                    if let Some((_, Some(f), since)) = side.as_ref().filter(|(d, _, _)| d == dir) {
+                        let ms = since.elapsed().as_millis();
+                        let opened = f.open.length();
+                        let (film, waiting, t) = if ms < opened { (&f.open, false, ms) } else { (&f.wait, true, ms - opened) };
+                        let (k, left) = film.at(t, waiting);
+                        let at = (bx, dir.clone(), waiting, k);
+                        if shown_side.as_ref() != Some(&at) {
+                            let (dx, dy) = (
+                                ((*w as u32 * cw).saturating_sub(film.w) / 2 / cw) as u16,
+                                ((*h as u32 * chh).saturating_sub(film.h) / 2 / chh) as u16,
+                            );
+                            let _ = out.write_all(b"\x1b[?2026h");
+                            blank(&mut out, bx, term_color(pal.surface));
+                            let _ = queue!(
+                                out,
+                                ratatui::crossterm::cursor::SavePosition,
+                                ratatui::crossterm::cursor::MoveTo(x + dx, y + dy)
+                            );
+                            let _ = out.write_all(film.frames[k].0.as_bytes());
+                            let _ = queue!(out, ratatui::crossterm::cursor::RestorePosition);
+                            let _ = out.write_all(b"\x1b[?2026l");
+                            let _ = out.flush();
+                            shown_side = Some(at);
+                        }
+                        side_due = Some(Duration::from_millis(left.clamp(1, 1000) as u64));
+                    }
+                }
+                _ => shown_side = None,
+            }
             dirty = again;
         }
         if app.quit.is_some() {
             break;
         }
         // a transition playing wakes for its next frame, a drag for its next picture; else the next event
-        let due = match (
+        let due = [
             film_due,
+            side_due,
             drag_owed.then(|| DRAG_GAP.saturating_sub(drag_drawn.elapsed()).max(Duration::from_millis(1))),
-        ) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        };
+        ]
+        .into_iter()
+        .flatten()
+        .min();
         let ev = match due {
             Some(d) => match rx.recv_timeout(d) {
                 Ok(ev) => ev,
@@ -593,11 +667,20 @@ fn main() {
         };
         match ev {
             Ev::Gone => app.quit = Some(129),
+            Ev::Side(dir, f) => {
+                if side_loading.as_deref() == Some(dir.as_str()) {
+                    side_loading = None;
+                    side = Some((dir, f, Instant::now()));
+                    dirty = true;
+                }
+            }
             Ev::Films(f) => {
-                // the open plays when the dialog opened on its home a moment ago and nothing was pressed
+                // the open plays from its start when it is still pending: the dialog opened on its home a moment ago and no
+                // key cut it (a letter typed lands at the prompt and cuts nothing, #138); else the rows show
                 app.films = f.is_some();
-                if f.is_some() && app.cfg.home.is_none() && app.view == View::Home && app.input.is_empty() && started.elapsed() < Duration::from_millis(800) {
-                    app.motion = Some((Reel::Open, Instant::now()));
+                if matches!(app.motion, Some((Reel::Open, _))) {
+                    let on_time = f.is_some() && app.view == View::Home && started.elapsed() < Duration::from_millis(800);
+                    app.motion = on_time.then(|| (Reel::Open, Instant::now()));
                 }
                 films = f;
                 dirty = true;
@@ -606,6 +689,13 @@ fn main() {
                 let was = app.busy();
                 app.tick(Instant::now());
                 dirty |= was || app.busy();
+                // an opening whose animation never came: the rows show (#138)
+                if films.is_none() && matches!(app.motion, Some((Reel::Open, _))) && started.elapsed() >= Duration::from_millis(1500) {
+                    app.motion = None;
+                    dirty = true;
+                }
+                // a toast whose time is out, or whose view was left, goes (#133)
+                dirty |= app.toast_tick();
                 // a picture not drawn yet (its small picture is still being made): tried again now and then
                 dirty |= drawn.preview.is_some() && shown_preview.is_none() && preview_tried.elapsed() >= Duration::from_millis(400);
                 // a sound playing: its waveform and its spectrum move
@@ -642,7 +732,14 @@ fn main() {
             }
             Ev::Term(Event::Key(k)) if k.kind == KeyEventKind::Press => {
                 dirty = true;
-                app.cut_motion();
+                // a letter typed while the opening plays lands at the prompt and the opening plays on; Enter, Esc, an
+                // arrow or a click cut it (#138)
+                if !matches!(k.code, KeyCode::Char(_) | KeyCode::Backspace)
+                    || k.modifiers.contains(KeyModifiers::CONTROL)
+                    || k.modifiers.contains(KeyModifiers::ALT)
+                {
+                    app.cut_motion();
+                }
                 match (k.code, k.modifiers) {
                     (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) => app.quit = Some(130),
                     (KeyCode::Esc, _) => app.escape(),
@@ -700,6 +797,10 @@ fn main() {
                             } else {
                                 app.close_window();
                             }
+                        } else if drawn.toast_close.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
+                            app.toast = None; // the toast's x (#133)
+                        } else if drawn.toast_undo.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
+                            app.undo_now();
                         } else if let Some((_, _, _, c)) = drawn.chips.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.chip(*c);
                         } else if let Some((_, _, _, key)) = drawn.keys.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
@@ -717,10 +818,22 @@ fn main() {
                             drag = Some((m.column, m.row));
                         } else if m.row >= drawn.prompt.0 && m.row <= drawn.prompt.1 {
                             app.focus_prompt();
-                        } else if let Some((_, n)) = drawn.picks.iter().find(|(y, _)| *y == m.row) {
+                        } else if let Some((_, n)) = drawn
+                            .picks
+                            .iter()
+                            .find(|(y, _)| *y == m.row && m.column >= drawn.columns.0 && m.column < drawn.columns.1)
+                        {
+                            // a file or a folder in Files: a click lights it, a second one on it opens it, as a file manager's
+                            // do; any other row, a place or an action, is done on one click (#140)
+                            let again = last_click.is_some_and(|(r, k, t)| r == m.row && k == *n && t.elapsed() < DOUBLE_CLICK);
                             app.in_list = true;
                             app.sel = *n;
-                            app.enter();
+                            if !app.lights_on_click(*n) || again {
+                                last_click = None;
+                                app.enter();
+                            } else {
+                                last_click = Some((m.row, *n, Instant::now()));
+                            }
                         }
                     }
                     MouseEventKind::Drag(MouseButton::Left) => {

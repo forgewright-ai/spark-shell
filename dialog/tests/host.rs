@@ -328,12 +328,20 @@ fn an_undo_that_carries_a_secret_is_not_kept_and_esc_closes() {
     assert_eq!(seen.lock().unwrap()[0], json!({"name": "cafe", "password": "s3cret"}));
     assert!(app.undo.is_none(), "an undo with a password in it is not kept");
     assert!(!app.exchange.iter().any(|l| l.text.contains("s3cret")), "the password is in no line");
+    assert!(
+        app.toast.as_ref().is_some_and(|t| t.text == "connected to cafe" && !t.undo),
+        "the receipt is the toast, with no Undo"
+    );
     app.escape();
     assert_eq!(app.view, View::Home, "Esc goes back to the home");
+    app.toast_tick();
+    assert!(
+        app.toast.is_none() && !app.exchange_up(),
+        "the toast went with its view, and nothing is left to clear (#133)"
+    );
+    assert!(!app.items().iter().any(|i| matches!(i, Item::Undo(..))), "no undo row: there is no undo");
     app.escape();
-    assert!(app.exchange.is_empty() && app.quit.is_none(), "at the home the first Esc clears the exchange");
-    app.escape();
-    assert_eq!(app.quit, Some(0), "and the next one closes");
+    assert_eq!(app.quit, Some(0), "so Esc closes");
 }
 
 #[test]
@@ -942,7 +950,12 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
     // his report (#39): "change theme to nord" worked, and the next request ran its undo
     let (mut app, rx, calls, _r) = started();
     app.cfg.spark_shell = "/bin/spark-shell".into();
-    let line = |sign: Sign, text: &str, undo: bool| spark_dialog::app::Line { sign, text: text.into(), undo };
+    let line = |sign: Sign, text: &str, undo: bool| spark_dialog::app::Line {
+        sign,
+        text: text.into(),
+        undo,
+        step: false,
+    };
     app.exchange = vec![line(Sign::You, "window close terminal", false), line(Sign::Done, "terminal closed", true)];
     app.undo = Some(spark_dialog::app::Step {
         prov: 0,
@@ -1060,7 +1073,12 @@ fn the_undo_is_at_the_end_of_the_result_it_takes_back() {
     // his photo (#52): "Undo theme text bigger" stood under a newer question. The undo is no row of its
     // own now: it is Undo at the end of the result it takes back (#53)
     let (mut app, _rx, _calls, _r) = started();
-    let line = |sign: Sign, text: &str, undo: bool| spark_dialog::app::Line { sign, text: text.into(), undo };
+    let line = |sign: Sign, text: &str, undo: bool| spark_dialog::app::Line {
+        sign,
+        text: text.into(),
+        undo,
+        step: false,
+    };
     app.exchange = vec![
         line(Sign::You, "window close terminal", false),
         line(Sign::Done, "terminal closed", true),
@@ -1659,7 +1677,7 @@ fn typing_a_section_s_name_lists_the_section_once() {
 }
 
 #[test]
-fn esc_at_the_home_clears_the_exchange_then_closes() {
+fn a_receipt_is_a_toast_that_goes_with_its_view_and_the_home_keeps_the_undo() {
     let (mut app, rx, tx) = app_with(&["wifi"]);
     let tools = json!([{"name": "wifi_disconnect", "title": "wifi disconnect", "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false}, "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}}]);
     let rows = json!({"title": "wifi", "rows": [{"id": "wifi:disconnect", "sign": "dot", "text": "cafe", "tool": {"name": "wifi_disconnect", "arguments": {}}, "more": [], "columns": [], "children": null}], "short": ["wifi:disconnect"]});
@@ -1680,25 +1698,32 @@ fn esc_at_the_home_clears_the_exchange_then_closes() {
     at_row(&mut app, View::Section(0), 0);
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text == "wifi off")));
+    // #133: the receipt is the toast at the content's bottom, Undo in it, and no turn of the exchange
+    assert!(app.toast_here() && app.toast.as_ref().is_some_and(|t| t.text == "wifi off" && t.undo));
+    assert_eq!(app.items().last(), Some(&Item::Toast), "the toast is the content's last line");
+    assert!(
+        !app.items().iter().any(|i| matches!(i, Item::Said(..) | Item::Undo(..))),
+        "a step's lines are no turn: {:?}",
+        app.items()
+    );
+    app.in_list = true;
+    app.sel = app.picks().len() - 1;
+    assert!(app.hint().iter().any(|(w, _)| w == "Undo "), "the toast lit, Enter undoes: {:?}", app.hint());
+    // it goes after its time
+    app.toast.as_mut().unwrap().at = std::time::Instant::now() - spark_dialog::app::TOAST_FOR;
+    assert!(app.toast_tick() && app.toast.is_none(), "the toast goes after its time");
+    app.sel = 0;
     app.escape();
     assert_eq!(app.view, View::Home, "Esc goes back to the home");
-    assert!(app.exchange_up(), "the receipt is still up at the home");
-    assert!(
-        app.hint().iter().any(|(w, _)| w == "Clear "),
-        "the key row says Clear while an exchange is up: {:?}",
-        app.hint()
+    assert!(!app.exchange_up(), "nothing at the home to clear");
+    assert_eq!(
+        app.items().first(),
+        Some(&Item::Undo(Sign::Done, "wifi off".into(), true)),
+        "the home keeps the undo at hand, the receipt it takes back with Undo"
     );
+    assert!(!app.hint().iter().any(|(w, _)| w == "Clear "), "the key row says no Clear: {:?}", app.hint());
     app.escape();
-    assert_eq!(app.view, View::Home, "the first Esc at the home clears, it does not close");
-    assert_eq!(app.quit, None);
-    assert!(app.exchange.is_empty() && app.undo.is_none(), "the exchange and the undo are gone");
-    assert!(
-        !app.hint().iter().any(|(w, _)| w == "Clear "),
-        "the key row no longer says Clear: {:?}",
-        app.hint()
-    );
-    app.escape();
-    assert_eq!(app.quit, Some(0), "the next Esc closes");
+    assert_eq!(app.quit, Some(0), "Esc closes; the undo was offered, not forced");
 }
 
 #[test]
@@ -1823,33 +1848,24 @@ fn header(app: &App) -> String {
 }
 
 #[test]
-fn the_bar_says_what_kind_of_work_is_going_on() {
+fn the_march_is_sparks_alone() {
     let (mut app, rx, _c, _r) = started();
     assert!(!app.busy(), "nothing asked, nothing shown");
     assert!(!header(&app).contains('['), "{:?}", header(&app));
 
-    // one step alone: marks moving right
+    // a step running shows no march: its answer is its toast (#139, #133)
     app.plan(r#"{"answer": "", "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
     app.enter();
-    assert!(app.running.is_some() && app.queue.is_empty());
-    assert_eq!(app.work(), Work::March, "one step alone");
+    assert!(app.running.is_some() && !app.thinking());
     app.frame = 1;
-    assert!(header(&app).contains(&progress::bar(Work::March, 1)), "{:?}", header(&app));
+    assert!(!header(&app).contains('['), "a step marches no more: {:?}", header(&app));
     assert!(pump(&mut app, &rx, |a| a.running.is_none()));
-    assert!(!app.busy(), "the step is done: the bar goes");
-
-    // two steps: one after another while the second waits
-    app.plan(r#"{"answer": "", "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}, {"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
-    app.enter();
-    assert!(app.running.is_some() && !app.queue.is_empty(), "the first runs, the second waits");
-    assert_eq!(app.work(), Work::Steps, "a step with more behind it");
-    assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.queue.is_empty()));
 
     // words that go to spark: a light bouncing, until the plan comes
     app.cfg.spark_shell = "/bin/spark-shell".into();
     typed(&mut app, "is anything open");
     app.enter();
-    assert!(app.busy());
+    assert!(app.busy() && app.thinking());
     assert_eq!(app.work(), Work::Think, "spark is asked");
     app.frame = 3;
     assert!(header(&app).contains(&progress::bar(Work::Think, 3)), "{:?}", header(&app));
@@ -1883,11 +1899,11 @@ fn a_model_that_loads_is_a_swell_and_a_recording_waits_like_a_thought() {
     app.talk = spark_dialog::app::Talk::Click;
     app.chip(3);
     assert_eq!(app.mode, Mode::Listening);
-    assert_eq!(app.work(), Work::Think, "a recording waits as spark thinks does");
+    assert!(!app.thinking() && !header(&app).contains('['), "a recording is no AI call yet: no march (#139)");
 }
 
 #[test]
-fn the_rows_of_a_place_being_read_are_an_arrow() {
+fn the_rows_of_a_place_being_read_show_no_march() {
     let (mut app, rx, tx) = app_with(&["window"]);
     let script: common::Script = Box::new(move |v, send| {
         if let Some(r) = ordinary("window", v, &window_tools(), &window_rows()) {
@@ -1897,8 +1913,8 @@ fn the_rows_of_a_place_being_read_are_an_arrow() {
     app.servers.push(stub(0, "window", script, tx));
     app.start();
     app.view = View::Section(0);
-    assert!(app.busy());
-    assert_eq!(app.work(), Work::Read, "a place opened while its rows come");
+    assert!(app.busy() && !app.thinking(), "a place opened while its rows come: busy, and no march (#139)");
+    assert!(!header(&app).contains('['), "{:?}", header(&app));
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
     assert!(!app.busy());
 }
@@ -2285,4 +2301,102 @@ fn a_search_opens_the_rows_it_found() {
         "Esc goes back to the folder: {:?}",
         app.view
     );
+}
+
+#[test]
+fn settings_stand_in_groups_and_the_home_holds_about_and_power() {
+    // #137: Settings under the groups' headings; #136: About and Power are places of the home, About out of Settings
+    let (mut app, _rx, _tx) = app_with(&["out", "wifi", "theme", "power", "about"]);
+    app.view = View::Dest(SETTINGS_DEST);
+    let items = app.items();
+    let heads: Vec<String> = items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Heading(h) => Some(h.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(heads, vec!["sound", "network", "look", "system"], "{:?}", items);
+    assert!(
+        !items
+            .iter()
+            .any(|i| matches!(i, Item::Setting(k) if spark_dialog::app::SETTINGS[*k].0 == "about")),
+        "About left Settings"
+    );
+    app.view = View::Home;
+    let names: Vec<&str> = app
+        .items()
+        .iter()
+        .filter_map(|i| match i {
+            Item::Dest(d) => Some(spark_dialog::app::DESTS[*d].name),
+            _ => None,
+        })
+        .collect();
+    assert!(names.ends_with(&["Settings", "About", "Power"]), "{:?}", names);
+    app.in_list = true;
+    app.sel = app
+        .picks()
+        .iter()
+        .position(|i| matches!(i, Item::Dest(d) if spark_dialog::app::DESTS[*d].name == "About"))
+        .unwrap();
+    app.enter();
+    assert_eq!(app.view, View::About, "About opens the about");
+    app.escape();
+    app.in_list = true;
+    app.sel = app
+        .picks()
+        .iter()
+        .position(|i| matches!(i, Item::Dest(d) if spark_dialog::app::DESTS[*d].name == "Power"))
+        .unwrap();
+    app.enter();
+    assert!(
+        matches!(app.view, View::Section(p) if app.providers[p].label == "power"),
+        "Power opens its section: {:?}",
+        app.view
+    );
+}
+
+#[test]
+fn in_files_a_click_lights_a_row_and_elsewhere_one_click_does_it() {
+    // #140: a file's or a folder's row in Files is lit by a click and opened by a second; a place is done on one
+    let (app, _rx, _calls, _home) = manager();
+    let file = app.picks().iter().position(|i| matches!(i, Item::Folder(_))).unwrap();
+    assert!(app.lights_on_click(file), "a row of Files lights on a click");
+    let (mut app, _rx, _tx) = app_with(&["out", "about"]);
+    app.view = View::Home;
+    let place = app.picks().iter().position(|i| matches!(i, Item::Dest(_))).unwrap();
+    assert!(!app.lights_on_click(place), "a place of the home is done on one click");
+}
+
+#[test]
+fn an_animations_row_names_its_folder_and_the_list_plays_the_lit_one_beside_it() {
+    // #132: a row's film is a whole folder path, nothing climbing out of it; the list draws a box for the lit one
+    let rows = spark_dialog::model::rows(
+        &json!({"title": "animation", "rows": [
+            {"id": "theme:animation:moon", "sign": "check", "text": "moon", "tool": {"name": "theme_animation", "arguments": {"to": "moon"}}, "more": [], "columns": ["the palette's own"], "children": null, "group": null, "film": "/opt/spark-shell/assets/transitions/moon/nord"},
+            {"id": "theme:animation:tide", "sign": "blank", "text": "tide", "tool": {"name": "theme_animation", "arguments": {"to": "tide"}}, "more": [], "columns": [], "children": null, "group": null, "film": "/opt/x/../etc"},
+            {"id": "theme:animation:none", "sign": "blank", "text": "none", "tool": {"name": "theme_animation", "arguments": {"to": "none"}}, "more": [], "columns": ["no motion"], "children": null, "group": null}
+        ], "short": []})
+        .to_string(),
+    )
+    .unwrap();
+    assert_eq!(rows.rows[0].film.as_deref(), Some("/opt/spark-shell/assets/transitions/moon/nord"));
+    assert_eq!(rows.rows[1].film, None, "a path that climbs out is no film");
+    let (mut app, _rx, _tx) = app_with(&["theme"]);
+    app.size = (spark_dialog::app::WIDTH, spark_dialog::app::HEIGHT);
+    app.view = View::Folder(0, "spark-shell://theme/rows/animations".into());
+    app.folder = Some((0, "spark-shell://theme/rows/animations".into(), rows));
+    app.in_list = true;
+    app.sel = 0;
+    let p = palette("tokyonight-night");
+    let mut b = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, app.size.0, app.size.1));
+    let drawn = spark_dialog::ui::draw(&app, &p, "Sun 18 Oct \u{b7} 12:04", &mut b);
+    assert!(
+        drawn.side_film.as_ref().is_some_and(|f| f.4 == "/opt/spark-shell/assets/transitions/moon/nord"),
+        "the lit piece plays beside the list: {:?}",
+        drawn.side_film
+    );
+    app.sel = 2;
+    let drawn = spark_dialog::ui::draw(&app, &p, "Sun 18 Oct \u{b7} 12:04", &mut b);
+    assert!(drawn.side_film.is_none(), "none lit: the box stays empty");
 }

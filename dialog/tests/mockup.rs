@@ -615,7 +615,12 @@ fn design_system_preview() {
     ));
     // the turn: the command as it ran, then the reply; Undo at the end of the result it takes back (#53)
     let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
-    let said = |sign: Sign, text: &str, undo: bool| Line { sign, text: text.into(), undo };
+    let said = |sign: Sign, text: &str, undo: bool| Line {
+        sign,
+        text: text.into(),
+        undo,
+        step: false,
+    };
     a.exchange = vec![
         said(Sign::You, "theme rainbow", false),
         said(Sign::Refused, "rainbow is not in the list now", false),

@@ -6473,12 +6473,12 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 (if $s == "theme" and ((.group // "") | test("^(dark|light|yours)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
                 | (if $s == "theme" and .id == "theme:show:Text size" then .step = {value: $size, less: {name: "theme_text", arguments: {size: "smaller"}}, more: {name: "theme_text", arguments: {size: "bigger"}}, words: ["smaller", "bigger"]}
                    elif $s == "theme" and .id == "theme:show:Transparency" then .step = {value: $tr, less: {name: "theme_transparency", arguments: {amount: "less"}}, more: {name: "theme_transparency", arguments: {amount: "more"}}, words: ["less", "more"]}
-                   elif $s == "theme" and .id == "theme:show:Animation" then .step = {value: $anim, less: {name: "theme_animation", arguments: {to: "back"}}, more: {name: "theme_animation", arguments: {to: "next"}}, words: ["back", "next"]}
                    else . end))
             | .rows |= map(
                 if $s == "theme" and (.tool.name // "") == "theme_save" then .tool.ask = ["name"]
                 elif $s == "theme" and .id == "theme:picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_picture", types: ($types | split(" "))}
                 elif $s == "theme" and .id == "theme:wallpaper" then .children = "spark-shell://theme/rows/wallpapers" | .tool = null
+                elif $s == "theme" and .id == "theme:show:Animation" then .children = "spark-shell://theme/rows/animations" | .tool = null | .columns = [$anim]
                 elif ($s == "lan" or $s == "wifi") and (.id | startswith($s + ":network-settings")) then .sign = "opens" | .children = ("spark-shell://" + $s + "/rows/network/" + (.id | split(":network-settings ")[1]))
                 elif $s == "display" and (.text | startswith("screen ")) then .sign = "opens" | .children = ("spark-shell://display/rows/screen/" + (.text | split(" ")[1]))
                 elif $s == "window" and ((.tool.name // "") | test("^window_(focus|close)$")) then .group = "open now"
@@ -6508,6 +6508,18 @@ provide_wall_rows() {   # -> the theme's wallpaper list as a rows resource (spar
              | if .id == "theme:wallpaper-color" then .tool.ask = ["color"] else . end
              | if .id == "theme:wallpaper-picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_wallpaper_picture", types: ($types | split(" "))} else . end]
             | {title: "wallpaper", state: "", rows: ., short: []}'
+}
+provide_anim_rows() {   # -> the theme's animation list as a rows resource (spark-shell://theme/rows/animations, #132): the pieces and none, the one in use checked, the palette's own said, each piece with its folder in the palette in use, where the dialog plays it beside the list while it is lit
+    _ap=$(anim_palette); _an=$(anim_now); _apo=$(anim_for_palette "$_ap")
+    for _n in $ANIMATION_NAMES none; do
+        _af=''; [ "$_n" = none ] || [ -z "$_ap" ] || [ ! -f "$REPO/assets/transitions/$_n/$_ap/open.gif" ] || _af=$REPO/assets/transitions/$_n/$_ap
+        printf '%s\t%s\n' "$_n" "$_af"
+    done | jq -Rn --arg now "$_an" --arg paired "$_apo" '
+        [inputs | split("\t") | {id: ("theme:animation:" + .[0]), sign: (if .[0] == $now then "check" else "blank" end), text: .[0],
+            tool: {name: "theme_animation", arguments: {to: .[0]}}, more: [], children: null, group: null,
+            columns: (if .[0] == "none" then ["no motion"] elif .[0] == $paired then ["the palette'"'"'s own"] else [] end)}
+          + (if .[1] != "" then {film: .[1]} else {} end)]
+        | {title: "animation", state: "", rows: ., short: []}'
 }
 theme_chips() {   # theme_chips SECTION -> {NAME: [nine colors]} for the theme's palettes and saved themes, {} for any other section
     [ "$1" = theme ] || { printf '{}'; return 0; }
@@ -6659,6 +6671,9 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
             fi
             if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/wallpapers" ] && [ "$_method" = resources/read ]; then   # the wallpaper list, opened from the theme's wallpaper row
                 rpc_result "$_id" "$(provide_wall_rows | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
+            fi
+            if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/animations" ] && [ "$_method" = resources/read ]; then   # the animation list, opened from the theme's animation row (#132)
+                rpc_result "$_id" "$(provide_anim_rows | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
             fi
             if [ "$sec" = display ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://display/rows/screen/?*) true ;; *) false ;; esac; then
                 if provide_screen_rows "${_uri##*/}" > "$TMP/screen.json"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/screen.json")"
@@ -7673,7 +7688,16 @@ dialog_sections() {   # dialog_sections [FIRST] -> the providers the dialog star
     panel_sections "${1:-glance}" | grep -vxE 'spark|undo|glance|chat' || :
 }
 cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a click on a bar block, the first desktop start (about)
-    [ ! -t 1 ] || printf '\033[?25l'   # no cursor blinking in the window while it starts (#122): the dialog puts it back at its prompt
+    if [ "${SPARK_DIALOG_WINDOW:-}" = 1 ] && [ "${1:-}" != chat ] && [ -t 0 ] && [ -t 1 ]; then
+        # the dialog's own window (dialog.ini says so, #138): its prompt is there the moment the window maps, before the slow part
+        # (a cold start takes a second), drawn in the window's own slots where the dialog draws it; a key typed now waits for the
+        # dialog unseen, and lands at its prompt
+        stty -echo -icanon 2>/dev/null || :
+        printf '\033[?1049h\033[?25l\033[3;3H\033[1;38;5;16m\342\235\257\033[0m\033[3;5H\033[38;5;20mType a request.\033[0m'
+    else
+        [ ! -t 1 ] || printf '\033[?25l'   # no cursor blinking in the window while it starts (#122): the dialog puts it back at its prompt
+    fi
+    unset SPARK_DIALOG_WINDOW   # read once: a terminal a step opens from here is no dialog's window
     config_load
     [ "$OS" != Darwin ] || refuse_in dialog "the dialog is the Linux desktop's; in a terminal here, spark-shell panel"
     command -v jq >/dev/null 2>&1 || refuse_in dialog "jq is not installed (spark-shell on)"

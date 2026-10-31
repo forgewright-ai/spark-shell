@@ -40,6 +40,8 @@ pub struct Row {
     pub preview: Option<String>,
     /// The uri of the page that shows the row's file (#120): Space opens its preview.
     pub page: Option<String>,
+    /// The folder of an animation the row brings (#132): its open and its wait play beside the list while it is lit.
+    pub film: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -99,6 +101,12 @@ fn step(v: Option<&Value>) -> Option<Step> {
 fn preview(v: Option<&Value>) -> Option<String> {
     let p = v?.as_str()?;
     (p.starts_with('/') && p.ends_with(".png") && !p.split('/').any(|c| c == "..") && !p.chars().any(char::is_control)).then(|| p.to_string())
+}
+
+/// A film is a whole folder path, nothing climbs out of it (#132).
+fn film(v: Option<&Value>) -> Option<String> {
+    let p = v?.as_str()?;
+    (p.starts_with('/') && !p.split('/').any(|c| c == "..") && !p.chars().any(char::is_control)).then(|| p.to_string())
 }
 
 /// A pick names a tool in the offered shape and file types of a few lower-case letters or digits.
@@ -290,6 +298,7 @@ pub fn rows(text: &str) -> Option<Rows> {
                 .and_then(Value::as_str)
                 .filter(|u| u.starts_with("spark-shell://") && !u.chars().any(char::is_control))
                 .map(str::to_string),
+            film: film(r.get("film")),
         })
         .collect();
     let short = v

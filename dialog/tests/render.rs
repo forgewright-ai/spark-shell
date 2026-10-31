@@ -7,7 +7,7 @@ use common::palette;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use serde_json::json;
-use spark_dialog::app::{App, Config, Line, Mode, Provider, Sign, Staged, Step, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
+use spark_dialog::app::{App, Config, Line, Mode, Provider, Sign, Staged, Step, Toast, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
 use spark_dialog::model;
 
 const CLOCK: &str = "Sun 18 Oct \u{b7} 12:04";
@@ -184,7 +184,8 @@ fn a_two_line_draft_and_a_file_for_the_next_question() {
 }
 
 #[test]
-fn a_section_with_its_groups_and_the_exchange() {
+fn a_section_with_its_groups_and_a_steps_toast() {
+    // #133: a step's receipt is the toast at the content's bottom, Undo and the x at its end; its lines are no turn
     let mut app = base();
     app.view = View::Section(0);
     app.came_from = vec![View::Home];
@@ -193,13 +194,22 @@ fn a_section_with_its_groups_and_the_exchange() {
             sign: Sign::You,
             text: "window close aerc".into(),
             undo: false,
+            step: true,
         },
         Line {
             sign: Sign::Done,
             text: "aerc closed".into(),
             undo: true,
+            step: true,
         },
     ];
+    app.toast = Some(Toast {
+        sign: Sign::Done,
+        text: "aerc closed".into(),
+        undo: true,
+        view: View::Section(0),
+        at: std::time::Instant::now(),
+    });
     app.undo = Some(Step {
         prov: 0,
         call: model::Call {
@@ -216,30 +226,34 @@ fn a_section_with_its_groups_and_the_exchange() {
 }
 
 #[test]
-fn a_turn_is_the_command_then_what_came_of_it() {
-    // #53: a step's turn is its command as it ran and its result, Undo at the end of that result;
-    // a question's turn is the words and the answer; the newest turn first
+fn a_turn_is_the_question_then_its_answer_and_a_step_is_its_toast() {
+    // #53: a question's turn is the words and the answer, the newest first; a step's receipt is the toast,
+    // Undo in it, never a turn (#133)
     let mut app = full();
     app.exchange = vec![
         Line {
             sign: Sign::You,
             text: "theme gruvbox-dark".into(),
             undo: false,
+            step: true,
         },
         Line {
             sign: Sign::Done,
             text: "gruvbox-dark is on".into(),
             undo: true,
+            step: true,
         },
         Line {
             sign: Sign::You,
             text: "is firefox open?".into(),
             undo: false,
+            step: false,
         },
         Line {
             sign: Sign::Says,
             text: "No. Firefox is installed, and no window of it is open now.".into(),
             undo: false,
+            step: false,
         },
     ];
     app.undo = Some(Step {
@@ -253,6 +267,13 @@ fn a_turn_is_the_command_then_what_came_of_it() {
         },
         who: Who::Undo,
         line: "undo theme gruvbox-dark".into(),
+    });
+    app.toast = Some(Toast {
+        sign: Sign::Done,
+        text: "gruvbox-dark is on".into(),
+        undo: true,
+        view: View::Home,
+        at: std::time::Instant::now(),
     });
     app.in_list = true;
     app.sel = 0;
@@ -390,6 +411,7 @@ fn about() {
         sign: Sign::You,
         text: "show me about".into(),
         undo: false,
+        step: false,
     }]; // the about is a page: the exchange is not drawn on it
     render(&app, "about");
 }
@@ -426,11 +448,13 @@ fn an_answer_wraps_under_its_sign() {
             sign: Sign::You,
             text: "what is my address".into(),
             undo: false,
+            step: false,
         },
         Line {
             sign: Sign::Says,
             text: "192.0.2.10 on the wire and 192.0.2.20 on wifi; the gateway is 192.0.2.1, and the name server the same.".into(),
             undo: false,
+            step: false,
         },
     ];
     render(&app, "answer");
@@ -470,6 +494,7 @@ fn a_folder_with_its_columns_and_an_attachment() {
         sign: Sign::You,
         text: "which of these are big".into(),
         undo: false,
+        step: false,
     }];
     render(&app, "folder");
 }
@@ -1159,4 +1184,67 @@ fn space_opens_the_lit_files_preview_and_esc_lights_it_again() {
     app.typed('a');
     app.typed(' ');
     assert_eq!(app.input, "a ");
+}
+
+// ---- full screen (#131): the dialog keeps its own column, the room beside it or under it is a pane that shows
+// what the lit row holds
+
+/// A wide screen (a 1920 by 1080 monitor at the dialog's text size) and a tall one (the same turned).
+const WIDE: (u16, u16) = (150, 46);
+const TALL: (u16, u16) = (90, 80);
+
+fn sized(mut app: App, (w, h): (u16, u16)) -> App {
+    app.size = (w, h);
+    app
+}
+
+#[test]
+fn full_screen_home_shows_the_lit_place_beside_the_column() {
+    let mut app = sized(full(), WIDE);
+    app.in_list = true;
+    app.sel = app.picks().iter().position(|i| matches!(i, spark_dialog::app::Item::Dest(2))).unwrap(); // Workspace
+    render_at(&app, "full-home", WIDE.0, WIDE.1);
+}
+
+#[test]
+fn full_screen_settings_show_the_lit_section_beside_them() {
+    let mut app = sized(full(), WIDE);
+    app.view = View::Dest(SETTINGS_DEST);
+    app.came_from = vec![View::Home];
+    app.in_list = true;
+    app.sel = app
+        .picks()
+        .iter()
+        .position(|i| matches!(i, spark_dialog::app::Item::Setting(k) if spark_dialog::app::SETTINGS[*k].0 == "bt"))
+        .unwrap();
+    render_at(&app, "full-settings", WIDE.0, WIDE.1);
+}
+
+#[test]
+fn full_screen_files_show_the_lit_files_page_beside_the_list() {
+    let mut app = sized(files_home(), WIDE);
+    let (f, _, rows) = app.folder.clone().unwrap();
+    let id = rows.rows[3].id.clone(); // notes.md, lit
+    let mut pv = spark_dialog::preview::Preview::new(f, &rows.title, &rows.rows, &id).unwrap();
+    pv.shown = spark_dialog::preview::page(
+        &pv.uri(),
+        &json!({"lines": ["# Week of 2 November", "", "The report goes out on Friday. Ada reviews the numbers on Thursday morning, and the charts follow the same afternoon.", "", "## To do", "", "- send the draft to Ada", "- book the room for Thursday"], "bold": [0, 4], "facts": ["2 KB", "18 Oct"]})
+            .to_string(),
+    );
+    app.side = Some(pv);
+    render_at(&app, "full-files", WIDE.0, WIDE.1);
+}
+
+#[test]
+fn full_screen_calendar_on_a_tall_screen_shows_the_months_ahead_under_its_list() {
+    let app = sized(calendar_app(true), TALL);
+    render_at(&app, "full-calendar-tall", TALL.0, TALL.1);
+}
+
+#[test]
+fn full_screen_home_on_a_tall_screen_keeps_the_column_in_the_middle() {
+    let mut app = sized(full(), TALL);
+    app.in_list = true;
+    app.sel = app.picks().iter().position(|i| matches!(i, spark_dialog::app::Item::Dest(2))).unwrap();
+    render_at(&app, "full-home-tall", TALL.0, TALL.1);
 }

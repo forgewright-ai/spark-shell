@@ -700,24 +700,33 @@ app or a layout closes it: the window is the receipt. A window that is
 fullscreen steps aside for the dialog and is fullscreen again when the
 dialog closes with nothing opened.
 
-The dialog opens with a short animation in the middle of its content
-area, waits with one while the home's rows load, and closes with one
-when Esc or the x closes it: moon, ripple, tide, embers, sun or flight,
-in your palette's own colors (`assets/transitions/`). Any key, a word
-or a click cuts the opening short, so it never stands between you and
-the dialog; Esc during the closing closes at once. A preview's page that
-takes a moment to draw shows the waiting one too. Settings > theme picks
-the animation, or none for no motion (`DIALOG_ANIMATION`, embers to
-begin with); a palette with no set of its own plays none.
+Full screen (Super+f), the dialog keeps its own width, top to bottom,
+and the space it brings shows what the lit row holds: beside the dialog
+on a wide screen, under its list on a tall one. A place's rows, a
+setting's section, a row's facts and actions, the lit file's page in
+Files, and the Calendar's months ahead. The preview Space opens takes
+the whole screen.
+
+The window shows its prompt the moment it opens, before the rest is
+ready, and keys typed then wait for it. The dialog opens with a short
+animation at the top of its content area, where the rows land, waits
+with one while the home's rows load, and closes with one when Esc or
+the x closes it: moon, ripple, tide, embers, sun or flight, in your
+palette's own colors (`assets/transitions/`). Enter, Esc, an arrow or
+a click cuts the opening short; letters typed meanwhile land at the
+prompt and it plays on. Esc during the closing closes at once. A
+preview's page that takes a moment to draw shows the waiting one too.
+Settings > theme picks the animation from a list, each piece playing
+beside it, or none for no motion (`DIALOG_ANIMATION`, embers to begin
+with); a palette with no set of its own plays none.
 
 The top row says where you are (`home`, a place, a section and its
 state; a long one is cut at a word), then the date and the time as your
-locale writes them, and a small bar while work runs. The bar is one of
-the five animations spark draws at its prompt, and it says what is
-going on: a light bouncing while spark thinks, an arrow crossing while
-the rows of a place are read, arrows moving right while a step runs,
-one step after another when more steps wait behind it, and a bar
-growing and shrinking while a model loads. Under it is
+locale writes them, and a small bar while spark works on your words:
+one of the animations spark draws at its prompt, a light bouncing while
+it thinks and a bar growing and shrinking while a model loads. Nothing
+else shows it: a step's answer is its receipt, and a page that takes a
+moment has its waiting animation. Under it is
 the prompt, two rows tall:
 type a request, Enter sends it, and Shift+Enter starts a new line (Alt+Enter
 where a terminal cannot tell the two apart). A longer draft scrolls
@@ -726,13 +735,15 @@ row under the prompt says what Enter does to the lit row and what Esc
 does now; with nothing typed it says only what Esc does. A key is drawn
 as a key, and nothing else is.
 
-The home lists six places, each with what it holds now: Apps (the
+The home lists its places, each with what it holds now: Apps (the
 apps by name), Files (your home folder), Workspace (the windows open
 and the layouts saved), Notes (how many, and the newest), Calendar (the
-next reminder, or none ahead) and Settings (the network and the theme;
-inside, sound, microphone, Wi-Fi, Bluetooth, storage, display,
-keyboard, notifications, theme, the bar, power, Talk, Connections and
-About). A place shows only where this
+next reminder, or none ahead), Settings (the network and the theme),
+About (the version) and Power (lock, log out, restart, shut down).
+Settings stands in groups: sound and microphone; Wi-Fi, Bluetooth and
+the network; storage, display, keyboard and pointer; theme, wallpaper,
+the bar and notifications; power, battery, Talk and Connections. A
+place shows only where this
 machine has it. The down arrow moves from the prompt into the
 list, and up from the first row comes back. A row wears a sign where
 there is a state: a dot is in use or connected, a ring is available, a
@@ -758,8 +769,10 @@ its first and its last row.
   last three ask for a typed yes. What the power button does is said
   under them, never changed.
 - `theme`: first the wallpaper, the text size, the transparency and the
-  dialog's animation, a row each; on the text size, the transparency and
-  the animation, left and right change the value in place. Then the
+  dialog's animation, a row each; on the text size and the transparency,
+  left and right change the value in place. The animation row opens a
+  list of the pieces and none, the one in use checked and the palette's
+  own said; the lit one plays beside the list in your palette. Then the
   palettes, dark and light, each with a chip of its colors (its ground,
   its accent and six hues) and the drawing it brings; a palette brings
   its animation too. Then yours: your saved themes, `save this look
@@ -771,12 +784,11 @@ its first and its last row.
   the lit one shown as a picture in your palette at the top right; `a
   picture of yours` (jpg, jpeg, png, webp); `a color`, which asks for a
   name or `#rrggbb`; and the ground. The header names the palette. At
-  the home, Esc clears what the last request left on the screen, its
-  receipts and refusals; the next Esc closes the dialog.
+  the home, Esc clears what spark said; the next Esc closes the dialog.
 - Calendar: the time in large figures, then this month and the next
   side by side, today lit and a day with a reminder in the accent; the
   left and right arrows move the months while nothing is typed. Under
-  them, the reminders.
+  them, the reminders. Full screen, the months ahead fill the screen.
 - `notes`: a new note, then your notes, the newest first, each with its
   date. Enter opens one in your editor in a terminal window. Said in
   words, `note buy oat milk` makes a note, `groceries: buy oat milk`
@@ -802,7 +814,9 @@ its first and its last row.
 - `files`: your home folder, as a file manager of its own. Enter on a
   folder opens it, `..` goes back up, and Esc walks back the way you
   came; a folder lists its folders, then its files with the size and
-  the date. A folder of thousands lists about a thousand at a time: its
+  the date. A click lights a file or a folder and a double-click opens
+  it, as Enter does; a long name is cut in its middle, its end and its
+  type kept. A folder of thousands lists about a thousand at a time: its
   last row, `the next page`, says how many more there are and opens
   them. Enter on a text file opens it in your editor, in a terminal
   window; any other file opens with the app for its kind. The right
@@ -860,11 +874,13 @@ its first and its last row.
   is not. spark reads text: a PDF goes with your words as the text of its
   page, a sound or a picture with none.
 
-Above the list, what was said and done, the newest first, a blank row
-between one turn and the next. A turn is the command as it ran, then
-what came of it in plain words: a check for a step done, a cross and
-the reason for one refused. Undo at the end of a result takes that step
-back while it can be: pick it, or type undo. At the bottom, under a
+Above the list, what you asked spark and what it said, the newest
+first, a blank row between one turn and the next. A step's answer is
+one line at the bottom of the content, its receipt: a check for a step
+done, a cross and the reason for one refused, Undo where the step can
+be taken back, and an x that dismisses it. It goes after ten seconds,
+or when you leave the view it was made in; the home then keeps the undo
+at hand as its first row, and typing undo works too. At the bottom, under a
 rule, the controls in plain text: Attach, the model, and the mic at the
 right. Tab moves through them and the one in focus is lit; Shift+Tab
 goes back.

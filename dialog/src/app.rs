@@ -52,7 +52,7 @@ pub struct Dest {
     pub purpose: &'static str,
     pub sections: &'static [&'static str],
 }
-pub const DESTS: [Dest; 6] = [
+pub const DESTS: [Dest; 8] = [
     Dest {
         name: "Apps",
         purpose: "Open an application",
@@ -83,11 +83,23 @@ pub const DESTS: [Dest; 6] = [
         purpose: "Devices and appearance",
         sections: &[],
     },
+    // how to leave, and what this is, on the home itself (#136)
+    Dest {
+        name: "About",
+        purpose: "Version and keys",
+        sections: &["about"],
+    },
+    Dest {
+        name: "Power",
+        purpose: "Lock, log out, restart, shut down",
+        sections: &["power"],
+    },
 ];
 pub const SETTINGS_DEST: usize = 5;
 pub const CALENDAR_DEST: usize = 4;
-/// Settings: a section each, then Connections and About, in this order.
-pub const SETTINGS: [(&str, &str, &str); 18] = [
+/// Settings: a section each, then Talk and Connections, in this order, under their groups (#137); About is a
+/// place of the home since v0.114 (#136).
+pub const SETTINGS: [(&str, &str, &str); 17] = [
     ("out", "Sound", "Output and volume"),
     ("mic", "Microphone", "Input and level"),
     ("wifi", "Wi-Fi", "Networks"),
@@ -97,16 +109,26 @@ pub const SETTINGS: [(&str, &str, &str); 18] = [
     ("display", "Display", "Screens, brightness, lock"),
     ("keyboard", "Keyboard", "Layouts and key repeat"),
     ("pointer", "Pointer", "Mouse and touchpad"),
-    ("notifications", "Notifications", "Do not disturb, the last few"),
     ("theme", "Theme", "Palette, wallpaper and text"),
     ("wallpaper", "Wallpaper", "The desktop picture"),
     ("bar", "Bar", "The status bar"),
+    ("notifications", "Notifications", "Do not disturb, the last few"),
     ("power", "Power", "Lock, suspend, restart"),
     ("bat", "Battery", "Charge"),
     ("talk", "Talk", "Click the mic, or off"),
     ("connections", "Connections", "Tools and the model"),
-    ("about", "About", "Version and keys"),
 ];
+
+/// The group a row of Settings sits under, its heading (#137).
+pub fn setting_group(label: &str) -> &'static str {
+    match label {
+        "out" | "mic" => "sound",
+        "wifi" | "bt" | "lan" => "network",
+        "storage" | "display" | "keyboard" | "pointer" => "devices",
+        "theme" | "wallpaper" | "bar" | "notifications" => "look",
+        _ => "system",
+    }
+}
 /// Elicitation's caps: a provider asks at most this often (the review's M1).
 pub const ASK_PER_CALL: usize = 3;
 pub const ASK_PER_MINUTE: usize = 10;
@@ -258,7 +280,26 @@ pub struct Line {
     pub sign: Sign,
     pub text: String,
     pub undo: bool,
+    /// A step's own line (its command, its receipt): kept in the record, shown as the toast, never as a turn (#133).
+    pub step: bool,
 }
+
+/// A step's receipt as a toast (#133): one line at the bottom of the content, with Undo where the step has
+/// one and a dismiss x; it goes after TOAST_FOR, on the x, on Esc, or when the view it was made in is left.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Toast {
+    pub sign: Sign,
+    pub text: String,
+    pub undo: bool,
+    pub view: View,
+    pub at: Instant,
+}
+
+/// How long a toast stays (#133).
+pub const TOAST_FOR: Duration = Duration::from_secs(10);
+
+/// The lit file's page is asked for once its row has stayed lit this long (#131).
+pub const SIDE_GAP: Duration = Duration::from_millis(150);
 
 /// A pick in progress: the view to go back to and how deep the stack was,
 /// the provider and tool the file goes to, and the types offered. A folder
@@ -498,6 +539,8 @@ pub enum Item {
     Title(String),
     /// A line that says something and opens nothing: (words, muted).
     Text(String, bool),
+    /// The last step's receipt at the bottom of the content: Enter takes the step back where it has an undo (#133).
+    Toast,
     /// A provider the dialog talks to, in Connections.
     Provider(usize),
     /// Connections' row that opens the models.
@@ -557,6 +600,12 @@ pub struct App {
     /// same value takes that turn's place, so a run of presses is one turn.
     pub value_turn: Option<(String, usize)>,
     pub running: Option<(usize, u64, Step, usize)>,
+    /// The receipt of the last step, shown at the bottom of the content for a while (#133).
+    pub toast: Option<Toast>,
+    /// Where the step being run began in the exchange: its lines from there are a step's.
+    step_from: Option<usize>,
+    /// The receipt the undo at hand takes back, for the home's undo row once its toast is gone.
+    pub undo_said: Option<String>,
     pub busy_since: Option<Instant>,
     pub frame: u64,
     /// Every model spark lists: (name, serving | downloaded | -).
@@ -591,6 +640,9 @@ pub struct App {
     pub keep_lit: Option<String>,
     /// The preview shown (View::Preview): the list it came from, the file, its page (#120).
     pub preview: Option<Preview>,
+    /// Full screen's pane, the lit file's page beside the list (#131); the row lit and since when, before it is asked.
+    pub side: Option<Preview>,
+    side_lit: Option<(String, Instant)>,
     /// A sound's play or stop on its way: its request and its call, audited when it answers.
     quiet: Option<(u64, usize, Call)>,
     /// The transition playing, and since when (#122); main.rs moves it on and draws it.
@@ -645,6 +697,9 @@ impl App {
             staged: None,
             value_turn: None,
             running: None,
+            toast: None,
+            step_from: None,
+            undo_said: None,
             busy_since: None,
             frame: 0,
             models: vec![],
@@ -667,6 +722,8 @@ impl App {
             last_view: None,
             keep_lit: None,
             preview: None,
+            side: None,
+            side_lit: None,
             quiet: None,
             motion: None,
             films: false,
@@ -683,7 +740,12 @@ impl App {
         if text.is_empty() {
             return;
         }
-        self.exchange.push(Line { sign, text, undo: false });
+        self.exchange.push(Line {
+            sign,
+            text,
+            undo: false,
+            step: false,
+        });
         let n = self.exchange.len();
         if n > 200 {
             self.exchange.drain(..n - 200);
@@ -715,23 +777,15 @@ impl App {
             || self.servers.iter().any(|s| s.pending.values().any(|p| p.kind == Kind::Page))
     }
 
-    /// What kind of work the header's bar shows, one of spark's five animations: a step that runs
-    /// alone is a march, one with more behind it is steps, spark's reply is think, a model loading
-    /// is swell, and the rows of a place being read are read. A recording waits as spark thinks does.
+    /// spark works on words: the header's march says so and nothing else does (#139). A step, a page, a place's
+    /// rows show none: a page slow to come has its wait (#122), a step's answer its toast (#133).
+    pub fn thinking(&self) -> bool {
+        self.wait.is_some()
+    }
+
+    /// What spark's work is, for the march: its reply is think, its model loading is swell.
     pub fn work(&self) -> Work {
-        if self.running.is_some() {
-            if self.queue.is_empty() {
-                Work::March
-            } else {
-                Work::Steps
-            }
-        } else if let Some(w) = self.wait {
-            w
-        } else if matches!(self.mode, Mode::Listening) {
-            Work::Think
-        } else {
-            Work::Read
-        }
+        self.wait.unwrap_or(Work::Think)
     }
 
     /// The providers whose rows the view on screen shows: they check for changes while it does (#37).
@@ -1130,6 +1184,24 @@ impl App {
                     }
                 }
             }
+            Kind::Side => {
+                // the lit file's page for the pane: the one asked for alone, a refusal said by nothing but its absence
+                let text = result
+                    .as_ref()
+                    .and_then(|r| r.pointer("/contents/0/text"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let of = result.as_ref().and_then(|r| r.pointer("/contents/0/uri")).and_then(Value::as_str).map(scrub);
+                let Some(pv) = self.side.as_mut().filter(|pv| pv.prov == idx) else { return };
+                let want = pv.uri();
+                if of.as_deref().is_some_and(|u| u != want) {
+                    return;
+                }
+                match preview::page(&want, text).filter(|_| text.len() <= mcp::RESOURCE_MAX) {
+                    Some(pg) => pv.shown = Some(pg),
+                    None => pv.failed = true,
+                }
+            }
             Kind::Quiet => {
                 let Some((_, p, call)) = self.quiet.take().filter(|(q, p, _)| *q == n && *p == idx) else {
                     return;
@@ -1176,6 +1248,7 @@ impl App {
             }
         }
         self.follow_view(now);
+        self.side_follow(now);
         let mut late = vec![];
         for s in self.servers.iter_mut() {
             for (id, p) in s.expired(now) {
@@ -1208,6 +1281,11 @@ impl App {
                     }
                 }
                 Kind::Folder => self.say(Sign::Refused, "the list did not come in time: Esc goes back"),
+                Kind::Side => {
+                    if let Some(pv) = self.side.as_mut() {
+                        pv.failed = true;
+                    }
+                }
                 Kind::Page => {
                     if let Some(pv) = self.preview.as_mut() {
                         pv.failed = true; // the wait ends with the words (#124)
@@ -1259,7 +1337,7 @@ impl App {
             .collect()
     }
 
-    /// The rows of Settings shown here: a section that runs, Connections always, About when it runs.
+    /// The rows of Settings shown here: a section that runs, Talk where talk is offered, Connections always.
     pub fn settings(&self) -> Vec<usize> {
         SETTINGS
             .iter()
@@ -1279,9 +1357,12 @@ impl App {
     /// back, never a row of its own (#53); a blank row between turns; older turns while EXCHANGE_MAX
     /// lines hold them.
     fn said(&self, out: &mut Vec<Item>) {
-        let w = self.size.0.saturating_sub(8).max(10) as usize; // the sign at 2, the words at 4, air at the right
+        let w = self.col_w().saturating_sub(8).max(10) as usize; // the sign at 2, the words at 4, air at the right
         let mut turns: Vec<Vec<usize>> = vec![];
         for (i, l) in self.exchange.iter().enumerate() {
+            if l.step {
+                continue; // a step's own line: its receipt is the toast (#133)
+            }
             if l.sign == Sign::You || turns.is_empty() {
                 turns.push(vec![]);
             }
@@ -1464,9 +1545,14 @@ impl App {
             }
             View::Section(p) => self.section_rows(*p, &mut list, false),
             View::Dest(d) if *d == SETTINGS_DEST => {
-                for i in self.settings() {
-                    if self.query().is_empty() || self.word_in(SETTINGS[i].1) {
-                        list.push(Item::Setting(i));
+                if self.query().is_empty() {
+                    self.settings_items(&mut list);
+                } else {
+                    // what was typed, found, with no headings
+                    for i in self.settings() {
+                        if self.word_in(SETTINGS[i].1) {
+                            list.push(Item::Setting(i));
+                        }
                     }
                 }
             }
@@ -1488,7 +1574,12 @@ impl App {
             }
             View::Home => {
                 if self.query().trim().is_empty() {
-                    // the six places with air between them, as the approved home has them
+                    // the undo at hand once its toast is gone: the receipt it takes back, Undo at its end (#133)
+                    if let (Some(_), Some(said), false) = (&self.undo, &self.undo_said, self.toast_here()) {
+                        list.push(Item::Undo(Sign::Done, said.clone(), true));
+                        list.push(Item::Blank);
+                    }
+                    // the places with air between them, as the approved home has them
                     for (k, d) in self.dests().into_iter().enumerate() {
                         if k > 0 {
                             list.push(Item::Blank);
@@ -1541,12 +1632,31 @@ impl App {
             out.push(Item::Blank);
         }
         out.extend(list);
+        if self.toast_here() {
+            out.push(Item::Toast);
+        }
         out
+    }
+
+    /// Settings under their groups' headings, as Files parts its rows (#137).
+    fn settings_items(&self, list: &mut Vec<Item>) {
+        let mut group = "";
+        for i in self.settings() {
+            let g = setting_group(SETTINGS[i].0);
+            if g != group {
+                if !group.is_empty() {
+                    list.push(Item::Blank);
+                }
+                list.push(Item::Heading(g.into()));
+                group = g;
+            }
+            list.push(Item::Setting(i));
+        }
     }
 
     /// Words that open nothing, wrapped to the content's width.
     fn text(&self, out: &mut Vec<Item>, words: &str, muted: bool) {
-        for l in crate::ui::wrap(words, self.size.0.saturating_sub(6).max(10) as usize) {
+        for l in crate::ui::wrap(words, self.col_w().saturating_sub(6).max(10) as usize) {
             out.push(Item::Text(l, muted));
         }
     }
@@ -1569,6 +1679,7 @@ impl App {
             Item::Model(i) => self.models.get(*i).map(|(_, s)| s == "serving" || s == "downloaded").unwrap_or(false),
             Item::TalkOpt(_) => self.voice_on,
             Item::Ask | Item::Undo(..) | Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::StepOf(_) | Item::Here => true,
+            Item::Toast => self.toast.as_ref().is_some_and(|t| t.undo) && self.undo.is_some(),
             _ => false,
         }
     }
@@ -1712,6 +1823,14 @@ impl App {
                 }
             }
             "Files" => "your home folder".to_string(),
+            "About" => {
+                // the version where the about knows it, else what the place is for
+                let v = prov("about")?.version.clone();
+                if v.is_empty() {
+                    return None;
+                }
+                format!("spark-shell {}", v)
+            }
             "Settings" => {
                 let first = |l: &str| prov(l).map(|p| p.title.split(crate::ui::SEP).next().unwrap_or("").trim().to_string());
                 // the network: Wi-Fi's own words while it is joined, else wired when the cable is up (#128)
@@ -2100,13 +2219,16 @@ impl App {
         match std::mem::replace(&mut self.mode, Mode::Normal) {
             Mode::Confirm(_) => {
                 self.say(Sign::Refused, "not done: no yes");
+                self.step_done();
                 self.input.clear();
                 self.unstash();
                 self.stop_queue();
             }
             Mode::Ask { step, field, .. } => {
+                self.step_from = Some(self.exchange.len());
                 self.say(Sign::You, &step.line);
                 self.say(Sign::Refused, &format!("not done: no {} given", field.replace('_', " ")));
+                self.step_done();
                 self.input.clear();
                 self.unstash();
                 self.stop_queue();
@@ -2149,9 +2271,10 @@ impl App {
                 } else if let Some(v) = self.came_from.pop() {
                     self.go_back(v);
                 } else if self.exchange_up() {
-                    // at the home with an exchange showing, Esc clears it first; the next Esc closes (#25)
+                    // at the home with an exchange or a toast showing, Esc clears them first; the next Esc closes (#25);
+                    // the undo at hand stays, the home's undo row (#133)
                     self.exchange.clear();
-                    self.undo = None;
+                    self.toast = None;
                     self.value_turn = None;
                     self.sel = 0;
                 } else {
@@ -2161,9 +2284,9 @@ impl App {
         }
     }
 
-    /// Whether the content area shows an exchange or an undo that Esc would clear.
+    /// Whether the content area shows an exchange or a toast that Esc would clear.
     pub fn exchange_up(&self) -> bool {
-        self.running.is_none() && (!self.exchange.is_empty() || self.undo.is_some())
+        self.running.is_none() && (self.exchange.iter().any(|l| !l.step) || self.toast_here())
     }
 
     fn go_back(&mut self, v: View) {
@@ -2265,6 +2388,9 @@ impl App {
     fn dest_view(&self, d: usize) -> View {
         if d == SETTINGS_DEST || d == CALENDAR_DEST {
             return View::Dest(d);
+        }
+        if DESTS[d].sections == ["about"] {
+            return View::About;
         }
         let secs = self.dest_sections(d);
         match secs.as_slice() {
@@ -2444,11 +2570,7 @@ impl App {
                 }
                 self.request(&words);
             }
-            Item::Undo(..) => {
-                if let Some(u) = self.undo.take() {
-                    self.run(u);
-                }
-            }
+            Item::Undo(..) | Item::Toast => self.undo_now(),
             Item::StepOf(k) => {
                 // one of the lit row's steps: back to its list, then the step as a pick of its own
                 let (Some(row), View::Steps(p)) = (self.steps_row.clone(), self.view.clone()) else {
@@ -3321,14 +3443,18 @@ impl App {
         }
         if step.who == Who::Undo {
             self.undo = None; // the undo at hand is taken, wherever it came from (its row, "undo", spark)
+            self.undo_said = None;
         }
+        self.step_from = Some(self.exchange.len());
         self.say(Sign::You, &step.line);
         let Some(tool) = self.tool_of(&step).cloned() else {
             self.say(Sign::Refused, "this is not offered here now");
+            self.step_done();
             return self.stop_queue();
         };
         if let Err(e) = self.checked(&step) {
             self.say(Sign::Refused, &e);
+            self.step_done();
             return self.stop_queue();
         }
         if self.risky(&tool) {
@@ -3372,6 +3498,7 @@ impl App {
             Ok(()) => self.call(step),
             Err(e) => {
                 self.say(Sign::Refused, &format!("not done: {}", e));
+                self.step_done();
                 self.stop_queue();
             }
         }
@@ -3399,6 +3526,7 @@ impl App {
             }
             None => {
                 self.say(Sign::Refused, "not done: the part of the desktop that does it stopped");
+                self.step_done();
                 self.stop_queue();
             }
         }
@@ -3454,6 +3582,7 @@ impl App {
         if let Some(e) = output_error {
             self.opened = false;
             self.say(Sign::Refused, &e);
+            self.step_done();
             self.stop_queue();
             self.providers[idx].dirty = true;
             return;
@@ -3469,6 +3598,7 @@ impl App {
                         text
                     },
                 );
+                self.step_done();
                 self.stop_queue();
             } else {
                 let sc = r.get("structuredContent").cloned().unwrap_or(Value::Null);
@@ -3563,7 +3693,165 @@ impl App {
             }
         }
         self.providers[idx].dirty = true;
+        self.step_done();
         self.next_step();
+    }
+
+    /// A step ended, done, refused or with no yes: its lines are a step's, kept out of the turns, and its
+    /// receipt is the toast, with Undo where the step left one (#133).
+    fn step_done(&mut self) {
+        let Some(from) = self.step_from.take() else { return };
+        let from = from.min(self.exchange.len());
+        for l in &mut self.exchange[from..] {
+            l.step = true;
+        }
+        let Some(l) = self.exchange[from..].iter().find(|l| matches!(l.sign, Sign::Done | Sign::Refused)).cloned() else {
+            return;
+        };
+        let undo = l.sign == Sign::Done && self.undo.is_some();
+        if undo {
+            self.undo_said = Some(l.text.clone());
+        }
+        self.toast = Some(Toast {
+            sign: l.sign,
+            text: l.text,
+            undo,
+            view: self.view.clone(),
+            at: Instant::now(),
+        });
+    }
+
+    /// The toast is up in the view on screen, its time not out (#133).
+    pub fn toast_here(&self) -> bool {
+        self.toast.as_ref().is_some_and(|t| t.view == self.view && t.at.elapsed() < TOAST_FOR)
+    }
+
+    /// A toast whose time is out, or whose view was left, goes; true when one went.
+    pub fn toast_tick(&mut self) -> bool {
+        if self.toast.is_some() && !self.toast_here() {
+            self.toast = None;
+            if self.in_list && self.sel >= self.picks().len() {
+                self.sel = self.picks().len().saturating_sub(1);
+            }
+            return true;
+        }
+        false
+    }
+
+    /// Full screen keeps the lit file's page in its pane (#131): asked once the lit row has stayed a moment, so a run of
+    /// keys asks for nothing on its way; gone where no file with a page is lit or there is no pane.
+    fn side_follow(&mut self, now: Instant) {
+        let pane = crate::ui::layout(self.size.0, self.size.1) != crate::ui::Layout::One;
+        let lit = match (&self.view, self.picks().get(self.sel), &self.folder) {
+            (View::Folder(p, _), Some(Item::Folder(i)), Some((fp, _, rows))) if pane && fp == p && self.providers[*p].label == "files" => {
+                rows.rows.get(*i).filter(|r| r.page.is_some()).map(|r| r.id.clone())
+            }
+            _ => None,
+        };
+        let Some(id) = lit else {
+            self.side = None;
+            self.side_lit = None;
+            return;
+        };
+        if self.side.as_ref().is_some_and(|pv| pv.row().id == id) {
+            return;
+        }
+        match &self.side_lit {
+            Some((l, t)) if *l == id && now.duration_since(*t) >= SIDE_GAP => {
+                let Some((p, _, rows)) = self.folder.as_ref() else { return };
+                let Some(pv) = Preview::new(*p, &rows.title, &rows.rows, &id) else { return };
+                let (p, uri) = (pv.prov, pv.uri());
+                self.side = Some(pv);
+                if let Some(s) = self.server(p) {
+                    s.request("resources/read", json!({"uri": uri}), Kind::Side, mcp::T_READ);
+                }
+            }
+            Some((l, _)) if *l == id => {}
+            _ => self.side_lit = Some((id, now)),
+        }
+    }
+
+    /// The dialog's own column's width: the whole grid, or the dialog's width where full screen gives a pane (#131).
+    pub fn col_w(&self) -> u16 {
+        if self.view == View::Preview {
+            return self.size.0; // the preview keeps the whole screen
+        }
+        crate::ui::column_width(self.size.0, self.size.1)
+    }
+
+    /// The pane shows the lit file's page (#131).
+    pub fn side_here(&self) -> bool {
+        matches!(self.view, View::Folder(..)) && self.side.is_some()
+    }
+
+    /// What the pane shows under its name (#131): the lit place's rows, the lit setting's section, the lit row's facts and
+    /// actions. The row followed is the one lit, or the first while the prompt has the keys. None where nothing is.
+    pub fn pane_of(&self) -> Option<(String, String, Vec<Item>)> {
+        let lit = self.picks().get(self.sel).cloned()?;
+        match lit {
+            Item::Dest(d) => {
+                let mut items = vec![];
+                if d == SETTINGS_DEST {
+                    self.settings_items(&mut items);
+                } else if d == CALENDAR_DEST {
+                    if let Some(p) = self.providers.iter().position(|p| p.label == "reminders" && p.dead.is_none()) {
+                        self.section_rows(p, &mut items, false);
+                    }
+                } else if DESTS[d].sections != ["about"] {
+                    let secs = self.dest_sections(d);
+                    let one = secs.len() == 1;
+                    for p in secs {
+                        if !items.is_empty() {
+                            items.push(Item::Blank);
+                        }
+                        self.section_rows(p, &mut items, !one);
+                    }
+                }
+                let sub = self.dest_state(d).unwrap_or_else(|| DESTS[d].purpose.to_string());
+                Some((DESTS[d].name.to_string(), sub, items))
+            }
+            Item::Setting(i) => {
+                let (label, name, purpose) = SETTINGS[i];
+                let mut items = vec![];
+                if let Some(p) = self.providers.iter().position(|p| p.label == label && p.dead.is_none()) {
+                    self.section_rows(p, &mut items, false);
+                }
+                Some((name.to_string(), purpose.to_string(), items))
+            }
+            Item::Row(..) | Item::Folder(_) => {
+                let row = match lit {
+                    Item::Row(p, r) => self.providers[p].rows.rows.get(r)?.clone(),
+                    Item::Folder(i) => self.folder.as_ref()?.2.rows.get(i)?.clone(),
+                    _ => return None,
+                };
+                // the row's facts under its whole name, then what can be done with it, in the provider's words
+                let mut items = vec![];
+                // in the provider's words alone: a pick's bare verb (use, open) says nothing the row does not
+                let calls: Vec<&Call> = row.tool.iter().chain(row.more.iter()).filter(|c| c.said.is_some()).collect();
+                if !calls.is_empty() {
+                    items.push(Item::Heading("actions".into()));
+                    for c in calls {
+                        items.push(Item::Text(format!("  {}", self.step_words(c)), false));
+                    }
+                }
+                Some((row.text.clone(), row.columns.join(crate::ui::SEP), items))
+            }
+            _ => None,
+        }
+    }
+
+    /// A click on this pick lights it and a second one opens it: a file's or a folder's row in Files, as a file
+    /// manager's rows are (#140). Any other row is a place or an action, done on one click.
+    pub fn lights_on_click(&self, n: usize) -> bool {
+        matches!(&self.view, View::Folder(p, _) if self.providers[*p].label == "files") && matches!(self.picks().get(n), Some(Item::Folder(_)))
+    }
+
+    /// The undo at hand runs now (the toast's Undo, the home's undo row).
+    pub fn undo_now(&mut self) {
+        self.toast = None;
+        if let Some(u) = self.undo.take() {
+            self.run(u);
+        }
     }
 
     /// A helper's answer: the plan, the model list, the model set, the words heard, the voice's state,
@@ -3847,7 +4135,7 @@ impl App {
             }
             let word = match &lit {
                 Some(Item::Ask) => "Ask",
-                Some(Item::Undo(..)) => "Undo",
+                Some(Item::Undo(..)) | Some(Item::Toast) => "Undo",
                 Some(Item::Model(_)) | Some(Item::TalkOpt(_)) => "Choose",
                 Some(Item::Here) => "Here",
                 Some(Item::StepOf(k)) => self.step_call(*k).map(|c| verb_of(&c.name)).unwrap_or("Use"),
@@ -4401,7 +4689,7 @@ impl App {
                 keys.push(("Turn", "< >"));
             }
         }
-        let room = self.size.0.saturating_sub(4) as usize;
+        let room = self.col_w().saturating_sub(4) as usize;
         let mut v: Vec<(String, bool)> = vec![];
         let mut used = 0;
         for (w, k) in keys {
