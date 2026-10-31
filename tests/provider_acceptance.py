@@ -488,8 +488,11 @@ else: print('[]')
         fixture.chmod(0o755)
         state = self.home / "windows.json"
         state.write_text(json.dumps({"nodes":[{"id":i,"pid":i,"type":"con","app_id":"fixture","name":"Same title","focused":False} for i in (101,102)]}))
-        rows = [r for r in self.rows("window") if r["tool"] and r["tool"]["name"] == "window_close"]
+        # one row a window, close behind it by the same container ID (#144)
+        rows = [r for r in self.rows("window") if r["tool"] and r["tool"]["name"] == "window_focus"]
         self.assertEqual({r["tool"]["arguments"]["name"] for r in rows}, {"101", "102"})
+        self.assertEqual([[m["name"], m["arguments"]["name"]] for r in rows for m in r["more"]], [["window_close", r["tool"]["arguments"]["name"]] for r in rows])
+        self.assertFalse([r for r in self.rows("window") if r["tool"] and r["tool"]["name"] == "window_close"])
         result = self.provider("window", call(1,"window_close",name="fixture"), call(2,"window_focus",name="102"))
         self.assertTrue(result[1]["result"]["isError"])
         self.assertEqual(result[2]["result"]["structuredContent"]["effect"]["id"], "102")
