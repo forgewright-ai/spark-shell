@@ -6044,7 +6044,7 @@ STUB
     [ "$rc" = 0 ] && [ -z "$out" ] && [ "$(ls -ld "$M" | cut -c1-10)" = drwx------ ] && [ "$(ls -l "$mf" | cut -c1-10)" = -rw------- ] && [ "$(ls -l "$mn" | cut -c1-10)" = -rw------- ] \
         && [ "$(ls -A "$M" | paste -sd' ' -)" = 'spark-shell.facts spark-shell.now' ] \
         && ok "desktop --machine: spark-shell.facts and spark-shell.now, 0600 each, in a folder it made 0700, nothing else left there (#159)" || bad "machine files" "rc=$rc $out $(ls -la "$M" 2>&1)"
-    grep -qx -- '- Session: sway 1.12 on Wayland (no X11: X11 tools do not work here), set up by spark-shell v[0-9.]*; screenshots grim, clipboard wl-copy, notifications notify-send, swaymsg.' "$mf" \
+    grep -qx -- '- Session: sway 1.12 on Wayland (no X11: X11 tools do not work here), set up by spark-shell\( v[0-9.]*\)\{0,1\}; screenshots grim, clipboard wl-copy, notifications notify-send, swaymsg.' "$mf" \
         && grep -qxF -- '- Screens: DP-3 = Fakemake Portable 16, on the left, turned 270, portrait, 1920x1200; HDMI-A-1 = Othermake Desk 24, on the right, 1920x1080.' "$mf" \
         && grep -qxF -- '- spark-shell is this desktop: the bar at the top; the dialog (Super+d) is the launcher and the settings, Super+s spark chat in it.' "$mf" \
         && grep -qxF -- '- Keys: Super+Return opens a terminal window. Super+Shift+q closes the window. Super+1..0 go to workspaces 1 to 10; with Shift the window goes there. Super+Escape locks the screen. Print captures the screen, Shift+Print an area, Super+Print the window. Super+Ctrl+space goes to the next keyboard layout. The volume and mute keys set the sound. The brightness keys set the screen'"'"'s brightness.' "$mf" \
@@ -6056,12 +6056,20 @@ STUB
         && grep -qF -- '- Saved layouts: writing. Notes in ~/notes, by file: alpha.md, beta.md.' "$mf" \
         && grep -q "^- Palettes, dark: .*nord.*; light: .*solarized-light.*; none is the terminal's own colors.$" "$mf" && grep -q '^- Wallpapers: .*dunes.*, or default. Savers: clock' "$mf" \
         && ok "facts: the sound devices by their exact names with what each is, the paired devices with their kinds, the saved networks, the keyboard's codes and names, the layouts, the notes by file, the palettes (#159)" || bad "facts names" "$(cat "$mf")"
-    grep -qxF -- '- spark-shell theme [NAME|none|list|save [NAME]|delete NAME|back|wallpaper X|text N|transparency N|picture PATH|"WORDS"]' "$mf" \
-        && grep -qxF -- '- spark-shell bar on|off [--desktop]' "$mf" && grep -qxF -- '- spark-shell dialog [SECTION|chat|about]' "$mf" \
-        && grep -qF -- '- spark-shell desktop lock; capture screen|area|window; display [idle|lock N|saver [NAME]|brightness N|up|down]; keyboard [' "$mf" \
+    # spark-shell's providers on spark's list: its own commands are the ways to read and list, a change is a tool's (a model that read
+    # the commands as the ways to change wrote spark-shell bar off, spark-shell layout list); its own command only where no tool does it
+    grep -qxF -- '- To read or list with spark-shell: spark-shell theme list, spark-shell font list, spark-shell layout (the saved layouts), spark-shell notes (your notes), spark-shell reminders, spark-shell desktop keys (the desktop'"'"'s keys), spark-shell desktop display.' "$mf" \
+        && grep -qxF -- '- A change to a desktop setting goes through its MCP tool (spark mcp call SERVER TOOL KEY=VALUE), not a spark-shell command; with no tool for it: spark-shell font FACE SIZE|none (set the console font, or use its own); spark-shell dialog [SECTION] (open the dialog (Super+d), SECTION first); spark-shell desktop idle [off] (the idle screen now, or down).' "$mf" \
         && grep -qxF -- '- Reading state: spark mcp read SERVER spark-shell://SERVER/rows; swaymsg -t get_outputs|get_workspaces|get_tree|get_inputs, wpctl status, bluetoothctl show.' "$mf" \
-        && [ "$(grep -n '^- Keys: ' "$mf" | cut -d: -f1)" -lt "$(grep -n '^- spark-shell theme ' "$mf" | cut -d: -f1)" ] \
-        && ok "facts: how to read the state with the tools here, the keys, then spark-shell's commands from its own help, a verb's alternatives in one bracket, the rarer last (the reader's cut takes the end first) (#159)" || bad "facts commands" "$(cat "$mf")"
+        && ! grep -qE '^- spark-shell (theme|font|layout|notes|reminders|desktop|bar|dialog) ' "$mf" && [ "$(grep -n '^- A change ' "$mf" | cut -d: -f1)" -lt "$(grep -n '^- Keys: ' "$mf" | cut -d: -f1)" ] \
+        && ok "facts: how to read the state; spark-shell's own ways to read and list, from its help; a change is the setting's MCP tool, spark-shell's command only where no tool does it (the font, the dialog, the idle screen now); then the keys (#159)" || bad "facts commands" "$(cat "$mf")"
+    mv "$HOME/.config/spark/mcp.env" "$H/mcp.env.kept"; rm -rf "$H/m2"; SPARK_MACHINE_DIR=$H/m2 SWAYSOCK=$H/sock sh "$SH" desktop --machine >/dev/null 2>&1
+    grep -qxF -- '- spark-shell theme [NAME|none|list|save [NAME]|delete NAME|back|wallpaper X|text N|transparency N|picture PATH|"WORDS"]' "$H/m2/spark-shell.facts" \
+        && grep -qF -- '- spark-shell desktop lock; capture screen|area|window; display [idle|lock N|saver [NAME]|brightness N|up|down]; keyboard [' "$H/m2/spark-shell.facts" \
+        && grep -qxF -- '- Reading state: swaymsg -t get_outputs|get_workspaces|get_tree|get_inputs, wpctl status, bluetoothctl show.' "$H/m2/spark-shell.facts" \
+        && ! grep -q '^- A change ' "$H/m2/spark-shell.facts" && [ "$(wc -m < "$H/m2/spark-shell.facts" | tr -d ' ')" -le 3000 ] \
+        && ok "facts, no provider of spark-shell's on spark's list (no tool to change with): spark-shell's own commands from its help, a verb's alternatives in one bracket, within 3000 characters" || bad "facts no tools" "$(cat "$H/m2/spark-shell.facts" 2>&1)"
+    mv "$H/mcp.env.kept" "$HOME/.config/spark/mcp.env"; rm -rf "$H/m2"
     grep -qxF -- '- Windows open (sway con id, app_id, workspace): 42 firefox on 1, focused; 7 foot on 1; 12 mpv on 2.' "$mn" \
         && grep -qxF -- '- Workspaces: 1:X on DP-3 (focused), 2:Y writing on HDMI-A-1 (shown).' "$mn" \
         && grep -qxF -- '- Sound: output "Fake Speaker" in use, volume 38%, not muted; no microphone connected.' "$mn" \

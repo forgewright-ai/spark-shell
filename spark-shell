@@ -4012,6 +4012,38 @@ machine_clean() { tr '\t' ' ' | scrub_text | awk -v max="$1" 'NF { n += length($
 machine_keys() {   # -> the key table's sentences a request asks about (desk_keys, the sway template's own), each to its first clause, as one line
     desk_keys | awk '$1 ~ /^(Super[+]Return|Super[+]Shift[+]q|Super[+]Escape|Print|Super[+]Ctrl[+]space|Super[+]1[.][.]0)$/ || /^The (volume|brightness) / { if ($1 !~ /^Super[+]1/) sub(/(; |, and ).*/, "."); print }' | machine_join ' '   # the workspaces' second clause says where Shift sends the window
 }
+# The ways spark-shell itself reads and lists, by the help's words: a form here is printed when the
+# help has it alone or with one optional part, a [word] said as the word ([list]: list), and what it
+# lists when its help begins with "list". A change to a setting goes through the setting's MCP tool;
+# spark-shell's own command is named only where no tool does it (#159: a model that read the
+# commands as the ways to change wrote spark-shell bar off and spark-shell layout list).
+MACHINE_READS='theme:font list:layout:notes:reminders:desktop keys:desktop display'   # a colon between (awk -v takes no new line); the screens, layouts, savers and drives are facts of their own
+MACHINE_NO_TOOL='font FACE:dialog:desktop idle'   # the changes no MCP tool makes: the console's font, the dialog opened, the idle screen now
+machine_usage() {   # -> SYNOPSIS<tab>WORDS per command of the help (usage), its words the next line's when the synopsis fills its own
+    usage | awk '
+        function out() { if (syn != "") print syn "\t" desc; syn = "" }
+        /^ *spark-shell / { out(); l = $0; sub(/^ */, "", l); if (match(l, /  +/)) { syn = substr(l, 1, RSTART - 1); desc = substr(l, RSTART + RLENGTH) } else { syn = l; desc = "" }; next }
+        syn != "" && desc == "" && /^ +[^ ]/ { desc = $0; sub(/^ +/, "", desc); next }
+        { out() }
+        END { out() }'
+}
+machine_ways() {   # -> the ways to read and list (MACHINE_READS) as the help writes them, one line
+    machine_usage | awk -F '\t' -v reads="$MACHINE_READS" '
+        BEGIN { n = split(reads, r, ":"); for (i = 1; i <= n; i++) want["spark-shell " r[i]] = i }
+        { syn = $1; desc = $2; base = syn; opt = ""
+          if (substr(syn, length(syn)) == "]" && (p = index(syn, " [")) > 0) { base = substr(syn, 1, p - 1); opt = substr(syn, p + 2, length(syn) - p - 2) }
+          if (!(base in want) || (base in got)) next
+          got[base] = 1; form = base; if (opt ~ /^[a-z]+$/) form = base " " opt
+          g = ""; if (desc ~ /^list / && form !~ / list$/) { g = substr(desc, 6); sub(/, .*/, "", g) }
+          w[want[base]] = form (g == "" ? "" : " (" g ")") }
+        END { s = ""; for (i = 1; i <= n; i++) if (i in w) s = s (s == "" ? "" : ", ") w[i]; if (s != "") print s }'
+}
+machine_no_tool() {   # -> the changes no MCP tool makes (MACHINE_NO_TOOL), each as the help writes it with its words, one line
+    machine_usage | awk -F '\t' -v forms="$MACHINE_NO_TOOL" '
+        BEGIN { n = split(forms, f, ":") }
+        { for (i = 1; i <= n; i++) if (!(i in w) && ($1 == "spark-shell " f[i] || index($1, "spark-shell " f[i] " ") == 1)) w[i] = $1 ($2 == "" ? "" : " (" $2 ")") }
+        END { s = ""; for (i = 1; i <= n; i++) if (i in w) s = s (s == "" ? "" : "; ") w[i]; if (s != "") print s }'
+}
 machine_cmds() {   # -> spark-shell's own commands as its help says them (usage), a line a verb: a group's alternatives in one bracket, the desktop's groups on one line (desktop lock; capture ...), its keys and idle left out (the keys are above)
     usage | sed -n 's/^ *\(spark-shell [^ ].*\)$/\1/p' | sed 's/   *.*$//' \
         | grep -E '^spark-shell (theme|font|layout|notes|reminders|desktop [a-z]+|bar|dialog)( |$)' | grep -vxE 'spark-shell desktop (portals|keys|idle .*)' \
@@ -4128,8 +4160,15 @@ machine_facts() {   # -> the .facts lines: what holds while the machine stays as
     case ${SND:-} in wpctl) _mrt="$_mrt, wpctl status" ;; pactl) _mrt="$_mrt, pactl list sinks" ;; alsa) _mrt="$_mrt, amixer" ;; esac
     [ -z "$_mbt" ] || _mrt="$_mrt, bluetoothctl show"
     printf -- '- Reading state: %s%s.\n' "$_mrs" "$_mrt"
-    printf -- '- Keys: %s\n' "$(machine_keys)"
-    machine_cmds | sed 's/^+ /- /'   # last: past the reader's 3,000 characters the end goes first, and each of them has its tool too
+    _mwy=$(machine_ways); [ -z "$_mwy" ] || printf -- '- To read or list with spark-shell: %s.\n' "$_mwy"
+    if [ -n "$(mcp_mine)" ]; then   # the tools are on spark's list: a change is a tool's
+        _mnt=$(machine_no_tool)
+        printf -- '- A change to a desktop setting goes through its MCP tool (spark mcp call SERVER TOOL KEY=VALUE), not a spark-shell command%s.\n' "${_mnt:+; with no tool for it: $_mnt}"
+        printf -- '- Keys: %s\n' "$(machine_keys)"
+    else   # no tool on spark's list: spark-shell's own commands are the ways to change
+        printf -- '- Keys: %s\n' "$(machine_keys)"
+        machine_cmds | sed 's/^+ /- /'   # last: past the reader's 3,000 characters the end goes first
+    fi
 }
 machine_awake() { screens_json | jq -e '[.[] | select(.active) | if .power != null then .power elif .dpms != null then .dpms else true end] | length == 0 or any' >/dev/null 2>&1; }   # a screen on (none told: on); the lock turns them off
 machine_now() {   # -> the .now lines: what is open, focused, in use, connected and muted now

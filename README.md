@@ -1121,7 +1121,11 @@ keeps two files in spark's machine folder, `~/.local/state/spark/machine/`.
 tools here, the screens by port, the sound and Bluetooth devices, the
 keyboard's layouts, the saved Wi-Fi networks, layouts, notes (by file),
 palettes, wallpapers, savers and printers, each by the exact name its
-tool takes, then the keys and spark-shell's own commands from its help.
+tool takes; then spark-shell's own commands that read and list, from
+its help; that a change goes through the setting's MCP tool, with
+spark-shell's own command only where no tool does it (the console's
+font, the dialog, the idle screen now); then the keys. Where spark lists
+no tool of spark-shell's, its commands are the ways to change instead.
 It is written only when it changed, since spark keeps it in the cached
 part of the line's prompt, and not while the screens sleep.
 `spark-shell.now` holds what is in use now: the windows by sway's id and

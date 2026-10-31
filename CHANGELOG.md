@@ -12,8 +12,12 @@ What only the desktop knows, written down for spark's prompt line
   what each is, the wire, the radio and its saved networks, the
   keyboard's layouts, the saved layouts, the notes by file, the
   palettes, wallpapers, savers and printers, each by the exact name its
-  tool takes, then the keys and spark-shell's own commands, read from
-  its help so they cannot drift. `spark-shell.now` holds what is in use:
+  tool takes; then spark-shell's own commands that read and list, read
+  from its help so they cannot drift; that a change goes through the
+  setting's MCP tool, spark-shell's own command only where no tool does
+  it (the console's font, the dialog, the idle screen now); then the
+  keys. A model that read the commands as the ways to change wrote
+  commands that are not there. `spark-shell.now` holds what is in use:
   the windows by sway's id and app, the workspaces, the sound, who is
   connected, the network, the layout, the look, the brightness, the
   minutes, the drives and do not disturb.
