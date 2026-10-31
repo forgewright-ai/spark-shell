@@ -3006,7 +3006,8 @@ echo "$*" >> "$HOME/swaymsg.log"
 case "$*" in
     "-t get_version") echo '{"major":1}' ;;
     "-t get_inputs") echo '[{"type":"keyboard","xkb_layout_names":["English (US)","Portuguese (Brazil)"],"xkb_active_layout_index":1}]' ;;
-    "-t get_workspaces") [ -e "$HOME/ws-test" ] || exit 0   # only the workspace glyphs' test asks
+    "-t get_workspaces") [ ! -e "$HOME/ws-styled" ] || { cat "$HOME/ws-styled"; exit 0; }   # the workspaces' style test (#160)
+        [ -e "$HOME/ws-test" ] || exit 0   # only the workspace glyphs' test asks
         if [ -e "$HOME/ws-later" ]; then echo '[{"num":1,"name":"1:x"},{"num":5,"name":"5"}]'
         else echo '[{"num":1,"name":"1"},{"num":2,"name":"2:x"},{"num":3,"name":"3 writing"},{"num":10,"name":"10"},{"num":11,"name":"11"}]'; touch "$HOME/ws-later"; fi ;;
     "-r -t subscribe -m [\"workspace\"]") echo '{ "change": "init", "old": null, "current": { "num": 5, "name": "5" } }' ;;   # as sway writes it: spaced
@@ -3275,6 +3276,16 @@ SPARK_SHELL_WS_SEED=7 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status </
 i=0; while [ "$i" -lt 50 ] && [ "$(cat "$HOME/swaymsg.log" 2>/dev/null | grep -c '^-- rename')" -lt 5 ]; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null; wait "$bp" 2>/dev/null
 grep -qF -- "-- rename workspace \"11\" to \"11:$(printf '\342\215\216')\"" "$HOME/swaymsg.log" && [ "$(grep -c . "$WSO")" -gt 69 ] \
     && ok "bar status: with the pool, the same seed gives the same APL order (the families are shuffled apart), and the order goes on past APL" || bad "ws pool order" "$(cat "$HOME/swaymsg.log" 2>&1)"
+# numbers (#160): a workspace named with its symbol takes its number, a layout's words kept; a bare one takes its number too;
+# one the user named is left; the same style again is refused
+s1=$(printf "$(sed -n 1p "$WSO")"); s3=$(printf "$(sed -n 3p "$WSO")")
+printf '[{"num":1,"name":"1:%s"},{"num":2,"name":"2:x"},{"num":3,"name":"3:%s writing"},{"num":4,"name":"4"}]\n' "$s1" "$s3" > "$HOME/ws-styled"; rm -f "$HOME/swaymsg.log"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" theme workspaces numbers 2>&1) || rc=$?
+[ "$rc" = 0 ] && [ "$out" = 'the workspaces as numbers' ] && [ "$(grep '^-- rename' "$HOME/swaymsg.log" 2>/dev/null)" = "$(printf '%s\n' "-- rename workspace \"1:$s1\" to \"1:1\"" "-- rename workspace \"3:$s3 writing\" to \"3:3 writing\"" "-- rename workspace \"4\" to \"4:4\"")" ] \
+    && ok "theme workspaces numbers (#160): the open workspaces renamed at once, a layout's words kept, a name the user gave left" || bad "ws numbers" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" theme workspaces numbers 2>&1) || rc=$?
+[ "$rc" = 1 ] && [ "$out" = 'the workspaces are numbers already' ] && ok "theme workspaces: the style in use again is refused" || bad "ws numbers again" "rc=$rc $out"
+SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" theme workspaces symbols >/dev/null 2>&1; rm -f "$HOME/ws-styled"
 rm -f "$H/lx/fc-query" "$WSP"
 rm -f "$HOME/ws-test" "$HOME/ws-later"
 SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" bar light down; grep -qx -- '-q -c backlight set 42%' "$HOME/bctl.log" && ok "bar light down: the brightness keys, 5 down" || bad "bar light down" "$(cat "$HOME/bctl.log")"
@@ -3699,6 +3710,14 @@ else
     echo down > "$S/class/net/wlan0/operstate"; line=$(sh "$SH" bar status --once)
     [ "$(t wifi name)" = "<span foreground='#555555'>$(printf '\342\227\240')</span>" ] && [ -z "$(t wifi gauge)" ] && ok "wifi off: the half circle alone, muted, no gauge" || bad "wifi off" "$(t wifi name) / $(t wifi gauge)"
     echo up > "$S/class/net/wlan0/operstate"
+    # the words set (#160): the kind words where the signs were, muted (bt in the accent while connected), the gauges as they
+    # were, the battery its word and its number
+    printf 'BAR_GLYPHS=words\n' >> "$HOME/.config/spark-shell/config"; line=$(sh "$SH" bar status --once)
+    [ "$(t lan)" = "<span foreground='#555555'>lan</span>" ] && [ "$(t bt)" = "<span foreground='#ff5555'>bt</span>" ] && [ "$(t wifi name)" = "<span foreground='#555555'>wifi</span>" ] \
+        && [ "$(t out name)" = "<span foreground='#555555'>out</span>" ] && [ "$(t mic name)" = "<span foreground='#555555'>mic</span>" ] && [ -n "$(t out gauge)" ] && [ -n "$(t wifi gauge)" ] \
+        && [ "$(t bat)" = "<span foreground='#555555'>bat</span> <span foreground='#aaaaaa'>80</span>" ] \
+        && ok "bar in words (#160): lan, bt, wifi, out and mic as words, muted, bt in the accent while connected; the gauges as before; the battery its word and number" || bad "bar words" "$line"
+    sed -i.bak '/^BAR_GLYPHS=/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak"
     # present-only: a machine with none of it shows the clock alone, and no divider
     mv "$S" "$S.full"; mv "$P" "$P.full"; mkdir -p "$S" "$P"
     line=$(sh "$SH" bar status --once)
@@ -4258,8 +4277,8 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 128 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 128 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 130 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 130 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -4772,8 +4791,15 @@ for kv in DIALOG_ATTACH=maybe DIALOG_MODEL=1 DIALOG_TALK=off 'DIALOG_ATTACH_TYPE
 done
 ok "config: DIALOG_ATTACH, DIALOG_MODEL and DIALOG_TALK take yes or no, DIALOG_ATTACH_TYPES lower-case types; anything else is refused in one line"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" && grep -q '^DIALOG_ANIMATION=$' "$REPO/config.example" \
-    && ok "config: the five keys are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
+grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u BAR_GLYPHS -u BAR_WORKSPACES -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" && grep -q '^DIALOG_ANIMATION=$' "$REPO/config.example" && grep -q '^BAR_GLYPHS=signs$' "$REPO/config.example" && grep -q '^BAR_WORKSPACES=symbols$' "$REPO/config.example" \
+    && ok "config: the dialog's five keys and the bar's two (#160) are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
+# the local gate (#155): every python3 test ci.yml runs is in the gate's list, read from ci.yml itself, with the lint and the
+# dialog's checks; the pre-push hook runs its quick part
+_gl=$(sh "$REPO/tests/gate.sh" --list 2>/dev/null || :)
+_ci=$(grep -oE 'python3( -I)? tests/[A-Za-z0-9_]+\.py' "$REPO/.github/workflows/ci.yml" | awk '!seen[$0]++')
+_gm=$(printf '%s\n' "$_ci" | while IFS= read -r _l; do printf '%s\n' "$_gl" | grep -qxF "$_l" || echo "$_l"; done)
+[ -n "$_ci" ] && [ -z "$_gm" ] && printf '%s\n' "$_gl" | grep -qx 'cargo fmt --check' && printf '%s\n' "$_gl" | grep -qx 'shellcheck' && grep -qx 'exec sh tests/gate.sh --quick' "$REPO/.githooks/pre-push" \
+    && ok "tests/gate.sh (#155): every python3 test of ci.yml in its list, the lint and the dialog's checks too; the pre-push hook runs its quick part" || bad "gate list" "missing: $_gm; $_gl"
 # the want verb: one entry for words, the plan as JSON, a file asked about
 cat > "$H/.local/bin/spark" <<'STUB'
 #!/bin/sh
@@ -5632,6 +5658,23 @@ if [ "$(uname -s)" != Darwin ]; then
     mcp theme "$(call 1 theme_wallpaper_color '{"color":"teal"}')" "$(call 2 theme_wallpaper_color '{"color":"chartreuse"}')"
     [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'the wallpaper is teal' ] && grep -qx 'WALLPAPER=#008080' "$cfg" && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'theme: a color is a name (black, white, gray, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange) or #rrggbb' ] \
         && ok "provide theme_wallpaper_color: a color by its name or #rrggbb, a word that is no color refused" || bad "wallpaper color call" "$(cat "$H/mcp.out" | cut -c1-300)"
+    # the bar's set and its workspaces (#160): a value each in Settings > theme that left and right change; a step with its
+    # undo, the same value again a refusal; a saved theme keeps both and brings them back
+    jq -e '(.rows[] | select(.id == "theme:show:Bar glyphs") | .step == {value: "signs", less: {name: "theme_glyphs", arguments: {to: "signs"}}, more: {name: "theme_glyphs", arguments: {to: "words"}}, words: ["signs", "words"]} and .tool == null)
+        and (.rows[] | select(.id == "theme:show:Workspaces") | .step.value == "symbols" and .step.more == {name: "theme_workspaces", arguments: {to: "numbers"}} and .step.words == ["symbols", "numbers"])' "$H/trows.json" >/dev/null \
+        && ok "provide theme rows (#160): Bar glyphs and Workspaces, a value each that left and right change" || bad "bar rows" "$(jq -c '[.rows[] | select(.id | test("Bar glyphs|Workspaces"))]' "$H/trows.json")"
+    mcp theme "$(call 1 theme_glyphs '{"to":"words"}')" "$(call 2 theme_glyphs '{"to":"words"}')" "$(call 3 theme_workspaces '{"to":"numbers"}')"
+    [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'the bar in words' ] && ans 1 | jq -e '.result.structuredContent.undo | .name == "theme_glyphs" and .arguments.to == "signs"' >/dev/null \
+        && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'the bar is in words already' ] \
+        && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'the workspaces as numbers' ] && grep -qx 'BAR_GLYPHS=words' "$cfg" && grep -qx 'BAR_WORKSPACES=numbers' "$cfg" \
+        && ok "provide theme_glyphs and theme_workspaces (#160): each a step with its receipt and undo, kept in the config; the same value again is refused" || bad "bar steps" "$(cut -c1-300 "$H/mcp.out")"
+    sh "$SH" theme save barlook >/dev/null 2>&1; sh "$SH" theme glyphs signs >/dev/null 2>&1; sh "$SH" theme workspaces symbols >/dev/null 2>&1; sh "$SH" theme barlook >/dev/null 2>&1
+    grep -qx 'BAR_GLYPHS=words' "$th_dir/barlook/look.env" && grep -qx 'BAR_WORKSPACES=numbers' "$th_dir/barlook/look.env" && grep -qx 'BAR_GLYPHS=words' "$cfg" && grep -qx 'BAR_WORKSPACES=numbers' "$cfg" \
+        && ok "theme save keeps the bar's set and its workspaces, and the theme brings them back (#160)" || bad "bar look kept" "$(cat "$th_dir/barlook/look.env" 2>&1; grep BAR_ "$cfg")"
+    sh "$SH" theme dracula >/dev/null 2>&1; sh "$SH" theme delete barlook </dev/null >/dev/null 2>&1; sh "$SH" theme glyphs signs >/dev/null 2>&1; sh "$SH" theme workspaces symbols >/dev/null 2>&1
+    printf 'BAR_GLYPHS=letters\n' >> "$cfg"; st=0; out=$(sh "$SH" theme 2>&1) || st=$?
+    [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q 'BAR_GLYPHS=letters in .*: signs or words' && ok "config: BAR_GLYPHS other than signs or words is refused in one line (#160)" || bad "bar glyphs refuse" "st=$st $out"
+    sed -i.bak '/^BAR_GLYPHS=letters$/d' "$cfg"; rm -f "$cfg.bak"
     sh "$SH" theme wallpaper dunes >/dev/null 2>&1
     mcp theme "$(call 1 theme_wallpaper '{"name":"sunset"}')" "$(call 2 theme_wallpaper '{"name":"nowhere"}')" "$(call 3 theme_wallpaper '{"name":"sunset"}')" "$(call 4 theme_palette '{"name":"dracula"}')"
     [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'the wallpaper is sunset' ] && grep -qx 'WALLPAPER=dunes' "$cfg" && [ "$(ans 1 | jq -c '.result.structuredContent.undo')" = '{"name":"theme_wallpaper","arguments":{"name":"dunes"}}' ] \
@@ -6079,7 +6122,7 @@ STUB
         && ! grep -qE '^- spark-shell (theme|font|layout|notes|reminders|desktop|bar|dialog) ' "$mf" && [ "$(grep -n '^- A change ' "$mf" | cut -d: -f1)" -lt "$(grep -n '^- Keys: ' "$mf" | cut -d: -f1)" ] \
         && ok "facts: how to read the state; spark-shell's own ways to read and list, from its help; a change is the setting's MCP tool, spark-shell's command only where no tool does it (the font, the dialog, the idle screen now); then the keys (#159)" || bad "facts commands" "$(cat "$mf")"
     mv "$HOME/.config/spark/mcp.env" "$H/mcp.env.kept"; rm -rf "$H/m2"; SPARK_MACHINE_DIR=$H/m2 SWAYSOCK=$H/sock sh "$SH" desktop --machine >/dev/null 2>&1
-    grep -qxF -- '- spark-shell theme [NAME|none|list|save [NAME]|delete NAME|back|wallpaper X|text N|transparency N|picture PATH|"WORDS"]' "$H/m2/spark-shell.facts" \
+    grep -qxF -- '- spark-shell theme [NAME|none|list|save [NAME]|delete NAME|back|wallpaper X|text N|transparency N|glyphs SET|workspaces X|picture PATH|"WORDS"]' "$H/m2/spark-shell.facts" \
         && grep -qF -- '- spark-shell desktop lock; capture screen|area|window; display [idle|lock N|saver [NAME]|brightness N|up|down]; keyboard [' "$H/m2/spark-shell.facts" \
         && grep -qxF -- '- Reading state: swaymsg -t get_outputs|get_workspaces|get_tree|get_inputs, wpctl status, bluetoothctl show.' "$H/m2/spark-shell.facts" \
         && ! grep -q '^- A change ' "$H/m2/spark-shell.facts" && [ "$(wc -m < "$H/m2/spark-shell.facts" | tr -d ' ')" -le 3000 ] \

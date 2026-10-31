@@ -111,6 +111,8 @@ explain each part. If something fails, run `spark-shell check` and
     spark-shell theme wallpaper X     a drawing, a picture, a color or default
     spark-shell theme text N          the text size everywhere; bigger, smaller
     spark-shell theme transparency N  the windows' transparency; more, less
+    spark-shell theme glyphs SET      the bar in signs or in words
+    spark-shell theme workspaces X    the workspaces as symbols or numbers
     spark-shell theme picture PATH    a theme from a picture of yours
     spark-shell theme "WORDS"         a theme from words, read by spark
     spark-shell font FACE SIZE|none   set the console font, or use its own
@@ -639,30 +641,38 @@ block first, then Miscellaneous Technical, Geometric Shapes,
 Mathematical Operators and Arrows, as the bar's font has them, so a
 workspace past the tenth wears one too. A workspace a layout opened
 carries the layout's words after its symbol, so `2 news` reads from a
-distance. On the right, in groups parted by a thin
-line: `lan`, `wifi` and `bt`; `out` and `mic`, each with its gauge;
-`due`, a reminder due; `do not disturb`, while it is on; `light`, the
-brightness with its gauge, and `kb`,
-the keyboard's layout; `bat`; the date and time; and last, spark-shell's
-own sign, the prompt sign in the palette's yellow. The palette has no
-block: it is picked in the dialog, where a click on any block leads.
+distance. On the right, in groups parted by air: the wire, Bluetooth
+and Wi-Fi with its gauge; sound out and the mic, each with its gauge;
+a reminder due; do not disturb, while it is on; the brightness with its
+gauge, and the keyboard's layout; the battery, four cells and the
+number; the date and time; and last, spark-shell's own sign, the prompt
+sign in the palette's yellow. The palette has no block: it is picked in
+the dialog, where a click on any block leads.
+
+Each block is a glyph of the bar's font: filled is on, hollow is off or
+muted, the accent is connected, red wants you. Settings > theme has two
+rows that left and right change: Bar glyphs, signs or words (the kind
+words: lan, wifi, bt, out, mic, light, kb, bat), and Workspaces,
+symbols or numbers (1 2 3). `spark-shell theme glyphs words` and
+`spark-shell theme workspaces numbers` do the same, the bar takes them
+at once, and a saved theme keeps both.
 
 A block appears only for hardware this machine has. No battery, no
-`bat`. The kind word is muted and the name is in the text color, as
-in `out jabra`. Color is for alarms: `mic` is red while any program
-records, and so are `lan down` and a battery under 15. The bar never
-changes width: a click never swaps a block's text.
+battery block. Device names are in the dialog, never on the bar. Color
+is for alarms: the mic is a red dot while any program records, and the
+wire is red with a warning sign when it is down, as is a battery under
+15. The bar never changes width: a click never swaps a block's text.
 
-The two gauges are the things you set in the bar itself. A click sets
-the level where you clicked, the wheel nudges it by 5, and a right
-click mutes. The volume keys do the same for `out`, and the mic mute
-key for `mic`.
+The three gauges are the things you set in the bar itself: sound out,
+the mic and the brightness. A click sets the level where you clicked,
+the wheel nudges it by 5, and a right click mutes. The volume keys do
+the same for sound out, the mic mute key for the mic, and the
+brightness keys for the screen.
 
 A click on any other block opens the dialog with that block first.
 The sign at the end opens it as Super+d does.
-The signs the bar wears are the dialog's: a dot before a connected
-device, a warning sign with a red `lan down` or a low battery, a red
-dot after `mic` while a program records.
+The signs the bar wears are the dialog's: a warning sign with the wire
+down or a low battery, a red dot for the mic while a program records.
 
 Wi-Fi is set through the tool this machine has: nmcli, iwctl or
 wpa_cli. Sound comes from PipeWire, which `on desktop` installs,
@@ -1256,6 +1266,14 @@ Uninstall: `spark-shell off`, then delete `~/.spark-shell`.
 
     git config core.hooksPath .githooks
     sh tests/shell_test.sh
+    sh tests/gate.sh
+
+`sh tests/gate.sh` runs every check CI runs, on this machine: the lint
+checks, the dialog's format, lint, tests and release build, every
+python3 test the CI file names (read from it), then the suite's two
+halves (on a Mac, Linux's through a stub). One line a check; the first
+failure stops it. The pre-push hook runs `sh tests/gate.sh --quick`,
+everything but the suites; run the whole gate before a release.
 
 The suite is five parts, cut by time. `sh tests/shell_test.sh --parallel`
 runs them side by side, a process each, as CI does; `--part NAME` runs

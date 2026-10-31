@@ -3,12 +3,18 @@
 import socket
 import struct
 
+# Two sockets on the proof's own link, never every interface (#168): one bound
+# to the broadcast address hears a client that has no address yet, and one
+# bound to the server's address answers it.
+hear = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+hear.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, b'server0\0')
+hear.bind(('255.255.255.255', 67))
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, b'server0\0')
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-sock.bind(('', 67))
+sock.bind(('192.0.2.1', 67))
 while True:
-    data, _ = sock.recvfrom(4096)
+    data, _ = hear.recvfrom(4096)
     if len(data) < 240 or data[0] != 1:
         continue
     opts, i = {}, 240

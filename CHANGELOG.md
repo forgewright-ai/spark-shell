@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.117
+
+The bar in signs or in words, the workspaces as symbols or numbers, and
+a gate that runs what CI runs before a push (#160, #155, #168).
+
+- The bar's glyphs and the workspaces' names are a choice (#160, the
+  owner's pick of named sets). Settings > theme has two new rows that
+  left and right change: Bar glyphs, signs (today's, each one the bar's
+  font's own) or words (lan, wifi, bt, out, mic, light, kb, bat, the
+  gauges kept); and Workspaces, symbols (today's) or numbers (1 2 3).
+  The running bar takes the glyphs at once, and the open workspaces are
+  renamed at once, a layout's words kept and a name of your own left as
+  it is. A saved theme keeps both and brings them back. `spark-shell
+  theme glyphs words` and `theme workspaces numbers` do the same, and
+  the keys are BAR_GLYPHS and BAR_WORKSPACES. The README's Bar section
+  says what the bar shows since v0.109.
+- `sh tests/gate.sh` runs every check CI runs, on this machine (#155):
+  the lint checks, the dialog's format, lint, tests and release build,
+  every python3 test the CI file names, read from it so none is
+  missed, then the suite's two halves. One line a check; the first
+  failure stops it. The pre-push hook runs its quick part, all but the
+  suites. v0.114.1 lost three CI rounds to checks this machine could
+  have run.
+- The network test's address server listens on its own link's
+  addresses only, never on every interface (#168), so CodeQL's alert
+  closes with no dismissal.
+
 ## v0.116
 
 What the owner's use of v0.115.1 found in the dialog's keys and its

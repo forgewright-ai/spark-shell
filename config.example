@@ -138,6 +138,16 @@ DIALOG_TALK=yes
 # theme changes it.
 DIALOG_ANIMATION=
 
+# The bar's glyphs: signs (each one the bar's font's own) or words (the
+# kind words: lan, wifi, bt, out, mic, light, kb, bat). Settings > theme
+# changes it, and a saved theme keeps it.
+BAR_GLYPHS=signs
+
+# The workspaces on the bar: symbols (a symbol each, drawn at each
+# desktop start) or numbers (1 2 3). Settings > theme changes it, and a
+# saved theme keeps it.
+BAR_WORKSPACES=symbols
+
 # Clock presentation on the bar, Calendar and idle screen.
 CLOCK_FORMAT=24
 WEEK_START=sunday
