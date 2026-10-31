@@ -249,13 +249,6 @@ type ShownSide = ((u16, u16, u16, u16), String, bool, usize);
 /// A sound's spectrogram in the palette: its file, the palette's ramp, its box, the picture.
 type Tinted = (String, [[u8; 3]; 4], (u32, u32), Image);
 
-fn rgb(c: ratatui::style::Color) -> [u8; 3] {
-    match c {
-        ratatui::style::Color::Rgb(r, g, b) => [r, g, b],
-        _ => [128, 128, 128],
-    }
-}
-
 /// A piece's three films from its folder; @2x where a cell is twice the usual height. None where one is
 /// missing or no GIF.
 fn decode_films(dir: &str) -> Option<transition::Films> {
@@ -333,6 +326,8 @@ fn main() {
     };
     let mut pal = Palette::from_env();
     let slots = slots_here();
+    // the palette as colors, slots or not: a picture tinted in it needs them (a spectrogram, #156)
+    let mut colors = Palette::from(|k| std::env::var(k).ok());
     let labels: Vec<String> = a.providers.iter().map(|(l, _)| l.clone()).collect();
     let mut app = App::new(a.cfg, &labels);
     unsafe {
@@ -455,14 +450,17 @@ fn main() {
         }
         // in slots, the switch recolored this window with every other one, its slots and its ground (#33, #34);
         // elsewhere a theme step brings the new palette, and the window's ground with it
-        if let Some(m) = app.palette.take().filter(|_| !slots) {
-            pal = Palette::from(|k| m.get(k).and_then(serde_json::Value::as_str).map(String::from));
-            if let ratatui::style::Color::Rgb(r, g, b) = pal.surface {
-                let _ = write!(out, "\x1b]11;#{:02x}{:02x}{:02x}\x1b\\", r, g, b);
-                let _ = out.flush();
+        if let Some(m) = app.palette.take() {
+            colors = Palette::from(|k| m.get(k).and_then(serde_json::Value::as_str).map(String::from));
+            if !slots {
+                pal = colors.clone();
+                if let ratatui::style::Color::Rgb(r, g, b) = pal.surface {
+                    let _ = write!(out, "\x1b]11;#{:02x}{:02x}{:02x}\x1b\\", r, g, b);
+                    let _ = out.flush();
+                }
+                let _ = term.clear();
             }
             shown_preview = None;
-            let _ = term.clear();
             dirty = true;
         }
         let prefs = spark_dialog::preferences::read();
@@ -484,8 +482,6 @@ fn main() {
             if let Ok(sz) = term.size() {
                 app.size = (sz.width, sz.height);
             }
-            // full screen's pane follows the lit file at once, not only on the tick (#149)
-            app.side_follow(Instant::now());
             // a sound's picture read once: its waveform and its spectrum, before it is drawn
             if let Some(pv) = app.preview.as_mut().filter(|pv| pv.heard.is_none()) {
                 if let Some((file, wave)) = pv.shown.as_ref().and_then(|pg| pg.sound.clone()) {
@@ -525,7 +521,7 @@ fn main() {
                     blank(&mut out, (p.x, p.y, p.w, p.h), term_color(pal.surface));
                     let (bw, bh) = (p.w as u32 * cw, p.h as u32 * chh);
                     let img = if p.spectrogram {
-                        let ramp = [rgb(pal.surface), rgb(pal.muted), rgb(pal.accent), rgb(pal.fg)];
+                        let ramp = colors.ramp().unwrap_or([[0x1f; 3], [0x7f; 3], [0x55, 0x55, 0xff], [0xaa; 3]]);
                         let heard = app.preview.as_ref().and_then(|pv| pv.heard.as_ref());
                         if let Some(h) = heard.filter(|_| !tinted.as_ref().is_some_and(|(f, r, b, _)| *f == p.file && *r == ramp && *b == (bw, bh))) {
                             tinted = Some((p.file.clone(), ramp, (bw, bh), h.spectrogram.tinted(&ramp).resized(bw, bh)));
@@ -545,9 +541,8 @@ fn main() {
                         // while a drag moves the picture, a lighter frame keeps up with the pointer; the whole one when it stops (#148)
                         let colors = if drag.is_some() { DRAG_COLORS } else { 255 };
                         if let Some((s, pw, ph)) = sixel::show_with(img, bw, bh, &p.view, colors) {
-                            // in the middle of its box by whole cells, or from its top where it says so (the pane's, #149)
-                            let dy = if p.top { 0 } else { (bh.saturating_sub(ph) / 2 / chh) as u16 };
-                            let (dx, dy) = ((bw.saturating_sub(pw) / 2 / cw) as u16, dy);
+                            // in the middle of its box by whole cells
+                            let (dx, dy) = ((bw.saturating_sub(pw) / 2 / cw) as u16, (bh.saturating_sub(ph) / 2 / chh) as u16);
                             // where it is, in pixels: a video plays over it (#125)
                             if let Some(pv) = app.preview.as_mut().filter(|_| app.view == View::Preview && !p.spectrogram) {
                                 pv.frame = Some(((p.x + dx) as u32 * cw, (p.y + dy) as u32 * chh, pw, ph));

@@ -108,13 +108,14 @@ fn render(app: &App, name: &str) {
 }
 
 /// The app drawn at w by h in both palettes: the same grid of slots, the grid kept in golden/.
-fn render_at(app: &App, name: &str, w: u16, h: u16) {
+fn render_at(app: &App, name: &str, w: u16, h: u16) -> spark_dialog::ui::Drawn {
     let mut grids = vec![];
+    let mut drawn = spark_dialog::ui::Drawn::default();
     for pal in ["tokyonight-night", "solarized-light"] {
         let p = palette(pal);
         let mut b = Buffer::empty(Rect::new(0, 0, w, h));
         assert_eq!(app.size, (w, h), "{}: the app is told the size it is drawn at", name);
-        spark_dialog::ui::draw(app, &p, CLOCK, &mut b);
+        drawn = spark_dialog::ui::draw(app, &p, CLOCK, &mut b);
         if let Ok(dir) = std::env::var("RENDER_HTML") {
             let page = format!("<!doctype html><meta charset=utf-8><body style=\"margin:0;padding:28px;background:#111;font:16px 'DejaVu Sans Mono',Menlo,monospace\">{}</body>", common::html_runs(&b, &p, &format!("{} \u{b7} {} \u{b7} {}x{}", name, pal, w, h), "PICTURE"));
             std::fs::write(format!("{}/{}-{}.html", dir, name, pal), page).unwrap();
@@ -131,6 +132,7 @@ fn render_at(app: &App, name: &str, w: u16, h: u16) {
     }
     let want = std::fs::read_to_string(&path).unwrap_or_default();
     assert_eq!(grids[0], want, "{} differs from {} (UPDATE_GOLDEN=1 after looking at it)", name, path);
+    drawn
 }
 
 /// The base with a section for each place of the home: apps, files, notes and the clock too.
@@ -663,8 +665,25 @@ fn files_home() -> App {
     ];
     more.extend(steps.as_array().unwrap().iter().cloned());
     let kinds = json!({"file": {"tool": {"name": "files_open", "said": "open"}, "more": more}, "dir": {"more": steps}});
-    let dir = |name: &str, items: &str| json!({"id": format!("files:dir:{}", name), "sign": "opens", "text": name, "columns": [items], "children": format!("spark-shell://files/rows/{}", name), "group": "home", "kind": "dir", "args": {"path": format!("/data/me/{}", name)}});
-    let file = |name: &str, cols: &[&str], group: &str| json!({"id": format!("files:file:{}:{}", group, name), "sign": "blank", "text": name, "columns": cols, "group": group, "kind": "file", "args": {"path": format!("/data/me/{}", name)}, "page": format!("spark-shell://files/preview/{}", name)});
+    let dir = |name: &str, items: &str| json!({"id": format!("files:dir:{}", name), "sign": "opens", "text": name, "columns": [items], "wide": ["folder", items, "", ""], "children": format!("spark-shell://files/rows/{}", name), "group": "home", "kind": "dir", "args": {"path": format!("/data/me/{}", name)}});
+    // a wide list's columns as the provider writes them (#141): the kind, the size, the date with the time, the folder
+    let file = |name: &str, cols: &[&str], group: &str| {
+        let kind = match name.rsplit('.').next() {
+            Some("md") => "Markdown",
+            Some("txt") => "text",
+            Some("pdf") => "PDF",
+            Some("jpg") => "picture",
+            _ => "file",
+        };
+        let stamp = if cols[1] == "2025" {
+            "04 Mar 2025".to_string()
+        } else {
+            format!("{} 09:14", cols[1])
+        };
+        let mut wide = vec![kind.to_string(), cols[0].to_string(), stamp];
+        wide.push(cols.get(2).copied().unwrap_or("").to_string());
+        json!({"id": format!("files:file:{}:{}", group, name), "sign": "blank", "text": name, "columns": cols, "wide": wide, "group": group, "kind": "file", "args": {"path": format!("/data/me/{}", name)}, "page": format!("spark-shell://files/preview/{}", name)})
+    };
     let rows = model::rows(
         &json!({"title": "~", "here": "/data/me", "kinds": kinds, "rows": [
         dir("documents", "12 items"),
@@ -672,11 +691,11 @@ fn files_home() -> App {
         dir("pictures", "40 items"),
         file("notes.md", &["2 KB", "18 Oct"], "home"),
         file("todo.txt", &["1 KB", "2025"], "home"),
-        {"id": "files:trash", "sign": "opens", "text": "trash", "columns": ["2 items"], "children": "spark-shell://files/rows/trash", "group": "home"},
+        {"id": "files:trash", "sign": "opens", "text": "trash", "columns": ["2 items"], "wide": ["", "2 items", "", ""], "children": "spark-shell://files/rows/trash", "group": "home"},
         file("invoice-0412.pdf", &["120 KB", "today", "downloads"], "recent"),
         file("photo-0412.jpg", &["4.8 MB", "yesterday", "camera"], "recent"),
         file("notes.md", &["2 KB", "18 Oct", "~"], "recent"),
-        {"id": "files:drive:s", "sign": "opens", "text": "STICK", "columns": ["14.2 GB free"], "children": "spark-shell://files/rows/c3RpY2s", "group": "drives"},
+        {"id": "files:drive:s", "sign": "opens", "text": "STICK", "columns": ["14.2 GB free"], "wide": ["", "14.2 GB free", "", ""], "children": "spark-shell://files/rows/c3RpY2s", "group": "drives"},
         {"id": "files:here", "sign": "opens", "text": "this folder \u{b7} 3 folders \u{b7} 2 files \u{b7} 3 KB", "columns": [], "more": [
             {"name": "files_new_folder", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new folder"},
             {"name": "files_new_text", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new text file"}]}
@@ -1217,8 +1236,8 @@ fn space_opens_the_lit_files_preview_and_esc_lights_it_again() {
     assert_eq!(app.input, "a ");
 }
 
-// ---- full screen (#131): the dialog keeps its own column, the room beside it or under it is a pane that shows
-// what the lit row holds
+// ---- full screen (#141): one flow, the dialog's column as wide as a list wants (FULL_WIDTH at most) in the middle,
+// nothing beside or under it
 
 /// A wide screen (a 1920 by 1080 monitor at the dialog's text size) and a tall one (the same turned).
 const WIDE: (u16, u16) = (150, 46);
@@ -1230,15 +1249,16 @@ fn sized(mut app: App, (w, h): (u16, u16)) -> App {
 }
 
 #[test]
-fn full_screen_home_shows_the_lit_place_beside_the_column() {
+fn full_screen_home_is_one_column_in_the_middle_its_words_whole() {
     let mut app = sized(full(), WIDE);
     app.in_list = true;
     app.sel = app.picks().iter().position(|i| matches!(i, spark_dialog::app::Item::Dest(2))).unwrap(); // Workspace
-    render_at(&app, "full-home", WIDE.0, WIDE.1);
+    let drawn = render_at(&app, "full-home", WIDE.0, WIDE.1);
+    assert_eq!(drawn.columns, (15, 135), "one column, {} wide, in the middle", spark_dialog::ui::FULL_WIDTH);
 }
 
 #[test]
-fn full_screen_settings_show_the_lit_section_beside_them() {
+fn full_screen_settings_write_each_state_whole() {
     let mut app = sized(full(), WIDE);
     app.view = View::Dest(SETTINGS_DEST);
     app.came_from = vec![View::Home];
@@ -1252,22 +1272,28 @@ fn full_screen_settings_show_the_lit_section_beside_them() {
 }
 
 #[test]
-fn full_screen_files_show_the_lit_files_page_beside_the_list() {
+fn full_screen_files_list_whole_names_with_the_kind_the_size_and_the_time() {
     let mut app = sized(files_home(), WIDE);
-    let (f, _, rows) = app.folder.clone().unwrap();
-    let id = rows.rows[3].id.clone(); // notes.md, lit
-    let mut pv = spark_dialog::preview::Preview::new(f, &rows.title, &rows.rows, &id).unwrap();
-    pv.shown = spark_dialog::preview::page(
-        &pv.uri(),
-        &json!({"lines": ["# Week of 2 November", "", "The report goes out on Friday. Ada reviews the numbers on Thursday morning, and the charts follow the same afternoon.", "", "## To do", "", "- send the draft to Ada", "- book the room for Thursday"], "bold": [0, 4], "facts": ["2 KB", "18 Oct"]})
-            .to_string(),
-    );
-    app.side = Some(pv);
+    let long = model::rows(&json!({"title": "~", "rows": [{"id": "files:file:home:q", "sign": "blank", "text": "quarterly-report-for-the-board-final-v3.pdf", "columns": ["4.5 MB", "today"], "wide": ["PDF", "4.5 MB", "today 21:02", ""], "group": "home", "page": "spark-shell://files/preview/q"}], "short": []}).to_string()).unwrap();
+    let rows = &mut app.folder.as_mut().unwrap().2.rows;
+    let at = rows.iter().position(|r| r.text == "todo.txt").unwrap();
+    rows.insert(at, long.rows[0].clone());
     render_at(&app, "full-files", WIDE.0, WIDE.1);
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDE.0, WIDE.1));
+    spark_dialog::ui::draw(&app, &palette("tokyonight-night"), CLOCK, &mut b);
+    let text: String = (0..WIDE.1)
+        .flat_map(|y| (0..WIDE.0).map(move |x| (x, y)))
+        .map(|(x, y)| b[(x, y)].symbol().to_string())
+        .collect();
+    assert!(text.contains("quarterly-report-for-the-board-final-v3.pdf"), "the name whole");
+    assert!(
+        text.contains("Markdown") && text.contains("18 Oct 09:14"),
+        "the kind, and the date with the time"
+    );
 }
 
 #[test]
-fn full_screen_calendar_on_a_tall_screen_shows_the_months_ahead_under_its_list() {
+fn full_screen_calendar_shows_more_months_across() {
     let app = sized(calendar_app(true), TALL);
     render_at(&app, "full-calendar-tall", TALL.0, TALL.1);
 }
@@ -1400,25 +1426,15 @@ fn a_rows_key_is_a_chip() {
     assert_eq!(rows.rows[1].key, None, "not a key's shape");
 }
 
-/// A click lights its row and the light kept from a preview lets go (#153): a page read for the last file never
-/// shows under the row now lit.
+/// A click lights its row and the light kept from a preview lets go (#153).
 #[test]
-fn a_click_lights_its_row_and_the_last_page_lets_go() {
+fn a_click_lights_its_row_and_the_kept_light_lets_go() {
     let mut app = manager_app();
-    for r in app.folder.as_mut().unwrap().2.rows.iter_mut().filter(|r| r.id.starts_with("files:file:")) {
-        r.page = Some(format!("spark-shell://files/preview/{}", r.text));
-    }
-    let (f, rows) = {
-        let (f, _, rows) = app.folder.as_ref().unwrap();
-        (*f, rows.clone())
-    };
-    app.side = spark_dialog::preview::Preview::new(f, &rows.title, &rows.rows, &rows.rows[1].id);
-    app.keep_lit = Some(rows.rows[1].id.clone());
+    let id = app.folder.as_ref().unwrap().2.rows[1].id.clone();
+    app.keep_lit = Some(id);
     app.sel = 1;
-    assert!(app.side_here(), "the lit row's page");
     app.light(0);
     assert!(app.keep_lit.is_none() && app.sel == 0 && app.in_list, "the click's row, the kept light gone");
-    assert!(!app.side_here(), "the other file's page is not shown under it");
 }
 
 /// A receipt has one place, the toast (#154): once it goes, the home shows no Undo of its own; typed undo still works.

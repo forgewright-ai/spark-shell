@@ -4,7 +4,7 @@
 //! turn first, then the view's list), scrolled as it needs; a rule; the footer's controls (Attach, the
 //! model, the mic).
 
-use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, HEIGHT, MIN_HEIGHT, MIN_WIDTH, PLACEHOLDER, SETTINGS, SETTINGS_DEST, WIDTH};
+use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, PLACEHOLDER, SETTINGS, SETTINGS_DEST, WIDTH};
 use crate::palette::Palette;
 use crate::progress;
 use crate::scrub::{cells, cut, cut_words};
@@ -55,6 +55,9 @@ struct Pen<'a> {
     h: u16,
     /// Rows y0..y1 end at x: a picture sits right of them.
     stop: Option<(u16, u16, u16)>,
+    /// A wide list's right edge (#141): its band, its arrows and the toast's Undo end where its words end, never at the
+    /// screen's edge.
+    right: u16,
 }
 
 impl Pen<'_> {
@@ -71,8 +74,8 @@ impl Pen<'_> {
     /// Text at (x, y) in a color; returns the column after it; nothing past the grid.
     fn end(&self, y: u16) -> u16 {
         match self.stop {
-            Some((y0, y1, x)) if y >= y0 && y < y1 => x,
-            _ => self.w,
+            Some((y0, y1, x)) if y >= y0 && y < y1 => x.min(self.right),
+            _ => self.w.min(self.right),
         }
     }
     fn put(&mut self, x: u16, y: u16, text: &str, fg: Color, bold: bool, lit: bool) -> u16 {
@@ -202,8 +205,6 @@ pub struct Picture {
     pub file: String,
     pub view: Viewport,
     pub spectrogram: bool,
-    /// Drawn from the top of its box, not its middle (the pane's picture, #149).
-    pub top: bool,
 }
 
 /// The draft as the prompt shows it: its lines, each wrapped to `w` cells, and where the cursor is in
@@ -250,46 +251,18 @@ pub fn draft_rows(text: &str, cursor: usize, w: usize) -> (Vec<String>, (usize, 
     (rows, at)
 }
 
-/// How the grid is laid out (#131): the dialog at its own size is its one column; full screen keeps the
-/// column at the dialog's width, header to footer, and gives the room it brings to a pane that shows what
-/// the lit row holds: beside the column on a wide screen, under its list on a tall one.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Layout {
-    One,
-    /// The column at the left, the pane beside it from this column to the right edge.
-    Wide {
-        pane_x: u16,
-    },
-    /// The column at `x`, the pane its content area's last `pane_h` rows.
-    Tall {
-        x: u16,
-        pane_h: u16,
-    },
-}
-
-/// A pane this wide at least beside the column, this many rows at least under its list.
-pub const PANE_MIN_W: u16 = 40;
-pub const PANE_MIN_H: u16 = 16;
-
-pub fn layout(w: u16, h: u16) -> Layout {
-    if w >= WIDTH + 2 + PANE_MIN_W && h >= MIN_HEIGHT {
-        Layout::Wide { pane_x: WIDTH + 2 }
-    } else if w >= WIDTH && h >= HEIGHT + PANE_MIN_H {
-        Layout::Tall {
-            x: (w - WIDTH) / 2,
-            pane_h: h - HEIGHT,
-        }
-    } else {
-        Layout::One
-    }
-}
+/// Full screen (#141): one flow, the dialog's own column as wide as a list's columns want, this many cells at most, in
+/// the middle of the screen; nothing beside or under it, nothing stretched to the screen's edge.
+pub const FULL_WIDTH: u16 = 120;
 
 /// The width the dialog's own column has at this size: its words wrap to it.
-pub fn column_width(w: u16, h: u16) -> u16 {
-    match layout(w, h) {
-        Layout::One => w,
-        _ => WIDTH,
-    }
+pub fn column_width(w: u16, _h: u16) -> u16 {
+    w.min(FULL_WIDTH)
+}
+
+/// A column wider than the dialog's own size: a list there shows its rows' wide columns and whole names (#141).
+pub fn wide(w: u16) -> bool {
+    w > WIDTH
 }
 
 impl Drawn {
@@ -351,171 +324,37 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
         drawn.film = Some((x, y, bw, bh, reel, since));
         return drawn;
     }
-    // a preview opened on Space keeps the whole screen: its zoom and its drag want the room (#120)
-    let lay = if app.view == View::Preview { Layout::One } else { layout(w, h) };
-    match lay {
-        Layout::One => {
-            let mut d = draw_column(app, pal, clock, buf, 0);
-            d.columns = (0, w);
-            d
-        }
-        Layout::Wide { pane_x } => {
-            let mut col = Buffer::empty(Rect::new(0, 0, WIDTH, h));
-            let mut drawn = draw_column(app, pal, clock, &mut col, 0);
-            drawn.columns = (0, WIDTH);
-            blit(buf, &col, 0, 0);
-            // the column and the pane parted by a line in the lit row's color, from the header to the footer
-            for y in 0..h {
-                buf[(pane_x - 1, y)].set_symbol("\u{2502}").set_fg(pal.lit);
-            }
-            let area = Rect::new(pane_x + 1, 0, w - pane_x - 2, h - 1);
-            pane(app, pal, clock, buf, area, &mut drawn);
-            drawn
-        }
-        Layout::Tall { x, pane_h } => {
-            let mut col = Buffer::empty(Rect::new(0, 0, WIDTH, h));
-            let mut drawn = draw_column(app, pal, clock, &mut col, pane_h);
-            blit(buf, &col, x, 0);
-            drawn.shift(x);
-            drawn.columns = (x, x + WIDTH);
-            // the list's end, a rule in the lit row's color, then the pane down to the bottom's air
-            let rule_y = h - BOTTOM - pane_h;
-            for xx in x + 2..x + WIDTH - 2 {
-                buf[(xx, rule_y)].set_symbol(RULE).set_fg(pal.lit);
-            }
-            let area = Rect::new(x, rule_y + 2, WIDTH, pane_h.saturating_sub(3));
-            pane(app, pal, clock, buf, area, &mut drawn);
-            drawn
-        }
+    // a preview opened on Space keeps the whole screen: its zoom and its drag want the room (#120); elsewhere the column
+    // in the middle (#141)
+    let cw = if app.view == View::Preview { w } else { column_width(w, h) };
+    if cw == w {
+        let mut d = draw_column(app, pal, clock, buf);
+        d.columns = (0, w);
+        return d;
     }
+    let x = (w - cw) / 2;
+    let mut col = Buffer::empty(Rect::new(0, 0, cw, h));
+    let mut drawn = draw_column(app, pal, clock, &mut col);
+    blit(buf, &col, x, 0);
+    drawn.shift(x);
+    drawn.columns = (x, x + cw);
+    drawn
 }
 
-/// The pane full screen brings (#131): what the lit row holds, under its name and its state. The lit file's page in
-/// Files (its picture, its text); the lit place's or setting's rows; a row's facts and actions; the Calendar's months
-/// after the two the column shows. The row followed is the one lit, or the first while the prompt has the keys.
-fn pane(app: &App, pal: &Palette, _clock: &str, buf: &mut Buffer, area: Rect, drawn: &mut Drawn) {
-    if area.width < 12 || area.height < 6 {
-        return;
-    }
-    let mut part = Buffer::empty(Rect::new(0, 0, area.width, area.height));
-    part.set_style(part.area, Style::default().fg(pal.fg));
-    let mut picture = None;
-    let mut film = None;
-    {
-        let mut pen = Pen {
-            buf: &mut part,
-            pal,
-            w: area.width,
-            h: area.height,
-            stop: None,
-        };
-        let (w, h) = (area.width, area.height);
-        if app.is_calendar() {
-            pen.put(2, 0, "the months ahead", pal.muted, false, false);
-            months(app, &mut pen, 2, h, 2);
-        } else if let Some((title, sub, items)) = app.pane_of() {
-            // a file's page brings its own facts (its size as it plays, its pages): they stand under its name
-            let side = app.side.as_ref().filter(|_| app.side_here());
-            let sub = match side.and_then(|pv| pv.shown.as_ref()) {
-                Some(pg) => pg.facts.join(SEP),
-                None => sub,
-            };
-            pen.put(2, 0, &cut_words(&title, w.saturating_sub(4) as usize), pal.fg, true, false);
-            if !sub.is_empty() {
-                pen.put(2, 1, &cut_words(&sub, w.saturating_sub(4) as usize), pal.muted, false, false);
-            }
-            if let Some(pv) = side {
-                picture = side_page(&mut pen, pv, 3, h);
-                // the page still on its way: the loading animation where the picture will land, at the pane's top (#149)
-                if pv.shown.is_none() && !pv.failed && app.films && pv.asked.elapsed() >= std::time::Duration::from_millis(150) {
-                    let (fx, fy, fw, fh) = (2, 3, w.saturating_sub(4), h.saturating_sub(4).min(12));
-                    for yy in fy..(fy + fh).min(h) {
-                        for xx in fx..(fx + fw).min(w) {
-                            pen.buf[(xx, yy)].set_diff_option(CellDiffOption::Skip);
-                        }
-                    }
-                    film = Some((fx, fy, fw, fh, Reel::Load, pv.asked + std::time::Duration::from_millis(150)));
-                }
-            } else {
-                rows_in(app, &mut pen, &items, 3, h);
-            }
-        }
-    }
-    blit(buf, &part, area.x, area.y);
-    if let Some(mut p) = picture {
-        p.x += area.x;
-        p.y += area.y;
-        drawn.preview = Some(p);
-    }
-    if let (Some((x, y, w, h, reel, since)), None) = (film, drawn.film) {
-        drawn.film = Some((x + area.x, y + area.y, w, h, reel, since));
-    }
-}
-
-/// A list drawn as the content draws one, nothing lit, from `top`; what does not fit is said as how many more.
-fn rows_in(app: &App, pen: &mut Pen, items: &[Item], top: u16, bottom: u16) {
-    let pal = pen.pal.clone();
-    let (widths, right) = widths(app, items);
-    let samples = items.iter().any(|it| row_of(app, it).is_some_and(|r| r.swatch.is_some()));
-    let room = bottom.saturating_sub(top) as usize;
-    let show = if items.len() > room { room.saturating_sub(1) } else { items.len() };
-    for (k, it) in items.iter().take(show).enumerate() {
-        item_line(app, pen, it, top + k as u16, false, (&widths, &right, samples, false));
-    }
-    let left = items[show..].iter().filter(|it| !matches!(it, Item::Heading(_) | Item::Blank)).count();
-    if left > 0 {
-        let y = top + show as u16;
-        pen.put(4, y, BELOW, pal.muted, false, false);
-        pen.put(6, y, &format!("{} more", left), pal.muted, false, false);
-    }
-}
-
-/// The lit file's page in the pane (#131): its picture fit to the room, else its text from its start (its facts stand
-/// under its name); nothing yet while it comes.
-fn side_page(pen: &mut Pen, pv: &crate::preview::Preview, top: u16, bottom: u16) -> Preview {
-    let pal = pen.pal.clone();
-    let pg = pv.shown.as_ref()?;
-    let (x0, w) = (2u16, pen.w.saturating_sub(4));
-    let rows = bottom.saturating_sub(top + 1);
-    let mut picture = None;
-    if let Some(png) = &pg.picture {
-        picture = Some(skip(
-            pen,
-            Picture {
-                x: x0,
-                y: top,
-                w,
-                h: rows,
-                file: png.clone(),
-                view: Viewport::FIT,
-                spectrogram: false,
-                top: true, // under the file's name and facts, as the pane's text starts (#149)
-            },
-        ));
-    } else if let Some(say) = &pg.say {
-        let t = cut_words(say, w as usize);
-        pen.put(x0 + w.saturating_sub(cells(&t) as u16) / 2, top + rows / 2, &t, pal.muted, false, false);
-    } else {
-        let lines: Vec<(usize, String)> = pg
-            .lines
-            .iter()
-            .enumerate()
-            .flat_map(|(i, l)| fold(l, w as usize).into_iter().map(move |f| (i, f)))
-            .collect();
-        for (r, (i, f)) in lines.iter().take(rows as usize).enumerate() {
-            pen.put(x0, top + r as u16, f, pal.fg, pg.bold.contains(i), false);
-        }
-    }
-    picture
-}
-
-/// The dialog's own column, `reserve` rows at its content's end left to the pane under it (#131).
-fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, reserve: u16) -> Drawn {
+/// The dialog's own column.
+fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let mut drawn = Drawn::default();
     let (w, h) = (buf.area.width, buf.area.height);
     let area = Rect::new(0, 0, w, h);
     buf.set_style(area, Style::default().fg(pal.fg));
-    let mut pen = Pen { buf, pal, w, h, stop: None };
+    let mut pen = Pen {
+        buf,
+        pal,
+        w,
+        h,
+        stop: None,
+        right: w,
+    };
     if w < MIN_WIDTH || h < MIN_HEIGHT {
         // too small to hold the prompt, a list and the footer without cutting one: say so, plainly
         let t = "Make this window larger";
@@ -620,7 +459,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, reserve:
     let shift = shift + if target.is_some() { 2 } else { 0 };
 
     // the content first: a preview's text decides the pages its key row offers
-    let bottom = h - BOTTOM - reserve;
+    let bottom = h - BOTTOM;
     let content_y = CONTENT_Y + shift;
     if let Some((reel, since)) = app.motion {
         // a transition: the content area is its, in its middle (main.rs draws it)
@@ -635,7 +474,6 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, reserve:
                 file: String::new(),
                 view: Viewport::FIT,
                 spectrogram: false,
-                top: false,
             },
         );
         drawn.film = Some((x, y, w, h, reel, since));
@@ -799,34 +637,33 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             pen.put(2, y, DESTS[*d].name, pal.fg, false, lit);
             // what the place holds now, else what it is for
             let words = app.dest_state(*d).unwrap_or_else(|| DESTS[*d].purpose.to_string());
-            pen.put(PURPOSE_X, y, &cut_words(&words, (w - PURPOSE_X - 4) as usize), pal.muted, false, lit);
-            pen.put(w - 3, y, MORE, pal.muted, false, lit);
+            let e = pen.end(y);
+            pen.put(
+                PURPOSE_X,
+                y,
+                &cut_words(&words, e.saturating_sub(PURPOSE_X + 4) as usize),
+                pal.muted,
+                false,
+                lit,
+            );
+            pen.put(e - 3, y, MORE, pal.muted, false, lit);
         }
         Item::Setting(i) => {
             let (label, name, purpose) = SETTINGS[*i];
             // in Settings the rows sit under their groups' headings, as a folder's do (#137); found from the home, beside the places
             let ind = if app.view == View::Dest(SETTINGS_DEST) { 2 } else { 0 };
             pen.put(2 + ind, y, name, pal.fg, false, lit);
-            // a section's own state reads better than its purpose where it has one (on, a level, a name)
-            let state = if label == "talk" {
-                Some(if app.talk == Talk::Off { "Off" } else { "Click the mic" }.to_string())
-            } else {
-                app.providers
-                    .iter()
-                    .find(|p| p.label == label)
-                    .map(|p| p.title.clone())
-                    .filter(|t| !t.is_empty())
-            };
-            let words = state.unwrap_or_else(|| purpose.to_string());
+            let words = setting_words(app, label, purpose);
             pen.put(
                 PURPOSE_X + ind,
                 y,
-                &cut_words(&words, (w - PURPOSE_X - ind - 4) as usize),
+                &cut_words(&words, pen.end(y).saturating_sub(PURPOSE_X + ind + 4) as usize),
                 pal.muted,
                 false,
                 lit,
             );
-            pen.put(w - 3, y, MORE, pal.muted, false, lit);
+            let e = pen.end(y);
+            pen.put(e - 3, y, MORE, pal.muted, false, lit);
         }
         Item::Title(t) => {
             pen.put(2, y, t, pal.fg, false, false);
@@ -972,7 +809,6 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
                     file: String::new(),
                     view: Viewport::FIT,
                     spectrogram: false,
-                    top: false,
                 },
             );
             // the opening from its first frame, as it shows, then the wait while the page is still on its way (#142)
@@ -998,7 +834,6 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
                 file: png.clone(),
                 view: pv.viewport(),
                 spectrogram: false,
-                top: false,
             },
         ));
         if pg.pages > 1 {
@@ -1173,7 +1008,6 @@ fn sound(
                 file: file.to_string(),
                 view: Viewport::FIT,
                 spectrogram: true,
-                top: false,
             },
         )
     })
@@ -1240,7 +1074,6 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
                 file,
                 view: Viewport::FIT,
                 spectrogram: false,
-                top: false,
             });
             // the picture's cells are sixel's: the buffer skips them, as it does the logo's (main.rs draws it)
             for yy in top..(top + PREVIEW_H).min(pen.h) {
@@ -1298,6 +1131,10 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     }
     let (widths, right) = widths(app, &items);
     let samples = items.iter().any(|it| row_of(app, it).is_some_and(|r| r.swatch.is_some()));
+    // a wide list ends where its words end (#141): its band, its arrows, the toast's Undo
+    if wide(pen.w) {
+        pen.right = list_end(app, &items[..n], &widths, samples).clamp(WIDTH, pen.w);
+    }
     // a group where any row carries a chip keeps the chip's column for every row, so their columns line up
     let chip_groups: Vec<Option<String>> = items
         .iter()
@@ -1329,7 +1166,7 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
             pen.light(y);
         }
         let (sg, sc) = if t.sign == Sign::Refused { (CROSS, pal.alarm) } else { (CHECK, pal.accent) };
-        let close_x = pen.w - 3;
+        let close_x = pen.end(y) - 3;
         let undo_x = close_x - 6;
         let undo = t.undo && app.undo.is_some();
         pen.put(4, y, sg, sc, false, lit);
@@ -1342,7 +1179,40 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         pen.put(close_x, y, CLOSE, pal.muted, false, lit);
         drawn.toast_close = Some((close_x - 1, close_x + 2, y));
     }
+    pen.right = pen.w;
     (at, preview)
+}
+
+/// A setting's words: its section's own state, which reads better than its purpose where it has one (on, a level, a
+/// name).
+fn setting_words(app: &App, label: &str, purpose: &str) -> String {
+    let state = if label == "talk" {
+        Some(if app.talk == Talk::Off { "Off" } else { "Click the mic" }.to_string())
+    } else {
+        app.providers
+            .iter()
+            .find(|p| p.label == label)
+            .map(|p| p.title.clone())
+            .filter(|t| !t.is_empty())
+    };
+    state.unwrap_or_else(|| purpose.to_string())
+}
+
+/// Where a wide list's words end (#141): a place's or a setting's name and state, a row's name and columns, then its
+/// arrow and two cells of air.
+fn list_end(app: &App, items: &[Item], widths: &[usize], samples: bool) -> u16 {
+    let cols: usize = widths.iter().enumerate().skip(1).map(|(k, w)| w + if k == 1 { 2 } else { 3 }).sum();
+    let row = (if samples { 9 } else { 6 }) + widths.first().copied().unwrap_or(0) + cols + 4;
+    let words = items
+        .iter()
+        .filter_map(|it| match it {
+            Item::Dest(d) => Some(PURPOSE_X as usize + cells(&app.dest_state(*d).unwrap_or_else(|| DESTS[*d].purpose.to_string())) + 5),
+            Item::Setting(i) => Some(PURPOSE_X as usize + 2 + cells(&setting_words(app, SETTINGS[*i].0, SETTINGS[*i].2)) + 5),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0);
+    row.max(words) as u16
 }
 
 /// A cell that starts or ends with a figure: a size, a count, a time.
@@ -1354,6 +1224,7 @@ fn figure(col: &str) -> bool {
 /// The widths of a list's columns: the name, then each column, so they line up (the name 26 cells at most);
 /// and per column whether every cell in it is a figure, so the column lines up on its right edge.
 fn widths(app: &App, items: &[Item]) -> (Vec<usize>, Vec<bool>) {
+    let wide = wide(app.col_w());
     let mut w: Vec<usize> = vec![];
     let mut right: Vec<bool> = vec![];
     for it in items {
@@ -1365,17 +1236,17 @@ fn widths(app: &App, items: &[Item]) -> (Vec<usize>, Vec<bool>) {
             },
             _ => continue,
         };
-        if row.columns.is_empty() && row.step.is_none() && row.key.is_none() {
+        if row_columns(row, wide).is_empty() && row.step.is_none() && row.key.is_none() {
             continue;
         }
-        let cols = std::iter::once(cells(&row.text).min(26)).chain(row.columns.iter().map(|c| cells(c)));
+        let cols = std::iter::once(cells(&row.text).min(name_cap(app.col_w()))).chain(row_columns(row, wide).iter().map(|c| cells(c)));
         for (k, c) in cols.enumerate() {
             if w.len() <= k {
                 w.push(0);
             }
             w[k] = w[k].max(c);
         }
-        for (k, col) in row.columns.iter().enumerate() {
+        for (k, col) in row_columns(row, wide).iter().enumerate() {
             if right.len() <= k {
                 right.push(true);
             }
@@ -1383,6 +1254,25 @@ fn widths(app: &App, items: &[Item]) -> (Vec<usize>, Vec<bool>) {
         }
     }
     (w, right)
+}
+
+/// A name's cells at most in a list of `w` cells: 26 in the dialog's own size, up to 48 in a wide list (#141), so a long
+/// name is whole and its columns still fit.
+fn name_cap(w: u16) -> usize {
+    if wide(w) {
+        (w.saturating_sub(70) as usize).clamp(26, 48)
+    } else {
+        26
+    }
+}
+
+/// A row's columns: its wide ones in a wide list where it has them (a file's kind, size, and date with the time,
+/// #141), else its own.
+fn row_columns(row: &crate::model::Row, wide: bool) -> &[String] {
+    match &row.wide {
+        Some(c) if wide => c,
+        _ => &row.columns,
+    }
 }
 
 /// One row: its sign at 4, its text at 6, its columns lined up (the first right-aligned, a size; the rest left), its arrow when it opens more.
@@ -1396,13 +1286,15 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &
     if let Some([r, gr, b]) = row.swatch {
         pen.put(6, y, SAMPLE, Color::Rgb(r, gr, b), false, lit);
     }
-    // a file's or a folder's name cut in its middle, its type kept (#140); other rows' at their end
-    let name = if row.columns.is_empty() {
+    // a file's or a folder's name cut in its middle, its type kept (#140); other rows' at their end; a wide list's whole
+    let wide = wide(pen.w);
+    let columns = row_columns(row, wide);
+    let name = if columns.is_empty() {
         row.text.clone()
     } else if row.id.starts_with("files:") {
-        crate::scrub::cut_middle(&row.text, 26)
+        crate::scrub::cut_middle(&row.text, name_cap(pen.w))
     } else {
-        cut(&row.text, 26)
+        cut(&row.text, name_cap(pen.w))
     };
     let mut x = pen.put(tx, y, &name, pal.fg, false, lit);
     let name_end = tx + widths.first().copied().unwrap_or(0) as u16;
@@ -1423,9 +1315,9 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &
         pen.chip(name_end.max(x) + 2, y, k, false);
     }
     // a row's columns, unless its one column is its picture's caption (the wallpaper list); a file with a picture keeps its size and date (#112)
-    if !row.columns.is_empty() && !widths.is_empty() && (row.preview.is_none() || row.columns.len() > 1) {
+    if !columns.is_empty() && !widths.is_empty() && (row.preview.is_none() || columns.len() > 1) {
         x = if chips { name_end + CHIP + 2 } else { name_end };
-        for (k, col) in row.columns.iter().enumerate() {
+        for (k, col) in columns.iter().enumerate() {
             let w = widths.get(k + 1).copied().unwrap_or(0) as u16;
             let cw = cells(col) as u16;
             // a size, a count or a time lines up on its right edge; words (a palette's name) on their left
@@ -1474,8 +1366,8 @@ fn chip(pen: &mut Pen, x: u16, y: u16, c: &[[u8; 3]]) {
     }
 }
 
-/// Where the Calendar's two months start.
-const MONTH_X: [u16; 2] = [2, 32];
+/// A month's cells across, and the air after it: the Calendar's months start at 2, 32, 62 (#141).
+const MONTH_STEP: u16 = 30;
 
 /// The time at the end of the header's clock, after the middle dot ("10:24", or "9:05 AM" on a
 /// twelve-hour clock): its figures, and AM or PM.
@@ -1508,11 +1400,11 @@ fn calendar(app: &App, pen: &mut Pen, clock: &str, top: u16, bottom: u16) -> u16
         }
         top += rows.len() as u16 + 1;
     }
-    // two months side by side where they fit, else this month alone
-    let two = pen.w >= MONTH_X[1] + 28;
+    // as many months side by side as fit: two in the dialog's own size, more in full screen (#141), else this month alone
+    let across = (pen.w.saturating_sub(2) + 2) / MONTH_STEP;
     let mut low = top;
-    for (k, x0) in MONTH_X.iter().enumerate().take(if two { 2 } else { 1 }) {
-        low = low.max(month(app, pen, *x0, top, bottom, k as i32).unwrap_or(top));
+    for k in 0..across.max(1) {
+        low = low.max(month(app, pen, 2 + k * MONTH_STEP, top, bottom, k as i32).unwrap_or(top));
     }
     low
 }
@@ -1558,23 +1450,6 @@ fn month(app: &App, pen: &mut Pen, x0: u16, top: u16, bottom: u16, k: i32) -> Op
         y += 1;
     }
     Some(y)
-}
-
-/// The months after the column's two, as many as the pane holds, in rows of as many as fit across (#131): a year
-/// ahead on a wide screen, the months down a tall one.
-fn months(app: &App, pen: &mut Pen, top: u16, bottom: u16, from: i32) {
-    let across = (pen.w / 30).max(1); // a month 28 cells and 2 of air, from column 2, as the column's two
-    let (mut y, mut k) = (top, from);
-    while y + 8 <= bottom && k < from + 12 {
-        for c in 0..across {
-            if k >= from + 12 {
-                break;
-            }
-            month(app, pen, 2 + c * 30, y, bottom, k);
-            k += 1;
-        }
-        y += 9;
-    }
 }
 
 /// A key's sentence up to its first comma, colon or semicolon, with no period: the part the about

@@ -67,6 +67,16 @@ impl Palette {
         }
     }
 
+    /// A picture's ramp in this palette (#156): the ground, the muted color, the accent, the text color, as colors. A
+    /// palette drawn in slots has none (a slot is no color a picture can hold): keep the palette as it came for this.
+    pub fn ramp(&self) -> Option<[[u8; 3]; 4]> {
+        let rgb = |c: Color| match c {
+            Color::Rgb(r, g, b) => Some([r, g, b]),
+            _ => None,
+        };
+        Some([rgb(self.surface)?, rgb(self.muted)?, rgb(self.accent)?, rgb(self.fg)?])
+    }
+
     /// The environment's palette; in slots where spark-shell says the window has them (SPARK_DIALOG_SLOTS=1).
     pub fn from_env() -> Palette {
         let p = Palette::from(|k| std::env::var(k).ok());
@@ -86,6 +96,21 @@ pub fn slots_here() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pictures_ramp_is_colors_never_slots() {
+        // #156: on the desktop the dialog draws in slots, and a slot is no color: a ramp of slots was four grays, the
+        // spectrogram one flat block; the ramp comes from the palette as colors, and a slots palette has none
+        let p = Palette::from(|k| match k {
+            "PANEL_BG" => Some("184956".into()),
+            "PANEL_MUTED" => Some("72898f".into()),
+            "HEX_ACCENT" => Some("4695f7".into()),
+            "HEX_FG" => Some("adbcbc".into()),
+            _ => None,
+        });
+        assert_eq!(p.ramp(), Some([[0x18, 0x49, 0x56], [0x72, 0x89, 0x8f], [0x46, 0x95, 0xf7], [0xad, 0xbc, 0xbc]]));
+        assert_eq!(p.clone().slots().ramp(), None);
+    }
 
     #[test]
     fn colors_come_from_the_keys() {

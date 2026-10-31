@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.115
+
+Full screen as one flow, from the owner's pick of a wireframe (#141),
+and what his use of v0.114.1 found (#156 to #158).
+
+- Full screen is one column in the middle of the screen, up to 120
+  cells wide, and its lists take the space (#141): Files shows a whole
+  name, the kind in plain words (picture, sound, video, PDF, Word,
+  Markdown), the size, and the date with the time; the Calendar shows
+  as many months across as fit; the home and Settings write each state
+  whole. A list ends where its words end, its lit band and its arrows
+  right after them, nothing stretched to the screen's edge. v0.114's
+  pane is gone, the lit file's page in it too: Space opens the preview.
+- A sound's spectrogram shows its shape on the desktop (#156). There
+  the dialog draws in the terminal's slots, so a new look recolors it
+  in place, and a slot is no color a picture can hold: the ramp was
+  four grays, every spectrogram one flat block. The ramp comes from the
+  palette's colors now, and a theme step brings the new ones.
+- A video no longer flashes at its own size before it lands in its
+  frame (#157): its window maps unseen and is shown by the same command
+  that places it.
+- Full screen, Space plays a video in its frame too (#158): for the
+  play the dialog floats on the same pixels, the bar out of sight, and
+  is full screen again at its own size when the play ends. A refused
+  play is one toast, never a new line for every press.
+
 ## v0.114.1
 
 What the owner's first evening on v0.114 found, on his tall screen

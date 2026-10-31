@@ -44,6 +44,8 @@ pub struct Row {
     pub film: Option<String>,
     /// The key that does what the row does, drawn as a chip beside its words (Print, Shift+Print: #144).
     pub key: Option<String>,
+    /// The columns a wide list shows in place of `columns` (a file's kind, size, and date with the time: #141).
+    pub wide: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -306,6 +308,10 @@ pub fn rows(text: &str) -> Option<Rows> {
                 .and_then(Value::as_str)
                 .filter(|k| !k.is_empty() && k.len() <= 24 && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '+'))
                 .map(str::to_string),
+            wide: r
+                .get("wide")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().take(6).map(|c| scrub(c.as_str().unwrap_or(""))).collect()),
         })
         .collect();
     let short = v

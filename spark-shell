@@ -6982,14 +6982,14 @@ files_timed() {   # files_timed SECONDS CMD... -- CMD at a low priority, stopped
 files_nul() { tr '\n\000' '\001\n' | grep -v "$(printf '\001')" | tr '\n' '\000' || :; }   # NUL-separated paths -> the same, a name with a line feed in it left out (never listed)
 files_stats() {   # NUL-separated paths on stdin -> TYPE US SIZE US EPOCH US DATE US LINK US PATH a line, one stat for many paths (GNU's, else BSD's)
     if stat --version >/dev/null 2>&1; then QUOTING_STYLE=literal xargs -0 stat --printf='%F\037%s\037%Y\037%y\037%N\037%n\n' 2>/dev/null || :
-    else xargs -0 stat -f "%HT$US%z$US%m$US%Sm$US%Y$US%N" -t '%Y-%m-%d' 2>/dev/null || :; fi
+    else xargs -0 stat -f "%HT$US%z$US%m$US%Sm$US%Y$US%N" -t '%Y-%m-%d %H:%M' 2>/dev/null || :; fi
 }
 files_counts() {   # files_counts [FOLDER] -> PATH US COUNT a line: the things not hidden in each folder in FOLDER (one walk, FILES_WALK_T at most), or in each folder named on stdin, NUL-separated
     if [ -n "${1:-}" ]; then files_timed "$FILES_WALK_T" find "$1" -mindepth 2 -maxdepth 2 ! -name '.*' -print0 2>/dev/null
     else xargs -0 sh -c 'exec find "$@" -mindepth 1 -maxdepth 1 ! -name ".*" -print0' sh 2>/dev/null || :; fi \
         | files_nul | tr '\000' '\n' | awk -v us="$US" '{ sub(/\/[^\/]*$/, ""); n[$0]++ } END { for (d in n) print d us n[d] }'
 }
-files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' lines -> KEY US a row line for each file (KEY 1), folder (0) and link (2): ID US SIGN US TEXT US CHILDREN US PATH US SIZE US DATE US GROUP US COLUMN3 US KIND US PREVIEW; FOLDERS yes puts each one's folder in COLUMN3 (~ for your home); $TMP/files.sum "FILES FOLDERS BYTES"
+files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' lines -> KEY US a row line for each file (KEY 1), folder (0) and link (2): ID US SIGN US TEXT US CHILDREN US PATH US SIZE US DATE US GROUP US COLUMN3 US KIND US PREVIEW US KIND-WORD US DATE-AND-TIME (a wide list's, #141); FOLDERS yes puts each one's folder in COLUMN3 (~ for your home); $TMP/files.sum "FILES FOLDERS BYTES"
     _frs=''; [ ! -e "$TMP/walk.stopped" ] || _frs=1
     LC_ALL=C awk -F "$US" -v us="$US" -v group="$1" -v folders="$2" -v counts="${3:-}" -v cstop="$_frs" -v home="$(files_home_root)" \
         -v today="$(date +%Y%m%d)" -v yday="$(date -d "@$(( $(date +%s) - 86400 ))" +%Y%m%d 2>/dev/null || date -r "$(( $(date +%s) - 86400 ))" +%Y%m%d)" \
@@ -7007,6 +7007,19 @@ files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' line
         function clean(s) { gsub(/[\001-\037\177]|\302[\200-\237]|\342\200[\213-\217\250-\256]|\342\201[\240\246-\251]|\357\273\277/, "", s); return s }   # SCRUB_JQ, on bytes
         function size(n) { if (n < 1024) return sprintf("%d B", n); if (n < 1048576) return sprintf("%d KB", n / 1024); if (n < 1073741824) return sprintf("%.1f MB", n / 1048576); return sprintf("%.1f GB", n / 1073741824) }
         function when(d) { if (d == today) return "today"; if (d == yday) return "yesterday"; if (substr(d, 1, 4) == year) return substr(d, 7, 2) " " mon[substr(d, 5, 2) + 0]; return substr(d, 1, 4) }
+        function stamp(s,   d) { d = substr(s, 1, 4) substr(s, 6, 2) substr(s, 9, 2); if (substr(d, 1, 4) != year) return substr(d, 7, 2) " " mon[substr(d, 5, 2) + 0] " " substr(d, 1, 4); return when(d) " " substr(s, 12, 5) }   # a wide list: the date with the time, the year in place of the time for another year (#141)
+        function kindof(n,   e) {   # what a file is, by its type: a word a person says, never a MIME type (#141)
+            e = tolower(n); if (e !~ /\.[^.\/]+$/) return "file"; sub(/.*\./, "", e)
+            if (e ~ /^(jpe?g|png|gif|webp|bmp|tiff?|svg|heic|heif|avif)$/) return "picture"
+            if (e ~ /^(mp3|flac|wav|ogg|oga|opus|m4a|aac|aiff?|wma)$/) return "sound"
+            if (e ~ /^(mp4|m4v|mkv|webm|mov|avi|wmv|ogv)$/) return "video"
+            if (e == "pdf") return "PDF"; if (e ~ /^docx?$/) return "Word"; if (e ~ /^xlsx?$/) return "Excel"; if (e ~ /^pptx?$/) return "PowerPoint"
+            if (e ~ /^(odt|rtf)$/) return "document"; if (e == "ods") return "spreadsheet"; if (e == "odp") return "slides"; if (e == "csv") return "CSV"
+            if (e ~ /^(md|markdown)$/) return "Markdown"; if (e ~ /^(txt|log)$/) return "text"; if (e ~ /^(json|ya?ml|toml|xml|ini|conf)$/) return "data"
+            if (e ~ /^(sh|py|rs|js|ts|c|h|cc|cpp|go|rb|java|lua|pl|html?|css)$/) return "code"
+            if (e ~ /^(zip|tar|gz|tgz|xz|bz2|zst|7z|rar)$/) return "archive"; if (e ~ /^(iso|img|dmg)$/) return "disk image"
+            return toupper(e)
+        }
         BEGIN {
             B = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"; for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i
             split("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec", mon, " ")
@@ -7020,10 +7033,10 @@ files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' line
             if (folders == "yes") { d = p; sub(/\/[^\/]*$/, "", d); if (d == home) c3 = "~"; else { c3 = d; sub(/.*\//, "", c3); c3 = clean(c3) } }
             if (t ~ /^dir/) {
                 nd++; c = (p in cnt) ? cnt[p] : (counts != "" && !cstop ? 0 : "")
-                print "0" us "files:dir:" id us "opens" us text us "spark-shell://files/rows/" id us p us (c == "" ? "" : c " " (c == 1 ? "item" : "items")) us "" us group us c3 us "dir" us ""
+                print "0" us "files:dir:" id us "opens" us text us "spark-shell://files/rows/" id us p us (c == "" ? "" : c " " (c == 1 ? "item" : "items")) us "" us group us c3 us "dir" us "" us "folder" us ""
             } else if (t ~ /^regular/) {
                 nf++; nb += $2
-                print "1" us "files:file:" id us "blank" us text us "" us p us size($2) us when(substr($4, 1, 4) substr($4, 6, 2) substr($4, 9, 2)) us group us c3 us "file" us ""
+                print "1" us "files:file:" id us "blank" us text us "" us p us size($2) us when(substr($4, 1, 4) substr($4, 6, 2) substr($4, 9, 2)) us group us c3 us "file" us "" us kindof(name) us stamp($4)
             } else if (t ~ /^symbolic/) {
                 print "2" us "files:link:" id us "blank" us text " -> " clean(to[p]) us "" us "" us "" us "" us group us "" us "link" us ""
             }   # a device, a socket, a pipe: not listed
@@ -7307,9 +7320,27 @@ files_play_video() {   # files_play_video PATH AT X Y W H -- a video played over
     _fvt=$(swaymsg -t get_tree 2>/dev/null) || { echo "sway does not answer"; return 1; }
     _fvd=$(printf '%s' "$_fvt" | jq -r 'first(.. | objects | select(.app_id? == "spark-dialog" and .focused? == true) | "\(.rect.x + .window_rect.x) \(.rect.y + .window_rect.y) \(.fullscreen_mode // 0)") // empty')
     [ -n "$_fvd" ] || { echo "the dialog's window is not found"; return 1; }
-    case $_fvd in *' 0') ;; *) echo "full screen, Enter opens it in its app"; return 1 ;; esac   # sway draws a full screen window over a floating one
     _fvo=$(printf '%s' "$_fvt" | jq -r 'first(.nodes[] | select(.type == "output") | select(any(.. | objects; .app_id? == "spark-dialog" and .focused? == true)) | .name) // empty')
     _fvs=$(swaymsg -t get_outputs 2>/dev/null | jq -r --arg o "$_fvo" 'first(.[] | select(.name == $o) | .scale) // 1')
+    # full screen (#158): sway draws a full screen window over a floating one, so for the play the dialog trades sway's full
+    # screen for a floating window on the same pixels, the bar out of sight, and takes it back when the play ends; its own
+    # size kept for the full screen to give back. One command each way: no frame between
+    _fvsw=''
+    if [ -f "$TMP/play.swap" ]; then _fvsw=$(cat "$TMP/play.swap")   # an earlier play traded it already
+    else
+        case $_fvd in *' 0') ;; *)
+            _fvsw=$(printf '%s' "$_fvt" | jq -r 'first(.. | objects | select(.app_id? == "spark-dialog" and .focused? == true) | "\(.id) \(.geometry.width // 0) \(.geometry.height // 0)") // empty')
+            _fvr=$(swaymsg -t get_outputs 2>/dev/null | jq -r --arg o "$_fvo" 'first(.[] | select(.name == $o) | "\(.rect.width) \(.rect.height) \(.rect.x) \(.rect.y)") // empty')
+            [ -n "$_fvsw" ] && [ -n "$_fvr" ] || { echo "the dialog's window is not found"; return 1; }
+            # shellcheck disable=SC2086   # four numbers
+            set -- "$1" "$2" "$3" "$4" "$5" "$6" $_fvr
+            # the bar first, unseen behind full screen; then the window in one command (a sway with no bar says no to the bar alone)
+            swaymsg "bar mode invisible" >/dev/null 2>&1 || :
+            swaymsg "[con_id=${_fvsw%% *}] fullscreen disable, resize set $7 $8, move absolute position $9 ${10}" >/dev/null 2>&1 \
+                || { swaymsg "bar mode $(bar_mode)" >/dev/null 2>&1 || :; echo "full screen could not make room for the video"; return 1; }
+            printf '%s\n' "$_fvsw" > "$TMP/play.swap" ;;
+        esac
+    fi
     _fvp=$(sed -n 's/^pad=\([0-9]*\)x\([0-9]*\).*/\1 \2/p' "$HOME/.config/foot/dialog.ini" 2>/dev/null | head -1)
     # the frame on the screen, in sway's units: the window's corner, foot's padding, the dialog's pixels by the screen's scale
     # shellcheck disable=SC2086   # numbers, split on purpose
@@ -7317,11 +7348,23 @@ files_play_video() {   # files_play_video PATH AT X Y W H -- a video played over
     files_stop
     # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
     mpv $MPV_SAFE --wayland-app-id=spark-preview --no-border --osc=no --osd-level=0 --no-terminal --really-quiet --keep-open=no --start="+$2" -- "$1" </dev/null >/dev/null 2>&1 &
-    echo "$!" > "$TMP/play.pid"
+    _fvm=$!; echo "$_fvm" > "$TMP/play.pid"
+    # the full screen given back when this play ends, unless another play took the frame meanwhile (#158)
+    [ -z "$_fvsw" ] || ( while kill -0 "$_fvm" 2>/dev/null; do sleep 0.2; done; sleep 0.3
+        if [ -f "$TMP/play.pid" ] && kill -0 "$(cat "$TMP/play.pid")" 2>/dev/null; then exit 0; fi
+        rm -f "$TMP/play.swap"; files_full_back "$_fvsw" ) </dev/null >/dev/null 2>&1 &
     # shellcheck disable=SC2086   # four numbers
     set -- $_fvg
     _fvi=0; while [ "$_fvi" -lt 30 ] && ! swaymsg -t get_tree 2>/dev/null | jq -e 'any(.. | objects; .app_id? == "spark-preview")' >/dev/null 2>&1; do sleep 0.1; _fvi=$((_fvi + 1)); done
-    swaymsg "[app_id=\"spark-preview\"] floating enable, border none, resize set $3 $4, move absolute position $1 $2" >/dev/null 2>&1 || :
+    # it maps unseen (the rule's opacity 0) and is shown where it plays in the same command: no frame at its own size (#157)
+    swaymsg "[app_id=\"spark-preview\"] floating enable, border none, resize set $3 $4, move absolute position $1 $2, opacity 1" >/dev/null 2>&1 || :
+}
+files_full_back() {   # files_full_back "ID W H" -- the dialog full screen again after a play (#158): its own size first, so leaving full screen later gives it back, then full screen, in one command; the bar as the settings have it
+    # shellcheck disable=SC2086   # three numbers
+    set -- $1
+    _ffb=''; [ "${2:-0}" -gt 0 ] && [ "${3:-0}" -gt 0 ] && _ffb="resize set $2 $3, move position center, "
+    swaymsg "[con_id=$1] ${_ffb}fullscreen enable" >/dev/null 2>&1 || :
+    swaymsg "bar mode $(bar_mode)" >/dev/null 2>&1 || :   # back behind full screen, unseen
 }
 files_stop() { [ ! -f "$TMP/play.pid" ] || { kill "$(cat "$TMP/play.pid")" 2>/dev/null || :; rm -f "$TMP/play.pid"; }; }   # the sound playing here, stopped; quiet when none plays
 provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one folder's, with your home's recent files at its top, its own steps at its end and the drives beside your home; a search's; false when the uri names no folder that holds to the lines
@@ -7362,9 +7405,11 @@ provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one fold
         {file: {tool: {name: "files_open", said: "open"}, more: ([{name: "files_preview", said: "preview"}, {name: "files_attach", said: "attach to the next request"}] + steps)},
          dir: ({more: steps} + (if $fm != "" then {tool: {name: "files_browse", said: "open in the system file manager"}} else {} end)),
          trashed: {tool: {name: "files_restore", said: "restore"}, more: [{name: "files_purge", said: "delete for good"}]}} as $kinds |
-        [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end), path: .[4], c1: .[5], c2: .[6], group: (if .[7] == "" then null else .[7] end), c3: .[8], kind: .[9], preview: .[10]}
+        [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end), path: .[4], c1: .[5], c2: .[6], group: (if .[7] == "" then null else .[7] end), c3: .[8], kind: .[9], preview: .[10], kw: .[11], stamp: .[12]}
             | {path: .path} as $a
             | {id, sign, text: (.text | '"$SCRUB_JQ"'), children, group, columns: ([.c1, .c2, .c3] | map(select(. != null and . != "") | '"$SCRUB_JQ"')),
+               wide: (if (.kind == "file" or .kind == "dir") and (.kw // "") != "" then ([.kw, .c1, .stamp, .c3] | map((. // "") | '"$SCRUB_JQ"'))
+                      elif .kind == "trashdir" or .kind == "drive" then (["", .c1, "", ""] | map((. // "") | '"$SCRUB_JQ"')) else null end),
                page: (if .kind == "file" then "spark-shell://files/preview/" + (.id | ltrimstr("files:file:")) else null end),
                kind: (if .kind == "file" or .kind == "dir" or .kind == "trashed" then .kind else null end), args: (if .kind == "file" or .kind == "dir" or .kind == "trashed" then $a else null end),
                more: (if .kind == "here" then [{name: "files_new_folder", arguments: $a, ask: ["name"], said: "new folder"}, {name: "files_new_text", arguments: $a, ask: ["name"], said: "new text file"}]

@@ -4435,6 +4435,11 @@ ans 3 | jq -r '.result.contents[0].text' > "$H/folder.raw"; jq "$KX" "$H/folder.
     && [ "$(jq -r '.rows[-1] | [.more[].said] | join("|")' "$H/folder.json")" = 'new folder|new text file|open in the system file manager' ] \
     && jq -e '(.rows[] | select(.text == "docs") | .children != null and .columns == ["2 items"] and .tool.name == "files_browse") and (.rows[] | select(.text == "notes.md") | .tool.name == "files_open" and .columns[0] == "12 B" and ([.more[].name] == ["files_preview", "files_attach", "files_reveal", "files_rename", "files_move", "files_copy", "files_trash"]) and (.page | startswith("spark-shell://files/preview/"))) and (.rows[] | select(.text | startswith("etc-link")) | .tool == null and .children == null)' "$H/folder.json" >/dev/null \
     && ok "provide files: a folder lists its folders, then its files with the size and the date, then one row for itself, its actions behind it (#127); a link is shown and never followed; a hidden file and a pipe are not listed" || bad "files folder" "$(jq -c '.rows[] | [.text, .columns, .tool.name]' "$H/folder.json")"
+# #141: a wide list's columns beside the short ones: a file's kind, its size and its date with the time; a folder's
+jq -e '(.rows[] | select(.text == "notes.md") | .wide[0] == "Markdown" and .wide[1] == .columns[0] and (.wide[2] | test("^today [0-9][0-9]:[0-9][0-9]$")))
+    and (.rows[] | select(.text == "pic.png") | .wide[0] == "picture") and (.rows[] | select(.text == "blob.txt") | .wide[0] == "text")
+    and (.rows[] | select(.text == "docs") | .wide[0:2] == ["folder", "2 items"]) and ([.rows[] | select(.text | startswith("this folder")) | .wide] == [null])' "$H/folder.json" >/dev/null \
+    && ok "provide files: a wide list's columns, the kind in plain words, the size and the date with the time; a folder's kind and count (#141)" || bad "files wide" "$(jq -c '.rows[] | [.text, .wide]' "$H/folder.json")"
 [ "$(ans 4 | jq -r .result.structuredContent.receipt)" = "$(printf 'notes.md\nhello\nworld')" ] && [ "$(ans 5 | jq -r .result.structuredContent.attach)" = "$FR/notes.md" ] \
     && ok "provide files: show gives a text file's first lines; attach gives its path for the next want" || bad "files show attach" "$(ans 4) $(ans 5)"
 for i in 6 8 9; do [ "$(ans $i | jq -r '.result.content[0].text')" = 'files: that is not a file in the folders given' ] || bad "files refusal $i" "$(ans $i)"; done
@@ -4670,8 +4675,8 @@ cat > "$H/pvsw/swaymsg" <<'STUB'
 echo "$*" >> "$HOME/swaymsg.log"
 case "$*" in
     "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
-    "-t get_outputs") echo '[{"name":"HDMI-A-1","scale":1}]' ;;
-    "-t get_tree") printf '{"nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"app_id":"spark-dialog","focused":true,"fullscreen_mode":%s,"rect":{"x":100,"y":50},"window_rect":{"x":0,"y":0}},{"app_id":"spark-preview"}]}]}\n' "${FULL:-0}" ;;
+    "-t get_outputs") echo '[{"name":"HDMI-A-1","scale":1,"rect":{"x":0,"y":0,"width":1920,"height":1080}}]' ;;
+    "-t get_tree") printf '{"nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"app_id":"spark-dialog","id":42,"focused":true,"fullscreen_mode":%s,"rect":{"x":100,"y":50},"window_rect":{"x":0,"y":0},"geometry":{"width":600,"height":800}},{"app_id":"spark-preview"}]}]}\n' "${FULL:-0}" ;;
 esac
 STUB
 chmod +x "$H/pvsw/swaymsg"
@@ -4683,13 +4688,23 @@ _p2=$(page 2); _a3=$(ans 3); _a4=$(ans 4)
 printf '%s' "$_p2" | jq -e '.play.name == "files_play" and .stop.name == "files_stop" and .seconds == 4.5' >/dev/null \
     && [ "$(printf '%s' "$_a3" | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
     && grep -qF -- '--wayland-app-id=spark-preview --no-border --osc=no' "$F2/mpv.log" && grep -qF -- '--start=+1.5 -- ' "$F2/mpv.log" \
-    && grep -qxF '[app_id="spark-preview"] floating enable, border none, resize set 640 360, move absolute position 144 269' "$F2/swaymsg.log" \
+    && grep -qxF '[app_id="spark-preview"] floating enable, border none, resize set 640 360, move absolute position 144 269, opacity 1' "$F2/swaymsg.log" \
     && [ "$(printf '%s' "$_a4" | jq -r '.result.content[0].text')" = 'files: a video plays over its preview: the dialog gives the box' ] \
-    && [ "$(ans 5 | jq -r '.result.content[0].text')" = 'files: full screen, Enter opens it in its app' ] \
-    && ok "provide files: a video plays over its frame where sway is: mpv with no border laid at the window's corner, foot's padding and the frame's box; no box, or the dialog full screen, says why (#125)" \
-    || bad "preview video over" "$_p2 | $_a3 | $_a4 | $(ans 5) | $(cat "$F2/swaymsg.log" 2>&1) | $(grep spark-preview "$F2/mpv.log" 2>&1)"
-grep -qxF 'no_focus [app_id="spark-preview"]' "$REPO/templates/.config/sway/config" && grep -qxF 'for_window [app_id="spark-preview"] floating enable, border none' "$REPO/templates/.config/sway/config" \
-    && ok "sway template: a video a preview plays floats with no border and never takes the focus: the keys stay in the dialog (#125)" || bad "sway preview rules" "$(grep spark-preview "$REPO/templates/.config/sway/config")"
+    && ok "provide files: a video plays over its frame where sway is: mpv with no border laid at the window's corner, foot's padding and the frame's box, shown in the same command that places it (#157); no box says why (#125)" \
+    || bad "preview video over" "$_p2 | $_a3 | $_a4 | $(cat "$F2/swaymsg.log" 2>&1) | $(grep spark-preview "$F2/mpv.log" 2>&1)"
+# #158: full screen, the dialog trades sway's full screen for a floating window on the same pixels while the video plays,
+# the bar out of sight, in one command; when the play ends it takes full screen back at its own size first, in one command
+rm -f "$F2/swaymsg.log"
+( FULL=1 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" )
+_fb=0; while [ "$_fb" -lt 30 ] && ! grep -q 'fullscreen enable' "$F2/swaymsg.log" 2>/dev/null; do sleep 0.1; _fb=$((_fb + 1)); done; sleep 0.3
+[ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
+    && [ "$(grep -n -e '^bar mode invisible$' -e 'fullscreen disable' "$F2/swaymsg.log" | cut -d: -f2- | head -2 | paste -sd '|' -)" = 'bar mode invisible|[con_id=42] fullscreen disable, resize set 1920 1080, move absolute position 0 0' ] \
+    && [ "$(grep -n -e 'fullscreen enable' -e '^bar mode' "$F2/swaymsg.log" | cut -d: -f2- | tail -2 | paste -sd '|' -)" = '[con_id=42] resize set 600 800, move position center, fullscreen enable|bar mode dock' ] \
+    && [ "$(grep -n 'fullscreen disable' "$F2/swaymsg.log" | cut -d: -f1)" -lt "$(grep -n 'spark-preview' "$F2/swaymsg.log" | tail -1 | cut -d: -f1)" ] \
+    && ok "provide files: full screen, a video plays in its frame too: the dialog floats on the same pixels for the play and is full screen again at its own size after (#158)" \
+    || bad "preview video full screen" "$(ans 5) | $(cat "$F2/swaymsg.log" 2>&1)"
+grep -qxF 'no_focus [app_id="spark-preview"]' "$REPO/templates/.config/sway/config" && grep -qxF 'for_window [app_id="spark-preview"] floating enable, border none, opacity 0' "$REPO/templates/.config/sway/config" \
+    && ok "sway template: a video a preview plays floats with no border, maps unseen until it is placed (#157) and never takes the focus: the keys stay in the dialog (#125)" || bad "sway preview rules" "$(grep spark-preview "$REPO/templates/.config/sway/config")"
 # the dialog's transitions (#122): the theme's row, the verb, the key the config holds
 printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
 o1=$(sh "$SH" theme animation 2>&1); o2=$(sh "$SH" theme animation next 2>&1); o3=$(sh "$SH" theme animation back 2>&1); o4=$(sh "$SH" theme animation none 2>&1); st=0; o5=$(sh "$SH" theme animation fireworks 2>&1) || st=$?

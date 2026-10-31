@@ -700,13 +700,13 @@ app or a layout closes it: the window is the receipt. A window that is
 fullscreen steps aside for the dialog and is fullscreen again when the
 dialog closes with nothing opened.
 
-Full screen (Super+f), the dialog keeps its own width, top to bottom,
-and the space it brings shows what the lit row holds: beside the dialog
-on a wide screen, under its list on a tall one. A place's rows, a
-setting's section, a row's facts and actions, the lit file's page in
-Files, and the Calendar's months ahead. A picture there sits at the
-pane's top, and a page that takes a moment plays the waiting animation
-where it will be. The preview Space opens takes the whole screen.
+Full screen (Super+f), the dialog is one column in the middle of the
+screen, up to 120 cells wide, and the space goes to its lists: in Files
+a whole name, the kind (picture, sound, PDF, Word), the size, and the
+date with the time; the Calendar shows as many months across as fit;
+the home and Settings write each state whole. A list ends where its
+words end, its arrows right after them. The preview Space opens takes
+the whole screen.
 
 The dialog opens with a short animation in the middle of its window,
 alone, and then the whole dialog is drawn at once; keys typed meanwhile
@@ -876,8 +876,9 @@ its first and its last row.
   its rate, bits, channels and format; Space plays and pauses it, left
   and right go 5 seconds back and ahead, Home to its start. A video's
   Space plays it over its frame, in a
-  window of its own with no border, the keys still the dialog's; full
-  screen, or where sway is not, Enter opens it in its app. A Word,
+  window of its own with no border, the keys still the dialog's, full
+  screen too (the dialog floats on the same pixels while it plays);
+  where sway is not, Enter opens it in its app. A Word,
   PowerPoint, Excel or OpenDocument file shows its text, read by Python's
   own zip and XML readers (no LibreOffice). Anything else says that it
   has no preview. A PDF needs poppler (installed with the desktop); a

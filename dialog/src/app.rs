@@ -298,9 +298,6 @@ pub struct Toast {
 /// How long a toast stays (#133).
 pub const TOAST_FOR: Duration = Duration::from_secs(10);
 
-/// The lit file's page is asked for once its row has stayed lit this long (#131, #149).
-pub const SIDE_GAP: Duration = Duration::from_millis(80);
-
 /// How far Left and Right move a sound or a video in the preview (#151).
 pub const SEEK_SECONDS: f64 = 5.0;
 
@@ -641,9 +638,6 @@ pub struct App {
     pub keep_lit: Option<String>,
     /// The preview shown (View::Preview): the list it came from, the file, its page (#120).
     pub preview: Option<Preview>,
-    /// Full screen's pane, the lit file's page beside the list (#131); the row lit and since when, before it is asked.
-    pub side: Option<Preview>,
-    side_lit: Option<(String, Instant)>,
     /// A sound's play or stop on its way: its request and its call, audited when it answers.
     quiet: Option<(u64, usize, Call)>,
     /// The transition playing, and since when (#122); main.rs moves it on and draws it.
@@ -722,8 +716,6 @@ impl App {
             last_view: None,
             keep_lit: None,
             preview: None,
-            side: None,
-            side_lit: None,
             quiet: None,
             motion: None,
             films: false,
@@ -1184,24 +1176,6 @@ impl App {
                     }
                 }
             }
-            Kind::Side => {
-                // the lit file's page for the pane: the one asked for alone, a refusal said by nothing but its absence
-                let text = result
-                    .as_ref()
-                    .and_then(|r| r.pointer("/contents/0/text"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                let of = result.as_ref().and_then(|r| r.pointer("/contents/0/uri")).and_then(Value::as_str).map(scrub);
-                let Some(pv) = self.side.as_mut().filter(|pv| pv.prov == idx) else { return };
-                let want = pv.uri();
-                if of.as_deref().is_some_and(|u| u != want) {
-                    return;
-                }
-                match preview::page(&want, text).filter(|_| text.len() <= mcp::RESOURCE_MAX) {
-                    Some(pg) => pv.shown = Some(pg),
-                    None => pv.failed = true,
-                }
-            }
             Kind::Quiet => {
                 let Some((_, p, call)) = self.quiet.take().filter(|(q, p, _)| *q == n && *p == idx) else {
                     return;
@@ -1226,7 +1200,7 @@ impl App {
                         .filter(|t| !t.is_empty())
                         .or(error)
                         .unwrap_or_else(|| "not played".into());
-                    self.say(Sign::Refused, &said);
+                    self.refuse_toast(&said);
                 }
             }
             Kind::Call(_) => {
@@ -1248,7 +1222,6 @@ impl App {
             }
         }
         self.follow_view(now);
-        self.side_follow(now);
         let mut late = vec![];
         for s in self.servers.iter_mut() {
             for (id, p) in s.expired(now) {
@@ -1281,11 +1254,6 @@ impl App {
                     }
                 }
                 Kind::Folder => self.say(Sign::Refused, "the list did not come in time: Esc goes back"),
-                Kind::Side => {
-                    if let Some(pv) = self.side.as_mut() {
-                        pv.failed = true;
-                    }
-                }
                 Kind::Page => {
                     if let Some(pv) = self.preview.as_mut() {
                         pv.failed = true; // the wait ends with the words (#124)
@@ -1297,7 +1265,7 @@ impl App {
                     if let Some(pv) = self.preview.as_mut() {
                         pv.playing = None;
                     }
-                    self.say(Sign::Refused, "the sound did not answer in time");
+                    self.refuse_toast("the sound did not answer in time");
                 }
                 Kind::Init => self.lose(idx, "it did not answer"),
                 _ => {}
@@ -3758,40 +3726,7 @@ impl App {
         false
     }
 
-    /// Full screen keeps the lit file's page in its pane (#131): asked once the lit row has stayed a moment, so a run of
-    /// keys asks for nothing on its way; gone where no file with a page is lit or there is no pane.
-    pub fn side_follow(&mut self, now: Instant) {
-        let pane = crate::ui::layout(self.size.0, self.size.1) != crate::ui::Layout::One;
-        let lit = match (&self.view, self.picks().get(self.sel), &self.folder) {
-            (View::Folder(p, _), Some(Item::Folder(i)), Some((fp, _, rows))) if pane && fp == p && self.providers[*p].label == "files" => {
-                rows.rows.get(*i).filter(|r| r.page.is_some()).map(|r| r.id.clone())
-            }
-            _ => None,
-        };
-        let Some(id) = lit else {
-            self.side = None;
-            self.side_lit = None;
-            return;
-        };
-        if self.side.as_ref().is_some_and(|pv| pv.row().id == id) {
-            return;
-        }
-        match &self.side_lit {
-            Some((l, t)) if *l == id && now.duration_since(*t) >= SIDE_GAP => {
-                let Some((p, _, rows)) = self.folder.as_ref() else { return };
-                let Some(pv) = Preview::new(*p, &rows.title, &rows.rows, &id) else { return };
-                let (p, uri) = (pv.prov, pv.uri());
-                self.side = Some(pv);
-                if let Some(s) = self.server(p) {
-                    s.request("resources/read", json!({"uri": uri}), Kind::Side, mcp::T_READ);
-                }
-            }
-            Some((l, _)) if *l == id => {}
-            _ => self.side_lit = Some((id, now)),
-        }
-    }
-
-    /// The dialog's own column's width: the whole grid, or the dialog's width where full screen gives a pane (#131).
+    /// The dialog's own column's width: the whole grid, at most ui::FULL_WIDTH in the middle of a full screen (#141).
     pub fn col_w(&self) -> u16 {
         if self.view == View::Preview {
             return self.size.0; // the preview keeps the whole screen
@@ -3799,13 +3734,15 @@ impl App {
         crate::ui::column_width(self.size.0, self.size.1)
     }
 
-    /// The pane shows the lit file's page (#131): only the lit row's, never the last one's under its name (#153).
-    pub fn side_here(&self) -> bool {
-        let lit = match (self.picks().get(self.sel), &self.folder) {
-            (Some(Item::Folder(i)), Some((_, _, rows))) => rows.rows.get(*i).map(|r| r.id.clone()),
-            _ => None,
-        };
-        matches!(self.view, View::Folder(..)) && self.side.as_ref().is_some_and(|pv| Some(&pv.row().id) == lit.as_ref())
+    /// A play refused is a toast, the one before it replaced, never a line of the exchange a press (#158).
+    fn refuse_toast(&mut self, said: &str) {
+        self.toast = Some(Toast {
+            sign: Sign::Refused,
+            text: said.to_string(),
+            undo: false,
+            view: self.view.clone(),
+            at: Instant::now(),
+        });
     }
 
     /// A click lights row `n`: a choice, as a key's is, so the light kept from a preview lets go (#153).
@@ -3813,62 +3750,6 @@ impl App {
         self.in_list = true;
         self.sel = n;
         self.keep_lit = None;
-    }
-
-    /// What the pane shows under its name (#131): the lit place's rows, the lit setting's section, the lit row's facts and
-    /// actions. The row followed is the one lit, or the first while the prompt has the keys. None where nothing is.
-    pub fn pane_of(&self) -> Option<(String, String, Vec<Item>)> {
-        let lit = self.picks().get(self.sel).cloned()?;
-        match lit {
-            Item::Dest(d) => {
-                let mut items = vec![];
-                if d == SETTINGS_DEST {
-                    self.settings_items(&mut items);
-                } else if d == CALENDAR_DEST {
-                    if let Some(p) = self.providers.iter().position(|p| p.label == "reminders" && p.dead.is_none()) {
-                        self.section_rows(p, &mut items, false);
-                    }
-                } else if DESTS[d].sections != ["about"] {
-                    let secs = self.dest_sections(d);
-                    let one = secs.len() == 1;
-                    for p in secs {
-                        if !items.is_empty() {
-                            items.push(Item::Blank);
-                        }
-                        self.section_rows(p, &mut items, !one);
-                    }
-                }
-                let sub = self.dest_state(d).unwrap_or_else(|| DESTS[d].purpose.to_string());
-                Some((DESTS[d].name.to_string(), sub, items))
-            }
-            Item::Setting(i) => {
-                let (label, name, purpose) = SETTINGS[i];
-                let mut items = vec![];
-                if let Some(p) = self.providers.iter().position(|p| p.label == label && p.dead.is_none()) {
-                    self.section_rows(p, &mut items, false);
-                }
-                Some((name.to_string(), purpose.to_string(), items))
-            }
-            Item::Row(..) | Item::Folder(_) => {
-                let row = match lit {
-                    Item::Row(p, r) => self.providers[p].rows.rows.get(r)?.clone(),
-                    Item::Folder(i) => self.folder.as_ref()?.2.rows.get(i)?.clone(),
-                    _ => return None,
-                };
-                // the row's facts under its whole name, then what can be done with it, in the provider's words
-                let mut items = vec![];
-                // in the provider's words alone: a pick's bare verb (use, open) says nothing the row does not
-                let calls: Vec<&Call> = row.tool.iter().chain(row.more.iter()).filter(|c| c.said.is_some()).collect();
-                if !calls.is_empty() {
-                    items.push(Item::Heading("actions".into()));
-                    for c in calls {
-                        items.push(Item::Text(format!("  {}", self.step_words(c)), false));
-                    }
-                }
-                Some((row.text.clone(), row.columns.join(crate::ui::SEP), items))
-            }
-            _ => None,
-        }
     }
 
     /// A click on this pick lights it and a second one opens it: a file's or a folder's row in Files, as a file
