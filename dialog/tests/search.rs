@@ -276,4 +276,11 @@ fn a_row_that_is_only_its_steps_opens_them_on_enter() {
     r.app.enter();
     assert_eq!(r.app.view, View::Steps(2));
     assert_eq!(r.app.step_call_words(0).as_deref(), Some("forget"));
+    // Esc comes back with the row lit, so Space and the right arrow go on from it
+    r.app.escape();
+    assert_eq!(r.app.view, View::Section(2));
+    assert!(
+        r.app.in_list && r.app.picks().get(r.app.sel) == Some(&Item::Row(2, 1)),
+        "the row it came from is lit again"
+    );
 }

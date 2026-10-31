@@ -566,10 +566,13 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     let mic_w = if mic_on { cells(mic) as u16 + 2 } else { 0 };
     let mut x = 1;
     if let Some(pv) = app.preview.as_ref().filter(|_| app.view == View::Preview) {
-        // the file shown goes with the words: Attach names it, in the accent where spark can read it (#120)
+        // the file shown goes with the words: Attach names it, in the accent where spark can read it (#120); a page that is no
+        // file's (an app, a network, #169) goes with nothing, and names nothing here
         let reads = pv.shown.as_ref().is_some_and(|pg| pg.attach.is_some());
-        let name = cut(&pv.row().text, (w / 2) as usize);
-        x = pen.control(x, y, &name, false, reads, !reads) + 1;
+        if reads || app.providers.get(pv.prov).is_some_and(|p| p.label == "files") {
+            let name = cut(&pv.row().text, (w / 2) as usize);
+            x = pen.control(x, y, &name, false, reads, !reads) + 1;
+        }
     } else if chips.contains(&0) {
         let e = pen.control(x, y, "Attach", app.chip_focus == Some(0), app.attachment.is_some(), false);
         drawn.chips.push((x, e, y, 0));
@@ -634,14 +637,16 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             pen.put(w.saturating_sub(6), y, "Undo", if lit { pal.fg } else { pal.muted }, false, lit);
         }
         Item::Dest(d) => {
-            pen.put(2, y, DESTS[*d].name, pal.fg, false, lit);
+            // found from the home, a place stands with the rows under its group's heading (#169)
+            let ind = if app.searching() { 4 } else { 0 };
+            pen.put(2 + ind, y, DESTS[*d].name, pal.fg, false, lit);
             // what the place holds now, else what it is for
             let words = app.dest_state(*d).unwrap_or_else(|| DESTS[*d].purpose.to_string());
             let e = pen.end(y);
             pen.put(
-                PURPOSE_X,
+                PURPOSE_X + ind,
                 y,
-                &cut_words(&words, e.saturating_sub(PURPOSE_X + 4) as usize),
+                &cut_words(&words, e.saturating_sub(PURPOSE_X + ind + 4) as usize),
                 pal.muted,
                 false,
                 lit,
@@ -650,8 +655,15 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         }
         Item::Setting(i) => {
             let (label, name, purpose) = SETTINGS[*i];
-            // in Settings the rows sit under their groups' headings, as a folder's do (#137); found from the home, beside the places
-            let ind = if app.view == View::Dest(SETTINGS_DEST) { 2 } else { 0 };
+            // in Settings the rows sit under their groups' headings, as a folder's do (#137); found from the home, under the
+            // settings' heading with the rows (#169)
+            let ind = if app.searching() {
+                4
+            } else if app.view == View::Dest(SETTINGS_DEST) {
+                2
+            } else {
+                0
+            };
             pen.put(2 + ind, y, name, pal.fg, false, lit);
             let words = setting_words(app, label, purpose);
             pen.put(
@@ -1232,13 +1244,14 @@ fn setting_words(app: &App, label: &str, purpose: &str) -> String {
 /// Where a wide list's words end (#141): a place's or a setting's name and state, a row's name and columns, then its
 /// arrow and two cells of air.
 fn list_end(app: &App, items: &[Item], widths: &[usize], samples: bool) -> u16 {
+    let ind = if app.searching() { 4 } else { 0 };
     let cols: usize = widths.iter().enumerate().skip(1).map(|(k, w)| w + if k == 1 { 2 } else { 3 }).sum();
     let row = (if samples { 9 } else { 6 }) + widths.first().copied().unwrap_or(0) + cols + 4;
     let words = items
         .iter()
         .filter_map(|it| match it {
-            Item::Dest(d) => Some(PURPOSE_X as usize + cells(&app.dest_state(*d).unwrap_or_else(|| DESTS[*d].purpose.to_string())) + 5),
-            Item::Setting(i) => Some(PURPOSE_X as usize + 2 + cells(&setting_words(app, SETTINGS[*i].0, SETTINGS[*i].2)) + 5),
+            Item::Dest(d) => Some(PURPOSE_X as usize + ind + cells(&app.dest_state(*d).unwrap_or_else(|| DESTS[*d].purpose.to_string())) + 5),
+            Item::Setting(i) => Some(PURPOSE_X as usize + 2.max(ind) + cells(&setting_words(app, SETTINGS[*i].0, SETTINGS[*i].2)) + 5),
             _ => None,
         })
         .max()

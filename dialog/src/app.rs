@@ -1829,6 +1829,11 @@ impl App {
         }
     }
 
+    /// The list is what a search from Home found: the groups, or the rest of one kind (#169).
+    pub fn searching(&self) -> bool {
+        matches!(self.view, View::Found(..)) || (self.view == View::Home && !self.query().trim().is_empty())
+    }
+
     /// The words typed at Home changed: the providers are asked what they find for them once typing rests (#169).
     fn search_later(&mut self) {
         if self.view == View::Home && !self.query().trim().is_empty() {
@@ -2551,9 +2556,12 @@ impl App {
             (View::Found(_, w), View::Home) => Some(w.clone()),
             _ => None,
         };
+        // back from a preview or from a row's steps: that row lit again, so Space and the right arrow go on from it (#169)
         let lit = if self.view == View::Preview {
             self.stop_sound();
             self.preview.take().map(|pv| pv.row().id.clone())
+        } else if matches!(self.view, View::Steps(_)) {
+            self.steps_row.as_ref().map(|r| r.id.clone())
         } else {
             None
         };
@@ -2850,6 +2858,7 @@ impl App {
                     self.open_preview();
                     return;
                 }
+                self.steps_row = None; // a step run from the list: the light is not put back on a row it may have taken away
                 if let Some(v) = self.came_from.pop() {
                     self.go_back(v);
                 }

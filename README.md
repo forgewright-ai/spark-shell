@@ -770,8 +770,9 @@ a drive's unmount and eject), and Space shows its page: an app's group,
 where it runs and its command; a note's text; a reminder's time and
 calendar; a window's app, workspace and screen; a layout's apps; a
 network's signal and security; a device's state; a drive's size and
-free space; a file or a folder. A row that is only its steps, as a
-saved network that is not around, opens them on Enter. When the list
+free space; a file or a folder. Esc from its steps or its page comes
+back with it lit. A row that is only its steps, as a saved network that
+is not around, opens them on Enter. When the list
 is longer than the window, its last line says how many rows sit below.
 In a list,
 Page Up and Page Down move the lit row by a screen, Home and End go to

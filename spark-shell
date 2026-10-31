@@ -7545,7 +7545,8 @@ files_match() {   # files_match WORDS -> the paths under your home whose name ho
     if [ ! -s "$FILES_NAMES" ]; then files_names_build
     elif [ -z "$(find "$FILES_NAMES" -mmin "-$FILES_NAMES_AGE" 2>/dev/null)" ]; then ( files_names_build ) >/dev/null 2>&1 </dev/null 3>&- 4<&- 5>&- & fi
     [ -s "$FILES_NAMES" ] || return 0
-    W=$1 awk -v max="$FILES_MATCH_MAX" '
+    _fmn=$(realpath "$NOTES_DIR" 2>/dev/null || printf '%s' "$NOTES_DIR")   # your notes are found as notes, by what they say
+    W=$1 N=$_fmn/ awk -v max="$FILES_MATCH_MAX" '
         function near(a, b,   la, lb, i, d, j, t) {   # one edit apart at most
             la = length(a); lb = length(b)
             if (la == lb) {
@@ -7571,6 +7572,7 @@ files_match() {   # files_match WORDS -> the paths under your home whose name ho
             return 0
         }
         BEGIN { nw = split(tolower(ENVIRON["W"]), ws, /[ \t]+/) }
+        index($0, ENVIRON["N"]) == 1 { next }
         { n = $0; sub(/.*\//, "", n); n = tolower(n); t = 0
           for (i = 1; i <= nw; i++) { if (ws[i] == "") continue; s = one(ws[i], n); if (!s) next; t += s }
           if (t) printf "%d\t%d\t%s\n", t, length(n), $0 }' "$FILES_NAMES" | sort -t "$TAB" -k1,1nr -k2,2n | head -n "$FILES_MATCH_MAX" | cut -f3-
@@ -7659,7 +7661,7 @@ app_page() {   # app_page NAME -> an app's page: its name, what it is, its group
         command -v "$1" >/dev/null 2>&1 || return 1
         printf 'runs in\ta terminal\ncommand\t%s\n' "$1" | page_of "$1" "a command on this computer"; return
     fi
-    _apf=$(printf '%s' "$_apl" | cut -f2); _apw=$(printf '%s' "$_apl" | cut -f3); _apx=$(printf '%s' "$_apl" | cut -f6)
+    _apf=$(printf '%s' "$_apl" | cut -f2); _apw=$(printf '%s' "$_apl" | cut -f3); _apx=$(printf '%s' "$_apl" | cut -f6 | sed 's/ *%[a-zA-Z]//g')   # the command as typed: no field codes
     _apn=$(sed -n 's/^Name=//p' "$_apf" | head -1); [ -n "$_apn" ] || _apn=$1
     case $_apf in */flatpak/*) _api='as a Flatpak' ;; */snapd/*) _api='as a Snap' ;; "${XDG_DATA_HOME:-$HOME/.local/share}"/*) _api='in your own apps folder' ;; /usr/local/*) _api='by hand, in /usr/local' ;; *) _api="with the system's packages" ;; esac
     _apr='its own window'; [ "$(printf '%s' "$_apl" | cut -f4)" != yes ] || _apr='a terminal'

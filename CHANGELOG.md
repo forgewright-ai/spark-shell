@@ -34,7 +34,9 @@ picks from wireframes).
   size, free space, mount and format; a folder's, what it holds and its
   newest things. Up and down go to the next of its kind, and the key
   row names what they move between (File, App, Note, Network, Device,
-  Drive) and what Enter does.
+  Drive) and what Enter does. Esc from a row's steps comes back with
+  that row lit, as Esc from its page does; a page that is no file's
+  names nothing in the footer, where Attach names a file.
 - One row for a thing, its steps behind it (v0.114.1's rule, now
   everywhere): a saved network's forget, a paired device's remove, a
   drive's unmount and eject, and a note's append leave their rows of
