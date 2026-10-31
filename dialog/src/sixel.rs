@@ -177,11 +177,30 @@ impl Image {
     /// (a spectrogram in the palette's own colors, #120).
     pub fn tinted(&self, ramp: &[[u8; 3]]) -> Image {
         let n = ramp.len().max(2) - 1;
+        // its own range of light stretched over the ramp: the darkest 2 percent the ramp's first color, the lightest half
+        // percent its last, so a recording that is mid-gray throughout (speech, an hour long) shows its shape (#152)
+        let mut hist = [0usize; 766];
+        for p in &self.px {
+            hist[p[0] as usize + p[1] as usize + p[2] as usize] += 1;
+        }
+        let total = self.px.len().max(1);
+        let at = |share: f64| {
+            let mut seen = 0usize;
+            for (v, c) in hist.iter().enumerate() {
+                seen += c;
+                if seen as f64 >= share * total as f64 {
+                    return v as f32;
+                }
+            }
+            765.0
+        };
+        let (lo, hi) = (at(0.02), at(0.995));
+        let span = (hi - lo).max(38.0); // a picture with almost no range is not blown up into noise
         let px = self
             .px
             .iter()
             .map(|p| {
-                let l = (p[0] as u32 + p[1] as u32 + p[2] as u32) as f32 / (3.0 * 255.0) * n as f32;
+                let l = (((p[0] as u32 + p[1] as u32 + p[2] as u32) as f32 - lo) / span).clamp(0.0, 1.0) * n as f32;
                 let (i, f) = ((l as usize).min(n - 1), l - (l as usize).min(n - 1) as f32);
                 let (a, b) = (ramp.get(i).copied().unwrap_or([0; 3]), ramp.get(i + 1).copied().unwrap_or([255; 3]));
                 let m = |q: usize| (a[q] as f32 + (b[q] as f32 - a[q] as f32) * f).round() as u8;
@@ -249,6 +268,11 @@ pub fn picture(png: &[u8], bw: u32, bh: u32) -> Option<(String, u32, u32)> {
 /// it, sharp. Its colors cut to at most 255 (the most used of a 4096-color grid, every other pixel the
 /// nearest of them); a pixel under half opacity is left unpainted. None for a box under 8 pixels.
 pub fn show(img: &Image, bw: u32, bh: u32, view: &Viewport) -> Option<(String, u32, u32)> {
+    show_with(img, bw, bh, view, 255)
+}
+
+/// As `show`, its colors cut to at most `colors` (a drag's lighter frames, #148).
+pub fn show_with(img: &Image, bw: u32, bh: u32, view: &Viewport, colors: usize) -> Option<(String, u32, u32)> {
     if bw < 8 || bh < 8 {
         return None;
     }
@@ -285,12 +309,12 @@ pub fn show(img: &Image, bw: u32, bh: u32, view: &Viewport) -> Option<(String, u
             out.push([(sum[0] / n) as u8, (sum[1] / n) as u8, (sum[2] / n) as u8, (sum[3] / n) as u8]);
         }
     }
-    Some((encode(w, h, &inked(&out)), w, h))
+    Some((encode(w, h, &inked(&out, colors.clamp(2, 255))), w, h))
 }
 
 /// The pixels with their colors cut to at most 255, as RGBA bytes: the 255 most used cells of a
 /// 16-step grid, each the mean of its pixels, every other cell the ink nearest its mean.
-fn inked(px: &[[u8; 4]]) -> Vec<u8> {
+fn inked(px: &[[u8; 4]], colors: usize) -> Vec<u8> {
     let key = |c: &[u8; 4]| ((c[0] as usize >> 4) << 8) | ((c[1] as usize >> 4) << 4) | (c[2] as usize >> 4);
     let mut bins = vec![(0u32, [0u32; 3]); 4096];
     for c in px.iter().filter(|c| c[3] >= 128) {
@@ -300,7 +324,7 @@ fn inked(px: &[[u8; 4]]) -> Vec<u8> {
     }
     let mut used: Vec<usize> = (0..4096).filter(|i| bins[*i].0 > 0).collect();
     used.sort_by(|a, b| bins[*b].0.cmp(&bins[*a].0).then(a.cmp(b)));
-    used.truncate(255);
+    used.truncate(colors);
     let mean = |i: usize| {
         let (n, s) = bins[i];
         [(s[0] / n) as u8, (s[1] / n) as u8, (s[2] / n) as u8]
@@ -333,6 +357,29 @@ fn inked(px: &[[u8; 4]]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_mid_gray_spectrogram_spans_the_ramp_and_a_drag_frame_is_lighter() {
+        // speech an hour long: grays between a third and two thirds; tinted, its darkest is the ramp's first color and
+        // its lightest the last (#152)
+        let px: Vec<[u8; 4]> = (0..200u32)
+            .map(|i| {
+                let g = (85 + (i % 86)) as u8;
+                [g, g, g, 255]
+            })
+            .collect();
+        let t = Image { w: 200, h: 1, px }.tinted(&[[0, 0, 0], [255, 255, 255]]);
+        let (lo, hi) = t.px.iter().fold((255u8, 0u8), |(l, h), p| (l.min(p[0]), h.max(p[0])));
+        assert!(lo < 10 && hi > 245, "stretched: {} to {}", lo, hi);
+        // a drag's frame in fewer colors writes fewer bytes (#148)
+        let px: Vec<[u8; 4]> = (0..64 * 64u32)
+            .map(|i| [(i * 7 % 256) as u8, (i * 13 % 256) as u8, (i * 29 % 256) as u8, 255])
+            .collect();
+        let img = Image { w: 64, h: 64, px };
+        let full = show(&img, 64, 64, &Viewport::FIT).unwrap().0.len();
+        let light = show_with(&img, 64, 64, &Viewport::FIT, 32).unwrap().0.len();
+        assert!(light < full, "{} < {}", light, full);
+    }
 
     #[test]
     fn a_picture_fits_its_box_with_its_shape_and_few_colors() {

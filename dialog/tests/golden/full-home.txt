@@ -5,7 +5,7 @@
                                                              │     ▸ terminal                                                                         
   Open  Enter    Close  Esc                                  │       close terminal                                                                   
                                                              │     ▸ firefox                                                                          
-  Apps           Open an application                     ›   │       close firefox                                                                    
+  Apps           open an application                     ›   │       close firefox                                                                    
                                                              │                                                                                        
   Files          your home folder                        ›   │   layout                                                                               
                                                              │     ✓ side by side                                                                     
@@ -13,7 +13,7 @@
                                                              │     ○ stacked                                                                          
   Notes          no notes yet                            ›   │                                                                                        
                                                              │                                                                                        
-  Calendar       Dates and reminders                     ›   │                                                                                        
+  Calendar       dates and reminders                     ›   │                                                                                        
                                                              │                                                                                        
   Settings       tokyonight-night                        ›   │                                                                                        
                                                              │                                                                                        

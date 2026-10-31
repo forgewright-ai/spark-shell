@@ -185,6 +185,10 @@ pub struct Drawn {
     pub toast_close: Option<(u16, u16, u16)>,
     /// The dialog's own column, its first cell and the cell after its last (#131): a click's row is its list's only there.
     pub columns: (u16, u16),
+    /// The opening plays alone (#142): nothing else drawn, no cursor.
+    pub alone: bool,
+    /// The back arrow's cells (x0, x1) on the header's row, for a click (#147).
+    pub back: Option<(u16, u16)>,
 }
 
 /// A picture main.rs draws in sixel over cells the buffer skips: where (x, y, w, h in cells), its file,
@@ -198,6 +202,8 @@ pub struct Picture {
     pub file: String,
     pub view: Viewport,
     pub spectrogram: bool,
+    /// Drawn from the top of its box, not its middle (the pane's picture, #149).
+    pub top: bool,
 }
 
 /// The draft as the prompt shows it: its lines, each wrapped to `w` cells, and where the cursor is in
@@ -299,6 +305,7 @@ impl Drawn {
             k.1 += dx;
         }
         self.close = self.close.map(|(a, b)| (a + dx, b + dx));
+        self.back = self.back.map(|(a, b)| (a + dx, b + dx));
         if let Some(p) = self.preview.as_mut() {
             p.x += dx;
         }
@@ -328,6 +335,22 @@ fn blit(buf: &mut Buffer, part: &Buffer, x: u16, y: u16) {
 pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let (w, h) = (buf.area.width, buf.area.height);
     buf.set_style(Rect::new(0, 0, w, h), Style::default().fg(pal.fg));
+    // the opening, and the wait after it while the home loads, play alone in the middle of the window: nothing
+    // else is drawn until they end, then the whole dialog at once (#142)
+    if let Some((reel @ (Reel::Open | Reel::Wait), since)) = app.motion {
+        let mut drawn = Drawn {
+            alone: true,
+            ..Drawn::default()
+        };
+        let (x, y, bw, bh) = (2, 2, w.saturating_sub(4), h.saturating_sub(4));
+        for yy in y..(y + bh).min(h) {
+            for xx in x..(x + bw).min(w) {
+                buf[(xx, yy)].set_diff_option(CellDiffOption::Skip);
+            }
+        }
+        drawn.film = Some((x, y, bw, bh, reel, since));
+        return drawn;
+    }
     // a preview opened on Space keeps the whole screen: its zoom and its drag want the room (#120)
     let lay = if app.view == View::Preview { Layout::One } else { layout(w, h) };
     match lay {
@@ -377,6 +400,7 @@ fn pane(app: &App, pal: &Palette, _clock: &str, buf: &mut Buffer, area: Rect, dr
     let mut part = Buffer::empty(Rect::new(0, 0, area.width, area.height));
     part.set_style(part.area, Style::default().fg(pal.fg));
     let mut picture = None;
+    let mut film = None;
     {
         let mut pen = Pen {
             buf: &mut part,
@@ -402,6 +426,16 @@ fn pane(app: &App, pal: &Palette, _clock: &str, buf: &mut Buffer, area: Rect, dr
             }
             if let Some(pv) = side {
                 picture = side_page(&mut pen, pv, 3, h);
+                // the page still on its way: the loading animation where the picture will land, at the pane's top (#149)
+                if pv.shown.is_none() && !pv.failed && app.films && pv.asked.elapsed() >= std::time::Duration::from_millis(150) {
+                    let (fx, fy, fw, fh) = (2, 3, w.saturating_sub(4), h.saturating_sub(4).min(12));
+                    for yy in fy..(fy + fh).min(h) {
+                        for xx in fx..(fx + fw).min(w) {
+                            pen.buf[(xx, yy)].set_diff_option(CellDiffOption::Skip);
+                        }
+                    }
+                    film = Some((fx, fy, fw, fh, Reel::Load, pv.asked + std::time::Duration::from_millis(150)));
+                }
             } else {
                 rows_in(app, &mut pen, &items, 3, h);
             }
@@ -412,6 +446,9 @@ fn pane(app: &App, pal: &Palette, _clock: &str, buf: &mut Buffer, area: Rect, dr
         p.x += area.x;
         p.y += area.y;
         drawn.preview = Some(p);
+    }
+    if let (Some((x, y, w, h, reel, since)), None) = (film, drawn.film) {
+        drawn.film = Some((x + area.x, y + area.y, w, h, reel, since));
     }
 }
 
@@ -452,6 +489,7 @@ fn side_page(pen: &mut Pen, pv: &crate::preview::Preview, top: u16, bottom: u16)
                 file: png.clone(),
                 view: Viewport::FIT,
                 spectrogram: false,
+                top: true, // under the file's name and facts, as the pane's text starts (#149)
             },
         ));
     } else if let Some(say) = &pg.say {
@@ -485,8 +523,14 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, reserve:
         return drawn;
     }
 
-    // the header: the title, its state; then the march, the date and the time, close
+    // the header: the back arrow where there is somewhere to go back to (#147), the title, its state; then the march,
+    // the date and the time, close
     let mut x = 2;
+    if app.goes_back() {
+        pen.put(2, 0, LESS, pal.muted, false, false);
+        drawn.back = Some((1, 4));
+        x = 4;
+    }
     let right = if app.cfg.close { w - 3 } else { w - 1 };
     if app.cfg.close {
         pen.put(w - 3, 0, CLOSE, pal.muted, false, false);
@@ -591,6 +635,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, reserve:
                 file: String::new(),
                 view: Viewport::FIT,
                 spectrogram: false,
+                top: false,
             },
         );
         drawn.film = Some((x, y, w, h, reel, since));
@@ -668,6 +713,8 @@ fn key_of(k: &str) -> Option<HintKey> {
         "\u{2191}" => HintKey::Up,
         "\u{2193}" => HintKey::Down,
         "+" | "-" | "<" | ">" => HintKey::Char(k.chars().next()?),
+        // Space previews the lit file, its chip as clickable as the others (#150)
+        "Space" => HintKey::Char(' '),
         _ => return None,
     })
 }
@@ -925,9 +972,11 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
                     file: String::new(),
                     view: Viewport::FIT,
                     spectrogram: false,
+                    top: false,
                 },
             );
-            drawn.film = Some((x, y, w, h, Reel::Wait, pv.asked));
+            // the opening from its first frame, as it shows, then the wait while the page is still on its way (#142)
+            drawn.film = Some((x, y, w, h, Reel::Load, pv.asked + std::time::Duration::from_millis(300)));
         }
         return (picks, None, 1);
     };
@@ -949,6 +998,7 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
                 file: png.clone(),
                 view: pv.viewport(),
                 spectrogram: false,
+                top: false,
             },
         ));
         if pg.pages > 1 {
@@ -1084,8 +1134,14 @@ fn sound(
     // the spectrum: its bands at the time played while it plays, else the whole sound's, low to high
     if y + BAND_ROWS < end {
         let bands: Vec<f32> = if pv.playing.is_some() {
-            let col = ((played * n as f64) as usize).min(heard.bands.len().saturating_sub(1));
-            heard.bands.get(col).map(|b| b.iter().map(|v| *v as f32).collect()).unwrap_or_default()
+            // between the two columns the time played falls in, blended, so the bars move and never jump (#152)
+            let last = heard.bands.len().saturating_sub(1);
+            let pos = (played * n as f64).min(last as f64);
+            let (col, f) = (pos as usize, (pos - pos.floor()) as f32);
+            match (heard.bands.get(col), heard.bands.get((col + 1).min(last))) {
+                (Some(a), Some(b)) => a.iter().zip(b.iter()).map(|(x, y)| *x as f32 * (1.0 - f) + *y as f32 * f).collect(),
+                _ => vec![],
+            }
         } else {
             (0..crate::preview::BANDS)
                 .map(|k| heard.bands.iter().map(|b| b[k] as f32).sum::<f32>() / heard.bands.len().max(1) as f32)
@@ -1117,6 +1173,7 @@ fn sound(
                 file: file.to_string(),
                 view: Viewport::FIT,
                 spectrogram: true,
+                top: false,
             },
         )
     })
@@ -1183,6 +1240,7 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
                 file,
                 view: Viewport::FIT,
                 spectrogram: false,
+                top: false,
             });
             // the picture's cells are sixel's: the buffer skips them, as it does the logo's (main.rs draws it)
             for yy in top..(top + PREVIEW_H).min(pen.h) {
@@ -1307,7 +1365,7 @@ fn widths(app: &App, items: &[Item]) -> (Vec<usize>, Vec<bool>) {
             },
             _ => continue,
         };
-        if row.columns.is_empty() && row.step.is_none() {
+        if row.columns.is_empty() && row.step.is_none() && row.key.is_none() {
             continue;
         }
         let cols = std::iter::once(cells(&row.text).min(26)).chain(row.columns.iter().map(|c| cells(c)));
@@ -1359,6 +1417,10 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &
     }
     if !row.chip.is_empty() {
         chip(pen, name_end + 2, y, &row.chip);
+    }
+    // the key that does what the row does, as a key is drawn everywhere: a chip (#144)
+    if let Some(k) = &row.key {
+        pen.chip(name_end.max(x) + 2, y, k, false);
     }
     // a row's columns, unless its one column is its picture's caption (the wallpaper list); a file with a picture keeps its size and date (#112)
     if !row.columns.is_empty() && !widths.is_empty() && (row.preview.is_none() || row.columns.len() > 1) {

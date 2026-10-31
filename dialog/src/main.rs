@@ -283,8 +283,11 @@ fn spawn_films(dir: String, tx: mpsc::Sender<Ev>) {
 /// Two clicks on a row this close together are a double-click, the desktop's usual (#140).
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 
-/// A drag's pictures, this far apart at least (#129).
+/// A drag's pictures, this far apart at least (#129), and as far apart as the last one took to draw (#148).
 const DRAG_GAP: Duration = Duration::from_millis(40);
+/// A drag's pictures in fewer colors, so each is a small write the terminal draws at once; the whole one when the
+/// pointer lets go (#148).
+const DRAG_COLORS: usize = 48;
 
 /// The pointer foot draws over the window (OSC 22, its cursor theme's names): a hand where a click acts,
 /// the closed hand over a picture that moves and while it moves, the text cursor on the prompt (#129).
@@ -293,6 +296,7 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
     let span = |a: u16, b: u16, y: u16| row == y && col >= a && col < b;
     // where a click acts: the x, a chip, a key, the waveform (it seeks), a row of the list
     let clicks = (row == 0 && drawn.close.is_some_and(|(a, b)| span(a, b, 0)))
+        || (row == 0 && drawn.back.is_some_and(|(a, b)| span(a, b, 0)))
         || drawn.chips.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.keys.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.wave.is_some_and(on)
@@ -407,6 +411,8 @@ fn main() {
     }
     let started = Instant::now();
     let (mut drag_drawn, mut drag_owed) = (Instant::now(), false);
+    // how long the last picture of a drag took to make and write: the next waits as long (#148)
+    let mut drag_cost = Duration::ZERO;
     // the last click on a row of Files: where, which, when (#140)
     let mut last_click: Option<(u16, usize, Instant)> = None;
     let mut pointer = "";
@@ -478,12 +484,16 @@ fn main() {
             if let Ok(sz) = term.size() {
                 app.size = (sz.width, sz.height);
             }
+            // full screen's pane follows the lit file at once, not only on the tick (#149)
+            app.side_follow(Instant::now());
             // a sound's picture read once: its waveform and its spectrum, before it is drawn
             if let Some(pv) = app.preview.as_mut().filter(|pv| pv.heard.is_none()) {
                 if let Some((file, wave)) = pv.shown.as_ref().and_then(|pg| pg.sound.clone()) {
                     pv.heard = image(&file, &mut images).and_then(|i| preview::sound(i, wave));
                 }
             }
+            let _ = out.write_all(b"\x1b[?2026h");
+            let _ = out.flush();
             let _ = term.draw(|f| {
                 let area = f.area();
                 let mut b = Buffer::empty(Rect::new(0, 0, area.width, area.height));
@@ -494,8 +504,13 @@ fn main() {
                         fb[(x, y)] = b[(x, y)].clone();
                     }
                 }
-                f.set_cursor_position(drawn.cursor);
+                // the opening alone has no cursor: nothing is there to type into yet (#142)
+                if !drawn.alone {
+                    f.set_cursor_position(drawn.cursor);
+                }
             });
+            let _ = out.write_all(b"\x1b[?2026l");
+            let _ = out.flush();
             app.preview_pages = drawn.pages.max(1);
             // the picture beside a list: drawn when it changed, its cells blanked first (the buffer skips them);
             // a picture gone is the buffer's again, which writes its cells over it
@@ -504,6 +519,7 @@ fn main() {
             if want != shown_preview {
                 shown_preview = None;
                 if let (Some(p), Some((cw, chh)), true) = (&want, cell_px(), sixel_ok) {
+                    let drawing = Instant::now();
                     // one synchronized update: the old picture stays on screen until the new one is whole (#129)
                     let _ = out.write_all(b"\x1b[?2026h");
                     blank(&mut out, (p.x, p.y, p.w, p.h), term_color(pal.surface));
@@ -526,9 +542,12 @@ fn main() {
                                 again = true;
                             }
                         }
-                        if let Some((s, pw, ph)) = sixel::show(img, bw, bh, &p.view) {
-                            // in the middle of its box, by whole cells
-                            let (dx, dy) = ((bw.saturating_sub(pw) / 2 / cw) as u16, (bh.saturating_sub(ph) / 2 / chh) as u16);
+                        // while a drag moves the picture, a lighter frame keeps up with the pointer; the whole one when it stops (#148)
+                        let colors = if drag.is_some() { DRAG_COLORS } else { 255 };
+                        if let Some((s, pw, ph)) = sixel::show_with(img, bw, bh, &p.view, colors) {
+                            // in the middle of its box by whole cells, or from its top where it says so (the pane's, #149)
+                            let dy = if p.top { 0 } else { (bh.saturating_sub(ph) / 2 / chh) as u16 };
+                            let (dx, dy) = ((bw.saturating_sub(pw) / 2 / cw) as u16, dy);
                             // where it is, in pixels: a video plays over it (#125)
                             if let Some(pv) = app.preview.as_mut().filter(|_| app.view == View::Preview && !p.spectrogram) {
                                 pv.frame = Some(((p.x + dx) as u32 * cw, (p.y + dy) as u32 * chh, pw, ph));
@@ -545,6 +564,9 @@ fn main() {
                     }
                     let _ = out.write_all(b"\x1b[?2026l");
                     let _ = out.flush();
+                    if drag.is_some() {
+                        drag_cost = drawing.elapsed();
+                    }
                 }
                 preview_tried = Instant::now();
             }
@@ -553,13 +575,24 @@ fn main() {
             film_due = None;
             match (drawn.film, &films, cell_px()) {
                 (Some((x, y, w, h, reel, since)), Some(f), Some((cw, chh))) if sixel_ok => {
-                    let film = f.of(reel);
-                    let (k, left) = film.at(since.elapsed().as_millis(), reel == Reel::Wait);
-                    let at = ((x, y, w, h), reel, k);
+                    // a page being read plays the open from its start, then the wait looped while it is still on its way (#142)
+                    let ms = Instant::now().saturating_duration_since(since).as_millis();
+                    let (film, k, left, shown) = if reel == Reel::Load && ms >= f.open.length() {
+                        let (k, left) = f.wait.at(ms - f.open.length(), true);
+                        (&f.wait, k, left, k + f.open.frames.len())
+                    } else {
+                        let film = f.of(reel);
+                        let (k, left) = film.at(ms, reel == Reel::Wait);
+                        (film, k, left, k)
+                    };
+                    let at = ((x, y, w, h), reel, shown);
                     if shown_film != Some(at) {
                         // its cells cleared and the frame drawn in one synchronized update: the ground is
                         // the window's own, and no frame shows half drawn
-                        let (dx, dy) = (0u16, 0u16);
+                        let (dx, dy) = (
+                            ((w as u32 * cw).saturating_sub(film.w) / 2 / cw) as u16,
+                            ((h as u32 * chh).saturating_sub(film.h) / 2 / chh) as u16,
+                        );
                         let (fw, fh) = ((film.w.div_ceil(cw) as u16).min(w - dx), (film.h.div_ceil(chh) as u16).min(h - dy));
                         let _ = out.write_all(b"\x1b[?2026h");
                         if shown_film.is_none_or(|(b, _, _)| b != (x, y, w, h)) {
@@ -639,10 +672,13 @@ fn main() {
             break;
         }
         // a transition playing wakes for its next frame, a drag for its next picture; else the next event
+        // a sound playing: its waveform and its spectrum drawn about thirty times a second, a steady motion (#152)
+        let play_due = (app.view == View::Preview && app.preview.as_ref().is_some_and(|pv| pv.playing.is_some())).then(|| Duration::from_millis(33));
         let due = [
             film_due,
             side_due,
-            drag_owed.then(|| DRAG_GAP.saturating_sub(drag_drawn.elapsed()).max(Duration::from_millis(1))),
+            play_due,
+            drag_owed.then(|| DRAG_GAP.max(drag_cost).saturating_sub(drag_drawn.elapsed()).max(Duration::from_millis(1))),
         ]
         .into_iter()
         .flatten()
@@ -651,7 +687,7 @@ fn main() {
             Some(d) => match rx.recv_timeout(d) {
                 Ok(ev) => ev,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
-                    if drag_owed && drag_drawn.elapsed() >= DRAG_GAP {
+                    if drag_owed && drag_drawn.elapsed() >= DRAG_GAP.max(drag_cost) {
                         drag_owed = false;
                         drag_drawn = Instant::now();
                     }
@@ -791,7 +827,9 @@ fn main() {
                         if !drawn.keys.iter().any(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.stop_video();
                         }
-                        if m.row == 0 && drawn.close.is_some_and(|(a, b)| m.column >= a && m.column < b) {
+                        if m.row == 0 && drawn.back.is_some_and(|(a, b)| m.column >= a && m.column < b) {
+                            app.back(); // the header's back arrow, as a browser's (#147)
+                        } else if m.row == 0 && drawn.close.is_some_and(|(a, b)| m.column >= a && m.column < b) {
                             if matches!(app.motion, Some((Reel::Close, _))) {
                                 app.quit = Some(0);
                             } else {
@@ -826,8 +864,7 @@ fn main() {
                             // a file or a folder in Files: a click lights it, a second one on it opens it, as a file manager's
                             // do; any other row, a place or an action, is done on one click (#140)
                             let again = last_click.is_some_and(|(r, k, t)| r == m.row && k == *n && t.elapsed() < DOUBLE_CLICK);
-                            app.in_list = true;
-                            app.sel = *n;
+                            app.light(*n);
                             if !app.lights_on_click(*n) || again {
                                 last_click = None;
                                 app.enter();
@@ -840,8 +877,9 @@ fn main() {
                         if let (Some((c0, r0)), Some((cw, chh))) = (drag, cell_px()) {
                             app.preview_drag((m.column as f64 - c0 as f64) * cw as f64, (m.row as f64 - r0 as f64) * chh as f64);
                             drag = Some((m.column, m.row));
-                            // the picture follows at most every DRAG_GAP, at the latest place: never a picture a motion (#129)
-                            if drag_drawn.elapsed() < DRAG_GAP {
+                            // the picture follows at most every DRAG_GAP, and no sooner than the last took to draw, at the
+                            // latest place: never a picture a motion (#129, #148)
+                            if drag_drawn.elapsed() < DRAG_GAP.max(drag_cost) {
                                 drag_owed = true;
                                 dirty = false;
                             } else {
@@ -850,7 +888,11 @@ fn main() {
                         }
                     }
                     MouseEventKind::Up(_) => {
-                        drag = None;
+                        // the pointer let go: the picture drawn whole again, in all its colors (#148)
+                        if drag.take().is_some() {
+                            shown_preview = None;
+                            drag_cost = Duration::ZERO;
+                        }
                         drag_owed = false;
                     }
                     MouseEventKind::ScrollUp if app.view == View::Preview => app.preview_wheel(-1, m.modifiers.contains(KeyModifiers::CONTROL)),

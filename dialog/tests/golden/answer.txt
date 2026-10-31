@@ -9,7 +9,7 @@
     * 192.0.2.10 on the wire and 192.0.2.20 on wifi; the    
       gateway is 192.0.2.1, and the name server the same.   
                                                             
-  Apps           Open an application                     ›  
+  Apps           open an application                     ›  
                                                             
   Files          your home folder                        ›  
                                                             
@@ -17,7 +17,7 @@
                                                             
   Notes          no notes yet                            ›  
                                                             
-  Calendar       Dates and reminders                     ›  
+  Calendar       dates and reminders                     ›  
                                                             
   Settings       tokyonight-night                        ›  
                                                             

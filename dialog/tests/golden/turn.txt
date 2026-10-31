@@ -9,7 +9,7 @@
     * No. Firefox is installed, and no window of it is      
       open now.                                             
                                                             
-  Apps           Open an application                     ›  
+  Apps           open an application                     ›  
                                                             
   Files          your home folder                        ›  
                                                             
@@ -17,7 +17,7 @@
                                                             
   Notes          no notes yet                            ›  
                                                             
-  Calendar       Dates and reminders                     ›  
+  Calendar       dates and reminders                     ›  
                                                             
   Settings       tokyonight-night                        ›  
                                                             

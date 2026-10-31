@@ -391,6 +391,7 @@ mod tests {
             preview: None,
             page: None,
             film: None,
+            key: None,
         };
         (
             vec![tool("wifi_connect", s), tool("out_level", lv)],
@@ -622,6 +623,7 @@ mod path_tests {
                 preview: None,
                 page: None,
                 film: None,
+                key: None,
             }],
             short: vec![],
         };

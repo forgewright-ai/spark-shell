@@ -55,43 +55,43 @@ pub struct Dest {
 pub const DESTS: [Dest; 8] = [
     Dest {
         name: "Apps",
-        purpose: "Open an application",
+        purpose: "open an application",
         sections: &["apps"],
     },
     Dest {
         name: "Files",
-        purpose: "Browse your home",
+        purpose: "browse your home",
         sections: &["files"],
     },
     Dest {
         name: "Workspace",
-        purpose: "Windows and layouts",
+        purpose: "windows and layouts",
         sections: &["window", "layout"],
     },
     Dest {
         name: "Notes",
-        purpose: "Write and find",
+        purpose: "write and find",
         sections: &["notes"],
     },
     Dest {
         name: "Calendar",
-        purpose: "Dates and reminders",
+        purpose: "dates and reminders",
         sections: &["clock", "reminders"],
     },
     Dest {
         name: "Settings",
-        purpose: "Devices and appearance",
+        purpose: "devices and appearance",
         sections: &[],
     },
     // how to leave, and what this is, on the home itself (#136)
     Dest {
         name: "About",
-        purpose: "Version and keys",
+        purpose: "version and keys",
         sections: &["about"],
     },
     Dest {
         name: "Power",
-        purpose: "Lock, log out, restart, shut down",
+        purpose: "lock, log out, restart, shut down",
         sections: &["power"],
     },
 ];
@@ -298,8 +298,11 @@ pub struct Toast {
 /// How long a toast stays (#133).
 pub const TOAST_FOR: Duration = Duration::from_secs(10);
 
-/// The lit file's page is asked for once its row has stayed lit this long (#131).
-pub const SIDE_GAP: Duration = Duration::from_millis(150);
+/// The lit file's page is asked for once its row has stayed lit this long (#131, #149).
+pub const SIDE_GAP: Duration = Duration::from_millis(80);
+
+/// How far Left and Right move a sound or a video in the preview (#151).
+pub const SEEK_SECONDS: f64 = 5.0;
 
 /// A pick in progress: the view to go back to and how deep the stack was,
 /// the provider and tool the file goes to, and the types offered. A folder
@@ -604,8 +607,6 @@ pub struct App {
     pub toast: Option<Toast>,
     /// Where the step being run began in the exchange: its lines from there are a step's.
     step_from: Option<usize>,
-    /// The receipt the undo at hand takes back, for the home's undo row once its toast is gone.
-    pub undo_said: Option<String>,
     pub busy_since: Option<Instant>,
     pub frame: u64,
     /// Every model spark lists: (name, serving | downloaded | -).
@@ -699,7 +700,6 @@ impl App {
             running: None,
             toast: None,
             step_from: None,
-            undo_said: None,
             busy_since: None,
             frame: 0,
             models: vec![],
@@ -1477,11 +1477,24 @@ impl App {
                 }
             }
             View::Connections => {
+                // what is true of them all, said once; their names as Settings writes them; a row only for one that
+                // stopped, with why (#146)
                 list.push(Item::Heading("tools".into()));
-                for (i, p) in self.providers.iter().enumerate() {
-                    if p.dead.is_none() && Some(i) != self.about_idx {
-                        list.push(Item::Provider(i));
-                    }
+                let tools: Vec<&Provider> = self
+                    .providers
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| Some(*i) != self.about_idx)
+                    .map(|(_, p)| p)
+                    .collect();
+                let running: Vec<String> = tools.iter().filter(|p| p.dead.is_none()).map(|p| section_name(&p.label)).collect();
+                list.push(Item::Text(format!("{} tools \u{b7} this computer, from spark-shell", running.len()), false));
+                self.text(&mut list, &running.join(", "), true);
+                for p in tools.iter().filter(|p| p.dead.is_some()) {
+                    list.push(Item::Text(
+                        format!("{} stopped: {}", section_name(&p.label), p.dead.clone().unwrap_or_default()),
+                        false,
+                    ));
                 }
                 list.push(Item::Blank);
                 list.push(Item::Heading("model".into()));
@@ -1574,11 +1587,8 @@ impl App {
             }
             View::Home => {
                 if self.query().trim().is_empty() {
-                    // the undo at hand once its toast is gone: the receipt it takes back, Undo at its end (#133)
-                    if let (Some(_), Some(said), false) = (&self.undo, &self.undo_said, self.toast_here()) {
-                        list.push(Item::Undo(Sign::Done, said.clone(), true));
-                        list.push(Item::Blank);
-                    }
+                    // a receipt has one place, the toast: when it goes its Undo goes with it, and typed undo still takes
+                    // the step back (#154; #133 kept a second Undo here)
                     // the places with air between them, as the approved home has them
                     for (k, d) in self.dests().into_iter().enumerate() {
                         if k > 0 {
@@ -1981,6 +1991,10 @@ impl App {
         // Space with nothing typed: a lit file's preview, or back from one (#120)
         if c == ' ' && self.input.is_empty() && self.mode == Mode::Normal && self.chip_focus.is_none() && self.pending.is_none() {
             if self.view == View::Preview {
+                // a sound or a video: Space plays and pauses, as a player's does (#151); else back to the list
+                if self.preview_plays() {
+                    return self.preview_play_pause();
+                }
                 return self.escape();
             }
             if self.open_preview() {
@@ -2115,8 +2129,8 @@ impl App {
             if self.zoomed() {
                 return self.preview_pan(-1.0, 0.0);
             }
-            if self.preview.as_ref().and_then(|pv| pv.shown.as_ref()).is_some_and(|pg| pg.sound.is_some()) {
-                return self.preview_seek(0.0);
+            if self.preview_plays() {
+                return self.preview_seek_by(-SEEK_SECONDS); // 5 s back (#151)
             }
             return self.preview_page(-1);
         }
@@ -2131,7 +2145,13 @@ impl App {
 
     pub fn right(&mut self) {
         if self.preview_key() {
-            return if self.zoomed() { self.preview_pan(1.0, 0.0) } else { self.preview_right() };
+            return if self.zoomed() {
+                self.preview_pan(1.0, 0.0)
+            } else if self.preview_plays() {
+                self.preview_seek_by(SEEK_SECONDS) // 5 s ahead (#151)
+            } else {
+                self.preview_page(1)
+            };
         }
         if self.step_value(true) {
             return;
@@ -2148,6 +2168,9 @@ impl App {
     /// Home and End: in a list, its first and its last row (a folder of a thousand, #123); else the
     /// line's start and end.
     pub fn line_start(&mut self) {
+        if self.preview_key() && self.preview_plays() {
+            return self.preview_seek(0.0); // Home: a sound or a video from its start (#151)
+        }
         if self.in_list && !self.preview_key() {
             self.keep_lit = None;
             self.sel = 0;
@@ -3443,7 +3466,6 @@ impl App {
         }
         if step.who == Who::Undo {
             self.undo = None; // the undo at hand is taken, wherever it came from (its row, "undo", spark)
-            self.undo_said = None;
         }
         self.step_from = Some(self.exchange.len());
         self.say(Sign::You, &step.line);
@@ -3709,9 +3731,6 @@ impl App {
             return;
         };
         let undo = l.sign == Sign::Done && self.undo.is_some();
-        if undo {
-            self.undo_said = Some(l.text.clone());
-        }
         self.toast = Some(Toast {
             sign: l.sign,
             text: l.text,
@@ -3740,7 +3759,7 @@ impl App {
 
     /// Full screen keeps the lit file's page in its pane (#131): asked once the lit row has stayed a moment, so a run of
     /// keys asks for nothing on its way; gone where no file with a page is lit or there is no pane.
-    fn side_follow(&mut self, now: Instant) {
+    pub fn side_follow(&mut self, now: Instant) {
         let pane = crate::ui::layout(self.size.0, self.size.1) != crate::ui::Layout::One;
         let lit = match (&self.view, self.picks().get(self.sel), &self.folder) {
             (View::Folder(p, _), Some(Item::Folder(i)), Some((fp, _, rows))) if pane && fp == p && self.providers[*p].label == "files" => {
@@ -3779,9 +3798,20 @@ impl App {
         crate::ui::column_width(self.size.0, self.size.1)
     }
 
-    /// The pane shows the lit file's page (#131).
+    /// The pane shows the lit file's page (#131): only the lit row's, never the last one's under its name (#153).
     pub fn side_here(&self) -> bool {
-        matches!(self.view, View::Folder(..)) && self.side.is_some()
+        let lit = match (self.picks().get(self.sel), &self.folder) {
+            (Some(Item::Folder(i)), Some((_, _, rows))) => rows.rows.get(*i).map(|r| r.id.clone()),
+            _ => None,
+        };
+        matches!(self.view, View::Folder(..)) && self.side.as_ref().is_some_and(|pv| Some(&pv.row().id) == lit.as_ref())
+    }
+
+    /// A click lights row `n`: a choice, as a key's is, so the light kept from a preview lets go (#153).
+    pub fn light(&mut self, n: usize) {
+        self.in_list = true;
+        self.sel = n;
+        self.keep_lit = None;
     }
 
     /// What the pane shows under its name (#131): the lit place's rows, the lit setting's section, the lit row's facts and
@@ -3844,6 +3874,29 @@ impl App {
     /// manager's rows are (#140). Any other row is a place or an action, done on one click.
     pub fn lights_on_click(&self, n: usize) -> bool {
         matches!(&self.view, View::Folder(p, _) if self.providers[*p].label == "files") && matches!(self.picks().get(n), Some(Item::Folder(_)))
+    }
+
+    /// There is a view to go back to: the header's back arrow shows (#147).
+    pub fn goes_back(&self) -> bool {
+        !self.came_from.is_empty()
+    }
+
+    /// The back arrow: back one view, as a browser's arrow does; a question open is cancelled first, as Esc does,
+    /// and words typed do not stop it (#147).
+    pub fn back(&mut self) {
+        if self.mode != Mode::Normal {
+            return self.escape();
+        }
+        if !self.goes_back() {
+            return;
+        }
+        self.set_input(String::new());
+        self.staged = None;
+        self.chip_focus = None;
+        if let Some(pv) = self.preview.as_mut() {
+            pv.fit(); // a zoomed preview goes back too, not to its fit first
+        }
+        self.escape();
     }
 
     /// The undo at hand runs now (the toast's Undo, the home's undo row).
@@ -4552,12 +4605,30 @@ impl App {
         }
     }
 
-    /// A sound: Right plays it from where it is, or pauses it there; a video plays in its app; any
-    /// other file, the next page.
-    fn preview_right(&mut self) {
+    /// The page shown plays: a sound, or a video (#151).
+    pub fn preview_plays(&self) -> bool {
+        self.preview.as_ref().and_then(|pv| pv.shown.as_ref()).is_some_and(|pg| pg.play.is_some())
+    }
+
+    /// A sound or a video `d` seconds back or ahead of where it is, playing on where it played (#151).
+    fn preview_seek_by(&mut self, d: f64) {
+        let Some(pv) = &self.preview else { return };
+        let Some(pg) = pv.shown.as_ref() else { return };
+        let (Some(play), len) = (pg.play.clone(), pg.seconds) else { return };
+        let at = (pv.position(Instant::now()) + d).clamp(0.0, len.max(0.0));
+        if pv.playing.is_some() {
+            self.play_from(play, at);
+        } else if let Some(pv) = self.preview.as_mut() {
+            pv.played = at;
+        }
+    }
+
+    /// A sound or a video: Space plays it from where it is, or pauses it there; a video with no player here plays in
+    /// its app (#151).
+    fn preview_play_pause(&mut self) {
         let Some(pv) = &self.preview else { return };
         let Some(play) = pv.shown.as_ref().and_then(|pg| pg.play.clone()) else {
-            return self.preview_page(1);
+            return;
         };
         if pv.playing.is_some() {
             return self.stop_sound();
@@ -4567,7 +4638,7 @@ impl App {
         self.play_from(play, at);
     }
 
-    /// A sound from `at` seconds: a click on its waveform, Left back to the start.
+    /// A sound from a share of its length: a click on its waveform, Home back to the start.
     pub fn preview_seek(&mut self, share: f64) {
         let Some(pv) = &self.preview else { return };
         let Some(pg) = pv.shown.as_ref().filter(|pg| pg.sound.is_some()) else {
@@ -4670,18 +4741,22 @@ impl App {
             keys.push(("Move", "\u{2190} \u{2191} \u{2193} \u{2192}"));
             keys.push(("Zoom", "+ -"));
             keys.push(("Turn", "< >"));
+        } else if shown.is_some_and(|pg| pg.play.is_some()) {
+            // a player's keys: Space plays and pauses, the arrows seek; then back, the file, open (#151)
+            keys.push((if pv.is_some_and(|pv| pv.playing.is_some()) { "Pause" } else { "Play" }, "Space"));
+            keys.push(("Seek", "\u{2190} \u{2192}"));
+            keys.push(("Back", "Esc"));
+            if pv.is_some_and(|pv| pv.files.len() > 1) {
+                keys.push(("File", "\u{2191} \u{2193}"));
+            }
+            keys.push(("Open", "Enter"));
         } else {
             keys.push(("Open", "Enter"));
             keys.push(("Back", "Esc"));
             if pv.is_some_and(|pv| pv.files.len() > 1) {
                 keys.push(("File", "\u{2191} \u{2193}"));
             }
-            if shown.is_some_and(|pg| pg.play.is_some()) {
-                keys.push((if pv.is_some_and(|pv| pv.playing.is_some()) { "Pause" } else { "Play" }, "\u{2192}"));
-                if shown.is_some_and(|pg| pg.sound.is_some()) {
-                    keys.push(("Start", "\u{2190}"));
-                }
-            } else if shown.is_some_and(|pg| if pg.picture.is_some() { pg.pages > 1 } else { pages > 1 }) {
+            if shown.is_some_and(|pg| if pg.picture.is_some() { pg.pages > 1 } else { pages > 1 }) {
                 keys.push(("Page", "\u{2190} \u{2192}"));
             }
             if self.has_picture() {

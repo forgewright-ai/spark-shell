@@ -1097,16 +1097,19 @@ fn a_page_that_did_not_come_ends_the_wait() {
     );
 }
 
-/// A video plays over the frame where it was drawn (#125): Right sends the box with the play.
+/// A video plays over the frame where it was drawn (#125): Space sends the box with the play (#151).
 #[test]
 fn a_video_sends_the_box_of_its_frame_with_its_play() {
     let page = json!({"title": "clip.webm", "facts": ["0:05", "1280 \u{d7} 720"], "picture": "/run/pages/9-1600.png", "size": [1280, 720], "full": true, "seconds": 5.0,
         "play": {"name": "files_play", "arguments": {"path": "/data/me/clip.webm"}, "said": "play"}, "stop": {"name": "files_stop", "arguments": {}, "said": "stop"}});
     let mut app = preview_app("clip.webm", "~/videos", page, WIDTH, HEIGHT);
     app.preview.as_mut().unwrap().frame = Some((20, 200, 640, 360));
+    app.typed(' ');
+    let pv = app.preview.as_ref().unwrap();
+    assert!(pv.playing.is_some(), "Space plays it, a player's key (#151)");
     app.right();
     let pv = app.preview.as_ref().unwrap();
-    assert!(pv.playing.is_some(), "Right plays it");
+    assert!(pv.playing.is_some() && pv.played >= 4.9, "Right goes 5 s ahead and plays on: {}", pv.played);
     app.stop_video();
     assert!(app.preview.as_ref().unwrap().playing.is_none(), "a click, a new size: the player stops");
 }
@@ -1247,4 +1250,165 @@ fn full_screen_home_on_a_tall_screen_keeps_the_column_in_the_middle() {
     app.in_list = true;
     app.sel = app.picks().iter().position(|i| matches!(i, spark_dialog::app::Item::Dest(2))).unwrap();
     render_at(&app, "full-home-tall", TALL.0, TALL.1);
+}
+
+// ---- v0.114.1
+
+/// The opening plays alone (#142): nothing but its box is drawn, no cursor, the whole dialog after it.
+#[test]
+fn the_opening_plays_alone_then_the_whole_dialog() {
+    let mut app = full();
+    app.motion = Some((spark_dialog::transition::Reel::Open, std::time::Instant::now()));
+    let p = palette("tokyonight-night");
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
+    assert!(drawn.alone && drawn.film.is_some(), "the opening alone");
+    let text: String = (0..HEIGHT)
+        .flat_map(|y| (0..WIDTH).map(move |x| (x, y)))
+        .map(|(x, y)| b[(x, y)].symbol().to_string())
+        .collect();
+    assert!(text.trim().is_empty(), "nothing else drawn: {:?}", text.trim());
+    app.motion = None;
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
+    assert!(!drawn.alone && drawn.film.is_none(), "after it, the dialog whole");
+}
+
+/// The header's back arrow (#147): where there is a view to go back to, a click goes back, words typed or not.
+#[test]
+fn the_back_arrow_goes_back_as_a_browsers_does() {
+    let mut app = manager_app();
+    let p = palette("tokyonight-night");
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    assert!(
+        spark_dialog::ui::draw(&app, &p, CLOCK, &mut b).back.is_some(),
+        "a folder opened from the home: the arrow"
+    );
+    app.input = "words".into();
+    app.cursor = 5;
+    app.back();
+    assert_eq!(app.view, View::Home, "back to the home, the words let go");
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    assert!(spark_dialog::ui::draw(&app, &p, CLOCK, &mut b).back.is_none(), "the home: no arrow");
+}
+
+/// The Space chip takes a click as the other chips do (#150).
+#[test]
+fn the_space_chip_is_a_key_a_click_takes() {
+    let mut app = manager_app();
+    app.folder.as_mut().unwrap().2.rows[0].page = Some("spark-shell://files/preview/aW52b2ljZQ".into());
+    let p = palette("tokyonight-night");
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
+    assert!(
+        drawn.keys.iter().any(|(_, _, _, k)| *k == spark_dialog::app::HintKey::Char(' ')),
+        "Space's chip is clickable: {:?}",
+        drawn.keys
+    );
+}
+
+/// A sound's keys are a player's (#151): Space plays and pauses, the arrows go 5 s back and ahead, Home to the start.
+#[test]
+fn a_sounds_keys_are_a_players() {
+    let mut app = sound_app(false);
+    app.typed(' ');
+    assert!(app.preview.as_ref().unwrap().playing.is_some(), "Space plays");
+    app.typed(' ');
+    let pv = app.preview.as_ref().unwrap();
+    assert!(
+        pv.playing.is_none() && (pv.played - 7.0).abs() < 0.5,
+        "Space pauses where it was: {}",
+        pv.played
+    );
+    app.right();
+    assert!((app.preview.as_ref().unwrap().played - 12.0).abs() < 0.5, "Right: 5 s ahead");
+    app.left();
+    app.left();
+    assert!((app.preview.as_ref().unwrap().played - 2.0).abs() < 0.5, "Left twice: 10 s back");
+    app.line_start();
+    assert_eq!(app.preview.as_ref().unwrap().played, 0.0, "Home: the start");
+    assert_eq!(app.view, View::Preview, "and Space never left the preview");
+    let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
+    assert!(hint.iter().any(|t| t == "Play ") && hint.iter().any(|t| t == "Seek "), "{:?}", hint);
+}
+
+/// Connections says once what is true of all its tools, by Settings' names; a tool that stopped has a row (#146).
+#[test]
+fn connections_say_the_tools_once() {
+    let mut app = full();
+    app.providers[2].dead = Some("its provider exited".into());
+    app.view = View::Connections;
+    app.came_from = vec![View::Home];
+    let texts: Vec<String> = app
+        .items()
+        .into_iter()
+        .filter_map(|i| match i {
+            spark_dialog::app::Item::Text(t, _) => Some(t),
+            _ => None,
+        })
+        .collect();
+    assert!(texts[0].ends_with("tools \u{b7} this computer, from spark-shell"), "{:?}", texts);
+    assert!(
+        texts.iter().any(|t| t.contains("Windows") && t.contains("Theme")),
+        "Settings' names: {:?}",
+        texts
+    );
+    assert!(texts.iter().any(|t| t.ends_with("stopped: its provider exited")), "{:?}", texts);
+}
+
+/// A row's key is drawn as a chip beside it (#144); a key that is no key's shape is not read.
+#[test]
+fn a_rows_key_is_a_chip() {
+    let rows = model::rows(&json!({"title": "window", "rows": [
+        {"id": "window:capture screen", "sign": "opens", "text": "capture the screen", "tool": {"name": "window_capture", "arguments": {"what": "screen"}}, "more": [], "columns": [], "children": null, "key": "Print"},
+        {"id": "window:capture area", "sign": "opens", "text": "capture an area", "tool": {"name": "window_capture", "arguments": {"what": "area"}}, "more": [], "columns": [], "children": null, "key": "Shift+Print; rm"}
+    ], "short": []}).to_string()).unwrap();
+    assert_eq!(rows.rows[0].key.as_deref(), Some("Print"));
+    assert_eq!(rows.rows[1].key, None, "not a key's shape");
+}
+
+/// A click lights its row and the light kept from a preview lets go (#153): a page read for the last file never
+/// shows under the row now lit.
+#[test]
+fn a_click_lights_its_row_and_the_last_page_lets_go() {
+    let mut app = manager_app();
+    for r in app.folder.as_mut().unwrap().2.rows.iter_mut().filter(|r| r.id.starts_with("files:file:")) {
+        r.page = Some(format!("spark-shell://files/preview/{}", r.text));
+    }
+    let (f, rows) = {
+        let (f, _, rows) = app.folder.as_ref().unwrap();
+        (*f, rows.clone())
+    };
+    app.side = spark_dialog::preview::Preview::new(f, &rows.title, &rows.rows, &rows.rows[1].id);
+    app.keep_lit = Some(rows.rows[1].id.clone());
+    app.sel = 1;
+    assert!(app.side_here(), "the lit row's page");
+    app.light(0);
+    assert!(app.keep_lit.is_none() && app.sel == 0 && app.in_list, "the click's row, the kept light gone");
+    assert!(!app.side_here(), "the other file's page is not shown under it");
+}
+
+/// A receipt has one place, the toast (#154): once it goes, the home shows no Undo of its own; typed undo still works.
+#[test]
+fn the_home_has_no_second_undo_once_the_toast_goes() {
+    let mut app = full();
+    app.view = View::Home;
+    app.undo = Some(Step {
+        prov: 0,
+        call: model::Call {
+            name: "theme_set".into(),
+            arguments: json!({"name": "dracula"}).as_object().unwrap().clone(),
+            ask: vec![],
+            said: None,
+            pick: None,
+        },
+        who: Who::Undo,
+        line: "undo the theme".into(),
+    });
+    app.toast = None;
+    assert!(
+        !app.items().iter().any(|i| matches!(i, spark_dialog::app::Item::Undo(..))),
+        "no Undo row on the home"
+    );
+    assert!(app.undo.is_some(), "the undo is still at hand for typed undo");
 }

@@ -4695,8 +4695,11 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
         window) for _w in split tabs stacked; do
                 if [ "$_w" = "${WINDOWS:-split}" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$(win_words "$_w")"; else printf -- '-\t%s\t%s\n' "$(win_words "$_w")" "$_w"; fi
             done
-            printf '%s\tcapture the screen\tcapture screen\n%s\tcapture an area\tcapture area\n' "$PANEL_GO" "$PANEL_GO"   # a picture, the dialog closed first
-            [ "${2:-}" != full ] || win_label | while IFS="$TAB" read -r _l _i; do printf '%s\t%s\tfocus %s\n-\tclose %s\tclose %s\n' "$PANEL_GO" "$_l" "$_i" "$_l" "$_i"; done ;;   # each window keeps its native ID even when labels coincide
+            printf '%s\tcapture the screen\tcapture screen\n%s\tcapture an area\tcapture area\n%s\tcapture a window\tcapture window\n' "$PANEL_GO" "$PANEL_GO" "$PANEL_GO"   # a picture, the dialog closed first; the keys beside them (#144)
+            # one row a window: the app, its title a column with the app's own name left out (#144); each window keeps its
+            # native ID even when labels coincide. The close row is for spark's list and --list: the dialog puts close
+            # behind the window's row (provide_rows)
+            [ "${2:-}" != full ] || win_label | win_rows | while IFS="$TAB" read -r _l _i _t; do printf '%s\t%s\tfocus %s\topen now|%s\n-\tclose %s\tclose %s\n' "$PANEL_GO" "$_l" "$_i" "$_t" "$_l" "$_i"; done ;;
         display) for _k in idle lock; do   # the minutes now, then the other picks in a full list
                 if [ "$_k" = idle ]; then _v=$DISPLAY_IDLE; _w='idle screen'; else _v=$DISPLAY_LOCK; _w=lock; fi
                 printf '%s\t%s %s\tshow\n' "$PANEL_TICK" "$_w" "$(idle_words "$_v")"
@@ -4753,8 +4756,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ -z "${WAYLAND_DISPLAY:-}" ] || printf -- '-\tlock the screen\tlock\n'
             [ -z "$_pt" ] || ! power_sleeps || printf -- '-\tsuspend\tsuspend\n'
             [ -z "${SWAYSOCK:-}" ] || printf -- '-\tlog out\tlogout\n'
-            if [ -n "$_pt" ]; then printf -- '-\trestart\trestart\n-\tshut down\tshutdown\n'; else printf -- '-\t%s\tshow\n' "$(power_why)"; fi
-            power_keys | while IFS= read -r _pk; do printf -- '-\t%s\tshow\tthe buttons||\n' "$_pk"; done ;;   # said apart, under a heading of their own: nothing to press
+            if [ -n "$_pt" ]; then printf -- '-\trestart\trestart\n-\tshut down\tshutdown\n'; else printf -- '-\t%s\tshow\n' "$(power_why)"; fi ;;   # what the machine's buttons do is no step here (#143)
         notes) printf '%s\tnew note\tnew\n' "$PANEL_GO"   # the newest five, and a more row; a full list, all of them; the date a column, the group recent
             notes_list > "$TMP/notes.l"; _n=0
             while IFS="$TAB" read -r _e _nm _f; do
@@ -4782,10 +4784,13 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                 for f in "$LAYOUTS_DIR"/*; do _w=$(desk_label "$f"); printf '%s\t%s\topen %s\n-\trename %s\trename %s\n' "$PANEL_GO" "$_w" "${f##*/}" "$_w" "${f##*/}"; done   # by the name it was saved under (#51), and a new name for it (#54)
             else printf -- '-\tnone saved yet: say what you want to do at the prompt\tshow\n'; fi
             [ ! -f "$DESK_LAST" ] || jq -r '.suggested // [] | .[]' "$DESK_LAST" 2>/dev/null | while IFS= read -r a; do printf '%s\talso open %s\tadd %s\n' "$PANEL_GO" "$a" "$a"; done   # what spark also suggested for the last layout, one Enter away
-            kept_history layout | while IFS="$TAB" read -r _e _n; do   # back: the last ten opened, when each was; a layout not saved is kept for it
+            # recent: the layouts opened lately and not saved, five at most, each with when (#145); a saved one is under its name above
+            kept_history layout | while IFS="$TAB" read -r _e _n; do
+                [ ! -f "$LAYOUTS_DIR/$_n" ] || continue
+                case $_n in layout-delete*|layout-rename*|layout-save*|layout-back*|layout-help*|-*|help) continue ;; esac
                 _f=$(desk_kept_file "$_n") || continue
-                printf '%s\t%s\topen %s\tback|%s||%s\n' "$PANEL_GO" "$(desk_label "$_f")" "$_n" "$(kept_when "$_e")" "$_e"
-            done
+                printf '%s\t%s\topen %s\trecent|%s||%s\n' "$PANEL_GO" "$(desk_label "$_f")" "$_n" "$(kept_when "$_e")" "$_e"
+            done | head -5
             [ -z "${SWAYSOCK:-}" ] || printf '%s\tsave what is open now\tsave\n' "$PANEL_GO" ;;
         apps) printf '%s\tterminal\tterminal\n' "$PANEL_GO"   # a terminal window, as Super+Return
             panel_apps_known | { _n=0; while IFS= read -r a; do   # the apps a layout may open, as rows that open one; three unless full
@@ -5593,7 +5598,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                     [ -z "${SWAYSOCK:-}" ] || swaymsg -- "[workspace=__focused__ tiling] layout $_l" >/dev/null 2>&1 || :
                     echo "windows $(win_words "$_a")" ;;
                 close) win_change close "$_arg" ;;
-                capture) case $_arg in screen|area) ;; *) echo "capture takes screen or area"; return 1 ;; esac
+                capture) case $_arg in screen|area|window) ;; *) echo "capture takes screen, area or window"; return 1 ;; esac
                     desk_in_sway || { echo "a capture needs the desktop"; return 1; }
                     swaymsg -- exec "$REPO/spark-shell desktop capture $_arg --wait 1" >/dev/null 2>&1 || { echo "could not capture"; return 1; }   # after the dialog closes, so it is not in the picture
                     : > "$TMP/opened"; echo "capture: the $_arg, in ~/pictures/screenshots" ;;
@@ -5663,6 +5668,16 @@ win_named() {   # an ID stays exact; legacy words must identify one open window
         $2 == w { exact=$2; ne++ }
         w != "" && index(tolower($1),w) { matchid=$2; nm++ }
         END { if (ne == 1) print exact; else if (w ~ /^[0-9]+$/) exit 1; else if (nm == 1) print matchid; else exit 1 }'
+}
+win_rows() {   # LABEL<tab>ID lines -> APP<tab>ID<tab>TITLE (the title last: two tabs in a row are one to read): the app before the title's first ": " (or " - ", " \342\200\224 "), the title after it, its last part dropped where it names the app (Claude Code, not Claude Code \342\200\224 Mozilla Firefox) (#144)
+    awk -F '\t' 'BEGIN { OFS = "\t" } {
+        l = $1; a = l; t = ""
+        n = split(": | - | \342\200\224 ", seps, "|")
+        best = 0; for (k = 1; k <= n; k++) { p = index(l, seps[k]); if (p > 0 && (best == 0 || p < best)) { best = p; s = seps[k] } }
+        if (best > 0) { a = substr(l, 1, best - 1); t = substr(l, best + length(s)) }
+        for (k = 1; k <= n; k++) { p = 0; r = t; while ((q = index(r, seps[k])) > 0) { p += q + length(seps[k]) - 1; r = substr(r, q + length(seps[k])) }
+            if (p > 0 && index(tolower(r), tolower(a)) > 0) t = substr(t, 1, p - length(seps[k])) }
+        gsub(/\|/, "/", t); print a, $2, t }'
 }
 win_name_of() { win_label | awk -F '\t' -v i="$1" '$2 == i { print $1; exit }'; }   # win_name_of ID -> its name
 win_change() {   # the command receipt alone cannot prove focus or a close an app may decline
@@ -5963,8 +5978,8 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         theme:delete) case $(theme_kind "${3:-}") in saved|look) [ "$3" != "${THEME:-}" ] && { echo "$3"; return 0; }; echo "theme: $3 is the theme in use"; return 1 ;; *) echo "theme: no saved theme named ${3:-?}"; return 1 ;; esac ;;
         theme:back) [ -s "$(kept_hist theme)" ] && { echo ''; return 0; }; echo "theme: no look before this one"; return 1 ;;
         theme:words) case $3 in [a-z]*' accent='[a-z]*' warmth='[a-z]*' contrast='[a-z]*' light='[a-z]*|[a-z]*' accent='[a-z]*' warmth='[a-z]*' contrast='[a-z]*' light='[a-z]*' name='*) echo "$3"; return 0 ;; *) echo "theme: words take a hue, then accent, warmth, contrast and light"; return 1 ;; esac ;;
-        layout:delete) [ -f "$LAYOUTS_DIR/${3:-}" ] && { echo "$3"; return 0; }; echo "layout: no saved layout named ${3:-?}"; return 1 ;;
-        layout:rename) _ro=${3%% *}; [ -n "$_ro" ] && [ -f "$LAYOUTS_DIR/$_ro" ] && { echo "$3"; return 0; }; echo "layout: no saved layout named ${_ro:-?}"; return 1 ;;
+        layout:delete) { [ -f "$LAYOUTS_DIR/${3:-}" ] || kept_names layout | grep -qxF -- "${3:-}"; } && { echo "$3"; return 0; }; echo "layout: no saved or recent layout named ${3:-?}"; return 1 ;;
+        layout:rename) _ro=${3%% *}; [ -n "$_ro" ] && { [ -f "$LAYOUTS_DIR/$_ro" ] || [ -f "$KEPT_LAYOUTS/$_ro" ]; } && { echo "$3"; return 0; }; echo "layout: no saved or recent layout named ${_ro:-?}"; return 1 ;;
         layout:back) [ -s "$(kept_hist layout)" ] && { echo ''; return 0; }; echo "layout: no layout before this one"; return 1 ;;
         theme:alpha) case $3 in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) echo "$3"; return 0 ;; *) echo "theme: alpha takes 0 to 1"; return 1 ;; esac ;;
         notes:new) echo ''; return 0 ;;
@@ -6320,7 +6335,7 @@ tool_spec() {
         window_stacked)    _ts=window _ta=stacked _th=i _tt='window stacked' _td='New windows stacked.' ;;
         window_focus)      _ts=window _ta=focus _tp=name _tk=string _th=i _tt='window focus NAME' _td='Put one open window in front. Use its native container ID from the row, not its display label.' ;;
         window_close)      _ts=window _ta=close _tp=name _tk=string _th=d _tt='window close NAME' _td='Close one open window by its native container ID from the row. It cannot be undone.' ;;
-        window_capture)    _ts=window _ta=capture _tp=what _tk='screen|area' _th='' _tt='window capture WHAT' _td='A picture of the screen, or of an area you drag, in ~/pictures/screenshots.' ;;
+        window_capture)    _ts=window _ta=capture _tp=what _tk='screen|area|window' _th='' _tt='window capture WHAT' _td='A picture of the screen, of an area you drag, or of the window in front, in ~/pictures/screenshots.' ;;
         notes_new)         _ts=notes _ta=new _th='' _tt='notes new' _td='Open a blank note in the editor for the person to write. No supplied text is saved.' ;;
         notes_open)        _ts=notes _ta=open _tp=name _tk=string _th='' _tt='notes open NAME' _td='Only open a note in the editor; this does not append or save supplied text. To append text, use notes_append. Use the filename from the row; duplicate titles are not identities.' ;;
         notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='Create a new note: text is the literal heading, never an invented filename or filename prefix. The result gives the actual filename. To add a body or append to an existing note, use notes_append with that filename and separate text. The legacy NAME: TEXT syntax still appends when NAME already exists.' ;;
@@ -6458,7 +6473,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
         _asks=$(wifi_scan | awk -F '\t' '$3 == 1' | cut -f1 | grep -vxFf "$TMP/wifi.known.ask" | jq -R . | jq -cs . 2>/dev/null) || _asks='[]'
     fi
     panel_rows "$1" | while IFS="$TAB" read -r _m _t _a _x; do provide_row_line "$1" "$_m" "$_t" "$_a" "$_x"; done > "$TMP/rows.short"   # the short form: what matters, and a more row that opens the rest
-    { panel_rows "$1" full | while IFS="$TAB" read -r _m _t _a _x; do provide_row_line "$1" "$_m" "$_t" "$_a" "$_x"; done; grep "^$1:more$US" "$TMP/rows.short" || :; } \
+    { panel_rows "$1" full | while IFS="$TAB" read -r _m _t _a _x; do case $1:$_a in 'window:close '*) continue ;; esac; provide_row_line "$1" "$_m" "$_t" "$_a" "$_x"; done; grep "^$1:more$US" "$TMP/rows.short" || :; } \
         | jq -Rn --arg s "$1" --arg u "spark-shell://$1/rows" --arg st "$(provide_title "$1")" --rawfile short "$TMP/rows.short" '
             [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [],
                 columns: ((.[5] // "") | split("|") | .[1:2] | map(select(. != ""))),
@@ -6481,10 +6496,12 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif $s == "theme" and .id == "theme:show:Animation" then .children = "spark-shell://theme/rows/animations" | .tool = null | .columns = [$anim]
                 elif ($s == "lan" or $s == "wifi") and (.id | startswith($s + ":network-settings")) then .sign = "opens" | .children = ("spark-shell://" + $s + "/rows/network/" + (.id | split(":network-settings ")[1]))
                 elif $s == "display" and (.text | startswith("screen ")) then .sign = "opens" | .children = ("spark-shell://display/rows/screen/" + (.text | split(" ")[1]))
-                elif $s == "window" and ((.tool.name // "") | test("^window_(focus|close)$")) then .group = "open now"
+                elif $s == "window" and (.tool.name // "") == "window_focus" then .group = "open now" | .more = [{name: "window_close", arguments: {name: .tool.arguments.name}, said: "close"}]
+                elif $s == "window" and (.tool.name // "") == "window_capture" then .key = ({"screen": "Print", "area": "Shift+Print", "window": "Super+Print"}[.tool.arguments.what] // null)
                 elif $s == "window" and (((.tool.name // "") | test("^window_(split|tabs|stacked)$")) or (.id | startswith("window:show:"))) then .group = "layout"
                 elif (.tool.name // "") == "layout_save" then .tool.ask = ["name"]
                 elif (.tool.name // "") == "layout_rename" then .tool.ask = ["to"]
+                elif $s == "layout" and .group == "recent" then .more = [{name: "layout_rename", arguments: {name: .tool.arguments.name}, ask: ["to"], said: "save as"}, {name: "layout_delete", arguments: {name: .tool.arguments.name}, said: "forget"}]
                 elif (.tool.name // "") == "clock_zone" then .tool.ask = ["zone"]
                 elif (.tool.name // "") == "reminders_add" then .tool.ask = ["words"]
                 elif (.tool.name // "") == "wifi_hidden" then .tool.ask = ["name", "password"]
@@ -7689,11 +7706,10 @@ dialog_sections() {   # dialog_sections [FIRST] -> the providers the dialog star
 }
 cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a click on a bar block, the first desktop start (about)
     if [ "${SPARK_DIALOG_WINDOW:-}" = 1 ] && [ "${1:-}" != chat ] && [ -t 0 ] && [ -t 1 ]; then
-        # the dialog's own window (dialog.ini says so, #138): its prompt is there the moment the window maps, before the slow part
-        # (a cold start takes a second), drawn in the window's own slots where the dialog draws it; a key typed now waits for the
-        # dialog unseen, and lands at its prompt
+        # the dialog's own window (dialog.ini says so, #138): nothing is drawn ahead of the opening, which comes first and alone
+        # (#142); a key typed now waits for the dialog unseen, and lands at its prompt
         stty -echo -icanon 2>/dev/null || :
-        printf '\033[?1049h\033[?25l\033[3;3H\033[1;38;5;16m\342\235\257\033[0m\033[3;5H\033[38;5;20mType a request.\033[0m'
+        printf '\033[?25l'
     else
         [ ! -t 1 ] || printf '\033[?25l'   # no cursor blinking in the window while it starts (#122): the dialog puts it back at its prompt
     fi
@@ -9275,6 +9291,10 @@ desk_save() {   # desk_save [NAME...] -- the last layout under that name (its ow
 }
 desk_delete() {   # desk_delete NAME...
     name=$(desk_name_of "$*"); [ -n "$name" ] || refuse "delete NAME -- which layout?"
+    if [ ! -f "$LAYOUTS_DIR/$name" ] && kept_names layout | grep -qxF -- "$name"; then   # a recent one forgotten (#145)
+        _kh=$(kept_hist layout); awk -F '\t' -v n="$name" '$2 != n' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; kept_prune layout
+        echo "forgot $name"; return 0
+    fi
     [ -f "$LAYOUTS_DIR/$name" ] || refuse "no saved layout named $name"
     why=$(desk_open "$LAYOUTS_DIR/$name"); [ -z "$why" ] || refuse "$why"
     kept_delete_ok layout "$name" || return 0
@@ -9286,6 +9306,11 @@ desk_rename() {   # desk_rename NAME NEW... -- a saved layout under a new name, 
     _ro=$(desk_name_of "${1:-}"); [ $# -eq 0 ] || shift
     _rn=$(desk_name_of "$*")
     [ -n "$_ro" ] && [ -n "$_rn" ] || refuse "rename NAME NEW -- the layout and its new name"
+    if [ ! -f "$LAYOUTS_DIR/$_ro" ] && [ -f "$KEPT_LAYOUTS/$_ro" ]; then   # a recent one saved under a name (#145)
+        [ ! -e "$LAYOUTS_DIR/$_rn" ] || refuse "a layout named $_rn is saved already"
+        mkdir -p "$LAYOUTS_DIR"; cp "$KEPT_LAYOUTS/$_ro" "$LAYOUTS_DIR/$_rn"; kept_note layout "$_rn"
+        echo "saved as $_rn -- spark-shell layout $_rn opens it"; return 0
+    fi
     [ -f "$LAYOUTS_DIR/$_ro" ] || refuse "no saved layout named $_ro"
     [ "$_rn" != "$_ro" ] || refuse "$_ro is its name already"
     [ ! -e "$LAYOUTS_DIR/$_rn" ] || refuse "a layout named $_rn is saved already"
@@ -9303,6 +9328,8 @@ desk_label() {   # desk_label FILE -> how a layout is listed: the name it was sa
 # waiting for it (desk_start).
 desk_need() {   # desk_need WORDS...
     command -v jq >/dev/null 2>&1 || refuse "jq is not installed (spark-shell on)"
+    # a command's words make no layout: layout delete NAME, --help (#145)
+    case " $* " in *" -"*|" layout "*|" help "|" save "*|" delete "*|" rename "*|" back "*) refuse "\"$*\" is a command, not what a layout is for (spark-shell layout save|delete|rename|back)" ;; esac
     PLAYER=$(desk_player)
     if [ "$PLAYER" = windows ] && ! desk_in_sway; then desk_start "$*"; return; fi
     [ "$PLAYER" = rooms ] || [ "$OS" != Darwin ] || refuse "not on macOS, which has its own desktop"
@@ -9334,6 +9361,10 @@ cmd_layout() {   # cmd_layout [save [NAME] | delete NAME | rename NAME NEW | NAM
 }
 desk_pending() {   # at the desktop's start: do not disturb as it was left (#71), beside it; then the words left by a console start, laid out once, then gone
     ( notify_keep ) </dev/null >/dev/null 2>&1 &
+    # the dialog's files read once aside, so the session's first opening is a warm one (#142): the script, the binary, its animations
+    ( _dw=$(dialog_transitions); cat "$REPO/spark-shell" "$DIALOG_BIN" ${_dw:+"$_dw"/*.gif} ) </dev/null >/dev/null 2>&1 &
+    # the layouts that a command's words once made (#145): out of the history, their kept files with them
+    _kh=$(kept_hist layout); [ ! -f "$_kh" ] || { awk -F '\t' '$2 !~ /^(layout-(delete|rename|save|back|help)(-|$)|-|help$)/' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; kept_prune layout; }
     [ -f "$DESK_PENDING" ] || return 0
     need=$(head -1 "$DESK_PENDING"); rm -f "$DESK_PENDING"
     [ -z "$need" ] || desk_need "$need"

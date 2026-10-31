@@ -704,30 +704,32 @@ Full screen (Super+f), the dialog keeps its own width, top to bottom,
 and the space it brings shows what the lit row holds: beside the dialog
 on a wide screen, under its list on a tall one. A place's rows, a
 setting's section, a row's facts and actions, the lit file's page in
-Files, and the Calendar's months ahead. The preview Space opens takes
-the whole screen.
+Files, and the Calendar's months ahead. A picture there sits at the
+pane's top, and a page that takes a moment plays the waiting animation
+where it will be. The preview Space opens takes the whole screen.
 
-The window shows its prompt the moment it opens, before the rest is
-ready, and keys typed then wait for it. The dialog opens with a short
-animation at the top of its content area, where the rows land, waits
-with one while the home's rows load, and closes with one when Esc or
-the x closes it: moon, ripple, tide, embers, sun or flight, in your
-palette's own colors (`assets/transitions/`). Enter, Esc, an arrow or
-a click cuts the opening short; letters typed meanwhile land at the
-prompt and it plays on. Esc during the closing closes at once. A
-preview's page that takes a moment to draw shows the waiting one too.
-Settings > theme picks the animation from a list, each piece playing
-beside it, or none for no motion (`DIALOG_ANIMATION`, embers to begin
-with); a palette with no set of its own plays none.
+The dialog opens with a short animation in the middle of its window,
+alone, and then the whole dialog is drawn at once; keys typed meanwhile
+wait for it. It waits with one while the home's rows load, and closes
+with one when Esc or the x closes it: moon, ripple, tide, embers, sun or
+flight, in your palette's own colors (`assets/transitions/`). Enter,
+Esc, an arrow or a click cuts the opening short; letters typed meanwhile
+land at the prompt and it plays on. Esc during the closing closes at
+once. A preview's page that takes a moment to load plays the opening,
+then the waiting one, until it is drawn. Settings > theme picks the
+animation from a list, each piece playing beside it, or none for no
+motion (`DIALOG_ANIMATION`, embers to begin with); a palette with no set
+of its own plays none.
 
 The top row says where you are (`home`, a place, a section and its
-state; a long one is cut at a word), then the date and the time as your
-locale writes them, and a small bar while spark works on your words:
-one of the animations spark draws at its prompt, a light bouncing while
-it thinks and a bar growing and shrinking while a model loads. Nothing
-else shows it: a step's answer is its receipt, and a page that takes a
-moment has its waiting animation. Under it is
-the prompt, two rows tall:
+state; a long one is cut at a word), led by a back arrow wherever there
+is a view to go back to: a click on it goes back, as Esc does. Then the
+date and the time as your locale writes them, and a small bar while
+spark works on your words: one of the animations spark draws at its
+prompt, a light bouncing while it thinks and a bar growing and shrinking
+while a model loads. Nothing else shows it: a step's answer is its
+receipt, and a page that takes a moment has its waiting animation.
+Under it is the prompt, two rows tall:
 type a request, Enter sends it, and Shift+Enter starts a new line (Alt+Enter
 where a terminal cannot tell the two apart). A longer draft scrolls
 inside the two rows, and a paste keeps its lines and never sends. The
@@ -754,7 +756,9 @@ Page Up and Page Down move the lit row by a screen, Home and End go to
 its first and its last row.
 
 - `layout`: a saved layout opens on Enter. Words at the prompt make a
-  new one. `save what is open now` asks a name for it.
+  new one. `save what is open now` asks a name for it. Under `recent`,
+  the last five opened and not saved, each with when; behind one, `save
+  as` gives it a name and `forget` lets it go.
 - `wifi`: disconnect the network in use; connect one around, and a new
   network asks its password once, masked; forget a saved one.
 - `bt`: connect or disconnect your devices, look for new ones, pair a
@@ -766,8 +770,7 @@ its first and its last row.
   and on one that is mounted opens it in your file manager; unmount
   one, eject the drive; then this computer's free space.
 - `power`: lock the screen, suspend, log out, restart, shut down; the
-  last three ask for a typed yes. What the power button does is said
-  under them, never changed.
+  last three ask for a typed yes.
 - `theme`: first the wallpaper, the text size, the transparency and the
   dialog's animation, a row each; on the text size and the transparency,
   left and right change the value in place. The animation row opens a
@@ -803,9 +806,14 @@ its first and its last row.
   puts the reminder aside in `~/calendar/done` for 30 days, and undo
   brings it back; delete takes the file away, and undo brings it back
   while the dialog is open.
-- `window`: the windows open now, in front or closed, and how new
-  windows sit on a workspace: side by side, in tabs or stacked.
+- `window`: capture the screen, an area or a window, each with its key
+  beside it; the windows open now, a row each with its title, Enter
+  puts one in front and close is behind it; and how new windows sit on
+  a workspace: side by side, in tabs or stacked.
 - `bar`: hide the bar at the top of the screen, or show it again.
+- Connections: how many sections give the dialog their tools, all on
+  this computer from spark-shell, by the names Settings gives them; one
+  that stopped says why. Then the model.
 - `apps`: a terminal window, then a row per app a layout may open.
 - `about`: the version, the licence and the address, then each key on
   one line, its sentence up to the first comma; `spark-shell desktop
@@ -852,7 +860,8 @@ its first and its last row.
   is, and Attach in the footer names it: words at the prompt go to spark
   with it. Up and down go to the previous and next file of the list,
   left and right turn the page, Enter opens the file in its app, and
-  Esc, or Space with nothing typed, goes back with it lit. A text, a
+  Esc, or Space with nothing typed, goes back with it lit (on a sound
+  or a video, Space plays it). A text, a
   Markdown file (its headings bold), code (its lines numbered) and JSON
   (indented) show as text, 128 kB of it at most. A picture, a PDF's page
   and a video's frame are drawn as they are, and zoom and turn: with
@@ -863,8 +872,9 @@ its first and its last row.
   the preview's, never the file's. A sound shows its title, its artist
   and album, its waveform (the part played in the accent; a click plays
   from there), a spectrum that moves while it plays, its spectrogram, and
-  its rate, bits, channels and format; right plays and pauses it, left
-  goes back to its start. A video's right plays it over its frame, in a
+  its rate, bits, channels and format; Space plays and pauses it, left
+  and right go 5 seconds back and ahead, Home to its start. A video's
+  Space plays it over its frame, in a
   window of its own with no border, the keys still the dialog's; full
   screen, or where sway is not, Enter opens it in its app. A Word,
   PowerPoint, Excel or OpenDocument file shows its text, read by Python's
@@ -879,8 +889,8 @@ first, a blank row between one turn and the next. A step's answer is
 one line at the bottom of the content, its receipt: a check for a step
 done, a cross and the reason for one refused, Undo where the step can
 be taken back, and an x that dismisses it. It goes after ten seconds,
-or when you leave the view it was made in; the home then keeps the undo
-at hand as its first row, and typing undo works too. At the bottom, under a
+or when you leave the view it was made in, and its Undo with it; typing
+undo still takes the step back. At the bottom, under a
 rule, the controls in plain text: Attach, the model, and the mic at the
 right. Tab moves through them and the one in focus is lit; Shift+Tab
 goes back.

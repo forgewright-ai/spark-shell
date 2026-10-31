@@ -1677,7 +1677,7 @@ fn typing_a_section_s_name_lists_the_section_once() {
 }
 
 #[test]
-fn a_receipt_is_a_toast_that_goes_with_its_view_and_the_home_keeps_the_undo() {
+fn a_receipt_is_a_toast_that_goes_with_its_view_and_nothing_after_it() {
     let (mut app, rx, tx) = app_with(&["wifi"]);
     let tools = json!([{"name": "wifi_disconnect", "title": "wifi disconnect", "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false}, "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}}]);
     let rows = json!({"title": "wifi", "rows": [{"id": "wifi:disconnect", "sign": "dot", "text": "cafe", "tool": {"name": "wifi_disconnect", "arguments": {}}, "more": [], "columns": [], "children": null}], "short": ["wifi:disconnect"]});
@@ -1716,14 +1716,16 @@ fn a_receipt_is_a_toast_that_goes_with_its_view_and_the_home_keeps_the_undo() {
     app.escape();
     assert_eq!(app.view, View::Home, "Esc goes back to the home");
     assert!(!app.exchange_up(), "nothing at the home to clear");
-    assert_eq!(
-        app.items().first(),
-        Some(&Item::Undo(Sign::Done, "wifi off".into(), true)),
-        "the home keeps the undo at hand, the receipt it takes back with Undo"
+    // #154: one receipt, one place: the home shows no Undo of its own once the toast is gone, typed undo still works
+    assert!(
+        !app.items().iter().any(|i| matches!(i, Item::Undo(..))),
+        "no second Undo: {:?}",
+        app.items().first()
     );
+    assert!(app.undo.is_some(), "the undo still at hand for typed undo");
     assert!(!app.hint().iter().any(|(w, _)| w == "Clear "), "the key row says no Clear: {:?}", app.hint());
     app.escape();
-    assert_eq!(app.quit, Some(0), "Esc closes; the undo was offered, not forced");
+    assert_eq!(app.quit, Some(0), "Esc closes");
 }
 
 #[test]

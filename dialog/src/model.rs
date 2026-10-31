@@ -42,6 +42,8 @@ pub struct Row {
     pub page: Option<String>,
     /// The folder of an animation the row brings (#132): its open and its wait play beside the list while it is lit.
     pub film: Option<String>,
+    /// The key that does what the row does, drawn as a chip beside its words (Print, Shift+Print: #144).
+    pub key: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -299,6 +301,11 @@ pub fn rows(text: &str) -> Option<Rows> {
                 .filter(|u| u.starts_with("spark-shell://") && !u.chars().any(char::is_control))
                 .map(str::to_string),
             film: film(r.get("film")),
+            key: r
+                .get("key")
+                .and_then(Value::as_str)
+                .filter(|k| !k.is_empty() && k.len() <= 24 && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '+'))
+                .map(str::to_string),
         })
         .collect();
     let short = v

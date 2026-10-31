@@ -1,5 +1,58 @@
 # Changelog
 
+## v0.114.1
+
+What the owner's first evening on v0.114 found, on his tall screen
+(#142 to #154).
+
+- The opening plays alone (#142): its animation in the middle of the
+  window, nothing drawn before it, then the whole dialog at once, no
+  part of it ahead of the rest. v0.114 drew the prompt first and then
+  the rest in pieces. Each frame is one synchronized update, and the
+  desktop's start reads the dialog's files once aside so the first
+  opening of a session is a warm one. The opening is back in the
+  middle: in a corner it looked lost, full screen most of all. A
+  preview's page that takes a moment plays the opening, then the
+  waiting animation, until it is drawn.
+- Power lost the lines about the buttons (#143): "the buttons" and a
+  sentence that said what the power button does were no step anyone
+  could take. The home's places say what they hold in lowercase,
+  Power's "lock, log out, restart, shut down" too.
+- Workspace (#144): one row a window with its title as a column, close
+  behind it instead of a second row; capture a window as well as the
+  screen and an area, each row with its key as a chip beside it.
+- Layouts (#145): `back` was the last ten opened, saved ones and words
+  that were commands among them. It is `recent` now: five at most, none
+  saved, each with when, `save as` and `forget` behind it. A command's
+  words (`layout delete NAME`, `help`) make no layout any more, and the
+  ones they made are cleared at the desktop's start.
+- Connections (#146): what is true of every section's tools is said
+  once (how many, on this computer, from spark-shell), their names as
+  Settings writes them; a section that stopped has a row with why.
+- A back arrow in the header (#147): wherever there is a view to go
+  back to, a click on it goes back, as Esc does. The mouse's habit is
+  a browser's.
+- A drag on a zoomed picture follows the hand (#148): a frame is drawn
+  no sooner than the last one took, in fewer colors while the drag
+  lasts, and whole again when it ends.
+- Full screen's pane (#149): a picture sits at its top, not its middle,
+  and a page that takes a moment plays the waiting animation where it
+  will be; the page is asked sooner once a row stays lit.
+- The Space chip takes a click as the other chips do (#150).
+- A sound's keys are the usual ones (#151): Space plays and pauses, left
+  and right go 5 seconds back and ahead, Home to the start. Right
+  played, left went to the start and right then paused.
+- A sound's spectrum moves smoothly (#152), redrawn about 30 times a
+  second while it plays; its spectrogram is stretched to the palette's
+  whole ramp, so speech is no longer a flat gray.
+- A click on a file after a sound played no longer jumps back to the
+  sound (#153): the light kept from the preview let go of nothing, and
+  the pane could show the last file's page under the new row.
+- A receipt has one place (#154): when the toast goes, its Undo goes
+  with it. v0.114 drew the same receipt and Undo again as the home's
+  first row, so it seemed to come back at the top. Typing undo still
+  takes the step back.
+
 ## v0.114
 
 The dialog full screen, and what the owner's evening on v0.113.1 asked

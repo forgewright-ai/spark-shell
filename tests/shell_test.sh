@@ -2981,10 +2981,16 @@ rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop captur
 rm -f "$HOME/grim-fails"
 rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture photo 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: capture takes screen, area or window' ] && ok "desktop capture: a wrong word refused in one line" || bad "capture word" "rc=$rc $out"
-# the dialog's window section: two capture rows; a pick closes the dialog and captures a second later
+# the dialog's window section: three capture rows, as the three keys (#144); a pick closes the dialog and captures a second later
 rows=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel window --list 2>&1)
 printf '%s\n' "$rows" | grep -q 'capture the screen	window capture screen$' && printf '%s\n' "$rows" | grep -q 'capture an area	window capture area$' \
-    && ok "the dialog's window section: capture the screen, capture an area" || bad "capture rows" "$rows"
+    && printf '%s\n' "$rows" | grep -q 'capture a window	window capture window$' \
+    && ok "the dialog's window section: capture the screen, an area, a window (#144)" || bad "capture rows" "$rows"
+# one row a window: the app, then its title, the app's own name off the title's end (#144)
+eval "$(sed -n '/^win_rows() {/,/^}/p' "$SH")"
+_wr=$(printf 'firefox: Claude Code \342\200\224 Mozilla Firefox\t12\n~/projects\t13\nmicro: notes.md - micro\t14\nzen: a|b: c\t15\n' | win_rows)
+[ "$_wr" = "$(printf 'firefox\t12\tClaude Code\n~/projects\t13\t\nmicro\t14\tnotes.md\nzen\t15\ta/b: c')" ] \
+    && ok "window rows: the app, its ID, then the title with the app's name off its end, a bar in a title kept out of the row's fields (#144)" || bad "win_rows" "$_wr"
 rm -f "$HOME/swaymsg.log"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel window capture area 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'capture: the area, in ~/pictures/screenshots' ] && grep -qx -- "-- exec $REPO/spark-shell desktop capture area --wait 1" "$HOME/swaymsg.log" \
@@ -4702,8 +4708,8 @@ printf 'DESKTOP=sway\nTHEME=tokyonight-night\n' > "$HOME/.config/spark-shell/con
 _np=0; for _pd in "$REPO"/assets/transitions/*/; do [ -f "$_pd/tokyonight-night/open.gif" ] && [ -f "$_pd/solarized-light/close.gif" ] && _np=$((_np + 1)); done
 [ -f "$REPO/assets/transitions/moon/tokyonight-night/open.gif" ] && grep -q -- '--transitions "$_ta"' "$SH" && [ "$_np" = 6 ] \
     && ok "the dialog is given the piece in the palette in use, every piece in every palette: open, wait, close, at one and two times (#122)" || bad "transitions given" "$(ls "$REPO/assets/transitions")"
-# #138: in the dialog's own window its prompt is drawn the moment the window maps, before the slow part, in the window's
-# slots and on its own screen; elsewhere (a terminal) nothing is drawn ahead of the dialog
+# #142: in the dialog's own window nothing is drawn ahead of the opening (#138 drew the prompt first, and the dialog then
+# came in parts): the cursor hidden, then the dialog; elsewhere (a terminal) the same
 if command -v python3 >/dev/null 2>&1; then
     cat > "$H/pty_first.py" <<'PY'
 import os, pty, sys
@@ -4723,9 +4729,9 @@ os.waitpid(pid, 0)
 sys.stdout.write(repr(out[:160]))
 PY
     _f1=$(SPARK_DIALOG_WINDOW=1 python3 -I "$H/pty_first.py" "$SH" 2>/dev/null); _f2=$(python3 -I "$H/pty_first.py" "$SH" 2>/dev/null)
-    case $_f1 in b?"\\x1b[?1049h\\x1b[?25l\\x1b[3;3H\\x1b[1;38;5;16m\\xe2\\x9d\\xaf\\x1b[0m\\x1b[3;5H\\x1b[38;5;20mType a request."*) _fo=1 ;; *) _fo='' ;; esac
-    [ -n "$_fo" ] && case $_f2 in *1049h*|*'Type a request.'*) false ;; *) true ;; esac \
-        && ok "dialog: in its own window the prompt is drawn first, in the window's slots on its own screen; in a terminal nothing is drawn ahead (#138)" || bad "dialog first frame" "$_f1 | $_f2"
+    case $_f1 in b?"\\x1b[?25l"*) _fo=1 ;; *) _fo='' ;; esac
+    [ -n "$_fo" ] && case $_f1$_f2 in *'Type a request.'*) false ;; *) true ;; esac \
+        && ok "dialog: in its own window and in a terminal nothing is drawn ahead of the opening, the cursor hidden first (#142)" || bad "dialog first frame" "$_f1 | $_f2"
 fi
 # #132: the theme's animation row opens a list of the pieces, as the wallpaper's opens its drawings: the one in use checked,
 # the palette's own said, each with its folder in the palette in use (none with none), Enter the step that sets it
@@ -4880,7 +4886,8 @@ if [ "$(uname -s)" != Darwin ]; then
         && ok "provide wifi rows: a secured network not saved asks its password; an open one asks nothing" || bad "wifi ask" "$(jq -c '.rows[] | .tool' "$H/wifi.rows")"
     mcp window "$(rq 1 resources/read '{"uri":"spark-shell://window/rows"}')"; ans 1 | jq -r '.result.contents[0].text' > "$H/window.rows"
     jq -e '[.rows[] | .group] | unique | . - [null] | inside(["layout", "open now"]) and contains(["layout"])' "$H/window.rows" >/dev/null && jq -e 'all(.rows[] | select((.tool.name // "") | test("^window_(focus|close)$")); .group == "open now")' "$H/window.rows" >/dev/null \
-        && ok "provide window rows: the open windows under open now, split, tabs and stacked under layout" || bad "window groups" "$(jq -c '.rows[] | [.id, .group]' "$H/window.rows")"
+        && jq -e '[.rows[] | select(.tool.name == "window_capture") | .key] == ["Print", "Shift+Print", "Super+Print"] and all(.rows[] | select(.tool.name == "window_focus"); .more == [{name: "window_close", arguments: {name: .tool.arguments.name}, said: "close"}]) and ([.rows[] | select(.tool.name == "window_close")] | length == 0)' "$H/window.rows" >/dev/null \
+        && ok "provide window rows: one row a window under open now, close behind it; the capture rows with their keys; split, tabs and stacked under layout (#144)" || bad "window groups" "$(jq -c '.rows[] | [.id, .group, .key, .more]' "$H/window.rows")"
     mcp layout "$(rq 1 resources/read '{"uri":"spark-shell://layout/rows"}')"
     ans 1 | jq -r '.result.contents[0].text' | jq -e '.rows[] | select(.tool.name == "layout_save") | .tool.ask == ["name"]' >/dev/null && ok "provide layout rows: save what is open asks a name" || bad "layout ask" "$(ans 1 | head -c 300)"
     # a layout by the name it was saved under, a rename row that asks the new name, made as a save makes one (#51, #54)
@@ -4888,9 +4895,25 @@ if [ "$(uname -s)" != Darwin ]; then
     mcp layout "$(rq 1 resources/read '{"uri":"spark-shell://layout/rows"}')" "$(call 2 layout_rename '{"name":"webdev","to":"Web Dev"}')" "$(call 3 layout_rename '{"name":"nowhere","to":"x"}')"
     ans 1 | jq -r '.result.contents[0].text' | jq -e '(.rows[] | select(.text == "webdev") | .tool == {name: "layout_open", arguments: {name: "webdev"}}) and (.rows[] | select(.text == "rename webdev") | .tool.ask == ["to"])' >/dev/null \
         && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = "webdev is web-dev now -- spark-shell layout web-dev opens it" ] && [ -f "$HOME/.config/spark-shell/layouts/web-dev" ] \
-        && [ "$(ans 3 | jq -r '.result.content[0].text')" = "layout: no saved layout named nowhere" ] \
+        && [ "$(ans 3 | jq -r '.result.content[0].text')" = "layout: no saved or recent layout named nowhere" ] \
         && ok "provide layout: a layout by its name, its rename row asks the new name, and the call renames it (#51, #54)" || bad "provide layout rename" "$(cut -c1-300 "$H/mcp.out")"
     rm -f "$HOME/.config/spark-shell/layouts/web-dev"
+    # recent (#145): the layouts opened lately and not saved, five at most, a saved one under its name alone, a command's words
+    # never one; behind each, save as and forget
+    _ks=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell; mkdir -p "$_ks/layouts"; [ ! -f "$_ks/layout.history" ] || cp "$_ks/layout.history" "$H/layout.history.keep"; : > "$_ks/layout.history"
+    for _kn in one two three four five six layout-delete-x webdev; do printf '{"words":"%s","main":{"app":"zen"}}' "$_kn" > "$_ks/layouts/$_kn"; printf '1700000000\t%s\n' "$_kn" >> "$_ks/layout.history"; done
+    printf '{"words":"zen","main":{"app":"zen"}}' > "$HOME/.config/spark-shell/layouts/webdev"   # saved: under its name, not in recent
+    mcp layout "$(rq 1 resources/read '{"uri":"spark-shell://layout/rows"}')" "$(call 2 layout_rename '{"name":"one","to":"focus"}')" "$(call 3 layout_delete '{"name":"two"}')"
+    _kr=$(ans 1 | jq -r '.result.contents[0].text')
+    [ "$(printf '%s' "$_kr" | jq -c '[.rows[] | select(.group == "recent") | .text]')" = '["one","two","three","four","five"]' ] \
+        && printf '%s' "$_kr" | jq -e '(.rows[] | select(.group == "recent" and .text == "one") | .more) == [{name: "layout_rename", arguments: {name: "one"}, ask: ["to"], said: "save as"}, {name: "layout_delete", arguments: {name: "one"}, said: "forget"}]' >/dev/null \
+        && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = "saved as focus -- spark-shell layout focus opens it" ] && [ -f "$HOME/.config/spark-shell/layouts/focus" ] \
+        && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = "forgot two" ] && ! cut -f2 "$_ks/layout.history" | grep -qx two \
+        && ok "provide layout: recent holds the five last opened and not saved, a command's words never one; save as names one, forget lets it go (#145)" || bad "layout recent" "$_kr $(cut -c1-400 "$H/mcp.out")"
+    st=0; o=$(sh "$SH" layout layout delete x 2>&1) || st=$?; st2=0; o2=$(sh "$SH" layout help 2>&1) || st2=$?
+    [ "$st" = 1 ] && [ "$st2" = 1 ] && printf '%s' "$o" | grep -q 'is a command, not what a layout is for' && printf '%s' "$o2" | grep -q 'is a command' \
+        && ok "layout: a command's words make no layout (layout layout delete x, layout help) (#145)" || bad "layout command words" "$st $o | $st2 $o2"
+    rm -f "$HOME/.config/spark-shell/layouts/focus" "$HOME/.config/spark-shell/layouts/webdev"; rm -f "$_ks"/layouts/*; : > "$_ks/layout.history"; [ ! -f "$H/layout.history.keep" ] || mv "$H/layout.history.keep" "$_ks/layout.history"
     # the undo journal plays an ARG as it is: a glob in a name never expands against the folder it runs in
     mkdir -p "$H/globdir"; : > "$H/globdir/Jx"; printf 'out\tuse J*\tout J*\n' > "$H/.local/state/spark-shell/panel/undo"
     out=$(cd "$H/globdir" && sh "$SH" panel undo all 2>&1 || :)
@@ -5918,8 +5941,8 @@ STUB
     pw sh -c 'sh "$1" provide power' _ "$SH" > "$H/mcp.out" 2>/dev/null <<EOF
 $(rq 1 resources/read '{"uri":"spark-shell://power/rows"}')
 EOF
-    [ "$(ans 1 | jq -r '.result.contents[0].text' | jq -c '[.rows[] | .text]')" = '["lock the screen","suspend","log out","restart","shut down","the power button does nothing","closing the lid suspends"]' ] \
-        && ok "power rows with logind: lock, suspend, log out, restart, shut down; logind's word for the power button, its default for the lid" || bad "power systemd rows" "$(cat "$H/mcp.out")"
+    [ "$(ans 1 | jq -r '.result.contents[0].text' | jq -c '[.rows[] | .text]')" = '["lock the screen","suspend","log out","restart","shut down"]' ] \
+        && ok "power rows with logind: lock, suspend, log out, restart, shut down; what the buttons do is no row (#143)" || bad "power systemd rows" "$(cat "$H/mcp.out")"
     rm -f "$HOME/power.log" "$HOME/swaymsg.log"
     pw sh -c 'sh "$1" provide power' _ "$SH" > "$H/mcp.out" 2>/dev/null <<EOF
 $(call 1 power_restart)
