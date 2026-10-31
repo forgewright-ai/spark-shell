@@ -95,11 +95,13 @@ if [ "$(uname -s)" = Darwin ]; then
     { st=0; sh tests/shell_test.sh > "$logs/mac.log" 2>&1 || st=$?; echo "$st" > "$logs/mac.st"; } &
     { st=0; PATH=$logs/stub:$PATH sh tests/shell_test.sh > "$logs/linux.log" 2>&1 || st=$?; echo "$st" > "$logs/linux.st"; } &
     wait
-    for h in mac linux; do
+    _bad=''
+    for h in mac linux; do   # both halves said, a failing one with its lines, before the gate stops
         n=$((n + 1)); _l=$(tail -1 "$logs/$h.log")
         if [ "$(cat "$logs/$h.st")" = 0 ]; then printf 'ok    suite: %s (%s)\n' "$h" "$_l"
-        else printf 'FAIL  suite: %s (%s)\n' "$h" "$_l"; grep '  FAIL' "$logs/$h.log" | head -20 | sed 's/^/      /'; exit 1; fi
+        else printf 'FAIL  suite: %s (%s)\n' "$h" "$_l"; grep '  FAIL' "$logs/$h.log" | head -20 | sed 's/^/      /'; _bad=1; fi
     done
+    [ -z "$_bad" ] || exit 1
 else
     _name='suite: this machine'; step sh tests/shell_test.sh
 fi

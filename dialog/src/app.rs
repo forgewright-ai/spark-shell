@@ -21,6 +21,7 @@ use crate::model::{self, Call, Rows, Tool};
 use crate::preview::{self, Preview};
 use crate::progress::Work;
 use crate::scrub::{cells, scrub};
+use crate::search;
 use crate::transition::Reel;
 use serde_json::{json, Map, Value};
 use std::collections::VecDeque;
@@ -129,6 +130,78 @@ pub fn setting_group(label: &str) -> &'static str {
         _ => "system",
     }
 }
+/// What a search from Home finds, in the order its groups stand (#169): a heading each, the best few
+/// of each, and a row that opens the rest of that kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Found {
+    Places,
+    Apps,
+    Files,
+    Notes,
+    Reminders,
+    Windows,
+    Layouts,
+    Settings,
+}
+pub const FOUND: [Found; 8] = [
+    Found::Places,
+    Found::Apps,
+    Found::Files,
+    Found::Notes,
+    Found::Reminders,
+    Found::Windows,
+    Found::Layouts,
+    Found::Settings,
+];
+/// The things of one kind a search from Home shows before the row that opens the rest (#169).
+pub const FOUND_SHOWN: usize = 3;
+/// How long typing rests before the providers are asked what they find for the words (#169).
+pub const SEARCH_PAUSE: Duration = Duration::from_millis(250);
+
+impl Found {
+    /// The kind's heading, as the list writes it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Found::Places => "places",
+            Found::Apps => "apps",
+            Found::Files => "files",
+            Found::Notes => "notes",
+            Found::Reminders => "reminders",
+            Found::Windows => "windows",
+            Found::Layouts => "layouts",
+            Found::Settings => "settings",
+        }
+    }
+
+    /// The kind of a section's rows: a place's own, else a setting.
+    pub fn of(label: &str) -> Found {
+        match label {
+            "apps" => Found::Apps,
+            "files" => Found::Files,
+            "notes" => Found::Notes,
+            "reminders" => Found::Reminders,
+            "window" => Found::Windows,
+            "layout" => Found::Layouts,
+            _ => Found::Settings,
+        }
+    }
+}
+
+/// What the up and down arrows move between in a preview: the thing a section's rows are (#169).
+pub fn thing_of(label: &str) -> &'static str {
+    match label {
+        "apps" => "App",
+        "notes" => "Note",
+        "reminders" => "Reminder",
+        "window" => "Window",
+        "layout" => "Layout",
+        "wifi" => "Network",
+        "bt" => "Device",
+        "storage" => "Drive",
+        _ => "File",
+    }
+}
+
 /// Elicitation's caps: a provider asks at most this often (the review's M1).
 pub const ASK_PER_CALL: usize = 3;
 pub const ASK_PER_MINUTE: usize = 10;
@@ -219,6 +292,11 @@ fn typed_value(schema: &Value, k: &str, value: &str) -> Option<Value> {
         },
         _ => Some(Value::String(bare.unwrap_or(value).to_string())),
     }
+}
+
+/// The rows a provider finds for the words (#169): the files' names that hold them, the notes that say them.
+pub fn search_uri(label: &str, kind: &str, words: &str) -> String {
+    format!("spark-shell://{}/rows/{}/{}", label, kind, search::b64(words))
 }
 
 pub fn home() -> Option<String> {
@@ -335,6 +413,8 @@ pub enum View {
     Connections,
     /// One file of a list, as large as the area allows (#120): the state is App::preview.
     Preview,
+    /// Every thing of one kind a search from Home found for these words (#169).
+    Found(Found, String),
 }
 
 /// How the person talks to the prompt. Holding a key waits for a spark that can finish a recording on
@@ -522,6 +602,10 @@ pub enum Item {
     Row(usize, usize),
     /// A row of the folder shown now.
     Folder(usize),
+    /// A row a provider found for the words typed at Home (a file by its name, a note by what it says): App::hits (#169).
+    Hit(usize),
+    /// The row that opens the rest of one kind a search from Home found, and how many more there are (#169).
+    More(Found, usize),
     /// A step of the row whose steps are shown: its index among the row's tool and its more.
     StepOf(usize),
     /// The row that ends a folder pick: the step lands in the folder shown (#112).
@@ -650,6 +734,12 @@ pub struct App {
     pub films_want: Option<Option<String>>,
     /// A text page's count as last drawn: how far right goes (the area decides it, so ui.rs does).
     pub preview_pages: usize,
+    /// The rows the providers found for the words in hits_for: the files by name, the notes by what they say (#169).
+    pub hits: Vec<(usize, model::Row)>,
+    pub hits_for: String,
+    /// When the words typed at Home last changed, until the providers are asked about them, and the words asked.
+    pub search_at: Option<Instant>,
+    pub search_sent: String,
 }
 
 impl App {
@@ -725,6 +815,10 @@ impl App {
             films_want: None,
             preview_pages: 1,
             steps_row: None,
+            hits: vec![],
+            hits_for: String::new(),
+            search_at: None,
+            search_sent: String::new(),
         }
     }
 
@@ -1155,6 +1249,35 @@ impl App {
                     }
                 }
             }
+            Kind::Hits => {
+                // what a provider found for the words: kept for the words typed now, an answer for older words lands nowhere
+                let of = result.as_ref().and_then(|r| r.pointer("/contents/0/uri")).and_then(Value::as_str).map(scrub);
+                let words = self.query().trim().to_string();
+                let label = self.providers[idx].label.clone();
+                let kind = if label == "files" { "match" } else { "find" };
+                if words.is_empty() || of.as_deref() != Some(search_uri(&label, kind, &words).as_str()) {
+                    return;
+                }
+                let text = result
+                    .as_ref()
+                    .and_then(|r| r.pointer("/contents/0/text"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let Some(rows) = model::rows(text).filter(|_| text.len() <= mcp::RESOURCE_MAX) else {
+                    return;
+                };
+                let before = self.picks().get(self.sel).cloned().map(|it| {
+                    let key = self.prov_of(&it).zip(self.row_ref(&it).map(|r| r.id.clone()));
+                    (it, key)
+                });
+                if self.hits_for != words {
+                    self.hits.clear();
+                    self.hits_for = words;
+                }
+                self.hits.retain(|(p, _)| *p != idx);
+                self.hits.extend(rows.rows.into_iter().map(|r| (idx, r)));
+                self.relight(before);
+            }
             Kind::Page => {
                 let text = result
                     .as_ref()
@@ -1225,6 +1348,7 @@ impl App {
             }
         }
         self.follow_view(now);
+        self.search_now(now);
         let mut late = vec![];
         for s in self.servers.iter_mut() {
             for (id, p) in s.expired(now) {
@@ -1296,7 +1420,7 @@ impl App {
     }
 
     fn pickable(row: &model::Row) -> bool {
-        row.tool.is_some() || row.children.is_some() || row.step.is_some()
+        row.tool.is_some() || row.children.is_some() || row.step.is_some() || !row.more.is_empty()
     }
 
     /// The sections present that a destination holds; Settings holds those of SETTINGS that run here.
@@ -1557,6 +1681,15 @@ impl App {
                     self.section_rows(p, &mut list, !one);
                 }
             }
+            View::Found(k, words) => {
+                let all = self.found(words);
+                let q = search::words(self.query());
+                for it in all.into_iter().filter(|(f, _)| f == k).map(|(_, it)| it) {
+                    if q.is_empty() || self.name_of(&it).is_some_and(|n| search::score(&q, &n).is_some()) {
+                        list.push(it);
+                    }
+                }
+            }
             View::Home => {
                 if self.query().trim().is_empty() {
                     // a receipt has one place, the toast: when it goes its Undo goes with it, and typed undo still takes
@@ -1569,42 +1702,21 @@ impl App {
                         list.push(Item::Dest(d));
                     }
                 } else {
-                    // what was typed, found: the places, then every step that says those words
-                    for d in self.dests() {
-                        if self.word_in(DESTS[d].name) {
-                            list.push(Item::Dest(d));
-                        }
-                    }
-                    for i in self.settings() {
-                        if self.word_in(SETTINGS[i].1) {
-                            list.push(Item::Setting(i));
-                        }
-                    }
-                    for (p, prov) in self.providers.iter().enumerate() {
-                        let rows: Vec<usize> = prov
-                            .rows
-                            .rows
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, r)| {
-                                // the about's own row is found; its key sentences stay out of a search; a row that only opens
-                                // its own section is left out, as the section's view leaves it (the setting opens it already)
-                                Self::pickable(r)
-                                    && self.matches(p, r)
-                                    && (Some(p) != self.about_idx || r.tool.as_ref().is_some_and(|t| t.name == "about_open"))
-                                    && r.children.as_deref() != Some(format!("spark-shell://{}/rows", prov.label).as_str())
-                            })
-                            .map(|(i, _)| i)
-                            .collect();
-                        if rows.is_empty() {
+                    // what was typed, found, in groups of a kind each (#169): the best few of each, then a row that opens the rest
+                    let all = self.found(self.query());
+                    for k in FOUND {
+                        let of: Vec<Item> = all.iter().filter(|(f, _)| *f == k).map(|(_, it)| it.clone()).collect();
+                        if of.is_empty() {
                             continue;
                         }
                         if !list.is_empty() {
                             list.push(Item::Blank);
                         }
-                        list.push(Item::Heading(prov.label.clone()));
-                        for i in rows {
-                            list.push(Item::Row(p, i));
+                        list.push(Item::Heading(k.name().into()));
+                        let n = of.len();
+                        list.extend(of.into_iter().take(FOUND_SHOWN));
+                        if n > FOUND_SHOWN {
+                            list.push(Item::More(k, n - FOUND_SHOWN));
                         }
                     }
                 }
@@ -1618,6 +1730,135 @@ impl App {
             out.push(Item::Toast);
         }
         out
+    }
+
+    /// Everything the words name, by kind, the best first in each (#169): the places and the settings by their names, every
+    /// row of every section by its words (or its section's name), and what the providers found for these words (files
+    /// by name, notes by what they say). A score ties to the shorter name, then to the order the rows came in.
+    pub fn found(&self, typed: &str) -> Vec<(Found, Item)> {
+        let words = search::words(typed);
+        if words.is_empty() {
+            return vec![];
+        }
+        let mut all: Vec<(Found, u32, usize, usize, Item)> = vec![];
+        let add = |k: Found, sc: u32, name: &str, it: Item, all: &mut Vec<(Found, u32, usize, usize, Item)>| {
+            let at = all.len();
+            all.push((k, sc, cells(name), at, it));
+        };
+        // a place and a setting by their names, a setting by its section's too (wifi is Wi-Fi), and by what they are for,
+        // a little ("volume" finds Sound)
+        let named = |name: &str, also: &str, purpose: &str| {
+            search::score(&words, name)
+                .or_else(|| search::score(&words, also))
+                .or_else(|| search::score(&words, purpose).map(|_| search::NEAR))
+        };
+        for d in self.dests() {
+            if let Some(sc) = named(DESTS[d].name, "", DESTS[d].purpose) {
+                add(Found::Places, sc, DESTS[d].name, Item::Dest(d), &mut all);
+            }
+        }
+        for i in self.settings() {
+            let (label, name, purpose) = SETTINGS[i];
+            if let Some(sc) = named(name, label, purpose) {
+                add(Found::Settings, sc, name, Item::Setting(i), &mut all);
+            }
+        }
+        let mut seen: Vec<String> = vec![];
+        for (p, prov) in self.providers.iter().enumerate() {
+            if prov.dead.is_some() {
+                continue;
+            }
+            // a section's name, three letters of it at least, holds its rows a little: "wifi" finds the networks, "wifi home"
+            // the one; the files' rows are their roots, found by the place
+            let (label, name) = (prov.label.clone(), section_name(&prov.label).to_lowercase());
+            let names = |w: &String| prov.label != "files" && w.chars().count() >= 3 && (label.starts_with(w.as_str()) || name.starts_with(w.as_str()));
+            for (i, r) in prov.rows.rows.iter().enumerate() {
+                // the about's own row is found, its key sentences stay out; a row that only opens its own section is left
+                // out, as the section's view leaves it (the setting opens it already)
+                if !Self::pickable(r)
+                    || (Some(p) == self.about_idx && !r.tool.as_ref().is_some_and(|t| t.name == "about_open"))
+                    || r.children.as_deref() == Some(format!("spark-shell://{}/rows", prov.label).as_str())
+                {
+                    continue;
+                }
+                let sc = search::score(&words, &r.text).or_else(|| {
+                    // every word in the row's words or the section's name, and one at least in the row's
+                    let own: Vec<String> = words.iter().filter(|w| !names(w)).cloned().collect();
+                    (own.len() < words.len())
+                        .then(|| if own.is_empty() { Some(search::NEAR) } else { search::score(&own, &r.text) })
+                        .flatten()
+                });
+                if let Some(sc) = sc {
+                    seen.push(format!("{}\u{1f}{}", p, r.id));
+                    add(Found::of(&prov.label), sc, &r.text, Item::Row(p, i), &mut all);
+                }
+            }
+        }
+        if self.hits_for == typed.trim() {
+            for (i, (p, r)) in self.hits.iter().enumerate() {
+                if seen.contains(&format!("{}\u{1f}{}", p, r.id)) || !Self::pickable(r) {
+                    continue;
+                }
+                // the provider found it: by its name (a file), or by what it says (a note, whose name may hold none of the words)
+                let sc = search::score(&words, &r.text).unwrap_or(search::NEAR);
+                add(Found::of(&self.providers[*p].label), sc, &r.text, Item::Hit(i), &mut all);
+            }
+        }
+        all.sort_by(|a, b| b.1.cmp(&a.1).then(a.2.cmp(&b.2)).then(a.3.cmp(&b.3)));
+        all.into_iter().map(|(k, _, _, _, it)| (k, it)).collect()
+    }
+
+    /// The list changed under the light, a provider's finds having come in (#169): where the words chose the lit row, it
+    /// is the one they name best now; where a key chose it, it stays on that row, wherever it moved.
+    fn relight(&mut self, before: Option<(Item, Option<(usize, String)>)>) {
+        if !self.in_list {
+            return;
+        }
+        if !self.list_keys {
+            self.sel = self.best();
+            return;
+        }
+        let Some((it, key)) = before else { return };
+        let picks = self.picks();
+        let at = picks.iter().position(|x| match &key {
+            Some((p, id)) => self.prov_of(x) == Some(*p) && self.row_ref(x).is_some_and(|r| &r.id == id),
+            None => *x == it,
+        });
+        if let Some(i) = at {
+            self.sel = i;
+        }
+    }
+
+    /// The words typed at Home changed: the providers are asked what they find for them once typing rests (#169).
+    fn search_later(&mut self) {
+        if self.view == View::Home && !self.query().trim().is_empty() {
+            self.search_at = Some(Instant::now());
+        } else {
+            self.search_at = None;
+        }
+    }
+
+    /// Typing rested: the files are asked for the names that hold the words, the notes for the ones that say them (#169).
+    fn search_now(&mut self, now: Instant) {
+        let Some(at) = self.search_at else { return };
+        if now.duration_since(at) < SEARCH_PAUSE {
+            return;
+        }
+        self.search_at = None;
+        let words = self.query().trim().to_string();
+        if self.view != View::Home || words.is_empty() || words == self.search_sent {
+            return;
+        }
+        self.search_sent = words.clone();
+        for (label, kind) in [("files", "match"), ("notes", "find")] {
+            let Some(p) = self.providers.iter().position(|x| x.label == label && x.ready && x.dead.is_none()) else {
+                continue;
+            };
+            let uri = search_uri(label, kind, &words);
+            if let Some(s) = self.server(p) {
+                s.request("resources/read", json!({"uri": uri}), Kind::Hits, mcp::T_READ);
+            }
+        }
     }
 
     /// Settings under their groups' headings, as Files parts its rows (#137).
@@ -1660,7 +1901,8 @@ impl App {
                 .unwrap_or(false),
             Item::Model(i) => self.models.get(*i).map(|(_, s)| s == "serving" || s == "downloaded").unwrap_or(false),
             Item::TalkOpt(_) => self.voice_on,
-            Item::Ask | Item::Undo(..) | Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::StepOf(_) | Item::Here => true,
+            Item::Hit(i) => self.hits.get(*i).is_some_and(|(_, r)| Self::pickable(r)),
+            Item::Ask | Item::Undo(..) | Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::StepOf(_) | Item::Here | Item::More(..) => true,
             Item::Toast => self.toast.as_ref().is_some_and(|t| t.undo) && self.undo.is_some(),
             _ => false,
         }
@@ -1676,7 +1918,7 @@ impl App {
             && !self.query().trim().is_empty()
             && self.attaching.is_none()
             && self.picking.is_none()
-            && matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..))
+            && matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..) | View::Found(..))
     }
 
     /// The name a pick goes by, as typed words are matched against it.
@@ -1684,6 +1926,7 @@ impl App {
         match it {
             Item::Row(p, r) => Some(self.providers[*p].rows.rows[*r].text.clone()),
             Item::Folder(i) => self.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)).map(|r| r.text.clone()),
+            Item::Hit(i) => self.hits.get(*i).map(|(_, r)| r.text.clone()),
             Item::StepOf(k) => self.step_call(*k).map(|c| self.step_words(&c)),
             Item::Here => self.picking.as_ref().map(|pk| pk.what.clone()),
             Item::Dest(d) => Some(DESTS[*d].name.to_string()),
@@ -1728,6 +1971,7 @@ impl App {
     /// The words changed: the lit row follows them; with no words, nothing is lit.
     fn follow_words(&mut self) {
         self.list_keys = false;
+        self.search_later();
         if self.mode != Mode::Normal {
             return;
         }
@@ -2302,6 +2546,11 @@ impl App {
     }
 
     fn go_back(&mut self, v: View) {
+        // back from the rest of a kind to the home: the words come back, the search as it was (#169)
+        let words = match (&self.view, &v) {
+            (View::Found(_, w), View::Home) => Some(w.clone()),
+            _ => None,
+        };
         let lit = if self.view == View::Preview {
             self.stop_sound();
             self.preview.take().map(|pv| pv.row().id.clone())
@@ -2338,6 +2587,10 @@ impl App {
             self.in_list = true;
             self.keep_lit = Some(id);
             self.follow_lit();
+        }
+        if let Some(w) = words {
+            self.set_input(w);
+            self.follow_words();
         }
     }
 
@@ -2568,7 +2821,7 @@ impl App {
         let Some(item) = picks.get(sel).cloned() else { return };
         let words = self.input.trim().to_string();
         // a list filtered by the words typed: the words were a search, and go with the pick
-        if matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..)) {
+        if matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..) | View::Found(..)) {
             self.set_input(String::new());
         }
         self.sel = 0;
@@ -2669,6 +2922,23 @@ impl App {
                 self.stash_draft();
                 self.mode = Mode::Apply(name);
             }
+            Item::More(k, _) => self.go(View::Found(k, words)),
+            Item::Hit(i) => {
+                let Some((p, row)) = self.hits.get(i).cloned() else { return };
+                if let Some(c) = row.children {
+                    self.open_children(p, &c);
+                } else if let Some(call) = row.tool {
+                    let line = self.step_line(p, &call, &row.text);
+                    self.run(Step {
+                        prov: p,
+                        call,
+                        who: Who::Person,
+                        line,
+                    });
+                } else if !row.more.is_empty() {
+                    self.steps_of(p, row);
+                }
+            }
             Item::Row(p, r) => {
                 let row = self.providers[p].rows.rows[r].clone();
                 if let Some(pk) = &row.pick {
@@ -2703,6 +2973,9 @@ impl App {
                         who: Who::Person,
                         line,
                     });
+                } else if !row.more.is_empty() {
+                    // a row that is only its steps (a saved network not around, #169): Enter opens them, as Right does
+                    self.steps_of(p, row);
                 }
             }
             Item::Folder(i) => {
@@ -2754,7 +3027,7 @@ impl App {
                     });
                 } else if !row.more.is_empty() {
                     // a row that is only its actions (this folder, #127): Enter opens them, as Right does
-                    self.open_steps();
+                    self.steps_of(p, row);
                 }
             }
             _ => {}
@@ -3906,6 +4179,7 @@ impl App {
             View::Talk => "talk".into(),
             View::Connections => "connections".into(),
             View::Preview => "preview".into(),
+            View::Found(k, _) => k.name().into(),
         }
     }
 
@@ -3915,6 +4189,7 @@ impl App {
             View::Folder(..) => self.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default(),
             View::Steps(_) => self.steps_row.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
             View::Preview => self.preview.as_ref().map(|pv| pv.place.clone()).unwrap_or_default(),
+            View::Found(_, words) => words.clone(),
             _ => String::new(),
         }
     }
@@ -4149,8 +4424,25 @@ impl App {
         match it {
             Item::Row(p, r) => self.providers[*p].rows.rows.get(*r),
             Item::Folder(i) => self.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)),
+            Item::Hit(i) => self.hits.get(*i).map(|(_, r)| r),
             _ => None,
         }
+    }
+
+    /// The provider an item's row is of: a section's, the folder's, the one that found it.
+    fn prov_of(&self, it: &Item) -> Option<usize> {
+        match it {
+            Item::Row(p, _) => Some(*p),
+            Item::Folder(_) => self.folder.as_ref().map(|(p, _, _)| *p),
+            Item::Hit(i) => self.hits.get(*i).map(|(p, _)| *p),
+            _ => None,
+        }
+    }
+
+    /// The lit row and its provider, where the lit pick is a row.
+    fn lit_row(&self) -> Option<(usize, model::Row)> {
+        let it = self.picks().get(self.sel).cloned()?;
+        Some((self.prov_of(&it)?, self.row_ref(&it)?.clone()))
     }
 
     /// A step's line as people read it, the command as typed: its tool's title with the arguments in
@@ -4228,16 +4520,7 @@ impl App {
         if !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal {
             return false;
         }
-        let Some(it) = self.picks().get(self.sel).cloned() else { return false };
-        let prov = match &it {
-            Item::Row(p, _) => *p,
-            Item::Folder(_) => match &self.folder {
-                Some((p, _, _)) => *p,
-                None => return false,
-            },
-            _ => return false,
-        };
-        let Some(row) = self.row_ref(&it).cloned() else { return false };
+        let Some((prov, row)) = self.lit_row() else { return false };
         let Some(st) = row.step else { return false };
         let call = if up { st.more } else { st.less };
         self.keep_lit = Some(row.id.clone());
@@ -4265,19 +4548,16 @@ impl App {
         if !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal || self.picking.is_some() || self.attaching.is_some() {
             return false;
         }
-        let Some(it) = self.picks().get(self.sel).cloned() else { return false };
-        let prov = match &it {
-            Item::Row(p, _) => *p,
-            Item::Folder(_) => match &self.folder {
-                Some((p, _, _)) => *p,
-                None => return false,
-            },
-            _ => return false,
-        };
-        let Some(row) = self.row_ref(&it).cloned() else { return false };
+        let Some((prov, row)) = self.lit_row() else { return false };
         if row.more.is_empty() {
             return false;
         }
+        self.steps_of(prov, row);
+        true
+    }
+
+    /// A row's steps as a list of their own (#112): Enter runs one, Esc comes back.
+    fn steps_of(&mut self, prov: usize, row: model::Row) {
         self.want_cancel();
         self.target = None;
         self.keep_lit = None;
@@ -4287,7 +4567,6 @@ impl App {
         self.sel = 0;
         self.in_list = true;
         self.scroll = 0;
-        true
     }
 
     /// The k-th step of the row whose steps are shown: its tool first, then its more.
@@ -4381,17 +4660,26 @@ impl App {
         self.view == View::Preview && self.input.is_empty() && self.mode == Mode::Normal && self.chip_focus.is_none() && self.staged.is_none()
     }
 
-    /// The lit row's preview, where it is a file of the folder shown; false where it is not.
+    /// The lit row's page, where it has one (#120; every kind of row since #169): the list it is in goes with it, so
+    /// up and down go to the next of its kind; false where it has none.
     fn open_preview(&mut self) -> bool {
         if !self.in_list || self.picking.is_some() || self.attaching.is_some() {
             return false;
         }
-        let Some(Item::Folder(i)) = self.picks().get(self.sel).cloned() else {
-            return false;
+        let Some(it) = self.picks().get(self.sel).cloned() else { return false };
+        let Some((p, row)) = self.lit_row() else { return false };
+        let (place, rows): (String, Vec<model::Row>) = match it {
+            Item::Folder(_) => match &self.folder {
+                Some((_, _, rows)) => (rows.title.clone(), rows.rows.clone()),
+                None => return false,
+            },
+            Item::Hit(_) => (
+                section_name(&self.providers[p].label).to_lowercase(),
+                self.hits.iter().filter(|(q, _)| *q == p).map(|(_, r)| r.clone()).collect(),
+            ),
+            _ => (section_name(&self.providers[p].label).to_lowercase(), self.providers[p].rows.rows.clone()),
         };
-        let Some((p, _, rows)) = self.folder.clone() else { return false };
-        let Some(row) = rows.rows.get(i) else { return false };
-        let Some(pv) = Preview::new(p, &rows.title, &rows.rows, &row.id) else {
+        let Some(pv) = Preview::new(p, &place, &rows, &row.id) else {
             return false;
         };
         // the words that filtered the folder go: in the preview Space plays and Esc goes back (#163)
@@ -4649,9 +4937,12 @@ impl App {
         if zoomed {
             keys.push(("Move", "\u{2190} \u{2191} \u{2193} \u{2192}"));
         } else if pv.is_some_and(|pv| pv.files.len() > 1) {
-            keys.push(("File", "\u{2191} \u{2193}"));
+            keys.push((pv.map(|pv| thing_of(&self.providers[pv.prov].label)).unwrap_or("File"), "\u{2191} \u{2193}"));
         }
-        keys.push(("Open", "Enter"));
+        // what Enter does to the thing shown, in its tool's word (Open an app, Connect a network); nothing where it has no tool
+        if let Some(t) = pv.and_then(|pv| pv.row().tool.as_ref()) {
+            keys.push((verb_of(&t.name), "Enter"));
+        }
         if !zoomed && own.is_some_and(|k| k.play) {
             // a player's keys: Space plays and pauses, the arrows seek (#151)
             keys.push((if pv.is_some_and(|pv| pv.playing.is_some()) { "Pause" } else { "Play " }, "Space"));

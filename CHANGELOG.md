@@ -1,5 +1,58 @@
 # Changelog
 
+## v0.118
+
+A search from Home that finds everything, and the same keys on every
+row (#169, from the owner's talk on where the dialog goes next; his
+picks from wireframes).
+
+- Typing at Home finds places, apps, files, notes, reminders, windows,
+  layouts and settings, in groups with a heading each, in that order.
+  Each group shows its best three: a name's start first, then a word's
+  start, then inside a word, the shorter name on a tie. A row under
+  them, `N more`, opens the rest of that kind as a list of its own, and
+  Esc from it brings the search back as it was. A word of four letters
+  or more may be one letter off (a letter missing, one too many, a
+  wrong one, two swapped); such a match is shown, never lit, so Enter
+  never runs a guess. A section's name, three letters of it at least,
+  holds its rows: `wifi` lists the networks.
+- Files are found by name anywhere under your home, and notes by what
+  they say, once typing rests for a moment. The files provider keeps
+  the names in `~/.cache/spark-shell/files.names`, yours alone (0600 in
+  a 0700 folder) and never sent anywhere, walked again in the
+  background when it is ten minutes old: the walk Files' own search
+  does, with its depth, its skips and its time limit. An answer for
+  words typed before is dropped.
+- Every row takes the same keys: Enter runs it, the right arrow opens
+  its other steps, and Space shows its page, the preview's surface. An
+  app's page says its group, where it runs, its command and how it was
+  installed; a note's is its text; a reminder's, its time and its
+  calendar; a window's, its app, title, workspace, screen and size; a
+  layout's, the app in front and the ones beside it; a network's, its
+  signal, its security and whether it is saved; a device's, connected,
+  paired, its battery where it says and its address; a drive's, its
+  size, free space, mount and format; a folder's, what it holds and its
+  newest things. Up and down go to the next of its kind, and the key
+  row names what they move between (File, App, Note, Network, Device,
+  Drive) and what Enter does.
+- One row for a thing, its steps behind it (v0.114.1's rule, now
+  everywhere): a saved network's forget, a paired device's remove, a
+  drive's unmount and eject, and a note's append leave their rows of
+  their own. A saved network that is not around has a row of its own,
+  forget behind it, and Enter on a row that is only its steps opens
+  them. A note gains rename (its first line, its heading's hashes kept)
+  and trash, each with its Undo (notes_rename, notes_trash,
+  notes_restore: 133 tools).
+- Apps stands in groups, as Settings does: internet, office, graphics,
+  sound and video, development, education, games, system, utilities,
+  and others, by the first of those its desktop entry's categories
+  name; the terminal first and the picker last.
+- Not done: a note does not move to another folder from Notes (it would
+  be no note then; Files moves its file), and a reminder's page says no
+  repeat, since a repeating event is never a reminder here.
+- `sh tests/gate.sh` says both halves of the suite before it stops, a
+  failing half with its lines; it stopped at the first one before.
+
 ## v0.117
 
 The bar in signs or in words, the workspaces as symbols or numbers, and

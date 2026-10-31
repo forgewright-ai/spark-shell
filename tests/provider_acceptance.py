@@ -205,9 +205,11 @@ else: os.execv(''' + repr(shutil.which("stat")) + ''', ['stat']+a)
         for filename in ("first.md", "second.md"):
             (notes / filename).write_bytes(original)
         rows = self.rows("notes")
-        direct = [r for r in rows if r.get("tool") and r["tool"]["name"] == "notes_append"]
-        self.assertEqual({r["tool"]["arguments"]["name"] for r in direct}, {"first.md", "second.md"})
-        self.assertTrue(all(r["tool"]["ask"] == ["text"] for r in direct))
+        # append is behind each note's row, no row of its own (#169)
+        self.assertFalse([r for r in rows if r.get("tool") and r["tool"]["name"] == "notes_append"])
+        direct = [m for r in rows for m in r.get("more", []) if m["name"] == "notes_append"]
+        self.assertEqual({m["arguments"]["name"] for m in direct}, {"first.md", "second.md"})
+        self.assertTrue(all(m["ask"] == ["text"] for m in direct))
         tools = self.provider("notes", rpc(1, "tools/list"))[1]["result"]["tools"]
         typed = next(t for t in tools if t["name"] == "notes_append")
         self.assertEqual(typed["inputSchema"]["required"], ["name", "text"])

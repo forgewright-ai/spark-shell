@@ -731,6 +731,16 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
                 row_line(pen, row, y, lit, widths, right, samples, chips);
             }
         }
+        Item::Hit(i) => {
+            if let Some((_, row)) = app.hits.get(*i) {
+                row_line(pen, row, y, lit, widths, right, samples, chips);
+            }
+        }
+        Item::More(_, n) => {
+            // the rest of one kind a search found (#169): a row as a section's own "N more" is, with its arrow
+            let x = pen.put(6, y, &format!("{} more", n), pal.fg, false, lit);
+            pen.put(x, y, " \u{203a}", pal.muted, false, lit);
+        }
         Item::StepOf(k) => {
             // one of a row's steps, in the provider's words: a row of its own, no sign
             if let Some(c) = app.steps_row.as_ref().and_then(|r| r.tool.iter().chain(r.more.iter()).nth(*k)) {
@@ -756,6 +766,7 @@ fn row_of<'a>(app: &'a App, it: &Item) -> Option<&'a crate::model::Row> {
     match it {
         Item::Row(p, r) => app.providers[*p].rows.rows.get(*r),
         Item::Folder(i) => app.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)),
+        Item::Hit(i) => app.hits.get(*i).map(|(_, r)| r),
         _ => None,
     }
 }
@@ -1252,6 +1263,10 @@ fn widths(app: &App, items: &[Item]) -> (Vec<usize>, Vec<bool>) {
             Item::Row(p, r) => &app.providers[*p].rows.rows[*r],
             Item::Folder(i) => match app.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)) {
                 Some(r) => r,
+                None => continue,
+            },
+            Item::Hit(i) => match app.hits.get(*i) {
+                Some((_, r)) => r,
                 None => continue,
             },
             _ => continue,

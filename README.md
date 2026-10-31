@@ -763,8 +763,17 @@ machine has it. The down arrow moves from the prompt into the
 list, and up from the first row comes back. A row wears a sign where
 there is a state: a dot is in use or connected, a ring is available, a
 check is current or saved, a small triangle opens something. A row
-that ends in a small arrow opens more. When the list is longer than
-the window, its last line says how many rows sit below. In a list,
+that ends in a small arrow opens more. Every row takes the same keys:
+Enter does what it does, the right arrow opens its other steps as a
+list (a file's rename and trash, a network's forget, a device's remove,
+a drive's unmount and eject), and Space shows its page: an app's group,
+where it runs and its command; a note's text; a reminder's time and
+calendar; a window's app, workspace and screen; a layout's apps; a
+network's signal and security; a device's state; a drive's size and
+free space; a file or a folder. A row that is only its steps, as a
+saved network that is not around, opens them on Enter. When the list
+is longer than the window, its last line says how many rows sit below.
+In a list,
 Page Up and Page Down move the lit row by a screen, Home and End go to
 its first and its last row.
 
@@ -774,15 +783,17 @@ its first and its last row.
   five opened and not saved, each with when; behind one, `save as`
   gives it a name and `forget` lets it go.
 - `wifi`: disconnect the network in use; connect one around, and a new
-  network asks its password once, masked; forget a saved one.
-- `bt`: connect or disconnect your devices, look for new ones, pair a
-  new one, turn Bluetooth off and on.
+  network asks its password once, masked; forget a saved one, behind
+  its row (a saved one that is not around has a row of its own).
+- `bt`: connect or disconnect your devices, remove a paired one (behind
+  its row), look for new ones, pair a new one, turn Bluetooth off and
+  on.
 - `out` and `mic`: use another device, mute and unmute.
 - `notifications`: turn do not disturb on or off, dismiss what is on
   the screen, show the last one again; under them the last few.
 - `storage`: each drive plugged in, with its parts: Enter mounts one,
-  and on one that is mounted opens it in your file manager; unmount
-  one, eject the drive; then this computer's free space.
+  and on one that is mounted opens it in your file manager; behind it,
+  unmount it and eject the drive; then this computer's free space.
 - `power`: lock the screen, suspend, log out, restart, shut down; the
   last three ask for a typed yes.
 - `theme`: first the wallpaper, the text size, the transparency and the
@@ -807,7 +818,9 @@ its first and its last row.
   left and right arrows move the months while nothing is typed. Under
   them, the reminders. Full screen, the months ahead fill the screen.
 - `notes`: a new note, then your notes, the newest first, each with its
-  date. Enter opens one in your editor in a terminal window. Said in
+  date. Enter opens one in your editor in a terminal window; behind it,
+  append (it asks the words), rename (it asks the new title, the note's
+  first line) and trash, each with its Undo. Said in
   words, `note buy oat milk` makes a note, `groceries: buy oat milk`
   adds a line to the note named groceries, and a question finds the
   note and the line that answer it.
@@ -828,7 +841,10 @@ its first and its last row.
 - Connections: how many tools the dialog has, all on this computer
   from spark-shell, then the sections that give them by the names
   Settings gives them; one that stopped says why. Then the model.
-- `apps`: a terminal window, then a row per app a layout may open.
+- `apps`: a terminal window, then a row per app a layout may open,
+  under the group its desktop entry names: internet, office, graphics,
+  sound and video, development, education, games, system, utilities,
+  and others for an app whose entry names none of them.
 - `about`: the version, the licence and the address, then each key on
   one line, its sentence up to the first comma; `spark-shell desktop
   keys` has every sentence whole. It opens by itself the first time the
@@ -856,7 +872,8 @@ its first and its last row.
   `open in the system file manager`, for anything beyond these steps
   (permissions, archives, remote places); where no file manager is
   configured, that action and the reveal step are not offered. Space on
-  a lit file, with nothing typed, opens its preview, described below;
+  a lit file, with nothing typed, opens its preview, described below (a
+  folder's says what it holds and its newest things);
   after words that filter the folder, the down arrow first, since Space
   is a space while you type. Your
   home folder starts with its folders and files, then `recent`, the
@@ -871,15 +888,18 @@ its first and its last row.
   the text files that hold the words, each as a list to act on. A
   hidden file, a link and anything outside your home and your drives
   are never read, and never written.
-- Preview: one file as large as the content area allows, read only. The
-  header names its folder, the facts row at the area's foot says what it
-  is, and Attach in the footer names it: words at the prompt go to spark
-  with it. Up and down go to the previous and next file of the list,
-  left and right turn the page, Enter opens the file in its app, and
-  Esc, or Space with nothing typed, goes back with it lit (on a sound
-  or a video, Space plays it). The key row starts with Back, File and
-  Open, in the same places on every file, and the file's own keys
-  follow; while the next file's page loads, the row stays as it was.
+- Preview: one file, or the page of any row, as large as the content
+  area allows, read only. The header names its folder or its place, the
+  facts row at the area's foot says what it is, and Attach in the footer
+  names a file: words at the prompt go to spark with it. Up and down go
+  to the previous and next of the list, left and right turn the page,
+  Enter does what the row does (opens the file in its app, an app,
+  connects a network), and Esc, or Space with nothing typed, goes back
+  with it lit (on a sound or a video, Space plays it). The key row
+  starts with Back, what up and down move between (File, App, Note,
+  Network, Device, Drive) and what Enter does, in the same places on
+  every page, and a file's own keys follow; while the next page loads,
+  the row stays as it was.
   A text, a
   Markdown file (its headings bold), code (its lines numbered) and JSON
   (indented) show as text, 128 kB of it at most. A picture, a PDF's page
@@ -940,8 +960,19 @@ goes back.
 `DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide the controls.
 `DIALOG_ANIMATION` names the opening and closing animation, or none.
 
-Type, and the list shows what matches: places, settings, and every step
-the dialog can take, shown or not. The row your words name is lit, and
+Type in a place, and its list keeps what matches. Type at the home, and
+the list shows what the words name, in groups: places, apps, files,
+notes, reminders, windows, layouts and settings, the best three of each
+(a name's start first, then a word's start, then inside a word), then a
+row that opens the rest of that kind as a list of its own; Esc from it
+brings the search back. A word of four letters or more may be one
+letter off: a letter missing, one too many, a wrong one, or two
+swapped. Files are found by name anywhere under your home, from a list
+of the names kept in `~/.cache/spark-shell/files.names` (yours alone,
+never sent anywhere, walked again in the background when it is ten
+minutes old), and notes by what they say; both come in once typing
+rests for a moment. A section's name holds its rows too: `wifi` lists
+the networks. The row your words name is lit, and
 Enter runs it with no model call: `nord` and Enter is the palette nord
 (`drac` lights dracula). Words that name no row light `Ask spark`, the
 first row while you type. A place's name alone, as `settings` or

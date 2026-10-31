@@ -16,6 +16,7 @@ pub mod preferences;
 pub mod preview;
 pub mod progress;
 pub mod scrub;
+pub mod search;
 pub mod sha256;
 pub mod sixel;
 pub mod transition;

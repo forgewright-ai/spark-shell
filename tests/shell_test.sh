@@ -545,6 +545,8 @@ ans() { jq -c --argjson i "$1" 'select(.id == $i)' "$H/mcp.out"; }   # ans ID ->
 
 fcall() { call "$1" "$2" "$(jq -cn --arg p "$3" '{path: $p}')"; }
 
+b64u() { printf '%s' "$1" | base64 | tr -d '\n=' | tr '+/' '-_'; }   # b64u TEXT -> the uri part the providers read (#169)
+
 # --- 1. dry-run: rows, nothing touched -----------------------------------
 if want 1; then
 fresh
@@ -3939,8 +3941,12 @@ STUB
     printf '%s\n' "$out" | grep -q "^  theme      none $SEP more	theme more$" && [ "$(printf '%s\n' "$out" | grep -c "^. theme      ")" = 1 ] && sh "$SH" panel theme --list > "$H/theme.list" && grep -q "^  theme      Wallpaper	theme wallpaper$" "$H/theme.list" && grep -q "^  theme      dracula	theme dracula$" "$H/theme.list" && grep -q "^  theme      Text size	theme show$" "$H/theme.list" && grep -q "^  theme      Transparency	theme show$" "$H/theme.list" \
         && ok "panel: theme is one row in the list, the palette and a more; opened on theme, the wallpaper row, the text size and the transparency rows, the palettes" || bad "theme more" "$(printf '%s\n' "$out" | grep theme; grep theme "$H/theme.list" | head -3)"
     out=$(sh "$SH" panel apps --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "apps       every app allowed $SEP Enter opens one" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO apps       terminal	apps terminal" ] && [ "$(printf '%s\n' "$out" | sed -n 3p)" = "$GO apps       firefox	apps open firefox" ] && printf '%s\n' "$out" | grep -q "^$GO apps       gimp-3.0	apps open gimp-3.0$" && [ "$(printf '%s\n' "$out" | grep "^$GO apps       " | tail -1)" = "$GO apps       choose the allowed apps	apps pick" ] \
-        && ok "panel apps --list: the title says what is allowed, a terminal first, a row per app that opens it, the picker last" || bad "panel apps" "$out"
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "apps       every app allowed $SEP Enter opens one" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$GO apps       terminal	apps terminal" ] && [ "$(printf '%s\n' "$out" | sed -n 3p)" = "$GO apps       tmux	apps open tmux" ] && [ "$(printf '%s\n' "$out" | sed -n 4p)" = "$GO apps       firefox	apps open firefox" ] && printf '%s\n' "$out" | grep -q "^$GO apps       gimp-3.0	apps open gimp-3.0$" && [ "$(printf '%s\n' "$out" | grep "^$GO apps       " | tail -1)" = "$GO apps       choose the allowed apps	apps pick" ] \
+        && ok "panel apps --list: the title says what is allowed, a terminal first, a row per app that opens it in the order of its group (tmux is system, before the others, #169), the picker last" || bad "panel apps" "$out"
+    mcp apps "$(rq 1 resources/read '{"uri":"spark-shell://apps/rows"}')" "$(rq 2 resources/read "{\"uri\":\"spark-shell://apps/page/$(b64u 'apps:open tmux')\"}")"
+    ans 1 | jq -r '.result.contents[0].text' | jq -e '([.rows[] | select(.text == "tmux")][0] | .group == "system" and (.page | startswith("spark-shell://apps/page/"))) and ([.rows[] | select(.text == "firefox")][0].group == "others") and (.rows[0].text == "terminal" and .rows[0].group == null)' >/dev/null \
+        && ans 2 | jq -r '.result.contents[0].text' | jq -e '.lines[0:2] == ["tmux", "A shell with panes, sessions and the status line"] and (.lines | index("group       system")) and (.lines | index("runs in     a terminal")) and (.lines | index("command     tmux"))' >/dev/null \
+        && ok "provide apps: each app under the group its desktop entry names (tmux system, one with none others), the terminal first; Space shows an app: its group, where it runs, its command, how it came (#169)" || bad "apps groups" "$(head -c 900 "$H/mcp.out")"
     rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps terminal 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'opened a terminal' ] && grep -qx 'exec foot' "$H/.local/state/swaymsg.log" && ok "panel apps terminal: a terminal window, as Super+Return" || bad "apps terminal" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps open GIMP-3.0 2>&1) || st=$?
@@ -4019,6 +4025,10 @@ STUB
     out=$(sh "$SH" bar panel bt --list); blog=$H/.local/state/bt.log
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "bt         $DOT MAJOR V" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT bt         MAJOR V	bt disconnect MAJOR V" ] && printf '%s\n' "$out" | grep -q "^$RING bt         Buds $SEP new	bt pair Buds$" && printf '%s\n' "$out" | grep -q "^  bt         find new devices	bt scan$" && printf '%s\n' "$out" | grep -q "^  bt         turn off	bt power off$" \
         && ok "panel bt: the connected device, a new one to pair, a row that scans, and off" || bad "panel bt" "$out"
+    mcp bt "$(rq 1 resources/read '{"uri":"spark-shell://bt/rows"}')" "$(rq 2 resources/read "{\"uri\":\"spark-shell://bt/page/$(b64u 'bt:disconnect MAJOR V')\"}")"
+    ans 1 | jq -r '.result.contents[0].text' | jq -e '([.rows[] | select(.tool.name == "bt_remove")] == []) and ([.rows[] | select(.text == "MAJOR V")][0] | .more == [{name: "bt_remove", arguments: {name: "MAJOR V"}, said: "remove"}] and .page != null)' >/dev/null \
+        && ans 2 | jq -r '.result.contents[0].text' | jq -e '.lines[0] == "MAJOR V" and (.lines | index("connected   yes")) and (.lines | index("address     00:25:D1:4A:C2:AA"))' >/dev/null \
+        && ok "provide bt: remove is behind a paired device, no row of its own; Space shows a device, connected, paired, its address (#169)" || bad "bt remove behind" "$(head -c 1200 "$H/mcp.out")"
     rm -f "$blog"; st=0; out=$(sh "$SH" bar panel bt disconnect MAJOR V 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'disconnected MAJOR V' ] && grep -qx 'disconnect 00:25:D1:4A:C2:AA' "$blog" && ok "panel bt disconnect NAME: the device's address told to bluetoothctl" || bad "bt disconnect" "st=$st $out; $(cat "$blog" 2>&1)"
     out=$(sh "$SH" bar panel out --list)
@@ -4277,8 +4287,8 @@ done
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 130 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 130 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 133 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 133 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -4289,6 +4299,21 @@ ans 1 | jq -e '.result.isError == false and .result.structuredContent.effect == 
     && ans 3 | jq -e '.result.structuredContent | has("effect") | not' >/dev/null \
     && grep -qx -- '- one more line' "$H/notes/ax-result-fixture.md" \
     && ok "provide notes: results identify the actual created or appended file, with no stale effect on the next call" || bad "note result" "$(ans 1) $(ans 2) $(ans 3)"
+printf '# Shopping list\n- oat milk\n' > "$H/notes/shop-169.md"; printf 'plain first line\nthe vet on friday\n' > "$H/notes/vet-169.md"
+mcp notes "$(rq 1 resources/read '{"uri":"spark-shell://notes/rows"}')" "$(rq 2 resources/read "{\"uri\":\"spark-shell://notes/page/$(b64u 'notes:open shop-169.md')\"}")" "$(rq 3 resources/read "{\"uri\":\"spark-shell://notes/rows/find/$(b64u 'vet friday')\"}")"
+ans 1 | jq -r '.result.contents[0].text' | jq -e '([.rows[] | select(.id == "notes:open shop-169.md")][0] | ([.more[].name] == ["notes_append", "notes_rename", "notes_trash"]) and (.page | startswith("spark-shell://notes/page/"))) and ([.rows[] | select(.text | startswith("append to"))] == [])' >/dev/null \
+    && ans 2 | jq -r '.result.contents[0].text' | jq -e '.lines == ["Shopping list", "- oat milk"]' >/dev/null \
+    && ans 3 | jq -r '.result.contents[0].text' | jq -e '[.rows[].id] == ["notes:open vet-169.md"]' >/dev/null \
+    && ok "provide notes: append, rename and trash behind a note's row, no row of its own for append; Space shows the note; the notes that say every word, for a search from Home (#169)" || bad "notes steps" "$(head -c 900 "$H/mcp.out")"
+export SPARK_SHELL_NO_GIO=1   # the trash by the spec here: a Mac's Homebrew gio would put the note in this Mac's own Trash
+mcp notes "$(call 1 notes_rename '{"name":"shop-169.md","to":"Groceries"}')" "$(call 2 notes_rename '{"name":"vet-169.md","to":"Luna at the vet"}')" "$(call 3 notes_trash '{"name":"vet-169.md"}')" "$(call 4 notes_rename '{"name":"../x.md","to":"no"}')"
+[ "$(sed -n 1p "$H/notes/shop-169.md")" = '# Groceries' ] && ans 1 | jq -e '.result.structuredContent == {receipt: "Shopping list renamed to Groceries", undo: {name: "notes_rename", arguments: {name: "shop-169.md", to: "Shopping list"}}}' >/dev/null \
+    && ans 2 | jq -e '.result.structuredContent.undo.arguments.to == "plain first line"' >/dev/null \
+    && [ ! -e "$H/notes/vet-169.md" ] && ans 3 | jq -e '.result.structuredContent.undo == {name: "notes_restore", arguments: {name: "vet-169.md"}}' >/dev/null && [ "$(ans 4 | jq -r .error.code)" = -32602 ] \
+    && ok "notes rename: the first line takes the new title, its hashes kept, a plain line stays plain, undo the old title; trash: the note in the trash, undo restores it; a path is refused (#169)" || bad "notes rename trash" "$(cat "$H/mcp.out")"
+mcp notes "$(call 1 notes_restore '{"name":"vet-169.md"}')"
+[ "$(sed -n 1p "$H/notes/vet-169.md" 2>&1)" = 'Luna at the vet' ] && ans 1 | jq -e '.result.structuredContent.undo.name == "notes_trash"' >/dev/null && ok "notes restore: the note back from the trash as it was (#169)" || bad "notes restore" "$(cat "$H/mcp.out") $(ls "$H/notes")"
+rm -f "$H/notes/shop-169.md" "$H/notes/vet-169.md"; unset SPARK_SHELL_NO_GIO
 printf '#!/bin/sh\ncase "$1" in +%%s) echo 1234567890 ;; *) exec %s "$@" ;; esac\n' "$(command -v date)" > "$H/.local/bin/date"
 chmod +x "$H/.local/bin/date"
 mcp reminders "$(call 1 reminders_add '{"words":"2099-01-01 10:00 AX result fixture"}')" "$(call 2 reminders_add '{"words":"2099-01-02 10:00 AX second fixture"}')"
@@ -4476,7 +4501,7 @@ mcp files "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},
 F2=$H/home2; mkdir -p "$F2/docs/deep" "$F2/pictures" "$F2/node_modules/x"; printf 'hello\nworld\n' > "$F2/notes.md"; printf 'invoice text here\n' > "$F2/docs/invoice.txt"; printf 'p' > "$F2/pictures/photo.png"; printf 'invoice text here too\n' > "$F2/node_modules/x/invoice.js"
 touch -t "$(date -d '-3 day' +%Y%m%d%H%M 2>/dev/null || date -v-3d +%Y%m%d%H%M)" "$F2/docs/invoice.txt"; touch -t 202001010000 "$F2/pictures/photo.png" "$F2/node_modules/x/invoice.js"
 F2R=$(realpath "$F2"); roots2=$(jq -cn --arg u "file://$F2R" '{jsonrpc: "2.0", id: "roots", result: {roots: [{uri: $u}]}}')
-mcp2() { printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots2" "$@" | HOME=$F2 XDG_DATA_HOME=$F2/.local/share SPARK_SHELL_NO_UDISKS=1 SPARK_SHELL_NO_GIO=${NO_GIO-1} SPARK_SHELL_NO_THUMB=1 SPARK_SHELL_NO_SVG=1 sh "$SH" provide files > "$H/mcp.out" 2> "$H/mcp.err"; }
+mcp2() { printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots2" "$@" | HOME=$F2 XDG_DATA_HOME=$F2/.local/share XDG_CACHE_HOME=$F2/.cache SPARK_SHELL_NO_UDISKS=1 SPARK_SHELL_NO_GIO=${NO_GIO-1} SPARK_SHELL_NO_THUMB=1 SPARK_SHELL_NO_SVG=1 sh "$SH" provide files > "$H/mcp.out" 2> "$H/mcp.err"; }
 fc2() { call "$1" "$2" "$(jq -cn --arg p "$3" --arg k "${4:-}" --arg v "${5:-}" '{path: $p} + (if $k == "" then {} else {($k): $v} end)')"; }   # fc2 ID TOOL PATH [KEY VALUE]
 mcp2 "$(rq 2 resources/read "$(jq -cn --arg u "$(uri "$F2R")" '{uri: $u}')")" "$(rq 3 resources/read "$(jq -cn --arg u "$(uri "$F2R/docs")" '{uri: $u}')")"
 ans 2 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/home2.json"; ans 3 | jq -r '.result.contents[0].text' | jq "$KX" > "$H/docs2.json"
@@ -4675,8 +4700,16 @@ page 18 | jq -e '.say == "No preview: this PDF is locked by a password. Enter op
     && page 20 | jq -e '.say == "No preview: nothing here draws this picture. Enter opens it."' >/dev/null && page 21 | jq -e '.size == [5400, 2700] and (.picture | endswith(".png"))' >/dev/null \
     && ok "provide files: a locked PDF says so; a photo turned by its orientation keeps its size the drawn way round; bytes no tool reads draw no empty square; a TIFF is a picture, its size read by mpv (#120)" \
     || bad "preview trial cases" "$(page 18) | $(page 19) | $(page 20) | $(page 21)"
-[ "$(ans 11 | jq -r '.error.message')" = 'no file at that uri' ] && [ "$(ans 12 | jq -r '.error.message')" = 'no file at that uri' ] && ans 13 | jq -e '[.result.resourceTemplates[].name] == ["folder", "preview"]' >/dev/null \
+[ "$(ans 11 | jq -r '.error.message')" = 'no file at that uri' ] && [ "$(ans 12 | jq -r '.error.message')" = 'no file at that uri' ] && ans 13 | jq -e '[.result.resourceTemplates[].name] == ["folder", "match", "preview"]' >/dev/null \
     && ok "provide files: a hidden file and a path outside the roots have no page; the template names it (#120)" || bad "preview gate" "$(ans 11) $(ans 12) $(ans 13)"
+mkdir -p "$F2/docs-169/reports"; : > "$F2/docs-169/final-report.pdf"; : > "$F2/docs-169/reports/firmware.bin"; : > "$F2/docs-169/field-notes.md"; rm -rf "$F2/.cache/spark-shell"
+mcp2 "$(rq 21 resources/read "{\"uri\":\"spark-shell://files/rows/match/$(b64u firmwre)\"}")" "$(rq 22 resources/read "{\"uri\":\"spark-shell://files/rows/match/$(b64u 'feild notes')\"}")" "$(rq 23 resources/read "{\"uri\":\"spark-shell://files/rows/match/$(b64u report)\"}")" "$(rq 24 resources/read "{\"uri\":\"spark-shell://files/preview/$(b64u "$(realpath "$F2/docs-169")")\"}")"
+ans 21 | jq -r '.result.contents[0].text' | jq -e '[.rows[] | select(.kind != null) | .text] == ["firmware.bin"] and (.rows[0].page | startswith("spark-shell://files/preview/"))' >/dev/null \
+    && ans 22 | jq -r '.result.contents[0].text' | jq -e '[.rows[] | select(.kind != null) | .text] == ["field-notes.md"]' >/dev/null \
+    && ans 23 | jq -r '.result.contents[0].text' | jq -e '[.rows[] | select(.kind != null) | .text] == ["reports", "final-report.pdf"] and (.rows[0].page != null)' >/dev/null \
+    && ans 24 | jq -r '.result.contents[0].text' | jq -e '.lines[0:2] == ["docs-169", "1 folder, 2 files"] and .lines[3] == "newest" and .facts == ["~/docs-169"]' >/dev/null \
+    && [ "$(ls -l "$F2/.cache/spark-shell/files.names" | cut -c1-10)" = '-rw-------' ] && [ "$(ls -ld "$F2/.cache/spark-shell" | cut -c1-10)" = drwx------ ] \
+    && ok "provide files: a search from Home finds the names under your home that hold the words, a letter missing or two swapped too, from a list in your cache yours alone; a folder has a page, what it holds and its newest (#169)" || bad "files match" "$(jq -c 'select(.id > 20) | .result.contents[0].text | fromjson? | [.rows[]? | .text, .lines?]' "$H/mcp.out")"
 rm -f "$F2/mpv.log"
 mcpv "$(call 2 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: 12.5}')")" "$(call 3 files_stop)" "$(fc2 4 files_play "$PVR/plan.md")" "$(call 5 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: -1}')")"
 [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'playing song.flac' ] && grep -q -- '--no-video --no-terminal --really-quiet --start=+12.5 -- ' "$F2/mpv.log" && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = stopped ] \
@@ -4905,6 +4938,8 @@ if [ "$(uname -s)" != Darwin ]; then
     mcp wifi "$(rq 3 resources/read '{"uri":"spark-shell://wifi/rows"}')" "$(call 2 wifi_forget '{"name":"nowhere"}')"
     ans 3 | jq -r '.result.contents[0].text' | jq -e '.rows[] | select(.text == "home") | .sign == "dot" and .tool == {name: "wifi_disconnect", arguments: {}}' >/dev/null \
         && ok "provide wifi rows: the network in use a dot, its tool disconnects" || bad "provide wifi rows" "$(ans 3 | head -c 400)"
+    ans 3 | jq -r '.result.contents[0].text' | jq -e '([.rows[] | select(.tool.name == "wifi_forget")] == []) and ([.rows[] | select(.id == "wifi:saved old")][0] | .tool == null and .more == [{name: "wifi_forget", arguments: {name: "old"}, said: "forget"}] and .columns == ["saved, not around"] and (.page | startswith("spark-shell://wifi/page/")))' >/dev/null \
+        && ok "provide wifi rows: forget is behind a saved network, and a saved one not around is a row of its own with forget behind it, no forget row (#169)" || bad "wifi forget behind" "$(ans 3 | head -c 1200)"
     [ "$(ans 2 | jq -r '.result.content[0].text')" = 'nowhere is not in the list now' ] && ok "provide wifi: forget names a saved network or nothing" || bad "provide forget" "$(ans 2)"
     rm -f "$H/.local/state/wpa.log"; mcp wifi "$(call 1 wifi_connect '{"name":"cafe","password":"s3cret-pass"}')"
     grep -q 'set_network 2 psk aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$H/.local/state/wpa.log" && ans 1 | jq -e '.result.content[0].text | startswith("could not connect to cafe")' >/dev/null && ! grep -rq 's3cret-pass' "$H/mcp.out" "$H/mcp.err" "$H/.local/state/spark-shell" \
@@ -5929,18 +5964,23 @@ JSON
     blk ''
     rows storage > "$H/s.json"
     jq -e '.state == "2 drives"
-        and ([.rows[] | .text] == ["BACKUP", "SanDisk Ultra 1.0 MB", "eject SanDisk Ultra", "cam/era is encrypted: udisksctl unlock -b /dev/mmcblk0p1", "eject drive", "465.7 GB, 190.7 GB free"])
+        and ([.rows[] | .text] == ["BACKUP", "SanDisk Ultra 1.0 MB", "cam/era is encrypted: udisksctl unlock -b /dev/mmcblk0p1", "465.7 GB, 190.7 GB free"])
         and (.rows[0] | .sign == "ring" and .tool == {name: "storage_mount", arguments: {name: "BACKUP"}} and .group == "SanDisk Ultra" and .columns == ["28.9 GB"])
-        and (.rows[2].tool == {name: "storage_eject", arguments: {name: "SanDisk Ultra"}}) and (.rows[3].tool == null) and (.rows[5].group == "this computer")' "$H/s.json" >/dev/null \
-        && ok "storage rows: a drive a group, its parts (Enter mounts), eject; an encrypted part says how to unlock it; never the system's disk or one it mounts itself (fstab); this computer's free space (#73)" || bad "storage rows" "$(cat "$H/s.json")"
+        and (.rows[0].more == [{name: "storage_eject", arguments: {name: "SanDisk Ultra"}, said: "eject"}]) and (.rows[1].more == .rows[0].more)
+        and (.rows[2].tool == null and .rows[2].more == [{name: "storage_eject", arguments: {name: "drive"}, said: "eject"}]) and (.rows[3].group == "this computer" and .rows[3].more == [])
+        and (.rows[0].page | startswith("spark-shell://storage/page/"))' "$H/s.json" >/dev/null \
+        && ok "storage rows: a drive a group, its parts (Enter mounts), eject behind each part (#169); an encrypted part says how to unlock it; never the system's disk or one it mounts itself (fstab); this computer's free space (#73)" || bad "storage rows" "$(cat "$H/s.json")"
     rm -f "$HOME/udisks.log"
     mcp storage "$(call 1 storage_mount '{"name":"BACKUP"}')" "$(call 2 storage_mount '{"name":"nothing"}')"
     [ "$(ans 1 | jq -c .result.structuredContent)" = '{"receipt":"BACKUP mounted at /run/media/ada/BACKUP","undo":{"name":"storage_unmount","arguments":{"name":"BACKUP"}}}' ] && [ "$(sed -n 1p "$HOME/udisks.log")" = 'mount -b /dev/sdb1 --no-user-interaction' ] \
         && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'nothing is not in the list now' ] \
         && ok "storage mount: udisksctl mounts the part by its device, with no question; undo unmounts it; a name not listed is refused" || bad "storage mount" "$(cat "$H/mcp.out") $(cat "$HOME/udisks.log" 2>&1)"
     blk /run/media/ada/BACKUP
-    [ "$(rows storage | jq -c '[.rows[0] | .sign, .tool, .columns], [.rows[1] | .text, .tool.name]')" = "$(printf '%s\n%s' '["dot",{"name":"storage_open","arguments":{"name":"BACKUP"}},["2.9 GB free"]]' '["unmount BACKUP","storage_unmount"]')" ] \
-        && ok "storage rows: a part that is mounted opens on Enter, its free space a column, and unmounts" || bad "storage mounted rows" "$(rows storage)"
+    [ "$(rows storage | jq -c '[.rows[0] | .sign, .tool, .columns, [.more[].name]], [.rows[1] | .text]')" = "$(printf '%s\n%s' '["dot",{"name":"storage_open","arguments":{"name":"BACKUP"}},["2.9 GB free"],["storage_unmount","storage_eject"]]' '["SanDisk Ultra 1.0 MB"]')" ] \
+        && ok "storage rows: a part that is mounted opens on Enter, its free space a column; unmount and eject behind it (#169)" || bad "storage mounted rows" "$(rows storage)"
+    mcp storage "$(rq 1 resources/read "{\"uri\":\"spark-shell://storage/page/$(printf 'storage:open BACKUP' | base64 | tr -d '\n=' | tr '+/' '-_')\"}")"
+    ans 1 | jq -r '.result.contents[0].text' | jq -e '.lines[0] == "BACKUP" and .bold == [0] and (.lines | index("drive        SanDisk Ultra")) and (.lines | any(startswith("mounted at   ")))' >/dev/null \
+        && ok "storage page: Space on a part shows its drive, its size, its free space, where it is mounted, its format (#169)" || bad "storage page" "$(cat "$H/mcp.out")"
     # a mounted drive is a root of the files beside your home (#112): its row in the home folder, its folder opened, a path on it held to the lines, its trash its own (.Trash-UID at its top)
     mkdir -p "$H/stick/photos"; printf 'on the stick\n' > "$H/stick/photos/trip.txt"; blk "$H/stick"
     rinit=$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{"roots":{}},"clientInfo":{"name":"test","version":"0"}}')

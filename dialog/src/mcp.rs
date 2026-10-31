@@ -68,6 +68,8 @@ pub enum Kind {
     Folder,
     /// A preview's page (#120).
     Page,
+    /// The rows a provider found for the words typed at Home: files by name, notes by what they say (#169).
+    Hits,
     /// A sound's play or stop in a preview: a key, not a turn (#120).
     Quiet,
     Subscribe,
