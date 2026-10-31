@@ -126,6 +126,8 @@ case ${1:-} in
             sh "$0" --part "$p" > "$logs/$p.log" 2>&1 &
             pids="$pids $!"
         done
+        # stopped before the parts end (CI's timeout): each part's last lines, so a hang says where it is
+        trap 'for p in $PARTS; do printf "== %s, cut short\n" "$p"; tail -n 30 "$logs/$p.log"; done; kill $pids 2>/dev/null; exit 1' TERM INT
         rc=0
         for pid in $pids; do wait "$pid" || rc=1; done
         for p in $PARTS; do printf '== %s\n' "$p"; cat "$logs/$p.log"; done

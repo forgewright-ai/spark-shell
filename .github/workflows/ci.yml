@@ -164,7 +164,7 @@ jobs:
         run: pacman -Sp --needed $(sed -n 's/^PKG_SHELL=//p; s/^PKG_CLI=//p; s/^PKG_CONSOLE=//p; s/^PKG_DESKTOP=//p; s/^PKG_SOUND=//p; s/^PKG_LOGIN=//p' distro/arch.env) >/dev/null
       - name: the suite in a throwaway HOME
         run: |
-          sh tests/shell_test.sh --parallel
+          timeout 1080 sh tests/shell_test.sh --parallel   # cut short before the job's 20 minutes, so the parts say where they are
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   void:
