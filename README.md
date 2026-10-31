@@ -709,21 +709,21 @@ words end, its arrows right after them. The preview Space opens takes
 the whole screen.
 
 The dialog opens with a short animation in the middle of its window,
-alone, and then the whole dialog is drawn at once; keys typed meanwhile
-wait for it. It waits with one while the home's rows load, and closes
-with one when Esc or the x closes it: moon, ripple, tide, embers, sun or
-flight, in your palette's own colors (`assets/transitions/`). Enter,
-Esc, an arrow or a click cuts the opening short; letters typed meanwhile
-land at the prompt and it plays on. Esc during the closing closes at
-once. A preview's page that takes a moment to load plays the opening,
-then the waiting one, until it is drawn. Settings > theme picks the
-animation from a list, each piece playing beside it, or none for no
+alone, and then the whole dialog is drawn at once; the window shows only
+once that animation is on it, so nothing comes before it; keys typed
+meanwhile wait for it. It waits with one while the home's rows load, and
+closes with one when Esc or the x closes it: moon, ripple, tide, embers,
+sun or flight, in your palette's own colors (`assets/transitions/`).
+Enter, Esc, an arrow or a click cuts the opening short; letters typed
+meanwhile land at the prompt and it plays on. Esc during the closing
+closes at once. A preview's page that takes a moment to load plays the
+opening, then the waiting one, until it is drawn. Settings > theme picks
+the animation from a list, each piece playing beside it, or none for no
 motion (`DIALOG_ANIMATION`, embers to begin with); a palette with no set
 of its own plays none.
 
 The top row says where you are (`home`, a place, a section and its
-state; a long one is cut at a word), led by a back arrow wherever there
-is a view to go back to: a click on it goes back, as Esc does. Then the
+state; a long one is cut at a word). Then the
 date and the time as your locale writes them, and a small bar while
 spark works on your words: one of the animations spark draws at its
 prompt, a light bouncing while it thinks and a bar growing and shrinking
@@ -733,9 +733,12 @@ Under it is the prompt, two rows tall:
 type a request, Enter sends it, and Shift+Enter starts a new line (Alt+Enter
 where a terminal cannot tell the two apart). A longer draft scrolls
 inside the two rows, and a paste keeps its lines and never sends. The
-row under the prompt says what Enter does to the lit row and what Esc
-does now; with nothing typed it says only what Esc does. A key is drawn
-as a key, and nothing else is.
+row under the prompt says what Esc does now, first, then what Enter
+does to the lit row, then what only some rows have; with nothing typed
+it says only what Esc does. Each key keeps its place there from one row
+or file to the next, and a click on one does what the key does. Back
+is there, never at the top. A key is drawn as a key, and nothing else
+is.
 
 The home lists its places, each with what it holds now: Apps (the
 apps by name), Files (your home folder), Workspace (the windows open
@@ -843,7 +846,9 @@ its first and its last row.
   `open in the system file manager`, for anything beyond these steps
   (permissions, archives, remote places); where no file manager is
   configured, that action and the reveal step are not offered. Space on
-  a lit file, with nothing typed, opens its preview, described below. Your
+  a lit file, with nothing typed, opens its preview, described below;
+  after words that filter the folder, the down arrow first, since Space
+  is a space while you type. Your
   home folder starts with its folders and files, then `recent`, the
   files touched in the last 7 days wherever they are, each with its
   folder's name, then `drives`, a row per drive mounted (Storage mounts
@@ -862,7 +867,10 @@ its first and its last row.
   with it. Up and down go to the previous and next file of the list,
   left and right turn the page, Enter opens the file in its app, and
   Esc, or Space with nothing typed, goes back with it lit (on a sound
-  or a video, Space plays it). A text, a
+  or a video, Space plays it). The key row starts with Back, File and
+  Open, in the same places on every file, and the file's own keys
+  follow; while the next file's page loads, the row stays as it was.
+  A text, a
   Markdown file (its headings bold), code (its lines numbered) and JSON
   (indented) show as text, 128 kB of it at most. A picture, a PDF's page
   and a video's frame are drawn as they are, and zoom and turn: with
@@ -873,7 +881,9 @@ its first and its last row.
   the preview's, never the file's. A sound shows its title, its artist
   and album, its waveform (the part played in the accent; a click plays
   from there), a spectrum that moves while it plays, its spectrogram, and
-  its rate, bits, channels and format; Space plays and pauses it, left
+  its rate, bits, channels and format (while a long sound's waveform is
+  drawn, the opening animation plays on in its place); Space plays and
+  pauses it, left
   and right go 5 seconds back and ahead, Home to its start. A video's
   Space plays it over its frame, in a
   window of its own with no border, the keys still the dialog's, full

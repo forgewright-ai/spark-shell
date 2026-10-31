@@ -665,17 +665,17 @@ fn the_hint_says_what_enter_and_esc_do_and_only_keys_are_chips() {
     typed(&mut app, "is anything open");
     assert_eq!(
         said(&app),
-        "Ask Enter   New line Shift+Enter   Clear Esc",
-        "words that name no row: Ask spark, and a new line"
+        "Clear Esc   Ask Enter   New line Shift+Enter",
+        "words that name no row: what Esc does first (#166), Ask spark, and a new line"
     );
     let chips: Vec<String> = app.hint().into_iter().filter(|(_, k)| *k).map(|(t, _)| t).collect();
-    assert_eq!(chips, vec!["Enter", "Shift+Enter", "Esc"], "a chip is a key, nothing else");
+    assert_eq!(chips, vec!["Esc", "Enter", "Shift+Enter"], "a chip is a key, nothing else");
     app.escape();
     typed(&mut app, "terminal");
-    assert_eq!(said(&app), "Open Enter   Clear Esc", "a row the words name: its own verb, no new line");
+    assert_eq!(said(&app), "Clear Esc   Open Enter", "a row the words name: its own verb, no new line");
     app.escape();
     at_row(&mut app, View::Section(0), 1);
-    assert_eq!(said(&app), "Close Enter   Back Esc", "the lit row's verb");
+    assert_eq!(said(&app), "Back Esc   Close Enter", "the lit row's verb");
     app.escape();
     assert_eq!(app.view, View::Home);
 }
@@ -1786,7 +1786,7 @@ fn left_and_right_change_a_value_in_place() {
     at_row(&mut app, View::Section(0), 0);
     let said = app.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
     assert_eq!(
-        said, "Smaller \u{2190}   Bigger \u{2192}   Back Esc",
+        said, "Back Esc   Smaller \u{2190}   Bigger \u{2192}",
         "the row under the prompt says what left and right do"
     );
     app.right();
@@ -2187,7 +2187,7 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
     assert_eq!(texts[7], "trash");
     app.sel = 7;
     let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
-    assert_eq!(hint[0], "Trash ");
+    assert_eq!(hint[3], "Trash ", "after what Esc does (#166): {:?}", hint);
     app.enter();
     assert!(matches!(app.view, View::Folder(0, _)), "back to the folder: {:?}", app.view);
     assert!(app.steps_row.is_none());
@@ -2238,7 +2238,11 @@ fn a_move_picks_its_folder_in_the_files_and_lands_the_step_here() {
     );
     assert!(items.iter().any(|it| matches!(it, Item::Folder(0))), "the folders show: {:?}", items);
     let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
-    assert!(hint[0].starts_with("A folder for notes.md") || hint[0] == "Here ", "{:?}", hint);
+    assert!(
+        hint[0].starts_with("A folder for notes.md") || hint.contains(&"Here ".to_string()),
+        "{:?}",
+        hint
+    );
     // into docs, then Enter on the first row: the step runs with that folder, and the list stays there
     app.sel = 1;
     app.enter();

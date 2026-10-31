@@ -1328,22 +1328,65 @@ fn the_opening_plays_alone_then_the_whole_dialog() {
     assert!(!drawn.alone && drawn.film.is_none(), "after it, the dialog whole");
 }
 
-/// The header's back arrow (#147): where there is a view to go back to, a click goes back, words typed or not.
+/// Back is the key row's (#165): the header starts with the place, no arrow that reads as the prompt sign
+/// below it, and the key row says Back with its key.
 #[test]
-fn the_back_arrow_goes_back_as_a_browsers_does() {
-    let mut app = manager_app();
+fn back_is_in_the_key_row_never_the_header() {
+    let app = manager_app();
     let p = palette("tokyonight-night");
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
-    assert!(
-        spark_dialog::ui::draw(&app, &p, CLOCK, &mut b).back.is_some(),
-        "a folder opened from the home: the arrow"
-    );
-    app.input = "words".into();
-    app.cursor = 5;
-    app.back();
-    assert_eq!(app.view, View::Home, "back to the home, the words let go");
+    spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
+    let head: String = (0..WIDTH).map(|x| b[(x, 0)].symbol().to_string()).collect();
+    assert!(head.starts_with("  files"), "the header starts with the place: {:?}", head);
+    let hint: String = app.hint().iter().map(|(t, _)| t.as_str()).collect();
+    assert!(hint.contains("Back Esc"), "the key row says Back: {:?}", hint);
+}
+
+/// A typed filter lights a file (#163): the key row says the down arrow leads to its preview; Down keeps the
+/// file lit and hands the keys to the list, the row says Preview with Space, and Space shows it, the words gone.
+/// Before Down, Space is a space: a second word, or a request to spark.
+#[test]
+fn a_filtered_file_shows_its_preview_after_the_down_arrow() {
+    let filtered = || {
+        let mut app = manager_app();
+        app.folder.as_mut().unwrap().2.rows[0].page = Some("spark-shell://files/preview/aW52b2ljZQ".into());
+        app.in_list = false;
+        for c in "invo".chars() {
+            app.typed(c);
+        }
+        app
+    };
+    let hint = |app: &App| app.hint().iter().map(|(t, _)| t.as_str()).collect::<String>();
+    let mut app = filtered();
+    assert!(hint(&app).contains("Preview \u{2193}"), "the way to the preview is said: {:?}", hint(&app));
+    app.typed(' ');
+    assert_eq!(app.input, "invo ", "Space before Down is a space");
+    let mut app = filtered();
+    app.down();
+    assert!(hint(&app).contains("Preview Space"), "Down: the keys are the list's: {:?}", hint(&app));
+    app.typed(' ');
+    assert_eq!(app.view, View::Preview, "Space shows the lit file");
+    assert!(app.input.is_empty(), "the filter's words let go, so Space plays and Esc goes back");
+    assert_eq!(app.preview.as_ref().unwrap().row().text, "invoice-0412.pdf");
+}
+
+/// A long sound whose waveform is still being drawn (#164): the animation that began while the page came plays
+/// on under the title, no words over it, until the picture is there.
+#[test]
+fn a_long_sound_plays_the_wait_until_its_waveform_is_there() {
+    let mut app = sound_app(false);
+    app.films = true;
+    app.preview.as_mut().unwrap().heard = None;
+    let p = palette("tokyonight-night");
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
-    assert!(spark_dialog::ui::draw(&app, &p, CLOCK, &mut b).back.is_none(), "the home: no arrow");
+    let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
+    assert!(drawn.film.is_some(), "the wait plays");
+    let all: String = (0..HEIGHT)
+        .flat_map(|y| (0..WIDTH).map(move |x| (x, y)))
+        .map(|c| b[c].symbol().to_string())
+        .collect();
+    assert!(!all.contains("drawing the waveform"), "no words over the animation");
+    assert!(all.contains("Evening sketch"), "the title stays above it");
 }
 
 /// The Space chip takes a click as the other chips do (#150).
@@ -1383,7 +1426,9 @@ fn a_sounds_keys_are_a_players() {
     assert_eq!(app.preview.as_ref().unwrap().played, 0.0, "Home: the start");
     assert_eq!(app.view, View::Preview, "and Space never left the preview");
     let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
-    assert!(hint.iter().any(|t| t == "Play ") && hint.iter().any(|t| t == "Seek "), "{:?}", hint);
+    // the shared keys first, then the player's (#166); in a 60-cell window Seek is past the edge, its keys still work
+    assert_eq!(hint[..3].concat(), "Back Esc   ", "{:?}", hint);
+    assert!(hint.iter().any(|t| t.trim_end() == "Play"), "{:?}", hint);
 }
 
 /// Connections says once what is true of all its tools, by Settings' names; a tool that stopped has a row (#146).
@@ -1460,4 +1505,21 @@ fn the_home_has_no_second_undo_once_the_toast_goes() {
         "no Undo row on the home"
     );
     assert!(app.undo.is_some(), "the undo is still at hand for typed undo");
+}
+
+/// The key row holds still (#166): Back, File and Open in the same places on a sound and on a picture, the
+/// file's own keys after them; moving to the next file keeps the row as it was until that file's page is there.
+#[test]
+fn the_previews_keys_hold_their_places_between_files() {
+    let row = |app: &App| app.hint().into_iter().map(|(t, _)| t).collect::<Vec<String>>();
+    let sound = sound_app(false);
+    let picture = json!({"title": "photo.jpg", "facts": ["4032 \u{d7} 3024", "951 KB"], "picture": "/run/pages/3-1600.png", "size": [4032, 3024]});
+    let picture = preview_app("photo.jpg", "~/pictures", picture, WIDTH, HEIGHT);
+    let (s, p) = (row(&sound), row(&picture));
+    assert_eq!(s[..8], p[..8], "Back, File and Open the same on both: {:?} {:?}", s, p);
+    assert_eq!(s[..8].concat(), "Back Esc   File \u{2191} \u{2193}   Open Enter");
+    let mut app = sound_app(false);
+    app.down();
+    assert!(app.preview.as_ref().unwrap().shown.is_none(), "the next file's page is on its way");
+    assert_eq!(row(&app), s, "the row as it was, no blink while it loads");
 }

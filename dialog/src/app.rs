@@ -636,6 +636,8 @@ pub struct App {
     /// The row a value was just changed on: the light stays on it while the list around it changes
     /// (the receipt and the Undo row come in above it), until a key moves it.
     pub keep_lit: Option<String>,
+    /// Words typed, then the down arrow or a click: the keys are the list's, so Space previews the lit file (#163).
+    pub list_keys: bool,
     /// The preview shown (View::Preview): the list it came from, the file, its page (#120).
     pub preview: Option<Preview>,
     /// A sound's play or stop on its way: its request and its call, audited when it answers.
@@ -715,6 +717,7 @@ impl App {
             palette: None,
             last_view: None,
             keep_lit: None,
+            list_keys: false,
             preview: None,
             quiet: None,
             motion: None,
@@ -1724,6 +1727,7 @@ impl App {
 
     /// The words changed: the lit row follows them; with no words, nothing is lit.
     fn follow_words(&mut self) {
+        self.list_keys = false;
         if self.mode != Mode::Normal {
             return;
         }
@@ -1865,6 +1869,7 @@ impl App {
         if self.in_list {
             if self.sel == 0 {
                 self.in_list = false; // above the first row is the prompt
+                self.list_keys = false;
             } else {
                 self.sel -= 1;
             }
@@ -1884,6 +1889,14 @@ impl App {
         }
         self.keep_lit = None;
         if self.in_list {
+            // words typed lit a file: the first Down hands the keys to the list and keeps it lit, so Space
+            // previews it (#163)
+            if !self.input.is_empty() && !self.list_keys {
+                self.list_keys = true;
+                if self.lit_has_page() {
+                    return;
+                }
+            }
             if self.sel + 1 < self.picks().len() {
                 self.sel += 1;
             }
@@ -1896,8 +1909,14 @@ impl App {
             // Down restores the unfinished draft before it can enter the list.
         } else if !self.picks().is_empty() && self.chip_focus.is_none() {
             self.in_list = true;
+            self.list_keys = true;
             self.sel = 0;
         }
+    }
+
+    /// The lit row is a file with a page of its own: Space can show it (#120).
+    fn lit_has_page(&self) -> bool {
+        self.in_list && self.picks().get(self.sel).and_then(|it| self.row_ref(it)).is_some_and(|r| r.page.is_some())
     }
 
     fn recall_prompt(&mut self, older: bool) -> bool {
@@ -1957,8 +1976,8 @@ impl App {
         if self.preview_picture_key(c) {
             return;
         }
-        // Space with nothing typed: a lit file's preview, or back from one (#120)
-        if c == ' ' && self.input.is_empty() && self.mode == Mode::Normal && self.chip_focus.is_none() && self.pending.is_none() {
+        // Space with nothing typed, or with the keys on the list: a lit file's preview, or back from one (#120, #163)
+        if c == ' ' && (self.input.is_empty() || self.list_keys) && self.mode == Mode::Normal && self.chip_focus.is_none() && self.pending.is_none() {
             if self.view == View::Preview {
                 // a sound or a video: Space plays and pauses, as a player's does (#151); else back to the list
                 if self.preview_plays() {
@@ -2050,6 +2069,7 @@ impl App {
 
     pub(crate) fn set_input(&mut self, s: String) {
         self.leave_history();
+        self.list_keys = false;
         self.cursor = s.chars().count();
         self.input = s;
     }
@@ -3750,35 +3770,13 @@ impl App {
         self.in_list = true;
         self.sel = n;
         self.keep_lit = None;
+        self.list_keys = true;
     }
 
     /// A click on this pick lights it and a second one opens it: a file's or a folder's row in Files, as a file
     /// manager's rows are (#140). Any other row is a place or an action, done on one click.
     pub fn lights_on_click(&self, n: usize) -> bool {
         matches!(&self.view, View::Folder(p, _) if self.providers[*p].label == "files") && matches!(self.picks().get(n), Some(Item::Folder(_)))
-    }
-
-    /// There is a view to go back to: the header's back arrow shows (#147).
-    pub fn goes_back(&self) -> bool {
-        !self.came_from.is_empty()
-    }
-
-    /// The back arrow: back one view, as a browser's arrow does; a question open is cancelled first, as Esc does,
-    /// and words typed do not stop it (#147).
-    pub fn back(&mut self) {
-        if self.mode != Mode::Normal {
-            return self.escape();
-        }
-        if !self.goes_back() {
-            return;
-        }
-        self.set_input(String::new());
-        self.staged = None;
-        self.chip_focus = None;
-        if let Some(pv) = self.preview.as_mut() {
-            pv.fit(); // a zoomed preview goes back too, not to its fit first
-        }
-        self.escape();
     }
 
     /// The undo at hand runs now (the toast's Undo, the home's undo row).
@@ -3944,6 +3942,22 @@ impl App {
     /// The key row, a preview's text taking `pages` at the size it is drawn now (ui.rs draws the
     /// content first, so the row offers the pages of this frame, not the last one's).
     pub fn hint_with(&self, pages: usize) -> Vec<(String, bool)> {
+        let mut v = self.hint_keys(pages);
+        // one rule for every row of keys (#166): what Esc does comes first, in the same place on every view,
+        // then Enter's, then what only some rows have; a row that starts with a sentence keeps its order
+        if self.mode == Mode::Normal && !self.preview_key() && v.get(1).is_some_and(|(_, k)| *k) {
+            if let Some(i) = v.iter().position(|(t, k)| *k && t == "Esc").filter(|i| *i >= 3) {
+                let pair: Vec<(String, bool)> = v.drain(i - 2..=i).skip(1).collect();
+                v.insert(0, ("   ".to_string(), false));
+                for (n, p) in pair.into_iter().enumerate() {
+                    v.insert(n, p);
+                }
+            }
+        }
+        v
+    }
+
+    fn hint_keys(&self, pages: usize) -> Vec<(String, bool)> {
         let key = |w: &str, k: &str| vec![(format!("{} ", w), false), (k.to_string(), true)];
         let gap = || ("   ".to_string(), false);
         let esc = |w: &str| vec![gap(), (format!("{} ", w), false), ("Esc".to_string(), true)];
@@ -4086,15 +4100,20 @@ impl App {
                 v.extend(key("New line", "Shift+Enter"));
             }
             let free = self.picking.is_none() && self.attaching.is_none();
-            // a file with a page of its own: Space shows it, nothing typed (#120, named in the row since #127)
-            if lit.as_ref().and_then(|it| self.row_ref(it)).is_some_and(|r| r.page.is_some()) && free && self.input.is_empty() {
-                v.push(gap());
-                v.extend(key("Preview", "Space"));
-            }
             // a row with steps of its own: the right arrow opens them (#112), named actions (#127)
             if lit.as_ref().and_then(|it| self.row_ref(it)).is_some_and(|r| !r.more.is_empty()) && free {
                 v.push(gap());
                 v.extend(key("Actions", "\u{2192}"));
+            }
+            // a file with a page of its own, last since only files have one (#166): Space shows it, nothing typed or
+            // the keys on the list (#120, named in the row since #127); with words typed, the down arrow first (#163)
+            if lit.as_ref().and_then(|it| self.row_ref(it)).is_some_and(|r| r.page.is_some()) && free {
+                v.push(gap());
+                if self.input.is_empty() || self.list_keys {
+                    v.extend(key("Preview", "Space"));
+                } else {
+                    v.extend(key("Preview", "\u{2193}"));
+                }
             }
             v.extend(esc(esc_word));
             if self.is_calendar() && self.input.is_empty() {
@@ -4375,6 +4394,8 @@ impl App {
         let Some(pv) = Preview::new(p, &rows.title, &rows.rows, &row.id) else {
             return false;
         };
+        // the words that filtered the folder go: in the preview Space plays and Esc goes back (#163)
+        self.set_input(String::new());
         self.preview = Some(pv);
         self.preview_pages = 1;
         self.go(View::Preview);
@@ -4617,34 +4638,31 @@ impl App {
     fn preview_hint(&self, pages: usize) -> Vec<(String, bool)> {
         let pv = self.preview.as_ref();
         let shown = pv.and_then(|pv| pv.shown.as_ref());
-        let mut keys: Vec<(&str, &str)> = vec![];
-        if self.zoomed() {
-            keys.push(("Fit", "Esc"));
+        // the shared keys first, in the same places on every file and in every state (loading, zoomed); the
+        // file's own after them, so a click never lands on another key when the file or the state changes
+        // (#166). A word that changes keeps its width: Fit is Back's, Play is Pause's.
+        let zoomed = self.zoomed();
+        // the page's own keys, or the last page's while the next file's is on its way: the row never
+        // blinks between files (#166)
+        let own = shown.map(crate::preview::Keys::of).or_else(|| pv.and_then(|pv| pv.keys));
+        let mut keys: Vec<(&str, &str)> = vec![(if zoomed { "Fit " } else { "Back" }, "Esc")];
+        if zoomed {
             keys.push(("Move", "\u{2190} \u{2191} \u{2193} \u{2192}"));
+        } else if pv.is_some_and(|pv| pv.files.len() > 1) {
+            keys.push(("File", "\u{2191} \u{2193}"));
+        }
+        keys.push(("Open", "Enter"));
+        if !zoomed && own.is_some_and(|k| k.play) {
+            // a player's keys: Space plays and pauses, the arrows seek (#151)
+            keys.push((if pv.is_some_and(|pv| pv.playing.is_some()) { "Pause" } else { "Play " }, "Space"));
+            keys.push(("Seek", "\u{2190} \u{2192}"));
+        }
+        if !zoomed && own.is_some_and(|k| if k.picture { k.pages > 1 } else { pages > 1 }) {
+            keys.push(("Page", "\u{2190} \u{2192}"));
+        }
+        if own.is_some_and(|k| k.picture) {
             keys.push(("Zoom", "+ -"));
             keys.push(("Turn", "< >"));
-        } else if shown.is_some_and(|pg| pg.play.is_some()) {
-            // a player's keys: Space plays and pauses, the arrows seek; then back, the file, open (#151)
-            keys.push((if pv.is_some_and(|pv| pv.playing.is_some()) { "Pause" } else { "Play" }, "Space"));
-            keys.push(("Seek", "\u{2190} \u{2192}"));
-            keys.push(("Back", "Esc"));
-            if pv.is_some_and(|pv| pv.files.len() > 1) {
-                keys.push(("File", "\u{2191} \u{2193}"));
-            }
-            keys.push(("Open", "Enter"));
-        } else {
-            keys.push(("Open", "Enter"));
-            keys.push(("Back", "Esc"));
-            if pv.is_some_and(|pv| pv.files.len() > 1) {
-                keys.push(("File", "\u{2191} \u{2193}"));
-            }
-            if shown.is_some_and(|pg| if pg.picture.is_some() { pg.pages > 1 } else { pages > 1 }) {
-                keys.push(("Page", "\u{2190} \u{2192}"));
-            }
-            if self.has_picture() {
-                keys.push(("Zoom", "+ -"));
-                keys.push(("Turn", "< >"));
-            }
         }
         let room = self.col_w().saturating_sub(4) as usize;
         let mut v: Vec<(String, bool)> = vec![];

@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.116
+
+What the owner's use of v0.115.1 found in the dialog's keys and its
+first moments (#163 to #167): no key moves under the pointer, and
+nothing blinks.
+
+- The key row holds still (#166). What Esc does comes first on every
+  view, then what Enter does, then what only some rows have (Actions,
+  Preview, Month). In the preview, Back, File and Open come first, in
+  the same places on every file and in every state, and the file's own
+  keys follow (Play and Seek, Page, Zoom and Turn); zoomed, Back reads
+  Fit and File reads Move in the same places. While the next file's
+  page loads, the row stays as it was. Clicking File down through a
+  folder once landed on Zoom, then on Turn, as the row changed.
+- No back arrow at the top (#165). It read as the prompt sign below it;
+  Back is in the key row, and a click takes it there.
+- A typed filter and the preview (#163). After words that filter a
+  folder, the down arrow hands the keys to the list: the lit file stays
+  lit, the row says Preview with Space, and Space shows it. Before the
+  down arrow, Space is a space, for a second word or a request to
+  spark, and the row says the down arrow leads to the preview. The
+  filter's words go when the preview opens, so Space plays a sound
+  there.
+- A long sound's preview plays the opening animation on, under its
+  title, until its waveform is drawn (#164), where it wrote "drawing
+  the waveform". The words stay only where no animation plays.
+- Nothing before the opening (#167). The animation is there to cover
+  the moment the dialog takes to start, so it is the first thing seen:
+  the dialog's window now maps unseen, and the dialog shows it once the
+  opening's first frame is on it (with no animation, its first whole
+  frame; a second and a half at most). foot had drawn the window, with
+  its cursor, before the dialog started. Super+s, spark chat, shows its
+  window at once.
+
 ## v0.115.1
 
 What only the desktop knows, written down for spark's prompt line

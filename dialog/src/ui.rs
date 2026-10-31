@@ -190,8 +190,6 @@ pub struct Drawn {
     pub columns: (u16, u16),
     /// The opening plays alone (#142): nothing else drawn, no cursor.
     pub alone: bool,
-    /// The back arrow's cells (x0, x1) on the header's row, for a click (#147).
-    pub back: Option<(u16, u16)>,
 }
 
 /// A picture main.rs draws in sixel over cells the buffer skips: where (x, y, w, h in cells), its file,
@@ -278,7 +276,6 @@ impl Drawn {
             k.1 += dx;
         }
         self.close = self.close.map(|(a, b)| (a + dx, b + dx));
-        self.back = self.back.map(|(a, b)| (a + dx, b + dx));
         if let Some(p) = self.preview.as_mut() {
             p.x += dx;
         }
@@ -362,14 +359,9 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         return drawn;
     }
 
-    // the header: the back arrow where there is somewhere to go back to (#147), the title, its state; then the march,
-    // the date and the time, close
+    // the header: the title, its state; then the march, the date and the time, close. Back is the key row's
+    // (#165): a back arrow here read as the prompt sign below it
     let mut x = 2;
-    if app.goes_back() {
-        pen.put(2, 0, LESS, pal.muted, false, false);
-        drawn.back = Some((1, 4));
-        x = 4;
-    }
     let right = if app.cfg.close { w - 3 } else { w - 1 };
     if app.cfg.close {
         pen.put(w - 3, 0, CLOSE, pal.muted, false, false);
@@ -494,9 +486,17 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         drawn.preview = preview;
     }
 
-    // the key row keeps to the content's width: where it would pass the margin (Open, Preview,
-    // Actions and Back on a file, #127) the gaps between its keys close to two cells
+    // one gap between keys on every row of a window, so a key keeps its place from one row to the next (#166):
+    // two cells in the dialog's column, three where full screen gives it room; a row still too wide for a
+    // small window closes them further (#127)
     let mut hint = app.hint_with(drawn.pages.max(1));
+    if w <= WIDTH {
+        for (t, k) in hint.iter_mut() {
+            if !*k && t.len() > 2 && t.chars().all(|c| c == ' ') {
+                t.pop();
+            }
+        }
+    }
     let span = |v: &[(String, bool)]| v.iter().map(|(t, k)| cells(t) + if *k { 2 } else { 0 }).sum::<usize>();
     while span(&hint) > w.saturating_sub(4) as usize {
         let mut closed = false;
@@ -851,11 +851,31 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     } else if pg.sound.is_some() {
         // a long sound's waveform, still being drawn: its length now, the picture the moment it is there (#124)
         facts.push(format!("{} of {}", clock_of(pv.position(std::time::Instant::now())), clock_of(pg.seconds)));
-        for (k, l) in pg.lines.iter().take(rows.saturating_sub(3) as usize).enumerate() {
+        let said = pg.lines.len().min(rows.saturating_sub(3) as usize);
+        for (k, l) in pg.lines.iter().take(said).enumerate() {
             pen.put(x0, y + k as u16, &cut_words(l, w as usize), pal.fg, pg.bold.contains(&k), false);
         }
-        let t = "drawing the waveform";
-        pen.put(x0 + w.saturating_sub(cells(t) as u16) / 2, y + rows / 2, t, pal.muted, false, false);
+        // the animation that began while the page was on its way plays on under the title, the wait looped,
+        // until the picture is there; words only where no animation plays (#164)
+        let (fy, fh) = (y + said as u16 + 1, rows.saturating_sub(said as u16 + 1));
+        if app.films && fh > 4 {
+            skip(
+                pen,
+                Picture {
+                    x: x0,
+                    y: fy,
+                    w,
+                    h: fh,
+                    file: String::new(),
+                    view: Viewport::FIT,
+                    spectrogram: false,
+                },
+            );
+            drawn.film = Some((x0, fy, w, fh, Reel::Load, pv.asked + std::time::Duration::from_millis(300)));
+        } else {
+            let t = "drawing the waveform";
+            pen.put(x0 + w.saturating_sub(cells(t) as u16) / 2, y + rows / 2, t, pal.muted, false, false);
+        }
     } else if let Some(say) = &pg.say {
         // no preview: why, in the middle of the area
         let t = cut_words(say, w as usize);

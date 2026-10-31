@@ -282,6 +282,25 @@ const DRAG_GAP: Duration = Duration::from_millis(40);
 /// pointer lets go (#148).
 const DRAG_COLORS: usize = 48;
 
+/// The dialog's window shown (#167): it mapped unseen, and its first frame is drawn now. A RUN_COMMAND on sway's
+/// own socket, no process started; a moment's wait first, so foot has put the frame on the window before it shows.
+fn reveal() {
+    let Some(sock) = std::env::var_os("SWAYSOCK") else { return };
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(25));
+        let cmd: &[u8] = b"[app_id=\"spark-dialog\"] opacity 1";
+        if let Ok(mut s) = std::os::unix::net::UnixStream::connect(sock) {
+            let mut msg = b"i3-ipc".to_vec();
+            msg.extend((cmd.len() as u32).to_ne_bytes());
+            msg.extend(0u32.to_ne_bytes());
+            msg.extend(cmd);
+            let _ = s.write_all(&msg);
+            let mut answer = [0u8; 512];
+            let _ = std::io::Read::read(&mut s, &mut answer);
+        }
+    });
+}
+
 /// The pointer foot draws over the window (OSC 22, its cursor theme's names): a hand where a click acts,
 /// the closed hand over a picture that moves and while it moves, the text cursor on the prompt (#129).
 fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) -> &'static str {
@@ -289,7 +308,6 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
     let span = |a: u16, b: u16, y: u16| row == y && col >= a && col < b;
     // where a click acts: the x, a chip, a key, the waveform (it seeks), a row of the list
     let clicks = (row == 0 && drawn.close.is_some_and(|(a, b)| span(a, b, 0)))
-        || (row == 0 && drawn.back.is_some_and(|(a, b)| span(a, b, 0)))
         || drawn.chips.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.keys.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.wave.is_some_and(on)
@@ -405,6 +423,9 @@ fn main() {
         }
     }
     let started = Instant::now();
+    // the window maps unseen (the sway rule's opacity 0) and is shown once the opening's first frame is on it:
+    // nothing comes before the animation, no cursor and no empty surface (#167)
+    let mut unseen = std::env::var_os("SPARK_DIALOG_REVEAL").is_some() && std::env::var_os("SWAYSOCK").is_some();
     let (mut drag_drawn, mut drag_owed) = (Instant::now(), false);
     // how long the last picture of a drag took to make and write: the next waits as long (#148)
     let mut drag_cost = Duration::ZERO;
@@ -507,6 +528,11 @@ fn main() {
             });
             let _ = out.write_all(b"\x1b[?2026l");
             let _ = out.flush();
+            // with no opening to wait for (none chosen, or it never came), the first whole frame shows the window
+            if unseen && !matches!(app.motion, Some((Reel::Open, _))) {
+                reveal();
+                unseen = false;
+            }
             app.preview_pages = drawn.pages.max(1);
             // the picture beside a list: drawn when it changed, its cells blanked first (the buffer skips them);
             // a picture gone is the buffer's again, which writes its cells over it
@@ -605,6 +631,10 @@ fn main() {
                         let _ = out.write_all(b"\x1b[?2026l");
                         let _ = out.flush();
                         shown_film = Some(at);
+                        if unseen {
+                            reveal();
+                            unseen = false;
+                        }
                     }
                     film_due = Some(Duration::from_millis(left.clamp(1, 1000) as u64));
                 }
@@ -720,6 +750,11 @@ fn main() {
                 let was = app.busy();
                 app.tick(Instant::now());
                 dirty |= was || app.busy();
+                // a window still unseen after a moment is shown whatever is drawn: never a dialog that cannot be seen
+                if unseen && started.elapsed() >= Duration::from_millis(1500) {
+                    reveal();
+                    unseen = false;
+                }
                 // an opening whose animation never came: the rows show (#138)
                 if films.is_none() && matches!(app.motion, Some((Reel::Open, _))) && started.elapsed() >= Duration::from_millis(1500) {
                     app.motion = None;
@@ -822,9 +857,7 @@ fn main() {
                         if !drawn.keys.iter().any(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.stop_video();
                         }
-                        if m.row == 0 && drawn.back.is_some_and(|(a, b)| m.column >= a && m.column < b) {
-                            app.back(); // the header's back arrow, as a browser's (#147)
-                        } else if m.row == 0 && drawn.close.is_some_and(|(a, b)| m.column >= a && m.column < b) {
+                        if m.row == 0 && drawn.close.is_some_and(|(a, b)| m.column >= a && m.column < b) {
                             if matches!(app.motion, Some((Reel::Close, _))) {
                                 app.quit = Some(0);
                             } else {

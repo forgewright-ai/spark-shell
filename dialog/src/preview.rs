@@ -99,6 +99,26 @@ pub struct Preview {
     pub failed: bool,
     /// Where the picture was drawn, in the terminal's pixels from the grid's corner: a video plays over it (#125).
     pub frame: Option<(u32, u32, u32, u32)>,
+    /// The keys of the page last shown: the key row keeps them while the next file's page is on its way (#166).
+    pub keys: Option<Keys>,
+}
+
+/// What a page's own keys need (#166): a player's, a picture's, and how many pages.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Keys {
+    pub play: bool,
+    pub picture: bool,
+    pub pages: usize,
+}
+
+impl Keys {
+    pub fn of(pg: &Page) -> Keys {
+        Keys {
+            play: pg.play.is_some(),
+            picture: pg.picture.is_some(),
+            pages: pg.pages,
+        }
+    }
 }
 
 impl Preview {
@@ -125,6 +145,7 @@ impl Preview {
             asked: std::time::Instant::now(),
             failed: false,
             frame: None,
+            keys: None,
         })
     }
 
@@ -158,6 +179,7 @@ impl Preview {
         }
         self.at = to as usize;
         self.page = 1;
+        self.keys = self.shown.as_ref().map(Keys::of).or(self.keys);
         self.shown = None;
         self.playing = None;
         self.played = 0.0;
