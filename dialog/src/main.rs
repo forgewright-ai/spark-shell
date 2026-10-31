@@ -425,7 +425,8 @@ fn main() {
     let started = Instant::now();
     // the window maps unseen (the sway rule's opacity 0) and is shown once the opening's first frame is on it:
     // nothing comes before the animation, no cursor and no empty surface (#167)
-    let mut unseen = std::env::var_os("SPARK_DIALOG_REVEAL").is_some() && std::env::var_os("SWAYSOCK").is_some();
+    // under sway, always: a dialog run elsewhere finds no window of that app id unseen, and nothing changes
+    let mut unseen = std::env::var_os("SWAYSOCK").is_some();
     let (mut drag_drawn, mut drag_owed) = (Instant::now(), false);
     // how long the last picture of a drag took to make and write: the next waits as long (#148)
     let mut drag_cost = Duration::ZERO;

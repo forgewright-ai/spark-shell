@@ -8072,7 +8072,7 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     else
         [ ! -t 1 ] || printf '\033[?25l'   # no cursor blinking in the window while it starts (#122): the dialog puts it back at its prompt
     fi
-    _dw=${SPARK_DIALOG_WINDOW:-}   # the dialog's own window, which maps unseen (the sway rule): the dialog shows it once its opening is drawn (#167)
+    _dwin=${SPARK_DIALOG_WINDOW:-}   # the dialog's own window maps unseen (the sway rule); the dialog shows it once its opening is drawn (#167)
     unset SPARK_DIALOG_WINDOW   # read once: a terminal a step opens from here is no dialog's window
     config_load
     [ "$OS" != Darwin ] || refuse_in dialog "the dialog is the Linux desktop's; in a terminal here, spark-shell panel"
@@ -8081,7 +8081,7 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     _first=${1:-}
     case $_first in ''|about|chat|files) ;; *) panel_section_ok "$_first" || refuse_in dialog "$_first is not a section of the dialog" ;; esac
     [ "$(panel_open_count)" -lt 2 ] || { swaymsg "[app_id=$PANEL_APP] kill" >/dev/null 2>&1 || :; return 0; }   # the key again: the dialog already open goes, this one too
-    [ "$_first" != chat ] || { [ "$_dw" != 1 ] || swaymsg "[app_id=$PANEL_APP] opacity 1" >/dev/null 2>&1 || :; panel_chat; return; }   # spark chat draws its own: its window is shown at once
+    [ "$_first" != chat ] || { [ "$_dwin" != 1 ] || swaymsg "[app_id=$PANEL_APP] opacity 1" >/dev/null 2>&1 || :; panel_chat; return; }   # spark chat draws its own: its window is shown at once
     dialog_ok || refuse_in dialog "the dialog is not installed, or not the release's -- spark-shell on"
     case $REPO in *[[:space:]]*) refuse_in dialog "the clone's path holds a space, and a provider is argv words: move it ($REPO)" ;; esac
     set --
@@ -8097,7 +8097,6 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     _sp=$(spark_bin); [ -z "$_sp" ] || set -- "$@" --spark "$_sp"
     _ta=$(dialog_transitions); [ -z "$_ta" ] || set -- "$@" --transitions "$_ta"
     FULL_ID=''; ! panel_own_window || panel_full_aside
-    [ "$_dw" != 1 ] || { SPARK_DIALOG_REVEAL=1; export SPARK_DIALOG_REVEAL; }   # the dialog shows its window at the opening's first frame (#167)
     ! desktop_wanted || case ${TERM:-} in foot*) SPARK_DIALOG_SLOTS=1; export SPARK_DIALOG_SLOTS ;; esac   # its foot.ini sets the five slots: the dialog draws in them, and a new look recolors it in place (#34)
     st=0; "$DIALOG_BIN" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?
     [ "$st" -eq 3 ] || panel_full_back   # 3: a step put a window on the screen, and the window is the receipt
