@@ -3043,6 +3043,7 @@ cmd_off() {   # cmd_off [desktop|login]
         storage_off
         power_off
         mcp_off
+        machine_off
         echo "packages stay installed -- the package manager removes them if you want"
         return 0
     fi
@@ -3066,6 +3067,7 @@ cmd_off() {   # cmd_off [desktop|login]
     storage_off
     power_off
     mcp_off
+    machine_off
     pm_detect
     console_off   # the palette, the font, the login screen and the boot, as they were
     # spark's own hook must survive the hand-back: a restored or absent
@@ -3100,6 +3102,7 @@ off_would() {   # off_would [desktop|login]
         return 0
     fi
     _mo=$(mcp_mine); [ -z "$_mo" ] || row would mcp "take$_mo off spark's MCP list"
+    ! machine_there || row would machine "remove what the desktop told spark's prompt line ($(files_home "$(machine_dir)"))"
     if [ "${1:-}" = desktop ]; then
         [ "$DESKTOP" = none ] || row would config "DESKTOP=none ($CONFIG)"
         list=$DESKTOP_RENDERED
@@ -3901,7 +3904,9 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
     [ -z "${SWAYSOCK:-}" ] || { bar_ws_watch </dev/null & watcher=$!; }   # the workspaces' glyphs
     _ts=$(theme_sum); _bp=$({ cksum < "$BAR_PALETTE"; } 2>/dev/null || :); _line=''
     storage_sig; _bseen=$_bsg
+    MACHINE_AT_FACTS=$(( $(date +%s) - MACHINE_FACTS_EVERY + 60 ))   # the machine folder's .facts a minute in: the sound and the devices are up by then (#159)
     while :; do
+        _mts=${redraw:-0}   # this pass came at once, after a click, a key or a drive
         redraw=0
         storage_notice   # a drive plugged in since the last look: one notification (#73)
         if [ -n "$_line" ] && [ "$({ cksum < "$BAR_PALETTE"; } 2>/dev/null || :)" != "$_bp" ]; then   # a new look: the line just drawn, in its colors at once (#33); the probes follow
@@ -3911,6 +3916,7 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
         [ "$(theme_sum)" = "$_ts" ] || { _ts=$(theme_sum); config_load; for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; }   # a palette changed outside a look change (spark theme): read again
         _line=$(bar_line) || break
         printf '%s\n' "$_line"
+        machine_tick "$_mts"   # what is in use now, for spark's prompt line, aside (#159)
         t=0   # 15 one-second sleeps: a signal ends the current one, and a click that fell between two is seen within 1 s
         while [ "$t" -lt 15 ] && [ "$redraw" = 0 ]; do
             sleep 1 & sleeper=$!
@@ -3974,6 +3980,272 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | due 
     which=both; case ${PLAYER:-} in rooms) which=rooms ;; windows) which=windows ;; esac
     [ "$which" = windows ] || bar_tmux "${1:-}" "$which"
     [ "$which" = rooms ] || bar_desktop "${1:-}" "$which"
+}
+
+# --- the machine folder (#159): what only the desktop knows, for spark's
+# prompt line (spark #167 reads it), by the contract the two programs
+# share. Two files in spark's machine folder. spark-shell.facts holds
+# what stays true while the machine stays as it is: the session, the
+# keys, the commands, the screens, the devices and every name a tool
+# takes, exactly as the tool takes it. It is written only when it
+# changed, since spark keeps it in the cached part of the line's prompt
+# and a change costs one cold prompt. spark-shell.now holds what is in
+# use now, and its time is its freshness. Each is 0600, written to a temp
+# file in the folder and renamed over the old one; the folder is made
+# 0700. The desktop's start writes both; the bar's loop writes .now aside
+# every 30 s (3 s after a click or a key) and looks at .facts every 5
+# minutes; off removes both. Never in either: a window's title, a
+# notification, a note's or a reminder's words, a file's contents, a
+# Wi-Fi network around that is not saved, a password, a token, an address
+# on the LAN (a wire is "up with an address").
+MACHINE_NAME='spark-shell'   # NAME.facts and NAME.now: the writer's name in the folder
+MACHINE_NOW_EVERY=30      # seconds between two .now writes from the bar's loop
+MACHINE_NOW_SOON=3        # after a click or a key (the bar drawn again at once), this soon
+MACHINE_FACTS_EVERY=300   # seconds between two looks at .facts; the first a minute after the bar starts
+MACHINE_AT_NOW=0; MACHINE_AT_FACTS=0
+machine_dir() { printf '%s\n' "${SPARK_MACHINE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/spark/machine}"; }   # SPARK_MACHINE_DIR: the whole path, for the tests and a measured run (spark reads the default alone)
+machine_live() { [ "$OS" != Darwin ] && [ -S "${SWAYSOCK:-}" ] && { [ -n "${SPARK_MACHINE_DIR:-}" ] || [ -n "$(spark_bin)" ]; }; }   # the start's and the bar's gate: a running sway's own socket, and a spark here to read the files
+machine_q() { case $1 in ''|*[!A-Za-z0-9._+-]*) printf '"%s"' "$(printf '%s' "$1" | tr -d '"')" ;; *) printf '%s' "$1" ;; esac; }   # machine_q NAME -> NAME, in quotes when it holds more than a word's characters
+machine_join() { awk -v s="${1:-, }" '{ o = o (NR > 1 ? s : "") $0 } END { if (NR) print o }'; }   # machine_join [SEP] -- the lines as one, parted by SEP (", ")
+machine_names() { while IFS= read -r _mqn; do [ -z "$_mqn" ] || { machine_q "$_mqn"; echo; }; done | machine_join; }   # a name a line -> one line, each name quoted when it must be
+machine_clean() { tr '\t' ' ' | scrub_text | awk -v max="$1" 'NF { n += length($0) + 1; if (n > max) exit; print }'; }   # machine_clean MAX -- no tab, no control character, no empty line, MAX characters at most, cut at a line's end
+machine_keys() {   # -> the key table's sentences a request asks about (desk_keys, the sway template's own), each to its first clause, as one line
+    desk_keys | awk '$1 ~ /^(Super[+]Return|Super[+]Shift[+]q|Super[+]Escape|Print|Super[+]Ctrl[+]space|Super[+]1[.][.]0)$/ || /^The (volume|brightness) / { if ($1 !~ /^Super[+]1/) sub(/(; |, and ).*/, "."); print }' | machine_join ' '   # the workspaces' second clause says where Shift sends the window
+}
+machine_cmds() {   # -> spark-shell's own commands as its help says them (usage), a line a verb: a group's alternatives in one bracket, the desktop's groups on one line (desktop lock; capture ...), its keys and idle left out (the keys are above)
+    usage | sed -n 's/^ *\(spark-shell [^ ].*\)$/\1/p' | sed 's/   *.*$//' \
+        | grep -E '^spark-shell (theme|font|layout|notes|reminders|desktop [a-z]+|bar|dialog)( |$)' | grep -vxE 'spark-shell desktop (portals|keys|idle .*)' \
+        | awk '
+            { n = split($0, w, " "); key = w[2]; s = 3; if (key == "desktop") { key = key " " w[3]; s = 4 }
+              alt = ""; for (i = s; i <= n; i++) alt = alt (alt == "" ? "" : " ") w[i]
+              if (!(key in na)) { na[key] = 0; order[++k] = key; top[key] = w[2] }
+              if (substr(alt, 1, 1) == "[" && substr(alt, length(alt)) == "]" && index(substr(alt, 2), "[") == 0) { alt = substr(alt, 2, length(alt) - 2); bare[key] = 1 }   # [list]: the verb alone, or with it
+              if (alt == "") { bare[key] = 1; next }
+              for (j = 1; j <= na[key]; j++) if (index(alt, a[key, j] " ") == 1) { a[key, j] = a[key, j] " [" substr(alt, length(a[key, j]) + 2) "]"; next }   # on|off --desktop: on|off [--desktop]
+              a[key, ++na[key]] = alt }
+            END { for (i = 1; i <= k; i++) { key = order[i]; s = ""; for (j = 1; j <= na[key]; j++) s = s (j > 1 ? "|" : "") a[key, j]
+                      if (s == "") s = key; else if (bare[key]) s = key " [" s "]"; else s = key " " s
+                      t = top[key]; if (key ~ /^desktop (time|pointer|notifications|storage)$/) t = "desktop+"
+                      if (t in line) line[t] = line[t] "; " substr(s, index(s, " ") + 1); else { line[t] = "spark-shell " s; to[++m] = t } }
+                  for (i = 1; i <= m; i++) if (to[i] != "desktop+" && to[i] != "font") print "- " line[to[i]]
+                  if ("font" in line) print "+ " line["font"]
+                  if ("desktop+" in line) print "+ " line["desktop+"] }'   # the console'"'"'s font and the desktop'"'"'s rarer groups marked: they go last
+}
+machine_bt_kind() {   # machine_bt_kind ADDRESS -> what a Bluetooth device is, from bluez's icon: speaker, headphones, headset, keyboard...; nothing when it says none
+    case $(bar_timeout bluetoothctl info "$1" 2>/dev/null | sed -n 's/^[[:space:]]*Icon: *//p' | sed -n 1p) in
+        audio-card|audio-speakers) echo speaker ;; audio-headphones) echo headphones ;; audio-headset) echo headset ;;
+        input-keyboard) echo keyboard ;; input-mouse) echo mouse ;; input-tablet) echo tablet ;; input-gaming) echo gamepad ;;
+        phone) echo phone ;; computer) echo computer ;; camera*) echo camera ;; printer) echo printer ;; multimedia-player) echo 'media player' ;;
+    esac
+}
+machine_snd_kind() {   # machine_snd_kind NAME -> what a sound device is, in a word or two: a paired Bluetooth device's kind ($TMP/machine.bt), HDMI, USB; else nothing
+    _msk=$(awk -F '\t' -v n="$1" '$1 == n { print ($2 == "" ? "Bluetooth" : "Bluetooth " $2); exit }' "$TMP/machine.bt" 2>/dev/null)
+    if [ -n "$_msk" ]; then printf '%s' "$_msk"; return 0; fi
+    case $1 in *HDMI*|*DisplayPort*) printf 'HDMI' ;; *USB*) printf 'USB' ;; esac
+}
+machine_snd_list() { snd_devices "$1" | LC_ALL=C sort -t "$TAB" -k1,1 | while IFS="$TAB" read -r _msn _msd; do _msw=$(machine_snd_kind "$_msn"); printf '%s%s\n' "$(machine_q "$_msn")" "${_msw:+ ($_msw)}"; done | machine_join; }   # machine_snd_list out|mic -> the devices by name (a device back after a while keeps its place), each with what it is
+machine_screens() {   # -> the screens, each by its port, its make and model (never the serial), its place, its turn and its mode (sway's outputs)
+    screens_json | jq -r --arg main "$(screen_main || :)" '
+        [.[] | select(.name != null)] as $all | [$all[] | select(.active)] as $on
+        | ($on | map(.rect.x // 0)) as $xs | ($on | map(.rect.y // 0)) as $ys
+        | [$all[] | ([.make, .model] | map(select(. != null and . != "" and . != "Unknown")) | join(" ")) as $mm
+            | ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")) as $id
+            | (.rect.x // 0) as $x | (.rect.y // 0) as $y
+            | [.name + (if $mm == "" then "" else " = " + $mm end)]
+              + (if (.name | test("^(eDP|LVDS|DSI)")) then ["the laptop screen"] else [] end)
+              + (if .active then
+                    (if ($on | length) < 2 then []
+                     elif ($xs | min) != ($xs | max) then [if $x == ($xs | min) then "on the left" elif $x == ($xs | max) then "on the right" else "in the middle" end]
+                     elif ($ys | min) != ($ys | max) then [if $y == ($ys | min) then "on top" elif $y == ($ys | max) then "below" else "in the middle" end]
+                     else [] end)
+                    + (if .transform == "90" or .transform == "270" then ["turned " + .transform + ", portrait"] elif .transform == "180" then ["turned 180"] elif ((.transform // "") | startswith("flipped")) then ["flipped"] else [] end)
+                    + (if (.current_mode.width // 0) > 0 then ["\(.current_mode.width)x\(.current_mode.height)"] else [] end)
+                    + (if (.scale // 1) != 1 then ["scale \(.scale)"] else [] end)
+                    + (if $main != "" and ($main == .name or $main == $id) then ["workspace 1 starts there"] else [] end)
+                 else ["off"] end)
+            | join(", ")] | join("; ")' 2>/dev/null
+}
+machine_facts() {   # -> the .facts lines: what holds while the machine stays as it is, every name exactly as its tool takes it
+    : > "$TMP/machine.bt"; _mbt=''   # the paired Bluetooth devices, NAME<tab>KIND: their own line, and what a sound device of theirs is
+    if ls -d "$BAR_SYS"/class/bluetooth/hci* >/dev/null 2>&1 && command -v bluetoothctl >/dev/null 2>&1 && bt_running; then
+        _mbt=1
+        bt_list_now | awk -F '\t' '$3 == 1' | LC_ALL=C sort -t "$TAB" -k2,2 | head -8 | while IFS="$TAB" read -r _mba _mbn _mbp _mbc; do printf '%s\t%s\n' "$_mbn" "$(machine_bt_kind "$_mba")"; done > "$TMP/machine.bt"
+    fi
+    # the session: sway's version, spark-shell's, and the Wayland tools that are here
+    _msv=$(swaymsg -t get_version 2>/dev/null | jq -r 'if (.major // null) != null then "\(.major).\(.minor)" + (if (.patch // 0) > 0 then ".\(.patch)" else "" end) else "" end' 2>/dev/null || :)
+    _mpv=$(panel_version); _mwl=''
+    if command -v grim >/dev/null 2>&1; then _mwl='screenshots grim'; ! command -v slurp >/dev/null 2>&1 || _mwl="$_mwl + slurp"; fi
+    if command -v wl-copy >/dev/null 2>&1; then _mwl="${_mwl:+$_mwl, }clipboard wl-copy"; ! command -v wl-paste >/dev/null 2>&1 || _mwl="$_mwl and wl-paste"; fi
+    ! command -v notify-send >/dev/null 2>&1 || _mwl="${_mwl:+$_mwl, }notifications notify-send"
+    printf -- "- Session: sway%s on Wayland (no X11: X11 tools do not work here), set up by spark-shell%s; %s.\n" "${_msv:+ $_msv}" "${_mpv:+ v$_mpv}" "${_mwl:+$_mwl, }swaymsg"
+    _mkd=$(desk_keys | awk '/ opens the dialog: / { print $1; exit }'); _mkc=$(desk_keys | awk '/ opens the dialog in spark chat/ { print $1; exit }')
+    printf -- '- spark-shell is this desktop: the bar at the top; the dialog%s is the launcher and the settings%s.\n' "${_mkd:+ ($_mkd)}" "${_mkc:+, $_mkc spark chat in it}"
+    _msc=$(machine_screens); [ -z "$_msc" ] || printf -- '- Screens: %s.\n' "$_msc"
+    echo '- Workspaces: the bar names each N:GLYPH; swaymsg workspace number N goes to one.'
+    if [ -n "${SND:-}" ]; then printf -- '- Sound outputs (out_use name): %s. Inputs (mic_use name): %s.\n' "$(machine_snd_list out | grep . || echo none)" "$(machine_snd_list mic | grep . || echo none)"
+    else echo '- Sound: no audio system answers.'; fi
+    if [ -n "$_mbt" ]; then
+        if [ -s "$TMP/machine.bt" ]; then printf -- '- Bluetooth, paired (bt_connect name): %s.\n' "$(while IFS="$TAB" read -r _mbn _mbk; do printf '%s%s\n' "$(machine_q "$_mbn")" "${_mbk:+ ($_mbk)}"; done < "$TMP/machine.bt" | machine_join)"
+        else echo '- Bluetooth: nothing paired.'; fi
+    fi
+    # the network: the wire and the radio by name, the tool that runs the radio, its saved networks (never one around)
+    _mnl=$(bar_wired | sed 's/^/wired /' | machine_join)
+    _mwi=$(wifi_if)
+    if [ -n "$_mwi" ]; then
+        _mwt=$(wifi_tool)
+        if [ -n "$_mwt" ]; then _mnl="${_mnl:+$_mnl; }Wi-Fi $_mwi through $_mwt, saved networks (wifi_connect name): $(wifi_known | cut -f2 | head -8 | machine_names | grep . || echo none)"
+        else _mnl="${_mnl:+$_mnl; }Wi-Fi $_mwi, with no tool that answers for it (nmcli, iwctl or wpa_cli)"; fi
+    fi
+    [ -z "$_mnl" ] || printf -- '- Network: %s.\n' "$_mnl"
+    if [ -n "$KEYBOARD" ]; then
+        kb_names | cut -f2- | tr '\t' '\n' > "$TMP/machine.kb"   # sway's long names, in KEYBOARD's order
+        _mkl=$(_mki=0; for _mkx in $KEYBOARD; do _mki=$((_mki + 1)); _mkn=$(sed -n "${_mki}p" "$TMP/machine.kb"); printf '%s%s\n' "$_mkx" "${_mkn:+ ($_mkn)}"; done | machine_join)
+        _mkl="Keyboard layouts (keyboard_use name): $_mkl"
+    else _mkl="Keyboard: sway's own layout (spark-shell desktop keyboard us br sets some)"; fi
+    printf -- '- %s; caps key %s, repeat %s ms, %s a second. Pointer: tap to click %s, natural scroll %s, speed %s.\n' "$_mkl" "$KEY_CAPS" "$KEY_REPEAT_DELAY" "$KEY_REPEAT_RATE" "$POINTER_TAP" "$POINTER_SCROLL" "$POINTER_SPEED"
+    # names: the saved layouts, the notes by file (never a word of one), the palettes and themes, the drawings, the savers, the printers
+    _mly=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | head -8 | machine_names)
+    _mnt=''; _mnn=0
+    if [ -d "$NOTES_DIR" ]; then
+        ls -t -- "$NOTES_DIR"/*.md 2>/dev/null | while IFS= read -r _mnf; do [ ! -f "$_mnf" ] || [ -L "$_mnf" ] || printf '%s\n' "${_mnf##*/}"; done > "$TMP/machine.notes"
+        _mnn=$(grep -c . "$TMP/machine.notes" || :); _mnt=$(head -8 "$TMP/machine.notes" | LC_ALL=C sort | machine_names)   # the newest eight, by name: a note edited is no new fact
+        [ "${_mnn:-0}" -le 8 ] || _mnt="$_mnt and $((_mnn - 8)) more"
+    fi
+    printf -- '- Saved layouts: %s. Notes in ~/notes, by file: %s.\n' "${_mly:-none}" "${_mnt:-none}"
+    palette_names > "$TMP/machine.pal"; palette_darks > "$TMP/machine.dark"
+    _mst=$(theme_saved_names | head -8 | machine_names)
+    printf -- "- Palettes, dark: %s; light: %s; none is the terminal's own colors.%s\n" \
+        "$(grep -xFf "$TMP/machine.dark" "$TMP/machine.pal" | machine_join)" "$(grep -vxFf "$TMP/machine.dark" "$TMP/machine.pal" | machine_join)" "${_mst:+ Saved themes: $_mst.}"
+    _msa=clock; ! saver_can || _msa="clock $SAVER_NAMES"
+    printf -- "- Wallpapers: %s, or default. Savers: %s.\n" "$(wall_shipped_names | machine_join)" "$(printf '%s\n' $_msa | machine_join)"
+    if command -v lpstat >/dev/null 2>&1 && printer_status_now > "$TMP/machine.pr" 2>/dev/null; then
+        _mpr=$(jq -r '.default as $d | [.queues[]? | .name + (if .name == $d then " (the default)" else "" end)] | join(", ")' "$TMP/machine.pr" 2>/dev/null || :)
+        printf -- '- Printers: %s.\n' "${_mpr:-none}"
+    fi
+    # how to read the state: a dialog section through spark when spark-shell's providers are on its list, then the tools here
+    _mrs=''; [ -z "$(mcp_mine)" ] || _mrs="spark mcp read SERVER spark-shell://SERVER/rows; "
+    _mrt='swaymsg -t get_outputs|get_workspaces|get_tree|get_inputs'
+    case ${SND:-} in wpctl) _mrt="$_mrt, wpctl status" ;; pactl) _mrt="$_mrt, pactl list sinks" ;; alsa) _mrt="$_mrt, amixer" ;; esac
+    [ -z "$_mbt" ] || _mrt="$_mrt, bluetoothctl show"
+    printf -- '- Reading state: %s%s.\n' "$_mrs" "$_mrt"
+    printf -- '- Keys: %s\n' "$(machine_keys)"
+    machine_cmds | sed 's/^+ /- /'   # last: past the reader's 3,000 characters the end goes first, and each of them has its tool too
+}
+machine_awake() { screens_json | jq -e '[.[] | select(.active) | if .power != null then .power elif .dpms != null then .dpms else true end] | length == 0 or any' >/dev/null 2>&1; }   # a screen on (none told: on); the lock turns them off
+machine_now() {   # -> the .now lines: what is open, focused, in use, connected and muted now
+    swaymsg -t get_tree 2>/dev/null | jq -r --arg me "$PANEL_APP" '
+        [.nodes[]? | select(.type == "output") | .nodes[]? | select(.type == "workspace") | . as $w
+         | .. | objects | select(.pid? != null and (.type? == "con" or .type? == "floating_con") and (.app_id // "") != $me)
+         | "\(.id) \(.app_id // .window_properties.class // "unknown")" + (if $w.name == "__i3_scratch" then " in the scratchpad" else " on \($w.num)" end) + (if .focused then ", focused" else "" end)]
+        | if length == 0 then "- No window is open." else "- Windows open (sway con id, app_id, workspace): " + join("; ") + "." end' 2>/dev/null   # never a title
+    swaymsg -t get_workspaces 2>/dev/null | jq -r '[.[] | select(.name != "__i3_scratch") | .name + " on " + .output + (if .focused then " (focused)" elif .visible then " (shown)" else "" end)]
+        | if length == 0 then empty else "- Workspaces: " + join(", ") + "." end' 2>/dev/null
+    screens_json | jq -r '[.[] | select(.active and (if .power != null then .power elif .dpms != null then .dpms else true end) == false) | .name] | if length == 0 then empty else "- Screens off now (the lock turns them off): " + join(", ") + "." end' 2>/dev/null
+    if [ -n "${SND:-}" ]; then
+        snd_out > "$TMP/machine.out"; snd_mic > "$TMP/machine.mic"
+        if [ -s "$TMP/machine.out" ]; then
+            _mol=$(sed -n 2p "$TMP/machine.out"); _mos="output $(machine_q "$(sed -n 1p "$TMP/machine.out")") in use"
+            [ "$_mol" = - ] || [ -z "$_mol" ] || _mos="$_mos, volume $_mol%"
+            if [ "$(sed -n 3p "$TMP/machine.out")" = 1 ]; then _mos="$_mos, muted"; else _mos="$_mos, not muted"; fi
+        else _mos='no output'; fi
+        if [ -s "$TMP/machine.mic" ]; then
+            _mil=$(sed -n 4p "$TMP/machine.mic"); _mos="$_mos; microphone $(machine_q "$(sed -n 1p "$TMP/machine.mic")") connected"
+            if [ "$(sed -n 3p "$TMP/machine.mic")" = 1 ]; then _mos="$_mos, muted"; else _mos="$_mos, not muted"; fi
+            [ "$_mil" = - ] || [ -z "$_mil" ] || _mos="$_mos, level $_mil%"
+            [ "$(sed -n 2p "$TMP/machine.mic")" != 1 ] || _mos="$_mos, recording now"
+        else _mos="$_mos; no microphone connected"; fi
+        printf -- '- Sound: %s.\n' "$_mos"
+    fi
+    if ls -d "$BAR_SYS"/class/bluetooth/hci* >/dev/null 2>&1 && command -v bluetoothctl >/dev/null 2>&1 && bt_running; then
+        if ! bt_powered; then echo '- Bluetooth off.'
+        else
+            _mbc=$(bt_list_now | awk -F '\t' '$4 == 1 { print $2 }' | machine_names)
+            if [ -n "$_mbc" ]; then printf -- '- Bluetooth on; connected now: %s.\n' "$_mbc"; else echo '- Bluetooth on, nothing connected.'; fi
+        fi
+    fi
+    _mnl=''   # the wire up or down (never its address), the radio connected to a saved network, or not
+    for _mni in $(bar_wired); do
+        if [ "$(cat "$BAR_SYS/class/net/$_mni/carrier" 2>/dev/null)" != 1 ]; then _mns=down
+        elif [ -n "$(bar_addr "$_mni")" ]; then _mns='up with an address'; else _mns='up, no address yet'; fi
+        _mnl="${_mnl:+$_mnl; }wired $_mni $_mns"
+    done
+    _mwi=$(wifi_if)
+    if [ -n "$_mwi" ]; then
+        _mwc=$(wifi_connected)
+        if [ -n "$_mwc" ]; then
+            _mws="connected to $(machine_q "$_mwc")"; _mwp=$(bar_wifi_pct)
+            [ -z "$_mwp" ] || _mws="$_mws, signal ${_mwp%% *}%"
+            case ${_mwp#* } in ''|"$_mwp") ;; *) _mws="$_mws, with an address" ;; esac
+        elif [ "$(cat "$BAR_SYS/class/net/$_mwi/operstate" 2>/dev/null)" = up ]; then _mws='up, not connected'
+        else _mws=down; fi
+        _mnl="${_mnl:+$_mnl; }Wi-Fi $_mwi $_mws"
+    fi
+    [ -z "$_mnl" ] || printf -- '- Network: %s.\n' "$_mnl"
+    _mka=$(kb_active); [ -n "$_mka" ] || _mka=${KEYBOARD%% *}; [ -n "$_mka" ] || _mka="sway's own"
+    case ${THEME:-none} in none) _mpa="none (the terminal's own colors)" ;; *) _mpa=$THEME ;; esac
+    _mwa=$(wall_name); [ -n "$_mwa" ] || _mwa='a picture of yours'
+    _mla=''; [ -n "${MACHINE_START:-}" ] || _mla=$(light_get)   # at the start the bar's loop brings it: a screen's DDC/CI is asked one at a time
+    _mss=''; [ "$DISPLAY_SAVER" = clock ] || _mss=" (saver $DISPLAY_SAVER)"
+    printf -- "- Keyboard layout in use: %s. Palette %s, wallpaper %s.%s Idle screen %s%s, lock %s.\n" "$_mka" "$_mpa" "$_mwa" "${_mla:+ Brightness $_mla%.}" "$(idle_words "$DISPLAY_IDLE")" "$_mss" "$(idle_words "$DISPLAY_LOCK")"
+    if command -v lsblk >/dev/null 2>&1; then
+        _mdr=$(storage_drives | cut -f3 | machine_names)
+        if [ -n "$_mdr" ]; then printf -- '- Drives plugged in: %s.\n' "$_mdr"; else echo '- No drive is plugged in.'; fi
+    fi
+    if notify_up; then if notify_dnd; then _mdd=on; else _mdd=off; fi
+    elif [ "$DO_NOT_DISTURB" = yes ]; then _mdd=on; else _mdd=off; fi
+    if [ "$DESKTOP_BAR" = yes ]; then _mbs=shown; else _mbs=hidden; fi
+    printf -- '- The bar is %s; do not disturb is %s.\n' "$_mbs" "$_mdd"
+}
+machine_put() {   # machine_put now|facts FILE -- FILE as NAME.KIND in the folder (_md): a temp file there, 0600, renamed over the old one; the same .facts is left as it is, the same .now too until it is 3 minutes old
+    _mpf=$_md/$MACHINE_NAME.$1
+    [ -s "$2" ] || return 0
+    if [ -f "$_mpf" ] && [ ! -L "$_mpf" ] && cmp -s "$2" "$_mpf"; then
+        [ "$1" = now ] && [ -n "$(find "$_mpf" -mmin +3 2>/dev/null)" ] || return 0
+    fi
+    _mpt=$(mktemp "$_md/.$MACHINE_NAME.$1.XXXXXX") || return 0
+    if cat "$2" > "$_mpt" && chmod 600 "$_mpt" && mv -f "$_mpt" "$_mpf"; then return 0; fi
+    rm -f "$_mpt"
+}
+machine_write() (   # machine_write now|all|tick -- its own shell: .now, and with all .facts too (tick: while a screen is on); only on spark-shell's desktop, inside it, with a spark to read them; a second writer while one runs gives way
+    config_load
+    [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && grep -qs 'rendered by spark-shell' "$HOME/.config/sway/config" && desk_in_sway || exit 0
+    [ -n "${SPARK_MACHINE_DIR:-}" ] || [ -n "$(spark_bin)" ] || exit 0
+    _md=$(machine_dir)
+    [ -d "$_md" ] || (umask 077 && mkdir -p "$_md") || exit 0
+    [ -d "$_md" ] && [ ! -L "$_md" ] || exit 0
+    _mlk=$_md/.$MACHINE_NAME.lock   # a writer's mark; one left by a writer that died is taken after 2 minutes
+    mkdir "$_mlk" 2>/dev/null || { [ -n "$(find "$_mlk" -prune -mmin +2 2>/dev/null)" ] && rmdir "$_mlk" 2>/dev/null && mkdir "$_mlk" 2>/dev/null; } || exit 0
+    TMP=$(mktemp -d) || { rmdir "$_mlk"; exit 0; }
+    trap 'rm -rf "$TMP"; rmdir "$_mlk" 2>/dev/null || :' EXIT
+    trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 141' PIPE
+    SND=$(snd_tool)
+    { machine_now || :; } | machine_clean 1200 > "$TMP/now"
+    machine_put now "$TMP/now"
+    case ${1:-} in all) ;; tick) machine_awake || exit 0 ;; *) exit 0 ;; esac   # tick: the screens asleep, .facts keeps what it said while they were on (a screen's sound and its mode come back with it)
+    { machine_facts || :; } | machine_clean 3000 > "$TMP/facts"
+    machine_put facts "$TMP/facts"
+)
+machine_tick() {   # machine_tick SIGNALED -- the bar's pass: .now aside every MACHINE_NOW_EVERY seconds (MACHINE_NOW_SOON after a click or a key), .facts with it every MACHINE_FACTS_EVERY; nothing waits for it
+    machine_live || return 0
+    _mtk=$(date +%s)
+    [ $((_mtk - MACHINE_AT_NOW)) -ge "$MACHINE_NOW_EVERY" ] || { [ "$1" = 1 ] && [ $((_mtk - MACHINE_AT_NOW)) -ge "$MACHINE_NOW_SOON" ]; } || return 0
+    MACHINE_AT_NOW=$_mtk; _mtw=now
+    [ $((_mtk - MACHINE_AT_FACTS)) -lt "$MACHINE_FACTS_EVERY" ] || { MACHINE_AT_FACTS=$_mtk; _mtw=tick; }
+    machine_write "$_mtw" </dev/null >/dev/null 2>&1 &
+}
+machine_start() (   # at the desktop's start, aside: both files (no slow probe: the bar's loop brings the brightness), then spark mcp once inside the session when spark-shell's providers are on its list, so what it lists is this session's (its screens)
+    MACHINE_START=1
+    machine_write all
+    [ -n "$(mcp_mine)" ] || exit 0
+    _msp=$(spark_bin); [ -n "$_msp" ] || exit 0
+    "$_msp" mcp </dev/null >/dev/null 2>&1 || :
+)
+machine_rm() { _mrd=$(machine_dir); for _mrk in "$@"; do rm -f "$_mrd/$MACHINE_NAME.$_mrk" "$_mrd/.$MACHINE_NAME.$_mrk".*; done; }   # machine_rm KIND... -- those files gone, and a temp file of theirs a writer left
+machine_there() { _mtd=$(machine_dir); for _mtf in facts now; do [ ! -e "$_mtd/$MACHINE_NAME.$_mtf" ] && [ ! -L "$_mtd/$MACHINE_NAME.$_mtf" ] || return 0; done; return 1; }   # one of the two files is there
+machine_off() {   # off: the two files gone, a writer's mark with them, said once when there were any
+    _mof=''; ! machine_there || _mof=1
+    machine_rm facts now; rmdir "$(machine_dir)/.$MACHINE_NAME.lock" 2>/dev/null || :
+    [ -z "$_mof" ] || row ok machine "what the desktop told spark's prompt line is gone ($(files_home "$(machine_dir)"))"
 }
 
 # ================================================================ the panel
@@ -9366,6 +9638,8 @@ desk_pending() {   # at the desktop's start: do not disturb as it was left (#71)
     ( _dw=$(dialog_transitions); cat "$REPO/spark-shell" "$DIALOG_BIN" ${_dw:+"$_dw"/*.gif} ) </dev/null >/dev/null 2>&1 &
     # the layouts that a command's words once made (#145): out of the history, their kept files with them
     _kh=$(kept_hist layout); [ ! -f "$_kh" ] || { awk -F '\t' '$2 !~ /^(layout-(delete|rename|save|back|help)(-|$)|-|help$)/' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; kept_prune layout; }
+    # what only the desktop knows, for spark's prompt line, and spark mcp once inside the session (#159)
+    if machine_live; then machine_start </dev/null >/dev/null 2>&1 & fi
     [ -f "$DESK_PENDING" ] || return 0
     need=$(head -1 "$DESK_PENDING"); rm -f "$DESK_PENDING"
     [ -z "$need" ] || desk_need "$need"
@@ -9431,6 +9705,7 @@ cmd_desktop() {
             if [ "$#" = 0 ]; then panel_title pointer; else [ "$#" = 2 ] || refuse "pointer takes tap on|off, scroll on|off or speed N"; input_setting pointer "$1" "$2"; fi
             return ;;
         portals) desk_portals; return ;;
+        --machine) case ${2:-all} in all|now|tick) machine_write "${2:-all}"; return ;; *) refuse "--machine takes all, now or tick" ;; esac ;;   # the machine folder's files now, inside the desktop (#159): the tests' door, as the start (all) and the bar (now, tick) write them aside
         screen|screens) shift; desk_screen "$@"; return ;;
         capture) shift; desk_capture "$@"; return ;;
         notifications) shift; desk_notifications "$@"; return ;;
@@ -9944,6 +10219,7 @@ desk_start() {   # desk_start PENDING
     # shellcheck disable=SC2086   # the -u words and the bus, split on purpose: sway and all it starts read the file, never a key from this login
     XDG_CURRENT_DESKTOP=sway PATH=$HOME/.local/bin:$PATH env $CONFIG_UNSET $_bus sway 2>"$log_dir/sway.log" || st=$?
     sound_stop
+    machine_rm now   # the session is over: nothing is open or in use any more (#159)
     [ "${TERM:-}" != linux ] || printf '\033[?25h'
     exit "$st"
 }

@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.114.2
+
+What only the desktop knows, written down for spark's prompt line
+(#159, with spark's #167).
+
+- Two files in spark's machine folder, `~/.local/state/spark/machine/`
+  (#159). `spark-shell.facts` holds what stays true: sway's version and
+  the Wayland tools here, the screens by port with their make, model,
+  place and turn, the sound devices and the paired Bluetooth ones with
+  what each is, the wire, the radio and its saved networks, the
+  keyboard's layouts, the saved layouts, the notes by file, the
+  palettes, wallpapers, savers and printers, each by the exact name its
+  tool takes, then the keys and spark-shell's own commands, read from
+  its help so they cannot drift. `spark-shell.now` holds what is in use:
+  the windows by sway's id and app, the workspaces, the sound, who is
+  connected, the network, the layout, the look, the brightness, the
+  minutes, the drives and do not disturb.
+- The desktop's start writes both and runs `spark mcp` once inside the
+  session (#159). The bar writes `.now` aside every 30 seconds, 3 after a
+  click or a key, and looks at `.facts` every 5 minutes; `.facts` is
+  written only when it changed, and not while the screens sleep. Each
+  file is 0600, through a temp file renamed in a folder made 0700. When
+  the desktop ends `.now` goes; `off` and `off desktop` remove both.
+- Never in either (#159): a window's title, a notification, a note's or
+  a reminder's words, a file's contents, a Wi-Fi network around that is
+  not saved, a password, an address on the LAN (a wire is "up with an
+  address"), a screen's serial, a device's address.
+
 ## v0.114.1
 
 What the owner's first evening on v0.114 found, on his tall screen

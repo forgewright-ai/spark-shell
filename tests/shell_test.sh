@@ -5981,6 +5981,172 @@ EOF
     rm -rf "$H/root/etc/runit"
 fi
 
+# --- the machine folder (#159): what only the desktop knows, for spark's prompt line ---
+# spark-shell.facts and spark-shell.now in spark's machine folder, against stand-ins for
+# sway, wpctl, bluetoothctl, wpa_cli, makoctl and lsblk that also hold what must never be
+# written there: a window's title, a network around that is not saved, a note's words, a
+# reminder's, a notification's, the wire's address, a screen's serial, a device's address.
+# The Linux half is guarded by uname like 25.
+fresh
+desktop_stubs
+mkdir -p "$HOME/.config/spark-shell" "$HOME/.config/sway" "$HOME/.config/foot"
+printf 'DESKTOP=sway\nTHEME=nord\nKEYBOARD=us br\nDISPLAY_SAVER=starfield\n' > "$HOME/.config/spark-shell/config"
+printf '# rendered by spark-shell from templates/.config/sway/config\n' > "$HOME/.config/sway/config"; : > "$HOME/.config/foot/foot.ini"
+M=$H/machine; mf=$M/spark-shell.facts; mn=$M/spark-shell.now
+inode() { ls -i "$1" 2>/dev/null | awk '{ print $1 }'; }
+if [ "$(uname -s)" = Darwin ]; then
+    rc=0; out=$(SPARK_MACHINE_DIR=$M SWAYSOCK=$H/sock sh "$SH" desktop --machine 2>&1) || rc=$?
+    [ "$rc" = 0 ] && [ ! -e "$M" ] && ok "macOS: the machine folder is the desktop's (#159), and the Mac has its own: nothing written" || bad "macOS machine" "rc=$rc $out $(ls -la "$M" 2>&1)"
+else
+    bar_fixture   # a wire up (eth0 at 192.0.2.10), wlan0 through wpa_cli (home saved and in use, old saved, cafe around), a controller, a battery
+    cat > "$H/.local/bin/swaymsg" <<'STUB'
+#!/bin/sh
+case "$*" in
+    '-t get_version') echo '{"human_readable":"1.12","major":1,"minor":12,"patch":0}' ;;
+    '-t get_outputs') if [ -e "$HOME/asleep" ]; then   # the lock turned them off: sway says power false, and a 0x0 mode for one
+            echo '[{"name":"DP-3","active":true,"power":false,"make":"Fakemake","model":"Portable 16","serial":"SN0001","transform":"270","scale":1.0,"rect":{"x":-1920,"y":0,"width":1200,"height":1920},"current_mode":{"width":1920,"height":1200,"refresh":60000}},{"name":"HDMI-A-1","active":true,"power":false,"make":"Othermake","model":"Desk 24","serial":"SN0002","transform":"normal","scale":1.0,"rect":{"x":-720,"y":0,"width":0,"height":0},"current_mode":{"width":0,"height":0,"refresh":0}}]'
+        else echo '[{"name":"DP-3","active":true,"power":true,"make":"Fakemake","model":"Portable 16","serial":"SN0001","transform":"270","scale":1.0,"rect":{"x":0,"y":0,"width":1200,"height":1920},"current_mode":{"width":1920,"height":1200,"refresh":60000}},{"name":"HDMI-A-1","active":true,"make":"Othermake","model":"Desk 24","serial":"SN0002","transform":"normal","scale":1.0,"rect":{"x":1200,"y":0,"width":1920,"height":1080},"current_mode":{"width":1920,"height":1080,"refresh":60000}}]'; fi ;;
+    '-t get_workspaces') echo '[{"num":1,"name":"1:X","output":"DP-3","focused":true,"visible":true},{"num":2,"name":"2:Y writing","output":"HDMI-A-1","focused":false,"visible":true}]' ;;
+    '-t get_tree') echo '{"type":"root","nodes":[{"type":"output","name":"DP-3","nodes":[{"type":"workspace","num":1,"name":"1:X","nodes":[{"type":"con","id":42,"pid":100,"app_id":"firefox","name":"Bank statement - SECRET TITLE","focused":true,"nodes":[]},{"type":"con","id":7,"pid":101,"app_id":"foot","name":"ada: ~/hidden-dir","focused":false,"nodes":[]}],"floating_nodes":[{"type":"floating_con","id":9,"pid":102,"app_id":"spark-dialog","name":"dialog","focused":false}]}]},{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","num":2,"name":"2:Y writing","nodes":[{"type":"con","id":12,"pid":103,"app_id":"mpv","name":"secret-movie.mkv","focused":false,"nodes":[]}]}]}]}' ;;
+    '-t get_inputs') echo '[{"type":"keyboard","xkb_active_layout_index":1,"xkb_layout_names":["English (US)","Portuguese (Brazil)"]}]' ;;
+esac
+STUB
+    cat > "$H/.local/bin/wpctl" <<'STUB'
+#!/bin/sh
+case "$*" in
+    status) printf 'Audio\n |- Devices:\n |      45. Built-in Audio [alsa]\n |\n |- Sinks:\n |  *   52. Fake Speaker [vol: 0.38]\n |      60. HD-Audio Generic Digital Stereo (HDMI 2) [Desk 24] [vol: 1.00]\n |\n |- Sources:\n |\n' ;;
+    'get-volume @DEFAULT_AUDIO_SINK@') echo 'Volume: 0.38' ;;
+    *) exit 1 ;;
+esac
+STUB
+    cat > "$H/.local/bin/bluetoothctl" <<'STUB'
+#!/bin/sh
+case "$*" in
+    show) printf 'Controller 00:11:22:33:44:55 (public)\n\tPowered: yes\n' ;;
+    'devices Paired') printf 'Device 00:25:D1:4A:C2:AA Major V\nDevice 00:25:D1:4A:C2:BB Fake Speaker\n' ;;
+    'devices Connected') echo 'Device 00:25:D1:4A:C2:BB Fake Speaker' ;;
+    devices) printf 'Device 00:25:D1:4A:C2:AA Major V\nDevice 00:25:D1:4A:C2:BB Fake Speaker\nDevice 11:22:33:44:55:66 Buds Nearby\n' ;;
+    'info 00:25:D1:4A:C2:AA') printf 'Device 00:25:D1:4A:C2:AA (public)\n\tName: Major V\n\tIcon: audio-headphones\n' ;;
+    'info 00:25:D1:4A:C2:BB') printf 'Device 00:25:D1:4A:C2:BB (public)\n\tName: Fake Speaker\n\tIcon: audio-card\n' ;;
+esac
+STUB
+    printf '#!/bin/sh\ncase $1 in mode) echo default ;; list|history) echo "1 app SECRET NOTICE TEXT" ;; esac\n' > "$H/.local/bin/makoctl"
+    printf '#!/bin/sh\necho %s\n' "'{\"blockdevices\":[{\"name\":\"sdb\",\"path\":\"/dev/sdb\",\"type\":\"disk\",\"rm\":true,\"hotplug\":true,\"size\":16000000000,\"model\":\"Fakestick\",\"vendor\":\"Acme\",\"label\":null,\"fstype\":null,\"mountpoint\":null}]}'" > "$H/.local/bin/lsblk"
+    for t in grim wl-copy notify-send; do printf '#!/bin/sh\n:\n' > "$H/.local/bin/$t"; done
+    chmod +x "$H/.local/bin/swaymsg" "$H/.local/bin/wpctl" "$H/.local/bin/bluetoothctl" "$H/.local/bin/makoctl" "$H/.local/bin/lsblk" "$H/.local/bin/grim" "$H/.local/bin/wl-copy" "$H/.local/bin/notify-send"
+    mkdir -p "$HOME/notes" "$HOME/calendar" "$HOME/.config/spark-shell/layouts"
+    printf '# my hidden words\nmore of them\n' > "$HOME/notes/alpha.md"; printf 'x\n' > "$HOME/notes/beta.md"
+    printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:r1\r\nDTSTART:20991231T090000\r\nSUMMARY:call the dentist\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' > "$HOME/calendar/r1.ics"
+    printf '{"words": "write", "main": {"app": "micro"}}\n' > "$HOME/.config/spark-shell/layouts/writing"
+    printf 'MCP_SERVER_OUT="%s/spark-shell provide out"\n' "$REPO" > "$HOME/.config/spark/mcp.env"
+    MW() { SPARK_MACHINE_DIR=$M SWAYSOCK=$H/sock sh "$SH" desktop --machine 2>&1; }   # the writer, now
+    rc=0; out=$(MW) || rc=$?
+    [ "$rc" = 0 ] && [ -z "$out" ] && [ "$(ls -ld "$M" | cut -c1-10)" = drwx------ ] && [ "$(ls -l "$mf" | cut -c1-10)" = -rw------- ] && [ "$(ls -l "$mn" | cut -c1-10)" = -rw------- ] \
+        && [ "$(ls -A "$M" | paste -sd' ' -)" = 'spark-shell.facts spark-shell.now' ] \
+        && ok "desktop --machine: spark-shell.facts and spark-shell.now, 0600 each, in a folder it made 0700, nothing else left there (#159)" || bad "machine files" "rc=$rc $out $(ls -la "$M" 2>&1)"
+    grep -qx -- '- Session: sway 1.12 on Wayland (no X11: X11 tools do not work here), set up by spark-shell v[0-9.]*; screenshots grim, clipboard wl-copy, notifications notify-send, swaymsg.' "$mf" \
+        && grep -qxF -- '- Screens: DP-3 = Fakemake Portable 16, on the left, turned 270, portrait, 1920x1200; HDMI-A-1 = Othermake Desk 24, on the right, 1920x1080.' "$mf" \
+        && grep -qxF -- '- spark-shell is this desktop: the bar at the top; the dialog (Super+d) is the launcher and the settings, Super+s spark chat in it.' "$mf" \
+        && grep -qxF -- '- Keys: Super+Return opens a terminal window. Super+Shift+q closes the window. Super+1..0 go to workspaces 1 to 10; with Shift the window goes there. Super+Escape locks the screen. Print captures the screen, Shift+Print an area, Super+Print the window. Super+Ctrl+space goes to the next keyboard layout. The volume and mute keys set the sound. The brightness keys set the screen'"'"'s brightness.' "$mf" \
+        && ok "facts: the session with the Wayland tools that are here, the dialog's keys and the key table's, the screens by port with their make and model, place, turn and mode (#159)" || bad "facts session" "$(cat "$mf")"
+    grep -qF -- '- Sound outputs (out_use name): "Fake Speaker" (Bluetooth speaker), "HD-Audio Generic Digital Stereo (HDMI 2) [Desk 24]" (HDMI). Inputs (mic_use name): none.' "$mf" \
+        && grep -qF -- '- Bluetooth, paired (bt_connect name): "Fake Speaker" (speaker), "Major V" (headphones).' "$mf" \
+        && grep -qF -- '- Network: wired eth0; Wi-Fi wlan0 through wpa_cli, saved networks (wifi_connect name): home, old.' "$mf" \
+        && grep -qF -- '- Keyboard layouts (keyboard_use name): us (English (US)), br (Portuguese (Brazil)); caps key caps' "$mf" \
+        && grep -qF -- '- Saved layouts: writing. Notes in ~/notes, by file: alpha.md, beta.md.' "$mf" \
+        && grep -q "^- Palettes, dark: .*nord.*; light: .*solarized-light.*; none is the terminal's own colors.$" "$mf" && grep -q '^- Wallpapers: .*dunes.*, or default. Savers: clock' "$mf" \
+        && ok "facts: the sound devices by their exact names with what each is, the paired devices with their kinds, the saved networks, the keyboard's codes and names, the layouts, the notes by file, the palettes (#159)" || bad "facts names" "$(cat "$mf")"
+    grep -qxF -- '- spark-shell theme [NAME|none|list|save [NAME]|delete NAME|back|wallpaper X|text N|transparency N|picture PATH|"WORDS"]' "$mf" \
+        && grep -qxF -- '- spark-shell bar on|off [--desktop]' "$mf" && grep -qxF -- '- spark-shell dialog [SECTION|chat|about]' "$mf" \
+        && grep -qF -- '- spark-shell desktop lock; capture screen|area|window; display [idle|lock N|saver [NAME]|brightness N|up|down]; keyboard [' "$mf" \
+        && grep -qxF -- '- Reading state: spark mcp read SERVER spark-shell://SERVER/rows; swaymsg -t get_outputs|get_workspaces|get_tree|get_inputs, wpctl status, bluetoothctl show.' "$mf" \
+        && [ "$(grep -n '^- Keys: ' "$mf" | cut -d: -f1)" -lt "$(grep -n '^- spark-shell theme ' "$mf" | cut -d: -f1)" ] \
+        && ok "facts: how to read the state with the tools here, the keys, then spark-shell's commands from its own help, a verb's alternatives in one bracket, the rarer last (the reader's cut takes the end first) (#159)" || bad "facts commands" "$(cat "$mf")"
+    grep -qxF -- '- Windows open (sway con id, app_id, workspace): 42 firefox on 1, focused; 7 foot on 1; 12 mpv on 2.' "$mn" \
+        && grep -qxF -- '- Workspaces: 1:X on DP-3 (focused), 2:Y writing on HDMI-A-1 (shown).' "$mn" \
+        && grep -qxF -- '- Sound: output "Fake Speaker" in use, volume 38%, not muted; no microphone connected.' "$mn" \
+        && grep -qxF -- '- Bluetooth on; connected now: "Fake Speaker".' "$mn" \
+        && grep -qxF -- '- Network: wired eth0 up with an address; Wi-Fi wlan0 connected to home, signal 70%, with an address.' "$mn" \
+        && grep -qxF -- '- Keyboard layout in use: br. Palette nord, wallpaper default. Idle screen after 10 minutes (saver starfield), lock after 15 minutes.' "$mn" \
+        && grep -qxF -- '- Drives plugged in: "Acme Fakestick".' "$mn" && grep -qxF -- '- The bar is shown; do not disturb is off.' "$mn" \
+        && ok "now: the windows by con id and app_id, the focused one said, the dialog left out; the workspaces; the sound in use; who is connected; the wire and the radio; the layout, the look and the minutes; the drive; the bar (#159)" || bad "now" "$(cat "$mn")"
+    hit=$(grep -iF -e 'SECRET' -e 'hidden words' -e 'hidden-dir' -e 'secret-movie' -e 'cafe' -e 'dentist' -e '192.0.2' -e 'SN0001' -e 'SN0002' -e '00:25:D1' -e 'Buds Nearby' "$mf" "$mn" || :)
+    [ -z "$hit" ] && ok "the machine folder holds no window's title, no network around that is not saved, no note's or reminder's words, no notification, no address, no serial, no device's address, no device that is not paired (#159)" || bad "machine never-list" "$hit"
+    [ "$(wc -m < "$mf" | tr -d ' ')" -le 3000 ] && [ "$(wc -m < "$mn" | tr -d ' ')" -le 1200 ] && ! LC_ALL=C grep -q "$(printf '[\001-\010\011\013-\037\177]')" "$mf" "$mn" && ! grep -q '^$' "$mf" "$mn" \
+        && ok "the two files: within what spark reads (3000 and 1200 characters), no tab, no control character, no empty line (#159)" || bad "machine sizes" "$(wc -m "$mf" "$mn")"
+    fi1=$(inode "$mf"); ni1=$(inode "$mn"); rc=0; out=$(MW) || rc=$?
+    [ "$rc" = 0 ] && [ "$(inode "$mf")" = "$fi1" ] && [ "$(inode "$mn")" = "$ni1" ] && [ "$(ls -A "$M" | paste -sd' ' -)" = 'spark-shell.facts spark-shell.now' ] \
+        && ok "desktop --machine again, nothing changed: neither file is written again (.facts is in spark's cached prompt)" || bad "machine unchanged" "rc=$rc $(ls -lai "$M")"
+    printf '{"words": "mail", "main": {"app": "aerc"}}\n' > "$HOME/.config/spark-shell/layouts/mail"; MW >/dev/null
+    [ "$(inode "$mf")" != "$fi1" ] && grep -qF 'Saved layouts: mail, writing.' "$mf" && [ "$(inode "$mn")" = "$ni1" ] \
+        && ok "a new saved layout: .facts written again through a new file, .now left as it was" || bad "machine facts change" "$(ls -lai "$M") $(grep layouts "$mf")"
+    # the screens asleep (the lock turns them off): .now says so; the bar's look at .facts leaves it as it was while they were on
+    touch "$HOME/notes/alpha.md"; fi1=$(inode "$mf"); MW >/dev/null
+    [ "$(inode "$mf")" = "$fi1" ] && ok "a note edited (the newest now): .facts lists the notes by name, so it is not written again" || bad "machine note edited" "$(grep Notes "$mf")"
+    touch "$HOME/asleep"; fi1=$(inode "$mf"); SPARK_MACHINE_DIR=$M SWAYSOCK=$H/sock sh "$SH" desktop --machine tick >/dev/null 2>&1
+    [ "$(inode "$mf")" = "$fi1" ] && grep -qxF -- '- Screens off now (the lock turns them off): DP-3, HDMI-A-1.' "$mn" && ! grep -q 'Screens off' "$mf" \
+        && ok "the screens asleep: .now says they are off, and the bar's look at .facts leaves it as the screens on had it" || bad "machine asleep" "$(cat "$mn")"
+    MW >/dev/null
+    grep -qF -- '- Screens: DP-3 = Fakemake Portable 16, on the left, turned 270, portrait, 1920x1200; HDMI-A-1 = Othermake Desk 24, on the right.' "$mf" \
+        && ok "a screen powered off says 0x0: no mode is written for it" || bad "machine 0x0" "$(grep Screens "$mf")"
+    rm -f "$HOME/asleep"; fi1=$(inode "$mf"); SPARK_MACHINE_DIR=$M SWAYSOCK=$H/sock sh "$SH" desktop --machine tick >/dev/null 2>&1
+    [ "$(inode "$mf")" != "$fi1" ] && grep -qF 'HDMI-A-1 = Othermake Desk 24, on the right, 1920x1080.' "$mf" && ! grep -q 'Screens off' "$mn" \
+        && ok "awake again: the bar's look writes .facts with the screens as they are" || bad "machine awake" "$(grep Screens "$mf" "$mn")"
+    rc=0; out=$(SPARK_MACHINE_DIR=$M SWAYSOCK=$H/sock sh "$SH" desktop --machine later 2>&1) || rc=$?
+    [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: --machine takes all, now or tick' ] && ok "desktop --machine WORD: all, now or tick, or one line and exit 1" || bad "machine door word" "rc=$rc $out"
+    touch -t 202001010000 "$mn"; ni1=$(inode "$mn"); MW >/dev/null
+    [ "$(inode "$mn")" != "$ni1" ] && [ -z "$(find "$mn" -mmin +3)" ] && ok ".now the same but older than 3 minutes: written again, its time is its freshness" || bad "machine now refresh" "$(ls -lai "$M")"
+    rm -f "$mn"; printf 'theirs\n' > "$H/target"; ln -s "$H/target" "$mn"; MW >/dev/null
+    [ -f "$mn" ] && [ ! -L "$mn" ] && [ "$(cat "$H/target")" = theirs ] && [ "$(ls -l "$mn" | cut -c1-10)" = -rw------- ] \
+        && ok "a link where .now goes: the rename puts a file of its own in its place, nothing written through the link" || bad "machine link" "$(ls -la "$M") $(cat "$H/target")"
+    mkdir "$M/.spark-shell.lock"; fi1=$(inode "$mf"); rm -f "$HOME/.config/spark-shell/layouts/mail"; MW >/dev/null
+    [ "$(inode "$mf")" = "$fi1" ] && ok "a writer that runs already (its mark): this one gives way" || bad "machine lock" "$(ls -lai "$M")"
+    touch -t 202001010000 "$M/.spark-shell.lock"; MW >/dev/null
+    [ "$(inode "$mf")" != "$fi1" ] && [ ! -e "$M/.spark-shell.lock" ] && ! grep -q 'mail' "$mf" && ok "a mark a writer left when it died is taken after 2 minutes, and given back" || bad "machine stale lock" "$(ls -lai "$M")"
+    rm -rf "$M"; printf 'DESKTOP=none\n' > "$HOME/.config/spark-shell/config"; MW >/dev/null
+    [ ! -e "$M" ] && ok "the desktop off (DESKTOP=none): nothing written" || bad "machine desktop off" "$(ls -la "$M")"
+    printf 'DESKTOP=sway\nTHEME=nord\nKEYBOARD=us br\nDISPLAY_SAVER=starfield\n' > "$HOME/.config/spark-shell/config"
+    if ! command -v spark >/dev/null 2>&1; then   # a machine of the suite's with spark on its PATH has it here too
+        rc=0; out=$(SWAYSOCK=$H/sock sh "$SH" desktop --machine 2>&1) || rc=$?
+        [ "$rc" = 0 ] && [ ! -e "$HOME/.local/state/spark/machine" ] && ok "without SPARK_MACHINE_DIR and no spark here to read it: nothing written" || bad "machine no spark" "$(ls -la "$HOME/.local/state/spark" 2>&1)"
+    fi
+    printf '#!/bin/sh\necho "$*" >> "$HOME/spark.calls"\n' > "$H/.local/bin/spark"; chmod +x "$H/.local/bin/spark"
+    rc=0; out=$(SWAYSOCK=$H/sock sh "$SH" desktop --machine 2>&1) || rc=$?
+    [ "$rc" = 0 ] && [ -f "$HOME/.local/state/spark/machine/spark-shell.facts" ] && [ -f "$HOME/.local/state/spark/machine/spark-shell.now" ] && [ "$(ls -ld "$HOME/.local/state/spark/machine" | cut -c1-10)" = drwx------ ] && [ ! -e "$HOME/spark.calls" ] \
+        && ok "with spark here, the default folder: spark's state, then machine (~/.local/state/spark/machine), 0700; spark itself not asked" || bad "machine default dir" "rc=$rc $out $(ls -la "$HOME/.local/state/spark" 2>&1)"
+    MW >/dev/null; out=$(SPARK_MACHINE_DIR=$M sh "$SH" off desktop --dry-run 2>&1 || :)
+    printf '%s\n' "$out" | grep -qF "would  machine      remove what the desktop told spark's prompt line (~/machine)" && [ -f "$mf" ] && [ -f "$mn" ] \
+        && ok "off desktop --dry-run: a would row for the machine folder's two files, both kept" || bad "machine off dry-run" "$out"
+    out=$(SPARK_MACHINE_DIR=$M sh "$SH" off desktop 2>&1 || :)
+    printf '%s\n' "$out" | grep -qF "ok     machine      what the desktop told spark's prompt line is gone (~/machine)" && [ ! -e "$mf" ] && [ ! -e "$mn" ] \
+        && ok "off desktop: both files gone, said once (#159)" || bad "machine off desktop" "$out $(ls -la "$M" 2>&1)"
+    out=$(SPARK_MACHINE_DIR=$M sh "$SH" off desktop 2>&1 || :)
+    printf '%s\n' "$out" | grep -q 'machine' && bad "off desktop again names the machine folder" "$out" || ok "off desktop again: nothing to remove, nothing said"
+    printf 'DESKTOP=sway\nTHEME=nord\nKEYBOARD=us br\nDISPLAY_SAVER=starfield\n' > "$HOME/.config/spark-shell/config"; printf '# rendered by spark-shell from templates/.config/sway/config\n' > "$HOME/.config/sway/config"
+    MW >/dev/null; [ -f "$mf" ] || bad "machine before off" "$(ls -la "$M" 2>&1)"
+    SPARK_MACHINE_DIR=$M sh "$SH" off >/dev/null 2>&1 || :
+    [ ! -e "$mf" ] && [ ! -e "$mn" ] && ok "off: both files gone too" || bad "machine off" "$(ls -la "$M" 2>&1)"
+    # the session ends (sway returns): .now goes, nothing is open or in use any more; .facts stays
+    printf 'DESKTOP=sway\nTHEME=nord\nKEYBOARD=us br\nDISPLAY_SAVER=starfield\n' > "$HOME/.config/spark-shell/config"; printf '# rendered by spark-shell from templates/.config/sway/config\n' > "$HOME/.config/sway/config"; : > "$HOME/.config/foot/foot.ini"
+    MW >/dev/null; printf '#!/bin/sh\n:\n' > "$H/.local/bin/sway"; chmod +x "$H/.local/bin/sway"
+    SPARK_MACHINE_DIR=$M env -u WAYLAND_DISPLAY -u SWAYSOCK TEST_TTY=/dev/tty1 sh "$SH" desktop >/dev/null 2>&1 || :
+    [ ! -e "$mn" ] && [ -f "$mf" ] && ok "the desktop over (sway returned): .now gone, .facts kept" || bad "machine session end" "$(ls -la "$M" 2>&1)"
+    # the desktop's start and the bar's loop, inside a running sway: its socket is a real one (python3 makes it)
+    if [ -n "$py3" ]; then
+        "$py3" -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$H/sway.sock"
+        rm -rf "$M"; rm -f "$HOME/spark.calls"; SPARK_MACHINE_DIR=$M SWAYSOCK=$H/sway.sock sh "$SH" desktop --pending >/dev/null 2>&1
+        i=0; while [ "$i" -lt 50 ] && { [ ! -s "$mf" ] || [ ! -s "$HOME/spark.calls" ]; }; do sleep 0.1; i=$((i + 1)); done
+        [ -s "$mf" ] && [ -s "$mn" ] && [ "$(cat "$HOME/spark.calls" 2>/dev/null)" = mcp ] && ! grep -q 'Brightness' "$mn" \
+            && ok "the desktop's start (desktop --pending): both files aside, then spark mcp once, inside the session (#159)" || bad "machine start" "$(ls -la "$M" 2>&1) $(cat "$HOME/spark.calls" 2>&1)"
+        rm -rf "$M"; SPARK_MACHINE_DIR=$M SWAYSOCK=$H/sway.sock sh "$SH" bar status </dev/null >/dev/null 2>&1 & bp=$!
+        i=0; while [ "$i" -lt 50 ] && [ ! -s "$mn" ]; do sleep 0.1; i=$((i + 1)); done; kill "$bp" 2>/dev/null; wait "$bp" 2>/dev/null
+        [ -s "$mn" ] && [ ! -e "$mf" ] && ok "the bar's loop: .now at its first pass, aside; .facts a minute in" || bad "machine bar" "$(ls -la "$M" 2>&1)"
+        rm -rf "$M"; SPARK_MACHINE_DIR=$M SWAYSOCK=$H/sock sh "$SH" desktop --pending >/dev/null 2>&1; sleep 1
+        [ ! -e "$M" ] && ok "no running sway's socket there: the start writes nothing" || bad "machine no socket" "$(ls -la "$M" 2>&1)"
+    fi
+fi
+rm -rf "$H"
+
 # --- the voice: the docs and the help hold to it -------------------------
 # README.md, the top entry of CHANGELOG.md, CREDITS.md, config.example, the
 # help (sh spark-shell -h) and the comment lines of the sway template are

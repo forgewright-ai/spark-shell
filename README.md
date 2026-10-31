@@ -1115,6 +1115,26 @@ answers its title and facts, then its lines, a picture (its size at 100
 %, and `full` when it is drawn whole), a sound (its waveform over its
 spectrogram, its length, play and stop), or why there is none.
 
+spark's prompt line knows this desktop too. While it runs, spark-shell
+keeps two files in spark's machine folder, `~/.local/state/spark/machine/`.
+`spark-shell.facts` holds what stays true: sway's version and the Wayland
+tools here, the screens by port, the sound and Bluetooth devices, the
+keyboard's layouts, the saved Wi-Fi networks, layouts, notes (by file),
+palettes, wallpapers, savers and printers, each by the exact name its
+tool takes, then the keys and spark-shell's own commands from its help.
+It is written only when it changed, since spark keeps it in the cached
+part of the line's prompt, and not while the screens sleep.
+`spark-shell.now` holds what is in use now: the windows by sway's id and
+app, the workspaces, the sound, who is connected, the network, the
+layout, the look, the brightness, the drives and do not disturb. The
+bar writes it every 30 seconds, and 3 seconds after a click or a key.
+Each file is yours alone (0600). Never in either: a window's title, a
+notification, a note's or a reminder's words, a file's contents, a
+network around that is not saved, a password, an address. The
+desktop's start also runs `spark mcp` once, so the tools spark lists
+are this session's. When the desktop ends `.now` goes; `off` removes
+both.
+
 ## Status and check
 
 Type `spark-shell status`. You get one row per part, and a last `next`
@@ -1158,7 +1178,8 @@ the two cursor themes in
 `~/.config/spark/sv/spark-shell-sound` and two links in
 `~/.config/pipewire/pipewire.conf.d`, and, after a change of output on
 plain ALSA, `~/.config/alsa/asoundrc`, and
-`~/.config/spark-shell/screens.conf`. As
+`~/.config/spark-shell/screens.conf`, and while the desktop runs the two
+files for spark's prompt line in `~/.local/state/spark/machine/`. As
 root: the console colors at boot (a systemd unit or a line in
 `/etc/rc.local`), the console font, the login notice and boot files for
 quiet, and on Void PipeWire's two links in `/etc/alsa/conf.d` and your
