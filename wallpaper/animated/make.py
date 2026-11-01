@@ -789,7 +789,7 @@ def stars(cv, color, seed, n, top, bottom, t=None, alpha=0.5, avoid=None):
     rnd = random.Random(seed)
     out = []
     for i in range(n):
-        x, y, r = rnd.uniform(0, W), rnd.uniform(top, bottom), rnd.choice((1.0, 1.3, 1.7, 2.1))
+        x, y, r = rnd.uniform(-cv.ox, cv.uw - cv.ox), rnd.uniform(top, bottom), rnd.choice((1.0, 1.3, 1.7, 2.1))
         if avoid and math.hypot(x - avoid[0], y - avoid[1]) < avoid[2]:
             continue
         a = alpha
@@ -825,6 +825,7 @@ class Duck(Scene, Cached):
     name = "duck"
     poster = 9.0
     PX, PY, PRX, PRY = 960.0, 868.0, 900.0, 205.0  # the pond
+    portrait = (1080.0, 1920.0, -400.0, 840.0)  # the frog's pad and the duck, a tall sky over them
     WL = 820.0  # the duck's waterline
 
     def colors(self, p):
@@ -851,11 +852,11 @@ class Duck(Scene, Cached):
 
     def back(self, cv, p):
         c = self.colors(p)
-        sx, sy = 400.0, 210.0
+        sx, sy = (1240.0, -420.0) if cv.portrait else (400.0, 210.0)
         out = [D(cv, sx, sy, 120, c["halo"]), D(cv, sx, sy, 58, c["sun"])]
         if c["dark"]:  # a crescent: the sky's own color over the moon
             out = [D(cv, sx, sy, 120, c["halo"]), D(cv, sx, sy, 58, c["sun"]), D(cv, sx + 26, sy - 12, 52, c["halo"])]
-            out += stars(cv, c["wing"], 21, 70, 30, 520, alpha=0.4, avoid=(sx, sy, 150))
+            out += stars(cv, c["wing"], 21, 140 if cv.portrait else 70, -800 if cv.portrait else 30, 520, alpha=0.4, avoid=(sx, sy, 150))
         out.append(L(cv, Shape().poly([(0, 640)] + spline([(0, 600), (300, 540), (640, 590), (980, 520), (1320, 580), (1640, 530), (1920, 590)], closed=False, per=16) + [(W, 640)]), c["hill"], ss=2))
         out.append(L(cv, Shape().poly([(0, 700)] + spline([(0, 640), (360, 600), (760, 650), (1160, 610), (1560, 655), (1920, 620)], closed=False, per=16) + [(W, 700)]), c["hill2"], ss=2))
         out.append(L(cv, Shape().rect(0, 650, W, H - 650), c["grass"], ss=1))
@@ -883,6 +884,8 @@ class Duck(Scene, Cached):
         for i in range(26):
             left = i < 13
             x = rnd.uniform(40, 330) if left else rnd.uniform(1600, 1900)
+            if cv.portrait:  # the reeds at the view's edges
+                x = 404 + (x - 40) * 0.12 if left else 1360 + (x - 1600) * 0.38
             base, h = rnd.uniform(690, 760), rnd.uniform(120, 230)
             sway = 9 * (h / 200) * wave(t, 6 if i % 2 else 4, rnd.random())
             top = (x + sway + rnd.uniform(-12, 12), base - h)
@@ -953,7 +956,8 @@ class Duck(Scene, Cached):
     def under(self, cv, p, t):
         c = self.colors(p)
         out = []
-        for i, (x, y, w) in enumerate(((760, 250, 1.0), (1180, 170, 0.8), (1580, 300, 0.7))):  # clouds, drifting and back
+        clouds_ = ((720, -560, 1.0), (1180, -260, 0.8), (880, 60, 0.7)) if cv.portrait else ((760, 250, 1.0), (1180, 170, 0.8), (1580, 300, 0.7))
+        for i, (x, y, w) in enumerate(clouds_):  # clouds, drifting and back
             dx = 46 * wave(t, 24, i * 0.3)
             cl = Shape().rect(x + dx - 120 * w, y, 240 * w, 34 * w).circle(x + dx - 60 * w, y + 4, 42 * w).circle(x + dx + 20 * w, y - 10 * w, 56 * w).circle(x + dx + 90 * w, y + 8, 34 * w)
             out.append(L(cv, cl, c["cloud"], 1.0, ss=2, above=y + 34 * w))
@@ -1029,6 +1033,11 @@ class Duck(Scene, Cached):
 
 class Reef(Scene, Cached):
     name = "reef"
+    portrait = (1080.0, 1920.0, 0.0, 840.0)  # a tall water column: the eel's rock, and the starfish's brought near
+
+    def right(self, cv):
+        """How far the starfish's rock and what lives on it move for a portrait."""
+        return -620.0 if cv.portrait else 0.0
     poster = 4.5
 
     def colors(self, p):
@@ -1048,7 +1057,8 @@ class Reef(Scene, Cached):
 
     def back(self, cv, p):
         c = self.colors(p)
-        out = [L(cv, Shape().poly([(0, 0), (W, 0)] + [(x, 360 + 18 * math.sin(x / 140)) for x in range(W, -1, -40)]), c["top"], ss=1)]
+        top = -900.0 if cv.portrait else 0.0
+        out = [L(cv, Shape().poly([(0, top), (W, top)] + [(x, 360 + 18 * math.sin(x / 140)) for x in range(W, -1, -40)]), c["top"], ss=1)]
         out.append(L(cv, Shape().poly([(0, 360)] + [(x, 360 + 18 * math.sin(x / 140)) for x in range(0, W + 1, 40)] + [(W, 700), (0, 700)]), c["mid"], ss=1))
         out.append(L(cv, Shape().poly([(0, 700)] + [(x, 690 + 14 * math.sin(x / 170 + 1)) for x in range(0, W + 1, 40)] + [(W, H), (0, H)]), c["low"], ss=1))
         out.append(L(cv, Shape().poly([(0, H)] + spline([(0, 840), (300, 800), (700, 850), (1100, 812), (1500, 846), (1920, 806)], closed=False, per=16) + [(W, H)]), c["sand"], ss=2))
@@ -1062,8 +1072,9 @@ class Reef(Scene, Cached):
         out.append(L(cv, Shape().poly(spline([(60, 900), (120, 780), (260, 730), (420, 760), (520, 860), (470, 930), (200, 950)], per=10)), c["rock"], ss=2))
         out.append(L(cv, Shape().poly(spline([(110, 900), (180, 820), (300, 800), (420, 840), (380, 900)], per=8)), c["rock2"], 0.5, ss=2))
         out.append(L(cv, Shape().ellipse(392, 836, 30, 22, -0.2), c["hole"], ss=2))
-        out.append(L(cv, Shape().poly(spline([(1440, 900), (1480, 800), (1580, 760), (1720, 770), (1820, 840), (1800, 920), (1560, 940)], per=10)), c["rock"], ss=2))
-        out.append(L(cv, Shape().poly(spline([(1500, 900), (1560, 830), (1680, 815), (1770, 860), (1700, 905)], per=8)), c["rock2"], 0.5, ss=2))
+        R = self.right(cv)
+        out.append(L(cv, Shape().poly(spline([(1440, 900), (1480, 800), (1580, 760), (1720, 770), (1820, 840), (1800, 920), (1560, 940)], per=10)).moved(R), c["rock"], ss=2))
+        out.append(L(cv, Shape().poly(spline([(1500, 900), (1560, 830), (1680, 815), (1770, 860), (1700, 905)], per=8)).moved(R), c["rock2"], 0.5, ss=2))
         # coral: branches and a fan
         br = Shape()
         def branch(x, y, a, ln, w, d):
@@ -1073,7 +1084,7 @@ class Reef(Scene, Cached):
                 branch(x2, y2, a - 0.42, ln * 0.72, w * 0.75, d - 1)
                 branch(x2, y2, a + 0.38, ln * 0.7, w * 0.75, d - 1)
         for x, a in ((1250, -1.75), (1300, -1.45), (1350, -1.62)):
-            branch(x, 880, a, 70, 14, 3)
+            branch(x - (460 if cv.portrait else 0), 880, a, 70, 14, 3)
         out.append(L(cv, br, c["coral"], ss=2))
         fan = Shape()
         for k in range(9):
@@ -1086,7 +1097,8 @@ class Reef(Scene, Cached):
         def make():
             got = []
             for x in (260, 600, 980, 1340, 1680):
-                got.append(cover(cv, Shape().poly([(x - 40, -10), (x + 50, -10), (x + 260, 900), (x + 90, 900)]), 1, soft=40))
+                top = [(x - 167, -900), (x - 77, -900)] if cv.portrait else [(x - 40, -10), (x + 50, -10)]
+                got.append(cover(cv, Shape().poly(top + [(x + 260, 900), (x + 90, 900)]), 1, soft=40))
             return got
         return self.cached(cv, "rays", make)
 
@@ -1095,6 +1107,8 @@ class Reef(Scene, Cached):
         rnd = random.Random(6)
         for i in range(12):
             x = rnd.choice((rnd.uniform(20, 260), rnd.uniform(520, 760), rnd.uniform(1820, 1910), rnd.uniform(1080, 1200)))
+            if x > 1000:
+                x += self.right(cv)
             base, h = rnd.uniform(860, 960), rnd.uniform(280, 470)
             ph, per = rnd.random(), rnd.choice((4, 6))
             pts = []
@@ -1156,7 +1170,8 @@ class Reef(Scene, Cached):
             out.append(Layer(got, c["ray"], (0.06 if c["dark"] else 0.22) * (0.6 + 0.4 * wave(t, 8, i * 0.27))))
         for i in range(8):  # the light on the surface
             x = (i * 260 + 80 * wave(t, 12, i * 0.13)) % (W + 200) - 100
-            out.append(L(cv, Shape().line([(x - 50, 40 + 12 * (i % 3)), (x + 50, 40 + 12 * (i % 3))], 4), c["ray"], 0.18 if c["dark"] else 0.5, ss=2))
+            y = 40 + 12 * (i % 3) - (840 if cv.portrait else 0)
+            out.append(L(cv, Shape().line([(x - 50, y), (x + 50, y)], 4), c["ray"], 0.18 if c["dark"] else 0.5, ss=2))
         out += self.kelp(cv, c, t)
         # the eel: out of its hole, a snap at a bubble, a burp, back in
         pts = self.eel(t)
@@ -1170,7 +1185,7 @@ class Reef(Scene, Cached):
             t0 = i * 3 + rnd.uniform(0, 1)
             u = ((t - t0) % 24) / 5.0
             if u < 1:
-                out += self.bub(cv, c, 456 + 14 * wave(t, 1.6, i * 0.2) + 6 * (i % 3), 818 - 760 * u, 6 + 3 * (i % 3))
+                out += self.bub(cv, c, 456 + 14 * wave(t, 1.6, i * 0.2) + 6 * (i % 3), 818 - (1600 if cv.portrait else 760) * u, 6 + 3 * (i % 3))
         if 13.6 <= t < 16.2:  # the one it eats: from the vent to where its mouth will be
             hx, hy = self.eel(16.2)[-1]
             u = ease_io(window(t, 13.6, 16.2))
@@ -1180,7 +1195,7 @@ class Reef(Scene, Cached):
             hx, hy = self.eel(16.8)[-1]
             out += self.bub(cv, c, hx + 6 + 10 * u, hy - 12 - 120 * u, 4 + 3 * u)
         # the starfish turns, by a fifth of a turn a loop: the same star when it ends
-        sx, sy = 1600.0, 768.0
+        sx, sy = 1600.0 + self.right(cv), 768.0
         a0 = 2 * math.pi / 5 * t / 24
         st = Shape()
         for k in range(5):
@@ -1193,7 +1208,7 @@ class Reef(Scene, Cached):
             out.append(D(cv, sx + 16 * math.cos(a), sy + 16 * math.sin(a), 2.2, c["bub"], 0.45))
         # the @ snail goes along its rock and back
         u = (1 - math.cos(2 * math.pi * t / 24)) / 2
-        nx = 1500 + 220 * u
+        nx = 1500 + 220 * u + self.right(cv)
         kx = 1 if math.sin(2 * math.pi * t / 24) >= 0 else -1
         kx *= clamp(abs(math.sin(2 * math.pi * t / 24)) * 6)
         ny = 812 - 26 * math.sin(math.pi * u)
@@ -1223,6 +1238,7 @@ class Campfire(Scene, Cached):
     name = "campfire"
     poster = 3.0
     FX, FY = 840.0, 880.0  # the fire
+    portrait = (1080.0, 1920.0, -240.0, 840.0)  # the tent, the fire and the raccoon, the trees and the moon high
     RX, RY = 1130.0, 884.0  # the raccoon's seat
 
     def colors(self, p):
@@ -1245,11 +1261,11 @@ class Campfire(Scene, Cached):
 
     def back(self, cv, p):
         c = self.colors(p)
-        mx, my = 1540.0, 200.0
+        mx, my = (1120.0, -420.0) if cv.portrait else (1540.0, 200.0)
         out = [D(cv, mx, my, 110, c["halo"]), D(cv, mx, my, 50, c["moon"])]
         if c["dark"]:
             out.append(D(cv, mx + 22, my - 14, 44, c["halo"]))
-            out += stars(cv, c["star"], 17, 90, 20, 560, alpha=0.45, avoid=(mx, my, 140))
+            out += stars(cv, c["star"], 17, 180 if cv.portrait else 90, -800 if cv.portrait else 20, 560, alpha=0.45, avoid=(mx, my, 140))
         rnd = random.Random(10)
         far = Shape()
         for i in range(60):
@@ -1258,7 +1274,7 @@ class Campfire(Scene, Cached):
         far.rect(0, 740, W, 40)
         out.append(L(cv, far, c["far"], ss=2))
         out.append(L(cv, Shape().poly([(0, 770)] + spline([(0, 770), (480, 750), (960, 770), (1440, 752), (1920, 772)], closed=False, per=16) + [(W, H), (0, H)]), c["ground"], ss=2))
-        for x, side in ((-40, 1), (1960, -1)):  # big trees at the edges, framing it
+        for x, side in ((200, 1), (1360, -1)) if cv.portrait else ((-40, 1), (1960, -1)):  # big trees at the edges, framing it
             sh = Shape()
             for k in range(6):
                 y = 300 + k * 90
@@ -1422,6 +1438,7 @@ class Campfire(Scene, Cached):
 
 class Ufo(Scene, Cached):
     name = "ufo"
+    portrait = (1080.0, 1920.0, -640.0, 840.0)  # the saucer and the cow in the middle, a tall sky with its planet
     poster = 8.0
     HZ = 720.0
     COW = (1180.0, 862.0)
@@ -1444,8 +1461,8 @@ class Ufo(Scene, Cached):
 
     def back(self, cv, p):
         c = self.colors(p)
-        out = stars(cv, c["star"], 23, 120, 20, self.HZ - 40, alpha=0.5 if c["dark"] else 0.0)
-        px, py = 380.0, 230.0
+        out = stars(cv, c["star"], 23, 240 if cv.portrait else 120, -800 if cv.portrait else 20, self.HZ - 40, alpha=0.5 if c["dark"] else 0.0)
+        px, py = (900.0, -440.0) if cv.portrait else (380.0, 230.0)
         out += [D(cv, px, py, 44, c["planet"])]
         ring = ellipse_pts(px, py, 86, 18, -0.25, n=80)
         out.append(L(cv, Shape().line(ring + [ring[0]], 7), c["ring"], ss=2, above=None))
@@ -1453,7 +1470,7 @@ class Ufo(Scene, Cached):
         out.append(L(cv, Shape().poly([(0, self.HZ), (120, self.HZ), (150, 610), (330, 600), (360, self.HZ), (1500, self.HZ), (1530, 640), (1690, 632), (1720, 676), (1820, 670), (1840, self.HZ), (W, self.HZ), (W, self.HZ + 40), (0, self.HZ + 40)]), c["mesa"], ss=2))
         for col, pts in ((c["dune"], [(0, 730), (400, 700), (900, 740), (1400, 705), (1920, 735)]), (c["dune2"], [(0, 800), (500, 770), (1100, 810), (1600, 780), (1920, 800)]), (c["dune3"], [(0, 920), (600, 890), (1200, 930), (1920, 900)])):
             out.append(L(cv, Shape().poly([(0, H)] + spline(pts, closed=False, per=16) + [(W, H)]), col, ss=2))
-        for x, y, s in ((360, 830, 1.0), (1640, 790, 0.8), (230, 760, 0.5)):
+        for x, y, s in ((760, 830, 1.0), (1640, 790, 0.8), (1480, 760, 0.5)) if cv.portrait else ((360, 830, 1.0), (1640, 790, 0.8), (230, 760, 0.5)):
             out.append(L(cv, self.cactus(x, y, s), c["cactus"], ss=2))
         return out
 
@@ -1578,6 +1595,7 @@ class Pigeons(Scene, Cached):
     poster = 1.5
     WIRE = (140.0, 1780.0, 410.0, 56.0)  # its ends, its height, its sag
     PERCH = (560.0, 720.0, 1060.0, 1220.0, 1360.0)
+    portrait = (1080.0, 1920.0, -420.0, 840.0)  # the wire with its birds across, a tall sky for the couriers
 
     def colors(self, p):
         if not hasattr(self, "_c") or self._c[0] is not p:
@@ -1600,10 +1618,10 @@ class Pigeons(Scene, Cached):
 
     def back(self, cv, p):
         c = self.colors(p)
-        sx, sy = 1560.0, 190.0
+        sx, sy = (1300.0, -430.0) if cv.portrait else (1560.0, 190.0)
         out = [D(cv, sx, sy, 110, c["halo"]), D(cv, sx, sy, 50, c["sun"])]
         if c["dark"]:
-            out += stars(cv, c["star"], 27, 70, 20, 520, alpha=0.4, avoid=(sx, sy, 140))
+            out += stars(cv, c["star"], 27, 140 if cv.portrait else 70, -800 if cv.portrait else 20, 520, alpha=0.4, avoid=(sx, sy, 140))
         rnd = random.Random(15)
         far = Shape()
         x = -20
@@ -1701,7 +1719,8 @@ class Pigeons(Scene, Cached):
     def under(self, cv, p, t):
         c = self.colors(p)
         out = []
-        for i, (x, y, w) in enumerate(((560, 160, 1.0), (1060, 250, 0.7), (300, 320, 0.6))):
+        clouds_ = ((760, -520, 1.0), (1240, -220, 0.7), (700, 120, 0.6)) if cv.portrait else ((560, 160, 1.0), (1060, 250, 0.7), (300, 320, 0.6))
+        for i, (x, y, w) in enumerate(clouds_):
             dx = 40 * wave(t, 24, i * 0.3)
             cl = Shape().rect(x + dx - 110 * w, y, 220 * w, 30 * w).circle(x + dx - 50 * w, y + 4, 38 * w).circle(x + dx + 24 * w, y - 8 * w, 50 * w).circle(x + dx + 86 * w, y + 8, 30 * w)
             out.append(L(cv, cl, c["cloud"], ss=2, above=y + 30 * w))
