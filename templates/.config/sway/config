@@ -125,6 +125,12 @@ bindsym $mod+h focus left
 bindsym $mod+j focus down
 bindsym $mod+k focus up
 bindsym $mod+l focus right
+# The focus on arrows again, a modifier away from the snaps (#185): what Super+arrow did before v0.119.
+# key: Super+Alt+arrow moves the focus too, across the screens.
+bindsym $mod+Mod1+Left focus left
+bindsym $mod+Mod1+Down focus down
+bindsym $mod+Mod1+Up focus up
+bindsym $mod+Mod1+Right focus right
 # The window keys (#182): a snapped window floats at that half of its screen, below the bar and
 # inside the gaps, where a tiled window would sit; a window floated from the tiling opens at two
 # thirds of its screen, centered.
@@ -180,6 +186,14 @@ bindsym $mod+Shift+7 move container to workspace number 7
 bindsym $mod+Shift+8 move container to workspace number 8
 bindsym $mod+Shift+9 move container to workspace number 9
 bindsym $mod+Shift+0 move container to workspace number 10
+# The workspace before or after, in order across the screens (#185), Windows' and KDE's keys; Shift
+# takes the window along, as it does with the numbers.
+# key: Super+Ctrl+Left/Right go to the previous or next workspace.
+# key: Super+Ctrl+Shift+Left/Right take the window there too.
+bindsym $mod+Ctrl+Left workspace prev
+bindsym $mod+Ctrl+Right workspace next
+bindsym $mod+Ctrl+Shift+Left move container to workspace prev, workspace prev
+bindsym $mod+Ctrl+Shift+Right move container to workspace next, workspace next
 
 # key: Super+Escape locks the screen; it locks by itself after idle minutes.
 bindsym $mod+Escape exec @REPO@/spark-shell desktop lock || swaylock -f

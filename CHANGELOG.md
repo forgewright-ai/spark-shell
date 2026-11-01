@@ -1,5 +1,65 @@
 # Changelog
 
+## v0.120
+
+The theme view made fast and still, the pointer's borders as the owner
+drew them, keys for the workspace before and after, and the printers
+kept to their own section; all from the owner's reports of 2026-11-01.
+
+- The theme view (#183), from the owner's video of it and his picks
+  from wireframes:
+  - The palettes come first, dark beside light, each with a chip of its
+    colors; the arrows move down a column and across. A palette lit a
+    moment shows on the screen (sway, the bar, the open terminals and
+    its drawing) with nothing written; Enter or a click keeps it, and
+    the light leaving the palettes puts yours back.
+  - Then yours, then the settings in three groups (the screen, the text
+    and the bar, the dialog), each control ending where the rows'
+    arrows stand.
+  - A setting with two states is one switch, named as a yes or no:
+    Words on the bar, Numbered workspaces, Moving wallpaper. Enter,
+    Space or a click flips it.
+  - A value (the text size, the transparency) carries every value it
+    takes. Left, right or a click on an arrow shows the next one at
+    once; the arrow at the end of the range is dimmed, where it used to
+    answer "already". Presses while one is being set collapse into the
+    last.
+  - A change shows the moment it is made and is set behind it. No line
+    runs above the list and no receipt comes below it, so nothing
+    moves; a refusal is said, and the value goes back.
+  - The theme's rows are built in about 100 ms on the owner's desktop, from
+    about 480: each row ran a process for each of its words and looked
+    up every palette's name again. Plain words are now kept as they are
+    and the names read once, which speeds every section's list.
+  - While something takes longer than a quarter of a second, the
+    pointer over the dialog is the hourglass.
+  - The text size and the transparency take their exact values through
+    the MCP tools; a new tool, theme_preview, shows a palette without
+    keeping it.
+- The pointer (#184): the four sides of a window's border, which sway
+  asks for on every edge, a tiled border too, are the owner's sketch
+  now, two triangles and the bar between, turned for top and bottom, in
+  place of a one-headed arrow; the art is the spark-shell decorations
+  session's. A screenshot shows the pointer (grim -c).
+- The keys (#185): v0.119 gave Super+arrows to snapping, and they had
+  moved the focus, to the other screen too. Super+Ctrl+Left/Right go to
+  the previous or next workspace in order across the screens,
+  Super+Ctrl+Shift+Left/Right take the window there too, and
+  Super+Alt+arrows move the focus as Super+arrows did.
+- The printers (#186): only the printers section asks CUPS. A section's
+  list (the panel and `spark-shell bar panel SECTION --list`) holds
+  that section alone, the glance all of them; the printers section is
+  there where CUPS is installed, asked nowhere else; spark's machine
+  facts name the printers the printers section saw last, from its
+  cache.
+- Proof: dialog tests for a value set in place with nothing said and
+  held over an old read, a switch and its refusal, a palette kept in
+  place, its look and the look taken back, and the arrows across two
+  columns; the pty test clicks a value's arrows in the built dialog;
+  suite tests for the rows' new shapes, the exact values, the look that
+  keeps nothing, the keys bound once, and a theme list, rows and facts
+  that ask CUPS nothing.
+
 ## v0.119
 
 The gamer arc, from the owner's trial of No Man's Sky through Steam

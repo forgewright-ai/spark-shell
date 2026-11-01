@@ -72,6 +72,8 @@ pub enum Kind {
     Hits,
     /// A sound's play or stop in a preview: a key, not a turn (#120).
     Quiet,
+    /// A value set in place (#183): no turn, a refusal puts the value back.
+    Set,
     Subscribe,
     Call(u64),
 }

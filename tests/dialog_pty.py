@@ -347,9 +347,9 @@ def busy(binary, env, home):
 
 
 CLICK_PROVIDER = r"""import json, sys
-step = {"value": "signs", "less": {"name": "theme_glyphs", "arguments": {"to": "signs"}}, "more": {"name": "theme_glyphs", "arguments": {"to": "words"}}, "words": ["signs", "words"]}
-rows = {"title": "theme", "short": [], "rows": [{"id": "theme:show:Bar glyphs", "sign": "blank", "text": "Bar glyphs", "tool": None, "more": [], "columns": [], "children": None, "group": None, "step": step}]}
-tool = {"name": "theme_glyphs", "title": "theme glyphs SET", "inputSchema": {"type": "object", "properties": {"to": {"type": "string", "enum": ["signs", "words"]}}, "required": ["to"], "additionalProperties": False},
+step = {"values": [{"shown": n, "sent": n} for n in ("10", "11", "12")], "at": 1, "set": {"name": "theme_text", "arguments": {}}, "key": "size", "words": ["smaller", "bigger"]}
+rows = {"title": "theme", "short": [], "rows": [{"id": "theme:show:Text size", "sign": "blank", "text": "Text size", "tool": None, "more": [], "columns": [], "children": None, "group": None, "step": step}]}
+tool = {"name": "theme_text", "title": "theme text SIZE", "inputSchema": {"type": "object", "properties": {"size": {"type": "string", "enum": ["10", "11", "12"]}}, "required": ["size"], "additionalProperties": False},
         "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}}
 for line in sys.stdin:
     v = json.loads(line)
@@ -365,7 +365,7 @@ for line in sys.stdin:
     elif m == "tools/call":
         with open(sys.argv[1], "a") as f:
             f.write(json.dumps(v["params"]) + "\n")
-        r = {"content": [{"type": "text", "text": "the bar in " + v["params"]["arguments"]["to"]}], "isError": False}
+        r = {"content": [{"type": "text", "text": "text at " + v["params"]["arguments"]["size"]}], "isError": False}
     else:
         r = {}
     print(json.dumps({"jsonrpc": "2.0", "id": i, "result": r}), flush=True)
@@ -399,7 +399,7 @@ def clicks(binary, env, home):
     def calls():
         try:
             with open(log) as f:
-                return [json.loads(l)["arguments"]["to"] for l in f if l.strip()]
+                return [json.loads(l)["arguments"]["size"] for l in f if l.strip()]
         except OSError:
             return []
 
@@ -409,7 +409,7 @@ def clicks(binary, env, home):
     def arrows():
         # the value row where it stands now, and its two arrows: the list moves down as a receipt comes in above it
         for k, l in enumerate(screen.cells):
-            if "Bar glyphs" in "".join(l) and "\u2039" in l and "\u203a" in l:
+            if "Text size" in "".join(l) and "\u2039" in l and "\u203a" in l:
                 return k, l.index("\u2039"), l.index("\u203a")
         return None
 
@@ -420,18 +420,17 @@ def clicks(binary, env, home):
             return
         r, _, more = arrows()
         click(r, more)
-        ok(wait_for(lambda: calls() == ["words"], 5), "a click on the right arrow steps the value up", repr(calls()))
-        wait_for(lambda: "the bar in words" in screen.text(), 5)   # the answer, not the line the step starts with
+        ok(wait_for(lambda: calls() == ["12"], 5), "a click on the right arrow sets the next value up", repr(calls()))
+        ok(wait_for(lambda: "12" in "".join(screen.cells[r]) and "text at" not in screen.text(), 2), "the value changes in place, and nothing is said", screen.text()[-400:])
         wait_for(lambda: False, 0.5)
         r, less, _ = arrows()
         click(r, less)
-        ok(wait_for(lambda: calls() == ["words", "signs"], 5), "a click on the left arrow steps it down", repr(calls()))
-        wait_for(lambda: "the bar in signs" in screen.text(), 5)
+        ok(wait_for(lambda: calls() == ["12", "11"], 5), "a click on the left arrow sets the next value down", repr(calls()))
         wait_for(lambda: False, 0.5)
         r, _, _ = arrows()
         click(r, 6)
         time.sleep(0.5)
-        ok(calls() == ["words", "signs"], "a click on the row's name lights it and runs nothing", repr(calls()))
+        ok(calls() == ["12", "11"], "a click on the row's name lights it and runs nothing", repr(calls()))
     finally:
         os.write(fd, b"\x03")
         gone = []

@@ -1758,113 +1758,212 @@ fn a_provider_checks_its_rows_only_while_they_are_on_screen_and_its_first_rows_c
     assert_eq!(n("resources/subscribe"), 1);
 }
 
-#[test]
-fn left_and_right_change_a_value_in_place() {
+/// The theme's rows for the value tests (#183): a stepper of three, a switch, two palettes kept in place with a
+/// look each, dark and light side by side, and a setting after them.
+fn theme_rows(at: u64, on: bool) -> Value {
+    let tool = |n: &str| json!({"name": n, "arguments": {}});
+    json!({"title": "theme", "side_by_side": ["dark", "light"], "look_back": {"name": "theme_preview", "arguments": {"name": "off"}}, "rows": [
+        {"id": "theme:mocha", "sign": "check", "text": "mocha", "tool": {"name": "theme_palette", "arguments": {"name": "mocha"}}, "more": [], "columns": [], "children": null, "group": "dark", "quiet": true,
+         "look": {"name": "theme_preview", "arguments": {"name": "mocha"}}},
+        {"id": "theme:nord", "sign": "blank", "text": "nord", "tool": {"name": "theme_palette", "arguments": {"name": "nord"}}, "more": [], "columns": [], "children": null, "group": "dark", "quiet": true,
+         "look": {"name": "theme_preview", "arguments": {"name": "nord"}}},
+        {"id": "theme:latte", "sign": "blank", "text": "latte", "tool": {"name": "theme_palette", "arguments": {"name": "latte"}}, "more": [], "columns": [], "children": null, "group": "light", "quiet": true,
+         "look": {"name": "theme_preview", "arguments": {"name": "latte"}}},
+        {"id": "theme:show:Text size", "sign": "blank", "text": "Text size", "tool": null, "more": [], "columns": [], "children": null, "group": "text",
+         "step": {"values": [{"shown": "10", "sent": "10"}, {"shown": "11", "sent": "11"}, {"shown": "12", "sent": "12"}], "at": at, "set": tool("theme_text"), "key": "size", "words": ["smaller", "bigger"]}},
+        {"id": "theme:show:Words on the bar", "sign": "blank", "text": "Words on the bar", "tool": null, "more": [], "columns": [], "children": null, "group": "text",
+         "switch": {"on": on, "turn_on": {"name": "theme_glyphs", "arguments": {"to": "words"}}, "turn_off": {"name": "theme_glyphs", "arguments": {"to": "signs"}}}}
+    ], "short": []})
+}
+
+/// A theme provider that answers with `rows` every time it is read (a read that left before a change
+/// says the old value), logs every tool call, and refuses the ones `refuse` names.
+fn theme_app(refuse: &'static str) -> (App, std::sync::mpsc::Receiver<Incoming>, Arc<Mutex<Vec<Value>>>) {
     let (mut app, rx, tx) = app_with(&["theme"]);
     let calls = Arc::new(Mutex::new(vec![]));
     let c2 = calls.clone();
-    let tools = json!([{"name": "theme_text", "title": "theme text SIZE", "inputSchema": {"type": "object", "properties": {"size": {"type": "string", "enum": ["bigger", "smaller"]}}, "required": ["size"], "additionalProperties": false}, "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}}]);
-    let rows = json!({"title": "theme", "rows": [
-        {"id": "theme:show:Text size", "sign": "blank", "text": "Text size", "tool": null, "more": [], "columns": [], "children": null, "group": null,
-         "step": {"value": "11", "less": {"name": "theme_text", "arguments": {"size": "smaller"}}, "more": {"name": "theme_text", "arguments": {"size": "bigger"}}, "words": ["smaller", "bigger"]}}
-    ], "short": []});
+    let schema =
+        |k: &str, e: &[&str]| json!({"type": "object", "properties": {k: {"type": "string", "enum": e}}, "required": [k], "additionalProperties": false});
+    let ann = json!({"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false});
+    let tools = json!([
+        {"name": "theme_text", "title": "theme text SIZE", "inputSchema": schema("size", &["10", "11", "12"]), "annotations": ann},
+        {"name": "theme_glyphs", "title": "theme glyphs SET", "inputSchema": schema("to", &["signs", "words"]), "annotations": ann},
+        {"name": "theme_palette", "title": "theme NAME", "inputSchema": schema("name", &["mocha", "nord", "latte"]), "annotations": ann},
+        {"name": "theme_preview", "title": "theme preview NAME", "inputSchema": schema("name", &["mocha", "nord", "latte", "off"]), "annotations": ann}
+    ]);
+    let rows = theme_rows(1, false);
     let script: common::Script = Box::new(move |v, send| {
         if let Some(r) = ordinary("theme", v, &tools, &rows) {
             return send(r);
         }
         if v.get("method").and_then(Value::as_str) == Some("tools/call") {
             c2.lock().unwrap().push(v["params"].clone());
+            let no = v["params"]["name"] == refuse;
+            // a look carries the colors on the screen, for the dialog to wear them too
+            let sc = if v["params"]["name"] == "theme_preview" {
+                json!({"receipt": "done", "palette": {"HEX_FG": "d8dee9", "HEX_ACCENT": "88c0d0"}})
+            } else {
+                json!({"receipt": "done"})
+            };
             send(result(
                 &v["id"],
-                json!({"content": [{"type": "text", "text": "text 12"}], "structuredContent": {"receipt": "text 12", "undo": {"name": "theme_text", "arguments": {"size": "smaller"}}}, "isError": false}),
+                json!({"content": [{"type": "text", "text": if no { "the bar stays in signs" } else { "done" }}], "structuredContent": sc, "isError": no}),
             ));
         }
     });
     app.servers.push(stub(0, "theme", script, tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
-    at_row(&mut app, View::Section(0), 0);
+    (app, rx, calls)
+}
+
+fn row_of<'a>(app: &'a App, id: &str) -> &'a spark_dialog::model::Row {
+    app.providers[0].rows.rows.iter().find(|r| r.id == id).unwrap()
+}
+
+fn lit_at(app: &mut App, id: &str) {
+    at_row(app, View::Section(0), 0);
+    let n = app
+        .picks()
+        .iter()
+        .position(|it| matches!(it, Item::Row(0, r) if app.providers[0].rows.rows[*r].id == id))
+        .unwrap();
+    at_row(app, View::Section(0), n);
+}
+
+#[test]
+fn a_value_changes_in_place_says_nothing_and_holds_over_an_old_read() {
+    // the value on the screen the moment the key is pressed, set behind it; no line runs above the list and no
+    // receipt comes below it; a read that left before the change does not bring the old value back (#183)
+    let (mut app, rx, calls) = theme_app("");
+    lit_at(&mut app, "theme:show:Text size");
     let said = app.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
     assert_eq!(
         said, "Back Esc   Smaller \u{2190}   Bigger \u{2192}",
         "the row under the prompt says what left and right do"
     );
     app.right();
-    assert!(
-        pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["arguments"]["size"] == "bigger")),
-        "right is the value's step up, run at once"
+    assert_eq!(
+        row_of(&app, "theme:show:Text size").step.as_ref().unwrap().value(),
+        "12",
+        "the next value at once, before any answer"
     );
-    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("text 12"))));
+    assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 1), "then it is set");
+    assert_eq!(calls.lock().unwrap()[0]["arguments"]["size"], "12", "the value itself, never a word to step by");
+    assert!(pump(&mut app, &rx, |a| !a.busy_pointer() && !a.providers[0].dirty && !a.providers[0].reading));
+    assert_eq!(
+        row_of(&app, "theme:show:Text size").step.as_ref().unwrap().value(),
+        "12",
+        "the provider's old rows read again: the value holds"
+    );
     assert!(
-        matches!(app.picks().get(app.sel), Some(Item::Row(0, 0))),
-        "the light stays on the value's row while the receipt and the Undo row come in above it: {:?}",
-        app.picks().get(app.sel)
+        app.exchange.is_empty() && app.toast.is_none(),
+        "nothing said: no line above the list, no receipt below it: {:?}",
+        app.exchange
     );
     app.right();
+    std::thread::sleep(Duration::from_millis(100));
+    pump(&mut app, &rx, |_| false);
+    assert_eq!(calls.lock().unwrap().len(), 1, "the end of the list: a press there does nothing");
+    // two presses while the first is set: only the newest is sent after it
+    app.left();
+    app.left();
+    assert_eq!(row_of(&app, "theme:show:Text size").step.as_ref().unwrap().value(), "10");
     assert!(
-        pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 2),
-        "a second right steps the same value again"
+        pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 3),
+        "the one under way and the newest: {:?}",
+        calls.lock().unwrap()
     );
+    let sent: Vec<Value> = calls.lock().unwrap().iter().map(|c| c["arguments"]["size"].clone()).collect();
+    assert_eq!(sent, vec![json!("12"), json!("11"), json!("10")]);
+    assert!(matches!(app.picks().get(app.sel), Some(Item::Row(0, 3))), "the light stays on the value's row");
 }
 
 #[test]
-fn a_click_on_a_value_arrow_steps_it() {
-    // the arrows of a value row look like buttons, so they are (#175): a click on the left one steps it down, on the
-    // right one up, and the row stays lit for the keys
-    let (mut app, rx, tx) = app_with(&["theme"]);
-    let calls = Arc::new(Mutex::new(vec![]));
-    let c2 = calls.clone();
-    let tools = json!([{"name": "theme_glyphs", "title": "theme glyphs SET", "inputSchema": {"type": "object", "properties": {"to": {"type": "string", "enum": ["signs", "words"]}}, "required": ["to"], "additionalProperties": false}, "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}}]);
-    let rows = json!({"title": "theme", "rows": [
-        {"id": "theme:wallpaper", "sign": "blank", "text": "Wallpaper", "tool": null, "more": [], "columns": [], "children": "spark-shell://theme/rows/wallpapers", "group": null},
-        {"id": "theme:show:Bar glyphs", "sign": "blank", "text": "Bar glyphs", "tool": null, "more": [], "columns": [], "children": null, "group": null,
-         "step": {"value": "signs", "less": {"name": "theme_glyphs", "arguments": {"to": "signs"}}, "more": {"name": "theme_glyphs", "arguments": {"to": "words"}}, "words": ["signs", "words"]}}
-    ], "short": []});
-    let script: common::Script = Box::new(move |v, send| {
-        if let Some(r) = ordinary("theme", v, &tools, &rows) {
-            return send(r);
-        }
-        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
-            c2.lock().unwrap().push(v["params"].clone());
-            send(result(
-                &v["id"],
-                json!({"content": [{"type": "text", "text": "the bar in words"}], "isError": false}),
-            ));
-        }
-    });
-    app.servers.push(stub(0, "theme", script, tx));
-    app.start();
-    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
-    app.size = (spark_dialog::app::WIDTH, spark_dialog::app::HEIGHT);
-    at_row(&mut app, View::Section(0), 0);
-    let p = palette("tokyonight-night");
-    let mut b = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, app.size.0, app.size.1));
-    let drawn = spark_dialog::ui::draw(&app, &p, "Sun 18 Oct \u{b7} 12:04", &mut b);
-    let n = app.picks().iter().position(|it| matches!(it, Item::Row(0, 1))).unwrap();
-    let place = |up: bool| *drawn.steps.iter().find(|s| s.3 == n && s.4 == up).expect("a value's arrow takes a click");
-    assert_eq!(drawn.steps.len(), 2, "only the value row has arrows to click: {:?}", drawn.steps);
-    for (up, arrow) in [(false, "\u{2039}"), (true, "\u{203a}")] {
-        let (a, z, y, _, _) = place(up);
-        assert_eq!(z - a, 3, "the arrow and a cell on either side");
-        assert_eq!(b[(a + 1, y)].symbol(), arrow, "the place is on the arrow drawn");
-    }
-    app.step_at(n, true);
+fn a_switch_flips_in_place_and_a_refusal_puts_it_back() {
+    let (mut app, rx, calls) = theme_app("theme_glyphs");
+    lit_at(&mut app, "theme:show:Words on the bar");
+    let said = app.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
+    assert_eq!(said, "Back Esc   Turn on Enter", "the row under the prompt says what Enter does");
+    app.enter();
+    assert!(row_of(&app, "theme:show:Words on the bar").switch.as_ref().unwrap().on, "on at once");
+    assert!(
+        app.in_list && matches!(app.picks().get(app.sel), Some(Item::Row(0, 4))),
+        "the light stays on the switch"
+    );
+    assert!(pump(&mut app, &rx, |a| a.toast.is_some()), "the refusal is said");
+    assert_eq!(calls.lock().unwrap()[0]["arguments"]["to"], "words");
+    assert!(app.toast.as_ref().unwrap().text.contains("the bar stays in signs"), "in the provider's words");
+    let on = |a: &App| {
+        a.providers[0]
+            .rows
+            .rows
+            .iter()
+            .find(|r| r.id == "theme:show:Words on the bar")
+            .and_then(|r| r.switch.as_ref())
+            .is_some_and(|w| w.on)
+    };
+    assert!(pump(&mut app, &rx, |a| !on(a)), "and the switch is off again, as the provider says");
+}
+
+#[test]
+fn a_palette_is_kept_in_place_its_look_shown_while_lit_and_taken_back_after() {
+    let (mut app, rx, calls) = theme_app("");
+    // dark beside light: the arrows go down a column and across at the same height
+    lit_at(&mut app, "theme:mocha");
+    app.right();
+    assert!(matches!(app.picks().get(app.sel), Some(Item::Row(0, 2))), "right: the light column");
+    app.left();
+    app.down();
+    assert!(matches!(app.picks().get(app.sel), Some(Item::Row(0, 1))), "down: the next in the dark column");
+    app.down();
+    assert!(
+        matches!(app.picks().get(app.sel), Some(Item::Row(0, 3))),
+        "down out of the columns: the row after them"
+    );
+    app.up();
+    app.up();
+    app.up();
+    assert!(!app.in_list, "up out of the columns at the top: the prompt");
+    // a palette lit a moment shows its look; the one in use asks for nothing
+    lit_at(&mut app, "theme:nord");
+    app.tick(Instant::now());
+    app.tick(Instant::now() + Duration::from_millis(400));
     assert!(
         pump(&mut app, &rx, |_| calls
             .lock()
             .unwrap()
             .iter()
-            .any(|c| c["name"] == "theme_glyphs" && c["arguments"]["to"] == "words")),
-        "a click on the right arrow is its step up"
+            .any(|c| c["name"] == "theme_preview" && c["arguments"]["name"] == "nord")),
+        "nord's look on the desktop"
     );
-    // the dialog runs one step at a time: the second click waits for the first one's answer, as a person's would
-    assert!(pump(&mut app, &rx, |a| a.running.is_none()), "the step's answer comes back");
-    assert!(matches!(app.picks().get(app.sel), Some(Item::Row(0, 1))), "the clicked row is lit");
-    app.step_at(n, false);
     assert!(
-        pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["arguments"]["to"] == "signs")),
-        "a click on the left arrow is its step down"
+        pump(&mut app, &rx, |a| a.palette.as_ref().is_some_and(|p| p["HEX_FG"] == "d8dee9")),
+        "and the dialog wears it too"
     );
+    lit_at(&mut app, "theme:show:Text size");
+    app.tick(Instant::now());
+    assert!(
+        pump(&mut app, &rx, |_| calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| c["name"] == "theme_preview" && c["arguments"]["name"] == "off")),
+        "the light gone from the palettes: the desktop back"
+    );
+    // Enter keeps one: checked at once, the other not, nothing said
+    lit_at(&mut app, "theme:nord");
+    app.enter();
+    assert_eq!(
+        (row_of(&app, "theme:nord").sign.as_str(), row_of(&app, "theme:mocha").sign.as_str()),
+        ("check", "blank")
+    );
+    assert!(pump(&mut app, &rx, |_| calls
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|c| c["name"] == "theme_palette" && c["arguments"]["name"] == "nord")));
+    assert!(app.exchange.is_empty() && app.toast.is_none(), "kept in place, nothing said");
 }
 
 #[test]

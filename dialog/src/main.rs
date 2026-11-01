@@ -314,7 +314,9 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
         || [drawn.toast_undo, drawn.toast_close].iter().flatten().any(|(a, b, y)| span(*a, *b, *y));
     if dragging {
         "grabbing"
-    } else if clicks {
+    } else if app.busy_pointer() {
+        "progress" // the work under way: spark's hourglass (#183)
+    } else if clicks || drawn.cells.iter().any(|(a, b, y, _)| span(*a, *b, *y)) {
         "pointer"
     } else if drawn.preview.as_ref().is_some_and(|p| app.zoomed() && on((p.x, p.y, p.w, p.h))) {
         "grab"
@@ -433,6 +435,8 @@ fn main() {
     // the last click on a row of Files: where, which, when (#140)
     let mut last_click: Option<(u16, usize, Instant)> = None;
     let mut pointer = "";
+    // where the mouse was last over the window: the pointer's shape is asked again there as the work starts and ends (#183)
+    let mut mouse_at: Option<(u16, u16)> = None;
     let mut films: Option<transition::Films> = None;
     // the transition drawn now: its box, which one, its frame
     let mut shown_film: Option<ShownFilm> = None;
@@ -528,6 +532,14 @@ fn main() {
                 }
             });
             let _ = out.write_all(b"\x1b[?2026l");
+            // the busy pointer as work starts and ends, the mouse still: its shape asked again where it is (#183)
+            if let Some((c, r)) = mouse_at {
+                let want = pointer_at(&app, &drawn, c, r, false);
+                if want != pointer && drag.is_none() {
+                    pointer = want;
+                    let _ = write!(out, "\x1b]22;{}\x1b\\", want);
+                }
+            }
             let _ = out.flush();
             // with no opening to wait for (none chosen, or it never came), the first whole frame shows the window
             if unseen && !matches!(app.motion, Some((Reel::Open, _))) {
@@ -842,6 +854,7 @@ fn main() {
                 dirty = true;
                 // the pointer says what a click does where it is (#129)
                 let dragging = drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_));
+                mouse_at = Some((m.column, m.row));
                 let want = pointer_at(&app, &drawn, m.column, m.row, dragging);
                 if want != pointer {
                     pointer = want;
@@ -891,6 +904,16 @@ fn main() {
                             .picks
                             .iter()
                             .find(|(y, _)| *y == m.row && m.column >= drawn.columns.0 && m.column < drawn.columns.1)
+                            .copied()
+                            .or_else(|| {
+                                // a pick in one of two columns side by side (#183): its own cells
+                                drawn
+                                    .cells
+                                    .iter()
+                                    .find(|(a, b, y, _)| *y == m.row && m.column >= *a && m.column < *b)
+                                    .map(|(_, _, y, n)| (*y, *n))
+                            })
+                            .as_ref()
                         {
                             // a file or a folder in Files: a click lights it, a second one on it opens it, as a file manager's
                             // do; any other row, a place or an action, is done on one click (#140)

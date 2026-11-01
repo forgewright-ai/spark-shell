@@ -308,10 +308,10 @@ pub fn step(tools: &[Tool], rows: &Rows, c: &Call) -> Result<(), String> {
     }
     // a row that asks the person for the argument (a name to save under) names nothing: what is
     // typed there is free, so a step from the model with its own name passes the same way (#25)
-    let naming: Vec<&Call> = rows
+    let naming: Vec<Call> = rows
         .rows
         .iter()
-        .flat_map(|r| r.tool.iter().chain(r.more.iter()).chain(r.step.iter().flat_map(|st| [&st.less, &st.more])))
+        .flat_map(|r| r.calls())
         .filter(|x| x.name == c.name && required.iter().all(|k| x.arguments.contains_key(k) && !x.ask.contains(k)))
         .collect();
     if naming.is_empty() {
@@ -388,6 +388,9 @@ mod tests {
             date: None,
             chip: vec![],
             step: None,
+            switch: None,
+            quiet: false,
+            look: None,
             preview: None,
             page: None,
             film: None,
@@ -402,6 +405,8 @@ mod tests {
                 state: None,
                 rows: vec![row],
                 short: vec![],
+                side_by_side: None,
+                look_back: None,
             },
         )
     }
@@ -621,6 +626,9 @@ mod path_tests {
                 date: None,
                 chip: vec![],
                 step: None,
+                switch: None,
+                quiet: false,
+                look: None,
                 preview: None,
                 page: None,
                 film: None,
@@ -628,6 +636,8 @@ mod path_tests {
                 wide: None,
             }],
             short: vec![],
+            side_by_side: None,
+            look_back: None,
         };
         let step_with = |p: &str, to: &str| Call {
             name: "files_move".into(),

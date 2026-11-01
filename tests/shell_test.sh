@@ -1205,6 +1205,12 @@ grep -q '^xwayland enable$' "$REPO/templates/.config/sway/config" && ! grep -q '
 grep -qxF 'bindsym $mod+Left exec @REPO@/spark-shell desktop window left' "$REPO/templates/.config/sway/config" && grep -qxF 'bindsym $mod+Shift+space exec @REPO@/spark-shell desktop window float' "$REPO/templates/.config/sway/config" \
     && ! grep -q '^bindsym $mod+\(Left\|Right\|Up\|Down\) focus' "$REPO/templates/.config/sway/config" && grep -qxF 'bindsym $mod+h focus left' "$REPO/templates/.config/sway/config" \
     && ok "sway template: Super+arrow snaps the window and Super+Shift+space floats it through desktop window; the focus on Super+h/j/k/l (#182)" || bad "sway window keys" "$(grep -n 'mod+Left\|mod+Shift+space\|mod+h ' "$REPO/templates/.config/sway/config")"
+swt=$REPO/templates/.config/sway/config
+grep -qxF 'bindsym $mod+Ctrl+Left workspace prev' "$swt" && grep -qxF 'bindsym $mod+Ctrl+Right workspace next' "$swt" \
+    && grep -qxF 'bindsym $mod+Ctrl+Shift+Right move container to workspace next, workspace next' "$swt" && grep -qxF 'bindsym $mod+Ctrl+Shift+Left move container to workspace prev, workspace prev' "$swt" \
+    && grep -qxF 'bindsym $mod+Mod1+Left focus left' "$swt" && grep -qxF 'bindsym $mod+Mod1+Down focus down' "$swt" && grep -qxF 'bindsym $mod+Mod1+Up focus up' "$swt" && grep -qxF 'bindsym $mod+Mod1+Right focus right' "$swt" \
+    && [ -z "$(awk '$1 == "bindsym" { print $2 }' "$swt" | sort | uniq -d)" ] \
+    && ok "sway template: Super+Ctrl+Left/Right the workspace before or after, with Shift the window along; Super+Alt+arrows the focus; no key bound twice (#185)" || bad "sway workspace keys" "$(awk '$1 == "bindsym" { print $2 }' "$swt" | sort | uniq -d)"
 grep -v '^#' "$REPO/templates/.config/sway/config" | grep -q 'tmux' && bad "sway: a window starts tmux (it runs the login shell)" || ok "sway template: a new foot runs the login shell, never tmux"
 grep -q "^exec sh -c '\$term -e @REPO@/spark-shell desktop --first; swaymsg exit'$" "$REPO/templates/.config/sway/config" && ok "sway template: the desktop ends with its first terminal (desktop --first: the keys once, then your shell)" || bad "sway template: exec line" "$(grep -n '^exec' "$REPO/templates/.config/sway/config")"
 sway_t=$REPO/templates/.config/sway/config
@@ -2964,18 +2970,18 @@ shots=$HOME/pictures/screenshots
 rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture screen 2>&1) || rc=$?
 # shellcheck disable=SC2088   # the line as the user reads it, a tilde and all
 [ "$rc" = 0 ] && [ "$out" = '~/pictures/screenshots/2026-10-19-153012.png, and on the clipboard' ] && [ "$(cat "$shots/2026-10-19-153012.png")" = PNG ] \
-    && [ "$(tail -1 "$HOME/grim.log")" = "-o HDMI-A-1 $shots/2026-10-19-153012.png" ] && [ "$(cat "$HOME/wlcopy.log")" = '--type image/png' ] && [ "$(cat "$HOME/clip")" = PNG ] \
-    && ok "desktop capture screen: the screen in use, a PNG named by the time in ~/pictures/screenshots, and on the clipboard" || bad "capture screen" "rc=$rc $out $(cat "$HOME/grim.log" 2>&1)"
+    && [ "$(tail -1 "$HOME/grim.log")" = "-c -o HDMI-A-1 $shots/2026-10-19-153012.png" ] && [ "$(cat "$HOME/wlcopy.log")" = '--type image/png' ] && [ "$(cat "$HOME/clip")" = PNG ] \
+    && ok "desktop capture screen: the screen in use with the pointer in it (#184), a PNG named by the time in ~/pictures/screenshots, and on the clipboard" || bad "capture screen" "rc=$rc $out $(cat "$HOME/grim.log" 2>&1)"
 rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture area 2>&1) || rc=$?
 # shellcheck disable=SC2088   # the line as the user reads it, a tilde and all
-[ "$rc" = 0 ] && [ "$out" = '~/pictures/screenshots/2026-10-19-153012-2.png, and on the clipboard' ] && [ "$(tail -1 "$HOME/grim.log")" = "-g 10,20 300x200 $shots/2026-10-19-153012-2.png" ] \
+[ "$rc" = 0 ] && [ "$out" = '~/pictures/screenshots/2026-10-19-153012-2.png, and on the clipboard' ] && [ "$(tail -1 "$HOME/grim.log")" = "-c -g 10,20 300x200 $shots/2026-10-19-153012-2.png" ] \
     && ok "desktop capture area: the area slurp gives; a second picture in the same second gets -2" || bad "capture area" "rc=$rc $out $(tail -1 "$HOME/grim.log")"
 rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture window 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$(tail -1 "$HOME/grim.log")" = "-g 10,40 800x600 $shots/2026-10-19-153012-3.png" ] && ok "desktop capture window: the window in front, by its place on the screen" || bad "capture window" "rc=$rc $out $(tail -1 "$HOME/grim.log")"
+[ "$rc" = 0 ] && [ "$(tail -1 "$HOME/grim.log")" = "-c -g 10,40 800x600 $shots/2026-10-19-153012-3.png" ] && ok "desktop capture window: the window in front, by its place on the screen" || bad "capture window" "rc=$rc $out $(tail -1 "$HOME/grim.log")"
 # the pictures folder the home's file names (#119): a home whose file says ~/Pictures gets no lowercase twin
 mkdir -p "$HOME/.config"; printf 'XDG_PICTURES_DIR="$HOME/Pictures"\n' > "$HOME/.config/user-dirs.dirs"
 rc=0; out=$(WAYLAND_DISPLAY=wayland-1 PATH="$H/lx:$PATH" sh "$SH" desktop capture screen 2>&1) || rc=$?
-_shot=$(tail -1 "$HOME/grim.log" | sed 's/^-o HDMI-A-1 //')   # a numbered name where the folder holds one already: a Mac's folders are one of any case
+_shot=$(tail -1 "$HOME/grim.log" | sed 's/^-c -o HDMI-A-1 //')   # a numbered name where the folder holds one already: a Mac's folders are one of any case
 [ "$rc" = 0 ] && case $_shot in "$HOME/Pictures/screenshots/2026-10-19-153012"*.png) true ;; *) false ;; esac \
     && ok "desktop capture: the screenshots go to the pictures folder ~/.config/user-dirs.dirs names (#119)" || bad "capture pictures folder" "rc=$rc $out $_shot"
 rm -f "$HOME/.config/user-dirs.dirs" "$_shot"
@@ -4040,9 +4046,8 @@ STUB
     out=$(sh "$SH" bar panel lan --list)
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "lan        up $SEP 192.0.2.10" ] && [ "$(printf '%s\n' "$out" | sed -n 3p)" = "  lan        address 192.0.2.10	lan show" ] && printf '%s\n' "$out" | grep -q "^  lan        speed 1000 Mb/s	lan show$" && printf '%s\n' "$out" | grep -q "^  lan        gateway 192.0.2.1	lan show$" \
         && ok "panel lan: the address, the speed and the gateway, a look only, first (the old bar panel spelling)" || bad "panel lan" "$out"
-    printf '%s\n' "$out" | grep -q "^$RING wifi       cafe .*	wifi connect cafe$" && printf '%s\n' "$out" | grep -q "^  theme      [a-z-]* $SEP more	theme more$" && ! printf '%s\n' "$out" | grep -q "^  theme      dracula	" && ! printf '%s\n' "$out" | grep -q "^. bat        " && ! printf '%s\n' "$out" | grep -q "^. clock      " && ! printf '%s\n' "$out" | grep -q "^. layout     none" \
-        && [ "$(printf '%s\n' "$out" | grep -c "	lan show$")" = "$(printf '%s\n' "$out" | grep -c "	[a-z]* show$")" ] && printf '%s\n' "$out" | grep -q "^$GO apps       choose the allowed apps	apps pick$" && [ "$(printf '%s\n' "$out" | grep -n "^$GO apps" | head -1 | cut -d: -f1)" -lt "$(printf '%s\n' "$out" | grep -n "^$RING wifi       cafe" | cut -d: -f1)" ] \
-        && ok "panel lan: then what every other section can do, in order, the slow wifi last; never another section's look-only rows (no layout saved: its one row is a look)" || bad "panel lan rest" "$out"
+    printf '%s\n' "$out" | awk 'NR > 1 && index($0, " lan ") == 0 { bad = 1 } END { exit bad }' \
+        && ok "panel lan: the lan section alone, never every other section after it: building them asked CUPS for a theme's list (#186)" || bad "panel lan rest" "$out"
     out=$(sh "$SH" panel --list)
     printf '%s\n' "$out" | sed -n 1p | grep -q "^$(date '+%A %d %B') $SEP [0-9][0-9]:[0-9][0-9]$" && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "wifi home $SEP bt $DOT MAJOR V $SEP out 40% $SEP mic 50% $SEP bat 80% $SEP theme none" ] && [ "$(printf '%s\n' "$out" | sed -n 3p)" = "$GO spark      chat	spark chat" ] && printf '%s\n' "$out" | grep -q "^$DOT wifi       home	wifi disconnect$" && ! printf '%s\n' "$out" | grep -q "	[a-z]* show$" \
         && ok "panel with nothing first (Super+d): the glance (the date and time, the bar's facts; a wire that is up says nothing), the chat row first, then everything it can do" || bad "panel bar" "$out"
@@ -4158,8 +4163,8 @@ STUB
     rm -f "$blog"; st=0; out=$(sh "$SH" bar panel bt disconnect MAJOR V 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'disconnected MAJOR V' ] && grep -qx 'disconnect 00:25:D1:4A:C2:AA' "$blog" && ok "panel bt disconnect NAME: the device's address told to bluetoothctl" || bad "bt disconnect" "st=$st $out; $(cat "$blog" 2>&1)"
     out=$(sh "$SH" bar panel out --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "out        Jabra $SEP 40%" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT out        Jabra	out show" ] && printf '%s\n' "$out" | grep -q "^$RING out        HDMI	out use HDMI$" && printf '%s\n' "$out" | grep -q "^  out        mute	out mute$" && printf '%s\n' "$out" | grep -q "^  mic        mute	mic mute$" && ! printf '%s\n' "$out" | grep -q "^$DOT mic        Jabra" \
-        && ok "panel out: the cards that play, the one in use named, and mute; the mic's mute after, never its look-only row" || bad "panel out" "$out"
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "out        Jabra $SEP 40%" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "$DOT out        Jabra	out show" ] && printf '%s\n' "$out" | grep -q "^$RING out        HDMI	out use HDMI$" && printf '%s\n' "$out" | grep -q "^  out        mute	out mute$" && ! printf '%s\n' "$out" | grep -q " mic  " \
+        && ok "panel out: the cards that play, the one in use named, and mute; the out section alone (#186)" || bad "panel out" "$out"
     printf ' 0 [USB            ]: USB-Audio - Jabra SPEAK 410 USB\n                      Jabra SPEAK 410 USB at usb-0000:00:14.0-2, full speed\n 1 [HDMI           ]: HDA-Intel - HD-Audio Generic\n' > "$P/asound/cards"
     [ "$(sh "$SH" bar panel out --list | sed -n 1p)" = "out        Jabra SPEAK 410 USB $SEP 40%" ] && ok "ALSA: a card with the generic id USB is named by its long name, read past the driver's own hyphen (USB-Audio)" || bad "alsa usb name" "$(sh "$SH" bar panel out --list | sed -n 1p)"
     printf ' 0 [Jabra          ]: USB-Audio - Jabra SPEAK 410 USB\n                      Jabra SPEAK 410 USB at usb-0000:00:14.0-2, full speed\n 1 [HDMI           ]: HDA-Intel - HD-Audio Generic\n                      HD-Audio Generic at 0xdc5c8000 irq 104\n' > "$P/asound/cards"
@@ -4189,8 +4194,8 @@ STUB
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "$(date '+%A %d %B %Y')" ] && [ -z "$(printf '%s\n' "$out" | sed -n 2p)" ] && printf '%s\n' "$out" | sed -n 3p | grep -q "^ \{40\} *$(date '+%B %Y')$" && printf '%s\n' "$out" | sed -n 4p | grep -q " Su  Mo  Tu  We  Th  Fr  Sa$" && [ "$(printf '%s\n' "$out" | sed -n '4,8p' | grep -c "^[$B ]*${B}[$B ]*      ")" = 5 ] && printf '%s\n' "$out" | sed -n '4,8p' | grep -q "$B$B  *$B" && printf '%s\n' "$out" | grep -q "	clock format 12$" && printf '%s\n' "$out" | grep -q "	clock week monday$" \
         && ok "panel clock: the date alone on top, then the time five rows tall in strokes two cells wide on the left and this month on the right, 34 cells apart; time settings follow" || bad "panel clock" "$out"
     out=$(sh "$SH" bar panel look --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "theme      none" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  theme      Wallpaper	theme wallpaper" ] && printf '%s\n' "$out" | grep -q "^$TICK theme      the terminal's own colors	theme show$" && printf '%s\n' "$out" | grep -q "^  theme      dracula	theme dracula$" && printf '%s\n' "$out" | grep -q "^  theme      save this look as	theme save$" && printf '%s\n' "$out" | grep -q "^  theme      Text size	theme show$" && printf '%s\n' "$out" | grep -q "^  theme      Transparency	theme show$" \
-        && ok "panel theme (look, the old word, still opens it): the wallpaper, the text size and the transparency first, the palettes by name, none as the terminal's own colors, save this look as" || bad "panel look" "$out"
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "theme      none" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  theme      catppuccin-mocha	theme catppuccin-mocha" ] && printf '%s\n' "$out" | grep -q "^  theme      Wallpaper	theme wallpaper$" && printf '%s\n' "$out" | grep -q "^$TICK theme      the terminal's own colors	theme show$" && printf '%s\n' "$out" | grep -q "^  theme      dracula	theme dracula$" && printf '%s\n' "$out" | grep -q "^  theme      save this look as	theme save$" && printf '%s\n' "$out" | grep -q "^  theme      Text size	theme show$" && printf '%s\n' "$out" | grep -q "^  theme      Transparency	theme show$" \
+        && ok "panel theme (look, the old word, still opens it): the palettes first, each its own step (#183), then the wallpaper, the text size and the transparency, the palettes by name, none as the terminal's own colors, save this look as" || bad "panel look" "$out"
     st=0; out=$(sh "$SH" panel theme text bigger 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = "text at 13 $SEP new windows and the bar take it; the pointer 24 pixels" ] && grep -q '^FONT=DejaVu Sans Mono:size=13$' "$HOME/.config/spark-shell/config" && grep -q '^    font pango:DejaVu Sans Mono 13$' "$sway" \
         && ok "panel theme text bigger: FONT in the config, the bar's font rendered, the receipt names the pointer's size" || bad "look text" "st=$st $out $(grep -n 'FONT\|font' "$HOME/.config/spark-shell/config" "$sway")"
@@ -4238,7 +4243,7 @@ STUB
     printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
     line=$(sh "$SH" bar status --once)
     printf '%s' "$line" | jq -e '[.[] | select(.name == "theme")] | length == 0' >/dev/null && ok "bar: no theme block even with a palette set (the panel's theme section has it)" || bad "theme block" "$line"
-    [ "$(sh "$SH" bar panel look --list | grep -c "^$TICK theme      dracula	theme show$")" = 1 ] && ok "panel look: the current palette named" || bad "look current" "$(sh "$SH" bar panel look --list | head -4)"
+    [ "$(sh "$SH" bar panel look --list | grep -c "^$TICK theme      dracula	theme dracula$")" = 1 ] && ok "panel look: the current palette named" || bad "look current" "$(sh "$SH" bar panel look --list | head -4)"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     # a want: spark turns the words into steps from what this machine offers; the gate refuses the rest
     cat > "$H/.local/bin/spark" <<'EOF'
@@ -4414,8 +4419,8 @@ for _mf in "$REPO"/wallpaper/motion/*; do _mn=${_mf##*/}; case $_mn in *.py) wal
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 134 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 134 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 135 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 135 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -4497,7 +4502,7 @@ mcp theme "$(call 1 theme_palette '{"name":"nord"}')" "$(call 2 theme_palette '{
 nfg=$(sed -n 's/^THEME_FG=#//p' "$REPO/themes/nord.env"); nbg=$(sed -n 's/^THEME_BG=#//p' "$REPO/themes/nord.env")
 ans 1 | jq -e --arg f "$nfg" --arg b "$nbg" '.result.structuredContent.palette | (.HEX_FG | ascii_downcase) == ($f | ascii_downcase) and (.PANEL_BG | test("^[0-9a-fA-F]{6}$")) and (.PANEL_BG | ascii_downcase) != ($b | ascii_downcase) and (keys == ["HEX_ACCENT", "HEX_ANSI_1", "HEX_ANSI_2", "HEX_FG", "PANEL_BG", "PANEL_HI", "PANEL_MUTED"])' >/dev/null \
     && ok "provide theme: a step's result carries the palette as it is now, the dialog's surface a shade off the background, so the dialog repaints itself" || bad "theme palette in result" "$(ans 1 | jq -c .result.structuredContent.palette) fg=$nfg bg=$nbg"
-[ "$(ans 2 | jq -r .error.code)" = -32602 ] && ans 2 | jq -e '.error.message | startswith("theme_palette: name is one of ") and contains("nord") and contains("none")' >/dev/null && [ "$(ans 3 | jq -r .error.message)" = 'theme_text: size is one of bigger, smaller' ] && [ "$(ans 4 | jq -r .error.message)" = 'theme_alpha: no argument x' ] \
+[ "$(ans 2 | jq -r .error.code)" = -32602 ] && ans 2 | jq -e '.error.message | startswith("theme_palette: name is one of ") and contains("nord") and contains("none")' >/dev/null && [ "$(ans 3 | jq -r .error.message)" = "theme_text: size is one of bigger, smaller, $(awk 'BEGIN { for (i = 6; i <= 40; i++) printf "%s%d", (i > 6 ? ", " : ""), i }')" ] && [ "$(ans 4 | jq -r .error.message)" = 'theme_alpha: no argument x' ] \
     && [ "$(ans 5 | jq -r .error.message)" = 'no tool wifi_connect in theme' ] && [ "$(ans 6 | jq -r .error.code)" = -32602 ] && [ "$(ans 7 | jq -r .error.message)" = 'theme_alpha: value is a number, 0 to 1' ] \
     && ok "provide: a palette no row offers is outside the schema's enum, -32602 with the names; an argument outside its schema, an argument it lacks, another section's tool and a name of another shape are -32602" || bad "provide refusals" "$(cat "$H/mcp.out")"
 mcp theme "$(call 1 theme_palette '{"name":"none"}')"; grep -q '^THEME=none$' "$HOME/.config/spark-shell/config" && ok "provide: the undo, called as a tool, puts the palette back" || bad "provide undo" "$(cat "$H/mcp.out")"
@@ -5825,12 +5830,23 @@ ans 1 | jq -r '.result.contents[0].text' > "$H/trows.json"; ans 2 | jq -r '.resu
 jq -e --arg dw "$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" '(.rows[] | select(.id == "theme:desk") | .group == "yours" and .columns == ["nord \u00b7 " + $dw] and .tool == {name: "theme_palette", arguments: {name: "desk"}} and (.chip | length) == 9)
     and (.rows[] | select(.id == "theme:save") | .group == "yours" and .text == "save this look as" and .tool.name == "theme_save" and .tool.ask == ["name"])
     and ([.rows[] | select(.group == "back" or .group == "palettes")] | length == 0)
-    and (.rows[] | select(.id == "theme:nord") | .group == "dark" and .columns == ["fjord"] and .chip == ["#2e3440", "#d8dee9", "#88c0d0", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#88c0d0"])
-    and (.rows[] | select(.id == "theme:solarized-light") | .group == "light") and (.rows[] | select(.id == "theme:show:dracula") | .sign == "check" and .columns == ["dunes"] and .group == "dark")
-    and (.rows[] | select(.id == "theme:show:Text size") | .step == {value: "12", less: {name: "theme_text", arguments: {size: "smaller"}}, more: {name: "theme_text", arguments: {size: "bigger"}}, words: ["smaller", "bigger"]} and .tool == null)
-    and (.rows[] | select(.id == "theme:show:Transparency") | .step.value == "15%" and .step.less == {name: "theme_transparency", arguments: {amount: "less"}})
+    and (.rows[] | select(.id == "theme:nord") | .group == "dark" and .columns == [] and .quiet == true and .look == {name: "theme_preview", arguments: {name: "nord"}} and .tool == {name: "theme_palette", arguments: {name: "nord"}}
+        and .chip == ["#2e3440", "#d8dee9", "#88c0d0", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#88c0d0"])
+    and (.rows[] | select(.id == "theme:solarized-light") | .group == "light") and (.rows[] | select(.id == "theme:dracula") | .sign == "check" and .group == "dark" and .tool.arguments.name == "dracula" and .quiet == true)
+    and (.rows[] | select(.id == "theme:show:Text size") | .step.values[.step.at] == {shown: "12", sent: "12"} and (.step.values | length) == 35 and .step.values[0].sent == "6"
+        and .step.set == {name: "theme_text", arguments: {}} and .step.key == "size" and .step.words == ["smaller", "bigger"] and .group == "text and bar" and .tool == null)
+    and (.rows[] | select(.id == "theme:show:Transparency") | .step.values[.step.at] == {shown: "15%", sent: "15"} and .step.values[0] == {shown: "off", sent: "0"} and .step.values[-1].shown == "50%"
+        and .step.key == "amount" and .group == "screen")
+    and .side_by_side == ["dark", "light"] and .look_back == {name: "theme_preview", arguments: {name: "off"}}
+    and ([.rows[] | .group] | index("dark") < index("yours") and index("yours") < index("screen"))
     and ([.rows[] | select(.text | test("^(text bigger|text smaller|more transparency|less transparency)"))] | length == 0) and (.short == ["theme:more"])' "$H/trows.json" >/dev/null \
-    && ok "provide theme rows (#36): the text size and the transparency one row each, a value left and right change; dark and light, each palette with its drawing and its chip; yours: the saved theme with its palette and wallpaper, the save row that asks a name; no back rows" || bad "theme rows" "$(head -c 900 "$H/trows.json")"
+    && ok "provide theme rows (#36, #183): the palettes first, dark beside light, each its own step kept in place with a look, its chip and no drawing; yours: the saved theme, the save row that asks a name; then the settings: the text size and the transparency, each with every value it takes and the one in use; no back rows" || bad "theme rows" "$(head -c 900 "$H/trows.json")"
+# a value set as it is, the dialog's own way (#183); a palette looked at is on the screen and nothing is kept
+mcp theme "$(call 1 theme_text '{"size":"14"}')" "$(call 2 theme_transparency '{"amount":"30"}')" "$(call 3 theme_preview '{"name":"nord"}')" "$(call 4 theme_preview '{"name":"none"}')" "$(call 5 theme_preview '{"name":"off"}')"
+[ "$(ans 1 | jq -r '.result.structuredContent.receipt' | cut -c1-10)" = 'text at 14' ] && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'transparency at 30%' ] \
+    && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'nord on the screen' ] && ans 3 | jq -e '.result.structuredContent | (.palette.HEX_FG | ascii_downcase) == "d8dee9" and .undo == null and .transitions == null' >/dev/null && grep -qx 'THEME=dracula' "$cfg" && [ "$(ans 4 | jq -r '.result.isError')" = true ] && [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'the look in use is on the screen again' ] \
+    && ok "provide theme: a size and a percent set as they are (#183); a palette looked at says so and keeps nothing, none has nothing to show, off puts the look in use back" || bad "theme exact values" "$(cut -c1-400 "$H/mcp.out")"
+sh "$SH" theme text 12 >/dev/null 2>&1; sh "$SH" theme transparency 15 >/dev/null 2>&1   # the steps below start from these
 mcp theme "$(call 1 theme_text '{"size":"bigger"}')" "$(call 2 theme_transparency '{"amount":"more"}')"
 [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = "text at 13 $SEP new windows and the bar take it; the pointer 24 pixels" ] && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'transparency at 25%' ] \
     && ok "provide theme: a value's step passes without the rows drawn (#33), a step with its receipt" || bad "theme quick steps" "$(cat "$H/mcp.out" | cut -c1-300)"
@@ -5849,9 +5865,9 @@ if [ "$(uname -s)" != Darwin ]; then
         && ok "provide theme_wallpaper_color: a color by its name or #rrggbb, a word that is no color refused" || bad "wallpaper color call" "$(cat "$H/mcp.out" | cut -c1-300)"
     # the bar's set and its workspaces (#160): a value each in Settings > theme that left and right change; a step with its
     # undo, the same value again a refusal; a saved theme keeps both and brings them back
-    jq -e '(.rows[] | select(.id == "theme:show:Bar glyphs") | .step == {value: "signs", less: {name: "theme_glyphs", arguments: {to: "signs"}}, more: {name: "theme_glyphs", arguments: {to: "words"}}, words: ["signs", "words"]} and .tool == null)
-        and (.rows[] | select(.id == "theme:show:Workspaces") | .step.value == "symbols" and .step.more == {name: "theme_workspaces", arguments: {to: "numbers"}} and .step.words == ["symbols", "numbers"])' "$H/trows.json" >/dev/null \
-        && ok "provide theme rows (#160): Bar glyphs and Workspaces, a value each that left and right change" || bad "bar rows" "$(jq -c '[.rows[] | select(.id | test("Bar glyphs|Workspaces"))]' "$H/trows.json")"
+    jq -e '(.rows[] | select(.id == "theme:show:Words on the bar") | .switch == {on: false, turn_on: {name: "theme_glyphs", arguments: {to: "words"}}, turn_off: {name: "theme_glyphs", arguments: {to: "signs"}}} and .tool == null and .group == "text and bar")
+        and (.rows[] | select(.id == "theme:show:Numbered workspaces") | .switch.on == false and .switch.turn_on == {name: "theme_workspaces", arguments: {to: "numbers"}} and .switch.turn_off == {name: "theme_workspaces", arguments: {to: "symbols"}})' "$H/trows.json" >/dev/null \
+        && ok "provide theme rows (#160, #183): words on the bar and numbered workspaces, a switch each" || bad "bar rows" "$(jq -c '[.rows[] | select(.id | test("bar|workspaces"))]' "$H/trows.json")"
     mcp theme "$(call 1 theme_glyphs '{"to":"words"}')" "$(call 2 theme_glyphs '{"to":"words"}')" "$(call 3 theme_workspaces '{"to":"numbers"}')"
     [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'the bar in words' ] && ans 1 | jq -e '.result.structuredContent.undo | .name == "theme_glyphs" and .arguments.to == "signs"' >/dev/null \
         && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'the bar is in words already' ] \
@@ -5866,8 +5882,8 @@ if [ "$(uname -s)" != Darwin ]; then
     sed -i.bak '/^BAR_GLYPHS=letters$/d' "$cfg"; rm -f "$cfg.bak"
     # the moving wallpaper (#180): a value in Settings > theme that left and right change; a step with its undo, the same value
     # again a refusal; kept with a saved theme; refused in one line where the tools are not here; a wrong word in the config refused
-    jq -e '.rows[] | select(.id == "theme:show:Moving wallpaper") | .step == {value: "off", less: {name: "theme_motion", arguments: {to: "off"}}, more: {name: "theme_motion", arguments: {to: "on"}}, words: ["off", "on"]} and .tool == null' "$H/trows.json" >/dev/null \
-        && ok "provide theme rows (#180): Moving wallpaper, a value that left and right change" || bad "motion row" "$(jq -c '[.rows[] | select(.id | test("Moving"))]' "$H/trows.json")"
+    jq -e '.rows[] | select(.id == "theme:show:Moving wallpaper") | .switch == {on: false, turn_on: {name: "theme_motion", arguments: {to: "on"}}, turn_off: {name: "theme_motion", arguments: {to: "off"}}} and .tool == null and .group == "screen"' "$H/trows.json" >/dev/null \
+        && ok "provide theme rows (#180, #183): the moving wallpaper, a switch" || bad "motion row" "$(jq -c '[.rows[] | select(.id | test("Moving"))]' "$H/trows.json")"
     mkdir -p "$H/mot"; for t in python3 rsvg-convert mpv mpvpaper; do printf '#!/bin/sh\nexit 0\n' > "$H/mot/$t"; chmod +x "$H/mot/$t"; done
     ( PATH=$H/mot:$PATH; mcp theme "$(call 1 theme_motion '{"to":"on"}')" "$(call 2 theme_motion '{"to":"on"}')" )
     ans 1 | jq -r '.result.structuredContent.receipt' | grep -q '^moving wallpaper on .* dunes is still; orbit moves$' && ans 1 | jq -e '.result.structuredContent.undo | .name == "theme_motion" and .arguments.to == "off"' >/dev/null \
@@ -6316,6 +6332,23 @@ STUB
     [ "$rc" = 0 ] && [ -z "$out" ] && [ "$(ls -ld "$M" | cut -c1-10)" = drwx------ ] && [ "$(ls -l "$mf" | cut -c1-10)" = -rw------- ] && [ "$(ls -l "$mn" | cut -c1-10)" = -rw------- ] \
         && [ "$(ls -A "$M" | paste -sd' ' -)" = 'spark-shell.facts spark-shell.now' ] \
         && ok "desktop --machine: spark-shell.facts and spark-shell.now, 0600 each, in a folder it made 0700, nothing else left there (#159)" || bad "machine files" "rc=$rc $out $(ls -la "$M" 2>&1)"
+    # only the printers section asks CUPS (#186): the facts, the theme's list and its rows never run lpstat or
+    # lib/printers.py; the facts name the printers the printers section saw last, from its cache
+    mkdir -p "$H/prl"; printf '#!/bin/sh\necho "lpstat $*" >> "$HOME/cups.log"\nexit 1\n' > "$H/prl/lpstat"
+    printf '#!/bin/sh\ncase "$*" in *printers.py*) echo "python3 $*" >> "$HOME/cups.log"; exit 1 ;; esac\nexec %s "$@"\n' "$(command -v python3 || echo false)" > "$H/prl/python3"
+    chmod +x "$H/prl/lpstat" "$H/prl/python3"; rm -f "$HOME/cups.log" "$HOME/.local/state/spark-shell/panel/printers.status"
+    PATH="$H/prl:$PATH" MW >/dev/null 2>&1 || :
+    PATH="$H/prl:$PATH" SWAYSOCK=$H/sock sh "$SH" bar panel theme --list >/dev/null 2>&1 || :
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' \
+        '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"spark-shell://theme/rows"}}' | PATH="$H/prl:$PATH" SWAYSOCK=$H/sock sh "$SH" provide theme >/dev/null 2>&1 || :
+    [ ! -s "$HOME/cups.log" ] && [ ! -e "$HOME/.local/state/spark-shell/panel/printers.status" ] && ! grep -q '^- Printers:' "$mf" \
+        && ok "the facts, the theme's list and its rows ask CUPS nothing, and keep nothing of it (#186)" || bad "printers asked" "$(cat "$HOME/cups.log" 2>&1)"
+    mkdir -p "$HOME/.local/state/spark-shell/panel"; printf '%s\n%s\n' "$(date +%s)" '{"default":"office","queues":[{"name":"office","state":"idle","enabled":true},{"name":"lab","state":"idle","enabled":true}]}' > "$HOME/.local/state/spark-shell/panel/printers.status"
+    PATH="$H/prl:$PATH" MW >/dev/null 2>&1 || :
+    grep -qxF -- '- Printers: office (the default), lab.' "$mf" && [ ! -s "$HOME/cups.log" ] \
+        && ok "the facts name the printers the printers section saw last, from its cache, and still ask CUPS nothing (#186)" || bad "printers from cache" "$(grep Printers "$mf"; cat "$HOME/cups.log" 2>&1)"
+    rm -f "$HOME/.local/state/spark-shell/panel/printers.status" "$HOME/cups.log"
+    PATH="$H/prl:$PATH" MW >/dev/null 2>&1 || :   # the facts as they were, no printer seen: the checks below read them so
     grep -qx -- '- Session: sway 1.12 on Wayland (X11 apps run through Xwayland), set up by spark-shell\( v[0-9.]*\)\{0,1\}; screenshots grim, clipboard wl-copy, notifications notify-send, swaymsg.' "$mf" \
         && grep -qxF -- '- Screens: DP-3 = Fakemake Portable 16, on the left, turned 270, portrait, 1920x1200; HDMI-A-1 = Othermake Desk 24, on the right, 1920x1080.' "$mf" \
         && grep -qxF -- '- spark-shell is this desktop: the bar at the top; the dialog (Super+d) is the launcher and the settings, Super+s spark chat in it.' "$mf" \

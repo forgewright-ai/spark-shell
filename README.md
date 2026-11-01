@@ -394,6 +394,7 @@ the dialog's `about` row shows them again.
     Super+Shift+e leaves the desktop.
     Super+h/j/k/l move the focus, and with Shift they move the window.
     Super+Shift+arrow moves the window too.
+    Super+Alt+arrow moves the focus too, across the screens.
     Super+arrow snaps the window to that half of the screen.
     Super+Shift+space floats the window, or tiles it again.
     Super+f makes a window fill the screen.
@@ -403,6 +404,8 @@ the dialog's `about` row shows them again.
     Super+w makes tabs, Super+Shift+s a stack, Super+e side by side again.
     Super+b puts the next window beside this one, and Super+v below it.
     Super+1..0 go to workspaces 1 to 10; with Shift the window goes there.
+    Super+Ctrl+Left/Right go to the previous or next workspace.
+    Super+Ctrl+Shift+Left/Right take the window there too.
     Super+Escape locks the screen; it locks by itself after idle minutes.
     Print captures the screen, Shift+Print an area, Super+Print the window.
     Super+Ctrl+space goes to the next keyboard layout.
@@ -838,24 +841,32 @@ its first and its last row.
   unmount it and eject the drive; then this computer's free space.
 - `power`: lock the screen, suspend, log out, restart, shut down; the
   last three ask for a typed yes.
-- `theme`: first the wallpaper, the text size, the transparency and the
-  dialog's animation, a row each; on the text size and the transparency,
-  left and right change the value in place, and so does a click on its
-  arrows. The animation row opens a
-  list of the pieces and none, the one in use checked and the palette's
-  own said; the lit one plays beside the list in your palette. Then the
-  palettes, dark and light, each with a chip of its colors (its ground,
-  its accent and six hues) and the drawing it brings; a palette brings
-  its animation too. Then yours: your saved themes, `save this look
-  as`, which asks a name, `a theme from a picture`, which opens your
-  home folder, and the terminal's own colors (palette none). Enter on a
-  palette applies it, and Undo takes it back; `theme back` on the
-  command line steps through the last ten. The wallpaper row opens the
-  wallpaper list: the drawings, each with the palette it was drawn for,
-  the lit one shown as a picture in your palette at the top right; `a
-  picture of yours` (jpg, jpeg, png, webp); `a color`, which asks for a
-  name or `#rrggbb`; and the ground. The header names the palette. At
-  the home, Esc clears what spark said; the next Esc closes the dialog.
+- `theme`: the palettes first, dark beside light, each with a chip of
+  its colors (its ground, its accent and six hues); the arrows move down
+  a column and across to the other. A palette lit a moment shows on the
+  screen at once, sway, the bar, the open terminals and its drawing, and
+  nothing is kept until Enter or a click; move the light away, or leave,
+  and yours comes back. A palette brings its drawing and its animation
+  too. Then yours: your saved themes, `save this look as`, which asks a
+  name, `a theme from a picture`, which opens your home folder, and the
+  terminal's own colors (palette none). Then the settings in three
+  groups, each control at the right: the screen (the wallpaper, the
+  moving wallpaper, the transparency), the text and the bar (the text
+  size, words on the bar, numbered workspaces), and the dialog (its
+  animation). A switch flips with Enter, Space or a click; a value
+  steps with left and right or a click on its arrows, the arrow at the
+  end of its range dimmed. Every change shows the moment it is made,
+  and nothing else on the screen moves: no line above the list, no
+  receipt below it. `theme back` on the command line steps through the
+  last ten looks. The wallpaper row opens the wallpaper list: the
+  drawings, each with the palette it was drawn for, the lit one shown
+  as a picture in your palette at the top right; `a picture of yours`
+  (jpg, jpeg, png, webp); `a color`, which asks for a name or
+  `#rrggbb`; and the ground. The animation row opens a list of the
+  pieces and none, the one in use checked and the palette's own said;
+  the lit one plays beside the list in your palette. The header names
+  the palette. At the home, Esc clears what spark said; the next Esc
+  closes the dialog.
 - Calendar: the time in large figures, then this month and the next
   side by side, today lit and a day with a reminder in the accent; the
   left and right arrows move the months while nothing is typed. Under

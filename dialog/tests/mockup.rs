@@ -90,33 +90,58 @@ fn row(id: &str, sign: &str, text: &str, tool: Option<(&str, Value)>, group: Opt
 }
 
 fn theme_rows(cur: &str, drawing: &str, size: &str, transparency: &str) -> Value {
-    let mut rows = vec![
-        json!({"id": "theme:wallpaper", "sign": "blank", "text": "Wallpaper", "tool": null, "more": [], "columns": [drawing], "children": "spark-shell://theme/rows/wallpapers", "group": null}),
-        json!({"id": "theme:text", "sign": "blank", "text": "Text size", "tool": null, "more": [], "columns": [], "children": null, "group": null,
-               "step": {"value": size, "less": {"name": "theme_text", "arguments": {"size": "smaller"}}, "more": {"name": "theme_text", "arguments": {"size": "bigger"}}, "words": ["smaller", "bigger"]}}),
-        json!({"id": "theme:transparency", "sign": "blank", "text": "Transparency", "tool": null, "more": [], "columns": [], "children": null, "group": null,
-               "step": {"value": transparency, "less": {"name": "theme_transparency", "arguments": {"amount": "less"}}, "more": {"name": "theme_transparency", "arguments": {"amount": "more"}}, "words": ["less", "more"]}}),
-    ];
+    // as the provider sends them (#183): the palettes first, dark beside light, each kept in place with a look;
+    // yours; then the settings in three groups, each with its control
+    let mut rows = vec![];
     let all = themes();
     for (dark, group) in [(true, "dark"), (false, "light")] {
         for (name, kv) in all
             .iter()
             .filter(|(_, kv)| (luma(kv.get("THEME_BG").map(String::as_str).unwrap_or("#000")) < 128) == dark)
         {
-            let own = DRAWINGS.iter().find(|(_, p)| p == name).map(|(d, _)| *d).unwrap_or("");
             let sign = if name == cur { "check" } else { "blank" };
-            let tool = if name == cur {
-                Value::Null
-            } else {
-                json!({"name": "theme_palette", "arguments": {"name": name}})
-            };
-            rows.push(json!({"id": format!("theme:{}", name), "sign": sign, "text": name, "tool": tool, "more": [], "columns": [own], "children": null, "group": group, "chip": chip(kv)}));
+            rows.push(json!({"id": format!("theme:{}", name), "sign": sign, "text": name, "tool": {"name": "theme_palette", "arguments": {"name": name}}, "more": [], "columns": [], "children": null, "group": group, "chip": chip(kv),
+                             "quiet": true, "look": {"name": "theme_preview", "arguments": {"name": name}}}));
         }
     }
     rows.push(json!({"id": "theme:save", "sign": "blank", "text": "save this look as", "tool": {"name": "theme_save", "arguments": {}, "ask": ["name"]}, "more": [], "columns": [], "children": null, "group": "yours"}));
     rows.push(json!({"id": "theme:picture", "sign": "blank", "text": "a theme from a picture", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows", "group": "yours"}));
     rows.push(json!({"id": "theme:none", "sign": "blank", "text": "the terminal's own colors", "tool": {"name": "theme_palette", "arguments": {"name": "none"}}, "more": [], "columns": [], "children": null, "group": "yours"}));
-    json!({"title": cur, "rows": rows, "short": []})
+    let sizes: Vec<Value> = (6..=40).map(|n| json!({"shown": n.to_string(), "sent": n.to_string()})).collect();
+    let pcts: Vec<Value> = [0, 10, 20, 25, 30, 40, 50]
+        .iter()
+        .map(|n| json!({"shown": if *n == 0 { "off".to_string() } else { format!("{}%", n) }, "sent": n.to_string()}))
+        .collect();
+    let at_size = size.parse::<usize>().unwrap_or(12).saturating_sub(6);
+    let at_pct = [0, 10, 20, 25, 30, 40, 50].iter().position(|n| format!("{}%", n) == transparency).unwrap_or(3);
+    let switch = |id: &str, text: &str, on: bool, tool: &str, yes: &str, no: &str| {
+        json!({"id": id, "sign": "blank", "text": text, "tool": null, "more": [], "columns": [], "children": null, "group": if tool == "theme_motion" { "screen" } else { "text and bar" },
+               "switch": {"on": on, "turn_on": {"name": tool, "arguments": {"to": yes}}, "turn_off": {"name": tool, "arguments": {"to": no}}}})
+    };
+    rows.push(json!({"id": "theme:wallpaper", "sign": "blank", "text": "Wallpaper", "tool": null, "more": [], "columns": [drawing], "children": "spark-shell://theme/rows/wallpapers", "group": "screen"}));
+    rows.push(switch("theme:show:Moving wallpaper", "Moving wallpaper", false, "theme_motion", "on", "off"));
+    rows.push(json!({"id": "theme:show:Transparency", "sign": "blank", "text": "Transparency", "tool": null, "more": [], "columns": [], "children": null, "group": "screen",
+                     "step": {"values": pcts, "at": at_pct, "set": {"name": "theme_transparency", "arguments": {}}, "key": "amount", "words": ["less", "more"]}}));
+    rows.push(json!({"id": "theme:show:Text size", "sign": "blank", "text": "Text size", "tool": null, "more": [], "columns": [], "children": null, "group": "text and bar",
+                     "step": {"values": sizes, "at": at_size, "set": {"name": "theme_text", "arguments": {}}, "key": "size", "words": ["smaller", "bigger"]}}));
+    rows.push(switch(
+        "theme:show:Words on the bar",
+        "Words on the bar",
+        true,
+        "theme_glyphs",
+        "words",
+        "signs",
+    ));
+    rows.push(switch(
+        "theme:show:Numbered workspaces",
+        "Numbered workspaces",
+        false,
+        "theme_workspaces",
+        "numbers",
+        "symbols",
+    ));
+    rows.push(json!({"id": "theme:show:Animation", "sign": "blank", "text": "Animation", "tool": null, "more": [], "columns": ["moon"], "children": "spark-shell://theme/rows/animations", "group": "dialog"}));
+    json!({"title": cur, "rows": rows, "short": [], "side_by_side": ["dark", "light"], "look_back": {"name": "theme_preview", "arguments": {"name": "off"}}})
 }
 
 fn wallpaper_rows(cur: &str, thumbs: &str) -> Value {

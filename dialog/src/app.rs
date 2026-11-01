@@ -432,6 +432,24 @@ pub enum Who {
     Undo,
 }
 
+/// A value shown before the provider says it (#183): a step's place in its list, a switch's state, a
+/// setting kept (a palette: its row checked, the others not).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Held {
+    At(usize),
+    On(bool),
+    Checked,
+}
+
+/// How long a value set in place is held over the rows read after its call came back.
+const HOLD: Duration = Duration::from_millis(1500);
+/// Work that ends within this shows no busy pointer: a switch that flips at once does not flash an hourglass.
+const BUSY_AFTER: Duration = Duration::from_millis(250);
+/// A row lit this long shows its look on the desktop (#183): the light passing over a list asks for none.
+const LOOK_AFTER: Duration = Duration::from_millis(250);
+/// The id a look's set goes under: one look waits at a time, the newest.
+const LOOK_ID: &str = "\u{0}look";
+
 impl Who {
     pub fn word(&self) -> &'static str {
         match self {
@@ -726,6 +744,18 @@ pub struct App {
     pub preview: Option<Preview>,
     /// A sound's play or stop on its way: its request and its call, audited when it answers.
     quiet: Option<(u64, usize, Call)>,
+    /// A value being set in place (#183): the request, its provider, its row and the call.
+    setting: Option<(u64, usize, String, Call)>,
+    /// The values wanted while one was being set, the last one for each row only.
+    set_next: Vec<(usize, String, Call)>,
+    /// Values shown before the provider's rows say them: kept over every rows read until a moment after
+    /// the last one was set, so a read that left before it never shows the old value again.
+    held: Vec<(usize, String, Held, Option<Instant>)>,
+    /// Since when something the person asked for has been under way: the busy pointer after a moment of it.
+    work_since: Option<Instant>,
+    /// The row whose look is on the desktop now (#183), and the one lit since when, before its look is asked.
+    looked: Option<(usize, String)>,
+    look_at: Option<(usize, String, Instant)>,
     /// The transition playing, and since when (#122); main.rs moves it on and draws it.
     pub motion: Option<(Reel, Instant)>,
     /// The transitions are loaded: Esc that closes the dialog plays the close first.
@@ -810,6 +840,12 @@ impl App {
             list_keys: false,
             preview: None,
             quiet: None,
+            setting: None,
+            set_next: vec![],
+            held: vec![],
+            work_since: None,
+            looked: None,
+            look_at: None,
             motion: None,
             films: false,
             films_want: None,
@@ -1220,6 +1256,7 @@ impl App {
                         self.providers[idx].title = st.clone(); // the subtitle follows the section's state, step by step
                     }
                     self.providers[idx].rows = rows;
+                    self.hold_rows(idx);
                     self.providers[idx].ready = true;
                     if self.view == View::Section(idx) {
                         if let Some(root) = self.files_root(idx) {
@@ -1333,6 +1370,23 @@ impl App {
                 self.clear_pair(idx);
                 self.called(idx, n, result, error)
             }
+            Kind::Set => {
+                let refused = error.is_some() || result.as_ref().and_then(|r| r.get("isError")).and_then(Value::as_bool).unwrap_or(false);
+                let said = result
+                    .as_ref()
+                    .and_then(|r| r.pointer("/content/0/text"))
+                    .and_then(Value::as_str)
+                    .map(scrub)
+                    .filter(|t| !t.is_empty())
+                    .or(error)
+                    .unwrap_or_else(|| "not changed".into());
+                if !refused {
+                    if let Some(sc) = result.as_ref().and_then(|r| r.get("structuredContent")) {
+                        self.wear_theme(idx, sc);
+                    }
+                }
+                self.set_done(idx, n, refused, &said);
+            }
         }
     }
 
@@ -1341,6 +1395,14 @@ impl App {
         if self.busy() {
             self.frame += 1;
         }
+        // the busy pointer: a step, a value being set or a request to spark under way (#183)
+        let under_way = self.running.is_some() || self.setting.is_some() || self.wait.is_some();
+        match (under_way, self.work_since) {
+            (true, None) => self.work_since = Some(now),
+            (false, Some(_)) => self.work_since = None,
+            _ => {}
+        }
+        self.look_follow(now);
         // a sound that has played to its end: the key row says Play again
         if let Some(pv) = self.preview.as_mut() {
             if pv.playing.is_some() && !pv.plays(now) {
@@ -1387,6 +1449,7 @@ impl App {
                     }
                     self.say(Sign::Refused, "the preview did not come in time: Enter opens the file")
                 }
+                Kind::Set => self.set_done(idx, id, true, "it did not answer in time"),
                 Kind::Quiet => {
                     self.quiet = None;
                     if let Some(pv) = self.preview.as_mut() {
@@ -1420,7 +1483,7 @@ impl App {
     }
 
     fn pickable(row: &model::Row) -> bool {
-        row.tool.is_some() || row.children.is_some() || row.step.is_some() || !row.more.is_empty()
+        row.tool.is_some() || row.children.is_some() || row.step.is_some() || row.switch.is_some() || !row.more.is_empty()
     }
 
     /// The sections present that a destination holds; Settings holds those of SETTINGS that run here.
@@ -2114,6 +2177,9 @@ impl App {
         if self.preview_key() {
             return if self.zoomed() { self.preview_pan(0.0, -1.0) } else { self.preview_file(-1) };
         }
+        if self.grid_move(0, -1) {
+            return;
+        }
         self.keep_lit = None;
         if self.in_list {
             if self.sel == 0 {
@@ -2135,6 +2201,9 @@ impl App {
     pub fn down(&mut self) {
         if self.preview_key() {
             return if self.zoomed() { self.preview_pan(0.0, 1.0) } else { self.preview_file(1) };
+        }
+        if self.grid_move(0, 1) {
+            return;
         }
         self.keep_lit = None;
         if self.in_list {
@@ -2233,6 +2302,15 @@ impl App {
                     return self.preview_play_pause();
                 }
                 return self.escape();
+            }
+            if let Some(it) = self
+                .picks()
+                .get(self.sel)
+                .cloned()
+                .filter(|it| self.in_list && self.row_ref(it).is_some_and(|r| r.switch.is_some()))
+            {
+                self.flip_or_keep(&it); // a switch: Space flips it, as Enter and a click do (#183)
+                return;
             }
             if self.open_preview() {
                 return;
@@ -2372,7 +2450,7 @@ impl App {
             }
             return self.preview_page(-1);
         }
-        if self.step_value(false) {
+        if self.step_value(false) || self.grid_move(-1, 0) {
             return;
         }
         if self.input.is_empty() && (!self.in_list || self.is_calendar()) {
@@ -2391,7 +2469,7 @@ impl App {
                 self.preview_page(1)
             };
         }
-        if self.step_value(true) {
+        if self.step_value(true) || self.grid_move(1, 0) {
             return;
         }
         if self.open_steps() {
@@ -2827,6 +2905,9 @@ impl App {
         let picks = self.picks();
         let sel = self.sel.min(picks.len().saturating_sub(1));
         let Some(item) = picks.get(sel).cloned() else { return };
+        if self.input.trim().is_empty() && self.flip_or_keep(&item) {
+            return;
+        }
         let words = self.input.trim().to_string();
         // a list filtered by the words typed: the words were a search, and go with the pick
         if matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..) | View::Found(..)) {
@@ -3472,18 +3553,19 @@ impl App {
             let Some(typed) = call.arguments.get(&k).and_then(Value::as_str).map(str::to_string) else {
                 continue;
             };
-            let mut names: Vec<&str> = vec![];
+            let mut names: Vec<String> = vec![];
             for r in &rows.rows {
-                for c in r.tool.iter().chain(r.more.iter()).chain(r.step.iter().flat_map(|st| [&st.less, &st.more])) {
+                for c in r.calls() {
                     if c.name == call.name {
                         if let Some(v) = c.arguments.get(&k).and_then(Value::as_str) {
-                            if !names.contains(&v) {
-                                names.push(v);
+                            if !names.iter().any(|n| n == v) {
+                                names.push(v.to_string());
                             }
                         }
                     }
                 }
             }
+            let names: Vec<&str> = names.iter().map(String::as_str).collect();
             if names.contains(&typed.as_str()) {
                 continue;
             }
@@ -4355,6 +4437,14 @@ impl App {
         };
         if self.in_list {
             let lit = self.picks().get(self.sel).cloned();
+            if let Some(sw) = lit.as_ref().and_then(|it| self.row_ref(it)).and_then(|r| r.switch.clone()) {
+                if self.input.is_empty() {
+                    // a switch: Enter, Space or a click flips it (#183)
+                    let mut v = key(if sw.on { "Turn off" } else { "Turn on" }, "Enter");
+                    v.extend(esc(esc_word));
+                    return v;
+                }
+            }
             if let Some(st) = lit.as_ref().and_then(|it| self.row_ref(it)).and_then(|r| r.step.clone()) {
                 if self.input.is_empty() {
                     // a value: left and right change it, in place
@@ -4545,23 +4635,261 @@ impl App {
         }
         let Some((prov, row)) = self.lit_row() else { return false };
         let Some(st) = row.step else { return false };
-        let call = if up { st.more } else { st.less };
         self.keep_lit = Some(row.id.clone());
-        // a run of presses on one value is one turn: this change takes the place of the last one's
-        if let Some((id, at)) = self.value_turn.clone() {
-            if id == row.id && self.running.is_none() && at < self.exchange.len() && self.exchange[at + 1..].iter().all(|l| l.sign != Sign::You) {
-                self.exchange.truncate(at);
+        // the next value in the list, on the screen now and set behind it; an end of the list does nothing,
+        // its arrow dimmed (#183)
+        let next = if up {
+            Some(st.at + 1).filter(|i| *i < st.values.len())
+        } else {
+            st.at.checked_sub(1)
+        };
+        if let Some((i, call)) = next.and_then(|i| st.call_at(i).map(|c| (i, c))) {
+            self.set_value(prov, &row.id, Held::At(i), call);
+        }
+        true
+    }
+
+    /// A switch flips, a setting changed in place is kept (a palette): the light stays on its row, and
+    /// nothing is said unless it is refused (#183). False for any other row.
+    fn flip_or_keep(&mut self, item: &Item) -> bool {
+        let Some(row) = self.row_ref(item).cloned() else { return false };
+        let Some(p) = self.prov_of(item) else { return false };
+        if let Some(sw) = &row.switch {
+            self.keep_lit = Some(row.id.clone());
+            self.set_value(p, &row.id, Held::On(!sw.on), sw.flip());
+            return true;
+        }
+        if let (true, Some(call)) = (row.quiet, row.tool.clone()) {
+            self.keep_lit = Some(row.id.clone());
+            self.looked = None;
+            self.look_at = None;
+            self.set_value(p, &row.id, Held::Checked, call);
+            return true;
+        }
+        false
+    }
+
+    /// A value set in place (#183): held to its tool as every step is, shown on its row at once, then
+    /// set; while one is being set, the newest wanted for each row waits, and only it is sent.
+    fn set_value(&mut self, p: usize, id: &str, held: Held, call: Call) {
+        let step = Step {
+            prov: p,
+            call: call.clone(),
+            who: Who::Person,
+            line: String::new(),
+        };
+        if self.tool_of(&step).is_none() {
+            return self.refuse_toast("this is not offered here now");
+        }
+        if let Err(e) = self.checked(&step) {
+            return self.refuse_toast(&e);
+        }
+        self.held.retain(|(hp, hid, _, _)| !(*hp == p && hid == id));
+        self.held.push((p, id.to_string(), held, None));
+        self.hold_rows(p);
+        if self.setting.is_some() {
+            self.set_next.retain(|(np, nid, _)| !(*np == p && nid == id));
+            self.set_next.push((p, id.to_string(), call));
+            return;
+        }
+        self.send_set(p, id, call);
+    }
+
+    fn send_set(&mut self, p: usize, id: &str, call: Call) {
+        let params = json!({"name": call.name, "arguments": Value::Object(call.arguments.clone())});
+        match self.server(p).and_then(|s| s.request("tools/call", params, Kind::Set, mcp::T_CALL)) {
+            Some(n) => self.setting = Some((n, p, id.to_string(), call)),
+            None => {
+                self.held.retain(|(hp, hid, _, _)| !(*hp == p && hid == id));
+                self.refuse_toast("not changed: the part of the desktop that does it stopped");
             }
         }
-        self.value_turn = Some((row.id.clone(), self.exchange.len()));
-        let line = self.step_line(prov, &call, &row.text);
-        self.run(Step {
-            prov,
-            call,
-            who: Who::Person,
-            line,
-        });
+    }
+
+    /// A palette kept or looked at (#183): the dialog wears the colors its result carries, and a palette kept brings
+    /// its animation; the theme section's own result only, plain colors only.
+    fn wear_theme(&mut self, idx: usize, sc: &Value) {
+        if self.providers[idx].label != "theme" {
+            return;
+        }
+        if let Some(p) = sc.get("palette").and_then(Value::as_object) {
+            if p.values().all(|v| {
+                v.as_str()
+                    .is_some_and(|s| s.is_empty() || (s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit())))
+            }) {
+                self.palette = Some(p.clone());
+            }
+        }
+        if let Some(t) = sc.get("transitions").and_then(Value::as_str) {
+            let whole = t.starts_with('/') && !t.split('/').any(|c| c == "..") && !t.chars().any(char::is_control);
+            if t.is_empty() || whole {
+                let want = (!t.is_empty()).then(|| t.to_string());
+                if want != self.cfg.transitions {
+                    self.cfg.transitions = want.clone();
+                    self.films_want = Some(want);
+                }
+            }
+        }
+    }
+
+    /// A value's set came back: audited as every step is; a refusal said and its value given back to the
+    /// provider's rows; then the next one waiting, if any.
+    fn set_done(&mut self, idx: usize, n: u64, refused: bool, said: &str) {
+        let Some((_, p, id, call)) = self.setting.take().filter(|(q, p, _, _)| *q == n && *p == idx) else {
+            return;
+        };
+        let schema = self.providers[p]
+            .tools
+            .iter()
+            .find(|t| t.name == call.name)
+            .map(|t| t.schema.clone())
+            .unwrap_or(Value::Null);
+        crate::audit::record(Who::Person.word(), &self.providers[p].label, &call.name, &schema, &call.arguments, refused);
+        let waiting = self.set_next.iter().any(|(np, nid, _)| *np == p && *nid == id);
+        if refused && !waiting {
+            self.held.retain(|(hp, hid, _, _)| !(*hp == p && *hid == id));
+            self.refuse_toast(said);
+        } else if !waiting {
+            let until = Instant::now() + HOLD;
+            for h in self.held.iter_mut().filter(|(hp, hid, _, _)| *hp == p && *hid == id) {
+                h.3 = Some(until);
+            }
+        }
+        self.providers[p].dirty = true; // the rows read again: the provider's word on the value
+        if !self.set_next.is_empty() {
+            let (np, nid, ncall) = self.set_next.remove(0);
+            self.send_set(np, &nid, ncall);
+        }
+    }
+
+    /// The values held for a provider's rows, over the rows as they came: a step's place, a switch's
+    /// state, the setting kept checked. A hold that ran out goes.
+    fn hold_rows(&mut self, p: usize) {
+        let now = Instant::now();
+        self.held.retain(|(_, _, _, until)| until.is_none_or(|u| u > now));
+        let held: Vec<(String, Held)> = self.held.iter().filter(|h| h.0 == p).map(|h| (h.1.clone(), h.2.clone())).collect();
+        for (id, h) in held {
+            let rows = &mut self.providers[p].rows.rows;
+            match h {
+                Held::At(i) => {
+                    if let Some(st) = rows.iter_mut().find(|r| r.id == id).and_then(|r| r.step.as_mut()) {
+                        st.at = i.min(st.values.len().saturating_sub(1));
+                    }
+                }
+                Held::On(on) => {
+                    if let Some(sw) = rows.iter_mut().find(|r| r.id == id).and_then(|r| r.switch.as_mut()) {
+                        sw.on = on;
+                    }
+                }
+                Held::Checked => {
+                    if rows.iter().any(|r| r.id == id) {
+                        for r in rows.iter_mut().filter(|r| r.quiet) {
+                            r.sign = if r.id == id { "check" } else { "blank" }.to_string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The lit row's look on the desktop (#183): a palette lit a moment shows itself, the light leaving the looks
+    /// puts the desktop back; the one in use and the one shown now ask for nothing.
+    fn look_follow(&mut self, now: Instant) {
+        let want = if self.in_list && self.input.is_empty() && self.mode == Mode::Normal {
+            self.lit_row()
+                .and_then(|(p, r)| r.look.clone().filter(|_| r.sign != "check").map(|c| (p, r.id.clone(), c)))
+        } else {
+            None
+        };
+        match want {
+            Some((p, id, call)) => {
+                if self.looked.as_ref().is_some_and(|(lp, lid)| *lp == p && *lid == id) {
+                    return;
+                }
+                match &self.look_at {
+                    Some((lp, lid, since)) if *lp == p && *lid == id => {
+                        if now.duration_since(*since) >= LOOK_AFTER {
+                            self.look_at = None;
+                            self.looked = Some((p, id));
+                            self.look_set(p, call);
+                        }
+                    }
+                    _ => self.look_at = Some((p, id, now)),
+                }
+            }
+            None => {
+                self.look_at = None;
+                if let Some((p, _)) = self.looked.take() {
+                    if let Some(back) = self.providers[p].rows.look_back.clone() {
+                        self.look_set(p, back);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A look asked of the provider, as a value is set: audited, a refusal said; the newest waits for the one
+    /// under way.
+    fn look_set(&mut self, p: usize, call: Call) {
+        if self.setting.is_some() {
+            self.set_next.retain(|(np, nid, _)| !(*np == p && nid == LOOK_ID));
+            self.set_next.push((p, LOOK_ID.to_string(), call));
+        } else {
+            self.send_set(p, LOOK_ID, call);
+        }
+    }
+
+    /// The arrows in two columns side by side (#183): up and down within a column and out of it at its ends,
+    /// left and right across at the same height. False when the lit row is in neither column.
+    fn grid_move(&mut self, dx: i8, dy: i8) -> bool {
+        if !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal {
+            return false;
+        }
+        let Some((lg, rg)) = self.side_by_side() else { return false };
+        let picks = self.picks();
+        let group = |it: &Item| self.row_ref(it).and_then(|r| r.group.clone());
+        let left: Vec<usize> = (0..picks.len()).filter(|i| group(&picks[*i]).as_deref() == Some(lg.as_str())).collect();
+        let right: Vec<usize> = (0..picks.len()).filter(|i| group(&picks[*i]).as_deref() == Some(rg.as_str())).collect();
+        let (col, other, j) = if let Some(j) = left.iter().position(|i| *i == self.sel) {
+            (&left, &right, j)
+        } else if let Some(j) = right.iter().position(|i| *i == self.sel) {
+            (&right, &left, j)
+        } else {
+            return false;
+        };
+        let (first, last) = (
+            left.iter().chain(right.iter()).min().copied().unwrap_or(0),
+            left.iter().chain(right.iter()).max().copied().unwrap_or(0),
+        );
+        self.keep_lit = None;
+        match (dx, dy) {
+            (0, -1) if j > 0 => self.sel = col[j - 1],
+            (0, -1) if first == 0 => {
+                self.in_list = false; // above the first row is the prompt
+                self.list_keys = false;
+            }
+            (0, -1) => self.sel = first - 1,
+            (0, 1) if j + 1 < col.len() => self.sel = col[j + 1],
+            (0, 1) if last + 1 < picks.len() => self.sel = last + 1,
+            (0, 1) => {}
+            (_, 0) if (dx > 0) == std::ptr::eq(col, &left) && !other.is_empty() => self.sel = other[j.min(other.len() - 1)],
+            _ => {}
+        }
         true
+    }
+
+    /// Two groups of the view's rows to draw side by side (#183): the palettes, dark beside light.
+    pub fn side_by_side(&self) -> Option<(String, String)> {
+        match &self.view {
+            View::Section(p) if !self.searching() => self.providers[*p].rows.side_by_side.clone(),
+            _ => None,
+        }
+    }
+
+    /// Something the person asked for is under way: a step, a value being set, a request to spark, a
+    /// rows read the view waits on. The pointer over the dialog is the busy one meanwhile (#183).
+    pub fn busy_pointer(&self) -> bool {
+        self.work_since.is_some_and(|t| t.elapsed() >= BUSY_AFTER)
     }
 
     /// The lit row's steps, when it has steps of its own (its more): Right opens them as a list of

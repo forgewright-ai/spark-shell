@@ -2308,10 +2308,28 @@ sway_live_cmd() {   # -> the one swaymsg command that gives a running sway the l
     [ -z "$_b" ] || _c="$_c; bar $_b mode $(bar_mode); bar $_b font pango:$(bar_font "$(font_spec)"); bar $_b colors background #$HEX_BG$BAR_ALPHA; bar $_b colors statusline #$HEX_FG; bar $_b colors separator #$HEX_MUTED; bar $_b colors focused_workspace #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG; bar $_b colors active_workspace #$HEX_MUTED #$HEX_MUTED #$HEX_BG; bar $_b colors inactive_workspace #$HEX_BG$BAR_ALPHA #$HEX_BG$BAR_ALPHA #$HEX_MUTED; bar $_b colors urgent_workspace #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG; bar $_b colors binding_mode #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG"
     printf '%s' "$_c"
 }
+theme_preview() (   # theme_preview NAME|off -- a palette on the screen while the dialog's light rests on it (#183): sway, the bar, the open terminals and its drawing, nothing written, nothing kept; off puts the look in use back. Its own shell: the provider keeps the palette in use
+    case ${1:-} in '') echo "preview takes a palette's name, or off"; exit 1 ;; esac
+    MODE=apply; LOOK_PREVIEW=1
+    if [ "$1" = off ]; then config_load; theme_load
+    else
+        [ "$1" != none ] || { echo "none has no colors to show"; exit 1; }
+        palette_render "$1" || { cat "$TMP/palette.why"; exit 1; }
+        [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || wall_yours || ! _pw=$(wall_for_palette "$1") || WALLPAPER=$_pw   # its own drawing, unless a picture of yours is on
+        for _k in $THEME_KEYS; do unset "$_k"; done
+        THEME=$1; THEME_ENV=$TMP/theme.env; theme_load
+    fi
+    wall_follow >/dev/null 2>&1 || :
+    look_burst
+    # the colors on the screen now, for the dialog to wear them too: the provider's own are the palette in use
+    [ "$1" = off ] || { panel_load; jq -cn --arg f "$HEX_FG" --arg a "$HEX_ACCENT" --arg m "$PANEL_MUTED" --arg b "$PANEL_BG" --arg h "$PANEL_HI" --arg r "${HEX_ANSI_1:-}" --arg g "${HEX_ANSI_2:-}" \
+        '{HEX_FG: $f, HEX_ACCENT: $a, PANEL_MUTED: $m, PANEL_BG: $b, PANEL_HI: $h, HEX_ANSI_1: $r, HEX_ANSI_2: $g}' > "$TMP/preview.palette" 2>/dev/null || :; }
+    if [ "$1" = off ]; then echo "the look in use is on the screen again"; else echo "$1 on the screen"; fi
+)
 look_burst() {   # the look on the screen at once (#33): everything made ready first; then a new wallpaper, which takes about 90 ms to draw, and in that moment sway, the bar and the open terminals, which take theirs at once
     _painted=0
     [ "$MODE" = apply ] && [ "$OS" != Darwin ] || return 0
-    portal_look
+    [ -n "${LOOK_PREVIEW:-}" ] || portal_look   # a palette looked at leaves the apps' light or dark as it is (#183)
     _wn=''; ! desktop_wanted || [ -z "${SWAYSOCK:-}" ] || [ "$WALL_BG" = "$(wall_shown)" ] || _wn=1
     look_terms prepare
     ! desktop_wanted || bar_palette
@@ -2325,7 +2343,7 @@ look_burst() {   # the look on the screen at once (#33): everything made ready f
     [ -z "$_sw" ] || wait "$_sw" 2>/dev/null || :   # that one alone: the cover's swaybg is a child too, and runs on
     [ -z "$_sc" ] || pointer_seen
     wall_uncover "$WALL_BG"
-    ! desktop_wanted || motion_follow   # the moving wallpaper follows the drawing and the palette (#180)
+    [ -n "${LOOK_PREVIEW:-}" ] || ! desktop_wanted || motion_follow   # the moving wallpaper follows the drawing and the palette (#180); a look leaves it
 }
 
 # --------------------------------------------------------- the console font
@@ -4204,7 +4222,8 @@ machine_facts() {   # -> the .facts lines: what holds while the machine stays as
         "$(grep -xFf "$TMP/machine.dark" "$TMP/machine.pal" | machine_join)" "$(grep -vxFf "$TMP/machine.dark" "$TMP/machine.pal" | machine_join)" "${_mst:+ Saved themes: $_mst.}"
     _msa=clock; ! saver_can || _msa="clock $SAVER_NAMES"
     printf -- "- Wallpapers: %s, or default. Savers: %s.\n" "$(wall_shipped_names | machine_join)" "$(printf '%s\n' $_msa | machine_join)"
-    if command -v lpstat >/dev/null 2>&1 && printer_status_now > "$TMP/machine.pr" 2>/dev/null; then
+    # the printers the printers section saw last, from its own cache: the facts never ask CUPS (#186)
+    if [ -s "$PANEL_CACHE/printers.status" ] && sed 1d "$PANEL_CACHE/printers.status" > "$TMP/machine.pr" 2>/dev/null && [ -s "$TMP/machine.pr" ]; then
         _mpr=$(jq -r '.default as $d | [.queues[]? | .name + (if .name == $d then " (the default)" else "" end)] | join(", ")' "$TMP/machine.pr" 2>/dev/null || :)
         printf -- '- Printers: %s.\n' "${_mpr:-none}"
     fi
@@ -4444,7 +4463,7 @@ panel_sections() {   # panel_sections [FIRST] -> the sections in order, FIRST on
     [ "$_f" = glance ] || echo "$_f"
     for s in $PANEL_ORDER; do
         [ "$s" != "$_f" ] || continue
-        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; printers) command -v lpstat >/dev/null 2>&1 && printers_here || continue ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|pointer|notes|reminders|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
+        case $s in undo) [ -s "$PANEL_CACHE/undo" ] || continue ;; spark|layout|about) ;; printers) command -v lpstat >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; window|bar|display|keyboard|pointer|notes|reminders|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; *) case $_here in *" $s "*) ;; *) continue ;; esac ;; esac
         echo "$s"
     done
 }
@@ -5024,18 +5043,13 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ "$OS" = Darwin ] || printf -- '-\tchange time zone\tzone\n' ;;
         theme) _sz=$(look_font_size)   # the look (#36): its values first (the wallpaper, the text size, the transparency), then the palettes, dark and light, each with its colors as a chip (provide_rows), then yours: the saved themes, the look in use when it is not saved, keep this look, a theme from a picture, the terminal's own colors
             [ "${2:-}" = full ] || { printf -- '-\t%s %s more\tmore\n' "$(panel_title theme | sed "s/^theme *//")" "$PANEL_SEP"; return 0; }   # one row in the list: the look is a rare pick; typing finds every row below
-            [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\tWallpaper\twallpaper\t|%s\n' "$(wall_now)"   # opens the wallpaper list
-            [ -z "$_sz" ] || printf -- '-\tText size\tshow\n'   # a value left and right change (provide_rows)
-            printf -- '-\tTransparency\tshow\n'
-            [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\tAnimation\tshow\n'   # the dialog's transitions (#122)
-            [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\tBar glyphs\tshow\n-\tWorkspaces\tshow\n-\tMoving wallpaper\tshow\n'   # the bar's set and its workspaces' names (#160), the moving wallpaper (#180): values left and right change
+            # the palettes first, dark beside light (the dialog draws them so), each its own step, the one in use too:
+            # the light rests on it, a palette lit a moment shows on the screen (provide_rows, #183)
             palette_names > "$TMP/pal.names"; palette_darks > "$TMP/pal.dark"
             for _g in dark light; do
                 while IFS= read -r n; do
                     if grep -qxF "$n" "$TMP/pal.dark"; then [ "$_g" = dark ] || continue; else [ "$_g" = light ] || continue; fi
-                    _dw=''; wall_yours || _dw=$(wall_for_palette "$n") || _dw=''   # the drawing it brings; none named over a picture of yours, which stays
-                    [ ! -f "$PALETTE_DIR/$n.env" ] || _dw=yours
-                    if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\tshow\t%s|%s\n' "$PANEL_TICK" "$n" "$_g" "$_dw"; else printf -- '-\t%s\t%s\t%s|%s\n' "$n" "$n" "$_g" "$_dw"; fi
+                    if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\t%s\t%s\n' "$PANEL_TICK" "$n" "$n" "$_g"; else printf -- '-\t%s\t%s\t%s\n' "$n" "$n" "$_g"; fi
                 done < "$TMP/pal.names"
             done
             for n in $(theme_saved_names); do   # yours: the themes kept as folders, the one in use a check
@@ -5046,7 +5060,16 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ "$(theme_kind "${THEME:-}")" != look ] || printf '%s\t%s\tshow\tyours|not saved\n' "$PANEL_TICK" "$(theme_words_of "$THEME")"   # a look from words or a picture stays here until it is saved
             printf -- '-\tsave this look as\tsave\tyours\n'
             [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\ta theme from a picture\tpicture\tyours\n'   # the files, to pick a picture from (the dialog's)
-            if [ "${THEME:-none}" = none ]; then printf '%s\t%s\tshow\tyours\n' "$PANEL_TICK" "$PALETTE_NONE"; else printf -- '-\t%s\tnone\tyours\n' "$PALETTE_NONE"; fi ;;
+            if [ "${THEME:-none}" = none ]; then printf '%s\t%s\tshow\tyours\n' "$PANEL_TICK" "$PALETTE_NONE"; else printf -- '-\t%s\tnone\tyours\n' "$PALETTE_NONE"; fi
+            # then the settings, in three groups, each control at the rows' right (provide_rows, #183): the screen,
+            # the text and the bar, the dialog
+            _de=''; [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || _de=1
+            [ -z "$_de" ] || printf -- '-\tWallpaper\twallpaper\tscreen|%s\n' "$(wall_now)"   # opens the wallpaper list
+            [ -z "$_de" ] || printf -- '-\tMoving wallpaper\tshow\tscreen\n'   # a switch (#180)
+            printf -- '-\tTransparency\tshow\tscreen\n'   # a value left and right change
+            [ -z "$_sz" ] || printf -- '-\tText size\tshow\ttext and bar\n'
+            [ -z "$_de" ] || printf -- '-\tWords on the bar\tshow\ttext and bar\n-\tNumbered workspaces\tshow\ttext and bar\n'   # switches (#160)
+            [ -z "$_de" ] || printf -- '-\tAnimation\tshow\tdialog\n' ;;   # the dialog's transitions (#122): opens their list
         wallpapers) _cur=$(wall_name)   # the theme's wallpaper list (no section of its own, #36): the drawings, each with the palette it was drawn for and its picture in the palette in use (provide_wall_rows); then yours: a picture of yours, a color, the ground
             for w in $(wall_shipped_names); do
                 _pw=$(wall_palette_of "$w"); if [ "$_pw" = any ]; then _pw='for any dark palette'; else _pw="for $_pw"; fi   # the caption under its picture: 24 cells
@@ -5593,22 +5616,6 @@ rem_due_line() {   # -> "due: WORDS  " for tmux's status line while a reminder i
 # package install or queue creation is implicit in looking at these rows.
 printer_status_now() { python3 "$REPO/lib/printers.py" status; }
 printer_status() { panel_cache printers.status 2 printer_status_now; }
-# Whether a print service answers, for the sections the dialog starts: lpstat can take a second, and the
-# window showed nothing but a cursor while it did (#122). The answer is kept ten minutes and asked again
-# aside when older, so no opening waits on it; only the first ever does.
-PRINTERS_HERE_AGE=600
-printers_here() {   # -> 0 when the print service answered the last time it was asked
-    _phf=$PANEL_CACHE/printers.here
-    [ -f "$_phf" ] || { printers_here_now; return; }
-    [ $(( $(date +%s) - $(sed -n 1p "$_phf") )) -lt "$PRINTERS_HERE_AGE" ] 2>/dev/null || ( printers_here_now >/dev/null 2>&1 </dev/null & )
-    [ "$(sed -n 2p "$_phf")" = yes ]
-}
-printers_here_now() {   # -> 0 when the print service answers now; the answer kept for printers_here
-    if printer_status_now >/dev/null 2>&1; then _pha=yes; else _pha=no; fi
-    panel_dir && printf '%s\n%s\n' "$(date +%s)" "$_pha" > "$PANEL_CACHE/printers.here.$$" && mv "$PANEL_CACHE/printers.here.$$" "$PANEL_CACHE/printers.here"
-    [ "$_pha" = yes ]
-}
-
 # --- the notifications (#71): mako shows them, started by the sway
 # template and drawn by ~/.config/mako/config; makoctl is the one tool. Do
 # not disturb is mako's mode of that name, kept in the config
@@ -5890,6 +5897,9 @@ panel_section_rows() {   # panel_section_rows SECTION FIRST -> the section's row
     done
 }
 panel_stream() {   # panel_stream FIRST -> the one list, in the order rows are ready: FIRST, the recent picks, the instant and fast sections, then the slow ones as each answers
+    # a section named lists itself alone, the panel and its text alike: building every other one asked CUPS for a
+    # theme's list (#186); the glance lists them all
+    if [ "$1" != glance ]; then panel_section_rows "$1" "$1"; return; fi
     _slow=''; : > "$TMP/quick.rows"
     for s in $(panel_sections "$1"); do
         if [ "$s" != "$1" ] && [ "$(panel_cost "$s")" = slow ]; then _slow="$_slow $s"; continue; fi
@@ -5953,7 +5963,8 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 alpha) case $_arg in 1|1.0|0|0.[0-9]|0.[0-9][0-9]) ;; *) echo "alpha is 0 to 1, as 0.85"; return 1 ;; esac
                     config_set ALPHA "$_arg" >/dev/null; ALPHA=$_arg; export ALPHA; look_apply
                     echo "alpha at $_arg" ;;
-                transparency|see-through) case $_arg in more|less) alpha_step "$_arg" ;; *) echo "transparency takes more or less"; return 1 ;; esac ;;   # see-through: the word before v0.71
+                transparency|see-through) case ${_arg%\%} in more|less|[0-9]|[1-4][0-9]|50) alpha_step "${_arg%\%}" ;; *) echo "transparency takes more or less, or a percent from 0 to 50"; return 1 ;; esac ;;   # see-through: the word before v0.71
+                preview) theme_preview "$_arg" ;;   # a palette looked at, nothing kept (#183)
                 animation) anim_step "$_arg" ;;
                 glyphs) glyphs_step "$_arg" ;;
                 workspaces) ws_style_step "$_arg" ;;
@@ -6368,8 +6379,9 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         theme:picture|theme:wallpaper-picture) _pp=$(wall_picture_ok "${3:-}") && { echo "$_pp"; return 0; }; echo "$_pp"; return 1 ;;
         theme:wallpaper) case ${3:-} in default) echo default; return 0 ;; esac; ! wall_shipped "${3:-}" || { echo "$3"; return 0; } ;;   # a drawing or the ground: the wallpaper list holds every one
         theme:wallpaper-color) wall_hex "${3:-}" >/dev/null && { echo "$3"; return 0; }; echo "theme: a color is a name ($(printf '%s' "$WALL_NAMES" | sed 's/ /, /g')) or #rrggbb"; return 1 ;;
-        theme:text|theme:font) case ${3:-} in bigger|smaller) echo "$3"; return 0 ;; *) echo "theme: text takes bigger or smaller"; return 1 ;; esac ;;   # a value's own step (#36): no row names it, the row's left and right do
-        theme:transparency) case ${3:-} in more|less) echo "$3"; return 0 ;; *) echo "theme: transparency takes more or less"; return 1 ;; esac ;;
+        theme:text|theme:font) case ${3:-} in bigger|smaller|[6-9]|[1-3][0-9]|40) echo "$3"; return 0 ;; *) echo "theme: text takes bigger or smaller, or a size from 6 to 40"; return 1 ;; esac ;;   # a value's own step (#36): no row names it, the row's values do (#183)
+        theme:transparency) case ${3%\%} in more|less|[0-9]|[1-4][0-9]|50) echo "${3%\%}"; return 0 ;; *) echo "theme: transparency takes more or less, or a percent from 0 to 50"; return 1 ;; esac ;;
+        theme:preview) case "|$(theme_enum)|off|" in *"|${3:-}|"*) echo "$3"; return 0 ;; esac; echo "theme: preview takes a palette's name, or off"; return 1 ;;   # a row's look (#183): no row's step names it
         theme:glyphs) case ${3:-} in signs|words) echo "$3"; return 0 ;; *) echo "theme: glyphs takes signs or words"; return 1 ;; esac ;;
         theme:workspaces) case ${3:-} in symbols|numbers) echo "$3"; return 0 ;; *) echo "theme: workspaces takes symbols or numbers"; return 1 ;; esac ;;
         theme:motion) case ${3:-} in on|off) echo "$3"; return 0 ;; *) echo "theme: motion takes on or off"; return 1 ;; esac ;;
@@ -6415,7 +6427,7 @@ panel_list() {   # panel_list [SECTION] -> the glance (the clock's view under it
 # --- the router and the want: a row is fzf's; an app named is a layout; the rest is spark's
 panel_brief_sections() {   # -> the sections the want path offers here, in the brief's order: every one the dialog has (notes and reminders are files, so a Mac has them too)
     for p in layout apps printers window bar notes reminders display keyboard notifications storage power $(panel_blocks_here); do
-        case $p in lan|bat|clock) continue ;; window|bar|display|keyboard|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; printers) command -v lpstat >/dev/null 2>&1 && printers_here || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
+        case $p in lan|bat|clock) continue ;; window|bar|display|keyboard|notifications|storage|power) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || continue ;; printers) command -v lpstat >/dev/null 2>&1 || continue ;; apps) [ "$OS" != Darwin ] || continue ;; esac
         printf '%s\n' "$p"
     done
 }
@@ -6664,7 +6676,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -6673,6 +6685,15 @@ PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel c
 #   the zero-width set                    \u200b-\u200d \u2060 \ufeff
 #   the line and paragraph separators     \u2028 \u2029
 SCRUB_JQ='gsub("[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069\u200b-\u200d\u2060\ufeff\u2028\u2029]"; "")'
+scrub_plain() {   # scrub_plain WORDS -> them scrubbed; plain printable ASCII as it is, with no process (#183)
+    case $1 in *[!\ -~]*) printf '%s' "$1" | scrub_text ;; *) printf '%s' "$1" ;; esac
+}
+tool_args_json() {   # tool_args_json TOOL VALUE -> the call's arguments as JSON; a plain word for a plain string argument built here, the rest by tool_call_json
+    tool_spec "$1" || return 1
+    if [ -z "$_tp" ]; then printf '{}'; return 0; fi
+    case $_tk:$_te:$2 in level:*|delta:*|alpha:*|minutes:*|speed:*|delay:*|*:?*:*) ;; *:*:*[!A-Za-z0-9._:+-]*) ;; *) printf '{"%s":"%s"}' "$_tp" "$2"; return 0 ;; esac
+    tool_call_json "$1" "$2" | jq -c .arguments
+}
 scrub_text() {   # stdin -> the same lines scrubbed; C0 and DEL alone where there is no jq
     if command -v jq >/dev/null 2>&1; then jq -Rr "$SCRUB_JQ" 2>/dev/null || :; else tr -d '\000-\010\013-\037\177'; fi
 }
@@ -6717,11 +6738,11 @@ tool_spec() {
         mic_adjust)        _ts=mic _ta=adjust _tp=delta _tk=delta _th=f _tt='mic adjust DELTA' _td='Change the microphone level by delta percentage points from its fresh native level. Negative lowers and positive raises; the result is bounded to 0 to 100 and read back. Use this for relative requests; no arithmetic from a remembered level is needed.' ;;
         mic_mute)          _ts=mic _ta=mute _th=if _tt='mic mute' _td='Mute the microphone.' ;;
         mic_unmute)        _ts=mic _ta=unmute _th=if _tt='mic unmute' _td='Unmute the microphone.' ;;
-        theme_palette)     _ts=theme _ta='=' _tp=name _tk=$(theme_enum) _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none.' ;;
+        theme_palette)     _ts=theme _ta='=' _tp=name _tk=${THEME_ENUM_NOW:-$(theme_enum)} _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none.' ;;
         theme_save)        _ts=theme _ta=save _tp=name _tk=string _th=f _tt='theme save NAME' _td='Keep the look in use under a name: the palette, the wallpaper, the text size, the transparency. After the look is made, never before it.' ;;
         theme_delete)      _ts=theme _ta=delete _tp=name _tk=string _th=dif _tt='theme delete NAME' _td='Delete a saved theme.' ;;
         theme_back)        _ts=theme _ta=back _th=f _tt='theme back' _td='The look before this one.' ;;   # free: no row carries it, the gate asks the history
-        theme_text)        _ts=theme _ta=text _tp=size _tk='bigger|smaller' _th='' _tt='theme text SIZE' _td='The text one size bigger or smaller, on every surface.' ;;
+        theme_text)        _ts=theme _ta=text _tp=size _tk='bigger|smaller|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35|36|37|38|39|40' _th='' _tt='theme text SIZE' _td='The text one size bigger or smaller, or a size from 6 to 40, on every surface.' ;;
         theme_wallpaper)   _ts=theme _ta=wallpaper _tp=name _tk=string _th=i _tt='theme wallpaper NAME' _td='The wallpaper: one of the drawings, or default (the ground, the palette a shade darker).' ;;
         theme_wallpaper_color) _ts=theme _ta=wallpaper-color _tp=color _tk=string _th=if _tt='theme wallpaper color COLOR' _td='A plain color as the wallpaper: a name (teal, navy, olive, maroon...) or #rrggbb.' ;;
         theme_wallpaper_picture) _ts=theme _ta=wallpaper-picture _tp=path _tk=path _th=if _tt='theme wallpaper picture PATH' _td='A picture of yours as the wallpaper.' ;;
@@ -6731,7 +6752,8 @@ tool_spec() {
         theme_glyphs)      _ts=theme _ta=glyphs _tp=to _tk='signs|words' _th='' _tt='theme glyphs SET' _td='The bar in signs (the default) or in words.' ;;
         theme_workspaces)  _ts=theme _ta=workspaces _tp=to _tk='symbols|numbers' _th='' _tt='theme workspaces STYLE' _td='The workspaces on the bar as symbols (the default) or as numbers.' ;;
         theme_motion)      _ts=theme _ta=motion _tp=to _tk='on|off' _th='' _tt='theme motion ON' _td='The wallpaper moving (on), where the drawing has a motion, or still (off, the default).' ;;
-        theme_transparency) _ts=theme _ta=transparency _tp=amount _tk='more|less' _th='' _tt='theme transparency AMOUNT' _td='The windows more or less transparent.' ;;
+        theme_transparency) _ts=theme _ta=transparency _tp=amount _tk='more|less|0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35|36|37|38|39|40|41|42|43|44|45|46|47|48|49|50' _th='' _tt='theme transparency AMOUNT' _td='The windows more or less transparent, or a percent from 0 (off) to 50.' ;;
+        theme_preview)     _ts=theme _ta=preview _tp=name _tk="${THEME_ENUM_NOW:-$(theme_enum)}|off" _th='' _tt='theme preview NAME' _td='A palette on the screen while it is looked at, nothing kept; off puts the one in use back.' ;;
         theme_alpha)       _ts=theme _ta=alpha _tp=value _tk=alpha _th=if _tt='theme alpha N' _td='How solid the windows are, 0 to 1.' ;;
         window_split)      _ts=window _ta=split _th=i _tt='window split' _td='New windows side by side.' ;;
         window_tabs)       _ts=window _ta=tabs _th=i _tt='window tabs' _td='New windows in tabs.' ;;
@@ -6874,6 +6896,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
     [ "$1" != clock ] || [ "${2:-}" = settings ] || { provide_clock_rows; return; }
     [ "$1" != about ] || { provide_about_rows; return; }
     [ "$1" != files ] || { provide_files_rows; return; }
+    THEME_ENUM_NOW=''; [ "$1" != theme ] || THEME_ENUM_NOW=$(theme_enum)   # the palette names once for this read, not once a row (#183)
     _asks='[]'
     if [ "$1" = wifi ] && [ -n "$(wifi_tool)" ]; then   # a secured network not saved yet: its password is asked, masked
         wifi_known | cut -f2 > "$TMP/wifi.known.ask"
@@ -6890,15 +6913,22 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                     if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}, said:"done"}, {name:"reminders_snooze", arguments:{name:$id}, said:"again in 10 minutes"}, {name:"reminders_delete", arguments:{name:$id}, said:"delete"}]} else {} end
                    else {} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$(theme_chips "$1")" --arg size "$(look_font_size)" --arg anim "$(anim_now)" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg motion "$WALLPAPER_MOTION" --arg tr "$(_t=$(transparency_of "$ALPHA"); if [ "$_t" -eq 0 ]; then echo off; else echo "$_t%"; fi)" '
+        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$(theme_chips "$1")" --arg size "$(look_font_size)" --arg anim "$(anim_now)" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg motion "$WALLPAPER_MOTION" --argjson trn "$(transparency_of "$ALPHA")" --arg tr "$(_t=$(transparency_of "$ALPHA"); if [ "$_t" -eq 0 ]; then echo off; else echo "$_t%"; fi)" '
             .rows |= map(
                 (if $s == "theme" and ((.group // "") | test("^(dark|light|yours)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
-                | (if $s == "theme" and .id == "theme:show:Text size" then .step = {value: $size, less: {name: "theme_text", arguments: {size: "smaller"}}, more: {name: "theme_text", arguments: {size: "bigger"}}, words: ["smaller", "bigger"]}
-                   elif $s == "theme" and .id == "theme:show:Transparency" then .step = {value: $tr, less: {name: "theme_transparency", arguments: {amount: "less"}}, more: {name: "theme_transparency", arguments: {amount: "more"}}, words: ["less", "more"]}
-                   elif $s == "theme" and .id == "theme:show:Bar glyphs" then .step = {value: $glyphs, less: {name: "theme_glyphs", arguments: {to: "signs"}}, more: {name: "theme_glyphs", arguments: {to: "words"}}, words: ["signs", "words"]}
-                   elif $s == "theme" and .id == "theme:show:Workspaces" then .step = {value: $wsstyle, less: {name: "theme_workspaces", arguments: {to: "symbols"}}, more: {name: "theme_workspaces", arguments: {to: "numbers"}}, words: ["symbols", "numbers"]}
-                   elif $s == "theme" and .id == "theme:show:Moving wallpaper" then .step = {value: $motion, less: {name: "theme_motion", arguments: {to: "off"}}, more: {name: "theme_motion", arguments: {to: "on"}}, words: ["off", "on"]}
+                | (if $s == "theme" and ((.group // "") | test("^(dark|light)$")) and (.tool.name // "") == "theme_palette"
+                   then .quiet = true | .look = {name: "theme_preview", arguments: {name: .tool.arguments.name}} else . end)   # kept in place, looked at while lit (#183)
+                | (if $s == "theme" and .id == "theme:show:Text size" then
+                     ((($size | tonumber? // 12) | if . < 6 then 6 elif . > 40 then 40 else . end) - 6) as $at
+                     | .step = {values: [range(6; 41) | tostring | {shown: ., sent: .}], at: $at, set: {name: "theme_text", arguments: {}}, key: "size", words: ["smaller", "bigger"]}
+                   elif $s == "theme" and .id == "theme:show:Transparency" then
+                     (([0, 10, 20, 30, 40, 50] + [$trn]) | unique) as $v
+                     | .step = {values: [$v[] | {shown: (if . == 0 then "off" else "\(.)%" end), sent: tostring}], at: ($v | index($trn)), set: {name: "theme_transparency", arguments: {}}, key: "amount", words: ["less", "more"]}
+                   elif $s == "theme" and .id == "theme:show:Words on the bar" then .switch = {on: ($glyphs == "words"), turn_on: {name: "theme_glyphs", arguments: {to: "words"}}, turn_off: {name: "theme_glyphs", arguments: {to: "signs"}}}
+                   elif $s == "theme" and .id == "theme:show:Numbered workspaces" then .switch = {on: ($wsstyle == "numbers"), turn_on: {name: "theme_workspaces", arguments: {to: "numbers"}}, turn_off: {name: "theme_workspaces", arguments: {to: "symbols"}}}
+                   elif $s == "theme" and .id == "theme:show:Moving wallpaper" then .switch = {on: ($motion == "on"), turn_on: {name: "theme_motion", arguments: {to: "on"}}, turn_off: {name: "theme_motion", arguments: {to: "off"}}}
                    else . end))
+            | (if $s == "theme" then .side_by_side = ["dark", "light"] | .look_back = {name: "theme_preview", arguments: {name: "off"}} else . end)
             | .rows |= map(
                 if $s == "theme" and (.tool.name // "") == "theme_save" then .tool.ask = ["name"]
                 elif $s == "theme" and .id == "theme:picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_picture", types: ($types | split(" "))}
@@ -6921,7 +6951,9 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
             | .rows |= map(if $s == "notes" and (.tool.name // "") == "notes_open" then
                 {name:"notes_append", arguments:{name:.tool.arguments.name}, ask:["text"], said:"append"} as $append |
                 [. + {more:(.more + [$append, {name:"notes_rename", arguments:{name:.tool.arguments.name}, ask:["to"], said:"rename"}, {name:"notes_trash", arguments:{name:.tool.arguments.name}, said:"trash"}])}]
-              else [.] end) | .rows |= (add // [])' | provide_rows_more "$1"
+              else [.] end) | .rows |= (add // [])' | provide_rows_more "$1" && _prs=0 || _prs=$?
+    THEME_ENUM_NOW=''   # the next read sees a palette saved meanwhile
+    return "$_prs"
 }
 provide_rows_more() {   # provide_rows_more SECTION -- stdin: a rows resource -> the same with one row a thing, its other steps behind it (a saved network's forget, a paired device's remove, a drive's unmount and eject), and the page Space shows for a thing (#169)
     jq -c --arg s "$1" '
@@ -6989,15 +7021,15 @@ provide_in_use() {   # provide_in_use SECTION TOOL ARG -> 0 when ARG names what 
 }
 provide_row_line() {   # provide_row_line SECTION MARK TEXT ACTION [GROUP|COLUMN|DATE|SUFFIX] -> ID US SIGN US TEXT US TOOL US ARGUMENTS US EXTRAS: one row, scrubbed, its step as a tool call; SUFFIX tells two rows with one step apart (a look in the history and the palette)
     case $2 in "$PANEL_DOT") _sg="dot" ;; "$PANEL_RING") _sg="ring" ;; "$PANEL_TICK") _sg="check" ;; "$PANEL_CROSS") _sg="cross" ;; "$PANEL_GO") _sg="opens" ;; *) _sg="blank" ;; esac
-    _tx=$(printf '%s' "$3" | scrub_text); _ac=$(printf '%s' "$4" | scrub_text); _id="$1:$_ac"; _tn=''; _ag='{}'
+    _tx=$(scrub_plain "$3"); _ac=$(scrub_plain "$4"); _id="$1:$_ac"; _tn=''; _ag='{}'
     if [ "$_ac" = show ]; then _id="$1:show:$_tx"
     elif [ "$_ac" = more ]; then :   # the rest of the section: its children, no tool
-    elif action_tool "$1" "$_ac"; then _tn=$_tool; _ag=$(tool_call_json "$_tool" "$_tv" | jq -c .arguments); fi
+    elif action_tool "$1" "$_ac"; then _tn=$_tool; _ag=$(tool_args_json "$_tool" "$_tv"); fi
     _dt=''; _sx=''
-    case ${5:-} in *'|'*) _dt=$(printf '%s' "$5" | cut -d'|' -f3); _sx=$(printf '%s' "$5" | cut -d'|' -f4) ;; esac   # a group alone has no pipe: cut would hand the word back whole
+    case ${5:-} in *'|'*'|'*) _dx=${5#*|}; _dx=${_dx#*|}; _dt=${_dx%%|*}; case $_dx in *'|'*) _dx=${_dx#*|}; _sx=${_dx%%|*} ;; esac ;; esac   # the third and fourth fields, no cut: a group alone has no pipe
     [ -z "$_dt" ] || _id="$_id:$_dt"   # a dated row's id is its own (two reminders may share a name)
     [ -z "$_sx" ] || _id="$_id:$_sx"
-    printf '%s\n' "$_id$US$_sg$US$_tx$US$_tn$US$_ag$US$(printf '%s' "${5:-}" | scrub_text)"   # the parts scrubbed, never the line: the scrubber drops US
+    printf '%s\n' "$_id$US$_sg$US$_tx$US$_tn$US$_ag$US$(scrub_plain "${5:-}")"   # the parts scrubbed, never the line: the scrubber drops US
 }
 provide_clock_rows() {
     jq -cn --arg state "$(time_zone), $(time_sync)" '{title: "clock", state: $state, rows: [{id: "clock:settings", sign: "opens", text: "time settings", tool: null, more: [], columns: [], children: "spark-shell://clock/rows/settings", group: null}], short: ["clock:settings"]}'
@@ -7297,7 +7329,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         provide_quick "$sec" "$_name" "$_v" && _quick=1 || _quick=''
         [ -n "$_quick" ] || provide_rows "$sec" > "$TMP/rows.json"
         [ -n "$_quick" ] || [ "$sec" != theme ] || provide_wall_rows >> "$TMP/rows.json"   # the wallpaper list opens from the theme section: its rows are the theme's too
-        [ -n "$_quick" ] || jq -e -s --arg n "$_name" --argjson a "$_plain" 'any(.[].rows[] | .tool, (.more // [])[], .step.less, .step.more | select(. != null); .name == $n and .arguments == $a)' "$TMP/rows.json" >/dev/null 2>&1 \
+        [ -n "$_quick" ] || jq -e -s --arg n "$_name" --argjson a "$_plain" 'any(.[] | ((.rows // [])[] | .tool, (.more // [])[], (.step // empty | . as $s | $s.values[] | . as $v | $s.set | .arguments[$s.key] = $v.sent), .switch.turn_on, .switch.turn_off, .look), .look_back | select(. != null); .name == $n and .arguments == $a)' "$TMP/rows.json" >/dev/null 2>&1 \
             || provide_in_use "$sec" "$_name" "${_arg:-$_act}" \
             || { provide_refuse "$1" "${_arg:-$_act} is not in the list now"; return 0; } ;;
     esac
@@ -7335,7 +7367,10 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     esac
     _pal='null'; _trn='null'   # a theme step: the palette as it is now, so the dialog repaints itself with it (its colors came in its environment at start)
     [ "$sec" != theme ] || { _trn=$(dialog_transitions); _trn=$(jq -cn --arg t "$_trn" '$t'); }   # and its animation now, read again by an open dialog (#126): "" plays none
-    [ "$sec" != theme ] || { panel_load; _pal=$(jq -cn --arg f "$HEX_FG" --arg a "$HEX_ACCENT" --arg m "$PANEL_MUTED" --arg b "$PANEL_BG" --arg h "$PANEL_HI" --arg r "${HEX_ANSI_1:-}" --arg g "${HEX_ANSI_2:-}" '{HEX_FG: $f, HEX_ACCENT: $a, PANEL_MUTED: $m, PANEL_BG: $b, PANEL_HI: $h, HEX_ANSI_1: $r, HEX_ANSI_2: $g}'); }
+    if [ "$_name" = theme_preview ]; then   # a look: the colors on the screen, no animation changed, nothing to undo (#183)
+        _trn=null; _undo=null; _pal=$(cat "$TMP/preview.palette" 2>/dev/null || :); [ -n "$_pal" ] || _pal=null; rm -f "$TMP/preview.palette"
+    fi
+    [ "$sec" != theme ] || [ "$_name" = theme_preview ] || { panel_load; _pal=$(jq -cn --arg f "$HEX_FG" --arg a "$HEX_ACCENT" --arg m "$PANEL_MUTED" --arg b "$PANEL_BG" --arg h "$PANEL_HI" --arg r "${HEX_ANSI_1:-}" --arg g "${HEX_ANSI_2:-}" '{HEX_FG: $f, HEX_ACCENT: $a, PANEL_MUTED: $m, PANEL_BG: $b, PANEL_HI: $h, HEX_ANSI_1: $r, HEX_ANSI_2: $g}'); }
     if [ -s "$TMP/network.undo" ]; then _undo=$(tool_call_json "${sec}_restore" "$(cat "$TMP/network.undo")"); fi
     if [ -s "$TMP/sound.undo" ]; then _undo=$(tool_call_json "${sec}_level" "$(cat "$TMP/sound.undo")"); fi
     if [ -f "$TMP/opened" ]; then _sc=$(jq -cn '{opened: true}')
@@ -7349,8 +7384,9 @@ provide_quick() {   # provide_quick SECTION TOOL VALUE -> 0 for a pick the rows 
     case $2 in
         theme_palette) case $(theme_kind "$3") in shipped|yours|saved|none) return 0 ;; look) [ "$3" = "${THEME:-}" ] ;; *) return 1 ;; esac ;;
         theme_wallpaper) [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && { wall_shipped "$3" || [ "$3" = default ]; } ;;
-        theme_text) case $3 in bigger|smaller) [ -n "$(look_font_size)" ] ;; *) return 1 ;; esac ;;
-        theme_transparency) case $3 in more|less) return 0 ;; *) return 1 ;; esac ;;
+        theme_text) case $3 in bigger|smaller|[6-9]|[1-3][0-9]|40) [ -n "$(look_font_size)" ] ;; *) return 1 ;; esac ;;   # a size as it is, the dialog's step (#183)
+        theme_transparency) case ${3%\%} in more|less|[0-9]|[1-4][0-9]|50) return 0 ;; *) return 1 ;; esac ;;
+        theme_preview) [ "$3" = off ] || case $(theme_kind "$3") in shipped|yours) return 0 ;; *) return 1 ;; esac ;;   # a palette's look, or the look in use again (#183)
         theme_animation) case " next back none $ANIMATION_NAMES " in *" $3 "*) return 0 ;; *) return 1 ;; esac ;;
         theme_glyphs) case $3 in signs|words) return 0 ;; *) return 1 ;; esac ;;
         theme_workspaces) case $3 in symbols|numbers) return 0 ;; *) return 1 ;; esac ;;
@@ -10844,7 +10880,7 @@ desk_capture() {   # desk_capture screen|area|window [--wait N]
             [ -n "$_g" ] || refuse "no window in front to capture"
             set -- -g "$_g" ;;
     esac
-    grim "$@" "$_f" 2>/dev/null || { rm -f "$_f"; refuse "grim could not take the picture"; }
+    grim -c "$@" "$_f" 2>/dev/null || { rm -f "$_f"; refuse "grim could not take the picture"; }   # -c: the pointer in the picture, as it is on the screen (#184)
     _c=''
     if command -v wl-copy >/dev/null 2>&1 && wl-copy --type image/png < "$_f" 2>/dev/null; then _c=', and on the clipboard'; fi
     # shellcheck disable=SC2088   # the path as you read it, a tilde and all
