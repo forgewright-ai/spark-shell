@@ -3,9 +3,28 @@
 drawn in a palette's own colors, in collections: a look and feel for each
 persona.
 
+    python3 wallpaper/animated/make.py --raw --scene NAME --size WxH [--fps N] [--jobs N] PALETTE.env
+    python3 wallpaper/animated/make.py --info [--scene NAME [--size WxH] [--fps N]]
+    python3 wallpaper/animated/make.py --scene NAME --still T|poster --size WxH --png FILE.png PALETTE.env
+    python3 wallpaper/animated/make.py --scene NAME --still T[,T...] --png DIR [PALETTE.env ...]
     python3 wallpaper/animated/make.py [--collection NAME] [--scene NAME ...] [PALETTE.env ...]
                                        [--size WxH] [--out DIR] [--preset NAME]
-    python3 wallpaper/animated/make.py --scene NAME --still T[,T...] --png DIR [PALETTE.env]
+
+--raw is what the desktop reads: the loop once, rgb24 frames of W*H*3 bytes on
+stdout, seamless, at the scene's own rate unless --fps says another (a pixel
+scene steps 12 times a second on its grid; asked for at its grid's size, as
+--info names it, it comes unscaled, for the player to scale with square
+pixels). --jobs draws frames in that many processes, in order all the same.
+It exits 0 once the whole loop is written; anything it cannot do (a scene it
+does not know, a palette it cannot read, a size it cannot draw, a reader that
+goes away) is one line on stderr and a nonzero exit, and nothing else is ever
+written there. --info is one line of JSON: a scene's rate, length, frames,
+still time and grid, or with no --scene every scene and its collection. A
+still (poster: the scene's own moment) is a PNG, the picture to show before
+its loop is made. Only numpy is needed for these; the MP4s of the last form,
+for a gallery, are encoded by ffmpeg. A landscape size that is not 16 by 9
+gets the scene's picture covering it, centered; a portrait one is refused
+until the scene has its own portrait composition.
 
 cozy: warm and playful, a picture book for grown-ups
 
@@ -47,19 +66,22 @@ ends where it begins: DIR/SCENE/NAME.mp4 for each palette (by default every
 themes/*.env). The colors are the palette's, by the roles the shipped
 wallpapers use (bg, fg, accent, muted, ansi_N, and A+B:PCT, the first moved
 PCT of the way to the second): a dark palette's scene is at night and a
-light one's by day. Most of the picture is still;
-what moves is small and slow, so it can sit behind the terminals.
+light one's by day. Most of the picture is still; what moves is small and
+slow, so it can sit behind the terminals.
 """
 
+import json
 import math
 import os
 import random
+import struct
 import subprocess
 import sys
+import warnings
+import zlib
 from multiprocessing import Pool
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -228,6 +250,75 @@ class Shape:
         return min(xs), min(ys), max(xs), max(ys)
 
 
+def scan(polys, w, h):
+    """Polygons filled into a mask h by w: a sample is in when its center is.
+    Each polygon is turned the same way first, so overlapping ones make a union."""
+    D = np.zeros((h, w + 2), np.int32)
+    for pts in polys:
+        P = np.asarray(pts, np.float64)
+        if len(P) < 3:
+            continue
+        x, y = P[:, 0], P[:, 1]
+        if np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y) < 0:
+            x, y = x[::-1], y[::-1]
+        x1, y1 = np.roll(x, -1), np.roll(y, -1)
+        r0 = np.clip(np.ceil(np.minimum(y, y1) - 0.5), 0, h).astype(np.int64)  # the rows whose centers each edge crosses
+        r1 = np.clip(np.ceil(np.maximum(y, y1) - 0.5), 0, h).astype(np.int64)
+        n = np.maximum(r1 - r0, 0)
+        tot = int(n.sum())
+        if not tot:
+            continue
+        e = np.repeat(np.arange(len(x)), n)
+        r = r0[e] + np.arange(tot) - np.repeat(np.cumsum(n) - n, n)
+        xi = x[e] + (r + 0.5 - y[e]) * (x1[e] - x[e]) / (y1[e] - y[e])
+        col = np.clip(np.floor(xi - 0.5).astype(np.int64) + 1, 0, w + 1)
+        np.add.at(D, (r, col), np.where(y1[e] > y[e], 1, -1))
+    return np.cumsum(D, axis=1)[:, :w] != 0
+
+
+def strokes(m, pts, r, strict=False):
+    """A round stroke of radius r along points into the mask m: round ends and joins."""
+    h, w = m.shape
+    segs = list(zip(pts, pts[1:])) or [(pts[0], pts[0])]
+    for (ax, ay), (bx, by) in segs:
+        x0, x1 = max(0, int(math.floor(min(ax, bx) - r))), min(w, int(math.ceil(max(ax, bx) + r)) + 1)
+        y0, y1 = max(0, int(math.floor(min(ay, by) - r))), min(h, int(math.ceil(max(ay, by) + r)) + 1)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        X = np.arange(x0, x1, dtype=np.float32)[None, :] + 0.5 - ax
+        Y = np.arange(y0, y1, dtype=np.float32)[:, None] + 0.5 - ay
+        dx, dy = bx - ax, by - ay
+        ll = dx * dx + dy * dy
+        t = np.clip((X * dx + Y * dy) / ll, 0, 1) if ll > 0 else 0.0
+        d2 = (X - t * dx) ** 2 + (Y - t * dy) ** 2
+        m[y0:y1, x0:x1] |= (d2 < r * r) if strict else (d2 <= r * r)
+
+
+def box_blur(a, r, axis):
+    """A running mean 2r+1 wide along an axis, the edges taken as empty."""
+    if r <= 0:
+        return a
+    pad = [(0, 0)] * a.ndim
+    pad[axis] = (r + 1, r)
+    c = np.cumsum(np.pad(a, pad), axis=axis, dtype=np.float64)
+    hi = np.take(c, np.arange(2 * r + 1, c.shape[axis]), axis=axis)
+    lo = np.take(c, np.arange(0, c.shape[axis] - 2 * r - 1), axis=axis)
+    return ((hi - lo) / (2 * r + 1)).astype(np.float32)
+
+
+def blur(a, sigma):
+    """A Gaussian blur of sigma pixels, as three running means (close enough to the eye)."""
+    if sigma < 0.3:
+        return a
+    wl = int(math.sqrt(4 * sigma * sigma + 1))
+    wl -= 1 - wl % 2
+    m = round((12 * sigma * sigma - 3 * wl * wl - 12 * wl - 9) / (-4 * wl - 4))
+    for i in range(3):
+        r = ((wl if i < m else wl + 2) - 1) // 2
+        a = box_blur(box_blur(a, r, 0), r, 1)
+    return a
+
+
 def cover(cv, shape, ss=4, above=None, below=None, soft=0.0, clip=None):
     """A shape's coverage over its pixels: drawn ss times larger and averaged down.
     above: only what is above that height (a waterline); below: only what is under
@@ -241,24 +332,15 @@ def cover(cv, shape, ss=4, above=None, below=None, soft=0.0, clip=None):
         return None
     px0, py0, px1, py1 = b
     w, h = px1 - px0, py1 - py0
-    im = Image.new("L", (w * ss, h * ss), 0)
-    d = ImageDraw.Draw(im)
     k = cv.s * ss
     tr = lambda p: ((p[0] * cv.s - px0) * ss, (p[1] * cv.s - py0) * ss)
+    m = scan([[tr(p) for p in cmd[1]] for cmd in shape.cmds if cmd[0] == "poly" and len(cmd[1]) >= 3], w * ss, h * ss)
     for cmd in shape.cmds:
-        if cmd[0] == "poly":
-            if len(cmd[1]) >= 3:
-                d.polygon([tr(p) for p in cmd[1]], fill=255)
-        else:
-            pts, lw = [tr(p) for p in cmd[1]], max(1.0, cmd[2] * k)
-            if len(pts) > 1:
-                d.line(pts, fill=255, width=int(round(lw)), joint="curve")
-            r = lw / 2
-            for x, y in (pts[0], pts[-1]):
-                d.ellipse([x - r, y - r, x + r, y + r], fill=255)
-    cov = np.asarray(im, np.float32).reshape(h, ss, w, ss).mean(axis=(1, 3)) / 255
+        if cmd[0] == "line" and cmd[1]:
+            strokes(m, [tr(p) for p in cmd[1]], round(max(1.0, cmd[2] * k)) / 2, strict=True)  # a whole number of samples wide
+    cov = m.reshape(h, ss, w, ss).mean(axis=(1, 3), dtype=np.float32)
     if soft:
-        cov = np.asarray(Image.fromarray(np.rint(cov * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(soft * cv.s)), np.float32) / 255
+        cov = blur(cov, soft * cv.s)
     if clip is not None:
         cov = cov * clip[py0:py1, px0:px1]
     rows = (np.arange(py0, py1, dtype=np.float32) + 0.5)[:, None]
@@ -397,7 +479,7 @@ def wave(t, period, phase=0.0):
 
 
 class Scene:
-    name, seconds = "", 24
+    name, seconds, poster = "", 24, 6.0
 
     def back(self, cv, p):  # drawn once: what is behind everything that moves
         return []
@@ -420,6 +502,7 @@ class Scene:
 
 class Onsen(Scene):
     name = "onsen"
+    poster = 4.0  # the still: the list's picture, and what shows before the loop is made
     PX, PY, PRX, PRY = 1120.0, 846.0, 430.0, 118.0  # the pool
     CX, CY = 1030.0, 836.0  # the capybara: its waterline under the neck
 
@@ -723,6 +806,7 @@ class Cached:
 
 class Duck(Scene, Cached):
     name = "duck"
+    poster = 9.0
     PX, PY, PRX, PRY = 960.0, 868.0, 900.0, 205.0  # the pond
     WL = 820.0  # the duck's waterline
 
@@ -928,6 +1012,7 @@ class Duck(Scene, Cached):
 
 class Reef(Scene, Cached):
     name = "reef"
+    poster = 4.5
 
     def colors(self, p):
         if not hasattr(self, "_c") or self._c[0] is not p:
@@ -1119,6 +1204,7 @@ class Reef(Scene, Cached):
 
 class Campfire(Scene, Cached):
     name = "campfire"
+    poster = 3.0
     FX, FY = 840.0, 880.0  # the fire
     RX, RY = 1130.0, 884.0  # the raccoon's seat
 
@@ -1319,6 +1405,7 @@ class Campfire(Scene, Cached):
 
 class Ufo(Scene, Cached):
     name = "ufo"
+    poster = 8.0
     HZ = 720.0
     COW = (1180.0, 862.0)
     HOVER = (1180.0, 400.0)
@@ -1471,6 +1558,7 @@ class Ufo(Scene, Cached):
 
 class Pigeons(Scene, Cached):
     name = "pigeons"
+    poster = 1.5
     WIRE = (140.0, 1780.0, 410.0, 56.0)  # its ends, its height, its sag
     PERCH = (560.0, 720.0, 1060.0, 1220.0, 1360.0)
 
@@ -1651,7 +1739,14 @@ BLACK3 = (0.0, 0.0, 0.0)
 PW, PH, PFPS = 480, 270, 12
 WHITE3 = (255.0, 255.0, 255.0)
 BAYER = (np.array([[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]], np.float32) + 0.5) / 16
-DITHER = np.tile(BAYER, (PH // 4 + 1, PW // 4 + 1))[:PH, :PW]
+DITHERS = {}
+
+
+def dither(h, w):
+    """The ordered dither's thresholds over a canvas h by w, fixed to its pixels."""
+    if (h, w) not in DITHERS:
+        DITHERS[(h, w)] = np.tile(BAYER, (h // 4 + 1, w // 4 + 1))[:h, :w]
+    return DITHERS[(h, w)]
 
 
 def C(col):
@@ -1659,40 +1754,55 @@ def C(col):
 
 
 class Mask:
-    """Shapes with hard edges, as a pixel artist draws them: a pixel is in or out."""
+    """Shapes with hard edges, as a pixel artist draws them: a pixel is in or out.
+    Whole numbers name pixels, as on a grid of them; a polygon keeps its edge."""
 
-    def __init__(self):
-        self.im = Image.new("L", (PW, PH), 0)
-        self.d = ImageDraw.Draw(self.im)
+    def __init__(self, w=None, h=None):
+        self.mm = np.zeros((h or PH, w or PW), bool)
 
     def poly(self, pts):
-        self.d.polygon([(round(x), round(y)) for x, y in pts], fill=255)
+        q = [(round(x) + 0.5, round(y) + 0.5) for x, y in pts]
+        self.mm |= scan([q], self.mm.shape[1], self.mm.shape[0])
+        strokes(self.mm, q + q[:1], 0.5)
         return self
 
     def rect(self, x, y, w, h):
         x0, y0, x1, y1 = round(x), round(y), round(x + w) - 1, round(y + h) - 1
         if x1 >= x0 and y1 >= y0:
-            self.d.rectangle([x0, y0, x1, y1], fill=255)
+            self.mm[max(0, y0) : max(0, y1 + 1), max(0, x0) : max(0, x1 + 1)] = True
         return self
 
+    def _in(self, x0, y0, x1, y1, shrink=0.0):
+        """The pixels inside the ellipse that fits pixels x0..x1 by y0..y1."""
+        cx, cy = (x0 + x1 + 1) / 2, (y0 + y1 + 1) / 2
+        rx, ry = (x1 - x0 + 1) / 2 - shrink, (y1 - y0 + 1) / 2 - shrink
+        if rx <= 0 or ry <= 0:
+            return np.zeros_like(self.mm)
+        X = (np.arange(self.mm.shape[1], dtype=np.float32)[None, :] + 0.5 - cx) / rx
+        Y = (np.arange(self.mm.shape[0], dtype=np.float32)[:, None] + 0.5 - cy) / ry
+        return X * X + Y * Y <= 1.0
+
     def ell(self, cx, cy, rx, ry):
-        self.d.ellipse([round(cx - rx), round(cy - ry), round(cx + rx), round(cy + ry)], fill=255)
+        self.mm |= self._in(round(cx - rx), round(cy - ry), round(cx + rx), round(cy + ry))
         return self
 
     def ring(self, cx, cy, rx, ry, w=1):
-        self.d.ellipse([round(cx - rx), round(cy - ry), round(cx + rx), round(cy + ry)], outline=255, width=w)
+        box_ = (round(cx - rx), round(cy - ry), round(cx + rx), round(cy + ry))
+        self.mm |= self._in(*box_) & ~self._in(*box_, shrink=w)
         return self
 
     def line(self, pts, w=1):
-        self.d.line([(round(x), round(y)) for x, y in pts], fill=255, width=w)
+        strokes(self.mm, [(round(x) + 0.5, round(y) + 0.5) for x, y in pts], w / 2)
         return self
 
     def px(self, x, y):
-        self.d.point((round(x), round(y)), fill=255)
+        x, y = round(x), round(y)
+        if 0 <= y < self.mm.shape[0] and 0 <= x < self.mm.shape[1]:
+            self.mm[y, x] = True
         return self
 
     def m(self):
-        return np.asarray(self.im) > 0
+        return self.mm
 
 
 def fill(a, mask, col, alpha=1.0):
@@ -1705,35 +1815,35 @@ def fill(a, mask, col, alpha=1.0):
 
 def put(a, x, y, col, alpha=1.0):
     x, y = int(round(x)), int(round(y))
-    if 0 <= x < PW and 0 <= y < PH:
+    if 0 <= x < a.shape[1] and 0 <= y < a.shape[0]:
         a[y, x] += (C(col) - a[y, x]) * alpha
 
 
 def hline(a, x0, x1, y, col, alpha=1.0):
     y = int(round(y))
-    x0, x1 = max(0, int(round(x0))), min(PW, int(round(x1)))
-    if 0 <= y < PH and x1 > x0:
+    x0, x1 = max(0, int(round(x0))), min(a.shape[1], int(round(x1)))
+    if 0 <= y < a.shape[0] and x1 > x0:
         a[y, x0:x1] += (C(col) - a[y, x0:x1]) * alpha
 
 
 def vline(a, x, y0, y1, col, alpha=1.0):
     x = int(round(x))
-    y0, y1 = max(0, int(round(y0))), min(PH, int(round(y1)))
-    if 0 <= x < PW and y1 > y0:
+    y0, y1 = max(0, int(round(y0))), min(a.shape[0], int(round(y1)))
+    if 0 <= x < a.shape[1] and y1 > y0:
         a[y0:y1, x] += (C(col) - a[y0:y1, x]) * alpha
 
 
 def box(a, x, y, w, h, col, alpha=1.0):
     x0, y0 = max(0, int(round(x))), max(0, int(round(y)))
-    x1, y1 = min(PW, int(round(x + w))), min(PH, int(round(y + h)))
+    x1, y1 = min(a.shape[1], int(round(x + w))), min(a.shape[0], int(round(y + h)))
     if x1 > x0 and y1 > y0:
         a[y0:y1, x0:x1] += (C(col) - a[y0:y1, x0:x1]) * alpha
 
 
 def pglow(a, x, y, r, col, k, add=True):
     """Light round a point; the dither turns it into the rings a pixel artist draws."""
-    x0, x1 = max(0, int(x - r - 1)), min(PW, int(x + r + 2))
-    y0, y1 = max(0, int(y - r - 1)), min(PH, int(y + r + 2))
+    x0, x1 = max(0, int(x - r - 1)), min(a.shape[1], int(x + r + 2))
+    y0, y1 = max(0, int(y - r - 1)), min(a.shape[0], int(y + r + 2))
     if x1 <= x0 or y1 <= y0:
         return
     xs = np.arange(x0, x1, dtype=np.float32)[None, :] - x
@@ -1746,14 +1856,15 @@ def pglow(a, x, y, r, col, k, add=True):
         sub += (C(col) - sub) * f
 
 
-def pgrad(a, y0, y1, stops, x0=0, x1=PW):
+def pgrad(a, y0, y1, stops, x0=0, x1=None):
     """A sky: colors at heights, in between them a straight blend for the dither to step."""
-    ys = np.arange(PH, dtype=np.float32)
-    col = np.zeros((PH, 3), np.float32)
+    h = a.shape[0]
+    ys = np.arange(h, dtype=np.float32)
+    col = np.zeros((h, 3), np.float32)
     hs = [s[0] for s in stops]
     for ch in range(3):
         col[:, ch] = np.interp(ys, hs, [s[1][ch] for s in stops])
-    y0, y1 = max(0, int(y0)), min(PH, int(y1))
+    y0, y1 = max(0, int(y0)), min(h, int(y1))
     a[y0:y1, x0:x1] = col[y0:y1, None, :]
 
 
@@ -1792,18 +1903,24 @@ def text(a, x, y, s, col, alpha=1.0, scale=1):
                     box(a, bx, by, scale, scale, col, alpha)
 
 
-def quant(a, pal):
-    """Each pixel to the nearest of the palette's colors, or, between two, an
-    ordered dither of them: flat color stays flat, a blend becomes a pattern."""
-    P = pal
-    d = ((a[:, :, None, :] - P[None, None, :, :]) ** 2).sum(-1)
+def quant_px(a, P, th):
+    """Pixels (n by 3) to the nearest of the palette's colors, or, between two, an
+    ordered dither of them by their thresholds th: flat color stays flat, a blend
+    becomes a pattern."""
+    a64, P64 = a.astype(np.float64), P.astype(np.float64)
+    d = (a64 * a64).sum(1)[:, None] - 2.0 * (a64 @ P64.T) + (P64 * P64).sum(1)[None, :]  # the squared distances, as a product
     i1 = d.argmin(-1)
-    np.put_along_axis(d, i1[..., None], np.inf, -1)
+    np.put_along_axis(d, i1[:, None], np.inf, -1)
     i2 = d.argmin(-1)
     c1, c2 = P[i1], P[i2]
     v = c2 - c1
     t = ((a - c1) * v).sum(-1) / np.maximum((v * v).sum(-1), 1e-6)
-    return np.where((t > DITHER)[..., None], c2, c1)
+    return np.where((t > th)[:, None], c2, c1)
+
+
+def quant(a, pal):
+    h, w = a.shape[:2]
+    return quant_px(a.reshape(-1, 3), pal, dither(h, w).reshape(-1)).reshape(h, w, 3)
 
 
 def hull(pts):
@@ -1828,7 +1945,7 @@ def ramp(a, b, n):
 
 
 class Pixel:
-    name, seconds, pixel = "", 24, True
+    name, seconds, pixel, poster = "", 24, True, 6.0
 
     def key(self, p):
         return tuple(sorted(p.hex.items()))
@@ -1870,10 +1987,21 @@ class Pixel:
         pass
 
     def render(self, p, t):
+        """A frame: the still part's dither is worked out once, and each frame's
+        only where it differs from it; the same pixels as dithering it all."""
         t = t % self.seconds
-        a = self.base(p).copy()
+        base = self.base(p)
+        a = base.copy()
         self.draw(a, p, self.colors(p), t)
-        return quant(a, self.palette(p))
+        st = self.__dict__.setdefault("_qbase", {})
+        k = self.key(p)
+        if k not in st:
+            st[k] = quant(base, self.palette(p))
+        out = st[k].copy()
+        ys, xs = np.nonzero(np.any(a != base, axis=-1))
+        if len(ys):
+            out[ys, xs] = quant_px(a[ys, xs], self.palette(p), dither(*a.shape[:2])[ys, xs])
+        return out
 
 
 def clouds(a, seed, n, band, body, lit, alpha, lit_below=True, wmin=50, wmax=130, big=False, tail=False):
@@ -1934,6 +2062,7 @@ class Garoa(Pixel):
     with their red lights, helicopters going from roof to roof."""
 
     name = "garoa"
+    poster = 8.0
     HZ = 225
     PADS = ((274, 154), (425, 146))
     MASTS = ((332, 67), (367, 57), (397, 75))
@@ -2166,6 +2295,7 @@ class Horizon(Pixel):
     bends over the top. A probe falls in, and as seen from here never quite does."""
 
     name = "horizon"
+    poster = 12.0
     CX, CY, RS = 302.0, 105.0, 30.0
     PLANET = (65.0, 455.0, 265.0)
 
@@ -2300,6 +2430,7 @@ class Watch(Pixel):
     sweeping. Once a loop the lighthouse stops and looks up at the moon."""
 
     name = "watch"
+    poster = 0.5
     HZ = 152
     MOON = (140.0, 110.0)
     F, EYE = 236.0, 1.0  # the eye: one unit over the water, the horizon at HZ
@@ -2450,37 +2581,32 @@ class Watch(Pixel):
 
 def hold_mask(kind, rnd):
     """A climbing hold as a pixel artist would cut it: a jug, a crimp, a sloper..."""
-    m = Image.new("L", (34, 34), 0)
-    d = ImageDraw.Draw(m)
+    m = Mask(34, 34)
     cx, cy = 17, 17
     rot = rnd.uniform(-0.6, 0.6)
     e = lambda rx, ry, r=rot, x=cx, y=cy: [(round(px_), round(py_)) for px_, py_ in ellipse_pts(x, y, rx, ry, r, 28)]
     groove = None
     if kind == "jug":
-        d.polygon(e(10.5, 7), fill=255)
+        m.poly(e(10.5, 7))
         groove = e(6.5, 1.6, rot, cx, cy - 3)
     elif kind == "crimp":
-        d.polygon(e(10, 3.2, rot * 0.4), fill=255)
+        m.poly(e(10, 3.2, rot * 0.4))
     elif kind == "sloper":
-        d.polygon(e(11, 8.5), fill=255)
+        m.poly(e(11, 8.5))
     elif kind == "pinch":
-        d.polygon(e(4.5, 10, rot * 0.6), fill=255)
+        m.poly(e(4.5, 10, rot * 0.6))
     elif kind == "pocket":
-        d.polygon(e(8.5, 7), fill=255)
+        m.poly(e(8.5, 7))
         groove = e(2.6, 2, 0, cx, cy - 1)
     elif kind == "edge":
-        d.polygon([(cx - 9, cy - 3), (cx + 9, cy - 4), (cx + 8, cy + 4), (cx - 8, cy + 4)], fill=255)
+        m.poly([(cx - 9, cy - 3), (cx + 9, cy - 4), (cx + 8, cy + 4), (cx - 8, cy + 4)])
     elif kind == "blob":
         for k in range(3):
-            d.polygon(e(rnd.uniform(4, 7), rnd.uniform(3, 6), rnd.uniform(0, 3), cx + rnd.randint(-5, 5), cy + rnd.randint(-3, 3)), fill=255)
+            m.poly(e(rnd.uniform(4, 7), rnd.uniform(3, 6), rnd.uniform(0, 3), cx + rnd.randint(-5, 5), cy + rnd.randint(-3, 3)))
     else:  # a foot chip
-        d.ellipse([cx - 3, cy - 2, cx + 3, cy + 2], fill=255)
-    g = None
-    if groove:
-        gi = Image.new("L", (34, 34), 0)
-        ImageDraw.Draw(gi).polygon(groove, fill=255)
-        g = np.asarray(gi) > 0
-    return np.asarray(m) > 0, g
+        m.ell(cx, cy, 3, 2)
+    g = Mask(34, 34).poly(groove).m() if groove else None
+    return m.m(), g
 
 
 def dome(m):
@@ -2500,6 +2626,7 @@ class Problem(Pixel):
     down across it."""
 
     name = "problem"
+    poster = 4.0
     CELL, COLS, ROWS = 30, 16, 9
     KINDS = ("jug", "crimp", "sloper", "pinch", "pocket", "edge", "jug", "blob", "blob", "crimp", "sloper")
     HUES = ("ansi_1", "ansi_2", "ansi_3", "ansi_4", "ansi_5", "ansi_6", "w", "k", "ansi_3", "w")
@@ -2660,6 +2787,7 @@ class Continue(Pixel):
     an empty room to continue, counts down, and gives up."""
 
     name = "continue"
+    poster = 6.0
     FLOOR = 214
     CABS = (88, 168, 248, 328, 408)
 
@@ -2943,6 +3071,7 @@ class Crossing(Pixel):
     wire are in another order."""
 
     name = "crossing"
+    poster = 12.0
     RAIL = 200
     CROWS = (130, 190, 250, 310)
     SX = 334
@@ -3125,28 +3254,141 @@ def frame(cv, scene, p, back, front, t):
 
 
 def upscale(q, w, h):
-    """A pixel scene's frame at screen size: every pixel a square of them."""
+    """A pixel scene's grid at a size: every pixel a square of them, the whole
+    grid covering the size and centered (so a 16 by 9 size shows all of it)."""
     img = np.clip(np.rint(q), 0, 255).astype(np.uint8)
-    if w % PW == 0 and h == w // PW * PH:
-        k = w // PW
+    gh, gw = img.shape[:2]
+    if (w, h) == (gw, gh):
+        return img
+    k = max(w / gw, h / gh)
+    if k == int(k) and gw * k == w and gh * k == h:
+        k = int(k)
         return np.repeat(np.repeat(img, k, 0), k, 1)
-    return np.asarray(Image.fromarray(img).resize((w, h), Image.NEAREST))
+    cols = np.clip(((np.arange(w) + 0.5 + (gw * k - w) / 2) / k).astype(np.int64), 0, gw - 1)
+    rows = np.clip(((np.arange(h) + 0.5 + (gh * k - h) / 2) / k).astype(np.int64), 0, gh - 1)
+    return img[rows][:, cols]
 
 
-def frames(cv, scene, p):
-    """The loop's frames, 24 a second; a pixel scene's change 12 times a second."""
-    n = scene.seconds * FPS
+def drawable(scene, w, h):
+    """Why a scene cannot be drawn at w by h, or None when it can."""
+    if not (16 <= w <= 8192 and 16 <= h <= 8192):
+        return "%dx%d is not a size to draw at (16 to 8192 a side)" % (w, h)
+    if h > w:
+        return "%s has no portrait composition yet" % scene.name
+    return None
+
+
+def frames_at(scene, p, w, h, fps):
+    """The loop once, w by h, fps frames a second: a pixel scene steps on its own
+    grid's beat and is scaled up with square pixels; a flat one is drawn at the
+    size, its 16 by 9 picture covering a wider or taller landscape, centered."""
+    n = round(scene.seconds * fps)
     if getattr(scene, "pixel", False):
         last = (None, None)
         for f in range(n):
-            k = f * PFPS // FPS
+            k = f * PFPS // fps
             if last[0] != k:
-                last = (k, upscale(scene.render(p, k / PFPS), cv.w, cv.h))
+                last = (k, upscale(scene.render(p, k / PFPS), w, h))
             yield last[1]
         return
+    s = max(w / W, h / H)
+    while round(W * s) < w or round(H * s) < h:
+        s += 0.5 / W
+    cv = Canvas(s)
+    x0, y0 = (cv.w - w) // 2, (cv.h - h) // 2
     back, front = stills(cv, scene, p)
     for f in range(n):
-        yield frame(cv, scene, p, back, front, f / FPS)
+        yield frame(cv, scene, p, back, front, f / fps)[y0 : y0 + h, x0 : x0 + w]
+
+
+def still_at(scene, p, w, h, t):
+    """One frame of a scene at a time of its loop, w by h."""
+    if getattr(scene, "pixel", False):
+        return upscale(scene.render(p, t), w, h)
+    s = max(w / W, h / H)
+    while round(W * s) < w or round(H * s) < h:
+        s += 0.5 / W
+    cv = Canvas(s)
+    x0, y0 = (cv.w - w) // 2, (cv.h - h) // 2
+    back, front = stills(cv, scene, p)
+    return frame(cv, scene, p, back, front, t)[y0 : y0 + h, x0 : x0 + w]
+
+
+_JOB = {}
+
+
+def _job_init(name, path, w, h, fps):
+    """A worker of --jobs: the scene, its palette and its still part, once."""
+    warnings.simplefilter("ignore")
+    np.seterr(all="ignore")
+    sc = SCENES[name]
+    p = Palette(read_env(path))
+    _JOB.update(sc=sc, p=p, w=w, h=h, fps=fps)
+    if not getattr(sc, "pixel", False):
+        s = max(w / W, h / H)
+        while round(W * s) < w or round(H * s) < h:
+            s += 0.5 / W
+        cv = Canvas(s)
+        back, front = stills(cv, sc, p)
+        _JOB.update(cv=cv, back=back, front=front, x0=(cv.w - w) // 2, y0=(cv.h - h) // 2)
+
+
+def _job_frame(i):
+    """Frame i of the loop as bytes (for a pixel scene, step i of its grid)."""
+    j = _JOB
+    if getattr(j["sc"], "pixel", False):
+        return upscale(j["sc"].render(j["p"], i / PFPS), j["w"], j["h"]).tobytes()
+    img = frame(j["cv"], j["sc"], j["p"], j["back"], j["front"], i / j["fps"])
+    return img[j["y0"] : j["y0"] + j["h"], j["x0"] : j["x0"] + j["w"]].tobytes()
+
+
+def frame_bytes(name, path, p, w, h, fps, jobs):
+    """The loop's frames as bytes, in order, drawn by jobs processes."""
+    sc = SCENES[name]
+    n = sc.seconds * fps
+    if jobs <= 1:
+        for img in frames_at(sc, p, w, h, fps):
+            yield img.tobytes()
+        return
+    with Pool(jobs, initializer=_job_init, initargs=(name, path, w, h, fps)) as pool:
+        if getattr(sc, "pixel", False):
+            steps = [f * PFPS // fps for f in range(n)]
+            uniq = sorted(set(steps))
+            it = pool.imap(_job_frame, uniq, chunksize=4)
+            reps = {}  # each grid step, as many times as the frame rate repeats it
+            for k in steps:
+                reps[k] = reps.get(k, 0) + 1
+            for k, data in zip(uniq, it):
+                for _ in range(reps[k]):
+                    yield data
+        else:
+            for data in pool.imap(_job_frame, range(n), chunksize=4):
+                yield data
+
+
+def write_png(path, img):
+    """An RGB picture as a PNG, with zlib alone."""
+    h, w = img.shape[:2]
+    raw = b"".join(b"\x00" + img[y].tobytes() for y in range(h))
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    with open(path, "wb") as f:
+        f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
+
+
+def info(scene):
+    out = {"scene": scene.name, "collection": next(c for c, ns in COLLECTIONS.items() if scene.name in ns),
+           "fps": native_fps(scene), "seconds": scene.seconds, "frames": scene.seconds * native_fps(scene), "still": scene.poster,
+           "kind": "pixel" if getattr(scene, "pixel", False) else "flat", "orientations": ["landscape"]}
+    if getattr(scene, "pixel", False):
+        out["grid"] = "%dx%d" % (PW, PH)
+    return out
+
+
+def native_fps(scene):
+    return PFPS if getattr(scene, "pixel", False) else FPS
 
 
 def encode(path, w, h, frames, preset="slow"):
@@ -3164,74 +3406,168 @@ def encode(path, w, h, frames, preset="slow"):
 
 
 def make(job):
-    scene_name, path, out_dir, s, preset = job
+    scene_name, path, out_dir, size, preset = job
     scene = SCENES[scene_name]
     name = os.path.basename(path)[: -len(".env")] if path.endswith(".env") else os.path.basename(path)
     p = Palette(read_env(path))
-    cv = Canvas(s)
     d = os.path.join(out_dir, scene.name)
     os.makedirs(d, exist_ok=True)
-    encode(os.path.join(d, name + ".mp4"), cv.w, cv.h, frames(cv, scene, p), preset)
+    encode(os.path.join(d, name + ".mp4"), size[0], size[1], frames_at(scene, p, size[0], size[1], FPS), preset)
     return "%s/%s" % (scene.name, name)
 
 
+def refuse(msg, code=1):
+    """One line on stderr and out: what the frames' reader is told when it cannot have them."""
+    sys.stderr.write("make.py: %s\n" % msg)
+    sys.exit(code)
+
+
+def palette_of(path):
+    try:
+        env = read_env(path)
+    except (OSError, UnicodeDecodeError, ValueError) as e:
+        refuse("cannot read the palette %s (%s)" % (path, e.__class__.__name__))
+    if not any(k.startswith("THEME_") for k in env):
+        refuse("%s is not a palette: it has no THEME_ lines" % path)
+    return Palette(env)
+
+
 def main(argv):
-    out_dir, paths, scenes, size, at, png, preset = HERE, [], [], (W, H), None, None, "slow"
-    collection = None
+    out_dir, paths, scenes, size, at, png, preset = HERE, [], [], None, None, None, "slow"
+    raw, want_info, fps, jobs = False, False, None, 1
     it = iter(argv)
-    for a in it:
-        if a == "--out":
-            out_dir = next(it)
-        elif a == "--scene":
-            scenes.append(next(it))
-        elif a == "--size":
-            size = tuple(int(v) for v in next(it).lower().split("x"))
-        elif a == "--still":
-            at = [float(v) for v in next(it).split(",")]
-        elif a == "--png":
-            png = next(it)
-        elif a == "--preset":
-            preset = next(it)
-        elif a == "--collection":
-            collection = next(it)
-            if collection not in COLLECTIONS:
-                sys.exit("no collection %s: %s" % (collection, " ".join(COLLECTIONS)))
-            scenes += list(COLLECTIONS[collection])
-        else:
-            paths.append(a)
-    for s in scenes:
-        if s not in SCENES:
-            sys.exit("no scene %s: %s" % (s, " ".join(SCENES)))
-    if size[0] * H != size[1] * W:
-        sys.exit("the size must be 16 by 9, as 1920x1080 is")
-    s = size[0] / W
+    try:
+        for a in it:
+            if a == "--out":
+                out_dir = next(it)
+            elif a == "--scene":
+                scenes.append(next(it))
+            elif a == "--size":
+                v = next(it).lower().split("x")
+                if len(v) != 2 or not all(x.isdigit() for x in v):
+                    refuse("the size is WxH, as 1920x1080 is", 2)
+                size = (int(v[0]), int(v[1]))
+            elif a == "--still":
+                at = next(it)
+            elif a == "--png":
+                png = next(it)
+            elif a == "--preset":
+                preset = next(it)
+            elif a == "--raw":
+                raw = True
+            elif a == "--info":
+                want_info = True
+            elif a == "--jobs":
+                v = next(it)
+                if not v.isdigit() or not 1 <= int(v) <= 64:
+                    refuse("the jobs are a whole number, 1 to 64", 2)
+                jobs = int(v)
+            elif a == "--fps":
+                v = next(it)
+                if not v.isdigit() or not 1 <= int(v) <= 120:
+                    refuse("the fps is a whole number, 1 to 120", 2)
+                fps = int(v)
+            elif a == "--collection":
+                c = next(it)
+                if c not in COLLECTIONS:
+                    refuse("no collection %s: %s" % (c, " ".join(COLLECTIONS)), 2)
+                scenes += list(COLLECTIONS[c])
+            elif a.startswith("--"):
+                refuse("no option %s" % a, 2)
+            else:
+                paths.append(a)
+    except StopIteration:
+        refuse("%s wants a value" % a, 2)
+    for n in scenes:
+        if n not in SCENES:
+            refuse("no scene %s: %s" % (n, " ".join(SCENES)), 2)
+    if raw or want_info or at is not None:  # what spark-shell reads: nothing else on stderr
+        warnings.simplefilter("ignore")
+        np.seterr(all="ignore")
+    if want_info:
+        if not scenes:
+            print(json.dumps({"collections": {c: list(ns) for c, ns in COLLECTIONS.items()}, "scenes": [info(SCENES[n]) for ns in COLLECTIONS.values() for n in ns]}))
+            return 0
+        if len(scenes) != 1:
+            refuse("--info takes one --scene, or none for all of them", 2)
+        sc = SCENES[scenes[0]]
+        out = info(sc)
+        if size:
+            why = drawable(sc, *size)
+            if why:
+                refuse(why)
+            out["size"] = "%dx%d" % size
+        if fps:
+            if (sc.seconds * fps) != int(sc.seconds * fps):
+                refuse("%d frames a second do not make a whole loop of %s" % (fps, sc.name))
+            out["fps"], out["frames"] = fps, sc.seconds * fps
+        print(json.dumps(out))
+        return 0
+    if raw:
+        if len(scenes) != 1 or len(paths) != 1 or not size:
+            refuse("--raw takes one --scene, one --size WxH and one palette file", 2)
+        sc = SCENES[scenes[0]]
+        why = drawable(sc, *size)
+        if why:
+            refuse(why)
+        p = palette_of(paths[0])
+        fps = fps or native_fps(sc)
+        n, out = sc.seconds * fps, sys.stdout.buffer
+        done = 0
+        try:
+            for data in frame_bytes(sc.name, paths[0], p, size[0], size[1], fps, jobs):
+                out.write(data)
+                done += 1
+            out.flush()
+        except BrokenPipeError:
+            sys.stderr.write("make.py: the reader went away after %d of %d frames\n" % (done, n))
+            os._exit(1)
+        except Exception as e:  # noqa: BLE001 -- one line, whatever it was
+            refuse("%s stopped after %d of %d frames: %s" % (sc.name, done, n, e))
+        return 0
+    size = size or (W, H)
     if not paths:
         d = os.path.join(REPO, "themes")
         paths = sorted(os.path.join(d, f) for f in os.listdir(d) if f.endswith(".env"))
-    if at is not None:  # stills, to look at
-        os.makedirs(png, exist_ok=True)
-        cv = Canvas(s)
-        for name in scenes or list(SCENES):
-            scene = SCENES[name]
+    if at is not None:  # stills: the list's picture, and the layer under the loop
+        names = scenes or list(SCENES)
+        one = png and png.endswith(".png")
+        if not png or (one and (len(names) != 1 or len(paths) != 1 or "," in at)):
+            refuse("--still takes --png DIR, or --png FILE.png for one scene, one palette and one time", 2)
+        for name in names:
+            sc = SCENES[name]
+            why = drawable(sc, *size)
+            if why:
+                refuse(why)
             for path in paths:
-                p = Palette(read_env(path))
-                pixel = getattr(scene, "pixel", False)
-                if not pixel:
-                    back, front = stills(cv, scene, p)
-                for t in at:
-                    out = os.path.join(png, "%s-%s-%05.2f.png" % (name, os.path.basename(path)[:-4], t))
-                    img = upscale(scene.render(p, t), cv.w, cv.h) if pixel else frame(cv, scene, p, back, front, t)
-                    Image.fromarray(img).save(out)
-                    print(out)
-        return
-    jobs = [(n, path, out_dir, s, preset) for n in (scenes or list(SCENES)) for path in paths]
+                p = palette_of(path)
+                for v in at.split(","):
+                    try:
+                        t = sc.poster if v == "poster" else float(v)
+                    except ValueError:
+                        refuse("--still takes times in seconds, or poster", 2)
+                    if one:
+                        out = png
+                    else:
+                        os.makedirs(png, exist_ok=True)
+                        out = os.path.join(png, "%s-%s-%05.2f.png" % (name, os.path.basename(path)[:-4], t))
+                    write_png(out, still_at(sc, p, size[0], size[1], t))
+                    if not one:
+                        print(out)
+        return 0
+    for n in scenes or list(SCENES):
+        why = drawable(SCENES[n], *size)
+        if why:
+            refuse(why)
+    jobs = [(n, path, out_dir, size, preset) for n in (scenes or list(SCENES)) for path in paths]
     with Pool() as pool:
         try:
             for done in pool.imap_unordered(make, jobs):
                 print(done)
         except RuntimeError as e:
             sys.exit(str(e))
+    return 0
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    sys.exit(main(sys.argv[1:]))
