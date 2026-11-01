@@ -15,7 +15,7 @@ import os
 import struct
 import sys
 
-VERSION = "2"          # bump when a shape or an alias changes: on desktop writes the themes again
+VERSION = "3"          # bump when a shape or an alias changes: on desktop writes the themes again
 SIZES = (24, 32, 48, 64, 96)
 WHITE = ((255, 255, 255), (14, 14, 16))
 BLACK = ((0, 0, 0), (255, 255, 255))
@@ -131,17 +131,9 @@ def shapes():
     bar = sd_box((12.0, 12.0), (1.0, 6.0))                                   # x 11..13, y 6..18
     tri_l = sd_poly([(2.5, 12.0), (8.0, 6.0), (8.0, 18.0)])
     tri_r = sd_poly([(21.5, 12.0), (16.0, 6.0), (16.0, 18.0)])
-    col = union(bar, tri_l, tri_r)
-    S["col-resize"] = (col, (12, 12), None)
+    col = union(bar, tri_l, tri_r)                                           # a border: two heads, a bar between (#184)
+    S["col-resize"] = (col, (12, 12), None)                                  # and the four sides, by alias below
     S["row-resize"] = (swap_xy(col), (12, 12), None)
-
-    head_w = sd_poly([(2.5, 12.0), (8.0, 7.0), (8.0, 17.0)])                 # one head and a shaft: the four sides
-    shaft_w = sd_box((14.5, 12.0), (6.5, 1.0))                               # x 8..21, y 11..13
-    w = union(head_w, shaft_w)
-    S["w-resize"] = (w, (12, 12), None)
-    S["e-resize"] = (flip_x(w), (12, 12), None)
-    S["n-resize"] = (swap_xy(w), (12, 12), None)
-    S["s-resize"] = (flip_y(swap_xy(w)), (12, 12), None)
 
     bracket = union(sd_box((10.5, 3.0), (8.5, 1.0)), sd_box((3.0, 10.5), (1.0, 8.5)))   # arms x 2..19 and y 2..19
     wedge = sd_poly([(7.0, 7.0), (18.0, 7.0), (7.0, 18.0)])
@@ -183,12 +175,9 @@ ALIASES = {
     "grabbing": ["grab", "closedhand", "fleur_grab", "dnd-move"],   # grab: what sway asks for while a window moves (#46)
     "text": ["xterm", "ibeam", "vertical-text"],
     "wait": ["watch", "progress", "left_ptr_watch", "half-busy"],
-    "col-resize": ["sb_h_double_arrow", "split_h", "ew-resize", "h_double_arrow", "size_hor"],
-    "row-resize": ["sb_v_double_arrow", "split_v", "ns-resize", "v_double_arrow", "size_ver"],
-    "w-resize": ["left_side"],
-    "e-resize": ["right_side"],
-    "n-resize": ["top_side"],
-    "s-resize": ["bottom_side"],
+    # a window's side is a border, as sway asks for it on every edge, tiled ones too (#184)
+    "col-resize": ["sb_h_double_arrow", "split_h", "ew-resize", "h_double_arrow", "size_hor", "w-resize", "left_side", "e-resize", "right_side"],
+    "row-resize": ["sb_v_double_arrow", "split_v", "ns-resize", "v_double_arrow", "size_ver", "n-resize", "top_side", "s-resize", "bottom_side"],
     "nw-resize": ["top_left_corner", "ul_angle"],
     "ne-resize": ["top_right_corner", "ur_angle"],
     "sw-resize": ["bottom_left_corner", "ll_angle"],
