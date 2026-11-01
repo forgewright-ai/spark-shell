@@ -2874,8 +2874,13 @@ class Crossing(Pixel):
         return (ramp(c["top"], c["mid"], 4) + ramp(c["mid"], c["low"], 4) + ramp(c["low"], c["sun"], 4)[1:-1] + ramp(c["ground"], c["red"], 4)[1:-1]
                 + ramp(c["ground"], c["vend"], 4)[1:-1] + [mix(c["mid"], c["red"], 0.5), mix(c["low"], c["red"], 0.5), mix(c["train"], c["window"], 0.5)])
 
+    WIRES = ((33, 22), (33, 31), (43, 26))  # where each wire leaves the crossarm, and how far it sags
+
     def wire(self, x, k):
-        return 40 + k * 7 + 22 * ((x - 240) / 200) ** 2
+        """A wire from pole to pole: it hangs, lowest halfway between them."""
+        top, sag = self.WIRES[k]
+        u = (x - 240) / 204
+        return top + sag * (1 - u * u)
 
     def back(self, a, p, c):
         dk = p.dark
