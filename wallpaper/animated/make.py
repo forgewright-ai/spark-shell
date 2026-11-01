@@ -1806,6 +1806,23 @@ def quant(a, pal):
     return np.where((t > DITHER)[..., None], c2, c1)
 
 
+def hull(pts):
+    """The convex hull of points, to fill: a cone of light from a lamp to a patch."""
+    pts = sorted(set((round(x, 2), round(y, 2)) for x, y in pts))
+    if len(pts) < 3:
+        return pts
+
+    def half(seq):
+        out = []
+        for q in seq:
+            while len(out) >= 2 and (out[-1][0] - out[-2][0]) * (q[1] - out[-2][1]) - (out[-1][1] - out[-2][1]) * (q[0] - out[-2][0]) <= 0:
+                out.pop()
+            out.append(q)
+        return out[:-1]
+
+    return half(pts) + half(pts[::-1])
+
+
 def ramp(a, b, n):
     return [mix(a, b, k / (n - 1)) for k in range(n)]
 
@@ -2285,6 +2302,13 @@ class Watch(Pixel):
     name = "watch"
     HZ = 152
     MOON = (140.0, 110.0)
+    F, EYE = 236.0, 1.0  # the eye: one unit over the water, the horizon at HZ
+    LAMP = (-47.8, 8.37, 60.0)  # the lamp in the world: across, up, away (on screen it is at 52, HZ - 29)
+    REACH = 50.0  # how far out its beam comes down on the water
+
+    def scr(self, x, y, z):
+        """A point of the world on the screen, in perspective."""
+        return PW / 2 + self.F * x / z, self.HZ + self.F * (self.EYE - y) / z
 
     def colors(self, p):
         st = self.__dict__.setdefault("_c", {})
@@ -2347,9 +2371,6 @@ class Watch(Pixel):
         put(a, lx, self.HZ - 29, c["beam"])
         box(a, lx - 2, self.HZ - 31, 5, 1, c["land"])
         put(a, lx, self.HZ - 32, c["land"])
-        # the lighthouse in the water, long and broken
-        for d in range(2, 22, 2):
-            put(a, lx + (d % 3) - 1, self.HZ + d, c["glintdim"], 0.5 * (1 - d / 22))
         self.lamp = (lx, self.HZ - 29)
 
     def draw(self, a, p, c, t):
@@ -2379,29 +2400,49 @@ class Watch(Pixel):
         # the beam: it sweeps the water, three times a loop; once it looks up at the moon
         lx, ly = self.lamp
         ang = 2 * math.pi * t / 8.0
-        near = max(0.0, math.sin(ang))  # turned toward us, it lands nearer the shore
-        away = max(0.0, -math.sin(ang))  # turned out to sea, it reaches the horizon
-        vx = 230 * math.cos(ang) * (1 - 0.55 * near)
-        vy = (self.HZ + 3 + 62 * near) - ly
         w = ease_io(window(t, 12.3, 13.3)) * (1 - ease_io(window(t, 14.9, 15.9)))
-        if w > 0:
-            tx, ty = mx - lx, my - ly
-            vx, vy = vx * (1 - w) + tx * w, vy * (1 - w) + ty * w
-        n = math.hypot(vx, vy)
-        k = 1 - 0.7 * away ** 2 * (1 - w)
-        if n > 3:
-            ux, uy = vx / n, vy / n
-            hw = 3 + 0.07 * n
-            tip = (lx + vx, ly + vy)
-            fill(a, Mask().poly([(lx, ly - 1), (tip[0] - uy * hw, tip[1] + ux * hw), (tip[0] + uy * hw, tip[1] - ux * hw), (lx, ly + 1)]), c["beam"], (0.2 if dk else 0.3) * k)
-            fill(a, Mask().line([(lx, ly), tip]), c["beam"], 0.3 * k)
-            if w < 0.5 and tip[1] > self.HZ:  # where it lands, the water lit
-                fill(a, Mask().ell(tip[0], tip[1], hw * 1.3, 1 + 2 * near), c["beam"], 0.3 * k * (1 - 2 * w))
-                for d in (-1, 1):
-                    hline(a, tip[0] + d * hw * 0.6 - 2, tip[0] + d * hw * 0.6 + 2, tip[1] + 2 + near * 2, c["glint"], 0.6 * k * (1 - 2 * w))
-        facing = near ** 6 * (1 - w)
+        X0, Y0, Z0 = self.LAMP
+        dx, dz = math.cos(ang), -math.sin(ang)  # where it points, on the water; -z is toward us
+        gx, gz = X0 + self.REACH * dx, Z0 + self.REACH * dz
+        cx_, cz_ = -X0, -Z0  # toward the eye
+        n_ = math.hypot(cx_, cz_)
+        facing = max(0.0, (dx * cx_ + dz * cz_) / n_) ** 6
+        away = max(0.0, -math.sin(ang))
+        spot = []
+        for k in range(20):  # the patch it lights: a round of light on the water, seen in perspective
+            f = 2 * math.pi * k / 20
+            px_ = gx + 13 * math.cos(f) * dx + 7 * math.sin(f) * (-dz)
+            pz_ = gz + 13 * math.cos(f) * dz + 7 * math.sin(f) * dx
+            spot.append(self.scr(px_, 0.0, max(pz_, 3.0)))
+        gs = self.scr(gx, 0.0, gz)
+        if w > 0:  # it lifts off the water toward the moon
+            tip = (gs[0] + (mx - gs[0]) * w, gs[1] + (my - gs[1]) * w)
+            spot = [(tip[0] + (x - gs[0]) * (1 - 0.6 * w), tip[1] + (y - gs[1]) * (1 - 0.8 * w)) for x, y in spot]
+        k = (1 - 0.6 * away ** 2) * (1 - w) + w
+        water = (1 - w) * (1 - 0.6 * away ** 2)
+        fill(a, Mask().poly(hull(spot + [(lx, ly - 1), (lx, ly + 1)])), c["beam"], (0.18 if dk else 0.26) * k)
+        if water > 0.05:
+            # the beam again in the water, from the lamp's mirror image down there to the patch
+            rx, ry = self.scr(X0, -Y0, Z0)
+            m = Mask().poly(hull(spot + [(rx, ry)])).m()
+            m[: self.HZ + 1] = False
+            rows = (np.arange(PH) + int(t * PFPS)) % 3 == 0  # broken by the swell
+            m[rows] = False
+            fill(a, m, c["beam"], (0.1 if dk else 0.16) * water)
+            fill(a, Mask().poly(spot), c["beam"], (0.3 if dk else 0.35) * water)
+            rnd = random.Random(17)
+            for i in range(14):  # glints in the patch, short far off and longer near
+                f, r = rnd.uniform(0, 2 * math.pi), rnd.random() ** 0.5
+                px_ = gx + 12 * r * math.cos(f) * dx + 6 * r * math.sin(f) * (-dz)
+                pz_ = max(3.0, gz + 12 * r * math.cos(f) * dz + 6 * r * math.sin(f) * dx)
+                if wave(t, 24 / rnd.choice((8, 12, 24)), rnd.random()) > 0:
+                    sx, sy = self.scr(px_, 0.0, pz_)
+                    half = max(0.5, 0.25 * self.F / pz_)
+                    hline(a, sx - half, sx + half + 1, sy, c["glint"], 0.7 * water)
         put(a, lx, ly, c["beam"])
-        pglow(a, lx, ly, 3 + 12 * facing, c["beam"], 0.5 + 0.4 * facing, add=dk)
+        pglow(a, lx, ly, 3 + 12 * facing * (1 - w), c["beam"], 0.5 + 0.4 * facing * (1 - w), add=dk)
+        for d in range(3, 24, 2):  # the lamp in the water below it, brighter when it faces us
+            put(a, lx + (d % 3) - 1, self.HZ + d, c["glint"], (0.25 + 0.6 * facing) * (1 - d / 24))
 
 
 # -- problem ----------------------------------------------------------------------
