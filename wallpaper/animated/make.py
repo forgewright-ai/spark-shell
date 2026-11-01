@@ -31,8 +31,8 @@ them; the references and not the story, no one in them, a dry joke
               Paulista; a helicopter finds its roof taken and takes the next
     horizon   a black hole over the edge of an ice planet, its disc turning;
               a probe falls in and, as seen from here, never quite does
-    watch     the sea at night, the moon's road on it, a lighthouse sweeping;
-              once a loop the lighthouse stops and looks up at the moon
+    watch     the sea at night, the moon's road on it, a lighthouse sweeping
+              the water; once a loop it stops and looks up at the moon
     problem   a training board, a grid of holds in every color, a light by
               each; it shows a problem, then another, then runs Life, and a
               glider walks down it
@@ -2376,24 +2376,30 @@ class Watch(Pixel):
             put(a, 330, self.HZ + 9, c["buoy"])
             pglow(a, 330, self.HZ + 9, 5, c["buoy"], 0.35, add=dk)
             put(a, 330, self.HZ + 12, c["buoy"], 0.4)
-        # the beam: it sweeps, three times a loop; once it looks up at the moon
+        # the beam: it sweeps the water, three times a loop; once it looks up at the moon
         lx, ly = self.lamp
         ang = 2 * math.pi * t / 8.0
-        side = 1 if math.cos(ang) > 0 else -1
-        reach = 240 * abs(math.cos(ang))
-        vx, vy = side * reach, -1 - 4 * abs(math.sin(ang))
+        near = max(0.0, math.sin(ang))  # turned toward us, it lands nearer the shore
+        away = max(0.0, -math.sin(ang))  # turned out to sea, it reaches the horizon
+        vx = 230 * math.cos(ang) * (1 - 0.55 * near)
+        vy = (self.HZ + 3 + 62 * near) - ly
         w = ease_io(window(t, 12.3, 13.3)) * (1 - ease_io(window(t, 14.9, 15.9)))
         if w > 0:
             tx, ty = mx - lx, my - ly
             vx, vy = vx * (1 - w) + tx * w, vy * (1 - w) + ty * w
         n = math.hypot(vx, vy)
+        k = 1 - 0.7 * away ** 2 * (1 - w)
         if n > 3:
             ux, uy = vx / n, vy / n
             hw = 3 + 0.07 * n
             tip = (lx + vx, ly + vy)
-            fill(a, Mask().poly([(lx, ly - 1), (tip[0] - uy * hw, tip[1] + ux * hw), (tip[0] + uy * hw, tip[1] - ux * hw), (lx, ly + 1)]), c["beam"], 0.2 if dk else 0.3)
-            fill(a, Mask().line([(lx, ly), tip]), c["beam"], 0.3)
-        facing = max(0.0, math.sin(ang)) ** 6 * (1 - w)
+            fill(a, Mask().poly([(lx, ly - 1), (tip[0] - uy * hw, tip[1] + ux * hw), (tip[0] + uy * hw, tip[1] - ux * hw), (lx, ly + 1)]), c["beam"], (0.2 if dk else 0.3) * k)
+            fill(a, Mask().line([(lx, ly), tip]), c["beam"], 0.3 * k)
+            if w < 0.5 and tip[1] > self.HZ:  # where it lands, the water lit
+                fill(a, Mask().ell(tip[0], tip[1], hw * 1.3, 1 + 2 * near), c["beam"], 0.3 * k * (1 - 2 * w))
+                for d in (-1, 1):
+                    hline(a, tip[0] + d * hw * 0.6 - 2, tip[0] + d * hw * 0.6 + 2, tip[1] + 2 + near * 2, c["glint"], 0.6 * k * (1 - 2 * w))
+        facing = near ** 6 * (1 - w)
         put(a, lx, ly, c["beam"])
         pglow(a, lx, ly, 3 + 12 * facing, c["beam"], 0.5 + 0.4 * facing, add=dk)
 
