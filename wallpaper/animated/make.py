@@ -23,8 +23,9 @@ still time and grid, or with no --scene every scene and its collection. A
 still (poster: the scene's own moment) is a PNG, the picture to show before
 its loop is made. Only numpy is needed for these; the MP4s of the last form,
 for a gallery, are encoded by ffmpeg. A landscape size that is not 16 by 9
-gets the scene's picture covering it, centered; a portrait one is refused
-until the scene has its own portrait composition.
+gets the scene's picture covering it, centered; a portrait one gets the
+scene's own portrait composition (a pixel scene's on a 270 by 480 grid), and
+is refused for a scene that does not have one yet.
 
 cozy: warm and playful, a picture book for grown-ups
 
@@ -157,13 +158,20 @@ class Palette:
 
 
 class Canvas:
-    def __init__(self, s):
-        self.s, self.w, self.h = s, round(W * s), round(H * s)
+    """The pixels a scene is drawn on: uw by uh of its units at s pixels a unit,
+    the drawing moved by (ox, oy) units. A landscape canvas is the drawing as it
+    is; a portrait one is the scene's own view of it, with things placed for it."""
+
+    def __init__(self, s, uw=W, uh=H, ox=0.0, oy=0.0):
+        self.s, self.uw, self.uh, self.ox, self.oy = s, uw, uh, ox, oy
+        self.w, self.h = round(uw * s), round(uh * s)
+        self.portrait = uh > uw
+        self.key = (self.w, self.h, ox, oy)
 
     def box(self, x0, y0, x1, y1):
         """A box in units as pixel rows and columns on the canvas, or None off it."""
-        px0, px1 = max(0, math.floor(x0 * self.s) - 1), min(self.w, math.ceil(x1 * self.s) + 1)
-        py0, py1 = max(0, math.floor(y0 * self.s) - 1), min(self.h, math.ceil(y1 * self.s) + 1)
+        px0, px1 = max(0, math.floor((x0 + self.ox) * self.s) - 1), min(self.w, math.ceil((x1 + self.ox) * self.s) + 1)
+        py0, py1 = max(0, math.floor((y0 + self.oy) * self.s) - 1), min(self.h, math.ceil((y1 + self.oy) * self.s) + 1)
         return None if px1 <= px0 or py1 <= py0 else (px0, py0, px1, py1)
 
 
@@ -333,7 +341,7 @@ def cover(cv, shape, ss=4, above=None, below=None, soft=0.0, clip=None):
     px0, py0, px1, py1 = b
     w, h = px1 - px0, py1 - py0
     k = cv.s * ss
-    tr = lambda p: ((p[0] * cv.s - px0) * ss, (p[1] * cv.s - py0) * ss)
+    tr = lambda p: (((p[0] + cv.ox) * cv.s - px0) * ss, ((p[1] + cv.oy) * cv.s - py0) * ss)
     m = scan([[tr(p) for p in cmd[1]] for cmd in shape.cmds if cmd[0] == "poly" and len(cmd[1]) >= 3], w * ss, h * ss)
     for cmd in shape.cmds:
         if cmd[0] == "line" and cmd[1]:
@@ -345,9 +353,9 @@ def cover(cv, shape, ss=4, above=None, below=None, soft=0.0, clip=None):
         cov = cov * clip[py0:py1, px0:px1]
     rows = (np.arange(py0, py1, dtype=np.float32) + 0.5)[:, None]
     if above is not None:
-        cov = cov * np.clip(above * cv.s - rows + 0.5, 0, 1)
+        cov = cov * np.clip((above + cv.oy) * cv.s - rows + 0.5, 0, 1)
     if below is not None:
-        cov = cov * np.clip(rows - below * cv.s + 0.5, 0, 1)
+        cov = cov * np.clip(rows - (below + cv.oy) * cv.s + 0.5, 0, 1)
     return cov, slice(py0, py1), slice(px0, px1)
 
 
@@ -357,8 +365,8 @@ def dot(cv, cx, cy, r):
     if b is None or r <= 0:
         return None
     px0, py0, px1, py1 = b
-    xs = (np.arange(px0, px1, dtype=np.float32) + 0.5)[None, :] / cv.s
-    ys = (np.arange(py0, py1, dtype=np.float32) + 0.5)[:, None] / cv.s
+    xs = (np.arange(px0, px1, dtype=np.float32) + 0.5)[None, :] / cv.s - cv.ox
+    ys = (np.arange(py0, py1, dtype=np.float32) + 0.5)[:, None] / cv.s - cv.oy
     cov = np.clip(0.5 - (np.hypot(xs - cx, ys - cy) - r) * cv.s, 0, 1)
     return cov, slice(py0, py1), slice(px0, px1)
 
@@ -399,7 +407,7 @@ def vgrad(cv, x0, y0, x1, y1, stops):
     if b is None:
         return Layer(None, (0, 0, 0))
     px0, py0, px1, py1 = b
-    ys = (np.arange(py0, py1, dtype=np.float32) + 0.5) / cv.s
+    ys = (np.arange(py0, py1, dtype=np.float32) + 0.5) / cv.s - cv.oy
     sy = np.array([s[0] for s in stops], np.float32)
     col = np.stack([np.interp(ys, sy, np.array([s[1][k] for s in stops], np.float32)) for k in range(3)], -1)[:, None, :]
     return Layer((np.ones((py1 - py0, px1 - px0), np.float32), slice(py0, py1), slice(px0, px1)), col)
@@ -480,6 +488,11 @@ def wave(t, period, phase=0.0):
 
 class Scene:
     name, seconds, poster = "", 24, 6.0
+    portrait = None  # its view for a portrait screen: (width, height, x, y) in units, or None for none yet
+
+    def view(self, portrait):
+        """The units a canvas shows: the drawing as it is, or the portrait view."""
+        return self.portrait if portrait else (W, H, 0.0, 0.0)
 
     def back(self, cv, p):  # drawn once: what is behind everything that moves
         return []
@@ -503,6 +516,7 @@ class Scene:
 class Onsen(Scene):
     name = "onsen"
     poster = 4.0  # the still: the list's picture, and what shows before the loop is made
+    portrait = (1080.0, 1920.0, -580.0, 840.0)  # the pool at the foot, a tall sky over it
     PX, PY, PRX, PRY = 1120.0, 846.0, 430.0, 118.0  # the pool
     CX, CY = 1030.0, 836.0  # the capybara: its waterline under the neck
 
@@ -532,10 +546,13 @@ class Onsen(Scene):
     def back(self, cv, p):
         c = self.colors(p)
         out = []
-        mx, my = 1490.0, 250.0
+        mx, my = (1360.0, -330.0) if cv.portrait else (1490.0, 250.0)
         out += [D(cv, mx, my, 165, c["halo2"]), D(cv, mx, my, 112, c["halo1"]), D(cv, mx, my, 62, c["moon"])]
         rnd = random.Random(4)
-        for x, y in [(rnd.uniform(0, W), rnd.uniform(40, 420)) for _ in range(46)]:
+        flakes = [(rnd.uniform(0, W), rnd.uniform(40, 420)) for _ in range(46)]
+        if cv.portrait:  # the tall sky has its own
+            flakes = [(rnd.uniform(560, 1680), rnd.uniform(-820, 420)) for _ in range(80)]
+        for x, y in flakes:
             if math.hypot(x - mx, y - my) > 190:
                 out.append(D(cv, x, y, rnd.choice((1.1, 1.4, 1.8)), c["flake"], 0.35 if p.dark else 0.0))
         for color, base, peaks in (
@@ -569,7 +586,7 @@ class Onsen(Scene):
         for x0, w in ((0, 420), (380, 300), (1550, 380)):
             drift.ellipse(x0 + w / 2, 742, w / 2, 18)
         out.append(L(cv, drift, c["shade"], 0.55, ss=2))
-        out += self.lantern(cv, c, 560.0, 812.0)
+        out += self.lantern(cv, c, *((1500.0, 712.0) if cv.portrait else (560.0, 812.0)))  # in a portrait, behind the pool
         # the pool: its far rocks, the water, its light
         px, py, rx, ry = self.PX, self.PY, self.PRX, self.PRY
         out.append(L(cv, Shape().ellipse(px, py + 6, rx + 30, ry + 24), c["shade"], ss=2))
@@ -602,8 +619,8 @@ class Onsen(Scene):
                 L(cv, Shape().circle(x, y - 139, 40), c["glow"], 0.22 if c["dark"] else 0.12, ss=1, soft=30)]
 
     def pool(self, cv):
-        if getattr(self, "_pool", (None,))[0] != cv.w:
-            self._pool = (cv.w, full(cv, Shape().ellipse(self.PX, self.PY, self.PRX, self.PRY)))
+        if getattr(self, "_pool", (None,))[0] != cv.key:
+            self._pool = (cv.key, full(cv, Shape().ellipse(self.PX, self.PY, self.PRX, self.PRY)))
         return self._pool[1]
 
     def front(self, cv, p):
@@ -799,9 +816,9 @@ def ribbon(pts, w0, w1):
 class Cached:
     def cached(self, cv, key, make):
         store = self.__dict__.setdefault("_cache", {})
-        if (key, cv.w) not in store:
-            store[(key, cv.w)] = make()
-        return store[(key, cv.w)]
+        if (key, cv.key) not in store:
+            store[(key, cv.key)] = make()
+        return store[(key, cv.key)]
 
 
 class Duck(Scene, Cached):
@@ -1737,6 +1754,7 @@ BLACK3 = (0.0, 0.0, 0.0)
 # them an ordered dither, each pixel shown as a square.
 
 PW, PH, PFPS = 480, 270, 12
+GRID = [PW, PH]  # the grid being drawn on: 480 by 270, or 270 by 480 for a portrait
 WHITE3 = (255.0, 255.0, 255.0)
 BAYER = (np.array([[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]], np.float32) + 0.5) / 16
 DITHERS = {}
@@ -1758,7 +1776,7 @@ class Mask:
     Whole numbers name pixels, as on a grid of them; a polygon keeps its edge."""
 
     def __init__(self, w=None, h=None):
-        self.mm = np.zeros((h or PH, w or PW), bool)
+        self.mm = np.zeros((h or GRID[1], w or GRID[0]), bool)
 
     def poly(self, pts):
         q = [(round(x) + 0.5, round(y) + 0.5) for x, y in pts]
@@ -1946,9 +1964,20 @@ def ramp(a, b, n):
 
 class Pixel:
     name, seconds, pixel, poster = "", 24, True, 6.0
+    portrait = False  # True once it has a portrait composition on a 270 by 480 grid
+    gw, gh = PW, PH
+
+    def orient(self, portrait):
+        """Draw on the landscape grid or the portrait one; a scene places its things in layout."""
+        self.gw, self.gh = (PH, PW) if portrait else (PW, PH)
+        GRID[:] = [self.gw, self.gh]
+        self.layout(portrait)
+
+    def layout(self, portrait):
+        pass
 
     def key(self, p):
-        return tuple(sorted(p.hex.items()))
+        return (self.gw > self.gh,) + tuple(sorted(p.hex.items()))
 
     def colors(self, p):
         raise NotImplementedError
@@ -1975,7 +2004,7 @@ class Pixel:
         st = self.__dict__.setdefault("_base", {})
         k = self.key(p)
         if k not in st:
-            a = np.zeros((PH, PW, 3), np.float32)
+            a = np.zeros((self.gh, self.gw, 3), np.float32)
             self.back(a, p, self.colors(p))
             st[k] = a
         return st[k]
@@ -1986,9 +2015,10 @@ class Pixel:
     def draw(self, a, p, c, t):
         pass
 
-    def render(self, p, t):
+    def render(self, p, t, portrait=False):
         """A frame: the still part's dither is worked out once, and each frame's
         only where it differs from it; the same pixels as dithering it all."""
+        self.orient(portrait)
         t = t % self.seconds
         base = self.base(p)
         a = base.copy()
@@ -2008,7 +2038,7 @@ def clouds(a, seed, n, band, body, lit, alpha, lit_below=True, wmin=50, wmax=130
     """Long clouds of a few puffs each; their edge toward the light picked out."""
     rnd = random.Random(seed)
     for k in range(n):
-        cx, cy, w = rnd.randint(-20, PW + 20), rnd.randint(*band), rnd.randint(wmin, wmax)
+        cx, cy, w = rnd.randint(-20, a.shape[1] + 20), rnd.randint(*band), rnd.randint(wmin, wmax)
         m = Mask()
         for j in range(rnd.randint(4, 7)):
             px_ = cx - w / 2 + w * rnd.random()
@@ -2431,15 +2461,22 @@ class Watch(Pixel):
 
     name = "watch"
     poster = 0.5
-    HZ = 152
-    MOON = (140.0, 110.0)
+    portrait = True
     F, EYE = 236.0, 1.0  # the eye: one unit over the water, the horizon at HZ
-    LAMP = (-47.8, 8.37, 60.0)  # the lamp in the world: across, up, away (on screen it is at 52, HZ - 29)
     REACH = 50.0  # how far out its beam comes down on the water
+
+    def layout(self, portrait):
+        """Where things are: landscape, or a portrait's tall sky and long road of moonlight."""
+        if portrait:
+            self.HZ, self.MOON, self.LX, self.BUOY, self.CLOUDS, self.SHIFT = 274, (168.0, 150.0), 40, (204, 283), (96, 236), -12
+        else:
+            self.HZ, self.MOON, self.LX, self.BUOY, self.CLOUDS, self.SHIFT = 152, (140.0, 110.0), 52, (330, 161), (78, 135), 0
+        z = 60.0  # the lamp in the world: across, up, away; on screen at LX, 29 over the horizon
+        self.LAMP = ((self.LX - self.gw / 2) * z / self.F, self.EYE + 29 * z / self.F, z)
 
     def scr(self, x, y, z):
         """A point of the world on the screen, in perspective."""
-        return PW / 2 + self.F * x / z, self.HZ + self.F * (self.EYE - y) / z
+        return self.gw / 2 + self.F * x / z, self.HZ + self.F * (self.EYE - y) / z
 
     def colors(self, p):
         st = self.__dict__.setdefault("_c", {})
@@ -2471,28 +2508,28 @@ class Watch(Pixel):
         pgrad(a, 0, self.HZ, [(0, c["top"]), (self.HZ, c["low"])])
         if dk:
             rnd = random.Random(31)
-            for i in range(170):
-                x, y = rnd.randrange(PW), rnd.randrange(self.HZ - 30)
+            for i in range(170 if self.gw > self.gh else 230):
+                x, y = rnd.randrange(self.gw), rnd.randrange(self.HZ - 30)
                 put(a, x, y, c["star"] if rnd.random() < 0.3 else c["stardim"])
         mx, my = self.MOON
         pglow(a, mx, my, 44, c["moon"], 0.22 if dk else 0.35, add=False)
         fill(a, Mask().ell(mx, my, 9, 9), c["moon"])
         for dx, dy in ((-3, -2), (-2, -2), (-3, -1), (2, 1), (3, 1), (2, 2), (0, 4), (-1, 3)):
             put(a, mx + dx, my + dy, c["mare"])
-        clouds(a, 5, 5, (78, 135), c["cloud"], c["cloudlit"], 0.9, lit_below=False, wmin=60, wmax=170)
-        pgrad(a, self.HZ, PH, [(self.HZ, c["sea"]), (PH, c["deep"])])
-        hline(a, 0, PW, self.HZ, c["seahi"])
+        clouds(a, 5, 5, self.CLOUDS, c["cloud"], c["cloudlit"], 0.9, lit_below=False, wmin=60, wmax=170)
+        pgrad(a, self.HZ, self.gh, [(self.HZ, c["sea"]), (self.gh, c["deep"])])
+        hline(a, 0, self.gw, self.HZ, c["seahi"])
         rnd = random.Random(9)
         for i in range(260):  # the sea's texture: short strokes, longer as they come near
-            y = self.HZ + 2 + int((PH - self.HZ) * rnd.random() ** 1.5)
+            y = self.HZ + 2 + int((self.gh - self.HZ) * rnd.random() ** 1.5)
             ln = 1 + int((y - self.HZ) / 12)
-            x = rnd.randrange(PW)
+            x = rnd.randrange(self.gw)
             hline(a, x, x + ln, y, c["seahi"] if rnd.random() < 0.5 else c["deep"], 0.7)
-        land = [(0, self.HZ + 1), (0, self.HZ - 13), (14, self.HZ - 15), (30, self.HZ - 12), (46, self.HZ - 10), (64, self.HZ - 6), (80, self.HZ - 2), (92, self.HZ + 1)]
+        land = [(0, self.HZ + 1), (0, self.HZ - 13)] + [(x + self.SHIFT, self.HZ + y) for x, y in ((14, -15), (30, -12), (46, -10), (64, -6), (80, -2), (92, 1))]
         fill(a, Mask().poly(land), c["land"])
         for (x0, y0), (x1_, y1_) in zip(land[1:-2], land[2:-1]):
             fill(a, Mask().line([(x0, y0), (x1_, y1_)]), c["landedge"])
-        lx = 52
+        lx = self.LX
         for y in range(self.HZ - 26, self.HZ - 9):
             w = 3 if y < self.HZ - 17 else 4
             band = ((y - (self.HZ - 26)) // 3) % 2
@@ -2509,7 +2546,7 @@ class Watch(Pixel):
         mx, my = self.MOON
         rnd = random.Random(5)
         for i in range(80):  # the moon's road: strokes that come and go
-            y = self.HZ + 2 + int((PH - self.HZ - 2) * rnd.random() ** 1.7)
+            y = self.HZ + 2 + int((self.gh - self.HZ - 2) * rnd.random() ** 1.7)
             spread = 5 + (y - self.HZ) * 0.42
             x = mx + rnd.uniform(-1, 1) * spread
             ln = 1 + int((y - self.HZ) * 0.07)
@@ -2518,16 +2555,17 @@ class Watch(Pixel):
                 hline(a, x - ln, x + ln + 1, y, c["glint"] if v > 0.6 else c["glintdim"])
         for k in range(8):  # the swell, rolling in
             u = ((t / 8.0) + k / 8) % 1.0
-            y = self.HZ + 3 + (PH - self.HZ - 3) * u ** 1.6
+            y = self.HZ + 3 + (self.gh - self.HZ - 3) * u ** 1.6
             al = 0.25 + 0.5 * bump(u)
-            for x in range(-(k * 7) % 9, PW, 9):
+            for x in range(-(k * 7) % 9, self.gw, 9):
                 yy = y + 1.5 * math.sin(x / 35 + k)
                 hline(a, x, x + 3 + int(4 * u), yy, c["deep"], al)
         # the buoy far out: green, every three seconds
         if (t % 3.0) < 0.35:
-            put(a, 330, self.HZ + 9, c["buoy"])
-            pglow(a, 330, self.HZ + 9, 5, c["buoy"], 0.35, add=dk)
-            put(a, 330, self.HZ + 12, c["buoy"], 0.4)
+            bx, by = self.BUOY
+            put(a, bx, by, c["buoy"])
+            pglow(a, bx, by, 5, c["buoy"], 0.35, add=dk)
+            put(a, bx, by + 3, c["buoy"], 0.4)
         # the beam: it sweeps the water, three times a loop; once it looks up at the moon
         lx, ly = self.lamp
         ang = 2 * math.pi * t / 8.0
@@ -2557,7 +2595,7 @@ class Watch(Pixel):
             rx, ry = self.scr(X0, -Y0, Z0)
             m = Mask().poly(hull(spot + [(rx, ry)])).m()
             m[: self.HZ + 1] = False
-            rows = (np.arange(PH) + int(t * PFPS)) % 3 == 0  # broken by the swell
+            rows = (np.arange(self.gh) + int(t * PFPS)) % 3 == 0  # broken by the swell
             m[rows] = False
             fill(a, m, c["beam"], (0.1 if dk else 0.16) * water)
             fill(a, Mask().poly(spot), c["beam"], (0.3 if dk else 0.35) * water)
@@ -3273,9 +3311,20 @@ def drawable(scene, w, h):
     """Why a scene cannot be drawn at w by h, or None when it can."""
     if not (16 <= w <= 8192 and 16 <= h <= 8192):
         return "%dx%d is not a size to draw at (16 to 8192 a side)" % (w, h)
-    if h > w:
+    if h > w and not scene.portrait:
         return "%s has no portrait composition yet" % scene.name
     return None
+
+
+def canvas_for(scene, w, h):
+    """A flat scene's canvas for a screen w by h, its view for that shape covering
+    it; and where the screen's corner falls on it."""
+    uw, uh, ox, oy = scene.view(h > w)
+    s = max(w / uw, h / uh)
+    while round(uw * s) < w or round(uh * s) < h:
+        s += 0.5 / uw
+    cv = Canvas(s, uw, uh, ox, oy)
+    return cv, (cv.w - w) // 2, (cv.h - h) // 2
 
 
 def frames_at(scene, p, w, h, fps):
@@ -3288,14 +3337,10 @@ def frames_at(scene, p, w, h, fps):
         for f in range(n):
             k = f * PFPS // fps
             if last[0] != k:
-                last = (k, upscale(scene.render(p, k / PFPS), w, h))
+                last = (k, upscale(scene.render(p, k / PFPS, h > w), w, h))
             yield last[1]
         return
-    s = max(w / W, h / H)
-    while round(W * s) < w or round(H * s) < h:
-        s += 0.5 / W
-    cv = Canvas(s)
-    x0, y0 = (cv.w - w) // 2, (cv.h - h) // 2
+    cv, x0, y0 = canvas_for(scene, w, h)
     back, front = stills(cv, scene, p)
     for f in range(n):
         yield frame(cv, scene, p, back, front, f / fps)[y0 : y0 + h, x0 : x0 + w]
@@ -3304,12 +3349,8 @@ def frames_at(scene, p, w, h, fps):
 def still_at(scene, p, w, h, t):
     """One frame of a scene at a time of its loop, w by h."""
     if getattr(scene, "pixel", False):
-        return upscale(scene.render(p, t), w, h)
-    s = max(w / W, h / H)
-    while round(W * s) < w or round(H * s) < h:
-        s += 0.5 / W
-    cv = Canvas(s)
-    x0, y0 = (cv.w - w) // 2, (cv.h - h) // 2
+        return upscale(scene.render(p, t, h > w), w, h)
+    cv, x0, y0 = canvas_for(scene, w, h)
     back, front = stills(cv, scene, p)
     return frame(cv, scene, p, back, front, t)[y0 : y0 + h, x0 : x0 + w]
 
@@ -3325,19 +3366,16 @@ def _job_init(name, path, w, h, fps):
     p = Palette(read_env(path))
     _JOB.update(sc=sc, p=p, w=w, h=h, fps=fps)
     if not getattr(sc, "pixel", False):
-        s = max(w / W, h / H)
-        while round(W * s) < w or round(H * s) < h:
-            s += 0.5 / W
-        cv = Canvas(s)
+        cv, x0, y0 = canvas_for(sc, w, h)
         back, front = stills(cv, sc, p)
-        _JOB.update(cv=cv, back=back, front=front, x0=(cv.w - w) // 2, y0=(cv.h - h) // 2)
+        _JOB.update(cv=cv, back=back, front=front, x0=x0, y0=y0)
 
 
 def _job_frame(i):
     """Frame i of the loop as bytes (for a pixel scene, step i of its grid)."""
     j = _JOB
     if getattr(j["sc"], "pixel", False):
-        return upscale(j["sc"].render(j["p"], i / PFPS), j["w"], j["h"]).tobytes()
+        return upscale(j["sc"].render(j["p"], i / PFPS, j["h"] > j["w"]), j["w"], j["h"]).tobytes()
     img = frame(j["cv"], j["sc"], j["p"], j["back"], j["front"], i / j["fps"])
     return img[j["y0"] : j["y0"] + j["h"], j["x0"] : j["x0"] + j["w"]].tobytes()
 
@@ -3378,12 +3416,14 @@ def write_png(path, img):
         f.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
 
 
-def info(scene):
+def info(scene, portrait=False):
     out = {"scene": scene.name, "collection": next(c for c, ns in COLLECTIONS.items() if scene.name in ns),
            "fps": native_fps(scene), "seconds": scene.seconds, "frames": scene.seconds * native_fps(scene), "still": scene.poster,
-           "kind": "pixel" if getattr(scene, "pixel", False) else "flat", "orientations": ["landscape"]}
+           "kind": "pixel" if getattr(scene, "pixel", False) else "flat", "orientations": ["landscape"] + (["portrait"] if scene.portrait else [])}
     if getattr(scene, "pixel", False):
-        out["grid"] = "%dx%d" % (PW, PH)
+        out["grid"] = "%dx%d" % ((PH, PW) if portrait else (PW, PH))
+        if scene.portrait and not portrait:
+            out["portrait_grid"] = "%dx%d" % (PH, PW)
     return out
 
 
@@ -3491,7 +3531,7 @@ def main(argv):
         if len(scenes) != 1:
             refuse("--info takes one --scene, or none for all of them", 2)
         sc = SCENES[scenes[0]]
-        out = info(sc)
+        out = info(sc, bool(size and size[1] > size[0]))
         if size:
             why = drawable(sc, *size)
             if why:
