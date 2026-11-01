@@ -36,7 +36,7 @@ them; the references and not the story, no one in them, a dry joke
     problem   a training board, a grid of holds in every color, a light by
               each; it shows a problem, then another, then runs Life, and a
               glider walks down it
-    continue  an arcade after closing, the machines playing to no one; one
+    continue  an arcade after closing, six machines playing to no one; one
               asks the empty room to continue, counts down, and gives up
     crossing  a level crossing at dusk, far off: the bells, the arm, a small
               train; after it the crows on the wire are in another order
@@ -2614,7 +2614,7 @@ class Continue(Pixel):
 
     name = "continue"
     FLOOR = 214
-    CABS = (88, 168, 248, 328)
+    CABS = (88, 168, 248, 328, 408)
 
     def colors(self, p):
         st = self.__dict__.setdefault("_c", {})
@@ -2622,13 +2622,13 @@ class Continue(Pixel):
         if k in st:
             return st[k]
         bg, dk = p("bg"), p.dark
-        hues = (p("ansi_4"), p("ansi_5"), p("ansi_2"), p("ansi_1"))
+        hues = (p("ansi_4"), p("ansi_5"), p("ansi_2"), p("ansi_1"), p("ansi_3"))
         if dk:
             wallc = mix(bg, BLACK3, 0.62)
             c = dict(wall=wallc, wall2=mix(bg, BLACK3, 0.7), floor=mix(bg, BLACK3, 0.72), carpet1=mix(mix(bg, BLACK3, 0.72), p("ansi_5"), 0.28),
                      carpet2=mix(mix(bg, BLACK3, 0.72), p("ansi_6"), 0.25), carpet3=mix(mix(bg, BLACK3, 0.72), p("ansi_3"), 0.25),
                      screen=mix(bg, BLACK3, 0.85), ink=mix(bg, BLACK3, 0.88), text=p("fg"), textdim=mix(p("fg"), BLACK3, 0.45),
-                     neon=p("ansi_5"), neondim=mix(p("ansi_5"), wallc, 0.7), street=p("ansi_3"), slat=mix(bg, BLACK3, 0.5), slat2=mix(bg, BLACK3, 0.62),
+                     neon=p("ansi_5"), neondim=mix(p("ansi_5"), wallc, 0.7),
                      red=p("ansi_1"), yellow=p("ansi_3"), green=p("ansi_2"), cyan=p("ansi_6"), blue=p("ansi_4"), white=p("fg"))
             for i, h in enumerate(hues):
                 c["body%d" % i] = mix(h, BLACK3, 0.7)
@@ -2638,7 +2638,7 @@ class Continue(Pixel):
         else:
             c = dict(wall=p("bg+fg:12"), wall2=p("bg+fg:18"), floor=p("bg+fg:24"), carpet1=p("bg+ansi_5:30"), carpet2=p("bg+ansi_6:30"), carpet3=p("bg+ansi_3:30"),
                      screen=mix(p("fg"), BLACK3, 0.55), ink=p("bg+fg:80"), text=p("white"), textdim=p("bg+fg:40"),
-                     neon=p("ansi_5"), neondim=p("bg+ansi_5:30"), street=p("white"), slat=p("bg+fg:30"), slat2=p("bg+fg:40"),
+                     neon=p("ansi_5"), neondim=p("bg+ansi_5:30"),
                      red=p("ansi_1"), yellow=p("ansi_3"), green=p("ansi_2"), cyan=p("ansi_6"), blue=p("ansi_4"), white=p("white"))
             for i, h in enumerate(hues):
                 c["body%d" % i] = mix(h, BLACK3, 0.35)
@@ -2650,9 +2650,9 @@ class Continue(Pixel):
 
     def extra(self, p, c):
         out = []
-        for col in ("blue", "neon", "green", "red", "yellow", "street", "cyan"):
-            out += ramp(c["wall"], c[col], 5)[1:-1] + ramp(c["floor"], c[col], 4)[1:-1]
-        for i in range(4):
+        for col in ("blue", "neon", "green", "red", "yellow", "cyan"):
+            out += ramp(c["wall"], c[col], 5)[1:-1] + ramp(c["floor"], c[col], 4)[1:-1] + ramp(c["screen"], c[col], 3)[1:2]
+        for i in range(5):
             out += [mix(c["body%d" % i], c["white"], 0.18)]
         out += ramp(c["screen"], c["white"], 4)[1:-1]
         return out
@@ -2679,16 +2679,6 @@ class Continue(Pixel):
                 for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
                     put(a, x + dx, y + dy, col)
         hline(a, 0, PW, self.FLOOR, c["ink"])
-        # the shutter, down: street light under it and between its slats
-        box(a, 408, 30, 72, self.FLOOR - 30, c["slat"])
-        for y in range(32, self.FLOOR - 3, 4):
-            hline(a, 408, PW, y, c["slat2"])
-        hline(a, 408, PW, self.FLOOR - 2, c["street"], 0.8 if dk else 0.4)
-        box(a, 404, 26, 4, self.FLOOR - 26, c["ink"])
-        box(a, 404, 26, 76, 4, c["ink"])
-        for k in range(14):
-            yy = self.FLOOR + 1 + k
-            hline(a, 408 - k * 3, PW, yy, c["street"], (0.25 if dk else 0.12) * (1 - k / 14))
         # the claw machine
         box(a, 16, 70, 58, self.FLOOR - 70, c["edge1"])
         box(a, 20, 74, 50, 70, c["body1"])
@@ -2725,7 +2715,7 @@ class Continue(Pixel):
                 box(a, x + 24 + s_ * 14, 166, 2, 6, c["red"])
                 pglow(a, x + 25 + s_ * 14, 169, 6, c["red"], 0.3 if dk else 0.1, add=dk)
             box(a, x + 4, 196, 56, 16, edge)
-            title = ("ZAP", "RACE", "BRIX", "QUEST")[i]
+            title = ("ZAP", "RACE", "BRIX", "QUEST", "CLIMB")[i]
             text(a, x + 32 - len(title) * 2, 66, title, edge)
             hline(a, x + 6, x + 58, 75, edge)
 
@@ -2783,6 +2773,8 @@ class Continue(Pixel):
             put(a, bx, by, c["text"])
             px_ = min(max(bx, x0 + 5), x0 + w - 5)
             hline(a, px_ - 4, px_ + 5, y0 + h - 2, c["text"])
+        elif i == 4:  # girders, ladders, barrels rolling down, and someone going up
+            self.climb(a, c, x0, y0, w, t)
         else:  # the one that asks
             if t < 3.0:
                 text(a, x0 + 8, y0 + 4, "HI SCORE", c["yellow"])
@@ -2804,9 +2796,68 @@ class Continue(Pixel):
         for dx, dy in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
             put(a, x0 + dx, y0 + dy, c["ink"])
 
+    def climb(self, a, c, x0, y0, w, t):
+        red, rail = c["red"], mix(c["red"], c["screen"], 0.5)
+
+        def gy(j, x):  # each girder slopes the other way: the barrels zigzag down
+            u = (x - x0) / w
+            return y0 + 10 + 9 * j + (2 * u if j % 2 == 0 else 2 * (1 - u))
+
+        spans = ((x0, x0 + w - 6), (x0 + 6, x0 + w), (x0, x0 + w - 6), (x0, x0 + w))
+        for lx, j in ((x0 + 30, 0), (x0 + 14, 1), (x0 + 34, 2)):
+            ya, yb = gy(j, lx) + 2, gy(j + 1, lx)
+            vline(a, lx, ya, yb, c["cyan"])
+            vline(a, lx + 2, ya, yb, c["cyan"])
+            for yy in range(int(ya) + 1, int(yb), 2):
+                put(a, lx + 1, yy, c["cyan"])
+        for j, (xa, xb) in enumerate(spans):
+            for x in range(xa, xb):
+                put(a, x, gy(j, x), red)
+                put(a, x, gy(j, x) + 1, red if x % 3 == 0 else rail)
+        for k, (bx, by) in enumerate(((x0 + 1, y0 + 6), (x0 + 4, y0 + 6), (x0 + 2, y0 + 3))):
+            box(a, bx, by, 3, 3, c["yellow"])
+            put(a, bx + 1, by + 1, rail)
+        text(a, x0 + w - 12, y0 + 1, "1UP", red)
+        barrels = []
+        for k in range(3):  # three barrels, two seconds apart, six seconds from top to bottom
+            sp = ((t - 2 * k) % 6.0) / 6.0 * 4
+            j, f = int(sp), sp - int(sp)
+            xa, xb = (x0 + 7, x0 + w - 4) if j % 2 == 0 else (x0 + w - 4, x0 - 3)
+            if j == 3:
+                xa, xb = x0 + w - 4, x0 - 4
+            bx = xa + (xb - xa) * f
+            barrels.append((j, bx))
+            by = gy(j, bx) - 3
+            box(a, bx - 1, by, 3, 3, c["yellow"])
+            put(a, bx - 1 + (int(t * 6) % 2) * 2, by + 1, rail)
+        u = t % 12.0  # the climber's demo: across, up, back, up, and again
+        if u < 4:
+            j, hx, hy = 3, x0 + 4 + 30 * u / 4, None
+        elif u < 6:
+            j, hx = 2, x0 + 34
+            hy = gy(3, hx) - 4 + (gy(2, hx) - gy(3, hx)) * (u - 4) / 2
+        elif u < 9:
+            j, hx, hy = 2, x0 + 34 - 20 * (u - 6) / 3, None
+        elif u < 11:
+            j, hx = 1, x0 + 14
+            hy = gy(2, hx) - 4 + (gy(1, hx) - gy(2, hx)) * (u - 9) / 2
+        else:
+            j, hx, hy = 1, x0 + 14, None
+        if hy is None:
+            hy = gy(j, hx) - 4
+            if any(bj == j and abs(bx - hx) < 4 for bj, bx in barrels):
+                hy -= 3
+        if u < 11.5 or int(t * 8) % 2:
+            put(a, hx + 1, hy, c["text"])
+            hline(a, hx, hx + 3, hy + 1, c["blue"])
+            put(a, hx + 1, hy + 2, c["blue"])
+            step = int(t * 6) % 2
+            put(a, hx + step * 2, hy + 3, c["text"])
+            put(a, hx + 2 - step * 2, hy + 3, c["text"])
+
     def draw(self, a, p, c, t):
         dk = p.dark
-        tints = (c["cyan"], c["green"], c["yellow"], c["text"])
+        tints = (c["cyan"], c["green"], c["yellow"], c["text"], c["red"])
         for i, x in enumerate(self.CABS):
             k = 0.1
             if i == 3 and 3.0 <= t < 13.0:
