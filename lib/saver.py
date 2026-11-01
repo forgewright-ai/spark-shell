@@ -9,6 +9,7 @@
                                         every frame as JSON, for a preview
   saver.py ... --ascii                  plain ASCII only, for a console with no block glyphs
   saver.py NAME --fade N                frames to come in over (played: 15; --frames and --json: 0)
+  saver.py NAME --no-clock              the animation alone: a screen beside the main one (#177)
   saver.py --version
 
 A saver is a small machine: a size, a seed, and a frame each tick. The same seed
@@ -23,7 +24,9 @@ since the frame before: the terminal redraws what moved and nothing else.
 The savers are spark (bursts that arc and fade, embers rising), starfield (the
 Windows 3.1 one) and drift (the clock bounces off the edges). Each keeps the idle
 screen's own clock: the time in its large figures at the lower left, a row of
-air, the date under it. Drift is the clock bouncing, with its date.
+air, the date under it. Drift is the clock bouncing, with its date. With
+--no-clock a saver draws its animation alone, for a screen beside the main one,
+and drift, which is its clock, draws nothing (#177).
 """
 import json
 import locale
@@ -129,8 +132,9 @@ class Saver:
     clock_at = "bl"          # "bl", "tl", or None when the saver draws the time itself
     fades = True             # whether its cells come in over `fade` frames; the clock never does
 
-    def __init__(self, w, h, seed=0, block=None, ascii=False, fade=0):
+    def __init__(self, w, h, seed=0, block=None, ascii=False, fade=0, clock=True):
         self.w, self.h = max(1, w), max(1, h)
+        self.clock = clock
         self.seed = seed
         self.fade = max(0, int(fade))
         self.rng = random.Random(seed)
@@ -146,7 +150,7 @@ class Saver:
         if self.fades and self.n < self.fade:
             self._thin(g, (self.n + 1) / (self.fade + 1))
         self.n += 1
-        if self.clock_at:
+        if self.clock_at and self.clock:
             overlay_clock(g, clock_text, self.clock_at, self.block, date_text)
         return g
 
@@ -272,6 +276,8 @@ class Drift(Saver):
         self.bold = False
 
     def draw(self, g, clock_text):
+        if not self.clock:                       # its cells are the clock: none without it
+            return
         rows = clock_rows(clock_text, self.block) + ["", self.date]    # the time, a row of air, the date
         cw, ch = max(len(r) for r in rows), len(rows)
         if cw > self.w or ch > self.h:           # a screen too small to bounce on: the idle screen's small layout
@@ -400,7 +406,7 @@ def usage():
     print(__doc__.strip().split("\n\n")[0])
 
 
-def play(name, seed, block, ascii, fade=FADE):
+def play(name, seed, block, ascii, fade=FADE, clock=True):
     """In this terminal until a key, a mouse move or a signal ends it (#70): the window's size is
     read each frame, the terminal a byte at a time with no echo, and every move of the mouse is
     reported to it, so whatever a person does at the screen ends the saver as Ctrl-C does."""
@@ -436,7 +442,7 @@ def play(name, seed, block, ascii, fade=FADE):
                 now = (80, 24)
             if now != size:
                 size = now
-                saver = SAVERS[name](size[0], size[1], seed, block, ascii, fade)
+                saver = SAVERS[name](size[0], size[1], seed, block, ascii, fade, clock)
                 fade = 0                             # a saver comes in once, not again at every resize
                 out.write("\033[2J")
                 prev = None
@@ -485,7 +491,7 @@ def main(argv):
         print("saver: no saver named %s; saver.py list names them" % name, file=sys.stderr)
         return 2
     opts = {"--size": None, "--frames": None, "--seed": None, "--time": None, "--date": None, "--block": None, "--fade": None}
-    flags = {"--json": False, "--color": False, "--ascii": False}
+    flags = {"--json": False, "--color": False, "--ascii": False, "--no-clock": False}
     i = 0
     while i < len(rest):
         a = rest[i]
@@ -516,7 +522,7 @@ def main(argv):
         if not sys.stdout.isatty():
             print("saver: not a terminal: --frames N prints the last frame of N", file=sys.stderr)
             return 2
-        play(name, int(time.time()) if seed is None else seed, block, flags["--ascii"], FADE if fade is None else fade)   # each idle screen its own way
+        play(name, int(time.time()) if seed is None else seed, block, flags["--ascii"], FADE if fade is None else fade, not flags["--no-clock"])   # each idle screen its own way
         return 0
     frames = 100 if frames is None else frames
     if not 1 <= frames <= 5000:
@@ -525,7 +531,7 @@ def main(argv):
     w, h = parse_size(opts["--size"] or "80x24")
     t = opts["--time"] or clock_now()
     d = date_now() if opts["--date"] is None else opts["--date"]
-    saver = SAVERS[name](w, h, seed or 0, block, flags["--ascii"], fade or 0)   # a look at frames has no fade unless asked
+    saver = SAVERS[name](w, h, seed or 0, block, flags["--ascii"], fade or 0, not flags["--no-clock"])   # a look at frames has no fade unless asked
     grids = [saver.frame(t, d) for _ in range(frames)]
     if flags["--json"]:
         json.dump({"name": name, "w": w, "h": h, "fps": FPS,

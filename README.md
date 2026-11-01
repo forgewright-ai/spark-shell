@@ -479,7 +479,10 @@ ground and the time sits at the lower left in large figures, in the
 accent, as the Calendar draws it, the date under it; a key or a mouse
 move takes it down, and so does Ctrl-C, whether it came by itself or by
 `spark-shell desktop idle`. However it goes, the workspace you were on
-and the bar come back.
+and the bar come back. With more than one screen, every screen idles at
+once: the clock on the main screen, the others dimmed, with the saver
+alone when you pick one (below). A key or a move on any screen brings
+each one back to its workspace.
 
 Type `spark-shell desktop display saver spark`. You get an animation
 behind the clock on the idle screen, in your palette: spark (bursts and
@@ -799,7 +802,8 @@ its first and its last row.
   last three ask for a typed yes.
 - `theme`: first the wallpaper, the text size, the transparency and the
   dialog's animation, a row each; on the text size and the transparency,
-  left and right change the value in place. The animation row opens a
+  left and right change the value in place, and so does a click on its
+  arrows. The animation row opens a
   list of the pieces and none, the one in use checked and the palette's
   own said; the lit one plays beside the list in your palette. Then the
   palettes, dark and light, each with a chip of its colors (its ground,

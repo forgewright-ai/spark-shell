@@ -186,6 +186,8 @@ pub struct Drawn {
     /// The toast's Undo and its x (#133): their cells (x0, x1, y), for a click.
     pub toast_undo: Option<(u16, u16, u16)>,
     pub toast_close: Option<(u16, u16, u16)>,
+    /// A value row's arrows (#175): each one's cells (x0, x1, y), its pick, and whether it steps the value up.
+    pub steps: Vec<(u16, u16, u16, usize, bool)>,
     /// The dialog's own column, its first cell and the cell after its last (#131): a click's row is its list's only there.
     pub columns: (u16, u16),
     /// The opening plays alone (#142): nothing else drawn, no cursor.
@@ -286,6 +288,10 @@ impl Drawn {
         }
         self.toast_undo = self.toast_undo.map(|(a, b, y)| (a + dx, b + dx, y));
         self.toast_close = self.toast_close.map(|(a, b, y)| (a + dx, b + dx, y));
+        for st in &mut self.steps {
+            st.0 += dx;
+            st.1 += dx;
+        }
         self.columns = (self.columns.0 + dx, self.columns.1 + dx);
     }
 }
@@ -616,10 +622,12 @@ fn said_line(pen: &mut Pen, s: &Sign, text: &str, first: bool, y: u16, lit: bool
 /// A list's columns: their widths, which line up on their right edge, whether rows carry a sample.
 type Cols<'a> = (&'a [usize], &'a [bool], bool, bool);
 
-fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols) {
+/// One item of a list; a value row gives back where its arrows are drawn (#175).
+fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols) -> Option<(u16, u16)> {
     let (widths, right, samples, chips) = cols;
     let pal = pen.pal.clone();
     let w = pen.w;
+    let mut arrows = None;
     match it {
         Item::Ask => {
             let x = pen.put(2, y, "Ask spark", pal.fg, false, lit);
@@ -737,15 +745,15 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             pen.put(x, y, &cut(&format!("{}{}", SEP, at), (w.saturating_sub(x + 4)) as usize), pal.muted, false, lit);
             pen.put(w - 3, y, MORE, pal.muted, false, lit);
         }
-        Item::Row(p, r) => row_line(pen, &app.providers[*p].rows.rows[*r], y, lit, widths, right, samples, chips),
+        Item::Row(p, r) => arrows = row_line(pen, &app.providers[*p].rows.rows[*r], y, lit, widths, right, samples, chips),
         Item::Folder(i) => {
             if let Some(row) = app.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)) {
-                row_line(pen, row, y, lit, widths, right, samples, chips);
+                arrows = row_line(pen, row, y, lit, widths, right, samples, chips);
             }
         }
         Item::Hit(i) => {
             if let Some((_, row)) = app.hits.get(*i) {
-                row_line(pen, row, y, lit, widths, right, samples, chips);
+                arrows = row_line(pen, row, y, lit, widths, right, samples, chips);
             }
         }
         Item::More(_, n) => {
@@ -767,6 +775,7 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             pen.put(6, y, &what, pal.fg, false, lit);
         }
     }
+    arrows
 }
 
 fn pal_muted(pen: &Pen) -> Color {
@@ -1214,7 +1223,11 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         }
         let chips = row_of(app, it).is_some_and(|r| chip_groups.contains(&r.group));
         let (w, r) = cols_at(k);
-        item_line(app, pen, it, y, lit, (&w, &r, samples, chips));
+        // a value's arrows take a click, each with a cell of air on either side so it is easy to hit (#175)
+        if let (Some((less, more)), Some(n)) = (item_line(app, pen, it, y, lit, (&w, &r, samples, chips)), picks.iter().position(|i| *i == k)) {
+            drawn.steps.push((less.saturating_sub(1), less + 2, y, n, false));
+            drawn.steps.push((more - 1, more + 2, y, n, true));
+        }
     }
     pen.stop = None;
     if let (true, Some(t)) = (toast, app.toast.as_ref()) {
@@ -1344,8 +1357,9 @@ fn row_columns(row: &crate::model::Row, wide: bool) -> &[String] {
 
 /// One row: its sign at 4, its text at 6, its columns lined up (the first right-aligned, a size; the rest left), its arrow when it opens more.
 /// A row: its sign at 4, its text at 6, or at 9 in a list where rows carry a color's sample, the sample at 6.
+/// A value row gives back the cells of its two arrows (#175).
 #[allow(clippy::too_many_arguments)]
-fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &[usize], right: &[bool], samples: bool, chips: bool) {
+fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &[usize], right: &[bool], samples: bool, chips: bool) -> Option<(u16, u16)> {
     let pal = pen.pal.clone();
     let (g, c) = sign(&pal, &row.sign);
     pen.put(4, y, g, c, false, lit);
@@ -1372,7 +1386,7 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &
         let x1 = pen.put(x0, y, LESS, ac, false, lit);
         let x2 = pen.put(x1 + 1, y, &st.value, pal.fg, false, lit);
         pen.put(x2 + 1, y, MORE, ac, false, lit);
-        return;
+        return Some((x0, x2 + 1));
     }
     if !row.chip.is_empty() {
         chip(pen, name_end + 2, y, &row.chip);
@@ -1410,6 +1424,7 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, widths: &
     if row.children.is_some() && row.text != ".." {
         pen.put(x, y, " \u{203a}", pal.muted, false, lit);
     }
+    None
 }
 
 /// A palette's chip, CHIP cells on its own ground: a dot in the accent and in each hue after it. A

@@ -103,6 +103,7 @@ def main(binary):
     keys(binary, env)
     tasks(binary, env, home)
     files(binary, env, home)
+    clicks(binary, env, home)
     print("dialog_pty: %d failed" % failed)
     return 1 if failed else 0
 
@@ -343,6 +344,101 @@ def busy(binary, env, home):
        "took %s s, the busy one still there: %s" % (took, still))
     time.sleep(3)
     ok(not any(slow in l for l in ps().splitlines()), "the busy provider ends by itself once its work is done")
+
+
+CLICK_PROVIDER = r"""import json, sys
+step = {"value": "signs", "less": {"name": "theme_glyphs", "arguments": {"to": "signs"}}, "more": {"name": "theme_glyphs", "arguments": {"to": "words"}}, "words": ["signs", "words"]}
+rows = {"title": "theme", "short": [], "rows": [{"id": "theme:show:Bar glyphs", "sign": "blank", "text": "Bar glyphs", "tool": None, "more": [], "columns": [], "children": None, "group": None, "step": step}]}
+tool = {"name": "theme_glyphs", "title": "theme glyphs SET", "inputSchema": {"type": "object", "properties": {"to": {"type": "string", "enum": ["signs", "words"]}}, "required": ["to"], "additionalProperties": False},
+        "annotations": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}}
+for line in sys.stdin:
+    v = json.loads(line)
+    m, i = v.get("method"), v.get("id")
+    if i is None:
+        continue
+    if m == "initialize":
+        r = {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}, "resources": {"subscribe": True}}, "serverInfo": {"name": "theme", "title": "theme", "version": "1"}}
+    elif m == "tools/list":
+        r = {"tools": [tool]}
+    elif m == "resources/read":
+        r = {"contents": [{"uri": "spark-shell://theme/rows", "mimeType": "application/json", "text": json.dumps(rows)}]}
+    elif m == "tools/call":
+        with open(sys.argv[1], "a") as f:
+            f.write(json.dumps(v["params"]) + "\n")
+        r = {"content": [{"type": "text", "text": "glyphs " + v["params"]["arguments"]["to"]}], "isError": False}
+    else:
+        r = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": i, "result": r}), flush=True)
+"""
+
+
+def clicks(binary, env, home):
+    """A click on a value row's arrows (#175): the right one steps the value up and the left one down, as the
+    arrow keys do. The clicks are the bytes a terminal sends for a mouse press and release (SGR, 1006)."""
+    prov, log = os.path.join(home, "click-provider.py"), os.path.join(home, "click-calls")
+    with open(prov, "w") as f:
+        f.write(CLICK_PROVIDER)
+    argv = [binary, "--provider", "%s %s %s theme" % (sys.executable, prov, log), "--home", "theme", "--composer", "", "--spark-shell", SS]
+    pid, fd = pty.fork()
+    if pid == 0:
+        os.execve(binary, argv, env)
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
+    screen = Screen()
+
+    def wait_for(test, secs=10):
+        end = time.time() + secs
+        while time.time() < end and not test():
+            r, _, _ = select.select([fd], [], [], 0.1)
+            if r:
+                try:
+                    screen.feed(os.read(fd, 65536))
+                except OSError:
+                    break
+        return test()
+
+    def calls():
+        try:
+            with open(log) as f:
+                return [json.loads(l)["arguments"]["to"] for l in f if l.strip()]
+        except OSError:
+            return []
+
+    def click(r, c):
+        os.write(fd, ("\x1b[<0;%d;%dM\x1b[<0;%d;%dm" % (c + 1, r + 1, c + 1, r + 1)).encode())
+
+    def arrows():
+        # the value row where it stands now, and its two arrows: the list moves down as a receipt comes in above it
+        for k, l in enumerate(screen.cells):
+            if "Bar glyphs" in "".join(l) and "\u2039" in l and "\u203a" in l:
+                return k, l.index("\u2039"), l.index("\u203a")
+        return None
+
+    try:
+        drawn = wait_for(lambda: arrows() is not None)
+        ok(drawn, "the value row draws with its arrows", screen.text()[-600:])
+        if not drawn:
+            return
+        r, _, more = arrows()
+        click(r, more)
+        ok(wait_for(lambda: calls() == ["words"], 5), "a click on the right arrow steps the value up", repr(calls()))
+        wait_for(lambda: "glyphs words" in screen.text(), 5)
+        wait_for(lambda: False, 0.5)
+        r, less, _ = arrows()
+        click(r, less)
+        ok(wait_for(lambda: calls() == ["words", "signs"], 5), "a click on the left arrow steps it down", repr(calls()))
+        wait_for(lambda: "glyphs signs" in screen.text(), 5)
+        wait_for(lambda: False, 0.5)
+        r, _, _ = arrows()
+        click(r, 6)
+        time.sleep(0.5)
+        ok(calls() == ["words", "signs"], "a click on the row's name lights it and runs nothing", repr(calls()))
+    finally:
+        os.write(fd, b"\x03")
+        gone = []
+        if not wait_for(lambda: bool(gone) or (os.waitpid(pid, os.WNOHANG)[0] != 0 and not gone.append(1)), 5):
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+        os.close(fd)
 
 
 def keys(binary, env):

@@ -4524,9 +4524,23 @@ impl App {
         format!("{}\n{}", label, args)
     }
 
+    /// A click on a value row's arrow (#175): the row lit, and its step down or up, as left and right are.
+    pub fn step_at(&mut self, n: usize, up: bool) {
+        self.light(n);
+        self.step_lit(up);
+    }
+
     /// Left or right on a value row: its step down or up, run as a pick is.
     fn step_value(&mut self, up: bool) -> bool {
-        if !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal {
+        if !self.in_list || !self.input.is_empty() {
+            return false;
+        }
+        self.step_lit(up)
+    }
+
+    /// The lit value row's step down or up.
+    fn step_lit(&mut self, up: bool) -> bool {
+        if self.mode != Mode::Normal {
             return false;
         }
         let Some((prov, row)) = self.lit_row() else { return false };

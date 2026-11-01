@@ -1808,6 +1808,64 @@ fn left_and_right_change_a_value_in_place() {
 }
 
 #[test]
+fn a_click_on_a_value_arrow_steps_it() {
+    // the arrows of a value row look like buttons, so they are (#175): a click on the left one steps it down, on the
+    // right one up, and the row stays lit for the keys
+    let (mut app, rx, tx) = app_with(&["theme"]);
+    let calls = Arc::new(Mutex::new(vec![]));
+    let c2 = calls.clone();
+    let tools = json!([{"name": "theme_glyphs", "title": "theme glyphs SET", "inputSchema": {"type": "object", "properties": {"to": {"type": "string", "enum": ["signs", "words"]}}, "required": ["to"], "additionalProperties": false}, "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}}]);
+    let rows = json!({"title": "theme", "rows": [
+        {"id": "theme:wallpaper", "sign": "blank", "text": "Wallpaper", "tool": null, "more": [], "columns": [], "children": "spark-shell://theme/rows/wallpapers", "group": null},
+        {"id": "theme:show:Bar glyphs", "sign": "blank", "text": "Bar glyphs", "tool": null, "more": [], "columns": [], "children": null, "group": null,
+         "step": {"value": "signs", "less": {"name": "theme_glyphs", "arguments": {"to": "signs"}}, "more": {"name": "theme_glyphs", "arguments": {"to": "words"}}, "words": ["signs", "words"]}}
+    ], "short": []});
+    let script: common::Script = Box::new(move |v, send| {
+        if let Some(r) = ordinary("theme", v, &tools, &rows) {
+            return send(r);
+        }
+        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+            c2.lock().unwrap().push(v["params"].clone());
+            send(result(
+                &v["id"],
+                json!({"content": [{"type": "text", "text": "glyphs words"}], "isError": false}),
+            ));
+        }
+    });
+    app.servers.push(stub(0, "theme", script, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    app.size = (spark_dialog::app::WIDTH, spark_dialog::app::HEIGHT);
+    at_row(&mut app, View::Section(0), 0);
+    let p = palette("tokyonight-night");
+    let mut b = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, app.size.0, app.size.1));
+    let drawn = spark_dialog::ui::draw(&app, &p, "Sun 18 Oct \u{b7} 12:04", &mut b);
+    let n = app.picks().iter().position(|it| matches!(it, Item::Row(0, 1))).unwrap();
+    let place = |up: bool| *drawn.steps.iter().find(|s| s.3 == n && s.4 == up).expect("a value's arrow takes a click");
+    assert_eq!(drawn.steps.len(), 2, "only the value row has arrows to click: {:?}", drawn.steps);
+    for (up, arrow) in [(false, "\u{2039}"), (true, "\u{203a}")] {
+        let (a, z, y, _, _) = place(up);
+        assert_eq!(z - a, 3, "the arrow and a cell on either side");
+        assert_eq!(b[(a + 1, y)].symbol(), arrow, "the place is on the arrow drawn");
+    }
+    app.step_at(n, true);
+    assert!(
+        pump(&mut app, &rx, |_| calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| c["name"] == "theme_glyphs" && c["arguments"]["to"] == "words")),
+        "a click on the right arrow is its step up"
+    );
+    assert!(matches!(app.picks().get(app.sel), Some(Item::Row(0, 1))), "the clicked row is lit");
+    app.step_at(n, false);
+    assert!(
+        pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["arguments"]["to"] == "signs")),
+        "a click on the left arrow is its step down"
+    );
+}
+
+#[test]
 fn a_provider_runs_in_a_process_group_of_its_own_and_ends_when_its_input_does() {
     // the window closing hangs up the terminal's process group: a provider is never in it, so it is
     // never cut short mid-step, and nothing waits for it; it ends when its input does (#60)

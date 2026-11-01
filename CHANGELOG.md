@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.118.1
+
+A patch of two fixes, both from the owner's reports: a click on a
+value's arrows changes it (#175), and the idle screen covers every
+screen (#177).
+
+- In a value row such as Bar glyphs, a click on the arrow before the
+  value steps it down and a click on the arrow after it steps it up, as
+  the left and right keys do. Each arrow takes the cell on either side
+  too, so it is easy to hit, and the row stays lit. Before, the arrows
+  took no click: a click lit the row and nothing changed. This holds
+  for every value row: Text size, Transparency, Bar glyphs and
+  Workspaces.
+- Proof: a dialog test checks that the click places sit on the arrows
+  drawn and that each click runs its step; the pty test sends a real
+  mouse click to the built dialog and sees the step run, and fails
+  against v0.118.
+- With two or more screens, every screen idles at once (#177). Before,
+  the idle screen showed only on the screen with the focus, and the
+  others kept their windows up. Now each screen gets an idle window on
+  a workspace of its own. The main screen (the one Display calls main,
+  or the one with the focus when none is set) shows the clock and the
+  saver; every other screen shows the saver alone, drawn for its shape,
+  or the dimmed wallpaper when the saver is the clock or drift. A key
+  or a mouse move on any screen brings every screen back to the
+  workspace it showed, with the focus where it was, and the pointer
+  stays where it is. The lock and the screens going off are as they
+  were. The owner's pick, from wireframes. `saver.py --no-clock` draws
+  a saver's animation alone.
+- Proof: the suite's idle tests run with two screens on and one off. A
+  headless sway with a portrait screen and a landscape one got an idle
+  window on each, the clock on the main one only, with the starfield
+  saver and with the clock alone; each way out (the side window's end,
+  the main window's end, and `idle off`) brought both screens back with
+  no idle window or process left.
+
 ## v0.118
 
 A search from Home that finds everything, and the same keys on every

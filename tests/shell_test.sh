@@ -3098,9 +3098,16 @@ if [ -n "$py3" ]; then   # a bare container has no python3 (debian, arch, void):
     printf '%s' "$out" | grep -q '38;5;16m' && ok "desktop idle --clock: a saver that fails leaves the clock in its window" || bad "idle saver fails" "$out"
     out=$(PATH="$H/nopy:$H/clk:$H/lx:$PATH" sh "$SH" desktop idle --clock 2>&1)
     printf '%s' "$out" | grep -q '38;5;16m' && ok "desktop idle --clock: with no python3 the clock, as before the savers" || bad "idle no python" "$out"
+    # a screen beside the main one (#177): the saver without its clock
+    rm -f "$HOME/py.log"
+    rc=0; out=$(PATH="$H/pyl:$H/lx:$PATH" sh "$SH" desktop idle --side 2>&1) || rc=$?
+    [ "$rc" = 0 ] && [ "$(grep -v -e ' --version$' "$HOME/py.log")" = "python3 $REPO/lib/saver.py starfield --no-clock" ] && [ -z "$out" ] \
+        && ok "desktop idle --side: a screen beside the main one runs the saver without its clock (#177)" || bad "idle side saver" "rc=$rc $out $(cat "$HOME/py.log" 2>&1)"
     printf 'DESKTOP=sway\nDISPLAY_SAVER=clock\n' > "$HOME/.config/spark-shell/config"
     rm -f "$HOME/py.log"; out=$(PATH="$H/pyl:$H/clk:$H/lx:$PATH" sh "$SH" desktop idle --clock 2>&1)
     [ ! -s "$HOME/py.log" ] && printf '%s' "$out" | grep -q '38;5;16m' && ok "desktop idle --clock: DISPLAY_SAVER=clock never starts python3" || bad "idle clock default" "$out $(cat "$HOME/py.log" 2>&1)"
+    rm -f "$HOME/py.log"; rc=0; out=$(PATH="$H/pyl:$H/clk:$H/lx:$PATH" sh "$SH" desktop idle --side 2>&1) || rc=$?
+    [ "$rc" = 0 ] && [ ! -s "$HOME/py.log" ] && ! printf '%s' "$out" | grep -q '38;5;16m' && ok "desktop idle --side: with the clock alone, a screen beside the main one is the dimmed wallpaper, no clock (#177)" || bad "idle side clock" "rc=$rc $out"
     # check: a row for it, a warn with a remedy where a chosen saver cannot run
     out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" check 2>&1) || :
     printf '%s\n' "$out" | grep -q '^ok     saver  *the idle screen shows the clock alone$' && ok "check: the saver row says the idle screen shows the clock alone" || bad "check saver clock" "$(printf '%s\n' "$out" | grep saver)"
@@ -5589,25 +5596,44 @@ if [ "$(uname -s)" != Darwin ]; then
 echo "$*" >> "$HOME/swaymsg.log"
 case "$*" in
     "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
-    "-t get_tree") echo '{"nodes":[]}' ;;
-    "-t get_workspaces") printf '[{"name":"%s","focused":true}]\n' "$(cat "$HOME/ws.focused" 2>/dev/null || echo idle)" ;;   # the workspace in front: idle, unless a test says another
+    "-t get_tree") cat "$HOME/tree.json" 2>/dev/null || echo '{"nodes":[]}' ;;   # the idle windows a test says are up, or none
+    "-t get_workspaces") printf '[{"name":"%s","focused":true,"visible":true}]\n' "$(cat "$HOME/ws.focused" 2>/dev/null || echo idle)" ;;   # the workspace in front: idle, unless a test says another
+    "-t get_outputs") printf '%s\n' '[{"name":"DP-3","make":"ASUSTek COMPUTER INC","model":"MB16AH","serial":"S1","active":true,"focused":false,"current_workspace":"1"},' \
+        '{"name":"HDMI-A-1","make":"Lenovo Group Limited","model":"T24i-30","serial":"V30A1","active":true,"focused":true,"current_workspace":"2 webdev"},' \
+        '{"name":"HDMI-A-2","make":"Unknown","model":"Unknown","serial":"","active":false,"focused":false}]' ;;   # two screens on, the focus on HDMI-A-1, a third one off
 esac
 STUB
-    chmod +x "$H/ix/swaymsg"; printf '#!/bin/sh\necho "jq-stub"\n' > /dev/null
-    rm -f "$HOME/swaymsg.log" "$HOME/.local/state/spark-shell/idle.from"; printf '2 webdev\n' > "$HOME/ws.focused"
+    chmod +x "$H/ix/swaymsg"
+    tb=$(printf '\t')
+    rm -f "$HOME/swaymsg.log" "$HOME/tree.json" "$HOME/.local/state/spark-shell/idle.from" "$HOME/.config/spark-shell/screens.conf"; printf '2 webdev\n' > "$HOME/ws.focused"
     rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle 2>&1) || rc=$?
-    [ "$rc" = 0 ] && [ "$(cat "$HOME/.local/state/spark-shell/idle.from" 2>/dev/null)" = '2 webdev' ] && ok "desktop idle: the workspace it leaves is kept by name, the way back (#70)" || bad "idle from" "rc=$rc $(cat "$HOME/.local/state/spark-shell/idle.from" 2>&1)"
+    [ "$rc" = 0 ] && [ "$(cat "$HOME/.local/state/spark-shell/idle.from" 2>/dev/null)" = "DP-3${tb}1
+HDMI-A-1${tb}2 webdev" ] && ok "desktop idle: each screen's workspace kept by name, the focused screen's last: the way back (#70, #177)" || bad "idle from" "rc=$rc $(cat "$HOME/.local/state/spark-shell/idle.from" 2>&1)"
     rm -f "$HOME/ws.focused"
-    [ "$rc" = 0 ] && grep -qx -- '-- bar mode invisible' "$HOME/swaymsg.log" && grep -qx -- '-- workspace idle' "$HOME/swaymsg.log" && grep -q "^-- exec foot --app-id spark-idle -o 'font=DejaVu Sans Mono:size=24' -o colors.*\.alpha=0.8 -o colors.*\.background=2e3440 -o pad=0x0 -e $REPO/spark-shell desktop idle --clock$" "$HOME/swaymsg.log" \
-        && ok "desktop idle: the bar away, the idle workspace, one foot at twice the text size, the background at 80% over the wallpaper, running the clock" || bad "idle on" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
-    rm -f "$HOME/swaymsg.log"
+    foot="foot --app-id spark-idle -o 'font=DejaVu Sans Mono:size=24' -o colors[a-z-]*\.alpha=0\.8 -o colors[a-z-]*\.background=2e3440 -o pad=0x0 -e $REPO/spark-shell desktop idle"
+    [ "$rc" = 0 ] && grep -qx -- '-- bar mode invisible' "$HOME/swaymsg.log" \
+        && grep -qx -- "-- mouse_warping none; focus output \"DP-3\"; workspace \"idle DP-3\"; gaps inner current set 0; gaps outer current set 0; exec $foot --side; mouse_warping output" "$HOME/swaymsg.log" \
+        && grep -qx -- "-- mouse_warping none; focus output \"HDMI-A-1\"; workspace idle; exec $foot --clock; mouse_warping output" "$HOME/swaymsg.log" \
+        && [ "$(grep 'exec foot' "$HOME/swaymsg.log" | sed 's/.*desktop idle --//; s/;.*//' | tr '\n' ' ')" = 'side clock ' ] && ! grep -q 'HDMI-A-2' "$HOME/swaymsg.log" \
+        && ok "desktop idle: the bar away; every screen on gets a foot at twice the text size, 80% over the wallpaper, on an idle workspace of its own: the saver alone beside, the clock last on the screen with the focus; the pointer stays (#177)" || bad "idle on" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
+    printf '# rendered by spark-shell\nworkspace 1 output "ASUSTek COMPUTER INC MB16AH S1"\n' > "$HOME/.config/spark-shell/screens.conf"; rm -f "$HOME/swaymsg.log"
+    SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle >/dev/null 2>&1 || :
+    grep -q -- '-- mouse_warping none; focus output "DP-3"; workspace idle; exec foot .*--clock; mouse_warping output$' "$HOME/swaymsg.log" && grep -q -- '-- mouse_warping none; focus output "HDMI-A-1"; workspace "idle HDMI-A-1"; .*--side; mouse_warping output$' "$HOME/swaymsg.log" \
+        && ok "desktop idle: the clock goes on Display's main screen, named by its make and model, wherever the focus is (#177)" || bad "idle main" "$(cat "$HOME/swaymsg.log" 2>&1)"
+    rm -f "$HOME/.config/spark-shell/screens.conf" "$HOME/swaymsg.log"
+    printf '%s\n' '{"nodes":[{"type":"con","app_id":"spark-idle","pid":4011,"id":51},{"type":"con","app_id":"foot","pid":4012,"id":52},{"type":"con","app_id":"spark-idle","pid":4013,"id":53}]}' > "$HOME/tree.json"
     rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle off 2>&1) || rc=$?
-    [ "$rc" = 0 ] && grep -qxF -- '-- [app_id=spark-idle] kill' "$HOME/swaymsg.log" && grep -qxF -- '-- workspace "2 webdev"' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
-        && ok "desktop idle off: the window killed, the workspace it left back by name (never a toggle, #70), the bar back" || bad "idle off" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
+    [ "$rc" = 0 ] && grep -qxF -- '-- mouse_warping none; focus output "DP-3"; workspace "1"; focus output "HDMI-A-1"; workspace "2 webdev"; mouse_warping output' "$HOME/swaymsg.log" \
+        && grep -qxF -- '-- [con_id=51] kill' "$HOME/swaymsg.log" && grep -qxF -- '-- [con_id=53] kill' "$HOME/swaymsg.log" && ! grep -q 'con_id=52' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
+        && awk '/workspace "1"/ { w = NR } /con_id=51/ { k = NR } END { exit !(w && k && w < k) }' "$HOME/swaymsg.log" \
+        && ok "desktop idle off: every screen back to its workspace by name in one command (never a toggle, #70), the focus where it was, the bar back, then every idle window closed, nothing else (#177)" || bad "idle off" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
     rm -f "$HOME/swaymsg.log"; printf '2 webdev\n' > "$HOME/ws.focused"
     SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle off >/dev/null 2>&1 || :
-    ! grep -q -- '-- workspace' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" && ok "desktop idle off a second time, the idle workspace gone: nothing moves, the bar stays (#70)" || bad "idle off twice" "$(cat "$HOME/swaymsg.log" 2>&1)"
-    rm -f "$HOME/swaymsg.log" "$HOME/ws.focused" "$HOME/.local/state/spark-shell/idle.from"
+    ! grep -q -- '-- workspace' "$HOME/swaymsg.log" && ! grep -q 'workspace "' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" && ok "desktop idle off a second time, no idle workspace shown: nothing moves, the bar stays (#70)" || bad "idle off twice" "$(cat "$HOME/swaymsg.log" 2>&1)"
+    rm -f "$HOME/swaymsg.log" "$HOME/ws.focused" "$HOME/tree.json"; printf '2 webdev\n' > "$HOME/.local/state/spark-shell/idle.from"
+    SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle off >/dev/null 2>&1 || :
+    grep -qxF -- '-- mouse_warping none; workspace "2 webdev"; mouse_warping output' "$HOME/swaymsg.log" && ok "desktop idle off with one name kept (a window from before #177): that workspace back" || bad "idle off old file" "$(cat "$HOME/swaymsg.log" 2>&1)"
+    rm -f "$HOME/swaymsg.log" "$HOME/.local/state/spark-shell/idle.from"
     SWAYSOCK=$H/sock PATH="$H/ix:$PATH" sh "$SH" desktop idle off >/dev/null 2>&1 || :
     grep -qx -- '-- workspace back_and_forth' "$HOME/swaymsg.log" && ok "desktop idle off with no name kept (a window from before v0.102): back and forth, as it was" || bad "idle off no name" "$(cat "$HOME/swaymsg.log" 2>&1)"
     printf '2 webdev\n' > "$HOME/.local/state/spark-shell/idle.from"
@@ -5624,7 +5650,7 @@ STUB
     # whatever ends the idle window brings the desktop back (#70): the clock's end, here its sleep failing; and in its own terminal, a key
     rm -f "$HOME/swaymsg.log"
     rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/ix:$H/ic:$PATH" sh "$SH" desktop idle --clock 2>&1) || rc=$?
-    [ "$rc" = 0 ] && grep -qxF -- '-- workspace "2 webdev"' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
+    [ "$rc" = 0 ] && grep -qxF -- '-- mouse_warping none; workspace "2 webdev"; mouse_warping output' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
         && ok "desktop idle --clock: when the clock ends, the workspace it left and the bar come back (#70)" || bad "idle clock end" "rc=$rc $(cat "$HOME/swaymsg.log" 2>&1)"
     if [ -n "$py3" ]; then   # the real python3 (CI's bare containers have none)
         cat > "$H/keypty.py" <<'PY'
@@ -5649,7 +5675,7 @@ os.kill(pid, 9); sys.exit(1)
 PY
         rm -f "$HOME/swaymsg.log"; printf 'DESKTOP=sway\nDISPLAY_SAVER=clock\n' > "$HOME/.config/spark-shell/config"
         rc=0; SWAYSOCK=$H/sock PATH="$H/ix:$PATH" "$py3" "$H/keypty.py" sh "$SH" desktop idle --clock || rc=$?
-        [ "$rc" = 0 ] && grep -qxF -- '-- workspace "2 webdev"' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
+        [ "$rc" = 0 ] && grep -qxF -- '-- mouse_warping none; workspace "2 webdev"; mouse_warping output' "$HOME/swaymsg.log" && grep -qx -- '-- bar mode dock' "$HOME/swaymsg.log" \
             && ok "desktop idle --clock in its terminal: a key ends the clock within a second or two, and the desktop comes back (#70)" || bad "idle clock key" "rc=$rc $(cat "$HOME/swaymsg.log" 2>&1)"
         printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     fi

@@ -883,6 +883,8 @@ fn main() {
                             .is_some_and(|p| app.zoomed() && m.row >= p.y && m.row < p.y + p.h && m.column >= p.x && m.column < p.x + p.w)
                         {
                             drag = Some((m.column, m.row));
+                        } else if let Some((_, _, _, n, up)) = drawn.steps.iter().find(|(a, b, y, _, _)| m.row == *y && m.column >= *a && m.column < *b) {
+                            app.step_at(*n, *up); // a value's arrow steps it, as left and right do (#175)
                         } else if m.row >= drawn.prompt.0 && m.row <= drawn.prompt.1 {
                             app.focus_prompt();
                         } else if let Some((_, n)) = drawn
