@@ -23,8 +23,9 @@ cozy: warm and playful, a picture book for grown-ups
     pigeons   IP over avian carriers (RFC 1149): pigeons carry envelopes
               over the roofs; one drops its packet and another sends it again
 
-night: the night-shift builder, cinematic; weather, scale and light, a dry
-joke, graded like a film (a vignette, a grain that holds still)
+night: the night-shift builder, cinematic; weather, scale and light, the
+references and not the story (no one in them), a dry joke, graded like a
+film (a vignette, a grain that holds still)
 
     garoa     Sao Paulo in the drizzle at night, the Copan and the masts of
               Paulista; a helicopter finds its roof taken and takes the next
@@ -32,10 +33,11 @@ joke, graded like a film (a vignette, a grain that holds still)
               a probe falls in and, as seen from here, never quite does
     watch     a night sail on a long swell, a lighthouse sweeping; beating
               upwind, it tacks twice a loop
-    problem   a bouldering wall under one light, chalk in the beam; the
-              climber comes off the crux, chalks up, starts again
-    hangar    a mech in its gantry; its visor wakes, the technician jumps,
-              the welder at its knee never looks up
+    problem   a climbing wall as a canvas, holds and volumes under one moving
+              light; chalk turns up hold by hold, sifts down at the crux,
+              and next time reaches the top
+    unit      a mech so close it is only armor; a warning light sweeps it,
+              and once a loop light runs along its seams and it vents
     crossing  a level crossing at dusk; the bells, the arm, a train, and
               after it the crows on the wire in another order
 
@@ -1982,26 +1984,6 @@ class Horizon(Cinema, Cached):
 SCENES_NIGHT = (Garoa(), Horizon())
 
 
-def limbs(joints, w):
-    """A figure from its joints: head, neck, hip, and each hand and foot through
-    its elbow or knee, as round strokes."""
-    j = joints
-    sh = Shape().circle(j["head"][0], j["head"][1], w * 0.95)
-    sh.line([j["neck"], j["hip"]], w * 1.8)
-    sh.line([((j["neck"][0] + j["hip"][0]) / 2, (j["neck"][1] + j["hip"][1]) / 2 - w * 0.3), j["neck"]], w * 2.1)  # the chest, broader
-    for a, b in (("elbow_l", "hand_l"), ("elbow_r", "hand_r")):
-        sh.line([j["neck"], j[a], j[b]], w * 0.75)
-        sh.circle(j[b][0], j[b][1], w * 0.42)
-    for a, b in (("knee_l", "foot_l"), ("knee_r", "foot_r")):
-        sh.line([j["hip"], j[a], j[b]], w * 0.95)
-        sh.ellipse(j[b][0] + w * 0.3, j[b][1] + w * 0.1, w * 0.62, w * 0.36)
-    return sh
-
-
-def pose_mix(a, b, u):
-    return {k: (a[k][0] + (b[k][0] - a[k][0]) * u, a[k][1] + (b[k][1] - a[k][1]) * u) for k in a}
-
-
 class Watch(Cinema, Cached):
     """A night sail on a long swell, the moon low; a lighthouse sweeps the
     water. It is beating upwind: twice a loop it tacks."""
@@ -2091,213 +2073,286 @@ class Watch(Cinema, Cached):
 
 
 class Problem(Cinema, Cached):
-    """A bouldering wall at night under one light, chalk hanging in the beam. The
-    climber works the crux, comes off, chalks up, and starts again."""
+    """A climbing wall as a canvas: holds and volumes in the palette's colors,
+    one light moving over them. No one climbs it, yet chalk turns up hold by
+    hold along one route; at the crux it sifts down the wall, and next time it
+    reaches the top."""
 
     name = "problem"
+    ROUTE = [(600, 930), (700, 948), (730, 806), (868, 726), (826, 604), (990, 524), (1128, 470), (1190, 334), (1330, 236), (1470, 150)]
+    CHALK1 = [1.0 + 1.1 * i for i in range(7)]  # the first go: up to the crux
+    FALL = 9.0
+    CHALK2 = [13.4, 15.0, 16.6]  # the second: the crux, the hold after, the top
 
     def colors(self, p):
         if not hasattr(self, "_c") or self._c[0] is not p:
             dk = p.dark
             bg = p("bg")
+            wall = mix(bg, BLACK3, 0.32) if dk else p("bg+fg:5")
             self._c = (p, dict(
-                dark=dk, room=mix(bg, BLACK3, 0.7) if dk else p("bg+fg:22"), wall=mix(bg, BLACK3, 0.45) if dk else p("bg+fg:8"), wall2=mix(bg, BLACK3, 0.55) if dk else p("bg+fg:14"),
-                bolt=mix(bg, BLACK3, 0.75) if dk else p("bg+fg:30"), pad=mix(bg, BLACK3, 0.62) if dk else p("bg+fg:42"), seam=mix(bg, BLACK3, 0.8) if dk else p("bg+fg:55"),
-                light=p.pick("ansi_3+white:60", "white"), chalk=p.pick("fg", "white"), body=mix(bg, BLACK3, 0.85) if dk else p("bg+fg:75"), rim=p.pick("ansi_3+white:50", "accent"),
-                holds=[p("ansi_1"), p("ansi_2"), p("ansi_3"), p("ansi_4"), p("ansi_5"), p("ansi_6"), p("accent")],
+                dark=dk, wall=wall, seam=mix(wall, BLACK3, 0.35) if dk else p("bg+fg:14"), nut=mix(wall, BLACK3, 0.5) if dk else p("bg+fg:20"),
+                light=p.pick("ansi_3+white:65", "white"), chalk=(245.0, 245.0, 240.0), tape=p("accent"), route=p("accent"),
+                holds=[p("ansi_1"), p("ansi_2"), p("ansi_3"), p("ansi_4"), p("ansi_5"), p("ansi_6")], ink=mix(wall, BLACK3, 0.6),
             ))
         return self._c[1]
 
-    WALL = [(420, 120), (1500, 120), (1640, 860), (280, 860)]  # an overhang, seen from the side and below
+    @staticmethod
+    def hold_shape(x, y, kind, r, rot):
+        """A hold's outline: a jug with its lip, a thin crimp, a round sloper, an upright pinch."""
+        if kind == "crimp":
+            pts = [(-1.3, -0.25), (1.3, -0.35), (1.4, 0.15), (-1.2, 0.3)]
+        elif kind == "sloper":
+            pts = [(math.cos(a) * 1.1, math.sin(a) * 0.85) for a in [k * math.pi / 5 for k in range(10)]]
+        elif kind == "pinch":
+            pts = [(math.cos(a) * 0.5, math.sin(a) * 1.25) for a in [k * math.pi / 5 for k in range(10)]]
+        else:
+            pts = [(-1.0, 0.2), (-0.8, -0.7), (0.0, -1.0), (0.85, -0.6), (1.0, 0.25), (0.4, 0.75), (-0.5, 0.7)]
+        c, s = math.cos(rot), math.sin(rot)
+        return Shape().poly(spline([(x + r * (px * c - py * s), y + r * (px * s + py * c)) for px, py in pts], per=5))
+
+    def hold(self, cv, c, x, y, kind, r, rot, col):
+        base = mix(col, c["wall"], 0.12)
+        sh = self.hold_shape(x, y, kind, r, rot)
+        return [L(cv, sh.moved(r * 0.18, r * 0.24), c["ink"], 0.6, ss=2), L(cv, sh, base, ss=2),
+                L(cv, self.hold_shape(x - r * 0.12, y - r * 0.2, kind, r * 0.55, rot), mix(base, (255.0, 255.0, 255.0), 0.22), 0.55, ss=2),
+                D(cv, x + r * 0.05, y + r * 0.05, max(1.5, r * 0.11), c["ink"], 0.8)]
+
+    def volume(self, cv, c, faces, col):
+        """A volume: its faces, each a shade of one color, the light from above left."""
+        out = []
+        for pts, k in faces:
+            out.append(L(cv, Shape().poly(pts), mix(mix(col, c["wall"], 0.35), (255.0, 255.0, 255.0) if k > 0 else BLACK3, abs(k)), ss=2))
+        return out
 
     def back(self, cv, p):
         c = self.colors(p)
-        out = [L(cv, Shape().rect(0, 0, W, H), c["room"], ss=1)]
-        out.append(L(cv, Shape().poly(self.WALL), c["wall"], ss=2))
-        panels = Shape()
-        for k in range(1, 6):
-            u = k / 6
-            panels.line([(420 + 1080 * u, 120), (280 + 1360 * u, 860)], 2)
-        for k in range(1, 4):
-            v = k / 4
-            panels.line([(420 - 140 * v, 120 + 740 * v), (1500 + 140 * v, 120 + 740 * v)], 2)
-        out.append(L(cv, panels, c["wall2"], 0.8, ss=2))
-        bolts = Shape()
-        for i in range(24):
-            for j in range(14):
-                u, v = (i + 0.5) / 24, (j + 0.5) / 14
-                x = 420 - 140 * v + (1080 + 280 * v) * u
-                bolts.circle(x, 120 + 740 * v, 2.2)
-        out.append(L(cv, bolts, c["bolt"], ss=2))
-        rnd = random.Random(17)
-        for i in range(70):  # the holds: every route a color
-            u, v = rnd.uniform(0.03, 0.97), rnd.uniform(0.05, 0.95)
-            x, y = 420 - 140 * v + (1080 + 280 * v) * u, 120 + 740 * v
-            col = c["holds"][i % len(c["holds"])]
-            r = rnd.uniform(9, 22)
-            sh = Shape().poly(spline([(x + r * math.cos(a) * rnd.uniform(0.7, 1.2), y + r * 0.8 * math.sin(a) * rnd.uniform(0.7, 1.2)) for a in [k * math.pi / 3 for k in range(6)]], per=4))
-            out.append(L(cv, sh, mix(col, c["room"], 0.25), ss=2))
-        out.append(L(cv, Shape().poly([(200, 880), (1720, 880), (1800, 1040), (120, 1040)]), c["pad"], ss=2))
-        out.append(L(cv, Shape().line([(600, 880), (560, 1040)], 3).line([(1000, 880), (1000, 1040)], 3).line([(1400, 880), (1440, 1040)], 3).line([(160, 960), (1760, 960)], 2), c["seam"], ss=2))
-        out.append(L(cv, Shape().poly([(560, -20), (760, -20), (1240, 1060), (300, 1060)]), c["light"], 0.10 if c["dark"] else 0.18, ss=1, soft=60, mode="add" if c["dark"] else "over"))
+        out = [L(cv, Shape().rect(0, 0, W, H), c["wall"], ss=1)]
+        seams = Shape()
+        for x in range(0, W + 1, 320):
+            seams.line([(x, 0), (x, H)], 2.4)
+        for y in (360, 720):
+            seams.line([(0, y), (W, y)], 2.4)
+        out.append(L(cv, seams, c["seam"], 0.9, ss=2))
+        nuts = Shape()
+        for j in range(17):
+            for i in range(31):
+                nuts.circle(32 + i * 64 + (32 if j % 2 else 0), 30 + j * 64, 3.2)
+        out.append(L(cv, nuts, c["nut"], 0.9, ss=2))
+        h = c["holds"]
+        # the volumes: a big wedge, a cube on its corner, a long ramp, a small pyramid
+        out += self.volume(cv, c, [([(130, 990), (360, 640), (400, 990)], 0.18), ([(360, 640), (560, 990), (400, 990)], -0.25)], h[3])
+        cx, cy, rr = 1520.0, 520.0, 150.0
+        hexa = [(cx + rr * math.cos(math.pi / 6 + k * math.pi / 3), cy + rr * math.sin(math.pi / 6 + k * math.pi / 3)) for k in range(6)]
+        out += self.volume(cv, c, [([hexa[3], hexa[4], hexa[5], (cx, cy)], 0.22), ([hexa[5], hexa[0], hexa[1], (cx, cy)], -0.05), ([hexa[1], hexa[2], hexa[3], (cx, cy)], -0.3)], h[4])
+        out += self.volume(cv, c, [([(1060, 820), (1520, 760), (1560, 820)], 0.15), ([(1060, 820), (1560, 820), (1500, 900), (1090, 905)], -0.25)], h[5])
+        px, py = 420.0, 300.0
+        out += self.volume(cv, c, [([(px - 110, py), (px, py - 100), (px, py)], 0.25), ([(px, py - 100), (px + 110, py), (px, py)], 0.0), ([(px - 110, py), (px, py), (px, py + 100)], -0.2), ([(px, py), (px + 110, py), (px, py + 100)], -0.35)], h[0])
+        # the other routes, each a curve of holds in its own color, quieter than the one that matters
+        rnd = random.Random(33)
+        kinds = ("jug", "crimp", "sloper", "pinch")
+        acc = c["route"]
+        others = sorted(h, key=lambda q: -sum((a - b) ** 2 for a, b in zip(q, acc)))[:4]  # the colors furthest from the accent
+        for col, curve in zip(others, (((180, 1010), (120, 700), (300, 420), (560, 110)), ((1740, 1020), (1860, 760), (1640, 380), (1800, 90)),
+                                       ((1020, 1040), (1240, 960), (1560, 980), (1880, 880)), ((640, 130), (860, 60), (1080, 200), (1260, 110)))):
+            for k, (x, y) in enumerate(bezier(*curve, n=6)):
+                out += self.hold(cv, c, x + rnd.uniform(-14, 14), y + rnd.uniform(-14, 14), rnd.choice(kinds), rnd.uniform(14, 26), rnd.uniform(-0.8, 0.8), mix(col, c["wall"], 0.38))
+        # the route itself, in the accent, its start and its top taped
+        for i, (x, y) in enumerate(self.ROUTE):
+            out += self.hold(cv, c, x, y, ("jug", "jug", "crimp", "jug", "pinch", "crimp", "sloper", "crimp", "jug", "jug")[i], 26 if i in (0, 1, 9) else 22, 0.3 * math.sin(i * 1.7), c["route"])
+        tape = Shape()
+        for x, y in self.ROUTE[:2]:
+            tape.poly([(x - 16, y + 34), (x + 18, y + 30), (x + 19, y + 38), (x - 15, y + 42)])
+        x, y = self.ROUTE[-1]
+        tape.poly([(x - 20, y + 36), (x + 22, y + 32), (x + 23, y + 41), (x - 19, y + 45)]).poly([(x - 20, y + 48), (x + 22, y + 44), (x + 23, y + 53), (x - 19, y + 57)])
+        out.append(L(cv, tape, c["tape"], 0.9, ss=2))
         return out
 
-    # where the climber is at each moment: a few poses, and the times between them
-    POSES = {
-        "start": dict(head=(820, 690), neck=(830, 712), hip=(850, 790), elbow_l=(800, 690), hand_l=(790, 650), elbow_r=(870, 690), hand_r=(880, 640), knee_l=(810, 820), foot_l=(800, 860), knee_r=(895, 815), foot_r=(900, 850)),
-        "mid": dict(head=(900, 520), neck=(905, 545), hip=(930, 630), elbow_l=(870, 510), hand_l=(860, 470), elbow_r=(950, 520), hand_r=(975, 480), knee_l=(880, 660), foot_l=(870, 700), knee_r=(980, 650), foot_r=(990, 690)),
-        "reach": dict(head=(960, 400), neck=(962, 426), hip=(985, 510), elbow_l=(930, 400), hand_l=(925, 360), elbow_r=(1010, 360), hand_r=(1040, 300), knee_l=(950, 545), foot_l=(940, 590), knee_r=(1020, 540), foot_r=(1035, 585)),
-        "air": dict(head=(990, 560), neck=(985, 585), hip=(985, 670), elbow_l=(940, 560), hand_l=(920, 520), elbow_r=(1030, 560), hand_r=(1050, 520), knee_l=(960, 720), foot_l=(950, 770), knee_r=(1020, 720), foot_r=(1030, 770)),
-        "sit": dict(head=(1000, 820), neck=(1000, 845), hip=(1010, 915), elbow_l=(970, 870), hand_l=(990, 900), elbow_r=(1040, 870), hand_r=(1020, 900), knee_l=(960, 900), foot_l=(940, 940), knee_r=(1060, 900), foot_r=(1080, 940)),
-        "stand": dict(head=(880, 760), neck=(882, 785), hip=(885, 865), elbow_l=(860, 815), hand_l=(875, 840), elbow_r=(905, 815), hand_r=(890, 840), knee_l=(870, 905), foot_l=(865, 945), knee_r=(900, 905), foot_r=(905, 945)),
-    }
-    KEYS = [(0.0, "start"), (3.0, "start"), (6.0, "mid"), (9.0, "reach"), (10.2, "reach"), (10.6, "air"), (11.0, "sit"), (15.5, "sit"), (17.5, "stand"), (21.0, "stand"), (23.4, "start")]
-
-    def pose(self, t):
-        for (t0, a), (t1, b) in zip(self.KEYS, self.KEYS[1:]):
-            if t0 <= t < t1:
-                u = (t - t0) / (t1 - t0)
-                return pose_mix(self.POSES[a], self.POSES[b], u if a == "reach" else ease_io(u))
-        return self.POSES["start"]
+    def chalk_times(self):
+        return self.CHALK1 + self.CHALK2
 
     def under(self, cv, p, t):
         c = self.colors(p)
         out = []
-        j = self.pose(t)
-        fig = limbs(j, 17)
-        out.append(L(cv, fig.moved(3, -2), c["rim"], 0.5 if c["dark"] else 0.6))
-        out.append(L(cv, fig, c["body"]))
-        for age, (x, y), big in ((t - 11.0, (1000, 930), 1.0), (t - 16.0, (1000, 880), 0.5), (t - 21.3, (885, 840), 0.4)):  # chalk: the landing, then chalking up
-            u = age / 2.2
-            if 0 <= u < 1:
-                out.append(L(cv, Shape().ellipse(x, y - 30 * u, (40 + 120 * u) * big, (20 + 40 * u) * big), c["chalk"], 0.22 * (1 - u), ss=1, soft=16))
+        # the light: it follows whoever is not there, from one hold to the next
+        times = self.chalk_times()
+        idx = sum(1 for k, t0 in enumerate(times) if t >= t0 and not (self.FALL <= t < self.CHALK2[0] and k >= 7))
+        if self.FALL <= t < 12.0:
+            idx = 6
+        target = self.ROUTE[min(max(idx - 1, 0), len(self.ROUTE) - 1)]
+        home = (700.0, 860.0)
+        k = ease_io(window(t, 0.0, 1.5)) * (1 - ease_io(window(t, 20.5, 23.5)))
+        lx, ly = home[0] + (target[0] - home[0]) * k, home[1] + (target[1] - home[1]) * k
+        out.append(L(cv, Shape().circle(lx, ly, 360), c["light"], 0.10 if c["dark"] else 0.16, ss=1, soft=220, mode="add" if c["dark"] else "over"))
+        fade = 1 - ease_io(window(t, 21.0, 23.4))  # the wall brushed for the next one
+        for i, t0 in enumerate(times):
+            hi = i if i < 7 else i  # the first seven holds, then the crux, the next, the top
+            x, y = self.ROUTE[hi]
+            if t >= t0:
+                gone = 1.0
+                if i < 7 or t >= t0:
+                    out.append(L(cv, Shape().ellipse(x - 4, y - 8, 20, 11), c["chalk"], 0.42 * fade * gone, ss=1, soft=5))
+                u = window(t, t0, t0 + 0.9)
+                if 0 < u < 1:
+                    out.append(L(cv, Shape().circle(x, y - 10, 14 + 40 * u), c["chalk"], 0.22 * (1 - u), ss=1, soft=10 + 10 * u))
+        # the fall: chalk from the crux sifts down the wall
+        u = window(t, self.FALL, self.FALL + 2.6)
+        if 0 < u < 1:
+            x, y = self.ROUTE[7]
+            rnd = random.Random(44)
+            for i in range(26):
+                vx, d = rnd.uniform(-40, 40), rnd.uniform(0.0, 0.35)
+                v = clamp((u - d) / (1 - d))
+                if 0 < v < 1:
+                    out.append(D(cv, x + vx * v, y + (H - y) * v * v, rnd.uniform(1.2, 2.6), c["chalk"], 0.6 * (1 - v)))
+            out.append(L(cv, Shape().ellipse(x, y + 120 * u, 30 + 50 * u, 20 + 80 * u), c["chalk"], 0.12 * (1 - u), ss=1, soft=20))
+        # the send: the top hold glows a moment
+        u = window(t, self.CHALK2[2], self.CHALK2[2] + 1.6)
+        if 0 < u < 1:
+            x, y = self.ROUTE[-1]
+            out.append(glow(cv, x, y, 70, c["route"], 0.35 * bump(u)) if c["dark"] else L(cv, Shape().circle(x, y, 60), c["route"], 0.18 * bump(u), ss=1, soft=24))
         return out
 
     def over(self, cv, p, t):
         c = self.colors(p)
         out = []
         rnd = random.Random(29)
-        for i in range(70):  # chalk hanging in the beam, drifting
-            x0, y0 = rnd.uniform(500, 1200), rnd.uniform(60, 1000)
+        for i in range(60):  # chalk hanging in the light
+            x0, y0 = rnd.uniform(300, 1600), rnd.uniform(80, 1000)
             x = x0 + 30 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random())
             y = y0 + 26 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random())
-            inside = clamp(1 - abs(x - (560 + (y / 1060) * 340 + 100)) / 380)
-            out.append(D(cv, x, y, rnd.uniform(0.8, 2.0), c["chalk"], (0.5 if c["dark"] else 0.6) * inside))
+            out.append(D(cv, x, y, rnd.uniform(0.8, 1.8), c["chalk"], 0.28 if c["dark"] else 0.0))
         return out
 
 
-class Hangar(Cinema, Cached):
-    """A mech in its gantry, half done. A welder works at its knee; beacons turn.
-    Its visor wakes, the technician on the catwalk jumps, and it sleeps again."""
+class Unit(Cinema, Cached):
+    """A mech, seen so close it is only armor: plates, panel lines, a hazard band,
+    a sensor slit asleep. A warning light sweeps it and sparks fly in from out of
+    frame. Once a loop it wakes: light runs along its seams, the sensor flares,
+    it vents, and sleeps again."""
 
-    name = "hangar"
+    name = "unit"
+    SENSOR = ((1180.0, 404.0), (1440.0, 384.0))
+    WAKE = (12.0, 15.6)
 
     def colors(self, p):
         if not hasattr(self, "_c") or self._c[0] is not p:
             dk = p.dark
             bg = p("bg")
+            armor = mix(mix(bg, p("fg"), 0.18), BLACK3, 0.2) if dk else p("bg+fg:16")
             self._c = (p, dict(
-                dark=dk, top=mix(bg, BLACK3, 0.75) if dk else p("bg+fg:30"), low=mix(bg, BLACK3, 0.5) if dk else p("bg+fg:14"),
-                floor=mix(bg, BLACK3, 0.6) if dk else p("bg+fg:24"), steel=mix(bg, BLACK3, 0.35) if dk else p("bg+fg:44"), steel2=mix(bg, BLACK3, 0.5) if dk else p("bg+fg:56"),
-                armor=mix(mix(bg, p("fg"), 0.22), BLACK3, 0.25) if dk else p("bg+fg:36"), armor2=mix(bg, BLACK3, 0.25) if dk else p("bg+fg:50"), stripe=p("ansi_1"),
-                visor=p("accent"), amber=p("ansi_3"), spark=mix(p("ansi_3"), (255.0, 255.0, 255.0), 0.5), light=p.pick("ansi_3+white:60", "white"), steam=p.pick("fg", "white"),
-                person=mix(bg, BLACK3, 0.85) if dk else p("bg+fg:75"), hazard=p("ansi_3"),
+                dark=dk, gap=mix(bg, BLACK3, 0.8) if dk else p("bg+fg:62"), inner=mix(bg, BLACK3, 0.62) if dk else p("bg+fg:48"),
+                armor=armor, bevel=mix(armor, (255.0, 255.0, 255.0), 0.16), shade=mix(armor, BLACK3, 0.38), line=mix(armor, BLACK3, 0.55),
+                mark=p.pick("fg", "fg"), hazard=p("ansi_3"), stripe=p("ansi_1"), sensor=p("accent"), amber=p("ansi_3"), red=p("ansi_1"),
+                spark=mix(p("ansi_3"), (255.0, 255.0, 255.0), 0.5), steam=p.pick("fg", "white"),
             ))
         return self._c[1]
 
+    PLATES = [  # each plate: its outline, and the panel lines across it
+        ([(-40, -40), (1180, -40), (1020, 560), (-40, 700)], [((200, -40), (120, 660)), ((-40, 300), (1080, 240)), ((560, -40), (520, 270))]),
+        ([(1060, 300), (1960, 220), (1960, 1120), (880, 1120), (980, 640)], [((1060, 470), (1960, 420)), ((1400, 470), (1380, 1120)), ((980, 800), (1960, 760))]),
+        ([(-40, 760), (980, 640), (880, 1120), (-40, 1120)], [((400, 700), (380, 1120)), ((-40, 930), (920, 880))]),
+    ]
+
     def back(self, cv, p):
         c = self.colors(p)
-        out = [vgrad(cv, 0, 0, W, 860, [(0, c["top"]), (860, c["low"])])]
-        ribs = Shape()
-        for k in range(9):  # the hangar's roof ribs
-            x = 60 + k * 230
-            ribs.line([(x, 0), (x + 40, 260)], 10)
-        ribs.line([(0, 260), (W, 260)], 8)
-        out.append(L(cv, ribs, c["steel2"], ss=1))
-        for x in (420, 960, 1500):  # lights in the roof, their cones
-            out += [L(cv, Shape().poly([(x - 30, 260), (x + 30, 260), (x + 260, 900), (x - 260, 900)]), c["light"], 0.06 if c["dark"] else 0.12, ss=1, soft=40, mode="add" if c["dark"] else "over"), glow(cv, x, 262, 30, c["light"], 0.5)]
-        out.append(L(cv, Shape().rect(0, 860, W, H - 860), c["floor"], ss=1))
+        out = [L(cv, Shape().rect(0, 0, W, H), c["gap"], ss=1)]
+        inner = Shape()  # the frame inside, in the gaps: a piston, cables
+        inner.line([(980, 580), (1180, 260)], 46).line([(940, 700), (1060, 620)], 30)
+        for k in range(4):
+            inner.line(bezier((900 + k * 14, 760), (960, 700), (1000, 660), (1100 + k * 10, 600), n=16), 7)
+        out.append(L(cv, inner, c["inner"], ss=2))
+        out.append(L(cv, Shape().line([(990, 560), (1170, 270)], 6), c["bevel"], 0.35, ss=2))
+        for pts, lines in self.PLATES:
+            plate = Shape().poly(pts)
+            out.append(L(cv, plate.moved(10, 14), BLACK3, 0.5 if c["dark"] else 0.2, ss=1, soft=10))
+            out.append(L(cv, plate, c["armor"], ss=2))
+            edges = Shape()
+            n = len(pts)
+            for k in range(n):
+                (x0, y0), (x1, y1) = pts[k], pts[(k + 1) % n]
+                edges.line([(x0, y0), (x1, y1)], 12)
+            out.append(L(cv, edges, c["shade"], 0.7, ss=2, clip=None))
+            top = Shape()
+            for k in range(n):
+                (x0, y0), (x1, y1) = pts[k], pts[(k + 1) % n]
+                if x1 > x0 and abs(y1 - y0) < abs(x1 - x0):  # the edges facing up catch the light
+                    top.line([(x0, y0 + 6), (x1, y1 + 6)], 4)
+            out.append(L(cv, top, c["bevel"], 0.8, ss=2))
+            pl = Shape()
+            for a, b in lines:
+                pl.line([a, b], 3)
+            out.append(L(cv, pl, c["line"], 0.9, ss=2))
+        rivets = Shape()
+        for x, y in ((240, 80), (300, 80), (900, 80), (960, 80), (1500, 520), (1560, 520), (1800, 980), (200, 1000), (260, 1000)):
+            rivets.circle(x, y, 5)
+        out.append(L(cv, rivets, c["line"], ss=2))
+        # a hazard band along the lower plate, a red stripe, markings
         hz = Shape()
-        for k in range(30):
-            x = k * 70
-            hz.poly([(x, 880), (x + 35, 880), (x + 5, 900), (x - 30, 900)])
-        out.append(L(cv, hz, c["hazard"], 0.5, ss=2))
-        # the gantry round the mech: uprights, catwalks
-        g = Shape()
-        for x in (640, 1280):
-            g.line([(x, 160), (x, 880)], 14)
-        for y in (330, 560):
-            g.line([(600, y), (1320, y)], 10)
-            for x in range(620, 1301, 40):
-                g.line([(x, y - 30), (x, y)], 2)
-            g.line([(600, y - 30), (1320, y - 30)], 3)
-        out.append(L(cv, g, c["steel"], ss=2))
-        out += self.mech(cv, c)
+        for k in range(22):
+            x = -40 + k * 48
+            hz.poly([(x, 770 - 0.118 * (x + 40)), (x + 24, 770 - 0.118 * (x + 64)), (x + 44, 812 - 0.118 * (x + 84)), (x + 20, 812 - 0.118 * (x + 60))])
+        out.append(L(cv, hz, c["hazard"], 0.75, ss=2))
+        out.append(L(cv, Shape().poly([(1080, 540), (1960, 470), (1960, 500), (1078, 572)]), c["stripe"], 0.8, ss=2))
+        marks = Shape()
+        for k in range(3):  # chevrons
+            x = 1520 + k * 34
+            marks.line([(x, 640), (x + 20, 664), (x, 688)], 8)
+        ring = ellipse_pts(420, 440, 70, 70, n=60, a0=0.4, a1=2 * math.pi - 0.4)
+        marks.line(ring, 9).line([(360, 520), (480, 520)], 6)
+        out.append(L(cv, marks, c["mark"], 0.22, ss=2))
+        # the sensor slit, asleep
+        (sx0, sy0), (sx1, sy1) = self.SENSOR
+        out.append(L(cv, Shape().poly([(sx0, sy0), (sx1, sy1), (sx1, sy1 + 16), (sx0, sy0 + 18)]), c["gap"], ss=2))
         return out
 
-    def mech(self, cv, c):
-        """A mech of no one's: broad shoulders, a slit for a visor, an arm in a clamp."""
-        a, a2 = c["armor"], c["armor2"]
-        out = []
-        legs = Shape().poly([(840, 600), (920, 600), (930, 720), (910, 880), (820, 880), (830, 720)]).poly([(1000, 600), (1080, 600), (1090, 720), (1100, 880), (1010, 880), (990, 720)])
-        out.append(L(cv, legs, a2, ss=2))
-        out.append(L(cv, Shape().poly([(835, 690), (925, 690), (935, 740), (825, 740)]).poly([(995, 690), (1085, 690), (1095, 740), (985, 740)]), a, ss=2))
-        out.append(L(cv, Shape().poly([(860, 600), (1060, 600), (1080, 520), (840, 520)]), a2, ss=2))
-        torso = Shape().poly([(800, 300), (1120, 300), (1100, 470), (1060, 540), (860, 540), (820, 470)])
-        out.append(L(cv, torso, a, ss=2))
-        out.append(L(cv, Shape().poly([(900, 330), (1020, 330), (1000, 450), (920, 450)]), a2, ss=2))
-        out.append(L(cv, Shape().poly([(820, 470), (1100, 470), (1094, 488), (826, 488)]), c["stripe"], 0.85, ss=2))
-        out.append(L(cv, Shape().poly([(720, 270), (820, 280), (830, 360), (740, 380)]).poly([(1100, 280), (1200, 270), (1180, 380), (1090, 360)]), a2, ss=2))  # shoulders
-        out.append(L(cv, Shape().poly([(735, 380), (790, 375), (800, 560), (750, 580)]).poly([(1130, 375), (1185, 380), (1170, 580), (1120, 560)]), a, ss=2))  # arms
-        out.append(L(cv, Shape().rect(1110, 560, 80, 30), c["steel"], ss=2))  # the clamp
-        out.append(L(cv, Shape().poly([(915, 230), (1005, 230), (1015, 290), (905, 290)]), a, ss=2))  # the head
-        out.append(L(cv, Shape().poly([(918, 252), (1002, 252), (998, 264), (922, 264)]), a2, ss=2))  # its visor, asleep
-        lines = Shape().line([(960, 300), (960, 540)], 2).line([(860, 420), (1060, 420)], 2).line([(845, 760), (915, 760)], 2).line([(1005, 760), (1075, 760)], 2)
-        out.append(L(cv, lines, a2, 0.7, ss=2))
-        return out
+    def awake(self, t):
+        w0, w1 = self.WAKE
+        return bump(window(t, w0, w1)) ** 0.4 if w0 <= t < w1 else 0.0
 
     def under(self, cv, p, t):
         c = self.colors(p)
         out = []
-        wake = bump(window(t, 12.0, 15.6)) ** 0.5 if 12.0 <= t < 15.6 else 0.0
-        flick = wake * (0.6 + 0.4 * (1 if int(t * 12) % 3 else 0)) if t < 12.6 else wake
-        if flick > 0.02:
-            out += [L(cv, Shape().poly([(918, 252), (1002, 252), (998, 264), (922, 264)]), c["visor"], flick), glow(cv, 960, 258, 60, c["visor"], 0.45 * flick)]
-        for k, (bx, by) in enumerate(((640, 150), (1280, 150))):  # beacons, turning faster while it is awake
-            ang = 2 * math.pi * (t / 2.0 + (1 / 0.75 - 1 / 2.0) * clamp(t - 12.0, 0.0, 3.6) + k * 0.5)
-            out.append(D(cv, bx, by, 9, c["amber"]))
-            sweep = Shape().poly([(bx, by), (bx + 420 * math.cos(ang), by + 160 * math.sin(ang) - 40), (bx + 420 * math.cos(ang + 0.25), by + 160 * math.sin(ang + 0.25) + 40)])
-            out += [L(cv, sweep, c["amber"], 0.10 * (0.5 + 0.5 * math.cos(ang)) if c["dark"] else 0.12, ss=1, soft=14, mode="add" if c["dark"] else "over"), glow(cv, bx, by, 24, c["amber"], 0.5)]
-        # the welder at the knee: a figure, a hot point, sparks falling
-        wx, wy = 790.0, 760.0
-        weld = Shape().circle(wx - 30, wy - 64, 11).line([(wx - 30, wy - 50), (wx - 34, wy + 10)], 18).line([(wx - 28, wy - 40), (wx - 6, wy - 30), (wx + 6, wy - 34)], 9).line([(wx - 34, wy + 10), (wx - 46, wy + 60), (wx - 40, wy + 112)], 11).line([(wx - 34, wy + 10), (wx - 18, wy + 60), (wx - 26, wy + 112)], 11)
-        out.append(L(cv, weld, c["person"]))
-        arc = 0.6 + 0.4 * (1 if int(t * 20) % 4 else 0)
-        out += [glow(cv, wx + 10, wy - 36, 36, c["spark"], 0.6 * arc), D(cv, wx + 10, wy - 36, 3, (255.0, 255.0, 255.0))]
+        aw = self.awake(t)
+        # the warning light from out of frame: a band sweeping the plates
+        ang = (t / 3.0) % 1.0
+        x = -600 + 3000 * ang
+        band = Shape().poly([(x - 120, -40), (x + 60, -40), (x - 340, 1120), (x - 520, 1120)])
+        col = mix(c["amber"], c["red"], aw)
+        out.append(L(cv, band, col, (0.10 + 0.08 * aw) if c["dark"] else 0.14, ss=1, soft=60, mode="add" if c["dark"] else "over"))
+        # waking: light runs out along the seams from the sensor, then the sensor flares
+        if aw > 0.01:
+            front = 2200 * ease_out(window(t, self.WAKE[0], self.WAKE[0] + 1.4))
+            (sx0, sy0), (sx1, sy1) = self.SENSOR
+            sx, sy = (sx0 + sx1) / 2, (sy0 + sy1) / 2
+            for pts, lines in self.PLATES:
+                segs = list(lines) + [(pts[k], pts[(k + 1) % len(pts)]) for k in range(len(pts))]
+                for a, b in segs:
+                    for k in range(12):
+                        u0, u1 = k / 12, (k + 1) / 12
+                        pa = (a[0] + (b[0] - a[0]) * u0, a[1] + (b[1] - a[1]) * u0)
+                        pb = (a[0] + (b[0] - a[0]) * u1, a[1] + (b[1] - a[1]) * u1)
+                        d = math.hypot((pa[0] + pb[0]) / 2 - sx, (pa[1] + pb[1]) / 2 - sy)
+                        lit = clamp((front - d) / 160) * aw
+                        if lit > 0.02:
+                            out.append(L(cv, Shape().line([pa, pb], 3), c["sensor"], 0.9 * lit, ss=1))
+            slit = Shape().poly([(sx0, sy0), (sx1, sy1), (sx1, sy1 + 16), (sx0, sy0 + 18)])
+            flick = aw * (0.6 + 0.4 * (1 if int(t * 14) % 3 else 0)) if t < self.WAKE[0] + 0.6 else aw
+            out += [L(cv, slit, c["sensor"], flick), L(cv, Shape().ellipse(sx, sy + 8, 200, 40), c["sensor"], 0.35 * flick, ss=1, soft=40, mode="add" if c["dark"] else "over")]
+        # sparks from out of frame, bottom right
         rnd = random.Random(53)
-        for i in range(40):
+        for i in range(36):
             t0 = rnd.uniform(0, 24)
-            u = ((t - t0) % 24) / 1.2
+            u = ((t - t0) % 24) / 1.3
             if u < 1:
-                vx, vy = rnd.uniform(-120, 160), rnd.uniform(-160, -40)
-                x, y = wx + 10 + vx * u, wy - 36 + vy * u + 520 * u * u
-                out.append(L(cv, Shape().line([(x, y), (x - vx * 0.03, y - (vy + 1040 * u) * 0.03)], 2), c["spark"], 1 - u, mode="add" if c["dark"] else "over"))
-        # the technician on the upper catwalk, with a tablet: it jumps back when the visor wakes
-        jump = bump(window(t, 12.3, 13.2))
-        back_off = 60 * ease_out(window(t, 12.3, 13.0)) * (1 - ease_io(window(t, 16.0, 18.0)))
-        tx, ty = 1110.0 + back_off, 330.0 - 40 * jump
-        tech = Shape().circle(tx, ty - 74, 10).line([(tx, ty - 62), (tx, ty - 20)], 15).line([(tx, ty - 20), (tx - 8, ty)], 9).line([(tx, ty - 20), (tx + 8, ty)], 9).line([(tx, ty - 54), (tx - 16, ty - 40)], 7)
-        out += [L(cv, tech, c["person"]), L(cv, Shape().rect(tx - 26, ty - 48, 12, 8), c["visor"], 0.9), glow(cv, tx - 20, ty - 44, 14, c["visor"], 0.3)]
-        # steam from a vent at its feet, more when it wakes
-        rnd = random.Random(61)
-        for i in range(6):
-            u = ((t / 6.0) + i / 6) % 1.0
-            out.append(L(cv, Shape().ellipse(1150 + 20 * u, 860 - 160 * u, 30 + 60 * u, 20 + 40 * u), c["steam"], (0.06 + 0.12 * wake) * bump(u) * (1 if c["dark"] else 2), ss=1, soft=20 + 20 * u))
+                vx, vy = rnd.uniform(-900, -300), rnd.uniform(-520, -180)
+                x, y = 1980 + vx * u, 1000 + vy * u + 700 * u * u
+                out.append(L(cv, Shape().line([(x, y), (x - vx * 0.025, y - (vy + 1400 * u) * 0.025)], 2.2), c["spark"], 1 - u, mode="add" if c["dark"] else "over"))
+        # steam from the seam between the plates, more as it vents
+        for i in range(7):
+            u = ((t / 6.0) + i / 7) % 1.0
+            burst = aw
+            out.append(L(cv, Shape().ellipse(1000 + 60 * u, 600 - 260 * u, 30 + 80 * u, 22 + 50 * u), c["steam"], (0.05 + 0.16 * burst) * bump(u) * (1 if c["dark"] else 2.2), ss=1, soft=22 + 24 * u))
         return out
-
-    def over(self, cv, p, t):
-        c = self.colors(p)
-        return bubble(cv, 1160 + 60 * ease_out(window(t, 12.3, 13.0)), 220, pop(t, 12.4, 14.2), "!", p.pick("bg+fg:88", "white"), mix(p("bg"), BLACK3, 0.6), tail=-1)
 
 
 class Crossing(Cinema, Cached):
@@ -2418,13 +2473,13 @@ class Crossing(Cinema, Cached):
         return out
 
 
-SCENES_NIGHT2 = (Watch(), Problem(), Hangar(), Crossing())
+SCENES_NIGHT2 = (Watch(), Problem(), Unit(), Crossing())
 
 
 # the collections: a look and feel for each persona, the scenes in it
 COLLECTIONS = {
     "cozy": ("onsen", "duck", "reef", "campfire", "ufo", "pigeons"),  # warm, playful, a picture book for grown-ups
-    "night": ("garoa", "horizon", "watch", "problem", "hangar", "crossing"),  # the night-shift builder: cinematic, weather and light, a dry joke
+    "night": ("garoa", "horizon", "watch", "problem", "unit", "crossing"),  # the night-shift builder: cinematic, weather and light, a dry joke
 }
 SCENES = {s.name: s for s in (Onsen(), Duck(), Reef(), Campfire(), Ufo(), Pigeons()) + SCENES_NIGHT + SCENES_NIGHT2}
 
