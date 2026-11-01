@@ -1857,6 +1857,10 @@ fn a_click_on_a_value_arrow_steps_it() {
             .any(|c| c["name"] == "theme_glyphs" && c["arguments"]["to"] == "words")),
         "a click on the right arrow is its step up"
     );
+    assert!(
+        pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("glyphs words"))),
+        "the step's receipt comes back"
+    );
     assert!(matches!(app.picks().get(app.sel), Some(Item::Row(0, 1))), "the clicked row is lit");
     app.step_at(n, false);
     assert!(
