@@ -8979,7 +8979,17 @@ motion_why() {   # -> why a moving wallpaper cannot play here, or nothing (after
     else echo "the moving wallpaper needs mpvpaper, which this Linux family does not package: the wallpaper stays still"; fi
 }
 motion_want() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-motion.want"; }   # -> the file that names the loop the desktop should play now
-motion_ours() { pgrep -u "$(id -u)" -f "mpvpaper .*$MOTION_DIR/" 2>/dev/null || :; }   # -> the pids of the mpvpapers playing a loop of ours: their file is in the cache
+motion_ours() {   # -> the pids of the mpvpapers playing a loop of ours: their file is in the cache
+    if command -v pgrep >/dev/null 2>&1; then pgrep -u "$(id -u)" -f "mpvpaper .*$MOTION_DIR/" 2>/dev/null || :; return 0; fi
+    # no pgrep (a bare container has none): the same from /proc, the command lines that name the cache,
+    # whose program is mpvpaper, run by you
+    _muid=$(id -u)
+    grep -l -s -F "$MOTION_DIR/" /proc/[0-9]*/cmdline 2>/dev/null | while IFS= read -r _mc; do
+        _mpid=${_mc#/proc/}; _mpid=${_mpid%/cmdline}
+        { tr '\0' ' ' < "$_mc"; } 2>/dev/null | grep -Eq '(^|/)mpvpaper -' || continue   # a process gone meanwhile has no file
+        [ "$(awk '/^Uid:/ { print $2; exit }' "/proc/$_mpid/status" 2>/dev/null)" != "$_muid" ] || echo "$_mpid"
+    done || :
+}
 motion_stop() {   # the loop of ours gone, and nothing wanted: the still shows
     rm -f "$(motion_want)"
     for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done
