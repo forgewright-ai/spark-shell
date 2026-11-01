@@ -24,8 +24,8 @@ still (poster: the scene's own moment) is a PNG, the picture to show before
 its loop is made. Only numpy is needed for these; the MP4s of the last form,
 for a gallery, are encoded by ffmpeg. A landscape size that is not 16 by 9
 gets the scene's picture covering it, centered; a portrait one gets the
-scene's own portrait composition (a pixel scene's on a 270 by 480 grid), and
-is refused for a scene that does not have one yet.
+scene's own portrait composition, never a crop (a pixel scene's on a 270 by
+480 grid).
 
 cozy: warm and playful, a picture book for grown-ups
 
@@ -2112,9 +2112,22 @@ class Garoa(Pixel):
 
     name = "garoa"
     poster = 8.0
-    HZ = 225
-    PADS = ((274, 154), (425, 146))
-    MASTS = ((332, 67), (367, 57), (397, 75))
+    portrait = True
+
+    def layout(self, portrait):
+        """Where the city is: landscape, or a portrait's city at the foot of a tall sky of drizzle,
+        the Copan narrower, the masts and the two roofs with a helipad closer together. DY moves
+        the skyline's heights down to the portrait's street."""
+        if portrait:
+            self.HZ, self.DY, self.MIDX, self.CLOUDS, self.NCLOUDS, self.HELIY = 410, 185, 128, (10, 230), 10, 150
+            self.PADS, self.MASTS = ((150, 339), (238, 331)), ((176, 252), (206, 242), (234, 260))
+            self.COPAN = [(12, 303), (35, 299), (62, 303), (88, 298), (118, 302), (126, 303)]
+            self.NEAR = [(254, 302, 24), (100, 375, 26)]
+        else:
+            self.HZ, self.DY, self.MIDX, self.CLOUDS, self.NCLOUDS, self.HELIY = 225, 0, 215, (4, 80), 7, 75
+            self.PADS, self.MASTS = ((274, 154), (425, 146)), ((332, 67), (367, 57), (397, 75))
+            self.COPAN = [(75, 118), (105, 114), (140, 118), (175, 113), (215, 117), (225, 118)]
+            self.NEAR = [(-10, 130, 58), (452, 117, 50), (47, 190, 30)]
 
     def colors(self, p):
         st = self.__dict__.setdefault("_c", {})
@@ -2147,23 +2160,23 @@ class Garoa(Pixel):
                 + [mix(c["fog"], c["far"], 0.5), mix(c["white"], c["street"], 0.5), mix(c["red"], c["street"], 0.5)])
 
     def towers(self):
-        if hasattr(self, "_towers"):
-            return self._towers
+        st = self.__dict__.setdefault("_towers", {})
+        if self.gw in st:
+            return st[self.gw]
         rnd = random.Random(41)
         far, mid = [], []
         x = -5
-        while x < PW:
+        while x < self.gw:
             w = rnd.randint(10, 27)
-            far.append((x, rnd.randint(140, 175), w))
+            far.append((x, rnd.randint(140, 175) + self.DY, w))
             x += w + rnd.randint(-2, 1)
-        x = 215
-        while x < PW + 10:
+        x = self.MIDX
+        while x < self.gw + 10:
             w = rnd.randint(22, 42)
-            mid.append((x, rnd.randint(140, 180), w))
+            mid.append((x, rnd.randint(140, 180) + self.DY, w))
             x += w + rnd.randint(2, 7)
-        near = [(-10, 130, 58), (452, 117, 50), (47, 190, 30)]
-        self._towers = far, mid, near
-        return self._towers
+        st[self.gw] = far, mid, list(self.NEAR)
+        return st[self.gw]
 
     def facade(self, a, c, x, y, w, rnd, lit=0.34, step=(4, 5), size=(2, 2), dk=True):
         for wx in range(int(x) + 3, int(x + w) - 3, step[0]):
@@ -2179,9 +2192,10 @@ class Garoa(Pixel):
 
     def back(self, a, p, c):
         dk = p.dark
-        pgrad(a, 0, self.HZ, [(0, c["top"]), (120, mix(c["top"], c["low"], 0.55)), (self.HZ, c["low"])])
+        DY, gw, gh = self.DY, self.gw, self.gh
+        pgrad(a, 0, self.HZ, [(0, c["top"]), (120 + DY, mix(c["top"], c["low"], 0.55)), (self.HZ, c["low"])])
         # low cloud, lit from below by the city
-        clouds(a, 3, 7, (4, 80), c["cloud"], c["cloudlit"], 0.75, lit_below=True, wmin=70, wmax=170, big=True, tail=True)
+        clouds(a, 3, self.NCLOUDS, self.CLOUDS, c["cloud"], c["cloudlit"], 0.75, lit_below=True, wmin=70, wmax=170, big=True, tail=True)
         far, mid, near = self.towers()
         m = Mask()
         for x, y, w in far:
@@ -2193,29 +2207,31 @@ class Garoa(Pixel):
         for x, y, w in far:
             for k in range(w // 6):
                 if frnd.random() < 0.35:
-                    put(a, x + 2 + frnd.randrange(max(1, w - 4)), y + 3 + frnd.randrange(max(1, 150 - y)), c["warmdim"] if dk else c["glass"], 0.6)
-        box(a, 0, 152, PW, 30, c["fog"], 0.3)
+                    put(a, x + 2 + frnd.randrange(max(1, w - 4)), y + 3 + frnd.randrange(max(1, 150 + DY - y)), c["warmdim"] if dk else c["glass"], 0.6)
+        box(a, 0, 152 + DY, gw, 30, c["fog"], 0.3)
         # the masts of Paulista: lattices
+        foot = 160 + DY
         for mx, top in self.MASTS:
-            m = Mask().line([(mx - 3, 160), (mx, top)]).line([(mx + 3, 160), (mx, top)])
+            m = Mask().line([(mx - 3, foot), (mx, top)]).line([(mx + 3, foot), (mx, top)])
             for k in range(1, 12):
-                y0 = top + (160 - top) * (k - 1) / 11
-                y1 = top + (160 - top) * k / 11
-                h0, h1 = 3 * (y0 - top) / (160 - top), 3 * (y1 - top) / (160 - top)
+                y0 = top + (foot - top) * (k - 1) / 11
+                y1 = top + (foot - top) * k / 11
+                h0, h1 = 3 * (y0 - top) / (foot - top), 3 * (y1 - top) / (foot - top)
                 m.line([(mx - h0, y0), (mx + h1, y1)])
             m.rect(mx - 2, top + 18, 5, 1).rect(mx - 3, top + 52, 7, 1)
             fill(a, m, c["mast"])
         # the Copan: a long wave of a building in lines of sunshade
-        cp = spline([(75, 118), (105, 114), (140, 118), (175, 113), (215, 117), (225, 118)], closed=False, per=12)
-        fill(a, Mask().poly(cp + [(225, self.HZ), (75, self.HZ)]), c["copan"])
+        cp = spline(self.COPAN, closed=False, per=12)
+        x0c, x1c = self.COPAN[0][0], self.COPAN[-1][0]
+        fill(a, Mask().poly(cp + [(x1c, self.HZ), (x0c, self.HZ)]), c["copan"])
         rnd = random.Random(8)
-        for y in range(122, self.HZ, 3):
-            hline(a, 75, 226, y, c["copanline"])
-            for x in range(76, 225):
+        for y in range(122 + DY, self.HZ, 3):
+            hline(a, x0c, x1c + 1, y, c["copanline"])
+            for x in range(x0c + 1, x1c):
                 if rnd.random() < 0.035:
                     put(a, x, y + 1, c["warm"] if dk else c["glass"], 1.0 if dk else 0.8)
-        for x in (75, 225):
-            vline(a, x, 113, self.HZ, c["copanline"])
+        for x in (x0c, x1c):
+            vline(a, x, 113 + DY, self.HZ, c["copanline"])
         # the middle row, two roofs with a helipad
         rnd = random.Random(19)
         for x, y, w in mid:
@@ -2235,23 +2251,23 @@ class Garoa(Pixel):
         for x, y, w in near:
             box(a, x, y, w, self.HZ - y, c["near"])
             self.facade(a, c, x, y, w, rnd, lit=0.16, step=(5, 7), size=(3, 3), dk=dk)
-        box(a, 0, self.HZ, PW, PH - self.HZ, c["street"])
-        hline(a, 0, PW, self.HZ, c["wet"])
+        box(a, 0, self.HZ, gw, gh - self.HZ, c["street"])
+        hline(a, 0, gw, self.HZ, c["wet"])
         rnd = random.Random(4)
-        src = a[150 : self.HZ - 2].copy()
-        for y in range(self.HZ + 1, PH):
+        src = a[150 + DY : self.HZ - 2].copy()
+        for y in range(self.HZ + 1, gh):
             d = y - self.HZ
             sy = self.HZ - 3 - int(d * 1.6)
-            if sy < 150 or rnd.random() < 0.25:
+            if sy < 150 + DY or rnd.random() < 0.25:
                 continue
-            row = src[sy - 150]
+            row = src[sy - 150 - DY]
             bright = row.sum(-1) > C(c["street"]).sum() + 160
             if bright.any():
                 xs = np.nonzero(bright)[0]
-                k = 0.5 * (1 - d / (PH - self.HZ)) ** 1.2
+                k = 0.5 * (1 - d / (gh - self.HZ)) ** 1.2
                 a[y, xs] += (row[xs] - a[y, xs]) * k
-        for y in range(self.HZ + 6, PH, 9):  # lanes
-            for x in range(0, PW, 16):
+        for y in range(self.HZ + 6, gh, 9):  # lanes
+            for x in range(0, gw, 16):
                 hline(a, x, x + 6, y + 8, c["wet"]) if y == self.HZ + 15 else None
 
     def heli(self, a, c, x, y, t, kx=1, parked=False):
@@ -2276,10 +2292,10 @@ class Garoa(Pixel):
 
     def draw(self, a, p, c, t):
         dk = p.dark
-        box(a, 0, 158 + 2 * wave(t, 24), PW, 18, c["fog"], 0.18)
+        box(a, 0, 158 + self.DY + 2 * wave(t, 24), self.gw, 18, c["fog"], 0.18)
         for k, (mx, top) in enumerate(self.MASTS):
             on = ((t + k * 0.7) % 2.0) < 1.0
-            for yy in (top, top + int((160 - top) * 0.45)):
+            for yy in (top, top + int((160 + self.DY - top) * 0.45)):
                 put(a, mx, yy, c["red"], 1.0 if on else 0.35)
                 if on:
                     for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
@@ -2290,7 +2306,7 @@ class Garoa(Pixel):
         if 2.0 <= t < 17.5:  # the late one: its roof is taken, it goes round and takes the next
             if t < 6.5:
                 u = ease_io(window(t, 2.0, 6.5))
-                hx, hy = -20 + (x + 8 + 20) * u, 75 + (y - 30 - 75) * u
+                hx, hy = -20 + (x + 8 + 20) * u, self.HELIY + (y - 30 - self.HELIY) * u
             elif t < 9.5:
                 hx, hy = x + 8 + 4 * math.sin((t - 6.5) * 2.2), y - 30 + 2 * math.sin((t - 6.5) * 3)
             else:
@@ -2311,7 +2327,7 @@ class Garoa(Pixel):
         for k in range(4):
             u = ((t / 6.0) + k / 4) % 1.0
             right = k % 2 == 0
-            xx = -12 + (PW + 24) * u if right else PW + 12 - (PW + 24) * u
+            xx = -12 + (self.gw + 24) * u if right else self.gw + 12 - (self.gw + 24) * u
             yy = self.HZ + 9 + k * 5
             col = c["white"] if right else c["red"]
             box(a, xx - 4, yy - 2, 9, 3, c["near"])
@@ -2323,16 +2339,16 @@ class Garoa(Pixel):
                 put(a, fx, yy + d, col, 0.45 * (1 - d / 14))
         # the drizzle: thin, slanted, quick, and its splashes
         rnd = random.Random(23)
-        speed = 12 * (PH + 20) / self.seconds
+        speed = 12 * (self.gh + 20) / self.seconds
         for i in range(150):
-            x0, y0, ln = rnd.uniform(-60, PW), rnd.uniform(0, PH + 20), rnd.choice((3, 3, 4, 5))
-            yy = (y0 + speed * t) % (PH + 20) - 10
+            x0, y0, ln = rnd.uniform(-60, self.gw), rnd.uniform(0, self.gh + 20), rnd.choice((3, 3, 4, 5))
+            yy = (y0 + speed * t) % (self.gh + 20) - 10
             xx = x0 + 0.3 * yy
             for j in range(ln):
                 put(a, xx + 0.3 * j, yy + j, c["rain"], 0.9 if i % 4 else 1.0)
         frnd = random.Random(int(round(t * PFPS)) % (self.seconds * PFPS) * 7 + 1)
         for i in range(14):
-            put(a, frnd.randint(0, PW - 1), frnd.randint(self.HZ + 2, PH - 1), c["rain"])
+            put(a, frnd.randint(0, self.gw - 1), frnd.randint(self.HZ + 2, self.gh - 1), c["rain"])
 
 
 
@@ -2345,8 +2361,18 @@ class Horizon(Pixel):
 
     name = "horizon"
     poster = 12.0
-    CX, CY, RS = 302.0, 105.0, 30.0
-    PLANET = (65.0, 455.0, 265.0)
+    portrait = True
+
+    def layout(self, portrait):
+        """The hole, its scale K and the planet: landscape, or a portrait's tall dark with the hole
+        smaller, a little over the middle, and the planet's edge across the foot."""
+        if portrait:
+            self.CX, self.CY, self.K, self.PLANET = 140.0, 170.0, 0.74, (60.0, 700.0, 330.0)
+            self.NEB = ((60, 90, 150, 0.55), (220, 330, 120, 0.5))
+        else:
+            self.CX, self.CY, self.K, self.PLANET = 302.0, 105.0, 1.0, (65.0, 455.0, 265.0)
+            self.NEB = ((130, 75, 170, 0.55), (375, 205, 140, 0.5))
+        self.RS = 30.0 * self.K
 
     def colors(self, p):
         st = self.__dict__.setdefault("_c", {})
@@ -2380,14 +2406,14 @@ class Horizon(Pixel):
 
     def back(self, a, p, c):
         dk = p.dark
-        pgrad(a, 0, PH, [(0, c["top"]), (PH, c["low"])])
-        pglow(a, 130, 75, 170, c["neb1"], 0.55, add=False)
-        pglow(a, 375, 205, 140, c["neb2"], 0.5, add=False)
+        pgrad(a, 0, self.gh, [(0, c["top"]), (self.gh, c["low"])])
+        for (nx, ny, nr, nk), col in zip(self.NEB, (c["neb1"], c["neb2"])):
+            pglow(a, nx, ny, nr, col, nk, add=False)
         rnd = random.Random(12)
         self.twinkle = []
         for i in range(260):
-            x, y = rnd.randrange(PW), rnd.randrange(PH)
-            if math.hypot(x - self.CX, y - self.CY) < 70:
+            x, y = rnd.randrange(self.gw), rnd.randrange(self.gh)
+            if math.hypot(x - self.CX, y - self.CY) < 70 * self.K:
                 continue
             m = rnd.random() ** 3
             if m > 0.9:
@@ -2402,7 +2428,7 @@ class Horizon(Pixel):
                 put(a, x, y, c["stardim"], 0.8 if dk else 0.6)
         # the planet's edge, lit from the disc, its ice in bands
         px_, py_, pr = self.PLANET
-        ys, xs = np.mgrid[0:PH, 0:PW].astype(np.float32)
+        ys, xs = np.mgrid[0 : self.gh, 0 : self.gw].astype(np.float32)
         d = np.sqrt((xs - px_) ** 2 + (ys - py_) ** 2)
         inside = d <= pr
         a[inside] = C(c["planet"])
@@ -2419,25 +2445,26 @@ class Horizon(Pixel):
         fill(a, Mask().ell(self.CX, self.CY, self.RS, self.RS), c["shadow"])
 
     def light(self, a, c, t, dk):
-        cx, cy, rs = self.CX, self.CY, self.RS
-        x0, x1, y0, y1 = int(cx - 150), int(cx + 151), int(cy - 60), int(cy + 61)
+        cx, cy, rs, k = self.CX, self.CY, self.RS, self.K
+        x0, x1 = max(0, int(cx - 150 * k)), min(self.gw, int(cx + 150 * k) + 1)
+        y0, y1 = max(0, int(cy - 60 * k)), min(self.gh, int(cy + 60 * k) + 1)
         X = np.arange(x0, x1, dtype=np.float32)[None, :] + 0.5 - cx
         Y = np.arange(y0, y1, dtype=np.float32)[:, None] + 0.5 - cy
         tilt = -0.08
         xr = X * math.cos(tilt) + Y * math.sin(tilt)
         yr = -X * math.sin(tilt) + Y * math.cos(tilt)
-        q, rin, rout = 0.085, 33.0, 140.0
+        q, rin, rout = 0.085, 33.0 * k, 140.0 * k
         rho = np.sqrt(xr ** 2 + (yr / q) ** 2)
         phi = np.arctan2(yr / q, xr)
         f = np.clip((rho - rin) / (rout - rin), 0, 1)
-        edge = np.clip((rho - rin) / 2.5, 0, 1) * np.clip((rout - rho) / 30, 0, 1)
-        swirl = 0.8 + 0.2 * np.sin(phi * 5 + rho * 0.1 - 2 * math.pi * 2 * t / self.seconds) * np.sin(phi * 2 - rho * 0.048 + 1.3)
+        edge = np.clip((rho - rin) / (2.5 * k), 0, 1) * np.clip((rout - rho) / (30 * k), 0, 1)
+        swirl = 0.8 + 0.2 * np.sin(phi * 5 + rho * 0.1 / k - 2 * math.pi * 2 * t / self.seconds) * np.sin(phi * 2 - rho * 0.048 / k + 1.3)
         doppler = 1 - 0.42 * np.cos(phi)
         disc = 1.6 * edge * (rin / np.maximum(rho, rin)) ** 1.25 * swirl * doppler
         r = np.sqrt(X ** 2 + Y ** 2)
         disc = np.where((yr < 0) & (r < rs), 0, disc)
         theta = np.arctan2(Y, X)
-        lensed = 0.8 * np.exp(-((r - rs * 1.19) / 2.2) ** 2) * (0.5 + 0.5 * np.abs(np.sin(theta))) * (1 - 0.35 * np.cos(theta))
+        lensed = 0.8 * np.exp(-((r - rs * 1.19) / (2.2 * max(k, 0.8))) ** 2) * (0.5 + 0.5 * np.abs(np.sin(theta))) * (1 - 0.35 * np.cos(theta))
         photon = np.exp(-((r - rs * 1.04) / 0.7) ** 2) * 0.9
         hot, warm, cool = C(c["hot"]), C(c["warm"]), C(c["cool"])
         fc = f[..., None]
@@ -2454,12 +2481,12 @@ class Horizon(Pixel):
         for x, y, per, ph in self.twinkle:
             if wave(t, 24 / per, ph) < -0.2:
                 put(a, x, y, c["stardim"])
-        pglow(a, self.CX, self.CY, 80, c["warm"], 0.08 if dk else 0.05, add=dk)
+        pglow(a, self.CX, self.CY, 80 * self.K, c["warm"], 0.08 if dk else 0.05, add=dk)
         self.light(a, c, t, dk)
         u = window(t, 3.0, 21.0)
         if 0 < u < 1:
             s_ = 1 - (1 - u) ** 3
-            r = 225 - (225 - (self.RS + 11)) * s_
+            r = 225 * self.K - (225 * self.K - (self.RS + 11 * self.K)) * s_
             ang = -0.62 + 0.9 * s_
             x, y = self.CX + r * math.cos(ang), self.CY + r * math.sin(ang) * 0.6
             redden = clamp((s_ - 0.7) / 0.3)
@@ -2684,11 +2711,21 @@ class Problem(Pixel):
 
     name = "problem"
     poster = 4.0
-    CELL, COLS, ROWS = 30, 16, 9
+    CELL = 30
+    portrait = True
     KINDS = ("jug", "crimp", "sloper", "pinch", "pocket", "edge", "jug", "blob", "blob", "crimp", "sloper")
     HUES = ("ansi_1", "ansi_2", "ansi_3", "ansi_4", "ansi_5", "ansi_6", "w", "k", "ansi_3", "w")
-    A = ([(5, 1), (6, 1)], [(4, 3), (7, 4), (5, 5), (8, 6), (6, 7)], [(7, 8)])
-    B = ([(10, 0)], [(12, 2), (9, 3), (11, 5), (13, 6), (10, 7)], [(12, 8)])
+
+    def layout(self, portrait):
+        """The board's cells, and its problems: a portrait board is 9 by 16, its problems taller."""
+        if portrait:
+            self.COLS, self.ROWS, self.GLIDER = 9, 16, (1, 4)
+            self.A = ([(3, 1), (4, 1)], [(2, 3), (5, 5), (3, 7), (6, 9), (4, 11), (2, 13)], [(4, 15)])
+            self.B = ([(6, 0)], [(7, 2), (5, 4), (7, 6), (4, 8), (6, 10), (5, 12), (7, 14)], [(6, 15)])
+        else:
+            self.COLS, self.ROWS, self.GLIDER = 16, 9, (2, 0)
+            self.A = ([(5, 1), (6, 1)], [(4, 3), (7, 4), (5, 5), (8, 6), (6, 7)], [(7, 8)])
+            self.B = ([(10, 0)], [(12, 2), (9, 3), (11, 5), (13, 6), (10, 7)], [(12, 8)])
 
     def colors(self, p):
         st = self.__dict__.setdefault("_c", {})
@@ -2729,14 +2766,14 @@ class Problem(Pixel):
 
     def back(self, a, p, c):
         a[:] = C(c["wall"])
-        pgrad(a, 0, PH, [(0, c["walllit"]), (110, c["wall"]), (PH, mix(c["wall"], c["walldark"], 0.6))])
-        for y in range(5, PH, 10):  # the T-nuts, a hole every ten
-            for x in range(5, PW, 10):
+        pgrad(a, 0, self.gh, [(0, c["walllit"]), (110, c["wall"]), (self.gh, mix(c["wall"], c["walldark"], 0.6))])
+        for y in range(5, self.gh, 10):  # the T-nuts, a hole every ten
+            for x in range(5, self.gw, 10):
                 put(a, x, y, c["tnut"])
-        for x in range(0, PW, 120):
-            vline(a, x, 0, PH, c["seam"])
-        for y in range(0, PH, 90):
-            hline(a, 0, PW, y, c["seam"])
+        for x in range(0, self.gw, 120):
+            vline(a, x, 0, self.gh, c["seam"])
+        for y in range(0, self.gh, 90):
+            hline(a, 0, self.gw, y, c["seam"])
         rnd = random.Random(77)
         for col in range(self.COLS):
             for row in range(self.ROWS):
@@ -2804,10 +2841,11 @@ class Problem(Pixel):
                 put(a, lx + dx, ly + dy, colr, 0.5)
 
     def life(self):
-        if hasattr(self, "_life"):
-            return self._life
+        st = self.__dict__.setdefault("_life", {})
+        if self.GLIDER in st:
+            return st[self.GLIDER]
         cells = {(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)}
-        cells = {(x + 2, y + 0) for x, y in cells}
+        cells = {(x + self.GLIDER[0], y + self.GLIDER[1]) for x, y in cells}
         gens = [cells]
         for _ in range(30):
             n = {}
@@ -2818,7 +2856,7 @@ class Problem(Pixel):
                             n[(x + dx, y + dy)] = n.get((x + dx, y + dy), 0) + 1
             cells = {q for q, v in n.items() if v == 3 or (v == 2 and q in cells)}
             gens.append(cells)
-        self._life = gens
+        st[self.GLIDER] = gens
         return gens
 
     def draw(self, a, p, c, t):
@@ -2845,8 +2883,19 @@ class Continue(Pixel):
 
     name = "continue"
     poster = 6.0
-    FLOOR = 214
-    CABS = (88, 168, 248, 328, 408)
+    portrait = True
+
+    def layout(self, portrait):
+        """Where the machines stand: the claw and five cabinets in a row, or in a portrait three
+        of them (the shooter, the one that asks, the climb) under the neon, a deep carpet in front.
+        DY moves the cabinets down to the portrait's floor."""
+        if portrait:
+            self.FLOOR, self.DY, self.CLAW, self.NEON = 360, 146, False, (93, 110, 135, 120)
+            self.SLOTS = ((0, 27), (3, 103), (4, 179))
+        else:
+            self.FLOOR, self.DY, self.CLAW, self.NEON = 214, 0, True, (196, 20, 240, 30)
+            self.SLOTS = ((0, 88), (1, 168), (2, 248), (3, 328), (4, 408))
+        self.CABX = dict(self.SLOTS)
 
     def colors(self, p):
         st = self.__dict__.setdefault("_c", {})
@@ -2891,13 +2940,14 @@ class Continue(Pixel):
 
     def back(self, a, p, c):
         dk = p.dark
+        gw, gh = self.gw, self.gh
         a[:] = C(c["wall"])
-        for x in range(0, PW, 24):
+        for x in range(0, gw, 24):
             vline(a, x, 0, self.FLOOR, c["wall2"])
-        box(a, 0, self.FLOOR, PW, PH - self.FLOOR, c["floor"])
+        box(a, 0, self.FLOOR, gw, gh - self.FLOOR, c["floor"])
         rnd = random.Random(15)
         for i in range(260):  # the carpet: little cosmic shapes, as arcade carpets have
-            x, y = rnd.randrange(PW), rnd.randrange(self.FLOOR + 2, PH)
+            x, y = rnd.randrange(gw), rnd.randrange(self.FLOOR + 2, gh)
             col = c[rnd.choice(("carpet1", "carpet2", "carpet3"))]
             kind = rnd.random()
             if kind < 0.4:
@@ -2910,8 +2960,35 @@ class Continue(Pixel):
             else:
                 for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
                     put(a, x + dx, y + dy, col)
-        hline(a, 0, PW, self.FLOOR, c["ink"])
-        # the claw machine
+        hline(a, 0, gw, self.FLOOR, c["ink"])
+        if self.CLAW:
+            self.claw_machine(a, c)
+        # the cabinets
+        Y = self.DY
+        for i, x in self.SLOTS:
+            body, edge, side, marq = (c[n % i] for n in ("body%d", "edge%d", "side%d", "marq%d"))
+            box(a, x, 56 + Y, 64, self.FLOOR - 56 - Y, edge)
+            box(a, x + 3, 60 + Y, 58, self.FLOOR - 62 - Y, body)
+            box(a, x + 3, 60 + Y, 2, self.FLOOR - 62 - Y, side)
+            box(a, x + 59, 60 + Y, 2, self.FLOOR - 62 - Y, side)
+            box(a, x + 4, 62 + Y, 56, 16, marq)
+            box(a, x + 6, 82 + Y, 52, 44, c["ink"])
+            box(a, x + 5, 130 + Y, 54, 4, side)
+            box(a, x + 4, 134 + Y, 56, 14, mix(body, c["white"], 0.18))
+            box(a, x + 14, 136 + Y, 1, 6, c["ink"])
+            box(a, x + 13, 135 + Y, 3, 2, c["red"])
+            for b, colr in enumerate((c["red"], c["yellow"], c["cyan"])):
+                box(a, x + 28 + b * 7, 140 + Y, 3, 2, colr)
+            for s_ in (0, 1):
+                box(a, x + 22 + s_ * 14, 164 + Y, 6, 10, c["ink"])
+                box(a, x + 24 + s_ * 14, 166 + Y, 2, 6, c["red"])
+                pglow(a, x + 25 + s_ * 14, 169 + Y, 6, c["red"], 0.3 if dk else 0.1, add=dk)
+            box(a, x + 4, 196 + Y, 56, 16, edge)
+            title = ("ZAP", "RACE", "BRIX", "QUEST", "CLIMB")[i]
+            text(a, x + 32 - len(title) * 2, 66 + Y, title, edge)
+            hline(a, x + 6, x + 58, 75 + Y, edge)
+
+    def claw_machine(self, a, c):
         box(a, 16, 70, 58, self.FLOOR - 70, c["edge1"])
         box(a, 20, 74, 50, 70, c["body1"])
         box(a, 22, 82, 46, 56, mix(c["body1"], c["white"], 0.18))
@@ -2927,32 +3004,9 @@ class Continue(Pixel):
         box(a, 43, 164, 4, 6, c["red"], 0.9)
         box(a, 18, 66, 54, 8, c["marq1"])
         text(a, 27, 68, "PRIZE", c["edge1"])
-        # the cabinets
-        for i, x in enumerate(self.CABS):
-            body, edge, side, marq = (c[n % i] for n in ("body%d", "edge%d", "side%d", "marq%d"))
-            box(a, x, 56, 64, self.FLOOR - 56, edge)
-            box(a, x + 3, 60, 58, self.FLOOR - 62, body)
-            box(a, x + 3, 60, 2, self.FLOOR - 62, side)
-            box(a, x + 59, 60, 2, self.FLOOR - 62, side)
-            box(a, x + 4, 62, 56, 16, marq)
-            box(a, x + 6, 82, 52, 44, c["ink"])
-            box(a, x + 5, 130, 54, 4, side)
-            box(a, x + 4, 134, 56, 14, mix(body, c["white"], 0.18))
-            box(a, x + 14, 136, 1, 6, c["ink"])
-            box(a, x + 13, 135, 3, 2, c["red"])
-            for b, colr in enumerate((c["red"], c["yellow"], c["cyan"])):
-                box(a, x + 28 + b * 7, 140, 3, 2, colr)
-            for s_ in (0, 1):
-                box(a, x + 22 + s_ * 14, 164, 6, 10, c["ink"])
-                box(a, x + 24 + s_ * 14, 166, 2, 6, c["red"])
-                pglow(a, x + 25 + s_ * 14, 169, 6, c["red"], 0.3 if dk else 0.1, add=dk)
-            box(a, x + 4, 196, 56, 16, edge)
-            title = ("ZAP", "RACE", "BRIX", "QUEST", "CLIMB")[i]
-            text(a, x + 32 - len(title) * 2, 66, title, edge)
-            hline(a, x + 6, x + 58, 75, edge)
 
     def screen(self, a, c, i, t):
-        x0, y0, w, h = self.CABS[i] + 8, 84, 48, 40
+        x0, y0, w, h = self.CABX[i] + 8, 84 + self.DY, 48, 40
         box(a, x0, y0, w, h, c["screen"])
         rnd = random.Random(i * 11 + 3)
         if i == 0:  # a shooter: stars going by, a ship that dodges, a row that marches
@@ -3090,20 +3144,25 @@ class Continue(Pixel):
     def draw(self, a, p, c, t):
         dk = p.dark
         tints = (c["cyan"], c["green"], c["yellow"], c["text"], c["red"])
-        for i, x in enumerate(self.CABS):
+        for i, x in self.SLOTS:
             k = 0.1
             if i == 3 and 3.0 <= t < 13.0:
                 k = 0.14 if (t - 3.0) % 1.0 < 0.8 else 0.08
-            pglow(a, x + 32, 104, 46, tints[i], k if dk else k * 0.5, add=dk)
+            pglow(a, x + 32, 104 + self.DY, 46, tints[i], k if dk else k * 0.5, add=dk)
             fill(a, Mask().ell(x + 32, self.FLOOR + 10, 30, 6), tints[i], 0.12 if dk else 0.06)
             self.screen(a, c, i, t)
         # the neon on the back wall; its last letter is not well
         fl = (int(round(t * PFPS)) % (self.seconds * PFPS) % 61) in (7, 8, 30, 33, 34)
-        pglow(a, 240, 30, 60, c["neon"], 0.12 if dk else 0.05, add=dk)
+        nx, ny, gx, gy = self.NEON
+        pglow(a, gx, gy, 60, c["neon"], 0.12 if dk else 0.05, add=dk)
         for k, ch in enumerate("GAMES"):
             on = not (k == 4 and fl)
-            text(a, 196 + k * 18, 20, ch, c["neon"] if on else c["neondim"], scale=4)
-        # the claw, idling
+            text(a, nx + k * 18, ny, ch, c["neon"] if on else c["neondim"], scale=4)
+        if self.CLAW:
+            self.claw(a, c, t, dk)
+
+    def claw(self, a, c, t, dk):
+        """The claw, idling."""
         cx = 30 + 30 * (0.5 + 0.5 * math.sin(2 * math.pi * t / 12))
         vline(a, cx, 82, 92, c["textdim"])
         for dx, dy in ((-2, 0), (-1, 0), (0, 0), (1, 0), (2, 0), (-2, 1), (2, 1), (-2, 2), (2, 2)):
@@ -3129,9 +3188,21 @@ class Crossing(Pixel):
 
     name = "crossing"
     poster = 12.0
-    RAIL = 200
-    CROWS = (130, 190, 250, 310)
-    SX = 334
+    portrait = True
+
+    def layout(self, portrait):
+        """Where things are: landscape, or a portrait's tall dusk over a low horizon, one span of
+        wire high up between two poles, the crossing and the vending machine below."""
+        if portrait:
+            self.RAIL, self.CROWS, self.SX, self.SUN = 340, (70, 110, 150, 190), 196, (178, 302)
+            self.POLES, self.WIRES, self.ARM = (24, 246), ((63, 18), (63, 26), (73, 22)), 62
+            self.VEND, self.CLOUDS, self.TOWER, self.DUST = (44, 336), (40, 250), (62, 306), (110, 262, 230, 340)
+            self.SKY = ((0, "top"), (190, "mid"), (340, "low"))
+        else:
+            self.RAIL, self.CROWS, self.SX, self.SUN = 200, (130, 190, 250, 310), 334, (345, 168)
+            self.POLES, self.WIRES, self.ARM = (36, 444), ((33, 22), (33, 31), (43, 26)), 32
+            self.VEND, self.CLOUDS, self.TOWER, self.DUST = (70, 196), (30, 140), (150, 166), (200, 470, 95, 200)
+            self.SKY = ((0, "top"), (105, "mid"), (200, "low"))
 
     def colors(self, p):
         st = self.__dict__.setdefault("_c", {})
@@ -3158,59 +3229,63 @@ class Crossing(Pixel):
         return (ramp(c["top"], c["mid"], 4) + ramp(c["mid"], c["low"], 4) + ramp(c["low"], c["sun"], 4)[1:-1] + ramp(c["ground"], c["red"], 4)[1:-1]
                 + ramp(c["ground"], c["vend"], 4)[1:-1] + [mix(c["mid"], c["red"], 0.5), mix(c["low"], c["red"], 0.5), mix(c["train"], c["window"], 0.5)])
 
-    WIRES = ((33, 22), (33, 31), (43, 26))  # where each wire leaves the crossarm, and how far it sags
-
     def wire(self, x, k):
-        """A wire from pole to pole: it hangs, lowest halfway between them."""
+        """A wire from pole to pole: it hangs, lowest halfway between them (WIRES: where
+        each leaves the crossarm, and how far it sags)."""
         top, sag = self.WIRES[k]
-        u = (x - 240) / 204
+        p0, p1 = self.POLES
+        u = (x - (p0 + p1) / 2) / ((p1 - p0) / 2)
         return top + sag * (1 - u * u)
 
     def back(self, a, p, c):
         dk = p.dark
-        pgrad(a, 0, self.RAIL, [(0, c["top"]), (105, c["mid"]), (self.RAIL, c["low"])])
-        pglow(a, 345, 168, 60, c["sun"], 0.35 if dk else 0.45, add=False)
-        fill(a, Mask().ell(345, 168, 11, 11), c["sun"])
-        clouds(a, 21, 6, (30, 140), c["cloud"], c["cloudlit"], 0.95, lit_below=True, wmin=60, wmax=180)
+        pgrad(a, 0, self.RAIL, [(y, c[k]) for y, k in self.SKY])
+        sx, sy = self.SUN
+        pglow(a, sx, sy, 60, c["sun"], 0.35 if dk else 0.45, add=False)
+        fill(a, Mask().ell(sx, sy, 11, 11), c["sun"])
+        clouds(a, 21, 6, self.CLOUDS, c["cloud"], c["cloudlit"], 0.95, lit_below=True, wmin=60, wmax=180)
         rnd = random.Random(33)  # the roofs of the town beyond the line
         x = -6
         m, lit = Mask(), []
-        while x < PW:
+        while x < self.gw:
             w, h = rnd.randint(14, 28), rnd.randint(5, 10)
-            top = 186 - rnd.randint(0, 8)
+            top = self.RAIL - 14 - rnd.randint(0, 8)
             m.poly([(x, top + h // 2), (x + w // 2, top), (x + w, top + h // 2), (x + w, self.RAIL), (x, self.RAIL)])
             if rnd.random() < 0.5:
                 lit.append((x + rnd.randint(3, max(4, w - 4)), top + h // 2 + 3))
             x += w + rnd.randint(0, 3)
-        m.rect(150, 168, 3, 20).rect(146, 166, 11, 3)
+        tx, ty = self.TOWER
+        m.rect(tx, ty + 2, 3, 20).rect(tx - 4, ty, 11, 3)
         fill(a, m, c["ink2"])
         for lx, ly in lit:
             box(a, lx, ly, 2, 2, c["window"], 0.9 if dk else 0.5)
-        box(a, 0, self.RAIL, PW, PH - self.RAIL, c["field"])
+        gw, gh = self.gw, self.gh
+        box(a, 0, self.RAIL, gw, gh - self.RAIL, c["field"])
         rnd = random.Random(2)
         for i in range(300):
-            x, y = rnd.randrange(PW), rnd.randrange(self.RAIL + 8, PH)
+            x, y = rnd.randrange(gw), rnd.randrange(self.RAIL + 8, gh)
             put(a, x, y, c["ground"])
-        box(a, 0, self.RAIL, PW, 7, c["ground"])
-        for x in range(0, PW, 4):
+        box(a, 0, self.RAIL, gw, 7, c["ground"])
+        for x in range(0, gw, 4):
             box(a, x, self.RAIL + 2, 2, 4, c["ink2"])
-        hline(a, 0, PW, self.RAIL + 2, c["ink"])
-        hline(a, 0, PW, self.RAIL + 5, c["ink"])
-        fill(a, Mask().poly([(self.SX - 10, self.RAIL + 7), (self.SX + 6, self.RAIL + 7), (self.SX + 70, PH), (self.SX - 92, PH)]), c["road"])
+        hline(a, 0, gw, self.RAIL + 2, c["ink"])
+        hline(a, 0, gw, self.RAIL + 5, c["ink"])
+        fill(a, Mask().poly([(self.SX - 10, self.RAIL + 7), (self.SX + 6, self.RAIL + 7), (self.SX + 70, gh), (self.SX - 92, gh)]), c["road"])
         fill(a, Mask().rect(self.SX - 12, self.RAIL, 20, 7), c["road"])
         hline(a, self.SX - 12, self.SX + 8, self.RAIL + 2, c["ink"])
         hline(a, self.SX - 12, self.SX + 8, self.RAIL + 5, c["ink"])
         # the poles and wires, near, framing it
-        for x in (36, 444):
-            box(a, x - 2, 14, 5, PH - 14, c["ink"])
-            box(a, x - 14, 32, 29, 3, c["ink"])
-            box(a, x - 9, 42, 19, 2, c["ink"])
+        p0, p1 = self.POLES
+        for x in (p0, p1):
+            box(a, x - 2, self.ARM - 18, 5, gh - self.ARM + 18, c["ink"])
+            box(a, x - 14, self.ARM, 29, 3, c["ink"])
+            box(a, x - 9, self.ARM + 10, 19, 2, c["ink"])
         for k in range(3):
-            for x in range(36, 445):
+            for x in range(p0, p1 + 1):
                 put(a, x, self.wire(x, k), c["ink"])
 
     def front(self, a, c, dk):
-        x, y = 70, 196  # the vending machine, on our side of the line
+        x, y = self.VEND  # the vending machine, on our side of the line
         box(a, x, y, 18, 34, c["ink"])
         box(a, x + 2, y + 2, 14, 18, c["vend"], 0.95)
         for i in range(3):
@@ -3248,7 +3323,7 @@ class Crossing(Pixel):
         active = 8.0 <= t < 16.0
         u = window(t, 10.6, 14.6)
         if 0 < u < 1:  # the train, small and far, right to left
-            x0 = PW + 10 - (PW + 380) * u
+            x0 = self.gw + 10 - (self.gw + 380) * u
             for car in range(5):
                 cx = x0 + car * 70
                 box(a, cx, self.RAIL - 14, 68, 15, c["train"])
@@ -3274,7 +3349,7 @@ class Crossing(Pixel):
             sprite(a, int(x) - 4, int(y) - 5 - bob, CROW, {"k": c["ink"]}, kx)
         rnd = random.Random(71)
         for i in range(36):  # dust in the low sun
-            x0, y0 = rnd.uniform(200, 470), rnd.uniform(95, 200)
+            x0, y0 = rnd.uniform(*self.DUST[:2]), rnd.uniform(*self.DUST[2:])
             x = x0 + 10 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random())
             y = y0 + 5 * wave(t, 24 / rnd.choice((2, 3, 4)), rnd.random())
             if wave(t, 24 / rnd.choice((4, 6)), rnd.random()) > 0:
