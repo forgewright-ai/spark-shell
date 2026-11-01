@@ -1132,7 +1132,7 @@ if [ "$(uname -s)" != Darwin ]; then
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  wall  missing' && ok "status: wall missing" || bad "status wall missing" "$(sh "$SH" status | grep wall)"
     rc=0; out=$(sh "$SH" theme wallpaper /nowhere/at/all.jpg 2>&1) || rc=$?
     [ $rc = 1 ] && printf '%s\n' "$out" | grep -q 'not a readable file' && ok "theme wallpaper: a path that is not there is refused" || bad "wallpaper refuse missing" "$out"
-    [ $rc = 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell theme: /nowhere/at/all.jpg is not a readable file or a color\. Give a picture.s path, default (the ground), one of the drawings (skyline, fjord, forest, sunset, hills, dunes, ripples, contours, morning, meadow, kites, fields, grove, arches, shore, flight, embers), #rrggbb or one of these colors: black, white, gray, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange$' \
+    [ $rc = 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell theme: /nowhere/at/all.jpg is not a readable file or a color\. Give a picture.s path, default (the ground), one of the drawings (skyline, fjord, forest, sunset, hills, dunes, orbit, ripples, contours, morning, meadow, kites, fields, grove, arches, shore, flight, embers), #rrggbb or one of these colors: black, white, gray, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange$' \
         && [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = 1 ] && ok "theme wallpaper: the refusal is one line that lists what is accepted" || bad "wallpaper refusal words" "$out"
     # a path from where you are, and a quoted ~: saved as the full path
     printf x > "$pic"; printf x > "$HOME/pictures/two.png"
@@ -1200,7 +1200,11 @@ grep -q '@FONT@' "$REPO/templates/.config/foot/foot.ini" && grep -q '@FOOT_ALPHA
     && grep -q 'output \* bg @WALL_BG@' "$REPO/templates/.config/sway/config" && grep -q '^gaps inner @GAPS_INNER@' "$REPO/templates/.config/sway/config" \
     && ok "templates: foot.ini and sway/config carry placeholders, the hex and the wallpaper land at render time" || bad "desktop template placeholders"
 grep -q '^bar {' "$REPO/templates/.config/sway/config" && grep -q '^    position top' "$REPO/templates/.config/sway/config" && grep -q '^    status_command @REPO@/spark-shell bar status' "$REPO/templates/.config/sway/config" && ok "sway template: a bar at the top, drawn by spark-shell bar status" || bad "sway template: the bar block" "$(grep -n '^bar\|position\|status_command' "$REPO/templates/.config/sway/config")"
-grep -q '^xwayland disable$' "$REPO/templates/.config/sway/config" && ok "sway template: xwayland disabled" || bad "sway xwayland"
+grep -q '^xwayland enable$' "$REPO/templates/.config/sway/config" && ! grep -q '^xwayland disable' "$REPO/templates/.config/sway/config" && ok "sway template: Xwayland on, so Steam and other X11 apps open (#170)" || bad "sway xwayland"
+[ "$(grep -v '^$' "$REPO/templates/.config/sway/config" | tail -1)" = 'include @HOME@/.config/sway/config.d/*' ] && ok "sway template: your own lines in config.d, read last so they win (#170)" || bad "sway own lines" "$(tail -3 "$REPO/templates/.config/sway/config")"
+grep -qxF 'bindsym $mod+Left exec @REPO@/spark-shell desktop window left' "$REPO/templates/.config/sway/config" && grep -qxF 'bindsym $mod+Shift+space exec @REPO@/spark-shell desktop window float' "$REPO/templates/.config/sway/config" \
+    && ! grep -q '^bindsym $mod+\(Left\|Right\|Up\|Down\) focus' "$REPO/templates/.config/sway/config" && grep -qxF 'bindsym $mod+h focus left' "$REPO/templates/.config/sway/config" \
+    && ok "sway template: Super+arrow snaps the window and Super+Shift+space floats it through desktop window; the focus on Super+h/j/k/l (#182)" || bad "sway window keys" "$(grep -n 'mod+Left\|mod+Shift+space\|mod+h ' "$REPO/templates/.config/sway/config")"
 grep -v '^#' "$REPO/templates/.config/sway/config" | grep -q 'tmux' && bad "sway: a window starts tmux (it runs the login shell)" || ok "sway template: a new foot runs the login shell, never tmux"
 grep -q "^exec sh -c '\$term -e @REPO@/spark-shell desktop --first; swaymsg exit'$" "$REPO/templates/.config/sway/config" && ok "sway template: the desktop ends with its first terminal (desktop --first: the keys once, then your shell)" || bad "sway template: exec line" "$(grep -n '^exec' "$REPO/templates/.config/sway/config")"
 sway_t=$REPO/templates/.config/sway/config
@@ -2813,7 +2817,7 @@ printf '%s\n' "$out" | grep -q '^todo   sound        pulseaudio is installed, an
     && ok "Arch with pulseaudio: pipewire-pulse is left out of the install, one todo says how to take it" || bad "arch pulseaudio" "$out"
 grep -q '^PKG_SOUND=pipewire wireplumber alsa-pipewire libspa-bluetooth$' "$REPO/distro/void.env" && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa libspa-0.2-bluetooth$' "$REPO/distro/debian.env" \
     && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa$' "$REPO/distro/arch.env" && ok "distro: the sound's packages, each family's names" || bad "PKG_SOUND" "$(grep -h PKG_SOUND "$REPO"/distro/*.env)"
-grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils poppler mako libnotify udisks2 dbus xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk gsettings-desktop-schemas bluez python3-dbus python3-gobject$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, poppler, mako, notify-send, udisks2 and the session bus among them" || bad "void.env desktop"
+grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils poppler mako libnotify udisks2 dbus xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk gsettings-desktop-schemas bluez python3-dbus python3-gobject mpv mpvpaper xorg-server-xwayland xrandr$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, poppler, mako, notify-send, udisks2, the session bus, mpvpaper, Xwayland and xrandr among them" || bad "void.env desktop"
 
 fi
 
@@ -3030,6 +3034,15 @@ grep -qx "exec swayidle -w timeout 600 '$REPO/spark-shell desktop idle' resume '
     && grep -qx "# the keyboard: sway's own layout (spark-shell desktop keyboard us br sets some)" "$swc" \
     && grep -qxF 'for_window [app_id="spark-idle"] border none' "$swc" && grep -qx 'workspace idle gaps outer 0' "$swc" \
     && ok "sway render: swayidle brings the idle screen at 10 minutes and the lock with the display off at 15 by default, the idle window taken down behind the lock (#66); the idle workspace has no gaps and no border; the screens file included (and there), no keyboard line without KEYBOARD" || bad "display render" "$(grep -n 'swayidle\|include\|keyboard' "$swc")"
+# your own sway lines (#170): their folder made and read last; a render changed by hand kept as .bak at the next render, an unchanged one rendered again with none
+[ "$(grep -v '^$' "$swc" | tail -1)" = "include $HOME/.config/sway/config.d/*" ] && [ -d "$HOME/.config/sway/config.d" ] && grep -qx 'xwayland enable' "$swc" \
+    && ok "sway render: Xwayland on, and the folder for your own lines made and read last (#170)" || bad "sway own lines render" "$(grep -n 'xwayland\|config.d' "$swc")"
+echo '# a line of mine' >> "$swc"; rm -f "$swc.bak"
+L on --yes >/dev/null 2>&1 </dev/null || :
+grep -qx '# a line of mine' "$swc.bak" && ! grep -q 'a line of mine' "$swc" && grep -q 'rendered by spark-shell' "$swc" \
+    && ok "render: a file of ours changed by hand is kept as .bak before the new render (#170)" || bad "render by hand" "$(ls "$swc"* 2>&1)"
+rm -f "$swc.bak"; L on --yes >/dev/null 2>&1 </dev/null || :
+[ ! -e "$swc.bak" ] && ok "render: a render no one changed is rendered again with no .bak (#170)" || bad "render unchanged" "$(ls "$swc"* 2>&1)"
 rm -f "$HOME/swaymsg.log"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop display idle 0 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'idle screen never' ] && grep -qx 'DISPLAY_IDLE=0' "$HOME/.config/spark-shell/config" \
@@ -3204,6 +3217,19 @@ _mf=$HOME/.config/spark-shell/screens.conf
     && grep -qxF 'workspace 1 output "Lenovo Group Limited T24i-30 V30A1"' "$H/root/etc/spark-shell/login/screens.conf" && ! grep -q '^exec' "$H/root/etc/spark-shell/login/screens.conf" \
     && grep -qF 'workspace 1 output "Lenovo Group Limited T24i-30 V30A1"' "$HOME/swaymsg.log" \
     && ok "desktop screen main: workspace 1 and the focus at the start on it, the one before gone, the other lines kept; the login screen's copy names it for its form (#135)" || bad "screen main" "rc=$rc $out $(cat "$_mf") | $(cat "$H/root/etc/spark-shell/login/screens.conf" 2>&1)"
+# X11's main screen (#173): the main screen named X11's primary once Xwayland runs, by its port; once only; nothing with no X11 or no xrandr
+mkdir -p "$H/xr"
+printf '#!/bin/sh\necho "$*" >> "$HOME/xrandr.log"\n[ "$1" != --listmonitors ] || cat "$HOME/xrandr.monitors" 2>/dev/null\n' > "$H/xr/xrandr"; chmod +x "$H/xr/xrandr"
+rm -f "$HOME/xrandr.log" "$HOME/xrandr.monitors"
+DISPLAY=:9 SWAYSOCK=$H/sock PATH="$H/xr:$H/lx:$PATH" sh "$SH" desktop screen --x11-main >/dev/null 2>&1 || :
+_x1=$(grep -c -- '--output HDMI-A-1 --primary' "$HOME/xrandr.log" 2>/dev/null || :)
+printf ' 0: +*HDMI-A-1 1920/531x1080/299+1920+0  HDMI-A-1\n' > "$HOME/xrandr.monitors"; rm -f "$HOME/xrandr.log"
+DISPLAY=:9 SWAYSOCK=$H/sock PATH="$H/xr:$H/lx:$PATH" sh "$SH" desktop screen --x11-main >/dev/null 2>&1 || :
+_x2=$(grep -c -- '--primary' "$HOME/xrandr.log" 2>/dev/null || :)
+rm -f "$HOME/xrandr.log"; (unset DISPLAY; SWAYSOCK=$H/sock PATH="$H/xr:$H/lx:$PATH" sh "$SH" desktop screen --x11-main >/dev/null 2>&1) || :
+[ "$_x1" = 1 ] && [ "$_x2" = 0 ] && [ ! -e "$HOME/xrandr.log" ] && grep -qxF 'for_window [shell="xwayland"] exec @REPO@/spark-shell desktop screen --x11-main' "$REPO/templates/.config/sway/config" \
+    && ok "desktop screen: the main screen is X11's primary once an X11 window starts, by its port, once; nothing with no X11 (#173)" || bad "screen x11 main" "x1=$_x1 x2=$_x2 $(cat "$HOME/xrandr.log" 2>&1)"
+rm -f "$HOME/xrandr.log" "$HOME/xrandr.monitors"
 grep -qF 'sed -n '"'"'s/^workspace 1 output "\(.*\)"$/\1/p'"'"' /@LOGIN_ETC@/screens.conf' "$REPO/templates/login/window" \
     && ok "login window: its form goes to the main screen screens.conf names, else the one at 0 0 (#135)" || bad "login window main" "$(head -12 "$REPO/templates/login/window")"
 grep -v '^LOGIN=' "$HOME/.config/spark-shell/config" > "$H/cfg.tmp" && cat "$H/cfg.tmp" > "$HOME/.config/spark-shell/config"; rm -rf "$H/root/etc/spark-shell/login"
@@ -3257,6 +3283,95 @@ rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/screens-one:$H/lx:$PATH" sh "$SH" desktop 
 [ "$rc" = 1 ] && [ ! -e "$H/one-screen.log" ] && ok "display: the last active screen cannot be disabled" || bad "display last screen" "$out"
 SCREEN_ACTIVE=false SWAYSOCK=$H/sock PATH="$H/screens-one:$H/lx:$PATH" sh "$SH" desktop screen --ensure-visible >/dev/null
 grep -q 'enable' "$H/one-screen.log" && ok "display: login recovers an all-off set of connected screens" || bad "display recovery"
+# the layout's left and top edges at 0 (#171): a screen left of 0 moves with every other by the same amount
+mkdir -p "$H/screens-left"
+cat > "$H/screens-left/swaymsg" <<'LEFT_STUB'
+#!/bin/sh
+case "$*" in
+    '-t get_version') echo '{}' ;;
+    '-t get_outputs') echo '[{"name":"DP-3","make":"Test","model":"Tall","serial":"2","active":true,"scale":1,"rect":{"x":-1200,"y":0,"width":1200,"height":1920},"current_mode":{"width":1920,"height":1200},"modes":[]},{"name":"HDMI-A-1","make":"Test","model":"Screen","serial":"1","active":true,"scale":1,"rect":{"x":0,"y":0,"width":1920,"height":1080},"current_mode":{"width":1920,"height":1080},"modes":[]}]' ;;
+    *) echo "$*" >> "$HOME/left-screen.log" ;;
+esac
+LEFT_STUB
+chmod +x "$H/screens-left/swaymsg"
+cp "$HOME/.config/spark-shell/screens.conf" "$H/screens.keep" 2>/dev/null || :
+printf '%s\n' '# rendered by spark-shell: the screens' 'output "Test Tall 2" transform 270' 'output "Test Tall 2" position -1200 0' '# beside "Test Tall 2" left-of "Test Screen 1"' > "$HOME/.config/spark-shell/screens.conf"
+rm -f "$HOME/left-screen.log"
+SWAYSOCK=$H/sock PATH="$H/screens-left:$H/lx:$PATH" sh "$SH" desktop screen --ensure-visible >/dev/null 2>&1 || :
+_sl=$HOME/.config/spark-shell/screens.conf
+grep -qxF -- '-- output "Test Tall 2" position 0 0' "$HOME/left-screen.log" && grep -qxF -- '-- output "Test Screen 1" position 1200 0' "$HOME/left-screen.log" \
+    && grep -qxF 'output "Test Tall 2" position 0 0' "$_sl" && grep -qxF 'output "Test Screen 1" position 1200 0' "$_sl" && ! grep -q 'position -' "$_sl" \
+    && grep -qxF 'output "Test Tall 2" transform 270' "$_sl" && grep -qxF '# beside "Test Tall 2" left-of "Test Screen 1"' "$_sl" \
+    && ok "desktop screen: at the start a screen left of 0 moves with every other by the same amount, its turn and beside line kept (#171)" || bad "screen origin" "$(cat "$HOME/left-screen.log" 2>&1) | $(cat "$_sl")"
+rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/screens-left:$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 scale 1 2>&1) || rc=$?
+[ "$rc" = 0 ] && printf '%s\n' "$out" | grep -qx 'every screen moved by the same amount, so none sits left of or above 0 (X11 apps take clicks there)' \
+    && ok "desktop screen: a change that leaves a screen left of 0 moves them all and says so (#171)" || bad "screen origin said" "rc=$rc $out"
+rm -f "$HOME/left-screen.log"; SWAYSOCK=$H/sock PATH="$H/screens-one:$H/lx:$PATH" sh "$SH" desktop screen --ensure-visible >/dev/null 2>&1 || :
+[ ! -e "$HOME/left-screen.log" ] && ! grep -q 'position' "$H/one-screen.log" && ok "desktop screen: a layout already at 0 is left as it is (#171)" || bad "screen origin none" "$(cat "$H/one-screen.log")"
+[ ! -f "$H/screens.keep" ] || cp "$H/screens.keep" "$_sl"
+# the window keys (#182): a snap is one sway command to the focused window, its half of the workspace's area; float toggles at two thirds, centered
+mkdir -p "$H/win"
+cat > "$H/win/swaymsg" <<'WIN_STUB'
+#!/bin/sh
+case "$*" in
+    '-t get_version') echo '{}' ;;
+    '-t get_tree') cat "$HOME/win-tree.json" ;;
+    *) echo "$*" >> "$HOME/win.log" ;;
+esac
+WIN_STUB
+chmod +x "$H/win/swaymsg"
+win_tree() { printf '{"type":"root","nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","id":3,"num":1,"rect":{"x":1216,"y":42,"width":1888,"height":1022},"nodes":[{"type":"%s","id":7,"focused":%s,"fullscreen_mode":%s,"nodes":[]}],"floating_nodes":[]}]}]}\n' "$1" "$2" "$3" > "$HOME/win-tree.json"; }
+win_run() { rm -f "$HOME/win.log"; rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/win:$H/lx:$PATH" sh "$SH" desktop window "$@" 2>&1) || rc=$?; }
+win_tree con true 0
+win_run left; _wl=$(cat "$HOME/win.log" 2>/dev/null)
+win_run right; _wr=$(cat "$HOME/win.log" 2>/dev/null)
+win_run up; _wu=$(cat "$HOME/win.log" 2>/dev/null)
+win_run down; _wd=$(cat "$HOME/win.log" 2>/dev/null)
+[ "$_wl" = '-- [con_id=7] floating enable, resize set width 944 px height 1022 px, move absolute position 1216 42' ] \
+    && [ "$_wr" = '-- [con_id=7] floating enable, resize set width 944 px height 1022 px, move absolute position 2160 42' ] \
+    && [ "$_wu" = '-- [con_id=7] floating enable, resize set width 1888 px height 511 px, move absolute position 1216 42' ] \
+    && [ "$_wd" = '-- [con_id=7] floating enable, resize set width 1888 px height 511 px, move absolute position 1216 553' ] && [ "$out" = 'the window is on the bottom half' ] \
+    && ok "desktop window left, right, up, down: the focused window floats at that half of its workspace's area, one command by its con_id (#182)" || bad "window snap" "$_wl | $_wr | $_wu | $_wd | $out"
+win_run float
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=7] floating enable, resize set width 1258 px height 681 px, move position center' ] && [ "$out" = 'the window is floating' ] \
+    && ok "desktop window float: a tiled window floats at two thirds of its workspace, centered (#182)" || bad "window float" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+win_tree floating_con true 0; win_run float
+[ "$rc" = 0 ] && [ "$(cat "$HOME/win.log")" = '-- [con_id=7] floating disable' ] && [ "$out" = 'the window is tiled' ] && ok "desktop window float: a floating window tiles again (#182)" || bad "window tile" "rc=$rc $out $(cat "$HOME/win.log" 2>&1)"
+win_tree con true 1; win_run left
+[ "$(cat "$HOME/win.log")" = '-- [con_id=7] fullscreen disable, floating enable, resize set width 944 px height 1022 px, move absolute position 1216 42' ] && ok "desktop window: a full screen window leaves full screen before its snap (#182)" || bad "window full" "$(cat "$HOME/win.log" 2>&1)"
+win_tree con false 0; win_run left
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: no window has the focus' ] && [ ! -e "$HOME/win.log" ] && ok "desktop window: no window with the focus, refused in one line, nothing sent (#182)" || bad "window none" "rc=$rc $out"
+win_run sideways
+[ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: window takes float, left, right, up or down' ] && ok "desktop window: a wrong word refused in one line (#182)" || bad "window word" "rc=$rc $out"
+# the moving wallpaper (#180): the loop made in the background from the drawing's frames, played by mpvpaper on every screen;
+# a second start finds it playing; off stops it; on again plays the loop from the cache, made once
+mkdir -p "$H/mo" "$H/motmp" "$H/run"
+printf '#!/bin/sh\ncase "$*" in "-t get_version") echo "{}" ;; esac\n' > "$H/mo/swaymsg"
+printf '#!/bin/sh\nfor a; do d=$a; done; echo "<svg/>" > "$d/f0000.svg"; echo "<svg/>" > "$d/f0001.svg"\n' > "$H/mo/python3"
+printf '#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" != -o ] || { shift; cat > "$1"; }; shift; done\n' > "$H/mo/rsvg-convert"
+printf '#!/bin/sh\necho "$*" >> "$HOME/mpv.log"; for a; do case $a in --o=*) echo loop > "${a#--o=}" ;; esac; done\n' > "$H/mo/mpv"
+printf '#!/bin/sh\necho "$*" >> "$HOME/mpvpaper.log"\nwhile :; do sleep 1; done\n' > "$H/mo/mpvpaper"
+chmod +x "$H/mo/swaymsg" "$H/mo/python3" "$H/mo/rsvg-convert" "$H/mo/mpv" "$H/mo/mpvpaper"
+cp "$HOME/.config/spark-shell/config" "$H/cfg.mo"; printf 'DESKTOP=sway\nTHEME=dracula\nWALLPAPER=orbit\nWALLPAPER_MOTION=on\n' > "$HOME/.config/spark-shell/config"
+rm -f "$HOME/mpv.log" "$HOME/mpvpaper.log"; _mdir=${XDG_CACHE_HOME:-$HOME/.cache}/spark-shell/motion
+mo() { TMPDIR=$H/motmp XDG_RUNTIME_DIR=$H/run SWAYSOCK=$H/sock PATH="$H/mo:$H/lx:$PATH" sh "$SH" "$@"; }
+mo_wait() { _i=0; while [ "$_i" -lt 50 ] && [ "$(grep -c '' "$HOME/mpvpaper.log" 2>/dev/null || echo 0)" -lt "$1" ]; do sleep 0.2; _i=$((_i + 1)); done; }
+mo desktop --motion >/dev/null 2>&1; mo_wait 1
+_ml=$(sed -n 1p "$HOME/mpvpaper.log" 2>/dev/null)
+case $_ml in "-p -o no-audio loop panscan=1.0 ALL $_mdir/orbit-"*.mp4) _mok=1 ;; *) _mok='' ;; esac
+[ -n "$_mok" ] && [ -f "${_ml##* }" ] && [ "$(grep -c '' "$HOME/mpv.log")" = 1 ] && grep -q 'mf://.* --mf-fps=30 .*--ovc=libx264' "$HOME/mpv.log" && [ -z "$(ls "$H/motmp")" ] \
+    && ok "desktop --motion: the drawing's frames drawn and made into a loop by mpv in the background, kept in the cache, played by mpvpaper on every screen, the frames gone (#180)" || bad "motion start" "$_ml | $(cat "$HOME/mpv.log" 2>&1) | $(ls "$H/motmp")"
+mo desktop --motion >/dev/null 2>&1; sleep 0.5
+[ "$(grep -c '' "$HOME/mpvpaper.log")" = 1 ] && ok "desktop --motion: a loop already playing is left as it is (#180)" || bad "motion twice" "$(cat "$HOME/mpvpaper.log")"
+rc=0; out=$(mo theme motion off 2>&1) || rc=$?; sleep 0.5
+[ "$rc" = 0 ] && [ "$out" = 'moving wallpaper off' ] && grep -qx 'WALLPAPER_MOTION=off' "$HOME/.config/spark-shell/config" && [ -z "$(pgrep -u "$(id -u)" -f "mpvpaper .*$_mdir/")" ] && [ ! -e "$H/run/spark-shell-motion.want" ] \
+    && ok "theme motion off: the loop's player stopped, the still shows (#180)" || bad "motion off" "rc=$rc $out $(pgrep -u "$(id -u)" -f "mpvpaper .*$_mdir/")"
+rc=0; out=$(mo theme motion on 2>&1) || rc=$?; mo_wait 2
+[ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^moving wallpaper on .* orbit moves$' && [ "$(grep -c '' "$HOME/mpvpaper.log")" = 2 ] && [ "$(grep -c '' "$HOME/mpv.log")" = 1 ] \
+    && ok "theme motion on: the loop in the cache plays again, never made twice (#180)" || bad "motion cache" "rc=$rc $out $(cat "$HOME/mpvpaper.log" "$HOME/mpv.log" 2>&1)"
+mo theme motion off >/dev/null 2>&1 || :
+for _mp in $(pgrep -u "$(id -u)" -f "$H/mo/mpvpaper"); do kill "$_mp" 2>/dev/null || :; done
+cp "$H/cfg.mo" "$HOME/.config/spark-shell/config"
 # two screens with one name (no serial, the same model): each by its port, never both at once
 sed -i.bak 's/"make":"BOE","model":"0x0BCA","serial":""/"make":"Lenovo Group Limited","model":"T24i-30","serial":"V30A1"/' "$H/lx/swaymsg"; rm -f "$H/lx/swaymsg.bak" "$HOME/swaymsg.log"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop screen hdmi-a-1 scale 2 2>&1) || rc=$?
@@ -3548,8 +3663,8 @@ spark-shell changes how this machine works:
                poppler otf-monaspace mako libnotify udisks2 xdg-desktop-portal
                xdg-desktop-portal-wlr xdg-desktop-portal-gtk
                gsettings-desktop-schemas bluez bluez-utils python-dbus
-               python-gobject pipewire wireplumber pipewire-pulse pipewire-alsa
-               (sudo)
+               python-gobject xorg-xwayland xorg-xrandr pipewire wireplumber
+               pipewire-pulse pipewire-alsa (sudo)
   login        logging in on tty1 starts the desktop
                Alt+F2 is a plain shell
 
@@ -4294,12 +4409,13 @@ _wb=''
 for n in $(sed -n 's/^WALL_SHIPPED="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | cut -d: -f1); do
     [ -f "$REPO/wallpaper/$n.svg" ] && [ -f "$REPO/wallpaper/$n.png" ] && [ "$(od -An -tu1 -j16 -N8 "$REPO/wallpaper/$n.png" | tr -s ' \n' ' ' | sed 's/^ //; s/ $//')" = '0 0 15 0 0 0 8 112' ] || _wb="$_wb $n"
 done
-[ -z "$_wb" ] && [ "$(ls "$REPO/wallpaper" | wc -l | tr -d ' ')" = 34 ] && ok "wallpaper/: the 17 shipped wallpapers, each its SVG and a 3840 by 2160 PNG, nothing else" || bad "wallpaper files" "$_wb $(ls "$REPO/wallpaper")"
+for _mf in "$REPO"/wallpaper/motion/*; do _mn=${_mf##*/}; case $_mn in *.py) wall_n=${_mn%.py}; grep -q "[ \"]$wall_n:" "$SH" || _wb="$_wb motion/$_mn" ;; *) _wb="$_wb motion/$_mn" ;; esac; done
+[ -z "$_wb" ] && [ "$(ls "$REPO/wallpaper" | wc -l | tr -d ' ')" = 37 ] && ok "wallpaper/: the 18 shipped wallpapers, each its SVG and a 3840 by 2160 PNG, and motion/ with a script of a shipped one alone (#180)" || bad "wallpaper files" "$_wb $(ls "$REPO/wallpaper" "$REPO/wallpaper/motion")"
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 133 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 133 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 134 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 134 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -4843,7 +4959,7 @@ for kv in DIALOG_ATTACH=maybe DIALOG_MODEL=1 DIALOG_TALK=off 'DIALOG_ATTACH_TYPE
 done
 ok "config: DIALOG_ATTACH, DIALOG_MODEL and DIALOG_TALK take yes or no, DIALOG_ATTACH_TYPES lower-case types; anything else is refused in one line"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u BAR_GLYPHS -u BAR_WORKSPACES -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" && grep -q '^DIALOG_ANIMATION=$' "$REPO/config.example" && grep -q '^BAR_GLYPHS=signs$' "$REPO/config.example" && grep -q '^BAR_WORKSPACES=symbols$' "$REPO/config.example" \
+grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u BAR_GLYPHS -u BAR_WORKSPACES -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" && grep -q '^DIALOG_ANIMATION=$' "$REPO/config.example" && grep -q '^BAR_GLYPHS=signs$' "$REPO/config.example" && grep -q '^BAR_WORKSPACES=symbols$' "$REPO/config.example" && grep -q '^WALLPAPER_MOTION=off$' "$REPO/config.example" \
     && ok "config: the dialog's five keys and the bar's two (#160) are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
 # the local gate (#155): every python3 test ci.yml runs is in the gate's list, read from ci.yml itself, with the lint and the
 # dialog's checks; the pre-push hook runs its quick part
@@ -5748,6 +5864,26 @@ if [ "$(uname -s)" != Darwin ]; then
     printf 'BAR_GLYPHS=letters\n' >> "$cfg"; st=0; out=$(sh "$SH" theme 2>&1) || st=$?
     [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q 'BAR_GLYPHS=letters in .*: signs or words' && ok "config: BAR_GLYPHS other than signs or words is refused in one line (#160)" || bad "bar glyphs refuse" "st=$st $out"
     sed -i.bak '/^BAR_GLYPHS=letters$/d' "$cfg"; rm -f "$cfg.bak"
+    # the moving wallpaper (#180): a value in Settings > theme that left and right change; a step with its undo, the same value
+    # again a refusal; kept with a saved theme; refused in one line where the tools are not here; a wrong word in the config refused
+    jq -e '.rows[] | select(.id == "theme:show:Moving wallpaper") | .step == {value: "off", less: {name: "theme_motion", arguments: {to: "off"}}, more: {name: "theme_motion", arguments: {to: "on"}}, words: ["off", "on"]} and .tool == null' "$H/trows.json" >/dev/null \
+        && ok "provide theme rows (#180): Moving wallpaper, a value that left and right change" || bad "motion row" "$(jq -c '[.rows[] | select(.id | test("Moving"))]' "$H/trows.json")"
+    mkdir -p "$H/mot"; for t in python3 rsvg-convert mpv mpvpaper; do printf '#!/bin/sh\nexit 0\n' > "$H/mot/$t"; chmod +x "$H/mot/$t"; done
+    ( PATH=$H/mot:$PATH; mcp theme "$(call 1 theme_motion '{"to":"on"}')" "$(call 2 theme_motion '{"to":"on"}')" )
+    ans 1 | jq -r '.result.structuredContent.receipt' | grep -q '^moving wallpaper on .* dunes is still; orbit moves$' && ans 1 | jq -e '.result.structuredContent.undo | .name == "theme_motion" and .arguments.to == "off"' >/dev/null \
+        && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'the moving wallpaper is on already' ] && grep -qx 'WALLPAPER_MOTION=on' "$cfg" \
+        && ok "provide theme_motion (#180): a step with its receipt (the drawing in use still, the ones that move named) and undo, kept in the config; the same value again refused" || bad "motion step" "$(cut -c1-300 "$H/mcp.out")"
+    sh "$SH" theme save motionlook >/dev/null 2>&1; sh "$SH" theme motion off >/dev/null 2>&1; sh "$SH" theme motionlook >/dev/null 2>&1
+    grep -qx 'WALLPAPER_MOTION=on' "$th_dir/motionlook/look.env" && grep -qx 'WALLPAPER_MOTION=on' "$cfg" && ok "theme save keeps the moving wallpaper, and the theme brings it back (#180)" || bad "motion look kept" "$(cat "$th_dir/motionlook/look.env" 2>&1; grep MOTION "$cfg")"
+    sh "$SH" theme dracula >/dev/null 2>&1; sh "$SH" theme delete motionlook </dev/null >/dev/null 2>&1; sh "$SH" theme motion off >/dev/null 2>&1
+    if ! command -v mpvpaper >/dev/null 2>&1; then
+        rc=0; out=$(sh "$SH" theme motion on 2>&1) || rc=$?
+        [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'the moving wallpaper needs ' && grep -qx 'WALLPAPER_MOTION=off' "$cfg" \
+            && ok "theme motion on: refused in one line where mpvpaper is not here, the setting left off (#180)" || bad "motion skip" "rc=$rc $out"
+    fi
+    printf 'WALLPAPER_MOTION=fast\n' >> "$cfg"; st=0; out=$(sh "$SH" theme 2>&1) || st=$?
+    [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q 'WALLPAPER_MOTION=fast in .*: on or off' && ok "config: WALLPAPER_MOTION other than on or off is refused in one line (#180)" || bad "motion refuse" "st=$st $out"
+    sed -i.bak '/^WALLPAPER_MOTION=fast$/d' "$cfg"; rm -f "$cfg.bak"
     sh "$SH" theme wallpaper dunes >/dev/null 2>&1
     mcp theme "$(call 1 theme_wallpaper '{"name":"sunset"}')" "$(call 2 theme_wallpaper '{"name":"nowhere"}')" "$(call 3 theme_wallpaper '{"name":"sunset"}')" "$(call 4 theme_palette '{"name":"dracula"}')"
     [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'the wallpaper is sunset' ] && grep -qx 'WALLPAPER=dunes' "$cfg" && [ "$(ans 1 | jq -c '.result.structuredContent.undo')" = '{"name":"theme_wallpaper","arguments":{"name":"dunes"}}' ] \
@@ -6180,7 +6316,7 @@ STUB
     [ "$rc" = 0 ] && [ -z "$out" ] && [ "$(ls -ld "$M" | cut -c1-10)" = drwx------ ] && [ "$(ls -l "$mf" | cut -c1-10)" = -rw------- ] && [ "$(ls -l "$mn" | cut -c1-10)" = -rw------- ] \
         && [ "$(ls -A "$M" | paste -sd' ' -)" = 'spark-shell.facts spark-shell.now' ] \
         && ok "desktop --machine: spark-shell.facts and spark-shell.now, 0600 each, in a folder it made 0700, nothing else left there (#159)" || bad "machine files" "rc=$rc $out $(ls -la "$M" 2>&1)"
-    grep -qx -- '- Session: sway 1.12 on Wayland (no X11: X11 tools do not work here), set up by spark-shell\( v[0-9.]*\)\{0,1\}; screenshots grim, clipboard wl-copy, notifications notify-send, swaymsg.' "$mf" \
+    grep -qx -- '- Session: sway 1.12 on Wayland (X11 apps run through Xwayland), set up by spark-shell\( v[0-9.]*\)\{0,1\}; screenshots grim, clipboard wl-copy, notifications notify-send, swaymsg.' "$mf" \
         && grep -qxF -- '- Screens: DP-3 = Fakemake Portable 16, on the left, turned 270, portrait, 1920x1200; HDMI-A-1 = Othermake Desk 24, on the right, 1920x1080.' "$mf" \
         && grep -qxF -- '- spark-shell is this desktop: the bar at the top; the dialog (Super+d) is the launcher and the settings, Super+s spark chat in it.' "$mf" \
         && grep -qxF -- '- Keys: Super+Return opens a terminal window. Super+Shift+q closes the window. Super+1..0 go to workspaces 1 to 10; with Shift the window goes there. Super+Escape locks the screen. Print captures the screen, Shift+Print an area, Super+Print the window. Super+Ctrl+space goes to the next keyboard layout. The volume and mute keys set the sound. The brightness keys set the screen'"'"'s brightness.' "$mf" \
@@ -6200,7 +6336,7 @@ STUB
         && ! grep -qE '^- spark-shell (theme|font|layout|notes|reminders|desktop|bar|dialog) ' "$mf" && [ "$(grep -n '^- A change ' "$mf" | cut -d: -f1)" -lt "$(grep -n '^- Keys: ' "$mf" | cut -d: -f1)" ] \
         && ok "facts: how to read the state; spark-shell's own ways to read and list, from its help; a change is the setting's MCP tool, spark-shell's command only where no tool does it (the font, the dialog, the idle screen now); then the keys (#159)" || bad "facts commands" "$(cat "$mf")"
     mv "$HOME/.config/spark/mcp.env" "$H/mcp.env.kept"; rm -rf "$H/m2"; SPARK_MACHINE_DIR=$H/m2 SWAYSOCK=$H/sock sh "$SH" desktop --machine >/dev/null 2>&1
-    grep -qxF -- '- spark-shell theme [NAME|none|list|save [NAME]|delete NAME|back|wallpaper X|text N|transparency N|glyphs SET|workspaces X|picture PATH|"WORDS"]' "$H/m2/spark-shell.facts" \
+    grep -qxF -- '- spark-shell theme [NAME|none|list|save [NAME]|delete NAME|back|wallpaper X|text N|transparency N|glyphs SET|workspaces X|motion on|off|picture PATH|"WORDS"]' "$H/m2/spark-shell.facts" \
         && grep -qF -- '- spark-shell desktop lock; capture screen|area|window; display [idle|lock N|saver [NAME]|brightness N|up|down]; keyboard [' "$H/m2/spark-shell.facts" \
         && grep -qxF -- '- Reading state: swaymsg -t get_outputs|get_workspaces|get_tree|get_inputs, wpctl status, bluetoothctl show.' "$H/m2/spark-shell.facts" \
         && ! grep -q '^- A change ' "$H/m2/spark-shell.facts" && [ "$(wc -m < "$H/m2/spark-shell.facts" | tr -d ' ')" -le 3000 ] \

@@ -22,6 +22,7 @@
 #   spark-shell theme transparency N  the windows' transparency; more, less
 #   spark-shell theme glyphs SET      the bar in signs or in words
 #   spark-shell theme workspaces X    the workspaces as symbols or numbers
+#   spark-shell theme motion on|off   a moving wallpaper, where a drawing moves
 #   spark-shell theme picture PATH    a theme from a picture of yours
 #   spark-shell theme "WORDS"         a theme from words, read by spark
 #   spark-shell font FACE SIZE|none   set the console font, or use its own
@@ -70,6 +71,8 @@
 #                                     clock preferences and native time zone
 #   spark-shell desktop screen [NAME scale N|mode WxH|on|off|left-of NAME]
 #                                     list the screens, or set one
+#   spark-shell desktop window float|left|right|up|down
+#                                     float or tile the window, or snap it
 #   spark-shell desktop notifications [do-not-disturb on|off|dismiss|restore]
 #                                     do not disturb, and the last few
 #   spark-shell desktop storage [mount|unmount|open|eject NAME]
@@ -174,7 +177,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u BAR_GLYPHS -u BAR_WORKSPACES -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u BAR_GLYPHS -u BAR_WORKSPACES -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'
 
 # This machine's short name (the twin of spark lib/env.sh short_host). On
 # a Mac, LocalHostName, by scutil's full path: /usr/sbin is not on every
@@ -237,6 +240,8 @@ config_load() {
     : "${BAR_GLYPHS:=signs}" "${BAR_WORKSPACES:=symbols}"   # the bar's glyphs and its workspaces' names, kept with a saved theme (#160)
     case $BAR_GLYPHS in signs|words) ;; *) echo "spark-shell: BAR_GLYPHS=$BAR_GLYPHS in $CONFIG: signs or words" >&2; exit 1 ;; esac
     case $BAR_WORKSPACES in symbols|numbers) ;; *) echo "spark-shell: BAR_WORKSPACES=$BAR_WORKSPACES in $CONFIG: symbols or numbers" >&2; exit 1 ;; esac
+    : "${WALLPAPER_MOTION:=off}"   # a moving wallpaper where the drawing has one (#180), kept with a saved theme
+    case $WALLPAPER_MOTION in on|off) ;; *) echo "spark-shell: WALLPAPER_MOTION=$WALLPAPER_MOTION in $CONFIG: on or off" >&2; exit 1 ;; esac
     : "${DO_NOT_DISTURB:=no}"   # the notifications kept out of sight, as mako's do-not-disturb mode, across logins (#71)
     for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK LOGIN DO_NOT_DISTURB; do
         eval "v=\$$k"
@@ -262,7 +267,7 @@ config_load() {
         input_valid "$k" "$v" || { echo "spark-shell: invalid $k in $CONFIG" >&2; exit 1; }
     done
     export POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE KEY_CAPS
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK DIALOG_ANIMATION BAR_GLYPHS BAR_WORKSPACES LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK DIALOG_ANIMATION BAR_GLYPHS BAR_WORKSPACES WALLPAPER_MOTION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB
 }
 ANIMATION_NAMES='moon ripple tide embers sun flight'   # assets/transitions' pieces, in the order the theme's row steps through them; none is no motion (#122)
 # The piece each palette brings, as it brings its drawing (#122): picked for the drawing's mood, the
@@ -432,7 +437,7 @@ WALL_KEYS="WALL_BG GAPS_INNER GAPS_OUTER FOOT_ALPHA BAR_ALPHA BORDER BORDER_HEX 
 WALL_NAMES="black white gray silver navy blue teal green olive maroon red purple brown orange"   # one name a color: grey is still read as gray, never listed twice
 # the wallpapers spark-shell ships in wallpaper/, each NAME:PALETTE:SAMPLE, the palette it was drawn
 # for and its main color for the sample on its row; WALLPAPER stores the name, so it follows the clone
-WALL_SHIPPED="skyline:tokyonight-night:7aa2f7 fjord:nord:88c0d0 forest:everforest-dark:a7c080 sunset:gruvbox-dark:fe8019 hills:catppuccin-mocha:f5c2e7 dunes:dracula:ff79c6 ripples:rose-pine:ebbcba contours:selenized-dark:41c7b9 morning:solarized-light:b58900 meadow:catppuccin-latte:ea76cb kites:tokyonight-day:2e7de9 fields:gruvbox-light:d79921 grove:everforest-light:8da101 arches:rose-pine-dawn:d7827e shore:selenized-light:009c8f flight:one-light:4078f2 embers:any:d24a2a"
+WALL_SHIPPED="skyline:tokyonight-night:7aa2f7 fjord:nord:88c0d0 forest:everforest-dark:a7c080 sunset:gruvbox-dark:fe8019 hills:catppuccin-mocha:f5c2e7 dunes:dracula:ff79c6 orbit:dracula:bd93f9 ripples:rose-pine:ebbcba contours:selenized-dark:41c7b9 morning:solarized-light:b58900 meadow:catppuccin-latte:ea76cb kites:tokyonight-day:2e7de9 fields:gruvbox-light:d79921 grove:everforest-light:8da101 arches:rose-pine-dawn:d7827e shore:selenized-light:009c8f flight:one-light:4078f2 embers:any:d24a2a"
 wall_shipped() { for _e in $WALL_SHIPPED; do [ "${_e%%:*}" != "$1" ] || return 0; done; return 1; }   # wall_shipped NAME -> 0 for a wallpaper spark-shell ships
 wall_shipped_names() { for _e in $WALL_SHIPPED; do printf '%s\n' "${_e%%:*}"; done; }
 wall_for_palette() { for _e in $WALL_SHIPPED; do _r=${_e#*:}; [ "${_r%%:*}" != "$1" ] || { printf '%s' "${_e%%:*}"; return 0; }; done; return 1; }   # wall_for_palette PALETTE -> the drawing drawn for it; false for a palette with none
@@ -452,13 +457,13 @@ wall_role_hex() {   # wall_role_hex ROLE PALETTE_FILE -> rrggbb: bg, fg, accent,
         *) palette_get "$2" "THEME_$(printf '%s' "$1" | tr 'a-z' 'A-Z')" | tr -d '#' | tr 'A-F' 'a-f' ;;
     esac
 }
-wall_recolor() {   # wall_recolor SVG PALETTE_FILE -> the drawing on stdout in that palette: each color of its roles line (the second line of every shipped SVG) by its role
+wall_recolor_sed() {   # wall_recolor_sed SVG PALETTE_FILE -> the sed script that draws the drawing in that palette: each color of its roles line (the second line of every shipped SVG) by its role
     sed -n '2s/^<!-- roles: \(.*\) -->$/\1/p' "$1" | tr ';' '\n' | sed 's/^ *//' | while read -r _c _r; do
         [ -n "$_c" ] || continue
         printf 's/%s/#%s/g\n' "$_c" "$(wall_role_hex "$_r" "$2")"
-    done > "$TMP/recolor.sed"
-    sed -f "$TMP/recolor.sed" "$1"
+    done
 }
+wall_recolor() { wall_recolor_sed "$1" "$2" > "$TMP/recolor.sed"; sed -f "$TMP/recolor.sed" "$1"; }   # wall_recolor SVG PALETTE_FILE -> the drawing on stdout in that palette
 # The drawings are drawn by rsvg-convert, librsvg's own; gdk-pixbuf's
 # thumbnailer stands in where a distro still ships it (gdk-pixbuf 2.44
 # dropped it: Arch, Fedora and Tumbleweed have none). A picture of yours
@@ -872,16 +877,35 @@ render_tmp() {   # render_tmp SRC DST -- the template through EXPR, every placeh
         exit 1
     fi
 }
+# A render changed by hand (#170): each render's checksum is kept in the state, and a file of ours
+# that no longer matches it was edited since. That edit is kept as .bak before the new render, as a
+# file of yours is: an update never drops a line you wrote. Your own sway lines go in
+# ~/.config/sway/config.d, which the sway config reads last and spark-shell never writes.
+render_sum() { { cksum < "$1"; } 2>/dev/null | awk '{ print $1 "-" $2 }'; }   # render_sum FILE -> its checksum and size
+render_by_hand() {   # render_by_hand DST -> true when DST is a render whose kept checksum it no longer has
+    [ -f "$STATE_DIR/renders" ] || return 1
+    _rbh=$(awk -F '\t' -v p="$1" '$1 == p { s = $2 } END { print s }' "$STATE_DIR/renders")
+    [ -n "$_rbh" ] && [ "$_rbh" != "$(render_sum "$1")" ]
+}
+render_sum_keep() {   # render_sum_keep DST -- its checksum now, in place of the one kept before
+    [ "$MODE" != dry ] || return 0
+    _rsk=$(render_sum "$1")
+    ! grep -qxF "$1$TAB$_rsk" "$STATE_DIR/renders" 2>/dev/null || return 0
+    mkdir_private "$STATE_DIR"
+    { [ ! -f "$STATE_DIR/renders" ] || awk -F '\t' -v p="$1" '$1 != p' "$STATE_DIR/renders"; printf '%s\t%s\n' "$1" "$_rsk"; } > "$TMP/renders" \
+        && cp "$TMP/renders" "$STATE_DIR/renders" && chmod 0600 "$STATE_DIR/renders"
+}
 render_one() {   # render_one SRC DST -- EXPR must be set
     render_tmp "$1" "$TMP/render"
-    if [ -f "$2" ] && [ ! -L "$2" ] && cmp -s "$TMP/render" "$2"; then ok look "$2"; return; fi
-    if [ -f "$2" ] && [ ! -L "$2" ] && ! grep -q 'rendered by spark-shell' "$2"; then backup "$2"; fi
+    if [ -f "$2" ] && [ ! -L "$2" ] && cmp -s "$TMP/render" "$2"; then ok look "$2"; render_sum_keep "$2"; return; fi
+    if [ -f "$2" ] && [ ! -L "$2" ] && { ! grep -q 'rendered by spark-shell' "$2" || render_by_hand "$2"; }; then backup "$2"; fi
     changes=$((changes + 1))
     if [ "$MODE" = dry ]; then row would look "$2"; return; fi
     mkdir -p "$(dirname "$2")"
     rm -f "$2"
     cp "$TMP/render" "$2"
     chmod 0644 "$2"
+    render_sum_keep "$2"
     row render look "$2"
 }
 
@@ -984,6 +1008,7 @@ desktop_files() {   # the desktop's renders: foot's, the dialog's, sway's, the t
         render_one "$REPO/templates/$rel" "$HOME/$rel"
     done
     user_dirs_apply
+    [ "$MODE" = dry ] || mkdir -p "$HOME/.config/sway/config.d"   # your own sway lines (#170): the config reads the folder last
     [ "$MODE" = dry ] || [ -f "$SCREENS_CONF" ] || { mkdir -p "$CONFIG_DIR" && echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them' > "$SCREENS_CONF"; }   # the template includes it
     [ "$MODE" = dry ] || [ "$({ cksum < "$HOME/.config/mako/config"; } 2>/dev/null || :)" = "$_mk" ] || notify_reload   # a new look reaches the next notification, with no login
 }
@@ -994,6 +1019,7 @@ desktop_look_apply() {   # on and on desktop: the renders, the pointer, and a ru
     desktop_files
     pointer_apply
     ws_pool_apply
+    motion_row
     [ "$({ cksum < "$HOME/.config/sway/config"; } 2>/dev/null || :)" = "$_sc" ] || sway_reload
     look_burst   # the open terminals take the look too: after an upgrade, the slots their new shells draw in
 }
@@ -1893,6 +1919,7 @@ look_ok() {   # look_ok DIR -> 0 when the folder's look.env may be used; else on
     _lv=$(look_get "$1" PALETTE); case $_lv in .*|*[!A-Za-z0-9._-]*) echo "its PALETTE is not a palette's name"; return 1 ;; esac
     _lv=$(look_get "$1" BAR_GLYPHS); case $_lv in ''|signs|words) ;; *) echo "its BAR_GLYPHS is not signs or words"; return 1 ;; esac
     _lv=$(look_get "$1" BAR_WORKSPACES); case $_lv in ''|symbols|numbers) ;; *) echo "its BAR_WORKSPACES is not symbols or numbers"; return 1 ;; esac
+    _lv=$(look_get "$1" WALLPAPER_MOTION); case $_lv in ''|on|off) ;; *) echo "its WALLPAPER_MOTION is not on or off"; return 1 ;; esac
     _lv=$(look_get "$1" WALLPAPER)
     case $_lv in
         '') ;;
@@ -2298,6 +2325,7 @@ look_burst() {   # the look on the screen at once (#33): everything made ready f
     [ -z "$_sw" ] || wait "$_sw" 2>/dev/null || :   # that one alone: the cover's swaybg is a child too, and runs on
     [ -z "$_sc" ] || pointer_seen
     wall_uncover "$WALL_BG"
+    ! desktop_wanted || motion_follow   # the moving wallpaper follows the drawing and the palette (#180)
 }
 
 # --------------------------------------------------------- the console font
@@ -4135,7 +4163,7 @@ machine_facts() {   # -> the .facts lines: what holds while the machine stays as
     if command -v grim >/dev/null 2>&1; then _mwl='screenshots grim'; ! command -v slurp >/dev/null 2>&1 || _mwl="$_mwl + slurp"; fi
     if command -v wl-copy >/dev/null 2>&1; then _mwl="${_mwl:+$_mwl, }clipboard wl-copy"; ! command -v wl-paste >/dev/null 2>&1 || _mwl="$_mwl and wl-paste"; fi
     ! command -v notify-send >/dev/null 2>&1 || _mwl="${_mwl:+$_mwl, }notifications notify-send"
-    printf -- "- Session: sway%s on Wayland (no X11: X11 tools do not work here), set up by spark-shell%s; %s.\n" "${_msv:+ $_msv}" "${_mpv:+ v$_mpv}" "${_mwl:+$_mwl, }swaymsg"
+    printf -- "- Session: sway%s on Wayland (X11 apps run through Xwayland), set up by spark-shell%s; %s.\n" "${_msv:+ $_msv}" "${_mpv:+ v$_mpv}" "${_mwl:+$_mwl, }swaymsg"
     _mkd=$(desk_keys | awk '/ opens the dialog: / { print $1; exit }'); _mkc=$(desk_keys | awk '/ opens the dialog in spark chat/ { print $1; exit }')
     printf -- '- spark-shell is this desktop: the bar at the top; the dialog%s is the launcher and the settings%s.\n' "${_mkd:+ ($_mkd)}" "${_mkc:+, $_mkc spark chat in it}"
     _msc=$(machine_screens); [ -z "$_msc" ] || printf -- '- Screens: %s.\n' "$_msc"
@@ -5000,7 +5028,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ -z "$_sz" ] || printf -- '-\tText size\tshow\n'   # a value left and right change (provide_rows)
             printf -- '-\tTransparency\tshow\n'
             [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\tAnimation\tshow\n'   # the dialog's transitions (#122)
-            [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\tBar glyphs\tshow\n-\tWorkspaces\tshow\n'   # the bar's set and its workspaces' names (#160), values left and right change
+            [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\tBar glyphs\tshow\n-\tWorkspaces\tshow\n-\tMoving wallpaper\tshow\n'   # the bar's set and its workspaces' names (#160), the moving wallpaper (#180): values left and right change
             palette_names > "$TMP/pal.names"; palette_darks > "$TMP/pal.dark"
             for _g in dark light; do
                 while IFS= read -r n; do
@@ -5929,6 +5957,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 animation) anim_step "$_arg" ;;
                 glyphs) glyphs_step "$_arg" ;;
                 workspaces) ws_style_step "$_arg" ;;
+                motion) motion_step "$_arg" ;;
                 theme) _r=$(cmd_theme "$_arg" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "$_arg is on" ;;   # the old spelling of a step
                 *) _r=$(cmd_theme "$_a" 2>&1) || { printf '%s\n' "$_r" | tail -1; return 1; }; echo "$_a is on" ;;   # a palette, by its name: the reply says it is on, never the command again (#53)
             esac ;;
@@ -6128,6 +6157,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         theme:animation) printf 'animation %s\tanimation %s\n' "$(anim_now)" "$(anim_now)" ;;
         theme:glyphs) printf 'glyphs %s\tthe bar in %s\n' "$BAR_GLYPHS" "$BAR_GLYPHS" ;;
         theme:workspaces) printf 'workspaces %s\tthe workspaces as %s\n' "$BAR_WORKSPACES" "$BAR_WORKSPACES" ;;
+        theme:motion) printf 'motion %s\tmoving wallpaper %s\n' "$WALLPAPER_MOTION" "$WALLPAPER_MOTION" ;;
         window:close|window:focus) ;;   # a closed window does not come back; a window in front has no inverse worth a row
         window:*) printf '%s\twindows %s\n' "${WINDOWS:-split}" "$(win_words "$WINDOWS")" ;;
         bar:off) printf 'on\tbar shown\n' ;;
@@ -6342,6 +6372,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         theme:transparency) case ${3:-} in more|less) echo "$3"; return 0 ;; *) echo "theme: transparency takes more or less"; return 1 ;; esac ;;
         theme:glyphs) case ${3:-} in signs|words) echo "$3"; return 0 ;; *) echo "theme: glyphs takes signs or words"; return 1 ;; esac ;;
         theme:workspaces) case ${3:-} in symbols|numbers) echo "$3"; return 0 ;; *) echo "theme: workspaces takes symbols or numbers"; return 1 ;; esac ;;
+        theme:motion) case ${3:-} in on|off) echo "$3"; return 0 ;; *) echo "theme: motion takes on or off"; return 1 ;; esac ;;
         theme:animation) case " next back none $ANIMATION_NAMES " in *" ${3:-} "*) echo "$3"; return 0 ;; *) echo "theme: animation takes none, $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g'), next or back"; return 1 ;; esac ;;
         theme:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "theme: save takes a name"; return 1 ;;
         theme:delete) case $(theme_kind "${3:-}") in saved|look) [ "$3" != "${THEME:-}" ] && { echo "$3"; return 0; }; echo "theme: $3 is the theme in use"; return 1 ;; *) echo "theme: no saved theme named ${3:-?}"; return 1 ;; esac ;;
@@ -6633,7 +6664,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_animation theme_glyphs theme_workspaces theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -6699,6 +6730,7 @@ tool_spec() {
         theme_animation)   _ts=theme _ta=animation _tp=to _tk="next|back|none|$(printf '%s' "$ANIMATION_NAMES" | tr ' ' '|')" _th='' _tt='theme animation NAME' _td='The dialog'"'"'s animation as it opens, waits and closes: one by name, none for no motion, or the next or the one before.' ;;
         theme_glyphs)      _ts=theme _ta=glyphs _tp=to _tk='signs|words' _th='' _tt='theme glyphs SET' _td='The bar in signs (the default) or in words.' ;;
         theme_workspaces)  _ts=theme _ta=workspaces _tp=to _tk='symbols|numbers' _th='' _tt='theme workspaces STYLE' _td='The workspaces on the bar as symbols (the default) or as numbers.' ;;
+        theme_motion)      _ts=theme _ta=motion _tp=to _tk='on|off' _th='' _tt='theme motion ON' _td='The wallpaper moving (on), where the drawing has a motion, or still (off, the default).' ;;
         theme_transparency) _ts=theme _ta=transparency _tp=amount _tk='more|less' _th='' _tt='theme transparency AMOUNT' _td='The windows more or less transparent.' ;;
         theme_alpha)       _ts=theme _ta=alpha _tp=value _tk=alpha _th=if _tt='theme alpha N' _td='How solid the windows are, 0 to 1.' ;;
         window_split)      _ts=window _ta=split _th=i _tt='window split' _td='New windows side by side.' ;;
@@ -6858,13 +6890,14 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                     if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}, said:"done"}, {name:"reminders_snooze", arguments:{name:$id}, said:"again in 10 minutes"}, {name:"reminders_delete", arguments:{name:$id}, said:"delete"}]} else {} end
                    else {} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$(theme_chips "$1")" --arg size "$(look_font_size)" --arg anim "$(anim_now)" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg tr "$(_t=$(transparency_of "$ALPHA"); if [ "$_t" -eq 0 ]; then echo off; else echo "$_t%"; fi)" '
+        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$(theme_chips "$1")" --arg size "$(look_font_size)" --arg anim "$(anim_now)" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg motion "$WALLPAPER_MOTION" --arg tr "$(_t=$(transparency_of "$ALPHA"); if [ "$_t" -eq 0 ]; then echo off; else echo "$_t%"; fi)" '
             .rows |= map(
                 (if $s == "theme" and ((.group // "") | test("^(dark|light|yours)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
                 | (if $s == "theme" and .id == "theme:show:Text size" then .step = {value: $size, less: {name: "theme_text", arguments: {size: "smaller"}}, more: {name: "theme_text", arguments: {size: "bigger"}}, words: ["smaller", "bigger"]}
                    elif $s == "theme" and .id == "theme:show:Transparency" then .step = {value: $tr, less: {name: "theme_transparency", arguments: {amount: "less"}}, more: {name: "theme_transparency", arguments: {amount: "more"}}, words: ["less", "more"]}
                    elif $s == "theme" and .id == "theme:show:Bar glyphs" then .step = {value: $glyphs, less: {name: "theme_glyphs", arguments: {to: "signs"}}, more: {name: "theme_glyphs", arguments: {to: "words"}}, words: ["signs", "words"]}
                    elif $s == "theme" and .id == "theme:show:Workspaces" then .step = {value: $wsstyle, less: {name: "theme_workspaces", arguments: {to: "symbols"}}, more: {name: "theme_workspaces", arguments: {to: "numbers"}}, words: ["symbols", "numbers"]}
+                   elif $s == "theme" and .id == "theme:show:Moving wallpaper" then .step = {value: $motion, less: {name: "theme_motion", arguments: {to: "off"}}, more: {name: "theme_motion", arguments: {to: "on"}}, words: ["off", "on"]}
                    else . end))
             | .rows |= map(
                 if $s == "theme" and (.tool.name // "") == "theme_save" then .tool.ask = ["name"]
@@ -6977,7 +7010,7 @@ provide_about_rows() {   # -> the about's rows: the template's `# key:` sentence
             | {id: ("about:key:" + ($i | tostring)), sign: "blank",
                text: (if $k then ($l | sub("^[^ ]* "; "")) else $l end), tool: null, more: [],
                columns: (if $k then [$l | sub(" .*$"; "") | sub(",$"; "")] else [] end), children: null,
-               group: ("keys " + (if $i < 3 then "1" elif $i < 6 then "2" elif $i < 12 then "3" elif $i < 15 then "4" else "5" end))})
+               group: ("keys " + (if $i < 3 then "1" elif $i < 6 then "2" elif $i < 15 then "3" elif $i < 18 then "4" else "5" end))})
         | . + [{id: "about:address", sign: "opens", text: "github.com/forgewright-ai/spark-shell", tool: null, more: [], columns: [], children: null, group: "address"},
                {id: "about:open", sign: "opens", text: ("spark-shell " + $v), tool: {name: "about_open", arguments: {}}, more: [], columns: [], children: null, group: null}]
         | {title: "about", rows: ., short: ["about:open"]}'
@@ -7321,6 +7354,7 @@ provide_quick() {   # provide_quick SECTION TOOL VALUE -> 0 for a pick the rows 
         theme_animation) case " next back none $ANIMATION_NAMES " in *" $3 "*) return 0 ;; *) return 1 ;; esac ;;
         theme_glyphs) case $3 in signs|words) return 0 ;; *) return 1 ;; esac ;;
         theme_workspaces) case $3 in symbols|numbers) return 0 ;; *) return 1 ;; esac ;;
+        theme_motion) case $3 in on|off) return 0 ;; *) return 1 ;; esac ;;
         *) return 1 ;;
     esac
 }
@@ -8685,7 +8719,7 @@ verb_close() {   # the last line of a verb: the count on a dry run, the sentence
     else echo "$1"; fi
 }
 
-cmd_theme() {   # theme [NAME|none|list|show] | save [NAME] | delete NAME | back | wallpaper [X] | text [N|bigger|smaller] | transparency [N|more|less] | animation [NAME|none|next|back] | glyphs [signs|words] | workspaces [symbols|numbers] | picture PATH | "WORDS"
+cmd_theme() {   # theme [NAME|none|list|show] | save [NAME] | delete NAME | back | wallpaper [X] | text [N|bigger|smaller] | transparency [N|more|less] | animation [NAME|none|next|back] | glyphs [signs|words] | workspaces [symbols|numbers] | motion [on|off] | picture PATH | "WORDS"
     config_load
     case ${1:-show} in
         show) [ $# -le 1 ] || refuse_in theme "show takes no word"; theme_show; return ;;
@@ -8699,6 +8733,7 @@ cmd_theme() {   # theme [NAME|none|list|show] | save [NAME] | delete NAME | back
         animation) shift; theme_animation "$@"; return ;;
         glyphs) shift; theme_glyphs "$@"; return ;;
         workspaces) shift; theme_workspaces "$@"; return ;;
+        motion) shift; theme_motion "$@"; return ;;
         picture) shift; theme_picture "$@"; return ;;
     esac
     case "$*" in *' '*) theme_from_words "$*"; return ;; esac   # words: the model reads them into a look
@@ -8732,6 +8767,7 @@ theme_apply() {   # theme_apply NAME|none [back] -- the whole look follows: a sa
         _an=$(look_get "$_td" ANIMATION); case " $ANIMATION_NAMES " in *" $_an "*) ;; *) _an=$(anim_for_palette "$(look_get "$_td" PALETTE)") ;; esac
         anim_follow "$_an"
         bar_look_follow "$(look_get "$_td" BAR_GLYPHS)" "$(look_get "$_td" BAR_WORKSPACES)"
+        case $(look_get "$_td" WALLPAPER_MOTION) in on|off) _lm=$(look_get "$_td" WALLPAPER_MOTION); [ "$_lm" = "$WALLPAPER_MOTION" ] || { [ "$MODE" = dry ] || config_set WALLPAPER_MOTION "$_lm" >/dev/null; WALLPAPER_MOTION=$_lm; export WALLPAPER_MOTION; } ;; esac   # a saved theme's moving wallpaper (#180); look_burst plays it
     elif [ "$name" != none ] && [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && ! wall_yours && _w=$(wall_for_palette "$name") && [ "$_w" != "$WALLPAPER" ]; then   # on the desktop the palette brings the drawing made for it, as its row says; only a picture of yours stays (#25)
         [ "$MODE" = dry ] || config_set WALLPAPER "$_w" >/dev/null
         WALLPAPER=$_w; export WALLPAPER
@@ -8821,7 +8857,7 @@ theme_save() {   # theme_save [NAME...] -- the look in use kept as a folder unde
         elif wall_there; then
             _pic=${WALLPAPER##*/}; cp "$WALLPAPER" "$_d.new/$_pic"; printf 'WALLPAPER=picture\nPICTURE=%s\n' "$_pic"
         else printf 'WALLPAPER=%s\n' "$WALLPAPER"; fi
-        printf 'FONT=%s\nALPHA=%s\nPOINTER=%s\nANIMATION=%s\nBAR_GLYPHS=%s\nBAR_WORKSPACES=%s\n' "$FONT" "$ALPHA" "${POINTER:-}" "$(anim_now)" "$BAR_GLYPHS" "$BAR_WORKSPACES"
+        printf 'FONT=%s\nALPHA=%s\nPOINTER=%s\nANIMATION=%s\nBAR_GLYPHS=%s\nBAR_WORKSPACES=%s\nWALLPAPER_MOTION=%s\n' "$FONT" "$ALPHA" "${POINTER:-}" "$(anim_now)" "$BAR_GLYPHS" "$BAR_WORKSPACES" "$WALLPAPER_MOTION"
     } > "$_d.new/look.env"
     rm -rf "$_d"; mv "$_d.new" "$_d"
     echo "saved $name ($_d) -- spark-shell theme $name brings the look back"
@@ -8921,6 +8957,88 @@ glyphs_step() {   # glyphs_step signs|words -> the receipt, or the refusal and e
     [ "$1" != "$BAR_GLYPHS" ] || { echo "the bar is in $1 already"; return 1; }
     config_set BAR_GLYPHS "$1" >/dev/null; BAR_GLYPHS=$1; export BAR_GLYPHS; bar_redraw
     echo "the bar in $1"
+}
+# A moving wallpaper (#180): a drawing may have a motion script, wallpaper/motion/NAME.py, that
+# writes one seamless loop of SVG frames at 30 a second in the drawing's own colors. With
+# WALLPAPER_MOTION on, the frames are drawn in the palette in use the way the still is (its roles
+# line), made into a video by mpv, kept in the cache by drawing and palette, and played on every
+# screen by mpvpaper, which pauses while the wallpaper is covered. The still stays under it: it
+# shows until the loop is ready and whenever the player is gone. The loop is made in the
+# background, never holding the step that asked for it. A player of yours (an mpvpaper playing a
+# file outside the cache) is never stopped. Off by default.
+MOTION_DIR=${XDG_CACHE_HOME:-$HOME/.cache}/spark-shell/motion
+MOTION_TOOLS="python3 rsvg-convert mpv mpvpaper"
+motion_names() { for _ms in "$REPO"/wallpaper/motion/*.py; do [ -f "$_ms" ] || continue; _ms=${_ms##*/}; printf '%s\n' "${_ms%.py}"; done; }   # -> the drawings that move, one a line
+motion_has() { wall_shipped "$1" && [ -f "$REPO/wallpaper/motion/$1.py" ]; }   # motion_has DRAWING -> 0 when it has a motion script
+motion_missing() { _mm=''; for _mt in $MOTION_TOOLS; do command -v "$_mt" >/dev/null 2>&1 || _mm="$_mm $_mt"; done; printf '%s' "${_mm# }"; }   # -> the tools a loop needs that are not here, or nothing
+motion_why() {   # -> why a moving wallpaper cannot play here, or nothing (after pm_detect)
+    [ "$OS" != Darwin ] || { echo "the moving wallpaper is the Linux desktop's: macOS has its own"; return; }
+    [ "$DESKTOP" = sway ] || { echo "the moving wallpaper is the desktop's: spark-shell on desktop first"; return; }
+    _mw=$(motion_missing); [ -n "$_mw" ] || return 0
+    if pkg_listed mpvpaper; then echo "the moving wallpaper needs $_mw: spark-shell on desktop installs it"
+    else echo "the moving wallpaper needs mpvpaper, which this Linux family does not package: the wallpaper stays still"; fi
+}
+motion_want() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-motion.want"; }   # -> the file that names the loop the desktop should play now
+motion_ours() { pgrep -u "$(id -u)" -f "mpvpaper .*$MOTION_DIR/" 2>/dev/null || :; }   # -> the pids of the mpvpapers playing a loop of ours: their file is in the cache
+motion_stop() {   # the loop of ours gone, and nothing wanted: the still shows
+    rm -f "$(motion_want)"
+    for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done
+}
+motion_play() {   # motion_play FILE -- mpvpaper plays it on every screen, any other loop of ours stopped; its own session, so a closed terminal never takes it
+    for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done
+    if command -v setsid >/dev/null 2>&1; then setsid mpvpaper -p -o "no-audio loop panscan=1.0" ALL "$1" </dev/null >/dev/null 2>&1 &
+    else ( trap '' HUP; exec mpvpaper -p -o "no-audio loop panscan=1.0" ALL "$1" ) </dev/null >/dev/null 2>&1 & fi
+}
+motion_make() {   # motion_make DRAWING SEDFILE OUT -- the loop: the script's frames, each drawn in the palette by SEDFILE (empty: as drawn), drawn by rsvg-convert on every core, made into OUT by mpv; the frames gone after, older loops of the drawing too
+    _md=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 1
+    if python3 -I "$REPO/wallpaper/motion/$1.py" "$_md" >/dev/null 2>&1 && [ -f "$_md/f0000.svg" ] \
+        && printf '%s\n' "$_md"/f*.svg | xargs -P "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" -n 32 sh -c 's=$1; shift; for f; do if [ -s "$s" ]; then sed -f "$s" "$f"; else cat "$f"; fi | rsvg-convert -o "${f%.svg}.png" || exit 1; done' _ "$2" \
+        && mpv --no-config --really-quiet "mf://$_md/f*.png" --mf-fps=30 --vf=format=yuv420p --ovc=libx264 --ovcopts=crf=20,preset=medium --of=mp4 --o="$3.part" </dev/null >/dev/null 2>&1 \
+        && [ -s "$3.part" ] && mv "$3.part" "$3"; then _mk=0; else _mk=1; rm -f "$3.part"; fi
+    rm -rf "${_md:?}"
+    [ "$_mk" = 0 ] || return 1
+    for _mo in "$MOTION_DIR/$1"-*.mp4; do [ "$_mo" = "$3" ] || rm -f "$_mo"; done
+}
+MOTION_NOW=''   # what motion_follow did: playing (the loop plays), making (it plays once made), or nothing
+motion_follow() {   # the desktop's wallpaper moving as the settings say: the loop of the drawing in use, in the palette in use, playing (made first, in the background, when the cache has none); else none of ours
+    MOTION_NOW=''
+    [ "$OS" != Darwin ] && desk_in_sway || return 0
+    if [ "${WALLPAPER_MOTION:-off}" != on ] || ! motion_has "${WALLPAPER:-}" || [ -n "$(motion_missing)" ]; then motion_stop; return 0; fi
+    _mj=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 0
+    : > "$_mj/palette.sed"   # its own palette, or none: the frames as drawn
+    if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && ! wall_own "$WALLPAPER" && _mpf=$(palette_file "$THEME"); then wall_recolor_sed "$REPO/wallpaper/$WALLPAPER.svg" "$_mpf" > "$_mj/palette.sed"; fi
+    _msum=$(cat "$REPO/wallpaper/motion/$WALLPAPER.py" "$_mj/palette.sed" | cksum | cut -d' ' -f1)
+    _mfile=$MOTION_DIR/$WALLPAPER-$_msum.mp4
+    if [ "$(cat "$(motion_want)" 2>/dev/null)" = "$_mfile" ] && [ -n "$(motion_ours)" ]; then rm -rf "${_mj:?}"; MOTION_NOW=playing; return 0; fi   # playing already
+    mkdir -p "$MOTION_DIR" "$(dirname "$(motion_want)")" && printf '%s\n' "$_mfile" > "$(motion_want)"
+    if [ -f "$_mfile" ]; then rm -rf "${_mj:?}"; motion_play "$_mfile"; MOTION_NOW=playing; return 0; fi
+    MOTION_NOW=making
+    [ ! -f "$_mfile.making" ] || ! pid_running "$(cat "$_mfile.making" 2>/dev/null)" || { rm -rf "${_mj:?}"; return 0; }   # being made: it plays once ready, while it is still wanted
+    for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done   # the loop before is not this look's: the still until the new one is ready
+    if [ -n "$_mfile" ]; then
+        ( trap '' HUP; sh -c 'echo "$PPID"' > "$_mfile.making"
+          if motion_make "$WALLPAPER" "$_mj/palette.sed" "$_mfile" && [ "$(cat "$(motion_want)" 2>/dev/null)" = "$_mfile" ]; then motion_play "$_mfile"; fi
+          rm -f "$_mfile.making"; rm -rf "${_mj:?}" ) </dev/null >/dev/null 2>&1 3>&- 4<&- &
+    fi
+}
+motion_row() {   # the moving wallpaper's row of on and on desktop, when it is on: what moves, or why it cannot here (#180)
+    [ "${WALLPAPER_MOTION:-off}" = on ] || return 0
+    _mw=$(motion_why); if [ -z "$_mw" ]; then ok motion "the moving wallpaper is on: $(motion_names | paste -sd, - | sed 's/,/, /g') moves"; else skip motion "$_mw"; fi
+}
+theme_motion() {   # theme_motion [on|off] -- the moving wallpaper (#180): on, the drawings that have a motion move; off, every one is still
+    [ -n "${1:-}" ] || { echo "moving wallpaper $WALLPAPER_MOTION $PANEL_SEP on or off; $(motion_names | paste -sd, - | sed 's/,/, /g') moves"; return; }
+    [ $# -eq 1 ] || refuse_in theme "motion takes one word: on or off"
+    motion_step "$1" || exit 1
+}
+motion_step() {   # motion_step on|off -> the receipt, or the refusal and exit 1 (the panel's step and the verb share it): the desktop takes it at once
+    case $1 in on|off) ;; *) echo "motion takes on or off"; return 1 ;; esac
+    [ "$1" != "$WALLPAPER_MOTION" ] || { echo "the moving wallpaper is $1 already"; return 1; }
+    if [ "$1" = on ]; then [ -n "${PM:-}" ] || pm_detect; _mw=$(motion_why); [ -z "$_mw" ] || { echo "$_mw"; return 1; }; fi
+    config_set WALLPAPER_MOTION "$1" >/dev/null; WALLPAPER_MOTION=$1; export WALLPAPER_MOTION
+    motion_follow
+    if [ "$1" = off ]; then echo "moving wallpaper off"
+    elif motion_has "$WALLPAPER"; then case $MOTION_NOW in making) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves once its loop is made" ;; playing) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves" ;; *) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves on the desktop" ;; esac
+    else echo "moving wallpaper on $PANEL_SEP $WALLPAPER is still; $(motion_names | paste -sd, - | sed 's/,/, /g') moves"; fi
 }
 theme_workspaces() {   # theme_workspaces [symbols|numbers] -- the workspaces' names on the bar (#160): a symbol each, or their numbers
     [ -n "${1:-}" ] || { echo "the workspaces as $BAR_WORKSPACES $PANEL_SEP symbols or numbers"; return; }
@@ -10114,6 +10232,7 @@ cmd_desktop() {
         forget) shift; desk_delete "$@"; return ;;
         --ask) cmd_panel layout; return ;;           # the old spellings of layout --ask and layout --pending
         --pending) desk_pending; return ;;
+        --motion) theme_load 2>/dev/null || :; motion_follow; return ;;   # the moving wallpaper at the desktop's start (#180)
         --chat) cmd_panel chat; return ;;             # the old Super+s: spark chat in the panel's window
         keys) desk_keys; return ;;   # the template's sentences, anywhere (documentation)
         lock) theme_load 2>/dev/null || :; desk_lock; return ;;
@@ -10129,6 +10248,7 @@ cmd_desktop() {
         portals) desk_portals; return ;;
         --machine) case ${2:-all} in all|now|tick) machine_write "${2:-all}"; return ;; *) refuse "--machine takes all, now or tick" ;; esac ;;   # the machine folder's files now, inside the desktop (#159): the tests' door, as the start (all) and the bar (now, tick) write them aside
         screen|screens) shift; desk_screen "$@"; return ;;
+        window) shift; desk_window "$@"; return ;;
         capture) shift; desk_capture "$@"; return ;;
         notifications) shift; desk_notifications "$@"; return ;;
         storage) shift; desk_storage "$@"; return ;;
@@ -10484,6 +10604,73 @@ screen_beside_again() {   # screen_beside_again ID -- every screen placed beside
     done > "$TMP/beside"
     while IFS="$TAB" read -r _bn _bs _bon; do ( desk_screen "$_bn" "$_bs" "$_bon" ) >/dev/null 2>&1 || :; done < "$TMP/beside"   # its own shell: the turn's receipt stays the turn's
 }
+# The window keys (#182): Super+arrow snaps the focused window to that half of its screen, and
+# Super+Shift+space floats it or tiles it again. A snapped window floats at the place a tiled
+# window would take there: the workspace's area (the screen less the bar and the outer gaps),
+# halved, so two snapped halves meet at the same eight-pixel strip two tiled windows have. A
+# window floated from the tiling opens at two thirds of that area, centered, never at the size it
+# had in the tiling. One sway command for each, sent to the window by its con_id.
+desk_window() {   # desk_window float|left|right|up|down
+    [ "$OS" != Darwin ] || refuse "not on macOS, which has its own window keys"
+    case ${1:-} in float|left|right|up|down) ;; *) refuse "window takes float, left, right, up or down" ;; esac
+    desk_in_sway || refuse "moves the desktop's windows: run it inside it"
+    swaymsg -t get_tree > "$TMP/tree" 2>/dev/null || refuse "sway did not answer"
+    # the focused window: con_id, floating or not, full screen or not; then its workspace's area
+    _dw=$(jq -r '[.. | objects | select(.focused == true and (.type == "con" or .type == "floating_con"))][0] // empty
+        | "\(.id) \(.type) \(.fullscreen_mode // 0)"' "$TMP/tree" 2>/dev/null)
+    [ -n "$_dw" ] || refuse "no window has the focus"
+    set -- "$1" $_dw
+    _da=$(jq -r --argjson i "$2" '[.. | objects | select(.type == "workspace") | select([.. | objects | select(.id == $i)] | length > 0)][0].rect // empty
+        | "\(.x) \(.y) \(.width) \(.height)"' "$TMP/tree" 2>/dev/null)
+    [ -n "$_da" ] || refuse "the window is on no workspace"
+    # shellcheck disable=SC2086   # four numbers, split on purpose
+    set -- "$@" $_da   # KIND ID TYPE FULL X Y W H
+    _dfs=''; [ "$4" = 0 ] || _dfs='fullscreen disable, '
+    case $1 in
+        float) if [ "$3" = floating_con ]; then _dc="floating disable"; _ds="tiled"
+            else _dc="${_dfs}floating enable, resize set width $(($7 * 2 / 3)) px height $(($8 * 2 / 3)) px, move position center"; _ds="floating"; fi ;;
+        left) _dc="${_dfs}floating enable, resize set width $(($7 / 2)) px height $8 px, move absolute position $5 $6"; _ds="on the left half" ;;
+        right) _dc="${_dfs}floating enable, resize set width $(($7 - $7 / 2)) px height $8 px, move absolute position $(($5 + $7 / 2)) $6"; _ds="on the right half" ;;
+        up) _dc="${_dfs}floating enable, resize set width $7 px height $(($8 / 2)) px, move absolute position $5 $6"; _ds="on the top half" ;;
+        *) _dc="${_dfs}floating enable, resize set width $7 px height $(($8 - $8 / 2)) px, move absolute position $5 $(($6 + $8 / 2))"; _ds="on the bottom half" ;;
+    esac
+    swaymsg -- "[con_id=$2] $_dc" >/dev/null 2>&1 || refuse "sway refused: $_dc"
+    echo "the window is $_ds"
+}
+# X11's main screen (#173): Wine, and the games it runs, take X11's primary output as their
+# first screen, else the screen at 0,0, and Xwayland names no primary. So the main screen (#135)
+# is named X11's primary once Xwayland runs: at each X11 window's start (a rule in the sway
+# config) and when the main screen changes. xrandr does it; with no xrandr, no Xwayland running
+# or no main screen set, nothing changes.
+screen_x11_main() {
+    [ -n "${DISPLAY:-}" ] && command -v xrandr >/dev/null 2>&1 || return 0
+    _xm=$(screen_main); [ -n "$_xm" ] || return 0
+    _xp=$(screen_rows | awk -F '\t' -v i="$_xm" '($2 == i || $1 == i) && $3 == "on" { print $1; exit }')
+    [ -n "$_xp" ] || return 0
+    ! xrandr --listmonitors 2>/dev/null | grep -qF " +*$_xp " || return 0   # named already
+    xrandr --output "$_xp" --primary >/dev/null 2>&1 || :
+}
+# The layout's left and top edges at 0 (#171): X11 has no place left of or above 0, so Xwayland's
+# screen starts there and an X11 window on a screen placed further left or up takes no click.
+# After a screen moves, and at each start, every screen on moves by the same amount, so the
+# arrangement stays and the smallest x and y are 0. Each new place is kept in screens.conf, the
+# beside lines with it.
+screen_origin() {   # -> the screens moved, one line each, or nothing when none sat left of or above 0
+    screen_rows | awk -F '\t' '$3 == "on"' > "$TMP/origin"
+    _sox=$(awk -F '\t' 'NR == 1 || $6 + 0 < m { m = $6 + 0 } END { print m + 0 }' "$TMP/origin")
+    _soy=$(awk -F '\t' 'NR == 1 || $7 + 0 < m { m = $7 + 0 } END { print m + 0 }' "$TMP/origin")
+    [ "$_sox" -lt 0 ] || [ "$_soy" -lt 0 ] || return 0
+    [ "$_sox" -lt 0 ] || _sox=0; [ "$_soy" -lt 0 ] || _soy=0
+    while IFS="$TAB" read -r _son _soi _ _ _ _sx _sy _; do
+        _snx=$((_sx - _sox)); _sny=$((_sy - _soy))
+        [ "$(awk -F '\t' -v i="$_soi" '$2 == i' "$TMP/origin" | grep -c .)" -eq 1 ] || _soi=$_son   # a name two screens share: the port's
+        swaymsg -- output "\"$_soi\"" position "$_snx" "$_sny" >/dev/null 2>&1 || swaymsg -- output "$_son" position "$_snx" "$_sny" >/dev/null 2>&1 || continue
+        mkdir -p "$CONFIG_DIR"
+        { [ ! -f "$SCREENS_CONF" ] || grep -v -F -e "output \"$_soi\" position " -e '# rendered' "$SCREENS_CONF" || :; } > "$TMP/screens"
+        { echo '# rendered by spark-shell: the screens, as spark-shell desktop screen set them'; grep . "$TMP/screens" || :; printf 'output "%s" position %s %s\n' "$_soi" "$_snx" "$_sny"; } > "$SCREENS_CONF"
+        echo "$_son at $_snx,$_sny"
+    done < "$TMP/origin"
+}
 desk_screen() {   # desk_screen [NAME [scale N | mode WxH | transform normal|90|180|270 | on | off | left-of|right-of|above|below OTHER]]
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own display settings"
     desk_in_sway || refuse "changes the desktop's screens: run it inside it"
@@ -10492,8 +10679,10 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | transform normal|90|
             _first=$(screens_json | jq -r '.[0].name // empty')
             [ -z "$_first" ] || desk_screen "$_first" on
         fi
+        screen_origin >/dev/null
         return 0
     fi
+    if [ "${1:-}" = --x11-main ]; then screen_x11_main; return 0; fi
     if [ -z "${1:-}" ]; then
         screen_rows | while IFS="$TAB" read -r n id on m sc x y w h _mo tr; do
             _tw=''; [ "${tr:-normal}" = normal ] || _tw="  turned $tr"
@@ -10512,7 +10701,7 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | transform normal|90|
             _cmd="transform $3"; if [ "$3" = normal ]; then _said="$_n upright"; else _said="$_n turned $3"; fi ;;
         main) [ "$(printf '%s' "$_r" | cut -f3)" = on ] || refuse "$_n is off: a screen off is no main one"
             screen_main_save "$_id"; swaymsg -- workspace 1 output "\"$_id\"" >/dev/null 2>&1 || :   # the next start's, and sway's now for a workspace 1 made anew
-            login_screens_follow
+            login_screens_follow; screen_x11_main
             echo "$_n is the main screen: workspace 1 and the login screen go to it from the next start"; return 0 ;;
         on) _cmd=enable; _said="$_n on" ;;
         off) [ "$(screen_rows | awk -F '\t' '$3 == "on"' | grep -c .)" -gt 1 ] || refuse "$_n is the only screen on: it stays on"
@@ -10533,8 +10722,10 @@ desk_screen() {   # desk_screen [NAME [scale N | mode WxH | transform normal|90|
     case $_kind in left-of|right-of|above|below) _oi=$(printf '%s' "$_o" | cut -f2); [ "$(screen_rows | awk -F '\t' -v i="$_oi" '$2 == i' | grep -c .)" -eq 1 ] || _oi=$(printf '%s' "$_o" | cut -f1); screen_save "$_id" "$_cmd" "$_kind" "$_oi" ;;
         *) screen_save "$_id" "$_cmd" ;; esac
     [ "$_kind" != transform ] || screen_beside_again "$_id"   # its width changed: the screens placed beside it, and it beside another, placed again
+    screen_origin > "$TMP/origin.said"
     login_screens_follow
     echo "$_said"
+    [ ! -s "$TMP/origin.said" ] || echo "every screen moved by the same amount, so none sits left of or above 0 (X11 apps take clicks there)"
 }
 
 # The notifications, the drives and the power from the command line: the

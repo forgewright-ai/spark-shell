@@ -33,6 +33,12 @@ FONT=Monaspace Neon:size=11
 # saves a color's name as its #rrggbb.
 WALLPAPER=default
 
+# A moving wallpaper: on, a drawing that has a motion (orbit) moves on
+# the desktop, a loop made from the drawing in the palette in use and
+# played by mpvpaper; off, every wallpaper is still. Settings > theme
+# changes it, and a saved theme keeps it.
+WALLPAPER_MOTION=off
+
 # The pointer: empty for the spark pointer, white on a dark palette and
 # black on a light one; or a cursor theme's name and, after a space, its
 # size in pixels (24 when left out): spark-black 32, Adwaita.

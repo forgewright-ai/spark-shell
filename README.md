@@ -113,6 +113,7 @@ explain each part. If something fails, run `spark-shell check` and
     spark-shell theme transparency N  the windows' transparency; more, less
     spark-shell theme glyphs SET      the bar in signs or in words
     spark-shell theme workspaces X    the workspaces as symbols or numbers
+    spark-shell theme motion on|off   a moving wallpaper, where a drawing moves
     spark-shell theme picture PATH    a theme from a picture of yours
     spark-shell theme "WORDS"         a theme from words, read by spark
     spark-shell font FACE SIZE|none   set the console font, or use its own
@@ -158,6 +159,8 @@ explain each part. If something fails, run `spark-shell check` and
                                      tap to click, natural scroll and speed
     spark-shell desktop screen [NAME scale N|mode WxH|on|off|left-of NAME]
                                       list the screens, or set one
+    spark-shell desktop window float|left|right|up|down
+                                      float or tile the window, or snap it
     spark-shell desktop notifications [do-not-disturb on|off|dismiss|restore]
                                       do not disturb, and the last few
     spark-shell desktop storage [mount|unmount|open|eject NAME]
@@ -297,6 +300,13 @@ eject a USB drive and one that lets you suspend, restart and shut down
 `spark-shell check` says where PipeWire runs from: boot, login or the
 desktop. `off desktop` stops the service and removes it, with the links.
 
+X11 apps, Steam and its games among them, run through Xwayland, which
+sway starts only when one opens. Your own sway lines go in
+`~/.config/sway/config.d`: the sway config reads every file there last,
+so a line of yours wins, and spark-shell never writes there. A change
+made by hand to a file spark-shell renders, the sway config among them,
+is kept as a `.bak` file when spark-shell renders it again.
+
 ## Login
 
 Without `spark-shell on login`, the login screen is the normal console
@@ -382,7 +392,10 @@ the dialog's `about` row shows them again.
     Super+Shift+q closes the window.
     Super+Shift+c reloads sway after spark-shell on.
     Super+Shift+e leaves the desktop.
-    Super+arrow moves the focus, as h, j, k, l do; Shift moves the window.
+    Super+h/j/k/l move the focus, and with Shift they move the window.
+    Super+Shift+arrow moves the window too.
+    Super+arrow snaps the window to that half of the screen.
+    Super+Shift+space floats the window, or tiles it again.
     Super+f makes a window fill the screen.
     Super+r resizes the window, until Enter.
     The mouse resizes too: drag the strip between two windows.
@@ -396,6 +409,12 @@ the dialog's `about` row shows them again.
     The volume and mute keys set the sound, and the mic mute key the mic.
     The brightness keys set the screen's brightness.
     Typing exit in the first window also leaves the desktop.
+
+A snapped window floats at that half of its screen, below the bar and
+inside the gaps; Super+Shift+space tiles it again. A window floated from
+the tiling opens at two thirds of its screen, centered.
+`spark-shell desktop window left` (right, up, down, float) does the same
+from a script.
 
 ## Display, keyboard and screens
 
@@ -419,14 +438,18 @@ bar's `kb` block and `desktop keyboard next` go to the next one. The
 scale 1.5`, `mode 2560x1440`, `transform 90` (normal, 90, 180 or 270,
 clockwise; no mirrored orientation), `main` (workspace 1, the focus at
 the start and the login screen go to it), or `left-of`, `right-of`,
-`above` and `below` another screen set one, by its port or words of its make and
-model; each is sway's at once and kept, by the screen's make, model and
-serial, in `~/.config/spark-shell/screens.conf`. A screen placed beside
-another is placed again after a turn, since its width changed. `on` and
-`off` hold until the desktop starts again, so a later start never comes
-up with no screen, and the last screen on stays on. The dialog has a
-`display` and a `keyboard` section for the same; a screen's rows offer
-its orientation beside its scale, resolution and arrangement.
+`above` and `below` another screen set one, by its port or words of its
+make and model; each is sway's at once and kept, by the screen's make,
+model and serial, in `~/.config/spark-shell/screens.conf`. A screen
+placed beside another is placed again after a turn, since its width
+changed. `on` and `off` hold until the desktop starts again, so a later
+start never comes up with no screen, and the last screen on stays on.
+After a change, and at each start, every screen moves by the same amount
+so that none sits left of or above 0, where an X11 app takes no click.
+The dialog has a `display` and a `keyboard` section for the same; a
+screen's rows offer its orientation beside its scale, resolution and
+arrangement. The main screen is X11's primary output too, once an X11
+app runs, so a game goes to it (xrandr).
 
 ## Notes and reminders
 
@@ -584,11 +607,11 @@ follows the palette. Type `spark-shell theme wallpaper
 are, or one that starts with `~`, works too. `default` is the ground
 again, and so is `none`: no wallpaper changes the transparency.
 
-Type `spark-shell theme wallpaper skyline`. You get one of the 17
+Type `spark-shell theme wallpaper skyline`. You get one of the 18
 wallpapers spark-shell ships in `wallpaper/`, each drawn for a palette.
 For the dark ones: skyline (tokyonight-night), fjord (nord), forest
 (everforest-dark), sunset (gruvbox-dark), hills (catppuccin-mocha),
-dunes (dracula), ripples (rose-pine), contours (selenized-dark) and
+dunes and orbit (dracula), ripples (rose-pine), contours (selenized-dark) and
 embers (any dark palette). For the light ones: morning
 (solarized-light), meadow (catppuccin-latte), kites (tokyonight-day),
 fields (gruvbox-light), grove (everforest-light), arches
@@ -611,6 +634,21 @@ stand apart, with a transparent edge the mouse can grab, and the
 terminals as transparent as `theme transparency` says. No window is
 outlined in the accent; tabs and stacks show the focused title in the
 surface shade.
+
+Type `spark-shell theme motion on`. You get a moving wallpaper where the
+drawing has a motion: today orbit, a ringed planet with a moon that goes
+round it, stars that twinkle and drift, and a meteor once a loop. Its
+motion is a script, `wallpaper/motion/orbit.py`, that writes 90 seconds
+of frames in the drawing's own colors. spark-shell draws them in the
+palette in use, as it draws the still, makes them into a loop with mpv
+in the background, keeps it under `~/.cache/spark-shell/motion/`, and
+mpvpaper plays it on every screen, filled as the still is, paused while
+windows cover the wallpaper. The still shows until the loop is ready.
+Another palette makes a new loop; the one before goes. `off` stops it,
+and Settings > theme has the same switch; a saved theme keeps it. Off
+by default. Void and openSUSE package mpvpaper, and `on desktop`
+installs it with mpv; elsewhere the wallpaper stays still and `theme
+motion on` says why.
 
 ## Pointer
 

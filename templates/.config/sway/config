@@ -1,8 +1,9 @@
-# rendered by spark-shell from templates/.config/sway/config -- edit the template, then spark-shell on
+# rendered by spark-shell from templates/.config/sway/config -- your own lines go in ~/.config/sway/config.d
 # sway, kept simple: it tiles windows. The bar at the top shows the
 # workspaces and the hardware you sit at; tmux draws the machine and
-# the AI on its status line inside each window. No title bars, no
-# Xwayland. A new window is foot running your login shell. The borders,
+# the AI on its status line inside each window. No title bars. An X11
+# app (Steam, a game) runs through Xwayland, which sway starts only when
+# one opens (#170). A new window is foot running your login shell. The borders,
 # the bar and the background use the palette, or the wallpaper (then
 # with gaps between windows).
 # spark-shell desktop starts the desktop from a console, and
@@ -12,14 +13,19 @@
 set $mod Mod4
 set $term foot
 
-xwayland disable
+xwayland enable
 # Give services started by the session bus the running desktop environment.
 exec @REPO@/spark-shell desktop portals
 output * bg @WALL_BG@
+# A moving wallpaper (#180), when the theme has it on: mpvpaper plays the drawing's loop over the still.
+exec @REPO@/spark-shell desktop --motion
 # The screens as spark-shell desktop screen set them (scale, mode, place, on or off)
 include "@SCREENS_CONF@"
-# A disconnected second screen must never leave the remaining one off.
+# A disconnected second screen must never leave the remaining one off, and no screen sits
+# left of or above 0, where an X11 app takes no click (#171).
 exec_always @REPO@/spark-shell desktop screen --ensure-visible
+# An X11 window's start names the main screen X11's primary, the first screen a game takes (#173).
+for_window [shell="xwayland"] exec @REPO@/spark-shell desktop screen --x11-main
 # The keyboard's layouts, as spark-shell desktop keyboard set them
 @KB_LAYOUT@
 @KB_VARIANT@
@@ -113,15 +119,22 @@ bindsym $mod+Shift+c reload
 # key: Super+Shift+e leaves the desktop.
 bindsym $mod+Shift+e exit
 
-# key: Super+arrow moves the focus, as h, j, k, l do; Shift moves the window.
+# key: Super+h/j/k/l move the focus, and with Shift they move the window.
+# key: Super+Shift+arrow moves the window too.
 bindsym $mod+h focus left
 bindsym $mod+j focus down
 bindsym $mod+k focus up
 bindsym $mod+l focus right
-bindsym $mod+Left focus left
-bindsym $mod+Down focus down
-bindsym $mod+Up focus up
-bindsym $mod+Right focus right
+# The window keys (#182): a snapped window floats at that half of its screen, below the bar and
+# inside the gaps, where a tiled window would sit; a window floated from the tiling opens at two
+# thirds of its screen, centered.
+# key: Super+arrow snaps the window to that half of the screen.
+# key: Super+Shift+space floats the window, or tiles it again.
+bindsym $mod+Left exec @REPO@/spark-shell desktop window left
+bindsym $mod+Down exec @REPO@/spark-shell desktop window down
+bindsym $mod+Up exec @REPO@/spark-shell desktop window up
+bindsym $mod+Right exec @REPO@/spark-shell desktop window right
+bindsym $mod+Shift+space exec @REPO@/spark-shell desktop window float
 bindsym $mod+Shift+h move left
 bindsym $mod+Shift+j move down
 bindsym $mod+Shift+k move up
@@ -143,7 +156,6 @@ bindsym $mod+v splitv
 bindsym $mod+Shift+s layout stacking
 bindsym $mod+w layout tabbed
 bindsym $mod+e layout toggle split
-bindsym $mod+Shift+space floating toggle
 bindsym $mod+space focus mode_toggle
 bindsym $mod+a focus parent
 
@@ -222,3 +234,8 @@ bindsym $mod+r mode "resize"
 exec @REPO@/spark-shell desktop --pending
 # key: Typing exit in the first window also leaves the desktop.
 exec sh -c '$term -e @REPO@/spark-shell desktop --first; swaymsg exit'
+
+# Your own lines (#170): every file in this folder, read last, so a line there wins over one
+# above. spark-shell never writes there, and an update keeps a change made to this file by hand
+# as config.bak.
+include @HOME@/.config/sway/config.d/*

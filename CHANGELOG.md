@@ -1,5 +1,79 @@
 # Changelog
 
+## v0.119
+
+The gamer arc, from the owner's trial of No Man's Sky through Steam
+(2026-10-31) and a family member's feedback: X11 apps open (#170), an
+X11 window takes clicks on every screen (#171), a game goes to the main
+screen (#173), keys to float, tile and snap a window (#182), and a
+moving wallpaper (#180).
+
+- Xwayland is on (#170). Steam, every Proton or Wine game and other X11
+  apps open. sway starts Xwayland only when an X11 app connects, so it
+  costs nothing until then. It was off since v0.6, when the desktop was
+  a bare sway with tmux as its bar.
+- Your own sway lines go in `~/.config/sway/config.d` (#170). The sway
+  config reads every file there last, so a line of yours wins over one
+  of spark-shell's, and spark-shell never writes there. Before, the only
+  way to change a sway setting was to edit the rendered config, and the
+  next update wrote it again: the owner's `xwayland enable` was lost
+  that way, and the reload that followed showed sway's config error bar.
+- A file spark-shell renders and you changed by hand is kept as a `.bak`
+  file when spark-shell renders it again (#170). spark-shell keeps each
+  render's checksum in `~/.local/state/spark-shell/renders` and compares
+  before it writes. Before, a file that still had spark-shell's marker
+  line was written again with no copy.
+- No screen sits left of or above 0 (#171). X11 has no place there, so
+  Xwayland's screen starts at 0 and an X11 window on a screen placed
+  further left or up took no click. After a screen moves, and at each
+  start, every screen moves by the same amount, so the arrangement
+  stays and the smallest x and y are 0; the new places are kept in
+  screens.conf.
+- The main screen (#135) is X11's primary output too (#173). Wine, and
+  the games it runs, take X11's primary output as their first screen,
+  else the screen at 0,0, and Xwayland names none. With the portrait
+  screen on the left at 0,0, No Man's Sky, set to borderless on its
+  first screen, sized its window to the portrait screen when it took
+  the focus back: sway showed it floating at 1208 by 1928 on the
+  landscape screen. Now each X11 window's start, and a new main screen,
+  name the main screen X11's primary through xrandr. Every family
+  installs Xwayland and xrandr with the desktop. Proof: in a headless
+  sway with Xwayland 24.1 and two screens, X11 named no primary before;
+  after `desktop screen NAME main` xrandr named that screen primary and
+  listed it first, and a new main screen took its place. The owner's
+  own game is the last word.
+- Super+Left, Right, Up and Down snap the focused window to that half
+  of its screen, below the bar and inside the gaps (#182). A snapped
+  window floats. Super+Shift+space floats a tiled window at two thirds
+  of its screen, centered, or tiles a floating one again; before, a
+  window floated at the size it had in the tiling. The focus moves with
+  Super+h/j/k/l. `spark-shell desktop window left` (right, up, down,
+  float) does the same from a script.
+- spark's facts about the session say X11 apps run through Xwayland.
+- A moving wallpaper (#180): `spark-shell theme motion on`, or Moving
+  wallpaper in Settings > theme, makes a drawing that has a motion move
+  on the desktop. Off by default, and a saved theme keeps it. A
+  drawing's motion is a script beside it, `wallpaper/motion/NAME.py`,
+  that writes one loop of frames in the drawing's own colors;
+  spark-shell draws them in the palette in use, as it draws the still,
+  makes them into a loop with mpv in the background, keeps it under
+  `~/.cache/spark-shell/motion/`, and mpvpaper plays it on every screen,
+  paused while windows cover the wallpaper. The still shows until the
+  loop is ready, and an mpvpaper you started yourself is never stopped.
+  Void and openSUSE package mpvpaper, and `on desktop` installs it with
+  mpv; elsewhere the wallpaper stays still and the step says why.
+- A new drawing, orbit, drawn for dracula: a ringed planet, its moon,
+  stars and a meteor, the first that moves. 18 drawings now.
+- Proof: in a headless sway 1.12 on the owner's machine, with a bar and
+  gaps of 16, each snap put a window at its half (left at 16,39 and
+  right at 960,39, 944 wide each, the eight-pixel strip between them),
+  the float key floated it at two thirds, centered, and tiled it again;
+  a screen placed at -1920 moved to 0 with the other beside it at 1920,
+  both kept. sway took `include` of a missing, an empty and a filled
+  folder with no config error, and a mode set in the folder won over the
+  main config's. On that machine, with Xwayland on and no X11 app open,
+  there is no Xwayland process.
+
 ## v0.118.1
 
 A patch of three fixes: a click on a value's arrows changes it (#175)
