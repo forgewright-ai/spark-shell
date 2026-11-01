@@ -2,9 +2,10 @@
 
 ## v0.118.1
 
-A patch of two fixes, both from the owner's reports: a click on a
-value's arrows changes it (#175), and the idle screen covers every
-screen (#177).
+A patch of three fixes: a click on a value's arrows changes it (#175)
+and the idle screen covers every screen (#177), both from the owner's
+reports, and a video played full screen no longer holds the step that
+started it where /bin/sh is bash (#172), the hang CI met for a while.
 
 - In a value row such as Bar glyphs, a click on the arrow before the
   value steps it down and a click on the arrow after it steps it up, as
@@ -35,6 +36,22 @@ screen (#177).
   saver and with the clock alone; each way out (the side window's end,
   the main window's end, and `idle off`) brought both screens back with
   no idle window or process left.
+- With the dialog full screen, a video's play gives the screen back
+  through a small job that waits for the play to end (#158). That job
+  was started as part of an `||` list, and under bash, the /bin/sh of
+  Arch, Fedora and openSUSE, the list's own process kept the pipe the
+  step's answer is read from: the step waited as long as the video
+  played (#172). In CI's containers the job never ended at all, since
+  it counted a finished mpv that no one reaps as still playing, and
+  the providers part hung in about half the runs on those three
+  distros. The job now runs on its own with its file descriptors
+  closed, and an mpv no one reaps counts as ended. CI stops only the
+  suite at its time limit (`timeout --foreground`), so a hang lists
+  what still runs.
+- Proof: a test plays a video for 6 seconds and wants the step's answer
+  within 4. It failed with the old code (7 seconds under macOS's bash)
+  and passes now; the providers part ran three rounds on Arch with no
+  hang.
 
 ## v0.118
 

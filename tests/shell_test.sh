@@ -4668,6 +4668,7 @@ echo "$*" >> "$HOME/mpv.log"; us=$(printf '\037')
 case $* in *--lavfi-complex=*) [ -z "${SLOW_WAVE:-}" ] || sleep 8 ;; esac   # a long sound's waveform (#124)
 for a; do case $a in --vo-image-outdir=*) cp "$REPO_PNG" "${a#*=}/00000001.png" ;; --no-video) exec sleep 41 ;; esac; done
 for a; do f=$a; done
+case $* in *--wayland-app-id=spark-preview*) [ -z "${VIDEO_PLAYS:-}" ] || sleep "$VIDEO_PLAYS" ;; esac   # a video that plays on (#172)
 case $* in *--term-playing-msg=*) case $f in
     *.flac) printf '20.5%s%s%s44100%s2%ss16%sflac%sEvening%sAda%sProofs\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
     *.webm) printf '4.5%s1280%s720%s%s%s%svp8%s%s%s\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
@@ -4766,6 +4767,12 @@ _fb=0; while [ "$_fb" -lt 30 ] && ! grep -q 'fullscreen enable' "$F2/swaymsg.log
     && [ "$(grep -n 'fullscreen disable' "$F2/swaymsg.log" | cut -d: -f1)" -lt "$(grep -n 'spark-preview' "$F2/swaymsg.log" | tail -1 | cut -d: -f1)" ] \
     && ok "provide files: full screen, a video plays in its frame too: the dialog floats on the same pixels for the play and is full screen again at its own size after (#158)" \
     || bad "preview video full screen" "$(ans 5) | $(cat "$F2/swaymsg.log" 2>&1)"
+# #172: a full screen play's way back is a job of its own: a video that plays on never holds the step's answer, bash or dash
+rm -f "$F2/swaymsg.log"; _t0=$(date +%s)
+( FULL=1 VIDEO_PLAYS=6 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" ); _t1=$(date +%s)
+[ $((_t1 - _t0)) -le 4 ] && [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
+    && ok "provide files: full screen, the step answers at once while the video plays on, and the provider ends: nothing waits for the play (#172)" \
+    || bad "preview video full screen held" "$((_t1 - _t0)) s $(ans 5)"
 grep -qxF 'no_focus [app_id="spark-preview"]' "$REPO/templates/.config/sway/config" && grep -qxF 'for_window [app_id="spark-preview"] floating enable, border none, opacity 0' "$REPO/templates/.config/sway/config" \
     && ok "sway template: a video a preview plays floats with no border, maps unseen until it is placed (#157) and never takes the focus: the keys stay in the dialog (#125)" || bad "sway preview rules" "$(grep spark-preview "$REPO/templates/.config/sway/config")"
 # the dialog's transitions (#122): the theme's row, the verb, the key the config holds
