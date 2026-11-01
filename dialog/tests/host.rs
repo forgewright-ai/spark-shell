@@ -1828,7 +1828,7 @@ fn a_click_on_a_value_arrow_steps_it() {
             c2.lock().unwrap().push(v["params"].clone());
             send(result(
                 &v["id"],
-                json!({"content": [{"type": "text", "text": "glyphs words"}], "isError": false}),
+                json!({"content": [{"type": "text", "text": "the bar in words"}], "isError": false}),
             ));
         }
     });
@@ -1857,10 +1857,8 @@ fn a_click_on_a_value_arrow_steps_it() {
             .any(|c| c["name"] == "theme_glyphs" && c["arguments"]["to"] == "words")),
         "a click on the right arrow is its step up"
     );
-    assert!(
-        pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("glyphs words"))),
-        "the step's receipt comes back"
-    );
+    // the dialog runs one step at a time: the second click waits for the first one's answer, as a person's would
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()), "the step's answer comes back");
     assert!(matches!(app.picks().get(app.sel), Some(Item::Row(0, 1))), "the clicked row is lit");
     app.step_at(n, false);
     assert!(

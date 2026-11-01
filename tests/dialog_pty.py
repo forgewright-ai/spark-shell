@@ -365,7 +365,7 @@ for line in sys.stdin:
     elif m == "tools/call":
         with open(sys.argv[1], "a") as f:
             f.write(json.dumps(v["params"]) + "\n")
-        r = {"content": [{"type": "text", "text": "glyphs " + v["params"]["arguments"]["to"]}], "isError": False}
+        r = {"content": [{"type": "text", "text": "the bar in " + v["params"]["arguments"]["to"]}], "isError": False}
     else:
         r = {}
     print(json.dumps({"jsonrpc": "2.0", "id": i, "result": r}), flush=True)
@@ -421,12 +421,12 @@ def clicks(binary, env, home):
         r, _, more = arrows()
         click(r, more)
         ok(wait_for(lambda: calls() == ["words"], 5), "a click on the right arrow steps the value up", repr(calls()))
-        wait_for(lambda: "glyphs words" in screen.text(), 5)
+        wait_for(lambda: "the bar in words" in screen.text(), 5)   # the answer, not the line the step starts with
         wait_for(lambda: False, 0.5)
         r, less, _ = arrows()
         click(r, less)
         ok(wait_for(lambda: calls() == ["words", "signs"], 5), "a click on the left arrow steps it down", repr(calls()))
-        wait_for(lambda: "glyphs signs" in screen.text(), 5)
+        wait_for(lambda: "the bar in signs" in screen.text(), 5)
         wait_for(lambda: False, 0.5)
         r, _, _ = arrows()
         click(r, 6)
