@@ -127,7 +127,9 @@ case ${1:-} in
             pids="$pids $!"
         done
         # stopped before the parts end (CI's timeout): each part's last lines, so a hang says where it is
-        trap 'for p in $PARTS; do printf "== %s, cut short\n" "$p"; tail -n 30 "$logs/$p.log"; done; kill $pids 2>/dev/null; exit 1' TERM INT
+        trap 'for p in $PARTS; do printf "== %s, cut short\n" "$p"; tail -n 30 "$logs/$p.log"; done
+            if [ -d /proc/1 ]; then echo "== what runs"; for q in /proc/[0-9]*; do [ -r "$q/cmdline" ] || continue; printf "%s %s: " "${q#/proc/}" "$(awk "/^PPid/ { print \$2 }" "$q/status" 2>/dev/null)"; tr "\000" " " < "$q/cmdline" | cut -c1-160; echo; done; fi
+            kill $pids 2>/dev/null; exit 1' TERM INT
         rc=0
         for pid in $pids; do wait "$pid" || rc=1; done
         for p in $PARTS; do printf '== %s\n' "$p"; cat "$logs/$p.log"; done
