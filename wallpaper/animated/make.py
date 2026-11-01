@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Animated wallpapers: six small scenes, each a quiet loop with a joke in
-it, drawn in a palette's own colors.
+"""Animated wallpapers: small scenes, each a quiet loop with a joke in it,
+drawn in a palette's own colors, in collections: a look and feel for each
+persona.
 
-    python3 wallpaper/animated/make.py [--scene NAME ...] [PALETTE.env ...]
+    python3 wallpaper/animated/make.py [--collection NAME] [--scene NAME ...] [PALETTE.env ...]
                                        [--size WxH] [--out DIR] [--preset NAME]
     python3 wallpaper/animated/make.py --scene NAME --still T[,T...] --png DIR [PALETTE.env]
+
+cozy: warm and playful, a picture book for grown-ups
 
     onsen     a capybara soaks in a hot spring in the snow, a yuzu on its
               head; the yuzu rolls off, the capybara goes under, and comes
@@ -19,6 +22,22 @@ it, drawn in a palette's own colors.
               it back
     pigeons   IP over avian carriers (RFC 1149): pigeons carry envelopes
               over the roofs; one drops its packet and another sends it again
+
+night: the night-shift builder, cinematic; weather, scale and light, a dry
+joke, graded like a film (a vignette, a grain that holds still)
+
+    garoa     Sao Paulo in the drizzle at night, the Copan and the masts of
+              Paulista; a helicopter finds its roof taken and takes the next
+    horizon   a black hole over the edge of an ice planet, its disc turning;
+              a probe falls in and, as seen from here, never quite does
+    watch     a night sail on a long swell, a lighthouse sweeping; beating
+              upwind, it tacks twice a loop
+    problem   a bouldering wall under one light, chalk in the beam; the
+              climber comes off the crux, chalks up, starts again
+    hangar    a mech in its gantry; its visor wakes, the technician jumps,
+              the welder at its knee never looks up
+    crossing  a level crossing at dusk; the bells, the arm, a train, and
+              after it the crows on the wire in another order
 
 Each scene is a loop of 24 seconds at 24 frames a second, 1920 by 1080 by
 default, H.264 in an MP4 that ends where it begins: DIR/SCENE/NAME.mp4 for
@@ -260,24 +279,45 @@ def dot(cv, cx, cy, r):
 
 
 class Layer:
-    __slots__ = ("cov", "rows", "cols", "color", "alpha")
+    __slots__ = ("cov", "rows", "cols", "color", "alpha", "mode")
 
-    def __init__(self, covered, color, alpha=1.0):
+    def __init__(self, covered, color, alpha=1.0, mode="over"):
         self.cov, self.rows, self.cols = covered if covered else (None, None, None)
-        self.color, self.alpha = color, alpha
+        self.color, self.alpha, self.mode = color, alpha, mode
 
 
 def paint(img, layers):
+    """Each layer over what is there; a light ("add") adds to it instead."""
     for ly in layers:
         if ly.cov is None or ly.alpha <= 0:
             continue
         a = (ly.cov * np.float32(min(1.0, ly.alpha)))[..., None]
         sub = img[ly.rows, ly.cols]
-        sub += (np.asarray(ly.color, np.float32) - sub) * a
+        if ly.mode == "add":
+            sub += np.asarray(ly.color, np.float32) * a
+        else:
+            sub += (np.asarray(ly.color, np.float32) - sub) * a
 
 
-def L(cv, shape, color, alpha=1.0, ss=4, above=None, below=None, soft=0.0, clip=None):
-    return Layer(cover(cv, shape, ss, above, below, soft, clip), color, alpha)
+def L(cv, shape, color, alpha=1.0, ss=4, above=None, below=None, soft=0.0, clip=None, mode="over"):
+    return Layer(cover(cv, shape, ss, above, below, soft, clip), color, alpha, mode)
+
+
+def glow(cv, x, y, r, color, alpha=1.0, soft=None):
+    """A light: a soft disc added to what is under it."""
+    return L(cv, Shape().circle(x, y, r), color, alpha, ss=1, soft=r * 0.8 if soft is None else soft, mode="add")
+
+
+def vgrad(cv, x0, y0, x1, y1, stops):
+    """A box filled top to bottom through colors: stops is [(y, color), ...]."""
+    b = cv.box(x0, y0, x1, y1)
+    if b is None:
+        return Layer(None, (0, 0, 0))
+    px0, py0, px1, py1 = b
+    ys = (np.arange(py0, py1, dtype=np.float32) + 0.5) / cv.s
+    sy = np.array([s[0] for s in stops], np.float32)
+    col = np.stack([np.interp(ys, sy, np.array([s[1][k] for s in stops], np.float32)) for k in range(3)], -1)[:, None, :]
+    return Layer((np.ones((py1 - py0, px1 - px0), np.float32), slice(py0, py1), slice(px0, px1)), col)
 
 
 def full(cv, shape, ss=2):
@@ -370,6 +410,30 @@ class Scene:
 
     def ground(self, p):
         return p("bg")
+
+    def finish(self, cv, img, p):  # the grade over the whole frame: none for these
+        return img
+
+
+class Cinema(Scene):
+    """A scene graded like a film: its corners darker, a grain that holds still
+    (it costs the video nothing, and it keeps a dark sky from banding)."""
+
+    vignette, grain = 0.35, 1.6
+
+    def finish(self, cv, img, p):
+        store = self.__dict__.setdefault("_grade", {})
+        key = (cv.w, p.dark)
+        if key not in store:  # a light palette: a softer edge and less grain, as a print is
+            ys = (np.arange(cv.h, dtype=np.float32) + 0.5) / cv.h - 0.5
+            xs = (np.arange(cv.w, dtype=np.float32) + 0.5) / cv.w - 0.5
+            r2 = (xs[None, :] * 1.15) ** 2 + (ys[:, None] * 1.35) ** 2
+            k = self.vignette * (1.0 if p.dark else 0.3)
+            v = (1 - k * np.clip(r2 / 0.5, 0, 1) ** 1.4)[..., None].astype(np.float32)
+            g = np.random.default_rng(7).normal(0, self.grain * (1.0 if p.dark else 0.6), (cv.h, cv.w, 1)).astype(np.float32)
+            store[key] = (v, g)
+        v, g = store[key]
+        return img * v + g
 
 
 class Onsen(Scene):
@@ -1593,7 +1657,776 @@ class Pigeons(Scene, Cached):
         return bubble(cv, px + 50, self.wire_y(px) - 140, pop(t, 11.3, 12.3), "!", c["bubble"], c["ink"], tail=-1)
 
 
-SCENES = {s.name: s for s in (Onsen(), Duck(), Reef(), Campfire(), Ufo(), Pigeons())}
+BLACK3 = (0.0, 0.0, 0.0)
+
+
+def starfield(cv, seed, n, top, bottom, color, t=None, avoid=None, big=1.0):
+    """Stars of many sizes and strengths; a few of them breathing over the loop."""
+    rnd = random.Random(seed)
+    out = []
+    for i in range(n):
+        x, y = rnd.uniform(0, W), rnd.uniform(top, bottom)
+        if avoid and math.hypot(x - avoid[0], y - avoid[1]) < avoid[2]:
+            continue
+        m = rnd.random() ** 3
+        r, a = (0.6 + 1.6 * m) * big, 0.18 + 0.75 * m
+        if t is not None and i % 5 == 0:
+            a *= 0.55 + 0.45 * (0.5 + 0.5 * wave(t, 24 / rnd.choice((3, 4, 6, 8)), rnd.random()))
+        out.append(D(cv, x, y, r, color, a))
+        if m > 0.85:
+            out.append(glow(cv, x, y, 5 * big, color, 0.18 * a))
+    return out
+
+
+class Garoa(Cinema, Cached):
+    """Sao Paulo in the drizzle at night: the Copan's wave, the masts of Paulista
+    with their red lights, helicopters going from roof to roof."""
+
+    name = "garoa"
+    HZ = 900.0  # where the street begins
+    PADS = ((1095.0, 618.0), (1700.0, 586.0))  # two roofs with a helipad
+
+    def colors(self, p):
+        if not hasattr(self, "_c") or self._c[0] is not p:
+            dk = p.dark
+            bg = p("bg")
+            self._c = (p, dict(
+                dark=dk,
+                top=mix(bg, BLACK3, 0.55) if dk else p("bg+fg:16"), low=mix(bg, p("ansi_1"), 0.16) if dk else p("bg+white:30"),
+                far=mix(mix(bg, p("ansi_1"), 0.08), BLACK3, 0.18) if dk else p("bg+fg:20"), mid=mix(bg, BLACK3, 0.42) if dk else p("bg+fg:34"),
+                near=mix(bg, BLACK3, 0.66) if dk else p("bg+fg:50"), copan=mix(bg, BLACK3, 0.3) if dk else p("bg+fg:28"), copan2=mix(bg, BLACK3, 0.5) if dk else p("bg+fg:40"),
+                street=mix(bg, BLACK3, 0.58) if dk else p("bg+fg:42"),
+                warm=p("ansi_3"), cool=p("accent"), red=p("ansi_1"), green=p("ansi_2"), white=p.pick("fg", "white"), fog=mix(bg, p("ansi_1"), 0.12) if dk else p("bg+white:40"),
+                rain=p.pick("fg", "fg"), heli=mix(bg, BLACK3, 0.75) if dk else p("bg+fg:60"),
+            ))
+        return self._c[1]
+
+    def towers(self):
+        """The skyline, made once: (x, y, w, kind) for the far, the middle and the near rows."""
+        if hasattr(self, "_towers"):
+            return self._towers
+        rnd = random.Random(41)
+        far, mid, near = [], [], []
+        x = -20
+        while x < W:
+            w = rnd.uniform(40, 110)
+            far.append((x, rnd.uniform(560, 700), w))
+            x += w + rnd.uniform(-8, 6)
+        x = 860
+        while x < W + 40:
+            w = rnd.uniform(90, 170)
+            mid.append((x, rnd.uniform(560, 720), w))
+            x += w + rnd.uniform(6, 30)
+        for x0, w, y in ((-40, 230, 520), (1810, 200, 470), (190, 120, 760)):
+            near.append((x0, y, w))
+        self._towers = far, mid, near
+        return self._towers
+
+    def windows(self, x, y, w, rnd, lit=0.35, step=(16, 22)):
+        warm, cool = Shape(), Shape()
+        for wx in range(int(x + 8), int(x + w - 10), step[0]):
+            for wy in range(int(y + 14), int(self.HZ - 10), step[1]):
+                if rnd.random() < lit:
+                    (warm if rnd.random() < 0.7 else cool).rect(wx, wy, 7, 9)
+        return warm, cool
+
+    def back(self, cv, p):
+        c = self.colors(p)
+        out = [vgrad(cv, 0, 0, W, self.HZ, [(0, c["top"]), (520, mix(c["top"], c["low"], 0.6)), (self.HZ, c["low"])])]
+        if c["dark"]:
+            out.append(L(cv, Shape().ellipse(980, 760, 1100, 260), c["red"], 0.06, ss=1, soft=120, mode="add"))  # the city's glow on the cloud
+        far, mid, near = self.towers()
+        sh = Shape()
+        for x, y, w in far:
+            sh.rect(x, y, w, self.HZ - y)
+            if w > 80:
+                sh.rect(x + w / 2 - 1.5, y - 40, 3, 40)
+        out.append(L(cv, sh, c["far"], ss=1))
+        out.append(L(cv, Shape().rect(0, 610, W, 120), c["fog"], 0.35, ss=1, soft=40))
+        # the masts of Paulista: lattices with lights
+        for mx, top in ((1330.0, 270.0), (1470.0, 230.0), (1590.0, 300.0)):
+            m = Shape().line([(mx - 14, 640), (mx, top), (mx + 14, 640)], 3)
+            for k in range(10):
+                y0 = top + (640 - top) * k / 10
+                y1 = top + (640 - top) * (k + 1) / 10
+                hw0, hw1 = 14 * (y0 - top) / (640 - top), 14 * (y1 - top) / (640 - top)
+                m.line([(mx - hw0, y0), (mx + hw1, y1)], 1.4).line([(mx + hw0, y0), (mx - hw1, y1)], 1.4)
+            out.append(L(cv, m, c["mid"], ss=2))
+        # the Copan: a long wave of a building, its sunshades in lines
+        cp = [(300, 470), (420, 455), (560, 470), (700, 452), (860, 468), (900, 470)]
+        body = Shape().poly(spline(cp, closed=False, per=10) + [(900, self.HZ), (300, self.HZ)])
+        out.append(L(cv, body, c["copan"], ss=2))
+        shade = Shape()
+        for k in range(7):
+            x0 = 300 + k * 86
+            shade.poly([(x0, 460), (x0 + 40, 460), (x0 + 30, self.HZ), (x0 - 4, self.HZ)])
+        out.append(L(cv, shade, c["copan2"], 0.55, ss=1, soft=14, clip=None))
+        lines = Shape()
+        for y in range(484, int(self.HZ), 11):
+            lines.line([(300, y), (900, y)], 3.2)
+        out.append(L(cv, lines, c["far"], 0.75, ss=2))
+        rnd = random.Random(8)
+        lit = Shape()
+        for y in range(489, int(self.HZ) - 6, 11):
+            for x in range(306, 896, 9):
+                if rnd.random() < 0.07:
+                    lit.rect(x, y, 5, 3)
+        out.append(L(cv, lit, c["warm"], 0.65 if c["dark"] else 0.25, ss=2))
+        # the middle row with its windows, two of them with a helipad on the roof
+        rnd = random.Random(19)
+        for x, y, w in mid:
+            out.append(L(cv, Shape().rect(x, y, w, self.HZ - y), c["mid"], ss=1))
+            wm, cl = self.windows(x, y, w, rnd)
+            out += [L(cv, wm, c["warm"], 0.7 if c["dark"] else 0.3, ss=1), L(cv, cl, c["cool"], 0.6 if c["dark"] else 0.3, ss=1)]
+        for px, py in self.PADS:
+            out.append(L(cv, Shape().rect(px - 70, py, 140, self.HZ - py), c["mid"], ss=1))
+            ring = ellipse_pts(px, py - 2, 46, 8, n=48)
+            out.append(L(cv, Shape().line(ring + [ring[0]], 2.4), c["white"], 0.45, ss=2))
+            out.append(L(cv, glyph_h(px, py - 2), c["white"], 0.5, ss=2))
+            wm, cl = self.windows(px - 70, py, 140, rnd)
+            out += [L(cv, wm, c["warm"], 0.7 if c["dark"] else 0.3, ss=1), L(cv, cl, c["cool"], 0.6 if c["dark"] else 0.3, ss=1)]
+        # the near buildings, framing it, and the street
+        for x, y, w in near:
+            out.append(L(cv, Shape().rect(x, y, w, self.HZ - y), c["near"], ss=1))
+            wm, cl = self.windows(x, y, w, rnd, lit=0.18, step=(20, 26))
+            out.append(L(cv, wm, c["warm"], 0.55 if c["dark"] else 0.25, ss=1))
+        out.append(L(cv, Shape().rect(0, self.HZ, W, H - self.HZ), c["street"], ss=1))
+        # the wet street: every light above it drawn again below, long and soft
+        refl = Shape()
+        for x, y, w in mid + near:
+            for k in range(3):
+                refl.rect(x + w * (0.2 + 0.25 * k), self.HZ + 4, 5, 70 + 40 * k)
+        out.append(L(cv, refl, c["warm"], 0.12 if c["dark"] else 0.06, ss=1, soft=6))
+        return out
+
+    def heli(self, cv, c, x, y, t, kx=1.0, tilt=0.0, parked=False):
+        tf = lambda s: s.moved(x, y, 1.0, tilt, 0, 0, kx)
+        out = [L(cv, tf(Shape().ellipse(0, 0, 22, 9).line([(10, -2), (52, -6)], 3.2).line([(50, -6), (56, -16)], 2.4).line([(-12, 10), (14, 10)], 2)), c["heli"])]
+        blade = 0.0 if parked else (1 if int(t * 30) % 2 else 0.4)
+        out.append(L(cv, tf(Shape().line([(-34 * blade - 4, -12), (34 * blade + 4, -12)], 1.8)), c["heli"], 0.85))
+        on = int(t * 1.5) % 2 == 0
+        strobe = (t * 1.25) % 1.0 < 0.08
+        px, py = tf(Shape().poly([(56, -14)])).cmds[0][1][0]
+        out.append(D(cv, px, py, 2.4, c["red"], 1.0 if on else 0.25))
+        if on:
+            out.append(glow(cv, px, py, 10, c["red"], 0.35))
+        if strobe and not parked:
+            bx, by = tf(Shape().poly([(0, 9)])).cmds[0][1][0]
+            out += [D(cv, bx, by, 2.2, c["white"]), glow(cv, bx, by, 16, c["white"], 0.4)]
+        return out
+
+    def under(self, cv, p, t):
+        c = self.colors(p)
+        out = []
+        out.append(L(cv, Shape().rect(-200 + 60 * wave(t, 24), 640, W + 400, 70), c["fog"], 0.22, ss=1, soft=36))
+        for k, (mx, top) in enumerate(((1330.0, 270.0), (1470.0, 230.0), (1590.0, 300.0))):  # the masts' red lights, out of step
+            on = ((t + k * 0.7) % 2.0) < 1.0
+            for yy in (top, top + (640 - top) * 0.45):
+                out.append(D(cv, mx, yy, 2.6, c["red"], 1.0 if on else 0.2))
+                if on:
+                    out.append(glow(cv, mx, yy, 14, c["red"], 0.4))
+        x, y = self.PADS[0]
+        out += self.heli(cv, c, x - 4, y - 14, t, 1.0, 0.0, parked=True)  # the one already there
+        # the late one: it comes for the first roof, finds it taken, goes round, takes the second
+        if 2.0 <= t < 17.5:
+            if t < 6.5:
+                u = ease_io(window(t, 2.0, 6.5))
+                hx, hy = -80 + (x + 30 + 80) * u, 300 + (y - 120 - 300) * u
+            elif t < 9.5:
+                hx, hy = x + 30 + 18 * math.sin((t - 6.5) * 2.2), y - 120 + 8 * math.sin((t - 6.5) * 3)
+            else:
+                px2, py2 = self.PADS[1]
+                u = ease_io(window(t, 9.5, 17.0))
+                hx = x + 30 + (px2 - x - 30) * u
+                hy = (y - 120) + ((py2 - 16) - (y - 120)) * u - 120 * math.sin(math.pi * u)
+            out += self.heli(cv, c, hx, hy, t, -1.0 if t >= 9.5 else 1.0, 0.08 if t < 6.5 or t >= 9.5 else 0.0)
+        if 17.0 <= t < 20.0:  # down on the second roof, a breath, then off again
+            px2, py2 = self.PADS[1]
+            out += self.heli(cv, c, px2, py2 - 16, t, -1.0, 0.0, parked=18.5 <= t < 19.5)
+        elif t >= 20.0:
+            px2, py2 = self.PADS[1]
+            u = ease_in(window(t, 20.0, 23.6))
+            out += self.heli(cv, c, px2 + 400 * u, py2 - 16 - 300 * u, t, -1.0, -0.1 * u)
+        # cars on the street: light going by
+        for k in range(4):
+            u = ((t / 6.0) + k / 4) % 1.0
+            xx = -100 + (W + 200) * u if k % 2 else W + 100 - (W + 200) * u
+            col = c["white"] if k % 2 else c["red"]
+            out.append(L(cv, Shape().line([(xx - 30, 950 + k * 18), (xx + 30, 950 + k * 18)], 3), col, 0.5, ss=1, soft=3))
+            out.append(L(cv, Shape().line([(xx - 30, 990 + k * 18), (xx + 30, 990 + k * 18)], 8), col, 0.08, ss=1, soft=10))
+        # the green cross of the pharmacy that never closes, with a flicker
+        fl = 0.35 if (int(t * 8) % 37) in (3, 4, 19) else 1.0
+        cx, cy = 1880.0, 640.0
+        cross = Shape().rect(cx - 9, cy - 26, 18, 52).rect(cx - 26, cy - 9, 52, 18)
+        out += [L(cv, cross, c["green"], fl), glow(cv, cx, cy, 70, c["green"], 0.25 * fl), L(cv, Shape().rect(cx - 12, self.HZ + 6, 24, 120), c["green"], 0.12 * fl, ss=1, soft=10)]
+        return out
+
+    def over(self, cv, p, t):
+        c = self.colors(p)
+        out = []
+        rnd = random.Random(23)
+        rain = Shape()
+        for i in range(260):  # drizzle: thin, slanted, quick
+            x0, y0 = rnd.uniform(-100, W), rnd.uniform(0, H)
+            ln = rnd.uniform(14, 34)
+            y = (y0 + (H + 60) * 6 * t / self.seconds) % (H + 60) - 30
+            x = x0 + 0.22 * ((y0 + (H + 60) * 6 * t / self.seconds) // (H + 60)) * 0 + 0.2 * y
+            rain.line([(x, y), (x + ln * 0.22, y + ln)], 1.1)
+        out.append(L(cv, rain, c["rain"], 0.16 if c["dark"] else 0.14, ss=2))
+        return out
+
+
+def glyph_h(x, y):
+    """An H laid flat on a roof, as a pilot sees it from far off."""
+    return Shape().line([(x - 14, y - 4), (x - 10, y + 4)], 2).line([(x + 10, y - 4), (x + 14, y + 4)], 2).line([(x - 12, y), (x + 12, y)], 2)
+
+
+class Horizon(Cinema, Cached):
+    """A black hole over the edge of an ice planet: its disc turns, its light
+    bends over the top. Now and then a probe falls in, and never quite does."""
+
+    name = "horizon"
+    CX, CY, RS = 1210.0, 420.0, 118.0
+
+    def colors(self, p):
+        if not hasattr(self, "_c") or self._c[0] is not p:
+            dk = p.dark
+            bg = p("bg")
+            hot = mix(p("ansi_3"), (255.0, 255.0, 255.0), 0.55)
+            self._c = (p, dict(
+                dark=dk, top=mix(bg, BLACK3, 0.62) if dk else p("bg+white:30"), low=mix(bg, BLACK3, 0.4) if dk else p("bg"),
+                star=p.pick("fg", "fg"), neb1=p("accent"), neb2=p("ansi_5"),
+                shadow=mix(bg, BLACK3, 0.92) if dk else mix(p("fg"), BLACK3, 0.2), hot=hot if dk else p("ansi_3"), warm=p("ansi_3") if dk else mix(p("ansi_3"), p("ansi_1"), 0.5), cool=p("ansi_1"),
+                ring=mix(p("fg"), p("ansi_3"), 0.25) if dk else p("fg"), planet=mix(bg, BLACK3, 0.25) if dk else p("bg+fg:10"), planet2=mix(bg, BLACK3, 0.45) if dk else p("bg+fg:18"),
+                limb=p("accent"), probe=p.pick("fg", "fg"),
+            ))
+        return self._c[1]
+
+    def back(self, cv, p):
+        c = self.colors(p)
+        out = [vgrad(cv, 0, 0, W, H, [(0, c["top"]), (H, c["low"])])]
+        if c["dark"]:
+            out.append(L(cv, Shape().ellipse(520, 300, 520, 200, 0.4), c["neb1"], 0.05, ss=1, soft=140, mode="add"))
+            out.append(L(cv, Shape().ellipse(1500, 820, 420, 160, -0.3), c["neb2"], 0.04, ss=1, soft=120, mode="add"))
+        out += starfield(cv, 12, 520, 0, H, c["star"], avoid=(self.CX, self.CY, 300))
+        # the planet's edge, lit from the disc
+        out.append(L(cv, Shape().circle(260, 1820, 1060), c["planet"], ss=2))
+        for k in range(5):  # its ice in bands
+            out.append(L(cv, Shape().line([(x, 1820 - math.sqrt(max(0, (1060 - 60 - k * 70) ** 2 - (x - 260) ** 2))) for x in range(-200, 1300, 20)], 2.2), c["planet2"], 0.6, ss=2))
+        limb = [(x, 1820 - math.sqrt(max(0, 1060 ** 2 - (x - 260) ** 2))) for x in range(-200, 1330, 10)]
+        out.append(L(cv, Shape().line(limb, 3), c["limb"], 0.8, ss=2))
+        out.append(L(cv, Shape().line(limb, 22), c["limb"], 0.12 if c["dark"] else 0.08, ss=1, soft=14, mode="add" if c["dark"] else "over"))
+        return out
+
+    def light(self, cv, c, t):
+        """The disc and the light bent round the hole, worked out a pixel at a time:
+        hot at its inner edge, turning, brighter on the side coming toward us."""
+        cx, cy, rs = self.CX, self.CY, self.RS
+        b = cv.box(cx - 600, cy - 230, cx + 600, cy + 230)
+        px0, py0, px1, py1 = b
+        X = (np.arange(px0, px1, dtype=np.float32) + 0.5)[None, :] / cv.s - cx
+        Y = (np.arange(py0, py1, dtype=np.float32) + 0.5)[:, None] / cv.s - cy
+        tilt = -0.08
+        xr = X * math.cos(tilt) + Y * math.sin(tilt)
+        yr = -X * math.sin(tilt) + Y * math.cos(tilt)
+        q, rin, rout = 0.085, 132.0, 560.0
+        rho = np.sqrt(xr ** 2 + (yr / q) ** 2)
+        phi = np.arctan2(yr / q, xr)
+        f = np.clip((rho - rin) / (rout - rin), 0, 1)
+        edge = np.clip((rho - rin) / 10, 0, 1) * np.clip((rout - rho) / 120, 0, 1)
+        swirl = 0.82 + 0.18 * np.sin(phi * 5 + rho * 0.025 - 2 * math.pi * 2 * t / self.seconds) * np.sin(phi * 2 - rho * 0.012 + 1.3)
+        doppler = 1 - 0.42 * np.cos(phi)
+        disc = 1.7 * edge * (rin / np.maximum(rho, rin)) ** 1.25 * swirl * doppler
+        r = np.sqrt(X ** 2 + Y ** 2)
+        behind = (yr < 0) & (r < rs)  # the far half, where the hole is in front of it
+        disc = np.where(behind, 0, disc)
+        theta = np.arctan2(Y, X)
+        lensed = 0.75 * np.exp(-((r - rs * 1.19) / 8.5) ** 2) * (0.5 + 0.5 * np.abs(np.sin(theta))) * (1 - 0.35 * np.cos(theta))
+        photon = np.exp(-((r - rs * 1.03) / 1.8) ** 2) * 0.9
+        hot, warm, cool = (np.asarray(c[k], np.float32) for k in ("hot", "warm", "cool"))
+        fc = f[..., None]
+        col = np.where(fc < 0.35, hot + (warm - hot) * (fc / 0.35), warm + (cool - warm) * np.clip((fc - 0.35) / 0.65, 0, 1))
+        ring_col = (hot * 0.5 + warm * 0.5)
+        total = disc + lensed + photon
+        mixed = (col * disc[..., None] + ring_col * lensed[..., None] + np.asarray(c["ring"], np.float32) * photon[..., None]) / np.maximum(total, 1e-4)[..., None]
+        cov = np.clip(total, 0, 1.6).astype(np.float32)
+        if c["dark"]:
+            return Layer((cov, slice(py0, py1), slice(px0, px1)), mixed.astype(np.float32), 1.0, "add")
+        return Layer((np.clip(cov, 0, 1), slice(py0, py1), slice(px0, px1)), mixed.astype(np.float32), 0.9)
+
+    def under(self, cv, p, t):
+        c = self.colors(p)
+        cx, cy, rs = self.CX, self.CY, self.RS
+        out = []
+        if c["dark"]:
+            out.append(glow(cv, cx, cy, 320, c["warm"], 0.09))
+        out.append(D(cv, cx, cy, rs, c["shadow"]))
+        out.append(self.light(cv, c, t))
+        # the probe: it falls toward the edge, slows, reddens, dims, and is never seen to cross
+        u = window(t, 3.0, 21.0)
+        if 0 < u < 1:
+            s = 1 - (1 - u) ** 3
+            r = 900 - (900 - (rs + 46)) * s
+            ang = -0.62 + 0.9 * s
+            x, y = cx + r * math.cos(ang), cy + r * math.sin(ang) * 0.6
+            redden = clamp((s - 0.7) / 0.3)
+            col = mix(c["probe"], c["cool"], redden)
+            blink = 0.35 + 0.65 * (1 if (t * (2.0 - 1.7 * redden)) % 1.0 < 0.5 else 0)
+            fade = 1 - clamp((u - 0.82) / 0.18)
+            out.append(D(cv, x, y, 2.4, col, blink * fade))
+            if c["dark"]:
+                out.append(glow(cv, x, y, 10, col, 0.3 * blink * fade))
+        return out
+
+
+SCENES_NIGHT = (Garoa(), Horizon())
+
+
+def limbs(joints, w):
+    """A figure from its joints: head, neck, hip, and each hand and foot through
+    its elbow or knee, as round strokes."""
+    j = joints
+    sh = Shape().circle(j["head"][0], j["head"][1], w * 0.95)
+    sh.line([j["neck"], j["hip"]], w * 1.8)
+    sh.line([((j["neck"][0] + j["hip"][0]) / 2, (j["neck"][1] + j["hip"][1]) / 2 - w * 0.3), j["neck"]], w * 2.1)  # the chest, broader
+    for a, b in (("elbow_l", "hand_l"), ("elbow_r", "hand_r")):
+        sh.line([j["neck"], j[a], j[b]], w * 0.75)
+        sh.circle(j[b][0], j[b][1], w * 0.42)
+    for a, b in (("knee_l", "foot_l"), ("knee_r", "foot_r")):
+        sh.line([j["hip"], j[a], j[b]], w * 0.95)
+        sh.ellipse(j[b][0] + w * 0.3, j[b][1] + w * 0.1, w * 0.62, w * 0.36)
+    return sh
+
+
+def pose_mix(a, b, u):
+    return {k: (a[k][0] + (b[k][0] - a[k][0]) * u, a[k][1] + (b[k][1] - a[k][1]) * u) for k in a}
+
+
+class Watch(Cinema, Cached):
+    """A night sail on a long swell, the moon low; a lighthouse sweeps the
+    water. It is beating upwind: twice a loop it tacks."""
+
+    name = "watch"
+    HZ = 610.0
+
+    def colors(self, p):
+        if not hasattr(self, "_c") or self._c[0] is not p:
+            dk = p.dark
+            bg = p("bg")
+            self._c = (p, dict(
+                dark=dk, top=mix(bg, BLACK3, 0.6) if dk else p("bg+fg:10"), low=mix(bg, p("accent"), 0.14) if dk else p("bg+white:45"),
+                sea=mix(bg, BLACK3, 0.42) if dk else p("bg+ansi_4:22"), deep=mix(bg, BLACK3, 0.66) if dk else p("bg+ansi_4:34"),
+                moon=p.pick("fg+ansi_3:12", "ansi_3+white:40"), glint=p.pick("fg", "white"), cloud=mix(bg, BLACK3, 0.5) if dk else p("bg+fg:14"),
+                land=mix(bg, BLACK3, 0.7) if dk else p("bg+fg:40"), beam=p.pick("ansi_3+white:50", "white"),
+                hull=mix(bg, BLACK3, 0.8) if dk else p("bg+fg:62"), sail=mix(bg, BLACK3, 0.62) if dk else p("bg+fg:8"), rim=p.pick("fg+accent:30", "fg"),
+                red=p("ansi_1"), green=p("ansi_2"), white=p.pick("fg", "white"), star=p.pick("fg", "fg"),
+            ))
+        return self._c[1]
+
+    def back(self, cv, p):
+        c = self.colors(p)
+        out = [vgrad(cv, 0, 0, W, self.HZ, [(0, c["top"]), (self.HZ, c["low"])])]
+        if c["dark"]:
+            out += starfield(cv, 31, 260, 0, self.HZ - 120, c["star"], big=0.9)
+        mx, my = 560.0, 470.0
+        out += [glow(cv, mx, my, 160, c["moon"], 0.14 if c["dark"] else 0.25), D(cv, mx, my, 40, c["moon"])]
+        for y, h, x0, w in ((420, 26, -100, 900), (452, 18, 300, 700), (500, 22, 1000, 1100)):  # long thin clouds, one over the moon
+            out.append(L(cv, Shape().ellipse(x0 + w / 2, y, w / 2, h), c["cloud"], 0.8, ss=1, soft=10))
+        out.append(vgrad(cv, 0, self.HZ, W, H, [(self.HZ, c["sea"]), (H, c["deep"])]))
+        out.append(L(cv, Shape().poly([(0, self.HZ + 2), (0, self.HZ - 40), (90, self.HZ - 46), (170, self.HZ - 30), (260, self.HZ - 22), (330, self.HZ + 2)]), c["land"], ss=2))
+        out.append(L(cv, Shape().rect(216, self.HZ - 84, 12, 62).poly([(212, self.HZ - 84), (222, self.HZ - 98), (232, self.HZ - 84)]), c["land"], ss=2))
+        return out
+
+    def under(self, cv, p, t):
+        c = self.colors(p)
+        out = []
+        # the moon's road on the water: short glints that come and go
+        rnd = random.Random(5)
+        for i in range(90):
+            y = self.HZ + 6 + (H - self.HZ) * rnd.random() ** 1.8
+            spread = 30 + (y - self.HZ) * 0.45
+            x = 560 + rnd.uniform(-1, 1) * spread
+            a = 0.5 + 0.5 * wave(t, 24 / rnd.choice((6, 8, 12)), rnd.random())
+            out.append(L(cv, Shape().line([(x - 6 - (y - self.HZ) * 0.03, y), (x + 6 + (y - self.HZ) * 0.03, y)], 1.6 + (y - self.HZ) * 0.006), c["glint"], (0.55 if c["dark"] else 0.7) * a, ss=1))
+        # the swell: long lines rolling toward us
+        for k in range(9):
+            u = ((t / 8.0) + k / 9) % 1.0
+            y = self.HZ + 10 + (H - self.HZ) * u ** 1.6
+            pts = [(x, y + 6 * math.sin(x / 140 + k)) for x in range(-20, W + 21, 40)]
+            out.append(L(cv, Shape().line(pts, 1.2 + 2.5 * u), c["deep"], 0.5 * bump(u) + 0.1, ss=1))
+        # the lighthouse: a beam that turns, three times a loop
+        ang = 2 * math.pi * t / 8.0
+        reach = 900 * abs(math.cos(ang))
+        lx, ly = 222.0, self.HZ - 92
+        side = 1 if math.cos(ang) > 0 else -1
+        beam = Shape().poly([(lx, ly - 4), (lx + side * reach, ly - 30 - 40 * abs(math.sin(ang))), (lx + side * reach, ly + 30), (lx, ly + 4)])
+        facing = max(0.0, math.sin(ang)) ** 6
+        out.append(L(cv, beam, c["beam"], 0.10 + 0.08 * facing, ss=1, soft=18, mode="add" if c["dark"] else "over"))
+        out.append(glow(cv, lx, ly, 10 + 40 * facing, c["beam"], 0.6 + 0.4 * facing))
+        # the boat: it heels, rides the swell, and tacks at six and eighteen seconds
+        k1 = ease_io(window(t, 5.0, 7.0))
+        k2 = ease_io(window(t, 17.0, 19.0))
+        kx = 1 - 2 * k1 + 2 * k2  # 1: bow to the right, -1: bow to the left
+        bx = 1180 - 90 * math.sin(2 * math.pi * (t - 6) / 24)
+        by = self.HZ + 92 + 6 * wave(t, 4)
+        heel = 0.2 * kx * (1 - 0.6 * bump(window(t, 5.0, 7.0)) - 0.6 * bump(window(t, 17.0, 19.0))) + 0.03 * wave(t, 4, 0.2)
+        luff = bump(window(t, 5.0, 7.0)) + bump(window(t, 17.0, 19.0))
+        f = kx if abs(kx) > 0.06 else (0.06 if kx >= 0 else -0.06)
+        tf = lambda s: s.moved(bx, by, 1.4, heel, 0, 0, f)
+        wake = Shape().line([(bx - f * 40, by + 8), (bx - f * 260, by + 18)], 3)
+        out.append(L(cv, wake, c["glint"], 0.18, ss=1, soft=4))
+        hull = Shape().poly([(-70, -6), (78, -10), (60, 10), (-56, 10)])
+        mast = Shape().line([(0, -8), (6, -190)], 3)
+        main = Shape().poly([(8, -186), (10 + 60 * luff, -100), (12, -12), (-62 + 30 * luff, -14)])
+        jib = Shape().poly([(6, -170), (74, -10), (20, -12)])
+        out.append(L(cv, tf(main).moved(1.5, -1.5), c["rim"], 0.6))
+        out.append(L(cv, tf(jib).moved(1.5, -1.5), c["rim"], 0.6))
+        out += [L(cv, tf(main), c["sail"]), L(cv, tf(jib), c["sail"]), L(cv, tf(mast), c["hull"]), L(cv, tf(hull), c["hull"])]
+        tx, ty = tf(Shape().poly([(6, -192)])).cmds[0][1][0]
+        out += [D(cv, tx, ty, 2.2, c["white"]), glow(cv, tx, ty, 10, c["white"], 0.4)]
+        nx, ny = tf(Shape().poly([(74, -10)])).cmds[0][1][0]
+        col = c["green"] if kx > 0 else c["red"]
+        out += [D(cv, nx, ny, 2.6, col), glow(cv, nx, ny, 14, col, 0.45)]
+        return out
+
+
+class Problem(Cinema, Cached):
+    """A bouldering wall at night under one light, chalk hanging in the beam. The
+    climber works the crux, comes off, chalks up, and starts again."""
+
+    name = "problem"
+
+    def colors(self, p):
+        if not hasattr(self, "_c") or self._c[0] is not p:
+            dk = p.dark
+            bg = p("bg")
+            self._c = (p, dict(
+                dark=dk, room=mix(bg, BLACK3, 0.7) if dk else p("bg+fg:22"), wall=mix(bg, BLACK3, 0.45) if dk else p("bg+fg:8"), wall2=mix(bg, BLACK3, 0.55) if dk else p("bg+fg:14"),
+                bolt=mix(bg, BLACK3, 0.75) if dk else p("bg+fg:30"), pad=mix(bg, BLACK3, 0.62) if dk else p("bg+fg:42"), seam=mix(bg, BLACK3, 0.8) if dk else p("bg+fg:55"),
+                light=p.pick("ansi_3+white:60", "white"), chalk=p.pick("fg", "white"), body=mix(bg, BLACK3, 0.85) if dk else p("bg+fg:75"), rim=p.pick("ansi_3+white:50", "accent"),
+                holds=[p("ansi_1"), p("ansi_2"), p("ansi_3"), p("ansi_4"), p("ansi_5"), p("ansi_6"), p("accent")],
+            ))
+        return self._c[1]
+
+    WALL = [(420, 120), (1500, 120), (1640, 860), (280, 860)]  # an overhang, seen from the side and below
+
+    def back(self, cv, p):
+        c = self.colors(p)
+        out = [L(cv, Shape().rect(0, 0, W, H), c["room"], ss=1)]
+        out.append(L(cv, Shape().poly(self.WALL), c["wall"], ss=2))
+        panels = Shape()
+        for k in range(1, 6):
+            u = k / 6
+            panels.line([(420 + 1080 * u, 120), (280 + 1360 * u, 860)], 2)
+        for k in range(1, 4):
+            v = k / 4
+            panels.line([(420 - 140 * v, 120 + 740 * v), (1500 + 140 * v, 120 + 740 * v)], 2)
+        out.append(L(cv, panels, c["wall2"], 0.8, ss=2))
+        bolts = Shape()
+        for i in range(24):
+            for j in range(14):
+                u, v = (i + 0.5) / 24, (j + 0.5) / 14
+                x = 420 - 140 * v + (1080 + 280 * v) * u
+                bolts.circle(x, 120 + 740 * v, 2.2)
+        out.append(L(cv, bolts, c["bolt"], ss=2))
+        rnd = random.Random(17)
+        for i in range(70):  # the holds: every route a color
+            u, v = rnd.uniform(0.03, 0.97), rnd.uniform(0.05, 0.95)
+            x, y = 420 - 140 * v + (1080 + 280 * v) * u, 120 + 740 * v
+            col = c["holds"][i % len(c["holds"])]
+            r = rnd.uniform(9, 22)
+            sh = Shape().poly(spline([(x + r * math.cos(a) * rnd.uniform(0.7, 1.2), y + r * 0.8 * math.sin(a) * rnd.uniform(0.7, 1.2)) for a in [k * math.pi / 3 for k in range(6)]], per=4))
+            out.append(L(cv, sh, mix(col, c["room"], 0.25), ss=2))
+        out.append(L(cv, Shape().poly([(200, 880), (1720, 880), (1800, 1040), (120, 1040)]), c["pad"], ss=2))
+        out.append(L(cv, Shape().line([(600, 880), (560, 1040)], 3).line([(1000, 880), (1000, 1040)], 3).line([(1400, 880), (1440, 1040)], 3).line([(160, 960), (1760, 960)], 2), c["seam"], ss=2))
+        out.append(L(cv, Shape().poly([(560, -20), (760, -20), (1240, 1060), (300, 1060)]), c["light"], 0.10 if c["dark"] else 0.18, ss=1, soft=60, mode="add" if c["dark"] else "over"))
+        return out
+
+    # where the climber is at each moment: a few poses, and the times between them
+    POSES = {
+        "start": dict(head=(820, 690), neck=(830, 712), hip=(850, 790), elbow_l=(800, 690), hand_l=(790, 650), elbow_r=(870, 690), hand_r=(880, 640), knee_l=(810, 820), foot_l=(800, 860), knee_r=(895, 815), foot_r=(900, 850)),
+        "mid": dict(head=(900, 520), neck=(905, 545), hip=(930, 630), elbow_l=(870, 510), hand_l=(860, 470), elbow_r=(950, 520), hand_r=(975, 480), knee_l=(880, 660), foot_l=(870, 700), knee_r=(980, 650), foot_r=(990, 690)),
+        "reach": dict(head=(960, 400), neck=(962, 426), hip=(985, 510), elbow_l=(930, 400), hand_l=(925, 360), elbow_r=(1010, 360), hand_r=(1040, 300), knee_l=(950, 545), foot_l=(940, 590), knee_r=(1020, 540), foot_r=(1035, 585)),
+        "air": dict(head=(990, 560), neck=(985, 585), hip=(985, 670), elbow_l=(940, 560), hand_l=(920, 520), elbow_r=(1030, 560), hand_r=(1050, 520), knee_l=(960, 720), foot_l=(950, 770), knee_r=(1020, 720), foot_r=(1030, 770)),
+        "sit": dict(head=(1000, 820), neck=(1000, 845), hip=(1010, 915), elbow_l=(970, 870), hand_l=(990, 900), elbow_r=(1040, 870), hand_r=(1020, 900), knee_l=(960, 900), foot_l=(940, 940), knee_r=(1060, 900), foot_r=(1080, 940)),
+        "stand": dict(head=(880, 760), neck=(882, 785), hip=(885, 865), elbow_l=(860, 815), hand_l=(875, 840), elbow_r=(905, 815), hand_r=(890, 840), knee_l=(870, 905), foot_l=(865, 945), knee_r=(900, 905), foot_r=(905, 945)),
+    }
+    KEYS = [(0.0, "start"), (3.0, "start"), (6.0, "mid"), (9.0, "reach"), (10.2, "reach"), (10.6, "air"), (11.0, "sit"), (15.5, "sit"), (17.5, "stand"), (21.0, "stand"), (23.4, "start")]
+
+    def pose(self, t):
+        for (t0, a), (t1, b) in zip(self.KEYS, self.KEYS[1:]):
+            if t0 <= t < t1:
+                u = (t - t0) / (t1 - t0)
+                return pose_mix(self.POSES[a], self.POSES[b], u if a == "reach" else ease_io(u))
+        return self.POSES["start"]
+
+    def under(self, cv, p, t):
+        c = self.colors(p)
+        out = []
+        j = self.pose(t)
+        fig = limbs(j, 17)
+        out.append(L(cv, fig.moved(3, -2), c["rim"], 0.5 if c["dark"] else 0.6))
+        out.append(L(cv, fig, c["body"]))
+        for age, (x, y), big in ((t - 11.0, (1000, 930), 1.0), (t - 16.0, (1000, 880), 0.5), (t - 21.3, (885, 840), 0.4)):  # chalk: the landing, then chalking up
+            u = age / 2.2
+            if 0 <= u < 1:
+                out.append(L(cv, Shape().ellipse(x, y - 30 * u, (40 + 120 * u) * big, (20 + 40 * u) * big), c["chalk"], 0.22 * (1 - u), ss=1, soft=16))
+        return out
+
+    def over(self, cv, p, t):
+        c = self.colors(p)
+        out = []
+        rnd = random.Random(29)
+        for i in range(70):  # chalk hanging in the beam, drifting
+            x0, y0 = rnd.uniform(500, 1200), rnd.uniform(60, 1000)
+            x = x0 + 30 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random())
+            y = y0 + 26 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random())
+            inside = clamp(1 - abs(x - (560 + (y / 1060) * 340 + 100)) / 380)
+            out.append(D(cv, x, y, rnd.uniform(0.8, 2.0), c["chalk"], (0.5 if c["dark"] else 0.6) * inside))
+        return out
+
+
+class Hangar(Cinema, Cached):
+    """A mech in its gantry, half done. A welder works at its knee; beacons turn.
+    Its visor wakes, the technician on the catwalk jumps, and it sleeps again."""
+
+    name = "hangar"
+
+    def colors(self, p):
+        if not hasattr(self, "_c") or self._c[0] is not p:
+            dk = p.dark
+            bg = p("bg")
+            self._c = (p, dict(
+                dark=dk, top=mix(bg, BLACK3, 0.75) if dk else p("bg+fg:30"), low=mix(bg, BLACK3, 0.5) if dk else p("bg+fg:14"),
+                floor=mix(bg, BLACK3, 0.6) if dk else p("bg+fg:24"), steel=mix(bg, BLACK3, 0.35) if dk else p("bg+fg:44"), steel2=mix(bg, BLACK3, 0.5) if dk else p("bg+fg:56"),
+                armor=mix(mix(bg, p("fg"), 0.22), BLACK3, 0.25) if dk else p("bg+fg:36"), armor2=mix(bg, BLACK3, 0.25) if dk else p("bg+fg:50"), stripe=p("ansi_1"),
+                visor=p("accent"), amber=p("ansi_3"), spark=mix(p("ansi_3"), (255.0, 255.0, 255.0), 0.5), light=p.pick("ansi_3+white:60", "white"), steam=p.pick("fg", "white"),
+                person=mix(bg, BLACK3, 0.85) if dk else p("bg+fg:75"), hazard=p("ansi_3"),
+            ))
+        return self._c[1]
+
+    def back(self, cv, p):
+        c = self.colors(p)
+        out = [vgrad(cv, 0, 0, W, 860, [(0, c["top"]), (860, c["low"])])]
+        ribs = Shape()
+        for k in range(9):  # the hangar's roof ribs
+            x = 60 + k * 230
+            ribs.line([(x, 0), (x + 40, 260)], 10)
+        ribs.line([(0, 260), (W, 260)], 8)
+        out.append(L(cv, ribs, c["steel2"], ss=1))
+        for x in (420, 960, 1500):  # lights in the roof, their cones
+            out += [L(cv, Shape().poly([(x - 30, 260), (x + 30, 260), (x + 260, 900), (x - 260, 900)]), c["light"], 0.06 if c["dark"] else 0.12, ss=1, soft=40, mode="add" if c["dark"] else "over"), glow(cv, x, 262, 30, c["light"], 0.5)]
+        out.append(L(cv, Shape().rect(0, 860, W, H - 860), c["floor"], ss=1))
+        hz = Shape()
+        for k in range(30):
+            x = k * 70
+            hz.poly([(x, 880), (x + 35, 880), (x + 5, 900), (x - 30, 900)])
+        out.append(L(cv, hz, c["hazard"], 0.5, ss=2))
+        # the gantry round the mech: uprights, catwalks
+        g = Shape()
+        for x in (640, 1280):
+            g.line([(x, 160), (x, 880)], 14)
+        for y in (330, 560):
+            g.line([(600, y), (1320, y)], 10)
+            for x in range(620, 1301, 40):
+                g.line([(x, y - 30), (x, y)], 2)
+            g.line([(600, y - 30), (1320, y - 30)], 3)
+        out.append(L(cv, g, c["steel"], ss=2))
+        out += self.mech(cv, c)
+        return out
+
+    def mech(self, cv, c):
+        """A mech of no one's: broad shoulders, a slit for a visor, an arm in a clamp."""
+        a, a2 = c["armor"], c["armor2"]
+        out = []
+        legs = Shape().poly([(840, 600), (920, 600), (930, 720), (910, 880), (820, 880), (830, 720)]).poly([(1000, 600), (1080, 600), (1090, 720), (1100, 880), (1010, 880), (990, 720)])
+        out.append(L(cv, legs, a2, ss=2))
+        out.append(L(cv, Shape().poly([(835, 690), (925, 690), (935, 740), (825, 740)]).poly([(995, 690), (1085, 690), (1095, 740), (985, 740)]), a, ss=2))
+        out.append(L(cv, Shape().poly([(860, 600), (1060, 600), (1080, 520), (840, 520)]), a2, ss=2))
+        torso = Shape().poly([(800, 300), (1120, 300), (1100, 470), (1060, 540), (860, 540), (820, 470)])
+        out.append(L(cv, torso, a, ss=2))
+        out.append(L(cv, Shape().poly([(900, 330), (1020, 330), (1000, 450), (920, 450)]), a2, ss=2))
+        out.append(L(cv, Shape().poly([(820, 470), (1100, 470), (1094, 488), (826, 488)]), c["stripe"], 0.85, ss=2))
+        out.append(L(cv, Shape().poly([(720, 270), (820, 280), (830, 360), (740, 380)]).poly([(1100, 280), (1200, 270), (1180, 380), (1090, 360)]), a2, ss=2))  # shoulders
+        out.append(L(cv, Shape().poly([(735, 380), (790, 375), (800, 560), (750, 580)]).poly([(1130, 375), (1185, 380), (1170, 580), (1120, 560)]), a, ss=2))  # arms
+        out.append(L(cv, Shape().rect(1110, 560, 80, 30), c["steel"], ss=2))  # the clamp
+        out.append(L(cv, Shape().poly([(915, 230), (1005, 230), (1015, 290), (905, 290)]), a, ss=2))  # the head
+        out.append(L(cv, Shape().poly([(918, 252), (1002, 252), (998, 264), (922, 264)]), a2, ss=2))  # its visor, asleep
+        lines = Shape().line([(960, 300), (960, 540)], 2).line([(860, 420), (1060, 420)], 2).line([(845, 760), (915, 760)], 2).line([(1005, 760), (1075, 760)], 2)
+        out.append(L(cv, lines, a2, 0.7, ss=2))
+        return out
+
+    def under(self, cv, p, t):
+        c = self.colors(p)
+        out = []
+        wake = bump(window(t, 12.0, 15.6)) ** 0.5 if 12.0 <= t < 15.6 else 0.0
+        flick = wake * (0.6 + 0.4 * (1 if int(t * 12) % 3 else 0)) if t < 12.6 else wake
+        if flick > 0.02:
+            out += [L(cv, Shape().poly([(918, 252), (1002, 252), (998, 264), (922, 264)]), c["visor"], flick), glow(cv, 960, 258, 60, c["visor"], 0.45 * flick)]
+        for k, (bx, by) in enumerate(((640, 150), (1280, 150))):  # beacons, turning faster while it is awake
+            ang = 2 * math.pi * (t / 2.0 + (1 / 0.75 - 1 / 2.0) * clamp(t - 12.0, 0.0, 3.6) + k * 0.5)
+            out.append(D(cv, bx, by, 9, c["amber"]))
+            sweep = Shape().poly([(bx, by), (bx + 420 * math.cos(ang), by + 160 * math.sin(ang) - 40), (bx + 420 * math.cos(ang + 0.25), by + 160 * math.sin(ang + 0.25) + 40)])
+            out += [L(cv, sweep, c["amber"], 0.10 * (0.5 + 0.5 * math.cos(ang)) if c["dark"] else 0.12, ss=1, soft=14, mode="add" if c["dark"] else "over"), glow(cv, bx, by, 24, c["amber"], 0.5)]
+        # the welder at the knee: a figure, a hot point, sparks falling
+        wx, wy = 790.0, 760.0
+        weld = Shape().circle(wx - 30, wy - 64, 11).line([(wx - 30, wy - 50), (wx - 34, wy + 10)], 18).line([(wx - 28, wy - 40), (wx - 6, wy - 30), (wx + 6, wy - 34)], 9).line([(wx - 34, wy + 10), (wx - 46, wy + 60), (wx - 40, wy + 112)], 11).line([(wx - 34, wy + 10), (wx - 18, wy + 60), (wx - 26, wy + 112)], 11)
+        out.append(L(cv, weld, c["person"]))
+        arc = 0.6 + 0.4 * (1 if int(t * 20) % 4 else 0)
+        out += [glow(cv, wx + 10, wy - 36, 36, c["spark"], 0.6 * arc), D(cv, wx + 10, wy - 36, 3, (255.0, 255.0, 255.0))]
+        rnd = random.Random(53)
+        for i in range(40):
+            t0 = rnd.uniform(0, 24)
+            u = ((t - t0) % 24) / 1.2
+            if u < 1:
+                vx, vy = rnd.uniform(-120, 160), rnd.uniform(-160, -40)
+                x, y = wx + 10 + vx * u, wy - 36 + vy * u + 520 * u * u
+                out.append(L(cv, Shape().line([(x, y), (x - vx * 0.03, y - (vy + 1040 * u) * 0.03)], 2), c["spark"], 1 - u, mode="add" if c["dark"] else "over"))
+        # the technician on the upper catwalk, with a tablet: it jumps back when the visor wakes
+        jump = bump(window(t, 12.3, 13.2))
+        back_off = 60 * ease_out(window(t, 12.3, 13.0)) * (1 - ease_io(window(t, 16.0, 18.0)))
+        tx, ty = 1110.0 + back_off, 330.0 - 40 * jump
+        tech = Shape().circle(tx, ty - 74, 10).line([(tx, ty - 62), (tx, ty - 20)], 15).line([(tx, ty - 20), (tx - 8, ty)], 9).line([(tx, ty - 20), (tx + 8, ty)], 9).line([(tx, ty - 54), (tx - 16, ty - 40)], 7)
+        out += [L(cv, tech, c["person"]), L(cv, Shape().rect(tx - 26, ty - 48, 12, 8), c["visor"], 0.9), glow(cv, tx - 20, ty - 44, 14, c["visor"], 0.3)]
+        # steam from a vent at its feet, more when it wakes
+        rnd = random.Random(61)
+        for i in range(6):
+            u = ((t / 6.0) + i / 6) % 1.0
+            out.append(L(cv, Shape().ellipse(1150 + 20 * u, 860 - 160 * u, 30 + 60 * u, 20 + 40 * u), c["steam"], (0.06 + 0.12 * wake) * bump(u) * (1 if c["dark"] else 2), ss=1, soft=20 + 20 * u))
+        return out
+
+    def over(self, cv, p, t):
+        c = self.colors(p)
+        return bubble(cv, 1160 + 60 * ease_out(window(t, 12.3, 13.0)), 220, pop(t, 12.4, 14.2), "!", p.pick("bg+fg:88", "white"), mix(p("bg"), BLACK3, 0.6), tail=-1)
+
+
+class Crossing(Cinema, Cached):
+    """A level crossing at dusk, wires and a lit vending machine. The bells ring,
+    the arm comes down, a train goes by; after it the crows have changed places."""
+
+    name = "crossing"
+    RAIL = 800.0
+
+    def colors(self, p):
+        if not hasattr(self, "_c") or self._c[0] is not p:
+            dk = p.dark
+            bg = p("bg")
+            self._c = (p, dict(
+                dark=dk, top=mix(bg, p("ansi_5"), 0.12) if dk else p("bg+ansi_5:12"), mid=mix(bg, p("ansi_1"), 0.2) if dk else p("bg+ansi_3:22"), low=mix(p("ansi_3"), bg, 0.55) if dk else p("ansi_3+white:55"),
+                sun=mix(p("ansi_3"), (255.0, 255.0, 255.0), 0.4), cloud=mix(bg, p("ansi_5"), 0.25) if dk else p("bg+ansi_5:24"),
+                ink=mix(bg, BLACK3, 0.78) if dk else p("bg+fg:70"), ink2=mix(bg, BLACK3, 0.6) if dk else p("bg+fg:52"), ground=mix(bg, BLACK3, 0.5) if dk else p("bg+fg:30"),
+                red=p("ansi_1"), vend=p.pick("fg+accent:20", "white"), vend2=p("accent"), train=mix(bg, BLACK3, 0.62) if dk else p("bg+fg:46"), window=p("ansi_3"),
+                haze=p.pick("ansi_3", "ansi_3"),
+            ))
+        return self._c[1]
+
+    def wire(self, x, k):
+        return 300 + k * 26 + 70 * ((x - 960) / 1100) ** 2
+
+    def back(self, cv, p):
+        c = self.colors(p)
+        out = [vgrad(cv, 0, 0, W, self.RAIL, [(0, c["top"]), (420, c["mid"]), (self.RAIL, c["low"])])]
+        out += [glow(cv, 1380, 640, 220, c["sun"], 0.28 if c["dark"] else 0.4), D(cv, 1380, 640, 60, c["sun"], 0.95)]
+        for y, h, x0, w in ((180, 30, 100, 900), (240, 22, 900, 800), (520, 18, 1100, 700)):
+            out.append(L(cv, Shape().ellipse(x0 + w / 2, y, w / 2, h), c["cloud"], 0.85, ss=1, soft=8))
+        out.append(L(cv, Shape().poly([(0, 760), (300, 720), (520, 740), (520, 680), (700, 680), (700, 740), (1100, 760), (W, 740), (W, self.RAIL), (0, self.RAIL)]), c["ink2"], ss=2))  # roofs far off
+        out.append(L(cv, Shape().rect(0, self.RAIL, W, H - self.RAIL), c["ground"], ss=1))
+        rails = Shape().line([(0, self.RAIL + 40), (W, self.RAIL + 40)], 5).line([(0, self.RAIL + 70), (W, self.RAIL + 70)], 5)
+        for x in range(0, W, 46):
+            rails.rect(x, self.RAIL + 36, 18, 40)
+        out.append(L(cv, rails, c["ink"], ss=2))
+        poles = Shape()
+        for x in (160, 1760):
+            poles.line([(x, 120), (x, self.RAIL + 20)], 14).line([(x - 60, 260), (x + 60, 260)], 8).line([(x - 40, 300), (x + 40, 300)], 6)
+        out.append(L(cv, poles, c["ink"], ss=2))
+        for k in range(3):
+            out.append(L(cv, Shape().line([(x, self.wire(x, k)) for x in range(160, 1761, 40)], 2.2), c["ink"], ss=2))
+        return out
+
+    def front(self, cv, p):
+        """The vending machine on our side of the line, in front of the train."""
+        c = self.colors(p)
+        out = [L(cv, Shape().rect(300, 700, 120, 210), c["ink"], ss=2), L(cv, Shape().rect(313, 716, 94, 120), c["vend"], 0.9, ss=2)]
+        cans = Shape()
+        for i in range(4):
+            for j in range(3):
+                cans.rect(320 + i * 22, 724 + j * 36, 13, 24)
+        out += [L(cv, cans, c["vend2"], 0.7, ss=2), glow(cv, 360, 780, 130, c["vend"], 0.2 if c["dark"] else 0.0)]
+        return out
+
+    CROWS = (520.0, 760.0, 1000.0, 1240.0)
+
+    def crossing_sign(self, cv, c, t, active):
+        x, y = 1520.0, self.RAIL + 20
+        out = [L(cv, Shape().line([(x, y), (x, y - 330)], 10), c["ink"])]
+        out.append(L(cv, Shape().line([(x - 54, y - 330), (x + 54, y - 290)], 12).line([(x - 54, y - 290), (x + 54, y - 330)], 12), c["ink"]))
+        out.append(L(cv, Shape().rect(x - 70, y - 252, 140, 14), c["ink"]))
+        on = int(t * 2.4) % 2 if active else -1
+        for k, lx in enumerate((x - 50, x + 50)):
+            lit = active and on == k
+            out.append(D(cv, lx, y - 228, 16, c["red"] if lit else c["ink2"]))
+            if lit:
+                out.append(glow(cv, lx, y - 228, 70, c["red"], 0.55))
+        # the arm: up, coming down, down, going up
+        down = ease_io(window(t, 8.6, 9.8)) * (1 - ease_io(window(t, 15.0, 16.2)))
+        ang = -1.45 * (1 - down)
+        ax, ay = x - 30, y - 120
+        tip = (ax - 560 * math.cos(ang), ay + 560 * math.sin(ang))
+        out.append(L(cv, Shape().line([(ax, ay), tip], 12), c["ink"]))
+        for k in range(1, 7):  # its stripes
+            u0, u1 = (k - 0.5) / 7, (k - 0.1) / 7
+            out.append(L(cv, Shape().line([(ax + (tip[0] - ax) * u0, ay + (tip[1] - ay) * u0), (ax + (tip[0] - ax) * u1, ay + (tip[1] - ay) * u1)], 9), c["red"], 0.9))
+        return out
+
+    def under(self, cv, p, t):
+        c = self.colors(p)
+        out = []
+        active = 8.0 <= t < 16.0
+        # the train: a long blur of windows, right to left, behind the crossing's sign and arm
+        u = window(t, 10.6, 14.6)
+        if 0 < u < 1:
+            x0 = W + 100 - (W + 3200) * u
+            train = Shape().rect(x0, self.RAIL - 220, 3000, 240)
+            out.append(L(cv, train, c["train"]))
+            wins = Shape()
+            for k in range(60):
+                wins.rect(x0 + 30 + k * 50, self.RAIL - 180, 34, 60)
+            out.append(L(cv, wins, c["window"], 0.75 if c["dark"] else 0.5, ss=1))
+            out.append(L(cv, Shape().rect(x0, self.RAIL - 110, 3000, 8), c["ink"], 0.8))
+            out.append(L(cv, Shape().rect(x0 - 200, self.RAIL - 230, 3400, 260), c["train"], 0.3, ss=1, soft=24))
+        out += self.crossing_sign(cv, c, t, active)
+        # the crows: in one order before the train, another after
+        after = t >= 12.6 and t < 23.0
+        order = (2, 0, 3, 1) if after else (0, 1, 2, 3)
+        settle = ease_io(window(t, 22.0, 23.0))
+        for slot, k in enumerate(order):
+            x = self.CROWS[slot]
+            if 22.0 <= t < 23.0:  # they shuffle back, one by one
+                x0b = self.CROWS[(2, 0, 3, 1).index(k)]
+                x = x0b + (self.CROWS[k] - x0b) * settle
+            y = self.wire(x, 0) - 2
+            bob = 3 * max(0.0, wave(t, 2.4, k * 0.31))
+            kx = 1 if k % 2 else -1
+            crow = Shape().poly(spline([(-20, -10), (-6, -24), (14, -22), (22, -12), (40, -6), (14, -2), (-12, -2)], per=5)).circle(-20, -22 - bob, 9).poly([(-28, -22 - bob), (-40, -18 - bob), (-28, -16 - bob)]).line([(-2, -2), (-4, 4)], 2).line([(6, -2), (6, 4)], 2)
+            out.append(L(cv, crow.moved(x, y, 1.2, 0, 0, 0, kx), c["ink"]))
+        rnd = random.Random(71)
+        for i in range(50):  # dust in the low sun
+            x0, y0 = rnd.uniform(0, W), rnd.uniform(380, 800)
+            x = x0 + 40 * wave(t, 24 / rnd.choice((1, 2, 3)), rnd.random())
+            y = y0 + 20 * wave(t, 24 / rnd.choice((2, 3, 4)), rnd.random())
+            out.append(D(cv, x, y, rnd.uniform(0.8, 1.8), c["haze"], 0.35 * (0.5 + 0.5 * wave(t, 24 / rnd.choice((4, 6)), rnd.random()))))
+        return out
+
+
+SCENES_NIGHT2 = (Watch(), Problem(), Hangar(), Crossing())
+
+
+# the collections: a look and feel for each persona, the scenes in it
+COLLECTIONS = {
+    "cozy": ("onsen", "duck", "reef", "campfire", "ufo", "pigeons"),  # warm, playful, a picture book for grown-ups
+    "night": ("garoa", "horizon", "watch", "problem", "hangar", "crossing"),  # the night-shift builder: cinematic, weather and light, a dry joke
+}
+SCENES = {s.name: s for s in (Onsen(), Duck(), Reef(), Campfire(), Ufo(), Pigeons()) + SCENES_NIGHT + SCENES_NIGHT2}
 
 
 # -- the loop ---------------------------------------------------------------------
@@ -1611,7 +2444,7 @@ def frame(cv, scene, p, back, front, t):
     paint(img, scene.under(cv, p, t))
     paint(img, front)
     paint(img, scene.over(cv, p, t))
-    return np.clip(np.rint(img), 0, 255).astype(np.uint8)
+    return np.clip(np.rint(scene.finish(cv, img, p)), 0, 255).astype(np.uint8)
 
 
 def encode(path, w, h, frames, preset="slow"):
@@ -1644,6 +2477,7 @@ def make(job):
 
 def main(argv):
     out_dir, paths, scenes, size, at, png, preset = HERE, [], [], (W, H), None, None, "slow"
+    collection = None
     it = iter(argv)
     for a in it:
         if a == "--out":
@@ -1658,6 +2492,11 @@ def main(argv):
             png = next(it)
         elif a == "--preset":
             preset = next(it)
+        elif a == "--collection":
+            collection = next(it)
+            if collection not in COLLECTIONS:
+                sys.exit("no collection %s: %s" % (collection, " ".join(COLLECTIONS)))
+            scenes += list(COLLECTIONS[collection])
         else:
             paths.append(a)
     for s in scenes:
