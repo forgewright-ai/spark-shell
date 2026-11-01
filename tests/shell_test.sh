@@ -4748,7 +4748,9 @@ mcpw() { printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initia
 rm -f "$F2/swaymsg.log" "$F2/mpv.log"
 mcpw "$(pvr 2 "$PVR/clip.webm")" "$(call 3 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, at: 1.5, x: 20, y: 200, w: 640, h: 360}')")" "$(call 4 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p}')")"
 _p2=$(page 2); _a3=$(ans 3); _a4=$(ans 4)
-( FULL=1 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" )
+# a full screen play's way back runs after its step has answered (#172): its last word is the bar, then the next test may start
+full_back() { _fb=0; while [ "$_fb" -lt 50 ] && ! tail -n 1 "$F2/swaymsg.log" 2>/dev/null | grep -q '^bar mode '; do sleep 0.1; _fb=$((_fb + 1)); done; }
+( FULL=1 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" ); full_back
 printf '%s' "$_p2" | jq -e '.play.name == "files_play" and .stop.name == "files_stop" and .seconds == 4.5' >/dev/null \
     && [ "$(printf '%s' "$_a3" | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
     && grep -qF -- '--wayland-app-id=spark-preview --no-border --osc=no' "$F2/mpv.log" && grep -qF -- '--geometry=640x360 --start=+1.5 -- ' "$F2/mpv.log" \
@@ -4759,8 +4761,7 @@ printf '%s' "$_p2" | jq -e '.play.name == "files_play" and .stop.name == "files_
 # #158: full screen, the dialog trades sway's full screen for a floating window on the same pixels while the video plays,
 # the bar out of sight, in one command; when the play ends it takes full screen back at its own size first, in one command
 rm -f "$F2/swaymsg.log"
-( FULL=1 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" )
-_fb=0; while [ "$_fb" -lt 30 ] && ! grep -q 'fullscreen enable' "$F2/swaymsg.log" 2>/dev/null; do sleep 0.1; _fb=$((_fb + 1)); done; sleep 0.3
+( FULL=1 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" ); full_back
 [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
     && [ "$(grep -n -e '^bar mode invisible$' -e 'fullscreen disable' "$F2/swaymsg.log" | cut -d: -f2- | head -2 | paste -sd '|' -)" = 'bar mode invisible|[con_id=42] fullscreen disable, resize set 1920 1080, move absolute position 0 0' ] \
     && [ "$(grep -n -e 'fullscreen enable' -e '^bar mode' "$F2/swaymsg.log" | cut -d: -f2- | tail -2 | paste -sd '|' -)" = '[con_id=42] resize set 600 800, move position center, fullscreen enable|bar mode dock' ] \
@@ -4769,7 +4770,7 @@ _fb=0; while [ "$_fb" -lt 30 ] && ! grep -q 'fullscreen enable' "$F2/swaymsg.log
     || bad "preview video full screen" "$(ans 5) | $(cat "$F2/swaymsg.log" 2>&1)"
 # #172: a full screen play's way back is a job of its own: a video that plays on never holds the step's answer, bash or dash
 rm -f "$F2/swaymsg.log"; _t0=$(date +%s)
-( FULL=1 VIDEO_PLAYS=6 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" ); _t1=$(date +%s)
+( FULL=1 VIDEO_PLAYS=6 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" ); _t1=$(date +%s); full_back
 [ $((_t1 - _t0)) -le 4 ] && [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
     && ok "provide files: full screen, the step answers at once while the video plays on, and the provider ends: nothing waits for the play (#172)" \
     || bad "preview video full screen held" "$((_t1 - _t0)) s $(ans 5)"
