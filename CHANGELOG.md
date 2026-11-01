@@ -3,7 +3,7 @@
 ## v0.119
 
 - The dialog builds with unicode-width 0.2.3 (dependabot #176, #179):
-  Unicode 18's width tables, and the halfwidth katakana sound marks
+  Unicode 18's width tables, and the halfwidth katakana voicing signs
   measured right. `dialog/dialog.env` pins the new build.
 
 ## v0.118
