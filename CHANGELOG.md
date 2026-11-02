@@ -147,6 +147,15 @@ part lands in a pull request of its own.
   layout is the same. In a headless sway on the box, saving three
   windows took about 810 ms and 124 processes, and takes about 365 ms
   and 74.
+- `theme save` no longer puts the look on again. The save ended by
+  applying the theme it had just made: sway's colors and the bar sent
+  again, the wallpaper covered and drawn again, the open terminals
+  repainted, the theme's files written. The look on the screen is the
+  one it keeps, so now the saved theme is only named the one in use,
+  and first in the history; a picture of yours becomes the folder's
+  copy in sway's file, and the screen shows the same picture. In a
+  headless sway on the box a save took 2.3 seconds and 465 processes,
+  and takes 1.0 second and 230.
 
 ## v0.121
 

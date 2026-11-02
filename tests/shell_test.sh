@@ -5627,11 +5627,14 @@ rc=0; out=$(sh "$SH" theme save 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: save NAME -- a name for this look' ] && ok "theme save (bare) on a palette: a name is asked for in one line" || bad "theme save bare" "rc=$rc $out"
 rc=0; out=$(sh "$SH" theme save nord 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell theme: nord is a palette's name -- give the theme another" ] && ok "theme save nord: a palette's name is refused" || bad "theme save palette name" "rc=$rc $out"
+_te=$(cksum < "$HOME/.config/spark/theme.env")
 out=$(sh "$SH" theme save Winter Desk 2>&1)
 [ "$(printf '%s\n' "$out" | sed -n 1p)" = "saved winter-desk ($th_dir/winter-desk) -- spark-shell theme winter-desk brings the look back" ] && [ -f "$th_dir/winter-desk/palette.env" ] && cmp -s "$th_dir/winter-desk/palette.env" "$REPO/themes/nord.env" \
     && grep -qx 'PALETTE=nord' "$th_dir/winter-desk/look.env" && grep -qx "WALLPAPER=$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" "$th_dir/winter-desk/look.env" && grep -qx 'FONT=DejaVu Sans Mono:size=12' "$th_dir/winter-desk/look.env" && grep -qx 'ALPHA=0.85' "$th_dir/winter-desk/look.env" \
     && grep -qx 'THEME=winter-desk' "$cfg" \
     && ok "theme save WORDS: a folder named by the words with the palette and the look, the theme in use now, said in one line" || bad "theme save" "$out $(ls "$th_dir" 2>&1; cat "$th_dir/winter-desk/look.env" 2>&1)"
+[ "$(printf '%s\n' "$out" | grep -c '')" = 1 ] && [ "$_te" = "$(cksum < "$HOME/.config/spark/theme.env")" ] && [ "$(sed -n 1p "$st_dir/theme.history" | cut -f2)" = winter-desk ] \
+    && ok "theme save: the look on the screen is the one kept, so nothing is drawn or written again (theme.env as it was, no terminal repainted); first in the history (#196)" || bad "theme save no apply" "$out"
 out=$(sh "$SH" theme list)
 printf '%s\n' "$out" | grep -q "^Saved themes (folders in $th_dir):$" && printf '%s\n' "$out" | grep -q "^  winter-desk  *nord $SEP $([ "$(uname -s)" = Darwin ] && echo default || echo fjord), current$" && printf '%s\n' "$out" | grep -q '^  nord  *fjord$' && printf '%s\n' "$out" | grep -q '^  tokyonight-night  *skyline$' \
     && printf '%s\n' "$out" | grep -q '^The last looks (spark-shell theme back steps through them):$' && [ "$(printf '%s\n' "$out" | grep -c '^  winter-desk  *today ')" = 1 ] && printf '%s\n' "$out" | grep -q '^  nord  *today ' \

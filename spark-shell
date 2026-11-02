@@ -5962,6 +5962,10 @@ panel_recent_first() {   # panel_recent_first ROWS -- the rows you picked most r
         cat "$TMP/rest.rows"
     else cat "$1"; fi
 }
+sway_file_apply() {   # sway's file rendered again, alone: a setting only that file holds changed, and nothing on the screen is drawn again (#196)
+    for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; EXPR=$(render_expr)
+    render_one "$REPO/templates/.config/sway/config" "$HOME/.config/sway/config" >/dev/null 2>&1 || :
+}
 look_apply() {   # a look setter's change (text size, transparency, the wallpaper, the bar, the windows, the display, the keyboard): on the screen at once, with no reload (#33), then the desktop's files for new windows
     for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; EXPR=$(render_expr)
     wall_missing >/dev/null
@@ -9054,6 +9058,7 @@ theme_save() {   # theme_save [NAME...] -- the look in use kept as a folder unde
     mkdir_private "$PALETTE_DIR"; rm -rf "$_d.new"; mkdir -p "$_d.new"
     cp "$_pf" "$_d.new/palette.env"
     _origin=$THEME; [ -z "$_src" ] || _origin=$(look_get "$_src" PALETTE)
+    _tsp=''   # a picture of the look's own, copied into the folder
     {
         printf 'PALETTE=%s\n' "${_origin:-$THEME}"
         _ws=''; [ -z "$_src" ] || _ws=$(look_get "$_src" WORDS); [ -z "$_ws" ] || printf 'WORDS=%s\n' "$_ws"
@@ -9061,13 +9066,20 @@ theme_save() {   # theme_save [NAME...] -- the look in use kept as a folder unde
             printf 'WALLPAPER=%s\nDRAWING=%s\n' "$WALLPAPER" "$WALLPAPER"
             _wp=$(wall_path); cp "$_wp" "$_d.new/wallpaper.png"; [ ! -f "${_wp%.png}.svg" ] || cp "${_wp%.png}.svg" "$_d.new/wallpaper.svg"
         elif wall_there; then
-            _pic=${WALLPAPER##*/}; cp "$WALLPAPER" "$_d.new/$_pic"; printf 'WALLPAPER=picture\nPICTURE=%s\n' "$_pic"
+            _tsp=${WALLPAPER##*/}; cp "$WALLPAPER" "$_d.new/$_tsp"; printf 'WALLPAPER=picture\nPICTURE=%s\n' "$_tsp"
         else printf 'WALLPAPER=%s\n' "$WALLPAPER"; fi
         printf 'FONT=%s\nALPHA=%s\nPOINTER=%s\nANIMATION=%s\nBAR_GLYPHS=%s\nBAR_WORKSPACES=%s\nWALLPAPER_MOTION=%s\n' "$FONT" "$ALPHA" "${POINTER:-}" "$(anim_now)" "$BAR_GLYPHS" "$BAR_WORKSPACES" "$WALLPAPER_MOTION"
     } > "$_d.new/look.env"
     rm -rf "$_d"; mv "$_d.new" "$_d"
     echo "saved $name ($_d) -- spark-shell theme $name brings the look back"
-    theme_apply "$name"
+    # the look on the screen is the one just kept: it becomes the theme in use, and nothing is drawn again (#196)
+    [ "$THEME" = "$name" ] || config_set THEME "$name" >/dev/null
+    THEME=$name; export THEME
+    if [ -n "$_tsp" ] && [ "$WALLPAPER" != "$_d/$_tsp" ]; then   # the picture: the folder's copy from now on, so the look's own can go
+        config_set WALLPAPER "$_d/$_tsp" >/dev/null; WALLPAPER=$_d/$_tsp; export WALLPAPER
+        ! desktop_wanted || sway_file_apply   # sway's file names it; the running sway shows the same picture meanwhile
+    fi
+    kept_note theme "$name"
 }
 theme_delete() {   # theme_delete NAME... -- a saved theme's folder gone, with its lines in the history; never a palette, never the theme in use; at a terminal it asks first
     name=$(desk_name_of "$*"); [ -n "$name" ] || refuse_in theme "delete NAME -- which theme?"
