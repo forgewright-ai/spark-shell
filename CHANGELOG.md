@@ -192,6 +192,11 @@ part lands in a pull request of its own.
   is dragged. Files no longer draws a page larger for a zoom (`full`)
   or says a picture's size at 100 % (`size`); the size stays a fact.
   The preview-zoom frame becomes preview-fit.
+- Cut: the Home search in groups. Words typed at Home show everything
+  they name as one list, the best first, with no headings, no best
+  three of a kind and no row that opened the rest of a kind as a list
+  of its own. The files and notes found for the words come after the
+  rest once typing rests, so no row above them moves.
 
 ## v0.121
 

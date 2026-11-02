@@ -993,21 +993,20 @@ ends where it always does.
 `DIALOG_ATTACH` hides Attach.
 
 Type in a place, and its list keeps what matches. Type at the home, and
-the list shows what the words name, in groups: places, apps, files,
-notes, reminders, windows, layouts and settings, the best three of each
-(a name's start first, then a word's start, then inside a word), then a
-row that opens the rest of that kind as a list of its own; Esc from it
-brings the search back. A word of four letters or more may be one
-letter off: a letter missing, one too many, a wrong one, or two
-swapped. Files are found by name anywhere under your home, from a list
-of the names kept in `~/.cache/spark-shell/files.names` (yours alone,
-never sent anywhere, walked again in the background when it is ten
-minutes old), and notes by what they say; both come in once typing
-rests for a moment. A section's name holds its rows too: `wifi` lists
-the networks. The row your words name is lit, and
-Enter runs it with no model call: `nord` and Enter is the palette nord
-(`drac` lights dracula). Words that name no row stay at the prompt,
-and the key row says Ask: Enter sends them. A place's name alone, as
+the list shows everything the words name as one list, the best first:
+places, apps, notes, reminders, windows, layouts and settings alike (a
+name's start first, then a word's start, then inside a word). A word of
+four letters or more may be one letter off: a letter missing, one too
+many, a wrong one, or two swapped. Files are found by name anywhere
+under your home, from a list of the names kept in
+`~/.cache/spark-shell/files.names` (yours alone, never sent anywhere,
+walked again in the background when it is ten minutes old), and notes
+by what they say; both come in once typing rests for a moment, after
+the rest of the list, so no row above them moves. A section's name
+holds its rows too: `wifi` lists the networks. The row your words name
+is lit, and Enter runs it with no model call: `nord` and Enter is the
+palette nord (`drac` lights dracula). Words that name no row stay at
+the prompt, and the key row says Ask: Enter sends them. A place's name alone, as
 `settings` or `calendar`, opens it. A command in the dialog's own
 words, as `display brightness 30` or `theme dracula`, runs at once,
 with no model. Other

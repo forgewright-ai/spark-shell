@@ -1,10 +1,9 @@
-// The search from Home and the keys every row shares (#169): what is found, in which group, the rest
-// of a kind, what the providers find for the words, Space on any row with a page, Enter on a row that
-// is only its steps.
+// The search from Home and the keys every row shares (#169): what is found, as one list (#196), what the
+// providers find for the words, Space on any row with a page, Enter on a row that is only its steps.
 mod common;
 use common::*;
 use serde_json::{json, Value};
-use spark_dialog::app::{search_uri, App, Found, Item, View};
+use spark_dialog::app::{search_uri, App, Item, View};
 use spark_dialog::mcp::Incoming;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
@@ -122,7 +121,7 @@ fn typed(app: &mut App, words: &str) {
     }
 }
 
-/// The list as words: a heading as `# name`, a row by its text, the rest of a kind as `N more`.
+/// The list as words: a heading as `# name`, a row by its text, a place and a setting by their names.
 fn list(app: &App) -> Vec<String> {
     app.items()
         .iter()
@@ -131,29 +130,33 @@ fn list(app: &App) -> Vec<String> {
             Item::Row(p, r) => Some(app.providers[*p].rows.rows[*r].text.clone()),
             Item::Hit(i) => Some(app.hits[*i].1.text.clone()),
             Item::Dest(d) => Some(spark_dialog::app::DESTS[*d].name.to_string()),
-            Item::More(_, n) => Some(format!("{} more", n)),
+            Item::Setting(i) => Some(spark_dialog::app::SETTINGS[*i].1.to_string()),
             _ => None,
         })
         .collect()
 }
 
 #[test]
-fn a_search_from_home_groups_what_it_finds_by_kind_the_best_three_each() {
+fn a_search_from_home_is_one_list_the_best_first() {
     let mut r = started();
     typed(&mut r.app, "fi");
     let l = list(&r.app);
     let at = |s: &str| l.iter().position(|x| x == s).unwrap_or_else(|| panic!("{} not in {:?}", s, l));
-    assert!(at("# places") < at("Files") && at("Files") < at("# apps"), "{:?}", l);
-    assert!(at("# apps") < at("firefox") && at("firefox") < at("# notes"), "{:?}", l);
-    assert!(at("# notes") < at("# settings") && at("# settings") < at("FiberNet"), "{:?}", l);
-    // four notes say fi: the best three, then the rest as one row; a name's start before a word's start
-    let notes: Vec<&String> = l[at("# notes") + 1..at("# settings")].iter().collect();
-    assert_eq!(
-        notes,
-        ["finance", "field trip", "fish recipes", "1 more"],
-        "a tie goes to the shorter name: {:?}",
+    assert!(!l.iter().any(|x| x.starts_with("# ")), "no group headings: {:?}", l);
+    assert!(!r.app.items().iter().any(|it| matches!(it, Item::Blank)), "no air between groups: {:?}", l);
+    // every thing the words name, all four notes among them; a name's start first, the shorter name in a tie, then a
+    // word's start (Wi-Fi)
+    assert!(
+        at("Files") < at("firefox") && at("firefox") < at("finance") && at("finance") < at("FiberNet"),
+        "{:?}",
         l
     );
+    assert!(
+        at("FiberNet") < at("field trip") && at("field trip") < at("fish recipes") && at("fish recipes") < at("fiction to read"),
+        "{:?}",
+        l
+    );
+    assert!(at("fiction to read") < at("Wi-Fi"), "{:?}", l);
     assert!(!l.contains(&"vegetables".to_string()) && !l.contains(&"micro".to_string()));
     assert!(
         !l.contains(&"Cafe".to_string()) && !l.contains(&"~".to_string()),
@@ -177,25 +180,6 @@ fn a_search_from_home_groups_what_it_finds_by_kind_the_best_three_each() {
 }
 
 #[test]
-fn the_rest_of_a_kind_opens_as_a_list_of_its_own_and_esc_brings_the_search_back() {
-    let mut r = started();
-    typed(&mut r.app, "fi");
-    let picks = r.app.picks();
-    let more = picks.iter().position(|it| matches!(it, Item::More(Found::Notes, 1))).expect("the notes' rest");
-    r.app.in_list = true;
-    r.app.sel = more;
-    r.app.enter();
-    assert_eq!(r.app.view, View::Found(Found::Notes, "fi".into()));
-    assert_eq!(r.app.title(), "notes");
-    assert_eq!(r.app.subtitle(), "fi");
-    assert_eq!(list(&r.app), ["finance", "field trip", "fish recipes", "fiction to read"]);
-    r.app.escape();
-    assert_eq!(r.app.view, View::Home);
-    assert_eq!(r.app.input, "fi", "back on the home, the words and the search as they were");
-    assert!(list(&r.app).contains(&"1 more".to_string()));
-}
-
-#[test]
 fn a_letter_off_still_finds_and_never_lights_the_row() {
     let mut r = started();
     typed(&mut r.app, "firfox");
@@ -209,6 +193,7 @@ fn a_letter_off_still_finds_and_never_lights_the_row() {
 fn the_files_are_asked_once_typing_rests_and_an_answer_for_older_words_lands_nowhere() {
     let mut r = started();
     typed(&mut r.app, "rep");
+    let before = list(&r.app);
     let uri = search_uri("files", "match", "rep");
     assert!(!r.asked.lock().unwrap().contains(&uri), "nothing is asked while the words are typed");
     r.app.tick(Instant::now() + Duration::from_millis(300));
@@ -222,9 +207,10 @@ fn the_files_are_asked_once_typing_rests_and_an_answer_for_older_words_lands_now
         pump(&mut r.app, &r.rx, |_| asked.lock().unwrap().contains(&notes)),
         "the notes are asked what they say"
     );
+    // the files' names come after every row that was there: nothing above them moved (#196)
     let l = list(&r.app);
-    let f = l.iter().position(|x| x == "# files").expect("a files group");
-    assert_eq!(&l[f + 1..f + 3], ["report.pdf", "old-report.txt"], "{:?}", l);
+    assert_eq!(&l[l.len() - 2..], ["report.pdf", "old-report.txt"], "{:?}", l);
+    assert_eq!(&l[..l.len() - 2], &before[..], "the rows before the names stay where they were");
     // a space after the words: the same words, the same names
     r.app.typed(' ');
     assert!(

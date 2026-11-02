@@ -126,62 +126,8 @@ pub fn setting_group(label: &str) -> &'static str {
         _ => "system",
     }
 }
-/// What a search from Home finds, in the order its groups stand (#169): a heading each, the best few
-/// of each, and a row that opens the rest of that kind.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Found {
-    Places,
-    Apps,
-    Files,
-    Notes,
-    Reminders,
-    Windows,
-    Layouts,
-    Settings,
-}
-pub const FOUND: [Found; 8] = [
-    Found::Places,
-    Found::Apps,
-    Found::Files,
-    Found::Notes,
-    Found::Reminders,
-    Found::Windows,
-    Found::Layouts,
-    Found::Settings,
-];
-/// The things of one kind a search from Home shows before the row that opens the rest (#169).
-pub const FOUND_SHOWN: usize = 3;
 /// How long typing rests before the providers are asked what they find for the words (#169).
 pub const SEARCH_PAUSE: Duration = Duration::from_millis(250);
-
-impl Found {
-    /// The kind's heading, as the list writes it.
-    pub fn name(self) -> &'static str {
-        match self {
-            Found::Places => "places",
-            Found::Apps => "apps",
-            Found::Files => "files",
-            Found::Notes => "notes",
-            Found::Reminders => "reminders",
-            Found::Windows => "windows",
-            Found::Layouts => "layouts",
-            Found::Settings => "settings",
-        }
-    }
-
-    /// The kind of a section's rows: a place's own, else a setting.
-    pub fn of(label: &str) -> Found {
-        match label {
-            "apps" => Found::Apps,
-            "files" => Found::Files,
-            "notes" => Found::Notes,
-            "reminders" => Found::Reminders,
-            "window" => Found::Windows,
-            "layout" => Found::Layouts,
-            _ => Found::Settings,
-        }
-    }
-}
 
 /// What the up and down arrows move between in a preview: the thing a section's rows are (#169).
 pub fn thing_of(label: &str) -> &'static str {
@@ -372,8 +318,6 @@ pub enum View {
     About,
     /// One file of a list, as large as the area allows (#120): the state is App::preview.
     Preview,
-    /// Every thing of one kind a search from Home found for these words (#169).
-    Found(Found, String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -549,8 +493,6 @@ pub enum Item {
     Folder(usize),
     /// A row a provider found for the words typed at Home (a file by its name, a note by what it says): App::hits (#169).
     Hit(usize),
-    /// The row that opens the rest of one kind a search from Home found, and how many more there are (#169).
-    More(Found, usize),
     /// A step of the row whose steps are shown: its index among the row's tool and its more.
     StepOf(usize),
     /// The row that ends a folder pick: the step lands in the folder shown (#112).
@@ -1510,15 +1452,6 @@ impl App {
                     self.section_rows(p, &mut list, !one);
                 }
             }
-            View::Found(k, words) => {
-                let all = self.found(words);
-                let q = search::words(self.query());
-                for it in all.into_iter().filter(|(f, _)| f == k).map(|(_, it)| it) {
-                    if q.is_empty() || self.name_of(&it).is_some_and(|n| search::score(&q, &n).is_some()) {
-                        list.push(it);
-                    }
-                }
-            }
             View::Home => {
                 if self.query().trim().is_empty() {
                     // the places with air between them, as the approved home has them
@@ -1529,23 +1462,8 @@ impl App {
                         list.push(Item::Dest(d));
                     }
                 } else {
-                    // what was typed, found, in groups of a kind each (#169): the best few of each, then a row that opens the rest
-                    let all = self.found(self.query());
-                    for k in FOUND {
-                        let of: Vec<Item> = all.iter().filter(|(f, _)| *f == k).map(|(_, it)| it.clone()).collect();
-                        if of.is_empty() {
-                            continue;
-                        }
-                        if !list.is_empty() {
-                            list.push(Item::Blank);
-                        }
-                        list.push(Item::Heading(k.name().into()));
-                        let n = of.len();
-                        list.extend(of.into_iter().take(FOUND_SHOWN));
-                        if n > FOUND_SHOWN {
-                            list.push(Item::More(k, n - FOUND_SHOWN));
-                        }
-                    }
+                    // what was typed, found, as one list, the best first (#196)
+                    list.extend(self.found(self.query()));
                 }
             }
         }
@@ -1556,18 +1474,23 @@ impl App {
         out
     }
 
-    /// Everything the words name, by kind, the best first in each (#169): the places and the settings by their names, every
-    /// row of every section by its words (or its section's name), and what the providers found for these words (files
-    /// by name, notes by what they say). A score ties to the shorter name, then to the order the rows came in.
-    pub fn found(&self, typed: &str) -> Vec<(Found, Item)> {
+    /// Everything the words name, as one list, the best first (#169, #196): the places and the settings by their names,
+    /// every row of every section by its words (or its section's name); then what the providers found for these words
+    /// (files by name, notes by what they say), after the rest, so their coming moves no row above them. A score ties to
+    /// the shorter name, then to the order the rows came in.
+    pub fn found(&self, typed: &str) -> Vec<Item> {
         let words = search::words(typed);
         if words.is_empty() {
             return vec![];
         }
-        let mut all: Vec<(Found, u32, usize, usize, Item)> = vec![];
-        let add = |k: Found, sc: u32, name: &str, it: Item, all: &mut Vec<(Found, u32, usize, usize, Item)>| {
+        let mut all: Vec<(u32, usize, usize, Item)> = vec![];
+        let add = |sc: u32, name: &str, it: Item, all: &mut Vec<(u32, usize, usize, Item)>| {
             let at = all.len();
-            all.push((k, sc, cells(name), at, it));
+            all.push((sc, cells(name), at, it));
+        };
+        let best_first = |all: &mut Vec<(u32, usize, usize, Item)>| {
+            all.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+            std::mem::take(all).into_iter().map(|(_, _, _, it)| it).collect::<Vec<Item>>()
         };
         // a place and a setting by their names, a setting by its section's too (wifi is Wi-Fi), and by what they are for,
         // a little ("volume" finds Sound)
@@ -1578,13 +1501,13 @@ impl App {
         };
         for d in self.dests() {
             if let Some(sc) = named(DESTS[d].name, "", DESTS[d].purpose) {
-                add(Found::Places, sc, DESTS[d].name, Item::Dest(d), &mut all);
+                add(sc, DESTS[d].name, Item::Dest(d), &mut all);
             }
         }
         for i in self.settings() {
             let (label, name, purpose) = SETTINGS[i];
             if let Some(sc) = named(name, label, purpose) {
-                add(Found::Settings, sc, name, Item::Setting(i), &mut all);
+                add(sc, name, Item::Setting(i), &mut all);
             }
         }
         let mut seen: Vec<String> = vec![];
@@ -1614,10 +1537,11 @@ impl App {
                 });
                 if let Some(sc) = sc {
                     seen.push(format!("{}\u{1f}{}", p, r.id));
-                    add(Found::of(&prov.label), sc, &r.text, Item::Row(p, i), &mut all);
+                    add(sc, &r.text, Item::Row(p, i), &mut all);
                 }
             }
         }
+        let mut list = best_first(&mut all);
         if self.hits_for == typed.trim() {
             for (i, (p, r)) in self.hits.iter().enumerate() {
                 if seen.contains(&format!("{}\u{1f}{}", p, r.id)) || !Self::pickable(r) {
@@ -1625,11 +1549,11 @@ impl App {
                 }
                 // the provider found it: by its name (a file), or by what it says (a note, whose name may hold none of the words)
                 let sc = search::score(&words, &r.text).unwrap_or(search::NEAR);
-                add(Found::of(&self.providers[*p].label), sc, &r.text, Item::Hit(i), &mut all);
+                add(sc, &r.text, Item::Hit(i), &mut all);
             }
         }
-        all.sort_by(|a, b| b.1.cmp(&a.1).then(a.2.cmp(&b.2)).then(a.3.cmp(&b.3)));
-        all.into_iter().map(|(k, _, _, _, it)| (k, it)).collect()
+        list.extend(best_first(&mut all));
+        list
     }
 
     /// The list changed under the light, a provider's finds having come in (#169): where the words chose the lit row, it
@@ -1656,9 +1580,9 @@ impl App {
         }
     }
 
-    /// The list is what a search from Home found: the groups, or the rest of one kind (#169).
+    /// The list is what a search from Home found (#169).
     pub fn searching(&self) -> bool {
-        matches!(self.view, View::Found(..)) || (self.view == View::Home && !self.query().trim().is_empty())
+        self.view == View::Home && !self.query().trim().is_empty()
     }
 
     /// The words typed at Home changed: the providers are asked what they find for them once typing rests (#169).
@@ -1728,7 +1652,7 @@ impl App {
                 .map(Self::pickable)
                 .unwrap_or(false),
             Item::Hit(i) => self.hits.get(*i).is_some_and(|(_, r)| Self::pickable(r)),
-            Item::Dest(_) | Item::Setting(_) | Item::StepOf(_) | Item::Here | Item::More(..) => true,
+            Item::Dest(_) | Item::Setting(_) | Item::StepOf(_) | Item::Here => true,
             _ => false,
         }
     }
@@ -2322,11 +2246,6 @@ impl App {
     }
 
     fn go_back(&mut self, v: View) {
-        // back from the rest of a kind to the home: the words come back, the search as it was (#169)
-        let words = match (&self.view, &v) {
-            (View::Found(_, w), View::Home) => Some(w.clone()),
-            _ => None,
-        };
         // back from a preview or from a row's steps: that row lit again, so Space and the right arrow go on from it (#169)
         let lit = if self.view == View::Preview {
             self.preview.take().map(|pv| pv.row().id.clone())
@@ -2366,10 +2285,6 @@ impl App {
             self.in_list = true;
             self.keep_lit = Some(id);
             self.follow_lit();
-        }
-        if let Some(w) = words {
-            self.set_input(w);
-            self.follow_words();
         }
     }
 
@@ -2581,7 +2496,7 @@ impl App {
         let words = self.input.trim().to_string();
         // a list filtered by the words typed: the words were a search, and go with the pick; commands spark
         // put in the box go too, so Space and the history are the list's again
-        if matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..) | View::Found(..)) {
+        if matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..)) {
             self.staged = None;
             if !words.is_empty() {
                 self.set_input(String::new());
@@ -2645,7 +2560,6 @@ impl App {
                     self.go(v);
                 }
             }
-            Item::More(k, _) => self.go(View::Found(k, words)),
             Item::Hit(i) => {
                 let Some((p, row)) = self.hits.get(i).cloned() else { return };
                 if let Some(c) = row.children {
@@ -3757,7 +3671,6 @@ impl App {
             View::Section(p) | View::Folder(p, _) | View::Steps(p) => section_name(&self.providers[*p].label).to_lowercase(),
             View::About => "about".into(),
             View::Preview => "preview".into(),
-            View::Found(k, _) => k.name().into(),
         }
     }
 
@@ -3767,7 +3680,6 @@ impl App {
             View::Folder(..) => self.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default(),
             View::Steps(_) => self.steps_row.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
             View::Preview => self.preview.as_ref().map(|pv| pv.place.clone()).unwrap_or_default(),
-            View::Found(_, words) => words.clone(),
             _ => String::new(),
         }
     }

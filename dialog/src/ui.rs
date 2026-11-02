@@ -575,7 +575,7 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         Item::Blank => {}
         Item::Said(s, text, first) => said_line(pen, s, text, *first, y, false),
         Item::Dest(d) => {
-            // found from the home, a place stands with the rows under its group's heading (#169)
+            // found from the home, a place's name stands with the rows' names (#169)
             let ind = if app.searching() { 4 } else { 0 };
             pen.put(2 + ind, y, DESTS[*d].name, pal.fg, false, lit);
             // what the place holds now, else what it is for
@@ -593,8 +593,8 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         }
         Item::Setting(i) => {
             let (label, name, purpose) = SETTINGS[*i];
-            // in Settings the rows sit under their groups' headings, as a folder's do (#137); found from the home, under the
-            // settings' heading with the rows (#169)
+            // in Settings the rows sit under their groups' headings, as a folder's do (#137); found from the home, its name
+            // stands with the rows' names (#169)
             let ind = if app.searching() {
                 4
             } else if app.view == View::Dest(SETTINGS_DEST) {
@@ -628,11 +628,6 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             if let Some((_, row)) = app.hits.get(*i) {
                 arrows = row_line(pen, row, y, lit, (widths, right, samples, chips, controls));
             }
-        }
-        Item::More(_, n) => {
-            // the rest of one kind a search found (#169): a row as a section's own "N more" is, with its arrow
-            let x = pen.put(6, y, &format!("{} more", n), pal.fg, false, lit);
-            pen.put(x, y, " \u{203a}", pal.muted, false, lit);
         }
         Item::StepOf(k) => {
             // one of a row's steps, in the provider's words: a row of its own, no sign
@@ -807,24 +802,6 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     let (widths, right) = widths(app, &items);
     // the columns held while the view stays (#196)
     let widths = if app.searching() { widths } else { app.held_columns(widths) };
-    // found from the home, each group lines up its own columns: a note's time is no file's size (#169)
-    let mut parts: Vec<(usize, Vec<usize>, Vec<bool>)> = vec![];
-    if app.searching() {
-        let mut start = 0;
-        for (k, it) in items.iter().enumerate() {
-            if matches!(it, Item::Heading(_)) && k > start {
-                let (w, r) = self::widths(app, &items[start..k]);
-                parts.push((start, w, r));
-                start = k;
-            }
-        }
-        let (w, r) = self::widths(app, &items[start..]);
-        parts.push((start, w, r));
-    }
-    let cols_at = |k: usize| match parts.iter().rev().find(|(s, _, _)| *s <= k) {
-        Some((_, w, r)) => (w.clone(), r.clone()),
-        None => (widths.clone(), right.clone()),
-    };
     let samples = items.iter().any(|it| row_of(app, it).is_some_and(|r| r.swatch.is_some()));
     // a group where any row carries a chip keeps the chip's column for every row, so their columns line up
     let chip_groups: Vec<Option<String>> = items
@@ -845,10 +822,9 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
             pen.light(y);
         }
         let chips = row_of(app, it).is_some_and(|r| chip_groups.contains(&r.group));
-        let (w, r) = cols_at(k);
         // a value's arrows take a click, each with a cell of air on either side so it is easy to hit (#175)
         if let (Some((less, more)), Some(n)) = (
-            item_line(app, pen, it, y, lit, (&w, &r, samples, chips, controls)),
+            item_line(app, pen, it, y, lit, (&widths, &right, samples, chips, controls)),
             picks.iter().position(|i| *i == k),
         ) {
             drawn.steps.push((less.saturating_sub(1), less + 2, y, n, false));
