@@ -5962,11 +5962,11 @@ panel_recent_first() {   # panel_recent_first ROWS -- the rows you picked most r
         cat "$TMP/rest.rows"
     else cat "$1"; fi
 }
-sway_file_apply() {   # sway's file rendered again, alone: a setting only that file holds changed, and nothing on the screen is drawn again (#196)
+sway_file_apply() {   # sway's file rendered again, alone: a setting only that file holds changed (how new windows sit, the idle minutes, the keyboard, the pointer, a picture's path), and nothing on the screen is drawn again; the caller gives a running sway the change itself (#196)
     for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; EXPR=$(render_expr)
     render_one "$REPO/templates/.config/sway/config" "$HOME/.config/sway/config" >/dev/null 2>&1 || :
 }
-look_apply() {   # a look setter's change (text size, transparency, the wallpaper, the bar, the windows, the display, the keyboard): on the screen at once, with no reload (#33), then the desktop's files for new windows
+look_apply() {   # a look setter's change (text size, transparency, the wallpaper): on the screen at once, with no reload (#33), then the desktop's files for new windows
     for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; EXPR=$(render_expr)
     wall_missing >/dev/null
     wall_follow >/dev/null
@@ -6051,7 +6051,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
             esac ;;
         spark) case $_a in chat) panel_chat ;; *) echo "$_a is not something spark does here"; return 1 ;; esac ;;
         window) case $_a in
-                split|tabs|stacked) config_set WINDOWS "$_a" >/dev/null; WINDOWS=$_a; export WINDOWS; look_apply   # the default for new workspaces, rendered; this one now
+                split|tabs|stacked) config_set WINDOWS "$_a" >/dev/null; WINDOWS=$_a; export WINDOWS; sway_file_apply   # the default for new workspaces, rendered; this one now
                     case $_a in tabs) _l=tabbed ;; stacked) _l=stacking ;; *) _l=splith ;; esac
                     [ -z "${SWAYSOCK:-}" ] || swaymsg -- "[workspace=__focused__ tiling] layout $_l" >/dev/null 2>&1 || :
                     echo "windows $(win_words "$_a")" ;;
@@ -6071,7 +6071,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
         display) case $_a in
                 idle|lock) case $_arg in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; *) echo "$_a takes minutes, 0 to 999 (0: never)"; return 1 ;; esac
                     _k=DISPLAY_IDLE; [ "$_a" = idle ] || _k=DISPLAY_LOCK
-                    config_set "$_k" "$_arg" >/dev/null; eval "$_k=\$_arg"; export "${_k?}"; look_apply; idle_restart
+                    config_set "$_k" "$_arg" >/dev/null; eval "$_k=\$_arg"; export "${_k?}"; sway_file_apply; idle_restart
                     if [ "$_a" = idle ]; then echo "idle screen $(idle_words "$_arg")"; else echo "lock and display off $(idle_words "$_arg")"; fi ;;
                 saver) _p=$(saver_problem "$_arg"); [ -z "$_p" ] || { echo "$_p"; return 1; }
                     config_set DISPLAY_SAVER "$_arg" >/dev/null; DISPLAY_SAVER=$_arg; export DISPLAY_SAVER
@@ -10730,7 +10730,7 @@ desk_display() {   # desk_display [idle|lock N | saver [NAME] | brightness N|up|
             case ${2:-} in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) ;; never) set -- "$1" 0 ;; *) refuse "display $1 takes minutes, 0 to 999 (0: never)" ;; esac
             [ "$DESKTOP" = sway ] || refuse "DESKTOP=$DESKTOP -- spark-shell on desktop first"
             config_set "$_k" "$2" >/dev/null; eval "$_k=\$2"; export "${_k?}"
-            look_apply; idle_restart
+            sway_file_apply; idle_restart
             if [ "$1" = idle ]; then echo "idle screen $(idle_words "$2")"; else echo "lock and display off $(idle_words "$2")"; fi ;;
         saver) if [ -z "${2:-}" ]; then   # the savers, the one in use ticked, as the keyboard lists its layouts
                 for _x in clock $SAVER_NAMES; do if [ "$_x" = "$DISPLAY_SAVER" ]; then echo "$PANEL_TICK $_x"; else echo "  $_x"; fi; done; return 0; fi
@@ -10788,7 +10788,7 @@ input_setting() {
     fi
     config_set "$input_key" "$3" >/dev/null
     export "$input_key=$3"
-    look_apply
+    sway_file_apply
     echo "$1 $2 $3"
 }
 
@@ -10829,7 +10829,7 @@ desk_keyboard() {   # desk_keyboard [next | LAYOUT...]
             printf '%s\n' "$_w" | grep -qE "$KB_RE" || refuse "$_w: layouts by their xkb names, a space between, a variant after a plus (us us+intl)"
             for _x in $_w; do kb_known "$_x" || refuse "$_x is no keyboard layout xkb knows (the two-letter names: us, br, de, fr, gb)"; done
             config_set KEYBOARD "$_w" >/dev/null; KEYBOARD=$_w; export KEYBOARD
-            look_apply; bar_redraw
+            sway_file_apply; bar_redraw
             echo "keyboard $_w" ;;
     esac
 }

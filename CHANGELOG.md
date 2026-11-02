@@ -156,6 +156,13 @@ part lands in a pull request of its own.
   copy in sway's file, and the screen shows the same picture. In a
   headless sway on the box a save took 2.3 seconds and 465 processes,
   and takes 1.0 second and 230.
+- A setting that only sway's file holds (how new windows sit, the idle
+  and lock minutes, the keyboard, the pointer) renders that file alone.
+  Each rendered all seven of the desktop's files and sent the whole
+  look to sway again: its colors, gaps, bar and pointer, and the open
+  terminals repainted. The step still gives a running sway the setting
+  itself. In a headless sway on the box, windows in tabs took 1.5
+  seconds and 242 processes, and takes 0.96 second and 173.
 
 ## v0.121
 

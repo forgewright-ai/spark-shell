@@ -4270,6 +4270,12 @@ STUB
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window split 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'windows side by side' ] && grep -q '^WINDOWS=split$' "$HOME/.config/spark-shell/config" && grep -q '^workspace_layout default$' "$sway" && grep -qxF '[workspace=__focused__ tiling] layout splith' "$H/.local/state/swaymsg.log" \
         && ok "panel window split: side by side again, workspace_layout default" || bad "window split" "st=$st $out"
+    # one line of the config: sway's file alone is rendered again, and the look is not sent to sway again (#196)
+    mv "$HOME/.config/foot/foot.ini" "$H/foot.ini.keep" 2>/dev/null || :; rm -f "$H/.local/state/swaymsg.log"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window tabs 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -q '^workspace_layout tabbed$' "$sway" && [ ! -e "$HOME/.config/foot/foot.ini" ] && ! grep -q 'client.focused' "$H/.local/state/swaymsg.log" \
+        && ok "panel window tabs: sway's file alone rendered again (foot's not written), nothing of the look sent to sway (#196)" || bad "window tabs one file" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
+    [ ! -e "$H/foot.ini.keep" ] || mv "$H/foot.ini.keep" "$HOME/.config/foot/foot.ini"; SWAYSOCK=/tmp/x sh "$SH" panel window split >/dev/null 2>&1 || :
     st=0; out=$(sh "$SH" panel window sideways 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: sideways is not in the list now' ] && ok "panel window WORD: a way that is not a row is refused" || bad "window refuse" "st=$st $out"
     # the windows open now: a row that puts one in front, a close row, the steps by name; the tree shows a firefox window while $HOME/fullscreen is there
