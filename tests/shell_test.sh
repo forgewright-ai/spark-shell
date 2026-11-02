@@ -4650,7 +4650,7 @@ mcp layout "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(c
 [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'saved three: firefox, sleep, shell' ] \
     && [ "$(jq -c 'del(.why)' "$HOME/.config/spark-shell/layouts/three")" = '{"words":"three","main":{"app":"firefox"},"side":[{"app":"sleep"},{"app":"shell"}]}' ] \
     && ok "provide layout_save: three windows saved as a layout knows them (Firefox is firefox, a terminal by the program in it, a shell when none), the dialog left out (#196)" || bad "layout save windows" "$(ans 2) $(cat "$HOME/.config/spark-shell/layouts/three" 2>&1)"
-pkill -P "$_lsh" 2>/dev/null || :; kill "$_lsh" 2>/dev/null || :; wait "$_lsh" 2>/dev/null || :; rm -f "$HOME/ls.tree"
+pkill -P "$_lsh" 2>/dev/null || :; kill "$_lsh" 2>/dev/null || :; wait "$_lsh" 2>/dev/null || :; rm -f "$HOME/ls.tree" "$HOME/.config/spark-shell/layouts/three"   # the layouts after it are webdev alone
 unset SWAYSOCK; PATH=$_lp
 # every palette: the dialog's quiet words read at 4.5 to 1 on its surface, or as its author's own text where that reads lower (#18)
 _cw=''
