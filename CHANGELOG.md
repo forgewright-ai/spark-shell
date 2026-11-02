@@ -120,6 +120,9 @@ part lands in a pull request of its own.
   back: each was a theme preview call of about 300 ms, and a flash of
   sway, the bar and the terminals as the arrows passed. Enter or a
   click keeps a palette, at once, as before.
+- Cut: the busy pointer. The pointer over the dialog no longer turns
+  to an hourglass a quarter of a second into a step or a request: the
+  row shows the step, and the header's march shows spark thinking.
 
 ## v0.121
 

@@ -1827,7 +1827,7 @@ fn a_value_changes_in_place_says_nothing_and_holds_over_an_old_read() {
     );
     assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 1), "then it is set");
     assert_eq!(calls.lock().unwrap()[0]["arguments"]["size"], "12", "the value itself, never a word to step by");
-    assert!(pump(&mut app, &rx, |a| !a.busy_pointer() && !a.providers[0].dirty && !a.providers[0].reading));
+    assert!(pump(&mut app, &rx, |a| !a.under_way() && !a.providers[0].dirty && !a.providers[0].reading));
     assert_eq!(
         row_of(&app, "theme:show:Text size").step.as_ref().unwrap().value(),
         "12",
@@ -2575,7 +2575,7 @@ fn a_pick_in_a_list_moves_its_check_in_place_and_says_nothing() {
     assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 1), "then it is set");
     assert_eq!(calls.lock().unwrap()[0]["arguments"]["name"], "waves");
     assert!(pump(&mut app, &rx, |a| *lists.lock().unwrap() >= 2
-        && !a.busy_pointer()
+        && !a.under_way()
         && !a.providers[0].dirty
         && !a.providers[0].reading));
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
@@ -2633,7 +2633,7 @@ fn a_pick_of_any_kind_keeps_every_other_row_still_and_a_refusal_lands_under_the_
         assert_eq!(y, y1, "{}: the lit row keeps its place while the call runs", id);
         assert_eq!(list_but(&before, y), list_but(&during, y), "{}: no other row moves", id);
         assert_eq!(before[6], during[6], "{}: nothing said at the click", id);
-        assert!(pump(&mut app, &rx, |a| a.reply.is_some() || !a.busy_pointer()));
+        assert!(pump(&mut app, &rx, |a| a.reply.is_some() || !a.under_way()));
         std::thread::sleep(Duration::from_millis(50));
         pump(&mut app, &rx, |_| false);
         let (after, y2) = frame(&app);
