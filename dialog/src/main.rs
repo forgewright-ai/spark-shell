@@ -42,8 +42,6 @@ enum Ev {
     Helper(Helper, Result<String, String>),
     /// The transitions' piece, decoded (#122): None when it could not be.
     Films(Option<transition::Films>),
-    /// A piece lit in the animation list, decoded (#132): its folder, and None when it could not be.
-    Side(String, Option<transition::Films>),
 }
 
 struct Args {
@@ -245,7 +243,6 @@ fn image<'a>(file: &str, cache: &'a mut Option<(String, std::time::SystemTime, I
 /// A transition drawn: its box, which one, its frame.
 type ShownFilm = ((u16, u16, u16, u16), Reel, usize);
 /// A piece beside a list drawn (#132): its box, its folder, the wait or the open, its frame.
-type ShownSide = ((u16, u16, u16, u16), String, bool, usize);
 /// A sound's spectrogram in the palette: its file, the palette's ramp, its box, the picture.
 type Tinted = (String, [[u8; 3]; 4], (u32, u32), Image);
 
@@ -273,22 +270,42 @@ fn spawn_films(dir: String, tx: mpsc::Sender<Ev>) {
     });
 }
 
-/// Two clicks on a row this close together are a double-click, the desktop's usual (#140).
-const DOUBLE_CLICK: Duration = Duration::from_millis(400);
-
 /// A drag's pictures, this far apart at least (#129), and as far apart as the last one took to draw (#148).
 const DRAG_GAP: Duration = Duration::from_millis(40);
 /// A drag's pictures in fewer colors, so each is a small write the terminal draws at once; the whole one when the
 /// pointer lets go (#148).
 const DRAG_COLORS: usize = 48;
 
+/// A tick wants a frame while spark's march shows, and when work starts or ends; work nothing shows draws
+/// nothing (#196). `was` and `now` say whether work was under way.
+fn frame_for_tick(was: bool, now: bool, march: bool) -> bool {
+    march || was != now
+}
+
+/// A mouse event wants a frame when it can change what is drawn: a press, a drag, the wheel, or the end of a drag;
+/// a motion or a release that ends nothing draws none, so a click is one frame (#196).
+fn frame_for_mouse(kind: MouseEventKind, dragging: bool) -> bool {
+    match kind {
+        MouseEventKind::Moved => false,
+        MouseEventKind::Up(_) => dragging,
+        _ => true,
+    }
+}
+
 /// The dialog's window shown (#167): it mapped unseen, and its first frame is drawn now. A RUN_COMMAND on sway's
 /// own socket, no process started; a moment's wait first, so foot has put the frame on the window before it shows.
 fn reveal() {
+    opacity(1, Duration::from_millis(25));
+}
+
+/// The dialog's window made clear (0) or solid (1) on sway's own socket: clear while a step puts a window in
+/// front, so the click shows that window coming at once, solid again when the step comes back refused (#196).
+fn opacity(level: u8, after: Duration) {
     let Some(sock) = std::env::var_os("SWAYSOCK") else { return };
     std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(25));
-        let cmd: &[u8] = b"[app_id=\"spark-dialog\"] opacity 1";
+        std::thread::sleep(after);
+        let cmd = format!("[app_id=\"spark-dialog\"] opacity {}", level);
+        let cmd = cmd.as_bytes();
         if let Ok(mut s) = std::os::unix::net::UnixStream::connect(sock) {
             let mut msg = b"i3-ipc".to_vec();
             msg.extend((cmd.len() as u32).to_ne_bytes());
@@ -311,12 +328,10 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
         || drawn.chips.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.keys.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.wave.is_some_and(on)
-        || [drawn.toast_undo, drawn.toast_close].iter().flatten().any(|(a, b, y)| span(*a, *b, *y));
+        || drawn.reply_undo.is_some_and(|(a, b, y)| span(a, b, y));
     if dragging {
         "grabbing"
-    } else if app.busy_pointer() {
-        "progress" // the work under way: spark's hourglass (#183)
-    } else if clicks || drawn.cells.iter().any(|(a, b, y, _)| span(*a, *b, *y)) {
+    } else if clicks {
         "pointer"
     } else if drawn.preview.as_ref().is_some_and(|p| app.zoomed() && on((p.x, p.y, p.w, p.h))) {
         "grab"
@@ -432,8 +447,8 @@ fn main() {
     let (mut drag_drawn, mut drag_owed) = (Instant::now(), false);
     // how long the last picture of a drag took to make and write: the next waits as long (#148)
     let mut drag_cost = Duration::ZERO;
-    // the last click on a row of Files: where, which, when (#140)
-    let mut last_click: Option<(u16, usize, Instant)> = None;
+    // the window made clear for a step that puts a window in front (#196)
+    let mut cleared = false;
     let mut pointer = "";
     // where the mouse was last over the window: the pointer's shape is asked again there as the work starts and ends (#183)
     let mut mouse_at: Option<(u16, u16)> = None;
@@ -441,13 +456,6 @@ fn main() {
     // the transition drawn now: its box, which one, its frame
     let mut shown_film: Option<ShownFilm> = None;
     let mut film_due: Option<Duration> = None;
-    // an animation beside a list (#132): the piece lit, decoded aside, and since when it plays; the one being decoded;
-    // the frame drawn now (its box, its folder, the wait or the open, the frame)
-    let mut side: Option<(String, Option<transition::Films>, Instant)> = None;
-    let mut side_loading: Option<String> = None;
-    let mut shown_side: Option<ShownSide> = None;
-    let mut side_due: Option<Duration> = None;
-    let side_tx = tx.clone();
 
     let mut term = match Terminal::new(CrosstermBackend::new(std::io::stdout())) {
         Ok(t) => t,
@@ -470,6 +478,7 @@ fn main() {
     let mut drawn = ui::Drawn::default();
     let mut dirty = true;
     let mut last_clock = String::new();
+    let mut prefs_at: Option<Instant> = None;
     loop {
         for j in std::mem::take(&mut app.jobs) {
             run_job(j, tx.clone(), listening.clone());
@@ -489,16 +498,24 @@ fn main() {
             shown_preview = None;
             dirty = true;
         }
-        let prefs = spark_dialog::preferences::read();
-        if app.monday_first != prefs.monday {
-            app.monday_first = prefs.monday;
-            dirty = true;
+        // the preferences read and the clock written once a second at most, never per event or pointer motion (#196)
+        if prefs_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(1)) {
+            prefs_at = Some(Instant::now());
+            let prefs = spark_dialog::preferences::read();
+            if app.monday_first != prefs.monday {
+                app.monday_first = prefs.monday;
+                dirty = true;
+            }
+            let now_clock = clock(prefs.twelve);
+            if now_clock != last_clock {
+                last_clock = now_clock;
+                app.today = Some(today());
+                dirty = true;
+            }
         }
-        let now_clock = clock(prefs.twelve);
-        if now_clock != last_clock {
-            last_clock = now_clock;
-            app.today = Some(today());
-            dirty = true;
+        // a step that closes the dialog closes it before another frame is drawn (#196)
+        if app.quit.is_some() {
+            break;
         }
         if let Some(f) = &films {
             app.follow_motion(Instant::now(), f.open.length(), f.close.length());
@@ -532,7 +549,7 @@ fn main() {
                 }
             });
             let _ = out.write_all(b"\x1b[?2026l");
-            // the busy pointer as work starts and ends, the mouse still: its shape asked again where it is (#183)
+            // the mouse still and the frame new: the pointer's shape asked again where it rests
             if let Some((c, r)) = mouse_at {
                 let want = pointer_at(&app, &drawn, c, r, false);
                 if want != pointer && drag.is_none() {
@@ -545,6 +562,10 @@ fn main() {
             if unseen && !matches!(app.motion, Some((Reel::Open, _))) {
                 reveal();
                 unseen = false;
+            }
+            if app.hidden != cleared && !unseen {
+                cleared = app.hidden;
+                opacity(if cleared { 0 } else { 1 }, Duration::ZERO);
             }
             app.preview_pages = drawn.pages.max(1);
             // the picture beside a list: drawn when it changed, its cells blanked first (the buffer skips them);
@@ -653,57 +674,6 @@ fn main() {
                 }
                 _ => shown_film = None,
             }
-            // an animation beside a list (#132): the lit piece's open, then its wait looped, from when it was lit, in the
-            // middle of the box a wallpaper's picture takes
-            side_due = None;
-            match (&drawn.side_film, cell_px()) {
-                (Some((x, y, w, h, dir)), Some((cw, chh))) if sixel_ok => {
-                    let bx = (*x, *y, *w, *h);
-                    if side.as_ref().is_none_or(|(d, _, _)| d != dir) && side_loading.as_deref() != Some(dir.as_str()) {
-                        side_loading = Some(dir.clone());
-                        let (tx, dir) = (side_tx.clone(), dir.clone());
-                        std::thread::spawn(move || {
-                            let f = decode_films(&dir);
-                            let _ = tx.send(Ev::Side(dir, f));
-                        });
-                    }
-                    if shown_side.as_ref().is_some_and(|(b, d, _, _)| *b != bx || d != dir) {
-                        // another piece lit: the box is cleared while it comes
-                        let _ = out.write_all(b"\x1b[?2026h");
-                        blank(&mut out, bx, term_color(pal.surface));
-                        let _ = out.write_all(b"\x1b[?2026l");
-                        let _ = out.flush();
-                        shown_side = None;
-                    }
-                    if let Some((_, Some(f), since)) = side.as_ref().filter(|(d, _, _)| d == dir) {
-                        let ms = since.elapsed().as_millis();
-                        let opened = f.open.length();
-                        let (film, waiting, t) = if ms < opened { (&f.open, false, ms) } else { (&f.wait, true, ms - opened) };
-                        let (k, left) = film.at(t, waiting);
-                        let at = (bx, dir.clone(), waiting, k);
-                        if shown_side.as_ref() != Some(&at) {
-                            let (dx, dy) = (
-                                ((*w as u32 * cw).saturating_sub(film.w) / 2 / cw) as u16,
-                                ((*h as u32 * chh).saturating_sub(film.h) / 2 / chh) as u16,
-                            );
-                            let _ = out.write_all(b"\x1b[?2026h");
-                            blank(&mut out, bx, term_color(pal.surface));
-                            let _ = queue!(
-                                out,
-                                ratatui::crossterm::cursor::SavePosition,
-                                ratatui::crossterm::cursor::MoveTo(x + dx, y + dy)
-                            );
-                            let _ = out.write_all(film.frames[k].0.as_bytes());
-                            let _ = queue!(out, ratatui::crossterm::cursor::RestorePosition);
-                            let _ = out.write_all(b"\x1b[?2026l");
-                            let _ = out.flush();
-                            shown_side = Some(at);
-                        }
-                        side_due = Some(Duration::from_millis(left.clamp(1, 1000) as u64));
-                    }
-                }
-                _ => shown_side = None,
-            }
             dirty = again;
         }
         if app.quit.is_some() {
@@ -714,7 +684,6 @@ fn main() {
         let play_due = (app.view == View::Preview && app.preview.as_ref().is_some_and(|pv| pv.playing.is_some())).then(|| Duration::from_millis(33));
         let due = [
             film_due,
-            side_due,
             play_due,
             drag_owed.then(|| DRAG_GAP.max(drag_cost).saturating_sub(drag_drawn.elapsed()).max(Duration::from_millis(1))),
         ]
@@ -741,13 +710,6 @@ fn main() {
         };
         match ev {
             Ev::Gone => app.quit = Some(129),
-            Ev::Side(dir, f) => {
-                if side_loading.as_deref() == Some(dir.as_str()) {
-                    side_loading = None;
-                    side = Some((dir, f, Instant::now()));
-                    dirty = true;
-                }
-            }
             Ev::Films(f) => {
                 // the open plays from its start when it is still pending: the dialog opened on its home a moment ago and no
                 // key cut it (a letter typed lands at the prompt and cuts nothing, #138); else the rows show
@@ -762,7 +724,8 @@ fn main() {
             Ev::Tick => {
                 let was = app.busy();
                 app.tick(Instant::now());
-                dirty |= was || app.busy();
+                // a frame for the march while it shows, and when the work starts or ends; none for work nothing shows (#196)
+                dirty |= frame_for_tick(was, app.busy(), app.cfg.progress && app.thinking());
                 // a window still unseen after a moment is shown whatever is drawn: never a dialog that cannot be seen
                 if unseen && started.elapsed() >= Duration::from_millis(1500) {
                     reveal();
@@ -773,8 +736,6 @@ fn main() {
                     app.motion = None;
                     dirty = true;
                 }
-                // a toast whose time is out, or whose view was left, goes (#133)
-                dirty |= app.toast_tick();
                 // a picture not drawn yet (its small picture is still being made): tried again now and then
                 dirty |= drawn.preview.is_some() && shown_preview.is_none() && preview_tried.elapsed() >= Duration::from_millis(400);
                 // a sound playing: its waveform and its spectrum move
@@ -786,7 +747,7 @@ fn main() {
                     .is_some_and(|pv| pv.heard.is_none() && pv.shown.as_ref().is_some_and(|pg| pg.sound.is_some()));
             }
             Ev::Mcp(m) => {
-                app.incoming(m);
+                let shows = app.incoming(m);
                 // a theme step changed the animation: the new piece read aside, none at once (#126)
                 match app.films_want.take() {
                     Some(Some(dir)) => spawn_films(dir, films_tx.clone()),
@@ -797,7 +758,7 @@ fn main() {
                     }
                     None => {}
                 }
-                dirty = true;
+                dirty |= shows;
             }
             Ev::Helper(h, r) => {
                 app.helper(h, r);
@@ -851,7 +812,7 @@ fn main() {
                 dirty = true;
             }
             Ev::Term(Event::Mouse(m)) => {
-                dirty = true;
+                dirty |= frame_for_mouse(m.kind, drag.is_some());
                 // the pointer says what a click does where it is (#129)
                 let dragging = drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_));
                 mouse_at = Some((m.column, m.row));
@@ -860,9 +821,6 @@ fn main() {
                     pointer = want;
                     let _ = write!(out, "\x1b]22;{}\x1b\\", want);
                     let _ = out.flush();
-                }
-                if matches!(m.kind, MouseEventKind::Moved) {
-                    dirty = false;
                 }
                 match m.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
@@ -877,9 +835,7 @@ fn main() {
                             } else {
                                 app.close_window();
                             }
-                        } else if drawn.toast_close.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
-                            app.toast = None; // the toast's x (#133)
-                        } else if drawn.toast_undo.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
+                        } else if drawn.reply_undo.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
                             app.undo_now();
                         } else if let Some((_, _, _, c)) = drawn.chips.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.chip(*c);
@@ -905,26 +861,11 @@ fn main() {
                             .iter()
                             .find(|(y, _)| *y == m.row && m.column >= drawn.columns.0 && m.column < drawn.columns.1)
                             .copied()
-                            .or_else(|| {
-                                // a pick in one of two columns side by side (#183): its own cells
-                                drawn
-                                    .cells
-                                    .iter()
-                                    .find(|(a, b, y, _)| *y == m.row && m.column >= *a && m.column < *b)
-                                    .map(|(_, _, y, n)| (*y, *n))
-                            })
                             .as_ref()
                         {
-                            // a file or a folder in Files: a click lights it, a second one on it opens it, as a file manager's
-                            // do; any other row, a place or an action, is done on one click (#140)
-                            let again = last_click.is_some_and(|(r, k, t)| r == m.row && k == *n && t.elapsed() < DOUBLE_CLICK);
+                            // one click runs a row, everywhere, a folder's and a file's too (#196)
                             app.light(*n);
-                            if !app.lights_on_click(*n) || again {
-                                last_click = None;
-                                app.enter();
-                            } else {
-                                last_click = Some((m.row, *n, Instant::now()));
-                            }
+                            app.enter();
                         }
                     }
                     MouseEventKind::Drag(MouseButton::Left) => {
@@ -982,4 +923,35 @@ fn main() {
         s.close_stdin();
     }
     std::process::exit(code);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::crossterm::event::{MouseButton, MouseEventKind};
+
+    #[test]
+    fn a_click_is_one_frame_and_a_motion_none() {
+        // the press draws; the release after it draws nothing unless it ends a drag (#196)
+        let frames = [MouseEventKind::Down(MouseButton::Left), MouseEventKind::Up(MouseButton::Left)]
+            .into_iter()
+            .filter(|k| frame_for_mouse(*k, false))
+            .count();
+        assert_eq!(frames, 1, "a click");
+        assert!(!frame_for_mouse(MouseEventKind::Moved, false), "a motion");
+        assert!(
+            frame_for_mouse(MouseEventKind::Up(MouseButton::Left), true),
+            "a drag let go draws the picture whole"
+        );
+        assert!(frame_for_mouse(MouseEventKind::ScrollDown, false), "the wheel");
+    }
+
+    #[test]
+    fn a_tick_draws_only_for_the_march_or_a_change_of_work() {
+        assert!(!frame_for_tick(true, true, false), "work nothing shows: no frame");
+        assert!(frame_for_tick(false, true, false), "the work starts");
+        assert!(frame_for_tick(true, false, false), "the work ends");
+        assert!(frame_for_tick(false, false, true), "the march moves");
+        assert!(!frame_for_tick(false, false, false), "nothing at all: no frame");
+    }
 }

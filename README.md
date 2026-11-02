@@ -224,10 +224,12 @@ windows' transparency, 0 to 50; the open windows take it at once.
 
 `theme save winter` keeps the look in use as a theme: a folder
 `~/.config/spark-shell/themes/winter/` with the palette, the
-wallpaper's files, the text size, the transparency and the pointer. It
-copies to another machine, and a folder from elsewhere is read the way
-the config is: each value is held to its shape, and a folder with one
-that is not is refused in a line that names it, with nothing changed.
+wallpaper's files, the text size, the transparency and the pointer. The
+look on the screen is the one it keeps, so nothing is drawn again: the
+saved theme is the one in use from then on. It copies to another
+machine, and a folder from elsewhere is read the way the config is: each
+value is held to its shape, and a folder with one that is not is refused
+in a line that names it, with nothing changed.
 The themes folder is yours alone (0700). `theme winter` brings it
 back, `theme list` shows the saved themes, `theme delete winter`
 removes one. The last ten
@@ -759,8 +761,11 @@ the window, down to 36 by 20 cells.
 Super+d opens it. Super+s opens it in spark chat. A click on a bar
 block opens that block's section: the clock opens the Calendar. Esc
 closes it, and so does the key that opened it, pressed again, and so
-does a click on the x in its top right corner. A pick that opens an
-app or a layout closes it: the window is the receipt. A window that is
+does a click on the x in its top right corner. A pick that puts a
+window in front (an app, a file, a terminal, a window, the lock) clears
+the dialog at the click and closes it once the window is there; if the
+step is refused, the dialog comes back with the reason under the keys.
+A window that is
 fullscreen steps aside for the dialog and is fullscreen again when the
 dialog closes with nothing opened.
 
@@ -782,7 +787,7 @@ Enter, Esc, an arrow or a click cuts the opening short; letters typed
 meanwhile land at the prompt and it plays on. Esc during the closing
 closes at once. A preview's page that takes a moment to load plays the
 opening, then the waiting one, until it is drawn. Settings > theme picks
-the animation from a list, each piece playing beside it, or none for no
+the animation from a list of the pieces, or none for no
 motion (`DIALOG_ANIMATION`, embers to begin with); a palette with no set
 of its own plays none.
 
@@ -791,8 +796,8 @@ state; a long one is cut at a word). Then the
 date and the time as your locale writes them, and a small bar while
 spark works on your words: one of the animations spark draws at its
 prompt, a light bouncing while it thinks and a bar growing and shrinking
-while a model loads. Nothing else shows it: a step's answer is its
-receipt, and a page that takes a moment has its waiting animation.
+while a model loads. Nothing else shows it: a step shows on its row,
+and a page that takes a moment has its waiting animation.
 Under it is the prompt, two rows tall:
 type a request, Enter sends it, and Shift+Enter starts a new line (Alt+Enter
 where a terminal cannot tell the two apart). A longer draft scrolls
@@ -852,11 +857,10 @@ its first and its last row.
 - `power`: lock the screen, suspend, log out, restart, shut down; the
   last three ask for a typed yes.
 - `theme`: the palettes first, dark then light in one column, each
-  with a chip of its colors (its ground, its accent and six hues). A
-  palette lit a moment shows on the screen at once, sway, the bar, the
-  open terminals and its drawing, and nothing is kept until Enter or a
-  click; move the light away, or leave, and yours comes back. A
-  palette brings its drawing and its animation too. Then custom: your
+  with a chip of its colors (its ground, its accent and six hues).
+  Enter or a click puts one on the screen, sway, the bar, the open
+  terminals and its drawing; lighting one changes nothing. A palette
+  brings its drawing and its animation too. Then custom: your
   saved themes, `save this look as`, which asks a name, `a theme from
   a picture`, which opens your home folder, and terminal default
   colors (palette none). Then the settings in three groups, each
@@ -869,13 +873,12 @@ its first and its last row.
   and nothing else on the screen moves: no line above the list, no
   receipt below it. `theme back` on the command line steps through the
   last ten looks. The wallpaper row opens the wallpaper list: the
-  drawings, each with the palette it was drawn for, the lit one shown
-  as a picture in your palette at the top right; `a picture` (jpg,
+  drawings, each with the palette it was drawn for; `a picture` (jpg,
   jpeg, png, webp); `a color`, which asks for a name or `#rrggbb`; and
   the ground. The animation row opens a list of the pieces and none,
-  the one in use checked and the palette's own said; the lit one plays
-  beside the list in your palette. A drawing, the ground or a piece
-  picked there is checked at once, and the list stays as it is. The
+  the one in use checked and the palette's own said. A drawing, the
+  ground or a piece picked there is checked at once, and the list stays
+  as it is. The
   pieces are drawn for the shipped palettes only: with a theme from a
   picture or words, a palette of your own, or none, the animation is
   none, and its row says so and opens no list. The header names the
@@ -920,12 +923,13 @@ its first and its last row.
 - `files`: your home folder, as a file manager of its own. Enter on a
   folder opens it, `..` goes back up, and Esc walks back the way you
   came; a folder lists its folders, then its files with the size and
-  the date. A click lights a file or a folder and a double-click opens
-  it, as Enter does; a long name is cut in its middle, its end and its
-  type kept. A folder of thousands lists about a thousand at a time: its
-  last row, `the next page`, says how many more there are and opens
-  them. Enter on a text file opens it in your editor, in a terminal
-  window; any other file opens with the app for its kind. The right
+  the date. A click on a file or a folder opens it, as Enter does and
+  as one click does everywhere in the dialog; a long name is cut in its
+  middle, its end and its type kept. A folder of thousands lists about
+  a thousand at a time: its last row, `the next page`, says how many
+  more there are and opens them. Enter on a text file opens it in your
+  editor, in a terminal window; any other file opens with the app for
+  its kind. The right
   arrow opens the lit row's actions as a list: open, preview, attach,
   reveal in the system file manager, rename (it asks the name), move to
   a folder and copy to a folder (the folder is picked
@@ -994,20 +998,26 @@ its first and its last row.
   is not. spark reads text: a PDF goes with your words as the text of its
   page, a sound or a picture with none.
 
-Above the list, what you asked spark and what it said, the newest
-first, a blank row between one turn and the next. A step's answer is
-one line at the bottom of the content, its receipt: a check for a step
-done, a cross and the reason for one refused, Undo where the step can
-be taken back, and an x that dismisses it. It goes after ten seconds,
-or when you leave the view it was made in, and its Undo with it; typing
-undo still takes the step back. At the bottom, under a
+A click on a row runs it and says nothing: the row shows that it
+worked, and nothing else on the screen moves. Under the key row, one
+reply row says what came of the last step when there is something to
+say: a cross and the reason for a step refused, a check and the receipt
+for a command you typed, and Undo at the right where the step can be
+taken back (alone, for a click). A new reply takes the place of the
+last; Esc clears it, and so does leaving the view. Typing undo still
+takes the step back. spark's answer is the reply row too; an answer
+longer than that row is kept whole at Home, above the places, under
+the words that asked it, and never over a section's list. While
+commands spark planned wait in the two rows of the prompt, the reply
+row names them all (`run: ...`). At the bottom, under a
 rule, the controls in plain text: Attach, the model, and the mic at the
 right. Tab moves through them and the one in focus is lit; Shift+Tab
 goes back.
 
 - Attach picks one text or Markdown file from your home (the types
   `DIALOG_ATTACH_TYPES` names), for the next question only: its name
-  shows under the prompt with Remove. Picking it sends nothing. It
+  shows in the footer in place of Attach, with Remove after it.
+  Picking it sends nothing. It
   goes with the next words, and comes back with them if that request
   fails. spark reads a file of 16 kB whole; a longer one goes to `spark
   read`, which reads it by parts and answers from the part your words
@@ -1044,10 +1054,11 @@ minutes old), and notes by what they say; both come in once typing
 rests for a moment. A section's name holds its rows too: `wifi` lists
 the networks. The row your words name is lit, and
 Enter runs it with no model call: `nord` and Enter is the palette nord
-(`drac` lights dracula). Words that name no row light `Ask spark`, the
-first row while you type. A place's name alone, as `settings` or
-`calendar`, opens it. A command in the dialog's own words, as `display
-brightness 30` or `theme dracula`, runs at once, with no model. Other
+(`drac` lights dracula). Words that name no row stay at the prompt,
+and the key row says Ask: Enter sends them. A place's name alone, as
+`settings` or `calendar`, opens it. A command in the dialog's own
+words, as `display brightness 30` or `theme dracula`, runs at once,
+with no model. Other
 words are one request to spark: the words, the view, the selected row
 and the names the steps take now (the open view's rows, then every
 ready provider's layouts, networks, windows and notes, as written) go
@@ -1138,8 +1149,8 @@ is owned by spark's `CLAUDE.md`, contract 16.
 
 One proposed step waits for Enter, a plan of several steps one after
 another; consequential steps still require `yes`. Select a row before
-typing or clicking the prompt to use it as the target. The `For:` line
-keeps that choice visible while search results change. An item that
+typing or clicking the prompt to use it as the target. `For:` in the
+footer keeps that choice visible while search results change. An item that
 disappears stops the proposal; select the item again. Proposals with
 several arguments show each field and its value. The actual MCP result
 is the receipt; spark is not asked again after a step. Esc drops the
@@ -1170,7 +1181,7 @@ are excluded. History is unavailable during an active task or review and
 is forgotten when the window closes.
 The terminal `want --json` interface and attachment reader below retain
 their existing one-shot behavior. An attachment goes with one request;
-it does not start a continuing task. The dialog says so when it is sent.
+it does not start a continuing task. The footer names it until it goes.
 
 A tool can advertise `_meta["spark-shell/prepare"]: true`. Before showing
 its proposal, the dialog calls the read-only `spark/prepare` method with
@@ -1180,6 +1191,21 @@ canonical arguments; these are checked and shown before execution.
 or another model call. Preparation failure, timeout or cancellation
 never falls through to execution. This extension is optional; providers
 without the flag keep their existing path. It grants no permission.
+
+A tool that puts a window in front (an app, a file, a terminal, a
+window, the lock) advertises `_meta["spark-shell/opens"]: true`: the
+dialog clears itself when the call goes and closes when the result says
+`opened`. The provider says it the moment sway maps the new window: it
+reads sway's window events from before the step, so nothing is polled.
+A window that never comes (an app already open took it as a tab) is said
+after 30 seconds, and the dialog comes back. A call's result may carry
+`rows`, the section's rows resource as the step left them: the dialog
+shows them in place of a new read, and no rows-changed note follows the
+call. The provider keeps the rows it last sent as the allowlist a step
+is matched against, and its watcher counts them as seen. Only the
+sections the desktop changes behind the dialog have a watcher (wifi, bt,
+out, mic, storage, window, notifications): every other one changes only
+by a step.
 
 `reminders_add` uses preparation to resolve relative times to an explicit
 local date and time. A past or unreadable time asks for clarification.

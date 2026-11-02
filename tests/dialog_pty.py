@@ -62,8 +62,15 @@ def main(binary):
     def themed():
         with open(cfg) as f:
             return "THEME=nord" in f.read()
-    ok(read_until(lambda: themed() and "theme nord" in text() and "nord is on" in text(), 15), "Enter sets the palette: the turn is the command, then the reply (#53)", text()[-400:])
+    ok(read_until(themed, 15), "Enter on the palette the words found keeps it (#196: C)", text()[-400:])
+    # the step is audited when its answer comes, and the answer carries the section's rows (#196,
+    # phase 4): wait for the audit line, the state the checks below need, never a fixed time
     audit = os.path.join(home, ".local/state/spark-shell/audit")
+    def audited():
+        return os.path.exists(audit) and open(audit).read().count("\n") >= 1
+    read_until(audited, 15)
+    read_until(lambda: False, 0.5)
+    ok("nord is on" not in text() and "\u276f theme nord" not in text(), "a pick says nothing: no command above the list, no receipt (#196)", text()[-400:])
     rec = open(audit).read() if os.path.exists(audit) else ""
     ok(rec.count("\n") == 1 and "\ttheme\ttheme_palette\t" in rec and "nord" not in rec and (os.stat(audit).st_mode & 0o777) == 0o600,
        "one audit line, 0600, numbers and names: the tool, never the argument", rec)
@@ -470,8 +477,9 @@ def keys(binary, env):
         if r:
             seen.extend(os.read(fd, 65536))
     text = seen.decode("utf-8", "replace")
-    # three lines in the draft (one, twothree, four): the prompt grows to show all three, no arrow (#53)
-    ok("twothree" in text and "four" in text and "\u2191" not in text and "No such file" not in text and "not found" not in text,
+    # three lines in the draft (one, twothree, four): the prompt stays two rows, the last two shown, the arrow
+    # saying a line sits above (#196)
+    ok("twothree" in text and "four" in text and "\u2191" in text and "No such file" not in text and "not found" not in text,
        "Shift+Enter starts a new line and a pasted newline stays in the draft: nothing was sent", text[-400:])
     os.write(fd, b"\x03")
     status = None

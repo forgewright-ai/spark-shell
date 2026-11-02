@@ -1,5 +1,178 @@
 # Changelog
 
+## v0.122
+
+The dialog's rule, in the owner's words: typed input gets one reply row
+under the prompt; a click on screen just runs the command, with no echo
+and no toast; the row shows it worked; nothing on screen moves. Each
+part lands in a pull request of its own.
+
+- One silent path for every row. A click or Enter on any row that runs
+  a step (a section's row, a folder's file, a step from a row's list, a
+  file picked, a preview's Enter, a search hit, Undo) no longer writes
+  the step's line above the list or a receipt at the bottom. The row
+  shows what changed; a refusal is said.
+- The toast is gone. In its place is one reply row under the key row:
+  a cross and the reason for a refusal, a check and the receipt for a
+  command you typed, and Undo at its right where the step can be taken
+  back. A click's step that can be taken back shows Undo there alone. A
+  new reply replaces the last; Esc clears it, and so does leaving the
+  view. The list starts on the same row with or without it.
+- One click everywhere: a click on a file or a folder in Files opens
+  it. The double-click is gone.
+- A row that puts a window in front (an app, a file, a terminal, a
+  window, the lock) clears the dialog at the click, and the dialog
+  closes once the window is there; if the step is refused, the dialog
+  comes back with the reason. The provider flags these tools with
+  `_meta` `spark-shell/opens` (the `o` hint in the shell's tool list).
+- Fixed: a step that timed out, lost its provider or got no yes left
+  its line above the list, and later typed replies then vanished (A).
+  Words typed to find a switch, then Enter, did nothing (C). A receipt
+  of several lines kept only its first (E). Commands spark planned while
+  the prompt asked for a yes or a name took over the prompt; they now wait and
+  come when the question is done (G). A click while spark's commands sat
+  in the prompt left Space and the history blocked (M). While attaching or
+  picking a file, typed words ran as a request or opened another place;
+  Enter now picks the best match (O and the attach picker). Space on a
+  row with no page typed a space into the prompt.
+- Esc on a question (a yes, a name) says nothing now; it was "not done:
+  no yes". A refusal and the steps it stopped share one reply.
+- Two of the 43 golden frames were drawn again (section, turn): the
+  toast and the step lines they showed are now the reply row.
+- The frame holds still. The prompt is two rows always and a longer
+  draft scrolls inside them; it no longer grows to five. The file
+  attached is named in the footer in place of Attach, with Remove; the
+  row the words are for (`For:`) is a muted note in the footer; the Ask
+  spark row is gone, and words that name no row stay at the prompt,
+  where Enter asks spark. None of them pushes the list down now.
+- spark's answer is the reply row; one longer than the row is kept
+  whole at Home, under the words that asked it, and never over a
+  section's list. What spark's plan could not do is one reply, each
+  refusal parted by a semicolon. Commands spark planned wait in the
+  prompt's two rows and the reply row names them all (`run: ...`).
+- A list's column widths and, full screen, its right edge are held
+  while you stay in the view: a longer name or state widens them once,
+  and they never move back and forth.
+- The key row is cut at the window's edge, the words at a word, never
+  a key drawn in part.
+- The Calendar's months always take six weeks of space, so Left and Right
+  never move the reminders under them.
+- A helper's raw system error is said in plain words: with no spark
+  installed, "spark did not answer: spark is not installed here", not
+  "No such file or directory (os error 2)".
+- Six more golden frames drawn again (calendar, draft, folder,
+  full-calendar-tall, preview-answer, staged).
+- Less work per event. The preferences file is read and the clock
+  written once a second at most, no longer on every key and pointer
+  motion. A tick draws a frame only while spark's march shows or when
+  work starts or ends, not every 120 ms while anything is under way. A
+  click is one frame, where the press and the release drew two. A
+  provider's notice that its rows changed, or a progress note, draws
+  nothing until the rows come. A step that closes the dialog closes it
+  before another frame is drawn.
+- The shell's call path does about half the work. One jq reads a
+  whole message, one the call's name and arguments, one its value, and
+  one writes the answer. A call is checked against the rows the host
+  was last sent, which the provider keeps; before, it built the rows
+  twice per call to check them. The undo is read once a call. A host's
+  step no longer writes the terminal panel's recent picks or its undo
+  journal. The settings are read again after a step only when it wrote
+  them. The theme's own helpers run for the theme's rows alone.
+- A call's answer carries the section's rows as the step left them.
+  The dialog shows them and reads nothing again, the provider sends no
+  rows-changed note after the call, and its watcher counts them as
+  seen, so nothing refreshes twice. Past the provider's own start, a
+  note added now starts 56 processes, its rows in the answer, where the
+  call and the dialog's read after it started 64; a read and a refused
+  call start 27, where they started 39.
+- The shell's reads ask less. The palette names, which palettes are
+  dark, the palettes' chips and the apps' desktop entries are kept and
+  read again only when a file in their folders changes, so a theme read
+  on a warm cache starts about 20 processes past the provider's start,
+  where it started about 150, and an apps read about 55, where it
+  started about 230. The wifi manager is asked once a read, python3 for
+  the savers and git for the version once a provider. The printers'
+  state is kept ten seconds, where it was kept two. A dash in a name is
+  turned without a process.
+- A provider watches its rows only for the sections the desktop changes
+  behind the dialog: wifi, bt, out, mic, storage, window and
+  notifications. Every other section changes only by a step, and the
+  step's answer carries its rows.
+- Fixed in the shell: a step that failed with no words of its own was
+  refused in its undo's title ("bar: bar on did not work" for bar
+  off); a provider's line writer killed mid-line left a lock the next
+  writer waited on for good; a change of the idle minutes restarted
+  every swayidle of yours, not only spark-shell's; the cache's writers
+  shared one temp file and could cut each other's; deleting a saved
+  theme offered an undo that only put the palette in use on again;
+  connecting a Bluetooth device already connected offered disconnect
+  as its undo; an app that opened as a tab of one already open was
+  refused after 30 seconds, and is now said.
+- Fixed in the dialog: a move picked from inside Files and landed in
+  the same folder left that folder twice behind Esc (B); Esc while
+  listening waited for the helper to answer (D); spark's plan opened
+  the about before Enter (F); a quick play then stop lost the stop's
+  audit record (H); an older reply to spark cleared the march of the
+  newer request (I); the same words typed again at Home were not asked
+  again (N). J and K went with phase 1.
+- Cut: the look while lit. A palette lit for a quarter of a second no
+  longer repaints the desktop, and the light leaving no longer puts it
+  back: each was a theme preview call of about 300 ms, and a flash of
+  sway, the bar and the terminals as the arrows passed. Enter or a
+  click keeps a palette, at once, as before.
+- Cut: the busy pointer. The pointer over the dialog no longer turns
+  to an hourglass a quarter of a second into a step or a request: the
+  row shows the step, and the header's march shows spark thinking.
+- Cut: the picture and the animation beside a list. The wallpaper list
+  no longer draws the lit drawing at the top right, and the animation
+  list no longer plays the lit piece beside it. The rows beside them
+  no longer lose 26 cells and reflow as the light moves between a row
+  with a picture and one without, and no picture is decoded and drawn
+  on the dialog's own thread for a list. The preview Space opens keeps
+  its picture.
+- Cut: the two columns side by side. Since v0.120.1 the theme list is
+  one column and no provider asks for two, so the code that laid two
+  groups side by side, moved the arrows across them and drew a narrow
+  chip goes, about 150 lines. Nothing on screen changes.
+- A step that opens a window (an app, a terminal, a file in the editor,
+  a drive's folder) ends the moment sway maps it: the provider reads
+  sway's window events from before the step. Before, it asked sway for
+  every window four times a second, up to 30 seconds. `apps open` opens
+  from the list of apps its check read, where it read the desktop's
+  apps a second time. In a headless sway on the owner's machine, opening micro took
+  about 565 ms and 66 processes, and takes about 260 ms and 49.
+- `layout save` reads the apps a layout knows, and the processes, once
+  for all the windows on the workspace. It read the desktop's apps once
+  a window, and asked for each terminal's program apart. The saved
+  layout is the same. In a headless sway on the owner's machine, saving three
+  windows took about 810 ms and 124 processes, and takes about 365 ms
+  and 74.
+- `theme save` no longer puts the look on again. The save ended by
+  applying the theme it had just made: sway's colors and the bar sent
+  again, the wallpaper covered and drawn again, the open terminals
+  repainted, the theme's files written. The look on the screen is the
+  one it keeps, so now the saved theme is only named the one in use,
+  and first in the history; a picture of yours becomes the folder's
+  copy in sway's file, and the screen shows the same picture. In a
+  headless sway on the owner's machine a save took 2.3 seconds and 465 processes,
+  and takes 1.0 second and 230.
+- A setting that only sway's file holds (how new windows sit, the idle
+  and lock minutes, the keyboard, the pointer) renders that file alone.
+  Each rendered all seven of the desktop's files and sent the whole
+  look to sway again: its colors, gaps, bar and pointer, and the open
+  terminals repainted. The step still gives a running sway the setting
+  itself. In a headless sway on the owner's machine, windows in tabs took 1.5
+  seconds and 242 processes, and takes 0.96 second and 173.
+- Putting a window in front and closing one read the windows less. A
+  call reads them once for its check, the window's name and the step,
+  where each asked sway for them again. A focus is confirmed by one
+  read, since sway puts the window in front before it answers; a close
+  is read as before, every 50 ms for 2 seconds at most, with one jq a
+  read where there were two. In a headless sway on the owner's machine a focus
+  reads the windows twice, where it read them four times (33
+  processes, 39 before), and a close three times, where it read them
+  five (47, 53 before).
+
 ## v0.121
 
 The moving wallpaper on every family, twelve scenes that move (#187,

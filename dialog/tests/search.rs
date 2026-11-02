@@ -201,7 +201,7 @@ fn a_letter_off_still_finds_and_never_lights_the_row() {
     typed(&mut r.app, "firfox");
     let l = list(&r.app);
     assert!(l.contains(&"firefox".to_string()), "{:?}", l);
-    assert_eq!(r.app.picks().get(r.app.sel), Some(&Item::Ask), "a typo never lights a row Enter would run");
+    assert!(!r.app.in_list, "a typo never lights a row Enter would run");
     r.app.typed('\u{8}');
 }
 
@@ -215,8 +215,11 @@ fn the_files_are_asked_once_typing_rests_and_an_answer_for_older_words_lands_now
     let app = &mut r.app;
     assert!(pump(app, &r.rx, |a| a.hits.len() == 2), "the files' names never came");
     assert!(r.asked.lock().unwrap().contains(&uri));
+    // the notes are asked on the same rest; their request may still be on its way when the files' answer is in
+    let notes = search_uri("notes", "find", "rep");
+    let asked = r.asked.clone();
     assert!(
-        r.asked.lock().unwrap().contains(&search_uri("notes", "find", "rep")),
+        pump(&mut r.app, &r.rx, |_| asked.lock().unwrap().contains(&notes)),
         "the notes are asked what they say"
     );
     let l = list(&r.app);
@@ -282,5 +285,28 @@ fn a_row_that_is_only_its_steps_opens_them_on_enter() {
     assert!(
         r.app.in_list && r.app.picks().get(r.app.sel) == Some(&Item::Row(2, 1)),
         "the row it came from is lit again"
+    );
+}
+
+#[test]
+fn the_same_words_typed_again_are_asked_again() {
+    // the review's N: words cleared, then typed again, ask the providers again: a file made meanwhile is found
+    let mut r = started();
+    typed(&mut r.app, "rep");
+    r.app.tick(Instant::now() + Duration::from_millis(300));
+    let uri = search_uri("files", "match", "rep");
+    let asked = r.asked.clone();
+    assert!(pump(&mut r.app, &r.rx, |_| asked.lock().unwrap().contains(&uri)));
+    for _ in 0..3 {
+        r.app.backspace();
+    }
+    r.app.tick(Instant::now() + Duration::from_millis(300));
+    let before = r.asked.lock().unwrap().iter().filter(|u| **u == uri).count();
+    typed(&mut r.app, "rep");
+    r.app.tick(Instant::now() + Duration::from_millis(600));
+    let asked = r.asked.clone();
+    assert!(
+        pump(&mut r.app, &r.rx, |_| asked.lock().unwrap().iter().filter(|u| **u == uri).count() > before),
+        "asked again"
     );
 }

@@ -250,8 +250,6 @@ pub struct Rows {
     pub here: Option<String>,
     pub rows: Vec<Row>,
     pub short: Vec<String>,
-    /// Two groups drawn side by side (#183): the palettes, dark beside light.
-    pub side_by_side: Option<(String, String)>,
     /// The desktop as it was before a row's look: what the light leaving the looks puts back (#183).
     pub look_back: Option<Call>,
 }
@@ -265,6 +263,8 @@ pub struct Tool {
     pub schema: Value,
     pub read_only: bool,
     pub destructive: bool,
+    /// It puts a window in front (an app, a file, a terminal): the dialog steps aside at the click.
+    pub opens: bool,
 }
 
 /// A tool's name is offered only in this shape (the review's L3).
@@ -339,6 +339,7 @@ pub fn tools(v: &Value) -> Vec<Tool> {
                         schema: t.get("inputSchema").cloned().unwrap_or(Value::Null),
                         read_only,
                         destructive,
+                        opens: t.pointer("/_meta/spark-shell~1opens").and_then(Value::as_bool).unwrap_or(false),
                     })
                 })
                 .collect()
@@ -446,10 +447,6 @@ pub fn rows(text: &str) -> Option<Rows> {
             .map(str::to_string),
         rows,
         short,
-        side_by_side: v.get("side_by_side").and_then(Value::as_array).and_then(|a| match a.as_slice() {
-            [l, r] => Some((scrub(l.as_str()?), scrub(r.as_str()?))),
-            _ => None,
-        }),
         look_back: v.get("look_back").and_then(call),
     })
 }

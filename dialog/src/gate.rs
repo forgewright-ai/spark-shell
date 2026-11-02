@@ -343,6 +343,7 @@ mod tests {
             schema,
             read_only: false,
             destructive: true,
+            opens: false,
         }
     }
     fn args(v: Value) -> Map<String, Value> {
@@ -405,7 +406,6 @@ mod tests {
                 state: None,
                 rows: vec![row],
                 short: vec![],
-                side_by_side: None,
                 look_back: None,
             },
         )
@@ -493,6 +493,7 @@ mod tests {
             title: "theme NAME".into(),
             schema: json!({"type": "object", "properties": {"name": {"type": "string", "minLength": 1}}, "required": ["name"], "additionalProperties": false}),
             destructive: false,
+            opens: false,
             read_only: false,
         }];
         let r = crate::model::rows(r#"{"title":"theme","rows":[
@@ -521,6 +522,7 @@ mod tests {
             title: "display brightness N".into(),
             schema: json!({"type": "object", "properties": {"level": {"type": "string", "enum": ["up", "down", "10", "25", "30"]}}, "required": ["level"], "additionalProperties": false}),
             destructive: false,
+            opens: false,
             read_only: false,
         }];
         let r = crate::model::rows(r#"{"title":"display","rows":[
@@ -554,6 +556,7 @@ mod tests {
             title: "theme save NAME".into(),
             schema: json!({"type": "object", "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 256}}, "required": ["name"], "additionalProperties": false}),
             destructive: false,
+            opens: false,
             read_only: false,
         }];
         let r = crate::model::rows(r#"{"title":"theme","rows":[{"id":"theme:save","sign":"blank","text":"save this look as","tool":{"name":"theme_save","arguments":{"name":""},"ask":["name"]},"more":[],"columns":[],"children":null}]}"#).unwrap();
@@ -600,6 +603,7 @@ mod path_tests {
             schema,
             read_only: false,
             destructive: false,
+            opens: false,
         }];
         let call = |p: &str| Call {
             name: "files_move".into(),
@@ -636,7 +640,6 @@ mod path_tests {
                 wide: None,
             }],
             short: vec![],
-            side_by_side: None,
             look_back: None,
         };
         let step_with = |p: &str, to: &str| Call {

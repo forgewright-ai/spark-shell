@@ -7,6 +7,7 @@
 use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, PLACEHOLDER, SETTINGS, SETTINGS_DEST, WIDTH};
 use crate::palette::Palette;
 use crate::progress;
+use crate::reply::Mark;
 use crate::scrub::{cells, cut, cut_words};
 use crate::sixel::Viewport;
 use crate::transition::Reel;
@@ -29,14 +30,11 @@ pub const RULE: &str = "\u{2500}";
 /// A color's sample: two full blocks, about a square in a terminal cell's shape.
 pub const SAMPLE: &str = "\u{2588}\u{2588}";
 pub const SEP: &str = " \u{b7} ";
-/// The rows: the prompt's two, the attachment's (air above and below it), what a key does, where the
-/// content starts (the last two two rows lower while a file is attached).
+/// The rows, fixed whatever is typed or attached (#196): the prompt's two, what a key does, the reply row,
+/// where the list starts.
 pub const PROMPT_Y: u16 = 2;
-/// The rows the prompt grows to for a longer draft: commands spark planned are all in sight before
-/// Enter runs them (#53); past this the draft scrolls inside them.
-pub const PROMPT_MAX: usize = 5;
-pub const ATTACH_Y: u16 = 5;
 pub const HINT_Y: u16 = 5;
+pub const REPLY_Y: u16 = 6;
 pub const CONTENT_Y: u16 = 7;
 /// The bottom: air, the rule, the footer, air.
 pub const BOTTOM: u16 = 4;
@@ -44,23 +42,15 @@ pub const BOTTOM: u16 = 4;
 pub const PURPOSE_X: u16 = 17;
 /// A palette's chip: a small terminal in the palette's own colors, this many cells wide.
 pub const CHIP: u16 = 9;
-/// A picture beside a list (a wallpaper's), in cells: about 16 by 9 in a 9 by 18 pixel cell.
-pub const PREVIEW_W: u16 = 24;
-pub const PREVIEW_H: u16 = 7;
 pub const LESS: &str = "\u{2039}";
 struct Pen<'a> {
     buf: &'a mut Buffer,
     pal: &'a Palette,
     w: u16,
     h: u16,
-    /// Rows y0..y1 end at x: a picture sits right of them.
-    stop: Option<(u16, u16, u16)>,
-    /// A wide list's right edge (#141): its band, its arrows and the toast's Undo end where its words end, never at the
+    /// A wide list's right edge (#141): its band and its arrows end where its words end, never at the
     /// screen's edge.
     right: u16,
-    /// Where a row is drawn from (#183): the right of two columns side by side starts this far in, and its band at `lx`.
-    ox: u16,
-    lx: u16,
 }
 
 impl Pen<'_> {
@@ -75,22 +65,18 @@ impl Pen<'_> {
         s
     }
     /// Text at (x, y) in a color; returns the column after it; nothing past the grid.
-    fn end(&self, y: u16) -> u16 {
-        match self.stop {
-            Some((y0, y1, x)) if y >= y0 && y < y1 => x.min(self.right),
-            _ => self.w.min(self.right),
-        }
+    fn end(&self, _y: u16) -> u16 {
+        self.w.min(self.right)
     }
     fn put(&mut self, x: u16, y: u16, text: &str, fg: Color, bold: bool, lit: bool) -> u16 {
-        let x = x + self.ox; // a row in the right column: drawn from its own origin, given back in its own terms
         if x >= self.end(y) || y >= self.h {
-            return x - self.ox;
+            return x;
         }
         let room = (self.end(y) - x) as usize;
         let t = cut(text, room);
         let st = self.style(fg, bold, lit);
         self.buf.set_string(x, y, &t, st);
-        x + cells(&t) as u16 - self.ox
+        x + cells(&t) as u16
     }
     /// A key, as a chip: the only thing drawn as one.
     fn chip(&mut self, x: u16, y: u16, text: &str, focus: bool) -> u16 {
@@ -129,7 +115,7 @@ impl Pen<'_> {
         x + cells(&t) as u16
     }
     fn light(&mut self, y: u16) {
-        for x in self.lx..self.end(y).min(self.w) {
+        for x in 0..self.end(y).min(self.w) {
             let c = &mut self.buf[(x, y)];
             c.set_bg(self.pal.lit);
         }
@@ -173,8 +159,6 @@ pub fn wrap(text: &str, w: usize) -> Vec<String> {
 pub struct Drawn {
     pub cursor: (u16, u16),
     pub picks: Vec<(u16, usize)>,
-    /// A pick in one of two columns side by side (#183): its cells (x0, x1, y) and its index.
-    pub cells: Vec<(u16, u16, u16, usize)>,
     pub chips: Vec<(u16, u16, u16, usize)>,
     pub keys: Vec<(u16, u16, u16, HintKey)>,
     pub close: Option<(u16, u16)>,
@@ -187,11 +171,8 @@ pub struct Drawn {
     pub wave: Option<(u16, u16, u16, u16)>,
     /// A transition playing (#122): its cells (x, y, w, h), which one, and since when.
     pub film: Option<(u16, u16, u16, u16, Reel, std::time::Instant)>,
-    /// An animation beside a list (#132): its box (x, y, w, h in cells) and the piece's folder, main.rs plays it.
-    pub side_film: Option<(u16, u16, u16, u16, String)>,
-    /// The toast's Undo and its x (#133): their cells (x0, x1, y), for a click.
-    pub toast_undo: Option<(u16, u16, u16)>,
-    pub toast_close: Option<(u16, u16, u16)>,
+    /// The reply row's Undo (#196): its cells (x0, x1, y), for a click.
+    pub reply_undo: Option<(u16, u16, u16)>,
     /// A value row's arrows (#175): each one's cells (x0, x1, y), its pick, and whether it steps the value up.
     pub steps: Vec<(u16, u16, u16, usize, bool)>,
     /// The dialog's own column, its first cell and the cell after its last (#131): a click's row is its list's only there.
@@ -289,18 +270,10 @@ impl Drawn {
         }
         self.wave = self.wave.map(|(x, y, w, h)| (x + dx, y, w, h));
         self.film = self.film.map(|(x, y, w, h, r, t)| (x + dx, y, w, h, r, t));
-        if let Some(s) = self.side_film.as_mut() {
-            s.0 += dx;
-        }
-        self.toast_undo = self.toast_undo.map(|(a, b, y)| (a + dx, b + dx, y));
-        self.toast_close = self.toast_close.map(|(a, b, y)| (a + dx, b + dx, y));
+        self.reply_undo = self.reply_undo.map(|(a, b, y)| (a + dx, b + dx, y));
         for st in &mut self.steps {
             st.0 += dx;
             st.1 += dx;
-        }
-        for c in &mut self.cells {
-            c.0 += dx;
-            c.1 += dx;
         }
         self.columns = (self.columns.0 + dx, self.columns.1 + dx);
     }
@@ -360,16 +333,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     let (w, h) = (buf.area.width, buf.area.height);
     let area = Rect::new(0, 0, w, h);
     buf.set_style(area, Style::default().fg(pal.fg));
-    let mut pen = Pen {
-        buf,
-        pal,
-        w,
-        h,
-        stop: None,
-        right: w,
-        ox: 0,
-        lx: 0,
-    };
+    let mut pen = Pen { buf, pal, w, h, right: w };
     if w < MIN_WIDTH || h < MIN_HEIGHT {
         // too small to hold the prompt, a list and the footer without cutting one: say so, plainly
         let t = "Make this window larger";
@@ -414,7 +378,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         }
     }
 
-    // the prompt: two rows, up to PROMPT_MAX for a longer draft; past that it scrolls inside them
+    // the prompt: two rows always; a longer draft scrolls inside them (#196)
     let tx = 4;
     let tw = (w - tx - 3) as usize;
     pen.put(2, PROMPT_Y, PROMPT, pal.accent, true, false);
@@ -425,8 +389,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         app.input.clone()
     };
     let (rows, (cr, cc)) = draft_rows(&shown, app.cursor, tw);
-    let n = rows.len().clamp(2, PROMPT_MAX);
-    let grow = (n - 2) as u16;
+    let n = 2;
     let top = cr.saturating_sub(n - 1).min(rows.len().saturating_sub(n));
     drawn.prompt = (PROMPT_Y, PROMPT_Y + n as u16 - 1);
     if app.input.is_empty() && app.mode == Mode::Normal {
@@ -444,33 +407,12 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     }
     drawn.cursor = (tx + cc as u16, PROMPT_Y + (cr - top) as u16);
 
-    // the file attached, for the next question alone, and its Remove
-    if let Some(a) = &app.attachment {
-        let name = cut(a.rsplit('/').next().unwrap_or(""), (w / 3) as usize);
-        let ay = ATTACH_Y + grow;
-        let x = pen.put(tx, ay, &name, pal.fg, false, false);
-        let x0 = x + 2;
-        let e = pen.control(x0, ay, "Remove", app.chip_focus == Some(4), false, false);
-        drawn.chips.push((x0, e, ay, 4));
-        let said = "Text or Markdown, next question only";
-        let said = if e + 3 + cells(said) as u16 <= w - 2 { said } else { "next question only" };
-        if e + 3 + cells(said) as u16 <= w - 2 {
-            pen.put(w - 2 - cells(said) as u16, ay, said, pal.muted, false, false);
-        }
-    }
-
-    // what a key does now; a row lower when a file is attached, so air stays between them
-    let shift = (if app.attachment.is_some() { 2 } else { 0 }) + grow;
-    let hint_y = HINT_Y + shift;
-    let target = app.target_label();
-    if let Some(t) = &target {
-        pen.put(2, hint_y + 2, &cut_words(t, (w - 4) as usize), pal.muted, false, false);
-    }
-    let shift = shift + if target.is_some() { 2 } else { 0 };
+    let hint_y = HINT_Y;
+    reply_row(app, &mut pen, REPLY_Y, &mut drawn);
 
     // the content first: a preview's text decides the pages its key row offers
     let bottom = h - BOTTOM;
-    let content_y = CONTENT_Y + shift;
+    let content_y = CONTENT_Y;
     if let Some((reel, since)) = app.motion {
         // a transition: the content area is its, in its middle (main.rs draws it)
         let (x, y, w, h) = (2, content_y, pen.w.saturating_sub(4), bottom.saturating_sub(content_y));
@@ -499,9 +441,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         if app.is_calendar() {
             top = calendar(app, &mut pen, clock, content_y, bottom) + 1;
         }
-        let (picks, preview) = content(app, &mut pen, top, bottom, &mut drawn);
-        drawn.picks = picks;
-        drawn.preview = preview;
+        drawn.picks = content(app, &mut pen, top, bottom, &mut drawn);
     }
 
     // one gap between keys on every row of a window, so a key keeps its place from one row to the next (#166):
@@ -530,6 +470,15 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     }
     let mut x = 2;
     for (t, key) in hint {
+        // still too wide (a provider's long question): cut at the window's edge, the words at a word, never a key
+        // drawn in part (#196)
+        let need = cells(&t) as u16 + if key { 2 } else { 0 };
+        if x + need > w.saturating_sub(2) {
+            if !key {
+                pen.put(x, hint_y, &cut_words(&t, w.saturating_sub(x + 2) as usize), pal.muted, false, false);
+            }
+            break;
+        }
         let start = x;
         x = if key {
             pen.chip(x, hint_y, &t, false)
@@ -592,9 +541,26 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
             x = pen.control(x, y, &name, false, reads, !reads) + 1;
         }
     } else if chips.contains(&0) {
-        let e = pen.control(x, y, "Attach", app.chip_focus == Some(0), app.attachment.is_some(), false);
+        // the file attached is named where Attach was, in the accent, with its Remove: the footer, never a row that
+        // pushes the list down (#196)
+        let name = app.attachment.as_deref().map(|a| cut(a.rsplit('/').next().unwrap_or(""), (w / 4) as usize));
+        let e = pen.control(x, y, name.as_deref().unwrap_or("Attach"), app.chip_focus == Some(0), name.is_some(), false);
         drawn.chips.push((x, e, y, 0));
         x = e + 1;
+    }
+    if chips.contains(&4) {
+        let e = pen.control(x, y, "Remove", app.chip_focus == Some(4), false, false);
+        drawn.chips.push((x, e, y, 4));
+        x = e + 1;
+    }
+    // the row the words are for, a muted note in the room left (#196)
+    if let Some(t) = app.target_label() {
+        let room = w.saturating_sub(x + mic_w + 4) as usize;
+        let model = if app.cfg.model && app.model_name.is_some() { 14 } else { 0 };
+        if room > model + 8 {
+            pen.put(x + 1, y, &cut_words(&t, room - model), pal_muted(pen), false, false);
+            x += cells(&cut_words(&t, room - model)) as u16 + 2;
+        }
     }
     if app.cfg.model && app.model_name.is_some() {
         let room = (w.saturating_sub(x + mic_w + 6)) as usize;
@@ -611,6 +577,38 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
         if live {
             drawn.chips.push((mx, e, y, 3));
         }
+    }
+}
+
+/// The reply row under the key row (#196): a check or a cross, the words, Undo at the right where the rows'
+/// arrows stand; blank when there is nothing to say. One row, cut to the window: it never moves the list.
+fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
+    let Some(r) = &app.reply else { return };
+    let pal = pen.pal.clone();
+    let w = pen.w;
+    let undo = r.undo && app.undo.is_some();
+    let undo_x = w.saturating_sub(7);
+    match r.mark {
+        Mark::Done if !r.text.is_empty() => {
+            pen.put(2, y, CHECK, pal.accent, false, false);
+        }
+        Mark::Refused => {
+            pen.put(2, y, CROSS, pal.alarm, false, false);
+        }
+        _ => {}
+    }
+    let room = if undo { undo_x } else { w - 2 }.saturating_sub(6);
+    pen.put(
+        4,
+        y,
+        &cut_words(&r.text, room as usize),
+        if r.mark == Mark::Note { pal.muted } else { pal.fg },
+        false,
+        false,
+    );
+    if undo {
+        let e = pen.chip(undo_x, y, "Undo", false);
+        drawn.reply_undo = Some((undo_x, e, y));
     }
 }
 
@@ -632,30 +630,20 @@ fn said_line(pen: &mut Pen, s: &Sign, text: &str, first: bool, y: u16, lit: bool
 
 /// One content row: what it shows, lit when it is the row picked.
 /// A list's columns: their widths, which line up on their right edge, whether rows carry a sample.
-type Cols<'a> = (&'a [usize], &'a [bool], bool, bool, bool, bool);
+type Cols<'a> = (&'a [usize], &'a [bool], bool, bool, bool);
 
 /// One item of a list; a value row gives back where its arrows are drawn (#175).
 fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols) -> Option<(u16, u16)> {
-    let (widths, right, samples, chips, controls, tight) = cols;
+    let (widths, right, samples, chips, controls) = cols;
     let pal = pen.pal.clone();
     let w = pen.w;
     let mut arrows = None;
     match it {
-        Item::Ask => {
-            let x = pen.put(2, y, "Ask spark", pal.fg, false, lit);
-            let words = app.input.trim().replace('\n', " ");
-            pen.put(x + 2, y, &cut_words(&words, w.saturating_sub(x + 5) as usize), pal.muted, false, lit);
-        }
         Item::Heading(h) => {
             pen.put(2, y, h, pal.muted, false, false);
         }
-        Item::Blank | Item::Toast => {}
+        Item::Blank => {}
         Item::Said(s, text, first) => said_line(pen, s, text, *first, y, false),
-        Item::Undo(s, text, first) => {
-            // the result the undo at hand takes back, with Undo at its end where the rows' signs end (#53)
-            said_line(pen, s, text, *first, y, lit);
-            pen.put(w.saturating_sub(6), y, "Undo", if lit { pal.fg } else { pal.muted }, false, lit);
-        }
         Item::Dest(d) => {
             // found from the home, a place stands with the rows under its group's heading (#169)
             let ind = if app.searching() { 4 } else { 0 };
@@ -757,15 +745,15 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             pen.put(x, y, &cut(&format!("{}{}", SEP, at), (w.saturating_sub(x + 4)) as usize), pal.muted, false, lit);
             pen.put(w - 3, y, MORE, pal.muted, false, lit);
         }
-        Item::Row(p, r) => arrows = row_line(pen, &app.providers[*p].rows.rows[*r], y, lit, (widths, right, samples, chips, controls, tight)),
+        Item::Row(p, r) => arrows = row_line(pen, &app.providers[*p].rows.rows[*r], y, lit, (widths, right, samples, chips, controls)),
         Item::Folder(i) => {
             if let Some(row) = app.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)) {
-                arrows = row_line(pen, row, y, lit, (widths, right, samples, chips, controls, tight));
+                arrows = row_line(pen, row, y, lit, (widths, right, samples, chips, controls));
             }
         }
         Item::Hit(i) => {
             if let Some((_, row)) = app.hits.get(*i) {
-                arrows = row_line(pen, row, y, lit, (widths, right, samples, chips, controls, tight));
+                arrows = row_line(pen, row, y, lit, (widths, right, samples, chips, controls));
             }
         }
         Item::More(_, n) => {
@@ -833,7 +821,7 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     let said = app.items().len() as u16;
     let (picks, y) = if said > 0 {
         let end = (top + said).min(bottom.saturating_sub(6));
-        (content(app, pen, top, end, drawn).0, end + 1)
+        (content(app, pen, top, end, drawn), end + 1)
     } else {
         (vec![], top)
     };
@@ -1077,112 +1065,21 @@ fn sound(
     })
 }
 
-fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> (Vec<(u16, usize)>, Preview) {
+fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> Vec<(u16, usize)> {
     let mut at = vec![];
     let items = app.items();
     let picks: Vec<usize> = items.iter().enumerate().filter(|(_, it)| app.pickable_item(it)).map(|(i, _)| i).collect();
     let selected = if app.in_list { picks.get(app.sel).copied() } else { None };
-    // the toast, the last item: its own line at the content's bottom with a blank row above it, out of the scroll (#133)
-    let toast = matches!(items.last(), Some(Item::Toast)) && bottom >= top + 4;
-    let n = if toast { items.len() - 1 } else { items.len() };
-    let (end, bottom) = (bottom, if toast { bottom - 2 } else { bottom });
+    let n = items.len();
     let all = bottom.saturating_sub(top) as usize;
     // a list longer than the area keeps its last line to say how many rows sit below
     let room = if n > all { all.saturating_sub(1) } else { all };
-    // two groups side by side when the whole list fits that way (#183): each item's line and column, no scroll
-    let place = app.side_by_side().and_then(|g| side_by_side(&items[..n], &g, all));
-    let room = if place.is_some() { n } else { room };
     // the picked row in view; else where Page Up and Page Down left it
-    let mut first = if place.is_some() { 0 } else { app.scroll.min(n.saturating_sub(room)) };
+    let mut first = app.scroll.min(n.saturating_sub(room));
     if let Some(s) = selected.filter(|s| *s < n) {
         first = first.min(s);
         if s >= first + room {
             first = s + 1 - room;
-        }
-    }
-    // a list whose rows carry pictures shows the lit row's at the top right, else the one in use; the rows beside it end before it
-    let mut preview: Preview = None;
-    if items.iter().any(|it| row_of(app, it).is_some_and(|r| r.preview.is_some())) && pen.w >= 2 * PREVIEW_W {
-        let lit = selected.and_then(|k| row_of(app, &items[k])).and_then(|r| r.preview.clone());
-        let used = items
-            .iter()
-            .filter_map(|it| row_of(app, it))
-            .find(|r| r.sign == "check")
-            .and_then(|r| r.preview.clone());
-        let lit_row = selected.and_then(|k| row_of(app, &items[k])).filter(|r| r.preview.is_some());
-        let used_row = items.iter().filter_map(|it| row_of(app, it)).find(|r| r.sign == "check" && r.preview.is_some());
-        // under the picture, the row's columns: a drawing's palette on one line; a file's size and date, then
-        // its folder on a second line, since the rows beside the picture have no room for them (#112)
-        let caption: Vec<String> = lit_row
-            .or(used_row)
-            .map(|r| match r.columns.as_slice() {
-                [] => vec![],
-                [one] => vec![one.clone()],
-                [a, b, rest @ ..] => {
-                    let mut lines = vec![format!("{}{}{}", a, SEP, b)];
-                    lines.extend(rest.iter().take(1).cloned());
-                    lines
-                }
-            })
-            .unwrap_or_default();
-        // beside the list, from its first row: what was said above it keeps the whole width
-        let k0 = items
-            .iter()
-            .position(|it| matches!(it, Item::Heading(_) | Item::Row(..) | Item::Folder(_)))
-            .unwrap_or(0);
-        let top = top + k0.saturating_sub(first) as u16;
-        if let Some(file) = lit.or(used).filter(|_| top + PREVIEW_H + 1 < bottom) {
-            let x = pen.w - 2 - PREVIEW_W;
-            preview = Some(Picture {
-                x,
-                y: top,
-                w: PREVIEW_W,
-                h: PREVIEW_H,
-                file,
-                view: Viewport::FIT,
-                spectrogram: false,
-            });
-            // the picture's cells are sixel's: the buffer skips them, as it does the logo's (main.rs draws it)
-            for yy in top..(top + PREVIEW_H).min(pen.h) {
-                for xx in x..(x + PREVIEW_W).min(pen.w) {
-                    pen.buf[(xx, yy)].set_diff_option(CellDiffOption::Skip);
-                }
-            }
-            pen.stop = Some((top, top + PREVIEW_H + 2, x - 2));
-            let stop = pen.stop.take();
-            for (k, c) in caption.iter().enumerate() {
-                pen.put(x, top + PREVIEW_H + k as u16, &cut_words(c, PREVIEW_W as usize), pal_muted(pen), false, false);
-            }
-            pen.stop = stop;
-        }
-    }
-    // a list whose rows bring an animation (#132): the lit row's plays where a wallpaper's picture is drawn, else the
-    // one in use; a lit row with none (no motion) leaves the box empty, the rows beside it ending before it either way
-    if preview.is_none() && pen.w >= 2 * PREVIEW_W && items.iter().any(|it| row_of(app, it).is_some_and(|r| r.film.is_some())) {
-        let film = match selected.and_then(|k| row_of(app, &items[k])) {
-            Some(r) => r.film.clone(),
-            None => items
-                .iter()
-                .filter_map(|it| row_of(app, it))
-                .find(|r| r.sign == "check")
-                .and_then(|r| r.film.clone()),
-        };
-        let k0 = items
-            .iter()
-            .position(|it| matches!(it, Item::Heading(_) | Item::Row(..) | Item::Folder(_)))
-            .unwrap_or(0);
-        let top = top + k0.saturating_sub(first) as u16;
-        let x = pen.w - 2 - PREVIEW_W;
-        if top + PREVIEW_H + 1 < bottom {
-            if let Some(f) = film {
-                for yy in top..(top + PREVIEW_H).min(pen.h) {
-                    for xx in x..(x + PREVIEW_W).min(pen.w) {
-                        pen.buf[(xx, yy)].set_diff_option(CellDiffOption::Skip);
-                    }
-                }
-                drawn.side_film = Some((x, top, PREVIEW_W, PREVIEW_H, f));
-            }
-            pen.stop = Some((top, top + PREVIEW_H + 2, x - 2));
         }
     }
     let pal = pen.pal.clone();
@@ -1197,6 +1094,19 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         pen.put(6, y, &format!("{} more", below), pal.muted, false, false);
     }
     let (widths, right) = widths(app, &items);
+    // a wide list ends where its words end (#141): its band, its arrows; both held while the view stays (#196)
+    let end = if wide(pen.w) {
+        list_end(
+            app,
+            &items[..n],
+            &widths,
+            items.iter().any(|it| row_of(app, it).is_some_and(|r| r.swatch.is_some())),
+        )
+        .clamp(WIDTH, pen.w)
+    } else {
+        pen.w
+    };
+    let (widths, end) = if app.searching() { (widths, end) } else { app.held_columns(widths, end) };
     // found from the home, each group lines up its own columns: a note's time is no file's size (#169)
     let mut parts: Vec<(usize, Vec<usize>, Vec<bool>)> = vec![];
     if app.searching() {
@@ -1216,9 +1126,8 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         None => (widths.clone(), right.clone()),
     };
     let samples = items.iter().any(|it| row_of(app, it).is_some_and(|r| r.swatch.is_some()));
-    // a wide list ends where its words end (#141): its band, its arrows, the toast's Undo
     if wide(pen.w) {
-        pen.right = list_end(app, &items[..n], &widths, samples).clamp(WIDTH, pen.w);
+        pen.right = end.min(pen.w);
     }
     // a group where any row carries a chip keeps the chip's column for every row, so their columns line up
     let chip_groups: Vec<Option<String>> = items
@@ -1229,25 +1138,11 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         .collect();
     // a list of settings: each control ends where the rows' arrows stand (#183)
     let controls = items.iter().any(|it| row_of(app, it).is_some_and(|r| r.step.is_some() || r.switch.is_some()));
-    let full = pen.right;
     for (k, it) in items[..n].iter().enumerate().skip(first).take(room) {
-        let (y, col) = match &place {
-            Some(pl) => (top + pl[k].0, pl[k].1),
-            None => (top + (k - first) as u16, 0),
-        };
-        // a column of two: the left one ends where the right one's band starts
-        (pen.ox, pen.lx, pen.right) = match col {
-            1 => (0, 0, GRID_X + 2),
-            2 => (GRID_X, GRID_X + 2, full),
-            _ => (0, 0, full),
-        };
+        let y = top + (k - first) as u16;
         let lit = Some(k) == selected;
         if let Some(n) = picks.iter().position(|i| *i == k) {
-            if col == 0 {
-                at.push((y, n));
-            } else {
-                drawn.cells.push((pen.lx, pen.right, y, n));
-            }
+            at.push((y, n));
         }
         if lit {
             pen.light(y);
@@ -1256,91 +1151,15 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         let (w, r) = cols_at(k);
         // a value's arrows take a click, each with a cell of air on either side so it is easy to hit (#175)
         if let (Some((less, more)), Some(n)) = (
-            item_line(app, pen, it, y, lit, (&w, &r, samples, chips, controls, col != 0)),
+            item_line(app, pen, it, y, lit, (&w, &r, samples, chips, controls)),
             picks.iter().position(|i| *i == k),
         ) {
             drawn.steps.push((less.saturating_sub(1), less + 2, y, n, false));
             drawn.steps.push((more - 1, more + 2, y, n, true));
         }
     }
-    (pen.ox, pen.lx, pen.right) = (0, 0, full);
-    pen.stop = None;
-    if let (true, Some(t)) = (toast, app.toast.as_ref()) {
-        // the receipt's sign at 4 and its words at 6, as a row's; Undo, then the x where the rows' arrows stand
-        let (y, k) = (end - 1, items.len() - 1);
-        let lit = Some(k) == selected;
-        if let Some(i) = picks.iter().position(|i| *i == k) {
-            at.push((y, i));
-        }
-        if lit {
-            pen.light(y);
-        }
-        let (sg, sc) = if t.sign == Sign::Refused { (CROSS, pal.alarm) } else { (CHECK, pal.accent) };
-        let close_x = pen.end(y) - 3;
-        let undo_x = close_x - 6;
-        let undo = t.undo && app.undo.is_some();
-        pen.put(4, y, sg, sc, false, lit);
-        let room = if undo { undo_x } else { close_x }.saturating_sub(8);
-        pen.put(6, y, &cut_words(&t.text, room as usize), pal.fg, false, lit);
-        if undo {
-            pen.put(undo_x, y, "Undo", if lit { pal.fg } else { pal.muted }, false, lit);
-            drawn.toast_undo = Some((undo_x - 1, undo_x + 5, y));
-        }
-        pen.put(close_x, y, CLOSE, pal.muted, false, lit);
-        drawn.toast_close = Some((close_x - 1, close_x + 2, y));
-    }
     pen.right = pen.w;
-    (at, preview)
-}
-
-/// The right of two columns side by side starts here (#183): a palette's sign, its seven dots and a name of 16 fit
-/// either side of it in the dialog's 60 cells.
-const GRID_X: u16 = 28;
-
-/// Two groups side by side (#183): each item's line and its column (0 the one column, 1 the left, 2 the right). None
-/// when the two groups are not both there, one after the other with only a blank between, or the list would not fit
-/// in `all` lines that way.
-fn side_by_side(items: &[Item], g: &(String, String), all: usize) -> Option<Vec<(u16, u8)>> {
-    let head = |it: &Item, name: &str| matches!(it, Item::Heading(h) if h == name);
-    let l0 = items.iter().position(|it| head(it, &g.0))?;
-    let r0 = items.iter().position(|it| head(it, &g.1))?;
-    let lend = l0
-        + 1
-        + items
-            .get(l0 + 1..r0)?
-            .iter()
-            .position(|it| matches!(it, Item::Blank | Item::Heading(_)))
-            .unwrap_or(r0 - l0 - 1);
-    if items[lend..r0].iter().any(|it| !matches!(it, Item::Blank)) {
-        return None;
-    }
-    let rend = r0
-        + 1
-        + items[r0 + 1..]
-            .iter()
-            .position(|it| matches!(it, Item::Blank | Item::Heading(_)))
-            .unwrap_or(items.len() - r0 - 1);
-    let mut place = vec![(0u16, 0u8); items.len()];
-    let mut line = 0u16;
-    for p in place.iter_mut().take(l0) {
-        *p = (line, 0);
-        line += 1;
-    }
-    for (i, k) in (l0..lend).enumerate() {
-        place[k] = (line + i as u16, 1);
-    }
-    for p in place.iter_mut().take(r0).skip(lend) {
-        *p = (line, 1); // a blank between the two: drawn nowhere
-    }
-    for (i, k) in (r0..rend).enumerate() {
-        place[k] = (line + i as u16, 2);
-    }
-    line += (lend - l0).max(rend - r0) as u16;
-    for p in place.iter_mut().skip(rend) {
-        *p = (line, 0);
-        line += 1;
-    }
-    (line as usize <= all).then_some(place)
+    at
 }
 
 /// A setting's words: its section's own state, which reads better than its purpose where it has one (on, a level, a
@@ -1446,7 +1265,7 @@ fn row_columns(row: &crate::model::Row, wide: bool) -> &[String] {
 /// A value row gives back the cells of its two arrows (#175). In a list of settings a control ends where the rows'
 /// arrows stand (#183): a value between its arrows, a switch, a choice's name before its arrow.
 fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Cols) -> Option<(u16, u16)> {
-    let (widths, right, samples, chips, controls, tight) = cols;
+    let (widths, right, samples, chips, controls) = cols;
     let pal = pen.pal.clone();
     let (g, c) = sign(&pal, &row.sign);
     pen.put(4, y, g, c, false, lit);
@@ -1464,16 +1283,10 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
     } else {
         cut(&row.text, name_cap(pen.w))
     };
-    // a palette in a column of two: its chip first, seven dots, then its name (#183)
-    if tight && !row.chip.is_empty() {
-        chip_tight(pen, tx, y, &row.chip);
-        pen.put(tx + CHIP_TIGHT + 1, y, &cut(&row.text, 16), pal.fg, false, lit);
-        return None;
-    }
     let mut x = pen.put(tx, y, &name, pal.fg, false, lit);
     let name_end = tx + widths.first().copied().unwrap_or(0) as u16;
     // a control's last cell is where the rows' arrows stand
-    let end = (pen.end(y) - pen.ox).saturating_sub(2);
+    let end = pen.end(y).saturating_sub(2);
     if let Some(st) = &row.step {
         // a value left and right change: the room of its widest value, so the arrows stand still as it
         // changes; an end of the list dims its arrow, and a press there does nothing (#183)
@@ -1486,7 +1299,7 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
         pen.put(x0 + 2 + wv.saturating_sub(cells(v) as u16), y, v, pal.fg, false, lit);
         let mx = x0 + 3 + wv;
         pen.put(mx, y, MORE, if st.at + 1 >= st.values.len() { dim } else { on }, false, lit);
-        return Some((x0 + pen.ox, mx + pen.ox));
+        return Some((x0, mx));
     }
     if let Some(sw) = &row.switch {
         // a switch: on is the accent's dot and the word, off a ring and the word muted (#183)
@@ -1530,10 +1343,8 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
                 x + 3
             };
             let room = pen.end(y).saturating_sub(at) as usize;
-            // a number cut is no number, and beside the picture a column is whole or not drawn at all (nor what follows it);
-            // elsewhere words are cut at a word
-            let beside = pen.stop.is_some_and(|(y0, y1, _)| y >= y0 && y < y1);
-            if (numeric || beside) && cw as usize > room {
+            // a number cut is no number: whole or not drawn at all (nor what follows it); words are cut at a word
+            if numeric && cw as usize > room {
                 break;
             }
             pen.put(at, y, &cut_words(col, room), pal.muted, false, lit);
@@ -1553,16 +1364,9 @@ fn chip(pen: &mut Pen, x: u16, y: u16, c: &[[u8; 3]]) {
     chip_cells(pen, x, y, c, 0..CHIP);
 }
 
-/// A palette's chip with no ground at its ends, seven dots: two columns of palettes side by side fit (#183).
-const CHIP_TIGHT: u16 = CHIP - 2;
-fn chip_tight(pen: &mut Pen, x: u16, y: u16, c: &[[u8; 3]]) {
-    chip_cells(pen, x.saturating_sub(1), y, c, 1..CHIP - 1);
-}
-
 fn chip_cells(pen: &mut Pen, x: u16, y: u16, c: &[[u8; 3]], ks: std::ops::Range<u16>) {
     let rgb = |v: &[u8; 3]| Color::Rgb(v[0], v[1], v[2]);
     let Some(ground) = c.first().map(rgb) else { return };
-    let x = x + pen.ox;
     for k in ks {
         if x + k >= pen.end(y) || y >= pen.h {
             return;
@@ -1643,6 +1447,7 @@ fn month(app: &App, pen: &mut Pen, x0: u16, top: u16, bottom: u16, k: i32) -> Op
         pen.put(x0 + i as u16 * 4, y, d, pal.muted, false, false);
     }
     y += 1;
+    let end = (y + 6).min(bottom);
     for wk in weeks_from(yr, mo, app.monday_first) {
         if y >= bottom {
             break;
@@ -1661,7 +1466,8 @@ fn month(app: &App, pen: &mut Pen, x0: u16, top: u16, bottom: u16, k: i32) -> Op
         }
         y += 1;
     }
-    Some(y)
+    // six weeks' room whatever the month: Left and Right never move what is under it (#196)
+    Some(end.max(y))
 }
 
 /// A key's sentence up to its first comma, colon or semicolon, with no period: the part the about
