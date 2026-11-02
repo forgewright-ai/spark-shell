@@ -4486,6 +4486,28 @@ if command -v strace >/dev/null 2>&1; then   # the processes a call starts, over
 else
     printf '  NOTICE: strace is not installed -- the call'"'"'s process budget not counted\n'
 fi
+# the reads (#196): the palettes, their chips and the desktop entries are read again only when their folders change;
+# a palette added is in the next read; a section the desktop does not change behind the dialog has no watcher
+if command -v strace >/dev/null 2>&1; then
+    readn() { printf '%s\n' "$(rq 1 resources/read "{\"uri\":\"spark-shell://$1/rows\"}")" | strace -f -e trace=execve -o "$H/execve" sh "$SH" provide "$1" >/dev/null 2>&1; grep -c 'execve(' "$H/execve"; }
+    pingn() { printf '%s\n' "$(rq 1 ping)" | strace -f -e trace=execve -o "$H/execve" sh "$SH" provide "$1" >/dev/null 2>&1; grep -c 'execve(' "$H/execve"; }
+    readn theme >/dev/null; readn apps >/dev/null   # the caches made
+    _th=$(( $(readn theme) - $(pingn theme) )); _ap=$(( $(readn apps) - $(pingn apps) ))
+    [ "$_th" -lt 60 ] && [ "$_ap" -lt 60 ] \
+        && ok "provide: a rows read on a warm cache starts $_th processes for theme and $_ap for apps past the provider's start, each under 60 (#196)" \
+        || bad "read spawn budget" "theme $_th, apps $_ap: $(grep -o 'execve("[^"]*"' "$H/execve" | sort | uniq -c | sort -rn | head -8 | tr '\n' ' ')"
+fi
+mkdir -p "$H/.config/spark-shell/themes"; cp "$REPO/themes/nord.env" "$H/.config/spark-shell/themes/cache-196.env"
+mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows"}')"
+ans 1 | jq -r '.result.contents[0].text' | jq -e 'any(.rows[]; .text == "cache-196" and .group == "dark" and (.chip | length) == 9)' >/dev/null \
+    && ok "provide: a palette added is a row of the next read, dark and with its chip: the cache saw its folder change (#196)" || bad "palette cache" "$(head -c 400 "$H/mcp.out")"
+rm -f "$H/.config/spark-shell/themes/cache-196.env"
+: > "$H/mcp.out"
+{ rq 1 resources/subscribe '{"uri":"spark-shell://notes/rows"}'; sleep 1; printf 'made behind its back\n' > "$H/notes/behind-196.md"; sleep 2.5
+  rq 2 resources/unsubscribe '{"uri":"spark-shell://notes/rows"}'; } | SPARK_SHELL_PROVIDE_POLL=1 sh "$SH" provide notes > "$H/mcp.out" 2> "$H/mcp.err"
+! grep -q 'notifications/resources/updated' "$H/mcp.out" && [ "$(jq -s 'length' "$H/mcp.out")" = 2 ] \
+    && ok "provide: notes, which only a step changes, has no watcher: a subscribed host is sent no rows-changed note (#196)" || bad "notes unwatched" "$(cat "$H/mcp.out")"
+rm -f "$H/notes/behind-196.md"
 printf '# Shopping list\n- oat milk\n' > "$H/notes/shop-169.md"; printf 'plain first line\nthe vet on friday\n' > "$H/notes/vet-169.md"
 mcp notes "$(rq 1 resources/read '{"uri":"spark-shell://notes/rows"}')" "$(rq 2 resources/read "{\"uri\":\"spark-shell://notes/page/$(b64u 'notes:open shop-169.md')\"}")" "$(rq 3 resources/read "{\"uri\":\"spark-shell://notes/rows/find/$(b64u 'vet friday')\"}")"
 ans 1 | jq -r '.result.contents[0].text' | jq -e '([.rows[] | select(.id == "notes:open shop-169.md")][0] | ([.more[].name] == ["notes_append", "notes_rename", "notes_trash"]) and (.page | startswith("spark-shell://notes/page/"))) and ([.rows[] | select(.text | startswith("append to"))] == [])' >/dev/null \
@@ -4615,7 +4637,7 @@ mcp theme "$(call 1 theme_palette '{"name":"none"}')"
       tries=$((tries + 1)); [ "$tries" -lt 300 ] || break; sleep 0.1
   done
   rq 3 resources/unsubscribe '{"uri":"spark-shell://theme/rows"}'; } \
-    | SPARK_SHELL_PROVIDE_POLL=1 sh "$SH" provide theme > "$H/mcp.out" 2> "$H/mcp.err"
+    | SPARK_SHELL_PROVIDE_POLL=1 SPARK_SHELL_PROVIDE_WATCHED=theme sh "$SH" provide theme > "$H/mcp.out" 2> "$H/mcp.err"
 order=$(jq -r 'if .id then "r" + (.id | tostring) else .method end' "$H/mcp.out" | uniq | paste -sd ' ' -)
 case $order in "r1 notifications/progress r2 notifications/resources/updated r3") ok "provide: progress against the token while a step runs, then its result with its rows, then the rows updated by the watcher alone, unsubscribed" ;;
     *) bad "provide subscribe" "$order $(cat "$H/mcp.err")" ;; esac

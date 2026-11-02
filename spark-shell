@@ -1926,7 +1926,8 @@ theme_kind() {   # theme_kind NAME -> saved | look | yours | shipped | none | no
     elif [ -f "$REPO/themes/$1.env" ]; then echo shipped; fi
 }
 theme_saved_names() { for _d in "$PALETTE_DIR"/*/; do [ -f "${_d}palette.env" ] || continue; _d=${_d%/}; printf '%s\n' "${_d##*/}"; done | sort; }   # -> the saved themes, by name
-theme_enum() { { palette_names; theme_saved_names; echo none; } | LC_ALL=C grep -E '^[A-Za-z0-9._-]+$' | sort -u | paste -sd'|' -; }   # -> every name theme NAME takes now, as a|b|c: the schema's enum, so a model writes a real name or none (#95)
+theme_enum() { dirs_cached theme.enum "$(THEME_DIRS)" theme_enum_now; }   # -> every name theme NAME takes now, as a|b|c: the schema's enum; read again only when the themes change (#196)
+theme_enum_now() { { palette_names; theme_saved_names; echo none; } | LC_ALL=C grep -E '^[A-Za-z0-9._-]+$' | sort -u | paste -sd'|' -; }   # the enum so a model writes a real name or none (#95)
 look_get() { sed -n "s/^$2=//p" "$1/look.env" 2>/dev/null | head -1 | tr -d '\001-\037\177'; }   # look_get DIR KEY -> a line of the folder's look.env, no control character in it
 look_set() {   # look_set DIR KEY VALUE -- that line of look.env set (added when absent), the others kept
     mkdir -p "$1"; { [ ! -f "$1/look.env" ] || grep -v "^$2=" "$1/look.env"; printf '%s=%s\n' "$2" "$3"; } > "$1/look.env.new" && mv "$1/look.env.new" "$1/look.env"
@@ -2022,7 +2023,8 @@ kept_delete_ok() {   # kept_delete_ok KIND NAME -> 0 to go on: at a terminal it 
 palette_names() { for _p in "$REPO"/themes/*.env "$PALETTE_DIR"/*.env; do [ -f "$_p" ] || continue; _n=${_p##*/}; printf '%s\n' "${_n%.env}"; done | sort -u; }
 palette_get() { sed -n "s/^$2=//p" "$1" | tail -1 | tr -d '"\r'; }   # palette_get FILE KEY
 PALETTE_NONE="terminal default colors"   # palette none's row: foot's own sixteen on the desktop, the console's own colors at the console
-palette_darks() {   # -> the palettes whose ground is dark, one name a line (theme_is_dark's rule: the background's luminance under half)
+palette_darks() { dirs_cached theme.darks "$(THEME_DIRS)" palette_darks_now; }   # -> the palettes whose ground is dark, one name a line; read again only when the themes change (#196)
+palette_darks_now() {   # theme_is_dark's rule: the background's luminance under half
     palette_names | while IFS= read -r _n; do _f=$(palette_file "$_n") && printf '%s\t%s\n' "$_n" "$(palette_get "$_f" THEME_BG)"; done \
         | awk -F '\t' 'function hx(s, i) { return (index("0123456789abcdef", substr(s, i, 1)) - 1) * 16 + index("0123456789abcdef", substr(s, i + 1, 1)) - 1 }
             { c = tolower($2); sub(/^#/, "", c); if ((hx(c, 1) * 299 + hx(c, 3) * 587 + hx(c, 5) * 114) / 1000 < 128) print $1 }'
@@ -4510,6 +4512,17 @@ panel_cache() {   # panel_cache NAME AGE CMD... -> CMD's output, from the cache 
     sed 1d "$_pc_file"
 }
 panel_forget() { rm -f "$PANEL_CACHE/$1"; }   # panel_forget NAME -- after a change the probe must see
+dirs_cached() {   # dirs_cached NAME "DIR..." CMD -> CMD's output, kept until a file under the folders changes, one is made or goes, or the list does (#196)
+    _dcf=$PANEL_CACHE/dirs.$1; _dck=''
+    for _dcd in $2; do [ ! -d "$_dcd" ] || _dck="$_dck $_dcd"; done   # the folders there now are the key: one made later is a change
+    if [ -f "$_dcf" ] && IFS= read -r _dcl < "$_dcf" && [ "$_dcl" = "#$_dck" ] && [ -z "$(find $_dck -newer "$_dcf" -print 2>/dev/null | sed -n 1p)" ]; then
+        sed 1d "$_dcf"; return 0
+    fi
+    panel_dir
+    { printf '#%s\n' "$_dck"; eval "$3"; } > "$_dcf.$$" 2>/dev/null && mv "$_dcf.$$" "$_dcf" || { rm -f "$_dcf.$$"; eval "$3"; return; }   # a temp of its own: two readers never cut each other's
+    sed 1d "$_dcf"
+}
+THEME_DIRS() { printf '%s %s' "$REPO/themes" "$PALETTE_DIR"; }   # the folders the palettes and the saved themes are read from
 panel_dir() { mkdir_state "$PANEL_CACHE" && chmod 700 "$PANEL_CACHE"; }   # the cache and the journal: names of networks, devices and apps, for you alone
 panel_age() {   # panel_age NAME SECONDS -- an answer made older by that much, so it is asked again sooner
     _pc_file=$PANEL_CACHE/$1; [ -f "$_pc_file" ] || return 0
@@ -4586,7 +4599,8 @@ wifi_iwd_running() {   # probing iwctl itself can activate iwd and take a radio
         dbus-send --system --print-reply --reply-timeout=2000 --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner string:net.connman.iwd 2>/dev/null | grep -q 'boolean true'
     else pgrep -x iwd >/dev/null 2>&1; fi
 }
-wifi_tool() {   # -> nmcli | iwctl | wpa_cli | nothing
+wifi_tool() {   # -> nmcli | iwctl | wpa_cli | nothing; asked once a rows read (#196)
+    [ -z "${WIFI_TOOL_READ:-}" ] || { [ -z "$WIFI_TOOL_NOW" ] || echo "$WIFI_TOOL_NOW"; return 0; }
     _i=$(wifi_if); [ -n "$_i" ] || return 0
     if command -v nmcli >/dev/null 2>&1 && nmcli -t -f RUNNING general 2>/dev/null | grep -qx running && [ "$(nmcli -g GENERAL.NM-MANAGED device show "$_i" 2>/dev/null)" = yes ]; then echo nmcli
     elif command -v iwctl >/dev/null 2>&1 && wifi_iwd_running && iwctl station "$_i" show 2>/dev/null | wifi_strip | grep -q '^State[[:space:]]'; then echo iwctl
@@ -5073,10 +5087,10 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ "${2:-}" = full ] || { printf -- '-\t%s %s more\tmore\n' "$(panel_title theme | sed "s/^theme *//")" "$PANEL_SEP"; return 0; }   # one row in the list: the look is a rare pick; typing finds every row below
             # the palettes first, dark beside light (the dialog draws them so), each its own step, the one in use too:
             # the light rests on it, a palette lit a moment shows on the screen (provide_rows, #183)
-            palette_names > "$TMP/pal.names"; palette_darks > "$TMP/pal.dark"
+            palette_names > "$TMP/pal.names"; _darks=" $(palette_darks | tr '\n' ' ') "   # the dark ones, a word each: no process a palette (#196)
             for _g in dark light; do
                 while IFS= read -r n; do
-                    if grep -qxF "$n" "$TMP/pal.dark"; then [ "$_g" = dark ] || continue; else [ "$_g" = light ] || continue; fi
+                    case $_darks in *" $n "*) [ "$_g" = dark ] || continue ;; *) [ "$_g" = light ] || continue ;; esac
                     if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\t%s\t%s\n' "$PANEL_TICK" "$n" "$n" "$_g"; else printf -- '-\t%s\t%s\t%s\n' "$n" "$n" "$_g"; fi
                 done < "$TMP/pal.names"
             done
@@ -5644,7 +5658,7 @@ rem_due_line() {   # -> "due: WORDS  " for tmux's status line while a reminder i
 # Printing stays with the configured CUPS service. No server discovery,
 # package install or queue creation is implicit in looking at these rows.
 printer_status_now() { python3 "$REPO/lib/printers.py" status; }
-printer_status() { panel_cache printers.status 2 printer_status_now; }
+printer_status() { panel_cache printers.status 10 printer_status_now; }   # ten seconds: CUPS is asked through python3, and a step forgets it (#196)
 # --- the notifications (#71): mako shows them, started by the sway
 # template and drawn by ~/.config/mako/config; makoctl is the one tool. Do
 # not disturb is mako's mode of that name, kept in the config
@@ -5906,7 +5920,7 @@ power_off() {   # by the record alone: the sudoers file spark-shell wrote
 APP_GROUPS='Network:internet Office:office Graphics:graphics AudioVideo:sound-and-video Audio:sound-and-video Video:sound-and-video Development:development Education:education Science:education Game:games System:system Settings:system Utility:utilities'
 app_group() {   # app_group CATEGORIES -> the group's words
     for _apg in $APP_GROUPS; do
-        case ";$1;" in *";${_apg%%:*};"*) printf '%s\n' "${_apg#*:}" | tr '-' ' '; return 0 ;; esac
+        case ";$1;" in *";${_apg%%:*};"*) _apw=${_apg#*:}; while case $_apw in *-*) true ;; *) false ;; esac; do _apw=${_apw%%-*}\ ${_apw#*-}; done; printf '%s\n' "$_apw"; return 0 ;; esac   # dashes as spaces, no process (#196)
     done
     echo others
 }
@@ -6368,7 +6382,7 @@ clock_view() {   # clock_view [MARK UNMARK] -> the time large on the left, in MA
         if [ -n "$_l" ]; then printf '%s%s%s      %s\n' "${1:-}" "$_l" "${2:-}" "$_m"; else printf '%34s      %s\n' '' "$_m"; fi
     done < "$TMP/clock.month"
 }
-look_font_size() { printf '%s' "$FONT" | sed -n 's/.*size=\([0-9][0-9]*\).*/\1/p' | sed -n 1p; }
+look_font_size() { case $FONT in *size=[0-9]*) _lfs=${FONT##*size=}; printf '%s' "${_lfs%%[!0-9]*}" ;; esac; }   # the size in FONT, no process (#196)
 
 # --- the gate and the list as text
 panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0), or why not (exit 1): only a step the section offers now
@@ -6881,7 +6895,7 @@ tool_spec() {
 action_tool() {   # action_tool SECTION "ACTION [ARG]" -> sets _tool and _tv, the tool that does that panel step and its argument; false when no tool does
     _av=${2%% *}; _tv=''; [ "$_av" = "$2" ] || _tv=${2#* }
     case $1:$_av in apps:close|apps:focus) _tool=window_$_av; tool_spec "$_tool"; return ;; esac   # said of an app, done to its window
-    _tool=$(printf '%s_%s' "$1" "$_av" | tr '-' '_')
+    _tool=${1}_$_av; while case $_tool in *-*) true ;; *) false ;; esac; do _tool=${_tool%%-*}_${_tool#*-}; done   # dashes as underscores, no process (#196)
     if tool_spec "$_tool" && [ "$_ts" = "$1" ] && [ "$_ta" = "$_av" ]; then return 0; fi
     [ "$1" = theme ] && [ -z "$_tv" ] && tool_spec theme_palette || return 1   # a palette's step is its name alone
     _tool=theme_palette; _tv=$_av
@@ -6933,6 +6947,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
     [ "$1" != about ] || { provide_about_rows; return; }
     [ "$1" != files ] || { provide_files_rows; return; }
     THEME_ENUM_NOW=''; [ "$1" != theme ] || THEME_ENUM_NOW=$(theme_enum)   # the palette names once for this read, not once a row (#183)
+    WIFI_TOOL_READ=''; [ "$1" != wifi ] || { WIFI_TOOL_NOW=$(wifi_tool); WIFI_TOOL_READ=1; }   # the wifi manager once for this read (#196)
     # the theme's own helpers (the chips, the text size, the animation, the transparency) for the theme's rows alone (#196)
     _pr_chips='{}'; _pr_size=''; _pr_anim=''; _pr_animok=''; _pr_trn=0; _pr_tr=''
     if [ "$1" = theme ]; then
@@ -6995,7 +7010,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 {name:"notes_append", arguments:{name:.tool.arguments.name}, ask:["text"], said:"append"} as $append |
                 [. + {more:(.more + [$append, {name:"notes_rename", arguments:{name:.tool.arguments.name}, ask:["to"], said:"rename"}, {name:"notes_trash", arguments:{name:.tool.arguments.name}, said:"trash"}])}]
               else [.] end) | .rows |= (add // [])' | provide_rows_more "$1" && _prs=0 || _prs=$?
-    THEME_ENUM_NOW=''   # the next read sees a palette saved meanwhile
+    THEME_ENUM_NOW=''; WIFI_TOOL_READ=''   # the next read sees a palette saved, a manager started meanwhile
     return "$_prs"
 }
 provide_rows_more() {   # provide_rows_more SECTION -- stdin: a rows resource -> the same with one row a thing, its other steps behind it (a saved network's forget, a paired device's remove, a drive's unmount and eject), and the page Space shows for a thing (#169)
@@ -7054,8 +7069,11 @@ provide_anim_rows() {   # -> the theme's animation list as a rows resource (spar
           + (if .[1] != "" then {film: .[1]} else {} end)]
         | {title: "animation", state: "", rows: ., short: []}'
 }
-theme_chips() {   # theme_chips SECTION -> {NAME: [nine colors]} for the theme's palettes and saved themes, {} for any other section
+theme_chips() {   # theme_chips SECTION -> {NAME: [nine colors]} for the theme's palettes and saved themes, {} for any other section; read again only when the themes change (#196)
     [ "$1" = theme ] || { printf '{}'; return 0; }
+    dirs_cached theme.chips "$(THEME_DIRS)" theme_chips_now
+}
+theme_chips_now() {
     { palette_names; theme_saved_names; } | sort -u | while IFS= read -r _n; do _c=$(palette_chip "$_n") && printf '%s\t%s\n' "$_n" "$_c"; done \
         | jq -Rn '[inputs | split("\t") | {(.[0]): (.[1] | split(" ") | map(select(test("^#[0-9A-Fa-f]{6}$"))))}] | add // {}'
 }
@@ -7107,6 +7125,9 @@ fifo_put() {   # fifo_put LINE -- one line into the loop's FIFO (fd 5), under th
     printf '%s\n' "$1" >&5 || :; rmdir "$PLOCK"
 }
 PROVIDE_POLL=${SPARK_SHELL_PROVIDE_POLL:-}   # the watcher's seconds between looks; the tests set it
+# the sections the desktop changes behind the dialog: a network found, a device, a sound, a drive, a window, a
+# notice. Every other section changes only by a step, whose answer carries its rows: no watcher for those (#196)
+PROVIDE_WATCHED=${SPARK_SHELL_PROVIDE_WATCHED:-wifi bt out mic storage window notifications}
 provide_seen() { cksum < "$TMP/rows.last" > "$TMP/rows.seen"; }   # the rows the host was last sent, as the watcher compares them (#196)
 provide_watch() {   # the rows looked at again every few seconds while a host is subscribed; a change pokes the loop. Its own TMP: the loop's files are the loop's
     _seen=$TMP/rows.seen; TMP=$TMP/watch; mkdir -p "$TMP"
@@ -7144,6 +7165,8 @@ provide_main() {   # provide_main SECTION -- serve it until stdin ends
     command -v jq >/dev/null 2>&1 || refuse_in provide "jq is not installed (spark-shell on)" >&2
     command -v mkfifo >/dev/null 2>&1 || refuse_in provide "mkfifo is not installed" >&2
     config_load; [ "$OS" = Darwin ] || pm_detect; theme_load; SND=''; [ "$OS" = Darwin ] || SND=$(snd_tool)
+    PANEL_VERSION_NOW=$(panel_version); PANEL_VERSION_READ=1   # once a provider: the release does not change under it (#196)
+    [ "$sec" != display ] || { if saver_can; then SAVER_CAN_NOW=1; else SAVER_CAN_NOW=0; fi; }   # python3 asked once a provider, not twice a read
     exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in; whatever a step prints goes to stderr
     WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; CLIENT_PAIRING=''; : > "$PROOTS"
     REM_DELETED=$TMP/deleted   # a reminder deleted here is kept until the provider ends: its undo (#111)
@@ -7247,7 +7270,9 @@ EOF
             case $_method in
                 resources/read) provide_rows "$sec" > "$TMP/rows.last"; provide_seen   # the rows the host has: the gate's, the watcher's (#196)
                     rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/rows.last")" ;;
-                resources/subscribe) SUBSCRIBED=1; [ -n "$WATCH" ] || { provide_watch "$sec" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }; rpc_result "$_id" '{}' ;;
+                resources/subscribe) SUBSCRIBED=1
+                    case " $PROVIDE_WATCHED " in *" $sec "*) [ -n "$WATCH" ] || { provide_watch "$sec" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; } ;; esac
+                    rpc_result "$_id" '{}' ;;
                 resources/unsubscribe) SUBSCRIBED=''; [ -z "$WATCH" ] || { kill "$WATCH" 2>/dev/null || :; wait "$WATCH" 2>/dev/null || :; WATCH=''; }; rpc_result "$_id" '{}' ;;
             esac ;;
         *) rpc_error "$_id" -32601 "no method $_method here" ;;
@@ -8777,7 +8802,7 @@ panel_hint() {   # the one line under the list: the keys as keys
     if [ "${view:-home}" = about ]; then printf 'say what you would like %s %s closes' "$PANEL_SEP" "$(panel_chip Esc)"
     else printf '%s %s pick an option, or say what you would like %s %s closes' "$(panel_chip "$PANEL_UP")" "$(panel_chip "$PANEL_DOWN")" "$PANEL_SEP" "$(panel_chip Esc)"; fi
 }
-panel_version() { (cd "$REPO" 2>/dev/null && git describe --tags --abbrev=0 2>/dev/null) | sed 's/^v//'; }   # the release this copy is at, or nothing
+panel_version() { [ -z "${PANEL_VERSION_READ:-}" ] || { printf '%s\n' "$PANEL_VERSION_NOW"; return 0; }; (cd "$REPO" 2>/dev/null && git describe --tags --abbrev=0 2>/dev/null) | sed 's/^v//'; }   # the release this copy is at, or nothing; a provider asks git once (#196)
 panel_about() {   # panel_about WIDTH -> the splash: the logo small, the version, the keys as keys with their sentences in one column, the licence and the address
     _k=20; _w=$(($1 - _k)); [ "$_w" -ge 20 ] || _w=20
     _y1=''; _y2=''; _r=''; _b=''
@@ -9599,7 +9624,11 @@ DESK_WAIT=30                                                    # seconds for a 
 # `spark ver --sbom` writes, so the two compose) and the desk's inventory.
 SBOM_JSON=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/sbom.cdx.json
 APPS=$CONFIG_DIR/apps     # yours: the allowed apps, what a layout may open, one per line, `name[: your words]`
-sbom_entries() {   # -> $TMP/entries: NAME<tab>FILE<tab>WHAT<tab>TERMINAL<tab>CATEGORIES<tab>LAUNCH, hidden ones out
+sbom_entries() {   # -> $TMP/entries: NAME<tab>FILE<tab>WHAT<tab>TERMINAL<tab>CATEGORIES<tab>LAUNCH, hidden ones out; read again only when a desktop file changes (#196)
+    _sbd=''; for d in ${XDG_DATA_HOME:-$HOME/.local/share} $(printf '%s' "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" | tr ':' ' '); do _sbd="$_sbd $d/applications"; done
+    dirs_cached apps.entries "$_sbd" 'sbom_entries_now; cat "$TMP/entries"' > "$TMP/entries.c" && mv "$TMP/entries.c" "$TMP/entries"
+}
+sbom_entries_now() {
     : > "$TMP/entries"
     for d in ${XDG_DATA_HOME:-$HOME/.local/share} $(printf '%s' "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" | tr ':' ' '); do
         [ -d "$d/applications" ] || continue
@@ -10602,7 +10631,7 @@ idle_wait() {   # idle_wait SECONDS -- 0 when a key or a mouse move came first, 
 }
 idle_clock_end() { { printf '\033[?1003l\033[?25h\033[0m'; [ -z "${_ist:-}" ] || stty "$_ist"; } 2>/dev/null || :; }   # the mouse unreported, the cursor and the terminal as they were
 saver_version() { sed -n 's/^VERSION = "\(.*\)".*/\1/p' "$REPO/lib/saver.py" 2>/dev/null; }   # read without python3
-saver_can() { _sver=$(saver_version); [ -n "$_sver" ] && [ "$(python3 "$REPO/lib/saver.py" --version 2>/dev/null)" = "$_sver" ]; }   # a python3 that runs the savers (not a stub, not missing)
+saver_can() { case ${SAVER_CAN_NOW:-} in 1) return 0 ;; 0) return 1 ;; esac; _sver=$(saver_version); [ -n "$_sver" ] && [ "$(python3 "$REPO/lib/saver.py" --version 2>/dev/null)" = "$_sver" ]; }   # a python3 that runs the savers (not a stub, not missing)
 saver_known() { for _sn in clock $SAVER_NAMES; do [ "$_sn" != "$1" ] || return 0; done; return 1; }   # saver_known NAME -> a whole word of the list, never a part of one
 saver_words() { if [ "$1" = clock ]; then echo "the clock alone"; else echo "the $1 saver"; fi; }   # saver_words NAME
 saver_problem() {   # saver_problem NAME -> why it cannot be the idle screen's, in one line; nothing when it can

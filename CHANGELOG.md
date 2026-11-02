@@ -85,6 +85,19 @@ part lands in a pull request of its own.
   note added now starts 56 processes, its rows in the answer, where the
   call and the dialog's read after it started 64; a read and a refused
   call start 27, where they started 39.
+- The shell's reads ask less. The palette names, which palettes are
+  dark, the palettes' chips and the apps' desktop entries are kept and
+  read again only when a file in their folders changes, so a theme read
+  on a warm cache starts about 20 processes past the provider's start,
+  where it started about 150, and an apps read about 55, where it
+  started about 230. The wifi manager is asked once a read, python3 for
+  the savers and git for the version once a provider. The printers'
+  state is kept ten seconds, where it was kept two. A dash in a name is
+  turned without a process.
+- A provider watches its rows only for the sections the desktop changes
+  behind the dialog: wifi, bt, out, mic, storage, window and
+  notifications. Every other section changes only by a step, and the
+  step's answer carries its rows.
 
 ## v0.121
 

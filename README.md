@@ -1199,7 +1199,9 @@ dialog clears itself when the call goes and closes when the result says
 as the step left them: the dialog shows them in place of a new read,
 and no rows-changed note follows the call. The provider keeps the rows
 it last sent as the allowlist a step is matched against, and its
-watcher counts them as seen.
+watcher counts them as seen. Only the sections the desktop changes
+behind the dialog have a watcher (wifi, bt, out, mic, storage, window,
+notifications): every other one changes only by a step.
 
 `reminders_add` uses preparation to resolve relative times to an explicit
 local date and time. A past or unreadable time asks for clarification.
