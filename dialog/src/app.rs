@@ -1054,12 +1054,20 @@ impl App {
         self.refuse(&format!("{} stopped: {}", label, why));
     }
 
-    pub fn incoming(&mut self, m: Incoming) {
+    /// A provider's message. True when it may change what is drawn: a notice that the rows changed only marks
+    /// them to be read again, and a progress note only moves a march the header may not show, so neither asks for
+    /// a frame (#196).
+    pub fn incoming(&mut self, m: Incoming) -> bool {
+        let shows = match &m {
+            Incoming::Msg(_, v) => v.get("id").is_some() || v.get("method").and_then(Value::as_str) == Some("notifications/tools/list_changed"),
+            Incoming::Gone(..) => true,
+        };
         match m {
             Incoming::Gone(idx, why) => self.lose(idx, &why),
             Incoming::Msg(idx, v) => self.message(idx, v),
         }
         self.follow_lit();
+        shows
     }
 
     /// The light back on the row a value was changed on, wherever the list moved it.
