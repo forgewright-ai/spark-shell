@@ -785,7 +785,7 @@ Enter, Esc, an arrow or a click cuts the opening short; letters typed
 meanwhile land at the prompt and it plays on. Esc during the closing
 closes at once. A preview's page that takes a moment to load plays the
 opening, then the waiting one, until it is drawn. Settings > theme picks
-the animation from a list, each piece playing beside it, or none for no
+the animation from a list of the pieces, or none for no
 motion (`DIALOG_ANIMATION`, embers to begin with); a palette with no set
 of its own plays none.
 
@@ -871,13 +871,12 @@ its first and its last row.
   and nothing else on the screen moves: no line above the list, no
   receipt below it. `theme back` on the command line steps through the
   last ten looks. The wallpaper row opens the wallpaper list: the
-  drawings, each with the palette it was drawn for, the lit one shown
-  as a picture in your palette at the top right; `a picture` (jpg,
+  drawings, each with the palette it was drawn for; `a picture` (jpg,
   jpeg, png, webp); `a color`, which asks for a name or `#rrggbb`; and
   the ground. The animation row opens a list of the pieces and none,
-  the one in use checked and the palette's own said; the lit one plays
-  beside the list in your palette. A drawing, the ground or a piece
-  picked there is checked at once, and the list stays as it is. The
+  the one in use checked and the palette's own said. A drawing, the
+  ground or a piece picked there is checked at once, and the list stays
+  as it is. The
   pieces are drawn for the shipped palettes only: with a theme from a
   picture or words, a palette of your own, or none, the animation is
   none, and its row says so and opens no list. The header names the

@@ -42,17 +42,12 @@ pub const BOTTOM: u16 = 4;
 pub const PURPOSE_X: u16 = 17;
 /// A palette's chip: a small terminal in the palette's own colors, this many cells wide.
 pub const CHIP: u16 = 9;
-/// A picture beside a list (a wallpaper's), in cells: about 16 by 9 in a 9 by 18 pixel cell.
-pub const PREVIEW_W: u16 = 24;
-pub const PREVIEW_H: u16 = 7;
 pub const LESS: &str = "\u{2039}";
 struct Pen<'a> {
     buf: &'a mut Buffer,
     pal: &'a Palette,
     w: u16,
     h: u16,
-    /// Rows y0..y1 end at x: a picture sits right of them.
-    stop: Option<(u16, u16, u16)>,
     /// A wide list's right edge (#141): its band and its arrows end where its words end, never at the
     /// screen's edge.
     right: u16,
@@ -73,11 +68,8 @@ impl Pen<'_> {
         s
     }
     /// Text at (x, y) in a color; returns the column after it; nothing past the grid.
-    fn end(&self, y: u16) -> u16 {
-        match self.stop {
-            Some((y0, y1, x)) if y >= y0 && y < y1 => x.min(self.right),
-            _ => self.w.min(self.right),
-        }
+    fn end(&self, _y: u16) -> u16 {
+        self.w.min(self.right)
     }
     fn put(&mut self, x: u16, y: u16, text: &str, fg: Color, bold: bool, lit: bool) -> u16 {
         let x = x + self.ox; // a row in the right column: drawn from its own origin, given back in its own terms
@@ -185,8 +177,6 @@ pub struct Drawn {
     pub wave: Option<(u16, u16, u16, u16)>,
     /// A transition playing (#122): its cells (x, y, w, h), which one, and since when.
     pub film: Option<(u16, u16, u16, u16, Reel, std::time::Instant)>,
-    /// An animation beside a list (#132): its box (x, y, w, h in cells) and the piece's folder, main.rs plays it.
-    pub side_film: Option<(u16, u16, u16, u16, String)>,
     /// The reply row's Undo (#196): its cells (x0, x1, y), for a click.
     pub reply_undo: Option<(u16, u16, u16)>,
     /// A value row's arrows (#175): each one's cells (x0, x1, y), its pick, and whether it steps the value up.
@@ -286,9 +276,6 @@ impl Drawn {
         }
         self.wave = self.wave.map(|(x, y, w, h)| (x + dx, y, w, h));
         self.film = self.film.map(|(x, y, w, h, r, t)| (x + dx, y, w, h, r, t));
-        if let Some(s) = self.side_film.as_mut() {
-            s.0 += dx;
-        }
         self.reply_undo = self.reply_undo.map(|(a, b, y)| (a + dx, b + dx, y));
         for st in &mut self.steps {
             st.0 += dx;
@@ -361,7 +348,6 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         pal,
         w,
         h,
-        stop: None,
         right: w,
         ox: 0,
         lx: 0,
@@ -473,9 +459,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         if app.is_calendar() {
             top = calendar(app, &mut pen, clock, content_y, bottom) + 1;
         }
-        let (picks, preview) = content(app, &mut pen, top, bottom, &mut drawn);
-        drawn.picks = picks;
-        drawn.preview = preview;
+        drawn.picks = content(app, &mut pen, top, bottom, &mut drawn);
     }
 
     // one gap between keys on every row of a window, so a key keeps its place from one row to the next (#166):
@@ -855,7 +839,7 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     let said = app.items().len() as u16;
     let (picks, y) = if said > 0 {
         let end = (top + said).min(bottom.saturating_sub(6));
-        (content(app, pen, top, end, drawn).0, end + 1)
+        (content(app, pen, top, end, drawn), end + 1)
     } else {
         (vec![], top)
     };
@@ -1099,7 +1083,7 @@ fn sound(
     })
 }
 
-fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> (Vec<(u16, usize)>, Preview) {
+fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> Vec<(u16, usize)> {
     let mut at = vec![];
     let items = app.items();
     let picks: Vec<usize> = items.iter().enumerate().filter(|(_, it)| app.pickable_item(it)).map(|(i, _)| i).collect();
@@ -1117,91 +1101,6 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         first = first.min(s);
         if s >= first + room {
             first = s + 1 - room;
-        }
-    }
-    // a list whose rows carry pictures shows the lit row's at the top right, else the one in use; the rows beside it end before it
-    let mut preview: Preview = None;
-    if items.iter().any(|it| row_of(app, it).is_some_and(|r| r.preview.is_some())) && pen.w >= 2 * PREVIEW_W {
-        let lit = selected.and_then(|k| row_of(app, &items[k])).and_then(|r| r.preview.clone());
-        let used = items
-            .iter()
-            .filter_map(|it| row_of(app, it))
-            .find(|r| r.sign == "check")
-            .and_then(|r| r.preview.clone());
-        let lit_row = selected.and_then(|k| row_of(app, &items[k])).filter(|r| r.preview.is_some());
-        let used_row = items.iter().filter_map(|it| row_of(app, it)).find(|r| r.sign == "check" && r.preview.is_some());
-        // under the picture, the row's columns: a drawing's palette on one line; a file's size and date, then
-        // its folder on a second line, since the rows beside the picture have no room for them (#112)
-        let caption: Vec<String> = lit_row
-            .or(used_row)
-            .map(|r| match r.columns.as_slice() {
-                [] => vec![],
-                [one] => vec![one.clone()],
-                [a, b, rest @ ..] => {
-                    let mut lines = vec![format!("{}{}{}", a, SEP, b)];
-                    lines.extend(rest.iter().take(1).cloned());
-                    lines
-                }
-            })
-            .unwrap_or_default();
-        // beside the list, from its first row: what was said above it keeps the whole width
-        let k0 = items
-            .iter()
-            .position(|it| matches!(it, Item::Heading(_) | Item::Row(..) | Item::Folder(_)))
-            .unwrap_or(0);
-        let top = top + k0.saturating_sub(first) as u16;
-        if let Some(file) = lit.or(used).filter(|_| top + PREVIEW_H + 1 < bottom) {
-            let x = pen.w - 2 - PREVIEW_W;
-            preview = Some(Picture {
-                x,
-                y: top,
-                w: PREVIEW_W,
-                h: PREVIEW_H,
-                file,
-                view: Viewport::FIT,
-                spectrogram: false,
-            });
-            // the picture's cells are sixel's: the buffer skips them, as it does the logo's (main.rs draws it)
-            for yy in top..(top + PREVIEW_H).min(pen.h) {
-                for xx in x..(x + PREVIEW_W).min(pen.w) {
-                    pen.buf[(xx, yy)].set_diff_option(CellDiffOption::Skip);
-                }
-            }
-            pen.stop = Some((top, top + PREVIEW_H + 2, x - 2));
-            let stop = pen.stop.take();
-            for (k, c) in caption.iter().enumerate() {
-                pen.put(x, top + PREVIEW_H + k as u16, &cut_words(c, PREVIEW_W as usize), pal_muted(pen), false, false);
-            }
-            pen.stop = stop;
-        }
-    }
-    // a list whose rows bring an animation (#132): the lit row's plays where a wallpaper's picture is drawn, else the
-    // one in use; a lit row with none (no motion) leaves the box empty, the rows beside it ending before it either way
-    if preview.is_none() && pen.w >= 2 * PREVIEW_W && items.iter().any(|it| row_of(app, it).is_some_and(|r| r.film.is_some())) {
-        let film = match selected.and_then(|k| row_of(app, &items[k])) {
-            Some(r) => r.film.clone(),
-            None => items
-                .iter()
-                .filter_map(|it| row_of(app, it))
-                .find(|r| r.sign == "check")
-                .and_then(|r| r.film.clone()),
-        };
-        let k0 = items
-            .iter()
-            .position(|it| matches!(it, Item::Heading(_) | Item::Row(..) | Item::Folder(_)))
-            .unwrap_or(0);
-        let top = top + k0.saturating_sub(first) as u16;
-        let x = pen.w - 2 - PREVIEW_W;
-        if top + PREVIEW_H + 1 < bottom {
-            if let Some(f) = film {
-                for yy in top..(top + PREVIEW_H).min(pen.h) {
-                    for xx in x..(x + PREVIEW_W).min(pen.w) {
-                        pen.buf[(xx, yy)].set_diff_option(CellDiffOption::Skip);
-                    }
-                }
-                drawn.side_film = Some((x, top, PREVIEW_W, PREVIEW_H, f));
-            }
-            pen.stop = Some((top, top + PREVIEW_H + 2, x - 2));
         }
     }
     let pal = pen.pal.clone();
@@ -1295,9 +1194,8 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         }
     }
     (pen.ox, pen.lx, pen.right) = (0, 0, full);
-    pen.stop = None;
     pen.right = pen.w;
-    (at, preview)
+    at
 }
 
 /// The right of two columns side by side starts here (#183): a palette's sign, its seven dots and a name of 16 fit
@@ -1537,10 +1435,8 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
                 x + 3
             };
             let room = pen.end(y).saturating_sub(at) as usize;
-            // a number cut is no number, and beside the picture a column is whole or not drawn at all (nor what follows it);
-            // elsewhere words are cut at a word
-            let beside = pen.stop.is_some_and(|(y0, y1, _)| y >= y0 && y < y1);
-            if (numeric || beside) && cw as usize > room {
+            // a number cut is no number: whole or not drawn at all (nor what follows it); words are cut at a word
+            if numeric && cw as usize > room {
                 break;
             }
             pen.put(at, y, &cut_words(col, room), pal.muted, false, lit);

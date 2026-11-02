@@ -2479,8 +2479,8 @@ fn settings_stand_in_groups_and_the_home_holds_about_and_power() {
 }
 
 #[test]
-fn an_animations_row_names_its_folder_and_the_list_plays_the_lit_one_beside_it() {
-    // #132: a row's film is a whole folder path, nothing climbing out of it; the list draws a box for the lit one
+fn an_animations_row_names_its_folder_and_nothing_plays_beside_the_list() {
+    // #132: a row's film is a whole folder path, nothing climbing out of it
     let rows = spark_dialog::model::rows(
         &json!({"title": "animation", "rows": [
             {"id": "theme:animation:moon", "sign": "check", "text": "moon", "tool": {"name": "theme_animation", "arguments": {"to": "moon"}}, "more": [], "columns": ["the palette's own"], "children": null, "group": null, "film": "/opt/spark-shell/assets/transitions/moon/nord"},
@@ -2501,14 +2501,11 @@ fn an_animations_row_names_its_folder_and_the_list_plays_the_lit_one_beside_it()
     let p = palette("tokyonight-night");
     let mut b = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, app.size.0, app.size.1));
     let drawn = spark_dialog::ui::draw(&app, &p, "Sun 18 Oct \u{b7} 12:04", &mut b);
-    assert!(
-        drawn.side_film.as_ref().is_some_and(|f| f.4 == "/opt/spark-shell/assets/transitions/moon/nord"),
-        "the lit piece plays beside the list: {:?}",
-        drawn.side_film
-    );
-    app.sel = 2;
-    let drawn = spark_dialog::ui::draw(&app, &p, "Sun 18 Oct \u{b7} 12:04", &mut b);
-    assert!(drawn.side_film.is_none(), "none lit: the box stays empty");
+    // #196: nothing plays beside the list; its rows keep the whole width, lit or not
+    assert!(drawn.preview.is_none() && drawn.film.is_none(), "no picture, no film beside the list");
+    let row = |b: &ratatui::buffer::Buffer, y: u16| (0..b.area.width).map(|x| b[(x, y)].symbol().to_string()).collect::<String>();
+    let lit = drawn.picks.iter().find(|(_, n)| *n == 0).map(|(y, _)| *y).unwrap();
+    assert!(row(&b, lit).contains("the palette's own"), "the row's column whole: {:?}", row(&b, lit));
 }
 
 #[test]

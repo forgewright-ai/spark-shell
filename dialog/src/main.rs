@@ -42,8 +42,6 @@ enum Ev {
     Helper(Helper, Result<String, String>),
     /// The transitions' piece, decoded (#122): None when it could not be.
     Films(Option<transition::Films>),
-    /// A piece lit in the animation list, decoded (#132): its folder, and None when it could not be.
-    Side(String, Option<transition::Films>),
 }
 
 struct Args {
@@ -245,7 +243,6 @@ fn image<'a>(file: &str, cache: &'a mut Option<(String, std::time::SystemTime, I
 /// A transition drawn: its box, which one, its frame.
 type ShownFilm = ((u16, u16, u16, u16), Reel, usize);
 /// A piece beside a list drawn (#132): its box, its folder, the wait or the open, its frame.
-type ShownSide = ((u16, u16, u16, u16), String, bool, usize);
 /// A sound's spectrogram in the palette: its file, the palette's ramp, its box, the picture.
 type Tinted = (String, [[u8; 3]; 4], (u32, u32), Image);
 
@@ -459,13 +456,6 @@ fn main() {
     // the transition drawn now: its box, which one, its frame
     let mut shown_film: Option<ShownFilm> = None;
     let mut film_due: Option<Duration> = None;
-    // an animation beside a list (#132): the piece lit, decoded aside, and since when it plays; the one being decoded;
-    // the frame drawn now (its box, its folder, the wait or the open, the frame)
-    let mut side: Option<(String, Option<transition::Films>, Instant)> = None;
-    let mut side_loading: Option<String> = None;
-    let mut shown_side: Option<ShownSide> = None;
-    let mut side_due: Option<Duration> = None;
-    let side_tx = tx.clone();
 
     let mut term = match Terminal::new(CrosstermBackend::new(std::io::stdout())) {
         Ok(t) => t,
@@ -684,57 +674,6 @@ fn main() {
                 }
                 _ => shown_film = None,
             }
-            // an animation beside a list (#132): the lit piece's open, then its wait looped, from when it was lit, in the
-            // middle of the box a wallpaper's picture takes
-            side_due = None;
-            match (&drawn.side_film, cell_px()) {
-                (Some((x, y, w, h, dir)), Some((cw, chh))) if sixel_ok => {
-                    let bx = (*x, *y, *w, *h);
-                    if side.as_ref().is_none_or(|(d, _, _)| d != dir) && side_loading.as_deref() != Some(dir.as_str()) {
-                        side_loading = Some(dir.clone());
-                        let (tx, dir) = (side_tx.clone(), dir.clone());
-                        std::thread::spawn(move || {
-                            let f = decode_films(&dir);
-                            let _ = tx.send(Ev::Side(dir, f));
-                        });
-                    }
-                    if shown_side.as_ref().is_some_and(|(b, d, _, _)| *b != bx || d != dir) {
-                        // another piece lit: the box is cleared while it comes
-                        let _ = out.write_all(b"\x1b[?2026h");
-                        blank(&mut out, bx, term_color(pal.surface));
-                        let _ = out.write_all(b"\x1b[?2026l");
-                        let _ = out.flush();
-                        shown_side = None;
-                    }
-                    if let Some((_, Some(f), since)) = side.as_ref().filter(|(d, _, _)| d == dir) {
-                        let ms = since.elapsed().as_millis();
-                        let opened = f.open.length();
-                        let (film, waiting, t) = if ms < opened { (&f.open, false, ms) } else { (&f.wait, true, ms - opened) };
-                        let (k, left) = film.at(t, waiting);
-                        let at = (bx, dir.clone(), waiting, k);
-                        if shown_side.as_ref() != Some(&at) {
-                            let (dx, dy) = (
-                                ((*w as u32 * cw).saturating_sub(film.w) / 2 / cw) as u16,
-                                ((*h as u32 * chh).saturating_sub(film.h) / 2 / chh) as u16,
-                            );
-                            let _ = out.write_all(b"\x1b[?2026h");
-                            blank(&mut out, bx, term_color(pal.surface));
-                            let _ = queue!(
-                                out,
-                                ratatui::crossterm::cursor::SavePosition,
-                                ratatui::crossterm::cursor::MoveTo(x + dx, y + dy)
-                            );
-                            let _ = out.write_all(film.frames[k].0.as_bytes());
-                            let _ = queue!(out, ratatui::crossterm::cursor::RestorePosition);
-                            let _ = out.write_all(b"\x1b[?2026l");
-                            let _ = out.flush();
-                            shown_side = Some(at);
-                        }
-                        side_due = Some(Duration::from_millis(left.clamp(1, 1000) as u64));
-                    }
-                }
-                _ => shown_side = None,
-            }
             dirty = again;
         }
         if app.quit.is_some() {
@@ -745,7 +684,6 @@ fn main() {
         let play_due = (app.view == View::Preview && app.preview.as_ref().is_some_and(|pv| pv.playing.is_some())).then(|| Duration::from_millis(33));
         let due = [
             film_due,
-            side_due,
             play_due,
             drag_owed.then(|| DRAG_GAP.max(drag_cost).saturating_sub(drag_drawn.elapsed()).max(Duration::from_millis(1))),
         ]
@@ -772,13 +710,6 @@ fn main() {
         };
         match ev {
             Ev::Gone => app.quit = Some(129),
-            Ev::Side(dir, f) => {
-                if side_loading.as_deref() == Some(dir.as_str()) {
-                    side_loading = None;
-                    side = Some((dir, f, Instant::now()));
-                    dirty = true;
-                }
-            }
             Ev::Films(f) => {
                 // the open plays from its start when it is still pending: the dialog opened on its home a moment ago and no
                 // key cut it (a letter typed lands at the prompt and cuts nothing, #138); else the rows show

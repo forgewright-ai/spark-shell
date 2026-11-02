@@ -557,16 +557,17 @@ fn manager_app() -> App {
 /// The picture's row lit: its small picture at the top right with no caption, the rows beside it ending
 /// before it, and the row itself keeping its size, date and folder (#112).
 #[test]
-fn a_picture_lit_shows_it_at_the_top_right_and_keeps_its_columns() {
+fn a_file_with_a_picture_lit_keeps_its_columns_and_nothing_is_drawn_beside_it() {
+    // #196: the picture beside the list is cut; a row with one is a row as any other
     let mut app = manager_app();
     app.sel = 1;
     render(&app, "picture");
 }
 
-/// Beside the picture a column is whole or not drawn (#112): with short names the size fits and the date does
-/// not, so a row beside the picture shows its size and no cut date; a row below keeps both.
+/// A column is whole or not drawn (#112); with no picture beside the rows (#196), every row keeps its size, its date
+/// and its folder.
 #[test]
-fn beside_the_picture_a_column_is_whole_or_not_drawn() {
+fn rows_with_a_picture_keep_every_column() {
     let mut app = manager_app();
     let (f, uri, _) = app.folder.clone().unwrap();
     let file = |name: &str, size: &str, when: &str, group: &str, folder: Option<&str>| {
