@@ -123,6 +123,13 @@ part lands in a pull request of its own.
 - Cut: the busy pointer. The pointer over the dialog no longer turns
   to an hourglass a quarter of a second into a step or a request: the
   row shows the step, and the header's march shows spark thinking.
+- Cut: the picture and the animation beside a list. The wallpaper list
+  no longer draws the lit drawing at the top right, and the animation
+  list no longer plays the lit piece beside it. The rows beside them
+  no longer lose 26 cells and reflow as the light moves between a row
+  with a picture and one without, and no picture is decoded and drawn
+  on the dialog's own thread for a list. The preview Space opens keeps
+  its picture.
 
 ## v0.121
 
