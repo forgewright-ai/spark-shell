@@ -1888,7 +1888,7 @@ fn a_switch_flips_in_place_and_a_refusal_puts_it_back() {
 }
 
 #[test]
-fn a_palette_is_kept_in_place_its_look_shown_while_lit_and_taken_back_after() {
+fn a_palette_is_kept_in_place_and_lighting_one_changes_nothing() {
     let (mut app, rx, calls) = theme_app("");
     // dark beside light: the arrows go down a column and across at the same height
     lit_at(&mut app, "theme:mocha");
@@ -1906,32 +1906,12 @@ fn a_palette_is_kept_in_place_its_look_shown_while_lit_and_taken_back_after() {
     app.up();
     app.up();
     assert!(!app.in_list, "up out of the columns at the top: the prompt");
-    // a palette lit a moment shows its look; the one in use asks for nothing
+    // a palette lit a while changes nothing on the desktop: only Enter or a click keeps one (#196)
     lit_at(&mut app, "theme:nord");
     app.tick(Instant::now());
     app.tick(Instant::now() + Duration::from_millis(400));
-    assert!(
-        pump(&mut app, &rx, |_| calls
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|c| c["name"] == "theme_preview" && c["arguments"]["name"] == "nord")),
-        "nord's look on the desktop"
-    );
-    assert!(
-        pump(&mut app, &rx, |a| a.palette.as_ref().is_some_and(|p| p["HEX_FG"] == "d8dee9")),
-        "and the dialog wears it too"
-    );
-    lit_at(&mut app, "theme:show:Text size");
-    app.tick(Instant::now());
-    assert!(
-        pump(&mut app, &rx, |_| calls
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|c| c["name"] == "theme_preview" && c["arguments"]["name"] == "off")),
-        "the light gone from the palettes: the desktop back"
-    );
+    pump(&mut app, &rx, |_| false);
+    assert!(calls.lock().unwrap().is_empty(), "nothing asked of the desktop: {:?}", calls.lock().unwrap());
     // Enter keeps one: checked at once, the other not, nothing said
     lit_at(&mut app, "theme:nord");
     app.enter();

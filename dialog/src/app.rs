@@ -440,10 +440,6 @@ pub enum Held {
 const HOLD: Duration = Duration::from_millis(1500);
 /// Work that ends within this shows no busy pointer: a switch that flips at once does not flash an hourglass.
 const BUSY_AFTER: Duration = Duration::from_millis(250);
-/// A row lit this long shows its look on the desktop (#183): the light passing over a list asks for none.
-const LOOK_AFTER: Duration = Duration::from_millis(250);
-/// The id a look's set goes under: one look waits at a time, the newest.
-const LOOK_ID: &str = "\u{0}look";
 
 impl Who {
     pub fn word(&self) -> &'static str {
@@ -742,9 +738,6 @@ pub struct App {
     held: Vec<(usize, String, Held, Option<Instant>)>,
     /// Since when something the person asked for has been under way: the busy pointer after a moment of it.
     work_since: Option<Instant>,
-    /// The row whose look is on the desktop now (#183), and the one lit since when, before its look is asked.
-    looked: Option<(usize, String)>,
-    look_at: Option<(usize, String, Instant)>,
     /// The transition playing, and since when (#122); main.rs moves it on and draws it.
     pub motion: Option<(Reel, Instant)>,
     /// The transitions are loaded: Esc that closes the dialog plays the close first.
@@ -835,8 +828,6 @@ impl App {
             set_next: vec![],
             held: vec![],
             work_since: None,
-            looked: None,
-            look_at: None,
             motion: None,
             films: false,
             films_want: None,
@@ -1427,7 +1418,6 @@ impl App {
             (false, Some(_)) => self.work_since = None,
             _ => {}
         }
-        self.look_follow(now);
         // a sound that has played to its end: the key row says Play again
         if let Some(pv) = self.preview.as_mut() {
             if pv.playing.is_some() && !pv.plays(now) {
@@ -4617,8 +4607,6 @@ impl App {
             if row.sign == "check" {
                 return true; // the one in use already: nothing to set, nothing said (#191)
             }
-            self.looked = None;
-            self.look_at = None;
             self.set_value(p, &row.id, Held::Checked, call);
             return true;
         }
@@ -4664,7 +4652,7 @@ impl App {
         }
     }
 
-    /// A palette kept or looked at (#183): the dialog wears the colors its result carries, and a palette kept brings
+    /// A palette kept (#183): the dialog wears the colors its result carries, and a palette kept brings
     /// its animation; the theme section's own result only, plain colors only.
     fn wear_theme(&mut self, idx: usize, sc: &Value) {
         if self.providers[idx].label != "theme" {
@@ -4756,53 +4744,6 @@ impl App {
                     }
                 }
             }
-        }
-    }
-
-    /// The lit row's look on the desktop (#183): a palette lit a moment shows itself, the light leaving the looks
-    /// puts the desktop back; the one in use and the one shown now ask for nothing.
-    fn look_follow(&mut self, now: Instant) {
-        let want = if self.in_list && self.input.is_empty() && self.mode == Mode::Normal {
-            self.lit_row()
-                .and_then(|(p, r)| r.look.clone().filter(|_| r.sign != "check").map(|c| (p, r.id.clone(), c)))
-        } else {
-            None
-        };
-        match want {
-            Some((p, id, call)) => {
-                if self.looked.as_ref().is_some_and(|(lp, lid)| *lp == p && *lid == id) {
-                    return;
-                }
-                match &self.look_at {
-                    Some((lp, lid, since)) if *lp == p && *lid == id => {
-                        if now.duration_since(*since) >= LOOK_AFTER {
-                            self.look_at = None;
-                            self.looked = Some((p, id));
-                            self.look_set(p, call);
-                        }
-                    }
-                    _ => self.look_at = Some((p, id, now)),
-                }
-            }
-            None => {
-                self.look_at = None;
-                if let Some((p, _)) = self.looked.take() {
-                    if let Some(back) = self.providers[p].rows.look_back.clone() {
-                        self.look_set(p, back);
-                    }
-                }
-            }
-        }
-    }
-
-    /// A look asked of the provider, as a value is set: audited, a refusal said; the newest waits for the one
-    /// under way.
-    fn look_set(&mut self, p: usize, call: Call) {
-        if self.setting.is_some() {
-            self.set_next.retain(|(np, nid, _)| !(*np == p && nid == LOOK_ID));
-            self.set_next.push((p, LOOK_ID.to_string(), call));
-        } else {
-            self.send_set(p, LOOK_ID, call);
         }
     }
 

@@ -855,11 +855,10 @@ its first and its last row.
 - `power`: lock the screen, suspend, log out, restart, shut down; the
   last three ask for a typed yes.
 - `theme`: the palettes first, dark then light in one column, each
-  with a chip of its colors (its ground, its accent and six hues). A
-  palette lit a moment shows on the screen at once, sway, the bar, the
-  open terminals and its drawing, and nothing is kept until Enter or a
-  click; move the light away, or leave, and yours comes back. A
-  palette brings its drawing and its animation too. Then custom: your
+  with a chip of its colors (its ground, its accent and six hues).
+  Enter or a click puts one on the screen, sway, the bar, the open
+  terminals and its drawing; lighting one changes nothing. A palette
+  brings its drawing and its animation too. Then custom: your
   saved themes, `save this look as`, which asks a name, `a theme from
   a picture`, which opens your home folder, and terminal default
   colors (palette none). Then the settings in three groups, each
