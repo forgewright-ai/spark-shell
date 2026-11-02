@@ -98,6 +98,23 @@ part lands in a pull request of its own.
   behind the dialog: wifi, bt, out, mic, storage, window and
   notifications. Every other section changes only by a step, and the
   step's answer carries its rows.
+- Fixed in the shell: a step that failed with no words of its own was
+  refused in its undo's title ("bar: bar on did not work" for bar
+  off); a provider's line writer killed mid-line left a lock the next
+  writer waited on for good; a change of the idle minutes restarted
+  every swayidle of yours, not only spark-shell's; the cache's writers
+  shared one temp file and could cut each other's; deleting a saved
+  theme offered an undo that only put the palette in use on again;
+  connecting a Bluetooth device already connected offered disconnect
+  as its undo; an app that opened as a tab of one already open was
+  refused after 30 seconds, and is now said.
+- Fixed in the dialog: a move picked from inside Files and landed in
+  the same folder left that folder twice behind Esc (B); Esc while
+  listening waited for the helper to answer (D); spark's plan opened
+  the about before Enter (F); a quick play then stop lost the stop's
+  audit record (H); an older reply to spark cleared the march of the
+  newer request (I); the same words typed again at Home were not asked
+  again (N). J and K went with phase 1.
 
 ## v0.121
 

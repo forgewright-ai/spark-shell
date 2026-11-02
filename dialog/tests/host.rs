@@ -654,6 +654,10 @@ fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
     app.plan(r#"{"answer": "", "steps": [{"name": "about_open", "arguments": {}, "line": "about"}], "refused": []}"#);
+    // the review's F: nothing opens while spark's plan is read; the about waits in the box for Enter, as any step does
+    assert_eq!(app.view, View::Home);
+    assert!(app.staged_now() && app.input == "about", "{:?}", app.input);
+    app.enter();
     assert_eq!(app.view, View::About);
 }
 
@@ -2833,4 +2837,44 @@ fn a_call_whose_answer_carries_the_rows_reads_nothing_again() {
     assert!(!app.providers[0].dirty, "nothing to read again");
     pump(&mut app, &rx, |_| false);
     assert_eq!(*reads.lock().unwrap(), before, "no read followed the call");
+}
+
+#[test]
+fn a_move_that_lands_in_its_own_folder_leaves_no_second_copy_of_it_behind_esc() {
+    // the review's B: picked from inside Files and landed there, Esc goes back past that folder at once
+    let (mut app, rx, calls, _home) = manager();
+    let start = app.came_from.clone();
+    app.sel = 1;
+    app.right();
+    app.sel = 5; // move to a folder
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
+    app.in_list = true;
+    app.sel = 0;
+    assert_eq!(app.picks()[0], Item::Here);
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && !tool_calls(&calls).is_empty()));
+    assert_eq!(app.came_from, start, "the stack as it was before the pick: {:?}", app.came_from);
+}
+
+#[test]
+fn esc_leaves_listening_at_once_and_an_older_reply_leaves_the_newer_thought_alone() {
+    // the review's D: Esc ends listening now, not when the helper answers
+    let (mut app, _rx, _tx) = app_with(&["window"]);
+    app.mode = Mode::Listening;
+    app.escape();
+    assert_eq!(app.mode, Mode::Normal, "the prompt is yours at once");
+    assert!(app.jobs.contains(&Job::StopListening));
+    app.helper(spark_dialog::app::Helper::Listen, Ok("too late".into()));
+    assert!(app.input.is_empty(), "what comes back after Esc is not said");
+    // the review's I: a reply to an older request leaves the newer one's march where it is
+    app.cfg.spark_shell = "/bin/spark-shell".into();
+    typed(&mut app, "first words");
+    app.enter();
+    let old = app.want_serial;
+    typed(&mut app, "newer words");
+    app.enter();
+    assert!(app.want_serial != old && app.thinking());
+    app.helper(spark_dialog::app::Helper::Want(old), Ok("{}".into()));
+    assert!(app.thinking(), "the newer request still thinks");
 }

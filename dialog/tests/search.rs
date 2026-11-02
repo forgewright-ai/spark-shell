@@ -287,3 +287,26 @@ fn a_row_that_is_only_its_steps_opens_them_on_enter() {
         "the row it came from is lit again"
     );
 }
+
+#[test]
+fn the_same_words_typed_again_are_asked_again() {
+    // the review's N: words cleared, then typed again, ask the providers again: a file made meanwhile is found
+    let mut r = started();
+    typed(&mut r.app, "rep");
+    r.app.tick(Instant::now() + Duration::from_millis(300));
+    let uri = search_uri("files", "match", "rep");
+    let asked = r.asked.clone();
+    assert!(pump(&mut r.app, &r.rx, |_| asked.lock().unwrap().contains(&uri)));
+    for _ in 0..3 {
+        r.app.backspace();
+    }
+    r.app.tick(Instant::now() + Duration::from_millis(300));
+    let before = r.asked.lock().unwrap().iter().filter(|u| **u == uri).count();
+    typed(&mut r.app, "rep");
+    r.app.tick(Instant::now() + Duration::from_millis(600));
+    let asked = r.asked.clone();
+    assert!(
+        pump(&mut r.app, &r.rx, |_| asked.lock().unwrap().iter().filter(|u| **u == uri).count() > before),
+        "asked again"
+    );
+}

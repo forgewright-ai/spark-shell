@@ -4508,7 +4508,8 @@ panel_cache() {   # panel_cache NAME AGE CMD... -> CMD's output, from the cache 
     _pc_file=$PANEL_CACHE/$1; _pc_age=$2; _pc_now=$(date +%s); shift 2   # names of their own: CMD may use the usual short ones
     if [ -f "$_pc_file" ] && [ $(( _pc_now - $(sed -n 1p "$_pc_file") )) -lt "$_pc_age" ] 2>/dev/null; then sed 1d "$_pc_file"; return 0; fi
     panel_dir
-    { echo "$_pc_now"; "$@"; } > "$_pc_file.new" 2>/dev/null && mv "$_pc_file.new" "$_pc_file" || { rm -f "$_pc_file.new"; "$@"; return; }
+    _pct=$_pc_file.$$; case $TMP in */watch) _pct=${_pct}w ;; esac   # a temp of each writer's own: a provider and its watcher never cut each other's (#196)
+    { echo "$_pc_now"; "$@"; } > "$_pct" 2>/dev/null && mv "$_pct" "$_pc_file" || { rm -f "$_pct"; "$@"; return; }
     sed 1d "$_pc_file"
 }
 panel_forget() { rm -f "$PANEL_CACHE/$1"; }   # panel_forget NAME -- after a change the probe must see
@@ -4519,7 +4520,8 @@ dirs_cached() {   # dirs_cached NAME "DIR..." CMD -> CMD's output, kept until a 
         sed 1d "$_dcf"; return 0
     fi
     panel_dir
-    { printf '#%s\n' "$_dck"; eval "$3"; } > "$_dcf.$$" 2>/dev/null && mv "$_dcf.$$" "$_dcf" || { rm -f "$_dcf.$$"; eval "$3"; return; }   # a temp of its own: two readers never cut each other's
+    _dct=$_dcf.$$; case $TMP in */watch) _dct=${_dct}w ;; esac   # a temp of each writer's own: two readers never cut each other's
+    { printf '#%s\n' "$_dck"; eval "$3"; } > "$_dct" 2>/dev/null && mv "$_dct" "$_dcf" || { rm -f "$_dct"; eval "$3"; return; }
     sed 1d "$_dcf"
 }
 THEME_DIRS() { printf '%s %s' "$REPO/themes" "$PALETTE_DIR"; }   # the folders the palettes and the saved themes are read from
@@ -6100,7 +6102,8 @@ panel_app_open() {   # panel_app_open NAME -> the app opens on the current works
     _l=$(desk_launch "$_n" ''); ! desk_app_term "$_n" || _l="foot -e $_l"
     _before=$(desk_windows_all)
     swaymsg -- exec "$_l" >/dev/null 2>&1 || { echo "could not open $_n"; return 1; }
-    panel_open_wait "$_before" || { echo "$_n opened no window"; return 1; }
+    # no new window in time: an app already open may have taken it as a tab, so it is said, not refused (#196)
+    panel_open_wait "$_before" || { echo "asked $_n to open; no new window came"; return 0; }
     : > "$TMP/opened"; echo "opened $_n"   # the mark the panel's window reads: it closes, the app has the screen
 }
 panel_open_wait() {   # panel_open_wait COUNT -- until sway shows more windows than COUNT, DESK_WAIT seconds at most: the window maps and takes the focus, then the panel may go
@@ -6218,6 +6221,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         bar:on) printf 'off\tbar hidden\n' ;;
         theme:wallpaper|theme:wallpaper-picture|theme:wallpaper-color) _cur=$(wall_name); if [ -n "$_cur" ]; then printf 'wallpaper %s\twallpaper %s\n' "$_cur" "$_cur"; else printf 'wallpaper-picture %s\twallpaper %s\n' "$WALLPAPER" "${WALLPAPER##*/}"; fi ;;
         theme:theme) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
+        theme:delete) ;;   # a saved theme's folder is gone: nothing brings it back, and putting the palette in use on again was no undo (#196)
         theme:*) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
         wifi:connect|wifi:hidden) _c=$(wifi_connected); if [ -n "$_c" ]; then printf 'connect %s\twifi %s\n' "$_c" "$_c"; else printf 'disconnect\twifi off\n'; fi ;;
         wifi:disconnect) _c=$(wifi_connected); [ -z "$_c" ] || printf 'connect %s\twifi %s\n' "$_c" "$_c" ;;
@@ -6225,7 +6229,8 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         printers:pause|printers:resume)
             _pe=$(printer_status_now | jq -r --arg n "$_arg" '.queues[] | select(.name == $n) | .enabled')
             case $_a:$_pe in pause:true) printf 'resume %s\tprinter enabled\n' "$_arg" ;; resume:false) printf 'pause %s\tprinter paused\n' "$_arg" ;; esac ;;
-        bt:connect) printf 'disconnect %s\tbt %s off\n' "$_arg" "$_arg" ;;
+        bt:connect) bt_list | awk -F '\t' -v d="$_arg" '($1 == d || $2 == d) && $4 == 1 { f = 1 } END { exit !f }' \
+            || printf 'disconnect %s\tbt %s off\n' "$_arg" "$_arg" ;;   # connected already: a connect changed nothing, and its undo is none (#196)
         bt:disconnect) printf 'connect %s\tbt %s\n' "$_arg" "$_arg" ;;
         bt:power) if [ "$_arg" = off ]; then printf 'power on\tbt on\n'; else printf 'power off\tbt off\n'; fi ;;
         notifications:do-not-disturb) _nd=off; ! notify_dnd || _nd=on; [ "$_nd" = "$_arg" ] || printf 'do-not-disturb %s\tdo not disturb %s\n' "$_nd" "$_nd" ;;   # as it was; asked as it is, a receipt takes nothing back
@@ -7121,7 +7126,9 @@ rpc_result() { printf '%s' "$2" | jq -c --argjson id "$1" '{jsonrpc: "2.0", id: 
 rpc_error() { rpc_send "$(jq -cn --argjson id "$1" --argjson c "$2" --arg m "$3" '{jsonrpc: "2.0", id: $id, error: {code: $c, message: $m}}')"; }   # rpc_error ID CODE MESSAGE
 rpc_note() { rpc_send "$(jq -cn --arg m "$1" --argjson p "$2" '{jsonrpc: "2.0", method: $m, params: $p}')"; }   # rpc_note METHOD PARAMS -- a notification
 fifo_put() {   # fifo_put LINE -- one line into the loop's FIFO (fd 5), under the lock, so a long line is never cut by a poke
-    until mkdir "$PLOCK" 2>/dev/null; do sleep 0.01; done
+    # a line takes far less than two seconds to write: a lock older than that was left by a writer killed mid-line,
+    # and is taken (#196), where the next writer once waited for good
+    _fpw=0; until mkdir "$PLOCK" 2>/dev/null; do _fpw=$((_fpw + 1)); [ "$_fpw" -lt 200 ] || { rmdir "$PLOCK" 2>/dev/null || :; _fpw=0; }; sleep 0.01; done
     printf '%s\n' "$1" >&5 || :; rmdir "$PLOCK"
 }
 PROVIDE_POLL=${SPARK_SHELL_PROVIDE_POLL:-}   # the watcher's seconds between looks; the tests set it
@@ -7357,6 +7364,7 @@ $_parts
 EOF
     case $_name in *[!a-z0-9_]*|[!a-z]*|'') rpc_error "$1" -32602 "no tool by that name"; return 0 ;; esac
     { tool_spec "$_name" && [ "$_ts" = "$sec" ]; } || { rpc_error "$1" -32602 "no tool $_name in $sec"; return 0; }
+    _title=$_tt   # the call's own title: the undo's tool_spec below sets _tt to its own (the review: "bar: bar on did not work")
     [ "$_name" != notes_append ] || { provide_notes_append "$1" "$_args"; return 0; }
     case $_name in notes_rename|notes_trash|notes_restore) provide_notes_step "$1" "$_name" "$_args"; return 0 ;; esac   # a note's file by its exact name, as the append (#169)
     _bad=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg k "$_tk" --arg q "$_tq" --arg x "$_te" '
@@ -7461,7 +7469,7 @@ EOF
     if [ -n "$(find "$CONFIG" "$THEME_ENV" -newer "$TMP/step.mark" 2>/dev/null)" ]; then   # the step changed the settings: the rows read them anew
         for _k in $THEME_KEYS; do unset "$_k"; done; config_load; theme_load
     fi
-    if [ "$_rc" -ne 0 ]; then provide_refuse "$1" "${_out:-$sec: $_tt did not work}"; return 0; fi
+    if [ "$_rc" -ne 0 ]; then provide_refuse "$1" "${_out:-$sec: $_title did not work}"; return 0; fi
     case $_name in notes_add|reminders_*|out_level|out_adjust|out_mute|out_unmute|mic_level|mic_adjust|mic_mute|mic_unmute|window_focus|window_close)
         [ -s "$TMP/action.effect" ] || { provide_refuse "$1" 'the action may have happened, but its result could not be read back; check the current state before trying again'; return 0; } ;;
     esac
@@ -10677,7 +10685,8 @@ idle_side() {   # in the idle window of a screen beside the main one (#177): the
 }
 idle_restart() {   # the running desktop's swayidle, again with the settings now
     desk_in_sway || return 0
-    pkill -u "$(id -u)" -x swayidle 2>/dev/null || :
+    # spark-shell's own swayidle alone, the one that locks with it: never another session's or one of your own (#196)
+    pkill -u "$(id -u)" -f "^swayidle .*$(printf '%s' "$REPO/spark-shell desktop lock" | sed 's/[][\.*^$+?(){}|]/\\&/g')" 2>/dev/null || :
     swaymsg -- exec "$(idle_exec)" >/dev/null 2>&1 || :
 }
 idle_words() { if [ "$1" = 0 ]; then echo never; elif [ "$1" = 1 ]; then echo "after 1 minute"; else echo "after $1 minutes"; fi; }   # idle_words MINUTES

@@ -3054,8 +3054,8 @@ rm -f "$HOME/swaymsg.log"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop display idle 0 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'idle screen never' ] && grep -qx 'DISPLAY_IDLE=0' "$HOME/.config/spark-shell/config" \
     && grep -qx "exec swayidle -w timeout 900 '$REPO/spark-shell desktop lock || swaylock -f; $REPO/spark-shell desktop idle off' timeout 900 'swaymsg \"output \* power off\"' resume 'swaymsg \"output \* power on\"' before-sleep '$REPO/spark-shell desktop lock || swaylock -f'" "$swc" \
-    && grep -qx "pkill -u $(id -u) -x swayidle" "$HOME/swaymsg.log" && grep -q "^-- exec swayidle -w timeout 900 " "$HOME/swaymsg.log" \
-    && ok "desktop display idle 0: no idle screen; the render and the running desktop's swayidle (restarted) follow" || bad "display idle 0" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
+    && grep '^pkill ' "$HOME/swaymsg.log" | grep -q "^pkill -u $(id -u) -f ^swayidle .*spark-shell desktop lock\$" && grep -q "^-- exec swayidle -w timeout 900 " "$HOME/swaymsg.log" \
+    && ok "desktop display idle 0: no idle screen; the render and the running desktop's swayidle (restarted, spark-shell's own alone, #196) follow" || bad "display idle 0" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
 rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" desktop display lock 30 2>&1) || rc=$?
 [ "$rc" = 0 ] && [ "$out" = 'lock and display off after 30 minutes' ] && grep -q "^exec swayidle -w timeout 1800 " "$swc" && ok "desktop display lock 30: the lock and the display off after 30 minutes" || bad "display lock 30" "rc=$rc $out"
 rc=0; out=$(PATH="$H/lx:$PATH" sh "$SH" desktop display idle soon 2>&1) || rc=$?
@@ -5616,6 +5616,10 @@ sh "$SH" theme dracula >/dev/null 2>&1
 [ "$(cut -f2 "$st_dir/theme.history" | paste -sd ' ' -)" = 'dracula tokyonight-night winter-desk nord' ] && [ ! -f "$st_dir/theme.history.back" ] && ok "a new choice goes on top and starts the steps over" || bad "history after back" "$(cat "$st_dir/theme.history")"
 for n in 1 2 3 4 5 6 7 8; do sh "$SH" theme nord >/dev/null 2>&1; sh "$SH" theme dracula >/dev/null 2>&1; done
 [ "$(grep -c '' "$st_dir/theme.history")" = 4 ] && [ "$(cut -f2 "$st_dir/theme.history" | paste -sd ' ' -)" = 'dracula nord tokyonight-night winter-desk' ] && ok "the same look again moves up, never twice in the list" || bad "history dedup" "$(cat "$st_dir/theme.history")"
+sh "$SH" theme save undo-196 >/dev/null 2>&1; sh "$SH" theme winter-desk >/dev/null 2>&1
+mcp theme "$(call 1 theme_delete '{"name":"undo-196"}')"
+ans 1 | jq -e '.result.isError == false and (.result.structuredContent | has("undo") | not)' >/dev/null && [ ! -d "$th_dir/undo-196" ] \
+    && ok "provide theme_delete: the saved theme gone and no undo offered, where its undo once put the palette in use on again (#196)" || bad "theme delete undo" "$(cat "$H/mcp.out" | head -c 400)"
 rc=0; out=$(sh "$SH" theme delete nord 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: nord is a palette spark-shell ships, not a saved theme' ] && ok "theme delete nord: a shipped palette is refused" || bad "theme delete shipped" "rc=$rc $out"
 sh "$SH" theme winter-desk >/dev/null 2>&1

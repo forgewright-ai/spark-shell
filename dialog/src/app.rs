@@ -732,7 +732,7 @@ pub struct App {
     /// The preview shown (View::Preview): the list it came from, the file, its page (#120).
     pub preview: Option<Preview>,
     /// A sound's play or stop on its way: its request and its call, audited when it answers.
-    quiet: Option<(u64, usize, Call)>,
+    quiet: Vec<(u64, usize, Call)>,
     /// A value being set in place (#183): the request, its provider, its row and the call.
     setting: Option<(u64, usize, String, Call)>,
     /// The values wanted while one was being set, the last one for each row only.
@@ -830,7 +830,7 @@ impl App {
             keep_lit: None,
             list_keys: false,
             preview: None,
-            quiet: None,
+            quiet: vec![],
             setting: None,
             set_next: vec![],
             held: vec![],
@@ -1361,9 +1361,11 @@ impl App {
                 }
             }
             Kind::Quiet => {
-                let Some((_, p, call)) = self.quiet.take().filter(|(q, p, _)| *q == n && *p == idx) else {
+                // a play and a stop may both be on their way: each answer finds its own, and both are audited (the review's H)
+                let Some(k) = self.quiet.iter().position(|(q, p, _)| *q == n && *p == idx) else {
                     return;
                 };
+                let (_, p, call) = self.quiet.remove(k);
                 let refused = error.is_some() || result.as_ref().and_then(|r| r.get("isError")).and_then(Value::as_bool).unwrap_or(false);
                 let schema = self.providers[p]
                     .tools
@@ -1472,7 +1474,7 @@ impl App {
                 }
                 Kind::Set => self.set_done(idx, id, true, "it did not answer in time", false),
                 Kind::Quiet => {
-                    self.quiet = None;
+                    self.quiet.retain(|(q, p, _)| !(*q == id && *p == idx));
                     if let Some(pv) = self.preview.as_mut() {
                         pv.playing = None;
                     }
@@ -1902,6 +1904,9 @@ impl App {
             self.search_at = Some(Instant::now());
         } else {
             self.search_at = None;
+            if self.query().trim().is_empty() {
+                self.search_sent.clear(); // the same words typed again are asked again (the review's N)
+            }
         }
     }
 
@@ -2567,9 +2572,8 @@ impl App {
                 self.unstash();
             }
             Mode::Listening => {
-                // the recording is dropped; the draft stays as it was
+                // the recording is dropped, the prompt is yours at once; what comes back is not said (the review's D)
                 self.listen_cancelled = true;
-                self.mode = Mode::Listening;
                 self.jobs.push(Job::StopListening);
             }
             Mode::Normal => {
@@ -2934,6 +2938,10 @@ impl App {
                 step.call.arguments.insert(pk.field.clone(), Value::String(here));
                 step.call.pick = None;
                 self.came_from.truncate(pk.depth);
+                // landed in the folder the pick began in: the copy pushed so Esc could cancel goes (the review's B)
+                if self.came_from.last() == Some(&self.view) {
+                    self.came_from.pop();
+                }
                 self.sel = 0;
                 self.run(step);
             }
@@ -3594,10 +3602,22 @@ impl App {
                 continue;
             }
             if name == "about_open" {
-                if self.about_idx.is_some() {
-                    self.go(View::About);
-                } else {
-                    no.push(format!("{} is not offered here now", line));
+                // the about waits in the box as the word about, as every step does: nothing opens before Enter (the review's F)
+                match self.about_idx {
+                    Some(p) => steps.push(Step {
+                        prov: p,
+                        call: Call {
+                            name: name.to_string(),
+                            arguments: Map::new(),
+                            ask: vec![],
+                            said: None,
+                            pick: None,
+                        },
+                        who: Who::Model,
+                        line: "about".into(),
+                        typed: true,
+                    }),
+                    None => no.push(format!("{} is not offered here now", line)),
                 }
                 continue;
             }
@@ -3787,6 +3807,9 @@ impl App {
             self.in_list = true;
             self.sel = 0;
             return;
+        }
+        if step.call.name == "about_open" {
+            return self.go(View::About); // the about is the dialog's own page, no provider's step
         }
         if step.who == Who::Undo {
             self.undo = None; // the undo at hand is taken, wherever it came from (its row, "undo", spark)
@@ -4095,7 +4118,7 @@ impl App {
     /// where the model runs.
     pub fn helper(&mut self, h: Helper, out: Result<String, String>) {
         match h {
-            Helper::Want(serial) if serial != self.want_serial => self.wait = None, // an older request's reply
+            Helper::Want(serial) if serial != self.want_serial => {} // an older request's reply: the newer one still thinks (the review's I)
             Helper::Want(_) => match out {
                 Ok(t) => self.plan(&t),
                 Err(e) => {
@@ -5178,7 +5201,7 @@ impl App {
         }
         let params = json!({"name": call.name, "arguments": Value::Object(call.arguments.clone())});
         if let Some(n) = self.server(p).and_then(|s| s.request("tools/call", params, Kind::Quiet, mcp::T_CALL)) {
-            self.quiet = Some((n, p, call));
+            self.quiet.push((n, p, call));
         }
     }
 
