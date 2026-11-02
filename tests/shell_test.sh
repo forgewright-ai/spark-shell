@@ -4497,6 +4497,60 @@ if command -v strace >/dev/null 2>&1; then
         && ok "provide: a rows read on a warm cache starts $_th processes for theme and $_ap for apps past the provider's start, each under 60 (#196)" \
         || bad "read spawn budget" "theme $_th, apps $_ap: $(grep -o 'execve("[^"]*"' "$H/execve" | sort | uniq -c | sort -rn | head -8 | tr '\n' ' ')"
 fi
+# one probe per rows read (#196): the title, the short form and the full form share each device's answer, and the next
+# read asks again. A stub of each tool counts its calls: two reads in one provider, less a provider that only pings,
+# ask each probe twice (each note's time and the calendar's files too)
+if [ "$(uname -s)" != Darwin ]; then
+    mkdir -p "$H/once" "$H/sys/class/backlight/panel" "$HOME/calendar"; rm -f "$H/.local/state/spark-shell/panel/bt.list"
+    cp "$HOME/.config/spark-shell/config" "$H/config.once"; printf 'DESKTOP=sway\nKEYBOARD=us br\n' > "$HOME/.config/spark-shell/config"
+    printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:spark-shell-once-196\r\nDTSTART:%s\r\nSUMMARY:the probe test\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' "$(date -d '+2 days' +%Y%m%dT090000)" > "$HOME/calendar/once-196.ics"
+    cat > "$H/once/stub" <<'STUB'
+#!/bin/sh
+t=${0##*/}; printf '%s %s\n' "$t" "$*" >> "$HOME/once.log"
+case $t in stat) PATH=$ONCE_PATH; export PATH; exec stat "$@" ;; esac
+case "$t $*" in
+    'wpctl status') printf 'Audio\n |- Sinks:\n |  *   50. Studio Speakers [vol: 0.40]\n |      51. HDMI Output [vol: 1.00]\n |\n |- Sources:\n |  *   52. Studio Mic [vol: 0.50]\n |\n' ;;
+    'wpctl get-volume '*) echo 'Volume: 0.40' ;;
+    pw-dump*) echo '[]' ;;
+    dbus-send*) echo 'boolean true' ;;
+    'bluetoothctl show') printf 'Controller 00:11:22:33:44:55 (public)\n\tPowered: yes\n' ;;
+    'bluetoothctl devices'*) echo 'Device 00:25:D1:4A:C2:AA MAJOR V' ;;
+    lsblk*) echo '{"blockdevices": [{"name":"sdb","path":"/dev/sdb","type":"disk","rm":true,"hotplug":true,"size":31004295168,"model":"Ultra","vendor":"SanDisk","label":null,"fstype":null,"mountpoint":null,
+        "children":[{"name":"sdb1","path":"/dev/sdb1","type":"part","rm":true,"hotplug":true,"size":31003246592,"label":"STICK","fstype":"exfat","mountpoint":"/run/media/ada/STICK"}]}]}' ;;
+    df*) printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/x 30000000 27000000 3000000 90%% /\n' ;;
+    'makoctl mode') echo default ;;
+    'makoctl list') printf 'Notification 9: Download complete\n  App name: firefox\n' ;;
+    'makoctl history') printf 'Notification 5: Build passed\n  App name: aerc\n' ;;
+    'swaymsg -t get_inputs') echo '[{"type":"keyboard","xkb_layout_names":["English (US)","Portuguese (Brazil)"],"xkb_active_layout_index":1}]' ;;
+    'swaymsg -t get_outputs') echo '[{"name":"DP-1","active":true,"make":"Fake","model":"Screen","serial":"1","scale":1,"rect":{"x":0,"y":0,"width":2560,"height":1440},"current_mode":{"width":2560,"height":1440,"refresh":60000}}]' ;;
+    'brightnessctl -m -c backlight info') echo 'panel,backlight,750,75%,1000' ;;
+esac
+STUB
+    chmod +x "$H/once/stub"
+    for t in wpctl pw-dump dbus-send bluetoothctl lsblk df makoctl mako swaymsg brightnessctl stat; do ln -sf stub "$H/once/$t"; done
+    ONCE_PATH=$PATH; export ONCE_PATH   # the stub's stat runs the real one
+    asks() {   # asks SECTION PATTERN -> the calls PATTERN matches in two rows reads, less a provider that only pings; the second read's rows in $H/once.json
+        rm -f "$HOME/once.log"; rq 1 ping | SWAYSOCK=$H/sock PATH="$H/once:$PATH" sh "$SH" provide "$1" >/dev/null 2>&1
+        _ab=$(grep -c -- "$2" "$HOME/once.log" 2>/dev/null || :)
+        rm -f "$HOME/once.log"; printf '%s\n' "$(rq 1 resources/read "{\"uri\":\"spark-shell://$1/rows\"}")" "$(rq 2 resources/read "{\"uri\":\"spark-shell://$1/rows\"}")" \
+            | SWAYSOCK=$H/sock PATH="$H/once:$PATH" sh "$SH" provide "$1" 2>/dev/null | jq -r 'select(.id == 2) | .result.contents[0].text' > "$H/once.json"
+        echo $(( $(grep -c -- "$2" "$HOME/once.log" 2>/dev/null || :) - ${_ab:-0} ))
+    }
+    _ob=''; _os=''
+    for c in 'out:wpctl status' 'out:wpctl get-volume @DEFAULT_AUDIO_SINK@' 'mic:wpctl get-volume @DEFAULT_AUDIO_SOURCE@' 'mic:pw-dump' \
+        'bt:dbus-send' 'bt:bluetoothctl show' 'bt:bluetoothctl devices Connected' 'storage:lsblk' 'storage:df -Pk /$' 'storage:df -Pk /run/media/ada/STICK' \
+        'notifications:makoctl mode$' 'notifications:makoctl list' 'notifications:makoctl history' 'keyboard:swaymsg -t get_inputs' \
+        'display:swaymsg -t get_outputs' 'display:brightnessctl' 'reminders:stat -c %n %s %Y'; do
+        _n=$(asks "${c%%:*}" "${c#*:}"); [ "$_n" = 2 ] || _ob="$_ob [$c] $_n"
+        _os="$_os$(jq -r '.state' "$H/once.json" 2>/dev/null)|"
+    done
+    _nn=$(ls "$HOME/notes"/*.md 2>/dev/null | wc -l | tr -d ' '); _n=$(asks notes "stat -c %Y $HOME/notes/"); [ "$_n" = $((2 * _nn)) ] || _ob="$_ob [notes] $_n of $((2 * _nn))"
+    _sp=" $(printf '\302\267') "; _dt=$(printf '\342\227\217')   # the panel's middle dot and its dot for in use
+    [ -z "$_ob" ] && [ "$_nn" -gt 0 ] && [ "$_os" = "Studio Speakers${_sp}40%|Studio Speakers${_sp}40%|Studio Mic${_sp}40%|Studio Mic${_sp}40%|$_dt MAJOR V|$_dt MAJOR V|$_dt MAJOR V|1 drive|1 drive|1 drive|1 on the screen|1 on the screen|1 on the screen|br${_sp}2 layouts|brightness 75%|brightness 75%|0 today, 1 after|" ] \
+        && ok "provide: one rows read asks each device, list and file once, its title, short form and full form sharing the answer, and the next read asks again: sound, bluetooth, drives, notifications, keyboard, screens, brightness, notes and reminders (#196)" \
+        || bad "one probe per read" "asked otherwise:$_ob; states: $_os"
+    cp "$H/config.once" "$HOME/.config/spark-shell/config"; rm -rf "$H/once" "$H/sys/class/backlight" "$HOME/calendar/once-196.ics" "$H/.local/state/spark-shell/panel/bt.list" "$HOME/once.log" "$H/once.json" "$H/config.once"; unset ONCE_PATH
+fi
 mkdir -p "$H/.config/spark-shell/themes"; cp "$REPO/themes/nord.env" "$H/.config/spark-shell/themes/cache-196.env"
 mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows"}')"
 ans 1 | jq -r '.result.contents[0].text' | jq -e 'any(.rows[]; .text == "cache-196" and .group == "dark" and (.chip | length) == 9)' >/dev/null \
