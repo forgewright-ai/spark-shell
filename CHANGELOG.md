@@ -174,6 +174,10 @@ part lands in a pull request of its own.
   count of the dialog's tools, the sections that give them, and why one
   stopped. Two golden frames (settings, full-settings) are drawn again
   without the row.
+- Cut: the footer once empty. With Attach off or out of place, no file
+  attached and no row the words are for, the footer and the rule over
+  it are not drawn; the list ends on the same row with or without
+  them. Sixteen golden frames are drawn again without the rule.
 
 ## v0.121
 

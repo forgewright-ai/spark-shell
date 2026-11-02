@@ -979,9 +979,11 @@ takes the step back. spark's answer is the reply row too; an answer
 longer than that row is kept whole at Home, above the places, under
 the words that asked it, and never over a section's list. While
 commands spark planned wait in the two rows of the prompt, the reply
-row names them all (`run: ...`). At the bottom, under a
-rule, Attach in plain text: Tab moves to it, lit while it has the
-focus, and Shift+Tab goes back.
+row names them all (`run: ...`). At the bottom, under a rule, the
+footer: Attach in plain text (Tab moves to it, lit while it has the
+focus, and Shift+Tab goes back), and the row your words are for. With
+nothing to hold, the footer and its rule are not drawn, and the list
+ends where it always does.
 
 - Attach picks one text or Markdown file from your home (the types
   `DIALOG_ATTACH_TYPES` names), for the next question only: its name

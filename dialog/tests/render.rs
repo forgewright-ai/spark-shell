@@ -1326,3 +1326,43 @@ fn the_previews_keys_hold_their_places_between_files() {
     assert!(app.preview.as_ref().unwrap().shown.is_none(), "the next file's page is on its way");
     assert_eq!(row(&app), s, "the row as it was, no blink while it loads");
 }
+
+/// The footer once empty (#196): with nothing in it, no rule and no footer; a row the words are for brings the rule
+/// and the note back, and every row of the list stays where it was.
+#[test]
+fn the_footer_and_its_rule_show_only_while_they_hold_something() {
+    let mut app = base();
+    app.view = View::Section(0);
+    app.came_from = vec![View::Home];
+    app.in_list = true;
+    app.sel = 1;
+    let p = palette("tokyonight-night");
+    let rows = |app: &App| {
+        let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+        let drawn = spark_dialog::ui::draw(app, &p, CLOCK, &mut b);
+        let line = |y: u16| (0..WIDTH).map(|x| b[(x, y)].symbol().to_string()).collect::<String>();
+        (line(HEIGHT - 3), line(HEIGHT - 2), drawn.picks)
+    };
+    let (rule, foot, picks) = rows(&app);
+    assert!(
+        rule.trim().is_empty() && foot.trim().is_empty(),
+        "nothing in the footer: no rule ({:?}) and no footer ({:?})",
+        rule,
+        foot
+    );
+    let lit = app.providers[0].rows.rows[1].clone();
+    app.target = Some(spark_dialog::app::Target {
+        view: app.view.clone(),
+        provider: 0,
+        id: lit.id.clone(),
+        text: lit.text.clone(),
+    });
+    let (rule, foot, again) = rows(&app);
+    assert!(
+        rule.contains('\u{2500}') && foot.contains(&format!("For: {}", lit.text)),
+        "{:?} {:?}",
+        rule,
+        foot
+    );
+    assert_eq!(picks, again, "the list's rows stay where they were");
+}

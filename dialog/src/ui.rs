@@ -455,11 +455,13 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         }
     }
 
-    // the rule, then the footer: Attach at the left
-    for x in 2..w - 2 {
-        pen.put(x, h - 3, RULE, pal.lit, false, false);
+    // the footer, and the rule over it, only while the footer holds something (#196); the list ends where it ends
+    // either way, so nothing above them moves
+    if footer(app, &mut pen, h - 2, &mut drawn) {
+        for x in 2..w - 2 {
+            pen.put(x, h - 3, RULE, pal.lit, false, false);
+        }
     }
-    footer(app, &mut pen, h - 2, &mut drawn);
     drawn
 }
 
@@ -481,7 +483,9 @@ fn key_of(k: &str) -> Option<HintKey> {
     })
 }
 
-fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
+/// The footer: the file shown in a preview, else Attach (or the file attached, with Remove), then the row the words
+/// are for. False when it holds nothing.
+fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) -> bool {
     let w = pen.w;
     let chips = app.chips();
     let mut x = 1;
@@ -510,9 +514,10 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     if let Some(t) = app.target_label() {
         let room = w.saturating_sub(x + 4) as usize;
         if room > 8 {
-            pen.put(x + 1, y, &cut_words(&t, room), pal_muted(pen), false, false);
+            x = pen.put(x + 1, y, &cut_words(&t, room), pal_muted(pen), false, false);
         }
     }
+    x > 1
 }
 
 /// The reply row under the key row (#196): a check or a cross, the words, Undo at the right where the rows'
