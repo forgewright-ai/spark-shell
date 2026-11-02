@@ -4623,6 +4623,19 @@ ans 9 | jq -e '.result.tools[] | select(.name == "layout_save") | .annotations.d
     && [ "$(ans 2 | jq -c '.result.structuredContent.undo')" = '{"name":"layout_delete","arguments":{"name":"webdev"}}' ] && [ -f "$HOME/.config/spark-shell/layouts/webdev" ] \
     && [ "$(ans 3 | jq -r '.result.content[0].text')" = 'webdev is a layout already: rename it, or delete it first' ] && [ "$(ans 3 | jq -r '.result.isError')" = true ] \
     && ok "provide layout_save: not destructive, so no yes; a new name is saved with its undo (layout delete); a name in use is refused, nothing written over (#96)" || bad "layout save" "$(cat "$H/mcp.out" "$H/mcp.err")"
+# several windows: the dialog left out, a terminal by the program inside it (a shell when none runs), each app by the
+# name a layout knows it; the apps and the processes read once for them all (#196)
+sh -c 'sleep 30; :' & _lsh=$!; sleep 0.3   # a terminal's process, a program inside it
+cat > "$H/ls/swaymsg" <<'EOF'
+#!/bin/sh
+case "$*" in "-t get_version") echo '{"human_readable":"sway-stub"}' ;; "-t get_tree") cat "$HOME/ls.tree" ;; *) : ;; esac
+EOF
+printf '{"type":"root","nodes":[{"type":"workspace","num":1,"nodes":[{"type":"con","id":80,"pid":1,"app_id":"Firefox","focused":true},{"type":"con","id":81,"pid":%s,"app_id":"foot"},{"type":"con","id":82,"pid":999999,"app_id":"foot"}],"floating_nodes":[{"type":"floating_con","id":83,"pid":%s,"app_id":"spark-dialog"}]}]}\n' "$_lsh" "$_lsh" > "$HOME/ls.tree"
+mcp layout "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(call 2 layout_save '{"name":"three"}')"
+[ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'saved three: firefox, sleep, shell' ] \
+    && [ "$(jq -c 'del(.why)' "$HOME/.config/spark-shell/layouts/three")" = '{"words":"three","main":{"app":"firefox"},"side":[{"app":"sleep"},{"app":"shell"}]}' ] \
+    && ok "provide layout_save: three windows saved as a layout knows them (Firefox is firefox, a terminal by the program in it, a shell when none), the dialog left out (#196)" || bad "layout save windows" "$(ans 2) $(cat "$HOME/.config/spark-shell/layouts/three" 2>&1)"
+pkill -P "$_lsh" 2>/dev/null || :; kill "$_lsh" 2>/dev/null || :; wait "$_lsh" 2>/dev/null || :; rm -f "$HOME/ls.tree"
 unset SWAYSOCK; PATH=$_lp
 # every palette: the dialog's quiet words read at 4.5 to 1 on its surface, or as its author's own text where that reads lower (#18)
 _cw=''

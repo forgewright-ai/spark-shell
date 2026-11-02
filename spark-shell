@@ -6169,22 +6169,23 @@ panel_layout_save() {   # panel_layout_save NAME -> what is open on the focused 
     [ -n "$1" ] || { echo "a name for it"; return 1; }
     swaymsg -t get_tree 2>/dev/null | jq -r '.. | objects | select(.type? == "workspace" and (.. | objects | select(.focused? == true)) != null) | .. | objects | select(.app_id? != null or .window_properties? != null) | "\(.app_id // .window_properties.class)\t\(.pid // 0)"' > "$TMP/open" 2>/dev/null
     [ -s "$TMP/open" ] || { echo "nothing is open on this workspace"; return 1; }
-    : > "$TMP/open.apps"
-    while IFS="$TAB" read -r _id _pid; do
-        _app=$_id
-        if [ "$_id" = foot ] || [ "$_id" = "$PANEL_APP" ]; then   # a terminal: the program inside it, else a shell
-            _child=$(pgrep -P "$_pid" 2>/dev/null | head -1); _app=$(ps -o comm= -p "${_child:-0}" 2>/dev/null | sed 's/.*\///'); case $_app in ''|sh|bash|zsh|dash|fish) _app=shell ;; esac
-            [ "$_id" != "$PANEL_APP" ] || continue   # not the panel itself
-        fi
-        _known=$(panel_apps_known | awk -v w="$(panel_lower "$_app")" 'tolower($0) == w && !d {print; d = 1}'); [ -z "$_known" ] || _app=$_known   # the name a layout knows it by (Firefox is firefox)
-        [ -z "$_app" ] || echo "$_app" >> "$TMP/open.apps"
-    done < "$TMP/open"
+    # one look at the apps a layout knows and one at the processes, for every window (#196)
+    panel_apps_known > "$TMP/known"
+    ps -eo pid=,ppid=,comm= > "$TMP/ps" 2>/dev/null || : > "$TMP/ps"
+    # each window's app: a terminal's the program inside it (its first child), else a shell; the dialog itself left
+    # out; then the name a layout knows it by (Firefox is firefox)
+    awk -v me="$PANEL_APP" -v tab="$TAB" '
+        FILENAME == ARGV[1] { c = $0; sub(/^ *[0-9]+ +[0-9]+ +/, "", c); sub(/.*\//, "", c); if (!($2 in kid)) kid[$2] = c; next }
+        FILENAME == ARGV[2] { w = tolower($0); if (!(w in known)) known[w] = $0; next }
+        { split($0, f, tab); if (f[1] == me) next
+          a = f[1]; if (a == "foot") { a = (f[2] in kid) ? kid[f[2]] : ""; if (a ~ /^(sh|bash|zsh|dash|fish)?$/) a = "shell" }
+          w = tolower(a); if (w in known) a = known[w]
+          if (a != "") print a }' "$TMP/ps" "$TMP/known" "$TMP/open" > "$TMP/open.apps"
     [ -s "$TMP/open.apps" ] || { echo "nothing is open on this workspace"; return 1; }
-    _main=$(sed -n 1p "$TMP/open.apps"); _side=$(sed 1d "$TMP/open.apps" | jq -R '{app: .}' | jq -s -c .)
     _name=$(desk_name_of "$1"); [ -n "$_name" ] || { echo "a name for it, in letters"; return 1; }
     [ ! -e "$LAYOUTS_DIR/$_name" ] || { echo "$_name is a layout already: rename it, or delete it first"; return 1; }   # a save never writes over a layout, so it needs no yes (#96)
     mkdir -p "$LAYOUTS_DIR"
-    jq -n --arg w "$1" --arg why "saved from the screen on $(date '+%d %B %Y')" --arg m "$_main" --argjson side "${_side:-[]}" '{words: $w, why: $why, main: {app: $m}, side: $side}' > "$LAYOUTS_DIR/$_name"
+    jq -R -s --arg w "$1" --arg why "saved from the screen on $(date '+%d %B %Y')" 'split("\n") | map(select(. != "")) | {words: $w, why: $why, main: {app: .[0]}, side: [.[1:][] | {app: .}]}' "$TMP/open.apps" > "$LAYOUTS_DIR/$_name"
     echo "saved $_name: $(paste -sd, "$TMP/open.apps" | sed 's/,/, /g')"
 }
 panel_undo() {   # the last group's inverse steps, played newest first, then forgotten

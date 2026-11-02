@@ -141,6 +141,12 @@ part lands in a pull request of its own.
   from the list of apps its check read, where it read the desktop's
   apps a second time. In a headless sway on the box, opening micro took
   about 565 ms and 66 processes, and takes about 260 ms and 49.
+- `layout save` reads the apps a layout knows, and the processes, once
+  for all the windows on the workspace. It read the desktop's apps once
+  a window, and asked for each terminal's program apart. The saved
+  layout is the same. In a headless sway on the box, saving three
+  windows took about 810 ms and 124 processes, and takes about 365 ms
+  and 74.
 
 ## v0.121
 
