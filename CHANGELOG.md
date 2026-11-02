@@ -23,15 +23,15 @@ part lands in a pull request of its own.
 - A row that puts a window in front (an app, a file, a terminal, a
   window, the lock) clears the dialog at the click, and the dialog
   closes once the window is there; if the step is refused, the dialog
-  comes back with the reason. The provider marks these tools with
+  comes back with the reason. The provider flags these tools with
   `_meta` `spark-shell/opens` (the `o` hint in the shell's tool list).
 - Fixed: a step that timed out, lost its provider or got no yes left
   its line above the list, and later typed replies then vanished (A).
   Words typed to find a switch, then Enter, did nothing (C). A receipt
   of several lines kept only its first (E). Commands spark planned while
-  the prompt asked for a yes or a name took the box; they now wait and
+  the prompt asked for a yes or a name took over the prompt; they now wait and
   come when the question is done (G). A click while spark's commands sat
-  in the box left Space and the history blocked (M). While attaching or
+  in the prompt left Space and the history blocked (M). While attaching or
   picking a file, typed words ran as a request or opened another place;
   Enter now picks the best match (O and the attach picker). Space on a
   row with no page typed a space into the prompt.
@@ -55,7 +55,7 @@ part lands in a pull request of its own.
   and they never move back and forth.
 - The key row is cut at the window's edge, the words at a word, never
   a key drawn in part.
-- The Calendar's months always take six weeks' room, so Left and Right
+- The Calendar's months always take six weeks of space, so Left and Right
   never move the reminders under them.
 - A helper's raw system error is said in plain words: with no spark
   installed, "spark did not answer: spark is not installed here", not
@@ -139,12 +139,12 @@ part lands in a pull request of its own.
   sway's window events from before the step. Before, it asked sway for
   every window four times a second, up to 30 seconds. `apps open` opens
   from the list of apps its check read, where it read the desktop's
-  apps a second time. In a headless sway on the box, opening micro took
+  apps a second time. In a headless sway on the owner's machine, opening micro took
   about 565 ms and 66 processes, and takes about 260 ms and 49.
 - `layout save` reads the apps a layout knows, and the processes, once
   for all the windows on the workspace. It read the desktop's apps once
   a window, and asked for each terminal's program apart. The saved
-  layout is the same. In a headless sway on the box, saving three
+  layout is the same. In a headless sway on the owner's machine, saving three
   windows took about 810 ms and 124 processes, and takes about 365 ms
   and 74.
 - `theme save` no longer puts the look on again. The save ended by
@@ -154,21 +154,21 @@ part lands in a pull request of its own.
   one it keeps, so now the saved theme is only named the one in use,
   and first in the history; a picture of yours becomes the folder's
   copy in sway's file, and the screen shows the same picture. In a
-  headless sway on the box a save took 2.3 seconds and 465 processes,
+  headless sway on the owner's machine a save took 2.3 seconds and 465 processes,
   and takes 1.0 second and 230.
 - A setting that only sway's file holds (how new windows sit, the idle
   and lock minutes, the keyboard, the pointer) renders that file alone.
   Each rendered all seven of the desktop's files and sent the whole
   look to sway again: its colors, gaps, bar and pointer, and the open
   terminals repainted. The step still gives a running sway the setting
-  itself. In a headless sway on the box, windows in tabs took 1.5
+  itself. In a headless sway on the owner's machine, windows in tabs took 1.5
   seconds and 242 processes, and takes 0.96 second and 173.
 - Putting a window in front and closing one read the windows less. A
   call reads them once for its check, the window's name and the step,
   where each asked sway for them again. A focus is confirmed by one
   read, since sway puts the window in front before it answers; a close
   is read as before, every 50 ms for 2 seconds at most, with one jq a
-  read where there were two. In a headless sway on the box a focus
+  read where there were two. In a headless sway on the owner's machine a focus
   reads the windows twice, where it read them four times (33
   processes, 39 before), and a close three times, where it read them
   five (47, 53 before).
