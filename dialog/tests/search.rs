@@ -218,7 +218,10 @@ fn the_files_are_asked_once_typing_rests_and_an_answer_for_older_words_lands_now
     // the notes are asked on the same rest; their request may still be on its way when the files' answer is in
     let notes = search_uri("notes", "find", "rep");
     let asked = r.asked.clone();
-    assert!(pump(&mut r.app, &r.rx, |_| asked.lock().unwrap().contains(&notes)), "the notes are asked what they say");
+    assert!(
+        pump(&mut r.app, &r.rx, |_| asked.lock().unwrap().contains(&notes)),
+        "the notes are asked what they say"
+    );
     let l = list(&r.app);
     let f = l.iter().position(|x| x == "# files").expect("a files group");
     assert_eq!(&l[f + 1..f + 3], ["report.pdf", "old-report.txt"], "{:?}", l);
