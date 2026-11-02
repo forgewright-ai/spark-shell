@@ -61,7 +61,7 @@ jobs:
       - name: ascii docs
         run: |
           tab=$(printf '\t')
-          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/desktop_proof.sh tests/dialog_pty.py lib/terminal_profile.py tests/profile_test.py lib/saver.py tests/saver_test.py lib/office.py tests/office_test.py $(find templates distro themes dialog/src dialog/tests -type f ! -name '*.txt' | sort) dialog/Cargo.toml dialog/deny.toml dialog/dialog.env dialog/rust-toolchain.toml; do
+          for f in README.md CHANGELOG.md CREDITS.md LICENSE config.example allowed-signers spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/player_build.sh tests/desktop_proof.sh tests/dialog_pty.py lib/terminal_profile.py tests/profile_test.py lib/saver.py tests/saver_test.py lib/office.py tests/office_test.py $(find templates distro themes dialog/src dialog/tests player/src -type f ! -name '*.txt' | sort) dialog/Cargo.toml dialog/deny.toml dialog/dialog.env dialog/rust-toolchain.toml player/Cargo.toml player/deny.toml player/player.env player/rust-toolchain.toml; do
             if LC_ALL=C grep -n "[^ -~${tab}]" "$f"; then
               echo "non-ASCII in $f"; exit 1; fi; done
       - name: no hex color in a template (the look is the 16 slots)
@@ -69,7 +69,7 @@ jobs:
           if grep -rnE '#[0-9a-fA-F]{6}' templates; then
             echo "a hex color is in a template"; exit 1; fi
       - name: shellcheck
-        run: shellcheck -S warning spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/desktop_proof.sh tests/wifi_proof.sh tests/greetd_upgrade_proof.sh tests/dhcpcd_proof.sh tests/gate.sh .githooks/pre-push .claude/hooks/session-start.sh
+        run: shellcheck -S warning spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/player_build.sh tests/desktop_proof.sh tests/wifi_proof.sh tests/greetd_upgrade_proof.sh tests/dhcpcd_proof.sh tests/gate.sh .githooks/pre-push .claude/hooks/session-start.sh
       - name: zizmor over .github/workflows
         # the workflows are code too: zizmor (pinned, in a venv of its own)
         # reads every file under .github/workflows; medium and above fail.
@@ -406,12 +406,64 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
         with:
           manifest-path: dialog/Cargo.toml
+  player:
+    # the wallpaper player (player/, #187): the format, clippy, its tests,
+    # the release build twice and its sha256 against player/player.env, all
+    # in one pinned Debian 12 image (glibc 2.36, the oldest a supported
+    # family runs), so the build is reproducible and release.yml builds
+    # the same bytes; the binary kept as an artifact; cargo-deny.
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    container: rust:1.99.1-slim-bookworm@sha256:24707e70a4f1e23d9a7b25202ec43126d28a52294b96aad5c670df1fd1f1d400
+    steps:
+      - name: git, for the checkout
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the format, clippy and the tests
+        working-directory: player
+        run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
+      - name: the release build, twice, the same bytes
+        run: |
+          set -eu
+          one=$(sh tests/player_build.sh | cut -d' ' -f1)
+          (cd player && cargo clean --release --target x86_64-unknown-linux-gnu)
+          two=$(sh tests/player_build.sh | cut -d' ' -f1)
+          echo "built $one, from clean again $two"
+          if [ "$one" != "$two" ]; then echo "two builds of one tree differ: the build is not reproducible"; exit 1; fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        with:
+          name: spark-wallpaper-x86_64-linux-gnu
+          path: player/target/x86_64-unknown-linux-gnu/release/spark-wallpaper
+          retention-days: 14
+      - name: the sha256 player/player.env pins
+        run: |
+          set -eu
+          got=$(sha256sum player/target/x86_64-unknown-linux-gnu/release/spark-wallpaper | cut -d' ' -f1)
+          want=$(sed -n 's/^PLAYER_SHA256_X86_64_LINUX_GNU=//p' player/player.env)
+          if [ "$got" != "$want" ]; then echo "the build is not the binary player/player.env pins -- PLAYER_SHA256_X86_64_LINUX_GNU=$got"; exit 1; fi
+  player-deny:
+    # cargo-deny over the player's crates (advisories, licences), on the
+    # runner: the action is a container of its own
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+      - name: cargo-deny (advisories, licences, no network crate)
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25   # v2.1.1
+        with:
+          manifest-path: player/Cargo.toml
   green:
     # the one name a ruleset on main can require: it needs every job above
     # and fails when any of them failed, was cancelled or was skipped. A
     # pull request from this repository's own branch is the one run whose
     # jobs are all skipped on purpose, and green skips with them.
-    needs: [lint, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog]
+    needs: [lint, linux, debian, ubuntu, arch, void, fedora, opensuse, desktop, macos, dialog, player, player-deny]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 2

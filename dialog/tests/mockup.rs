@@ -833,3 +833,32 @@ fn design_system_preview_card() {
     let head = "<!-- @dsCard group=\"Preview\" height=1740 width=1420 subtitle=\"the preview from v0.113's own render, bound to the tokens: a note, a PDF page, a sound playing, a page zoomed; the pictures are the real window's on the Linux machine\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
     std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n<script></script>\n", head, frames.join(""))).unwrap();
 }
+
+/// Every palette's chip stands in one column, whatever the length of its name (#195): a name longer than
+/// the list's other names once pushed its own chip to the right.
+#[test]
+fn the_palettes_chips_stand_in_one_column() {
+    let pal = common::palette("tokyonight-night");
+    let mut a = app("tokyonight-night", "skyline", "");
+    let th = a.providers.iter().position(|p| p.label == "theme").unwrap();
+    a.view = View::Section(th);
+    a.came_from = vec![View::Home, View::Dest(SETTINGS_DEST)];
+    let h = 80;
+    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, h));
+    spark_dialog::ui::draw(&a, &pal, CLOCK, &mut b);
+    let names: Vec<String> = themes().into_iter().map(|(n, _)| n).collect();
+    let mut at = vec![];
+    for y in 0..h {
+        let row: Vec<String> = (0..WIDTH).map(|x| b[(x, y)].symbol().to_string()).collect();
+        let line = row.concat();
+        let Some(name) = names.iter().find(|n| line.split_whitespace().any(|w| w == n.as_str())) else {
+            continue;
+        };
+        if let Some(x) = row.iter().position(|s| s == spark_dialog::ui::DOT) {
+            at.push((name.clone(), x));
+        }
+    }
+    assert!(at.len() >= 10, "the theme view shows the palettes with their chips: {:?}", at);
+    let first = at[0].1;
+    assert!(at.iter().all(|(_, x)| *x == first), "every chip starts in one column: {:?}", at);
+}

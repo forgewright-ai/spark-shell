@@ -1401,7 +1401,8 @@ fn widths(app: &App, items: &[Item]) -> (Vec<usize>, Vec<bool>) {
             },
             _ => continue,
         };
-        if row_columns(row, wide).is_empty() && row.step.is_none() && row.key.is_none() {
+        // a palette's row has only its chip: its name still counts, so every chip stands in one column (#195)
+        if row_columns(row, wide).is_empty() && row.step.is_none() && row.key.is_none() && row.chip.is_empty() {
             continue;
         }
         let cols = std::iter::once(cells(&row.text).min(name_cap(app.col_w()))).chain(row_columns(row, wide).iter().map(|c| cells(c)));

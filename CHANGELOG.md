@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.121
+
+The moving wallpaper on every family, twelve scenes that move (#187,
+#188), and the palettes' chips in one column (#195).
+
+- spark-wallpaper, a program of spark-shell's own, plays the moving
+  wallpaper in place of mpvpaper (#187), which only Void and openSUSE
+  package. It is a small Rust program beside the dialog: it puts a
+  surface on the background layer of each screen and plays that
+  screen's loop through the system's libmpv, decoded on the GPU where
+  the VA-API driver is, and it pauses a screen while windows or a full
+  screen app cover it. It loads libmpv, EGL and Wayland's client library
+  when it starts, so it needs no development packages and runs on each
+  family's own libraries (glibc 2.34 or newer). The release workflow
+  builds it in a pinned Debian 12 image, and `on desktop` installs it
+  checked against the sha256 the signed tag pins, as it does the dialog.
+- Every family's desktop installs mpv, libmpv, the VA-API driver and
+  numpy. Fedora's own mesa leaves H.264 out, so there the loops decode on
+  the CPU unless RPM Fusion's driver is added. mpvpaper is no longer
+  installed.
+- Twelve scenes are wallpapers (#188): onsen, duck, reef, campfire, ufo,
+  pigeons, garoa, horizon, watch, problem, continue and crossing, after
+  the drawings in the wallpaper list. `wallpaper/animated/make.py` draws
+  each one in the palette in use with numpy, its still and its loop; a
+  portrait screen gets its own composition, still or moving, never a
+  crop. With the moving wallpaper on, a loop is made only for the
+  wallpaper on screen, one for each screen's size and shape: a pixel
+  scene at its own small grid, kept whole (lossless), and scaled up by
+  spark-wallpaper with square pixels.
+- The receipts of the moving wallpaper count the wallpapers that move
+  instead of naming each one.
+- Settings > theme: every palette's chip stands in one column, two
+  cells past the longest palette name (#195). The dialog measured the
+  name column only from rows with columns, a step or a key, so a
+  palette's row, its chip alone, never counted, and a long name pushed
+  its own chip to the right.
 ## v0.120.1
 
 A patch from the owner's reports of 2026-11-01: a pick in the wallpaper

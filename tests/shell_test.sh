@@ -691,9 +691,10 @@ fi
 mv "$H/starship.aside" "$H/.local/bin/starship"
 out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^ok     prompt       starship 0.0-stub draws the prompt$' && ok "on: the prompt row names the starship it found" || bad "prompt ok" "$out"
-! grep -q 'STARSHIP_VERSION' "$SH" && [ "$(grep -c 'curl -' "$SH")" = 2 ] && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_df" "$DIALOG_URL/$_rt/spark-dialog-$_dt"' "$SH" \
+! grep -q 'STARSHIP_VERSION' "$SH" && [ "$(grep -c 'curl -' "$SH")" = 3 ] && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_df" "$DIALOG_URL/$_rt/spark-dialog-$_dt"' "$SH" \
+    && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_plf" "$DIALOG_URL/$_plr/spark-wallpaper-$_plt"' "$SH" \
     && grep -q '^    if ! curl -fsSL --proto .=https,file. --proto-redir .=https. --connect-timeout 30 -o "$_nz" "$NEON_URL"' "$SH" && grep -q '^NEON_SHA256=[0-9a-f]\{64\} ' "$SH" \
-    && ok "spark-shell: two downloads, the dialog's release file and the font's, each checked against the sha256 pinned for it; no pinned version of anything else" || bad "a download survives" "$(grep -n 'STARSHIP_VERSION\|curl ' "$SH")"
+    && ok "spark-shell: three downloads, the release files of the dialog and of spark-wallpaper (#187) and the font's, each checked against the sha256 pinned for it; no pinned version of anything else" || bad "a download survives" "$(grep -n 'STARSHIP_VERSION\|curl ' "$SH")"
 
 fi
 
@@ -1132,7 +1133,7 @@ if [ "$(uname -s)" != Darwin ]; then
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  wall  missing' && ok "status: wall missing" || bad "status wall missing" "$(sh "$SH" status | grep wall)"
     rc=0; out=$(sh "$SH" theme wallpaper /nowhere/at/all.jpg 2>&1) || rc=$?
     [ $rc = 1 ] && printf '%s\n' "$out" | grep -q 'not a readable file' && ok "theme wallpaper: a path that is not there is refused" || bad "wallpaper refuse missing" "$out"
-    [ $rc = 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell theme: /nowhere/at/all.jpg is not a readable file or a color\. Give a picture.s path, default (the ground), one of the drawings (skyline, fjord, forest, sunset, hills, dunes, orbit, ripples, contours, morning, meadow, kites, fields, grove, arches, shore, flight, embers), #rrggbb or one of these colors: black, white, gray, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange$' \
+    [ $rc = 1 ] && printf '%s\n' "$out" | grep -q '^spark-shell theme: /nowhere/at/all.jpg is not a readable file or a color\. Give a picture.s path, default (the ground), one of the drawings (skyline, fjord, forest, sunset, hills, dunes, orbit, ripples, contours, morning, meadow, kites, fields, grove, arches, shore, flight, embers, onsen, duck, reef, campfire, ufo, pigeons, garoa, horizon, watch, problem, continue, crossing), #rrggbb or one of these colors: black, white, gray, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange$' \
         && [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = 1 ] && ok "theme wallpaper: the refusal is one line that lists what is accepted" || bad "wallpaper refusal words" "$out"
     # a path from where you are, and a quoted ~: saved as the full path
     printf x > "$pic"; printf x > "$HOME/pictures/two.png"
@@ -2823,7 +2824,7 @@ printf '%s\n' "$out" | grep -q '^todo   sound        pulseaudio is installed, an
     && ok "Arch with pulseaudio: pipewire-pulse is left out of the install, one todo says how to take it" || bad "arch pulseaudio" "$out"
 grep -q '^PKG_SOUND=pipewire wireplumber alsa-pipewire libspa-bluetooth$' "$REPO/distro/void.env" && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa libspa-0.2-bluetooth$' "$REPO/distro/debian.env" \
     && grep -q '^PKG_SOUND=pipewire wireplumber pipewire-pulse pipewire-alsa$' "$REPO/distro/arch.env" && ok "distro: the sound's packages, each family's names" || bad "PKG_SOUND" "$(grep -h PKG_SOUND "$REPO"/distro/*.env)"
-grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils poppler mako libnotify udisks2 dbus xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk gsettings-desktop-schemas bluez python3-dbus python3-gobject mpv mpvpaper xorg-server-xwayland xrandr$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, poppler, mako, notify-send, udisks2, the session bus, mpvpaper, Xwayland and xrandr among them" || bad "void.env desktop"
+grep -q '^PKG_DESKTOP=sway swaybg foot foot-terminfo dejavu-fonts-ttf mesa-dri seatd curl openssh swayidle swaylock grim slurp wl-clipboard brightnessctl ddcutil i2c-tools librsvg librsvg-utils poppler mako libnotify udisks2 dbus xdg-desktop-portal xdg-desktop-portal-wlr xdg-desktop-portal-gtk gsettings-desktop-schemas bluez python3-dbus python3-gobject mpv mesa-vaapi python3-numpy xorg-server-xwayland xrandr$' "$REPO/distro/void.env" && ok "distro/void.env: the desktop's packages, seatd, librsvg and rsvg-convert, poppler, mako, notify-send, udisks2, the session bus, mpv, the VA-API driver, numpy, Xwayland and xrandr among them" || bad "void.env desktop"
 
 fi
 
@@ -3349,34 +3350,65 @@ win_tree con false 0; win_run left
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: no window has the focus' ] && [ ! -e "$HOME/win.log" ] && ok "desktop window: no window with the focus, refused in one line, nothing sent (#182)" || bad "window none" "rc=$rc $out"
 win_run sideways
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: window takes float, left, right, up or down' ] && ok "desktop window: a wrong word refused in one line (#182)" || bad "window word" "rc=$rc $out"
-# the moving wallpaper (#180): the loop made in the background from the drawing's frames, played by mpvpaper on every screen;
-# a second start finds it playing; off stops it; on again plays the loop from the cache, made once
+# the moving wallpaper (#180, #187): a drawing's loop made in the background from its frames, played by spark-wallpaper on
+# every screen; a second start finds it playing; off stops it; on again plays the loop from the cache, made once
 mkdir -p "$H/mo" "$H/motmp" "$H/run"
-printf '#!/bin/sh\ncase "$*" in "-t get_version") echo "{}" ;; esac\n' > "$H/mo/swaymsg"
-printf '#!/bin/sh\nfor a; do d=$a; done; echo "<svg/>" > "$d/f0000.svg"; echo "<svg/>" > "$d/f0001.svg"\n' > "$H/mo/python3"
+cat > "$H/mo/swaymsg" <<'MO_SWAY'
+#!/bin/sh
+case "$*" in
+    "-t get_version") echo "{}" ;;
+    "-t get_outputs") echo '[{"name":"DP-3","active":true,"scale":1,"rect":{"x":0,"y":0,"width":1200,"height":1920}},{"name":"HDMI-A-1","active":true,"scale":1,"rect":{"x":1200,"y":0,"width":1920,"height":1080}}]' ;;
+    *) echo "$*" >> "$HOME/mosway.log" ;;
+esac
+MO_SWAY
+cat > "$H/mo/python3" <<'MO_PY'
+#!/bin/sh
+case "$*" in
+    *"-c import numpy"*) exit 0 ;;
+    *--info*) size=''; while [ $# -gt 0 ]; do [ "$1" != --size ] || size=$2; shift; done
+        w=${size%x*}; h=${size#*x}; if [ "$h" -gt "$w" ]; then g=270x480; else g=480x270; fi
+        echo "{\"scene\":\"watch\",\"fps\":12,\"kind\":\"pixel\",\"grid\":\"$g\"}" ;;
+    *--raw*) echo "$*" >> "$HOME/scene.log"; printf 'frames' ;;
+    *--still*) echo "$*" >> "$HOME/scene.log"; out=''; while [ $# -gt 0 ]; do [ "$1" != --png ] || out=$2; shift; done; echo png > "$out" ;;
+    *) for a; do d=$a; done; echo "<svg/>" > "$d/f0000.svg"; echo "<svg/>" > "$d/f0001.svg" ;;
+esac
+MO_PY
 printf '#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" != -o ] || { shift; cat > "$1"; }; shift; done\n' > "$H/mo/rsvg-convert"
-printf '#!/bin/sh\necho "$*" >> "$HOME/mpv.log"; for a; do case $a in --o=*) echo loop > "${a#--o=}" ;; esac; done\n' > "$H/mo/mpv"
-printf '#!/bin/sh\necho "$*" >> "$HOME/mpvpaper.log"\nwhile :; do sleep 1; done\n' > "$H/mo/mpvpaper"
-chmod +x "$H/mo/swaymsg" "$H/mo/python3" "$H/mo/rsvg-convert" "$H/mo/mpv" "$H/mo/mpvpaper"
+printf '#!/bin/sh\necho "$*" >> "$HOME/mpv.log"; case " $* " in *" - "*) cat >/dev/null ;; esac   # frames on its input: read them all, as mpv does\nfor a; do case $a in --o=*) echo loop > "${a#--o=}" ;; esac; done\n' > "$H/mo/mpv"
+printf '#!/bin/sh\necho "$*" >> "$HOME/player.log"\nwhile :; do sleep 1; done\n' > "$H/mo/spark-wallpaper"
+chmod +x "$H/mo/swaymsg" "$H/mo/python3" "$H/mo/rsvg-convert" "$H/mo/mpv" "$H/mo/spark-wallpaper"
 cp "$HOME/.config/spark-shell/config" "$H/cfg.mo"; printf 'DESKTOP=sway\nTHEME=dracula\nWALLPAPER=orbit\nWALLPAPER_MOTION=on\n' > "$HOME/.config/spark-shell/config"
-rm -f "$HOME/mpv.log" "$HOME/mpvpaper.log"; _mdir=${XDG_CACHE_HOME:-$HOME/.cache}/spark-shell/motion
-mo() { TMPDIR=$H/motmp XDG_RUNTIME_DIR=$H/run SWAYSOCK=$H/sock PATH="$H/mo:$H/lx:$PATH" sh "$SH" "$@"; }
-mo_wait() { _i=0; while [ "$_i" -lt 50 ] && [ "$(grep -c '' "$HOME/mpvpaper.log" 2>/dev/null || echo 0)" -lt "$1" ]; do sleep 0.2; _i=$((_i + 1)); done; }
+rm -f "$HOME/mpv.log" "$HOME/player.log"; _mdir=${XDG_CACHE_HOME:-$HOME/.cache}/spark-shell/motion
+mo() { TMPDIR=$H/motmp XDG_RUNTIME_DIR=$H/run SWAYSOCK=$H/sock SPARK_SHELL_PLAYER=$H/mo/spark-wallpaper PATH="$H/mo:$H/lx:$PATH" sh "$SH" "$@"; }
+mo_wait() { _i=0; while [ "$_i" -lt 50 ] && [ "$(grep -c '' "$HOME/player.log" 2>/dev/null || :)" != "$1" ]; do sleep 0.2; _i=$((_i + 1)); done; }
+mo_stop() { for _mp in $(pgrep -u "$(id -u)" -f "$H/mo/spark-wallpaper" 2>/dev/null || :); do kill "$_mp" 2>/dev/null || :; done; }
 mo desktop --motion >/dev/null 2>&1; mo_wait 1
-_ml=$(sed -n 1p "$HOME/mpvpaper.log" 2>/dev/null)
-case $_ml in "-p -o no-audio loop panscan=1.0 ALL $_mdir/orbit-"*.mp4) _mok=1 ;; *) _mok='' ;; esac
+_ml=$(sed -n 1p "$HOME/player.log" 2>/dev/null || :)
+case $_ml in "--all $_mdir/orbit-"*.mp4) _mok=1 ;; *) _mok='' ;; esac
 [ -n "$_mok" ] && [ -f "${_ml##* }" ] && [ "$(grep -c '' "$HOME/mpv.log")" = 1 ] && grep -q 'mf://.* --mf-fps=30 .*--ovc=libx264' "$HOME/mpv.log" && [ -z "$(ls "$H/motmp")" ] \
-    && ok "desktop --motion: the drawing's frames drawn and made into a loop by mpv in the background, kept in the cache, played by mpvpaper on every screen, the frames gone (#180)" || bad "motion start" "$_ml | $(cat "$HOME/mpv.log" 2>&1) | $(ls "$H/motmp")"
+    && ok "desktop --motion: a drawing's frames made into a loop by mpv in the background, kept in the cache, played by spark-wallpaper on every screen, the frames gone (#180, #187)" || bad "motion start" "$_ml | $(cat "$HOME/mpv.log" 2>&1) | $(ls "$H/motmp")"
 mo desktop --motion >/dev/null 2>&1; sleep 0.5
-[ "$(grep -c '' "$HOME/mpvpaper.log")" = 1 ] && ok "desktop --motion: a loop already playing is left as it is (#180)" || bad "motion twice" "$(cat "$HOME/mpvpaper.log")"
+[ "$(grep -c '' "$HOME/player.log")" = 1 ] && ok "desktop --motion: a loop already playing is left as it is (#180)" || bad "motion twice" "$(cat "$HOME/player.log")"
 rc=0; out=$(mo theme motion off 2>&1) || rc=$?; sleep 0.5
-[ "$rc" = 0 ] && [ "$out" = 'moving wallpaper off' ] && grep -qx 'WALLPAPER_MOTION=off' "$HOME/.config/spark-shell/config" && [ -z "$(pgrep -u "$(id -u)" -f "mpvpaper .*$_mdir/")" ] && [ ! -e "$H/run/spark-shell-motion.want" ] \
-    && ok "theme motion off: the loop's player stopped, the still shows (#180)" || bad "motion off" "rc=$rc $out $(pgrep -u "$(id -u)" -f "mpvpaper .*$_mdir/")"
+[ "$rc" = 0 ] && [ "$out" = 'moving wallpaper off' ] && grep -qx 'WALLPAPER_MOTION=off' "$HOME/.config/spark-shell/config" && [ -z "$(pgrep -u "$(id -u)" -f "spark-wallpaper .*$_mdir/" || :)" ] && [ ! -e "$H/run/spark-shell-motion.want" ] \
+    && ok "theme motion off: the loop's player stopped, the still shows (#180)" || bad "motion off" "rc=$rc $out $(pgrep -u "$(id -u)" -f "spark-wallpaper .*$_mdir/" || :)"
 rc=0; out=$(mo theme motion on 2>&1) || rc=$?; mo_wait 2
-[ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^moving wallpaper on .* orbit moves$' && [ "$(grep -c '' "$HOME/mpvpaper.log")" = 2 ] && [ "$(grep -c '' "$HOME/mpv.log")" = 1 ] \
-    && ok "theme motion on: the loop in the cache plays again, never made twice (#180)" || bad "motion cache" "rc=$rc $out $(cat "$HOME/mpvpaper.log" "$HOME/mpv.log" 2>&1)"
-mo theme motion off >/dev/null 2>&1 || :
-for _mp in $(pgrep -u "$(id -u)" -f "$H/mo/mpvpaper"); do kill "$_mp" 2>/dev/null || :; done
+[ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q '^moving wallpaper on .* orbit moves$' && [ "$(grep -c '' "$HOME/player.log")" = 2 ] && [ "$(grep -c '' "$HOME/mpv.log")" = 1 ] \
+    && ok "theme motion on: the loop in the cache plays again, never made twice (#180)" || bad "motion cache" "rc=$rc $out $(cat "$HOME/player.log" "$HOME/mpv.log" 2>&1)"
+mo_stop
+# a scene (#188): a loop a screen, each at its shape (a pixel scene at its own grid, the player scaling it with square pixels),
+# made from make.py's raw frames by mpv; the portrait screen's still drawn in its own shape and given to that screen alone
+rm -f "$HOME/player.log" "$HOME/mpv.log" "$HOME/scene.log" "$HOME/mosway.log" "$H/run/spark-shell-motion.want"
+printf 'DESKTOP=sway\nTHEME=dracula\nWALLPAPER=watch\nWALLPAPER_MOTION=on\n' > "$HOME/.config/spark-shell/config"
+mo desktop --motion >/dev/null 2>&1; mo_wait 1; sleep 0.3
+_ml=$(sed -n 1p "$HOME/player.log" 2>/dev/null || :)
+case $_ml in "--scale nearest --screen DP-3=$_mdir/watch-"*"-270x480.mp4 --screen HDMI-A-1=$_mdir/watch-"*"-480x270.mp4") _mok=1 ;; *) _mok='' ;; esac
+[ -n "$_mok" ] && [ "$(grep -c -- '--demuxer=rawvideo' "$HOME/mpv.log")" = 2 ] && grep -q -- '--demuxer-rawvideo-w=270 --demuxer-rawvideo-h=480 .*--vf=format=yuv444p' "$HOME/mpv.log" \
+    && grep -q -- '--raw --scene watch --size 480x270 ' "$HOME/scene.log" && [ -z "$(ls "$H/motmp")" ] \
+    && ok "desktop --motion, a scene: a loop a screen at its shape (a pixel scene at its grid, lossless), played with square pixels (#187, #188)" || bad "scene loops" "$_ml | $(cat "$HOME/mpv.log" "$HOME/scene.log" 2>&1)"
+grep -q -- "--still poster --size 1200x1920 " "$HOME/scene.log" && grep -q '^-- output "DP-3" bg ".*/watch-dracula-1200x1920.png" fill$' "$HOME/mosway.log" && ! grep -q 'HDMI-A-1" bg' "$HOME/mosway.log" \
+    && ok "desktop --motion, a scene: the portrait screen's still in its own shape, on that screen alone (#188)" || bad "scene portrait still" "$(cat "$HOME/scene.log" "$HOME/mosway.log" 2>&1)"
+mo_stop
 cp "$H/cfg.mo" "$HOME/.config/spark-shell/config"
 # two screens with one name (no serial, the same model): each by its port, never both at once
 sed -i.bak 's/"make":"BOE","model":"0x0BCA","serial":""/"make":"Lenovo Group Limited","model":"T24i-30","serial":"V30A1"/' "$H/lx/swaymsg"; rm -f "$H/lx/swaymsg.bak" "$HOME/swaymsg.log"
@@ -3669,8 +3701,8 @@ spark-shell changes how this machine works:
                poppler otf-monaspace mako libnotify udisks2 xdg-desktop-portal
                xdg-desktop-portal-wlr xdg-desktop-portal-gtk
                gsettings-desktop-schemas bluez bluez-utils python-dbus
-               python-gobject xorg-xwayland xorg-xrandr pipewire wireplumber
-               pipewire-pulse pipewire-alsa (sudo)
+               python-gobject xorg-xwayland xorg-xrandr mpv mesa python-numpy
+               pipewire wireplumber pipewire-pulse pipewire-alsa (sudo)
   login        logging in on tty1 starts the desktop
                Alt+F2 is a plain shell
 
@@ -4415,7 +4447,8 @@ for n in $(sed -n 's/^WALL_SHIPPED="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | cut -d:
     [ -f "$REPO/wallpaper/$n.svg" ] && [ -f "$REPO/wallpaper/$n.png" ] && [ "$(od -An -tu1 -j16 -N8 "$REPO/wallpaper/$n.png" | tr -s ' \n' ' ' | sed 's/^ //; s/ $//')" = '0 0 15 0 0 0 8 112' ] || _wb="$_wb $n"
 done
 for _mf in "$REPO"/wallpaper/motion/*; do _mn=${_mf##*/}; case $_mn in *.py) wall_n=${_mn%.py}; grep -q "[ \"]$wall_n:" "$SH" || _wb="$_wb motion/$_mn" ;; *) _wb="$_wb motion/$_mn" ;; esac; done
-[ -z "$_wb" ] && [ "$(ls "$REPO/wallpaper" | wc -l | tr -d ' ')" = 37 ] && ok "wallpaper/: the 18 shipped wallpapers, each its SVG and a 3840 by 2160 PNG, and motion/ with a script of a shipped one alone (#180)" || bad "wallpaper files" "$_wb $(ls "$REPO/wallpaper" "$REPO/wallpaper/motion")"
+[ "$(ls "$REPO/wallpaper/animated")" = make.py ] || _wb="$_wb animated/"
+[ -z "$_wb" ] && [ "$(ls "$REPO/wallpaper" | wc -l | tr -d ' ')" = 38 ] && ok "wallpaper/: the 18 drawings, each its SVG and a 3840 by 2160 PNG, motion/ with a script of a shipped one alone (#180), and animated/ with make.py, the scenes' (#188)" || bad "wallpaper files" "$_wb $(ls "$REPO/wallpaper" "$REPO/wallpaper/motion")"
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
@@ -5876,6 +5909,9 @@ if [ "$(uname -s)" != Darwin ]; then
             and (.rows[] | select(.id == "theme:wallpaper default") | .text == "the ground" and .group == "custom" and .quiet == true and (.chip | length) == 1) and ([.rows[] | select(.text == "none" or .group == "colors")] | length == 0)
             and (.rows[] | select(.id == "theme:wallpaper dunes") | .sign == "check" and .quiet == true and .tool.arguments.name == "dunes") and .rows[0].id == "theme:wallpaper skyline"' "$H/wrows.json" >/dev/null \
         && ok "provide theme: the wallpaper row opens the list resource (#36): the drawings first, each with the palette it was drawn for and its picture in this palette, each kept in place (#191); custom: a picture to pick, a color asked for, the ground with its color; no none, no color rows; dunes checked, its step kept" || bad "wallpaper rows" "$(head -c 700 "$H/trows.json"; head -c 900 "$H/wrows.json")"
+    jq -e --arg th "$HOME/.local/state/spark-shell/thumbs" '(.rows[] | select(.id == "theme:wallpaper watch") | .group == "drawings" and .columns == ["moves, in any palette"] and .preview == ($th + "/watch-dracula.png") and .quiet == true)
+        and ([.rows[] | select(.group == "drawings") | .text] | index("watch") > index("embers")) and ([.rows[] | .text, (.columns[]?)] | map(select(test("^(cozy|night)$"))) | length == 0)' "$H/wrows.json" >/dev/null \
+        && ok "provide theme: the scenes are wallpapers after the drawings, each moving in any palette, its picture drawn in this one; no collection named (#188)" || bad "scene rows" "$(jq -c '[.rows[] | select(.text == "watch")]' "$H/wrows.json")"
     mcp theme "$(call 1 theme_wallpaper_color '{"color":"teal"}')" "$(call 2 theme_wallpaper_color '{"color":"chartreuse"}')"
     [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'the wallpaper is teal' ] && grep -qx 'WALLPAPER=#008080' "$cfg" && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'theme: a color is a name (black, white, gray, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange) or #rrggbb' ] \
         && ok "provide theme_wallpaper_color: a color by its name or #rrggbb, a word that is no color refused" || bad "wallpaper color call" "$(cat "$H/mcp.out" | cut -c1-300)"
@@ -5900,19 +5936,17 @@ if [ "$(uname -s)" != Darwin ]; then
     # again a refusal; kept with a saved theme; refused in one line where the tools are not here; a wrong word in the config refused
     jq -e '.rows[] | select(.id == "theme:show:Moving wallpaper") | .switch == {on: false, turn_on: {name: "theme_motion", arguments: {to: "on"}}, turn_off: {name: "theme_motion", arguments: {to: "off"}}} and .tool == null and .group == "screen"' "$H/trows.json" >/dev/null \
         && ok "provide theme rows (#180, #183): the moving wallpaper, a switch" || bad "motion row" "$(jq -c '[.rows[] | select(.id | test("Moving"))]' "$H/trows.json")"
-    mkdir -p "$H/mot"; for t in python3 rsvg-convert mpv mpvpaper; do printf '#!/bin/sh\nexit 0\n' > "$H/mot/$t"; chmod +x "$H/mot/$t"; done
-    ( PATH=$H/mot:$PATH; mcp theme "$(call 1 theme_motion '{"to":"on"}')" "$(call 2 theme_motion '{"to":"on"}')" )
-    ans 1 | jq -r '.result.structuredContent.receipt' | grep -q '^moving wallpaper on .* dunes is still; orbit moves$' && ans 1 | jq -e '.result.structuredContent.undo | .name == "theme_motion" and .arguments.to == "off"' >/dev/null \
+    mkdir -p "$H/mot"; for t in python3 rsvg-convert mpv spark-wallpaper; do printf '#!/bin/sh\nexit 0\n' > "$H/mot/$t"; chmod +x "$H/mot/$t"; done
+    ( PATH=$H/mot:$PATH; SPARK_SHELL_PLAYER=$H/mot/spark-wallpaper; export SPARK_SHELL_PLAYER; mcp theme "$(call 1 theme_motion '{"to":"on"}')" "$(call 2 theme_motion '{"to":"on"}')" )
+    ans 1 | jq -r '.result.structuredContent.receipt' | grep -q '^moving wallpaper on .* dunes is still; 13 wallpapers move$' && ans 1 | jq -e '.result.structuredContent.undo | .name == "theme_motion" and .arguments.to == "off"' >/dev/null \
         && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'the moving wallpaper is on already' ] && grep -qx 'WALLPAPER_MOTION=on' "$cfg" \
         && ok "provide theme_motion (#180): a step with its receipt (the drawing in use still, the ones that move named) and undo, kept in the config; the same value again refused" || bad "motion step" "$(cut -c1-300 "$H/mcp.out")"
     sh "$SH" theme save motionlook >/dev/null 2>&1; sh "$SH" theme motion off >/dev/null 2>&1; sh "$SH" theme motionlook >/dev/null 2>&1
     grep -qx 'WALLPAPER_MOTION=on' "$th_dir/motionlook/look.env" && grep -qx 'WALLPAPER_MOTION=on' "$cfg" && ok "theme save keeps the moving wallpaper, and the theme brings it back (#180)" || bad "motion look kept" "$(cat "$th_dir/motionlook/look.env" 2>&1; grep MOTION "$cfg")"
     sh "$SH" theme dracula >/dev/null 2>&1; sh "$SH" theme delete motionlook </dev/null >/dev/null 2>&1; sh "$SH" theme motion off >/dev/null 2>&1
-    if ! command -v mpvpaper >/dev/null 2>&1; then
-        rc=0; out=$(sh "$SH" theme motion on 2>&1) || rc=$?
-        [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'the moving wallpaper needs ' && grep -qx 'WALLPAPER_MOTION=off' "$cfg" \
-            && ok "theme motion on: refused in one line where mpvpaper is not here, the setting left off (#180)" || bad "motion skip" "rc=$rc $out"
-    fi
+    rc=0; out=$(env -u SPARK_SHELL_PLAYER sh "$SH" theme motion on 2>&1) || rc=$?   # no player of the release's in this clone
+    [ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q 'the moving wallpaper needs .*spark-wallpaper' && grep -qx 'WALLPAPER_MOTION=off' "$cfg" \
+        && ok "theme motion on: refused in one line where the wallpaper player is not here, the setting left off (#180, #187)" || bad "motion skip" "rc=$rc $out"
     printf 'WALLPAPER_MOTION=fast\n' >> "$cfg"; st=0; out=$(sh "$SH" theme 2>&1) || st=$?
     [ "$st" -eq 1 ] && printf '%s' "$out" | grep -q 'WALLPAPER_MOTION=fast in .*: on or off' && ok "config: WALLPAPER_MOTION other than on or off is refused in one line (#180)" || bad "motion refuse" "st=$st $out"
     sed -i.bak '/^WALLPAPER_MOTION=fast$/d' "$cfg"; rm -f "$cfg.bak"

@@ -22,7 +22,7 @@
 #   spark-shell theme transparency N  the windows' transparency; more, less
 #   spark-shell theme glyphs SET      the bar in signs or in words
 #   spark-shell theme workspaces X    the workspaces as symbols or numbers
-#   spark-shell theme motion on|off   a moving wallpaper, where a drawing moves
+#   spark-shell theme motion on|off   a moving wallpaper, where it can move
 #   spark-shell theme picture PATH    a theme from a picture of yours
 #   spark-shell theme "WORDS"         a theme from words, read by spark
 #   spark-shell font FACE SIZE|none   set the console font, or use its own
@@ -106,8 +106,9 @@
 # the rendered ~/.config/spark-shell/sgr.sh color the prompt. spark
 # itself is not required. Without it the status line stays empty and
 # everything else works. Nothing leaves this machine except what the
-# package manager fetches, the dialog's release file and the font's
-# (Monaspace Neon), each checked against its sha256. A layout, and a want
+# package manager fetches, the release files of the dialog and of
+# spark-wallpaper, and the font's (Monaspace Neon), each checked against
+# its sha256. A layout, and a want
 # at the bar, ask spark on this machine (spark edit).
 #
 # POSIX sh on both OSes: the Debian (Ubuntu too), Arch, Void, Fedora and
@@ -440,15 +441,32 @@ WALL_NAMES="black white gray silver navy blue teal green olive maroon red purple
 # the wallpapers spark-shell ships in wallpaper/, each NAME:PALETTE:SAMPLE, the palette it was drawn
 # for and its main color for the sample on its row; WALLPAPER stores the name, so it follows the clone
 WALL_SHIPPED="skyline:tokyonight-night:7aa2f7 fjord:nord:88c0d0 forest:everforest-dark:a7c080 sunset:gruvbox-dark:fe8019 hills:catppuccin-mocha:f5c2e7 dunes:dracula:ff79c6 orbit:dracula:bd93f9 ripples:rose-pine:ebbcba contours:selenized-dark:41c7b9 morning:solarized-light:b58900 meadow:catppuccin-latte:ea76cb kites:tokyonight-day:2e7de9 fields:gruvbox-light:d79921 grove:everforest-light:8da101 arches:rose-pine-dawn:d7827e shore:selenized-light:009c8f flight:one-light:4078f2 embers:any:d24a2a"
-wall_shipped() { for _e in $WALL_SHIPPED; do [ "${_e%%:*}" != "$1" ] || return 0; done; return 1; }   # wall_shipped NAME -> 0 for a wallpaper spark-shell ships
-wall_shipped_names() { for _e in $WALL_SHIPPED; do printf '%s\n' "${_e%%:*}"; done; }
+# The moving scenes (#188): wallpapers wallpaper/animated/make.py draws, listed after the drawings,
+# each in any palette (their palette word is every), never named by collection. Their picture is the
+# scene's still, drawn by make.py in the palette in use; with the moving wallpaper on they move.
+WALL_SCENES="onsen duck reef campfire ufo pigeons garoa horizon watch problem continue crossing"
+SCENE_MAKE=$REPO/wallpaper/animated/make.py
+wall_scene() { case " $WALL_SCENES " in *" ${1:-} "*) [ -n "${1:-}" ] ;; *) return 1 ;; esac; }   # wall_scene NAME -> 0 for a moving scene
+wall_shipped() { for _e in $WALL_SHIPPED; do [ "${_e%%:*}" != "$1" ] || return 0; done; wall_scene "$1"; }   # wall_shipped NAME -> 0 for a wallpaper spark-shell ships: a drawing or a scene
+wall_shipped_names() { for _e in $WALL_SHIPPED; do printf '%s\n' "${_e%%:*}"; done; for _e in $WALL_SCENES; do printf '%s\n' "$_e"; done; }
+SCENE_READY=''
+scene_ready() {   # -> 0 when make.py can draw here: python3 with numpy (asked once a run)
+    [ -n "$SCENE_READY" ] || { if command -v python3 >/dev/null 2>&1 && python3 -I -c 'import numpy' >/dev/null 2>&1; then SCENE_READY=yes; else SCENE_READY=no; fi; }
+    [ "$SCENE_READY" = yes ]
+}
+scene_still() {   # scene_still SCENE PALETTE_FILE WxH OUT.png -- the scene's still (its own moment) in that palette at that size; silent, false with no PNG
+    scene_ready || return 1
+    _stn=${4%.png}.new.png   # its own prefix: scene_screens holds the screen's name in _ssn
+    if python3 -I "$SCENE_MAKE" --scene "$1" --still poster --size "$3" --png "$_stn" "$2" >/dev/null 2>&1 && [ -s "$_stn" ]; then mv "$_stn" "$4"; else rm -f "$_stn"; return 1; fi
+}
 wall_for_palette() { for _e in $WALL_SHIPPED; do _r=${_e#*:}; [ "${_r%%:*}" != "$1" ] || { printf '%s' "${_e%%:*}"; return 0; }; done; return 1; }   # wall_for_palette PALETTE -> the drawing drawn for it; false for a palette with none
-wall_palette_of() { for _e in $WALL_SHIPPED; do [ "${_e%%:*}" != "$1" ] || { _r=${_e#*:}; printf '%s' "${_r%%:*}"; return 0; }; done; return 1; }   # wall_palette_of DRAWING -> the palette it was drawn for (any: embers)
+wall_palette_of() { for _e in $WALL_SHIPPED; do [ "${_e%%:*}" != "$1" ] || { _r=${_e#*:}; printf '%s' "${_r%%:*}"; return 0; }; done; ! wall_scene "$1" || { printf 'every'; return 0; }; return 1; }   # wall_palette_of DRAWING -> the palette it was drawn for (any: embers, every: a scene)
 wall_path() {   # -> the picture's path: a drawing in the theme's folder when it was rendered there, in the cache when the palette is not the drawing's own, else the clone's; a picture of yours as it is (default and none are words, a color is hex)
     wall_shipped "$WALLPAPER" || { printf '%s' "$WALLPAPER"; return; }
     _td=$(theme_dir "${THEME:-}")
     if [ -n "$_td" ] && [ -f "$_td/wallpaper.png" ] && [ "$(look_get "$_td" DRAWING)" = "$WALLPAPER" ]; then printf '%s' "$_td/wallpaper.png"
     elif [ -n "${THEME:-}" ] && [ "$THEME" != none ] && [ "$(wall_palette_of "$WALLPAPER")" != "$THEME" ] && [ -f "$WALL_CACHE/$WALLPAPER-$THEME.png" ]; then printf '%s' "$WALL_CACHE/$WALLPAPER-$THEME.png"
+    elif wall_scene "$WALLPAPER"; then printf '%s' "$WALL_CACHE/$WALLPAPER-${THEME:-none}.png"   # a scene's still is always drawn: there is no shipped one
     else printf '%s' "$REPO/wallpaper/$WALLPAPER.png"; fi
 }
 wall_own() { [ "$(wall_palette_of "$1")" = "${THEME:-}" ]; }   # wall_own DRAWING -> 0 when the palette in use is the one it was drawn for (the clone's PNG is the picture)
@@ -506,6 +524,7 @@ pic_png() {   # pic_png PICTURE OUT SIZE -- OUT, a PNG of PICTURE SIZE on its lo
 }
 wall_render() {   # wall_render DRAWING PALETTE_FILE OUT_BASE -- OUT_BASE.svg in that palette and, where a tool draws it, OUT_BASE.png at 3840 by 2160; silent, exit 1 with no PNG
     mkdir_state "$(dirname "$3")"
+    if wall_scene "$1"; then scene_still "$1" "$2" 3840x2160 "$3.png"; return; fi   # a scene's still, from make.py
     wall_recolor "$REPO/wallpaper/$1.svg" "$2" > "$3.svg.new" && mv "$3.svg.new" "$3.svg"
     svg_png "$3.svg" "$3.png" 3840 || { rm -f "$3.png"; return 1; }
 }
@@ -522,6 +541,7 @@ wall_follow() {   # the drawing in use, rendered in the palette in use when that
         [ -z "$_td" ] || look_set "$_td" DRAWING "$WALLPAPER"
         wall_load; EXPR=$(render_expr)   # the renders after this name the picture just drawn
         row render wallpaper "$WALLPAPER drawn in $THEME ($_wb.png)"
+    elif wall_scene "$WALLPAPER"; then row todo wallpaper "$WALLPAPER: python3 with numpy draws its picture, and it is not here (spark-shell on desktop installs it)"
     else row todo wallpaper "$WALLPAPER as drawn for $(wall_palette_of "$WALLPAPER"): rsvg-convert is not installed to draw it in $THEME (the $(svg_pkg) package)"; fi
 }
 wall_color() { hex_rgb "$WALLPAPER" >/dev/null; }   # WALLPAPER is a plain color, #rrggbb
@@ -552,6 +572,11 @@ wall_thumbs() {   # the drawings' small pictures in the palette in use (#36): ea
     mkdir_state "$THUMB_DIR"; _tp=$(thumb_palette); _pf=''; [ "$_tp" = none ] || _pf=$(palette_file "$_tp")
     for _w in $(wall_shipped_names); do
         _t=$THUMB_DIR/$_w-$_tp.png
+        if wall_scene "$_w"; then   # a scene's small picture is its still, drawn by make.py in the palette in use
+            [ -n "$_pf" ] || continue
+            [ ! -f "$_t" ] || [ -n "$(find "$SCENE_MAKE" -newer "$_t" 2>/dev/null)" ] || continue
+            scene_still "$_w" "$_pf" 480x270 "$_t" || :; continue
+        fi
         [ ! -f "$_t" ] || [ -n "$(find "$REPO/wallpaper/$_w.svg" -newer "$_t" 2>/dev/null)" ] || continue   # find -newer: test's -nt is not in every POSIX sh
         if [ -z "$_pf" ] || [ "$(wall_palette_of "$_w")" = "$_tp" ]; then _src=$REPO/wallpaper/$_w.svg   # its own palette, or none: the drawing as shipped
         else wall_recolor "$REPO/wallpaper/$_w.svg" "$_pf" > "$TMP/thumb.svg" || continue; _src=$TMP/thumb.svg; fi
@@ -1021,7 +1046,6 @@ desktop_look_apply() {   # on and on desktop: the renders, the pointer, and a ru
     desktop_files
     pointer_apply
     ws_pool_apply
-    motion_row
     [ "$({ cksum < "$HOME/.config/sway/config"; } 2>/dev/null || :)" = "$_sc" ] || sway_reload
     look_burst   # the open terminals take the look too: after an upgrade, the slots their new shells draw in
 }
@@ -1034,6 +1058,8 @@ desktop_apply() {
     storage_apply
     power_apply
     dialog_install
+    player_install
+    motion_row
     mcp_apply
     notify_start
 }
@@ -4223,7 +4249,7 @@ machine_facts() {   # -> the .facts lines: what holds while the machine stays as
     printf -- "- Palettes, dark: %s; light: %s; none is terminal default colors.%s\n" \
         "$(grep -xFf "$TMP/machine.dark" "$TMP/machine.pal" | machine_join)" "$(grep -vxFf "$TMP/machine.dark" "$TMP/machine.pal" | machine_join)" "${_mst:+ Saved themes: $_mst.}"
     _msa=clock; ! saver_can || _msa="clock $SAVER_NAMES"
-    printf -- "- Wallpapers: %s, or default. Savers: %s.\n" "$(wall_shipped_names | machine_join)" "$(printf '%s\n' $_msa | machine_join)"
+    printf -- "- Wallpapers: %s, $(set -- $WALL_SCENES; echo $#) scenes that move, or default. Savers: %s.\n" "$(for _e in $WALL_SHIPPED; do printf '%s\n' "${_e%%:*}"; done | machine_join)" "$(printf '%s\n' $_msa | machine_join)"
     # the printers the printers section saw last, from its own cache: the facts never ask CUPS (#186)
     if [ -s "$PANEL_CACHE/printers.status" ] && sed 1d "$PANEL_CACHE/printers.status" > "$TMP/machine.pr" 2>/dev/null && [ -s "$TMP/machine.pr" ]; then
         _mpr=$(jq -r '.default as $d | [.queues[]? | .name + (if .name == $d then " (the default)" else "" end)] | join(", ")' "$TMP/machine.pr" 2>/dev/null || :)
@@ -5074,7 +5100,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ -z "$_de" ] || printf -- '-\tAnimation\tshow\tdialog\n' ;;   # the dialog's transitions (#122): opens their list
         wallpapers) _cur=$(wall_name)   # the theme's wallpaper list (no section of its own, #36): the drawings, each with the palette it was drawn for and its picture in the palette in use (provide_wall_rows); then custom: a picture, a color, the ground
             for w in $(wall_shipped_names); do
-                _pw=$(wall_palette_of "$w"); if [ "$_pw" = any ]; then _pw='for any dark palette'; else _pw="for $_pw"; fi   # the caption under its picture: 24 cells
+                _pw=$(wall_palette_of "$w"); case $_pw in any) _pw='for any dark palette' ;; every) _pw='moves, in any palette' ;; *) _pw="for $_pw" ;; esac   # the caption under its picture: 24 cells
                 if [ "$w" = "$_cur" ]; then printf '%s\t%s\twallpaper %s\tdrawings|%s\n' "$PANEL_TICK" "$w" "$w" "$_pw"; else printf -- '-\t%s\twallpaper %s\tdrawings|%s\n' "$w" "$w" "$_pw"; fi
             done
             [ -n "$_cur" ] || printf '%s\tpicture %s\tshow\tcustom\n' "$PANEL_TICK" "$(basename "$(wall_path)")"
@@ -8403,6 +8429,41 @@ dialog_install() {   # the dialog's row of `on`: in place as the tree pins it, o
     mkdir -p "$(dirname "$DIALOG_BIN")" && cp "$_df" "$DIALOG_BIN.new" && chmod 755 "$DIALOG_BIN.new" && mv "$DIALOG_BIN.new" "$DIALOG_BIN"
     row ok dialog "installed for $_rt ($DIALOG_BIN), sha256 checked"
 }
+# --- the wallpaper player (#187): spark-wallpaper plays the moving wallpaper's loop on the background
+# layer of each screen, through the system's libmpv, paused while the wallpaper is covered. One
+# binary built from player/ by the release workflow at a signed tag, shipped as the dialog is:
+# player/player.env in the tagged tree holds its sha256, `on desktop` installs only the file that
+# has it, and the motion plays it only while it still has. SPARK_SHELL_PLAYER names another build
+# to play with as it is (a proof's, the tests' stand-in).
+PLAYER_BIN=${XDG_DATA_HOME:-$HOME/.local/share}/spark-shell/spark-wallpaper
+player_target() { case $(uname -m) in x86_64|amd64) echo x86_64-linux-gnu ;; *) return 1 ;; esac; }   # the builds there are: x86_64 alone today
+player_release_tag() {   # -> the release the clone's player belongs to: the newest tag at or behind HEAD whose tree has player/player.env, when player/ is unchanged since; false otherwise
+    _plr=$(git -C "$REPO" describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null) || return 1
+    git -C "$REPO" cat-file -e "$_plr:player/player.env" 2>/dev/null || return 1
+    git -C "$REPO" diff --quiet "$_plr" -- player 2>/dev/null || return 1
+    printf '%s\n' "$_plr"
+}
+player_want_sha() {   # -> the sha256 the release tag's own tree pins for this machine, or nothing
+    _plk=PLAYER_SHA256_$(player_target | tr 'a-z-' 'A-Z_'); _plr=$(player_release_tag) || return 0
+    git -C "$REPO" show "$_plr:player/player.env" 2>/dev/null | sed -n "s/^$_plk=\([0-9a-f]\{64\}\)$/\1/p"
+}
+player_ok() { [ -x "$PLAYER_BIN" ] && _plw=$(player_want_sha) && [ -n "$_plw" ] && [ "$(sha256_of "$PLAYER_BIN")" = "$_plw" ]; }   # the binary in place is the one the tree pins
+player_cmd() { if [ -n "${SPARK_SHELL_PLAYER:-}" ]; then [ -x "$SPARK_SHELL_PLAYER" ] && printf '%s' "$SPARK_SHELL_PLAYER"; elif player_ok; then printf '%s' "$PLAYER_BIN"; else return 1; fi; }   # -> the player to run, or false
+player_install() {   # the player's row of on desktop: in place as the tree pins it, or fetched for the signed release tag and checked
+    _plt=$(player_target) || { skip motion "no spark-wallpaper built for $(uname -m) yet: the wallpaper stays still"; return 0; }
+    _plr=$(player_release_tag) || { row todo motion "this clone is past its release: spark-wallpaper comes with the next tag"; return 0; }
+    _plw=$(player_want_sha); [ -n "$_plw" ] || { skip motion "$_plr pins no spark-wallpaper: the wallpaper stays still"; return 0; }
+    if player_ok; then ok motion "$PLAYER_BIN, the sha256 $_plr pins"; return 0; fi
+    [ "$DIALOG_URL" != none ] || { skip motion "no release to fetch it from (SPARK_SHELL_DIALOG_URL=none)"; return 0; }
+    tag_signed "$_plr" || { row todo motion "$_plr is not signed by a key in allowed-signers: spark-wallpaper not installed"; return 0; }
+    command -v curl >/dev/null 2>&1 || { row todo motion "curl is not installed: spark-wallpaper cannot be fetched (spark-shell on installs it)"; return 0; }
+    need motion "fetch spark-wallpaper for $_plr and check its sha256" || return 0
+    _plf=$TMP/spark-wallpaper
+    curl -fsSL --proto '=https,file' --proto-redir '=https' -o "$_plf" "$DIALOG_URL/$_plr/spark-wallpaper-$_plt" 2>/dev/null || { rm -f "$_plf"; row todo motion "could not fetch spark-wallpaper for $_plr -- spark-shell on desktop again"; return 0; }
+    [ "$(sha256_of "$_plf")" = "$_plw" ] || { rm -f "$_plf"; row todo motion "the spark-wallpaper fetched for $_plr is not the one the tree pins: not installed"; return 0; }
+    mkdir -p "$(dirname "$PLAYER_BIN")" && cp "$_plf" "$PLAYER_BIN.new" && chmod 755 "$PLAYER_BIN.new" && mv "$PLAYER_BIN.new" "$PLAYER_BIN"
+    row ok motion "spark-wallpaper installed for $_plr ($PLAYER_BIN), sha256 checked"
+}
 
 # --- spark's MCP list (spark 1.90, contract 16): desktop on puts each
 # provider on it, `spark mcp add NAME CLONE/spark-shell provide NAME`, so
@@ -9002,85 +9063,155 @@ glyphs_step() {   # glyphs_step signs|words -> the receipt, or the refusal and e
     config_set BAR_GLYPHS "$1" >/dev/null; BAR_GLYPHS=$1; export BAR_GLYPHS; bar_redraw
     echo "the bar in $1"
 }
-# A moving wallpaper (#180): a drawing may have a motion script, wallpaper/motion/NAME.py, that
-# writes one seamless loop of SVG frames at 30 a second in the drawing's own colors. With
-# WALLPAPER_MOTION on, the frames are drawn in the palette in use the way the still is (its roles
-# line), made into a video by mpv, kept in the cache by drawing and palette, and played on every
-# screen by mpvpaper, which pauses while the wallpaper is covered. The still stays under it: it
-# shows until the loop is ready and whenever the player is gone. The loop is made in the
-# background, never holding the step that asked for it. A player of yours (an mpvpaper playing a
-# file outside the cache) is never stopped. Off by default.
+# A moving wallpaper (#180, #187, #188). orbit's motion script (wallpaper/motion/NAME.py) writes one
+# seamless loop of SVG frames at 30 a second in the drawing's own colors, each recolored as its still
+# is; a scene's loop comes from make.py --raw, drawn in the palette in use for each screen's size and
+# shape (a pixel scene at its own grid, which the player scales up with square pixels). mpv makes
+# each loop a video, kept in the cache by wallpaper, palette and size; spark-wallpaper plays them,
+# one process, each screen its own loop, paused while the wallpaper is covered. The still stays
+# under it: it shows until the loops are ready and whenever the player is gone. Loops are made
+# only for the wallpaper on screen, in the background, never holding the step that asked. A player
+# of yours (one playing a file outside the cache) is never stopped. Off by default.
 MOTION_DIR=${XDG_CACHE_HOME:-$HOME/.cache}/spark-shell/motion
-MOTION_TOOLS="python3 rsvg-convert mpv mpvpaper"
-motion_names() { for _ms in "$REPO"/wallpaper/motion/*.py; do [ -f "$_ms" ] || continue; _ms=${_ms##*/}; printf '%s\n' "${_ms%.py}"; done; }   # -> the drawings that move, one a line
-motion_has() { wall_shipped "$1" && [ -f "$REPO/wallpaper/motion/$1.py" ]; }   # motion_has DRAWING -> 0 when it has a motion script
-motion_missing() { _mm=''; for _mt in $MOTION_TOOLS; do command -v "$_mt" >/dev/null 2>&1 || _mm="$_mm $_mt"; done; printf '%s' "${_mm# }"; }   # -> the tools a loop needs that are not here, or nothing
+motion_names() { for _ms in "$REPO"/wallpaper/motion/*.py; do [ -f "$_ms" ] || continue; _ms=${_ms##*/}; printf '%s\n' "${_ms%.py}"; done; printf '%s\n' $WALL_SCENES; }   # -> the wallpapers that move, one a line
+motion_has() { wall_scene "$1" || { wall_shipped "$1" && [ -f "$REPO/wallpaper/motion/$1.py" ]; }; }   # motion_has WALLPAPER -> 0 when it moves: a scene, or a drawing with a motion script
+motion_missing() {   # -> what a loop of the wallpaper in use needs that is not here, or nothing
+    _mm=''
+    command -v mpv >/dev/null 2>&1 || _mm="$_mm mpv"
+    if wall_scene "${WALLPAPER:-}"; then scene_ready || _mm="$_mm numpy"
+    else for _mt in python3 rsvg-convert; do command -v "$_mt" >/dev/null 2>&1 || _mm="$_mm $_mt"; done; fi
+    player_cmd >/dev/null || _mm="$_mm spark-wallpaper"
+    printf '%s' "${_mm# }"
+}
 motion_why() {   # -> why a moving wallpaper cannot play here, or nothing (after pm_detect)
     [ "$OS" != Darwin ] || { echo "the moving wallpaper is the Linux desktop's: macOS has its own"; return; }
     [ "$DESKTOP" = sway ] || { echo "the moving wallpaper is the desktop's: spark-shell on desktop first"; return; }
     _mw=$(motion_missing); [ -n "$_mw" ] || return 0
-    if pkg_listed mpvpaper; then echo "the moving wallpaper needs $_mw: spark-shell on desktop installs it"
-    else echo "the moving wallpaper needs mpvpaper, which this Linux family does not package: the wallpaper stays still"; fi
+    echo "the moving wallpaper needs $_mw: spark-shell on desktop installs it"
 }
-motion_want() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-motion.want"; }   # -> the file that names the loop the desktop should play now
-motion_ours() {   # -> the pids of the mpvpapers playing a loop of ours: their file is in the cache
-    if command -v pgrep >/dev/null 2>&1; then pgrep -u "$(id -u)" -f "mpvpaper .*$MOTION_DIR/" 2>/dev/null || :; return 0; fi
+motion_want() { printf '%s' "${XDG_RUNTIME_DIR:-$STATE_DIR}/spark-shell-motion.want"; }   # -> the file that holds the player's words for the loops the desktop should play now
+motion_ours() {   # -> the pids of the players playing a loop of ours (their file is in the cache): spark-wallpaper, or the mpvpaper of v0.119
+    if command -v pgrep >/dev/null 2>&1; then { pgrep -u "$(id -u)" -f "spark-wallpaper .*$MOTION_DIR/"; pgrep -u "$(id -u)" -f "mpvpaper .*$MOTION_DIR/"; } 2>/dev/null || :; return 0; fi
     # no pgrep (a bare container has none): the same from /proc, the command lines that name the cache,
-    # whose program is mpvpaper, run by you
+    # whose program is one of the two, run by you
     _muid=$(id -u)
     grep -l -s -F "$MOTION_DIR/" /proc/[0-9]*/cmdline 2>/dev/null | while IFS= read -r _mc; do
         _mpid=${_mc#/proc/}; _mpid=${_mpid%/cmdline}
-        { tr '\0' ' ' < "$_mc"; } 2>/dev/null | grep -Eq '(^|/)mpvpaper -' || continue   # a process gone meanwhile has no file
+        { tr '\0' ' ' < "$_mc"; } 2>/dev/null | grep -Eq '(^|/)(spark-wallpaper|mpvpaper) -' || continue   # a process gone meanwhile has no file
         [ "$(awk '/^Uid:/ { print $2; exit }' "/proc/$_mpid/status" 2>/dev/null)" != "$_muid" ] || echo "$_mpid"
     done || :
 }
-motion_stop() {   # the loop of ours gone, and nothing wanted: the still shows
+motion_stop() {   # the loops of ours gone, and nothing wanted: the still shows
     rm -f "$(motion_want)"
     for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done
 }
-motion_play() {   # motion_play FILE -- mpvpaper plays it on every screen, any other loop of ours stopped; its own session, so a closed terminal never takes it
+motion_play() {   # motion_play ARGS... -- spark-wallpaper plays them (--all FILE, or --screen NAME=FILE a screen, --scale nearest for a pixel scene), any other loop of ours stopped; its own session, so a closed terminal never takes it
+    _mpc=$(player_cmd) || return 0
     for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done
-    if command -v setsid >/dev/null 2>&1; then setsid mpvpaper -p -o "no-audio loop panscan=1.0" ALL "$1" </dev/null >/dev/null 2>&1 &
-    else ( trap '' HUP; exec mpvpaper -p -o "no-audio loop panscan=1.0" ALL "$1" ) </dev/null >/dev/null 2>&1 & fi
+    if command -v setsid >/dev/null 2>&1; then setsid "$_mpc" "$@" </dev/null >/dev/null 2>&1 &
+    else ( trap '' HUP; exec "$_mpc" "$@" ) </dev/null >/dev/null 2>&1 & fi
 }
-motion_make() {   # motion_make DRAWING SEDFILE OUT -- the loop: the script's frames, each drawn in the palette by SEDFILE (empty: as drawn), drawn by rsvg-convert on every core, made into OUT by mpv; the frames gone after, older loops of the drawing too
+motion_make() {   # motion_make DRAWING SEDFILE OUT -- a drawing's loop: the script's frames, each drawn in the palette by SEDFILE (empty: as drawn), drawn by rsvg-convert on every core, made into OUT by mpv; the frames gone after
     _md=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 1
     if python3 -I "$REPO/wallpaper/motion/$1.py" "$_md" >/dev/null 2>&1 && [ -f "$_md/f0000.svg" ] \
         && printf '%s\n' "$_md"/f*.svg | xargs -P "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" -n 32 sh -c 's=$1; shift; for f; do if [ -s "$s" ]; then sed -f "$s" "$f"; else cat "$f"; fi | rsvg-convert -o "${f%.svg}.png" || exit 1; done' _ "$2" \
         && mpv --no-config --really-quiet "mf://$_md/f*.png" --mf-fps=30 --vf=format=yuv420p --ovc=libx264 --ovcopts=crf=20,preset=medium --of=mp4 --o="$3.part" </dev/null >/dev/null 2>&1 \
         && [ -s "$3.part" ] && mv "$3.part" "$3"; then _mk=0; else _mk=1; rm -f "$3.part"; fi
     rm -rf "${_md:?}"
-    [ "$_mk" = 0 ] || return 1
-    for _mo in "$MOTION_DIR/$1"-*.mp4; do [ "$_mo" = "$3" ] || rm -f "$_mo"; done
+    return "$_mk"
 }
-MOTION_NOW=''   # what motion_follow did: playing (the loop plays), making (it plays once made), or nothing
-motion_follow() {   # the desktop's wallpaper moving as the settings say: the loop of the drawing in use, in the palette in use, playing (made first, in the background, when the cache has none); else none of ours
+scene_info() {   # scene_info SCENE WxH -> make.py's one line for the scene at that size (fps, kind, grid...), kept in the cache: it never changes for one make.py
+    _sik=$MOTION_DIR/info-$1-$2-$(cksum < "$SCENE_MAKE" | cut -d' ' -f1).json
+    [ -s "$_sik" ] || { mkdir -p "$MOTION_DIR" && python3 -I "$SCENE_MAKE" --info --scene "$1" --size "$2" > "$_sik.new" 2>/dev/null && mv "$_sik.new" "$_sik"; } || { rm -f "$_sik.new"; return 1; }
+    cat "$_sik"
+}
+scene_loop_size() {   # scene_loop_size SCENE WxH -> the size its loop is drawn at for a screen of that size: a pixel scene's grid, else the screen's own (even, for the video)
+    _sls=$(scene_info "$1" "$2" | jq -r 'if .kind == "pixel" and .grid != null then (.grid | if type == "array" then "\(.[0])x\(.[1])" else tostring end) else empty end' 2>/dev/null) || return 1
+    [ -n "$_sls" ] || { _slw=${2%x*}; _slh=${2#*x}; _sls="$((_slw - _slw % 2))x$((_slh - _slh % 2))"; }
+    printf '%s' "$_sls"
+}
+motion_make_scene() {   # motion_make_scene SCENE PALETTE_FILE WxH OUT -- a scene's loop at that size in that palette: make.py's raw frames made into OUT by mpv; a pixel scene's colors kept whole (4:4:4, lossless at its small grid)
+    _msf=$(scene_info "$1" "$3" | jq -r '.fps // empty' 2>/dev/null); [ -n "$_msf" ] || return 1
+    if [ "$(scene_info "$1" "$3" | jq -r '.kind // empty' 2>/dev/null)" = pixel ]; then _msv='--vf=format=yuv444p --ovcopts=crf=0,preset=medium'; else _msv='--vf=format=yuv420p --ovcopts=crf=18,preset=medium'; fi
+    _msd=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 1
+    # shellcheck disable=SC2086   # the encoder's words, split on purpose
+    { python3 -I "$SCENE_MAKE" --raw --scene "$1" --size "$3" --jobs "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" "$2" 2>/dev/null || : > "$_msd/failed"; } \
+        | mpv --no-config --really-quiet --demuxer=rawvideo --demuxer-rawvideo-w="${3%x*}" --demuxer-rawvideo-h="${3#*x}" --demuxer-rawvideo-mp-format=rgb24 --demuxer-rawvideo-fps="$_msf" - $_msv --ovc=libx264 --of=mp4 --o="$4.part" >/dev/null 2>&1 || : > "$_msd/failed"
+    if [ ! -e "$_msd/failed" ] && [ -s "$4.part" ]; then mv "$4.part" "$4"; _mk=0; else rm -f "$4.part"; _mk=1; fi
+    rm -rf "${_msd:?}"
+    return "$_mk"
+}
+motion_screens() {   # -> NAME<tab>WxH for each screen on: its size in pixels, as its surface has it
+    swaymsg -t get_outputs 2>/dev/null | jq -r '.[] | select(.active) | [.name, (((.rect.width * (.scale // 1)) | floor | tostring) + "x" + ((.rect.height * (.scale // 1)) | floor | tostring))] | @tsv' 2>/dev/null || :
+}
+scene_screens() {   # a scene's still on each portrait screen, drawn for that screen's shape (its own composition, never a crop of the landscape one), in the background; sway's output * bg covers the others
+    wall_scene "${WALLPAPER:-}" && _ssp=$(palette_file "${THEME:-}" 2>/dev/null) && scene_ready || return 0
+    _ssl=$(motion_screens | awk -F '\t' '{ split($2, s, "x"); if (s[2] + 0 > s[1] + 0) print }')
+    [ -n "$_ssl" ] || return 0
+    ( printf '%s\n' "$_ssl" | while IFS="$TAB" read -r _ssn _sss; do   # the list in hand: TMP goes with the step that started this
+          _ssf=$WALL_CACHE/$WALLPAPER-$THEME-$_sss.png
+          [ -f "$_ssf" ] || { mkdir_state "$WALL_CACHE" && scene_still "$WALLPAPER" "$_ssp" "$_sss" "$_ssf"; } || continue
+          swaymsg -- "output \"$_ssn\" bg \"$_ssf\" fill" >/dev/null 2>&1 || :
+      done ) </dev/null >/dev/null 2>&1 3>&- 4<&- &
+}
+MOTION_NOW=''   # what motion_follow did: playing (the loops play), making (they play once made), or nothing
+motion_follow() {   # the desktop's wallpaper moving as the settings say: the loops of the wallpaper in use, in the palette in use, a screen each, playing (made first, in the background, when the cache has none); else none of ours
     MOTION_NOW=''
     [ "$OS" != Darwin ] && desk_in_sway || return 0
+    scene_screens
     if [ "${WALLPAPER_MOTION:-off}" != on ] || ! motion_has "${WALLPAPER:-}" || [ -n "$(motion_missing)" ]; then motion_stop; return 0; fi
     _mj=$(mktemp -d "${TMPDIR:-/tmp}/spark-shell-motion.XXXXXX") || return 0
-    : > "$_mj/palette.sed"   # its own palette, or none: the frames as drawn
-    if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && ! wall_own "$WALLPAPER" && _mpf=$(palette_file "$THEME"); then wall_recolor_sed "$REPO/wallpaper/$WALLPAPER.svg" "$_mpf" > "$_mj/palette.sed"; fi
-    _msum=$(cat "$REPO/wallpaper/motion/$WALLPAPER.py" "$_mj/palette.sed" | cksum | cut -d' ' -f1)
-    _mfile=$MOTION_DIR/$WALLPAPER-$_msum.mp4
-    if [ "$(cat "$(motion_want)" 2>/dev/null)" = "$_mfile" ] && [ -n "$(motion_ours)" ]; then rm -rf "${_mj:?}"; MOTION_NOW=playing; return 0; fi   # playing already
-    mkdir -p "$MOTION_DIR" "$(dirname "$(motion_want)")" && printf '%s\n' "$_mfile" > "$(motion_want)"
-    if [ -f "$_mfile" ]; then rm -rf "${_mj:?}"; motion_play "$_mfile"; MOTION_NOW=playing; return 0; fi
-    MOTION_NOW=making
-    [ ! -f "$_mfile.making" ] || ! pid_running "$(cat "$_mfile.making" 2>/dev/null)" || { rm -rf "${_mj:?}"; return 0; }   # being made: it plays once ready, while it is still wanted
-    for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done   # the loop before is not this look's: the still until the new one is ready
-    if [ -n "$_mfile" ]; then
-        ( trap '' HUP; sh -c 'echo "$PPID"' > "$_mfile.making"
-          if motion_make "$WALLPAPER" "$_mj/palette.sed" "$_mfile" && [ "$(cat "$(motion_want)" 2>/dev/null)" = "$_mfile" ]; then motion_play "$_mfile"; fi
-          rm -f "$_mfile.making"; rm -rf "${_mj:?}" ) </dev/null >/dev/null 2>&1 3>&- 4<&- &
+    mkdir -p "$MOTION_DIR"
+    if wall_scene "$WALLPAPER"; then   # a loop a screen, at its size and shape: LOOP<tab>SIZE<tab>SCREEN a line
+        _mpf=$(palette_file "${THEME:-}" 2>/dev/null) || { rm -rf "${_mj:?}"; motion_stop; return 0; }   # a scene is drawn in a palette: with none, its still alone
+        cp "$_mpf" "$_mj/palette.env"
+        _msum=$(cat "$SCENE_MAKE" "$_mpf" | cksum | cut -d' ' -f1)
+        motion_screens | while IFS="$TAB" read -r _mn _ms; do
+            _msz=$(scene_loop_size "$WALLPAPER" "$_ms") || continue
+            printf '%s\t%s\t%s\n' "$MOTION_DIR/$WALLPAPER-$_msum-$_msz.mp4" "$_msz" "$_mn"
+        done > "$_mj/plan"
+        [ -s "$_mj/plan" ] || { rm -rf "${_mj:?}"; motion_stop; return 0; }
+        _mscale=smooth; [ "$(scene_info "$WALLPAPER" "$(motion_screens | awk -F '\t' 'NR == 1 { print $2 }')" | jq -r '.kind // empty' 2>/dev/null)" != pixel ] || _mscale=nearest
+        { printf -- '--scale\n%s\n' "$_mscale"; awk -F '\t' '{ print "--screen"; print $3 "=" $1 }' "$_mj/plan"; } > "$_mj/args"
+    else   # a drawing's one loop, every screen alike
+        : > "$_mj/palette.sed"   # its own palette, or none: the frames as drawn
+        if [ -n "${THEME:-}" ] && [ "$THEME" != none ] && ! wall_own "$WALLPAPER" && _mpf=$(palette_file "$THEME"); then wall_recolor_sed "$REPO/wallpaper/$WALLPAPER.svg" "$_mpf" > "$_mj/palette.sed"; fi
+        _msum=$(cat "$REPO/wallpaper/motion/$WALLPAPER.py" "$_mj/palette.sed" | cksum | cut -d' ' -f1)
+        printf '%s\tdrawing\t*\n' "$MOTION_DIR/$WALLPAPER-$_msum.mp4" > "$_mj/plan"
+        printf -- '--all\n%s\n' "$MOTION_DIR/$WALLPAPER-$_msum.mp4" > "$_mj/args"
     fi
+    if cmp -s "$_mj/args" "$(motion_want)" && [ -n "$(motion_ours)" ]; then rm -rf "${_mj:?}"; MOTION_NOW=playing; return 0; fi   # playing already
+    mkdir -p "$(dirname "$(motion_want)")" && cp "$_mj/args" "$(motion_want)"
+    if awk -F '\t' '{ print $1 }' "$_mj/plan" | while IFS= read -r _mf; do [ -f "$_mf" ] || exit 1; done; then
+        motion_play_want; rm -rf "${_mj:?}"; MOTION_NOW=playing; return 0
+    fi
+    MOTION_NOW=making
+    [ ! -f "$MOTION_DIR/making" ] || ! pid_running "$(cat "$MOTION_DIR/making" 2>/dev/null)" || { rm -rf "${_mj:?}"; return 0; }   # being made: the newest wanted plays once ready
+    for _mp in $(motion_ours); do kill "$_mp" 2>/dev/null || :; done   # the loops before are not this look's: the still until the new ones are ready
+    ( trap '' HUP; sh -c 'echo "$PPID"' > "$MOTION_DIR/making"
+      _mok=1
+      while IFS="$TAB" read -r _mf _msz _mn; do
+          [ ! -f "$_mf" ] || continue
+          if [ "$_msz" = drawing ]; then motion_make "$WALLPAPER" "$_mj/palette.sed" "$_mf" || _mok=0
+          else motion_make_scene "$WALLPAPER" "$_mj/palette.env" "$_msz" "$_mf" || _mok=0; fi
+      done < "$_mj/plan"
+      if [ "$_mok" = 1 ] && cmp -s "$_mj/args" "$(motion_want)"; then
+          motion_play_want
+          for _mo in "$MOTION_DIR/$WALLPAPER"-*.mp4; do grep -qF "$_mo" "$_mj/plan" || rm -f "$_mo"; done   # the wallpaper's loops of another palette or size
+      fi
+      rm -f "$MOTION_DIR/making"; rm -rf "${_mj:?}" ) </dev/null >/dev/null 2>&1 3>&- 4<&- &
+}
+motion_play_want() {   # the player started on the words the want file holds, one a line
+    [ -f "$(motion_want)" ] || return 0
+    set --; while IFS= read -r _ma; do set -- "$@" "$_ma"; done < "$(motion_want)"
+    motion_play "$@"
 }
 motion_row() {   # the moving wallpaper's row of on and on desktop, when it is on: what moves, or why it cannot here (#180)
     [ "${WALLPAPER_MOTION:-off}" = on ] || return 0
-    _mw=$(motion_why); if [ -z "$_mw" ]; then ok motion "the moving wallpaper is on: $(motion_names | paste -sd, - | sed 's/,/, /g') moves"; else skip motion "$_mw"; fi
+    _mw=$(motion_why); if [ -z "$_mw" ]; then ok motion "the moving wallpaper is on: $(motion_names | grep -c '') wallpapers move"; else skip motion "$_mw"; fi
 }
 theme_motion() {   # theme_motion [on|off] -- the moving wallpaper (#180): on, the drawings that have a motion move; off, every one is still
-    [ -n "${1:-}" ] || { echo "moving wallpaper $WALLPAPER_MOTION $PANEL_SEP on or off; $(motion_names | paste -sd, - | sed 's/,/, /g') moves"; return; }
+    [ -n "${1:-}" ] || { echo "moving wallpaper $WALLPAPER_MOTION $PANEL_SEP on or off; $(motion_names | grep -c '') wallpapers move"; return; }
     [ $# -eq 1 ] || refuse_in theme "motion takes one word: on or off"
     motion_step "$1" || exit 1
 }
@@ -9092,7 +9223,7 @@ motion_step() {   # motion_step on|off -> the receipt, or the refusal and exit 1
     motion_follow
     if [ "$1" = off ]; then echo "moving wallpaper off"
     elif motion_has "$WALLPAPER"; then case $MOTION_NOW in making) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves once its loop is made" ;; playing) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves" ;; *) echo "moving wallpaper on $PANEL_SEP $WALLPAPER moves on the desktop" ;; esac
-    else echo "moving wallpaper on $PANEL_SEP $WALLPAPER is still; $(motion_names | paste -sd, - | sed 's/,/, /g') moves"; fi
+    else echo "moving wallpaper on $PANEL_SEP $WALLPAPER is still; $(motion_names | grep -c '') wallpapers move"; fi
 }
 theme_workspaces() {   # theme_workspaces [symbols|numbers] -- the workspaces' names on the bar (#160): a symbol each, or their numbers
     [ -n "${1:-}" ] || { echo "the workspaces as $BAR_WORKSPACES $PANEL_SEP symbols or numbers"; return; }

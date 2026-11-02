@@ -17,8 +17,10 @@ xwayland enable
 # Give services started by the session bus the running desktop environment.
 exec @REPO@/spark-shell desktop portals
 output * bg @WALL_BG@
-# A moving wallpaper (#180), when the theme has it on: mpvpaper plays the drawing's loop over the still.
-exec @REPO@/spark-shell desktop --motion
+# A scene's still on each portrait screen in its own shape (#188), and the moving wallpaper when the
+# theme has it on: spark-wallpaper plays each screen's loop over the still (#187). At a reload too,
+# since a reload puts the line above back on every screen.
+exec_always @REPO@/spark-shell desktop --motion
 # The screens as spark-shell desktop screen set them (scale, mode, place, on or off)
 include "@SCREENS_CONF@"
 # A disconnected second screen must never leave the remaining one off, and no screen sits

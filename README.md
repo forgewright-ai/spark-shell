@@ -113,7 +113,7 @@ explain each part. If something fails, run `spark-shell check` and
     spark-shell theme transparency N  the windows' transparency; more, less
     spark-shell theme glyphs SET      the bar in signs or in words
     spark-shell theme workspaces X    the workspaces as symbols or numbers
-    spark-shell theme motion on|off   a moving wallpaper, where a drawing moves
+    spark-shell theme motion on|off   a moving wallpaper, where it can move
     spark-shell theme picture PATH    a theme from a picture of yours
     spark-shell theme "WORDS"         a theme from words, read by spark
     spark-shell font FACE SIZE|none   set the console font, or use its own
@@ -638,20 +638,29 @@ terminals as transparent as `theme transparency` says. No window is
 outlined in the accent; tabs and stacks show the focused title in the
 surface shade.
 
-Type `spark-shell theme motion on`. You get a moving wallpaper where the
-drawing has a motion: today orbit, a ringed planet with a moon that goes
-round it, stars that twinkle and drift, and a meteor once a loop. Its
-motion is a script, `wallpaper/motion/orbit.py`, that writes 90 seconds
-of frames in the drawing's own colors. spark-shell draws them in the
-palette in use, as it draws the still, makes them into a loop with mpv
-in the background, keeps it under `~/.cache/spark-shell/motion/`, and
-mpvpaper plays it on every screen, filled as the still is, paused while
-windows cover the wallpaper. The still shows until the loop is ready.
-Another palette makes a new loop; the one before goes. `off` stops it,
-and Settings > theme has the same switch; a saved theme keeps it. Off
-by default. Void and openSUSE package mpvpaper, and `on desktop`
-installs it with mpv; elsewhere the wallpaper stays still and `theme
-motion on` says why.
+Twelve scenes sit in the wallpaper list after the drawings: onsen, duck,
+reef, campfire, ufo, pigeons, garoa, horizon, watch, problem, continue
+and crossing. A scene is a wallpaper like a drawing (`spark-shell theme
+wallpaper watch`), in any palette: its picture is drawn in the palette
+in use by `wallpaper/animated/make.py`, with numpy, and a portrait
+screen gets its own composition, never a crop of the landscape one.
+
+Type `spark-shell theme motion on`, or use the Moving wallpaper switch
+in Settings > theme: the wallpaper moves where it can. A scene moves,
+and so does orbit, a ringed planet whose motion is a script,
+`wallpaper/motion/orbit.py`. spark-shell makes the loop for the
+wallpaper on screen only, in the palette in use, one for each screen's
+size and shape (a pixel scene at its own small grid, scaled up with
+square pixels), with mpv in the background, and keeps it under
+`~/.cache/spark-shell/motion/`. The still shows until the loop is ready.
+spark-wallpaper, spark-shell's own program, plays each screen's loop on
+the background layer through libmpv, decoded on the GPU where the VA-API
+driver is, and pauses a screen while windows or a full screen app cover
+it. `on desktop` installs spark-wallpaper for the release, checked
+against the sha256 the signed tag pins, as it does the dialog, with mpv,
+libmpv, the VA-API driver and numpy from the family's packages. Another
+palette makes new loops; the ones before go. `off` stops it, and a saved
+theme keeps the setting. Off by default.
 
 ## Pointer
 
@@ -1309,8 +1318,9 @@ one. The font stays, as the packages do: four files in
 copy, in `/usr/share/fonts/spark-shell/`.
 
 What leaves the machine: only what the package manager downloads and,
-for the desktop, the dialog's release file from GitHub, checked against
-the sha256 the signed tree pins, and Monaspace Neon's release file from
+for the desktop, the release files of the dialog and of spark-wallpaper
+from GitHub, checked against the sha256 the signed tree pins, and
+Monaspace Neon's release file from
 GitHub, checked against the sha256 spark-shell pins. A
 layout asks spark, which runs on this machine, with your words, the
 screen sizes and the app list; a want at the dialog asks it with your

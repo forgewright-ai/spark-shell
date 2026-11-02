@@ -1,0 +1,34 @@
+[package]
+name = "spark-wallpaper"
+version = "0.121.0"
+edition = "2021"
+rust-version = "1.98"
+license = "MIT"
+publish = false
+description = "The spark wallpaper player: a looping video on the background layer of each screen"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "spark-wallpaper"
+path = "src/main.rs"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+smithay-client-toolkit = { version = "0.21", default-features = false, features = ["calloop", "system"] }
+wayland-client = { version = "0.31", features = ["dlopen"] }
+wayland-backend = { version = "0.3", features = ["client_system", "dlopen"] }
+wayland-sys = { version = "0.31", features = ["client", "egl", "dlopen"] }
+wayland-egl = "0.32"
+khronos-egl = { version = "6", features = ["dynamic"] }
+libloading = "0.8"
+calloop = { version = "0.14", features = ["signals"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+debug = false
+incremental = false
