@@ -6707,7 +6707,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -6859,8 +6859,6 @@ tool_spec() {
         files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=ifo _tt='files browse PATH' _td='Open a folder in the system file manager, for anything beyond the steps here. path is a row'"'"'s own path, exactly as written.' ;;
         files_open)        _ts=files _ta=open _tp=path _tk=path _th=ifo _tt='files open PATH' _td='Open a file with the app that opens its kind. path is a row'"'"'s own path, exactly as written.' ;;
         files_show)        _ts=files _ta=show _tp=path _tk=path _th=rif _tt='files show PATH' _td='The first lines of a text file. path is a row'"'"'s own path, exactly as written.' ;;
-        files_play)        _ts=files _ta=play _tp=path _tk=path _te='at:seconds' _th='' _tt='files play PATH' _td='Play a sound here, with no window, from at seconds (the start when none), until it ends or files stop. path is a row'"'"'s own path, exactly as written.' ;;
-        files_stop)        _ts=files _ta=stop _th=i _tt='files stop' _td='Stop the sound files play started.' ;;
         files_attach)      _ts=files _ta=attach _tp=path _tk=path _th=rif _tt='files attach PATH' _td='A text file to ask spark about, with the next words. path is a row'"'"'s own path, exactly as written.' ;;
         files_reveal)      _ts=files _ta=reveal _tp=path _tk=path _th=ifo _tt='files reveal PATH' _td='Show a file or folder in the system file manager, its folder opened. path is a row'"'"'s own path, exactly as written.' ;;
         files_rename)      _ts=files _ta=rename _tp=path _tk=path _te='name:filename' _th='' _tt='files rename PATH' _td='Give a file or folder a new name, in its folder. path is a row'"'"'s own path, exactly as written; name the new name alone, no folder in it. Undo puts the old name back.' ;;
@@ -6912,8 +6910,8 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
                 else {type: "string", minLength: 1, maxLength: 256} end) + (if $w == "" then {} else {description: $w} end))} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)
-              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} elif .[1] == "filename" then {type: "string", minLength: 1, maxLength: 255, description: "one name, no slash"} elif .[1] == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"} elif .[1] == "seconds" then {type: "number", minimum: 0, maximum: 86400, description: "where to start, in seconds"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
-            required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text" and .[1] != "seconds") | .[0]]), additionalProperties: false},
+              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} elif .[1] == "filename" then {type: "string", minLength: 1, maxLength: 255, description: "one name, no slash"} elif .[1] == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
+            required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text") | .[0]]), additionalProperties: false},
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"}, open: {type: "string"}, rows: {type: "object"},
             effect: {type: "object", properties: {kind: {type: "string"}, operation: {type: "string"}, id: {type: "string"}, title: {type: "string"}, localTime: {type: "string"}, level: {type: "integer"}, muted: {type: "boolean"}}, required: ["kind", "operation", "id", "title"], additionalProperties: false},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
@@ -7142,7 +7140,7 @@ provide_main() {   # provide_main SECTION -- serve it until stdin ends
     exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in; whatever a step prints goes to stderr
     WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; CLIENT_PAIRING=''; : > "$PROOTS"
     REM_DELETED=$TMP/deleted   # a reminder deleted here is kept until the provider ends: its undo (#111)
-    trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; files_stop; files_sound_stop; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
+    trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
     trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # a signal ends a provider through the EXIT trap: the watcher, the reader and the temp folder go (#37)
     mkfifo "$TMP/in"
     ( provide_input ) <&6 5>"$TMP/in" 3>&- & READER=$!
@@ -7335,8 +7333,8 @@ EOF
         if type != "object" then "arguments are an object"
         elif (keys - [$p, $q] - $xk - [""]) != [] then "no argument " + ((keys - [$p, $q] - $xk)[0])
         elif $p != "" and (has($p) | not) then "missing " + $p
-        elif ([$xs[] | select(.[1] != "text" and .[1] != "seconds") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text" and .[1] != "seconds") | . as $e | select(($a | has($e[0])) | not)][0][0])
-        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
+        elif ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text") | . as $e | select(($a | has($e[0])) | not)][0][0])
+        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
         elif any($xs[]; . as $e | .[1] == "filename" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | length) < 1 or ($a[$e[0]] | length) > 255 or ($a[$e[0]] | test("[\u0000-\u001f\u007f/]")))) then "name is one name, no slash, 255 characters at most"
         elif any($xs[]; . as $e | .[1] == "path" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | startswith("/") | not) or ($a[$e[0]] | length) > 4096 or ($a[$e[0]] | test("[\u0000-\u001f\u007f]")))) then "to is a whole path, plain text"
         elif ([$xs[] | select(.[1] == "text" or .[1] == "name") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text" or .[1] == "name") | .[0]][0]) + " is plain text, 40 characters at most"
@@ -7344,7 +7342,6 @@ EOF
         elif any($xs[]; . as $e | .[1] == "scale" and (if ($a[$e[0]] | type) != "string" then true else ($a[$e[0]] | length) > 16 or ($a[$e[0]] | test("^[0-9]+([.][0-9]+)?$") | not) or (($a[$e[0]] | tonumber? // 0) <= 0) end)) then "scale is a positive decimal"
         elif any($xs[]; . as $e | .[1] == "mode" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$") | not))) then "mode is WIDTHxHEIGHT or WIDTHxHEIGHT@REFRESHHz"
         elif any($xs[]; . as $e | .[1] == "net" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9.,:/-]{1,80}$") | not))) then "network values are addresses, none or auto"
-        elif any($xs[]; . as $e | .[1] == "seconds" and ($a | has($e[0])) and (($a[$e[0]] | type) != "number" or $a[$e[0]] < 0 or $a[$e[0]] > 86400)) then "at is a number of seconds, 0 to 86400"
         elif any($xs[]; . as $e | .[1] == "port" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9_.:-]{1,80}$") | not))) then "other is a connected screen port"
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
@@ -7752,7 +7749,6 @@ FILES_TEXT_MAX=131072    # a text's preview, at most: past it the preview says w
 FILES_PAGE_PX=1600       # a preview's picture, its long side at most, in pixels: a page at full screen fits under it
 FILES_FULL_PX=4096       # the same drawn larger, once a zoom asks for more than it holds (the dialog decodes 4096 a side at most)
 FILES_TOOL_T=10          # a tool a preview runs on a file, at most this many seconds: a file is untrusted
-FILES_SOUND_T=300        # a sound's waveform, drawn aside: at most this many seconds (a long recording is read whole) (#124)
 # The kinds a preview knows (#120), by a file's type: a line each, the kind, then its types.
 FILES_KINDS='markdown md markdown
 json json
@@ -7763,7 +7759,6 @@ pdf pdf
 sound mp3 wav flac ogg oga opus m4a aac aif aiff aifc ac3 eac3 dts caf mka wv
 video mp4 m4v mov webm mkv avi mpg mpeg mts m2ts wmv ogv mxf 3gp
 office docx pptx xlsx odt odp ods'
-FILES_WAVE_PX=160        # a sound's waveform, its height in pixels over the spectrogram (512)
 MPV_SAFE='--no-config --no-ytdl --load-scripts=no --demuxer-lavf-o=protocol_whitelist=file'   # mpv on a file: no config of its own, no scripts, no network
 files_kind() {   # files_kind PATH -> its kind (FILES_KINDS); text for another type file calls text; else other
     _fke=$(printf '%s' "${1##*/}" | sed -n 's/.*\.\([A-Za-z0-9]*\)$/\1/p' | tr 'A-Z' 'a-z')
@@ -7772,8 +7767,7 @@ files_kind() {   # files_kind PATH -> its kind (FILES_KINDS); text for another t
     elif command -v file >/dev/null 2>&1 && file -b --mime-type -- "$1" 2>/dev/null | grep -q '^text/'; then echo text
     else echo other; fi
 }
-files_tool() {   # files_tool CMD... -- CMD, stopped after FILES_TOOL_T seconds where timeout is here; at an idle priority under FILES_IDLE (the small pictures, #123)
-    if [ -n "${FILES_IDLE:-}" ]; then set -- nice -n 19 "$@"; ! command -v ionice >/dev/null 2>&1 || set -- ionice -c 3 "$@"; fi
+files_tool() {   # files_tool CMD... -- CMD, stopped after FILES_TOOL_T seconds where timeout is here
     if command -v timeout >/dev/null 2>&1; then timeout "$FILES_TOOL_T" "$@"; else "$@"; fi
 }
 files_say() { jq -cn --arg s "$1" '{say: $s}' > "$TMP/page.json"; }   # files_say WORDS -- page.json: no preview, and why
@@ -7879,7 +7873,7 @@ files_folder_page() {   # files_folder_page PATH -> a folder's page (#169): how 
         ($n | split("\n") | map(select(. != ""))) as $new
         | {title: $t, lines: ([$t, $h] + (if ($new | length) > 0 then ["", "newest"] + ($new | map("   " + .)) else [] end)), bold: [0, 3], facts: [$w]}'
 }
-files_page() {   # files_page PATH PAGE [full] -> the preview's page of PATH (#120): its name, its facts, then its lines, a picture (full: drawn larger, for a zoom), a sound, or why there is none; false when PATH does not hold to the lines
+files_page() {   # files_page PATH PAGE [full] -> the preview's page of PATH (#120): its name, its facts, then its lines, a picture (full: drawn larger, for a zoom), or why there is none; false when PATH does not hold to the lines
     if _fp=$(files_ok "$1" dir); then files_folder_page "$_fp"; return; fi   # a folder: what it holds (#169)
     _fp=$(files_ok "$1" file) || return 1
     _fpg=${2:-1}; case $_fpg in ''|*[!0-9]*) _fpg=1 ;; esac; [ "$_fpg" -ge 1 ] || _fpg=1
@@ -7974,34 +7968,8 @@ audio_bits() {   # audio_bits FILE -> the bits of a FLAC's, a WAV's or an AIFF's
                     if (id(o) == "COMM") { print be(o + 14, 2); exit } }
         }'
 }
-files_sound_draw() {   # files_sound_draw PATH BASE -- BASE-sound.png, the waveform over the spectrogram, drawn aside by mpv (one at a time: another sound's stops the last), waited for a moment so a short sound's comes with its page (#124)
-    if [ -f "$TMP/sound.job" ]; then
-        read -r _fsj _fsb < "$TMP/sound.job"
-        if [ "$_fsb" = "$2" ] && kill -0 "$_fsj" 2>/dev/null; then files_sound_wait "$2"; return 0; fi
-        files_sound_stop
-    fi
-    (
-        FILES_IDLE=1; FILES_TOOL_T=$FILES_SOUND_T; _fsd=$(mktemp -d) || exit 0
-        # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
-        files_tool mpv $MPV_SAFE --untimed --really-quiet --ao=null --vo=image --vo-image-format=png --vo-image-outdir="$_fsd" \
-            --lavfi-complex="[aid1]asplit[a][b];[a]showwavespic=s=1600x${FILES_WAVE_PX}:split_channels=0:colors=white:scale=sqrt[w];[b]showspectrumpic=s=1600x512:legend=0:fscale=log:scale=log[s];[w][s]vstack=inputs=2[vo]" \
-            -- "$1" </dev/null >/dev/null 2>&1 &
-        echo "$!" > "$2-sound.pid"; wait "$!"
-        mv "$_fsd/00000001.png" "$2-sound.png.new" 2>/dev/null && mv "$2-sound.png.new" "$2-sound.png"   # whole or not there: the dialog reads it as it comes
-        rm -rf "$_fsd" "$2-sound.pid"
-    ) </dev/null >/dev/null 2>&1 &
-    echo "$! $2" > "$TMP/sound.job"
-    files_sound_wait "$2"
-}
-files_sound_wait() { _fsw=0; while [ "$_fsw" -lt 15 ] && [ ! -f "$1-sound.png" ]; do sleep 0.1; _fsw=$((_fsw + 1)); done; }   # files_sound_wait BASE -- a moment, 1.5 s: a short sound's picture comes with its page
-files_sound_stop() {   # the waveform being drawn aside, stopped (another sound's is wanted, or the provider ends)
-    [ -f "$TMP/sound.job" ] || return 0
-    read -r _fsj _fsb < "$TMP/sound.job"
-    [ ! -f "$_fsb-sound.pid" ] || kill "$(cat "$_fsb-sound.pid")" 2>/dev/null || :
-    kill "$_fsj" 2>/dev/null || :; rm -f "$TMP/sound.job"
-}
 files_time() { awk -v s="$1" 'BEGIN { s = int(s + 0.5); h = int(s / 3600); m = int(s % 3600 / 60); if (h > 0) printf "%d:%02d:%02d", h, m, s % 60; else printf "%d:%02d", m, s % 60 }'; }   # files_time SECONDS -> 3:45, 1:02:03
-files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.json: a sound's tags, its waveform over its spectrogram (drawn once, whole, by mpv), what an audio engineer asks first (rate, bits, channels, format, the bitrate of a lossy one), Space plays it here; a video's frame, PX wide at most, its length and size, Enter opens it in its app
+files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.json: a sound's tags, its length, what an audio engineer asks first (rate, bits, channels, format, the bitrate of a lossy one), Enter opens it in its app; a video's frame, PX wide at most, its length and size, Enter opens it in its app
     command -v mpv >/dev/null 2>&1 || { files_say "No preview: mpv is not installed. Enter opens it."; return 0; }
     # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
     _fmf=$(files_tool mpv $MPV_SAFE --untimed --vo=null --ao=null --length=0.05 --msg-level=all=no,term-msg=info \
@@ -8009,7 +7977,6 @@ files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.jso
     [ -n "$_fmf" ] || { files_say "No preview: mpv could not read this file. Enter opens it."; return 0; }
     printf '%s\n' "$_fmf" | tr "$US" '\n' > "$TMP/page.media"
     { read -r _fms; read -r _fmw; read -r _fmh; read -r _fmr; read -r _fmc; read -r _fmb; read -r _fmk; } < "$TMP/page.media"
-    _fma=$(jq -cn --arg p "$1" '{path: $p}')
     if [ "$2" = video ]; then
         files_time "${_fms:-0}" >> "$TMP/page.lead"; echo >> "$TMP/page.lead"
         _fmx=${4:-$FILES_PAGE_PX}; _fmz=null; _fmu=true
@@ -8033,7 +8000,9 @@ files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.jso
         jq -cn --arg p "$3.png" --argjson z "$_fmz" --argjson f "$_fmu" '{picture: $p, full: $f} + (if $z == null then {} else {size: $z} end)' > "$TMP/page.json"
         return 0
     fi
-    # what an audio engineer asks first: the rate, the bits of a lossless one, the channels, the format, a lossy one's bitrate
+    # its length, then what an audio engineer asks first: the rate, the bits of a lossless one, the channels, the format, a
+    # lossy one's bitrate; nothing plays it here (#196)
+    files_time "${_fms:-0}" >> "$TMP/page.lead"; echo >> "$TMP/page.lead"
     [ -z "$_fmr" ] || awk -v r="$_fmr" 'BEGIN { k = r / 1000; if (k == int(k)) printf "%d kHz\n", k; else printf "%.1f kHz\n", k }' >> "$TMP/page.lead"
     case $_fmk in mp3|mp2|aac|opus|vorbis|wmav2|ac3|eac3|dca) _fml=lossy ;; *) _fml='' ;; esac
     [ -n "$_fml" ] || case $_fmb in u8*) echo '8 bit' ;; s16*) echo '16 bit' ;; s24*) echo '24 bit' ;;
@@ -8041,16 +8010,8 @@ files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.jso
     case $_fmc in 1) echo mono ;; 2) echo stereo ;; ''|0) ;; *) echo "$_fmc channels" ;; esac >> "$TMP/page.lead"
     case $_fmk in pcm_*) echo PCM ;; '') ;; *) printf '%s\n' "$_fmk" | tr 'a-z' 'A-Z' ;; esac >> "$TMP/page.lead"
     [ -z "$_fml" ] || awk -v b="$(wc -c < "$1")" -v s="${_fms:-0}" 'BEGIN { if (s > 0) printf "%d kbps\n", b * 8 / s / 1000 + 0.5 }' >> "$TMP/page.lead"
-    # the waveform over the spectrogram, one picture, the whole sound read once: drawn aside at an idle priority, as long as a
-    # long recording takes; the page answers at once, a short sound's picture with it, and the dialog draws the picture the
-    # moment it is there (#124)
-    [ -f "$3-sound.png" ] || files_sound_draw "$1" "$3"
-    _fmp=$3-sound.png
     sed -n '8p' "$TMP/page.media" > "$TMP/page.tags"; sed -n '9,10p' "$TMP/page.media" | awk 'NF { s = s (s == "" ? "" : " \302\267 ") $0 } END { if (s != "") print s }' >> "$TMP/page.tags"
-    jq -Rn --argjson a "$_fma" --argjson n "${_fms:-0}" --arg p "$_fmp" --argjson h "$FILES_WAVE_PX" '[inputs | select(. != "")] as $l
-        | {lines: $l, bold: (if ($l | length) > 0 then [0] else [] end), seconds: $n,
-           play: {name: "files_play", arguments: $a, said: "play"}, stop: {name: "files_stop", arguments: {}, said: "stop"}}
-          + (if $p == "" then {} else {sound: {picture: $p, wave: $h}} end)' < "$TMP/page.tags" > "$TMP/page.json"
+    jq -Rn '[inputs | select(. != "")] as $l | {lines: $l, bold: (if ($l | length) > 0 then [0] else [] end)}' < "$TMP/page.tags" > "$TMP/page.json"
 }
 files_page_office() {   # files_page_office PATH BASE -- page.json: an Office document's text, read by Python's own zip and XML readers (no LibreOffice); BASE.txt for spark
     command -v python3 >/dev/null 2>&1 || { files_say "No preview: python3 is not installed. Enter opens it."; return 0; }
@@ -8059,14 +8020,7 @@ files_page_office() {   # files_page_office PATH BASE -- page.json: an Office do
     jq -r '.lines[]' "$TMP/page.office" > "$2.txt"
     jq -c --arg a "$2.txt" '. + {attach: $a}' "$TMP/page.office" > "$TMP/page.json"
 }
-files_play() {   # files_play PATH [AT] -- a sound played here from AT seconds, no window, through mpv: the one playing before stops first
-    files_stop
-    # shellcheck disable=SC2086
-    mpv $MPV_SAFE --no-video --no-terminal --really-quiet --start="+${2:-0}" -- "$1" </dev/null >/dev/null 2>&1 &
-    echo "$!" > "$TMP/play.pid"
-}
 pid_running() { kill -0 "$1" 2>/dev/null && ! grep -qs '^State:[[:space:]]*Z' "/proc/$1/status"; }   # pid_running PID -- it runs; a zombie no one reaps (a container's first process may never) has ended (#172)
-files_stop() { [ ! -f "$TMP/play.pid" ] || { kill "$(cat "$TMP/play.pid")" 2>/dev/null || :; rm -f "$TMP/play.pid"; }; }   # the sound playing here, stopped; quiet when none plays
 provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one folder's, with your home's recent files at its top, its own steps at its end and the drives beside your home; a search's; false when the uri names no folder that holds to the lines
     _fu=${1:-spark-shell://files/rows}; _fhere=''; FILES_N=0; FILES_B=0; FILES_D=0
     [ ! -d "$FILES_THUMB_DIR" ] || rm -rf "$FILES_THUMB_DIR"   # the small pictures of v0.111 to v0.113 go: Space shows a file whole (#127)
@@ -8242,7 +8196,6 @@ files_open_with() {   # files_open_with ID PATH [--reveal] -- the path through t
 provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a file or a folder that holds to the four lines (the dialog's rows are the allowlist for a step the model plans; the lines hold for every step); a write answers with its undo
     _fa=$(printf '%s' "$3" | jq -r '.path // ""'); _fto=$(printf '%s' "$3" | jq -r '.to // ""'); _fnm=$(printf '%s' "$3" | jq -r '.name // ""'); _fws=$(printf '%s' "$3" | jq -r '.words // ""')
     case $2 in
-        files_stop) files_stop; files_result "$1" "stopped"; return 0 ;;
         files_empty) _fo=$(files_empty) || { provide_refuse "$1" "files: $_fo"; return 0; }; files_result "$1" "$_fo"; return 0 ;;   # for good: no undo (#130)
         files_find|files_say)
             _fk=${2#files_}; _fsw=$(printf '%s' "$_fws" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')
@@ -8277,17 +8230,13 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
             fi
             files_result "$1" "$_fnm made in $(files_home "${_fn%/*}")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"; return 0 ;;
         files_browse) _ff=$(files_ok "$_fa" dir) || { provide_refuse "$1" "files: that is not a folder in the folders given"; return 0; } ;;
-        files_open|files_show|files_attach|files_play) _ff=$(files_ok "$_fa" file) || { provide_refuse "$1" "files: that is not a file in the folders given"; return 0; } ;;
+        files_open|files_show|files_attach) _ff=$(files_ok "$_fa" file) || { provide_refuse "$1" "files: that is not a file in the folders given"; return 0; } ;;
         *) _ff=$(files_ok "$_fa" any) || { provide_refuse "$1" "files: that is not a file or a folder in the folders given"; return 0; } ;;
     esac
     _fname=$(printf '%s' "${_ff##*/}" | scrub_text)
     case $2 in files_rename|files_move|files_copy|files_trash) ! files_is_root "$_ff" || { provide_refuse "$1" "files: your home and a drive stay as they are"; return 0; } ;; esac
     case $2 in
         files_open) files_open_text "$1" "$_ff" || files_open_with "$1" "$_ff" ;;
-        files_play)
-            _fat=$(printf '%s' "$3" | jq -r '.at // 0 | if type == "number" and . >= 0 and . < 86400 then (. * 10 | floor) / 10 else 0 end')
-            [ "$(files_kind "$_ff")" = sound ] && command -v mpv >/dev/null 2>&1 || { provide_refuse "$1" "files: $_fname is no sound mpv plays here"; return 0; }
-            files_play "$_ff" "$_fat"; files_result "$1" "playing $_fname" ;;
         files_browse) files_open_with "$1" "$_ff" ;;
         files_reveal) files_open_with "$1" "$_ff" --reveal ;;
         files_show|files_attach)

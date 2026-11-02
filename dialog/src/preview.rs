@@ -1,12 +1,12 @@
 //! The preview (#120): one file of a list, as large as the content area allows. Up and down go
 //! through the list's files, left and right through the file's pages; Esc, or Space with nothing
-//! typed, goes back to the list, and Enter opens the file. A picture zooms, moves and turns; a sound
-//! plays with its waveform and its spectrum. The provider reads the file and answers a page; the
-//! dialog draws three shapes, lines, a picture or a sound, and never looks at a file's type.
+//! typed, goes back to the list, and Enter opens the file. A picture zooms, moves and turns. The
+//! provider reads the file and answers a page; the dialog draws two shapes, lines or a picture, and
+//! never looks at a file's type.
 
-use crate::model::{self, Call, Row};
+use crate::model::Row;
 use crate::scrub::scrub;
-use crate::sixel::{Image, Viewport};
+use crate::sixel::Viewport;
 use serde_json::Value;
 
 /// The lines one page brings, at most: a longer text says where its preview stops.
@@ -17,8 +17,6 @@ pub const FACTS_MAX: usize = 8;
 pub const STOPS: [u32; 10] = [25, 33, 50, 67, 100, 150, 200, 300, 400, 800];
 /// An arrow moves a zoomed picture by this share of the part shown.
 pub const PAN: f64 = 0.25;
-/// A sound's spectrum: this many bands, low to high.
-pub const BANDS: usize = 28;
 
 /// What a provider answers for a file: its name, its facts, and lines or a picture.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -42,28 +40,10 @@ pub struct Page {
     pub say: Option<String>,
     /// A text of the page spark can read, as a file the provider wrote: the attach path takes it.
     pub attach: Option<String>,
-    /// Space plays the file here: a sound.
-    pub play: Option<Call>,
-    /// What stops a sound playing here; leaving the file calls it.
-    pub stop: Option<Call>,
-    /// A sound's length in seconds: the key row says Play again once it has ended, and the waveform
-    /// knows where it is.
-    pub seconds: f64,
     /// A picture's size at 100 %: its own pixels, a PDF page's at 96 pixels an inch.
     pub size: Option<(u32, u32)>,
     /// The picture is the largest the provider draws: a zoom past it asks for nothing more.
     pub full: bool,
-    /// A sound: a PNG of its waveform over its spectrogram, and the waveform's height in it.
-    pub sound: Option<(String, u32)>,
-}
-
-/// A sound as the dialog draws it, read once from its picture: the waveform's loudness at each of
-/// its columns (0 to 1), the spectrum's bands at each column (0 to 255), and the spectrogram itself.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Sound {
-    pub wave: Vec<f32>,
-    pub bands: Vec<[u8; BANDS]>,
-    pub spectrogram: Image,
 }
 
 /// The preview's place: the provider, the list it came from (its files, in its order), the file
@@ -78,9 +58,6 @@ pub struct Preview {
     /// The page shown, from 1.
     pub page: usize,
     pub shown: Option<Page>,
-    /// When the sound started, while it plays here, and where it was in it then, in seconds.
-    pub playing: Option<std::time::Instant>,
-    pub played: f64,
     /// A picture's quarter turns, its zoom in percent (None fits it) and the point at the middle of
     /// the box, as a share of the picture turned.
     pub turn: u8,
@@ -91,16 +68,13 @@ pub struct Preview {
     /// The picture's box in pixels and the picture's own pixels, as main.rs last drew it.
     pub px: (u32, u32),
     pub src: (u32, u32),
-    /// The sound read from its picture (main.rs reads it once).
-    pub heard: Option<Sound>,
     /// The keys of the page last shown: the key row keeps them while the next file's page is on its way (#166).
     pub keys: Option<Keys>,
 }
 
-/// What a page's own keys need (#166): a player's, a picture's, and how many pages.
+/// What a page's own keys need (#166): a picture's, and how many pages.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Keys {
-    pub play: bool,
     pub picture: bool,
     pub pages: usize,
 }
@@ -108,7 +82,6 @@ pub struct Keys {
 impl Keys {
     pub fn of(pg: &Page) -> Keys {
         Keys {
-            play: pg.play.is_some(),
             picture: pg.picture.is_some(),
             pages: pg.pages,
         }
@@ -127,15 +100,12 @@ impl Preview {
             at,
             page: 1,
             shown: None,
-            playing: None,
-            played: 0.0,
             turn: 0,
             zoom: None,
             center: (0.5, 0.5),
             full: false,
             px: (0, 0),
             src: (0, 0),
-            heard: None,
             keys: None,
         })
     }
@@ -172,9 +142,6 @@ impl Preview {
         self.page = 1;
         self.keys = self.shown.as_ref().map(Keys::of).or(self.keys);
         self.shown = None;
-        self.playing = None;
-        self.played = 0.0;
-        self.heard = None;
         self.fit();
         self.turn = 0;
         self.full = false;
@@ -190,25 +157,6 @@ impl Preview {
         self.page = to as usize;
         self.fit();
         true
-    }
-
-    /// Where the sound is now, in seconds: where it started plus the time since, while it plays.
-    pub fn position(&self, now: std::time::Instant) -> f64 {
-        let len = self.shown.as_ref().map(|p| p.seconds).unwrap_or(0.0);
-        let at = self.played + self.playing.map(|t| now.duration_since(t).as_secs_f64()).unwrap_or(0.0);
-        if len > 0.0 {
-            at.min(len)
-        } else {
-            at
-        }
-    }
-
-    /// Whether the sound plays still: its length has not run out since it started.
-    pub fn plays(&self, now: std::time::Instant) -> bool {
-        match (self.playing, &self.shown) {
-            (Some(_), Some(p)) => p.seconds <= 0.0 || self.position(now) < p.seconds,
-            _ => false,
-        }
     }
 
     /// The picture's size at 100 %, turned; its own pixels where the provider gave none.
@@ -312,47 +260,6 @@ impl Preview {
     }
 }
 
-/// A sound read from its picture (the provider's waveform over its spectrogram, `wave` rows of it the
-/// waveform): the loudness of each column, the spectrum's bands at each column (low first), and the
-/// spectrogram for its picture.
-pub fn sound(img: &Image, wave: u32) -> Option<Sound> {
-    if wave == 0 || wave >= img.h || img.w == 0 {
-        return None;
-    }
-    let lit = |x: u32, y: u32| {
-        let p = img.pixel(x, y);
-        (p[0] as u32 + p[1] as u32 + p[2] as u32) / 3
-    };
-    // the waveform is drawn about its middle: a column's loudness is how far its ink reaches
-    let wave_at: Vec<f32> = (0..img.w)
-        .map(|x| {
-            let ink: Vec<u32> = (0..wave).filter(|y| lit(x, *y) > 64).collect();
-            match (ink.first(), ink.last()) {
-                (Some(a), Some(b)) => (b - a + 1) as f32 / wave as f32,
-                _ => 0.0,
-            }
-        })
-        .collect();
-    // the spectrogram, high at its top: its rows cut into BANDS, the low band last
-    let rows = img.h - wave;
-    let bands: Vec<[u8; BANDS]> = (0..img.w)
-        .map(|x| {
-            let mut b = [0u8; BANDS];
-            for (k, slot) in b.iter_mut().enumerate() {
-                let (y0, y1) = (rows * (BANDS - 1 - k) as u32 / BANDS as u32, rows * (BANDS - k) as u32 / BANDS as u32);
-                let n = (y1 - y0).max(1);
-                *slot = ((y0..y1).map(|y| lit(x, wave + y)).sum::<u32>() / n) as u8;
-            }
-            b
-        })
-        .collect();
-    Some(Sound {
-        wave: wave_at,
-        bands,
-        spectrogram: img.rows(wave, img.h),
-    })
-}
-
 /// A picture's path is held to a preview's shape: absolute, a PNG, no parent step, no control.
 fn png_path(v: Option<&Value>) -> Option<String> {
     let p = v?.as_str()?;
@@ -404,29 +311,19 @@ pub fn page(uri: &str, text: &str) -> Option<Page> {
         lines,
         say: str_of("say"),
         attach: attach(v.get("attach")),
-        play: v.get("play").and_then(model::call),
-        stop: v.get("stop").and_then(model::call),
         size: v
             .get("size")
             .and_then(Value::as_array)
             .and_then(|a| Some((a.first()?.as_u64()? as u32, a.get(1)?.as_u64()? as u32)))
             .filter(|(w, h)| *w > 0 && *h > 0 && *w <= 1 << 20 && *h <= 1 << 20),
         full: v.get("full").and_then(Value::as_bool).unwrap_or(false),
-        sound: v
-            .get("sound")
-            .and_then(|s| Some((png_path(s.get("picture"))?, s.get("wave")?.as_u64()? as u32))),
-        seconds: v
-            .get("seconds")
-            .and_then(Value::as_f64)
-            .filter(|s| s.is_finite())
-            .unwrap_or(0.0)
-            .clamp(0.0, 86_400.0),
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model;
 
     fn row(id: &str, page: Option<&str>) -> Row {
         let mut r = model::rows(&format!(r#"{{"title":"t","rows":[{{"id":"{}","text":"{}"}}]}}"#, id, id))
@@ -443,7 +340,7 @@ mod tests {
             "spark-shell://files/preview/x",
             r##"{"title":"notes\u001b[2J.md","facts":["2 kB","a fact far too long to be one, past forty cells","today"],
                "lines":["# one","two\u0007"],"bold":[0,9],"numbered":true,"picture":"/data/me/../etc/x.png",
-               "attach":"/data/me/.cache/p.txt","play":{"name":"files_play","arguments":{"path":"/data/me/a.mp3"}},"seconds":225}"##,
+               "attach":"/data/me/.cache/p.txt"}"##,
         )
         .unwrap();
         assert_eq!(p.title, "notes[2J.md");
@@ -452,8 +349,6 @@ mod tests {
         assert_eq!(p.bold, vec![0]);
         assert!(p.numbered && p.picture.is_none() && p.pages == 1);
         assert_eq!(p.attach.as_deref(), Some("/data/me/.cache/p.txt"));
-        assert_eq!(p.play.map(|c| c.name), Some("files_play".to_string()));
-        assert_eq!(p.seconds, 225.0);
         let q = page("u", r#"{"title":"r.pdf","picture":"/c/r-3.png","page":3,"pages":14,"attach":"/c/r.pdf"}"#).unwrap();
         assert_eq!((q.picture.as_deref(), q.page, q.pages, q.attach), (Some("/c/r-3.png"), 3, 14, None));
         assert!(page("u", "not json").is_none());
@@ -500,41 +395,5 @@ mod tests {
         // turned, the long side stands: 500 box pixels for its 1600 drawn, 4000 its own, 12.5 % again
         assert_eq!(v.percent(), Some(13));
         assert_eq!(v.size(), Some((3000.0, 4000.0)));
-    }
-
-    #[test]
-    fn a_sound_is_read_from_its_waveform_and_its_spectrogram() {
-        // 2 columns: a waveform 4 rows tall (the first column's ink 2 of them, the second none),
-        // then a spectrogram of 28 rows, bright at its bottom (the low band) in the first column
-        let mut px = vec![];
-        for y in 0..32u32 {
-            for x in 0..2u32 {
-                let on = (y < 4 && x == 0 && (1..3).contains(&y)) || (y >= 31 && x == 0);
-                px.extend(if on { [255u8, 255, 255, 255] } else { [0, 0, 0, 255] });
-            }
-        }
-        let mut raw = Vec::new();
-        {
-            let mut e = png::Encoder::new(&mut raw, 2, 32);
-            e.set_color(png::ColorType::Rgba);
-            e.set_depth(png::BitDepth::Eight);
-            e.write_header().unwrap().write_image_data(&px).unwrap();
-        }
-        let s = sound(&crate::sixel::decode(&raw).unwrap(), 4).unwrap();
-        assert_eq!(s.wave, vec![0.5, 0.0]);
-        assert_eq!((s.bands[0][0], s.bands[0][BANDS - 1], s.bands[1][0]), (255, 0, 0));
-        assert_eq!((s.spectrogram.w, s.spectrogram.h), (2, 28));
-    }
-
-    #[test]
-    fn a_sound_knows_where_it_is() {
-        let mut v = Preview::new(0, "~", &[row("a", Some("p://a"))], "a").unwrap();
-        v.shown = page("p://a", r#"{"seconds":10.5,"lines":["a"]}"#);
-        let t = std::time::Instant::now();
-        v.played = 4.0;
-        assert_eq!(v.position(t), 4.0);
-        v.playing = Some(t);
-        assert!(v.plays(t + std::time::Duration::from_secs(6)) && !v.plays(t + std::time::Duration::from_secs(7)));
-        assert_eq!(v.position(t + std::time::Duration::from_secs(60)), 10.5);
     }
 }

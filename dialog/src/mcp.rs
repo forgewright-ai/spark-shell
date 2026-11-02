@@ -70,8 +70,6 @@ pub enum Kind {
     Page,
     /// The rows a provider found for the words typed at Home: files by name, notes by what they say (#169).
     Hits,
-    /// A sound's play or stop in a preview: a key, not a turn (#120).
-    Quiet,
     /// A value set in place (#183): no turn, a refusal puts the value back.
     Set,
     Subscribe,

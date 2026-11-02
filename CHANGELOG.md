@@ -149,6 +149,13 @@ part lands in a pull request of its own.
   window with no border over the frame to play it, and full screen no
   longer trades the dialog's full screen for a floating window while
   it plays. The sway rules for that window (`spark-preview`) go.
+- Cut: playing a sound in the dialog. A sound's preview is its title,
+  its artist and album, its length, and its rate, bits, channels and
+  format; Enter opens it in its app. Space no longer plays it in the
+  dialog, the arrows and Home no longer seek, and no waveform, spectrum or
+  spectrogram is drawn, so mpv no longer reads a whole recording aside
+  for its picture. `files play` and `files stop` go from the files
+  provider's tools.
 
 ## v0.121
 

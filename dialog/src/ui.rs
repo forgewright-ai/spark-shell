@@ -166,8 +166,6 @@ pub struct Drawn {
     pub preview: Option<Picture>,
     /// A preview's text, the pages it takes at this size (#120).
     pub pages: usize,
-    /// A sound's waveform, its cells (x, y, w, h): a click there plays from that point.
-    pub wave: Option<(u16, u16, u16, u16)>,
     /// The reply row's Undo (#196): its cells (x0, x1, y), for a click.
     pub reply_undo: Option<(u16, u16, u16)>,
     /// A value row's arrows (#175): each one's cells (x0, x1, y), its pick, and whether it steps the value up.
@@ -177,7 +175,7 @@ pub struct Drawn {
 }
 
 /// A picture main.rs draws in sixel over cells the buffer skips: where (x, y, w, h in cells), its file,
-/// how it is shown, and whether it is a sound's spectrogram (the lower part of its file, in the palette).
+/// and how it is shown.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Picture {
     pub x: u16,
@@ -186,7 +184,6 @@ pub struct Picture {
     pub h: u16,
     pub file: String,
     pub view: Viewport,
-    pub spectrogram: bool,
 }
 
 /// The draft as the prompt shows it: its lines, each wrapped to `w` cells, and where the cursor is in
@@ -263,7 +260,6 @@ impl Drawn {
         if let Some(p) = self.preview.as_mut() {
             p.x += dx;
         }
-        self.wave = self.wave.map(|(x, y, w, h)| (x + dx, y, w, h));
         self.reply_undo = self.reply_undo.map(|(a, b, y)| (a + dx, b + dx, y));
         for st in &mut self.steps {
             st.0 += dx;
@@ -809,7 +805,6 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
                 h: rows,
                 file: png.clone(),
                 view: pv.viewport(),
-                spectrogram: false,
             },
         ));
         if pg.pages > 1 {
@@ -819,20 +814,6 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         if pv.turn > 0 {
             facts.push(format!("turned {}\u{b0}", pv.turn as u32 * 90));
         }
-    } else if let (Some((file, _)), Some(heard)) = (&pg.sound, &pv.heard) {
-        let now = std::time::Instant::now();
-        let at = pv.position(now);
-        facts.push(format!("{} of {}", clock_of(at), clock_of(pg.seconds)));
-        picture = sound(pen, pv, pg, heard, at, (x0, y, w, rows), file, drawn);
-    } else if pg.sound.is_some() {
-        // a long sound's waveform, still being drawn: its length now, the picture the moment it is there (#124)
-        facts.push(format!("{} of {}", clock_of(pv.position(std::time::Instant::now())), clock_of(pg.seconds)));
-        let said = pg.lines.len().min(rows.saturating_sub(3) as usize);
-        for (k, l) in pg.lines.iter().take(said).enumerate() {
-            pen.put(x0, y + k as u16, &cut_words(l, w as usize), pal.fg, pg.bold.contains(&k), false);
-        }
-        let t = "drawing the waveform";
-        pen.put(x0 + w.saturating_sub(cells(t) as u16) / 2, y + rows / 2, t, pal.muted, false, false);
     } else if let Some(say) = &pg.say {
         // no preview: why, in the middle of the area
         let t = cut_words(say, w as usize);
@@ -883,111 +864,6 @@ fn skip(pen: &mut Pen, p: Picture) -> Picture {
         }
     }
     p
-}
-
-/// Seconds as a clock: 3:45, 1:02:03.
-fn clock_of(s: f64) -> String {
-    let s = s.max(0.0) as u64;
-    if s >= 3600 {
-        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
-    } else {
-        format!("{}:{:02}", s / 60, s % 60)
-    }
-}
-
-/// The eighths of a cell, bottom up: a bar's top.
-const EIGHTHS: [&str; 9] = [
-    " ", "\u{2581}", "\u{2582}", "\u{2583}", "\u{2584}", "\u{2585}", "\u{2586}", "\u{2587}", "\u{2588}",
-];
-/// A sound's waveform, its spectrum and the rows between them, in cells.
-const WAVE_ROWS: u16 = 4;
-const BAND_ROWS: u16 = 6;
-
-/// A sound (#120): its lines (the title bold), its waveform (the part played in the accent, the rest
-/// muted), its spectrum at the time played (or the whole sound's, stopped), and its spectrogram where
-/// the area has room for it.
-#[allow(clippy::too_many_arguments)]
-fn sound(
-    pen: &mut Pen,
-    pv: &crate::preview::Preview,
-    pg: &crate::preview::Page,
-    heard: &crate::preview::Sound,
-    at: f64,
-    area: (u16, u16, u16, u16),
-    file: &str,
-    drawn: &mut Drawn,
-) -> Preview {
-    let pal = pen.pal.clone();
-    let (x0, mut y, w, rows) = area;
-    let end = y + rows;
-    for (i, l) in pg.lines.iter().enumerate() {
-        let bold = pg.bold.contains(&i);
-        pen.put(x0, y, &cut_words(l, w as usize), if bold || i == 0 { pal.fg } else { pal.muted }, bold, false);
-        y += 1;
-    }
-    y += 1;
-    // the waveform: each cell a column's loudest, bottom up in eighths; played in the accent
-    let n = heard.wave.len().max(1);
-    let played = if pg.seconds > 0.0 { (at / pg.seconds).clamp(0.0, 1.0) } else { 0.0 };
-    if y + WAVE_ROWS < end {
-        for c in 0..w as usize {
-            let (a, b) = (c * n / w as usize, ((c + 1) * n / w as usize).max(c * n / w as usize + 1).min(n));
-            let loud = heard.wave[a..b].iter().cloned().fold(0.0f32, f32::max);
-            let level = (loud * (WAVE_ROWS * 8) as f32).round().max(1.0) as u16;
-            let color = if (c as f64 + 0.5) / w as f64 <= played { pal.accent } else { pal.muted };
-            for r in 0..WAVE_ROWS {
-                let fill = level.saturating_sub(r * 8).min(8) as usize;
-                pen.put(x0 + c as u16, y + WAVE_ROWS - 1 - r, EIGHTHS[fill], color, false, false);
-            }
-        }
-        drawn.wave = Some((x0, y, w, WAVE_ROWS));
-        y += WAVE_ROWS + 1;
-    }
-    // the spectrum: its bands at the time played while it plays, else the whole sound's, low to high
-    if y + BAND_ROWS < end {
-        let bands: Vec<f32> = if pv.playing.is_some() {
-            // between the two columns the time played falls in, blended, so the bars move and never jump (#152)
-            let last = heard.bands.len().saturating_sub(1);
-            let pos = (played * n as f64).min(last as f64);
-            let (col, f) = (pos as usize, (pos - pos.floor()) as f32);
-            match (heard.bands.get(col), heard.bands.get((col + 1).min(last))) {
-                (Some(a), Some(b)) => a.iter().zip(b.iter()).map(|(x, y)| *x as f32 * (1.0 - f) + *y as f32 * f).collect(),
-                _ => vec![],
-            }
-        } else {
-            (0..crate::preview::BANDS)
-                .map(|k| heard.bands.iter().map(|b| b[k] as f32).sum::<f32>() / heard.bands.len().max(1) as f32)
-                .collect()
-        };
-        let step = (w as usize / crate::preview::BANDS).max(1);
-        let bar = step.saturating_sub(1).max(1);
-        let left = x0 + (w as usize - (step * crate::preview::BANDS).min(w as usize)) as u16 / 2;
-        for (k, v) in bands.iter().enumerate() {
-            let level = (v / 255.0 * (BAND_ROWS * 8) as f32).round() as u16;
-            for r in 0..BAND_ROWS {
-                let fill = level.saturating_sub(r * 8).min(8) as usize;
-                for dx in 0..bar {
-                    pen.put(left + (k * step + dx) as u16, y + BAND_ROWS - 1 - r, EIGHTHS[fill], pal.accent, false, false);
-                }
-            }
-        }
-        y += BAND_ROWS + 1;
-    }
-    // the spectrogram, where four rows or more are left
-    (y + 4 <= end).then(|| {
-        skip(
-            pen,
-            Picture {
-                x: x0,
-                y,
-                w,
-                h: end - y,
-                file: file.to_string(),
-                view: Viewport::FIT,
-                spectrogram: true,
-            },
-        )
-    })
 }
 
 fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> Vec<(u16, usize)> {

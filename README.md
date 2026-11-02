@@ -947,7 +947,7 @@ its first and its last row.
   to the previous and next of the list, left and right turn the page,
   Enter does what the row does (opens the file in its app, an app,
   connects a network), and Esc, or Space with nothing typed, goes back
-  with it lit (on a sound, Space plays it). The key row
+  with it lit. The key row
   starts with Back, what up and down move between (File, App, Note,
   Network, Device, Drive) and what Enter does, in the same places on
   every page, and a file's own keys follow; while the next page loads,
@@ -961,12 +961,9 @@ its first and its last row.
   Esc fits it again. 100 % is a picture's own pixels and a PDF page at 96
   pixels an inch, and past it a picture's pixels stay sharp; a turn is
   the preview's, never the file's. A sound shows its title, its artist
-  and album, its waveform (the part played in the accent; a click plays
-  from there), a spectrum that moves while it plays, its spectrogram, and
-  its rate, bits, channels and format; Space plays and pauses it, left
-  and right go 5 seconds back and ahead, Home to its start. A video
-  shows its frame, its length and its size, and Enter opens it in its
-  app; nothing plays over the dialog. A Word, PowerPoint, Excel or
+  and album, its length, and its rate, bits, channels and format; a
+  video shows its frame, its length and its size. Enter opens either in
+  its app; nothing plays in the dialog. A Word, PowerPoint, Excel or
   OpenDocument file shows its text, read by Python's own zip and XML
   readers (no LibreOffice). Anything else says that it
   has no preview. A PDF needs poppler (installed with the desktop); a
@@ -1229,8 +1226,7 @@ the file's text goes to spark as someone else's text, by its name
 alone; a file over 16 kB goes to `spark read`. The files section also
 shows a file as a page: `spark-shell://files/preview/{file}{?page,full}`
 answers its title and facts, then its lines, a picture (its size at 100
-%, and `full` when it is drawn whole), a sound (its waveform over its
-spectrogram, its length, play and stop), or why there is none.
+%, and `full` when it is drawn whole), or why there is none.
 
 spark's prompt line knows this desktop too. While it runs, spark-shell
 keeps two files in spark's machine folder, `~/.local/state/spark/machine/`.

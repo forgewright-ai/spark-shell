@@ -745,17 +745,13 @@ fn preview_app(name: &str, place: &str, page: serde_json::Value) -> App {
     a
 }
 
-/// The preview's card for the design system (#120): a Markdown note, a PDF page, a sound playing, a picture zoomed
-/// and turned. DS_PREVIEW_CARD names the file to write; DS_PAGE and DS_SPECTROGRAM are PNGs cut from the real
-/// window on the Linux machine (a page pdftoppm drew, a spectrogram mpv drew), the pictures sixel draws there;
-/// DS_SOUND is the waveform over the spectrogram mpv drew for that sound, the one the dialog reads.
+/// The preview's card for the design system (#120): a Markdown note, a PDF page, a sound, a picture zoomed and
+/// turned. DS_PREVIEW_CARD names the file to write; DS_PAGE is a PNG cut from the real window on the Linux machine
+/// (a page pdftoppm drew), the picture sixel draws there.
 #[test]
 fn design_system_preview_card() {
     let Ok(file) = std::env::var("DS_PREVIEW_CARD") else { return };
-    let (page_png, spectrogram) = (
-        data_png(&std::env::var("DS_PAGE").unwrap()),
-        data_png(&std::env::var("DS_SPECTROGRAM").unwrap()),
-    );
+    let page_png = data_png(&std::env::var("DS_PAGE").unwrap());
     let pal = common::palette("tokyonight-night");
     let draw = |a: &App| -> (Buffer, spark_dialog::ui::Drawn) {
         let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
@@ -791,25 +787,13 @@ fn design_system_preview_card() {
         "a PDF: the page drawn, page 1 of 477; left and right turn it",
         d.preview.as_ref().map(|p| (p, page_png.as_str())),
     )));
-    let mut a = preview_app(
+    let a = preview_app(
         "evening-sketch.flac",
         "~/music",
-        json!({"title": "evening-sketch.flac", "facts": ["44.1 kHz", "16 bit", "stereo", "FLAC", "866 KB"],
-        "lines": ["Evening sketch", "Ada \u{b7} Proofs"], "bold": [0], "seconds": 20.0, "sound": {"picture": "/run/p/3-sound.png", "wave": 160},
-        "play": {"name": "files_play", "arguments": {"path": "/data/me/evening-sketch.flac"}, "said": "play"}, "stop": {"name": "files_stop", "arguments": {}, "said": "stop"}}),
+        json!({"title": "evening-sketch.flac", "facts": ["0:20", "44.1 kHz", "16 bit", "stereo", "FLAC", "866 KB"],
+        "lines": ["Evening sketch", "Ada \u{b7} Proofs"], "bold": [0]}),
     );
-    let sound = std::fs::read(std::env::var("DS_SOUND").unwrap()).unwrap();
-    let pv = a.preview.as_mut().unwrap();
-    pv.heard = spark_dialog::preview::sound(&spark_dialog::sixel::decode(&sound).unwrap(), 160);
-    pv.played = 7.0;
-    pv.playing = Some(std::time::Instant::now());
-    let (b, d) = draw(&a);
-    frames.push(ds_frame(
-        &b,
-        &pal,
-        "a sound playing: its waveform, its spectrum now, its spectrogram",
-        d.preview.as_ref().map(|p| (p, spectrogram.as_str())),
-    ));
+    frames.push(ds_frame(&draw(&a).0, &pal, "a sound: its tags and its facts; Enter opens it in its app", None));
     let mut a = preview_app(
         "ghostscript.pdf",
         "~/docs",
@@ -826,7 +810,7 @@ fn design_system_preview_card() {
         "zoomed: the arrows and a drag move it, Esc fits it again; < and > turn it",
         d.preview.as_ref().map(|p| (p, page_png.as_str())),
     ));
-    let head = "<!-- @dsCard group=\"Preview\" height=1740 width=1420 subtitle=\"the preview from v0.113's own render, bound to the tokens: a note, a PDF page, a sound playing, a page zoomed; the pictures are the real window's on the Linux machine\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
+    let head = "<!-- @dsCard group=\"Preview\" height=1740 width=1420 subtitle=\"the preview from the dialog's own render, bound to the tokens: a note, a PDF page, a sound, a page zoomed; the pictures are the real window's on the Linux machine\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
     std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n<script></script>\n", head, frames.join(""))).unwrap();
 }
 

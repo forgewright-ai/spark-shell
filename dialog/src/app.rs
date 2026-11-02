@@ -370,9 +370,6 @@ pub struct Line {
     pub text: String,
 }
 
-/// How far Left and Right move a sound in the preview (#151).
-pub const SEEK_SECONDS: f64 = 5.0;
-
 /// A pick in progress: the view to go back to and how deep the stack was,
 /// the provider and tool the file goes to, and the types offered. A folder
 /// pick (#112) carries the step waiting for it, the argument it fills and
@@ -721,8 +718,6 @@ pub struct App {
     pub list_keys: bool,
     /// The preview shown (View::Preview): the list it came from, the file, its page (#120).
     pub preview: Option<Preview>,
-    /// A sound's play or stop on its way: its request and its call, audited when it answers.
-    quiet: Vec<(u64, usize, Call)>,
     /// A value being set in place (#183): the request, its provider, its row and the call.
     setting: Option<(u64, usize, String, Call)>,
     /// The values wanted while one was being set, the last one for each row only.
@@ -809,7 +804,6 @@ impl App {
             keep_lit: None,
             list_keys: false,
             preview: None,
-            quiet: vec![],
             setting: None,
             set_next: vec![],
             held: vec![],
@@ -1332,35 +1326,6 @@ impl App {
                     }
                 }
             }
-            Kind::Quiet => {
-                // a play and a stop may both be on their way: each answer finds its own, and both are audited (the review's H)
-                let Some(k) = self.quiet.iter().position(|(q, p, _)| *q == n && *p == idx) else {
-                    return;
-                };
-                let (_, p, call) = self.quiet.remove(k);
-                let refused = error.is_some() || result.as_ref().and_then(|r| r.get("isError")).and_then(Value::as_bool).unwrap_or(false);
-                let schema = self.providers[p]
-                    .tools
-                    .iter()
-                    .find(|t| t.name == call.name)
-                    .map(|t| t.schema.clone())
-                    .unwrap_or(Value::Null);
-                crate::audit::record(Who::Person.word(), &self.providers[p].label, &call.name, &schema, &call.arguments, refused);
-                if refused {
-                    if let Some(pv) = self.preview.as_mut() {
-                        pv.playing = None;
-                    }
-                    let said = result
-                        .as_ref()
-                        .and_then(|r| r.pointer("/content/0/text"))
-                        .and_then(Value::as_str)
-                        .map(scrub)
-                        .filter(|t| !t.is_empty())
-                        .or(error)
-                        .unwrap_or_else(|| "not played".into());
-                    self.refuse(&said);
-                }
-            }
             Kind::Call(_) => {
                 self.clear_pair(idx);
                 self.called(idx, n, result, error)
@@ -1391,12 +1356,6 @@ impl App {
     pub fn tick(&mut self, now: Instant) {
         if self.busy() {
             self.frame += 1;
-        }
-        // a sound that has played to its end: the key row says Play again
-        if let Some(pv) = self.preview.as_mut() {
-            if pv.playing.is_some() && !pv.plays(now) {
-                pv.playing = None;
-            }
         }
         self.follow_view(now);
         self.search_now(now);
@@ -1432,13 +1391,6 @@ impl App {
                 Kind::Folder => self.refuse("the list did not come in time: Esc goes back"),
                 Kind::Page => self.refuse("the preview did not come in time: Enter opens the file"),
                 Kind::Set => self.set_done(idx, id, true, "it did not answer in time", false),
-                Kind::Quiet => {
-                    self.quiet.retain(|(q, p, _)| !(*q == id && *p == idx));
-                    if let Some(pv) = self.preview.as_mut() {
-                        pv.playing = None;
-                    }
-                    self.refuse("the sound did not answer in time");
-                }
                 Kind::Init => self.lose(idx, "it did not answer"),
                 _ => {}
             }
@@ -2247,11 +2199,7 @@ impl App {
         // Space with nothing typed, or with the keys on the list: a lit file's preview, or back from one (#120, #163)
         if c == ' ' && (self.input.is_empty() || self.list_keys) && self.mode == Mode::Normal && self.chip_focus.is_none() && self.pending.is_none() {
             if self.view == View::Preview {
-                // a sound: Space plays and pauses, as a player's does (#151); else back to the list
-                if self.preview_plays() {
-                    return self.preview_play_pause();
-                }
-                return self.escape();
+                return self.escape(); // back to the list
             }
             if let Some(it) = self
                 .picks()
@@ -2394,9 +2342,6 @@ impl App {
             if self.zoomed() {
                 return self.preview_pan(-1.0, 0.0);
             }
-            if self.preview_plays() {
-                return self.preview_seek_by(-SEEK_SECONDS); // 5 s back (#151)
-            }
             return self.preview_page(-1);
         }
         if self.step_value(false) {
@@ -2410,13 +2355,7 @@ impl App {
 
     pub fn right(&mut self) {
         if self.preview_key() {
-            return if self.zoomed() {
-                self.preview_pan(1.0, 0.0)
-            } else if self.preview_plays() {
-                self.preview_seek_by(SEEK_SECONDS) // 5 s ahead (#151)
-            } else {
-                self.preview_page(1)
-            };
+            return if self.zoomed() { self.preview_pan(1.0, 0.0) } else { self.preview_page(1) };
         }
         if self.step_value(true) {
             return;
@@ -2433,9 +2372,6 @@ impl App {
     /// Home and End: in a list, its first and its last row (a folder of a thousand, #123); else the
     /// line's start and end.
     pub fn line_start(&mut self) {
-        if self.preview_key() && self.preview_plays() {
-            return self.preview_seek(0.0); // Home: a sound from its start (#151)
-        }
         if self.in_list && !self.preview_key() {
             self.keep_lit = None;
             self.sel = 0;
@@ -2569,7 +2505,6 @@ impl App {
         };
         // back from a preview or from a row's steps: that row lit again, so Space and the right arrow go on from it (#169)
         let lit = if self.view == View::Preview {
-            self.stop_sound();
             self.preview.take().map(|pv| pv.row().id.clone())
         } else if matches!(self.view, View::Steps(_)) {
             self.steps_row.as_ref().map(|r| r.id.clone())
@@ -2690,7 +2625,6 @@ impl App {
         if self.preview_key() {
             let Some(pv) = &self.preview else { return };
             let (p, row) = (pv.prov, pv.row().clone());
-            self.stop_sound();
             if let Some(call) = row.tool {
                 self.pick_step(p, call, &row.text);
             }
@@ -4852,7 +4786,6 @@ impl App {
 
     /// Up and down: the list's previous or next file.
     fn preview_file(&mut self, d: i32) {
-        self.stop_sound();
         if self.preview.as_mut().is_some_and(|pv| pv.step_file(d)) {
             self.preview_pages = 1;
             self.read_page();
@@ -4932,7 +4865,7 @@ impl App {
             self.preview_zoom(-d);
         } else if self.zoomed() {
             self.preview_pan(0.0, d as f64);
-        } else if !self.preview.as_ref().and_then(|pv| pv.shown.as_ref()).is_some_and(|pg| pg.sound.is_some()) {
+        } else {
             self.preview_page(d);
         }
     }
@@ -4944,109 +4877,15 @@ impl App {
         }
     }
 
-    /// The page shown plays: a sound (#151).
-    pub fn preview_plays(&self) -> bool {
-        self.preview.as_ref().and_then(|pv| pv.shown.as_ref()).is_some_and(|pg| pg.play.is_some())
-    }
-
-    /// A sound `d` seconds back or ahead of where it is, playing on where it played (#151).
-    fn preview_seek_by(&mut self, d: f64) {
-        let Some(pv) = &self.preview else { return };
-        let Some(pg) = pv.shown.as_ref() else { return };
-        let (Some(play), len) = (pg.play.clone(), pg.seconds) else { return };
-        let at = (pv.position(Instant::now()) + d).clamp(0.0, len.max(0.0));
-        if pv.playing.is_some() {
-            self.play_from(play, at);
-        } else if let Some(pv) = self.preview.as_mut() {
-            pv.played = at;
-        }
-    }
-
-    /// A sound: Space plays it from where it is, or pauses it there (#151).
-    fn preview_play_pause(&mut self) {
-        let Some(pv) = &self.preview else { return };
-        let Some(play) = pv.shown.as_ref().and_then(|pg| pg.play.clone()) else {
-            return;
-        };
-        if pv.playing.is_some() {
-            return self.stop_sound();
-        }
-        let len = pv.shown.as_ref().map(|pg| pg.seconds).unwrap_or(0.0);
-        let at = if len > 0.0 && pv.played >= len { 0.0 } else { pv.played };
-        self.play_from(play, at);
-    }
-
-    /// A sound from a share of its length: a click on its waveform, Home back to the start.
-    pub fn preview_seek(&mut self, share: f64) {
-        let Some(pv) = &self.preview else { return };
-        let Some(pg) = pv.shown.as_ref().filter(|pg| pg.sound.is_some()) else {
-            return;
-        };
-        let (Some(play), len) = (pg.play.clone(), pg.seconds) else { return };
-        let at = (share.clamp(0.0, 1.0) * len).max(0.0);
-        if pv.playing.is_some() {
-            self.play_from(play, at);
-        } else if let Some(pv) = self.preview.as_mut() {
-            pv.played = at;
-        }
-    }
-
-    fn play_from(&mut self, mut play: Call, at: f64) {
-        let Some(pv) = self.preview.as_mut() else { return };
-        let p = pv.prov;
-        play.arguments.insert("at".into(), json!((at * 10.0).round() / 10.0));
-        pv.played = at;
-        pv.playing = Some(Instant::now());
-        self.transport(p, play);
-    }
-
-    /// A sound's play or stop: a key of the preview's, as the Calendar's arrows are, so it says no turn
-    /// in the exchange; held to its tool's schema, audited as every step is, and a refusal said.
-    fn transport(&mut self, p: usize, call: Call) {
-        let step = Step {
-            prov: p,
-            call: call.clone(),
-            who: Who::Person,
-            line: String::new(),
-            typed: false,
-        };
-        if self.tool_of(&step).is_none() {
-            return self.refuse("this is not offered here now");
-        }
-        if let Err(e) = self.checked(&step) {
-            return self.refuse(&e);
-        }
-        let params = json!({"name": call.name, "arguments": Value::Object(call.arguments.clone())});
-        if let Some(n) = self.server(p).and_then(|s| s.request("tools/call", params, Kind::Quiet, mcp::T_CALL)) {
-            self.quiet.push((n, p, call));
-        }
-    }
-
-    /// A sound playing here stops where it is: leaving its file, leaving the preview, Right again.
-    fn stop_sound(&mut self) {
-        let now = Instant::now();
-        let Some(pv) = self.preview.as_mut() else { return };
-        if pv.playing.is_none() {
-            return;
-        }
-        pv.played = pv.position(now);
-        pv.playing = None;
-        let Some(stop) = pv.shown.as_ref().and_then(|pg| pg.stop.clone()) else {
-            return;
-        };
-        let p = pv.prov;
-        self.transport(p, stop);
-    }
-
     /// The preview's key row, nothing typed, each key whole where the row has room, in this order:
-    /// open, back (fit, zoomed), the files (move, zoomed), the pages or play, zoom, turn. The about
+    /// open, back (fit, zoomed), the files (move, zoomed), the pages, zoom, turn. The about
     /// lists them all.
     fn preview_hint(&self, pages: usize) -> Vec<(String, bool)> {
         let pv = self.preview.as_ref();
         let shown = pv.and_then(|pv| pv.shown.as_ref());
         // the shared keys first, in the same places on every file and in every state (loading, zoomed); the
         // file's own after them, so a click never lands on another key when the file or the state changes
-        // (#166). A word that changes keeps its width: Fit is Back's, Play is Pause's.
+        // (#166). A word that changes keeps its width: Fit is Back's.
         let zoomed = self.zoomed();
         // the page's own keys, or the last page's while the next file's is on its way: the row never
         // blinks between files (#166)
@@ -5060,11 +4899,6 @@ impl App {
         // what Enter does to the thing shown, in its tool's word (Open an app, Connect a network); nothing where it has no tool
         if let Some(t) = pv.and_then(|pv| pv.row().tool.as_ref()) {
             keys.push((verb_of(&t.name), "Enter"));
-        }
-        if !zoomed && own.is_some_and(|k| k.play) {
-            // a player's keys: Space plays and pauses, the arrows seek (#151)
-            keys.push((if pv.is_some_and(|pv| pv.playing.is_some()) { "Pause" } else { "Play " }, "Space"));
-            keys.push(("Seek", "\u{2190} \u{2192}"));
         }
         if !zoomed && own.is_some_and(|k| if k.picture { k.pages > 1 } else { pages > 1 }) {
             keys.push(("Page", "\u{2190} \u{2192}"));

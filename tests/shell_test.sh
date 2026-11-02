@@ -4452,8 +4452,8 @@ for _mf in "$REPO"/wallpaper/motion/*; do _mn=${_mf##*/}; case $_mn in *.py) wal
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 134 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 134 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 132 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 132 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -4868,8 +4868,7 @@ STUB
 cat > "$H/pvb/mpv" <<'STUB'
 #!/bin/sh
 echo "$*" >> "$HOME/mpv.log"; us=$(printf '\037')
-case $* in *--lavfi-complex=*) [ -z "${SLOW_WAVE:-}" ] || sleep 8 ;; esac   # a long sound's waveform (#124)
-for a; do case $a in --vo-image-outdir=*) cp "$REPO_PNG" "${a#*=}/00000001.png" ;; --no-video) exec sleep 41 ;; esac; done
+for a; do case $a in --vo-image-outdir=*) cp "$REPO_PNG" "${a#*=}/00000001.png" ;; esac; done
 for a; do f=$a; done
 case $* in *--term-playing-msg=*) case $f in
     *.flac) printf '20.5%s%s%s44100%s2%ss16%sflac%sEvening%sAda%sProofs\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
@@ -4898,9 +4897,9 @@ page 6 | jq -e '(.picture | endswith(".png")) and .full == true' >/dev/null && g
 page 7 | jq -e '.page == 2 and .pages == 3 and .size == [816, 1056] and .full == false and (.picture | endswith("-1600-2.png")) and (.attach | endswith("-2.txt"))' >/dev/null \
     && page 8 | jq -e '.full == true and (.picture | endswith("-4096-2.png"))' >/dev/null && grep -q -- '-f 2 -l 2 -png -scale-to 1600 ' "$F2/pdftoppm.log" && grep -q -- '-scale-to 4096 ' "$F2/pdftoppm.log" \
     && ok "provide files: a PDF's page drawn, page 2 of 3, its 100 % the page at 96 pixels an inch, its text for spark; full=1 draws it at 4096 for a zoom (#120)" || bad "preview pdf" "$(page 7) | $(page 8) | $(cat "$F2/pdftoppm.log" 2>&1)"
-page 9 | jq -e '.lines == ["Evening", "Ada \u00b7 Proofs"] and .seconds == 20.5 and .facts[0:4] == ["44.1 kHz", "16 bit", "stereo", "FLAC"] and .sound.wave == 160 and (.sound.picture | endswith("-sound.png")) and .play.name == "files_play" and .stop.name == "files_stop"' >/dev/null \
-    && grep -q -- '--untimed' "$F2/mpv.log" && grep -q -- 'showwavespic' "$F2/mpv.log" && grep -q -- '--demuxer-lavf-o=protocol_whitelist=file' "$F2/mpv.log" \
-    && ok "provide files: a sound's tags, its waveform over its spectrogram drawn once, what an engineer asks first (rate, bits, channels, format); mpv on local files only (#120)" || bad "preview sound" "$(page 9) | $(cat "$F2/mpv.log" 2>&1)"
+page 9 | jq -e '.lines == ["Evening", "Ada \u00b7 Proofs"] and .facts[0:5] == ["0:21", "44.1 kHz", "16 bit", "stereo", "FLAC"] and .sound == null and .play == null and .stop == null and .seconds == null' >/dev/null \
+    && grep -q -- '--untimed' "$F2/mpv.log" && ! grep -q -- 'showwavespic' "$F2/mpv.log" && grep -q -- '--demuxer-lavf-o=protocol_whitelist=file' "$F2/mpv.log" \
+    && ok "provide files: a sound's tags, its length and what an engineer asks first (rate, bits, channels, format), nothing drawn or played here; mpv on local files only (#120, #196)" || bad "preview sound" "$(page 9) | $(cat "$F2/mpv.log" 2>&1)"
 page 10 | jq -e '.facts[0:2] == ["0:05", "1280 \u00d7 720"] and .size == [1280, 720] and .play == null and .stop == null and (.picture | endswith(".png"))' >/dev/null \
     && ok "provide files: a video's frame, its length and size; nothing to play here, Enter opens it in its app (#120, #196)" || bad "preview video" "$(page 10)"
 _vf() { grep -F -- "--vo-image-outdir" "$F2/mpv.log" | grep -F -- "$1" | grep -o -- '--vf=[^ ]*' || :; }   # _vf FILE -> the scale its frame was drawn with
@@ -4908,7 +4907,7 @@ page 14 | jq -e '.facts[1] == "1080 \u00d7 1920" and .size == [1080, 1920]' >/de
     && [ "$(_vf phone.mov)" = '--vf=scale=w=1600:h=-2' ] && [ "$(_vf tall.mp4)" = '--vf=scale=w=-2:h=1600' ] && [ -z "$(_vf clip.webm)" ] \
     && ok "provide files: a phone's clip shows its size as it plays; a frame fits its long side in plain numbers, mpv's own syntax, and one smaller is drawn as it is (#120)" \
     || bad "preview video turned" "$(page 14) | $(page 15) | $(grep -F -- --vo-image-outdir "$F2/mpv.log" 2>&1)"
-page 16 | jq -e '.facts[0:4] == ["96 kHz", "24 bit", "stereo", "PCM"] and .sound != null' >/dev/null && page 17 | jq -e '.facts[0:2] == ["48 kHz", "24 bit"] and .sound != null' >/dev/null \
+page 16 | jq -e '.facts[1:5] == ["96 kHz", "24 bit", "stereo", "PCM"]' >/dev/null && page 17 | jq -e '.facts[1:3] == ["48 kHz", "24 bit"]' >/dev/null \
     && ok "provide files: a 24-bit WAV and an AIFF say 24 bit, read from their headers (mpv decodes them to 32); an AIFF is a sound (#120)" || bad "preview bits" "$(page 16) | $(page 17)"
 page 18 | jq -e '.say == "No preview: this PDF is locked by a password. Enter opens it."' >/dev/null && page 19 | jq -e '.size == [20, 40] and .facts[0] == "20 \u00d7 40"' >/dev/null \
     && page 20 | jq -e '.say == "No preview: nothing here draws this picture. Enter opens it."' >/dev/null && page 21 | jq -e '.size == [5400, 2700] and (.picture | endswith(".png"))' >/dev/null \
@@ -4925,15 +4924,9 @@ ans 21 | jq -r '.result.contents[0].text' | jq -e '[.rows[] | select(.kind != nu
     && [ "$(ls -l "$F2/.cache/spark-shell/files.names" | cut -c1-10)" = '-rw-------' ] && [ "$(ls -ld "$F2/.cache/spark-shell" | cut -c1-10)" = drwx------ ] \
     && ok "provide files: a search from Home finds the names under your home that hold the words, a letter missing or two swapped too, from a list in your cache yours alone; a folder has a page, what it holds and its newest (#169)" || bad "files match" "$(jq -c 'select(.id > 20) | .result.contents[0].text | fromjson? | [.rows[]? | .text, .lines?]' "$H/mcp.out")"
 rm -f "$F2/mpv.log"
-mcpv "$(call 2 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: 12.5}')")" "$(call 3 files_stop)" "$(fc2 4 files_play "$PVR/plan.md")" "$(call 5 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: -1}')")"
-[ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'playing song.flac' ] && grep -q -- '--no-video --no-terminal --really-quiet --start=+12.5 -- ' "$F2/mpv.log" && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = stopped ] \
-    && [ "$(ans 4 | jq -r '.result.content[0].text')" = 'files: plan.md is no sound mpv plays here' ] && [ "$(ans 5 | jq -r '.error.message')" = 'files_play: at is a number of seconds, 0 to 86400' ] \
-    && ! ps -A -o args= 2>/dev/null | grep -q '^sleep 41$' \
-    && ok "provide files: a sound plays here from a point and stops; anything else, or a point that is no time, is refused; nothing plays on past the provider (#120)" || bad "preview play" "$(ans 2) $(ans 3) $(ans 4) $(ans 5) $(cat "$F2/mpv.log" 2>&1)"
-# #124: a long sound's page answers at once, its waveform drawn aside (the stand-in takes 8 s over it; the page is in well before, a slow runner's start included), the picture named for the dialog to read when it comes
-_t0=$(date +%s); ( SLOW_WAVE=1 mcpv "$(pvr 2 "$PVR/song.flac")" ); _t1=$(date +%s)
-page 2 | jq -e '(.sound.picture | endswith("-sound.png")) and .sound.wave == 160 and .play.name == "files_play" and .seconds == 20.5' >/dev/null && [ $((_t1 - _t0)) -le 5 ] \
-    && ok "provide files: a long sound's page comes at once with its facts and Play, its waveform drawn aside at an idle priority and named for the dialog to draw when it is there (#124)" || bad "preview sound aside" "$((_t1 - _t0)) s $(page 2)"
+mcpv "$(call 2 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p}')")" "$(call 3 files_stop)"
+[ "$(ans 2 | jq -r '.error.message')" = 'no tool files_play in files' ] && [ "$(ans 3 | jq -r '.error.message')" = 'no tool files_stop in files' ] && ! grep -q -- '--no-video' "$F2/mpv.log" \
+    && ok "provide files: nothing plays a sound here; files play and files stop are no tools (#196)" || bad "preview play" "$(ans 2) $(ans 3) $(cat "$F2/mpv.log" 2>&1)"
 # #196: a video never plays over the dialog: where sway is, its page is its frame and its facts, sway is not asked
 # for the dialog's place, and the sway template has no rule for a player laid over it
 mkdir -p "$H/pvsw"

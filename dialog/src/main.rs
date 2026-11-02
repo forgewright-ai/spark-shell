@@ -15,7 +15,7 @@ use spark_dialog::app::{App, Config, Helper, Job, View};
 use spark_dialog::mcp::{Incoming, Server};
 use spark_dialog::palette::{slots_here, Palette};
 use spark_dialog::sixel::Image;
-use spark_dialog::{preview, sixel, ui};
+use spark_dialog::{sixel, ui};
 use std::io::Write;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -230,9 +230,6 @@ fn image<'a>(file: &str, cache: &'a mut Option<(String, std::time::SystemTime, I
     cache.as_ref().map(|(_, _, i)| i)
 }
 
-/// A sound's spectrogram in the palette: its file, the palette's ramp, its box, the picture.
-type Tinted = (String, [[u8; 3]; 4], (u32, u32), Image);
-
 /// A drag's pictures, this far apart at least (#129), and as far apart as the last one took to draw (#148).
 const DRAG_GAP: Duration = Duration::from_millis(40);
 /// A drag's pictures in fewer colors, so each is a small write the terminal draws at once; the whole one when the
@@ -286,11 +283,10 @@ fn opacity(level: u8, after: Duration) {
 fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) -> &'static str {
     let on = |(x, y, w, h): (u16, u16, u16, u16)| row >= y && row < y + h && col >= x && col < x + w;
     let span = |a: u16, b: u16, y: u16| row == y && col >= a && col < b;
-    // where a click acts: the x, a chip, a key, the waveform (it seeks), a row of the list
+    // where a click acts: the x, a chip, a key, a row of the list
     let clicks = (row == 0 && drawn.close.is_some_and(|(a, b)| span(a, b, 0)))
         || drawn.chips.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.keys.iter().any(|(a, b, y, _)| span(*a, *b, *y))
-        || drawn.wave.is_some_and(on)
         || drawn.reply_undo.is_some_and(|(a, b, y)| span(a, b, y));
     if dragging {
         "grabbing"
@@ -324,8 +320,6 @@ fn main() {
     };
     let mut pal = Palette::from_env();
     let slots = slots_here();
-    // the palette as colors, slots or not: a picture tinted in it needs them (a spectrogram, #156)
-    let mut colors = Palette::from(|k| std::env::var(k).ok());
     let labels: Vec<String> = a.providers.iter().map(|(l, _)| l.clone()).collect();
     let mut app = App::new(a.cfg, &labels);
     unsafe {
@@ -421,8 +415,6 @@ fn main() {
     let mut shown_preview: Option<ui::Picture> = None;
     let mut preview_tried = Instant::now();
     let mut images = None;
-    // a sound's spectrogram in the palette's colors, filling its box: made once a sound, a palette and a box
-    let mut tinted: Option<Tinted> = None;
     // a drag on a picture: where the pointer was
     let mut drag: Option<(u16, u16)> = None;
     let mut drawn = ui::Drawn::default();
@@ -436,9 +428,8 @@ fn main() {
         // in slots, the switch recolored this window with every other one, its slots and its ground (#33, #34);
         // elsewhere a theme step brings the new palette, and the window's ground with it
         if let Some(m) = app.palette.take() {
-            colors = Palette::from(|k| m.get(k).and_then(serde_json::Value::as_str).map(String::from));
             if !slots {
-                pal = colors.clone();
+                pal = Palette::from(|k| m.get(k).and_then(serde_json::Value::as_str).map(String::from));
                 if let ratatui::style::Color::Rgb(r, g, b) = pal.surface {
                     let _ = write!(out, "\x1b]11;#{:02x}{:02x}{:02x}\x1b\\", r, g, b);
                     let _ = out.flush();
@@ -470,12 +461,6 @@ fn main() {
         if dirty {
             if let Ok(sz) = term.size() {
                 app.size = (sz.width, sz.height);
-            }
-            // a sound's picture read once: its waveform and its spectrum, before it is drawn
-            if let Some(pv) = app.preview.as_mut().filter(|pv| pv.heard.is_none()) {
-                if let Some((file, wave)) = pv.shown.as_ref().and_then(|pg| pg.sound.clone()) {
-                    pv.heard = image(&file, &mut images).and_then(|i| preview::sound(i, wave));
-                }
             }
             let _ = out.write_all(b"\x1b[?2026h");
             let _ = out.flush();
@@ -523,19 +508,9 @@ fn main() {
                     let _ = out.write_all(b"\x1b[?2026h");
                     blank(&mut out, (p.x, p.y, p.w, p.h), term_color(pal.surface));
                     let (bw, bh) = (p.w as u32 * cw, p.h as u32 * chh);
-                    let img = if p.spectrogram {
-                        let ramp = colors.ramp().unwrap_or([[0x1f; 3], [0x7f; 3], [0x55, 0x55, 0xff], [0xaa; 3]]);
-                        let heard = app.preview.as_ref().and_then(|pv| pv.heard.as_ref());
-                        if let Some(h) = heard.filter(|_| !tinted.as_ref().is_some_and(|(f, r, b, _)| *f == p.file && *r == ramp && *b == (bw, bh))) {
-                            tinted = Some((p.file.clone(), ramp, (bw, bh), h.spectrogram.tinted(&ramp).resized(bw, bh)));
-                        }
-                        tinted.as_ref().filter(|(f, _, _, _)| *f == p.file).map(|(_, _, _, i)| i)
-                    } else {
-                        image(&p.file, &mut images)
-                    };
-                    if let Some(img) = img {
+                    if let Some(img) = image(&p.file, &mut images) {
                         // the preview's picture: its box and its pixels, for the zoom and the move (#120)
-                        if let Some(pv) = app.preview.as_mut().filter(|_| app.view == View::Preview && !p.spectrogram) {
+                        if let Some(pv) = app.preview.as_mut().filter(|_| app.view == View::Preview) {
                             if pv.px != (bw, bh) || pv.src != (img.w, img.h) {
                                 (pv.px, pv.src) = ((bw, bh), (img.w, img.h));
                                 again = true;
@@ -570,15 +545,7 @@ fn main() {
             break;
         }
         // a drag wakes for its next picture; else the next event
-        // a sound playing: its waveform and its spectrum drawn about thirty times a second, a steady motion (#152)
-        let play_due = (app.view == View::Preview && app.preview.as_ref().is_some_and(|pv| pv.playing.is_some())).then(|| Duration::from_millis(33));
-        let due = [
-            play_due,
-            drag_owed.then(|| DRAG_GAP.max(drag_cost).saturating_sub(drag_drawn.elapsed()).max(Duration::from_millis(1))),
-        ]
-        .into_iter()
-        .flatten()
-        .min();
+        let due = drag_owed.then(|| DRAG_GAP.max(drag_cost).saturating_sub(drag_drawn.elapsed()).max(Duration::from_millis(1)));
         let ev = match due {
             Some(d) => match rx.recv_timeout(d) {
                 Ok(ev) => ev,
@@ -611,13 +578,6 @@ fn main() {
                 }
                 // a picture not drawn yet (its small picture is still being made): tried again now and then
                 dirty |= drawn.preview.is_some() && shown_preview.is_none() && preview_tried.elapsed() >= Duration::from_millis(400);
-                // a sound playing: its waveform and its spectrum move
-                dirty |= app.preview.as_ref().is_some_and(|pv| pv.playing.is_some());
-                // a long sound's waveform drawn aside: read the moment it is there (#124)
-                dirty |= app
-                    .preview
-                    .as_ref()
-                    .is_some_and(|pv| pv.heard.is_none() && pv.shown.as_ref().is_some_and(|pg| pg.sound.is_some()));
             }
             Ev::Mcp(m) => {
                 dirty |= app.incoming(m);
@@ -685,11 +645,6 @@ fn main() {
                             app.chip(*c);
                         } else if let Some((_, _, _, key)) = drawn.keys.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.hint_key(*key);
-                        } else if let Some((x, _, w, _)) = drawn
-                            .wave
-                            .filter(|(x, y, w, h)| m.row >= *y && m.row < y + h && m.column >= *x && m.column < x + w)
-                        {
-                            app.preview_seek((m.column - x) as f64 / w as f64);
                         } else if drawn
                             .preview
                             .as_ref()

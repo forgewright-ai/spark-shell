@@ -1029,61 +1029,17 @@ fn a_pdf_is_its_page_drawn_and_page_n_of_m() {
     render(&preview_app("invoice-0412.pdf", "~/downloads", page, WIDTH, HEIGHT), "preview-pdf");
 }
 
-/// A sound's picture as mpv draws it: a waveform 16 rows tall (loud on the beat), then a spectrogram
-/// of 32 rows (bright low, dark high), 64 columns.
-fn sound_png() -> Vec<u8> {
-    let (w, wave, spec) = (64u32, 16u32, 32u32);
-    let mut px = vec![];
-    for y in 0..wave + spec {
-        for x in 0..w {
-            let on = if y < wave {
-                let reach = if x % 8 == 0 { 8 } else { 2 + (x % 8) / 3 };
-                (y as i32 - 8).unsigned_abs() < reach
-            } else {
-                (y - wave) * 2 > spec - (x % 16) && (x / 4) % 2 == 0
-            };
-            let v = if on { 230 } else { 20 };
-            px.extend([v, v, v, 255]);
-        }
-    }
-    let mut raw = Vec::new();
-    {
-        let mut e = png::Encoder::new(&mut raw, w, wave + spec);
-        e.set_color(png::ColorType::Rgba);
-        e.set_depth(png::BitDepth::Eight);
-        e.write_header().unwrap().write_image_data(&px).unwrap();
-    }
-    raw
+fn sound_app() -> App {
+    let page = json!({"title": "evening-sketch.flac", "facts": ["0:20", "44.1 kHz", "16 bit", "stereo", "FLAC", "866 KB", "today"],
+        "lines": ["Evening sketch", "Ada \u{b7} Proofs"], "bold": [0]});
+    preview_app("evening-sketch.flac", "~/music", page, WIDTH, HEIGHT)
 }
 
-fn sound_app(playing: bool) -> App {
-    let page = json!({"title": "evening-sketch.flac", "facts": ["44.1 kHz", "16 bit", "stereo", "FLAC", "866 KB", "today"],
-        "lines": ["Evening sketch", "Ada \u{b7} Proofs"], "bold": [0], "seconds": 20.0, "sound": {"picture": "/run/pages/7-sound.png", "wave": 16},
-        "play": {"name": "files_play", "arguments": {"path": "/data/me/evening-sketch.flac"}, "said": "play"}, "stop": {"name": "files_stop", "arguments": {}, "said": "stop"}});
-    let mut app = preview_app("evening-sketch.flac", "~/music", page, WIDTH, HEIGHT);
-    let pv = app.preview.as_mut().unwrap();
-    pv.heard = spark_dialog::preview::sound(&spark_dialog::sixel::decode(&sound_png()).unwrap(), 16);
-    pv.played = 7.0;
-    if playing {
-        pv.playing = Some(std::time::Instant::now() + std::time::Duration::from_secs(3600));
-    }
-    app
-}
-
-/// Stopped at 0:07 of 0:20: the waveform played to there in the accent, the whole sound's spectrum,
-/// the spectrogram's picture under them, what an audio engineer asks first in the facts.
+/// A sound is its tags and its facts (#196): its title bold, its artist and album, its length and what an audio
+/// engineer asks first at the foot; nothing plays it here.
 #[test]
-fn a_sound_is_its_waveform_its_spectrum_and_its_spectrogram() {
-    render(&sound_app(false), "preview-sound");
-}
-
-/// A long sound whose waveform is still being drawn aside (#124): its facts, its tags, its length, the words
-/// that say the picture comes; Play works meanwhile.
-#[test]
-fn a_long_sound_says_its_waveform_is_being_drawn() {
-    let mut app = sound_app(false);
-    app.preview.as_mut().unwrap().heard = None;
-    render(&app, "preview-sound-drawing");
+fn a_sound_is_its_tags_and_its_facts() {
+    render(&sound_app(), "preview-sound");
 }
 
 /// A video is its frame and its facts (#196): nothing plays over the dialog. The key row offers Open, no Play, and
@@ -1316,31 +1272,22 @@ fn the_space_chip_is_a_key_a_click_takes() {
     );
 }
 
-/// A sound's keys are a player's (#151): Space plays and pauses, the arrows go 5 s back and ahead, Home to the start.
+/// A sound has no player (#196): the key row offers Open, no Play; Space goes back to the list, and the arrows
+/// leave the page as it is.
 #[test]
-fn a_sounds_keys_are_a_players() {
-    let mut app = sound_app(false);
-    app.typed(' ');
-    assert!(app.preview.as_ref().unwrap().playing.is_some(), "Space plays");
-    app.typed(' ');
-    let pv = app.preview.as_ref().unwrap();
+fn a_sound_opens_in_its_app() {
+    let mut app = sound_app();
+    let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
+    assert_eq!(hint[..3].concat(), "Back Esc   ", "{:?}", hint);
     assert!(
-        pv.playing.is_none() && (pv.played - 7.0).abs() < 0.5,
-        "Space pauses where it was: {}",
-        pv.played
+        hint.iter().any(|t| t.trim_end() == "Open") && !hint.iter().any(|t| t.trim_end() == "Play"),
+        "{:?}",
+        hint
     );
     app.right();
-    assert!((app.preview.as_ref().unwrap().played - 12.0).abs() < 0.5, "Right: 5 s ahead");
-    app.left();
-    app.left();
-    assert!((app.preview.as_ref().unwrap().played - 2.0).abs() < 0.5, "Left twice: 10 s back");
-    app.line_start();
-    assert_eq!(app.preview.as_ref().unwrap().played, 0.0, "Home: the start");
-    assert_eq!(app.view, View::Preview, "and Space never left the preview");
-    let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
-    // the shared keys first, then the player's (#166); in a 60-cell window Seek is past the edge, its keys still work
-    assert_eq!(hint[..3].concat(), "Back Esc   ", "{:?}", hint);
-    assert!(hint.iter().any(|t| t.trim_end() == "Play"), "{:?}", hint);
+    assert_eq!(app.view, View::Preview, "Right turns no page: there is one");
+    app.typed(' ');
+    assert_ne!(app.view, View::Preview, "Space goes back to the list");
 }
 
 /// Connections says once what is true of all its tools, by Settings' names; a tool that stopped has a row (#146).
@@ -1426,13 +1373,13 @@ fn the_home_has_no_second_undo() {
 #[test]
 fn the_previews_keys_hold_their_places_between_files() {
     let row = |app: &App| app.hint().into_iter().map(|(t, _)| t).collect::<Vec<String>>();
-    let sound = sound_app(false);
+    let sound = sound_app();
     let picture = json!({"title": "photo.jpg", "facts": ["4032 \u{d7} 3024", "951 KB"], "picture": "/run/pages/3-1600.png", "size": [4032, 3024]});
     let picture = preview_app("photo.jpg", "~/pictures", picture, WIDTH, HEIGHT);
     let (s, p) = (row(&sound), row(&picture));
     assert_eq!(s[..8], p[..8], "Back, File and Open the same on both: {:?} {:?}", s, p);
     assert_eq!(s[..8].concat(), "Back Esc   File \u{2191} \u{2193}   Open Enter");
-    let mut app = sound_app(false);
+    let mut app = sound_app();
     app.down();
     assert!(app.preview.as_ref().unwrap().shown.is_none(), "the next file's page is on its way");
     assert_eq!(row(&app), s, "the row as it was, no blink while it loads");
