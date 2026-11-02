@@ -38,6 +38,8 @@ pub const CONTENT_Y: u16 = 7;
 pub const BOTTOM: u16 = 4;
 /// Where a destination's purpose starts: past the longest name (Notifications) and two cells of air.
 pub const PURPOSE_X: u16 = 17;
+/// A name's cells at most in a list with columns: the columns after it still fit.
+const NAME_CAP: usize = 26;
 /// A palette's chip: a small terminal in the palette's own colors, this many cells wide.
 pub const CHIP: u16 = 9;
 pub const LESS: &str = "\u{2039}";
@@ -46,9 +48,6 @@ struct Pen<'a> {
     pal: &'a Palette,
     w: u16,
     h: u16,
-    /// A wide list's right edge (#141): its band and its arrows end where its words end, never at the
-    /// screen's edge.
-    right: u16,
 }
 
 impl Pen<'_> {
@@ -64,7 +63,7 @@ impl Pen<'_> {
     }
     /// Text at (x, y) in a color; returns the column after it; nothing past the grid.
     fn end(&self, _y: u16) -> u16 {
-        self.w.min(self.right)
+        self.w
     }
     fn put(&mut self, x: u16, y: u16, text: &str, fg: Color, bold: bool, lit: bool) -> u16 {
         if x >= self.end(y) || y >= self.h {
@@ -238,11 +237,6 @@ pub fn column_width(w: u16, _h: u16) -> u16 {
     w.min(FULL_WIDTH)
 }
 
-/// A column wider than the dialog's own size: a list there shows its rows' wide columns and whole names (#141).
-pub fn wide(w: u16) -> bool {
-    w > WIDTH
-}
-
 impl Drawn {
     /// Every place moved right by `dx` cells: the column drawn apart, then laid at its place on the screen.
     fn shift(&mut self, dx: u16) {
@@ -306,7 +300,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     let (w, h) = (buf.area.width, buf.area.height);
     let area = Rect::new(0, 0, w, h);
     buf.set_style(area, Style::default().fg(pal.fg));
-    let mut pen = Pen { buf, pal, w, h, right: w };
+    let mut pen = Pen { buf, pal, w, h };
     if w < MIN_WIDTH || h < MIN_HEIGHT {
         // too small to hold the prompt, a list and the footer without cutting one: say so, plainly
         let t = "Make this window larger";
@@ -819,19 +813,8 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         pen.put(6, y, &format!("{} more", below), pal.muted, false, false);
     }
     let (widths, right) = widths(app, &items);
-    // a wide list ends where its words end (#141): its band, its arrows; both held while the view stays (#196)
-    let end = if wide(pen.w) {
-        list_end(
-            app,
-            &items[..n],
-            &widths,
-            items.iter().any(|it| row_of(app, it).is_some_and(|r| r.swatch.is_some())),
-        )
-        .clamp(WIDTH, pen.w)
-    } else {
-        pen.w
-    };
-    let (widths, end) = if app.searching() { (widths, end) } else { app.held_columns(widths, end) };
+    // the columns held while the view stays (#196)
+    let widths = if app.searching() { widths } else { app.held_columns(widths) };
     // found from the home, each group lines up its own columns: a note's time is no file's size (#169)
     let mut parts: Vec<(usize, Vec<usize>, Vec<bool>)> = vec![];
     if app.searching() {
@@ -851,9 +834,6 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         None => (widths.clone(), right.clone()),
     };
     let samples = items.iter().any(|it| row_of(app, it).is_some_and(|r| r.swatch.is_some()));
-    if wide(pen.w) {
-        pen.right = end.min(pen.w);
-    }
     // a group where any row carries a chip keeps the chip's column for every row, so their columns line up
     let chip_groups: Vec<Option<String>> = items
         .iter()
@@ -883,7 +863,6 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
             drawn.steps.push((more - 1, more + 2, y, n, true));
         }
     }
-    pen.right = pen.w;
     at
 }
 
@@ -898,24 +877,6 @@ fn setting_words(app: &App, label: &str, purpose: &str) -> String {
         .unwrap_or_else(|| purpose.to_string())
 }
 
-/// Where a wide list's words end (#141): a place's or a setting's name and state, a row's name and columns, then its
-/// arrow and two cells of air.
-fn list_end(app: &App, items: &[Item], widths: &[usize], samples: bool) -> u16 {
-    let ind = if app.searching() { 4 } else { 0 };
-    let cols: usize = widths.iter().enumerate().skip(1).map(|(k, w)| w + if k == 1 { 2 } else { 3 }).sum();
-    let row = (if samples { 9 } else { 6 }) + widths.first().copied().unwrap_or(0) + cols + 4;
-    let words = items
-        .iter()
-        .filter_map(|it| match it {
-            Item::Dest(d) => Some(PURPOSE_X as usize + ind + cells(&app.dest_state(*d).unwrap_or_else(|| DESTS[*d].purpose.to_string())) + 5),
-            Item::Setting(i) => Some(PURPOSE_X as usize + 2.max(ind) + cells(&setting_words(app, SETTINGS[*i].0, SETTINGS[*i].2)) + 5),
-            _ => None,
-        })
-        .max()
-        .unwrap_or(0);
-    row.max(words) as u16
-}
-
 /// A cell that starts or ends with a figure: a size, a count, a time.
 fn figure(col: &str) -> bool {
     // an empty folder's count is one too: an empty trash keeps the sizes beside it on their right edge (#130)
@@ -925,7 +886,6 @@ fn figure(col: &str) -> bool {
 /// The widths of a list's columns: the name, then each column, so they line up (the name 26 cells at most);
 /// and per column whether every cell in it is a figure, so the column lines up on its right edge.
 fn widths(app: &App, items: &[Item]) -> (Vec<usize>, Vec<bool>) {
-    let wide = wide(app.col_w());
     let mut w: Vec<usize> = vec![];
     let mut right: Vec<bool> = vec![];
     for it in items {
@@ -942,17 +902,17 @@ fn widths(app: &App, items: &[Item]) -> (Vec<usize>, Vec<bool>) {
             _ => continue,
         };
         // a palette's row has only its chip: its name still counts, so every chip stands in one column (#195)
-        if row_columns(row, wide).is_empty() && row.step.is_none() && row.key.is_none() && row.chip.is_empty() {
+        if row.columns.is_empty() && row.step.is_none() && row.key.is_none() && row.chip.is_empty() {
             continue;
         }
-        let cols = std::iter::once(cells(&row.text).min(name_cap(app.col_w()))).chain(row_columns(row, wide).iter().map(|c| cells(c)));
+        let cols = std::iter::once(cells(&row.text).min(NAME_CAP)).chain(row.columns.iter().map(|c| cells(c)));
         for (k, c) in cols.enumerate() {
             if w.len() <= k {
                 w.push(0);
             }
             w[k] = w[k].max(c);
         }
-        for (k, col) in row_columns(row, wide).iter().enumerate() {
+        for (k, col) in row.columns.iter().enumerate() {
             if right.len() <= k {
                 right.push(true);
             }
@@ -960,25 +920,6 @@ fn widths(app: &App, items: &[Item]) -> (Vec<usize>, Vec<bool>) {
         }
     }
     (w, right)
-}
-
-/// A name's cells at most in a list of `w` cells: 26 in the dialog's own size, up to 48 in a wide list (#141), so a long
-/// name is whole and its columns still fit.
-fn name_cap(w: u16) -> usize {
-    if wide(w) {
-        (w.saturating_sub(70) as usize).clamp(26, 48)
-    } else {
-        26
-    }
-}
-
-/// A row's columns: its wide ones in a wide list where it has them (a file's kind, size, and date with the time,
-/// #141), else its own.
-fn row_columns(row: &crate::model::Row, wide: bool) -> &[String] {
-    match &row.wide {
-        Some(c) if wide => c,
-        _ => &row.columns,
-    }
 }
 
 /// One row: its sign at 4, its text at 6, its columns lined up (the first right-aligned, a size; the rest left), its arrow when it opens more.
@@ -994,15 +935,14 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
     if let Some([r, gr, b]) = row.swatch {
         pen.put(6, y, SAMPLE, Color::Rgb(r, gr, b), false, lit);
     }
-    // a file's or a folder's name cut in its middle, its type kept (#140); other rows' at their end; a wide list's whole
-    let wide = wide(pen.w);
-    let columns = row_columns(row, wide);
+    // a file's or a folder's name cut in its middle, its type kept (#140); other rows' at their end
+    let columns = &row.columns;
     let name = if columns.is_empty() {
         row.text.clone()
     } else if row.id.starts_with("files:") {
-        crate::scrub::cut_middle(&row.text, name_cap(pen.w))
+        crate::scrub::cut_middle(&row.text, NAME_CAP)
     } else {
-        cut(&row.text, name_cap(pen.w))
+        cut(&row.text, NAME_CAP)
     };
     let mut x = pen.put(tx, y, &name, pal.fg, false, lit);
     let name_end = tx + widths.first().copied().unwrap_or(0) as u16;

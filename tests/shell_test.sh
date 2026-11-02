@@ -4693,11 +4693,9 @@ ans 3 | jq -r '.result.contents[0].text' > "$H/folder.raw"; jq "$KX" "$H/folder.
     && [ "$(jq -r '.rows[-1] | [.more[].said] | join("|")' "$H/folder.json")" = 'new folder|new text file|open in the system file manager' ] \
     && jq -e '(.rows[] | select(.text == "docs") | .children != null and .columns == ["2 items"] and .tool.name == "files_browse") and (.rows[] | select(.text == "notes.md") | .tool.name == "files_open" and .columns[0] == "12 B" and ([.more[].name] == ["files_preview", "files_attach", "files_reveal", "files_rename", "files_move", "files_copy", "files_trash"]) and (.page | startswith("spark-shell://files/preview/"))) and (.rows[] | select(.text | startswith("etc-link")) | .tool == null and .children == null)' "$H/folder.json" >/dev/null \
     && ok "provide files: a folder lists its folders, then its files with the size and the date, then one row for itself, its actions behind it (#127); a link is shown and never followed; a hidden file and a pipe are not listed" || bad "files folder" "$(jq -c '.rows[] | [.text, .columns, .tool.name]' "$H/folder.json")"
-# #141: a wide list's columns beside the short ones: a file's kind, its size and its date with the time; a folder's
-jq -e '(.rows[] | select(.text == "notes.md") | .wide[0] == "Markdown" and .wide[1] == .columns[0] and (.wide[2] | test("^today [0-9][0-9]:[0-9][0-9]$")))
-    and (.rows[] | select(.text == "pic.png") | .wide[0] == "picture") and (.rows[] | select(.text == "blob.txt") | .wide[0] == "text")
-    and (.rows[] | select(.text == "docs") | .wide[0:2] == ["folder", "2 items"]) and ([.rows[] | select(.text | startswith("this folder")) | .wide] == [null])' "$H/folder.json" >/dev/null \
-    && ok "provide files: a wide list's columns, the kind in plain words, the size and the date with the time; a folder's kind and count (#141)" || bad "files wide" "$(jq -c '.rows[] | [.text, .wide]' "$H/folder.json")"
+# #196: one row layout at every size: no wide columns beside the short ones
+jq -e '[.rows[] | has("wide")] | any | not' "$H/folder.json" >/dev/null \
+    && ok "provide files: a row has its columns alone, no wider set for full screen (#196)" || bad "files wide" "$(jq -c '.rows[] | [.text, .wide]' "$H/folder.json")"
 [ "$(ans 4 | jq -r .result.structuredContent.receipt)" = "$(printf 'notes.md\nhello\nworld')" ] && [ "$(ans 5 | jq -r .result.structuredContent.attach)" = "$FR/notes.md" ] \
     && ok "provide files: show gives a text file's first lines; attach gives its path for the next want" || bad "files show attach" "$(ans 4) $(ans 5)"
 for i in 6 8 9; do [ "$(ans $i | jq -r '.result.content[0].text')" = 'files: that is not a file in the folders given' ] || bad "files refusal $i" "$(ans $i)"; done

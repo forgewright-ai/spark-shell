@@ -596,25 +596,8 @@ fn files_home() -> App {
     ];
     more.extend(steps.as_array().unwrap().iter().cloned());
     let kinds = json!({"file": {"tool": {"name": "files_open", "said": "open"}, "more": more}, "dir": {"more": steps}});
-    let dir = |name: &str, items: &str| json!({"id": format!("files:dir:{}", name), "sign": "opens", "text": name, "columns": [items], "wide": ["folder", items, "", ""], "children": format!("spark-shell://files/rows/{}", name), "group": "home", "kind": "dir", "args": {"path": format!("/data/me/{}", name)}});
-    // a wide list's columns as the provider writes them (#141): the kind, the size, the date with the time, the folder
-    let file = |name: &str, cols: &[&str], group: &str| {
-        let kind = match name.rsplit('.').next() {
-            Some("md") => "Markdown",
-            Some("txt") => "text",
-            Some("pdf") => "PDF",
-            Some("jpg") => "picture",
-            _ => "file",
-        };
-        let stamp = if cols[1] == "2025" {
-            "04 Mar 2025".to_string()
-        } else {
-            format!("{} 09:14", cols[1])
-        };
-        let mut wide = vec![kind.to_string(), cols[0].to_string(), stamp];
-        wide.push(cols.get(2).copied().unwrap_or("").to_string());
-        json!({"id": format!("files:file:{}:{}", group, name), "sign": "blank", "text": name, "columns": cols, "wide": wide, "group": group, "kind": "file", "args": {"path": format!("/data/me/{}", name)}, "page": format!("spark-shell://files/preview/{}", name)})
-    };
+    let dir = |name: &str, items: &str| json!({"id": format!("files:dir:{}", name), "sign": "opens", "text": name, "columns": [items], "children": format!("spark-shell://files/rows/{}", name), "group": "home", "kind": "dir", "args": {"path": format!("/data/me/{}", name)}});
+    let file = |name: &str, cols: &[&str], group: &str| json!({"id": format!("files:file:{}:{}", group, name), "sign": "blank", "text": name, "columns": cols, "group": group, "kind": "file", "args": {"path": format!("/data/me/{}", name)}, "page": format!("spark-shell://files/preview/{}", name)});
     let rows = model::rows(
         &json!({"title": "~", "here": "/data/me", "kinds": kinds, "rows": [
         dir("documents", "12 items"),
@@ -622,11 +605,11 @@ fn files_home() -> App {
         dir("pictures", "40 items"),
         file("notes.md", &["2 KB", "18 Oct"], "home"),
         file("todo.txt", &["1 KB", "2025"], "home"),
-        {"id": "files:trash", "sign": "opens", "text": "trash", "columns": ["2 items"], "wide": ["", "2 items", "", ""], "children": "spark-shell://files/rows/trash", "group": "home"},
+        {"id": "files:trash", "sign": "opens", "text": "trash", "columns": ["2 items"], "children": "spark-shell://files/rows/trash", "group": "home"},
         file("invoice-0412.pdf", &["120 KB", "today", "downloads"], "recent"),
         file("photo-0412.jpg", &["4.8 MB", "yesterday", "camera"], "recent"),
         file("notes.md", &["2 KB", "18 Oct", "~"], "recent"),
-        {"id": "files:drive:s", "sign": "opens", "text": "STICK", "columns": ["14.2 GB free"], "wide": ["", "14.2 GB free", "", ""], "children": "spark-shell://files/rows/c3RpY2s", "group": "drives"},
+        {"id": "files:drive:s", "sign": "opens", "text": "STICK", "columns": ["14.2 GB free"], "children": "spark-shell://files/rows/c3RpY2s", "group": "drives"},
         {"id": "files:here", "sign": "opens", "text": "this folder \u{b7} 3 folders \u{b7} 2 files \u{b7} 3 KB", "columns": [], "more": [
             {"name": "files_new_folder", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new folder"},
             {"name": "files_new_text", "arguments": {"path": "/data/me"}, "ask": ["name"], "said": "new text file"}]}
@@ -1136,9 +1119,9 @@ fn full_screen_settings_write_each_state_whole() {
 }
 
 #[test]
-fn full_screen_files_list_whole_names_with_the_kind_the_size_and_the_time() {
+fn full_screen_files_lay_out_their_rows_as_the_dialogs_own_size_does() {
     let mut app = sized(files_home(), WIDE);
-    let long = model::rows(&json!({"title": "~", "rows": [{"id": "files:file:home:q", "sign": "blank", "text": "quarterly-report-for-the-board-final-v3.pdf", "columns": ["4.5 MB", "today"], "wide": ["PDF", "4.5 MB", "today 21:02", ""], "group": "home", "page": "spark-shell://files/preview/q"}], "short": []}).to_string()).unwrap();
+    let long = model::rows(&json!({"title": "~", "rows": [{"id": "files:file:home:q", "sign": "blank", "text": "quarterly-report-for-the-board-final-v3.pdf", "columns": ["4.5 MB", "today"], "group": "home", "page": "spark-shell://files/preview/q"}], "short": []}).to_string()).unwrap();
     let rows = &mut app.folder.as_mut().unwrap().2.rows;
     let at = rows.iter().position(|r| r.text == "todo.txt").unwrap();
     rows.insert(at, long.rows[0].clone());
@@ -1149,11 +1132,9 @@ fn full_screen_files_list_whole_names_with_the_kind_the_size_and_the_time() {
         .flat_map(|y| (0..WIDE.0).map(move |x| (x, y)))
         .map(|(x, y)| b[(x, y)].symbol().to_string())
         .collect();
-    assert!(text.contains("quarterly-report-for-the-board-final-v3.pdf"), "the name whole");
-    assert!(
-        text.contains("Markdown") && text.contains("18 Oct 09:14"),
-        "the kind, and the date with the time"
-    );
+    // #196: one row layout at every size: the name cut in its middle at 26 cells, its size and its date
+    assert!(text.contains("quarterly-repor\u{2026}nal-v3.pdf"), "the name cut in its middle");
+    assert!(!text.contains("Markdown") && !text.contains("18 Oct 09:14"), "no wider columns");
 }
 
 #[test]

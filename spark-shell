@@ -7583,7 +7583,7 @@ files_counts() {   # files_counts [FOLDER] -> PATH US COUNT a line: the things n
     else xargs -0 sh -c 'exec find "$@" -mindepth 1 -maxdepth 1 ! -name ".*" -print0' sh 2>/dev/null || :; fi \
         | files_nul | tr '\000' '\n' | awk -v us="$US" '{ sub(/\/[^\/]*$/, ""); n[$0]++ } END { for (d in n) print d us n[d] }'
 }
-files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' lines -> KEY US a row line for each file (KEY 1), folder (0) and link (2): ID US SIGN US TEXT US CHILDREN US PATH US SIZE US DATE US GROUP US COLUMN3 US KIND US PREVIEW US KIND-WORD US DATE-AND-TIME (a wide list's, #141); FOLDERS yes puts each one's folder in COLUMN3 (~ for your home); $TMP/files.sum "FILES FOLDERS BYTES"
+files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' lines -> KEY US a row line for each file (KEY 1), folder (0) and link (2): ID US SIGN US TEXT US CHILDREN US PATH US SIZE US DATE US GROUP US COLUMN3 US KIND US PREVIEW; FOLDERS yes puts each one's folder in COLUMN3 (~ for your home); $TMP/files.sum "FILES FOLDERS BYTES"
     _frs=''; [ ! -e "$TMP/walk.stopped" ] || _frs=1
     LC_ALL=C awk -F "$US" -v us="$US" -v group="$1" -v folders="$2" -v counts="${3:-}" -v cstop="$_frs" -v home="$(files_home_root)" \
         -v today="$(date +%Y%m%d)" -v yday="$(date -d "@$(( $(date +%s) - 86400 ))" +%Y%m%d 2>/dev/null || date -r "$(( $(date +%s) - 86400 ))" +%Y%m%d)" \
@@ -7601,19 +7601,6 @@ files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' line
         function clean(s) { gsub(/[\001-\037\177]|\302[\200-\237]|\342\200[\213-\217\250-\256]|\342\201[\240\246-\251]|\357\273\277/, "", s); return s }   # SCRUB_JQ, on bytes
         function size(n) { if (n < 1024) return sprintf("%d B", n); if (n < 1048576) return sprintf("%d KB", n / 1024); if (n < 1073741824) return sprintf("%.1f MB", n / 1048576); return sprintf("%.1f GB", n / 1073741824) }
         function when(d) { if (d == today) return "today"; if (d == yday) return "yesterday"; if (substr(d, 1, 4) == year) return substr(d, 7, 2) " " mon[substr(d, 5, 2) + 0]; return substr(d, 1, 4) }
-        function stamp(s,   d) { d = substr(s, 1, 4) substr(s, 6, 2) substr(s, 9, 2); if (substr(d, 1, 4) != year) return substr(d, 7, 2) " " mon[substr(d, 5, 2) + 0] " " substr(d, 1, 4); return when(d) " " substr(s, 12, 5) }   # a wide list: the date with the time, the year in place of the time for another year (#141)
-        function kindof(n,   e) {   # what a file is, by its type: a word a person says, never a MIME type (#141)
-            e = tolower(n); if (e !~ /\.[^.\/]+$/) return "file"; sub(/.*\./, "", e)
-            if (e ~ /^(jpe?g|png|gif|webp|bmp|tiff?|svg|heic|heif|avif)$/) return "picture"
-            if (e ~ /^(mp3|flac|wav|ogg|oga|opus|m4a|aac|aiff?|wma)$/) return "sound"
-            if (e ~ /^(mp4|m4v|mkv|webm|mov|avi|wmv|ogv)$/) return "video"
-            if (e == "pdf") return "PDF"; if (e ~ /^docx?$/) return "Word"; if (e ~ /^xlsx?$/) return "Excel"; if (e ~ /^pptx?$/) return "PowerPoint"
-            if (e ~ /^(odt|rtf)$/) return "document"; if (e == "ods") return "spreadsheet"; if (e == "odp") return "slides"; if (e == "csv") return "CSV"
-            if (e ~ /^(md|markdown)$/) return "Markdown"; if (e ~ /^(txt|log)$/) return "text"; if (e ~ /^(json|ya?ml|toml|xml|ini|conf)$/) return "data"
-            if (e ~ /^(sh|py|rs|js|ts|c|h|cc|cpp|go|rb|java|lua|pl|html?|css)$/) return "code"
-            if (e ~ /^(zip|tar|gz|tgz|xz|bz2|zst|7z|rar)$/) return "archive"; if (e ~ /^(iso|img|dmg)$/) return "disk image"
-            return toupper(e)
-        }
         BEGIN {
             B = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"; for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i
             split("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec", mon, " ")
@@ -7627,10 +7614,10 @@ files_rows_fmt() {   # files_rows_fmt GROUP FOLDERS [COUNTS] < files_stats' line
             if (folders == "yes") { d = p; sub(/\/[^\/]*$/, "", d); if (d == home) c3 = "~"; else { c3 = d; sub(/.*\//, "", c3); c3 = clean(c3) } }
             if (t ~ /^dir/) {
                 nd++; c = (p in cnt) ? cnt[p] : (counts != "" && !cstop ? 0 : "")
-                print "0" us "files:dir:" id us "opens" us text us "spark-shell://files/rows/" id us p us (c == "" ? "" : c " " (c == 1 ? "item" : "items")) us "" us group us c3 us "dir" us "" us "folder" us ""
+                print "0" us "files:dir:" id us "opens" us text us "spark-shell://files/rows/" id us p us (c == "" ? "" : c " " (c == 1 ? "item" : "items")) us "" us group us c3 us "dir" us ""
             } else if (t ~ /^regular/) {
                 nf++; nb += $2
-                print "1" us "files:file:" id us "blank" us text us "" us p us size($2) us when(substr($4, 1, 4) substr($4, 6, 2) substr($4, 9, 2)) us group us c3 us "file" us "" us kindof(name) us stamp($4)
+                print "1" us "files:file:" id us "blank" us text us "" us p us size($2) us when(substr($4, 1, 4) substr($4, 6, 2) substr($4, 9, 2)) us group us c3 us "file" us ""
             } else if (t ~ /^symbolic/) {
                 print "2" us "files:link:" id us "blank" us text " -> " clean(to[p]) us "" us "" us "" us "" us group us "" us "link" us ""
             }   # a device, a socket, a pipe: not listed
@@ -8059,11 +8046,9 @@ provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one fold
         {file: {tool: {name: "files_open", said: "open"}, more: ([{name: "files_preview", said: "preview"}, {name: "files_attach", said: "attach to the next request"}] + steps)},
          dir: ({more: steps} + (if $fm != "" then {tool: {name: "files_browse", said: "open in the system file manager"}} else {} end)),
          trashed: {tool: {name: "files_restore", said: "restore"}, more: [{name: "files_purge", said: "delete for good"}]}} as $kinds |
-        [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end), path: .[4], c1: .[5], c2: .[6], group: (if .[7] == "" then null else .[7] end), c3: .[8], kind: .[9], preview: .[10], kw: .[11], stamp: .[12]}
+        [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], children: (if .[3] == "" then null else .[3] end), path: .[4], c1: .[5], c2: .[6], group: (if .[7] == "" then null else .[7] end), c3: .[8], kind: .[9], preview: .[10]}
             | {path: .path} as $a
             | {id, sign, text: (.text | '"$SCRUB_JQ"'), children, group, columns: ([.c1, .c2, .c3] | if (.[2] // "") != "" and (.[0] // "") != "" then map((. // "") | '"$SCRUB_JQ"') else map(select(. != null and . != "") | '"$SCRUB_JQ"') end),   # a folder found keeps its empty date column, its folder under the folders of the files found (#169)
-               wide: (if (.kind == "file" or .kind == "dir") and (.kw // "") != "" then ([.kw, .c1, .stamp, .c3] | map((. // "") | '"$SCRUB_JQ"'))
-                      elif .kind == "trashdir" or .kind == "drive" then (["", .c1, "", ""] | map((. // "") | '"$SCRUB_JQ"')) else null end),
                page: (if .kind == "file" then "spark-shell://files/preview/" + (.id | ltrimstr("files:file:")) elif .kind == "dir" then "spark-shell://files/preview/" + (.id | ltrimstr("files:dir:")) else null end),
                kind: (if .kind == "file" or .kind == "dir" or .kind == "trashed" then .kind else null end), args: (if .kind == "file" or .kind == "dir" or .kind == "trashed" then $a else null end),
                more: (if .kind == "here" then [{name: "files_new_folder", arguments: $a, ask: ["name"], said: "new folder"}, {name: "files_new_text", arguments: $a, ask: ["name"], said: "new text file"}]

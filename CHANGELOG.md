@@ -178,6 +178,13 @@ part lands in a pull request of its own.
   attached and no row the words are for, the footer and the rule over
   it are not drawn; the list ends on the same row with or without
   them. Sixteen golden frames are drawn again without the rule.
+- Cut: the wide-row layout. Full screen, a list's rows are laid out as
+  in the dialog's own size: the same columns, a name cut at 26 cells,
+  the arrows at the column's right edge. Files no longer sends a second
+  set of columns for a wide list (the kind, the date with the time),
+  and a list no longer ends where its longest words end. Four golden
+  frames (full-files, full-home, full-home-tall, full-settings) are
+  drawn again.
 
 ## v0.121
 

@@ -659,9 +659,9 @@ pub struct App {
     /// When the words typed at Home last changed, until the providers are asked about them, and the words asked.
     pub search_at: Option<Instant>,
     pub search_sent: String,
-    /// The list's column widths and its right edge as last drawn, and the view they are for: held while the view
-    /// stays, so a longer name or state moves no column back and forth (#196). ui.rs keeps it as it draws.
-    cols_held: std::cell::RefCell<Option<(View, Vec<usize>, u16)>>,
+    /// The list's column widths as last drawn, and the view they are for: held while the view stays, so a longer
+    /// name or state moves no column back and forth (#196). ui.rs keeps it as it draws.
+    cols_held: std::cell::RefCell<Option<(View, Vec<usize>)>>,
 }
 
 impl App {
@@ -737,22 +737,18 @@ impl App {
         }
     }
 
-    /// A list's column widths and right edge, never narrower than they were drawn in this view: they grow once for a
-    /// longer value and then stand still (#196).
-    pub fn held_columns(&self, widths: Vec<usize>, right: u16) -> (Vec<usize>, u16) {
+    /// A list's column widths, never narrower than they were drawn in this view: they grow once for a longer value
+    /// and then stand still (#196).
+    pub fn held_columns(&self, widths: Vec<usize>) -> Vec<usize> {
         let mut held = self.cols_held.borrow_mut();
-        let (w, r) = match held.as_ref().filter(|(v, _, _)| *v == self.view) {
-            Some((_, old, r0)) => {
-                let n = widths.len().max(old.len());
-                let w = (0..n)
-                    .map(|k| widths.get(k).copied().unwrap_or(0).max(old.get(k).copied().unwrap_or(0)))
-                    .collect();
-                (w, right.max(*r0))
-            }
-            None => (widths, right),
+        let w: Vec<usize> = match held.as_ref().filter(|(v, _)| *v == self.view) {
+            Some((_, old)) => (0..widths.len().max(old.len()))
+                .map(|k| widths.get(k).copied().unwrap_or(0).max(old.get(k).copied().unwrap_or(0)))
+                .collect(),
+            None => widths,
         };
-        *held = Some((self.view.clone(), w.clone(), r));
-        (w, r)
+        *held = Some((self.view.clone(), w.clone()));
+        w
     }
 
     pub fn say(&mut self, sign: Sign, text: &str) {

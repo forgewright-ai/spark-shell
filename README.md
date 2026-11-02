@@ -768,12 +768,11 @@ fullscreen steps aside for the dialog and is fullscreen again when the
 dialog closes with nothing opened.
 
 Full screen (Super+f), the dialog is one column in the middle of the
-screen, up to 120 cells wide, and the space goes to its lists: in Files
-a whole name, the kind (picture, sound, PDF, Word), the size, and the
-date with the time; the Calendar shows as many months across as fit;
-the home and Settings write each state whole. A list ends where its
-words end, its arrows right after them. The preview Space opens takes
-the whole screen.
+screen, up to 120 cells wide. A row is laid out as in the dialog's own
+size, the same columns and a name cut at the same length, its arrow at
+the column's right edge; the home and Settings write each state whole
+where it fits, and the Calendar shows as many months across as fit.
+The preview Space opens takes the whole screen.
 
 The dialog is drawn whole at once, and the window shows only once its
 first frame is on it, so nothing comes before it; keys typed meanwhile
