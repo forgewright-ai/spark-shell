@@ -70,6 +70,21 @@ part lands in a pull request of its own.
   provider's notice that its rows changed, or a progress note, draws
   nothing until the rows come. A step that closes the dialog closes it
   before another frame is drawn.
+- The shell's call path does about half the work. One jq reads a
+  whole message, one the call's name and arguments, one its value, and
+  one writes the answer. A call is checked against the rows the host
+  was last sent, which the provider keeps; before, it built the rows
+  twice per call to check them. The undo is read once a call. A host's
+  step no longer writes the terminal panel's recent picks or its undo
+  journal. The settings are read again after a step only when it wrote
+  them. The theme's own helpers run for the theme's rows alone.
+- A call's answer carries the section's rows as the step left them.
+  The dialog shows them and reads nothing again, the provider sends no
+  rows-changed note after the call, and its watcher counts them as
+  seen, so nothing refreshes twice. Past the provider's own start, a
+  note added now starts 56 processes, its rows in the answer, where the
+  call and the dialog's read after it started 64; a read and a refused
+  call start 27, where they started 39.
 
 ## v0.121
 

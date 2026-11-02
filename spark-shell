@@ -6221,11 +6221,12 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
     esac
 }
 panel_step() {   # panel_step SECTION ACTION [ARG] -> panel_act's line; a step that worked is remembered as recent, and its inverse kept for undo
-    _inv=$(panel_inverse "$@")
+    if [ -n "${PANEL_INV_READ:-}" ]; then _inv=$PANEL_INV; else _inv=$(panel_inverse "$@"); fi   # read once by a host's call (#196)
     rm -f "$TMP/network.undo" "$TMP/sound.undo"
     if panel_act "$@"; then
         if [ -s "$TMP/network.undo" ]; then _inv="restore $(cat "$TMP/network.undo")$TAB network settings restored"; fi
         if [ -s "$TMP/sound.undo" ]; then _snd_old=$(cat "$TMP/sound.undo"); _inv="level $_snd_old$TAB$1 at $_snd_old%"; fi
+        [ "${PANEL_JOURNAL:-}" != off ] || return 0   # a host's step: no recent pick, no journal (#196)
         case $2 in show|all|pick|chat|more|save|close|focus) ;; *) panel_recent_add "$1" "$(printf '%s' "$2${3:+ $3}${4:+ $4}${5:+ $5}" | sed 's/ *$//')" ;; esac
         [ -z "$_inv" ] || printf '%s\t%s\n' "$1" "$_inv" >> "$TMP/group"
         return 0
@@ -6436,6 +6437,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
     if [ "$1" = theme ] && [ -z "${3:-}" ]; then   # a palette's step is its name alone: every palette and saved theme is a row, a kept look while in use
         case $(theme_kind "$2") in shipped|yours|saved|none) echo ''; return 0 ;; look) [ "$2" != "${THEME:-}" ] || { echo ''; return 0; } ;; esac
     fi
+    [ -z "${PANEL_ROW_MATCHED:-}" ] || { printf '%s\n' "${3:-}"; return 0; }   # a host's call matched a row it was sent, exactly (#196)
     _want=$(panel_lower "$2 $3" | sed 's/ *$//')
     _m=$(panel_rows "$1" full | cut -f3 | awk -v w="$_want" 'tolower($0) == w { print; exit }')
     [ "$1" != theme ] || [ -n "$_m" ] || _m=$(panel_rows wallpapers full | cut -f3 | awk -v w="$_want" 'tolower($0) == w { print; exit }')   # the wallpaper list is the theme's too
@@ -6720,6 +6722,9 @@ scrub_plain() {   # scrub_plain WORDS -> them scrubbed; plain printable ASCII as
 tool_args_json() {   # tool_args_json TOOL VALUE -> the call's arguments as JSON; a plain word for a plain string argument built here, the rest by tool_call_json
     tool_spec "$1" || return 1
     if [ -z "$_tp" ]; then printf '{}'; return 0; fi
+    case $_tk:$_te in level:|delta:|alpha:|minutes:|speed:|delay:)   # a plain number is written here, no jq (#196)
+        case $2 in ''|*[!0-9.-]*|?*-*|*.*.*|-|.|*.|.*|-.*|0[0-9]*|-0[0-9]*) ;; *) printf '{"%s":%s}' "$_tp" "$2"; return 0 ;; esac ;;
+    esac
     case $_tk:$_te:$2 in level:*|delta:*|alpha:*|minutes:*|speed:*|delay:*|*:?*:*) ;; *:*:*[!A-Za-z0-9._:+-]*) ;; *) printf '{"%s":"%s"}' "$_tp" "$2"; return 0 ;; esac
     tool_call_json "$1" "$2" | jq -c .arguments
 }
@@ -6910,7 +6915,7 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)
               + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} elif .[1] == "filename" then {type: "string", minLength: 1, maxLength: 255, description: "one name, no slash"} elif .[1] == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"} elif .[1] == "seconds" then {type: "number", minimum: 0, maximum: 86400, description: "where to start, in seconds"} elif .[1] == "pixels" then {type: "integer", minimum: 0, maximum: 65535, description: "pixels from the corner of the dialog"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
             required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text" and .[1] != "seconds" and .[1] != "pixels") | .[0]]), additionalProperties: false},
-         outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"}, open: {type: "string"},
+         outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"}, open: {type: "string"}, rows: {type: "object"},
             effect: {type: "object", properties: {kind: {type: "string"}, operation: {type: "string"}, id: {type: "string"}, title: {type: "string"}, localTime: {type: "string"}, level: {type: "integer"}, muted: {type: "boolean"}}, required: ["kind", "operation", "id", "title"], additionalProperties: false},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
             palette: {type: "object", additionalProperties: {type: "string"}}, transitions: {type: "string"}},
@@ -6928,6 +6933,12 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
     [ "$1" != about ] || { provide_about_rows; return; }
     [ "$1" != files ] || { provide_files_rows; return; }
     THEME_ENUM_NOW=''; [ "$1" != theme ] || THEME_ENUM_NOW=$(theme_enum)   # the palette names once for this read, not once a row (#183)
+    # the theme's own helpers (the chips, the text size, the animation, the transparency) for the theme's rows alone (#196)
+    _pr_chips='{}'; _pr_size=''; _pr_anim=''; _pr_animok=''; _pr_trn=0; _pr_tr=''
+    if [ "$1" = theme ]; then
+        _pr_chips=$(theme_chips theme); _pr_size=$(look_font_size); _pr_anim=$(anim_now); ! anim_drawn "$(anim_palette)" || _pr_animok=1
+        _pr_trn=$(transparency_of "$ALPHA"); if [ "$_pr_trn" -eq 0 ]; then _pr_tr=off; else _pr_tr="$_pr_trn%"; fi
+    fi
     _asks='[]'
     if [ "$1" = wifi ] && [ -n "$(wifi_tool)" ]; then   # a secured network not saved yet: its password is asked, masked
         wifi_known | cut -f2 > "$TMP/wifi.known.ask"
@@ -6944,7 +6955,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                     if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}, said:"done"}, {name:"reminders_snooze", arguments:{name:$id}, said:"again in 10 minutes"}, {name:"reminders_delete", arguments:{name:$id}, said:"delete"}]} else {} end
                    else {} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$(theme_chips "$1")" --arg size "$(look_font_size)" --arg anim "$(anim_now)" --arg animok "$(! anim_drawn "$(anim_palette)" || echo 1)" --arg animnone "$ANIM_NONE_SAID" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg motion "$WALLPAPER_MOTION" --argjson trn "$(transparency_of "$ALPHA")" --arg tr "$(_t=$(transparency_of "$ALPHA"); if [ "$_t" -eq 0 ]; then echo off; else echo "$_t%"; fi)" '
+        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$_pr_chips" --arg size "$_pr_size" --arg anim "$_pr_anim" --arg animok "$_pr_animok" --arg animnone "$ANIM_NONE_SAID" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg motion "$WALLPAPER_MOTION" --argjson trn "$_pr_trn" --arg tr "$_pr_tr" '
             .rows |= map(
                 (if $s == "theme" and ((.group // "") | test("^(dark|light|custom)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
                 | (if $s == "theme" and ((.group // "") | test("^(dark|light)$")) and (.tool.name // "") == "theme_palette"
@@ -7096,15 +7107,18 @@ fifo_put() {   # fifo_put LINE -- one line into the loop's FIFO (fd 5), under th
     printf '%s\n' "$1" >&5 || :; rmdir "$PLOCK"
 }
 PROVIDE_POLL=${SPARK_SHELL_PROVIDE_POLL:-}   # the watcher's seconds between looks; the tests set it
+provide_seen() { cksum < "$TMP/rows.last" > "$TMP/rows.seen"; }   # the rows the host was last sent, as the watcher compares them (#196)
 provide_watch() {   # the rows looked at again every few seconds while a host is subscribed; a change pokes the loop. Its own TMP: the loop's files are the loop's
-    TMP=$TMP/watch; mkdir -p "$TMP"
+    _seen=$TMP/rows.seen; TMP=$TMP/watch; mkdir -p "$TMP"
     _every=$PROVIDE_POLL; [ -n "$_every" ] || case $(panel_cost "$1") in slow) _every=15 ;; fast) _every=5 ;; *) _every=3 ;; esac
     _last=$(provide_rows "$1" 2>/dev/null | cksum)
     while :; do
         sleep "$_every"
         config_load; theme_load
         _now=$(provide_rows "$1" 2>/dev/null | cksum)
-        [ "$_now" = "$_last" ] || { _last=$_now; fifo_put poke; }
+        # a change pokes once; rows the host already has (a call's answer carried them) poke nothing (#196)
+        _had=''; [ ! -f "$_seen" ] || IFS= read -r _had < "$_seen" || :
+        [ "$_now" = "$_last" ] || { _last=$_now; [ "$_now" = "$_had" ] || fifo_put poke; }
     done
 }
 provide_input() {   # answers reach a pairing agent while the tool call runs
@@ -7148,21 +7162,26 @@ provide_main() {   # provide_main SECTION -- serve it until stdin ends
 }
 provide_one() {   # provide_one LINE -- one message: a request answered, a notification taken, anything else refused
     [ "${#1}" -le "$PROVIDE_LINE_MAX" ] || { rpc_error null -32600 "a message is $PROVIDE_LINE_MAX bytes at most"; return 0; }
-    _kind=$(printf '%s' "$1" | jq -r 'if type != "object" or .jsonrpc != "2.0" then "bad" elif (has("method") | not) then "answer" elif has("id") then "request" else "note" end' 2>/dev/null) || { rpc_error null -32700 "not JSON"; return 0; }
+    # one jq reads the whole message (#196): its kind, its id, its method, its params, an answer's result, a line each
+    # (compact JSON holds no newline, and the method's control characters are spaces)
+    _parts=$(printf '%s' "$1" | jq -r 'if type != "object" or .jsonrpc != "2.0" then "bad", "null", "", "{}", "{}"
+        else (if (has("method") | not) then "answer" elif has("id") then "request" else "note" end),
+            (.id | tojson), (.method // "" | tostring | gsub("[\u0000-\u001f]"; " ")), (.params // {} | tojson), (.result // {} | tojson) end' 2>/dev/null) \
+        || { rpc_error null -32700 "not JSON"; return 0; }
+    { IFS= read -r _kind; IFS= read -r _id; IFS= read -r _method; IFS= read -r _params; IFS= read -r _result; } <<EOF
+$_parts
+EOF
     case $_kind in
         request) ;;
         answer)   # the one question this server asks: the host's roots
-            [ "$(printf '%s' "$1" | jq -c '.id')" = '"roots"' ] && provide_roots "$(printf '%s' "$1" | jq -c '.result // {}')"; return 0 ;;
+            [ "$_id" = '"roots"' ] && provide_roots "$_result"; return 0 ;;
         note)   # initialized, roots changed: ask the host for its roots when it has them; anything else, nothing to say
-            case $(printf '%s' "$1" | jq -r '.method') in notifications/initialized|notifications/roots/list_changed)
+            case $_method in notifications/initialized|notifications/roots/list_changed)
                 [ -z "$CLIENT_ROOTS" ] || rpc_send "$(jq -cn '{jsonrpc: "2.0", id: "roots", method: "roots/list"}')" ;; esac
             return 0 ;;
         *) rpc_error null -32600 "one JSON-RPC 2.0 object a line"; return 0 ;;
     esac
-    _id=$(printf '%s' "$1" | jq -c '.id')
     case $_id in '"'*|[0-9]*|-[0-9]*) ;; *) rpc_error null -32600 "an id is a string or a number"; return 0 ;; esac
-    _method=$(printf '%s' "$1" | jq -r '.method | tostring | gsub("[\u0000-\u001f]"; " ")')
-    _params=$(printf '%s' "$1" | jq -c '.params // {}')
     case $_method in
         initialize)
             [ "$(printf '%s' "$_params" | jq -r '.capabilities.experimental["spark-shell/pairing"] == true')" != true ] || CLIENT_PAIRING=1
@@ -7193,7 +7212,8 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
                 return 0
             fi
             if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/wallpapers" ] && [ "$_method" = resources/read ]; then   # the wallpaper list, opened from the theme's wallpaper row
-                rpc_result "$_id" "$(provide_wall_rows | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
+                provide_wall_rows > "$TMP/wall.last"   # the rows the host has: the gate's (#196)
+                rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/wall.last")"; return 0
             fi
             if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/animations" ] && [ "$_method" = resources/read ]; then   # the animation list, opened from the theme's animation row (#132)
                 rpc_result "$_id" "$(provide_anim_rows | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
@@ -7225,8 +7245,8 @@ provide_one() {   # provide_one LINE -- one message: a request answered, a notif
             fi
             [ "$_uri" = "spark-shell://$sec/rows" ] || { rpc_error "$_id" -32002 "no resource at that uri"; return 0; }
             case $_method in
-                resources/read) provide_rows "$sec" | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' > "$TMP/read.json"
-                    rpc_result "$_id" "$(cat "$TMP/read.json")" ;;
+                resources/read) provide_rows "$sec" > "$TMP/rows.last"; provide_seen   # the rows the host has: the gate's, the watcher's (#196)
+                    rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/rows.last")" ;;
                 resources/subscribe) SUBSCRIBED=1; [ -n "$WATCH" ] || { provide_watch "$sec" 5>"$TMP/in" 3>&- 4<&- & WATCH=$!; }; rpc_result "$_id" '{}' ;;
                 resources/unsubscribe) SUBSCRIBED=''; [ -z "$WATCH" ] || { kill "$WATCH" 2>/dev/null || :; wait "$WATCH" 2>/dev/null || :; WATCH=''; }; rpc_result "$_id" '{}' ;;
             esac ;;
@@ -7305,10 +7325,13 @@ provide_ask() {   # provide_ask CALL-ID MESSAGE FIELD TITLE -> what the person t
     printf '%s' "$_ans"
 }
 provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its arguments by its schema, the row it names, panel_gate, then the step itself
-    _name=$(printf '%s' "$2" | jq -r '.name // "" | tostring')
+    # the name, the arguments and the progress token in one jq (#196): a line each, compact JSON holds no newline
+    _parts=$(printf '%s' "$2" | jq -r '(.name // "" | tostring | gsub("[\u0000-\u001f]"; " ")), (.arguments // {} | tojson), (._meta.progressToken // "" | if . == "" then "" else tojson end)')
+    { IFS= read -r _name; IFS= read -r _args; IFS= read -r _tok; } <<EOF
+$_parts
+EOF
     case $_name in *[!a-z0-9_]*|[!a-z]*|'') rpc_error "$1" -32602 "no tool by that name"; return 0 ;; esac
     { tool_spec "$_name" && [ "$_ts" = "$sec" ]; } || { rpc_error "$1" -32602 "no tool $_name in $sec"; return 0; }
-    _args=$(printf '%s' "$2" | jq -c '.arguments // {}')
     [ "$_name" != notes_append ] || { provide_notes_append "$1" "$_args"; return 0; }
     case $_name in notes_rename|notes_trash|notes_restore) provide_notes_step "$1" "$_name" "$_args"; return 0 ;; esac   # a note's file by its exact name, as the append (#169)
     _bad=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg k "$_tk" --arg q "$_tq" --arg x "$_te" '
@@ -7344,9 +7367,15 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         + (if $q != "" and has($q) and ((.[$q] | type) != "string" or (.[$q] | length) > 256) then "; " + $q + " is text, 256 characters at most" else "" end)')
     [ -z "$_bad" ] || { rpc_error "$1" -32602 "$_name: $_bad"; return 0; }
     [ "$sec" != files ] || { provide_files_call "$1" "$_name" "$_args"; return 0; }   # files: the four lines, not the panel's gate; a name whole, never its slug
-    _v=''; [ -z "$_tp" ] || _v=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg x "$_te" '. as $a | [$a[$p] | tostring] + [$x | split(" ")[] | select(. != "") | split(":") | . as $e | select($a[$e[0]] != null) | $e[0] + "=" + (($a[$e[0]] | tostring) | if $e[1] == "text" or $e[1] == "name" then ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-+|-+$"; "") | .[0:40] else . end)] | join(" ")')   # a text extra travels as its slug
+    # the step's value (a text extra travels as its slug) and the arguments without the secret, what a row is matched
+    # against: one jq, a line each (#196)
+    _parts=$(printf '%s' "$_args" | jq -r --arg p "$_tp" --arg x "$_te" --arg q "$_tq" '. as $a
+        | (if $p == "" then "" else [$a[$p] | tostring] + [$x | split(" ")[] | select(. != "") | split(":") | . as $e | select($a[$e[0]] != null) | $e[0] + "=" + (($a[$e[0]] | tostring) | if $e[1] == "text" or $e[1] == "name" then ascii_downcase | gsub("[^a-z0-9]+"; "-") | gsub("^-+|-+$"; "") | .[0:40] else . end)] | join(" ") end),
+          (if $q == "" then . else del(.[$q]) end | tojson)')
+    { IFS= read -r _v; IFS= read -r _plain; } <<EOF
+$_parts
+EOF
     PANEL_PASS=''; [ -z "$_tq" ] || PANEL_PASS=$(printf '%s' "$_args" | jq -r --arg q "$_tq" '.[$q] // ""')   # a password: a shell variable for the step, never a file, never a line out
-    _plain=$(printf '%s' "$_args" | jq -c --arg q "$_tq" 'if $q == "" then . else del(.[$q]) end')   # the arguments without the secret: what a row is matched against
     case $_name in
         notes_open) _resolved=$(note_file "$_v") || { provide_refuse "$1" 'select one note by its filename; that name is missing or ambiguous'; return 0; }; _v=${_resolved##*/} ;;
         reminders_done|reminders_snooze|reminders_delete) _resolved=$(rem_find "$_v") || { provide_refuse "$1" 'select one reminder by its UID; that name is missing or ambiguous'; return 0; }; _v=$(printf '%s' "$_resolved" | cut -f2) ;;
@@ -7359,16 +7388,27 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         _when=$(provide_ask "$1" "When" when "5pm, tomorrow 9:00, in 20 min") || { provide_refuse "$1" "not done: no time given"; return 0; }
         _v="$_when $_v"; _arg=$_v
     fi
-    case $_th in *f*) ;; *)   # the argument must be a row's own, exactly: the rows are the allowlist
+    PANEL_ROW_MATCHED=''
+    case $_th in *f*) ;; *)   # the argument must be a row's own, exactly: the rows are the allowlist, the ones the host was
+        # last sent (kept hot by every read and call, #196), else read now
         provide_quick "$sec" "$_name" "$_v" && _quick=1 || _quick=''
-        [ -n "$_quick" ] || provide_rows "$sec" > "$TMP/rows.json"
-        [ -n "$_quick" ] || [ "$sec" != theme ] || provide_wall_rows >> "$TMP/rows.json"   # the wallpaper list opens from the theme section: its rows are the theme's too
-        [ -n "$_quick" ] || jq -e -s --arg n "$_name" --argjson a "$_plain" 'any(.[] | ((.rows // [])[] | .tool, (.more // [])[], (.step // empty | . as $s | $s.values[] | . as $v | $s.set | .arguments[$s.key] = $v.sent), .switch.turn_on, .switch.turn_off, .look), .look_back | select(. != null); .name == $n and .arguments == $a)' "$TMP/rows.json" >/dev/null 2>&1 \
-            || provide_in_use "$sec" "$_name" "${_arg:-$_act}" \
+        if [ -z "$_quick" ]; then
+            [ -s "$TMP/rows.last" ] || provide_rows "$sec" > "$TMP/rows.last"
+            cat "$TMP/rows.last" > "$TMP/rows.json"
+            if [ "$sec" = theme ]; then   # the wallpaper list opens from the theme section: its rows are the theme's too
+                [ -s "$TMP/wall.last" ] || provide_wall_rows > "$TMP/wall.last"
+                cat "$TMP/wall.last" >> "$TMP/rows.json"
+            fi
+            jq -e -s --arg n "$_name" --argjson a "$_plain" 'any(.[] | ((.rows // [])[] | .tool, (.more // [])[], (.step // empty | . as $s | $s.values[] | . as $v | $s.set | .arguments[$s.key] = $v.sent), .switch.turn_on, .switch.turn_off, .look), .look_back | select(. != null); .name == $n and .arguments == $a)' "$TMP/rows.json" >/dev/null 2>&1 \
+                && PANEL_ROW_MATCHED=1
+        fi
+        [ -n "$_quick$PANEL_ROW_MATCHED" ] || provide_in_use "$sec" "$_name" "${_arg:-$_act}" \
             || { provide_refuse "$1" "${_arg:-$_act} is not in the list now"; return 0; } ;;
     esac
-    _g=$(panel_gate "$sec" "$_act" "$_arg") || { provide_refuse "$1" "$(printf '%s' "$_g" | scrub_text)"; return 0; }
-    _undo='null'; _inv=$(panel_inverse "$sec" "$_act" "$_g" | cut -f1)   # read before the step: the state now is what undo puts back
+    _g=$(panel_gate "$sec" "$_act" "$_arg") || { PANEL_ROW_MATCHED=''; provide_refuse "$1" "$(printf '%s' "$_g" | scrub_text)"; return 0; }
+    PANEL_ROW_MATCHED=''
+    # the inverse read once, before the step: the state now is what undo puts back; panel_step takes it as it is (#196)
+    _undo='null'; PANEL_INV=$(panel_inverse "$sec" "$_act" "$_g"); PANEL_INV_READ=1; _inv=${PANEL_INV%%"$TAB"*}
     if [ -n "$_inv" ] && action_tool "$sec" "$_inv"; then _undo=$(tool_call_json "$_tool" "$_tv") || _undo='null'; fi
     BT_BRIDGE=''
     if [ "$_name" = bt_pair ]; then
@@ -7378,9 +7418,9 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         printf '%s\n' "$1" > "$TMP/bt.call-id"
     fi
     export BT_BRIDGE
-    _tok=$(printf '%s' "$2" | jq -c '._meta.progressToken // empty')
-    rm -f "$TMP/opened" "$TMP/action.effect"; panel_group_begin
-    PROVIDE_EFFECT=1
+    rm -f "$TMP/opened" "$TMP/action.effect"
+    : > "$TMP/step.mark"   # the settings read again after the step only when it wrote them (#196)
+    PROVIDE_EFFECT=1; PANEL_JOURNAL=off   # the terminal panel's recent picks and undo journal are its own: a host's step writes neither (#196)
     ( set +e; panel_step "$sec" "$_act" "$_g" > "$TMP/call.out" 2>&1; echo $? > "$TMP/call.rc" ) 3>&- 4<&- 5>&- & _w=$!
     if [ -n "$_tok$BT_BRIDGE" ]; then
         _i=0
@@ -7391,10 +7431,11 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
         done
     fi
     wait "$_w" 2>/dev/null || :
-    PANEL_PASS=''; BT_BRIDGE=''; rm -f "$TMP/bt.call-id" "$TMP/bt.ask"
-    panel_group_end
+    PANEL_PASS=''; BT_BRIDGE=''; PANEL_INV=''; PANEL_INV_READ=''; PANEL_JOURNAL=''; rm -f "$TMP/bt.call-id" "$TMP/bt.ask"
     _rc=$(cat "$TMP/call.rc" 2>/dev/null || echo 1); _out=$(scrub_text < "$TMP/call.out")
-    for _k in $THEME_KEYS; do unset "$_k"; done; config_load; theme_load   # a step may have changed the settings: the rows read them anew
+    if [ -n "$(find "$CONFIG" "$THEME_ENV" -newer "$TMP/step.mark" 2>/dev/null)" ]; then   # the step changed the settings: the rows read them anew
+        for _k in $THEME_KEYS; do unset "$_k"; done; config_load; theme_load
+    fi
     if [ "$_rc" -ne 0 ]; then provide_refuse "$1" "${_out:-$sec: $_tt did not work}"; return 0; fi
     case $_name in notes_add|reminders_*|out_level|out_adjust|out_mute|out_unmute|mic_level|mic_adjust|mic_mute|mic_unmute|window_focus|window_close)
         [ -s "$TMP/action.effect" ] || { provide_refuse "$1" 'the action may have happened, but its result could not be read back; check the current state before trying again'; return 0; } ;;
@@ -7407,11 +7448,19 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
     [ "$sec" != theme ] || [ "$_name" = theme_preview ] || { panel_load; _pal=$(jq -cn --arg f "$HEX_FG" --arg a "$HEX_ACCENT" --arg m "$PANEL_MUTED" --arg b "$PANEL_BG" --arg h "$PANEL_HI" --arg r "${HEX_ANSI_1:-}" --arg g "${HEX_ANSI_2:-}" '{HEX_FG: $f, HEX_ACCENT: $a, PANEL_MUTED: $m, PANEL_BG: $b, PANEL_HI: $h, HEX_ANSI_1: $r, HEX_ANSI_2: $g}'); }
     if [ -s "$TMP/network.undo" ]; then _undo=$(tool_call_json "${sec}_restore" "$(cat "$TMP/network.undo")"); fi
     if [ -s "$TMP/sound.undo" ]; then _undo=$(tool_call_json "${sec}_level" "$(cat "$TMP/sound.undo")"); fi
-    if [ -f "$TMP/opened" ]; then _sc=$(jq -cn '{opened: true}')
-    else _sc=$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" --argjson t "$_trn" '{receipt: $r} + (if $u == null then {} else {undo: $u} end) + (if $p == null then {} else {palette: $p} end) + (if $t == null then {} else {transitions: $t} end)'); fi
-    if [ -s "$TMP/action.effect" ]; then _sc=$(printf '%s' "$_sc" | jq -c --slurpfile e "$TMP/action.effect" '. + {effect: $e[0]}'); fi
-    rpc_result "$1" "$(printf '%s' "$_sc" | jq -c '{content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
-    [ -z "$SUBSCRIBED" ] || rpc_note notifications/resources/updated "$(jq -cn --arg u "spark-shell://$sec/rows" '{uri: $u}')"
+    # the section's rows as the step left them go with the answer: the host shows them and reads nothing again, the
+    # gate's rows are these, and the watcher counts them as seen (#196). A window put in front needs none.
+    [ -s "$TMP/action.effect" ] || printf 'null' > "$TMP/action.effect"
+    if [ -f "$TMP/opened" ]; then printf 'null' > "$TMP/rows.last.new"
+    else provide_rows "$sec" > "$TMP/rows.last.new" && cp "$TMP/rows.last.new" "$TMP/rows.last" && provide_seen; fi
+    rpc_result "$1" "$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" --argjson t "$_trn" --argjson o "$([ -f "$TMP/opened" ] && echo true || echo false)" \
+        --slurpfile e "$TMP/action.effect" --slurpfile rows "$TMP/rows.last.new" '
+        (if $o then {opened: true}
+         else {receipt: $r} + (if $u == null then {} else {undo: $u} end) + (if $p == null then {} else {palette: $p} end)
+            + (if $t == null then {} else {transitions: $t} end) + (if $rows[0] == null then {} else {rows: $rows[0]} end) end)
+        + (if $e[0] == null then {} else {effect: $e[0]} end)
+        | {content: [{type: "text", text: (del(.rows) | tojson)}], structuredContent: ., isError: false}')"
+    rm -f "$TMP/action.effect" "$TMP/rows.last.new"
 }
 provide_quick() {   # provide_quick SECTION TOOL VALUE -> 0 for a pick the rows of its kind always list, said without drawing them all (#33): every palette and saved theme by its name (a kept look only while in use), every drawing and the ground, a value's own step
     [ "$1" = theme ] || return 1

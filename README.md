@@ -1181,7 +1181,7 @@ are excluded. History is unavailable during an active task or review and
 is forgotten when the window closes.
 The terminal `want --json` interface and attachment reader below retain
 their existing one-shot behavior. An attachment goes with one request;
-it does not start a continuing task. The dialog says so when it is sent.
+it does not start a continuing task. The footer names it until it goes.
 
 A tool can advertise `_meta["spark-shell/prepare"]: true`. Before showing
 its proposal, the dialog calls the read-only `spark/prepare` method with
@@ -1191,6 +1191,15 @@ canonical arguments; these are checked and shown before execution.
 or another model call. Preparation failure, timeout or cancellation
 never falls through to execution. This extension is optional; providers
 without the flag keep their existing path. It grants no permission.
+
+A tool that puts a window in front (an app, a file, a terminal, a
+window, the lock) advertises `_meta["spark-shell/opens"]: true`: the
+dialog clears itself when the call goes and closes when the result says
+`opened`. A call's result may carry `rows`, the section's rows resource
+as the step left them: the dialog shows them in place of a new read,
+and no rows-changed note follows the call. The provider keeps the rows
+it last sent as the allowlist a step is matched against, and its
+watcher counts them as seen.
 
 `reminders_add` uses preparation to resolve relative times to an explicit
 local date and time. A past or unreadable time asks for clarification.

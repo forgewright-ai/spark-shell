@@ -2795,3 +2795,42 @@ fn a_notice_that_the_rows_changed_draws_no_frame_and_an_answer_does() {
     assert!(app.incoming(Incoming::Msg(0, answer)), "an answer may change the rows on screen");
     assert!(app.incoming(Incoming::Gone(0, "it ended".into())), "a provider gone is said");
 }
+
+#[test]
+fn a_call_whose_answer_carries_the_rows_reads_nothing_again() {
+    // #196: the provider answers with the section's rows as the step left them; the row shows the new state from the
+    // answer itself, and no read follows it
+    let (mut app, rx, tx) = app_with(&["bar"]);
+    let reads = Arc::new(Mutex::new(0));
+    let r2 = reads.clone();
+    let tools = json!([{"name": "bar_off", "title": "bar off", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}, "annotations": {"destructiveHint": false}}]);
+    let rows = |on: bool| json!({"title": "bar", "state": if on { "on" } else { "off" }, "rows": [{"id": "bar:off", "sign": if on { "dot" } else { "ring" }, "text": "the bar", "tool": {"name": "bar_off", "arguments": {}}, "more": [], "columns": [], "children": null}], "short": []});
+    let first = rows(true);
+    let after = rows(false);
+    let script: Script = Box::new(move |v, send| {
+        if v.get("method").and_then(Value::as_str) == Some("resources/read") {
+            *r2.lock().unwrap() += 1;
+        }
+        if let Some(r) = ordinary("bar", v, &tools, &first) {
+            return send(r);
+        }
+        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+            send(result(
+                &v["id"],
+                json!({"content": [{"type": "text", "text": "bar off"}], "structuredContent": {"receipt": "bar off", "rows": after}, "isError": false}),
+            ));
+        }
+    });
+    app.servers.push(stub(0, "bar", script, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    at_row(&mut app, View::Section(0), 0);
+    let before = *reads.lock().unwrap();
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()));
+    assert_eq!(app.providers[0].rows.rows[0].sign, "ring", "the row as the answer says it");
+    assert_eq!(app.providers[0].title, "off", "and the section's state");
+    assert!(!app.providers[0].dirty, "nothing to read again");
+    pump(&mut app, &rx, |_| false);
+    assert_eq!(*reads.lock().unwrap(), before, "no read followed the call");
+}

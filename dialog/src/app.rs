@@ -1401,12 +1401,14 @@ impl App {
                     .filter(|t| !t.is_empty())
                     .or(error)
                     .unwrap_or_else(|| "not changed".into());
+                let mut fresh = false;
                 if !refused {
                     if let Some(sc) = result.as_ref().and_then(|r| r.get("structuredContent")) {
                         self.wear_theme(idx, sc);
+                        fresh = self.setting.as_ref().is_some_and(|(q, p, _, _)| *q == n && *p == idx) && self.take_rows(idx, sc);
                     }
                 }
-                self.set_done(idx, n, refused, &said);
+                self.set_done(idx, n, refused, &said, fresh);
             }
         }
     }
@@ -1468,7 +1470,7 @@ impl App {
                     }
                     self.refuse("the preview did not come in time: Enter opens the file")
                 }
-                Kind::Set => self.set_done(idx, id, true, "it did not answer in time"),
+                Kind::Set => self.set_done(idx, id, true, "it did not answer in time", false),
                 Kind::Quiet => {
                     self.quiet = None;
                     if let Some(pv) = self.preview.as_mut() {
@@ -3928,6 +3930,7 @@ impl App {
             self.providers[idx].dirty = true;
             return;
         }
+        let mut fresh = false;
         if let Some(r) = result {
             let text = r.pointer("/content/0/text").and_then(Value::as_str).unwrap_or("");
             if refused {
@@ -3940,6 +3943,7 @@ impl App {
                 self.stop_queue();
             } else {
                 let sc = r.get("structuredContent").cloned().unwrap_or(Value::Null);
+                fresh = self.take_rows(idx, &sc);
                 if let Some(path) = sc.get("attach").and_then(Value::as_str) {
                     let under = home().map(|h| path.starts_with(&format!("{}/", h))).unwrap_or(false);
                     if privacy.text_safe(path) && under && !path.split('/').any(|c| c == ".." || c.starts_with('.')) {
@@ -4032,8 +4036,35 @@ impl App {
                 }
             }
         }
-        self.providers[idx].dirty = true;
+        if !fresh {
+            self.providers[idx].dirty = true;
+        }
         self.next_step();
+    }
+
+    /// The rows a call's answer carries, as the step left them (#196): taken as a read's are, and nothing is read
+    /// again. False when the answer carries none.
+    fn take_rows(&mut self, idx: usize, sc: &Value) -> bool {
+        let Some(text) = sc.get("rows").filter(|r| r.is_object()).map(Value::to_string) else {
+            return false;
+        };
+        let Some(rows) = model::rows(&text).filter(|_| text.len() <= mcp::RESOURCE_MAX) else {
+            return false;
+        };
+        if let Some(st) = &rows.state {
+            self.providers[idx].title = st.clone();
+        }
+        self.providers[idx].rows = rows;
+        self.providers[idx].dirty = false;
+        self.providers[idx].last_read = Some(Instant::now());
+        self.hold_rows(idx);
+        // a list of the provider's own on screen (the wallpapers) is read again: the answer is the section's rows
+        if let View::Folder(fp, uri) = self.view.clone() {
+            if fp == idx {
+                self.refresh_folder(fp, &uri);
+            }
+        }
+        true
     }
 
     /// The dialog's own column's width: the whole grid, at most ui::FULL_WIDTH in the middle of a full screen (#141).
@@ -4638,7 +4669,7 @@ impl App {
 
     /// A value's set came back: audited as every step is; a refusal said and its value given back to the
     /// provider's rows; then the next one waiting, if any.
-    fn set_done(&mut self, idx: usize, n: u64, refused: bool, said: &str) {
+    fn set_done(&mut self, idx: usize, n: u64, refused: bool, said: &str, fresh: bool) {
         let Some((_, p, id, call)) = self.setting.take().filter(|(q, p, _, _)| *q == n && *p == idx) else {
             return;
         };
@@ -4659,7 +4690,9 @@ impl App {
                 h.3 = Some(until);
             }
         }
-        self.providers[p].dirty = true; // the rows read again: the provider's word on the value
+        if !fresh {
+            self.providers[p].dirty = true; // the rows read again: the provider's word on the value
+        }
         if !self.set_next.is_empty() {
             let (np, nid, ncall) = self.set_next.remove(0);
             self.send_set(np, &nid, ncall);
