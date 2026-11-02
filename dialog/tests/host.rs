@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use spark_dialog::app::{App, Item, Job, Mode, Sign, View, CALENDAR_DEST, SETTINGS_DEST};
 use spark_dialog::mcp::Incoming;
 use spark_dialog::progress::{self, Work};
+use spark_dialog::reply::{Mark, Reply};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -147,7 +148,7 @@ fn a_destructive_step_takes_the_typed_yes() {
     typed(&mut app, "y");
     app.enter();
     assert!(calls.lock().unwrap().is_empty(), "anything but yes runs nothing");
-    assert_eq!(app.exchange.last().unwrap().sign, Sign::Refused);
+    assert_eq!(app.reply.as_ref().unwrap().mark, Mark::Refused, "the refusal is the reply row's");
     assert_eq!(app.input, "my draft", "the draft comes back after the question");
     app.set_draft("");
     at_row(&mut app, View::Section(0), 1);
@@ -157,10 +158,10 @@ fn a_destructive_step_takes_the_typed_yes() {
     }
     app.enter();
     let before = *reads.lock().unwrap();
-    assert!(pump(&mut app, &rx, |a| a.exchange.last().map(|l| l.sign == Sign::Done).unwrap_or(false)));
-    let last = app.exchange.last().unwrap();
-    assert_eq!(last.text, "terminal closed");
-    assert!(last.undo && app.undo.is_some(), "the result's undo is kept");
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.undo.is_some()));
+    // a row picked says nothing: no line above the list, the receipt in no row; its undo stands alone (#196)
+    assert!(app.exchange.is_empty(), "{:?}", app.exchange);
+    assert_eq!(app.reply, Some(Reply::undo_only()), "the result's undo is kept, at the reply row's end");
     let c = calls.lock().unwrap()[0].clone();
     assert_eq!(c["name"], "window_close");
     assert!(c.pointer("/_meta/progressToken").is_some(), "a call carries a progress token");
@@ -180,12 +181,13 @@ fn an_elicitation_is_asked_in_the_composer_and_a_secret_is_declined() {
         app.typed(c);
     }
     app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && calls.lock().unwrap().len() > 1));
+    assert_eq!(calls.lock().unwrap()[1], json!({"elicited": "accept", "name": "box"}));
     assert!(
-        pump(&mut app, &rx, |a| a.exchange.last().map(|l| l.text == "named box").unwrap_or(false)),
-        "{:?}",
+        app.exchange.is_empty() && app.reply.is_none(),
+        "the answer is not said back: {:?}",
         app.exchange
     );
-    assert_eq!(calls.lock().unwrap()[1], json!({"elicited": "accept", "name": "box"}));
     // a provider that asks for a password is declined unasked
     let step = spark_dialog::app::Step {
         prov: 0,
@@ -198,12 +200,13 @@ fn an_elicitation_is_asked_in_the_composer_and_a_secret_is_declined() {
         },
         who: spark_dialog::app::Who::Person,
         line: "window ask".into(),
+        typed: false,
     };
     app.run(step);
     assert!(pump(&mut app, &rx, |a| a
-        .exchange
-        .iter()
-        .any(|l| l.text.contains("asked for a secret: declined"))));
+        .reply
+        .as_ref()
+        .is_some_and(|r| r.mark == Mark::Refused && r.text.contains("asked for a secret: declined"))));
     assert!(pump(&mut app, &rx, |_| calls
         .lock()
         .unwrap()
@@ -235,14 +238,12 @@ fn a_plan_is_gated_step_by_step() {
     assert!(lines.contains(&"Refused rm everything is not offered here now".to_string()), "{:?}", lines);
     assert!(!lines.iter().any(|l| l.contains('_')), "no tool's name: {:?}", lines);
     app.enter();
-    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text == "terminal in front")));
-    let lines: Vec<String> = app.exchange.iter().map(|l| format!("{:?} {}", l.sign, l.text)).collect();
-    let step = lines
+    // the step spark planned ran on Enter: its receipt is the reply row's, and no line runs above the list (#196)
+    assert!(pump(&mut app, &rx, |a| a.reply.as_ref().is_some_and(|r| r.text == "terminal in front")));
+    assert!(!app
+        .exchange
         .iter()
-        .position(|l| l == "You window focus terminal")
-        .expect("the turn starts with the command as it ran");
-    let done = lines.iter().position(|l| l == "Done terminal in front").unwrap();
-    assert_eq!(step + 1, done, "and what came of it right under it");
+        .any(|l| l.text.contains("window focus terminal") || l.text.contains("in front")));
     assert_eq!(calls.lock().unwrap().len(), 1, "only the gated step ran");
 }
 
@@ -261,7 +262,7 @@ fn a_provider_with_another_name_or_protocol_is_closed() {
         app.servers.push(stub(0, "window", script, tx));
         app.start();
         assert!(pump(&mut app, &rx, |a| a.providers[0].dead.is_some()));
-        assert!(app.exchange.last().unwrap().text.contains(why), "{:?}", app.exchange);
+        assert!(app.reply.as_ref().unwrap().text.contains(why), "{:?}", app.reply);
     }
 }
 
@@ -273,7 +274,7 @@ fn a_provider_that_dies_floods_or_hangs_is_one_line_and_the_dialog_stays() {
     app.servers.push(stub(0, "window", script, tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].dead.is_some()));
-    assert_eq!(app.exchange.last().unwrap().text, "window stopped: it ended");
+    assert_eq!(app.reply.as_ref().unwrap().text, "window stopped: it ended");
     assert!(app.quit.is_none());
     // a line over 1 MB
     let (mut app, rx, tx) = app_with(&["window"]);
@@ -281,14 +282,14 @@ fn a_provider_that_dies_floods_or_hangs_is_one_line_and_the_dialog_stays() {
     app.servers.push(stub(0, "window", script, tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].dead.is_some()));
-    assert_eq!(app.exchange.last().unwrap().text, "window stopped: a line over 1 MB");
+    assert_eq!(app.reply.as_ref().unwrap().text, "window stopped: a line over 1 MB");
     // silent: initialize gets no answer within its 5 s
     let (mut app, rx, tx) = app_with(&["window"]);
     app.servers.push(stub(0, "window", Box::new(|_, _| {}), tx));
     app.start();
     app.tick(Instant::now() + Duration::from_secs(6));
     assert!(pump(&mut app, &rx, |a| a.providers[0].dead.is_some()));
-    assert_eq!(app.exchange.last().unwrap().text, "window stopped: it did not answer");
+    assert_eq!(app.reply.as_ref().unwrap().text, "window stopped: it did not answer");
 }
 
 #[test]
@@ -324,22 +325,16 @@ fn an_undo_that_carries_a_secret_is_not_kept_and_esc_closes() {
         app.typed(c);
     }
     app.enter();
-    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text == "connected to cafe")));
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && !seen.lock().unwrap().is_empty()));
     assert_eq!(seen.lock().unwrap()[0], json!({"name": "cafe", "password": "s3cret"}));
     assert!(app.undo.is_none(), "an undo with a password in it is not kept");
-    assert!(!app.exchange.iter().any(|l| l.text.contains("s3cret")), "the password is in no line");
     assert!(
-        app.toast.as_ref().is_some_and(|t| t.text == "connected to cafe" && !t.undo),
-        "the receipt is the toast, with no Undo"
+        app.exchange.is_empty() && app.reply.is_none(),
+        "a row picked says nothing, and no Undo stands with no undo"
     );
     app.escape();
     assert_eq!(app.view, View::Home, "Esc goes back to the home");
-    app.toast_tick();
-    assert!(
-        app.toast.is_none() && !app.exchange_up(),
-        "the toast went with its view, and nothing is left to clear (#133)"
-    );
-    assert!(!app.items().iter().any(|i| matches!(i, Item::Undo(..))), "no undo row: there is no undo");
+    assert!(!app.exchange_up(), "nothing is left to clear");
     app.escape();
     assert_eq!(app.quit, Some(0), "so Esc closes");
 }
@@ -378,10 +373,8 @@ fn a_row_that_asks_for_words_says_what_they_are() {
         app.typed(c);
     }
     app.enter();
-    assert!(pump(&mut app, &rx, |a| a
-        .exchange
-        .iter()
-        .any(|l| l.text == "reminder tomorrow 09:00 call the dentist")));
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && !seen.lock().unwrap().is_empty()));
+    assert!(app.reply.is_none(), "a row picked says nothing: the list shows the reminder");
     assert_eq!(seen.lock().unwrap()[0], json!({"words": "tomorrow 9:00 call the dentist"}));
 }
 
@@ -522,7 +515,7 @@ fn a_step_run_from_a_folder_reads_the_folder_again() {
     app.sel = 1;
     app.enter();
     assert!(
-        pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("attached"))),
+        pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c.get("name").is_some())),
         "the row's step ran"
     );
     assert!(pump(&mut app, &rx, |_| reads(&calls) >= 2), "the folder is read again after the step");
@@ -572,7 +565,10 @@ fn an_attachment_outside_home_is_refused() {
     app.in_list = true;
     app.sel = 1;
     app.enter();
-    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("not under your home"))));
+    assert!(pump(&mut app, &rx, |a| a
+        .reply
+        .as_ref()
+        .is_some_and(|r| r.text.contains("not under your home"))));
     assert!(app.attachment.is_none());
 }
 
@@ -638,6 +634,7 @@ fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
         },
         who: spark_dialog::app::Who::Undo,
         line: "undo terminal".into(),
+        typed: false,
     });
     app.plan(r#"{"answer": "", "steps": [{"name": "undo_all", "arguments": {}, "line": "undo"}], "refused": []}"#);
     assert_eq!(app.input, "undo", "the undo waits in the box as the word undo");
@@ -950,13 +947,9 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
     // his report (#39): "change theme to nord" worked, and the next request ran its undo
     let (mut app, rx, calls, _r) = started();
     app.cfg.spark_shell = "/bin/spark-shell".into();
-    let line = |sign: Sign, text: &str, undo: bool| spark_dialog::app::Line {
-        sign,
-        text: text.into(),
-        undo,
-        step: false,
-    };
-    app.exchange = vec![line(Sign::You, "window close terminal", false), line(Sign::Done, "terminal closed", true)];
+    let mut r = Reply::new(Mark::Done, "terminal closed");
+    r.undo = true;
+    app.reply = Some(r);
     app.undo = Some(spark_dialog::app::Step {
         prov: 0,
         call: spark_dialog::model::Call {
@@ -968,15 +961,10 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
         },
         who: spark_dialog::app::Who::Undo,
         line: "undo window close terminal".into(),
+        typed: false,
     });
     typed(&mut app, "change theme to dracula");
-    let picks = app.picks();
-    let ask = picks.iter().position(|i| *i == Item::Ask).expect("Ask spark");
-    assert!(
-        picks[..ask].iter().any(|i| matches!(i, Item::Undo(..))),
-        "the undo comes before Ask spark: {:?}",
-        picks
-    );
+    assert!(app.picks().contains(&Item::Ask), "Ask spark");
     assert_eq!(app.picks().get(app.sel), Some(&Item::Ask), "words that name no row light Ask spark");
     app.enter();
     assert!(app.jobs.iter().any(|j| asks_for(j, "change theme to dracula")), "Enter asks spark");
@@ -1069,22 +1057,17 @@ fn a_command_typed_in_the_dialog_s_own_words_runs_with_no_model() {
 }
 
 #[test]
-fn the_undo_is_at_the_end_of_the_result_it_takes_back() {
-    // his photo (#52): "Undo theme text bigger" stood under a newer question. The undo is no row of its
-    // own now: it is Undo at the end of the result it takes back (#53)
-    let (mut app, _rx, _calls, _r) = started();
-    let line = |sign: Sign, text: &str, undo: bool| spark_dialog::app::Line {
-        sign,
-        text: text.into(),
-        undo,
-        step: false,
-    };
-    app.exchange = vec![
-        line(Sign::You, "window close terminal", false),
-        line(Sign::Done, "terminal closed", true),
-        line(Sign::You, "is the terminal open?", false),
-        line(Sign::Says, "No.", false),
-    ];
+fn the_undo_is_at_the_end_of_the_reply_row_and_its_click_runs_it() {
+    // his photo (#52): "Undo theme text bigger" stood under a newer question. The undo is no row of the list:
+    // it is Undo at the end of the reply row, under the keys, and the list never moves for it (#196)
+    let (mut app, rx, calls, _r) = started();
+    app.exchange = vec![spark_dialog::app::Line {
+        sign: Sign::You,
+        text: "is the terminal open?".into(),
+    }];
+    let mut r = Reply::new(Mark::Done, "terminal closed");
+    r.undo = true;
+    app.reply = Some(r);
     app.undo = Some(spark_dialog::app::Step {
         prov: 0,
         call: spark_dialog::model::Call {
@@ -1096,25 +1079,15 @@ fn the_undo_is_at_the_end_of_the_result_it_takes_back() {
         },
         who: spark_dialog::app::Who::Undo,
         line: "undo window close terminal".into(),
+        typed: false,
     });
-    let items = app.items();
-    let q = items
-        .iter()
-        .position(|x| matches!(x, Item::Said(Sign::You, t, true) if t == "is the terminal open?"))
-        .expect("the question");
-    assert_eq!(q, 0, "the newest turn first");
-    let c = items
-        .iter()
-        .position(|x| matches!(x, Item::Said(Sign::You, t, true) if t == "window close terminal"))
-        .expect("the older turn's command");
-    assert!(c > q + 1);
-    assert_eq!(
-        items[c + 1],
-        Item::Undo(Sign::Done, "terminal closed".into(), true),
-        "Undo ends the result it takes back"
+    assert!(
+        !app.items().iter().any(|x| matches!(x, Item::Said(_, t, _) if t.contains("terminal closed"))),
+        "the receipt is no line of the list"
     );
-    assert_eq!(items.iter().filter(|x| matches!(x, Item::Undo(..))).count(), 1, "and nowhere else");
-    assert!(matches!(app.picks().first(), Some(Item::Undo(..))), "it is the first pick");
+    app.undo_now();
+    assert!(app.reply.is_none() && app.undo.is_none(), "the undo taken, the reply row clear");
+    assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["name"] == "window_focus")));
 }
 
 #[test]
@@ -1155,9 +1128,9 @@ fn risk_is_decided_here_a_hint_that_says_safe_does_not_skip_the_yes() {
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(*seen.lock().unwrap(), 0, "a yes for a step no longer offered runs nothing");
     assert!(
-        app.exchange.last().unwrap().text.contains("not done: this is not offered here now"),
+        app.reply.as_ref().unwrap().text.contains("not done: this is not offered here now"),
         "{:?}",
-        app.exchange
+        app.reply
     );
 }
 
@@ -1194,10 +1167,15 @@ fn a_failed_step_stops_the_steps_that_depend_on_it() {
     app.plan(r#"{"answer": "", "steps": [{"name": "out_mute", "arguments": {}, "line": "out mute"}, {"name": "out_unmute", "arguments": {}, "line": "out unmute"}], "refused": []}"#);
     assert_eq!(app.input, "out mute\nout unmute", "two steps, one command a line");
     app.enter();
-    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.starts_with("so these did not run"))));
+    assert!(pump(&mut app, &rx, |a| a
+        .reply
+        .as_ref()
+        .is_some_and(|r| r.text.contains("so these did not run"))));
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(calls.lock().unwrap().len(), 1, "the step after the failure did not run");
-    assert!(app.exchange.iter().any(|l| l.text == "so these did not run: out unmute"), "{:?}", app.exchange);
+    // one reply row: the refusal, then what did not run for it
+    let r = app.reply.clone().unwrap();
+    assert!(r.mark == Mark::Refused && r.text.ends_with("; so these did not run: out unmute"), "{:?}", r);
 }
 
 #[test]
@@ -1211,12 +1189,9 @@ fn a_step_with_no_answer_is_neither_done_nor_failed_and_stops_the_rest() {
     app.enter();
     assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 1));
     app.tick(Instant::now() + spark_dialog::mcp::T_CALL + Duration::from_secs(1));
-    assert!(
-        app.exchange.iter().any(|l| l.text.contains("may or may not have happened")),
-        "{:?}",
-        app.exchange
-    );
-    assert!(app.exchange.iter().any(|l| l.text == "so these did not run: out unmute"), "{:?}", app.exchange);
+    let r = app.reply.clone().unwrap();
+    assert!(r.text.contains("may or may not have happened"), "{:?}", r);
+    assert!(r.text.ends_with("so these did not run: out unmute"), "{:?}", r);
     assert!(app.queue.is_empty() && app.running.is_none());
 }
 
@@ -1458,6 +1433,7 @@ fn an_overlong_literal_addition_refuses_without_changing_the_draft() {
         },
         who: Who::Person,
         line: "enter literal text".into(),
+        typed: false,
     });
     assert!(matches!(app.mode, Mode::Ask { .. }));
     app.paste("existing draft");
@@ -1466,8 +1442,8 @@ fn an_overlong_literal_addition_refuses_without_changing_the_draft() {
     assert_eq!(app.input, "existing draft");
     assert_eq!(app.cursor, 3);
     assert!(matches!(app.mode, Mode::Ask { .. }));
-    assert_eq!(app.exchange.last().unwrap().sign, Sign::Refused);
-    assert!(app.exchange.last().unwrap().text.contains("2000 characters; the text was not added"));
+    assert_eq!(app.reply.as_ref().unwrap().mark, Mark::Refused);
+    assert!(app.reply.as_ref().unwrap().text.contains("2000 characters; the text was not added"));
     let mut buffer = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 60, 44));
     spark_dialog::ui::draw(&app, &palette("tokyonight-night"), "", &mut buffer);
     let visible = buffer.content.iter().map(|cell| cell.symbol()).collect::<String>();
@@ -1486,7 +1462,7 @@ fn an_overlong_literal_addition_refuses_without_changing_the_draft() {
         add(&mut app);
         assert_eq!(app.input, full);
         assert_eq!(app.cursor, INPUT_MAX);
-        assert_eq!(app.exchange.last().unwrap().sign, Sign::Refused);
+        assert_eq!(app.reply.as_ref().unwrap().mark, Mark::Refused);
     }
     assert!(calls.lock().unwrap().is_empty());
     assert!(!app.jobs.iter().any(inference));
@@ -1517,7 +1493,7 @@ fn talk_puts_what_was_heard_in_the_draft_and_esc_keeps_the_draft() {
     assert!(app.jobs.contains(&Job::StopListening));
     app.helper(spark_dialog::app::Helper::Listen, Err(String::new()));
     assert_eq!(app.input, "play some jazz", "Esc kept the draft");
-    assert_eq!(app.exchange.last().unwrap().text, "stopped: nothing kept");
+    assert!(app.reply.is_none() && app.exchange.is_empty(), "Esc said it: nothing more is said");
     app.chip(3);
     app.jobs.clear();
     app.focus_lost();
@@ -1547,7 +1523,7 @@ fn a_model_picked_is_reviewed_first_and_the_draft_waits() {
     app.sel = k;
     app.enter();
     assert_eq!(app.mode, Mode::Apply("qwen".into()), "browsing changed nothing; picking asks");
-    assert!(app.exchange.last().unwrap().text.contains("every client of this computer's spark"));
+    assert!(app.reply.as_ref().unwrap().text.contains("every client of this computer's spark"));
     assert!(!app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::ModelSet, _))));
     app.escape();
     assert_eq!(app.input, "half a thought", "Esc keeps the model and the draft");
@@ -1586,7 +1562,7 @@ fn a_theme_step_hands_the_dialog_its_new_palette_and_no_other_provider_can() {
         assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
         at_row(&mut app, View::Section(0), 0);
         app.enter();
-        assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text == "theme dracula")));
+        assert!(pump(&mut app, &rx, |a| a.running.is_none()));
         assert_eq!(
             app.palette.as_ref().and_then(|p| p.get("PANEL_BG")).and_then(Value::as_str),
             if kept { Some("30323e") } else { None },
@@ -1677,7 +1653,7 @@ fn typing_a_section_s_name_lists_the_section_once() {
 }
 
 #[test]
-fn a_receipt_is_a_toast_that_goes_with_its_view_and_nothing_after_it() {
+fn a_click_says_nothing_and_typed_words_get_one_reply_row() {
     let (mut app, rx, tx) = app_with(&["wifi"]);
     let tools = json!([{"name": "wifi_disconnect", "title": "wifi disconnect", "inputSchema": {"type": "object", "properties": {}, "required": [], "additionalProperties": false}, "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}}]);
     let rows = json!({"title": "wifi", "rows": [{"id": "wifi:disconnect", "sign": "dot", "text": "cafe", "tool": {"name": "wifi_disconnect", "arguments": {}}, "more": [], "columns": [], "children": null}], "short": ["wifi:disconnect"]});
@@ -1696,34 +1672,29 @@ fn a_receipt_is_a_toast_that_goes_with_its_view_and_nothing_after_it() {
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
     at_row(&mut app, View::Section(0), 0);
+    let before = app.items();
     app.enter();
-    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text == "wifi off")));
-    // #133: the receipt is the toast at the content's bottom, Undo in it, and no turn of the exchange
-    assert!(app.toast_here() && app.toast.as_ref().is_some_and(|t| t.text == "wifi off" && t.undo));
-    assert_eq!(app.items().last(), Some(&Item::Toast), "the toast is the content's last line");
+    assert!(app.items() == before, "the click changes no line of the list while it runs");
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.undo.is_some()));
+    // #196: a click says nothing; its undo stands alone in the reply row; the list is what it was
+    assert_eq!(app.reply, Some(Reply::undo_only()));
     assert!(
-        !app.items().iter().any(|i| matches!(i, Item::Said(..) | Item::Undo(..))),
-        "a step's lines are no turn: {:?}",
+        app.exchange.is_empty() && app.items() == before,
+        "no line above the list, none below it: {:?}",
         app.items()
     );
-    app.in_list = true;
-    app.sel = app.picks().len() - 1;
-    assert!(app.hint().iter().any(|(w, _)| w == "Undo "), "the toast lit, Enter undoes: {:?}", app.hint());
-    // it goes after its time
-    app.toast.as_mut().unwrap().at = std::time::Instant::now() - spark_dialog::app::TOAST_FOR;
-    assert!(app.toast_tick() && app.toast.is_none(), "the toast goes after its time");
-    app.sel = 0;
+    // typed words: the receipt in the reply row, Undo at its end, and still nothing in the list
+    app.in_list = false;
+    typed(&mut app, "wifi disconnect");
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.reply.as_ref().is_some_and(|r| r.text == "wifi off")));
+    assert!(app.reply.as_ref().is_some_and(|r| r.mark == Mark::Done && r.undo));
+    assert!(app.exchange.is_empty(), "{:?}", app.exchange);
+    // Esc clears the reply row and goes back; the undo stays at hand for typed undo
     app.escape();
     assert_eq!(app.view, View::Home, "Esc goes back to the home");
-    assert!(!app.exchange_up(), "nothing at the home to clear");
-    // #154: one receipt, one place: the home shows no Undo of its own once the toast is gone, typed undo still works
-    assert!(
-        !app.items().iter().any(|i| matches!(i, Item::Undo(..))),
-        "no second Undo: {:?}",
-        app.items().first()
-    );
+    assert!(app.reply.is_none() && !app.exchange_up(), "nothing at the home to clear");
     assert!(app.undo.is_some(), "the undo still at hand for typed undo");
-    assert!(!app.hint().iter().any(|(w, _)| w == "Clear "), "the key row says no Clear: {:?}", app.hint());
     app.escape();
     assert_eq!(app.quit, Some(0), "Esc closes");
 }
@@ -1857,7 +1828,7 @@ fn a_value_changes_in_place_says_nothing_and_holds_over_an_old_read() {
         "the provider's old rows read again: the value holds"
     );
     assert!(
-        app.exchange.is_empty() && app.toast.is_none(),
+        app.exchange.is_empty() && app.reply.is_none(),
         "nothing said: no line above the list, no receipt below it: {:?}",
         app.exchange
     );
@@ -1891,9 +1862,13 @@ fn a_switch_flips_in_place_and_a_refusal_puts_it_back() {
         app.in_list && matches!(app.picks().get(app.sel), Some(Item::Row(0, 4))),
         "the light stays on the switch"
     );
-    assert!(pump(&mut app, &rx, |a| a.toast.is_some()), "the refusal is said");
+    assert!(pump(&mut app, &rx, |a| a.reply.is_some()), "the refusal is said");
     assert_eq!(calls.lock().unwrap()[0]["arguments"]["to"], "words");
-    assert!(app.toast.as_ref().unwrap().text.contains("the bar stays in signs"), "in the provider's words");
+    let r = app.reply.clone().unwrap();
+    assert!(
+        r.mark == Mark::Refused && r.text.contains("the bar stays in signs"),
+        "in the reply row, in the provider's words"
+    );
     let on = |a: &App| {
         a.providers[0]
             .rows
@@ -1963,7 +1938,7 @@ fn a_palette_is_kept_in_place_its_look_shown_while_lit_and_taken_back_after() {
         .unwrap()
         .iter()
         .any(|c| c["name"] == "theme_palette" && c["arguments"]["name"] == "nord")));
-    assert!(app.exchange.is_empty() && app.toast.is_none(), "kept in place, nothing said");
+    assert!(app.exchange.is_empty() && app.reply.is_none(), "kept in place, nothing said");
 }
 
 #[test]
@@ -2127,8 +2102,8 @@ fn native_pairing_is_bound_to_the_running_native_provider_and_never_echoes_codes
                     },
                     who: Who::Person,
                     line: "bt pair Buds".into(),
+                    typed: false,
                 },
-                0,
             ));
         }
         app.incoming(Incoming::Msg(
@@ -2350,10 +2325,12 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
     app.enter();
     assert!(matches!(app.view, View::Folder(0, _)), "back to the folder: {:?}", app.view);
     assert!(app.steps_row.is_none());
-    assert!(pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("in the trash"))));
-    // the turn names the file, never its whole path (#112)
-    assert!(app.exchange.iter().any(|l| l.text == "files trash notes.md"), "{:?}", app.exchange);
-    assert!(!app.exchange.iter().any(|l| l.text.contains(&home)), "{:?}", app.exchange);
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.undo.is_some()));
+    // a step from a row's list says nothing: the row is gone from the list, its undo in the reply row (#196)
+    assert!(app.exchange.is_empty(), "{:?}", app.exchange);
+    assert_eq!(app.reply, Some(Reply::undo_only()));
+    // the undo names the file, never its whole path (#112)
+    assert_eq!(app.undo.as_ref().unwrap().line, "undo files trash notes.md");
     let c = tool_calls(&calls);
     assert_eq!(c[0]["name"], "files_trash");
     assert_eq!(c[0]["arguments"]["path"], format!("{}/notes.md", home));
@@ -2367,12 +2344,9 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
     at_row(&mut app, v, 0);
     let undo = app.undo.clone().unwrap();
     app.run(undo);
-    assert!(
-        pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("files_restore notes.md"))),
-        "{:?}",
-        app.exchange
-    );
-    assert!(!app.exchange.iter().any(|l| l.text.contains("not in the list")), "{:?}", app.exchange);
+    assert!(pump(&mut app, &rx, |_| tool_calls(&calls).iter().any(|c| c["name"] == "files_restore")));
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()));
+    assert!(app.reply.as_ref().is_none_or(|r| r.mark != Mark::Refused), "{:?}", app.reply);
 }
 
 #[test]
@@ -2415,11 +2389,8 @@ fn a_move_picks_its_folder_in_the_files_and_lands_the_step_here() {
     assert_eq!(app.picks()[0], Item::Here);
     app.enter();
     assert!(app.picking.is_none());
-    assert!(
-        pump(&mut app, &rx, |a| a.exchange.iter().any(|l| l.text.contains("moved to"))),
-        "{:?}",
-        app.exchange
-    );
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && !tool_calls(&calls).is_empty()));
+    assert!(app.exchange.is_empty(), "a move picked says nothing: {:?}", app.exchange);
     let c = tool_calls(&calls);
     assert_eq!(c[0]["name"], "files_move");
     assert_eq!(c[0]["arguments"]["path"], format!("{}/notes.md", home));
@@ -2519,18 +2490,6 @@ fn settings_stand_in_groups_and_the_home_holds_about_and_power() {
         "Power opens its section: {:?}",
         app.view
     );
-}
-
-#[test]
-fn in_files_a_click_lights_a_row_and_elsewhere_one_click_does_it() {
-    // #140: a file's or a folder's row in Files is lit by a click and opened by a second; a place is done on one
-    let (app, _rx, _calls, _home) = manager();
-    let file = app.picks().iter().position(|i| matches!(i, Item::Folder(_))).unwrap();
-    assert!(app.lights_on_click(file), "a row of Files lights on a click");
-    let (mut app, _rx, _tx) = app_with(&["out", "about"]);
-    app.view = View::Home;
-    let place = app.picks().iter().position(|i| matches!(i, Item::Dest(_))).unwrap();
-    assert!(!app.lights_on_click(place), "a place of the home is done on one click");
 }
 
 #[test]
@@ -2642,8 +2601,120 @@ fn a_pick_in_a_list_moves_its_check_in_place_and_says_nothing() {
     pump(&mut app, &rx, |_| false);
     assert_eq!(calls.lock().unwrap().len(), 1, "the one in use again sends nothing");
     assert!(
-        app.exchange.is_empty() && app.toast.is_none(),
+        app.exchange.is_empty() && app.reply.is_none(),
         "nothing said: no line above the list, no receipt below it: {:?}",
         app.exchange
     );
+}
+
+/// The grid as drawn at 60 by 40, a string a row, and the lit row's y.
+fn frame(app: &App) -> (Vec<String>, Option<u16>) {
+    let mut b = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 60, 40));
+    let d = spark_dialog::ui::draw(app, &palette("tokyonight-night"), "Sun 18 Oct \u{b7} 12:04", &mut b);
+    let rows = (0..40).map(|y| (0..60).map(|x| b[(x, y)].symbol().to_string()).collect::<String>()).collect();
+    // a pick's y in the list, or in one of two columns side by side (#183)
+    let lit = d
+        .picks
+        .iter()
+        .map(|(y, n)| (*y, *n))
+        .chain(d.cells.iter().map(|(_, _, y, n)| (*y, *n)))
+        .find(|(_, n)| app.in_list && *n == app.sel)
+        .map(|(y, _)| y);
+    (rows, lit)
+}
+
+/// The list's rows, 7 to 35, but for the lit row (a switch's own control), with a check read as a blank: a pick
+/// moves its check from the row kept before, and nothing else.
+fn list_but(rows: &[String], y: Option<u16>) -> Vec<String> {
+    (7..36).filter(|r| Some(*r as u16) != y).map(|r| rows[r].replace('\u{2713}', " ")).collect()
+}
+
+#[test]
+fn a_pick_of_any_kind_keeps_every_other_row_still_and_a_refusal_lands_under_the_keys() {
+    // #196: a switch, a value, a palette kept, the rows above and below never move; the lit row keeps its y before,
+    // while and after the call; a refusal is the reply row (6) and the switch comes back
+    for (id, refused) in [("theme:show:Text size", false), ("theme:nord", false), ("theme:show:Words on the bar", true)] {
+        let (mut app, rx, _calls) = theme_app("theme_glyphs");
+        lit_at(&mut app, id);
+        let (before, y) = frame(&app);
+        assert!(y.is_some(), "{} lit", id);
+        if id.contains("Text size") {
+            app.right();
+        } else {
+            app.enter();
+        }
+        let (during, y1) = frame(&app);
+        assert_eq!(y, y1, "{}: the lit row keeps its place while the call runs", id);
+        assert_eq!(list_but(&before, y), list_but(&during, y), "{}: no other row moves", id);
+        assert_eq!(before[6], during[6], "{}: nothing said at the click", id);
+        assert!(pump(&mut app, &rx, |a| a.reply.is_some() || !a.busy_pointer()));
+        std::thread::sleep(Duration::from_millis(50));
+        pump(&mut app, &rx, |_| false);
+        let (after, y2) = frame(&app);
+        assert_eq!(y, y2, "{}: and after it", id);
+        assert_eq!(list_but(&before, y), list_but(&after, y), "{}: no other row moved", id);
+        if refused {
+            assert!(after[6].contains('\u{2717}') && after[6].contains("the bar stays in signs"), "{:?}", after[6]);
+            assert_eq!(before[y.unwrap() as usize], after[y.unwrap() as usize], "the switch came back as it was");
+        } else {
+            assert_eq!(before[6], after[6], "{}: nothing said after it either", id);
+        }
+    }
+}
+
+#[test]
+fn a_row_that_opens_a_window_steps_aside_at_the_click_and_back_on_a_refusal() {
+    // #196: the provider marks a tool that puts a window in front; the dialog goes clear at the click, closes when
+    // the window came, and is back with the refusal under the keys when it did not
+    for opened in [true, false] {
+        let (mut app, rx, tx) = app_with(&["apps"]);
+        let tools = json!([{"name": "apps_open", "title": "apps open NAME", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"], "additionalProperties": false}, "annotations": {"destructiveHint": false}, "_meta": {"spark-shell/opens": true}}]);
+        let rows = json!({"title": "apps", "rows": [{"id": "apps:open foot", "sign": "blank", "text": "foot", "tool": {"name": "apps_open", "arguments": {"name": "foot"}}, "more": [], "columns": [], "children": null}], "short": []});
+        let script: Script = Box::new(move |v, send| {
+            if let Some(r) = ordinary("apps", v, &tools, &rows) {
+                return send(r);
+            }
+            if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+                let r = if opened {
+                    json!({"content": [{"type": "text", "text": "{\"opened\":true}"}], "structuredContent": {"opened": true}, "isError": false})
+                } else {
+                    json!({"content": [{"type": "text", "text": "foot opened no window"}], "isError": true})
+                };
+                send(result(&v["id"], r));
+            }
+        });
+        app.servers.push(stub(0, "apps", script, tx));
+        app.start();
+        assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+        assert!(app.providers[0].tools[0].opens, "the hint is read");
+        at_row(&mut app, View::Section(0), 0);
+        app.enter();
+        assert!(app.hidden, "clear at the click");
+        assert!(pump(&mut app, &rx, |a| a.running.is_none()));
+        if opened {
+            assert_eq!(app.quit, Some(3), "the window came: the dialog closes");
+        } else {
+            assert!(!app.hidden && app.quit.is_none(), "refused: the dialog is back");
+            assert_eq!(app.reply, Some(Reply::new(Mark::Refused, "foot opened no window")));
+        }
+    }
+}
+
+#[test]
+fn space_on_a_row_with_no_page_types_nothing_and_a_switch_found_by_words_flips() {
+    // the review's Space on a row with no page, and C: Enter on a switch found by typed words flips it
+    let (mut app, rx, calls) = theme_app("");
+    lit_at(&mut app, "theme:show:Text size");
+    app.typed(' ');
+    assert!(app.input.is_empty(), "Space typed no space: {:?}", app.input);
+    app.view = View::Section(0);
+    app.in_list = false;
+    typed(&mut app, "words on");
+    assert!(app.in_list || !app.picks().is_empty());
+    app.in_list = true;
+    app.sel = app.picks().iter().position(|i| matches!(i, Item::Row(0, 4))).expect("the switch found");
+    app.enter();
+    assert!(app.input.is_empty(), "the words went with the pick");
+    assert!(row_of(&app, "theme:show:Words on the bar").switch.as_ref().unwrap().on, "the switch flipped");
+    assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["name"] == "theme_glyphs")));
 }

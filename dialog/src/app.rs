@@ -20,6 +20,7 @@ use crate::mcp::{self, Incoming, Kind, Server};
 use crate::model::{self, Call, Rows, Tool};
 use crate::preview::{self, Preview};
 use crate::progress::Work;
+use crate::reply::{Mark, Reply};
 use crate::scrub::{cells, scrub};
 use crate::search;
 use crate::transition::Reel;
@@ -35,8 +36,6 @@ pub const MIN_WIDTH: u16 = 36;
 pub const MIN_HEIGHT: u16 = 20;
 /// The newest lines of the exchange the content area shows, newest turn first.
 pub const EXCHANGE_MAX: usize = 10;
-/// The cells the Undo at the end of a result takes, with the air before it.
-pub const UNDO_ROOM: usize = 7;
 /// The draft's length, in characters.
 pub const INPUT_MAX: usize = 2000;
 /// What the prompt says while it is empty.
@@ -344,7 +343,7 @@ fn talk_keep(t: Talk) {
     let _ = std::fs::write(d.join("talk"), if t == Talk::Off { "off\n" } else { "click\n" });
 }
 
-/// A line of the exchange: the command as it ran (or the words of a question), then what came of it.
+/// A line of the exchange: the words asked of spark, then what it said.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Sign {
     You,
@@ -357,24 +356,7 @@ pub enum Sign {
 pub struct Line {
     pub sign: Sign,
     pub text: String,
-    pub undo: bool,
-    /// A step's own line (its command, its receipt): kept in the record, shown as the toast, never as a turn (#133).
-    pub step: bool,
 }
-
-/// A step's receipt as a toast (#133): one line at the bottom of the content, with Undo where the step has
-/// one and a dismiss x; it goes after TOAST_FOR, on the x, on Esc, or when the view it was made in is left.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Toast {
-    pub sign: Sign,
-    pub text: String,
-    pub undo: bool,
-    pub view: View,
-    pub at: Instant,
-}
-
-/// How long a toast stays (#133).
-pub const TOAST_FOR: Duration = Duration::from_secs(10);
 
 /// How far Left and Right move a sound or a video in the preview (#151).
 pub const SEEK_SECONDS: f64 = 5.0;
@@ -465,7 +447,10 @@ pub struct Step {
     pub prov: usize,
     pub call: Call,
     pub who: Who,
+    /// The step in words ("theme nord"): what a list of steps not run names. Never drawn as a line.
     pub line: String,
+    /// Typed words made it, not a click: its receipt is said in the reply row (#196).
+    pub typed: bool,
 }
 
 /// The commands spark planned for words, in the input box where the words were typed, as spark's own
@@ -614,9 +599,6 @@ pub enum Item {
     Ask,
     Heading(String),
     Blank,
-    /// The last line of the result the undo at hand takes back, with Undo at its end: the line, as
-    /// Said, and picking it runs the undo (#53).
-    Undo(Sign, String, bool),
     Row(usize, usize),
     /// A row of the folder shown now.
     Folder(usize),
@@ -641,8 +623,6 @@ pub enum Item {
     Title(String),
     /// A line that says something and opens nothing: (words, muted).
     Text(String, bool),
-    /// The last step's receipt at the bottom of the content: Enter takes the step back where it has an undo (#133).
-    Toast,
     /// A provider the dialog talks to, in Connections.
     Provider(usize),
     /// Connections' row that opens the models.
@@ -694,18 +674,16 @@ pub struct App {
     pub in_list: bool,
     pub sel: usize,
     pub exchange: Vec<Line>,
+    /// The reply row under the key row: the last receipt, refusal or note (#196).
+    pub reply: Option<Reply>,
     pub undo: Option<Step>,
     pub queue: VecDeque<Step>,
     /// The commands spark planned, waiting in the input box for Enter (#53).
     pub staged: Option<Staged>,
-    /// The value row left or right last changed, and where its turn starts: the next change of the
-    /// same value takes that turn's place, so a run of presses is one turn.
-    pub value_turn: Option<(String, usize)>,
-    pub running: Option<(usize, u64, Step, usize)>,
-    /// The receipt of the last step, shown at the bottom of the content for a while (#133).
-    pub toast: Option<Toast>,
-    /// Where the step being run began in the exchange: its lines from there are a step's.
-    step_from: Option<usize>,
+    pub running: Option<(usize, u64, Step)>,
+    /// The dialog stepped aside for a step that puts a window in front: main.rs makes the window clear
+    /// while this holds, and solid again when it ends (#196).
+    pub hidden: bool,
     pub busy_since: Option<Instant>,
     pub frame: u64,
     /// Every model spark lists: (name, serving | downloaded | -).
@@ -809,13 +787,12 @@ impl App {
             in_list: false,
             sel: 0,
             exchange: vec![],
+            reply: None,
             undo: None,
             queue: VecDeque::new(),
             staged: None,
-            value_turn: None,
             running: None,
-            toast: None,
-            step_from: None,
+            hidden: false,
             busy_since: None,
             frame: 0,
             models: vec![],
@@ -865,17 +842,21 @@ impl App {
         if text.is_empty() {
             return;
         }
-        self.exchange.push(Line {
-            sign,
-            text,
-            undo: false,
-            step: false,
-        });
+        self.exchange.push(Line { sign, text });
         let n = self.exchange.len();
         if n > 200 {
             self.exchange.drain(..n - 200);
-            self.value_turn = self.value_turn.take().and_then(|(id, at)| at.checked_sub(n - 200).map(|a| (id, a)));
         }
+    }
+
+    /// The reply row says this, in place of what it said before (#196).
+    pub fn reply(&mut self, mark: Mark, text: &str) {
+        self.reply = Some(Reply::new(mark, text));
+    }
+
+    /// A refusal, in the reply row.
+    pub fn refuse(&mut self, text: &str) {
+        self.reply(Mark::Refused, text);
     }
 
     /// The commands spark planned are in the box as they came: Enter runs them (#53).
@@ -903,7 +884,7 @@ impl App {
     }
 
     /// spark works on words: the header's march says so and nothing else does (#139). A step, a page, a place's
-    /// rows show none: a page slow to come has its wait (#122), a step's answer its toast (#133).
+    /// rows show none: a page slow to come has its wait (#122), a step its row (#196).
     pub fn thinking(&self) -> bool {
         self.wait.is_some()
     }
@@ -1028,20 +1009,16 @@ impl App {
         if let Some(s) = self.servers.iter_mut().find(|s| s.idx == idx) {
             s.close_stdin();
         }
-        if let Some((p, _, _, _)) = self.running.clone() {
-            if p == idx {
-                self.running = None;
-                self.want_cancel();
-                self.opened = false;
-                self.say(
-                    Sign::Refused,
-                    &format!("{} stopped before it answered, so it may or may not have happened", label),
-                );
-                self.stop_queue();
-                self.next_step();
-            }
+        if self.running.as_ref().is_some_and(|(p, _, _)| *p == idx) {
+            self.running = None;
+            self.want_cancel();
+            self.opened = false;
+            self.hidden = false;
+            self.refuse(&format!("{} stopped before it answered, so it may or may not have happened", label));
+            self.stop_queue();
+            return self.next_step();
         }
-        self.say(Sign::Refused, &format!("{} stopped: {}", label, why));
+        self.refuse(&format!("{} stopped: {}", label, why));
     }
 
     pub fn incoming(&mut self, m: Incoming) {
@@ -1124,7 +1101,7 @@ impl App {
         let active = self
             .running
             .as_ref()
-            .is_some_and(|(provider, _, step, _)| *provider == idx && step.call.name == "bt_pair");
+            .is_some_and(|(provider, _, step)| *provider == idx && step.call.name == "bt_pair");
         let native = !self.cfg.spark_shell.is_empty()
             && self
                 .servers
@@ -1168,10 +1145,10 @@ impl App {
         let credential = props
             .iter()
             .any(|(k, v)| gate::secret(k, Some(v)) || v.get("title").and_then(Value::as_str).map(|t| gate::secret(t, None)).unwrap_or(false));
-        let busy = !matches!(self.mode, Mode::Normal) || !self.running.as_ref().is_some_and(|(provider, _, _, _)| *provider == idx);
+        let busy = !matches!(self.mode, Mode::Normal) || !self.running.as_ref().is_some_and(|(provider, _, _)| *provider == idx);
         if credential || busy || self.asks_this_call >= ASK_PER_CALL || self.asks.len() >= ASK_PER_MINUTE || props.is_empty() {
             if credential {
-                self.say(Sign::Refused, &format!("{} asked for a secret: declined", self.providers[idx].label));
+                self.refuse(&format!("{} asked for a secret: declined", self.providers[idx].label));
             }
             if let Some(s) = self.server(idx) {
                 s.answer(&id, json!({"action": "decline"}));
@@ -1273,7 +1250,7 @@ impl App {
                     .and_then(Value::as_str)
                     .unwrap_or("");
                 if text.len() > mcp::RESOURCE_MAX {
-                    return self.say(Sign::Refused, "that folder holds too much to show");
+                    return self.refuse("that folder holds too much to show");
                 }
                 // the rows of the folder on screen alone: an answer for a folder left meanwhile lands nowhere (#112)
                 let of = result.as_ref().and_then(|r| r.pointer("/contents/0/uri")).and_then(Value::as_str).map(scrub);
@@ -1284,7 +1261,7 @@ impl App {
                                 self.folder = Some((p, uri, rows));
                                 self.hold_rows(p); // a pick kept in a list (a wallpaper) stays checked over the read (#191)
                             }
-                            None => self.say(Sign::Refused, &error.unwrap_or_else(|| "that folder could not be read".into())),
+                            None => self.refuse(&error.unwrap_or_else(|| "that folder could not be read".into())),
                         }
                     }
                 }
@@ -1338,7 +1315,7 @@ impl App {
                     None => {
                         pv.failed = true;
                         let name = pv.row().text.clone();
-                        self.say(Sign::Refused, &error.unwrap_or_else(|| format!("{} could not be shown", name)));
+                        self.refuse(&error.unwrap_or_else(|| format!("{} could not be shown", name)));
                     }
                 }
             }
@@ -1366,7 +1343,7 @@ impl App {
                         .filter(|t| !t.is_empty())
                         .or(error)
                         .unwrap_or_else(|| "not played".into());
-                    self.refuse_toast(&said);
+                    self.refuse(&said);
                 }
             }
             Kind::Call(_) => {
@@ -1424,18 +1401,16 @@ impl App {
             match kind {
                 Kind::Call(_) => {
                     self.clear_pair(idx);
-                    if self.running.as_ref().is_some_and(|(p, n, _, _)| *p == idx && *n == id) {
+                    if self.running.as_ref().is_some_and(|(p, n, _)| *p == idx && *n == id) {
                         self.running = None;
                         self.want_cancel();
                         self.opened = false;
+                        self.hidden = false;
                         // no answer is no proof either way: say so, and run nothing that depends on it
-                        self.say(
-                            Sign::Refused,
-                            &format!(
-                                "no answer in {} s, so it may or may not have happened: look before you try again",
-                                mcp::T_CALL.as_secs()
-                            ),
-                        );
+                        self.refuse(&format!(
+                            "no answer in {} s, so it may or may not have happened: look before you try again",
+                            mcp::T_CALL.as_secs()
+                        ));
                         self.stop_queue();
                         self.next_step();
                     }
@@ -1445,12 +1420,12 @@ impl App {
                         self.providers[idx].reading = false;
                     }
                 }
-                Kind::Folder => self.say(Sign::Refused, "the list did not come in time: Esc goes back"),
+                Kind::Folder => self.refuse("the list did not come in time: Esc goes back"),
                 Kind::Page => {
                     if let Some(pv) = self.preview.as_mut() {
                         pv.failed = true; // the wait ends with the words (#124)
                     }
-                    self.say(Sign::Refused, "the preview did not come in time: Enter opens the file")
+                    self.refuse("the preview did not come in time: Enter opens the file")
                 }
                 Kind::Set => self.set_done(idx, id, true, "it did not answer in time"),
                 Kind::Quiet => {
@@ -1458,7 +1433,7 @@ impl App {
                     if let Some(pv) = self.preview.as_mut() {
                         pv.playing = None;
                     }
-                    self.refuse_toast("the sound did not answer in time");
+                    self.refuse("the sound did not answer in time");
                 }
                 Kind::Init => self.lose(idx, "it did not answer"),
                 _ => {}
@@ -1521,9 +1496,6 @@ impl App {
         let w = self.col_w().saturating_sub(8).max(10) as usize; // the sign at 2, the words at 4, air at the right
         let mut turns: Vec<Vec<usize>> = vec![];
         for (i, l) in self.exchange.iter().enumerate() {
-            if l.step {
-                continue; // a step's own line: its receipt is the toast (#133)
-            }
             if l.sign == Sign::You || turns.is_empty() {
                 turns.push(vec![]);
             }
@@ -1531,11 +1503,6 @@ impl App {
                 t.push(i);
             }
         }
-        let undo_at = if self.undo.is_some() {
-            self.exchange.iter().rposition(|l| l.undo)
-        } else {
-            None
-        };
         let mut lines = 0;
         for (k, t) in turns.iter().rev().enumerate() {
             let mut turn = vec![];
@@ -1544,16 +1511,8 @@ impl App {
             }
             for &i in t {
                 let l = &self.exchange[i];
-                // the line Undo ends keeps its room: the words wrap short of the chip
-                let room = if Some(i) == undo_at { w.saturating_sub(UNDO_ROOM).max(10) } else { w };
-                let parts = crate::ui::wrap(&l.text, room);
-                let last = parts.len().saturating_sub(1);
-                for (j, part) in parts.into_iter().enumerate() {
-                    if Some(i) == undo_at && j == last {
-                        turn.push(Item::Undo(l.sign.clone(), part, j == 0));
-                    } else {
-                        turn.push(Item::Said(l.sign.clone(), part, j == 0));
-                    }
+                for (j, part) in crate::ui::wrap(&l.text, w).into_iter().enumerate() {
+                    turn.push(Item::Said(l.sign.clone(), part, j == 0));
                 }
             }
             if k > 0 && lines + turn.len() > EXCHANGE_MAX {
@@ -1758,8 +1717,6 @@ impl App {
             }
             View::Home => {
                 if self.query().trim().is_empty() {
-                    // a receipt has one place, the toast: when it goes its Undo goes with it, and typed undo still takes
-                    // the step back (#154; #133 kept a second Undo here)
                     // the places with air between them, as the approved home has them
                     for (k, d) in self.dests().into_iter().enumerate() {
                         if k > 0 {
@@ -1792,9 +1749,6 @@ impl App {
             out.push(Item::Blank);
         }
         out.extend(list);
-        if self.toast_here() {
-            out.push(Item::Toast);
-        }
         out
     }
 
@@ -1973,8 +1927,7 @@ impl App {
             Item::Model(i) => self.models.get(*i).map(|(_, s)| s == "serving" || s == "downloaded").unwrap_or(false),
             Item::TalkOpt(_) => self.voice_on,
             Item::Hit(i) => self.hits.get(*i).is_some_and(|(_, r)| Self::pickable(r)),
-            Item::Ask | Item::Undo(..) | Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::StepOf(_) | Item::Here | Item::More(..) => true,
-            Item::Toast => self.toast.as_ref().is_some_and(|t| t.undo) && self.undo.is_some(),
+            Item::Ask | Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::StepOf(_) | Item::Here | Item::More(..) => true,
             _ => false,
         }
     }
@@ -2318,6 +2271,9 @@ impl App {
             if self.open_preview() {
                 return;
             }
+            if self.in_list && self.input.is_empty() {
+                return; // a lit row with no page: Space is no letter of a search not begun (#196)
+            }
         }
         self.keep_lit = None;
         if c.is_control() {
@@ -2364,11 +2320,7 @@ impl App {
         self.leave_history();
         let room = INPUT_MAX.saturating_sub(self.input.chars().count());
         if self.plain_text_input() && t.chars().count() > room {
-            self.say(
-                Sign::Refused,
-                &format!("this prompt holds at most {} characters; the text was not added", INPUT_MAX),
-            );
-            return;
+            return self.refuse(&format!("this prompt holds at most {} characters; the text was not added", INPUT_MAX));
         }
         if self.mode == Mode::Normal {
             self.remember_target();
@@ -2547,6 +2499,8 @@ impl App {
             return;
         }
         self.target = None;
+        // Esc clears the reply row, whatever else it does (#196)
+        self.reply = None;
         // a request spark is still reading: Esc drops it, and the words come back
         if self.pending.is_some() && self.mode == Mode::Normal && !self.staged_now() {
             let words = self.pending.as_ref().map(|(w, _)| w.clone()).unwrap_or_default();
@@ -2554,26 +2508,16 @@ impl App {
             if self.input.is_empty() {
                 self.set_input(words);
             }
-            self.say(Sign::Says, "stopped");
             return;
         }
         self.keep_lit = None;
         match std::mem::replace(&mut self.mode, Mode::Normal) {
-            Mode::Confirm(_) => {
-                self.say(Sign::Refused, "not done: no yes");
-                self.step_done();
+            // a question let go is a step not run: nothing is said, Esc said it (#196)
+            Mode::Confirm(_) | Mode::Ask { .. } => {
+                self.hidden = false;
                 self.input.clear();
                 self.unstash();
-                self.stop_queue();
-            }
-            Mode::Ask { step, field, .. } => {
-                self.step_from = Some(self.exchange.len());
-                self.say(Sign::You, &step.line);
-                self.say(Sign::Refused, &format!("not done: no {} given", field.replace('_', " ")));
-                self.step_done();
-                self.input.clear();
-                self.unstash();
-                self.stop_queue();
+                self.queue.clear();
             }
             Mode::Pair { prov, id, .. } | Mode::Elicit { prov, id, .. } => {
                 if let Some(s) = self.server(prov) {
@@ -2582,8 +2526,7 @@ impl App {
                 self.input.clear();
                 self.unstash();
             }
-            Mode::Apply(name) => {
-                self.say(Sign::Refused, &format!("model {}: kept {}", name, self.model_name.clone().unwrap_or_default()));
+            Mode::Apply(_) => {
                 self.input.clear();
                 self.unstash();
             }
@@ -2613,11 +2556,9 @@ impl App {
                 } else if let Some(v) = self.came_from.pop() {
                     self.go_back(v);
                 } else if self.exchange_up() {
-                    // at the home with an exchange or a toast showing, Esc clears them first; the next Esc closes (#25);
-                    // the undo at hand stays, the home's undo row (#133)
+                    // at the home with an exchange showing, Esc clears it first; the next Esc closes (#25);
+                    // the undo at hand stays, typed undo takes it
                     self.exchange.clear();
-                    self.toast = None;
-                    self.value_turn = None;
                     self.sel = 0;
                 } else {
                     self.close_window();
@@ -2626,9 +2567,9 @@ impl App {
         }
     }
 
-    /// Whether the content area shows an exchange or a toast that Esc would clear.
+    /// Whether the content area shows an exchange that Esc would clear.
     pub fn exchange_up(&self) -> bool {
-        self.running.is_none() && (self.exchange.iter().any(|l| !l.step) || self.toast_here())
+        self.running.is_none() && !self.exchange.is_empty()
     }
 
     fn go_back(&mut self, v: View) {
@@ -2649,6 +2590,7 @@ impl App {
         self.want_cancel();
         self.target = None;
         self.keep_lit = None;
+        self.reply = None; // a reply is the view's it was said in: it never follows to another (#196)
         self.view = v;
         self.sel = 0;
         self.in_list = false;
@@ -2687,6 +2629,7 @@ impl App {
         self.want_cancel();
         self.target = None;
         self.keep_lit = None;
+        self.reply = None;
         self.steps_row = None;
         // the files section is its home folder: its one row, ~, is no stop of its own
         if let View::Section(p) = v {
@@ -2760,13 +2703,7 @@ impl App {
             let (p, row) = (pv.prov, pv.row().clone());
             self.stop_sound();
             if let Some(call) = row.tool {
-                let line = self.step_line(p, &call, &row.text);
-                self.run(Step {
-                    prov: p,
-                    call,
-                    who: Who::Person,
-                    line,
-                });
+                self.pick_step(p, call, &row.text);
             }
             return;
         }
@@ -2777,7 +2714,8 @@ impl App {
                 if typed.trim() == "yes" {
                     self.approved(step);
                 } else {
-                    self.say(Sign::Refused, "not done: it takes the word yes");
+                    self.hidden = false;
+                    self.refuse("not done: it takes the word yes");
                     self.stop_queue();
                 }
                 return;
@@ -2791,8 +2729,7 @@ impl App {
                     .and_then(|p| p.get(&field))
                     .is_some_and(gate::plain_text);
                 if if plain { typed.is_empty() } else { typed.trim().is_empty() } {
-                    self.say(Sign::You, &step.line);
-                    self.say(Sign::Refused, &format!("not done: no {}", field));
+                    self.refuse(&format!("not done: no {}", field.replace('_', " ")));
                     self.stop_queue();
                     return;
                 }
@@ -2826,14 +2763,11 @@ impl App {
                     }
                     self.unstash();
                 } else {
-                    self.say(
-                        Sign::Refused,
-                        if kind == "confirm" || kind == "display" {
-                            "type yes or no"
-                        } else {
-                            "enter the device code in the requested form"
-                        },
-                    );
+                    self.refuse(if kind == "confirm" || kind == "display" {
+                        "type yes or no"
+                    } else {
+                        "enter the device code in the requested form"
+                    });
                     self.mode = Mode::Pair { prov, id, message, kind };
                 }
                 return;
@@ -2849,8 +2783,7 @@ impl App {
                 let typed = std::mem::take(&mut self.input);
                 self.cursor = 0;
                 let (k, _) = &fields[at];
-                answers.insert(k.clone(), Value::String(typed.clone()));
-                self.say(Sign::You, &format!("{} {}", self.providers[prov].label, typed));
+                answers.insert(k.clone(), Value::String(typed));
                 if at + 1 < fields.len() {
                     self.mode = Mode::Elicit {
                         prov,
@@ -2871,7 +2804,6 @@ impl App {
             Mode::Apply(name) => {
                 self.input.clear();
                 self.unstash();
-                self.say(Sign::You, &format!("model {}", name));
                 self.wait = Some(Work::Swell); // spark's server restarts and loads the model: no estimate of how long
                 self.jobs.push(Job::Run(Helper::ModelSet, vec![self.cfg.spark.clone(), "model".into(), name]));
                 return;
@@ -2891,9 +2823,17 @@ impl App {
             if let Some(st) = self.staged.take() {
                 self.set_input(st.draft); // what was typed while spark planned comes back
                 self.sel = 0;
-                self.queue.extend(st.steps);
+                self.queue.extend(st.steps.into_iter().map(|s| Step { typed: true, ..s }));
                 return self.next_step();
             }
+        }
+        if !self.in_list && (self.attaching.is_some() || self.picking.is_some()) {
+            // picking a file or a folder, the words typed find one: Enter picks the best, it never leaves the pick
+            if self.input.trim().is_empty() || self.picks().is_empty() {
+                return;
+            }
+            self.in_list = true;
+            self.sel = self.best();
         }
         if !self.in_list {
             // the prompt: a place's name alone opens it, a command runs, any other words are a request,
@@ -2908,13 +2848,22 @@ impl App {
         let picks = self.picks();
         let sel = self.sel.min(picks.len().saturating_sub(1));
         let Some(item) = picks.get(sel).cloned() else { return };
-        if self.input.trim().is_empty() && self.flip_or_keep(&item) {
-            return;
-        }
         let words = self.input.trim().to_string();
-        // a list filtered by the words typed: the words were a search, and go with the pick
+        // a list filtered by the words typed: the words were a search, and go with the pick; commands spark
+        // put in the box go too, so Space and the history are the list's again
         if matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..) | View::Found(..)) {
-            self.set_input(String::new());
+            self.staged = None;
+            if !words.is_empty() {
+                self.set_input(String::new());
+            }
+        }
+        // a switch flips and a value kept is set, found by words or not; a value row found by words stays lit
+        if self.flip_or_keep(&item) {
+            return self.follow_lit();
+        }
+        if !words.is_empty() && self.row_ref(&item).is_some_and(|r| r.step.is_some()) {
+            self.keep_lit = self.row_ref(&item).map(|r| r.id.clone());
+            return self.follow_lit();
         }
         self.sel = 0;
         self.in_list = false;
@@ -2927,7 +2876,6 @@ impl App {
                 }
                 self.request(&words);
             }
-            Item::Undo(..) | Item::Toast => self.undo_now(),
             Item::StepOf(k) => {
                 // one of the lit row's steps: back to its list, then the step as a pick of its own
                 let (Some(row), View::Steps(p)) = (self.steps_row.clone(), self.view.clone()) else {
@@ -2946,13 +2894,7 @@ impl App {
                 if let Some(v) = self.came_from.pop() {
                     self.go_back(v);
                 }
-                let line = self.step_line(p, &call, &row.text);
-                self.run(Step {
-                    prov: p,
-                    call,
-                    who: Who::Person,
-                    line,
-                });
+                self.pick_step(p, call, &row.text);
             }
             Item::Here => {
                 // the folder shown is the one picked: the step waiting for it runs with it, and the list stays here
@@ -2987,7 +2929,6 @@ impl App {
             Item::TalkOpt(t) => {
                 self.talk = t;
                 talk_keep(t);
-                self.say(Sign::Done, if t == Talk::Off { "talk off" } else { "click the mic to talk" });
                 if let Some(v) = self.came_from.pop() {
                     self.go_back(v);
                 }
@@ -2995,16 +2936,15 @@ impl App {
             Item::Model(i) => {
                 let (name, state) = self.models[i].clone();
                 if state == "serving" {
-                    self.say(Sign::Done, &format!("{} is in use", name));
-                    return;
+                    return; // the one in use: nothing to change
                 }
                 // browsing changed nothing; this is the review: what changes, and for whom
                 let who = match &self.server {
                     Some(s) => format!("everyone who uses {}", s),
                     None => "every client of this computer's spark".to_string(),
                 };
-                self.say(
-                    Sign::Says,
+                self.reply(
+                    Mark::Note,
                     &format!(
                         "Use {} instead of {}? It restarts the model for {}.",
                         name,
@@ -3021,13 +2961,7 @@ impl App {
                 if let Some(c) = row.children {
                     self.open_children(p, &c);
                 } else if let Some(call) = row.tool {
-                    let line = self.step_line(p, &call, &row.text);
-                    self.run(Step {
-                        prov: p,
-                        call,
-                        who: Who::Person,
-                        line,
-                    });
+                    self.pick_step(p, call, &row.text);
                 } else if !row.more.is_empty() {
                     self.steps_of(p, row);
                 }
@@ -3037,10 +2971,10 @@ impl App {
                 if let Some(pk) = &row.pick {
                     // a pick opens the files at the home folder, offering the types it takes
                     let Some(f) = self.files() else {
-                        return self.say(Sign::Refused, "no files to pick from");
+                        return self.refuse("no files to pick from");
                     };
                     let Some(root) = self.providers[f].rows.rows.iter().find_map(|r| r.children.clone()) else {
-                        return self.say(Sign::Refused, "no folder to pick from");
+                        return self.refuse("no folder to pick from");
                     };
                     self.picking = Some(Picking {
                         back: self.view.clone(),
@@ -3059,13 +2993,7 @@ impl App {
                     if call.name == "about_open" {
                         return self.go(View::About);
                     }
-                    let line = self.step_line(p, &call, &row.text);
-                    self.run(Step {
-                        prov: p,
-                        call,
-                        who: Who::Person,
-                        line,
-                    });
+                    self.pick_step(p, call, &row.text);
                 } else if !row.more.is_empty() {
                     // a row that is only its steps (a saved network not around, #169): Enter opens them, as Right does
                     self.steps_of(p, row);
@@ -3090,19 +3018,14 @@ impl App {
                     self.view = pk.back;
                     self.folder = None;
                     self.sel = 0;
-                    let line = format!("{} {}", self.providers[pk.prov].label, row.text);
-                    self.run(Step {
-                        prov: pk.prov,
-                        call: Call {
-                            name: pk.tool,
-                            arguments,
-                            ask: vec![],
-                            said: None,
-                            pick: None,
-                        },
-                        who: Who::Person,
-                        line,
-                    });
+                    let call = Call {
+                        name: pk.tool,
+                        arguments,
+                        ask: vec![],
+                        said: None,
+                        pick: None,
+                    };
+                    self.pick_step(pk.prov, call, &row.text);
                     return;
                 }
                 let call = if self.attaching.is_some() {
@@ -3111,13 +3034,7 @@ impl App {
                     row.tool.clone()
                 };
                 if let Some(call) = call {
-                    let line = self.step_line(p, &call, &row.text);
-                    self.run(Step {
-                        prov: p,
-                        call,
-                        who: Who::Person,
-                        line,
-                    });
+                    self.pick_step(p, call, &row.text);
                 } else if !row.more.is_empty() {
                     // a row that is only its actions (this folder, #127): Enter opens them, as Right does
                     self.steps_of(p, row);
@@ -3182,15 +3099,12 @@ impl App {
         self.chip_focus = None;
         match c {
             4 => {
-                if let Some(a) = self.attachment.take() {
-                    let name = a.rsplit('/').next().unwrap_or("").to_string();
-                    self.say(Sign::Done, &format!("{} removed: the next question goes without it", name));
-                }
+                self.attachment = None;
             }
             0 if self.cfg.plus => {
                 let Some(f) = self.files() else { return };
                 let Some(root) = self.providers[f].rows.rows.iter().find_map(|r| r.children.clone()) else {
-                    return self.say(Sign::Refused, "no folder to attach from");
+                    return self.refuse("no folder to attach from");
                 };
                 self.attaching = Some((self.view.clone(), self.came_from.len()));
                 self.open_children(f, &root);
@@ -3269,7 +3183,7 @@ impl App {
     fn request(&mut self, words: &str) {
         if self.running.is_some() {
             self.set_input(words.into());
-            return self.say(Sign::Says, "wait for the current action's result");
+            return self.reply(Mark::Note, "wait for the current action's result");
         }
         let visible = self.shown();
         let first = words.split_whitespace().next().unwrap_or("");
@@ -3280,7 +3194,7 @@ impl App {
         });
         if loading {
             self.set_input(words.into());
-            return self.say(Sign::Says, "the controls are still loading; press Enter when they appear");
+            return self.reply(Mark::Note, "the controls are still loading; press Enter when they appear");
         }
         self.remember_prompt(words);
         let target = self.target.take();
@@ -3295,7 +3209,7 @@ impl App {
             }
         }
         if let Some(steps) = self.commands(words) {
-            self.queue.extend(steps);
+            self.queue.extend(steps.into_iter().map(|s| Step { typed: true, ..s }));
             return self.next_step();
         }
         self.want(words);
@@ -3368,6 +3282,7 @@ impl App {
                         call,
                         who: Who::Person,
                         line: words.join(" "),
+                        typed: true,
                     },
                 ));
             }
@@ -3378,15 +3293,13 @@ impl App {
     fn want(&mut self, words: &str) {
         if self.cfg.spark.is_empty() && self.cfg.spark_shell.is_empty() {
             self.set_input(words.to_string());
-            self.say(Sign::You, words);
-            return self.say(Sign::Refused, "no spark to read the words");
+            return self.refuse("no spark to read the words");
         }
         self.want_cancel();
         self.wait = Some(Work::Think);
         // the file goes with this request alone; it comes back if the request fails. In a preview it is
         // the file shown, as the text spark can read of it (#120): a picture, a sound has none
         let mut file = self.attachment.take();
-        let picked = file.is_some();
         if file.is_none() && self.view == View::Preview {
             let Some(pv) = &self.preview else { return };
             match pv.shown.as_ref().and_then(|pg| pg.attach.clone()) {
@@ -3395,13 +3308,9 @@ impl App {
                     let name = pv.row().text.clone();
                     self.wait = None;
                     self.set_input(words.to_string());
-                    self.say(Sign::You, words);
-                    return self.say(Sign::Refused, &format!("spark reads text, and {} has none to read", name));
+                    return self.refuse(&format!("spark reads text, and {} has none to read", name));
                 }
             }
-        }
-        if picked {
-            self.say(Sign::Says, "This file is used for this request only.");
         }
         self.pending = Some((words.to_string(), file.clone()));
         let serial = self.want_serial;
@@ -3628,9 +3537,8 @@ impl App {
         self.wait = None;
         let words = self.pending.as_ref().map(|(w, _)| w.clone()).unwrap_or_default();
         let Ok(v) = serde_json::from_str::<Value>(text) else {
-            self.say(Sign::You, &words);
             self.give_back();
-            return self.say(Sign::Refused, "spark answered with nothing to run");
+            return self.refuse("spark answered with nothing to run");
         };
         let answer = v.get("answer").and_then(Value::as_str).unwrap_or("").trim().to_string();
         let mut no: Vec<String> = v
@@ -3688,6 +3596,7 @@ impl App {
                             call,
                             who: Who::Model,
                             line,
+                            typed: true,
                         })
                     }
                     Err(e) => no.push(format!("{} did not run: {}", said.unwrap_or_else(|| self.proposal_line(p, &call)), e)),
@@ -3707,8 +3616,7 @@ impl App {
         if steps.is_empty() {
             if answer.is_empty() {
                 if no.is_empty() {
-                    self.say(Sign::You, &words);
-                    self.say(Sign::Refused, "spark found nothing to do for that");
+                    self.refuse("spark found nothing to do for that");
                 }
                 return self.give_back(); // the words come back to be said again
             }
@@ -3732,8 +3640,15 @@ impl App {
             }
             return;
         }
-        let draft = std::mem::take(&mut self.input);
         let text = lines.join("\n");
+        if self.mode != Mode::Normal {
+            // the prompt is asking (a yes, a name, a code): the commands wait where the draft waits, and come
+            // to the box when the question is answered or let go (#196)
+            let draft = self.stash.replace(text.clone()).unwrap_or_default();
+            self.staged = Some(Staged { text, steps, draft });
+            return;
+        }
+        let draft = std::mem::take(&mut self.input);
         self.set_input(text.clone());
         self.in_list = false;
         self.sel = 0;
@@ -3757,7 +3672,26 @@ impl App {
             return;
         }
         let left: Vec<String> = self.queue.drain(..).map(|s| s.line).collect();
-        self.say(Sign::Refused, &format!("so these did not run: {}", left.join(", ")));
+        let why = self
+            .reply
+            .as_ref()
+            .filter(|r| r.mark == Mark::Refused)
+            .map(|r| format!("{}; ", r.text))
+            .unwrap_or_default();
+        self.refuse(&format!("{}so these did not run: {}", why, left.join(", ")));
+    }
+
+    /// A row picked (a click, Enter, a preview's Enter, a step from a row's list): its step, run as every
+    /// step is and silent unless refused (#196).
+    fn pick_step(&mut self, prov: usize, call: Call, row_text: &str) {
+        let line = self.step_line(prov, &call, row_text);
+        self.run(Step {
+            prov,
+            call,
+            who: Who::Person,
+            line,
+            typed: false,
+        });
     }
 
     /// Whether a step waits for the typed yes: the provider's destructive hint, or this machine's own
@@ -3766,12 +3700,13 @@ impl App {
         tool.destructive || LOCAL_RISK.contains(&tool.name.as_str())
     }
 
-    /// A step: an argument asked when it lacks one; then its turn starts, the command as it runs (#53);
-    /// a typed yes when it is risky, then the call.
+    /// A step: an argument asked when it lacks one; a typed yes when it is risky, then the call. Nothing is
+    /// drawn for it: a refusal lands in the reply row, a typed step's receipt too (#196).
     pub fn run(&mut self, step: Step) {
         if self.running.is_some() {
-            return self.say(Sign::Says, "wait for the current action's result");
+            return self.reply(Mark::Note, "wait for the current action's result");
         }
+        self.reply = None;
         if step.who != Who::Model {
             self.want_cancel();
             self.target = None;
@@ -3786,7 +3721,7 @@ impl App {
             // a folder picked in the files for the step's argument (a move's to): the list stays where it
             // is with a row that lands the step here, and only folders open; Esc cancels (#112)
             let Some(f) = self.files() else {
-                return self.say(Sign::Refused, "no files to pick a folder from");
+                return self.refuse("no files to pick a folder from");
             };
             let name = step
                 .call
@@ -3799,7 +3734,7 @@ impl App {
             let what = format!("{} {} here", verb_of(&step.call.name).to_lowercase(), name);
             if !matches!(&self.view, View::Folder(p, _) if *p == f) {
                 let Some(root) = self.files_root(f) else {
-                    return self.say(Sign::Refused, "no folder to pick from");
+                    return self.refuse("no folder to pick from");
                 };
                 self.go(View::Folder(f, root.clone()));
                 self.read_folder(f, &root);
@@ -3823,16 +3758,12 @@ impl App {
         if step.who == Who::Undo {
             self.undo = None; // the undo at hand is taken, wherever it came from (its row, "undo", spark)
         }
-        self.step_from = Some(self.exchange.len());
-        self.say(Sign::You, &step.line);
         let Some(tool) = self.tool_of(&step).cloned() else {
-            self.say(Sign::Refused, "this is not offered here now");
-            self.step_done();
+            self.refuse("this is not offered here now");
             return self.stop_queue();
         };
         if let Err(e) = self.checked(&step) {
-            self.say(Sign::Refused, &e);
-            self.step_done();
+            self.refuse(&e);
             return self.stop_queue();
         }
         if self.risky(&tool) {
@@ -3875,8 +3806,7 @@ impl App {
         match self.checked(&step) {
             Ok(()) => self.call(step),
             Err(e) => {
-                self.say(Sign::Refused, &format!("not done: {}", e));
-                self.step_done();
+                self.refuse(&format!("not done: {}", e));
                 self.stop_queue();
             }
         }
@@ -3888,8 +3818,10 @@ impl App {
 
     fn call(&mut self, step: Step) {
         if self.running.is_some() {
-            return self.say(Sign::Says, "wait for the current action's result");
+            return self.reply(Mark::Note, "wait for the current action's result");
         }
+        // a step that puts a window in front: the dialog steps aside at once, and closes when it is done (#196)
+        let opens = self.tool_of(&step).is_some_and(|t| t.opens);
         let params = json!({"name": step.call.name, "arguments": Value::Object(step.call.arguments.clone())});
         let idx = step.prov;
         let n = self
@@ -3900,11 +3832,11 @@ impl App {
         match n {
             Some(id) => {
                 self.asks_this_call = 0;
-                self.running = Some((idx, id, step, self.exchange.len()));
+                self.running = Some((idx, id, step));
+                self.hidden = opens;
             }
             None => {
-                self.say(Sign::Refused, "not done: the part of the desktop that does it stopped");
-                self.step_done();
+                self.refuse("not done: the part of the desktop that does it stopped");
                 self.stop_queue();
             }
         }
@@ -3912,10 +3844,10 @@ impl App {
 
     fn called(&mut self, idx: usize, n: u64, result: Option<Value>, error: Option<String>) {
         match &self.running {
-            Some((p, id, _, _)) if *p == idx && *id == n => {}
+            Some((p, id, _)) if *p == idx && *id == n => {}
             _ => return,
         }
-        let Some((_, _, step, _)) = self.running.take() else { return };
+        let Some((_, _, step)) = self.running.take() else { return };
         let task_result = result
             .clone()
             .unwrap_or_else(|| json!({"isError": true, "message": error.clone().unwrap_or_else(|| "no result".into())}));
@@ -3959,8 +3891,8 @@ impl App {
         );
         if let Some(e) = output_error {
             self.opened = false;
-            self.say(Sign::Refused, &e);
-            self.step_done();
+            self.hidden = false;
+            self.refuse(&e);
             self.stop_queue();
             self.providers[idx].dirty = true;
             return;
@@ -3968,15 +3900,12 @@ impl App {
         if let Some(r) = result {
             let text = r.pointer("/content/0/text").and_then(Value::as_str).unwrap_or("");
             if refused {
-                self.say(
-                    Sign::Refused,
-                    if text.is_empty() || !privacy.text_safe(text) {
-                        "the action did not complete"
-                    } else {
-                        text
-                    },
-                );
-                self.step_done();
+                self.hidden = false;
+                self.refuse(if text.is_empty() || !privacy.text_safe(text) {
+                    "the action did not complete"
+                } else {
+                    text
+                });
                 self.stop_queue();
             } else {
                 let sc = r.get("structuredContent").cloned().unwrap_or(Value::Null);
@@ -3994,7 +3923,7 @@ impl App {
                             }
                         }
                     } else {
-                        self.say(Sign::Refused, "that file is not under your home: not attached");
+                        self.refuse("that file is not under your home: not attached");
                     }
                 }
                 // a list of the provider's own to open (a search's rows): opened as a row's children are
@@ -4023,20 +3952,19 @@ impl App {
                         }
                     }
                 }
+                // a window put in front closes the dialog when the steps are done; anything else shows it again
                 if sc.get("opened").and_then(Value::as_bool) == Some(true) {
                     self.opened = true;
                 } else {
+                    self.hidden = false;
+                }
+                // the receipt, every line of it, for typed words alone: a click's row shows what it did (#196)
+                if step.typed && !self.opened {
                     let receipt = sc.get("receipt").and_then(Value::as_str).unwrap_or(text).to_string();
                     if privacy.text_safe(&receipt) {
-                        for (i, l) in receipt.lines().enumerate() {
-                            if i == 0 {
-                                self.say(Sign::Done, l);
-                            } else {
-                                self.say(Sign::Says, l);
-                            }
-                        }
+                        self.reply(Mark::Done, &receipt);
                     } else {
-                        self.say(Sign::Done, "the action completed; private details withheld");
+                        self.reply(Mark::Done, "the action completed; private details withheld");
                     }
                 }
                 self.undo = None;
@@ -4061,9 +3989,12 @@ impl App {
                                 call,
                                 who: Who::Undo,
                                 line,
+                                typed: false,
                             });
-                            if let Some(l) = self.exchange.last_mut() {
-                                l.undo = true;
+                            // Undo at the end of the reply row: after the receipt, or alone for a click
+                            match self.reply.as_mut() {
+                                Some(r) if r.mark == Mark::Done => r.undo = true,
+                                _ => self.reply = Some(Reply::undo_only()),
                             }
                         }
                     }
@@ -4071,46 +4002,7 @@ impl App {
             }
         }
         self.providers[idx].dirty = true;
-        self.step_done();
         self.next_step();
-    }
-
-    /// A step ended, done, refused or with no yes: its lines are a step's, kept out of the turns, and its
-    /// receipt is the toast, with Undo where the step left one (#133).
-    fn step_done(&mut self) {
-        let Some(from) = self.step_from.take() else { return };
-        let from = from.min(self.exchange.len());
-        for l in &mut self.exchange[from..] {
-            l.step = true;
-        }
-        let Some(l) = self.exchange[from..].iter().find(|l| matches!(l.sign, Sign::Done | Sign::Refused)).cloned() else {
-            return;
-        };
-        let undo = l.sign == Sign::Done && self.undo.is_some();
-        self.toast = Some(Toast {
-            sign: l.sign,
-            text: l.text,
-            undo,
-            view: self.view.clone(),
-            at: Instant::now(),
-        });
-    }
-
-    /// The toast is up in the view on screen, its time not out (#133).
-    pub fn toast_here(&self) -> bool {
-        self.toast.as_ref().is_some_and(|t| t.view == self.view && t.at.elapsed() < TOAST_FOR)
-    }
-
-    /// A toast whose time is out, or whose view was left, goes; true when one went.
-    pub fn toast_tick(&mut self) -> bool {
-        if self.toast.is_some() && !self.toast_here() {
-            self.toast = None;
-            if self.in_list && self.sel >= self.picks().len() {
-                self.sel = self.picks().len().saturating_sub(1);
-            }
-            return true;
-        }
-        false
     }
 
     /// The dialog's own column's width: the whole grid, at most ui::FULL_WIDTH in the middle of a full screen (#141).
@@ -4121,17 +4013,6 @@ impl App {
         crate::ui::column_width(self.size.0, self.size.1)
     }
 
-    /// A play refused is a toast, the one before it replaced, never a line of the exchange a press (#158).
-    fn refuse_toast(&mut self, said: &str) {
-        self.toast = Some(Toast {
-            sign: Sign::Refused,
-            text: said.to_string(),
-            undo: false,
-            view: self.view.clone(),
-            at: Instant::now(),
-        });
-    }
-
     /// A click lights row `n`: a choice, as a key's is, so the light kept from a preview lets go (#153).
     pub fn light(&mut self, n: usize) {
         self.in_list = true;
@@ -4140,15 +4021,9 @@ impl App {
         self.list_keys = true;
     }
 
-    /// A click on this pick lights it and a second one opens it: a file's or a folder's row in Files, as a file
-    /// manager's rows are (#140). Any other row is a place or an action, done on one click.
-    pub fn lights_on_click(&self, n: usize) -> bool {
-        matches!(&self.view, View::Folder(p, _) if self.providers[*p].label == "files") && matches!(self.picks().get(n), Some(Item::Folder(_)))
-    }
-
-    /// The undo at hand runs now (the toast's Undo, the home's undo row).
+    /// The undo at hand runs now (the reply row's Undo).
     pub fn undo_now(&mut self) {
-        self.toast = None;
+        self.reply = None;
         if let Some(u) = self.undo.take() {
             self.run(u);
         }
@@ -4166,12 +4041,8 @@ impl App {
                     match serde_json::from_str::<Value>(&e) {
                         Ok(_) => self.plan(&e),
                         Err(_) => {
-                            if let Some((w, _)) = &self.pending {
-                                let w = w.clone();
-                                self.say(Sign::You, &w);
-                            }
                             self.give_back();
-                            self.say(Sign::Refused, e.lines().next().unwrap_or("spark did not answer"))
+                            self.refuse(e.lines().next().unwrap_or("spark did not answer"))
                         }
                     }
                 }
@@ -4202,13 +4073,13 @@ impl App {
                 self.wait = None;
                 match out {
                     Ok(_) => {
-                        self.say(Sign::Done, "model changed");
+                        self.reply(Mark::Done, "model changed");
                         self.jobs.push(Job::Run(
                             Helper::Models,
                             vec![self.cfg.spark.clone(), "model".into(), "list".into(), "--porcelain".into()],
                         ));
                     }
-                    Err(e) => self.say(Sign::Refused, e.lines().last().unwrap_or("the model stays")),
+                    Err(e) => self.refuse(e.lines().last().unwrap_or("the model stays")),
                 }
             }
             Helper::Listen => {
@@ -4231,8 +4102,8 @@ impl App {
                         }
                     }
                     Ok(_) => {}
-                    Err(_) if cancelled => self.say(Sign::Done, "stopped: nothing kept"),
-                    Err(e) => self.say(Sign::Refused, e.lines().next().filter(|l| !l.trim().is_empty()).unwrap_or("nothing heard")),
+                    Err(_) if cancelled => {}
+                    Err(e) => self.refuse(e.lines().next().filter(|l| !l.trim().is_empty()).unwrap_or("nothing heard")),
                 }
             }
             Helper::Voice => {
@@ -4461,7 +4332,6 @@ impl App {
             }
             let word = match &lit {
                 Some(Item::Ask) => "Ask",
-                Some(Item::Undo(..)) | Some(Item::Toast) => "Undo",
                 Some(Item::Model(_)) | Some(Item::TalkOpt(_)) => "Choose",
                 Some(Item::Here) => "Here",
                 Some(Item::StepOf(k)) => self.step_call(*k).map(|c| verb_of(&c.name)).unwrap_or("Use"),
@@ -4683,13 +4553,15 @@ impl App {
             call: call.clone(),
             who: Who::Person,
             line: String::new(),
+            typed: false,
         };
         if self.tool_of(&step).is_none() {
-            return self.refuse_toast("this is not offered here now");
+            return self.refuse("this is not offered here now");
         }
         if let Err(e) = self.checked(&step) {
-            return self.refuse_toast(&e);
+            return self.refuse(&e);
         }
+        self.reply = None;
         self.held.retain(|(hp, hid, _, _)| !(*hp == p && hid == id));
         self.held.push((p, id.to_string(), held, None));
         self.hold_rows(p);
@@ -4707,7 +4579,7 @@ impl App {
             Some(n) => self.setting = Some((n, p, id.to_string(), call)),
             None => {
                 self.held.retain(|(hp, hid, _, _)| !(*hp == p && hid == id));
-                self.refuse_toast("not changed: the part of the desktop that does it stopped");
+                self.refuse("not changed: the part of the desktop that does it stopped");
             }
         }
     }
@@ -4754,7 +4626,7 @@ impl App {
         let waiting = self.set_next.iter().any(|(np, nid, _)| *np == p && *nid == id);
         if refused && !waiting {
             self.held.retain(|(hp, hid, _, _)| !(*hp == p && *hid == id));
-            self.refuse_toast(said);
+            self.refuse(said);
         } else if !waiting {
             let until = Instant::now() + HOLD;
             for h in self.held.iter_mut().filter(|(hp, hid, _, _)| *hp == p && *hid == id) {
@@ -5213,13 +5085,7 @@ impl App {
         let (p, text) = (pv.prov, pv.row().text.clone());
         if pv.shown.as_ref().is_none_or(|pg| pg.stop.is_none()) {
             // a video plays in its app: a step like any, its window the receipt
-            let line = self.step_line(p, &play, &text);
-            return self.run(Step {
-                prov: p,
-                call: play,
-                who: Who::Person,
-                line,
-            });
+            return self.pick_step(p, play, &text);
         }
         play.arguments.insert("at".into(), json!((at * 10.0).round() / 10.0));
         // a video: the box its frame was drawn in, where the player is laid (#125)
@@ -5243,12 +5109,13 @@ impl App {
             call: call.clone(),
             who: Who::Person,
             line: String::new(),
+            typed: false,
         };
         if self.tool_of(&step).is_none() {
-            return self.say(Sign::Refused, "this is not offered here now");
+            return self.refuse("this is not offered here now");
         }
         if let Err(e) = self.checked(&step) {
-            return self.say(Sign::Refused, &e);
+            return self.refuse(&e);
         }
         let params = json!({"name": call.name, "arguments": Value::Object(call.arguments.clone())});
         if let Some(n) = self.server(p).and_then(|s| s.request("tools/call", params, Kind::Quiet, mcp::T_CALL)) {

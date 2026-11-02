@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased: the dialog made still (#196)
+
+The dialog's rule, in the owner's words: typed input gets one reply row
+under the prompt; a click on screen just runs the command, with no echo
+and no toast; the row shows it worked; nothing on screen moves. Each
+part lands in a pull request of its own.
+
+- One silent path for every row. A click or Enter on any row that runs
+  a step (a section's row, a folder's file, a step from a row's list, a
+  file picked, a preview's Enter, a search hit, Undo) no longer writes
+  the step's line above the list or a receipt at the bottom. The row
+  shows what changed; a refusal is said.
+- The toast is gone. In its place is one reply row under the key row:
+  a cross and the reason for a refusal, a check and the receipt for a
+  command you typed, and Undo at its right where the step can be taken
+  back. A click's step that can be taken back shows Undo there alone. A
+  new reply replaces the last; Esc clears it, and so does leaving the
+  view. The list starts on the same row with or without it.
+- One click everywhere: a click on a file or a folder in Files opens
+  it. The double-click is gone.
+- A row that puts a window in front (an app, a file, a terminal, a
+  window, the lock) clears the dialog at the click, and the dialog
+  closes once the window is there; if the step is refused, the dialog
+  comes back with the reason. The provider marks these tools with
+  `_meta` `spark-shell/opens` (the `o` hint in the shell's tool list).
+- Fixed: a step that timed out, lost its provider or got no yes left
+  its line above the list, and later typed replies then vanished (A).
+  Words typed to find a switch, then Enter, did nothing (C). A receipt
+  of several lines kept only its first (E). Commands spark planned while
+  the prompt asked for a yes or a name took the box; they now wait and
+  come when the question is done (G). A click while spark's commands sat
+  in the box left Space and the history blocked (M). While attaching or
+  picking a file, typed words ran as a request or opened another place;
+  Enter now picks the best match (O and the attach picker). Space on a
+  row with no page typed a space into the prompt.
+- Esc on a question (a yes, a name) says nothing now; it was "not done:
+  no yes". A refusal and the steps it stopped share one reply.
+- Two of the 43 golden frames were drawn again (section, turn): the
+  toast and the step lines they showed are now the reply row.
+
 ## v0.121
 
 The moving wallpaper on every family, twelve scenes that move (#187,

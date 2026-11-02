@@ -7,7 +7,7 @@ use ratatui::buffer::{Buffer, CellDiffOption};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
 use serde_json::{json, Value};
-use spark_dialog::app::{App, Config, Line, Provider, Sign, Staged, Step, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
+use spark_dialog::app::{App, Config, Provider, Staged, Step, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
 use spark_dialog::model;
 use spark_dialog::palette::Palette;
 use spark_dialog::scrub::cells;
@@ -638,20 +638,11 @@ fn design_system_preview() {
         "spark's commands in the prompt: Enter runs them, Esc drops them",
         None,
     ));
-    // the turn: the command as it ran, then the reply; Undo at the end of the result it takes back (#53)
+    // a typed command's receipt: one reply row under the keys, Undo at its end (#196)
     let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
-    let said = |sign: Sign, text: &str, undo: bool| Line {
-        sign,
-        text: text.into(),
-        undo,
-        step: false,
-    };
-    a.exchange = vec![
-        said(Sign::You, "theme rainbow", false),
-        said(Sign::Refused, "rainbow is not in the list now", false),
-        said(Sign::You, "theme nord", false),
-        said(Sign::Done, "nord is on", true),
-    ];
+    let mut r = spark_dialog::reply::Reply::new(spark_dialog::reply::Mark::Done, "nord is on");
+    r.undo = true;
+    a.reply = Some(r);
     a.undo = Some(Step {
         prov: th,
         call: model::Call {
@@ -663,10 +654,16 @@ fn design_system_preview() {
         },
         who: Who::Undo,
         line: "undo theme nord".into(),
+        typed: false,
     });
     a.in_list = true;
     a.sel = 0;
-    frames.push(ds_frame(&draw(&a).0, &pal, "a turn: the command, then the reply; Undo lit at its end", None));
+    frames.push(ds_frame(
+        &draw(&a).0,
+        &pal,
+        "a typed command: its receipt in the reply row, Undo at its end",
+        None,
+    ));
     let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
     a.view = View::Section(th);
     a.came_from = vec![View::Home, View::Dest(SETTINGS_DEST)];

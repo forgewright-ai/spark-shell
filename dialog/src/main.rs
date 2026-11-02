@@ -273,9 +273,6 @@ fn spawn_films(dir: String, tx: mpsc::Sender<Ev>) {
     });
 }
 
-/// Two clicks on a row this close together are a double-click, the desktop's usual (#140).
-const DOUBLE_CLICK: Duration = Duration::from_millis(400);
-
 /// A drag's pictures, this far apart at least (#129), and as far apart as the last one took to draw (#148).
 const DRAG_GAP: Duration = Duration::from_millis(40);
 /// A drag's pictures in fewer colors, so each is a small write the terminal draws at once; the whole one when the
@@ -285,10 +282,17 @@ const DRAG_COLORS: usize = 48;
 /// The dialog's window shown (#167): it mapped unseen, and its first frame is drawn now. A RUN_COMMAND on sway's
 /// own socket, no process started; a moment's wait first, so foot has put the frame on the window before it shows.
 fn reveal() {
+    opacity(1, Duration::from_millis(25));
+}
+
+/// The dialog's window made clear (0) or solid (1) on sway's own socket: clear while a step puts a window in
+/// front, so the click shows that window coming at once, solid again when the step comes back refused (#196).
+fn opacity(level: u8, after: Duration) {
     let Some(sock) = std::env::var_os("SWAYSOCK") else { return };
     std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(25));
-        let cmd: &[u8] = b"[app_id=\"spark-dialog\"] opacity 1";
+        std::thread::sleep(after);
+        let cmd = format!("[app_id=\"spark-dialog\"] opacity {}", level);
+        let cmd = cmd.as_bytes();
         if let Ok(mut s) = std::os::unix::net::UnixStream::connect(sock) {
             let mut msg = b"i3-ipc".to_vec();
             msg.extend((cmd.len() as u32).to_ne_bytes());
@@ -311,7 +315,7 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
         || drawn.chips.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.keys.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.wave.is_some_and(on)
-        || [drawn.toast_undo, drawn.toast_close].iter().flatten().any(|(a, b, y)| span(*a, *b, *y));
+        || drawn.reply_undo.is_some_and(|(a, b, y)| span(a, b, y));
     if dragging {
         "grabbing"
     } else if app.busy_pointer() {
@@ -432,8 +436,8 @@ fn main() {
     let (mut drag_drawn, mut drag_owed) = (Instant::now(), false);
     // how long the last picture of a drag took to make and write: the next waits as long (#148)
     let mut drag_cost = Duration::ZERO;
-    // the last click on a row of Files: where, which, when (#140)
-    let mut last_click: Option<(u16, usize, Instant)> = None;
+    // the window made clear for a step that puts a window in front (#196)
+    let mut cleared = false;
     let mut pointer = "";
     // where the mouse was last over the window: the pointer's shape is asked again there as the work starts and ends (#183)
     let mut mouse_at: Option<(u16, u16)> = None;
@@ -545,6 +549,10 @@ fn main() {
             if unseen && !matches!(app.motion, Some((Reel::Open, _))) {
                 reveal();
                 unseen = false;
+            }
+            if app.hidden != cleared && !unseen {
+                cleared = app.hidden;
+                opacity(if cleared { 0 } else { 1 }, Duration::ZERO);
             }
             app.preview_pages = drawn.pages.max(1);
             // the picture beside a list: drawn when it changed, its cells blanked first (the buffer skips them);
@@ -773,8 +781,6 @@ fn main() {
                     app.motion = None;
                     dirty = true;
                 }
-                // a toast whose time is out, or whose view was left, goes (#133)
-                dirty |= app.toast_tick();
                 // a picture not drawn yet (its small picture is still being made): tried again now and then
                 dirty |= drawn.preview.is_some() && shown_preview.is_none() && preview_tried.elapsed() >= Duration::from_millis(400);
                 // a sound playing: its waveform and its spectrum move
@@ -877,9 +883,7 @@ fn main() {
                             } else {
                                 app.close_window();
                             }
-                        } else if drawn.toast_close.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
-                            app.toast = None; // the toast's x (#133)
-                        } else if drawn.toast_undo.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
+                        } else if drawn.reply_undo.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
                             app.undo_now();
                         } else if let Some((_, _, _, c)) = drawn.chips.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.chip(*c);
@@ -915,16 +919,9 @@ fn main() {
                             })
                             .as_ref()
                         {
-                            // a file or a folder in Files: a click lights it, a second one on it opens it, as a file manager's
-                            // do; any other row, a place or an action, is done on one click (#140)
-                            let again = last_click.is_some_and(|(r, k, t)| r == m.row && k == *n && t.elapsed() < DOUBLE_CLICK);
+                            // one click runs a row, everywhere, a folder's and a file's too (#196)
                             app.light(*n);
-                            if !app.lights_on_click(*n) || again {
-                                last_click = None;
-                                app.enter();
-                            } else {
-                                last_click = Some((m.row, *n, Instant::now()));
-                            }
+                            app.enter();
                         }
                     }
                     MouseEventKind::Drag(MouseButton::Left) => {

@@ -7,6 +7,7 @@
 use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, PLACEHOLDER, SETTINGS, SETTINGS_DEST, WIDTH};
 use crate::palette::Palette;
 use crate::progress;
+use crate::reply::Mark;
 use crate::scrub::{cells, cut, cut_words};
 use crate::sixel::Viewport;
 use crate::transition::Reel;
@@ -55,7 +56,7 @@ struct Pen<'a> {
     h: u16,
     /// Rows y0..y1 end at x: a picture sits right of them.
     stop: Option<(u16, u16, u16)>,
-    /// A wide list's right edge (#141): its band, its arrows and the toast's Undo end where its words end, never at the
+    /// A wide list's right edge (#141): its band and its arrows end where its words end, never at the
     /// screen's edge.
     right: u16,
     /// Where a row is drawn from (#183): the right of two columns side by side starts this far in, and its band at `lx`.
@@ -189,9 +190,8 @@ pub struct Drawn {
     pub film: Option<(u16, u16, u16, u16, Reel, std::time::Instant)>,
     /// An animation beside a list (#132): its box (x, y, w, h in cells) and the piece's folder, main.rs plays it.
     pub side_film: Option<(u16, u16, u16, u16, String)>,
-    /// The toast's Undo and its x (#133): their cells (x0, x1, y), for a click.
-    pub toast_undo: Option<(u16, u16, u16)>,
-    pub toast_close: Option<(u16, u16, u16)>,
+    /// The reply row's Undo (#196): its cells (x0, x1, y), for a click.
+    pub reply_undo: Option<(u16, u16, u16)>,
     /// A value row's arrows (#175): each one's cells (x0, x1, y), its pick, and whether it steps the value up.
     pub steps: Vec<(u16, u16, u16, usize, bool)>,
     /// The dialog's own column, its first cell and the cell after its last (#131): a click's row is its list's only there.
@@ -292,8 +292,7 @@ impl Drawn {
         if let Some(s) = self.side_film.as_mut() {
             s.0 += dx;
         }
-        self.toast_undo = self.toast_undo.map(|(a, b, y)| (a + dx, b + dx, y));
-        self.toast_close = self.toast_close.map(|(a, b, y)| (a + dx, b + dx, y));
+        self.reply_undo = self.reply_undo.map(|(a, b, y)| (a + dx, b + dx, y));
         for st in &mut self.steps {
             st.0 += dx;
             st.1 += dx;
@@ -467,6 +466,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         pen.put(2, hint_y + 2, &cut_words(t, (w - 4) as usize), pal.muted, false, false);
     }
     let shift = shift + if target.is_some() { 2 } else { 0 };
+    reply_row(app, &mut pen, hint_y + 1, &mut drawn);
 
     // the content first: a preview's text decides the pages its key row offers
     let bottom = h - BOTTOM;
@@ -614,6 +614,38 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     }
 }
 
+/// The reply row under the key row (#196): a check or a cross, the words, Undo at the right where the rows'
+/// arrows stand; blank when there is nothing to say. One row, cut to the window: it never moves the list.
+fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
+    let Some(r) = &app.reply else { return };
+    let pal = pen.pal.clone();
+    let w = pen.w;
+    let undo = r.undo && app.undo.is_some();
+    let undo_x = w.saturating_sub(7);
+    match r.mark {
+        Mark::Done if !r.text.is_empty() => {
+            pen.put(2, y, CHECK, pal.accent, false, false);
+        }
+        Mark::Refused => {
+            pen.put(2, y, CROSS, pal.alarm, false, false);
+        }
+        _ => {}
+    }
+    let room = if undo { undo_x } else { w - 2 }.saturating_sub(6);
+    pen.put(
+        4,
+        y,
+        &cut_words(&r.text, room as usize),
+        if r.mark == Mark::Note { pal.muted } else { pal.fg },
+        false,
+        false,
+    );
+    if undo {
+        let e = pen.chip(undo_x, y, "Undo", false);
+        drawn.reply_undo = Some((undo_x, e, y));
+    }
+}
+
 /// A line of the exchange: the command as it ran at the left, in muted after its prompt sign; what came
 /// of it under it, after its sign (#53).
 fn said_line(pen: &mut Pen, s: &Sign, text: &str, first: bool, y: u16, lit: bool) {
@@ -649,13 +681,8 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         Item::Heading(h) => {
             pen.put(2, y, h, pal.muted, false, false);
         }
-        Item::Blank | Item::Toast => {}
+        Item::Blank => {}
         Item::Said(s, text, first) => said_line(pen, s, text, *first, y, false),
-        Item::Undo(s, text, first) => {
-            // the result the undo at hand takes back, with Undo at its end where the rows' signs end (#53)
-            said_line(pen, s, text, *first, y, lit);
-            pen.put(w.saturating_sub(6), y, "Undo", if lit { pal.fg } else { pal.muted }, false, lit);
-        }
         Item::Dest(d) => {
             // found from the home, a place stands with the rows under its group's heading (#169)
             let ind = if app.searching() { 4 } else { 0 };
@@ -1082,10 +1109,7 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     let items = app.items();
     let picks: Vec<usize> = items.iter().enumerate().filter(|(_, it)| app.pickable_item(it)).map(|(i, _)| i).collect();
     let selected = if app.in_list { picks.get(app.sel).copied() } else { None };
-    // the toast, the last item: its own line at the content's bottom with a blank row above it, out of the scroll (#133)
-    let toast = matches!(items.last(), Some(Item::Toast)) && bottom >= top + 4;
-    let n = if toast { items.len() - 1 } else { items.len() };
-    let (end, bottom) = (bottom, if toast { bottom - 2 } else { bottom });
+    let n = items.len();
     let all = bottom.saturating_sub(top) as usize;
     // a list longer than the area keeps its last line to say how many rows sit below
     let room = if n > all { all.saturating_sub(1) } else { all };
@@ -1216,7 +1240,7 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         None => (widths.clone(), right.clone()),
     };
     let samples = items.iter().any(|it| row_of(app, it).is_some_and(|r| r.swatch.is_some()));
-    // a wide list ends where its words end (#141): its band, its arrows, the toast's Undo
+    // a wide list ends where its words end (#141): its band, its arrows
     if wide(pen.w) {
         pen.right = list_end(app, &items[..n], &widths, samples).clamp(WIDTH, pen.w);
     }
@@ -1265,30 +1289,6 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     }
     (pen.ox, pen.lx, pen.right) = (0, 0, full);
     pen.stop = None;
-    if let (true, Some(t)) = (toast, app.toast.as_ref()) {
-        // the receipt's sign at 4 and its words at 6, as a row's; Undo, then the x where the rows' arrows stand
-        let (y, k) = (end - 1, items.len() - 1);
-        let lit = Some(k) == selected;
-        if let Some(i) = picks.iter().position(|i| *i == k) {
-            at.push((y, i));
-        }
-        if lit {
-            pen.light(y);
-        }
-        let (sg, sc) = if t.sign == Sign::Refused { (CROSS, pal.alarm) } else { (CHECK, pal.accent) };
-        let close_x = pen.end(y) - 3;
-        let undo_x = close_x - 6;
-        let undo = t.undo && app.undo.is_some();
-        pen.put(4, y, sg, sc, false, lit);
-        let room = if undo { undo_x } else { close_x }.saturating_sub(8);
-        pen.put(6, y, &cut_words(&t.text, room as usize), pal.fg, false, lit);
-        if undo {
-            pen.put(undo_x, y, "Undo", if lit { pal.fg } else { pal.muted }, false, lit);
-            drawn.toast_undo = Some((undo_x - 1, undo_x + 5, y));
-        }
-        pen.put(close_x, y, CLOSE, pal.muted, false, lit);
-        drawn.toast_close = Some((close_x - 1, close_x + 2, y));
-    }
     pen.right = pen.w;
     (at, preview)
 }
