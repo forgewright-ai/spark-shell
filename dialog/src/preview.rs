@@ -42,7 +42,7 @@ pub struct Page {
     pub say: Option<String>,
     /// A text of the page spark can read, as a file the provider wrote: the attach path takes it.
     pub attach: Option<String>,
-    /// Right plays the file: here (a sound), or in its app (a video, through the open tool).
+    /// Space plays the file here: a sound.
     pub play: Option<Call>,
     /// What stops a sound playing here; leaving the file calls it.
     pub stop: Option<Call>,
@@ -93,8 +93,6 @@ pub struct Preview {
     pub src: (u32, u32),
     /// The sound read from its picture (main.rs reads it once).
     pub heard: Option<Sound>,
-    /// Where the picture was drawn, in the terminal's pixels from the grid's corner: a video plays over it (#125).
-    pub frame: Option<(u32, u32, u32, u32)>,
     /// The keys of the page last shown: the key row keeps them while the next file's page is on its way (#166).
     pub keys: Option<Keys>,
 }
@@ -138,7 +136,6 @@ impl Preview {
             px: (0, 0),
             src: (0, 0),
             heard: None,
-            frame: None,
             keys: None,
         })
     }

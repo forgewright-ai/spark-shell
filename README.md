@@ -947,7 +947,7 @@ its first and its last row.
   to the previous and next of the list, left and right turn the page,
   Enter does what the row does (opens the file in its app, an app,
   connects a network), and Esc, or Space with nothing typed, goes back
-  with it lit (on a sound or a video, Space plays it). The key row
+  with it lit (on a sound, Space plays it). The key row
   starts with Back, what up and down move between (File, App, Note,
   Network, Device, Drive) and what Enter does, in the same places on
   every page, and a file's own keys follow; while the next page loads,
@@ -963,15 +963,12 @@ its first and its last row.
   the preview's, never the file's. A sound shows its title, its artist
   and album, its waveform (the part played in the accent; a click plays
   from there), a spectrum that moves while it plays, its spectrogram, and
-  its rate, bits, channels and format; Space plays and
-  pauses it, left
-  and right go 5 seconds back and ahead, Home to its start. A video's
-  Space plays it over its frame, in a
-  window of its own with no border, the keys still the dialog's, full
-  screen too (the dialog floats on the same pixels while it plays);
-  where sway is not, Enter opens it in its app. A Word,
-  PowerPoint, Excel or OpenDocument file shows its text, read by Python's
-  own zip and XML readers (no LibreOffice). Anything else says that it
+  its rate, bits, channels and format; Space plays and pauses it, left
+  and right go 5 seconds back and ahead, Home to its start. A video
+  shows its frame, its length and its size, and Enter opens it in its
+  app; nothing plays over the dialog. A Word, PowerPoint, Excel or
+  OpenDocument file shows its text, read by Python's own zip and XML
+  readers (no LibreOffice). Anything else says that it
   has no preview. A PDF needs poppler (installed with the desktop); a
   sound and a video need mpv where it is installed, and say so where it
   is not. spark reads text: a PDF goes with your words as the text of its

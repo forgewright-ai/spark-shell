@@ -1086,21 +1086,16 @@ fn a_long_sound_says_its_waveform_is_being_drawn() {
     render(&app, "preview-sound-drawing");
 }
 
-/// A video plays over the frame where it was drawn (#125): Space sends the box with the play (#151).
+/// A video is its frame and its facts (#196): nothing plays over the dialog. The key row offers Open, no Play, and
+/// Space goes back to the list.
 #[test]
-fn a_video_sends_the_box_of_its_frame_with_its_play() {
-    let page = json!({"title": "clip.webm", "facts": ["0:05", "1280 \u{d7} 720"], "picture": "/run/pages/9-1600.png", "size": [1280, 720], "full": true, "seconds": 5.0,
-        "play": {"name": "files_play", "arguments": {"path": "/data/me/clip.webm"}, "said": "play"}, "stop": {"name": "files_stop", "arguments": {}, "said": "stop"}});
+fn a_video_is_its_frame_and_enter_opens_it() {
+    let page = json!({"title": "clip.webm", "facts": ["0:05", "1280 \u{d7} 720"], "picture": "/run/pages/9-1600.png", "size": [1280, 720], "full": true});
     let mut app = preview_app("clip.webm", "~/videos", page, WIDTH, HEIGHT);
-    app.preview.as_mut().unwrap().frame = Some((20, 200, 640, 360));
+    let hint: String = app.hint().iter().map(|(t, _)| t.as_str()).collect();
+    assert!(hint.contains("Open") && !hint.contains("Play"), "Open, no player: {:?}", hint);
     app.typed(' ');
-    let pv = app.preview.as_ref().unwrap();
-    assert!(pv.playing.is_some(), "Space plays it, a player's key (#151)");
-    app.right();
-    let pv = app.preview.as_ref().unwrap();
-    assert!(pv.playing.is_some() && pv.played >= 4.9, "Right goes 5 s ahead and plays on: {}", pv.played);
-    app.stop_video();
-    assert!(app.preview.as_ref().unwrap().playing.is_none(), "a click, a new size: the player stops");
+    assert_ne!(app.view, View::Preview, "Space goes back to the list");
 }
 
 #[test]

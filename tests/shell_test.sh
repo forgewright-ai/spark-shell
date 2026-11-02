@@ -4871,7 +4871,6 @@ echo "$*" >> "$HOME/mpv.log"; us=$(printf '\037')
 case $* in *--lavfi-complex=*) [ -z "${SLOW_WAVE:-}" ] || sleep 8 ;; esac   # a long sound's waveform (#124)
 for a; do case $a in --vo-image-outdir=*) cp "$REPO_PNG" "${a#*=}/00000001.png" ;; --no-video) exec sleep 41 ;; esac; done
 for a; do f=$a; done
-case $* in *--wayland-app-id=spark-preview*) [ -z "${VIDEO_PLAYS:-}" ] || sleep "$VIDEO_PLAYS" ;; esac   # a video that plays on (#172)
 case $* in *--term-playing-msg=*) case $f in
     *.flac) printf '20.5%s%s%s44100%s2%ss16%sflac%sEvening%sAda%sProofs\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
     *.webm) printf '4.5%s1280%s720%s%s%s%svp8%s%s%s\n' "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" "$us" ;;
@@ -4902,8 +4901,8 @@ page 7 | jq -e '.page == 2 and .pages == 3 and .size == [816, 1056] and .full ==
 page 9 | jq -e '.lines == ["Evening", "Ada \u00b7 Proofs"] and .seconds == 20.5 and .facts[0:4] == ["44.1 kHz", "16 bit", "stereo", "FLAC"] and .sound.wave == 160 and (.sound.picture | endswith("-sound.png")) and .play.name == "files_play" and .stop.name == "files_stop"' >/dev/null \
     && grep -q -- '--untimed' "$F2/mpv.log" && grep -q -- 'showwavespic' "$F2/mpv.log" && grep -q -- '--demuxer-lavf-o=protocol_whitelist=file' "$F2/mpv.log" \
     && ok "provide files: a sound's tags, its waveform over its spectrogram drawn once, what an engineer asks first (rate, bits, channels, format); mpv on local files only (#120)" || bad "preview sound" "$(page 9) | $(cat "$F2/mpv.log" 2>&1)"
-page 10 | jq -e '.facts[0:2] == ["0:05", "1280 \u00d7 720"] and .size == [1280, 720] and .play.name == "files_open" and (.picture | endswith(".png"))' >/dev/null \
-    && ok "provide files: a video's frame, its length and size; right plays it in its app (#120)" || bad "preview video" "$(page 10)"
+page 10 | jq -e '.facts[0:2] == ["0:05", "1280 \u00d7 720"] and .size == [1280, 720] and .play == null and .stop == null and (.picture | endswith(".png"))' >/dev/null \
+    && ok "provide files: a video's frame, its length and size; nothing to play here, Enter opens it in its app (#120, #196)" || bad "preview video" "$(page 10)"
 _vf() { grep -F -- "--vo-image-outdir" "$F2/mpv.log" | grep -F -- "$1" | grep -o -- '--vf=[^ ]*' || :; }   # _vf FILE -> the scale its frame was drawn with
 page 14 | jq -e '.facts[1] == "1080 \u00d7 1920" and .size == [1080, 1920]' >/dev/null && page 15 | jq -e '.size == [1080, 1920]' >/dev/null \
     && [ "$(_vf phone.mov)" = '--vf=scale=w=1600:h=-2' ] && [ "$(_vf tall.mp4)" = '--vf=scale=w=-2:h=1600' ] && [ -z "$(_vf clip.webm)" ] \
@@ -4935,50 +4934,20 @@ mcpv "$(call 2 files_play "$(jq -cn --arg p "$PVR/song.flac" '{path: $p, at: 12.
 _t0=$(date +%s); ( SLOW_WAVE=1 mcpv "$(pvr 2 "$PVR/song.flac")" ); _t1=$(date +%s)
 page 2 | jq -e '(.sound.picture | endswith("-sound.png")) and .sound.wave == 160 and .play.name == "files_play" and .seconds == 20.5' >/dev/null && [ $((_t1 - _t0)) -le 5 ] \
     && ok "provide files: a long sound's page comes at once with its facts and Play, its waveform drawn aside at an idle priority and named for the dialog to draw when it is there (#124)" || bad "preview sound aside" "$((_t1 - _t0)) s $(page 2)"
-# #125: where sway is, a video plays over its frame: the page offers play and stop; the player laid at the dialog's corner, foot's padding and the frame's box
-mkdir -p "$H/pvsw" "$F2/.config/foot"; printf '[main]\npad=24x19\n' > "$F2/.config/foot/dialog.ini"
+# #196: a video never plays over the dialog: where sway is, its page is its frame and its facts, sway is not asked
+# for the dialog's place, and the sway template has no rule for a player laid over it
+mkdir -p "$H/pvsw"
 cat > "$H/pvsw/swaymsg" <<'STUB'
 #!/bin/sh
 echo "$*" >> "$HOME/swaymsg.log"
-case "$*" in
-    "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
-    "-t get_outputs") echo '[{"name":"HDMI-A-1","scale":1,"rect":{"x":0,"y":0,"width":1920,"height":1080}}]' ;;
-    "-t get_tree") printf '{"nodes":[{"type":"output","name":"HDMI-A-1","nodes":[{"app_id":"spark-dialog","id":42,"focused":true,"fullscreen_mode":%s,"rect":{"x":100,"y":50},"window_rect":{"x":0,"y":0},"geometry":{"width":600,"height":800}},{"app_id":"spark-preview"}]}]}\n' "${FULL:-0}" ;;
-esac
+case "$*" in "-t get_version") echo '{"human_readable":"sway-stub"}' ;; esac
 STUB
 chmod +x "$H/pvsw/swaymsg"
-mcpw() { printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots2" "$@" | REPO_PNG=$REPO/assets/favicon-26.png PATH="$H/pvsw:$H/pvb:$_fpath" SWAYSOCK=$H/sock HOME=$F2 XDG_DATA_HOME=$F2/.local/share SPARK_SHELL_NO_UDISKS=1 SPARK_SHELL_NO_GIO=1 sh "$SH" provide files > "$H/mcp.out" 2> "$H/mcp.err"; }   # mcpv with a stand-in sway
-rm -f "$F2/swaymsg.log" "$F2/mpv.log"
-mcpw "$(pvr 2 "$PVR/clip.webm")" "$(call 3 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, at: 1.5, x: 20, y: 200, w: 640, h: 360}')")" "$(call 4 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p}')")"
-_p2=$(page 2); _a3=$(ans 3); _a4=$(ans 4)
-# a full screen play's way back runs after its step has answered (#172): its last word is the bar, then the next test may start
-full_back() { _fb=0; while [ "$_fb" -lt 50 ] && ! tail -n 1 "$F2/swaymsg.log" 2>/dev/null | grep -q '^bar mode '; do sleep 0.1; _fb=$((_fb + 1)); done; }
-( FULL=1 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" ); full_back
-printf '%s' "$_p2" | jq -e '.play.name == "files_play" and .stop.name == "files_stop" and .seconds == 4.5' >/dev/null \
-    && [ "$(printf '%s' "$_a3" | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
-    && grep -qF -- '--wayland-app-id=spark-preview --no-border --osc=no' "$F2/mpv.log" && grep -qF -- '--geometry=640x360 --start=+1.5 -- ' "$F2/mpv.log" \
-    && grep -qxF '[app_id="spark-preview"] floating enable, border none, resize set 640 360, move absolute position 144 269, opacity 1' "$F2/swaymsg.log" \
-    && [ "$(printf '%s' "$_a4" | jq -r '.result.content[0].text')" = 'files: a video plays over its preview: the dialog gives the box' ] \
-    && ok "provide files: a video plays over its frame where sway is: mpv with no border laid at the window's corner, foot's padding and the frame's box, shown in the same command that places it (#157); no box says why (#125)" \
-    || bad "preview video over" "$_p2 | $_a3 | $_a4 | $(cat "$F2/swaymsg.log" 2>&1) | $(grep spark-preview "$F2/mpv.log" 2>&1)"
-# #158: full screen, the dialog trades sway's full screen for a floating window on the same pixels while the video plays,
-# the bar out of sight, in one command; when the play ends it takes full screen back at its own size first, in one command
 rm -f "$F2/swaymsg.log"
-( FULL=1 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" ); full_back
-[ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
-    && [ "$(grep -n -e '^bar mode invisible$' -e 'fullscreen disable' "$F2/swaymsg.log" | cut -d: -f2- | head -2 | paste -sd '|' -)" = 'bar mode invisible|[con_id=42] fullscreen disable, resize set 1920 1080, move absolute position 0 0' ] \
-    && [ "$(grep -n -e 'fullscreen enable' -e '^bar mode' "$F2/swaymsg.log" | cut -d: -f2- | tail -2 | paste -sd '|' -)" = '[con_id=42] resize set 600 800, move position center, fullscreen enable|bar mode dock' ] \
-    && [ "$(grep -n 'fullscreen disable' "$F2/swaymsg.log" | cut -d: -f1)" -lt "$(grep -n 'spark-preview' "$F2/swaymsg.log" | tail -1 | cut -d: -f1)" ] \
-    && ok "provide files: full screen, a video plays in its frame too: the dialog floats on the same pixels for the play and is full screen again at its own size after (#158)" \
-    || bad "preview video full screen" "$(ans 5) | $(cat "$F2/swaymsg.log" 2>&1)"
-# #172: a full screen play's way back is a job of its own: a video that plays on never holds the step's answer, bash or dash
-rm -f "$F2/swaymsg.log"; _t0=$(date +%s)
-( FULL=1 VIDEO_PLAYS=6 mcpw "$(call 5 files_play "$(jq -cn --arg p "$PVR/clip.webm" '{path: $p, x: 20, y: 200, w: 640, h: 360}')")" ); _t1=$(date +%s); full_back
-[ $((_t1 - _t0)) -le 4 ] && [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'playing clip.webm' ] \
-    && ok "provide files: full screen, the step answers at once while the video plays on, and the provider ends: nothing waits for the play (#172)" \
-    || bad "preview video full screen held" "$((_t1 - _t0)) s $(ans 5)"
-grep -qxF 'no_focus [app_id="spark-preview"]' "$REPO/templates/.config/sway/config" && grep -qxF 'for_window [app_id="spark-preview"] floating enable, border none, opacity 0' "$REPO/templates/.config/sway/config" \
-    && ok "sway template: a video a preview plays floats with no border, maps unseen until it is placed (#157) and never takes the focus: the keys stay in the dialog (#125)" || bad "sway preview rules" "$(grep spark-preview "$REPO/templates/.config/sway/config")"
+printf '%s\n' "$rinit" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$roots2" "$(pvr 2 "$PVR/clip.webm")" | REPO_PNG=$REPO/assets/favicon-26.png PATH="$H/pvsw:$H/pvb:$_fpath" SWAYSOCK=$H/sock HOME=$F2 XDG_DATA_HOME=$F2/.local/share SPARK_SHELL_NO_UDISKS=1 SPARK_SHELL_NO_GIO=1 sh "$SH" provide files > "$H/mcp.out" 2> "$H/mcp.err"
+page 2 | jq -e '.play == null and .stop == null and (.picture | endswith(".png"))' >/dev/null && ! grep -q get_tree "$F2/swaymsg.log" 2>/dev/null \
+    && ! grep -q spark-preview "$REPO/templates/.config/sway/config" \
+    && ok "provide files: where sway is, a video is its frame and its facts, nothing laid over the dialog, no sway rule for a player (#196)" || bad "preview video still" "$(page 2) | $(cat "$F2/swaymsg.log" 2>&1)"
 # #142: in the dialog's own window nothing is drawn ahead of the dialog's first frame (#138 drew the prompt first, and the
 # dialog then came in parts): the cursor hidden, then the dialog; elsewhere (a terminal) the same
 if command -v python3 >/dev/null 2>&1; then

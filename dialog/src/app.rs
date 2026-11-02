@@ -370,7 +370,7 @@ pub struct Line {
     pub text: String,
 }
 
-/// How far Left and Right move a sound or a video in the preview (#151).
+/// How far Left and Right move a sound in the preview (#151).
 pub const SEEK_SECONDS: f64 = 5.0;
 
 /// A pick in progress: the view to go back to and how deep the stack was,
@@ -2247,7 +2247,7 @@ impl App {
         // Space with nothing typed, or with the keys on the list: a lit file's preview, or back from one (#120, #163)
         if c == ' ' && (self.input.is_empty() || self.list_keys) && self.mode == Mode::Normal && self.chip_focus.is_none() && self.pending.is_none() {
             if self.view == View::Preview {
-                // a sound or a video: Space plays and pauses, as a player's does (#151); else back to the list
+                // a sound: Space plays and pauses, as a player's does (#151); else back to the list
                 if self.preview_plays() {
                     return self.preview_play_pause();
                 }
@@ -2434,7 +2434,7 @@ impl App {
     /// line's start and end.
     pub fn line_start(&mut self) {
         if self.preview_key() && self.preview_plays() {
-            return self.preview_seek(0.0); // Home: a sound or a video from its start (#151)
+            return self.preview_seek(0.0); // Home: a sound from its start (#151)
         }
         if self.in_list && !self.preview_key() {
             self.keep_lit = None;
@@ -4944,12 +4944,12 @@ impl App {
         }
     }
 
-    /// The page shown plays: a sound, or a video (#151).
+    /// The page shown plays: a sound (#151).
     pub fn preview_plays(&self) -> bool {
         self.preview.as_ref().and_then(|pv| pv.shown.as_ref()).is_some_and(|pg| pg.play.is_some())
     }
 
-    /// A sound or a video `d` seconds back or ahead of where it is, playing on where it played (#151).
+    /// A sound `d` seconds back or ahead of where it is, playing on where it played (#151).
     fn preview_seek_by(&mut self, d: f64) {
         let Some(pv) = &self.preview else { return };
         let Some(pg) = pv.shown.as_ref() else { return };
@@ -4962,8 +4962,7 @@ impl App {
         }
     }
 
-    /// A sound or a video: Space plays it from where it is, or pauses it there; a video with no player here plays in
-    /// its app (#151).
+    /// A sound: Space plays it from where it is, or pauses it there (#151).
     fn preview_play_pause(&mut self) {
         let Some(pv) = &self.preview else { return };
         let Some(play) = pv.shown.as_ref().and_then(|pg| pg.play.clone()) else {
@@ -4994,20 +4993,8 @@ impl App {
 
     fn play_from(&mut self, mut play: Call, at: f64) {
         let Some(pv) = self.preview.as_mut() else { return };
-        let (p, text) = (pv.prov, pv.row().text.clone());
-        if pv.shown.as_ref().is_none_or(|pg| pg.stop.is_none()) {
-            // a video plays in its app: a step like any, its window the receipt
-            return self.pick_step(p, play, &text);
-        }
+        let p = pv.prov;
         play.arguments.insert("at".into(), json!((at * 10.0).round() / 10.0));
-        // a video: the box its frame was drawn in, where the player is laid (#125)
-        if pv.shown.as_ref().is_some_and(|pg| pg.sound.is_none()) {
-            if let Some((x, y, w, h)) = pv.frame {
-                for (k, v) in [("x", x), ("y", y), ("w", w), ("h", h)] {
-                    play.arguments.insert(k.into(), json!(v));
-                }
-            }
-        }
         pv.played = at;
         pv.playing = Some(Instant::now());
         self.transport(p, play);
@@ -5032,18 +5019,6 @@ impl App {
         let params = json!({"name": call.name, "arguments": Value::Object(call.arguments.clone())});
         if let Some(n) = self.server(p).and_then(|s| s.request("tools/call", params, Kind::Quiet, mcp::T_CALL)) {
             self.quiet.push((n, p, call));
-        }
-    }
-
-    /// A video playing over its frame stops where it is: a click raises the dialog over the player, a new
-    /// size moves the frame (#125).
-    pub fn stop_video(&mut self) {
-        if self
-            .preview
-            .as_ref()
-            .is_some_and(|pv| pv.playing.is_some() && pv.shown.as_ref().is_some_and(|pg| pg.sound.is_none()))
-        {
-            self.stop_sound();
         }
     }
 

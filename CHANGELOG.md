@@ -144,6 +144,11 @@ part lands in a pull request of its own.
   before, the line left alone. `assets/transitions/` and
   `assets/brand-transitions/` go (674 files, 25 MB), and with them the
   gif crate that read them.
+- Cut: video in a window. A video's preview is its frame, its length
+  and its size, and Enter opens it in its app; Space no longer lays a
+  window with no border over the frame to play it, and full screen no
+  longer trades the dialog's full screen for a floating window while
+  it plays. The sway rules for that window (`spark-preview`) go.
 
 ## v0.121
 

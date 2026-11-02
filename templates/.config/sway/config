@@ -110,10 +110,6 @@ bindsym $mod+s exec $term --config @HOME@/.config/foot/dialog.ini --app-id spark
 # the dialog's window maps unseen and the dialog shows it once its first
 # frame is drawn, so nothing comes before it (#167)
 for_window [app_id="spark-dialog"] floating enable, border none, move position center, opacity 0
-# a video a preview plays (#125): laid over its frame, never taking the keys from the dialog; it maps unseen and is
-# shown where it plays, in one command (#157)
-for_window [app_id="spark-preview"] floating enable, border none, opacity 0
-no_focus [app_id="spark-preview"]
 # key: Super+Shift+q closes the window.
 bindsym $mod+Shift+q kill
 # key: Super+Shift+c reloads sway after spark-shell on.

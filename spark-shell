@@ -6859,7 +6859,7 @@ tool_spec() {
         files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=ifo _tt='files browse PATH' _td='Open a folder in the system file manager, for anything beyond the steps here. path is a row'"'"'s own path, exactly as written.' ;;
         files_open)        _ts=files _ta=open _tp=path _tk=path _th=ifo _tt='files open PATH' _td='Open a file with the app that opens its kind. path is a row'"'"'s own path, exactly as written.' ;;
         files_show)        _ts=files _ta=show _tp=path _tk=path _th=rif _tt='files show PATH' _td='The first lines of a text file. path is a row'"'"'s own path, exactly as written.' ;;
-        files_play)        _ts=files _ta=play _tp=path _tk=path _te='at:seconds x:pixels y:pixels w:pixels h:pixels' _th='' _tt='files play PATH' _td='Play a sound here, with no window, from at seconds (the start when none), until it ends or files stop; a video over the box x, y, w, h of the dialog the preview drew it in. path is a row'"'"'s own path, exactly as written.' ;;
+        files_play)        _ts=files _ta=play _tp=path _tk=path _te='at:seconds' _th='' _tt='files play PATH' _td='Play a sound here, with no window, from at seconds (the start when none), until it ends or files stop. path is a row'"'"'s own path, exactly as written.' ;;
         files_stop)        _ts=files _ta=stop _th=i _tt='files stop' _td='Stop the sound files play started.' ;;
         files_attach)      _ts=files _ta=attach _tp=path _tk=path _th=rif _tt='files attach PATH' _td='A text file to ask spark about, with the next words. path is a row'"'"'s own path, exactly as written.' ;;
         files_reveal)      _ts=files _ta=reveal _tp=path _tk=path _th=ifo _tt='files reveal PATH' _td='Show a file or folder in the system file manager, its folder opened. path is a row'"'"'s own path, exactly as written.' ;;
@@ -6912,8 +6912,8 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
                 elif ($k | contains("|")) then {type: "string", enum: ($k | split("|"))}
                 else {type: "string", minLength: 1, maxLength: 256} end) + (if $w == "" then {} else {description: $w} end))} end)
               + (if $q == "" then {} else {($q): {type: "string", format: "password", maxLength: 256}} end)
-              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} elif .[1] == "filename" then {type: "string", minLength: 1, maxLength: 255, description: "one name, no slash"} elif .[1] == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"} elif .[1] == "seconds" then {type: "number", minimum: 0, maximum: 86400, description: "where to start, in seconds"} elif .[1] == "pixels" then {type: "integer", minimum: 0, maximum: 65535, description: "pixels from the corner of the dialog"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
-            required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text" and .[1] != "seconds" and .[1] != "pixels") | .[0]]), additionalProperties: false},
+              + ([$xs[] | {(.[0]): (if .[1] == "text" then {type: "string", maxLength: 40, description: "two or three words from the request"} elif .[1] == "coordinate" then {type: "integer", minimum: -65535, maximum: 65535} elif .[1] == "scale" then {type: "string", pattern: "^[0-9]+([.][0-9]+)?$", maxLength: 16} elif .[1] == "mode" then {type: "string", pattern: "^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$"} elif .[1] == "net" then {type: "string", pattern: "^[A-Za-z0-9.,:/-]{1,80}$", description: "IPv4 value; gateway may be none and DNS may be auto"} elif .[1] == "port" then {type: "string", pattern: "^[A-Za-z0-9_.:-]+$", maxLength: 80} elif .[1] == "name" then {type: "string", minLength: 1, maxLength: 40, description: "the new name"} elif .[1] == "filename" then {type: "string", minLength: 1, maxLength: 255, description: "one name, no slash"} elif .[1] == "path" then {type: "string", minLength: 2, maxLength: 4096, format: "path"} elif .[1] == "seconds" then {type: "number", minimum: 0, maximum: 86400, description: "where to start, in seconds"} else {type: "string", enum: (.[1] | split("|"))} end)}] | add // {})),
+            required: ((if $p == "" then [] else [$p] end) + [$xs[] | select(.[1] != "text" and .[1] != "seconds") | .[0]]), additionalProperties: false},
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"}, open: {type: "string"}, rows: {type: "object"},
             effect: {type: "object", properties: {kind: {type: "string"}, operation: {type: "string"}, id: {type: "string"}, title: {type: "string"}, localTime: {type: "string"}, level: {type: "integer"}, muted: {type: "boolean"}}, required: ["kind", "operation", "id", "title"], additionalProperties: false},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
@@ -7335,8 +7335,8 @@ EOF
         if type != "object" then "arguments are an object"
         elif (keys - [$p, $q] - $xk - [""]) != [] then "no argument " + ((keys - [$p, $q] - $xk)[0])
         elif $p != "" and (has($p) | not) then "missing " + $p
-        elif ([$xs[] | select(.[1] != "text" and .[1] != "seconds" and .[1] != "pixels") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text" and .[1] != "seconds" and .[1] != "pixels") | . as $e | select(($a | has($e[0])) | not)][0][0])
-        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds" and .[1] != "pixels") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds" and .[1] != "pixels") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
+        elif ([$xs[] | select(.[1] != "text" and .[1] != "seconds") | . as $e | select(($a | has($e[0])) | not)] | length) > 0 then "missing " + ([$xs[] | select(.[1] != "text" and .[1] != "seconds") | . as $e | select(($a | has($e[0])) | not)][0][0])
+        elif ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)] | length) > 0 then ([$xs[] | select(.[1] != "text" and .[1] != "name" and .[1] != "filename" and .[1] != "path" and .[1] != "coordinate" and .[1] != "scale" and .[1] != "mode" and .[1] != "port" and .[1] != "net" and .[1] != "seconds") | . as $e | select((($e[1] | split("|")) | index([$a[$e[0]]])) | not)][0] | .[0] + " is one of " + (.[1] | split("|") | join(", ")))
         elif any($xs[]; . as $e | .[1] == "filename" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | length) < 1 or ($a[$e[0]] | length) > 255 or ($a[$e[0]] | test("[\u0000-\u001f\u007f/]")))) then "name is one name, no slash, 255 characters at most"
         elif any($xs[]; . as $e | .[1] == "path" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | startswith("/") | not) or ($a[$e[0]] | length) > 4096 or ($a[$e[0]] | test("[\u0000-\u001f\u007f]")))) then "to is a whole path, plain text"
         elif ([$xs[] | select(.[1] == "text" or .[1] == "name") | . as $e | select(($a | has($e[0])) and ((($a[$e[0]] | type) != "string") or (($a[$e[0]] | length) > 40) or (($a[$e[0]]) | plain | not)))] | length) > 0 then ([$xs[] | select(.[1] == "text" or .[1] == "name") | .[0]][0]) + " is plain text, 40 characters at most"
@@ -7345,7 +7345,6 @@ EOF
         elif any($xs[]; . as $e | .[1] == "mode" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[0-9]{2,5}x[0-9]{2,5}(@[0-9]{1,4}([.][0-9]{1,3})?Hz)?$") | not))) then "mode is WIDTHxHEIGHT or WIDTHxHEIGHT@REFRESHHz"
         elif any($xs[]; . as $e | .[1] == "net" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9.,:/-]{1,80}$") | not))) then "network values are addresses, none or auto"
         elif any($xs[]; . as $e | .[1] == "seconds" and ($a | has($e[0])) and (($a[$e[0]] | type) != "number" or $a[$e[0]] < 0 or $a[$e[0]] > 86400)) then "at is a number of seconds, 0 to 86400"
-        elif any($xs[]; . as $e | .[1] == "pixels" and ($a | has($e[0])) and (($a[$e[0]] | type) != "number" or $a[$e[0]] < 0 or $a[$e[0]] > 65535 or $a[$e[0]] != ($a[$e[0]] | floor))) then "x, y, w and h are whole numbers of pixels, 0 to 65535"
         elif any($xs[]; . as $e | .[1] == "port" and (($a[$e[0]] | type) != "string" or ($a[$e[0]] | test("^[A-Za-z0-9_.:-]{1,80}$") | not))) then "other is a connected screen port"
         elif $p == "" then ""
         elif $k == "level" then (if (.[$p] | type) == "number" and .[$p] == (.[$p] | floor) and .[$p] >= 0 and .[$p] <= 100 then "" else $p + " is a whole number, 0 to 100" end)
@@ -8002,7 +8001,7 @@ files_sound_stop() {   # the waveform being drawn aside, stopped (another sound'
     kill "$_fsj" 2>/dev/null || :; rm -f "$TMP/sound.job"
 }
 files_time() { awk -v s="$1" 'BEGIN { s = int(s + 0.5); h = int(s / 3600); m = int(s % 3600 / 60); if (h > 0) printf "%d:%02d:%02d", h, m, s % 60; else printf "%d:%02d", m, s % 60 }'; }   # files_time SECONDS -> 3:45, 1:02:03
-files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.json: a sound's tags, its waveform over its spectrogram (drawn once, whole, by mpv), what an audio engineer asks first (rate, bits, channels, format, the bitrate of a lossy one), right plays it here; a video's frame, PX wide at most, its length and size, right plays it in its app
+files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.json: a sound's tags, its waveform over its spectrogram (drawn once, whole, by mpv), what an audio engineer asks first (rate, bits, channels, format, the bitrate of a lossy one), Space plays it here; a video's frame, PX wide at most, its length and size, Enter opens it in its app
     command -v mpv >/dev/null 2>&1 || { files_say "No preview: mpv is not installed. Enter opens it."; return 0; }
     # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
     _fmf=$(files_tool mpv $MPV_SAFE --untimed --vo=null --ao=null --length=0.05 --msg-level=all=no,term-msg=info \
@@ -8030,11 +8029,8 @@ files_page_media() {   # files_page_media PATH sound|video BASE [PX] -- page.jso
                 --start=10% --frames=1 $_fmv -- "$1" </dev/null >/dev/null 2>&1
             mv "$TMP/frame/00000001.png" "$3.png" 2>/dev/null
         } || { files_say "No preview: no frame of this video could be drawn. Enter opens it."; return 0; }
-        # played over its frame where sway is (#125), its length the clock; else in its app
-        _fmh=''; ! files_video_here || _fmh=1
-        jq -cn --arg p "$3.png" --argjson a "$_fma" --argjson z "$_fmz" --argjson f "$_fmu" --arg h "$_fmh" --argjson n "${_fms:-0}" \
-            '{picture: $p, full: $f} + (if $h != "" then {play: {name: "files_play", arguments: $a, said: "play"}, stop: {name: "files_stop", arguments: {}, said: "stop"}, seconds: $n}
-               else {play: {name: "files_open", arguments: $a, said: "play"}} end) + (if $z == null then {} else {size: $z} end)' > "$TMP/page.json"
+        # its frame, its length and its size: Enter opens it in its app, nothing plays over the dialog (#196)
+        jq -cn --arg p "$3.png" --argjson z "$_fmz" --argjson f "$_fmu" '{picture: $p, full: $f} + (if $z == null then {} else {size: $z} end)' > "$TMP/page.json"
         return 0
     fi
     # what an audio engineer asks first: the rate, the bits of a lossless one, the channels, the format, a lossy one's bitrate
@@ -8069,64 +8065,7 @@ files_play() {   # files_play PATH [AT] -- a sound played here from AT seconds, 
     mpv $MPV_SAFE --no-video --no-terminal --really-quiet --start="+${2:-0}" -- "$1" </dev/null >/dev/null 2>&1 &
     echo "$!" > "$TMP/play.pid"
 }
-files_video_here() { [ -n "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 && swaymsg -t get_version >/dev/null 2>&1; }   # a video plays over its preview: sway is here to lay the player over the dialog (#125)
-files_play_video() {   # files_play_video PATH AT X Y W H -- a video played over its preview's frame (#125): mpv with no border at the frame's place on the screen (X Y W H in the terminal's pixels from the corner of the dialog's grid), sway's rules keeping the keys in the dialog; says why not and fails where it cannot
-    _fvt=$(swaymsg -t get_tree 2>/dev/null) || { echo "sway does not answer"; return 1; }
-    _fvd=$(printf '%s' "$_fvt" | jq -r 'first(.. | objects | select(.app_id? == "spark-dialog" and .focused? == true) | "\(.rect.x + .window_rect.x) \(.rect.y + .window_rect.y) \(.fullscreen_mode // 0)") // empty')
-    [ -n "$_fvd" ] || { echo "the dialog's window is not found"; return 1; }
-    _fvo=$(printf '%s' "$_fvt" | jq -r 'first(.nodes[] | select(.type == "output") | select(any(.. | objects; .app_id? == "spark-dialog" and .focused? == true)) | .name) // empty')
-    _fvs=$(swaymsg -t get_outputs 2>/dev/null | jq -r --arg o "$_fvo" 'first(.[] | select(.name == $o) | .scale) // 1')
-    # full screen (#158): sway draws a full screen window over a floating one, so for the play the dialog trades sway's full
-    # screen for a floating window on the same pixels, the bar out of sight, and takes it back when the play ends; its own
-    # size kept for the full screen to give back. One command each way: no frame between
-    _fvsw=''
-    if [ -f "$TMP/play.swap" ]; then _fvsw=$(cat "$TMP/play.swap")   # an earlier play traded it already
-    else
-        case $_fvd in *' 0') ;; *)
-            _fvsw=$(printf '%s' "$_fvt" | jq -r 'first(.. | objects | select(.app_id? == "spark-dialog" and .focused? == true) | "\(.id) \(.geometry.width // 0) \(.geometry.height // 0)") // empty')
-            _fvr=$(swaymsg -t get_outputs 2>/dev/null | jq -r --arg o "$_fvo" 'first(.[] | select(.name == $o) | "\(.rect.width) \(.rect.height) \(.rect.x) \(.rect.y)") // empty')
-            [ -n "$_fvsw" ] && [ -n "$_fvr" ] || { echo "the dialog's window is not found"; return 1; }
-            # shellcheck disable=SC2086   # four numbers
-            set -- "$1" "$2" "$3" "$4" "$5" "$6" $_fvr
-            # the bar first, unseen behind full screen; then the window in one command (a sway with no bar says no to the bar alone)
-            swaymsg "bar mode invisible" >/dev/null 2>&1 || :
-            swaymsg "[con_id=${_fvsw%% *}] fullscreen disable, resize set $7 $8, move absolute position $9 ${10}" >/dev/null 2>&1 \
-                || { swaymsg "bar mode $(bar_mode)" >/dev/null 2>&1 || :; echo "full screen could not make room for the video"; return 1; }
-            printf '%s\n' "$_fvsw" > "$TMP/play.swap" ;;
-        esac
-    fi
-    _fvp=$(sed -n 's/^pad=\([0-9]*\)x\([0-9]*\).*/\1 \2/p' "$HOME/.config/foot/dialog.ini" 2>/dev/null | head -1)
-    # the frame on the screen, in sway's units: the window's corner, foot's padding, the dialog's pixels by the screen's scale
-    # shellcheck disable=SC2086   # numbers, split on purpose
-    _fvg=$(printf '%s %s %s %s %s %s\n' "$3 $4 $5 $6" ${_fvd% *} ${_fvp:-0 0} | awk -v s="${_fvs:-1}" '{ if (s <= 0) s = 1; printf "%d %d %d %d", $5 + $7 + $1 / s, $6 + $8 + $2 / s, $3 / s, $4 / s }')
-    files_stop
-    # shellcheck disable=SC2086   # MPV_SAFE is options, split on purpose
-    # its size from its first frame the frame's: mpv left to itself fits the screen's width and keeps to it (#158)
-    mpv $MPV_SAFE --wayland-app-id=spark-preview --no-border --osc=no --osd-level=0 --no-terminal --really-quiet --keep-open=no \
-        --geometry="$(printf '%s' "$_fvg" | awk '{ printf "%dx%d", $3, $4 }')" --start="+$2" -- "$1" </dev/null >/dev/null 2>&1 &
-    _fvm=$!; echo "$_fvm" > "$TMP/play.pid"
-    # the full screen given back when this play ends, unless another play took the frame meanwhile (#158). A job of its
-    # own with its fds closed, never an and-or list sent to the background: under bash that list's own process keeps the
-    # step's answer pipe, and the step waited as long as the video played (#172)
-    if [ -n "$_fvsw" ]; then
-        ( while pid_running "$_fvm"; do sleep 0.2; done; sleep 0.3
-          if [ -f "$TMP/play.pid" ] && pid_running "$(cat "$TMP/play.pid")"; then exit 0; fi
-          rm -f "$TMP/play.swap"; files_full_back "$_fvsw" ) </dev/null >/dev/null 2>&1 3>&- 4<&- &
-    fi
-    # shellcheck disable=SC2086   # four numbers
-    set -- $_fvg
-    _fvi=0; while [ "$_fvi" -lt 30 ] && ! swaymsg -t get_tree 2>/dev/null | jq -e 'any(.. | objects; .app_id? == "spark-preview")' >/dev/null 2>&1; do sleep 0.1; _fvi=$((_fvi + 1)); done
-    # it maps unseen (the rule's opacity 0) and is shown where it plays in the same command: no frame at its own size (#157)
-    swaymsg "[app_id=\"spark-preview\"] floating enable, border none, resize set $3 $4, move absolute position $1 $2, opacity 1" >/dev/null 2>&1 || :
-}
 pid_running() { kill -0 "$1" 2>/dev/null && ! grep -qs '^State:[[:space:]]*Z' "/proc/$1/status"; }   # pid_running PID -- it runs; a zombie no one reaps (a container's first process may never) has ended (#172)
-files_full_back() {   # files_full_back "ID W H" -- the dialog full screen again after a play (#158): its own size first, so leaving full screen later gives it back, then full screen, in one command; the bar as the settings have it
-    # shellcheck disable=SC2086   # three numbers
-    set -- $1
-    _ffb=''; [ "${2:-0}" -gt 0 ] && [ "${3:-0}" -gt 0 ] && _ffb="resize set $2 $3, move position center, "
-    swaymsg "[con_id=$1] ${_ffb}fullscreen enable" >/dev/null 2>&1 || :
-    swaymsg "bar mode $(bar_mode)" >/dev/null 2>&1 || :   # back behind full screen, unseen
-}
 files_stop() { [ ! -f "$TMP/play.pid" ] || { kill "$(cat "$TMP/play.pid")" 2>/dev/null || :; rm -f "$TMP/play.pid"; }; }   # the sound playing here, stopped; quiet when none plays
 provide_files_rows() {   # provide_files_rows [URI] -> the roots' rows; one folder's, with your home's recent files at its top, its own steps at its end and the drives beside your home; a search's; false when the uri names no folder that holds to the lines
     _fu=${1:-spark-shell://files/rows}; _fhere=''; FILES_N=0; FILES_B=0; FILES_D=0
@@ -8347,13 +8286,6 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
         files_open) files_open_text "$1" "$_ff" || files_open_with "$1" "$_ff" ;;
         files_play)
             _fat=$(printf '%s' "$3" | jq -r '.at // 0 | if type == "number" and . >= 0 and . < 86400 then (. * 10 | floor) / 10 else 0 end')
-            if [ "$(files_kind "$_ff")" = video ] && command -v mpv >/dev/null 2>&1 && files_video_here; then   # over its frame (#125)
-                _fbx=$(printf '%s' "$3" | jq -r '[.x, .y, .w, .h] | if all(type == "number" and . >= 0 and . <= 65535) then map(floor | tostring) | join(" ") else "" end')
-                [ -n "$_fbx" ] || { provide_refuse "$1" "files: a video plays over its preview: the dialog gives the box"; return 0; }
-                # shellcheck disable=SC2086   # four numbers, split on purpose
-                _fpv=$(files_play_video "$_ff" "$_fat" $_fbx) || { provide_refuse "$1" "files: ${_fpv:-$_fname could not be played here}"; return 0; }
-                files_result "$1" "playing $_fname"; return 0
-            fi
             [ "$(files_kind "$_ff")" = sound ] && command -v mpv >/dev/null 2>&1 || { provide_refuse "$1" "files: $_fname is no sound mpv plays here"; return 0; }
             files_play "$_ff" "$_fat"; files_result "$1" "playing $_fname" ;;
         files_browse) files_open_with "$1" "$_ff" ;;

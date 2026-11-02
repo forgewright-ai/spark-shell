@@ -546,10 +546,6 @@ fn main() {
                         if let Some((s, pw, ph)) = sixel::show_with(img, bw, bh, &p.view, colors) {
                             // in the middle of its box by whole cells
                             let (dx, dy) = ((bw.saturating_sub(pw) / 2 / cw) as u16, (bh.saturating_sub(ph) / 2 / chh) as u16);
-                            // where it is, in pixels: a video plays over it (#125)
-                            if let Some(pv) = app.preview.as_mut().filter(|_| app.view == View::Preview && !p.spectrogram) {
-                                pv.frame = Some(((p.x + dx) as u32 * cw, (p.y + dy) as u32 * chh, pw, ph));
-                            }
                             let _ = queue!(
                                 out,
                                 ratatui::crossterm::cursor::SavePosition,
@@ -631,7 +627,6 @@ fn main() {
                 dirty = true;
             }
             Ev::Term(Event::Resize(_, _)) => {
-                app.stop_video(); // the frame moves: the player would stand where it was (#125)
                 shown_preview = None;
                 let _ = term.clear();
                 dirty = true;
@@ -682,10 +677,6 @@ fn main() {
                 }
                 match m.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
-                        // a click raises the dialog over a video's player: it stops, unless the click is the key that pauses it (#125)
-                        if !drawn.keys.iter().any(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
-                            app.stop_video();
-                        }
                         if m.row == 0 && drawn.close.is_some_and(|(a, b)| m.column >= a && m.column < b) {
                             app.quit = Some(0);
                         } else if drawn.reply_undo.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
