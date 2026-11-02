@@ -63,10 +63,14 @@ def main(binary):
         with open(cfg) as f:
             return "THEME=nord" in f.read()
     ok(read_until(themed, 15), "Enter on the palette the words found keeps it (#196: C)", text()[-400:])
-    time.sleep(0.5)
+    # the step is audited when its answer comes, and the answer carries the section's rows (#196,
+    # phase 4): wait for the audit line, the state the checks below need, never a fixed time
+    audit = os.path.join(home, ".local/state/spark-shell/audit")
+    def audited():
+        return os.path.exists(audit) and open(audit).read().count("\n") >= 1
+    read_until(audited, 15)
     read_until(lambda: False, 0.5)
     ok("nord is on" not in text() and "\u276f theme nord" not in text(), "a pick says nothing: no command above the list, no receipt (#196)", text()[-400:])
-    audit = os.path.join(home, ".local/state/spark-shell/audit")
     rec = open(audit).read() if os.path.exists(audit) else ""
     ok(rec.count("\n") == 1 and "\ttheme\ttheme_palette\t" in rec and "nord" not in rec and (os.stat(audit).st_mode & 0o777) == 0o600,
        "one audit line, 0600, numbers and names: the tool, never the argument", rec)
