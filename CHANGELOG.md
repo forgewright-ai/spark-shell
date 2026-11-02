@@ -62,6 +62,14 @@ part lands in a pull request of its own.
   "No such file or directory (os error 2)".
 - Six more golden frames drawn again (calendar, draft, folder,
   full-calendar-tall, preview-answer, staged).
+- Less work per event. The preferences file is read and the clock
+  written once a second at most, no longer on every key and pointer
+  motion. A tick draws a frame only while spark's march shows or when
+  work starts or ends, not every 120 ms while anything is under way. A
+  click is one frame, where the press and the release drew two. A
+  provider's notice that its rows changed, or a progress note, draws
+  nothing until the rows come. A step that closes the dialog closes it
+  before another frame is drawn.
 
 ## v0.121
 

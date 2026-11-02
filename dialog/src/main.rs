@@ -279,6 +279,22 @@ const DRAG_GAP: Duration = Duration::from_millis(40);
 /// pointer lets go (#148).
 const DRAG_COLORS: usize = 48;
 
+/// A tick wants a frame while spark's march shows, and when work starts or ends or the busy pointer comes or goes;
+/// work nothing shows draws nothing (#196). `was` and `now` are (busy, busy pointer).
+fn frame_for_tick(was: (bool, bool), now: (bool, bool), march: bool) -> bool {
+    march || was != now
+}
+
+/// A mouse event wants a frame when it can change what is drawn: a press, a drag, the wheel, or the end of a drag;
+/// a motion or a release that ends nothing draws none, so a click is one frame (#196).
+fn frame_for_mouse(kind: MouseEventKind, dragging: bool) -> bool {
+    match kind {
+        MouseEventKind::Moved => false,
+        MouseEventKind::Up(_) => dragging,
+        _ => true,
+    }
+}
+
 /// The dialog's window shown (#167): it mapped unseen, and its first frame is drawn now. A RUN_COMMAND on sway's
 /// own socket, no process started; a moment's wait first, so foot has put the frame on the window before it shows.
 fn reveal() {
@@ -474,6 +490,7 @@ fn main() {
     let mut drawn = ui::Drawn::default();
     let mut dirty = true;
     let mut last_clock = String::new();
+    let mut prefs_at: Option<Instant> = None;
     loop {
         for j in std::mem::take(&mut app.jobs) {
             run_job(j, tx.clone(), listening.clone());
@@ -493,16 +510,24 @@ fn main() {
             shown_preview = None;
             dirty = true;
         }
-        let prefs = spark_dialog::preferences::read();
-        if app.monday_first != prefs.monday {
-            app.monday_first = prefs.monday;
-            dirty = true;
+        // the preferences read and the clock written once a second at most, never per event or pointer motion (#196)
+        if prefs_at.is_none_or(|t| t.elapsed() >= Duration::from_secs(1)) {
+            prefs_at = Some(Instant::now());
+            let prefs = spark_dialog::preferences::read();
+            if app.monday_first != prefs.monday {
+                app.monday_first = prefs.monday;
+                dirty = true;
+            }
+            let now_clock = clock(prefs.twelve);
+            if now_clock != last_clock {
+                last_clock = now_clock;
+                app.today = Some(today());
+                dirty = true;
+            }
         }
-        let now_clock = clock(prefs.twelve);
-        if now_clock != last_clock {
-            last_clock = now_clock;
-            app.today = Some(today());
-            dirty = true;
+        // a step that closes the dialog closes it before another frame is drawn (#196)
+        if app.quit.is_some() {
+            break;
         }
         if let Some(f) = &films {
             app.follow_motion(Instant::now(), f.open.length(), f.close.length());
@@ -768,9 +793,10 @@ fn main() {
                 dirty = true;
             }
             Ev::Tick => {
-                let was = app.busy();
+                let was = (app.busy(), app.busy_pointer());
                 app.tick(Instant::now());
-                dirty |= was || app.busy();
+                // a frame for the march while it shows, and when the work starts or ends; none for work nothing shows (#196)
+                dirty |= frame_for_tick(was, (app.busy(), app.busy_pointer()), app.cfg.progress && app.thinking());
                 // a window still unseen after a moment is shown whatever is drawn: never a dialog that cannot be seen
                 if unseen && started.elapsed() >= Duration::from_millis(1500) {
                     reveal();
@@ -792,7 +818,7 @@ fn main() {
                     .is_some_and(|pv| pv.heard.is_none() && pv.shown.as_ref().is_some_and(|pg| pg.sound.is_some()));
             }
             Ev::Mcp(m) => {
-                app.incoming(m);
+                let shows = app.incoming(m);
                 // a theme step changed the animation: the new piece read aside, none at once (#126)
                 match app.films_want.take() {
                     Some(Some(dir)) => spawn_films(dir, films_tx.clone()),
@@ -803,7 +829,7 @@ fn main() {
                     }
                     None => {}
                 }
-                dirty = true;
+                dirty |= shows;
             }
             Ev::Helper(h, r) => {
                 app.helper(h, r);
@@ -857,7 +883,7 @@ fn main() {
                 dirty = true;
             }
             Ev::Term(Event::Mouse(m)) => {
-                dirty = true;
+                dirty |= frame_for_mouse(m.kind, drag.is_some());
                 // the pointer says what a click does where it is (#129)
                 let dragging = drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_));
                 mouse_at = Some((m.column, m.row));
@@ -866,9 +892,6 @@ fn main() {
                     pointer = want;
                     let _ = write!(out, "\x1b]22;{}\x1b\\", want);
                     let _ = out.flush();
-                }
-                if matches!(m.kind, MouseEventKind::Moved) {
-                    dirty = false;
                 }
                 match m.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
@@ -979,4 +1002,35 @@ fn main() {
         s.close_stdin();
     }
     std::process::exit(code);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::crossterm::event::{MouseButton, MouseEventKind};
+
+    #[test]
+    fn a_click_is_one_frame_and_a_motion_none() {
+        // the press draws; the release after it draws nothing unless it ends a drag (#196)
+        let frames = [MouseEventKind::Down(MouseButton::Left), MouseEventKind::Up(MouseButton::Left)]
+            .into_iter()
+            .filter(|k| frame_for_mouse(*k, false))
+            .count();
+        assert_eq!(frames, 1, "a click");
+        assert!(!frame_for_mouse(MouseEventKind::Moved, false), "a motion");
+        assert!(
+            frame_for_mouse(MouseEventKind::Up(MouseButton::Left), true),
+            "a drag let go draws the picture whole"
+        );
+        assert!(frame_for_mouse(MouseEventKind::ScrollDown, false), "the wheel");
+    }
+
+    #[test]
+    fn a_tick_draws_only_for_the_march_or_a_change_of_work() {
+        assert!(!frame_for_tick((true, false), (true, false), false), "work nothing shows: no frame");
+        assert!(frame_for_tick((true, false), (true, true), false), "the busy pointer comes");
+        assert!(frame_for_tick((true, true), (false, false), false), "the work ends");
+        assert!(frame_for_tick((false, false), (false, false), true), "the march moves");
+        assert!(!frame_for_tick((false, false), (false, false), false), "nothing at all: no frame");
+    }
 }

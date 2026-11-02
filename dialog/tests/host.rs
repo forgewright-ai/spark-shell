@@ -2781,3 +2781,17 @@ fn typed_words_get_one_reply_row_and_the_frame_holds_still() {
     assert!(search[7].contains("text") || search[7].contains("Text"), "{:?}", &search[6..9]);
     assert!(y.is_some_and(|y| y >= 7));
 }
+
+#[test]
+fn a_notice_that_the_rows_changed_draws_no_frame_and_an_answer_does() {
+    // #196: a provider's message asks for a frame only when it can change what is drawn
+    let (mut app, _rx, _tx) = app_with(&["window"]);
+    let note = json!({"jsonrpc": "2.0", "method": "notifications/resources/updated", "params": {"uri": "spark-shell://window/rows"}});
+    assert!(!app.incoming(Incoming::Msg(0, note)), "the rows are marked to be read again; nothing drawn yet");
+    assert!(app.providers[0].dirty);
+    let progress = json!({"jsonrpc": "2.0", "method": "notifications/progress", "params": {"progressToken": "x", "progress": 1}});
+    assert!(!app.incoming(Incoming::Msg(0, progress)));
+    let answer = json!({"jsonrpc": "2.0", "id": 99, "result": {}});
+    assert!(app.incoming(Incoming::Msg(0, answer)), "an answer may change the rows on screen");
+    assert!(app.incoming(Incoming::Gone(0, "it ended".into())), "a provider gone is said");
+}
