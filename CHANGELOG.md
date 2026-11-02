@@ -130,6 +130,10 @@ part lands in a pull request of its own.
   with a picture and one without, and no picture is decoded and drawn
   on the dialog's own thread for a list. The preview Space opens keeps
   its picture.
+- Cut: the two columns side by side. Since v0.120.1 the theme list is
+  one column and no provider asks for two, so the code that laid two
+  groups side by side, moved the arrows across them and drew a narrow
+  chip goes, about 150 lines. Nothing on screen changes.
 
 ## v0.121
 

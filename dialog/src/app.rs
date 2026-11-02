@@ -2152,9 +2152,6 @@ impl App {
         if self.preview_key() {
             return if self.zoomed() { self.preview_pan(0.0, -1.0) } else { self.preview_file(-1) };
         }
-        if self.grid_move(0, -1) {
-            return;
-        }
         self.keep_lit = None;
         if self.in_list {
             if self.sel == 0 {
@@ -2176,9 +2173,6 @@ impl App {
     pub fn down(&mut self) {
         if self.preview_key() {
             return if self.zoomed() { self.preview_pan(0.0, 1.0) } else { self.preview_file(1) };
-        }
-        if self.grid_move(0, 1) {
-            return;
         }
         self.keep_lit = None;
         if self.in_list {
@@ -2424,7 +2418,7 @@ impl App {
             }
             return self.preview_page(-1);
         }
-        if self.step_value(false) || self.grid_move(-1, 0) {
+        if self.step_value(false) {
             return;
         }
         if self.input.is_empty() && (!self.in_list || self.is_calendar()) {
@@ -2443,7 +2437,7 @@ impl App {
                 self.preview_page(1)
             };
         }
-        if self.step_value(true) || self.grid_move(1, 0) {
+        if self.step_value(true) {
             return;
         }
         if self.open_steps() {
@@ -4732,53 +4726,6 @@ impl App {
                     }
                 }
             }
-        }
-    }
-
-    /// The arrows in two columns side by side (#183): up and down within a column and out of it at its ends,
-    /// left and right across at the same height. False when the lit row is in neither column.
-    fn grid_move(&mut self, dx: i8, dy: i8) -> bool {
-        if !self.in_list || !self.input.is_empty() || self.mode != Mode::Normal {
-            return false;
-        }
-        let Some((lg, rg)) = self.side_by_side() else { return false };
-        let picks = self.picks();
-        let group = |it: &Item| self.row_ref(it).and_then(|r| r.group.clone());
-        let left: Vec<usize> = (0..picks.len()).filter(|i| group(&picks[*i]).as_deref() == Some(lg.as_str())).collect();
-        let right: Vec<usize> = (0..picks.len()).filter(|i| group(&picks[*i]).as_deref() == Some(rg.as_str())).collect();
-        let (col, other, j) = if let Some(j) = left.iter().position(|i| *i == self.sel) {
-            (&left, &right, j)
-        } else if let Some(j) = right.iter().position(|i| *i == self.sel) {
-            (&right, &left, j)
-        } else {
-            return false;
-        };
-        let (first, last) = (
-            left.iter().chain(right.iter()).min().copied().unwrap_or(0),
-            left.iter().chain(right.iter()).max().copied().unwrap_or(0),
-        );
-        self.keep_lit = None;
-        match (dx, dy) {
-            (0, -1) if j > 0 => self.sel = col[j - 1],
-            (0, -1) if first == 0 => {
-                self.in_list = false; // above the first row is the prompt
-                self.list_keys = false;
-            }
-            (0, -1) => self.sel = first - 1,
-            (0, 1) if j + 1 < col.len() => self.sel = col[j + 1],
-            (0, 1) if last + 1 < picks.len() => self.sel = last + 1,
-            (0, 1) => {}
-            (_, 0) if (dx > 0) == std::ptr::eq(col, &left) && !other.is_empty() => self.sel = other[j.min(other.len() - 1)],
-            _ => {}
-        }
-        true
-    }
-
-    /// Two groups of the view's rows to draw side by side (#183): the palettes, dark beside light.
-    pub fn side_by_side(&self) -> Option<(String, String)> {
-        match &self.view {
-            View::Section(p) if !self.searching() => self.providers[*p].rows.side_by_side.clone(),
-            _ => None,
         }
     }
 
