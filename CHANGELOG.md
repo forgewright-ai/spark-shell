@@ -163,6 +163,15 @@ part lands in a pull request of its own.
   terminals repainted. The step still gives a running sway the setting
   itself. In a headless sway on the box, windows in tabs took 1.5
   seconds and 242 processes, and takes 0.96 second and 173.
+- Putting a window in front and closing one read the windows less. A
+  call reads them once for its check, the window's name and the step,
+  where each asked sway for them again. A focus is confirmed by one
+  read, since sway puts the window in front before it answers; a close
+  is read as before, every 50 ms for 2 seconds at most, with one jq a
+  read where there were two. In a headless sway on the box a focus
+  reads the windows twice, where it read them four times (33
+  processes, 39 before), and a close three times, where it read them
+  five (47, 53 before).
 
 ## v0.121
 

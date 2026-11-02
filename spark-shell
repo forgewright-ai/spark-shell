@@ -6134,8 +6134,9 @@ win_open() {   # -> the windows sway shows, one a line: APP<tab>TITLE<tab>ID; th
     swaymsg -t get_tree 2>/dev/null | jq -r --arg me "$PANEL_APP" '.. | objects | select(.pid? != null and (.type? == "con" or .type? == "floating_con")) | select(((.app_id // .window_properties.class // "") != "") and .app_id != $me) | "\(.app_id // .window_properties.class)\t\(.name // "" | gsub("\t"; " "))\t\(.id)"' 2>/dev/null | scrub_text || :   # a title is any program's words: scrubbed
 }
 win_label() { win_open | awk -F '\t' '{ l = $1; if ($2 != "" && $2 != $1) { if ($1 == "foot" || $1 == "footclient") l=$2; else l=l ": " $2 }; print l "\t" $3 }'; }   # -> display label and native container ID
+win_labels() { if [ -n "${WIN_LABELS_READ:-}" ]; then cat "$TMP/win.labels"; else win_label; fi; }   # -> win_label's lines: the call's own read of the windows when it made one (#196)
 win_named() {   # an ID stays exact; legacy words must identify one open window
-    win_label | awk -F '\t' -v w="$(panel_lower "$1")" '
+    win_labels | awk -F '\t' -v w="$(panel_lower "$1")" '
         $2 == w { exact=$2; ne++ }
         w != "" && index(tolower($1),w) { matchid=$2; nm++ }
         END { if (ne == 1) print exact; else if (w ~ /^[0-9]+$/) exit 1; else if (nm == 1) print matchid; else exit 1 }'
@@ -6150,16 +6151,20 @@ win_rows() {   # LABEL<tab>ID lines -> APP<tab>ID<tab>TITLE (the title last: two
             if (p > 0 && index(tolower(r), tolower(a)) > 0) t = substr(t, 1, p - length(seps[k])) }
         gsub(/\|/, "/", t); print a, $2, t }'
 }
-win_name_of() { win_label | awk -F '\t' -v i="$1" '$2 == i { print $1; exit }'; }   # win_name_of ID -> its name
+win_name_of() { win_labels | awk -F '\t' -v i="$1" '$2 == i { print $1; exit }'; }   # win_name_of ID -> its name
 win_change() {   # the command receipt alone cannot prove focus or a close an app may decline
     _wc_name=$(win_name_of "$2"); [ -n "$_wc_name" ] || { echo 'that window is no longer open'; return 1; }
     _wc_cmd=focus; [ "$1" != close ] || _wc_cmd='kill'
     swaymsg -- "[con_id=$2] $_wc_cmd" >/dev/null 2>&1 || { echo "$_wc_name did not $1"; return 1; }
+    # sway puts a window in front before it answers, so one read confirms a focus; a close is the app's to make, read
+    # again every 50 ms, 2 seconds at most (it may ask first, or keep the window). One jq a read (#196)
     _wc_tries=0; _wc_ok=''
-    while [ "$_wc_tries" -lt 40 ]; do
-        _wc_state=$(swaymsg -t get_tree 2>/dev/null | jq -ce --argjson id "$2" '
-            if type != "object" or .type != "root" or (.nodes | type) != "array" then error("no tree") else [.. | objects | select(.id? == $id)] | {exists:(length > 0), focused:any(.[]; .focused == true)} end') || break
-        if printf '%s' "$_wc_state" | jq -e --arg action "$1" 'if $action == "close" then .exists == false else .exists and .focused end' >/dev/null; then _wc_ok=1; break; fi
+    while :; do
+        _wc_rc=0; swaymsg -t get_tree 2>/dev/null | jq -e --argjson id "$2" --arg action "$1" '
+            if type != "object" or .type != "root" or (.nodes | type) != "array" then error("no tree")
+            else [.. | objects | select(.id? == $id)] | if $action == "close" then length == 0 else any(.[]; .focused == true) end end' >/dev/null 2>&1 || _wc_rc=$?
+        [ "$_wc_rc" -ne 0 ] || { _wc_ok=1; break; }
+        [ "$_wc_rc" -eq 1 ] && [ "$1" = close ] && [ "$_wc_tries" -lt 40 ] || break   # no tree, or a focus not made: no read again
         sleep 0.05; _wc_tries=$((_wc_tries + 1))
     done
     [ -n "$_wc_ok" ] || { echo "$1 was requested, but the window state did not confirm it; check the window before trying again"; return 1; }
@@ -7386,6 +7391,7 @@ provide_call() {   # provide_call ID PARAMS -- the step: the tool by name, its a
 $_parts
 EOF
     case $_name in *[!a-z0-9_]*|[!a-z]*|'') rpc_error "$1" -32602 "no tool by that name"; return 0 ;; esac
+    WIN_LABELS_READ=''   # a call's own read of the windows is its alone
     { tool_spec "$_name" && [ "$_ts" = "$sec" ]; } || { rpc_error "$1" -32602 "no tool $_name in $sec"; return 0; }
     _title=$_tt   # the call's own title: the undo's tool_spec below sets _tt to its own (the review: "bar: bar on did not work")
     [ "$_name" != notes_append ] || { provide_notes_append "$1" "$_args"; return 0; }
@@ -7435,7 +7441,8 @@ EOF
     case $_name in
         notes_open) _resolved=$(note_file "$_v") || { provide_refuse "$1" 'select one note by its filename; that name is missing or ambiguous'; return 0; }; _v=${_resolved##*/} ;;
         reminders_done|reminders_snooze|reminders_delete) _resolved=$(rem_find "$_v") || { provide_refuse "$1" 'select one reminder by its UID; that name is missing or ambiguous'; return 0; }; _v=$(printf '%s' "$_resolved" | cut -f2) ;;
-        window_focus|window_close) _v=$(win_named "$_v") || { provide_refuse "$1" 'select one open window by its ID; that name is missing or ambiguous'; return 0; } ;;
+        window_focus|window_close) win_label > "$TMP/win.labels"; WIN_LABELS_READ=1   # the windows read once for the call: its check, its name, the step's (#196)
+            _v=$(win_named "$_v") || { provide_refuse "$1" 'select one open window by its ID; that name is missing or ambiguous'; return 0; } ;;
     esac
     case $_name in notes_open|reminders_done|reminders_snooze|reminders_delete|window_focus|window_close) _plain=$(jq -cn --arg n "$_v" '{name:$n}') ;; esac
     _act=$_ta; _arg=$_v; [ "$_ta" != '=' ] || { _act=$_v; _arg=''; }   # a palette's step is its name alone
@@ -7487,7 +7494,7 @@ EOF
         done
     fi
     wait "$_w" 2>/dev/null || :
-    PANEL_PASS=''; BT_BRIDGE=''; PANEL_INV=''; PANEL_INV_READ=''; PANEL_JOURNAL=''; rm -f "$TMP/bt.call-id" "$TMP/bt.ask"
+    PANEL_PASS=''; BT_BRIDGE=''; PANEL_INV=''; PANEL_INV_READ=''; PANEL_JOURNAL=''; WIN_LABELS_READ=''; rm -f "$TMP/bt.call-id" "$TMP/bt.ask"
     _rc=$(cat "$TMP/call.rc" 2>/dev/null || echo 1); _out=$(scrub_text < "$TMP/call.out")
     if [ -n "$(find "$CONFIG" "$THEME_ENV" -newer "$TMP/step.mark" 2>/dev/null)" ]; then   # the step changed the settings: the rows read them anew
         for _k in $THEME_KEYS; do unset "$_k"; done; config_load; theme_load

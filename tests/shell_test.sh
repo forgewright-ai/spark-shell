@@ -4293,6 +4293,15 @@ STUB
         && ok "panel window --list: each open window by its name is a row that puts it in front, and a close row; the terminal by what runs in it; the panel's own window not listed" || bad "window rows" "$(cat "$H/win.list")"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window close nothing 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: window: no unique window named nothing is open; select it in Workspace' ] && ok "panel window close NAME: a window that is not open is refused" || bad "window close refuse" "st=$st $out"
+    # a close as the dialog makes it, the rows read first: the windows read once for the call (its check, its name, the
+    # step's), once to see the window gone, then the rows after it as a read reads them (#196)
+    touch "$HOME/fullscreen"; rm -f "$H/.local/state/swaymsg.trees"
+    ( export SWAYSOCK=/tmp/x; mcp window "$(rq 1 resources/read '{"uri":"spark-shell://window/rows"}')" ); _rr=$(grep -c '' "$H/.local/state/swaymsg.trees" 2>/dev/null || :)
+    rm -f "$H/.local/state/swaymsg.log" "$H/.local/state/swaymsg.trees"
+    ( export SWAYSOCK=/tmp/x; mcp window "$(rq 1 resources/read '{"uri":"spark-shell://window/rows"}')" "$(call 2 window_close '{"name":"77"}')" ); _rt=$(grep -c '' "$H/.local/state/swaymsg.trees" 2>/dev/null || :)
+    [ "$(ans 2 | jq -c '.result.structuredContent.effect')" = '{"kind":"window","id":"77","title":"firefox","operation":"close"}' ] && [ ! -e "$HOME/fullscreen" ] \
+        && [ "$_rt" = $((2 * _rr + 2)) ] && grep -qxF '[con_id=77] kill' "$H/.local/state/swaymsg.log" \
+        && ok "provide window_close: the windows read once for the call's check, name and step, once to see the window gone, then the rows (#196)" || bad "provide window_close" "trees=$_rt read=$_rr $(ans 2) $(cat "$H/.local/state/swaymsg.log" 2>&1)"
     rm -f "$HOME/fullscreen" "$HOME/aerc" "$H/win.list"
     printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
     line=$(sh "$SH" bar status --once)
