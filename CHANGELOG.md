@@ -23,15 +23,15 @@ part lands in a pull request of its own.
 - A row that puts a window in front (an app, a file, a terminal, a
   window, the lock) clears the dialog at the click, and the dialog
   closes once the window is there; if the step is refused, the dialog
-  comes back with the reason. The provider marks these tools with
+  comes back with the reason. The provider tags these tools with
   `_meta` `spark-shell/opens` (the `o` hint in the shell's tool list).
 - Fixed: a step that timed out, lost its provider or got no yes left
   its line above the list, and later typed replies then vanished (A).
   Words typed to find a switch, then Enter, did nothing (C). A receipt
   of several lines kept only its first (E). Commands spark planned while
-  the prompt asked for a yes or a name took the box; they now wait and
+  the prompt asked for a yes or a name took it over; they now wait and
   come when the question is done (G). A click while spark's commands sat
-  in the box left Space and the history blocked (M). While attaching or
+  in the prompt left Space and the history blocked (M). While attaching or
   picking a file, typed words ran as a request or opened another place;
   Enter now picks the best match (O and the attach picker). Space on a
   row with no page typed a space into the prompt.
@@ -55,7 +55,7 @@ part lands in a pull request of its own.
   and they never move back and forth.
 - The key row is cut at the window's edge, the words at a word, never
   a key drawn in part.
-- The Calendar's months always take six weeks' room, so Left and Right
+- The Calendar's months always take six weeks' rows, so Left and Right
   never move the reminders under them.
 - A helper's raw system error is said in plain words: with no spark
   installed, "spark did not answer: spark is not installed here", not
