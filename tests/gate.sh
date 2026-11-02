@@ -3,9 +3,9 @@
 # the lint job's (privacy over the tree, ASCII docs, no hex color in a
 # template, shellcheck), the dialog's (cargo fmt, clippy, test, the pty test
 # against a release build), every python3 test ci.yml runs, read from ci.yml
-# itself so a step added there runs here too, then the suite's two halves
-# (this machine's, and Linux's through a uname stub on a Mac). One line a
-# check; the first failure is named, with its log, and the gate stops.
+# itself so a step added there runs here too, then the suite on this
+# machine (a real Linux's is CI's, #194). One line a check; the first
+# failure is named, with its log, and the gate stops.
 #   sh tests/gate.sh           everything
 #   sh tests/gate.sh --quick   all but the two suites (the pre-push hook)
 #   sh tests/gate.sh --list    the checks, one a line; nothing runs
@@ -30,7 +30,7 @@ py_tests() { grep -oE 'python3( -I)? tests/[A-Za-z0-9_]+\.py' "$ci" | awk '!seen
 checks() {
     printf '%s\n' privacy ascii templates shellcheck 'cargo fmt --check' 'cargo clippy' 'cargo test' 'cargo build --release'
     py_tests
-    [ -n "$quick" ] || printf '%s\n' 'suite: this machine' 'suite: linux (uname stub)'
+    [ -n "$quick" ] || printf '%s\n' 'suite: this machine'
 }
 if [ -n "$list" ]; then checks; exit 0; fi
 
@@ -87,22 +87,6 @@ done < "$logs/py"
 
 [ -z "$quick" ] || { echo "gate: $n checks passed (the suites are not run with --quick)"; exit 0; }
 
-# --- the suite's two halves, at once
-if [ "$(uname -s)" = Darwin ]; then
-    mkdir -p "$logs/stub"
-    printf '#!/bin/sh\ncase "${1:-}" in -m) echo x86_64 ;; -r) echo 6.6.0 ;; *) echo Linux ;; esac\n' > "$logs/stub/uname"; chmod +x "$logs/stub/uname"
-    # each half's status kept whatever it is: set -e would end the job before it is written
-    { st=0; sh tests/shell_test.sh > "$logs/mac.log" 2>&1 || st=$?; echo "$st" > "$logs/mac.st"; } &
-    { st=0; PATH=$logs/stub:$PATH sh tests/shell_test.sh > "$logs/linux.log" 2>&1 || st=$?; echo "$st" > "$logs/linux.st"; } &
-    wait
-    _bad=''
-    for h in mac linux; do   # both halves said, a failing one with its lines, before the gate stops
-        n=$((n + 1)); _l=$(tail -1 "$logs/$h.log")
-        if [ "$(cat "$logs/$h.st")" = 0 ]; then printf 'ok    suite: %s (%s)\n' "$h" "$_l"
-        else printf 'FAIL  suite: %s (%s)\n' "$h" "$_l"; grep '  FAIL' "$logs/$h.log" | head -20 | sed 's/^/      /'; _bad=1; fi
-    done
-    [ -z "$_bad" ] || exit 1
-else
-    _name='suite: this machine'; step sh tests/shell_test.sh
-fi
+# --- the suite on this machine; Linux's is CI's, on real distros (#194)
+_name='suite: this machine'; step sh tests/shell_test.sh
 echo "gate: $n checks passed"

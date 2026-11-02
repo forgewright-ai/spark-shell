@@ -37,6 +37,10 @@ none, locked (#193).
   and named embers as the palette's own. The piece set is kept, so a
   shipped palette brings its own again, and a theme saved meanwhile
   keeps none.
+- `sh tests/gate.sh` runs the suite once, on this machine (#194). It
+  used to run it a second time on a Mac with a stub that says Linux,
+  which covered only the Linux-only branches; CI runs the suite on
+  seven real distros.
 
 ## v0.120
 

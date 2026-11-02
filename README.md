@@ -1361,10 +1361,10 @@ Uninstall: `spark-shell off`, then delete `~/.spark-shell`.
 
 `sh tests/gate.sh` runs every check CI runs, on this machine: the lint
 checks, the dialog's format, lint, tests and release build, every
-python3 test the CI file names (read from it), then the suite's two
-halves (on a Mac, Linux's through a stub). One line a check; the first
-failure stops it. The pre-push hook runs `sh tests/gate.sh --quick`,
-everything but the suites; run the whole gate before a release.
+python3 test the CI file names (read from it), then the suite on this
+machine. One line a check; the first failure stops it. The pre-push
+hook runs `sh tests/gate.sh --quick`, everything but the suite; CI runs
+the suite on every distro.
 
 The suite is five parts, cut by time. `sh tests/shell_test.sh --parallel`
 runs them side by side, a process each, as CI does; `--part NAME` runs
