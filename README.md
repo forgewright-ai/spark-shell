@@ -1612,7 +1612,9 @@ call. The provider keeps the rows it last sent as the allowlist a step
 is matched against, and its watcher counts them as seen. Only the
 sections the desktop changes behind the dialog have a watcher (wifi, bt,
 out, mic, storage, window, notifications): every other one changes only
-by a step.
+by a step. A rows read asks each device, list and file once: the
+section's title, its short form and its full form share the answer, and
+the next read asks again.
 
 `reminders_add` uses preparation to resolve relative times to an explicit
 local date and time. A past or unreadable time asks for clarification.

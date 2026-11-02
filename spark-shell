@@ -3682,8 +3682,8 @@ bar_wifi() { _wp=$(bar_wifi_pct); [ -z "$_wp" ] || printf '%s %s\n' "$(( (${_wp%
 bar_bt() {   # -> "name NAME", "on", "off", or nothing (no controller)
     ls -d "$BAR_SYS"/class/bluetooth/hci* >/dev/null 2>&1 || return 0
     command -v bluetoothctl >/dev/null 2>&1 || { echo on; return; }
-    bar_timeout bluetoothctl show 2>/dev/null | grep -q 'Powered: yes' || { echo off; return; }
-    dev=$(bar_timeout bluetoothctl devices Connected 2>/dev/null | awk '$1 == "Device" { $1 = ""; $2 = ""; sub(/^ +/, ""); print; exit }')
+    bt_powered || { echo off; return; }
+    dev=$(bt_connected | awk '$1 == "Device" { $1 = ""; $2 = ""; sub(/^ +/, ""); print; exit }')
     if [ -n "$dev" ]; then printf 'name %s\n' "$dev"; else echo on; fi
 }
 mac_battery() {   # pmset owns the Mac's battery facts; no Linux sysfs fallback
@@ -3715,10 +3715,10 @@ snd_tool() {   # -> wpctl | pactl | alsa | nothing
     fi
 }
 # wpctl status: a section's rows are "N. Description [vol: ...]", the default starred
-wp_rows() { wpctl status 2>/dev/null | awk -v sec="$1:" 'index($0, sec) {on = 1; next} on && !/[0-9]+\. / {exit} on { star = index($0, "*") ? 1 : 0; id = $0; sub(/^[^0-9]*/, "", id); sub(/\..*$/, "", id); d = $0; sub(/^.*[0-9]+\. /, "", d); sub(/[ \t]+\[vol:.*$/, "", d); sub(/[ \t]+$/, "", d); print star "\t" id "\t" d }'; }   # wp_rows Sinks|Sources -> STAR<tab>ID<tab>DESCRIPTION
+wp_rows() { read_once wpctl.status wpctl status 2>/dev/null | awk -v sec="$1:" 'index($0, sec) {on = 1; next} on && !/[0-9]+\. / {exit} on { star = index($0, "*") ? 1 : 0; id = $0; sub(/^[^0-9]*/, "", id); sub(/\..*$/, "", id); d = $0; sub(/^.*[0-9]+\. /, "", d); sub(/[ \t]+\[vol:.*$/, "", d); sub(/[ \t]+$/, "", d); print star "\t" id "\t" d }'; }   # wp_rows Sinks|Sources -> STAR<tab>ID<tab>DESCRIPTION
 wp_default() { wp_rows "$1" | awk -F '\t' '$1 == 1 {print $3; exit}'; }
-wp_level() { wpctl get-volume "$1" 2>/dev/null | awk '{printf "%d", $2 * 100 + 0.5}'; }   # wp_level @DEFAULT_AUDIO_SINK@|SOURCE@
-wp_muted() { _wm=$(wpctl get-volume "$1" 2>/dev/null) || return 1; case $_wm in 'Volume: '*) case $_wm in *MUTED*) echo 1 ;; *) echo 0 ;; esac ;; *) return 1 ;; esac; }
+wp_level() { read_once "wpctl.volume$1" wpctl get-volume "$1" 2>/dev/null | awk '{printf "%d", $2 * 100 + 0.5}'; }   # wp_level @DEFAULT_AUDIO_SINK@|SOURCE@
+wp_muted() { _wm=$(read_once "wpctl.volume$1" wpctl get-volume "$1" 2>/dev/null) || return 1; case $_wm in 'Volume: '*) case $_wm in *MUTED*) echo 1 ;; *) echo 0 ;; esac ;; *) return 1 ;; esac; }
 wp_live() { command -v pw-dump >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && pw-dump 2>/dev/null | jq -e 'any(.[]; .info.props["media.class"]? == "Stream/Input/Audio" and .info.state? == "running")' >/dev/null 2>&1 && echo 1 || echo 0; }
 # pactl: names and descriptions in the long list, the default by name
 pa_desc() { pactl list "$1" 2>/dev/null | awk -v n="$2" '/^\tName: / {cur = $2} /^\tDescription: / && cur == n {sub(/^\tDescription: /, ""); print; exit}'; }   # pa_desc sinks|sources NAME
@@ -3804,7 +3804,8 @@ al_mend_file() {   # a file v0.45 wrote said `defaults.pcm.card NAME`, which ALS
     [ -f "$BAR_ASOUNDRC" ] && grep -q 'rendered by spark-shell' "$BAR_ASOUNDRC" && grep -q '^defaults\.pcm\.card ' "$BAR_ASOUNDRC" || return 0
     t=$(sed -e 's/^defaults\.pcm\.card /defaults.pcm.!card /' -e 's/^defaults\.ctl\.card /defaults.ctl.!card /' "$BAR_ASOUNDRC") && printf '%s\n' "$t" > "$BAR_ASOUNDRC"
 }
-snd_out() {   # -> NAME, LEVEL (or -), MUTED on three lines; nothing without an output
+snd_out() { read_once snd.out snd_out_now; }   # -> NAME, LEVEL (or -), MUTED on three lines; nothing without an output
+snd_out_now() {
     case $SND in
         wpctl) n=$(wp_default Sinks); [ -n "$n" ] || return 0; printf '%s\n%s\n%s\n' "$n" "$(wp_level @DEFAULT_AUDIO_SINK@)" "$(wp_muted @DEFAULT_AUDIO_SINK@)" ;;
         pactl) s=$(pactl get-default-sink 2>/dev/null); [ -n "$s" ] || return 0; n=$(pa_desc sinks "$s"); printf '%s\n%s\n%s\n' "${n:-$s}" "$(pa_level sink @DEFAULT_SINK@)" "$(pa_muted sink @DEFAULT_SINK@)" ;;
@@ -3815,7 +3816,8 @@ snd_out() {   # -> NAME, LEVEL (or -), MUTED on three lines; nothing without an 
             if ctl=$(al_control "$c" p); then printf '%s\n%s\n%s\n' "$(al_name "$c")" "$(al_level "$c" "$ctl")" "$(al_muted "$c" "$ctl")"; else printf '%s\n-\n0\n' "$(al_name "$c")"; fi ;;
     esac
 }
-snd_mic() {   # -> NAME, LIVE, MUTED, LEVEL (or -) on four lines; nothing without a microphone
+snd_mic() { read_once snd.mic snd_mic_now; }   # -> NAME, LIVE, MUTED, LEVEL (or -) on four lines; nothing without a microphone
+snd_mic_now() {
     case $SND in
         wpctl) n=$(wp_default Sources); [ -n "$n" ] || return 0; printf '%s\n%s\n%s\n%s\n' "$n" "$(wp_live)" "$(wp_muted @DEFAULT_AUDIO_SOURCE@)" "$(wp_level @DEFAULT_AUDIO_SOURCE@)" ;;
         pactl) s=$(pactl get-default-source 2>/dev/null); [ -n "$s" ] || return 0; case $s in *.monitor) return 0 ;; esac
@@ -3932,7 +3934,8 @@ light_ddc_bus() {   # -> the i2c bus of the first screen ddcutil drives; nothing
     rm -f "$_f.out"; mv "$_f.new" "$_f"
     grep -vx 'none\|asleep' "$_f" || :
 }
-light_get() {   # -> PERCENT, or nothing without a brightness to set
+light_get() { read_once light light_get_now; }   # -> PERCENT, or nothing without a brightness to set
+light_get_now() {
     case $(light_tool) in
         backlight) brightnessctl -m -c backlight info 2>/dev/null | awk -F, '{gsub(/%/, "", $4); print $4; exit}' ;;
         ddc) _f=$STATE_DIR/light
@@ -3958,7 +3961,8 @@ light_set() {   # light_set N|up|down|+5|-5 -> one line; exit 1 when nothing too
     bar_redraw
     echo "brightness at $_to%"
 }
-kb_active() {   # -> the layout in use, by its KEYBOARD word; nothing with one layout or none
+kb_active() { read_once kb.active kb_active_now; }   # -> the layout in use, by its KEYBOARD word; nothing with one layout or none
+kb_active_now() {
     [ "$(printf '%s\n' $KEYBOARD | grep -c .)" -gt 1 ] || return 0
     _i=$(kb_names | cut -f1); [ -n "$_i" ] || _i=0
     printf '%s\n' $KEYBOARD | sed -n "$((_i + 1))p"
@@ -4682,6 +4686,24 @@ dirs_cached() {   # dirs_cached NAME "DIR..." CMD -> CMD's output, kept until a 
     { printf '#%s\n' "$_dck"; eval "$3"; } > "$_dct" 2>/dev/null && mv "$_dct" "$_dcf" || { rm -f "$_dct"; eval "$3"; return; }
     sed 1d "$_dcf"
 }
+# one rows read asks each probe once (#196): the title, the short form and the full form share its answer.
+# ROWS_READ is the answers' file prefix while provide_rows runs; outside a read every probe asks afresh
+read_once() {   # read_once KEY PROBE [ARG...] -> PROBE's lines and status: asked the first time in a rows read, kept for the rest of it
+    [ -n "${ROWS_READ:-}" ] || { shift; "$@"; return; }
+    set -- "$ROWS_READ.$1" "$@"   # the answer's file first: the probe may ask another through here, and these stay
+    if [ ! -s "$1.rc" ]; then
+        # the first to ask claims the file (noclobber: one claim wins); one asking at the same moment (the title
+        # beside the full form) asks for itself. The status is written last: a file with none is not done yet
+        set -C; true 2>/dev/null > "$1"; _roc=$?; set +C
+        [ "$_roc" -eq 0 ] || { shift 2; "$@"; return; }
+        { read_once_ask "$@"; echo "$?" >&9; } > "$1" 9> "$1.rc"
+    fi
+    IFS= read -r _ros < "$1.rc" || _ros=1
+    while IFS= read -r _rol || [ -n "$_rol" ]; do printf '%s\n' "$_rol"; done < "$1"   # no process: the shell's own read
+    return "$_ros"
+}
+read_once_ask() { shift 2; "$@"; }   # FILE KEY PROBE [ARG...] -> the probe asked
+read_once_end() { [ -n "${ROWS_READ:-}" ] || return 0; set -- "$ROWS_READ".*; [ ! -e "$1" ] || rm -f "$@"; }   # the read's answers go: the next read asks again
 THEME_DIRS() { printf '%s %s' "$REPO/themes" "$PALETTE_DIR"; }   # the folders the palettes and the saved themes are read from
 panel_dir() { mkdir_state "$PANEL_CACHE" && chmod 700 "$PANEL_CACHE"; }   # the cache and the journal: names of networks, devices and apps, for you alone
 panel_age() {   # panel_age NAME SECONDS -- an answer made older by that much, so it is asked again sooner
@@ -4957,7 +4979,8 @@ desk_network() {
 }
 
 # --- bluetooth: bluetoothctl, the one tool
-bt_running() {
+bt_running() { read_once bt.running bt_running_now; }   # bluez answers on the system bus
+bt_running_now() {
     if command -v dbus-send >/dev/null 2>&1; then
         dbus-send --system --print-reply --reply-timeout=2000 --dest=org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner string:org.bluez 2>/dev/null | grep -q 'boolean true'
     else pgrep -x bluetoothd >/dev/null 2>&1; fi
@@ -4991,11 +5014,13 @@ bt_apply() {   # use the distribution's shared native services, never our own da
     ok bluetooth "the native services are enabled; shared services stay when the desktop is off"
 }
 
-bt_powered() { bar_timeout bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; }
-bt_list() { panel_cache bt.list 30 bt_list_now; }   # -> MAC<tab>NAME<tab>PAIRED<tab>CONNECTED per device bluez knows; kept for half a minute
+bt_powered() { read_once bt.powered bt_powered_now; }
+bt_powered_now() { bar_timeout bluetoothctl show 2>/dev/null | grep -q 'Powered: yes'; }
+bt_connected() { read_once bt.connected bar_timeout bluetoothctl devices Connected 2>/dev/null; }   # -> bluetoothctl's lines of the devices connected now
+bt_list() { read_once bt.list panel_cache bt.list 30 bt_list_now; }   # -> MAC<tab>NAME<tab>PAIRED<tab>CONNECTED per device bluez knows; kept for half a minute
 bt_list_now() {
     _p=$(bar_timeout bluetoothctl devices Paired 2>/dev/null | awk '$1 == "Device" {print $2}')
-    _c=$(bar_timeout bluetoothctl devices Connected 2>/dev/null | awk '$1 == "Device" {print $2}')
+    _c=$(bt_connected | awk '$1 == "Device" {print $2}')
     bar_timeout bluetoothctl devices 2>/dev/null | scrub_text | awk '$1 == "Device" { mac = $2; $1 = ""; $2 = ""; sub(/^ +/, ""); print mac "\t" $0 }' | while IFS="$TAB" read -r mac name; do
         p=0; c=0
         printf '%s\n' "$_p" | grep -qx "$mac" && p=1
@@ -5028,7 +5053,8 @@ bt_act() {   # bt_act connect|disconnect|pair NAME | scan | power on|off -> one 
 }
 
 # --- sound: the devices, through the same tool the bar reads
-snd_devices() {   # snd_devices out|mic -> NAME<tab>DEFAULT(1/0) per device
+snd_devices() { read_once "snd.devices.$1" snd_devices_now "$1"; }   # snd_devices out|mic -> NAME<tab>DEFAULT(1/0) per device
+snd_devices_now() {
     case $SND in
         wpctl) _s=Sinks; [ "$1" = out ] || _s=Sources; wp_rows "$_s" | awk -F '\t' '{print $3 "\t" $1}' ;;
         pactl) _k=sinks; _d=$(pactl get-default-sink 2>/dev/null); [ "$1" = out ] || { _k=sources; _d=$(pactl get-default-source 2>/dev/null); }
@@ -5338,7 +5364,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             while IFS= read -r _sdn; do   # a drive is a group: its filesystems, mounted (Enter opens it) or not (Enter mounts it), then eject
                 awk -F '\037' -v d="$_sdn" '$1 == "fs" && $6 == d' "$TMP/storage.l" | while IFS="$US" read -r _sk _sn _sd _ss _sm _sdr _sf; do
                     if [ "$_sf" = crypto_LUKS ]; then printf -- '-\t%s is encrypted: udisksctl unlock -b %s\tshow\t%s|%s|\n' "$_sn" "$_sd" "$_sdr" "$(files_size "$_ss")"
-                    elif [ -n "$_sm" ]; then printf '%s\t%s\topen %s\t%s|%s free|\n-\tunmount %s\tunmount %s\t%s||\n' "$PANEL_DOT" "$_sn" "$_sn" "$_sdr" "$(storage_kb "$(storage_free "$_sm")")" "$_sn" "$_sn" "$_sdr"
+                    elif [ -n "$_sm" ]; then printf '%s\t%s\topen %s\t%s|%s free|\n-\tunmount %s\tunmount %s\t%s||\n' "$PANEL_DOT" "$_sn" "$_sn" "$_sdr" "$(storage_kb "$(read_once "free.${_sd##*/}" storage_free "$_sm")")" "$_sn" "$_sn" "$_sdr"
                     else printf '%s\t%s\tmount %s\t%s|%s|\n' "$PANEL_RING" "$_sn" "$_sn" "$_sdr" "$(files_size "$_ss")"; fi
                 done
                 printf -- '-\teject %s\teject %s\t%s||\n' "$_sdn" "$_sdn" "$_sdn"
@@ -5355,22 +5381,21 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             while IFS="$TAB" read -r _e _nm _f; do
                 [ -z "${NOTES_WORDS:-}" ] || note_says "$_f" "$NOTES_WORDS" || continue   # a search from Home: the notes that say every word (#169)
                 _n=$((_n + 1)); if [ "${2:-}" != full ] && [ "$_n" -gt 5 ]; then continue; fi
-                printf -- '-\t%s\topen %s\trecent|%s|\n' "$_nm" "${_f##*/}" "$(note_when "$_e")"
+                printf -- '-\t%s\topen %s\trecent|%s|\n' "$_nm" "${_f##*/}" "$(read_once "when.$_e" note_when "$_e")"   # its day once a read: the full form shows the short form's five again
             done < "$TMP/notes.l"
             [ "${2:-}" = full ] || [ "$_n" -le 5 ] || printf -- '-\t%s more\tmore\trecent||\n' $((_n - 5)) ;;
         reminders) printf '%s\tnew reminder\tadd\n' "$PANEL_GO"   # its words asked for; then the ones due, the first with done and a snooze; then the ones ahead in their groups, each its time a column and its day for the Calendar
-            _now=$(date +%Y%m%d%H%M); _first=1; _next=1
-            rem_list > "$TMP/rem.rows"
-            while IFS="$TAB" read -r _s _u _t _f; do
-                _g=$(rem_group "$_s" "$_now"); _x="$_g|$(rem_column "$_s" "$_g")|$(printf '%s' "$_s" | sed 's/^\(....\)\(..\)\(..\).*/\1-\2-\3/')|$_u"
-                if [ "$_g" = due ]; then
-                    if rem_ours "$_s$TAB$_u$TAB$_t$TAB$_f"; then
+            _first=1; _next=1
+            rem_rows > "$TMP/rem.rows"
+            while IFS="$TAB" read -r _s _u _t _f _x _o; do
+                if [ "${_x%%|*}" = due ]; then
+                    if [ "$_o" = 1 ]; then
                         printf '%s\t%s\tdone %s\t%s\n' "$PANEL_DOT" "$_t" "$_u" "$_x"
                         [ -z "$_first" ] || printf -- '-\tdone\tdone %s\tdue||\n-\tagain in 10 minutes\tsnooze %s\tdue||\n' "$_u" "$_u"
                         _first=''
                     else printf '%s\t%s\tshow\t%s\n' "$PANEL_DOT" "$_t" "$_x"; fi
                 elif [ "${2:-}" = full ]; then   # one ahead: done on Enter, delete and again in its steps, when spark-shell wrote it; another calendar's is shown alone (#111)
-                    if rem_ours "$_s$TAB$_u$TAB$_t$TAB$_f"; then printf '%s\t%s\tdone %s\t%s\n' "$PANEL_RING" "$_t" "$_u" "$_x"; else printf '%s\t%s\tshow\t%s\n' "$PANEL_RING" "$_t" "$_x"; fi
+                    if [ "$_o" = 1 ]; then printf '%s\t%s\tdone %s\t%s\n' "$PANEL_RING" "$_t" "$_u" "$_x"; else printf '%s\t%s\tshow\t%s\n' "$PANEL_RING" "$_t" "$_x"; fi
                 elif [ -n "$_next" ]; then printf '%s\t%s\tmore\t|%s|\n' "$PANEL_RING" "$_t" "$(rem_said "$_s")"; _next=''; fi   # short: the next one ahead, its day and time; Enter opens the rest
             done < "$TMP/rem.rows" ;;
         bar) _bpn=$(bar_place)   # where it is, a check: at the top, at the bottom, or hidden; then its text size (a step) and the tray (a switch), provide_rows
@@ -5420,7 +5445,8 @@ note_name() {   # note_name FILE -> its first line that says something, the head
     [ -n "$_nn" ] || { _nn=${1##*/}; _nn=${_nn%.md}; }
     printf '%s\n' "$_nn"
 }
-notes_list() {   # -> EPOCH<tab>NAME<tab>FILE per note, the newest first
+notes_list() { read_once notes.list notes_list_now; }   # -> EPOCH<tab>NAME<tab>FILE per note, the newest first
+notes_list_now() {
     [ -d "$NOTES_DIR" ] || return 0
     for _f in "$NOTES_DIR"/*.md; do [ -f "$_f" ] && [ ! -L "$_f" ] || continue; printf '%s\t%s\t%s\n' "$(mtime_of "$_f")" "$(note_name "$_f")" "$_f"; done | sort -t "$TAB" -k1,1nr
 }
@@ -5590,25 +5616,35 @@ rem_all() {   # -> START<tab>UID<tab>SUMMARY<tab>FILE per event of ~/calendar, k
     mkdir_private "$(dirname "$_rc")"; { echo "$_key"; cat "$TMP/rem.all"; } > "$_rc.new" && mv "$_rc.new" "$_rc"
     cat "$TMP/rem.all"
 }
-rem_list() {   # -> the events from a day ago on, soonest first: an older one is no reminder
+rem_list() { read_once rem.list rem_list_now; }   # -> the events from a day ago on, soonest first: an older one is no reminder
+rem_list_now() {
     _cut=$(when_of "$(( $(date +%s) - 86400 ))" %Y%m%d%H%M)
     rem_all | awk -F '\t' -v c="$_cut" '$1 >= c'
 }
+rem_rows() { read_once rem.rows rem_rows_now; }   # -> START<tab>UID<tab>SUMMARY<tab>FILE<tab>GROUP|COLUMN|DAY|UID<tab>OURS (1, else 0) per reminder: what its row says, worked out once a rows read
+rem_rows_now() {
+    _now=$(date +%Y%m%d%H%M); _d1=$(rem_day 1); _d6=$(rem_day 6)   # the day's bounds once, not twice a reminder
+    rem_list | while IFS="$TAB" read -r _s _u _t _f; do
+        _g=$(rem_group "$_s" "$_now" "$_d1" "$_d6"); _o=0; ! rem_ours "$_s$TAB$_u$TAB$_t$TAB$_f" || _o=1
+        _dy=${_s%????}; _md=${_dy#????}   # YYYYMMDD, MMDD: the day for the Calendar as YYYY-MM-DD, no process
+        printf '%s\t%s\t%s\t%s\t%s|%s|%s-%s-%s|%s\t%s\n' "$_s" "$_u" "$_t" "$_f" "$_g" "$(rem_column "$_s" "$_g")" "${_dy%????}" "${_md%??}" "${_md#??}" "$_u" "$_o"
+    done
+}
 rem_day() { _x=$(date -d "+$1 days" +%Y%m%d 2>/dev/null || date -v+"$1"d +%Y%m%d 2>/dev/null); printf '%s' "$_x"; }   # rem_day N -> the date N days on
-rem_group() {   # rem_group START NOW -> due, today, tomorrow, this week or later
+rem_group() {   # rem_group START NOW [TOMORROW SIXTH] -> due, today, tomorrow, this week or later; TOMORROW and SIXTH, the days 1 and 6 on, when the caller has them
     if [ "$1" -le "$2" ]; then echo due
     elif [ "${1%????}" = "${2%????}" ]; then echo today
-    elif [ "${1%????}" = "$(rem_day 1)" ]; then echo tomorrow
-    elif [ "${1%????}" -le "$(rem_day 6)" ]; then echo 'this week'
+    elif [ "${1%????}" = "${3:-$(rem_day 1)}" ]; then echo tomorrow
+    elif [ "${1%????}" -le "${4:-$(rem_day 6)}" ]; then echo 'this week'
     else echo later; fi
 }
-rem_hm() { printf '%s:%s' "$(printf '%s' "$1" | cut -c9-10)" "$(printf '%s' "$1" | cut -c11-12)"; }   # rem_hm START -> HH:MM
+rem_hm() { _rhm=${1#????????}; printf '%s:%s' "${_rhm%??}" "${_rhm#??}"; }   # rem_hm START -> HH:MM (START is YYYYMMDDHHMM: no process)
 rem_column() {   # rem_column START GROUP -> the column: 17:00, Fri 20:00, Tue 27 10:00, Tue 3 Nov 16:30
-    _d=$(printf '%s' "$1" | cut -c1-8); _e=$(date -d "$_d" +%s 2>/dev/null || date -j -f %Y%m%d%H%M "${_d}1200" +%s 2>/dev/null) || { rem_hm "$1"; return; }
+    _d=${1%????}; _e=$(date -d "$_d" +%s 2>/dev/null || date -j -f %Y%m%d%H%M "${_d}1200" +%s 2>/dev/null) || { rem_hm "$1"; return; }
     case $2 in
         due|today|tomorrow) rem_hm "$1" ;;
         'this week') echo "$(LC_ALL=C when_of "$_e" %a) $(rem_hm "$1")" ;;
-        *) if [ "$(printf '%s' "$1" | cut -c1-6)" = "$(date +%Y%m)" ]; then echo "$(LC_ALL=C when_of "$_e" '%a %d' | sed 's/ 0/ /') $(rem_hm "$1")"
+        *) if [ "${_d%??}" = "$(date +%Y%m)" ]; then echo "$(LC_ALL=C when_of "$_e" '%a %d' | sed 's/ 0/ /') $(rem_hm "$1")"
            else echo "$(LC_ALL=C when_of "$_e" '%a %d %b' | sed 's/ 0/ /') $(rem_hm "$1")"; fi ;;
     esac
 }
@@ -5728,8 +5764,9 @@ rem_said() {   # rem_said START -> today 18:30, tomorrow 09:00, Fri 20:00, Tue 3
     case $_g in due|today) echo "today $(rem_hm "$1")" ;; tomorrow) echo "tomorrow $(rem_hm "$1")" ;; *) rem_column "$1" "$_g" ;; esac
 }
 rem_ours() {   # rem_ours LINE -> 0 when spark-shell wrote that event (its uid, its file alone): only those are done or moved here
-    case $(printf '%s' "$1" | cut -f2) in spark-shell-*) ;; *) return 1 ;; esac
-    [ "$(grep -c '^BEGIN:VEVENT' "$(printf '%s' "$1" | cut -f4)")" = 1 ]
+    _rof=${1#*"$TAB"}; case ${_rof%%"$TAB"*} in spark-shell-*) ;; *) return 1 ;; esac   # the fields by the shell, no process: the uid, then the file
+    _rof=${_rof#*"$TAB"}; _rof=${_rof#*"$TAB"}
+    [ "$(grep -c '^BEGIN:VEVENT' "${_rof%%"$TAB"*}")" = 1 ]
 }
 REM_DONE_DAYS=30   # a reminder done is kept this long in ~/calendar/done, so undo can bring it back
 rem_restore() {   # UID or unique title from the done folder, or from the keep of this provider's deletes while it lives, never a different duplicate
@@ -5836,9 +5873,11 @@ printer_status() { panel_cache printers.status 10 printer_status_now; }   # ten 
 # makes one (Void), the desktop starts inside dbus-run-session (desk_start).
 NOTIFY_MODE=do-not-disturb
 mako_here() { [ -z "${SPARK_SHELL_NO_MAKO:-}" ] && command -v mako >/dev/null 2>&1; }   # mako is installed (SPARK_SHELL_NO_MAKO, tests: as if it were not)
-notify_up() { command -v makoctl >/dev/null 2>&1 && makoctl mode >/dev/null 2>&1; }   # mako answers on this session's bus
+notify_mode() { read_once notify.mode makoctl mode; }   # -> the modes on now; false when mako does not answer
+notify_up() { command -v makoctl >/dev/null 2>&1 && notify_mode >/dev/null 2>&1; }   # mako answers on this session's bus
 notify_reload() { ! notify_up || makoctl reload >/dev/null 2>&1 || :; }   # a mako that runs reads its file again
-notify_dnd() { makoctl mode 2>/dev/null | grep -qx "$NOTIFY_MODE"; }   # do not disturb is on now
+notify_dnd() { read_once notify.dnd notify_dnd_now; }   # do not disturb is on now
+notify_dnd_now() { notify_mode 2>/dev/null | grep -qx "$NOTIFY_MODE"; }
 notify_anchor() { if [ "$DESKTOP_BAR" = yes ] && [ "$BAR_POSITION" = bottom ]; then echo bottom-right; else echo top-right; fi; }   # mako's corner: the right one by the bar
 # The bar's count (#71): the notifications that came while nobody looked. mako keeps the ones on
 # the screen and the last ten gone, each by an id that only grows while it runs; an id is looked
@@ -5871,7 +5910,8 @@ notify_start() {   # the notify row of on desktop: inside a desktop with a sessi
     swaymsg -- exec mako >/dev/null 2>&1 || return 0
     ok notify "mako shows the notifications now"
 }
-notify_list() {   # notify_list list|history -> ID US APP US SUMMARY, newest first (an app with no name stays a field): makoctl's own lines (mako 1.9 on), or busctl's JSON (mako 1.7 and 1.8); no file, as a section's rows and its title ask at once
+notify_list() { read_once "notify.$1" notify_list_now "$1"; }   # notify_list list|history -> ID US APP US SUMMARY, newest first (an app with no name stays a field): makoctl's own lines (mako 1.9 on), or busctl's JSON (mako 1.7 and 1.8); no file, as a section's rows and its title ask at once
+notify_list_now() {
     _nlo=$(makoctl "$1" 2>/dev/null) || return 0
     case $_nlo in
         '{'*) printf '%s\n' "$_nlo" | jq -r '.data[0][]? | [(.id.data // 0 | tostring), (."app-name".data // ""), (.summary.data // "")] | @tsv' 2>/dev/null || : ;;
@@ -5920,7 +5960,8 @@ notify_act() {   # notify_act do-not-disturb on|off | dismiss | restore -> one l
 # notification says a drive arrived, and a click opens the dialog here.
 STORAGE_SEEN=$STATE_DIR/storage.seen   # the drives the bar saw at its last look, so a new one is said once
 STORAGE_RULE=etc/polkit-1/rules.d/50-spark-shell-storage.rules
-storage_list() {   # -> "drive NAME DEV SIZE" a drive, then "fs NAME DEV SIZE MOUNT DRIVE FSTYPE" per filesystem on it, parted by US (an empty mount stays a field); names as a person reads them, each once
+storage_list() { read_once storage.list storage_list_now; }   # -> "drive NAME DEV SIZE" a drive, then "fs NAME DEV SIZE MOUNT DRIVE FSTYPE" per filesystem on it, parted by US (an empty mount stays a field); names as a person reads them, each once
+storage_list_now() {
     command -v lsblk >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
     lsblk -J -b -o NAME,PATH,TYPE,RM,HOTPLUG,SIZE,MODEL,VENDOR,LABEL,FSTYPE,MOUNTPOINT 2>/dev/null | jq -r --arg media "${SPARK_SHELL_MEDIA:-/nowhere/}" '
         def yes: . == true or . == "1" or . == 1;
@@ -5938,7 +5979,8 @@ storage_list() {   # -> "drive NAME DEV SIZE" a drive, then "fs NAME DEV SIZE MO
 udisks_here() { [ -z "${SPARK_SHELL_NO_UDISKS:-}" ] && command -v udisksctl >/dev/null 2>&1; }   # udisks2 is installed (SPARK_SHELL_NO_UDISKS, tests: as if it were not)
 storage_free() { df -Pk "$1" 2>/dev/null | awk 'NR == 2 { printf "%s", $4 }'; }   # storage_free MOUNT -> the KB free there
 storage_kb() { files_size $(( ${1:-0} * 1024 )); }   # storage_kb KB -> 3.1 GB
-storage_here() {   # -> "476.9 GB, 120.3 GB free": the disk the system runs from; nothing when df cannot tell
+storage_here() { read_once storage.here storage_here_now; }   # -> "476.9 GB, 120.3 GB free": the disk the system runs from; nothing when df cannot tell
+storage_here_now() {
     df -Pk / 2>/dev/null | awk 'NR == 2 { print $2, $4 }' > "$TMP/df.here"
     read -r _st _sf < "$TMP/df.here" 2>/dev/null && [ -n "${_sf:-}" ] || return 0
     printf '%s, %s free\n' "$(storage_kb "$_st")" "$(storage_kb "$_sf")"
@@ -7284,6 +7326,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
     [ "$1" != files ] || { provide_files_rows; return; }
     THEME_ENUM_NOW=''; [ "$1" != theme ] || THEME_ENUM_NOW=$(theme_enum)   # the palette names once for this read, not once a row (#183)
     WIFI_TOOL_READ=''; [ "$1" != wifi ] || { WIFI_TOOL_NOW=$(wifi_tool); WIFI_TOOL_READ=1; }   # the wifi manager once for this read (#196)
+    ROWS_READ=$TMP/once; read_once_end   # the devices, the lists and the files asked once for this read (#196), none left from a read cut short
     # the theme's own helpers (the chips, the text size, the animation, the transparency) for the theme's rows alone (#196)
     _pr_keys='{}'; [ "$1" != window ] || _pr_keys=$(python3 "$REPO/lib/home.py" map "$REPO/templates/.config/sway/config")
     case $1 in window|layout) win_facts > "$TMP/win.facts"; WIN_FACTS_READ=1 ;; esac   # the tree read once for this read of the rows
@@ -7354,6 +7397,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 [. + {more:(.more + [$append, {name:"notes_rename", arguments:{name:.tool.arguments.name}, ask:["to"], said:"rename"}, {name:"notes_trash", arguments:{name:.tool.arguments.name}, said:"trash"}])}]
               else [.] end) | .rows |= (add // [])' | provide_rows_more "$1" | provide_rows_place "$1" && _prs=0 || _prs=$?
     THEME_ENUM_NOW=''; WIFI_TOOL_READ=''; WIN_FACTS_READ=''   # the next read sees a palette saved, a manager started meanwhile
+    read_once_end; ROWS_READ=''   # and a device plugged in meanwhile
     return "$_prs"
 }
 provide_rows_place() { case $1 in window) provide_rows_window ;; layout) provide_rows_layout ;; *) cat ;; esac; }   # stdin: a rows resource -> the same as the workspace place shows it
@@ -11350,7 +11394,8 @@ provide_screen_rows() {   # connected screen choices, all through the same typed
 }
 
 screens_json() { swaymsg -t get_outputs 2>/dev/null || echo '[]'; }
-screen_rows() {   # -> NAME<tab>ID<tab>ON<tab>MODE<tab>SCALE<tab>X<tab>Y<tab>W<tab>H<tab>MODEL<tab>TRANSFORM per screen (W, H: its place in layout pixels; TRANSFORM normal, 90, 180 or 270)
+screen_rows() { read_once screens screen_rows_now; }   # -> NAME<tab>ID<tab>ON<tab>MODE<tab>SCALE<tab>X<tab>Y<tab>W<tab>H<tab>MODEL<tab>TRANSFORM per screen (W, H: its place in layout pixels; TRANSFORM normal, 90, 180 or 270)
+screen_rows_now() {
     screens_json | jq -r '.[] | [.name, ([.make, .model, .serial] | map(if . == null or . == "" then "Unknown" else . end) | join(" ")), (if .active then "on" else "off" end),
         (if .current_mode then "\(.current_mode.width)x\(.current_mode.height)" + (if (.current_mode.refresh // 0) > 0 then "@\(.current_mode.refresh / 1000)Hz" else "" end) else "" end), ((.scale // 1) + 0 | tostring), (.rect.x | tostring), (.rect.y | tostring), (.rect.width | tostring), (.rect.height | tostring), (.model // ""), (.transform // "normal")] | @tsv' 2>/dev/null || :
 }
