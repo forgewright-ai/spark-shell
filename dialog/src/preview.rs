@@ -1,22 +1,17 @@
 //! The preview (#120): one file of a list, as large as the content area allows. Up and down go
 //! through the list's files, left and right through the file's pages; Esc, or Space with nothing
-//! typed, goes back to the list, and Enter opens the file. A picture zooms, moves and turns. The
+//! typed, goes back to the list, and Enter opens the file. A picture is fitted to the area. The
 //! provider reads the file and answers a page; the dialog draws two shapes, lines or a picture, and
 //! never looks at a file's type.
 
 use crate::model::Row;
 use crate::scrub::scrub;
-use crate::sixel::Viewport;
 use serde_json::Value;
 
 /// The lines one page brings, at most: a longer text says where its preview stops.
 pub const LINES_MAX: usize = 20_000;
 /// The facts a page shows at its foot, at most.
 pub const FACTS_MAX: usize = 8;
-/// The zoom's stops, in percent: 100 is a picture's own pixels, a PDF page at 96 pixels an inch.
-pub const STOPS: [u32; 10] = [25, 33, 50, 67, 100, 150, 200, 300, 400, 800];
-/// An arrow moves a zoomed picture by this share of the part shown.
-pub const PAN: f64 = 0.25;
 
 /// What a provider answers for a file: its name, its facts, and lines or a picture.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -40,10 +35,6 @@ pub struct Page {
     pub say: Option<String>,
     /// A text of the page spark can read, as a file the provider wrote: the attach path takes it.
     pub attach: Option<String>,
-    /// A picture's size at 100 %: its own pixels, a PDF page's at 96 pixels an inch.
-    pub size: Option<(u32, u32)>,
-    /// The picture is the largest the provider draws: a zoom past it asks for nothing more.
-    pub full: bool,
 }
 
 /// The preview's place: the provider, the list it came from (its files, in its order), the file
@@ -58,16 +49,6 @@ pub struct Preview {
     /// The page shown, from 1.
     pub page: usize,
     pub shown: Option<Page>,
-    /// A picture's quarter turns, its zoom in percent (None fits it) and the point at the middle of
-    /// the box, as a share of the picture turned.
-    pub turn: u8,
-    pub zoom: Option<u32>,
-    pub center: (f64, f64),
-    /// The page drawn larger was asked for (a zoom past the picture's pixels).
-    pub full: bool,
-    /// The picture's box in pixels and the picture's own pixels, as main.rs last drew it.
-    pub px: (u32, u32),
-    pub src: (u32, u32),
     /// The keys of the page last shown: the key row keeps them while the next file's page is on its way (#166).
     pub keys: Option<Keys>,
 }
@@ -100,12 +81,6 @@ impl Preview {
             at,
             page: 1,
             shown: None,
-            turn: 0,
-            zoom: None,
-            center: (0.5, 0.5),
-            full: false,
-            px: (0, 0),
-            src: (0, 0),
             keys: None,
         })
     }
@@ -114,21 +89,13 @@ impl Preview {
         &self.files[self.at]
     }
 
-    /// The uri of the page to read now: the row's own, with the page asked for past the first and
-    /// the picture drawn larger once a zoom asked for it.
+    /// The uri of the page to read now: the row's own, with the page asked for past the first.
     pub fn uri(&self) -> String {
         let base = self.row().page.clone().unwrap_or_default();
-        let mut q = vec![];
         if self.page > 1 && self.shown.as_ref().is_some_and(|p| p.picture.is_some()) {
-            q.push(format!("page={}", self.page));
-        }
-        if self.full {
-            q.push("full=1".to_string());
-        }
-        if q.is_empty() {
-            base
+            format!("{}?page={}", base, self.page)
         } else {
-            format!("{}?{}", base, q.join("&"))
+            base
         }
     }
 
@@ -142,9 +109,6 @@ impl Preview {
         self.page = 1;
         self.keys = self.shown.as_ref().map(Keys::of).or(self.keys);
         self.shown = None;
-        self.fit();
-        self.turn = 0;
-        self.full = false;
         true
     }
 
@@ -155,108 +119,7 @@ impl Preview {
             return false;
         }
         self.page = to as usize;
-        self.fit();
         true
-    }
-
-    /// The picture's size at 100 %, turned; its own pixels where the provider gave none.
-    fn size(&self) -> Option<(f64, f64)> {
-        let (w, h) = self.shown.as_ref()?.size.or((self.src.0 > 0).then_some(self.src))?;
-        let (w, h) = if self.turn % 2 == 1 { (h, w) } else { (w, h) };
-        Some((w as f64, h as f64))
-    }
-
-    /// Box pixels a pixel of the picture drawn, at the zoom asked for, or fitted.
-    fn scale(&self) -> Option<f64> {
-        let (w, _) = self.size()?;
-        let (sw, sh) = if self.turn % 2 == 1 { (self.src.1, self.src.0) } else { self.src };
-        if sw == 0 || self.px.0 == 0 {
-            return None;
-        }
-        Some(match self.zoom {
-            Some(z) => z as f64 / 100.0 * w / sw as f64,
-            None => (self.px.0 as f64 / sw as f64).min(self.px.1 as f64 / sh as f64).min(1.0),
-        })
-    }
-
-    /// The zoom as drawn now, in percent: the one asked for, else the fit's.
-    pub fn percent(&self) -> Option<u32> {
-        if let Some(z) = self.zoom {
-            return Some(z);
-        }
-        let (w, _) = self.size()?;
-        let sw = if self.turn % 2 == 1 { self.src.1 } else { self.src.0 };
-        Some((self.scale()? * sw as f64 / w * 100.0).round().max(1.0) as u32)
-    }
-
-    /// How the picture is drawn now, for sixel::show.
-    pub fn viewport(&self) -> Viewport {
-        Viewport {
-            turn: self.turn,
-            scale: self.zoom.and_then(|_| self.scale()),
-            at: self.center,
-        }
-    }
-
-    /// The picture fitted again, at its middle.
-    pub fn fit(&mut self) {
-        self.zoom = None;
-        self.center = (0.5, 0.5);
-    }
-
-    /// A zoom stop in (+1) or out (-1); out past the fit fits it. False where it stays as it is.
-    pub fn zoom_step(&mut self, d: i32) -> bool {
-        let Some(now) = self.percent() else { return false };
-        let fit = self.zoom.map_or(now, |_| {
-            let z = self.zoom.take();
-            let f = self.percent().unwrap_or(now);
-            self.zoom = z;
-            f
-        });
-        let to = if d > 0 {
-            STOPS.iter().copied().find(|s| *s > now)
-        } else {
-            STOPS.iter().rev().copied().find(|s| *s < now).filter(|s| *s > fit)
-        };
-        match to {
-            Some(z) => self.zoom = Some(z),
-            None if d < 0 && self.zoom.is_some() => self.fit(),
-            None => return false,
-        }
-        self.hold();
-        true
-    }
-
-    /// A quarter turn, clockwise (+1) or back (-1), fitted again.
-    pub fn rotate(&mut self, d: i32) {
-        self.turn = ((self.turn as i32 + d).rem_euclid(4)) as u8;
-        self.fit();
-    }
-
-    /// The part shown moved, in shares of what is shown (an arrow moves PAN of it).
-    pub fn pan(&mut self, dx: f64, dy: f64) {
-        let Some(k) = self.scale() else { return };
-        let (sw, sh) = if self.turn % 2 == 1 { (self.src.1, self.src.0) } else { self.src };
-        let (vw, vh) = (
-            (self.px.0 as f64 / k / sw.max(1) as f64).min(1.0),
-            (self.px.1 as f64 / k / sh.max(1) as f64).min(1.0),
-        );
-        self.center = (self.center.0 + dx * vw, self.center.1 + dy * vh);
-        self.hold();
-    }
-
-    /// The middle held where the picture still covers the box.
-    fn hold(&mut self) {
-        let Some(k) = self.scale() else { return };
-        let (sw, sh) = if self.turn % 2 == 1 { (self.src.1, self.src.0) } else { self.src };
-        let half = |box_px: u32, n: u32| (box_px as f64 / k / n.max(1) as f64 / 2.0).min(0.5);
-        let (hx, hy) = (half(self.px.0, sw), half(self.px.1, sh));
-        self.center = (self.center.0.clamp(hx, 1.0 - hx), self.center.1.clamp(hy, 1.0 - hy));
-    }
-
-    /// The zoom asks for more than the picture holds, and the larger one was not asked for yet.
-    pub fn needs_full(&self) -> bool {
-        !self.full && self.shown.as_ref().is_some_and(|p| p.picture.is_some() && !p.full) && self.zoom.is_some() && self.scale().is_some_and(|k| k > 1.0)
     }
 }
 
@@ -311,12 +174,6 @@ pub fn page(uri: &str, text: &str) -> Option<Page> {
         lines,
         say: str_of("say"),
         attach: attach(v.get("attach")),
-        size: v
-            .get("size")
-            .and_then(Value::as_array)
-            .and_then(|a| Some((a.first()?.as_u64()? as u32, a.get(1)?.as_u64()? as u32)))
-            .filter(|(w, h)| *w > 0 && *h > 0 && *w <= 1 << 20 && *h <= 1 << 20),
-        full: v.get("full").and_then(Value::as_bool).unwrap_or(false),
     })
 }
 
@@ -367,33 +224,5 @@ mod tests {
         assert!(v.step_page(1, 3) && v.step_page(1, 3) && !v.step_page(1, 3));
         assert_eq!(v.uri(), "p://a?page=3");
         assert!(v.step_file(1) && v.page == 1 && v.shown.is_none());
-    }
-
-    #[test]
-    fn a_picture_zooms_along_the_stops_moves_inside_itself_and_turns() {
-        let mut v = Preview::new(0, "~", &[row("a", Some("p://a"))], "a").unwrap();
-        v.shown = page("p://a", r#"{"picture":"/c/a.png","size":[4000,3000]}"#);
-        (v.src, v.px) = ((1600, 1200), (500, 500));
-        // fitted: 500 box pixels for the 1600 drawn, 4000 the picture's own: 12.5 %
-        assert_eq!((v.percent(), v.viewport().scale), (Some(13), None));
-        assert!(v.zoom_step(1) && v.zoom == Some(25) && !v.needs_full());
-        assert!(v.zoom_step(1) && v.zoom_step(1) && v.zoom_step(1) && v.zoom_step(1) && v.zoom == Some(100));
-        assert!(v.needs_full(), "100 % is 2.5 box pixels a pixel drawn: the larger picture is asked for");
-        assert_eq!(v.viewport().scale, Some(2.5));
-        // moved past its edge, the middle stays where the picture covers the box
-        v.pan(-10.0, 0.0);
-        assert!((v.center.0 - 500.0 / 2.5 / 1600.0 / 2.0).abs() < 1e-9 && v.center.1 == 0.5);
-        // out past the fit fits it; a turn fits it again and swaps the sides
-        assert!(v.zoom_step(-1) && v.zoom == Some(67));
-        for _ in 0..4 {
-            v.zoom_step(-1);
-        }
-        assert_eq!((v.zoom, v.center), (None, (0.5, 0.5)));
-        assert!(!v.zoom_step(-1), "fitted, out does nothing");
-        v.rotate(-1);
-        assert_eq!((v.turn, v.viewport().turn), (3, 3));
-        // turned, the long side stands: 500 box pixels for its 1600 drawn, 4000 its own, 12.5 % again
-        assert_eq!(v.percent(), Some(13));
-        assert_eq!(v.size(), Some((3000.0, 4000.0)));
     }
 }

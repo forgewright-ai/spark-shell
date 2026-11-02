@@ -89,62 +89,12 @@ fn push_run(line: &mut String, c: char, n: u32) {
     }
 }
 
-/// A picture decoded once, its pixels RGBA row by row: the preview zooms, moves and turns it with no
-/// second decode (#120).
+/// A picture decoded once, its pixels RGBA row by row: the preview fits it to its box (#120).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Image {
     pub w: u32,
     pub h: u32,
     px: Vec<[u8; 4]>,
-}
-
-/// How a picture sits in its box: quarter turns clockwise; the scale, box pixels a picture pixel, None
-/// to fit (never past its own pixels); the point of the turned picture at the box's middle, as a share
-/// of its width and height (held so the picture covers the box where it can).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Viewport {
-    pub turn: u8,
-    pub scale: Option<f64>,
-    pub at: (f64, f64),
-}
-
-impl Viewport {
-    pub const FIT: Viewport = Viewport {
-        turn: 0,
-        scale: None,
-        at: (0.5, 0.5),
-    };
-}
-
-impl Image {
-    /// A picture from RGBA bytes, row by row; None when they are not w by h of them.
-    pub fn from_rgba(w: u32, h: u32, rgba: &[u8]) -> Option<Image> {
-        (rgba.len() == (w * h * 4) as usize).then(|| Image {
-            w,
-            h,
-            px: rgba.as_chunks::<4>().0.to_vec(),
-        })
-    }
-
-    /// Its size, turned.
-    pub fn turned(&self, turn: u8) -> (u32, u32) {
-        if turn % 2 == 1 {
-            (self.h, self.w)
-        } else {
-            (self.w, self.h)
-        }
-    }
-
-    /// The pixel at (u, v) of the picture turned.
-    fn at(&self, turn: u8, u: u32, v: u32) -> [u8; 4] {
-        let (x, y) = match turn % 4 {
-            1 => (v, self.h - 1 - u),
-            2 => (self.w - 1 - u, self.h - 1 - v),
-            3 => (self.w - 1 - v, u),
-            _ => (u, v),
-        };
-        self.px[(y * self.w + x) as usize]
-    }
 }
 
 /// A PNG's bytes as a picture, 8-bit RGBA; None for bytes that are no PNG or over 4096 pixels a side.
@@ -185,48 +135,31 @@ pub fn decode(png: &[u8]) -> Option<Image> {
 /// list): fitted with its shape kept. None for bytes that are no PNG, a picture over 4096 pixels a
 /// side, or a box under 8 pixels.
 pub fn picture(png: &[u8], bw: u32, bh: u32) -> Option<(String, u32, u32)> {
-    show(&decode(png)?, bw, bh, &Viewport::FIT)
+    show(&decode(png)?, bw, bh)
 }
 
-/// The picture in a box of `bw` by `bh` pixels as `view` has it, as sixel, with the size drawn. Smaller
-/// than its pixels, each pixel drawn is the mean of the ones it covers; larger, each is the pixel under
-/// it, sharp. Its colors cut to at most 255 (the most used of a 4096-color grid, every other pixel the
-/// nearest of them); a pixel under half opacity is left unpainted. None for a box under 8 pixels.
-pub fn show(img: &Image, bw: u32, bh: u32, view: &Viewport) -> Option<(String, u32, u32)> {
-    show_with(img, bw, bh, view, 255)
-}
-
-/// As `show`, its colors cut to at most `colors` (a drag's lighter frames, #148).
-pub fn show_with(img: &Image, bw: u32, bh: u32, view: &Viewport, colors: usize) -> Option<(String, u32, u32)> {
+/// The picture fitted to a box of `bw` by `bh` pixels with its shape kept, never past its own pixels, as
+/// sixel, with the size drawn: each pixel drawn is the mean of the ones it covers. Its colors cut to at
+/// most 255 (the most used of a 4096-color grid, every other pixel the nearest of them); a pixel under
+/// half opacity is left unpainted. None for a box under 8 pixels.
+pub fn show(img: &Image, bw: u32, bh: u32) -> Option<(String, u32, u32)> {
     if bw < 8 || bh < 8 {
         return None;
     }
-    let turn = view.turn % 4;
-    let (w0, h0) = img.turned(turn);
-    let k = view
-        .scale
-        .unwrap_or_else(|| (bw as f64 / w0 as f64).min(bh as f64 / h0 as f64).min(1.0))
-        .max(1e-3);
+    let (w0, h0) = (img.w, img.h);
+    let k = (bw as f64 / w0 as f64).min(bh as f64 / h0 as f64).clamp(1e-3, 1.0);
     let (w, h) = (((w0 as f64 * k) as u32).clamp(1, bw), ((h0 as f64 * k) as u32).clamp(1, bh));
-    // the part of the turned picture in the box: its left and top, in the picture's pixels
-    let (sw, sh) = (w as f64 / k, h as f64 / k);
-    let left = (view.at.0 * w0 as f64 - sw / 2.0).clamp(0.0, (w0 as f64 - sw).max(0.0));
-    let top = (view.at.1 * h0 as f64 - sh / 2.0).clamp(0.0, (h0 as f64 - sh).max(0.0));
     let mut out: Vec<[u8; 4]> = Vec::with_capacity((w * h) as usize);
     for y in 0..h {
-        let (v0, v1) = (top + y as f64 / k, top + (y + 1) as f64 / k);
+        let (v0, v1) = (y as f64 / k, (y + 1) as f64 / k);
         let (y0, y1) = ((v0 as u32).min(h0 - 1), (v1.ceil() as u32).clamp(v0 as u32 + 1, h0));
         for x in 0..w {
-            let (u0, u1) = (left + x as f64 / k, left + (x + 1) as f64 / k);
-            if k >= 1.0 {
-                out.push(img.at(turn, (((u0 + u1) / 2.0) as u32).min(w0 - 1), (((v0 + v1) / 2.0) as u32).min(h0 - 1)));
-                continue;
-            }
+            let (u0, u1) = (x as f64 / k, (x + 1) as f64 / k);
             let (x0, x1) = ((u0 as u32).min(w0 - 1), (u1.ceil() as u32).clamp(u0 as u32 + 1, w0));
             let (mut sum, mut n) = ([0u32; 4], 0u32);
             for sy in y0..y1 {
                 for sx in x0..x1 {
-                    let c = img.at(turn, sx, sy);
+                    let c = img.px[(sy * w0 + sx) as usize];
                     sum = [sum[0] + c[0] as u32, sum[1] + c[1] as u32, sum[2] + c[2] as u32, sum[3] + c[3] as u32];
                     n += 1;
                 }
@@ -234,12 +167,15 @@ pub fn show_with(img: &Image, bw: u32, bh: u32, view: &Viewport, colors: usize) 
             out.push([(sum[0] / n) as u8, (sum[1] / n) as u8, (sum[2] / n) as u8, (sum[3] / n) as u8]);
         }
     }
-    Some((encode(w, h, &inked(&out, colors.clamp(2, 255))), w, h))
+    Some((encode(w, h, &inked(&out)), w, h))
 }
 
-/// The pixels with their colors cut to at most 255, as RGBA bytes: the 255 most used cells of a
-/// 16-step grid, each the mean of its pixels, every other cell the ink nearest its mean.
-fn inked(px: &[[u8; 4]], colors: usize) -> Vec<u8> {
+/// The most colors a picture is drawn in.
+const COLORS: usize = 255;
+
+/// The pixels with their colors cut to at most COLORS, as RGBA bytes: the most used cells of a 16-step
+/// grid, each the mean of its pixels, every other cell the ink nearest its mean.
+fn inked(px: &[[u8; 4]]) -> Vec<u8> {
     let key = |c: &[u8; 4]| ((c[0] as usize >> 4) << 8) | ((c[1] as usize >> 4) << 4) | (c[2] as usize >> 4);
     let mut bins = vec![(0u32, [0u32; 3]); 4096];
     for c in px.iter().filter(|c| c[3] >= 128) {
@@ -249,7 +185,7 @@ fn inked(px: &[[u8; 4]], colors: usize) -> Vec<u8> {
     }
     let mut used: Vec<usize> = (0..4096).filter(|i| bins[*i].0 > 0).collect();
     used.sort_by(|a, b| bins[*b].0.cmp(&bins[*a].0).then(a.cmp(b)));
-    used.truncate(colors);
+    used.truncate(COLORS);
     let mean = |i: usize| {
         let (n, s) = bins[i];
         [(s[0] / n) as u8, (s[1] / n) as u8, (s[2] / n) as u8]
@@ -284,18 +220,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_drag_frame_is_lighter() {
-        // a drag's frame in fewer colors writes fewer bytes (#148)
-        let px: Vec<[u8; 4]> = (0..64 * 64u32)
-            .map(|i| [(i * 7 % 256) as u8, (i * 13 % 256) as u8, (i * 29 % 256) as u8, 255])
-            .collect();
-        let img = Image { w: 64, h: 64, px };
-        let full = show(&img, 64, 64, &Viewport::FIT).unwrap().0.len();
-        let light = show_with(&img, 64, 64, &Viewport::FIT, 32).unwrap().0.len();
-        assert!(light < full, "{} < {}", light, full);
-    }
-
-    #[test]
     fn a_picture_fits_its_box_with_its_shape_and_few_colors() {
         // a 64 by 32 PNG, left half red, right half a gradient: 16 by 8 fits a box of 20 by 8
         let (w, h) = (64u32, 32u32);
@@ -322,52 +246,6 @@ mod tests {
         assert!(s.contains(";2;78;8;8"), "the red, exact enough");
         assert!(picture(b"not a png", 20, 8).is_none());
         assert!(picture(&bytes, 4, 4).is_none(), "a box too small draws nothing");
-    }
-
-    #[test]
-    fn a_picture_turns_and_zooms_sharp_past_its_pixels() {
-        // 4 by 2: the left column red, the rest blue; a quarter turn makes it 2 by 4, red on top
-        let mut px = vec![];
-        for _y in 0..2 {
-            for x in 0..4 {
-                px.push(if x == 0 { [255, 0, 0, 255] } else { [0, 0, 255, 255] });
-            }
-        }
-        let img = Image { w: 4, h: 2, px };
-        assert_eq!(img.turned(1), (2, 4));
-        assert_eq!(img.at(1, 0, 0), [255, 0, 0, 255]);
-        assert_eq!(img.at(1, 1, 3), [0, 0, 255, 255]);
-        assert_eq!(img.at(3, 0, 3), [255, 0, 0, 255], "three quarters: red at the bottom");
-        // at 4 box pixels a pixel, the turned picture is 8 by 16, its first rows red, every row whole
-        let (s, w, h) = show(
-            &img,
-            64,
-            64,
-            &Viewport {
-                turn: 1,
-                scale: Some(4.0),
-                at: (0.5, 0.5),
-            },
-        )
-        .unwrap();
-        assert_eq!((w, h), (8, 16));
-        assert!(
-            s.contains("#0;2;100;0;0") || s.contains(";2;100;0;0"),
-            "red, exact: no smoothing past the pixels"
-        );
-        // zoomed past the box, the view is the box: a corner of the picture, held inside it
-        let (_, w, h) = show(
-            &img,
-            8,
-            8,
-            &Viewport {
-                turn: 0,
-                scale: Some(8.0),
-                at: (0.0, 0.0),
-            },
-        )
-        .unwrap();
-        assert_eq!((w, h), (8, 8));
     }
 
     #[test]

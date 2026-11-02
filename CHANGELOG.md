@@ -185,6 +185,13 @@ part lands in a pull request of its own.
   and a list no longer ends where its longest words end. Four golden
   frames (full-files, full-home, full-home-tall, full-settings) are
   drawn again.
+- Cut: zoom and turn in the picture preview. A picture, a PDF's page
+  and a video's frame are fitted to the area, never past their own
+  pixels: `+`, `-`, `0`, `<` and `>` are words at the prompt again, the
+  arrows and the wheel turn pages and files, Esc goes back, and nothing
+  is dragged. Files no longer draws a page larger for a zoom (`full`)
+  or says a picture's size at 100 % (`size`); the size stays a fact.
+  The preview-zoom frame becomes preview-fit.
 
 ## v0.121
 

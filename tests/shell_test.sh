@@ -4890,25 +4890,25 @@ page 2 | jq -e '.title == "plan.md" and .lines == ["Plan", "", "some words"] and
     && page 3 | jq -e '.numbered == true and .lines[1] == "    go();"' >/dev/null && page 4 | jq -e '.lines == ["{", "  \"a\": 1,", "  \"b\": [", "    2", "  ]", "}"]' >/dev/null \
     && page 5 | jq -e '.say == "No preview for this kind of file. Enter opens it." and .lines == null' >/dev/null \
     && ok "provide files: a text previews read only, a Markdown heading bold without its #, code numbered with its tabs at four, JSON indented, binary bytes no preview (#120)" || bad "preview text" "$(page 2) | $(page 3) | $(page 4) | $(page 5)"
-page 6 | jq -e '(.picture | endswith(".png")) and .full == true' >/dev/null && grep -q '^-s 26 ' "$F2/thumb.log" \
+page 6 | jq -e '(.picture | endswith(".png")) and (has("full") or has("size") | not)' >/dev/null && grep -q '^-s 26 ' "$F2/thumb.log" \
     && ok "provide files: a picture previews drawn no larger than itself, the whole of it (#120)" || bad "preview picture" "$(page 6) $(cat "$F2/thumb.log" 2>&1)"
-page 7 | jq -e '.page == 2 and .pages == 3 and .size == [816, 1056] and .full == false and (.picture | endswith("-1600-2.png")) and (.attach | endswith("-2.txt"))' >/dev/null \
-    && page 8 | jq -e '.full == true and (.picture | endswith("-4096-2.png"))' >/dev/null && grep -q -- '-f 2 -l 2 -png -scale-to 1600 ' "$F2/pdftoppm.log" && grep -q -- '-scale-to 4096 ' "$F2/pdftoppm.log" \
-    && ok "provide files: a PDF's page drawn, page 2 of 3, its 100 % the page at 96 pixels an inch, its text for spark; full=1 draws it at 4096 for a zoom (#120)" || bad "preview pdf" "$(page 7) | $(page 8) | $(cat "$F2/pdftoppm.log" 2>&1)"
+page 7 | jq -e '.page == 2 and .pages == 3 and (has("full") or has("size") | not) and (.picture | endswith("-1600-2.png")) and (.attach | endswith("-2.txt"))' >/dev/null \
+    && page 8 | jq -e '(.picture | endswith("-1600-2.png"))' >/dev/null && grep -q -- '-f 2 -l 2 -png -scale-to 1600 ' "$F2/pdftoppm.log" && ! grep -q -- '-scale-to 4096 ' "$F2/pdftoppm.log" \
+    && ok "provide files: a PDF's page drawn, page 2 of 3, its text for spark; the old full=1 asks for nothing larger, the page is fitted (#120, #196)" || bad "preview pdf" "$(page 7) | $(page 8) | $(cat "$F2/pdftoppm.log" 2>&1)"
 page 9 | jq -e '.lines == ["Evening", "Ada \u00b7 Proofs"] and .facts[0:5] == ["0:21", "44.1 kHz", "16 bit", "stereo", "FLAC"] and .sound == null and .play == null and .stop == null and .seconds == null' >/dev/null \
     && grep -q -- '--untimed' "$F2/mpv.log" && ! grep -q -- 'showwavespic' "$F2/mpv.log" && grep -q -- '--demuxer-lavf-o=protocol_whitelist=file' "$F2/mpv.log" \
     && ok "provide files: a sound's tags, its length and what an engineer asks first (rate, bits, channels, format), nothing drawn or played here; mpv on local files only (#120, #196)" || bad "preview sound" "$(page 9) | $(cat "$F2/mpv.log" 2>&1)"
-page 10 | jq -e '.facts[0:2] == ["0:05", "1280 \u00d7 720"] and .size == [1280, 720] and .play == null and .stop == null and (.picture | endswith(".png"))' >/dev/null \
+page 10 | jq -e '.facts[0:2] == ["0:05", "1280 \u00d7 720"] and (has("size") | not) and .play == null and .stop == null and (.picture | endswith(".png"))' >/dev/null \
     && ok "provide files: a video's frame, its length and size; nothing to play here, Enter opens it in its app (#120, #196)" || bad "preview video" "$(page 10)"
 _vf() { grep -F -- "--vo-image-outdir" "$F2/mpv.log" | grep -F -- "$1" | grep -o -- '--vf=[^ ]*' || :; }   # _vf FILE -> the scale its frame was drawn with
-page 14 | jq -e '.facts[1] == "1080 \u00d7 1920" and .size == [1080, 1920]' >/dev/null && page 15 | jq -e '.size == [1080, 1920]' >/dev/null \
+page 14 | jq -e '.facts[1] == "1080 \u00d7 1920"' >/dev/null && page 15 | jq -e '.facts[1] == "1080 \u00d7 1920"' >/dev/null \
     && [ "$(_vf phone.mov)" = '--vf=scale=w=1600:h=-2' ] && [ "$(_vf tall.mp4)" = '--vf=scale=w=-2:h=1600' ] && [ -z "$(_vf clip.webm)" ] \
     && ok "provide files: a phone's clip shows its size as it plays; a frame fits its long side in plain numbers, mpv's own syntax, and one smaller is drawn as it is (#120)" \
     || bad "preview video turned" "$(page 14) | $(page 15) | $(grep -F -- --vo-image-outdir "$F2/mpv.log" 2>&1)"
 page 16 | jq -e '.facts[1:5] == ["96 kHz", "24 bit", "stereo", "PCM"]' >/dev/null && page 17 | jq -e '.facts[1:3] == ["48 kHz", "24 bit"]' >/dev/null \
     && ok "provide files: a 24-bit WAV and an AIFF say 24 bit, read from their headers (mpv decodes them to 32); an AIFF is a sound (#120)" || bad "preview bits" "$(page 16) | $(page 17)"
-page 18 | jq -e '.say == "No preview: this PDF is locked by a password. Enter opens it."' >/dev/null && page 19 | jq -e '.size == [20, 40] and .facts[0] == "20 \u00d7 40"' >/dev/null \
-    && page 20 | jq -e '.say == "No preview: nothing here draws this picture. Enter opens it."' >/dev/null && page 21 | jq -e '.size == [5400, 2700] and (.picture | endswith(".png"))' >/dev/null \
+page 18 | jq -e '.say == "No preview: this PDF is locked by a password. Enter opens it."' >/dev/null && page 19 | jq -e '.facts[0] == "20 \u00d7 40"' >/dev/null \
+    && page 20 | jq -e '.say == "No preview: nothing here draws this picture. Enter opens it."' >/dev/null && page 21 | jq -e '.facts[0] == "5400 \u00d7 2700" and (.picture | endswith(".png"))' >/dev/null \
     && ok "provide files: a locked PDF says so; a photo turned by its orientation keeps its size the drawn way round; bytes no tool reads draw no empty square; a TIFF is a picture, its size read by mpv (#120)" \
     || bad "preview trial cases" "$(page 18) | $(page 19) | $(page 20) | $(page 21)"
 [ "$(ans 11 | jq -r '.error.message')" = 'no file at that uri' ] && [ "$(ans 12 | jq -r '.error.message')" = 'no file at that uri' ] && ans 13 | jq -e '[.result.resourceTemplates[].name] == ["folder", "match", "preview"]' >/dev/null \

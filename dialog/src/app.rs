@@ -1926,7 +1926,7 @@ impl App {
 
     pub fn up(&mut self) {
         if self.preview_key() {
-            return if self.zoomed() { self.preview_pan(0.0, -1.0) } else { self.preview_file(-1) };
+            return self.preview_file(-1);
         }
         self.keep_lit = None;
         if self.in_list {
@@ -1948,7 +1948,7 @@ impl App {
 
     pub fn down(&mut self) {
         if self.preview_key() {
-            return if self.zoomed() { self.preview_pan(0.0, 1.0) } else { self.preview_file(1) };
+            return self.preview_file(1);
         }
         self.keep_lit = None;
         if self.in_list {
@@ -2036,9 +2036,6 @@ impl App {
 
     /// A key that types: it goes to the prompt, wherever the focus was.
     pub fn typed(&mut self, c: char) {
-        if self.preview_picture_key(c) {
-            return;
-        }
         // Space with nothing typed, or with the keys on the list: a lit file's preview, or back from one (#120, #163)
         if c == ' ' && (self.input.is_empty() || self.list_keys) && self.mode == Mode::Normal && self.chip_focus.is_none() && self.pending.is_none() {
             if self.view == View::Preview {
@@ -2182,9 +2179,6 @@ impl App {
     /// the draft.
     pub fn left(&mut self) {
         if self.preview_key() {
-            if self.zoomed() {
-                return self.preview_pan(-1.0, 0.0);
-            }
             return self.preview_page(-1);
         }
         if self.step_value(false) {
@@ -2198,7 +2192,7 @@ impl App {
 
     pub fn right(&mut self) {
         if self.preview_key() {
-            return if self.zoomed() { self.preview_pan(1.0, 0.0) } else { self.preview_page(1) };
+            return self.preview_page(1);
         }
         if self.step_value(true) {
             return;
@@ -2308,10 +2302,6 @@ impl App {
                     self.set_input(String::new());
                     self.in_list = false;
                     self.sel = 0;
-                } else if self.zoomed() {
-                    if let Some(pv) = self.preview.as_mut() {
-                        pv.fit();
-                    }
                 } else if let Some(v) = self.came_from.pop() {
                     self.go_back(v);
                 } else if self.exchange_up() {
@@ -4466,101 +4456,31 @@ impl App {
         }
     }
 
-    /// A picture shown, the preview's zoom and turn apply to it.
-    fn has_picture(&self) -> bool {
-        self.preview.as_ref().and_then(|pv| pv.shown.as_ref()).is_some_and(|pg| pg.picture.is_some())
-    }
-
-    /// Zoomed: the arrows move the picture, and Esc fits it.
-    pub fn zoomed(&self) -> bool {
-        self.has_picture() && self.preview.as_ref().is_some_and(|pv| pv.zoom.is_some())
-    }
-
-    /// A key of the picture's, nothing typed: + (or =) and - zoom, 0 fits, < and > turn a quarter.
-    /// False for any other key, or with no picture shown: the key is typed.
-    fn preview_picture_key(&mut self, c: char) -> bool {
-        if !self.preview_key() || !self.has_picture() {
-            return false;
-        }
-        let Some(pv) = self.preview.as_mut() else { return false };
-        match c {
-            '+' | '=' => {
-                pv.zoom_step(1);
-            }
-            '-' => {
-                pv.zoom_step(-1);
-            }
-            '0' => pv.fit(),
-            '<' => pv.rotate(-1),
-            '>' => pv.rotate(1),
-            _ => return false,
-        }
-        if pv.needs_full() {
-            pv.full = true;
-            self.read_page();
-        }
-        true
-    }
-
-    /// Ctrl and the wheel, or a key: a zoom stop in or out.
-    pub fn preview_zoom(&mut self, d: i32) {
-        self.preview_picture_key(if d > 0 { '+' } else { '-' });
-    }
-
-    /// A drag or the wheel on a zoomed picture: it moves, by box pixels.
-    pub fn preview_drag(&mut self, dx: f64, dy: f64) {
-        if let Some(pv) = self.preview.as_mut().filter(|pv| pv.zoom.is_some() && pv.px.0 > 0) {
-            pv.pan(-dx / pv.px.0 as f64, -dy / pv.px.1 as f64);
-        }
-    }
-
-    /// The wheel in a preview: with Ctrl a zoom stop; on a zoomed picture it moves it; else a page.
-    pub fn preview_wheel(&mut self, d: i32, ctrl: bool) {
-        if ctrl {
-            self.preview_zoom(-d);
-        } else if self.zoomed() {
-            self.preview_pan(0.0, d as f64);
-        } else {
-            self.preview_page(d);
-        }
-    }
-
-    /// The arrows on a zoomed picture: it moves a quarter of what is shown.
-    fn preview_pan(&mut self, dx: f64, dy: f64) {
-        if let Some(pv) = self.preview.as_mut() {
-            pv.pan(dx * preview::PAN, dy * preview::PAN);
-        }
+    /// The wheel in a preview: a page.
+    pub fn preview_wheel(&mut self, d: i32) {
+        self.preview_page(d);
     }
 
     /// The preview's key row, nothing typed, each key whole where the row has room, in this order:
-    /// open, back (fit, zoomed), the files (move, zoomed), the pages, zoom, turn. The about
-    /// lists them all.
+    /// back, the files, what Enter does, the pages. The about lists them all.
     fn preview_hint(&self, pages: usize) -> Vec<(String, bool)> {
         let pv = self.preview.as_ref();
         let shown = pv.and_then(|pv| pv.shown.as_ref());
-        // the shared keys first, in the same places on every file and in every state (loading, zoomed); the
-        // file's own after them, so a click never lands on another key when the file or the state changes
-        // (#166). A word that changes keeps its width: Fit is Back's.
-        let zoomed = self.zoomed();
+        // the shared keys first, in the same places on every file and while a page loads; the file's own after
+        // them, so a click never lands on another key when the file changes (#166)
         // the page's own keys, or the last page's while the next file's is on its way: the row never
         // blinks between files (#166)
         let own = shown.map(crate::preview::Keys::of).or_else(|| pv.and_then(|pv| pv.keys));
-        let mut keys: Vec<(&str, &str)> = vec![(if zoomed { "Fit " } else { "Back" }, "Esc")];
-        if zoomed {
-            keys.push(("Move", "\u{2190} \u{2191} \u{2193} \u{2192}"));
-        } else if pv.is_some_and(|pv| pv.files.len() > 1) {
+        let mut keys: Vec<(&str, &str)> = vec![("Back", "Esc")];
+        if pv.is_some_and(|pv| pv.files.len() > 1) {
             keys.push((pv.map(|pv| thing_of(&self.providers[pv.prov].label)).unwrap_or("File"), "\u{2191} \u{2193}"));
         }
         // what Enter does to the thing shown, in its tool's word (Open an app, Connect a network); nothing where it has no tool
         if let Some(t) = pv.and_then(|pv| pv.row().tool.as_ref()) {
             keys.push((verb_of(&t.name), "Enter"));
         }
-        if !zoomed && own.is_some_and(|k| if k.picture { k.pages > 1 } else { pages > 1 }) {
+        if own.is_some_and(|k| if k.picture { k.pages > 1 } else { pages > 1 }) {
             keys.push(("Page", "\u{2190} \u{2192}"));
-        }
-        if own.is_some_and(|k| k.picture) {
-            keys.push(("Zoom", "+ -"));
-            keys.push(("Turn", "< >"));
         }
         let room = self.col_w().saturating_sub(4) as usize;
         let mut v: Vec<(String, bool)> = vec![];

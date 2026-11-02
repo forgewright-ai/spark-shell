@@ -741,8 +741,7 @@ fn preview_app(name: &str, place: &str, page: serde_json::Value) -> App {
     a
 }
 
-/// The preview's card for the design system (#120): a Markdown note, a PDF page, a sound, a picture zoomed and
-/// turned. DS_PREVIEW_CARD names the file to write; DS_PAGE is a PNG cut from the real window on the Linux machine
+/// The preview's card for the design system (#120): a Markdown note, a PDF page, a sound, a page fitted. DS_PREVIEW_CARD names the file to write; DS_PAGE is a PNG cut from the real window on the Linux machine
 /// (a page pdftoppm drew), the picture sixel draws there.
 #[test]
 fn design_system_preview_card() {
@@ -790,23 +789,19 @@ fn design_system_preview_card() {
         "lines": ["Evening sketch", "Ada \u{b7} Proofs"], "bold": [0]}),
     );
     frames.push(ds_frame(&draw(&a).0, &pal, "a sound: its tags and its facts; Enter opens it in its app", None));
-    let mut a = preview_app(
+    let a = preview_app(
         "ghostscript.pdf",
         "~/docs",
-        json!({"title": "ghostscript.pdf", "facts": ["4.5 MB", "today"], "picture": "/run/p/2.png", "page": 1, "pages": 477, "size": [816, 1056], "full": true}),
+        json!({"title": "ghostscript.pdf", "facts": ["4.5 MB", "today"], "picture": "/run/p/2.png", "page": 1, "pages": 477}),
     );
-    let pv = a.preview.as_mut().unwrap();
-    (pv.src, pv.px) = ((459, 594), (616, 594));
-    a.typed('+');
-    a.typed('+');
     let (b, d) = draw(&a);
     frames.push(ds_frame(
         &b,
         &pal,
-        "zoomed: the arrows and a drag move it, Esc fits it again; < and > turn it",
+        "a page fitted to the area, as the file has it",
         d.preview.as_ref().map(|p| (p, page_png.as_str())),
     ));
-    let head = "<!-- @dsCard group=\"Preview\" height=1740 width=1420 subtitle=\"the preview from the dialog's own render, bound to the tokens: a note, a PDF page, a sound, a page zoomed; the pictures are the real window's on the Linux machine\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
+    let head = "<!-- @dsCard group=\"Preview\" height=1740 width=1420 subtitle=\"the preview from the dialog's own render, bound to the tokens: a note, a PDF page, a sound, a page fitted; the pictures are the real window's on the Linux machine\" -->\n<style>body{margin:0;background:var(--bg);color:var(--fg);font:16px/19px var(--font-mono);padding:12px}.d{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}</style>\n";
     std::fs::write(file, format!("{}<div class=\"d\">{}</div>\n<script></script>\n", head, frames.join(""))).unwrap();
 }
 

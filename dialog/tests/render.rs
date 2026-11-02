@@ -1008,24 +1008,22 @@ fn a_video_is_its_frame_and_enter_opens_it() {
     assert_ne!(app.view, View::Preview, "Space goes back to the list");
 }
 
+/// A picture is fitted to the area as the file has it (#196): no zoom and no turn. The key row offers neither, a
+/// + or a > typed is a word at the prompt, and Esc clears it, then goes back.
 #[test]
-fn a_zoomed_picture_moves_with_the_arrows_and_fits_with_esc() {
-    let page =
-        json!({"title": "dunes.png", "facts": ["2400 \u{d7} 1350", "48 KB", "today"], "picture": "/run/pages/4-1600.png", "size": [2400, 1350], "full": false});
+fn a_picture_is_fitted_and_its_old_keys_are_words() {
+    let page = json!({"title": "dunes.png", "facts": ["2400 \u{d7} 1350", "48 KB", "today"], "picture": "/run/pages/4-1600.png"});
     let mut app = preview_app("dunes.png", "~/pictures", page, WIDTH, HEIGHT);
-    let pv = app.preview.as_mut().unwrap();
-    (pv.src, pv.px) = ((1600, 900), (616, 594));
+    render(&app, "preview-fit");
+    let hint: String = app.hint().iter().map(|(t, _)| t.as_str()).collect();
+    assert!(!hint.contains("Zoom") && !hint.contains("Turn"), "{:?}", hint);
+    app.typed('+');
     app.typed('>');
-    app.typed('+');
-    app.typed('+');
-    let pv = app.preview.as_ref().unwrap();
-    assert_eq!((pv.turn, pv.zoom, pv.full), (1, Some(50), false), "fitted at 25 %, two stops in");
-    render(&app, "preview-zoom");
+    assert_eq!(app.input, "+>", "typed words");
     app.escape();
-    assert!(
-        app.view == View::Preview && app.preview.as_ref().unwrap().zoom.is_none(),
-        "Esc fits it, and the preview stays"
-    );
+    assert!(app.input.is_empty() && app.view == View::Preview, "Esc clears the words first");
+    app.escape();
+    assert_ne!(app.view, View::Preview, "then goes back");
 }
 
 #[test]

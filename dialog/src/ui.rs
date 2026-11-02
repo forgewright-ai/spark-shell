@@ -9,7 +9,6 @@ use crate::palette::Palette;
 use crate::progress;
 use crate::reply::Mark;
 use crate::scrub::{cells, cut, cut_words};
-use crate::sixel::Viewport;
 use ratatui::buffer::{Buffer, CellDiffOption};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -172,8 +171,8 @@ pub struct Drawn {
     pub columns: (u16, u16),
 }
 
-/// A picture main.rs draws in sixel over cells the buffer skips: where (x, y, w, h in cells), its file,
-/// and how it is shown.
+/// A picture main.rs draws in sixel over cells the buffer skips: where (x, y, w, h in cells), and its file,
+/// fitted to them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Picture {
     pub x: u16,
@@ -181,7 +180,6 @@ pub struct Picture {
     pub w: u16,
     pub h: u16,
     pub file: String,
-    pub view: Viewport,
 }
 
 /// The draft as the prompt shows it: its lines, each wrapped to `w` cells, and where the cursor is in
@@ -470,7 +468,6 @@ fn key_of(k: &str) -> Option<HintKey> {
         "\u{2192}" => HintKey::Right,
         "\u{2191}" => HintKey::Up,
         "\u{2193}" => HintKey::Down,
-        "+" | "-" | "<" | ">" => HintKey::Char(k.chars().next()?),
         // Space previews the lit file, its chip as clickable as the others (#150)
         "Space" => HintKey::Char(' '),
         _ => return None,
@@ -722,15 +719,10 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
                 w,
                 h: rows,
                 file: png.clone(),
-                view: pv.viewport(),
             },
         ));
         if pg.pages > 1 {
             facts.push(format!("page {} of {}", pg.page, pg.pages));
-        }
-        facts.extend(pv.percent().map(|p| format!("{}%", p)));
-        if pv.turn > 0 {
-            facts.push(format!("turned {}\u{b0}", pv.turn as u32 * 90));
         }
     } else if let Some(say) = &pg.say {
         // no preview: why, in the middle of the area

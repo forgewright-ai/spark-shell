@@ -211,26 +211,16 @@ fn image<'a>(file: &str, cache: &'a mut Option<(String, std::time::SystemTime, I
     cache.as_ref().map(|(_, _, i)| i)
 }
 
-/// A drag's pictures, this far apart at least (#129), and as far apart as the last one took to draw (#148).
-const DRAG_GAP: Duration = Duration::from_millis(40);
-/// A drag's pictures in fewer colors, so each is a small write the terminal draws at once; the whole one when the
-/// pointer lets go (#148).
-const DRAG_COLORS: usize = 48;
-
 /// A tick wants a frame while spark's march shows, and when work starts or ends; work nothing shows draws
 /// nothing (#196). `was` and `now` say whether work was under way.
 fn frame_for_tick(was: bool, now: bool, march: bool) -> bool {
     march || was != now
 }
 
-/// A mouse event wants a frame when it can change what is drawn: a press, a drag, the wheel, or the end of a drag;
-/// a motion or a release that ends nothing draws none, so a click is one frame (#196).
-fn frame_for_mouse(kind: MouseEventKind, dragging: bool) -> bool {
-    match kind {
-        MouseEventKind::Moved => false,
-        MouseEventKind::Up(_) => dragging,
-        _ => true,
-    }
+/// A mouse event wants a frame when it can change what is drawn: a press or the wheel; a motion, a drag or a
+/// release draws none, so a click is one frame (#196).
+fn frame_for_mouse(kind: MouseEventKind) -> bool {
+    !matches!(kind, MouseEventKind::Moved | MouseEventKind::Drag(_) | MouseEventKind::Up(_))
 }
 
 /// The dialog's window shown (#167): it mapped unseen, and its first frame is drawn now. A RUN_COMMAND on sway's
@@ -259,22 +249,17 @@ fn opacity(level: u8, after: Duration) {
     });
 }
 
-/// The pointer foot draws over the window (OSC 22, its cursor theme's names): a hand where a click acts,
-/// the closed hand over a picture that moves and while it moves, the text cursor on the prompt (#129).
-fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) -> &'static str {
-    let on = |(x, y, w, h): (u16, u16, u16, u16)| row >= y && row < y + h && col >= x && col < x + w;
+/// The pointer foot draws over the window (OSC 22, its cursor theme's names): a hand where a click acts, the
+/// text cursor on the prompt (#129).
+fn pointer_at(drawn: &ui::Drawn, col: u16, row: u16) -> &'static str {
     let span = |a: u16, b: u16, y: u16| row == y && col >= a && col < b;
     // where a click acts: the x, a chip, a key, a row of the list
     let clicks = (row == 0 && drawn.close.is_some_and(|(a, b)| span(a, b, 0)))
         || drawn.chips.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.keys.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.reply_undo.is_some_and(|(a, b, y)| span(a, b, y));
-    if dragging {
-        "grabbing"
-    } else if clicks {
+    if clicks {
         "pointer"
-    } else if drawn.preview.as_ref().is_some_and(|p| app.zoomed() && on((p.x, p.y, p.w, p.h))) {
-        "grab"
     } else if row >= drawn.prompt.0 && row <= drawn.prompt.1 {
         "text"
     } else if drawn.picks.iter().any(|(y, _)| *y == row) && col >= drawn.columns.0 && col < drawn.columns.1 {
@@ -373,9 +358,6 @@ fn main() {
     // the window maps unseen (the sway rule's opacity 0) and is shown once its first whole frame is on it: no cursor
     // and no empty surface before it (#167); under sway, always: a dialog run elsewhere finds no window of that app id unseen, and nothing changes
     let mut unseen = std::env::var_os("SWAYSOCK").is_some();
-    let (mut drag_drawn, mut drag_owed) = (Instant::now(), false);
-    // how long the last picture of a drag took to make and write: the next waits as long (#148)
-    let mut drag_cost = Duration::ZERO;
     // the window made clear for a step that puts a window in front (#196)
     let mut cleared = false;
     let mut pointer = "";
@@ -395,8 +377,6 @@ fn main() {
     let mut shown_preview: Option<ui::Picture> = None;
     let mut preview_tried = Instant::now();
     let mut images = None;
-    // a drag on a picture: where the pointer was
-    let mut drag: Option<(u16, u16)> = None;
     let mut drawn = ui::Drawn::default();
     let mut dirty = true;
     let mut last_clock = String::new();
@@ -459,8 +439,8 @@ fn main() {
             let _ = out.write_all(b"\x1b[?2026l");
             // the mouse still and the frame new: the pointer's shape asked again where it rests
             if let Some((c, r)) = mouse_at {
-                let want = pointer_at(&app, &drawn, c, r, false);
-                if want != pointer && drag.is_none() {
+                let want = pointer_at(&drawn, c, r);
+                if want != pointer {
                     pointer = want;
                     let _ = write!(out, "\x1b]22;{}\x1b\\", want);
                 }
@@ -479,26 +459,15 @@ fn main() {
             // the picture beside a list: drawn when it changed, its cells blanked first (the buffer skips them);
             // a picture gone is the buffer's again, which writes its cells over it
             let want = drawn.preview.clone();
-            let mut again = false;
             if want != shown_preview {
                 shown_preview = None;
                 if let (Some(p), Some((cw, chh)), true) = (&want, cell_px(), sixel_ok) {
-                    let drawing = Instant::now();
                     // one synchronized update: the old picture stays on screen until the new one is whole (#129)
                     let _ = out.write_all(b"\x1b[?2026h");
                     blank(&mut out, (p.x, p.y, p.w, p.h), term_color(pal.surface));
                     let (bw, bh) = (p.w as u32 * cw, p.h as u32 * chh);
                     if let Some(img) = image(&p.file, &mut images) {
-                        // the preview's picture: its box and its pixels, for the zoom and the move (#120)
-                        if let Some(pv) = app.preview.as_mut().filter(|_| app.view == View::Preview) {
-                            if pv.px != (bw, bh) || pv.src != (img.w, img.h) {
-                                (pv.px, pv.src) = ((bw, bh), (img.w, img.h));
-                                again = true;
-                            }
-                        }
-                        // while a drag moves the picture, a lighter frame keeps up with the pointer; the whole one when it stops (#148)
-                        let colors = if drag.is_some() { DRAG_COLORS } else { 255 };
-                        if let Some((s, pw, ph)) = sixel::show_with(img, bw, bh, &p.view, colors) {
+                        if let Some((s, pw, ph)) = sixel::show(img, bw, bh) {
                             // in the middle of its box by whole cells
                             let (dx, dy) = ((bw.saturating_sub(pw) / 2 / cw) as u16, (bh.saturating_sub(ph) / 2 / chh) as u16);
                             let _ = queue!(
@@ -513,36 +482,17 @@ fn main() {
                     }
                     let _ = out.write_all(b"\x1b[?2026l");
                     let _ = out.flush();
-                    if drag.is_some() {
-                        drag_cost = drawing.elapsed();
-                    }
                 }
                 preview_tried = Instant::now();
             }
-            dirty = again;
+            dirty = false;
         }
         if app.quit.is_some() {
             break;
         }
-        // a drag wakes for its next picture; else the next event
-        let due = drag_owed.then(|| DRAG_GAP.max(drag_cost).saturating_sub(drag_drawn.elapsed()).max(Duration::from_millis(1)));
-        let ev = match due {
-            Some(d) => match rx.recv_timeout(d) {
-                Ok(ev) => ev,
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    if drag_owed && drag_drawn.elapsed() >= DRAG_GAP.max(drag_cost) {
-                        drag_owed = false;
-                        drag_drawn = Instant::now();
-                    }
-                    dirty = true;
-                    continue;
-                }
-                Err(_) => break,
-            },
-            None => match rx.recv() {
-                Ok(ev) => ev,
-                Err(_) => break,
-            },
+        let ev = match rx.recv() {
+            Ok(ev) => ev,
+            Err(_) => break,
         };
         match ev {
             Ev::Gone => app.quit = Some(129),
@@ -601,11 +551,10 @@ fn main() {
                 dirty = true;
             }
             Ev::Term(Event::Mouse(m)) => {
-                dirty |= frame_for_mouse(m.kind, drag.is_some());
+                dirty |= frame_for_mouse(m.kind);
                 // the pointer says what a click does where it is (#129)
-                let dragging = drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_));
                 mouse_at = Some((m.column, m.row));
-                let want = pointer_at(&app, &drawn, m.column, m.row, dragging);
+                let want = pointer_at(&drawn, m.column, m.row);
                 if want != pointer {
                     pointer = want;
                     let _ = write!(out, "\x1b]22;{}\x1b\\", want);
@@ -621,12 +570,6 @@ fn main() {
                             app.chip(*c);
                         } else if let Some((_, _, _, key)) = drawn.keys.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.hint_key(*key);
-                        } else if drawn
-                            .preview
-                            .as_ref()
-                            .is_some_and(|p| app.zoomed() && m.row >= p.y && m.row < p.y + p.h && m.column >= p.x && m.column < p.x + p.w)
-                        {
-                            drag = Some((m.column, m.row));
                         } else if let Some((_, _, _, n, up)) = drawn.steps.iter().find(|(a, b, y, _, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.step_at(*n, *up); // a value's arrow steps it, as left and right do (#175)
                         } else if m.row >= drawn.prompt.0 && m.row <= drawn.prompt.1 {
@@ -643,30 +586,8 @@ fn main() {
                             app.enter();
                         }
                     }
-                    MouseEventKind::Drag(MouseButton::Left) => {
-                        if let (Some((c0, r0)), Some((cw, chh))) = (drag, cell_px()) {
-                            app.preview_drag((m.column as f64 - c0 as f64) * cw as f64, (m.row as f64 - r0 as f64) * chh as f64);
-                            drag = Some((m.column, m.row));
-                            // the picture follows at most every DRAG_GAP, and no sooner than the last took to draw, at the
-                            // latest place: never a picture a motion (#129, #148)
-                            if drag_drawn.elapsed() < DRAG_GAP.max(drag_cost) {
-                                drag_owed = true;
-                                dirty = false;
-                            } else {
-                                drag_drawn = Instant::now();
-                            }
-                        }
-                    }
-                    MouseEventKind::Up(_) => {
-                        // the pointer let go: the picture drawn whole again, in all its colors (#148)
-                        if drag.take().is_some() {
-                            shown_preview = None;
-                            drag_cost = Duration::ZERO;
-                        }
-                        drag_owed = false;
-                    }
-                    MouseEventKind::ScrollUp if app.view == View::Preview => app.preview_wheel(-1, m.modifiers.contains(KeyModifiers::CONTROL)),
-                    MouseEventKind::ScrollDown if app.view == View::Preview => app.preview_wheel(1, m.modifiers.contains(KeyModifiers::CONTROL)),
+                    MouseEventKind::ScrollUp if app.view == View::Preview => app.preview_wheel(-1),
+                    MouseEventKind::ScrollDown if app.view == View::Preview => app.preview_wheel(1),
                     MouseEventKind::ScrollUp => app.page(-1),
                     MouseEventKind::ScrollDown => app.page(1),
                     _ => {}
@@ -699,18 +620,15 @@ mod tests {
 
     #[test]
     fn a_click_is_one_frame_and_a_motion_none() {
-        // the press draws; the release after it draws nothing unless it ends a drag (#196)
+        // the press draws; the release after it draws nothing (#196)
         let frames = [MouseEventKind::Down(MouseButton::Left), MouseEventKind::Up(MouseButton::Left)]
             .into_iter()
-            .filter(|k| frame_for_mouse(*k, false))
+            .filter(|k| frame_for_mouse(*k))
             .count();
         assert_eq!(frames, 1, "a click");
-        assert!(!frame_for_mouse(MouseEventKind::Moved, false), "a motion");
-        assert!(
-            frame_for_mouse(MouseEventKind::Up(MouseButton::Left), true),
-            "a drag let go draws the picture whole"
-        );
-        assert!(frame_for_mouse(MouseEventKind::ScrollDown, false), "the wheel");
+        assert!(!frame_for_mouse(MouseEventKind::Moved), "a motion");
+        assert!(!frame_for_mouse(MouseEventKind::Drag(MouseButton::Left)), "a drag: nothing moves with it");
+        assert!(frame_for_mouse(MouseEventKind::ScrollDown), "the wheel");
     }
 
     #[test]

@@ -951,21 +951,17 @@ its first and its last row.
   A text, a
   Markdown file (its headings bold), code (its lines numbered) and JSON
   (indented) show as text, 128 kB of it at most. A picture, a PDF's page
-  and a video's frame are drawn as they are, and zoom and turn: with
-  nothing typed, `+` (or `=`) and `-` zoom along 25 to 800 %, `0` fits,
-  `<` and `>` turn a quarter; zoomed, the arrows and a drag move it and
-  Esc fits it again. 100 % is a picture's own pixels and a PDF page at 96
-  pixels an inch, and past it a picture's pixels stay sharp; a turn is
-  the preview's, never the file's. A sound shows its title, its artist
-  and album, its length, and its rate, bits, channels and format; a
-  video shows its frame, its length and its size. Enter opens either in
-  its app; nothing plays in the dialog. A Word, PowerPoint, Excel or
-  OpenDocument file shows its text, read by Python's own zip and XML
-  readers (no LibreOffice). Anything else says that it
-  has no preview. A PDF needs poppler (installed with the desktop); a
-  sound and a video need mpv where it is installed, and say so where it
-  is not. spark reads text: a PDF goes with your words as the text of its
-  page, a sound or a picture with none.
+  and a video's frame are drawn as they are, fitted to the area and
+  never past their own pixels; there is no zoom and no turn. A sound
+  shows its title, its artist and album, its length, and its rate, bits,
+  channels and format; a video shows its frame, its length and its
+  size. Enter opens either in its app; nothing plays in the dialog. A
+  Word, PowerPoint, Excel or OpenDocument file shows its text, read by
+  Python's own zip and XML readers (no LibreOffice). Anything else says
+  that it has no preview. A PDF needs poppler (installed with the
+  desktop); a sound and a video need mpv where it is installed, and say
+  so where it is not. spark reads text: a PDF goes with your words as
+  the text of its page, a sound or a picture with none.
 
 A click on a row runs it and says nothing: the row shows that it
 worked, and nothing else on the screen moves. Under the key row, one
@@ -1210,9 +1206,9 @@ picks for the words as JSON, each checked the same way, and runs none.
 `spark-shell want --attach FILE "WORDS"` asks spark about a text file:
 the file's text goes to spark as someone else's text, by its name
 alone; a file over 16 kB goes to `spark read`. The files section also
-shows a file as a page: `spark-shell://files/preview/{file}{?page,full}`
-answers its title and facts, then its lines, a picture (its size at 100
-%, and `full` when it is drawn whole), or why there is none.
+shows a file as a page: `spark-shell://files/preview/{file}{?page}`
+answers its title and facts, then its lines, a picture, or why there is
+none.
 
 spark's prompt line knows this desktop too. While it runs, spark-shell
 keeps two files in spark's machine folder, `~/.local/state/spark/machine/`.
