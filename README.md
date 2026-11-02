@@ -1005,16 +1005,19 @@ say: a cross and the reason for a step refused, a check and the receipt
 for a command you typed, and Undo at the right where the step can be
 taken back (alone, for a click). A new reply takes the place of the
 last; Esc clears it, and so does leaving the view. Typing undo still
-takes the step back. Above the list, what you asked spark and what it
-said, the newest first, a blank row between one turn and the next.
-At the bottom, under a
+takes the step back. spark's answer is the reply row too; an answer
+longer than that row is kept whole at Home, above the places, under
+the words that asked it, and never over a section's list. While
+commands spark planned wait in the two rows of the prompt, the reply
+row names them all (`run: ...`). At the bottom, under a
 rule, the controls in plain text: Attach, the model, and the mic at the
 right. Tab moves through them and the one in focus is lit; Shift+Tab
 goes back.
 
 - Attach picks one text or Markdown file from your home (the types
   `DIALOG_ATTACH_TYPES` names), for the next question only: its name
-  shows under the prompt with Remove. Picking it sends nothing. It
+  shows in the footer in place of Attach, with Remove after it.
+  Picking it sends nothing. It
   goes with the next words, and comes back with them if that request
   fails. spark reads a file of 16 kB whole; a longer one goes to `spark
   read`, which reads it by parts and answers from the part your words
@@ -1051,10 +1054,11 @@ minutes old), and notes by what they say; both come in once typing
 rests for a moment. A section's name holds its rows too: `wifi` lists
 the networks. The row your words name is lit, and
 Enter runs it with no model call: `nord` and Enter is the palette nord
-(`drac` lights dracula). Words that name no row light `Ask spark`, the
-first row while you type. A place's name alone, as `settings` or
-`calendar`, opens it. A command in the dialog's own words, as `display
-brightness 30` or `theme dracula`, runs at once, with no model. Other
+(`drac` lights dracula). Words that name no row stay at the prompt,
+and the key row says Ask: Enter sends them. A place's name alone, as
+`settings` or `calendar`, opens it. A command in the dialog's own
+words, as `display brightness 30` or `theme dracula`, runs at once,
+with no model. Other
 words are one request to spark: the words, the view, the selected row
 and the names the steps take now (the open view's rows, then every
 ready provider's layouts, networks, windows and notes, as written) go
@@ -1145,8 +1149,8 @@ is owned by spark's `CLAUDE.md`, contract 16.
 
 One proposed step waits for Enter, a plan of several steps one after
 another; consequential steps still require `yes`. Select a row before
-typing or clicking the prompt to use it as the target. The `For:` line
-keeps that choice visible while search results change. An item that
+typing or clicking the prompt to use it as the target. `For:` in the
+footer keeps that choice visible while search results change. An item that
 disappears stops the proposal; select the item again. Proposals with
 several arguments show each field and its value. The actual MCP result
 is the receipt; spark is not asked again after a step. Esc drops the

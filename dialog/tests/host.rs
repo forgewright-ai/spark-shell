@@ -226,7 +226,10 @@ fn a_plan_is_gated_step_by_step() {
     ], "refused": ["\u2717 theme: rainbow is not on the panel now"]}"#,
     );
     assert_eq!(app.input, "window focus terminal", "the one step the gate took waits in the box");
-    let lines: Vec<String> = app.exchange.iter().map(|l| format!("{:?} {}", l.sign, l.text)).collect();
+    // what spark's plan could not do is one reply row, each refusal parted by a semicolon (#196)
+    let r = app.reply.clone().unwrap();
+    assert_eq!(r.mark, Mark::Refused);
+    let lines: Vec<String> = r.text.split("; ").map(|l| format!("Refused {}", l)).collect();
     assert!(lines.contains(&"Refused theme: rainbow is not on the panel now".to_string()), "{:?}", lines);
     // a refusal says what did not run and why, in plain words, never a tool's name (#53)
     assert!(
@@ -622,7 +625,7 @@ fn a_search_finds_the_about_and_a_section_name_opens_its_section() {
 fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
     let (mut app, rx, calls, _r) = started();
     app.plan(r#"{"answer": "", "steps": [{"name": "undo_all", "arguments": {}, "line": "undo"}], "refused": []}"#);
-    assert_eq!(app.exchange.last().unwrap().text, "nothing to undo");
+    assert_eq!(app.reply.as_ref().unwrap().text, "nothing to undo");
     app.undo = Some(spark_dialog::app::Step {
         prov: 0,
         call: spark_dialog::model::Call {
@@ -645,7 +648,7 @@ fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
     );
     assert!(app.undo.is_none());
     app.plan(r#"{"answer": "", "steps": [{"name": "about_open", "arguments": {}, "line": "about"}], "refused": []}"#);
-    assert_eq!(app.exchange.last().unwrap().text, "about is not offered here now", "no about provider here");
+    assert_eq!(app.reply.as_ref().unwrap().text, "about is not offered here now", "no about provider here");
     let (mut app, rx, tx) = app_with(&["about"]);
     app.servers.push(stub(0, "about", about_stub(), tx));
     app.start();
@@ -936,7 +939,7 @@ fn words_that_name_no_row_are_a_request() {
     let (mut app, _rx, calls, _r) = started();
     app.cfg.spark_shell = "/bin/spark-shell".into();
     typed(&mut app, "is anything open");
-    assert_eq!(app.picks().first(), Some(&Item::Ask), "Ask spark leads while words are typed");
+    assert!(!app.in_list, "words that name no row stay at the prompt: no Ask row moves the list (#196)");
     app.enter();
     assert!(calls.lock().unwrap().is_empty(), "words that name no row run no row");
     assert!(app.jobs.iter().any(|j| asks_for(j, "is anything open")));
@@ -964,8 +967,7 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
         typed: false,
     });
     typed(&mut app, "change theme to dracula");
-    assert!(app.picks().contains(&Item::Ask), "Ask spark");
-    assert_eq!(app.picks().get(app.sel), Some(&Item::Ask), "words that name no row light Ask spark");
+    assert!(!app.in_list, "words that name no row light no row");
     app.enter();
     assert!(app.jobs.iter().any(|j| asks_for(j, "change theme to dracula")), "Enter asks spark");
     assert!(!pump(&mut app, &rx, |_| !calls.lock().unwrap().is_empty()), "and runs no undo");
@@ -999,12 +1001,12 @@ fn spark_s_steps_wait_in_the_box_a_question_s_alike_and_run_on_enter() {
     std::thread::sleep(Duration::from_millis(200));
     assert!(calls.lock().unwrap().is_empty(), "nothing runs before Enter");
     assert_eq!(
-        app.exchange.last().map(|l| l.text.as_str()),
-        Some("The terminal is open."),
-        "the answer is said"
+        app.reply.as_ref().map(|r| r.text.as_str()),
+        Some("run: window focus terminal"),
+        "the reply row names the commands waiting in the box"
     );
     assert!(app.staged_now() && app.input == "window focus terminal", "{:?}", app.input);
-    assert!(!app.items().contains(&Item::Ask), "the list is not searched for spark's own command");
+    assert!(!app.in_list, "the list is not searched for spark's own command");
     app.enter();
     assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["name"] == "window_focus")));
     assert!(app.input.is_empty() && app.staged.is_none());
@@ -2717,4 +2719,65 @@ fn space_on_a_row_with_no_page_types_nothing_and_a_switch_found_by_words_flips()
     assert!(app.input.is_empty(), "the words went with the pick");
     assert!(row_of(&app, "theme:show:Words on the bar").switch.as_ref().unwrap().on, "the switch flipped");
     assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().iter().any(|c| c["name"] == "theme_glyphs")));
+}
+
+#[test]
+fn typed_words_get_one_reply_row_and_the_frame_holds_still() {
+    // #196: the prompt is two rows, the keys row 5, the reply row 6, the list from row 7, whatever is typed, said or
+    // refused; a typed command's receipt and a refusal change row 6 alone
+    let (mut app, rx, _calls) = theme_app("theme_glyphs");
+    at_row(&mut app, View::Section(0), 0);
+    app.in_list = false;
+    let (before, _) = frame(&app);
+    let still = |a: &[String], b: &[String], skip: &str| (7..36).filter(|r| !a[*r].contains(skip)).all(|r| a[r] == b[r]);
+    // a typed command: its receipt in row 6, the list as it was but for the value it changed
+    typed(&mut app, "theme text 11");
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.reply.is_some()));
+    let (after, _) = frame(&app);
+    assert!(after[6].contains('\u{2713}') && after[6].contains("done"), "{:?}", after[6]);
+    assert!(
+        still(&before, &after, "Text size"),
+        "the list did not move:\n{}\n{}",
+        before.join("\n"),
+        after.join("\n")
+    );
+    // a refusal: row 6 again, in place of the receipt
+    typed(&mut app, "theme glyphs words");
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none()
+        && a.reply.as_ref().is_some_and(|r| r.mark == Mark::Refused)));
+    let (refused, _) = frame(&app);
+    assert!(
+        refused[6].contains('\u{2717}') && refused[6].contains("the bar stays in signs"),
+        "{:?}",
+        refused[6]
+    );
+    assert!(still(&after, &refused, "Text size"), "the list did not move for the refusal");
+    // a receipt of several lines is one row, cut to the window
+    app.reply = Some(Reply::new(Mark::Done, &"a long receipt that runs on\n".repeat(6)));
+    let (long, _) = frame(&app);
+    assert!(still(&refused, &long, "\u{0}") && long[7] == refused[7], "a long receipt is row 6 alone");
+    // a draft of five lines: the prompt stays two rows and scrolls inside them
+    app.reply = None;
+    for (k, l) in ["one", "two", "three", "four", "five"].iter().enumerate() {
+        if k > 0 {
+            app.newline();
+        }
+        typed(&mut app, l);
+    }
+    let (draft, _) = frame(&app);
+    assert!(
+        draft[3].contains("five") && draft[2].contains("four") && !draft[4].contains("three"),
+        "{:?}",
+        &draft[2..5]
+    );
+    assert!(draft[4].trim().is_empty(), "row 4 stays air");
+    // a search: rows go, none comes above the list, and the first is at row 7
+    app.set_draft("");
+    typed(&mut app, "text");
+    let (search, y) = frame(&app);
+    assert!(!search[6].contains("Ask spark") && !search[7].contains("Ask spark"), "no Ask row");
+    assert!(search[7].contains("text") || search[7].contains("Text"), "{:?}", &search[6..9]);
+    assert!(y.is_some_and(|y| y >= 7));
 }

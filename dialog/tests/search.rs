@@ -201,7 +201,7 @@ fn a_letter_off_still_finds_and_never_lights_the_row() {
     typed(&mut r.app, "firfox");
     let l = list(&r.app);
     assert!(l.contains(&"firefox".to_string()), "{:?}", l);
-    assert_eq!(r.app.picks().get(r.app.sel), Some(&Item::Ask), "a typo never lights a row Enter would run");
+    assert!(!r.app.in_list, "a typo never lights a row Enter would run");
     r.app.typed('\u{8}');
 }
 

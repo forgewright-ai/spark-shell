@@ -39,6 +39,29 @@ part lands in a pull request of its own.
   no yes". A refusal and the steps it stopped share one reply.
 - Two of the 43 golden frames were drawn again (section, turn): the
   toast and the step lines they showed are now the reply row.
+- The frame holds still. The prompt is two rows always and a longer
+  draft scrolls inside them; it no longer grows to five. The file
+  attached is named in the footer in place of Attach, with Remove; the
+  row the words are for (`For:`) is a muted note in the footer; the Ask
+  spark row is gone, and words that name no row stay at the prompt,
+  where Enter asks spark. None of them pushes the list down now.
+- spark's answer is the reply row; one longer than the row is kept
+  whole at Home, under the words that asked it, and never over a
+  section's list. What spark's plan could not do is one reply, each
+  refusal parted by a semicolon. Commands spark planned wait in the
+  prompt's two rows and the reply row names them all (`run: ...`).
+- A list's column widths and, full screen, its right edge are held
+  while you stay in the view: a longer name or state widens them once,
+  and they never move back and forth.
+- The key row is cut at the window's edge, the words at a word, never
+  a key drawn in part.
+- The Calendar's months always take six weeks' room, so Left and Right
+  never move the reminders under them.
+- A helper's raw system error is said in plain words: with no spark
+  installed, "spark did not answer: spark is not installed here", not
+  "No such file or directory (os error 2)".
+- Six more golden frames drawn again (calendar, draft, folder,
+  full-calendar-tall, preview-answer, staged).
 
 ## v0.121
 
