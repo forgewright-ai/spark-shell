@@ -661,6 +661,9 @@ part lands in a pull request of its own.
   audit record (H); an older reply to spark cleared the march of the
   newer request (I); the same words typed again at Home were not asked
   again (N). J and K went with phase 1.
+- H has a test of its own: a play and a stop both on their way,
+  answered out of order, are both in the audit record, and the play's
+  refusal is said.
 - Cut: the look while lit. A palette lit for a quarter of a second no
   longer repaints the desktop, and the light leaving no longer puts it
   back: each was a theme preview call of about 300 ms, and a flash of
