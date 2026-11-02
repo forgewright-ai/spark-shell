@@ -287,6 +287,8 @@ fn commands_from_spark_wait_in_the_box_for_enter() {
         steps: vec![],
         draft: String::new(),
     });
+    // the box is two rows: the reply row names every command in it (#196)
+    app.reply = Some(Reply::new(Mark::Note, "run: bt connect jabra speak 410; out level 60; display brightness 30"));
     render(&app, "staged");
 }
 

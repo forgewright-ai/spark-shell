@@ -275,7 +275,9 @@ fn an_answer_is_said_in_place_and_nothing_to_do_is_one_line() {
         Helper::Want(serial),
         Ok(json!({"answer": "The output is at 70 percent.", "steps": [], "refused": []}).to_string()),
     );
-    assert_eq!(app.exchange.last().map(|l| l.text.as_str()), Some("The output is at 70 percent."));
+    // a one-line answer is the reply row's, nothing above the list (#196)
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("The output is at 70 percent."));
+    assert!(app.exchange.is_empty());
     assert!(app.staged.is_none() && calls.lock().unwrap().is_empty());
     type_words(&mut app, "fly me to the moon");
     app.enter();
@@ -292,13 +294,13 @@ fn a_step_that_is_not_offered_or_fails_the_gate_is_refused_in_one_line() {
     app.enter();
     let (serial, _, _) = request(&app);
     propose(&mut app, serial, json!([{"name": "display_brightness", "arguments": {"level": 10}}]));
-    assert!(app.exchange.last().is_some_and(|l| l.text.contains("not offered here now")));
+    assert!(app.reply.as_ref().is_some_and(|r| r.text.contains("not offered here now")));
     assert!(app.staged.is_none() && calls.lock().unwrap().is_empty());
     type_words(&mut app, "make it quieter");
     app.enter();
     let (serial, _, _) = request(&app);
     propose(&mut app, serial, json!([{"name": "out_level", "arguments": {"level": 300}}]));
-    assert!(app.exchange.last().is_some_and(|l| l.text.contains("did not run")));
+    assert!(app.reply.as_ref().is_some_and(|r| r.text.contains("did not run")));
     assert!(app.staged.is_none() && calls.lock().unwrap().is_empty());
 }
 
@@ -446,7 +448,7 @@ fn a_step_that_names_no_row_is_refused_in_the_steps_own_words() {
     let (serial, _, _) = request(&app);
     propose(&mut app, serial, json!([{"name": "theme_palette", "arguments": {"name": "rainbow"}}]));
     assert!(!app.staged_now(), "{:?}", app.input);
-    let last = app.exchange.last().map(|l| l.text.clone()).unwrap_or_default();
+    let last = app.reply.as_ref().map(|r| r.text.clone()).unwrap_or_default();
     assert_eq!(last, "theme rainbow did not run: rainbow is not in the list now");
     // two names start with the word: no guess, the gate decides
     app.input.clear();
@@ -543,9 +545,9 @@ fn a_step_with_a_path_no_row_holds_is_refused_and_a_rows_own_path_passes() {
     let (serial, _, _) = request(&app);
     propose(&mut app, serial, json!([{"name": "files_trash", "arguments": {"path": "/etc/passwd"}}]));
     assert!(
-        app.exchange.iter().any(|l| l.text.contains("passwd is not in the list now")),
+        app.reply.as_ref().is_some_and(|r| r.text.contains("passwd is not in the list now")),
         "{:?}",
-        app.exchange
+        app.reply
     );
     assert!(app.staged.is_none());
     type_words(&mut app, "move the invoice to documents");
@@ -592,4 +594,16 @@ fn a_plan_that_comes_while_the_prompt_asks_waits_for_the_question() {
     app.escape();
     assert!(app.staged_now(), "the question let go, the commands are in the box: {:?}", app.input);
     assert!(calls.lock().unwrap().is_empty(), "and nothing ran");
+}
+
+#[test]
+fn a_raw_error_of_the_system_is_said_in_plain_words() {
+    // the review: with no spark installed, "No such file or directory (os error 2)" was said as the answer
+    let (mut app, _, _) = started(false);
+    type_words(&mut app, "make it quieter");
+    app.enter();
+    let (serial, _, _) = request(&app);
+    app.helper(Helper::Want(serial), Err("No such file or directory (os error 2)".into()));
+    assert_eq!(app.reply.as_ref().unwrap().text, "spark did not answer: spark is not installed here");
+    assert_eq!(app.input, "make it quieter", "the words come back");
 }

@@ -30,14 +30,11 @@ pub const RULE: &str = "\u{2500}";
 /// A color's sample: two full blocks, about a square in a terminal cell's shape.
 pub const SAMPLE: &str = "\u{2588}\u{2588}";
 pub const SEP: &str = " \u{b7} ";
-/// The rows: the prompt's two, the attachment's (air above and below it), what a key does, where the
-/// content starts (the last two two rows lower while a file is attached).
+/// The rows, fixed whatever is typed or attached (#196): the prompt's two, what a key does, the reply row,
+/// where the list starts.
 pub const PROMPT_Y: u16 = 2;
-/// The rows the prompt grows to for a longer draft: commands spark planned are all in sight before
-/// Enter runs them (#53); past this the draft scrolls inside them.
-pub const PROMPT_MAX: usize = 5;
-pub const ATTACH_Y: u16 = 5;
 pub const HINT_Y: u16 = 5;
+pub const REPLY_Y: u16 = 6;
 pub const CONTENT_Y: u16 = 7;
 /// The bottom: air, the rule, the footer, air.
 pub const BOTTOM: u16 = 4;
@@ -413,7 +410,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         }
     }
 
-    // the prompt: two rows, up to PROMPT_MAX for a longer draft; past that it scrolls inside them
+    // the prompt: two rows always; a longer draft scrolls inside them (#196)
     let tx = 4;
     let tw = (w - tx - 3) as usize;
     pen.put(2, PROMPT_Y, PROMPT, pal.accent, true, false);
@@ -424,8 +421,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         app.input.clone()
     };
     let (rows, (cr, cc)) = draft_rows(&shown, app.cursor, tw);
-    let n = rows.len().clamp(2, PROMPT_MAX);
-    let grow = (n - 2) as u16;
+    let n = 2;
     let top = cr.saturating_sub(n - 1).min(rows.len().saturating_sub(n));
     drawn.prompt = (PROMPT_Y, PROMPT_Y + n as u16 - 1);
     if app.input.is_empty() && app.mode == Mode::Normal {
@@ -443,34 +439,12 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     }
     drawn.cursor = (tx + cc as u16, PROMPT_Y + (cr - top) as u16);
 
-    // the file attached, for the next question alone, and its Remove
-    if let Some(a) = &app.attachment {
-        let name = cut(a.rsplit('/').next().unwrap_or(""), (w / 3) as usize);
-        let ay = ATTACH_Y + grow;
-        let x = pen.put(tx, ay, &name, pal.fg, false, false);
-        let x0 = x + 2;
-        let e = pen.control(x0, ay, "Remove", app.chip_focus == Some(4), false, false);
-        drawn.chips.push((x0, e, ay, 4));
-        let said = "Text or Markdown, next question only";
-        let said = if e + 3 + cells(said) as u16 <= w - 2 { said } else { "next question only" };
-        if e + 3 + cells(said) as u16 <= w - 2 {
-            pen.put(w - 2 - cells(said) as u16, ay, said, pal.muted, false, false);
-        }
-    }
-
-    // what a key does now; a row lower when a file is attached, so air stays between them
-    let shift = (if app.attachment.is_some() { 2 } else { 0 }) + grow;
-    let hint_y = HINT_Y + shift;
-    let target = app.target_label();
-    if let Some(t) = &target {
-        pen.put(2, hint_y + 2, &cut_words(t, (w - 4) as usize), pal.muted, false, false);
-    }
-    let shift = shift + if target.is_some() { 2 } else { 0 };
-    reply_row(app, &mut pen, hint_y + 1, &mut drawn);
+    let hint_y = HINT_Y;
+    reply_row(app, &mut pen, REPLY_Y, &mut drawn);
 
     // the content first: a preview's text decides the pages its key row offers
     let bottom = h - BOTTOM;
-    let content_y = CONTENT_Y + shift;
+    let content_y = CONTENT_Y;
     if let Some((reel, since)) = app.motion {
         // a transition: the content area is its, in its middle (main.rs draws it)
         let (x, y, w, h) = (2, content_y, pen.w.saturating_sub(4), bottom.saturating_sub(content_y));
@@ -530,6 +504,15 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     }
     let mut x = 2;
     for (t, key) in hint {
+        // still too wide (a provider's long question): cut at the window's edge, the words at a word, never a key
+        // drawn in part (#196)
+        let need = cells(&t) as u16 + if key { 2 } else { 0 };
+        if x + need > w.saturating_sub(2) {
+            if !key {
+                pen.put(x, hint_y, &cut_words(&t, w.saturating_sub(x + 2) as usize), pal.muted, false, false);
+            }
+            break;
+        }
         let start = x;
         x = if key {
             pen.chip(x, hint_y, &t, false)
@@ -592,9 +575,26 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
             x = pen.control(x, y, &name, false, reads, !reads) + 1;
         }
     } else if chips.contains(&0) {
-        let e = pen.control(x, y, "Attach", app.chip_focus == Some(0), app.attachment.is_some(), false);
+        // the file attached is named where Attach was, in the accent, with its Remove: the footer, never a row that
+        // pushes the list down (#196)
+        let name = app.attachment.as_deref().map(|a| cut(a.rsplit('/').next().unwrap_or(""), (w / 4) as usize));
+        let e = pen.control(x, y, name.as_deref().unwrap_or("Attach"), app.chip_focus == Some(0), name.is_some(), false);
         drawn.chips.push((x, e, y, 0));
         x = e + 1;
+    }
+    if chips.contains(&4) {
+        let e = pen.control(x, y, "Remove", app.chip_focus == Some(4), false, false);
+        drawn.chips.push((x, e, y, 4));
+        x = e + 1;
+    }
+    // the row the words are for, a muted note in the room left (#196)
+    if let Some(t) = app.target_label() {
+        let room = w.saturating_sub(x + mic_w + 4) as usize;
+        let model = if app.cfg.model && app.model_name.is_some() { 14 } else { 0 };
+        if room > model + 8 {
+            pen.put(x + 1, y, &cut_words(&t, room - model), pal_muted(pen), false, false);
+            x += cells(&cut_words(&t, room - model)) as u16 + 2;
+        }
     }
     if app.cfg.model && app.model_name.is_some() {
         let room = (w.saturating_sub(x + mic_w + 6)) as usize;
@@ -673,11 +673,6 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
     let w = pen.w;
     let mut arrows = None;
     match it {
-        Item::Ask => {
-            let x = pen.put(2, y, "Ask spark", pal.fg, false, lit);
-            let words = app.input.trim().replace('\n', " ");
-            pen.put(x + 2, y, &cut_words(&words, w.saturating_sub(x + 5) as usize), pal.muted, false, lit);
-        }
         Item::Heading(h) => {
             pen.put(2, y, h, pal.muted, false, false);
         }
@@ -1221,6 +1216,19 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         pen.put(6, y, &format!("{} more", below), pal.muted, false, false);
     }
     let (widths, right) = widths(app, &items);
+    // a wide list ends where its words end (#141): its band, its arrows; both held while the view stays (#196)
+    let end = if wide(pen.w) {
+        list_end(
+            app,
+            &items[..n],
+            &widths,
+            items.iter().any(|it| row_of(app, it).is_some_and(|r| r.swatch.is_some())),
+        )
+        .clamp(WIDTH, pen.w)
+    } else {
+        pen.w
+    };
+    let (widths, end) = if app.searching() { (widths, end) } else { app.held_columns(widths, end) };
     // found from the home, each group lines up its own columns: a note's time is no file's size (#169)
     let mut parts: Vec<(usize, Vec<usize>, Vec<bool>)> = vec![];
     if app.searching() {
@@ -1240,9 +1248,8 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         None => (widths.clone(), right.clone()),
     };
     let samples = items.iter().any(|it| row_of(app, it).is_some_and(|r| r.swatch.is_some()));
-    // a wide list ends where its words end (#141): its band, its arrows
     if wide(pen.w) {
-        pen.right = list_end(app, &items[..n], &widths, samples).clamp(WIDTH, pen.w);
+        pen.right = end.min(pen.w);
     }
     // a group where any row carries a chip keeps the chip's column for every row, so their columns line up
     let chip_groups: Vec<Option<String>> = items
@@ -1643,6 +1650,7 @@ fn month(app: &App, pen: &mut Pen, x0: u16, top: u16, bottom: u16, k: i32) -> Op
         pen.put(x0 + i as u16 * 4, y, d, pal.muted, false, false);
     }
     y += 1;
+    let end = (y + 6).min(bottom);
     for wk in weeks_from(yr, mo, app.monday_first) {
         if y >= bottom {
             break;
@@ -1661,7 +1669,8 @@ fn month(app: &App, pen: &mut Pen, x0: u16, top: u16, bottom: u16, k: i32) -> Op
         }
         y += 1;
     }
-    Some(y)
+    // six weeks' room whatever the month: Left and Right never move what is under it (#196)
+    Some(end.max(y))
 }
 
 /// A key's sentence up to its first comma, colon or semicolon, with no period: the part the about

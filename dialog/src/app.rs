@@ -326,6 +326,19 @@ pub fn section_name(label: &str) -> String {
     }
 }
 
+/// A helper's error line as the reply row says it: its own words, but a raw error of the system (a program not
+/// found, a pipe broken) is said plainly (#196).
+fn plain_words(line: Option<&str>, fallback: &str) -> String {
+    match line.map(str::trim).filter(|l| !l.is_empty()) {
+        Some(l) if l.contains("No such file or directory") || l.contains("os error 2)") => {
+            format!("{}: spark is not installed here", fallback)
+        }
+        Some(l) if l.contains("(os error") => format!("{}: the system refused to run it", fallback),
+        Some(l) => l.to_string(),
+        None => fallback.to_string(),
+    }
+}
+
 /// How talk works, as the person last chose it: click to talk unless they turned it off.
 pub fn talk_kept() -> Talk {
     let said = state_dir().and_then(|d| std::fs::read_to_string(d.join("talk")).ok()).unwrap_or_default();
@@ -595,8 +608,6 @@ impl Default for Config {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item {
-    /// The words typed, as a request to spark: the first row while words are typed, lit when no name matches them.
-    Ask,
     Heading(String),
     Blank,
     Row(usize, usize),
@@ -748,6 +759,9 @@ pub struct App {
     /// When the words typed at Home last changed, until the providers are asked about them, and the words asked.
     pub search_at: Option<Instant>,
     pub search_sent: String,
+    /// The list's column widths and its right edge as last drawn, and the view they are for: held while the view
+    /// stays, so a longer name or state moves no column back and forth (#196). ui.rs keeps it as it draws.
+    cols_held: std::cell::RefCell<Option<(View, Vec<usize>, u16)>>,
 }
 
 impl App {
@@ -832,7 +846,26 @@ impl App {
             hits_for: String::new(),
             search_at: None,
             search_sent: String::new(),
+            cols_held: std::cell::RefCell::new(None),
         }
+    }
+
+    /// A list's column widths and right edge, never narrower than they were drawn in this view: they grow once for a
+    /// longer value and then stand still (#196).
+    pub fn held_columns(&self, widths: Vec<usize>, right: u16) -> (Vec<usize>, u16) {
+        let mut held = self.cols_held.borrow_mut();
+        let (w, r) = match held.as_ref().filter(|(v, _, _)| *v == self.view) {
+            Some((_, old, r0)) => {
+                let n = widths.len().max(old.len());
+                let w = (0..n)
+                    .map(|k| widths.get(k).copied().unwrap_or(0).max(old.get(k).copied().unwrap_or(0)))
+                    .collect();
+                (w, right.max(*r0))
+            }
+            None => (widths, right),
+        };
+        *held = Some((self.view.clone(), w.clone(), r));
+        (w, r)
     }
 
     pub fn say(&mut self, sign: Sign, text: &str) {
@@ -1558,17 +1591,13 @@ impl App {
         out.extend(rows);
     }
 
-    /// The content area's items, in order: the exchange (the newest turn first, the undo at the end of
-    /// its result), then the view's list.
+    /// The content area's items, in order: at Home the exchange (the newest turn first), then the view's list.
     pub fn items(&self) -> Vec<Item> {
         let mut out = vec![];
-        if self.view != View::About {
+        if self.view == View::Home {
             self.said(&mut out);
         }
         let mut list = vec![];
-        if self.asks_spark() {
-            list.push(Item::Ask);
-        }
         match &self.view {
             View::Models => {
                 list.push(Item::Heading("where it runs".into()));
@@ -1835,7 +1864,10 @@ impl App {
             return;
         }
         if !self.list_keys {
-            self.sel = self.best();
+            match self.best() {
+                Some(i) => self.sel = i,
+                None => (self.in_list, self.sel) = (false, 0),
+            }
             return;
         }
         let Some((it, key)) = before else { return };
@@ -1927,22 +1959,13 @@ impl App {
             Item::Model(i) => self.models.get(*i).map(|(_, s)| s == "serving" || s == "downloaded").unwrap_or(false),
             Item::TalkOpt(_) => self.voice_on,
             Item::Hit(i) => self.hits.get(*i).is_some_and(|(_, r)| Self::pickable(r)),
-            Item::Ask | Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::StepOf(_) | Item::Here | Item::More(..) => true,
+            Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::StepOf(_) | Item::Here | Item::More(..) => true,
             _ => false,
         }
     }
 
     pub fn picks(&self) -> Vec<Item> {
         self.items().into_iter().filter(|i| self.pickable_item(i)).collect()
-    }
-
-    /// Words are typed where a list is shown, in no question: they can go to spark as a request.
-    pub fn asks_spark(&self) -> bool {
-        self.mode == Mode::Normal
-            && !self.query().trim().is_empty()
-            && self.attaching.is_none()
-            && self.picking.is_none()
-            && matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..) | View::Found(..))
     }
 
     /// The name a pick goes by, as typed words are matched against it.
@@ -1980,16 +2003,15 @@ impl App {
 
     /// The pick lit as words are typed: the one they name best; the request when they name none (#28),
     /// wherever it sits: the exchange's undo comes before it and runs only when picked (#39).
-    pub fn best(&self) -> usize {
-        let picks = self.picks();
+    pub fn best(&self) -> Option<usize> {
         let mut best: Option<(u8, usize)> = None;
-        for (i, it) in picks.iter().enumerate() {
+        for (i, it) in self.picks().iter().enumerate() {
             let sc = self.name_score(it);
             if sc > 0 && best.is_none_or(|(b, _)| sc > b) {
                 best = Some((sc, i));
             }
         }
-        best.map(|(_, i)| i).or_else(|| picks.iter().position(|it| *it == Item::Ask)).unwrap_or(0)
+        best.map(|(_, i)| i)
     }
 
     /// The words changed: the lit row follows them; with no words, nothing is lit.
@@ -2000,14 +2022,18 @@ impl App {
             return;
         }
         self.scroll = 0;
-        // Only searchable rows follow typing. Model/connection/voice controls
-        // keep their explicit keyboard selection; a request must not pick one.
-        if self.asks_spark() || (!self.query().trim().is_empty() && self.picks().iter().any(|it| self.name_of(it).is_some())) {
-            self.in_list = true;
-            self.sel = self.best();
-        } else {
-            self.in_list = false;
-            self.sel = 0;
+        // Only searchable rows follow typing: the row the words name best is lit, and words that name no row stay
+        // at the prompt, where Enter asks spark. Model/connection/voice controls keep their explicit keyboard
+        // selection; a request must not pick one.
+        match self.best().filter(|_| !self.query().trim().is_empty()) {
+            Some(i) => {
+                self.in_list = true;
+                self.sel = i;
+            }
+            None => {
+                self.in_list = false;
+                self.sel = 0;
+            }
         }
     }
 
@@ -2833,7 +2859,7 @@ impl App {
                 return;
             }
             self.in_list = true;
-            self.sel = self.best();
+            self.sel = self.best().unwrap_or(0);
         }
         if !self.in_list {
             // the prompt: a place's name alone opens it, a command runs, any other words are a request,
@@ -2868,14 +2894,6 @@ impl App {
         self.sel = 0;
         self.in_list = false;
         match item {
-            Item::Ask => {
-                // words that name no row: a place's name alone opens it (Window, Settings, about), a command
-                // runs, any other words are a request
-                if words.is_empty() {
-                    return;
-                }
-                self.request(&words);
-            }
             Item::StepOf(k) => {
                 // one of the lit row's steps: back to its list, then the step as a pick of its own
                 let (Some(row), View::Steps(p)) = (self.steps_row.clone(), self.view.clone()) else {
@@ -3135,11 +3153,11 @@ impl App {
     /// The controls Tab moves through, in their order on the screen.
     pub fn chips(&self) -> Vec<usize> {
         let mut v = vec![];
-        if self.attachment.is_some() {
-            v.push(4);
-        }
         if self.cfg.plus && self.files().is_some() && self.view != View::Preview {
             v.push(0);
+        }
+        if self.attachment.is_some() {
+            v.push(4);
         }
         if self.cfg.model && self.model_name.is_some() {
             v.push(1);
@@ -3603,15 +3621,16 @@ impl App {
                 },
             }
         }
-        // the words asked something spark answered, or it refused a step: those lines stay, under the words
-        if !answer.is_empty() || !no.is_empty() {
+        // spark's answer and its refusals are the reply row's; an answer longer than that row is kept whole, under
+        // the words that asked, at Home, never over a section's list (#196)
+        if !no.is_empty() {
+            self.refuse(&no.join("; "));
+        } else if !answer.is_empty() {
+            self.reply(Mark::Note, &answer);
+        }
+        if !answer.is_empty() && (!no.is_empty() || answer.contains('\n') || cells(&answer) + 6 > self.col_w() as usize) {
             self.say(Sign::You, &words);
-            if !answer.is_empty() {
-                self.say(Sign::Says, &answer);
-            }
-            for t in &no {
-                self.say(Sign::Refused, t);
-            }
+            self.say(Sign::Says, &answer);
         }
         if steps.is_empty() {
             if answer.is_empty() {
@@ -3652,6 +3671,10 @@ impl App {
         self.set_input(text.clone());
         self.in_list = false;
         self.sel = 0;
+        // the box is two rows: the reply row names every command waiting in it, unless it says what was refused
+        if self.reply.as_ref().is_none_or(|r| r.mark != Mark::Refused) {
+            self.reply(Mark::Note, &format!("run: {}", lines.join("; ")));
+        }
         self.staged = Some(Staged { text, steps, draft });
     }
 
@@ -4042,7 +4065,7 @@ impl App {
                         Ok(_) => self.plan(&e),
                         Err(_) => {
                             self.give_back();
-                            self.refuse(e.lines().next().unwrap_or("spark did not answer"))
+                            self.refuse(&plain_words(e.lines().next(), "spark did not answer"))
                         }
                     }
                 }
@@ -4079,7 +4102,7 @@ impl App {
                             vec![self.cfg.spark.clone(), "model".into(), "list".into(), "--porcelain".into()],
                         ));
                     }
-                    Err(e) => self.refuse(e.lines().last().unwrap_or("the model stays")),
+                    Err(e) => self.refuse(&plain_words(e.lines().last(), "the model stays")),
                 }
             }
             Helper::Listen => {
@@ -4103,7 +4126,7 @@ impl App {
                     }
                     Ok(_) => {}
                     Err(_) if cancelled => {}
-                    Err(e) => self.refuse(e.lines().next().filter(|l| !l.trim().is_empty()).unwrap_or("nothing heard")),
+                    Err(e) => self.refuse(&plain_words(e.lines().next(), "nothing heard")),
                 }
             }
             Helper::Voice => {
@@ -4331,7 +4354,6 @@ impl App {
                 }
             }
             let word = match &lit {
-                Some(Item::Ask) => "Ask",
                 Some(Item::Model(_)) | Some(Item::TalkOpt(_)) => "Choose",
                 Some(Item::Here) => "Here",
                 Some(Item::StepOf(k)) => self.step_call(*k).map(|c| verb_of(&c.name)).unwrap_or("Use"),
@@ -4342,10 +4364,6 @@ impl App {
                 None => "Open",
             };
             let mut v = key(word, "Enter");
-            if lit == Some(Item::Ask) {
-                v.push(gap());
-                v.extend(key("New line", "Shift+Enter"));
-            }
             let free = self.picking.is_none() && self.attaching.is_none();
             // a row with steps of its own: the right arrow opens them (#112), named actions (#127)
             if lit.as_ref().and_then(|it| self.row_ref(it)).is_some_and(|r| !r.more.is_empty()) && free {
@@ -4371,8 +4389,8 @@ impl App {
             return v;
         }
         if !self.input.trim().is_empty() {
-            // words where no list is shown (the about, the models): they go to spark as they are
-            let mut v = key("Send", "Enter");
+            // words that light no row: Enter asks spark, as the Ask row once said (#196)
+            let mut v = key("Ask", "Enter");
             v.push(gap());
             v.extend(key("New line", "Shift+Enter"));
             v.extend(esc(esc_word));
