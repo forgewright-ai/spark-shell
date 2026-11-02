@@ -7,6 +7,7 @@
 set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 fixture_python=$(command -v python3)
+sys_timeout=$(command -v timeout || :)   # macOS has none: fresh puts a stand-in on PATH
 # on a Mac the suite builds Terminal.app's profile and prints it, never
 # applying it: the developer's own terminal and profiles stay as they are
 [ "$(uname -s)" != Darwin ] || export SPARK_SHELL_NO_APPLY=1
@@ -61,6 +62,8 @@ fresh() {   # a new throwaway HOME with the stubs in place
     # sway's runtime dir is a login manager's (the desktop tests unset it)
     printf '#!/bin/sh\n[ -n "${TEST_TTY:-}" ] || { echo "not a tty"; exit 1; }\necho "$TEST_TTY"\n' > "$H/.local/bin/tty"
     chmod +x "$H/.local/bin/tty"
+    # sway's waits for a window end at the stubs' own events; where the system has no timeout (macOS), the command alone
+    [ -n "$sys_timeout" ] || { printf '#!/bin/sh\nshift; exec "$@"\n' > "$H/.local/bin/timeout"; chmod +x "$H/.local/bin/timeout"; }
     export XDG_RUNTIME_DIR=$H/run
     PATH=$H/.local/bin:$PATH
 }
@@ -178,13 +181,20 @@ EOF
 #!/bin/sh
 log=${XDG_STATE_HOME:-$HOME/.local/state}/swaymsg.log; mkdir -p "$(dirname "$log")"
 case ${1:-} in
+    -r) # -r -t subscribe -m EVENTS: sway's tick to a new subscriber at once, then a window's new event once an exec comes; with $HOME/no-new-window, the tick alone
+        n=$(grep -c '^exec' "$log" 2>/dev/null) || :   # counted before the tick: the exec may follow it at once
+        echo '{ "first": true, "payload": "" }'
+        [ ! -e "$HOME/no-new-window" ] || exit 0
+        while c=$(grep -c '^exec' "$log" 2>/dev/null) || :; [ "${c:-0}" -le "${n:-0}" ]; do sleep 0.05; done   # a log not made yet counts none
+        echo '{ "change": "new", "container": { "id": 1000 } }' ;;
     -t) case $2 in
             get_version) echo '{"human_readable":"sway-stub"}' ;;
             get_outputs) o1='{"name":"DP-1","active":true,"make":"Fakemake","model":"Fakemodel","serial":"SN0001","rect":{"x":0,"y":0},"current_mode":{"width":2560,"height":1440}}'
                 o2='{"name":"HDMI-A-1","active":true,"make":"Fakemake","model":"Fakemodel","serial":"SN0002","rect":{"x":2560,"y":0},"current_mode":{"width":1920,"height":1080}}'
                 if [ -e "$HOME/two-screens" ]; then echo "[$o2,$o1]"; else echo "[$o1]"; fi ;;
             get_workspaces) echo '[{"num":1},{"num":2}]' ;;
-            get_tree) ws=$(grep -n '^workspace number' "$log" 2>/dev/null | tail -1); from=${ws%%:*}; num=${ws##* }; [ -n "$from" ] || { from=0; num=3; }
+            get_tree) echo tree >> "${log%.log}.trees"   # each count of the windows, for the tests that say none is polled
+                ws=$(grep -n '^workspace number' "$log" 2>/dev/null | tail -1); from=${ws%%:*}; num=${ws##* }; [ -n "$from" ] || { from=0; num=3; }
                 n=$({ if [ "$from" -gt 0 ]; then sed "1,${from}d" "$log"; else cat "$log"; fi; } 2>/dev/null | grep '^exec' | grep -vc 'exec gone' || :); [ -n "$n" ] || n=0; i=0
                 printf '{"type":"root","nodes":[{"type":"workspace","num":%s,"fullscreen_mode":0,"nodes":[' "$num"
                 # with $HOME/fullscreen: a fullscreen window (77) on the workspace, and the panel floating under it with the pid the test wrote
@@ -4110,12 +4120,18 @@ STUB
     ans 1 | jq -r '.result.contents[0].text' | jq -e '([.rows[] | select(.text == "tmux")][0] | .group == "system" and (.page | startswith("spark-shell://apps/page/"))) and ([.rows[] | select(.text == "firefox")][0].group == "others") and (.rows[0].text == "terminal" and .rows[0].group == null)' >/dev/null \
         && ans 2 | jq -r '.result.contents[0].text' | jq -e '.lines[0:2] == ["tmux", "A shell with panes, sessions and the status line"] and (.lines | index("group       system")) and (.lines | index("runs in     a terminal")) and (.lines | index("command     tmux"))' >/dev/null \
         && ok "provide apps: each app under the group its desktop entry names (tmux system, one with none others), the terminal first; Space shows an app: its group, where it runs, its command, how it came (#169)" || bad "apps groups" "$(head -c 900 "$H/mcp.out")"
-    rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps terminal 2>&1) || st=$?
+    rm -f "$H/.local/state/swaymsg.log" "$H/.local/state/swaymsg.trees"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps terminal 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'opened a terminal' ] && grep -qx 'exec foot' "$H/.local/state/swaymsg.log" && ok "panel apps terminal: a terminal window, as Super+Return" || bad "apps terminal" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps open GIMP-3.0 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'opened gimp-3.0' ] && grep -q '^exec gimp-3.0' "$H/.local/state/swaymsg.log" && ok "panel apps open NAME: the app opens on the current workspace the way its entry says (any case)" || bad "apps open" "st=$st $out $(tail -2 "$H/.local/state/swaymsg.log" 2>&1)"
+    [ ! -e "$H/.local/state/swaymsg.trees" ] && ok "panel apps open and terminal: each ends at sway's event for the new window; no window count is polled (#196)" || bad "apps open poll" "$(wc -l < "$H/.local/state/swaymsg.trees")"
     [ "$(sh "$SH" panel --list | sed -n 3p)" = "$GO apps       gimp-3.0	apps open gimp-3.0" ] && [ "$(sed -n 1p "$journal/recent")" = "apps	open gimp-3.0" ] \
         && ok "recent: the app just opened is the first row of the next list, and the journal's first line" || bad "recent" "$(sh "$SH" panel --list | sed -n 2,4p) | $(cat "$journal/recent")"
+    touch "$HOME/no-new-window"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps open firefox 2>&1) || st=$?; rm -f "$HOME/no-new-window"
+    [ "$st" -eq 0 ] && [ "$out" = 'asked firefox to open; no new window came' ] && ok "panel apps open: an app that maps no window (one open took it as a tab) is said, not refused (#196)" || bad "apps open no window" "st=$st $out"
+    ( export SWAYSOCK=/tmp/x; mcp apps "$(rq 1 resources/read '{"uri":"spark-shell://apps/rows"}')" "$(call 2 apps_open '{"name":"micro"}')" )
+    [ "$(ans 2 | jq -c '.result.structuredContent')" = '{"opened":true}' ] && grep -qx 'exec foot -e micro' "$H/.local/state/swaymsg.log" \
+        && ok "provide apps_open: the app its row names opens, a terminal app inside foot, from the list the gate read; the answer says opened, so the dialog closes (#196)" || bad "provide apps_open" "$(ans 2) $(tail -2 "$H/.local/state/swaymsg.log")"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps open nowhere 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: apps: no app named nowhere here' ] && ok "panel apps open: an app that is not here is refused in one line" || bad "apps open gate" "st=$st $out"
     # undo: a step's inverse is read before the act, kept in the journal, played back newest first
@@ -4254,6 +4270,12 @@ STUB
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window split 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'windows side by side' ] && grep -q '^WINDOWS=split$' "$HOME/.config/spark-shell/config" && grep -q '^workspace_layout default$' "$sway" && grep -qxF '[workspace=__focused__ tiling] layout splith' "$H/.local/state/swaymsg.log" \
         && ok "panel window split: side by side again, workspace_layout default" || bad "window split" "st=$st $out"
+    # one line of the config: sway's file alone is rendered again, and the look is not sent to sway again (#196)
+    mv "$HOME/.config/foot/foot.ini" "$H/foot.ini.keep" 2>/dev/null || :; rm -f "$H/.local/state/swaymsg.log"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window tabs 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -q '^workspace_layout tabbed$' "$sway" && [ ! -e "$HOME/.config/foot/foot.ini" ] && ! grep -q 'client.focused' "$H/.local/state/swaymsg.log" \
+        && ok "panel window tabs: sway's file alone rendered again (foot's not written), nothing of the look sent to sway (#196)" || bad "window tabs one file" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
+    [ ! -e "$H/foot.ini.keep" ] || mv "$H/foot.ini.keep" "$HOME/.config/foot/foot.ini"; SWAYSOCK=/tmp/x sh "$SH" panel window split >/dev/null 2>&1 || :
     st=0; out=$(sh "$SH" panel window sideways 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: sideways is not in the list now' ] && ok "panel window WORD: a way that is not a row is refused" || bad "window refuse" "st=$st $out"
     # the windows open now: a row that puts one in front, a close row, the steps by name; the tree shows a firefox window while $HOME/fullscreen is there
@@ -4271,6 +4293,15 @@ STUB
         && ok "panel window --list: each open window by its name is a row that puts it in front, and a close row; the terminal by what runs in it; the panel's own window not listed" || bad "window rows" "$(cat "$H/win.list")"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window close nothing 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: window: no unique window named nothing is open; select it in Workspace' ] && ok "panel window close NAME: a window that is not open is refused" || bad "window close refuse" "st=$st $out"
+    # a close as the dialog makes it, the rows read first: the windows read once for the call (its check, its name, the
+    # step's), once to see the window gone, then the rows after it as a read reads them (#196)
+    touch "$HOME/fullscreen"; rm -f "$H/.local/state/swaymsg.trees"
+    ( export SWAYSOCK=/tmp/x; mcp window "$(rq 1 resources/read '{"uri":"spark-shell://window/rows"}')" ); _rr=$(grep -c '' "$H/.local/state/swaymsg.trees" 2>/dev/null || :)
+    rm -f "$H/.local/state/swaymsg.log" "$H/.local/state/swaymsg.trees"
+    ( export SWAYSOCK=/tmp/x; mcp window "$(rq 1 resources/read '{"uri":"spark-shell://window/rows"}')" "$(call 2 window_close '{"name":"77"}')" ); _rt=$(grep -c '' "$H/.local/state/swaymsg.trees" 2>/dev/null || :)
+    [ "$(ans 2 | jq -c '.result.structuredContent.effect')" = '{"kind":"window","id":"77","title":"firefox","operation":"close"}' ] && [ ! -e "$HOME/fullscreen" ] \
+        && [ "$_rt" = $((2 * _rr + 2)) ] && grep -qxF '[con_id=77] kill' "$H/.local/state/swaymsg.log" \
+        && ok "provide window_close: the windows read once for the call's check, name and step, once to see the window gone, then the rows (#196)" || bad "provide window_close" "trees=$_rt read=$_rr $(ans 2) $(cat "$H/.local/state/swaymsg.log" 2>&1)"
     rm -f "$HOME/fullscreen" "$HOME/aerc" "$H/win.list"
     printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
     line=$(sh "$SH" bar status --once)
@@ -4607,6 +4638,19 @@ ans 9 | jq -e '.result.tools[] | select(.name == "layout_save") | .annotations.d
     && [ "$(ans 2 | jq -c '.result.structuredContent.undo')" = '{"name":"layout_delete","arguments":{"name":"webdev"}}' ] && [ -f "$HOME/.config/spark-shell/layouts/webdev" ] \
     && [ "$(ans 3 | jq -r '.result.content[0].text')" = 'webdev is a layout already: rename it, or delete it first' ] && [ "$(ans 3 | jq -r '.result.isError')" = true ] \
     && ok "provide layout_save: not destructive, so no yes; a new name is saved with its undo (layout delete); a name in use is refused, nothing written over (#96)" || bad "layout save" "$(cat "$H/mcp.out" "$H/mcp.err")"
+# several windows: the dialog left out, a terminal by the program inside it (a shell when none runs), each app by the
+# name a layout knows it; the apps and the processes read once for them all (#196)
+printf '#!/bin/sh\n[ "$*" = "-eo pid=,ppid=,comm=" ] || exit 1\nprintf "    1     0 init\\n 4242     1 foot\\n 4243  4242 /usr/bin/sleep\\n 4244  4242 sh\\n"\n' > "$H/ls/ps"; chmod +x "$H/ls/ps"   # the processes: a terminal (4242) with a program inside it
+cat > "$H/ls/swaymsg" <<'EOF'
+#!/bin/sh
+case "$*" in "-t get_version") echo '{"human_readable":"sway-stub"}' ;; "-t get_tree") cat "$HOME/ls.tree" ;; *) : ;; esac
+EOF
+printf '{"type":"root","nodes":[{"type":"workspace","num":1,"nodes":[{"type":"con","id":80,"pid":1,"app_id":"Firefox","focused":true},{"type":"con","id":81,"pid":4242,"app_id":"foot"},{"type":"con","id":82,"pid":4245,"app_id":"foot"}],"floating_nodes":[{"type":"floating_con","id":83,"pid":4242,"app_id":"spark-dialog"}]}]}\n' > "$HOME/ls.tree"
+mcp layout "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(call 2 layout_save '{"name":"three"}')"
+[ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'saved three: firefox, sleep, shell' ] \
+    && [ "$(jq -c 'del(.why)' "$HOME/.config/spark-shell/layouts/three")" = '{"words":"three","main":{"app":"firefox"},"side":[{"app":"sleep"},{"app":"shell"}]}' ] \
+    && ok "provide layout_save: three windows saved as a layout knows them (Firefox is firefox, a terminal by the program in it, a shell when none), the dialog left out (#196)" || bad "layout save windows" "$(ans 2) $(cat "$HOME/.config/spark-shell/layouts/three" 2>&1)"
+rm -f "$HOME/ls.tree" "$H/ls/ps" "$HOME/.config/spark-shell/layouts/three"   # the layouts after it are webdev alone
 unset SWAYSOCK; PATH=$_lp
 # every palette: the dialog's quiet words read at 4.5 to 1 on its surface, or as its author's own text where that reads lower (#18)
 _cw=''
@@ -4815,6 +4859,7 @@ if [ "$(uname -s)" = Linux ]; then   # the Linux half (the uname stub): xdg-open
 #!/bin/sh
 case "$*" in "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
     "-t get_tree") if [ -e "$HOME/opened" ]; then echo '{"nodes":[{"pid":1},{"pid":2}]}'; else echo '{"nodes":[{"pid":1}]}'; fi ;;
+    "-r -t subscribe -m "*) echo '{ "first": true, "payload": "" }'; while [ ! -e "$HOME/opened" ]; do sleep 0.05; done; echo '{ "change": "new", "container": { "id": 2 } }' ;;
     "-- exec "*) echo "$*" >> "$HOME/swaymsg.log"; : > "$HOME/opened" ;; *) echo "$*" >> "$HOME/swaymsg.log" ;; esac
 EOF
     printf '#!/bin/sh\n' > "$H/lxo/ed-stub"; chmod +x "$H/lxo/swaymsg" "$H/lxo/ed-stub"; rm -f "$F2/opened" "$F2/swaymsg.log" "$F2/xdg-open.log"
@@ -5597,11 +5642,14 @@ rc=0; out=$(sh "$SH" theme save 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = 'spark-shell theme: save NAME -- a name for this look' ] && ok "theme save (bare) on a palette: a name is asked for in one line" || bad "theme save bare" "rc=$rc $out"
 rc=0; out=$(sh "$SH" theme save nord 2>&1) || rc=$?
 [ "$rc" = 1 ] && [ "$out" = "spark-shell theme: nord is a palette's name -- give the theme another" ] && ok "theme save nord: a palette's name is refused" || bad "theme save palette name" "rc=$rc $out"
+_te=$(cksum < "$HOME/.config/spark/theme.env")
 out=$(sh "$SH" theme save Winter Desk 2>&1)
 [ "$(printf '%s\n' "$out" | sed -n 1p)" = "saved winter-desk ($th_dir/winter-desk) -- spark-shell theme winter-desk brings the look back" ] && [ -f "$th_dir/winter-desk/palette.env" ] && cmp -s "$th_dir/winter-desk/palette.env" "$REPO/themes/nord.env" \
     && grep -qx 'PALETTE=nord' "$th_dir/winter-desk/look.env" && grep -qx "WALLPAPER=$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" "$th_dir/winter-desk/look.env" && grep -qx 'FONT=DejaVu Sans Mono:size=12' "$th_dir/winter-desk/look.env" && grep -qx 'ALPHA=0.85' "$th_dir/winter-desk/look.env" \
     && grep -qx 'THEME=winter-desk' "$cfg" \
     && ok "theme save WORDS: a folder named by the words with the palette and the look, the theme in use now, said in one line" || bad "theme save" "$out $(ls "$th_dir" 2>&1; cat "$th_dir/winter-desk/look.env" 2>&1)"
+[ "$(printf '%s\n' "$out" | grep -c '')" = 1 ] && [ "$_te" = "$(cksum < "$HOME/.config/spark/theme.env")" ] && [ "$(sed -n 1p "$st_dir/theme.history" | cut -f2)" = winter-desk ] \
+    && ok "theme save: the look on the screen is the one kept, so nothing is drawn or written again (theme.env as it was, no terminal repainted); first in the history (#196)" || bad "theme save no apply" "$out"
 out=$(sh "$SH" theme list)
 printf '%s\n' "$out" | grep -q "^Saved themes (folders in $th_dir):$" && printf '%s\n' "$out" | grep -q "^  winter-desk  *nord $SEP $([ "$(uname -s)" = Darwin ] && echo default || echo fjord), current$" && printf '%s\n' "$out" | grep -q '^  nord  *fjord$' && printf '%s\n' "$out" | grep -q '^  tokyonight-night  *skyline$' \
     && printf '%s\n' "$out" | grep -q '^The last looks (spark-shell theme back steps through them):$' && [ "$(printf '%s\n' "$out" | grep -c '^  winter-desk  *today ')" = 1 ] && printf '%s\n' "$out" | grep -q '^  nord  *today ' \

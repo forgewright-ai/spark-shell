@@ -134,6 +134,44 @@ part lands in a pull request of its own.
   one column and no provider asks for two, so the code that laid two
   groups side by side, moved the arrows across them and drew a narrow
   chip goes, about 150 lines. Nothing on screen changes.
+- A step that opens a window (an app, a terminal, a file in the editor,
+  a drive's folder) ends the moment sway maps it: the provider reads
+  sway's window events from before the step. Before, it asked sway for
+  every window four times a second, up to 30 seconds. `apps open` opens
+  from the list of apps its check read, where it read the desktop's
+  apps a second time. In a headless sway on the box, opening micro took
+  about 565 ms and 66 processes, and takes about 260 ms and 49.
+- `layout save` reads the apps a layout knows, and the processes, once
+  for all the windows on the workspace. It read the desktop's apps once
+  a window, and asked for each terminal's program apart. The saved
+  layout is the same. In a headless sway on the box, saving three
+  windows took about 810 ms and 124 processes, and takes about 365 ms
+  and 74.
+- `theme save` no longer puts the look on again. The save ended by
+  applying the theme it had just made: sway's colors and the bar sent
+  again, the wallpaper covered and drawn again, the open terminals
+  repainted, the theme's files written. The look on the screen is the
+  one it keeps, so now the saved theme is only named the one in use,
+  and first in the history; a picture of yours becomes the folder's
+  copy in sway's file, and the screen shows the same picture. In a
+  headless sway on the box a save took 2.3 seconds and 465 processes,
+  and takes 1.0 second and 230.
+- A setting that only sway's file holds (how new windows sit, the idle
+  and lock minutes, the keyboard, the pointer) renders that file alone.
+  Each rendered all seven of the desktop's files and sent the whole
+  look to sway again: its colors, gaps, bar and pointer, and the open
+  terminals repainted. The step still gives a running sway the setting
+  itself. In a headless sway on the box, windows in tabs took 1.5
+  seconds and 242 processes, and takes 0.96 second and 173.
+- Putting a window in front and closing one read the windows less. A
+  call reads them once for its check, the window's name and the step,
+  where each asked sway for them again. A focus is confirmed by one
+  read, since sway puts the window in front before it answers; a close
+  is read as before, every 50 ms for 2 seconds at most, with one jq a
+  read where there were two. In a headless sway on the box a focus
+  reads the windows twice, where it read them four times (33
+  processes, 39 before), and a close three times, where it read them
+  five (47, 53 before).
 
 ## v0.121
 

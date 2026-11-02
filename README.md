@@ -224,10 +224,12 @@ windows' transparency, 0 to 50; the open windows take it at once.
 
 `theme save winter` keeps the look in use as a theme: a folder
 `~/.config/spark-shell/themes/winter/` with the palette, the
-wallpaper's files, the text size, the transparency and the pointer. It
-copies to another machine, and a folder from elsewhere is read the way
-the config is: each value is held to its shape, and a folder with one
-that is not is refused in a line that names it, with nothing changed.
+wallpaper's files, the text size, the transparency and the pointer. The
+look on the screen is the one it keeps, so nothing is drawn again: the
+saved theme is the one in use from then on. It copies to another
+machine, and a folder from elsewhere is read the way the config is: each
+value is held to its shape, and a folder with one that is not is refused
+in a line that names it, with nothing changed.
 The themes folder is yours alone (0700). `theme winter` brings it
 back, `theme list` shows the saved themes, `theme delete winter`
 removes one. The last ten
@@ -1193,13 +1195,17 @@ without the flag keep their existing path. It grants no permission.
 A tool that puts a window in front (an app, a file, a terminal, a
 window, the lock) advertises `_meta["spark-shell/opens"]: true`: the
 dialog clears itself when the call goes and closes when the result says
-`opened`. A call's result may carry `rows`, the section's rows resource
-as the step left them: the dialog shows them in place of a new read,
-and no rows-changed note follows the call. The provider keeps the rows
-it last sent as the allowlist a step is matched against, and its
-watcher counts them as seen. Only the sections the desktop changes
-behind the dialog have a watcher (wifi, bt, out, mic, storage, window,
-notifications): every other one changes only by a step.
+`opened`. The provider says it the moment sway maps the new window: it
+reads sway's window events from before the step, so nothing is polled.
+A window that never comes (an app already open took it as a tab) is said
+after 30 seconds, and the dialog comes back. A call's result may carry
+`rows`, the section's rows resource as the step left them: the dialog
+shows them in place of a new read, and no rows-changed note follows the
+call. The provider keeps the rows it last sent as the allowlist a step
+is matched against, and its watcher counts them as seen. Only the
+sections the desktop changes behind the dialog have a watcher (wifi, bt,
+out, mic, storage, window, notifications): every other one changes only
+by a step.
 
 `reminders_add` uses preparation to resolve relative times to an explicit
 local date and time. A past or unreadable time asks for clarification.
