@@ -6732,7 +6732,8 @@ scrub_text() {   # stdin -> the same lines scrubbed; C0 and DEL alone where ther
 # 0-100, bright up, down or 1-100, alpha 0-1, a|b for a closed set), _tw what the argument says,
 # when a person is asked for it, _tq a secret argument, _th the
 # hints (r read only, d destructive, i idempotent, f free: the argument
-# names no row), _tt the title, the sentence the model may say, and _td
+# names no row, o opens: it puts a window in front, so the dialog steps
+# aside at the click, #196), _tt the title, the sentence the model may say, and _td
 # the words for a person. False for a name that is no tool. The panel's
 # action `=` takes the argument itself as the action (a palette's name).
 tool_spec() {
@@ -6787,11 +6788,11 @@ tool_spec() {
         window_split)      _ts=window _ta=split _th=i _tt='window split' _td='New windows side by side.' ;;
         window_tabs)       _ts=window _ta=tabs _th=i _tt='window tabs' _td='New windows in tabs.' ;;
         window_stacked)    _ts=window _ta=stacked _th=i _tt='window stacked' _td='New windows stacked.' ;;
-        window_focus)      _ts=window _ta=focus _tp=name _tk=string _th=i _tt='window focus NAME' _td='Put one open window in front. Use its native container ID from the row, not its display label.' ;;
+        window_focus)      _ts=window _ta=focus _tp=name _tk=string _th=io _tt='window focus NAME' _td='Put one open window in front. Use its native container ID from the row, not its display label.' ;;
         window_close)      _ts=window _ta=close _tp=name _tk=string _th=d _tt='window close NAME' _td='Close one open window by its native container ID from the row. It cannot be undone.' ;;
-        window_capture)    _ts=window _ta=capture _tp=what _tk='screen|area|window' _th='' _tt='window capture WHAT' _td='A picture of the screen, of an area you drag, or of the window in front, in ~/pictures/screenshots.' ;;
+        window_capture)    _ts=window _ta=capture _tp=what _tk='screen|area|window' _th=o _tt='window capture WHAT' _td='A picture of the screen, of an area you drag, or of the window in front, in ~/pictures/screenshots.' ;;
         notes_new)         _ts=notes _ta=new _th='' _tt='notes new' _td='Open a blank note in the editor for the person to write. No supplied text is saved.' ;;
-        notes_open)        _ts=notes _ta=open _tp=name _tk=string _th='' _tt='notes open NAME' _td='Only open a note in the editor; this does not append or save supplied text. To append text, use notes_append. Use the filename from the row; duplicate titles are not identities.' ;;
+        notes_open)        _ts=notes _ta=open _tp=name _tk=string _th=o _tt='notes open NAME' _td='Only open a note in the editor; this does not append or save supplied text. To append text, use notes_append. Use the filename from the row; duplicate titles are not identities.' ;;
         notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='Create a new note: text is the literal heading, never an invented filename or filename prefix. The result gives the actual filename. To add a body or append to an existing note, use notes_append with that filename and separate text. The legacy NAME: TEXT syntax still appends when NAME already exists.' ;;
         notes_append)      _ts=notes _ta=append _tp=name _tk=string _th=f _tt='notes append NAME' _td='Append a bullet to an existing note. name is its exact filename from the row or a prior result, never a guessed title or a new filename. text is saved verbatim inside the bullet, including spaces and line breaks; a final newline follows. This saves text without opening an editor.' ;;
         notes_find)        _ts=notes _ta=find _tp=words _tk=string _th=rf _tt='notes find WORDS' _td='Which notes say these words, and the line that does.' ;;
@@ -6831,10 +6832,10 @@ tool_spec() {
         notifications_restore) _ts=notifications _ta=restore _th='' _tt='notifications restore' _td='Show the last notification again.' ;;
         storage_mount)     _ts=storage _ta=mount _tp=name _tk=string _th=i _tt='storage mount NAME' _td='Mount a drive that is plugged in.' ;;
         storage_unmount)   _ts=storage _ta=unmount _tp=name _tk=string _th=i _tt='storage unmount NAME' _td='Unmount a drive.' ;;
-        storage_open)      _ts=storage _ta=open _tp=name _tk=string _th=f _tt='storage open NAME' _td='Open a drive in the file manager, mounted first when it is not.' ;;
+        storage_open)      _ts=storage _ta=open _tp=name _tk=string _th=fo _tt='storage open NAME' _td='Open a drive in the file manager, mounted first when it is not.' ;;
         storage_eject)     _ts=storage _ta=eject _tp=name _tk=string _th='' _tt='storage eject NAME' _td='Unmount every part of a drive and power it off, so it can be taken out.' ;;
-        power_lock)        _ts=power _ta=lock _th='' _tt='power lock' _td='Lock the screen.' ;;
-        power_suspend)     _ts=power _ta=suspend _th='' _tt='power suspend' _td='Lock the screen and suspend the machine.' ;;
+        power_lock)        _ts=power _ta=lock _th=o _tt='power lock' _td='Lock the screen.' ;;
+        power_suspend)     _ts=power _ta=suspend _th=o _tt='power suspend' _td='Lock the screen and suspend the machine.' ;;
         power_logout)      _ts=power _ta=logout _th=d _tt='power logout' _td='Log out: every window closes.' ;;
         power_restart)     _ts=power _ta=restart _th=d _tt='power restart' _td='Restart the machine.' ;;
         power_shutdown)    _ts=power _ta=shutdown _th=d _tt='power shutdown' _td='Shut the machine down.' ;;
@@ -6847,17 +6848,17 @@ tool_spec() {
         layout_delete)     _ts=layout _ta=delete _tp=name _tk=string _th=dif _tt='layout delete NAME' _td='Delete a saved layout.' ;;
         layout_rename)     _ts=layout _ta=rename _tp=name _tk=string _te='to:name' _th=f _tt='layout rename NAME' _td='Give a saved layout a new name.' ;;
         layout_back)       _ts=layout _ta=back _th=f _tt='layout back' _td='The layout before this one, opened again.' ;;
-        apps_open)         _ts=apps _ta=open _tp=name _tk=string _th='' _tt='apps open NAME' _td='Open an app on this workspace.' ;;
-        apps_terminal)     _ts=apps _ta=terminal _th='' _tt='apps terminal' _td='Open a terminal window.' ;;
+        apps_open)         _ts=apps _ta=open _tp=name _tk=string _th=o _tt='apps open NAME' _td='Open an app on this workspace.' ;;
+        apps_terminal)     _ts=apps _ta=terminal _th=o _tt='apps terminal' _td='Open a terminal window.' ;;
         about_open)        _ts=about _ta=open _th=ri _tt='about' _td='The version, the keys, the licence and the address.' ;;
         undo_all)          _ts=undo _ta=all _th='' _tt='undo' _td='Take the last thing done back.' ;;
-        files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=if _tt='files browse PATH' _td='Open a folder in the system file manager, for anything beyond the steps here. path is a row'"'"'s own path, exactly as written.' ;;
-        files_open)        _ts=files _ta=open _tp=path _tk=path _th=if _tt='files open PATH' _td='Open a file with the app that opens its kind. path is a row'"'"'s own path, exactly as written.' ;;
+        files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=ifo _tt='files browse PATH' _td='Open a folder in the system file manager, for anything beyond the steps here. path is a row'"'"'s own path, exactly as written.' ;;
+        files_open)        _ts=files _ta=open _tp=path _tk=path _th=ifo _tt='files open PATH' _td='Open a file with the app that opens its kind. path is a row'"'"'s own path, exactly as written.' ;;
         files_show)        _ts=files _ta=show _tp=path _tk=path _th=rif _tt='files show PATH' _td='The first lines of a text file. path is a row'"'"'s own path, exactly as written.' ;;
         files_play)        _ts=files _ta=play _tp=path _tk=path _te='at:seconds x:pixels y:pixels w:pixels h:pixels' _th='' _tt='files play PATH' _td='Play a sound here, with no window, from at seconds (the start when none), until it ends or files stop; a video over the box x, y, w, h of the dialog the preview drew it in. path is a row'"'"'s own path, exactly as written.' ;;
         files_stop)        _ts=files _ta=stop _th=i _tt='files stop' _td='Stop the sound files play started.' ;;
         files_attach)      _ts=files _ta=attach _tp=path _tk=path _th=rif _tt='files attach PATH' _td='A text file to ask spark about, with the next words. path is a row'"'"'s own path, exactly as written.' ;;
-        files_reveal)      _ts=files _ta=reveal _tp=path _tk=path _th=if _tt='files reveal PATH' _td='Show a file or folder in the system file manager, its folder opened. path is a row'"'"'s own path, exactly as written.' ;;
+        files_reveal)      _ts=files _ta=reveal _tp=path _tk=path _th=ifo _tt='files reveal PATH' _td='Show a file or folder in the system file manager, its folder opened. path is a row'"'"'s own path, exactly as written.' ;;
         files_rename)      _ts=files _ta=rename _tp=path _tk=path _te='name:filename' _th='' _tt='files rename PATH' _td='Give a file or folder a new name, in its folder. path is a row'"'"'s own path, exactly as written; name the new name alone, no folder in it. Undo puts the old name back.' ;;
         files_move)        _ts=files _ta=move _tp=path _tk=path _te='to:path' _th='' _tt='files move PATH' _td='Move a file or folder into another folder. path and to are rows'"'"' own paths, exactly as written; to is a folder. Undo moves it back.' ;;
         files_copy)        _ts=files _ta=copy _tp=path _tk=path _te='to:path' _th='' _tt='files copy PATH' _td='Copy a file or folder into another folder. path and to are rows'"'"' own paths, exactly as written; to is a folder. Undo trashes the copy.' ;;
@@ -6915,6 +6916,7 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
             palette: {type: "object", additionalProperties: {type: "string"}}, transitions: {type: "string"}},
             required: (if $n == "notes_add" or $n == "notes_append" or ($n | startswith("reminders_")) or ($n | test("^(out|mic)_(level|adjust|mute|unmute)$")) then ["receipt", "effect"] elif $n == "window_focus" or $n == "window_close" then ["effect"] else [] end), additionalProperties: false},
          annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}
+         | if ($h | contains("o")) then ._meta = {"spark-shell/opens": true} else . end
          | if $n == "notes_append" then .inputSchema = {type:"object", properties:{name:{type:"string", minLength:1, maxLength:255, description:"Exact existing Markdown filename"}, text:{type:"string", minLength:1, maxLength:16384, contentMediaType:"text/plain", description:"Text to append; spaces and line breaks are preserved"}}, required:["name","text"], additionalProperties:false} else . end
          | if $n == "notes_rename" then .inputSchema = {type:"object", properties:{name:{type:"string", minLength:1, maxLength:255, description:"Exact existing Markdown filename"}, to:{type:"string", minLength:1, maxLength:255, description:"the new title"}}, required:["name","to"], additionalProperties:false} else . end'
 }

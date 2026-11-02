@@ -62,7 +62,10 @@ def main(binary):
     def themed():
         with open(cfg) as f:
             return "THEME=nord" in f.read()
-    ok(read_until(lambda: themed() and "theme nord" in text() and "nord is on" in text(), 15), "Enter sets the palette: the turn is the command, then the reply (#53)", text()[-400:])
+    ok(read_until(themed, 15), "Enter on the palette the words found keeps it (#196: C)", text()[-400:])
+    time.sleep(0.5)
+    read_until(lambda: False, 0.5)
+    ok("nord is on" not in text() and "\u276f theme nord" not in text(), "a pick says nothing: no command above the list, no receipt (#196)", text()[-400:])
     audit = os.path.join(home, ".local/state/spark-shell/audit")
     rec = open(audit).read() if os.path.exists(audit) else ""
     ok(rec.count("\n") == 1 and "\ttheme\ttheme_palette\t" in rec and "nord" not in rec and (os.stat(audit).st_mode & 0o777) == 0o600,

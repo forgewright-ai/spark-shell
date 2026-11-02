@@ -100,6 +100,7 @@ fn a_dead_or_unready_provider_is_not_offered_and_the_files_are() {
             schema: json!({"type": "object", "properties": {}}),
             read_only: true,
             destructive: false,
+            opens: false,
         }];
     }
     app.providers[2].dead = Some("gone".into());
@@ -258,7 +259,10 @@ fn the_words_come_back_when_spark_does_not_answer() {
     app.helper(Helper::Want(serial), Err("spark did not answer within 75 seconds".into()));
     assert_eq!(app.input, "make it quieter");
     assert!(app.pending.is_none());
-    assert!(app.exchange.iter().any(|l| l.text.contains("did not answer")));
+    assert!(
+        app.reply.as_ref().is_some_and(|r| r.text.contains("did not answer")),
+        "the refusal is the reply row's"
+    );
 }
 
 #[test]
@@ -277,11 +281,7 @@ fn an_answer_is_said_in_place_and_nothing_to_do_is_one_line() {
     app.enter();
     let (serial, _, _) = request(&app);
     app.helper(Helper::Want(serial), Ok(json!({"answer": "", "steps": [], "refused": []}).to_string()));
-    assert!(
-        app.exchange.last().is_some_and(|l| l.text.contains("nothing to do")),
-        "{:?}",
-        app.exchange.last().map(|l| l.text.clone())
-    );
+    assert!(app.reply.as_ref().is_some_and(|r| r.text.contains("nothing to do")), "{:?}", app.reply);
     assert_eq!(app.input, "fly me to the moon", "the words come back to be said again");
 }
 
@@ -313,9 +313,8 @@ fn a_proposal_with_several_fields_shows_each_before_enter() {
     let display = &app.staged.as_ref().unwrap().text;
     assert!(display.contains("level: 30") && display.contains("balance: 70"), "{}", display);
     assert!(calls.lock().unwrap().is_empty());
-    // run, the turn reads the fields on one line, parted by spaces: never "levelbalance" (#112's proof)
-    app.enter();
-    let said = app.exchange.iter().map(|l| l.text.clone()).collect::<Vec<_>>().join("|");
+    // the reply row reads a text of several lines on one line, parted by spaces: never "levelbalance" (#112's proof)
+    let said = spark_dialog::reply::Reply::new(spark_dialog::reply::Mark::Done, display).text;
     assert!(said.contains(" level: 30") && said.contains(" balance: 70"), "{}", said);
 }
 
@@ -575,4 +574,22 @@ fn a_step_with_a_path_no_row_holds_is_refused_and_a_rows_own_path_passes() {
         app.staged,
         app.exchange
     );
+}
+
+#[test]
+fn a_plan_that_comes_while_the_prompt_asks_waits_for_the_question() {
+    // the review's G: commands spark planned never take the box where a yes was being typed
+    let (mut app, _, calls) = started(false);
+    type_words(&mut app, "make it quieter");
+    app.enter();
+    let (serial, _, _) = request(&app);
+    app.mode = Mode::Confirm(app.commands("out level 20").unwrap().remove(0));
+    app.stash = Some(String::new());
+    type_words(&mut app, "ye");
+    propose(&mut app, serial, json!([{"name": "out_level", "arguments": {"level": 10}}]));
+    assert_eq!(app.input, "ye", "the yes being typed stays");
+    assert!(matches!(app.mode, Mode::Confirm(_)));
+    app.escape();
+    assert!(app.staged_now(), "the question let go, the commands are in the box: {:?}", app.input);
+    assert!(calls.lock().unwrap().is_empty(), "and nothing ran");
 }

@@ -7,8 +7,9 @@ use common::palette;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use serde_json::json;
-use spark_dialog::app::{App, Config, Line, Mode, Provider, Sign, Staged, Step, Toast, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
+use spark_dialog::app::{App, Config, Line, Mode, Provider, Sign, Staged, Step, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
 use spark_dialog::model;
+use spark_dialog::reply::{Mark, Reply};
 
 const CLOCK: &str = "Sun 18 Oct \u{b7} 12:04";
 
@@ -214,32 +215,13 @@ fn a_two_line_draft_and_a_file_for_the_next_question() {
 }
 
 #[test]
-fn a_section_with_its_groups_and_a_steps_toast() {
-    // #133: a step's receipt is the toast at the content's bottom, Undo and the x at its end; its lines are no turn
+fn a_section_with_its_groups_and_a_click_left_an_undo() {
+    // #196: a click says nothing; the step it ran left an undo, so the reply row under the keys holds Undo alone,
+    // and the list starts where it always does
     let mut app = base();
     app.view = View::Section(0);
     app.came_from = vec![View::Home];
-    app.exchange = vec![
-        Line {
-            sign: Sign::You,
-            text: "window close aerc".into(),
-            undo: false,
-            step: true,
-        },
-        Line {
-            sign: Sign::Done,
-            text: "aerc closed".into(),
-            undo: true,
-            step: true,
-        },
-    ];
-    app.toast = Some(Toast {
-        sign: Sign::Done,
-        text: "aerc closed".into(),
-        undo: true,
-        view: View::Section(0),
-        at: std::time::Instant::now(),
-    });
+    app.reply = Some(Reply::undo_only());
     app.undo = Some(Step {
         prov: 0,
         call: model::Call {
@@ -251,39 +233,24 @@ fn a_section_with_its_groups_and_a_steps_toast() {
         },
         who: Who::Undo,
         line: "undo aerc".into(),
+        typed: false,
     });
     render(&app, "section");
 }
 
 #[test]
-fn a_turn_is_the_question_then_its_answer_and_a_step_is_its_toast() {
-    // #53: a question's turn is the words and the answer, the newest first; a step's receipt is the toast,
-    // Undo in it, never a turn (#133)
+fn a_question_is_its_turn_and_a_typed_step_its_reply() {
+    // #53: a question's turn is the words and the answer; a typed step's receipt is the reply row, Undo at
+    // its end, never a turn (#196)
     let mut app = full();
     app.exchange = vec![
         Line {
             sign: Sign::You,
-            text: "theme gruvbox-dark".into(),
-            undo: false,
-            step: true,
-        },
-        Line {
-            sign: Sign::Done,
-            text: "gruvbox-dark is on".into(),
-            undo: true,
-            step: true,
-        },
-        Line {
-            sign: Sign::You,
             text: "is firefox open?".into(),
-            undo: false,
-            step: false,
         },
         Line {
             sign: Sign::Says,
             text: "No. Firefox is installed, and no window of it is open now.".into(),
-            undo: false,
-            step: false,
         },
     ];
     app.undo = Some(Step {
@@ -297,14 +264,11 @@ fn a_turn_is_the_question_then_its_answer_and_a_step_is_its_toast() {
         },
         who: Who::Undo,
         line: "undo theme gruvbox-dark".into(),
+        typed: false,
     });
-    app.toast = Some(Toast {
-        sign: Sign::Done,
-        text: "gruvbox-dark is on".into(),
-        undo: true,
-        view: View::Home,
-        at: std::time::Instant::now(),
-    });
+    let mut r = Reply::new(Mark::Done, "gruvbox-dark is on");
+    r.undo = true;
+    app.reply = Some(r);
     app.in_list = true;
     app.sel = 0;
     render(&app, "turn");
@@ -440,8 +404,6 @@ fn about() {
     app.exchange = vec![Line {
         sign: Sign::You,
         text: "show me about".into(),
-        undo: false,
-        step: false,
     }]; // the about is a page: the exchange is not drawn on it
     render(&app, "about");
 }
@@ -464,6 +426,7 @@ fn a_destructive_step_waits_for_yes() {
         },
         who: Who::Person,
         line: "window close terminal".into(),
+        typed: false,
     });
     app.input = "ye".into();
     app.cursor = 2;
@@ -477,14 +440,10 @@ fn an_answer_wraps_under_its_sign() {
         Line {
             sign: Sign::You,
             text: "what is my address".into(),
-            undo: false,
-            step: false,
         },
         Line {
             sign: Sign::Says,
             text: "192.0.2.10 on the wire and 192.0.2.20 on wifi; the gateway is 192.0.2.1, and the name server the same.".into(),
-            undo: false,
-            step: false,
         },
     ];
     render(&app, "answer");
@@ -523,8 +482,6 @@ fn a_folder_with_its_columns_and_an_attachment() {
     app.exchange = vec![Line {
         sign: Sign::You,
         text: "which of these are big".into(),
-        undo: false,
-        step: false,
     }];
     render(&app, "folder");
 }
@@ -1005,6 +962,7 @@ fn key_chips_preserve_the_typed_confirmation_for_destructive_actions() {
         },
         who: Who::Person,
         line: "close terminal".into(),
+        typed: false,
     });
     let p = palette("tokyonight-night");
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
@@ -1482,9 +1440,9 @@ fn a_click_lights_its_row_and_the_kept_light_lets_go() {
     assert!(app.keep_lit.is_none() && app.sel == 0 && app.in_list, "the click's row, the kept light gone");
 }
 
-/// A receipt has one place, the toast (#154): once it goes, the home shows no Undo of its own; typed undo still works.
+/// A receipt has one place, the reply row (#154, #196): the home shows no Undo of its own; typed undo still works.
 #[test]
-fn the_home_has_no_second_undo_once_the_toast_goes() {
+fn the_home_has_no_second_undo() {
     let mut app = full();
     app.view = View::Home;
     app.undo = Some(Step {
@@ -1498,12 +1456,14 @@ fn the_home_has_no_second_undo_once_the_toast_goes() {
         },
         who: Who::Undo,
         line: "undo the theme".into(),
+        typed: false,
     });
-    app.toast = None;
-    assert!(
-        !app.items().iter().any(|i| matches!(i, spark_dialog::app::Item::Undo(..))),
-        "no Undo row on the home"
-    );
+    app.reply = None;
+    let undo = app
+        .items()
+        .iter()
+        .any(|i| matches!(i, spark_dialog::app::Item::Said(_, t, _) if t.contains("Undo")));
+    assert!(!undo, "no Undo row on the home");
     assert!(app.undo.is_some(), "the undo is still at hand for typed undo");
 }
 

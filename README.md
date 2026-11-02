@@ -759,8 +759,11 @@ the window, down to 36 by 20 cells.
 Super+d opens it. Super+s opens it in spark chat. A click on a bar
 block opens that block's section: the clock opens the Calendar. Esc
 closes it, and so does the key that opened it, pressed again, and so
-does a click on the x in its top right corner. A pick that opens an
-app or a layout closes it: the window is the receipt. A window that is
+does a click on the x in its top right corner. A pick that puts a
+window in front (an app, a file, a terminal, a window, the lock) clears
+the dialog at the click and closes it once the window is there; if the
+step is refused, the dialog comes back with the reason under the keys.
+A window that is
 fullscreen steps aside for the dialog and is fullscreen again when the
 dialog closes with nothing opened.
 
@@ -791,8 +794,8 @@ state; a long one is cut at a word). Then the
 date and the time as your locale writes them, and a small bar while
 spark works on your words: one of the animations spark draws at its
 prompt, a light bouncing while it thinks and a bar growing and shrinking
-while a model loads. Nothing else shows it: a step's answer is its
-receipt, and a page that takes a moment has its waiting animation.
+while a model loads. Nothing else shows it: a step shows on its row,
+and a page that takes a moment has its waiting animation.
 Under it is the prompt, two rows tall:
 type a request, Enter sends it, and Shift+Enter starts a new line (Alt+Enter
 where a terminal cannot tell the two apart). A longer draft scrolls
@@ -920,12 +923,13 @@ its first and its last row.
 - `files`: your home folder, as a file manager of its own. Enter on a
   folder opens it, `..` goes back up, and Esc walks back the way you
   came; a folder lists its folders, then its files with the size and
-  the date. A click lights a file or a folder and a double-click opens
-  it, as Enter does; a long name is cut in its middle, its end and its
-  type kept. A folder of thousands lists about a thousand at a time: its
-  last row, `the next page`, says how many more there are and opens
-  them. Enter on a text file opens it in your editor, in a terminal
-  window; any other file opens with the app for its kind. The right
+  the date. A click on a file or a folder opens it, as Enter does and
+  as one click does everywhere in the dialog; a long name is cut in its
+  middle, its end and its type kept. A folder of thousands lists about
+  a thousand at a time: its last row, `the next page`, says how many
+  more there are and opens them. Enter on a text file opens it in your
+  editor, in a terminal window; any other file opens with the app for
+  its kind. The right
   arrow opens the lit row's actions as a list: open, preview, attach,
   reveal in the system file manager, rename (it asks the name), move to
   a folder and copy to a folder (the folder is picked
@@ -994,13 +998,16 @@ its first and its last row.
   is not. spark reads text: a PDF goes with your words as the text of its
   page, a sound or a picture with none.
 
-Above the list, what you asked spark and what it said, the newest
-first, a blank row between one turn and the next. A step's answer is
-one line at the bottom of the content, its receipt: a check for a step
-done, a cross and the reason for one refused, Undo where the step can
-be taken back, and an x that dismisses it. It goes after ten seconds,
-or when you leave the view it was made in, and its Undo with it; typing
-undo still takes the step back. At the bottom, under a
+A click on a row runs it and says nothing: the row shows that it
+worked, and nothing else on the screen moves. Under the key row, one
+reply row says what came of the last step when there is something to
+say: a cross and the reason for a step refused, a check and the receipt
+for a command you typed, and Undo at the right where the step can be
+taken back (alone, for a click). A new reply takes the place of the
+last; Esc clears it, and so does leaving the view. Typing undo still
+takes the step back. Above the list, what you asked spark and what it
+said, the newest first, a blank row between one turn and the next.
+At the bottom, under a
 rule, the controls in plain text: Attach, the model, and the mic at the
 right. Tab moves through them and the one in focus is lit; Shift+Tab
 goes back.
