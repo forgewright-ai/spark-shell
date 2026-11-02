@@ -394,7 +394,6 @@ mod tests {
             look: None,
             preview: None,
             page: None,
-            film: None,
             key: None,
             wide: None,
         };
@@ -635,7 +634,6 @@ mod path_tests {
                 look: None,
                 preview: None,
                 page: None,
-                film: None,
                 key: None,
                 wide: None,
             }],

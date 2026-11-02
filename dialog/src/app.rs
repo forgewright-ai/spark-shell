@@ -23,7 +23,6 @@ use crate::progress::Work;
 use crate::reply::{Mark, Reply};
 use crate::scrub::{cells, scrub};
 use crate::search;
-use crate::transition::Reel;
 use serde_json::{json, Map, Value};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -578,8 +577,6 @@ pub struct Config {
     pub attach: Vec<String>,
     pub spark_shell: String,
     pub spark: String,
-    /// The folder of the transitions' piece in the palette in use (#122): open, wait and close.
-    pub transitions: Option<String>,
 }
 
 impl Default for Config {
@@ -595,7 +592,6 @@ impl Default for Config {
             attach: vec![],
             spark_shell: String::new(),
             spark: "spark".into(),
-            transitions: None,
         }
     }
 }
@@ -734,12 +730,6 @@ pub struct App {
     /// Values shown before the provider's rows say them: kept over every rows read until a moment after
     /// the last one was set, so a read that left before it never shows the old value again.
     held: Vec<(usize, String, Held, Option<Instant>)>,
-    /// The transition playing, and since when (#122); main.rs moves it on and draws it.
-    pub motion: Option<(Reel, Instant)>,
-    /// The transitions are loaded: Esc that closes the dialog plays the close first.
-    pub films: bool,
-    /// The transitions to read again, a theme step having changed them (#126): a folder, or None for none.
-    pub films_want: Option<Option<String>>,
     /// A text page's count as last drawn: how far right goes (the area decides it, so ui.rs does).
     pub preview_pages: usize,
     /// The rows the providers found for the words in hits_for: the files by name, the notes by what they say (#169).
@@ -823,9 +813,6 @@ impl App {
             setting: None,
             set_next: vec![],
             held: vec![],
-            motion: None,
-            films: false,
-            films_want: None,
             preview_pages: 1,
             steps_row: None,
             hits: vec![],
@@ -903,7 +890,7 @@ impl App {
     }
 
     /// spark works on words: the header's march says so and nothing else does (#139). A step, a page, a place's
-    /// rows show none: a page slow to come has its wait (#122), a step its row (#196).
+    /// rows show none: a step shows on its row (#196).
     pub fn thinking(&self) -> bool {
         self.wait.is_some()
     }
@@ -1340,7 +1327,6 @@ impl App {
                 match preview::page(&want, text).filter(|_| text.len() <= mcp::RESOURCE_MAX) {
                     Some(pg) => pv.shown = Some(pg),
                     None => {
-                        pv.failed = true;
                         let name = pv.row().text.clone();
                         self.refuse(&error.unwrap_or_else(|| format!("{} could not be shown", name)));
                     }
@@ -1444,12 +1430,7 @@ impl App {
                     }
                 }
                 Kind::Folder => self.refuse("the list did not come in time: Esc goes back"),
-                Kind::Page => {
-                    if let Some(pv) = self.preview.as_mut() {
-                        pv.failed = true; // the wait ends with the words (#124)
-                    }
-                    self.refuse("the preview did not come in time: Enter opens the file")
-                }
+                Kind::Page => self.refuse("the preview did not come in time: Enter opens the file"),
                 Kind::Set => self.set_done(idx, id, true, "it did not answer in time", false),
                 Kind::Quiet => {
                     self.quiet.retain(|(q, p, _)| !(*q == id && *p == idx));
@@ -2507,10 +2488,6 @@ impl App {
     /// Esc: a question waiting is answered no (the draft comes back); the focus on a control or the
     /// draft goes first; then back one view; from the first view the dialog closes.
     pub fn escape(&mut self) {
-        if matches!(self.motion, Some((Reel::Close, _))) {
-            self.quit = Some(0);
-            return;
-        }
         self.target = None;
         // Esc clears the reply row, whatever else it does (#196)
         self.reply = None;
@@ -2573,7 +2550,7 @@ impl App {
                     self.exchange.clear();
                     self.sel = 0;
                 } else {
-                    self.close_window();
+                    self.quit = Some(0);
                 }
             }
         }
@@ -3970,17 +3947,6 @@ impl App {
                             self.palette = Some(p.clone());
                         }
                     }
-                    // and its animation now: read again at once, so the next wait and the close are the new look's (#126)
-                    if let Some(t) = sc.get("transitions").and_then(Value::as_str) {
-                        let whole = t.starts_with('/') && !t.split('/').any(|c| c == "..") && !t.chars().any(char::is_control);
-                        if t.is_empty() || whole {
-                            let want = (!t.is_empty()).then(|| t.to_string());
-                            if want != self.cfg.transitions {
-                                self.cfg.transitions = want.clone();
-                                self.films_want = Some(want);
-                            }
-                        }
-                    }
                 }
                 // a window put in front closes the dialog when the steps are done; anything else shows it again
                 if sc.get("opened").and_then(Value::as_bool) == Some(true) {
@@ -4634,8 +4600,8 @@ impl App {
         }
     }
 
-    /// A palette kept (#183): the dialog wears the colors its result carries, and a palette kept brings
-    /// its animation; the theme section's own result only, plain colors only.
+    /// A palette kept (#183): the dialog wears the colors its result carries; the theme section's own result
+    /// only, plain colors only.
     fn wear_theme(&mut self, idx: usize, sc: &Value) {
         if self.providers[idx].label != "theme" {
             return;
@@ -4646,16 +4612,6 @@ impl App {
                     .is_some_and(|s| s.is_empty() || (s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit())))
             }) {
                 self.palette = Some(p.clone());
-            }
-        }
-        if let Some(t) = sc.get("transitions").and_then(Value::as_str) {
-            let whole = t.starts_with('/') && !t.split('/').any(|c| c == "..") && !t.chars().any(char::is_control);
-            if t.is_empty() || whole {
-                let want = (!t.is_empty()).then(|| t.to_string());
-                if want != self.cfg.transitions {
-                    self.cfg.transitions = want.clone();
-                    self.films_want = Some(want);
-                }
             }
         }
     }
@@ -4693,8 +4649,8 @@ impl App {
     }
 
     /// The values held for a provider's rows, over the rows as they came: a step's place, a switch's
-    /// state, the setting kept checked, in the section or in the list shown of it (a wallpaper, an
-    /// animation: one checked, #191). A hold that ran out goes.
+    /// state, the setting kept checked, in the section or in the list shown of it (a wallpaper: one
+    /// checked, #191). A hold that ran out goes.
     fn hold_rows(&mut self, p: usize) {
         let now = Instant::now();
         self.held.retain(|(_, _, _, until)| until.is_none_or(|u| u > now));
@@ -4887,9 +4843,7 @@ impl App {
 
     /// The page on screen asked of its provider; the answer replaces what is shown.
     fn read_page(&mut self) {
-        let Some(pv) = self.preview.as_mut() else { return };
-        pv.asked = Instant::now();
-        pv.failed = false;
+        let Some(pv) = self.preview.as_ref() else { return };
         let (p, uri) = (pv.prov, pv.uri());
         if let Some(s) = self.server(p) {
             s.request("resources/read", json!({"uri": uri}), Kind::Page, mcp::T_READ);
@@ -5160,43 +5114,5 @@ impl App {
             used += need;
         }
         v
-    }
-}
-
-/// The transitions (#122): the dialog opens with one, waits with one, and closes with one.
-impl App {
-    /// The window closes: with the close playing first where the transitions are loaded (Esc, the x).
-    pub fn close_window(&mut self) {
-        if self.films {
-            self.motion = Some((Reel::Close, Instant::now()));
-            self.in_list = false;
-        } else {
-            self.quit = Some(0);
-        }
-    }
-
-    /// A key or a click: the open or the wait stops where it is, and the key does what it does.
-    pub fn cut_motion(&mut self) {
-        if matches!(self.motion, Some((Reel::Open | Reel::Wait, _))) {
-            self.motion = None;
-        }
-    }
-
-    /// The home has its rows: every provider has answered, or stopped.
-    pub fn home_ready(&self) -> bool {
-        self.providers.iter().all(|p| p.ready || p.dead.is_some())
-    }
-
-    /// The transition moved on: the open ends in the wait while the home loads, the wait when it has,
-    /// the close in the window going. `open` and `close` are how long they play.
-    pub fn follow_motion(&mut self, now: Instant, open: u128, close: u128) {
-        let Some((reel, since)) = self.motion else { return };
-        let ms = now.duration_since(since).as_millis();
-        match reel {
-            Reel::Open if ms >= open => self.motion = (!self.home_ready()).then_some((Reel::Wait, now)),
-            Reel::Wait if self.home_ready() || ms >= crate::transition::WAIT_MAX_MS => self.motion = None,
-            Reel::Close if ms >= close => self.quit = Some(0),
-            _ => {}
-        }
     }
 }

@@ -140,7 +140,6 @@ fn theme_rows(cur: &str, drawing: &str, size: &str, transparency: &str) -> Value
         "numbers",
         "symbols",
     ));
-    rows.push(json!({"id": "theme:show:Animation", "sign": "blank", "text": "Animation", "tool": null, "more": [], "columns": ["moon"], "children": "spark-shell://theme/rows/animations", "group": "dialog"}));
     json!({"title": cur, "rows": rows, "short": [], "look_back": {"name": "theme_preview", "arguments": {"name": "off"}}})
 }
 

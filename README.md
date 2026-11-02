@@ -775,27 +775,16 @@ the home and Settings write each state whole. A list ends where its
 words end, its arrows right after them. The preview Space opens takes
 the whole screen.
 
-The dialog opens with a short animation in the middle of its window,
-alone, and then the whole dialog is drawn at once; the window shows only
-once that animation is on it, so nothing comes before it; keys typed
-meanwhile wait for it. It waits with one while the home's rows load, and
-closes with one when Esc or the x closes it: moon, ripple, tide, embers,
-sun or flight, in your palette's own colors (`assets/transitions/`).
-Enter, Esc, an arrow or a click cuts the opening short; letters typed
-meanwhile land at the prompt and it plays on. Esc during the closing
-closes at once. A preview's page that takes a moment to load plays the
-opening, then the waiting one, until it is drawn. Settings > theme picks
-the animation from a list of the pieces, or none for no
-motion (`DIALOG_ANIMATION`, embers to begin with); a palette with no set
-of its own plays none.
+The dialog is drawn whole at once, and the window shows only once its
+first frame is on it, so nothing comes before it; keys typed meanwhile
+wait for it. Esc or the x closes it at once.
 
 The top row says where you are (`home`, a place, a section and its
 state; a long one is cut at a word). Then the
 date and the time as your locale writes them, and a small bar while
 spark works on your words: one of the animations spark draws at its
 prompt, a light bouncing while it thinks and a bar growing and shrinking
-while a model loads. Nothing else shows it: a step shows on its row,
-and a page that takes a moment has its waiting animation.
+while a model loads. Nothing else shows it: a step shows on its row.
 Under it is the prompt, two rows tall:
 type a request, Enter sends it, and Shift+Enter starts a new line (Alt+Enter
 where a terminal cannot tell the two apart). A longer draft scrolls
@@ -858,14 +847,13 @@ its first and its last row.
   with a chip of its colors (its ground, its accent and six hues).
   Enter or a click puts one on the screen, sway, the bar, the open
   terminals and its drawing; lighting one changes nothing. A palette
-  brings its drawing and its animation too. Then custom: your
-  saved themes, `save this look as`, which asks a name, `a theme from
-  a picture`, which opens your home folder, and terminal default
-  colors (palette none). Then the settings in three groups, each
-  control at the right: the screen (the wallpaper, the moving
-  wallpaper, the transparency), the text and the bar (the text size,
-  words on the bar, numbered workspaces), and the dialog (its
-  animation). A switch flips with Enter, Space or a click; a value
+  brings its drawing too. Then custom: your saved themes, `save this
+  look as`, which asks a name, `a theme from a picture`, which opens
+  your home folder, and terminal default colors (palette none). Then
+  the settings in two groups, each control at the right: the screen
+  (the wallpaper, the moving wallpaper, the transparency), and the
+  text and the bar (the text size, words on the bar, numbered
+  workspaces). A switch flips with Enter, Space or a click; a value
   steps with left and right or a click on its arrows, the arrow at the
   end of its range dimmed. Every change shows the moment it is made,
   and nothing else on the screen moves: no line above the list, no
@@ -873,15 +861,9 @@ its first and its last row.
   last ten looks. The wallpaper row opens the wallpaper list: the
   drawings, each with the palette it was drawn for; `a picture` (jpg,
   jpeg, png, webp); `a color`, which asks for a name or `#rrggbb`; and
-  the ground. The animation row opens a list of the pieces and none,
-  the one in use checked and the palette's own said. A drawing, the
-  ground or a piece picked there is checked at once, and the list stays
-  as it is. The
-  pieces are drawn for the shipped palettes only: with a theme from a
-  picture or words, a palette of your own, or none, the animation is
-  none, and its row says so and opens no list. The header names the
-  palette. At the home, Esc clears what spark said; the next Esc
-  closes the dialog.
+  the ground. A drawing or the ground picked there is checked at once,
+  and the list stays as it is. The header names the palette. At the
+  home, Esc clears what spark said; the next Esc closes the dialog.
 - Calendar: the time in large figures, then this month and the next
   side by side, today lit and a day with a reminder in the accent; the
   left and right arrows move the months while nothing is typed. Under
@@ -981,8 +963,7 @@ its first and its last row.
   the preview's, never the file's. A sound shows its title, its artist
   and album, its waveform (the part played in the accent; a click plays
   from there), a spectrum that moves while it plays, its spectrogram, and
-  its rate, bits, channels and format (while a long sound's waveform is
-  drawn, the opening animation plays on in its place); Space plays and
+  its rate, bits, channels and format; Space plays and
   pauses it, left
   and right go 5 seconds back and ahead, Home to its start. A video's
   Space plays it over its frame, in a
@@ -1034,9 +1015,6 @@ goes back.
   and nothing is kept. Holding a key to talk waits for a newer spark.
 
 `DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide the controls.
-`DIALOG_ANIMATION` names the opening and closing animation, or none.
-A palette with no pieces drawn for it plays none, and the one named
-comes back with a shipped palette.
 
 Type in a place, and its list keeps what matches. Type at the home, and
 the list shows what the words name, in groups: places, apps, files,
@@ -1361,26 +1339,6 @@ a light one; `favicon.svg` and `favicon-light.svg` are the same with no
 ground of their own, and `favicon-16.png` to `favicon-26.png`, with
 their `-light` twins, are those at the height of a terminal row.
 The S keeps spark's colors and is never recolored.
-
-The transitions, in `assets/transitions/`: six short animations for the
-home dialog, as GIFs, drawn like the wallpapers. There are six: moon,
-ripple, tide, embers, sun and flight. Each comes as `open.gif`, which
-plays once (about 1.2 seconds) and ends where `wait.gif` begins;
-`wait.gif`, which loops while the dialog loads; and `close.gif`, which
-plays once (about a second) and ends on an empty frame. Each is 180 by
-120, and again at twice that with `@2x` in its name, for each of the 16
-palettes, in `assets/transitions/PIECE/NAME/`. A piece takes its
-palette's own colors (the text, the accent, the muted shade, a few
-terminal colors) and has nothing behind it. A GIF pixel is drawn or
-not, never half, so the soft edges are mixed toward the dialog's
-surface, the color it draws them on. The dialog plays the one
-`DIALOG_ANIMATION` names, in the palette in use.
-`python3 assets/transitions/make.py` draws them all again, with Pillow
-and NumPy. Give it a palette file, such as one in
-`~/.config/spark-shell/themes/`, and it draws the set for that palette.
-`assets/brand-transitions/` keeps the first set, made from the logo's S,
-prompt sign and cursor, with its own `make.py`. It draws the S in each
-palette's colors, so nothing uses it.
 
 Uninstall: `spark-shell off`, then delete `~/.spark-shell`.
 

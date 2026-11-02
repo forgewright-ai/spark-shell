@@ -1559,7 +1559,7 @@ fn a_theme_step_hands_the_dialog_its_new_palette_and_no_other_provider_can() {
                     return send(r);
                 }
                 if v.get("method").and_then(Value::as_str) == Some("tools/call") {
-                    send(result(&v["id"], json!({"content": [], "structuredContent": {"receipt": "theme dracula", "palette": {"HEX_FG": "f8f8f2", "PANEL_BG": "30323e"}, "transitions": "/srv/transitions/embers/dracula"}, "isError": false})));
+                    send(result(&v["id"], json!({"content": [], "structuredContent": {"receipt": "theme dracula", "palette": {"HEX_FG": "f8f8f2", "PANEL_BG": "30323e"}}, "isError": false})));
                 }
             }),
             tx,
@@ -1572,17 +1572,6 @@ fn a_theme_step_hands_the_dialog_its_new_palette_and_no_other_provider_can() {
         assert_eq!(
             app.palette.as_ref().and_then(|p| p.get("PANEL_BG")).and_then(Value::as_str),
             if kept { Some("30323e") } else { None },
-            "{}",
-            label
-        );
-        // and its animation now, read again at once (#126)
-        assert_eq!(
-            app.films_want.clone(),
-            if kept {
-                Some(Some("/srv/transitions/embers/dracula".to_string()))
-            } else {
-                None
-            },
             "{}",
             label
         );
@@ -2467,36 +2456,6 @@ fn settings_stand_in_groups_and_the_home_holds_about_and_power() {
         "Power opens its section: {:?}",
         app.view
     );
-}
-
-#[test]
-fn an_animations_row_names_its_folder_and_nothing_plays_beside_the_list() {
-    // #132: a row's film is a whole folder path, nothing climbing out of it
-    let rows = spark_dialog::model::rows(
-        &json!({"title": "animation", "rows": [
-            {"id": "theme:animation:moon", "sign": "check", "text": "moon", "tool": {"name": "theme_animation", "arguments": {"to": "moon"}}, "more": [], "columns": ["the palette's own"], "children": null, "group": null, "film": "/opt/spark-shell/assets/transitions/moon/nord"},
-            {"id": "theme:animation:tide", "sign": "blank", "text": "tide", "tool": {"name": "theme_animation", "arguments": {"to": "tide"}}, "more": [], "columns": [], "children": null, "group": null, "film": "/opt/x/../etc"},
-            {"id": "theme:animation:none", "sign": "blank", "text": "none", "tool": {"name": "theme_animation", "arguments": {"to": "none"}}, "more": [], "columns": ["no motion"], "children": null, "group": null}
-        ], "short": []})
-        .to_string(),
-    )
-    .unwrap();
-    assert_eq!(rows.rows[0].film.as_deref(), Some("/opt/spark-shell/assets/transitions/moon/nord"));
-    assert_eq!(rows.rows[1].film, None, "a path that climbs out is no film");
-    let (mut app, _rx, _tx) = app_with(&["theme"]);
-    app.size = (spark_dialog::app::WIDTH, spark_dialog::app::HEIGHT);
-    app.view = View::Folder(0, "spark-shell://theme/rows/animations".into());
-    app.folder = Some((0, "spark-shell://theme/rows/animations".into(), rows));
-    app.in_list = true;
-    app.sel = 0;
-    let p = palette("tokyonight-night");
-    let mut b = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, app.size.0, app.size.1));
-    let drawn = spark_dialog::ui::draw(&app, &p, "Sun 18 Oct \u{b7} 12:04", &mut b);
-    // #196: nothing plays beside the list; its rows keep the whole width, lit or not
-    assert!(drawn.preview.is_none() && drawn.film.is_none(), "no picture, no film beside the list");
-    let row = |b: &ratatui::buffer::Buffer, y: u16| (0..b.area.width).map(|x| b[(x, y)].symbol().to_string()).collect::<String>();
-    let lit = drawn.picks.iter().find(|(_, n)| *n == 0).map(|(y, _)| *y).unwrap();
-    assert!(row(&b, lit).contains("the palette's own"), "the row's column whole: {:?}", row(&b, lit));
 }
 
 #[test]

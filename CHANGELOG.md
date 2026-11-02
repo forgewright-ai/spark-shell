@@ -134,6 +134,16 @@ part lands in a pull request of its own.
   one column and no provider asks for two, so the code that laid two
   groups side by side, moved the arrows across them and drew a narrow
   chip goes, about 150 lines. Nothing on screen changes.
+- Cut: the transitions. The dialog no longer opens, waits and closes
+  with an animation: it is drawn whole at once, its window shows with
+  that first frame, and Esc or the x closes it at once. A preview's
+  page that takes a moment leaves its area blank until it comes.
+  Settings > theme loses its Animation row and list, and `spark-shell
+  theme animation`, `DIALOG_ANIMATION` and a saved theme's animation
+  go; a config or a saved theme that still names one is read as
+  before, the line left alone. `assets/transitions/` and
+  `assets/brand-transitions/` go (674 files, 25 MB), and with them the
+  gif crate that read them.
 
 ## v0.121
 

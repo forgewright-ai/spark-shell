@@ -15,7 +15,6 @@ use spark_dialog::app::{App, Config, Helper, Job, View};
 use spark_dialog::mcp::{Incoming, Server};
 use spark_dialog::palette::{slots_here, Palette};
 use spark_dialog::sixel::Image;
-use spark_dialog::transition::{self, Reel};
 use spark_dialog::{preview, sixel, ui};
 use std::io::Write;
 use std::sync::mpsc;
@@ -29,7 +28,7 @@ const USAGE: &str = "spark-dialog -- the spark dialog, one window for every doma
   spark-dialog [--provider \"PATH WORDS\"]... [--home SECTION] [--title TEXT]
                [--close on|off] [--progress on|off]
                [--composer plus,model,talk] [--attach \"txt md\"]
-               [--spark-shell PATH] [--spark PATH] [--transitions DIR]
+               [--spark-shell PATH] [--spark PATH]
   spark-dialog login ...   the login screen on tty1 (spark-dialog login -h)
 ";
 
@@ -40,8 +39,6 @@ enum Ev {
     Mcp(Incoming),
     Tick,
     Helper(Helper, Result<String, String>),
-    /// The transitions' piece, decoded (#122): None when it could not be.
-    Films(Option<transition::Films>),
 }
 
 struct Args {
@@ -88,13 +85,6 @@ fn args() -> Result<Args, String> {
             "--attach" => cfg.attach = val("--attach")?.split_whitespace().map(String::from).collect(),
             "--spark-shell" => cfg.spark_shell = val("--spark-shell")?,
             "--spark" => cfg.spark = val("--spark")?,
-            "--transitions" => {
-                let dir = val("--transitions")?;
-                if !dir.starts_with('/') || dir.split('/').any(|c| c == "..") || dir.chars().any(char::is_control) {
-                    return Err(format!("{}: the transitions are a whole path", dir));
-                }
-                cfg.transitions = Some(dir);
-            }
             other => return Err(format!("no option {}", other)),
         }
     }
@@ -240,35 +230,8 @@ fn image<'a>(file: &str, cache: &'a mut Option<(String, std::time::SystemTime, I
     cache.as_ref().map(|(_, _, i)| i)
 }
 
-/// A transition drawn: its box, which one, its frame.
-type ShownFilm = ((u16, u16, u16, u16), Reel, usize);
-/// A piece beside a list drawn (#132): its box, its folder, the wait or the open, its frame.
 /// A sound's spectrogram in the palette: its file, the palette's ramp, its box, the picture.
 type Tinted = (String, [[u8; 3]; 4], (u32, u32), Image);
-
-/// A piece's three films from its folder; @2x where a cell is twice the usual height. None where one is
-/// missing or no GIF.
-fn decode_films(dir: &str) -> Option<transition::Films> {
-    let double = cell_px().is_some_and(|(_, ch)| ch >= 30);
-    let one = |reel: &str| {
-        let f = format!("{}/{}{}.gif", dir, reel, if double { "@2x" } else { "" });
-        let bytes = std::fs::read(&f).ok().filter(|b| b.len() <= 4 << 20)?;
-        transition::film(&bytes)
-    };
-    Some(transition::Films {
-        open: one("open")?,
-        wait: one("wait")?,
-        close: one("close")?,
-    })
-}
-
-/// The transitions' piece (#122), decoded aside so the window draws at once. Again when a theme step
-/// changes the look (#126).
-fn spawn_films(dir: String, tx: mpsc::Sender<Ev>) {
-    std::thread::spawn(move || {
-        let _ = tx.send(Ev::Films(decode_films(&dir)));
-    });
-}
 
 /// A drag's pictures, this far apart at least (#129), and as far apart as the last one took to draw (#148).
 const DRAG_GAP: Duration = Duration::from_millis(40);
@@ -369,7 +332,6 @@ fn main() {
         libc::setlocale(libc::LC_TIME, c"".as_ptr());
     }
     let (tx, rx) = mpsc::channel::<Ev>();
-    let films_tx = tx.clone();
     let (mtx, mrx) = mpsc::sync_channel::<Incoming>(256);
     for (i, (label, argv)) in a.providers.iter().enumerate() {
         match Server::spawn(i, label, argv, mtx.clone()) {
@@ -432,17 +394,9 @@ fn main() {
         });
     }
     app.start();
-    if let Some(dir) = app.cfg.transitions.clone() {
-        spawn_films(dir, tx.clone());
-        // the opening is pending from the first frame: the home's rows wait for it, never a flash of them before it (#138)
-        if app.cfg.home.is_none() && app.view == View::Home {
-            app.motion = Some((Reel::Open, Instant::now()));
-        }
-    }
     let started = Instant::now();
-    // the window maps unseen (the sway rule's opacity 0) and is shown once the opening's first frame is on it:
-    // nothing comes before the animation, no cursor and no empty surface (#167)
-    // under sway, always: a dialog run elsewhere finds no window of that app id unseen, and nothing changes
+    // the window maps unseen (the sway rule's opacity 0) and is shown once its first whole frame is on it: no cursor
+    // and no empty surface before it (#167); under sway, always: a dialog run elsewhere finds no window of that app id unseen, and nothing changes
     let mut unseen = std::env::var_os("SWAYSOCK").is_some();
     let (mut drag_drawn, mut drag_owed) = (Instant::now(), false);
     // how long the last picture of a drag took to make and write: the next waits as long (#148)
@@ -452,10 +406,6 @@ fn main() {
     let mut pointer = "";
     // where the mouse was last over the window: the pointer's shape is asked again there as the work starts and ends (#183)
     let mut mouse_at: Option<(u16, u16)> = None;
-    let mut films: Option<transition::Films> = None;
-    // the transition drawn now: its box, which one, its frame
-    let mut shown_film: Option<ShownFilm> = None;
-    let mut film_due: Option<Duration> = None;
 
     let mut term = match Terminal::new(CrosstermBackend::new(std::io::stdout())) {
         Ok(t) => t,
@@ -517,10 +467,6 @@ fn main() {
         if app.quit.is_some() {
             break;
         }
-        if let Some(f) = &films {
-            app.follow_motion(Instant::now(), f.open.length(), f.close.length());
-            dirty |= app.motion.is_some() || shown_film.is_some();
-        }
         if dirty {
             if let Ok(sz) = term.size() {
                 app.size = (sz.width, sz.height);
@@ -543,10 +489,7 @@ fn main() {
                         fb[(x, y)] = b[(x, y)].clone();
                     }
                 }
-                // the opening alone has no cursor: nothing is there to type into yet (#142)
-                if !drawn.alone {
-                    f.set_cursor_position(drawn.cursor);
-                }
+                f.set_cursor_position(drawn.cursor);
             });
             let _ = out.write_all(b"\x1b[?2026l");
             // the mouse still and the frame new: the pointer's shape asked again where it rests
@@ -558,8 +501,8 @@ fn main() {
                 }
             }
             let _ = out.flush();
-            // with no opening to wait for (none chosen, or it never came), the first whole frame shows the window
-            if unseen && !matches!(app.motion, Some((Reel::Open, _))) {
+            // the first whole frame shows the window
+            if unseen {
                 reveal();
                 unseen = false;
             }
@@ -625,65 +568,15 @@ fn main() {
                 }
                 preview_tried = Instant::now();
             }
-            // a transition: its frame now, at the top left of its box, where the rows land and give way to it (#132), at
-            // the GIF's own pace (#122)
-            film_due = None;
-            match (drawn.film, &films, cell_px()) {
-                (Some((x, y, w, h, reel, since)), Some(f), Some((cw, chh))) if sixel_ok => {
-                    // a page being read plays the open from its start, then the wait looped while it is still on its way (#142)
-                    let ms = Instant::now().saturating_duration_since(since).as_millis();
-                    let (film, k, left, shown) = if reel == Reel::Load && ms >= f.open.length() {
-                        let (k, left) = f.wait.at(ms - f.open.length(), true);
-                        (&f.wait, k, left, k + f.open.frames.len())
-                    } else {
-                        let film = f.of(reel);
-                        let (k, left) = film.at(ms, reel == Reel::Wait);
-                        (film, k, left, k)
-                    };
-                    let at = ((x, y, w, h), reel, shown);
-                    if shown_film != Some(at) {
-                        // its cells cleared and the frame drawn in one synchronized update: the ground is
-                        // the window's own, and no frame shows half drawn
-                        let (dx, dy) = (
-                            ((w as u32 * cw).saturating_sub(film.w) / 2 / cw) as u16,
-                            ((h as u32 * chh).saturating_sub(film.h) / 2 / chh) as u16,
-                        );
-                        let (fw, fh) = ((film.w.div_ceil(cw) as u16).min(w - dx), (film.h.div_ceil(chh) as u16).min(h - dy));
-                        let _ = out.write_all(b"\x1b[?2026h");
-                        if shown_film.is_none_or(|(b, _, _)| b != (x, y, w, h)) {
-                            blank(&mut out, (x, y, w, h), term_color(pal.surface));
-                        } else {
-                            blank(&mut out, (x + dx, y + dy, fw, fh), term_color(pal.surface));
-                        }
-                        let _ = queue!(
-                            out,
-                            ratatui::crossterm::cursor::SavePosition,
-                            ratatui::crossterm::cursor::MoveTo(x + dx, y + dy)
-                        );
-                        let _ = out.write_all(film.frames[k].0.as_bytes());
-                        let _ = queue!(out, ratatui::crossterm::cursor::RestorePosition);
-                        let _ = out.write_all(b"\x1b[?2026l");
-                        let _ = out.flush();
-                        shown_film = Some(at);
-                        if unseen {
-                            reveal();
-                            unseen = false;
-                        }
-                    }
-                    film_due = Some(Duration::from_millis(left.clamp(1, 1000) as u64));
-                }
-                _ => shown_film = None,
-            }
             dirty = again;
         }
         if app.quit.is_some() {
             break;
         }
-        // a transition playing wakes for its next frame, a drag for its next picture; else the next event
+        // a drag wakes for its next picture; else the next event
         // a sound playing: its waveform and its spectrum drawn about thirty times a second, a steady motion (#152)
         let play_due = (app.view == View::Preview && app.preview.as_ref().is_some_and(|pv| pv.playing.is_some())).then(|| Duration::from_millis(33));
         let due = [
-            film_due,
             play_due,
             drag_owed.then(|| DRAG_GAP.max(drag_cost).saturating_sub(drag_drawn.elapsed()).max(Duration::from_millis(1))),
         ]
@@ -710,17 +603,6 @@ fn main() {
         };
         match ev {
             Ev::Gone => app.quit = Some(129),
-            Ev::Films(f) => {
-                // the open plays from its start when it is still pending: the dialog opened on its home a moment ago and no
-                // key cut it (a letter typed lands at the prompt and cuts nothing, #138); else the rows show
-                app.films = f.is_some();
-                if matches!(app.motion, Some((Reel::Open, _))) {
-                    let on_time = f.is_some() && app.view == View::Home && started.elapsed() < Duration::from_millis(800);
-                    app.motion = on_time.then(|| (Reel::Open, Instant::now()));
-                }
-                films = f;
-                dirty = true;
-            }
             Ev::Tick => {
                 let was = app.busy();
                 app.tick(Instant::now());
@@ -730,11 +612,6 @@ fn main() {
                 if unseen && started.elapsed() >= Duration::from_millis(1500) {
                     reveal();
                     unseen = false;
-                }
-                // an opening whose animation never came: the rows show (#138)
-                if films.is_none() && matches!(app.motion, Some((Reel::Open, _))) && started.elapsed() >= Duration::from_millis(1500) {
-                    app.motion = None;
-                    dirty = true;
                 }
                 // a picture not drawn yet (its small picture is still being made): tried again now and then
                 dirty |= drawn.preview.is_some() && shown_preview.is_none() && preview_tried.elapsed() >= Duration::from_millis(400);
@@ -747,18 +624,7 @@ fn main() {
                     .is_some_and(|pv| pv.heard.is_none() && pv.shown.as_ref().is_some_and(|pg| pg.sound.is_some()));
             }
             Ev::Mcp(m) => {
-                let shows = app.incoming(m);
-                // a theme step changed the animation: the new piece read aside, none at once (#126)
-                match app.films_want.take() {
-                    Some(Some(dir)) => spawn_films(dir, films_tx.clone()),
-                    Some(None) => {
-                        films = None;
-                        app.films = false;
-                        app.motion = None;
-                    }
-                    None => {}
-                }
-                dirty |= shows;
+                dirty |= app.incoming(m);
             }
             Ev::Helper(h, r) => {
                 app.helper(h, r);
@@ -772,14 +638,6 @@ fn main() {
             }
             Ev::Term(Event::Key(k)) if k.kind == KeyEventKind::Press => {
                 dirty = true;
-                // a letter typed while the opening plays lands at the prompt and the opening plays on; Enter, Esc, an
-                // arrow or a click cut it (#138)
-                if !matches!(k.code, KeyCode::Char(_) | KeyCode::Backspace)
-                    || k.modifiers.contains(KeyModifiers::CONTROL)
-                    || k.modifiers.contains(KeyModifiers::ALT)
-                {
-                    app.cut_motion();
-                }
                 match (k.code, k.modifiers) {
                     (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) => app.quit = Some(130),
                     (KeyCode::Esc, _) => app.escape(),
@@ -824,17 +682,12 @@ fn main() {
                 }
                 match m.kind {
                     MouseEventKind::Down(MouseButton::Left) => {
-                        app.cut_motion();
                         // a click raises the dialog over a video's player: it stops, unless the click is the key that pauses it (#125)
                         if !drawn.keys.iter().any(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
                             app.stop_video();
                         }
                         if m.row == 0 && drawn.close.is_some_and(|(a, b)| m.column >= a && m.column < b) {
-                            if matches!(app.motion, Some((Reel::Close, _))) {
-                                app.quit = Some(0);
-                            } else {
-                                app.close_window();
-                            }
+                            app.quit = Some(0);
                         } else if drawn.reply_undo.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
                             app.undo_now();
                         } else if let Some((_, _, _, c)) = drawn.chips.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {

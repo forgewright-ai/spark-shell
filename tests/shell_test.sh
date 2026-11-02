@@ -1664,7 +1664,7 @@ EOF
     sway=$HOME/.config/sway/config
     grep -qF "bindsym \$mod+d exec \$term --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog" "$sway" && grep -qx 'initial-window-size-chars=60x40' "$HOME/.config/foot/dialog.ini" && grep -qx 'background=0f0f0f' "$HOME/.config/foot/dialog.ini" \
         && ok "sway render: Super+d opens the dialog (the clone's spark-shell) in foot with dialog.ini: 60x40 with air and the surface a shade of black towards the text (no theme: 0f0f0f)" || bad "sway render bind" "$(grep -n 'mod+d' "$sway"; cat "$HOME/.config/foot/dialog.ini" 2>&1)"
-    grep -qF 'for_window [app_id="spark-dialog"] floating enable, border none, move position center, opacity 0' "$sway" && ok "sway render: the dialog floats in the middle, no frame, and maps unseen until its opening is drawn (#167)" || bad "sway render for_window" "$(grep -n spark-dialog "$sway")"
+    grep -qF 'for_window [app_id="spark-dialog"] floating enable, border none, move position center, opacity 0' "$sway" && ok "sway render: the dialog floats in the middle, no frame, and maps unseen until its first frame is drawn (#167)" || bad "sway render for_window" "$(grep -n spark-dialog "$sway")"
     l_p=$(grep -nF "exec $REPO/spark-shell desktop --pending" "$sway" | head -1 | cut -d: -f1); l_t=$(grep -n "^exec sh -c '" "$sway" | tail -1 | cut -d: -f1)
     [ -n "$l_p" ] && [ -n "$l_t" ] && [ "$l_p" -lt "$l_t" ] && ok "sway render: desktop --pending runs before the first terminal" || bad "sway render pending" "pending $l_p terminal $l_t"
     unset SWAYSOCK WAYLAND_DISPLAY
@@ -3821,7 +3821,7 @@ else
     grep -q "^bindsym XF86AudioRaiseVolume exec $REPO/spark-shell bar volume up\$" "$sway" && grep -q "^bindsym XF86AudioMicMute exec $REPO/spark-shell bar volume mic\$" "$sway" \
         && ok "sway: the volume keys and the mic mute key run spark-shell bar volume" || bad "volume keys" "$(grep -n XF86 "$sway")"
     ! grep -q 'mod+p ' "$sway" && grep -q '^for_window \[app_id="spark-dialog"\] floating enable, border none, move position center, opacity 0$' "$sway" \
-        && ok "sway: no Super+p any more; the dialog's window floats in the middle, unseen until its opening is drawn (#167)" || bad "panel key" "$(grep -n 'spark-dialog\|mod+p' "$sway")"
+        && ok "sway: no Super+p any more; the dialog's window floats in the middle, unseen until its first frame is drawn (#167)" || bad "panel key" "$(grep -n 'spark-dialog\|mod+p' "$sway")"
     printf 'DESKTOP=sway\nFONT=Test Mono:pixelsize=14\nWALLPAPER=none\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" on --yes >/dev/null
     grep -q '^    font pango:Test Mono 14px$' "$sway" && grep -q '^        background #000000d9$' "$sway" && ok "sway: a pixelsize font is Npx in pango; none is the ground, the bar as translucent as over any wallpaper" || bad "bar font px" "$(grep -n 'font\|background' "$sway")"
@@ -4452,8 +4452,8 @@ for _mf in "$REPO"/wallpaper/motion/*; do _mn=${_mf##*/}; case $_mn in *.py) wal
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 135 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 135 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 134 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 134 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -4577,8 +4577,8 @@ ans 2 | jq -r '.result.contents[0].text' > "$H/rows.json"
     && jq -e '.short == ["theme:more"] and (.rows[] | select(.id == "theme:more") | .children == "spark-shell://theme/rows" and .tool == null)' "$H/rows.json" >/dev/null \
     && ok "provide: the rows resource: the palette in use (none, terminal default colors) a check with no tool, every other a row whose tool takes it by name, with its chip; the short form the one row that opens the section" || bad "provide rows" "$(cat "$H/rows.json" | head -c 600)"
 mcp theme "$(call 1 theme_palette '{"name":"nord"}')" "$(call 2 theme_palette '{"name":"nowhere"}')" "$(call 3 theme_text '{"size":"huge"}')" "$(call 4 theme_alpha '{"value":0.9,"x":1}')" "$(call 5 wifi_connect '{"name":"home"}')" "$(call 6 'Theme_Font')" "$(call 7 theme_alpha '{"value":2}')"
-[ "$(ans 1 | jq -c '.result.structuredContent | del(.palette, .transitions, .rows)')" = '{"receipt":"nord is on","undo":{"name":"theme_palette","arguments":{"name":"none"}}}' ] && [ "$(ans 1 | jq -r '.result.structuredContent.transitions')" = "$REPO/assets/transitions/tide/nord" ] && ans 1 | jq -e '.result.isError == false and (.result.content[0].text | fromjson) == (.result.structuredContent | del(.rows)) and .result.structuredContent.rows.title == "theme"' >/dev/null && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
-    && ok "provide tools/call: the palette set, the receipt in the present tense, the undo the step that takes it back, the same JSON in a text block; the animation it brings, for an open dialog to read again (#126)" || bad "provide call" "$(ans 1) $(cat "$H/mcp.err")"
+[ "$(ans 1 | jq -c '.result.structuredContent | del(.palette, .rows)')" = '{"receipt":"nord is on","undo":{"name":"theme_palette","arguments":{"name":"none"}}}' ] && ans 1 | jq -e '.result.isError == false and (.result.content[0].text | fromjson) == (.result.structuredContent | del(.rows)) and .result.structuredContent.rows.title == "theme"' >/dev/null && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
+    && ok "provide tools/call: the palette set, the receipt in the present tense, the undo the step that takes it back, the same JSON in a text block" || bad "provide call" "$(ans 1) $(cat "$H/mcp.err")"
 nfg=$(sed -n 's/^THEME_FG=#//p' "$REPO/themes/nord.env"); nbg=$(sed -n 's/^THEME_BG=#//p' "$REPO/themes/nord.env")
 ans 1 | jq -e --arg f "$nfg" --arg b "$nbg" '.result.structuredContent.palette | (.HEX_FG | ascii_downcase) == ($f | ascii_downcase) and (.PANEL_BG | test("^[0-9a-fA-F]{6}$")) and (.PANEL_BG | ascii_downcase) != ($b | ascii_downcase) and (keys == ["HEX_ACCENT", "HEX_ANSI_1", "HEX_ANSI_2", "HEX_FG", "PANEL_BG", "PANEL_HI", "PANEL_MUTED"])' >/dev/null \
     && ok "provide theme: a step's result carries the palette as it is now, the dialog's surface a shade off the background, so the dialog repaints itself" || bad "theme palette in result" "$(ans 1 | jq -c .result.structuredContent.palette) fg=$nfg bg=$nbg"
@@ -4979,26 +4979,8 @@ rm -f "$F2/swaymsg.log"; _t0=$(date +%s)
     || bad "preview video full screen held" "$((_t1 - _t0)) s $(ans 5)"
 grep -qxF 'no_focus [app_id="spark-preview"]' "$REPO/templates/.config/sway/config" && grep -qxF 'for_window [app_id="spark-preview"] floating enable, border none, opacity 0' "$REPO/templates/.config/sway/config" \
     && ok "sway template: a video a preview plays floats with no border, maps unseen until it is placed (#157) and never takes the focus: the keys stay in the dialog (#125)" || bad "sway preview rules" "$(grep spark-preview "$REPO/templates/.config/sway/config")"
-# the dialog's transitions (#122): the theme's row, the verb, the key the config holds
-printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
-o1=$(sh "$SH" theme animation 2>&1); o2=$(sh "$SH" theme animation next 2>&1); o3=$(sh "$SH" theme animation back 2>&1); o4=$(sh "$SH" theme animation none 2>&1); st=0; o5=$(sh "$SH" theme animation fireworks 2>&1) || st=$?
-[ "$o1" = "animation embers $(printf '\302\267') none, moon, ripple, tide, embers, sun, flight" ] && [ "${o2%% *}" = animation ] && printf '%s' "$o2" | grep -q '^animation sun ' && printf '%s' "$o3" | grep -q '^animation embers ' \
-    && printf '%s' "$o4" | grep -q '^animation none ' && grep -qx 'DIALOG_ANIMATION=none' "$HOME/.config/spark-shell/config" && [ "$st" -ne 0 ] \
-    && ok "theme animation: the palette's piece when none is set (dracula's embers), next and back step through the six and none, none is no motion, another word refused (#122)" || bad "theme animation" "$o1 | $o2 | $o3 | $o4 | $st $o5"
-# each palette brings its piece, as it brings its drawing; none stays none (#122)
-printf 'DESKTOP=sway\nTHEME=dracula\n' > "$HOME/.config/spark-shell/config"
-sh "$SH" theme nord >/dev/null 2>&1; a1=$(sed -n 's/^DIALOG_ANIMATION=//p' "$HOME/.config/spark-shell/config"); sh "$SH" theme animation none >/dev/null 2>&1; sh "$SH" theme gruvbox-dark >/dev/null 2>&1; a2=$(sed -n 's/^DIALOG_ANIMATION=//p' "$HOME/.config/spark-shell/config")
-for e in $(sed -n 's/^ANIM_PAIRED="\(.*\)"$/\1/p' "$SH"); do [ -d "$REPO/assets/transitions/${e#*:}/${e%%:*}" ] || a3="${a3:-}${e} "; done
-[ "$a1" = tide ] && [ "$a2" = none ] && [ -z "${a3:-}" ] && [ "$(sed -n 's/^ANIM_PAIRED="\(.*\)"$/\1/p' "$SH" | wc -w | tr -d ' ')" = 16 ] \
-    && ok "theme: a palette brings its piece (nord the tide), none stays none, every one of the 16 palettes paired with a piece it has (#122)" || bad "animation pairs" "$a1 $a2 missing: ${a3:-}"
-printf 'DIALOG_ANIMATION=fireworks\n' >> "$HOME/.config/spark-shell/config"; st=0; o=$(sh "$SH" theme animation 2>&1) || st=$?
-[ "$st" -ne 0 ] && printf '%s' "$o" | grep -q 'DIALOG_ANIMATION=fireworks' && ok "config: DIALOG_ANIMATION holds to none and the six (#122)" || bad "animation config" "$st $o"
-printf 'DESKTOP=sway\nTHEME=tokyonight-night\n' > "$HOME/.config/spark-shell/config"
-_np=0; for _pd in "$REPO"/assets/transitions/*/; do [ -f "$_pd/tokyonight-night/open.gif" ] && [ -f "$_pd/solarized-light/close.gif" ] && _np=$((_np + 1)); done
-[ -f "$REPO/assets/transitions/moon/tokyonight-night/open.gif" ] && grep -q -- '--transitions "$_ta"' "$SH" && [ "$_np" = 6 ] \
-    && ok "the dialog is given the piece in the palette in use, every piece in every palette: open, wait, close, at one and two times (#122)" || bad "transitions given" "$(ls "$REPO/assets/transitions")"
-# #142: in the dialog's own window nothing is drawn ahead of the opening (#138 drew the prompt first, and the dialog then
-# came in parts): the cursor hidden, then the dialog; elsewhere (a terminal) the same
+# #142: in the dialog's own window nothing is drawn ahead of the dialog's first frame (#138 drew the prompt first, and the
+# dialog then came in parts): the cursor hidden, then the dialog; elsewhere (a terminal) the same
 if command -v python3 >/dev/null 2>&1; then
     cat > "$H/pty_first.py" <<'PY'
 import os, pty, sys
@@ -5020,31 +5002,8 @@ PY
     _f1=$(SPARK_DIALOG_WINDOW=1 python3 -I "$H/pty_first.py" "$SH" 2>/dev/null); _f2=$(python3 -I "$H/pty_first.py" "$SH" 2>/dev/null)
     case $_f1 in b?"\\x1b[?25l"*) _fo=1 ;; *) _fo='' ;; esac
     [ -n "$_fo" ] && case $_f1$_f2 in *'Type a request.'*) false ;; *) true ;; esac \
-        && ok "dialog: in its own window and in a terminal nothing is drawn ahead of the opening, the cursor hidden first (#142)" || bad "dialog first frame" "$_f1 | $_f2"
+        && ok "dialog: in its own window and in a terminal nothing is drawn ahead of the dialog, the cursor hidden first (#142)" || bad "dialog first frame" "$_f1 | $_f2"
 fi
-# #132: the theme's animation row opens a list of the pieces, as the wallpaper's opens its drawings: the one in use checked,
-# the palette's own said, each with its folder in the palette in use (none with none), Enter the step that sets it
-mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/animations"}')"
-ans 2 | jq -r '.result.contents[0].text' > "$H/anims.json"
-[ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:the palette's own|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|none:blank:no motion" ] \
-    && jq -e --arg d "$REPO/assets/transitions" '(.rows[0].film == ($d + "/moon/tokyonight-night")) and (.rows[-1] | has("film") | not) and all(.rows[]; .tool.name == "theme_animation" and .tool.arguments.to == .text and .quiet == true)' "$H/anims.json" >/dev/null \
-    && ok "provide theme: the animation list: the six and none, the one in use checked, the palette's own said, each piece's folder in the palette in use, Enter sets it in place (#132, #191)" || bad "animation list" "$(cat "$H/anims.json")"
-# #193: the pieces are drawn for the shipped palettes alone: a theme with none drawn (a palette of yours, a theme from a
-# picture or words, none) plays none, its row says why and opens nothing, its list holds none alone, the verb refuses a piece
-cp "$HOME/.config/spark-shell/config" "$H/config.anim"; palette_fixture mine '#fe8019'
-printf 'DESKTOP=sway\nTHEME=mine\nDIALOG_ANIMATION=ripple\n' > "$HOME/.config/spark-shell/config"
-o1=$(sh "$SH" theme animation 2>&1); st=0; o2=$(sh "$SH" theme animation moon 2>&1) || st=$?; a1=$(sed -n 's/^DIALOG_ANIMATION=//p' "$HOME/.config/spark-shell/config")
-mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/animations"}')" "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows"}')"
-ans 2 | jq -r '.result.contents[0].text' > "$H/anims.json"; ans 3 | jq -r '.result.contents[0].text' > "$H/trows.json"
-[ "$o1" = "animation none $(printf '\302\267') this palette has none" ] && [ "$st" -ne 0 ] && [ "$o2" = 'the animation stays none: this palette has none (the pieces are drawn for the shipped palettes)' ] && [ "$a1" = ripple ] \
-    && [ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "none:check:this palette has none" ] \
-    && { [ "$(uname -s)" = Darwin ] || jq -e '.rows[] | select(.id == "theme:show:Animation") | .columns == ["none", "this palette has none"] and .children == null and .tool == null' "$H/trows.json" >/dev/null; } \
-    && [ "$(sh "$SH" theme animation none 2>&1 | cut -d' ' -f1-2)" = 'animation none' ] \
-    && ok "theme animation, a palette with no pieces drawn (#193): none, its row says why and opens nothing, its list none alone, a piece refused and the one set kept for later; none passes" \
-    || bad "animation locked" "$o1 | $st $o2 | $a1 | $(cat "$H/anims.json") $(jq -c '.rows[] | select(.id == "theme:show:Animation")' "$H/trows.json" 2>&1)"
-printf 'DESKTOP=sway\nTHEME=mine\nDIALOG_ANIMATION=ripple\n' > "$HOME/.config/spark-shell/config"; sh "$SH" theme nord >/dev/null 2>&1
-[ "$(sh "$SH" theme animation 2>&1 | cut -d' ' -f1-2)" = 'animation tide' ] && ok "theme animation: a shipped palette after one with none brings its piece again (#193)" || bad "animation back" "$(sh "$SH" theme animation 2>&1)"
-cp "$H/config.anim" "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/themes/mine.env"
 mkdir -p "$H/gio"; cat > "$H/gio/gio" <<'STUB'
 #!/bin/sh
 echo "gio $*" >> "$HOME/gio.log"
@@ -5062,8 +5021,8 @@ for kv in DIALOG_ATTACH=maybe DIALOG_MODEL=1 DIALOG_TALK=off 'DIALOG_ATTACH_TYPE
 done
 ok "config: DIALOG_ATTACH, DIALOG_MODEL and DIALOG_TALK take yes or no, DIALOG_ATTACH_TYPES lower-case types; anything else is refused in one line"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u BAR_GLYPHS -u BAR_WORKSPACES -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" && grep -q '^DIALOG_ANIMATION=$' "$REPO/config.example" && grep -q '^BAR_GLYPHS=signs$' "$REPO/config.example" && grep -q '^BAR_WORKSPACES=symbols$' "$REPO/config.example" && grep -q '^WALLPAPER_MOTION=off$' "$REPO/config.example" \
-    && ok "config: the dialog's five keys and the bar's two (#160) are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
+grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u BAR_GLYPHS -u BAR_WORKSPACES -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_MODEL=yes$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" && grep -q '^BAR_GLYPHS=signs$' "$REPO/config.example" && grep -q '^BAR_WORKSPACES=symbols$' "$REPO/config.example" && grep -q '^WALLPAPER_MOTION=off$' "$REPO/config.example" \
+    && ok "config: the dialog's four keys and the bar's two (#160) are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
 # the local gate (#155): every python3 test ci.yml runs is in the gate's list, read from ci.yml itself, with the lint and the
 # dialog's checks; the pre-push hook runs its quick part
 _gl=$(sh "$REPO/tests/gate.sh" --list 2>/dev/null || :)
@@ -5356,12 +5315,6 @@ STUB
         && ok "dialog files: the files first, its provider started once" || bad "dialog files" "$(cat "$HOME/dialog.argv")"
     printf 'DESKTOP=sway\nDIALOG_ATTACH=no\nDIALOG_MODEL=no\nDIALOG_TALK=no\n' > "$HOME/.config/spark-shell/config"
     sh "$C/spark-shell" dialog >/dev/null 2>&1; [ "$(grep -A1 -x -- --composer "$HOME/dialog.argv" | tail -1)" = '' ] && ok "dialog: DIALOG_ATTACH, DIALOG_MODEL and DIALOG_TALK at no leave the composer bare" || bad "dialog keys" "$(cat "$HOME/dialog.argv")"
-    # the transitions (#122): the piece in the palette in use; none, or a palette with no set, plays none
-    printf 'DESKTOP=sway\nTHEME=tokyonight-night\n' > "$HOME/.config/spark-shell/config"; sh "$C/spark-shell" dialog >/dev/null 2>&1; a1=$(grep -A1 -x -- --transitions "$HOME/dialog.argv" | tail -1)
-    printf 'DESKTOP=sway\nTHEME=tokyonight-night\nDIALOG_ANIMATION=none\n' > "$HOME/.config/spark-shell/config"; sh "$C/spark-shell" dialog >/dev/null 2>&1; a2=$(grep -cx -- --transitions "$HOME/dialog.argv" || :)
-    printf 'DESKTOP=sway\nTHEME=none\n' > "$HOME/.config/spark-shell/config"; sh "$C/spark-shell" dialog >/dev/null 2>&1; a3=$(grep -cx -- --transitions "$HOME/dialog.argv" || :)
-    [ "$a1" = "$C/assets/transitions/moon/tokyonight-night" ] && [ "$a2" = 0 ] && [ "$a3" = 0 ] \
-        && ok "dialog: the transitions are the palette's piece in the palette in use (tokyonight-night's moon); none, or no palette, plays none (#122)" || bad "dialog transitions" "$a1 $a2 $a3"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     st=0; out=$(sh "$C/spark-shell" dialog nonsense 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell dialog: nonsense is not a section of the dialog' ] && ok "dialog WORD: a word that is no section, refused" || bad "dialog nonsense" "st=$st $out"
@@ -5946,7 +5899,7 @@ jq -e --arg dw "$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" '(.
 # a value set as it is, the dialog's own way (#183); a palette looked at is on the screen and nothing is kept
 mcp theme "$(call 1 theme_text '{"size":"14"}')" "$(call 2 theme_transparency '{"amount":"30"}')" "$(call 3 theme_preview '{"name":"nord"}')" "$(call 4 theme_preview '{"name":"none"}')" "$(call 5 theme_preview '{"name":"off"}')"
 [ "$(ans 1 | jq -r '.result.structuredContent.receipt' | cut -c1-10)" = 'text at 14' ] && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'transparency at 30%' ] \
-    && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'nord on the screen' ] && ans 3 | jq -e '.result.structuredContent | (.palette.HEX_FG | ascii_downcase) == "d8dee9" and .undo == null and .transitions == null' >/dev/null && grep -qx 'THEME=dracula' "$cfg" && [ "$(ans 4 | jq -r '.result.isError')" = true ] && [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'the look in use is on the screen again' ] \
+    && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'nord on the screen' ] && ans 3 | jq -e '.result.structuredContent | (.palette.HEX_FG | ascii_downcase) == "d8dee9" and .undo == null' >/dev/null && grep -qx 'THEME=dracula' "$cfg" && [ "$(ans 4 | jq -r '.result.isError')" = true ] && [ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'the look in use is on the screen again' ] \
     && ok "provide theme: a size and a percent set as they are (#183); a palette looked at says so and keeps nothing, none has nothing to show, off puts the look in use back" || bad "theme exact values" "$(cut -c1-400 "$H/mcp.out")"
 sh "$SH" theme text 12 >/dev/null 2>&1; sh "$SH" theme transparency 15 >/dev/null 2>&1   # the steps below start from these
 mcp theme "$(call 1 theme_text '{"size":"bigger"}')" "$(call 2 theme_transparency '{"amount":"more"}')"

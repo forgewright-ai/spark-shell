@@ -20,5 +20,4 @@ pub mod scrub;
 pub mod search;
 pub mod sha256;
 pub mod sixel;
-pub mod transition;
 pub mod ui;

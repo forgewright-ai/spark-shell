@@ -107,8 +107,8 @@ bindsym $mod+Return exec $term
 bindsym $mod+d exec $term --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog
 # key: Super+s opens the dialog in spark chat, and Ctrl-D closes it.
 bindsym $mod+s exec $term --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog chat
-# the dialog's window maps unseen and the dialog shows it once its opening
-# is drawn, so nothing comes before the animation (#167)
+# the dialog's window maps unseen and the dialog shows it once its first
+# frame is drawn, so nothing comes before it (#167)
 for_window [app_id="spark-dialog"] floating enable, border none, move position center, opacity 0
 # a video a preview plays (#125): laid over its frame, never taking the keys from the dialog; it maps unseen and is
 # shown where it plays, in one command (#157)

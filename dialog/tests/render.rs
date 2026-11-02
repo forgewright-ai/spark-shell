@@ -1086,25 +1086,6 @@ fn a_long_sound_says_its_waveform_is_being_drawn() {
     render(&app, "preview-sound-drawing");
 }
 
-/// The wait plays while a page is slow to come, and ends when it did not come (#124): never under the words.
-#[test]
-fn a_page_that_did_not_come_ends_the_wait() {
-    let mut app = sound_app(false);
-    app.films = true;
-    let pv = app.preview.as_mut().unwrap();
-    pv.shown = None;
-    pv.asked = std::time::Instant::now() - std::time::Duration::from_secs(2);
-    let p = palette("tokyonight-night");
-    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
-    assert!(spark_dialog::ui::draw(&app, &p, CLOCK, &mut b).film.is_some(), "a slow page: the wait");
-    app.preview.as_mut().unwrap().failed = true;
-    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
-    assert!(
-        spark_dialog::ui::draw(&app, &p, CLOCK, &mut b).film.is_none(),
-        "a page that did not come: no wait"
-    );
-}
-
 /// A video plays over the frame where it was drawn (#125): Space sends the box with the play (#151).
 #[test]
 fn a_video_sends_the_box_of_its_frame_with_its_play() {
@@ -1269,24 +1250,18 @@ fn full_screen_home_on_a_tall_screen_keeps_the_column_in_the_middle() {
 
 // ---- v0.114.1
 
-/// The opening plays alone (#142): nothing but its box is drawn, no cursor, the whole dialog after it.
+/// No opening (#196): the first frame is the whole dialog, the header, the prompt with its cursor and the home's
+/// places; nothing plays before it.
 #[test]
-fn the_opening_plays_alone_then_the_whole_dialog() {
-    let mut app = full();
-    app.motion = Some((spark_dialog::transition::Reel::Open, std::time::Instant::now()));
+fn the_first_frame_is_the_whole_dialog() {
+    let app = full();
     let p = palette("tokyonight-night");
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
     let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
-    assert!(drawn.alone && drawn.film.is_some(), "the opening alone");
-    let text: String = (0..HEIGHT)
-        .flat_map(|y| (0..WIDTH).map(move |x| (x, y)))
-        .map(|(x, y)| b[(x, y)].symbol().to_string())
-        .collect();
-    assert!(text.trim().is_empty(), "nothing else drawn: {:?}", text.trim());
-    app.motion = None;
-    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
-    let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
-    assert!(!drawn.alone && drawn.film.is_none(), "after it, the dialog whole");
+    let row = |y: u16| (0..WIDTH).map(|x| b[(x, y)].symbol().to_string()).collect::<String>();
+    assert!(row(0).trim_start().starts_with("home"), "the header: {:?}", row(0));
+    assert_eq!(drawn.cursor.1, spark_dialog::ui::PROMPT_Y, "the cursor at the prompt");
+    assert!(!drawn.picks.is_empty(), "the home's places");
 }
 
 /// Back is the key row's (#165): the header starts with the place, no arrow that reads as the prompt sign
@@ -1329,25 +1304,6 @@ fn a_filtered_file_shows_its_preview_after_the_down_arrow() {
     assert_eq!(app.view, View::Preview, "Space shows the lit file");
     assert!(app.input.is_empty(), "the filter's words let go, so Space plays and Esc goes back");
     assert_eq!(app.preview.as_ref().unwrap().row().text, "invoice-0412.pdf");
-}
-
-/// A long sound whose waveform is still being drawn (#164): the animation that began while the page came plays
-/// on under the title, no words over it, until the picture is there.
-#[test]
-fn a_long_sound_plays_the_wait_until_its_waveform_is_there() {
-    let mut app = sound_app(false);
-    app.films = true;
-    app.preview.as_mut().unwrap().heard = None;
-    let p = palette("tokyonight-night");
-    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
-    let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
-    assert!(drawn.film.is_some(), "the wait plays");
-    let all: String = (0..HEIGHT)
-        .flat_map(|y| (0..WIDTH).map(move |x| (x, y)))
-        .map(|c| b[c].symbol().to_string())
-        .collect();
-    assert!(!all.contains("drawing the waveform"), "no words over the animation");
-    assert!(all.contains("Evening sketch"), "the title stays above it");
 }
 
 /// The Space chip takes a click as the other chips do (#150).

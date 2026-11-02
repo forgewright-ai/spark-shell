@@ -178,7 +178,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u BAR_GLYPHS -u BAR_WORKSPACES -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u BAR_GLYPHS -u BAR_WORKSPACES -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'
 
 # This machine's short name (the twin of spark lib/env.sh short_host). On
 # a Mac, LocalHostName, by scutil's full path: /usr/sbin is not on every
@@ -236,8 +236,6 @@ config_load() {
     pointer_ok "$POINTER" || { echo "spark-shell: POINTER=$POINTER in $CONFIG: a cursor theme's NAME and, after a space, its SIZE in pixels (spark-white 24, spark-black 32, Adwaita)" >&2; exit 1; }
     # the dialog's composer: plus and the file types it attaches, the model chip, talk
     : "${DIALOG_ATTACH:=yes}" "${DIALOG_ATTACH_TYPES:=txt md}" "${DIALOG_MODEL:=yes}" "${DIALOG_TALK:=yes}"
-    : "${DIALOG_ANIMATION:=}"   # the dialog's transitions as it opens, waits and closes (#122): a piece of assets/transitions, none, or empty for the one the palette brings
-    [ -z "$DIALOG_ANIMATION" ] || case " none $ANIMATION_NAMES " in *" $DIALOG_ANIMATION "*) ;; *) echo "spark-shell: DIALOG_ANIMATION=$DIALOG_ANIMATION in $CONFIG: none or one of $ANIMATION_NAMES" >&2; exit 1 ;; esac
     : "${BAR_GLYPHS:=signs}" "${BAR_WORKSPACES:=symbols}"   # the bar's glyphs and its workspaces' names, kept with a saved theme (#160)
     case $BAR_GLYPHS in signs|words) ;; *) echo "spark-shell: BAR_GLYPHS=$BAR_GLYPHS in $CONFIG: signs or words" >&2; exit 1 ;; esac
     case $BAR_WORKSPACES in symbols|numbers) ;; *) echo "spark-shell: BAR_WORKSPACES=$BAR_WORKSPACES in $CONFIG: symbols or numbers" >&2; exit 1 ;; esac
@@ -268,21 +266,8 @@ config_load() {
         input_valid "$k" "$v" || { echo "spark-shell: invalid $k in $CONFIG" >&2; exit 1; }
     done
     export POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE KEY_CAPS
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK DIALOG_ANIMATION BAR_GLYPHS BAR_WORKSPACES WALLPAPER_MOTION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK BAR_GLYPHS BAR_WORKSPACES WALLPAPER_MOTION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB
 }
-ANIMATION_NAMES='moon ripple tide embers sun flight'   # assets/transitions' pieces, in the order the theme's row steps through them; none is no motion (#122)
-# The piece each palette brings, as it brings its drawing (#122): picked for the drawing's mood, the
-# night skyline's moon, the fjord's tide, the dunes' embers, the sunset's sun, the kites' flight.
-ANIM_PAIRED="tokyonight-night:moon nord:tide everforest-dark:embers gruvbox-dark:sun catppuccin-mocha:moon dracula:embers rose-pine:ripple selenized-dark:tide solarized-light:sun catppuccin-latte:flight tokyonight-day:flight gruvbox-light:sun everforest-light:ripple rose-pine-dawn:sun selenized-light:tide one-light:flight"
-anim_for_palette() { for _e in $ANIM_PAIRED; do [ "${_e%%:*}" != "$1" ] || { printf '%s' "${_e#*:}"; return 0; }; done; echo embers; }   # anim_for_palette PALETTE -> the piece it brings; embers for one with none
-anim_palette() { _apd=$(theme_dir "${THEME:-}"); if [ -n "$_apd" ]; then look_get "$_apd" PALETTE; else printf '%s' "${THEME:-}"; fi; }   # -> the shipped palette under the theme in use: a saved theme's own, else the theme
-dialog_transitions() {   # -> the folder of the piece in the palette in use, a saved theme's in its own; nothing where it plays none (none, or a palette with no set of its own) (#122, #126)
-    _dta=$REPO/assets/transitions/$(anim_now)/$(anim_palette)
-    [ "$(anim_now)" = none ] || [ -z "$(anim_palette)" ] || [ ! -f "$_dta/open.gif" ] || printf '%s\n' "$_dta"
-}
-anim_drawn() { [ -n "$1" ] && [ -f "$REPO/assets/transitions/${ANIMATION_NAMES%% *}/$1/open.gif" ]; }   # anim_drawn PALETTE -> true when the pieces are drawn for it: the shipped palettes; a theme from a picture or words, a palette file of yours and none have none (#193)
-ANIM_NONE_SAID='this palette has none'   # why a theme with no pieces drawn plays none: the theme's row, its list and the verb say it (#193)
-anim_now() { _anp=$(anim_palette); if ! anim_drawn "$_anp"; then printf none; elif [ -n "${DIALOG_ANIMATION:-}" ]; then printf '%s' "$DIALOG_ANIMATION"; else anim_for_palette "$_anp"; fi; }   # -> the piece the dialog plays: none where the palette has none drawn, else the one set, else the palette's
 SAVER_NAMES='spark starfield drift'   # lib/saver.py's list, in its order: what DISPLAY_SAVER takes besides clock (#66)
 KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}$'   # one to eight layouts, a variant after a plus: us us+intl
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept. A value load_env would refuse at the next read is refused here, before the file is touched
@@ -5112,8 +5097,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ -z "$_de" ] || printf -- '-\tMoving wallpaper\tshow\tscreen\n'   # a switch (#180)
             printf -- '-\tTransparency\tshow\tscreen\n'   # a value left and right change
             [ -z "$_sz" ] || printf -- '-\tText size\tshow\ttext and bar\n'
-            [ -z "$_de" ] || printf -- '-\tWords on the bar\tshow\ttext and bar\n-\tNumbered workspaces\tshow\ttext and bar\n'   # switches (#160)
-            [ -z "$_de" ] || printf -- '-\tAnimation\tshow\tdialog\n' ;;   # the dialog's transitions (#122): opens their list
+            [ -z "$_de" ] || printf -- '-\tWords on the bar\tshow\ttext and bar\n-\tNumbered workspaces\tshow\ttext and bar\n' ;;   # switches (#160)
         wallpapers) _cur=$(wall_name)   # the theme's wallpaper list (no section of its own, #36): the drawings, each with the palette it was drawn for and its picture in the palette in use (provide_wall_rows); then custom: a picture, a color, the ground
             for w in $(wall_shipped_names); do
                 _pw=$(wall_palette_of "$w"); case $_pw in any) _pw='for any dark palette' ;; every) _pw='moves, in any palette' ;; *) _pw="for $_pw" ;; esac   # the caption under its picture: 24 cells
@@ -6010,7 +5994,6 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                     echo "alpha at $_arg" ;;
                 transparency|see-through) case ${_arg%\%} in more|less|[0-9]|[1-4][0-9]|50) alpha_step "${_arg%\%}" ;; *) echo "transparency takes more or less, or a percent from 0 to 50"; return 1 ;; esac ;;   # see-through: the word before v0.71
                 preview) theme_preview "$_arg" ;;   # a palette looked at, nothing kept (#183)
-                animation) anim_step "$_arg" ;;
                 glyphs) glyphs_step "$_arg" ;;
                 workspaces) ws_style_step "$_arg" ;;
                 motion) motion_step "$_arg" ;;
@@ -6211,7 +6194,6 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         out:use|mic:use) _cur=$(snd_devices "$_p" | awk -F '\t' '$2 == 1 && !d {print $1; d = 1}'); [ -z "$_cur" ] || printf 'use %s\t%s %s\n' "$_cur" "$_p" "$_cur" ;;   # the whole list read: no broken pipe
         theme:text|theme:font) case $_arg in bigger) printf 'text smaller\ttext smaller\n' ;; smaller) printf 'text bigger\ttext bigger\n' ;; *) printf 'text %s\ttext %s\n' "$(look_font_size)" "$(look_font_size)" ;; esac ;;
         theme:alpha|theme:transparency|theme:see-through) printf 'alpha %s\ttransparency %s%%\n' "$ALPHA" "$(transparency_of "$ALPHA")" ;;
-        theme:animation) printf 'animation %s\tanimation %s\n' "$(anim_now)" "$(anim_now)" ;;
         theme:glyphs) printf 'glyphs %s\tthe bar in %s\n' "$BAR_GLYPHS" "$BAR_GLYPHS" ;;
         theme:workspaces) printf 'workspaces %s\tthe workspaces as %s\n' "$BAR_WORKSPACES" "$BAR_WORKSPACES" ;;
         theme:motion) printf 'motion %s\tmoving wallpaper %s\n' "$WALLPAPER_MOTION" "$WALLPAPER_MOTION" ;;
@@ -6434,7 +6416,6 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         theme:glyphs) case ${3:-} in signs|words) echo "$3"; return 0 ;; *) echo "theme: glyphs takes signs or words"; return 1 ;; esac ;;
         theme:workspaces) case ${3:-} in symbols|numbers) echo "$3"; return 0 ;; *) echo "theme: workspaces takes symbols or numbers"; return 1 ;; esac ;;
         theme:motion) case ${3:-} in on|off) echo "$3"; return 0 ;; *) echo "theme: motion takes on or off"; return 1 ;; esac ;;
-        theme:animation) case " next back none $ANIMATION_NAMES " in *" ${3:-} "*) echo "$3"; return 0 ;; *) echo "theme: animation takes none, $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g'), next or back"; return 1 ;; esac ;;
         theme:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "theme: save takes a name"; return 1 ;;
         theme:delete) case $(theme_kind "${3:-}") in saved|look) [ "$3" != "${THEME:-}" ] && { echo "$3"; return 0; }; echo "theme: $3 is the theme in use"; return 1 ;; *) echo "theme: no saved theme named ${3:-?}"; return 1 ;; esac ;;
         theme:back) [ -s "$(kept_hist theme)" ] && { echo ''; return 0; }; echo "theme: no look before this one"; return 1 ;;
@@ -6726,7 +6707,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -6802,7 +6783,6 @@ tool_spec() {
         theme_wallpaper_picture) _ts=theme _ta=wallpaper-picture _tp=path _tk=path _th=if _tt='theme wallpaper picture PATH' _td='A picture of yours as the wallpaper.' ;;
         theme_picture)     _ts=theme _ta=picture _tp=path _tk=path _th=f _tt='theme picture PATH' _td='A theme from a picture of yours: its colors as the palette, the picture as the wallpaper.' ;;
         theme_words)       _ts=theme _ta=words _tp=hue _tk='red|orange|yellow|green|teal|blue|violet|pink|grey' _te='accent:red|orange|yellow|green|teal|blue|violet|pink|grey|same warmth:warm|neutral|cool contrast:soft|normal|high light:dark|light name:text' _th=f _tt='theme words HUE' _td='One look for one request: the hue of the ground, the hue of the accent (same when the words name one color), how warm, how much contrast, dark or light, and a short name from the words. A flag or a brand is one step with two hues, never two steps. The wallpaper in use is drawn again in the new palette.' ;;
-        theme_animation)   _ts=theme _ta=animation _tp=to _tk="next|back|none|$(printf '%s' "$ANIMATION_NAMES" | tr ' ' '|')" _th='' _tt='theme animation NAME' _td='The dialog'"'"'s animation as it opens, waits and closes: one by name, none for no motion, or the next or the one before.' ;;
         theme_glyphs)      _ts=theme _ta=glyphs _tp=to _tk='signs|words' _th='' _tt='theme glyphs SET' _td='The bar in signs (the default) or in words.' ;;
         theme_workspaces)  _ts=theme _ta=workspaces _tp=to _tk='symbols|numbers' _th='' _tt='theme workspaces STYLE' _td='The workspaces on the bar as symbols (the default) or as numbers.' ;;
         theme_motion)      _ts=theme _ta=motion _tp=to _tk='on|off' _th='' _tt='theme motion ON' _td='The wallpaper moving (on), where the drawing has a motion, or still (off, the default).' ;;
@@ -6937,7 +6917,7 @@ tool_json() {   # tool_json NAME -> the tool as tools/list says it: the title, t
          outputSchema: {type: "object", properties: {receipt: {type: "string"}, opened: {type: "boolean"}, attach: {type: "string"}, open: {type: "string"}, rows: {type: "object"},
             effect: {type: "object", properties: {kind: {type: "string"}, operation: {type: "string"}, id: {type: "string"}, title: {type: "string"}, localTime: {type: "string"}, level: {type: "integer"}, muted: {type: "boolean"}}, required: ["kind", "operation", "id", "title"], additionalProperties: false},
             undo: {type: "object", properties: {name: {type: "string"}, arguments: {type: "object"}}, required: ["name", "arguments"]},
-            palette: {type: "object", additionalProperties: {type: "string"}}, transitions: {type: "string"}},
+            palette: {type: "object", additionalProperties: {type: "string"}}},
             required: (if $n == "notes_add" or $n == "notes_append" or ($n | startswith("reminders_")) or ($n | test("^(out|mic)_(level|adjust|mute|unmute)$")) then ["receipt", "effect"] elif $n == "window_focus" or $n == "window_close" then ["effect"] else [] end), additionalProperties: false},
          annotations: {title: $t, readOnlyHint: ($h | contains("r")), destructiveHint: ($h | contains("d")), idempotentHint: ($h | contains("i")), openWorldHint: false}}
          | if ($h | contains("o")) then ._meta = {"spark-shell/opens": true} else . end
@@ -6953,10 +6933,10 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
     [ "$1" != files ] || { provide_files_rows; return; }
     THEME_ENUM_NOW=''; [ "$1" != theme ] || THEME_ENUM_NOW=$(theme_enum)   # the palette names once for this read, not once a row (#183)
     WIFI_TOOL_READ=''; [ "$1" != wifi ] || { WIFI_TOOL_NOW=$(wifi_tool); WIFI_TOOL_READ=1; }   # the wifi manager once for this read (#196)
-    # the theme's own helpers (the chips, the text size, the animation, the transparency) for the theme's rows alone (#196)
-    _pr_chips='{}'; _pr_size=''; _pr_anim=''; _pr_animok=''; _pr_trn=0; _pr_tr=''
+    # the theme's own helpers (the chips, the text size, the transparency) for the theme's rows alone (#196)
+    _pr_chips='{}'; _pr_size=''; _pr_trn=0; _pr_tr=''
     if [ "$1" = theme ]; then
-        _pr_chips=$(theme_chips theme); _pr_size=$(look_font_size); _pr_anim=$(anim_now); ! anim_drawn "$(anim_palette)" || _pr_animok=1
+        _pr_chips=$(theme_chips theme); _pr_size=$(look_font_size)
         _pr_trn=$(transparency_of "$ALPHA"); if [ "$_pr_trn" -eq 0 ]; then _pr_tr=off; else _pr_tr="$_pr_trn%"; fi
     fi
     _asks='[]'
@@ -6975,7 +6955,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                     if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}, said:"done"}, {name:"reminders_snooze", arguments:{name:$id}, said:"again in 10 minutes"}, {name:"reminders_delete", arguments:{name:$id}, said:"delete"}]} else {} end
                    else {} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$_pr_chips" --arg size "$_pr_size" --arg anim "$_pr_anim" --arg animok "$_pr_animok" --arg animnone "$ANIM_NONE_SAID" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg motion "$WALLPAPER_MOTION" --argjson trn "$_pr_trn" --arg tr "$_pr_tr" '
+        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$_pr_chips" --arg size "$_pr_size" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg motion "$WALLPAPER_MOTION" --argjson trn "$_pr_trn" --arg tr "$_pr_tr" '
             .rows |= map(
                 (if $s == "theme" and ((.group // "") | test("^(dark|light|custom)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
                 | (if $s == "theme" and ((.group // "") | test("^(dark|light)$")) and (.tool.name // "") == "theme_palette"
@@ -6995,8 +6975,6 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 if $s == "theme" and (.tool.name // "") == "theme_save" then .tool.ask = ["name"]
                 elif $s == "theme" and .id == "theme:picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_picture", types: ($types | split(" "))}
                 elif $s == "theme" and .id == "theme:wallpaper" then .children = "spark-shell://theme/rows/wallpapers" | .tool = null
-                elif $s == "theme" and .id == "theme:show:Animation" and $animok == "" then .tool = null | .columns = ["none", $animnone]   # locked: nothing to pick (#193)
-                elif $s == "theme" and .id == "theme:show:Animation" then .children = "spark-shell://theme/rows/animations" | .tool = null | .columns = [$anim]
                 elif ($s == "lan" or $s == "wifi") and (.id | startswith($s + ":network-settings")) then .sign = "opens" | .children = ("spark-shell://" + $s + "/rows/network/" + (.id | split(":network-settings ")[1]))
                 elif $s == "display" and (.text | startswith("screen ")) then .sign = "opens" | .children = ("spark-shell://display/rows/screen/" + (.text | split(" ")[1]))
                 elif $s == "window" and (.tool.name // "") == "window_focus" then .group = "open now" | .more = [{name: "window_close", arguments: {name: .tool.arguments.name}, said: "close"}]
@@ -7060,19 +7038,6 @@ provide_wall_rows() {   # -> the theme's wallpaper list as a rows resource (spar
              | if (.tool.name // "") == "theme_wallpaper" then .quiet = true else . end   # a drawing or the ground kept in place, nothing said (#191)
              | if .id == "theme:wallpaper-picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_wallpaper_picture", types: ($types | split(" "))} else . end]
             | {title: "wallpaper", state: "", rows: ., short: []}'
-}
-provide_anim_rows() {   # -> the theme's animation list as a rows resource (spark-shell://theme/rows/animations, #132): the pieces and none, the one in use checked, the palette's own said, each piece with its folder in the palette in use, where the dialog plays it beside the list while it is lit
-    _ap=$(anim_palette); _an=$(anim_now); _apo=$(anim_for_palette "$_ap"); _anl="$ANIMATION_NAMES none"
-    anim_drawn "$_ap" || { _anl=none; _apo=''; }   # a palette with none drawn: none alone, no palette's own (#193)
-    for _n in $_anl; do
-        _af=''; [ "$_n" = none ] || [ -z "$_ap" ] || [ ! -f "$REPO/assets/transitions/$_n/$_ap/open.gif" ] || _af=$REPO/assets/transitions/$_n/$_ap
-        printf '%s\t%s\n' "$_n" "$_af"
-    done | jq -Rn --arg now "$_an" --arg paired "$_apo" --arg locked "$(anim_drawn "$_ap" || echo "$ANIM_NONE_SAID")" '
-        [inputs | split("\t") | {id: ("theme:animation:" + .[0]), sign: (if .[0] == $now then "check" else "blank" end), text: .[0],
-            tool: {name: "theme_animation", arguments: {to: .[0]}}, more: [], children: null, group: null, quiet: true,
-            columns: (if $locked != "" then [$locked] elif .[0] == "none" then ["no motion"] elif .[0] == $paired then ["the palette'"'"'s own"] else [] end)}
-          + (if .[1] != "" then {film: .[1]} else {} end)]
-        | {title: "animation", state: "", rows: ., short: []}'
 }
 theme_chips() {   # theme_chips SECTION -> {NAME: [nine colors]} for the theme's palettes and saved themes, {} for any other section; read again only when the themes change (#196)
     [ "$1" = theme ] || { printf '{}'; return 0; }
@@ -7244,9 +7209,6 @@ EOF
             if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/wallpapers" ] && [ "$_method" = resources/read ]; then   # the wallpaper list, opened from the theme's wallpaper row
                 provide_wall_rows > "$TMP/wall.last"   # the rows the host has: the gate's (#196)
                 rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/wall.last")"; return 0
-            fi
-            if [ "$sec" = theme ] && [ "$_uri" = "spark-shell://theme/rows/animations" ] && [ "$_method" = resources/read ]; then   # the animation list, opened from the theme's animation row (#132)
-                rpc_result "$_id" "$(provide_anim_rows | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
             fi
             if [ "$sec" = display ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://display/rows/screen/?*) true ;; *) false ;; esac; then
                 if provide_screen_rows "${_uri##*/}" > "$TMP/screen.json"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/screen.json")"
@@ -7473,10 +7435,9 @@ EOF
     case $_name in notes_add|reminders_*|out_level|out_adjust|out_mute|out_unmute|mic_level|mic_adjust|mic_mute|mic_unmute|window_focus|window_close)
         [ -s "$TMP/action.effect" ] || { provide_refuse "$1" 'the action may have happened, but its result could not be read back; check the current state before trying again'; return 0; } ;;
     esac
-    _pal='null'; _trn='null'   # a theme step: the palette as it is now, so the dialog repaints itself with it (its colors came in its environment at start)
-    [ "$sec" != theme ] || { _trn=$(dialog_transitions); _trn=$(jq -cn --arg t "$_trn" '$t'); }   # and its animation now, read again by an open dialog (#126): "" plays none
-    if [ "$_name" = theme_preview ]; then   # a look: the colors on the screen, no animation changed, nothing to undo (#183)
-        _trn=null; _undo=null; _pal=$(cat "$TMP/preview.palette" 2>/dev/null || :); [ -n "$_pal" ] || _pal=null; rm -f "$TMP/preview.palette"
+    _pal='null'   # a theme step: the palette as it is now, so the dialog repaints itself with it (its colors came in its environment at start)
+    if [ "$_name" = theme_preview ]; then   # a look: the colors on the screen, nothing to undo (#183)
+        _undo=null; _pal=$(cat "$TMP/preview.palette" 2>/dev/null || :); [ -n "$_pal" ] || _pal=null; rm -f "$TMP/preview.palette"
     fi
     [ "$sec" != theme ] || [ "$_name" = theme_preview ] || { panel_load; _pal=$(jq -cn --arg f "$HEX_FG" --arg a "$HEX_ACCENT" --arg m "$PANEL_MUTED" --arg b "$PANEL_BG" --arg h "$PANEL_HI" --arg r "${HEX_ANSI_1:-}" --arg g "${HEX_ANSI_2:-}" '{HEX_FG: $f, HEX_ACCENT: $a, PANEL_MUTED: $m, PANEL_BG: $b, PANEL_HI: $h, HEX_ANSI_1: $r, HEX_ANSI_2: $g}'); }
     if [ -s "$TMP/network.undo" ]; then _undo=$(tool_call_json "${sec}_restore" "$(cat "$TMP/network.undo")"); fi
@@ -7486,11 +7447,11 @@ EOF
     [ -s "$TMP/action.effect" ] || printf 'null' > "$TMP/action.effect"
     if [ -f "$TMP/opened" ]; then printf 'null' > "$TMP/rows.last.new"
     else provide_rows "$sec" > "$TMP/rows.last.new" && cp "$TMP/rows.last.new" "$TMP/rows.last" && provide_seen; fi
-    rpc_result "$1" "$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" --argjson t "$_trn" --argjson o "$([ -f "$TMP/opened" ] && echo true || echo false)" \
+    rpc_result "$1" "$(jq -cn --arg r "$_out" --argjson u "$_undo" --argjson p "$_pal" --argjson o "$([ -f "$TMP/opened" ] && echo true || echo false)" \
         --slurpfile e "$TMP/action.effect" --slurpfile rows "$TMP/rows.last.new" '
         (if $o then {opened: true}
          else {receipt: $r} + (if $u == null then {} else {undo: $u} end) + (if $p == null then {} else {palette: $p} end)
-            + (if $t == null then {} else {transitions: $t} end) + (if $rows[0] == null then {} else {rows: $rows[0]} end) end)
+            + (if $rows[0] == null then {} else {rows: $rows[0]} end) end)
         + (if $e[0] == null then {} else {effect: $e[0]} end)
         | {content: [{type: "text", text: (del(.rows) | tojson)}], structuredContent: ., isError: false}')"
     rm -f "$TMP/action.effect" "$TMP/rows.last.new"
@@ -7503,7 +7464,6 @@ provide_quick() {   # provide_quick SECTION TOOL VALUE -> 0 for a pick the rows 
         theme_text) case $3 in bigger|smaller|[6-9]|[1-3][0-9]|40) [ -n "$(look_font_size)" ] ;; *) return 1 ;; esac ;;   # a size as it is, the dialog's step (#183)
         theme_transparency) case ${3%\%} in more|less|[0-9]|[1-4][0-9]|50) return 0 ;; *) return 1 ;; esac ;;
         theme_preview) [ "$3" = off ] || case $(theme_kind "$3") in shipped|yours) return 0 ;; *) return 1 ;; esac ;;   # a palette's look, or the look in use again (#183)
-        theme_animation) case " next back none $ANIMATION_NAMES " in *" $3 "*) return 0 ;; *) return 1 ;; esac ;;
         theme_glyphs) case $3 in signs|words) return 0 ;; *) return 1 ;; esac ;;
         theme_workspaces) case $3 in symbols|numbers) return 0 ;; *) return 1 ;; esac ;;
         theme_motion) case $3 in on|off) return 0 ;; *) return 1 ;; esac ;;
@@ -8588,14 +8548,14 @@ dialog_sections() {   # dialog_sections [FIRST] -> the providers the dialog star
 }
 cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a click on a bar block, the first desktop start (about)
     if [ "${SPARK_DIALOG_WINDOW:-}" = 1 ] && [ "${1:-}" != chat ] && [ -t 0 ] && [ -t 1 ]; then
-        # the dialog's own window (dialog.ini says so, #138): nothing is drawn ahead of the opening, which comes first and alone
-        # (#142); a key typed now waits for the dialog unseen, and lands at its prompt
+        # the dialog's own window (dialog.ini says so, #138): nothing is drawn ahead of the dialog's first frame (#142); a key
+        # typed now waits for the dialog unseen, and lands at its prompt
         stty -echo -icanon 2>/dev/null || :
         printf '\033[?25l'
     else
-        [ ! -t 1 ] || printf '\033[?25l'   # no cursor blinking in the window while it starts (#122): the dialog puts it back at its prompt
+        [ ! -t 1 ] || printf '\033[?25l'   # no cursor blinking in the window while it starts: the dialog puts it back at its prompt
     fi
-    _dwin=${SPARK_DIALOG_WINDOW:-}   # the dialog's own window maps unseen (the sway rule); the dialog shows it once its opening is drawn (#167)
+    _dwin=${SPARK_DIALOG_WINDOW:-}   # the dialog's own window maps unseen (the sway rule); the dialog shows it once its first frame is drawn (#167)
     unset SPARK_DIALOG_WINDOW   # read once: a terminal a step opens from here is no dialog's window
     config_load
     [ "$OS" != Darwin ] || refuse_in dialog "the dialog is the Linux desktop's; in a terminal here, spark-shell panel"
@@ -8618,7 +8578,6 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     case $_first in '') ;; *) set -- "$@" --home "$_first" ;; esac
     _dc=''; [ "$DIALOG_ATTACH" != yes ] || _dc=plus; [ "$DIALOG_MODEL" != yes ] || _dc="${_dc:+$_dc,}model"; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
     _sp=$(spark_bin); [ -z "$_sp" ] || set -- "$@" --spark "$_sp"
-    _ta=$(dialog_transitions); [ -z "$_ta" ] || set -- "$@" --transitions "$_ta"
     FULL_ID=''; ! panel_own_window || panel_full_aside
     ! desktop_wanted || case ${TERM:-} in foot*) SPARK_DIALOG_SLOTS=1; export SPARK_DIALOG_SLOTS ;; esac   # its foot.ini sets the five slots: the dialog draws in them, and a new look recolors it in place (#34)
     st=0; "$DIALOG_BIN" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?
@@ -8906,7 +8865,7 @@ verb_close() {   # the last line of a verb: the count on a dry run, the sentence
     else echo "$1"; fi
 }
 
-cmd_theme() {   # theme [NAME|none|list|show] | save [NAME] | delete NAME | back | wallpaper [X] | text [N|bigger|smaller] | transparency [N|more|less] | animation [NAME|none|next|back] | glyphs [signs|words] | workspaces [symbols|numbers] | motion [on|off] | picture PATH | "WORDS"
+cmd_theme() {   # theme [NAME|none|list|show] | save [NAME] | delete NAME | back | wallpaper [X] | text [N|bigger|smaller] | transparency [N|more|less] | glyphs [signs|words] | workspaces [symbols|numbers] | motion [on|off] | picture PATH | "WORDS"
     config_load
     case ${1:-show} in
         show) [ $# -le 1 ] || refuse_in theme "show takes no word"; theme_show; return ;;
@@ -8917,7 +8876,6 @@ cmd_theme() {   # theme [NAME|none|list|show] | save [NAME] | delete NAME | back
         wallpaper) shift; theme_wallpaper "$@"; return ;;
         text) shift; theme_text "$@"; return ;;
         transparency) shift; theme_transparency "$@"; return ;;
-        animation) shift; theme_animation "$@"; return ;;
         glyphs) shift; theme_glyphs "$@"; return ;;
         workspaces) shift; theme_workspaces "$@"; return ;;
         motion) shift; theme_motion "$@"; return ;;
@@ -8926,11 +8884,6 @@ cmd_theme() {   # theme [NAME|none|list|show] | save [NAME] | delete NAME | back
     case "$*" in *' '*) theme_from_words "$*"; return ;; esac   # words: the model reads them into a look
     [ -n "$(theme_kind "$1")" ] || refuse_in theme "no palette named $1 -- spark-shell theme list shows them"
     theme_apply "$1"
-}
-anim_follow() {   # anim_follow PIECE -- the dialog's animation follows the look, as the wallpaper does (#122); none, no motion, stays none
-    [ "${DIALOG_ANIMATION:-}" != none ] && [ "${DIALOG_ANIMATION:-}" != "$1" ] || return 0
-    [ "$MODE" = dry ] || config_set DIALOG_ANIMATION "$1" >/dev/null
-    DIALOG_ANIMATION=$1; export DIALOG_ANIMATION
 }
 theme_apply() {   # theme_apply NAME|none [back] -- the whole look follows: a saved theme or a kept look brings its own wallpaper, text size, transparency and pointer; a palette with a drawing of its own brings the drawing unless a picture of yours is on; `back` leaves the history as it is
     name=$1; _w=''
@@ -8951,15 +8904,12 @@ theme_apply() {   # theme_apply NAME|none [back] -- the whole look follows: a sa
             [ "$MODE" = dry ] || [ "$_cur" = "$_v" ] || config_set "$_k" "$_v" >/dev/null
             eval "$_k=\$_v"; export "${_k?}"
         done
-        _an=$(look_get "$_td" ANIMATION); case " $ANIMATION_NAMES " in *" $_an "*) ;; *) _an=$(anim_for_palette "$(look_get "$_td" PALETTE)") ;; esac
-        anim_follow "$_an"
         bar_look_follow "$(look_get "$_td" BAR_GLYPHS)" "$(look_get "$_td" BAR_WORKSPACES)"
         case $(look_get "$_td" WALLPAPER_MOTION) in on|off) _lm=$(look_get "$_td" WALLPAPER_MOTION); [ "$_lm" = "$WALLPAPER_MOTION" ] || { [ "$MODE" = dry ] || config_set WALLPAPER_MOTION "$_lm" >/dev/null; WALLPAPER_MOTION=$_lm; export WALLPAPER_MOTION; } ;; esac   # a saved theme's moving wallpaper (#180); look_burst plays it
     elif [ "$name" != none ] && [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] && ! wall_yours && _w=$(wall_for_palette "$name") && [ "$_w" != "$WALLPAPER" ]; then   # on the desktop the palette brings the drawing made for it, as its row says; only a picture of yours stays (#25)
         [ "$MODE" = dry ] || config_set WALLPAPER "$_w" >/dev/null
         WALLPAPER=$_w; export WALLPAPER
     else _w=''; fi
-    [ -n "$_td" ] || [ "$name" = none ] || anim_follow "$(anim_for_palette "$name")"
     [ "$MODE" = dry ] || [ "$THEME" = "$name" ] || config_set THEME "$name"
     THEME=$name; export THEME
     theme_files
@@ -9017,7 +8967,7 @@ theme_list() {
     fi
     echo "spark-shell theme NAME uses one everywhere; theme save NAME keeps the look in use."
 }
-theme_save() {   # theme_save [NAME...] -- the look in use kept as a folder under that name: the palette, the wallpaper's files, the text size, the transparency, the pointer, the dialog's animation, the bar's glyphs and workspaces (#160); a look made from words or a picture keeps its own name when none is given
+theme_save() {   # theme_save [NAME...] -- the look in use kept as a folder under that name: the palette, the wallpaper's files, the text size, the transparency, the pointer, the bar's glyphs and workspaces (#160); a look made from words or a picture keeps its own name when none is given
     [ -n "${THEME:-}" ] && [ "$THEME" != none ] || refuse_in theme "no palette is in use -- spark-shell theme NAME first"
     name=$(desk_name_of "$*")
     if [ -z "$name" ]; then case $(theme_kind "$THEME") in look) name=$THEME ;; *) refuse_in theme "save NAME -- a name for this look" ;; esac; fi
@@ -9044,7 +8994,7 @@ theme_save() {   # theme_save [NAME...] -- the look in use kept as a folder unde
         elif wall_there; then
             _pic=${WALLPAPER##*/}; cp "$WALLPAPER" "$_d.new/$_pic"; printf 'WALLPAPER=picture\nPICTURE=%s\n' "$_pic"
         else printf 'WALLPAPER=%s\n' "$WALLPAPER"; fi
-        printf 'FONT=%s\nALPHA=%s\nPOINTER=%s\nANIMATION=%s\nBAR_GLYPHS=%s\nBAR_WORKSPACES=%s\nWALLPAPER_MOTION=%s\n' "$FONT" "$ALPHA" "${POINTER:-}" "$(anim_now)" "$BAR_GLYPHS" "$BAR_WORKSPACES" "$WALLPAPER_MOTION"
+        printf 'FONT=%s\nALPHA=%s\nPOINTER=%s\nBAR_GLYPHS=%s\nBAR_WORKSPACES=%s\nWALLPAPER_MOTION=%s\n' "$FONT" "$ALPHA" "${POINTER:-}" "$BAR_GLYPHS" "$BAR_WORKSPACES" "$WALLPAPER_MOTION"
     } > "$_d.new/look.env"
     rm -rf "$_d"; mv "$_d.new" "$_d"
     echo "saved $name ($_d) -- spark-shell theme $name brings the look back"
@@ -9112,22 +9062,6 @@ text_step() {   # text_step N|bigger|smaller -> the receipt, or the refusal and 
     _f=$(printf '%s' "$FONT" | sed "s/size=$_sz/size=$_new/")
     config_set FONT "$_f" >/dev/null; FONT=$_f; export FONT; look_apply; login_follow >/dev/null 2>&1 || :
     echo "text at $_new $PANEL_SEP new windows and the bar take it; the pointer $(pointer_size_for "$_new") pixels"
-}
-theme_animation() {   # theme_animation [NAME|none|next|back] -- the dialog's transitions as it opens, waits and closes (#122): a piece by name, none for no motion
-    anim_drawn "$(anim_palette)" || [ -n "${1:-}" ] || { echo "animation none $PANEL_SEP $ANIM_NONE_SAID"; return; }
-    [ -n "${1:-}" ] || { echo "animation $(anim_now) $PANEL_SEP none, $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g')"; return; }
-    [ $# -eq 1 ] || refuse_in theme "animation takes one word"
-    anim_step "$1" || exit 1
-}
-anim_step() {   # anim_step NAME|none|next|back -> the receipt, or the refusal and exit 1 (the panel's step and the verb share it): from the dialog's next opening
-    anim_drawn "$(anim_palette)" || [ "$1" = none ] || { echo "the animation stays none: $ANIM_NONE_SAID (the pieces are drawn for the shipped palettes)"; return 1; }   # #193
-    # shellcheck disable=SC2086   # the names, a word each, on purpose
-    case $1 in
-        next|back) _an=$(printf '%s\n' none $ANIMATION_NAMES | awk -v c="$(anim_now)" -v d="$1" '{ n[NR] = $0; if ($0 == c) i = NR } END { if (!i) i = 1; print n[d == "next" ? i % NR + 1 : (i + NR - 2) % NR + 1] }') ;;
-        *) case " none $ANIMATION_NAMES " in *" $1 "*) _an=$1 ;; *) echo "animation takes none, $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g'), next or back"; return 1 ;; esac ;;
-    esac
-    config_set DIALOG_ANIMATION "$_an" >/dev/null; DIALOG_ANIMATION=$_an; export DIALOG_ANIMATION
-    if [ "$_an" = none ]; then echo "animation none $PANEL_SEP the dialog opens and closes with no motion"; else echo "animation $_an $PANEL_SEP from the dialog's next opening"; fi
 }
 bar_look_follow() {   # bar_look_follow GLYPHS WORKSPACES -- a saved theme's bar (#160), each when it names one: kept, the bar drawn again and the workspaces renamed
     _bc=''
@@ -10447,8 +10381,8 @@ cmd_layout() {   # cmd_layout [save [NAME] | delete NAME | rename NAME NEW | NAM
 }
 desk_pending() {   # at the desktop's start: do not disturb as it was left (#71), beside it; then the words left by a console start, laid out once, then gone
     ( notify_keep ) </dev/null >/dev/null 2>&1 &
-    # the dialog's files read once aside, so the session's first opening is a warm one (#142): the script, the binary, its animations
-    ( _dw=$(dialog_transitions); cat "$REPO/spark-shell" "$DIALOG_BIN" ${_dw:+"$_dw"/*.gif} ) </dev/null >/dev/null 2>&1 &
+    # the dialog's files read once aside, so the session's first opening is a warm one (#142): the script and the binary
+    ( cat "$REPO/spark-shell" "$DIALOG_BIN" ) </dev/null >/dev/null 2>&1 &
     # the layouts that a command's words once made (#145): out of the history, their kept files with them
     _kh=$(kept_hist layout); [ ! -f "$_kh" ] || { awk -F '\t' '$2 !~ /^(layout-(delete|rename|save|back|help)(-|$)|-|help$)/' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; kept_prune layout; }
     # what only the desktop knows, for spark's prompt line, and spark mcp once inside the session (#159)

@@ -10,7 +10,6 @@ use crate::progress;
 use crate::reply::Mark;
 use crate::scrub::{cells, cut, cut_words};
 use crate::sixel::Viewport;
-use crate::transition::Reel;
 use ratatui::buffer::{Buffer, CellDiffOption};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
@@ -169,16 +168,12 @@ pub struct Drawn {
     pub pages: usize,
     /// A sound's waveform, its cells (x, y, w, h): a click there plays from that point.
     pub wave: Option<(u16, u16, u16, u16)>,
-    /// A transition playing (#122): its cells (x, y, w, h), which one, and since when.
-    pub film: Option<(u16, u16, u16, u16, Reel, std::time::Instant)>,
     /// The reply row's Undo (#196): its cells (x0, x1, y), for a click.
     pub reply_undo: Option<(u16, u16, u16)>,
     /// A value row's arrows (#175): each one's cells (x0, x1, y), its pick, and whether it steps the value up.
     pub steps: Vec<(u16, u16, u16, usize, bool)>,
     /// The dialog's own column, its first cell and the cell after its last (#131): a click's row is its list's only there.
     pub columns: (u16, u16),
-    /// The opening plays alone (#142): nothing else drawn, no cursor.
-    pub alone: bool,
 }
 
 /// A picture main.rs draws in sixel over cells the buffer skips: where (x, y, w, h in cells), its file,
@@ -269,7 +264,6 @@ impl Drawn {
             p.x += dx;
         }
         self.wave = self.wave.map(|(x, y, w, h)| (x + dx, y, w, h));
-        self.film = self.film.map(|(x, y, w, h, r, t)| (x + dx, y, w, h, r, t));
         self.reply_undo = self.reply_undo.map(|(a, b, y)| (a + dx, b + dx, y));
         for st in &mut self.steps {
             st.0 += dx;
@@ -294,22 +288,6 @@ fn blit(buf: &mut Buffer, part: &Buffer, x: u16, y: u16) {
 pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let (w, h) = (buf.area.width, buf.area.height);
     buf.set_style(Rect::new(0, 0, w, h), Style::default().fg(pal.fg));
-    // the opening, and the wait after it while the home loads, play alone in the middle of the window: nothing
-    // else is drawn until they end, then the whole dialog at once (#142)
-    if let Some((reel @ (Reel::Open | Reel::Wait), since)) = app.motion {
-        let mut drawn = Drawn {
-            alone: true,
-            ..Drawn::default()
-        };
-        let (x, y, bw, bh) = (2, 2, w.saturating_sub(4), h.saturating_sub(4));
-        for yy in y..(y + bh).min(h) {
-            for xx in x..(x + bw).min(w) {
-                buf[(xx, yy)].set_diff_option(CellDiffOption::Skip);
-            }
-        }
-        drawn.film = Some((x, y, bw, bh, reel, since));
-        return drawn;
-    }
     // a preview opened on Space keeps the whole screen: its zoom and its drag want the room (#120); elsewhere the column
     // in the middle (#141)
     let cw = if app.view == View::Preview { w } else { column_width(w, h) };
@@ -413,23 +391,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     // the content first: a preview's text decides the pages its key row offers
     let bottom = h - BOTTOM;
     let content_y = CONTENT_Y;
-    if let Some((reel, since)) = app.motion {
-        // a transition: the content area is its, in its middle (main.rs draws it)
-        let (x, y, w, h) = (2, content_y, pen.w.saturating_sub(4), bottom.saturating_sub(content_y));
-        skip(
-            &mut pen,
-            Picture {
-                x,
-                y,
-                w,
-                h,
-                file: String::new(),
-                view: Viewport::FIT,
-                spectrogram: false,
-            },
-        );
-        drawn.film = Some((x, y, w, h, reel, since));
-    } else if app.view == View::About {
+    if app.view == View::About {
         about(app, &mut pen, content_y, bottom);
     } else if app.view == View::Preview {
         let (picks, picture, pages) = preview(app, &mut pen, content_y, bottom, &mut drawn);
@@ -828,24 +790,6 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     let pal = pen.pal.clone();
     let Some(pv) = app.preview.as_ref() else { return (picks, None, 1) };
     let Some(pg) = pv.shown.as_ref() else {
-        // a page slow to come: the wait, after a moment, so a quick one never flashes it (#122)
-        if app.films && !pv.failed && pv.asked.elapsed() >= std::time::Duration::from_millis(300) && y + 4 < bottom {
-            let (x, w, h) = (2, pen.w.saturating_sub(4), bottom - y);
-            skip(
-                pen,
-                Picture {
-                    x,
-                    y,
-                    w,
-                    h,
-                    file: String::new(),
-                    view: Viewport::FIT,
-                    spectrogram: false,
-                },
-            );
-            // the opening from its first frame, as it shows, then the wait while the page is still on its way (#142)
-            drawn.film = Some((x, y, w, h, Reel::Load, pv.asked + std::time::Duration::from_millis(300)));
-        }
         return (picks, None, 1);
     };
     let (x0, w) = (2u16, pen.w.saturating_sub(4));
@@ -887,27 +831,8 @@ fn preview(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         for (k, l) in pg.lines.iter().take(said).enumerate() {
             pen.put(x0, y + k as u16, &cut_words(l, w as usize), pal.fg, pg.bold.contains(&k), false);
         }
-        // the animation that began while the page was on its way plays on under the title, the wait looped,
-        // until the picture is there; words only where no animation plays (#164)
-        let (fy, fh) = (y + said as u16 + 1, rows.saturating_sub(said as u16 + 1));
-        if app.films && fh > 4 {
-            skip(
-                pen,
-                Picture {
-                    x: x0,
-                    y: fy,
-                    w,
-                    h: fh,
-                    file: String::new(),
-                    view: Viewport::FIT,
-                    spectrogram: false,
-                },
-            );
-            drawn.film = Some((x0, fy, w, fh, Reel::Load, pv.asked + std::time::Duration::from_millis(300)));
-        } else {
-            let t = "drawing the waveform";
-            pen.put(x0 + w.saturating_sub(cells(t) as u16) / 2, y + rows / 2, t, pal.muted, false, false);
-        }
+        let t = "drawing the waveform";
+        pen.put(x0 + w.saturating_sub(cells(t) as u16) / 2, y + rows / 2, t, pal.muted, false, false);
     } else if let Some(say) = &pg.say {
         // no preview: why, in the middle of the area
         let t = cut_words(say, w as usize);

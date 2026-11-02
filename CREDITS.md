@@ -97,7 +97,7 @@ With DESKTOP=sway, from apt, pacman, xbps, dnf or zypper.
 
 `spark-dialog`, built from `dialog/` with crates from crates.io, each
 pinned by `dialog/Cargo.lock`. The release's `spark-dialog.cdx.json`
-lists every one with its licence (95 today: MIT, Apache-2.0, Zlib and
+lists every one with its licence (93 today: MIT, Apache-2.0, Zlib and
 Unicode-3.0). The ones it is made of:
 
 - ratatui -- https://github.com/ratatui/ratatui -- MIT. The drawing.
@@ -107,9 +107,6 @@ Unicode-3.0). The ones it is made of:
   The protocol's JSON.
 - png -- https://github.com/image-rs/image-png -- MIT or Apache-2.0.
   The favicon, read for the logo in the about, and a preview's pictures.
-- gif -- https://github.com/image-rs/image-gif -- MIT or Apache-2.0. The
-  transitions, read frame by frame (with weezl, its LZW, MIT or
-  Apache-2.0).
 - unicode-width -- https://github.com/unicode-rs/unicode-width -- MIT or
   Apache-2.0. A character's cells.
 - libc -- https://github.com/rust-lang/libc -- MIT or Apache-2.0. The
@@ -131,18 +128,6 @@ line naming its upstream. The licence is the upstream's:
 - Selenized -- https://github.com/jan-warchol/selenized -- MIT.
 - Solarized -- https://ethanschoonover.com/solarized -- MIT.
 - Tokyo Night -- https://github.com/folke/tokyonight.nvim -- Apache-2.0.
-
-## The transitions
-
-The six animations in `assets/transitions/` are spark-shell's own, MIT,
-the repository's licence. `assets/transitions/make.py` draws them with
-Python 3 and two libraries, used only to make the files. Nothing is
-installed for them:
-
-- NumPy -- https://github.com/numpy/numpy -- BSD-3-Clause. The drawing
-  and the colors.
-- Pillow -- https://github.com/python-pillow/Pillow -- MIT-CMU. The
-  paper plane's outline, and the first cut of each file's colors.
 
 ## The Terminal.app profile
 
