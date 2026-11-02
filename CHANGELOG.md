@@ -115,6 +115,11 @@ part lands in a pull request of its own.
   audit record (H); an older reply to spark cleared the march of the
   newer request (I); the same words typed again at Home were not asked
   again (N). J and K went with phase 1.
+- Cut: the look while lit. A palette lit for a quarter of a second no
+  longer repaints the desktop, and the light leaving no longer puts it
+  back: each was a theme preview call of about 300 ms, and a flash of
+  sway, the bar and the terminals as the arrows passed. Enter or a
+  click keeps a palette, at once, as before.
 
 ## v0.121
 
