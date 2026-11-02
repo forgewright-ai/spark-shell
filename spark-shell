@@ -5790,10 +5790,11 @@ storage_act() {   # storage_act mount|unmount|open|eject NAME -> one line
 storage_open() {   # storage_open DIR NAME -> the folder in your file manager, else a terminal in it; the window is the receipt
     desk_in_sway || { echo "$2 is at $1"; return 0; }
     case $1 in *[,\;\'\"]*) echo "$2 is at $1 (a comma, a quote or a semicolon in it, which sway would split)"; return 0 ;; esac
-    _before=$(desk_windows_all)
-    if command -v xdg-open >/dev/null 2>&1 && [ -n "$(xdg-mime query default inode/directory 2>/dev/null)" ]; then swaymsg -- exec "xdg-open '$1'" >/dev/null 2>&1 || { echo "could not open $2"; return 1; }
-    else swaymsg -- exec "foot --working-directory='$1'" >/dev/null 2>&1 || { echo "could not open $2"; return 1; }; fi
-    panel_open_wait "$_before" || { echo "$2 is at $1"; return 0; }
+    _so="foot --working-directory='$1'"
+    if command -v xdg-open >/dev/null 2>&1 && [ -n "$(xdg-mime query default inode/directory 2>/dev/null)" ]; then _so="xdg-open '$1'"; fi
+    _wr=0; win_exec "$_so" || _wr=$?
+    [ "$_wr" -ne 2 ] || { echo "could not open $2"; return 1; }
+    [ "$_wr" -eq 0 ] || { echo "$2 is at $1"; return 0; }
     : > "$TMP/opened"; echo "opened $2"
 }
 storage_drives() { storage_list | awk -F '\037' '$1 == "drive" { print $3 "\t" $4 "\t" $2 }'; }   # -> DEV<tab>SIZE<tab>NAME per drive
@@ -5931,8 +5932,10 @@ app_group_order() {   # app_group_order GROUP -> its place among the headings, f
         education) echo 6 ;; games) echo 7 ;; system) echo 8 ;; utilities) echo 9 ;; *) echo 10 ;; esac
 }
 panel_apps_known() {   # -> the apps a layout may open (your allowed list, else every desktop entry), one name per line; never the desktop's own
-    ( [ "$OS" = Darwin ] || pm_detect; desk_apps '' ) 2>/dev/null | sed -n 's/^\([A-Za-z0-9][^:]*\): .*/\1/p' | grep -vx shell
+    ( [ "$OS" = Darwin ] || pm_detect; desk_apps '' ) 2>/dev/null | panel_apps_names
 }
+panel_apps_names() { sed -n 's/^\([A-Za-z0-9][^:]*\): .*/\1/p' | grep -vx shell; }   # desk_apps's lines -> the names
+panel_apps_read() { ( [ "$OS" = Darwin ] || pm_detect; desk_apps '' ) > "$1" 2>/dev/null; }   # panel_apps_read FILE -- desk_apps's lines there, $TMP/exec how each opens
 panel_section_rows() {   # panel_section_rows SECTION FIRST -> the section's rows for the list, "MARK SECTION  TEXT<tab>SECTION ACTION [ARG]"; look-only rows only for FIRST
     _full=''; [ "$1" != "$2" ] || _full=full
     panel_rows "$1" $_full | while IFS="$TAB" read -r m t a _x; do
@@ -6036,8 +6039,9 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 pick) ( cmd_apps_verb ) ;;
                 open) panel_app_open "$_arg" ;;
                 terminal) desk_in_sway || { echo "a terminal window needs the desktop"; return 1; }
-                    _before=$(desk_windows_all); swaymsg -- exec foot >/dev/null 2>&1 || { echo "could not open a terminal"; return 1; }
-                    panel_open_wait "$_before" || { echo "the terminal opened no window"; return 1; }
+                    _wr=0; win_exec foot || _wr=$?
+                    [ "$_wr" -ne 2 ] || { echo "could not open a terminal"; return 1; }
+                    [ "$_wr" -eq 0 ] || { echo "the terminal opened no window"; return 1; }
                     : > "$TMP/opened"; echo "opened a terminal" ;;
                 *) echo "$_a is not something apps does"; return 1 ;;
             esac ;;
@@ -6097,18 +6101,30 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
 }
 panel_app_open() {   # panel_app_open NAME -> the app opens on the current workspace, the way its desktop entry says (a terminal app inside foot)
     desk_in_sway || { echo "opening an app needs the desktop"; return 1; }
-    ( [ "$OS" = Darwin ] || pm_detect; desk_apps '' ) > "$TMP/apps" 2>/dev/null
+    mv -f "$TMP/apps.gate" "$TMP/apps" 2>/dev/null || panel_apps_read "$TMP/apps"   # the gate's list when it just read one (#196)
     _n=$(sed -n "s/^\($(printf '%s' "$1" | sed 's/[.[\*^$]/\\&/g')\): .*/\1/Ip" "$TMP/apps" | head -1); [ -n "$_n" ] || { echo "no app named $1 here"; return 1; }
     _l=$(desk_launch "$_n" ''); ! desk_app_term "$_n" || _l="foot -e $_l"
-    _before=$(desk_windows_all)
-    swaymsg -- exec "$_l" >/dev/null 2>&1 || { echo "could not open $_n"; return 1; }
+    _wr=0; win_exec "$_l" || _wr=$?
+    [ "$_wr" -ne 2 ] || { echo "could not open $_n"; return 1; }
     # no new window in time: an app already open may have taken it as a tab, so it is said, not refused (#196)
-    panel_open_wait "$_before" || { echo "asked $_n to open; no new window came"; return 0; }
+    [ "$_wr" -eq 0 ] || { echo "asked $_n to open; no new window came"; return 0; }
     : > "$TMP/opened"; echo "opened $_n"   # the mark the panel's window reads: it closes, the app has the screen
 }
-panel_open_wait() {   # panel_open_wait COUNT -- until sway shows more windows than COUNT, DESK_WAIT seconds at most: the window maps and takes the focus, then the panel may go
-    _t=0; while [ "$(desk_windows_all)" -le "$1" ] && [ "$_t" -lt $((DESK_WAIT * 4)) ]; do sleep 0.25; _t=$((_t + 1)); done
-    [ "$(desk_windows_all)" -gt "$1" ]
+win_exec() {   # win_exec COMMAND -- sway runs it: 0 once a new window maps, 1 when none came in DESK_WAIT seconds, 2 when sway took no exec. Its window events are read from before the exec, so a window that maps at once is not missed, and nothing is polled (#196)
+    _wr=1; [ ! -p "$TMP/win.events" ] || rm -f "$TMP/win.events"
+    if ! command -v timeout >/dev/null 2>&1 || ! mkfifo "$TMP/win.events" 2>/dev/null; then
+        swaymsg -- exec "$1" > /dev/null 2>&1 < /dev/null || _wr=2   # nothing to end a wait with: the exec alone, never a wait with no end
+        return "$_wr"
+    fi
+    timeout "$DESK_WAIT" swaymsg -r -t subscribe -m '["tick","window"]' > "$TMP/win.events" 2>/dev/null < /dev/null & _wx=$!
+    {
+        IFS= read -r _we || :   # sway's tick to a new subscriber, at once: from here on no window is missed
+        if swaymsg -- exec "$1" > /dev/null 2>&1 < /dev/null; then
+            while IFS= read -r _we; do case $_we in '{ "change": "new"'*|'{"change":"new"'*) _wr=0; break ;; esac; done   # -r: one event a line; sway spaces its JSON
+        else _wr=2; fi
+    } < "$TMP/win.events"
+    kill "$_wx" 2>/dev/null || :; wait "$_wx" 2>/dev/null || :; rm -f "$TMP/win.events"
+    return "$_wr"
 }
 win_open() {   # -> the windows sway shows, one a line: APP<tab>TITLE<tab>ID; the panel's own left out
     swaymsg -t get_tree 2>/dev/null | jq -r --arg me "$PANEL_APP" '.. | objects | select(.pid? != null and (.type? == "con" or .type? == "floating_con")) | select(((.app_id // .window_properties.class // "") != "") and .app_id != $me) | "\(.app_id // .window_properties.class)\t\(.name // "" | gsub("\t"; " "))\t\(.id)"' 2>/dev/null | scrub_text || :   # a title is any program's words: scrubbed
@@ -6417,7 +6433,9 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         spark:chat|undo:all|about:open) echo ''; return 0 ;;
         layout:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: save takes a name"; return 1 ;;
         layout:add) _n=$(jq -r '.suggested // [] | .[]' "$DESK_LAST" 2>/dev/null | awk -v w="$(panel_lower "$3")" 'tolower($0) == w && !d {print; d = 1}'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "layout: $3 was not suggested for the last layout"; return 1 ;;
-        apps:open) _n=$(panel_apps_known | awk -v w="$(panel_lower "$3")" 'tolower($0) == w && !d {print; d = 1}'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "apps: no app named $3 here"; return 1 ;;
+        apps:open) panel_apps_read "$TMP/apps.gate"   # the list the step opens from too: the desktop read once a step (#196)
+            _n=$(panel_apps_names < "$TMP/apps.gate" | awk -v w="$(panel_lower "$3")" 'tolower($0) == w && !d {print; d = 1}'); [ -n "$_n" ] && { echo "$_n"; return 0; }
+            rm -f "$TMP/apps.gate"; echo "apps: no app named $3 here"; return 1 ;;
         layout:open) _n=$(desk_name_of "$3"); if [ -n "$_n" ] && desk_kept_file "$_n" >/dev/null; then echo "$_n"; return 0; fi; echo "layout: no saved layout named $3"; return 1 ;;
         layout:new) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: new takes the words for it"; return 1 ;;
         apps:pick|apps:terminal) echo ''; return 0 ;;
@@ -8325,9 +8343,9 @@ files_text() { [ -f "$1" ] && { [ ! -s "$1" ] || LC_ALL=C grep -qI . "$1" 2>/dev
 files_open_text() {   # files_open_text ID PATH -- a text file in the editor, in a terminal window, the window the receipt (#113: the system's handler for text is a terminal editor, which xdg-open starts with no terminal); 1 where this is not the way: macOS (open knows), no sway, no editor, a path sway would split
     [ "$OS" != Darwin ] && files_text "$2" && desk_in_sway && _fed=$(editor_pick) || return 1
     case $2 in *[,\;\'\"]*) return 1 ;; esac
-    _before=$(desk_windows_all)
-    swaymsg -- exec "$(editor_exec "$2")" >/dev/null 2>&1 || { provide_refuse "$1" "files: could not start the editor"; return 0; }
-    if panel_open_wait "$_before"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
+    _wr=0; win_exec "$(editor_exec "$2")" || _wr=$?
+    [ "$_wr" -ne 2 ] || { provide_refuse "$1" "files: could not start the editor"; return 0; }
+    if [ "$_wr" -eq 0 ]; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"
     else files_result "$1" "$(printf '%s' "${2##*/}" | scrub_text) opens in ${_fed%% *}"; fi
 }
 files_open_with() {   # files_open_with ID PATH [--reveal] -- the path through the system's opener (xdg-open, open; a reveal selects it in the file manager)
@@ -8372,8 +8390,8 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
                 files_result "$1" "folder $_fnm made in $(files_home "${_fn%/*}")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"; return 0; fi
             : > "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not make $_fnm"; return 0; }
             if desk_in_sway && editor_pick >/dev/null; then   # in the editor (yours, else the system's), in a terminal window when it is a terminal program: the window is the receipt
-                case $_fn in *[,\;\'\"]*) ;; *) _before=$(desk_windows_all)
-                    if swaymsg -- exec "$(editor_exec "$_fn")" >/dev/null 2>&1 && panel_open_wait "$_before"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"; return 0; fi ;;
+                case $_fn in *[,\;\'\"]*) ;; *)
+                    if win_exec "$(editor_exec "$_fn")"; then rpc_result "$1" "$(jq -cn '{opened: true} | {content: [{type: "text", text: tojson}], structuredContent: ., isError: false}')"; return 0; fi ;;
                 esac
             fi
             files_result "$1" "$_fnm made in $(files_home "${_fn%/*}")" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"; return 0 ;;

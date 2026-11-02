@@ -134,6 +134,13 @@ part lands in a pull request of its own.
   one column and no provider asks for two, so the code that laid two
   groups side by side, moved the arrows across them and drew a narrow
   chip goes, about 150 lines. Nothing on screen changes.
+- A step that opens a window (an app, a terminal, a file in the editor,
+  a drive's folder) ends the moment sway maps it: the provider reads
+  sway's window events from before the step. Before, it asked sway for
+  every window four times a second, up to 30 seconds. `apps open` opens
+  from the list of apps its check read, where it read the desktop's
+  apps a second time. In a headless sway on the box, opening micro took
+  about 565 ms and 66 processes, and takes about 260 ms and 49.
 
 ## v0.121
 

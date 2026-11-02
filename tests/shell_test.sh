@@ -7,6 +7,7 @@
 set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 fixture_python=$(command -v python3)
+sys_timeout=$(command -v timeout || :)   # macOS has none: fresh puts a stand-in on PATH
 # on a Mac the suite builds Terminal.app's profile and prints it, never
 # applying it: the developer's own terminal and profiles stay as they are
 [ "$(uname -s)" != Darwin ] || export SPARK_SHELL_NO_APPLY=1
@@ -61,6 +62,8 @@ fresh() {   # a new throwaway HOME with the stubs in place
     # sway's runtime dir is a login manager's (the desktop tests unset it)
     printf '#!/bin/sh\n[ -n "${TEST_TTY:-}" ] || { echo "not a tty"; exit 1; }\necho "$TEST_TTY"\n' > "$H/.local/bin/tty"
     chmod +x "$H/.local/bin/tty"
+    # sway's waits for a window end at the stubs' own events; where the system has no timeout (macOS), the command alone
+    [ -n "$sys_timeout" ] || { printf '#!/bin/sh\nshift; exec "$@"\n' > "$H/.local/bin/timeout"; chmod +x "$H/.local/bin/timeout"; }
     export XDG_RUNTIME_DIR=$H/run
     PATH=$H/.local/bin:$PATH
 }
@@ -178,13 +181,20 @@ EOF
 #!/bin/sh
 log=${XDG_STATE_HOME:-$HOME/.local/state}/swaymsg.log; mkdir -p "$(dirname "$log")"
 case ${1:-} in
+    -r) # -r -t subscribe -m EVENTS: sway's tick to a new subscriber at once, then a window's new event once an exec comes; with $HOME/no-new-window, the tick alone
+        n=$(grep -c '^exec' "$log" 2>/dev/null) || :   # counted before the tick: the exec may follow it at once
+        echo '{ "first": true, "payload": "" }'
+        [ ! -e "$HOME/no-new-window" ] || exit 0
+        while [ "$(grep -c '^exec' "$log" 2>/dev/null || :)" -le "${n:-0}" ]; do sleep 0.05; done
+        echo '{ "change": "new", "container": { "id": 1000 } }' ;;
     -t) case $2 in
             get_version) echo '{"human_readable":"sway-stub"}' ;;
             get_outputs) o1='{"name":"DP-1","active":true,"make":"Fakemake","model":"Fakemodel","serial":"SN0001","rect":{"x":0,"y":0},"current_mode":{"width":2560,"height":1440}}'
                 o2='{"name":"HDMI-A-1","active":true,"make":"Fakemake","model":"Fakemodel","serial":"SN0002","rect":{"x":2560,"y":0},"current_mode":{"width":1920,"height":1080}}'
                 if [ -e "$HOME/two-screens" ]; then echo "[$o2,$o1]"; else echo "[$o1]"; fi ;;
             get_workspaces) echo '[{"num":1},{"num":2}]' ;;
-            get_tree) ws=$(grep -n '^workspace number' "$log" 2>/dev/null | tail -1); from=${ws%%:*}; num=${ws##* }; [ -n "$from" ] || { from=0; num=3; }
+            get_tree) echo tree >> "${log%.log}.trees"   # each count of the windows, for the tests that say none is polled
+                ws=$(grep -n '^workspace number' "$log" 2>/dev/null | tail -1); from=${ws%%:*}; num=${ws##* }; [ -n "$from" ] || { from=0; num=3; }
                 n=$({ if [ "$from" -gt 0 ]; then sed "1,${from}d" "$log"; else cat "$log"; fi; } 2>/dev/null | grep '^exec' | grep -vc 'exec gone' || :); [ -n "$n" ] || n=0; i=0
                 printf '{"type":"root","nodes":[{"type":"workspace","num":%s,"fullscreen_mode":0,"nodes":[' "$num"
                 # with $HOME/fullscreen: a fullscreen window (77) on the workspace, and the panel floating under it with the pid the test wrote
@@ -4110,12 +4120,18 @@ STUB
     ans 1 | jq -r '.result.contents[0].text' | jq -e '([.rows[] | select(.text == "tmux")][0] | .group == "system" and (.page | startswith("spark-shell://apps/page/"))) and ([.rows[] | select(.text == "firefox")][0].group == "others") and (.rows[0].text == "terminal" and .rows[0].group == null)' >/dev/null \
         && ans 2 | jq -r '.result.contents[0].text' | jq -e '.lines[0:2] == ["tmux", "A shell with panes, sessions and the status line"] and (.lines | index("group       system")) and (.lines | index("runs in     a terminal")) and (.lines | index("command     tmux"))' >/dev/null \
         && ok "provide apps: each app under the group its desktop entry names (tmux system, one with none others), the terminal first; Space shows an app: its group, where it runs, its command, how it came (#169)" || bad "apps groups" "$(head -c 900 "$H/mcp.out")"
-    rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps terminal 2>&1) || st=$?
+    rm -f "$H/.local/state/swaymsg.log" "$H/.local/state/swaymsg.trees"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps terminal 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'opened a terminal' ] && grep -qx 'exec foot' "$H/.local/state/swaymsg.log" && ok "panel apps terminal: a terminal window, as Super+Return" || bad "apps terminal" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps open GIMP-3.0 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'opened gimp-3.0' ] && grep -q '^exec gimp-3.0' "$H/.local/state/swaymsg.log" && ok "panel apps open NAME: the app opens on the current workspace the way its entry says (any case)" || bad "apps open" "st=$st $out $(tail -2 "$H/.local/state/swaymsg.log" 2>&1)"
+    [ ! -e "$H/.local/state/swaymsg.trees" ] && ok "panel apps open and terminal: each ends at sway's event for the new window; no window count is polled (#196)" || bad "apps open poll" "$(wc -l < "$H/.local/state/swaymsg.trees")"
     [ "$(sh "$SH" panel --list | sed -n 3p)" = "$GO apps       gimp-3.0	apps open gimp-3.0" ] && [ "$(sed -n 1p "$journal/recent")" = "apps	open gimp-3.0" ] \
         && ok "recent: the app just opened is the first row of the next list, and the journal's first line" || bad "recent" "$(sh "$SH" panel --list | sed -n 2,4p) | $(cat "$journal/recent")"
+    touch "$HOME/no-new-window"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps open firefox 2>&1) || st=$?; rm -f "$HOME/no-new-window"
+    [ "$st" -eq 0 ] && [ "$out" = 'asked firefox to open; no new window came' ] && ok "panel apps open: an app that maps no window (one open took it as a tab) is said, not refused (#196)" || bad "apps open no window" "st=$st $out"
+    ( export SWAYSOCK=/tmp/x; mcp apps "$(rq 1 resources/read '{"uri":"spark-shell://apps/rows"}')" "$(call 2 apps_open '{"name":"micro"}')" )
+    [ "$(ans 2 | jq -c '.result.structuredContent')" = '{"opened":true}' ] && grep -qx 'exec foot -e micro' "$H/.local/state/swaymsg.log" \
+        && ok "provide apps_open: the app its row names opens, a terminal app inside foot, from the list the gate read; the answer says opened, so the dialog closes (#196)" || bad "provide apps_open" "$(ans 2) $(tail -2 "$H/.local/state/swaymsg.log")"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps open nowhere 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: apps: no app named nowhere here' ] && ok "panel apps open: an app that is not here is refused in one line" || bad "apps open gate" "st=$st $out"
     # undo: a step's inverse is read before the act, kept in the journal, played back newest first
@@ -4815,6 +4831,7 @@ if [ "$(uname -s)" = Linux ]; then   # the Linux half (the uname stub): xdg-open
 #!/bin/sh
 case "$*" in "-t get_version") echo '{"human_readable":"sway-stub"}' ;;
     "-t get_tree") if [ -e "$HOME/opened" ]; then echo '{"nodes":[{"pid":1},{"pid":2}]}'; else echo '{"nodes":[{"pid":1}]}'; fi ;;
+    "-r -t subscribe -m "*) echo '{ "first": true, "payload": "" }'; while [ ! -e "$HOME/opened" ]; do sleep 0.05; done; echo '{ "change": "new", "container": { "id": 2 } }' ;;
     "-- exec "*) echo "$*" >> "$HOME/swaymsg.log"; : > "$HOME/opened" ;; *) echo "$*" >> "$HOME/swaymsg.log" ;; esac
 EOF
     printf '#!/bin/sh\n' > "$H/lxo/ed-stub"; chmod +x "$H/lxo/swaymsg" "$H/lxo/ed-stub"; rm -f "$F2/opened" "$F2/swaymsg.log" "$F2/xdg-open.log"
