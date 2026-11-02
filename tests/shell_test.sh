@@ -4464,6 +4464,28 @@ ans 1 | jq -e '.result.isError == false and .result.structuredContent.effect == 
     && ans 3 | jq -e '.result.structuredContent | has("effect") | not' >/dev/null \
     && grep -qx -- '- one more line' "$H/notes/ax-result-fixture.md" \
     && ok "provide notes: results identify the actual created or appended file, with no stale effect on the next call" || bad "note result" "$(ans 1) $(ans 2) $(ans 3)"
+# a call's answer carries the section's rows as the step left them, and no note that they changed follows it: the host
+# shows them and reads nothing again (#196); a host's step writes neither the panel's recent picks nor its undo journal
+rm -f "$H/.local/state/spark-shell/panel/recent" "$H/.local/state/spark-shell/panel/undo"
+mcp notes "$(rq 1 resources/subscribe '{"uri":"spark-shell://notes/rows"}')" "$(call 2 notes_add '{"text":"rows in the answer"}')"
+ans 2 | jq -e '.result.isError == false and .result.structuredContent.rows.title == "notes" and any(.result.structuredContent.rows.rows[]; .id == "notes:open rows-in-the-answer.md")
+        and (.result.content[0].text | fromjson | has("rows") | not)' >/dev/null \
+    && ! grep -q 'notifications/resources/updated' "$H/mcp.out" \
+    && [ ! -e "$H/.local/state/spark-shell/panel/recent" ] && [ ! -e "$H/.local/state/spark-shell/panel/undo" ] \
+    && ok "provide: a call answers with the section's rows as the step left them, no rows-changed note after it, and no entry in the panel's recent picks or undo journal (#196)" || bad "call answers with rows" "$(head -c 600 "$H/mcp.out")"
+if command -v strace >/dev/null 2>&1; then   # the processes a call starts, over the provider's own start: a budget (#196)
+    spawns() { printf '%s\n' "$@" | strace -f -e trace=execve -o "$H/execve" sh "$SH" provide notes >/dev/null 2>&1; grep -c 'execve(' "$H/execve"; }
+    mv "$H/notes" "$H/notes.kept"; mkdir "$H/notes"   # an empty notes folder: a read's cost grows with the notes, a call's should not
+    _base=$(spawns "$(rq 1 ping)")
+    _calln=$(( $(spawns "$(call 1 notes_add '{"text":"a budget"}')") - _base ))
+    _refn=$(( $(spawns "$(rq 1 resources/read '{"uri":"spark-shell://notes/rows"}')" "$(call 2 notes_open '{"name":"no-such.md"}')") - _base ))
+    rm -rf "$H/notes"; mv "$H/notes.kept" "$H/notes"
+    [ "$_calln" -lt 100 ] && [ "$_refn" -lt 60 ] \
+        && ok "provide: a note added, its rows in the answer, starts $_calln processes past the provider's start (under 100); a read and a refused call $_refn (under 60) (#196)" \
+        || bad "call spawn budget" "call $_calln, read and refusal $_refn: $(grep -o 'execve("[^"]*"' "$H/execve" | sort | uniq -c | sort -rn | head -8 | tr '\n' ' ')"
+else
+    printf '  NOTICE: strace is not installed -- the call'"'"'s process budget not counted\n'
+fi
 printf '# Shopping list\n- oat milk\n' > "$H/notes/shop-169.md"; printf 'plain first line\nthe vet on friday\n' > "$H/notes/vet-169.md"
 mcp notes "$(rq 1 resources/read '{"uri":"spark-shell://notes/rows"}')" "$(rq 2 resources/read "{\"uri\":\"spark-shell://notes/page/$(b64u 'notes:open shop-169.md')\"}")" "$(rq 3 resources/read "{\"uri\":\"spark-shell://notes/rows/find/$(b64u 'vet friday')\"}")"
 ans 1 | jq -r '.result.contents[0].text' | jq -e '([.rows[] | select(.id == "notes:open shop-169.md")][0] | ([.more[].name] == ["notes_append", "notes_rename", "notes_trash"]) and (.page | startswith("spark-shell://notes/page/"))) and ([.rows[] | select(.text | startswith("append to"))] == [])' >/dev/null \
@@ -4533,7 +4555,7 @@ ans 2 | jq -r '.result.contents[0].text' > "$H/rows.json"
     && jq -e '.short == ["theme:more"] and (.rows[] | select(.id == "theme:more") | .children == "spark-shell://theme/rows" and .tool == null)' "$H/rows.json" >/dev/null \
     && ok "provide: the rows resource: the palette in use (none, terminal default colors) a check with no tool, every other a row whose tool takes it by name, with its chip; the short form the one row that opens the section" || bad "provide rows" "$(cat "$H/rows.json" | head -c 600)"
 mcp theme "$(call 1 theme_palette '{"name":"nord"}')" "$(call 2 theme_palette '{"name":"nowhere"}')" "$(call 3 theme_text '{"size":"huge"}')" "$(call 4 theme_alpha '{"value":0.9,"x":1}')" "$(call 5 wifi_connect '{"name":"home"}')" "$(call 6 'Theme_Font')" "$(call 7 theme_alpha '{"value":2}')"
-[ "$(ans 1 | jq -c '.result.structuredContent | del(.palette, .transitions)')" = '{"receipt":"nord is on","undo":{"name":"theme_palette","arguments":{"name":"none"}}}' ] && [ "$(ans 1 | jq -r '.result.structuredContent.transitions')" = "$REPO/assets/transitions/tide/nord" ] && ans 1 | jq -e '.result.isError == false and (.result.content[0].text | fromjson) == .result.structuredContent' >/dev/null && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
+[ "$(ans 1 | jq -c '.result.structuredContent | del(.palette, .transitions, .rows)')" = '{"receipt":"nord is on","undo":{"name":"theme_palette","arguments":{"name":"none"}}}' ] && [ "$(ans 1 | jq -r '.result.structuredContent.transitions')" = "$REPO/assets/transitions/tide/nord" ] && ans 1 | jq -e '.result.isError == false and (.result.content[0].text | fromjson) == (.result.structuredContent | del(.rows)) and .result.structuredContent.rows.title == "theme"' >/dev/null && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
     && ok "provide tools/call: the palette set, the receipt in the present tense, the undo the step that takes it back, the same JSON in a text block; the animation it brings, for an open dialog to read again (#126)" || bad "provide call" "$(ans 1) $(cat "$H/mcp.err")"
 nfg=$(sed -n 's/^THEME_FG=#//p' "$REPO/themes/nord.env"); nbg=$(sed -n 's/^THEME_BG=#//p' "$REPO/themes/nord.env")
 ans 1 | jq -e --arg f "$nfg" --arg b "$nbg" '.result.structuredContent.palette | (.HEX_FG | ascii_downcase) == ($f | ascii_downcase) and (.PANEL_BG | test("^[0-9a-fA-F]{6}$")) and (.PANEL_BG | ascii_downcase) != ($b | ascii_downcase) and (keys == ["HEX_ACCENT", "HEX_ANSI_1", "HEX_ANSI_2", "HEX_FG", "PANEL_BG", "PANEL_HI", "PANEL_MUTED"])' >/dev/null \
@@ -4578,26 +4600,28 @@ for env in "$REPO"/themes/*.env; do
 done
 [ ! -s "$H/contrast.bad" ] && ok "every palette: the dialog's quiet words read at 4.5 to 1, or as the author's own text where that reads lower" || bad "panel-muted contrast" "$(cat "$H/contrast.bad")"
 mcp theme "$(call 1 theme_palette '{"name":"none"}')"
-# subscribe: wait for the step and its update before changing the palette outside it.
-# Slow runners must observe two distinct changes, not two racing writes.
+# subscribe: the step's answer carries its rows, so no rows-changed note follows it and the watcher, a beat later,
+# counts them as seen (#196); a change made outside it is the one it says. Slow runners wait out a whole poll first.
 : > "$H/mcp.out"
 { rq 1 resources/subscribe '{"uri":"spark-shell://theme/rows"}'; rq 2 tools/call '{"name":"theme_transparency","arguments":{"amount":"more"},"_meta":{"progressToken":"p1"}}'
   tries=0
-  until jq -e -s 'any(.id == 2) and any(.method == "notifications/resources/updated")' "$H/mcp.out" >/dev/null 2>&1; do
+  until jq -e -s 'any(.id == 2)' "$H/mcp.out" >/dev/null 2>&1; do
       tries=$((tries + 1)); [ "$tries" -lt 300 ] || break; sleep 0.1
   done
+  sleep 2.5
   printf 'THEME=dracula\n' >> "$HOME/.config/spark-shell/config"
   tries=0
-  until jq -e -s '[.[] | select(.method == "notifications/resources/updated")] | length >= 2' "$H/mcp.out" >/dev/null 2>&1; do
+  until jq -e -s '[.[] | select(.method == "notifications/resources/updated")] | length >= 1' "$H/mcp.out" >/dev/null 2>&1; do
       tries=$((tries + 1)); [ "$tries" -lt 300 ] || break; sleep 0.1
   done
   rq 3 resources/unsubscribe '{"uri":"spark-shell://theme/rows"}'; } \
     | SPARK_SHELL_PROVIDE_POLL=1 sh "$SH" provide theme > "$H/mcp.out" 2> "$H/mcp.err"
 order=$(jq -r 'if .id then "r" + (.id | tostring) else .method end' "$H/mcp.out" | uniq | paste -sd ' ' -)
-case $order in "r1 notifications/progress r2 notifications/resources/updated r3") ok "provide: progress against the token while a step runs, then its result, then the rows updated (after the step, and from the watcher), unsubscribed" ;;
+case $order in "r1 notifications/progress r2 notifications/resources/updated r3") ok "provide: progress against the token while a step runs, then its result with its rows, then the rows updated by the watcher alone, unsubscribed" ;;
     *) bad "provide subscribe" "$order $(cat "$H/mcp.err")" ;; esac
-[ "$(jq -s '[.[] | select(.method == "notifications/resources/updated")] | length' "$H/mcp.out")" -ge 2 ] && jq -e -s '[.[] | select(.method == "notifications/progress") | .params.progress] | . == (sort | unique)' "$H/mcp.out" >/dev/null \
-    && ok "provide: the watcher saw the palette change made outside it; progress only grows" || bad "provide watcher" "$(cat "$H/mcp.out")"
+[ "$(jq -s '[.[] | select(.method == "notifications/resources/updated")] | length' "$H/mcp.out")" -eq 1 ] && jq -e -s '[.[] | select(.method == "notifications/progress") | .params.progress] | . == (sort | unique)' "$H/mcp.out" >/dev/null \
+    && jq -e -s 'any(.id == 2 and .result.structuredContent.rows.title == "theme")' "$H/mcp.out" >/dev/null \
+    && ok "provide: the watcher said the palette change made outside it once, and never the step's own, whose rows went with its answer (#196); progress only grows" || bad "provide watcher" "$(cat "$H/mcp.out")"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
 st=0; out=$(sh "$SH" provide spark 2>&1 >/dev/null) || st=$?
 [ "$st" -eq 1 ] && [ "$out" = 'spark-shell provide: spark is not one: lan, wifi, bt, printers, out, mic, bat, clock, theme, window, display, keyboard, pointer, notifications, storage, power, notes, reminders, bar, layout, apps, about, undo, files' ] && ok "provide spark: no provider (the dialog holds the chat itself), the list on stderr, exit 1" || bad "provide spark" "st=$st $out"
@@ -6153,8 +6177,8 @@ STUB
     [ "$(rows notifications | jq -c '[.rows[] | select(.group == "earlier") | [.text, .columns]]')" = '[["Saved",["firefox"]]]' ] && ok "notifications rows: mako 1.7 and 1.8's history, busctl's JSON, read the same" || bad "mako 1.7 history" "$(rows notifications)"
     rm -f "$HOME/mako.log"
     mcp notifications "$(call 1 notifications_do_not_disturb '{"state":"on"}')" "$(call 2 notifications_do_not_disturb '{"state":"on"}')" "$(call 3 notifications_do_not_disturb '{"state":"maybe"}')"
-    [ "$(ans 1 | jq -c .result.structuredContent)" = '{"receipt":"do not disturb on: notifications wait out of sight","undo":{"name":"notifications_do_not_disturb","arguments":{"state":"off"}}}' ] \
-        && [ "$(ans 2 | jq -c .result.structuredContent)" = '{"receipt":"do not disturb on: notifications wait out of sight"}' ] && [ "$(ans 3 | jq -r .error.message)" = 'notifications_do_not_disturb: state is one of on, off' ] \
+    [ "$(ans 1 | jq -c '.result.structuredContent | del(.rows)')" = '{"receipt":"do not disturb on: notifications wait out of sight","undo":{"name":"notifications_do_not_disturb","arguments":{"state":"off"}}}' ] \
+        && [ "$(ans 2 | jq -c '.result.structuredContent | del(.rows)')" = '{"receipt":"do not disturb on: notifications wait out of sight"}' ] && [ "$(ans 3 | jq -r .error.message)" = 'notifications_do_not_disturb: state is one of on, off' ] \
         && [ -e "$HOME/mako.dnd" ] && grep -qx 'DO_NOT_DISTURB=yes' "$HOME/.config/spark-shell/config" \
         && ok "notifications do-not-disturb on: mako's mode and the config, undo puts it off; asked again, a receipt with nothing to undo (#71)" || bad "dnd on" "$(cat "$H/mcp.out")"
     [ "$(rows notifications | jq -r '.state + " | " + .rows[0].text + " | " + .rows[0].sign')" = 'do not disturb | turn off do not disturb | dot' ] && ok "notifications: with do not disturb on, the row in use turns it off" || bad "dnd row" "$(rows notifications | head -c 300)"
@@ -6215,7 +6239,7 @@ JSON
         && ok "storage rows: a drive a group, its parts (Enter mounts), eject behind each part (#169); an encrypted part says how to unlock it; never the system's disk or one it mounts itself (fstab); this computer's free space (#73)" || bad "storage rows" "$(cat "$H/s.json")"
     rm -f "$HOME/udisks.log"
     mcp storage "$(call 1 storage_mount '{"name":"BACKUP"}')" "$(call 2 storage_mount '{"name":"nothing"}')"
-    [ "$(ans 1 | jq -c .result.structuredContent)" = '{"receipt":"BACKUP mounted at /run/media/ada/BACKUP","undo":{"name":"storage_unmount","arguments":{"name":"BACKUP"}}}' ] && [ "$(sed -n 1p "$HOME/udisks.log")" = 'mount -b /dev/sdb1 --no-user-interaction' ] \
+    [ "$(ans 1 | jq -c '.result.structuredContent | del(.rows)')" = '{"receipt":"BACKUP mounted at /run/media/ada/BACKUP","undo":{"name":"storage_unmount","arguments":{"name":"BACKUP"}}}' ] && [ "$(sed -n 1p "$HOME/udisks.log")" = 'mount -b /dev/sdb1 --no-user-interaction' ] \
         && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'nothing is not in the list now' ] \
         && ok "storage mount: udisksctl mounts the part by its device, with no question; undo unmounts it; a name not listed is refused" || bad "storage mount" "$(cat "$H/mcp.out") $(cat "$HOME/udisks.log" 2>&1)"
     blk /run/media/ada/BACKUP
@@ -6289,8 +6313,8 @@ EOF
 $(call 1 power_restart)
 $(call 2 power_suspend)
 EOF
-    [ "$(ans 1 | jq -c .result.structuredContent)" = '{"receipt":"restarting"}' ] && grep -qx 'systemctl reboot' "$HOME/power.log" \
-        && [ "$(ans 2 | jq -c .result.structuredContent)" = '{"opened":true}' ] && grep -qxF -- "-- exec $REPO/spark-shell desktop power suspend" "$HOME/swaymsg.log" \
+    [ "$(ans 1 | jq -c '.result.structuredContent | del(.rows)')" = '{"receipt":"restarting"}' ] && grep -qx 'systemctl reboot' "$HOME/power.log" \
+        && [ "$(ans 2 | jq -c '.result.structuredContent | del(.rows)')" = '{"opened":true}' ] && grep -qxF -- "-- exec $REPO/spark-shell desktop power suspend" "$HOME/swaymsg.log" \
         && ok "power restart: logind restarts it; power suspend: after the dialog closes, the lock its receipt" || bad "power calls" "$(cat "$H/mcp.out") $(cat "$HOME/power.log" "$HOME/swaymsg.log" 2>&1)"
     rm -rf "$H/root/run/systemd" "$HOME/power.log"; mkdir -p "$H/root/etc/runit" "$H/root/usr/bin"
     printf '#!/bin/sh\n' > "$H/root/usr/bin/zzz"; printf '#!/bin/sh\n' > "$H/root/usr/bin/reboot"; chmod +x "$H/root/usr/bin/zzz" "$H/root/usr/bin/reboot"
