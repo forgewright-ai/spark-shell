@@ -279,9 +279,9 @@ const DRAG_GAP: Duration = Duration::from_millis(40);
 /// pointer lets go (#148).
 const DRAG_COLORS: usize = 48;
 
-/// A tick wants a frame while spark's march shows, and when work starts or ends or the busy pointer comes or goes;
-/// work nothing shows draws nothing (#196). `was` and `now` are (busy, busy pointer).
-fn frame_for_tick(was: (bool, bool), now: (bool, bool), march: bool) -> bool {
+/// A tick wants a frame while spark's march shows, and when work starts or ends; work nothing shows draws
+/// nothing (#196). `was` and `now` say whether work was under way.
+fn frame_for_tick(was: bool, now: bool, march: bool) -> bool {
     march || was != now
 }
 
@@ -334,8 +334,6 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
         || drawn.reply_undo.is_some_and(|(a, b, y)| span(a, b, y));
     if dragging {
         "grabbing"
-    } else if app.busy_pointer() {
-        "progress" // the work under way: spark's hourglass (#183)
     } else if clicks || drawn.cells.iter().any(|(a, b, y, _)| span(*a, *b, *y)) {
         "pointer"
     } else if drawn.preview.as_ref().is_some_and(|p| app.zoomed() && on((p.x, p.y, p.w, p.h))) {
@@ -561,7 +559,7 @@ fn main() {
                 }
             });
             let _ = out.write_all(b"\x1b[?2026l");
-            // the busy pointer as work starts and ends, the mouse still: its shape asked again where it is (#183)
+            // the mouse still and the frame new: the pointer's shape asked again where it rests
             if let Some((c, r)) = mouse_at {
                 let want = pointer_at(&app, &drawn, c, r, false);
                 if want != pointer && drag.is_none() {
@@ -793,10 +791,10 @@ fn main() {
                 dirty = true;
             }
             Ev::Tick => {
-                let was = (app.busy(), app.busy_pointer());
+                let was = app.busy();
                 app.tick(Instant::now());
                 // a frame for the march while it shows, and when the work starts or ends; none for work nothing shows (#196)
-                dirty |= frame_for_tick(was, (app.busy(), app.busy_pointer()), app.cfg.progress && app.thinking());
+                dirty |= frame_for_tick(was, app.busy(), app.cfg.progress && app.thinking());
                 // a window still unseen after a moment is shown whatever is drawn: never a dialog that cannot be seen
                 if unseen && started.elapsed() >= Duration::from_millis(1500) {
                     reveal();
@@ -1027,10 +1025,10 @@ mod tests {
 
     #[test]
     fn a_tick_draws_only_for_the_march_or_a_change_of_work() {
-        assert!(!frame_for_tick((true, false), (true, false), false), "work nothing shows: no frame");
-        assert!(frame_for_tick((true, false), (true, true), false), "the busy pointer comes");
-        assert!(frame_for_tick((true, true), (false, false), false), "the work ends");
-        assert!(frame_for_tick((false, false), (false, false), true), "the march moves");
-        assert!(!frame_for_tick((false, false), (false, false), false), "nothing at all: no frame");
+        assert!(!frame_for_tick(true, true, false), "work nothing shows: no frame");
+        assert!(frame_for_tick(false, true, false), "the work starts");
+        assert!(frame_for_tick(true, false, false), "the work ends");
+        assert!(frame_for_tick(false, false, true), "the march moves");
+        assert!(!frame_for_tick(false, false, false), "nothing at all: no frame");
     }
 }

@@ -438,8 +438,6 @@ pub enum Held {
 
 /// How long a value set in place is held over the rows read after its call came back.
 const HOLD: Duration = Duration::from_millis(1500);
-/// Work that ends within this shows no busy pointer: a switch that flips at once does not flash an hourglass.
-const BUSY_AFTER: Duration = Duration::from_millis(250);
 
 impl Who {
     pub fn word(&self) -> &'static str {
@@ -736,8 +734,6 @@ pub struct App {
     /// Values shown before the provider's rows say them: kept over every rows read until a moment after
     /// the last one was set, so a read that left before it never shows the old value again.
     held: Vec<(usize, String, Held, Option<Instant>)>,
-    /// Since when something the person asked for has been under way: the busy pointer after a moment of it.
-    work_since: Option<Instant>,
     /// The transition playing, and since when (#122); main.rs moves it on and draws it.
     pub motion: Option<(Reel, Instant)>,
     /// The transitions are loaded: Esc that closes the dialog plays the close first.
@@ -827,7 +823,6 @@ impl App {
             setting: None,
             set_next: vec![],
             held: vec![],
-            work_since: None,
             motion: None,
             films: false,
             films_want: None,
@@ -1410,13 +1405,6 @@ impl App {
     pub fn tick(&mut self, now: Instant) {
         if self.busy() {
             self.frame += 1;
-        }
-        // the busy pointer: a step, a value being set or a request to spark under way (#183)
-        let under_way = self.running.is_some() || self.setting.is_some() || self.wait.is_some();
-        match (under_way, self.work_since) {
-            (true, None) => self.work_since = Some(now),
-            (false, Some(_)) => self.work_since = None,
-            _ => {}
         }
         // a sound that has played to its end: the key row says Play again
         if let Some(pv) = self.preview.as_mut() {
@@ -4794,10 +4782,10 @@ impl App {
         }
     }
 
-    /// Something the person asked for is under way: a step, a value being set, a request to spark, a
-    /// rows read the view waits on. The pointer over the dialog is the busy one meanwhile (#183).
-    pub fn busy_pointer(&self) -> bool {
-        self.work_since.is_some_and(|t| t.elapsed() >= BUSY_AFTER)
+    /// Something the person asked for is under way: a step, a value being set, a request to spark. The pointer
+    /// does not change for it (#196): the row shows the step, and spark's march its thinking.
+    pub fn under_way(&self) -> bool {
+        self.running.is_some() || self.setting.is_some() || self.wait.is_some()
     }
 
     /// The lit row's steps, when it has steps of its own (its more): Right opens them as a list of
