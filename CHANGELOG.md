@@ -17,8 +17,11 @@ The moving wallpaper on every family, twelve scenes that move (#187,
   builds it in a pinned Debian 12 image, and `on desktop` installs it
   checked against the sha256 the signed tag pins, as it does the dialog.
 - Every family's desktop installs mpv, libmpv, the VA-API driver and
-  numpy. Fedora's own mesa leaves H.264 out, so there the loops decode on
-  the CPU unless RPM Fusion's driver is added. mpvpaper is no longer
+  numpy. On Debian and Ubuntu the driver comes inside Mesa from 25.2.8
+  (Ubuntu 26.04, Debian 14); an older release names it mesa-va-drivers,
+  left to you there. Fedora's own mesa leaves H.264 out, so there the
+  loops decode on the CPU unless RPM Fusion's driver is added. Without
+  the driver the loops decode on the CPU. mpvpaper is no longer
   installed.
 - Twelve scenes are wallpapers (#188): onsen, duck, reef, campfire, ufo,
   pigeons, garoa, horizon, watch, problem, continue and crossing, after

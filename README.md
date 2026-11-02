@@ -658,7 +658,8 @@ the background layer through libmpv, decoded on the GPU where the VA-API
 driver is, and pauses a screen while windows or a full screen app cover
 it. `on desktop` installs spark-wallpaper for the release, checked
 against the sha256 the signed tag pins, as it does the dialog, with mpv,
-libmpv, the VA-API driver and numpy from the family's packages. Another
+libmpv, the VA-API driver (inside Mesa on Debian and Ubuntu from Mesa
+25.2.8; `mesa-va-drivers` before) and numpy from the family's packages. Another
 palette makes new loops; the ones before go. `off` stops it, and a saved
 theme keeps the setting. Off by default.
 
