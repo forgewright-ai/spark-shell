@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased: the dialog made still (#196)
+## v0.122
 
 The dialog's rule, in the owner's words: typed input gets one reply row
 under the prompt; a click on screen just runs the command, with no echo
