@@ -250,8 +250,6 @@ pub struct Rows {
     pub here: Option<String>,
     pub rows: Vec<Row>,
     pub short: Vec<String>,
-    /// Two groups drawn side by side (#183): the palettes, dark beside light.
-    pub side_by_side: Option<(String, String)>,
     /// The desktop as it was before a row's look: what the light leaving the looks puts back (#183).
     pub look_back: Option<Call>,
 }
@@ -449,10 +447,6 @@ pub fn rows(text: &str) -> Option<Rows> {
             .map(str::to_string),
         rows,
         short,
-        side_by_side: v.get("side_by_side").and_then(Value::as_array).and_then(|a| match a.as_slice() {
-            [l, r] => Some((scrub(l.as_str()?), scrub(r.as_str()?))),
-            _ => None,
-        }),
         look_back: v.get("look_back").and_then(call),
     })
 }

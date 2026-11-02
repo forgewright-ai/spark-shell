@@ -1739,7 +1739,7 @@ fn a_provider_checks_its_rows_only_while_they_are_on_screen_and_its_first_rows_c
 /// look each, dark and light side by side, and a setting after them.
 fn theme_rows(at: u64, on: bool) -> Value {
     let tool = |n: &str| json!({"name": n, "arguments": {}});
-    json!({"title": "theme", "side_by_side": ["dark", "light"], "look_back": {"name": "theme_preview", "arguments": {"name": "off"}}, "rows": [
+    json!({"title": "theme", "look_back": {"name": "theme_preview", "arguments": {"name": "off"}}, "rows": [
         {"id": "theme:mocha", "sign": "check", "text": "mocha", "tool": {"name": "theme_palette", "arguments": {"name": "mocha"}}, "more": [], "columns": [], "children": null, "group": "dark", "quiet": true,
          "look": {"name": "theme_preview", "arguments": {"name": "mocha"}}},
         {"id": "theme:nord", "sign": "blank", "text": "nord", "tool": {"name": "theme_palette", "arguments": {"name": "nord"}}, "more": [], "columns": [], "children": null, "group": "dark", "quiet": true,
@@ -1890,22 +1890,13 @@ fn a_switch_flips_in_place_and_a_refusal_puts_it_back() {
 #[test]
 fn a_palette_is_kept_in_place_and_lighting_one_changes_nothing() {
     let (mut app, rx, calls) = theme_app("");
-    // dark beside light: the arrows go down a column and across at the same height
+    // one column, dark then light (#192): down goes to the next row, whatever its group (#196)
     lit_at(&mut app, "theme:mocha");
-    app.right();
-    assert!(matches!(app.picks().get(app.sel), Some(Item::Row(0, 2))), "right: the light column");
-    app.left();
     app.down();
-    assert!(matches!(app.picks().get(app.sel), Some(Item::Row(0, 1))), "down: the next in the dark column");
-    app.down();
-    assert!(
-        matches!(app.picks().get(app.sel), Some(Item::Row(0, 3))),
-        "down out of the columns: the row after them"
-    );
+    assert!(matches!(app.picks().get(app.sel), Some(Item::Row(0, 1))), "down: the next row");
     app.up();
     app.up();
-    app.up();
-    assert!(!app.in_list, "up out of the columns at the top: the prompt");
+    assert!(!app.in_list, "up from the first row: the prompt");
     // a palette lit a while changes nothing on the desktop: only Enter or a click keeps one (#196)
     lit_at(&mut app, "theme:nord");
     app.tick(Instant::now());
@@ -2595,14 +2586,7 @@ fn frame(app: &App) -> (Vec<String>, Option<u16>) {
     let mut b = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 60, 40));
     let d = spark_dialog::ui::draw(app, &palette("tokyonight-night"), "Sun 18 Oct \u{b7} 12:04", &mut b);
     let rows = (0..40).map(|y| (0..60).map(|x| b[(x, y)].symbol().to_string()).collect::<String>()).collect();
-    // a pick's y in the list, or in one of two columns side by side (#183)
-    let lit = d
-        .picks
-        .iter()
-        .map(|(y, n)| (*y, *n))
-        .chain(d.cells.iter().map(|(_, _, y, n)| (*y, *n)))
-        .find(|(_, n)| app.in_list && *n == app.sel)
-        .map(|(y, _)| y);
+    let lit = d.picks.iter().find(|(_, n)| app.in_list && *n == app.sel).map(|(y, _)| *y);
     (rows, lit)
 }
 

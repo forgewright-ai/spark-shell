@@ -331,7 +331,7 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
         || drawn.reply_undo.is_some_and(|(a, b, y)| span(a, b, y));
     if dragging {
         "grabbing"
-    } else if clicks || drawn.cells.iter().any(|(a, b, y, _)| span(*a, *b, *y)) {
+    } else if clicks {
         "pointer"
     } else if drawn.preview.as_ref().is_some_and(|p| app.zoomed() && on((p.x, p.y, p.w, p.h))) {
         "grab"
@@ -861,14 +861,6 @@ fn main() {
                             .iter()
                             .find(|(y, _)| *y == m.row && m.column >= drawn.columns.0 && m.column < drawn.columns.1)
                             .copied()
-                            .or_else(|| {
-                                // a pick in one of two columns side by side (#183): its own cells
-                                drawn
-                                    .cells
-                                    .iter()
-                                    .find(|(a, b, y, _)| *y == m.row && m.column >= *a && m.column < *b)
-                                    .map(|(_, _, y, n)| (*y, *n))
-                            })
                             .as_ref()
                         {
                             // one click runs a row, everywhere, a folder's and a file's too (#196)

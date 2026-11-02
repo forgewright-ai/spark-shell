@@ -51,9 +51,6 @@ struct Pen<'a> {
     /// A wide list's right edge (#141): its band and its arrows end where its words end, never at the
     /// screen's edge.
     right: u16,
-    /// Where a row is drawn from (#183): the right of two columns side by side starts this far in, and its band at `lx`.
-    ox: u16,
-    lx: u16,
 }
 
 impl Pen<'_> {
@@ -72,15 +69,14 @@ impl Pen<'_> {
         self.w.min(self.right)
     }
     fn put(&mut self, x: u16, y: u16, text: &str, fg: Color, bold: bool, lit: bool) -> u16 {
-        let x = x + self.ox; // a row in the right column: drawn from its own origin, given back in its own terms
         if x >= self.end(y) || y >= self.h {
-            return x - self.ox;
+            return x;
         }
         let room = (self.end(y) - x) as usize;
         let t = cut(text, room);
         let st = self.style(fg, bold, lit);
         self.buf.set_string(x, y, &t, st);
-        x + cells(&t) as u16 - self.ox
+        x + cells(&t) as u16
     }
     /// A key, as a chip: the only thing drawn as one.
     fn chip(&mut self, x: u16, y: u16, text: &str, focus: bool) -> u16 {
@@ -119,7 +115,7 @@ impl Pen<'_> {
         x + cells(&t) as u16
     }
     fn light(&mut self, y: u16) {
-        for x in self.lx..self.end(y).min(self.w) {
+        for x in 0..self.end(y).min(self.w) {
             let c = &mut self.buf[(x, y)];
             c.set_bg(self.pal.lit);
         }
@@ -163,8 +159,6 @@ pub fn wrap(text: &str, w: usize) -> Vec<String> {
 pub struct Drawn {
     pub cursor: (u16, u16),
     pub picks: Vec<(u16, usize)>,
-    /// A pick in one of two columns side by side (#183): its cells (x0, x1, y) and its index.
-    pub cells: Vec<(u16, u16, u16, usize)>,
     pub chips: Vec<(u16, u16, u16, usize)>,
     pub keys: Vec<(u16, u16, u16, HintKey)>,
     pub close: Option<(u16, u16)>,
@@ -281,10 +275,6 @@ impl Drawn {
             st.0 += dx;
             st.1 += dx;
         }
-        for c in &mut self.cells {
-            c.0 += dx;
-            c.1 += dx;
-        }
         self.columns = (self.columns.0 + dx, self.columns.1 + dx);
     }
 }
@@ -343,15 +333,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     let (w, h) = (buf.area.width, buf.area.height);
     let area = Rect::new(0, 0, w, h);
     buf.set_style(area, Style::default().fg(pal.fg));
-    let mut pen = Pen {
-        buf,
-        pal,
-        w,
-        h,
-        right: w,
-        ox: 0,
-        lx: 0,
-    };
+    let mut pen = Pen { buf, pal, w, h, right: w };
     if w < MIN_WIDTH || h < MIN_HEIGHT {
         // too small to hold the prompt, a list and the footer without cutting one: say so, plainly
         let t = "Make this window larger";
@@ -648,11 +630,11 @@ fn said_line(pen: &mut Pen, s: &Sign, text: &str, first: bool, y: u16, lit: bool
 
 /// One content row: what it shows, lit when it is the row picked.
 /// A list's columns: their widths, which line up on their right edge, whether rows carry a sample.
-type Cols<'a> = (&'a [usize], &'a [bool], bool, bool, bool, bool);
+type Cols<'a> = (&'a [usize], &'a [bool], bool, bool, bool);
 
 /// One item of a list; a value row gives back where its arrows are drawn (#175).
 fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols) -> Option<(u16, u16)> {
-    let (widths, right, samples, chips, controls, tight) = cols;
+    let (widths, right, samples, chips, controls) = cols;
     let pal = pen.pal.clone();
     let w = pen.w;
     let mut arrows = None;
@@ -763,15 +745,15 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             pen.put(x, y, &cut(&format!("{}{}", SEP, at), (w.saturating_sub(x + 4)) as usize), pal.muted, false, lit);
             pen.put(w - 3, y, MORE, pal.muted, false, lit);
         }
-        Item::Row(p, r) => arrows = row_line(pen, &app.providers[*p].rows.rows[*r], y, lit, (widths, right, samples, chips, controls, tight)),
+        Item::Row(p, r) => arrows = row_line(pen, &app.providers[*p].rows.rows[*r], y, lit, (widths, right, samples, chips, controls)),
         Item::Folder(i) => {
             if let Some(row) = app.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)) {
-                arrows = row_line(pen, row, y, lit, (widths, right, samples, chips, controls, tight));
+                arrows = row_line(pen, row, y, lit, (widths, right, samples, chips, controls));
             }
         }
         Item::Hit(i) => {
             if let Some((_, row)) = app.hits.get(*i) {
-                arrows = row_line(pen, row, y, lit, (widths, right, samples, chips, controls, tight));
+                arrows = row_line(pen, row, y, lit, (widths, right, samples, chips, controls));
             }
         }
         Item::More(_, n) => {
@@ -1092,11 +1074,8 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     let all = bottom.saturating_sub(top) as usize;
     // a list longer than the area keeps its last line to say how many rows sit below
     let room = if n > all { all.saturating_sub(1) } else { all };
-    // two groups side by side when the whole list fits that way (#183): each item's line and column, no scroll
-    let place = app.side_by_side().and_then(|g| side_by_side(&items[..n], &g, all));
-    let room = if place.is_some() { n } else { room };
     // the picked row in view; else where Page Up and Page Down left it
-    let mut first = if place.is_some() { 0 } else { app.scroll.min(n.saturating_sub(room)) };
+    let mut first = app.scroll.min(n.saturating_sub(room));
     if let Some(s) = selected.filter(|s| *s < n) {
         first = first.min(s);
         if s >= first + room {
@@ -1159,25 +1138,11 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         .collect();
     // a list of settings: each control ends where the rows' arrows stand (#183)
     let controls = items.iter().any(|it| row_of(app, it).is_some_and(|r| r.step.is_some() || r.switch.is_some()));
-    let full = pen.right;
     for (k, it) in items[..n].iter().enumerate().skip(first).take(room) {
-        let (y, col) = match &place {
-            Some(pl) => (top + pl[k].0, pl[k].1),
-            None => (top + (k - first) as u16, 0),
-        };
-        // a column of two: the left one ends where the right one's band starts
-        (pen.ox, pen.lx, pen.right) = match col {
-            1 => (0, 0, GRID_X + 2),
-            2 => (GRID_X, GRID_X + 2, full),
-            _ => (0, 0, full),
-        };
+        let y = top + (k - first) as u16;
         let lit = Some(k) == selected;
         if let Some(n) = picks.iter().position(|i| *i == k) {
-            if col == 0 {
-                at.push((y, n));
-            } else {
-                drawn.cells.push((pen.lx, pen.right, y, n));
-            }
+            at.push((y, n));
         }
         if lit {
             pen.light(y);
@@ -1186,66 +1151,15 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         let (w, r) = cols_at(k);
         // a value's arrows take a click, each with a cell of air on either side so it is easy to hit (#175)
         if let (Some((less, more)), Some(n)) = (
-            item_line(app, pen, it, y, lit, (&w, &r, samples, chips, controls, col != 0)),
+            item_line(app, pen, it, y, lit, (&w, &r, samples, chips, controls)),
             picks.iter().position(|i| *i == k),
         ) {
             drawn.steps.push((less.saturating_sub(1), less + 2, y, n, false));
             drawn.steps.push((more - 1, more + 2, y, n, true));
         }
     }
-    (pen.ox, pen.lx, pen.right) = (0, 0, full);
     pen.right = pen.w;
     at
-}
-
-/// The right of two columns side by side starts here (#183): a palette's sign, its seven dots and a name of 16 fit
-/// either side of it in the dialog's 60 cells.
-const GRID_X: u16 = 28;
-
-/// Two groups side by side (#183): each item's line and its column (0 the one column, 1 the left, 2 the right). None
-/// when the two groups are not both there, one after the other with only a blank between, or the list would not fit
-/// in `all` lines that way.
-fn side_by_side(items: &[Item], g: &(String, String), all: usize) -> Option<Vec<(u16, u8)>> {
-    let head = |it: &Item, name: &str| matches!(it, Item::Heading(h) if h == name);
-    let l0 = items.iter().position(|it| head(it, &g.0))?;
-    let r0 = items.iter().position(|it| head(it, &g.1))?;
-    let lend = l0
-        + 1
-        + items
-            .get(l0 + 1..r0)?
-            .iter()
-            .position(|it| matches!(it, Item::Blank | Item::Heading(_)))
-            .unwrap_or(r0 - l0 - 1);
-    if items[lend..r0].iter().any(|it| !matches!(it, Item::Blank)) {
-        return None;
-    }
-    let rend = r0
-        + 1
-        + items[r0 + 1..]
-            .iter()
-            .position(|it| matches!(it, Item::Blank | Item::Heading(_)))
-            .unwrap_or(items.len() - r0 - 1);
-    let mut place = vec![(0u16, 0u8); items.len()];
-    let mut line = 0u16;
-    for p in place.iter_mut().take(l0) {
-        *p = (line, 0);
-        line += 1;
-    }
-    for (i, k) in (l0..lend).enumerate() {
-        place[k] = (line + i as u16, 1);
-    }
-    for p in place.iter_mut().take(r0).skip(lend) {
-        *p = (line, 1); // a blank between the two: drawn nowhere
-    }
-    for (i, k) in (r0..rend).enumerate() {
-        place[k] = (line + i as u16, 2);
-    }
-    line += (lend - l0).max(rend - r0) as u16;
-    for p in place.iter_mut().skip(rend) {
-        *p = (line, 0);
-        line += 1;
-    }
-    (line as usize <= all).then_some(place)
 }
 
 /// A setting's words: its section's own state, which reads better than its purpose where it has one (on, a level, a
@@ -1351,7 +1265,7 @@ fn row_columns(row: &crate::model::Row, wide: bool) -> &[String] {
 /// A value row gives back the cells of its two arrows (#175). In a list of settings a control ends where the rows'
 /// arrows stand (#183): a value between its arrows, a switch, a choice's name before its arrow.
 fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Cols) -> Option<(u16, u16)> {
-    let (widths, right, samples, chips, controls, tight) = cols;
+    let (widths, right, samples, chips, controls) = cols;
     let pal = pen.pal.clone();
     let (g, c) = sign(&pal, &row.sign);
     pen.put(4, y, g, c, false, lit);
@@ -1369,16 +1283,10 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
     } else {
         cut(&row.text, name_cap(pen.w))
     };
-    // a palette in a column of two: its chip first, seven dots, then its name (#183)
-    if tight && !row.chip.is_empty() {
-        chip_tight(pen, tx, y, &row.chip);
-        pen.put(tx + CHIP_TIGHT + 1, y, &cut(&row.text, 16), pal.fg, false, lit);
-        return None;
-    }
     let mut x = pen.put(tx, y, &name, pal.fg, false, lit);
     let name_end = tx + widths.first().copied().unwrap_or(0) as u16;
     // a control's last cell is where the rows' arrows stand
-    let end = (pen.end(y) - pen.ox).saturating_sub(2);
+    let end = pen.end(y).saturating_sub(2);
     if let Some(st) = &row.step {
         // a value left and right change: the room of its widest value, so the arrows stand still as it
         // changes; an end of the list dims its arrow, and a press there does nothing (#183)
@@ -1391,7 +1299,7 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
         pen.put(x0 + 2 + wv.saturating_sub(cells(v) as u16), y, v, pal.fg, false, lit);
         let mx = x0 + 3 + wv;
         pen.put(mx, y, MORE, if st.at + 1 >= st.values.len() { dim } else { on }, false, lit);
-        return Some((x0 + pen.ox, mx + pen.ox));
+        return Some((x0, mx));
     }
     if let Some(sw) = &row.switch {
         // a switch: on is the accent's dot and the word, off a ring and the word muted (#183)
@@ -1456,16 +1364,9 @@ fn chip(pen: &mut Pen, x: u16, y: u16, c: &[[u8; 3]]) {
     chip_cells(pen, x, y, c, 0..CHIP);
 }
 
-/// A palette's chip with no ground at its ends, seven dots: two columns of palettes side by side fit (#183).
-const CHIP_TIGHT: u16 = CHIP - 2;
-fn chip_tight(pen: &mut Pen, x: u16, y: u16, c: &[[u8; 3]]) {
-    chip_cells(pen, x.saturating_sub(1), y, c, 1..CHIP - 1);
-}
-
 fn chip_cells(pen: &mut Pen, x: u16, y: u16, c: &[[u8; 3]], ks: std::ops::Range<u16>) {
     let rgb = |v: &[u8; 3]| Color::Rgb(v[0], v[1], v[2]);
     let Some(ground) = c.first().map(rgb) else { return };
-    let x = x + pen.ox;
     for k in ks {
         if x + k >= pen.end(y) || y >= pen.h {
             return;

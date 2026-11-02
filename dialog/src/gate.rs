@@ -406,7 +406,6 @@ mod tests {
                 state: None,
                 rows: vec![row],
                 short: vec![],
-                side_by_side: None,
                 look_back: None,
             },
         )
@@ -641,7 +640,6 @@ mod path_tests {
                 wide: None,
             }],
             short: vec![],
-            side_by_side: None,
             look_back: None,
         };
         let step_with = |p: &str, to: &str| Call {
