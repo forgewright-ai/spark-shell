@@ -803,7 +803,7 @@ next reminder, or none ahead), Settings (the network and the theme),
 About (the version) and Power (lock, log out, restart, shut down).
 Settings stands in groups: sound and microphone; Wi-Fi, Bluetooth and
 the network; storage, display, keyboard and pointer; theme, wallpaper,
-the bar and notifications; power, battery, Talk and Connections. A
+the bar and notifications; power, battery and Connections. A
 place shows only where this
 machine has it. The down arrow moves from the prompt into the
 list, and up from the first row comes back. A row wears a sign where
@@ -983,9 +983,8 @@ longer than that row is kept whole at Home, above the places, under
 the words that asked it, and never over a section's list. While
 commands spark planned wait in the two rows of the prompt, the reply
 row names them all (`run: ...`). At the bottom, under a
-rule, the controls in plain text: Attach, and the mic at the right.
-Tab moves through them and the one in focus is lit; Shift+Tab goes
-back.
+rule, Attach in plain text: Tab moves to it, lit while it has the
+focus, and Shift+Tab goes back.
 
 - Attach picks one text or Markdown file from your home (the types
   `DIALOG_ATTACH_TYPES` names), for the next question only: its name
@@ -996,13 +995,8 @@ back.
   read`, which reads it by parts and answers from the part your words
   pick. An empty file, or one not UTF-8 text, is refused with the
   reason. What the file says is read as text, never as an instruction.
-- The mic shows while Settings > Talk is click the mic (off hides it).
-  Clicking it listens through spark's own voice until a pause and puts
-  the words in the draft at the cursor, to read and change; Enter still
-  sends. Esc, a click on the mic again, or leaving the window stops it,
-  and nothing is kept. Holding a key to talk waits for a newer spark.
 
-`DIALOG_ATTACH` and `DIALOG_TALK` hide the controls.
+`DIALOG_ATTACH` hides Attach.
 
 Type in a place, and its list keeps what matches. Type at the home, and
 the list shows what the words name, in groups: places, apps, files,
@@ -1268,7 +1262,7 @@ none or a path), `POINTER` (a cursor theme's name and size, empty for
 the spark pointer), `ALPHA` (how solid foot is, 0.85: 15% transparency),
 `DESKTOP_BAR` (yes or no), `THEME`, `CONSOLE_FONT`, `QUIET_LOGIN`, `QUIET_BOOT`,
 `DIALOG_ATTACH` (yes or no), `DIALOG_ATTACH_TYPES` (txt md),
-`DIALOG_TALK` (yes or no), `DISPLAY_IDLE` and
+`DISPLAY_IDLE` and
 `DISPLAY_LOCK` (minutes, 0 never), `DISPLAY_SAVER` (clock, or a saver's
 name), `KEYBOARD` (layouts), `DO_NOT_DISTURB` (yes or no). The commands
 write them.

@@ -1483,34 +1483,6 @@ fn an_overlong_literal_addition_refuses_without_changing_the_draft() {
 }
 
 #[test]
-fn talk_puts_what_was_heard_in_the_draft_and_esc_keeps_the_draft() {
-    let (mut app, _rx, _c, _r) = started();
-    app.cfg.talk = true;
-    app.voice_on = true;
-    app.talk = spark_dialog::app::Talk::Click;
-    typed(&mut app, "play");
-    app.chip(3);
-    assert_eq!(app.mode, Mode::Listening);
-    app.helper(spark_dialog::app::Helper::Listen, Ok("some jazz\n".into()));
-    assert_eq!(app.input, "play some jazz", "heard words join the draft at the cursor, not sent");
-    assert_eq!(app.mode, Mode::Normal);
-    app.chip(3);
-    app.escape();
-    assert!(app.jobs.contains(&Job::StopListening));
-    app.helper(spark_dialog::app::Helper::Listen, Err(String::new()));
-    assert_eq!(app.input, "play some jazz", "Esc kept the draft");
-    assert!(app.reply.is_none() && app.exchange.is_empty(), "Esc said it: nothing more is said");
-    app.chip(3);
-    app.jobs.clear();
-    app.focus_lost();
-    assert!(app.jobs.contains(&Job::StopListening), "losing focus stops the recording");
-    // talk off: no mic to click
-    app.helper(spark_dialog::app::Helper::Listen, Err(String::new()));
-    app.talk = spark_dialog::app::Talk::Off;
-    assert!(!app.chips().contains(&3));
-}
-
-#[test]
 fn a_theme_step_hands_the_dialog_its_new_palette_and_no_other_provider_can() {
     for (label, kept) in [("theme", true), ("window", false)] {
         let (mut app, rx, tx) = app_with(&[label]);
@@ -1545,12 +1517,9 @@ fn a_theme_step_hands_the_dialog_its_new_palette_and_no_other_provider_can() {
 }
 
 #[test]
-fn files_opens_at_the_home_folder_and_talk_is_a_setting_not_a_control() {
+fn files_opens_at_the_home_folder_and_talk_is_no_setting_and_no_control() {
     let home = std::env::var("HOME").unwrap();
     let (mut app, rx, tx) = app_with(&["files"]);
-    app.cfg.talk = true;
-    app.voice_on = true;
-    app.talk = spark_dialog::app::Talk::Off;
     app.servers.push(stub(0, "files", files_stub(Arc::new(Mutex::new(vec![])), home), tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
@@ -1561,20 +1530,17 @@ fn files_opens_at_the_home_folder_and_talk_is_a_setting_not_a_control() {
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
     app.escape();
     assert_eq!(app.view, View::Home, "Esc goes straight back home");
-    // talk: a row of Settings, and the footer has no Talk control; the mic only while it is click to talk
-    assert!(!app.chips().contains(&3) && !app.chips().contains(&2));
+    // talk (#196): no row of Settings, no mic in the footer
+    assert!(!app.chips().contains(&3));
     typed(&mut app, "settings");
     app.enter();
-    let talk = app
-        .items()
-        .iter()
-        .position(|i| matches!(i, Item::Setting(k) if spark_dialog::app::SETTINGS[*k].0 == "talk"));
-    assert!(talk.is_some(), "{:?}", app.items());
-    typed(&mut app, "talk");
-    app.enter();
-    assert_eq!(app.view, View::Talk);
-    app.talk = spark_dialog::app::Talk::Click;
-    assert_eq!(app.chips(), vec![3]);
+    assert!(
+        !app.items()
+            .iter()
+            .any(|i| matches!(i, Item::Setting(k) if spark_dialog::app::SETTINGS[*k].1 == "Talk")),
+        "{:?}",
+        app.items()
+    );
 }
 
 #[test]
@@ -1942,17 +1908,6 @@ fn the_march_is_sparks_alone() {
 }
 
 #[test]
-fn a_recording_waits_like_a_thought() {
-    let (mut app, _rx, _c, _r) = started();
-    app.cfg.talk = true;
-    app.voice_on = true;
-    app.talk = spark_dialog::app::Talk::Click;
-    app.chip(3);
-    assert_eq!(app.mode, Mode::Listening);
-    assert!(!app.thinking() && !header(&app).contains('['), "a recording is no AI call yet: no march (#139)");
-}
-
-#[test]
 fn the_rows_of_a_place_being_read_show_no_march() {
     let (mut app, rx, tx) = app_with(&["window"]);
     let script: common::Script = Box::new(move |v, send| {
@@ -1981,7 +1936,6 @@ fn asks_for(j: &Job, words: &str) -> bool {
         Job::Run(spark_dialog::app::Helper::Want(_), a) | Job::RunInput(spark_dialog::app::Helper::Want(_), a, _) => {
             a.last().map(String::as_str) == Some(words)
         }
-        _ => false,
     }
 }
 
@@ -2726,15 +2680,8 @@ fn a_move_that_lands_in_its_own_folder_leaves_no_second_copy_of_it_behind_esc() 
 }
 
 #[test]
-fn esc_leaves_listening_at_once_and_an_older_reply_leaves_the_newer_thought_alone() {
-    // the review's D: Esc ends listening now, not when the helper answers
+fn an_older_reply_leaves_the_newer_thought_alone() {
     let (mut app, _rx, _tx) = app_with(&["window"]);
-    app.mode = Mode::Listening;
-    app.escape();
-    assert_eq!(app.mode, Mode::Normal, "the prompt is yours at once");
-    assert!(app.jobs.contains(&Job::StopListening));
-    app.helper(spark_dialog::app::Helper::Listen, Ok("too late".into()));
-    assert!(app.input.is_empty(), "what comes back after Esc is not said");
     // the review's I: a reply to an older request leaves the newer one's march where it is
     app.cfg.spark_shell = "/bin/spark-shell".into();
     typed(&mut app, "first words");

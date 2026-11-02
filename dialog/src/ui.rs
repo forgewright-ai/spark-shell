@@ -4,7 +4,7 @@
 //! turn first, then the view's list), scrolled as it needs; a rule; the footer's controls (Attach, the
 //! model, the mic).
 
-use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, PLACEHOLDER, SETTINGS, SETTINGS_DEST, WIDTH};
+use crate::app::{App, HintKey, Item, Mode, Sign, View, DESTS, MIN_HEIGHT, MIN_WIDTH, PLACEHOLDER, SETTINGS, SETTINGS_DEST, WIDTH};
 use crate::palette::Palette;
 use crate::progress;
 use crate::reply::Mark;
@@ -455,7 +455,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         }
     }
 
-    // the rule, then the footer: Attach at the left; the mic at the right
+    // the rule, then the footer: Attach at the left
     for x in 2..w - 2 {
         pen.put(x, h - 3, RULE, pal.lit, false, false);
     }
@@ -484,10 +484,6 @@ fn key_of(k: &str) -> Option<HintKey> {
 fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     let w = pen.w;
     let chips = app.chips();
-    let mic = if app.mode == Mode::Listening { "Listening" } else { "Mic" };
-    // the mic while talk is click to talk; how talk works is a setting
-    let mic_on = app.cfg.talk && app.talk == Talk::Click;
-    let mic_w = if mic_on { cells(mic) as u16 + 2 } else { 0 };
     let mut x = 1;
     if let Some(pv) = app.preview.as_ref().filter(|_| app.view == View::Preview) {
         // the file shown goes with the words: Attach names it, in the accent where spark can read it (#120); a page that is no
@@ -512,17 +508,9 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     }
     // the row the words are for, a muted note in the room left (#196)
     if let Some(t) = app.target_label() {
-        let room = w.saturating_sub(x + mic_w + 4) as usize;
+        let room = w.saturating_sub(x + 4) as usize;
         if room > 8 {
             pen.put(x + 1, y, &cut_words(&t, room), pal_muted(pen), false, false);
-        }
-    }
-    if mic_on {
-        let mx = w - 1 - mic_w;
-        let live = chips.contains(&3);
-        let e = pen.control(mx, y, mic, app.chip_focus == Some(3), app.mode == Mode::Listening, true);
-        if live {
-            drawn.chips.push((mx, e, y, 3));
         }
     }
 }
@@ -636,13 +624,6 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         }
         Item::Text(t, muted) => {
             pen.put(2, y, t, if *muted { pal.muted } else { pal.fg }, false, false);
-        }
-        Item::TalkOpt(t) => {
-            let on = app.talk == *t;
-            let (g, c) = if on { (DOT, pal.accent) } else { (RING, pal.fg) };
-            pen.put(4, y, g, c, false, lit);
-            let words = if *t == Talk::Click { "Click the mic to talk" } else { "Off" };
-            pen.put(6, y, words, if app.voice_on { pal.fg } else { pal.muted }, false, lit);
         }
         Item::Provider(i) => {
             let p = &app.providers[*i];
@@ -912,16 +893,12 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
 /// A setting's words: its section's own state, which reads better than its purpose where it has one (on, a level, a
 /// name).
 fn setting_words(app: &App, label: &str, purpose: &str) -> String {
-    let state = if label == "talk" {
-        Some(if app.talk == Talk::Off { "Off" } else { "Click the mic" }.to_string())
-    } else {
-        app.providers
-            .iter()
-            .find(|p| p.label == label)
-            .map(|p| p.title.clone())
-            .filter(|t| !t.is_empty())
-    };
-    state.unwrap_or_else(|| purpose.to_string())
+    app.providers
+        .iter()
+        .find(|p| p.label == label)
+        .map(|p| p.title.clone())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| purpose.to_string())
 }
 
 /// Where a wide list's words end (#141): a place's or a setting's name and state, a row's name and columns, then its

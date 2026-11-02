@@ -4977,14 +4977,14 @@ chmod +x "$H/gio/gio"; rm -f "$F2/gio.log"
 [ "$(cat "$F2/gio.log" 2>/dev/null)" = "gio trash -- $F2R/docs/todo.txt" ] && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'todo.txt is in the trash' ] && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'todo.txt is back' ] && [ -f "$F2/docs/todo.txt" ] \
     && ok "provide files: where gio is, it trashes (the system's own trash view agrees), and restore reads the spec's record it wrote" || bad "files gio" "$(cat "$F2/gio.log" 2>&1) $(ans 2) $(ans 3)"
 # the dialog's keys
-for kv in DIALOG_ATTACH=maybe DIALOG_TALK=off 'DIALOG_ATTACH_TYPES=.exe' 'DIALOG_ATTACH_TYPES=TXT'; do
+for kv in DIALOG_ATTACH=maybe 'DIALOG_ATTACH_TYPES=.exe' 'DIALOG_ATTACH_TYPES=TXT'; do
     printf 'DESKTOP=sway\n%s\n' "$kv" > "$HOME/.config/spark-shell/config"; st=0; out=$(sh "$SH" status 2>&1) || st=$?
     [ "$st" -eq 1 ] && printf '%s\n' "$out" | grep -q "^spark-shell: ${kv%%=*}=" || bad "key $kv refused" "st=$st $out"
 done
-ok "config: DIALOG_ATTACH and DIALOG_TALK take yes or no, DIALOG_ATTACH_TYPES lower-case types; anything else is refused in one line"
+ok "config: DIALOG_ATTACH takes yes or no, DIALOG_ATTACH_TYPES lower-case types; anything else is refused in one line"
 printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
-grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_TALK -u BAR_GLYPHS -u BAR_WORKSPACES -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^DIALOG_TALK=yes$' "$REPO/config.example" && grep -q '^BAR_GLYPHS=signs$' "$REPO/config.example" && grep -q '^BAR_WORKSPACES=symbols$' "$REPO/config.example" && grep -q '^WALLPAPER_MOTION=off$' "$REPO/config.example" \
-    && ok "config: the dialog's three keys and the bar's two (#160) are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
+grep -q "^CONFIG_UNSET=.* -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u BAR_GLYPHS -u BAR_WORKSPACES -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'" "$SH" && grep -q '^DIALOG_ATTACH=yes$' "$REPO/config.example" && grep -q '^DIALOG_ATTACH_TYPES=txt md$' "$REPO/config.example" && grep -q '^BAR_GLYPHS=signs$' "$REPO/config.example" && grep -q '^BAR_WORKSPACES=symbols$' "$REPO/config.example" && grep -q '^WALLPAPER_MOTION=off$' "$REPO/config.example" \
+    && ok "config: the dialog's two keys and the bar's two (#160) are unset for what spark-shell starts, and config.example shows their defaults" || bad "dialog keys" "$(grep -n DIALOG "$REPO/config.example")"
 # the local gate (#155): every python3 test ci.yml runs is in the gate's list, read from ci.yml itself, with the lint and the
 # dialog's checks; the pre-push hook runs its quick part
 _gl=$(sh "$REPO/tests/gate.sh" --list 2>/dev/null || :)
@@ -5264,7 +5264,7 @@ STUB
     # the verb: the providers, the home, the composer; the binary checked each time
     st=0; out=$(sh "$C/spark-shell" dialog 2>&1) || st=$?
     [ "$st" -eq 0 ] && grep -qx -- "$C/spark-shell provide layout" "$HOME/dialog.argv" && grep -qx -- "$C/spark-shell provide about" "$HOME/dialog.argv" && ! grep -q 'provide spark$\|provide undo$' "$HOME/dialog.argv" \
-        && grep -qx -- --composer "$HOME/dialog.argv" && grep -qx 'plus,talk' "$HOME/dialog.argv" && grep -qx -- "$C/spark-shell provide files" "$HOME/dialog.argv" && grep -qx 'txt md' "$HOME/dialog.argv" && grep -qx -- "$C/spark-shell" "$HOME/dialog.argv" && ! grep -qx -- --home "$HOME/dialog.argv" \
+        && grep -qx -- --composer "$HOME/dialog.argv" && grep -qx 'plus' "$HOME/dialog.argv" && grep -qx -- "$C/spark-shell provide files" "$HOME/dialog.argv" && grep -qx 'txt md' "$HOME/dialog.argv" && grep -qx -- "$C/spark-shell" "$HOME/dialog.argv" && ! grep -qx -- --home "$HOME/dialog.argv" \
         && ok "dialog: every section a provider but spark and undo, the composer by the keys, the attach types, this spark-shell for the want" || bad "dialog argv" "st=$st $out $(cat "$HOME/dialog.argv")"
     sh "$C/spark-shell" dialog about >/dev/null 2>&1; [ "$(grep -A1 -x -- --home "$HOME/dialog.argv" | tail -1)" = about ] && ! grep -qx -- --mark "$HOME/dialog.argv" \
         && ok "dialog about: the about first, and no logo on it (#40)" || bad "dialog about" "$(cat "$HOME/dialog.argv")"
@@ -5275,8 +5275,8 @@ STUB
         && ok "dialog: the clock is started once however the dialog opens, so the Calendar opens from any view" || bad "dialog clock" "$c1 $c2 $(cat "$HOME/dialog.argv")"
     sh "$C/spark-shell" dialog files >/dev/null 2>&1; [ "$(grep -A1 -x -- --home "$HOME/dialog.argv" | tail -1)" = files ] && [ "$(grep -cx -- "$C/spark-shell provide files" "$HOME/dialog.argv")" = 1 ] \
         && ok "dialog files: the files first, its provider started once" || bad "dialog files" "$(cat "$HOME/dialog.argv")"
-    printf 'DESKTOP=sway\nDIALOG_ATTACH=no\nDIALOG_TALK=no\n' > "$HOME/.config/spark-shell/config"
-    sh "$C/spark-shell" dialog >/dev/null 2>&1; [ "$(grep -A1 -x -- --composer "$HOME/dialog.argv" | tail -1)" = '' ] && ok "dialog: DIALOG_ATTACH and DIALOG_TALK at no leave the composer bare" || bad "dialog keys" "$(cat "$HOME/dialog.argv")"
+    printf 'DESKTOP=sway\nDIALOG_ATTACH=no\n' > "$HOME/.config/spark-shell/config"
+    sh "$C/spark-shell" dialog >/dev/null 2>&1; [ "$(grep -A1 -x -- --composer "$HOME/dialog.argv" | tail -1)" = '' ] && ok "dialog: DIALOG_ATTACH at no leaves the composer bare" || bad "dialog keys" "$(cat "$HOME/dialog.argv")"
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     st=0; out=$(sh "$C/spark-shell" dialog nonsense 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell dialog: nonsense is not a section of the dialog' ] && ok "dialog WORD: a word that is no section, refused" || bad "dialog nonsense" "st=$st $out"

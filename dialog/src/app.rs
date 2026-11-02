@@ -96,9 +96,9 @@ pub const DESTS: [Dest; 8] = [
 ];
 pub const SETTINGS_DEST: usize = 5;
 pub const CALENDAR_DEST: usize = 4;
-/// Settings: a section each, then Talk and Connections, in this order, under their groups (#137); About is a
+/// Settings: a section each, then Connections, in this order, under their groups (#137); About is a
 /// place of the home since v0.114 (#136).
-pub const SETTINGS: [(&str, &str, &str); 17] = [
+pub const SETTINGS: [(&str, &str, &str); 16] = [
     ("out", "Sound", "Output and volume"),
     ("mic", "Microphone", "Input and level"),
     ("wifi", "Wi-Fi", "Networks"),
@@ -114,7 +114,6 @@ pub const SETTINGS: [(&str, &str, &str); 17] = [
     ("notifications", "Notifications", "Do not disturb, the last few"),
     ("power", "Power", "Lock, suspend, restart"),
     ("bat", "Battery", "Charge"),
-    ("talk", "Talk", "Click the mic, or off"),
     ("connections", "Connections", "Tools and the model"),
 ];
 
@@ -301,14 +300,6 @@ pub fn home() -> Option<String> {
     std::env::var("HOME").ok().filter(|h| h.starts_with('/') && h.len() > 1)
 }
 
-fn state_dir() -> Option<std::path::PathBuf> {
-    let base = std::env::var("XDG_STATE_HOME")
-        .ok()
-        .filter(|s| s.starts_with('/'))
-        .or_else(|| home().map(|h| h + "/.local/state"))?;
-    Some(std::path::PathBuf::from(base).join("spark-shell").join("dialog"))
-}
-
 /// A section's name as a person reads it: Settings' names, and the places' own.
 pub fn section_name(label: &str) -> String {
     if let Some((_, n, _)) = SETTINGS.iter().find(|(s, _, _)| *s == label) {
@@ -336,23 +327,6 @@ fn plain_words(line: Option<&str>, fallback: &str) -> String {
         Some(l) => l.to_string(),
         None => fallback.to_string(),
     }
-}
-
-/// How talk works, as the person last chose it: click to talk unless they turned it off.
-pub fn talk_kept() -> Talk {
-    let said = state_dir().and_then(|d| std::fs::read_to_string(d.join("talk")).ok()).unwrap_or_default();
-    if said.trim() == "off" {
-        Talk::Off
-    } else {
-        Talk::Click
-    }
-}
-
-fn talk_keep(t: Talk) {
-    use std::os::unix::fs::DirBuilderExt;
-    let Some(d) = state_dir() else { return };
-    let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&d);
-    let _ = std::fs::write(d.join("talk"), if t == Talk::Off { "off\n" } else { "click\n" });
 }
 
 /// A line of the exchange: the words asked of spark, then what it said.
@@ -397,22 +371,12 @@ pub enum View {
     /// The steps of one row of a provider (its tool and its more), as a list: Right on the row opens it (#112).
     Steps(usize),
     About,
-    /// How talk works: click to talk, or off.
-    Talk,
     /// Settings > Connections: the tools the dialog talks to, and where the model runs.
     Connections,
     /// One file of a list, as large as the area allows (#120): the state is App::preview.
     Preview,
     /// Every thing of one kind a search from Home found for these words (#169).
     Found(Found, String),
-}
-
-/// How the person talks to the prompt. Holding a key waits for a spark that can finish a recording on
-/// a signal (Space is the preview's, #120); until then it is said, and not offered.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Talk {
-    Click,
-    Off,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -492,15 +456,12 @@ pub enum Mode {
         answers: Map<String, Value>,
         at: usize,
     },
-    Listening,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Helper {
     /// spark's answer to a request, with the request's serial: an older one is dropped.
     Want(u64),
-    Listen,
-    Voice,
 }
 
 /// What the app asks the outside world to do; main.rs runs each in a thread.
@@ -508,7 +469,6 @@ pub enum Helper {
 pub enum Job {
     RunInput(Helper, Vec<String>, String),
     Run(Helper, Vec<String>),
-    StopListening,
 }
 
 /// An explicit row selection, independent of the search results while typing.
@@ -563,7 +523,6 @@ pub struct Config {
     pub close: bool,
     pub progress: bool,
     pub plus: bool,
-    pub talk: bool,
     pub attach: Vec<String>,
     pub spark_shell: String,
     pub spark: String,
@@ -577,7 +536,6 @@ impl Default for Config {
             close: true,
             progress: true,
             plus: false,
-            talk: true,
             attach: vec![],
             spark_shell: String::new(),
             spark: "spark".into(),
@@ -606,8 +564,6 @@ pub enum Item {
     Setting(usize),
     /// A line of the exchange as drawn: its sign, the words, the first of its lines.
     Said(Sign, String, bool),
-    /// A way to talk.
-    TalkOpt(Talk),
     /// A section's name over its rows, where a view holds more than one section.
     Title(String),
     /// A line that says something and opens nothing: (words, muted).
@@ -670,10 +626,6 @@ pub struct App {
     pub hidden: bool,
     pub busy_since: Option<Instant>,
     pub frame: u64,
-    pub voice_on: bool,
-    pub talk: Talk,
-    /// Esc stopped the listening: what comes back is not said.
-    pub listen_cancelled: bool,
     /// The window's size in cells, as the terminal says.
     pub size: (u16, u16),
     /// What spark is asked for and has not answered: the words (think).
@@ -764,9 +716,6 @@ impl App {
             hidden: false,
             busy_since: None,
             frame: 0,
-            voice_on: false,
-            talk: talk_kept(),
-            listen_cancelled: false,
             size: (WIDTH, HEIGHT),
             wait: None,
             jobs: vec![],
@@ -856,7 +805,6 @@ impl App {
     pub fn busy(&self) -> bool {
         self.running.is_some()
             || self.wait.is_some()
-            || matches!(self.mode, Mode::Listening)
             || self.shown().iter().any(|&p| self.providers[p].reading && !self.providers[p].ready)
             || self.servers.iter().any(|s| s.pending.values().any(|p| p.kind == Kind::Page))
     }
@@ -927,9 +875,6 @@ impl App {
         }
         for i in 0..self.providers.len() {
             self.providers[i].reading = true;
-        }
-        if self.cfg.talk {
-            self.jobs.push(Job::Run(Helper::Voice, vec![self.cfg.spark.clone(), "voice".into()]));
         }
     }
 
@@ -1398,12 +1343,12 @@ impl App {
             .collect()
     }
 
-    /// The rows of Settings shown here: a section that runs, Talk where talk is offered, Connections always.
+    /// The rows of Settings shown here: a section that runs, Connections always.
     pub fn settings(&self) -> Vec<usize> {
         SETTINGS
             .iter()
             .enumerate()
-            .filter(|(_, (l, _, _))| *l == "connections" || (*l == "talk" && self.cfg.talk) || self.providers.iter().any(|p| &p.label == l && p.dead.is_none()))
+            .filter(|(_, (l, _, _))| *l == "connections" || self.providers.iter().any(|p| &p.label == l && p.dead.is_none()))
             .map(|(i, _)| i)
             .collect()
     }
@@ -1491,15 +1436,6 @@ impl App {
         }
         let mut list = vec![];
         match &self.view {
-            View::Talk => {
-                list.push(Item::TalkOpt(Talk::Click));
-                list.push(Item::TalkOpt(Talk::Off));
-                list.push(Item::Blank);
-                self.text(&mut list, "Holding a key to talk needs a newer spark.", true);
-                if !self.voice_on {
-                    self.text(&mut list, "spark's voice is off: spark voice clear turns it on.", true);
-                }
-            }
             View::Connections => {
                 // what is true of them all, said once; their names as Settings writes them; a row only for one that
                 // stopped, with why (#146)
@@ -1831,7 +1767,6 @@ impl App {
                 .and_then(|(_, _, rows)| rows.rows.get(*i))
                 .map(Self::pickable)
                 .unwrap_or(false),
-            Item::TalkOpt(_) => self.voice_on,
             Item::Hit(i) => self.hits.get(*i).is_some_and(|(_, r)| Self::pickable(r)),
             Item::Dest(_) | Item::Setting(_) | Item::StepOf(_) | Item::Here | Item::More(..) => true,
             _ => false,
@@ -2400,11 +2335,6 @@ impl App {
                 self.input.clear();
                 self.unstash();
             }
-            Mode::Listening => {
-                // the recording is dropped, the prompt is yours at once; what comes back is not said (the review's D)
-                self.listen_cancelled = true;
-                self.jobs.push(Job::StopListening);
-            }
             Mode::Normal => {
                 if self.chip_focus.is_some() {
                     self.chip_focus = None;
@@ -2527,9 +2457,6 @@ impl App {
         }
         if w == "connections" {
             return Some(View::Connections);
-        }
-        if w == "talk" && self.cfg.talk {
-            return Some(View::Talk);
         }
         if w == "about" && self.about_idx.is_some() {
             return Some(View::About);
@@ -2668,10 +2595,6 @@ impl App {
                 }
                 return;
             }
-            Mode::Listening => {
-                self.mode = Mode::Listening;
-                return;
-            }
             Mode::Normal => {}
         }
         if let Some(c) = self.chip_focus {
@@ -2774,18 +2697,8 @@ impl App {
                 if label == "connections" {
                     return self.go(View::Connections);
                 }
-                if label == "talk" {
-                    return self.go(View::Talk);
-                }
                 if let Some(v) = self.place(label) {
                     self.go(v);
-                }
-            }
-            Item::TalkOpt(t) => {
-                self.talk = t;
-                talk_keep(t);
-                if let Some(v) = self.came_from.pop() {
-                    self.go_back(v);
                 }
             }
             Item::More(k, _) => self.go(View::Found(k, words)),
@@ -2926,8 +2839,7 @@ impl App {
         self.providers.iter().position(|p| p.label == "files" && p.dead.is_none())
     }
 
-    /// The footer's controls and the attachment's Remove: 0 attach, 3 the mic, 4 remove
-    /// the file attached. How talk works is a setting (Settings > Talk), not a control.
+    /// The footer's controls and the attachment's Remove: 0 attach, 4 remove the file attached.
     pub fn chip(&mut self, c: usize) {
         self.chip_focus = None;
         match c {
@@ -2942,20 +2854,6 @@ impl App {
                 self.attaching = Some((self.view.clone(), self.came_from.len()));
                 self.open_children(f, &root);
             }
-            3 if self.cfg.talk && self.voice_on && self.talk == Talk::Click => {
-                if self.mode == Mode::Listening {
-                    // a click on the mic again: stop, nothing kept (spark ends a recording at a pause)
-                    self.listen_cancelled = true;
-                    self.jobs.push(Job::StopListening);
-                } else if self.mode == Mode::Normal && self.running.is_none() {
-                    self.listen_cancelled = false;
-                    self.mode = Mode::Listening;
-                    self.jobs.push(Job::Run(
-                        Helper::Listen,
-                        vec![self.cfg.spark.clone(), "voice".into(), "listen".into(), "--buffer".into()],
-                    ));
-                }
-            }
             _ => {}
         }
     }
@@ -2968,9 +2866,6 @@ impl App {
         }
         if self.attachment.is_some() {
             v.push(4);
-        }
-        if self.cfg.talk && self.voice_on && self.talk == Talk::Click {
-            v.push(3);
         }
         v
     }
@@ -2990,14 +2885,6 @@ impl App {
             (Some(0), true) => None,
             (Some(i), true) => c.get(i - 1).copied(),
         };
-    }
-
-    /// Focus left the window (another window, the lock): a recording stops, nothing kept.
-    pub fn focus_lost(&mut self) {
-        if self.mode == Mode::Listening {
-            self.listen_cancelled = true;
-            self.jobs.push(Job::StopListening);
-        }
     }
 
     // ---- the want and the steps
@@ -3910,39 +3797,6 @@ impl App {
                     }
                 }
             },
-            Helper::Listen => {
-                if self.mode == Mode::Listening {
-                    self.mode = Mode::Normal;
-                }
-                let cancelled = std::mem::take(&mut self.listen_cancelled);
-                match out {
-                    Ok(t) if !cancelled => {
-                        // what was heard goes into the draft at the cursor, to read and change; Enter sends
-                        let heard = scrub(t.trim()).replace('\n', " ");
-                        if !heard.is_empty() {
-                            let before: String = self.input.chars().take(self.cursor).collect();
-                            let pad = if before.is_empty() || before.ends_with(char::is_whitespace) {
-                                ""
-                            } else {
-                                " "
-                            };
-                            self.insert(&format!("{}{}", pad, heard));
-                        }
-                    }
-                    Ok(_) => {}
-                    Err(_) if cancelled => {}
-                    Err(e) => self.refuse(&plain_words(e.lines().next(), "nothing heard")),
-                }
-            }
-            Helper::Voice => {
-                if let Ok(t) = out {
-                    self.voice_on = t
-                        .lines()
-                        .next()
-                        .map(|l| !l.split_whitespace().nth(1).unwrap_or("off").starts_with("off"))
-                        .unwrap_or(false);
-                }
-            }
         }
     }
 
@@ -3958,7 +3812,6 @@ impl App {
             View::Dest(d) => DESTS[*d].name.to_lowercase(),
             View::Section(p) | View::Folder(p, _) | View::Steps(p) => section_name(&self.providers[*p].label).to_lowercase(),
             View::About => "about".into(),
-            View::Talk => "talk".into(),
             View::Connections => "connections".into(),
             View::Preview => "preview".into(),
             View::Found(k, _) => k.name().into(),
@@ -4064,11 +3917,6 @@ impl App {
                 v.extend(esc("Decline"));
                 return v;
             }
-            Mode::Listening => {
-                let mut v = vec![("Listening, a pause ends it".to_string(), false)];
-                v.extend(esc("Cancel"));
-                return v;
-            }
             Mode::Normal => {}
         }
         if self.pending.is_some() && !self.staged_now() {
@@ -4143,7 +3991,6 @@ impl App {
                 }
             }
             let word = match &lit {
-                Some(Item::TalkOpt(_)) => "Choose",
                 Some(Item::Here) => "Here",
                 Some(Item::StepOf(k)) => self.step_call(*k).map(|c| verb_of(&c.name)).unwrap_or("Use"),
                 Some(it) => match self.row_ref(it) {

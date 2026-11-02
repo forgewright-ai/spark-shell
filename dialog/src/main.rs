@@ -4,8 +4,8 @@
 use ratatui::backend::CrosstermBackend;
 use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{
-    self, DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste, EnableFocusChange, EnableMouseCapture, Event, KeyCode,
-    KeyEventKind, KeyModifiers, KeyboardEnhancementFlags, MouseButton, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    KeyboardEnhancementFlags, MouseButton, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use ratatui::crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::crossterm::{execute, queue};
@@ -18,7 +18,6 @@ use spark_dialog::sixel::Image;
 use spark_dialog::{sixel, ui};
 use std::io::Write;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 mod login_run;
@@ -27,7 +26,7 @@ const USAGE: &str = "spark-dialog -- the spark dialog, one window for every doma
 
   spark-dialog [--provider \"PATH WORDS\"]... [--home SECTION] [--title TEXT]
                [--close on|off] [--progress on|off]
-               [--composer plus,talk] [--attach \"txt md\"]
+               [--composer plus] [--attach \"txt md\"]
                [--spark-shell PATH] [--spark PATH]
   spark-dialog login ...   the login screen on tty1 (spark-dialog login -h)
 ";
@@ -75,11 +74,10 @@ fn args() -> Result<Args, String> {
             "--composer" => {
                 let v = val("--composer")?;
                 let w: Vec<&str> = v.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
-                if let Some(bad) = w.iter().find(|x| !["plus", "talk"].contains(x)) {
-                    return Err(format!("{}: the composer takes plus and talk", bad));
+                if let Some(bad) = w.iter().find(|x| **x != "plus") {
+                    return Err(format!("{}: the composer takes plus", bad));
                 }
                 cfg.plus = w.contains(&"plus");
-                cfg.talk = w.contains(&"talk");
             }
             "--attach" => cfg.attach = val("--attach")?.split_whitespace().map(String::from).collect(),
             "--spark-shell" => cfg.spark_shell = val("--spark-shell")?,
@@ -127,20 +125,13 @@ fn today() -> (i32, u32, u32) {
     }
 }
 
-fn run_job(job: Job, tx: mpsc::Sender<Ev>, listening: Arc<Mutex<Option<u32>>>) {
+fn run_job(job: Job, tx: mpsc::Sender<Ev>) {
     match job {
         Job::RunInput(h, argv, input) => {
             std::thread::spawn(move || {
                 let result = spark_dialog::helper::invoke(&argv, input);
                 let _ = tx.send(Ev::Helper(h, result));
             });
-        }
-        Job::StopListening => {
-            if let Some(pid) = *listening.lock().unwrap() {
-                unsafe {
-                    libc::kill(pid as libc::pid_t, libc::SIGINT);
-                }
-            }
         }
         Job::Run(h, argv) => {
             std::thread::spawn(move || {
@@ -153,27 +144,18 @@ fn run_job(job: Job, tx: mpsc::Sender<Ev>, listening: Arc<Mutex<Option<u32>>>) {
                     .spawn();
                 let out = match child {
                     Err(e) => Err(format!("{}: {}", cmd, e)),
-                    Ok(c) => {
-                        if h == Helper::Listen {
-                            *listening.lock().unwrap() = Some(c.id());
+                    Ok(c) => match c.wait_with_output() {
+                        Ok(o) if o.status.success() => Ok(String::from_utf8_lossy(&o.stdout).into_owned()),
+                        Ok(o) => {
+                            let so = String::from_utf8_lossy(&o.stdout).into_owned();
+                            Err(if so.trim().is_empty() {
+                                String::from_utf8_lossy(&o.stderr).into_owned()
+                            } else {
+                                so
+                            })
                         }
-                        let o = c.wait_with_output();
-                        if h == Helper::Listen {
-                            *listening.lock().unwrap() = None;
-                        }
-                        match o {
-                            Ok(o) if o.status.success() => Ok(String::from_utf8_lossy(&o.stdout).into_owned()),
-                            Ok(o) => {
-                                let so = String::from_utf8_lossy(&o.stdout).into_owned();
-                                Err(if so.trim().is_empty() {
-                                    String::from_utf8_lossy(&o.stderr).into_owned()
-                                } else {
-                                    so
-                                })
-                            }
-                            Err(e) => Err(e.to_string()),
-                        }
-                    }
+                        Err(e) => Err(e.to_string()),
+                    },
                 };
                 let _ = tx.send(Ev::Helper(h, out));
             });
@@ -353,7 +335,7 @@ fn main() {
     }
     let mut out = std::io::stdout();
     let _ = terminal::enable_raw_mode();
-    let _ = execute!(out, EnterAlternateScreen, EnableMouseCapture, EnableBracketedPaste, EnableFocusChange);
+    let _ = execute!(out, EnterAlternateScreen, EnableMouseCapture, EnableBracketedPaste);
     // the kitty keyboard protocol (foot speaks it): Shift+Enter is a key of its own, a new line, not
     // Enter. Asked before the keys' thread starts: that thread would hold the terminal's answer.
     let kitty = terminal::supports_keyboard_enhancement().unwrap_or(false);
@@ -408,7 +390,6 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let listening = Arc::new(Mutex::new(None));
     let sixel_ok = sixel::terminal_draws_it(&std::env::var("TERM").unwrap_or_default());
     // the picture beside a list (a wallpaper's): where it is drawn now, when one was last tried, the last one made
     let mut shown_preview: Option<ui::Picture> = None;
@@ -422,7 +403,7 @@ fn main() {
     let mut prefs_at: Option<Instant> = None;
     loop {
         for j in std::mem::take(&mut app.jobs) {
-            run_job(j, tx.clone(), listening.clone());
+            run_job(j, tx.clone());
         }
         // in slots, the switch recolored this window with every other one, its slots and its ground (#33, #34);
         // elsewhere a theme step brings the new palette, and the window's ground with it
@@ -619,10 +600,6 @@ fn main() {
                 app.paste(&p);
                 dirty = true;
             }
-            Ev::Term(Event::FocusLost) => {
-                app.focus_lost();
-                dirty = true;
-            }
             Ev::Term(Event::Mouse(m)) => {
                 dirty |= frame_for_mouse(m.kind, drag.is_some());
                 // the pointer says what a click does where it is (#129)
@@ -699,18 +676,10 @@ fn main() {
         }
     }
     let code = app.quit.unwrap_or(0);
-    // a recording does not outlive the window
-    run_job(Job::StopListening, tx.clone(), listening.clone());
     if kitty {
         let _ = execute!(term.backend_mut(), PopKeyboardEnhancementFlags);
     }
-    let _ = execute!(
-        term.backend_mut(),
-        DisableFocusChange,
-        DisableBracketedPaste,
-        DisableMouseCapture,
-        LeaveAlternateScreen
-    );
+    let _ = execute!(term.backend_mut(), DisableBracketedPaste, DisableMouseCapture, LeaveAlternateScreen);
     let _ = terminal::disable_raw_mode();
     let _ = term.show_cursor();
     // the providers: each one's input closed, none waited for. Each ends the request it is answering,

@@ -129,10 +129,6 @@ QUIET_BOOT=no
 DIALOG_ATTACH=yes
 DIALOG_ATTACH_TYPES=txt md
 
-# Talk, which speaks to spark through its own voice: yes or no. It is
-# hidden while spark's voice is off.
-DIALOG_TALK=yes
-
 # The bar's glyphs: signs (each one the bar's font's own) or words (the
 # kind words: lan, wifi, bt, out, mic, light, kb, bat). Settings > theme
 # changes it, and a saved theme keeps it.

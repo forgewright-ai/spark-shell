@@ -164,6 +164,12 @@ part lands in a pull request of its own.
   config that still names it is read as before. Thirty-seven golden
   frames are drawn again for the footer without the chip, and the
   models frame goes.
+- Cut: Talk and Listening. The mic goes from the footer and Talk from
+  Settings: the dialog no longer asks `spark voice` when it opens, and
+  no longer listens for words to put in the draft. `DIALOG_TALK` goes;
+  a config that still names it is read as before. Thirty-six golden
+  frames are drawn again: the footer without the mic, and Settings
+  without its Talk row; the talk frame goes.
 
 ## v0.121
 

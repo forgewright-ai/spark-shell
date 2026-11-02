@@ -178,7 +178,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_TALK -u BAR_GLYPHS -u BAR_WORKSPACES -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u BAR_GLYPHS -u BAR_WORKSPACES -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'
 
 # This machine's short name (the twin of spark lib/env.sh short_host). On
 # a Mac, LocalHostName, by scutil's full path: /usr/sbin is not on every
@@ -234,15 +234,15 @@ config_load() {
         echo "spark-shell: CONSOLE_FONT=$CONSOLE_FONT in $CONFIG: FACE SIZE (spark-shell font list)" >&2; exit 1
     fi
     pointer_ok "$POINTER" || { echo "spark-shell: POINTER=$POINTER in $CONFIG: a cursor theme's NAME and, after a space, its SIZE in pixels (spark-white 24, spark-black 32, Adwaita)" >&2; exit 1; }
-    # the dialog's composer: plus and the file types it attaches, talk
-    : "${DIALOG_ATTACH:=yes}" "${DIALOG_ATTACH_TYPES:=txt md}" "${DIALOG_TALK:=yes}"
+    # the dialog's composer: plus and the file types it attaches
+    : "${DIALOG_ATTACH:=yes}" "${DIALOG_ATTACH_TYPES:=txt md}"
     : "${BAR_GLYPHS:=signs}" "${BAR_WORKSPACES:=symbols}"   # the bar's glyphs and its workspaces' names, kept with a saved theme (#160)
     case $BAR_GLYPHS in signs|words) ;; *) echo "spark-shell: BAR_GLYPHS=$BAR_GLYPHS in $CONFIG: signs or words" >&2; exit 1 ;; esac
     case $BAR_WORKSPACES in symbols|numbers) ;; *) echo "spark-shell: BAR_WORKSPACES=$BAR_WORKSPACES in $CONFIG: symbols or numbers" >&2; exit 1 ;; esac
     : "${WALLPAPER_MOTION:=off}"   # a moving wallpaper where the drawing has one (#180), kept with a saved theme
     case $WALLPAPER_MOTION in on|off) ;; *) echo "spark-shell: WALLPAPER_MOTION=$WALLPAPER_MOTION in $CONFIG: on or off" >&2; exit 1 ;; esac
     : "${DO_NOT_DISTURB:=no}"   # the notifications kept out of sight, as mako's do-not-disturb mode, across logins (#71)
-    for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH DIALOG_TALK LOGIN DO_NOT_DISTURB; do
+    for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH LOGIN DO_NOT_DISTURB; do
         eval "v=\$$k"
         case $v in yes|no) ;; *) echo "spark-shell: $k=$v in $CONFIG: yes or no" >&2; exit 1 ;; esac
     done
@@ -266,7 +266,7 @@ config_load() {
         input_valid "$k" "$v" || { echo "spark-shell: invalid $k in $CONFIG" >&2; exit 1; }
     done
     export POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE KEY_CAPS
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_TALK BAR_GLYPHS BAR_WORKSPACES WALLPAPER_MOTION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES BAR_GLYPHS BAR_WORKSPACES WALLPAPER_MOTION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB
 }
 SAVER_NAMES='spark starfield drift'   # lib/saver.py's list, in its order: what DISPLAY_SAVER takes besides clock (#66)
 KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}$'   # one to eight layouts, a variant after a plus: us us+intl
@@ -8457,7 +8457,7 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     case " $* " in *" provide files "*) ;; *) set -- "$@" --provider "$REPO/spark-shell provide files" ;; esac
     case " $* " in *" provide clock "*) ;; *) set -- "$@" --provider "$REPO/spark-shell provide clock" ;; esac   # the Calendar, there to open from any view: it has no rows on the home dialog
     case $_first in '') ;; *) set -- "$@" --home "$_first" ;; esac
-    _dc=''; [ "$DIALOG_ATTACH" != yes ] || _dc=plus; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
+    _dc=''; [ "$DIALOG_ATTACH" != yes ] || _dc=plus
     _sp=$(spark_bin); [ -z "$_sp" ] || set -- "$@" --spark "$_sp"
     FULL_ID=''; ! panel_own_window || panel_full_aside
     ! desktop_wanted || case ${TERM:-} in foot*) SPARK_DIALOG_SLOTS=1; export SPARK_DIALOG_SLOTS ;; esac   # its foot.ini sets the five slots: the dialog draws in them, and a new look recolors it in place (#34)

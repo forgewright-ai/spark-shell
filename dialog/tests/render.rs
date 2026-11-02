@@ -54,7 +54,6 @@ fn open_window(name: &str, title: &str) -> serde_json::Value {
 
 fn base() -> App {
     let cfg = Config {
-        talk: true,
         close: true,
         ..Config::default()
     };
@@ -98,7 +97,6 @@ fn base() -> App {
     about.version = "0.90".into();
     app.providers = vec![window, theme, bt, about];
     app.about_idx = Some(3);
-    app.voice_on = true;
     app
 }
 
@@ -174,14 +172,6 @@ fn settings() {
     app.in_list = true;
     app.sel = 1;
     render(&app, "settings");
-}
-
-#[test]
-fn talk() {
-    let mut app = full();
-    app.view = View::Talk;
-    app.came_from = vec![View::Home];
-    render(&app, "talk");
 }
 
 #[test]
