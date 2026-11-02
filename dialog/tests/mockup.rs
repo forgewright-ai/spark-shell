@@ -91,7 +91,7 @@ fn row(id: &str, sign: &str, text: &str, tool: Option<(&str, Value)>, group: Opt
 
 fn theme_rows(cur: &str, drawing: &str, size: &str, transparency: &str) -> Value {
     // as the provider sends them (#183): the palettes first, dark beside light, each kept in place with a look;
-    // yours; then the settings in three groups, each with its control
+    // custom; then the settings in three groups, each with its control
     let mut rows = vec![];
     let all = themes();
     for (dark, group) in [(true, "dark"), (false, "light")] {
@@ -104,9 +104,9 @@ fn theme_rows(cur: &str, drawing: &str, size: &str, transparency: &str) -> Value
                              "quiet": true, "look": {"name": "theme_preview", "arguments": {"name": name}}}));
         }
     }
-    rows.push(json!({"id": "theme:save", "sign": "blank", "text": "save this look as", "tool": {"name": "theme_save", "arguments": {}, "ask": ["name"]}, "more": [], "columns": [], "children": null, "group": "yours"}));
-    rows.push(json!({"id": "theme:picture", "sign": "blank", "text": "a theme from a picture", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows", "group": "yours"}));
-    rows.push(json!({"id": "theme:none", "sign": "blank", "text": "the terminal's own colors", "tool": {"name": "theme_palette", "arguments": {"name": "none"}}, "more": [], "columns": [], "children": null, "group": "yours"}));
+    rows.push(json!({"id": "theme:save", "sign": "blank", "text": "save this look as", "tool": {"name": "theme_save", "arguments": {}, "ask": ["name"]}, "more": [], "columns": [], "children": null, "group": "custom"}));
+    rows.push(json!({"id": "theme:picture", "sign": "blank", "text": "a theme from a picture", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows", "group": "custom"}));
+    rows.push(json!({"id": "theme:none", "sign": "blank", "text": "terminal default colors", "tool": {"name": "theme_palette", "arguments": {"name": "none"}}, "more": [], "columns": [], "children": null, "group": "custom"}));
     let sizes: Vec<Value> = (6..=40).map(|n| json!({"shown": n.to_string(), "sent": n.to_string()})).collect();
     let pcts: Vec<Value> = [0, 10, 20, 25, 30, 40, 50]
         .iter()
@@ -141,7 +141,7 @@ fn theme_rows(cur: &str, drawing: &str, size: &str, transparency: &str) -> Value
         "symbols",
     ));
     rows.push(json!({"id": "theme:show:Animation", "sign": "blank", "text": "Animation", "tool": null, "more": [], "columns": ["moon"], "children": "spark-shell://theme/rows/animations", "group": "dialog"}));
-    json!({"title": cur, "rows": rows, "short": [], "side_by_side": ["dark", "light"], "look_back": {"name": "theme_preview", "arguments": {"name": "off"}}})
+    json!({"title": cur, "rows": rows, "short": [], "look_back": {"name": "theme_preview", "arguments": {"name": "off"}}})
 }
 
 fn wallpaper_rows(cur: &str, thumbs: &str) -> Value {
@@ -160,9 +160,9 @@ fn wallpaper_rows(cur: &str, thumbs: &str) -> Value {
         };
         rows.push(json!({"id": format!("wall:{}", d), "sign": sign, "text": d, "tool": tool, "more": [], "columns": [said], "children": null, "group": "drawings", "preview": format!("{}/{}.png", thumbs, d)}));
     }
-    rows.push(json!({"id": "wall:picture", "sign": "blank", "text": "a picture of yours", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows", "group": "yours"}));
-    rows.push(json!({"id": "wall:color", "sign": "blank", "text": "a color", "tool": {"name": "theme_wallpaper", "arguments": {}, "ask": ["name"]}, "more": [], "columns": ["a name or #rrggbb"], "children": null, "group": "yours"}));
-    rows.push(json!({"id": "wall:ground", "sign": "blank", "text": "the ground", "tool": {"name": "theme_wallpaper", "arguments": {"name": "default"}}, "more": [], "columns": ["the palette's own, darker"], "children": null, "group": "yours", "chip": ["#13141c"]}));
+    rows.push(json!({"id": "wall:picture", "sign": "blank", "text": "a picture", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows", "group": "custom"}));
+    rows.push(json!({"id": "wall:color", "sign": "blank", "text": "a color", "tool": {"name": "theme_wallpaper", "arguments": {}, "ask": ["name"]}, "more": [], "columns": ["a name or #rrggbb"], "children": null, "group": "custom"}));
+    rows.push(json!({"id": "wall:ground", "sign": "blank", "text": "the ground", "tool": {"name": "theme_wallpaper", "arguments": {"name": "default"}}, "more": [], "columns": ["the palette's own, darker"], "children": null, "group": "custom", "chip": ["#13141c"]}));
     json!({"title": "wallpaper", "rows": rows, "short": []})
 }
 
@@ -670,7 +670,7 @@ fn design_system_preview() {
     let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
     a.view = View::Section(th);
     a.came_from = vec![View::Home, View::Dest(SETTINGS_DEST)];
-    frames.push(ds_frame(&draw(&a).0, &pal, "theme: the values, the palettes with their chips, yours", None));
+    frames.push(ds_frame(&draw(&a).0, &pal, "theme: the values, the palettes with their chips, custom", None));
     let mut a = app("tokyonight-night", "skyline", "/srv/look/thumbs");
     a.view = View::Section(th);
     a.came_from = vec![View::Home, View::Dest(SETTINGS_DEST)];

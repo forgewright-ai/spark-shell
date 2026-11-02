@@ -1280,7 +1280,10 @@ impl App {
                 if let View::Folder(p, uri) = self.view.clone() {
                     if p == idx && of.as_deref().is_none_or(|u| u == uri) {
                         match model::rows(text) {
-                            Some(rows) => self.folder = Some((p, uri, rows)),
+                            Some(rows) => {
+                                self.folder = Some((p, uri, rows));
+                                self.hold_rows(p); // a pick kept in a list (a wallpaper) stays checked over the read (#191)
+                            }
                             None => self.say(Sign::Refused, &error.unwrap_or_else(|| "that folder could not be read".into())),
                         }
                     }
@@ -4661,6 +4664,9 @@ impl App {
         }
         if let (true, Some(call)) = (row.quiet, row.tool.clone()) {
             self.keep_lit = Some(row.id.clone());
+            if row.sign == "check" {
+                return true; // the one in use already: nothing to set, nothing said (#191)
+            }
             self.looked = None;
             self.look_at = None;
             self.set_value(p, &row.id, Held::Checked, call);
@@ -4763,7 +4769,8 @@ impl App {
     }
 
     /// The values held for a provider's rows, over the rows as they came: a step's place, a switch's
-    /// state, the setting kept checked. A hold that ran out goes.
+    /// state, the setting kept checked, in the section or in the list shown of it (a wallpaper, an
+    /// animation: one checked, #191). A hold that ran out goes.
     fn hold_rows(&mut self, p: usize) {
         let now = Instant::now();
         self.held.retain(|(_, _, _, until)| until.is_none_or(|u| u > now));
@@ -4784,6 +4791,12 @@ impl App {
                 Held::Checked => {
                     if rows.iter().any(|r| r.id == id) {
                         for r in rows.iter_mut().filter(|r| r.quiet) {
+                            r.sign = if r.id == id { "check" } else { "blank" }.to_string();
+                        }
+                    }
+                    // a list is one pick: the row kept is checked, the one checked before (a picture, a color) is not
+                    if let Some((_, _, fr)) = self.folder.as_mut().filter(|(fp, _, fr)| *fp == p && fr.rows.iter().any(|r| r.id == id)) {
+                        for r in fr.rows.iter_mut().filter(|r| r.id == id || r.sign == "check") {
                             r.sign = if r.id == id { "check" } else { "blank" }.to_string();
                         }
                     }

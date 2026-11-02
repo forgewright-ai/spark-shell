@@ -2565,3 +2565,85 @@ fn an_animations_row_names_its_folder_and_the_list_plays_the_lit_one_beside_it()
     let drawn = spark_dialog::ui::draw(&app, &p, "Sun 18 Oct \u{b7} 12:04", &mut b);
     assert!(drawn.side_film.is_none(), "none lit: the box stays empty");
 }
+
+#[test]
+fn a_pick_in_a_list_moves_its_check_in_place_and_says_nothing() {
+    // the wallpaper list (#191): Enter on a drawing checks it at once and takes the check off the picture in use; no
+    // line runs above the list, no receipt comes below it, and the list read again before the change does not
+    // bring the old check back
+    let (mut app, rx, tx) = app_with(&["theme"]);
+    let calls = Arc::new(Mutex::new(vec![]));
+    let lists = Arc::new(Mutex::new(0));
+    let (c2, l2) = (calls.clone(), lists.clone());
+    let list = "spark-shell://theme/rows/wallpaper";
+    let ann = json!({"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false});
+    let tools = json!([{"name": "theme_wallpaper", "title": "theme wallpaper NAME", "annotations": ann,
+        "inputSchema": {"type": "object", "properties": {"name": {"type": "string", "enum": ["dunes", "waves", "default"]}}, "required": ["name"], "additionalProperties": false}}]);
+    let rows = json!({"title": "theme", "rows": [
+        {"id": "theme:wallpaper", "sign": "blank", "text": "Wallpaper", "tool": null, "more": [], "columns": [], "children": list, "group": null}
+    ], "short": []});
+    let set = |n: &str| json!({"name": "theme_wallpaper", "arguments": {"name": n}});
+    let walls = json!({"title": "wallpaper", "state": "", "rows": [
+        {"id": "wall:dunes", "sign": "blank", "text": "dunes", "tool": set("dunes"), "more": [], "columns": ["for mocha"], "children": null, "group": "drawings", "quiet": true},
+        {"id": "wall:waves", "sign": "blank", "text": "waves", "tool": set("waves"), "more": [], "columns": ["for nord"], "children": null, "group": "drawings", "quiet": true},
+        {"id": "wall:picture", "sign": "check", "text": "picture x.png", "tool": null, "more": [], "columns": [], "children": null, "group": "custom"},
+        {"id": "wall:ground", "sign": "blank", "text": "the ground", "tool": set("default"), "more": [], "columns": [], "children": null, "group": "custom", "quiet": true}
+    ], "short": []});
+    let script: common::Script = Box::new(move |v, send| {
+        if v.get("method").and_then(Value::as_str) == Some("resources/read") && v["params"]["uri"] == list {
+            *l2.lock().unwrap() += 1;
+            return send(result(
+                &v["id"],
+                json!({"contents": [{"uri": list, "mimeType": "application/json", "text": walls.to_string()}]}),
+            ));
+        }
+        if let Some(r) = ordinary("theme", v, &tools, &rows) {
+            return send(r);
+        }
+        if v.get("method").and_then(Value::as_str) == Some("tools/call") {
+            c2.lock().unwrap().push(v["params"].clone());
+            send(result(
+                &v["id"],
+                json!({"content": [{"type": "text", "text": "done"}], "structuredContent": {"receipt": "done"}, "isError": false}),
+            ));
+        }
+    });
+    app.servers.push(stub(0, "theme", script, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    lit_at(&mut app, "theme:wallpaper");
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "the list opens: {:?}", app.view);
+    let sign = |a: &App, id: &str| a.folder.as_ref().unwrap().2.rows.iter().find(|r| r.id == id).unwrap().sign.clone();
+    let n = app
+        .picks()
+        .iter()
+        .position(|it| matches!(it, Item::Folder(i) if app.folder.as_ref().unwrap().2.rows[*i].id == "wall:waves"))
+        .unwrap();
+    let shown = app.view.clone();
+    at_row(&mut app, shown, n);
+    app.enter();
+    assert_eq!(sign(&app, "wall:waves"), "check", "checked at once, before any answer");
+    assert_eq!(sign(&app, "wall:picture"), "blank", "the picture in use is not checked any more");
+    assert!(matches!(app.view, View::Folder(0, _)) && app.in_list, "the list stays: {:?}", app.view);
+    assert!(matches!(app.picks().get(app.sel), Some(Item::Folder(1))), "the light stays on the pick");
+    assert!(pump(&mut app, &rx, |_| calls.lock().unwrap().len() == 1), "then it is set");
+    assert_eq!(calls.lock().unwrap()[0]["arguments"]["name"], "waves");
+    assert!(pump(&mut app, &rx, |a| *lists.lock().unwrap() >= 2
+        && !a.busy_pointer()
+        && !a.providers[0].dirty
+        && !a.providers[0].reading));
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
+    assert_eq!(sign(&app, "wall:waves"), "check", "the list's old rows read again: the check holds");
+    assert_eq!(sign(&app, "wall:picture"), "blank");
+    // Enter on the one in use: nothing to set
+    app.enter();
+    std::thread::sleep(Duration::from_millis(100));
+    pump(&mut app, &rx, |_| false);
+    assert_eq!(calls.lock().unwrap().len(), 1, "the one in use again sends nothing");
+    assert!(
+        app.exchange.is_empty() && app.toast.is_none(),
+        "nothing said: no line above the list, no receipt below it: {:?}",
+        app.exchange
+    );
+}

@@ -279,7 +279,9 @@ dialog_transitions() {   # -> the folder of the piece in the palette in use, a s
     _dta=$REPO/assets/transitions/$(anim_now)/$(anim_palette)
     [ "$(anim_now)" = none ] || [ -z "$(anim_palette)" ] || [ ! -f "$_dta/open.gif" ] || printf '%s\n' "$_dta"
 }
-anim_now() { if [ -n "${DIALOG_ANIMATION:-}" ]; then printf '%s' "$DIALOG_ANIMATION"; else anim_for_palette "$(anim_palette)"; fi; }   # -> the piece the dialog plays: the one set, else the palette's
+anim_drawn() { [ -n "$1" ] && [ -f "$REPO/assets/transitions/${ANIMATION_NAMES%% *}/$1/open.gif" ]; }   # anim_drawn PALETTE -> true when the pieces are drawn for it: the shipped palettes; a theme from a picture or words, a palette file of yours and none have none (#193)
+ANIM_NONE_SAID='this palette has none'   # why a theme with no pieces drawn plays none: the theme's row, its list and the verb say it (#193)
+anim_now() { _anp=$(anim_palette); if ! anim_drawn "$_anp"; then printf none; elif [ -n "${DIALOG_ANIMATION:-}" ]; then printf '%s' "$DIALOG_ANIMATION"; else anim_for_palette "$_anp"; fi; }   # -> the piece the dialog plays: none where the palette has none drawn, else the one set, else the palette's
 SAVER_NAMES='spark starfield drift'   # lib/saver.py's list, in its order: what DISPLAY_SAVER takes besides clock (#66)
 KB_RE='^[a-z]{2,10}(\+[a-z0-9_-]{1,24})?( [a-z]{2,10}(\+[a-z0-9_-]{1,24})?){0,7}$'   # one to eight layouts, a variant after a plus: us us+intl
 config_set() {   # config_set KEY VALUE -- one line replaced or added; every other line kept. A value load_env would refuse at the next read is refused here, before the file is touched
@@ -1993,7 +1995,7 @@ kept_delete_ok() {   # kept_delete_ok KIND NAME -> 0 to go on: at a terminal it 
 }
 palette_names() { for _p in "$REPO"/themes/*.env "$PALETTE_DIR"/*.env; do [ -f "$_p" ] || continue; _n=${_p##*/}; printf '%s\n' "${_n%.env}"; done | sort -u; }
 palette_get() { sed -n "s/^$2=//p" "$1" | tail -1 | tr -d '"\r'; }   # palette_get FILE KEY
-PALETTE_NONE="the terminal's own colors"   # palette none's row: foot's own sixteen on the desktop, the console's own colors at the console
+PALETTE_NONE="terminal default colors"   # palette none's row: foot's own sixteen on the desktop, the console's own colors at the console
 palette_darks() {   # -> the palettes whose ground is dark, one name a line (theme_is_dark's rule: the background's luminance under half)
     palette_names | while IFS= read -r _n; do _f=$(palette_file "$_n") && printf '%s\t%s\n' "$_n" "$(palette_get "$_f" THEME_BG)"; done \
         | awk -F '\t' 'function hx(s, i) { return (index("0123456789abcdef", substr(s, i, 1)) - 1) * 16 + index("0123456789abcdef", substr(s, i + 1, 1)) - 1 }
@@ -2060,7 +2062,7 @@ theme_files() {   # before the renders: theme.env and the console's two files, a
     [ -n "$THEME" ] || { skip theme "THEME unset: the palette stays as it is (spark-shell theme NAME)"; return 0; }
     if [ "$THEME" = none ]; then
         if [ -f "$THEME_ENV" ] && need theme "remove $THEME_ENV (THEME=none)"; then
-            rm -f "$THEME_ENV"; ok theme "none: theme.env removed, the terminal's own colors"
+            rm -f "$THEME_ENV"; ok theme "none: theme.env removed, terminal default colors"
         fi
         return 0
     fi
@@ -4218,7 +4220,7 @@ machine_facts() {   # -> the .facts lines: what holds while the machine stays as
     printf -- '- Saved layouts: %s. Notes in ~/notes, by file: %s.\n' "${_mly:-none}" "${_mnt:-none}"
     palette_names > "$TMP/machine.pal"; palette_darks > "$TMP/machine.dark"
     _mst=$(theme_saved_names | head -8 | machine_names)
-    printf -- "- Palettes, dark: %s; light: %s; none is the terminal's own colors.%s\n" \
+    printf -- "- Palettes, dark: %s; light: %s; none is terminal default colors.%s\n" \
         "$(grep -xFf "$TMP/machine.dark" "$TMP/machine.pal" | machine_join)" "$(grep -vxFf "$TMP/machine.dark" "$TMP/machine.pal" | machine_join)" "${_mst:+ Saved themes: $_mst.}"
     _msa=clock; ! saver_can || _msa="clock $SAVER_NAMES"
     printf -- "- Wallpapers: %s, or default. Savers: %s.\n" "$(wall_shipped_names | machine_join)" "$(printf '%s\n' $_msa | machine_join)"
@@ -4294,7 +4296,7 @@ machine_now() {   # -> the .now lines: what is open, focused, in use, connected 
     fi
     [ -z "$_mnl" ] || printf -- '- Network: %s.\n' "$_mnl"
     _mka=$(kb_active); [ -n "$_mka" ] || _mka=${KEYBOARD%% *}; [ -n "$_mka" ] || _mka="sway's own"
-    case ${THEME:-none} in none) _mpa="none (the terminal's own colors)" ;; *) _mpa=$THEME ;; esac
+    case ${THEME:-none} in none) _mpa="none (terminal default colors)" ;; *) _mpa=$THEME ;; esac
     _mwa=$(wall_name); [ -n "$_mwa" ] || _mwa='a picture of yours'
     _mla=''; [ -n "${MACHINE_START:-}" ] || _mla=$(light_get)   # at the start the bar's loop brings it: a screen's DDC/CI is asked one at a time
     _mss=''; [ "$DISPLAY_SAVER" = clock ] || _mss=" (saver $DISPLAY_SAVER)"
@@ -5052,15 +5054,15 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                     if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\t%s\t%s\n' "$PANEL_TICK" "$n" "$n" "$_g"; else printf -- '-\t%s\t%s\t%s\n' "$n" "$n" "$_g"; fi
                 done < "$TMP/pal.names"
             done
-            for n in $(theme_saved_names); do   # yours: the themes kept as folders, the one in use a check
+            for n in $(theme_saved_names); do   # custom: the themes kept as folders, the one in use a check
                 _td=$PALETTE_DIR/$n; _wl=$(look_get "$_td" WALLPAPER); [ "$_wl" != picture ] || _wl=$(look_get "$_td" PICTURE)
-                if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\tshow\tyours|%s %s %s\n' "$PANEL_TICK" "$n" "$(theme_source_of "$_td")" "$PANEL_SEP" "${_wl:-default}"
-                else printf -- '-\t%s\t%s\tyours|%s %s %s\n' "$n" "$n" "$(theme_source_of "$_td")" "$PANEL_SEP" "${_wl:-default}"; fi
+                if [ "$n" = "${THEME:-}" ]; then printf '%s\t%s\tshow\tcustom|%s %s %s\n' "$PANEL_TICK" "$n" "$(theme_source_of "$_td")" "$PANEL_SEP" "${_wl:-default}"
+                else printf -- '-\t%s\t%s\tcustom|%s %s %s\n' "$n" "$n" "$(theme_source_of "$_td")" "$PANEL_SEP" "${_wl:-default}"; fi
             done
-            [ "$(theme_kind "${THEME:-}")" != look ] || printf '%s\t%s\tshow\tyours|not saved\n' "$PANEL_TICK" "$(theme_words_of "$THEME")"   # a look from words or a picture stays here until it is saved
-            printf -- '-\tsave this look as\tsave\tyours\n'
-            [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\ta theme from a picture\tpicture\tyours\n'   # the files, to pick a picture from (the dialog's)
-            if [ "${THEME:-none}" = none ]; then printf '%s\t%s\tshow\tyours\n' "$PANEL_TICK" "$PALETTE_NONE"; else printf -- '-\t%s\tnone\tyours\n' "$PALETTE_NONE"; fi
+            [ "$(theme_kind "${THEME:-}")" != look ] || printf '%s\t%s\tshow\tcustom|not saved\n' "$PANEL_TICK" "$(theme_words_of "$THEME")"   # a look from words or a picture stays here until it is saved
+            printf -- '-\tsave this look as\tsave\tcustom\n'
+            [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || printf -- '-\ta theme from a picture\tpicture\tcustom\n'   # the files, to pick a picture from (the dialog's)
+            if [ "${THEME:-none}" = none ]; then printf '%s\t%s\tshow\tcustom\n' "$PANEL_TICK" "$PALETTE_NONE"; else printf -- '-\t%s\tnone\tcustom\n' "$PALETTE_NONE"; fi
             # then the settings, in three groups, each control at the rows' right (provide_rows, #183): the screen,
             # the text and the bar, the dialog
             _de=''; [ "$OS" = Darwin ] || [ "$DESKTOP" != sway ] || _de=1
@@ -5070,16 +5072,17 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             [ -z "$_sz" ] || printf -- '-\tText size\tshow\ttext and bar\n'
             [ -z "$_de" ] || printf -- '-\tWords on the bar\tshow\ttext and bar\n-\tNumbered workspaces\tshow\ttext and bar\n'   # switches (#160)
             [ -z "$_de" ] || printf -- '-\tAnimation\tshow\tdialog\n' ;;   # the dialog's transitions (#122): opens their list
-        wallpapers) _cur=$(wall_name)   # the theme's wallpaper list (no section of its own, #36): the drawings, each with the palette it was drawn for and its picture in the palette in use (provide_wall_rows); then yours: a picture of yours, a color, the ground
+        wallpapers) _cur=$(wall_name)   # the theme's wallpaper list (no section of its own, #36): the drawings, each with the palette it was drawn for and its picture in the palette in use (provide_wall_rows); then custom: a picture, a color, the ground
             for w in $(wall_shipped_names); do
                 _pw=$(wall_palette_of "$w"); if [ "$_pw" = any ]; then _pw='for any dark palette'; else _pw="for $_pw"; fi   # the caption under its picture: 24 cells
-                if [ "$w" = "$_cur" ]; then printf '%s\t%s\tshow\tdrawings|%s\n' "$PANEL_TICK" "$w" "$_pw"; else printf -- '-\t%s\twallpaper %s\tdrawings|%s\n' "$w" "$w" "$_pw"; fi
+                if [ "$w" = "$_cur" ]; then printf '%s\t%s\twallpaper %s\tdrawings|%s\n' "$PANEL_TICK" "$w" "$w" "$_pw"; else printf -- '-\t%s\twallpaper %s\tdrawings|%s\n' "$w" "$w" "$_pw"; fi
             done
-            [ -n "$_cur" ] || printf '%s\tpicture %s\tshow\tyours\n' "$PANEL_TICK" "$(basename "$(wall_path)")"
-            printf -- '-\ta picture of yours\twallpaper-picture\tyours\n'   # the files, to pick a picture from (the dialog's)
-            ! wall_color || printf '%s\t%s\tshow\tyours|a color\n' "$PANEL_TICK" "$_cur"
-            printf -- '-\ta color\twallpaper-color\tyours|a name or #rrggbb\n'   # it asks for one (provide_wall_rows)
-            if [ "$_cur" = default ]; then printf '%s\tthe ground\tshow\tyours|%s\n' "$PANEL_TICK" "$WALL_GROUND_SAID"; else printf -- '-\tthe ground\twallpaper default\tyours|%s\n' "$WALL_GROUND_SAID"; fi ;;
+            [ -n "$_cur" ] || printf '%s\tpicture %s\tshow\tcustom\n' "$PANEL_TICK" "$(basename "$(wall_path)")"
+            printf -- '-\ta picture\twallpaper-picture\tcustom\n'   # the files, to pick a picture from (the dialog's)
+            ! wall_color || printf '%s\t%s\tshow\tcustom|a color\n' "$PANEL_TICK" "$_cur"
+            printf -- '-\ta color\twallpaper-color\tcustom|a name or #rrggbb\n'   # it asks for one (provide_wall_rows)
+            if [ "$_cur" = default ]; then _gm=$PANEL_TICK; else _gm=-; fi
+            printf '%s\tthe ground\twallpaper default\tcustom|%s\n' "$_gm" "$WALL_GROUND_SAID" ;;   # in use or not, its own step: the check moves in place (#191)
         about) printf '%s\tspark-shell %s\topen\n' "$PANEL_GO" "$(panel_version)" ;;   # the splash, in this window
         window) for _w in split tabs stacked; do
                 if [ "$_w" = "${WINDOWS:-split}" ]; then printf '%s\t%s\tshow\n' "$PANEL_TICK" "$(win_words "$_w")"; else printf -- '-\t%s\t%s\n' "$(win_words "$_w")" "$_w"; fi
@@ -6913,9 +6916,9 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                     if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}, said:"done"}, {name:"reminders_snooze", arguments:{name:$id}, said:"again in 10 minutes"}, {name:"reminders_delete", arguments:{name:$id}, said:"delete"}]} else {} end
                    else {} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$(theme_chips "$1")" --arg size "$(look_font_size)" --arg anim "$(anim_now)" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg motion "$WALLPAPER_MOTION" --argjson trn "$(transparency_of "$ALPHA")" --arg tr "$(_t=$(transparency_of "$ALPHA"); if [ "$_t" -eq 0 ]; then echo off; else echo "$_t%"; fi)" '
+        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$(theme_chips "$1")" --arg size "$(look_font_size)" --arg anim "$(anim_now)" --arg animok "$(! anim_drawn "$(anim_palette)" || echo 1)" --arg animnone "$ANIM_NONE_SAID" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg motion "$WALLPAPER_MOTION" --argjson trn "$(transparency_of "$ALPHA")" --arg tr "$(_t=$(transparency_of "$ALPHA"); if [ "$_t" -eq 0 ]; then echo off; else echo "$_t%"; fi)" '
             .rows |= map(
-                (if $s == "theme" and ((.group // "") | test("^(dark|light|yours)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
+                (if $s == "theme" and ((.group // "") | test("^(dark|light|custom)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
                 | (if $s == "theme" and ((.group // "") | test("^(dark|light)$")) and (.tool.name // "") == "theme_palette"
                    then .quiet = true | .look = {name: "theme_preview", arguments: {name: .tool.arguments.name}} else . end)   # kept in place, looked at while lit (#183)
                 | (if $s == "theme" and .id == "theme:show:Text size" then
@@ -6928,11 +6931,12 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                    elif $s == "theme" and .id == "theme:show:Numbered workspaces" then .switch = {on: ($wsstyle == "numbers"), turn_on: {name: "theme_workspaces", arguments: {to: "numbers"}}, turn_off: {name: "theme_workspaces", arguments: {to: "symbols"}}}
                    elif $s == "theme" and .id == "theme:show:Moving wallpaper" then .switch = {on: ($motion == "on"), turn_on: {name: "theme_motion", arguments: {to: "on"}}, turn_off: {name: "theme_motion", arguments: {to: "off"}}}
                    else . end))
-            | (if $s == "theme" then .side_by_side = ["dark", "light"] | .look_back = {name: "theme_preview", arguments: {name: "off"}} else . end)
+            | (if $s == "theme" then .look_back = {name: "theme_preview", arguments: {name: "off"}} else . end)   # one column, dark then light (#192)
             | .rows |= map(
                 if $s == "theme" and (.tool.name // "") == "theme_save" then .tool.ask = ["name"]
                 elif $s == "theme" and .id == "theme:picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_picture", types: ($types | split(" "))}
                 elif $s == "theme" and .id == "theme:wallpaper" then .children = "spark-shell://theme/rows/wallpapers" | .tool = null
+                elif $s == "theme" and .id == "theme:show:Animation" and $animok == "" then .tool = null | .columns = ["none", $animnone]   # locked: nothing to pick (#193)
                 elif $s == "theme" and .id == "theme:show:Animation" then .children = "spark-shell://theme/rows/animations" | .tool = null | .columns = [$anim]
                 elif ($s == "lan" or $s == "wifi") and (.id | startswith($s + ":network-settings")) then .sign = "opens" | .children = ("spark-shell://" + $s + "/rows/network/" + (.id | split(":network-settings ")[1]))
                 elif $s == "display" and (.text | startswith("screen ")) then .sign = "opens" | .children = ("spark-shell://display/rows/screen/" + (.text | split(" ")[1]))
@@ -6992,20 +6996,22 @@ provide_wall_rows() {   # -> the theme's wallpaper list as a rows resource (spar
             [inputs | split("\u001f") | {id: .[0], sign: .[1], text: .[2], tool: (if .[3] == "" then null else {name: .[3], arguments: (.[4] | fromjson)} end), more: [],
                 columns: ((.[5] // "") | split("|") | .[1:2] | map(select(. != ""))), children: null, group: ((.[5] // "") | split("|") | .[0] | if . == "" or . == null then null else . end)}
              | if .group == "drawings" then .preview = ($dir + "/" + .text + "-" + $tp + ".png") else . end
-             | if .text == "the ground" then .chip = [$ground] elif .id == ("theme:show:" + .text) and .group == "yours" and $color != "" and .columns == ["a color"] then .chip = [$color] else . end
+             | if .text == "the ground" then .chip = [$ground] elif .id == ("theme:show:" + .text) and .group == "custom" and $color != "" and .columns == ["a color"] then .chip = [$color] else . end
              | if .id == "theme:wallpaper-color" then .tool.ask = ["color"] else . end
+             | if (.tool.name // "") == "theme_wallpaper" then .quiet = true else . end   # a drawing or the ground kept in place, nothing said (#191)
              | if .id == "theme:wallpaper-picture" then .children = "spark-shell://files/rows" | .pick = {tool: "theme_wallpaper_picture", types: ($types | split(" "))} else . end]
             | {title: "wallpaper", state: "", rows: ., short: []}'
 }
 provide_anim_rows() {   # -> the theme's animation list as a rows resource (spark-shell://theme/rows/animations, #132): the pieces and none, the one in use checked, the palette's own said, each piece with its folder in the palette in use, where the dialog plays it beside the list while it is lit
-    _ap=$(anim_palette); _an=$(anim_now); _apo=$(anim_for_palette "$_ap")
-    for _n in $ANIMATION_NAMES none; do
+    _ap=$(anim_palette); _an=$(anim_now); _apo=$(anim_for_palette "$_ap"); _anl="$ANIMATION_NAMES none"
+    anim_drawn "$_ap" || { _anl=none; _apo=''; }   # a palette with none drawn: none alone, no palette's own (#193)
+    for _n in $_anl; do
         _af=''; [ "$_n" = none ] || [ -z "$_ap" ] || [ ! -f "$REPO/assets/transitions/$_n/$_ap/open.gif" ] || _af=$REPO/assets/transitions/$_n/$_ap
         printf '%s\t%s\n' "$_n" "$_af"
-    done | jq -Rn --arg now "$_an" --arg paired "$_apo" '
+    done | jq -Rn --arg now "$_an" --arg paired "$_apo" --arg locked "$(anim_drawn "$_ap" || echo "$ANIM_NONE_SAID")" '
         [inputs | split("\t") | {id: ("theme:animation:" + .[0]), sign: (if .[0] == $now then "check" else "blank" end), text: .[0],
-            tool: {name: "theme_animation", arguments: {to: .[0]}}, more: [], children: null, group: null,
-            columns: (if .[0] == "none" then ["no motion"] elif .[0] == $paired then ["the palette'"'"'s own"] else [] end)}
+            tool: {name: "theme_animation", arguments: {to: .[0]}}, more: [], children: null, group: null, quiet: true,
+            columns: (if $locked != "" then [$locked] elif .[0] == "none" then ["no motion"] elif .[0] == $paired then ["the palette'"'"'s own"] else [] end)}
           + (if .[1] != "" then {film: .[1]} else {} end)]
         | {title: "animation", state: "", rows: ., short: []}'
 }
@@ -8821,7 +8827,7 @@ theme_apply() {   # theme_apply NAME|none [back] -- the whole look follows: a sa
     if [ "$_painted" -eq 1 ]; then echo "Repainted 1 open terminal."
     elif [ "$_painted" -gt 1 ]; then echo "Repainted $_painted open terminals."; fi
     [ "${2:-}" = back ] || [ "$MODE" = dry ] || [ "$name" = none ] || kept_note theme "$name"   # none is no look to come back to
-    if [ "$name" = none ]; then verb_close "No palette: the console and the terminal use their own colors."
+    if [ "$name" = none ]; then verb_close "No palette: the console and the terminal use their default colors."
     elif [ -n "$_td" ]; then verb_close "The theme is $(theme_words_of "$name"): $(theme_look_words). A program that is already running, such as btop, takes it when it starts again."
     else verb_close "The palette is $name${_w:+, with $_w}. A program that is already running, such as btop, takes it when it starts again."; fi
 }
@@ -8833,7 +8839,7 @@ theme_show() {
     if [ -f "$THEME_ENV" ]; then src=$THEME_ENV
     elif [ -n "$THEME" ] && [ "$THEME" != none ]; then src=$(palette_file "$THEME") || src=''
     else src=''; fi
-    if [ -z "$src" ]; then echo "  none: the console's and the terminal's own colors"; return 0; fi
+    if [ -z "$src" ]; then echo "  none: the console's and the terminal's default colors"; return 0; fi
     for k in BG FG ACCENT MUTED; do printf '  %-8s %s\n' "$(printf '%s' "$k" | tr 'A-Z' 'a-z')" "$(palette_get "$src" "THEME_$k")"; done
     row8() { _l=''; for n in "$@"; do _l="$_l $(palette_get "$src" "THEME_ANSI_$n")"; done; printf '%s' "${_l# }"; }
     printf '  %-8s %s\n' ansi "$(row8 0 1 2 3 4 5 6 7)" bright "$(row8 8 9 10 11 12 13 14 15)"
@@ -8854,7 +8860,7 @@ theme_list() {
     echo "The palettes (yours in $PALETTE_DIR come first):"
     { echo none; palette_names; } | while IFS= read -r n; do
         note=''
-        case $n in none) note="the console's and the terminal's own colors" ;; esac
+        case $n in none) note="the console's and the terminal's default colors" ;; esac
         [ ! -f "$PALETTE_DIR/$n.env" ] || note=yours
         [ -n "$note" ] || wall_yours || note=$(wall_for_palette "$n") || note=''
         [ "$n" != "${THEME:-}" ] || note="${note:+$note, }current"
@@ -8963,11 +8969,13 @@ text_step() {   # text_step N|bigger|smaller -> the receipt, or the refusal and 
     echo "text at $_new $PANEL_SEP new windows and the bar take it; the pointer $(pointer_size_for "$_new") pixels"
 }
 theme_animation() {   # theme_animation [NAME|none|next|back] -- the dialog's transitions as it opens, waits and closes (#122): a piece by name, none for no motion
+    anim_drawn "$(anim_palette)" || [ -n "${1:-}" ] || { echo "animation none $PANEL_SEP $ANIM_NONE_SAID"; return; }
     [ -n "${1:-}" ] || { echo "animation $(anim_now) $PANEL_SEP none, $(printf '%s' "$ANIMATION_NAMES" | sed 's/ /, /g')"; return; }
     [ $# -eq 1 ] || refuse_in theme "animation takes one word"
     anim_step "$1" || exit 1
 }
 anim_step() {   # anim_step NAME|none|next|back -> the receipt, or the refusal and exit 1 (the panel's step and the verb share it): from the dialog's next opening
+    anim_drawn "$(anim_palette)" || [ "$1" = none ] || { echo "the animation stays none: $ANIM_NONE_SAID (the pieces are drawn for the shipped palettes)"; return 1; }   # #193
     # shellcheck disable=SC2086   # the names, a word each, on purpose
     case $1 in
         next|back) _an=$(printf '%s\n' none $ANIMATION_NAMES | awk -v c="$(anim_now)" -v d="$1" '{ n[NR] = $0; if ($0 == c) i = NR } END { if (!i) i = 1; print n[d == "next" ? i % NR + 1 : (i + NR - 2) % NR + 1] }') ;;
@@ -9289,7 +9297,7 @@ check_theme() {
         if [ -f "$THEME_ENV" ]; then chk theme fail "THEME=none, but theme.env is here" "spark-shell on"
         elif console_linux && { [ -e "$ROOT/$CONSOLE_UNIT" ] || [ -n "$(marked "$ROOT/etc/rc.local" "$PALETTE_MARK")" ]; }; then
             chk theme fail "THEME=none, but a palette is still set at boot" "spark-shell on"
-        else chk theme ok "none: the console's and the terminal's own colors"; fi
+        else chk theme ok "none: the console's and the terminal's default colors"; fi
         return
     fi
     if ! palette_render "$THEME"; then chk theme fail "THEME=$THEME: $(cat "$TMP/palette.why")" "spark-shell theme list"; return; fi

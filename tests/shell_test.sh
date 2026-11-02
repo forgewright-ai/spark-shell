@@ -2130,7 +2130,7 @@ out=$(L theme none)
     && grep -q 'systemctl disable spark-shell-console.service' "$H/log" && grep -qx 'setvtrgb vga' "$H/log" && grep -qx 'THEME=none' "$HOME/.config/spark-shell/config" \
     && ok "theme none: theme.env, the unit and the console files gone, VGA set" || bad "theme none" "$out $(cat "$H/log")"
 ck=$(L check || true)
-printf '%s\n' "$ck" | grep -q "^ok     theme        none: the console's and the terminal's own colors" && ok "check: theme none is ok" || bad "check none" "$(printf '%s\n' "$ck" | grep theme)"
+printf '%s\n' "$ck" | grep -q "^ok     theme        none: the console's and the terminal's default colors" && ok "check: theme none is ok" || bad "check none" "$(printf '%s\n' "$ck" | grep theme)"
 
 # the repository's palettes (themes/*.env): each one a theme NAME takes
 if ls "$REPO"/themes/*.env >/dev/null 2>&1; then
@@ -4194,8 +4194,8 @@ STUB
     [ "$(printf '%s\n' "$out" | sed -n 1p)" = "$(date '+%A %d %B %Y')" ] && [ -z "$(printf '%s\n' "$out" | sed -n 2p)" ] && printf '%s\n' "$out" | sed -n 3p | grep -q "^ \{40\} *$(date '+%B %Y')$" && printf '%s\n' "$out" | sed -n 4p | grep -q " Su  Mo  Tu  We  Th  Fr  Sa$" && [ "$(printf '%s\n' "$out" | sed -n '4,8p' | grep -c "^[$B ]*${B}[$B ]*      ")" = 5 ] && printf '%s\n' "$out" | sed -n '4,8p' | grep -q "$B$B  *$B" && printf '%s\n' "$out" | grep -q "	clock format 12$" && printf '%s\n' "$out" | grep -q "	clock week monday$" \
         && ok "panel clock: the date alone on top, then the time five rows tall in strokes two cells wide on the left and this month on the right, 34 cells apart; time settings follow" || bad "panel clock" "$out"
     out=$(sh "$SH" bar panel look --list)
-    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "theme      none" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  theme      catppuccin-mocha	theme catppuccin-mocha" ] && printf '%s\n' "$out" | grep -q "^  theme      Wallpaper	theme wallpaper$" && printf '%s\n' "$out" | grep -q "^$TICK theme      the terminal's own colors	theme show$" && printf '%s\n' "$out" | grep -q "^  theme      dracula	theme dracula$" && printf '%s\n' "$out" | grep -q "^  theme      save this look as	theme save$" && printf '%s\n' "$out" | grep -q "^  theme      Text size	theme show$" && printf '%s\n' "$out" | grep -q "^  theme      Transparency	theme show$" \
-        && ok "panel theme (look, the old word, still opens it): the palettes first, each its own step (#183), then the wallpaper, the text size and the transparency, the palettes by name, none as the terminal's own colors, save this look as" || bad "panel look" "$out"
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "theme      none" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  theme      catppuccin-mocha	theme catppuccin-mocha" ] && printf '%s\n' "$out" | grep -q "^  theme      Wallpaper	theme wallpaper$" && printf '%s\n' "$out" | grep -q "^$TICK theme      terminal default colors	theme show$" && printf '%s\n' "$out" | grep -q "^  theme      dracula	theme dracula$" && printf '%s\n' "$out" | grep -q "^  theme      save this look as	theme save$" && printf '%s\n' "$out" | grep -q "^  theme      Text size	theme show$" && printf '%s\n' "$out" | grep -q "^  theme      Transparency	theme show$" \
+        && ok "panel theme (look, the old word, still opens it): the palettes first, each its own step (#183), then the wallpaper, the text size and the transparency, the palettes by name, none as terminal default colors, save this look as" || bad "panel look" "$out"
     st=0; out=$(sh "$SH" panel theme text bigger 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = "text at 13 $SEP new windows and the bar take it; the pointer 24 pixels" ] && grep -q '^FONT=DejaVu Sans Mono:size=13$' "$HOME/.config/spark-shell/config" && grep -q '^    font pango:DejaVu Sans Mono 13$' "$sway" \
         && ok "panel theme text bigger: FONT in the config, the bar's font rendered, the receipt names the pointer's size" || bad "look text" "st=$st $out $(grep -n 'FONT\|font' "$HOME/.config/spark-shell/config" "$sway")"
@@ -4493,9 +4493,9 @@ jq -e -s 'all(.[]; .inputSchema.type == "object" and .inputSchema.additionalProp
 mcp theme "$(rq 1 resources/list)" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows"}')" "$(rq 3 resources/read '{"uri":"spark-shell://wifi/rows"}')"
 ans 2 | jq -r '.result.contents[0].text' > "$H/rows.json"
 [ "$(ans 1 | jq -c '.result.resources[0] | [.uri, .mimeType]')" = '["spark-shell://theme/rows","application/json"]' ] && [ "$(ans 3 | jq -r .error.code)" = -32002 ] \
-    && jq -e '.title == "theme" and (.rows[] | select(.text == "the terminal'"'"'s own colors") | .sign == "check" and .tool == null and .group == "yours") and (.rows[] | select(.id == "theme:dracula") | .tool == {name: "theme_palette", arguments: {name: "dracula"}} and .group == "dark" and (.chip | length) == 9)' "$H/rows.json" >/dev/null \
+    && jq -e '.title == "theme" and (.rows[] | select(.text == "terminal default colors") | .sign == "check" and .tool == null and .group == "custom") and (.rows[] | select(.id == "theme:dracula") | .tool == {name: "theme_palette", arguments: {name: "dracula"}} and .group == "dark" and (.chip | length) == 9)' "$H/rows.json" >/dev/null \
     && jq -e '.short == ["theme:more"] and (.rows[] | select(.id == "theme:more") | .children == "spark-shell://theme/rows" and .tool == null)' "$H/rows.json" >/dev/null \
-    && ok "provide: the rows resource: the palette in use (none, the terminal's own colors) a check with no tool, every other a row whose tool takes it by name, with its chip; the short form the one row that opens the section" || bad "provide rows" "$(cat "$H/rows.json" | head -c 600)"
+    && ok "provide: the rows resource: the palette in use (none, terminal default colors) a check with no tool, every other a row whose tool takes it by name, with its chip; the short form the one row that opens the section" || bad "provide rows" "$(cat "$H/rows.json" | head -c 600)"
 mcp theme "$(call 1 theme_palette '{"name":"nord"}')" "$(call 2 theme_palette '{"name":"nowhere"}')" "$(call 3 theme_text '{"size":"huge"}')" "$(call 4 theme_alpha '{"value":0.9,"x":1}')" "$(call 5 wifi_connect '{"name":"home"}')" "$(call 6 'Theme_Font')" "$(call 7 theme_alpha '{"value":2}')"
 [ "$(ans 1 | jq -c '.result.structuredContent | del(.palette, .transitions)')" = '{"receipt":"nord is on","undo":{"name":"theme_palette","arguments":{"name":"none"}}}' ] && [ "$(ans 1 | jq -r '.result.structuredContent.transitions')" = "$REPO/assets/transitions/tide/nord" ] && ans 1 | jq -e '.result.isError == false and (.result.content[0].text | fromjson) == .result.structuredContent' >/dev/null && grep -q '^THEME=nord$' "$HOME/.config/spark-shell/config" \
     && ok "provide tools/call: the palette set, the receipt in the present tense, the undo the step that takes it back, the same JSON in a text block; the animation it brings, for an open dialog to read again (#126)" || bad "provide call" "$(ans 1) $(cat "$H/mcp.err")"
@@ -4945,8 +4945,24 @@ fi
 mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/animations"}')"
 ans 2 | jq -r '.result.contents[0].text' > "$H/anims.json"
 [ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "moon:check:the palette's own|ripple:blank:|tide:blank:|embers:blank:|sun:blank:|flight:blank:|none:blank:no motion" ] \
-    && jq -e --arg d "$REPO/assets/transitions" '(.rows[0].film == ($d + "/moon/tokyonight-night")) and (.rows[-1] | has("film") | not) and all(.rows[]; .tool.name == "theme_animation" and .tool.arguments.to == .text)' "$H/anims.json" >/dev/null \
-    && ok "provide theme: the animation list: the six and none, the one in use checked, the palette's own said, each piece's folder in the palette in use, Enter sets it (#132)" || bad "animation list" "$(cat "$H/anims.json")"
+    && jq -e --arg d "$REPO/assets/transitions" '(.rows[0].film == ($d + "/moon/tokyonight-night")) and (.rows[-1] | has("film") | not) and all(.rows[]; .tool.name == "theme_animation" and .tool.arguments.to == .text and .quiet == true)' "$H/anims.json" >/dev/null \
+    && ok "provide theme: the animation list: the six and none, the one in use checked, the palette's own said, each piece's folder in the palette in use, Enter sets it in place (#132, #191)" || bad "animation list" "$(cat "$H/anims.json")"
+# #193: the pieces are drawn for the shipped palettes alone: a theme with none drawn (a palette of yours, a theme from a
+# picture or words, none) plays none, its row says why and opens nothing, its list holds none alone, the verb refuses a piece
+cp "$HOME/.config/spark-shell/config" "$H/config.anim"; palette_fixture mine '#fe8019'
+printf 'DESKTOP=sway\nTHEME=mine\nDIALOG_ANIMATION=ripple\n' > "$HOME/.config/spark-shell/config"
+o1=$(sh "$SH" theme animation 2>&1); st=0; o2=$(sh "$SH" theme animation moon 2>&1) || st=$?; a1=$(sed -n 's/^DIALOG_ANIMATION=//p' "$HOME/.config/spark-shell/config")
+mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/animations"}')" "$(rq 3 resources/read '{"uri":"spark-shell://theme/rows"}')"
+ans 2 | jq -r '.result.contents[0].text' > "$H/anims.json"; ans 3 | jq -r '.result.contents[0].text' > "$H/trows.json"
+[ "$o1" = "animation none $(printf '\302\267') this palette has none" ] && [ "$st" -ne 0 ] && [ "$o2" = 'the animation stays none: this palette has none (the pieces are drawn for the shipped palettes)' ] && [ "$a1" = ripple ] \
+    && [ "$(jq -r '[.rows[] | .text + ":" + .sign + ":" + (.columns | join(","))] | join("|")' "$H/anims.json")" = "none:check:this palette has none" ] \
+    && { [ "$(uname -s)" = Darwin ] || jq -e '.rows[] | select(.id == "theme:show:Animation") | .columns == ["none", "this palette has none"] and .children == null and .tool == null' "$H/trows.json" >/dev/null; } \
+    && [ "$(sh "$SH" theme animation none 2>&1 | cut -d' ' -f1-2)" = 'animation none' ] \
+    && ok "theme animation, a palette with no pieces drawn (#193): none, its row says why and opens nothing, its list none alone, a piece refused and the one set kept for later; none passes" \
+    || bad "animation locked" "$o1 | $st $o2 | $a1 | $(cat "$H/anims.json") $(jq -c '.rows[] | select(.id == "theme:show:Animation")' "$H/trows.json" 2>&1)"
+printf 'DESKTOP=sway\nTHEME=mine\nDIALOG_ANIMATION=ripple\n' > "$HOME/.config/spark-shell/config"; sh "$SH" theme nord >/dev/null 2>&1
+[ "$(sh "$SH" theme animation 2>&1 | cut -d' ' -f1-2)" = 'animation tide' ] && ok "theme animation: a shipped palette after one with none brings its piece again (#193)" || bad "animation back" "$(sh "$SH" theme animation 2>&1)"
+cp "$H/config.anim" "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/themes/mine.env"
 mkdir -p "$H/gio"; cat > "$H/gio/gio" <<'STUB'
 #!/bin/sh
 echo "gio $*" >> "$HOME/gio.log"
@@ -5827,8 +5843,8 @@ printf 'DESKTOP=sway\nTHEME=nord\nWALLPAPER=default\n' > "$cfg"; rm -rf "$st_dir
 sh "$SH" theme nord >/dev/null 2>&1; sh "$SH" theme save desk >/dev/null 2>&1; sh "$SH" theme dracula >/dev/null 2>&1
 mcp theme "$(rq 1 resources/read '{"uri":"spark-shell://theme/rows"}')" "$(rq 2 resources/read '{"uri":"spark-shell://theme/rows/wallpapers"}')"
 ans 1 | jq -r '.result.contents[0].text' > "$H/trows.json"; ans 2 | jq -r '.result.contents[0].text' > "$H/wrows.json"
-jq -e --arg dw "$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" '(.rows[] | select(.id == "theme:desk") | .group == "yours" and .columns == ["nord \u00b7 " + $dw] and .tool == {name: "theme_palette", arguments: {name: "desk"}} and (.chip | length) == 9)
-    and (.rows[] | select(.id == "theme:save") | .group == "yours" and .text == "save this look as" and .tool.name == "theme_save" and .tool.ask == ["name"])
+jq -e --arg dw "$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" '(.rows[] | select(.id == "theme:desk") | .group == "custom" and .columns == ["nord \u00b7 " + $dw] and .tool == {name: "theme_palette", arguments: {name: "desk"}} and (.chip | length) == 9)
+    and (.rows[] | select(.id == "theme:save") | .group == "custom" and .text == "save this look as" and .tool.name == "theme_save" and .tool.ask == ["name"])
     and ([.rows[] | select(.group == "back" or .group == "palettes")] | length == 0)
     and (.rows[] | select(.id == "theme:nord") | .group == "dark" and .columns == [] and .quiet == true and .look == {name: "theme_preview", arguments: {name: "nord"}} and .tool == {name: "theme_palette", arguments: {name: "nord"}}
         and .chip == ["#2e3440", "#d8dee9", "#88c0d0", "#bf616a", "#a3be8c", "#ebcb8b", "#81a1c1", "#b48ead", "#88c0d0"])
@@ -5837,10 +5853,10 @@ jq -e --arg dw "$([ "$(uname -s)" = Darwin ] && echo default || echo fjord)" '(.
         and .step.set == {name: "theme_text", arguments: {}} and .step.key == "size" and .step.words == ["smaller", "bigger"] and .group == "text and bar" and .tool == null)
     and (.rows[] | select(.id == "theme:show:Transparency") | .step.values[.step.at] == {shown: "15%", sent: "15"} and .step.values[0] == {shown: "off", sent: "0"} and .step.values[-1].shown == "50%"
         and .step.key == "amount" and .group == "screen")
-    and .side_by_side == ["dark", "light"] and .look_back == {name: "theme_preview", arguments: {name: "off"}}
-    and ([.rows[] | .group] | index("dark") < index("yours") and index("yours") < index("screen"))
+    and (has("side_by_side") | not) and .look_back == {name: "theme_preview", arguments: {name: "off"}}
+    and ([.rows[] | .group] | index("dark") < index("custom") and index("custom") < index("screen"))
     and ([.rows[] | select(.text | test("^(text bigger|text smaller|more transparency|less transparency)"))] | length == 0) and (.short == ["theme:more"])' "$H/trows.json" >/dev/null \
-    && ok "provide theme rows (#36, #183): the palettes first, dark beside light, each its own step kept in place with a look, its chip and no drawing; yours: the saved theme, the save row that asks a name; then the settings: the text size and the transparency, each with every value it takes and the one in use; no back rows" || bad "theme rows" "$(head -c 900 "$H/trows.json")"
+    && ok "provide theme rows (#36, #183, #192): the palettes first, dark then light in one column, each its own step kept in place with a look, its chip and no drawing; custom: the saved theme, the save row that asks a name; then the settings: the text size and the transparency, each with every value it takes and the one in use; no back rows" || bad "theme rows" "$(head -c 900 "$H/trows.json")"
 # a value set as it is, the dialog's own way (#183); a palette looked at is on the screen and nothing is kept
 mcp theme "$(call 1 theme_text '{"size":"14"}')" "$(call 2 theme_transparency '{"amount":"30"}')" "$(call 3 theme_preview '{"name":"nord"}')" "$(call 4 theme_preview '{"name":"none"}')" "$(call 5 theme_preview '{"name":"off"}')"
 [ "$(ans 1 | jq -r '.result.structuredContent.receipt' | cut -c1-10)" = 'text at 14' ] && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'transparency at 30%' ] \
@@ -5854,12 +5870,12 @@ sh "$SH" theme text 12 >/dev/null 2>&1; sh "$SH" theme transparency 15 >/dev/nul
 if [ "$(uname -s)" != Darwin ]; then
     jq -e '(.rows[] | select(.id == "theme:wallpaper") | .text == "Wallpaper" and .columns == ["dunes"] and .tool == null and .children == "spark-shell://theme/rows/wallpapers")
         and (.rows[] | select(.id == "theme:picture") | .text == "a theme from a picture" and .children == "spark-shell://files/rows" and .pick == {tool: "theme_picture", types: ["jpg", "jpeg", "png", "webp"]})' "$H/trows.json" >/dev/null \
-        && jq -e --arg th "$HOME/.local/state/spark-shell/thumbs" '.title == "wallpaper" and (.rows[] | select(.id == "theme:wallpaper skyline") | .group == "drawings" and .columns == ["for tokyonight-night"] and .preview == ($th + "/skyline-dracula.png") and .tool == {name: "theme_wallpaper", arguments: {name: "skyline"}})
-            and (.rows[] | select(.id == "theme:wallpaper-picture") | .group == "yours" and .children == "spark-shell://files/rows" and .pick.tool == "theme_wallpaper_picture")
+        && jq -e --arg th "$HOME/.local/state/spark-shell/thumbs" '.title == "wallpaper" and (.rows[] | select(.id == "theme:wallpaper skyline") | .group == "drawings" and .columns == ["for tokyonight-night"] and .preview == ($th + "/skyline-dracula.png") and .tool == {name: "theme_wallpaper", arguments: {name: "skyline"}} and .quiet == true)
+            and (.rows[] | select(.id == "theme:wallpaper-picture") | .group == "custom" and .text == "a picture" and (has("quiet") | not) and .children == "spark-shell://files/rows" and .pick.tool == "theme_wallpaper_picture")
             and (.rows[] | select(.id == "theme:wallpaper-color") | .text == "a color" and .tool.name == "theme_wallpaper_color" and .tool.ask == ["color"])
-            and (.rows[] | select(.id == "theme:wallpaper default") | .text == "the ground" and (.chip | length) == 1) and ([.rows[] | select(.text == "none" or .group == "colors")] | length == 0)
-            and (.rows[] | select(.id == "theme:show:dunes") | .sign == "check") and .rows[0].id == "theme:wallpaper skyline"' "$H/wrows.json" >/dev/null \
-        && ok "provide theme: the wallpaper row opens the list resource (#36): the drawings first, each with the palette it was drawn for and its picture in this palette; yours: a picture to pick, a color asked for, the ground with its color; no none, no color rows; dunes checked" || bad "wallpaper rows" "$(head -c 700 "$H/trows.json"; head -c 900 "$H/wrows.json")"
+            and (.rows[] | select(.id == "theme:wallpaper default") | .text == "the ground" and .group == "custom" and .quiet == true and (.chip | length) == 1) and ([.rows[] | select(.text == "none" or .group == "colors")] | length == 0)
+            and (.rows[] | select(.id == "theme:wallpaper dunes") | .sign == "check" and .quiet == true and .tool.arguments.name == "dunes") and .rows[0].id == "theme:wallpaper skyline"' "$H/wrows.json" >/dev/null \
+        && ok "provide theme: the wallpaper row opens the list resource (#36): the drawings first, each with the palette it was drawn for and its picture in this palette, each kept in place (#191); custom: a picture to pick, a color asked for, the ground with its color; no none, no color rows; dunes checked, its step kept" || bad "wallpaper rows" "$(head -c 700 "$H/trows.json"; head -c 900 "$H/wrows.json")"
     mcp theme "$(call 1 theme_wallpaper_color '{"color":"teal"}')" "$(call 2 theme_wallpaper_color '{"color":"chartreuse"}')"
     [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'the wallpaper is teal' ] && grep -qx 'WALLPAPER=#008080' "$cfg" && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'theme: a color is a name (black, white, gray, silver, navy, blue, teal, green, olive, maroon, red, purple, brown, orange) or #rrggbb' ] \
         && ok "provide theme_wallpaper_color: a color by its name or #rrggbb, a word that is no color refused" || bad "wallpaper color call" "$(cat "$H/mcp.out" | cut -c1-300)"
@@ -6359,7 +6375,7 @@ STUB
         && grep -qF -- '- Network: wired eth0; Wi-Fi wlan0 through wpa_cli, saved networks: home, old.' "$mf" \
         && grep -qF -- '- Keyboard layouts: us (English (US)), br (Portuguese (Brazil)); caps key caps' "$mf" \
         && grep -qF -- '- Saved layouts: writing. Notes in ~/notes, by file: alpha.md, beta.md.' "$mf" \
-        && grep -q "^- Palettes, dark: .*nord.*; light: .*solarized-light.*; none is the terminal's own colors.$" "$mf" && grep -q '^- Wallpapers: .*dunes.*, or default. Savers: clock' "$mf" \
+        && grep -q "^- Palettes, dark: .*nord.*; light: .*solarized-light.*; none is terminal default colors.$" "$mf" && grep -q '^- Wallpapers: .*dunes.*, or default. Savers: clock' "$mf" \
         && ok "facts: the sound devices by their exact names with what each is, the paired devices with their kinds, the saved networks, the keyboard's codes and names, the layouts, the notes by file, the palettes (#159)" || bad "facts names" "$(cat "$mf")"
     # spark-shell's providers on spark's list: its own commands are the ways to read and list, a change is a tool's (a model that read
     # the commands as the ways to change wrote spark-shell bar off, spark-shell layout list); its own command only where no tool does it

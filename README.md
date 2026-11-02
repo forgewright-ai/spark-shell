@@ -244,7 +244,7 @@ the hue of the accent, how warm, how much contrast, dark or light, and
 makes the palette from them; a flag or a brand is one look with two
 hues, never two. The drawing you have is drawn again in it. Both apply
 at once and sit in the last ten under the picture's or the words' name
-until you save them. `theme none` leaves the terminal its own colors:
+until you save them. `theme none` leaves the terminal its default colors:
 foot's own sixteen on the desktop, the console's own at the console.
 
 ## Font
@@ -841,18 +841,18 @@ its first and its last row.
   unmount it and eject the drive; then this computer's free space.
 - `power`: lock the screen, suspend, log out, restart, shut down; the
   last three ask for a typed yes.
-- `theme`: the palettes first, dark beside light, each with a chip of
-  its colors (its ground, its accent and six hues); the arrows move down
-  a column and across to the other. A palette lit a moment shows on the
-  screen at once, sway, the bar, the open terminals and its drawing, and
-  nothing is kept until Enter or a click; move the light away, or leave,
-  and yours comes back. A palette brings its drawing and its animation
-  too. Then yours: your saved themes, `save this look as`, which asks a
-  name, `a theme from a picture`, which opens your home folder, and the
-  terminal's own colors (palette none). Then the settings in three
-  groups, each control at the right: the screen (the wallpaper, the
-  moving wallpaper, the transparency), the text and the bar (the text
-  size, words on the bar, numbered workspaces), and the dialog (its
+- `theme`: the palettes first, dark then light in one column, each
+  with a chip of its colors (its ground, its accent and six hues). A
+  palette lit a moment shows on the screen at once, sway, the bar, the
+  open terminals and its drawing, and nothing is kept until Enter or a
+  click; move the light away, or leave, and yours comes back. A
+  palette brings its drawing and its animation too. Then custom: your
+  saved themes, `save this look as`, which asks a name, `a theme from
+  a picture`, which opens your home folder, and terminal default
+  colors (palette none). Then the settings in three groups, each
+  control at the right: the screen (the wallpaper, the moving
+  wallpaper, the transparency), the text and the bar (the text size,
+  words on the bar, numbered workspaces), and the dialog (its
   animation). A switch flips with Enter, Space or a click; a value
   steps with left and right or a click on its arrows, the arrow at the
   end of its range dimmed. Every change shows the moment it is made,
@@ -860,12 +860,16 @@ its first and its last row.
   receipt below it. `theme back` on the command line steps through the
   last ten looks. The wallpaper row opens the wallpaper list: the
   drawings, each with the palette it was drawn for, the lit one shown
-  as a picture in your palette at the top right; `a picture of yours`
-  (jpg, jpeg, png, webp); `a color`, which asks for a name or
-  `#rrggbb`; and the ground. The animation row opens a list of the
-  pieces and none, the one in use checked and the palette's own said;
-  the lit one plays beside the list in your palette. The header names
-  the palette. At the home, Esc clears what spark said; the next Esc
+  as a picture in your palette at the top right; `a picture` (jpg,
+  jpeg, png, webp); `a color`, which asks for a name or `#rrggbb`; and
+  the ground. The animation row opens a list of the pieces and none,
+  the one in use checked and the palette's own said; the lit one plays
+  beside the list in your palette. A drawing, the ground or a piece
+  picked there is checked at once, and the list stays as it is. The
+  pieces are drawn for the shipped palettes only: with a theme from a
+  picture or words, a palette of your own, or none, the animation is
+  none, and its row says so and opens no list. The header names the
+  palette. At the home, Esc clears what spark said; the next Esc
   closes the dialog.
 - Calendar: the time in large figures, then this month and the next
   side by side, today lit and a day with a reminder in the accent; the
@@ -1013,6 +1017,8 @@ goes back.
 
 `DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide the controls.
 `DIALOG_ANIMATION` names the opening and closing animation, or none.
+A palette with no pieces drawn for it plays none, and the one named
+comes back with a shipped palette.
 
 Type in a place, and its list keeps what matches. Type at the home, and
 the list shows what the words name, in groups: places, apps, files,

@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.120.1
+
+A patch from the owner's reports of 2026-11-01: a pick in the wallpaper
+or the animation list stays in place, as the theme view's palettes do
+(#191); the group named yours is named custom (#190); Settings > theme
+is one column (#192); and a theme with no animations drawn for it plays
+none, locked (#193).
+
+- In the wallpaper list, Enter or a click on a drawing or the ground
+  checks it at once and takes the check off the one before it (a
+  drawing, a picture, a color). In the animation list the same holds
+  for a piece or none. No line runs above the list and no receipt comes
+  below it, so nothing moves down; a refusal is said. Before, each pick
+  ran as a step with its line on top, which pushed the list down.
+- The one in use keeps its step in the list, so its row is the same row
+  before and after a pick; Enter on it does nothing, where it used to
+  set the same look again. The same holds for the palette in use.
+- The group of saved themes, the save and picture rows and palette none
+  in Settings > theme, and of the picture, the color and the ground in
+  the wallpaper list, is named custom: every row there is the user's
+  choice, so "yours" said nothing. The picture row reads "a picture".
+- Palette none reads "terminal default colors", in the list, the
+  receipts and `spark-shell check`, where it read "the terminal's own
+  colors".
+- Settings > theme lists the palettes in one column, dark then light,
+  as every other list is. Two columns were drawn only while the whole
+  list fit, so after a theme from a picture, whose line and receipt sit
+  above the list, the view turned to one column until Esc; the owner
+  picked one column always.
+- The dialog's animations are drawn for the 16 shipped palettes only.
+  With a theme from a picture or words, a palette of your own, or none,
+  the animation is now none: the Animation row says "none, this palette
+  has none" and opens no list, and `theme animation PIECE` is refused
+  with the reason. Before, the list checked a piece that never played
+  and named embers as the palette's own. The piece set is kept, so a
+  shipped palette brings its own again, and a theme saved meanwhile
+  keeps none.
+
 ## v0.120
 
 The theme view made fast and still, the pointer's borders as the owner
