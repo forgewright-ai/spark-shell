@@ -803,7 +803,7 @@ next reminder, or none ahead), Settings (the network and the theme),
 About (the version) and Power (lock, log out, restart, shut down).
 Settings stands in groups: sound and microphone; Wi-Fi, Bluetooth and
 the network; storage, display, keyboard and pointer; theme, wallpaper,
-the bar and notifications; power, battery and Connections. A
+the bar and notifications; power and battery. A
 place shows only where this
 machine has it. The down arrow moves from the prompt into the
 list, and up from the first row comes back. A row wears a sign where
@@ -889,9 +889,6 @@ its first and its last row.
   puts one in front and close is behind it; and how new windows sit on
   a workspace: side by side, in tabs or stacked.
 - `bar`: hide the bar at the top of the screen, or show it again.
-- Connections: how many tools the dialog has, all on this computer
-  from spark-shell, then the sections that give them by the names
-  Settings gives them; one that stopped says why.
 - `apps`: a terminal window, then a row per app a layout may open,
   under the group its desktop entry names: internet, office, graphics,
   sound and video, development, education, games, system, utilities,

@@ -96,9 +96,9 @@ pub const DESTS: [Dest; 8] = [
 ];
 pub const SETTINGS_DEST: usize = 5;
 pub const CALENDAR_DEST: usize = 4;
-/// Settings: a section each, then Connections, in this order, under their groups (#137); About is a
+/// Settings: a section each, in this order, under their groups (#137); About is a
 /// place of the home since v0.114 (#136).
-pub const SETTINGS: [(&str, &str, &str); 16] = [
+pub const SETTINGS: [(&str, &str, &str); 15] = [
     ("out", "Sound", "Output and volume"),
     ("mic", "Microphone", "Input and level"),
     ("wifi", "Wi-Fi", "Networks"),
@@ -114,7 +114,6 @@ pub const SETTINGS: [(&str, &str, &str); 16] = [
     ("notifications", "Notifications", "Do not disturb, the last few"),
     ("power", "Power", "Lock, suspend, restart"),
     ("bat", "Battery", "Charge"),
-    ("connections", "Connections", "Tools and the model"),
 ];
 
 /// The group a row of Settings sits under, its heading (#137).
@@ -371,8 +370,6 @@ pub enum View {
     /// The steps of one row of a provider (its tool and its more), as a list: Right on the row opens it (#112).
     Steps(usize),
     About,
-    /// Settings > Connections: the tools the dialog talks to, and where the model runs.
-    Connections,
     /// One file of a list, as large as the area allows (#120): the state is App::preview.
     Preview,
     /// Every thing of one kind a search from Home found for these words (#169).
@@ -566,10 +563,6 @@ pub enum Item {
     Said(Sign, String, bool),
     /// A section's name over its rows, where a view holds more than one section.
     Title(String),
-    /// A line that says something and opens nothing: (words, muted).
-    Text(String, bool),
-    /// A provider the dialog talks to, in Connections.
-    Provider(usize),
 }
 
 pub struct App {
@@ -1343,12 +1336,12 @@ impl App {
             .collect()
     }
 
-    /// The rows of Settings shown here: a section that runs, Connections always.
+    /// The rows of Settings shown here: a section that runs.
     pub fn settings(&self) -> Vec<usize> {
         SETTINGS
             .iter()
             .enumerate()
-            .filter(|(_, (l, _, _))| *l == "connections" || self.providers.iter().any(|p| &p.label == l && p.dead.is_none()))
+            .filter(|(_, (l, _, _))| self.providers.iter().any(|p| &p.label == l && p.dead.is_none()))
             .map(|(i, _)| i)
             .collect()
     }
@@ -1436,28 +1429,6 @@ impl App {
         }
         let mut list = vec![];
         match &self.view {
-            View::Connections => {
-                // what is true of them all, said once; their names as Settings writes them; a row only for one that
-                // stopped, with why (#146)
-                list.push(Item::Heading("tools".into()));
-                let tools: Vec<&Provider> = self
-                    .providers
-                    .iter()
-                    .enumerate()
-                    .filter(|(i, _)| Some(*i) != self.about_idx)
-                    .map(|(_, p)| p)
-                    .collect();
-                let running: Vec<String> = tools.iter().filter(|p| p.dead.is_none()).map(|p| section_name(&p.label)).collect();
-                let n: usize = tools.iter().filter(|p| p.dead.is_none()).map(|p| p.tools.len()).sum();
-                list.push(Item::Text(format!("{} tools \u{b7} this computer, from spark-shell", n), false));
-                self.text(&mut list, &running.join(", "), true);
-                for p in tools.iter().filter(|p| p.dead.is_some()) {
-                    list.push(Item::Text(
-                        format!("{} stopped: {}", section_name(&p.label), p.dead.clone().unwrap_or_default()),
-                        false,
-                    ));
-                }
-            }
             View::About | View::Preview => {}
             View::Steps(_) => {
                 let n = self.steps_row.as_ref().map(|r| r.tool.iter().count() + r.more.len()).unwrap_or(0);
@@ -1742,13 +1713,6 @@ impl App {
                 group = g;
             }
             list.push(Item::Setting(i));
-        }
-    }
-
-    /// Words that open nothing, wrapped to the content's width.
-    fn text(&self, out: &mut Vec<Item>, words: &str, muted: bool) {
-        for l in crate::ui::wrap(words, self.col_w().saturating_sub(6).max(10) as usize) {
-            out.push(Item::Text(l, muted));
         }
     }
 
@@ -2455,9 +2419,6 @@ impl App {
         if let Some(d) = self.dests().into_iter().find(|d| DESTS[*d].name.to_lowercase() == w) {
             return Some(self.dest_view(d));
         }
-        if w == "connections" {
-            return Some(View::Connections);
-        }
         if w == "about" && self.about_idx.is_some() {
             return Some(View::About);
         }
@@ -2694,9 +2655,6 @@ impl App {
             }
             Item::Setting(i) => {
                 let label = SETTINGS[i].0;
-                if label == "connections" {
-                    return self.go(View::Connections);
-                }
                 if let Some(v) = self.place(label) {
                     self.go(v);
                 }
@@ -3812,7 +3770,6 @@ impl App {
             View::Dest(d) => DESTS[*d].name.to_lowercase(),
             View::Section(p) | View::Folder(p, _) | View::Steps(p) => section_name(&self.providers[*p].label).to_lowercase(),
             View::About => "about".into(),
-            View::Connections => "connections".into(),
             View::Preview => "preview".into(),
             View::Found(k, _) => k.name().into(),
         }

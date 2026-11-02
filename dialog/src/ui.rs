@@ -622,14 +622,6 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         Item::Title(t) => {
             pen.put(2, y, t, pal.fg, false, false);
         }
-        Item::Text(t, muted) => {
-            pen.put(2, y, t, if *muted { pal.muted } else { pal.fg }, false, false);
-        }
-        Item::Provider(i) => {
-            let p = &app.providers[*i];
-            pen.put(4, y, &p.label, pal.fg, false, false);
-            pen.put(PURPOSE_X, y, "this computer, spark-shell", pal.muted, false, false);
-        }
         Item::Row(p, r) => arrows = row_line(pen, &app.providers[*p].rows.rows[*r], y, lit, (widths, right, samples, chips, controls)),
         Item::Folder(i) => {
             if let Some(row) = app.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)) {

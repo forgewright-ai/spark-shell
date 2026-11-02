@@ -857,7 +857,7 @@ fn the_home_is_six_places_and_settings_holds_the_sections_that_run() {
     at_row(&mut app, View::Home, 2);
     app.enter();
     assert_eq!(app.view, View::Dest(SETTINGS_DEST));
-    assert_eq!(names(&app), vec!["Sound", "Wi-Fi", "Connections"]);
+    assert_eq!(names(&app), vec!["Sound", "Wi-Fi"]);
     at_row(&mut app, View::Dest(SETTINGS_DEST), 1);
     app.enter();
     assert_eq!(app.view, View::Section(2), "a setting opens its section");
@@ -903,8 +903,8 @@ fn settings_holds_the_drives_the_notifications_and_the_power_and_their_keys_say_
         .collect();
     assert_eq!(
         names,
-        vec!["Sound", "Storage", "Notifications", "Power", "Battery", "Connections"],
-        "the drives beside the connections, the power beside the battery (#71, #72, #73)"
+        vec!["Sound", "Storage", "Notifications", "Power", "Battery"],
+        "the drives, the power beside the battery (#71, #72, #73)"
     );
     let verbs: Vec<&str> = [
         "storage_mount",

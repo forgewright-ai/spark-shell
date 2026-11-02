@@ -170,6 +170,10 @@ part lands in a pull request of its own.
   a config that still names it is read as before. Thirty-six golden
   frames are drawn again: the footer without the mic, and Settings
   without its Talk row; the talk frame goes.
+- Cut: Connections. Settings no longer ends with a row that opened a
+  count of the dialog's tools, the sections that give them, and why one
+  stopped. Two golden frames (settings, full-settings) are drawn again
+  without the row.
 
 ## v0.121
 

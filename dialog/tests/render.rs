@@ -1261,35 +1261,6 @@ fn a_sound_opens_in_its_app() {
     assert_ne!(app.view, View::Preview, "Space goes back to the list");
 }
 
-/// Connections says once what is true of all its tools, by Settings' names; a tool that stopped has a row (#146).
-#[test]
-fn connections_say_the_tools_once() {
-    let mut app = full();
-    app.providers[2].dead = Some("its provider exited".into());
-    app.view = View::Connections;
-    app.came_from = vec![View::Home];
-    let texts: Vec<String> = app
-        .items()
-        .into_iter()
-        .filter_map(|i| match i {
-            spark_dialog::app::Item::Text(t, _) => Some(t),
-            _ => None,
-        })
-        .collect();
-    let n: usize = app.providers.iter().filter(|p| p.dead.is_none()).map(|p| p.tools.len()).sum();
-    assert_eq!(
-        texts[0],
-        format!("{} tools \u{b7} this computer, from spark-shell", n),
-        "the tools counted, not the sections"
-    );
-    assert!(
-        texts.iter().any(|t| t.contains("Windows") && t.contains("Theme")),
-        "Settings' names: {:?}",
-        texts
-    );
-    assert!(texts.iter().any(|t| t.ends_with("stopped: its provider exited")), "{:?}", texts);
-}
-
 /// A row's key is drawn as a chip beside it (#144); a key that is no key's shape is not read.
 #[test]
 fn a_rows_key_is_a_chip() {
