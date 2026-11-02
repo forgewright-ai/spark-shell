@@ -226,9 +226,10 @@ windows' transparency, 0 to 50; the open windows take it at once.
 `~/.config/spark-shell/themes/winter/` with the palette, the
 wallpaper's files, the text size, the transparency and the pointer. The
 look on the screen is the one it keeps, so nothing is drawn again: the
-saved theme is the one in use from then on. It copies to another machine, and a folder from elsewhere is read the way
-the config is: each value is held to its shape, and a folder with one
-that is not is refused in a line that names it, with nothing changed.
+saved theme is the one in use from then on. It copies to another
+machine, and a folder from elsewhere is read the way the config is: each
+value is held to its shape, and a folder with one that is not is refused
+in a line that names it, with nothing changed.
 The themes folder is yours alone (0700). `theme winter` brings it
 back, `theme list` shows the saved themes, `theme delete winter`
 removes one. The last ten
