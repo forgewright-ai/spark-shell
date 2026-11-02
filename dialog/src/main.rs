@@ -27,7 +27,7 @@ const USAGE: &str = "spark-dialog -- the spark dialog, one window for every doma
 
   spark-dialog [--provider \"PATH WORDS\"]... [--home SECTION] [--title TEXT]
                [--close on|off] [--progress on|off]
-               [--composer plus,model,talk] [--attach \"txt md\"]
+               [--composer plus,talk] [--attach \"txt md\"]
                [--spark-shell PATH] [--spark PATH]
   spark-dialog login ...   the login screen on tty1 (spark-dialog login -h)
 ";
@@ -75,11 +75,10 @@ fn args() -> Result<Args, String> {
             "--composer" => {
                 let v = val("--composer")?;
                 let w: Vec<&str> = v.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
-                if let Some(bad) = w.iter().find(|x| !["plus", "model", "talk"].contains(x)) {
-                    return Err(format!("{}: the composer takes plus, model and talk", bad));
+                if let Some(bad) = w.iter().find(|x| !["plus", "talk"].contains(x)) {
+                    return Err(format!("{}: the composer takes plus and talk", bad));
                 }
                 cfg.plus = w.contains(&"plus");
-                cfg.model = w.contains(&"model");
                 cfg.talk = w.contains(&"talk");
             }
             "--attach" => cfg.attach = val("--attach")?.split_whitespace().map(String::from).collect(),

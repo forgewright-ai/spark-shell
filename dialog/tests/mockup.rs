@@ -168,7 +168,6 @@ fn wallpaper_rows(cur: &str, thumbs: &str) -> Value {
 fn app(cur: &str, drawing: &str, thumbs: &str) -> App {
     let cfg = Config {
         plus: true,
-        model: true,
         talk: true,
         close: true,
         ..Config::default()
@@ -243,7 +242,6 @@ fn app(cur: &str, drawing: &str, thumbs: &str) -> App {
     let clock = provider("clock", "", json!({"title": "clock", "rows": [], "short": []}));
     let _ = thumbs;
     app.providers = vec![apps, files, window, layout, notes, reminders, clock, out, wifi, display, theme];
-    app.model_name = Some("gemma4-26b-a4b".into());
     app.voice_on = true;
     app
 }

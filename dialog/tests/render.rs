@@ -54,7 +54,6 @@ fn open_window(name: &str, title: &str) -> serde_json::Value {
 
 fn base() -> App {
     let cfg = Config {
-        model: true,
         talk: true,
         close: true,
         ..Config::default()
@@ -99,7 +98,6 @@ fn base() -> App {
     about.version = "0.90".into();
     app.providers = vec![window, theme, bt, about];
     app.about_idx = Some(3);
-    app.model_name = Some("gemma4-26b-a4b".into());
     app.voice_on = true;
     app
 }
@@ -176,23 +174,6 @@ fn settings() {
     app.in_list = true;
     app.sel = 1;
     render(&app, "settings");
-}
-
-#[test]
-fn the_model_picker_says_where_it_runs_and_for_whom() {
-    let mut app = full();
-    app.models = vec![
-        ("gemma4-26b-a4b".into(), "serving".into()),
-        ("qwen3-5-2b".into(), "downloaded".into()),
-        ("qwen3-30b-a3b".into(), "-".into()),
-    ];
-    app.view = View::Models;
-    app.came_from = vec![View::Home];
-    app.in_list = true;
-    app.sel = 1;
-    app.input = "half a thought".into();
-    app.cursor = 14;
-    render(&app, "models");
 }
 
 #[test]

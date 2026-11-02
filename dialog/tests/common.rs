@@ -85,7 +85,6 @@ pub fn ordinary(label: &str, v: &Value, tools: &Value, rows: &Value) -> Option<V
 pub fn app_with(labels: &[&str]) -> (App, Receiver<Incoming>, std::sync::mpsc::SyncSender<Incoming>) {
     let (tx, rx) = sync_channel(256);
     let cfg = Config {
-        model: false,
         talk: false,
         ..Config::default()
     };

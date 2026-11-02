@@ -783,8 +783,8 @@ The top row says where you are (`home`, a place, a section and its
 state; a long one is cut at a word). Then the
 date and the time as your locale writes them, and a small bar while
 spark works on your words: one of the animations spark draws at its
-prompt, a light bouncing while it thinks and a bar growing and shrinking
-while a model loads. Nothing else shows it: a step shows on its row.
+prompt, a light bouncing while it thinks. Nothing else shows it: a step
+shows on its row.
 Under it is the prompt, two rows tall:
 type a request, Enter sends it, and Shift+Enter starts a new line (Alt+Enter
 where a terminal cannot tell the two apart). A longer draft scrolls
@@ -891,7 +891,7 @@ its first and its last row.
 - `bar`: hide the bar at the top of the screen, or show it again.
 - Connections: how many tools the dialog has, all on this computer
   from spark-shell, then the sections that give them by the names
-  Settings gives them; one that stopped says why. Then the model.
+  Settings gives them; one that stopped says why.
 - `apps`: a terminal window, then a row per app a layout may open,
   under the group its desktop entry names: internet, office, graphics,
   sound and video, development, education, games, system, utilities,
@@ -983,9 +983,9 @@ longer than that row is kept whole at Home, above the places, under
 the words that asked it, and never over a section's list. While
 commands spark planned wait in the two rows of the prompt, the reply
 row names them all (`run: ...`). At the bottom, under a
-rule, the controls in plain text: Attach, the model, and the mic at the
-right. Tab moves through them and the one in focus is lit; Shift+Tab
-goes back.
+rule, the controls in plain text: Attach, and the mic at the right.
+Tab moves through them and the one in focus is lit; Shift+Tab goes
+back.
 
 - Attach picks one text or Markdown file from your home (the types
   `DIALOG_ATTACH_TYPES` names), for the next question only: its name
@@ -996,19 +996,13 @@ goes back.
   read`, which reads it by parts and answers from the part your words
   pick. An empty file, or one not UTF-8 text, is refused with the
   reason. What the file says is read as text, never as an instruction.
-- The model opens a list: where the model runs (this computer, or the
-  spark server this machine is a client of), the models in use,
-  installed and not downloaded. Looking changes nothing. Picking one
-  says what changes and for whom (every client of that spark), and Enter
-  applies it; Esc keeps the one in use. Your draft and file stay. Another
-  server or a cloud provider is not available yet, and is shown as such.
 - The mic shows while Settings > Talk is click the mic (off hides it).
   Clicking it listens through spark's own voice until a pause and puts
   the words in the draft at the cursor, to read and change; Enter still
   sends. Esc, a click on the mic again, or leaving the window stops it,
   and nothing is kept. Holding a key to talk waits for a newer spark.
 
-`DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide the controls.
+`DIALOG_ATTACH` and `DIALOG_TALK` hide the controls.
 
 Type in a place, and its list keeps what matches. Type at the home, and
 the list shows what the words name, in groups: places, apps, files,
@@ -1274,7 +1268,7 @@ none or a path), `POINTER` (a cursor theme's name and size, empty for
 the spark pointer), `ALPHA` (how solid foot is, 0.85: 15% transparency),
 `DESKTOP_BAR` (yes or no), `THEME`, `CONSOLE_FONT`, `QUIET_LOGIN`, `QUIET_BOOT`,
 `DIALOG_ATTACH` (yes or no), `DIALOG_ATTACH_TYPES` (txt md),
-`DIALOG_MODEL` and `DIALOG_TALK` (yes or no), `DISPLAY_IDLE` and
+`DIALOG_TALK` (yes or no), `DISPLAY_IDLE` and
 `DISPLAY_LOCK` (minutes, 0 never), `DISPLAY_SAVER` (clock, or a saver's
 name), `KEYBOARD` (layouts), `DO_NOT_DISTURB` (yes or no). The commands
 write them.

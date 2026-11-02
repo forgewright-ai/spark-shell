@@ -36,7 +36,7 @@
   0:20 · 44.1 kHz · 16 bit · stereo · FLAC · 866 KB         
                                                             
   ────────────────────────────────────────────────────────  
-  evening-sketch.flac   gemma4-26b-a4b ⌄               Mic  
+  evening-sketch.flac                                  Mic  
                                                             
 
 f.f.F.F.F.F.F.F.F.m.m.m.m.m.m.m.m.m.m.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.m.m.m.m.m.m.m.m.m.m.m.m.m.m.m.m.m.m.f.f.m.f.f.

@@ -24,7 +24,6 @@ pub const CLOSE: &str = "\u{d7}";
 pub const BELOW: &str = "\u{2193}";
 pub const ABOVE: &str = "\u{2191}";
 pub const MORE: &str = "\u{203a}";
-pub const MENU: &str = "\u{2304}";
 pub const RULE: &str = "\u{2500}";
 /// A color's sample: two full blocks, about a square in a terminal cell's shape.
 pub const SAMPLE: &str = "\u{2588}\u{2588}";
@@ -456,7 +455,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         }
     }
 
-    // the rule, then the footer: Attach, the model, Talk at the left; the mic at the right
+    // the rule, then the footer: Attach at the left; the mic at the right
     for x in 2..w - 2 {
         pen.put(x, h - 3, RULE, pal.lit, false, false);
     }
@@ -514,19 +513,9 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     // the row the words are for, a muted note in the room left (#196)
     if let Some(t) = app.target_label() {
         let room = w.saturating_sub(x + mic_w + 4) as usize;
-        let model = if app.cfg.model && app.model_name.is_some() { 14 } else { 0 };
-        if room > model + 8 {
-            pen.put(x + 1, y, &cut_words(&t, room - model), pal_muted(pen), false, false);
-            x += cells(&cut_words(&t, room - model)) as u16 + 2;
+        if room > 8 {
+            pen.put(x + 1, y, &cut_words(&t, room), pal_muted(pen), false, false);
         }
-    }
-    if app.cfg.model && app.model_name.is_some() {
-        let room = (w.saturating_sub(x + mic_w + 6)) as usize;
-        let full = app.model_name.clone().unwrap_or_default();
-        // the model's whole name, or the word for it where the name does not fit whole
-        let name = format!("{} {}", if cells(&full) + 2 <= room { full.as_str() } else { "Model" }, MENU);
-        let e = pen.control(x, y, &name, app.chip_focus == Some(1), false, false);
-        drawn.chips.push((x, e, y, 1));
     }
     if mic_on {
         let mx = w - 1 - mic_w;
@@ -594,7 +583,6 @@ type Cols<'a> = (&'a [usize], &'a [bool], bool, bool, bool);
 fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols) -> Option<(u16, u16)> {
     let (widths, right, samples, chips, controls) = cols;
     let pal = pen.pal.clone();
-    let w = pen.w;
     let mut arrows = None;
     match it {
         Item::Heading(h) => {
@@ -649,17 +637,6 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         Item::Text(t, muted) => {
             pen.put(2, y, t, if *muted { pal.muted } else { pal.fg }, false, false);
         }
-        Item::Model(i) => {
-            let (n, st) = &app.models[*i];
-            let (g, c, said) = match st.as_str() {
-                "serving" => (DOT, pal.accent, "in use"),
-                "downloaded" => (RING, pal.fg, "installed"),
-                _ => (" ", pal.muted, "not downloaded"),
-            };
-            pen.put(4, y, g, c, false, lit);
-            let x = pen.put(6, y, n, if st == "-" { pal.muted } else { pal.fg }, false, lit);
-            pen.put(x, y, &format!("{}{}", SEP, said), pal.muted, false, lit);
-        }
         Item::TalkOpt(t) => {
             let on = app.talk == *t;
             let (g, c) = if on { (DOT, pal.accent) } else { (RING, pal.fg) };
@@ -667,41 +644,10 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             let words = if *t == Talk::Click { "Click the mic to talk" } else { "Off" };
             pen.put(6, y, words, if app.voice_on { pal.fg } else { pal.muted }, false, lit);
         }
-        Item::Conn(k) => {
-            if *k == 0 {
-                pen.put(4, y, DOT, pal.accent, false, false);
-                let at = match &app.server {
-                    Some(s) => format!("your spark server, {}", s),
-                    None => "this computer".to_string(),
-                };
-                let x = pen.put(6, y, &cut(&at, (w - 18) as usize), pal.fg, false, false);
-                pen.put(x, y, &format!("{}in use", SEP), pal.muted, false, false);
-            } else {
-                let x = pen.put(6, y, "another server, a cloud provider", pal.muted, false, false);
-                pen.put(
-                    x,
-                    y,
-                    &cut(&format!("{}not yet", SEP), (w.saturating_sub(x + 2)) as usize),
-                    pal.muted,
-                    false,
-                    false,
-                );
-            }
-        }
         Item::Provider(i) => {
             let p = &app.providers[*i];
             pen.put(4, y, &p.label, pal.fg, false, false);
             pen.put(PURPOSE_X, y, "this computer, spark-shell", pal.muted, false, false);
-        }
-        Item::OpenModels => {
-            let name = app.model_name.clone().unwrap_or_else(|| "spark".into());
-            let x = pen.put(4, y, &name, pal.fg, false, lit);
-            let at = match &app.server {
-                Some(s) => s.clone(),
-                None => "this computer".to_string(),
-            };
-            pen.put(x, y, &cut(&format!("{}{}", SEP, at), (w.saturating_sub(x + 4)) as usize), pal.muted, false, lit);
-            pen.put(w - 3, y, MORE, pal.muted, false, lit);
         }
         Item::Row(p, r) => arrows = row_line(pen, &app.providers[*p].rows.rows[*r], y, lit, (widths, right, samples, chips, controls)),
         Item::Folder(i) => {

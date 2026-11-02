@@ -1511,40 +1511,6 @@ fn talk_puts_what_was_heard_in_the_draft_and_esc_keeps_the_draft() {
 }
 
 #[test]
-fn a_model_picked_is_reviewed_first_and_the_draft_waits() {
-    let (mut app, _rx, _c, _r) = started();
-    app.cfg.model = true;
-    app.helper(
-        spark_dialog::app::Helper::Models,
-        Ok("gemma\trepo\t1\t1\tx\tline\t-\tserving\nqwen\trepo\t1\t1\tx\tline\t-\tdownloaded\nbig\trepo\t1\t1\tx\tline\t-\t-\n".into()),
-    );
-    assert_eq!(app.model_name.as_deref(), Some("gemma"));
-    typed(&mut app, "half a thought");
-    app.chip(1);
-    assert_eq!(app.view, View::Models);
-    let models: Vec<Item> = app.picks().into_iter().filter(|i| matches!(i, Item::Model(_))).collect();
-    assert_eq!(models, vec![Item::Model(0), Item::Model(1)], "a model not downloaded is shown, not offered");
-    let k = app.picks().iter().position(|i| *i == Item::Model(1)).unwrap();
-    app.in_list = true;
-    app.sel = k;
-    app.enter();
-    assert_eq!(app.mode, Mode::Apply("qwen".into()), "browsing changed nothing; picking asks");
-    assert!(app.reply.as_ref().unwrap().text.contains("every client of this computer's spark"));
-    assert!(!app.jobs.iter().any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::ModelSet, _))));
-    app.escape();
-    assert_eq!(app.input, "half a thought", "Esc keeps the model and the draft");
-    app.in_list = true;
-    app.sel = k;
-    app.enter();
-    app.enter();
-    assert!(app
-        .jobs
-        .iter()
-        .any(|j| matches!(j, Job::Run(spark_dialog::app::Helper::ModelSet, a) if a.last().map(String::as_str) == Some("qwen"))));
-    assert_eq!(app.input, "half a thought");
-}
-
-#[test]
 fn a_theme_step_hands_the_dialog_its_new_palette_and_no_other_provider_can() {
     for (label, kept) in [("theme", true), ("window", false)] {
         let (mut app, rx, tx) = app_with(&[label]);
@@ -1976,26 +1942,8 @@ fn the_march_is_sparks_alone() {
 }
 
 #[test]
-fn a_model_that_loads_is_a_swell_and_a_recording_waits_like_a_thought() {
+fn a_recording_waits_like_a_thought() {
     let (mut app, _rx, _c, _r) = started();
-    app.cfg.model = true;
-    app.helper(
-        spark_dialog::app::Helper::Models,
-        Ok("gemma\trepo\t1\t1\tx\tline\t-\tserving\nqwen\trepo\t1\t1\tx\tline\t-\tdownloaded\n".into()),
-    );
-    app.chip(1);
-    let k = app.picks().iter().position(|i| *i == Item::Model(1)).unwrap();
-    app.in_list = true;
-    app.sel = k;
-    app.enter();
-    app.enter();
-    assert!(app.busy());
-    assert_eq!(app.work(), Work::Swell, "switching the model: spark's server loads it, no estimate");
-    app.frame = 3;
-    assert!(header(&app).contains("[========]"), "{:?}", header(&app));
-    app.helper(spark_dialog::app::Helper::ModelSet, Ok(String::new()));
-    assert!(!app.busy());
-
     app.cfg.talk = true;
     app.voice_on = true;
     app.talk = spark_dialog::app::Talk::Click;

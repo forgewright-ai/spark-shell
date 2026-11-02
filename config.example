@@ -129,10 +129,6 @@ QUIET_BOOT=no
 DIALOG_ATTACH=yes
 DIALOG_ATTACH_TYPES=txt md
 
-# The model chip, which shows the model spark uses and picks another: yes
-# or no.
-DIALOG_MODEL=yes
-
 # Talk, which speaks to spark through its own voice: yes or no. It is
 # hidden while spark's voice is off.
 DIALOG_TALK=yes

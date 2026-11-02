@@ -397,7 +397,6 @@ pub enum View {
     /// The steps of one row of a provider (its tool and its more), as a list: Right on the row opens it (#112).
     Steps(usize),
     About,
-    Models,
     /// How talk works: click to talk, or off.
     Talk,
     /// Settings > Connections: the tools the dialog talks to, and where the model runs.
@@ -494,19 +493,14 @@ pub enum Mode {
         at: usize,
     },
     Listening,
-    /// A model picked: Enter applies it, Esc keeps the one in use.
-    Apply(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Helper {
     /// spark's answer to a request, with the request's serial: an older one is dropped.
     Want(u64),
-    Models,
-    ModelSet,
     Listen,
     Voice,
-    Client,
 }
 
 /// What the app asks the outside world to do; main.rs runs each in a thread.
@@ -569,7 +563,6 @@ pub struct Config {
     pub close: bool,
     pub progress: bool,
     pub plus: bool,
-    pub model: bool,
     pub talk: bool,
     pub attach: Vec<String>,
     pub spark_shell: String,
@@ -584,7 +577,6 @@ impl Default for Config {
             close: true,
             progress: true,
             plus: false,
-            model: true,
             talk: true,
             attach: vec![],
             spark_shell: String::new(),
@@ -608,7 +600,6 @@ pub enum Item {
     StepOf(usize),
     /// The row that ends a folder pick: the step lands in the folder shown (#112).
     Here,
-    Model(usize),
     /// A destination of the home.
     Dest(usize),
     /// A row of Settings: its index in SETTINGS.
@@ -623,11 +614,6 @@ pub enum Item {
     Text(String, bool),
     /// A provider the dialog talks to, in Connections.
     Provider(usize),
-    /// Connections' row that opens the models.
-    OpenModels,
-    /// Where the model runs: 0 the one in use (this computer, or the server spark is a client of);
-    /// 1 the ones to come (another server, a cloud provider), shown and not offered.
-    Conn(usize),
 }
 
 pub struct App {
@@ -684,18 +670,13 @@ pub struct App {
     pub hidden: bool,
     pub busy_since: Option<Instant>,
     pub frame: u64,
-    /// Every model spark lists: (name, serving | downloaded | -).
-    pub models: Vec<(String, String)>,
-    pub model_name: Option<String>,
-    /// Where the model runs: None this computer, else the spark server's address (`spark client`).
-    pub server: Option<String>,
     pub voice_on: bool,
     pub talk: Talk,
     /// Esc stopped the listening: what comes back is not said.
     pub listen_cancelled: bool,
     /// The window's size in cells, as the terminal says.
     pub size: (u16, u16),
-    /// What spark or the machine is asked for and has not answered: the words (think), a model switch (swell).
+    /// What spark is asked for and has not answered: the words (think).
     pub wait: Option<Work>,
     pub jobs: Vec<Job>,
     pub quit: Option<i32>,
@@ -783,9 +764,6 @@ impl App {
             hidden: false,
             busy_since: None,
             frame: 0,
-            models: vec![],
-            model_name: None,
-            server: None,
             voice_on: false,
             talk: talk_kept(),
             listen_cancelled: false,
@@ -889,7 +867,7 @@ impl App {
         self.wait.is_some()
     }
 
-    /// What spark's work is, for the march: its reply is think, its model loading is swell.
+    /// What spark's work is, for the march: its reply is think.
     pub fn work(&self) -> Work {
         self.wait.unwrap_or(Work::Think)
     }
@@ -949,15 +927,6 @@ impl App {
         }
         for i in 0..self.providers.len() {
             self.providers[i].reading = true;
-        }
-        if self.cfg.model {
-            self.jobs.push(Job::Run(
-                Helper::Models,
-                vec![self.cfg.spark.clone(), "model".into(), "list".into(), "--porcelain".into()],
-            ));
-        }
-        if self.cfg.model {
-            self.jobs.push(Job::Run(Helper::Client, vec![self.cfg.spark.clone(), "client".into()]));
         }
         if self.cfg.talk {
             self.jobs.push(Job::Run(Helper::Voice, vec![self.cfg.spark.clone(), "voice".into()]));
@@ -1522,23 +1491,6 @@ impl App {
         }
         let mut list = vec![];
         match &self.view {
-            View::Models => {
-                list.push(Item::Heading("where it runs".into()));
-                list.push(Item::Conn(0));
-                list.push(Item::Conn(1));
-                list.push(Item::Blank);
-                list.push(Item::Heading("models".into()));
-                for i in 0..self.models.len() {
-                    list.push(Item::Model(i));
-                }
-                list.push(Item::Blank);
-                let who = if self.server.is_some() {
-                    "everyone who uses that server"
-                } else {
-                    "every client of this computer's spark"
-                };
-                self.text(&mut list, &format!("A change restarts the model for {}.", who), true);
-            }
             View::Talk => {
                 list.push(Item::TalkOpt(Talk::Click));
                 list.push(Item::TalkOpt(Talk::Off));
@@ -1569,9 +1521,6 @@ impl App {
                         false,
                     ));
                 }
-                list.push(Item::Blank);
-                list.push(Item::Heading("model".into()));
-                list.push(Item::OpenModels);
             }
             View::About | View::Preview => {}
             View::Steps(_) => {
@@ -1882,10 +1831,9 @@ impl App {
                 .and_then(|(_, _, rows)| rows.rows.get(*i))
                 .map(Self::pickable)
                 .unwrap_or(false),
-            Item::Model(i) => self.models.get(*i).map(|(_, s)| s == "serving" || s == "downloaded").unwrap_or(false),
             Item::TalkOpt(_) => self.voice_on,
             Item::Hit(i) => self.hits.get(*i).is_some_and(|(_, r)| Self::pickable(r)),
-            Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::StepOf(_) | Item::Here | Item::More(..) => true,
+            Item::Dest(_) | Item::Setting(_) | Item::StepOf(_) | Item::Here | Item::More(..) => true,
             _ => false,
         }
     }
@@ -2452,10 +2400,6 @@ impl App {
                 self.input.clear();
                 self.unstash();
             }
-            Mode::Apply(_) => {
-                self.input.clear();
-                self.unstash();
-            }
             Mode::Listening => {
                 // the recording is dropped, the prompt is yours at once; what comes back is not said (the review's D)
                 self.listen_cancelled = true;
@@ -2724,13 +2668,6 @@ impl App {
                 }
                 return;
             }
-            Mode::Apply(name) => {
-                self.input.clear();
-                self.unstash();
-                self.wait = Some(Work::Swell); // spark's server restarts and loads the model: no estimate of how long
-                self.jobs.push(Job::Run(Helper::ModelSet, vec![self.cfg.spark.clone(), "model".into(), name]));
-                return;
-            }
             Mode::Listening => {
                 self.mode = Mode::Listening;
                 return;
@@ -2844,35 +2781,12 @@ impl App {
                     self.go(v);
                 }
             }
-            Item::OpenModels => self.go(View::Models),
             Item::TalkOpt(t) => {
                 self.talk = t;
                 talk_keep(t);
                 if let Some(v) = self.came_from.pop() {
                     self.go_back(v);
                 }
-            }
-            Item::Model(i) => {
-                let (name, state) = self.models[i].clone();
-                if state == "serving" {
-                    return; // the one in use: nothing to change
-                }
-                // browsing changed nothing; this is the review: what changes, and for whom
-                let who = match &self.server {
-                    Some(s) => format!("everyone who uses {}", s),
-                    None => "every client of this computer's spark".to_string(),
-                };
-                self.reply(
-                    Mark::Note,
-                    &format!(
-                        "Use {} instead of {}? It restarts the model for {}.",
-                        name,
-                        self.model_name.clone().unwrap_or_default(),
-                        who
-                    ),
-                );
-                self.stash_draft();
-                self.mode = Mode::Apply(name);
             }
             Item::More(k, _) => self.go(View::Found(k, words)),
             Item::Hit(i) => {
@@ -3012,7 +2926,7 @@ impl App {
         self.providers.iter().position(|p| p.label == "files" && p.dead.is_none())
     }
 
-    /// The footer's controls and the attachment's Remove: 0 attach, 1 the model, 3 the mic, 4 remove
+    /// The footer's controls and the attachment's Remove: 0 attach, 3 the mic, 4 remove
     /// the file attached. How talk works is a setting (Settings > Talk), not a control.
     pub fn chip(&mut self, c: usize) {
         self.chip_focus = None;
@@ -3027,11 +2941,6 @@ impl App {
                 };
                 self.attaching = Some((self.view.clone(), self.came_from.len()));
                 self.open_children(f, &root);
-            }
-            1 if self.cfg.model => {
-                if self.view != View::Models {
-                    self.go(View::Models);
-                }
             }
             3 if self.cfg.talk && self.voice_on && self.talk == Talk::Click => {
                 if self.mode == Mode::Listening {
@@ -3059,9 +2968,6 @@ impl App {
         }
         if self.attachment.is_some() {
             v.push(4);
-        }
-        if self.cfg.model && self.model_name.is_some() {
-            v.push(1);
         }
         if self.cfg.talk && self.voice_on && self.talk == Talk::Click {
             v.push(3);
@@ -4004,41 +3910,6 @@ impl App {
                     }
                 }
             },
-            Helper::Models => {
-                if let Ok(t) = out {
-                    // every model spark knows: in use, installed, or not downloaded (shown, not offered)
-                    self.models = t
-                        .lines()
-                        .filter_map(|l| {
-                            let f: Vec<&str> = l.split('\t').collect();
-                            let name = scrub(f.first()?);
-                            let state = scrub(f.last()?);
-                            (!name.is_empty()).then_some((
-                                name,
-                                if state == "serving" || state == "downloaded" {
-                                    state
-                                } else {
-                                    "-".to_string()
-                                },
-                            ))
-                        })
-                        .collect();
-                    self.model_name = self.models.iter().find(|(_, s)| s == "serving").map(|(n, _)| n.clone());
-                }
-            }
-            Helper::ModelSet => {
-                self.wait = None;
-                match out {
-                    Ok(_) => {
-                        self.reply(Mark::Done, "model changed");
-                        self.jobs.push(Job::Run(
-                            Helper::Models,
-                            vec![self.cfg.spark.clone(), "model".into(), "list".into(), "--porcelain".into()],
-                        ));
-                    }
-                    Err(e) => self.refuse(&plain_words(e.lines().last(), "the model stays")),
-                }
-            }
             Helper::Listen => {
                 if self.mode == Mode::Listening {
                     self.mode = Mode::Normal;
@@ -4072,16 +3943,6 @@ impl App {
                         .unwrap_or(false);
                 }
             }
-            Helper::Client => {
-                // "spark client -- of http://HOST:PORT, ..." when the model runs on another machine
-                if let Ok(t) = out {
-                    let first = t.lines().next().unwrap_or("");
-                    self.server = first
-                        .split_once(" of ")
-                        .map(|(_, r)| scrub(r.split(|c: char| c == ',' || c.is_whitespace()).next().unwrap_or("")))
-                        .filter(|u| u.starts_with("http"));
-                }
-            }
         }
     }
 
@@ -4097,7 +3958,6 @@ impl App {
             View::Dest(d) => DESTS[*d].name.to_lowercase(),
             View::Section(p) | View::Folder(p, _) | View::Steps(p) => section_name(&self.providers[*p].label).to_lowercase(),
             View::About => "about".into(),
-            View::Models => "model".into(),
             View::Talk => "talk".into(),
             View::Connections => "connections".into(),
             View::Preview => "preview".into(),
@@ -4209,11 +4069,6 @@ impl App {
                 v.extend(esc("Cancel"));
                 return v;
             }
-            Mode::Apply(_) => {
-                let mut v = key("Apply", "Enter");
-                v.extend(esc("Keep"));
-                return v;
-            }
             Mode::Normal => {}
         }
         if self.pending.is_some() && !self.staged_now() {
@@ -4288,7 +4143,7 @@ impl App {
                 }
             }
             let word = match &lit {
-                Some(Item::Model(_)) | Some(Item::TalkOpt(_)) => "Choose",
+                Some(Item::TalkOpt(_)) => "Choose",
                 Some(Item::Here) => "Here",
                 Some(Item::StepOf(k)) => self.step_call(*k).map(|c| verb_of(&c.name)).unwrap_or("Use"),
                 Some(it) => match self.row_ref(it) {

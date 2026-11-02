@@ -113,35 +113,6 @@ fn a_dead_or_unready_provider_is_not_offered_and_the_files_are() {
 }
 
 #[test]
-fn typing_a_request_in_models_sends_it_instead_of_picking_a_model() {
-    let (mut app, _, _) = started(false);
-    app.view = View::Models;
-    app.models = vec![("local-model".into(), "downloaded".into())];
-    type_words(&mut app, "Increase the volume a little bit please.");
-    app.enter();
-    let (_, about, _) = request(&app);
-    assert!(about.contains("The view: model"), "{}", about);
-    assert_eq!(app.mode, Mode::Normal);
-    assert!(!app.jobs.iter().any(|j| matches!(j, Job::Run(Helper::ModelSet, _))));
-}
-
-#[test]
-fn keyboard_model_selection_still_requires_explicit_choice_and_confirmation() {
-    let (mut app, _, _) = started(false);
-    app.view = View::Models;
-    app.models = vec![("local-model".into(), "downloaded".into())];
-    app.down();
-    app.enter();
-    assert!(matches!(app.mode, Mode::Apply(_)));
-    assert!(!app.jobs.iter().any(|j| matches!(j, Job::Run(Helper::ModelSet, _))));
-    app.enter();
-    assert!(app
-        .jobs
-        .iter()
-        .any(|j| matches!(j, Job::Run(Helper::ModelSet, argv) if argv.last().is_some_and(|v| v == "local-model"))));
-}
-
-#[test]
 fn typed_command_needs_no_inference() {
     let (mut app, rx, calls) = started(false);
     app.input = "out level 30".into();

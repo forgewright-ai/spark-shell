@@ -156,6 +156,14 @@ part lands in a pull request of its own.
   spectrogram is drawn, so mpv no longer reads a whole recording aside
   for its picture. `files play` and `files stop` go from the files
   provider's tools.
+- Cut: the Models view and Apply. The model chip goes from the footer,
+  and with it the list of where the model runs and the models spark
+  has, the review a pick asked for and Enter that applied it. `spark
+  model` changes the model; the dialog no longer asks `spark model
+  list` and `spark client` each time it opens. `DIALOG_MODEL` goes; a
+  config that still names it is read as before. Thirty-seven golden
+  frames are drawn again for the footer without the chip, and the
+  models frame goes.
 
 ## v0.121
 
