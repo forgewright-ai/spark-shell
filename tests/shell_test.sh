@@ -185,7 +185,7 @@ case ${1:-} in
         n=$(grep -c '^exec' "$log" 2>/dev/null) || :   # counted before the tick: the exec may follow it at once
         echo '{ "first": true, "payload": "" }'
         [ ! -e "$HOME/no-new-window" ] || exit 0
-        while [ "$(grep -c '^exec' "$log" 2>/dev/null || :)" -le "${n:-0}" ]; do sleep 0.05; done
+        while c=$(grep -c '^exec' "$log" 2>/dev/null) || :; [ "${c:-0}" -le "${n:-0}" ]; do sleep 0.05; done   # a log not made yet counts none
         echo '{ "change": "new", "container": { "id": 1000 } }' ;;
     -t) case $2 in
             get_version) echo '{"human_readable":"sway-stub"}' ;;
