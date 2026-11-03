@@ -5,9 +5,9 @@
   Discard  Esc   Ask  Ctrl+Enter   Run  Enter               
                                                             
     run: bt connect jabra speak 410; out level 60;…         
-  Apps           open an application                     ›  
+  apps           open an application                     ›  
                                                             
-  Files          browse your home                        ›  
+  files          browse your home                        ›  
                                                             
   Workspace      2 windows                               ›  
                                                             

@@ -1,0 +1,39 @@
+  files · ~                           Tue 3 Nov · 10:01  ×
+
+  ❯ Find, do, or ask.
+
+  Back  Esc   Ask  Ctrl+Enter
+
+
+  home
+    ▸ bin                         3 items ›
+    ▸ run                         6 items ›
+    ▸ state                        1 item ›
+      long-attachment…-review.md     27 B   today
+      native.log                    376 B   today
+      screen.txt                     1 KB   today
+      sway.conf                     847 B   today
+    ▸ trash                         empty ›
+
+  recent
+      screen.txt                     1 KB   today   ~
+      wifi.scan                     123 B   today   panel
+      light                           3 B   today   spark-s…
+      ddc.lock                        0 B   today   spark-s…
+      bt.list                       111 B   today   panel
+      dirs.apps.entries              1 KB   today   panel
+      dirs.theme.darks              146 B   today   panel
+      printers.status               157 B   today   panel
+
+    ▸ this folder · 3 folders · 4 files · 2 KB
+
+
+
+
+
+
+
+
+  ─────────────────────────── ◇ ──────────────────────────
+
+  Attach           fixture-model · local ⌄            Talk

@@ -1,0 +1,39 @@
+  apps · Installed apps               Tue 3 Nov · 10:01  ×
+
+  ❯ Find, do, or ask.
+
+  Back  Esc   Ask  Ctrl+Enter
+
+
+  apps
+
+  Category          All apps                             ⌄
+
+  System
+  btop++              Resource monitor that shows usage…
+  foot                A wayland native terminal emulator
+  foot client         A wayland native terminal emulator…
+  foot server         A wayland native terminal emulator…
+  manage printing     CUPS Web Interface
+
+  Web
+  chromium            Access the Internet
+  mozilla firefox     Fast and private browser
+  pyradio             Curses based Radio Player
+  steam               Application for managing and…
+
+  Office
+  aerc                Launches the aerc email client
+
+  Media
+  mpv media player    Play movies and songs
+
+  Utilities
+  micro               Edit text files in a terminal
+
+  Manage categories
+    ↓ 2 more
+
+  ─────────────────────────── ◇ ──────────────────────────
+
+  Attach           fixture-model · local ⌄            Talk

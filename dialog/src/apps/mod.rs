@@ -79,6 +79,8 @@ pub enum Action {
     Mappings,
     Mapping(String),
     Map(String, Option<String>),
+    SaveMapping(String),
+    CancelMapping(String),
     AddMapping,
     Submit,
     Technical,
@@ -89,6 +91,7 @@ pub enum Action {
     SetLaunch(String, String),
     Save(String),
     Discard(String),
+    CancelForm,
     Refresh,
     Copy(String),
     RetryDetails(String),
@@ -98,12 +101,12 @@ impl Action {
     pub fn verb(&self) -> &str {
         match self {
             Self::Launch(_) => "Open",
-            Self::Save(_) | Self::Submit => "Save",
+            Self::Save(_) | Self::SaveMapping(_) | Self::Submit => "Save",
             Self::Copy(_) => "Copy",
             Self::ConfirmDelete(_) => "Delete",
             Self::Hidden | Self::Visibility(_) | Self::Technical => "Change",
             Self::SetCategory(..) | Self::SetLaunch(..) | Self::SetFilter(_) | Self::Map(..) => "Set",
-            Self::Discard(_) => "Discard",
+            Self::Discard(_) | Self::CancelForm | Self::CancelMapping(_) => "Cancel",
             Self::Refresh | Self::RetryDetails(_) => "Retry",
             _ => "Choose",
         }
@@ -150,12 +153,12 @@ pub struct State {
     pub show_hidden: bool,
     pub expanded: bool,
     pub drafts: BTreeMap<String, Preference>,
+    pub mapping_drafts: BTreeMap<String, Option<String>>,
     pub details: BTreeMap<String, Value>,
     pub loaded: bool,
     pub failed: bool,
     pub pending: Option<(u64, String)>,
     pub serial: u64,
-    pub suspended: Option<Navigation>,
     stack: Vec<(Page, Navigation)>,
 }
 
@@ -174,12 +177,12 @@ impl Default for State {
             show_hidden: false,
             expanded: false,
             drafts: BTreeMap::new(),
+            mapping_drafts: BTreeMap::new(),
             details: BTreeMap::new(),
             loaded: false,
             failed: false,
             pending: None,
             serial: 0,
-            suspended: None,
             stack: vec![],
         }
     }
@@ -197,6 +200,11 @@ impl State {
     }
     pub fn dirty(&self, id: &str) -> bool {
         self.draft(id) != self.preference(id)
+    }
+    pub fn mapping_dirty(&self, source: &str) -> bool {
+        self.mapping_drafts
+            .get(source)
+            .is_some_and(|target| target.as_ref() != self.prefs.mappings.get(source))
     }
     pub fn entry(&self, id: &str) -> Option<&Entry> {
         self.entries.iter().find(|a| a.id == id)
@@ -307,13 +315,26 @@ impl State {
             Action::Mappings => out.navigation = Some(self.navigate(Page::Mappings, nav)),
             Action::Mapping(name) => out.navigation = Some(self.navigate(Page::Mapping(name), nav)),
             Action::Map(source, target) => {
+                self.mapping_drafts.insert(source, target);
+            }
+            Action::SaveMapping(source) => {
                 let mut prefs = self.prefs.clone();
+                let target = self
+                    .mapping_drafts
+                    .get(&source)
+                    .cloned()
+                    .unwrap_or_else(|| self.prefs.mappings.get(&source).cloned());
                 if let Some(target) = target {
-                    prefs.mappings.insert(source, target);
+                    prefs.mappings.insert(source.clone(), target);
                 } else {
                     prefs.mappings.remove(&source);
                 }
                 self.save(prefs)?;
+                self.mapping_drafts.remove(&source);
+                out.navigation = self.back();
+            }
+            Action::CancelMapping(source) => {
+                self.mapping_drafts.remove(&source);
                 out.navigation = self.back();
             }
             Action::Submit => {
@@ -392,6 +413,7 @@ impl State {
                 self.drafts.remove(&id);
                 out.notice = Some("Unsaved preferences discarded".into());
             }
+            Action::CancelForm => out.navigation = self.back(),
             Action::Refresh => out.request = Some(json!({"op":"catalog"})),
             Action::RetryDetails(id) => out.request = Some(json!({"op":"details","id":id})),
             Action::Copy(value) => out.copy = Some(value),
@@ -527,8 +549,8 @@ impl State {
     pub fn lines(&self, width: u16, query: &str, frame: Option<u64>) -> Vec<Line> {
         let mut l = Lines::new(width);
         let heading = match &self.page {
-            Page::Details(id) => format!("Apps / {}", self.entry(id).map(|a| a.name.as_str()).unwrap_or("unavailable")),
-            _ => "Apps".into(),
+            Page::Details(id) => format!("apps / {}", self.entry(id).map(|a| a.name.as_str()).unwrap_or("unavailable")),
+            _ => "apps".into(),
         };
         l.line(&heading, "", None, true);
         if let Some((_, op)) = &self.pending {
@@ -652,11 +674,9 @@ impl State {
                     false,
                 );
                 l.setting("Launch", launch_name(pref.mode()), Action::ChooseLaunch(id.clone()), true);
-                if self.dirty(id) {
-                    l.text("Unsaved preferences");
-                    l.line("Save preferences", "", Some(Action::Save(id.clone())), false);
-                    l.line("Discard changes", "", Some(Action::Discard(id.clone())), false);
-                }
+                l.text(if self.dirty(id) { "Unsaved preferences" } else { "Preferences saved" });
+                l.line("Save", "", Some(Action::Save(id.clone())), false);
+                l.line("Cancel", "", Some(Action::Discard(id.clone())), false);
                 l.blank();
                 l.line("Open application", "", Some(Action::Launch(id.clone())), false);
             }
@@ -731,12 +751,21 @@ impl State {
             }
             Page::Mapping(source) => {
                 l.text(&format!("Map desktop category {source} to:"));
+                let target = self
+                    .mapping_drafts
+                    .get(source)
+                    .cloned()
+                    .unwrap_or_else(|| self.prefs.mappings.get(source).cloned());
+                l.field("Target", target.as_deref().unwrap_or("No mapping"));
                 l.blank();
                 for c in &self.prefs.categories {
                     l.line(c, "", Some(Action::Map(source.clone(), Some(c.clone()))), false);
                 }
                 l.blank();
                 l.line("Remove mapping", "", Some(Action::Map(source.clone(), None)), false);
+                l.text(if self.mapping_dirty(source) { "Unsaved mapping" } else { "Mapping saved" });
+                l.line("Save", "", Some(Action::SaveMapping(source.clone())), false);
+                l.line("Cancel", "", Some(Action::CancelMapping(source.clone())), false);
             }
             Page::Form(form) => {
                 l.text(match form {
@@ -749,6 +778,7 @@ impl State {
                 }
                 l.blank();
                 l.line("Save", "", Some(Action::Submit), false);
+                l.line("Cancel", "", Some(Action::CancelForm), false);
             }
         }
         l.rows

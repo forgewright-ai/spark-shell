@@ -19,7 +19,7 @@ All preferences and added test entries belong to a temporary HOME.
 ## Visual review, separate from automated checks
 
 1. **Browse and search: pass.** The grouped list keeps compact type and row
-   spacing. Fullscreen centers the entire shared column. Equal 720x972 snap
+   spacing. Fullscreen keeps a centered 60-cell body inside the shared frame; header, prompt, actions and footer retain the same anchors as files. Equal 720x972 snap
    regions have the same internal geometry and sit at y=28. Active search and
    selection survive the complete mode cycle; the Details keycap opens the
    selected app through the configurable key action.
@@ -53,6 +53,40 @@ All preferences and added test entries belong to a temporary HOME.
    Empty/discovery/launch failure screenshots deliberately use adapter response
    fixtures; native adapter tests separately exercise real unavailable entries.
 
+6. **Dirty exit decisions: pass.** [Unsaved preferences](contract/01-unsaved-preferences.png)
+   lead to [Save, Discard or Keep editing](contract/02-exit-decision.png) on
+   Esc, conversation navigation and the actual close button. Keep editing is
+   selected initially; Esc in the decision returns to the unchanged form.
+   Save persists before continuing navigation. A focused row has a non-color
+   chevron; focused footer controls and keycaps also use underlining.
+7. **Separate drafts: pass.** The [normal request](contract/03-restored-request.png)
+   and [Apps filter](contract/04-restored-app-query.png) restore independently.
+   Ask from a catalog/folder opens the normal request draft without sending the
+   filter. Request text is sent only by a subsequent explicit Ask there.
+   Attachments remain owned by the shared request. Category fields cannot be
+   sent while editing or while the exit decision is visible.
+8. **Save, Cancel and recovery: pass.** [Category Esc](contract/05-category-exit-decision.png)
+   retains the field; Cancel discards it. A real filesystem permission failure
+   [keeps preference edits](contract/06-save-failure.png) and the stored value.
+   Discard then completes the requested navigation. Preference and default
+   mapping edits require Save; category creation/rename provide Save and Cancel.
+   Save/Cancel/Open retain their slots when Details becomes dirty or clean.
+9. **Shared geometry and AI unavailable: pass.** The native proof visits home,
+   apps and files in all four modes and compares title/footer columns and window
+   rectangles. Fullscreen anchors are column 12 in all three; snapped anchors
+   are column 2. The Apps body stays bounded and centered. Both snapped bodies
+   have identical spacing. [Details with AI unavailable](contract/07-details-ai-unavailable.png)
+   remains usable after restart and restores saved preferences.
+
+| Shared frame | home | apps | files |
+| --- | --- | --- | --- |
+| Fullscreen | ![home](contract/home-fullscreen.png) | ![apps](contract/apps-fullscreen.png) | ![files](contract/files-fullscreen.png) |
+| Left snap | ![home](contract/home-left.png) | ![apps](contract/apps-left.png) | ![files](contract/files-left.png) |
+| Right snap | ![home](contract/home-right.png) | ![apps](contract/apps-right.png) | ![files](contract/files-right.png) |
+
+[Contract results](contract/contract.json) record the exact binary checksum,
+observations and geometry; matching text captures accompany each screenshot.
+
 The review caught and corrected an input-reader deadlock during resize, a hidden
 Details shortcut, a clipboard completion timeout, clipped selected preference
 values and metadata that could not be reached while keyboard focus stayed on an
@@ -63,11 +97,11 @@ and rejects cursor-position queries during those resizes.
 
 ## Reproduce
 
-Local validation: 278 Rust tests passed, including 11 Apps regressions. The native
-workflow passed all 12 checks recorded in `native.json`. Seven adapter tests
+Local validation: 283 Rust tests passed, including 16 Apps regressions. The native
+workflow passed all 12 checks recorded in `native.json`; the shared-contract proof passed all four additional flow groups in `contract/contract.json`. Seven adapter tests
 passed on Void; macOS runs three portable cases and explicitly skips four GIO
 cases. Two clean musl release builds produced the same SHA-256:
-`426682f9eada930c59696561bba301557d010e1b2fb665ec94f1d00ece13ed87`.
+`cb41366c61b355a1ee898fb1257d0cec2490bc7d15d9a7b4e38ae1afbac14c1b`.
 The PR records the complete push-gate result and hosted CI result for its head.
 
 ```sh
@@ -86,6 +120,8 @@ On Void with Sway, foot, grim, wtype and wl-clipboard available:
 sh tests/dialog_build.sh
 python3 tests/apps_desktop_proof.py \
   dialog/target/x86_64-unknown-linux-musl/release/spark-dialog /tmp/apps-proof
+python3 tests/apps_contract_desktop_proof.py \
+  dialog/target/x86_64-unknown-linux-musl/release/spark-dialog /tmp/apps-contract-proof
 ```
 
 The native script performs the flows above, records observed checks, compares
@@ -97,6 +133,8 @@ expansion, declared actions and inert metadata inspection. Those GIO cases run
 on Linux and explicitly skip on macOS.
 
 ## Limits
+
+Cross-module file transfers and their operation lifecycle remain the Files delivery. This increment validates navigation into existing Files, shared frame geometry and separated prompt state; it does not claim transfer integration.
 
 Native validation covers Sway/Wayland on Void. X11 class matching, DBus-activated
 applications, Flatpak permissions and other package managers were not exercised

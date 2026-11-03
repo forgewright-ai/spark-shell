@@ -154,7 +154,7 @@ fn a_search_from_home_groups_what_it_finds_by_kind_the_best_three_each() {
     typed(&mut r.app, "fi");
     let l = list(&r.app);
     let at = |s: &str| l.iter().position(|x| x == s).unwrap_or_else(|| panic!("{} not in {:?}", s, l));
-    assert!(at("# places") < at("Files") && at("Files") < at("# apps"), "{:?}", l);
+    assert!(at("# places") < at("files") && at("files") < at("# apps"), "{:?}", l);
     assert!(at("# apps") < at("firefox") && at("firefox") < at("# notes"), "{:?}", l);
     assert!(at("# notes") < at("# settings") && at("# settings") < at("FiberNet"), "{:?}", l);
     // four notes say fi: the best three, then the rest as one row; a name's start before a word's start

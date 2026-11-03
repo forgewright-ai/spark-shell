@@ -1,0 +1,39 @@
+  apps · Installed apps               Tue 3 Nov · 10:01  ×
+
+  ❯ btop
+
+  Clear  Esc   Ask  Ctrl+Enter   Open  Enter   Details  →
+
+
+  apps
+
+  Category          All apps search                      ⌄
+
+  System
+› btop++              Resource monitor that shows usage…
+
+  Manage categories
+  Show hidden apps
+  Refresh apps
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ─────────────────────────── ◇ ──────────────────────────
+
+  Attach           fixture-model · local ⌄            Talk

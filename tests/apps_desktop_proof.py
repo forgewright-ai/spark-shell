@@ -136,6 +136,8 @@ class Session:
         # Scroll through the real keyboard path, then derive coordinates from
         # the current terminal text, never from a pre-resize capture.
         match = re.compile(r"(?<!\w)" + re.escape(label) + r"(?!\w)")
+        if label in ("Save", "Cancel", "Discard", "Keep editing"):
+            match = re.compile(r"^\s*(?:\u203a\s*)?" + re.escape(label) + r"\s*$")
         for _ in range(80):
             lines = self.screen()
             if any(match.search(line) for line in (lines[7:] if body else lines)):
@@ -156,8 +158,8 @@ class Session:
             cols = (rect["width"] - 36) // self.cell[0]
             rows = (rect["height"] - 36) // self.cell[1]
             lines = self.screen()
-            title = 2 + (cols - min(cols, 60)) // 2
-            good = lines[0].find("home") == title and any("Attach" in line or "Remove" in line for line in lines[max(0, rows-3):])
+            title = 2 + (cols - min(cols, 120)) // 2
+            good = re.search(r"\b(home|apps|files|conversation)\b", lines[0]) is not None and len(lines[0]) - len(lines[0].lstrip()) == title and any("Attach" in line or "Remove" in line for line in lines[max(0, rows-3):])
             return good
         wait_for(current, "terminal redraw after resize")
         time.sleep(.3)
@@ -231,7 +233,7 @@ def main(binary, destination):
         s.click("Technical details")
         s.four_modes("expanded-unsaved", capture=False)
         assert "Identity" in s.text(), "resize collapsed Technical details"
-        s.click("Save preferences")
+        s.click("Save")
         preferences = s.root / ".config/spark-shell/apps.json"
         saved = json.loads(preferences.read_text())
         assert saved["apps"]["btop.desktop"]["hidden"]
@@ -244,7 +246,7 @@ def main(binary, destination):
         wait_for(lambda: "Technical details" in s.text(), "hidden app Details")
         s.click("Technical details")  # collapse to the compact preferences group
         s.click("Visibility")
-        s.click("Save preferences")
+        s.click("Save")
         assert not json.loads(preferences.read_text())["apps"]["btop.desktop"]["hidden"]
         s.checks.append("Hide saves to local preferences, removes search results, labels hidden entries, and restores without editing launchers")
         s.key("-k", "Escape", "-k", "Escape")
@@ -257,6 +259,7 @@ def main(binary, destination):
         s.click("Default mappings")
         s.click("Development")
         s.click("Review")
+        s.click("Save", body=True)
         assert json.loads(preferences.read_text())["mappings"]["Development"] == "Review"
         s.key("-k", "Escape")
         s.click("Delete category")
@@ -268,12 +271,12 @@ def main(binary, destination):
         s.key("btop", "-k", "Right")
         s.click("Category")
         s.click("Utilities")
-        s.click("Save preferences")
+        s.click("Save")
         assert json.loads(preferences.read_text())["apps"]["btop.desktop"]["category"] == "Utilities"
         s.click("Attach")
         s.key("long-attachment", "-k", "Down", "-k", "Return")
         wait_for(lambda: "Remove" in s.text(), "attachment")
-        assert "Apps / btop" in s.text(), "attachment did not return to Details"
+        assert "apps / btop" in s.text(), "attachment did not return to Details"
         s.click("Technical details")
         s.sway("[con_id=%d] resize set width 396 px height 416 px, move position center" % s.window()["id"])
         time.sleep(2)
@@ -290,7 +293,7 @@ def main(binary, destination):
         s.capture("minimum-technical-attachment")
         s.click("Visibility")
         s.capture("minimum-preferences-attachment")
-        s.click("Discard changes")
+        s.click("Cancel")
         s.click("Remove")
         assert "Remove" not in s.text()
         s.checks.append("At 36x20, long technical values reflow, original launcher path copies, preferences scroll above the reserved populated footer, and Remove has a current hit target")
@@ -329,7 +332,7 @@ def main(binary, destination):
         s.key("-k", "Right")
         s.click("Launch")
         s.click("Focus existing")
-        s.click("Save preferences")
+        s.click("Save")
         s.sway("[con_id=%d] focus" % first_btop)
         s.focus()
         s.click("Open application")
@@ -380,7 +383,7 @@ def main(binary, destination):
         s.capture("missing-metadata")
         s.click("Launch")
         s.click("New window")
-        s.click("Save preferences")
+        s.click("Save")
         s.click("Open application")
         wait_for(lambda: app_windows("org.example.AppsProof"), "declared New window action")
         s.focus()

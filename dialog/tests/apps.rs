@@ -122,9 +122,15 @@ fn details_back_restores_search_selection_scroll_and_unsaved_preferences() {
         assert!(a.apps.expanded);
     }
     a.escape();
+    assert!(a.leave_decision.is_some());
+    a.escape(); // dismissing the decision keeps the draft and the form
+    assert!(a.apps.dirty(ID));
+    assert_eq!(a.apps.page, Page::Details(ID.into()));
+    a.escape();
+    a.leave_choice(spark_dialog::interaction::Choice::Save);
     assert_eq!(a.apps.page, Page::List);
     assert_eq!((a.input.as_str(), a.sel, a.scroll), ("editor", sel, 3));
-    assert!(a.apps.draft(ID).hidden && !a.apps.preference(ID).hidden);
+    assert!(a.apps.preference(ID).hidden && !a.apps.dirty(ID));
     a.escape();
     assert!(a.input.is_empty());
     assert_eq!(a.view, View::Apps);
@@ -335,5 +341,143 @@ fn confirmed_launch_gives_the_app_the_screen_but_never_hides_a_newly_refocused_h
     a.apps.pending = Some((3, "launch".into()));
     a.helper(Helper::Apps(3), Ok(json!({"message":"Launch requested","confirmed":false}).to_string()));
     assert!(!a.hidden, "an unconfirmed launch keeps its receipt visible");
+    cleanup(&a);
+}
+
+#[test]
+fn module_queries_request_drafts_and_attachments_have_separate_ownership() {
+    let mut a = app();
+    a.set_draft("editor");
+    pick(&mut a, Action::Launch(ID.into()));
+    let selected = a.sel;
+    a.attachment = Some("/data/context.md".into());
+    a.conversation();
+    assert!(a.input.is_empty(), "a catalog filter must not become request text");
+    a.set_draft("retain this request draft");
+    a.conversation();
+    assert_eq!(a.input, "editor");
+    assert_eq!(a.sel, selected);
+    a.conversation();
+    assert_eq!(a.input, "retain this request draft");
+    assert_eq!(a.attachment.as_deref(), Some("/data/context.md"));
+    a.conversation();
+    a.model_name = Some("fixture".into());
+    a.ask(); // compose the saved request, never silently submit a catalog filter
+    assert!(a.pending.is_none() && a.jobs.is_empty());
+    assert_eq!(a.input, "retain this request draft");
+    a.ask();
+    assert_eq!(a.pending.as_ref().unwrap().0, "retain this request draft");
+    a.conversation();
+    assert_eq!(a.input, "editor");
+    cleanup(&a);
+}
+
+#[test]
+fn dirty_close_and_navigation_require_a_decision_and_failed_save_keeps_edits() {
+    use spark_dialog::interaction::Choice;
+    let mut a = app();
+    act(&mut a, Action::Details(ID.into()));
+    act(&mut a, Action::Visibility(ID.into()));
+    a.close_window();
+    assert!(a.quit.is_none() && a.leave_decision.is_some());
+    a.escape();
+    assert!(a.leave_decision.is_none() && a.apps.dirty(ID));
+    a.conversation();
+    assert_eq!(a.view, View::Apps);
+    assert!(a.leave_decision.is_some());
+    a.leave_choice(Choice::Keep);
+    std::fs::create_dir_all(a.apps.path.parent().unwrap()).unwrap();
+    let blocker = a.apps.path.parent().unwrap().join("not-a-directory");
+    std::fs::write(&blocker, "block").unwrap();
+    a.apps.path = blocker.join("apps.json");
+    a.close_window();
+    a.leave_choice(Choice::Save);
+    assert!(a.quit.is_none() && a.apps.dirty(ID));
+    assert_eq!(a.apps.page, Page::Details(ID.into()));
+    assert!(a.reply.as_ref().unwrap().text.contains("not saved"));
+    a.close_window();
+    a.leave_choice(Choice::Discard);
+    assert!(a.quit.is_some() && !a.apps.dirty(ID));
+    let _ = std::fs::remove_dir_all(blocker.parent().unwrap());
+}
+
+#[test]
+fn category_form_decision_keeps_field_and_cancel_is_keyboard_accessible() {
+    use spark_dialog::interaction::Choice;
+    let mut a = app();
+    act(&mut a, Action::Categories);
+    act(&mut a, Action::AddCategory);
+    a.set_draft("Writing");
+    a.escape();
+    assert!(a.leave_decision.is_some());
+    a.text_key('x');
+    a.paste("oops");
+    a.backspace();
+    a.escape();
+    assert_eq!(a.input, "Writing");
+    assert!(a.apps.form());
+    a.conversation();
+    assert!(a.leave_decision.is_some());
+    a.leave_choice(Choice::Save);
+    assert_eq!(a.view, View::Conversation);
+    assert!(a.input.is_empty());
+    assert!(Preferences::load(&a.apps.path).unwrap().categories.contains(&"Writing".into()));
+    a.conversation();
+    act(&mut a, Action::AddCategory);
+    a.set_draft("Discard me");
+    pick(&mut a, Action::CancelForm);
+    a.enter();
+    assert!(!a.apps.form() && a.input.is_empty());
+    assert!(!a.apps.prefs.categories.contains(&"Discard me".into()));
+    cleanup(&a);
+}
+
+#[test]
+fn preference_save_cancel_and_open_slots_do_not_move_and_focus_has_a_marker() {
+    let mut a = app();
+    act(&mut a, Action::Details(ID.into()));
+    let slots = |a: &App| {
+        a.items()
+            .iter()
+            .enumerate()
+            .filter_map(|(i, it)| match it {
+                Item::Apps(line) if matches!(line.action, Some(Action::Save(_) | Action::Discard(_) | Action::Launch(_))) => Some(i),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let before = slots(&a);
+    act(&mut a, Action::Visibility(ID.into()));
+    assert_eq!(slots(&a), before);
+    pick(&mut a, Action::Visibility(ID.into()));
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
+    let drawn = spark_dialog::ui::draw(&a, &common::palette("tokyonight-night"), "", &mut buffer);
+    let y = drawn.picks.iter().find(|(_, n)| *n == a.sel).unwrap().0;
+    assert_eq!(buffer[(drawn.columns.0, y)].symbol(), "\u{203a}");
+    act(&mut a, Action::Discard(ID.into()));
+    assert!(!a.apps.dirty(ID));
+    assert_eq!(slots(&a), before);
+    cleanup(&a);
+}
+
+#[test]
+fn mapping_changes_wait_for_save_and_use_the_shared_dirty_exit() {
+    use spark_dialog::interaction::Choice;
+    let mut a = app();
+    act(&mut a, Action::Mappings);
+    act(&mut a, Action::Mapping("Development".into()));
+    act(&mut a, Action::Map("Development".into(), Some("Office".into())));
+    assert_ne!(a.apps.prefs.mappings.get("Development").map(String::as_str), Some("Office"));
+    a.escape();
+    assert!(a.leave_decision.is_some());
+    a.leave_choice(Choice::Save);
+    assert_eq!(a.apps.page, Page::Mappings);
+    assert_eq!(Preferences::load(&a.apps.path).unwrap().mappings["Development"], "Office");
+    act(&mut a, Action::Mapping("Development".into()));
+    act(&mut a, Action::Map("Development".into(), None));
+    a.escape();
+    a.leave_choice(Choice::Discard);
+    assert_eq!(a.apps.page, Page::Mappings);
+    assert_eq!(a.apps.prefs.mappings["Development"], "Office");
     cleanup(&a);
 }

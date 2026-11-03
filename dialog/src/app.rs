@@ -62,12 +62,12 @@ pub struct Dest {
 }
 pub const DESTS: [Dest; 10] = [
     Dest {
-        name: "Apps",
+        name: "apps",
         purpose: "open an application",
         sections: &["apps"],
     },
     Dest {
-        name: "Files",
+        name: "files",
         purpose: "browse your home",
         sections: &["files"],
     },
@@ -627,6 +627,7 @@ impl Default for Config {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item {
+    Leave(crate::interaction::Choice),
     Apps(crate::apps::Line),
     Heading(String),
     Blank,
@@ -664,6 +665,8 @@ pub enum Item {
 }
 
 pub struct App {
+    pub prompts: crate::interaction::Prompts,
+    pub leave_decision: Option<crate::interaction::LeaveDecision>,
     pub apps: crate::apps::State,
     pub hover: Option<(u16, u16)>,
     pub window_focused: bool,
@@ -802,6 +805,8 @@ impl App {
             vec![]
         }; // opened on the about (the first desktop start): Esc gives the list back
         App {
+            prompts: Default::default(),
+            leave_decision: None,
             apps: crate::apps::State::default(),
             hover: None,
             window_focused: true,
@@ -1622,6 +1627,9 @@ impl App {
 
     /// The content area's items: conversation turns or the current native view.
     pub fn items(&self) -> Vec<Item> {
+        if self.leave_decision.is_some() {
+            return self.decision_items();
+        }
         if self.view == View::Apps {
             return self
                 .apps
@@ -2062,6 +2070,7 @@ impl App {
 
     pub fn pickable_item(&self, i: &Item) -> bool {
         match i {
+            Item::Leave(_) => true,
             Item::Apps(line) => line.action.is_some(),
             Item::Row(p, r) => Self::pickable(&self.providers[*p].rows.rows[*r]),
             Item::Folder(i) => self
@@ -2317,7 +2326,8 @@ impl App {
     }
 
     fn recall_prompt(&mut self, older: bool) -> bool {
-        if self.mode != Mode::Normal
+        if self.leave_decision.is_some()
+            || self.mode != Mode::Normal
             || self.pending.is_some()
             || self.running.is_some()
             || self.staged.is_some()
@@ -2370,6 +2380,9 @@ impl App {
 
     /// A key that types: it goes to the prompt, wherever the focus was.
     pub fn typed(&mut self, c: char) {
+        if self.leave_decision.is_some() {
+            return;
+        }
         if c == ' ' && self.list_keys && self.apps_details() {
             return;
         }
@@ -2406,6 +2419,9 @@ impl App {
 
     /// A printable key not bound to an action. Remapping removes its old shortcut.
     pub fn text_key(&mut self, c: char) {
+        if self.leave_decision.is_some() {
+            return;
+        }
         self.keep_lit = None;
         if c.is_control() {
             return;
@@ -2427,6 +2443,9 @@ impl App {
 
     /// Shift+Enter: a new line in a draft or an explicitly literal text field.
     pub fn newline(&mut self) {
+        if self.leave_decision.is_some() {
+            return;
+        }
         if self.mode == Mode::Normal || self.plain_text_input() {
             self.insert("\n");
         }
@@ -2435,6 +2454,9 @@ impl App {
     /// Pasted text goes into the draft as it is, its lines kept: a newline in it never sends. Where the
     /// prompt takes one line, the lines are joined by spaces.
     pub fn paste(&mut self, text: &str) {
+        if self.leave_decision.is_some() {
+            return;
+        }
         let plain = self.plain_text_input();
         let one = self.mode != Mode::Normal && !plain;
         let t: String = text
@@ -2488,6 +2510,9 @@ impl App {
     }
 
     pub fn backspace(&mut self) {
+        if self.leave_decision.is_some() {
+            return;
+        }
         if self.cursor == 0 {
             return;
         }
@@ -2503,6 +2528,9 @@ impl App {
     }
 
     pub fn delete(&mut self) {
+        if self.leave_decision.is_some() {
+            return;
+        }
         if self.cursor >= self.input.chars().count() {
             return;
         }
@@ -2635,6 +2663,15 @@ impl App {
     /// Esc: a question waiting is answered no (the draft comes back); the focus on a control or the
     /// draft goes first; then back one view; from the first view the dialog closes.
     pub fn escape(&mut self) {
+        if self.leave_decision.is_some() {
+            return self.leave_choice(crate::interaction::Choice::Keep);
+        }
+        if self.chip_focus.is_none() && self.view == View::Apps && self.mode == Mode::Normal {
+            let transient = matches!(self.apps.page, crate::apps::Page::CategoryPicker(_) | crate::apps::Page::LaunchPicker(_));
+            if !transient && self.guard_leave(crate::interaction::LeaveIntent::Back) {
+                return;
+            }
+        }
         if self.view == View::Apps && self.mode == Mode::Normal && self.input.is_empty() && self.chip_focus.is_none() {
             if let Some(nav) = self.apps.back() {
                 self.apps_restore(nav);
@@ -2720,6 +2757,7 @@ impl App {
     }
 
     fn go_back(&mut self, v: View) {
+        self.prompt_depart();
         self.navigation.retain(|(view, ..)| *view != self.view);
         self.navigation
             .push((self.view.clone(), self.sel, self.in_list, self.scroll, self.month_offset));
@@ -2741,6 +2779,7 @@ impl App {
         self.keep_lit = None;
         self.reply = None; // a reply is the view's it was said in: it never follows to another (#196)
         self.view = v;
+        self.prompt_arrive();
         self.sel = 0;
         self.in_list = false;
         self.scroll = 0;
@@ -2775,22 +2814,21 @@ impl App {
             self.scroll = *scroll;
             self.month_offset = *month;
         }
-        if self.view == View::Apps {
-            if let Some(nav) = self.apps.suspended.take() {
-                self.apps_restore(nav);
-            }
-        }
         if let Some(w) = words {
             self.set_input(w);
             self.follow_words();
         }
     }
 
-    fn go(&mut self, v: View) {
-        if self.view == View::Apps {
-            self.apps.suspended = Some(self.apps_navigation());
+    pub(crate) fn go(&mut self, v: View) {
+        let v = match v {
+            View::Section(p) => self.files_root(p).map(|root| View::Folder(p, root)).unwrap_or(View::Section(p)),
+            other => other,
+        };
+        if self.guard_leave(crate::interaction::LeaveIntent::Go(v.clone())) {
+            return;
         }
-
+        self.prompt_depart();
         self.navigation.retain(|(view, ..)| *view != self.view);
         self.navigation
             .push((self.view.clone(), self.sel, self.in_list, self.scroll, self.month_offset));
@@ -2800,19 +2838,9 @@ impl App {
         if v != View::Conversation {
             self.steps_row = None;
         }
-        // the files section is its home folder: its one row, ~, is no stop of its own
-        if let View::Section(p) = v {
-            if let Some(root) = self.files_root(p) {
-                self.came_from.push(self.view.clone());
-                self.view = View::Folder(p, root.clone());
-                self.sel = 0;
-                self.in_list = false;
-                self.scroll = 0;
-                return self.read_folder(p, &root);
-            }
-        }
         self.came_from.push(self.view.clone());
         self.view = v;
+        self.prompt_arrive();
         self.sel = 0;
         self.in_list = false;
         self.scroll = 0;
@@ -2822,6 +2850,9 @@ impl App {
             self.in_list = *in_list;
             self.scroll = *scroll;
             self.month_offset = *month;
+        }
+        if let View::Folder(p, uri) = self.view.clone() {
+            self.read_folder(p, &uri);
         }
     }
 
@@ -2878,6 +2909,12 @@ impl App {
     }
 
     pub fn enter(&mut self) {
+        if self.leave_decision.is_some() {
+            if let Some(Item::Leave(choice)) = self.picks().get(self.sel).filter(|_| self.in_list) {
+                self.leave_choice(choice.clone());
+            }
+            return;
+        }
         // the preview's Enter, nothing typed: the file opens in its app, as Files opens it
         if self.preview_key() {
             let Some(pv) = &self.preview else { return };
@@ -3043,7 +3080,7 @@ impl App {
         // put in the box go too, so Space and the history are the list's again
         if matches!(self.view, View::Home | View::Section(_) | View::Dest(_) | View::Folder(..) | View::Found(..)) {
             self.staged = None;
-            if !words.is_empty() {
+            if !words.is_empty() && !matches!(item, Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::More(..)) {
                 self.set_input(String::new());
             }
         }
@@ -3247,7 +3284,6 @@ impl App {
             self.go(v);
         } else if tail.starts_with("rows/") {
             self.go(View::Folder(q, uri.to_string()));
-            self.read_folder(q, uri);
         }
     }
 
@@ -3280,6 +3316,9 @@ impl App {
     /// The footer's controls and the attachment's Remove: 0 attach, 1 the model, 3 the mic, 4 remove
     /// the file attached. How talk works is a setting (Settings > Talk), not a control.
     pub fn chip(&mut self, c: usize) {
+        if self.leave_decision.is_some() {
+            return;
+        }
         self.chip_focus = None;
         match c {
             5 => self.ask(),
@@ -3288,6 +3327,9 @@ impl App {
                 self.attachment = None;
             }
             0 if self.cfg.plus => {
+                if self.guard_leave(crate::interaction::LeaveIntent::Attach) {
+                    return;
+                }
                 let Some(f) = self.files() else { return };
                 let Some(root) = self.providers[f].rows.rows.iter().find_map(|r| r.children.clone()) else {
                     return self.refuse("no folder to attach from");
@@ -3338,6 +3380,11 @@ impl App {
 
     /// Tab: the next control; after the last, the prompt again. Shift+Tab goes the other way.
     pub fn tab(&mut self, back: bool) {
+        if self.leave_decision.is_some() {
+            self.in_list = true;
+            self.sel = (self.sel + if back { 2 } else { 1 }) % 3;
+            return;
+        }
         let c = self.chips();
         if c.is_empty() {
             return;
@@ -3400,11 +3447,18 @@ impl App {
 
     /// Explicit model request. Forms, confirmation text and previews grant no context authority.
     pub fn ask(&mut self) {
+        if self.leave_decision.is_some() {
+            return;
+        }
         if self.view == View::Apps && self.apps.form() {
             return self.refuse("Finish the category edit before asking");
         }
         if self.mode != Mode::Normal || self.staged_now() {
             return;
+        }
+        if !self.request_prompt() {
+            self.conversation();
+            return self.reply(Mark::Note, "Write a request here; your module query is kept.");
         }
         if self.pending.is_some() || self.running.is_some() || self.wait.is_some() {
             return self.reply(Mark::Note, "Wait for the current request or action.");
@@ -3427,6 +3481,9 @@ impl App {
     }
 
     pub fn conversation(&mut self) {
+        if self.guard_leave(crate::interaction::LeaveIntent::Conversation) {
+            return;
+        }
         if self.mode != Mode::Normal {
             return;
         }
@@ -4321,7 +4378,7 @@ impl App {
             return scrub(t);
         }
         match &self.view {
-            View::Apps => "home".into(),
+            View::Apps => "apps".into(),
             View::Home => "home".into(),
             View::Help => "help".into(),
             View::Conversation => "conversation".into(),
@@ -4338,6 +4395,13 @@ impl App {
 
     pub fn subtitle(&self) -> String {
         match &self.view {
+            View::Apps => {
+                if self.apps.form() {
+                    "Category edit".into()
+                } else {
+                    "Installed apps".into()
+                }
+            }
             View::Section(p) => self.providers[*p].title.clone(),
             View::Folder(..) => self.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default(),
             View::Steps(_) => self.steps_row.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
@@ -4361,7 +4425,7 @@ impl App {
             HintKey::PageDown => self.page(1),
             HintKey::Backspace => self.backspace(),
             HintKey::Delete => self.delete(),
-            HintKey::Quit => self.quit = Some(130),
+            HintKey::Quit => self.close_window(),
             HintKey::Escape => self.escape(),
             HintKey::Newline => self.newline(),
             HintKey::Tab => self.tab(false),
@@ -4396,6 +4460,15 @@ impl App {
     }
 
     fn hint_keys(&self, pages: usize) -> Vec<(String, bool)> {
+        if self.leave_decision.is_some() {
+            return vec![
+                ("Keep editing ".into(), false),
+                ("Esc".into(), true),
+                ("   ".into(), false),
+                ("Choose ".into(), false),
+                ("Enter".into(), true),
+            ];
+        }
         if self.view == View::Apps && self.mode == Mode::Normal && self.chip_focus.is_none() {
             return self.apps_hint();
         }
@@ -5311,6 +5384,9 @@ impl App {
 impl App {
     /// The window closes: with the close playing first where the transitions are loaded (Esc, the x).
     pub fn close_window(&mut self) {
+        if self.guard_leave(crate::interaction::LeaveIntent::Close) {
+            return;
+        }
         if self.films {
             self.motion = Some((Reel::Close, Instant::now()));
             self.in_list = false;

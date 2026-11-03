@@ -1,0 +1,39 @@
+  apps · Installed apps               Tue 3 Nov · 10:01  ×
+
+  ❯ Find, do, or ask.
+
+  Back  Esc   Ask  Ctrl+Enter   Save  Enter
+
+  ✗ Apps preferences were not saved: Permission denied…
+  apps / btop++
+
+  Resource monitor that shows usage and stats for
+  processor, memory, disks, network and processes
+  Version           1.4.7_1
+  Installed via     XBPS / System
+  Source            XBPS
+
+  Technical details                                      ›
+
+  Preferences
+  Category          System (mapped)                      ⌄
+  Visibility        Hidden from Apps
+  Launch            Application default                  ⌄
+  Unsaved preferences
+› Save
+  Cancel
+
+  Open application
+
+
+
+
+
+
+
+
+
+
+  ─────────────────────────── ◇ ──────────────────────────
+
+  Attach           fixture-model · local ⌄            Talk

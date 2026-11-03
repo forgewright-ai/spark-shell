@@ -84,7 +84,7 @@ impl Pen<'_> {
             return x;
         }
         let st = if focus {
-            Style::default().fg(self.pal.surface).bg(self.pal.accent)
+            Style::default().fg(self.pal.surface).bg(self.pal.accent).add_modifier(Modifier::UNDERLINED)
         } else {
             Style::default().fg(self.pal.fg).bg(self.pal.lit)
         };
@@ -102,7 +102,7 @@ impl Pen<'_> {
         let fg = if quiet && !on { self.pal.muted } else { self.pal.accent };
         let mut st = Style::default().fg(fg);
         if focus {
-            st = st.bg(self.pal.lit);
+            st = st.bg(self.pal.lit).add_modifier(Modifier::UNDERLINED);
         }
         let t = cut(&format!(" {} ", text), (self.w - x) as usize);
         self.buf.set_string(x, y, &t, st);
@@ -355,10 +355,10 @@ fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     }
     // a preview opened on Space keeps the whole screen: its zoom and its drag want the room (#120); elsewhere the column
     // in the middle (#141)
-    let cw = column_width(w, &app.view);
+    // Frame anchors do not depend on the module's content width.
+    let cw = if app.view == View::Preview { w } else { w.min(FULL_WIDTH) };
     if cw == w {
-        let mut d = draw_column(app, pal, clock, buf);
-        d.columns = (0, w);
+        let d = draw_column(app, pal, clock, buf);
         return d;
     }
     let x = (w - cw) / 2;
@@ -366,7 +366,6 @@ fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     let mut drawn = draw_column(app, pal, clock, &mut col);
     blit(buf, &col, x, 0);
     drawn.shift(x);
-    drawn.columns = (x, x + cw);
     drawn
 }
 
@@ -374,6 +373,7 @@ fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
 fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let mut drawn = Drawn::default();
     let (w, h) = (buf.area.width, buf.area.height);
+    drawn.columns = (0, w);
     let area = Rect::new(0, 0, w, h);
     buf.set_style(area, Style::default().fg(pal.fg));
     let mut pen = Pen { buf, pal, w, h, right: w };
@@ -483,7 +483,32 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         if app.is_calendar() {
             top = calendar(app, &mut pen, clock, content_y, bottom) + 1;
         }
-        drawn.picks = content(app, &mut pen, top, bottom, &mut drawn);
+        let body_width = column_width(w, &app.view);
+        if body_width < w {
+            let offset = (w - body_width) / 2;
+            let mut body = Buffer::empty(Rect::new(0, 0, body_width, h));
+            body.set_style(body.area, Style::default().fg(pal.fg));
+            let mut body_pen = Pen {
+                buf: &mut body,
+                pal,
+                w: body_width,
+                h,
+                right: body_width,
+            };
+            drawn.picks = content(app, &mut body_pen, top, bottom, &mut drawn);
+            for y in top..bottom {
+                for x in 0..body_width {
+                    pen.buf[(offset + x, y)] = body[(x, y)].clone();
+                }
+            }
+            for step in &mut drawn.steps {
+                step.0 += offset;
+                step.1 += offset;
+            }
+            drawn.columns = (offset, offset + body_width);
+        } else {
+            drawn.picks = content(app, &mut pen, top, bottom, &mut drawn);
+        }
     }
 
     contextual_keys(app, &mut pen, &mut drawn);
@@ -514,7 +539,7 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
         let back = groups.remove(i);
         groups.insert(0, back);
     }
-    if app.mode == Mode::Normal && !(app.view == View::Apps && app.apps.form()) {
+    if app.mode == Mode::Normal && app.leave_decision.is_none() && !(app.view == View::Apps && app.apps.form()) {
         if app.pending.is_some() {
             groups.retain(|g| !g.iter().any(|(t, k)| !k && t == "Thinking"));
         }
@@ -727,6 +752,9 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
     let w = pen.w;
     let mut arrows = None;
     match it {
+        Item::Leave(choice) => {
+            pen.put(2, y, choice.label(), pal.accent, false, lit);
+        }
         Item::Apps(line) => {
             let color = if lit || line.action.is_some() { pal.accent } else { pal.fg };
             pen.put(line.indent, y, &line.label, color, line.bold, lit);
@@ -1273,6 +1301,9 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         }
         if lit {
             pen.light(y);
+            if item_owner(&items, k) == k {
+                pen.put(0, y, MORE, pal.accent, false, true);
+            }
         }
         let chips = row_of(app, it).is_some_and(|r| chip_groups.contains(&r.group));
         let (w, r) = cols_at(k);

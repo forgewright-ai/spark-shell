@@ -5,9 +5,9 @@
   Close  Esc   Ask  Ctrl+Enter                              
                                                             
                                                             
-  Apps           open an application                     ›  
+  apps           open an application                     ›  
                                                             
-  Files          browse your home                        ›  
+  files          browse your home                        ›  
                                                             
   Workspace      2 windows                               ›  
                                                             

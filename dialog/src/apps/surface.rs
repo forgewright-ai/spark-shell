@@ -40,6 +40,9 @@ impl App {
     }
 
     pub fn apps_activate(&mut self, action: Action) {
+        if self.leave_decision.is_some() {
+            return;
+        }
         let nav = self.apps_navigation();
         match self.apps.activate(action, nav) {
             Ok(Outcome {
@@ -80,7 +83,7 @@ impl App {
     }
 
     pub fn apps_enter(&mut self) {
-        if self.apps.form() {
+        if self.apps.form() && !self.in_list {
             return self.apps_activate(Action::Submit);
         }
         if let Some(Item::Apps(line)) = self.picks().get(self.sel).filter(|_| self.in_list) {
@@ -91,14 +94,20 @@ impl App {
     }
 
     pub fn apps_hint(&self) -> Vec<(String, bool)> {
-        let back = if !self.input.is_empty() { "Clear" } else { "Back" };
+        let back = if self.apps.form() {
+            "Cancel"
+        } else if !self.input.is_empty() {
+            "Clear"
+        } else {
+            "Back"
+        };
         let mut keys = vec![(format!("{back} "), false), ("Esc".into(), true)];
         let action = self.picks().get(self.sel).and_then(|it| match it {
             Item::Apps(line) => line.action.clone(),
             _ => None,
         });
         if self.apps.form() || self.in_list {
-            let label = if self.apps.form() {
+            let label = if self.apps.form() && !self.in_list {
                 "Save"
             } else {
                 action.as_ref().map(Action::verb).unwrap_or("Choose")

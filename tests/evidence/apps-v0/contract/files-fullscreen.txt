@@ -1,0 +1,49 @@
+            files · ~                                                                                       Tue 3 Nov · 10:02  ×
+
+            ❯ Find, do, or ask.
+
+            Back  Esc   Ask  Ctrl+Enter
+
+
+            home
+              ▸ bin                                 folder     3 items                             ›
+              ▸ run                                 folder     6 items                             ›
+              ▸ state                               folder     1 item                              ›
+                long-attachment-for-apps-review.md  Markdown   27 B      today 10:01
+                native.log                          text       376 B     today 10:01
+                screen.txt                          text       2 KB      today 10:02
+                sway.conf                           data       847 B     today 10:01
+              ▸ trash                                          empty                               ›
+
+            recent
+                screen.txt                          text       2 KB      today 10:02   ~
+                wifi.scan                           SCAN       123 B     today 10:01   panel
+                light                               file       3 B       today 10:01   spark-shell
+                ddc.lock                            LOCK       0 B       today 10:01   spark-shell
+                bt.list                             LIST       111 B     today 10:01   panel
+                dirs.apps.entries                   ENTRIES    1 KB      today 10:01   panel
+                dirs.theme.darks                    DARKS      146 B     today 10:01   panel
+                printers.status                     STATUS     157 B     today 10:01   panel
+
+              ▸ this folder · 3 folders · 4 files · 3 KB
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            ───────────────────────────────────────────────────────── ◇ ────────────────────────────────────────────────────────
+
+            Attach                                         fixture-model · local ⌄                                          Talk

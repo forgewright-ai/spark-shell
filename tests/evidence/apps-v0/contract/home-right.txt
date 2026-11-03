@@ -1,0 +1,48 @@
+  home                                        Tue 3 Nov · 10:02  ×
+
+  ❯ Find, do, or ask.
+
+  Close  Esc   Ask  Ctrl+Enter   Open  Enter
+
+
+      apps           open an application                     ›
+
+    › files          browse your home                        ›
+
+      Workspace      no windows open                         ›
+
+      Notes          no notes yet                            ›
+
+      Calendar       no reminders ahead                      ›
+
+      Tools          utilities and diagnostics               ›
+
+
+
+      Settings       devices and appearance                  ›
+
+      Help           commands and shortcuts                  ›
+
+      About          project, license and credits            ›
+
+
+      Power          lock, log out, restart, shut down       ›
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ─────────────────────────────── ◇ ──────────────────────────────
+
+  Attach               fixture-model · local ⌄                Talk

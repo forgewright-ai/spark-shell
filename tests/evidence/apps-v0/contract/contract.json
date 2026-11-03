@@ -1,0 +1,221 @@
+{
+  "binary_sha256": "cb41366c61b355a1ee898fb1257d0cec2490bc7d15d9a7b4e38ae1afbac14c1b",
+  "environment": "Void Linux; native headless Sway/foot; real installed catalog; isolated preferences; model/voice fixtures",
+  "checks": [
+    "Dirty Esc, close and conversation navigation require Save/Discard/Keep editing; Esc keeps edits; Save persists before navigation; request and app query restore separately",
+    "Category Esc retains the field and Cancel discards; real permission failure retains draft and stored value; Discard completes the pending navigation",
+    "Home/apps/files retain identical header and footer anchors and window geometry in compact/fullscreen/both snaps; equal snap bodies match",
+    "Persisted preferences and native Details remain available after restart with AI unavailable"
+  ],
+  "observations": [
+    {
+      "capture": "01-unsaved-preferences",
+      "rect": {
+        "x": 402,
+        "y": 116,
+        "width": 636,
+        "height": 796
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "02-exit-decision",
+      "rect": {
+        "x": 402,
+        "y": 116,
+        "width": 636,
+        "height": 796
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "03-restored-request",
+      "rect": {
+        "x": 402,
+        "y": 116,
+        "width": 636,
+        "height": 796
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "04-restored-app-query",
+      "rect": {
+        "x": 402,
+        "y": 116,
+        "width": 636,
+        "height": 796
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "05-category-exit-decision",
+      "rect": {
+        "x": 402,
+        "y": 116,
+        "width": 636,
+        "height": 796
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "06-save-failure",
+      "rect": {
+        "x": 402,
+        "y": 116,
+        "width": 636,
+        "height": 796
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "home-compact",
+      "rect": {
+        "x": 402,
+        "y": 116,
+        "width": 636,
+        "height": 796
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "apps-compact",
+      "rect": {
+        "x": 402,
+        "y": 116,
+        "width": 636,
+        "height": 796
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "files-compact",
+      "rect": {
+        "x": 402,
+        "y": 116,
+        "width": 636,
+        "height": 796
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "home-fullscreen",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 1000
+      },
+      "title_column": 12,
+      "attach_column": 12
+    },
+    {
+      "capture": "apps-fullscreen",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 1000
+      },
+      "title_column": 12,
+      "attach_column": 12
+    },
+    {
+      "capture": "files-fullscreen",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1440,
+        "height": 1000
+      },
+      "title_column": 12,
+      "attach_column": 12
+    },
+    {
+      "capture": "home-left",
+      "rect": {
+        "x": 0,
+        "y": 28,
+        "width": 720,
+        "height": 972
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "apps-left",
+      "rect": {
+        "x": 0,
+        "y": 28,
+        "width": 720,
+        "height": 972
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "files-left",
+      "rect": {
+        "x": 0,
+        "y": 28,
+        "width": 720,
+        "height": 972
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "home-right",
+      "rect": {
+        "x": 720,
+        "y": 28,
+        "width": 720,
+        "height": 972
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "apps-right",
+      "rect": {
+        "x": 720,
+        "y": 28,
+        "width": 720,
+        "height": 972
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "files-right",
+      "rect": {
+        "x": 720,
+        "y": 28,
+        "width": 720,
+        "height": 972
+      },
+      "title_column": 2,
+      "attach_column": 2
+    },
+    {
+      "capture": "07-details-ai-unavailable",
+      "rect": {
+        "x": 402,
+        "y": 116,
+        "width": 636,
+        "height": 796
+      },
+      "title_column": 2,
+      "attach_column": 2
+    }
+  ]
+}

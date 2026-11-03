@@ -1,5 +1,5 @@
 {
-  "binary_sha256": "426682f9eada930c59696561bba301557d010e1b2fb665ec94f1d00ece13ed87",
+  "binary_sha256": "cb41366c61b355a1ee898fb1257d0cec2490bc7d15d9a7b4e38ae1afbac14c1b",
   "environment": "Void Linux; native headless Sway, foot, GIO; 1440x1000; monospace 12; scale 1",
   "data": "System desktop entries; temporary Apps preferences; model and voice availability fixtures",
   "usable_area": {
