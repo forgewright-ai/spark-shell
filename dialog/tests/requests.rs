@@ -1,4 +1,4 @@
-//! Words that name no row are one request to spark: these words, this tool list, which
+//! Explicit Ask makes one request to spark: these words, this tool list, which
 //! steps. The steps come back as proposals in the box, each run on Enter; nothing runs
 //! before that, and a reply for a request that was dropped lands nowhere.
 mod common;
@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 fn started(risky: bool) -> (App, std::sync::mpsc::Receiver<spark_dialog::mcp::Incoming>, Arc<Mutex<Vec<Value>>>) {
     let (mut app, rx, tx) = app_with(&["out", "notes"]);
     app.cfg.spark = "/bin/sh".into();
+    app.model_name = Some("test-model".into());
     let calls = Arc::new(Mutex::new(vec![]));
     let captured = calls.clone();
     let tools = json!([{"name": "out_level", "title": "out level N", "description": "Set output volume from 0 to 100.",
@@ -70,16 +71,16 @@ fn type_words(app: &mut App, words: &str) {
 }
 
 #[test]
-fn a_request_carries_the_view_the_selected_row_and_every_ready_tool() {
+fn a_request_carries_tools_without_implicit_selected_context() {
     let (mut app, _, _) = started(false);
     app.down();
     assert!(app.in_list);
     type_words(&mut app, "make this quieter");
-    app.enter();
+    app.ask();
     let (_, about, tools) = request(&app);
-    assert!(about.contains("The view: sound"), "{}", about);
-    assert!(about.contains("The selected row: volume 70"), "{}", about);
-    assert!(about.contains("The local time: "), "{}", about);
+    assert!(!about.contains("The view: sound"), "{}", about);
+    assert!(!about.contains("volume 70"), "{}", about);
+    assert!(about.contains("explicit draft and attachment"), "{}", about);
     assert!(!about.contains("hidden note title"), "a row of another place is not volunteered: {}", about);
     let names: Vec<&str> = tools["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(names, vec!["out_level"]);
@@ -90,6 +91,7 @@ fn a_request_carries_the_view_the_selected_row_and_every_ready_tool() {
 fn a_dead_or_unready_provider_is_not_offered_and_the_files_are() {
     let (mut app, _, _) = app_with(&["out", "files", "wifi"]);
     app.cfg.spark = "/bin/sh".into();
+    app.model_name = Some("test-model".into());
     for p in &mut app.providers {
         p.ready = true;
         p.tools = vec![spark_dialog::model::Tool {
@@ -106,7 +108,7 @@ fn a_dead_or_unready_provider_is_not_offered_and_the_files_are() {
     app.providers[2].dead = Some("gone".into());
     app.view = View::Home;
     type_words(&mut app, "do something");
-    app.enter();
+    app.ask();
     let (_, _, tools) = request(&app);
     let names: Vec<&str> = tools["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(names, vec!["out_x", "files_x"], "the files' tools go too since #112");
@@ -118,9 +120,9 @@ fn typing_a_request_in_models_sends_it_instead_of_picking_a_model() {
     app.view = View::Models;
     app.models = vec![("local-model".into(), "downloaded".into())];
     type_words(&mut app, "Increase the volume a little bit please.");
-    app.enter();
+    app.ask();
     let (_, about, _) = request(&app);
-    assert!(about.contains("The view: model"), "{}", about);
+    assert!(!about.contains("The view: model"), "{}", about);
     assert_eq!(app.mode, Mode::Normal);
     assert!(!app.jobs.iter().any(|j| matches!(j, Job::Run(Helper::ModelSet, _))));
 }
@@ -174,7 +176,7 @@ fn an_early_direct_command_waits_for_its_provider_instead_of_using_ai() {
 fn a_proposal_waits_for_enter_and_runs_as_proposed() {
     let (mut app, rx, calls) = started(false);
     type_words(&mut app, "make it quieter");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     propose(&mut app, serial, json!([{"name": "out_level", "arguments": {"level": 30}}]));
     assert!(app.staged_now() && app.input == "out level 30", "{:?}", app.input);
@@ -190,7 +192,7 @@ fn a_proposal_waits_for_enter_and_runs_as_proposed() {
 fn a_proposal_cannot_bypass_destructive_confirmation() {
     let (mut app, _, calls) = started(true);
     type_words(&mut app, "make it quieter");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     propose(&mut app, serial, json!([{"name": "out_level", "arguments": {"level": 30}}]));
     app.enter();
@@ -202,10 +204,24 @@ fn a_proposal_cannot_bypass_destructive_confirmation() {
 }
 
 #[test]
+fn an_explicit_ask_for_an_exact_command_still_requires_review() {
+    let (mut app, rx, calls) = started(false);
+    app.set_draft("out level 30");
+    app.ask();
+    let (serial, _, _) = request(&app);
+    propose(&mut app, serial, json!([{"name": "out_level", "arguments": {"level": 30}}]));
+    assert!(app.staged_now());
+    assert!(calls.lock().unwrap().is_empty(), "the request's words do not authorize its proposal");
+    app.enter();
+    assert!(pump(&mut app, &rx, |_| !calls.lock().unwrap().is_empty()));
+    assert_eq!(calls.lock().unwrap().len(), 1);
+}
+
+#[test]
 fn a_reply_for_a_request_esc_dropped_lands_nowhere() {
     let (mut app, _, calls) = started(false);
     type_words(&mut app, "make it quieter");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     assert!(app.pending.is_some());
     app.escape();
@@ -220,9 +236,10 @@ fn a_reply_for_a_request_esc_dropped_lands_nowhere() {
 fn a_row_picked_while_spark_thinks_runs_and_drops_the_request() {
     let (mut app, rx, calls) = started(false);
     type_words(&mut app, "make it quieter");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     assert!(app.pending.is_some());
+    app.conversation();
     app.down();
     app.enter();
     assert!(pump(&mut app, &rx, |_| !calls.lock().unwrap().is_empty()), "the row runs at once");
@@ -233,20 +250,20 @@ fn a_row_picked_while_spark_thinks_runs_and_drops_the_request() {
 }
 
 #[test]
-fn a_newer_request_supersedes_the_older_one() {
+fn a_duplicate_request_is_suppressed_and_a_new_draft_is_preserved() {
     let (mut app, _, calls) = started(false);
     type_words(&mut app, "make it quieter");
-    app.enter();
+    app.ask();
     let (first, _, _) = request(&app);
     app.jobs.clear();
     type_words(&mut app, "make it much quieter");
-    app.enter();
-    let (second, _, _) = request(&app);
-    assert_ne!(first, second);
-    propose(&mut app, first, json!([{"name": "out_level", "arguments": {"level": 60}}]));
-    assert!(app.staged.is_none(), "the older reply proposes nothing");
-    propose(&mut app, second, json!([{"name": "out_level", "arguments": {"level": 20}}]));
+    app.ask();
+    assert!(app.jobs.is_empty());
+    assert_eq!(app.want_serial, first);
+    assert_eq!(app.input, "make it much quieter");
+    propose(&mut app, first, json!([{"name": "out_level", "arguments": {"level": 20}}]));
     assert!(app.staged_now() && app.input == "out level 20");
+    assert_eq!(app.staged.as_ref().unwrap().draft, "make it much quieter");
     assert!(calls.lock().unwrap().is_empty());
 }
 
@@ -254,7 +271,7 @@ fn a_newer_request_supersedes_the_older_one() {
 fn the_words_come_back_when_spark_does_not_answer() {
     let (mut app, _, _) = started(false);
     type_words(&mut app, "make it quieter");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     app.helper(Helper::Want(serial), Err("spark did not answer within 75 seconds".into()));
     assert_eq!(app.input, "make it quieter");
@@ -269,7 +286,7 @@ fn the_words_come_back_when_spark_does_not_answer() {
 fn an_answer_is_said_in_place_and_nothing_to_do_is_one_line() {
     let (mut app, _, calls) = started(false);
     type_words(&mut app, "is the sound on");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     app.helper(
         Helper::Want(serial),
@@ -277,10 +294,10 @@ fn an_answer_is_said_in_place_and_nothing_to_do_is_one_line() {
     );
     // a one-line answer is the reply row's, nothing above the list (#196)
     assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("The output is at 70 percent."));
-    assert!(app.exchange.is_empty());
+    assert!(app.exchange.iter().any(|line| line.text.contains("70 percent")));
     assert!(app.staged.is_none() && calls.lock().unwrap().is_empty());
     type_words(&mut app, "fly me to the moon");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     app.helper(Helper::Want(serial), Ok(json!({"answer": "", "steps": [], "refused": []}).to_string()));
     assert!(app.reply.as_ref().is_some_and(|r| r.text.contains("nothing to do")), "{:?}", app.reply);
@@ -291,13 +308,13 @@ fn an_answer_is_said_in_place_and_nothing_to_do_is_one_line() {
 fn a_step_that_is_not_offered_or_fails_the_gate_is_refused_in_one_line() {
     let (mut app, _, calls) = started(false);
     type_words(&mut app, "make it quieter");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     propose(&mut app, serial, json!([{"name": "display_brightness", "arguments": {"level": 10}}]));
     assert!(app.reply.as_ref().is_some_and(|r| r.text.contains("not offered here now")));
     assert!(app.staged.is_none() && calls.lock().unwrap().is_empty());
     type_words(&mut app, "make it quieter");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     propose(&mut app, serial, json!([{"name": "out_level", "arguments": {"level": 300}}]));
     assert!(app.reply.as_ref().is_some_and(|r| r.text.contains("did not run")));
@@ -309,7 +326,7 @@ fn a_proposal_with_several_fields_shows_each_before_enter() {
     let (mut app, _, calls) = started(false);
     app.providers[0].tools[0].schema["properties"]["balance"] = json!({"type":"integer"});
     type_words(&mut app, "set the volume and balance");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     propose(&mut app, serial, json!([{"name": "out_level", "arguments": {"level": 30, "balance": 70}}]));
     let display = &app.staged.as_ref().unwrap().text;
@@ -337,7 +354,7 @@ fn literal_text_proposals_show_escaped_fields_and_send_exact_arguments() {
             arguments["name"] = json!("fixture.md");
         }
         type_words(&mut app, "append literal text");
-        app.enter();
+        app.ask();
         let (serial, _, _) = request(&app);
         propose(&mut app, serial, json!([{"name": "notes_append", "arguments": arguments}]));
         let staged = app.staged.as_ref().unwrap();
@@ -367,6 +384,7 @@ fn the_helper_feeds_stdin_keeps_json_on_a_nonzero_exit_and_bounds_its_input() {
 fn with_names() -> (App, std::sync::mpsc::Receiver<spark_dialog::mcp::Incoming>) {
     let (mut app, rx, tx) = app_with(&["out", "theme", "layout"]);
     app.cfg.spark = "/bin/sh".into();
+    app.model_name = Some("test-model".into());
     let out_tools = json!([{"name": "out_level", "title": "out level N", "description": "Set output volume.",
         "inputSchema": {"type": "object", "properties": {"level": {"type": "integer", "minimum": 0, "maximum": 100}}, "required": ["level"]},
         "annotations": {"destructiveHint": false}}]);
@@ -419,7 +437,7 @@ fn with_names() -> (App, std::sync::mpsc::Receiver<spark_dialog::mcp::Incoming>)
 fn a_step_that_names_a_row_by_a_near_miss_takes_the_rows_own_name() {
     let (mut app, _) = with_names();
     type_words(&mut app, "change theme to everforest light");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     propose(&mut app, serial, json!([{"name": "theme_palette", "arguments": {"name": "everforest light"}}]));
     assert!(
@@ -433,7 +451,7 @@ fn a_step_that_names_a_row_by_a_near_miss_takes_the_rows_own_name() {
         app.escape();
         app.input.clear();
         type_words(&mut app, "use the other one");
-        app.enter();
+        app.ask();
         let (serial, _, _) = request(&app);
         propose(&mut app, serial, json!([{"name": "theme_palette", "arguments": {"name": said}}]));
         assert!(app.staged_now() && app.input == want, "{}: {:?} {:?}", said, app.input, app.exchange);
@@ -444,7 +462,7 @@ fn a_step_that_names_a_row_by_a_near_miss_takes_the_rows_own_name() {
 fn a_step_that_names_no_row_is_refused_in_the_steps_own_words() {
     let (mut app, _) = with_names();
     type_words(&mut app, "change theme to rainbow");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     propose(&mut app, serial, json!([{"name": "theme_palette", "arguments": {"name": "rainbow"}}]));
     assert!(!app.staged_now(), "{:?}", app.input);
@@ -453,27 +471,21 @@ fn a_step_that_names_no_row_is_refused_in_the_steps_own_words() {
     // two names start with the word: no guess, the gate decides
     app.input.clear();
     type_words(&mut app, "everforest please");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     propose(&mut app, serial, json!([{"name": "theme_palette", "arguments": {"name": "everforest"}}]));
     assert!(!app.staged_now(), "{:?}", app.input);
 }
 
 #[test]
-fn a_request_carries_the_names_other_steps_take_from_every_ready_provider() {
+fn a_request_does_not_volunteer_names_from_other_providers() {
     let (mut app, _) = with_names();
     type_words(&mut app, "open the web layout");
-    app.enter();
+    app.ask();
     let (_, about, _) = request(&app);
-    assert!(about.contains("The view: sound"), "{}", about);
     assert!(
-        about.contains("The names other steps take now, each exactly as written here: theme: everforest-dark, everforest-light, gruvbox-light, nord; layout open: webdev, zen-micro-and-a-terminal."),
-        "{}",
-        about
-    );
-    assert!(
-        about.find("names other steps").unwrap() < about.find("The local time").unwrap(),
-        "the clock stays last: {}",
+        !about.contains("everforest") && !about.contains("webdev"),
+        "unattached names stay local: {}",
         about
     );
 }
@@ -482,6 +494,7 @@ fn a_request_carries_the_names_other_steps_take_from_every_ready_provider() {
 fn in_a_folder() -> (App, std::sync::mpsc::Receiver<spark_dialog::mcp::Incoming>) {
     let (mut app, rx, tx) = app_with(&["files"]);
     app.cfg.spark = "/bin/sh".into();
+    app.model_name = Some("test-model".into());
     let path_prop = json!({"type": "string", "minLength": 2, "maxLength": 4096, "format": "path"});
     let tools = json!([
         {"name": "files_trash", "title": "files trash PATH", "description": "Trash.", "inputSchema": {"type": "object", "properties": {"path": path_prop}, "required": ["path"]}, "annotations": {"destructiveHint": false}},
@@ -522,15 +535,14 @@ fn in_a_folder() -> (App, std::sync::mpsc::Receiver<spark_dialog::mcp::Incoming>
 }
 
 #[test]
-fn a_request_from_a_folder_carries_its_paths_and_the_files_tools() {
+fn a_request_from_a_folder_carries_tools_without_browsed_paths() {
     let (mut app, _) = in_a_folder();
     type_words(&mut app, "move the invoice to documents");
-    app.enter();
+    app.ask();
     let (_, about, tools) = request(&app);
-    assert!(about.contains("The view: files"), "{}", about);
     assert!(
-        about.contains("/data/me/invoice.pdf") && about.contains("/data/me/documents"),
-        "the folder's paths are the names: {}",
+        !about.contains("/data/me/") && !about.contains("invoice.pdf"),
+        "browsed paths stay local: {}",
         about
     );
     let names: Vec<&str> = tools["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
@@ -541,7 +553,7 @@ fn a_request_from_a_folder_carries_its_paths_and_the_files_tools() {
 fn a_step_with_a_path_no_row_holds_is_refused_and_a_rows_own_path_passes() {
     let (mut app, _) = in_a_folder();
     type_words(&mut app, "trash the password file");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     propose(&mut app, serial, json!([{"name": "files_trash", "arguments": {"path": "/etc/passwd"}}]));
     assert!(
@@ -551,7 +563,7 @@ fn a_step_with_a_path_no_row_holds_is_refused_and_a_rows_own_path_passes() {
     );
     assert!(app.staged.is_none());
     type_words(&mut app, "move the invoice to documents");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     propose(
         &mut app,
@@ -561,7 +573,7 @@ fn a_step_with_a_path_no_row_holds_is_refused_and_a_rows_own_path_passes() {
     assert!(app.staged.is_some(), "a move between two rows' paths waits in the box: {:?}", app.exchange);
     // a near miss on the name resolves to the row's own path, and a folder named by its path alone passes the gate
     type_words(&mut app, "move invoice.pdf to documents");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     propose(
         &mut app,
@@ -583,7 +595,7 @@ fn a_plan_that_comes_while_the_prompt_asks_waits_for_the_question() {
     // the review's G: commands spark planned never take the box where a yes was being typed
     let (mut app, _, calls) = started(false);
     type_words(&mut app, "make it quieter");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     app.mode = Mode::Confirm(app.commands("out level 20").unwrap().remove(0));
     app.stash = Some(String::new());
@@ -601,7 +613,7 @@ fn a_raw_error_of_the_system_is_said_in_plain_words() {
     // the review: with no spark installed, "No such file or directory (os error 2)" was said as the answer
     let (mut app, _, _) = started(false);
     type_words(&mut app, "make it quieter");
-    app.enter();
+    app.ask();
     let (serial, _, _) = request(&app);
     app.helper(Helper::Want(serial), Err("No such file or directory (os error 2)".into()));
     assert_eq!(app.reply.as_ref().unwrap().text, "spark did not answer: spark is not installed here");

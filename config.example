@@ -157,3 +157,9 @@ BAR_WORKSPACES=symbols
 # Clock presentation on the bar, Calendar and idle screen.
 CLOCK_FORMAT=24
 WEEK_START=sunday
+
+# Home and desktop shortcuts use named actions in separate JSON files beside
+# this config: home-keys.json and desktop-keys.json. See Home's Help and
+# `spark-shell desktop keys`. Default home entry: Super+Space; floating/tiled
+# focus toggle: Super+Alt+Space. Unknown actions and managed conflicts fail
+# validation; reload home for its keys, and render/reload Sway for desktop keys.

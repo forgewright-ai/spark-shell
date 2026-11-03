@@ -2,8 +2,8 @@
 """The dialog at a real terminal, against spark-shell's own providers:
 python3 tests/dialog_pty.py PATH-TO-spark-dialog. A throwaway HOME, a
 60 by 40 pty; the home draws its places, words find a palette, Down
-moves into the list and Enter sets it (Enter in the prompt alone would
-send the words as a request), Esc closes, and no provider outlives the
+moves into the list and Enter sets it, unmatched Enter stays local,
+Ask sends deliberately, Esc closes, and no provider outlives the
 window. CI runs it with no
 network (unshare -n). Linux and macOS, python3 stdlib only."""
 import re
@@ -52,7 +52,7 @@ def main(binary):
         return test()
 
     text = lambda: seen.decode("utf-8", "replace")
-    ok(read_until(lambda: "home" in text() and "Settings" in text() and "Type a request." in text() and "\u00d7" in text(), 15), "the home draws: its title, Settings, the prompt, close as x", text()[-400:])
+    ok(read_until(lambda: "home" in text() and "Settings" in text() and "Find, do, or ask." in text() and "\u00d7" in text(), 15), "the home draws: its title, Settings, the prompt, close as x", text()[-400:])
     ok("\x1b]52" not in text(), "the dialog writes no clipboard sequence")
     os.write(fd, b"nord")
     ok(read_until(lambda: "nord" in text(), 5), "typing finds the palette among every row")
@@ -108,11 +108,64 @@ def main(binary):
     ok(not providers & processes().keys(), "this dialog's providers exit after the window closes")
     busy(binary, env, home)
     keys(binary, env)
+    resize(binary, env)
     tasks(binary, env, home)
     files(binary, env, home)
     clicks(binary, env, home)
     print("dialog_pty: %d failed" % failed)
     return 1 if failed else 0
+
+
+def resize(binary, env):
+    """Resize redraws even when a launcher leaves SIGWINCH blocked."""
+    pid, fd = pty.fork()
+    if pid == 0:
+        signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGWINCH})
+        os.execve(binary, [binary, "--composer", ""], env)
+    screen = Screen()
+
+    def wait_for(words, seconds=8):
+        until = time.monotonic() + seconds
+        while time.monotonic() < until:
+            if all(word in screen.text() for word in words):
+                return True
+            if select.select([fd], [], [], .1)[0]:
+                try:
+                    screen.feed(os.read(fd, 65536))
+                except OSError:
+                    return False
+        return False
+
+    try:
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
+        assert wait_for(["Find, do, or ask."]), "resize fixture did not open"
+        os.write(fd, b"resize draft")
+        assert wait_for(["resize draft"]), "draft did not appear"
+        screen = Screen(12, 32)
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 32, 0, 0))
+        assert wait_for(["Make this window larger"], 3), "shrink did not redraw without a key"
+        screen = Screen()
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
+        assert wait_for(["resize draft", "Ask", "\u25c7"], 3), "restore lost the draft or footer"
+        ok(True, "resize redraws without SIGWINCH or keyboard input and retains the draft")
+    except AssertionError as error:
+        ok(False, "resize redraw", str(error))
+    finally:
+        os.kill(pid, signal.SIGTERM)
+        # Drain the terminal while it restores its modes. A full PTY output
+        # buffer can otherwise hold macOS's exit path inside waitpid forever.
+        deadline = time.monotonic() + 5
+        while os.waitpid(pid, os.WNOHANG)[0] == 0:
+            if time.monotonic() >= deadline:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+                break
+            if select.select([fd], [], [], .1)[0]:
+                try:
+                    os.read(fd, 65536)
+                except OSError:
+                    pass
+        os.close(fd)
 
 
 def tasks(binary, base_env, home):
@@ -141,6 +194,9 @@ for line in sys.stdin:
     with open(helper, "w") as f:
         f.write("#!" + sys.executable + "\n" + r'''
 import json, os, sys
+if sys.argv[1:4] == ["model", "list", "--porcelain"]:
+    print("fixture-model\tserving")
+    sys.exit(0)
 if sys.argv[1:2] != ["steps"]: sys.exit(0)
 tools = json.load(sys.stdin)
 with open(os.environ["TASK_REQUESTS"], "a") as f: f.write(json.dumps({"argv": sys.argv[1:], "tools": tools})+"\n")
@@ -150,7 +206,7 @@ print(json.dumps({"answer": "", "steps": [{"name": "notes_pick", "arguments": {"
     os.chmod(helper, 0o700)
     requests, calls = (os.path.join(home, name) for name in ("task-requests", "task-calls"))
     env = dict(base_env, TASK_REQUESTS=requests)
-    argv = [binary, "--provider", provider + " " + calls + " notes", "--home", "notes", "--composer", "", "--spark", helper]
+    argv = [binary, "--provider", provider + " " + calls + " notes", "--home", "notes", "--composer", "model", "--spark", helper]
     pid, fd = pty.fork()
     if pid == 0:
         os.execve(binary, argv, env)
@@ -172,11 +228,14 @@ print(json.dumps({"answer": "", "steps": [{"name": "notes_pick", "arguments": {"
         os.write(fd, b"\x1b[B")
         time.sleep(.1)
         os.write(fd, b"use this\r")
+        time.sleep(.15)
+        ok(not records(requests), "Enter on unmatched text stays local")
+        os.write(fd, b"\x1b[13;5u")
         assert wait_for(lambda: b"notes pick Fixture" in seen and b"Discard" in seen), "the proposal did not draw"   # the line wraps across a cursor move
         req = records(requests)
-        ok(len(req) == 1 and req[0]["argv"][:3] == ["steps", "--about", req[0]["argv"][2]] and "The selected row: Fixture target" in req[0]["argv"][2]
+        ok(len(req) == 1 and req[0]["argv"][:3] == ["steps", "--about", req[0]["argv"][2]] and "Fixture target" not in req[0]["argv"][2]
            and [t["name"] for t in req[0]["tools"]["tools"]] == ["notes_pick"],
-           "the words go to spark steps once, with the selected row in the about and the providers' tools on stdin")
+           "the words go to spark steps once, with explicit context only and the providers' tools on stdin")
         ok(not records(calls), "nothing runs before Enter")
         os.write(fd, b"\r")
         assert wait_for(lambda: b"type yes" in seen), "the confirmation did not draw"
@@ -283,7 +342,7 @@ def files(binary, env, home):
     tight = lambda: re.sub(r"\s+", "", plain())   # the terminal's cursor moves split words: compared with no spaces
     shown = lambda: re.sub(r"\s+", "", screen.text())   # the screen as the terminal holds it, with no spaces
     try:
-        assert wait_for(lambda: "Type a request." in plain() and "your home folder" in plain()), "the home did not draw with the files ready"
+        assert wait_for(lambda: "Find, do, or ask." in plain() and "browse your home" in plain()), "the home did not draw with the files ready"
         os.write(fd, b"files")
         time.sleep(0.3)
         os.write(fd, b"\r")
@@ -292,12 +351,12 @@ def files(binary, env, home):
         os.write(fd, b"\x1b[B")       # Down: the first row, the folder
         time.sleep(0.3)
         os.write(fd, b"\x1b[B")       # Down: the file, lit
-        assert wait_for(lambda: "Preview" in shown() and "Actions" in shown()), "the key row did not offer the preview and the actions: " + screen.text()[-600:]
+        assert wait_for(lambda: "Ask" in shown() and "Actions" in shown()), "the normal-width key row did not keep Ask and the file actions visible: " + screen.text()[-600:]
         seen.clear()
         os.write(fd, b"\x1b[C")       # Right: its actions
         # read from the screen, not the bytes: a cell the row before held too is not sent again ("rename" over "hello.txt" keeps its e)
         assert wait_for(lambda: "movetoafolder" in shown() and "trash" in shown() and "rename" in shown() and "Back" in shown()), "the actions did not draw: " + screen.text()[-900:]
-        ok(True, "Down lights the file and the key row offers Preview and Actions; Right opens the actions in the provider's words: open, preview, attach, rename, move, copy, trash")
+        ok(True, "Down lights the file with Ask and Actions visible; Right opens the actions in the provider's words: open, preview, attach, rename, move, copy, trash")
         seen.clear()
         os.write(fd, b"\x1b")          # back to the folder
         assert wait_for(lambda: "hello.txt" in shown() and "thisfolder" in shown()), "Esc did not come back: " + screen.text()[-900:]
@@ -326,7 +385,7 @@ def busy(binary, env, home):
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
     seen = bytearray()
     end = time.time() + 15
-    while time.time() < end and b"Type a request." not in seen:
+    while time.time() < end and b"Find, do, or ask." not in seen:
         r, _, _ = select.select([fd], [], [], 0.1)
         if r:
             seen.extend(os.read(fd, 65536))
@@ -459,7 +518,7 @@ def keys(binary, env):
     seen = bytearray()
     answered = False
     end = time.time() + 15
-    while time.time() < end and b"Type a request." not in seen:
+    while time.time() < end and b"Find, do, or ask." not in seen:
         r, _, _ = select.select([fd], [], [], 0.1)
         if r:
             seen.extend(os.read(fd, 65536))

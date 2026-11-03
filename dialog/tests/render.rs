@@ -243,6 +243,7 @@ fn a_question_is_its_turn_and_a_typed_step_its_reply() {
     // #53: a question's turn is the words and the answer; a typed step's receipt is the reply row, Undo at
     // its end, never a turn (#196)
     let mut app = full();
+    app.view = View::Conversation;
     app.exchange = vec![
         Line {
             sign: Sign::You,
@@ -377,7 +378,7 @@ fn a_list_of_a_thousand_pages_and_jumps_by_its_keys() {
 }
 
 #[test]
-fn settings_says_wired_when_the_cable_is_up_and_wi_fi_is_not() {
+fn root_settings_keeps_its_purpose_instead_of_network_details() {
     let net = |wifi: &str, lan: &str| {
         let mut app = base();
         app.providers
@@ -387,15 +388,9 @@ fn settings_says_wired_when_the_cable_is_up_and_wi_fi_is_not() {
         app.about_idx = Some(app.providers.len() - 1);
         app.dest_state(spark_dialog::app::SETTINGS_DEST).unwrap_or_default()
     };
-    assert!(
-        net("not connected", "up \u{b7} 192.0.2.9").starts_with("wired"),
-        "#128: the cable up, Wi-Fi not: wired"
-    );
-    assert!(
-        net("\u{2582}\u{2584} home", "up \u{b7} 192.0.2.9").starts_with("\u{2582}\u{2584} home"),
-        "Wi-Fi joined: its own words"
-    );
-    assert!(net("not connected", "no wire").starts_with("not connected"), "neither: not connected");
+    assert!(net("not connected", "up").is_empty());
+    assert!(net("private network", "up").is_empty());
+    assert!(net("not connected", "no wire").is_empty());
 }
 
 #[test]
@@ -438,6 +433,7 @@ fn a_destructive_step_waits_for_yes() {
 #[test]
 fn an_answer_wraps_under_its_sign() {
     let mut app = full();
+    app.view = View::Conversation;
     app.exchange = vec![
         Line {
             sign: Sign::You,
@@ -790,9 +786,10 @@ fn the_calendar_is_the_months_then_the_reminders() {
 /// The app drawn in tokyonight-night: the buffer and each row's text.
 fn drawn(app: &App) -> (Buffer, spark_dialog::palette::Palette, Vec<String>) {
     let p = palette("tokyonight-night");
-    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    let (w, h) = app.size;
+    let mut b = Buffer::empty(Rect::new(0, 0, w, h));
     spark_dialog::ui::draw(app, &p, CLOCK, &mut b);
-    let rows = (0..HEIGHT).map(|y| (0..WIDTH).map(|x| b[(x, y)].symbol().to_string()).collect()).collect();
+    let rows = (0..h).map(|y| (0..w).map(|x| b[(x, y)].symbol().to_string()).collect()).collect();
     (b, p, rows)
 }
 
@@ -857,6 +854,8 @@ fn a_day_with_a_reminder_is_in_the_accent_and_today_is_a_chip() {
 #[test]
 fn the_reminders_under_the_months_are_rows_to_pick_in_their_groups() {
     let mut app = calendar_app(true);
+    // Room for all groups, including the final reminder above the footer gap.
+    app.size.1 = 42;
     let (b, p, rows) = drawn(&app);
     let head = |g: &str| {
         rows.iter()
@@ -1149,11 +1148,23 @@ fn a_file_with_no_preview_says_why_in_the_middle() {
 }
 
 #[test]
-fn an_answer_about_the_file_sits_above_its_page() {
+fn a_conversation_preserves_the_preview_without_attaching_it() {
     let mut app = preview_app("plan.md", "~/notes", note(), WIDTH, HEIGHT);
+    app.cfg.spark = "/bin/false".into();
+    app.model_name = Some("fixture".into());
+    app.set_draft("when is the report due?");
+    app.ask();
+    assert_eq!(app.view, View::Conversation);
+    assert_eq!(app.pending.as_ref().unwrap().1, None, "preview is not an attachment");
+    assert!(app.jobs.iter().any(|j| matches!(j, spark_dialog::app::Job::RunInput(..))));
+    app.pending = None;
+    app.wait = None;
     app.say(Sign::You, "when is the report due?");
     app.say(Sign::Says, "\"The report goes out on Friday.\"");
     render(&app, "preview-answer");
+    app.conversation();
+    assert_eq!(app.view, View::Preview);
+    assert_eq!(app.preview.as_ref().unwrap().row().text, "plan.md");
 }
 
 #[test]
@@ -1215,7 +1226,7 @@ fn full_screen_home_is_one_column_in_the_middle_its_words_whole() {
     app.in_list = true;
     app.sel = app.picks().iter().position(|i| matches!(i, spark_dialog::app::Item::Dest(2))).unwrap(); // Workspace
     let drawn = render_at(&app, "full-home", WIDE.0, WIDE.1);
-    assert_eq!(drawn.columns, (15, 135), "one column, {} wide, in the middle", spark_dialog::ui::FULL_WIDTH);
+    assert_eq!(drawn.columns, (45, 105), "home keeps its 60-cell measure in the middle");
 }
 
 #[test]
@@ -1354,9 +1365,12 @@ fn a_long_sound_plays_the_wait_until_its_waveform_is_there() {
 #[test]
 fn the_space_chip_is_a_key_a_click_takes() {
     let mut app = manager_app();
+    // Secondary preview hints follow navigation, Ask and the row's primary
+    // action; the wider column has room for the complete group.
+    app.size = (120, 40);
     app.folder.as_mut().unwrap().2.rows[0].page = Some("spark-shell://files/preview/aW52b2ljZQ".into());
     let p = palette("tokyonight-night");
-    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    let mut b = Buffer::empty(Rect::new(0, 0, 120, 40));
     let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
     assert!(
         drawn.keys.iter().any(|(_, _, _, k)| *k == spark_dialog::app::HintKey::Char(' ')),

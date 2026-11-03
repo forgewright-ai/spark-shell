@@ -98,6 +98,12 @@ fn args() -> Result<Args, String> {
             other => return Err(format!("no option {}", other)),
         }
     }
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")));
+    if let Some(config) = config {
+        cfg.keys = spark_dialog::keys::Bindings::load(&config.join("spark-shell/home-keys.json"))?;
+    }
     Ok(Args { cfg, providers })
 }
 
@@ -398,7 +404,14 @@ fn main() {
     }
     let mut out = std::io::stdout();
     let _ = terminal::enable_raw_mode();
-    let _ = execute!(out, EnterAlternateScreen, EnableMouseCapture, EnableBracketedPaste, EnableFocusChange);
+    let _ = execute!(
+        out,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste,
+        EnableFocusChange,
+        ratatui::crossterm::cursor::SetCursorStyle::BlinkingBlock
+    );
     // the kitty keyboard protocol (foot speaks it): Shift+Enter is a key of its own, a new line, not
     // Enter. Asked before the keys' thread starts: that thread would hold the terminal's answer.
     let kitty = terminal::supports_keyboard_enhancement().unwrap_or(false);
@@ -544,7 +557,7 @@ fn main() {
                     }
                 }
                 // the opening alone has no cursor: nothing is there to type into yet (#142)
-                if !drawn.alone {
+                if !drawn.alone && !app.list_keys && app.chip_focus.is_none() {
                     f.set_cursor_position(drawn.cursor);
                 }
             });
@@ -722,6 +735,14 @@ fn main() {
                 dirty = true;
             }
             Ev::Tick => {
+                // Some launchers do not deliver SIGWINCH to the UI process.
+                // Size is cheap to query; a resize must redraw without a keypress.
+                if terminal::size().is_ok_and(|size| size != app.size) {
+                    app.stop_video();
+                    shown_preview = None;
+                    let _ = term.clear();
+                    dirty = true;
+                }
                 let was = app.busy();
                 app.tick(Instant::now());
                 // a frame for the march while it shows, and when the work starts or ends; none for work nothing shows (#196)
@@ -780,27 +801,12 @@ fn main() {
                 {
                     app.cut_motion();
                 }
-                match (k.code, k.modifiers) {
-                    (KeyCode::Char('c'), m) if m.contains(KeyModifiers::CONTROL) => app.quit = Some(130),
-                    (KeyCode::Esc, _) => app.escape(),
-                    // Shift+Enter, or Alt+Enter where the terminal cannot tell Shift+Enter from Enter
-                    (KeyCode::Enter, m) if m.contains(KeyModifiers::SHIFT) || m.contains(KeyModifiers::ALT) => app.newline(),
-                    (KeyCode::Char('j'), m) if m.contains(KeyModifiers::CONTROL) => app.newline(),
-                    (KeyCode::Enter, _) => app.enter(),
-                    (KeyCode::Up, _) => app.up(),
-                    (KeyCode::Down, _) => app.down(),
-                    (KeyCode::Left, _) => app.left(),
-                    (KeyCode::Right, _) => app.right(),
-                    (KeyCode::Home, _) => app.line_start(),
-                    (KeyCode::End, _) => app.line_end(),
-                    (KeyCode::PageUp, _) => app.page(-1),
-                    (KeyCode::PageDown, _) => app.page(1),
-                    (KeyCode::Tab, m) => app.tab(m.contains(KeyModifiers::SHIFT)),
-                    (KeyCode::BackTab, _) => app.tab(true),
-                    (KeyCode::Backspace, _) => app.backspace(),
-                    (KeyCode::Delete, _) => app.delete(),
-                    (KeyCode::Char(c), m) if !m.contains(KeyModifiers::CONTROL) && !m.contains(KeyModifiers::ALT) => app.typed(c),
-                    _ => {}
+                if let Some(action) = app.cfg.keys.action(k) {
+                    app.hint_key(action);
+                } else if let KeyCode::Char(c) = k.code {
+                    if !k.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) {
+                        app.text_key(c);
+                    }
                 }
             }
             Ev::Term(Event::Paste(p)) => {
@@ -914,6 +920,7 @@ fn main() {
         LeaveAlternateScreen
     );
     let _ = terminal::disable_raw_mode();
+    let _ = execute!(out, ratatui::crossterm::cursor::SetCursorStyle::DefaultUserShape);
     let _ = term.show_cursor();
     // the providers: each one's input closed, none waited for. Each ends the request it is answering,
     // reads the end of its input and leaves through its own EXIT trap; its process group of its own keeps

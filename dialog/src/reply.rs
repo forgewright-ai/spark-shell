@@ -4,12 +4,14 @@
 
 use crate::scrub::scrub;
 
-/// What the reply says: a step done, a step refused, or a note (wait, still loading).
+/// What the reply says: a step done, a step refused, a note, or an answer summary.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Mark {
     Done,
     Refused,
     Note,
+    /// The full answer is in Conversation; its summary is only for other views.
+    Answer,
 }
 
 #[derive(Clone, Debug, PartialEq)]

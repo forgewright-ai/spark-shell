@@ -8,7 +8,7 @@ use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, 
 use crate::palette::Palette;
 use crate::progress;
 use crate::reply::Mark;
-use crate::scrub::{cells, cut, cut_words};
+use crate::scrub::{cells, cut, cut_middle, cut_words};
 use crate::sixel::Viewport;
 use crate::transition::Reel;
 use ratatui::buffer::{Buffer, CellDiffOption};
@@ -33,11 +33,11 @@ pub const SEP: &str = " \u{b7} ";
 /// The rows, fixed whatever is typed or attached (#196): the prompt's two, what a key does, the reply row,
 /// where the list starts.
 pub const PROMPT_Y: u16 = 2;
-pub const HINT_Y: u16 = 5;
+pub const HINT_Y: u16 = 4;
 pub const REPLY_Y: u16 = 6;
 pub const CONTENT_Y: u16 = 7;
-/// The bottom: air, the rule, the footer, air.
-pub const BOTTOM: u16 = 4;
+/// The bottom: air, the divider, a blank row, the controls, air.
+pub const BOTTOM: u16 = 5;
 /// Where a destination's purpose starts: past the longest name (Notifications) and two cells of air.
 pub const PURPOSE_X: u16 = 17;
 /// A palette's chip: a small terminal in the palette's own colors, this many cells wide.
@@ -99,13 +99,7 @@ impl Pen<'_> {
         if x >= self.w || y >= self.h {
             return x;
         }
-        let fg = if on {
-            self.pal.accent
-        } else if quiet {
-            self.pal.muted
-        } else {
-            self.pal.fg
-        };
+        let fg = if quiet && !on { self.pal.muted } else { self.pal.accent };
         let mut st = Style::default().fg(fg);
         if focus {
             st = st.bg(self.pal.lit);
@@ -151,6 +145,29 @@ pub fn wrap(text: &str, w: usize) -> Vec<String> {
         out.push(line);
     }
     out
+}
+
+/// Readable conversation lines: keep paragraphs and every byte of long tokens.
+/// Prefer a word boundary; unlike compact labels, answers must not be cut.
+pub fn conversation_rows(text: &str, w: usize) -> Vec<String> {
+    let mut rows = vec![];
+    for mut line in text.split('\n') {
+        loop {
+            let prefix = cut(line, w.max(2));
+            if prefix.len() == line.len() {
+                rows.push(line.to_string());
+                break;
+            }
+            let end = prefix
+                .rfind(' ')
+                .filter(|&i| !prefix[..i].trim().is_empty())
+                .map(|i| i + 1)
+                .unwrap_or(prefix.len());
+            rows.push(line[..end].to_string());
+            line = &line[end..];
+        }
+    }
+    rows
 }
 
 /// Where things landed, for a click: the cursor, each pickable row's line and its index, each
@@ -243,8 +260,12 @@ pub fn draft_rows(text: &str, cursor: usize, w: usize) -> (Vec<String>, (usize, 
 pub const FULL_WIDTH: u16 = 120;
 
 /// The width the dialog's own column has at this size: its words wrap to it.
-pub fn column_width(w: u16, _h: u16) -> u16 {
-    w.min(FULL_WIDTH)
+pub fn column_width(w: u16, view: &View) -> u16 {
+    match view {
+        View::Home => w.min(WIDTH),
+        View::Preview => w,
+        _ => w.min(FULL_WIDTH),
+    }
 }
 
 /// A column wider than the dialog's own size: a list there shows its rows' wide columns and whole names (#141).
@@ -312,7 +333,7 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     }
     // a preview opened on Space keeps the whole screen: its zoom and its drag want the room (#120); elsewhere the column
     // in the middle (#141)
-    let cw = if app.view == View::Preview { w } else { column_width(w, h) };
+    let cw = column_width(w, &app.view);
     if cw == w {
         let mut d = draw_column(app, pal, clock, buf);
         d.columns = (0, w);
@@ -352,7 +373,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     // the march sits before the date while something runs; where the window is too narrow for both,
     // it takes the date's place, which comes back when the work is done
     let clock_x = right.saturating_sub(2 + cells(clock) as u16);
-    let busy = app.cfg.progress && app.thinking();
+    let busy = app.cfg.progress && app.thinking() && app.pending.is_none();
     let title = app.title();
     let narrow = clock_x.saturating_sub(12) < x + cells(&title) as u16 + 1;
     let (end, march_x) = match (busy, narrow) {
@@ -407,7 +428,6 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     }
     drawn.cursor = (tx + cc as u16, PROMPT_Y + (cr - top) as u16);
 
-    let hint_y = HINT_Y;
     reply_row(app, &mut pen, REPLY_Y, &mut drawn);
 
     // the content first: a preview's text decides the pages its key row offers
@@ -444,72 +464,108 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         drawn.picks = content(app, &mut pen, top, bottom, &mut drawn);
     }
 
-    // one gap between keys on every row of a window, so a key keeps its place from one row to the next (#166):
-    // two cells in the dialog's column, three where full screen gives it room; a row still too wide for a
-    // small window closes them further (#127)
-    let mut hint = app.hint_with(drawn.pages.max(1));
-    if w <= WIDTH {
-        for (t, k) in hint.iter_mut() {
-            if !*k && t.len() > 2 && t.chars().all(|c| c == ' ') {
-                t.pop();
-            }
-        }
-    }
-    let span = |v: &[(String, bool)]| v.iter().map(|(t, k)| cells(t) + if *k { 2 } else { 0 }).sum::<usize>();
-    while span(&hint) > w.saturating_sub(4) as usize {
-        let mut closed = false;
-        for (t, k) in hint.iter_mut() {
-            if !*k && t.len() > 2 && t.chars().all(|c| c == ' ') {
-                t.pop();
-                closed = true;
-            }
-        }
-        if !closed {
-            break;
-        }
-    }
-    let mut x = 2;
-    for (t, key) in hint {
-        // still too wide (a provider's long question): cut at the window's edge, the words at a word, never a key
-        // drawn in part (#196)
-        let need = cells(&t) as u16 + if key { 2 } else { 0 };
-        if x + need > w.saturating_sub(2) {
-            if !key {
-                pen.put(x, hint_y, &cut_words(&t, w.saturating_sub(x + 2) as usize), pal.muted, false, false);
-            }
-            break;
-        }
-        let start = x;
-        x = if key {
-            pen.chip(x, hint_y, &t, false)
-        } else {
-            pen.put(x, hint_y, &t, pal.muted, false, false)
-        };
-        if key && start < x && x <= w && hint_y < h {
-            // a chip of one key, or of a few (the arrows, + -, < >): each key its share of the chip
-            let parts: Vec<HintKey> = t.split(' ').filter_map(key_of).collect();
-            if parts.len() == t.split(' ').count() {
-                let n = parts.len() as u16;
-                for (k, a) in parts.into_iter().enumerate() {
-                    let k = k as u16;
-                    drawn.keys.push((start + (x - start) * k / n, start + (x - start) * (k + 1) / n, hint_y, a));
-                }
-            }
-        }
-    }
+    contextual_keys(app, &mut pen, &mut drawn);
 
-    // the rule, then the footer: Attach, the model, Talk at the left; the mic at the right
+    // The divider, a full blank row, then the anchored controls.
     for x in 2..w - 2 {
-        pen.put(x, h - 3, RULE, pal.lit, false, false);
+        pen.put(x, h - 4, RULE, pal.lit, false, false);
     }
+    pen.put(w / 2 - 1, h - 4, " \u{25c7} ", pal.accent, false, false);
     footer(app, &mut pen, h - 2, &mut drawn);
     drawn
+}
+
+/// One row at normal width. Narrow windows may use the reserved second row;
+/// complete action groups wrap together, and keycaps are never clipped.
+/// Navigation and Ask take priority; secondary shortcuts remain in Help.
+fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
+    let mut groups: Vec<Vec<(String, bool)>> = vec![vec![]];
+    for (text, key) in app.hint_with(drawn.pages.max(1)) {
+        if !key && text.trim().is_empty() {
+            groups.push(vec![]);
+        } else {
+            groups.last_mut().unwrap().push((text, key));
+        }
+    }
+    groups.retain(|g| !g.is_empty());
+    if let Some(i) = groups.iter().position(|g| g.iter().any(|(t, k)| *k && t == "Esc")) {
+        let back = groups.remove(i);
+        groups.insert(0, back);
+    }
+    if app.mode == Mode::Normal {
+        if app.pending.is_some() {
+            groups.retain(|g| !g.iter().any(|(t, k)| !k && t == "Thinking"));
+        }
+        let label = if app.pending.is_some() && app.cfg.progress {
+            format!("Ask {} ", progress::bar(app.work(), app.frame))
+        } else {
+            "Ask ".into()
+        };
+        groups.insert(groups.len().min(1), vec![(label, false), ("Ctrl+Enter".into(), true)]);
+    }
+    let right = pen.w.saturating_sub(2);
+    let last_y = HINT_Y + u16::from(pen.w < WIDTH);
+    let (mut x, mut y) = (2, HINT_Y);
+    for group in groups {
+        let mut parts: Vec<_> = group
+            .into_iter()
+            .map(|(t, key)| {
+                let actions: Vec<_> = if key { t.split(' ').filter_map(key_of).collect() } else { vec![] };
+                let label = if actions.is_empty() {
+                    t
+                } else {
+                    actions.iter().map(|a| app.cfg.keys.label(*a)).collect::<Vec<_>>().join(" ")
+                };
+                (label, key, actions)
+            })
+            .collect();
+        let span = |parts: &[(String, bool, Vec<HintKey>)]| parts.iter().map(|(t, k, _)| cells(t) + if *k { 2 } else { 0 }).sum::<usize>() as u16;
+        let mut width = span(&parts);
+        let room = right.saturating_sub(if y < last_y { 2 } else { x });
+        if width > room && parts.iter().any(|(_, _, actions)| actions.contains(&HintKey::Ask)) {
+            // The optional progress animation yields to a long configured
+            // shortcut; Ask must remain visible at the minimum width too.
+            parts[0].0 = "Ask ".into();
+            width = span(&parts);
+        }
+        if x + width > right && y < last_y && width <= right - 2 {
+            x = 2;
+            y += 1;
+        }
+        if x + width > right {
+            // Explanatory text can end at a word; an action is shown whole or
+            // left to Help, never as a label without its configured key.
+            if parts.iter().all(|(_, k, _)| !k) {
+                let text = parts.iter().map(|(t, ..)| t.as_str()).collect::<String>();
+                pen.put(x, y, &cut_words(&text, right.saturating_sub(x) as usize), pen.pal.fg, false, false);
+            }
+            continue;
+        }
+        let group_start = x;
+        let focused = app.chip_focus == Some(5) && parts.iter().any(|(_, _, a)| a.contains(&HintKey::Ask));
+        for (text, key, actions) in parts {
+            let start = x;
+            x = if key {
+                pen.chip(x, y, &text, focused)
+            } else {
+                pen.put(x, y, &text, pen.pal.accent, false, focused)
+            };
+            let n = actions.len() as u16;
+            for (i, action) in actions.into_iter().enumerate() {
+                let i = i as u16;
+                let a = if n == 1 { group_start } else { start + (x - start) * i / n };
+                drawn.keys.push((a, start + (x - start) * (i + 1) / n, y, action));
+            }
+        }
+        x += 2;
+    }
 }
 
 /// The action of a key named on a chip.
 fn key_of(k: &str) -> Option<HintKey> {
     Some(match k {
         "Enter" => HintKey::Enter,
+        "Ctrl+Enter" => HintKey::Ask,
         "Esc" => HintKey::Escape,
         "Shift+Enter" => HintKey::Newline,
         "Tab" => HintKey::Tab,
@@ -517,7 +573,7 @@ fn key_of(k: &str) -> Option<HintKey> {
         "\u{2192}" => HintKey::Right,
         "\u{2191}" => HintKey::Up,
         "\u{2193}" => HintKey::Down,
-        "+" | "-" | "<" | ">" => HintKey::Char(k.chars().next()?),
+        "+" | "-" | "0" | "<" | ">" => HintKey::Char(k.chars().next()?),
         // Space previews the lit file, its chip as clickable as the others (#150)
         "Space" => HintKey::Char(' '),
         _ => return None,
@@ -527,23 +583,21 @@ fn key_of(k: &str) -> Option<HintKey> {
 fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     let w = pen.w;
     let chips = app.chips();
-    let mic = if app.mode == Mode::Listening { "Listening" } else { "Mic" };
+    let mic = if app.mode == Mode::Listening { "Cancel" } else { "Talk" };
     // the mic while talk is click to talk; how talk works is a setting
     let mic_on = app.cfg.talk && app.talk == Talk::Click;
     let mic_w = if mic_on { cells(mic) as u16 + 2 } else { 0 };
+    let mic_x = w - 1 - mic_w;
+    let right = if mic_on { mic_x - 1 } else { w - 1 };
+    let short_model = format!("Model {}", MENU);
+    let model_w = if app.cfg.model { cells(&short_model) as u16 + 3 } else { 0 };
+    let remove_w = if chips.contains(&4) { 9 } else { 0 };
     let mut x = 1;
-    if let Some(pv) = app.preview.as_ref().filter(|_| app.view == View::Preview) {
-        // the file shown goes with the words: Attach names it, in the accent where spark can read it (#120); a page that is no
-        // file's (an app, a network, #169) goes with nothing, and names nothing here
-        let reads = pv.shown.as_ref().is_some_and(|pg| pg.attach.is_some());
-        if reads || app.providers.get(pv.prov).is_some_and(|p| p.label == "files") {
-            let name = cut(&pv.row().text, (w / 2) as usize);
-            x = pen.control(x, y, &name, false, reads, !reads) + 1;
-        }
-    } else if chips.contains(&0) {
-        // the file attached is named where Attach was, in the accent, with its Remove: the footer, never a row that
-        // pushes the list down (#196)
-        let name = app.attachment.as_deref().map(|a| cut(a.rsplit('/').next().unwrap_or(""), (w / 4) as usize));
+    if chips.contains(&0) {
+        // Reserve the other controls, their padding and gaps before shortening
+        // an attachment. A long file name must never steal Remove or Cancel.
+        let room = right.saturating_sub(x + remove_w + model_w + 2).min(w / 4);
+        let name = app.attachment.as_deref().map(|a| cut_middle(a.rsplit('/').next().unwrap_or(""), room as usize));
         let e = pen.control(x, y, name.as_deref().unwrap_or("Attach"), app.chip_focus == Some(0), name.is_some(), false);
         drawn.chips.push((x, e, y, 0));
         x = e + 1;
@@ -553,29 +607,38 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
         drawn.chips.push((x, e, y, 4));
         x = e + 1;
     }
-    // the row the words are for, a muted note in the room left (#196)
+    let mut note_right = right;
+    if app.cfg.model {
+        let full = app.model_name.as_ref().map_or_else(
+            || "No model".into(),
+            |name| format!("{}{}{}", name, SEP, if app.server.is_some() { "remote" } else { "local" }),
+        );
+        let full = format!("{} {}", full, MENU);
+        let name = if cells(&full) + 2 <= right.saturating_sub(x) as usize {
+            &full
+        } else {
+            &short_model
+        };
+        let width = cells(name) as u16 + 2;
+        // Center beneath the diamond when the side controls leave that space;
+        // otherwise move only as far as necessary within the reserved gap.
+        let mx = (w / 2 - width / 2).clamp(x, right - width);
+        let e = pen.control(mx, y, name, app.chip_focus == Some(1), false, false);
+        drawn.chips.push((mx, e, y, 1));
+        note_right = mx.saturating_sub(1);
+    }
+    // Context is optional and uses only space left after the controls.
     if let Some(t) = app.target_label() {
-        let room = w.saturating_sub(x + mic_w + 4) as usize;
-        let model = if app.cfg.model && app.model_name.is_some() { 14 } else { 0 };
-        if room > model + 8 {
-            pen.put(x + 1, y, &cut_words(&t, room - model), pal_muted(pen), false, false);
-            x += cells(&cut_words(&t, room - model)) as u16 + 2;
+        let room = note_right.saturating_sub(x + 1);
+        if room >= 8 {
+            pen.put(x + 1, y, &cut_words(&t, room as usize), pal_muted(pen), false, false);
         }
     }
-    if app.cfg.model && app.model_name.is_some() {
-        let room = (w.saturating_sub(x + mic_w + 6)) as usize;
-        let full = app.model_name.clone().unwrap_or_default();
-        // the model's whole name, or the word for it where the name does not fit whole
-        let name = format!("{} {}", if cells(&full) + 2 <= room { full.as_str() } else { "Model" }, MENU);
-        let e = pen.control(x, y, &name, app.chip_focus == Some(1), false, false);
-        drawn.chips.push((x, e, y, 1));
-    }
     if mic_on {
-        let mx = w - 1 - mic_w;
         let live = chips.contains(&3);
-        let e = pen.control(mx, y, mic, app.chip_focus == Some(3), app.mode == Mode::Listening, true);
+        let e = pen.control(mic_x, y, mic, app.chip_focus == Some(3), app.mode == Mode::Listening, !live);
         if live {
-            drawn.chips.push((mx, e, y, 3));
+            drawn.chips.push((mic_x, e, y, 3));
         }
     }
 }
@@ -584,6 +647,9 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
 /// arrows stand; blank when there is nothing to say. One row, cut to the window: it never moves the list.
 fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     let Some(r) = &app.reply else { return };
+    if r.mark == Mark::Answer && app.view == View::Conversation {
+        return;
+    }
     let pal = pen.pal.clone();
     let w = pen.w;
     let undo = r.undo && app.undo.is_some();
@@ -602,7 +668,7 @@ fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
         4,
         y,
         &cut_words(&r.text, room as usize),
-        if r.mark == Mark::Note { pal.muted } else { pal.fg },
+        if matches!(r.mark, Mark::Note | Mark::Answer) { pal.muted } else { pal.fg },
         false,
         false,
     );
@@ -655,7 +721,7 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
                 PURPOSE_X + ind,
                 y,
                 &cut_words(&words, e.saturating_sub(PURPOSE_X + ind + 4) as usize),
-                pal.muted,
+                pal.fg,
                 false,
                 lit,
             );
@@ -1470,13 +1536,6 @@ fn month(app: &App, pen: &mut Pen, x0: u16, top: u16, bottom: u16, k: i32) -> Op
     Some(end.max(y))
 }
 
-/// A key's sentence up to its first comma, colon or semicolon, with no period: the part the about
-/// shows on one line (#40). "moves the focus, as h, j, k, l do; Shift moves the window." is "moves
-/// the focus".
-fn first_part(s: &str) -> &str {
-    s[..s.find([',', ':', ';']).unwrap_or(s.len())].trim_end_matches('.').trim()
-}
-
 /// The about (#40): spark-shell, its version and licence, and its address; then the keys, each a chip
 /// and the first part of its sentence on one line, in their groups, a group whole or not at all; then
 /// the command that shows every sentence whole, with the ones that have no key (the media keys,
@@ -1484,45 +1543,30 @@ fn first_part(s: &str) -> &str {
 fn about(app: &App, pen: &mut Pen, top: u16, bottom: u16) {
     let pal = pen.pal.clone();
     let w = pen.w;
-    let Some(i) = app.about_idx else { return };
-    let p = &app.providers[i];
-    let x = pen.put(2, top, &format!("spark-shell {}", p.version), pal.fg, false, false);
-    pen.put(x, top, &format!("{}MIT", SEP), pal.muted, false, false);
-    if let Some(addr) = p.rows.rows.iter().find(|r| r.id == "about:address") {
-        pen.put(2, top + 1, &addr.text, pal.accent, false, false);
-    }
-    let mut groups: Vec<Vec<(&str, &str)>> = vec![];
-    let mut group: Option<&Option<String>> = None;
-    for r in &p.rows.rows {
-        let Some(key) = r.columns.first() else { continue };
-        if r.tool.is_some() || r.children.is_some() {
-            continue;
-        }
-        if group != Some(&r.group) {
-            groups.push(vec![]);
-            group = Some(&r.group);
-        }
-        if let Some(g) = groups.last_mut() {
-            g.push((key, first_part(&r.text)));
-        }
-    }
-    // the sentences line up one cell past the widest chip, and keep 20 cells at least
-    let widest = groups.iter().flatten().map(|(k, _)| cells(k) as u16 + 2).max().unwrap_or(0);
-    let col = (2 + widest + 1).min(w.saturating_sub(22));
-    let last = bottom.saturating_sub(1); // the command's line, a blank row above it
-    let mut y = top + 3;
-    for g in &groups {
-        if y + g.len() as u16 + 1 > last {
-            break;
-        }
-        for (key, said) in g {
-            pen.chip(2, y, key, false);
-            pen.put(col, y, &cut_words(said, w.saturating_sub(col + 2) as usize), pal.fg, false, false);
+    let version = app
+        .about_idx
+        .map(|i| app.providers[i].version.as_str())
+        .filter(|v| !v.is_empty())
+        .unwrap_or(env!("CARGO_PKG_VERSION"));
+    let lines = [
+        format!("spark-shell {}", version),
+        "home: local discovery and optional assistance".into(),
+        "github.com/forgewright-ai/spark-shell".into(),
+        "MIT License".into(),
+        "Credits: forgewright contributors; Ratatui and Crossterm; the native tools of your OS.".into(),
+        "Full license and acknowledgements: LICENSE and CREDITS.md in the project.".into(),
+    ];
+    let mut y = top;
+    for text in lines {
+        for line in wrap(&text, w.saturating_sub(4) as usize) {
+            if y >= bottom {
+                return;
+            }
+            pen.put(2, y, &line, pal.fg, false, false);
             y += 1;
         }
         y += 1;
     }
-    pen.put(2, y, "More on the keys: spark-shell desktop keys", pal.muted, false, false);
 }
 
 /// A rendered buffer as text and tokens: the 60 characters of each row,

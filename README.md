@@ -174,7 +174,7 @@ explain each part. If something fails, run `spark-shell check` and
     spark-shell want --json "WORDS"   the steps spark picks, as JSON; none run
     spark-shell want --attach FILE "WORDS"
                                       ask about a text file (txt md)
-    spark-shell dialog [SECTION]      open the dialog (Super+d), SECTION first
+    spark-shell dialog [SECTION]      open home (Super+Space), SECTION first
     spark-shell panel [SECTION]       the dialog's list as text, for scripts
     spark-shell provide SECTION       a dialog section as an MCP server on stdio
     spark-shell sbom [NAME]           list the installed software, or one
@@ -353,7 +353,7 @@ dialog offers it as `layout  also open btop`; press Enter to open it.
 Each app you name opens once. Say `fullscreen` and the main
 window fills the screen alone. Say `workspace 3` and the layout opens
 there.
-On the desktop, `Super+d` opens the dialog, and the words go at its
+On the desktop, `Super+Space` opens or focuses home, and the words go at its
 prompt.
 
 `spark-shell layout save writing` saves the last layout, and
@@ -384,13 +384,13 @@ no list, any app with a desktop entry is allowed.
 
 ## Keys
 
-Type `spark-shell desktop keys`. You get these lines. The first
-desktop start shows the keys in the about dialog, one line each, and
-the dialog's `about` row shows them again.
+Type `spark-shell desktop keys` for the actual configured bindings and their
+named actions. Home's Help lists shortcuts; About contains project details.
+The default desktop actions include:
 
     Super+Return opens a terminal window.
-    Super+d opens the dialog: a place to go, or say what you would like.
-    Super+s opens the dialog in spark chat, and Ctrl-D closes it.
+    Super+Space opens or focuses home, including its conversation view.
+    Super+Alt+Space switches focus between floating and tiled windows.
     Super+Shift+q closes the window.
     Super+Shift+c reloads sway after spark-shell on.
     Super+Shift+e leaves the desktop.
@@ -726,7 +726,7 @@ the same for sound out, the mic mute key for the mic, and the
 brightness keys for the screen.
 
 A click on any other block opens the dialog with that block first.
-The sign at the end opens it as Super+d does.
+The sign at the end opens or focuses home as Super+Space does.
 The signs the bar wears are the dialog's: a warning sign with the wire
 down or a low battery, a red dot for the mic while a program records.
 
@@ -758,22 +758,30 @@ The dialog is one window in the middle of the screen, 60 by 40 cells,
 windows behind it, with air around its text and no frame. On a smaller
 screen sway keeps the window inside it, and the dialog fits its rows to
 the window, down to 36 by 20 cells.
-Super+d opens it. Super+s opens it in spark chat. A click on a bar
-block opens that block's section: the clock opens the Calendar. Esc
-closes it, and so does the key that opened it, pressed again, and so
-does a click on the x in its top right corner. A pick that puts a
-window in front (an app, a file, a terminal, a window, the lock) clears
+Super+Space opens or focuses home. Repeating it retains the same window,
+draft, attachments, view and ongoing request. A bar click uses the same
+entry; if no window exists it opens that section. Esc or the x closes it.
+The root order is Apps, Files, Workspace, Notes, Calendar, Tools, Settings,
+Help, About, Power. Unavailable capabilities explain their availability.
+Help and the conversation are views inside this same process. F2
+switches between the conversation and the previous view without losing a draft.
+`dialog chat` opens this conversation; `spark` remains usable independently.
+
+A click on an application or file still uses the native launch behavior.
+A pick that puts a window in front (an app, a file, a terminal, a window,
+the lock) clears
 the dialog at the click and closes it once the window is there; if the
 step is refused, the dialog comes back with the reason under the keys.
 A window that is
 fullscreen steps aside for the dialog and is fullscreen again when the
 dialog closes with nothing opened.
 
-Full screen (Super+f), the dialog is one column in the middle of the
-screen, up to 120 cells wide, and the space goes to its lists: in Files
+Full screen (Super+f), home keeps one centered column, at most 60 cells
+wide. Its header, prompt, keys, menu and footer share that measure.
+Wider views can use up to 120 cells, and the space goes to their lists: in Files
 a whole name, the kind (picture, sound, PDF, Word), the size, and the
 date with the time; the Calendar shows as many months across as fit;
-the home and Settings write each state whole. A list ends where its
+Settings writes each state whole. A list ends where its
 words end, its arrows right after them. The preview Space opens takes
 the whole screen.
 
@@ -799,26 +807,29 @@ prompt, a light bouncing while it thinks and a bar growing and shrinking
 while a model loads. Nothing else shows it: a step shows on its row,
 and a page that takes a moment has its waiting animation.
 Under it is the prompt, two rows tall:
-type a request, Enter sends it, and Shift+Enter starts a new line (Alt+Enter
-where a terminal cannot tell the two apart). A longer draft scrolls
-inside the two rows, and a paste keeps its lines and never sends. The
-row under the prompt says what Esc does now, first, then what Enter
-does to the lit row, then what only some rows have; with nothing typed
-it says only what Esc does. Each key keeps its place there from one row
-or file to the next, and a click on one does what the key does. Back
+type to find local actions, Enter performs the selected native action,
+and Shift+Enter starts a new line. Ctrl+Enter or the clickable Ask control
+explicitly sends the request. Unmatched text never sends automatically.
+Credential fields, confirmations and provider forms cannot use Ask.
+A longer draft scrolls inside the two rows, and a paste keeps its lines
+and never sends. The
+row under the prompt puts navigation first and keeps Ask visible. At the
+normal width it is one row; narrow windows can use a second reserved row.
+Action groups and configured keycaps stay whole. Secondary hints use the
+remaining space; Help lists every shortcut, including conversation.
+A click on a label or its keycap does what the key does. Back
 is there, never at the top. A key is drawn as a key, and nothing else
 is.
 
-The home lists its places, each with what it holds now: Apps (the
-apps by name), Files (your home folder), Workspace (the windows open
-and the layouts saved), Notes (how many, and the newest), Calendar (the
-next reminder, or none ahead), Settings (the network and the theme),
-About (the version) and Power (lock, log out, restart, shut down).
+The home gives each place a purpose description. Workspace shows open
+windows and saved layouts, Notes its count and newest note, and Calendar
+the next reminder when that context is available. All ten places stay
+visible; a missing capability explains its availability when opened.
 Settings stands in groups: sound and microphone; Wi-Fi, Bluetooth and
 the network; storage, display, keyboard and pointer; theme, wallpaper,
 the bar and notifications; power, battery, Talk and Connections. A
-place shows only where this
-machine has it. The down arrow moves from the prompt into the
+setting shows only where this machine has it. The down arrow moves from
+the prompt into the
 list, and up from the first row comes back. A row wears a sign where
 there is a state: a dot is in use or connected, a ring is available, a
 check is current or saved, a small triangle opens something. A row
@@ -962,9 +973,10 @@ its first and its last row.
   are never read, and never written.
 - Preview: one file, or the page of any row, as large as the content
   area allows, read only. The header names its folder or its place, the
-  facts row at the area's foot says what it is, and Attach in the footer
-  names a file: words at the prompt go to spark with it. Up and down go
-  to the previous and next of the list, left and right turn the page,
+  facts row at the area's foot says what it is. Selecting or previewing
+  a file does not attach it; use Attach to authorize context for Ask.
+  Up and down go to the previous and next of the list, left and right turn
+  the page,
   Enter does what the row does (opens the file in its app, an app,
   connects a network), and Esc, or Space with nothing typed, goes back
   with it lit (on a sound or a video, Space plays it). The key row
@@ -976,7 +988,7 @@ its first and its last row.
   Markdown file (its headings bold), code (its lines numbered) and JSON
   (indented) show as text, 128 kB of it at most. A picture, a PDF's page
   and a video's frame are drawn as they are, and zoom and turn: with
-  nothing typed, `+` (or `=`) and `-` zoom along 25 to 800 %, `0` fits,
+  nothing typed, `+` and `-` zoom along 25 to 800 %, `0` fits,
   `<` and `>` turn a quarter; zoomed, the arrows and a drag move it and
   Esc fits it again. 100 % is a picture's own pixels and a PDF page at 96
   pixels an inch, and past it a picture's pixels stay sharp; a turn is
@@ -1005,14 +1017,17 @@ say: a cross and the reason for a step refused, a check and the receipt
 for a command you typed, and Undo at the right where the step can be
 taken back (alone, for a click). A new reply takes the place of the
 last; Esc clears it, and so does leaving the view. Typing undo still
-takes the step back. spark's answer is the reply row too; an answer
-longer than that row is kept whole at Home, above the places, under
-the words that asked it, and never over a section's list. While
+takes the step back. The full model answer appears once in Conversation,
+under the words that asked it. If it arrives in another view, a summary
+in the reply row makes it visible without changing the view or draft. While
 commands spark planned wait in the two rows of the prompt, the reply
-row names them all (`run: ...`). At the bottom, under a
-rule, the controls in plain text: Attach, the model, and the mic at the
-right. Tab moves through them and the one in focus is lit; Shift+Tab
-goes back.
+row names them all (`run: ...`). At the bottom, a full blank row separates
+the diamond divider from the controls. Content reserves space for the
+whole footer. Its controls are plain text: Attach at the left, the
+model/source centered when it fits, and the mic at the right. Narrow
+windows shorten attachment names and use Model when needed, keeping
+Remove and Talk/Cancel separate.
+Tab moves through them and the one in focus is lit; Shift+Tab goes back.
 
 - Attach picks one text or Markdown file from your home (the types
   `DIALOG_ATTACH_TYPES` names), for the next question only: its name
@@ -1031,8 +1046,8 @@ goes back.
   server or a cloud provider is not available yet, and is shown as such.
 - The mic shows while Settings > Talk is click the mic (off hides it).
   Clicking it listens through spark's own voice until a pause and puts
-  the words in the draft at the cursor, to read and change; Enter still
-  sends. Esc, a click on the mic again, or leaving the window stops it,
+  the words in the draft at the cursor, to read and change; Ask sends
+  explicitly. Esc, Cancel, or leaving the window stops it,
   and nothing is kept. Holding a key to talk waits for a newer spark.
 
 `DIALOG_ATTACH`, `DIALOG_MODEL` and `DIALOG_TALK` hide the controls.
@@ -1055,15 +1070,14 @@ rests for a moment. A section's name holds its rows too: `wifi` lists
 the networks. The row your words name is lit, and
 Enter runs it with no model call: `nord` and Enter is the palette nord
 (`drac` lights dracula). Words that name no row stay at the prompt,
-and the key row says Ask: Enter sends them. A place's name alone, as
+and Enter preserves them. Ask explicitly sends them. A place's name alone, as
 `settings` or `calendar`, opens it. A command in the dialog's own
 words, as `display brightness 30` or `theme dracula`, runs at once,
-with no model. Other
-words are one request to spark: the words, the view, the selected row
-and the names the steps take now (the open view's rows, then every
-ready provider's layouts, networks, windows and notes, as written) go
-with every ready provider's tools, and spark answers with the steps that
-do it, under a grammar, in one call. The steps come back as commands in
+with no model. Ask sends the draft, explicitly attached context and the
+ready providers' tool schemas to spark in one bounded call. Browsed paths,
+selected rows and
+other providers' current values are not implicitly added to that request.
+The steps come back as commands in
 the prompt, one a line: Enter runs them in order, and a step that loses
 something (forget a network, close a window, remove a device, delete a
 layout or a theme, log out, restart, shut down) still asks for a typed
@@ -1072,7 +1086,10 @@ carries its Undo. A step that names a row by a near
 miss ("everforest light" for everforest-light) takes the row's own name
 when one row alone fits, and the proposal shows it; a miss with no one
 fit is refused in the step's own words. Esc drops them, and a change
-makes them typed words. An answer to a question is said in place. A
+makes them typed words. Full answers and proposed steps are retained in the
+scrollable conversation view. A proposal always waits for review, even if
+its text matches the request. Duplicate Ask submissions are suppressed;
+a new draft can be written while the current request runs. A
 provider that needs one more thing asks for it in the prompt (a
 reminder with no time asks when), and Esc there is not done. While
 spark reads the words the list keeps filtering: a row picked meanwhile
@@ -1081,6 +1098,47 @@ back, and a request that gets no answer comes back as typed. Nothing
 spark plans runs before Enter, and spark is not asked again after a
 step: a request is one call. The Providers
 section says what goes to spark.
+
+Home bindings are named actions in `~/.config/spark-shell/home-keys.json`:
+
+```json
+{"ask": "Ctrl+Enter", "newline": "Shift+Enter", "conversation": "F2"}
+```
+
+Help lists every action, including navigation, editing, preview and quit.
+An override replaces the original binding; unknown actions and conflicts
+are reported before home starts. The visible keycaps use that same
+map, and clicking them dispatches the same action. Restart home after edits.
+Foot's keyboard protocol distinguishes Ctrl+Enter and Shift+Enter.
+
+Desktop actions use `~/.config/spark-shell/desktop-keys.json`:
+
+```json
+{"home.open": "Super+Space", "window.focus-mode": "Super+Alt+Space"}
+```
+
+`spark-shell desktop keys` lists every configurable desktop action. Managed
+bindings are checked for conflicts before rendering. Run `spark-shell on`
+and reload Sway after editing this file. Custom raw `config.d` bindings are
+outside this map and must also be checked in the compositor's config.
+Super+D and Super+S are no longer default entry points.
+
+This delivery establishes the shared root, deliberate Ask, conversation
+view, configurable actions and one desktop entry. Two-pane Files with
+source/destination copy and move, complete operation progress/cancellation,
+and a voice Stop-to-transcribe protocol remain subsequent increments.
+Discarding a model request ignores its late response and restores its
+draft; it does not promise to stop computation in spark.
+The current voice helper supports pause-to-finish and cancellation; Cancel
+does not promise transcription. Tools does not fabricate a procedure or
+data service. Existing native placement stays with Sway; further Workspace
+placement controls remain to be completed against the product handoff.
+
+Native validation: `python3 tests/home_desktop_proof.py BINARY DIRECTORY`
+uses an isolated headless Sway with real foot and virtual keyboard input.
+`SPARK_SHELL_DIALOG=/absolute/path/to/spark-dialog` selects a development
+binary explicitly; normal installations retain signed-release verification.
+Rendered native evidence is in `tests/evidence/home-shared-surface/`.
 
 The dialog is a terminal program: keyboard, focus and contrast are its
 own, but a screen reader sees text, not controls with names.
