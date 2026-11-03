@@ -28,6 +28,15 @@ Each of these says what it will change and asks `Continue? [y/N]`
 first. `--dry-run` shows every change and changes nothing.
 `spark-shell off` undoes it all. The packages stay installed.
 
+On Arch, installing missing packages uses `pacman -Syu --needed`: it
+refreshes the package lists and upgrades the whole system in the same
+transaction. Pacman asks before applying it, even with `--yes`. This
+avoids downloading old package versions from stale package lists. If
+installation fails, setup stops before changing shell or desktop files;
+fix the package-manager error and run the same setup command again.
+For persistent mirror 404 errors, see the
+[Arch pacman guide](https://wiki.archlinux.org/title/Pacman).
+
 ## Install
 
     git clone https://github.com/forgewright-ai/spark-shell ~/.spark-shell

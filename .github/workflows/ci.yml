@@ -101,6 +101,7 @@ jobs:
           python3 -I tests/open_path_test.py
           python3 -I tests/office_test.py
           python3 -I tests/network_test.py
+          python3 -I tests/install_test.py
           python3 -I tests/network_dhcpcd_test.py
           python3 -I tests/display_test.py
           python3 -I tests/layout_terminal_test.py
