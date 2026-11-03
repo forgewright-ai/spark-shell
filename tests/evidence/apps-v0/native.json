@@ -1,0 +1,146 @@
+{
+  "binary_sha256": "426682f9eada930c59696561bba301557d010e1b2fb665ec94f1d00ece13ed87",
+  "environment": "Void Linux; native headless Sway, foot, GIO; 1440x1000; monospace 12; scale 1",
+  "data": "System desktop entries; temporary Apps preferences; model and voice availability fixtures",
+  "usable_area": {
+    "x": 0,
+    "y": 28,
+    "width": 1440,
+    "height": 972
+  },
+  "captures": {
+    "apps-compact": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "apps-fullscreen": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 1000,
+      "full_output": true
+    },
+    "apps-snap-left": {
+      "x": 0,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "apps-snap-right": {
+      "x": 720,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "details-compact": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "details-fullscreen": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 1000,
+      "full_output": true
+    },
+    "details-snap-left": {
+      "x": 0,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "details-snap-right": {
+      "x": 720,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "hidden-search": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "minimum-long-metadata": {
+      "x": 522,
+      "y": 306,
+      "width": 396,
+      "height": 416,
+      "full_output": true
+    },
+    "minimum-technical-attachment": {
+      "x": 522,
+      "y": 306,
+      "width": 396,
+      "height": 416,
+      "full_output": true
+    },
+    "minimum-preferences-attachment": {
+      "x": 522,
+      "y": 306,
+      "width": 396,
+      "height": 416,
+      "full_output": true
+    },
+    "no-matches": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "missing-metadata": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "launch-failure": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "empty-catalog": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "discovery-failure": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    }
+  },
+  "checks": [
+    "Real system Apps and on-demand btop Details render in compact, fullscreen and equal work-area snaps",
+    "Returning from Details restores the app search; active query and selected app survive all four modes; clicked Right keycap opens Details",
+    "Hide saves to local preferences, removes search results, labels hidden entries, and restores without editing launchers",
+    "Native category creation, rename, mapping edit and confirmed deletion persist and reclassify",
+    "At 36x20, long technical values reflow, original launcher path copies, preferences scroll above the reserved populated footer, and Remove has a current hit target",
+    "Enter and click both launch the installed foot desktop entry; windows outlive the helper; confirmed receipts stay in Apps",
+    "The real installed Terminal=true btop entry launches through GIO into foot and its window is confirmed",
+    "With two real btop windows, saved Focus existing selects the most recently focused match; Enter and click share it without opening a third",
+    "Focus existing starts the installed btop application when no matching window remains",
+    "After restarting home, btop retains its category override, restored visibility and Focus existing preference",
+    "A labelled local desktop-entry fixture shows unavailable package metadata; its declared New window action opens two real foot windows through the saved preference",
+    "Explicit adapter failure fixtures verify empty catalog versus unavailable discovery, retry recovery, and launch failure retaining the search"
+  ]
+}

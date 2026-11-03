@@ -123,6 +123,7 @@ def resize(binary, env):
         signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGWINCH})
         os.execve(binary, [binary, "--composer", ""], env)
     screen = Screen()
+    cursor_queries = []
 
     def wait_for(words, seconds=8):
         until = time.monotonic() + seconds
@@ -131,7 +132,10 @@ def resize(binary, env):
                 return True
             if select.select([fd], [], [], .1)[0]:
                 try:
-                    screen.feed(os.read(fd, 65536))
+                    data = os.read(fd, 65536)
+                    if b"\x1b[6n" in data:
+                        cursor_queries.append(True)
+                    screen.feed(data)
                 except OSError:
                     return False
         return False
@@ -141,12 +145,15 @@ def resize(binary, env):
         assert wait_for(["Find, do, or ask."]), "resize fixture did not open"
         os.write(fd, b"resize draft")
         assert wait_for(["resize draft"]), "draft did not appear"
-        screen = Screen(12, 32)
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 32, 0, 0))
-        assert wait_for(["Make this window larger"], 3), "shrink did not redraw without a key"
-        screen = Screen()
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
-        assert wait_for(["resize draft", "Ask", "\u25c7"], 3), "restore lost the draft or footer"
+        cursor_queries.clear()
+        for _ in range(6):
+            screen = Screen(12, 32)
+            fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 32, 0, 0))
+            assert wait_for(["Make this window larger"], 2), "shrink did not redraw without a key"
+            screen = Screen()
+            fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
+            assert wait_for(["resize draft", "Ask", "\u25c7"], 2), "restore lost the draft or footer"
+        assert not cursor_queries, "resize queried the cursor while another thread owns terminal input"
         ok(True, "resize redraws without SIGWINCH or keyboard input and retains the draft")
     except AssertionError as error:
         ok(False, "resize redraw", str(error))

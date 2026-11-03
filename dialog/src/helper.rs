@@ -19,14 +19,23 @@ pub fn clock() -> String {
 /// Bound input, output and lifetime. Killing this helper cannot cancel an OS
 /// write: it only proposes actions, which the host executes separately.
 pub fn invoke(argv: &[String], input: String) -> Result<String, String> {
+    invoke_bounded(argv, input, 262144, 75, false)
+}
+
+/// Native launch helpers may leave an application running after their receipt.
+/// Their inherited pipes are detached by the adapter before handing off to GIO.
+pub fn invoke_apps(argv: &[String], input: String) -> Result<String, String> {
+    invoke_bounded(argv, input, 1048576, 20, true)
+}
+
+fn invoke_bounded(argv: &[String], input: String, max: u64, seconds: u64, launches: bool) -> Result<String, String> {
     use std::io::{Read, Write};
     use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
-    const MAX: u64 = 262144;
-    if input.len() > MAX as usize {
-        return Err("the request exceeds 256 kB".into());
+    if input.len() > max as usize {
+        return Err(format!("the request exceeds {} kB", max / 1024));
     }
     let Some((cmd, args)) = argv.split_first() else {
         return Err("no spark executable".into());
@@ -51,21 +60,21 @@ pub fn invoke(argv: &[String], input: String) -> Result<String, String> {
     let t = tx.clone();
     std::thread::spawn(move || {
         let mut b = vec![];
-        let r = stdout.take(MAX + 1).read_to_end(&mut b).map(|_| b);
+        let r = stdout.take(max + 1).read_to_end(&mut b).map(|_| b);
         let _ = t.send((1, r));
     });
     std::thread::spawn(move || {
         let mut b = vec![];
-        let r = stderr.take(MAX + 1).read_to_end(&mut b).map(|_| b);
+        let r = stderr.take(max + 1).read_to_end(&mut b).map(|_| b);
         let _ = tx.send((2, r));
     });
-    let deadline = Instant::now() + Duration::from_secs(75);
+    let deadline = Instant::now() + Duration::from_secs(seconds);
     let mut parts: [Option<Vec<u8>>; 3] = [None, None, None];
     let result = (|| loop {
         while let Ok((i, r)) = rx.try_recv() {
             let bytes = r.map_err(|e| e.to_string())?;
-            if bytes.len() > MAX as usize {
-                return Err("the answer exceeds 256 kB".into());
+            if bytes.len() > max as usize {
+                return Err(format!("the answer exceeds {} kB", max / 1024));
             }
             parts[i] = Some(bytes);
         }
@@ -79,12 +88,14 @@ pub fn invoke(argv: &[String], input: String) -> Result<String, String> {
             }
         }
         if Instant::now() >= deadline {
-            return Err("spark did not answer within 75 seconds".into());
+            return Err(format!("helper did not answer within {seconds} seconds"));
         }
         std::thread::sleep(Duration::from_millis(10));
     })();
-    unsafe {
-        libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+    if !launches || result.is_err() {
+        unsafe {
+            libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+        }
     }
     let _ = child.wait();
     result

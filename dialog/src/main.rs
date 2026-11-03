@@ -148,7 +148,11 @@ fn run_job(job: Job, tx: mpsc::Sender<Ev>, listening: Arc<Mutex<Option<u32>>>) {
     match job {
         Job::RunInput(h, argv, input) => {
             std::thread::spawn(move || {
-                let result = spark_dialog::helper::invoke(&argv, input);
+                let result = if matches!(h, spark_dialog::app::Helper::Apps(_)) {
+                    spark_dialog::helper::invoke_apps(&argv, input)
+                } else {
+                    spark_dialog::helper::invoke(&argv, input)
+                };
                 let _ = tx.send(Ev::Helper(h, result));
             });
         }
@@ -350,6 +354,15 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
     }
 }
 
+/// Force a full repaint without querying the cursor. Terminal::clear asks the
+/// input reader for a cursor report; with event::read on another thread that
+/// can block resize until the next key. A fullscreen resize only writes output.
+fn invalidate_frame(term: &mut Terminal<CrosstermBackend<std::io::Stdout>>) {
+    if let Ok(size) = term.size() {
+        let _ = term.resize(Rect::new(0, 0, size.width, size.height));
+    }
+}
+
 fn main() {
     if std::env::args().nth(1).as_deref() == Some("login") {
         login_run::main();
@@ -506,7 +519,7 @@ fn main() {
                     let _ = write!(out, "\x1b]11;#{:02x}{:02x}{:02x}\x1b\\", r, g, b);
                     let _ = out.flush();
                 }
-                let _ = term.clear();
+                invalidate_frame(&mut term);
             }
             shown_preview = None;
             dirty = true;
@@ -535,9 +548,6 @@ fn main() {
             dirty |= app.motion.is_some() || shown_film.is_some();
         }
         if dirty {
-            if let Ok(sz) = term.size() {
-                app.size = (sz.width, sz.height);
-            }
             // a sound's picture read once: its waveform and its spectrum, before it is drawn
             if let Some(pv) = app.preview.as_mut().filter(|pv| pv.heard.is_none()) {
                 if let Some((file, wave)) = pv.shown.as_ref().and_then(|pg| pg.sound.clone()) {
@@ -546,8 +556,11 @@ fn main() {
             }
             let _ = out.write_all(b"\x1b[?2026h");
             let _ = out.flush();
-            let _ = term.draw(|f| {
+            let frame_drawn = term.draw(|f| {
                 let area = f.area();
+                // Use the frame actually being drawn, not an earlier size
+                // query that can race the compositor's next configure event.
+                app.size = (area.width, area.height);
                 let mut b = Buffer::empty(Rect::new(0, 0, area.width, area.height));
                 drawn = ui::draw(&app, &pal, &last_clock, &mut b);
                 let fb = f.buffer_mut();
@@ -561,6 +574,12 @@ fn main() {
                     f.set_cursor_position(drawn.cursor);
                 }
             });
+            let frame_drawn = frame_drawn.is_ok();
+            if !frame_drawn {
+                // SIGWINCH can interrupt an output write. Invalidate the diff
+                // and retry on the next event even when the size is unchanged.
+                invalidate_frame(&mut term);
+            }
             let _ = out.write_all(b"\x1b[?2026l");
             // the mouse still and the frame new: the pointer's shape asked again where it rests
             if let Some((c, r)) = mouse_at {
@@ -687,7 +706,7 @@ fn main() {
                 }
                 _ => shown_film = None,
             }
-            dirty = again;
+            dirty = again || !frame_drawn;
         }
         if app.quit.is_some() {
             break;
@@ -738,15 +757,21 @@ fn main() {
                 // Some launchers do not deliver SIGWINCH to the UI process.
                 // Size is cheap to query; a resize must redraw without a keypress.
                 if terminal::size().is_ok_and(|size| size != app.size) {
+                    app.hover = None;
+                    mouse_at = None;
                     app.stop_video();
                     shown_preview = None;
-                    let _ = term.clear();
+                    invalidate_frame(&mut term);
                     dirty = true;
                 }
                 let was = app.busy();
                 app.tick(Instant::now());
                 // a frame for the march while it shows, and when the work starts or ends; none for work nothing shows (#196)
-                dirty |= frame_for_tick(was, app.busy(), app.cfg.progress && app.thinking());
+                dirty |= frame_for_tick(
+                    was,
+                    app.busy(),
+                    app.cfg.progress && (app.thinking() || app.view == View::Apps && app.apps.pending.is_some()),
+                );
                 // a window still unseen after a moment is shown whatever is drawn: never a dialog that cannot be seen
                 if unseen && started.elapsed() >= Duration::from_millis(1500) {
                     reveal();
@@ -786,12 +811,15 @@ fn main() {
                 dirty = true;
             }
             Ev::Term(Event::Resize(_, _)) => {
+                app.hover = None;
+                mouse_at = None;
                 app.stop_video(); // the frame moves: the player would stand where it was (#125)
                 shown_preview = None;
-                let _ = term.clear();
+                invalidate_frame(&mut term);
                 dirty = true;
             }
             Ev::Term(Event::Key(k)) if k.kind == KeyEventKind::Press => {
+                app.hover = None;
                 dirty = true;
                 // a letter typed while the opening plays lands at the prompt and the opening plays on; Enter, Esc, an
                 // arrow or a click cut it (#138)
@@ -813,7 +841,13 @@ fn main() {
                 app.paste(&p);
                 dirty = true;
             }
+            Ev::Term(Event::FocusGained) => {
+                app.window_focused = true;
+                app.hidden = false;
+                dirty = true;
+            }
             Ev::Term(Event::FocusLost) => {
+                app.window_focused = false;
                 app.focus_lost();
                 dirty = true;
             }
@@ -821,6 +855,10 @@ fn main() {
                 dirty |= frame_for_mouse(m.kind, drag.is_some());
                 // the pointer says what a click does where it is (#129)
                 let dragging = drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_));
+                if m.kind == MouseEventKind::Moved && mouse_at.is_some_and(|old| old != (m.column, m.row)) {
+                    app.hover = Some((m.column, m.row));
+                    dirty = true;
+                }
                 mouse_at = Some((m.column, m.row));
                 let want = pointer_at(&app, &drawn, m.column, m.row, dragging);
                 if want != pointer {

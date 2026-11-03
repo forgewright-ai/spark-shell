@@ -113,6 +113,16 @@ fn started() -> Run {
         pump(&mut app, &rx, |a| a.providers.iter().all(|p| p.ready && !p.tools.is_empty())),
         "the stubs never got ready"
     );
+    app.apps.pending = Some((1, "catalog".into()));
+    app.apps
+        .receive(
+            1,
+            json!({"apps":[
+                {"id":"firefox.desktop", "name":"Firefox", "description":"Web Browser"},
+                {"id":"micro.desktop", "name":"Micro", "description":"Text editor"}
+            ]}),
+        )
+        .unwrap();
     Run { app, rx, asked }
 }
 
@@ -128,6 +138,7 @@ fn list(app: &App) -> Vec<String> {
         .iter()
         .filter_map(|it| match it {
             Item::Heading(h) => Some(format!("# {}", h)),
+            Item::Apps(line) => Some(line.label.clone()),
             Item::Row(p, r) => Some(app.providers[*p].rows.rows[*r].text.clone()),
             Item::Hit(i) => Some(app.hits[*i].1.text.clone()),
             Item::Dest(d) => Some(spark_dialog::app::DESTS[*d].name.to_string()),

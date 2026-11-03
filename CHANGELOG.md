@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Apps v0 lives inside home: native desktop-entry browsing, search, one category
+  per app, editable mappings and overrides, hide/restore, and on-demand Details.
+  Preferences persist by stable desktop identity without changing OS launchers.
+- Application default, supported New window actions and reliable Sway focus use
+  the same keyboard and pointer dispatch. Launch receipts distinguish requests
+  from observed windows, and failures preserve context.
+- Apps and Details share home's centered frame in compact, fullscreen and both
+  snaps. Values reflow at 36x20; drafts survive resizing. Shared links now show
+  hover feedback, and contextual keys can use the reserved second row. Resizing
+  no longer queries a cursor report from a competing input-reader thread.
+
 ## v0.122
 
 The dialog's rule, in the owner's words: typed input gets one reply row

@@ -262,7 +262,7 @@ pub const FULL_WIDTH: u16 = 120;
 /// The width the dialog's own column has at this size: its words wrap to it.
 pub fn column_width(w: u16, view: &View) -> u16 {
     match view {
-        View::Home => w.min(WIDTH),
+        View::Home | View::Apps => w.min(WIDTH),
         View::Preview => w,
         _ => w.min(FULL_WIDTH),
     }
@@ -313,6 +313,28 @@ fn blit(buf: &mut Buffer, part: &Buffer, x: u16, y: u16) {
 
 /// The local date and time as the person's locale writes them; main.rs makes it, this draws it.
 pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
+    let drawn = draw_layout(app, pal, clock, buf);
+    if let Some((x, y)) = app.hover {
+        let controls = drawn
+            .chips
+            .iter()
+            .map(|&(a, b, r, _)| (a, b, r))
+            .chain(drawn.keys.iter().map(|&(a, b, r, _)| (a, b, r)));
+        let hit = controls.into_iter().find(|&(a, b, r)| y == r && x >= a && x < b).or_else(|| {
+            (x >= drawn.columns.0 && x < drawn.columns.1 && drawn.picks.iter().any(|&(r, _)| r == y)).then_some((drawn.columns.0, drawn.columns.1, y))
+        });
+        if let Some((a, b, r)) = hit {
+            for col in a..b.min(buf.area.width) {
+                if r < buf.area.height {
+                    buf[(col, r)].set_bg(pal.lit);
+                }
+            }
+        }
+    }
+    drawn
+}
+
+fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let (w, h) = (buf.area.width, buf.area.height);
     buf.set_style(Rect::new(0, 0, w, h), Style::default().fg(pal.fg));
     // the opening, and the wait after it while the home loads, play alone in the middle of the window: nothing
@@ -475,7 +497,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     drawn
 }
 
-/// One row at normal width. Narrow windows may use the reserved second row;
+/// Use the reserved second row when a complete shortcut group needs it;
 /// complete action groups wrap together, and keycaps are never clipped.
 /// Navigation and Ask take priority; secondary shortcuts remain in Help.
 fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
@@ -492,7 +514,7 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
         let back = groups.remove(i);
         groups.insert(0, back);
     }
-    if app.mode == Mode::Normal {
+    if app.mode == Mode::Normal && !(app.view == View::Apps && app.apps.form()) {
         if app.pending.is_some() {
             groups.retain(|g| !g.iter().any(|(t, k)| !k && t == "Thinking"));
         }
@@ -504,7 +526,7 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
         groups.insert(groups.len().min(1), vec![(label, false), ("Ctrl+Enter".into(), true)]);
     }
     let right = pen.w.saturating_sub(2);
-    let last_y = HINT_Y + u16::from(pen.w < WIDTH);
+    let last_y = HINT_Y + 1;
     let (mut x, mut y) = (2, HINT_Y);
     for group in groups {
         let mut parts: Vec<_> = group
@@ -705,6 +727,19 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
     let w = pen.w;
     let mut arrows = None;
     match it {
+        Item::Apps(line) => {
+            let color = if lit || line.action.is_some() { pal.accent } else { pal.fg };
+            pen.put(line.indent, y, &line.label, color, line.bold, lit);
+            let value_color = if matches!(line.action, Some(crate::apps::Action::Launch(_))) {
+                pal.fg
+            } else {
+                color
+            };
+            pen.put(line.value_x, y, &line.value, value_color, false, lit);
+            if !line.tail.is_empty() {
+                pen.put(w.saturating_sub(3), y, &line.tail, pal.muted, false, lit);
+            }
+        }
         Item::Heading(h) => {
             pen.put(2, y, h, pal.muted, false, false);
         }
@@ -1131,6 +1166,39 @@ fn sound(
     })
 }
 
+// Wrapped control values share their label's selection and pointer target.
+fn item_owner(items: &[Item], mut k: usize) -> usize {
+    while k > 0 && matches!(&items[k], Item::Apps(l) if l.continuation) {
+        k -= 1;
+    }
+    k
+}
+
+fn content_start(items: &[Item], selected: Option<usize>, scroll: usize, room: usize) -> usize {
+    let mut first = scroll.min(items.len().saturating_sub(room));
+    if let Some(s) = selected.filter(|s| *s < items.len()) {
+        first = first.min(s);
+        let last = (s + 1..items.len()).take_while(|&k| item_owner(items, k) == s).last().unwrap_or(s);
+        if last >= first + room {
+            first = (last + 1).saturating_sub(room).min(s);
+        }
+    }
+    first
+}
+
+/// The current body's first line, including selection-driven scrolling. Pages
+/// with long metadata use this same layout when handing focus to text scrolling.
+pub fn body_scroll(app: &App) -> usize {
+    let items = app.items();
+    let all = app.size.1.saturating_sub(BOTTOM + CONTENT_Y) as usize;
+    let room = if items.len() > all { all.saturating_sub(1) } else { all };
+    let selected = app
+        .in_list
+        .then(|| items.iter().enumerate().filter(|(_, it)| app.pickable_item(it)).nth(app.sel).map(|(i, _)| i))
+        .flatten();
+    content_start(&items, selected, app.scroll, room)
+}
+
 fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> Vec<(u16, usize)> {
     let mut at = vec![];
     let items = app.items();
@@ -1140,14 +1208,7 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     let all = bottom.saturating_sub(top) as usize;
     // a list longer than the area keeps its last line to say how many rows sit below
     let room = if n > all { all.saturating_sub(1) } else { all };
-    // the picked row in view; else where Page Up and Page Down left it
-    let mut first = app.scroll.min(n.saturating_sub(room));
-    if let Some(s) = selected.filter(|s| *s < n) {
-        first = first.min(s);
-        if s >= first + room {
-            first = s + 1 - room;
-        }
-    }
+    let first = content_start(&items, selected, app.scroll, room);
     let pal = pen.pal.clone();
     let below = items[..n]
         .iter()
@@ -1206,8 +1267,8 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
     let controls = items.iter().any(|it| row_of(app, it).is_some_and(|r| r.step.is_some() || r.switch.is_some()));
     for (k, it) in items[..n].iter().enumerate().skip(first).take(room) {
         let y = top + (k - first) as u16;
-        let lit = Some(k) == selected;
-        if let Some(n) = picks.iter().position(|i| *i == k) {
+        let lit = Some(item_owner(&items, k)) == selected;
+        if let Some(n) = picks.iter().position(|i| *i == item_owner(&items, k)) {
             at.push((y, n));
         }
         if lit {
