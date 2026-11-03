@@ -254,6 +254,8 @@ EOF
 
 console_stubs() {   # console_stubs Linux|Darwin
     mkdir -p "$H/lx" "$H/root/sys/module/vt/parameters"
+    # Debian console fixtures exercise on without reaching the host package manager.
+    printf '#!/bin/sh\necho "install ok installed"\n' > "$H/lx/dpkg-query"
     printf '#!/bin/sh\nif [ "$1" = -s ]; then echo %s; else exec %s "$@"; fi\n' "$1" "$(command -v uname)" > "$H/lx/uname"
     vga_red='0,170,0,170,0,170,0,170,85,255,85,255,85,255,85,255'
     printf '%s\n' "$vga_red" > "$H/root/sys/module/vt/parameters/default_red"
@@ -5464,6 +5466,7 @@ else
         printf '#!/bin/sh\necho "usermod $*" >> "$HOME/log"\nsed "s/^%s:x:990:.*/&,$3/;s/:,/:/" "$SPARK_SHELL_ROOT/etc/group" > "$HOME/g" && cat "$HOME/g" > "$SPARK_SHELL_ROOT/etc/group"\n' '_seatd' > "$H/lx/usermod"
         printf '#!/bin/sh\necho "gpasswd $*" >> "$HOME/log"\nsed "s/^\\(_seatd:x:990:\\).*/\\1/" "$SPARK_SHELL_ROOT/etc/group" > "$HOME/g" && cat "$HOME/g" > "$SPARK_SHELL_ROOT/etc/group"\n' > "$H/lx/gpasswd"
         printf '#!/bin/sh\nexit 0\n' > "$H/lx/xbps-query"; printf '#!/bin/sh\necho "install ok installed"\n' > "$H/lx/dpkg-query"
+        printf '#!/bin/sh\nexit 0\n' > "$H/lx/rpm"   # Fedora/openSUSE packages are installed in this fixture too
         chmod +x "$H/lx"/*
         login_clone
         : > "$H/log"
