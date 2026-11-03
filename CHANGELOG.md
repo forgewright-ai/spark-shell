@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: Arch setup refreshes package lists and performs a full upgrade
+  with pacman's confirmation when dependencies are missing. A failed
+  package transaction stops setup with a nonzero exit before rendering
+  files or enabling the desktop or login screen. Existing settings stay
+  intact so the same command can be retried after fixing the error.
+
 ## v0.122
 
 The dialog's rule, in the owner's words: typed input gets one reply row

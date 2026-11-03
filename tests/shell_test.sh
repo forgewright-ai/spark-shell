@@ -3719,6 +3719,8 @@ spark-shell changes how this machine works:
 spark-shell off desktop puts the login back.
 Packages stay.
 
+On Arch, missing packages require a full system upgrade; pacman asks first.
+
 Continue? [y/N] spark-shell: nothing was changed." ] && ok "warning: on desktop names the packages (the desktop's with Arch's font, then the sound's), the login and the way back" || bad "warning desktop" "rc=$rc $out"
 [ ! -e "$HOME/.config/spark-shell/config" ] && [ ! -e "$H/sudo.log" ] && ok "warning: a stopped on desktop writes nothing, no sudo" || bad "warning desktop wrote" "$(cat "$HOME/.config/spark-shell/config" 2>&1)"
 printf 'ID=void\n' > "$H/os-release"
