@@ -237,6 +237,9 @@ print(json.dumps({"answer": "", "steps": [{"name": "notes_pick", "arguments": {"
         os.write(fd, b"use this\r")
         time.sleep(.15)
         ok(not records(requests), "Enter on unmatched text stays local")
+        # Provider discovery and model discovery are independent. Wait for the
+        # visible connection state before submitting, rather than racing startup.
+        assert wait_for(lambda: b"fixture-model" in seen), "the fixture model did not become available"
         os.write(fd, b"\x1b[13;5u")
         assert wait_for(lambda: b"notes pick Fixture" in seen and b"Discard" in seen), "the proposal did not draw"   # the line wraps across a cursor move
         req = records(requests)
