@@ -1,19 +1,24 @@
 # Changelog
 
-## Unreleased
+## v0.123
 
-- Apps v0 lives inside home: native desktop-entry browsing, search, one category
-  per app, editable mappings and overrides, hide/restore, and on-demand Details.
-  Preferences persist by stable desktop identity without changing OS launchers.
-- Application default, supported New window actions and reliable Sway focus use
-  the same keyboard and pointer dispatch. Launch receipts distinguish requests
-  from observed windows, and failures preserve context.
-- Apps and Details share home's centered frame in compact, fullscreen and both
-  snaps, with their bounded body aligned to the header and prompt. App rows show
-  short desktop-entry roles; full descriptions remain in Details and search.
-  Values reflow at 36x20; drafts survive resizing. Shared links now show
-  hover feedback, and contextual keys can use the reserved second row. Resizing
-  no longer queries a cursor report from a competing input-reader thread.
+- Apps is a place in home. It lists the applications installed on the
+  machine, read from their desktop entries, in one category each, and
+  finds one by its name or its words. Enter or a click opens the lit
+  app; Right or Space opens its Details: the version, the package, the
+  launcher and the windows it has open, read when asked. An app can be
+  hidden and shown again, and the categories and their mappings are
+  yours to edit. The preferences live in
+  `~/.config/spark-shell/apps.json`, keyed by the desktop entry, so a
+  package update keeps them. No system launcher is changed.
+- An app opens the way its desktop entry says. Focus existing goes to
+  the app's newest window on sway, or opens the app when it has none,
+  and New window is offered only where the entry declares one. The
+  reply says whether a window was seen, or only asked for.
+- Apps and Details share home's frame in full screen and in both snaps,
+  down to 36 by 20 cells. Unsaved preferences ask Save, Discard or Keep
+  editing before you leave. A resize no longer asks the terminal where
+  the cursor is, so it redraws without a key.
 
 ## v0.122.1
 
