@@ -430,7 +430,7 @@ fn plus_opens_the_files_attaches_one_and_the_want_carries_it() {
     app.servers.push(stub(0, "files", files_stub(calls.clone(), home.clone()), tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
-    assert_eq!(app.chips(), vec![5, 6, 0], "plus shows once a files provider runs");
+    assert_eq!(app.chips(), vec![5, 0], "plus shows once a files provider runs");
     app.chip(0);
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "plus opens the root folder");
     let shown: Vec<String> = app
@@ -1634,7 +1634,7 @@ fn files_opens_at_the_home_folder_and_talk_is_a_setting_not_a_control() {
     app.enter();
     assert_eq!(app.view, View::Talk);
     app.talk = spark_dialog::app::Talk::Click;
-    assert_eq!(app.chips(), vec![5, 6, 3]);
+    assert_eq!(app.chips(), vec![5, 3]);
 }
 
 #[test]

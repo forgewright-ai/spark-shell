@@ -159,4 +159,69 @@ fn configured_ask_is_visible_clickable_and_uses_the_same_action() {
     }
     app.hint_key(HintKey::Ask);
     assert!(app.pending.is_some() && app.jobs.len() == 1);
+    app.cfg.progress = true;
+    app.cfg.keys = spark_dialog::keys::Bindings::from_json(r#"{"ask":"Ctrl+Alt+Shift+Enter"}"#).unwrap();
+    for size in [(36, 20), (60, 40)] {
+        app.size = size;
+        let mut buffer = Buffer::empty(Rect::new(0, 0, size.0, size.1));
+        let drawn = spark_dialog::ui::draw(&app, &common::palette("tokyonight-night"), "", &mut buffer);
+        let key = drawn.keys.iter().find(|(_, _, _, key)| *key == HintKey::Ask).unwrap();
+        assert!(key.1 <= size.0 - 2, "progress yields space to the configured Ask key");
+    }
+}
+
+#[test]
+fn shared_frame_prioritizes_navigation_and_ask_with_a_configured_footer() {
+    let mut app = App::new(
+        Config {
+            plus: true,
+            model: true,
+            talk: true,
+            ..Config::default()
+        },
+        &["files".into()],
+    );
+    app.providers[0].ready = true;
+    app.model_name = Some("fixture-model".into());
+    app.voice_on = true;
+    let palette = common::palette("tokyonight-night");
+    for view in [View::Home, View::Conversation] {
+        app.view = view;
+        for size in [(60, 40), (36, 24)] {
+            app.size = size;
+            let mut buffer = Buffer::empty(Rect::new(0, 0, size.0, size.1));
+            let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+            let row = |y| (0..size.0).map(|x| buffer[(x, y)].symbol()).collect::<String>();
+            let hint = row(spark_dialog::ui::HINT_Y);
+            assert!(hint.find("Esc").unwrap() < hint.find("Ask").unwrap());
+            assert!(!hint.contains("Chat") && !hint.contains("F2"));
+            assert!(drawn
+                .keys
+                .iter()
+                .all(|(start, end, y, _)| start < end && *end <= size.0 - 2 && *y == spark_dialog::ui::HINT_Y));
+            for chip in [0, 1, 3] {
+                assert!(drawn.chips.iter().any(|(_, _, y, id)| *id == chip && *y == size.1 - 2));
+            }
+            assert_eq!(row(size.1 - 3).matches('\u{25c7}').count(), 1);
+            if size.0 == 60 {
+                assert!(row(size.1 - 2).contains("fixture-model \u{b7} local"));
+            }
+        }
+    }
+    app.view = View::Home;
+    app.size = (60, 40);
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
+    let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+    let positions: Vec<_> = drawn.picks.iter().map(|(y, _)| *y).collect();
+    assert!(positions[..6].windows(2).all(|ys| ys[1] - ys[0] == 2));
+    assert!(positions[6] - positions[5] > positions[9] - positions[8]);
+    assert_eq!(buffer[(spark_dialog::ui::PURPOSE_X, positions[0])].fg, palette.fg);
+
+    app.set_draft("unfinished request");
+    app.size = (36, 24);
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 36, 24));
+    let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+    assert!(drawn.keys.iter().any(|(_, _, y, k)| *k == HintKey::Ask && *y == spark_dialog::ui::HINT_Y));
+    assert!(drawn.keys.iter().any(|(_, _, y, k)| *k == HintKey::Enter && *y == spark_dialog::ui::HINT_Y + 1));
+    assert!(drawn.keys.iter().all(|(_, end, _, _)| *end <= 34));
 }

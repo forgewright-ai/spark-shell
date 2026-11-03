@@ -865,7 +865,9 @@ else
     grep -q '^\[colors-dark\]$' "$foot" && ! grep -q '^\[colors\]$' "$foot" && ok "foot.ini: foot 1.28 gets [colors-dark] alone" || bad "foot 1.28 section" "$(grep -n '^\[' "$foot")"
     grep -q '^client.focused *#00000000 #1e1e1e #aaaaaa #802b2b80 #00000000$' "$sway" && grep -q '^client.unfocused *#00000000 #000000 #555555 #00000000 #00000000$' "$sway" && ! grep -q '^client\.unfocused.*#ff5555' "$sway" && grep -q '^default_border pixel 4$' "$sway" && grep -q '^default_floating_border pixel 4$' "$sway" && grep -q '^smart_borders on$' "$sway" \
         && ok "sway: flat windows (#19, #22): a transparent four-pixel edge on every window while a wallpaper is on, none on a window alone on its workspace; the focused title in the surface shade (#1e1e1e); the accent only as the focused indicator, the drop area of a moving window (#47), at a quarter: #ff5555 halved with alpha 80, as sway takes it (#49)" || bad "sway focused" "$(grep -n 'client\|border' "$sway")"
-    grep -q "^bindsym \$mod+s exec \$term --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog chat\$" "$sway" && ok "sway: the Super+s line names the clone's spark-shell and the dialog's own foot config" || bad "sway Super+s render" "$(grep -n 'mod+s ' "$sway")"
+    grep -qxF "bindsym Mod4+space exec $REPO/spark-shell desktop home" "$sway" \
+        && ! grep -q '^bindsym Mod4+[ds] ' "$sway" \
+        && ok "sway: Super+Space opens home, without separate desktop chat keys" || bad "sway home render" "$(grep -n 'desktop home' "$sway")"
     dini=$HOME/.config/foot/dialog.ini
     grep -qx "include=$HOME/.config/foot/foot.ini" "$dini" && grep -qx 'initial-window-size-chars=60x40' "$dini" && grep -qx 'pad=24x19' "$dini" && grep -qx 'background=0f0f0f' "$dini" && grep -qx 'alpha=1.0' "$dini" && grep -qx '\[colors-dark\]' "$dini" \
         && [ "$(sed -n '/^\[environment\]$/,$p' "$dini" | grep -v '^#' | tr '\n' ' ')" = '[environment] SPARK_DIALOG_WINDOW=1 ' ] \
@@ -929,6 +931,17 @@ else
     st=$(sh "$SH" status); printf '%s\n' "$st" | grep -q '^  desktop sway .*sway: ready' && ok "status: the desktop row says sway, ready" || bad "status desktop sway" "$(printf '%s\n' "$st" | grep desktop)"
     out=$(sh "$SH" check || true)
     printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot' && ok "check: desktop ok with the stubs and fresh renders" || bad "check desktop ok" "$out"
+    printf '{"home.open":"Super+F3"}\n' > "$HOME/.config/spark-shell/desktop-keys.json"
+    out=$(sh "$SH" check || true)
+    printf '%s\n' "$out" | grep -q '^FAIL   desktop .*out of date: .config/sway/config' \
+        && ok "check: an unapplied named binding makes the desktop render stale" || bad "check pending home binding" "$out"
+    sh "$SH" on --yes >/dev/null
+    out=$(sh "$SH" check || true)
+    grep -qxF "bindsym Mod4+F3 exec $REPO/spark-shell desktop home" "$sway" \
+        && printf '%s\n' "$out" | grep -q '^ok     desktop      sway and foot' \
+        && ok "check: configured bindings use the same render as on" || bad "check configured home binding" "$out"
+    rm "$HOME/.config/spark-shell/desktop-keys.json"
+    sh "$SH" on --yes >/dev/null
     printf '%s\n' "$out" | grep -Eq '^(would|todo|FAIL|warn) +font' && bad "check: a font row fails with DESKTOP=sway" "$out" || ok "check: the font row does not fail with DESKTOP=sway"
     out=$(env -u TEST_TTY -u WAYLAND_DISPLAY sh "$SH" desktop 2>&1 || true)
     printf '%s\n' "$out" | grep -q 'needs a console login (tty1 to tty9): ssh and terminal windows cannot start sway' && ok "desktop: refused with no console tty (ssh)" || bad "desktop no console" "$out"
@@ -3146,6 +3159,8 @@ if [ -n "$py3" ]; then   # a bare container has no python3 (debian, arch, void):
     out=$(PATH="$H/svx:$H/lx:$PATH" sh "$SH" check 2>&1) || :
     printf '%s\n' "$out" | grep -q '^ok     saver  *the idle screen shows the drift saver$' && ok "check: the saver row names the saver in use" || bad "check saver drift" "$(printf '%s\n' "$out" | grep saver)"
     out=$(PATH="$H/nopy:$H/lx:$PATH" sh "$SH" check 2>&1) || :
+    printf '%s\n' "$out" | grep -q '^FAIL   desktop .*cannot render: .config/sway/config' \
+        && ok "check: an unavailable binding renderer reports failure and continues diagnostics" || bad "check missing renderer" "$out"
     printf '%s\n' "$out" | grep -q '^warn   saver  *python3 cannot run the drift saver: the idle screen shows the clock -- install python3, or spark-shell desktop display saver clock$' && ok "check: a chosen saver python3 cannot run is a warn with its remedy" || bad "check saver warn" "$(printf '%s\n' "$out" | grep saver)"
     # the key
     printf 'DESKTOP=sway\nDISPLAY_SAVER=mystery\n' > "$HOME/.config/spark-shell/config"

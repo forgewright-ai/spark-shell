@@ -152,7 +152,19 @@ def resize(binary, env):
         ok(False, "resize redraw", str(error))
     finally:
         os.kill(pid, signal.SIGTERM)
-        os.waitpid(pid, 0)
+        # Drain the terminal while it restores its modes. A full PTY output
+        # buffer can otherwise hold macOS's exit path inside waitpid forever.
+        deadline = time.monotonic() + 5
+        while os.waitpid(pid, os.WNOHANG)[0] == 0:
+            if time.monotonic() >= deadline:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+                break
+            if select.select([fd], [], [], .1)[0]:
+                try:
+                    os.read(fd, 65536)
+                except OSError:
+                    pass
         os.close(fd)
 
 
@@ -339,12 +351,12 @@ def files(binary, env, home):
         os.write(fd, b"\x1b[B")       # Down: the first row, the folder
         time.sleep(0.3)
         os.write(fd, b"\x1b[B")       # Down: the file, lit
-        assert wait_for(lambda: "Preview" in shown() and "Actions" in shown()), "the key row did not offer the preview and the actions: " + screen.text()[-600:]
+        assert wait_for(lambda: "Ask" in shown() and "Actions" in shown()), "the normal-width key row did not keep Ask and the file actions visible: " + screen.text()[-600:]
         seen.clear()
         os.write(fd, b"\x1b[C")       # Right: its actions
         # read from the screen, not the bytes: a cell the row before held too is not sent again ("rename" over "hello.txt" keeps its e)
         assert wait_for(lambda: "movetoafolder" in shown() and "trash" in shown() and "rename" in shown() and "Back" in shown()), "the actions did not draw: " + screen.text()[-900:]
-        ok(True, "Down lights the file and the key row offers Preview and Actions; Right opens the actions in the provider's words: open, preview, attach, rename, move, copy, trash")
+        ok(True, "Down lights the file with Ask and Actions visible; Right opens the actions in the provider's words: open, preview, attach, rename, move, copy, trash")
         seen.clear()
         os.write(fd, b"\x1b")          # back to the folder
         assert wait_for(lambda: "hello.txt" in shown() and "thisfolder" in shown()), "Esc did not come back: " + screen.text()[-900:]

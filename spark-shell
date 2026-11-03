@@ -3362,13 +3362,19 @@ cmd_check() {
     elif [ "$DESKTOP" = none ]; then chk desktop ok "na (DESKTOP=none)"
     elif [ -n "$(desktop_tools)" ]; then chk desktop fail "missing:$(desktop_tools)" "spark-shell on"
     else
-        stale=''
+        stale=''; render_failed=''
         for rel in $DESKTOP_RENDERED; do
             [ -f "$HOME/$rel" ] || { stale="$stale $rel"; continue; }
-            render_sed "$EXPR" "$REPO/templates/$rel" > "$TMP/chk"
+            # A broken renderer is a check result; continue to the remaining
+            # diagnostics even when Python or a binding is unavailable.
+            if ! (render_tmp "$REPO/templates/$rel" "$TMP/chk"); then
+                render_failed="$render_failed $rel"
+                continue
+            fi
             cmp -s "$TMP/chk" "$HOME/$rel" || stale="$stale $rel"
         done
-        if [ -n "$stale" ]; then chk desktop fail "out of date:$stale" "spark-shell on"
+        if [ -n "$render_failed" ]; then chk desktop fail "cannot render:$render_failed" "check python3 and desktop-keys.json"
+        elif [ -n "$stale" ]; then chk desktop fail "out of date:$stale" "spark-shell on"
         elif ! command -v jq >/dev/null 2>&1; then chk desktop fail "jq is missing (a layout reads the model's answer with it)" "spark-shell on"
         elif seat_needed && ! seatd_on; then chk desktop fail "seatd does not start at boot (Void has no logind)" "spark-shell on desktop"
         elif seat_needed && ! in_group _seatd "$(id -un)"; then chk desktop fail "$(id -un) is not in the _seatd group" "spark-shell on desktop"

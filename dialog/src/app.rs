@@ -1807,8 +1807,10 @@ impl App {
                     // the places with air between them, as the approved home has them
                     for (k, d) in self.dests().into_iter().enumerate() {
                         if d == SETTINGS_DEST {
-                            list.extend([Item::Blank, Item::Blank]);
+                            list.extend([Item::Blank, Item::Blank, Item::Blank]);
                         } else if d == DESTS.len() - 1 && k > 0 {
+                            list.extend([Item::Blank, Item::Blank]);
+                        } else if k > 0 {
                             list.push(Item::Blank);
                         }
                         list.push(Item::Dest(d));
@@ -3213,7 +3215,7 @@ impl App {
 
     /// The controls Tab moves through, in their order on the screen.
     pub fn chips(&self) -> Vec<usize> {
-        let mut v = if self.mode == Mode::Normal { vec![5, 6] } else { vec![] };
+        let mut v = if self.mode == Mode::Normal { vec![5] } else { vec![] };
         if self.cfg.plus && self.files().is_some() {
             v.push(0);
         }

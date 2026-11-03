@@ -763,7 +763,7 @@ draft, attachments, view and ongoing request. A bar click uses the same
 entry; if no window exists it opens that section. Esc or the x closes it.
 The root order is Apps, Files, Workspace, Notes, Calendar, Tools, Settings,
 Help, About, Power. Unavailable capabilities explain their availability.
-Help and the conversation are views inside this same process. F2 or Chat
+Help and the conversation are views inside this same process. F2
 switches between the conversation and the previous view without losing a draft.
 `dialog chat` opens this conversation; `spark` remains usable independently.
 
@@ -812,10 +812,11 @@ explicitly sends the request. Unmatched text never sends automatically.
 Credential fields, confirmations and provider forms cannot use Ask.
 A longer draft scrolls inside the two rows, and a paste keeps its lines
 and never sends. The
-row under the prompt says what Esc does now, first, then what Enter
-does to the lit row, then what only some rows have; with nothing typed
-it says only what Esc does. Each key keeps its place there from one row
-or file to the next, and a click on one does what the key does. Back
+row under the prompt puts navigation first and keeps Ask visible. At the
+normal width it is one row; narrow windows can use a second reserved row.
+Action groups and configured keycaps stay whole. Secondary hints use the
+remaining space; Help lists every shortcut, including conversation.
+A click on a label or its keycap does what the key does. Back
 is there, never at the top. A key is drawn as a key, and nothing else
 is.
 

@@ -1362,9 +1362,12 @@ fn a_long_sound_plays_the_wait_until_its_waveform_is_there() {
 #[test]
 fn the_space_chip_is_a_key_a_click_takes() {
     let mut app = manager_app();
+    // Secondary preview hints follow navigation, Ask and the row's primary
+    // action; the wider column has room for the complete group.
+    app.size = (120, 40);
     app.folder.as_mut().unwrap().2.rows[0].page = Some("spark-shell://files/preview/aW52b2ljZQ".into());
     let p = palette("tokyonight-night");
-    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    let mut b = Buffer::empty(Rect::new(0, 0, 120, 40));
     let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
     assert!(
         drawn.keys.iter().any(|(_, _, _, k)| *k == spark_dialog::app::HintKey::Char(' ')),

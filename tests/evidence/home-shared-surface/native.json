@@ -6,13 +6,66 @@
     "wtype",
     "grim"
   ],
+  "fixtures": [
+    "model response",
+    "voice availability"
+  ],
+  "footer": [
+    "Attach",
+    "model/source",
+    "Talk"
+  ],
+  "captures": {
+    "root-void": {
+      "width": 636,
+      "height": 796
+    },
+    "draft-refocus-void": {
+      "width": 636,
+      "height": 796
+    },
+    "conversation-void": {
+      "width": 636,
+      "height": 796
+    },
+    "conversation-scroll-void": {
+      "width": 636,
+      "height": 796
+    },
+    "fullscreen-void": {
+      "width": 1440,
+      "height": 1000
+    },
+    "snapped-left-void": {
+      "width": 716,
+      "height": 986
+    },
+    "snapped-right-void": {
+      "width": 720,
+      "height": 1000
+    },
+    "narrow-void": {
+      "width": 396,
+      "height": 492
+    },
+    "help-void": {
+      "width": 396,
+      "height": 492
+    },
+    "unavailable-ask-void": {
+      "width": 636,
+      "height": 796
+    }
+  },
   "checks": [
-    "Super+Space launches home in real foot",
-    "Repeated Super+Space keeps one container and process with the two-line draft visible",
-    "Native Ctrl+Enter reaches Ask; unavailable model keeps draft",
+    "Super+Space opens the quiet root with Attach, model/source and Talk configured",
+    "Repeated Super+Space retains one process and the two-line draft",
+    "Root and conversation share one normal size, font, key row and configured footer",
+    "The full fixture answer scrolls; F2 preserves the follow-up draft",
     "Native fullscreen and restore retain the same home process",
     "Native left and right placement retains the home process and draft",
-    "Narrow layout and Help render with configured actions",
-    "Configured F4 sends explicit Ask; fixture answer scrolls in home and F2 preserves the follow-up draft"
+    "Narrow hints wrap whole groups with Ask visible; Help lists the conversation shortcut",
+    "Configured F4 reaches the same explicit Ask action",
+    "No serving model keeps the draft and makes no model request"
   ]
 }

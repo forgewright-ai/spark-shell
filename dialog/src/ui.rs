@@ -33,7 +33,7 @@ pub const SEP: &str = " \u{b7} ";
 /// The rows, fixed whatever is typed or attached (#196): the prompt's two, what a key does, the reply row,
 /// where the list starts.
 pub const PROMPT_Y: u16 = 2;
-pub const HINT_Y: u16 = 5;
+pub const HINT_Y: u16 = 4;
 pub const REPLY_Y: u16 = 6;
 pub const CONTENT_Y: u16 = 7;
 /// The bottom: air, the rule, the footer, air.
@@ -99,13 +99,7 @@ impl Pen<'_> {
         if x >= self.w || y >= self.h {
             return x;
         }
-        let fg = if on {
-            self.pal.accent
-        } else if quiet {
-            self.pal.muted
-        } else {
-            self.pal.fg
-        };
+        let fg = if quiet && !on { self.pal.muted } else { self.pal.accent };
         let mut st = Style::default().fg(fg);
         if focus {
             st = st.bg(self.pal.lit);
@@ -430,20 +424,6 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     }
     drawn.cursor = (tx + cc as u16, PROMPT_Y + (cr - top) as u16);
 
-    if app.mode == Mode::Normal {
-        let label = "Ask";
-        let x = pen.control(1, 4, label, app.chip_focus == Some(5), true, false);
-        let end = pen.chip(x + 1, 4, app.cfg.keys.label(HintKey::Ask), false);
-        drawn.keys.push((1, end, 4, HintKey::Ask));
-        if app.pending.is_some() && end + 13 < w {
-            pen.put(end + 1, 4, &progress::bar(app.work(), app.frame), pal.muted, false, false);
-        } else if end + 16 < w {
-            let x = pen.control(end + 1, 4, "Chat", app.chip_focus == Some(6), false, false);
-            let right = pen.chip(x + 1, 4, app.cfg.keys.label(HintKey::Conversation), false);
-            drawn.keys.push((end + 1, right, 4, HintKey::Conversation));
-        }
-    }
-    let hint_y = HINT_Y;
     reply_row(app, &mut pen, REPLY_Y, &mut drawn);
 
     // the content first: a preview's text decides the pages its key row offers
@@ -480,64 +460,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         drawn.picks = content(app, &mut pen, top, bottom, &mut drawn);
     }
 
-    // one gap between keys on every row of a window, so a key keeps its place from one row to the next (#166):
-    // two cells in the dialog's column, three where full screen gives it room; a row still too wide for a
-    // small window closes them further (#127)
-    let mut hint = app.hint_with(drawn.pages.max(1));
-    if w <= WIDTH {
-        for (t, k) in hint.iter_mut() {
-            if !*k && t.len() > 2 && t.chars().all(|c| c == ' ') {
-                t.pop();
-            }
-        }
-    }
-    let span = |v: &[(String, bool)]| v.iter().map(|(t, k)| cells(t) + if *k { 2 } else { 0 }).sum::<usize>();
-    while span(&hint) > w.saturating_sub(4) as usize {
-        let mut closed = false;
-        for (t, k) in hint.iter_mut() {
-            if !*k && t.len() > 2 && t.chars().all(|c| c == ' ') {
-                t.pop();
-                closed = true;
-            }
-        }
-        if !closed {
-            break;
-        }
-    }
-    let mut x = 2;
-    for (t, key) in hint {
-        let parts: Vec<HintKey> = if key { t.split(' ').filter_map(key_of).collect() } else { vec![] };
-        let t = if key && !parts.is_empty() {
-            parts.iter().map(|a| app.cfg.keys.label(*a)).collect::<Vec<_>>().join(" ")
-        } else {
-            t
-        };
-        // still too wide (a provider's long question): cut at the window's edge, the words at a word, never a key
-        // drawn in part (#196)
-        let need = cells(&t) as u16 + if key { 2 } else { 0 };
-        if x + need > w.saturating_sub(2) {
-            if !key {
-                pen.put(x, hint_y, &cut_words(&t, w.saturating_sub(x + 2) as usize), pal.muted, false, false);
-            }
-            break;
-        }
-        let start = x;
-        x = if key {
-            pen.chip(x, hint_y, &t, false)
-        } else {
-            pen.put(x, hint_y, &t, pal.muted, false, false)
-        };
-        if key && start < x && x <= w && hint_y < h {
-            // a chip of one key, or of a few (the arrows, + -, < >): each key its share of the chip
-            if !parts.is_empty() {
-                let n = parts.len() as u16;
-                for (k, a) in parts.into_iter().enumerate() {
-                    let k = k as u16;
-                    drawn.keys.push((start + (x - start) * k / n, start + (x - start) * (k + 1) / n, hint_y, a));
-                }
-            }
-        }
-    }
+    contextual_keys(app, &mut pen, &mut drawn);
 
     // the rule, then the footer: Attach, the model, Talk at the left; the mic at the right
     for x in 2..w - 2 {
@@ -546,6 +469,92 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     pen.put(w / 2 - 1, h - 3, " \u{25c7} ", pal.accent, false, false);
     footer(app, &mut pen, h - 2, &mut drawn);
     drawn
+}
+
+/// One row at normal width. Narrow windows may use the reserved second row;
+/// complete action groups wrap together, and keycaps are never clipped.
+/// Navigation and Ask take priority; secondary shortcuts remain in Help.
+fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
+    let mut groups: Vec<Vec<(String, bool)>> = vec![vec![]];
+    for (text, key) in app.hint_with(drawn.pages.max(1)) {
+        if !key && text.trim().is_empty() {
+            groups.push(vec![]);
+        } else {
+            groups.last_mut().unwrap().push((text, key));
+        }
+    }
+    groups.retain(|g| !g.is_empty());
+    if let Some(i) = groups.iter().position(|g| g.iter().any(|(t, k)| *k && t == "Esc")) {
+        let back = groups.remove(i);
+        groups.insert(0, back);
+    }
+    if app.mode == Mode::Normal {
+        if app.pending.is_some() {
+            groups.retain(|g| !g.iter().any(|(t, k)| !k && t == "Thinking"));
+        }
+        let label = if app.pending.is_some() && app.cfg.progress {
+            format!("Ask {} ", progress::bar(app.work(), app.frame))
+        } else {
+            "Ask ".into()
+        };
+        groups.insert(groups.len().min(1), vec![(label, false), ("Ctrl+Enter".into(), true)]);
+    }
+    let right = pen.w.saturating_sub(2);
+    let last_y = HINT_Y + u16::from(pen.w < WIDTH);
+    let (mut x, mut y) = (2, HINT_Y);
+    for group in groups {
+        let mut parts: Vec<_> = group
+            .into_iter()
+            .map(|(t, key)| {
+                let actions: Vec<_> = if key { t.split(' ').filter_map(key_of).collect() } else { vec![] };
+                let label = if actions.is_empty() {
+                    t
+                } else {
+                    actions.iter().map(|a| app.cfg.keys.label(*a)).collect::<Vec<_>>().join(" ")
+                };
+                (label, key, actions)
+            })
+            .collect();
+        let span = |parts: &[(String, bool, Vec<HintKey>)]| parts.iter().map(|(t, k, _)| cells(t) + if *k { 2 } else { 0 }).sum::<usize>() as u16;
+        let mut width = span(&parts);
+        let room = right.saturating_sub(if y < last_y { 2 } else { x });
+        if width > room && parts.iter().any(|(_, _, actions)| actions.contains(&HintKey::Ask)) {
+            // The optional progress animation yields to a long configured
+            // shortcut; Ask must remain visible at the minimum width too.
+            parts[0].0 = "Ask ".into();
+            width = span(&parts);
+        }
+        if x + width > right && y < last_y && width <= right - 2 {
+            x = 2;
+            y += 1;
+        }
+        if x + width > right {
+            // Explanatory text can end at a word; an action is shown whole or
+            // left to Help, never as a label without its configured key.
+            if parts.iter().all(|(_, k, _)| !k) {
+                let text = parts.iter().map(|(t, ..)| t.as_str()).collect::<String>();
+                pen.put(x, y, &cut_words(&text, right.saturating_sub(x) as usize), pen.pal.fg, false, false);
+            }
+            continue;
+        }
+        let group_start = x;
+        let focused = app.chip_focus == Some(5) && parts.iter().any(|(_, _, a)| a.contains(&HintKey::Ask));
+        for (text, key, actions) in parts {
+            let start = x;
+            x = if key {
+                pen.chip(x, y, &text, focused)
+            } else {
+                pen.put(x, y, &text, pen.pal.accent, false, focused)
+            };
+            let n = actions.len() as u16;
+            for (i, action) in actions.into_iter().enumerate() {
+                let i = i as u16;
+                let a = if n == 1 { group_start } else { start + (x - start) * i / n };
+                drawn.keys.push((a, start + (x - start) * (i + 1) / n, y, action));
+            }
+        }
+        x += 2;
+    }
 }
 
 /// The action of a key named on a chip.
@@ -599,7 +608,10 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     }
     if app.cfg.model {
         let room = (w.saturating_sub(x + mic_w + 6)) as usize;
-        let full = app.model_name.clone().unwrap_or_else(|| "No model".into());
+        let full = app.model_name.as_ref().map_or_else(
+            || "No model".into(),
+            |name| format!("{}{}{}", name, SEP, if app.server.is_some() { "remote" } else { "local" }),
+        );
         // the model's whole name, or the word for it where the name does not fit whole
         let name = format!("{} {}", if cells(&full) + 2 <= room { full.as_str() } else { "Model" }, MENU);
         let e = pen.control(x, y, &name, app.chip_focus == Some(1), false, false);
@@ -608,7 +620,7 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     if mic_on {
         let mx = w - 1 - mic_w;
         let live = chips.contains(&3);
-        let e = pen.control(mx, y, mic, app.chip_focus == Some(3), app.mode == Mode::Listening, true);
+        let e = pen.control(mx, y, mic, app.chip_focus == Some(3), app.mode == Mode::Listening, !live);
         if live {
             drawn.chips.push((mx, e, y, 3));
         }
@@ -690,7 +702,7 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
                 PURPOSE_X + ind,
                 y,
                 &cut_words(&words, e.saturating_sub(PURPOSE_X + ind + 4) as usize),
-                pal.muted,
+                pal.fg,
                 false,
                 lit,
             );
