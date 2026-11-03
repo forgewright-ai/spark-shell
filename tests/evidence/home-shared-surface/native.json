@@ -2,10 +2,23 @@
   "platform": "Void Linux",
   "tools": [
     "sway",
+    "swaybar",
     "foot",
     "wtype",
-    "grim"
+    "grim",
+    "persistent virtual pointer"
   ],
+  "binary_sha256": "289912d777f73aec7e07ad57bf999666d68380b087e046b926eebe6d7721dc11",
+  "display": {
+    "width": 1440,
+    "height": 1000,
+    "usable_area": {
+      "x": 0,
+      "y": 28,
+      "width": 1440,
+      "height": 972
+    }
+  },
   "fixtures": [
     "model response",
     "voice availability"
@@ -17,47 +30,108 @@
   ],
   "captures": {
     "root-void": {
+      "x": 402,
+      "y": 116,
       "width": 636,
-      "height": 796
+      "height": 796,
+      "full_output": true
+    },
+    "root-fullscreen-void": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 1000,
+      "full_output": true
+    },
+    "root-snapped-left-void": {
+      "x": 0,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "root-snapped-right-void": {
+      "x": 720,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
     },
     "draft-refocus-void": {
+      "x": 402,
+      "y": 116,
       "width": 636,
-      "height": 796
+      "height": 796,
+      "full_output": false
     },
     "conversation-void": {
+      "x": 402,
+      "y": 116,
       "width": 636,
-      "height": 796
+      "height": 796,
+      "full_output": true
     },
     "conversation-scroll-void": {
+      "x": 402,
+      "y": 116,
       "width": 636,
-      "height": 796
+      "height": 796,
+      "full_output": false
     },
     "fullscreen-void": {
+      "x": 0,
+      "y": 0,
       "width": 1440,
-      "height": 1000
+      "height": 1000,
+      "full_output": false
     },
     "snapped-left-void": {
-      "width": 716,
-      "height": 986
+      "x": 0,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": false
     },
     "snapped-right-void": {
+      "x": 720,
+      "y": 28,
       "width": 720,
-      "height": 1000
+      "height": 972,
+      "full_output": false
     },
     "narrow-void": {
-      "width": 396,
-      "height": 492
+      "x": 880,
+      "y": 264,
+      "width": 400,
+      "height": 500,
+      "full_output": false
     },
     "help-void": {
+      "x": 880,
+      "y": 264,
+      "width": 400,
+      "height": 500,
+      "full_output": false
+    },
+    "narrow-attachment-void": {
+      "x": 522,
+      "y": 268,
       "width": 396,
-      "height": 492
+      "height": 492,
+      "full_output": false
     },
     "unavailable-ask-void": {
+      "x": 402,
+      "y": 116,
       "width": 636,
-      "height": 796
+      "height": 796,
+      "full_output": false
     }
   },
   "checks": [
+    "Root is bounded and centered; both snaps fill equivalent halves of the usable area below the bar",
+    "Native model clicks and the blank footer row are correct after normal, fullscreen and both snaps",
+    "The selected Power destination and root view survive fullscreen, both snaps and restore",
     "Super+Space opens the quiet root with Attach, model/source and Talk configured",
     "Repeated Super+Space retains one process and the two-line draft",
     "Root and conversation share one normal size, font, key row and configured footer",
@@ -65,6 +139,7 @@
     "Native fullscreen and restore retain the same home process",
     "Native left and right placement retains the home process and draft",
     "Narrow hints wrap whole groups with Ask visible; Help lists the conversation shortcut",
+    "At 36 columns with a long attachment, Talk, Cancel, Remove, Model and Attach clicks reach their displayed controls",
     "Configured F4 reaches the same explicit Ask action",
     "No serving model keeps the draft and makes no model request"
   ]

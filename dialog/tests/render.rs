@@ -786,9 +786,10 @@ fn the_calendar_is_the_months_then_the_reminders() {
 /// The app drawn in tokyonight-night: the buffer and each row's text.
 fn drawn(app: &App) -> (Buffer, spark_dialog::palette::Palette, Vec<String>) {
     let p = palette("tokyonight-night");
-    let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
+    let (w, h) = app.size;
+    let mut b = Buffer::empty(Rect::new(0, 0, w, h));
     spark_dialog::ui::draw(app, &p, CLOCK, &mut b);
-    let rows = (0..HEIGHT).map(|y| (0..WIDTH).map(|x| b[(x, y)].symbol().to_string()).collect()).collect();
+    let rows = (0..h).map(|y| (0..w).map(|x| b[(x, y)].symbol().to_string()).collect()).collect();
     (b, p, rows)
 }
 
@@ -853,6 +854,8 @@ fn a_day_with_a_reminder_is_in_the_accent_and_today_is_a_chip() {
 #[test]
 fn the_reminders_under_the_months_are_rows_to_pick_in_their_groups() {
     let mut app = calendar_app(true);
+    // Room for all groups, including the final reminder above the footer gap.
+    app.size.1 = 42;
     let (b, p, rows) = drawn(&app);
     let head = |g: &str| {
         rows.iter()
@@ -1223,7 +1226,7 @@ fn full_screen_home_is_one_column_in_the_middle_its_words_whole() {
     app.in_list = true;
     app.sel = app.picks().iter().position(|i| matches!(i, spark_dialog::app::Item::Dest(2))).unwrap(); // Workspace
     let drawn = render_at(&app, "full-home", WIDE.0, WIDE.1);
-    assert_eq!(drawn.columns, (15, 135), "one column, {} wide, in the middle", spark_dialog::ui::FULL_WIDTH);
+    assert_eq!(drawn.columns, (45, 105), "home keeps its 60-cell measure in the middle");
 }
 
 #[test]

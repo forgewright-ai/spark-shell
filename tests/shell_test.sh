@@ -869,6 +869,7 @@ else
         && ! grep -q '^bindsym Mod4+[ds] ' "$sway" \
         && ok "sway: Super+Space opens home, without separate desktop chat keys" || bad "sway home render" "$(grep -n 'desktop home' "$sway")"
     dini=$HOME/.config/foot/dialog.ini
+    grep -qx 'resize-by-cells=no' "$dini" && ok "home: floating snaps honor the compositor's pixel dimensions" || bad "home pixel resize" "$(cat "$dini")"
     grep -qx "include=$HOME/.config/foot/foot.ini" "$dini" && grep -qx 'initial-window-size-chars=60x40' "$dini" && grep -qx 'pad=24x19' "$dini" && grep -qx 'background=0f0f0f' "$dini" && grep -qx 'alpha=1.0' "$dini" && grep -qx '\[colors-dark\]' "$dini" \
         && [ "$(sed -n '/^\[environment\]$/,$p' "$dini" | grep -v '^#' | tr '\n' ' ')" = '[environment] SPARK_DIALOG_WINDOW=1 ' ] \
         && ok "dialog.ini: foot.ini included, then the dialog's size, air and surface, opaque (#33); the window says it is the dialog's, so its prompt is drawn the moment it maps (#138)" || bad "dialog.ini" "$(cat "$dini" 2>&1)"

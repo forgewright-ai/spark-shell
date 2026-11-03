@@ -202,7 +202,8 @@ fn shared_frame_prioritizes_navigation_and_ask_with_a_configured_footer() {
             for chip in [0, 1, 3] {
                 assert!(drawn.chips.iter().any(|(_, _, y, id)| *id == chip && *y == size.1 - 2));
             }
-            assert_eq!(row(size.1 - 3).matches('\u{25c7}').count(), 1);
+            assert_eq!(row(size.1 - 4).matches('\u{25c7}').count(), 1);
+            assert!(row(size.1 - 3).trim().is_empty(), "one full blank row above the controls");
             if size.0 == 60 {
                 assert!(row(size.1 - 2).contains("fixture-model \u{b7} local"));
             }
@@ -254,7 +255,7 @@ fn model_selector_centers_beneath_the_diamond_in_both_views() {
             let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
             let &(start, end, y, _) = drawn.chips.iter().find(|(_, _, _, id)| *id == 1).unwrap();
             assert!((start + end - 1).abs_diff(2 * (width / 2)) <= 1, "selector centered within one cell");
-            assert_eq!(buffer[(width / 2, 37)].symbol(), "\u{25c7}");
+            assert_eq!(buffer[(width / 2, 36)].symbol(), "\u{25c7}");
             let label: String = (start..end).map(|x| buffer[(x, y)].symbol()).collect();
             assert_eq!(label, " fixture-model \u{b7} local \u{2304} ");
         }
@@ -369,4 +370,52 @@ fn an_answer_arriving_in_another_view_is_discoverable_without_switching_views() 
         .items()
         .iter()
         .any(|item| matches!(item, Item::Said(Sign::Says, text, _) if text == "An answer has arrived.")));
+}
+
+#[test]
+fn root_frame_stays_at_its_reading_measure_with_every_edge_aligned() {
+    use spark_dialog::ui::{CONTENT_Y, HINT_Y, PROMPT_Y};
+    let mut app = footer_app();
+    let palette = common::palette("tokyonight-night");
+    for size in [(60, 40), (68, 49), (140, 50), (36, 24)] {
+        app.size = size;
+        let (w, h) = size;
+        let width = w.min(60);
+        let left = (w - width) / 2;
+        let mut buffer = Buffer::empty(Rect::new(0, 0, w, h));
+        let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+        assert_eq!(app.col_w(), width);
+        assert_eq!(drawn.columns, (left, left + width));
+        for (y, first) in [(0, "h"), (PROMPT_Y, "\u{276f}"), (HINT_Y, "C"), (CONTENT_Y, "A"), (h - 2, "A")] {
+            assert_eq!(buffer[(left + 2, y)].symbol(), first, "shared left edge at {size:?}, row {y}");
+        }
+        assert_eq!(buffer[(left + width - 3, CONTENT_Y)].symbol(), "\u{203a}");
+        assert_eq!(buffer[(left + width / 2, h - 4)].symbol(), "\u{25c7}");
+        assert!((0..w).all(|x| buffer[(x, h - 3)].symbol().trim().is_empty()));
+        assert!(drawn.chips.iter().all(|(a, b, _, _)| *a >= left && *b <= left + width));
+    }
+    app.size = (140, 50);
+    app.view = View::Folder(0, "spark-shell://files/rows/home".into());
+    assert_eq!(app.col_w(), 120, "Files retains its wider table");
+    app.view = View::Preview;
+    assert_eq!(app.col_w(), 140, "previews retain the available width");
+}
+
+#[test]
+fn footer_reservation_keeps_the_last_destination_visible_and_clickable_after_resize() {
+    let mut app = footer_app();
+    app.light(DESTS.len() - 1);
+    let palette = common::palette("tokyonight-night");
+    for size in [(60, 40), (140, 50), (68, 49), (36, 20), (60, 40)] {
+        app.size = size;
+        let mut buffer = Buffer::empty(Rect::new(0, 0, size.0, size.1));
+        let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+        let &(y, _) = drawn.picks.iter().find(|(_, pick)| *pick == DESTS.len() - 1).expect("Power remains navigable");
+        assert!(y < size.1 - spark_dialog::ui::BOTTOM);
+        let row: String = (0..size.0).map(|x| buffer[(x, y)].symbol()).collect();
+        assert!(row.contains("Power"));
+        assert!(drawn.picks.iter().all(|(y, _)| *y < size.1 - spark_dialog::ui::BOTTOM));
+        assert_eq!(app.sel, DESTS.len() - 1);
+        assert_eq!(app.view, View::Home);
+    }
 }

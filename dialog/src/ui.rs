@@ -36,8 +36,8 @@ pub const PROMPT_Y: u16 = 2;
 pub const HINT_Y: u16 = 4;
 pub const REPLY_Y: u16 = 6;
 pub const CONTENT_Y: u16 = 7;
-/// The bottom: air, the rule, the footer, air.
-pub const BOTTOM: u16 = 4;
+/// The bottom: air, the divider, a blank row, the controls, air.
+pub const BOTTOM: u16 = 5;
 /// Where a destination's purpose starts: past the longest name (Notifications) and two cells of air.
 pub const PURPOSE_X: u16 = 17;
 /// A palette's chip: a small terminal in the palette's own colors, this many cells wide.
@@ -260,8 +260,12 @@ pub fn draft_rows(text: &str, cursor: usize, w: usize) -> (Vec<String>, (usize, 
 pub const FULL_WIDTH: u16 = 120;
 
 /// The width the dialog's own column has at this size: its words wrap to it.
-pub fn column_width(w: u16, _h: u16) -> u16 {
-    w.min(FULL_WIDTH)
+pub fn column_width(w: u16, view: &View) -> u16 {
+    match view {
+        View::Home => w.min(WIDTH),
+        View::Preview => w,
+        _ => w.min(FULL_WIDTH),
+    }
 }
 
 /// A column wider than the dialog's own size: a list there shows its rows' wide columns and whole names (#141).
@@ -329,7 +333,7 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     }
     // a preview opened on Space keeps the whole screen: its zoom and its drag want the room (#120); elsewhere the column
     // in the middle (#141)
-    let cw = if app.view == View::Preview { w } else { column_width(w, h) };
+    let cw = column_width(w, &app.view);
     if cw == w {
         let mut d = draw_column(app, pal, clock, buf);
         d.columns = (0, w);
@@ -462,11 +466,11 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
 
     contextual_keys(app, &mut pen, &mut drawn);
 
-    // the rule, then the footer: Attach, the model, Talk at the left; the mic at the right
+    // The divider, a full blank row, then the anchored controls.
     for x in 2..w - 2 {
-        pen.put(x, h - 3, RULE, pal.lit, false, false);
+        pen.put(x, h - 4, RULE, pal.lit, false, false);
     }
-    pen.put(w / 2 - 1, h - 3, " \u{25c7} ", pal.accent, false, false);
+    pen.put(w / 2 - 1, h - 4, " \u{25c7} ", pal.accent, false, false);
     footer(app, &mut pen, h - 2, &mut drawn);
     drawn
 }

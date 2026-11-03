@@ -776,11 +776,12 @@ A window that is
 fullscreen steps aside for the dialog and is fullscreen again when the
 dialog closes with nothing opened.
 
-Full screen (Super+f), the dialog is one column in the middle of the
-screen, up to 120 cells wide, and the space goes to its lists: in Files
+Full screen (Super+f), home keeps one centered column, at most 60 cells
+wide. Its header, prompt, keys, menu and footer share that measure.
+Wider views can use up to 120 cells, and the space goes to their lists: in Files
 a whole name, the kind (picture, sound, PDF, Word), the size, and the
 date with the time; the Calendar shows as many months across as fit;
-the home and Settings write each state whole. A list ends where its
+Settings writes each state whole. A list ends where its
 words end, its arrows right after them. The preview Space opens takes
 the whole screen.
 
@@ -1020,10 +1021,12 @@ takes the step back. The full model answer appears once in Conversation,
 under the words that asked it. If it arrives in another view, a summary
 in the reply row makes it visible without changing the view or draft. While
 commands spark planned wait in the two rows of the prompt, the reply
-row names them all (`run: ...`). At the bottom, under the diamond divider,
-the controls in plain text: Attach at the left, the model/source centered
-when it fits, and the mic at the right. Narrow windows shorten attachment
-names and use Model when needed, keeping Remove and Talk/Cancel separate.
+row names them all (`run: ...`). At the bottom, a full blank row separates
+the diamond divider from the controls. Content reserves space for the
+whole footer. Its controls are plain text: Attach at the left, the
+model/source centered when it fits, and the mic at the right. Narrow
+windows shorten attachment names and use Model when needed, keeping
+Remove and Talk/Cancel separate.
 Tab moves through them and the one in focus is lit; Shift+Tab goes back.
 
 - Attach picks one text or Markdown file from your home (the types

@@ -4062,12 +4062,9 @@ impl App {
         true
     }
 
-    /// The dialog's own column's width: the whole grid, at most ui::FULL_WIDTH in the middle of a full screen (#141).
+    /// Home keeps its reading measure; wider views can use more of the grid.
     pub fn col_w(&self) -> u16 {
-        if self.view == View::Preview {
-            return self.size.0; // the preview keeps the whole screen
-        }
-        crate::ui::column_width(self.size.0, self.size.1)
+        crate::ui::column_width(self.size.0, &self.view)
     }
 
     /// A click lights row `n`: a choice, as a key's is, so the light kept from a preview lets go (#153).
