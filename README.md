@@ -825,50 +825,55 @@ The home gives each place a purpose description. Workspace shows open
 windows and saved layouts, Notes its count and newest note, and Calendar
 the next reminder when that context is available. All ten places stay
 visible; a missing capability explains its availability when opened.
-Apps lists installed, launchable desktop entries from the system's GIO library.
-All apps groups each application into one category, alphabetically within that
-group. Search matches its lowercase display name or description across categories.
-Enter and click launch the selected app; Right or Space opens Details. Esc clears
-the query first, then returns; Details preserves the list's query and position.
-Technical identifiers and copied paths keep their original spelling.
+Apps lists installed, launchable desktop entries from the system's GIO
+library. All apps groups each application into one category, alphabetically
+within that group. Search matches its lowercase display name or description
+across categories. Enter and click launch the selected app; Right or Space
+opens Details. Esc clears the query first, then returns; Details preserves the
+list's query and position. Technical identifiers and copied paths keep their
+original spelling.
 
 Manage categories creates, renames and deletes local categories and edits the
 mapping from desktop-entry categories. The first mapped desktop category wins;
-an individual override in Details wins over mappings, with Other as the fallback.
-Deleting a category removes its mappings and overrides while retaining visibility
-and launch preferences. Details edits are drafts until Save preferences is chosen.
-Hide removes an app from Apps and home search; Show hidden apps labels it explicitly
-and lets you restore it. Preferences live in
-`~/.config/spark-shell/apps.json` (or `$XDG_CONFIG_HOME/spark-shell/apps.json`), keyed
-by desktop-entry identity, so ordinary package updates retain them. System
-launchers and packages are never changed by these controls.
+an individual override in Details wins over mappings, with Other as the
+fallback. Deleting a category removes its mappings and overrides while
+retaining visibility and launch preferences. Details edits are drafts until
+Save preferences is chosen. Hide removes an app from Apps and home search;
+Show hidden apps labels it explicitly and lets you restore it. Preferences
+live in `~/.config/spark-shell/apps.json` (or
+`$XDG_CONFIG_HOME/spark-shell/apps.json`), keyed by desktop-entry identity, so
+ordinary package updates retain them. System launchers and packages are never
+changed by these controls.
 
-Application default uses the platform desktop-entry launch behavior. New window
-is available only for an explicitly declared New window action. Focus existing
-requires a supported Sway identity and uses its focus order; when nested groups
-make their relative recency ambiguous, it reports that limitation instead of
-choosing a window arbitrarily. No matching window starts the application.
-A launch request is distinguished from a window actually observed or focused.
-GIO owns argument expansion, desktop actions, working directories and activation.
-On foot-only desktops a private terminal bridge supplies GIO's terminal fallback.
-The adapter never interpolates discovered commands into shell text. An app remains running after the
-launch helper exits. Once the app has focus, home clears from view; Super+Space
-returns to the same search and edits. Failures remain visible in context.
+Application default uses the platform desktop-entry launch behavior. New
+window is available only for an explicitly declared New window action. Focus
+existing requires a supported Sway identity and uses its focus order; when
+nested groups make their relative recency ambiguous, it reports that
+limitation instead of choosing a window arbitrarily. No matching window starts
+the application. A launch request is distinguished from a window actually
+observed or focused. GIO owns argument expansion, desktop actions, working
+directories and activation. On foot-only desktops a private terminal bridge
+supplies GIO's terminal fallback. The adapter never interpolates discovered
+commands into shell text. An app remains running after the launch helper
+exits. Once the app has focus, home clears from view; Super+Space returns to
+the same search and edits. Failures remain visible in context.
 
 Details reads package and desktop metadata on demand: a compact overview, one
-Technical details disclosure, and Preferences. Missing package data is marked
-Unavailable; absent declarations do not imply a security policy. Copy launcher
-path copies its original contents. Apps uses home's shared 60-column centered
-frame, keybindings and footer in compact, fullscreen and both snaps. Its minimum
-is 36 columns by 20 rows; narrow values reflow and the body scrolls independently
-of the reserved footer. Page Up/Down and the wheel scroll all expanded metadata.
-The full model identity remains available in the model
-selector when its footer label is shortened. AI is optional throughout Apps.
+Technical details disclosure, and Preferences. Missing package data is shown
+as Unavailable; absent declarations do not imply a security policy. Copy
+launcher path copies its original contents. Apps uses home's shared 60-column
+centered frame, keybindings and footer in compact, fullscreen and both snaps.
+Its minimum is 36 columns by 20 rows; narrow values reflow and the body
+scrolls independently of the reserved footer. Page Up/Down and the wheel
+scroll all expanded metadata. The full model identity remains available in the
+model selector when its footer label is shortened. AI is optional throughout
+Apps.
 
-Native validation: `python3 tests/apps_desktop_proof.py BINARY DIRECTORY` runs an
-isolated Sway/foot session with real system discovery and launches, temporary
-preferences, and identified model/voice fixtures. `python3 tests/apps_test.py`
-checks adapter contracts, using isolated desktop-entry fixtures on Linux.
+Native validation: `python3 tests/apps_desktop_proof.py BINARY DIRECTORY` runs
+an isolated Sway/foot session with real system discovery and launches,
+temporary preferences, and identified model/voice fixtures.
+`python3 tests/apps_test.py` checks adapter contracts, using isolated
+desktop-entry fixtures on Linux.
 
 Settings stands in groups: sound and microphone; Wi-Fi, Bluetooth and
 the network; storage, display, keyboard and pointer; theme, wallpaper,
