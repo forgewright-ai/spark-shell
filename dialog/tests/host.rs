@@ -160,7 +160,7 @@ fn a_destructive_step_takes_the_typed_yes() {
     let before = *reads.lock().unwrap();
     assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.undo.is_some()));
     // a row picked says nothing: no line above the list, the receipt in no row; its undo stands alone (#196)
-    assert!(app.exchange.is_empty(), "{:?}", app.exchange);
+    assert!(app.exchange.iter().all(|l| l.text.contains("Proposed steps")), "{:?}", app.exchange);
     assert_eq!(app.reply, Some(Reply::undo_only()), "the result's undo is kept, at the reply row's end");
     let c = calls.lock().unwrap()[0].clone();
     assert_eq!(c["name"], "window_close");
@@ -243,10 +243,10 @@ fn a_plan_is_gated_step_by_step() {
     app.enter();
     // the step spark planned ran on Enter: its receipt is the reply row's, and no line runs above the list (#196)
     assert!(pump(&mut app, &rx, |a| a.reply.as_ref().is_some_and(|r| r.text == "terminal in front")));
-    assert!(!app
+    assert!(app
         .exchange
         .iter()
-        .any(|l| l.text.contains("window focus terminal") || l.text.contains("in front")));
+        .any(|l| l.text.contains("Proposed steps") && l.text.contains("window focus terminal")));
     assert_eq!(calls.lock().unwrap().len(), 1, "only the gated step ran");
 }
 
@@ -425,11 +425,12 @@ fn plus_opens_the_files_attaches_one_and_the_want_carries_it() {
     app.cfg.plus = true;
     app.cfg.attach = vec!["txt".into(), "md".into()];
     app.cfg.spark_shell = "/bin/spark-shell".into();
+    app.model_name = Some("test-model".into());
     let calls = Arc::new(Mutex::new(vec![]));
     app.servers.push(stub(0, "files", files_stub(calls.clone(), home.clone()), tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
-    assert_eq!(app.chips(), vec![0], "plus shows once a files provider runs");
+    assert_eq!(app.chips(), vec![5, 6, 0], "plus shows once a files provider runs");
     app.chip(0);
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "plus opens the root folder");
     let shown: Vec<String> = app
@@ -455,7 +456,7 @@ fn plus_opens_the_files_attaches_one_and_the_want_carries_it() {
     for c in "what do these say".chars() {
         app.typed(c);
     }
-    app.enter();
+    app.ask();
     let Some(Job::Run(_, argv)) = app.jobs.iter().rev().find(|j| matches!(j, Job::Run(spark_dialog::app::Helper::Want(_), _))) else {
         panic!("no want")
     };
@@ -486,7 +487,7 @@ fn an_attach_from_a_folder_comes_back_to_its_rows() {
     app.servers.push(stub(0, "files", files_stub(calls.clone(), home), tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
-    at_row(&mut app, View::Home, 0);
+    at_row(&mut app, View::Home, 1);
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "Files opens the home folder");
     app.chip(0);
@@ -509,7 +510,7 @@ fn a_step_run_from_a_folder_reads_the_folder_again() {
     app.servers.push(stub(0, "files", files_stub(calls.clone(), home), tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
-    at_row(&mut app, View::Home, 0);
+    at_row(&mut app, View::Home, 1);
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "Files opens the home folder");
     let reads = |c: &Arc<Mutex<Vec<Value>>>| c.lock().unwrap().iter().filter(|v| v.get("read").is_some()).count();
@@ -534,7 +535,7 @@ fn a_folder_drills_down_and_esc_walks_back() {
     app.servers.push(stub(0, "files", files_stub(calls.clone(), home), tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
-    at_row(&mut app, View::Home, 0);
+    at_row(&mut app, View::Home, 1);
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
     assert!(matches!(app.view, View::Folder(0, _)));
@@ -669,7 +670,7 @@ fn the_hint_says_what_enter_and_esc_do_and_only_keys_are_chips() {
     typed(&mut app, "is anything open");
     assert_eq!(
         said(&app),
-        "Clear Esc   Ask Enter   New line Shift+Enter",
+        "Clear Esc   Choose Enter   New line Shift+Enter",
         "words that name no row: what Esc does first (#166), Ask spark, and a new line"
     );
     let chips: Vec<String> = app.hint().into_iter().filter(|(_, k)| *k).map(|(t, _)| t).collect();
@@ -853,8 +854,11 @@ fn the_home_is_six_places_and_settings_holds_the_sections_that_run() {
             })
             .collect()
     };
-    assert_eq!(names(&app), vec!["Workspace", "Notes", "Settings"], "a place with no section here is not shown");
-    at_row(&mut app, View::Home, 2);
+    assert_eq!(
+        names(&app),
+        vec!["Apps", "Files", "Workspace", "Notes", "Calendar", "Tools", "Settings", "Help", "About", "Power"]
+    );
+    at_row(&mut app, View::Home, SETTINGS_DEST);
     app.enter();
     assert_eq!(app.view, View::Dest(SETTINGS_DEST));
     assert_eq!(names(&app), vec!["Sound", "Wi-Fi", "Connections"]);
@@ -942,9 +946,13 @@ fn settings_holds_the_drives_the_notifications_and_the_power_and_their_keys_say_
 fn words_that_name_no_row_are_a_request() {
     let (mut app, _rx, calls, _r) = started();
     app.cfg.spark_shell = "/bin/spark-shell".into();
+    app.model_name = Some("test-model".into());
     typed(&mut app, "is anything open");
     assert!(!app.in_list, "words that name no row stay at the prompt: no Ask row moves the list (#196)");
     app.enter();
+    assert!(!app.jobs.iter().any(inference), "Enter never sends an unmatched search");
+    assert_eq!(app.input, "is anything open");
+    app.ask();
     assert!(calls.lock().unwrap().is_empty(), "words that name no row run no row");
     assert!(app.jobs.iter().any(|j| asks_for(j, "is anything open")));
 }
@@ -954,6 +962,7 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
     // his report (#39): "change theme to nord" worked, and the next request ran its undo
     let (mut app, rx, calls, _r) = started();
     app.cfg.spark_shell = "/bin/spark-shell".into();
+    app.model_name = Some("test-model".into());
     let mut r = Reply::new(Mark::Done, "terminal closed");
     r.undo = true;
     app.reply = Some(r);
@@ -972,7 +981,7 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
     });
     typed(&mut app, "change theme to dracula");
     assert!(!app.in_list, "words that name no row light no row");
-    app.enter();
+    app.ask();
     assert!(app.jobs.iter().any(|j| asks_for(j, "change theme to dracula")), "Enter asks spark");
     assert!(!pump(&mut app, &rx, |_| !calls.lock().unwrap().is_empty()), "and runs no undo");
     assert!(app.undo.is_some(), "the undo is still there to pick");
@@ -982,6 +991,7 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
 fn words_that_name_a_row_run_that_row_with_no_model_call() {
     let (mut app, rx, calls, _r) = started();
     app.cfg.spark_shell = "/bin/spark-shell".into();
+    app.model_name = Some("test-model".into());
     typed(&mut app, "termi");
     assert!(
         matches!(app.picks().get(app.sel), Some(Item::Row(0, 0))),
@@ -1020,6 +1030,7 @@ fn spark_s_steps_wait_in_the_box_a_question_s_alike_and_run_on_enter() {
 fn esc_drops_spark_s_commands_and_a_change_makes_them_typed_words() {
     let (mut app, rx, calls, _r) = started();
     app.cfg.spark_shell = "/bin/spark-shell".into();
+    app.model_name = Some("test-model".into());
     app.plan(r#"{"answer": "", "steps": [{"name": "window_focus", "arguments": {"name": "terminal"}, "line": "window focus terminal"}], "refused": []}"#);
     app.escape();
     assert!(app.input.is_empty() && app.staged.is_none(), "Esc drops them: {:?}", app.input);
@@ -1044,6 +1055,7 @@ fn esc_drops_spark_s_commands_and_a_change_makes_them_typed_words() {
 fn a_command_typed_in_the_dialog_s_own_words_runs_with_no_model() {
     let (mut app, rx, calls, _r) = started();
     app.cfg.spark_shell = "/bin/spark-shell".into();
+    app.model_name = Some("test-model".into());
     typed(&mut app, "Window Focus terminal");
     app.in_list = false;
     app.enter();
@@ -1059,7 +1071,8 @@ fn a_command_typed_in_the_dialog_s_own_words_runs_with_no_model() {
     typed(&mut app, "window focus");
     app.in_list = false;
     app.enter();
-    assert!(app.jobs.iter().any(inference), "a title with its value left out is no command");
+    assert!(!app.jobs.iter().any(inference), "incomplete commands stay local");
+    assert_eq!(app.input, "window focus");
 }
 
 #[test]
@@ -1214,6 +1227,7 @@ fn an_argument_with_a_control_character_is_never_a_step() {
 fn the_draft_takes_new_lines_and_a_paste_never_sends() {
     let (mut app, _rx, _c, _r) = started();
     app.cfg.spark_shell = "/bin/spark-shell".into();
+    app.model_name = Some("test-model".into());
     typed(&mut app, "one");
     app.newline();
     typed(&mut app, "two");
@@ -1228,7 +1242,7 @@ fn the_draft_takes_new_lines_and_a_paste_never_sends() {
     app.line_end();
     app.delete();
     assert_eq!(app.input, "onetwothree\nfour five[2J");
-    app.enter();
+    app.ask();
     assert!(app.jobs.iter().any(|j| asks_for(j, "onetwothree\nfour five[2J")));
 }
 
@@ -1329,9 +1343,10 @@ fn history_does_not_change_a_request_spark_is_reading_or_a_form() {
     let (mut app, _, _) = app_with(&[]);
     history_request(&mut app, "an earlier request");
     app.cfg.spark = "/bin/sh".into();
+    app.model_name = Some("test-model".into());
     app.set_draft("a current request");
     app.in_list = false;
-    app.enter();
+    app.ask();
     assert!(app.pending.is_some(), "spark is reading the request");
     app.set_draft("keep this draft");
     let serial = app.want_serial;
@@ -1619,7 +1634,7 @@ fn files_opens_at_the_home_folder_and_talk_is_a_setting_not_a_control() {
     app.enter();
     assert_eq!(app.view, View::Talk);
     app.talk = spark_dialog::app::Talk::Click;
-    assert_eq!(app.chips(), vec![3]);
+    assert_eq!(app.chips(), vec![5, 6, 3]);
 }
 
 #[test]
@@ -1976,12 +1991,16 @@ fn the_march_is_sparks_alone() {
 
     // words that go to spark: a light bouncing, until the plan comes
     app.cfg.spark_shell = "/bin/spark-shell".into();
+    app.model_name = Some("test-model".into());
     typed(&mut app, "is anything open");
-    app.enter();
+    app.ask();
     assert!(app.busy() && app.thinking());
     assert_eq!(app.work(), Work::Think, "spark is asked");
     app.frame = 3;
-    assert!(header(&app).contains(&progress::bar(Work::Think, 3)), "{:?}", header(&app));
+    let mut buffer = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 60, 40));
+    spark_dialog::ui::draw(&app, &palette("tokyonight-night"), "", &mut buffer);
+    let activity: String = (0..60).map(|x| buffer[(x, 4)].symbol()).collect();
+    assert!(activity.contains(&progress::bar(Work::Think, 3)), "activity stays with Ask: {:?}", activity);
     app.helper(spark_dialog::app::Helper::Want(app.want_serial), Err("no answer".into()));
     assert!(!app.busy(), "the answer, or the lack of one, ends it");
 }
@@ -2244,7 +2263,7 @@ fn manager() -> (App, std::sync::mpsc::Receiver<Incoming>, Arc<Mutex<Vec<Value>>
     app.servers.push(stub(0, "files", manager_stub(calls.clone(), home.clone()), tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
-    at_row(&mut app, View::Home, 0);
+    at_row(&mut app, View::Home, 1);
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "Files opens the home folder");
     app.in_list = true;
@@ -2445,7 +2464,7 @@ fn settings_stand_in_groups_and_the_home_holds_about_and_power() {
             _ => None,
         })
         .collect();
-    assert!(names.ends_with(&["Settings", "About", "Power"]), "{:?}", names);
+    assert!(names.ends_with(&["Settings", "Help", "About", "Power"]), "{:?}", names);
     app.in_list = true;
     app.sel = app
         .picks()
@@ -2737,7 +2756,10 @@ fn typed_words_get_one_reply_row_and_the_frame_holds_still() {
         "{:?}",
         &draft[2..5]
     );
-    assert!(draft[4].trim().is_empty(), "row 4 stays air");
+    assert!(
+        draft[4].contains("Ask") && draft[4].contains("Ctrl+Enter"),
+        "Ask stays directly beneath the input"
+    );
     // a search: rows go, none comes above the list, and the first is at row 7
     app.set_draft("");
     typed(&mut app, "text");
@@ -2830,11 +2852,14 @@ fn esc_leaves_listening_at_once_and_an_older_reply_leaves_the_newer_thought_alon
     assert!(app.input.is_empty(), "what comes back after Esc is not said");
     // the review's I: a reply to an older request leaves the newer one's march where it is
     app.cfg.spark_shell = "/bin/spark-shell".into();
+    app.model_name = Some("test-model".into());
     typed(&mut app, "first words");
-    app.enter();
+    app.ask();
     let old = app.want_serial;
+    app.escape();
+    app.set_draft("");
     typed(&mut app, "newer words");
-    app.enter();
+    app.ask();
     assert!(app.want_serial != old && app.thinking());
     app.helper(spark_dialog::app::Helper::Want(old), Ok("{}".into()));
     assert!(app.thinking(), "the newer request still thinks");

@@ -4,6 +4,16 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HintKey {
     Enter,
+    Ask,
+    Conversation,
+    PreviousControl,
+    Start,
+    End,
+    PageUp,
+    PageDown,
+    Backspace,
+    Delete,
+    Quit,
     Escape,
     Newline,
     Tab,
@@ -34,12 +44,10 @@ pub const WIDTH: u16 = 60;
 pub const HEIGHT: u16 = 40;
 pub const MIN_WIDTH: u16 = 36;
 pub const MIN_HEIGHT: u16 = 20;
-/// The newest lines of the exchange the content area shows, newest turn first.
-pub const EXCHANGE_MAX: usize = 10;
 /// The draft's length, in characters.
 pub const INPUT_MAX: usize = 2000;
 /// What the prompt says while it is empty.
-pub const PLACEHOLDER: &str = "Type a request.";
+pub const PLACEHOLDER: &str = "Find, do, or ask.";
 /// Steps this machine counts as risky whatever their provider says (the hint is the provider's word,
 /// the risk is decided here): a saved password gone, a window closed with its work, a layout written
 /// over, a new device trusted.
@@ -52,7 +60,7 @@ pub struct Dest {
     pub purpose: &'static str,
     pub sections: &'static [&'static str],
 }
-pub const DESTS: [Dest; 8] = [
+pub const DESTS: [Dest; 10] = [
     Dest {
         name: "Apps",
         purpose: "open an application",
@@ -79,14 +87,23 @@ pub const DESTS: [Dest; 8] = [
         sections: &["clock", "reminders"],
     },
     Dest {
+        name: "Tools",
+        purpose: "utilities and diagnostics",
+        sections: &[],
+    },
+    Dest {
         name: "Settings",
         purpose: "devices and appearance",
         sections: &[],
     },
-    // how to leave, and what this is, on the home itself (#136)
+    Dest {
+        name: "Help",
+        purpose: "commands and shortcuts",
+        sections: &[],
+    },
     Dest {
         name: "About",
-        purpose: "version and keys",
+        purpose: "project, license and credits",
         sections: &["about"],
     },
     Dest {
@@ -95,7 +112,9 @@ pub const DESTS: [Dest; 8] = [
         sections: &["power"],
     },
 ];
-pub const SETTINGS_DEST: usize = 5;
+pub const SETTINGS_DEST: usize = 6;
+pub const HELP_DEST: usize = 7;
+pub const TOOLS_DEST: usize = 5;
 pub const CALENDAR_DEST: usize = 4;
 /// Settings: a section each, then Talk and Connections, in this order, under their groups (#137); About is a
 /// place of the home since v0.114 (#136).
@@ -393,6 +412,8 @@ pub struct Picking {
 #[derive(Clone, Debug, PartialEq)]
 pub enum View {
     Home,
+    Help,
+    Conversation,
     /// A destination of the home that holds more than one section, or none (Settings).
     Dest(usize),
     Section(usize),
@@ -568,6 +589,7 @@ impl Provider {
 /// What the command line chose (2.2 of the contract).
 #[derive(Clone, Debug)]
 pub struct Config {
+    pub keys: crate::keys::Bindings,
     pub home: Option<String>,
     pub title: Option<String>,
     pub close: bool,
@@ -585,6 +607,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Config {
         Config {
+            keys: crate::keys::Bindings::default(),
             home: None,
             title: None,
             close: true,
@@ -647,6 +670,7 @@ pub struct App {
     pub view: View,
     /// The views behind this one: Esc goes back through them.
     pub came_from: Vec<View>,
+    navigation: Vec<(View, usize, bool, usize, i32)>,
     /// The folder shown now: its provider, its uri, its rows once read.
     pub folder: Option<(usize, String, Rows)>,
     /// The row whose steps are shown (View::Steps), as it was when Right opened them.
@@ -759,11 +783,17 @@ impl App {
         let about_idx = providers.iter().position(|p| p.label == "about");
         let view = match cfg.home.as_deref() {
             Some("about") => View::About,
+            Some("chat") => View::Conversation,
+            Some("help") => View::Help,
             Some("clock") | Some("reminders") => View::Dest(CALENDAR_DEST), // the bar's clock opens the Calendar
             Some(h) => providers.iter().position(|p| p.label == h).map(View::Section).unwrap_or(View::Home),
             None => View::Home,
         };
-        let came_from: Vec<View> = if view == View::About { vec![View::Home] } else { vec![] }; // opened on the about (the first desktop start): Esc gives the list back
+        let came_from: Vec<View> = if matches!(view, View::About | View::Conversation | View::Help) {
+            vec![View::Home]
+        } else {
+            vec![]
+        }; // opened on the about (the first desktop start): Esc gives the list back
         App {
             want_serial: 0,
             target: None,
@@ -772,6 +802,7 @@ impl App {
             servers: vec![],
             view,
             came_from,
+            navigation: vec![],
             folder: None,
             attaching: None,
             attachment: None,
@@ -855,9 +886,7 @@ impl App {
     }
 
     pub fn say(&mut self, sign: Sign, text: &str) {
-        // a text of several lines (a proposal with every field on its own line) reads as one line, parted by spaces
-        let one = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ");
-        let text = scrub(&one);
+        let text = text.lines().map(scrub).collect::<Vec<_>>().join("\n");
         if text.is_empty() {
             return;
         }
@@ -1506,15 +1535,15 @@ impl App {
             .collect()
     }
 
-    /// The home's destinations shown here: one with a section that runs, Settings always.
+    /// Every root destination remains discoverable, including unavailable ones.
     pub fn dests(&self) -> Vec<usize> {
-        (0..DESTS.len()).filter(|d| *d == SETTINGS_DEST || !self.dest_sections(*d).is_empty()).collect()
+        (0..DESTS.len()).collect()
     }
 
     /// The exchange as content lines: the newest turn first, a turn the command as it ran (or the words
     /// of a question) and what came of it; the undo at hand is Undo at the end of the result it takes
-    /// back, never a row of its own (#53); a blank row between turns; older turns while EXCHANGE_MAX
-    /// lines hold them.
+    /// back, never a row of its own (#53); a blank row between turns. All retained
+    /// answers are readable by scrolling, without a rendered-line limit.
     fn said(&self, out: &mut Vec<Item>) {
         let w = self.col_w().saturating_sub(8).max(10) as usize; // the sign at 2, the words at 4, air at the right
         let mut turns: Vec<Vec<usize>> = vec![];
@@ -1526,7 +1555,6 @@ impl App {
                 t.push(i);
             }
         }
-        let mut lines = 0;
         for (k, t) in turns.iter().rev().enumerate() {
             let mut turn = vec![];
             if k > 0 {
@@ -1534,14 +1562,11 @@ impl App {
             }
             for &i in t {
                 let l = &self.exchange[i];
-                for (j, part) in crate::ui::wrap(&l.text, w).into_iter().enumerate() {
+                for (j, part) in crate::ui::conversation_rows(&l.text, w).into_iter().enumerate() {
                     turn.push(Item::Said(l.sign.clone(), part, j == 0));
                 }
             }
-            if k > 0 && lines + turn.len() > EXCHANGE_MAX {
-                break;
-            }
-            lines += turn.len();
+
             out.extend(turn);
         }
     }
@@ -1581,10 +1606,20 @@ impl App {
         out.extend(rows);
     }
 
-    /// The content area's items, in order: at Home the exchange (the newest turn first), then the view's list.
+    /// The content area's items: conversation turns or the current native view.
     pub fn items(&self) -> Vec<Item> {
         let mut out = vec![];
-        if self.view == View::Home {
+        if self.view == View::Conversation {
+            if let Some((words, _)) = &self.pending {
+                for (i, line) in crate::ui::draft_rows(words, 0, self.col_w().saturating_sub(8) as usize)
+                    .0
+                    .into_iter()
+                    .enumerate()
+                {
+                    out.push(Item::Said(Sign::You, line, i == 0));
+                }
+                out.push(Item::Blank);
+            }
             self.said(&mut out);
         }
         let mut list = vec![];
@@ -1640,7 +1675,29 @@ impl App {
                 list.push(Item::Heading("model".into()));
                 list.push(Item::OpenModels);
             }
-            View::About | View::Preview => {}
+            View::Conversation | View::About | View::Preview => {}
+            View::Help => {
+                self.text(
+                    &mut list,
+                    "Type to find local actions. Enter opens the selected result. Ask sends only when invited; Attach explicitly adds a file.",
+                    false,
+                );
+                list.push(Item::Blank);
+                for (name, binding) in self.cfg.keys.help() {
+                    self.text(&mut list, &format!("{}: {}", name, binding), false);
+                }
+                list.push(Item::Blank);
+                if let Some(p) = self.about_idx {
+                    for row in &self.providers[p].rows.rows {
+                        if let Some(key) = row.columns.first() {
+                            self.text(&mut list, &format!("{}: {}", row.text, key), false);
+                        }
+                    }
+                }
+                list.push(Item::Blank);
+                self.text(&mut list, "Commands: spark-shell desktop keys; spark-shell help; spark --help", true);
+                self.text(&mut list, "Configure: ~/.config/spark-shell/home-keys.json", true);
+            }
             View::Steps(_) => {
                 let n = self.steps_row.as_ref().map(|r| r.tool.iter().count() + r.more.len()).unwrap_or(0);
                 for k in 0..n {
@@ -1721,6 +1778,17 @@ impl App {
             View::Dest(d) => {
                 let secs = self.dest_sections(*d);
                 let one = secs.len() == 1;
+                if secs.is_empty() {
+                    self.text(
+                        &mut list,
+                        if *d == TOOLS_DEST {
+                            "No utilities are registered here yet. Native diagnostics: spark-shell status."
+                        } else {
+                            "This capability is unavailable in this session."
+                        },
+                        true,
+                    );
+                }
                 for p in secs {
                     self.section_rows(p, &mut list, !one);
                 }
@@ -1738,7 +1806,9 @@ impl App {
                 if self.query().trim().is_empty() {
                     // the places with air between them, as the approved home has them
                     for (k, d) in self.dests().into_iter().enumerate() {
-                        if k > 0 {
+                        if d == SETTINGS_DEST {
+                            list.extend([Item::Blank, Item::Blank]);
+                        } else if d == DESTS.len() - 1 && k > 0 {
                             list.push(Item::Blank);
                         }
                         list.push(Item::Dest(d));
@@ -2032,6 +2102,9 @@ impl App {
 
     /// A place's state for the home, from what its sections say now; None keeps what it is for.
     pub fn dest_state(&self, d: usize) -> Option<String> {
+        if !matches!(DESTS[d].name, "Workspace" | "Notes" | "Calendar") {
+            return None;
+        }
         let prov = |l: &str| self.providers.iter().find(|p| p.label == l && p.dead.is_none() && p.ready);
         let tools = |l: &str, names: &[&str]| -> Vec<String> {
             prov(l)
@@ -2047,15 +2120,8 @@ impl App {
         };
         let count = |n: usize, one: &str, many: &str| if n == 1 { format!("1 {}", one) } else { format!("{} {}", n, many) };
         let said = match DESTS[d].name {
-            "Apps" => {
-                let apps = tools("apps", &["apps_open", "apps_terminal"]);
-                match apps.len() {
-                    0 => return None,
-                    1..=3 => apps.join(", "),
-                    n => format!("{} and {} more", apps[..3].join(", "), n - 3),
-                }
-            }
             "Workspace" => {
+                prov("window")?;
                 let w = tools("window", &["window_focus"]).len();
                 let l = tools("layout", &["layout_open"]).len();
                 let wins = if w == 0 {
@@ -2070,6 +2136,7 @@ impl App {
                 }
             }
             "Notes" => {
+                prov("notes")?;
                 let notes = tools("notes", &["notes_open"]);
                 match notes.first() {
                     None => "no notes yet".to_string(),
@@ -2091,29 +2158,6 @@ impl App {
                         }
                     }
                 }
-            }
-            "Files" => "your home folder".to_string(),
-            "About" => {
-                // the version where the about knows it, else what the place is for
-                let v = prov("about")?.version.clone();
-                if v.is_empty() {
-                    return None;
-                }
-                format!("spark-shell {}", v)
-            }
-            "Settings" => {
-                let first = |l: &str| prov(l).map(|p| p.title.split(crate::ui::SEP).next().unwrap_or("").trim().to_string());
-                // the network: Wi-Fi's own words while it is joined, else wired when the cable is up (#128)
-                let net = match (first("wifi"), first("lan")) {
-                    (Some(w), Some(l)) if w.starts_with("not connected") && l == "up" => Some("wired".to_string()),
-                    (None, Some(l)) if l == "up" => Some("wired".to_string()),
-                    (w, _) => w,
-                };
-                let parts: Vec<String> = [net, first("theme")].into_iter().flatten().filter(|t| !t.is_empty()).collect();
-                if parts.is_empty() {
-                    return None;
-                }
-                parts.join(crate::ui::SEP)
             }
             _ => return None,
         };
@@ -2288,6 +2332,11 @@ impl App {
                 return; // a lit row with no page: Space is no letter of a search not begun (#196)
             }
         }
+        self.text_key(c);
+    }
+
+    /// A printable key not bound to an action. Remapping removes its old shortcut.
+    pub fn text_key(&mut self, c: char) {
         self.keep_lit = None;
         if c.is_control() {
             return;
@@ -2581,10 +2630,13 @@ impl App {
 
     /// Whether the content area shows an exchange that Esc would clear.
     pub fn exchange_up(&self) -> bool {
-        self.running.is_none() && !self.exchange.is_empty()
+        self.view == View::Conversation && self.running.is_none() && !self.exchange.is_empty()
     }
 
     fn go_back(&mut self, v: View) {
+        self.navigation.retain(|(view, ..)| *view != self.view);
+        self.navigation
+            .push((self.view.clone(), self.sel, self.in_list, self.scroll, self.month_offset));
         // back from the rest of a kind to the home: the words come back, the search as it was (#169)
         let words = match (&self.view, &v) {
             (View::Found(_, w), View::Home) => Some(w.clone()),
@@ -2599,7 +2651,6 @@ impl App {
         } else {
             None
         };
-        self.want_cancel();
         self.target = None;
         self.keep_lit = None;
         self.reply = None; // a reply is the view's it was said in: it never follows to another (#196)
@@ -2626,10 +2677,17 @@ impl App {
                 self.read_folder(p, &uri);
             }
         }
+        let restore_position = lit.is_none();
         if let Some(id) = lit {
             self.in_list = true;
             self.keep_lit = Some(id);
             self.follow_lit();
+        }
+        if let Some((_, sel, in_list, scroll, month)) = self.navigation.iter().find(|(view, ..)| restore_position && *view == self.view) {
+            self.sel = *sel;
+            self.in_list = *in_list;
+            self.scroll = *scroll;
+            self.month_offset = *month;
         }
         if let Some(w) = words {
             self.set_input(w);
@@ -2638,11 +2696,15 @@ impl App {
     }
 
     fn go(&mut self, v: View) {
-        self.want_cancel();
+        self.navigation.retain(|(view, ..)| *view != self.view);
+        self.navigation
+            .push((self.view.clone(), self.sel, self.in_list, self.scroll, self.month_offset));
         self.target = None;
         self.keep_lit = None;
         self.reply = None;
-        self.steps_row = None;
+        if v != View::Conversation {
+            self.steps_row = None;
+        }
         // the files section is its home folder: its one row, ~, is no stop of its own
         if let View::Section(p) = v {
             if let Some(root) = self.files_root(p) {
@@ -2660,6 +2722,12 @@ impl App {
         self.in_list = false;
         self.scroll = 0;
         self.month_offset = 0;
+        if let Some((_, sel, in_list, scroll, month)) = self.navigation.iter().find(|(view, ..)| *view == self.view) {
+            self.sel = *sel;
+            self.in_list = *in_list;
+            self.scroll = *scroll;
+            self.month_offset = *month;
+        }
     }
 
     /// A word typed alone that names a place: its view. "calendar" and "settings" are places, and
@@ -2695,6 +2763,9 @@ impl App {
 
     /// A destination's view: one section is that section's own, files is its home folder.
     fn dest_view(&self, d: usize) -> View {
+        if d == HELP_DEST {
+            return View::Help;
+        }
         if d == SETTINGS_DEST || d == CALENDAR_DEST {
             return View::Dest(d);
         }
@@ -2877,8 +2948,6 @@ impl App {
             self.keep_lit = self.row_ref(&item).map(|r| r.id.clone());
             return self.follow_lit();
         }
-        self.sel = 0;
-        self.in_list = false;
         match item {
             Item::StepOf(k) => {
                 // one of the lit row's steps: back to its list, then the step as a pick of its own
@@ -3106,6 +3175,8 @@ impl App {
     pub fn chip(&mut self, c: usize) {
         self.chip_focus = None;
         match c {
+            5 => self.ask(),
+            6 => self.conversation(),
             4 => {
                 self.attachment = None;
             }
@@ -3142,14 +3213,14 @@ impl App {
 
     /// The controls Tab moves through, in their order on the screen.
     pub fn chips(&self) -> Vec<usize> {
-        let mut v = vec![];
-        if self.cfg.plus && self.files().is_some() && self.view != View::Preview {
+        let mut v = if self.mode == Mode::Normal { vec![5, 6] } else { vec![] };
+        if self.cfg.plus && self.files().is_some() {
             v.push(0);
         }
         if self.attachment.is_some() {
             v.push(4);
         }
-        if self.cfg.model && self.model_name.is_some() {
+        if self.cfg.model {
             v.push(1);
         }
         if self.cfg.talk && self.voice_on && self.talk == Talk::Click {
@@ -3185,9 +3256,8 @@ impl App {
 
     // ---- the want and the steps
 
-    /// Words from the prompt: a place's name alone opens it; commands in the dialog's own words run at
-    /// once, with no model; any other words go to spark, and the commands it plans come back to the
-    /// box (#53).
+    /// Enter resolves places and native commands locally. An unmatched draft stays
+    /// available for editing or an explicit Ask.
     fn request(&mut self, words: &str) {
         if self.running.is_some() {
             self.set_input(words.into());
@@ -3205,9 +3275,6 @@ impl App {
             return self.reply(Mark::Note, "the controls are still loading; press Enter when they appear");
         }
         self.remember_prompt(words);
-        let target = self.target.take();
-        self.want_cancel();
-        self.target = target;
         if !words.contains('\n') {
             if let Some(v) = self.place(words) {
                 if self.view != v {
@@ -3220,7 +3287,48 @@ impl App {
             self.queue.extend(steps.into_iter().map(|s| Step { typed: true, ..s }));
             return self.next_step();
         }
-        self.want(words);
+        self.set_input(words.to_string());
+        self.reply(Mark::Note, "No native match. Use Ask to send this draft to the model.");
+    }
+
+    /// Explicit model request. Forms, confirmation text and previews grant no context authority.
+    pub fn ask(&mut self) {
+        if self.mode != Mode::Normal || self.staged_now() {
+            return;
+        }
+        if self.pending.is_some() || self.running.is_some() || self.wait.is_some() {
+            return self.reply(Mark::Note, "Wait for the current request or action.");
+        }
+        let words = self.input.trim().to_string();
+        if words.is_empty() {
+            return;
+        }
+        if self.model_name.is_none() {
+            return self.refuse("No model is available. Your draft is kept; native actions still work.");
+        }
+        self.remember_prompt(&words);
+        self.set_input(String::new());
+        self.in_list = false;
+        self.want(&words);
+        if self.pending.is_some() && self.view != View::Conversation {
+            self.go(View::Conversation);
+        }
+        self.scroll = 0;
+    }
+
+    pub fn conversation(&mut self) {
+        if self.mode != Mode::Normal {
+            return;
+        }
+        if self.view == View::Conversation {
+            if let Some(v) = self.came_from.pop() {
+                self.go_back(v);
+            } else {
+                self.view = View::Home;
+            }
+        } else {
+            self.go(View::Conversation);
+        }
     }
 
     /// Lines in the dialog's own words, each a step: None when any line is not one.
@@ -3305,21 +3413,8 @@ impl App {
         }
         self.want_cancel();
         self.wait = Some(Work::Think);
-        // the file goes with this request alone; it comes back if the request fails. In a preview it is
-        // the file shown, as the text spark can read of it (#120): a picture, a sound has none
-        let mut file = self.attachment.take();
-        if file.is_none() && self.view == View::Preview {
-            let Some(pv) = &self.preview else { return };
-            match pv.shown.as_ref().and_then(|pg| pg.attach.clone()) {
-                Some(a) => file = Some(a),
-                None => {
-                    let name = pv.row().text.clone();
-                    self.wait = None;
-                    self.set_input(words.to_string());
-                    return self.refuse(&format!("spark reads text, and {} has none to read", name));
-                }
-            }
-        }
+        // Only an explicit attachment is sent. Inspecting a file stays local.
+        let file = self.attachment.take();
         self.pending = Some((words.to_string(), file.clone()));
         let serial = self.want_serial;
         if file.is_some() || self.cfg.spark.is_empty() {
@@ -3360,103 +3455,9 @@ impl App {
         self.jobs.push(Job::RunInput(Helper::Want(serial), argv, payload));
     }
 
-    /// What the caller knows now, for spark steps: the view, the selected row, the
-    /// names the open view's steps take (a window, a note, a network, exactly as
-    /// written), and the clock last. Nothing a row hides.
+    /// Browsing state is not implicit model context.
     fn want_about(&self) -> String {
-        let mut about = format!("A desktop dialog. The view: {}.", self.title());
-        if let Some((_, row)) = self.target_row() {
-            about.push_str(&format!(" The selected row: {}.", row.text));
-        }
-        let mut names: Vec<String> = vec![];
-        for i in self.shown() {
-            if self.providers[i].label == "files" {
-                // the folder on screen: the paths its rows hold are the names a files step takes, and the
-                // only ones (#112); the home's own rows name nothing
-                if let Some((p, _, rows)) = &self.folder {
-                    if *p == i {
-                        for r in &rows.rows {
-                            for c in r.tool.iter().chain(r.more.iter()) {
-                                if let Some(v) = c.arguments.get("path").and_then(Value::as_str) {
-                                    if !names.iter().any(|n| n == v) {
-                                        names.push(v.to_string());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                continue;
-            }
-            for r in 0..self.providers[i].rows.rows.len() {
-                if let Some(n) = self.name_of(&Item::Row(i, r)) {
-                    if !names.contains(&n) {
-                        names.push(n);
-                    }
-                }
-            }
-        }
-        if !names.is_empty() {
-            let mut list = String::new();
-            for n in names {
-                if list.len() + n.len() > 1000 {
-                    break;
-                }
-                if !list.is_empty() {
-                    list.push_str(", ");
-                }
-                list.push_str(&n);
-            }
-            about.push_str(&format!(" The names a step takes now, each exactly as written here: {}.", list));
-        }
-        // the names other steps take: each tool that names one of the machine's own things (a
-        // layout, a network, a window, a note), its title's words, then its rows' values as written,
-        // so a request from any view names them exactly; 1500 characters at most (#95)
-        let shown = self.shown();
-        let mut others = String::new();
-        for (i, prov) in self.providers.iter().enumerate() {
-            if shown.contains(&i) || !prov.ready || prov.dead.is_some() || prov.label == "files" || Some(i) == self.about_idx {
-                continue;
-            }
-            for t in &prov.tools {
-                let keys = gate::name_keys(&t.schema);
-                let [k] = keys.as_slice() else { continue };
-                let mut vals: Vec<&str> = vec![];
-                for r in &prov.rows.rows {
-                    for c in r.tool.iter().chain(r.more.iter()) {
-                        if c.name == t.name {
-                            if let Some(v) = c.arguments.get(k).and_then(Value::as_str) {
-                                if !vals.contains(&v) {
-                                    vals.push(v);
-                                }
-                            }
-                        }
-                    }
-                }
-                if vals.is_empty() {
-                    continue;
-                }
-                let label = t
-                    .title
-                    .split_whitespace()
-                    .filter(|w| !w.bytes().all(|c| c.is_ascii_uppercase()))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let part = format!("{}: {}", label, vals.join(", "));
-                if others.len() + part.len() > 1500 {
-                    continue; // a list too long for the room goes without; the shorter ones still fit
-                }
-                if !others.is_empty() {
-                    others.push_str("; ");
-                }
-                others.push_str(&part);
-            }
-        }
-        if !others.is_empty() {
-            about.push_str(&format!(" The names other steps take now, each exactly as written here: {}.", others));
-        }
-        about.push_str(&format!(" The local time: {}.", crate::helper::clock()));
-        about
+        "Home: optional assistance. Only the explicit draft and attachment are authorized context. Propose steps for review; do not execute them.".into()
     }
 
     /// A step from spark that names a row by a near miss ("everforest light" for everforest-light,
@@ -3537,10 +3538,8 @@ impl App {
         }
     }
 
-    /// The plan from `spark-shell want --json`: each step gated here too. The steps come back to the
-    /// box as commands, one a line, to run with Enter, a question's alike (#52, #53): nothing spark
-    /// plans runs before that. Words that were the commands already run at once. An answer, or a step
-    /// refused, is said under the words that asked.
+    /// Model proposals are gated and staged for review, even when their text
+    /// matches the original request. Full answers remain in the conversation.
     pub fn plan(&mut self, text: &str) {
         self.wait = None;
         let words = self.pending.as_ref().map(|(w, _)| w.clone()).unwrap_or_default();
@@ -3623,16 +3622,30 @@ impl App {
                 },
             }
         }
-        // spark's answer and its refusals are the reply row's; an answer longer than that row is kept whole, under
-        // the words that asked, at Home, never over a section's list (#196)
+        // A brief receipt may use the feedback row; the complete text belongs
+        // in the conversation, preserving paragraphs and proposed steps.
         if !no.is_empty() {
             self.refuse(&no.join("; "));
         } else if !answer.is_empty() {
             self.reply(Mark::Note, &answer);
         }
-        if !answer.is_empty() && (!no.is_empty() || answer.contains('\n') || cells(&answer) + 6 > self.col_w() as usize) {
+        if !words.is_empty() {
             self.say(Sign::You, &words);
+        }
+        if !answer.is_empty() {
             self.say(Sign::Says, &answer);
+        }
+        if !no.is_empty() {
+            self.say(Sign::Refused, &no.join("\n"));
+        }
+        if !steps.is_empty() {
+            self.say(
+                Sign::Says,
+                &format!(
+                    "Proposed steps (review before running):\n{}",
+                    steps.iter().map(|s| s.line.as_str()).collect::<Vec<_>>().join("\n")
+                ),
+            );
         }
         if steps.is_empty() {
             if answer.is_empty() {
@@ -3646,21 +3659,6 @@ impl App {
         }
         self.pending = None;
         let lines: Vec<String> = steps.iter().map(|s| s.line.clone()).collect();
-        let said = |t: &str| {
-            t.lines()
-                .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase())
-                .filter(|l| !l.is_empty())
-                .collect::<Vec<_>>()
-        };
-        if said(&words) == said(&lines.join("\n")) {
-            // the words were the commands: they run, as typed ones do
-            self.queue
-                .extend(steps.into_iter().map(|s| if s.who == Who::Model { Step { who: Who::Person, ..s } } else { s }));
-            if self.running.is_none() && self.mode == Mode::Normal {
-                self.next_step();
-            }
-            return;
-        }
         let text = lines.join("\n");
         if self.mode != Mode::Normal {
             // the prompt is asking (a yes, a name, a code): the commands wait where the draft waits, and come
@@ -4194,6 +4192,8 @@ impl App {
         }
         match &self.view {
             View::Home => "home".into(),
+            View::Help => "help".into(),
+            View::Conversation => "conversation".into(),
             View::Dest(d) => DESTS[*d].name.to_lowercase(),
             View::Section(p) | View::Folder(p, _) | View::Steps(p) => section_name(&self.providers[*p].label).to_lowercase(),
             View::About => "about".into(),
@@ -4221,6 +4221,16 @@ impl App {
     pub fn hint_key(&mut self, key: HintKey) {
         match key {
             HintKey::Enter => self.enter(),
+            HintKey::Ask => self.ask(),
+            HintKey::Conversation => self.conversation(),
+            HintKey::PreviousControl => self.tab(true),
+            HintKey::Start => self.line_start(),
+            HintKey::End => self.line_end(),
+            HintKey::PageUp => self.page(-1),
+            HintKey::PageDown => self.page(1),
+            HintKey::Backspace => self.backspace(),
+            HintKey::Delete => self.delete(),
+            HintKey::Quit => self.quit = Some(130),
             HintKey::Escape => self.escape(),
             HintKey::Newline => self.newline(),
             HintKey::Tab => self.tab(false),
@@ -4318,7 +4328,7 @@ impl App {
         }
         if self.pending.is_some() && !self.staged_now() {
             let mut v = vec![("Thinking".to_string(), false)];
-            v.extend(esc("Stop"));
+            v.extend(esc("Discard"));
             return v;
         }
         if self.attaching.is_some() {
@@ -4424,7 +4434,7 @@ impl App {
         }
         if !self.input.trim().is_empty() {
             // words that light no row: Enter asks spark, as the Ask row once said (#196)
-            let mut v = key("Ask", "Enter");
+            let mut v = key("Choose", "Enter");
             v.push(gap());
             v.extend(key("New line", "Shift+Enter"));
             v.extend(esc(esc_word));

@@ -243,6 +243,7 @@ fn a_question_is_its_turn_and_a_typed_step_its_reply() {
     // #53: a question's turn is the words and the answer; a typed step's receipt is the reply row, Undo at
     // its end, never a turn (#196)
     let mut app = full();
+    app.view = View::Conversation;
     app.exchange = vec![
         Line {
             sign: Sign::You,
@@ -377,7 +378,7 @@ fn a_list_of_a_thousand_pages_and_jumps_by_its_keys() {
 }
 
 #[test]
-fn settings_says_wired_when_the_cable_is_up_and_wi_fi_is_not() {
+fn root_settings_keeps_its_purpose_instead_of_network_details() {
     let net = |wifi: &str, lan: &str| {
         let mut app = base();
         app.providers
@@ -387,15 +388,9 @@ fn settings_says_wired_when_the_cable_is_up_and_wi_fi_is_not() {
         app.about_idx = Some(app.providers.len() - 1);
         app.dest_state(spark_dialog::app::SETTINGS_DEST).unwrap_or_default()
     };
-    assert!(
-        net("not connected", "up \u{b7} 192.0.2.9").starts_with("wired"),
-        "#128: the cable up, Wi-Fi not: wired"
-    );
-    assert!(
-        net("\u{2582}\u{2584} home", "up \u{b7} 192.0.2.9").starts_with("\u{2582}\u{2584} home"),
-        "Wi-Fi joined: its own words"
-    );
-    assert!(net("not connected", "no wire").starts_with("not connected"), "neither: not connected");
+    assert!(net("not connected", "up").is_empty());
+    assert!(net("private network", "up").is_empty());
+    assert!(net("not connected", "no wire").is_empty());
 }
 
 #[test]
@@ -438,6 +433,7 @@ fn a_destructive_step_waits_for_yes() {
 #[test]
 fn an_answer_wraps_under_its_sign() {
     let mut app = full();
+    app.view = View::Conversation;
     app.exchange = vec![
         Line {
             sign: Sign::You,
@@ -1149,11 +1145,23 @@ fn a_file_with_no_preview_says_why_in_the_middle() {
 }
 
 #[test]
-fn an_answer_about_the_file_sits_above_its_page() {
+fn a_conversation_preserves_the_preview_without_attaching_it() {
     let mut app = preview_app("plan.md", "~/notes", note(), WIDTH, HEIGHT);
+    app.cfg.spark = "/bin/false".into();
+    app.model_name = Some("fixture".into());
+    app.set_draft("when is the report due?");
+    app.ask();
+    assert_eq!(app.view, View::Conversation);
+    assert_eq!(app.pending.as_ref().unwrap().1, None, "preview is not an attachment");
+    assert!(app.jobs.iter().any(|j| matches!(j, spark_dialog::app::Job::RunInput(..))));
+    app.pending = None;
+    app.wait = None;
     app.say(Sign::You, "when is the report due?");
     app.say(Sign::Says, "\"The report goes out on Friday.\"");
     render(&app, "preview-answer");
+    app.conversation();
+    assert_eq!(app.view, View::Preview);
+    assert_eq!(app.preview.as_ref().unwrap().row().text, "plan.md");
 }
 
 #[test]

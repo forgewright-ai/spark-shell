@@ -81,9 +81,9 @@
 #                                     lock, log out, suspend, restart, shut down
 #   spark-shell bar on|off            show or hide the status line and the bar
 #   spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
-#   spark-shell dialog [SECTION]      open the dialog (Super+d), SECTION first
-#   spark-shell dialog chat           spark chat in the dialog's window (Super+s)
-#   spark-shell dialog about          the version, the keys and the address
+#   spark-shell dialog [SECTION]      open home (Super+Space), SECTION first
+#   spark-shell dialog chat           conversation inside home
+#   spark-shell dialog about          the version, license and credits
 #   spark-shell want "WORDS"          ask for it, "mute everything": steps run;
 #                                     a question's are shown, not run
 #   spark-shell want --json "WORDS"   the steps spark picks, as JSON; none run
@@ -899,6 +899,7 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
 render_sed() { printf '%s\n' "$1" > "$TMP/render.sed"; sed -f "$TMP/render.sed" "$2"; }   # render_sed SCRIPT SRC -> SRC through the script, from a file (never one -e line)
 render_tmp() {   # render_tmp SRC DST -- the template through EXPR, every placeholder gone
     render_sed "$EXPR" "$1" > "$2"
+    case $1 in */sway/config) python3 "$REPO/lib/home.py" render "$2" || exit 1 ;; esac
     if grep -q '@[A-Z_0-9]*@' "$2"; then
         printf 'spark-shell: %s: unrendered placeholder: %s\n' "$1" "$(grep -o '@[A-Z_0-9]*@' "$2" | head -1)" >&2
         exit 1
@@ -3253,7 +3254,7 @@ cmd_follow() {
 # once, as a card (DESK_SEEN), and `desktop keys` any time. `status`
 # ends with one `next` row when something is off, nothing when not.
 DESK_SEEN=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/desktop.seen
-desk_keys() { sed -n 's/^# key: //p' "$REPO/templates/.config/sway/config"; }
+desk_keys() { python3 "$REPO/lib/home.py" keys "$REPO/templates/.config/sway/config"; }
 status_next() {   # the first sentence that applies, as a next row; nothing off, no row
     if [ -z "$(spark_bin)" ]; then n=spark; s="Install spark, the local AI: github.com/forgewright-ai/spark."
     elif [ -n "$(desktop_na)" ]; then return 0
@@ -4212,8 +4213,8 @@ machine_facts() {   # -> the .facts lines: what holds while the machine stays as
     if command -v wl-copy >/dev/null 2>&1; then _mwl="${_mwl:+$_mwl, }clipboard wl-copy"; ! command -v wl-paste >/dev/null 2>&1 || _mwl="$_mwl and wl-paste"; fi
     ! command -v notify-send >/dev/null 2>&1 || _mwl="${_mwl:+$_mwl, }notifications notify-send"
     printf -- "- Session: sway%s on Wayland (X11 apps run through Xwayland), set up by spark-shell%s; %s.\n" "${_msv:+ $_msv}" "${_mpv:+ v$_mpv}" "${_mwl:+$_mwl, }swaymsg"
-    _mkd=$(desk_keys | awk '/ opens the dialog: / { print $1; exit }'); _mkc=$(desk_keys | awk '/ opens the dialog in spark chat/ { print $1; exit }')
-    printf -- '- spark-shell is this desktop: the bar at the top; the dialog%s is the launcher and the settings%s.\n' "${_mkd:+ ($_mkd)}" "${_mkc:+, $_mkc spark chat in it}"
+    _mkd=$(desk_keys | awk '$2 == "home.open." { print $1; exit }')
+    printf -- '- spark-shell is this desktop: the bar at the top; home%s holds native actions and optional conversation.\n' "${_mkd:+ ($_mkd)}"
     _msc=$(machine_screens); [ -z "$_msc" ] || printf -- '- Screens: %s.\n' "$_msc"
     echo '- Workspaces: the bar names each N:GLYPH; swaymsg workspace number N goes to one.'
     if [ -n "${SND:-}" ]; then printf -- '- Sound outputs: %s. Inputs: %s.\n' "$(machine_snd_list out | grep . || echo none)" "$(machine_snd_list mic | grep . || echo none)"
@@ -4948,7 +4949,7 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
         display) _b=$(light_get); if [ -n "$_b" ]; then echo "$(panel_col display)brightness $_b%"; else echo "$(panel_col display)idle $(idle_words "$DISPLAY_IDLE")"; fi ;;   # short: the header holds it; the rows say the minutes
         pointer) echo "$(panel_col pointer)tap $POINTER_TAP $PANEL_SEP scroll $POINTER_SCROLL $PANEL_SEP speed $POINTER_SPEED" ;;
         keyboard) _k=$(kb_active); if [ -n "$_k" ]; then echo "$(panel_col keyboard)$_k $PANEL_SEP $(printf '%s\n' $KEYBOARD | grep -c .) layouts"; elif [ -n "$KEYBOARD" ]; then echo "$(panel_col keyboard)$KEYBOARD"; else echo "$(panel_col keyboard)sway's own layout"; fi ;;
-        bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown at the top of the screen"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys Super+d) opens the dialog"; fi ;;
+        bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown at the top of the screen"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys "$(desk_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog"; fi ;;
         notifications) if ! mako_here; then echo "$(panel_col notifications)mako is not installed"
             elif ! notify_up; then echo "$(panel_col notifications)not running yet"
             elif notify_dnd; then echo "$(panel_col notifications)do not disturb"
@@ -6095,7 +6096,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
             esac ;;
         about) case $_a in open) panel_about 72 ;; *) echo "$_a is not something about does"; return 1 ;; esac ;;   # on a pipe: the splash as text
         bar) case $_a in
-                off) bar_desktop off desktop >/dev/null; echo "bar hidden $PANEL_SEP $(panel_keys Super+d) opens the dialog" ;;
+                off) bar_desktop off desktop >/dev/null; echo "bar hidden $PANEL_SEP $(panel_keys "$(desk_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog" ;;
                 on) bar_desktop on desktop >/dev/null; echo "bar shown" ;;
                 *) echo "$_a is not something bar does"; return 1 ;;
             esac ;;
@@ -6982,6 +6983,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
     THEME_ENUM_NOW=''; [ "$1" != theme ] || THEME_ENUM_NOW=$(theme_enum)   # the palette names once for this read, not once a row (#183)
     WIFI_TOOL_READ=''; [ "$1" != wifi ] || { WIFI_TOOL_NOW=$(wifi_tool); WIFI_TOOL_READ=1; }   # the wifi manager once for this read (#196)
     # the theme's own helpers (the chips, the text size, the animation, the transparency) for the theme's rows alone (#196)
+    _pr_keys='{}'; [ "$1" != window ] || _pr_keys=$(python3 "$REPO/lib/home.py" map "$REPO/templates/.config/sway/config")
     _pr_chips='{}'; _pr_size=''; _pr_anim=''; _pr_animok=''; _pr_trn=0; _pr_tr=''
     if [ "$1" = theme ]; then
         _pr_chips=$(theme_chips theme); _pr_size=$(look_font_size); _pr_anim=$(anim_now); ! anim_drawn "$(anim_palette)" || _pr_animok=1
@@ -7003,7 +7005,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                     if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}, said:"done"}, {name:"reminders_snooze", arguments:{name:$id}, said:"again in 10 minutes"}, {name:"reminders_delete", arguments:{name:$id}, said:"delete"}]} else {} end
                    else {} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$_pr_chips" --arg size "$_pr_size" --arg anim "$_pr_anim" --arg animok "$_pr_animok" --arg animnone "$ANIM_NONE_SAID" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg motion "$WALLPAPER_MOTION" --argjson trn "$_pr_trn" --arg tr "$_pr_tr" '
+        | jq -c --argjson desktopkeys "$_pr_keys" --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$_pr_chips" --arg size "$_pr_size" --arg anim "$_pr_anim" --arg animok "$_pr_animok" --arg animnone "$ANIM_NONE_SAID" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg motion "$WALLPAPER_MOTION" --argjson trn "$_pr_trn" --arg tr "$_pr_tr" '
             .rows |= map(
                 (if $s == "theme" and ((.group // "") | test("^(dark|light|custom)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
                 | (if $s == "theme" and ((.group // "") | test("^(dark|light)$")) and (.tool.name // "") == "theme_palette"
@@ -7028,7 +7030,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif ($s == "lan" or $s == "wifi") and (.id | startswith($s + ":network-settings")) then .sign = "opens" | .children = ("spark-shell://" + $s + "/rows/network/" + (.id | split(":network-settings ")[1]))
                 elif $s == "display" and (.text | startswith("screen ")) then .sign = "opens" | .children = ("spark-shell://display/rows/screen/" + (.text | split(" ")[1]))
                 elif $s == "window" and (.tool.name // "") == "window_focus" then .group = "open now" | .more = [{name: "window_close", arguments: {name: .tool.arguments.name}, said: "close"}]
-                elif $s == "window" and (.tool.name // "") == "window_capture" then .key = ({"screen": "Print", "area": "Shift+Print", "window": "Super+Print"}[.tool.arguments.what] // null)
+                elif $s == "window" and (.tool.name // "") == "window_capture" then .key = ($desktopkeys["desktop.desktop-capture-" + .tool.arguments.what] // null)
                 elif $s == "window" and (((.tool.name // "") | test("^window_(split|tabs|stacked)$")) or (.id | startswith("window:show:"))) then .group = "layout"
                 elif (.tool.name // "") == "layout_save" then .tool.ask = ["name"]
                 elif (.tool.name // "") == "layout_rename" then .tool.ask = ["to"]
@@ -7134,7 +7136,7 @@ provide_title() { [ "$1" != about ] || return 0; [ "$1" != files ] || { echo "yo
 provide_about_rows() {   # -> the about's rows: the template's `# key:` sentences, a combo (or Print) as a column, in five groups; the licence and the address; the row that opens it
     desk_keys | scrub_text | jq -Rn --arg v "$(panel_version)" '
         [inputs] | to_entries | map(.key as $i | .value as $l
-            | ($l | test("^((Super|Ctrl|Alt|Shift)\\+|Print )")) as $k
+            | true as $k
             | {id: ("about:key:" + ($i | tostring)), sign: "blank",
                text: (if $k then ($l | sub("^[^ ]* "; "")) else $l end), tool: null, more: [],
                columns: (if $k then [$l | sub(" .*$"; "") | sub(",$"; "")] else [] end), children: null,
@@ -8616,7 +8618,7 @@ mcp_off() {   # off: spark-shell's lines taken off spark's MCP list, a server of
 dialog_sections() {   # dialog_sections [FIRST] -> the providers the dialog starts, FIRST on top: every panel section but spark (the dialog holds the conversation) and undo (it keeps a result's own)
     panel_sections "${1:-glance}" | grep -vxE 'spark|undo|glance|chat' || :
 }
-cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a click on a bar block, the first desktop start (about)
+cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- home, its conversation, or a section
     if [ "${SPARK_DIALOG_WINDOW:-}" = 1 ] && [ "${1:-}" != chat ] && [ -t 0 ] && [ -t 1 ]; then
         # the dialog's own window (dialog.ini says so, #138): nothing is drawn ahead of the opening, which comes first and alone
         # (#142); a key typed now waits for the dialog unseen, and lands at its prompt
@@ -8632,13 +8634,17 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     command -v jq >/dev/null 2>&1 || refuse_in dialog "jq is not installed (spark-shell on)"
     pm_detect; theme_load; SND=$(snd_tool)
     _first=${1:-}
-    case $_first in ''|about|chat|files) ;; *) panel_section_ok "$_first" || refuse_in dialog "$_first is not a section of the dialog" ;; esac
-    [ "$(panel_open_count)" -lt 2 ] || { swaymsg "[app_id=$PANEL_APP] kill" >/dev/null 2>&1 || :; return 0; }   # the key again: the dialog already open goes, this one too
-    [ "$_first" != chat ] || { [ "$_dwin" != 1 ] || swaymsg "[app_id=$PANEL_APP] opacity 1" >/dev/null 2>&1 || :; panel_chat; return; }   # spark chat draws its own: its window is shown at once
-    dialog_ok || refuse_in dialog "the dialog is not installed, or not the release's -- spark-shell on"
+    case $_first in ''|about|help|chat|files) ;; *) panel_section_ok "$_first" || refuse_in dialog "$_first is not a section of the dialog" ;; esac
+    # Compatibility entry: chat now opens the conversation inside home.
+    _db=${SPARK_SHELL_DIALOG:-$DIALOG_BIN}
+    if [ -n "${SPARK_SHELL_DIALOG:-}" ]; then
+        [ -x "$_db" ] || refuse_in dialog "SPARK_SHELL_DIALOG is not executable"
+    else
+        dialog_ok || refuse_in dialog "the dialog is not installed, or not the release's -- spark-shell on"
+    fi
     case $REPO in *[[:space:]]*) refuse_in dialog "the clone's path holds a space, and a provider is argv words: move it ($REPO)" ;; esac
     set --
-    _ds=$_first; [ "$_ds" != files ] || _ds=''   # files is no panel section: it is started once, below
+    _ds=$_first; case $_ds in files|chat|help) _ds='' ;; esac   # built-in views are not provider sections
     for s in $(dialog_sections "$_ds"); do
         [ "$s" != about ] || set -- "$@" --provider "$REPO/spark-shell provide files"   # the files under HOME, the root the dialog hands it, just before the about; plus picks from them
         set -- "$@" --provider "$REPO/spark-shell provide $s"
@@ -8647,11 +8653,11 @@ cmd_dialog() {   # cmd_dialog [SECTION|about|chat] -- Super+d, Super+s (chat), a
     case " $* " in *" provide clock "*) ;; *) set -- "$@" --provider "$REPO/spark-shell provide clock" ;; esac   # the Calendar, there to open from any view: it has no rows on the home dialog
     case $_first in '') ;; *) set -- "$@" --home "$_first" ;; esac
     _dc=''; [ "$DIALOG_ATTACH" != yes ] || _dc=plus; [ "$DIALOG_MODEL" != yes ] || _dc="${_dc:+$_dc,}model"; [ "$DIALOG_TALK" != yes ] || _dc="${_dc:+$_dc,}talk"
-    _sp=$(spark_bin); [ -z "$_sp" ] || set -- "$@" --spark "$_sp"
+    _sp=$(spark_bin); set -- "$@" --spark "$_sp"
     _ta=$(dialog_transitions); [ -z "$_ta" ] || set -- "$@" --transitions "$_ta"
     FULL_ID=''; ! panel_own_window || panel_full_aside
     ! desktop_wanted || case ${TERM:-} in foot*) SPARK_DIALOG_SLOTS=1; export SPARK_DIALOG_SLOTS ;; esac   # its foot.ini sets the five slots: the dialog draws in them, and a new look recolors it in place (#34)
-    st=0; "$DIALOG_BIN" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?
+    st=0; "$_db" "$@" --composer "$_dc" --attach "$DIALOG_ATTACH_TYPES" --spark-shell "$REPO/spark-shell" || st=$?
     [ "$st" -eq 3 ] || panel_full_back   # 3: a step put a window on the screen, and the window is the receipt
     [ "$st" -eq 3 ] || [ "$st" -eq 0 ] || return "$st"
 }
@@ -8895,14 +8901,8 @@ cmd_panel() {   # cmd_panel [SECTION] [--list | ACTION [ARG...]] | chat | "WORDS
         panel_loop "$what"
     else panel_list "$what"; fi
 }
-bar_panel_open() {   # bar_panel_open BLOCK -- from a click: the panel with that block first; a panel already open goes first, and is gone before the new one looks
-    command -v foot >/dev/null 2>&1 || return 0
-    if [ -n "${SWAYSOCK:-}" ]; then
-        swaymsg "[app_id=$PANEL_APP] kill" >/dev/null 2>&1 || :
-        _i=0; while [ "$_i" -lt 10 ] && [ "$(panel_open_count)" -gt 0 ]; do sleep 0.1; _i=$((_i + 1)); done
-    fi
-    lead=''; ! command -v setsid >/dev/null 2>&1 || lead=setsid
-    PANEL_LEAD=$lead panel_foot "$1" >/dev/null 2>&1 </dev/null &
+bar_panel_open() {   # the same open-or-focus path as the desktop key; existing work stays in its window
+    python3 "$REPO/lib/home.py" open "$REPO/spark-shell" "${1:-}" >/dev/null 2>&1 </dev/null &
 }
 
 # ---------------------------------------------- verbs: theme, font, quiet
@@ -10544,7 +10544,8 @@ cmd_desktop() {
         --ask) cmd_panel layout; return ;;           # the old spellings of layout --ask and layout --pending
         --pending) desk_pending; return ;;
         --motion) theme_load 2>/dev/null || :; motion_follow; return ;;   # the moving wallpaper at the desktop's start (#180)
-        --chat) cmd_panel chat; return ;;             # the old Super+s: spark chat in the panel's window
+        --chat) python3 "$REPO/lib/home.py" open "$REPO/spark-shell" chat; return ;;   # compatibility entry into home's conversation
+        home) python3 "$REPO/lib/home.py" open "$REPO/spark-shell" "${2:-}"; return ;;
         keys) desk_keys; return ;;   # the template's sentences, anywhere (documentation)
         lock) theme_load 2>/dev/null || :; desk_lock; return ;;
         idle) shift; theme_load 2>/dev/null || :; desk_idle "$@"; return ;;   # the idle screen now, or off (swayidle runs both)   # a palette that will not load never keeps the lock away
@@ -10564,10 +10565,10 @@ cmd_desktop() {
         notifications) shift; desk_notifications "$@"; return ;;
         storage) shift; desk_storage "$@"; return ;;
         power) shift; desk_power "$@"; return ;;
-        --first)   # the desktop's first window: the splash once, over it (the stamp first, so never twice), then your shell, always
+        --first)   # the desktop's first window: home once, then your shell, always
             if [ ! -f "$DESK_SEEN" ]; then
                 { mkdir_private "$(dirname "$DESK_SEEN")" && : > "$DESK_SEEN"; } 2>/dev/null || true
-                if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v foot >/dev/null 2>&1; then theme_load; lead=''; ! command -v setsid >/dev/null 2>&1 || lead=setsid; PANEL_LEAD=$lead panel_foot about >/dev/null 2>&1 </dev/null & fi
+                if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v foot >/dev/null 2>&1; then bar_panel_open ''; fi
             fi
             # the config's exports are ours, not the shell's (PROMPT would be zsh's prompt string)
             # shellcheck disable=SC2086   # the -u words, split on purpose

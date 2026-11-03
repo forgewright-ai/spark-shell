@@ -1,0 +1,18 @@
+{
+  "platform": "Void Linux",
+  "tools": [
+    "sway",
+    "foot",
+    "wtype",
+    "grim"
+  ],
+  "checks": [
+    "Super+Space launches home in real foot",
+    "Repeated Super+Space keeps one container and process with the two-line draft visible",
+    "Native Ctrl+Enter reaches Ask; unavailable model keeps draft",
+    "Native fullscreen and restore retain the same home process",
+    "Native left and right placement retains the home process and draft",
+    "Narrow layout and Help render with configured actions",
+    "Configured F4 sends explicit Ask; fixture answer scrolls in home and F2 preserves the follow-up draft"
+  ]
+}

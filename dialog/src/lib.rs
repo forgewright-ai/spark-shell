@@ -7,6 +7,7 @@ pub mod calendar;
 pub mod gate;
 pub mod greetd;
 pub mod helper;
+pub mod keys;
 pub mod login;
 pub mod login_ui;
 pub mod mcp;

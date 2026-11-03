@@ -153,6 +153,29 @@ pub fn wrap(text: &str, w: usize) -> Vec<String> {
     out
 }
 
+/// Readable conversation lines: keep paragraphs and every byte of long tokens.
+/// Prefer a word boundary; unlike compact labels, answers must not be cut.
+pub fn conversation_rows(text: &str, w: usize) -> Vec<String> {
+    let mut rows = vec![];
+    for mut line in text.split('\n') {
+        loop {
+            let prefix = cut(line, w.max(2));
+            if prefix.len() == line.len() {
+                rows.push(line.to_string());
+                break;
+            }
+            let end = prefix
+                .rfind(' ')
+                .filter(|&i| !prefix[..i].trim().is_empty())
+                .map(|i| i + 1)
+                .unwrap_or(prefix.len());
+            rows.push(line[..end].to_string());
+            line = &line[end..];
+        }
+    }
+    rows
+}
+
 /// Where things landed, for a click: the cursor, each pickable row's line and its index, each
 /// control's cells and row, close, the prompt's rows.
 #[derive(Clone, Debug, Default)]
@@ -352,7 +375,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     // the march sits before the date while something runs; where the window is too narrow for both,
     // it takes the date's place, which comes back when the work is done
     let clock_x = right.saturating_sub(2 + cells(clock) as u16);
-    let busy = app.cfg.progress && app.thinking();
+    let busy = app.cfg.progress && app.thinking() && app.pending.is_none();
     let title = app.title();
     let narrow = clock_x.saturating_sub(12) < x + cells(&title) as u16 + 1;
     let (end, march_x) = match (busy, narrow) {
@@ -407,6 +430,19 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     }
     drawn.cursor = (tx + cc as u16, PROMPT_Y + (cr - top) as u16);
 
+    if app.mode == Mode::Normal {
+        let label = "Ask";
+        let x = pen.control(1, 4, label, app.chip_focus == Some(5), true, false);
+        let end = pen.chip(x + 1, 4, app.cfg.keys.label(HintKey::Ask), false);
+        drawn.keys.push((1, end, 4, HintKey::Ask));
+        if app.pending.is_some() && end + 13 < w {
+            pen.put(end + 1, 4, &progress::bar(app.work(), app.frame), pal.muted, false, false);
+        } else if end + 16 < w {
+            let x = pen.control(end + 1, 4, "Chat", app.chip_focus == Some(6), false, false);
+            let right = pen.chip(x + 1, 4, app.cfg.keys.label(HintKey::Conversation), false);
+            drawn.keys.push((end + 1, right, 4, HintKey::Conversation));
+        }
+    }
     let hint_y = HINT_Y;
     reply_row(app, &mut pen, REPLY_Y, &mut drawn);
 
@@ -470,6 +506,12 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     }
     let mut x = 2;
     for (t, key) in hint {
+        let parts: Vec<HintKey> = if key { t.split(' ').filter_map(key_of).collect() } else { vec![] };
+        let t = if key && !parts.is_empty() {
+            parts.iter().map(|a| app.cfg.keys.label(*a)).collect::<Vec<_>>().join(" ")
+        } else {
+            t
+        };
         // still too wide (a provider's long question): cut at the window's edge, the words at a word, never a key
         // drawn in part (#196)
         let need = cells(&t) as u16 + if key { 2 } else { 0 };
@@ -487,8 +529,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         };
         if key && start < x && x <= w && hint_y < h {
             // a chip of one key, or of a few (the arrows, + -, < >): each key its share of the chip
-            let parts: Vec<HintKey> = t.split(' ').filter_map(key_of).collect();
-            if parts.len() == t.split(' ').count() {
+            if !parts.is_empty() {
                 let n = parts.len() as u16;
                 for (k, a) in parts.into_iter().enumerate() {
                     let k = k as u16;
@@ -502,6 +543,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     for x in 2..w - 2 {
         pen.put(x, h - 3, RULE, pal.lit, false, false);
     }
+    pen.put(w / 2 - 1, h - 3, " \u{25c7} ", pal.accent, false, false);
     footer(app, &mut pen, h - 2, &mut drawn);
     drawn
 }
@@ -510,6 +552,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
 fn key_of(k: &str) -> Option<HintKey> {
     Some(match k {
         "Enter" => HintKey::Enter,
+        "Ctrl+Enter" => HintKey::Ask,
         "Esc" => HintKey::Escape,
         "Shift+Enter" => HintKey::Newline,
         "Tab" => HintKey::Tab,
@@ -517,7 +560,7 @@ fn key_of(k: &str) -> Option<HintKey> {
         "\u{2192}" => HintKey::Right,
         "\u{2191}" => HintKey::Up,
         "\u{2193}" => HintKey::Down,
-        "+" | "-" | "<" | ">" => HintKey::Char(k.chars().next()?),
+        "+" | "-" | "0" | "<" | ">" => HintKey::Char(k.chars().next()?),
         // Space previews the lit file, its chip as clickable as the others (#150)
         "Space" => HintKey::Char(' '),
         _ => return None,
@@ -527,20 +570,12 @@ fn key_of(k: &str) -> Option<HintKey> {
 fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     let w = pen.w;
     let chips = app.chips();
-    let mic = if app.mode == Mode::Listening { "Listening" } else { "Mic" };
+    let mic = if app.mode == Mode::Listening { "Cancel" } else { "Talk" };
     // the mic while talk is click to talk; how talk works is a setting
     let mic_on = app.cfg.talk && app.talk == Talk::Click;
     let mic_w = if mic_on { cells(mic) as u16 + 2 } else { 0 };
     let mut x = 1;
-    if let Some(pv) = app.preview.as_ref().filter(|_| app.view == View::Preview) {
-        // the file shown goes with the words: Attach names it, in the accent where spark can read it (#120); a page that is no
-        // file's (an app, a network, #169) goes with nothing, and names nothing here
-        let reads = pv.shown.as_ref().is_some_and(|pg| pg.attach.is_some());
-        if reads || app.providers.get(pv.prov).is_some_and(|p| p.label == "files") {
-            let name = cut(&pv.row().text, (w / 2) as usize);
-            x = pen.control(x, y, &name, false, reads, !reads) + 1;
-        }
-    } else if chips.contains(&0) {
+    if chips.contains(&0) {
         // the file attached is named where Attach was, in the accent, with its Remove: the footer, never a row that
         // pushes the list down (#196)
         let name = app.attachment.as_deref().map(|a| cut(a.rsplit('/').next().unwrap_or(""), (w / 4) as usize));
@@ -562,9 +597,9 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
             x += cells(&cut_words(&t, room - model)) as u16 + 2;
         }
     }
-    if app.cfg.model && app.model_name.is_some() {
+    if app.cfg.model {
         let room = (w.saturating_sub(x + mic_w + 6)) as usize;
-        let full = app.model_name.clone().unwrap_or_default();
+        let full = app.model_name.clone().unwrap_or_else(|| "No model".into());
         // the model's whole name, or the word for it where the name does not fit whole
         let name = format!("{} {}", if cells(&full) + 2 <= room { full.as_str() } else { "Model" }, MENU);
         let e = pen.control(x, y, &name, app.chip_focus == Some(1), false, false);
@@ -1470,13 +1505,6 @@ fn month(app: &App, pen: &mut Pen, x0: u16, top: u16, bottom: u16, k: i32) -> Op
     Some(end.max(y))
 }
 
-/// A key's sentence up to its first comma, colon or semicolon, with no period: the part the about
-/// shows on one line (#40). "moves the focus, as h, j, k, l do; Shift moves the window." is "moves
-/// the focus".
-fn first_part(s: &str) -> &str {
-    s[..s.find([',', ':', ';']).unwrap_or(s.len())].trim_end_matches('.').trim()
-}
-
 /// The about (#40): spark-shell, its version and licence, and its address; then the keys, each a chip
 /// and the first part of its sentence on one line, in their groups, a group whole or not at all; then
 /// the command that shows every sentence whole, with the ones that have no key (the media keys,
@@ -1484,45 +1512,30 @@ fn first_part(s: &str) -> &str {
 fn about(app: &App, pen: &mut Pen, top: u16, bottom: u16) {
     let pal = pen.pal.clone();
     let w = pen.w;
-    let Some(i) = app.about_idx else { return };
-    let p = &app.providers[i];
-    let x = pen.put(2, top, &format!("spark-shell {}", p.version), pal.fg, false, false);
-    pen.put(x, top, &format!("{}MIT", SEP), pal.muted, false, false);
-    if let Some(addr) = p.rows.rows.iter().find(|r| r.id == "about:address") {
-        pen.put(2, top + 1, &addr.text, pal.accent, false, false);
-    }
-    let mut groups: Vec<Vec<(&str, &str)>> = vec![];
-    let mut group: Option<&Option<String>> = None;
-    for r in &p.rows.rows {
-        let Some(key) = r.columns.first() else { continue };
-        if r.tool.is_some() || r.children.is_some() {
-            continue;
-        }
-        if group != Some(&r.group) {
-            groups.push(vec![]);
-            group = Some(&r.group);
-        }
-        if let Some(g) = groups.last_mut() {
-            g.push((key, first_part(&r.text)));
-        }
-    }
-    // the sentences line up one cell past the widest chip, and keep 20 cells at least
-    let widest = groups.iter().flatten().map(|(k, _)| cells(k) as u16 + 2).max().unwrap_or(0);
-    let col = (2 + widest + 1).min(w.saturating_sub(22));
-    let last = bottom.saturating_sub(1); // the command's line, a blank row above it
-    let mut y = top + 3;
-    for g in &groups {
-        if y + g.len() as u16 + 1 > last {
-            break;
-        }
-        for (key, said) in g {
-            pen.chip(2, y, key, false);
-            pen.put(col, y, &cut_words(said, w.saturating_sub(col + 2) as usize), pal.fg, false, false);
+    let version = app
+        .about_idx
+        .map(|i| app.providers[i].version.as_str())
+        .filter(|v| !v.is_empty())
+        .unwrap_or(env!("CARGO_PKG_VERSION"));
+    let lines = [
+        format!("spark-shell {}", version),
+        "home: local discovery and optional assistance".into(),
+        "github.com/forgewright-ai/spark-shell".into(),
+        "MIT License".into(),
+        "Credits: forgewright contributors; Ratatui and Crossterm; the native tools of your OS.".into(),
+        "Full license and acknowledgements: LICENSE and CREDITS.md in the project.".into(),
+    ];
+    let mut y = top;
+    for text in lines {
+        for line in wrap(&text, w.saturating_sub(4) as usize) {
+            if y >= bottom {
+                return;
+            }
+            pen.put(2, y, &line, pal.fg, false, false);
             y += 1;
         }
         y += 1;
     }
-    pen.put(2, y, "More on the keys: spark-shell desktop keys", pal.muted, false, false);
 }
 
 /// A rendered buffer as text and tokens: the 60 characters of each row,
