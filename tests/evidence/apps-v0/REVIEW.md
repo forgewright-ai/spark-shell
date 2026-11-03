@@ -1,5 +1,8 @@
 # Apps v0 native review
 
+This is implementation-session evidence. Independent visual/functional review
+and owner approval to merge remain pending.
+
 The PR body records the final head commit and hosted CI run. `native.json` records
 the tested release binary, native environment, viewport geometry and observed
 interaction checks. `source-sha256.json` records the native checkout's sources,
@@ -100,9 +103,17 @@ and rejects cursor-position queries during those resizes.
 Local validation: 283 Rust tests passed, including 16 Apps regressions. The native
 workflow passed all 12 checks recorded in `native.json`; the shared-contract proof passed all four additional flow groups in `contract/contract.json`. Seven adapter tests
 passed on Void; macOS runs three portable cases and explicitly skips four GIO
-cases. Two clean musl release builds produced the same SHA-256:
-`cb41366c61b355a1ee898fb1257d0cec2490bc7d15d9a7b4e38ae1afbac14c1b`.
+cases. Two independent musl release builds produced the same SHA-256:
+`5ae41e3bf0548d6712683f24d3b12ad2b786ed2a5db7d6e347ec49febea204da`.
 The PR records the complete push-gate result and hosted CI result for its head.
+
+The conflict resolution incorporates main `9f5e4e9` (v0.122.1), preserving its
+installer fixes and release notes alongside the unreleased Apps entry. The
+dialog source is unchanged from the preceding Apps submission; the package
+version changed, so the binary checksum, native proofs, screenshots and source
+hashes were regenerated. The quick gate now has 26 checks, including main's
+new installer tests. Hosted push CI and CodeQL results are recorded separately
+from the intentionally skipped same-repository pull-request CI run.
 
 ```sh
 cd dialog

@@ -1,6 +1,6 @@
 {
-  "dialog/Cargo.lock": "40761937adbfaf40aec2c9d6a5f0c0ba036f892656a8a8c1788a8f1a12328eb5",
-  "dialog/Cargo.toml": "2bf8aba96e5bb1e3265cf388e6db20dd65d3c625d70eb76ad6a0073e4e4161cd",
+  "dialog/Cargo.lock": "5cd32a81d2c17843779e9b332f74ae2b49b9573e80b0311649355547a05a4472",
+  "dialog/Cargo.toml": "61ad559bb6c37e6b2825ac9bd0d6beb8fc6a22ad5b650e9a817b19d869675fe1",
   "dialog/rust-toolchain.toml": "2f259dd3724aeb6a62e45b4e39aa6574bb0aef545795ae55289983a49e785fb8",
   "dialog/src/app.rs": "f4398c1a86e558367dbeeed53e97430b3593959551a5508dcca8ad44d507b059",
   "dialog/src/apps/mod.rs": "45f1975a370aac8043852fc40e4157dfdd0c8be95909e02b155a73de3018b1c2",
@@ -33,7 +33,7 @@
   "dialog/src/ui.rs": "8d8ab21efc2f7cf2056e6709a063ba0242c27c8328efac424ccbce5c8bf9d8dd",
   "lib/apps-terminal/xterm": "a4d7358685a59147205fb450cb34932c41b11ee8e5ff65f3f6411d0a426ff8e8",
   "lib/apps.py": "362311e075fc2c85e22e8e584e1b02d9db9aa9f1ce274a7a9979e7892a802c0c",
-  "spark-shell": "1135930b9606b211574dcafb03dc3bf479c31a65de4da2b430de6908d9b06fc6",
+  "spark-shell": "e5acb44cbd7c52bc4d98fa0c3b19d87171ea6646babaefe92408a90a56f516fe",
   "templates/.config/foot/dialog.ini": "8a118e036ec6d52b90891360e5cf5c4f00d83ebcd424061a604ee4fa1d761892",
   "templates/.config/sway/config": "84ba7a3ad2fe80cd7d616d1b498cbe88731a2992b0ac1ff12bc20dd34d02cbe6",
   "tests/apps_contract_desktop_proof.py": "244bbd8010982e98efd7512835c516c4587f79eb10c0c534e7ac05acb5a336f5",

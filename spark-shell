@@ -834,6 +834,11 @@ pkg_install() {   # pkg_install NAME... -- as root, the manager's own way (the t
         *) return 1 ;;
     esac
 }
+pkg_install_on() {
+    # Arch's setup refreshes with a full upgrade; pacman asks before applying it.
+    if [ "$PM" = pacman ]; then as_root pacman -Syu --needed "$@"
+    else pkg_install "$@"; fi
+}
 
 # --------------------------------------------------------------- renders
 # The link/render engine is the twin of spark install.sh's: a symlink for
@@ -2908,13 +2913,14 @@ warn_wrap() {   # warn_wrap LABEL WORDS... -- one row of the desktop list, wrapp
 on_warning() {   # on_warning [desktop|login] -- at the very start of on: what it changes, then the question
     noun_ok on "$@"
     asks || return 0
+    pm_detect
     if [ "${1:-}" = login ]; then
         [ -z "$(desktop_na)" ] || return 0   # refused next, before anything
-        pm_detect
         ask_terminal
         printf '%s\n' 'spark-shell on login changes how this machine starts:' ''
         # shellcheck disable=SC2086
         [ -z "$PKG_LOGIN$PKG_DESKTOP" ] || warn_wrap packages $PKG_LOGIN $PKG_DESKTOP '(sudo)'
+        [ "$PM" != pacman ] || warn_wrap upgrade 'missing packages require a full system upgrade; pacman asks before applying it'
         warn_wrap login 'tty1 shows the login screen from the next boot (greetd)'
         warn_wrap '' 'tty2 keeps the console login (Alt+F2)'
         warn_wrap files "/$LOGIN_ETC, greetd's config.toml (sudo)"
@@ -2928,7 +2934,6 @@ on_warning() {   # on_warning [desktop|login] -- at the very start of on: what i
     fi
     if [ "${1:-}" = desktop ]; then
         [ -z "$(desktop_na)" ] || return 0   # refused next, before anything
-        pm_detect
     fi
     ask_terminal
     if [ "$OS" = Darwin ]; then
@@ -2958,6 +2963,7 @@ on_warning() {   # on_warning [desktop|login] -- at the very start of on: what i
         fi
         printf '\n%s\n%s\n' 'spark-shell off desktop puts the login back.' 'Packages stay.'
     fi
+    [ "$PM" != pacman ] || printf '\n%s\n' 'On Arch, missing packages require a full system upgrade; pacman asks first.'
     ask_continue
 }
 boot_warning() {   # boot_warning SHAPE -- before quiet boot on: what it changes, then the question
@@ -2980,21 +2986,17 @@ cmd_on() {   # cmd_on [desktop|login]
     [ "${1:-}" != login ] || [ -z "$(login_na)" ] || refuse_in login "$(login_na)"
     config_load
     if [ "${1:-}" = login ]; then
-        # the config first, as on desktop: everything on does with LOGIN=yes follows
+        # Select packages now; persist the choice only after they install.
         if [ "$LOGIN" != yes ]; then
             if [ "$MODE" = dry ]; then row would config "LOGIN=yes ($CONFIG)"; else changes=$((changes + 1)); fi
         fi
-        [ "$MODE" = dry ] || config_set LOGIN yes
         LOGIN=yes; export LOGIN
     fi
     if [ "${1:-}" = desktop ]; then
-        # the config first, then everything on does with DESKTOP=sway:
-        # the packages, the renders, seatd on Void (desktop_apply). The
-        # line itself is a change: never "Nothing to do" after writing it
+        # The pending choice selects desktop packages and counts as a change.
         if [ "$DESKTOP" != sway ]; then
             if [ "$MODE" = dry ]; then row would config "DESKTOP=sway ($CONFIG)"; else changes=$((changes + 1)); fi
         fi
-        [ "$MODE" = dry ] || config_set DESKTOP sway
         DESKTOP=sway; export DESKTOP
     fi
     sudo_upfront
@@ -3016,8 +3018,7 @@ cmd_on() {   # cmd_on [desktop|login]
         pkgs="$PKG_SHELL $PKG_CLI $PKG_CONSOLE"
         if desktop_wanted || login_wanted; then pkgs="$pkgs $PKG_DESKTOP"; fi
         if desktop_wanted; then pkgs="$pkgs $PKG_SOUND"; fi
-        # Arch: pipewire-pulse conflicts with a pulseaudio installed, and
-        # pacman --noconfirm answers no, which would stop every package
+        # Keep an existing PulseAudio until its replacement is chosen explicitly.
         if [ "$PM" = pacman ] && desktop_wanted && pkg_installed pulseaudio; then
             pkgs=$(printf '%s\n' $pkgs | grep -vx pipewire-pulse | paste -sd ' ' -)
             row todo sound "pulseaudio is installed, and pipewire-pulse takes its place -- sudo pacman -S pipewire-pulse (it asks before removing pulseaudio)"
@@ -3030,12 +3031,23 @@ cmd_on() {   # cmd_on [desktop|login]
             # nobody to type a password here: say what is left, keep going
             # (the links and renders below need no root)
             row todo packages "still to install:$missing -- spark-shell on at a terminal (sudo once)"
-        elif need packages "install$missing ($PM, sudo)"; then
-            # shellcheck disable=SC2086
-            if pkg_install $missing; then ok packages "installed"
-            elif _up=$(pkg_update_said) && [ -n "$_up" ]; then row todo packages "$PM could not install:$missing -- $_up, then spark-shell on"; acting=0
-            else row todo packages "$PM failed (see above) -- run spark-shell on again"; acting=0; fi
+        else
+            _install="install$missing ($PM, sudo)"
+            [ "$PM" != pacman ] || _install="full system upgrade and install$missing (pacman -Syu --needed, sudo; pacman asks first)"
+            if need packages "$_install"; then
+                # shellcheck disable=SC2086
+                if pkg_install_on $missing; then ok packages "installed"
+                else
+                    if _up=$(pkg_update_said) && [ -n "$_up" ]; then row todo packages "$PM could not install:$missing -- $_up, then spark-shell on $*"
+                    else row todo packages "$PM failed (see above) -- run spark-shell on $* again"; fi
+                    echo 'spark-shell: package installation failed; setup stopped before changing shell or desktop files.' >&2
+                    return 1
+                fi
+            fi
         fi
+    fi
+    if [ "$MODE" != dry ]; then
+        case ${1:-} in login) config_set LOGIN yes ;; desktop) config_set DESKTOP sway ;; esac
     fi
     # the desktop's packages ride the row above when DESKTOP=sway; say
     # why they are not there otherwise

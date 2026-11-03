@@ -13,6 +13,46 @@
   hover feedback, and contextual keys can use the reserved second row. Resizing
   no longer queries a cursor report from a competing input-reader thread.
 
+## v0.122.1
+
+A patch, the owner's pick of 2026-11-03 (#214): on Arch, setup no
+longer asks the mirrors for packages a stale list names, and a failed
+install stops `spark-shell on` before it changes anything (#212, from
+Arthur Granja). Home, on main since v0.122, ships with it: one entry
+on Super+Space, and spark asked only when you say so (#211).
+
+- On Arch, `spark-shell on` installs the missing packages with
+  `pacman -Syu --needed`: the package lists are refreshed and the
+  whole system is upgraded in the same transaction, so a stale list no
+  longer asks the mirrors for versions they dropped (an HTTP 404).
+  Pacman asks before the upgrade, even with `--yes`, and the question
+  before `on` and the dry run say so. The network setup's own install
+  is the same as before.
+- When the package install fails, `spark-shell on` stops with a
+  nonzero exit before it renders a file, and DESKTOP=sway or LOGIN=yes
+  is saved only once the packages are in, so the same command runs
+  again after the package manager's error is fixed. Before, the
+  setting was saved first and the files were rendered anyway.
+- Super+Space opens home, or focuses the one already open, with its
+  draft, its attachments, its view and a request on its way kept.
+  Super+d and Super+s are gone; a click on the bar goes in the same
+  way. The floating and tiled toggle moves to Super+Alt+Space.
+- Typing and Enter stay in home: Enter runs the row the words light,
+  and words that name no row are never sent on their own. Ctrl+Enter
+  or the Ask control sends them to spark. The answer and its steps are
+  kept in the conversation inside home, shown once; an answer that
+  comes in while another view is open leaves a summary there and
+  changes neither the view nor the draft.
+- Home's keys are named actions in
+  `~/.config/spark-shell/home-keys.json`: the help and the key chips
+  show the keys set there, and an unknown action or a key that clashes
+  with another is refused. `spark-shell desktop keys` lists the
+  desktop's.
+- Home's first view is one centered column, at most 60 cells wide,
+  full screen or snapped; its header, prompt, keys, list and footer
+  share it. Home's foot window no longer rounds its size to whole
+  cells, so home snapped to either half fills it below the bar.
+
 ## v0.122
 
 The dialog's rule, in the owner's words: typed input gets one reply row
