@@ -8,7 +8,7 @@ use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, 
 use crate::palette::Palette;
 use crate::progress;
 use crate::reply::Mark;
-use crate::scrub::{cells, cut, cut_words};
+use crate::scrub::{cells, cut, cut_middle, cut_words};
 use crate::sixel::Viewport;
 use crate::transition::Reel;
 use ratatui::buffer::{Buffer, CellDiffOption};
@@ -583,11 +583,17 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     // the mic while talk is click to talk; how talk works is a setting
     let mic_on = app.cfg.talk && app.talk == Talk::Click;
     let mic_w = if mic_on { cells(mic) as u16 + 2 } else { 0 };
+    let mic_x = w - 1 - mic_w;
+    let right = if mic_on { mic_x - 1 } else { w - 1 };
+    let short_model = format!("Model {}", MENU);
+    let model_w = if app.cfg.model { cells(&short_model) as u16 + 3 } else { 0 };
+    let remove_w = if chips.contains(&4) { 9 } else { 0 };
     let mut x = 1;
     if chips.contains(&0) {
-        // the file attached is named where Attach was, in the accent, with its Remove: the footer, never a row that
-        // pushes the list down (#196)
-        let name = app.attachment.as_deref().map(|a| cut(a.rsplit('/').next().unwrap_or(""), (w / 4) as usize));
+        // Reserve the other controls, their padding and gaps before shortening
+        // an attachment. A long file name must never steal Remove or Cancel.
+        let room = right.saturating_sub(x + remove_w + model_w + 2).min(w / 4);
+        let name = app.attachment.as_deref().map(|a| cut_middle(a.rsplit('/').next().unwrap_or(""), room as usize));
         let e = pen.control(x, y, name.as_deref().unwrap_or("Attach"), app.chip_focus == Some(0), name.is_some(), false);
         drawn.chips.push((x, e, y, 0));
         x = e + 1;
@@ -597,32 +603,38 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
         drawn.chips.push((x, e, y, 4));
         x = e + 1;
     }
-    // the row the words are for, a muted note in the room left (#196)
-    if let Some(t) = app.target_label() {
-        let room = w.saturating_sub(x + mic_w + 4) as usize;
-        let model = if app.cfg.model && app.model_name.is_some() { 14 } else { 0 };
-        if room > model + 8 {
-            pen.put(x + 1, y, &cut_words(&t, room - model), pal_muted(pen), false, false);
-            x += cells(&cut_words(&t, room - model)) as u16 + 2;
-        }
-    }
+    let mut note_right = right;
     if app.cfg.model {
-        let room = (w.saturating_sub(x + mic_w + 6)) as usize;
         let full = app.model_name.as_ref().map_or_else(
             || "No model".into(),
             |name| format!("{}{}{}", name, SEP, if app.server.is_some() { "remote" } else { "local" }),
         );
-        // the model's whole name, or the word for it where the name does not fit whole
-        let name = format!("{} {}", if cells(&full) + 2 <= room { full.as_str() } else { "Model" }, MENU);
-        let e = pen.control(x, y, &name, app.chip_focus == Some(1), false, false);
-        drawn.chips.push((x, e, y, 1));
+        let full = format!("{} {}", full, MENU);
+        let name = if cells(&full) + 2 <= right.saturating_sub(x) as usize {
+            &full
+        } else {
+            &short_model
+        };
+        let width = cells(name) as u16 + 2;
+        // Center beneath the diamond when the side controls leave that space;
+        // otherwise move only as far as necessary within the reserved gap.
+        let mx = (w / 2 - width / 2).clamp(x, right - width);
+        let e = pen.control(mx, y, name, app.chip_focus == Some(1), false, false);
+        drawn.chips.push((mx, e, y, 1));
+        note_right = mx.saturating_sub(1);
+    }
+    // Context is optional and uses only space left after the controls.
+    if let Some(t) = app.target_label() {
+        let room = note_right.saturating_sub(x + 1);
+        if room >= 8 {
+            pen.put(x + 1, y, &cut_words(&t, room as usize), pal_muted(pen), false, false);
+        }
     }
     if mic_on {
-        let mx = w - 1 - mic_w;
         let live = chips.contains(&3);
-        let e = pen.control(mx, y, mic, app.chip_focus == Some(3), app.mode == Mode::Listening, !live);
+        let e = pen.control(mic_x, y, mic, app.chip_focus == Some(3), app.mode == Mode::Listening, !live);
         if live {
-            drawn.chips.push((mx, e, y, 3));
+            drawn.chips.push((mic_x, e, y, 3));
         }
     }
 }
@@ -631,6 +643,9 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
 /// arrows stand; blank when there is nothing to say. One row, cut to the window: it never moves the list.
 fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     let Some(r) = &app.reply else { return };
+    if r.mark == Mark::Answer && app.view == View::Conversation {
+        return;
+    }
     let pal = pen.pal.clone();
     let w = pen.w;
     let undo = r.undo && app.undo.is_some();
@@ -649,7 +664,7 @@ fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
         4,
         y,
         &cut_words(&r.text, room as usize),
-        if r.mark == Mark::Note { pal.muted } else { pal.fg },
+        if matches!(r.mark, Mark::Note | Mark::Answer) { pal.muted } else { pal.fg },
         false,
         false,
     );

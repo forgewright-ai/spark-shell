@@ -1016,14 +1016,15 @@ say: a cross and the reason for a step refused, a check and the receipt
 for a command you typed, and Undo at the right where the step can be
 taken back (alone, for a click). A new reply takes the place of the
 last; Esc clears it, and so does leaving the view. Typing undo still
-takes the step back. spark's answer is the reply row too; an answer
-longer than that row is kept whole at Home, above the places, under
-the words that asked it, and never over a section's list. While
+takes the step back. The full model answer appears once in Conversation,
+under the words that asked it. If it arrives in another view, a summary
+in the reply row makes it visible without changing the view or draft. While
 commands spark planned wait in the two rows of the prompt, the reply
-row names them all (`run: ...`). At the bottom, under a
-rule, the controls in plain text: Attach, the model, and the mic at the
-right. Tab moves through them and the one in focus is lit; Shift+Tab
-goes back.
+row names them all (`run: ...`). At the bottom, under the diamond divider,
+the controls in plain text: Attach at the left, the model/source centered
+when it fits, and the mic at the right. Narrow windows shorten attachment
+names and use Model when needed, keeping Remove and Talk/Cancel separate.
+Tab moves through them and the one in focus is lit; Shift+Tab goes back.
 
 - Attach picks one text or Markdown file from your home (the types
   `DIALOG_ATTACH_TYPES` names), for the next question only: its name

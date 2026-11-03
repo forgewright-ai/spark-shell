@@ -225,3 +225,148 @@ fn shared_frame_prioritizes_navigation_and_ask_with_a_configured_footer() {
     assert!(drawn.keys.iter().any(|(_, _, y, k)| *k == HintKey::Enter && *y == spark_dialog::ui::HINT_Y + 1));
     assert!(drawn.keys.iter().all(|(_, end, _, _)| *end <= 34));
 }
+
+fn footer_app() -> App {
+    let mut app = App::new(
+        Config {
+            plus: true,
+            model: true,
+            talk: true,
+            ..Config::default()
+        },
+        &["files".into()],
+    );
+    app.providers[0].ready = true;
+    app.model_name = Some("fixture-model".into());
+    app.voice_on = true;
+    app
+}
+
+#[test]
+fn model_selector_centers_beneath_the_diamond_in_both_views() {
+    let palette = common::palette("tokyonight-night");
+    let mut app = footer_app();
+    for view in [View::Home, View::Conversation] {
+        app.view = view;
+        for width in [60, 61, 120] {
+            app.size = (width, 40);
+            let mut buffer = Buffer::empty(Rect::new(0, 0, width, 40));
+            let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+            let &(start, end, y, _) = drawn.chips.iter().find(|(_, _, _, id)| *id == 1).unwrap();
+            assert!((start + end - 1).abs_diff(2 * (width / 2)) <= 1, "selector centered within one cell");
+            assert_eq!(buffer[(width / 2, 37)].symbol(), "\u{25c7}");
+            let label: String = (start..end).map(|x| buffer[(x, y)].symbol()).collect();
+            assert_eq!(label, " fixture-model \u{b7} local \u{2304} ");
+        }
+    }
+}
+
+#[test]
+fn narrow_footer_reserves_controls_and_keeps_hit_areas_on_their_labels() {
+    let palette = common::palette("tokyonight-night");
+    let mut app = footer_app();
+    app.model_name = Some("a-model-name-too-long-to-fit-in-the-footer".into());
+    let wide = "\u{754c}".repeat(30);
+    for file in ["a-very-long-attachment-name.md", wide.as_str()] {
+        app.attachment = Some(format!("/data/{}", file));
+        for mode in [Mode::Normal, Mode::Listening] {
+            app.mode = mode;
+            for width in 36..=80 {
+                app.size = (width, 40);
+                let mut buffer = Buffer::empty(Rect::new(0, 0, width, 40));
+                let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+                let mut chips = drawn.chips.clone();
+                chips.sort_by_key(|c| c.0);
+                assert_eq!(chips.iter().map(|c| c.3).collect::<Vec<_>>(), [0, 4, 1, 3]);
+                assert!(chips.windows(2).all(|cs| cs[0].1 < cs[1].0), "one cell between hit areas at {width}");
+                for &(start, end, y, id) in &chips {
+                    assert!(start >= 1 && start < end && end < width && y == 38);
+                    let label: String = (start..end).map(|x| buffer[(x, y)].symbol()).collect();
+                    match id {
+                        0 => assert!(!label.trim().is_empty(), "an attachment remains visible"),
+                        4 => assert_eq!(label, " Remove "),
+                        1 if width == 36 => assert_eq!(label, " Model \u{2304} "),
+                        3 => assert_eq!(label, if app.mode == Mode::Listening { " Cancel " } else { " Talk " }),
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn conversation_shows_the_answer_once_and_keeps_other_feedback() {
+    use spark_dialog::app::{Step, Who};
+    use spark_dialog::model::Call;
+    use spark_dialog::reply::Mark;
+    let mut app = footer_app();
+    app.set_draft("question");
+    app.ask();
+    app.helper(
+        Helper::Want(app.want_serial),
+        Ok(json!({"answer": "One complete answer.", "steps": [], "refused": []}).to_string()),
+    );
+    let palette = common::palette("tokyonight-night");
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
+    spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+    let row = |b: &Buffer, y| (0..60).map(|x| b[(x, y)].symbol()).collect::<String>();
+    assert!(row(&buffer, spark_dialog::ui::REPLY_Y).trim().is_empty());
+    let screen: String = (0..40).map(|y| row(&buffer, y)).collect();
+    assert_eq!(screen.matches("One complete answer.").count(), 1);
+    // Other feedback still belongs to the reply row, even when its text happens
+    // to match the answer. Visibility follows its kind, not a text comparison.
+    for mark in [Mark::Refused, Mark::Done, Mark::Note] {
+        app.reply(mark, "One complete answer.");
+        let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
+        spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+        assert!(row(&buffer, spark_dialog::ui::REPLY_Y).contains("One complete answer."));
+    }
+    app.reply(Mark::Done, "action completed");
+    app.reply.as_mut().unwrap().undo = true;
+    app.undo = Some(Step {
+        prov: 0,
+        call: Call {
+            name: "fixture_undo".into(),
+            arguments: Default::default(),
+            ask: vec![],
+            said: None,
+            pick: None,
+        },
+        who: Who::Undo,
+        line: "undo".into(),
+        typed: false,
+    });
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
+    let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+    assert!(drawn.reply_undo.is_some());
+    assert!(row(&buffer, spark_dialog::ui::REPLY_Y).contains("action completed"));
+}
+
+#[test]
+fn an_answer_arriving_in_another_view_is_discoverable_without_switching_views() {
+    let mut app = footer_app();
+    app.set_draft("question");
+    app.ask();
+    app.conversation();
+    assert_eq!(app.view, View::Home);
+    app.set_draft("next draft");
+    app.helper(
+        Helper::Want(app.want_serial),
+        Ok(json!({"answer": "An answer has arrived.", "steps": [], "refused": []}).to_string()),
+    );
+    assert_eq!(app.view, View::Home);
+    assert_eq!(app.input, "next draft");
+    let palette = common::palette("tokyonight-night");
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
+    spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+    let row: String = (0..60).map(|x| buffer[(x, spark_dialog::ui::REPLY_Y)].symbol()).collect();
+    assert!(row.contains("An answer has arrived."));
+    app.hint_key(HintKey::Conversation);
+    assert_eq!(app.view, View::Conversation);
+    assert_eq!(app.input, "next draft");
+    assert!(app
+        .items()
+        .iter()
+        .any(|item| matches!(item, Item::Said(Sign::Says, text, _) if text == "An answer has arrived.")));
+}

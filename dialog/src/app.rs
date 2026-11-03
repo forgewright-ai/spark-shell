@@ -3624,12 +3624,12 @@ impl App {
                 },
             }
         }
-        // A brief receipt may use the feedback row; the complete text belongs
-        // in the conversation, preserving paragraphs and proposed steps.
+        // The answer's summary makes its arrival visible in another view.
+        // Conversation shows the complete text, preserving its paragraphs.
         if !no.is_empty() {
             self.refuse(&no.join("; "));
         } else if !answer.is_empty() {
-            self.reply(Mark::Note, &answer);
+            self.reply(Mark::Answer, &answer);
         }
         if !words.is_empty() {
             self.say(Sign::You, &words);
