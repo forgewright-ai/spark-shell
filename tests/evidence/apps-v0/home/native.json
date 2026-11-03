@@ -1,0 +1,185 @@
+{
+  "platform": "Void Linux",
+  "tools": [
+    "sway",
+    "swaybar",
+    "foot",
+    "wtype",
+    "grim",
+    "persistent virtual pointer"
+  ],
+  "binary_sha256": "5ae41e3bf0548d6712683f24d3b12ad2b786ed2a5db7d6e347ec49febea204da",
+  "palette": {
+    "colors": {
+      "HEX_FG": "c0caf5",
+      "HEX_ACCENT": "7aa2f7",
+      "HEX_MUTED": "565f89",
+      "PANEL_BG": "282a38",
+      "PANEL_HI": "373a4b",
+      "PANEL_MUTED": "8b94bf",
+      "HEX_ANSI_0": "15161e",
+      "HEX_ANSI_1": "f7768e",
+      "HEX_ANSI_2": "9ece6a",
+      "HEX_ANSI_3": "e0af68",
+      "HEX_ANSI_4": "7aa2f7",
+      "HEX_ANSI_5": "bb9af7",
+      "HEX_ANSI_6": "7dcfff",
+      "HEX_ANSI_7": "a9b1d6",
+      "HEX_ANSI_8": "414868",
+      "HEX_ANSI_9": "ff899d",
+      "HEX_ANSI_10": "9fe044",
+      "HEX_ANSI_11": "faba4a",
+      "HEX_ANSI_12": "8db0ff",
+      "HEX_ANSI_13": "c7a9ff",
+      "HEX_ANSI_14": "a4daff",
+      "HEX_ANSI_15": "c0caf5"
+    },
+    "contrast": {
+      "muted": 4.793,
+      "foreground": 8.798,
+      "accent": 5.64
+    },
+    "source": "spark-shell dialog launcher environment"
+  },
+  "display": {
+    "width": 1440,
+    "height": 1000,
+    "usable_area": {
+      "x": 0,
+      "y": 28,
+      "width": 1440,
+      "height": 972
+    }
+  },
+  "fixtures": [
+    "model response",
+    "voice availability"
+  ],
+  "footer": [
+    "Attach",
+    "model/source",
+    "Talk"
+  ],
+  "captures": {
+    "root-void": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "root-fullscreen-void": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 1000,
+      "full_output": true
+    },
+    "root-snapped-left-void": {
+      "x": 0,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "root-snapped-right-void": {
+      "x": 720,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "draft-refocus-void": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": false
+    },
+    "conversation-void": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "conversation-scroll-void": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": false
+    },
+    "fullscreen-void": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 1000,
+      "full_output": false
+    },
+    "snapped-left-void": {
+      "x": 0,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": false
+    },
+    "snapped-right-void": {
+      "x": 720,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": false
+    },
+    "narrow-void": {
+      "x": 880,
+      "y": 264,
+      "width": 400,
+      "height": 500,
+      "full_output": false
+    },
+    "help-void": {
+      "x": 880,
+      "y": 264,
+      "width": 400,
+      "height": 500,
+      "full_output": false
+    },
+    "narrow-attachment-void": {
+      "x": 522,
+      "y": 268,
+      "width": 396,
+      "height": 492,
+      "full_output": false
+    },
+    "root-unavailable-void": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "unavailable-ask-void": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": false
+    }
+  },
+  "checks": [
+    "Root is bounded and centered; both snaps fill equivalent halves of the usable area below the bar",
+    "Native model clicks and the blank footer row are correct after normal, fullscreen and both snaps",
+    "The selected Power destination and root view survive fullscreen, both snaps and restore",
+    "Super+Space opens the quiet root with Attach, model/source and Talk configured",
+    "Repeated Super+Space retains one process and the two-line draft",
+    "Root and conversation share one normal size, font, key row and configured footer",
+    "The full fixture answer scrolls; F2 preserves the follow-up draft",
+    "Native fullscreen and restore retain the same home process",
+    "Native left and right placement retains the home process and draft",
+    "Narrow hints wrap whole groups with Ask visible; Help lists the conversation shortcut",
+    "At 36 columns with a long attachment, Talk, Cancel, Remove, Model and Attach clicks reach their displayed controls",
+    "Configured F4 reaches the same explicit Ask action",
+    "Unavailable model and voice keep the configured footer visible; Ask retains the draft and makes no model request"
+  ]
+}

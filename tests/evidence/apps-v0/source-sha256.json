@@ -36,8 +36,8 @@
   "spark-shell": "e5acb44cbd7c52bc4d98fa0c3b19d87171ea6646babaefe92408a90a56f516fe",
   "templates/.config/foot/dialog.ini": "8a118e036ec6d52b90891360e5cf5c4f00d83ebcd424061a604ee4fa1d761892",
   "templates/.config/sway/config": "84ba7a3ad2fe80cd7d616d1b498cbe88731a2992b0ac1ff12bc20dd34d02cbe6",
-  "tests/apps_contract_desktop_proof.py": "244bbd8010982e98efd7512835c516c4587f79eb10c0c534e7ac05acb5a336f5",
-  "tests/apps_desktop_proof.py": "9848a06bdfd86221f7293ab4e4aa2947f57e0e18b68946b48d48a889a7e3fab5",
-  "tests/home_desktop_proof.py": "7eaecb686cff054ea6119eca45b9f3c885262c0b7f24771ba97ba368f3ac667c",
+  "tests/apps_contract_desktop_proof.py": "febe775dda29fa9c52bf693675fd6d73cc4e4d19117725d642db4be97454cc97",
+  "tests/apps_desktop_proof.py": "d4d8a7d886849c9d733a33b46ac0ed38468247e657ba2fa19c62289094791620",
+  "tests/home_desktop_proof.py": "ecb353236907fa40c1949a8fe64f82bc3cc0fc9dab7a83638cdf32c8d207bcc9",
   "themes/tokyonight-night.env": "14899e46026c40c6f38fb53fbe58d5a2e3be3b0a1e0e17856eba92a79fc937eb"
 }

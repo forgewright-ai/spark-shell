@@ -1,5 +1,37 @@
 {
   "binary_sha256": "5ae41e3bf0548d6712683f24d3b12ad2b786ed2a5db7d6e347ec49febea204da",
+  "palette": {
+    "colors": {
+      "HEX_FG": "c0caf5",
+      "HEX_ACCENT": "7aa2f7",
+      "HEX_MUTED": "565f89",
+      "PANEL_BG": "282a38",
+      "PANEL_HI": "373a4b",
+      "PANEL_MUTED": "8b94bf",
+      "HEX_ANSI_0": "15161e",
+      "HEX_ANSI_1": "f7768e",
+      "HEX_ANSI_2": "9ece6a",
+      "HEX_ANSI_3": "e0af68",
+      "HEX_ANSI_4": "7aa2f7",
+      "HEX_ANSI_5": "bb9af7",
+      "HEX_ANSI_6": "7dcfff",
+      "HEX_ANSI_7": "a9b1d6",
+      "HEX_ANSI_8": "414868",
+      "HEX_ANSI_9": "ff899d",
+      "HEX_ANSI_10": "9fe044",
+      "HEX_ANSI_11": "faba4a",
+      "HEX_ANSI_12": "8db0ff",
+      "HEX_ANSI_13": "c7a9ff",
+      "HEX_ANSI_14": "a4daff",
+      "HEX_ANSI_15": "c0caf5"
+    },
+    "contrast": {
+      "muted": 4.793,
+      "foreground": 8.798,
+      "accent": 5.64
+    },
+    "source": "spark-shell dialog launcher environment"
+  },
   "environment": "Void Linux; native headless Sway, foot, GIO; 1440x1000; monospace 12; scale 1",
   "data": "System desktop entries; temporary Apps preferences; model and voice availability fixtures",
   "usable_area": {

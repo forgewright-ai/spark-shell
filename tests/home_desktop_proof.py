@@ -21,6 +21,55 @@ import time
 REPO = Path(__file__).resolve().parents[1]
 
 
+def contrast_ratio(foreground, background):
+    def luminance(color):
+        channels = [int(color[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        linear = [v / 12.92 if v <= .04045 else ((v + .055) / 1.055) ** 2.4 for v in channels]
+        return sum(a * b for a, b in zip(linear, (.2126, .7152, .0722)))
+    a, b = sorted((luminance(foreground), luminance(background)))
+    return (b + .05) / (a + .05)
+
+
+def native_foot_config(root):
+    """Read the palette from the real launcher in the isolated fixture HOME.
+
+    A probe replaces only the dialog executable, before Sway starts. This uses
+    production theme loading and contrast adjustment without painting a desktop.
+    """
+    keys = ["HEX_FG", "HEX_ACCENT", "HEX_MUTED", "PANEL_BG", "PANEL_HI", "PANEL_MUTED"]
+    keys += ["HEX_ANSI_" + str(i) for i in range(16)]
+    probe = root / "palette-probe"
+    probe.write_text("#!" + sys.executable + "\nimport json, os\nprint(json.dumps({k: os.environ[k] for k in " + repr(keys) + "}))\n")
+    probe.chmod(0o700)
+    env = {k: v for k, v in os.environ.items() if k not in keys and k not in
+           ("SWAYSOCK", "WAYLAND_DISPLAY", "DISPLAY", "DBUS_SESSION_BUS_ADDRESS", "SPARK_DIALOG_WINDOW")}
+    env.update(HOME=str(root), XDG_CONFIG_HOME=str(root / ".config"),
+               XDG_STATE_HOME=str(root / "state"), XDG_DATA_HOME=str(root / "data"),
+               XDG_RUNTIME_DIR=str(root / "run"), SPARK_SHELL_DIALOG=str(probe),
+               SPARK_SHELL_PTS_DIR=str(root / "ptys"), SPARK_SHELL_NO_APPLY="1")
+    try:
+        result = subprocess.run(["sh", str(REPO / "spark-shell"), "dialog"], env=env,
+                                stdin=subprocess.DEVNULL, text=True, capture_output=True,
+                                check=True, timeout=30)
+        palette = json.loads(result.stdout)
+    finally:
+        probe.unlink()
+    assert all(re.fullmatch(r"[0-9a-fA-F]{6}", value) for value in palette.values())
+    ratios = {role: round(contrast_ratio(palette[key], palette["PANEL_BG"]), 3)
+              for role, key in (("muted", "PANEL_MUTED"), ("foreground", "HEX_FG"), ("accent", "HEX_ACCENT"))}
+    assert all(ratio >= 4.5 for ratio in ratios.values()), ratios
+    version = subprocess.check_output(["foot", "--version"], text=True)
+    major, minor = map(int, re.search(r"version: (\d+)\.(\d+)", version).groups())
+    colors = "colors-dark" if (major, minor) >= (1, 26) else "colors"
+    lines = ["[main]", "font=monospace:size=12", "[" + colors + "]",
+             "background=" + palette["PANEL_BG"], "foreground=" + palette["HEX_FG"]]
+    lines += [("regular" if i < 8 else "bright") + str(i % 8) + "=" + palette["HEX_ANSI_" + str(i)] for i in range(16)]
+    lines += [str(slot) + "=" + palette[key] for slot, key in
+              ((16, "HEX_ACCENT"), (17, "HEX_MUTED"), (18, "PANEL_BG"), (19, "PANEL_HI"), (20, "PANEL_MUTED"))]
+    (root / ".config/foot/foot.ini").write_text("\n".join(lines) + "\n")
+    return colors, {"colors": palette, "contrast": ratios, "source": "spark-shell dialog launcher environment"}
+
+
 class Pointer:
     """Keep a virtual pointer attached to the isolated compositor for real clicks.
 
@@ -131,6 +180,7 @@ if sys.argv[1] == 'model':
     if not here.with_suffix('.unavailable').exists(): print('fixture-model\\tserving')
 elif sys.argv[1] == 'client': print('spark client -- local')
 elif sys.argv[1] == 'voice':
+    if here.with_suffix('.unavailable').exists(): sys.exit(1)
     if 'listen' in sys.argv:
         here.with_suffix('.listening').touch()
         time.sleep(30)
@@ -144,12 +194,9 @@ elif sys.argv[1] == 'steps':
         fixture.chmod(0o700)
         foot = root / ".config/foot"
         foot.mkdir()
-        version = subprocess.check_output(["foot", "--version"], text=True)
-        major, minor = map(int, re.search(r"version: (\d+)\.(\d+)", version).groups())
-        colors = "colors-dark" if (major, minor) >= (1, 26) else "colors"
-        (foot / "foot.ini").write_text("[main]\nfont=monospace:size=12\n[" + colors + "]\nbackground=282a38\nforeground=c0caf5\n16=7aa2f7\n17=7b84ae\n18=282a38\n19=373a4b\n20=7b84ae\n")
+        colors, palette = native_foot_config(root)
         template = (REPO / "templates/.config/foot/dialog.ini").read_text()
-        for old, new in {"@HOME@": tmp, "@PANEL_SIZE@": "60x40", "@PANEL_PAD@": "18x18", "@FOOT_COLORS@": colors, "@PANEL_BG@": "282a38"}.items():
+        for old, new in {"@HOME@": tmp, "@PANEL_SIZE@": "60x40", "@PANEL_PAD@": "18x18", "@FOOT_COLORS@": colors, "@PANEL_BG@": palette["colors"]["PANEL_BG"]}.items():
             template = template.replace(old, new)
         dump = fixtures / "screen-dump"
         dump.write_text("from pathlib import Path\nimport sys\n(Path.home() / 'screen.txt').write_text(sys.stdin.read())\n")
@@ -379,11 +426,12 @@ elif sys.argv[1] == 'steps':
                 fixture.with_suffix(".unavailable").touch()
                 previous_request = request_file.read_text()
                 open_home()
+                capture("root-unavailable-void", whole=True)
                 key("unavailable draft")
                 key("-M", "ctrl", "-k", "Return", "-m", "ctrl")
                 assert request_file.read_text() == previous_request
                 capture("unavailable-ask-void")
-                checks.append("No serving model keeps the draft and makes no model request")
+                checks.append("Unavailable model and voice keep the configured footer visible; Ask retains the draft and makes no model request")
             finally:
                 if keyboard:
                     keyboard.terminate()
@@ -394,6 +442,7 @@ elif sys.argv[1] == 'steps':
                 compositor.wait(timeout=10)
     (evidence / "native.json").write_text(json.dumps({"platform": "Void Linux", "tools": ["sway", "swaybar", "foot", "wtype", "grim", "persistent virtual pointer"],
                                                      "binary_sha256": hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
+                                                     "palette": palette,
                                                      "display": {"width": 1440, "height": 1000, "usable_area": area},
                                                      "fixtures": ["model response", "voice availability"],
                                                      "footer": ["Attach", "model/source", "Talk"],

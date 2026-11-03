@@ -137,6 +137,7 @@ def main(binary, destination):
         capture("07-details-ai-unavailable")
         s.checks.append("Persisted preferences and native Details remain available after restart with AI unavailable")
         (s.evidence / "contract.json").write_text(json.dumps({"binary_sha256": s.binary_sha256,
+            "palette": s.palette,
             "environment": "Void Linux; native headless Sway/foot; real installed catalog; isolated preferences; model/voice fixtures",
             "checks": s.checks, "observations": observations}, indent=2) + "\n")
         print(json.dumps(s.checks, indent=2), flush=True)

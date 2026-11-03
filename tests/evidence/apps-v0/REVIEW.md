@@ -14,6 +14,43 @@ headless Sway output is 1440x1000; its bar reserves 28 pixels. Model and voice
 availability are fixtures; no inference or external account is needed for Apps.
 All preferences and added test entries belong to a temporary HOME.
 
+The capture fixture now reads the production palette from `spark-shell dialog`
+in that isolated HOME. It previously hard-coded muted text as `7b84ae`, giving
+3.89:1 on `282a38`. Production supplies `8b94bf`, giving 4.79:1. Destinations and
+descriptions use the foreground at 8.80:1; accents are 5.64:1. The native manifests
+record the actual palette and measured contrast. The application binary and
+layout did not change for this evidence correction.
+
+## Shared home review target
+
+These fresh native captures use the current Apps branch's shared home, at the
+same normal 636x796 window size (60x40 terminal cells), 12-point monospace and
+scale 1. The linked feedback against home PR #211 refers to its earlier
+`2eea6f1` revision; #211 merged with subsequent visual and CI fixes at `901f5d2`.
+
+| 1. Quiet root | 2. Conversation |
+| --- | --- |
+| ![Quiet root with configured footer](home/root-void.png) | ![Conversation with configured footer](home/conversation-void.png) |
+
+1. **Quiet root: pass.** Destinations have a consistent blank-row rhythm, with
+   larger breaks before Settings and Power. Names and descriptions use readable
+   foreground text. Close is first in one contextual key row, followed by Ask;
+   the conversation shortcut remains available without a permanent Chat slot.
+2. **Conversation: pass.** Font scale, header, prompt, keycaps, divider and footer
+   align with the root. Back leads the contextual actions, Ask remains visible,
+   and the full answer scrolls in the body. Attach, model/source and Talk remain
+   in their fixed positions. Model output and voice readiness are labelled
+   deterministic fixtures.
+3. **[Unavailable state](home/root-unavailable-void.png): pass.** The same footer
+   stays visible with No model and disabled Talk. Explicit Ask retains the draft
+   and sends no request. Both model and voice availability are disabled for this
+   capture; controls are still configured.
+
+[Home native results](home/native.json) record all 13 interaction checks and the
+geometry of all 15 captures from the run. The three requested review images are
+published here. This implementation-session review does not grant owner approval
+or establish screen-reader conformance.
+
 | Surface | Compact | Fullscreen | Left snap | Right snap |
 | --- | --- | --- | --- | --- |
 | Apps | ![Apps compact](apps-compact.png) | ![Apps fullscreen](apps-fullscreen.png) | ![Apps left](apps-snap-left.png) | ![Apps right](apps-snap-right.png) |
@@ -105,7 +142,8 @@ workflow passed all 12 checks recorded in `native.json`; the shared-contract pro
 passed on Void; macOS runs three portable cases and explicitly skips four GIO
 cases. Two independent musl release builds produced the same SHA-256:
 `5ae41e3bf0548d6712683f24d3b12ad2b786ed2a5db7d6e347ec49febea204da`.
-The PR records the complete push-gate result and hosted CI result for its head.
+The shared home proof also passed all 13 checks. The PR records the complete
+push-gate result and hosted CI result for its head.
 
 The conflict resolution incorporates main `9f5e4e9` (v0.122.1), preserving its
 installer fixes and release notes alongside the unreleased Apps entry. The

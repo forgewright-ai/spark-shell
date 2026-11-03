@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 
-from home_desktop_proof import Pointer, wait_for
+from home_desktop_proof import Pointer, native_foot_config, wait_for
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -45,14 +45,11 @@ class Session:
         spark.chmod(0o700)
         foot = self.root / ".config/foot"
         foot.mkdir()
-        version = subprocess.check_output(["foot", "--version"], text=True)
-        major, minor = map(int, re.search(r"version: (\d+)\.(\d+)", version).groups())
-        colors = "colors-dark" if (major, minor) >= (1, 26) else "colors"
-        (foot / "foot.ini").write_text("[main]\nfont=monospace:size=12\n[" + colors + "]\nbackground=282a38\nforeground=c0caf5\n16=7aa2f7\n17=7b84ae\n18=282a38\n19=373a4b\n20=7b84ae\n")
+        colors, self.palette = native_foot_config(self.root)
         dump = fixtures / "screen-dump"
         dump.write_text("from pathlib import Path\nimport sys\n(Path.home() / 'screen.txt').write_text(sys.stdin.read())\n")
         template = (REPO / "templates/.config/foot/dialog.ini").read_text()
-        for old, new in {"@HOME@": str(self.root), "@PANEL_SIZE@": "60x40", "@PANEL_PAD@": "18x18", "@FOOT_COLORS@": colors, "@PANEL_BG@": "282a38"}.items():
+        for old, new in {"@HOME@": str(self.root), "@PANEL_SIZE@": "60x40", "@PANEL_PAD@": "18x18", "@FOOT_COLORS@": colors, "@PANEL_BG@": self.palette["colors"]["PANEL_BG"]}.items():
             template = template.replace(old, new)
         template += "\n[key-bindings]\npipe-visible=[python3 " + str(dump) + "] Control+Shift+F12\n"
         (foot / "dialog.ini").write_text(template)
@@ -415,6 +412,7 @@ def main(binary, destination):
         wait_for(lambda: "btop" in s.text(), "discovery retry")
         s.checks.append("Explicit adapter failure fixtures verify empty catalog versus unavailable discovery, retry recovery, and launch failure retaining the search")
         manifest = {"binary_sha256": s.binary_sha256,
+                    "palette": s.palette,
                     "environment": "Void Linux; native headless Sway, foot, GIO; 1440x1000; monospace 12; scale 1",
                     "data": "System desktop entries; temporary Apps preferences; model and voice availability fixtures",
                     "usable_area": s.area, "captures": s.captures, "checks": s.checks}
