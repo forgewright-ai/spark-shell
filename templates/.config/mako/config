@@ -1,6 +1,6 @@
 # rendered by spark-shell from templates/.config/mako/config -- edit the template, then spark-shell on
-# The notifications (#71): mako draws them in the top right corner, under
-# the bar, as a small surface of the desktop like the dialog: the dialog's
+# The notifications (#71): mako draws them in the right corner by the bar
+# (the top one, or the bottom one with the bar there), as a small surface of the desktop like the dialog: the dialog's
 # ground, the palette's text, the bar's face, no frame and no icon. The
 # first line opens with spark's angle, the heavy angle of the prompt in
 # the accent, then the app's name muted; the summary is bold under it,
@@ -22,8 +22,9 @@
 # through, its angle too, and gone after four. A critical one stays
 # until it is dismissed and shows over a full-screen window too. A click
 # does what its app offers, a right click dismisses it, a middle click
-# dismisses them all. With do not disturb on they stay out of sight, but
-# a critical one still shows.
+# dismisses them all; a dismissed one is looked at, so the bar's count of
+# those that came while nobody looked leaves it out. With do not disturb
+# on they stay out of sight, but a critical one still shows.
 font=@BAR_FONT@
 background-color=#@PANEL_BG@
 text-color=#@HEX_FG@
@@ -35,13 +36,14 @@ margin=8
 outer-margin=12
 width=@NOTIFY_WIDTH@
 height=@NOTIFY_HEIGHT@
-anchor=top-right
+anchor=@NOTIFY_ANCHOR@
 icons=0
 max-visible=3
 max-history=10
 default-timeout=6000
 group-by=app-name
-on-button-middle=dismiss-all
+on-button-right=exec makoctl dismiss -n "$id"; @REPO@/spark-shell bar seen "$id"
+on-button-middle=exec makoctl dismiss -a; @REPO@/spark-shell bar seen
 format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">%a</span>\n&#x25CF; <b>%s</b>\n%b
 
 [grouped]
@@ -79,10 +81,10 @@ format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANE
 # Storage, where it mounts
 [app-name=spark-shell category=x-spark-shell.reminder]
 format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">reminder &#x25B8; a click opens it</span>\n&#x2691; <b>%s</b>\n%b
-on-button-left=exec makoctl dismiss -n "$id"; foot --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog reminders
+on-button-left=exec makoctl dismiss -n "$id"; @REPO@/spark-shell bar seen "$id"; foot --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog reminders
 [app-name=spark-shell category=device.added]
 format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">drive &#x25B8; a click opens Storage</span>\n&#x25AD; <b>%s</b>\n%b
-on-button-left=exec makoctl dismiss -n "$id"; foot --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog storage
+on-button-left=exec makoctl dismiss -n "$id"; @REPO@/spark-shell bar seen "$id"; foot --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog storage
 
 [urgency=critical]
 default-timeout=0
