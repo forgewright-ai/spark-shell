@@ -386,7 +386,7 @@ fn modules_share_frame_anchors_while_apps_keeps_a_bounded_body() {
         for view in [View::Home, View::Apps, View::Folder(0, "spark-shell://files/rows/home".into())] {
             app.view = view;
             let width = app.col_w();
-            let body_left = (w - width) / 2;
+            let body_left = if app.view == View::Apps { frame_left } else { (w - width) / 2 };
             let mut buffer = Buffer::empty(Rect::new(0, 0, w, h));
             let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
             assert_eq!(drawn.columns, (body_left, body_left + width));

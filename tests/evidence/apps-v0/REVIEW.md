@@ -14,12 +14,38 @@ headless Sway output is 1440x1000; its bar reserves 28 pixels. Model and voice
 availability are fixtures; no inference or external account is needed for Apps.
 All preferences and added test entries belong to a temporary HOME.
 
-The capture fixture now reads the production palette from `spark-shell dialog`
-in that isolated HOME. It previously hard-coded muted text as `7b84ae`, giving
-3.89:1 on `282a38`. Production supplies `8b94bf`, giving 4.79:1. Destinations and
-descriptions use the foreground at 8.80:1; accents are 5.64:1. The native manifests
-record the actual palette and measured contrast. The application binary and
-layout did not change for this evidence correction.
+The capture fixture reads the production palette from `spark-shell dialog`
+in that isolated HOME. App names use foreground at 8.80:1; short roles use muted
+text at 4.79:1; accents are 5.64:1 against the background. The native manifests
+record the actual palette and measured contrast.
+
+## Apps alignment and concise roles
+
+Fresh captures taken before and after this visual pass use the same desktop,
+font, palette and window sizes. The before captures record revision `e389d2f` in
+[their manifest](before/capture.json); the after captures use the binary pinned
+by this submission.
+
+| Mode | Before | After |
+| --- | --- | --- |
+| Compact | ![Before compact](before/apps-compact.png) | ![After compact](apps-compact.png) |
+| Fullscreen | ![Before fullscreen](before/apps-fullscreen.png) | ![After fullscreen](apps-fullscreen.png) |
+
+1. **Alignment: pass.** Apps and Details keep a 60-cell maximum body aligned to
+   the shared header/prompt inset. The second centering inset is gone in
+   fullscreen and both snaps. The Category value and app roles share a column.
+   Category headings and app names share one left edge, with space between groups.
+2. **Scanability: pass.** App names have foreground emphasis. List descriptions
+   use the desktop entry's localized `GenericName`, such as System Monitor,
+   Terminal and Web Browser. Missing roles stay blank. Full comments remain in
+   Details and search; role text is searchable too. No app-specific copy is guessed.
+3. **Resize and interaction: pass.** Native captures cover compact, fullscreen,
+   both snaps and [36x20](apps-minimum.png). The native proof checks the body and
+   header alignment before primary captures, matches both snapped compositions,
+   and exercises search, Details, launch and current pointer targets after resize.
+
+These are implementation-session findings. Independent approval is still pending;
+contrast checks and screenshots do not establish screen-reader conformance.
 
 ## Shared home review target
 
@@ -59,7 +85,7 @@ or establish screen-reader conformance.
 ## Visual review, separate from automated checks
 
 1. **Browse and search: pass.** The grouped list keeps compact type and row
-   spacing. Fullscreen keeps a centered 60-cell body inside the shared frame; header, prompt, actions and footer retain the same anchors as files. Equal 720x972 snap
+   spacing. Fullscreen keeps a 60-cell body aligned to the shared left inset; header, prompt, actions and footer retain the same anchors as files. Equal 720x972 snap
    regions have the same internal geometry and sit at y=28. Active search and
    selection survive the complete mode cycle; the Details keycap opens the
    selected app through the configurable key action.
@@ -114,7 +140,7 @@ or establish screen-reader conformance.
 9. **Shared geometry and AI unavailable: pass.** The native proof visits home,
    apps and files in all four modes and compares title/footer columns and window
    rectangles. Fullscreen anchors are column 12 in all three; snapped anchors
-   are column 2. The Apps body stays bounded and centered. Both snapped bodies
+   are column 2. The Apps body stays bounded and aligned to the shared left inset. Both snapped bodies
    have identical spacing. [Details with AI unavailable](contract/07-details-ai-unavailable.png)
    remains usable after restart and restores saved preferences.
 
@@ -137,21 +163,19 @@ and rejects cursor-position queries during those resizes.
 
 ## Reproduce
 
-Local validation: 283 Rust tests passed, including 16 Apps regressions. The native
-workflow passed all 12 checks recorded in `native.json`; the shared-contract proof passed all four additional flow groups in `contract/contract.json`. Seven adapter tests
-passed on Void; macOS runs three portable cases and explicitly skips four GIO
-cases. Two independent musl release builds produced the same SHA-256:
-`5ae41e3bf0548d6712683f24d3b12ad2b786ed2a5db7d6e347ec49febea204da`.
+Local validation: 285 Rust tests passed, including 18 Apps regressions. The native
+workflow passed all 13 checks recorded in `native.json`; the shared-contract proof passed all four additional flow groups in `contract/contract.json`. Eight adapter tests
+passed on Void, including localized/missing roles; macOS runs three portable cases
+and explicitly skips five GIO cases. Two independent musl release builds produced the same SHA-256:
+`bc22a18d41ab1836836f7b2b86ab26a0a3eacd748652f95c61d88e416756891a`.
 The shared home proof also passed all 13 checks. The PR records the complete
 push-gate result and hosted CI result for its head.
 
-The conflict resolution incorporates main `9f5e4e9` (v0.122.1), preserving its
-installer fixes and release notes alongside the unreleased Apps entry. The
-dialog source is unchanged from the preceding Apps submission; the package
-version changed, so the binary checksum, native proofs, screenshots and source
-hashes were regenerated. The quick gate now has 26 checks, including main's
-new installer tests. Hosted push CI and CodeQL results are recorded separately
-from the intentionally skipped same-repository pull-request CI run.
+The branch includes main `9f5e4e9` (v0.122.1) and its installer fixes. The release
+checksum, native proofs, screenshots and source hashes were regenerated for the
+alignment and role changes. The quick gate has 26 checks, including main's
+installer tests. Hosted push CI and CodeQL results are recorded separately from
+the intentionally skipped same-repository pull-request CI run.
 
 ```sh
 cd dialog

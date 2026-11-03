@@ -1,4 +1,4 @@
-  apps · Installed apps               Tue 3 Nov · 16:45  ×
+  apps · Installed apps               Tue 3 Nov · 17:23  ×
 
   ❯ Find, do, or ask.
 
@@ -10,26 +10,26 @@
   Category          All apps                             ⌄
 
   System
-  btop++              Resource monitor that shows usage…
-  foot                A wayland native terminal emulator
-  foot client         A wayland native terminal emulator…
-  foot server         A wayland native terminal emulator…
-  manage printing     CUPS Web Interface
+  btop++            System Monitor
+  foot              Terminal
+  foot client       Terminal
+  foot server       Terminal
+  manage printing
 
   Web
-  chromium            Access the Internet
-  mozilla firefox     Fast and private browser
-  pyradio             Curses based Radio Player
-  steam               Application for managing and…
+  chromium          Web Browser
+  mozilla firefox   Web Browser
+  pyradio           Terminal Radio Player
+  steam
 
   Office
-  aerc                Launches the aerc email client
+  aerc              Mail Client
 
   Media
-  mpv media player    Play movies and songs
+  mpv media player  Multimedia player
 
   Utilities
-  micro               Edit text files in a terminal
+  micro             Text Editor
 
   Manage categories
     ↓ 2 more

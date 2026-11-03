@@ -1,4 +1,4 @@
-  files · ~                           Tue 3 Nov · 16:45  ×
+  files · ~                           Tue 3 Nov · 17:23  ×
 
   ❯ Find, do, or ask.
 
@@ -17,10 +17,10 @@
 
   recent
       screen.txt                     1 KB   today   ~
-      wifi.scan                     164 B   today   panel
-      light                           3 B   today   spark-s…
+      wifi.scan                     111 B   today   panel
       ddc.lock                        0 B   today   spark-s…
       ddc.bus                         2 B   today   spark-s…
+      light                           3 B   today   spark-s…
       bt.list                       111 B   today   panel
       dirs.apps.entries              1 KB   today   panel
       dirs.theme.darks              146 B   today   panel

@@ -1,0 +1,21 @@
+{
+  "revision": "e389d2f62ebe6d2c283683d1ec648b5b12557a5d",
+  "binary_sha256": "5ae41e3bf0548d6712683f24d3b12ad2b786ed2a5db7d6e347ec49febea204da",
+  "environment": "Void Linux; isolated native Sway/foot; real system desktop entries; 12-point monospace; scale 1",
+  "captures": {
+    "apps-compact": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "apps-fullscreen": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 1000,
+      "full_output": true
+    }
+  }
+}

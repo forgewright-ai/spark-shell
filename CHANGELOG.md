@@ -9,7 +9,9 @@
   the same keyboard and pointer dispatch. Launch receipts distinguish requests
   from observed windows, and failures preserve context.
 - Apps and Details share home's centered frame in compact, fullscreen and both
-  snaps. Values reflow at 36x20; drafts survive resizing. Shared links now show
+  snaps, with their bounded body aligned to the header and prompt. App rows show
+  short desktop-entry roles; full descriptions remain in Details and search.
+  Values reflow at 36x20; drafts survive resizing. Shared links now show
   hover feedback, and contextual keys can use the reserved second row. Resizing
   no longer queries a cursor report from a competing input-reader thread.
 

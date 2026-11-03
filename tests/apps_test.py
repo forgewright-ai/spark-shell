@@ -101,6 +101,15 @@ class DesktopEntries(unittest.TestCase):
         self.assertFalse(sentinel.exists())
         self.assertIn("error", self.call(op="details", id=str(launcher)))
 
+    def test_short_roles_are_localized_and_comments_remain_available(self):
+        self.desktop("editor.desktop", "Name=Editor\nGenericName=Text Editor\nGenericName[fr]=Editeur de texte\nComment=Write documents and edit source files\nExec=/bin/true\n")
+        self.desktop("missing.desktop", "Name=Missing\nComment=A verbose comment without a generic name\nExec=/bin/true\n")
+        self.env.update(LANG="C.UTF-8", LC_ALL="C.UTF-8", LANGUAGE="fr")
+        entries = {a["id"]: a for a in self.call(op="catalog")["apps"]}
+        self.assertEqual(entries["editor.desktop"]["generic_name"], "Editeur de texte")
+        self.assertEqual(entries["editor.desktop"]["description"], "Write documents and edit source files")
+        self.assertEqual(entries["missing.desktop"]["generic_name"], "")
+
     def test_default_and_declared_new_window_use_gio_field_codes(self):
         output = self.root / "args.json"
         program = self.root / "record-arguments"

@@ -163,6 +163,10 @@ class Session:
 
     def capture(self, name, whole=True):
         self.settled()
+        if name.startswith(("apps-", "details-")):
+            lines = self.screen()
+            inset = lambda line: len(line) - len(line.lstrip())
+            assert inset(lines[7]) == inset(lines[0]), "Apps body must share the header's left anchor"
         rect = self.window()["rect"]
         geometry = "{x},{y} {width}x{height}".format(**rect)
         subprocess.run(["grim", *(["-o", "HEADLESS-1"] if whole else ["-g", geometry]), str(self.evidence / (name + ".png"))], env=self.env, check=True)
@@ -212,7 +216,20 @@ def main(binary, destination):
     try:
         s.key("apps", "-k", "Return")
         wait_for(lambda: "btop" in "\n".join(s.screen()), "Apps catalog")
+        text = s.text()
+        assert "System Monitor" in text and "Web Browser" in text
+        assert "Resource monitor that" not in text and "A wayland native" not in text
+        s.key("usage")
+        assert "btop" in s.text(), "full desktop comments remain searchable"
+        s.key("-k", "Escape")
+        s.key("system monitor")
+        assert "btop" in s.text(), "displayed roles remain searchable"
+        s.key("-k", "Escape")
+        s.checks.append("Browse uses concise desktop-entry roles; role and full-comment searches both find the installed app")
         s.four_modes("apps")
+        s.sway("[con_id=%d] resize set width 396 px height 416 px, move position center" % s.window()["id"])
+        s.capture("apps-minimum")
+        s.normal()
         s.key("btop")
         s.four_modes("query", capture=False)
         assert "btop" in s.screen()[2], "resize lost the search"

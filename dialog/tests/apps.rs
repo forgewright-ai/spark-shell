@@ -23,7 +23,7 @@ fn app() -> App {
         .join("apps.json");
     a.apps.pending = Some((1, "catalog".into()));
     a.apps.receive(1, json!({"apps":[
-        {"id":"org.example.Editor.desktop","name":"EDITOR","description":"Write Documents","categories":["Development","Utility"],"focus":true,"new_window":"new-window","launcher":"/data/Applications/Editor.desktop"},
+        {"id":"org.example.Editor.desktop","name":"EDITOR","generic_name":"Text Editor","description":"Write Documents","categories":["Development","Utility"],"focus":true,"new_window":"new-window","launcher":"/data/Applications/Editor.desktop"},
         {"id":"browser.desktop","name":"Browser","description":"Read the web","categories":["Network"]},
         {"id":"mystery.desktop","name":"Mystery","description":"","categories":["Unknown"]}
     ]})).unwrap();
@@ -43,6 +43,51 @@ fn pick(a: &mut App, action: Action) {
 }
 fn cleanup(a: &App) {
     let _ = std::fs::remove_dir_all(a.apps.path.parent().unwrap());
+}
+
+#[test]
+fn browse_uses_short_roles_without_losing_description_search_or_details() {
+    let mut a = app();
+    let rows = a.apps.lines(60, "", None);
+    let editor = rows.iter().find(|l| l.action == Some(Action::Launch(ID.into()))).unwrap();
+    assert_eq!(editor.value, "Text Editor");
+    assert_eq!(editor.value_x, rows.iter().find(|l| l.label == "Category").unwrap().value_x);
+    let browser = rows.iter().find(|l| l.action == Some(Action::Launch("browser.desktop".into()))).unwrap();
+    assert!(browser.value.is_empty(), "missing roles do not fall back to verbose comments");
+    assert_eq!(a.apps.visible("text")[0].id, ID, "the displayed role is searchable");
+    assert_eq!(a.apps.visible("write documents")[0].id, ID, "full comments remain searchable");
+    assert_eq!(a.apps.visible("read the web")[0].id, "browser.desktop");
+    a.apps.page = Page::Details(ID.into());
+    assert!(a.apps.lines(60, "", None).iter().any(|l| l.label == "Write Documents"));
+    cleanup(&a);
+}
+
+#[test]
+fn apps_body_and_pointer_bounds_stay_on_the_shared_left_anchor_after_resize() {
+    let mut a = app();
+    pick(&mut a, Action::Launch(ID.into()));
+    let pal = common::palette("tokyonight-night");
+    for (w, h) in [(60, 40), (140, 50), (68, 49), (36, 20), (60, 40)] {
+        a.size = (w, h);
+        let frame_left = (w - w.min(120)) / 2;
+        let mut b = Buffer::empty(Rect::new(0, 0, w, h));
+        let d = spark_dialog::ui::draw(&a, &pal, "", &mut b);
+        assert_eq!(d.columns, (frame_left, frame_left + w.min(60)));
+        let y = d.picks.iter().find(|(_, n)| *n == a.sel).unwrap().0;
+        assert_eq!(b[(frame_left + 2, 0)].symbol(), "a", "apps header");
+        assert_eq!(b[(frame_left + 2, y)].symbol(), "e", "selected editor name");
+        assert_eq!(b[(frame_left, y)].symbol(), "\u{203a}");
+        a.hover = Some((frame_left + 2, y));
+        spark_dialog::ui::draw(&a, &pal, "", &mut b);
+        assert_eq!(b[(frame_left + 2, y)].bg, pal.lit);
+        if w > 60 {
+            a.hover = Some((d.columns.1, y));
+            spark_dialog::ui::draw(&a, &pal, "", &mut b);
+            assert_ne!(b[(d.columns.1, y)].bg, pal.lit, "empty space outside the body is not a row target");
+        }
+        a.hover = None;
+    }
+    cleanup(&a);
 }
 
 #[test]
@@ -191,11 +236,12 @@ fn details_values_reflow_and_footer_and_pointer_bounds_follow_current_geometry()
         a.size = (w, h);
         let mut b = Buffer::empty(Rect::new(0, 0, w, h));
         let d = spark_dialog::ui::draw(&a, &palette, "Tue 3 Nov 12:00", &mut b);
-        assert_eq!(d.columns, ((w - w.min(60)) / 2, (w - w.min(60)) / 2 + w.min(60)));
+        let frame_left = (w - w.min(120)) / 2;
+        assert_eq!(d.columns, (frame_left, frame_left + w.min(60)));
         let footer = d.chips.iter().map(|c| c.2).min().unwrap();
         assert!(d.picks.iter().all(|&(y, _)| y < footer - 2));
         for &(x0, x1, y, _) in &d.chips {
-            assert!(x0 < x1 && x1 <= d.columns.1 && y < h - 1);
+            assert!(x0 < x1 && x0 >= frame_left && x1 <= frame_left + w.min(120) && y < h - 1);
         }
         for (i, &(x0, x1, y, _)) in d.chips.iter().enumerate() {
             assert!(d.chips[..i].iter().all(|&(a, b, r, _)| r != y || x1 <= a || x0 >= b));

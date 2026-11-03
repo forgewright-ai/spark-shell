@@ -133,6 +133,7 @@ class Desktop:
             "g_app_info_should_show": (integer, [ptr]),
             "g_desktop_app_info_new": (ptr, [string]),
             "g_desktop_app_info_get_filename": (string, [ptr]),
+            "g_desktop_app_info_get_generic_name": (string, [ptr]),
             "g_desktop_app_info_get_categories": (string, [ptr]),
             "g_desktop_app_info_get_startup_wm_class": (string, [ptr]),
             "g_desktop_app_info_get_string": (ptr, [ptr, string]),
@@ -175,6 +176,7 @@ class Desktop:
         terminal = bool(g.g_desktop_app_info_get_boolean(info, b"Terminal"))
         return {"id": ident, "name": self.text(g.g_app_info_get_display_name(info)).lower(),
                 "description": self.text(g.g_app_info_get_description(info)),
+                "generic_name": self.text(g.g_desktop_app_info_get_generic_name(info)),
                 "categories": self.text(g.g_desktop_app_info_get_categories(info)).strip(";").split(";"),
                 "launcher": self.text(g.g_desktop_app_info_get_filename(info)),
                 "wm_class": wm_class,

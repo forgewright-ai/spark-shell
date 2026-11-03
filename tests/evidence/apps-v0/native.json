@@ -1,5 +1,5 @@
 {
-  "binary_sha256": "5ae41e3bf0548d6712683f24d3b12ad2b786ed2a5db7d6e347ec49febea204da",
+  "binary_sha256": "bc22a18d41ab1836836f7b2b86ab26a0a3eacd748652f95c61d88e416756891a",
   "palette": {
     "colors": {
       "HEX_FG": "c0caf5",
@@ -67,6 +67,13 @@
       "y": 28,
       "width": 720,
       "height": 972,
+      "full_output": true
+    },
+    "apps-minimum": {
+      "x": 522,
+      "y": 306,
+      "width": 396,
+      "height": 416,
       "full_output": true
     },
     "details-compact": {
@@ -162,6 +169,7 @@
     }
   },
   "checks": [
+    "Browse uses concise desktop-entry roles; role and full-comment searches both find the installed app",
     "Real system Apps and on-demand btop Details render in compact, fullscreen and equal work-area snaps",
     "Returning from Details restores the app search; active query and selected app survive all four modes; clicked Right keycap opens Details",
     "Hide saves to local preferences, removes search results, labels hidden entries, and restores without editing launchers",

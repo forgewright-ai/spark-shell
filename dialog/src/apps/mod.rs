@@ -13,6 +13,7 @@ pub struct Entry {
     pub id: String,
     pub name: String,
     pub description: String,
+    pub generic_name: String,
     pub categories: Vec<String>,
     pub launcher: String,
     pub focus: bool,
@@ -29,6 +30,7 @@ impl Entry {
             id: id.into(),
             name: scrub(v["name"].as_str()?).to_lowercase(),
             description: scrub(v["description"].as_str().unwrap_or("")),
+            generic_name: scrub(v["generic_name"].as_str().unwrap_or("")),
             categories: v["categories"]
                 .as_array()
                 .map(|a| a.iter().filter_map(Value::as_str).map(scrub).collect())
@@ -222,7 +224,7 @@ impl State {
                 if words.trim().is_empty() {
                     self.filter.as_ref().is_none_or(|c| *c == self.prefs.category(&a.id, &a.categories))
                 } else {
-                    let text = format!("{} {}", a.name, a.description).to_lowercase();
+                    let text = format!("{} {} {}", a.name, a.generic_name, a.description).to_lowercase();
                     words.split_whitespace().all(|w| text.contains(w))
                 }
             })
@@ -480,7 +482,7 @@ impl Lines {
         self.line("", "", None, false);
     }
     fn line(&mut self, label: &str, value: &str, action: Option<Action>, bold: bool) {
-        let value_x = if value.is_empty() { 2 } else { 22.min(self.width / 2 + 2) };
+        let value_x = if value.is_empty() { 2 } else { 20.min(self.width / 2 + 2) };
         self.rows.push(Line {
             label: cut_words(
                 label,
@@ -616,7 +618,9 @@ impl State {
                     } else {
                         a.name.clone()
                     };
-                    l.line(&name, &a.description, Some(Action::Launch(a.id.clone())), false);
+                    // Desktop-entry roles are concise and localized. Keep the
+                    // full comment in Details and search, not every browse row.
+                    l.line(&name, &a.generic_name, Some(Action::Launch(a.id.clone())), false);
                 }
                 l.blank();
                 l.line("Manage categories", "", Some(Action::Categories), false);

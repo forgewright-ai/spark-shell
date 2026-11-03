@@ -1,4 +1,4 @@
-  files · ~                                   Tue 3 Nov · 16:45  ×
+  files · ~                                   Tue 3 Nov · 17:24  ×
 
   ❯ Find, do, or ask.
 
@@ -9,21 +9,21 @@
     ▸ bin                         folder     3 items
     ▸ run                         folder     6 items
     ▸ state                       folder     1 item
-      long-attachment…-review.md  Markdown   27 B      today 16:44
-      native.log                  text       407 B     today 16:45
-      screen.txt                  text       1 KB      today 16:45
-      sway.conf                   data       847 B     today 16:44
+      long-attachment…-review.md  Markdown   27 B      today 17:23
+      native.log                  text       407 B     today 17:24
+      screen.txt                  text       1 KB      today 17:24
+      sway.conf                   data       847 B     today 17:23
     ▸ trash                                  empty
 
   recent
-      wifi.scan.1778              1778       11 B      today 16:45
-      screen.txt                  text       1 KB      today 16:45
-      native.log                  text       407 B     today 16:45
-      wifi.scan                   SCAN       164 B     today 16:44
-      light                       file       3 B       today 16:44
-      ddc.lock                    LOCK       0 B       today 16:44
-      ddc.bus                     BUS        2 B       today 16:44
-      bt.list                     LIST       111 B     today 16:44
+      screen.txt                  text       1 KB      today 17:24
+      wifi.scan.5324              5324       11 B      today 17:24
+      native.log                  text       407 B     today 17:24
+      wifi.scan                   SCAN       111 B     today 17:23
+      ddc.lock                    LOCK       0 B       today 17:23
+      ddc.bus                     BUS        2 B       today 17:23
+      light                       file       3 B       today 17:23
+      bt.list                     LIST       111 B     today 17:23
 
     ▸ this folder · 3 folders · 4 files · 2 KB
 

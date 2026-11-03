@@ -485,7 +485,9 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         }
         let body_width = column_width(w, &app.view);
         if body_width < w {
-            let offset = (w - body_width) / 2;
+            // Apps keeps its readable measure on the shared frame's left
+            // anchor; centering it again adds an unrelated inset after resize.
+            let offset = if app.view == View::Apps { 0 } else { (w - body_width) / 2 };
             let mut body = Buffer::empty(Rect::new(0, 0, body_width, h));
             body.set_style(body.area, Style::default().fg(pal.fg));
             let mut body_pen = Pen {
@@ -756,13 +758,10 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             pen.put(2, y, choice.label(), pal.accent, false, lit);
         }
         Item::Apps(line) => {
-            let color = if lit || line.action.is_some() { pal.accent } else { pal.fg };
+            let app_row = matches!(app.apps.page, crate::apps::Page::List) && matches!(line.action, Some(crate::apps::Action::Launch(_)));
+            let color = if lit || line.action.is_some() && !app_row { pal.accent } else { pal.fg };
             pen.put(line.indent, y, &line.label, color, line.bold, lit);
-            let value_color = if matches!(line.action, Some(crate::apps::Action::Launch(_))) {
-                pal.fg
-            } else {
-                color
-            };
+            let value_color = if app_row { pal.muted } else { color };
             pen.put(line.value_x, y, &line.value, value_color, false, lit);
             if !line.tail.is_empty() {
                 pen.put(w.saturating_sub(3), y, &line.tail, pal.muted, false, lit);
