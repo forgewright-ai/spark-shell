@@ -39,8 +39,9 @@ tag:
 
 ## Validation
 
-- `cargo test --locked` in `dialog/`: every suite green, 66 golden frames
-  re-kept after a look at their renders, 26 Apps tests and 7 frame tests
+- `cargo test --locked` in `dialog/`: every suite green, 36 golden frames
+  re-kept after a look at their renders and 2 added (`apps`,
+  `apps-details`), 27 Apps tests and 7 frame tests
   (`dialog/tests/chrome.rs`) new.
 - `cargo fmt --check` and `cargo clippy --locked --all-targets -- -D
   warnings` clean.
