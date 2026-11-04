@@ -306,8 +306,16 @@ fn the_frame_is_one_shape_top_and_bottom_and_the_reply_is_the_last_row_above_the
         text(&buf, keys_y(40))
     );
     // the top has the same shape: the prompt, its tools, the rule with the diamond, a row of air, the list
-    assert_eq!(CONTENT_Y, TOOLS_Y + 3, "the tools, the rule, a row of air, then the list, at every width");
-    assert_eq!(TOP_RULE_Y, TOOLS_Y + 1);
+    assert_eq!(
+        CONTENT_Y,
+        TOOLS_Y + 4,
+        "the tools, a row of air, the rule, a row of air, then the list, at every width"
+    );
+    assert_eq!(TOP_RULE_Y, TOOLS_Y + 2);
+    assert!(
+        text(&buf, TOOLS_Y + 1).trim().is_empty(),
+        "a row of air between the tools and the rule (v0.124.3)"
+    );
     let tools = text(&buf, TOOLS_Y);
     assert!(tools.contains("gemma4") && tools.contains("talk"), "the prompt's tools under it: {:?}", tools);
     assert!(text(&buf, TOP_RULE_Y).contains("\u{2500}"), "the rule under the tools");
@@ -755,4 +763,97 @@ fn the_home_is_ten_lowercase_places_in_three_groups_that_breathe_when_the_window
     assert_eq!(buf[(4, files_y)].bg, pal.lit, "the selection bar under it");
     assert_eq!(buf[(0, files_y)].symbol(), " ", "no cursor glyph before the bar");
     assert!(!buf[(4, files_y)].modifier.contains(Modifier::BOLD), "no bold on the selected row");
+}
+
+#[test]
+fn back_has_more_doors_than_its_chip() {
+    // dialog/DESIGN.md (v0.124.3): with nothing typed, Left and Backspace go back a level, and the header's place
+    // name is a target for a click; none of them closes the dialog from home
+    let t0 = std::time::Instant::now();
+    let mut app = home();
+    assert!(!app.can_go_back(), "home is the first level");
+    app.left();
+    app.backspace();
+    assert_eq!(app.view, View::Home, "nothing closes the dialog but Esc");
+    app.clicked(0, t0);
+    assert_eq!(app.view, View::Apps);
+    assert!(app.can_go_back());
+    app.left();
+    assert_eq!(app.view, View::Home, "Left goes back, as Right opens");
+    app.clicked(0, t0);
+    app.backspace();
+    assert_eq!(app.view, View::Home, "Backspace on an empty prompt goes back");
+    // words typed: Left moves the cursor and Backspace deletes, as before
+    app.clicked(0, t0);
+    for c in "fire".chars() {
+        app.typed(c);
+    }
+    app.left();
+    app.backspace();
+    assert_eq!(app.view, View::Apps, "with words typed the keys edit them");
+    let (buf, _, _) = draw(&mut app, 60, 40);
+    assert!(text(&buf, PROMPT_Y).contains("fie"), "{:?}", text(&buf, PROMPT_Y));
+    app.set_draft("");
+    assert!(app.can_go_back());
+    let (buf, drawn, _) = draw(&mut app, 60, 40);
+    let (a, b) = drawn.title.expect("the header's place name has cells");
+    assert!(text(&buf, 0)[a as usize..b as usize].contains("apps"), "{:?}", text(&buf, 0));
+}
+
+#[test]
+fn asking_off_turns_the_model_off_everywhere_and_is_the_model_pages_first_choice() {
+    // dialog/DESIGN.md (v0.124.3): off, nothing is asked: no ask row, the diamond hollow, Ctrl+Enter refused with
+    // the reason, the control reading model off; the choice is a row of the model page and applies at once
+    let mut app = home();
+    assert!(app.model_on, "on unless turned off");
+    app.model_on = false;
+    for c in "zebra".chars() {
+        app.typed(c);
+    }
+    assert!(!app.items().iter().any(|it| matches!(it, Item::Ask)), "no ask row with the model off");
+    let (buf, _, _) = draw(&mut app, 60, 40);
+    assert!(
+        text(&buf, TOP_RULE_Y).contains('\u{25c7}') && !text(&buf, TOP_RULE_Y).contains('\u{25c6}'),
+        "the diamond hollow: {:?}",
+        text(&buf, TOP_RULE_Y)
+    );
+    assert!(text(&buf, TOOLS_Y).contains("model off"), "{:?}", text(&buf, TOOLS_Y));
+    app.ask();
+    assert!(
+        app.reply.as_ref().is_some_and(|r| r.text.contains("the model is off")),
+        "Ctrl+Enter refused with the reason: {:?}",
+        app.reply
+    );
+    app.set_draft("");
+    app.reply = None;
+    app.chip(1);
+    assert_eq!(app.view, View::Models);
+    let items = app.items();
+    assert!(matches!(&items[0], Item::Heading(h) if h == "asking"), "{:?}", items.first());
+    assert!(matches!(items[1], Item::ModelOpt(true)) && matches!(items[2], Item::ModelOpt(false)));
+    let (buf, drawn, pal) = draw(&mut app, 60, 40);
+    let row_of = |drawn: &Drawn, app: &App, on: bool| {
+        drawn
+            .picks
+            .iter()
+            .find(|(_, n)| matches!(app.picks()[*n], Item::ModelOpt(o) if o == on))
+            .copied()
+            .expect("the asking row")
+    };
+    let (off_y, _) = row_of(&drawn, &app, false);
+    assert_eq!(buf[(4, off_y)].fg, pal.accent, "off is the choice in force, its dot in the accent");
+    assert!(text(&buf, off_y).contains("off"));
+    let (_, on_n) = row_of(&drawn, &app, true);
+    app.light(on_n);
+    app.enter();
+    assert!(app.model_on, "the choice applies at once");
+    assert_eq!(app.view, View::Home, "and the page gives way to where the control was clicked");
+    let (buf, _, _) = draw(&mut app, 60, 40);
+    let tools = text(&buf, TOOLS_Y);
+    assert!(
+        tools.contains(" gemma4-26b-a4b ") && !tools.contains("local") && !tools.contains('\u{2304}') && !tools.contains('\u{b7}'),
+        "the model's name alone on the control: {:?}",
+        tools
+    );
+    assert!(text(&buf, TOP_RULE_Y).contains('\u{25c6}'), "the diamond full again");
 }

@@ -380,6 +380,19 @@ fn talk_keep(t: Talk) {
     let _ = std::fs::write(d.join("talk"), if t == Talk::Off { "off\n" } else { "click\n" });
 }
 
+/// Whether a model answers, as the person last chose it on the model page: on unless they turned it off.
+pub fn model_kept() -> bool {
+    let said = state_dir().and_then(|d| std::fs::read_to_string(d.join("ask")).ok()).unwrap_or_default();
+    said.trim() != "off"
+}
+
+fn model_keep(on: bool) {
+    use std::os::unix::fs::DirBuilderExt;
+    let Some(d) = state_dir() else { return };
+    let _ = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&d);
+    let _ = std::fs::write(d.join("ask"), if on { "on\n" } else { "off\n" });
+}
+
 /// A line of the exchange: the words asked of spark, then what it said.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Sign {
@@ -658,6 +671,8 @@ pub enum Item {
     Said(Sign, String, bool),
     /// A way to talk.
     TalkOpt(Talk),
+    /// Asking: a model answers (true), or off.
+    ModelOpt(bool),
     /// A section's name over its rows, where a view holds more than one section.
     Title(String),
     /// A line that says something and opens nothing: (words, muted).
@@ -742,6 +757,8 @@ pub struct App {
     pub server: Option<String>,
     pub voice_on: bool,
     pub talk: Talk,
+    /// Whether a model answers: the model page's choice, kept across runs (dialog/DESIGN.md).
+    pub model_on: bool,
     /// Esc stopped the listening: what comes back is not said.
     pub listen_cancelled: bool,
     /// The window's size in cells, as the terminal says.
@@ -861,6 +878,7 @@ impl App {
             server: None,
             voice_on: false,
             talk: talk_kept(),
+            model_on: model_kept(),
             listen_cancelled: false,
             size: (WIDTH, HEIGHT),
             wait: None,
@@ -1654,6 +1672,7 @@ impl App {
         searching_view
             && self.mode == Mode::Normal
             && self.cfg.model
+            && self.model_on
             && self.model_name.is_some()
             && !words.is_empty()
             && !runs_here
@@ -1697,6 +1716,11 @@ impl App {
         match &self.view {
             View::Apps => {}
             View::Models => {
+                // asking comes first: a model answers, or off and nothing is asked (dialog/DESIGN.md)
+                list.push(Item::Heading("asking".into()));
+                list.push(Item::ModelOpt(true));
+                list.push(Item::ModelOpt(false));
+                list.push(Item::Blank);
                 if let Some(name) = &self.model_name {
                     if cells(name) > self.col_w().saturating_sub(12) as usize {
                         list.push(Item::Heading("current model".into()));
@@ -2133,6 +2157,7 @@ impl App {
                 .unwrap_or(false),
             Item::Model(i) => self.models.get(*i).map(|(_, s)| s == "serving" || s == "downloaded").unwrap_or(false),
             Item::TalkOpt(_) => self.voice_on,
+            Item::ModelOpt(_) => true,
             Item::Hit(i) => self.hits.get(*i).is_some_and(|(_, r)| Self::pickable(r)),
             Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::StepOf(_) | Item::Here | Item::More(..) | Item::Ask => true,
             _ => false,
@@ -2627,6 +2652,10 @@ impl App {
 
     pub fn backspace(&mut self) {
         if self.cursor == 0 {
+            // an empty prompt: Backspace goes back a level, as a launcher's does (dialog/DESIGN.md)
+            if self.can_go_back() {
+                self.escape();
+            }
             return;
         }
         self.leave_history();
@@ -2677,10 +2706,27 @@ impl App {
         if self.step_value(false) {
             return;
         }
+        // nothing typed, outside the Calendar: Left goes back a level, as Right opens one (dialog/DESIGN.md)
+        if !self.is_calendar() && self.can_go_back() {
+            return self.escape();
+        }
         if self.input.is_empty() && (!self.in_list || self.is_calendar()) {
             return self.month(-1);
         }
         self.cursor = self.cursor.saturating_sub(1);
+    }
+
+    /// Whether there is a level above this one to go back to, with nothing in the way: a page of Apps under its
+    /// list or the view this one came from; no words typed, no question open, no request pending, no commands
+    /// staged, no form of Apps being filled (dialog/DESIGN.md).
+    pub fn can_go_back(&self) -> bool {
+        self.input.is_empty()
+            && self.mode == Mode::Normal
+            && self.chip_focus.is_none()
+            && self.staged.is_none()
+            && self.pending.is_none()
+            && !(self.view == View::Apps && self.apps.form())
+            && ((self.view == View::Apps && self.apps.has_back()) || !self.came_from.is_empty())
     }
 
     pub fn right(&mut self) {
@@ -2736,7 +2782,8 @@ impl App {
     /// Page up and down: in a list, the lit row by a screen of rows; else the content area, by most of
     /// its height.
     pub fn page(&mut self, d: i32) {
-        let step = self.size.1.saturating_sub(14).max(4) as usize;
+        // a page is the content's rows less one, so a line is shared between pages
+        let step = self.size.1.saturating_sub(crate::ui::CONTENT_Y + crate::ui::BOTTOM + 1).max(4) as usize;
         if self.view == View::Apps && matches!(self.apps.page, crate::apps::Page::Details(_) | crate::apps::Page::Technical(_)) {
             self.scroll = crate::ui::body_scroll(self);
             self.in_list = false;
@@ -3251,6 +3298,15 @@ impl App {
                     self.go_back(v);
                 }
             }
+            Item::ModelOpt(on) => {
+                // the choice applies at once and is kept; back to where the model control was clicked
+                self.model_on = on;
+                model_keep(on);
+                self.reply = None;
+                if let Some(v) = self.came_from.pop() {
+                    self.go_back(v);
+                }
+            }
             Item::Model(i) => {
                 let (name, state) = self.models[i].clone();
                 if state == "serving" {
@@ -3422,6 +3478,7 @@ impl App {
                 self.attachment = None;
             }
             0 if self.cfg.plus => {
+                self.reply = None; // a new action: what the status row said about the last one is gone
                 let Some(f) = self.files() else { return };
                 let Some(root) = self.providers[f].rows.rows.iter().find_map(|r| r.children.clone()) else {
                     return self.refuse("no folder to attach from");
@@ -3440,6 +3497,8 @@ impl App {
                     self.listen_cancelled = true;
                     self.jobs.push(Job::StopListening);
                 } else if self.mode == Mode::Normal && self.running.is_none() {
+                    // a new try clears the last one's refusal (nothing heard) from the status row
+                    self.reply = None;
                     self.listen_cancelled = false;
                     self.mode = Mode::Listening;
                     self.jobs.push(Job::Run(
@@ -3563,6 +3622,10 @@ impl App {
         if self.model_name.is_none() {
             return self.refuse("No model is available. Your draft is kept; native actions still work.");
         }
+        if !self.model_on {
+            return self.refuse("the model is off: the model control turns it on");
+        }
+        self.reply = None;
         self.remember_prompt(&words);
         self.set_input(String::new());
         self.in_list = false;

@@ -22,8 +22,8 @@ same shape, a strip, a rule, a row of air, then content:
     row 0   the header: where you are, its state; the date and time; the x
     row 2   the prompt
     row 4   the prompt's tools: attach, the model, talk
-    row 5   a rule with the diamond in its middle
-    row 7   the content, to the status row
+    row 6   a rule with the diamond in its middle, a row of air each side
+    row 8   the content, to the status row
     h-5     the status row
     h-4     a plain rule
     h-2     the key bar, a second line at h-1 when the keys need it
@@ -52,6 +52,15 @@ no chip.
 The tools row holds the prompt's controls alone, muted: attach, the
 model and talk. An attached file's name replaces the word attach; talk
 reads cancel while listening. Tab cycles these three and nothing else.
+The model control is the model's name alone, `gemma4-e4b`: here is the
+default and says nothing, a server says `gemma4-e4b, remote`, and the
+control reads `model off` when asking is off. No glyph after it, and
+no separator, which sat over the diamond (v0.124.3).
+
+The model page opens from the control. Its first choice is asking: a
+model answers, or off. Off, nothing is asked: no ask row, the diamond
+hollow, Ctrl+Enter refused with the reason. The choice is kept across
+runs, as talk's is.
 
 The key bar holds the view's keys alone: what Esc does here, close at
 home and back everywhere else, then what the list adds (details,
@@ -61,6 +70,11 @@ sends the key. Enter has no chip in a view's key bar. A mode that
 waits on Enter for something other than the selection (run the
 commands spark planned, apply a model, land a step in this folder)
 says so with its chip, as a question says what it takes.
+
+Back has more doors than its chip (v0.124.3): Esc; with nothing typed,
+Left, since Right opens a level, and Backspace, as a launcher's does;
+and a click on the header's place name. None of them closes the dialog
+from home: that is Esc's alone.
 
 ## Selection and action
 
@@ -96,7 +110,8 @@ The last row above the rule is the one place a message is written:
   and place; for an app its description, its category, and its launch
   choice where it is not the default;
 - a receipt with Undo at the right, or a refusal, while it stands; Esc
-  clears it;
+  clears it, and so does the next action, talk again, ask or attach
+  (v0.124.3: nothing heard stood through the next try);
 - an action's march while it is felt: an app opening, a file opening,
   a copy. The header's own frames, with the words, after about a third
   of a second, so a launch that answers at once shows the receipt
@@ -238,7 +253,11 @@ A details page is a menu: its facts are not rows; open, the technical
 details and the three preferences act on one click, and a change
 applies at once with Undo on the status row. Its title is the app's
 name, lowercase; the technical details keep the entry's text as
-written.
+written. An action row (open, new category, add mapping, rename,
+delete) stands at the row column like every row; only a checked list's
+picks keep a sign cell before their words (v0.124.3). The mappings page
+is its heading and its rows, a desktop word and our category: the rule
+that resolves them is the README's, not a note above the list.
 
 ## Files
 

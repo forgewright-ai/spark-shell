@@ -2834,17 +2834,17 @@ fn typed_words_get_one_reply_row_and_the_frame_holds_still() {
         &draft[2..5]
     );
     assert!(
-        !draft[4].contains("Ctrl+Enter") && draft[5].contains('\u{2500}'),
-        "no Ask chip under the input, the prompt's rule under its tools: {:?}",
-        &draft[4..6]
+        !draft[4].contains("Ctrl+Enter") && draft[5].trim().is_empty() && draft[6].contains('\u{2500}'),
+        "no Ask chip under the input, a row of air, then the prompt's rule under its tools: {:?}",
+        &draft[4..7]
     );
-    // a search: rows go, none comes above the list, and the first is at row 7
+    // a search: rows go, none comes above the list, and the first is at row 8 (CONTENT_Y)
     app.set_draft("");
     typed(&mut app, "text");
     let (search, y) = frame(&app);
-    assert!(!search[6].contains("Ask spark") && !search[7].contains("Ask spark"), "no Ask row");
-    assert!(search[7].contains("text") || search[7].contains("Text"), "{:?}", &search[6..9]);
-    assert!(y.is_some_and(|y| y >= 7));
+    assert!(!search[7].contains("Ask spark") && !search[8].contains("Ask spark"), "no Ask row");
+    assert!(search[8].contains("text") || search[8].contains("Text"), "{:?}", &search[7..10]);
+    assert!(y.is_some_and(|y| y >= 8));
 }
 
 #[test]

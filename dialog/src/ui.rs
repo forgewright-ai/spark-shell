@@ -25,7 +25,6 @@ pub const CLOSE: &str = "\u{d7}";
 pub const BELOW: &str = "\u{2193}";
 pub const ABOVE: &str = "\u{2191}";
 pub const MORE: &str = "\u{203a}";
-pub const MENU: &str = "\u{2304}";
 pub const RULE: &str = "\u{2500}";
 /// A color's sample: two full blocks, about a square in a terminal cell's shape.
 pub const SAMPLE: &str = "\u{2588}\u{2588}";
@@ -35,8 +34,8 @@ pub const SEP: &str = " \u{b7} ";
 /// a strip, a rule, a row of air, then content (dialog/DESIGN.md).
 pub const PROMPT_Y: u16 = 2;
 pub const TOOLS_Y: u16 = 4;
-pub const TOP_RULE_Y: u16 = 5;
-pub const CONTENT_Y: u16 = 7;
+pub const TOP_RULE_Y: u16 = 6;
+pub const CONTENT_Y: u16 = 8;
 /// The bottom: air, the status row, the plain rule, a blank row, the key bar, its second line.
 pub const BOTTOM: u16 = 6;
 /// The status row: the last row above the rule, the one place a message is written (the reply, a note, the
@@ -190,6 +189,8 @@ pub struct Drawn {
     pub chips: Vec<(u16, u16, u16, usize)>,
     pub keys: Vec<(u16, u16, u16, HintKey)>,
     pub close: Option<(u16, u16)>,
+    /// The header's place name, its cells on row 0: a click there goes back a level (dialog/DESIGN.md).
+    pub title: Option<(u16, u16)>,
     pub prompt: (u16, u16),
     /// A picture to draw beside the list, or a preview's page.
     pub preview: Option<Picture>,
@@ -311,6 +312,7 @@ impl Drawn {
             k.1 += dx;
         }
         self.close = self.close.map(|(a, b)| (a + dx, b + dx));
+        self.title = self.title.map(|(a, b)| (a + dx, b + dx));
         if let Some(p) = self.preview.as_mut() {
             p.x += dx;
         }
@@ -416,6 +418,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         (true, true) => (right.saturating_sub(12), Some(right.saturating_sub(12))),
     };
     x = pen.put(x, 0, &cut_words(&title, end.saturating_sub(x + 1) as usize), pal.fg, true, false);
+    drawn.title = Some((2, x));
     let sub = app.subtitle();
     if !sub.is_empty() && end > x + 12 {
         // two cells of air before the date: a long state is cut, never run into it
@@ -468,7 +471,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     for x in 2..w - 2 {
         pen.put(x, TOP_RULE_Y, RULE, pal.lit, false, false);
     }
-    if app.cfg.model && app.model_name.is_some() {
+    if app.cfg.model && app.model_on && app.model_name.is_some() {
         pen.put(w / 2 - 1, TOP_RULE_Y, " \u{25c6} ", pal.accent, false, false);
     } else {
         pen.put(w / 2 - 1, TOP_RULE_Y, " \u{25c7} ", pal.muted, false, false);
@@ -614,8 +617,8 @@ fn tools(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     let mic_w = if mic_on { cells(mic) as u16 + 2 } else { 0 };
     let mic_x = w - 1 - mic_w;
     let right = if mic_on { mic_x - 1 } else { w - 1 };
-    let short_model = format!("model {}", MENU);
-    let model_w = if app.cfg.model { cells(&short_model) as u16 + 3 } else { 0 };
+    let short_model = if app.model_on { "model" } else { "model off" };
+    let model_w = if app.cfg.model { cells(short_model) as u16 + 3 } else { 0 };
     let remove_w = if chips.contains(&4) { 9 } else { 0 };
     // the words start under the prompt's, at column 4
     let mut x = 3;
@@ -634,15 +637,20 @@ fn tools(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
         x = e + 1;
     }
     if app.cfg.model {
-        let full = app.model_name.as_ref().map_or_else(
-            || "no model".into(),
-            |name| format!("{}{}{}", name, SEP, if app.server.is_some() { "remote" } else { "local" }),
-        );
-        let full = format!("{} {}", full, MENU);
-        let name = if cells(&full) + 2 <= right.saturating_sub(x) as usize {
+        // the model's name alone: here is the default and says nothing, a server says remote; off when the person
+        // turned asking off. No separator, which sat over the diamond, and no glyph (dialog/DESIGN.md)
+        let full = if !app.model_on {
+            "model off".to_string()
+        } else {
+            app.model_name.as_ref().map_or_else(
+                || "no model".into(),
+                |name| if app.server.is_some() { format!("{}, remote", name) } else { name.clone() },
+            )
+        };
+        let name: &str = if cells(&full) + 2 <= right.saturating_sub(x) as usize {
             &full
         } else {
-            &short_model
+            short_model
         };
         let width = cells(name) as u16 + 2;
         // Center beneath the diamond when the side controls leave that space;
@@ -839,6 +847,13 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             pen.put(4, y, g, c, false, lit);
             let words = if *t == Talk::Click { "click the mic to talk" } else { "off" };
             pen.put(6, y, words, if app.voice_on { pal.fg } else { pal.muted }, false, lit);
+        }
+        Item::ModelOpt(on) => {
+            // asking, as the Talk page draws its ways: the chosen one's dot, the other's ring
+            let chosen = app.model_on == *on;
+            let (g, c) = if chosen { (DOT, pal.accent) } else { (RING, pal.fg) };
+            pen.put(4, y, g, c, false, lit);
+            pen.put(6, y, if *on { "a model answers what you ask" } else { "off" }, pal.fg, false, lit);
         }
         Item::Conn(k) => {
             if *k == 0 {

@@ -345,6 +345,7 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
     let span = |a: u16, b: u16, y: u16| row == y && col >= a && col < b;
     // where a click acts: the x, a chip, a key, the waveform (it seeks), a row of the list
     let clicks = (row == 0 && drawn.close.is_some_and(|(a, b)| span(a, b, 0)))
+        || (row == 0 && app.can_go_back() && drawn.title.is_some_and(|(a, b)| span(a, b, 0)))
         || drawn.chips.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.keys.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.wave.is_some_and(on)
@@ -885,6 +886,8 @@ fn main() {
                             } else {
                                 app.close_window();
                             }
+                        } else if m.row == 0 && drawn.title.is_some_and(|(a, b)| m.column >= a && m.column < b) && app.can_go_back() {
+                            app.escape(); // the header's place name: back a level (dialog/DESIGN.md)
                         } else if drawn.reply_undo.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
                             app.undo_now();
                         } else if let Some((_, _, _, c)) = drawn.chips.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {

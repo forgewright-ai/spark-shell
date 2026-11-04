@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.124.3
+
+- Back has more doors than its chip: Esc, and with nothing typed Left
+  and Backspace, and a click on the header's place name. None closes
+  the dialog from home.
+- The model control is the model's name alone: no down glyph, no
+  separator over the diamond, no place word for the default; a server
+  says remote. A row of air stands between the tools and the diamond's
+  rule.
+- The model page opens on asking: a model answers, or off. Off, no
+  model answers: no ask row, the diamond hollow, Ctrl+Enter refused
+  with the reason, the control reading model off; kept across runs.
+- A refusal on the status row clears when the next action starts, talk
+  again, ask or attach: nothing heard stood through the next try with
+  the mic connected.
+- Apps' action rows (new category, add mapping, rename, delete, copy
+  launcher path, remove mapping) stand at the row column like every
+  row; they stood two cells deeper, as a checked list's picks do. The
+  mappings page loses the note above its rows.
+- spark-shell update waits for the release. A tag is up minutes before
+  its release, and a machine moved in that gap had no build for the
+  new pin, so home did not open. It now moves nothing, says so, and the
+  same command works once the release is up.
+- spark-shell check has a dialog row: a dialog that is not the build
+  the release pins fails it, and says home will not open.
+
 ## v0.124.2
 
 - Home's second column is one color, muted, whether it says what the

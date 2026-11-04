@@ -132,7 +132,11 @@ fn keyboard_model_selection_still_requires_explicit_choice_and_confirmation() {
     let (mut app, _, _) = started(false);
     app.view = View::Models;
     app.models = vec![("local-model".into(), "downloaded".into())];
+    // the asking rows come first on the page (v0.124.3): Down until the model's own row
     app.down();
+    while !matches!(app.picks().get(app.sel), Some(spark_dialog::app::Item::Model(_))) {
+        app.down();
+    }
     app.enter();
     assert!(matches!(app.mode, Mode::Apply(_)));
     assert!(!app.jobs.iter().any(|j| matches!(j, Job::Run(Helper::ModelSet, _))));

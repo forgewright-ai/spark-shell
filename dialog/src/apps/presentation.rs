@@ -290,7 +290,7 @@ impl State {
                     None => l.note("the technical details are unavailable"),
                 }
                 l.blank();
-                l.row("blank", "copy launcher path", "", Some(Action::Copy(app.launcher.clone())));
+                l.row("", "copy launcher path", "", Some(Action::Copy(app.launcher.clone())));
             }
             Page::Filter => {
                 l.heading("category");
@@ -340,15 +340,15 @@ impl State {
                     l.choice(c, "", Action::Category(c.clone()));
                 }
                 l.blank();
-                l.row("blank", "new category", "", Some(Action::AddCategory));
+                l.row("", "new category", "", Some(Action::AddCategory));
                 l.choice("mappings", "", Action::Mappings);
             }
             Page::Category(c) => {
                 l.title(&c.to_lowercase());
                 l.blank();
                 if c != OTHER {
-                    l.row("blank", "rename", "", Some(Action::Rename(c.clone())));
-                    l.row("blank", "delete", "", Some(Action::Delete(c.clone())));
+                    l.row("", "rename", "", Some(Action::Rename(c.clone())));
+                    l.row("", "delete", "", Some(Action::Delete(c.clone())));
                 } else {
                     l.note("other is where an app goes when no mapping and no choice places it");
                 }
@@ -360,8 +360,6 @@ impl State {
             }
             Page::Mappings => {
                 l.heading("mappings");
-                l.note("the first desktop category that is mapped wins; a choice in an app's details wins over it");
-                l.blank();
                 for (source, target) in &self.prefs.mappings {
                     // the desktop's own word, as it is spelled; ours lowercase
                     l.choice(source, &target.to_lowercase(), Action::Mapping(source.clone()));
@@ -370,7 +368,7 @@ impl State {
                     }
                 }
                 l.blank();
-                l.row("blank", "add mapping", "", Some(Action::AddMapping));
+                l.row("", "add mapping", "", Some(Action::AddMapping));
             }
             Page::Mapping(source) => {
                 l.heading(&format!("{} maps to", source));
@@ -379,7 +377,7 @@ impl State {
                     l.pick(current == Some(c), c, Action::Map(source.clone(), Some(c.clone())));
                 }
                 l.blank();
-                l.row("blank", "remove mapping", "", Some(Action::Map(source.clone(), None)));
+                l.row("", "remove mapping", "", Some(Action::Map(source.clone(), None)));
                 if current.is_none() {
                     l.rows.last_mut().unwrap().disabled = true;
                 }

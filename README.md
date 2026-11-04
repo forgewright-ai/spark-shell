@@ -891,12 +891,17 @@ sends.
 Under the prompt stand its tools, muted: attach, the model and talk.
 An attached file's name replaces the word attach, with remove after
 it; talk reads cancel while listening. Tab cycles these three and
-nothing else. Under them a rule closes the prompt's block, with the
-diamond in its middle: full, in the accent, when a model answers;
-hollow, muted, when none does or AI is off. It is the frame's one
-ornament, it is read and never clicked, and nothing else in the dialog
-is drawn for decoration alone. Two rows of air, then the list, which
-starts at the seventh row at every width.
+nothing else. The model control is the model's name alone, `gemma4-e4b`
+(a server says `gemma4-e4b, remote`), and it opens the model page,
+whose first choice is asking: a model answers, or off. Off, nothing is
+asked: no ask row, the diamond hollow, Ctrl+Enter refused with the
+reason, the control reading `model off`; the choice is kept across
+runs. Under the tools, a row of air, then a rule closes the prompt's
+block, with the diamond in its middle: full, in the accent, when a
+model answers; hollow, muted, when none does or asking is off. It is
+the frame's one ornament, it is read and never clicked, and nothing
+else in the dialog is drawn for decoration alone. A row of air, then
+the list, which starts at the ninth row at every width.
 
 The key bar is the last thing in the frame, over a plain rule, as
 every terminal program places its keys: the view's keys alone, Esc
@@ -904,6 +909,9 @@ first (close at home, back everywhere else), then the keys the view's
 rows take: details, actions, preview, change, month, history. The same
 words whatever row is lit or typed, so nothing changes under a moving
 pointer. Enter has no chip: it opens what the bar is on, everywhere.
+Back has more doors than its chip: with nothing typed, Left and
+Backspace go back a level, and so does a click on the header's place
+name; none of them closes the dialog from home, which is Esc's alone.
 A mode that waits on Enter for something else (run the commands spark
 planned, apply a model, land a step in this folder) says so with its
 chip. Narrow, the keys wrap onto a second line under the bar, whole
@@ -941,8 +949,9 @@ and its launch choice where it is not the default. Enter or a second
 click opens it; Right opens its details. While an opening is felt,
 about a third of a second in, the status row shows the march with
 `opening NAME`; then the receipt, `NAME opened` or `NAME focused`, or
-the refusal with its reason. Esc clears the words first, then goes
-back; the details keep the list's words and position.
+the refusal with its reason, which clears when the next action starts,
+as every refusal on the status row does. Esc clears the words first,
+then goes back; the details keep the list's words and position.
 At the end of the list stand the managing rows, each a row the dialog
 has elsewhere: category, a choice with its arrow that opens the list of
 categories with the one in use checked; hidden apps, a list of its own;

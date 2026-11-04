@@ -478,7 +478,8 @@ fn every_line_of_long_technical_metadata_is_reachable_by_paging() {
     for _ in 0..80 {
         let mut b = Buffer::empty(Rect::new(0, 0, 36, 20));
         spark_dialog::ui::draw(&a, &pal, "", &mut b);
-        for y in 7..14 {
+        // the content's rows at 20 rows: from CONTENT_Y to the status row
+        for y in 8..15 {
             for x in 0..36 {
                 observed.push_str(b[(x, y)].symbol());
             }
@@ -553,7 +554,10 @@ fn categories_and_mappings_change_at_once_with_undo_and_a_form_types_in_the_prom
     let ls = lines(&a);
     assert_eq!(line(&ls, &Action::Category("Development".into())).tail, "\u{203a}");
     assert_eq!(line(&ls, &Action::Category("Development".into())).label, "development");
-    assert!(ls.iter().any(|l| l.action == Some(Action::AddCategory) && l.label == "new category"));
+    // an action row stands at the row column like every row: no sign cell before its words (v0.124.3)
+    assert!(ls
+        .iter()
+        .any(|l| l.action == Some(Action::AddCategory) && l.label == "new category" && l.sign.is_empty()));
     assert!(ls
         .iter()
         .any(|l| l.action == Some(Action::Mappings) && l.label == "mappings" && l.tail == "\u{203a}"));
@@ -585,6 +589,10 @@ fn categories_and_mappings_change_at_once_with_undo_and_a_form_types_in_the_prom
 
     // a mapping: its row names the source and the target, the list behind it is checked, a pick applies at once
     act(&mut a, Action::Mappings);
+    // the mappings page is its heading and its rows: no note above them, and add mapping at the row column
+    let ls = lines(&a);
+    assert!(!ls.iter().any(|l| l.muted && l.label.contains("wins")), "no note over the rows (v0.124.3)");
+    assert!(ls.iter().any(|l| l.action == Some(Action::AddMapping) && l.sign.is_empty()));
     let ls = lines(&a);
     let dev = line(&ls, &Action::Mapping("Development".into()));
     assert_eq!(

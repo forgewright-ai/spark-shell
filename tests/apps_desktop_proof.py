@@ -142,18 +142,18 @@ class Session:
                 return re.match(r"\s*(?:›\s*)?(?:▸\s*)?" + re.escape(label) + r"(?:\s{2,}|$)", line, re.I)
             return match.search(line)
         lines = self.screen()
-        if not any(matches(line) for line in (lines[7:] if body else lines)):
+        if not any(matches(line) for line in (lines[8:] if body else lines)):
             # The approved overview action precedes expanded metadata. Search
             # from the top when the desired control is outside this viewport.
             for _ in range(20):
-                before = lines[7:-5]
+                before = lines[8:-5]
                 self.key("-k", "Prior")
                 lines = self.screen()
-                if lines[7:-5] == before or any(matches(line) for line in (lines[7:] if body else lines)):
+                if lines[8:-5] == before or any(matches(line) for line in (lines[8:] if body else lines)):
                     break
         for _ in range(80):
             lines = self.screen()
-            if any(matches(line) for line in (lines[7:] if body else lines)):
+            if any(matches(line) for line in (lines[8:] if body else lines)):
                 break
             self.key("-k", "Down")
         else:
@@ -161,7 +161,7 @@ class Session:
         # A note can repeat a row's words; the row follows it, so use the last occurrence in the list, which ends
         # above the status row. A receipt there can repeat them too (writing added): a chip or the status row is
         # the target only when no row holds the words, as Undo and the x.
-        in_list = [i for i in range(7, len(lines) - 5) if matches(lines[i])]
+        in_list = [i for i in range(8, len(lines) - 5) if matches(lines[i])]
         row = in_list[-1] if in_list else next(i for i in range(len(lines) - 1, -1, -1) if matches(lines[i]) and (not body or i >= 7))
         col = match.search(lines[row]).start() + len(label) // 2
         rect = self.window()["rect"]
@@ -190,7 +190,7 @@ class Session:
         if name.startswith(("apps-", "details-")):
             lines = self.screen()
             inset = lambda line: len(line) - len(line.lstrip())
-            assert inset(lines[7]) == inset(lines[0]), "Apps body must share the header's left anchor"
+            assert inset(lines[8]) == inset(lines[0]), "Apps body must share the header's left anchor"
         rect = self.window()["rect"]
         geometry = "{x},{y} {width}x{height}".format(**rect)
         subprocess.run(["grim", *(["-o", "HEADLESS-1"] if whole else ["-g", geometry]), str(self.evidence / (name + ".png"))], env=self.env, check=True)

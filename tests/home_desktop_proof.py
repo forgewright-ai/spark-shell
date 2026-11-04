@@ -323,8 +323,9 @@ elif sys.argv[1] == 'steps':
                     # under them and a row of air; the plain rule, a row of air and the key bar at the bottom
                     lines = screen()
                     assert "fixture-model" in lines[4] or "model" in lines[4], "the prompt's tools on the fourth row"
-                    assert "\u2500" in lines[5] and ("\u25c6" in lines[5] or "\u25c7" in lines[5]), "the diamond's rule under the tools"
-                    assert not lines[6].strip(), "a row of air under the rule"
+                    assert not lines[5].strip(), "a row of air between the tools and the rule (v0.124.3)"
+                    assert "\u2500" in lines[6] and ("\u25c6" in lines[6] or "\u25c7" in lines[6]), "the diamond's rule under the air"
+                    assert not lines[7].strip(), "a row of air under the rule"
                     bottom = max(i for i, line in enumerate(lines) if "\u2500" in line)
                     assert not lines[bottom + 1].strip(), "a full blank row separates the plain rule and the keys"
                     assert "Esc" in lines[bottom + 2], "the key bar is the last thing in the frame"

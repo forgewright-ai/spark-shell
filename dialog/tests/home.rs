@@ -206,7 +206,13 @@ fn the_frame_is_one_shape_at_the_top_and_the_bottom_in_both_views() {
             assert_eq!(row(size.1 - 4).matches(['\u{25c7}', '\u{25c6}']).count(), 0, "the bottom rule is plain");
             assert!(row(size.1 - 3).trim().is_empty(), "one full blank row above the keys");
             if size.0 == 60 {
-                assert!(row(TOOLS_Y).contains("fixture-model \u{b7} local"));
+                // the model's name alone: no place word for the default, no separator over the diamond, no glyph
+                assert!(
+                    row(TOOLS_Y).contains(" fixture-model ") && !row(TOOLS_Y).contains("local"),
+                    "{:?}",
+                    row(TOOLS_Y)
+                );
+                assert!(row(TOOLS_Y + 1).trim().is_empty(), "a row of air between the tools and the diamond's rule");
             }
         }
     }
@@ -248,6 +254,17 @@ fn footer_app() -> App {
 }
 
 #[test]
+fn a_new_try_at_talk_clears_the_last_refusal() {
+    // dialog/DESIGN.md (v0.124.3): nothing heard stood on the status row through the next try with the mic connected
+    let mut app = footer_app();
+    app.refuse("nothing heard");
+    assert!(app.reply.is_some());
+    app.chip(3);
+    assert_eq!(app.mode, Mode::Listening);
+    assert!(app.reply.is_none(), "the status row is clear for the new try");
+}
+
+#[test]
 fn model_selector_centers_above_the_diamond_in_both_views() {
     let palette = common::palette("tokyonight-night");
     let mut app = footer_app();
@@ -266,7 +283,7 @@ fn model_selector_centers_above_the_diamond_in_both_views() {
                 "the full diamond under it"
             );
             let label: String = (start..end).map(|x| buffer[(x, y)].symbol()).collect();
-            assert_eq!(label, " fixture-model \u{b7} local \u{2304} ");
+            assert_eq!(label, " fixture-model ");
         }
     }
 }
@@ -295,7 +312,7 @@ fn narrow_footer_reserves_controls_and_keeps_hit_areas_on_their_labels() {
                     match id {
                         0 => assert!(!label.trim().is_empty(), "an attachment remains visible"),
                         4 => assert_eq!(label, " remove "),
-                        1 if width == 36 => assert_eq!(label, " model \u{2304} "),
+                        1 if width == 36 => assert_eq!(label, " model "),
                         3 => assert_eq!(label, if app.mode == Mode::Listening { " cancel " } else { " talk " }),
                         _ => {}
                     }

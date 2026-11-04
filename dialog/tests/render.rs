@@ -360,7 +360,7 @@ fn a_list_of_a_thousand_pages_and_jumps_by_its_keys() {
     app.view = View::Section(3);
     app.came_from = vec![View::Home];
     app.in_list = true;
-    let step = app.size.1.saturating_sub(14).max(4) as usize;
+    let step = app.size.1.saturating_sub(spark_dialog::ui::CONTENT_Y + spark_dialog::ui::BOTTOM + 1).max(4) as usize;
     app.page(1);
     assert_eq!(app.sel, step, "Page Down: the lit row a screen down");
     app.line_end();
@@ -807,25 +807,25 @@ fn the_calendar_shows_the_time_in_large_figures() {
     let app = calendar_app(true);
     let (b, p, rows) = drawn(&app);
     let block = "\u{2588}";
-    assert!(rows[7..12].iter().all(|r| r.contains(block)), "five rows of figures under the hint");
-    assert!(!rows[6].contains(block) && !rows[12].contains(block), "a row of air above and below them");
-    assert_eq!(b[(2, 7)].fg, p.accent, "in the accent");
+    assert!(rows[8..13].iter().all(|r| r.contains(block)), "five rows of figures under the hint");
+    assert!(!rows[7].contains(block) && !rows[13].contains(block), "a row of air above and below them");
+    assert_eq!(b[(2, 8)].fg, p.accent, "in the accent");
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
     spark_dialog::ui::draw(&app, &p, "Sun 18 Oct \u{b7} 9:05 PM", &mut b);
     let row = |y: u16| (0..WIDTH).map(|x| b[(x, y)].symbol().to_string()).collect::<String>();
     assert!(
-        row(11).trim_end().ends_with("PM"),
+        row(12).trim_end().ends_with("PM"),
         "a twelve-hour clock says PM beside the figures: {}",
-        row(11)
+        row(12)
     );
-    assert_eq!((7..12).filter_map(|y| at(&row(y), block)).min(), Some(2), "a 9 starts at the months' left edge");
+    assert_eq!((8..13).filter_map(|y| at(&row(y), block)).min(), Some(2), "a 9 starts at the months' left edge");
 }
 
 #[test]
 fn the_calendar_draws_this_month_and_the_next_side_by_side() {
     let (_, _, rows) = drawn(&calendar_app(true));
     let y = rows.iter().position(|r| r.starts_with("  October 2026")).expect("this month");
-    assert_eq!(y, 13, "under the prompt, the hint and the time's five rows of figures");
+    assert_eq!(y, 14, "under the prompt's block, the hint and the time's five rows of figures");
     assert_eq!(at(&rows[y], "November 2026"), Some(32), "the next month on the same row");
     assert_eq!(at(&rows[y + 1], "Su"), Some(2));
     assert_eq!(rows[y + 1].matches("Su").count(), 2, "a weekday line under each month");
@@ -858,7 +858,7 @@ fn a_day_with_a_reminder_is_in_the_accent_and_today_is_a_chip() {
 fn the_reminders_under_the_months_are_rows_to_pick_in_their_groups() {
     let mut app = calendar_app(true);
     // Room for all groups, including the final reminder above the footer gap.
-    app.size.1 = 42;
+    app.size.1 = 43;
     let (b, p, rows) = drawn(&app);
     let head = |g: &str| {
         rows.iter()

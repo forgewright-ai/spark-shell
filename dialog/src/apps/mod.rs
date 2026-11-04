@@ -254,6 +254,11 @@ impl State {
         })
     }
 
+    /// Whether a page stands under this one to go back to.
+    pub fn has_back(&self) -> bool {
+        !self.stack.is_empty()
+    }
+
     fn save(&mut self, prefs: Preferences) -> Result<(), String> {
         if let Some(error) = &self.preference_error {
             return Err(error.clone());
