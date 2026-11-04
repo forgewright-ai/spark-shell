@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.124.1
+
+The home dialog's design, written down and built: `dialog/DESIGN.md`
+holds the decisions of 2026-11-04, taken from the screens people know
+(Norton Commander, Sidekick, the launchers and chat boxes of today).
+
+- The frame has one shape top and bottom: the prompt, its tools
+  (attach, the model, talk) under it, a rule with the diamond in its
+  middle, full when a model answers and hollow when none does; the
+  status row, a plain rule, and the key bar as the last thing in the
+  frame, the view's keys alone, Esc first. Enter has no chip.
+- The prompt reads `search or ask`. Asking is a row: `ask spark` stands
+  last among the matches with the words echoed, alone and selected when
+  nothing matches, so Enter asks; Ctrl+Enter stays as a shortcut.
+- The selection bar is the one signal: a background, no cursor glyph,
+  no accent on the name, no bold. Every pointer sign is gone: the small
+  sign before an app or a folder, the arrow at a place's end. Rows
+  start at column 4.
+- A menu's row acts on one click; an object's row (an app, a file, a
+  folder, a note, a window, a layout) is selected by a click and acts
+  on a second click or Enter. The status row says what is selected: a
+  file's kind, size, date and place; an app's description, category
+  and launch choice.
+- Home's second column is state: the catalog's counts, the folder's
+  summary, the windows by name, the newest note and its date, the look
+  and the screens, help's counts, the installed release. Its rows
+  breathe when the window has the rows, two rows of air between the
+  groups.
+- Apps' names and roles are lowercase; a missing GenericName falls back
+  to the Comment; receipts name the app as a label (`firefox opened`);
+  a launch that is felt shows the march with `opening firefox` on the
+  status row. The about page opens on the versions.
+- A name that is an identifier keeps its spelling: a file, a drive, a
+  network, a package manager.
+
 ## v0.124
 
 Home's frame put right after v0.123: one column at every size, one band,

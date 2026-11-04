@@ -2267,16 +2267,14 @@ impl App {
                 return Some(format!("~{}{}", sep, total));
             }
             "settings" => {
-                // the look, the screens and the network, from what their sections say, whichever are known
+                // the look and the screens, from what their sections say, whichever are known; never the network: a
+                // network's name is no business of the home's first screen
                 let mut parts = vec![];
                 if let Some(t) = prov("theme").map(|p| p.title.split(sep).next().unwrap_or("").trim().to_string()).filter(|t| !t.is_empty()) {
                     parts.push(t.to_lowercase());
                 }
                 if let Some(t) = prov("display").map(|p| p.title.clone()).filter(|t| !t.is_empty()) {
                     parts.push(t.to_lowercase());
-                }
-                if let Some(t) = prov("wifi").map(|p| p.title.clone()).filter(|t| !t.is_empty()) {
-                    parts.push(format!("wi-fi {}", t));
                 }
                 return (!parts.is_empty()).then(|| parts.join(sep));
             }
@@ -4364,7 +4362,11 @@ impl App {
                     parts.push(about.trim_end_matches('.').to_lowercase());
                 }
                 parts.push(self.apps.category_of(a).to_lowercase());
-                parts.push(crate::apps::launch_name(self.apps.preference(id).mode()).to_string());
+                // the launch choice only where it is one: the default says nothing
+                let mode = self.apps.preference(id).mode().to_string();
+                if mode != "default" {
+                    parts.push(crate::apps::launch_name(&mode).to_string());
+                }
                 Some(parts.join(crate::ui::SEP))
             }
             Item::Folder(_) | Item::Row(..) | Item::Hit(_) if self.object_pick(self.sel) => {

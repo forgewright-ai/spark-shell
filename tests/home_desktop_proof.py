@@ -283,10 +283,15 @@ elif sys.argv[1] == 'steps':
                     time.sleep(.5)
 
                 def footer_gap():
+                    # the frame's two strips (dialog/DESIGN.md): the prompt's tools on the fourth row, the diamond's rule
+                    # under them and a row of air; the plain rule, a row of air and the key bar at the bottom
                     lines = screen()
-                    divider = next(i for i, line in enumerate(lines) if "\u25c7" in line)
-                    assert not lines[divider + 1].strip(), "a full blank row separates divider and controls"
-                    assert "fixture-model" in lines[divider + 2] or "model" in lines[divider + 2]
+                    assert "fixture-model" in lines[4] or "model" in lines[4], "the prompt's tools on the fourth row"
+                    assert "\u2500" in lines[5] and ("\u25c6" in lines[5] or "\u25c7" in lines[5]), "the diamond's rule under the tools"
+                    assert not lines[6].strip(), "a row of air under the rule"
+                    bottom = max(i for i, line in enumerate(lines) if "\u2500" in line)
+                    assert not lines[bottom + 1].strip(), "a full blank row separates the plain rule and the keys"
+                    assert "Esc" in lines[bottom + 2], "the key bar is the last thing in the frame"
 
                 def model_click():
                     footer_gap()
@@ -325,7 +330,7 @@ elif sys.argv[1] == 'steps':
                 time.sleep(2)
                 assert windows()[0]["rect"] == right, "fullscreen restores the snapped rectangle"
                 checks.append("Root is bounded and centered; both snaps fill equivalent halves of the usable area below the bar")
-                checks.append("Native model clicks and the blank footer row are correct after normal, fullscreen and both snaps")
+                checks.append("Native model clicks and the frame's two strips are correct after normal, fullscreen and both snaps")
                 # Restore the fixture's normal dimensions for the conversation comparison.
                 sway("[con_id=%d] resize set width %d px height %d px, move position center" % (first["id"], first["rect"]["width"], first["rect"]["height"]))
                 time.sleep(2)
@@ -388,7 +393,7 @@ elif sys.argv[1] == 'steps':
                 key("-k", "F2")
                 key("help", "-k", "Return")
                 capture("help-void")
-                checks.append("Narrow hints wrap whole groups with Ask visible; Help lists the conversation shortcut")
+                checks.append("Narrow keys wrap whole groups on the key bar; Help lists the conversation shortcut")
                 close_home()
 
                 first = open_home()
@@ -445,7 +450,7 @@ elif sys.argv[1] == 'steps':
                                                      "palette": palette,
                                                      "display": {"width": 1440, "height": 1000, "usable_area": area},
                                                      "fixtures": ["model response", "voice availability"],
-                                                     "footer": ["attach", "model/source", "talk"],
+                                                     "tools": ["attach", "model/source", "talk"],
                                                      "captures": captures, "checks": checks}, indent=2) + "\n")
     for check in checks:
         print("ok: " + check)

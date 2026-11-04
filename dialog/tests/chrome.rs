@@ -559,7 +559,7 @@ fn a_places_second_column_is_its_state_from_what_the_dialog_already_holds() {
     app.about_idx = Some(app.providers.len() - 1);
     assert_eq!(state(&app, "files").as_deref(), Some("~ \u{b7} 2 files \u{b7} 3 KB"));
     assert_eq!(state(&app, "notes").as_deref(), Some("2 notes \u{b7} shopping list, 4 Nov"));
-    assert_eq!(state(&app, "settings").as_deref(), Some("tokyonight-night \u{b7} 2 screens \u{b7} wi-fi home"));
+    assert_eq!(state(&app, "settings").as_deref(), Some("tokyonight-night \u{b7} 2 screens"), "the look and the screens, never the network");
     assert_eq!(state(&app, "about").as_deref(), Some("spark-shell v0.124"), "the installed release, nothing else");
     assert_eq!(state(&app, "tools"), None, "no state worth more than its purpose");
     assert_eq!(state(&app, "power"), None);

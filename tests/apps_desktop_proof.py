@@ -129,7 +129,9 @@ class Session:
         assert self.window()["id"] == ident, "Super+Space replaced home instead of returning to it"
         time.sleep(.3)
 
-    def click(self, label, body=False, app_name=False):
+    def click(self, label, body=False, app_name=False, double=False):
+        # double: an object's row (an app in the list, a managing row at its end) is selected by one click and acts
+        # on a second within 400 ms (dialog/DESIGN.md); a menu's row acts on one
         # Scroll through the real keyboard path, then derive coordinates from
         # the current terminal text, never from a pre-resize capture.
         match = re.compile(r"(?<!\w)" + re.escape(label) + r"(?!\w)", re.I)
@@ -163,8 +165,11 @@ class Session:
         row = in_list[-1] if in_list else next(i for i in range(len(lines) - 1, -1, -1) if matches(lines[i]) and (not body or i >= 7))
         col = match.search(lines[row]).start() + len(label) // 2
         rect = self.window()["rect"]
-        self.pointer.click(rect["x"] + 18 + col * self.cell[0] + self.cell[0] // 2,
-                           rect["y"] + 18 + row * self.cell[1] + self.cell[1] // 2)
+        x, y = rect["x"] + 18 + col * self.cell[0] + self.cell[0] // 2, rect["y"] + 18 + row * self.cell[1] + self.cell[1] // 2
+        self.pointer.click(x, y)
+        if double:
+            time.sleep(.12)
+            self.pointer.click(x, y)
         time.sleep(.4)
 
     def settled(self):
@@ -178,7 +183,7 @@ class Session:
             place = re.search(r"\b(home|apps|files|conversation)\b", lines[0])
             frame = min(cols, 120 if place and place.group(1) == "files" else 60)
             title = 2 + (cols - frame) // 2
-            good = place is not None and len(lines[0]) - len(lines[0].lstrip()) == title and any("attach" in line or "remove" in line for line in lines[max(0, rows-3):])
+            good = place is not None and len(lines[0]) - len(lines[0].lstrip()) == title and any(word in lines[4] for word in ("attach", "remove", "talk"))
             return good
         wait_for(current, "terminal redraw after resize")
         time.sleep(.3)
@@ -239,19 +244,19 @@ def main(binary, destination):
         s.key("apps", "-k", "Return")
         wait_for(lambda: "btop" in "\n".join(s.screen()), "Apps catalog")
         text = s.text()
-        assert "System Monitor" in text and "Web Browser" in text
+        assert "system monitor" in text and "web browser" in text, "the roles, lowercase"
         assert "Resource monitor that" not in text and "A wayland native" not in text
         # the entries' names in their own spelling (Foot Client, Foot Server on Void): matched whatever the case
         helpers = re.compile(r"foot (client|server)", re.I)
         assert not helpers.search(text), "the helpers start hidden"
-        assert "Firefox" in text and "Mozilla Firefox" not in text, "the supplied name, in its spelling"
-        assert "mpv Media Player" in text
-        s.click("hidden apps", body=True)
+        assert "firefox" in text and "mozilla firefox" not in text, "the name as a label, lowercase, never the display name"
+        assert "mpv media player" in text
+        s.click("hidden apps", body=True, double=True)
         assert re.search(r"foot client", s.text(), re.I) and re.search(r"foot server", s.text(), re.I), "the hidden apps, a list of their own"
         s.capture("hidden-helpers")
         s.key("-k", "Escape")
         assert not helpers.search(s.text())
-        s.checks.append("Supplied names keep their spelling; foot helpers start hidden and stand under hidden apps, a list of their own")
+        s.checks.append("Names are lowercase labels; foot helpers start hidden and stand under hidden apps, a list of their own")
         s.key("usage")
         assert "btop" in s.text(), "full desktop comments remain searchable"
         s.key("-k", "Escape")
@@ -287,7 +292,7 @@ def main(binary, destination):
         assert "no app matches" in s.text()
         s.capture("hidden-search")
         s.key("-k", "Escape")
-        s.click("hidden apps", body=True)
+        s.click("hidden apps", body=True, double=True)
         assert "btop++" in s.text()
         s.key("-k", "Down", "-k", "Right")
         wait_for(lambda: "technical details" in s.text(), "hidden app Details")
@@ -295,7 +300,7 @@ def main(binary, destination):
         assert not json.loads(preferences.read_text())["apps"]["btop.desktop"]["hidden"]
         s.checks.append("Hide is a switch applied at once with Undo: it leaves the search, stands under hidden apps, and comes back from its details without editing launchers")
         s.key("-k", "Escape", "-k", "Escape")  # the details, then the hidden apps, back to the list
-        s.click("categories", body=True)
+        s.click("categories", body=True, double=True)
         s.click("new category")
         s.key("Writing", "-k", "Return")
         s.click("writing")
@@ -357,19 +362,19 @@ def main(binary, destination):
         assert app_windows(), "application was killed when the helper exited"
         subprocess.run(["grim", "-o", "HEADLESS-1", str(s.evidence / "application-opened.png")], env=s.env, check=True)
         s.focus()
-        assert re.search(r"Opened foot", s.text(), re.I), s.text()
-        s.click("foot", body=True, app_name=True)
+        assert re.search(r"foot opened", s.text(), re.I), s.text()
+        s.click("foot", body=True, app_name=True, double=True)
         wait_for(lambda: len(app_windows()) == 2, "real installed foot launch via click")
         s.focus()
-        s.checks.append("Enter and click both launch the installed foot desktop entry; windows outlive the helper; confirmed receipts stay in Apps")
+        s.checks.append("Enter and a second click both launch the installed foot desktop entry; windows outlive the helper; confirmed receipts stay in Apps")
         s.key("-k", "Escape")
         s.key("btop", "-k", "Return")
         time.sleep(2)
         s.focus()
-        assert "Opened btop" in s.text(), s.text()
+        assert "btop opened" in s.text(), s.text()
         s.checks.append("The real installed Terminal=true btop entry launches through GIO into foot and its window is confirmed")
         first_btop = app_windows("btop")[0]["id"]
-        s.click("btop++", body=True, app_name=True)
+        s.click("btop++", body=True, app_name=True, double=True)
         wait_for(lambda: len(app_windows("btop")) == 2, "second btop window")
         s.focus()
         s.key("-k", "Right")
@@ -380,22 +385,22 @@ def main(binary, destination):
         s.click("open", body=True, app_name=True)
         wait_for(lambda: any(w["id"] == first_btop and w["focused"] for w in app_windows("btop")), "most recent matching btop window")
         s.focus()
-        assert "Focused btop" in s.text(), s.text()
+        assert "btop focused" in s.text(), s.text()
         s.key("-k", "Escape")
         s.key("-k", "Return")
         wait_for(lambda: any(w["id"] == first_btop and w["focused"] for w in app_windows("btop")), "focus via Enter")
         s.focus()
-        s.click("btop++", body=True, app_name=True)
-        wait_for(lambda: any(w["id"] == first_btop and w["focused"] for w in app_windows("btop")), "focus via click")
+        s.click("btop++", body=True, app_name=True, double=True)
+        wait_for(lambda: any(w["id"] == first_btop and w["focused"] for w in app_windows("btop")), "focus via a second click")
         s.focus()
         assert len(app_windows("btop")) == 2
-        s.checks.append("With two real btop windows, saved Focus existing selects the most recently focused match; Enter and click share it without opening a third")
+        s.checks.append("With two real btop windows, saved Focus existing selects the most recently focused match; Enter and a second click share it without opening a third")
         s.sway('[app_id="btop"] kill')
         s.focus()
         s.key("-k", "Return")
         wait_for(lambda: len(app_windows("btop")) == 1, "Focus existing launches when no matching window remains")
         s.focus()
-        assert "Opened btop" in s.text()
+        assert "btop opened" in s.text()
         s.checks.append("Focus existing starts the installed btop application when no matching window remains")
         # Reopen the same isolated home process with the saved preference file.
         s.sway("[con_id=%d] kill" % s.window()["id"])
@@ -415,7 +420,7 @@ def main(binary, destination):
         entries.mkdir(parents=True, exist_ok=True)
         fixture = entries / "org.example.AppsProof.desktop"
         fixture.write_text("[Desktop Entry]\nType=Application\nName=Inspection Fixture\nComment=Local fixture for missing package metadata and declared desktop actions\nExec=foot --app-id=org.example.AppsProof --title=Apps-proof\nActions=new-window;\n\n[Desktop Action new-window]\nName=New window\nExec=foot --app-id=org.example.AppsProof --title=Apps-proof-new\n")
-        s.click("refresh apps")
+        s.click("refresh apps", double=True)
         time.sleep(1)
         s.key("inspection", "-k", "Right")
         wait_for(lambda: re.search("unavailable", s.text(), re.I), "missing package metadata")
@@ -429,7 +434,7 @@ def main(binary, destination):
         wait_for(lambda: app_windows("org.example.AppsProof"), "declared New window action")
         s.focus()
         s.key("-k", "Escape")
-        s.click("inspection fixture", body=True, app_name=True)
+        s.click("inspection fixture", body=True, app_name=True, double=True)
         wait_for(lambda: len(app_windows("org.example.AppsProof")) == 2, "second declared New window action")
         s.focus()
         s.checks.append("A labelled local desktop-entry fixture shows unavailable package metadata; its declared New window action opens two real foot windows through the saved preference")
@@ -444,15 +449,15 @@ def main(binary, destination):
         mode.unlink()
         s.key("-k", "Escape")
         mode.write_text("empty")
-        s.click("refresh apps")
+        s.click("refresh apps", double=True)
         wait_for(lambda: "No launchable" in s.text(), "empty catalog")
         s.capture("empty-catalog")
         mode.write_text("discovery")
-        s.click("refresh apps")
+        s.click("refresh apps", double=True)
         wait_for(lambda: "Apps unavailable" in s.text(), "discovery failure")
         s.capture("discovery-failure")
         mode.unlink()
-        s.click("refresh apps")
+        s.click("refresh apps", double=True)
         wait_for(lambda: "btop" in s.text(), "discovery retry")
         s.checks.append("Explicit adapter failure fixtures verify empty catalog versus unavailable discovery, retry recovery, and launch failure retaining the search")
         manifest = {"binary_sha256": s.binary_sha256,

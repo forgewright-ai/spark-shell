@@ -142,7 +142,7 @@ scrolls.
         tools        utilities and diagnostics
 
 
-        settings     dark . 2 screens . wi-fi home
+        settings     dark . 2 screens
 
         help         38 shortcuts . 12 commands
 
@@ -168,8 +168,9 @@ from what the dialog already holds:
 - notes: the count, the newest note's title and its date.
 - calendar: the next reminder, or none ahead.
 - tools: its purpose, since it has no state yet.
-- settings: the look, the screens and the network, from what their
-  sections say, whichever are known.
+- settings: the look and the screens, from what their sections say,
+  whichever are known; never the network, whose name is no business of
+  the home's first screen.
 - help: the counts of shortcuts and commands.
 - about: `spark-shell` and the installed release.
 - power: its actions.
