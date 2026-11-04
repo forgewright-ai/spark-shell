@@ -1841,13 +1841,21 @@ impl App {
             }
             View::Home => {
                 if self.query().trim().is_empty() {
-                    // the places in three groups, a row of air between them: the everyday places, the system's,
-                    // and power alone at the end
-                    for d in self.dests() {
-                        if d == SETTINGS_DEST || d == DESTS.len() - 1 {
+                    // the places in three groups: the everyday places, the system's, and power alone at the end. A
+                    // menu breathes: a row of air between its rows when the window has the rows for it, two between
+                    // its groups; the minimum window single spaces, a row of air between the groups, and scrolls
+                    let dests = self.dests();
+                    let room = self.size.1.saturating_sub(crate::ui::CONTENT_Y + crate::ui::BOTTOM) as usize;
+                    let airy = room > dests.len() * 2;
+                    for (k, d) in dests.iter().enumerate() {
+                        let group = *d == SETTINGS_DEST || *d == DESTS.len() - 1;
+                        if k > 0 && (airy || group) {
                             list.push(Item::Blank);
                         }
-                        list.push(Item::Dest(d));
+                        if airy && group {
+                            list.push(Item::Blank);
+                        }
+                        list.push(Item::Dest(*d));
                     }
                 } else {
                     // what was typed, found, in groups of a kind each (#169): the best few of each, then a row that opens the rest
@@ -4520,8 +4528,9 @@ impl App {
         if self.preview_key() {
             return self.preview_hint(pages);
         }
-        // the row is the view's: what Esc does, what Enter does, and the keys any row of the view takes. It
-        // never changes for the row lit or the words typed, so a label stands still under a moving pointer
+        // the key bar is the view's: what Esc does, then the keys any row of the view takes. Enter has no chip:
+        // it opens what the bar is on, everywhere. The bar never changes for the row lit or the words typed, so
+        // a label stands still under a moving pointer
         let back = if self.came_from.is_empty() { "Close" } else { "Back" };
         let mut v = vec![(format!("{} ", back), false), ("Esc".to_string(), true)];
         let add = |v: &mut Vec<(String, bool)>, w: &str, k: &str| {
@@ -4530,11 +4539,8 @@ impl App {
         };
         match &self.view {
             View::Conversation => add(&mut v, "History", "\u{2191}"),
-            View::Models | View::Talk | View::Steps(_) => add(&mut v, "Choose", "Enter"),
-            View::Help | View::About | View::Preview | View::Apps => {}
-            View::Home | View::Connections => add(&mut v, "Open", "Enter"),
+            View::Models | View::Talk | View::Steps(_) | View::Help | View::About | View::Preview | View::Apps | View::Home | View::Connections => {}
             View::Dest(_) | View::Section(_) | View::Folder(..) | View::Found(..) => {
-                add(&mut v, "Open", "Enter");
                 let rows = self.view_rows();
                 if rows.iter().any(|r| !r.more.is_empty()) {
                     add(&mut v, "Actions", "\u{2192}");

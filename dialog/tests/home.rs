@@ -142,7 +142,8 @@ fn full_answers_keep_lines_and_long_tokens_across_resize_and_navigation() {
 }
 
 #[test]
-fn configured_ask_is_visible_clickable_and_uses_the_same_action() {
+fn a_configured_ask_key_asks_and_has_no_chip() {
+    // asking is a row, not a key (dialog/DESIGN.md): the configured key still asks, and no chip names it
     let mut app = app();
     app.cfg.keys = spark_dialog::keys::Bindings::from_json(r#"{"ask":"F4"}"#).unwrap();
     app.model_name = Some("fixture".into());
@@ -151,27 +152,17 @@ fn configured_ask_is_visible_clickable_and_uses_the_same_action() {
         app.size = size;
         let mut buffer = Buffer::empty(Rect::new(0, 0, size.0, size.1));
         let drawn = spark_dialog::ui::draw(&app, &common::palette("tokyonight-night"), "", &mut buffer);
-        let key = drawn.keys.iter().find(|(_, _, _, key)| *key == HintKey::Ask).unwrap();
-        assert_eq!(key.2, 4);
-        assert!(key.1 <= size.0);
-        let row: String = (0..size.0).map(|x| buffer[(x, 4)].symbol()).collect();
-        assert!(row.contains("ask") && row.contains("F4") && !row.contains("Ctrl+Enter"));
+        assert!(drawn.keys.iter().all(|(_, _, _, key)| *key != HintKey::Ask), "no Ask chip: {:?}", drawn.keys);
+        let bar: String = (0..size.0).map(|x| buffer[(x, spark_dialog::ui::keys_y(size.1))].symbol()).collect();
+        assert!(!bar.contains("F4") && !bar.contains("Ctrl+Enter"), "{:?}", bar);
     }
     app.hint_key(HintKey::Ask);
     assert!(app.pending.is_some() && app.jobs.len() == 1);
-    app.cfg.progress = true;
-    app.cfg.keys = spark_dialog::keys::Bindings::from_json(r#"{"ask":"Ctrl+Alt+Shift+Enter"}"#).unwrap();
-    for size in [(36, 20), (60, 40)] {
-        app.size = size;
-        let mut buffer = Buffer::empty(Rect::new(0, 0, size.0, size.1));
-        let drawn = spark_dialog::ui::draw(&app, &common::palette("tokyonight-night"), "", &mut buffer);
-        let key = drawn.keys.iter().find(|(_, _, _, key)| *key == HintKey::Ask).unwrap();
-        assert!(key.1 <= size.0 - 2, "progress yields space to the configured Ask key");
-    }
 }
 
 #[test]
-fn shared_frame_prioritizes_navigation_and_ask_with_a_configured_footer() {
+fn the_frame_is_one_shape_at_the_top_and_the_bottom_in_both_views() {
+    use spark_dialog::ui::{keys_y, TOOLS_Y, TOP_RULE_Y};
     let mut app = App::new(
         Config {
             plus: true,
@@ -192,20 +183,23 @@ fn shared_frame_prioritizes_navigation_and_ask_with_a_configured_footer() {
             let mut buffer = Buffer::empty(Rect::new(0, 0, size.0, size.1));
             let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
             let row = |y| (0..size.0).map(|x| buffer[(x, y)].symbol()).collect::<String>();
-            let hint = row(spark_dialog::ui::HINT_Y);
-            assert!(hint.find("Esc").unwrap() < hint.find("ask").unwrap());
-            assert!(!hint.contains("chat") && !hint.contains("F2"));
-            // navigation and Ask on the first row at every width; the rest may take the second row the keys keep
-            assert!(drawn.keys.iter().all(|(start, end, y, k)| start < end
-                && *end <= size.0 - 2
-                && (*y == spark_dialog::ui::HINT_Y || !matches!(k, HintKey::Escape | HintKey::Ask))));
+            // the key bar at the bottom: the view's keys alone, Esc first, no Enter and no Ask among them
+            let bar = row(keys_y(size.1));
+            assert!(bar.contains("Esc"), "{:?}", bar);
+            assert!(!bar.contains("ask") && !bar.contains("Enter") && !bar.contains("chat") && !bar.contains("F2"), "{:?}", bar);
+            assert!(drawn
+                .keys
+                .iter()
+                .all(|(start, end, y, _)| start < end && *end <= size.0 - 2 && (*y == keys_y(size.1) || *y == size.1 - 1)));
+            // the prompt's tools under the prompt, the diamond's rule under them, full since a model answers
             for chip in [0, 1, 3] {
-                assert!(drawn.chips.iter().any(|(_, _, y, id)| *id == chip && *y == size.1 - 2));
+                assert!(drawn.chips.iter().any(|(_, _, y, id)| *id == chip && *y == TOOLS_Y), "control {chip} on the tools row");
             }
-            assert_eq!(row(size.1 - 4).matches('\u{25c7}').count(), 1);
-            assert!(row(size.1 - 3).trim().is_empty(), "one full blank row above the controls");
+            assert_eq!(row(TOP_RULE_Y).matches('\u{25c6}').count(), 1, "{:?}", row(TOP_RULE_Y));
+            assert_eq!(row(size.1 - 4).matches(['\u{25c7}', '\u{25c6}']).count(), 0, "the bottom rule is plain");
+            assert!(row(size.1 - 3).trim().is_empty(), "one full blank row above the keys");
             if size.0 == 60 {
-                assert!(row(size.1 - 2).contains("fixture-model \u{b7} local"));
+                assert!(row(TOOLS_Y).contains("fixture-model \u{b7} local"));
             }
         }
     }
@@ -214,17 +208,15 @@ fn shared_frame_prioritizes_navigation_and_ask_with_a_configured_footer() {
     let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
     let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
     let positions: Vec<_> = drawn.picks.iter().map(|(y, _)| *y).collect();
-    assert!(positions[..6].windows(2).all(|ys| ys[1] - ys[0] == 1), "single spaced: {:?}", positions);
-    assert_eq!(positions[6] - positions[5], 2, "a row of air before settings: {:?}", positions);
-    assert_eq!(positions[9] - positions[8], 2, "and before power: {:?}", positions);
+    assert!(positions[..6].windows(2).all(|ys| ys[1] - ys[0] == 2), "a row of air between the rows: {:?}", positions);
+    assert_eq!(positions[6] - positions[5], 3, "two rows of air before settings: {:?}", positions);
+    assert_eq!(positions[9] - positions[8], 3, "and before power: {:?}", positions);
     assert_eq!(buffer[(spark_dialog::ui::PURPOSE_X, positions[0])].fg, palette.muted, "a purpose is muted");
 
     app.set_draft("unfinished request");
     app.size = (36, 24);
     let mut buffer = Buffer::empty(Rect::new(0, 0, 36, 24));
     let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
-    assert!(drawn.keys.iter().any(|(_, _, y, k)| *k == HintKey::Ask && *y == spark_dialog::ui::HINT_Y));
-    assert!(drawn.keys.iter().any(|(_, _, y, k)| *k == HintKey::Enter && *y == spark_dialog::ui::HINT_Y + 1));
     assert!(drawn.keys.iter().all(|(_, end, _, _)| *end <= 34));
 }
 
@@ -245,7 +237,7 @@ fn footer_app() -> App {
 }
 
 #[test]
-fn model_selector_centers_beneath_the_diamond_in_both_views() {
+fn model_selector_centers_above_the_diamond_in_both_views() {
     let palette = common::palette("tokyonight-night");
     let mut app = footer_app();
     for view in [View::Home, View::Conversation] {
@@ -256,7 +248,8 @@ fn model_selector_centers_beneath_the_diamond_in_both_views() {
             let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
             let &(start, end, y, _) = drawn.chips.iter().find(|(_, _, _, id)| *id == 1).unwrap();
             assert!((start + end - 1).abs_diff(2 * (width / 2)) <= 1, "selector centered within one cell");
-            assert_eq!(buffer[(width / 2, 36)].symbol(), "\u{25c7}");
+            assert_eq!(y, spark_dialog::ui::TOOLS_Y, "the model on the tools row");
+            assert_eq!(buffer[(width / 2, spark_dialog::ui::TOP_RULE_Y)].symbol(), "\u{25c6}", "the full diamond under it");
             let label: String = (start..end).map(|x| buffer[(x, y)].symbol()).collect();
             assert_eq!(label, " fixture-model \u{b7} local \u{2304} ");
         }
@@ -282,7 +275,7 @@ fn narrow_footer_reserves_controls_and_keeps_hit_areas_on_their_labels() {
                 assert_eq!(chips.iter().map(|c| c.3).collect::<Vec<_>>(), [0, 4, 1, 3]);
                 assert!(chips.windows(2).all(|cs| cs[0].1 < cs[1].0), "one cell between hit areas at {width}");
                 for &(start, end, y, id) in &chips {
-                    assert!(start >= 1 && start < end && end < width && y == 38);
+                    assert!(start >= 3 && start < end && end < width && y == spark_dialog::ui::TOOLS_Y);
                     let label: String = (start..end).map(|x| buffer[(x, y)].symbol()).collect();
                     match id {
                         0 => assert!(!label.trim().is_empty(), "an attachment remains visible"),

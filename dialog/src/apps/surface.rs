@@ -110,20 +110,11 @@ impl App {
         }
     }
 
-    /// The key row is the page's, whatever row is lit or typed: a label stands still under a moving pointer.
+    /// The key bar is the page's, whatever row is lit or typed: a label stands still under a moving pointer. Enter
+    /// has no chip: it opens the app the bar is on, saves a form, as it does everywhere.
     pub fn apps_hint(&self) -> Vec<(String, bool)> {
         let pair = |w: &str, k: &str| vec![(format!("{w} "), false), (k.to_string(), true)];
-        let mut keys = if self.apps.form() {
-            let mut v = pair("Cancel", "Esc");
-            v.push(("   ".into(), false));
-            v.extend(pair("Save", "Enter"));
-            v
-        } else {
-            let mut v = pair("Back", "Esc");
-            v.push(("   ".into(), false));
-            v.extend(pair("Open", "Enter"));
-            v
-        };
+        let mut keys = if self.apps.form() { pair("Cancel", "Esc") } else { pair("Back", "Esc") };
         if matches!(self.apps.page, Page::List | Page::Hidden) {
             keys.push(("   ".into(), false));
             keys.extend(pair("Details", "\u{2192}"));

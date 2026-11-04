@@ -165,12 +165,11 @@ fn nothing_is_underlined_and_the_lit_row_wears_the_column_band() {
                 w,
                 h
             );
-            assert_eq!(b[(d.columns.0, y)].symbol(), "\u{203a}", "the cursor at the band's first cell");
-            let label_x = (d.columns.0..d.columns.1)
-                .find(|x| b[(*x, y)].symbol() != " " && b[(*x, y)].symbol() != "\u{203a}")
-                .unwrap();
+            assert_eq!(b[(d.columns.0, y)].symbol(), " ", "no cursor glyph: the selection bar is the one signal");
+            let label_x = (d.columns.0..d.columns.1).find(|x| b[(*x, y)].symbol() != " ").unwrap();
             let label_x = (label_x..d.columns.1).find(|x| b[(*x, y)].symbol().chars().all(char::is_alphabetic)).unwrap();
-            assert_eq!(b[(label_x, y)].fg, pal.accent, "{:?} at {}x{}: the lit row's name in the accent", page, w, h);
+            assert_eq!(b[(label_x, y)].fg, pal.fg, "{:?} at {}x{}: the selected row's name in the text color", page, w, h);
+            assert!(!b[(label_x, y)].modifier.contains(Modifier::BOLD), "{:?} at {}x{}: no bold on the selected row", page, w, h);
             cleanup(&a);
         }
     }
@@ -188,7 +187,7 @@ fn the_frame_is_the_dialogs_own_column_in_the_middle() {
         assert_eq!(b[(left + 2, 0)].symbol(), "a", "the header at the column's inset at {}x{}", w, h);
         assert_eq!(b[(left + 2, spark_dialog::ui::PROMPT_Y)].symbol(), "\u{276f}");
         let y = d.picks.iter().find(|(_, n)| *n == a.sel).unwrap().0;
-        assert_eq!(b[(left + 6, y)].symbol(), "E", "the lit app's name at the row's inset");
+        assert_eq!(b[(left + 4, y)].symbol(), "E", "the lit app's name at the row column, with no sign before it");
     }
     cleanup(&a);
 }
@@ -197,7 +196,7 @@ fn the_frame_is_the_dialogs_own_column_in_the_middle() {
 fn the_key_row_is_the_pages_whatever_is_lit_or_typed() {
     let mut a = app();
     let list = words(&a);
-    assert_eq!(list, "Back Esc   Open Enter   Details \u{2192}");
+    assert_eq!(list, "Back Esc   Details \u{2192}", "Esc and the list's own key; Enter has no chip");
     a.light(2);
     assert_eq!(words(&a), list, "a row lit");
     a.set_draft("fire");
@@ -207,16 +206,16 @@ fn the_key_row_is_the_pages_whatever_is_lit_or_typed() {
     assert_eq!(words(&a), list, "the managing row lit");
     act(&mut a, Action::Details(ID.into()));
     let details = words(&a);
-    assert_eq!(details, "Back Esc   Open Enter");
+    assert_eq!(details, "Back Esc", "a details page: Esc alone, Enter needs no chip");
     pick(&mut a, Action::Visibility(ID.into()));
     assert_eq!(words(&a), details, "the switch lit");
     pick(&mut a, Action::ChooseCategory(ID.into()));
     assert_eq!(words(&a), details, "a choice lit");
     act(&mut a, Action::Categories);
     act(&mut a, Action::AddCategory);
-    assert_eq!(words(&a), "Cancel Esc   Save Enter", "a form");
+    assert_eq!(words(&a), "Cancel Esc", "a form: Esc lets it go, Enter saves as it does everywhere");
     a.set_draft("Writing");
-    assert_eq!(words(&a), "Cancel Esc   Save Enter");
+    assert_eq!(words(&a), "Cancel Esc");
     cleanup(&a);
 }
 
@@ -358,7 +357,7 @@ fn hidden_apps_are_a_list_of_their_own_and_never_leak_into_the_homes_search() {
         .map(|l| l.label.as_str())
         .collect();
     assert_eq!(hidden, ["foot client", "foot server"], "each a row that opens, as in the list");
-    assert_eq!(words(&a), "Back Esc   Open Enter   Details \u{2192}", "the same keys as the list");
+    assert_eq!(words(&a), "Back Esc   Details \u{2192}", "the same keys as the list");
     pick(&mut a, Action::Launch("footclient.desktop".into()));
     assert!(a.apps_details(), "Right opens its details, where the switch is");
     act(&mut a, Action::Visibility("footclient.desktop".into()));
@@ -690,10 +689,10 @@ fn details_values_reflow_and_the_footer_keeps_its_room() {
     a.model_name = Some("a-very-long-model-name-with-full-identity".into());
     for (w, h) in [(60, 40), (140, 50), (68, 49), (36, 20), (60, 40)] {
         let (_, d, _) = draw(&mut a, w, h);
-        let footer = d.chips.iter().map(|c| c.2).min().unwrap();
+        assert!(d.chips.iter().all(|c| c.2 == spark_dialog::ui::TOOLS_Y), "the prompt's tools on their row: {:?}", d.chips);
         assert!(
-            d.picks.iter().all(|&(y, _)| y < footer - 3),
-            "the list ends above the status row and the footer"
+            d.picks.iter().all(|&(y, _)| y < h - spark_dialog::ui::BOTTOM),
+            "the list ends above the status row and the key bar"
         );
         for &(y, n) in &d.picks {
             assert!(matches!(&a.picks()[n], Item::Apps(l) if l.action.is_some()));
@@ -716,7 +715,7 @@ fn configured_details_key_is_drawn_and_works() {
     pick(&mut a, Action::Launch(ID.into()));
     let (b, d, _) = draw(&mut a, 60, 40);
     let &(left, right, row, _) = d.keys.iter().find(|(_, _, _, k)| *k == HintKey::Right).expect("the Details key is drawn");
-    assert!(left < right && row <= 5);
+    assert!(left < right && row >= spark_dialog::ui::keys_y(40), "on the key bar at the bottom");
     let chip: String = (left..right).map(|x| b[(x, row)].symbol()).collect();
     assert!(chip.contains("F4"), "{:?}", chip);
     a.hint_key(HintKey::Right);
