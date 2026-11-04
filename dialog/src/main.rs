@@ -347,7 +347,7 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
         "grab"
     } else if row >= drawn.prompt.0 && row <= drawn.prompt.1 {
         "text"
-    } else if drawn.picks.iter().any(|(y, _)| *y == row) && col >= drawn.columns.0 && col < drawn.columns.1 {
+    } else if drawn.pick_at(col, row).is_some() {
         "pointer"
     } else {
         "default"
@@ -857,6 +857,15 @@ fn main() {
                 let dragging = drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_));
                 if m.kind == MouseEventKind::Moved && mouse_at.is_some_and(|old| old != (m.column, m.row)) {
                     app.hover = Some((m.column, m.row));
+                    if app.view == View::Apps && app.leave_decision.is_none() {
+                        // Pointer movement must not move the visible target by
+                        // dropping the keyboard selection's scroll position.
+                        app.scroll = ui::body_scroll(&app);
+                    }
+                    if let Some(n) = drawn.pick_at(m.column, m.row) {
+                        app.chip_focus = None;
+                        app.light(n);
+                    }
                     dirty = true;
                 }
                 mouse_at = Some((m.column, m.row));
@@ -900,15 +909,13 @@ fn main() {
                             app.step_at(*n, *up); // a value's arrow steps it, as left and right do (#175)
                         } else if m.row >= drawn.prompt.0 && m.row <= drawn.prompt.1 {
                             app.focus_prompt();
-                        } else if let Some((_, n)) = drawn
-                            .picks
-                            .iter()
-                            .find(|(y, _)| *y == m.row && m.column >= drawn.columns.0 && m.column < drawn.columns.1)
-                            .copied()
-                            .as_ref()
+                        } else if let Some((_, _, _, n, unhide)) =
+                            drawn.app_toggles.iter().find(|(a, b, y, _, _)| m.row == *y && m.column >= *a && m.column < *b)
                         {
+                            app.apps_toggle(*n, *unhide);
+                        } else if let Some(n) = drawn.pick_at(m.column, m.row) {
                             // one click runs a row, everywhere, a folder's and a file's too (#196)
-                            app.light(*n);
+                            app.light(n);
                             app.enter();
                         }
                     }

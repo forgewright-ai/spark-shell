@@ -1,5 +1,5 @@
 {
-  "binary_sha256": "bc22a18d41ab1836836f7b2b86ab26a0a3eacd748652f95c61d88e416756891a",
+  "binary_sha256": "69fc62b2bc297f960f1ed687e08bfa899999985eb268a20a8446b3c87e4d6ef6",
   "palette": {
     "colors": {
       "HEX_FG": "c0caf5",
@@ -41,6 +41,13 @@
     "height": 972
   },
   "captures": {
+    "hidden-helpers": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
     "apps-compact": {
       "x": 402,
       "y": 116,
@@ -169,6 +176,7 @@
     }
   },
   "checks": [
+    "Supplied short names are used; foot helpers start hidden; hide/unhide reveals them with explicit labels and pointer choices are idempotent",
     "Browse uses concise desktop-entry roles; role and full-comment searches both find the installed app",
     "Real system Apps and on-demand btop Details render in compact, fullscreen and equal work-area snaps",
     "Returning from Details restores the app search; active query and selected app survive all four modes; clicked Right keycap opens Details",

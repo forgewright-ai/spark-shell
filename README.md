@@ -875,8 +875,11 @@ windows and saved layouts, Notes its count and newest note, and Calendar
 the next reminder when that context is available. All ten places stay
 visible; a missing capability explains its availability when opened.
 Apps lists installed, launchable desktop entries from the system's GIO
-library. All apps groups each application into one category, alphabetically
-within that group. Search matches its lowercase display name or description
+library. The all categories filter groups each application into one category,
+alphabetically within that group. Names use the desktop entry's supplied Name,
+such as firefox, rather than a longer full name. Short roles come from
+GenericName; a missing role stays blank. Search matches the name, full name,
+role or full description
 across categories. Enter and click launch the selected app; Right or Space
 opens Details. Esc clears the query first, then returns; Details preserves the
 list's query and position. Technical identifiers and copied paths keep their
@@ -887,8 +890,12 @@ mapping from desktop-entry categories. The first mapped desktop category wins;
 an individual override in Details wins over mappings, with Other as the
 fallback. Deleting a category removes its mappings and overrides while
 retaining visibility and launch preferences. Details edits are drafts until
-Save preferences is chosen. Hide removes an app from Apps and home search;
-Show hidden apps labels it explicitly and lets you restore it. Preferences
+save is chosen; cancel discards the draft. Hidden entries are concealed by
+default. The list's hidden apps: hide / unhide toggle reveals them with an
+explicit hidden label, without changing their saved visibility. To restore
+one, open its Details, set visibility to unhide and save. To hide one, set
+visibility to hide and save. foot stays visible; foot client and foot server
+start hidden unless an explicit user preference restores them. Preferences
 live in `~/.config/spark-shell/apps.json` (or
 `$XDG_CONFIG_HOME/spark-shell/apps.json`), keyed by desktop-entry identity, so
 ordinary package updates retain them. System launchers and packages are never
@@ -910,8 +917,14 @@ the same search and edits. Failures remain visible in context.
 Details reads package and desktop metadata on demand: a compact overview, one
 Technical details disclosure, and Preferences. Missing package data is shown
 as Unavailable; absent declarations do not imply a security policy. Copy
-launcher path copies its original contents. Apps uses home's shared 60-column
-centered frame, keybindings and footer in compact, fullscreen and both snaps.
+launcher path copies its original contents. Apps keeps a bounded 60-column body
+on home's shared left inset, with shared keybindings and footer in compact,
+fullscreen and both snaps. Category and Details headings use the same blank
+row and two-cell child indent. Interface labels are lowercase; metadata and
+physical key names retain their spelling. Normal text identifies idle controls,
+bold text identifies headings, and muted text carries supporting descriptions.
+Accent shows focus and the shared footer diamond; toggle state also has bold
+underlined text. Save and cancel share a stable row with separate click targets.
 Its minimum is 36 columns by 20 rows; narrow values reflow and the body
 scrolls independently of the reserved footer. Page Up/Down and the wheel
 scroll all expanded metadata. The full model identity remains available in the

@@ -127,6 +127,7 @@ class Desktop:
             "g_app_info_get_all": (C.POINTER(GList), []),
             "g_app_info_get_id": (string, [ptr]),
             "g_app_info_get_display_name": (string, [ptr]),
+            "g_app_info_get_name": (string, [ptr]),
             "g_app_info_get_description": (string, [ptr]),
             "g_app_info_get_executable": (string, [ptr]),
             "g_app_info_get_commandline": (string, [ptr]),
@@ -174,7 +175,8 @@ class Desktop:
         ident = self.text(g.g_app_info_get_id(info))
         wm_class = self.text(g.g_desktop_app_info_get_startup_wm_class(info))
         terminal = bool(g.g_desktop_app_info_get_boolean(info, b"Terminal"))
-        return {"id": ident, "name": self.text(g.g_app_info_get_display_name(info)).lower(),
+        return {"id": ident, "name": self.text(g.g_app_info_get_name(info)).lower(),
+                "display_name": self.text(g.g_app_info_get_display_name(info)),
                 "description": self.text(g.g_app_info_get_description(info)),
                 "generic_name": self.text(g.g_desktop_app_info_get_generic_name(info)),
                 "categories": self.text(g.g_desktop_app_info_get_categories(info)).strip(";").split(";"),

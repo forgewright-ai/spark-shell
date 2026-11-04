@@ -155,7 +155,7 @@ fn configured_ask_is_visible_clickable_and_uses_the_same_action() {
         assert_eq!(key.2, 4);
         assert!(key.1 <= size.0);
         let row: String = (0..size.0).map(|x| buffer[(x, 4)].symbol()).collect();
-        assert!(row.contains("Ask") && row.contains("F4") && !row.contains("Ctrl+Enter"));
+        assert!(row.contains("ask") && row.contains("F4") && !row.contains("Ctrl+Enter"));
     }
     app.hint_key(HintKey::Ask);
     assert!(app.pending.is_some() && app.jobs.len() == 1);
@@ -193,8 +193,8 @@ fn shared_frame_prioritizes_navigation_and_ask_with_a_configured_footer() {
             let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
             let row = |y| (0..size.0).map(|x| buffer[(x, y)].symbol()).collect::<String>();
             let hint = row(spark_dialog::ui::HINT_Y);
-            assert!(hint.find("Esc").unwrap() < hint.find("Ask").unwrap());
-            assert!(!hint.contains("Chat") && !hint.contains("F2"));
+            assert!(hint.find("Esc").unwrap() < hint.find("ask").unwrap());
+            assert!(!hint.contains("chat") && !hint.contains("F2"));
             assert!(drawn
                 .keys
                 .iter()
@@ -285,9 +285,9 @@ fn narrow_footer_reserves_controls_and_keeps_hit_areas_on_their_labels() {
                     let label: String = (start..end).map(|x| buffer[(x, y)].symbol()).collect();
                     match id {
                         0 => assert!(!label.trim().is_empty(), "an attachment remains visible"),
-                        4 => assert_eq!(label, " Remove "),
-                        1 if width == 36 => assert_eq!(label, " Model \u{2304} "),
-                        3 => assert_eq!(label, if app.mode == Mode::Listening { " Cancel " } else { " Talk " }),
+                        4 => assert_eq!(label, " remove "),
+                        1 if width == 36 => assert_eq!(label, " model \u{2304} "),
+                        3 => assert_eq!(label, if app.mode == Mode::Listening { " cancel " } else { " talk " }),
                         _ => {}
                     }
                 }
@@ -391,7 +391,7 @@ fn modules_share_frame_anchors_while_apps_keeps_a_bounded_body() {
             let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
             assert_eq!(drawn.columns, (body_left, body_left + width));
             assert_eq!(buffer[(frame_left + 2, PROMPT_Y)].symbol(), "\u{276f}");
-            assert_eq!(buffer[(frame_left + 2, h - 2)].symbol(), "A");
+            assert_eq!(buffer[(frame_left + 2, h - 2)].symbol(), "a");
             assert_eq!(buffer[(w / 2, h - 4)].symbol(), "\u{25c7}");
             assert!((0..w).all(|x| buffer[(x, h - 3)].symbol().trim().is_empty()));
             assert!(drawn.chips.iter().all(|(a, b, _, _)| *a >= frame_left && *b <= frame_left + frame));
@@ -404,7 +404,7 @@ fn modules_share_frame_anchors_while_apps_keeps_a_bounded_body() {
             if app.view == View::Home {
                 assert_eq!(buffer[(body_left + 2, CONTENT_Y)].symbol(), "a");
                 assert_eq!(buffer[(body_left + width - 3, CONTENT_Y)].symbol(), "\u{203a}");
-                assert_eq!(buffer[(frame_left + 2, HINT_Y)].symbol(), "C");
+                assert_eq!(buffer[(frame_left + 2, HINT_Y)].symbol(), "c");
             }
         }
     }

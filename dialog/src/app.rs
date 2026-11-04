@@ -1916,16 +1916,18 @@ impl App {
             if self.apps.preference(&a.id).hidden {
                 continue;
             }
-            if let Some(sc) = named(&a.name, "", &a.description) {
+            if let Some(sc) = named(&a.name, &a.display_name, &format!("{} {}", a.generic_name, a.description)) {
                 let line = crate::apps::Line {
                     label: crate::scrub::cut_words(&a.name, 18),
-                    value: crate::scrub::cut_words(&a.description, self.col_w().saturating_sub(24) as usize),
+                    value: crate::scrub::cut_words(&a.generic_name, self.col_w().saturating_sub(24) as usize),
                     value_x: 22,
                     action: Some(crate::apps::Action::Launch(a.id.clone())),
                     bold: false,
                     indent: 2,
                     tail: String::new(),
                     continuation: false,
+                    value_muted: true,
+                    ..crate::apps::Line::default()
                 };
                 add(Found::Apps, sc, &a.name, Item::Apps(line), &mut all);
             }
@@ -2827,6 +2829,9 @@ impl App {
         };
         if self.guard_leave(crate::interaction::LeaveIntent::Go(v.clone())) {
             return;
+        }
+        if v == View::Apps && self.view != View::Conversation && matches!(self.apps.page, crate::apps::Page::List) {
+            self.apps.show_hidden = false;
         }
         self.prompt_depart();
         self.navigation.retain(|(view, ..)| *view != self.view);
@@ -4397,9 +4402,9 @@ impl App {
         match &self.view {
             View::Apps => {
                 if self.apps.form() {
-                    "Category edit".into()
+                    "category edit".into()
                 } else {
-                    "Installed apps".into()
+                    "installed apps".into()
                 }
             }
             View::Section(p) => self.providers[*p].title.clone(),

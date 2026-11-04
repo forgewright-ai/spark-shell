@@ -51,7 +51,10 @@ fn browse_uses_short_roles_without_losing_description_search_or_details() {
     let rows = a.apps.lines(60, "", None);
     let editor = rows.iter().find(|l| l.action == Some(Action::Launch(ID.into()))).unwrap();
     assert_eq!(editor.value, "Text Editor");
-    assert_eq!(editor.value_x, rows.iter().find(|l| l.label == "Category").unwrap().value_x);
+    assert_eq!(editor.indent, 4);
+    assert_eq!(editor.value_x, 24);
+    assert!(rows.iter().any(|l| l.label == "all categories"));
+    assert!(!rows.iter().any(|l| l.label == "apps" || l.label == "category"));
     let browser = rows.iter().find(|l| l.action == Some(Action::Launch("browser.desktop".into()))).unwrap();
     assert!(browser.value.is_empty(), "missing roles do not fall back to verbose comments");
     assert_eq!(a.apps.visible("text")[0].id, ID, "the displayed role is searchable");
@@ -59,6 +62,117 @@ fn browse_uses_short_roles_without_losing_description_search_or_details() {
     assert_eq!(a.apps.visible("read the web")[0].id, "browser.desktop");
     a.apps.page = Page::Details(ID.into());
     assert!(a.apps.lines(60, "", None).iter().any(|l| l.label == "Write Documents"));
+    cleanup(&a);
+}
+
+#[test]
+fn helper_defaults_can_be_restored_and_supplied_full_names_remain_searchable() {
+    let mut a = app();
+    a.apps.pending = Some((7, "catalog".into()));
+    a.apps
+        .receive(
+            7,
+            json!({"apps":[
+                {"id":"foot.desktop","name":"foot"},
+                {"id":"footclient.desktop","name":"foot client"},
+                {"id":"foot-server.desktop","name":"foot server"},
+                {"id":"firefox.desktop","name":"firefox","display_name":"Mozilla Firefox"}
+            ]}),
+        )
+        .unwrap();
+    assert_eq!(a.apps.visible("foot").iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["foot.desktop"]);
+    assert_eq!(a.apps.visible("mozilla")[0].name, "firefox");
+    a.view = View::Home;
+    a.set_draft("foot client");
+    assert!(!a.picks().iter().any(|it| matches!(it, Item::Apps(_))));
+    a.view = View::Apps;
+    act(&mut a, Action::Hidden);
+    assert_eq!(a.apps.visible("foot").len(), 3);
+    act(&mut a, Action::Visibility("footclient.desktop".into()));
+    assert!(a.apps.preference("footclient.desktop").hidden, "draft does not restore before save");
+    act(&mut a, Action::Save("footclient.desktop".into()));
+    a.apps.prefs = Preferences::load(&a.apps.path).unwrap();
+    a.apps.show_hidden = false;
+    assert_eq!(a.apps.visible("foot").len(), 2, "explicit restore wins over the helper default after restart");
+    assert!(a.apps.preference("foot-server.desktop").hidden);
+    cleanup(&a);
+}
+
+#[test]
+fn inline_controls_have_distinct_targets_and_toggles_set_the_clicked_state_after_resize() {
+    let mut a = app();
+    let pal = common::palette("tokyonight-night");
+    for (w, h) in [(60, 40), (140, 50), (36, 20), (68, 49)] {
+        a.size = (w, h);
+        a.apps.page = Page::List;
+        a.in_list = false;
+        a.scroll = 0;
+        let mut b = Buffer::empty(Rect::new(0, 0, w, h));
+        let d = spark_dialog::ui::draw(&a, &pal, "", &mut b);
+        let filter = d.pick_regions.iter().find(|(_, _, _, n)| *n == 0).unwrap();
+        let hidden = d.pick_regions.iter().find(|(_, _, _, n)| *n == 1).unwrap();
+        assert_eq!(filter.2 == hidden.2, w >= 54);
+        assert_eq!(d.pick_at(filter.0 + 2, filter.2), Some(0));
+        assert_eq!(d.pick_at(hidden.0 + 2, hidden.2), Some(1));
+        for wanted in [false, true, true, false, false] {
+            let &(x, _, y, n, state) = d.app_toggles.iter().find(|(_, _, _, _, state)| *state == wanted).unwrap();
+            assert_eq!(d.pick_at(x, y), Some(n));
+            a.apps_toggle(n, state);
+            assert_eq!(a.apps.show_hidden, wanted);
+        }
+        a.apps.page = Page::Details(ID.into());
+        act(&mut a, Action::Visibility(ID.into()));
+        pick(&mut a, Action::Save(ID.into()));
+        let d = spark_dialog::ui::draw(&a, &pal, "", &mut b);
+        let save = d
+            .pick_regions
+            .iter()
+            .find(|(_, _, _, n)| matches!(&a.picks()[*n], Item::Apps(l) if l.action == Some(Action::Save(ID.into()))))
+            .unwrap();
+        let cancel = d
+            .pick_regions
+            .iter()
+            .find(|(_, _, _, n)| matches!(&a.picks()[*n], Item::Apps(l) if l.action == Some(Action::Discard(ID.into()))))
+            .unwrap();
+        assert_eq!(save.2, cancel.2);
+        assert!(save.1 <= cancel.0);
+        let n = d.pick_at(cancel.0 + 2, cancel.2).unwrap();
+        a.light(n);
+        a.enter();
+        assert!(!a.apps.dirty(ID));
+        assert!(!a.apps.preference(ID).hidden);
+    }
+    cleanup(&a);
+}
+
+#[test]
+fn section_spacing_and_colors_have_one_meaning_in_apps_and_details() {
+    use ratatui::style::Modifier;
+    let mut a = app();
+    for page in [Page::List, Page::Details(ID.into()), Page::Categories] {
+        a.apps.page = page;
+        let lines = a.apps.lines(60, "", None);
+        for (i, line) in lines.iter().enumerate().filter(|(_, l)| l.bold && l.action.is_none()) {
+            assert_eq!(line.indent, 2);
+            assert!(lines[i + 1].label.is_empty() && lines[i + 1].value.is_empty());
+        }
+    }
+    a.apps.page = Page::List;
+    for theme in ["tokyonight-night", "solarized-light"] {
+        let pal = common::palette(theme);
+        let mut b = Buffer::empty(Rect::new(0, 0, 60, 40));
+        let d = spark_dialog::ui::draw(&a, &pal, "", &mut b);
+        let filter = d.pick_regions.iter().find(|(_, _, _, n)| *n == 0).unwrap();
+        assert_eq!(b[(filter.0 + 2, filter.2)].fg, pal.fg);
+        let hide = d.app_toggles.iter().find(|(_, _, _, _, state)| !*state).unwrap();
+        assert!(b[(hide.0, hide.2)].modifier.contains(Modifier::UNDERLINED | Modifier::BOLD));
+        pick(&mut a, Action::Launch(ID.into()));
+        let d = spark_dialog::ui::draw(&a, &pal, "", &mut b);
+        let row = d.picks.iter().find(|(_, n)| *n == a.sel).unwrap().0;
+        assert_eq!(b[(4, row)].fg, pal.accent);
+        assert_eq!(b[(24, row)].fg, pal.muted);
+        a.in_list = false;
+    }
     cleanup(&a);
 }
 
@@ -75,7 +189,7 @@ fn apps_body_and_pointer_bounds_stay_on_the_shared_left_anchor_after_resize() {
         assert_eq!(d.columns, (frame_left, frame_left + w.min(60)));
         let y = d.picks.iter().find(|(_, n)| *n == a.sel).unwrap().0;
         assert_eq!(b[(frame_left + 2, 0)].symbol(), "a", "apps header");
-        assert_eq!(b[(frame_left + 2, y)].symbol(), "e", "selected editor name");
+        assert_eq!(b[(frame_left + 4, y)].symbol(), "e", "selected editor name");
         assert_eq!(b[(frame_left, y)].symbol(), "\u{203a}");
         a.hover = Some((frame_left + 2, y));
         spark_dialog::ui::draw(&a, &pal, "", &mut b);
@@ -252,7 +366,7 @@ fn details_values_reflow_and_footer_and_pointer_bounds_follow_current_geometry()
         }
     }
     let lines = a.apps.lines(36, "", None);
-    let at = lines.iter().position(|l| l.label == "Category").unwrap();
+    let at = lines.iter().position(|l| l.label == "category").unwrap();
     assert!(lines[at].value.is_empty() && !lines[at + 1].value.is_empty());
     assert_eq!(a.apps.entry(ID).unwrap().launcher, "/data/Applications/Editor.desktop");
     cleanup(&a);
@@ -298,8 +412,13 @@ fn configured_details_key_and_hover_use_current_drawn_controls() {
             .expect("Details key remains visible and clickable");
         assert!(left < right && right < d.columns.1 && row <= 5);
         a.hover = Some((left, row));
-        spark_dialog::ui::draw(&a, &pal, "", &mut b);
+        b = Buffer::empty(Rect::new(0, 0, w, h));
+        let hovered = spark_dialog::ui::draw(&a, &pal, "", &mut b);
         assert_eq!(b[(left, row)].bg, pal.lit);
+        assert!(hovered.keys.iter().any(|(_, _, _, key)| *key == spark_dialog::app::HintKey::Right));
+        assert!(a.in_list, "hover keeps the app that the Details shortcut will inspect");
+        let body_row = hovered.picks.iter().find(|(_, n)| *n == a.sel).unwrap().0;
+        assert_ne!(b[(4 + (w - w.min(120)) / 2, body_row)].bg, pal.lit, "only the hovered shortcut is highlighted");
         a.hover = None;
     }
     a.hint_key(spark_dialog::app::HintKey::Right);
@@ -320,7 +439,7 @@ fn wrapped_preference_values_stay_visible_and_share_the_labels_hit_target() {
     let rows: Vec<_> = d.picks.iter().filter(|(_, n)| *n == a.sel).collect();
     assert_eq!(rows.len(), 2, "label and wrapped value activate the same preference");
     let value = (0..36).map(|x| b[(x, rows[1].0)].symbol()).collect::<String>();
-    assert!(value.contains("Hidden from Apps"), "{value}");
+    assert!(value.contains("hide / unhide"), "{value}");
     a.apps.pending = Some((9, "launch".into()));
     a.apps.receive(9, json!({"error":"launch failed"})).unwrap_err();
     assert!(!a.apps.failed, "a launch failure must not mislabel a valid catalog as unavailable");

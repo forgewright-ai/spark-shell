@@ -1,20 +1,20 @@
-  apps · Installed apps               Tue 3 Nov · 17:23  ×
+  apps · installed apps               Tue 3 Nov · 19:07  ×
 
   ❯ btop
 
-  Clear  Esc   Ask  Ctrl+Enter   Open  Enter   Details  →
+  clear  Esc   ask  Ctrl+Enter   open  Enter   details  →
 
 
-  apps
+  all categories          ⌄     hidden apps: hide / unhide
 
-  Category          All apps search                      ⌄
+  system
 
-  System
-› btop++            System Monitor
+›   btop++              System Monitor
 
-  Manage categories
-  Show hidden apps
-  Refresh apps
+    manage categories
+    refresh apps
+
+
 
 
 
@@ -36,4 +36,4 @@
 
   ─────────────────────────── ◇ ──────────────────────────
 
-  Attach           fixture-model · local ⌄            Talk
+  attach           fixture-model · local ⌄            talk

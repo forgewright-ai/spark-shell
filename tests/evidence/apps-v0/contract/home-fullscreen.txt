@@ -1,8 +1,8 @@
-            home                                                                                            Tue 3 Nov · 17:23  ×
+            home                                                                                            Tue 3 Nov · 19:08  ×
 
-            ❯ Find, do, or ask.
+            ❯ find, do, or ask.
 
-            Close  Esc   Ask  Ctrl+Enter   Open  Enter
+            close  Esc   ask  Ctrl+Enter   open  Enter
 
 
                                           apps           open an application                     ›
@@ -46,4 +46,4 @@
 
             ───────────────────────────────────────────────────────── ◇ ────────────────────────────────────────────────────────
 
-            Attach                                         fixture-model · local ⌄                                          Talk
+            attach                                         fixture-model · local ⌄                                          talk

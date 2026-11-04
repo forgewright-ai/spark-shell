@@ -22,7 +22,7 @@ def main(binary, destination):
         lines = s.screen()
         (s.evidence / (name + ".txt")).write_text("\n".join(lines) + "\n")
         title = len(lines[0]) - len(lines[0].lstrip())
-        attach = next(line.index("Attach") for line in lines[-5:] if "Attach" in line)
+        attach = next(line.index("attach") for line in lines[-5:] if "attach" in line)
         observations.append({"capture": name, "rect": s.window()["rect"], "title_column": title, "attach_column": attach})
         return title, attach
 
@@ -32,7 +32,7 @@ def main(binary, destination):
 
     def details():
         s.key("btop", "-k", "Right")
-        wait_for(lambda: "Preferences" in s.text(), "Details")
+        wait_for(lambda: "preferences" in s.text(), "Details")
 
     try:
         apps()
@@ -43,12 +43,12 @@ def main(binary, destination):
         assert "Save before leaving?" in s.text()
         capture("02-exit-decision")
         s.key("-k", "Escape")
-        assert "Unsaved preferences" in s.text() and "Hidden from Apps" in s.text()
+        assert "unsaved changes" in s.text() and "hide / unhide" in s.text()
         # The actual close button uses the same guard.
         s.click("\u00d7")
         assert s.window() and "Save before leaving?" in s.text()
         s.click("Keep editing", body=True)
-        assert "Unsaved preferences" in s.text()
+        assert "unsaved changes" in s.text()
         s.key("-k", "F2")
         assert "Save before leaving?" in s.text()
         s.click("Save", body=True)
@@ -84,7 +84,7 @@ def main(binary, destination):
         config = preferences.parent
         config.chmod(0o500)
         s.click("Save", body=True)
-        assert "not saved" in s.text() and "Unsaved preferences" in s.text()
+        assert "not saved" in s.text() and "unsaved changes" in s.text()
         assert not json.loads(preferences.read_text())["apps"]["btop.desktop"]["hidden"]
         capture("06-save-failure")
         config.chmod(0o700)
@@ -133,7 +133,7 @@ def main(binary, destination):
         time.sleep(2)
         apps()
         details()
-        assert "No model" in s.text() and "Preferences" in s.text()
+        assert "no model" in s.text() and "preferences" in s.text()
         capture("07-details-ai-unavailable")
         s.checks.append("Persisted preferences and native Details remain available after restart with AI unavailable")
         (s.evidence / "contract.json").write_text(json.dumps({"binary_sha256": s.binary_sha256,

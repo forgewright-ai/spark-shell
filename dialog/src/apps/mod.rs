@@ -1,8 +1,9 @@
 //! Apps owns browsing, Details and local preferences inside home's shared frame.
 pub mod preferences;
+mod presentation;
 mod surface;
 
-use crate::scrub::{cut_words, scrub};
+use crate::scrub::scrub;
 use preferences::{Preference, Preferences, OTHER};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -12,6 +13,7 @@ use std::path::PathBuf;
 pub struct Entry {
     pub id: String,
     pub name: String,
+    pub display_name: String,
     pub description: String,
     pub generic_name: String,
     pub categories: Vec<String>,
@@ -29,6 +31,7 @@ impl Entry {
         Some(Self {
             id: id.into(),
             name: scrub(v["name"].as_str()?).to_lowercase(),
+            display_name: scrub(v["display_name"].as_str().unwrap_or("")),
             description: scrub(v["description"].as_str().unwrap_or("")),
             generic_name: scrub(v["generic_name"].as_str().unwrap_or("")),
             categories: v["categories"]
@@ -102,22 +105,22 @@ pub enum Action {
 impl Action {
     pub fn verb(&self) -> &str {
         match self {
-            Self::Launch(_) => "Open",
-            Self::Save(_) | Self::SaveMapping(_) | Self::Submit => "Save",
-            Self::Copy(_) => "Copy",
-            Self::ConfirmDelete(_) => "Delete",
-            Self::Hidden | Self::Visibility(_) | Self::Technical => "Change",
-            Self::SetCategory(..) | Self::SetLaunch(..) | Self::SetFilter(_) | Self::Map(..) => "Set",
-            Self::Discard(_) | Self::CancelForm | Self::CancelMapping(_) => "Cancel",
-            Self::Refresh | Self::RetryDetails(_) => "Retry",
-            _ => "Choose",
+            Self::Launch(_) => "open",
+            Self::Save(_) | Self::SaveMapping(_) | Self::Submit => "save",
+            Self::Copy(_) => "copy",
+            Self::ConfirmDelete(_) => "delete",
+            Self::Hidden | Self::Visibility(_) | Self::Technical => "change",
+            Self::SetCategory(..) | Self::SetLaunch(..) | Self::SetFilter(_) | Self::Map(..) => "set",
+            Self::Discard(_) | Self::CancelForm | Self::CancelMapping(_) => "cancel",
+            Self::Refresh | Self::RetryDetails(_) => "retry",
+            _ => "choose",
         }
     }
 }
 
 /// A composed content line. Only its action makes it selectable. Wrapped values
 /// retain their original data in the model, independent of drawing and copying.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Line {
     pub label: String,
     pub value: String,
@@ -127,6 +130,14 @@ pub struct Line {
     pub indent: u16,
     pub tail: String,
     pub continuation: bool,
+    /// A second independently focusable control sharing the previous row.
+    pub inline: bool,
+    pub bounds: Option<(u16, u16)>,
+    pub toggle: Option<bool>,
+    pub underline: bool,
+    pub muted: bool,
+    pub value_muted: bool,
+    pub disabled: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -195,7 +206,10 @@ impl State {
         matches!(self.page, Page::Form(_))
     }
     pub fn preference(&self, id: &str) -> Preference {
-        self.prefs.apps.get(id).cloned().unwrap_or_default()
+        self.prefs.apps.get(id).cloned().unwrap_or_else(|| Preference {
+            hidden: matches!(id, "footclient.desktop" | "foot-server.desktop"),
+            ..Preference::default()
+        })
     }
     pub fn draft(&self, id: &str) -> Preference {
         self.drafts.get(id).cloned().unwrap_or_else(|| self.preference(id))
@@ -224,7 +238,7 @@ impl State {
                 if words.trim().is_empty() {
                     self.filter.as_ref().is_none_or(|c| *c == self.prefs.category(&a.id, &a.categories))
                 } else {
-                    let text = format!("{} {} {}", a.name, a.generic_name, a.description).to_lowercase();
+                    let text = format!("{} {} {} {}", a.name, a.display_name, a.generic_name, a.description).to_lowercase();
                     words.split_whitespace().all(|w| text.contains(w))
                 }
             })
@@ -304,10 +318,7 @@ impl State {
             }
             Action::Hidden => {
                 self.show_hidden = !self.show_hidden;
-                out.navigation = Some(Navigation {
-                    query: nav.query,
-                    ..Navigation::default()
-                });
+                out.navigation = Some(Navigation { scroll: 0, ..nav });
             }
             Action::Categories => out.navigation = Some(self.navigate(Page::Categories, nav)),
             Action::Category(name) => out.navigation = Some(self.navigate(Page::Category(name), nav)),
@@ -405,6 +416,9 @@ impl State {
                 self.drafts.insert(id, draft);
             }
             Action::Save(id) => {
+                if !self.dirty(&id) {
+                    return Ok(out);
+                }
                 let mut prefs = self.prefs.clone();
                 prefs.apps.insert(id.clone(), self.draft(&id));
                 self.save(prefs)?;
@@ -412,6 +426,9 @@ impl State {
                 out.notice = Some("Apps preferences saved".into());
             }
             Action::Discard(id) => {
+                if !self.dirty(&id) {
+                    return Ok(out);
+                }
                 self.drafts.remove(&id);
                 out.notice = Some("Unsaved preferences discarded".into());
             }
@@ -461,330 +478,8 @@ impl State {
 
 pub fn launch_name(mode: &str) -> &str {
     match mode {
-        "focus" => "Focus existing",
-        "new" => "New window",
-        _ => "Application default",
-    }
-}
-
-struct Lines {
-    rows: Vec<Line>,
-    width: u16,
-}
-impl Lines {
-    fn new(width: u16) -> Self {
-        Self {
-            rows: vec![],
-            width: width.saturating_sub(4),
-        }
-    }
-    fn blank(&mut self) {
-        self.line("", "", None, false);
-    }
-    fn line(&mut self, label: &str, value: &str, action: Option<Action>, bold: bool) {
-        let value_x = if value.is_empty() { 2 } else { 20.min(self.width / 2 + 2) };
-        self.rows.push(Line {
-            label: cut_words(
-                label,
-                if value.is_empty() {
-                    self.width as usize
-                } else {
-                    value_x.saturating_sub(4) as usize
-                },
-            ),
-            value: cut_words(value, self.width.saturating_sub(value_x - 2) as usize),
-            value_x,
-            action,
-            bold,
-            indent: 2,
-            tail: String::new(),
-            continuation: false,
-        });
-    }
-    fn setting(&mut self, label: &str, value: &str, action: Action, menu: bool) {
-        let first = self.rows.len();
-        // A preference's value reflows just like technical metadata. Its label
-        // remains the one logical keyboard/click target at every width.
-        self.field(label, value);
-        for line in self.rows.iter_mut().skip(first + 1) {
-            line.continuation = true;
-        }
-        if let Some(line) = self.rows.get_mut(first) {
-            line.action = Some(action);
-            if menu {
-                line.tail = "\u{2304}".into();
-            }
-        }
-    }
-    fn disclosure(&mut self, label: &str, expanded: bool, action: Action) {
-        self.line(label, "", Some(action), true);
-        self.rows.last_mut().unwrap().tail = if expanded { "\u{2304}" } else { "\u{203a}" }.into();
-    }
-    fn text(&mut self, text: &str) {
-        for row in crate::ui::wrap(&scrub(text), self.width as usize) {
-            self.line(&row, "", None, false);
-        }
-    }
-    fn field(&mut self, label: &str, value: &str) {
-        let narrow = self.width < 46;
-        let x = if narrow { 4 } else { 20 };
-        let available = self.width.saturating_sub(x) as usize;
-        if narrow {
-            self.line(label, "", None, false);
-        }
-        for (i, row) in crate::ui::wrap(&scrub(value), available).iter().enumerate() {
-            self.rows.push(Line {
-                label: if i == 0 && !narrow { label.into() } else { String::new() },
-                value: row.clone(),
-                value_x: x,
-                action: None,
-                bold: false,
-                indent: 2,
-                tail: String::new(),
-                continuation: false,
-            });
-        }
-    }
-}
-
-impl State {
-    pub fn lines(&self, width: u16, query: &str, frame: Option<u64>) -> Vec<Line> {
-        let mut l = Lines::new(width);
-        let heading = match &self.page {
-            Page::Details(id) => format!("apps / {}", self.entry(id).map(|a| a.name.as_str()).unwrap_or("unavailable")),
-            _ => "apps".into(),
-        };
-        l.line(&heading, "", None, true);
-        if let Some((_, op)) = &self.pending {
-            let label = match op.as_str() {
-                "catalog" => "Finding apps",
-                "details" => "Reading details",
-                "launch" => "Opening app",
-                _ => "Copying",
-            };
-            l.line(
-                &frame
-                    .map(|f| format!("{} {}", label, crate::progress::bar(crate::progress::Work::Swell, f)))
-                    .unwrap_or_else(|| label.into()),
-                "",
-                None,
-                false,
-            );
-        } else {
-            l.blank();
-        }
-        match &self.page {
-            Page::List => {
-                l.setting(
-                    "Category",
-                    if query.trim().is_empty() {
-                        self.filter.as_deref().unwrap_or("All apps")
-                    } else {
-                        "All apps search"
-                    },
-                    Action::Filter,
-                    true,
-                );
-                if self.preference_error.is_some() {
-                    l.text("Preferences could not be read. Saving is disabled; the original file is preserved.");
-                }
-                l.blank();
-                let apps = self.visible(query);
-                if apps.is_empty() && self.pending.is_none() {
-                    l.text(if self.failed {
-                        "Apps unavailable. Retry discovery below."
-                    } else if !self.loaded {
-                        "Apps have not been read yet."
-                    } else if self.entries.is_empty() {
-                        "No launchable applications are installed."
-                    } else if !query.trim().is_empty() {
-                        "No apps match this search."
-                    } else {
-                        "No visible apps in this category."
-                    });
-                }
-                let mut category = String::new();
-                for a in apps {
-                    let group = self.prefs.category(&a.id, &a.categories);
-                    if group != category {
-                        if !category.is_empty() {
-                            l.blank();
-                        }
-                        l.line(&group, "", None, true);
-                        category = group;
-                    }
-                    let name = if self.preference(&a.id).hidden {
-                        format!("hidden: {}", a.name)
-                    } else {
-                        a.name.clone()
-                    };
-                    // Desktop-entry roles are concise and localized. Keep the
-                    // full comment in Details and search, not every browse row.
-                    l.line(&name, &a.generic_name, Some(Action::Launch(a.id.clone())), false);
-                }
-                l.blank();
-                l.line("Manage categories", "", Some(Action::Categories), false);
-                l.line(
-                    if self.show_hidden { "Hide hidden apps" } else { "Show hidden apps" },
-                    "",
-                    Some(Action::Hidden),
-                    false,
-                );
-                l.line("Refresh apps", "", Some(Action::Refresh), false);
-            }
-            Page::Details(id) => {
-                let Some(app) = self.entry(id) else {
-                    l.text("This application is no longer installed.");
-                    return l.rows;
-                };
-                l.text(if app.description.is_empty() {
-                    "No description supplied by the desktop entry."
-                } else {
-                    &app.description
-                });
-                if let Some(details) = self.details.get(id) {
-                    for (label, key) in [("Version", "version"), ("Installed via", "installed"), ("Source", "source")] {
-                        l.field(label, details[key].as_str().unwrap_or("Unavailable"));
-                    }
-                } else if self.pending.is_none() {
-                    l.line("Retry details", "", Some(Action::RetryDetails(id.clone())), false);
-                }
-                l.blank();
-                l.disclosure("Technical details", self.expanded, Action::Technical);
-                if self.expanded {
-                    if let Some(fields) = self.details.get(id).and_then(|v| v["fields"].as_array()) {
-                        for pair in fields {
-                            if let (Some(label), Some(value)) = (pair[0].as_str(), pair[1].as_str()) {
-                                l.field(label, value);
-                            }
-                        }
-                    } else {
-                        l.text("Technical metadata is unavailable.");
-                    }
-                    l.line("Copy launcher path", "", Some(Action::Copy(app.launcher.clone())), false);
-                }
-                l.blank();
-                l.line("Preferences", "", None, true);
-                let pref = self.draft(id);
-                let category = pref
-                    .category
-                    .clone()
-                    .unwrap_or_else(|| format!("{} (mapped)", self.prefs.category("", &app.categories)));
-                l.setting("Category", &category, Action::ChooseCategory(id.clone()), true);
-                l.setting(
-                    "Visibility",
-                    if pref.hidden { "Hidden from Apps" } else { "Shown in Apps" },
-                    Action::Visibility(id.clone()),
-                    false,
-                );
-                l.setting("Launch", launch_name(pref.mode()), Action::ChooseLaunch(id.clone()), true);
-                l.text(if self.dirty(id) { "Unsaved preferences" } else { "Preferences saved" });
-                l.line("Save", "", Some(Action::Save(id.clone())), false);
-                l.line("Cancel", "", Some(Action::Discard(id.clone())), false);
-                l.blank();
-                l.line("Open application", "", Some(Action::Launch(id.clone())), false);
-            }
-            Page::Filter => {
-                l.line("Choose a category", "", None, true);
-                l.line("All apps", "", Some(Action::SetFilter(None)), false);
-                for c in &self.prefs.categories {
-                    l.line(c, "", Some(Action::SetFilter(Some(c.clone()))), false);
-                }
-            }
-            Page::CategoryPicker(id) => {
-                l.line("Category preference", "", None, true);
-                l.line("Follow category mapping", "", Some(Action::SetCategory(id.clone(), None)), false);
-                for c in &self.prefs.categories {
-                    l.line(c, "", Some(Action::SetCategory(id.clone(), Some(c.clone()))), false);
-                }
-            }
-            Page::LaunchPicker(id) => {
-                l.line("Launch preference", "", None, true);
-                for mode in ["default", "focus", "new"] {
-                    let supported = self
-                        .entry(id)
-                        .is_some_and(|a| mode == "default" || (mode == "focus" && a.focus) || (mode == "new" && a.new_window));
-                    l.line(
-                        launch_name(mode),
-                        if supported { "" } else { "Unavailable" },
-                        supported.then(|| Action::SetLaunch(id.clone(), mode.into())),
-                        false,
-                    );
-                    if !supported {
-                        l.text(if mode == "focus" {
-                            "Needs Sway and a declared window identity."
-                        } else {
-                            "No New window action is declared by this app."
-                        });
-                    }
-                }
-            }
-            Page::Categories => {
-                l.line("Categories", "", None, true);
-                for c in &self.prefs.categories {
-                    l.disclosure(c, false, Action::Category(c.clone()));
-                }
-                l.blank();
-                l.line("Create category", "", Some(Action::AddCategory), false);
-                l.line("Default mappings", "", Some(Action::Mappings), false);
-            }
-            Page::Category(c) => {
-                l.line(c, "", None, true);
-                if c != OTHER {
-                    l.line("Rename category", "", Some(Action::Rename(c.clone())), false);
-                    l.line("Delete category", "", Some(Action::Delete(c.clone())), false);
-                } else {
-                    l.text("Other is the fallback when no mapping or individual override applies.");
-                }
-                l.line("Default mappings", "", Some(Action::Mappings), false);
-            }
-            Page::DeleteCategory(c) => {
-                l.text(&format!("Delete {c}? Its mappings and individual category overrides will be removed. Apps use remaining mappings or Other. Visibility and launch preferences stay."));
-                l.blank();
-                l.line("Delete category", "", Some(Action::ConfirmDelete(c.clone())), false);
-            }
-            Page::Mappings => {
-                l.line("Default category mappings", "", None, true);
-                l.text("The first mapped category in a desktop entry wins; an individual override takes precedence.");
-                l.blank();
-                for (source, target) in &self.prefs.mappings {
-                    l.setting(source, target, Action::Mapping(source.clone()), true);
-                }
-                l.blank();
-                l.line("Add mapping", "", Some(Action::AddMapping), false);
-            }
-            Page::Mapping(source) => {
-                l.text(&format!("Map desktop category {source} to:"));
-                let target = self
-                    .mapping_drafts
-                    .get(source)
-                    .cloned()
-                    .unwrap_or_else(|| self.prefs.mappings.get(source).cloned());
-                l.field("Target", target.as_deref().unwrap_or("No mapping"));
-                l.blank();
-                for c in &self.prefs.categories {
-                    l.line(c, "", Some(Action::Map(source.clone(), Some(c.clone()))), false);
-                }
-                l.blank();
-                l.line("Remove mapping", "", Some(Action::Map(source.clone(), None)), false);
-                l.text(if self.mapping_dirty(source) { "Unsaved mapping" } else { "Mapping saved" });
-                l.line("Save", "", Some(Action::SaveMapping(source.clone())), false);
-                l.line("Cancel", "", Some(Action::CancelMapping(source.clone())), false);
-            }
-            Page::Form(form) => {
-                l.text(match form {
-                    Form::AddCategory => "Type a new category name in the prompt.",
-                    Form::RenameCategory(_) => "Type the new category name in the prompt.",
-                    Form::AddMapping => "Type the system desktop category identifier, such as Network, in the prompt.",
-                });
-                if let Form::RenameCategory(from) = form {
-                    l.field("Current name", from);
-                }
-                l.blank();
-                l.line("Save", "", Some(Action::Submit), false);
-                l.line("Cancel", "", Some(Action::CancelForm), false);
-            }
-        }
-        l.rows
+        "focus" => "focus existing",
+        "new" => "new window",
+        _ => "application default",
     }
 }

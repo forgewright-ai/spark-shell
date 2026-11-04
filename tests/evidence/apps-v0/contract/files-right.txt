@@ -1,29 +1,29 @@
-  files · ~                                   Tue 3 Nov · 17:24  ×
+  files · ~                                   Tue 3 Nov · 19:09  ×
 
-  ❯ Find, do, or ask.
+  ❯ find, do, or ask.
 
-  Back  Esc   Ask  Ctrl+Enter
+  back  Esc   ask  Ctrl+Enter
 
 
   home
     ▸ bin                         folder     3 items
     ▸ run                         folder     6 items
     ▸ state                       folder     1 item
-      long-attachment…-review.md  Markdown   27 B      today 17:23
-      native.log                  text       439 B     today 17:24
-      screen.txt                  text       1 KB      today 17:24
-      sway.conf                   data       847 B     today 17:23
+      long-attachment…-review.md  Markdown   27 B      today 19:07
+      native.log                  text       388 B     today 19:08
+      screen.txt                  text       1 KB      today 19:09
+      sway.conf                   data       847 B     today 19:07
     ▸ trash                                  empty
 
   recent
-      screen.txt                  text       1 KB      today 17:24
-      native.log                  text       439 B     today 17:24
-      wifi.scan                   SCAN       99 B      today 17:24
-      ddc.lock                    LOCK       0 B       today 17:23
-      ddc.bus                     BUS        2 B       today 17:23
-      light                       file       3 B       today 17:23
-      bt.list                     LIST       111 B     today 17:23
-      dirs.apps.entries           ENTRIES    1 KB      today 17:23
+      screen.txt                  text       1 KB      today 19:09
+      native.log                  text       388 B     today 19:08
+      wifi.scan                   SCAN       111 B     today 19:08
+      light                       file       3 B       today 19:07
+      ddc.lock                    LOCK       0 B       today 19:07
+      dirs.theme.darks            DARKS      146 B     today 19:07
+      ddc.bus                     BUS        2 B       today 19:07
+      bt.list                     LIST       111 B     today 19:07
 
     ▸ this folder · 3 folders · 4 files · 3 KB
 
@@ -45,4 +45,4 @@
 
   ─────────────────────────────── ◇ ──────────────────────────────
 
-  Attach               fixture-model · local ⌄                Talk
+  attach               fixture-model · local ⌄                talk

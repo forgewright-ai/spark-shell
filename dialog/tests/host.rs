@@ -2759,7 +2759,7 @@ fn typed_words_get_one_reply_row_and_the_frame_holds_still() {
         &draft[2..5]
     );
     assert!(
-        draft[4].contains("Ask") && draft[4].contains("Ctrl+Enter"),
+        draft[4].contains("ask") && draft[4].contains("Ctrl+Enter"),
         "Ask stays directly beneath the input"
     );
     // a search: rows go, none comes above the list, and the first is at row 7

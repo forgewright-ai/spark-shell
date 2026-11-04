@@ -110,6 +110,15 @@ class DesktopEntries(unittest.TestCase):
         self.assertEqual(entries["editor.desktop"]["description"], "Write documents and edit source files")
         self.assertEqual(entries["missing.desktop"]["generic_name"], "")
 
+    def test_supplied_short_name_keeps_full_name_for_search_and_identity(self):
+        self.desktop("firefox.desktop", "Name=Firefox\nName[fr]=Firefox court\nX-GNOME-FullName=Mozilla Firefox\nX-GNOME-FullName[fr]=Mozilla Firefox complet\nExec=/bin/true\n")
+        self.desktop("mpv.desktop", "Name=mpv Media Player\nExec=/bin/true\n")
+        self.env.update(LANG="C.UTF-8", LC_ALL="C.UTF-8", LANGUAGE="fr")
+        entries = {a["id"]: a for a in self.call(op="catalog")["apps"]}
+        self.assertEqual(entries["firefox.desktop"]["name"], "firefox court")
+        self.assertEqual(entries["firefox.desktop"]["display_name"], "Mozilla Firefox complet")
+        self.assertEqual(entries["mpv.desktop"]["name"], "mpv media player")
+
     def test_default_and_declared_new_window_use_gio_field_codes(self):
         output = self.root / "args.json"
         program = self.root / "record-arguments"

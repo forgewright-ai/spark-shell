@@ -1,16 +1,16 @@
-  apps · Category edit                Tue 3 Nov · 17:23  ×
+  apps · category edit                Tue 3 Nov · 19:08  ×
 
   ❯ Writing
 
-  Keep editing  Esc   Choose  Enter
+  keep editing  Esc   choose  Enter
 
 
   Unsaved changes
   Save before leaving?
 
-  Save
-  Discard
-› Keep editing
+  save
+  discard
+› keep editing
 
 
 
@@ -36,4 +36,4 @@
 
   ─────────────────────────── ◇ ──────────────────────────
 
-  Attach           fixture-model · local ⌄            Talk
+  attach           fixture-model · local ⌄            talk

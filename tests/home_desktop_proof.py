@@ -286,7 +286,7 @@ elif sys.argv[1] == 'steps':
                     lines = screen()
                     divider = next(i for i, line in enumerate(lines) if "\u25c7" in line)
                     assert not lines[divider + 1].strip(), "a full blank row separates divider and controls"
-                    assert "fixture-model" in lines[divider + 2] or "Model" in lines[divider + 2]
+                    assert "fixture-model" in lines[divider + 2] or "model" in lines[divider + 2]
 
                 def model_click():
                     footer_gap()
@@ -392,26 +392,26 @@ elif sys.argv[1] == 'steps':
                 close_home()
 
                 first = open_home()
-                control("Attach")
+                control("attach")
                 key("long-attachment", "-k", "Down", "-k", "Return")
                 time.sleep(1)
-                assert "Remove" in "\n".join(screen()), "attachment picker did not return its file"
+                assert "remove" in "\n".join(screen()), "attachment picker did not return its file"
                 sway("[con_id=%d] resize set width 396 px height 492 px" % first["id"])
                 time.sleep(2)
                 footer_gap()
-                control("Talk")
+                control("talk")
                 wait_for(fixture.with_suffix(".listening").exists, "native Talk click")
-                assert "Cancel" in "\n".join(screen())
+                assert "cancel" in "\n".join(screen())
                 capture("narrow-attachment-void")
-                control("Cancel")
-                assert "Talk" in "\n".join(screen())
-                control("Remove")
-                assert "Remove" not in "\n".join(screen())
-                control("Model")
+                control("cancel")
+                assert "talk" in "\n".join(screen())
+                control("remove")
+                assert "remove" not in "\n".join(screen())
+                control("model")
                 assert "model" in screen()[0].lower()
                 key("-k", "Escape")
-                control("Attach")
-                assert "Pick a file" in "\n".join(screen())
+                control("attach")
+                assert "pick a file" in "\n".join(screen())
                 checks.append("At 36 columns with a long attachment, Talk, Cancel, Remove, Model and Attach clicks reach their displayed controls")
                 close_home()
 
@@ -445,7 +445,7 @@ elif sys.argv[1] == 'steps':
                                                      "palette": palette,
                                                      "display": {"width": 1440, "height": 1000, "usable_area": area},
                                                      "fixtures": ["model response", "voice availability"],
-                                                     "footer": ["Attach", "model/source", "Talk"],
+                                                     "footer": ["attach", "model/source", "talk"],
                                                      "captures": captures, "checks": checks}, indent=2) + "\n")
     for check in checks:
         print("ok: " + check)

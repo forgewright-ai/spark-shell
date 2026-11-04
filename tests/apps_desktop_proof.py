@@ -129,21 +129,40 @@ class Session:
         assert self.window()["id"] == ident, "Super+Space replaced home instead of returning to it"
         time.sleep(.3)
 
-    def click(self, label, body=False):
+    def click(self, label, body=False, app_name=False):
         # Scroll through the real keyboard path, then derive coordinates from
         # the current terminal text, never from a pre-resize capture.
-        match = re.compile(r"(?<!\w)" + re.escape(label) + r"(?!\w)")
-        if label in ("Save", "Cancel", "Discard", "Keep editing"):
-            match = re.compile(r"^\s*(?:\u203a\s*)?" + re.escape(label) + r"\s*$")
+        match = re.compile(r"(?<!\w)" + re.escape(label) + r"(?!\w)", re.I)
+        action = label.lower() in ("save", "cancel", "discard", "keep editing")
+        if action:
+            body = True
+        def matches(line):
+            if app_name:
+                # Match the app-name column, not a longer app name such as
+                # foot client/server or a receipt containing the same word.
+                return re.match(r"\s*(?:›\s*)?" + re.escape(label) + r"(?:\s{2,}|$)", line, re.I)
+            return match.search(line) and (not action or re.fullmatch(r"\s*(?:›\s*)?(?:save|cancel|discard|keep editing)(?:\s+(?:›\s*)?(?:save|cancel))?\s*", line, re.I))
+        lines = self.screen()
+        if not any(matches(line) for line in (lines[7:] if body else lines)):
+            # The approved overview action precedes expanded metadata. Search
+            # from the top when the desired control is outside this viewport.
+            for _ in range(20):
+                before = lines[7:-5]
+                self.key("-k", "Prior")
+                lines = self.screen()
+                if lines[7:-5] == before or any(matches(line) for line in (lines[7:] if body else lines)):
+                    break
         for _ in range(80):
             lines = self.screen()
-            if any(match.search(line) for line in (lines[7:] if body else lines)):
+            if any(matches(line) for line in (lines[7:] if body else lines)):
                 break
             self.key("-k", "Down")
         else:
             raise AssertionError("control not found: " + label + "\n" + self.text())
-        row = next(i for i, line in enumerate(lines) if match.search(line) and (not body or i >= 7))
-        col = lines[row].index(label) + len(label) // 2
+        # Confirmation headings can repeat their action's words. The action
+        # follows the explanation, so use its last visible occurrence.
+        row = next(i for i in range(len(lines) - 1, -1, -1) if matches(lines[i]) and (not body or i >= 7))
+        col = match.search(lines[row]).start() + len(label) // 2
         rect = self.window()["rect"]
         self.pointer.click(rect["x"] + 18 + col * self.cell[0] + self.cell[0] // 2,
                            rect["y"] + 18 + row * self.cell[1] + self.cell[1] // 2)
@@ -156,7 +175,7 @@ class Session:
             rows = (rect["height"] - 36) // self.cell[1]
             lines = self.screen()
             title = 2 + (cols - min(cols, 120)) // 2
-            good = re.search(r"\b(home|apps|files|conversation)\b", lines[0]) is not None and len(lines[0]) - len(lines[0].lstrip()) == title and any("Attach" in line or "Remove" in line for line in lines[max(0, rows-3):])
+            good = re.search(r"\b(home|apps|files|conversation)\b", lines[0]) is not None and len(lines[0]) - len(lines[0].lstrip()) == title and any("attach" in line or "remove" in line for line in lines[max(0, rows-3):])
             return good
         wait_for(current, "terminal redraw after resize")
         time.sleep(.3)
@@ -219,6 +238,17 @@ def main(binary, destination):
         text = s.text()
         assert "System Monitor" in text and "Web Browser" in text
         assert "Resource monitor that" not in text and "A wayland native" not in text
+        assert "foot client" not in text and "foot server" not in text
+        assert "firefox" in text and "mozilla firefox" not in text
+        assert "mpv media player" in text
+        s.click("unhide", body=True)
+        assert re.search(r"foot client[^\n]*hidden", s.text()) and re.search(r"foot server[^\n]*hidden", s.text())
+        s.capture("hidden-helpers")
+        s.click("unhide", body=True)
+        assert "foot client" in s.text(), "clicking the selected state must not flip it"
+        s.click("hide", body=True)
+        assert "foot client" not in s.text() and "foot server" not in s.text()
+        s.checks.append("Supplied short names are used; foot helpers start hidden; hide/unhide reveals them with explicit labels and pointer choices are idempotent")
         s.key("usage")
         assert "btop" in s.text(), "full desktop comments remain searchable"
         s.key("-k", "Escape")
@@ -234,7 +264,7 @@ def main(binary, destination):
         s.four_modes("query", capture=False)
         assert "btop" in s.screen()[2], "resize lost the search"
         s.click("\u2192")  # the physical keycap opens Details through the same action
-        wait_for(lambda: "Preferences" in "\n".join(s.screen()), "application Details")
+        wait_for(lambda: "preferences" in "\n".join(s.screen()), "application Details")
         time.sleep(1)
         s.four_modes("details")
         s.checks.append("Real system Apps and on-demand btop Details render in compact, fullscreen and equal work-area snaps")
@@ -243,10 +273,10 @@ def main(binary, destination):
         s.checks.append("Returning from Details restores the app search; active query and selected app survive all four modes; clicked Right keycap opens Details")
         s.key("-k", "Right")
         s.click("Visibility")
-        assert "Unsaved preferences" in s.text()
-        s.click("Technical details")
+        assert "unsaved changes" in s.text()
+        s.click("technical details")
         s.four_modes("expanded-unsaved", capture=False)
-        assert "Identity" in s.text(), "resize collapsed Technical details"
+        assert "identity" in s.text(), "resize collapsed Technical details"
         s.click("Save")
         preferences = s.root / ".config/spark-shell/apps.json"
         saved = json.loads(preferences.read_text())
@@ -254,11 +284,11 @@ def main(binary, destination):
         s.key("-k", "Escape")
         assert "No apps match" in s.text()
         s.capture("hidden-search")
-        s.click("Show hidden apps")
-        assert "hidden: btop" in s.text()
-        s.key("-k", "Down", "-k", "Down", "-k", "Right")
-        wait_for(lambda: "Technical details" in s.text(), "hidden app Details")
-        s.click("Technical details")  # collapse to the compact preferences group
+        s.click("unhide", body=True)
+        assert re.search(r"btop[^\n]*hidden", s.text())
+        s.key("-k", "Down", "-k", "Right")
+        wait_for(lambda: "technical details" in s.text(), "hidden app Details")
+        s.click("technical details")  # collapse to the compact preferences group
         s.click("Visibility")
         s.click("Save")
         assert not json.loads(preferences.read_text())["apps"]["btop.desktop"]["hidden"]
@@ -287,11 +317,11 @@ def main(binary, destination):
         s.click("Utilities")
         s.click("Save")
         assert json.loads(preferences.read_text())["apps"]["btop.desktop"]["category"] == "Utilities"
-        s.click("Attach")
+        s.click("attach")
         s.key("long-attachment", "-k", "Down", "-k", "Return")
-        wait_for(lambda: "Remove" in s.text(), "attachment")
-        assert "apps / btop" in s.text(), "attachment did not return to Details"
-        s.click("Technical details")
+        wait_for(lambda: "remove" in s.text(), "attachment")
+        assert re.search(r"^\s*btop\+*\s*$", s.text(), re.M), "attachment did not return to Details"
+        s.click("technical details")
         s.sway("[con_id=%d] resize set width 396 px height 416 px, move position center" % s.window()["id"])
         time.sleep(2)
         s.settled()
@@ -308,8 +338,8 @@ def main(binary, destination):
         s.click("Visibility")
         s.capture("minimum-preferences-attachment")
         s.click("Cancel")
-        s.click("Remove")
-        assert "Remove" not in s.text()
+        s.click("remove")
+        assert "remove" not in s.text()
         s.checks.append("At 36x20, long technical values reflow, original launcher path copies, preferences scroll above the reserved populated footer, and Remove has a current hit target")
         s.normal()
         s.key("-k", "Escape", "-k", "Escape")
@@ -329,7 +359,7 @@ def main(binary, destination):
         subprocess.run(["grim", "-o", "HEADLESS-1", str(s.evidence / "application-opened.png")], env=s.env, check=True)
         s.focus()
         assert "Opened foot" in s.text(), s.text()
-        s.click("foot", body=True)
+        s.click("foot", body=True, app_name=True)
         wait_for(lambda: len(app_windows()) == 2, "real installed foot launch via click")
         s.focus()
         s.checks.append("Enter and click both launch the installed foot desktop entry; windows outlive the helper; confirmed receipts stay in Apps")
@@ -340,7 +370,7 @@ def main(binary, destination):
         assert "Opened btop" in s.text(), s.text()
         s.checks.append("The real installed Terminal=true btop entry launches through GIO into foot and its window is confirmed")
         first_btop = app_windows("btop")[0]["id"]
-        s.click("btop", body=True)
+        s.click("btop++", body=True, app_name=True)
         wait_for(lambda: len(app_windows("btop")) == 2, "second btop window")
         s.focus()
         s.key("-k", "Right")
@@ -357,7 +387,7 @@ def main(binary, destination):
         s.key("-k", "Return")
         wait_for(lambda: any(w["id"] == first_btop and w["focused"] for w in app_windows("btop")), "focus via Enter")
         s.focus()
-        s.click("btop", body=True)
+        s.click("btop++", body=True, app_name=True)
         wait_for(lambda: any(w["id"] == first_btop and w["focused"] for w in app_windows("btop")), "focus via click")
         s.focus()
         assert len(app_windows("btop")) == 2
@@ -378,8 +408,8 @@ def main(binary, destination):
         s.key("apps", "-k", "Return")
         wait_for(lambda: "btop" in s.text(), "catalog after restart")
         s.key("btop", "-k", "Right")
-        wait_for(lambda: "Focus existing" in s.text(), "preferences after restart")
-        assert "Utilities" in s.text()
+        wait_for(lambda: "focus existing" in s.text(), "preferences after restart")
+        assert "utilities" in s.text()
         s.checks.append("After restarting home, btop retains its category override, restored visibility and Focus existing preference")
         s.key("-k", "Escape", "-k", "Escape")
         # A local entry with no package ownership exercises absent metadata.
@@ -402,7 +432,7 @@ def main(binary, destination):
         wait_for(lambda: app_windows("org.example.AppsProof"), "declared New window action")
         s.focus()
         s.key("-k", "Escape")
-        s.click("inspection fixture", body=True)
+        s.click("inspection fixture", body=True, app_name=True)
         wait_for(lambda: len(app_windows("org.example.AppsProof")) == 2, "second declared New window action")
         s.focus()
         s.checks.append("A labelled local desktop-entry fixture shows unavailable package metadata; its declared New window action opens two real foot windows through the saved preference")

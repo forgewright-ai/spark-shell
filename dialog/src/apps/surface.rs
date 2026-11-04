@@ -93,6 +93,18 @@ impl App {
         }
     }
 
+    /// Pointer choices set an explicit state; activating the row by keyboard
+    /// toggles it. Clicking the already selected word must be harmless.
+    pub fn apps_toggle(&mut self, n: usize, unhide: bool) {
+        self.light(n);
+        let Some(Item::Apps(line)) = self.picks().get(n).cloned() else { return };
+        match line.action {
+            Some(Action::Hidden) if self.apps.show_hidden != unhide => self.apps_activate(Action::Hidden),
+            Some(Action::Visibility(id)) if self.apps.draft(&id).hidden == unhide => self.apps_activate(Action::Visibility(id)),
+            _ => {}
+        }
+    }
+
     pub fn apps_hint(&self) -> Vec<(String, bool)> {
         let back = if self.apps.form() {
             "Cancel"
