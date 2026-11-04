@@ -29,6 +29,12 @@ impl App {
         self.apps.serial += 1;
         let serial = self.apps.serial;
         let op = request["op"].as_str().unwrap_or("").to_string();
+        self.apps.pending_name = if op == "launch" {
+            request["id"].as_str().and_then(|id| self.apps.entry(id)).map(|a| a.name.to_lowercase()).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        self.apps.pending_since = Some(std::time::Instant::now());
         self.apps.pending = Some((serial, op));
         let shell = std::fs::canonicalize(&self.cfg.spark_shell).unwrap_or_else(|_| self.cfg.spark_shell.clone().into());
         let adapter = shell.parent().unwrap_or(std::path::Path::new(".")).join("lib/apps.py");

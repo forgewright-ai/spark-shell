@@ -51,6 +51,8 @@ pub fn keys_y(h: u16) -> u16 {
 }
 /// Where a destination's purpose starts: past the longest name (notifications) at column 4 and two cells of air.
 pub const PURPOSE_X: u16 = 19;
+/// How long a launch waits before the status row says so with the march: a quick one shows its receipt alone.
+pub const LAUNCH_FELT: std::time::Duration = std::time::Duration::from_millis(300);
 /// A palette's chip: a small terminal in the palette's own colors, this many cells wide.
 pub const CHIP: u16 = 9;
 pub const LESS: &str = "\u{2039}";
@@ -663,8 +665,19 @@ fn tools(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
 /// nothing to say. One row, cut to the window: it never moves the list, and nothing else is written between
 /// the keys and the list or among the list's rows.
 fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
+    // an action on a thing, waited on out loud (dialog/DESIGN.md): an app opening shows the header's march with the
+    // words once the wait is felt, a third of a second in, so a launch that answers at once shows its receipt alone
+    if let (Some((_, op)), Some(since)) = (&app.apps.pending, app.apps.pending_since) {
+        if op == "launch" && since.elapsed() >= LAUNCH_FELT && !app.apps.pending_name.is_empty() {
+            let x = pen.put(2, y, &progress::bar(progress::Work::March, app.frame), pen.pal.muted, false, false);
+            pen.put(x + 1, y, &format!("opening {}", app.apps.pending_name), pen.pal.muted, false, false);
+            return;
+        }
+    }
     let Some(r) = &app.reply else {
-        if let Some(t) = app.target_label() {
+        // nothing said: the note of the row the words are for, else the selected object's line, Norton Commander's
+        // mini-status (dialog/DESIGN.md), muted, moving only with the bar
+        if let Some(t) = app.target_label().or_else(|| app.selected_line()) {
             pen.put(4, y, &cut_words(&t, pen.w.saturating_sub(6) as usize), pen.pal.muted, false, false);
         }
         return;
@@ -884,6 +897,13 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             // the row that lands a step in the folder shown (#112): it opens nothing, it does
             let what = app.picking.as_ref().map(|pk| pk.what.clone()).unwrap_or_default();
             pen.put(4, y, &what, pal.fg, false, lit);
+        }
+        Item::Ask => {
+            // asking is a row (dialog/DESIGN.md): the words echoed muted beside it, so you see what will be sent
+            pen.put(4, y, "ask spark", pal.fg, false, lit);
+            let words: String = app.input.split_whitespace().collect::<Vec<_>>().join(" ");
+            let e = pen.end(y);
+            pen.put(PURPOSE_X, y, &cut(&words, e.saturating_sub(PURPOSE_X + 2) as usize), pal.muted, false, lit);
         }
     }
     arrows
@@ -1648,13 +1668,17 @@ fn month(app: &App, pen: &mut Pen, x0: u16, top: u16, bottom: u16, k: i32) -> Op
 fn about(app: &App, pen: &mut Pen, top: u16, bottom: u16) {
     let pal = pen.pal.clone();
     let w = pen.w;
-    let version = app
+    // the page opens on the versions (dialog/DESIGN.md): the installed release first, the dialog's own under it
+    let release = app
         .about_idx
-        .map(|i| app.providers[i].version.as_str())
-        .filter(|v| !v.is_empty())
-        .unwrap_or(env!("CARGO_PKG_VERSION"));
+        .map(|i| app.providers[i].version.trim_start_matches('v').to_string())
+        .filter(|v| !v.is_empty());
     let lines = [
-        format!("spark-shell {}", version),
+        match &release {
+            Some(v) => format!("spark-shell v{}", v),
+            None => "spark-shell, release unknown here".to_string(),
+        },
+        format!("dialog {}", env!("CARGO_PKG_VERSION")),
         "home: local discovery and optional assistance".into(),
         "github.com/forgewright-ai/spark-shell".into(),
         "MIT License".into(),

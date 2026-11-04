@@ -84,16 +84,21 @@ fn the_list_is_the_apps_under_their_categories_then_the_managing_rows() {
     let editor = line(&ls, &Action::Launch(ID.into()));
     assert_eq!(
         (editor.sign, editor.indent, editor.label.as_str()),
-        ("opens", 4, "Editor"),
-        "an app opens: its sign, under its heading"
+        ("", 4, "editor"),
+        "an app's row: no sign before it, its name lowercase, under its heading (dialog/DESIGN.md)"
     );
     assert_eq!(
         (editor.value.as_str(), editor.value_x, editor.value_muted),
-        ("Text Editor", 26, true),
-        "its role, muted, in one column"
+        ("text editor", 26, true),
+        "its role, lowercase, muted, in one column"
     );
     let browser = line(&ls, &Action::Launch("browser.desktop".into()));
-    assert!(browser.value.is_empty(), "no role, nothing invented");
+    assert_eq!(browser.value, "read the web", "no GenericName: the Comment is the role");
+    let mystery = line(&ls, &Action::Launch("mystery.desktop".into()));
+    assert!(mystery.value.is_empty(), "neither: nothing invented");
+    let narrow = a.apps.lines(36, "", None);
+    let browser = line(&narrow, &Action::Launch("browser.desktop".into()));
+    assert!(browser.value.ends_with('\u{2026}') && browser.value.len() < "read the web".len(), "cut with an ellipsis: {:?}", browser.value);
     assert!(
         !ls.iter().any(|l| l.label.contains("hidden apps:") || l.label == "all categories"),
         "no toolbar above the list"
@@ -187,7 +192,7 @@ fn the_frame_is_the_dialogs_own_column_in_the_middle() {
         assert_eq!(b[(left + 2, 0)].symbol(), "a", "the header at the column's inset at {}x{}", w, h);
         assert_eq!(b[(left + 2, spark_dialog::ui::PROMPT_Y)].symbol(), "\u{276f}");
         let y = d.picks.iter().find(|(_, n)| *n == a.sel).unwrap().0;
-        assert_eq!(b[(left + 4, y)].symbol(), "E", "the lit app's name at the row column, with no sign before it");
+        assert_eq!(b[(left + 4, y)].symbol(), "e", "the lit app's name at the row column, lowercase, with no sign before it");
     }
     cleanup(&a);
 }
@@ -234,13 +239,13 @@ fn hiding_an_app_is_a_switch_applied_at_once_with_undo() {
     assert!(a.apps.preference(ID).hidden, "hidden at once");
     assert!(Preferences::load(&a.apps.path).unwrap().apps[ID].hidden, "and saved at once");
     let r = a.reply.clone().expect("a receipt on the status row");
-    assert_eq!((r.mark, r.text.as_str(), r.undo), (Mark::Done, "Editor hidden", true));
+    assert_eq!((r.mark, r.text.as_str(), r.undo), (Mark::Done, "editor hidden", true), "the receipt names the app as a label, lowercase");
     let sw = line(&lines(&a), &Action::Visibility(ID.into())).clone();
     assert_eq!((sw.sign, sw.value.as_str()), ("dot", "on"));
     let (b, d, _) = draw(&mut a, 60, 40);
     assert!(d.reply_undo.is_some(), "Undo at the status row's right");
     let status: String = (0..60).map(|x| b[(x, 35)].symbol()).collect();
-    assert!(status.contains("Editor hidden") && status.contains("Undo"), "{:?}", status);
+    assert!(status.contains("editor hidden") && status.contains("Undo"), "{:?}", status);
     a.undo_now();
     assert!(!a.apps.preference(ID).hidden, "undo puts it back");
     assert!(!Preferences::load(&a.apps.path).unwrap().apps.get(ID).is_some_and(|p| p.hidden));
@@ -287,7 +292,7 @@ fn category_and_launch_are_choice_rows_that_open_a_checked_list() {
         Some("Web"),
         "saved at once"
     );
-    assert_eq!(a.reply.as_ref().map(|r| (r.text.as_str(), r.undo)), Some(("Editor in web", true)));
+    assert_eq!(a.reply.as_ref().map(|r| (r.text.as_str(), r.undo)), Some(("editor in web", true)));
     act(&mut a, Action::ChooseCategory(ID.into()));
     assert_eq!(line(&lines(&a), &Action::SetCategory(ID.into(), Some("Web".into()))).sign, "check");
     a.escape();
@@ -306,7 +311,7 @@ fn category_and_launch_are_choice_rows_that_open_a_checked_list() {
     );
     act(&mut a, Action::SetLaunch(ID.into(), "focus".into()));
     assert_eq!(a.apps.preference(ID).mode(), "focus");
-    assert_eq!(a.reply.as_ref().map(|r| (r.text.as_str(), r.undo)), Some(("Editor: focus existing", true)));
+    assert_eq!(a.reply.as_ref().map(|r| (r.text.as_str(), r.undo)), Some(("editor: focus existing", true)));
     a.undo_now();
     assert_eq!(a.apps.preference(ID).mode(), "default");
 
@@ -381,9 +386,9 @@ fn the_details_are_the_facts_then_the_steps_then_the_preferences() {
     act(&mut a, Action::Details(ID.into()));
     let ls = lines(&a);
     let texts: Vec<String> = ls.iter().map(|l| format!("{}|{}|{}", l.label, l.value, l.tail)).collect();
-    assert_eq!(texts[0], "Editor||", "the name first, as supplied");
+    assert_eq!(texts[0], "editor||", "the name first, lowercase as a label; the entry's text is in the technical details");
     assert!(ls[0].title && !ls[0].heading, "the subject of the page, in the text color");
-    assert!(ls.iter().any(|l| l.muted && l.label == "Write Documents"), "what it is, muted");
+    assert!(ls.iter().any(|l| l.muted && l.label == "write documents"), "what it is, muted, lowercase");
     let version = ls.iter().find(|l| l.label == "version").unwrap();
     assert_eq!(
         (version.value.as_str(), version.action.is_none(), version.value_x),
@@ -391,7 +396,7 @@ fn the_details_are_the_facts_then_the_steps_then_the_preferences() {
         "a fact: a label and a value, no action"
     );
     let open = line(&ls, &Action::Launch(ID.into()));
-    assert_eq!((open.sign, open.label.as_str()), ("opens", "open"));
+    assert_eq!((open.sign, open.label.as_str()), ("", "open"), "an action row, no sign before it");
     let tech = line(&ls, &Action::Technical(ID.into()));
     assert_eq!(
         (tech.label.as_str(), tech.tail.as_str()),

@@ -6,7 +6,7 @@
 mod common;
 use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
 use serde_json::json;
-use spark_dialog::app::{App, Config, HintKey, Item, Provider, Step, Target, View, Who, DESTS, SETTINGS_DEST};
+use spark_dialog::app::{App, Config, HintKey, Item, Mode, Provider, Step, Target, View, Who, DESTS, SETTINGS_DEST};
 use spark_dialog::model;
 use spark_dialog::palette::Palette;
 use spark_dialog::reply::{Mark, Reply};
@@ -410,6 +410,164 @@ fn one_frame_width_per_view_in_the_middle_of_the_window() {
             );
         }
     }
+}
+
+#[test]
+fn asking_is_a_row_last_among_the_matches_and_alone_when_nothing_matches() {
+    // the placeholder says what the box is for; Enter is the one key: it opens the match the bar is on, and the
+    // ask row when nothing matches (dialog/DESIGN.md)
+    assert_eq!(spark_dialog::app::PLACEHOLDER, "search or ask");
+    let type_words = |app: &mut App, words: &str| {
+        app.set_draft("");
+        for c in words.chars() {
+            app.typed(c);
+        }
+    };
+    let mut app = home();
+    assert!(!app.items().iter().any(|it| matches!(it, Item::Ask)), "the prompt empty: a menu, no ask row");
+    type_words(&mut app, "workspace");
+    let items = app.items();
+    assert!(matches!(items.last(), Some(Item::Ask)), "the ask row last: {:?}", items);
+    assert!(matches!(items[items.len() - 2], Item::Blank), "a row of air before it");
+    assert!(app.in_list && matches!(app.picks()[app.sel], Item::Dest(2)), "the match is selected, not the ask row");
+    let (buf, drawn, pal) = draw(&mut app, 60, 40);
+    let (ask_y, _) = drawn.picks.iter().find(|(_, n)| matches!(app.picks()[*n], Item::Ask)).copied().unwrap();
+    assert!(text(&buf, ask_y).contains("ask spark") && text(&buf, ask_y).contains("workspace"), "{:?}", text(&buf, ask_y));
+    assert_eq!(buf[(4, ask_y)].fg, pal.fg);
+    assert_eq!(buf[(ui::PURPOSE_X, ask_y)].fg, pal.muted, "the words echoed muted");
+    app.down();
+    assert!(matches!(app.picks()[app.sel], Item::Ask), "Down reaches it");
+
+    type_words(&mut app, "why is firefox slow today");
+    let picks = app.picks();
+    assert!(matches!(picks.as_slice(), [Item::Ask]), "nothing matches: the ask row alone: {:?}", picks);
+    assert!(app.in_list && app.sel == 0, "and selected, so Enter asks");
+    assert!(!app.items().iter().any(|it| matches!(it, Item::Blank)), "no air above a row that stands alone");
+    app.enter();
+    assert!(app.pending.is_some(), "Enter on the ask row asks");
+    assert_eq!(app.jobs.len(), 1);
+
+    // no model: no ask row, and typing searches alone
+    let mut app = home();
+    app.model_name = None;
+    type_words(&mut app, "why is firefox slow today");
+    assert!(app.picks().is_empty(), "{:?}", app.picks());
+    assert!(!app.in_list);
+
+    // in Apps, whose prompt filters the list, the ask row stands too: Enter carries the words to the request
+    let mut app = home();
+    app.view = View::Apps;
+    app.came_from.push(View::Home);
+    type_words(&mut app, "is my disk full");
+    // no app by these words: the managing rows stay, as they do in any search of the list, and the ask row stands
+    // last and selected
+    assert!(matches!(app.picks().last(), Some(Item::Ask)), "{:?}", app.picks());
+    assert!(app.in_list && matches!(app.picks()[app.sel], Item::Ask), "the ask row selected: {:?}", app.picks().get(app.sel));
+    app.enter();
+    assert_eq!(app.view, View::Conversation);
+    assert!(app.pending.is_some(), "asked");
+}
+
+#[test]
+fn an_objects_row_is_selected_by_a_click_and_acts_on_a_second_while_a_menus_row_acts_at_once() {
+    use std::time::{Duration, Instant};
+    let t0 = Instant::now();
+    // home is a menu: one click opens the place
+    let mut app = home();
+    app.clicked(0, t0);
+    assert_eq!(app.view, View::Apps, "one click on a place opens it");
+    // a switch among a section's controls flips on one click
+    let mut app = home();
+    app.view = View::Section(1);
+    app.came_from.push(View::Home);
+    let tray = app.picks().iter().position(|it| matches!(it, Item::Row(1, 1))).expect("the tray's switch is a pick");
+    app.clicked(tray, t0);
+    assert!(app.providers[1].rows.rows[1].switch.as_ref().unwrap().on, "a control acts at once");
+    // a window is an object: the first click selects it and the status row says what it is; a second click acts
+    let mut app = home();
+    app.view = View::Section(0);
+    app.came_from.push(View::Home);
+    let terminal = app.picks().iter().position(|it| matches!(it, Item::Row(0, 2))).expect("the window is a pick");
+    app.clicked(terminal, t0);
+    assert!(app.in_list && app.sel == terminal, "selected");
+    assert!(app.reply.is_none() && app.running.is_none(), "nothing acted on the first click");
+    let (buf, _, pal) = draw(&mut app, 60, 40);
+    let status = text(&buf, ui::status_y(40));
+    assert!(status.contains("terminal") && status.contains("~/projects"), "the selected object's line: {:?}", status);
+    assert_eq!(buf[(4, ui::status_y(40))].fg, pal.muted, "muted");
+    app.clicked(terminal, t0 + Duration::from_millis(200));
+    // the step ran: here it is a risky one, so it waits for the typed yes, as it would from Enter
+    assert!(
+        app.reply.is_some() || app.running.is_some() || matches!(app.mode, Mode::Confirm(_)),
+        "the second click acts on it: {:?}",
+        app.mode
+    );
+    // two clicks too far apart are two selections
+    let mut app = home();
+    app.view = View::Section(0);
+    app.came_from.push(View::Home);
+    app.clicked(terminal, t0);
+    app.clicked(terminal, t0 + Duration::from_secs(2));
+    assert!(app.reply.is_none() && app.running.is_none() && app.mode == Mode::Normal, "a slow second click selects again");
+    assert!(app.object_pick(terminal) && app.object_pick(0), "a window is an object, and so is a saved layout");
+    app.view = View::Section(1);
+    assert!(!app.object_pick(tray), "a control among a section's rows is a menu's row");
+}
+
+#[test]
+fn a_places_second_column_is_its_state_from_what_the_dialog_already_holds() {
+    let mut app = home();
+    let state = |app: &App, name: &str| app.dest_state(DESTS.iter().position(|d| d.name == name).unwrap());
+    // before anything is known: the purpose stands, muted, for every place but the two whose sections are here
+    for name in ["apps", "files", "notes", "calendar", "settings", "about", "tools", "power"] {
+        assert_eq!(state(&app, name), None, "{name}");
+    }
+    assert_eq!(state(&app, "workspace").as_deref(), Some("2 windows \u{b7} terminal, firefox"), "the windows by name, lowercase");
+    assert!(state(&app, "help").is_some_and(|s| s.ends_with(" shortcuts")), "the counts help has");
+    // the catalog read: its counts
+    app.apps.pending = Some((1, "catalog".into()));
+    app.apps
+        .receive(
+            1,
+            json!({"apps":[
+                {"id":"a.desktop","name":"Alpha","generic_name":"Editor","categories":["Utility"]},
+                {"id":"b.desktop","name":"Beta","categories":["Utility"]},
+                {"id":"footclient.desktop","name":"Foot Client","categories":["System"]}
+            ]}),
+        )
+        .unwrap();
+    assert_eq!(state(&app, "apps").as_deref(), Some("2 installed \u{b7} 1 hidden"));
+    // the files section's own summary, the newest note and its date, the look, the screens and the network
+    app.providers.push(provider(
+        "files",
+        "~",
+        json!({"title": "~", "rows": [
+            {"id": "files:total", "sign": "blank", "text": "2 files \u{b7} 3 KB", "tool": null, "more": [], "columns": [], "children": null, "group": "this folder"}
+        ], "short": []}),
+        json!([]),
+    ));
+    let mut shopping = row("notes:1", "", "Shopping list", Some(("notes_open", json!({"path": "/n/1"}))), None);
+    shopping["columns"] = json!(["4 Nov"]);
+    let other = row("notes:2", "", "Ideas", Some(("notes_open", json!({"path": "/n/2"}))), None);
+    app.providers.push(provider("notes", "", json!({"title": "notes", "rows": [shopping, other], "short": []}), json!([{"name": "notes_open"}])));
+    app.providers.push(provider("theme", "tokyonight-night \u{b7} size 12", json!({"title": "theme", "rows": [], "short": []}), json!([])));
+    app.providers.push(provider("display", "2 screens", json!({"title": "display", "rows": [], "short": []}), json!([])));
+    app.providers.push(provider("wifi", "home", json!({"title": "wifi", "rows": [], "short": []}), json!([])));
+    let mut about = provider("about", "", json!({"title": "about", "rows": [], "short": []}), json!([]));
+    about.version = "0.124".into();
+    app.providers.push(about);
+    app.about_idx = Some(app.providers.len() - 1);
+    assert_eq!(state(&app, "files").as_deref(), Some("~ \u{b7} 2 files \u{b7} 3 KB"));
+    assert_eq!(state(&app, "notes").as_deref(), Some("2 notes \u{b7} shopping list, 4 Nov"));
+    assert_eq!(state(&app, "settings").as_deref(), Some("tokyonight-night \u{b7} 2 screens \u{b7} wi-fi home"));
+    assert_eq!(state(&app, "about").as_deref(), Some("spark-shell v0.124"), "the installed release, nothing else");
+    assert_eq!(state(&app, "tools"), None, "no state worth more than its purpose");
+    assert_eq!(state(&app, "power"), None);
+    // the about page opens on the versions
+    app.view = View::About;
+    let (buf, _, _) = draw(&mut app, 60, 40);
+    assert!(text(&buf, CONTENT_Y).contains("spark-shell v0.124"), "{:?}", text(&buf, CONTENT_Y));
+    assert!(text(&buf, CONTENT_Y + 2).contains("dialog "), "{:?}", text(&buf, CONTENT_Y + 2));
 }
 
 #[test]

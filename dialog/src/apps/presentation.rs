@@ -50,6 +50,37 @@ impl Lines {
             });
         }
     }
+    /// An app's row (dialog/DESIGN.md): its name lowercase, and its role beside it, muted: the entry's GenericName,
+    /// else its Comment with the period dropped (a comment that only repeats the name is dropped too), else nothing;
+    /// cut with an ellipsis at the column's end, whole on the status row and in the details.
+    fn app(&mut self, a: &Entry) {
+        let role = if !a.generic_name.is_empty() {
+            a.generic_name.clone()
+        } else {
+            let c = a.description.trim_end_matches('.');
+            if c.eq_ignore_ascii_case(&a.name) {
+                String::new()
+            } else {
+                c.to_string()
+            }
+        };
+        let room = self.width.saturating_sub(VALUE_X + 2) as usize;
+        let role = role.to_lowercase();
+        let value = if cells(&role) > room {
+            format!("{}\u{2026}", crate::scrub::cut(&role, room.saturating_sub(1)))
+        } else {
+            role
+        };
+        self.rows.push(Line {
+            label: cut_words(&a.name.to_lowercase(), (VALUE_X - 8) as usize),
+            value,
+            value_x: VALUE_X,
+            action: Some(Action::Launch(a.id.clone())),
+            indent: 4,
+            value_muted: true,
+            ..Line::default()
+        });
+    }
     /// A row: its sign, its words, a value in the value column, an arrow where it opens a list.
     fn row(&mut self, sign: &'static str, label: &str, value: &str, action: Option<Action>) {
         let room = self.width.saturating_sub(VALUE_X + 2) as usize;
@@ -185,8 +216,7 @@ impl State {
                         l.heading(&group);
                         category = group;
                     }
-                    // the role is short and localized: the full comment is for the details and the search
-                    l.row("opens", &a.name, &a.generic_name, Some(Action::Launch(a.id.clone())));
+                    l.app(a);
                 }
                 l.blank();
                 let filter = self.filter.clone().unwrap_or_else(|| "all".into()).to_lowercase();
@@ -198,7 +228,7 @@ impl State {
                     Action::Hidden,
                 );
                 l.choice("categories", "", Action::Categories);
-                l.row("blank", "refresh apps", "", Some(Action::Refresh));
+                l.row("", "refresh apps", "", Some(Action::Refresh));
             }
             Page::Hidden => {
                 let hidden = self.hidden();
@@ -206,7 +236,7 @@ impl State {
                     l.note("no app is hidden");
                 }
                 for a in hidden {
-                    l.row("opens", &a.name, &a.generic_name, Some(Action::Launch(a.id.clone())));
+                    l.app(a);
                 }
             }
             Page::Details(id) => {
@@ -214,11 +244,13 @@ impl State {
                     l.note("this application is no longer installed");
                     return l.rows;
                 };
-                l.title(&app.name);
-                l.note(if app.description.is_empty() {
-                    "no description in its desktop entry"
+                // the name as a label: lowercase, as every name in a list is; the entry's own text is in the technical
+                // details (dialog/DESIGN.md)
+                l.title(&app.name.to_lowercase());
+                l.note(&if app.description.is_empty() {
+                    "no description in its desktop entry".to_string()
                 } else {
-                    &app.description
+                    app.description.trim_end_matches('.').to_lowercase()
                 });
                 l.blank();
                 if let Some(details) = self.details.get(id) {
@@ -227,10 +259,10 @@ impl State {
                     }
                     l.blank();
                 } else if self.pending.is_none() {
-                    l.row("blank", "read the details again", "", Some(Action::RetryDetails(id.clone())));
+                    l.row("", "read the details again", "", Some(Action::RetryDetails(id.clone())));
                     l.blank();
                 }
-                l.row("opens", "open", "", Some(Action::Launch(id.clone())));
+                l.row("", "open", "", Some(Action::Launch(id.clone())));
                 l.choice("technical details", "", Action::Technical(id.clone()));
                 l.blank();
                 l.heading("preferences");
@@ -245,7 +277,7 @@ impl State {
                     l.note("this application is no longer installed");
                     return l.rows;
                 };
-                l.title(&app.name);
+                l.title(&app.name.to_lowercase());
                 l.blank();
                 match self.details.get(id).and_then(|v| v["fields"].as_array()) {
                     Some(fields) => {
