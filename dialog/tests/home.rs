@@ -428,3 +428,52 @@ fn footer_reservation_keeps_the_last_destination_visible_and_clickable_after_res
         assert_eq!(app.view, View::Home);
     }
 }
+
+/// A pairing code or a password is no draft: leaving for the model list and
+/// coming back keeps nothing of it.
+#[test]
+fn an_answer_to_a_question_is_never_kept_as_a_draft() {
+    let mut app = app();
+    let here = View::Dest(spark_dialog::app::CALENDAR_DEST);
+    app.view = here.clone();
+    app.mode = Mode::Pair {
+        prov: 0,
+        id: json!(1),
+        message: "the code".into(),
+        kind: "pin".into(),
+    };
+    app.set_draft("123456");
+    app.chip(1);
+    assert_eq!(app.view, View::Models);
+    app.escape();
+    assert_eq!(app.mode, Mode::Normal);
+    app.escape();
+    assert_eq!(app.view, here);
+    assert!(app.input.is_empty(), "the code came back as words: {}", app.input);
+}
+
+/// open_preview clears the prompt so the preview's keys work (#163): the
+/// request draft stays the request's and never lands in a preview.
+#[test]
+fn a_preview_opens_clear_of_the_request_draft() {
+    use spark_dialog::interaction::Prompts;
+    let mut prompts = Prompts::default();
+    prompts.save(&View::Home, "files");
+    assert_eq!(prompts.restore(&View::Preview), "");
+    prompts.save(&View::Preview, "");
+    assert_eq!(prompts.restore(&View::Home), "files");
+}
+
+/// A motion draws and nothing more: Enter stays with the words typed.
+#[test]
+fn a_motion_outside_apps_leaves_enter_with_the_words() {
+    let mut app = app();
+    app.set_draft("open the notes");
+    app.pointer_over(Some(2));
+    assert!(!app.in_list, "a stray motion took Enter from the words");
+    assert_eq!(app.sel, 0);
+    app.view = View::Dest(spark_dialog::app::CALENDAR_DEST);
+    app.scroll = 14;
+    app.pointer_over(Some(3));
+    assert_eq!(app.scroll, 14, "a motion moved the list");
+}

@@ -496,16 +496,17 @@ fn confirmed_launch_gives_the_app_the_screen_but_never_hides_a_newly_refocused_h
     a.window_focused = false;
     a.apps.pending = Some((1, "launch".into()));
     a.helper(Helper::Apps(1), Ok(json!({"message":"Opened editor","confirmed":true}).to_string()));
-    assert!(a.hidden);
-    a.hidden = false;
+    assert!(a.stow, "home steps aside for the app it opened");
+    assert!(!a.hidden, "a clear window would stay over the app and take its clicks");
+    a.stow = false;
     a.window_focused = true;
     a.apps.pending = Some((2, "launch".into()));
     a.helper(Helper::Apps(2), Ok(json!({"message":"Opened editor","confirmed":true}).to_string()));
-    assert!(!a.hidden, "a user's return to home wins over a delayed receipt");
+    assert!(!a.stow, "a user's return to home wins over a delayed receipt");
     a.window_focused = false;
     a.apps.pending = Some((3, "launch".into()));
     a.helper(Helper::Apps(3), Ok(json!({"message":"Launch requested","confirmed":false}).to_string()));
-    assert!(!a.hidden, "an unconfirmed launch keeps its receipt visible");
+    assert!(!a.stow, "an unconfirmed launch keeps its receipt visible");
     cleanup(&a);
 }
 
@@ -644,5 +645,21 @@ fn mapping_changes_wait_for_save_and_use_the_shared_dirty_exit() {
     a.leave_choice(Choice::Discard);
     assert_eq!(a.apps.page, Page::Mappings);
     assert_eq!(a.apps.prefs.mappings["Development"], "Office");
+    cleanup(&a);
+}
+
+#[test]
+fn the_pointer_lights_an_app_and_leaves_a_waiting_decision_alone() {
+    let mut a = app();
+    a.pointer_over(Some(1));
+    assert!(a.in_list);
+    assert_eq!(a.sel, 1, "apps follows the pointer, so its shortcuts act on that row");
+    a.apps_activate(Action::Details(ID.into()));
+    a.apps_activate(Action::Visibility(ID.into()));
+    a.close_window();
+    assert!(a.leave_decision.is_some());
+    assert_eq!(a.sel, 2, "keep editing is the safe choice");
+    a.pointer_over(Some(0));
+    assert_eq!(a.sel, 2, "a motion moved the decision off its safe choice");
     cleanup(&a);
 }

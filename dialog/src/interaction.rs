@@ -11,7 +11,7 @@ pub struct Prompts {
 
 impl Prompts {
     fn request_view(view: &View) -> bool {
-        matches!(view, View::Home | View::Conversation | View::Preview | View::Models)
+        matches!(view, View::Home | View::Conversation | View::Models)
     }
     pub fn save(&mut self, view: &View, text: &str) {
         if Self::request_view(view) {
@@ -69,11 +69,35 @@ pub struct LeaveDecision {
 }
 
 impl App {
+    /// Only what was typed at rest is a draft. An answer to a question, a
+    /// password or a pairing code among them, is never kept, and a draft never
+    /// takes the place of an answer being typed.
     pub(crate) fn prompt_depart(&mut self) {
-        self.prompts.save(&self.view, &self.input);
+        if self.mode == Mode::Normal {
+            self.prompts.save(&self.view, &self.input);
+        }
     }
     pub(crate) fn prompt_arrive(&mut self) {
-        self.set_input(self.prompts.restore(&self.view));
+        if self.mode == Mode::Normal {
+            self.set_input(self.prompts.restore(&self.view));
+        }
+    }
+
+    /// The pointer moved, over row `pick` or over none. Everywhere else a
+    /// motion only draws: Enter stays with the keyboard's row or the words
+    /// typed. Apps follows it, so its shortcuts act on the row under the
+    /// pointer; a decision waiting keeps its safe choice.
+    pub fn pointer_over(&mut self, pick: Option<usize>) {
+        if self.view != View::Apps || self.leave_decision.is_some() {
+            return;
+        }
+        // Pointer movement must not move the visible target by dropping the
+        // keyboard selection's scroll position.
+        self.scroll = crate::ui::body_scroll(self);
+        if let Some(n) = pick {
+            self.chip_focus = None;
+            self.light(n);
+        }
     }
 
     /// Only normal request text may be sent. A module filter is never a request.

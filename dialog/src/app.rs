@@ -722,6 +722,8 @@ pub struct App {
     /// The dialog stepped aside for a step that puts a window in front: main.rs makes the window clear
     /// while this holds, and solid again when it ends (#196).
     pub hidden: bool,
+    /// The app home opened is in front: main.rs puts home away, once.
+    pub stow: bool,
     pub busy_since: Option<Instant>,
     pub frame: u64,
     /// Every model spark lists: (name, serving | downloaded | -).
@@ -842,6 +844,7 @@ impl App {
             staged: None,
             running: None,
             hidden: false,
+            stow: false,
             busy_since: None,
             frame: 0,
             models: vec![],
@@ -3242,6 +3245,7 @@ impl App {
                     self.picking = None;
                     self.came_from.truncate(pk.depth);
                     self.view = pk.back;
+                    self.prompt_arrive();
                     self.folder = None;
                     self.sel = 0;
                     let call = Call {
@@ -4116,6 +4120,7 @@ impl App {
                         if let Some((v, depth)) = self.attaching.take() {
                             self.came_from.truncate(depth);
                             self.view = v;
+                            self.prompt_arrive();
                             self.folder = None;
                             self.sel = 0;
                             if let View::Folder(p, uri) = self.view.clone() {
@@ -4264,10 +4269,10 @@ impl App {
             match self.apps.receive(serial, value) {
                 Ok(Some(message)) => {
                     self.reply(Mark::Done, &message);
-                    // The launched app has focus. Let it be seen, while home
-                    // keeps its workflow and returns on the next Super+Space.
+                    // The launched app has focus. Let it be seen and used, while
+                    // home keeps its workflow and returns on the next Super+Space.
                     if opened && !self.window_focused {
-                        self.hidden = true;
+                        self.stow = true;
                     }
                 }
                 Err(error) => self.refuse(&error),

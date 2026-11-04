@@ -419,6 +419,27 @@ fn files_stub(calls: Arc<Mutex<Vec<Value>>>, home: String) -> Script {
 }
 
 #[test]
+fn a_draft_comes_back_once_a_file_is_attached() {
+    let home = std::env::var("HOME").unwrap();
+    let (mut app, rx, tx) = app_with(&["files"]);
+    app.cfg.plus = true;
+    app.cfg.attach = vec!["txt".into(), "md".into()];
+    let calls = Arc::new(Mutex::new(vec![]));
+    app.servers.push(stub(0, "files", files_stub(calls, home), tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    app.set_draft("summarize this");
+    app.chip(0);
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
+    app.in_list = true;
+    app.sel = 1;
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.attachment.is_some()));
+    assert_eq!(app.view, View::Home);
+    assert_eq!(app.input, "summarize this", "the draft was lost to the attach");
+}
+
+#[test]
 fn plus_opens_the_files_attaches_one_and_the_want_carries_it() {
     let home = std::env::var("HOME").unwrap();
     let (mut app, rx, tx) = app_with(&["files"]);

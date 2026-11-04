@@ -311,10 +311,20 @@ fn reveal() {
 /// The dialog's window made clear (0) or solid (1) on sway's own socket: clear while a step puts a window in
 /// front, so the click shows that window coming at once, solid again when the step comes back refused (#196).
 fn opacity(level: u8, after: Duration) {
+    sway_command(format!("[app_id=\"spark-dialog\"] opacity {}", level), after);
+}
+
+/// Home put away while the app it opened is in front. It stays as it is and Super+Space brings it back; a clear
+/// window would stay over that app and take its clicks, and the pointer crossing it would bring home back.
+fn stow() {
+    sway_command("[app_id=\"spark-dialog\"] move scratchpad".into(), Duration::ZERO);
+}
+
+/// One command on sway's own socket; away from sway, nothing.
+fn sway_command(cmd: String, after: Duration) {
     let Some(sock) = std::env::var_os("SWAYSOCK") else { return };
     std::thread::spawn(move || {
         std::thread::sleep(after);
-        let cmd = format!("[app_id=\"spark-dialog\"] opacity {}", level);
         let cmd = cmd.as_bytes();
         if let Ok(mut s) = std::os::unix::net::UnixStream::connect(sock) {
             let mut msg = b"i3-ipc".to_vec();
@@ -599,6 +609,9 @@ fn main() {
                 cleared = app.hidden;
                 opacity(if cleared { 0 } else { 1 }, Duration::ZERO);
             }
+            if std::mem::take(&mut app.stow) {
+                stow();
+            }
             app.preview_pages = drawn.pages.max(1);
             // the picture beside a list: drawn when it changed, its cells blanked first (the buffer skips them);
             // a picture gone is the buffer's again, which writes its cells over it
@@ -857,15 +870,7 @@ fn main() {
                 let dragging = drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_));
                 if m.kind == MouseEventKind::Moved && mouse_at.is_some_and(|old| old != (m.column, m.row)) {
                     app.hover = Some((m.column, m.row));
-                    if app.view == View::Apps && app.leave_decision.is_none() {
-                        // Pointer movement must not move the visible target by
-                        // dropping the keyboard selection's scroll position.
-                        app.scroll = ui::body_scroll(&app);
-                    }
-                    if let Some(n) = drawn.pick_at(m.column, m.row) {
-                        app.chip_focus = None;
-                        app.light(n);
-                    }
+                    app.pointer_over(drawn.pick_at(m.column, m.row));
                     dirty = true;
                 }
                 mouse_at = Some((m.column, m.row));

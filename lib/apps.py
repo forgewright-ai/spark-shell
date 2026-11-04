@@ -30,12 +30,12 @@ class GError(C.Structure):
     _fields_ = [("domain", C.c_uint), ("code", C.c_int), ("message", C.c_char_p)]
 
 
-def run(argv, timeout=4):
+def run(argv, timeout=4, limit=131072):
     result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True,
                             errors="replace", timeout=timeout, check=False)
     if result.returncode:
         raise RuntimeError(result.stderr.strip()[:500] or "Native command did not complete")
-    return result.stdout[:131072].strip()
+    return result.stdout[:limit].strip()
 
 
 def windows(tree):
@@ -52,7 +52,8 @@ def windows(tree):
 def sway_tree():
     if not os.environ.get("SWAYSOCK") or not shutil.which("swaymsg"):
         raise RuntimeError("Window inspection requires the Sway session")
-    return json.loads(run(["swaymsg", "-r", "-t", "get_tree"]))
+    # Parsed whole: a cut tree is not JSON, and a busy desktop passes any limit.
+    return json.loads(run(["swaymsg", "-r", "-t", "get_tree"], limit=None))
 
 
 def matching(app, tree):
@@ -81,7 +82,8 @@ def most_recent(app, tree):
             return None
         if len(branches) == 1:
             return choose(branches[0])
-        latest = next(windows(branches[0]), None)
+        # Home is the focused window whenever it asks, so it orders nothing.
+        latest = next((w for w in windows(branches[0]) if w.get("app_id") != "spark-dialog"), None)
         if latest and latest["id"] in matches:
             return latest
         raise RuntimeError("Cannot reliably order matching windows in separate groups; choose a window in Workspace or use Application default")

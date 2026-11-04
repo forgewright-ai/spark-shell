@@ -34,6 +34,32 @@ class Contracts(unittest.TestCase):
         tree["nodes"].append({"id": 4, "window_properties": {"class": "Editor"}})
         self.assertEqual(apps.matching(record, tree)[-1]["id"], 4)
 
+    def test_home_on_top_of_the_workspace_orders_nothing(self):
+        # Home is focused whenever it asks: with the app on two workspaces its
+        # own window must not read as a third group's newest window.
+        record = {"id":"org.example.Editor.desktop", "wm_class":""}
+        here = {"id":2,"app_id":"org.example.Editor"}
+        home = {"id":3,"app_id":"spark-dialog"}
+        there = {"id":4,"app_id":"org.example.Editor"}
+        tree = {"id":0,"focus":[10,11],"nodes":[
+            {"id":10,"focus":[3,2],"nodes":[here],"floating_nodes":[home]},
+            {"id":11,"focus":[4],"nodes":[there],"floating_nodes":[]}]}
+        self.assertEqual(apps.most_recent(record, tree)["id"], 2)
+
+    def test_a_large_compositor_tree_is_parsed_whole(self):
+        tree = {"nodes": [{"id": n, "app_id": "x", "name": "w" * 400} for n in range(1000)]}
+        text = json.dumps(tree)
+        self.assertGreater(len(text), 131072)
+        real_run, real_which = apps.subprocess.run, apps.shutil.which
+        apps.subprocess.run = lambda *a, **k: subprocess.CompletedProcess(a, 0, text, "")
+        apps.shutil.which = lambda name: "/bin/" + name
+        os.environ["SWAYSOCK"] = "fixture"
+        try:
+            self.assertEqual(len(apps.sway_tree()["nodes"]), 1000)
+        finally:
+            apps.subprocess.run, apps.shutil.which = real_run, real_which
+            del os.environ["SWAYSOCK"]
+
     def test_ambiguous_cross_group_focus_is_never_guessed(self):
         record = {"id":"org.example.Editor.desktop", "wm_class":""}
         editor = {"id":1,"app_id":"org.example.Editor"}
