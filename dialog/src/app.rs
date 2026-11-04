@@ -2270,7 +2270,10 @@ impl App {
                 // the look and the screens, from what their sections say, whichever are known; never the network: a
                 // network's name is no business of the home's first screen
                 let mut parts = vec![];
-                if let Some(t) = prov("theme").map(|p| p.title.split(sep).next().unwrap_or("").trim().to_string()).filter(|t| !t.is_empty()) {
+                if let Some(t) = prov("theme")
+                    .map(|p| p.title.split(sep).next().unwrap_or("").trim().to_string())
+                    .filter(|t| !t.is_empty())
+                {
                     parts.push(t.to_lowercase());
                 }
                 if let Some(t) = prov("display").map(|p| p.title.clone()).filter(|t| !t.is_empty()) {
@@ -2288,7 +2291,10 @@ impl App {
                 });
             }
             "about" => {
-                let v = self.about_idx.map(|i| self.providers[i].version.trim_start_matches('v').to_string()).filter(|v| !v.is_empty())?;
+                let v = self
+                    .about_idx
+                    .map(|i| self.providers[i].version.trim_start_matches('v').to_string())
+                    .filter(|v| !v.is_empty())?;
                 return Some(format!("spark-shell v{}", v));
             }
             "workspace" | "notes" | "calendar" => {}
@@ -4321,7 +4327,9 @@ impl App {
     /// A click on row `n` (dialog/DESIGN.md): a menu's row acts at once; an object's row is selected by the first
     /// click and acts on a second within DOUBLE_CLICK, as a file does on every desktop.
     pub fn clicked(&mut self, n: usize, now: Instant) {
-        let again = self.last_click.is_some_and(|(k, at)| k == n && now.saturating_duration_since(at) < DOUBLE_CLICK);
+        let again = self
+            .last_click
+            .is_some_and(|(k, at)| k == n && now.saturating_duration_since(at) < DOUBLE_CLICK);
         self.light(n);
         if again || !self.object_pick(n) {
             self.last_click = None;

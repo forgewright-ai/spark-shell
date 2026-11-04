@@ -93,7 +93,8 @@ The last row above the rule is the one place a message is written:
 
 - the selected object's line, muted, moving only with the bar; the
   whole of what the narrow columns cut: for a file its kind, size, date
-  and place; for an app its description, category and launch choice;
+  and place; for an app its description, its category, and its launch
+  choice where it is not the default;
 - a receipt with Undo at the right, or a refusal, while it stands; Esc
   clears it;
 - an action's march while it is felt: an app opening, a file opening,

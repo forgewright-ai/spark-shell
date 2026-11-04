@@ -186,14 +186,21 @@ fn the_frame_is_one_shape_at_the_top_and_the_bottom_in_both_views() {
             // the key bar at the bottom: the view's keys alone, Esc first, no Enter and no Ask among them
             let bar = row(keys_y(size.1));
             assert!(bar.contains("Esc"), "{:?}", bar);
-            assert!(!bar.contains("ask") && !bar.contains("Enter") && !bar.contains("chat") && !bar.contains("F2"), "{:?}", bar);
+            assert!(
+                !bar.contains("ask") && !bar.contains("Enter") && !bar.contains("chat") && !bar.contains("F2"),
+                "{:?}",
+                bar
+            );
             assert!(drawn
                 .keys
                 .iter()
                 .all(|(start, end, y, _)| start < end && *end <= size.0 - 2 && (*y == keys_y(size.1) || *y == size.1 - 1)));
             // the prompt's tools under the prompt, the diamond's rule under them, full since a model answers
             for chip in [0, 1, 3] {
-                assert!(drawn.chips.iter().any(|(_, _, y, id)| *id == chip && *y == TOOLS_Y), "control {chip} on the tools row");
+                assert!(
+                    drawn.chips.iter().any(|(_, _, y, id)| *id == chip && *y == TOOLS_Y),
+                    "control {chip} on the tools row"
+                );
             }
             assert_eq!(row(TOP_RULE_Y).matches('\u{25c6}').count(), 1, "{:?}", row(TOP_RULE_Y));
             assert_eq!(row(size.1 - 4).matches(['\u{25c7}', '\u{25c6}']).count(), 0, "the bottom rule is plain");
@@ -208,7 +215,11 @@ fn the_frame_is_one_shape_at_the_top_and_the_bottom_in_both_views() {
     let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
     let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
     let positions: Vec<_> = drawn.picks.iter().map(|(y, _)| *y).collect();
-    assert!(positions[..6].windows(2).all(|ys| ys[1] - ys[0] == 2), "a row of air between the rows: {:?}", positions);
+    assert!(
+        positions[..6].windows(2).all(|ys| ys[1] - ys[0] == 2),
+        "a row of air between the rows: {:?}",
+        positions
+    );
     assert_eq!(positions[6] - positions[5], 3, "two rows of air before settings: {:?}", positions);
     assert_eq!(positions[9] - positions[8], 3, "and before power: {:?}", positions);
     assert_eq!(buffer[(spark_dialog::ui::PURPOSE_X, positions[0])].fg, palette.muted, "a purpose is muted");
@@ -249,7 +260,11 @@ fn model_selector_centers_above_the_diamond_in_both_views() {
             let &(start, end, y, _) = drawn.chips.iter().find(|(_, _, _, id)| *id == 1).unwrap();
             assert!((start + end - 1).abs_diff(2 * (width / 2)) <= 1, "selector centered within one cell");
             assert_eq!(y, spark_dialog::ui::TOOLS_Y, "the model on the tools row");
-            assert_eq!(buffer[(width / 2, spark_dialog::ui::TOP_RULE_Y)].symbol(), "\u{25c6}", "the full diamond under it");
+            assert_eq!(
+                buffer[(width / 2, spark_dialog::ui::TOP_RULE_Y)].symbol(),
+                "\u{25c6}",
+                "the full diamond under it"
+            );
             let label: String = (start..end).map(|x| buffer[(x, y)].symbol()).collect();
             assert_eq!(label, " fixture-model \u{b7} local \u{2304} ");
         }

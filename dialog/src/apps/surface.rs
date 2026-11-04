@@ -30,7 +30,11 @@ impl App {
         let serial = self.apps.serial;
         let op = request["op"].as_str().unwrap_or("").to_string();
         self.apps.pending_name = if op == "launch" {
-            request["id"].as_str().and_then(|id| self.apps.entry(id)).map(|a| a.name.to_lowercase()).unwrap_or_default()
+            request["id"]
+                .as_str()
+                .and_then(|id| self.apps.entry(id))
+                .map(|a| a.name.to_lowercase())
+                .unwrap_or_default()
         } else {
             String::new()
         };

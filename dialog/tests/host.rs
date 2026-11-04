@@ -688,7 +688,11 @@ fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
 fn the_hint_says_what_enter_and_esc_do_and_only_keys_are_chips() {
     let (mut app, _rx, _c, _r) = started();
     let said = |a: &App| a.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
-    assert_eq!(said(&app), "Close Esc", "at rest: what Esc does (#166); Enter has no chip, it opens what the bar is on");
+    assert_eq!(
+        said(&app),
+        "Close Esc",
+        "at rest: what Esc does (#166); Enter has no chip, it opens what the bar is on"
+    );
     typed(&mut app, "is anything open");
     assert_eq!(said(&app), "Close Esc", "words that name no row: the bar stands still");
     let chips: Vec<String> = app.hint().into_iter().filter(|(_, k)| *k).map(|(t, _)| t).collect();
@@ -2343,7 +2347,12 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
     assert_eq!(texts[7], "trash");
     app.sel = 7;
     let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
-    assert_eq!(hint, vec!["Back ", "Esc"], "what Esc does (#166) and nothing else: Enter needs no chip: {:?}", hint);
+    assert_eq!(
+        hint,
+        vec!["Back ", "Esc"],
+        "what Esc does (#166) and nothing else: Enter needs no chip: {:?}",
+        hint
+    );
     app.enter();
     assert!(matches!(app.view, View::Folder(0, _)), "back to the folder: {:?}", app.view);
     assert!(app.steps_row.is_none());

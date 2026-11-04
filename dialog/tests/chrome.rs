@@ -244,7 +244,11 @@ fn the_key_row_is_the_views_whatever_row_is_lit_or_typed() {
     app.set_draft("zzzq");
     assert_eq!(app.hint(), idle, "words that light no row");
     assert!(idle.iter().any(|(t, k)| !*k && t.trim() == "Close"), "Esc closes at the home: {:?}", idle);
-    assert!(!idle.iter().any(|(t, k)| *k && t == "Enter"), "Enter has no chip in a view's key bar: {:?}", idle);
+    assert!(
+        !idle.iter().any(|(t, k)| *k && t == "Enter"),
+        "Enter has no chip in a view's key bar: {:?}",
+        idle
+    );
 
     // a section: a check row, a row with a tool, a row with steps behind it, a switch and a value
     for (view, lit) in [(View::Section(0), vec![0, 1, 3]), (View::Section(1), vec![0, 1, 2])] {
@@ -296,14 +300,22 @@ fn the_frame_is_one_shape_top_and_bottom_and_the_reply_is_the_last_row_above_the
     assert!(text(&buf, status - 1).trim().is_empty(), "a row of air between the list and the status");
     assert!(text(&buf, status + 2).trim().is_empty(), "a row of air between the rule and the keys");
     assert_eq!(keys_y(40), status + 3, "the key bar is the last thing in the frame");
-    assert!(text(&buf, keys_y(40)).contains("Esc"), "the view's keys at the bottom: {:?}", text(&buf, keys_y(40)));
+    assert!(
+        text(&buf, keys_y(40)).contains("Esc"),
+        "the view's keys at the bottom: {:?}",
+        text(&buf, keys_y(40))
+    );
     // the top has the same shape: the prompt, its tools, the rule with the diamond, a row of air, the list
     assert_eq!(CONTENT_Y, TOOLS_Y + 3, "the tools, the rule, a row of air, then the list, at every width");
     assert_eq!(TOP_RULE_Y, TOOLS_Y + 1);
     let tools = text(&buf, TOOLS_Y);
     assert!(tools.contains("gemma4") && tools.contains("talk"), "the prompt's tools under it: {:?}", tools);
     assert!(text(&buf, TOP_RULE_Y).contains("\u{2500}"), "the rule under the tools");
-    assert!(text(&buf, TOP_RULE_Y).contains('\u{25c6}'), "the diamond full: a model answers: {:?}", text(&buf, TOP_RULE_Y));
+    assert!(
+        text(&buf, TOP_RULE_Y).contains('\u{25c6}'),
+        "the diamond full: a model answers: {:?}",
+        text(&buf, TOP_RULE_Y)
+    );
     assert!(text(&buf, TOP_RULE_Y + 1).trim().is_empty(), "a row of air under the rule");
     assert_eq!(drawn.picks[0].0, CONTENT_Y, "the list starts under the prompt's block");
     let (buf, drawn, _) = draw(&mut app, 36, 20);
@@ -373,7 +385,14 @@ fn one_frame_width_per_view_in_the_middle_of_the_window() {
                 w,
                 h
             );
-            assert_ne!(buf[(left + 2, keys_y(h))].symbol(), " ", "{:?} at {}x{}: the key bar starts at the inset", view, w, h);
+            assert_ne!(
+                buf[(left + 2, keys_y(h))].symbol(),
+                " ",
+                "{:?} at {}x{}: the key bar starts at the inset",
+                view,
+                w,
+                h
+            );
             assert_eq!(buf[(left + 2, TOP_RULE_Y)].symbol(), "\u{2500}", "{:?} at {}x{}: the top rule", view, w, h);
             assert_eq!(
                 buf[(left + width - 3, TOP_RULE_Y)].symbol(),
@@ -429,10 +448,17 @@ fn asking_is_a_row_last_among_the_matches_and_alone_when_nothing_matches() {
     let items = app.items();
     assert!(matches!(items.last(), Some(Item::Ask)), "the ask row last: {:?}", items);
     assert!(matches!(items[items.len() - 2], Item::Blank), "a row of air before it");
-    assert!(app.in_list && matches!(app.picks()[app.sel], Item::Dest(2)), "the match is selected, not the ask row");
+    assert!(
+        app.in_list && matches!(app.picks()[app.sel], Item::Dest(2)),
+        "the match is selected, not the ask row"
+    );
     let (buf, drawn, pal) = draw(&mut app, 60, 40);
     let (ask_y, _) = drawn.picks.iter().find(|(_, n)| matches!(app.picks()[*n], Item::Ask)).copied().unwrap();
-    assert!(text(&buf, ask_y).contains("ask spark") && text(&buf, ask_y).contains("workspace"), "{:?}", text(&buf, ask_y));
+    assert!(
+        text(&buf, ask_y).contains("ask spark") && text(&buf, ask_y).contains("workspace"),
+        "{:?}",
+        text(&buf, ask_y)
+    );
     assert_eq!(buf[(4, ask_y)].fg, pal.fg);
     assert_eq!(buf[(ui::PURPOSE_X, ask_y)].fg, pal.muted, "the words echoed muted");
     app.down();
@@ -462,7 +488,11 @@ fn asking_is_a_row_last_among_the_matches_and_alone_when_nothing_matches() {
     // no app by these words: the managing rows stay, as they do in any search of the list, and the ask row stands
     // last and selected
     assert!(matches!(app.picks().last(), Some(Item::Ask)), "{:?}", app.picks());
-    assert!(app.in_list && matches!(app.picks()[app.sel], Item::Ask), "the ask row selected: {:?}", app.picks().get(app.sel));
+    assert!(
+        app.in_list && matches!(app.picks()[app.sel], Item::Ask),
+        "the ask row selected: {:?}",
+        app.picks().get(app.sel)
+    );
     app.enter();
     assert_eq!(app.view, View::Conversation);
     assert!(app.pending.is_some(), "asked");
@@ -480,7 +510,11 @@ fn an_objects_row_is_selected_by_a_click_and_acts_on_a_second_while_a_menus_row_
     let mut app = home();
     app.view = View::Section(1);
     app.came_from.push(View::Home);
-    let tray = app.picks().iter().position(|it| matches!(it, Item::Row(1, 1))).expect("the tray's switch is a pick");
+    let tray = app
+        .picks()
+        .iter()
+        .position(|it| matches!(it, Item::Row(1, 1)))
+        .expect("the tray's switch is a pick");
     app.clicked(tray, t0);
     assert!(app.providers[1].rows.rows[1].switch.as_ref().unwrap().on, "a control acts at once");
     // a window is an object: the first click selects it and the status row says what it is; a second click acts
@@ -493,7 +527,11 @@ fn an_objects_row_is_selected_by_a_click_and_acts_on_a_second_while_a_menus_row_
     assert!(app.reply.is_none() && app.running.is_none(), "nothing acted on the first click");
     let (buf, _, pal) = draw(&mut app, 60, 40);
     let status = text(&buf, ui::status_y(40));
-    assert!(status.contains("terminal") && status.contains("~/projects"), "the selected object's line: {:?}", status);
+    assert!(
+        status.contains("terminal") && status.contains("~/projects"),
+        "the selected object's line: {:?}",
+        status
+    );
     assert_eq!(buf[(4, ui::status_y(40))].fg, pal.muted, "muted");
     app.clicked(terminal, t0 + Duration::from_millis(200));
     // the step ran: here it is a risky one, so it waits for the typed yes, as it would from Enter
@@ -508,8 +546,14 @@ fn an_objects_row_is_selected_by_a_click_and_acts_on_a_second_while_a_menus_row_
     app.came_from.push(View::Home);
     app.clicked(terminal, t0);
     app.clicked(terminal, t0 + Duration::from_secs(2));
-    assert!(app.reply.is_none() && app.running.is_none() && app.mode == Mode::Normal, "a slow second click selects again");
-    assert!(app.object_pick(terminal) && app.object_pick(0), "a window is an object, and so is a saved layout");
+    assert!(
+        app.reply.is_none() && app.running.is_none() && app.mode == Mode::Normal,
+        "a slow second click selects again"
+    );
+    assert!(
+        app.object_pick(terminal) && app.object_pick(0),
+        "a window is an object, and so is a saved layout"
+    );
     app.view = View::Section(1);
     assert!(!app.object_pick(tray), "a control among a section's rows is a menu's row");
 }
@@ -522,7 +566,11 @@ fn a_places_second_column_is_its_state_from_what_the_dialog_already_holds() {
     for name in ["apps", "files", "notes", "calendar", "settings", "about", "tools", "power"] {
         assert_eq!(state(&app, name), None, "{name}");
     }
-    assert_eq!(state(&app, "workspace").as_deref(), Some("2 windows \u{b7} terminal, firefox"), "the windows by name, lowercase");
+    assert_eq!(
+        state(&app, "workspace").as_deref(),
+        Some("2 windows \u{b7} terminal, firefox"),
+        "the windows by name, lowercase"
+    );
     assert!(state(&app, "help").is_some_and(|s| s.ends_with(" shortcuts")), "the counts help has");
     // the catalog read: its counts
     app.apps.pending = Some((1, "catalog".into()));
@@ -549,18 +597,42 @@ fn a_places_second_column_is_its_state_from_what_the_dialog_already_holds() {
     let mut shopping = row("notes:1", "", "Shopping list", Some(("notes_open", json!({"path": "/n/1"}))), None);
     shopping["columns"] = json!(["4 Nov"]);
     let other = row("notes:2", "", "Ideas", Some(("notes_open", json!({"path": "/n/2"}))), None);
-    app.providers.push(provider("notes", "", json!({"title": "notes", "rows": [shopping, other], "short": []}), json!([{"name": "notes_open"}])));
-    app.providers.push(provider("theme", "tokyonight-night \u{b7} size 12", json!({"title": "theme", "rows": [], "short": []}), json!([])));
-    app.providers.push(provider("display", "2 screens", json!({"title": "display", "rows": [], "short": []}), json!([])));
-    app.providers.push(provider("wifi", "home", json!({"title": "wifi", "rows": [], "short": []}), json!([])));
+    app.providers.push(provider(
+        "notes",
+        "",
+        json!({"title": "notes", "rows": [shopping, other], "short": []}),
+        json!([{"name": "notes_open"}]),
+    ));
+    app.providers.push(provider(
+        "theme",
+        "tokyonight-night \u{b7} size 12",
+        json!({"title": "theme", "rows": [], "short": []}),
+        json!([]),
+    ));
+    app.providers.push(provider(
+        "display",
+        "2 screens",
+        json!({"title": "display", "rows": [], "short": []}),
+        json!([]),
+    ));
+    app.providers
+        .push(provider("wifi", "home", json!({"title": "wifi", "rows": [], "short": []}), json!([])));
     let mut about = provider("about", "", json!({"title": "about", "rows": [], "short": []}), json!([]));
     about.version = "0.124".into();
     app.providers.push(about);
     app.about_idx = Some(app.providers.len() - 1);
     assert_eq!(state(&app, "files").as_deref(), Some("~ \u{b7} 2 files \u{b7} 3 KB"));
     assert_eq!(state(&app, "notes").as_deref(), Some("2 notes \u{b7} shopping list, 4 Nov"));
-    assert_eq!(state(&app, "settings").as_deref(), Some("tokyonight-night \u{b7} 2 screens"), "the look and the screens, never the network");
-    assert_eq!(state(&app, "about").as_deref(), Some("spark-shell v0.124"), "the installed release, nothing else");
+    assert_eq!(
+        state(&app, "settings").as_deref(),
+        Some("tokyonight-night \u{b7} 2 screens"),
+        "the look and the screens, never the network"
+    );
+    assert_eq!(
+        state(&app, "about").as_deref(),
+        Some("spark-shell v0.124"),
+        "the installed release, nothing else"
+    );
     assert_eq!(state(&app, "tools"), None, "no state worth more than its purpose");
     assert_eq!(state(&app, "power"), None);
     // the about page opens on the versions
@@ -587,15 +659,47 @@ fn the_home_is_ten_lowercase_places_in_three_groups_that_breathe_when_the_window
     assert_eq!(
         shape(&app),
         [
-            "apps", "-", "files", "-", "workspace", "-", "notes", "-", "calendar", "-", "tools", "-", "-", "settings", "-", "help", "-", "about", "-",
-            "-", "power"
+            "apps",
+            "-",
+            "files",
+            "-",
+            "workspace",
+            "-",
+            "notes",
+            "-",
+            "calendar",
+            "-",
+            "tools",
+            "-",
+            "-",
+            "settings",
+            "-",
+            "help",
+            "-",
+            "about",
+            "-",
+            "-",
+            "power"
         ]
     );
     // the minimum window: single spaced, a row of air between the groups, and it scrolls
     app.size = (36, 20);
     assert_eq!(
         shape(&app),
-        ["apps", "files", "workspace", "notes", "calendar", "tools", "-", "settings", "help", "about", "-", "power"]
+        [
+            "apps",
+            "files",
+            "workspace",
+            "notes",
+            "calendar",
+            "tools",
+            "-",
+            "settings",
+            "help",
+            "about",
+            "-",
+            "power"
+        ]
     );
     assert!(
         DESTS.iter().all(|d| d.name == d.name.to_lowercase()),
@@ -613,7 +717,11 @@ fn the_home_is_ten_lowercase_places_in_three_groups_that_breathe_when_the_window
     app.light(1);
     let (buf, drawn, pal) = draw(&mut app, 60, 40);
     let files_y = drawn.picks[1].0;
-    assert_eq!(buf[(4, files_y)].fg, pal.fg, "the selected row's name stays in the text color: the bar is the one signal");
+    assert_eq!(
+        buf[(4, files_y)].fg,
+        pal.fg,
+        "the selected row's name stays in the text color: the bar is the one signal"
+    );
     assert_eq!(buf[(4, files_y)].bg, pal.lit, "the selection bar under it");
     assert_eq!(buf[(0, files_y)].symbol(), " ", "no cursor glyph before the bar");
     assert!(!buf[(4, files_y)].modifier.contains(Modifier::BOLD), "no bold on the selected row");

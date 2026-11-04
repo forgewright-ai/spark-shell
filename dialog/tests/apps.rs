@@ -98,7 +98,11 @@ fn the_list_is_the_apps_under_their_categories_then_the_managing_rows() {
     assert!(mystery.value.is_empty(), "neither: nothing invented");
     let narrow = a.apps.lines(36, "", None);
     let browser = line(&narrow, &Action::Launch("browser.desktop".into()));
-    assert!(browser.value.ends_with('\u{2026}') && browser.value.len() < "read the web".len(), "cut with an ellipsis: {:?}", browser.value);
+    assert!(
+        browser.value.ends_with('\u{2026}') && browser.value.len() < "read the web".len(),
+        "cut with an ellipsis: {:?}",
+        browser.value
+    );
     assert!(
         !ls.iter().any(|l| l.label.contains("hidden apps:") || l.label == "all categories"),
         "no toolbar above the list"
@@ -173,8 +177,21 @@ fn nothing_is_underlined_and_the_lit_row_wears_the_column_band() {
             assert_eq!(b[(d.columns.0, y)].symbol(), " ", "no cursor glyph: the selection bar is the one signal");
             let label_x = (d.columns.0..d.columns.1).find(|x| b[(*x, y)].symbol() != " ").unwrap();
             let label_x = (label_x..d.columns.1).find(|x| b[(*x, y)].symbol().chars().all(char::is_alphabetic)).unwrap();
-            assert_eq!(b[(label_x, y)].fg, pal.fg, "{:?} at {}x{}: the selected row's name in the text color", page, w, h);
-            assert!(!b[(label_x, y)].modifier.contains(Modifier::BOLD), "{:?} at {}x{}: no bold on the selected row", page, w, h);
+            assert_eq!(
+                b[(label_x, y)].fg,
+                pal.fg,
+                "{:?} at {}x{}: the selected row's name in the text color",
+                page,
+                w,
+                h
+            );
+            assert!(
+                !b[(label_x, y)].modifier.contains(Modifier::BOLD),
+                "{:?} at {}x{}: no bold on the selected row",
+                page,
+                w,
+                h
+            );
             cleanup(&a);
         }
     }
@@ -192,7 +209,11 @@ fn the_frame_is_the_dialogs_own_column_in_the_middle() {
         assert_eq!(b[(left + 2, 0)].symbol(), "a", "the header at the column's inset at {}x{}", w, h);
         assert_eq!(b[(left + 2, spark_dialog::ui::PROMPT_Y)].symbol(), "\u{276f}");
         let y = d.picks.iter().find(|(_, n)| *n == a.sel).unwrap().0;
-        assert_eq!(b[(left + 4, y)].symbol(), "e", "the lit app's name at the row column, lowercase, with no sign before it");
+        assert_eq!(
+            b[(left + 4, y)].symbol(),
+            "e",
+            "the lit app's name at the row column, lowercase, with no sign before it"
+        );
     }
     cleanup(&a);
 }
@@ -239,7 +260,11 @@ fn hiding_an_app_is_a_switch_applied_at_once_with_undo() {
     assert!(a.apps.preference(ID).hidden, "hidden at once");
     assert!(Preferences::load(&a.apps.path).unwrap().apps[ID].hidden, "and saved at once");
     let r = a.reply.clone().expect("a receipt on the status row");
-    assert_eq!((r.mark, r.text.as_str(), r.undo), (Mark::Done, "editor hidden", true), "the receipt names the app as a label, lowercase");
+    assert_eq!(
+        (r.mark, r.text.as_str(), r.undo),
+        (Mark::Done, "editor hidden", true),
+        "the receipt names the app as a label, lowercase"
+    );
     let sw = line(&lines(&a), &Action::Visibility(ID.into())).clone();
     assert_eq!((sw.sign, sw.value.as_str()), ("dot", "on"));
     let (b, d, _) = draw(&mut a, 60, 40);
@@ -386,7 +411,10 @@ fn the_details_are_the_facts_then_the_steps_then_the_preferences() {
     act(&mut a, Action::Details(ID.into()));
     let ls = lines(&a);
     let texts: Vec<String> = ls.iter().map(|l| format!("{}|{}|{}", l.label, l.value, l.tail)).collect();
-    assert_eq!(texts[0], "editor||", "the name first, lowercase as a label; the entry's text is in the technical details");
+    assert_eq!(
+        texts[0], "editor||",
+        "the name first, lowercase as a label; the entry's text is in the technical details"
+    );
     assert!(ls[0].title && !ls[0].heading, "the subject of the page, in the text color");
     assert!(ls.iter().any(|l| l.muted && l.label == "write documents"), "what it is, muted, lowercase");
     let version = ls.iter().find(|l| l.label == "version").unwrap();
@@ -694,7 +722,11 @@ fn details_values_reflow_and_the_footer_keeps_its_room() {
     a.model_name = Some("a-very-long-model-name-with-full-identity".into());
     for (w, h) in [(60, 40), (140, 50), (68, 49), (36, 20), (60, 40)] {
         let (_, d, _) = draw(&mut a, w, h);
-        assert!(d.chips.iter().all(|c| c.2 == spark_dialog::ui::TOOLS_Y), "the prompt's tools on their row: {:?}", d.chips);
+        assert!(
+            d.chips.iter().all(|c| c.2 == spark_dialog::ui::TOOLS_Y),
+            "the prompt's tools on their row: {:?}",
+            d.chips
+        );
         assert!(
             d.picks.iter().all(|&(y, _)| y < h - spark_dialog::ui::BOTTOM),
             "the list ends above the status row and the key bar"
