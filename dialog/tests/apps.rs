@@ -663,3 +663,120 @@ fn the_pointer_lights_an_app_and_leaves_a_waiting_decision_alone() {
     assert_eq!(a.sel, 2, "a motion moved the decision off its safe choice");
     cleanup(&a);
 }
+
+#[test]
+fn a_slow_app_moves_home_aside_when_its_window_takes_the_focus() {
+    let mut a = app();
+    a.window_focused = true;
+    a.apps.pending = Some((7, "launch".into()));
+    a.helper(Helper::Apps(7), Ok(json!({"message":"Launch requested","confirmed":false}).to_string()));
+    assert!(!a.stow, "the receipt stays until a window comes");
+    a.focus_lost();
+    assert!(a.stow, "the slow app's window took the focus");
+    a.stow = false;
+    a.focus_lost();
+    assert!(!a.stow, "one launch, one window");
+    a.apps.pending = Some((8, "launch".into()));
+    a.helper(Helper::Apps(8), Ok(json!({"message":"Launch requested","confirmed":false}).to_string()));
+    a.launch_wait = Some(std::time::Instant::now() - std::time::Duration::from_secs(1));
+    a.focus_lost();
+    assert!(!a.stow, "long after the launch, the focus leaving is the person's");
+    cleanup(&a);
+}
+
+#[test]
+fn details_wait_for_the_work_under_way_and_open_from_the_list_alone() {
+    let mut a = app();
+    a.apps.pending = Some((9, "launch".into()));
+    a.apps_activate(Action::Details(ID.into()));
+    assert!(matches!(a.apps.page, Page::List), "a page with no request behind it");
+    a.apps.pending = None;
+    pick(&mut a, Action::Launch(ID.into()));
+    assert!(a.apps_details());
+    assert!(matches!(a.apps.page, Page::Details(_)));
+    a.apps.pending = None;
+    pick(&mut a, Action::Launch(ID.into()));
+    assert!(!a.apps_details(), "details on details");
+    a.escape();
+    assert!(matches!(a.apps.page, Page::List), "one Esc is the list again");
+    cleanup(&a);
+}
+
+#[test]
+fn the_default_launch_chosen_again_changes_nothing() {
+    let mut a = app();
+    a.apps_activate(Action::SetLaunch(ID.into(), "default".into()));
+    assert!(!a.apps.dirty(ID));
+    cleanup(&a);
+}
+
+fn add_mapping(a: &mut App, source: &str) {
+    a.apps_activate(Action::Categories);
+    a.apps_activate(Action::Mappings);
+    a.apps_activate(Action::AddMapping);
+    a.set_draft(source);
+}
+
+#[test]
+fn an_added_mapping_comes_back_to_the_mappings() {
+    let mut a = app();
+    add_mapping(&mut a, "Foo");
+    a.apps_activate(Action::Submit);
+    assert!(matches!(&a.apps.page, Page::Mapping(s) if s == "Foo"));
+    a.apps_activate(Action::CancelMapping("Foo".into()));
+    assert!(matches!(a.apps.page, Page::Mappings), "back went one level too far");
+    cleanup(&a);
+}
+
+#[test]
+fn save_in_a_decision_stays_for_a_mapping_that_wants_its_category() {
+    let mut a = app();
+    add_mapping(&mut a, "Foo");
+    a.close_window();
+    assert!(a.leave_decision.is_some());
+    a.leave_choice(spark_dialog::interaction::Choice::Save);
+    assert!(matches!(&a.apps.page, Page::Mapping(s) if s == "Foo"));
+    assert_eq!(a.quit, None, "the window closed with nothing saved");
+    cleanup(&a);
+}
+
+#[test]
+fn a_page_or_the_wheel_leaves_a_waiting_decision_working() {
+    let mut a = app();
+    a.apps_activate(Action::Details(ID.into()));
+    a.apps_activate(Action::Visibility(ID.into()));
+    a.close_window();
+    a.page(1);
+    assert!(a.in_list);
+    assert_eq!(a.sel, 2);
+    a.enter();
+    assert!(a.leave_decision.is_none(), "Enter went dead");
+    cleanup(&a);
+}
+
+#[test]
+fn a_renamed_category_keeps_its_filter() {
+    let mut a = app();
+    let name = a.apps.prefs.categories[0].clone();
+    a.apps_activate(Action::SetFilter(Some(name.clone())));
+    a.apps_activate(Action::Categories);
+    a.apps_activate(Action::Category(name.clone()));
+    a.apps_activate(Action::Rename(name));
+    a.set_draft("Renamed");
+    a.apps_activate(Action::Submit);
+    assert_eq!(a.apps.filter.as_deref(), Some("Renamed"));
+    cleanup(&a);
+}
+
+#[test]
+fn ctrl_c_asks_once_over_unsaved_edits_and_then_leaves() {
+    let mut a = app();
+    a.apps_activate(Action::Details(ID.into()));
+    a.apps_activate(Action::Visibility(ID.into()));
+    a.hint_key(spark_dialog::app::HintKey::Quit);
+    assert!(a.leave_decision.is_some());
+    assert_eq!(a.quit, None);
+    a.hint_key(spark_dialog::app::HintKey::Quit);
+    assert_eq!(a.quit, Some(130));
+    cleanup(&a);
+}

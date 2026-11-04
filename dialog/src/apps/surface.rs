@@ -70,7 +70,7 @@ impl App {
     }
 
     pub fn apps_details(&mut self) -> bool {
-        if self.view != View::Apps || !self.in_list || self.mode != Mode::Normal {
+        if self.view != View::Apps || !matches!(self.apps.page, Page::List) || !self.in_list || self.mode != Mode::Normal {
             return false;
         }
         if let Some(Item::Apps(line)) = self.picks().get(self.sel) {

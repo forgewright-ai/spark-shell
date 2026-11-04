@@ -23,9 +23,10 @@ looked at, its own text size, and the tray off (#213, #216).
   down to 36 by 20 cells. Unsaved preferences ask Save, Discard or Keep
   editing before you leave. A resize no longer asks the terminal where
   the cursor is, so it redraws without a key.
-- Home steps aside for the app it opened, and Super+Space brings it back
-  as it was, on the workspace you are on. A home that filled the screen
-  comes back at its floating size.
+- Home steps aside for the app it opened, a slow one too once its window
+  takes the focus, and Super+Space brings it back as it was, on the
+  workspace you are on. A home that filled the screen comes back at its
+  floating size.
 - The bar sits at the top or the bottom. `spark-shell bar bottom`, the
   dialog's bar section or BAR_POSITION moves it, the notifications move
   to the corner by it, and `bar on` brings a hidden bar back where it

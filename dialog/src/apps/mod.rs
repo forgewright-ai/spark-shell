@@ -215,7 +215,9 @@ impl State {
         self.drafts.get(id).cloned().unwrap_or_else(|| self.preference(id))
     }
     pub fn dirty(&self, id: &str) -> bool {
-        self.draft(id) != self.preference(id)
+        // An empty launch and "default" are one choice: the application's own.
+        let (draft, saved) = (self.draft(id), self.preference(id));
+        draft.category != saved.category || draft.hidden != saved.hidden || draft.mode() != saved.mode()
     }
     pub fn mapping_dirty(&self, source: &str) -> bool {
         self.mapping_drafts
@@ -300,6 +302,9 @@ impl State {
                 out.request = Some(json!({"op":"launch","id":id,"mode":pref.mode()}));
             }
             Action::Details(id) => {
+                if self.pending.is_some() {
+                    return Err("Wait for the current Apps operation".into());
+                }
                 self.entry(&id).ok_or("This application is no longer available")?;
                 out.navigation = Some(self.navigate(Page::Details(id.clone()), nav));
                 // Keep cached content readable while refreshing on entry:
@@ -355,8 +360,12 @@ impl State {
                 match self.page.clone() {
                     Page::Form(Form::AddCategory) => prefs.add(&nav.query)?,
                     Page::Form(Form::RenameCategory(from)) => {
+                        let filtered = self.filter.as_deref() == Some(from.as_str());
                         prefs.rename(&from, &nav.query)?;
                         self.save(prefs)?;
+                        if filtered {
+                            self.filter = Some(nav.query.trim().into());
+                        }
                         for draft in self.drafts.values_mut() {
                             if draft.category.as_deref() == Some(&from) {
                                 draft.category = Some(nav.query.trim().into());
@@ -372,7 +381,6 @@ impl State {
                         if source.is_empty() || source.len() > 80 || !source.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
                             return Err("Use a desktop category identifier, such as Network".into());
                         }
-                        self.back();
                         self.page = Page::Mapping(source.into());
                         out.navigation = Some(Navigation::default());
                         return Ok(out);

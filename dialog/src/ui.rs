@@ -204,6 +204,8 @@ pub struct Drawn {
     pub columns: (u16, u16),
     /// The opening plays alone (#142): nothing else drawn, no cursor.
     pub alone: bool,
+    /// The list's rows, the first and the one after its last: the pointer outside them dims the lit row.
+    pub body: (u16, u16),
 }
 
 /// A picture main.rs draws in sixel over cells the buffer skips: where (x, y, w, h in cells), its file,
@@ -282,6 +284,31 @@ pub fn wide(w: u16) -> bool {
 }
 
 impl Drawn {
+    /// The control or row the pointer at (x, y) lights: its cells and row.
+    pub fn hover_hit(&self, x: u16, y: u16) -> Option<(u16, u16, u16)> {
+        let controls = self
+            .chips
+            .iter()
+            .map(|&(a, b, r, _)| (a, b, r))
+            .chain(self.keys.iter().map(|&(a, b, r, _)| (a, b, r)));
+        controls.into_iter().find(|&(a, b, r)| y == r && x >= a && x < b).or_else(|| {
+            self.pick_at(x, y).map(|n| {
+                self.pick_regions
+                    .iter()
+                    .find(|(_, _, row, pick)| *row == y && *pick == n)
+                    .map(|(a, b, r, _)| (*a, *b, *r))
+                    .unwrap_or((self.columns.0, self.columns.1, y))
+            })
+        })
+    }
+
+    /// Does the pointer's move change what is drawn? Only onto another control or row, or in or out of the list:
+    /// a motion inside one draws nothing (#196).
+    pub fn hover_differs(&self, was: Option<(u16, u16)>, now: Option<(u16, u16)>) -> bool {
+        let seen = |at: Option<(u16, u16)>| at.map(|(x, y)| (self.hover_hit(x, y), y >= self.body.0 && y < self.body.1));
+        seen(was) != seen(now)
+    }
+
     pub fn pick_at(&self, x: u16, y: u16) -> Option<usize> {
         if self.pick_regions.iter().any(|(_, _, row, _)| *row == y) {
             return self
@@ -344,22 +371,7 @@ fn blit(buf: &mut Buffer, part: &Buffer, x: u16, y: u16) {
 pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let drawn = draw_layout(app, pal, clock, buf);
     if let Some((x, y)) = app.hover {
-        let controls = drawn
-            .chips
-            .iter()
-            .map(|&(a, b, r, _)| (a, b, r))
-            .chain(drawn.keys.iter().map(|&(a, b, r, _)| (a, b, r)));
-        let hit = controls.into_iter().find(|&(a, b, r)| y == r && x >= a && x < b).or_else(|| {
-            drawn.pick_at(x, y).map(|n| {
-                drawn
-                    .pick_regions
-                    .iter()
-                    .find(|(_, _, row, pick)| *row == y && *pick == n)
-                    .map(|(a, b, r, _)| (*a, *b, *r))
-                    .unwrap_or((drawn.columns.0, drawn.columns.1, y))
-            })
-        });
-        if let Some((a, b, r)) = hit {
+        if let Some((a, b, r)) = drawn.hover_hit(x, y) {
             for col in a..b.min(buf.area.width) {
                 if r < buf.area.height {
                     buf[(col, r)].set_bg(pal.lit);
@@ -1326,6 +1338,7 @@ pub fn body_scroll(app: &App) -> usize {
 }
 
 fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> Vec<(u16, usize)> {
+    drawn.body = (top, bottom);
     let mut at = vec![];
     let items = app.items();
     let picks: Vec<usize> = items.iter().enumerate().filter(|(_, it)| app.pickable_item(it)).map(|(i, _)| i).collect();

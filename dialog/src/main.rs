@@ -869,9 +869,11 @@ fn main() {
                 // the pointer says what a click does where it is (#129)
                 let dragging = drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_));
                 if m.kind == MouseEventKind::Moved && mouse_at.is_some_and(|old| old != (m.column, m.row)) {
+                    let was = app.hover;
+                    let lit = (app.sel, app.in_list, app.scroll);
                     app.hover = Some((m.column, m.row));
                     app.pointer_over(drawn.pick_at(m.column, m.row));
-                    dirty = true;
+                    dirty |= drawn.hover_differs(was, app.hover) || lit != (app.sel, app.in_list, app.scroll);
                 }
                 mouse_at = Some((m.column, m.row));
                 let want = pointer_at(&app, &drawn, m.column, m.row, dragging);

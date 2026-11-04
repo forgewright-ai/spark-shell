@@ -164,6 +164,11 @@ impl App {
                 }
             }
         }
+        // A mapping added here still wants its category: nothing is saved yet,
+        // so stay for it rather than leave with the choice lost.
+        if matches!(decision.owner, EditOwner::CategoryForm) && matches!(self.apps.page, Page::Mapping(_)) {
+            return;
+        }
         match decision.intent {
             LeaveIntent::Back if returned => {} // The feature already returned.
             LeaveIntent::Back => self.escape(),

@@ -477,3 +477,27 @@ fn a_motion_outside_apps_leaves_enter_with_the_words() {
     app.pointer_over(Some(3));
     assert_eq!(app.scroll, 14, "a motion moved the list");
 }
+
+/// Ctrl+C ends the dialog at once, and says so to the caller as a signal would.
+#[test]
+fn ctrl_c_is_the_way_out_with_a_signals_code() {
+    let mut app = app();
+    app.hint_key(HintKey::Quit);
+    assert_eq!(app.quit, Some(130));
+}
+
+/// A motion inside one row draws nothing (#196); crossing onto another does.
+#[test]
+fn a_motion_draws_only_when_it_crosses_onto_something_else() {
+    let mut app = app();
+    app.size = (60, 40);
+    let pal = common::palette("tokyonight-night");
+    let mut buf = Buffer::empty(Rect::new(0, 0, 60, 40));
+    let drawn = spark_dialog::ui::draw(&app, &pal, "", &mut buf);
+    let (y0, y1) = (drawn.picks[0].0, drawn.picks[1].0);
+    let x = drawn.columns.0 + 1;
+    assert!(!drawn.hover_differs(Some((x, y0)), Some((x + 1, y0))));
+    assert!(drawn.hover_differs(Some((x, y0)), Some((x, y1))));
+    assert!(drawn.hover_differs(None, Some((x, y0))));
+    assert!(drawn.hover_differs(Some((x, y0)), Some((x, 0))), "out of the list dims the lit row");
+}

@@ -228,6 +228,9 @@ pub const READ_GAP: Duration = Duration::from_millis(250);
 /// Rows older than this are read again when their place comes back on screen.
 pub const STALE: Duration = Duration::from_secs(5);
 /// The sections whose rows the home's places say (#36): read again when the home comes back.
+/// How long a launch no window confirmed may still bring its window (the desktop's own wait for a slow app).
+const LAUNCH_WAIT: Duration = Duration::from_secs(30);
+
 pub const HOME_STATES: [&str; 7] = ["apps", "window", "layout", "notes", "reminders", "wifi", "theme"];
 
 /// What Enter does to a row, in a word, from its tool's name: the hint says it (Use dracula, Connect a
@@ -724,6 +727,8 @@ pub struct App {
     pub hidden: bool,
     /// The app home opened is in front: main.rs puts home away, once.
     pub stow: bool,
+    /// A launch no window has confirmed, and until when the focus leaving home is taken for that app's window.
+    pub launch_wait: Option<Instant>,
     pub busy_since: Option<Instant>,
     pub frame: u64,
     /// Every model spark lists: (name, serving | downloaded | -).
@@ -845,6 +850,7 @@ impl App {
             running: None,
             hidden: false,
             stow: false,
+            launch_wait: None,
             busy_since: None,
             frame: 0,
             models: vec![],
@@ -2631,6 +2637,9 @@ impl App {
     /// Page up and down: in a list, the lit row by a screen of rows; else the content area, by most of
     /// its height.
     pub fn page(&mut self, d: i32) {
+        if self.leave_decision.is_some() {
+            return; // three choices, all in sight: a page moves none of them, and Enter stays with the lit one
+        }
         let step = self.size.1.saturating_sub(14).max(4) as usize;
         if self.view == View::Apps && matches!(self.apps.page, crate::apps::Page::Details(_)) {
             self.scroll = crate::ui::body_scroll(self);
@@ -3411,6 +3420,9 @@ impl App {
 
     /// Focus left the window (another window, the lock): a recording stops, nothing kept.
     pub fn focus_lost(&mut self) {
+        if self.launch_wait.take().is_some_and(|until| Instant::now() < until) {
+            self.stow = true;
+        }
         if self.mode == Mode::Listening {
             self.listen_cancelled = true;
             self.jobs.push(Job::StopListening);
@@ -3936,7 +3948,6 @@ impl App {
                     return self.refuse("no folder to pick from");
                 };
                 self.go(View::Folder(f, root.clone()));
-                self.read_folder(f, &root);
             } else {
                 self.came_from.push(self.view.clone());
             }
@@ -4265,7 +4276,8 @@ impl App {
             let value = out
                 .and_then(|text| serde_json::from_str::<Value>(&text).map_err(|_| "Invalid native Apps response".into()))
                 .unwrap_or_else(|error| json!({"error":error}));
-            let opened = self.apps.pending.as_ref().is_some_and(|(s, op)| *s == serial && op == "launch") && value["confirmed"].as_bool() == Some(true);
+            let launching = self.apps.pending.as_ref().is_some_and(|(s, op)| *s == serial && op == "launch");
+            let opened = launching && value["confirmed"].as_bool() == Some(true);
             match self.apps.receive(serial, value) {
                 Ok(Some(message)) => {
                     self.reply(Mark::Done, &message);
@@ -4273,6 +4285,9 @@ impl App {
                     // home keeps its workflow and returns on the next Super+Space.
                     if opened && !self.window_focused {
                         self.stow = true;
+                    } else if launching && !opened {
+                        // a slow app, or one whose window has another name: its window takes the focus when it maps
+                        self.launch_wait = Some(Instant::now() + LAUNCH_WAIT);
                     }
                 }
                 Err(error) => self.refuse(&error),
@@ -4435,7 +4450,12 @@ impl App {
             HintKey::PageDown => self.page(1),
             HintKey::Backspace => self.backspace(),
             HintKey::Delete => self.delete(),
-            HintKey::Quit => self.close_window(),
+            // the way out, with a signal's 130 for the caller; unsaved edits ask once, and the second Ctrl+C leaves
+            HintKey::Quit => {
+                if self.leave_decision.is_some() || !self.guard_leave(crate::interaction::LeaveIntent::Close) {
+                    self.quit = Some(130);
+                }
+            }
             HintKey::Escape => self.escape(),
             HintKey::Newline => self.newline(),
             HintKey::Tab => self.tab(false),
