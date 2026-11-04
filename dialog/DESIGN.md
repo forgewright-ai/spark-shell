@@ -28,7 +28,7 @@ same shape, a strip, a rule, a row of air, then content:
     h-4     a plain rule
     h-2     the key bar, a second line at h-1 when the keys need it
 
-The diamond is the one mark in the frame and it carries one fact: full,
+The diamond is the frame's one ornament and it carries one fact: full,
 in the accent, when a model answers; hollow, muted, when none does or
 AI is off. It is read, never clicked. Nothing else in the dialog is
 drawn for decoration alone.

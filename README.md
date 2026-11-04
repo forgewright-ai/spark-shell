@@ -892,9 +892,9 @@ An attached file's name replaces the word attach, with remove after
 it; talk reads cancel while listening. Tab cycles these three and
 nothing else. Under them a rule closes the prompt's block, with the
 diamond in its middle: full, in the accent, when a model answers;
-hollow, muted, when none does or AI is off. It is the one mark in the
-frame, it is read and never clicked, and nothing else in the dialog is
-drawn for decoration alone. Two rows of air, then the list, which
+hollow, muted, when none does or AI is off. It is the frame's one
+ornament, it is read and never clicked, and nothing else in the dialog
+is drawn for decoration alone. Two rows of air, then the list, which
 starts at the seventh row at every width.
 
 The key bar is the last thing in the frame, over a plain rule, as
