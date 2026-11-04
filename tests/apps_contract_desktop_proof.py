@@ -39,7 +39,8 @@ def main(binary, destination):
 
     try:
         preferences = s.root / ".config/spark-shell/apps.json"
-        hidden = lambda: json.loads(preferences.read_text())["apps"]["btop.desktop"]["hidden"]
+        # an app with no preference of its own has no entry: Undo puts the file back as it was
+        hidden = lambda: json.loads(preferences.read_text())["apps"].get("btop.desktop", {}).get("hidden", False)
         apps()
         details()
         s.click("hide this app")

@@ -238,14 +238,16 @@ def main(binary, destination):
         text = s.text()
         assert "System Monitor" in text and "Web Browser" in text
         assert "Resource monitor that" not in text and "A wayland native" not in text
-        assert "foot client" not in text and "foot server" not in text
+        # the entries' names in their own spelling (Foot Client, Foot Server on Void): matched whatever the case
+        helpers = re.compile(r"foot (client|server)", re.I)
+        assert not helpers.search(text), "the helpers start hidden"
         assert "Firefox" in text and "Mozilla Firefox" not in text, "the supplied name, in its spelling"
         assert "mpv Media Player" in text
         s.click("hidden apps", body=True)
-        assert "foot client" in s.text() and "foot server" in s.text(), "the hidden apps, a list of their own"
+        assert re.search(r"foot client", s.text(), re.I) and re.search(r"foot server", s.text(), re.I), "the hidden apps, a list of their own"
         s.capture("hidden-helpers")
         s.key("-k", "Escape")
-        assert "foot client" not in s.text() and "foot server" not in s.text()
+        assert not helpers.search(s.text())
         s.checks.append("Supplied names keep their spelling; foot helpers start hidden and stand under hidden apps, a list of their own")
         s.key("usage")
         assert "btop" in s.text(), "full desktop comments remain searchable"
@@ -352,7 +354,7 @@ def main(binary, destination):
         assert app_windows(), "application was killed when the helper exited"
         subprocess.run(["grim", "-o", "HEADLESS-1", str(s.evidence / "application-opened.png")], env=s.env, check=True)
         s.focus()
-        assert "Opened foot" in s.text(), s.text()
+        assert re.search(r"Opened foot", s.text(), re.I), s.text()
         s.click("foot", body=True, app_name=True)
         wait_for(lambda: len(app_windows()) == 2, "real installed foot launch via click")
         s.focus()
