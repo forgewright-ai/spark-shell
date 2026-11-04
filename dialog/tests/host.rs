@@ -2421,6 +2421,38 @@ fn a_move_picks_its_folder_in_the_files_and_lands_the_step_here() {
     assert_eq!(app.undo.as_ref().map(|u| u.call.name.as_str()), Some("files_move"));
 }
 
+/// A step from outside the files opens them for its pick: one read of the folder, not two.
+#[test]
+fn a_pick_from_outside_the_files_reads_its_folder_once() {
+    let (mut app, rx, calls, home) = manager();
+    app.view = View::Home;
+    app.folder = None;
+    let reads = || {
+        let all = calls.lock().unwrap();
+        all.iter().filter(|c| c["read"] == "spark-shell://files/rows/aG9tZQ").count()
+    };
+    let before = reads();
+    let mut arguments = serde_json::Map::new();
+    arguments.insert("path".into(), json!(format!("{}/notes.md", home)));
+    app.run(spark_dialog::app::Step {
+        prov: 0,
+        call: spark_dialog::model::Call {
+            name: "files_move".into(),
+            arguments,
+            ask: vec![],
+            said: None,
+            pick: Some("to".into()),
+        },
+        who: spark_dialog::app::Who::Person,
+        line: "move notes.md".into(),
+        typed: false,
+    });
+    assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
+    std::thread::sleep(Duration::from_millis(100));
+    pump(&mut app, &rx, |_| false);
+    assert_eq!(reads(), before + 1, "the pick read its folder twice");
+}
+
 #[test]
 fn esc_cancels_a_folder_pick_and_leaves_the_list_where_it_was() {
     let (mut app, rx, calls, _) = manager();
