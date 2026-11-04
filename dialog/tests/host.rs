@@ -2919,3 +2919,30 @@ fn esc_leaves_listening_at_once_and_an_older_reply_leaves_the_newer_thought_alon
     app.helper(spark_dialog::app::Helper::Want(old), Ok("{}".into()));
     assert!(app.thinking(), "the newer request still thinks");
 }
+
+/// Apps reads the machine itself: the way back to home does not read the apps provider's rows again.
+#[test]
+fn the_way_back_to_home_reads_no_rows_of_the_apps_provider() {
+    let (mut app, rx, tx) = app_with(&["apps"]);
+    let reads = Arc::new(Mutex::new(0));
+    let seen = reads.clone();
+    let tools = json!([]);
+    let rows = json!({"title": "apps", "rows": []});
+    let script: Script = Box::new(move |v, send| {
+        if v.get("method").and_then(Value::as_str) == Some("resources/read") {
+            *seen.lock().unwrap() += 1;
+        }
+        if let Some(r) = ordinary("apps", v, &tools, &rows) {
+            send(r);
+        }
+    });
+    app.servers.push(stub(0, "apps", script, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].reading));
+    let at_start = *reads.lock().unwrap();
+    app.providers[0].last_read = Some(Instant::now() - Duration::from_secs(60));
+    app.last_view = Some(View::About);
+    app.view = View::Home;
+    pump(&mut app, &rx, |_| false);
+    assert_eq!(*reads.lock().unwrap(), at_start, "a read nothing here uses");
+}

@@ -815,7 +815,7 @@ pkg_listed() { case " $PKG_SHELL $PKG_CLI $PKG_CONSOLE $PKG_DESKTOP $PKG_SOUND $
 starship_listed() { [ "$PM" = brew ] || pkg_listed starship; }   # the prompt comes with the packages: the Brewfile has it, a family's list may (Debian's has none)
 pkg_update_said() {   # -> the family's own step when an install is refused: a rolling distro wants the whole upgrade first
     case $PM in
-        pacman) echo 'sudo pacman -Syu' ;; xbps) echo 'sudo xbps-install -Su' ;;
+        xbps) echo 'sudo xbps-install -Su' ;;   # not pacman: its install is that upgrade already
         dnf) echo 'sudo dnf upgrade --refresh' ;; zypper) echo 'sudo zypper dup' ;;
     esac
 }
@@ -842,6 +842,11 @@ pkg_install() {   # pkg_install NAME... -- as root, the manager's own way (the t
         zypper) as_root zypper --non-interactive install "$@" ;;   # the same: zypper refreshes first
         *) return 1 ;;
     esac
+}
+pkg_nobody() {   # -> true when no one here can answer: no terminal, and sudo wants its password or pacman asks before its upgrade
+    [ ! -t 0 ] || return 1
+    if [ "$PM" = pacman ] && [ -z "${SPARK_SHELL_TEST_TTY:-}" ]; then return 0; fi
+    [ "$(id -u)" -ne 0 ] && ! sudo -n true 2>/dev/null
 }
 pkg_install_on() {
     # Arch's setup refreshes with a full upgrade; pacman asks before applying it.
@@ -3061,11 +3066,20 @@ cmd_on() {   # cmd_on [desktop|login]
         if login_wanted; then pkgs="$pkgs $PKG_LOGIN"; fi
         # shellcheck disable=SC2086
         for p in $pkgs; do pkg_installed "$p" || missing="$missing $p"; done
+        _again="spark-shell on${*:+ $*}"
         if [ -z "$missing" ]; then ok packages "installed"
-        elif [ "$(id -u)" -ne 0 ] && ! sudo -n true 2>/dev/null && [ ! -t 0 ]; then
-            # nobody to type a password here: say what is left, keep going
-            # (the links and renders below need no root)
-            row todo packages "still to install:$missing -- spark-shell on at a terminal (sudo once)"
+        elif pkg_nobody; then
+            # nobody here to type a password, or to answer pacman before its
+            # upgrade. A desktop or a login asked for now waits for its
+            # packages, as after a failed install; anything else goes on, as
+            # update must: the links and renders need no root
+            _why='sudo once'; [ "$PM" != pacman ] || _why='pacman asks before it upgrades'
+            case ${1:-} in desktop|login) if [ "$MODE" != dry ]; then
+                row todo packages "still to install:$missing -- $_again at a terminal ($_why)"
+                echo 'spark-shell: the packages are not in; setup stopped before changing shell or desktop files.' >&2
+                return 1
+            fi ;; esac
+            row todo packages "still to install:$missing -- $_again at a terminal ($_why); the links and renders need no root, so they go on"
         else
             _install="install$missing ($PM, sudo)"
             [ "$PM" != pacman ] || _install="full system upgrade and install$missing (pacman -Syu --needed, sudo; pacman asks first)"
@@ -3073,8 +3087,8 @@ cmd_on() {   # cmd_on [desktop|login]
                 # shellcheck disable=SC2086
                 if pkg_install_on $missing; then ok packages "installed"
                 else
-                    if _up=$(pkg_update_said) && [ -n "$_up" ]; then row todo packages "$PM could not install:$missing -- $_up, then spark-shell on $*"
-                    else row todo packages "$PM failed (see above) -- run spark-shell on $* again"; fi
+                    if _up=$(pkg_update_said) && [ -n "$_up" ]; then row todo packages "$PM could not install:$missing -- $_up, then $_again"
+                    else row todo packages "$PM failed (see above) -- run $_again again"; fi
                     echo 'spark-shell: package installation failed; setup stopped before changing shell or desktop files.' >&2
                     return 1
                 fi

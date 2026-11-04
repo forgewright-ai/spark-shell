@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.123.1
+
+A patch, the owner's pick of 2026-11-03 (#217): what a failed or
+unattended package install leaves behind, on every family.
+
+- A failed install stops `spark-shell on` on Debian, Ubuntu, Void, Fedora
+  and openSUSE as it does on Arch, and each now has a test. The notes of
+  v0.122.1 said Arch alone: the stop was always on the shared path.
+- With no terminal, `spark-shell on` no longer reaches pacman's question
+  before its upgrade. It says what is left to install and goes on, as
+  update must, since the links and renders need no root.
+- With nobody to type a password or to answer pacman, `on desktop` and
+  `on login` stop as a failed install does, so DESKTOP=sway and LOGIN=yes
+  are saved only once the packages are in. Before, they were saved
+  anyway.
+- The retry hint has one space, and on Arch it no longer sends you back
+  to the upgrade that just failed.
+- The README says what the allowed apps limit: layouts and spark. Home's
+  Apps shows every installed app.
+- Going back to home no longer reads the apps provider's rows again,
+  which nothing there uses.
+
 ## v0.123
 
 Apps is a place in home, and the bar gets a review: where it sits,

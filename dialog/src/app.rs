@@ -231,7 +231,7 @@ pub const STALE: Duration = Duration::from_secs(5);
 /// How long a launch no window confirmed may still bring its window (the desktop's own wait for a slow app).
 const LAUNCH_WAIT: Duration = Duration::from_secs(30);
 
-pub const HOME_STATES: [&str; 7] = ["apps", "window", "layout", "notes", "reminders", "wifi", "theme"];
+pub const HOME_STATES: [&str; 6] = ["window", "layout", "notes", "reminders", "wifi", "theme"];
 
 /// What Enter does to a row, in a word, from its tool's name: the hint says it (Use dracula, Connect a
 /// network). A row that opens more is Open.

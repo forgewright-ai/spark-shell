@@ -391,8 +391,9 @@ that still cannot fit it produces a refusal. No font size is guessed or changed.
 
 Type `spark-shell apps`. You get a list of the installed apps and
 tools. `Tab` selects or clears a row, `Enter` saves to
-`~/.config/spark-shell/apps`. A layout then opens only those apps. With
-no list, any app with a desktop entry is allowed.
+`~/.config/spark-shell/apps`. A layout and spark then open only those
+apps. With no list, any app with a desktop entry is allowed. The list
+limits those two alone: home's Apps shows and opens every installed app.
 
 ## Keys
 

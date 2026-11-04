@@ -126,6 +126,7 @@ jobs:
         run: |
           timeout --foreground 780 sh tests/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
           python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   ubuntu:
@@ -152,6 +153,7 @@ jobs:
         run: |
           timeout --foreground 780 sh tests/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
           python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   arch:
@@ -171,6 +173,7 @@ jobs:
         run: |
           timeout --foreground 900 sh tests/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 15 minutes, before the job's 20, so the parts say where they are
           python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   void:
@@ -206,6 +209,7 @@ jobs:
         run: |
           timeout --foreground 780 sh tests/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
           python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   fedora:
@@ -226,6 +230,7 @@ jobs:
         run: |
           timeout --foreground 780 sh tests/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
           python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   opensuse:
@@ -248,6 +253,7 @@ jobs:
         run: |
           timeout --foreground 780 sh tests/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
           python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   desktop:
@@ -363,6 +369,7 @@ jobs:
         run: |
           sh tests/shell_test.sh --parallel
           python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
       - name: the Terminal.app helper, built and never applied
