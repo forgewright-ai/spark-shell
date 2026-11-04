@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 
-from home_desktop_proof import Pointer, native_foot_config, wait_for
+from home_desktop_proof import Pointer, native_foot_config, stop_round, wait_for
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -230,7 +230,13 @@ class Session:
         self.keyboard.wait(timeout=5)
         self.pointer.close()
         self.compositor.terminate()
-        self.compositor.wait(timeout=10)
+        try:
+            self.compositor.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.compositor.kill()
+        # the foot, the dialog and its providers outlive the compositor (home_desktop_proof.stop_round): a failed
+        # round would leave a set behind
+        stop_round(self.env)
         self.log.close()
         self.tmp.cleanup()
 

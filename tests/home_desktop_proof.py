@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import socket
 import struct
 import subprocess
@@ -153,6 +154,37 @@ def wait_for(read, label):
             return value
         time.sleep(.1)
     raise AssertionError("timed out: " + label)
+
+
+def stop_round(env):
+    """Stop what the round started and the compositor's end leaves: spark-shell desktop home starts its foot in
+    a session of its own (lib/home.py), so the terminal, the dialog and its providers outlive sway, reparented to
+    init; a failed round left a set alive on the box for 17 hours. Every process with this round's runtime dir in
+    its environment goes, a term first and a kill for what stays a second later."""
+    mark = ("XDG_RUNTIME_DIR=" + env["XDG_RUNTIME_DIR"]).encode()
+
+    def alive():
+        found = []
+        for p in Path("/proc").iterdir():
+            if not p.name.isdigit() or int(p.name) == os.getpid():
+                continue
+            try:
+                if mark in p.joinpath("environ").read_bytes().split(b"\0"):
+                    found.append(int(p.name))
+            except OSError:
+                continue
+        return found
+
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        pids = alive()
+        if not pids:
+            return
+        for pid in pids:
+            try:
+                os.kill(pid, sig)
+            except ProcessLookupError:
+                pass
+        time.sleep(1)
 
 
 def main(binary, destination):
@@ -448,7 +480,11 @@ elif sys.argv[1] == 'steps':
                 if pointer:
                     pointer.close()
                 compositor.terminate()
-                compositor.wait(timeout=10)
+                try:
+                    compositor.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    compositor.kill()
+                stop_round(env)
     (evidence / "native.json").write_text(json.dumps({"platform": "Void Linux", "tools": ["sway", "swaybar", "foot", "wtype", "grim", "persistent virtual pointer"],
                                                      "binary_sha256": hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
                                                      "palette": palette,
