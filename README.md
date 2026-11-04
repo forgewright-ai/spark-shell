@@ -496,7 +496,8 @@ A note opens in your editor right in the terminal you typed in, and in
 a terminal window from the dialog. A new note you leave empty is not
 kept.
 
-When a reminder comes due, the bar shows a `due` block with its words,
+When a reminder comes due, the bar shows a `due` block, a black
+hourglass in the accent and its words,
 a click opens the reminders, and a short sound plays once (PipeWire,
 else ALSA; afplay on a Mac). On the desktop it comes as a notification
 too, once, its first line saying a click opens it, and the click opens
@@ -566,7 +567,7 @@ name muted; what it says is bold under it, and before it a glyph tells
 the kind: a filled dot for any one, and where the app names the kind
 three lines for mail, a message, a check or a cross for a transfer
 done or failed, a hollow stick for a drive not yet mounted, the bar's
-flag for a reminder due; a warning sign in red on a critical one. The
+hourglass for a reminder due; a warning sign in red on a critical one. The
 words follow. The glyphs are the bar's and the dialog's, filled for on
 and hollow for off as the bar has them, the small triangle before what
 a click opens among them. Its edge lines up with the windows' content,
@@ -584,7 +585,7 @@ do-not-disturb on`. They stay out of sight, a critical one still
 shows, the bar says `do not disturb`, and it holds until you turn it
 off, logins included.
 The bar counts the notifications that came while nobody looked: a
-filled diamond in the accent and how many (`new 3` in words), up to
+black flag in the accent and how many (`new 3` in words), up to
 `9+`, beside `do not disturb` while it is on. One you dismiss with a
 right or a middle click, or one of spark-shell's own you click open,
 is looked at. A click on the count opens the dialog's Notifications
@@ -728,7 +729,12 @@ sign in the palette's yellow. The palette has no block: it is picked in
 the dialog, where a click on any block leads.
 
 Each block is a glyph of the bar's font: filled is on, hollow is off or
-muted, the accent is connected, red wants you. Settings > theme has two
+muted, and one rule of color holds for every block. The accent is on
+and connected: the wire up, Wi-Fi joined, a Bluetooth device
+connected, sound out and the mic open, the brightness, the
+notifications waiting and a reminder due. Muted is idle, off or
+muted: Bluetooth with nothing connected, Wi-Fi with no network, sound
+out or the mic muted. Red wants you. Settings > theme has two
 rows that left and right change: Bar glyphs, signs or words (the kind
 words: lan, wifi, bt, out, mic, new, light, kb, bat), and Workspaces,
 symbols or numbers (1 2 3). `spark-shell theme glyphs words` and
@@ -736,7 +742,7 @@ symbols or numbers (1 2 3). `spark-shell theme glyphs words` and
 at once, and a saved theme keeps both.
 
 A block appears only for hardware this machine has. No battery, no
-battery block. Device names are in the dialog, never on the bar. Color
+battery block. Device names are in the dialog, never on the bar. Red
 is for alarms: the mic is a red dot while any program records, and the
 wire is red with a warning sign when it is down, as is a battery under
 15. The bar never changes width: a click never swaps a block's text.

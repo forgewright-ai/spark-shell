@@ -7,8 +7,8 @@
 # and before it a glyph tells the kind: a filled dot for any one, and
 # where the app names the kind (its category) three lines for mail, a
 # message, a check or a cross for a transfer done or failed, a
-# hollow stick for a drive plugged in and not yet mounted, the bar's flag
-# for a reminder due; a warning sign in red on a critical one. The words
+# hollow stick for a drive plugged in and not yet mounted, the bar's
+# hourglass for a reminder due; a warning sign in red on a critical one. The words
 # follow. The glyphs are the bar's and the dialog's, each one Monaspace
 # Neon's own, filled for on and hollow for off as the bar has them (a
 # low one is quiet, not off: its dot stays filled, its color says it), the
@@ -77,10 +77,10 @@ format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANE
 
 # spark-shell's own: the first line says what it is and, after the
 # triangle, what a click opens: a reminder in the dialog's Reminders,
-# under the bar's flag (U+2691); a drive plugged in the dialog's
+# under the bar's hourglass (U+29D7); a drive plugged in the dialog's
 # Storage, where it mounts
 [app-name=spark-shell category=x-spark-shell.reminder]
-format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">reminder &#x25B8; a click opens it</span>\n&#x2691; <b>%s</b>\n%b
+format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">reminder &#x25B8; a click opens it</span>\n&#x29D7; <b>%s</b>\n%b
 on-button-left=exec makoctl dismiss -n "$id"; @REPO@/spark-shell bar seen "$id"; foot --config @HOME@/.config/foot/dialog.ini --app-id spark-dialog -e @REPO@/spark-shell dialog reminders
 [app-name=spark-shell category=device.added]
 format=<span foreground="#@HEX_ACCENT@">&#x276F;</span> <span foreground="#@PANEL_MUTED@">drive &#x25B8; a click opens Storage</span>\n&#x25AD; <b>%s</b>\n%b

@@ -3480,9 +3480,13 @@ cmd_check() {
 # STATE_DIR/bar.pid). It shows the screen and the hardware you sit at;
 # the AI and the machine's load stay on tmux's status line inside each
 # window. Its rules: a block appears only for hardware this machine has
-# (no battery, no bat block); words show state and color shows alarm
-# (the kind word muted, a name in the text color, red for a recording
-# mic, a wire that is down and a battery under 15); the gauges, the
+# (no battery, no bat block); a sign is filled when on and hollow when
+# off or muted, and its color says the state, one rule for every block:
+# the accent for on and connected (a wire up, wifi joined, a bluetooth
+# device connected, sound out and the mic open, the screen's light, the
+# notifications that came while nobody looked, a reminder due), muted
+# for idle, off or muted, red for an alarm (a recording mic, a wire that
+# is down, a battery under 15), a name in the text color; the gauges, the
 # output volume and the mic level, are the things you can set (a click
 # sets, the wheel nudges, a right click mutes), so a read-only level
 # takes another shape (wifi as rising bars, the battery as a number); a
@@ -3516,9 +3520,9 @@ BAR_MIC=$(printf '\342\227\211')      # U+25C9 fisheye: the mic, open
 BAR_MIC_OFF=$(printf '\342\227\213')  # U+25CB white circle: the mic, muted (recording: PANEL_DOT in red)
 BAR_LIGHT=$(printf '\342\230\274')    # U+263C white sun with rays: brightness
 BAR_KB=$(printf '\342\214\227')       # U+2317 viewdata square: the keyboard's layout
-BAR_DUE=$(printf '\342\232\221')      # U+2691 black flag: a reminder due
+BAR_DUE=$(printf '\342\247\227')      # U+29D7 black hourglass: a reminder due, its time come
 BAR_DND=$(printf '\342\217\276')      # U+23FE power sleep symbol: do not disturb
-BAR_NOTE=$(printf '\342\227\206')     # U+25C6 black diamond: notifications that came while nobody looked
+BAR_NOTE=$(printf '\342\232\221')     # U+2691 black flag: notifications that came while nobody looked
 BAR_PIP=$(printf '\342\226\260')      # U+25B0 black parallelogram: a gauge's cell, lit
 BAR_PIP_OFF=$(printf '\342\226\261')  # U+25B1 white parallelogram: a gauge's cell, unlit
 # the workspaces, named N:GLYPH by bar_ws_names; the bar strips the number. Workspace 1 wears
@@ -3528,7 +3532,7 @@ BAR_PIP_OFF=$(printf '\342\226\261')  # U+25B1 white parallelogram: a gauge's ce
 # less the bar's own, the dialog's signs and the wide ones; without the pool, APL's block alone
 BAR_WS_FIRST='\342\215\237'   # U+235F, workspace 1
 WS_FAMILIES='2336-237a 2300-23ff 25a0-25ff 2200-22ff 2190-21ff'
-WS_NOT='235f 2317 23fe 25c6 25b0 25b1 25b8 25c0 25c1 25c9 25cb 25cf 25e0 21c5 231a 231b 23e9 23ea 23eb 23ec 23f0 23f3 25fd 25fe'   # the bar's blocks and the dialog's signs, and the ones East Asian Width calls wide
+WS_NOT='235f 2317 23fe 25b0 25b1 25b8 25c0 25c1 25c9 25cb 25cf 25e0 21c5 231a 231b 23e9 23ea 23eb 23ec 23f0 23f3 25fd 25fe'   # the bar's blocks and the dialog's signs, and the ones East Asian Width calls wide
 WS_POOL=$STATE_DIR/ws-pool   # FAMILY HEX a line, from the font, written at on desktop
 BAR_WS_ORDER=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; BAR_WS_ORDER=${BAR_WS_ORDER:-$STATE_DIR}/ws-order   # the session's order, one octal-escaped glyph a line, written at the bar's start
 ws_pool_lines() {   # -> FAMILY HEX per glyph the families hold, less WS_NOT, within the charset ranges on stdin (fc-query's "20-7e a0-148 ..."); every family when stdin is empty
@@ -3951,7 +3955,7 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by air
     # connections
     lan=$(bar_lan)
     case $lan in
-        up*) bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" "$k_lan")")" ;;
+        up*) bar_add "$(bar_block lan '' "$(bar_span "$HEX_ACCENT" "$k_lan")")" ;;   # connected: the accent, as bluetooth's
         down) bar_add "$(bar_block lan '' "$(bar_span "$HEX_ANSI_1" "$k_lan $PANEL_WARN")")" ;;
     esac
     bt=$(bar_bt)
@@ -3961,8 +3965,8 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by air
         off) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" "$k_bt_off")")" ;;
     esac
     wifi=$(bar_wifi_pct)
-    if [ -n "$wifi" ]; then   # the signal, a gauge as sound's
-        bar_add "$(bar_block wifi name "$(bar_span "$HEX_MUTED" "$k_wifi")" 6)"
+    if [ -n "$wifi" ]; then   # connected: the sign in the accent, and the signal, a gauge as sound's
+        bar_add "$(bar_block wifi name "$(bar_span "$HEX_ACCENT" "$k_wifi")" 6)"
         bar_add "$(bar_block wifi gauge "$(bar_gauge "${wifi%% *}" 0)")"
     elif [ -n "$(bar_wireless)" ]; then bar_add "$(bar_block wifi name "$(bar_span "$HEX_MUTED" "$k_wifi")")"; fi   # off, or no network: the sign alone
     bar_group
@@ -3970,15 +3974,15 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by air
     out=$(snd_out)
     if [ -n "$out" ]; then
         lvl=$(printf '%s\n' "$out" | sed -n 2p); m=$(printf '%s\n' "$out" | sed -n 3p)
-        k=$k_out; [ "$m" != 1 ] || k=$k_out_off
+        k=$k_out; c=$HEX_ACCENT; [ "$m" != 1 ] || { k=$k_out_off; c=$HEX_MUTED; }   # on: filled, in the accent; muted: hollow, muted
         gap=$BAR_GAP; [ "$lvl" = - ] || [ -z "$lvl" ] || gap=6   # the gauge sits close to its sign
-        bar_add "$(bar_block out name "$(bar_span "$HEX_MUTED" "$k")" "$gap")"
+        bar_add "$(bar_block out name "$(bar_span "$c" "$k")" "$gap")"
         [ "$lvl" = - ] || [ -z "$lvl" ] || bar_add "$(bar_block out gauge "$(bar_gauge "$lvl" "$m")")"
     fi
     mic=$(snd_mic)
     if [ -n "$mic" ]; then
         live=$(printf '%s\n' "$mic" | sed -n 2p); m=$(printf '%s\n' "$mic" | sed -n 3p); lvl=$(printf '%s\n' "$mic" | sed -n 4p)
-        c=$HEX_MUTED; k=$k_mic; [ "$m" != 1 ] || k=$k_mic_off
+        c=$HEX_ACCENT; k=$k_mic; [ "$m" != 1 ] || { k=$k_mic_off; c=$HEX_MUTED; }   # open: the accent; muted: hollow, muted
         [ "$live" != 1 ] || { c=$HEX_ANSI_1; k=$PANEL_DOT; [ -z "$_bw" ] || k="mic $PANEL_DOT"; }   # red, a dot, while a program records
         if [ "$lvl" = - ] || [ -z "$lvl" ]; then bar_add "$(bar_block mic name "$(bar_span "$c" "$k")")"
         else
@@ -3991,7 +3995,7 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by air
     due=$(rem_due 2>/dev/null || :)
     [ -z "$due" ] || { bar_add "$(bar_block due '' "$(bar_span "$HEX_ACCENT" "$k_due") $(bar_esc "$(printf '%s' "${due#*"$TAB"}" | cut_chars 28)")")"; bar_group; }
     # the notifications (#71): do not disturb while it is on, so none waits out of sight unsaid, and those that came while
-    # nobody looked (notify_unseen), the diamond and how many in the accent; nothing when neither; a click opens the
+    # nobody looked (notify_unseen), the flag and how many in the accent; nothing when neither; a click opens the
     # section and counts them looked at
     if command -v makoctl >/dev/null 2>&1 && _nm=$(makoctl mode 2>/dev/null); then
         _nu=$(notify_unseen); [ "${_nu:-0}" -le 9 ] || _nu='9+'
@@ -4005,7 +4009,7 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by air
     # the seat: the brightness, the keyboard's layout
     lt=$(light_get)
     if [ -n "$lt" ]; then
-        bar_add "$(bar_block light name "$(bar_span "$HEX_MUTED" "$k_light")" 6)"
+        bar_add "$(bar_block light name "$(bar_span "$HEX_ACCENT" "$k_light")" 6)"   # a screen it sets: the accent, as a gauge's sign
         bar_add "$(bar_block light gauge "$(bar_gauge "$lt" 0)")"
     fi
     kb=$(kb_active)
