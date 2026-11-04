@@ -983,7 +983,7 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
     assert!(!app.in_list, "words that name no row light no row");
     app.ask();
     assert!(app.jobs.iter().any(|j| asks_for(j, "change theme to dracula")), "Enter asks spark");
-    assert!(!pump(&mut app, &rx, |_| !calls.lock().unwrap().is_empty()), "and runs no undo");
+    assert!(!pump_for(&mut app, &rx, QUIET, |_| !calls.lock().unwrap().is_empty()), "and runs no undo");
     assert!(app.undo.is_some(), "the undo is still there to pick");
 }
 
@@ -1855,7 +1855,7 @@ fn a_value_changes_in_place_says_nothing_and_holds_over_an_old_read() {
     );
     app.right();
     std::thread::sleep(Duration::from_millis(100));
-    pump(&mut app, &rx, |_| false);
+    pump_for(&mut app, &rx, QUIET, |_| false);
     assert_eq!(calls.lock().unwrap().len(), 1, "the end of the list: a press there does nothing");
     // two presses while the first is set: only the newest is sent after it
     app.left();
@@ -1916,7 +1916,7 @@ fn a_palette_is_kept_in_place_and_lighting_one_changes_nothing() {
     lit_at(&mut app, "theme:nord");
     app.tick(Instant::now());
     app.tick(Instant::now() + Duration::from_millis(400));
-    pump(&mut app, &rx, |_| false);
+    pump_for(&mut app, &rx, QUIET, |_| false);
     assert!(calls.lock().unwrap().is_empty(), "nothing asked of the desktop: {:?}", calls.lock().unwrap());
     // Enter keeps one: checked at once, the other not, nothing said
     lit_at(&mut app, "theme:nord");
@@ -1948,7 +1948,7 @@ fn a_provider_runs_in_a_process_group_of_its_own_and_ends_when_its_input_does() 
     let argv = vec!["/bin/sh".to_string(), "-c".to_string(), script];
     let mut s = spark_dialog::mcp::Server::spawn(0, "pg", &argv, tx).unwrap();
     let read = || std::fs::read_to_string(&f).unwrap_or_default();
-    let end = Instant::now() + Duration::from_secs(5);
+    let end = Instant::now() + WAIT;
     while read().lines().count() < 2 && Instant::now() < end {
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -1957,7 +1957,7 @@ fn a_provider_runs_in_a_process_group_of_its_own_and_ends_when_its_input_does() 
     assert_eq!(lines[0], lines[1], "a process group of its own, its pid its group");
     assert_ne!(lines[0], unsafe { libc::getpgrp() } as i64, "never the window's group");
     s.close_stdin();
-    let end = Instant::now() + Duration::from_secs(5);
+    let end = Instant::now() + WAIT;
     while !read().contains("done") && Instant::now() < end {
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -2591,7 +2591,7 @@ fn a_pick_in_a_list_moves_its_check_in_place_and_says_nothing() {
     // Enter on the one in use: nothing to set
     app.enter();
     std::thread::sleep(Duration::from_millis(100));
-    pump(&mut app, &rx, |_| false);
+    pump_for(&mut app, &rx, QUIET, |_| false);
     assert_eq!(calls.lock().unwrap().len(), 1, "the one in use again sends nothing");
     assert!(
         app.exchange.is_empty() && app.reply.is_none(),
@@ -2635,7 +2635,7 @@ fn a_pick_of_any_kind_keeps_every_other_row_still_and_a_refusal_lands_under_the_
         assert_eq!(before[6], during[6], "{}: nothing said at the click", id);
         assert!(pump(&mut app, &rx, |a| a.reply.is_some() || !a.under_way()));
         std::thread::sleep(Duration::from_millis(50));
-        pump(&mut app, &rx, |_| false);
+        pump_for(&mut app, &rx, QUIET, |_| false);
         let (after, y2) = frame(&app);
         assert_eq!(y, y2, "{}: and after it", id);
         assert_eq!(list_but(&before, y), list_but(&after, y), "{}: no other row moved", id);
@@ -2818,7 +2818,7 @@ fn a_call_whose_answer_carries_the_rows_reads_nothing_again() {
     assert_eq!(app.providers[0].rows.rows[0].sign, "ring", "the row as the answer says it");
     assert_eq!(app.providers[0].title, "off", "and the section's state");
     assert!(!app.providers[0].dirty, "nothing to read again");
-    pump(&mut app, &rx, |_| false);
+    pump_for(&mut app, &rx, QUIET, |_| false);
     assert_eq!(*reads.lock().unwrap(), before, "no read followed the call");
 }
 

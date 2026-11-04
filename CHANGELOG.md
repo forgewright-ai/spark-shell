@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- The dialog's tests wait for what they test, not for a time (#189).
+  A wait for an answer gave up after 2 seconds, and when its time was
+  up it never read the answers already in the queue, so a test thread
+  that waited for its turn failed. Run at a background priority beside
+  busy work, as a gate on a Mac can be, the tests failed
+  `a_provider_that_dies_floods_or_hangs` in 3 of 3 runs. The wait now
+  gives up after 10 seconds, a guard for a test that hangs, as
+  `tests/dialog_pty.py` does, and reads what came before it gives up.
+  A test that something does not happen still watches for 2 seconds.
+  The search test's part of #189, the notes asked after the files
+  answered, was fixed on 2026-11-02. Nothing in the dialog changes.
+
 ## v0.122.1
 
 A patch, the owner's pick of 2026-11-03 (#214): on Arch, setup no

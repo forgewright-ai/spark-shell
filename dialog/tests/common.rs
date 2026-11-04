@@ -93,19 +93,46 @@ pub fn app_with(labels: &[&str]) -> (App, Receiver<Incoming>, std::sync::mpsc::S
     (app, rx, tx)
 }
 
-/// Feed the app what the stubs say until `done` holds, two seconds at most.
+/// How long a wait for a state may last: a guard so a test that hangs ends, never a guess at how long
+/// an answer takes (#189). A starved test thread (a slow runner, a gate run at a background priority
+/// beside a build) waits seconds for an answer that took milliseconds.
+pub const WAIT: Duration = Duration::from_secs(10);
+
+/// How long a test that something does not happen watches for it. A slow machine can only make such
+/// a test pass, never fail.
+pub const QUIET: Duration = Duration::from_secs(2);
+
+/// Feed the app what the stubs say until `done` holds; false only when it never does.
 pub fn pump(app: &mut App, rx: &Receiver<Incoming>, done: impl Fn(&App) -> bool) -> bool {
-    let end = Instant::now() + Duration::from_secs(2);
-    while Instant::now() < end {
+    pump_for(app, rx, WAIT, done)
+}
+
+/// Feed the app what the stubs say until `done` holds, `wait` at most: a message, then a tick. When
+/// the time is up, what is already in the queue is still fed, so a thread that waited for its turn
+/// takes the answers that came meanwhile (#189).
+pub fn pump_for(app: &mut App, rx: &Receiver<Incoming>, wait: Duration, done: impl Fn(&App) -> bool) -> bool {
+    let end = Instant::now() + wait;
+    let mut late = 0;
+    loop {
         if done(app) {
             return true;
         }
-        if let Ok(m) = rx.recv_timeout(Duration::from_millis(20)) {
-            app.incoming(m);
+        let left = end.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(left.min(Duration::from_millis(20))) {
+            Ok(m) => {
+                app.incoming(m);
+            }
+            Err(_) if left.is_zero() => return done(app),
+            Err(_) => {}
         }
         app.tick(Instant::now());
+        if left.is_zero() {
+            late += 1;
+            if late > 256 {
+                return done(app);
+            }
+        }
     }
-    done(app)
 }
 
 /// A rendered buffer as HTML in its real colors, for a person to look at
