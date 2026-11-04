@@ -374,7 +374,8 @@ def main(binary, destination):
         s.key("btop", "-k", "Return")
         time.sleep(2)
         s.focus()
-        assert "btop opened" in s.text(), s.text()
+        # the receipt names the app as a label, the entry's name lowercase (dialog/DESIGN.md): btop++ on Void
+        assert "btop++ opened" in s.text(), s.text()
         s.checks.append("The real installed Terminal=true btop entry launches through GIO into foot and its window is confirmed")
         first_btop = app_windows("btop")[0]["id"]
         s.click("btop++", body=True, app_name=True, double=True)
@@ -388,7 +389,7 @@ def main(binary, destination):
         s.click("open", body=True, app_name=True)
         wait_for(lambda: any(w["id"] == first_btop and w["focused"] for w in app_windows("btop")), "most recent matching btop window")
         s.focus()
-        assert "btop focused" in s.text(), s.text()
+        assert "btop++ focused" in s.text(), s.text()
         s.key("-k", "Escape")
         s.key("-k", "Return")
         wait_for(lambda: any(w["id"] == first_btop and w["focused"] for w in app_windows("btop")), "focus via Enter")
@@ -403,7 +404,7 @@ def main(binary, destination):
         s.key("-k", "Return")
         wait_for(lambda: len(app_windows("btop")) == 1, "Focus existing launches when no matching window remains")
         s.focus()
-        assert "btop opened" in s.text()
+        assert "btop++ opened" in s.text(), s.text()
         s.checks.append("Focus existing starts the installed btop application when no matching window remains")
         # Reopen the same isolated home process with the saved preference file.
         s.sway("[con_id=%d] kill" % s.window()["id"])
