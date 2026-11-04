@@ -1646,11 +1646,17 @@ impl App {
             View::Apps => matches!(self.apps.page, crate::apps::Page::List | crate::apps::Page::Hidden),
             _ => false,
         };
+        let words = self.query().trim().to_string();
+        // words the dialog runs itself are never a question: undo with an undo at hand, and a command in the dialog's
+        // own words (theme dracula, display brightness 30) run on Enter with no model, as they always did. A place's
+        // name selects its row, and the ask row stands under it as under any match
+        let runs_here = (words.eq_ignore_ascii_case("undo") && (self.undo.is_some() || self.apps.undo.is_some())) || self.commands(&words).is_some();
         searching_view
             && self.mode == Mode::Normal
             && self.cfg.model
             && self.model_name.is_some()
-            && !self.query().trim().is_empty()
+            && !words.is_empty()
+            && !runs_here
             && !self.staged_now()
             && self.attaching.is_none()
             && self.picking.is_none()

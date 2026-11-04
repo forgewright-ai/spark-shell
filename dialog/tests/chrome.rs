@@ -480,6 +480,32 @@ fn asking_is_a_row_last_among_the_matches_and_alone_when_nothing_matches() {
     assert!(app.picks().is_empty(), "{:?}", app.picks());
     assert!(!app.in_list);
 
+    // words the dialog runs itself are never a question: undo with an undo at hand stays a command, at home and in Apps
+    let mut app = home();
+    app.undo = Some(Step { who: Who::Undo, ..a_step() });
+    type_words(&mut app, "undo");
+    assert!(
+        !app.items().iter().any(|it| matches!(it, Item::Ask)),
+        "undo at hand: no ask row: {:?}",
+        app.picks()
+    );
+    assert!(!app.in_list, "the word stays at the prompt, where Enter runs it");
+    app.enter();
+    assert!(app.undo.is_none(), "Enter took the undo");
+    let mut app = home();
+    app.view = View::Apps;
+    app.came_from.push(View::Home);
+    app.apps.undo = Some(spark_dialog::apps::preferences::Preferences::default());
+    type_words(&mut app, "undo");
+    assert!(
+        !app.items().iter().any(|it| matches!(it, Item::Ask)),
+        "Apps' undo at hand: no ask row: {:?}",
+        app.picks()
+    );
+    app.enter();
+    assert!(app.apps.undo.is_none(), "Enter took Apps' undo");
+    assert!(app.reply.as_ref().is_some_and(|r| r.text == "put back"), "{:?}", app.reply);
+
     // in Apps, whose prompt filters the list, the ask row stands too: Enter carries the words to the request
     let mut app = home();
     app.view = View::Apps;
