@@ -770,7 +770,6 @@ fn main() {
                 // Some launchers do not deliver SIGWINCH to the UI process.
                 // Size is cheap to query; a resize must redraw without a keypress.
                 if terminal::size().is_ok_and(|size| size != app.size) {
-                    app.hover = None;
                     mouse_at = None;
                     app.stop_video();
                     shown_preview = None;
@@ -824,7 +823,6 @@ fn main() {
                 dirty = true;
             }
             Ev::Term(Event::Resize(_, _)) => {
-                app.hover = None;
                 mouse_at = None;
                 app.stop_video(); // the frame moves: the player would stand where it was (#125)
                 shown_preview = None;
@@ -832,7 +830,6 @@ fn main() {
                 dirty = true;
             }
             Ev::Term(Event::Key(k)) if k.kind == KeyEventKind::Press => {
-                app.hover = None;
                 dirty = true;
                 // a letter typed while the opening plays lands at the prompt and the opening plays on; Enter, Esc, an
                 // arrow or a click cut it (#138)
@@ -868,13 +865,6 @@ fn main() {
                 dirty |= frame_for_mouse(m.kind, drag.is_some());
                 // the pointer says what a click does where it is (#129)
                 let dragging = drag.is_some() && matches!(m.kind, MouseEventKind::Drag(_));
-                if m.kind == MouseEventKind::Moved && mouse_at.is_some_and(|old| old != (m.column, m.row)) {
-                    let was = app.hover;
-                    let lit = (app.sel, app.in_list, app.scroll);
-                    app.hover = Some((m.column, m.row));
-                    app.pointer_over(drawn.pick_at(m.column, m.row));
-                    dirty |= drawn.hover_differs(was, app.hover) || lit != (app.sel, app.in_list, app.scroll);
-                }
                 mouse_at = Some((m.column, m.row));
                 let want = pointer_at(&app, &drawn, m.column, m.row, dragging);
                 if want != pointer {
@@ -916,10 +906,6 @@ fn main() {
                             app.step_at(*n, *up); // a value's arrow steps it, as left and right do (#175)
                         } else if m.row >= drawn.prompt.0 && m.row <= drawn.prompt.1 {
                             app.focus_prompt();
-                        } else if let Some((_, _, _, n, unhide)) =
-                            drawn.app_toggles.iter().find(|(a, b, y, _, _)| m.row == *y && m.column >= *a && m.column < *b)
-                        {
-                            app.apps_toggle(*n, *unhide);
                         } else if let Some(n) = drawn.pick_at(m.column, m.row) {
                             // one click runs a row, everywhere, a folder's and a file's too (#196)
                             app.light(n);

@@ -451,7 +451,7 @@ fn plus_opens_the_files_attaches_one_and_the_want_carries_it() {
     app.servers.push(stub(0, "files", files_stub(calls.clone(), home.clone()), tx));
     app.start();
     assert!(pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
-    assert_eq!(app.chips(), vec![5, 0], "plus shows once a files provider runs");
+    assert_eq!(app.chips(), vec![0], "plus shows once a files provider runs");
     app.chip(0);
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()), "plus opens the root folder");
     let shown: Vec<String> = app
@@ -688,21 +688,21 @@ fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
 fn the_hint_says_what_enter_and_esc_do_and_only_keys_are_chips() {
     let (mut app, _rx, _c, _r) = started();
     let said = |a: &App| a.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
-    assert_eq!(said(&app), "Close Esc", "at rest it says only what Esc does");
+    assert_eq!(said(&app), "Close Esc   Open Enter", "at rest: what Esc does first (#166), then Enter");
     typed(&mut app, "is anything open");
-    assert_eq!(
-        said(&app),
-        "Clear Esc   Choose Enter   New line Shift+Enter",
-        "words that name no row: what Esc does first (#166), Ask spark, and a new line"
-    );
+    assert_eq!(said(&app), "Close Esc   Open Enter", "words that name no row: the row stands still");
     let chips: Vec<String> = app.hint().into_iter().filter(|(_, k)| *k).map(|(t, _)| t).collect();
-    assert_eq!(chips, vec!["Esc", "Enter", "Shift+Enter"], "a chip is a key, nothing else");
+    assert_eq!(chips, vec!["Esc", "Enter"], "a chip is a key, nothing else");
     app.escape();
     typed(&mut app, "terminal");
-    assert_eq!(said(&app), "Clear Esc   Open Enter", "a row the words name: its own verb, no new line");
+    assert_eq!(said(&app), "Close Esc   Open Enter", "a row the words name: the same row");
     app.escape();
     at_row(&mut app, View::Section(0), 1);
-    assert_eq!(said(&app), "Back Esc   Close Enter", "the lit row's verb");
+    assert!(
+        said(&app).starts_with("Back Esc   Open Enter"),
+        "in a place Esc goes back, and the words are the view's: {}",
+        said(&app)
+    );
     app.escape();
     assert_eq!(app.view, View::Home);
 }
@@ -878,12 +878,12 @@ fn the_home_is_six_places_and_settings_holds_the_sections_that_run() {
     };
     assert_eq!(
         names(&app),
-        vec!["apps", "files", "Workspace", "Notes", "Calendar", "Tools", "Settings", "Help", "About", "Power"]
+        vec!["apps", "files", "workspace", "notes", "calendar", "tools", "settings", "help", "about", "power"]
     );
     at_row(&mut app, View::Home, SETTINGS_DEST);
     app.enter();
     assert_eq!(app.view, View::Dest(SETTINGS_DEST));
-    assert_eq!(names(&app), vec!["Sound", "Wi-Fi", "Connections"]);
+    assert_eq!(names(&app), vec!["sound", "Wi-Fi", "connections"]);
     at_row(&mut app, View::Dest(SETTINGS_DEST), 1);
     app.enter();
     assert_eq!(app.view, View::Section(2), "a setting opens its section");
@@ -929,7 +929,7 @@ fn settings_holds_the_drives_the_notifications_and_the_power_and_their_keys_say_
         .collect();
     assert_eq!(
         names,
-        vec!["Sound", "Storage", "Notifications", "Power", "Battery", "Connections"],
+        vec!["sound", "storage", "notifications", "power", "battery", "connections"],
         "the drives beside the connections, the power beside the battery (#71, #72, #73)"
     );
     let verbs: Vec<&str> = [
@@ -1657,7 +1657,7 @@ fn files_opens_at_the_home_folder_and_talk_is_a_setting_not_a_control() {
     app.enter();
     assert_eq!(app.view, View::Talk);
     app.talk = spark_dialog::app::Talk::Click;
-    assert_eq!(app.chips(), vec![5, 3]);
+    assert_eq!(app.chips(), vec![3], "the mic is a control; the Ask key is a helper, no stop");
 }
 
 #[test]
@@ -1853,9 +1853,10 @@ fn a_value_changes_in_place_says_nothing_and_holds_over_an_old_read() {
     let (mut app, rx, calls) = theme_app("");
     lit_at(&mut app, "theme:show:Text size");
     let said = app.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
-    assert_eq!(
-        said, "Back Esc   Smaller \u{2190}   Bigger \u{2192}",
-        "the row under the prompt says what left and right do"
+    assert!(
+        said.starts_with("Back Esc   Open Enter") && said.ends_with("Change \u{2190} \u{2192}"),
+        "the row under the prompt says the view's keys, left and right among them: {}",
+        said
     );
     app.right();
     assert_eq!(
@@ -1899,7 +1900,7 @@ fn a_switch_flips_in_place_and_a_refusal_puts_it_back() {
     let (mut app, rx, calls) = theme_app("theme_glyphs");
     lit_at(&mut app, "theme:show:Words on the bar");
     let said = app.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
-    assert_eq!(said, "Back Esc   Turn on Enter", "the row under the prompt says what Enter does");
+    assert!(said.starts_with("Back Esc   Open Enter"), "the row under the prompt is the view's: {}", said);
     app.enter();
     assert!(row_of(&app, "theme:show:Words on the bar").switch.as_ref().unwrap().on, "on at once");
     assert!(
@@ -2022,8 +2023,10 @@ fn the_march_is_sparks_alone() {
     app.frame = 3;
     let mut buffer = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 60, 40));
     spark_dialog::ui::draw(&app, &palette("tokyonight-night"), "", &mut buffer);
-    let activity: String = (0..60).map(|x| buffer[(x, 4)].symbol()).collect();
-    assert!(activity.contains(&progress::bar(Work::Think, 3)), "activity stays with Ask: {:?}", activity);
+    let header: String = (0..60).map(|x| buffer[(x, 0)].symbol()).collect();
+    assert!(header.contains(&progress::bar(Work::Think, 3)), "the march is the header's: {:?}", header);
+    let keys: String = (0..60).map(|x| buffer[(x, 4)].symbol()).collect();
+    assert!(!keys.contains(&progress::bar(Work::Think, 3)), "and never a label's: {:?}", keys);
     app.helper(spark_dialog::app::Helper::Want(app.want_serial), Err("no answer".into()));
     assert!(!app.busy(), "the answer, or the lack of one, ends it");
 }
@@ -2320,7 +2323,7 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
         hint
     );
     app.input = "words".into();
-    assert!(!app.hint().iter().any(|(t, _)| t == "Preview "), "with words typed, Space is a space");
+    assert!(app.hint().iter().any(|(t, _)| t == "Preview "), "with words typed the label stands still");
     app.input.clear();
     app.right();
     assert!(matches!(app.view, View::Steps(0)), "{:?}", app.view);
@@ -2340,7 +2343,7 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
     assert_eq!(texts[7], "trash");
     app.sel = 7;
     let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
-    assert_eq!(hint[3], "Trash ", "after what Esc does (#166): {:?}", hint);
+    assert_eq!(hint[3], "Choose ", "after what Esc does (#166), one word for the list of steps: {:?}", hint);
     app.enter();
     assert!(matches!(app.view, View::Folder(0, _)), "back to the folder: {:?}", app.view);
     assert!(app.steps_row.is_none());
@@ -2519,12 +2522,12 @@ fn settings_stand_in_groups_and_the_home_holds_about_and_power() {
             _ => None,
         })
         .collect();
-    assert!(names.ends_with(&["Settings", "Help", "About", "Power"]), "{:?}", names);
+    assert!(names.ends_with(&["settings", "help", "about", "power"]), "{:?}", names);
     app.in_list = true;
     app.sel = app
         .picks()
         .iter()
-        .position(|i| matches!(i, Item::Dest(d) if spark_dialog::app::DESTS[*d].name == "About"))
+        .position(|i| matches!(i, Item::Dest(d) if spark_dialog::app::DESTS[*d].name == "about"))
         .unwrap();
     app.enter();
     assert_eq!(app.view, View::About, "About opens the about");
@@ -2533,7 +2536,7 @@ fn settings_stand_in_groups_and_the_home_holds_about_and_power() {
     app.sel = app
         .picks()
         .iter()
-        .position(|i| matches!(i, Item::Dest(d) if spark_dialog::app::DESTS[*d].name == "Power"))
+        .position(|i| matches!(i, Item::Dest(d) if spark_dialog::app::DESTS[*d].name == "power"))
         .unwrap();
     app.enter();
     assert!(
@@ -2664,16 +2667,19 @@ fn frame(app: &App) -> (Vec<String>, Option<u16>) {
     (rows, lit)
 }
 
-/// The list's rows, 7 to 35, but for the lit row (a switch's own control), with a check read as a blank: a pick
+/// The status row at 60 by 40: the last row above the divider, the one place a message is written.
+const STATUS: usize = 35;
+
+/// The list's rows, 7 to 34, but for the lit row (a switch's own control), with a check read as a blank: a pick
 /// moves its check from the row kept before, and nothing else.
 fn list_but(rows: &[String], y: Option<u16>) -> Vec<String> {
-    (7..36).filter(|r| Some(*r as u16) != y).map(|r| rows[r].replace('\u{2713}', " ")).collect()
+    (7..STATUS).filter(|r| Some(*r as u16) != y).map(|r| rows[r].replace('\u{2713}', " ")).collect()
 }
 
 #[test]
 fn a_pick_of_any_kind_keeps_every_other_row_still_and_a_refusal_lands_under_the_keys() {
     // #196: a switch, a value, a palette kept, the rows above and below never move; the lit row keeps its y before,
-    // while and after the call; a refusal is the reply row (6) and the switch comes back
+    // while and after the call; a refusal is the status row and the switch comes back
     for (id, refused) in [("theme:show:Text size", false), ("theme:nord", false), ("theme:show:Words on the bar", true)] {
         let (mut app, rx, _calls) = theme_app("theme_glyphs");
         lit_at(&mut app, id);
@@ -2687,7 +2693,7 @@ fn a_pick_of_any_kind_keeps_every_other_row_still_and_a_refusal_lands_under_the_
         let (during, y1) = frame(&app);
         assert_eq!(y, y1, "{}: the lit row keeps its place while the call runs", id);
         assert_eq!(list_but(&before, y), list_but(&during, y), "{}: no other row moves", id);
-        assert_eq!(before[6], during[6], "{}: nothing said at the click", id);
+        assert_eq!(before[STATUS], during[STATUS], "{}: nothing said at the click", id);
         assert!(pump(&mut app, &rx, |a| a.reply.is_some() || !a.under_way()));
         std::thread::sleep(Duration::from_millis(50));
         pump(&mut app, &rx, |_| false);
@@ -2695,10 +2701,14 @@ fn a_pick_of_any_kind_keeps_every_other_row_still_and_a_refusal_lands_under_the_
         assert_eq!(y, y2, "{}: and after it", id);
         assert_eq!(list_but(&before, y), list_but(&after, y), "{}: no other row moved", id);
         if refused {
-            assert!(after[6].contains('\u{2717}') && after[6].contains("the bar stays in signs"), "{:?}", after[6]);
+            assert!(
+                after[STATUS].contains('\u{2717}') && after[STATUS].contains("the bar stays in signs"),
+                "{:?}",
+                after[STATUS]
+            );
             assert_eq!(before[y.unwrap() as usize], after[y.unwrap() as usize], "the switch came back as it was");
         } else {
-            assert_eq!(before[6], after[6], "{}: nothing said after it either", id);
+            assert_eq!(before[STATUS], after[STATUS], "{}: nothing said after it either", id);
         }
     }
 }
@@ -2762,41 +2772,44 @@ fn space_on_a_row_with_no_page_types_nothing_and_a_switch_found_by_words_flips()
 
 #[test]
 fn typed_words_get_one_reply_row_and_the_frame_holds_still() {
-    // #196: the prompt is two rows, the keys row 5, the reply row 6, the list from row 7, whatever is typed, said or
-    // refused; a typed command's receipt and a refusal change row 6 alone
+    // #196: the prompt is two rows, the keys rows 4 and 5, the list from row 7, the status row above the divider,
+    // whatever is typed, said or refused; a typed command's receipt and a refusal change the status row alone
     let (mut app, rx, _calls) = theme_app("theme_glyphs");
     at_row(&mut app, View::Section(0), 0);
     app.in_list = false;
     let (before, _) = frame(&app);
-    let still = |a: &[String], b: &[String], skip: &str| (7..36).filter(|r| !a[*r].contains(skip)).all(|r| a[r] == b[r]);
-    // a typed command: its receipt in row 6, the list as it was but for the value it changed
+    let still = |a: &[String], b: &[String], skip: &str| (7..STATUS).filter(|r| !a[*r].contains(skip)).all(|r| a[r] == b[r]);
+    // a typed command: its receipt on the status row, the list as it was but for the value it changed
     typed(&mut app, "theme text 11");
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.reply.is_some()));
     let (after, _) = frame(&app);
-    assert!(after[6].contains('\u{2713}') && after[6].contains("done"), "{:?}", after[6]);
+    assert!(after[STATUS].contains('\u{2713}') && after[STATUS].contains("done"), "{:?}", after[STATUS]);
     assert!(
         still(&before, &after, "Text size"),
         "the list did not move:\n{}\n{}",
         before.join("\n"),
         after.join("\n")
     );
-    // a refusal: row 6 again, in place of the receipt
+    // a refusal: the status row again, in place of the receipt
     typed(&mut app, "theme glyphs words");
     app.enter();
     assert!(pump(&mut app, &rx, |a| a.running.is_none()
         && a.reply.as_ref().is_some_and(|r| r.mark == Mark::Refused)));
     let (refused, _) = frame(&app);
     assert!(
-        refused[6].contains('\u{2717}') && refused[6].contains("the bar stays in signs"),
+        refused[STATUS].contains('\u{2717}') && refused[STATUS].contains("the bar stays in signs"),
         "{:?}",
-        refused[6]
+        refused[STATUS]
     );
     assert!(still(&after, &refused, "Text size"), "the list did not move for the refusal");
     // a receipt of several lines is one row, cut to the window
     app.reply = Some(Reply::new(Mark::Done, &"a long receipt that runs on\n".repeat(6)));
     let (long, _) = frame(&app);
-    assert!(still(&refused, &long, "\u{0}") && long[7] == refused[7], "a long receipt is row 6 alone");
+    assert!(
+        still(&refused, &long, "\u{0}") && long[7] == refused[7],
+        "a long receipt is the status row alone"
+    );
     // a draft of five lines: the prompt stays two rows and scrolls inside them
     app.reply = None;
     for (k, l) in ["one", "two", "three", "four", "five"].iter().enumerate() {

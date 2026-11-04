@@ -30,14 +30,17 @@ pub const RULE: &str = "\u{2500}";
 /// A color's sample: two full blocks, about a square in a terminal cell's shape.
 pub const SAMPLE: &str = "\u{2588}\u{2588}";
 pub const SEP: &str = " \u{b7} ";
-/// The rows, fixed whatever is typed or attached (#196): the prompt's two, what a key does, the reply row,
-/// where the list starts.
+/// The rows, fixed whatever is typed, attached or lit (#196): the prompt's two, what a key does (its second
+/// row where the keys wrap), a row of air, where the list starts.
 pub const PROMPT_Y: u16 = 2;
 pub const HINT_Y: u16 = 4;
-pub const REPLY_Y: u16 = 6;
 pub const CONTENT_Y: u16 = 7;
-/// The bottom: air, the divider, a blank row, the controls, air.
-pub const BOTTOM: u16 = 5;
+/// The bottom: air, the status row, the divider, a blank row, the controls, air.
+pub const BOTTOM: u16 = 6;
+/// The status row: the last row above the divider, the one place a message is written (the reply, a note).
+pub fn status_y(h: u16) -> u16 {
+    h.saturating_sub(5)
+}
 /// Where a destination's purpose starts: past the longest name (Notifications) and two cells of air.
 pub const PURPOSE_X: u16 = 17;
 /// A palette's chip: a small terminal in the palette's own colors, this many cells wide.
@@ -78,45 +81,38 @@ impl Pen<'_> {
         self.buf.set_string(x, y, &t, st);
         x + cells(&t) as u16
     }
-    /// A key, as a chip: the only thing drawn as one.
-    fn chip(&mut self, x: u16, y: u16, text: &str, focus: bool) -> u16 {
+    /// A key, as a chip: the only thing drawn as one. It is a helper, a label for the key: never lit, never in
+    /// focus. A click on it sends the key, and the pointer's shape alone says so.
+    fn chip(&mut self, x: u16, y: u16, text: &str) -> u16 {
         if x >= self.w || y >= self.h {
             return x;
         }
-        let st = if focus {
-            Style::default().fg(self.pal.surface).bg(self.pal.accent).add_modifier(Modifier::UNDERLINED)
-        } else {
-            Style::default().fg(self.pal.fg).bg(self.pal.lit)
-        };
+        let st = Style::default().fg(self.pal.fg).bg(self.pal.lit);
         let t = cut(&format!(" {} ", text), (self.w - x) as usize);
         self.buf.set_string(x, y, &t, st);
         x + cells(&t) as u16
     }
     /// A control (Attach, the model, Talk, the mic, Remove): plain text, for it is no key. The one Tab
-    /// focuses is lit; one that is on (a file attached, listening) is in the accent. A cell of air each
-    /// side, lit with it, so the place a click takes is the place drawn.
+    /// focuses wears the band, as a lit row does; one that is on (a file attached, listening) is in the
+    /// accent. A cell of air each side, lit with it, so the place a click takes is the place drawn. Nothing
+    /// is underlined: the dialog has no links.
     fn control(&mut self, x: u16, y: u16, text: &str, focus: bool, on: bool, quiet: bool) -> u16 {
         if x >= self.w || y >= self.h {
             return x;
         }
         let fg = if quiet && !on {
             self.pal.muted
-        } else if focus {
+        } else if focus || on {
             self.pal.accent
         } else {
             self.pal.fg
         };
         let mut st = Style::default().fg(fg);
         if focus {
-            st = st.bg(self.pal.lit).add_modifier(Modifier::UNDERLINED);
+            st = st.bg(self.pal.lit);
         }
         let t = cut(&format!(" {} ", text), (self.w - x) as usize);
         self.buf.set_string(x, y, &t, st);
-        if !quiet && !text.contains(MENU) {
-            for col in x + 1..(x + 1 + cells(text) as u16).min(self.w) {
-                self.buf[(col, y)].modifier.insert(Modifier::UNDERLINED);
-            }
-        }
         x + cells(&t) as u16
     }
 }
@@ -181,9 +177,6 @@ pub fn conversation_rows(text: &str, w: usize) -> Vec<String> {
 pub struct Drawn {
     pub cursor: (u16, u16),
     pub picks: Vec<(u16, usize)>,
-    /// Exact horizontal targets for controls sharing a body row.
-    pub pick_regions: Vec<(u16, u16, u16, usize)>,
-    pub app_toggles: Vec<(u16, u16, u16, usize, bool)>,
     pub chips: Vec<(u16, u16, u16, usize)>,
     pub keys: Vec<(u16, u16, u16, HintKey)>,
     pub close: Option<(u16, u16)>,
@@ -269,10 +262,15 @@ pub fn draft_rows(text: &str, cursor: usize, w: usize) -> (Vec<String>, (usize, 
 /// the middle of the screen; nothing beside or under it, nothing stretched to the screen's edge.
 pub const FULL_WIDTH: u16 = 120;
 
-/// The width the dialog's own column has at this size: its words wrap to it.
+/// The frame's width in this view at this size: the dialog's own (WIDTH) for the home, apps, help, about, the
+/// conversation and a list of choices; the whole window for a preview; up to FULL_WIDTH for a list with
+/// columns. The header, the prompt, the keys, the list, the status row and the footer share it, in the
+/// middle of the window: one column, never a narrow list inside a wide frame.
 pub fn column_width(w: u16, view: &View) -> u16 {
     match view {
-        View::Home | View::Apps => w.min(WIDTH),
+        View::Home | View::Apps | View::Help | View::About | View::Conversation | View::Models | View::Talk | View::Connections | View::Steps(_) => {
+            w.min(WIDTH)
+        }
         View::Preview => w,
         _ => w.min(FULL_WIDTH),
     }
@@ -284,39 +282,8 @@ pub fn wide(w: u16) -> bool {
 }
 
 impl Drawn {
-    /// The control or row the pointer at (x, y) lights: its cells and row.
-    pub fn hover_hit(&self, x: u16, y: u16) -> Option<(u16, u16, u16)> {
-        let controls = self
-            .chips
-            .iter()
-            .map(|&(a, b, r, _)| (a, b, r))
-            .chain(self.keys.iter().map(|&(a, b, r, _)| (a, b, r)));
-        controls.into_iter().find(|&(a, b, r)| y == r && x >= a && x < b).or_else(|| {
-            self.pick_at(x, y).map(|n| {
-                self.pick_regions
-                    .iter()
-                    .find(|(_, _, row, pick)| *row == y && *pick == n)
-                    .map(|(a, b, r, _)| (*a, *b, *r))
-                    .unwrap_or((self.columns.0, self.columns.1, y))
-            })
-        })
-    }
-
-    /// Does the pointer's move change what is drawn? Only onto another control or row, or in or out of the list:
-    /// a motion inside one draws nothing (#196).
-    pub fn hover_differs(&self, was: Option<(u16, u16)>, now: Option<(u16, u16)>) -> bool {
-        let seen = |at: Option<(u16, u16)>| at.map(|(x, y)| (self.hover_hit(x, y), y >= self.body.0 && y < self.body.1));
-        seen(was) != seen(now)
-    }
-
+    /// The row a click at (x, y) takes: the band is the whole column, so the row is the only target on it.
     pub fn pick_at(&self, x: u16, y: u16) -> Option<usize> {
-        if self.pick_regions.iter().any(|(_, _, row, _)| *row == y) {
-            return self
-                .pick_regions
-                .iter()
-                .find(|(a, b, row, _)| *row == y && x >= *a && x < *b)
-                .map(|(_, _, _, n)| *n);
-        }
         self.picks
             .iter()
             .find(|(row, _)| *row == y && x >= self.columns.0 && x < self.columns.1)
@@ -344,14 +311,6 @@ impl Drawn {
             st.0 += dx;
             st.1 += dx;
         }
-        for (a, b, _, _) in &mut self.pick_regions {
-            *a += dx;
-            *b += dx;
-        }
-        for (a, b, _, _, _) in &mut self.app_toggles {
-            *a += dx;
-            *b += dx;
-        }
         self.columns = (self.columns.0 + dx, self.columns.1 + dx);
     }
 }
@@ -367,22 +326,11 @@ fn blit(buf: &mut Buffer, part: &Buffer, x: u16, y: u16) {
     }
 }
 
-/// The local date and time as the person's locale writes them; main.rs makes it, this draws it.
+/// The local date and time as the person's locale writes them; main.rs makes it, this draws it. The pointer
+/// resting on the window changes nothing drawn: a row lights by a key or a click, and its shape alone says
+/// where a click acts.
 pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
-    let drawn = draw_layout(app, pal, clock, buf);
-    if let Some((x, y)) = app.hover {
-        if let Some((a, b, r)) = drawn.hover_hit(x, y) {
-            for col in a..b.min(buf.area.width) {
-                if r < buf.area.height {
-                    buf[(col, r)].set_bg(pal.lit);
-                    if buf[(col, r)].fg == pal.fg {
-                        buf[(col, r)].set_fg(pal.accent);
-                    }
-                }
-            }
-        }
-    }
-    drawn
+    draw_layout(app, pal, clock, buf)
 }
 
 fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
@@ -404,10 +352,9 @@ fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         drawn.film = Some((x, y, bw, bh, reel, since));
         return drawn;
     }
-    // a preview opened on Space keeps the whole screen: its zoom and its drag want the room (#120); elsewhere the column
-    // in the middle (#141)
-    // Frame anchors do not depend on the module's content width.
-    let cw = if app.view == View::Preview { w } else { w.min(FULL_WIDTH) };
+    // a preview opened on Space keeps the whole screen: its zoom and its drag want the room (#120); elsewhere one
+    // column in the middle, the view's width (#141)
+    let cw = column_width(w, &app.view);
     if cw == w {
         let d = draw_column(app, pal, clock, buf);
         return d;
@@ -446,7 +393,11 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     // the march sits before the date while something runs; where the window is too narrow for both,
     // it takes the date's place, which comes back when the work is done
     let clock_x = right.saturating_sub(2 + cells(clock) as u16);
-    let busy = app.cfg.progress && app.thinking() && app.pending.is_none();
+    // spark at work on the words: the march is the header's alone, never a label's and never the status row's. A
+    // read of the machine (a place's rows, Apps' catalog or an app's facts) shows none, as #139 has it: its rows
+    // come when they come
+    let busy = app.cfg.progress && app.thinking();
+    let work = app.work();
     let title = app.title();
     let narrow = clock_x.saturating_sub(12) < x + cells(&title) as u16 + 1;
     let (end, march_x) = match (busy, narrow) {
@@ -462,7 +413,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     }
     match march_x {
         Some(mx) => {
-            pen.put(mx, 0, &progress::bar(app.work(), app.frame), pal.muted, false, false);
+            pen.put(mx, 0, &progress::bar(work, app.frame), pal.muted, false, false);
             if !narrow {
                 pen.put(clock_x, 0, clock, pal.muted, false, false);
             }
@@ -501,8 +452,6 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     }
     drawn.cursor = (tx + cc as u16, PROMPT_Y + (cr - top) as u16);
 
-    reply_row(app, &mut pen, REPLY_Y, &mut drawn);
-
     // the content first: a preview's text decides the pages its key row offers
     let bottom = h - BOTTOM;
     let content_y = CONTENT_Y;
@@ -534,47 +483,14 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         if app.is_calendar() {
             top = calendar(app, &mut pen, clock, content_y, bottom) + 1;
         }
-        let body_width = column_width(w, &app.view);
-        if body_width < w {
-            // Apps keeps its readable measure on the shared frame's left
-            // anchor; centering it again adds an unrelated inset after resize.
-            let offset = if app.view == View::Apps { 0 } else { (w - body_width) / 2 };
-            let mut body = Buffer::empty(Rect::new(0, 0, body_width, h));
-            body.set_style(body.area, Style::default().fg(pal.fg));
-            let mut body_pen = Pen {
-                buf: &mut body,
-                pal,
-                w: body_width,
-                h,
-                right: body_width,
-            };
-            drawn.picks = content(app, &mut body_pen, top, bottom, &mut drawn);
-            for y in top..bottom {
-                for x in 0..body_width {
-                    pen.buf[(offset + x, y)] = body[(x, y)].clone();
-                }
-            }
-            for step in &mut drawn.steps {
-                step.0 += offset;
-                step.1 += offset;
-            }
-            for (a, b, _, _) in &mut drawn.pick_regions {
-                *a += offset;
-                *b += offset;
-            }
-            for (a, b, _, _, _) in &mut drawn.app_toggles {
-                *a += offset;
-                *b += offset;
-            }
-            drawn.columns = (offset, offset + body_width);
-        } else {
-            drawn.picks = content(app, &mut pen, top, bottom, &mut drawn);
-        }
+        drawn.picks = content(app, &mut pen, top, bottom, &mut drawn);
     }
 
     contextual_keys(app, &mut pen, &mut drawn);
 
-    // The divider, a full blank row, then the anchored controls.
+    // the status row: the reply, or a note, the one place a message is written; then the divider, a full blank
+    // row, and the anchored controls
+    reply_row(app, &mut pen, status_y(h), &mut drawn);
     for x in 2..w - 2 {
         pen.put(x, h - 4, RULE, pal.lit, false, false);
     }
@@ -600,22 +516,18 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
         let back = groups.remove(i);
         groups.insert(0, back);
     }
-    if app.mode == Mode::Normal && app.leave_decision.is_none() && !(app.view == View::Apps && app.apps.form()) {
+    if app.mode == Mode::Normal && !(app.view == View::Apps && app.apps.form()) {
         if app.pending.is_some() {
             groups.retain(|g| !g.iter().any(|(t, k)| !k && t == "Thinking"));
         }
-        let label = if app.pending.is_some() && app.cfg.progress {
-            format!("Ask {} ", progress::bar(app.work(), app.frame))
-        } else {
-            "Ask ".into()
-        };
-        groups.insert(groups.len().min(1), vec![(label, false), ("Ctrl+Enter".into(), true)]);
+        // the march is the header's: a label never moves for it
+        groups.insert(groups.len().min(1), vec![("Ask ".into(), false), ("Ctrl+Enter".into(), true)]);
     }
     let right = pen.w.saturating_sub(2);
     let last_y = HINT_Y + 1;
     let (mut x, mut y) = (2, HINT_Y);
     for group in groups {
-        let mut parts: Vec<_> = group
+        let parts: Vec<_> = group
             .into_iter()
             .map(|(t, key)| {
                 let actions: Vec<_> = if key { t.split(' ').filter_map(key_of).collect() } else { vec![] };
@@ -628,14 +540,7 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
             })
             .collect();
         let span = |parts: &[(String, bool, Vec<HintKey>)]| parts.iter().map(|(t, k, _)| cells(t) + if *k { 2 } else { 0 }).sum::<usize>() as u16;
-        let mut width = span(&parts);
-        let room = right.saturating_sub(if y < last_y { 2 } else { x });
-        if width > room && parts.iter().any(|(_, _, actions)| actions.contains(&HintKey::Ask)) {
-            // The optional progress animation yields to a long configured
-            // shortcut; Ask must remain visible at the minimum width too.
-            parts[0].0 = "Ask ".into();
-            width = span(&parts);
-        }
+        let width = span(&parts);
         if x + width > right && y < last_y && width <= right - 2 {
             x = 2;
             y += 1;
@@ -650,13 +555,12 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
             continue;
         }
         let group_start = x;
-        let focused = app.chip_focus == Some(5) && parts.iter().any(|(_, _, a)| a.contains(&HintKey::Ask));
         for (text, key, actions) in parts {
             let start = x;
             x = if key {
-                pen.chip(x, y, &text, focused)
+                pen.chip(x, y, &text)
             } else {
-                pen.put(x, y, &text.to_lowercase(), if focused { pen.pal.accent } else { pen.pal.fg }, false, focused)
+                pen.put(x, y, &text.to_lowercase(), pen.pal.fg, false, false)
             };
             let n = actions.len() as u16;
             for (i, action) in actions.into_iter().enumerate() {
@@ -715,7 +619,6 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
         drawn.chips.push((x, e, y, 4));
         x = e + 1;
     }
-    let mut note_right = right;
     if app.cfg.model {
         let full = app.model_name.as_ref().map_or_else(
             || "no model".into(),
@@ -733,14 +636,6 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
         let mx = (w / 2 - width / 2).clamp(x, right - width);
         let e = pen.control(mx, y, name, app.chip_focus == Some(1), false, false);
         drawn.chips.push((mx, e, y, 1));
-        note_right = mx.saturating_sub(1);
-    }
-    // Context is optional and uses only space left after the controls.
-    if let Some(t) = app.target_label() {
-        let room = note_right.saturating_sub(x + 1);
-        if room >= 8 {
-            pen.put(x + 1, y, &cut_words(&t, room as usize), pal_muted(pen), false, false);
-        }
     }
     if mic_on {
         let live = chips.contains(&3);
@@ -751,33 +646,23 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     }
 }
 
-/// The reply row under the key row (#196): a check or a cross, the words, Undo at the right where the rows'
-/// arrows stand; blank when there is nothing to say. One row, cut to the window: it never moves the list.
+/// The status row, the last above the divider (#196): a check or a cross, the words, Undo at the right where
+/// the rows' arrows stand; a note (the row the words are for) when there is no reply; blank when there is
+/// nothing to say. One row, cut to the window: it never moves the list, and nothing else is written between
+/// the keys and the list or among the list's rows.
 fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
-    if app.view == View::Apps {
-        if let Some((_, op)) = &app.apps.pending {
-            let label = match op.as_str() {
-                "catalog" => "finding apps",
-                "details" => "reading details",
-                "launch" => "opening app",
-                _ => "copying",
-            };
-            let text = if app.cfg.progress {
-                format!("{} {}", label, progress::bar(progress::Work::Swell, app.frame))
-            } else {
-                label.into()
-            };
-            pen.put(2, y, &text, pen.pal.muted, false, false);
-            return;
+    let Some(r) = &app.reply else {
+        if let Some(t) = app.target_label() {
+            pen.put(4, y, &cut_words(&t, pen.w.saturating_sub(6) as usize), pen.pal.muted, false, false);
         }
-    }
-    let Some(r) = &app.reply else { return };
+        return;
+    };
     if r.mark == Mark::Answer && app.view == View::Conversation {
         return;
     }
     let pal = pen.pal.clone();
     let w = pen.w;
-    let undo = r.undo && app.undo.is_some();
+    let undo = r.undo && (app.undo.is_some() || app.apps.undo.is_some());
     let undo_x = w.saturating_sub(7);
     match r.mark {
         Mark::Done if !r.text.is_empty() => {
@@ -798,7 +683,7 @@ fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
         false,
     );
     if undo {
-        let e = pen.chip(undo_x, y, "Undo", false);
+        let e = pen.chip(undo_x, y, "Undo");
         drawn.reply_undo = Some((undo_x, e, y));
     }
 }
@@ -830,35 +715,46 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
     let w = pen.w;
     let mut arrows = None;
     match it {
-        Item::Leave(choice) => {
-            pen.put(2, y, &choice.label().to_lowercase(), if lit { pal.accent } else { pal.fg }, false, lit);
-        }
         Item::Apps(line) => {
-            let color = if line.disabled {
-                pal.muted
-            } else if lit {
-                pal.accent
+            // Apps' lines, in the shapes every list has: a heading muted at 2, a title in the text color, a note muted,
+            // a fact (its label muted, its value in the text color), a row with its sign at 4 and its words at 6, a
+            // switch's dot or ring and its word at the value column, a choice's value before its arrow
+            if line.heading {
+                pen.put(line.indent, y, &line.label, pal.muted, false, false);
+            } else if line.title {
+                pen.put(line.indent, y, &line.label, pal.fg, false, false);
+            } else if line.muted {
+                pen.put(line.indent, y, &line.label, pal.muted, false, false);
             } else {
-                pal.fg
-            };
-            let label_color = if line.muted && !lit { pal.muted } else { color };
-            let label_end = pen.put(line.indent, y, &line.label, label_color, line.bold, lit);
-            if line.underline {
-                for x in line.indent..label_end {
-                    pen.buf[(x, y)].modifier.insert(Modifier::UNDERLINED);
+                let e = pen.end(y);
+                let switch = matches!(line.sign, "dot" | "ring") && !line.value.is_empty();
+                if !switch && !line.sign.is_empty() && !line.continuation {
+                    let (g, c) = sign(&pal, line.sign);
+                    pen.put(line.indent, y, g, c, false, lit);
                 }
-            }
-            let value_color = if line.value_muted { pal.muted } else { color };
-            pen.put(line.value_x, y, &line.value, value_color, false, lit);
-            if let Some(unhide) = line.toggle {
-                let (start, len) = if unhide { (7, 6) } else { (0, 4) };
-                for x in line.value_x + start..(line.value_x + start + len).min(pen.w) {
-                    pen.buf[(x, y)].modifier.insert(Modifier::UNDERLINED | Modifier::BOLD);
+                let label_color = if line.disabled || (line.action.is_none() && !line.continuation) {
+                    pal.muted
+                } else {
+                    name_color(&pal, lit)
+                };
+                pen.put(line.indent + 2, y, &line.label, label_color, false, lit);
+                if switch {
+                    let (g, gc) = if line.sign == "dot" { (DOT, pal.accent) } else { (RING, pal.muted) };
+                    pen.put(line.value_x, y, g, gc, false, lit);
+                    let wc = if lit {
+                        pal.accent
+                    } else if line.value_muted {
+                        pal.muted
+                    } else {
+                        pal.fg
+                    };
+                    pen.put(line.value_x + 2, y, &line.value, wc, false, lit);
+                } else if !line.value.is_empty() {
+                    pen.put(line.value_x, y, &line.value, if line.value_muted { pal.muted } else { pal.fg }, false, lit);
                 }
-            }
-            if !line.tail.is_empty() {
-                let end = line.bounds.map(|(_, b)| b).unwrap_or(w);
-                pen.put(end.saturating_sub(2 + cells(&line.tail) as u16), y, &line.tail, pal.muted, false, lit);
+                if !line.tail.is_empty() {
+                    pen.put(e.saturating_sub(3), y, &line.tail, pal.muted, false, lit);
+                }
             }
         }
         Item::Heading(h) => {
@@ -869,15 +765,17 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         Item::Dest(d) => {
             // found from the home, a place stands with the rows under its group's heading (#169)
             let ind = if app.searching() { 4 } else { 0 };
-            pen.put(2 + ind, y, DESTS[*d].name, pal.fg, false, lit);
-            // what the place holds now, else what it is for
-            let words = app.dest_state(*d).unwrap_or_else(|| DESTS[*d].purpose.to_string());
+            pen.put(2 + ind, y, DESTS[*d].name, name_color(&pal, lit), false, lit);
+            // what the place holds now, in the text color; else what it is for, muted
+            let state = app.dest_state(*d);
+            let color = if state.is_some() { pal.fg } else { pal.muted };
+            let words = state.unwrap_or_else(|| DESTS[*d].purpose.to_string());
             let e = pen.end(y);
             pen.put(
                 PURPOSE_X + ind,
                 y,
                 &cut_words(&words, e.saturating_sub(PURPOSE_X + ind + 4) as usize),
-                pal.fg,
+                color,
                 false,
                 lit,
             );
@@ -894,7 +792,7 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             } else {
                 0
             };
-            pen.put(2 + ind, y, name, pal.fg, false, lit);
+            pen.put(2 + ind, y, name, name_color(&pal, lit), false, lit);
             let words = setting_words(app, label, purpose);
             pen.put(
                 PURPOSE_X + ind,
@@ -921,15 +819,41 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
                 _ => (" ", pal.muted, "not downloaded"),
             };
             pen.put(4, y, g, c, false, lit);
-            let x = pen.put(6, y, n, if st == "-" { pal.muted } else { pal.fg }, false, lit);
+            let x = pen.put(
+                6,
+                y,
+                n,
+                if lit {
+                    pal.accent
+                } else if st == "-" {
+                    pal.muted
+                } else {
+                    pal.fg
+                },
+                false,
+                lit,
+            );
             pen.put(x, y, &format!("{}{}", SEP, said), pal.muted, false, lit);
         }
         Item::TalkOpt(t) => {
             let on = app.talk == *t;
             let (g, c) = if on { (DOT, pal.accent) } else { (RING, pal.fg) };
             pen.put(4, y, g, c, false, lit);
-            let words = if *t == Talk::Click { "Click the mic to talk" } else { "Off" };
-            pen.put(6, y, words, if app.voice_on { pal.fg } else { pal.muted }, false, lit);
+            let words = if *t == Talk::Click { "click the mic to talk" } else { "off" };
+            pen.put(
+                6,
+                y,
+                words,
+                if lit {
+                    pal.accent
+                } else if app.voice_on {
+                    pal.fg
+                } else {
+                    pal.muted
+                },
+                false,
+                lit,
+            );
         }
         Item::Conn(k) => {
             if *k == 0 {
@@ -959,7 +883,7 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         }
         Item::OpenModels => {
             let name = app.model_name.clone().unwrap_or_else(|| "spark".into());
-            let x = pen.put(4, y, &name, pal.fg, false, lit);
+            let x = pen.put(4, y, &name, name_color(&pal, lit), false, lit);
             let at = match &app.server {
                 Some(s) => s.clone(),
                 None => "this computer".to_string(),
@@ -980,13 +904,13 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         }
         Item::More(_, n) => {
             // the rest of one kind a search found (#169): a row as a section's own "N more" is, with its arrow
-            let x = pen.put(6, y, &format!("{} more", n), pal.fg, false, lit);
+            let x = pen.put(6, y, &format!("{} more", n), name_color(&pal, lit), false, lit);
             pen.put(x, y, " \u{203a}", pal.muted, false, lit);
         }
         Item::StepOf(k) => {
             // one of a row's steps, in the provider's words: a row of its own, no sign
             if let Some(c) = app.steps_row.as_ref().and_then(|r| r.tool.iter().chain(r.more.iter()).nth(*k)) {
-                pen.put(6, y, &app.step_words(c), pal.fg, false, lit);
+                pen.put(6, y, &app.step_words(c), name_color(&pal, lit), false, lit);
             }
         }
         Item::Here => {
@@ -994,14 +918,19 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             let (g, c) = sign(&pal, "opens");
             pen.put(4, y, g, c, false, lit);
             let what = app.picking.as_ref().map(|pk| pk.what.clone()).unwrap_or_default();
-            pen.put(6, y, &what, pal.fg, false, lit);
+            pen.put(6, y, &what, name_color(&pal, lit), false, lit);
         }
     }
     arrows
 }
 
-fn pal_muted(pen: &Pen) -> Color {
-    pen.pal.muted
+/// A row's name: in the accent on the lit row, the one row in a color, else the text color.
+fn name_color(pal: &Palette, lit: bool) -> Color {
+    if lit {
+        pal.accent
+    } else {
+        pal.fg
+    }
 }
 
 /// The row an item stands for, where it is a provider's row or a folder's.
@@ -1295,18 +1224,9 @@ fn item_owner(items: &[Item], mut k: usize) -> usize {
     k
 }
 
+/// Each item's row: one a line.
 fn item_rows(items: &[Item]) -> Vec<usize> {
-    let mut row = 0;
-    items
-        .iter()
-        .enumerate()
-        .map(|(k, item)| {
-            if k > 0 && !matches!(item, Item::Apps(line) if line.inline) {
-                row += 1;
-            }
-            row
-        })
-        .collect()
+    (0..items.len()).collect()
 }
 
 fn content_start(items: &[Item], selected: Option<usize>, scroll: usize, room: usize) -> usize {
@@ -1414,29 +1334,19 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         let y = top + (rows[k] - first) as u16;
         // Hovering a shared shortcut changes its visual emphasis, not the
         // selection that gives the contextual shortcut its action.
-        let lit = Some(item_owner(&items, k)) == selected && !app.hover.is_some_and(|(_, y)| y < top || y >= bottom);
-        let bounds = match it {
-            Item::Apps(line) => line.bounds.unwrap_or((0, pen.w)),
-            _ => (0, pen.w),
-        };
+        let lit = Some(item_owner(&items, k)) == selected;
+        // the band is the list column, its first cell to the list's end: the same for every row of the list,
+        // whatever the window's size, the row's glyphs and two cells of air inside it
+        let band = (0, pen.end(y));
         if let Some(n) = picks.iter().position(|i| *i == item_owner(&items, k)) {
             at.push((y, n));
-            if matches!(it, Item::Apps(_)) {
-                drawn.pick_regions.push((bounds.0, bounds.1, y, n));
-                if let Item::Apps(line) = it {
-                    if line.toggle.is_some() {
-                        drawn.app_toggles.push((line.value_x, line.value_x + 4, y, n, false));
-                        drawn.app_toggles.push((line.value_x + 7, line.value_x + 13, y, n, true));
-                    }
-                }
-            }
         }
         if lit {
-            for x in bounds.0..bounds.1.min(pen.w) {
+            for x in band.0..band.1 {
                 pen.buf[(x, y)].set_bg(pal.lit);
             }
             if item_owner(&items, k) == k {
-                pen.put(bounds.0, y, MORE, pal.accent, false, true);
+                pen.put(band.0, y, MORE, pal.accent, false, true);
             }
         }
         let chips = row_of(app, it).is_some_and(|r| chip_groups.contains(&r.group));
@@ -1458,7 +1368,7 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
 /// name).
 fn setting_words(app: &App, label: &str, purpose: &str) -> String {
     let state = if label == "talk" {
-        Some(if app.talk == Talk::Off { "Off" } else { "Click the mic" }.to_string())
+        Some(if app.talk == Talk::Off { "off" } else { "click the mic" }.to_string())
     } else {
         app.providers
             .iter()
@@ -1575,7 +1485,7 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
     } else {
         cut(&row.text, name_cap(pen.w))
     };
-    let mut x = pen.put(tx, y, &name, pal.fg, false, lit);
+    let mut x = pen.put(tx, y, &name, name_color(&pal, lit), false, lit);
     let name_end = tx + widths.first().copied().unwrap_or(0) as u16;
     // a control's last cell is where the rows' arrows stand
     let end = pen.end(y).saturating_sub(2);
@@ -1617,7 +1527,7 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
     }
     // the key that does what the row does, as a key is drawn everywhere: a chip (#144)
     if let Some(k) = &row.key {
-        pen.chip(name_end.max(x) + 2, y, k, false);
+        pen.chip(name_end.max(x) + 2, y, k);
     }
     // a row's columns, unless its one column is its picture's caption (the wallpaper list); a file with a picture keeps its size and date (#112)
     if !columns.is_empty() && !widths.is_empty() && (row.preview.is_none() || columns.len() > 1) {
@@ -1749,7 +1659,7 @@ fn month(app: &App, pen: &mut Pen, x0: u16, top: u16, bottom: u16, k: i32) -> Op
             let x = x0 + i as u16 * 4;
             let n = format!("{:>2}", d);
             if (yr, mo, *d) == (ty, tm, td) {
-                pen.chip(x - 1, y, &n, false); // today, a cell of air each side
+                pen.chip(x - 1, y, &n); // today, a cell of air each side
             } else if dated.contains(&(yr, mo, *d)) {
                 pen.put(x, y, &n, pal.accent, true, false);
             } else {

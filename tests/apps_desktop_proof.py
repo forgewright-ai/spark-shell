@@ -133,15 +133,12 @@ class Session:
         # Scroll through the real keyboard path, then derive coordinates from
         # the current terminal text, never from a pre-resize capture.
         match = re.compile(r"(?<!\w)" + re.escape(label) + r"(?!\w)", re.I)
-        action = label.lower() in ("save", "cancel", "discard", "keep editing")
-        if action:
-            body = True
         def matches(line):
             if app_name:
-                # Match the app-name column, not a longer app name such as
-                # foot client/server or a receipt containing the same word.
-                return re.match(r"\s*(?:›\s*)?" + re.escape(label) + r"(?:\s{2,}|$)", line, re.I)
-            return match.search(line) and (not action or re.fullmatch(r"\s*(?:›\s*)?(?:save|cancel|discard|keep editing)(?:\s+(?:›\s*)?(?:save|cancel))?\s*", line, re.I))
+                # Match the app-name column (after the cursor and the row's sign), not a longer app name
+                # such as foot client/server or a receipt containing the same word.
+                return re.match(r"\s*(?:›\s*)?(?:▸\s*)?" + re.escape(label) + r"(?:\s{2,}|$)", line, re.I)
+            return match.search(line)
         lines = self.screen()
         if not any(matches(line) for line in (lines[7:] if body else lines)):
             # The approved overview action precedes expanded metadata. Search
@@ -159,8 +156,7 @@ class Session:
             self.key("-k", "Down")
         else:
             raise AssertionError("control not found: " + label + "\n" + self.text())
-        # Confirmation headings can repeat their action's words. The action
-        # follows the explanation, so use its last visible occurrence.
+        # A note can repeat a row's words; the row follows it, so use the last visible occurrence.
         row = next(i for i in range(len(lines) - 1, -1, -1) if matches(lines[i]) and (not body or i >= 7))
         col = match.search(lines[row]).start() + len(label) // 2
         rect = self.window()["rect"]
@@ -239,16 +235,14 @@ def main(binary, destination):
         assert "System Monitor" in text and "Web Browser" in text
         assert "Resource monitor that" not in text and "A wayland native" not in text
         assert "foot client" not in text and "foot server" not in text
-        assert "firefox" in text and "mozilla firefox" not in text
-        assert "mpv media player" in text
-        s.click("unhide", body=True)
-        assert re.search(r"foot client[^\n]*hidden", s.text()) and re.search(r"foot server[^\n]*hidden", s.text())
+        assert "Firefox" in text and "Mozilla Firefox" not in text, "the supplied name, in its spelling"
+        assert "mpv Media Player" in text
+        s.click("hidden apps", body=True)
+        assert "foot client" in s.text() and "foot server" in s.text(), "the hidden apps, a list of their own"
         s.capture("hidden-helpers")
-        s.click("unhide", body=True)
-        assert "foot client" in s.text(), "clicking the selected state must not flip it"
-        s.click("hide", body=True)
+        s.key("-k", "Escape")
         assert "foot client" not in s.text() and "foot server" not in s.text()
-        s.checks.append("Supplied short names are used; foot helpers start hidden; hide/unhide reveals them with explicit labels and pointer choices are idempotent")
+        s.checks.append("Supplied names keep their spelling; foot helpers start hidden and stand under hidden apps, a list of their own")
         s.key("usage")
         assert "btop" in s.text(), "full desktop comments remain searchable"
         s.key("-k", "Escape")
@@ -272,50 +266,47 @@ def main(binary, destination):
         assert "btop" in "\n".join(s.screen()), "Details returns to its query"
         s.checks.append("Returning from Details restores the app search; active query and selected app survive all four modes; clicked Right keycap opens Details")
         s.key("-k", "Right")
-        s.click("Visibility")
-        assert "unsaved changes" in s.text()
-        s.click("technical details")
-        s.four_modes("expanded-unsaved", capture=False)
-        assert "identity" in s.text(), "resize collapsed Technical details"
-        s.click("Save")
+        s.click("hide this app")
+        assert "btop++ hidden" in s.text() and "Undo" in s.text(), "applied at once, said on the status row with Undo"
         preferences = s.root / ".config/spark-shell/apps.json"
         saved = json.loads(preferences.read_text())
-        assert saved["apps"]["btop.desktop"]["hidden"]
-        s.key("-k", "Escape")
-        assert "No apps match" in s.text()
+        assert saved["apps"]["btop.desktop"]["hidden"], "saved at once"
+        s.click("technical details")
+        s.four_modes("technical", capture=False)
+        assert "identity" in s.text(), "resize lost the technical details"
+        s.key("-k", "Escape", "-k", "Escape")
+        assert "no app matches" in s.text()
         s.capture("hidden-search")
-        s.click("unhide", body=True)
-        assert re.search(r"btop[^\n]*hidden", s.text())
+        s.key("-k", "Escape")
+        s.click("hidden apps", body=True)
+        assert "btop++" in s.text()
         s.key("-k", "Down", "-k", "Right")
         wait_for(lambda: "technical details" in s.text(), "hidden app Details")
-        s.click("technical details")  # collapse to the compact preferences group
-        s.click("Visibility")
-        s.click("Save")
+        s.click("hide this app")
         assert not json.loads(preferences.read_text())["apps"]["btop.desktop"]["hidden"]
-        s.checks.append("Hide saves to local preferences, removes search results, labels hidden entries, and restores without editing launchers")
-        s.key("-k", "Escape", "-k", "Escape")
-        s.click("Manage categories")
-        s.click("Create category")
+        s.checks.append("Hide is a switch applied at once with Undo: it leaves the search, stands under hidden apps, and comes back from its details without editing launchers")
+        s.key("-k", "Escape", "-k", "Escape", "-k", "Escape")
+        s.click("categories", body=True)
+        s.click("new category")
         s.key("Writing", "-k", "Return")
-        s.click("Writing")
-        s.click("Rename category")
+        s.click("writing")
+        s.click("rename")
         s.key("Review", "-k", "Return")
-        s.click("Default mappings")
+        s.key("-k", "Escape")
+        s.click("mappings")
         s.click("Development")
-        s.click("Review")
-        s.click("Save", body=True)
+        s.click("review")
         assert json.loads(preferences.read_text())["mappings"]["Development"] == "Review"
         s.key("-k", "Escape")
-        s.click("Delete category")
-        s.click("Delete category")
+        s.click("review")
+        s.click("delete")
         saved = json.loads(preferences.read_text())
         assert "Review" not in saved["categories"] and "Development" not in saved["mappings"]
-        s.checks.append("Native category creation, rename, mapping edit and confirmed deletion persist and reclassify")
-        s.key("-k", "Escape")
+        s.checks.append("Native category creation, rename, mapping edit and deletion apply at once, persist and reclassify")
+        s.key("-k", "Escape", "-k", "Escape")
         s.key("btop", "-k", "Right")
-        s.click("Category")
-        s.click("Utilities")
-        s.click("Save")
+        s.click("category")
+        s.click("utilities")
         assert json.loads(preferences.read_text())["apps"]["btop.desktop"]["category"] == "Utilities"
         s.click("attach")
         s.key("long-attachment", "-k", "Down", "-k", "Return")
@@ -330,21 +321,20 @@ def main(binary, destination):
             s.key("-k", "Next")
         assert "/usr/share/applications/" in s.text(), "technical metadata cannot be scrolled into view"
         s.capture("minimum-long-metadata")
-        s.click("Copy launcher path")
+        s.click("copy launcher path")
         copied = subprocess.check_output(["wl-paste", "--no-newline"], env=s.env, text=True, timeout=5)
         assert copied == "/usr/share/applications/btop.desktop", copied
-        wait_for(lambda: "Copied" in s.text(), "clipboard completion receipt")
+        wait_for(lambda: "copied" in s.text(), "clipboard completion receipt")
         s.capture("minimum-technical-attachment")
-        s.click("Visibility")
+        s.key("-k", "Escape")
         s.capture("minimum-preferences-attachment")
-        s.click("Cancel")
         s.click("remove")
         assert "remove" not in s.text()
         s.checks.append("At 36x20, long technical values reflow, original launcher path copies, preferences scroll above the reserved populated footer, and Remove has a current hit target")
         s.normal()
         s.key("-k", "Escape", "-k", "Escape")
         s.key("zz-no-application")
-        assert "No apps match" in s.text()
+        assert "no app matches" in s.text()
         s.capture("no-matches")
         s.key("-k", "Escape")
         s.key("foot")
@@ -374,12 +364,11 @@ def main(binary, destination):
         wait_for(lambda: len(app_windows("btop")) == 2, "second btop window")
         s.focus()
         s.key("-k", "Right")
-        s.click("Launch")
-        s.click("Focus existing")
-        s.click("Save")
+        s.click("launch")
+        s.click("focus existing")
         s.sway("[con_id=%d] focus" % first_btop)
         s.focus()
-        s.click("Open application")
+        s.click("open", body=True, app_name=True)
         wait_for(lambda: any(w["id"] == first_btop and w["focused"] for w in app_windows("btop")), "most recent matching btop window")
         s.focus()
         assert "Focused btop" in s.text(), s.text()
@@ -417,18 +406,17 @@ def main(binary, destination):
         entries.mkdir(parents=True, exist_ok=True)
         fixture = entries / "org.example.AppsProof.desktop"
         fixture.write_text("[Desktop Entry]\nType=Application\nName=Inspection Fixture\nComment=Local fixture for missing package metadata and declared desktop actions\nExec=foot --app-id=org.example.AppsProof --title=Apps-proof\nActions=new-window;\n\n[Desktop Action new-window]\nName=New window\nExec=foot --app-id=org.example.AppsProof --title=Apps-proof-new\n")
-        s.click("Refresh apps")
+        s.click("refresh apps")
         time.sleep(1)
         s.key("inspection", "-k", "Right")
-        wait_for(lambda: "Unavailable" in s.text(), "missing package metadata")
+        wait_for(lambda: re.search("unavailable", s.text(), re.I), "missing package metadata")
         if app_windows() or app_windows("btop"):
             s.sway('[app_id="^(foot|btop)$"] move container to workspace 2')
         s.focus()
         s.capture("missing-metadata")
-        s.click("Launch")
-        s.click("New window")
-        s.click("Save")
-        s.click("Open application")
+        s.click("launch")
+        s.click("new window")
+        s.click("open", body=True, app_name=True)
         wait_for(lambda: app_windows("org.example.AppsProof"), "declared New window action")
         s.focus()
         s.key("-k", "Escape")
@@ -447,15 +435,15 @@ def main(binary, destination):
         mode.unlink()
         s.key("-k", "Escape")
         mode.write_text("empty")
-        s.click("Refresh apps")
+        s.click("refresh apps")
         wait_for(lambda: "No launchable" in s.text(), "empty catalog")
         s.capture("empty-catalog")
         mode.write_text("discovery")
-        s.click("Refresh apps")
+        s.click("refresh apps")
         wait_for(lambda: "Apps unavailable" in s.text(), "discovery failure")
         s.capture("discovery-failure")
         mode.unlink()
-        s.click("Refresh apps")
+        s.click("refresh apps")
         wait_for(lambda: "btop" in s.text(), "discovery retry")
         s.checks.append("Explicit adapter failure fixtures verify empty catalog versus unavailable discovery, retry recovery, and launch failure retaining the search")
         manifest = {"binary_sha256": s.binary_sha256,

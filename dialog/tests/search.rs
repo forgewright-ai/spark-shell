@@ -155,7 +155,7 @@ fn a_search_from_home_groups_what_it_finds_by_kind_the_best_three_each() {
     let l = list(&r.app);
     let at = |s: &str| l.iter().position(|x| x == s).unwrap_or_else(|| panic!("{} not in {:?}", s, l));
     assert!(at("# places") < at("files") && at("files") < at("# apps"), "{:?}", l);
-    assert!(at("# apps") < at("firefox") && at("firefox") < at("# notes"), "{:?}", l);
+    assert!(at("# apps") < at("Firefox") && at("Firefox") < at("# notes"), "{:?}", l);
     assert!(at("# notes") < at("# settings") && at("# settings") < at("FiberNet"), "{:?}", l);
     // four notes say fi: the best three, then the rest as one row; a name's start before a word's start
     let notes: Vec<&String> = l[at("# notes") + 1..at("# settings")].iter().collect();
@@ -211,7 +211,7 @@ fn a_letter_off_still_finds_and_never_lights_the_row() {
     let mut r = started();
     typed(&mut r.app, "firfox");
     let l = list(&r.app);
-    assert!(l.contains(&"firefox".to_string()), "{:?}", l);
+    assert!(l.contains(&"Firefox".to_string()), "{:?}", l);
     assert!(!r.app.in_list, "a typo never lights a row Enter would run");
     r.app.typed('\u{8}');
 }
