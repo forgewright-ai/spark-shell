@@ -125,7 +125,9 @@ def main(binary, destination):
             time.sleep(1)
             rect = s.window()["rect"]
             home_anchor = capture("home-" + mode)
-            assert home_anchor[0] == home_anchor[1] + 1, "the header and the footer share the frame"
+            # the title sits two cells into the frame; the footer's first chip starts one cell in with a cell of
+            # padding, so its word stands under the title: one column, as dialog/tests/chrome.rs has it
+            assert home_anchor[0] == home_anchor[1], "the header and the footer share the frame"
             apps()
             assert s.window()["rect"] == rect
             assert capture("apps-" + mode) == home_anchor, "apps and home share one 60 cell column"
@@ -136,7 +138,7 @@ def main(binary, destination):
             wait_for(lambda: s.screen()[0].lstrip().startswith("files"), "files")
             assert s.window()["rect"] == rect
             files_anchor = capture("files-" + mode)
-            assert files_anchor[0] == files_anchor[1] + 1, "files' header and footer share its frame, the wide one"
+            assert files_anchor[0] == files_anchor[1], "files' header and footer share its frame, the wide one"
             assert files_anchor[0] <= home_anchor[0], "a list with columns takes up to 120 cells, never less than home's 60"
             s.key("-k", "Escape")
         assert snaps[0] == snaps[1]
