@@ -1,5 +1,56 @@
 # Changelog
 
+## v0.124
+
+Home's frame put right after v0.123: one column at every size, one band,
+the key row the view's, no hover, no underline, the reply on a status
+row above the rule, and Apps drawn with the rows the dialog has.
+
+- Every label the dialog writes is lowercase: the home's ten places
+  (v0.123 lowercased apps and files alone), Settings' rows and their
+  purposes, a section's name. A supplied name keeps its spelling: an
+  app's, a window's title, Wi-Fi, Bluetooth.
+- The home's places stand single spaced in three groups, a row of air
+  before settings and before power. A place's purpose is muted; what
+  it holds now (the windows open, the notes, the next reminder) is in
+  the text color, and the lit row's name is in the accent.
+- One frame width per view, in the middle of the window: 60 cells for
+  home, apps, help, about and the conversation, up to 120 for a list
+  with columns. The header, the prompt, the keys, the list, the status
+  row and the footer share it. Full screen and both snaps no longer
+  draw a 60 cell list inside a 120 cell frame.
+- The lit row's band is the list column, its first cell to the list's
+  end, the same for every row whatever the window's size.
+- The key row is the view's: the same words whatever row is lit or
+  typed, so nothing changes under a moving pointer. Esc is close at
+  home and back everywhere else, Enter is open in a list, and the keys
+  a view's rows take (actions, preview, change, month) stand whichever
+  row is lit. The spinner left the ask label: the march is the
+  header's alone.
+- A key chip is a helper, never a control: never lit, never in focus,
+  and Tab never stops on it. A click on it still sends the key, and the
+  pointer's shape alone says so. The pointer resting on the window
+  changes nothing drawn: no hover on a row, a chip or a control, and it
+  never moves the selection.
+- Nothing is underlined. A footer control in focus wears the band.
+- The reply row moved from between the keys and the list to the status
+  row, the last row above the rule: a receipt, a refusal, the note of
+  the row the words are for, and Undo live there and nowhere else. The
+  list starts under the keys at every width, and nothing is written
+  among its rows.
+- Apps is drawn with the dialog's own rows. An app is a row under its
+  category's heading, its name as supplied, its role muted; Enter opens
+  it, Right its details. The toolbar is gone: category (a choice with
+  its arrow), hidden apps (a list of their own), categories and refresh
+  stand at the end of the list. An app's details are its facts, open,
+  technical details behind an arrow, and its preferences: hide this app
+  (a switch), category and launch (choices whose list checks the one in
+  use). Every change applies at once with Undo on the status row: no
+  draft, no save, no cancel and no question before you leave. A
+  category's rename and delete and a mapping's change apply the same
+  way; a new category or mapping is typed in the prompt, Enter saves it
+  and Esc lets it go.
+
 ## v0.123.1
 
 A patch, the owner's pick of 2026-11-03 (#217): what a failed or

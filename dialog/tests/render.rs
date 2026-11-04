@@ -1330,7 +1330,11 @@ fn a_filtered_file_shows_its_preview_after_the_down_arrow() {
     };
     let hint = |app: &App| app.hint().iter().map(|(t, _)| t.as_str()).collect::<String>();
     let mut app = filtered();
-    assert!(hint(&app).contains("Preview \u{2193}"), "the way to the preview is said: {:?}", hint(&app));
+    assert!(
+        hint(&app).contains("Preview Space"),
+        "the way to the preview is said, the same words as always: {:?}",
+        hint(&app)
+    );
     app.typed(' ');
     assert_eq!(app.input, "invo ", "Space before Down is a space");
     let mut app = filtered();
@@ -1428,7 +1432,7 @@ fn connections_say_the_tools_once() {
         "the tools counted, not the sections"
     );
     assert!(
-        texts.iter().any(|t| t.contains("Windows") && t.contains("Theme")),
+        texts.iter().any(|t| t.contains("windows") && t.contains("theme")),
         "Settings' names: {:?}",
         texts
     );
@@ -1499,4 +1503,53 @@ fn the_previews_keys_hold_their_places_between_files() {
     app.down();
     assert!(app.preview.as_ref().unwrap().shown.is_none(), "the next file's page is on its way");
     assert_eq!(row(&app), s, "the row as it was, no blink while it loads");
+}
+
+/// Apps with a catalog read: eight apps in five categories, two helpers hidden, Firefox's facts in.
+fn apps_app() -> App {
+    let mut app = base();
+    app.view = View::Apps;
+    app.came_from.push(View::Home);
+    app.apps.prefs = spark_dialog::apps::preferences::Preferences::default();
+    app.apps.preference_error = None;
+    app.apps.path = std::env::temp_dir().join("spark-dialog-render-apps.json");
+    app.apps.pending = Some((1, "catalog".into()));
+    app.apps
+        .receive(
+            1,
+            json!({"apps": [
+                {"id": "btop.desktop", "name": "btop++", "generic_name": "System Monitor", "categories": ["System"]},
+                {"id": "foot.desktop", "name": "foot", "generic_name": "Terminal", "categories": ["System"]},
+                {"id": "footclient.desktop", "name": "foot client", "generic_name": "Terminal", "categories": ["System"]},
+                {"id": "foot-server.desktop", "name": "foot server", "generic_name": "Terminal", "categories": ["System"]},
+                {"id": "org.mozilla.firefox.desktop", "name": "Firefox", "generic_name": "Web Browser", "description": "Browse the World Wide Web", "categories": ["Network"], "focus": true, "launcher": "/usr/share/applications/org.mozilla.firefox.desktop"},
+                {"id": "chromium.desktop", "name": "Chromium", "generic_name": "Web Browser", "categories": ["Network"]},
+                {"id": "aerc.desktop", "name": "aerc", "generic_name": "Mail Client", "categories": ["Office"]},
+                {"id": "mpv.desktop", "name": "mpv Media Player", "generic_name": "Multimedia player", "categories": ["AudioVideo"]},
+                {"id": "micro.desktop", "name": "micro", "generic_name": "Text Editor", "categories": ["Utility"]}
+            ]}),
+        )
+        .unwrap();
+    app.apps.details.insert(
+        "org.mozilla.firefox.desktop".into(),
+        json!({"id": "org.mozilla.firefox.desktop", "version": "128.0", "installed": "XBPS / System", "source": "XBPS",
+               "fields": [["Launcher", "/usr/share/applications/org.mozilla.firefox.desktop"]]}),
+    );
+    app
+}
+
+#[test]
+fn apps_is_the_list_under_its_categories_then_the_managing_rows() {
+    let mut app = apps_app();
+    app.light(3); // Firefox
+    render(&app, "apps");
+}
+
+#[test]
+fn an_apps_details_are_its_facts_its_steps_and_its_preferences() {
+    let mut app = apps_app();
+    app.apps_activate(spark_dialog::apps::Action::Details("org.mozilla.firefox.desktop".into()));
+    app.apps.pending = None; // the facts are in: nothing on its way
+    app.light(2); // the switch
+    render(&app, "apps-details");
 }

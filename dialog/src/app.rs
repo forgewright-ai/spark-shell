@@ -72,42 +72,42 @@ pub const DESTS: [Dest; 10] = [
         sections: &["files"],
     },
     Dest {
-        name: "Workspace",
+        name: "workspace",
         purpose: "windows and layouts",
         sections: &["window", "layout"],
     },
     Dest {
-        name: "Notes",
+        name: "notes",
         purpose: "write and find",
         sections: &["notes"],
     },
     Dest {
-        name: "Calendar",
+        name: "calendar",
         purpose: "dates and reminders",
         sections: &["clock", "reminders"],
     },
     Dest {
-        name: "Tools",
+        name: "tools",
         purpose: "utilities and diagnostics",
         sections: &[],
     },
     Dest {
-        name: "Settings",
+        name: "settings",
         purpose: "devices and appearance",
         sections: &[],
     },
     Dest {
-        name: "Help",
+        name: "help",
         purpose: "commands and shortcuts",
         sections: &[],
     },
     Dest {
-        name: "About",
+        name: "about",
         purpose: "project, license and credits",
         sections: &["about"],
     },
     Dest {
-        name: "Power",
+        name: "power",
         purpose: "lock, log out, restart, shut down",
         sections: &["power"],
     },
@@ -119,23 +119,23 @@ pub const CALENDAR_DEST: usize = 4;
 /// Settings: a section each, then Talk and Connections, in this order, under their groups (#137); About is a
 /// place of the home since v0.114 (#136).
 pub const SETTINGS: [(&str, &str, &str); 17] = [
-    ("out", "Sound", "Output and volume"),
-    ("mic", "Microphone", "Input and level"),
-    ("wifi", "Wi-Fi", "Networks"),
-    ("bt", "Bluetooth", "Devices nearby"),
-    ("lan", "Network", "The wired connection"),
-    ("storage", "Storage", "Drives and free space"),
-    ("display", "Display", "Screens, brightness, lock"),
-    ("keyboard", "Keyboard", "Layouts and key repeat"),
-    ("pointer", "Pointer", "Mouse and touchpad"),
-    ("theme", "Theme", "Palette, wallpaper and text"),
-    ("wallpaper", "Wallpaper", "The desktop picture"),
-    ("bar", "Bar", "The status bar"),
-    ("notifications", "Notifications", "Do not disturb, the last few"),
-    ("power", "Power", "Lock, suspend, restart"),
-    ("bat", "Battery", "Charge"),
-    ("talk", "Talk", "Click the mic, or off"),
-    ("connections", "Connections", "Tools and the model"),
+    ("out", "sound", "output and volume"),
+    ("mic", "microphone", "input and level"),
+    ("wifi", "Wi-Fi", "networks"),
+    ("bt", "Bluetooth", "devices nearby"),
+    ("lan", "network", "the wired connection"),
+    ("storage", "storage", "drives and free space"),
+    ("display", "display", "screens, brightness, lock"),
+    ("keyboard", "keyboard", "layouts and key repeat"),
+    ("pointer", "pointer", "mouse and touchpad"),
+    ("theme", "theme", "palette, wallpaper and text"),
+    ("wallpaper", "wallpaper", "the desktop picture"),
+    ("bar", "bar", "the status bar"),
+    ("notifications", "notifications", "do not disturb, the last few"),
+    ("power", "power", "lock, suspend, restart"),
+    ("bat", "battery", "charge"),
+    ("talk", "talk", "click the mic, or off"),
+    ("connections", "connections", "tools and the model"),
 ];
 
 /// The group a row of Settings sits under, its heading (#137).
@@ -337,14 +337,12 @@ pub fn section_name(label: &str) -> String {
     if let Some((_, n, _)) = SETTINGS.iter().find(|(s, _, _)| *s == label) {
         return n.to_string();
     }
+    // every label the dialog writes is lowercase; a section's name is its label said whole
     match label {
-        "window" => "Windows".into(),
-        "layout" => "Layouts".into(),
-        "clock" => "Calendar".into(),
-        l => {
-            let mut c = l.chars();
-            c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
-        }
+        "window" => "windows".into(),
+        "layout" => "layouts".into(),
+        "clock" => "calendar".into(),
+        l => l.to_string(),
     }
 }
 
@@ -630,7 +628,6 @@ impl Default for Config {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item {
-    Leave(crate::interaction::Choice),
     Apps(crate::apps::Line),
     Heading(String),
     Blank,
@@ -669,9 +666,7 @@ pub enum Item {
 
 pub struct App {
     pub prompts: crate::interaction::Prompts,
-    pub leave_decision: Option<crate::interaction::LeaveDecision>,
     pub apps: crate::apps::State,
-    pub hover: Option<(u16, u16)>,
     pub window_focused: bool,
     /// The request spark is answering now; an older reply is dropped.
     pub want_serial: u64,
@@ -813,9 +808,7 @@ impl App {
         }; // opened on the about (the first desktop start): Esc gives the list back
         App {
             prompts: Default::default(),
-            leave_decision: None,
             apps: crate::apps::State::default(),
-            hover: None,
             window_focused: true,
             want_serial: 0,
             target: None,
@@ -1636,9 +1629,6 @@ impl App {
 
     /// The content area's items: conversation turns or the current native view.
     pub fn items(&self) -> Vec<Item> {
-        if self.leave_decision.is_some() {
-            return self.decision_items();
-        }
         if self.view == View::Apps {
             return self
                 .apps
@@ -1851,13 +1841,10 @@ impl App {
             }
             View::Home => {
                 if self.query().trim().is_empty() {
-                    // the places with air between them, as the approved home has them
-                    for (k, d) in self.dests().into_iter().enumerate() {
-                        if d == SETTINGS_DEST {
-                            list.extend([Item::Blank, Item::Blank, Item::Blank]);
-                        } else if d == DESTS.len() - 1 && k > 0 {
-                            list.extend([Item::Blank, Item::Blank]);
-                        } else if k > 0 {
+                    // the places in three groups, a row of air between them: the everyday places, the system's,
+                    // and power alone at the end
+                    for d in self.dests() {
+                        if d == SETTINGS_DEST || d == DESTS.len() - 1 {
                             list.push(Item::Blank);
                         }
                         list.push(Item::Dest(d));
@@ -1927,14 +1914,12 @@ impl App {
             }
             if let Some(sc) = named(&a.name, &a.display_name, &format!("{} {}", a.generic_name, a.description)) {
                 let line = crate::apps::Line {
+                    sign: "opens",
                     label: crate::scrub::cut_words(&a.name, 18),
-                    value: crate::scrub::cut_words(&a.generic_name, self.col_w().saturating_sub(24) as usize),
-                    value_x: 22,
+                    value: crate::scrub::cut_words(&a.generic_name, self.col_w().saturating_sub(28) as usize),
+                    value_x: 26,
                     action: Some(crate::apps::Action::Launch(a.id.clone())),
-                    bold: false,
-                    indent: 2,
-                    tail: String::new(),
-                    continuation: false,
+                    indent: 4,
                     value_muted: true,
                     ..crate::apps::Line::default()
                 };
@@ -2081,7 +2066,6 @@ impl App {
 
     pub fn pickable_item(&self, i: &Item) -> bool {
         match i {
-            Item::Leave(_) => true,
             Item::Apps(line) => line.action.is_some(),
             Item::Row(p, r) => Self::pickable(&self.providers[*p].rows.rows[*r]),
             Item::Folder(i) => self
@@ -2188,7 +2172,7 @@ impl App {
 
     /// A place's state for the home, from what its sections say now; None keeps what it is for.
     pub fn dest_state(&self, d: usize) -> Option<String> {
-        if !matches!(DESTS[d].name, "Workspace" | "Notes" | "Calendar") {
+        if !matches!(DESTS[d].name, "workspace" | "notes" | "calendar") {
             return None;
         }
         let prov = |l: &str| self.providers.iter().find(|p| p.label == l && p.dead.is_none() && p.ready);
@@ -2206,7 +2190,7 @@ impl App {
         };
         let count = |n: usize, one: &str, many: &str| if n == 1 { format!("1 {}", one) } else { format!("{} {}", n, many) };
         let said = match DESTS[d].name {
-            "Workspace" => {
+            "workspace" => {
                 prov("window")?;
                 let w = tools("window", &["window_focus"]).len();
                 let l = tools("layout", &["layout_open"]).len();
@@ -2221,7 +2205,7 @@ impl App {
                     format!("{}{}{}", wins, crate::ui::SEP, count(l, "layout", "layouts"))
                 }
             }
-            "Notes" => {
+            "notes" => {
                 prov("notes")?;
                 let notes = tools("notes", &["notes_open"]);
                 match notes.first() {
@@ -2229,7 +2213,7 @@ impl App {
                     Some(n) => format!("{}{}{}", count(notes.len(), "note", "notes"), crate::ui::SEP, n),
                 }
             }
-            "Calendar" => {
+            "calendar" => {
                 // the first reminder, due or ahead: its sign is a dot or a ring, its group says when
                 let p = prov("reminders")?;
                 let next = p.rows.rows.iter().find(|r| r.group.is_some() && (r.sign == "dot" || r.sign == "ring"));
@@ -2337,8 +2321,7 @@ impl App {
     }
 
     fn recall_prompt(&mut self, older: bool) -> bool {
-        if self.leave_decision.is_some()
-            || self.mode != Mode::Normal
+        if self.mode != Mode::Normal
             || self.pending.is_some()
             || self.running.is_some()
             || self.staged.is_some()
@@ -2391,12 +2374,6 @@ impl App {
 
     /// A key that types: it goes to the prompt, wherever the focus was.
     pub fn typed(&mut self, c: char) {
-        if self.leave_decision.is_some() {
-            return;
-        }
-        if c == ' ' && self.list_keys && self.apps_details() {
-            return;
-        }
         if self.preview_picture_key(c) {
             return;
         }
@@ -2430,9 +2407,6 @@ impl App {
 
     /// A printable key not bound to an action. Remapping removes its old shortcut.
     pub fn text_key(&mut self, c: char) {
-        if self.leave_decision.is_some() {
-            return;
-        }
         self.keep_lit = None;
         if c.is_control() {
             return;
@@ -2454,9 +2428,6 @@ impl App {
 
     /// Shift+Enter: a new line in a draft or an explicitly literal text field.
     pub fn newline(&mut self) {
-        if self.leave_decision.is_some() {
-            return;
-        }
         if self.mode == Mode::Normal || self.plain_text_input() {
             self.insert("\n");
         }
@@ -2465,9 +2436,6 @@ impl App {
     /// Pasted text goes into the draft as it is, its lines kept: a newline in it never sends. Where the
     /// prompt takes one line, the lines are joined by spaces.
     pub fn paste(&mut self, text: &str) {
-        if self.leave_decision.is_some() {
-            return;
-        }
         let plain = self.plain_text_input();
         let one = self.mode != Mode::Normal && !plain;
         let t: String = text
@@ -2521,9 +2489,6 @@ impl App {
     }
 
     pub fn backspace(&mut self) {
-        if self.leave_decision.is_some() {
-            return;
-        }
         if self.cursor == 0 {
             return;
         }
@@ -2539,9 +2504,6 @@ impl App {
     }
 
     pub fn delete(&mut self) {
-        if self.leave_decision.is_some() {
-            return;
-        }
         if self.cursor >= self.input.chars().count() {
             return;
         }
@@ -2637,11 +2599,8 @@ impl App {
     /// Page up and down: in a list, the lit row by a screen of rows; else the content area, by most of
     /// its height.
     pub fn page(&mut self, d: i32) {
-        if self.leave_decision.is_some() {
-            return; // three choices, all in sight: a page moves none of them, and Enter stays with the lit one
-        }
         let step = self.size.1.saturating_sub(14).max(4) as usize;
-        if self.view == View::Apps && matches!(self.apps.page, crate::apps::Page::Details(_)) {
+        if self.view == View::Apps && matches!(self.apps.page, crate::apps::Page::Details(_) | crate::apps::Page::Technical(_)) {
             self.scroll = crate::ui::body_scroll(self);
             self.in_list = false;
             self.list_keys = false;
@@ -2677,16 +2636,8 @@ impl App {
     /// Esc: a question waiting is answered no (the draft comes back); the focus on a control or the
     /// draft goes first; then back one view; from the first view the dialog closes.
     pub fn escape(&mut self) {
-        if self.leave_decision.is_some() {
-            return self.leave_choice(crate::interaction::Choice::Keep);
-        }
-        if self.chip_focus.is_none() && self.view == View::Apps && self.mode == Mode::Normal {
-            let transient = matches!(self.apps.page, crate::apps::Page::CategoryPicker(_) | crate::apps::Page::LaunchPicker(_));
-            if !transient && self.guard_leave(crate::interaction::LeaveIntent::Back) {
-                return;
-            }
-        }
-        if self.view == View::Apps && self.mode == Mode::Normal && self.input.is_empty() && self.chip_focus.is_none() {
+        // a form of Apps: Esc lets it go, words typed or none, and asks nothing; a page: back, once the words are cleared
+        if self.view == View::Apps && self.mode == Mode::Normal && self.chip_focus.is_none() && (self.input.is_empty() || self.apps.form()) {
             if let Some(nav) = self.apps.back() {
                 self.apps_restore(nav);
                 self.reply = None;
@@ -2839,12 +2790,6 @@ impl App {
             View::Section(p) => self.files_root(p).map(|root| View::Folder(p, root)).unwrap_or(View::Section(p)),
             other => other,
         };
-        if self.guard_leave(crate::interaction::LeaveIntent::Go(v.clone())) {
-            return;
-        }
-        if v == View::Apps && self.view != View::Conversation && matches!(self.apps.page, crate::apps::Page::List) {
-            self.apps.show_hidden = false;
-        }
         self.prompt_depart();
         self.navigation.retain(|(view, ..)| *view != self.view);
         self.navigation
@@ -2926,12 +2871,6 @@ impl App {
     }
 
     pub fn enter(&mut self) {
-        if self.leave_decision.is_some() {
-            if let Some(Item::Leave(choice)) = self.picks().get(self.sel).filter(|_| self.in_list) {
-                self.leave_choice(choice.clone());
-            }
-            return;
-        }
         // the preview's Enter, nothing typed: the file opens in its app, as Files opens it
         if self.preview_key() {
             let Some(pv) = &self.preview else { return };
@@ -3334,9 +3273,6 @@ impl App {
     /// The footer's controls and the attachment's Remove: 0 attach, 1 the model, 3 the mic, 4 remove
     /// the file attached. How talk works is a setting (Settings > Talk), not a control.
     pub fn chip(&mut self, c: usize) {
-        if self.leave_decision.is_some() {
-            return;
-        }
         self.chip_focus = None;
         match c {
             5 => self.ask(),
@@ -3345,9 +3281,6 @@ impl App {
                 self.attachment = None;
             }
             0 if self.cfg.plus => {
-                if self.guard_leave(crate::interaction::LeaveIntent::Attach) {
-                    return;
-                }
                 let Some(f) = self.files() else { return };
                 let Some(root) = self.providers[f].rows.rows.iter().find_map(|r| r.children.clone()) else {
                     return self.refuse("no folder to attach from");
@@ -3378,9 +3311,10 @@ impl App {
         }
     }
 
-    /// The controls Tab moves through, in their order on the screen.
+    /// The controls Tab moves through, in their order on the screen: the footer's, which have no key. A key
+    /// chip is a helper, never a stop.
     pub fn chips(&self) -> Vec<usize> {
-        let mut v = if self.mode == Mode::Normal { vec![5] } else { vec![] };
+        let mut v = vec![];
         if self.cfg.plus && self.files().is_some() {
             v.push(0);
         }
@@ -3398,11 +3332,6 @@ impl App {
 
     /// Tab: the next control; after the last, the prompt again. Shift+Tab goes the other way.
     pub fn tab(&mut self, back: bool) {
-        if self.leave_decision.is_some() {
-            self.in_list = true;
-            self.sel = (self.sel + if back { 2 } else { 1 }) % 3;
-            return;
-        }
         let c = self.chips();
         if c.is_empty() {
             return;
@@ -3450,6 +3379,11 @@ impl App {
             return self.reply(Mark::Note, "the controls are still loading; press Enter when they appear");
         }
         self.remember_prompt(words);
+        // undo with no provider step at hand: the last change of Apps, whose receipt Esc may have cleared
+        if words.trim().eq_ignore_ascii_case("undo") && self.undo.is_none() && self.apps.undo.is_some() {
+            self.set_input(String::new());
+            return self.apps_undo();
+        }
         if !words.contains('\n') {
             if let Some(v) = self.place(words) {
                 if self.view != v {
@@ -3468,9 +3402,6 @@ impl App {
 
     /// Explicit model request. Forms, confirmation text and previews grant no context authority.
     pub fn ask(&mut self) {
-        if self.leave_decision.is_some() {
-            return;
-        }
         if self.view == View::Apps && self.apps.form() {
             return self.refuse("Finish the category edit before asking");
         }
@@ -3502,9 +3433,6 @@ impl App {
     }
 
     pub fn conversation(&mut self) {
-        if self.guard_leave(crate::interaction::LeaveIntent::Conversation) {
-            return;
-        }
         if self.mode != Mode::Normal {
             return;
         }
@@ -4261,11 +4189,13 @@ impl App {
         self.list_keys = true;
     }
 
-    /// The undo at hand runs now (the reply row's Undo).
+    /// The undo at hand runs now (the status row's Undo): a provider's step, or Apps' preferences as they were.
     pub fn undo_now(&mut self) {
         self.reply = None;
         if let Some(u) = self.undo.take() {
             self.run(u);
+        } else if self.apps.undo.is_some() {
+            self.apps_undo();
         }
     }
 
@@ -4450,12 +4380,8 @@ impl App {
             HintKey::PageDown => self.page(1),
             HintKey::Backspace => self.backspace(),
             HintKey::Delete => self.delete(),
-            // the way out, with a signal's 130 for the caller; unsaved edits ask once, and the second Ctrl+C leaves
-            HintKey::Quit => {
-                if self.leave_decision.is_some() || !self.guard_leave(crate::interaction::LeaveIntent::Close) {
-                    self.quit = Some(130);
-                }
-            }
+            // the way out, with a signal's 130 for the caller
+            HintKey::Quit => self.quit = Some(130),
             HintKey::Escape => self.escape(),
             HintKey::Newline => self.newline(),
             HintKey::Tab => self.tab(false),
@@ -4490,15 +4416,6 @@ impl App {
     }
 
     fn hint_keys(&self, pages: usize) -> Vec<(String, bool)> {
-        if self.leave_decision.is_some() {
-            return vec![
-                ("Keep editing ".into(), false),
-                ("Esc".into(), true),
-                ("   ".into(), false),
-                ("Choose ".into(), false),
-                ("Enter".into(), true),
-            ];
-        }
         if self.view == View::Apps && self.mode == Mode::Normal && self.chip_focus.is_none() {
             return self.apps_hint();
         }
@@ -4603,91 +4520,60 @@ impl App {
         if self.preview_key() {
             return self.preview_hint(pages);
         }
-        // what Esc does now: the words typed go first, then back a view, then what was said, then the dialog
-        let esc_word = if !self.input.is_empty() {
-            "Clear"
-        } else if !self.came_from.is_empty() {
-            "Back"
-        } else if self.exchange_up() {
-            "Clear"
-        } else {
-            "Close"
+        // the row is the view's: what Esc does, what Enter does, and the keys any row of the view takes. It
+        // never changes for the row lit or the words typed, so a label stands still under a moving pointer
+        let back = if self.came_from.is_empty() { "Close" } else { "Back" };
+        let mut v = vec![(format!("{} ", back), false), ("Esc".to_string(), true)];
+        let add = |v: &mut Vec<(String, bool)>, w: &str, k: &str| {
+            v.push(gap());
+            v.extend(key(w, k));
         };
-        if self.in_list {
-            let lit = self.picks().get(self.sel).cloned();
-            if let Some(sw) = lit.as_ref().and_then(|it| self.row_ref(it)).and_then(|r| r.switch.clone()) {
-                if self.input.is_empty() {
-                    // a switch: Enter, Space or a click flips it (#183)
-                    let mut v = key(if sw.on { "Turn off" } else { "Turn on" }, "Enter");
-                    v.extend(esc(esc_word));
-                    return v;
+        match &self.view {
+            View::Conversation => add(&mut v, "History", "\u{2191}"),
+            View::Models | View::Talk | View::Steps(_) => add(&mut v, "Choose", "Enter"),
+            View::Help | View::About | View::Preview | View::Apps => {}
+            View::Home | View::Connections => add(&mut v, "Open", "Enter"),
+            View::Dest(_) | View::Section(_) | View::Folder(..) | View::Found(..) => {
+                add(&mut v, "Open", "Enter");
+                let rows = self.view_rows();
+                if rows.iter().any(|r| !r.more.is_empty()) {
+                    add(&mut v, "Actions", "\u{2192}");
+                }
+                if rows.iter().any(|r| r.page.is_some()) {
+                    add(&mut v, "Preview", "Space");
+                }
+                if rows.iter().any(|r| r.step.is_some()) {
+                    add(&mut v, "Change", "\u{2190} \u{2192}");
+                }
+                if self.is_calendar() {
+                    add(&mut v, "Month", "\u{2190} \u{2192}");
                 }
             }
-            if let Some(st) = lit.as_ref().and_then(|it| self.row_ref(it)).and_then(|r| r.step.clone()) {
-                if self.input.is_empty() {
-                    // a value: left and right change it, in place
-                    let cap = |w: &str| w[..1].to_uppercase() + &w[1..];
-                    let mut v = key(&cap(&st.words.0), "\u{2190}");
-                    v.push(gap());
-                    v.extend(key(&cap(&st.words.1), "\u{2192}"));
-                    v.extend(esc(esc_word));
-                    return v;
-                }
-            }
-            let word = match &lit {
-                Some(Item::Model(_)) | Some(Item::TalkOpt(_)) => "Choose",
-                Some(Item::Here) => "Here",
-                Some(Item::StepOf(k)) => self.step_call(*k).map(|c| verb_of(&c.name)).unwrap_or("Use"),
-                Some(it) => match self.row_ref(it) {
-                    Some(r) if r.children.is_none() && r.pick.is_none() => r.tool.as_ref().map(|t| verb_of(&t.name)).unwrap_or("Open"),
-                    _ => "Open",
-                },
-                None => "Open",
-            };
-            let mut v = key(word, "Enter");
-            let free = self.picking.is_none() && self.attaching.is_none();
-            // a row with steps of its own: the right arrow opens them (#112), named actions (#127)
-            if lit.as_ref().and_then(|it| self.row_ref(it)).is_some_and(|r| !r.more.is_empty()) && free {
-                v.push(gap());
-                v.extend(key("Actions", "\u{2192}"));
-            }
-            // a file with a page of its own, last since only files have one (#166): Space shows it, nothing typed or
-            // the keys on the list (#120, named in the row since #127); with words typed, the down arrow first (#163)
-            if lit.as_ref().and_then(|it| self.row_ref(it)).is_some_and(|r| r.page.is_some()) && free {
-                v.push(gap());
-                if self.input.is_empty() || self.list_keys {
-                    v.extend(key("Preview", "Space"));
-                } else {
-                    v.extend(key("Preview", "\u{2193}"));
-                }
-            }
-            v.extend(esc(esc_word));
-            if self.is_calendar() && self.input.is_empty() {
-                // the months move from the reminders too (#59)
-                v.push(gap());
-                v.extend(key("Month", "\u{2190} \u{2192}"));
-            }
-            return v;
-        }
-        if !self.input.trim().is_empty() {
-            // words that light no row: Enter asks spark, as the Ask row once said (#196)
-            let mut v = key("Choose", "Enter");
-            v.push(gap());
-            v.extend(key("New line", "Shift+Enter"));
-            v.extend(esc(esc_word));
-            return v;
-        }
-        // nothing typed and nothing lit: Esc, and the down arrow into the list
-        let mut v = vec![(format!("{} ", esc_word), false), ("Esc".to_string(), true)];
-        if !self.prompt_history.is_empty() {
-            v.push(gap());
-            v.extend(key("History", "\u{2191}"));
-        }
-        if self.is_calendar() {
-            v.push(gap());
-            v.extend(key("Month", "\u{2190} \u{2192}"));
         }
         v
+    }
+
+    /// Every row the view holds, the words typed notwithstanding: what its key row offers is read from them all,
+    /// so a filter that leaves no row with a page takes no label away.
+    fn view_rows(&self) -> Vec<&model::Row> {
+        match &self.view {
+            View::Folder(..) => self.folder.as_ref().map(|(_, _, rows)| rows.rows.iter().collect()).unwrap_or_default(),
+            View::Section(p) => self.providers[*p].rows.rows.iter().collect(),
+            View::Dest(d) => self.dest_sections(*d).into_iter().flat_map(|p| self.providers[p].rows.rows.iter()).collect(),
+            View::Found(k, words) => {
+                let found = self.found(words);
+                found
+                    .iter()
+                    .filter(|(f, _)| f == k)
+                    .filter_map(|(_, it)| match it {
+                        Item::Row(p, r) => self.providers[*p].rows.rows.get(*r),
+                        Item::Hit(i) => self.hits.get(*i).map(|(_, r)| r),
+                        _ => None,
+                    })
+                    .collect()
+            }
+            _ => vec![],
+        }
     }
 
     /// The provider row an item stands for (a section's row, or a folder's).
@@ -5414,9 +5300,6 @@ impl App {
 impl App {
     /// The window closes: with the close playing first where the transitions are loaded (Esc, the x).
     pub fn close_window(&mut self) {
-        if self.guard_leave(crate::interaction::LeaveIntent::Close) {
-            return;
-        }
         if self.films {
             self.motion = Some((Reel::Close, Instant::now()));
             self.in_list = false;

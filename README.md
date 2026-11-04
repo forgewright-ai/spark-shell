@@ -811,8 +811,11 @@ the window, down to 36 by 20 cells.
 Super+Space opens or focuses home. Repeating it retains the same window,
 draft, attachments, view and ongoing request. A bar click uses the same
 entry; if no window exists it opens that section. Esc or the x closes it.
-The root order is Apps, Files, Workspace, Notes, Calendar, Tools, Settings,
-Help, About, Power. Unavailable capabilities explain their availability.
+The root order is apps, files, workspace, notes, calendar, tools, settings,
+help, about, power, single spaced in three groups: a row of air before
+settings and before power. Every label the dialog writes is lowercase;
+a supplied name (an app's, a window's title) keeps its spelling.
+Unavailable capabilities explain their availability.
 Help and the conversation are views inside this same process. F2
 switches between the conversation and the previous view without losing a draft.
 `dialog chat` opens this conversation; `spark` remains usable independently.
@@ -826,13 +829,18 @@ A window that is
 fullscreen steps aside for the dialog and is fullscreen again when the
 dialog closes with nothing opened.
 
-Full screen (Super+f), home keeps one centered column, at most 60 cells
-wide. Its header, prompt, keys, menu and footer share that measure.
-Wider views can use up to 120 cells, and the space goes to their lists: in Files
+Full screen (Super+f) and snapped to either half, every view is one
+column in the middle of the window: 60 cells for home, apps, help,
+about and the conversation, up to 120 for a list with columns. The
+header, the prompt, the keys, the list, the status row and the footer
+share that column; nothing stands outside it. The space a wide list
+gets goes to its rows: in Files
 a whole name, the kind (picture, sound, PDF, Word), the size, and the
 date with the time; the Calendar shows as many months across as fit;
 Settings writes each state whole. A list ends where its
-words end, its arrows right after them. The preview Space opens takes
+words end, its arrows right after them, and the lit row's band spans
+the list column from its first cell to that end, the same for every
+row at every size. The preview Space opens takes
 the whole screen.
 
 The dialog opens with a short animation in the middle of its window,
@@ -863,40 +871,57 @@ explicitly sends the request. Unmatched text never sends automatically.
 Credential fields, confirmations and provider forms cannot use Ask.
 A longer draft scrolls inside the two rows, and a paste keeps its lines
 and never sends. The
-row under the prompt puts navigation first and keeps Ask visible. Actions
-wrap onto a second reserved row when needed.
-Action groups and configured keycaps stay whole. Secondary hints use the
-remaining space; Help lists every shortcut, including conversation.
-A click on a label or its keycap does what the key does. Back
+row under the prompt is the view's: the same words whatever row is lit
+or typed, so nothing changes under a moving pointer. Esc (close at
+home, back everywhere else) comes first, then Ask, then Enter (open in
+a list), then the keys the view's rows take: actions, preview, change,
+month. Narrow, the keys wrap onto a second reserved row, whole groups
+at a time, and the list stays where it is. Help lists every shortcut,
+including conversation. A key chip is a label for its key, never a
+control: it is never lit, never in focus, and Tab never stops on it; a
+click on it sends the key, and the pointer's shape alone says so. Back
 is there, never at the top. A key is drawn as a key, and nothing else
-is.
+is. Nothing in the dialog is underlined, and the pointer resting on the
+window changes nothing drawn: a row lights by a key or a click.
 
-The home gives each place a purpose description. Workspace shows open
-windows and saved layouts, Notes its count and newest note, and Calendar
-the next reminder when that context is available. All ten places stay
-visible; a missing capability explains its availability when opened.
-Apps lists installed, launchable desktop entries from the system's GIO
-library. The all categories filter groups each application into one category,
-alphabetically within that group. Names use the desktop entry's supplied Name,
-such as firefox, rather than a longer full name. Short roles come from
-GenericName; a missing role stays blank. Search matches the name, full name,
-role or full description
-across categories. Enter and click launch the selected app; Right or Space
-opens Details. Esc clears the query first, then returns; Details preserves the
-list's query and position. Technical identifiers and copied paths keep their
-original spelling.
+The home gives each place a purpose, muted, and what it holds now in
+the text color: workspace its open windows and saved layouts, notes
+their count and the newest, calendar the next reminder, when that
+context is available. All ten places stay visible; a missing
+capability explains its availability when opened.
+Apps lists the installed, launchable desktop entries from the system's
+GIO library, an app a row under its category's heading, sorted by name
+within it. The name is the desktop entry's own, in its spelling
+(Firefox, btop++); the role beside it, muted, is its GenericName, and a
+missing role stays blank. Typed words search the name, the full name,
+the role and the full description across every category. Enter or a
+click opens the lit app; Right opens its details. Esc clears the words
+first, then goes back; the details keep the list's words and position.
+At the end of the list stand the managing rows, each a row the dialog
+has elsewhere: category, a choice with its arrow that opens the list of
+categories with the one in use checked; hidden apps, a list of its own;
+categories, the list below; and refresh apps.
 
-Manage categories creates, renames and deletes local categories and edits the
-mapping from desktop-entry categories. The first mapped desktop category wins;
-an individual override in Details wins over mappings, with Other as the
-fallback. Deleting a category removes its mappings and overrides while
-retaining visibility and launch preferences. Details edits are drafts until
-save is chosen; cancel discards the draft. Hidden entries are concealed by
-default. The list's hidden apps: hide / unhide toggle reveals them with an
-explicit hidden label, without changing their saved visibility. To restore
-one, open its Details, set visibility to unhide and save. To hide one, set
-visibility to hide and save. foot stays visible; foot client and foot server
-start hidden unless an explicit user preference restores them. Preferences
+An app's details are its name and description, its version, where it
+was installed from and its source, then open, technical details (a
+list behind its arrow, every field with its original spelling, and copy
+launcher path at its end), and its preferences: hide this app, a switch
+as a setting's; category and launch, choices whose list checks the one
+in use. Every change applies at once and is said on the status row
+with Undo at its end: there is no draft, no save, no cancel, and
+nothing asks before you leave. A hidden app leaves the list and the
+home's search and stands under hidden apps, where its details bring it
+back. foot stays visible; foot client and foot server start hidden
+until their switch says otherwise.
+
+Categories lists the local categories; one opens to rename (typed in
+the prompt, Enter saves, Esc lets go) or delete, each applied at once
+with Undo, and says which desktop categories map to it. Mappings lists
+the desktop categories and ours; one opens the list to pick from, and
+a new mapping is typed in the prompt. The first mapped desktop category
+wins; a choice in an app's details wins over the mappings, and Other is
+the fallback. Deleting a category removes its mappings and choices and
+keeps the apps' other preferences. The preferences
 live in `~/.config/spark-shell/apps.json` (or
 `$XDG_CONFIG_HOME/spark-shell/apps.json`), keyed by desktop-entry identity, so
 ordinary package updates retain them. System launchers and packages are never
@@ -915,22 +940,14 @@ commands into shell text. An app remains running after the launch helper
 exits. Once the app has focus, home clears from view; Super+Space returns to
 the same search and edits. Failures remain visible in context.
 
-Details reads package and desktop metadata on demand: a compact overview, one
-Technical details disclosure, and Preferences. Missing package data is shown
-as Unavailable; absent declarations do not imply a security policy. Copy
-launcher path copies its original contents. Apps keeps a bounded 60-column body
-on home's shared left inset, with shared keybindings and footer in compact,
-fullscreen and both snaps. Category and Details headings use the same blank
-row and two-cell child indent. Interface labels are lowercase; metadata and
-physical key names retain their spelling. Normal text identifies idle controls,
-bold text identifies headings, and muted text carries supporting descriptions.
-Accent shows focus and the shared footer diamond; toggle state also has bold
-underlined text. Save and cancel share a stable row with separate click targets.
-Its minimum is 36 columns by 20 rows; narrow values reflow and the body
-scrolls independently of the reserved footer. Page Up/Down and the wheel
-scroll all expanded metadata. The full model identity remains available in the
-model selector when its footer label is shortened. AI is optional throughout
-Apps.
+The details read package and desktop metadata on demand. Missing package
+data is shown as unavailable; absent declarations do not imply a
+security policy. Copy launcher path copies its original contents. Apps
+shares home's frame, keys and footer in compact, fullscreen and both
+snaps, down to 36 by 20 cells, where a long value goes under its label
+and the page scrolls with Page Up, Page Down and the wheel. The full
+model identity remains available in the model selector when its footer
+label is shortened. AI is optional throughout Apps.
 
 Native validation: `python3 tests/apps_desktop_proof.py BINARY DIRECTORY` runs
 an isolated Sway/foot session with real system discovery and launches,
@@ -1126,23 +1143,27 @@ its first and its last row.
   page, a sound or a picture with none.
 
 A click on a row runs it and says nothing: the row shows that it
-worked, and nothing else on the screen moves. Under the key row, one
-reply row says what came of the last step when there is something to
-say: a cross and the reason for a step refused, a check and the receipt
-for a command you typed, and Undo at the right where the step can be
-taken back (alone, for a click). A new reply takes the place of the
+worked, and nothing else on the screen moves. The status row, the last
+row above the divider, says what came of the last step when there is
+something to say: a cross and the reason for a step refused, a check
+and the receipt for a command you typed, and Undo at the right where
+the step can be taken back (alone, for a click). It is the one place a
+message is written: nothing comes between the keys and the list, and
+nothing among the list's rows. A new reply takes the place of the
 last; Esc clears it, and so does leaving the view. Typing undo still
 takes the step back. The full model answer appears once in Conversation,
 under the words that asked it. If it arrives in another view, a summary
-in the reply row makes it visible without changing the view or draft. While
-commands spark planned wait in the two rows of the prompt, the reply
+on the status row makes it visible without changing the view or draft. While
+commands spark planned wait in the two rows of the prompt, the status
 row names them all (`run: ...`). At the bottom, a full blank row separates
 the diamond divider from the controls. Content reserves space for the
 whole footer. Its controls are plain text: Attach at the left, the
 model/source centered when it fits, and the mic at the right. Narrow
 windows shorten attachment names and use Model when needed, keeping
 Remove and Talk/Cancel separate.
-Tab moves through them and the one in focus is lit; Shift+Tab goes back.
+Tab moves through them and the one in focus wears the band; Shift+Tab
+goes back. The key chips are not among them: a key is pressed, not
+focused.
 
 - Attach picks one text or Markdown file from your home (the types
   `DIALOG_ATTACH_TYPES` names), for the next question only: its name

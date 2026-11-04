@@ -69,7 +69,9 @@ shellcheck_ci() {   # the run line of ci.yml's shellcheck step, as it is
 _name=privacy; step privacy
 _name=ascii; step ascii
 _name=templates; step templates
-_name=shellcheck; step shellcheck_ci
+# a missing shellcheck is said and skipped, as the pre-commit hook has it: it is the contributor's tool, not a
+# user's package, and CI runs it on every push
+if command -v shellcheck >/dev/null 2>&1; then _name=shellcheck; step shellcheck_ci; else printf 'skip  shellcheck (not found here; CI runs it)\n'; fi
 
 # --- the dialog
 _name='cargo fmt --check'; step sh -c 'cd dialog && cargo fmt --check'

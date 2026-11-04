@@ -19,7 +19,7 @@ fn root_is_complete_quiet_and_restores_selection() {
         .collect();
     assert_eq!(
         names,
-        ["apps", "files", "Workspace", "Notes", "Calendar", "Tools", "Settings", "Help", "About", "Power"]
+        ["apps", "files", "workspace", "notes", "calendar", "tools", "settings", "help", "about", "power"]
     );
     app.light(HELP_DEST);
     app.enter();
@@ -195,10 +195,10 @@ fn shared_frame_prioritizes_navigation_and_ask_with_a_configured_footer() {
             let hint = row(spark_dialog::ui::HINT_Y);
             assert!(hint.find("Esc").unwrap() < hint.find("ask").unwrap());
             assert!(!hint.contains("chat") && !hint.contains("F2"));
-            assert!(drawn
-                .keys
-                .iter()
-                .all(|(start, end, y, _)| start < end && *end <= size.0 - 2 && *y == spark_dialog::ui::HINT_Y));
+            // navigation and Ask on the first row at every width; the rest may take the second row the keys keep
+            assert!(drawn.keys.iter().all(|(start, end, y, k)| start < end
+                && *end <= size.0 - 2
+                && (*y == spark_dialog::ui::HINT_Y || !matches!(k, HintKey::Escape | HintKey::Ask))));
             for chip in [0, 1, 3] {
                 assert!(drawn.chips.iter().any(|(_, _, y, id)| *id == chip && *y == size.1 - 2));
             }
@@ -214,9 +214,10 @@ fn shared_frame_prioritizes_navigation_and_ask_with_a_configured_footer() {
     let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
     let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
     let positions: Vec<_> = drawn.picks.iter().map(|(y, _)| *y).collect();
-    assert!(positions[..6].windows(2).all(|ys| ys[1] - ys[0] == 2));
-    assert!(positions[6] - positions[5] > positions[9] - positions[8]);
-    assert_eq!(buffer[(spark_dialog::ui::PURPOSE_X, positions[0])].fg, palette.fg);
+    assert!(positions[..6].windows(2).all(|ys| ys[1] - ys[0] == 1), "single spaced: {:?}", positions);
+    assert_eq!(positions[6] - positions[5], 2, "a row of air before settings: {:?}", positions);
+    assert_eq!(positions[9] - positions[8], 2, "and before power: {:?}", positions);
+    assert_eq!(buffer[(spark_dialog::ui::PURPOSE_X, positions[0])].fg, palette.muted, "a purpose is muted");
 
     app.set_draft("unfinished request");
     app.size = (36, 24);
@@ -312,7 +313,7 @@ fn conversation_shows_the_answer_once_and_keeps_other_feedback() {
     let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
     spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
     let row = |b: &Buffer, y| (0..60).map(|x| b[(x, y)].symbol()).collect::<String>();
-    assert!(row(&buffer, spark_dialog::ui::REPLY_Y).trim().is_empty());
+    assert!(row(&buffer, spark_dialog::ui::status_y(40)).trim().is_empty());
     let screen: String = (0..40).map(|y| row(&buffer, y)).collect();
     assert_eq!(screen.matches("One complete answer.").count(), 1);
     // Other feedback still belongs to the reply row, even when its text happens
@@ -321,7 +322,7 @@ fn conversation_shows_the_answer_once_and_keeps_other_feedback() {
         app.reply(mark, "One complete answer.");
         let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
         spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
-        assert!(row(&buffer, spark_dialog::ui::REPLY_Y).contains("One complete answer."));
+        assert!(row(&buffer, spark_dialog::ui::status_y(40)).contains("One complete answer."));
     }
     app.reply(Mark::Done, "action completed");
     app.reply.as_mut().unwrap().undo = true;
@@ -341,7 +342,7 @@ fn conversation_shows_the_answer_once_and_keeps_other_feedback() {
     let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
     let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
     assert!(drawn.reply_undo.is_some());
-    assert!(row(&buffer, spark_dialog::ui::REPLY_Y).contains("action completed"));
+    assert!(row(&buffer, spark_dialog::ui::status_y(40)).contains("action completed"));
 }
 
 #[test]
@@ -361,7 +362,7 @@ fn an_answer_arriving_in_another_view_is_discoverable_without_switching_views() 
     let palette = common::palette("tokyonight-night");
     let mut buffer = Buffer::empty(Rect::new(0, 0, 60, 40));
     spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
-    let row: String = (0..60).map(|x| buffer[(x, spark_dialog::ui::REPLY_Y)].symbol()).collect();
+    let row: String = (0..60).map(|x| buffer[(x, spark_dialog::ui::status_y(40))].symbol()).collect();
     assert!(row.contains("An answer has arrived."));
     app.hint_key(HintKey::Conversation);
     assert_eq!(app.view, View::Conversation);
@@ -370,44 +371,6 @@ fn an_answer_arriving_in_another_view_is_discoverable_without_switching_views() 
         .items()
         .iter()
         .any(|item| matches!(item, Item::Said(Sign::Says, text, _) if text == "An answer has arrived.")));
-}
-
-#[test]
-fn modules_share_frame_anchors_while_apps_keeps_a_bounded_body() {
-    use spark_dialog::ui::{CONTENT_Y, HINT_Y, PROMPT_Y};
-    let mut app = footer_app();
-    let palette = common::palette("tokyonight-night");
-    for size in [(60, 40), (68, 49), (140, 50), (36, 24)] {
-        app.size = size;
-        let (w, h) = size;
-        let frame = w.min(120);
-        let frame_left = (w - frame) / 2;
-        let mut anchors = None;
-        for view in [View::Home, View::Apps, View::Folder(0, "spark-shell://files/rows/home".into())] {
-            app.view = view;
-            let width = app.col_w();
-            let body_left = if app.view == View::Apps { frame_left } else { (w - width) / 2 };
-            let mut buffer = Buffer::empty(Rect::new(0, 0, w, h));
-            let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
-            assert_eq!(drawn.columns, (body_left, body_left + width));
-            assert_eq!(buffer[(frame_left + 2, PROMPT_Y)].symbol(), "\u{276f}");
-            assert_eq!(buffer[(frame_left + 2, h - 2)].symbol(), "a");
-            assert_eq!(buffer[(w / 2, h - 4)].symbol(), "\u{25c7}");
-            assert!((0..w).all(|x| buffer[(x, h - 3)].symbol().trim().is_empty()));
-            assert!(drawn.chips.iter().all(|(a, b, _, _)| *a >= frame_left && *b <= frame_left + frame));
-            let actual = (drawn.close, drawn.cursor, drawn.chips.clone());
-            if let Some(expected) = &anchors {
-                assert_eq!(&actual, expected, "shared frame at {size:?}");
-            } else {
-                anchors = Some(actual);
-            }
-            if app.view == View::Home {
-                assert_eq!(buffer[(body_left + 2, CONTENT_Y)].symbol(), "a");
-                assert_eq!(buffer[(body_left + width - 3, CONTENT_Y)].symbol(), "\u{203a}");
-                assert_eq!(buffer[(frame_left + 2, HINT_Y)].symbol(), "c");
-            }
-        }
-    }
 }
 
 #[test]
@@ -422,7 +385,7 @@ fn footer_reservation_keeps_the_last_destination_visible_and_clickable_after_res
         let &(y, _) = drawn.picks.iter().find(|(_, pick)| *pick == DESTS.len() - 1).expect("Power remains navigable");
         assert!(y < size.1 - spark_dialog::ui::BOTTOM);
         let row: String = (0..size.0).map(|x| buffer[(x, y)].symbol()).collect();
-        assert!(row.contains("Power"));
+        assert!(row.contains("power"), "{:?}", row);
         assert!(drawn.picks.iter().all(|(y, _)| *y < size.1 - spark_dialog::ui::BOTTOM));
         assert_eq!(app.sel, DESTS.len() - 1);
         assert_eq!(app.view, View::Home);
@@ -464,40 +427,10 @@ fn a_preview_opens_clear_of_the_request_draft() {
     assert_eq!(prompts.restore(&View::Home), "files");
 }
 
-/// A motion draws and nothing more: Enter stays with the words typed.
-#[test]
-fn a_motion_outside_apps_leaves_enter_with_the_words() {
-    let mut app = app();
-    app.set_draft("open the notes");
-    app.pointer_over(Some(2));
-    assert!(!app.in_list, "a stray motion took Enter from the words");
-    assert_eq!(app.sel, 0);
-    app.view = View::Dest(spark_dialog::app::CALENDAR_DEST);
-    app.scroll = 14;
-    app.pointer_over(Some(3));
-    assert_eq!(app.scroll, 14, "a motion moved the list");
-}
-
 /// Ctrl+C ends the dialog at once, and says so to the caller as a signal would.
 #[test]
 fn ctrl_c_is_the_way_out_with_a_signals_code() {
     let mut app = app();
     app.hint_key(HintKey::Quit);
     assert_eq!(app.quit, Some(130));
-}
-
-/// A motion inside one row draws nothing (#196); crossing onto another does.
-#[test]
-fn a_motion_draws_only_when_it_crosses_onto_something_else() {
-    let mut app = app();
-    app.size = (60, 40);
-    let pal = common::palette("tokyonight-night");
-    let mut buf = Buffer::empty(Rect::new(0, 0, 60, 40));
-    let drawn = spark_dialog::ui::draw(&app, &pal, "", &mut buf);
-    let (y0, y1) = (drawn.picks[0].0, drawn.picks[1].0);
-    let x = drawn.columns.0 + 1;
-    assert!(!drawn.hover_differs(Some((x, y0)), Some((x + 1, y0))));
-    assert!(drawn.hover_differs(Some((x, y0)), Some((x, y1))));
-    assert!(drawn.hover_differs(None, Some((x, y0))));
-    assert!(drawn.hover_differs(Some((x, y0)), Some((x, 0))), "out of the list dims the lit row");
 }

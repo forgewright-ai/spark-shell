@@ -52,7 +52,7 @@ def main(binary):
         return test()
 
     text = lambda: seen.decode("utf-8", "replace")
-    ok(read_until(lambda: "home" in text() and "Settings" in text() and "find, do, or ask." in text() and "\u00d7" in text(), 15), "the home draws: its title, Settings, the prompt, close as x", text()[-400:])
+    ok(read_until(lambda: "home" in text() and "settings" in text() and "find, do, or ask." in text() and "\u00d7" in text(), 15), "the home draws: its title, Settings, the prompt, close as x", text()[-400:])
     ok("\x1b]52" not in text(), "the dialog writes no clipboard sequence")
     os.write(fd, b"nord")
     ok(read_until(lambda: "nord" in text(), 5), "typing finds the palette among every row")

@@ -1,4 +1,4 @@
-//! Connect the Apps workflow to home's existing prompt, selection and job queue.
+//! Connect the Apps workflow to home's existing prompt, selection, status row and job queue.
 use super::{Action, Navigation, Outcome, Page};
 use crate::app::{App, Helper, Item, Job, Mode, View};
 use crate::reply::Mark;
@@ -24,7 +24,7 @@ impl App {
 
     pub fn apps_request(&mut self, request: Value) {
         if self.apps.pending.is_some() {
-            return self.refuse("Wait for the current Apps operation");
+            return self.refuse("wait for the current Apps operation");
         }
         self.apps.serial += 1;
         let serial = self.apps.serial;
@@ -39,16 +39,16 @@ impl App {
         ));
     }
 
+    /// An action of Apps: a page opened, a change applied at once and said on the status row with Undo, a
+    /// request to the native adapter, or a refusal.
     pub fn apps_activate(&mut self, action: Action) {
-        if self.leave_decision.is_some() {
-            return;
-        }
         let nav = self.apps_navigation();
         match self.apps.activate(action, nav) {
             Ok(Outcome {
                 navigation,
                 request,
                 notice,
+                undo,
                 copy,
             }) => {
                 self.reply = None;
@@ -63,14 +63,25 @@ impl App {
                 }
                 if let Some(text) = notice {
                     self.reply(Mark::Done, &text);
+                    if let Some(r) = self.reply.as_mut() {
+                        r.undo = undo;
+                    }
                 }
             }
             Err(error) => self.refuse(&error),
         }
     }
 
+    /// Undo on the status row, for a change of Apps: the preferences as they were.
+    pub fn apps_undo(&mut self) {
+        if let Some(prefs) = self.apps.undo.take() {
+            self.apps_activate(Action::Undo(Box::new(prefs)));
+        }
+    }
+
+    /// Right on an app in the list, or among the hidden: its details.
     pub fn apps_details(&mut self) -> bool {
-        if self.view != View::Apps || !matches!(self.apps.page, Page::List) || !self.in_list || self.mode != Mode::Normal {
+        if self.view != View::Apps || !matches!(self.apps.page, Page::List | Page::Hidden) || !self.in_list || self.mode != Mode::Normal {
             return false;
         }
         if let Some(Item::Apps(line)) = self.picks().get(self.sel) {
@@ -86,6 +97,12 @@ impl App {
         if self.apps.form() && !self.in_list {
             return self.apps_activate(Action::Submit);
         }
+        // the word undo, typed: the last change of Apps taken back, as a provider's step is at the home, after Esc
+        // cleared the receipt that carried its Undo
+        if !self.in_list && self.input.trim().eq_ignore_ascii_case("undo") && self.apps.undo.is_some() {
+            self.set_input(String::new());
+            return self.apps_undo();
+        }
         if let Some(Item::Apps(line)) = self.picks().get(self.sel).filter(|_| self.in_list) {
             if let Some(action) = &line.action {
                 self.apps_activate(action.clone());
@@ -93,41 +110,23 @@ impl App {
         }
     }
 
-    /// Pointer choices set an explicit state; activating the row by keyboard
-    /// toggles it. Clicking the already selected word must be harmless.
-    pub fn apps_toggle(&mut self, n: usize, unhide: bool) {
-        self.light(n);
-        let Some(Item::Apps(line)) = self.picks().get(n).cloned() else { return };
-        match line.action {
-            Some(Action::Hidden) if self.apps.show_hidden != unhide => self.apps_activate(Action::Hidden),
-            Some(Action::Visibility(id)) if self.apps.draft(&id).hidden == unhide => self.apps_activate(Action::Visibility(id)),
-            _ => {}
-        }
-    }
-
+    /// The key row is the page's, whatever row is lit or typed: a label stands still under a moving pointer.
     pub fn apps_hint(&self) -> Vec<(String, bool)> {
-        let back = if self.apps.form() {
-            "Cancel"
-        } else if !self.input.is_empty() {
-            "Clear"
+        let pair = |w: &str, k: &str| vec![(format!("{w} "), false), (k.to_string(), true)];
+        let mut keys = if self.apps.form() {
+            let mut v = pair("Cancel", "Esc");
+            v.push(("   ".into(), false));
+            v.extend(pair("Save", "Enter"));
+            v
         } else {
-            "Back"
+            let mut v = pair("Back", "Esc");
+            v.push(("   ".into(), false));
+            v.extend(pair("Open", "Enter"));
+            v
         };
-        let mut keys = vec![(format!("{back} "), false), ("Esc".into(), true)];
-        let action = self.picks().get(self.sel).and_then(|it| match it {
-            Item::Apps(line) => line.action.clone(),
-            _ => None,
-        });
-        if self.apps.form() || self.in_list {
-            let label = if self.apps.form() && !self.in_list {
-                "Save"
-            } else {
-                action.as_ref().map(Action::verb).unwrap_or("Choose")
-            };
-            keys.extend([("   ".into(), false), (format!("{label} "), false), ("Enter".into(), true)]);
-        }
-        if matches!(self.apps.page, Page::List) && matches!(action, Some(Action::Launch(_))) && self.in_list {
-            keys.extend([("   ".into(), false), ("Details ".into(), false), ("\u{2192}".into(), true)]);
+        if matches!(self.apps.page, Page::List | Page::Hidden) {
+            keys.push(("   ".into(), false));
+            keys.extend(pair("Details", "\u{2192}"));
         }
         keys
     }

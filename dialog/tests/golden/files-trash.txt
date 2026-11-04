@@ -2,8 +2,8 @@
                                                             
   ❯ find, do, or ask.                                       
                                                             
-  back  Esc   ask  Ctrl+Enter   restore  Enter              
-  actions  →                                                
+  back  Esc   ask  Ctrl+Enter   open  Enter   actions  →    
+                                                            
                                                             
 ›     old notes.txt     3 B   today       docs              
       draft-0410.md   14 KB   yesterday   ~                 
@@ -43,10 +43,10 @@ f.f.F.F.F.F.F.m.m.m.m.m.m.m.m.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.m.m.m.
 f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.
 f.f.F.f.m.m.m.m.m.m.m.m.m.m.m.m.m.m.m.m.m.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.
 f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.
-f.f.f.f.f.f.f.flflflflflf.f.f.f.f.f.flflflflflflflflflflflflf.f.f.f.f.f.f.f.f.f.flflflflflflflf.f.f.f.f.f.f.f.f.f.f.f.f.
-f.f.f.f.f.f.f.f.f.f.flflflf.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.
+f.f.f.f.f.f.f.flflflflflf.f.f.f.f.f.flflflflflflflflflflflflf.f.f.f.f.f.f.flflflflflflflf.f.f.f.f.f.f.f.f.f.flflflf.f.f.
 f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.
-alflflflflflflflflflflflflflflflflflflflflflflflmlmlmlflflflmlmlmlmlmlflflflflflflflmlmlmlmlflflflflflflflflflflflflflfl
+f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.
+alflflflflflalalalalalalalalalalalalalflflflflflmlmlmlflflflmlmlmlmlmlflflflflflflflmlmlmlmlflflflflflflflflflflflflflfl
 f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.m.m.m.m.m.f.f.f.m.m.m.m.m.m.m.m.m.f.f.f.m.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.
 f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.m.m.m.m.m.m.f.f.f.m.m.m.m.m.m.f.f.f.f.f.f.m.m.m.m.m.m.m.m.m.f.f.f.f.f.f.f.f.f.
 f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.f.

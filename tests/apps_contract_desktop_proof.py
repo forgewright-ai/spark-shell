@@ -3,6 +3,9 @@
 
 Usage: python3 tests/apps_contract_desktop_proof.py BINARY EVIDENCE_DIRECTORY
 Real Void catalog and Sway/foot; isolated preferences; optional AI is a fixture.
+A change of Apps applies at once and Undo takes it back; nothing asks before
+you leave; the request draft and the app query are kept apart; home, apps and
+files share one frame in every window mode.
 """
 import json
 from pathlib import Path
@@ -26,77 +29,90 @@ def main(binary, destination):
         observations.append({"capture": name, "rect": s.window()["rect"], "title_column": title, "attach_column": attach})
         return title, attach
 
-    def apps():
+    def apps(listed="btop"):
         s.click("apps", body=True)
-        wait_for(lambda: "btop" in s.text(), "installed catalog")
+        wait_for(lambda: listed in s.text(), "installed catalog")
 
     def details():
         s.key("btop", "-k", "Right")
         wait_for(lambda: "preferences" in s.text(), "Details")
 
     try:
+        preferences = s.root / ".config/spark-shell/apps.json"
+        # an app with no preference of its own has no entry: Undo puts the file back as it was
+        hidden = lambda: json.loads(preferences.read_text())["apps"].get("btop.desktop", {}).get("hidden", False)
         apps()
         details()
-        s.click("Visibility")
-        capture("01-unsaved-preferences")
+        s.click("hide this app")
+        assert "btop++ hidden" in s.text() and "Undo" in s.text(), s.text()
+        assert hidden(), "saved at once"
+        capture("01-applied-at-once")
+        s.click("Undo")
+        assert not hidden(), "Undo on the status row puts the preference back"
+        s.click("hide this app")
+        assert hidden()
         s.key("-k", "Escape")
-        assert "Save before leaving?" in s.text()
-        capture("02-exit-decision")
+        # Esc clears the receipt, as it does everywhere, and goes back; nothing is asked. The list still
+        # holds the words btop, which name no visible app now
+        assert "Save before leaving?" not in s.text() and s.screen()[0].lstrip().startswith("apps"), s.text()
+        assert "Undo" not in s.text() and "no app matches" in s.text(), s.text()
+        capture("02-back-without-a-question")
         s.key("-k", "Escape")
-        assert "unsaved changes" in s.text() and "hide / unhide" in s.text()
-        # The actual close button uses the same guard.
-        s.click("\u00d7")
-        assert s.window() and "Save before leaving?" in s.text()
-        s.click("Keep editing", body=True)
-        assert "unsaved changes" in s.text()
+        s.key("undo", "-k", "Return")
+        assert not hidden(), "typed undo takes the last change of Apps back, after the receipt is gone"
+        assert "btop" in s.text()
+        details()
+        s.click("hide this app")
+        assert hidden()
+        s.click("×")
+        wait_for(lambda: not s.window(), "the x closes at once, nothing asked")
+        assert hidden(), "the change stands after the close"
+        s.key("-M", "logo", "-k", "space", "-m", "logo")
+        wait_for(s.window, "reopen")
+        time.sleep(2)
+        apps("hidden apps")  # btop is hidden now: the list leaves it out, and says so in the count
+        s.click("hidden apps", body=True)
+        s.key("-k", "Down", "-k", "Right")
+        wait_for(lambda: "preferences" in s.text(), "the hidden app's details")
+        s.click("hide this app")
+        assert not hidden(), "shown again from the hidden apps"
+        s.key("-k", "Escape", "-k", "Escape")
+        s.key("btop")
         s.key("-k", "F2")
-        assert "Save before leaving?" in s.text()
-        s.click("Save", body=True)
         assert s.screen()[0].lstrip().startswith("conversation")
-        preferences = s.root / ".config/spark-shell/apps.json"
-        assert json.loads(preferences.read_text())["apps"]["btop.desktop"]["hidden"]
         s.key("retain this request draft", "-k", "F2")
-        s.click("Visibility")
-        s.click("Save", body=True)
-        s.key("-k", "Escape")
-        assert "btop" in s.screen()[2]
+        assert "btop" in s.screen()[2], "the app query is its own"
+        capture("03-restored-app-query")
         s.key("-k", "F2")
-        assert "retain this request draft" in s.screen()[2]
-        capture("03-restored-request")
+        assert "retain this request draft" in s.screen()[2], "the request draft is its own"
+        capture("04-restored-request")
         s.key("-k", "F2")
-        assert "btop" in s.screen()[2]
-        capture("04-restored-app-query")
-        s.checks.append("Dirty Esc, close and conversation navigation require Save/Discard/Keep editing; Esc keeps edits; Save persists before navigation; request and app query restore separately")
+        s.checks.append("A change applies at once, is said with Undo and survives Esc and the close without a question; request and app query restore separately")
 
         s.key("-k", "Escape")
-        s.click("Manage categories")
-        s.click("Create category")
+        s.click("categories", body=True)
+        s.click("new category")
         s.key("Writing", "-k", "Escape")
-        assert "Writing" in s.screen()[2] and "Save before leaving?" in s.text()
-        capture("05-category-exit-decision")
-        s.key("-k", "Escape")
-        assert "Writing" in s.screen()[2]
-        s.click("Cancel", body=True)
-        assert "Writing" not in json.loads(preferences.read_text())["categories"]
+        assert "Writing" not in json.loads(preferences.read_text())["categories"], "Esc lets a form go"
+        assert "Save before leaving?" not in s.text() and "categories" in s.text()
+        capture("05-form-let-go")
         s.key("-k", "Escape")
         details()
-        s.click("Visibility")
         config = preferences.parent
         config.chmod(0o500)
-        s.click("Save", body=True)
-        assert "not saved" in s.text() and "unsaved changes" in s.text()
-        assert not json.loads(preferences.read_text())["apps"]["btop.desktop"]["hidden"]
+        s.click("hide this app")
+        assert "not saved" in s.text(), s.text()
+        assert not hidden(), "a refused change leaves the file as it was"
         capture("06-save-failure")
         config.chmod(0o700)
         s.key("-k", "Escape")
-        s.click("Discard", body=True)
-        assert "btop" in s.screen()[2]
+        assert "btop" in s.screen()[2], "back to the list, its words kept"
         s.key("-k", "Escape", "-k", "Escape")
-        assert "retain this request draft" in s.screen()[2]
+        assert "retain this request draft" in s.screen()[2], "home again, with the request draft"
         s.key("-k", "Escape")  # explicitly clear the restored global draft
-        s.checks.append("Category Esc retains the field and Cancel discards; real permission failure retains draft and stored value; Discard completes the pending navigation")
+        s.checks.append("A form's Esc keeps nothing and asks nothing; a real permission failure is refused on the status row and the stored value stands")
 
-        # A shared frame with module-specific bodies, at identical window sizes.
+        # One frame for every view, at identical window sizes.
         snaps = []
         for mode in ("compact", "fullscreen", "left", "right"):
             if mode == "fullscreen":
@@ -109,24 +125,29 @@ def main(binary, destination):
             time.sleep(1)
             rect = s.window()["rect"]
             home_anchor = capture("home-" + mode)
+            # the title sits two cells into the frame; the footer's first chip starts one cell in with a cell of
+            # padding, so its word stands under the title: one column, as dialog/tests/chrome.rs has it
+            assert home_anchor[0] == home_anchor[1], "the header and the footer share the frame"
             apps()
             assert s.window()["rect"] == rect
-            assert capture("apps-" + mode) == home_anchor
+            assert capture("apps-" + mode) == home_anchor, "apps and home share one 60 cell column"
             if mode in ("left", "right"):
                 snaps.append(s.screen()[1:])
             s.key("-k", "Escape")
             s.click("files", body=True)
             wait_for(lambda: s.screen()[0].lstrip().startswith("files"), "files")
             assert s.window()["rect"] == rect
-            assert capture("files-" + mode) == home_anchor
+            files_anchor = capture("files-" + mode)
+            assert files_anchor[0] == files_anchor[1], "files' header and footer share its frame, the wide one"
+            assert files_anchor[0] <= home_anchor[0], "a list with columns takes up to 120 cells, never less than home's 60"
             s.key("-k", "Escape")
         assert snaps[0] == snaps[1]
-        s.checks.append("Home/apps/files retain identical header and footer anchors and window geometry in compact/fullscreen/both snaps; equal snap bodies match")
+        s.checks.append("Home and apps share one 60 cell column and files its 120 cell one, header and footer in the frame, in compact, fullscreen and both snaps; equal snap bodies match")
 
         s.normal()
         fixture = s.root / "bin/spark"
         fixture.write_text('#!/bin/sh\ncase $1 in client) echo "spark client -- local";; esac\n')
-        s.click("\u00d7")
+        s.click("×")
         wait_for(lambda: not s.window(), "clean close")
         s.key("-M", "logo", "-k", "space", "-m", "logo")
         wait_for(s.window, "reopen")
