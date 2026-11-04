@@ -178,6 +178,9 @@ explain each part. If something fails, run `spark-shell check` and
                                       lock, log out, suspend, restart, shut down
     spark-shell bar on|off            show or hide the status line and the bar
     spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
+    spark-shell bar top|bottom        the bar at the top or the bottom
+    spark-shell bar text [auto|N]     the bar's text size, auto: by the screen
+    spark-shell bar tray [on|off]     the apps' icons at the bar's end
     spark-shell want "WORDS"          ask for it, "mute everything": steps run;
                                       a question's are shown, not run
     spark-shell want --json "WORDS"   the steps spark picks, as JSON; none run
@@ -493,7 +496,8 @@ A note opens in your editor right in the terminal you typed in, and in
 a terminal window from the dialog. A new note you leave empty is not
 kept.
 
-When a reminder comes due, the bar shows a `due` block with its words,
+When a reminder comes due, the bar shows a `due` block, a black
+hourglass in the accent and its words,
 a click opens the reminders, and a short sound plays once (PipeWire,
 else ALSA; afplay on a Mac). On the desktop it comes as a notification
 too, once, its first line saying a click opens it, and the click opens
@@ -554,15 +558,16 @@ and wl-clipboard).
 
 ## Notifications, drives and power
 
-A notification comes in the top right corner, under the bar, as a
-small surface of the desktop like the dialog: its ground, your palette
+A notification comes in the right corner by the bar (the top one, or
+the bottom one when the bar sits there), as a small surface of the
+desktop like the dialog: its ground, your palette
 and text face, no frame and no icon. The first line opens with spark's
 angle, the heavy angle of the prompt in the accent, then the app's
 name muted; what it says is bold under it, and before it a glyph tells
 the kind: a filled dot for any one, and where the app names the kind
 three lines for mail, a message, a check or a cross for a transfer
 done or failed, a hollow stick for a drive not yet mounted, the bar's
-flag for a reminder due; a warning sign in red on a critical one. The
+hourglass for a reminder due; a warning sign in red on a critical one. The
 words follow. The glyphs are the bar's and the dialog's, filled for on
 and hollow for off as the bar has them, the small triangle before what
 a click opens among them. Its edge lines up with the windows' content,
@@ -579,6 +584,13 @@ the next one at once. Type `spark-shell desktop notifications
 do-not-disturb on`. They stay out of sight, a critical one still
 shows, the bar says `do not disturb`, and it holds until you turn it
 off, logins included.
+The bar counts the notifications that came while nobody looked: a
+black flag in the accent and how many (`new 3` in words), up to
+`9+`, beside `do not disturb` while it is on. One you dismiss with a
+right or a middle click, or one of spark-shell's own you click open,
+is looked at. A click on the count opens the dialog's Notifications
+and counts them all as looked at, and so does `dismiss`. Without any
+waiting, the count is not on the bar. It starts again with each login.
 `desktop notifications` lists the last few, `dismiss` clears the
 screen, and `restore` shows the last one again; the dialog's
 Notifications has the same. A program reaches mako through the
@@ -699,7 +711,8 @@ side of a window left alone in a split, where the next one opens.
 
 ## Bar
 
-On the desktop, a bar sits at the top of the screen. The workspaces are
+On the desktop, a bar sits at the top of the screen, or at its bottom
+(`spark-shell bar bottom`). The workspaces are
 on the left, each wearing a symbol: workspace 1 always the same one, the
 others one each from an order drawn when the desktop starts, from APL's
 block first, then Miscellaneous Technical, Geometric Shapes,
@@ -708,22 +721,28 @@ workspace past the tenth wears one too. A workspace a layout opened
 carries the layout's words after its symbol, so `2 news` reads from a
 distance. On the right, in groups parted by air: the wire, Bluetooth
 and Wi-Fi with its gauge; sound out and the mic, each with its gauge;
-a reminder due; do not disturb, while it is on; the brightness with its
+a reminder due; the notifications that came while nobody looked, and
+do not disturb while it is on; the brightness with its
 gauge, and the keyboard's layout; the battery, four cells and the
 number; the date and time; and last, spark-shell's own sign, the prompt
 sign in the palette's yellow. The palette has no block: it is picked in
 the dialog, where a click on any block leads.
 
 Each block is a glyph of the bar's font: filled is on, hollow is off or
-muted, the accent is connected, red wants you. Settings > theme has two
+muted, and one rule of color holds for every block. The accent is on
+and connected: the wire up, Wi-Fi joined, a Bluetooth device
+connected, sound out and the mic open, the brightness, the
+notifications waiting and a reminder due. Muted is idle, off or
+muted: Bluetooth with nothing connected, Wi-Fi with no network, sound
+out or the mic muted. Red wants you. Settings > theme has two
 rows that left and right change: Bar glyphs, signs or words (the kind
-words: lan, wifi, bt, out, mic, light, kb, bat), and Workspaces,
+words: lan, wifi, bt, out, mic, new, light, kb, bat), and Workspaces,
 symbols or numbers (1 2 3). `spark-shell theme glyphs words` and
 `spark-shell theme workspaces numbers` do the same, the bar takes them
 at once, and a saved theme keeps both.
 
 A block appears only for hardware this machine has. No battery, no
-battery block. Device names are in the dialog, never on the bar. Color
+battery block. Device names are in the dialog, never on the bar. Red
 is for alarms: the mic is a red dot while any program records, and the
 wire is red with a warning sign when it is down, as is a battery under
 15. The bar never changes width: a click never swaps a block's text.
@@ -755,9 +774,30 @@ kHz), and its level and mute are bluez-alsa's own. Only one of
 bluez-alsa and PipeWire can offer Bluetooth sound: `spark-shell check`
 says so when both run.
 
-Type `spark-shell bar off --desktop`. The bar is hidden. `on` brings
-it back. Type `spark-shell bar`. You get the state of this bar and of
-the status line in tmux; `--terminal` or `--desktop` names one. The
+The bar's text is the text size on a screen of 1080 rows or fewer,
+and larger on a taller one: by the square root of its rows over 1080,
+so 15% larger on 1440 rows and 41% on 2160. A screen sway already
+scales counts its rows after the scale, and one turned on its side
+counts its shorter side. With more than one screen the shortest
+decides, so no screen gets a bar too big for it, and a screen plugged
+in or a new scale reaches the bar within 15 seconds. Type
+`spark-shell bar text 14` for a size of your own, from 6 to 40, and
+`spark-shell bar text auto` to follow the screen again. The dialog's
+`bar` has the same as a value that left and right change.
+
+The bar wears its own glyphs alone: the icons apps put in the tray
+(Steam, a chat app, a network applet) are kept off it, since each app
+draws its icon in its own colors and shapes, and the bar is drawn in
+the palette. The apps run the same without it; open them again from
+Super+Space. Type `spark-shell bar tray on`. Their icons show at the
+bar's end, at its height; `off` takes them away again.
+
+Type `spark-shell bar bottom`. The bar moves to the bottom of the
+screen, and the notifications come in the bottom right corner;
+`spark-shell bar top` moves it back. Type
+`spark-shell bar off --desktop`. The bar is hidden. `on` brings it
+back where it was. Type `spark-shell bar`. You get the state of this
+bar and of the status line in tmux; `--terminal` or `--desktop` names one. The
 AI and the machine stay on the status line inside each window.
 
 ## Dialog
@@ -928,7 +968,9 @@ its first and its last row.
   beside it; the windows open now, a row each with its title, Enter
   puts one in front and close is behind it; and how new windows sit on
   a workspace: side by side, in tabs or stacked.
-- `bar`: hide the bar at the top of the screen, or show it again.
+- `bar`: the bar at the top of the screen, at its bottom, or hidden;
+  its text size, auto or a size of your own; and the apps' icons (the
+  tray) on it or off it.
 - Connections: how many tools the dialog has, all on this computer
   from spark-shell, then the sections that give them by the names
   Settings gives them; one that stopped says why. Then the model.
@@ -1374,7 +1416,9 @@ Config keys, in `~/.config/spark-shell/config` (see `config.example`):
 `DESKTOP` (none or sway), `FONT` (foot's font), `WALLPAPER` (default,
 none or a path), `POINTER` (a cursor theme's name and size, empty for
 the spark pointer), `ALPHA` (how solid foot is, 0.85: 15% transparency),
-`DESKTOP_BAR` (yes or no), `THEME`, `CONSOLE_FONT`, `QUIET_LOGIN`, `QUIET_BOOT`,
+`DESKTOP_BAR` (yes or no), `BAR_POSITION` (top or bottom), `BAR_TEXT`
+(auto, or 6 to 40), `BAR_TRAY` (yes or no), `THEME`, `CONSOLE_FONT`,
+`QUIET_LOGIN`, `QUIET_BOOT`,
 `DIALOG_ATTACH` (yes or no), `DIALOG_ATTACH_TYPES` (txt md),
 `DIALOG_MODEL` and `DIALOG_TALK` (yes or no), `DISPLAY_IDLE` and
 `DISPLAY_LOCK` (minutes, 0 never), `DISPLAY_SAVER` (clock, or a saver's

@@ -1,0 +1,16 @@
+== spark-shell on --yes
+ok: rendered, the bar at the top
+== the fixture machine: every block the bar has
+ok: a wire, wifi at 70%, a headset connected, a sound card, a backlight, a battery at 80, a reminder due
+== a session bus, a headless sway on it
+ok: sway 1.9, output HEADLESS-1 1920x1080, mako up, the bar's loop running
+== the states, one rule of color: on and connected, idle and muted, alarms; signs, then words
+ok: $HOME/proof/states-on.png (the bar 39 pixels high)
+   lan=4c566a bt=88c0d0 wifi.name=4c566a wifi.gauge=88c0d0 out.name=4c566a out.gauge=88c0d0 mic.name=4c566a mic.gauge=88c0d0 due=88c0d0 light.name=4c566a light.gauge=88c0d0 kb=4c566a bat=d8dee9
+ok: $HOME/proof/states-idle.png (the bar 39 pixels high)
+   lan=4c566a bt=4c566a wifi.name=4c566a out.name=4c566a out.gauge=4c566a mic.name=4c566a mic.gauge=4c566a light.name=4c566a light.gauge=88c0d0 kb=4c566a bat=d8dee9
+ok: $HOME/proof/states-alarm.png (the bar 39 pixels high)
+   lan=bf616a bt=88c0d0 wifi.name=4c566a wifi.gauge=88c0d0 out.name=4c566a out.gauge=88c0d0 mic.name=bf616a mic.gauge=88c0d0 due=88c0d0 light.name=4c566a light.gauge=88c0d0 kb=4c566a bat=bf616a
+ok: $HOME/proof/states-words.png (the bar 39 pixels high)
+   lan=4c566a bt=88c0d0 wifi.name=4c566a wifi.gauge=88c0d0 out.name=4c566a out.gauge=88c0d0 mic.name=4c566a mic.gauge=88c0d0 due=88c0d0 light.name=4c566a light.gauge=88c0d0 kb=4c566a bat=4c566a
+== done: the states

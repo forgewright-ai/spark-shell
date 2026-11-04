@@ -96,11 +96,26 @@ POINTER_SPEED=0
 # spark-shell desktop notifications do-not-disturb on or off sets this.
 DO_NOT_DISTURB=no
 
-# The bar at the top of the desktop's screen: yes or no. It shows the
-# workspaces, then lan, wifi, bluetooth, sound out and mic, battery, and
-# the date and time, each only when this machine has it. spark-shell bar
-# on|off --desktop sets this.
+# The bar on the desktop's screen: yes (shown) or no (hidden). It shows
+# the workspaces, then lan, wifi, bluetooth, sound out and mic, the
+# notifications that came while nobody looked, battery, and the date and
+# time, each only when this machine has it. spark-shell bar on|off
+# --desktop sets this.
 DESKTOP_BAR=yes
+
+# Where the bar sits: top or bottom. The notifications come in the right
+# corner by it. spark-shell bar top|bottom sets this.
+BAR_POSITION=top
+
+# The bar's text size: auto (the text size on a screen of 1080 rows or
+# fewer, larger on a taller one) or a size from 6 to 40. spark-shell bar
+# text sets this.
+BAR_TEXT=auto
+
+# The icons apps put in the tray (Steam, a chat app) at the bar's end:
+# yes or no. No keeps the bar in its own glyphs; the apps run the same.
+# spark-shell bar tray on|off sets this.
+BAR_TRAY=no
 
 # The theme: none (the terminal's own colors: foot's own sixteen on the
 # desktop, the console's at the console), a palette's name, or a
