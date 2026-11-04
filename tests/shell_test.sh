@@ -1227,7 +1227,7 @@ fi
 grep -q '@FONT@' "$REPO/templates/.config/foot/foot.ini" && grep -q '@FOOT_ALPHA@' "$REPO/templates/.config/foot/foot.ini" \
     && grep -q 'output \* bg @WALL_BG@' "$REPO/templates/.config/sway/config" && grep -q '^gaps inner @GAPS_INNER@' "$REPO/templates/.config/sway/config" \
     && ok "templates: foot.ini and sway/config carry placeholders, the hex and the wallpaper land at render time" || bad "desktop template placeholders"
-grep -q '^bar {' "$REPO/templates/.config/sway/config" && grep -q '^    position top' "$REPO/templates/.config/sway/config" && grep -q '^    status_command @REPO@/spark-shell bar status' "$REPO/templates/.config/sway/config" && ok "sway template: a bar at the top, drawn by spark-shell bar status" || bad "sway template: the bar block" "$(grep -n '^bar\|position\|status_command' "$REPO/templates/.config/sway/config")"
+grep -q '^bar {' "$REPO/templates/.config/sway/config" && grep -q '^    position @BAR_POSITION@$' "$REPO/templates/.config/sway/config" && grep -q '^    tray_output @BAR_TRAY@$' "$REPO/templates/.config/sway/config" && grep -q '^    status_command @REPO@/spark-shell bar status' "$REPO/templates/.config/sway/config" && ok "sway template: a bar where BAR_POSITION puts it, its tray as BAR_TRAY says, drawn by spark-shell bar status" || bad "sway template: the bar block" "$(grep -n '^bar\|position\|status_command' "$REPO/templates/.config/sway/config")"
 grep -q '^xwayland enable$' "$REPO/templates/.config/sway/config" && ! grep -q '^xwayland disable' "$REPO/templates/.config/sway/config" && ok "sway template: Xwayland on, so Steam and other X11 apps open (#170)" || bad "sway xwayland"
 [ "$(grep -v '^$' "$REPO/templates/.config/sway/config" | tail -1)" = 'include @HOME@/.config/sway/config.d/*' ] && ok "sway template: your own lines in config.d, read last so they win (#170)" || bad "sway own lines" "$(tail -3 "$REPO/templates/.config/sway/config")"
 grep -qxF 'bindsym $mod+Left exec @REPO@/spark-shell desktop window left' "$REPO/templates/.config/sway/config" && grep -qxF 'bindsym $mod+Shift+space exec @REPO@/spark-shell desktop window float' "$REPO/templates/.config/sway/config" \
@@ -3451,8 +3451,8 @@ rc=0; out=$(SPARK_SHELL_SYS=$H/sysb PATH="$H/lx:$PATH" sh "$SH" desktop display 
 [ "$rc" = 0 ] && [ "$out" = 'brightness at 52%' ] && grep -qx -- '-q -c backlight set 52%' "$HOME/bctl.log" && ok "desktop display brightness up: the backlight 5 up, through brightnessctl" || bad "brightness backlight" "rc=$rc $out $(cat "$HOME/bctl.log" 2>&1)"
 line=$(SPARK_SHELL_SYS=$H/sysb SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null)
 pip=$(printf '\342\226\260'); pipoff=$(printf '\342\226\261'); g=$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "gauge") | .full_text'); k=$(printf '%s' "$line" | jq -r '.[] | select(.name == "kb") | .full_text')
-[ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pip" | wc -l | tr -d ' ')" = 2 ] && [ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pipoff" | wc -l | tr -d ' ')" = 3 ] && [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "name") | .full_text')" = "<span foreground='#555555'>$(printf '\342\230\274')</span>" ] && [ "$k" = "<span foreground='#555555'>$(printf '\342\214\227')</span> us+intl" ] \
-    && ok "bar: light, a sun with its gauge (47: two of five cells), and kb, a key grid with the layout in use (sway's second, us+intl)" || bad "bar light kb" "$line"
+[ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pip" | wc -l | tr -d ' ')" = 2 ] && [ "$(printf '%s' "$g" | LC_ALL=C grep -o "$pipoff" | wc -l | tr -d ' ')" = 3 ] && [ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "light" and .instance == "name") | .full_text')" = "<span foreground='#ff5555'>$(printf '\342\230\274')</span>" ] && [ "$k" = "<span foreground='#555555'>$(printf '\342\214\227')</span> us+intl" ] \
+    && ok "bar: light, a sun in the accent with its gauge (47: two of five cells), and kb, a key grid muted with the layout in use (sway's second, us+intl)" || bad "bar light kb" "$line"
 # the workspaces' glyphs: a workspace named by its number, or a layout's "3 writing", takes its glyph; one named already, or past the tenth, is left
 WSO=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; WSO=${WSO:-$HOME/.local/state/spark-shell}/ws-order; WSP=$HOME/.local/state/spark-shell/ws-pool   # the order lives in the runtime dir when a login has one
 rm -f "$HOME/swaymsg.log" "$HOME/ws-later" "$WSO"; touch "$HOME/ws-test"
@@ -3560,7 +3560,7 @@ printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:spark-shell-test-1@box\r\nDTSTART
 printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:khal-1\r\nDTSTART:%s\r\nSUMMARY:a long title from another calendar\\, folded\r\n  across two lines\; done\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:khal-old\r\nDTSTART:20200101T080000Z\r\nSUMMARY:an old meeting\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:khal-weekly\r\nDTSTART:%s\r\nRRULE:FREQ=WEEKLY\r\nSUMMARY:a weekly one\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' "$(ago_utc 30)" "$(ago 10)" > "$HOME/calendar/other.ics"
 printf '#!/bin/sh\necho "$*" >> "$HOME/chime.log"\n' > "$H/lx/pw-play"; chmod +x "$H/lx/pw-play"; rm -f "$HOME/chime.log"
 line=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once 2>/dev/null); SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar status --once >/dev/null 2>&1; sleep 1
-[ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "due") | .full_text')" = "<span foreground='#ff5555'>$(printf '\342\232\221')</span> a long title from another ca" ] && [ "$(grep -c . "$HOME/chime.log" 2>/dev/null)" = 1 ] \
+[ "$(printf '%s' "$line" | jq -r '.[] | select(.name == "due") | .full_text')" = "<span foreground='#ff5555'>$(printf '\342\247\227')</span> a long title from another ca" ] && [ "$(grep -c . "$HOME/chime.log" 2>/dev/null)" = 1 ] \
     && ok "bar: the latest reminder due (another tool's, in UTC, its folded title joined), cut at 28 characters, and one chime for the two due, not at every line" || bad "due block" "$(printf '%s' "$line" | jq -c '.[] | select(.name == "due")') chimes=$(cat "$HOME/chime.log" 2>&1)"
 rows=$(NL reminders --list)
 printf '%s\n' "$rows" | grep -q "a long title from another calendar, folded across two lines; done	reminders show" && ! printf '%s\n' "$rows" | grep -q 'an old meeting\|a weekly one' \
@@ -3867,14 +3867,14 @@ else
     t() { printf '%s' "$line" | jq -r --arg n "$1" --arg i "${2:-}" '.[] | select(.name == $n and .instance == $i) | .full_text'; }   # t NAME [INSTANCE] -> its text
     pip=$(printf '\342\226\260'); pipoff=$(printf '\342\226\261')
     cur() { sh "$SH" bar panel "$1" --list 2>&1 | sed -n 1p | tr 'A-Z' 'a-z'; }   # cur out|mic -> the panel's title, the device in use: the bar shows its sign alone
-    [ "$(t lan)" = "<span foreground='#555555'>$(printf '\342\207\205')</span>" ] && ok "lan: the arrows alone, muted, when the wire is up (no address on screen)" || bad "lan block" "$(t lan)"
-    [ "$(t wifi name)" = "<span foreground='#555555'>$(printf '\342\227\240')</span>" ] && g=$(t wifi gauge) && [ "$(count "$g" "$pip")" = 4 ] && [ "$(count "$g" "$pipoff")" = 1 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" && ! printf '%s' "$line" | grep -q '192\.' \
-        && ok "wifi: the half circle muted, then a gauge as sound's, 4 of 5 cells in the accent at 49/70 (70%); no address" || bad "wifi block" "$(t wifi name) $(t wifi gauge)"
+    [ "$(t lan)" = "<span foreground='#ff5555'>$(printf '\342\207\205')</span>" ] && ok "lan: the arrows alone, in the accent, when the wire is up (no address on screen)" || bad "lan block" "$(t lan)"
+    [ "$(t wifi name)" = "<span foreground='#ff5555'>$(printf '\342\227\240')</span>" ] && g=$(t wifi gauge) && [ "$(count "$g" "$pip")" = 4 ] && [ "$(count "$g" "$pipoff")" = 1 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" && ! printf '%s' "$line" | grep -q '192\.' \
+        && ok "wifi joined: the half circle in the accent, then a gauge as sound's, 4 of 5 cells in the accent at 49/70 (70%); no address" || bad "wifi block" "$(t wifi name) $(t wifi gauge)"
     [ "$(t bt)" = "<span foreground='#ff5555'>$(printf '\342\234\246')</span>" ] && ok "bt: a device connected, the star in the accent; its name is the panel's" || bad "bt block" "$(t bt)"
-    [ "$(t out name)" = "<span foreground='#555555'>$(printf '\342\227\200')</span>" ] && ok "out: the speaker's triangle, muted" || bad "out name" "$(t out name)"
+    [ "$(t out name)" = "<span foreground='#ff5555'>$(printf '\342\227\200')</span>" ] && ok "out: the speaker's triangle, filled and in the accent while it plays" || bad "out name" "$(t out name)"
     g=$(t out gauge); [ "$(count "$g" "$pip")" = 2 ] && [ "$(count "$g" "$pipoff")" = 3 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" \
         && ok "out: the gauge is 5 cells, 2 lit in the accent at 40%, 3 unlit muted" || bad "out gauge" "$g"
-    [ "$(t mic name)" = "<span foreground='#555555'>$(printf '\342\227\211')</span>" ] && ok "mic: the fisheye, muted while idle" || bad "mic block" "$(t mic name)"
+    [ "$(t mic name)" = "<span foreground='#ff5555'>$(printf '\342\227\211')</span>" ] && ok "mic: the fisheye in the accent while it is open" || bad "mic block" "$(t mic name)"
     g=$(t mic gauge); [ "$(count "$g" "$pip")" = 3 ] && [ "$(count "$g" "$pipoff")" = 2 ] && printf '%s' "$g" | grep -q "^<span foreground='#ff5555'>" \
         && ok "mic: its own gauge, 3 of 5 cells in the accent at 50% (the Capture level)" || bad "mic gauge" "$g"
     [ "$(t bat)" = "<span foreground='#aaaaaa'>$pip$pip$pip</span><span foreground='#555555'>$pipoff</span> <span foreground='#aaaaaa'>80</span>" ] && ok "bat: four cells, three lit, and the number in the text color" || bad "bat block" "$(t bat)"
@@ -3887,6 +3887,9 @@ else
     touch "$H/muted"; line=$(sh "$SH" bar status --once)
     g=$(t out gauge); [ "$(count "$g" "'#ff5555'")" = 0 ] && [ "$(count "$g" "$pip")" = 2 ] && [ "$(t out name)" = "<span foreground='#555555'>$(printf '\342\227\201')</span>" ] && ok "out muted: the triangle turns hollow, the level stays, the whole gauge turns muted" || bad "muted gauge" "$(t out name) $g"
     rm -f "$H/muted"
+    touch "$H/cmuted"; line=$(sh "$SH" bar status --once)
+    g=$(t mic gauge); [ "$(t mic name)" = "<span foreground='#555555'>$(printf '\342\227\213')</span>" ] && [ "$(count "$g" "'#ff5555'")" = 0 ] && ok "mic muted: the ring turns hollow and muted, its gauge muted" || bad "mic muted" "$(t mic name) $g"
+    rm -f "$H/cmuted"
     echo 'state: RUNNING' > "$P/asound/card0/pcm0c/sub0/status"; line=$(sh "$SH" bar status --once)
     [ "$(t mic name)" = "<span foreground='#aa0000'>$(printf '\342\227\217')</span>" ] && ok "mic recording: a red dot" || bad "mic live" "$(t mic name)"
     echo closed > "$P/asound/card0/pcm0c/sub0/status"
@@ -3896,7 +3899,7 @@ else
     [ "$(t bat)" = "<span foreground='#aaaaaa'>$pip</span><span foreground='#555555'>$pipoff$pipoff$pipoff</span> <span foreground='#aaaaaa'>10</span><span foreground='#ff5555'>+</span>" ] && ok "bat charging: a plus in the accent, and no red while it charges" || bad "bat charging" "$(t bat)"
     echo 80 > "$S/class/power_supply/BAT0/capacity"; echo Discharging > "$S/class/power_supply/BAT0/status"
     echo 'state: RUNNING' > "$P/asound/card1/pcm0p/sub0/status"; line=$(sh "$SH" bar status --once)
-    [ "$(t out name)" = "<span foreground='#555555'>$(printf '\342\227\200')</span>" ] && [ -z "$(t out gauge)" ] && ok "sound playing on the HDMI card: out follows it; no volume control there, so no gauge" || bad "out follows" "$(t out name) / $(t out gauge)"
+    [ "$(t out name)" = "<span foreground='#ff5555'>$(printf '\342\227\200')</span>" ] && [ -z "$(t out gauge)" ] && ok "sound playing on the HDMI card: out follows it; no volume control there, so no gauge" || bad "out follows" "$(t out name) / $(t out gauge)"
     echo closed > "$P/asound/card1/pcm0p/sub0/status"
     touch "$H/bt-none"; line=$(sh "$SH" bar status --once)
     [ "$(t bt)" = "<span foreground='#555555'>$(printf '\342\234\246')</span>" ] && ok "bt with nothing connected: the star alone, muted" || bad "bt idle" "$(t bt)"
@@ -3907,13 +3910,13 @@ else
     echo down > "$S/class/net/wlan0/operstate"; line=$(sh "$SH" bar status --once)
     [ "$(t wifi name)" = "<span foreground='#555555'>$(printf '\342\227\240')</span>" ] && [ -z "$(t wifi gauge)" ] && ok "wifi off: the half circle alone, muted, no gauge" || bad "wifi off" "$(t wifi name) / $(t wifi gauge)"
     echo up > "$S/class/net/wlan0/operstate"
-    # the words set (#160): the kind words where the signs were, muted (bt in the accent while connected), the gauges as they
-    # were, the battery its word and its number
+    # the words set (#160): the kind words where the signs were, in the colors the signs take (the accent for what is on and
+    # connected), the gauges as they were, the battery its word and its number
     printf 'BAR_GLYPHS=words\n' >> "$HOME/.config/spark-shell/config"; line=$(sh "$SH" bar status --once)
-    [ "$(t lan)" = "<span foreground='#555555'>lan</span>" ] && [ "$(t bt)" = "<span foreground='#ff5555'>bt</span>" ] && [ "$(t wifi name)" = "<span foreground='#555555'>wifi</span>" ] \
-        && [ "$(t out name)" = "<span foreground='#555555'>out</span>" ] && [ "$(t mic name)" = "<span foreground='#555555'>mic</span>" ] && [ -n "$(t out gauge)" ] && [ -n "$(t wifi gauge)" ] \
+    [ "$(t lan)" = "<span foreground='#ff5555'>lan</span>" ] && [ "$(t bt)" = "<span foreground='#ff5555'>bt</span>" ] && [ "$(t wifi name)" = "<span foreground='#ff5555'>wifi</span>" ] \
+        && [ "$(t out name)" = "<span foreground='#ff5555'>out</span>" ] && [ "$(t mic name)" = "<span foreground='#ff5555'>mic</span>" ] && [ -n "$(t out gauge)" ] && [ -n "$(t wifi gauge)" ] \
         && [ "$(t bat)" = "<span foreground='#555555'>bat</span> <span foreground='#aaaaaa'>80</span>" ] \
-        && ok "bar in words (#160): lan, bt, wifi, out and mic as words, muted, bt in the accent while connected; the gauges as before; the battery its word and number" || bad "bar words" "$line"
+        && ok "bar in words (#160): lan, bt, wifi, out and mic as words, each in the accent while on and connected; the gauges as before; the battery its word and number" || bad "bar words" "$line"
     sed -i.bak '/^BAR_GLYPHS=/d' "$HOME/.config/spark-shell/config"; rm -f "$HOME/.config/spark-shell/config.bak"
     # present-only: a machine with none of it shows the clock alone, and no divider
     mv "$S" "$S.full"; mv "$P" "$P.full"; mkdir -p "$S" "$P"
@@ -3980,7 +3983,7 @@ else
         && grep -qxF '    capture.pcm "sysdefault"' "$H/.config/alsa/asoundrc" && grep -qx '# bluetooth out: MAJOR V' "$H/.config/alsa/asoundrc" && head -1 "$H/.config/alsa/asoundrc" | grep -q '^# rendered by spark-shell' \
         && ok "out use a headset: playing goes through bluez-alsa's A2DP for programs started from now, listening stays the card's, in spark-shell's own file" || bad "bt out use" "st=$st $out; $(cat "$H/.config/alsa/asoundrc" 2>&1)"
     line=$(sh "$SH" bar status --once)
-    [ "$(t out name)" = "<span foreground='#555555'>$(printf '\342\227\200')</span>" ] && cur out | grep -q 'major v' && sh "$SH" bar panel out level 35 >/dev/null && sh "$SH" bar panel out mute >/dev/null \
+    [ "$(t out name)" = "<span foreground='#ff5555'>$(printf '\342\227\200')</span>" ] && cur out | grep -q 'major v' && sh "$SH" bar panel out level 35 >/dev/null && sh "$SH" bar panel out mute >/dev/null \
         && [ "$(cat "$amlog")" = "$(printf '%s\n' '-D bluealsa sset MAJOR V - A2DP 35%' '-D bluealsa sset MAJOR V - A2DP mute')" ] \
         && ok "out on a headset: the panel names it, and the level and mute are bluez-alsa's mixer" || bad "bt out level" "$(t out name) $(cur out); $(cat "$amlog" 2>&1)"
     rm -f "$amlog" "$HOME/bmuted"
@@ -4032,7 +4035,7 @@ STUB
     printf '#!/bin/sh\n[ "$*" = "-x bluealsa" ] && [ -e "$HOME/bluealsa-runs" ]\n' > "$H/.local/bin/pgrep"
     chmod +x "$H/.local/bin/wpctl" "$H/.local/bin/pw-dump" "$H/.local/bin/pipewire" "$H/.local/bin/pgrep"
     line=$(sh "$SH" bar status --once)
-    [ "$(t out name)" = "<span foreground='#555555'>$(printf '\342\227\200')</span>" ] && [ "$(t mic name)" = "<span foreground='#555555'>$(printf '\342\227\211')</span>" ] && cur out | grep -q 'jabra speak' && cur mic | grep -q 'jabra speak' \
+    [ "$(t out name)" = "<span foreground='#ff5555'>$(printf '\342\227\200')</span>" ] && [ "$(t mic name)" = "<span foreground='#ff5555'>$(printf '\342\227\211')</span>" ] && cur out | grep -q 'jabra speak' && cur mic | grep -q 'jabra speak' \
         && ok "PipeWire: out and mic are WirePlumber's defaults (the panel names them)" || bad "wp names" "$(t out name) / $(t mic name) / $(cur out) / $(cur mic)"
     g=$(t out gauge); m=$(t mic gauge); [ "$(count "$g" "$pip")" = 2 ] && [ "$(count "$m" "$pip")" = 3 ] && ok "PipeWire: the gauges are wpctl's volumes (40, 50: 2 and 3 of 5)" || bad "wp gauges" "$g / $m"
     touch "$H/wp-rec"; line=$(sh "$SH" bar status --once)
@@ -4278,11 +4281,33 @@ STUB
     sh "$SH" panel --list | grep -q "^  undo       transparency 50%	undo all$" && ok "undo: the transparency step's inverse names the percent it was" || bad "transparency undo" "$(sh "$SH" panel --list | grep undo)"
     # the bar: hide and show from the panel, remembered in the config and the render
     rm -f "$journal/undo"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar off 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = "bar hidden $SEP Super+space opens the dialog" ] && grep -q '^DESKTOP_BAR=no$' "$HOME/.config/spark-shell/config" && grep -q '^    mode invisible$' "$sway" && [ "$(sh "$SH" panel bar --list | sed -n 2p)" = "  bar        show	bar on" ] && sh "$SH" panel --list | grep -q "^  undo       bar shown	undo all$" \
-        && ok "panel bar off (the row says hide): DESKTOP_BAR=no, the bar invisible in the render, the row says show now, the undo says shown" || bad "bar off" "st=$st $out $(grep -n 'mode ' "$sway"; sh "$SH" panel bar --list)"
+    [ "$st" -eq 0 ] && [ "$out" = "bar hidden $SEP Super+space opens the dialog" ] && grep -q '^DESKTOP_BAR=no$' "$HOME/.config/spark-shell/config" && grep -q '^    mode invisible$' "$sway" && [ "$(sh "$SH" panel bar --list | sed -n 2,4p)" = "$(printf '  bar        at the top of the screen\tbar top\n  bar        at the bottom of the screen\tbar bottom\n%s bar        hidden\tbar show' "$TICK")" ] && sh "$SH" panel --list | grep -q "^  undo       bar shown	undo all$" \
+        && ok "panel bar off (the hidden row): DESKTOP_BAR=no, the bar invisible in the render, hidden the place checked, the undo says shown" || bad "bar off" "st=$st $out $(grep -n 'mode ' "$sway"; sh "$SH" panel bar --list)"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar on 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'bar shown' ] && grep -q '^DESKTOP_BAR=yes$' "$HOME/.config/spark-shell/config" && grep -q '^    mode dock$' "$sway" && [ "$(sh "$SH" panel bar --list | sed -n 2p)" = "  bar        hide	bar off" ] \
-        && ok "panel bar on: back, and the row says hide again" || bad "bar on" "st=$st $out"
+    [ "$st" -eq 0 ] && [ "$out" = 'bar shown' ] && grep -q '^DESKTOP_BAR=yes$' "$HOME/.config/spark-shell/config" && grep -q '^    mode dock$' "$sway" && [ "$(sh "$SH" panel bar --list | sed -n 2p)" = "$TICK bar        at the top of the screen	bar show" ] && [ "$(sh "$SH" panel bar --list | sed -n 4p)" = "  bar        hidden	bar off" ] \
+        && ok "panel bar on: back where it was, the top checked and hidden a step again" || bad "bar on" "st=$st $out $(sh "$SH" panel bar --list)"
+    # the bar's place (top or bottom), its text size and the tray, from the panel
+    rm -f "$journal/undo"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar bottom 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'bar at the bottom of the screen' ] && grep -q '^BAR_POSITION=bottom$' "$HOME/.config/spark-shell/config" && grep -q '^    position bottom$' "$sway" && grep -qx 'anchor=bottom-right' "$HOME/.config/mako/config" \
+        && [ "$(sh "$SH" panel bar --list | sed -n 3p)" = "$TICK bar        at the bottom of the screen	bar show" ] && [ "$(sh "$SH" panel bar --list | sed -n 1p)" = "bar        shown at the bottom of the screen" ] && sh "$SH" panel --list | grep -q "^  undo       bar at the top of the screen	undo all$" \
+        && ok "panel bar bottom: BAR_POSITION=bottom, the bar at the bottom in the render and the notifications in the bottom corner, the row checked, the undo names the top" || bad "bar bottom" "st=$st $out $(grep -n 'position' "$sway"; sh "$SH" panel bar --list)"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar off 2>&1 && SWAYSOCK=/tmp/x sh "$SH" panel bar on 2>&1) || st=$?
+    [ "$st" -eq 0 ] && grep -q '^    position bottom$' "$sway" && grep -q '^    mode dock$' "$sway" && ok "panel bar off, then on: back at the bottom, where it was" || bad "bar on bottom" "st=$st $out $(grep -n 'position\|mode' "$sway")"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar top 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'bar at the top of the screen' ] && grep -q '^    position top$' "$sway" && grep -qx 'anchor=top-right' "$HOME/.config/mako/config" && ok "panel bar top: the top again, the notifications in the top corner" || bad "bar top" "st=$st $out"
+    grep -q '^    tray_output none$' "$sway" && ok "sway: the tray off by default, the bar in its own glyphs (BAR_TRAY=no)" || bad "tray default" "$(grep -n tray "$sway")"
+    st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel bar tray on 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = "tray on $SEP the apps' icons show at the bar's end" ] && grep -q '^BAR_TRAY=yes$' "$HOME/.config/spark-shell/config" && grep -q '^    tray_output \*$' "$sway" && sh "$SH" panel --list | grep -q "^  undo       tray off	undo all$" \
+        && ok "panel bar tray on: BAR_TRAY=yes, the tray on every screen's bar in the render, the undo turns it off" || bad "bar tray on" "st=$st $out $(grep -n tray "$sway")"
+    SWAYSOCK=/tmp/x sh "$SH" panel bar tray off >/dev/null 2>&1 || :
+    st=0; out=$(sh "$SH" panel bar text 15 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = 'bar text 15' ] && grep -q '^BAR_TEXT=15$' "$HOME/.config/spark-shell/config" && grep -q '^    font pango:DejaVu Sans Mono 15$' "$sway" && grep -qx 'font=DejaVu Sans Mono 13' "$HOME/.config/mako/config" \
+        && ok "panel bar text 15: BAR_TEXT=15, the bar's font at 15, the text and the notifications at the text size" || bad "bar text" "st=$st $out $(grep -n font "$sway" "$HOME/.config/mako/config")"
+    st=0; out=$(sh "$SH" panel bar text 41 2>&1) || st=$?
+    [ "$st" -eq 1 ] && grep -q '^BAR_TEXT=15$' "$HOME/.config/spark-shell/config" && ok "panel bar text 41: refused, nothing written" || bad "bar text 41" "st=$st $out"
+    st=0; out=$(sh "$SH" panel bar text auto 2>&1) || st=$?
+    [ "$st" -eq 0 ] && [ "$out" = "bar text auto, 13 now $SEP it follows the screen" ] && grep -q '^    font pango:DejaVu Sans Mono 13$' "$sway" \
+        && ok "panel bar text auto: with no sway to ask, the text size (13)" || bad "bar text auto" "st=$st $out $(grep -n font "$sway")"
     # the windows: how new ones sit, this workspace now and the default for new ones
     rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window tabs 2>&1) || st=$?
     [ "$st" -eq 0 ] && [ "$out" = 'windows tabs' ] && grep -q '^WINDOWS=tabs$' "$HOME/.config/spark-shell/config" && grep -q '^workspace_layout tabbed$' "$sway" && grep -qxF '[workspace=__focused__ tiling] layout tabbed' "$H/.local/state/swaymsg.log" \
@@ -4456,6 +4481,22 @@ STUB
         && ok "check: no audio system is a warn with the package to install, never a FAIL" || bad "check sound warn" "$out"
     printf 'DESKTOP_BAR=maybe\n' > "$HOME/.config/spark-shell/config"
     sh "$SH" status >/dev/null 2>&1 && bad "DESKTOP_BAR=maybe accepted" || ok "config: DESKTOP_BAR=maybe is refused"
+    _br=''; for _bk in BAR_POSITION=left BAR_TEXT=5 BAR_TEXT=big BAR_TRAY=maybe; do printf '%s\n' "$_bk" > "$HOME/.config/spark-shell/config"; ! sh "$SH" status >/dev/null 2>&1 || _br="$_br $_bk"; done
+    [ -z "$_br" ] && ok "config: BAR_POSITION=left, BAR_TEXT=5 and big, BAR_TRAY=maybe are refused" || bad "bar keys accepted" "$_br"
+    # the bar's text, auto: the text size on 1080 rows, by the square root of the rows over 1080 on a taller screen, the shortest side of the shortest screen on deciding
+    printf 'DESKTOP=sway\nFONT=DejaVu Sans Mono:size=11\n' > "$HOME/.config/spark-shell/config"
+    if command -v python3 >/dev/null 2>&1; then
+        mkdir -p "$H/bt-sway"; rm -f "$H/bt.sock"; python3 -c 'import socket, sys; socket.socket(socket.AF_UNIX).bind(sys.argv[1])' "$H/bt.sock"
+        printf '#!/bin/sh\ncase "$*" in "-t get_outputs") printf %%s "$BT_OUTPUTS" ;; esac\n' > "$H/bt-sway/swaymsg"; chmod +x "$H/bt-sway/swaymsg"
+        _bto() { BT_OUTPUTS=$1 SWAYSOCK=$H/bt.sock PATH=$H/bt-sway:$PATH sh "$SH" bar text 2>&1; }
+        _b1=$(_bto '[{"active":true,"rect":{"width":1920,"height":1080}}]'); _b2=$(_bto '[{"active":true,"rect":{"width":2560,"height":1440}}]')
+        _b3=$(_bto '[{"active":true,"rect":{"width":3840,"height":2160}}]'); _b4=$(_bto '[{"active":true,"rect":{"width":3840,"height":2160}},{"active":true,"rect":{"width":1920,"height":1080}},{"active":false,"rect":{"width":800,"height":600}}]')
+        _b5=$(_bto '[{"active":true,"rect":{"width":1080,"height":1920}}]'); _b6=$(_bto '[{"active":true,"rect":{"width":1920,"height":1080}}]' | head -1)
+        _bw="$SEP the text size, larger on a screen of many pixels"
+        [ "$_b1" = "bar text auto, 11 now $_bw" ] && [ "$_b2" = "bar text auto, 13 now $_bw" ] && [ "$_b3" = "bar text auto, 16 now $_bw" ] && [ "$_b4" = "bar text auto, 11 now $_bw" ] && [ "$_b5" = "bar text auto, 11 now $_bw" ] \
+            && ok "bar text auto: 11 on 1080 rows, 13 on 1440, 16 on 2160; beside a 1080 screen and an inactive one, 11; a screen on its side counts its shorter side" || bad "bar text auto" "$_b1 | $_b2 | $_b3 | $_b4 | $_b5"
+        rm -rf "$H/bt-sway" "$H/bt.sock"
+    fi
     printf 'DESKTOP=sway\n' > "$HOME/.config/spark-shell/config"
     st=0; out=$(PATH=$H/.local/bin:$sys sh "$SH" bar sideways 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: spark is not installed -- spark reads what you want (github.com/forgewright-ai/spark)' ] && ok "bar WORDS without spark: refused in one line" || bad "bar want no spark" "st=$st $out"
@@ -4504,8 +4545,8 @@ for _mf in "$REPO"/wallpaper/motion/*; do _mn=${_mf##*/}; case $_mn in *.py) wal
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 135 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 135 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 139 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 139 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -6048,6 +6089,20 @@ if [ "$(uname -s)" != Darwin ]; then
         && [ "$(ans 2 | jq -r '.result.content[0].text')" = 'the bar is in words already' ] \
         && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'the workspaces as numbers' ] && grep -qx 'BAR_GLYPHS=words' "$cfg" && grep -qx 'BAR_WORKSPACES=numbers' "$cfg" \
         && ok "provide theme_glyphs and theme_workspaces (#160): each a step with its receipt and undo, kept in the config; the same value again is refused" || bad "bar steps" "$(cut -c1-300 "$H/mcp.out")"
+    # the bar's own section: where it sits, a check on the place it has; its text size a value left and right change,
+    # auto standing where its size is; the tray a switch, off
+    mcp bar "$(rq 1 resources/read '{"uri":"spark-shell://bar/rows"}')"; ans 1 | jq -r '.result.contents[0].text' > "$H/brows.json"
+    jq -e '(.rows[0] | .id == "bar:show:at the top of the screen" and .sign == "check" and .group == "place")
+        and (.rows[1] | .tool == {name: "bar_bottom", arguments: {}} and .group == "place") and (.rows[2] | .text == "hidden" and .tool == {name: "bar_off", arguments: {}})
+        and (.rows[] | select(.id == "bar:show:Text size") | (.step.values | length) == 36 and .step.values[.step.at].sent == "auto" and (.step.values[.step.at].shown | test("^auto [0-9]+$"))
+            and .step.values[.step.at - 1].sent == ((.step.values[.step.at].shown | ltrimstr("auto ") | tonumber) - 1 | tostring) and .step.set == {name: "bar_text", arguments: {}} and .step.key == "size")
+        and (.rows[] | select(.id == "bar:show:App icons (the tray)") | .switch == {on: false, turn_on: {name: "bar_tray", arguments: {state: "on"}}, turn_off: {name: "bar_tray", arguments: {state: "off"}}})' "$H/brows.json" >/dev/null \
+        && ok "provide bar rows: the top checked, the bottom and hidden a tool each; the text size a step, auto where its size is; the tray a switch, off" || bad "bar section rows" "$(cut -c1-600 "$H/brows.json")"
+    mcp bar "$(call 1 bar_text '{"size":"14"}')" "$(call 2 bar_text '{"size":"huge"}')"
+    [ "$(ans 1 | jq -r '.result.structuredContent.receipt')" = 'bar text 14' ] && ans 1 | jq -e '.result.structuredContent.undo == {name: "bar_text", arguments: {size: "auto"}}' >/dev/null && grep -qx 'BAR_TEXT=14' "$cfg" \
+        && ans 2 | jq -e '.error.message | startswith("bar_text: size is one of auto, bigger, smaller, 6")' >/dev/null \
+        && ok "provide bar_text: a size kept in the config, its undo back to auto; a word that is no size refused" || bad "bar_text call" "$(cut -c1-400 "$H/mcp.out")"
+    sh "$SH" bar text auto >/dev/null 2>&1 || :
     sh "$SH" theme save barlook >/dev/null 2>&1; sh "$SH" theme glyphs signs >/dev/null 2>&1; sh "$SH" theme workspaces symbols >/dev/null 2>&1; sh "$SH" theme barlook >/dev/null 2>&1
     grep -qx 'BAR_GLYPHS=words' "$th_dir/barlook/look.env" && grep -qx 'BAR_WORKSPACES=numbers' "$th_dir/barlook/look.env" && grep -qx 'BAR_GLYPHS=words' "$cfg" && grep -qx 'BAR_WORKSPACES=numbers' "$cfg" \
         && ok "theme save keeps the bar's set and its workspaces, and the theme brings them back (#160)" || bad "bar look kept" "$(cat "$th_dir/barlook/look.env" 2>&1; grep BAR_ "$cfg")"
@@ -6217,7 +6272,7 @@ STUB
     glyph() { printf '</span>\\n&#x%s; <b>%%s</b>\\n%%b' "$1"; }   # glyph HEX -> the tail with that glyph before the summary
     after() { sed -n "/^\\[$1\\]\$/{n;p;}" "$mk"; }   # after CRITERIA -> the line under that section's header
     block() { sed -n "/^\\[$1\\]\$/,/^\$/p" "$mk" | sed -n '2,4p'; }   # block CRITERIA -> the three lines under the header
-    [ -n "$_pm" ] && [ "$_pm" != aaaaaa ] && grep -qx 'margin=8' "$mk" && grep -qx 'outer-margin=12' "$mk" && grep -qx 'group-by=app-name' "$mk" && grep -qx 'on-button-middle=dismiss-all' "$mk" && grep -qx 'icons=0' "$mk" && grep -qx 'default-timeout=6000' "$mk" \
+    [ -n "$_pm" ] && [ "$_pm" != aaaaaa ] && grep -qx 'margin=8' "$mk" && grep -qx 'outer-margin=12' "$mk" && grep -qx 'group-by=app-name' "$mk" && grep -qxF "on-button-middle=exec makoctl dismiss -a; $REPO/spark-shell bar seen" "$mk" && grep -qxF "on-button-right=exec makoctl dismiss -n \"\$id\"; $REPO/spark-shell bar seen \"\$id\"" "$mk" && grep -qx 'icons=0' "$mk" && grep -qx 'default-timeout=6000' "$mk" \
         && [ "$(after grouped)" = "format=$_a%a &#183; %g$_t" ] \
         && [ "$(after hidden)" = "format=<span foreground=\"#$_pm\">&#x25B8; and %h more</span>" ] \
         && [ "$(block 'urgency=low')" = "$(printf '%s\n' "text-color=#$_pm" 'default-timeout=4000' "format=<span foreground=\"#$_pm\">&#x276F; %a$_t")" ] \
@@ -6225,13 +6280,13 @@ STUB
         && [ "$(after 'grouped category=email.arrived')" = "format=$_a%a &#183; %g$(glyph 2261)" ] && [ "$(after 'grouped category=email')" = "format=$_a%a &#183; %g$(glyph 2261)" ] \
         && [ "$(after 'category=transfer.complete')" = "format=$_a%a$(glyph 2713)" ] && [ "$(after 'category=transfer.error')" = "format=$_a%a$(glyph 2717)" ] && [ "$(after 'category=device.added')" = "format=$_a%a$(glyph 25AD)" ] \
         && [ "$(block 'urgency=critical')" = "$(printf '%s\n' 'default-timeout=0' 'layer=overlay' "format=$_a%a</span>\n<span foreground=\"#aa0000\">&#x26A0;</span> <b>%s</b>\n%b")" ] && ! grep -q '^border-color=' "$mk" \
-        && ok "mako's config: the angle in the accent, the edge on the windows' content and 8 between, an app's own together with their count, 'and N more' under three, a low one muted through and gone in four seconds, a filled dot before what any card says, a low one's too (quiet is not off), three lines, a check or a cross and a hollow stick before what mail, a transfer and a drive say, a red warning sign before a critical one with no frame and over a full-screen window, a middle click dismisses all (#71)" || bad "mako look" "$(cat "$mk")"
-    grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog reminders" "$mk" \
-        && grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog storage" "$mk" \
-        && [ "$(after 'app-name=spark-shell category=x-spark-shell.reminder')" = "format=${_a}reminder &#x25B8; a click opens it$(glyph 2691)" ] \
+        && ok "mako's config: the angle in the accent, the edge on the windows' content and 8 between, an app's own together with their count, 'and N more' under three, a low one muted through and gone in four seconds, a filled dot before what any card says, a low one's too (quiet is not off), three lines, a check or a cross and a hollow stick before what mail, a transfer and a drive say, a red warning sign before a critical one with no frame and over a full-screen window, a middle click dismisses all and a right click one, each looked at for the bar's count (#71)" || bad "mako look" "$(cat "$mk")"
+    grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; $REPO/spark-shell bar seen \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog reminders" "$mk" \
+        && grep -qxF "on-button-left=exec makoctl dismiss -n \"\$id\"; $REPO/spark-shell bar seen \"\$id\"; foot --config $HOME/.config/foot/dialog.ini --app-id spark-dialog -e $REPO/spark-shell dialog storage" "$mk" \
+        && [ "$(after 'app-name=spark-shell category=x-spark-shell.reminder')" = "format=${_a}reminder &#x25B8; a click opens it$(glyph 29D7)" ] \
         && [ "$(after 'app-name=spark-shell category=device.added')" = "format=${_a}drive &#x25B8; a click opens Storage$(glyph 25AD)" ] \
         && [ "$(sed -n '/^\[mode=do-not-disturb\]$/,$p' "$mk" | grep -c .)" = 4 ] && tail -1 "$mk" | grep -qx 'invisible=0' \
-        && ok "mako's config: a reminder or a drive says so on its first line, the bar's flag or a hollow stick before what it says, and a click opens the dialog there; do not disturb last, a critical one through it" || bad "mako criteria" "$(cat "$mk")"
+        && ok "mako's config: a reminder or a drive says so on its first line, the bar's hourglass or a hollow stick before what it says, and a click opens the dialog there; do not disturb last, a critical one through it" || bad "mako criteria" "$(cat "$mk")"
     grep -qx 'exec mako' "$HOME/.config/sway/config" && ok "sway config: mako starts with the desktop" || bad "sway exec mako" "$(grep -n mako "$HOME/.config/sway/config")"
     # a new look: the file again, and a mako that runs reads it at once
     touch "$HOME/mako.up"; rm -f "$HOME/mako.log"
@@ -6279,10 +6334,23 @@ STUB
         && ok "notifications do-not-disturb on: mako's mode and the config, undo puts it off; asked again, a receipt with nothing to undo (#71)" || bad "dnd on" "$(cat "$H/mcp.out")"
     [ "$(rows notifications | jq -r '.state + " | " + .rows[0].text + " | " + .rows[0].sign')" = 'do not disturb | turn off do not disturb | dot' ] && ok "notifications: with do not disturb on, the row in use turns it off" || bad "dnd row" "$(rows notifications | head -c 300)"
     REM_LOOK=1 sh "$SH" bar status --once 2>/dev/null | jq -e 'any(.[]; .name == "notifications" and (.full_text | test("\u23fe")))' >/dev/null && ok "bar: do not disturb is said while it is on, a click opens its section" || bad "bar dnd" "$(REM_LOOK=1 sh "$SH" bar status --once 2>&1 | head -c 400)"
+    # the bar's count: mako's notifications, on the screen (9) and gone (12), that nobody looked at; bar seen ID (mako's click) and bare (the block's click, dismiss) count them looked at
+    nb() { REM_LOOK=1 XDG_RUNTIME_DIR=$H/run sh "$SH" bar status --once 2>/dev/null | jq -r '[.[] | select(.name == "notifications") | .instance + "=" + (.full_text | gsub("<[^>]*>"; ""))] | join(" ")'; }
+    mkdir -p "$H/run"; rm -f "$H/run/spark-shell/notify-seen"
+    _n1=$(nb); XDG_RUNTIME_DIR=$H/run sh "$SH" bar seen 12 >/dev/null 2>&1; _n2=$(nb); XDG_RUNTIME_DIR=$H/run sh "$SH" bar seen 9 77 >/dev/null 2>&1; _n3=$(nb)
+    _dnd=$(printf '\342\217\276'); _note=$(printf '\342\232\221')
+    [ "$_n1" = "dnd=$_dnd count=$_note 2" ] && [ "$_n2" = "dnd=$_dnd count=$_note 1" ] && [ "$_n3" = "dnd=$_dnd" ] && [ "$(cat "$H/run/spark-shell/notify-seen")" = "$(printf '9\n12')" ] \
+        && ok "bar: the notifications nobody looked at, the flag and how many beside do not disturb; one looked at by its id, then the other: do not disturb alone, an id mako does not hold not kept (#71)" || bad "bar count" "$_n1 | $_n2 | $_n3 | $(cat "$H/run/spark-shell/notify-seen" 2>&1)"
+    printf 'Notification 14: Ping\n  App name: chat\n' > "$HOME/mako.list"; _n4=$(nb)
+    cp "$HOME/.config/spark-shell/config" "$H/config.keep"; printf 'BAR_GLYPHS=words\n' >> "$HOME/.config/spark-shell/config"; _n5=$(nb); cp "$H/config.keep" "$HOME/.config/spark-shell/config"
+    XDG_RUNTIME_DIR=$H/run sh "$SH" bar seen >/dev/null 2>&1; _n6=$(nb)
+    [ "$_n4" = "dnd=$_dnd count=$_note 1" ] && [ "$_n5" = "dnd=do not disturb count=new 1" ] && [ "$_n6" = "dnd=$_dnd" ] \
+        && ok "bar: a new one on the screen counts, the one looked at stays looked at; in words, new 1; bar seen, bare, looks at them all" || bad "bar count new" "$_n4 | $_n5 | $_n6"
     rm -f "$HOME/mako.dnd"; sh "$SH" desktop --pending >/dev/null 2>&1 || :; _i=0; while [ "$_i" -lt 20 ] && [ ! -e "$HOME/mako.dnd" ]; do sleep 0.25; _i=$((_i + 1)); done
     [ -e "$HOME/mako.dnd" ] && ok "desktop --pending (the desktop's start): do not disturb as the config left it" || bad "dnd kept" "$(cat "$HOME/mako.log")"
     out=$(sh "$SH" desktop notifications do-not-disturb off 2>&1 || :); [ "$out" = 'do not disturb off' ] && [ ! -e "$HOME/mako.dnd" ] && grep -qx 'DO_NOT_DISTURB=no' "$HOME/.config/spark-shell/config" \
         && ok "desktop notifications do-not-disturb off: said, mako's mode gone, the config too" || bad "dnd off cli" "$out"
+    [ -z "$(nb)" ] && ok "bar: do not disturb off and every notification looked at: no notifications block" || bad "bar no count" "$(nb)"
     out=$(sh "$SH" desktop notifications 2>&1 || :); [ "$out" = "$(printf 'do not disturb off\n  firefox: Saved')" ] && ok "desktop notifications: do not disturb, then the last few with their app" || bad "notifications cli" "$out"
     rc=0; out=$(sh "$SH" desktop notifications loud 2>&1) || rc=$?; [ "$rc" = 1 ] && [ "$out" = 'spark-shell desktop: notifications takes do-not-disturb on|off, dismiss or restore' ] && ok "desktop notifications WORD: refused in one line" || bad "notifications refuse" "rc=$rc $out"
     # a reminder due comes as a notification once, on the desktop alone
@@ -6554,7 +6622,7 @@ STUB
         && grep -qxF -- '- Bluetooth on; connected now: "Fake Speaker".' "$mn" \
         && grep -qxF -- '- Network: wired eth0 up with an address; Wi-Fi wlan0 connected to home, signal 70%, with an address.' "$mn" \
         && grep -qxF -- '- Keyboard layout in use: br. Palette nord, wallpaper default. Idle screen after 10 minutes (saver starfield), lock after 15 minutes.' "$mn" \
-        && grep -qxF -- '- Drives plugged in: "Acme Fakestick".' "$mn" && grep -qxF -- '- The bar is shown; do not disturb is off.' "$mn" \
+        && grep -qxF -- '- Drives plugged in: "Acme Fakestick".' "$mn" && grep -qxF -- '- The bar is shown at the top of the screen; do not disturb is off.' "$mn" \
         && ok "now: the windows by con id and app_id, the focused one said, the dialog left out; the workspaces; the sound in use; who is connected; the wire and the radio; the layout, the look and the minutes; the drive; the bar (#159)" || bad "now" "$(cat "$mn")"
     hit=$(grep -iF -e 'SECRET' -e 'hidden words' -e 'hidden-dir' -e 'secret-movie' -e 'cafe' -e 'dentist' -e '192.0.2' -e 'SN0001' -e 'SN0002' -e '00:25:D1' -e 'Buds Nearby' "$mf" "$mn" || :)
     [ -z "$hit" ] && ok "the machine folder holds no window's title, no network around that is not saved, no note's or reminder's words, no notification, no address, no serial, no device's address, no device that is not paired (#159)" || bad "machine never-list" "$hit"

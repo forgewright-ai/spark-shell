@@ -81,6 +81,9 @@
 #                                     lock, log out, suspend, restart, shut down
 #   spark-shell bar on|off            show or hide the status line and the bar
 #   spark-shell bar on|off --desktop  the bar alone (--terminal: the line alone)
+#   spark-shell bar top|bottom        the bar at the top or the bottom
+#   spark-shell bar text [auto|N]     the bar's text size, auto: by the screen
+#   spark-shell bar tray [on|off]     the apps' icons at the bar's end
 #   spark-shell dialog [SECTION]      open home (Super+Space), SECTION first
 #   spark-shell dialog chat           conversation inside home
 #   spark-shell dialog about          the version, license and credits
@@ -117,8 +120,9 @@
 # in ~/.config/spark-shell/config, one KEY=value a line. PROMPT is
 # starship|plain, PROMPT_STYLE minimal|full, DESKTOP none|sway, FONT
 # foot's spec (Monaspace Neon:size=11), WALLPAPER default|none|PATH|#rrggbb,
-# ALPHA foot over a picture (0.85) and DESKTOP_BAR yes|no (the bar at the
-# top). THEME is a palette's name or none, CONSOLE_FONT "FACE SIZE" (empty:
+# ALPHA foot over a picture (0.85), DESKTOP_BAR yes|no (the bar shown or
+# hidden), BAR_POSITION top|bottom, BAR_TEXT auto or a size, BAR_TRAY
+# yes|no (the apps' icons on the bar). THEME is a palette's name or none, CONSOLE_FONT "FACE SIZE" (empty:
 # the console keeps its font), QUIET_LOGIN and QUIET_BOOT yes|no. starship
 # comes with the packages where the family's list names it (pacman, xbps,
 # zypper, Homebrew). Debian and Fedora have no package, so there the rc
@@ -178,7 +182,7 @@ load_env() {
 }
 # The keys spark-shell exports for its own runs; a shell or a desktop it
 # starts for you gets them unset, so nothing stale is handed on.
-CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u BAR_GLYPHS -u BAR_WORKSPACES -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'
+CONFIG_UNSET='-u PROMPT -u PROMPT_STYLE -u DESKTOP -u FONT -u WALLPAPER -u POINTER -u POINTER_TAP -u POINTER_SCROLL -u POINTER_SPEED -u KEY_REPEAT_DELAY -u KEY_REPEAT_RATE -u KEY_CAPS -u ALPHA -u THEME -u CONSOLE_FONT -u QUIET_LOGIN -u QUIET_BOOT -u DESKTOP_BAR -u BAR_POSITION -u BAR_TEXT -u BAR_TRAY -u WINDOWS -u LOGIN -u DIALOG_ATTACH -u DIALOG_ATTACH_TYPES -u DIALOG_MODEL -u DIALOG_TALK -u DIALOG_ANIMATION -u BAR_GLYPHS -u BAR_WORKSPACES -u WALLPAPER_MOTION -u DISPLAY_IDLE -u DISPLAY_LOCK -u DISPLAY_SAVER -u KEYBOARD -u DO_NOT_DISTURB -u CLOCK_FORMAT -u WEEK_START'
 
 # This machine's short name (the twin of spark lib/env.sh short_host). On
 # a Mac, LocalHostName, by scutil's full path: /usr/sbin is not on every
@@ -217,11 +221,16 @@ config_load() {
     : "${WALLPAPER:=default}"               # the desktop's background: default (the forge), none, a full path or #rrggbb
     : "${POINTER:=}"                        # the pointer: "NAME [SIZE]", a cursor theme's name and its size in pixels (24); empty: the spark pointer by palette
     : "${ALPHA:=0.85}"                      # foot over a picture: 0..1, 1 = opaque
-    : "${DESKTOP_BAR:=yes}"                # the bar at the top of the desktop: yes or no
+    : "${DESKTOP_BAR:=yes}"                # the bar on the desktop: yes (shown) or no (hidden)
+    : "${BAR_POSITION:=top}"               # where the bar sits: top or bottom
+    : "${BAR_TEXT:=auto}"                  # the bar's text size: auto (the text size, larger on a screen of many pixels) or 6 to 40
+    : "${BAR_TRAY:=no}"                    # the apps' own icons (the tray) at the bar's end: yes or no
     : "${WINDOWS:=split}"                  # how new windows sit on a workspace: split (side by side), tabs or stacked
     : "${LOGIN:=no}"                       # the login screen on tty1 (greetd): yes or no
     case $WINDOWS in split|tabs|stacked) ;;
         *) echo "spark-shell: WINDOWS=$WINDOWS in $CONFIG: split, tabs or stacked" >&2; exit 1 ;; esac
+    case $BAR_POSITION in top|bottom) ;; *) echo "spark-shell: BAR_POSITION=$BAR_POSITION in $CONFIG: top or bottom" >&2; exit 1 ;; esac
+    case $BAR_TEXT in auto|[6-9]|[1-3][0-9]|40) ;; *) echo "spark-shell: BAR_TEXT=$BAR_TEXT in $CONFIG: auto, or a size from 6 to 40" >&2; exit 1 ;; esac
     alpha_ok "$ALPHA" || { echo "spark-shell: ALPHA=$ALPHA in $CONFIG: 0 to 1 (0.85)" >&2; exit 1; }
     font_ok "$FONT" || { echo "spark-shell: FONT=$FONT in $CONFIG: a face and its size as foot takes them (Monaspace Neon:size=11): letters, digits, spaces and : = . + _ -" >&2; exit 1; }
     wall_value_ok "$WALLPAPER" || { echo "spark-shell: WALLPAPER=$WALLPAPER in $CONFIG: default, a drawing's name, #rrggbb or a picture's full path, with $PATH_SAID" >&2; exit 1; }
@@ -244,7 +253,7 @@ config_load() {
     : "${WALLPAPER_MOTION:=off}"   # a moving wallpaper where the drawing has one (#180), kept with a saved theme
     case $WALLPAPER_MOTION in on|off) ;; *) echo "spark-shell: WALLPAPER_MOTION=$WALLPAPER_MOTION in $CONFIG: on or off" >&2; exit 1 ;; esac
     : "${DO_NOT_DISTURB:=no}"   # the notifications kept out of sight, as mako's do-not-disturb mode, across logins (#71)
-    for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK LOGIN DO_NOT_DISTURB; do
+    for k in QUIET_LOGIN QUIET_BOOT DESKTOP_BAR BAR_TRAY DIALOG_ATTACH DIALOG_MODEL DIALOG_TALK LOGIN DO_NOT_DISTURB; do
         eval "v=\$$k"
         case $v in yes|no) ;; *) echo "spark-shell: $k=$v in $CONFIG: yes or no" >&2; exit 1 ;; esac
     done
@@ -268,7 +277,7 @@ config_load() {
         input_valid "$k" "$v" || { echo "spark-shell: invalid $k in $CONFIG" >&2; exit 1; }
     done
     export POINTER_TAP POINTER_SCROLL POINTER_SPEED KEY_REPEAT_DELAY KEY_REPEAT_RATE KEY_CAPS
-    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK DIALOG_ANIMATION BAR_GLYPHS BAR_WORKSPACES WALLPAPER_MOTION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB
+    export PROMPT PROMPT_STYLE DESKTOP FONT WALLPAPER ALPHA THEME CONSOLE_FONT QUIET_LOGIN QUIET_BOOT DESKTOP_BAR BAR_POSITION BAR_TEXT BAR_TRAY WINDOWS DIALOG_ATTACH DIALOG_ATTACH_TYPES DIALOG_MODEL DIALOG_TALK DIALOG_ANIMATION BAR_GLYPHS BAR_WORKSPACES WALLPAPER_MOTION LOGIN DISPLAY_IDLE DISPLAY_LOCK DISPLAY_SAVER KEYBOARD POINTER DO_NOT_DISTURB
 }
 ANIMATION_NAMES='moon ripple tide embers sun flight'   # assets/transitions' pieces, in the order the theme's row steps through them; none is no motion (#122)
 # The piece each palette brings, as it brings its drawing (#122): picked for the drawing's mood, the
@@ -865,11 +874,36 @@ link_one() {   # link_one SRC DST
 }
 esc() { printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'; }
 bar_mode() { if [ "$DESKTOP_BAR" = yes ]; then echo dock; else echo invisible; fi; }   # sway bar mode: shown, or there but never drawn
+bar_tray_output() { if [ "$BAR_TRAY" = yes ]; then echo '*'; else echo none; fi; }   # sway's tray_output: every screen's bar, or none
+bar_place() { if [ "$DESKTOP_BAR" != yes ]; then echo hidden; else echo "$BAR_POSITION"; fi; }   # -> top, bottom or hidden: the one place the bar's section and its verb say
+bar_place_words() { case $1 in top) echo 'at the top of the screen' ;; bottom) echo 'at the bottom of the screen' ;; *) echo hidden ;; esac; }
 bar_font() {   # bar_font [SPEC] -- foot's FONT ("Face:size=N", or :pixelsize=N) in pango's words: "Face N", "Face Npx"; no size, 12
     _bf=${1:-$FONT}; face=${_bf%%:*}; opts=""; case $_bf in *:*) opts=${_bf#*:} ;; esac
     size=$(printf '%s' "$opts" | tr ':' '\n' | sed -n 's/^size=\([0-9.]*\)$/\1/p' | head -1)
     px=$(printf '%s' "$opts" | tr ':' '\n' | sed -n 's/^pixelsize=\([0-9.]*\)$/\1/p' | head -1)
     if [ -n "$size" ]; then printf '%s %s' "$face" "$size"; elif [ -n "$px" ]; then printf '%s %spx' "$face" "$px"; else printf '%s 12' "$face"; fi
+}
+# The bar's own text size (BAR_TEXT): a size from 6 to 40, or auto, the text size on a screen of
+# 1080 rows or fewer, and larger on a taller one, by the square root of its rows over 1080 (1440
+# rows: 15% larger, 2160: 41%), so a screen of many pixels at scale 1 keeps a bar that reads from
+# a distance; a screen sway already scales counts its rows after the scale, and a screen turned
+# on its side its shorter side. One bar spans every screen: the shortest decides, so none gets
+# a bar too big for it. Outside a running sway auto is the text size, and the bar's loop puts the
+# screen's size on it once it runs (bar_font_follow).
+bar_line_font() {   # bar_line_font [SPEC] -- the bar's font in pango's words: FONT's face at BAR_TEXT's size (points), or at auto's
+    _blf=$(bar_font "${1:-$(font_spec)}"); _bls=${_blf##* }; _blf=${_blf% *}; _blu=''
+    case $_bls in *px) _blu=px; _bls=${_bls%px} ;; esac
+    case ${BAR_TEXT:-auto} in auto) _bls=$(bar_auto_size "$_bls" "$(bar_screen_rows)") ;; *) _bls=$BAR_TEXT; _blu='' ;; esac
+    printf '%s %s%s' "$_blf" "$_bls" "$_blu"
+}
+bar_auto_size() {   # bar_auto_size SIZE ROWS -> SIZE as it is for 1080 rows or fewer (or none known), else SIZE times the square root of ROWS/1080, whole, 40 at most
+    case $2 in ''|*[!0-9]*) printf '%s' "$1"; return 0 ;; esac
+    [ "$2" -gt 1080 ] || { printf '%s' "$1"; return 0; }
+    awk -v n="$1" -v h="$2" 'BEGIN { s = int(n * sqrt(h / 1080) + 0.5); if (s > 40) s = 40; if (s < n) s = n; print s }'
+}
+bar_screen_rows() {   # -> the rows of the shortest screen on, its shorter side after sway's scale, from a running sway; nothing outside one
+    [ -S "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
+    swaymsg -t get_outputs 2>/dev/null | jq -r '[.[] | select(.active) | [.rect.width, .rect.height] | min] | min // empty' 2>/dev/null || :
 }
 NL='
 '
@@ -889,7 +923,8 @@ render_expr() {   # -> the sed script that renders a template, one s command a l
     # before fontconfig's own list, whose first is the proportional DejaVu Sans
     case $_fs in "$NEON"|"$NEON":*) _ff="$_fs,$NEON_OLD${_fs#"$NEON"}" ;; *) _ff=$_fs ;; esac
     e="$e${NL}s|@FONT@|$(esc "$_ff")|g"
-    e="$e${NL}s|@BAR_MODE@|$(bar_mode)|g${NL}s|@BAR_FONT@|$(esc "$(bar_font "$_fs")")|g"
+    e="$e${NL}s|@BAR_MODE@|$(bar_mode)|g${NL}s|@BAR_FONT@|$(esc "$(bar_font "$_fs")")|g${NL}s|@BAR_LINE_FONT@|$(esc "$(bar_line_font "$_fs")")|g"
+    e="$e${NL}s|@BAR_POSITION@|$BAR_POSITION|g${NL}s|@BAR_TRAY@|$(bar_tray_output)|g${NL}s|@NOTIFY_ANCHOR@|$(notify_anchor)|g"
     e="$e${NL}s|@FOOT_COLORS@|$(foot_colors)|g"
     if desktop_wanted; then e="$e${NL}s|@DESK_SLOTS@|yes|g"; else e="$e${NL}s|@DESK_SLOTS@|no|g"; fi   # sgr.sh: the five slots in foot only where the desktop's foot.ini sets them (#34)
     e="$e${NL}s|@SCREENS_CONF@|$(esc "$SCREENS_CONF")|g${NL}s|@IDLE_EXEC@|$(esc "$(idle_exec)")|g${NL}s|@KB_LAYOUT@|$(esc "$(kb_line layout)")|g${NL}s|@KB_VARIANT@|$(esc "$(kb_line variant)")|g"
@@ -2341,7 +2376,7 @@ sway_live_cmd() {   # -> the one swaymsg command that gives a running sway the l
     _c="$_c; client.unfocused #$BORDER_HEX #$HEX_BG #$HEX_MUTED #$BORDER_HEX #$BORDER_HEX; client.urgent #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG #$HEX_ANSI_1 #$HEX_ANSI_1"
     _c="$_c; $(pointer_fresh)seat * xcursor_theme $POINTER_NAME $POINTER_SIZE; gaps inner all set $GAPS_INNER; gaps outer all set $GAPS_OUTER; [tiling] border $BORDER"
     _b=$(swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | cut -d, -f1)   # the bar's id, bar-0
-    [ -z "$_b" ] || _c="$_c; bar $_b mode $(bar_mode); bar $_b font pango:$(bar_font "$(font_spec)"); bar $_b colors background #$HEX_BG$BAR_ALPHA; bar $_b colors statusline #$HEX_FG; bar $_b colors separator #$HEX_MUTED; bar $_b colors focused_workspace #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG; bar $_b colors active_workspace #$HEX_MUTED #$HEX_MUTED #$HEX_BG; bar $_b colors inactive_workspace #$HEX_BG$BAR_ALPHA #$HEX_BG$BAR_ALPHA #$HEX_MUTED; bar $_b colors urgent_workspace #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG; bar $_b colors binding_mode #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG"
+    [ -z "$_b" ] || _c="$_c; bar $_b mode $(bar_mode); bar $_b font pango:$(bar_line_font "$(font_spec)"); bar $_b colors background #$HEX_BG$BAR_ALPHA; bar $_b colors statusline #$HEX_FG; bar $_b colors separator #$HEX_MUTED; bar $_b colors focused_workspace #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG; bar $_b colors active_workspace #$HEX_MUTED #$HEX_MUTED #$HEX_BG; bar $_b colors inactive_workspace #$HEX_BG$BAR_ALPHA #$HEX_BG$BAR_ALPHA #$HEX_MUTED; bar $_b colors urgent_workspace #$HEX_ANSI_1 #$HEX_ANSI_1 #$HEX_BG; bar $_b colors binding_mode #$HEX_ACCENT #$HEX_ACCENT #$HEX_BG"
     printf '%s' "$_c"
 }
 theme_preview() (   # theme_preview NAME|off -- a palette on the screen while the dialog's light rests on it (#183): sway, the bar, the open terminals and its drawing, nothing written, nothing kept; off puts the look in use back. Its own shell: the provider keeps the palette in use
@@ -3316,7 +3351,7 @@ cmd_status() {
         elif [ "$WALLPAPER" = default ]; then printf '  wall  %-16s %s\n' default "the ground, the palette's background a shade darker ($(wall_ground)); it follows the palette"
         elif wall_there; then printf '  wall  %-16s %s\n' picture "$WALLPAPER"
         else printf '  wall  %-16s %s\n' missing "$(wall_path) is missing -- the palette's background color instead"; fi
-        if [ "$DESKTOP_BAR" = yes ]; then printf '  bar   %-16s %s\n' shown "at the top of the screen: $(bar_names) (spark-shell bar off --desktop hides it)"
+        if [ "$DESKTOP_BAR" = yes ]; then printf '  bar   %-16s %s\n' shown "$(bar_place_words "$BAR_POSITION"): $(bar_names) (spark-shell bar off --desktop hides it)"
         else printf '  bar   %-16s %s\n' hidden "spark-shell bar on --desktop shows it"; fi
     fi
     theme_load || true
@@ -3445,9 +3480,13 @@ cmd_check() {
 # STATE_DIR/bar.pid). It shows the screen and the hardware you sit at;
 # the AI and the machine's load stay on tmux's status line inside each
 # window. Its rules: a block appears only for hardware this machine has
-# (no battery, no bat block); words show state and color shows alarm
-# (the kind word muted, a name in the text color, red for a recording
-# mic, a wire that is down and a battery under 15); the gauges, the
+# (no battery, no bat block); a sign is filled when on and hollow when
+# off or muted, and its color says the state, one rule for every block:
+# the accent for on and connected (a wire up, wifi joined, a bluetooth
+# device connected, sound out and the mic open, the screen's light, the
+# notifications that came while nobody looked, a reminder due), muted
+# for idle, off or muted, red for an alarm (a recording mic, a wire that
+# is down, a battery under 15), a name in the text color; the gauges, the
 # output volume and the mic level, are the things you can set (a click
 # sets, the wheel nudges, a right click mutes), so a read-only level
 # takes another shape (wifi as rising bars, the battery as a number); a
@@ -3481,8 +3520,9 @@ BAR_MIC=$(printf '\342\227\211')      # U+25C9 fisheye: the mic, open
 BAR_MIC_OFF=$(printf '\342\227\213')  # U+25CB white circle: the mic, muted (recording: PANEL_DOT in red)
 BAR_LIGHT=$(printf '\342\230\274')    # U+263C white sun with rays: brightness
 BAR_KB=$(printf '\342\214\227')       # U+2317 viewdata square: the keyboard's layout
-BAR_DUE=$(printf '\342\232\221')      # U+2691 black flag: a reminder due
+BAR_DUE=$(printf '\342\247\227')      # U+29D7 black hourglass: a reminder due, its time come
 BAR_DND=$(printf '\342\217\276')      # U+23FE power sleep symbol: do not disturb
+BAR_NOTE=$(printf '\342\232\221')     # U+2691 black flag: notifications that came while nobody looked
 BAR_PIP=$(printf '\342\226\260')      # U+25B0 black parallelogram: a gauge's cell, lit
 BAR_PIP_OFF=$(printf '\342\226\261')  # U+25B1 white parallelogram: a gauge's cell, unlit
 # the workspaces, named N:GLYPH by bar_ws_names; the bar strips the number. Workspace 1 wears
@@ -3908,14 +3948,14 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by air
     # step in Settings shows at once
     _bw=''; [ "$(bar_style BAR_GLYPHS signs)" != words ] || _bw=1
     if [ -n "$_bw" ]; then
-        k_lan=lan k_bt=bt k_bt_off='bt off' k_wifi=wifi k_out=out k_out_off=out k_mic=mic k_mic_off=mic k_light=light k_kb=kb k_due=due k_dnd='do not disturb'
+        k_lan=lan k_bt=bt k_bt_off='bt off' k_wifi=wifi k_out=out k_out_off=out k_mic=mic k_mic_off=mic k_light=light k_kb=kb k_due=due k_dnd='do not disturb' k_note=new
     else
-        k_lan=$BAR_LAN k_bt=$BAR_BT k_bt_off=$BAR_BT_OFF k_wifi=$BAR_WIFI k_out=$BAR_OUT k_out_off=$BAR_OUT_OFF k_mic=$BAR_MIC k_mic_off=$BAR_MIC_OFF k_light=$BAR_LIGHT k_kb=$BAR_KB k_due=$BAR_DUE k_dnd=$BAR_DND
+        k_lan=$BAR_LAN k_bt=$BAR_BT k_bt_off=$BAR_BT_OFF k_wifi=$BAR_WIFI k_out=$BAR_OUT k_out_off=$BAR_OUT_OFF k_mic=$BAR_MIC k_mic_off=$BAR_MIC_OFF k_light=$BAR_LIGHT k_kb=$BAR_KB k_due=$BAR_DUE k_dnd=$BAR_DND k_note=$BAR_NOTE
     fi
     # connections
     lan=$(bar_lan)
     case $lan in
-        up*) bar_add "$(bar_block lan '' "$(bar_span "$HEX_MUTED" "$k_lan")")" ;;
+        up*) bar_add "$(bar_block lan '' "$(bar_span "$HEX_ACCENT" "$k_lan")")" ;;   # connected: the accent, as bluetooth's
         down) bar_add "$(bar_block lan '' "$(bar_span "$HEX_ANSI_1" "$k_lan $PANEL_WARN")")" ;;
     esac
     bt=$(bar_bt)
@@ -3925,8 +3965,8 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by air
         off) bar_add "$(bar_block bt '' "$(bar_span "$HEX_MUTED" "$k_bt_off")")" ;;
     esac
     wifi=$(bar_wifi_pct)
-    if [ -n "$wifi" ]; then   # the signal, a gauge as sound's
-        bar_add "$(bar_block wifi name "$(bar_span "$HEX_MUTED" "$k_wifi")" 6)"
+    if [ -n "$wifi" ]; then   # connected: the sign in the accent, and the signal, a gauge as sound's
+        bar_add "$(bar_block wifi name "$(bar_span "$HEX_ACCENT" "$k_wifi")" 6)"
         bar_add "$(bar_block wifi gauge "$(bar_gauge "${wifi%% *}" 0)")"
     elif [ -n "$(bar_wireless)" ]; then bar_add "$(bar_block wifi name "$(bar_span "$HEX_MUTED" "$k_wifi")")"; fi   # off, or no network: the sign alone
     bar_group
@@ -3934,15 +3974,15 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by air
     out=$(snd_out)
     if [ -n "$out" ]; then
         lvl=$(printf '%s\n' "$out" | sed -n 2p); m=$(printf '%s\n' "$out" | sed -n 3p)
-        k=$k_out; [ "$m" != 1 ] || k=$k_out_off
+        k=$k_out; c=$HEX_ACCENT; [ "$m" != 1 ] || { k=$k_out_off; c=$HEX_MUTED; }   # on: filled, in the accent; muted: hollow, muted
         gap=$BAR_GAP; [ "$lvl" = - ] || [ -z "$lvl" ] || gap=6   # the gauge sits close to its sign
-        bar_add "$(bar_block out name "$(bar_span "$HEX_MUTED" "$k")" "$gap")"
+        bar_add "$(bar_block out name "$(bar_span "$c" "$k")" "$gap")"
         [ "$lvl" = - ] || [ -z "$lvl" ] || bar_add "$(bar_block out gauge "$(bar_gauge "$lvl" "$m")")"
     fi
     mic=$(snd_mic)
     if [ -n "$mic" ]; then
         live=$(printf '%s\n' "$mic" | sed -n 2p); m=$(printf '%s\n' "$mic" | sed -n 3p); lvl=$(printf '%s\n' "$mic" | sed -n 4p)
-        c=$HEX_MUTED; k=$k_mic; [ "$m" != 1 ] || k=$k_mic_off
+        c=$HEX_ACCENT; k=$k_mic; [ "$m" != 1 ] || { k=$k_mic_off; c=$HEX_MUTED; }   # open: the accent; muted: hollow, muted
         [ "$live" != 1 ] || { c=$HEX_ANSI_1; k=$PANEL_DOT; [ -z "$_bw" ] || k="mic $PANEL_DOT"; }   # red, a dot, while a program records
         if [ "$lvl" = - ] || [ -z "$lvl" ]; then bar_add "$(bar_block mic name "$(bar_span "$c" "$k")")"
         else
@@ -3954,12 +3994,22 @@ bar_line() {   # one JSON array of the blocks present now; groups parted by air
     # a reminder due: its own group, before the seat (a click opens the reminders)
     due=$(rem_due 2>/dev/null || :)
     [ -z "$due" ] || { bar_add "$(bar_block due '' "$(bar_span "$HEX_ACCENT" "$k_due") $(bar_esc "$(printf '%s' "${due#*"$TAB"}" | cut_chars 28)")")"; bar_group; }
-    # do not disturb: said while it is on, so no notification waits out of sight unsaid (#71); a click opens its section
-    if command -v makoctl >/dev/null 2>&1 && notify_dnd; then bar_add "$(bar_block notifications '' "$(bar_span "$HEX_MUTED" "$k_dnd")")"; bar_group; fi
+    # the notifications (#71): do not disturb while it is on, so none waits out of sight unsaid, and those that came while
+    # nobody looked (notify_unseen), the flag and how many in the accent; nothing when neither; a click opens the
+    # section and counts them looked at
+    if command -v makoctl >/dev/null 2>&1 && _nm=$(makoctl mode 2>/dev/null); then
+        _nu=$(notify_unseen); [ "${_nu:-0}" -le 9 ] || _nu='9+'
+        if printf '%s\n' "$_nm" | grep -qx "$NOTIFY_MODE"; then
+            if [ "${_nu:-0}" = 0 ]; then bar_add "$(bar_block notifications dnd "$(bar_span "$HEX_MUTED" "$k_dnd")")"
+            else bar_add "$(bar_block notifications dnd "$(bar_span "$HEX_MUTED" "$k_dnd")" 6)"; fi
+        fi
+        [ "${_nu:-0}" = 0 ] || bar_add "$(bar_block notifications count "$(bar_span "$HEX_ACCENT" "$k_note $_nu")")"
+        bar_group
+    fi
     # the seat: the brightness, the keyboard's layout
     lt=$(light_get)
     if [ -n "$lt" ]; then
-        bar_add "$(bar_block light name "$(bar_span "$HEX_MUTED" "$k_light")" 6)"
+        bar_add "$(bar_block light name "$(bar_span "$HEX_ACCENT" "$k_light")" 6)"   # a screen it sets: the accent, as a gauge's sign
         bar_add "$(bar_block light gauge "$(bar_gauge "$lt" 0)")"
     fi
     kb=$(kb_active)
@@ -3990,6 +4040,7 @@ bar_click() {   # bar_click NAME INSTANCE BUTTON RELX WIDTH X -- one click or wh
         light:*:5) light_set down >/dev/null || : ;;
         light:name:1) bar_panel_open display ;;   # the word opens the display's section
         due:*:1) bar_panel_open reminders ;;
+        notifications:*:1) notify_seen; bar_panel_open notifications ;;   # opened: what came is looked at
         kb:*:1) swaymsg -- input type:keyboard xkb_switch_layout next >/dev/null 2>&1 || : ;;   # the next layout, as Super+Ctrl+space
         out:*:4|mic:*:4) snd_set "$1" +5 ;;
         out:*:5|mic:*:5) snd_set "$1" -5 ;;
@@ -4036,6 +4087,7 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
         [ "$(theme_sum)" = "$_ts" ] || { _ts=$(theme_sum); config_load; for _k in $THEME_KEYS; do unset "$_k"; done; theme_load; }   # a palette changed outside a look change (spark theme): read again
         _line=$(bar_line) || break
         printf '%s\n' "$_line"
+        bar_font_follow
         machine_tick "$_mts"   # what is in use now, for spark's prompt line, aside (#159)
         t=0   # 15 one-second sleeps: a signal ends the current one, and a click that fell between two is seen within 1 s
         while [ "$t" -lt 15 ] && [ "$redraw" = 0 ]; do
@@ -4046,6 +4098,16 @@ bar_status() {   # bar_status [--once] -- the bar's program: the header, then a 
         done
     done
     kill ${reader:-} ${watcher:-} 2>/dev/null || :; rm -f "$BAR_PID"
+}
+bar_font_follow() {   # the bar's loop, BAR_TEXT=auto in a running sway: the bar's font at the screens' size (bar_line_font), sent when it changed (a screen plugged in, another scale); _bff the font sent last, the config read each pass as the line reads it
+    [ -S "${SWAYSOCK:-}" ] && command -v swaymsg >/dev/null 2>&1 || return 0
+    BAR_TEXT=$(bar_style BAR_TEXT auto); [ "$BAR_TEXT" = auto ] || { _bff=''; return 0; }   # a size of its own: the render and the verb gave it
+    FONT=$(bar_style FONT "$FONT"); case $FONT in \"*\") FONT=${FONT#\"}; FONT=${FONT%\"} ;; esac   # quoted as load_env takes it
+    _bfn=$(bar_line_font "$(font_spec)")
+    [ "$_bfn" != "${_bff:-}" ] || return 0
+    _bfb=$(swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | cut -d, -f1); [ -n "$_bfb" ] || return 0
+    if [ -z "${_bff:-}" ] && [ "$(swaymsg -t get_bar_config "$_bfb" 2>/dev/null | jq -r '.font // empty' 2>/dev/null)" = "pango:$_bfn" ]; then _bff=$_bfn; return 0; fi   # the first pass: the font it has already
+    swaymsg -- "bar $_bfb font pango:$_bfn" >/dev/null 2>&1 && _bff=$_bfn || :
 }
 bar_style() { _bv=$(sed -n "s/^$1=//p" "$CONFIG" 2>/dev/null | tail -1); printf '%s' "${_bv:-$2}"; }   # bar_style KEY DEFAULT -> the config's value now: the running bar reads it at each line (#160)
 bar_redraw() { [ -f "$BAR_PID" ] && read -r p < "$BAR_PID" && kill -USR1 "$p" 2>/dev/null || :; }   # the running bar draws again now
@@ -4082,11 +4144,58 @@ bar_desktop() {   # bar_desktop [on|off] WHICH -- the bar at the top: the config
         on|off) want=yes; [ "$1" = on ] || want=no
             config_set DESKTOP_BAR "$want"; DESKTOP_BAR=$want; export DESKTOP_BAR
             theme_load; EXPR=$(render_expr); desktop_look_apply
-            if [ "$want" = yes ]; then echo "bar: shown at the top of the screen (spark-shell bar off --desktop hides it)"; else echo "bar: hidden (spark-shell bar on --desktop shows it)"; fi ;;
-        *) if [ "$DESKTOP_BAR" = yes ]; then echo "bar: shown at the top of the screen -- $(bar_names) (spark-shell bar off --desktop hides it)"; else echo "bar: hidden (spark-shell bar on --desktop shows it)"; fi ;;
+            if [ "$want" = yes ]; then echo "bar: shown $(bar_place_words "$BAR_POSITION") (spark-shell bar off --desktop hides it)"; else echo "bar: hidden (spark-shell bar on --desktop shows it)"; fi ;;
+        *) if [ "$DESKTOP_BAR" = yes ]; then echo "bar: shown $(bar_place_words "$BAR_POSITION") -- $(bar_names) (spark-shell bar off --desktop hides it)"; else echo "bar: hidden (spark-shell bar on --desktop shows it)"; fi ;;
     esac
 }
-cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | due | volume up|down|mute|mic | panel [PAGE] [--list|ACTION [ARG]] | WORDS
+bar_desktop_here() { [ "$OS" != Darwin ] && [ "$DESKTOP" = sway ] || refuse_in bar "no desktop here (spark-shell on desktop)"; }
+bar_where() {   # bar_where top|bottom -- the bar shown there: the config keys, the render, a running sway reloaded
+    bar_desktop_here
+    config_set BAR_POSITION "$1"; BAR_POSITION=$1; config_set DESKTOP_BAR yes; DESKTOP_BAR=yes; export BAR_POSITION DESKTOP_BAR
+    theme_load; EXPR=$(render_expr); desktop_look_apply
+    echo "bar: shown $(bar_place_words "$1") (spark-shell bar off --desktop hides it)"
+}
+bar_text() {   # bar_text [auto|N|bigger|smaller] -- the bar's own text size; bare, the size it has now
+    bar_desktop_here
+    _bts=$(bar_line_font "$(font_spec)"); _bts=${_bts##* }
+    if [ -z "${1:-}" ]; then
+        if [ "$BAR_TEXT" = auto ]; then echo "bar text auto, $_bts now $PANEL_SEP the text size, larger on a screen of many pixels"; else echo "bar text $BAR_TEXT $PANEL_SEP auto follows the screen"; fi
+        return 0
+    fi
+    bar_text_step "$1" || exit 1
+}
+bar_text_step() {   # bar_text_step auto|N|bigger|smaller -> the receipt, or the refusal and exit 1 (the verb and the panel's step share it)
+    _bts=$(bar_line_font "$(font_spec)"); _bts=${_bts##* }; _bts=${_bts%px}; _bts=${_bts%%.*}
+    case $1 in
+        auto) _btn=auto ;;
+        bigger) _btn=$((_bts + 1)) ;;
+        smaller) _btn=$((_bts - 1)) ;;
+        [6-9]|[1-3][0-9]|40) _btn=$1 ;;
+        *) echo "bar text takes auto, a size from 6 to 40, bigger or smaller"; return 1 ;;
+    esac
+    [ "$_btn" = auto ] || { [ "$_btn" -ge 6 ] && [ "$_btn" -le 40 ]; } || { echo "bar text $_bts stays (6 to 40)"; return 1; }
+    config_set BAR_TEXT "$_btn" >/dev/null; BAR_TEXT=$_btn; export BAR_TEXT
+    theme_load; EXPR=$(render_expr); desktop_files >/dev/null
+    _btb=$(swaymsg -t get_bar_config 2>/dev/null | tr -d '[]" \n' | cut -d, -f1) || _btb=''
+    [ -z "$_btb" ] || [ -z "${SWAYSOCK:-}" ] || swaymsg -- "bar $_btb font pango:$(bar_line_font "$(font_spec)")" >/dev/null 2>&1 || :
+    _bts=$(bar_line_font "$(font_spec)"); _bts=${_bts##* }
+    if [ "$_btn" = auto ]; then echo "bar text auto, $_bts now $PANEL_SEP it follows the screen"; else echo "bar text $_btn"; fi
+}
+bar_tray() {   # bar_tray [on|off] -- the apps' own icons (the tray) at the bar's end; bare, whether they show
+    bar_desktop_here
+    case ${1:-} in
+        '') if [ "$BAR_TRAY" = yes ]; then echo "tray: the apps' icons show at the bar's end (spark-shell bar tray off hides them)"; else echo "tray: off, the bar wears its own glyphs alone (spark-shell bar tray on shows the apps' icons)"; fi ;;
+        on|off) bar_tray_step "$1" ;;
+        *) refuse_in bar "tray takes on or off" ;;
+    esac
+}
+bar_tray_step() {   # bar_tray_step on|off -> the receipt: the config, the render, a running sway reloaded
+    _btw=no; [ "$1" != on ] || _btw=yes
+    config_set BAR_TRAY "$_btw" >/dev/null; BAR_TRAY=$_btw; export BAR_TRAY
+    theme_load; EXPR=$(render_expr); desktop_look_apply >/dev/null
+    if [ "$_btw" = yes ]; then echo "tray on $PANEL_SEP the apps' icons show at the bar's end"; else echo "tray off $PANEL_SEP the apps keep running; their icons stay off the bar"; fi
+}
+cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | top|bottom | text [auto|N|bigger|smaller] | tray [on|off] | seen [ID...] | status [--once] | due | volume up|down|mute|mic | panel [PAGE] [--list|ACTION [ARG]] | WORDS
     config_load
     case ${1:-} in
         status) shift; bar_status "$@"; return ;;
@@ -4094,8 +4203,12 @@ cmd_bar() {   # cmd_bar [on|off] [--terminal|--desktop] | status [--once] | due 
         volume) shift; bar_volume_key "${1:-}"; return ;;
         light) shift; case ${1:-} in up|down) light_set "$1" >/dev/null || :; return ;; *) refuse_in bar "light takes up or down" ;; esac ;;
         panel) shift; cmd_panel "$@"; return ;;   # the old spelling of spark-shell panel
+        top|bottom) bar_where "$1"; return ;;
+        text) shift; bar_text "$@"; return ;;
+        tray) shift; bar_tray "$@"; return ;;
+        seen) shift; notify_seen "$@"; return ;;   # mako's clicks: what was dismissed is looked at
         on|off|'') ;;
-        -*) refuse_in bar "$1 is not a bar command: on, off, status, volume, panel, or words for what you want" ;;
+        -*) refuse_in bar "$1 is not a bar command: on, off, top, bottom, text, tray, status, volume, panel, or words for what you want" ;;
         *) [ "$OS" != Darwin ] || refuse_in bar "not on macOS, which has its own desktop"; bar_want "$*"; return ;;
     esac
     which=both; case ${PLAYER:-} in rooms) which=rooms ;; windows) which=windows ;; esac
@@ -4354,7 +4467,7 @@ machine_now() {   # -> the .now lines: what is open, focused, in use, connected 
     fi
     if notify_up; then if notify_dnd; then _mdd=on; else _mdd=off; fi
     elif [ "$DO_NOT_DISTURB" = yes ]; then _mdd=on; else _mdd=off; fi
-    if [ "$DESKTOP_BAR" = yes ]; then _mbs=shown; else _mbs=hidden; fi
+    if [ "$DESKTOP_BAR" = yes ]; then _mbs="shown $(bar_place_words "$BAR_POSITION")"; else _mbs=hidden; fi
     printf -- '- The bar is %s; do not disturb is %s.\n' "$_mbs" "$_mdd"
 }
 machine_put() {   # machine_put now|facts FILE -- FILE as NAME.KIND in the folder (_md): a temp file there, 0600, renamed over the old one; the same .facts is left as it is, the same .now too until it is 3 minutes old
@@ -4967,7 +5080,7 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
         display) _b=$(light_get); if [ -n "$_b" ]; then echo "$(panel_col display)brightness $_b%"; else echo "$(panel_col display)idle $(idle_words "$DISPLAY_IDLE")"; fi ;;   # short: the header holds it; the rows say the minutes
         pointer) echo "$(panel_col pointer)tap $POINTER_TAP $PANEL_SEP scroll $POINTER_SCROLL $PANEL_SEP speed $POINTER_SPEED" ;;
         keyboard) _k=$(kb_active); if [ -n "$_k" ]; then echo "$(panel_col keyboard)$_k $PANEL_SEP $(printf '%s\n' $KEYBOARD | grep -c .) layouts"; elif [ -n "$KEYBOARD" ]; then echo "$(panel_col keyboard)$KEYBOARD"; else echo "$(panel_col keyboard)sway's own layout"; fi ;;
-        bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown at the top of the screen"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys "$(desk_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog"; fi ;;
+        bar) if [ "$DESKTOP_BAR" = yes ]; then echo "$(panel_col bar)shown $(bar_place_words "$BAR_POSITION")"; else echo "$(panel_col bar)hidden $PANEL_SEP $(panel_keys "$(desk_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog"; fi ;;
         notifications) if ! mako_here; then echo "$(panel_col notifications)mako is not installed"
             elif ! notify_up; then echo "$(panel_col notifications)not running yet"
             elif notify_dnd; then echo "$(panel_col notifications)do not disturb"
@@ -5233,7 +5346,12 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                     if rem_ours "$_s$TAB$_u$TAB$_t$TAB$_f"; then printf '%s\t%s\tdone %s\t%s\n' "$PANEL_RING" "$_t" "$_u" "$_x"; else printf '%s\t%s\tshow\t%s\n' "$PANEL_RING" "$_t" "$_x"; fi
                 elif [ -n "$_next" ]; then printf '%s\t%s\tmore\t|%s|\n' "$PANEL_RING" "$_t" "$(rem_said "$_s")"; _next=''; fi   # short: the next one ahead, its day and time; Enter opens the rest
             done < "$TMP/rem.rows" ;;
-        bar) if [ "$DESKTOP_BAR" = yes ]; then printf -- '-\thide\toff\n'; else printf -- '-\tshow\ton\n'; fi ;;   # on and off, as the verb: show is the panel's look-only word
+        bar) _bpn=$(bar_place)   # where it is, a check: at the top, at the bottom, or hidden; then its text size (a step) and the tray (a switch), provide_rows
+            for _bp in top bottom hidden; do
+                _bpa=$_bp; [ "$_bp" != hidden ] || _bpa=off
+                if [ "$_bp" = "$_bpn" ]; then printf '%s\t%s\tshow\tplace\n' "$PANEL_TICK" "$(bar_place_words "$_bp")"; else printf -- '-\t%s\t%s\tplace\n' "$(bar_place_words "$_bp")" "$_bpa"; fi
+            done
+            printf -- '-\tText size\tshow\tlook\n-\tApp icons (the tray)\tshow\tlook\n' ;;
         layout) if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then
                 for f in "$LAYOUTS_DIR"/*; do _w=$(desk_label "$f"); printf '%s\t%s\topen %s\n-\trename %s\trename %s\n' "$PANEL_GO" "$_w" "${f##*/}" "$_w" "${f##*/}"; done   # by the name it was saved under (#51), and a new name for it (#54)
             else printf -- '-\tnone saved yet: say what you want to do at the prompt\tshow\n'; fi
@@ -5694,6 +5812,26 @@ mako_here() { [ -z "${SPARK_SHELL_NO_MAKO:-}" ] && command -v mako >/dev/null 2>
 notify_up() { command -v makoctl >/dev/null 2>&1 && makoctl mode >/dev/null 2>&1; }   # mako answers on this session's bus
 notify_reload() { ! notify_up || makoctl reload >/dev/null 2>&1 || :; }   # a mako that runs reads its file again
 notify_dnd() { makoctl mode 2>/dev/null | grep -qx "$NOTIFY_MODE"; }   # do not disturb is on now
+notify_anchor() { if [ "$DESKTOP_BAR" = yes ] && [ "$BAR_POSITION" = bottom ]; then echo bottom-right; else echo top-right; fi; }   # mako's corner: the right one by the bar
+# The bar's count (#71): the notifications that came while nobody looked. mako keeps the ones on
+# the screen and the last ten gone, each by an id that only grows while it runs; an id is looked
+# at once its card is dismissed by a click (mako's config runs bar seen with it), or once the
+# bar's block or the section's dismiss is used (all of them). The ids looked at are kept in the
+# session's runtime folder, and the desktop's start clears them, as mako's ids start again.
+NOTIFY_SEEN=${XDG_RUNTIME_DIR:+$XDG_RUNTIME_DIR/spark-shell}; NOTIFY_SEEN=${NOTIFY_SEEN:-$STATE_DIR}/notify-seen
+notify_ids() { { notify_list list; notify_list history; } | cut -d "$US" -f1 | grep -x '[0-9][0-9]*' | sort -un || :; }   # -> the ids mako holds now, on the screen and gone, one a line
+notify_unseen() {   # -> how many of the notifications mako holds nobody looked at
+    notify_ids > "$TMP/notify.ids"
+    if [ -s "$NOTIFY_SEEN" ]; then grep -cvxFf "$NOTIFY_SEEN" "$TMP/notify.ids" || :; else grep -c . "$TMP/notify.ids" || :; fi
+}
+notify_seen() {   # notify_seen [ID...] -- those looked at, every one mako holds when none is named; the file keeps only ids mako still holds; the bar drawn again
+    notify_up || return 0
+    mkdir -p "$(dirname "$NOTIFY_SEEN")" 2>/dev/null || return 0
+    notify_ids > "$TMP/notify.ids"
+    if [ $# -eq 0 ]; then cp "$TMP/notify.ids" "$NOTIFY_SEEN.new"
+    else { cat "$NOTIFY_SEEN" 2>/dev/null || :; printf '%s\n' "$@"; } | grep -xFf "$TMP/notify.ids" | sort -un > "$NOTIFY_SEEN.new" || :; fi
+    mv -f "$NOTIFY_SEEN.new" "$NOTIFY_SEEN"; bar_redraw
+}
 notify_bus() { [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]; }   # this login has a session bus: its own, or the one logind made
 notify_keep() {   # at the desktop's start: do not disturb as the config left it, once mako answers (it starts beside this)
     [ "$DO_NOT_DISTURB" = yes ] && command -v makoctl >/dev/null 2>&1 || return 0
@@ -5739,7 +5877,7 @@ notify_act() {   # notify_act do-not-disturb on|off | dismiss | restore -> one l
                 *) echo "do-not-disturb takes on or off"; return 1 ;;
             esac
             bar_redraw ;;
-        dismiss) makoctl dismiss -a >/dev/null 2>&1 || { echo "nothing to dismiss"; return 1; }; echo "dismissed" ;;
+        dismiss) makoctl dismiss -a >/dev/null 2>&1 || { echo "nothing to dismiss"; return 1; }; notify_seen; echo "dismissed" ;;
         restore) [ -n "$(notify_list history)" ] || { echo "nothing in the history"; return 1; }
             makoctl restore >/dev/null 2>&1 || { echo "mako did not show it again"; return 1; }; echo "the last one is on the screen again" ;;
         *) echo "$1 is not something notifications does"; return 1 ;;
@@ -6116,6 +6254,9 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
         bar) case $_a in
                 off) bar_desktop off desktop >/dev/null; echo "bar hidden $PANEL_SEP $(panel_keys "$(desk_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog" ;;
                 on) bar_desktop on desktop >/dev/null; echo "bar shown" ;;
+                top|bottom) bar_where "$_a" >/dev/null; echo "bar $(bar_place_words "$_a")" ;;
+                text) bar_text_step "$_arg" ;;
+                tray) case $_arg in on|off) bar_tray_step "$_arg" ;; *) echo "tray takes on or off"; return 1 ;; esac ;;
                 *) echo "$_a is not something bar does"; return 1 ;;
             esac ;;
         undo) case $_a in all) panel_undo ;; *) echo "$_a is not something undo does"; return 1 ;; esac ;;
@@ -6264,6 +6405,9 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         window:*) printf '%s\twindows %s\n' "${WINDOWS:-split}" "$(win_words "$WINDOWS")" ;;
         bar:off) printf 'on\tbar shown\n' ;;
         bar:on) printf 'off\tbar hidden\n' ;;
+        bar:top|bar:bottom) case $(bar_place) in hidden) printf 'off\tbar hidden\n' ;; *) printf '%s\tbar %s\n' "$BAR_POSITION" "$(bar_place_words "$BAR_POSITION")" ;; esac ;;
+        bar:text) printf 'text %s\tbar text %s\n' "$BAR_TEXT" "$BAR_TEXT" ;;
+        bar:tray) if [ "$BAR_TRAY" = yes ]; then printf 'tray on\ttray on\n'; else printf 'tray off\ttray off\n'; fi ;;
         theme:wallpaper|theme:wallpaper-picture|theme:wallpaper-color) _cur=$(wall_name); if [ -n "$_cur" ]; then printf 'wallpaper %s\twallpaper %s\n' "$_cur" "$_cur"; else printf 'wallpaper-picture %s\twallpaper %s\n' "$WALLPAPER" "${WALLPAPER##*/}"; fi ;;
         theme:theme) printf '%s\ttheme %s\n' "${THEME:-none}" "${THEME:-none}" ;;
         theme:delete) ;;   # a saved theme's folder is gone: nothing brings it back, and putting the palette in use on again was no undo (#196)
@@ -6496,6 +6640,9 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         reminders:restore) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo "reminders: restore takes the reminder's name"; return 1 ;;   # one put aside: no row lists it
         notes:add|notes:find|reminders:add) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo "$1: $2 takes the words"; return 1 ;;   # free words, as layout new
         display:brightness) case $3 in up|down|[1-9]|[1-9][0-9]|100) echo "$3"; return 0 ;; *) echo "display: brightness takes 1 to 100, up or down"; return 1 ;; esac ;;
+        bar:on|bar:off|bar:top|bar:bottom) echo ''; return 0 ;;   # the place is set, never toggled: each whatever the rows say now
+        bar:text) case ${3:-} in auto|bigger|smaller|[6-9]|[1-3][0-9]|40) echo "$3"; return 0 ;; *) echo "bar: text takes auto, a size from 6 to 40, bigger or smaller"; return 1 ;; esac ;;   # a step's value, as theme text
+        bar:tray) case ${3:-} in on|off) echo "$3"; return 0 ;; *) echo "bar: tray takes on or off"; return 1 ;; esac ;;   # a switch: both, whatever it says now
         notifications:do-not-disturb) case ${3:-} in on|off) echo "$3"; return 0 ;; *) echo "notifications: do-not-disturb takes on or off"; return 1 ;; esac ;;   # both, whatever the row says now: the step sets, never toggles
         storage:open) storage_list > "$TMP/storage.l"; [ -n "$(storage_find fs "${3:-}")" ] && { echo "$3"; return 0; }; echo "storage: no drive named ${3:-?} is plugged in"; return 1 ;;   # a drive not mounted yet opens too: it mounts first
         display:idle|display:lock) case $3 in 0|[1-9]|[1-9][0-9]|[1-9][0-9][0-9]) echo "$3"; return 0 ;; *) echo "display: $2 takes minutes, 0 to 999"; return 1 ;; esac ;;
@@ -6773,7 +6920,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -6910,8 +7057,12 @@ tool_spec() {
         power_logout)      _ts=power _ta=logout _th=d _tt='power logout' _td='Log out: every window closes.' ;;
         power_restart)     _ts=power _ta=restart _th=d _tt='power restart' _td='Restart the machine.' ;;
         power_shutdown)    _ts=power _ta=shutdown _th=d _tt='power shutdown' _td='Shut the machine down.' ;;
-        bar_on)            _ts=bar _ta=on _th=i _tt='bar on' _td='Show the bar at the top of the screen.' ;;
+        bar_on)            _ts=bar _ta=on _th=i _tt='bar on' _td='Show the bar where it was, at the top or the bottom of the screen.' ;;
         bar_off)           _ts=bar _ta=off _th=i _tt='bar off' _td='Hide the bar.' ;;
+        bar_top)           _ts=bar _ta=top _th=i _tt='bar top' _td='Show the bar at the top of the screen.' ;;
+        bar_bottom)        _ts=bar _ta=bottom _th=i _tt='bar bottom' _td='Show the bar at the bottom of the screen.' ;;
+        bar_text)          _ts=bar _ta=text _tp=size _tk='auto|bigger|smaller|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35|36|37|38|39|40' _th='' _tt='bar text SIZE' _td='The text on the bar one size bigger or smaller, a size from 6 to 40, or auto: the text size, larger on a screen of many pixels.' ;;
+        bar_tray)          _ts=bar _ta=tray _tp=state _tk='on|off' _th=i _tt='bar tray STATE' _td='Show the icons apps put in the tray at the end of the bar, or keep them off it; the apps run either way.' ;;
         layout_open)       _ts=layout _ta=open _tp=name _tk=string _th='' _tt='layout open NAME' _td='Open a saved layout.' ;;
         layout_new)        _ts=layout _ta=new _tp=words _tk=string _th=f _tt='layout new WORDS' _td='Open the apps for a task, picked by spark.' ;;
         layout_save)       _ts=layout _ta=save _tp=name _tk=string _th=f _tt='layout save NAME' _td='Save what is open on this workspace as a layout.' ;;
@@ -7007,6 +7158,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
         _pr_chips=$(theme_chips theme); _pr_size=$(look_font_size); _pr_anim=$(anim_now); ! anim_drawn "$(anim_palette)" || _pr_animok=1
         _pr_trn=$(transparency_of "$ALPHA"); if [ "$_pr_trn" -eq 0 ]; then _pr_tr=off; else _pr_tr="$_pr_trn%"; fi
     fi
+    _pr_bar=''; [ "$1" != bar ] || { _pr_bar=$(bar_line_font "$(font_spec)"); _pr_bar=${_pr_bar##* }; _pr_bar=${_pr_bar%px}; _pr_bar=${_pr_bar%%.*}; }   # the bar's size now, auto's included
     _asks='[]'
     if [ "$1" = wifi ] && [ -n "$(wifi_tool)" ]; then   # a secured network not saved yet: its password is asked, masked
         wifi_known | cut -f2 > "$TMP/wifi.known.ask"
@@ -7023,7 +7175,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                     if ($id | startswith("spark-shell-")) then {more: [{name:"reminders_done", arguments:{name:$id}, said:"done"}, {name:"reminders_snooze", arguments:{name:$id}, said:"again in 10 minutes"}, {name:"reminders_delete", arguments:{name:$id}, said:"delete"}]} else {} end
                    else {} end)] as $rows
             | {title: $s, state: $st, rows: $rows, short: ($short | split("\n") | map(select(. != "") | split("\u001f")[0]))}' \
-        | jq -c --argjson desktopkeys "$_pr_keys" --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$_pr_chips" --arg size "$_pr_size" --arg anim "$_pr_anim" --arg animok "$_pr_animok" --arg animnone "$ANIM_NONE_SAID" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg motion "$WALLPAPER_MOTION" --argjson trn "$_pr_trn" --arg tr "$_pr_tr" '
+        | jq -c --argjson desktopkeys "$_pr_keys" --arg s "$1" --argjson asks "$_asks" --arg types "$WALL_TYPES" --argjson chips "$_pr_chips" --arg size "$_pr_size" --arg anim "$_pr_anim" --arg animok "$_pr_animok" --arg animnone "$ANIM_NONE_SAID" --arg glyphs "$BAR_GLYPHS" --arg wsstyle "$BAR_WORKSPACES" --arg motion "$WALLPAPER_MOTION" --argjson trn "$_pr_trn" --arg tr "$_pr_tr" --arg bartext "$BAR_TEXT" --arg barsize "$_pr_bar" --arg tray "$BAR_TRAY" '
             .rows |= map(
                 (if $s == "theme" and ((.group // "") | test("^(dark|light|custom)$")) and $chips[.text] != null then .chip = $chips[.text] else . end)
                 | (if $s == "theme" and ((.group // "") | test("^(dark|light)$")) and (.tool.name // "") == "theme_palette"
@@ -7037,6 +7189,11 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                    elif $s == "theme" and .id == "theme:show:Words on the bar" then .switch = {on: ($glyphs == "words"), turn_on: {name: "theme_glyphs", arguments: {to: "words"}}, turn_off: {name: "theme_glyphs", arguments: {to: "signs"}}}
                    elif $s == "theme" and .id == "theme:show:Numbered workspaces" then .switch = {on: ($wsstyle == "numbers"), turn_on: {name: "theme_workspaces", arguments: {to: "numbers"}}, turn_off: {name: "theme_workspaces", arguments: {to: "symbols"}}}
                    elif $s == "theme" and .id == "theme:show:Moving wallpaper" then .switch = {on: ($motion == "on"), turn_on: {name: "theme_motion", arguments: {to: "on"}}, turn_off: {name: "theme_motion", arguments: {to: "off"}}}
+                   elif $s == "bar" and .id == "bar:show:Text size" then   # auto stands where its size is: a step left of it is one smaller, a step right that size kept
+                     (($barsize | tonumber? // 11) | if . < 6 then 6 elif . > 40 then 40 else . end) as $a
+                     | ([range(6; $a) | tostring | {shown: ., sent: .}] + [{shown: "auto \($a)", sent: "auto"}] + [range($a; 41) | tostring | {shown: ., sent: .}]) as $v
+                     | .step = {values: $v, at: (if $bartext == "auto" then $a - 6 else ($v | map(.sent) | index($bartext)) // ($a - 6) end), set: {name: "bar_text", arguments: {}}, key: "size", words: ["smaller", "bigger"]}
+                   elif $s == "bar" and .id == "bar:show:App icons (the tray)" then .switch = {on: ($tray == "yes"), turn_on: {name: "bar_tray", arguments: {state: "on"}}, turn_off: {name: "bar_tray", arguments: {state: "off"}}}
                    else . end))
             | (if $s == "theme" then .look_back = {name: "theme_preview", arguments: {name: "off"}} else . end)   # one column, dark then light (#192)
             | .rows |= map(
@@ -11196,7 +11353,7 @@ desk_start() {   # desk_start PENDING
     log_dir=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell
     mkdir_private "$log_dir"
     [ -z "${pending:-}" ] || printf '%s\n' "$pending" > "$DESK_PENDING"
-    rm -f "$BAR_WS_ORDER"   # the workspaces' glyphs: a new order for this login (#110)
+    rm -f "$BAR_WS_ORDER" "$NOTIFY_SEEN"   # the workspaces' glyphs: a new order for this login (#110); mako's ids start again
     st=0
     sound_start "$log_dir/sound.log"
     # a session bus for what the desktop runs (#71): where no logind made one (Void), sway runs inside

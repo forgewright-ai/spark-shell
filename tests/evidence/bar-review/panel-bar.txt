@@ -1,0 +1,6 @@
+bar        shown at the top of the screen
+✓ bar        at the top of the screen	bar show
+  bar        at the bottom of the screen	bar bottom
+  bar        hidden	bar off
+  bar        Text size	bar show
+  bar        App icons (the tray)	bar show
