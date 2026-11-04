@@ -29,9 +29,9 @@ def main(binary, destination):
         observations.append({"capture": name, "rect": s.window()["rect"], "title_column": title, "attach_column": attach})
         return title, attach
 
-    def apps():
+    def apps(listed="btop"):
         s.click("apps", body=True)
-        wait_for(lambda: "btop" in s.text(), "installed catalog")
+        wait_for(lambda: listed in s.text(), "installed catalog")
 
     def details():
         s.key("btop", "-k", "Right")
@@ -70,7 +70,7 @@ def main(binary, destination):
         s.key("-M", "logo", "-k", "space", "-m", "logo")
         wait_for(s.window, "reopen")
         time.sleep(2)
-        apps()
+        apps("hidden apps")  # btop is hidden now: the list leaves it out, and says so in the count
         s.click("hidden apps", body=True)
         s.key("-k", "Down", "-k", "Right")
         wait_for(lambda: "preferences" in s.text(), "the hidden app's details")

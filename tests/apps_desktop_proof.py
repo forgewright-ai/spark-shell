@@ -156,8 +156,11 @@ class Session:
             self.key("-k", "Down")
         else:
             raise AssertionError("control not found: " + label + "\n" + self.text())
-        # A note can repeat a row's words; the row follows it, so use the last visible occurrence.
-        row = next(i for i in range(len(lines) - 1, -1, -1) if matches(lines[i]) and (not body or i >= 7))
+        # A note can repeat a row's words; the row follows it, so use the last occurrence in the list, which ends
+        # above the status row. A receipt there can repeat them too (writing added): a chip or the status row is
+        # the target only when no row holds the words, as Undo and the x.
+        in_list = [i for i in range(7, len(lines) - 5) if matches(lines[i])]
+        row = in_list[-1] if in_list else next(i for i in range(len(lines) - 1, -1, -1) if matches(lines[i]) and (not body or i >= 7))
         col = match.search(lines[row]).start() + len(label) // 2
         rect = self.window()["rect"]
         self.pointer.click(rect["x"] + 18 + col * self.cell[0] + self.cell[0] // 2,
