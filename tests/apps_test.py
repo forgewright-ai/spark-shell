@@ -102,14 +102,14 @@ class DesktopEntries(unittest.TestCase):
                                 capture_output=True, text=True, timeout=20, check=True)
         return json.loads(result.stdout)
 
-    def test_precedence_hidden_nodisplay_tryexec_and_lowercase_names(self):
+    def test_precedence_hidden_nodisplay_tryexec_and_supplied_names(self):
         self.desktop("org.example.Editor.desktop", "Name=System Editor\nExec=/bin/true\n", False)
         self.desktop("org.example.Editor.desktop", "Name=User EDITOR\nExec=/bin/true\nCategories=Development;Utility;\n")
         self.desktop("hidden.desktop", "Name=Hidden\nExec=/bin/true\nHidden=true\n")
         self.desktop("nodisplay.desktop", "Name=Internal\nExec=/bin/true\nNoDisplay=true\n")
         self.desktop("missing.desktop", "Name=Missing\nExec=/bin/true\nTryExec=/this-does-not-exist/apps-test\n")
         catalog = self.call(op="catalog")["apps"]
-        self.assertEqual([a["name"] for a in catalog], ["user editor"])
+        self.assertEqual([a["name"] for a in catalog], ["User EDITOR"], "the name as the entry writes it")
         self.assertEqual(catalog[0]["id"], "org.example.Editor.desktop")
         self.assertEqual(catalog[0]["categories"], ["Development", "Utility"])
         self.assertFalse(catalog[0]["focus"])
@@ -141,9 +141,9 @@ class DesktopEntries(unittest.TestCase):
         self.desktop("mpv.desktop", "Name=mpv Media Player\nExec=/bin/true\n")
         self.env.update(LANG="C.UTF-8", LC_ALL="C.UTF-8", LANGUAGE="fr")
         entries = {a["id"]: a for a in self.call(op="catalog")["apps"]}
-        self.assertEqual(entries["firefox.desktop"]["name"], "firefox court")
+        self.assertEqual(entries["firefox.desktop"]["name"], "Firefox court")
         self.assertEqual(entries["firefox.desktop"]["display_name"], "Mozilla Firefox complet")
-        self.assertEqual(entries["mpv.desktop"]["name"], "mpv media player")
+        self.assertEqual(entries["mpv.desktop"]["name"], "mpv Media Player")
 
     def test_default_and_declared_new_window_use_gio_field_codes(self):
         output = self.root / "args.json"

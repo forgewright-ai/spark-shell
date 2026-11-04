@@ -97,6 +97,12 @@ impl App {
         if self.apps.form() && !self.in_list {
             return self.apps_activate(Action::Submit);
         }
+        // the word undo, typed: the last change of Apps taken back, as a provider's step is at the home, after Esc
+        // cleared the receipt that carried its Undo
+        if !self.in_list && self.input.trim().eq_ignore_ascii_case("undo") && self.apps.undo.is_some() {
+            self.set_input(String::new());
+            return self.apps_undo();
+        }
         if let Some(Item::Apps(line)) = self.picks().get(self.sel).filter(|_| self.in_list) {
             if let Some(action) = &line.action {
                 self.apps_activate(action.clone());

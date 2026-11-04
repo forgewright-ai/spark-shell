@@ -843,3 +843,31 @@ fn space_is_no_key_in_apps_and_ctrl_c_leaves_at_once() {
     assert_eq!(a.quit, Some(130), "nothing to save, nothing to ask");
     cleanup(&a);
 }
+
+#[test]
+fn typed_undo_takes_the_last_change_of_apps_back_after_its_receipt_is_gone() {
+    // Esc clears the receipt and its Undo, as it does everywhere; the word undo, typed in the list or at the home,
+    // still takes the change back, as it does a provider's step
+    let mut a = app();
+    a.set_draft("editor");
+    act(&mut a, Action::Details(ID.into()));
+    act(&mut a, Action::Visibility(ID.into()));
+    assert!(a.apps.preference(ID).hidden);
+    a.escape();
+    assert_eq!(a.apps.page, Page::List);
+    assert!(a.reply.is_none(), "Esc clears the receipt");
+    a.set_draft("undo");
+    a.enter();
+    assert!(!a.apps.preference(ID).hidden, "typed undo in the list");
+    assert!(a.input.is_empty(), "the word is taken");
+    act(&mut a, Action::Details(ID.into()));
+    act(&mut a, Action::Visibility(ID.into()));
+    a.escape();
+    a.escape();
+    a.escape();
+    assert_eq!(a.view, View::Home);
+    a.set_draft("undo");
+    a.enter();
+    assert!(!a.apps.preference(ID).hidden, "typed undo at the home");
+    cleanup(&a);
+}

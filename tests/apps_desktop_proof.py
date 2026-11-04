@@ -170,8 +170,12 @@ class Session:
             cols = (rect["width"] - 36) // self.cell[0]
             rows = (rect["height"] - 36) // self.cell[1]
             lines = self.screen()
-            title = 2 + (cols - min(cols, 120)) // 2
-            good = re.search(r"\b(home|apps|files|conversation)\b", lines[0]) is not None and len(lines[0]) - len(lines[0].lstrip()) == title and any("attach" in line or "remove" in line for line in lines[max(0, rows-3):])
+            # one frame width per view: the dialog's own 60 cells for home, apps and the conversation, up to 120 for
+            # a list with columns (files); the title sits two cells into it
+            place = re.search(r"\b(home|apps|files|conversation)\b", lines[0])
+            frame = min(cols, 120 if place and place.group(1) == "files" else 60)
+            title = 2 + (cols - frame) // 2
+            good = place is not None and len(lines[0]) - len(lines[0].lstrip()) == title and any("attach" in line or "remove" in line for line in lines[max(0, rows-3):])
             return good
         wait_for(current, "terminal redraw after resize")
         time.sleep(.3)
@@ -285,7 +289,7 @@ def main(binary, destination):
         s.click("hide this app")
         assert not json.loads(preferences.read_text())["apps"]["btop.desktop"]["hidden"]
         s.checks.append("Hide is a switch applied at once with Undo: it leaves the search, stands under hidden apps, and comes back from its details without editing launchers")
-        s.key("-k", "Escape", "-k", "Escape", "-k", "Escape")
+        s.key("-k", "Escape", "-k", "Escape")  # the details, then the hidden apps, back to the list
         s.click("categories", body=True)
         s.click("new category")
         s.key("Writing", "-k", "Return")
@@ -303,7 +307,7 @@ def main(binary, destination):
         saved = json.loads(preferences.read_text())
         assert "Review" not in saved["categories"] and "Development" not in saved["mappings"]
         s.checks.append("Native category creation, rename, mapping edit and deletion apply at once, persist and reclassify")
-        s.key("-k", "Escape", "-k", "Escape")
+        s.key("-k", "Escape")  # the categories, back to the list
         s.key("btop", "-k", "Right")
         s.click("category")
         s.click("utilities")

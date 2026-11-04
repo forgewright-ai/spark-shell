@@ -3379,6 +3379,11 @@ impl App {
             return self.reply(Mark::Note, "the controls are still loading; press Enter when they appear");
         }
         self.remember_prompt(words);
+        // undo with no provider step at hand: the last change of Apps, whose receipt Esc may have cleared
+        if words.trim().eq_ignore_ascii_case("undo") && self.undo.is_none() && self.apps.undo.is_some() {
+            self.set_input(String::new());
+            return self.apps_undo();
+        }
         if !words.contains('\n') {
             if let Some(v) = self.place(words) {
                 if self.view != v {
