@@ -1,15 +1,16 @@
-// The frame's rules, the same in every view: nothing is underlined, a key chip is a helper and no
-// control, the lit band is the list column with the same air at every size, the key row is the view's
-// whatever row is lit or typed, the reply is the last row above the rule, and the frame has one width
-// per view, in the middle of the window.
+// The frame's rules, the same in every view (dialog/DESIGN.md): nothing is underlined, a key chip is a helper
+// and no control, the selection bar is the list column with the same air at every size and the one signal,
+// the key bar is the view's whatever row is lit or typed and the last thing in the frame, the prompt's tools
+// stand under the prompt with the diamond's rule under them, the reply is the last row above the plain rule,
+// and the frame has one width per view, in the middle of the window.
 mod common;
 use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
 use serde_json::json;
-use spark_dialog::app::{App, Config, Item, Provider, Step, Target, View, Who, DESTS, SETTINGS_DEST};
+use spark_dialog::app::{App, Config, HintKey, Item, Mode, Provider, Step, Target, View, Who, DESTS, SETTINGS_DEST};
 use spark_dialog::model;
 use spark_dialog::palette::Palette;
 use spark_dialog::reply::{Mark, Reply};
-use spark_dialog::ui::{self, Drawn, CONTENT_Y, HINT_Y, PROMPT_Y};
+use spark_dialog::ui::{self, keys_y, Drawn, CONTENT_Y, PROMPT_Y, TOOLS_Y, TOP_RULE_Y};
 
 fn provider(label: &str, title: &str, rows: serde_json::Value, tools: serde_json::Value) -> Provider {
     let mut p = Provider::new(label);
@@ -154,25 +155,28 @@ fn nothing_is_underlined() {
 
 #[test]
 fn a_key_chip_is_a_helper_and_no_control() {
-    // Ctrl+Enter is the key: its chip is a label for it, never a Tab stop; a click on it still sends the key
+    // Esc is a key: its chip is a label for it, never a Tab stop; a click on it still sends the key. Enter and
+    // Ctrl+Enter have no chip: Enter opens what the bar is on, and asking is a row
     let mut app = home();
-    assert!(!app.chips().contains(&5), "the Ask chip is no control: {:?}", app.chips());
+    assert!(!app.chips().contains(&5), "a key chip is no control: {:?}", app.chips());
     let mut seen = vec![];
     for _ in 0..6 {
         app.tab(false);
         seen.push(app.chip_focus);
     }
     assert!(!seen.contains(&Some(5)), "Tab never stops on a key chip: {:?}", seen);
-    assert!(seen.contains(&None), "Tab comes back to the prompt after the footer's controls: {:?}", seen);
+    assert!(seen.contains(&None), "Tab comes back to the prompt after the prompt's tools: {:?}", seen);
     let (buf, drawn, pal) = draw(&mut app, 60, 40);
-    let ask = drawn
-        .keys
-        .iter()
-        .find(|(_, _, _, k)| *k == spark_dialog::app::HintKey::Ask)
-        .expect("the Ask key takes a click");
-    for x in ask.0..ask.1 {
-        assert_ne!(buf[(x, ask.2)].bg, pal.accent, "a key chip is never lit as a control");
+    let esc = drawn.keys.iter().find(|(_, _, _, k)| *k == HintKey::Escape).expect("the Esc key takes a click");
+    assert_eq!(esc.2, keys_y(40), "the key bar is the last thing in the frame");
+    for x in esc.0..esc.1 {
+        assert_ne!(buf[(x, esc.2)].bg, pal.accent, "a key chip is never lit as a control");
     }
+    assert!(
+        !drawn.keys.iter().any(|(_, _, _, k)| matches!(k, HintKey::Enter | HintKey::Ask)),
+        "Enter and Ask have no chip: {:?}",
+        drawn.keys
+    );
 }
 
 /// The band of the lit row: one run of the lit color, from the list column's first cell to the list's
@@ -240,7 +244,11 @@ fn the_key_row_is_the_views_whatever_row_is_lit_or_typed() {
     app.set_draft("zzzq");
     assert_eq!(app.hint(), idle, "words that light no row");
     assert!(idle.iter().any(|(t, k)| !*k && t.trim() == "Close"), "Esc closes at the home: {:?}", idle);
-    assert!(idle.iter().any(|(t, k)| !*k && t.trim() == "Open"), "Enter opens: {:?}", idle);
+    assert!(
+        !idle.iter().any(|(t, k)| *k && t == "Enter"),
+        "Enter has no chip in a view's key bar: {:?}",
+        idle
+    );
 
     // a section: a check row, a row with a tool, a row with steps behind it, a switch and a value
     for (view, lit) in [(View::Section(0), vec![0, 1, 3]), (View::Section(1), vec![0, 1, 2])] {
@@ -267,7 +275,7 @@ fn the_key_row_is_the_views_whatever_row_is_lit_or_typed() {
 }
 
 #[test]
-fn the_reply_is_the_last_row_above_the_rule_and_the_list_starts_under_the_keys() {
+fn the_frame_is_one_shape_top_and_bottom_and_the_reply_is_the_last_row_above_the_rule() {
     let mut app = home();
     app.reply = Some(Reply {
         mark: Mark::Done,
@@ -284,14 +292,43 @@ fn the_reply_is_the_last_row_above_the_rule_and_the_list_starts_under_the_keys()
     );
     assert_eq!(drawn.reply_undo.map(|(_, _, y)| y), Some(status), "Undo at the status row's right");
     assert!(text(&buf, status + 1).contains("\u{2500}"), "the rule under it");
+    assert!(
+        !text(&buf, status + 1).contains('\u{25c7}') && !text(&buf, status + 1).contains('\u{25c6}'),
+        "the bottom rule is plain: {:?}",
+        text(&buf, status + 1)
+    );
     assert!(text(&buf, status - 1).trim().is_empty(), "a row of air between the list and the status");
-    assert_eq!(drawn.picks[0].0, CONTENT_Y, "the list starts under the keys");
-    assert_eq!(CONTENT_Y, HINT_Y + 3, "the keys' second row, a row of air, then the list, at every width");
-    assert!(text(&buf, HINT_Y + 1).trim().is_empty());
-    assert!(text(&buf, HINT_Y + 2).trim().is_empty());
+    assert!(text(&buf, status + 2).trim().is_empty(), "a row of air between the rule and the keys");
+    assert_eq!(keys_y(40), status + 3, "the key bar is the last thing in the frame");
+    assert!(
+        text(&buf, keys_y(40)).contains("Esc"),
+        "the view's keys at the bottom: {:?}",
+        text(&buf, keys_y(40))
+    );
+    // the top has the same shape: the prompt, its tools, the rule with the diamond, a row of air, the list
+    assert_eq!(CONTENT_Y, TOOLS_Y + 3, "the tools, the rule, a row of air, then the list, at every width");
+    assert_eq!(TOP_RULE_Y, TOOLS_Y + 1);
+    let tools = text(&buf, TOOLS_Y);
+    assert!(tools.contains("gemma4") && tools.contains("talk"), "the prompt's tools under it: {:?}", tools);
+    assert!(text(&buf, TOP_RULE_Y).contains("\u{2500}"), "the rule under the tools");
+    assert!(
+        text(&buf, TOP_RULE_Y).contains('\u{25c6}'),
+        "the diamond full: a model answers: {:?}",
+        text(&buf, TOP_RULE_Y)
+    );
+    assert!(text(&buf, TOP_RULE_Y + 1).trim().is_empty(), "a row of air under the rule");
+    assert_eq!(drawn.picks[0].0, CONTENT_Y, "the list starts under the prompt's block");
     let (buf, drawn, _) = draw(&mut app, 36, 20);
-    assert_eq!(drawn.picks[0].0, CONTENT_Y, "narrow, the keys wrap and the list stays where it is");
-    assert!(text(&buf, HINT_Y + 2).trim().is_empty(), "{:?}", text(&buf, HINT_Y + 2));
+    assert_eq!(drawn.picks[0].0, CONTENT_Y, "narrow, the list stays where it is");
+    assert!(text(&buf, TOP_RULE_Y + 1).trim().is_empty(), "{:?}", text(&buf, TOP_RULE_Y + 1));
+    assert!(text(&buf, keys_y(20)).contains("Esc"), "{:?}", text(&buf, keys_y(20)));
+    app.model_name = None;
+    let (buf, _, _) = draw(&mut app, 60, 40);
+    assert!(
+        text(&buf, TOP_RULE_Y).contains('\u{25c7}') && !text(&buf, TOP_RULE_Y).contains('\u{25c6}'),
+        "the diamond hollow: no model answers: {:?}",
+        text(&buf, TOP_RULE_Y)
+    );
 
     // the row the words are for is a note on the status row, never in the footer
     let mut app = home();
@@ -341,9 +378,26 @@ fn one_frame_width_per_view_in_the_middle_of_the_window() {
             }
             assert_eq!(buf[(left + 2, PROMPT_Y)].symbol(), "\u{276f}", "{:?} at {}x{}: the prompt", view, w, h);
             assert_eq!(
-                buf[(left + 2, HINT_Y)].symbol().to_lowercase(),
-                buf[(left + 2, HINT_Y)].symbol(),
-                "{:?} at {}x{}: the key row",
+                buf[(left + 2, keys_y(h))].symbol().to_lowercase(),
+                buf[(left + 2, keys_y(h))].symbol(),
+                "{:?} at {}x{}: the key bar",
+                view,
+                w,
+                h
+            );
+            assert_ne!(
+                buf[(left + 2, keys_y(h))].symbol(),
+                " ",
+                "{:?} at {}x{}: the key bar starts at the inset",
+                view,
+                w,
+                h
+            );
+            assert_eq!(buf[(left + 2, TOP_RULE_Y)].symbol(), "\u{2500}", "{:?} at {}x{}: the top rule", view, w, h);
+            assert_eq!(
+                buf[(left + width - 3, TOP_RULE_Y)].symbol(),
+                "\u{2500}",
+                "{:?} at {}x{}: the top rule ends with the column",
                 view,
                 w,
                 h
@@ -358,9 +412,9 @@ fn one_frame_width_per_view_in_the_middle_of_the_window() {
                 h
             );
             assert_eq!(
-                buf[(left + width - 3, h - 2)].symbol(),
+                buf[(left + width - 3, TOOLS_Y)].symbol(),
                 "k",
-                "{:?} at {}x{}: talk ends at the column's inset",
+                "{:?} at {}x{}: talk ends at the column's inset, on the tools row",
                 view,
                 w,
                 h
@@ -378,19 +432,286 @@ fn one_frame_width_per_view_in_the_middle_of_the_window() {
 }
 
 #[test]
-fn the_home_is_ten_lowercase_places_single_spaced_in_three_groups() {
+fn asking_is_a_row_last_among_the_matches_and_alone_when_nothing_matches() {
+    // the placeholder says what the box is for; Enter is the one key: it opens the match the bar is on, and the
+    // ask row when nothing matches (dialog/DESIGN.md)
+    assert_eq!(spark_dialog::app::PLACEHOLDER, "search or ask");
+    let type_words = |app: &mut App, words: &str| {
+        app.set_draft("");
+        for c in words.chars() {
+            app.typed(c);
+        }
+    };
     let mut app = home();
+    assert!(!app.items().iter().any(|it| matches!(it, Item::Ask)), "the prompt empty: a menu, no ask row");
+    type_words(&mut app, "workspace");
     let items = app.items();
-    let shape: Vec<String> = items
+    assert!(matches!(items.last(), Some(Item::Ask)), "the ask row last: {:?}", items);
+    assert!(matches!(items[items.len() - 2], Item::Blank), "a row of air before it");
+    assert!(
+        app.in_list && matches!(app.picks()[app.sel], Item::Dest(2)),
+        "the match is selected, not the ask row"
+    );
+    let (buf, drawn, pal) = draw(&mut app, 60, 40);
+    let (ask_y, _) = drawn.picks.iter().find(|(_, n)| matches!(app.picks()[*n], Item::Ask)).copied().unwrap();
+    assert!(
+        text(&buf, ask_y).contains("ask spark") && text(&buf, ask_y).contains("workspace"),
+        "{:?}",
+        text(&buf, ask_y)
+    );
+    assert_eq!(buf[(4, ask_y)].fg, pal.fg);
+    assert_eq!(buf[(ui::PURPOSE_X, ask_y)].fg, pal.muted, "the words echoed muted");
+    app.down();
+    assert!(matches!(app.picks()[app.sel], Item::Ask), "Down reaches it");
+
+    type_words(&mut app, "why is firefox slow today");
+    let picks = app.picks();
+    assert!(matches!(picks.as_slice(), [Item::Ask]), "nothing matches: the ask row alone: {:?}", picks);
+    assert!(app.in_list && app.sel == 0, "and selected, so Enter asks");
+    assert!(!app.items().iter().any(|it| matches!(it, Item::Blank)), "no air above a row that stands alone");
+    app.enter();
+    assert!(app.pending.is_some(), "Enter on the ask row asks");
+    assert_eq!(app.jobs.len(), 1);
+
+    // no model: no ask row, and typing searches alone
+    let mut app = home();
+    app.model_name = None;
+    type_words(&mut app, "why is firefox slow today");
+    assert!(app.picks().is_empty(), "{:?}", app.picks());
+    assert!(!app.in_list);
+
+    // words the dialog runs itself are never a question: undo with an undo at hand stays a command, at home and in Apps
+    let mut app = home();
+    app.undo = Some(Step { who: Who::Undo, ..a_step() });
+    type_words(&mut app, "undo");
+    assert!(
+        !app.items().iter().any(|it| matches!(it, Item::Ask)),
+        "undo at hand: no ask row: {:?}",
+        app.picks()
+    );
+    assert!(!app.in_list, "the word stays at the prompt, where Enter runs it");
+    app.enter();
+    assert!(app.undo.is_none(), "Enter took the undo");
+    let mut app = home();
+    app.view = View::Apps;
+    app.came_from.push(View::Home);
+    app.apps.undo = Some(spark_dialog::apps::preferences::Preferences::default());
+    type_words(&mut app, "undo");
+    assert!(
+        !app.items().iter().any(|it| matches!(it, Item::Ask)),
+        "Apps' undo at hand: no ask row: {:?}",
+        app.picks()
+    );
+    app.enter();
+    assert!(app.apps.undo.is_none(), "Enter took Apps' undo");
+    assert!(app.reply.as_ref().is_some_and(|r| r.text == "put back"), "{:?}", app.reply);
+
+    // in Apps, whose prompt filters the list, the ask row stands too: Enter carries the words to the request
+    let mut app = home();
+    app.view = View::Apps;
+    app.came_from.push(View::Home);
+    type_words(&mut app, "is my disk full");
+    // no app by these words: the managing rows stay, as they do in any search of the list, and the ask row stands
+    // last and selected
+    assert!(matches!(app.picks().last(), Some(Item::Ask)), "{:?}", app.picks());
+    assert!(
+        app.in_list && matches!(app.picks()[app.sel], Item::Ask),
+        "the ask row selected: {:?}",
+        app.picks().get(app.sel)
+    );
+    app.enter();
+    assert_eq!(app.view, View::Conversation);
+    assert!(app.pending.is_some(), "asked");
+}
+
+#[test]
+fn an_objects_row_is_selected_by_a_click_and_acts_on_a_second_while_a_menus_row_acts_at_once() {
+    use std::time::{Duration, Instant};
+    let t0 = Instant::now();
+    // home is a menu: one click opens the place
+    let mut app = home();
+    app.clicked(0, t0);
+    assert_eq!(app.view, View::Apps, "one click on a place opens it");
+    // a switch among a section's controls flips on one click
+    let mut app = home();
+    app.view = View::Section(1);
+    app.came_from.push(View::Home);
+    let tray = app
+        .picks()
         .iter()
-        .map(|i| match i {
-            Item::Dest(d) => DESTS[*d].name.to_string(),
-            Item::Blank => "-".into(),
-            other => format!("{:?}", other),
-        })
-        .collect();
+        .position(|it| matches!(it, Item::Row(1, 1)))
+        .expect("the tray's switch is a pick");
+    app.clicked(tray, t0);
+    assert!(app.providers[1].rows.rows[1].switch.as_ref().unwrap().on, "a control acts at once");
+    // a window is an object: the first click selects it and the status row says what it is; a second click acts
+    let mut app = home();
+    app.view = View::Section(0);
+    app.came_from.push(View::Home);
+    let terminal = app.picks().iter().position(|it| matches!(it, Item::Row(0, 2))).expect("the window is a pick");
+    app.clicked(terminal, t0);
+    assert!(app.in_list && app.sel == terminal, "selected");
+    assert!(app.reply.is_none() && app.running.is_none(), "nothing acted on the first click");
+    let (buf, _, pal) = draw(&mut app, 60, 40);
+    let status = text(&buf, ui::status_y(40));
+    assert!(
+        status.contains("terminal") && status.contains("~/projects"),
+        "the selected object's line: {:?}",
+        status
+    );
+    assert_eq!(buf[(4, ui::status_y(40))].fg, pal.muted, "muted");
+    app.clicked(terminal, t0 + Duration::from_millis(200));
+    // the step ran: here it is a risky one, so it waits for the typed yes, as it would from Enter
+    assert!(
+        app.reply.is_some() || app.running.is_some() || matches!(app.mode, Mode::Confirm(_)),
+        "the second click acts on it: {:?}",
+        app.mode
+    );
+    // two clicks too far apart are two selections
+    let mut app = home();
+    app.view = View::Section(0);
+    app.came_from.push(View::Home);
+    app.clicked(terminal, t0);
+    app.clicked(terminal, t0 + Duration::from_secs(2));
+    assert!(
+        app.reply.is_none() && app.running.is_none() && app.mode == Mode::Normal,
+        "a slow second click selects again"
+    );
+    assert!(
+        app.object_pick(terminal) && app.object_pick(0),
+        "a window is an object, and so is a saved layout"
+    );
+    app.view = View::Section(1);
+    assert!(!app.object_pick(tray), "a control among a section's rows is a menu's row");
+}
+
+#[test]
+fn a_places_second_column_is_its_state_from_what_the_dialog_already_holds() {
+    let mut app = home();
+    let state = |app: &App, name: &str| app.dest_state(DESTS.iter().position(|d| d.name == name).unwrap());
+    // before anything is known: the purpose stands, muted, for every place but the two whose sections are here
+    for name in ["apps", "files", "notes", "calendar", "settings", "about", "tools", "power"] {
+        assert_eq!(state(&app, name), None, "{name}");
+    }
     assert_eq!(
-        shape,
+        state(&app, "workspace").as_deref(),
+        Some("2 windows \u{b7} terminal, firefox"),
+        "the windows by name, lowercase"
+    );
+    assert!(state(&app, "help").is_some_and(|s| s.ends_with(" shortcuts")), "the counts help has");
+    // the catalog read: its counts
+    app.apps.pending = Some((1, "catalog".into()));
+    app.apps
+        .receive(
+            1,
+            json!({"apps":[
+                {"id":"a.desktop","name":"Alpha","generic_name":"Editor","categories":["Utility"]},
+                {"id":"b.desktop","name":"Beta","categories":["Utility"]},
+                {"id":"footclient.desktop","name":"Foot Client","categories":["System"]}
+            ]}),
+        )
+        .unwrap();
+    assert_eq!(state(&app, "apps").as_deref(), Some("2 installed \u{b7} 1 hidden"));
+    // the files section's own summary, the newest note and its date, the look, the screens and the network
+    app.providers.push(provider(
+        "files",
+        "~",
+        json!({"title": "~", "rows": [
+            {"id": "files:total", "sign": "blank", "text": "2 files \u{b7} 3 KB", "tool": null, "more": [], "columns": [], "children": null, "group": "this folder"}
+        ], "short": []}),
+        json!([]),
+    ));
+    let mut shopping = row("notes:1", "", "Shopping list", Some(("notes_open", json!({"path": "/n/1"}))), None);
+    shopping["columns"] = json!(["4 Nov"]);
+    let other = row("notes:2", "", "Ideas", Some(("notes_open", json!({"path": "/n/2"}))), None);
+    app.providers.push(provider(
+        "notes",
+        "",
+        json!({"title": "notes", "rows": [shopping, other], "short": []}),
+        json!([{"name": "notes_open"}]),
+    ));
+    app.providers.push(provider(
+        "theme",
+        "tokyonight-night \u{b7} size 12",
+        json!({"title": "theme", "rows": [], "short": []}),
+        json!([]),
+    ));
+    app.providers.push(provider(
+        "display",
+        "2 screens",
+        json!({"title": "display", "rows": [], "short": []}),
+        json!([]),
+    ));
+    app.providers
+        .push(provider("wifi", "home", json!({"title": "wifi", "rows": [], "short": []}), json!([])));
+    let mut about = provider("about", "", json!({"title": "about", "rows": [], "short": []}), json!([]));
+    about.version = "0.124".into();
+    app.providers.push(about);
+    app.about_idx = Some(app.providers.len() - 1);
+    assert_eq!(state(&app, "files").as_deref(), Some("~ \u{b7} 2 files \u{b7} 3 KB"));
+    assert_eq!(state(&app, "notes").as_deref(), Some("2 notes \u{b7} shopping list, 4 Nov"));
+    assert_eq!(
+        state(&app, "settings").as_deref(),
+        Some("tokyonight-night \u{b7} 2 screens"),
+        "the look and the screens, never the network"
+    );
+    assert_eq!(
+        state(&app, "about").as_deref(),
+        Some("spark-shell v0.124"),
+        "the installed release, nothing else"
+    );
+    assert_eq!(state(&app, "tools"), None, "no state worth more than its purpose");
+    assert_eq!(state(&app, "power"), None);
+    // the about page opens on the versions
+    app.view = View::About;
+    let (buf, _, _) = draw(&mut app, 60, 40);
+    assert!(text(&buf, CONTENT_Y).contains("spark-shell v0.124"), "{:?}", text(&buf, CONTENT_Y));
+    assert!(text(&buf, CONTENT_Y + 2).contains("dialog "), "{:?}", text(&buf, CONTENT_Y + 2));
+}
+
+#[test]
+fn the_home_is_ten_lowercase_places_in_three_groups_that_breathe_when_the_window_has_the_rows() {
+    let mut app = home();
+    let shape = |app: &App| -> Vec<String> {
+        app.items()
+            .iter()
+            .map(|i| match i {
+                Item::Dest(d) => DESTS[*d].name.to_string(),
+                Item::Blank => "-".into(),
+                other => format!("{:?}", other),
+            })
+            .collect()
+    };
+    // the dialog's own size: a row of air between the rows, two between the groups
+    assert_eq!(
+        shape(&app),
+        [
+            "apps",
+            "-",
+            "files",
+            "-",
+            "workspace",
+            "-",
+            "notes",
+            "-",
+            "calendar",
+            "-",
+            "tools",
+            "-",
+            "-",
+            "settings",
+            "-",
+            "help",
+            "-",
+            "about",
+            "-",
+            "-",
+            "power"
+        ]
+    );
+    // the minimum window: single spaced, a row of air between the groups, and it scrolls
+    app.size = (36, 20);
+    assert_eq!(
+        shape(&app),
         [
             "apps",
             "files",
@@ -408,17 +729,26 @@ fn the_home_is_ten_lowercase_places_single_spaced_in_three_groups() {
     );
     assert!(
         DESTS.iter().all(|d| d.name == d.name.to_lowercase()),
-        "every place is lowercase, as the key row and the headings are"
+        "every place is lowercase, as the key bar and the headings are"
     );
     let (buf, drawn, pal) = draw(&mut app, 60, 40);
     let apps_y = drawn.picks[0].0;
-    assert_eq!(buf[(2, apps_y)].fg, pal.fg, "a place's name in the text color");
+    assert_eq!(buf[(4, apps_y)].symbol(), "a", "a place's name at the row column");
+    assert_eq!(buf[(4, apps_y)].fg, pal.fg, "a place's name in the text color");
     assert_eq!(buf[(ui::PURPOSE_X, apps_y)].fg, pal.muted, "what a place is for, muted");
+    assert!(!text(&buf, apps_y).contains('\u{203a}'), "no arrow at a place's end: every row here opens");
     let workspace_y = drawn.picks[2].0;
     assert!(text(&buf, workspace_y).contains("2 windows"));
     assert_eq!(buf[(ui::PURPOSE_X, workspace_y)].fg, pal.fg, "what a place holds now, in the text color");
     app.light(1);
     let (buf, drawn, pal) = draw(&mut app, 60, 40);
     let files_y = drawn.picks[1].0;
-    assert_eq!(buf[(2, files_y)].fg, pal.accent, "the lit row's name in the accent");
+    assert_eq!(
+        buf[(4, files_y)].fg,
+        pal.fg,
+        "the selected row's name stays in the text color: the bar is the one signal"
+    );
+    assert_eq!(buf[(4, files_y)].bg, pal.lit, "the selection bar under it");
+    assert_eq!(buf[(0, files_y)].symbol(), " ", "no cursor glyph before the bar");
+    assert!(!buf[(4, files_y)].modifier.contains(Modifier::BOLD), "no bold on the selected row");
 }

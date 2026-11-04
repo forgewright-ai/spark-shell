@@ -378,7 +378,9 @@ fn a_list_of_a_thousand_pages_and_jumps_by_its_keys() {
 }
 
 #[test]
-fn root_settings_keeps_its_purpose_instead_of_network_details() {
+fn root_settings_says_the_look_and_the_screens_never_network_details() {
+    // the settings row at home holds the look and the screens (dialog/DESIGN.md); a network's name or its state is
+    // no business of the home's first screen
     let net = |wifi: &str, lan: &str| {
         let mut app = base();
         app.providers
@@ -388,9 +390,10 @@ fn root_settings_keeps_its_purpose_instead_of_network_details() {
         app.about_idx = Some(app.providers.len() - 1);
         app.dest_state(spark_dialog::app::SETTINGS_DEST).unwrap_or_default()
     };
-    assert!(net("not connected", "up").is_empty());
-    assert!(net("private network", "up").is_empty());
-    assert!(net("not connected", "no wire").is_empty());
+    for (wifi, lan) in [("not connected", "up"), ("private network", "up"), ("not connected", "no wire")] {
+        let said = net(wifi, lan);
+        assert!(!said.contains(wifi) && !said.contains(lan) && !said.contains("wi-fi"), "{:?}", said);
+    }
 }
 
 #[test]

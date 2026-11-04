@@ -907,9 +907,9 @@ fn main() {
                         } else if m.row >= drawn.prompt.0 && m.row <= drawn.prompt.1 {
                             app.focus_prompt();
                         } else if let Some(n) = drawn.pick_at(m.column, m.row) {
-                            // one click runs a row, everywhere, a folder's and a file's too (#196)
-                            app.light(n);
-                            app.enter();
+                            // a menu's row acts on one click; an object's row is selected first and acts on a second
+                            // click, as a file does on every desktop (dialog/DESIGN.md)
+                            app.clicked(n, Instant::now());
                         }
                     }
                     MouseEventKind::Drag(MouseButton::Left) => {

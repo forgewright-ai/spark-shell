@@ -84,16 +84,25 @@ fn the_list_is_the_apps_under_their_categories_then_the_managing_rows() {
     let editor = line(&ls, &Action::Launch(ID.into()));
     assert_eq!(
         (editor.sign, editor.indent, editor.label.as_str()),
-        ("opens", 4, "Editor"),
-        "an app opens: its sign, under its heading"
+        ("", 4, "editor"),
+        "an app's row: no sign before it, its name lowercase, under its heading (dialog/DESIGN.md)"
     );
     assert_eq!(
         (editor.value.as_str(), editor.value_x, editor.value_muted),
-        ("Text Editor", 26, true),
-        "its role, muted, in one column"
+        ("text editor", 26, true),
+        "its role, lowercase, muted, in one column"
     );
     let browser = line(&ls, &Action::Launch("browser.desktop".into()));
-    assert!(browser.value.is_empty(), "no role, nothing invented");
+    assert_eq!(browser.value, "read the web", "no GenericName: the Comment is the role");
+    let mystery = line(&ls, &Action::Launch("mystery.desktop".into()));
+    assert!(mystery.value.is_empty(), "neither: nothing invented");
+    let narrow = a.apps.lines(36, "", None);
+    let browser = line(&narrow, &Action::Launch("browser.desktop".into()));
+    assert!(
+        browser.value.ends_with('\u{2026}') && browser.value.len() < "read the web".len(),
+        "cut with an ellipsis: {:?}",
+        browser.value
+    );
     assert!(
         !ls.iter().any(|l| l.label.contains("hidden apps:") || l.label == "all categories"),
         "no toolbar above the list"
@@ -165,12 +174,24 @@ fn nothing_is_underlined_and_the_lit_row_wears_the_column_band() {
                 w,
                 h
             );
-            assert_eq!(b[(d.columns.0, y)].symbol(), "\u{203a}", "the cursor at the band's first cell");
-            let label_x = (d.columns.0..d.columns.1)
-                .find(|x| b[(*x, y)].symbol() != " " && b[(*x, y)].symbol() != "\u{203a}")
-                .unwrap();
+            assert_eq!(b[(d.columns.0, y)].symbol(), " ", "no cursor glyph: the selection bar is the one signal");
+            let label_x = (d.columns.0..d.columns.1).find(|x| b[(*x, y)].symbol() != " ").unwrap();
             let label_x = (label_x..d.columns.1).find(|x| b[(*x, y)].symbol().chars().all(char::is_alphabetic)).unwrap();
-            assert_eq!(b[(label_x, y)].fg, pal.accent, "{:?} at {}x{}: the lit row's name in the accent", page, w, h);
+            assert_eq!(
+                b[(label_x, y)].fg,
+                pal.fg,
+                "{:?} at {}x{}: the selected row's name in the text color",
+                page,
+                w,
+                h
+            );
+            assert!(
+                !b[(label_x, y)].modifier.contains(Modifier::BOLD),
+                "{:?} at {}x{}: no bold on the selected row",
+                page,
+                w,
+                h
+            );
             cleanup(&a);
         }
     }
@@ -188,7 +209,11 @@ fn the_frame_is_the_dialogs_own_column_in_the_middle() {
         assert_eq!(b[(left + 2, 0)].symbol(), "a", "the header at the column's inset at {}x{}", w, h);
         assert_eq!(b[(left + 2, spark_dialog::ui::PROMPT_Y)].symbol(), "\u{276f}");
         let y = d.picks.iter().find(|(_, n)| *n == a.sel).unwrap().0;
-        assert_eq!(b[(left + 6, y)].symbol(), "E", "the lit app's name at the row's inset");
+        assert_eq!(
+            b[(left + 4, y)].symbol(),
+            "e",
+            "the lit app's name at the row column, lowercase, with no sign before it"
+        );
     }
     cleanup(&a);
 }
@@ -197,7 +222,7 @@ fn the_frame_is_the_dialogs_own_column_in_the_middle() {
 fn the_key_row_is_the_pages_whatever_is_lit_or_typed() {
     let mut a = app();
     let list = words(&a);
-    assert_eq!(list, "Back Esc   Open Enter   Details \u{2192}");
+    assert_eq!(list, "Back Esc   Details \u{2192}", "Esc and the list's own key; Enter has no chip");
     a.light(2);
     assert_eq!(words(&a), list, "a row lit");
     a.set_draft("fire");
@@ -207,16 +232,16 @@ fn the_key_row_is_the_pages_whatever_is_lit_or_typed() {
     assert_eq!(words(&a), list, "the managing row lit");
     act(&mut a, Action::Details(ID.into()));
     let details = words(&a);
-    assert_eq!(details, "Back Esc   Open Enter");
+    assert_eq!(details, "Back Esc", "a details page: Esc alone, Enter needs no chip");
     pick(&mut a, Action::Visibility(ID.into()));
     assert_eq!(words(&a), details, "the switch lit");
     pick(&mut a, Action::ChooseCategory(ID.into()));
     assert_eq!(words(&a), details, "a choice lit");
     act(&mut a, Action::Categories);
     act(&mut a, Action::AddCategory);
-    assert_eq!(words(&a), "Cancel Esc   Save Enter", "a form");
+    assert_eq!(words(&a), "Cancel Esc", "a form: Esc lets it go, Enter saves as it does everywhere");
     a.set_draft("Writing");
-    assert_eq!(words(&a), "Cancel Esc   Save Enter");
+    assert_eq!(words(&a), "Cancel Esc");
     cleanup(&a);
 }
 
@@ -235,13 +260,17 @@ fn hiding_an_app_is_a_switch_applied_at_once_with_undo() {
     assert!(a.apps.preference(ID).hidden, "hidden at once");
     assert!(Preferences::load(&a.apps.path).unwrap().apps[ID].hidden, "and saved at once");
     let r = a.reply.clone().expect("a receipt on the status row");
-    assert_eq!((r.mark, r.text.as_str(), r.undo), (Mark::Done, "Editor hidden", true));
+    assert_eq!(
+        (r.mark, r.text.as_str(), r.undo),
+        (Mark::Done, "editor hidden", true),
+        "the receipt names the app as a label, lowercase"
+    );
     let sw = line(&lines(&a), &Action::Visibility(ID.into())).clone();
     assert_eq!((sw.sign, sw.value.as_str()), ("dot", "on"));
     let (b, d, _) = draw(&mut a, 60, 40);
     assert!(d.reply_undo.is_some(), "Undo at the status row's right");
     let status: String = (0..60).map(|x| b[(x, 35)].symbol()).collect();
-    assert!(status.contains("Editor hidden") && status.contains("Undo"), "{:?}", status);
+    assert!(status.contains("editor hidden") && status.contains("Undo"), "{:?}", status);
     a.undo_now();
     assert!(!a.apps.preference(ID).hidden, "undo puts it back");
     assert!(!Preferences::load(&a.apps.path).unwrap().apps.get(ID).is_some_and(|p| p.hidden));
@@ -288,7 +317,7 @@ fn category_and_launch_are_choice_rows_that_open_a_checked_list() {
         Some("Web"),
         "saved at once"
     );
-    assert_eq!(a.reply.as_ref().map(|r| (r.text.as_str(), r.undo)), Some(("Editor in web", true)));
+    assert_eq!(a.reply.as_ref().map(|r| (r.text.as_str(), r.undo)), Some(("editor in web", true)));
     act(&mut a, Action::ChooseCategory(ID.into()));
     assert_eq!(line(&lines(&a), &Action::SetCategory(ID.into(), Some("Web".into()))).sign, "check");
     a.escape();
@@ -307,7 +336,7 @@ fn category_and_launch_are_choice_rows_that_open_a_checked_list() {
     );
     act(&mut a, Action::SetLaunch(ID.into(), "focus".into()));
     assert_eq!(a.apps.preference(ID).mode(), "focus");
-    assert_eq!(a.reply.as_ref().map(|r| (r.text.as_str(), r.undo)), Some(("Editor: focus existing", true)));
+    assert_eq!(a.reply.as_ref().map(|r| (r.text.as_str(), r.undo)), Some(("editor: focus existing", true)));
     a.undo_now();
     assert_eq!(a.apps.preference(ID).mode(), "default");
 
@@ -358,7 +387,7 @@ fn hidden_apps_are_a_list_of_their_own_and_never_leak_into_the_homes_search() {
         .map(|l| l.label.as_str())
         .collect();
     assert_eq!(hidden, ["foot client", "foot server"], "each a row that opens, as in the list");
-    assert_eq!(words(&a), "Back Esc   Open Enter   Details \u{2192}", "the same keys as the list");
+    assert_eq!(words(&a), "Back Esc   Details \u{2192}", "the same keys as the list");
     pick(&mut a, Action::Launch("footclient.desktop".into()));
     assert!(a.apps_details(), "Right opens its details, where the switch is");
     act(&mut a, Action::Visibility("footclient.desktop".into()));
@@ -382,9 +411,12 @@ fn the_details_are_the_facts_then_the_steps_then_the_preferences() {
     act(&mut a, Action::Details(ID.into()));
     let ls = lines(&a);
     let texts: Vec<String> = ls.iter().map(|l| format!("{}|{}|{}", l.label, l.value, l.tail)).collect();
-    assert_eq!(texts[0], "Editor||", "the name first, as supplied");
+    assert_eq!(
+        texts[0], "editor||",
+        "the name first, lowercase as a label; the entry's text is in the technical details"
+    );
     assert!(ls[0].title && !ls[0].heading, "the subject of the page, in the text color");
-    assert!(ls.iter().any(|l| l.muted && l.label == "Write Documents"), "what it is, muted");
+    assert!(ls.iter().any(|l| l.muted && l.label == "write documents"), "what it is, muted, lowercase");
     let version = ls.iter().find(|l| l.label == "version").unwrap();
     assert_eq!(
         (version.value.as_str(), version.action.is_none(), version.value_x),
@@ -392,7 +424,7 @@ fn the_details_are_the_facts_then_the_steps_then_the_preferences() {
         "a fact: a label and a value, no action"
     );
     let open = line(&ls, &Action::Launch(ID.into()));
-    assert_eq!((open.sign, open.label.as_str()), ("opens", "open"));
+    assert_eq!((open.sign, open.label.as_str()), ("", "open"), "an action row, no sign before it");
     let tech = line(&ls, &Action::Technical(ID.into()));
     assert_eq!(
         (tech.label.as_str(), tech.tail.as_str()),
@@ -690,10 +722,14 @@ fn details_values_reflow_and_the_footer_keeps_its_room() {
     a.model_name = Some("a-very-long-model-name-with-full-identity".into());
     for (w, h) in [(60, 40), (140, 50), (68, 49), (36, 20), (60, 40)] {
         let (_, d, _) = draw(&mut a, w, h);
-        let footer = d.chips.iter().map(|c| c.2).min().unwrap();
         assert!(
-            d.picks.iter().all(|&(y, _)| y < footer - 3),
-            "the list ends above the status row and the footer"
+            d.chips.iter().all(|c| c.2 == spark_dialog::ui::TOOLS_Y),
+            "the prompt's tools on their row: {:?}",
+            d.chips
+        );
+        assert!(
+            d.picks.iter().all(|&(y, _)| y < h - spark_dialog::ui::BOTTOM),
+            "the list ends above the status row and the key bar"
         );
         for &(y, n) in &d.picks {
             assert!(matches!(&a.picks()[n], Item::Apps(l) if l.action.is_some()));
@@ -716,7 +752,7 @@ fn configured_details_key_is_drawn_and_works() {
     pick(&mut a, Action::Launch(ID.into()));
     let (b, d, _) = draw(&mut a, 60, 40);
     let &(left, right, row, _) = d.keys.iter().find(|(_, _, _, k)| *k == HintKey::Right).expect("the Details key is drawn");
-    assert!(left < right && row <= 5);
+    assert!(left < right && row >= spark_dialog::ui::keys_y(40), "on the key bar at the bottom");
     let chip: String = (left..right).map(|x| b[(x, row)].symbol()).collect();
     assert!(chip.contains("F4"), "{:?}", chip);
     a.hint_key(HintKey::Right);

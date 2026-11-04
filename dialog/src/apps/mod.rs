@@ -155,6 +155,10 @@ pub struct State {
     pub loaded: bool,
     pub failed: bool,
     pub pending: Option<(u64, String)>,
+    /// When the pending operation began, and the app a launch is of, lowercase: the status row says "opening NAME"
+    /// with the march once the wait is felt (dialog/DESIGN.md).
+    pub pending_since: Option<std::time::Instant>,
+    pub pending_name: String,
     pub serial: u64,
     /// The preferences before the last change, while Undo stands on the status row.
     pub undo: Option<Preferences>,
@@ -177,6 +181,8 @@ impl Default for State {
             loaded: false,
             failed: false,
             pending: None,
+            pending_since: None,
+            pending_name: String::new(),
             serial: 0,
             undo: None,
             stack: vec![],
@@ -277,7 +283,8 @@ impl State {
 
     pub fn activate(&mut self, action: Action, nav: Navigation) -> Result<Outcome, String> {
         let mut out = Outcome::default();
-        let name = |s: &Self, id: &str| s.entry(id).map(|a| a.name.clone()).unwrap_or_else(|| id.to_string());
+        // a receipt names the app as a label, lowercase (dialog/DESIGN.md)
+        let name = |s: &Self, id: &str| s.entry(id).map(|a| a.name.to_lowercase()).unwrap_or_else(|| id.to_string());
         match action {
             Action::Launch(id) => {
                 if self.pending.is_some() {

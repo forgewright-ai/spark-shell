@@ -289,7 +289,7 @@ class Desktop:
                         raise RuntimeError("The compositor could not focus this window")
                     if not any(w["id"] == target and w.get("focused") for w in windows(sway_tree())):
                         raise RuntimeError("Focus was requested, but could not be confirmed")
-                    return {"message": "Focused " + app["name"], "confirmed": True}
+                    return {"message": app["name"].lower() + " focused", "confirmed": True}
             elif mode not in ("default", "new"):
                 raise ValueError("Unknown launch preference")
             if self.gio.g_desktop_app_info_get_boolean(info, b"Terminal") and foot_fallback():
@@ -315,13 +315,13 @@ class Desktop:
                 try:
                     opened = matching(app, sway_tree())
                     if any(w["id"] not in previous for w in opened):
-                        return {"message": "Opened " + app["name"], "confirmed": True}
+                        return {"message": app["name"].lower() + " opened", "confirmed": True}
                     if mode != "new" and any(w.get("focused") for w in opened):
-                        return {"message": "Focused " + app["name"], "confirmed": True}
+                        return {"message": app["name"].lower() + " focused", "confirmed": True}
                 except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired):
                     break
                 time.sleep(.1)
-            return {"message": "Launch requested for " + app["name"] + "; no new window confirmed yet", "confirmed": False}
+            return {"message": app["name"].lower() + " started; no window of its own seen yet", "confirmed": False}
         finally:
             if context:
                 self.gobject.g_object_unref(context)

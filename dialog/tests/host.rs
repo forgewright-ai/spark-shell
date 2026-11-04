@@ -688,18 +688,22 @@ fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
 fn the_hint_says_what_enter_and_esc_do_and_only_keys_are_chips() {
     let (mut app, _rx, _c, _r) = started();
     let said = |a: &App| a.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
-    assert_eq!(said(&app), "Close Esc   Open Enter", "at rest: what Esc does first (#166), then Enter");
+    assert_eq!(
+        said(&app),
+        "Close Esc",
+        "at rest: what Esc does (#166); Enter has no chip, it opens what the bar is on"
+    );
     typed(&mut app, "is anything open");
-    assert_eq!(said(&app), "Close Esc   Open Enter", "words that name no row: the row stands still");
+    assert_eq!(said(&app), "Close Esc", "words that name no row: the bar stands still");
     let chips: Vec<String> = app.hint().into_iter().filter(|(_, k)| *k).map(|(t, _)| t).collect();
-    assert_eq!(chips, vec!["Esc", "Enter"], "a chip is a key, nothing else");
+    assert_eq!(chips, vec!["Esc"], "a chip is a key, nothing else");
     app.escape();
     typed(&mut app, "terminal");
-    assert_eq!(said(&app), "Close Esc   Open Enter", "a row the words name: the same row");
+    assert_eq!(said(&app), "Close Esc", "a row the words name: the same bar");
     app.escape();
     at_row(&mut app, View::Section(0), 1);
     assert!(
-        said(&app).starts_with("Back Esc   Open Enter"),
+        said(&app).starts_with("Back Esc"),
         "in a place Esc goes back, and the words are the view's: {}",
         said(&app)
     );
@@ -1854,8 +1858,8 @@ fn a_value_changes_in_place_says_nothing_and_holds_over_an_old_read() {
     lit_at(&mut app, "theme:show:Text size");
     let said = app.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
     assert!(
-        said.starts_with("Back Esc   Open Enter") && said.ends_with("Change \u{2190} \u{2192}"),
-        "the row under the prompt says the view's keys, left and right among them: {}",
+        said.starts_with("Back Esc") && said.ends_with("Change \u{2190} \u{2192}"),
+        "the key bar says the view's keys, left and right among them: {}",
         said
     );
     app.right();
@@ -1900,7 +1904,7 @@ fn a_switch_flips_in_place_and_a_refusal_puts_it_back() {
     let (mut app, rx, calls) = theme_app("theme_glyphs");
     lit_at(&mut app, "theme:show:Words on the bar");
     let said = app.hint().iter().map(|(t, _)| t.clone()).collect::<String>();
-    assert!(said.starts_with("Back Esc   Open Enter"), "the row under the prompt is the view's: {}", said);
+    assert!(said.starts_with("Back Esc"), "the key bar is the view's: {}", said);
     app.enter();
     assert!(row_of(&app, "theme:show:Words on the bar").switch.as_ref().unwrap().on, "on at once");
     assert!(
@@ -2343,7 +2347,12 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
     assert_eq!(texts[7], "trash");
     app.sel = 7;
     let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
-    assert_eq!(hint[3], "Choose ", "after what Esc does (#166), one word for the list of steps: {:?}", hint);
+    assert_eq!(
+        hint,
+        vec!["Back ", "Esc"],
+        "what Esc does (#166) and nothing else: Enter needs no chip: {:?}",
+        hint
+    );
     app.enter();
     assert!(matches!(app.view, View::Folder(0, _)), "back to the folder: {:?}", app.view);
     assert!(app.steps_row.is_none());
@@ -2825,8 +2834,9 @@ fn typed_words_get_one_reply_row_and_the_frame_holds_still() {
         &draft[2..5]
     );
     assert!(
-        draft[4].contains("ask") && draft[4].contains("Ctrl+Enter"),
-        "Ask stays directly beneath the input"
+        !draft[4].contains("Ctrl+Enter") && draft[5].contains('\u{2500}'),
+        "no Ask chip under the input, the prompt's rule under its tools: {:?}",
+        &draft[4..6]
     );
     // a search: rows go, none comes above the list, and the first is at row 7
     app.set_draft("");

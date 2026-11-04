@@ -25,7 +25,7 @@ def main(binary, destination):
         lines = s.screen()
         (s.evidence / (name + ".txt")).write_text("\n".join(lines) + "\n")
         title = len(lines[0]) - len(lines[0].lstrip())
-        attach = next(line.index("attach") for line in lines[-5:] if "attach" in line)
+        attach = lines[4].index("attach")  # the prompt's tools, the fourth row
         observations.append({"capture": name, "rect": s.window()["rect"], "title_column": title, "attach_column": attach})
         return title, attach
 
@@ -71,7 +71,7 @@ def main(binary, destination):
         wait_for(s.window, "reopen")
         time.sleep(2)
         apps("hidden apps")  # btop is hidden now: the list leaves it out, and says so in the count
-        s.click("hidden apps", body=True)
+        s.click("hidden apps", body=True, double=True)
         s.key("-k", "Down", "-k", "Right")
         wait_for(lambda: "preferences" in s.text(), "the hidden app's details")
         s.click("hide this app")
@@ -90,7 +90,7 @@ def main(binary, destination):
         s.checks.append("A change applies at once, is said with Undo and survives Esc and the close without a question; request and app query restore separately")
 
         s.key("-k", "Escape")
-        s.click("categories", body=True)
+        s.click("categories", body=True, double=True)
         s.click("new category")
         s.key("Writing", "-k", "Escape")
         assert "Writing" not in json.loads(preferences.read_text())["categories"], "Esc lets a form go"
@@ -125,9 +125,9 @@ def main(binary, destination):
             time.sleep(1)
             rect = s.window()["rect"]
             home_anchor = capture("home-" + mode)
-            # the title sits two cells into the frame; the footer's first chip starts one cell in with a cell of
-            # padding, so its word stands under the title: one column, as dialog/tests/chrome.rs has it
-            assert home_anchor[0] == home_anchor[1], "the header and the footer share the frame"
+            # the title sits two cells into the frame and the prompt's tools start under the prompt's words, two
+            # cells further: one frame, as dialog/tests/chrome.rs has it (dialog/DESIGN.md)
+            assert home_anchor[1] == home_anchor[0] + 2, "the header and the tools row share the frame"
             apps()
             assert s.window()["rect"] == rect
             assert capture("apps-" + mode) == home_anchor, "apps and home share one 60 cell column"
@@ -138,11 +138,11 @@ def main(binary, destination):
             wait_for(lambda: s.screen()[0].lstrip().startswith("files"), "files")
             assert s.window()["rect"] == rect
             files_anchor = capture("files-" + mode)
-            assert files_anchor[0] == files_anchor[1], "files' header and footer share its frame, the wide one"
+            assert files_anchor[1] == files_anchor[0] + 2, "files' header and tools row share its frame, the wide one"
             assert files_anchor[0] <= home_anchor[0], "a list with columns takes up to 120 cells, never less than home's 60"
             s.key("-k", "Escape")
         assert snaps[0] == snaps[1]
-        s.checks.append("Home and apps share one 60 cell column and files its 120 cell one, header and footer in the frame, in compact, fullscreen and both snaps; equal snap bodies match")
+        s.checks.append("Home and apps share one 60 cell column and files its 120 cell one, header and tools row in the frame, in compact, fullscreen and both snaps; equal snap bodies match")
 
         s.normal()
         fixture = s.root / "bin/spark"
