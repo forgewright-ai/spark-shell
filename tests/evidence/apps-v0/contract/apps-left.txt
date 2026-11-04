@@ -1,0 +1,48 @@
+  apps · installed apps                       Tue 3 Nov · 19:08  ×
+
+  ❯ find, do, or ask.
+
+  back  Esc   ask  Ctrl+Enter
+
+
+  all categories          ⌄     hidden apps: hide / unhide
+
+  system
+
+    btop++              System Monitor
+    foot                Terminal
+    manage printing
+
+  web
+
+    chromium            Web Browser
+    firefox             Web Browser
+    pyradio             Terminal Radio Player
+    steam
+
+  office
+
+    aerc                Mail Client
+
+  media
+
+    mpv media player    Multimedia player
+
+  utilities
+
+    micro               Text Editor
+
+    manage categories
+    refresh apps
+
+
+
+
+
+
+
+
+
+  ─────────────────────────────── ◇ ──────────────────────────────
+
+  attach               fixture-model · local ⌄                talk

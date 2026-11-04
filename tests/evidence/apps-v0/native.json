@@ -1,0 +1,194 @@
+{
+  "binary_sha256": "69fc62b2bc297f960f1ed687e08bfa899999985eb268a20a8446b3c87e4d6ef6",
+  "palette": {
+    "colors": {
+      "HEX_FG": "c0caf5",
+      "HEX_ACCENT": "7aa2f7",
+      "HEX_MUTED": "565f89",
+      "PANEL_BG": "282a38",
+      "PANEL_HI": "373a4b",
+      "PANEL_MUTED": "8b94bf",
+      "HEX_ANSI_0": "15161e",
+      "HEX_ANSI_1": "f7768e",
+      "HEX_ANSI_2": "9ece6a",
+      "HEX_ANSI_3": "e0af68",
+      "HEX_ANSI_4": "7aa2f7",
+      "HEX_ANSI_5": "bb9af7",
+      "HEX_ANSI_6": "7dcfff",
+      "HEX_ANSI_7": "a9b1d6",
+      "HEX_ANSI_8": "414868",
+      "HEX_ANSI_9": "ff899d",
+      "HEX_ANSI_10": "9fe044",
+      "HEX_ANSI_11": "faba4a",
+      "HEX_ANSI_12": "8db0ff",
+      "HEX_ANSI_13": "c7a9ff",
+      "HEX_ANSI_14": "a4daff",
+      "HEX_ANSI_15": "c0caf5"
+    },
+    "contrast": {
+      "muted": 4.793,
+      "foreground": 8.798,
+      "accent": 5.64
+    },
+    "source": "spark-shell dialog launcher environment"
+  },
+  "environment": "Void Linux; native headless Sway, foot, GIO; 1440x1000; monospace 12; scale 1",
+  "data": "System desktop entries; temporary Apps preferences; model and voice availability fixtures",
+  "usable_area": {
+    "x": 0,
+    "y": 28,
+    "width": 1440,
+    "height": 972
+  },
+  "captures": {
+    "hidden-helpers": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "apps-compact": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "apps-fullscreen": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 1000,
+      "full_output": true
+    },
+    "apps-snap-left": {
+      "x": 0,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "apps-snap-right": {
+      "x": 720,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "apps-minimum": {
+      "x": 522,
+      "y": 306,
+      "width": 396,
+      "height": 416,
+      "full_output": true
+    },
+    "details-compact": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "details-fullscreen": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 1000,
+      "full_output": true
+    },
+    "details-snap-left": {
+      "x": 0,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "details-snap-right": {
+      "x": 720,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "hidden-search": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "minimum-long-metadata": {
+      "x": 522,
+      "y": 306,
+      "width": 396,
+      "height": 416,
+      "full_output": true
+    },
+    "minimum-technical-attachment": {
+      "x": 522,
+      "y": 306,
+      "width": 396,
+      "height": 416,
+      "full_output": true
+    },
+    "minimum-preferences-attachment": {
+      "x": 522,
+      "y": 306,
+      "width": 396,
+      "height": 416,
+      "full_output": true
+    },
+    "no-matches": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "missing-metadata": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "launch-failure": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "empty-catalog": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "discovery-failure": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    }
+  },
+  "checks": [
+    "Supplied short names are used; foot helpers start hidden; hide/unhide reveals them with explicit labels and pointer choices are idempotent",
+    "Browse uses concise desktop-entry roles; role and full-comment searches both find the installed app",
+    "Real system Apps and on-demand btop Details render in compact, fullscreen and equal work-area snaps",
+    "Returning from Details restores the app search; active query and selected app survive all four modes; clicked Right keycap opens Details",
+    "Hide saves to local preferences, removes search results, labels hidden entries, and restores without editing launchers",
+    "Native category creation, rename, mapping edit and confirmed deletion persist and reclassify",
+    "At 36x20, long technical values reflow, original launcher path copies, preferences scroll above the reserved populated footer, and Remove has a current hit target",
+    "Enter and click both launch the installed foot desktop entry; windows outlive the helper; confirmed receipts stay in Apps",
+    "The real installed Terminal=true btop entry launches through GIO into foot and its window is confirmed",
+    "With two real btop windows, saved Focus existing selects the most recently focused match; Enter and click share it without opening a third",
+    "Focus existing starts the installed btop application when no matching window remains",
+    "After restarting home, btop retains its category override, restored visibility and Focus existing preference",
+    "A labelled local desktop-entry fixture shows unavailable package metadata; its declared New window action opens two real foot windows through the saved preference",
+    "Explicit adapter failure fixtures verify empty catalog versus unavailable discovery, retry recovery, and launch failure retaining the search"
+  ]
+}

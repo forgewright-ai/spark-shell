@@ -614,6 +614,7 @@ fn a_search_finds_the_about_and_a_section_name_opens_its_section() {
     assert_eq!(app.view, View::About, "about typed alone opens the about");
     app.escape();
     assert_eq!(app.view, View::Home);
+    app.escape(); // clear the restored global query before starting another
     for c in "Window ".chars() {
         app.typed(c);
     }
@@ -856,7 +857,7 @@ fn the_home_is_six_places_and_settings_holds_the_sections_that_run() {
     };
     assert_eq!(
         names(&app),
-        vec!["Apps", "Files", "Workspace", "Notes", "Calendar", "Tools", "Settings", "Help", "About", "Power"]
+        vec!["apps", "files", "Workspace", "Notes", "Calendar", "Tools", "Settings", "Help", "About", "Power"]
     );
     at_row(&mut app, View::Home, SETTINGS_DEST);
     app.enter();
@@ -1621,7 +1622,8 @@ fn files_opens_at_the_home_folder_and_talk_is_a_setting_not_a_control() {
     assert!(pump(&mut app, &rx, |a| a.folder.is_some()));
     app.escape();
     assert_eq!(app.view, View::Home, "Esc goes straight back home");
-    // talk: a row of Settings, and the footer has no Talk control; the mic only while it is click to talk
+    app.escape(); // clear the restored global query
+                  // talk: a row of Settings, and the footer has no Talk control; the mic only while it is click to talk
     assert!(!app.chips().contains(&3) && !app.chips().contains(&2));
     typed(&mut app, "settings");
     app.enter();
@@ -2757,7 +2759,7 @@ fn typed_words_get_one_reply_row_and_the_frame_holds_still() {
         &draft[2..5]
     );
     assert!(
-        draft[4].contains("Ask") && draft[4].contains("Ctrl+Enter"),
+        draft[4].contains("ask") && draft[4].contains("Ctrl+Enter"),
         "Ask stays directly beneath the input"
     );
     // a search: rows go, none comes above the list, and the first is at row 7

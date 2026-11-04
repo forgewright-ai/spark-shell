@@ -52,7 +52,7 @@ def main(binary):
         return test()
 
     text = lambda: seen.decode("utf-8", "replace")
-    ok(read_until(lambda: "home" in text() and "Settings" in text() and "Find, do, or ask." in text() and "\u00d7" in text(), 15), "the home draws: its title, Settings, the prompt, close as x", text()[-400:])
+    ok(read_until(lambda: "home" in text() and "Settings" in text() and "find, do, or ask." in text() and "\u00d7" in text(), 15), "the home draws: its title, Settings, the prompt, close as x", text()[-400:])
     ok("\x1b]52" not in text(), "the dialog writes no clipboard sequence")
     os.write(fd, b"nord")
     ok(read_until(lambda: "nord" in text(), 5), "typing finds the palette among every row")
@@ -123,6 +123,7 @@ def resize(binary, env):
         signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGWINCH})
         os.execve(binary, [binary, "--composer", ""], env)
     screen = Screen()
+    cursor_queries = []
 
     def wait_for(words, seconds=8):
         until = time.monotonic() + seconds
@@ -131,22 +132,28 @@ def resize(binary, env):
                 return True
             if select.select([fd], [], [], .1)[0]:
                 try:
-                    screen.feed(os.read(fd, 65536))
+                    data = os.read(fd, 65536)
+                    if b"\x1b[6n" in data:
+                        cursor_queries.append(True)
+                    screen.feed(data)
                 except OSError:
                     return False
         return False
 
     try:
         fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
-        assert wait_for(["Find, do, or ask."]), "resize fixture did not open"
+        assert wait_for(["find, do, or ask."]), "resize fixture did not open"
         os.write(fd, b"resize draft")
         assert wait_for(["resize draft"]), "draft did not appear"
-        screen = Screen(12, 32)
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 32, 0, 0))
-        assert wait_for(["Make this window larger"], 3), "shrink did not redraw without a key"
-        screen = Screen()
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
-        assert wait_for(["resize draft", "Ask", "\u25c7"], 3), "restore lost the draft or footer"
+        cursor_queries.clear()
+        for _ in range(6):
+            screen = Screen(12, 32)
+            fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 32, 0, 0))
+            assert wait_for(["Make this window larger"], 2), "shrink did not redraw without a key"
+            screen = Screen()
+            fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
+            assert wait_for(["resize draft", "ask", "\u25c7"], 2), "restore lost the draft or footer"
+        assert not cursor_queries, "resize queried the cursor while another thread owns terminal input"
         ok(True, "resize redraws without SIGWINCH or keyboard input and retains the draft")
     except AssertionError as error:
         ok(False, "resize redraw", str(error))
@@ -230,8 +237,11 @@ print(json.dumps({"answer": "", "steps": [{"name": "notes_pick", "arguments": {"
         os.write(fd, b"use this\r")
         time.sleep(.15)
         ok(not records(requests), "Enter on unmatched text stays local")
+        # Provider discovery and model discovery are independent. Wait for the
+        # visible connection state before submitting, rather than racing startup.
+        assert wait_for(lambda: b"fixture-model" in seen), "the fixture model did not become available"
         os.write(fd, b"\x1b[13;5u")
-        assert wait_for(lambda: b"notes pick Fixture" in seen and b"Discard" in seen), "the proposal did not draw"   # the line wraps across a cursor move
+        assert wait_for(lambda: b"notes pick Fixture" in seen and b"discard" in seen), "the proposal did not draw"   # the line wraps across a cursor move
         req = records(requests)
         ok(len(req) == 1 and req[0]["argv"][:3] == ["steps", "--about", req[0]["argv"][2]] and "Fixture target" not in req[0]["argv"][2]
            and [t["name"] for t in req[0]["tools"]["tools"]] == ["notes_pick"],
@@ -342,7 +352,7 @@ def files(binary, env, home):
     tight = lambda: re.sub(r"\s+", "", plain())   # the terminal's cursor moves split words: compared with no spaces
     shown = lambda: re.sub(r"\s+", "", screen.text())   # the screen as the terminal holds it, with no spaces
     try:
-        assert wait_for(lambda: "Find, do, or ask." in plain() and "browse your home" in plain()), "the home did not draw with the files ready"
+        assert wait_for(lambda: "find, do, or ask." in plain() and "browse your home" in plain()), "the home did not draw with the files ready"
         os.write(fd, b"files")
         time.sleep(0.3)
         os.write(fd, b"\r")
@@ -351,11 +361,11 @@ def files(binary, env, home):
         os.write(fd, b"\x1b[B")       # Down: the first row, the folder
         time.sleep(0.3)
         os.write(fd, b"\x1b[B")       # Down: the file, lit
-        assert wait_for(lambda: "Ask" in shown() and "Actions" in shown()), "the normal-width key row did not keep Ask and the file actions visible: " + screen.text()[-600:]
+        assert wait_for(lambda: "ask" in shown() and "actions" in shown()), "the normal-width key row did not keep Ask and the file actions visible: " + screen.text()[-600:]
         seen.clear()
         os.write(fd, b"\x1b[C")       # Right: its actions
         # read from the screen, not the bytes: a cell the row before held too is not sent again ("rename" over "hello.txt" keeps its e)
-        assert wait_for(lambda: "movetoafolder" in shown() and "trash" in shown() and "rename" in shown() and "Back" in shown()), "the actions did not draw: " + screen.text()[-900:]
+        assert wait_for(lambda: "movetoafolder" in shown() and "trash" in shown() and "rename" in shown() and "back" in shown()), "the actions did not draw: " + screen.text()[-900:]
         ok(True, "Down lights the file with Ask and Actions visible; Right opens the actions in the provider's words: open, preview, attach, rename, move, copy, trash")
         seen.clear()
         os.write(fd, b"\x1b")          # back to the folder
@@ -385,7 +395,7 @@ def busy(binary, env, home):
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 60, 0, 0))
     seen = bytearray()
     end = time.time() + 15
-    while time.time() < end and b"Find, do, or ask." not in seen:
+    while time.time() < end and b"find, do, or ask." not in seen:
         r, _, _ = select.select([fd], [], [], 0.1)
         if r:
             seen.extend(os.read(fd, 65536))
@@ -518,7 +528,7 @@ def keys(binary, env):
     seen = bytearray()
     answered = False
     end = time.time() + 15
-    while time.time() < end and b"Find, do, or ask." not in seen:
+    while time.time() < end and b"find, do, or ask." not in seen:
         r, _, _ = select.select([fd], [], [], 0.1)
         if r:
             seen.extend(os.read(fd, 65536))

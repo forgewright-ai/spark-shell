@@ -19,7 +19,7 @@ fn root_is_complete_quiet_and_restores_selection() {
         .collect();
     assert_eq!(
         names,
-        ["Apps", "Files", "Workspace", "Notes", "Calendar", "Tools", "Settings", "Help", "About", "Power"]
+        ["apps", "files", "Workspace", "Notes", "Calendar", "Tools", "Settings", "Help", "About", "Power"]
     );
     app.light(HELP_DEST);
     app.enter();
@@ -155,7 +155,7 @@ fn configured_ask_is_visible_clickable_and_uses_the_same_action() {
         assert_eq!(key.2, 4);
         assert!(key.1 <= size.0);
         let row: String = (0..size.0).map(|x| buffer[(x, 4)].symbol()).collect();
-        assert!(row.contains("Ask") && row.contains("F4") && !row.contains("Ctrl+Enter"));
+        assert!(row.contains("ask") && row.contains("F4") && !row.contains("Ctrl+Enter"));
     }
     app.hint_key(HintKey::Ask);
     assert!(app.pending.is_some() && app.jobs.len() == 1);
@@ -193,8 +193,8 @@ fn shared_frame_prioritizes_navigation_and_ask_with_a_configured_footer() {
             let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
             let row = |y| (0..size.0).map(|x| buffer[(x, y)].symbol()).collect::<String>();
             let hint = row(spark_dialog::ui::HINT_Y);
-            assert!(hint.find("Esc").unwrap() < hint.find("Ask").unwrap());
-            assert!(!hint.contains("Chat") && !hint.contains("F2"));
+            assert!(hint.find("Esc").unwrap() < hint.find("ask").unwrap());
+            assert!(!hint.contains("chat") && !hint.contains("F2"));
             assert!(drawn
                 .keys
                 .iter()
@@ -285,9 +285,9 @@ fn narrow_footer_reserves_controls_and_keeps_hit_areas_on_their_labels() {
                     let label: String = (start..end).map(|x| buffer[(x, y)].symbol()).collect();
                     match id {
                         0 => assert!(!label.trim().is_empty(), "an attachment remains visible"),
-                        4 => assert_eq!(label, " Remove "),
-                        1 if width == 36 => assert_eq!(label, " Model \u{2304} "),
-                        3 => assert_eq!(label, if app.mode == Mode::Listening { " Cancel " } else { " Talk " }),
+                        4 => assert_eq!(label, " remove "),
+                        1 if width == 36 => assert_eq!(label, " model \u{2304} "),
+                        3 => assert_eq!(label, if app.mode == Mode::Listening { " cancel " } else { " talk " }),
                         _ => {}
                     }
                 }
@@ -373,32 +373,41 @@ fn an_answer_arriving_in_another_view_is_discoverable_without_switching_views() 
 }
 
 #[test]
-fn root_frame_stays_at_its_reading_measure_with_every_edge_aligned() {
+fn modules_share_frame_anchors_while_apps_keeps_a_bounded_body() {
     use spark_dialog::ui::{CONTENT_Y, HINT_Y, PROMPT_Y};
     let mut app = footer_app();
     let palette = common::palette("tokyonight-night");
     for size in [(60, 40), (68, 49), (140, 50), (36, 24)] {
         app.size = size;
         let (w, h) = size;
-        let width = w.min(60);
-        let left = (w - width) / 2;
-        let mut buffer = Buffer::empty(Rect::new(0, 0, w, h));
-        let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
-        assert_eq!(app.col_w(), width);
-        assert_eq!(drawn.columns, (left, left + width));
-        for (y, first) in [(0, "h"), (PROMPT_Y, "\u{276f}"), (HINT_Y, "C"), (CONTENT_Y, "A"), (h - 2, "A")] {
-            assert_eq!(buffer[(left + 2, y)].symbol(), first, "shared left edge at {size:?}, row {y}");
+        let frame = w.min(120);
+        let frame_left = (w - frame) / 2;
+        let mut anchors = None;
+        for view in [View::Home, View::Apps, View::Folder(0, "spark-shell://files/rows/home".into())] {
+            app.view = view;
+            let width = app.col_w();
+            let body_left = if app.view == View::Apps { frame_left } else { (w - width) / 2 };
+            let mut buffer = Buffer::empty(Rect::new(0, 0, w, h));
+            let drawn = spark_dialog::ui::draw(&app, &palette, "", &mut buffer);
+            assert_eq!(drawn.columns, (body_left, body_left + width));
+            assert_eq!(buffer[(frame_left + 2, PROMPT_Y)].symbol(), "\u{276f}");
+            assert_eq!(buffer[(frame_left + 2, h - 2)].symbol(), "a");
+            assert_eq!(buffer[(w / 2, h - 4)].symbol(), "\u{25c7}");
+            assert!((0..w).all(|x| buffer[(x, h - 3)].symbol().trim().is_empty()));
+            assert!(drawn.chips.iter().all(|(a, b, _, _)| *a >= frame_left && *b <= frame_left + frame));
+            let actual = (drawn.close, drawn.cursor, drawn.chips.clone());
+            if let Some(expected) = &anchors {
+                assert_eq!(&actual, expected, "shared frame at {size:?}");
+            } else {
+                anchors = Some(actual);
+            }
+            if app.view == View::Home {
+                assert_eq!(buffer[(body_left + 2, CONTENT_Y)].symbol(), "a");
+                assert_eq!(buffer[(body_left + width - 3, CONTENT_Y)].symbol(), "\u{203a}");
+                assert_eq!(buffer[(frame_left + 2, HINT_Y)].symbol(), "c");
+            }
         }
-        assert_eq!(buffer[(left + width - 3, CONTENT_Y)].symbol(), "\u{203a}");
-        assert_eq!(buffer[(left + width / 2, h - 4)].symbol(), "\u{25c7}");
-        assert!((0..w).all(|x| buffer[(x, h - 3)].symbol().trim().is_empty()));
-        assert!(drawn.chips.iter().all(|(a, b, _, _)| *a >= left && *b <= left + width));
     }
-    app.size = (140, 50);
-    app.view = View::Folder(0, "spark-shell://files/rows/home".into());
-    assert_eq!(app.col_w(), 120, "Files retains its wider table");
-    app.view = View::Preview;
-    assert_eq!(app.col_w(), 140, "previews retain the available width");
 }
 
 #[test]

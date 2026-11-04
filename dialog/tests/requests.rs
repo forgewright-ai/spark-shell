@@ -537,6 +537,7 @@ fn in_a_folder() -> (App, std::sync::mpsc::Receiver<spark_dialog::mcp::Incoming>
 #[test]
 fn a_request_from_a_folder_carries_tools_without_browsed_paths() {
     let (mut app, _) = in_a_folder();
+    app.conversation(); // compose request text separately from the folder filter
     type_words(&mut app, "move the invoice to documents");
     app.ask();
     let (_, about, tools) = request(&app);
@@ -552,6 +553,7 @@ fn a_request_from_a_folder_carries_tools_without_browsed_paths() {
 #[test]
 fn a_step_with_a_path_no_row_holds_is_refused_and_a_rows_own_path_passes() {
     let (mut app, _) = in_a_folder();
+    app.conversation(); // only the normal request draft is submitted
     type_words(&mut app, "trash the password file");
     app.ask();
     let (serial, _, _) = request(&app);

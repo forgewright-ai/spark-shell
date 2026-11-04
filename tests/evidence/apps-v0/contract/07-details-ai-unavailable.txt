@@ -1,0 +1,39 @@
+  apps · installed apps               Tue 3 Nov · 19:09  ×
+
+  ❯ find, do, or ask.
+
+  back  Esc   ask  Ctrl+Enter
+
+
+  btop++
+
+    Resource monitor that shows usage and stats for
+    processor, memory, disks, network and processes
+
+    version             1.4.7_1
+    installed via       XBPS / System
+    source              XBPS
+
+    open application
+
+  technical details                                      ›
+
+  preferences
+
+    category            system (mapped)                  ⌄
+    visibility          hide / unhide
+    launch              application default              ⌄
+
+
+    save      cancel
+
+
+
+
+
+
+
+
+  ─────────────────────────── ◇ ──────────────────────────
+
+  attach                 no model ⌄                   talk

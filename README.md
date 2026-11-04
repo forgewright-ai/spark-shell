@@ -862,8 +862,8 @@ explicitly sends the request. Unmatched text never sends automatically.
 Credential fields, confirmations and provider forms cannot use Ask.
 A longer draft scrolls inside the two rows, and a paste keeps its lines
 and never sends. The
-row under the prompt puts navigation first and keeps Ask visible. At the
-normal width it is one row; narrow windows can use a second reserved row.
+row under the prompt puts navigation first and keeps Ask visible. Actions
+wrap onto a second reserved row when needed.
 Action groups and configured keycaps stay whole. Secondary hints use the
 remaining space; Help lists every shortcut, including conversation.
 A click on a label or its keycap does what the key does. Back
@@ -874,6 +874,69 @@ The home gives each place a purpose description. Workspace shows open
 windows and saved layouts, Notes its count and newest note, and Calendar
 the next reminder when that context is available. All ten places stay
 visible; a missing capability explains its availability when opened.
+Apps lists installed, launchable desktop entries from the system's GIO
+library. The all categories filter groups each application into one category,
+alphabetically within that group. Names use the desktop entry's supplied Name,
+such as firefox, rather than a longer full name. Short roles come from
+GenericName; a missing role stays blank. Search matches the name, full name,
+role or full description
+across categories. Enter and click launch the selected app; Right or Space
+opens Details. Esc clears the query first, then returns; Details preserves the
+list's query and position. Technical identifiers and copied paths keep their
+original spelling.
+
+Manage categories creates, renames and deletes local categories and edits the
+mapping from desktop-entry categories. The first mapped desktop category wins;
+an individual override in Details wins over mappings, with Other as the
+fallback. Deleting a category removes its mappings and overrides while
+retaining visibility and launch preferences. Details edits are drafts until
+save is chosen; cancel discards the draft. Hidden entries are concealed by
+default. The list's hidden apps: hide / unhide toggle reveals them with an
+explicit hidden label, without changing their saved visibility. To restore
+one, open its Details, set visibility to unhide and save. To hide one, set
+visibility to hide and save. foot stays visible; foot client and foot server
+start hidden unless an explicit user preference restores them. Preferences
+live in `~/.config/spark-shell/apps.json` (or
+`$XDG_CONFIG_HOME/spark-shell/apps.json`), keyed by desktop-entry identity, so
+ordinary package updates retain them. System launchers and packages are never
+changed by these controls.
+
+Application default uses the platform desktop-entry launch behavior. New
+window is available only for an explicitly declared New window action. Focus
+existing requires a supported Sway identity and uses its focus order; when
+nested groups make their relative recency ambiguous, it reports that
+limitation instead of choosing a window arbitrarily. No matching window starts
+the application. A launch request is distinguished from a window actually
+observed or focused. GIO owns argument expansion, desktop actions, working
+directories and activation. On foot-only desktops a private terminal bridge
+supplies GIO's terminal fallback. The adapter never interpolates discovered
+commands into shell text. An app remains running after the launch helper
+exits. Once the app has focus, home clears from view; Super+Space returns to
+the same search and edits. Failures remain visible in context.
+
+Details reads package and desktop metadata on demand: a compact overview, one
+Technical details disclosure, and Preferences. Missing package data is shown
+as Unavailable; absent declarations do not imply a security policy. Copy
+launcher path copies its original contents. Apps keeps a bounded 60-column body
+on home's shared left inset, with shared keybindings and footer in compact,
+fullscreen and both snaps. Category and Details headings use the same blank
+row and two-cell child indent. Interface labels are lowercase; metadata and
+physical key names retain their spelling. Normal text identifies idle controls,
+bold text identifies headings, and muted text carries supporting descriptions.
+Accent shows focus and the shared footer diamond; toggle state also has bold
+underlined text. Save and cancel share a stable row with separate click targets.
+Its minimum is 36 columns by 20 rows; narrow values reflow and the body
+scrolls independently of the reserved footer. Page Up/Down and the wheel
+scroll all expanded metadata. The full model identity remains available in the
+model selector when its footer label is shortened. AI is optional throughout
+Apps.
+
+Native validation: `python3 tests/apps_desktop_proof.py BINARY DIRECTORY` runs
+an isolated Sway/foot session with real system discovery and launches,
+temporary preferences, and identified model/voice fixtures.
+`python3 tests/apps_test.py` checks adapter contracts, using isolated
+desktop-entry fixtures on Linux.
+
 Settings stands in groups: sound and microphone; Wi-Fi, Bluetooth and
 the network; storage, display, keyboard and pointer; theme, wallpaper,
 the bar and notifications; power, battery, Talk and Connections. A

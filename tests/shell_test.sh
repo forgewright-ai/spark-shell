@@ -3926,8 +3926,21 @@ else
     # clicks: swaybar's stream on stdin; the gauges set the levels, any other block opens the panel; each redraws the bar at once
     rm -f "$amlog" "$H/.local/state/foot.log"
     printf '[\n,{"name":"out","instance":"gauge","button":1,"relative_x":60,"width":100}\n,{"name":"out","instance":"gauge","button":4}\n,{"name":"out","instance":"gauge","button":3}\n,{"name":"mic","instance":"gauge","button":3}\n,{"name":"mic","instance":"gauge","button":1,"relative_x":30,"width":100}\n,{"name":"out","instance":"name","button":1,"x":1500,"relative_x":12,"width":90}\n,{"name":"lan","instance":"","button":1,"x":1200,"relative_x":5,"width":40}\n' > "$H/clicks"
-    sh "$SH" bar status < "$H/clicks" > "$H/bar.out" 2> "$H/bar.err" & bp=$!
-    sleep 3
+    # Send clicks after the initial frame. Feeding a completed file at startup
+    # can coalesce every signal into that first frame on a busy CI runner.
+    mkfifo "$H/bar-clicks"
+    sh "$SH" bar status < "$H/bar-clicks" > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+    exec 8> "$H/bar-clicks"
+    for _i in $(seq 1 100); do
+        [ "$(grep -c '^\[{' "$H/bar.out")" -ge 1 ] && break
+        sleep .1
+    done
+    cat "$H/clicks" >&8
+    exec 8>&-
+    for _i in $(seq 1 100); do
+        [ "$(grep -c '^\[{' "$H/bar.out")" -ge 2 ] && [ "$(wc -l < "$amlog" 2>/dev/null || echo 0)" -ge 5 ] && [ "$(wc -l < "$H/.local/state/foot.log" 2>/dev/null || echo 0)" -ge 2 ] && break
+        sleep .1
+    done
     kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
     head -1 "$H/bar.out" | grep -q '^{"version":1,"click_events":true}$' && [ "$(sed -n 2p "$H/bar.out")" = '[' ] && ok "bar status: the i3bar header asks for clicks, then the array opens" || bad "bar header" "$(head -2 "$H/bar.out")"
     [ "$(grep -c '^\[{' "$H/bar.out")" -ge 2 ] && ok "bar status: one line at start, and the bar drawn again after the clicks (quick clicks share one redraw)" || bad "bar redraws" "$(grep -c '^\[{' "$H/bar.out") lines; $(cat "$H/bar.err")"

@@ -84,7 +84,7 @@ impl Pen<'_> {
             return x;
         }
         let st = if focus {
-            Style::default().fg(self.pal.surface).bg(self.pal.accent)
+            Style::default().fg(self.pal.surface).bg(self.pal.accent).add_modifier(Modifier::UNDERLINED)
         } else {
             Style::default().fg(self.pal.fg).bg(self.pal.lit)
         };
@@ -99,20 +99,25 @@ impl Pen<'_> {
         if x >= self.w || y >= self.h {
             return x;
         }
-        let fg = if quiet && !on { self.pal.muted } else { self.pal.accent };
+        let fg = if quiet && !on {
+            self.pal.muted
+        } else if focus {
+            self.pal.accent
+        } else {
+            self.pal.fg
+        };
         let mut st = Style::default().fg(fg);
         if focus {
-            st = st.bg(self.pal.lit);
+            st = st.bg(self.pal.lit).add_modifier(Modifier::UNDERLINED);
         }
         let t = cut(&format!(" {} ", text), (self.w - x) as usize);
         self.buf.set_string(x, y, &t, st);
-        x + cells(&t) as u16
-    }
-    fn light(&mut self, y: u16) {
-        for x in 0..self.end(y).min(self.w) {
-            let c = &mut self.buf[(x, y)];
-            c.set_bg(self.pal.lit);
+        if !quiet && !text.contains(MENU) {
+            for col in x + 1..(x + 1 + cells(text) as u16).min(self.w) {
+                self.buf[(col, y)].modifier.insert(Modifier::UNDERLINED);
+            }
         }
+        x + cells(&t) as u16
     }
 }
 
@@ -176,6 +181,9 @@ pub fn conversation_rows(text: &str, w: usize) -> Vec<String> {
 pub struct Drawn {
     pub cursor: (u16, u16),
     pub picks: Vec<(u16, usize)>,
+    /// Exact horizontal targets for controls sharing a body row.
+    pub pick_regions: Vec<(u16, u16, u16, usize)>,
+    pub app_toggles: Vec<(u16, u16, u16, usize, bool)>,
     pub chips: Vec<(u16, u16, u16, usize)>,
     pub keys: Vec<(u16, u16, u16, HintKey)>,
     pub close: Option<(u16, u16)>,
@@ -262,7 +270,7 @@ pub const FULL_WIDTH: u16 = 120;
 /// The width the dialog's own column has at this size: its words wrap to it.
 pub fn column_width(w: u16, view: &View) -> u16 {
     match view {
-        View::Home => w.min(WIDTH),
+        View::Home | View::Apps => w.min(WIDTH),
         View::Preview => w,
         _ => w.min(FULL_WIDTH),
     }
@@ -274,6 +282,19 @@ pub fn wide(w: u16) -> bool {
 }
 
 impl Drawn {
+    pub fn pick_at(&self, x: u16, y: u16) -> Option<usize> {
+        if self.pick_regions.iter().any(|(_, _, row, _)| *row == y) {
+            return self
+                .pick_regions
+                .iter()
+                .find(|(a, b, row, _)| *row == y && x >= *a && x < *b)
+                .map(|(_, _, _, n)| *n);
+        }
+        self.picks
+            .iter()
+            .find(|(row, _)| *row == y && x >= self.columns.0 && x < self.columns.1)
+            .map(|(_, n)| *n)
+    }
     /// Every place moved right by `dx` cells: the column drawn apart, then laid at its place on the screen.
     fn shift(&mut self, dx: u16) {
         self.cursor.0 += dx;
@@ -296,6 +317,14 @@ impl Drawn {
             st.0 += dx;
             st.1 += dx;
         }
+        for (a, b, _, _) in &mut self.pick_regions {
+            *a += dx;
+            *b += dx;
+        }
+        for (a, b, _, _, _) in &mut self.app_toggles {
+            *a += dx;
+            *b += dx;
+        }
         self.columns = (self.columns.0 + dx, self.columns.1 + dx);
     }
 }
@@ -313,6 +342,38 @@ fn blit(buf: &mut Buffer, part: &Buffer, x: u16, y: u16) {
 
 /// The local date and time as the person's locale writes them; main.rs makes it, this draws it.
 pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
+    let drawn = draw_layout(app, pal, clock, buf);
+    if let Some((x, y)) = app.hover {
+        let controls = drawn
+            .chips
+            .iter()
+            .map(|&(a, b, r, _)| (a, b, r))
+            .chain(drawn.keys.iter().map(|&(a, b, r, _)| (a, b, r)));
+        let hit = controls.into_iter().find(|&(a, b, r)| y == r && x >= a && x < b).or_else(|| {
+            drawn.pick_at(x, y).map(|n| {
+                drawn
+                    .pick_regions
+                    .iter()
+                    .find(|(_, _, row, pick)| *row == y && *pick == n)
+                    .map(|(a, b, r, _)| (*a, *b, *r))
+                    .unwrap_or((drawn.columns.0, drawn.columns.1, y))
+            })
+        });
+        if let Some((a, b, r)) = hit {
+            for col in a..b.min(buf.area.width) {
+                if r < buf.area.height {
+                    buf[(col, r)].set_bg(pal.lit);
+                    if buf[(col, r)].fg == pal.fg {
+                        buf[(col, r)].set_fg(pal.accent);
+                    }
+                }
+            }
+        }
+    }
+    drawn
+}
+
+fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let (w, h) = (buf.area.width, buf.area.height);
     buf.set_style(Rect::new(0, 0, w, h), Style::default().fg(pal.fg));
     // the opening, and the wait after it while the home loads, play alone in the middle of the window: nothing
@@ -333,10 +394,10 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     }
     // a preview opened on Space keeps the whole screen: its zoom and its drag want the room (#120); elsewhere the column
     // in the middle (#141)
-    let cw = column_width(w, &app.view);
+    // Frame anchors do not depend on the module's content width.
+    let cw = if app.view == View::Preview { w } else { w.min(FULL_WIDTH) };
     if cw == w {
-        let mut d = draw_column(app, pal, clock, buf);
-        d.columns = (0, w);
+        let d = draw_column(app, pal, clock, buf);
         return d;
     }
     let x = (w - cw) / 2;
@@ -344,7 +405,6 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let mut drawn = draw_column(app, pal, clock, &mut col);
     blit(buf, &col, x, 0);
     drawn.shift(x);
-    drawn.columns = (x, x + cw);
     drawn
 }
 
@@ -352,6 +412,7 @@ pub fn draw(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
 fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
     let mut drawn = Drawn::default();
     let (w, h) = (buf.area.width, buf.area.height);
+    drawn.columns = (0, w);
     let area = Rect::new(0, 0, w, h);
     buf.set_style(area, Style::default().fg(pal.fg));
     let mut pen = Pen { buf, pal, w, h, right: w };
@@ -383,7 +444,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     };
     x = pen.put(x, 0, &cut_words(&title, end.saturating_sub(x + 1) as usize), pal.fg, true, false);
     let sub = app.subtitle();
-    if !sub.is_empty() && end > x + 5 {
+    if !sub.is_empty() && end > x + 12 {
         // two cells of air before the date: a long state is cut, never run into it
         pen.put(x, 0, &cut_words(&format!("{}{}", SEP, sub), (end - x - 2) as usize), pal.muted, false, false);
     }
@@ -402,7 +463,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     // the prompt: two rows always; a longer draft scrolls inside them (#196)
     let tx = 4;
     let tw = (w - tx - 3) as usize;
-    pen.put(2, PROMPT_Y, PROMPT, pal.accent, true, false);
+    pen.put(2, PROMPT_Y, PROMPT, pal.fg, true, false);
     let masked = matches!(&app.mode, Mode::Ask { masked: true, .. }) || matches!(&app.mode, Mode::Pair { kind, .. } if kind == "pin" || kind == "passkey");
     let shown: String = if masked {
         "\u{2022}".repeat(app.input.chars().count())
@@ -414,7 +475,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     let top = cr.saturating_sub(n - 1).min(rows.len().saturating_sub(n));
     drawn.prompt = (PROMPT_Y, PROMPT_Y + n as u16 - 1);
     if app.input.is_empty() && app.mode == Mode::Normal {
-        pen.put(tx, PROMPT_Y, PLACEHOLDER, pal.muted, false, false);
+        pen.put(tx, PROMPT_Y, &PLACEHOLDER.to_lowercase(), pal.muted, false, false);
     } else {
         for (k, r) in rows.iter().skip(top).take(n).enumerate() {
             pen.put(tx, PROMPT_Y + k as u16, r, pal.fg, false, false);
@@ -461,7 +522,42 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         if app.is_calendar() {
             top = calendar(app, &mut pen, clock, content_y, bottom) + 1;
         }
-        drawn.picks = content(app, &mut pen, top, bottom, &mut drawn);
+        let body_width = column_width(w, &app.view);
+        if body_width < w {
+            // Apps keeps its readable measure on the shared frame's left
+            // anchor; centering it again adds an unrelated inset after resize.
+            let offset = if app.view == View::Apps { 0 } else { (w - body_width) / 2 };
+            let mut body = Buffer::empty(Rect::new(0, 0, body_width, h));
+            body.set_style(body.area, Style::default().fg(pal.fg));
+            let mut body_pen = Pen {
+                buf: &mut body,
+                pal,
+                w: body_width,
+                h,
+                right: body_width,
+            };
+            drawn.picks = content(app, &mut body_pen, top, bottom, &mut drawn);
+            for y in top..bottom {
+                for x in 0..body_width {
+                    pen.buf[(offset + x, y)] = body[(x, y)].clone();
+                }
+            }
+            for step in &mut drawn.steps {
+                step.0 += offset;
+                step.1 += offset;
+            }
+            for (a, b, _, _) in &mut drawn.pick_regions {
+                *a += offset;
+                *b += offset;
+            }
+            for (a, b, _, _, _) in &mut drawn.app_toggles {
+                *a += offset;
+                *b += offset;
+            }
+            drawn.columns = (offset, offset + body_width);
+        } else {
+            drawn.picks = content(app, &mut pen, top, bottom, &mut drawn);
+        }
     }
 
     contextual_keys(app, &mut pen, &mut drawn);
@@ -475,7 +571,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     drawn
 }
 
-/// One row at normal width. Narrow windows may use the reserved second row;
+/// Use the reserved second row when a complete shortcut group needs it;
 /// complete action groups wrap together, and keycaps are never clipped.
 /// Navigation and Ask take priority; secondary shortcuts remain in Help.
 fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
@@ -492,7 +588,7 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
         let back = groups.remove(i);
         groups.insert(0, back);
     }
-    if app.mode == Mode::Normal {
+    if app.mode == Mode::Normal && app.leave_decision.is_none() && !(app.view == View::Apps && app.apps.form()) {
         if app.pending.is_some() {
             groups.retain(|g| !g.iter().any(|(t, k)| !k && t == "Thinking"));
         }
@@ -504,7 +600,7 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
         groups.insert(groups.len().min(1), vec![(label, false), ("Ctrl+Enter".into(), true)]);
     }
     let right = pen.w.saturating_sub(2);
-    let last_y = HINT_Y + u16::from(pen.w < WIDTH);
+    let last_y = HINT_Y + 1;
     let (mut x, mut y) = (2, HINT_Y);
     for group in groups {
         let mut parts: Vec<_> = group
@@ -548,7 +644,7 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
             x = if key {
                 pen.chip(x, y, &text, focused)
             } else {
-                pen.put(x, y, &text, pen.pal.accent, false, focused)
+                pen.put(x, y, &text.to_lowercase(), if focused { pen.pal.accent } else { pen.pal.fg }, false, focused)
             };
             let n = actions.len() as u16;
             for (i, action) in actions.into_iter().enumerate() {
@@ -583,13 +679,13 @@ fn key_of(k: &str) -> Option<HintKey> {
 fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     let w = pen.w;
     let chips = app.chips();
-    let mic = if app.mode == Mode::Listening { "Cancel" } else { "Talk" };
+    let mic = if app.mode == Mode::Listening { "cancel" } else { "talk" };
     // the mic while talk is click to talk; how talk works is a setting
     let mic_on = app.cfg.talk && app.talk == Talk::Click;
     let mic_w = if mic_on { cells(mic) as u16 + 2 } else { 0 };
     let mic_x = w - 1 - mic_w;
     let right = if mic_on { mic_x - 1 } else { w - 1 };
-    let short_model = format!("Model {}", MENU);
+    let short_model = format!("model {}", MENU);
     let model_w = if app.cfg.model { cells(&short_model) as u16 + 3 } else { 0 };
     let remove_w = if chips.contains(&4) { 9 } else { 0 };
     let mut x = 1;
@@ -598,19 +694,19 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
         // an attachment. A long file name must never steal Remove or Cancel.
         let room = right.saturating_sub(x + remove_w + model_w + 2).min(w / 4);
         let name = app.attachment.as_deref().map(|a| cut_middle(a.rsplit('/').next().unwrap_or(""), room as usize));
-        let e = pen.control(x, y, name.as_deref().unwrap_or("Attach"), app.chip_focus == Some(0), name.is_some(), false);
+        let e = pen.control(x, y, name.as_deref().unwrap_or("attach"), app.chip_focus == Some(0), name.is_some(), false);
         drawn.chips.push((x, e, y, 0));
         x = e + 1;
     }
     if chips.contains(&4) {
-        let e = pen.control(x, y, "Remove", app.chip_focus == Some(4), false, false);
+        let e = pen.control(x, y, "remove", app.chip_focus == Some(4), false, false);
         drawn.chips.push((x, e, y, 4));
         x = e + 1;
     }
     let mut note_right = right;
     if app.cfg.model {
         let full = app.model_name.as_ref().map_or_else(
-            || "No model".into(),
+            || "no model".into(),
             |name| format!("{}{}{}", name, SEP, if app.server.is_some() { "remote" } else { "local" }),
         );
         let full = format!("{} {}", full, MENU);
@@ -646,6 +742,23 @@ fn footer(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
 /// The reply row under the key row (#196): a check or a cross, the words, Undo at the right where the rows'
 /// arrows stand; blank when there is nothing to say. One row, cut to the window: it never moves the list.
 fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
+    if app.view == View::Apps {
+        if let Some((_, op)) = &app.apps.pending {
+            let label = match op.as_str() {
+                "catalog" => "finding apps",
+                "details" => "reading details",
+                "launch" => "opening app",
+                _ => "copying",
+            };
+            let text = if app.cfg.progress {
+                format!("{} {}", label, progress::bar(progress::Work::Swell, app.frame))
+            } else {
+                label.into()
+            };
+            pen.put(2, y, &text, pen.pal.muted, false, false);
+            return;
+        }
+    }
     let Some(r) = &app.reply else { return };
     if r.mark == Mark::Answer && app.view == View::Conversation {
         return;
@@ -705,6 +818,37 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
     let w = pen.w;
     let mut arrows = None;
     match it {
+        Item::Leave(choice) => {
+            pen.put(2, y, &choice.label().to_lowercase(), if lit { pal.accent } else { pal.fg }, false, lit);
+        }
+        Item::Apps(line) => {
+            let color = if line.disabled {
+                pal.muted
+            } else if lit {
+                pal.accent
+            } else {
+                pal.fg
+            };
+            let label_color = if line.muted && !lit { pal.muted } else { color };
+            let label_end = pen.put(line.indent, y, &line.label, label_color, line.bold, lit);
+            if line.underline {
+                for x in line.indent..label_end {
+                    pen.buf[(x, y)].modifier.insert(Modifier::UNDERLINED);
+                }
+            }
+            let value_color = if line.value_muted { pal.muted } else { color };
+            pen.put(line.value_x, y, &line.value, value_color, false, lit);
+            if let Some(unhide) = line.toggle {
+                let (start, len) = if unhide { (7, 6) } else { (0, 4) };
+                for x in line.value_x + start..(line.value_x + start + len).min(pen.w) {
+                    pen.buf[(x, y)].modifier.insert(Modifier::UNDERLINED | Modifier::BOLD);
+                }
+            }
+            if !line.tail.is_empty() {
+                let end = line.bounds.map(|(_, b)| b).unwrap_or(w);
+                pen.put(end.saturating_sub(2 + cells(&line.tail) as u16), y, &line.tail, pal.muted, false, lit);
+            }
+        }
         Item::Heading(h) => {
             pen.put(2, y, h, pal.muted, false, false);
         }
@@ -1131,28 +1275,77 @@ fn sound(
     })
 }
 
+// Wrapped control values share their label's selection and pointer target.
+fn item_owner(items: &[Item], mut k: usize) -> usize {
+    while k > 0 && matches!(&items[k], Item::Apps(l) if l.continuation) {
+        k -= 1;
+    }
+    k
+}
+
+fn item_rows(items: &[Item]) -> Vec<usize> {
+    let mut row = 0;
+    items
+        .iter()
+        .enumerate()
+        .map(|(k, item)| {
+            if k > 0 && !matches!(item, Item::Apps(line) if line.inline) {
+                row += 1;
+            }
+            row
+        })
+        .collect()
+}
+
+fn content_start(items: &[Item], selected: Option<usize>, scroll: usize, room: usize) -> usize {
+    let rows = item_rows(items);
+    let total = rows.last().map(|r| r + 1).unwrap_or(0);
+    let mut first = scroll.min(total.saturating_sub(room));
+    if let Some(s) = selected.filter(|s| *s < items.len()) {
+        first = first.min(rows[s]);
+        let last = (s + 1..items.len()).take_while(|&k| item_owner(items, k) == s).last().unwrap_or(s);
+        if rows[last] >= first + room {
+            first = (rows[last] + 1).saturating_sub(room).min(rows[s]);
+        }
+    }
+    first
+}
+
+/// The current body's first line, including selection-driven scrolling. Pages
+/// with long metadata use this same layout when handing focus to text scrolling.
+pub fn body_scroll(app: &App) -> usize {
+    let items = app.items();
+    let all = app.size.1.saturating_sub(BOTTOM + CONTENT_Y) as usize;
+    let total = item_rows(&items).last().map(|r| r + 1).unwrap_or(0);
+    let room = if total > all { all.saturating_sub(1) } else { all };
+    let selected = app
+        .in_list
+        .then(|| items.iter().enumerate().filter(|(_, it)| app.pickable_item(it)).nth(app.sel).map(|(i, _)| i))
+        .flatten();
+    content_start(&items, selected, app.scroll, room)
+}
+
 fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -> Vec<(u16, usize)> {
     let mut at = vec![];
     let items = app.items();
     let picks: Vec<usize> = items.iter().enumerate().filter(|(_, it)| app.pickable_item(it)).map(|(i, _)| i).collect();
     let selected = if app.in_list { picks.get(app.sel).copied() } else { None };
     let n = items.len();
+    let rows = item_rows(&items);
+    let total = rows.last().map(|r| r + 1).unwrap_or(0);
     let all = bottom.saturating_sub(top) as usize;
     // a list longer than the area keeps its last line to say how many rows sit below
-    let room = if n > all { all.saturating_sub(1) } else { all };
-    // the picked row in view; else where Page Up and Page Down left it
-    let mut first = app.scroll.min(n.saturating_sub(room));
-    if let Some(s) = selected.filter(|s| *s < n) {
-        first = first.min(s);
-        if s >= first + room {
-            first = s + 1 - room;
-        }
-    }
+    let room = if total > all { all.saturating_sub(1) } else { all };
+    let first = content_start(&items, selected, app.scroll, room);
     let pal = pen.pal.clone();
-    let below = items[..n]
+    let below = items
         .iter()
-        .skip(first + room)
-        .filter(|it| !matches!(it, Item::Heading(_) | Item::Blank))
+        .enumerate()
+        .filter(|(k, it)| {
+            rows[*k] >= first + room
+                && !matches!(it, Item::Heading(_) | Item::Blank)
+                && !matches!(it, Item::Apps(line) if line.label.is_empty() && line.value.is_empty())
+        })
         .count();
     if below > 0 {
         let y = top + room as u16;
@@ -1204,14 +1397,34 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
         .collect();
     // a list of settings: each control ends where the rows' arrows stand (#183)
     let controls = items.iter().any(|it| row_of(app, it).is_some_and(|r| r.step.is_some() || r.switch.is_some()));
-    for (k, it) in items[..n].iter().enumerate().skip(first).take(room) {
-        let y = top + (k - first) as u16;
-        let lit = Some(k) == selected;
-        if let Some(n) = picks.iter().position(|i| *i == k) {
+    for (k, it) in items.iter().enumerate().filter(|(k, _)| rows[*k] >= first && rows[*k] < first + room) {
+        let y = top + (rows[k] - first) as u16;
+        // Hovering a shared shortcut changes its visual emphasis, not the
+        // selection that gives the contextual shortcut its action.
+        let lit = Some(item_owner(&items, k)) == selected && !app.hover.is_some_and(|(_, y)| y < top || y >= bottom);
+        let bounds = match it {
+            Item::Apps(line) => line.bounds.unwrap_or((0, pen.w)),
+            _ => (0, pen.w),
+        };
+        if let Some(n) = picks.iter().position(|i| *i == item_owner(&items, k)) {
             at.push((y, n));
+            if matches!(it, Item::Apps(_)) {
+                drawn.pick_regions.push((bounds.0, bounds.1, y, n));
+                if let Item::Apps(line) = it {
+                    if line.toggle.is_some() {
+                        drawn.app_toggles.push((line.value_x, line.value_x + 4, y, n, false));
+                        drawn.app_toggles.push((line.value_x + 7, line.value_x + 13, y, n, true));
+                    }
+                }
+            }
         }
         if lit {
-            pen.light(y);
+            for x in bounds.0..bounds.1.min(pen.w) {
+                pen.buf[(x, y)].set_bg(pal.lit);
+            }
+            if item_owner(&items, k) == k {
+                pen.put(bounds.0, y, MORE, pal.accent, false, true);
+            }
         }
         let chips = row_of(app, it).is_some_and(|r| chip_groups.contains(&r.group));
         let (w, r) = cols_at(k);

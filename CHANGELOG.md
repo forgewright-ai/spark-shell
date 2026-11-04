@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.123
+
+- Apps is a place in home. It lists the applications installed on the
+  machine, read from their desktop entries, in one category each, and
+  finds one by its name or its words. Enter or a click opens the lit
+  app; Right or Space opens its Details: the version, the package, the
+  launcher and the windows it has open, read when asked. An app can be
+  hidden and shown again, and the categories and their mappings are
+  yours to edit. The preferences live in
+  `~/.config/spark-shell/apps.json`, keyed by the desktop entry, so a
+  package update keeps them. No system launcher is changed.
+- An app opens the way its desktop entry says. Focus existing goes to
+  the app's newest window on sway, or opens the app when it has none,
+  and New window is offered only where the entry declares one. The
+  reply says whether a window was seen, or only asked for.
+- Apps and Details share home's frame in full screen and in both snaps,
+  down to 36 by 20 cells. Unsaved preferences ask Save, Discard or Keep
+  editing before you leave. A resize no longer asks the terminal where
+  the cursor is, so it redraws without a key.
+
 ## v0.122.1
 
 A patch, the owner's pick of 2026-11-03 (#214): on Arch, setup no
