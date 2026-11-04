@@ -914,8 +914,9 @@ nothing else is. Nothing in the dialog is underlined, and the pointer
 resting on the window changes nothing drawn: a row lights by a key or
 a click.
 
-The home's second column is state, in the text color: what the place
-holds now, from what the dialog already has. Apps its count of apps
+The home's second column is state: what the place holds now, from
+what the dialog already has, muted as a launcher's subtitle is, so the
+name leads and the column is one color. Apps its count of apps
 installed and hidden once the catalog is read; files the folder's own
 summary; workspace its open windows by name; notes their count and the
 newest with its date; calendar the next reminder; settings the look and

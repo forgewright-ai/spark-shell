@@ -739,7 +739,11 @@ fn the_home_is_ten_lowercase_places_in_three_groups_that_breathe_when_the_window
     assert!(!text(&buf, apps_y).contains('\u{203a}'), "no arrow at a place's end: every row here opens");
     let workspace_y = drawn.picks[2].0;
     assert!(text(&buf, workspace_y).contains("2 windows"));
-    assert_eq!(buf[(ui::PURPOSE_X, workspace_y)].fg, pal.fg, "what a place holds now, in the text color");
+    assert_eq!(
+        buf[(ui::PURPOSE_X, workspace_y)].fg,
+        pal.muted,
+        "what a place holds now, muted too: one color for the column"
+    );
     app.light(1);
     let (buf, drawn, pal) = draw(&mut app, 60, 40);
     let files_y = drawn.picks[1].0;

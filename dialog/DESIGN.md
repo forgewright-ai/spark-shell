@@ -113,9 +113,12 @@ note's title. A name that is an identifier keeps its spelling, since
 changing it would misname the thing: a file, a drive, a network, a
 package manager (XBPS).
 
-A row's second column is state, in the text color: what the place
-holds now. A purpose in muted words stands only where there is no
-state worth more, which at home is power alone.
+A row's second column is muted, whatever it says: what the place
+holds now, where the dialog has it, else what the place is for. One
+color for the column, so the name leads in the text color and the
+words after it read as its line, as a launcher's subtitle and the
+status row do (v0.124.2: two colors there read as two fonts). At home,
+tools and power have no state worth more than their purpose.
 
 ## Home
 

@@ -786,14 +786,20 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         Item::Blank => {}
         Item::Said(s, text, first) => said_line(pen, s, text, *first, y, false),
         Item::Dest(d) => {
-            // a place's name at the row column, 4; what it holds now in the text color, else what it is for, muted.
-            // No arrow at its end: every row here opens, the key bar says Enter (dialog/DESIGN.md)
+            // a place's name at the row column, 4; what it holds now, else what it is for, both muted: one color for
+            // the column, so the name leads and the words after it read as its line (dialog/DESIGN.md). No arrow at
+            // its end: every row here opens
             pen.put(4, y, DESTS[*d].name, pal.fg, false, lit);
-            let state = app.dest_state(*d);
-            let color = if state.is_some() { pal.fg } else { pal.muted };
-            let words = state.unwrap_or_else(|| DESTS[*d].purpose.to_string());
+            let words = app.dest_state(*d).unwrap_or_else(|| DESTS[*d].purpose.to_string());
             let e = pen.end(y);
-            pen.put(PURPOSE_X, y, &cut_words(&words, e.saturating_sub(PURPOSE_X + 2) as usize), color, false, lit);
+            pen.put(
+                PURPOSE_X,
+                y,
+                &cut_words(&words, e.saturating_sub(PURPOSE_X + 2) as usize),
+                pal.muted,
+                false,
+                lit,
+            );
         }
         Item::Setting(i) => {
             let (label, name, purpose) = SETTINGS[*i];

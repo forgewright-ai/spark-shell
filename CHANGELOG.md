@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.124.2
+
+- Home's second column is one color, muted, whether it says what the
+  place holds now or what the place is for. At v0.124.1 the state was
+  in the text color and the purpose muted, so a place with no state
+  yet (files before Files was opened, tools, power) stood dim among the
+  others and the column read as two fonts. The name leads in the text
+  color; the words after it are its line, as the status row is.
+
 ## v0.124.1
 
 The home dialog's design, written down and built: `dialog/DESIGN.md`
