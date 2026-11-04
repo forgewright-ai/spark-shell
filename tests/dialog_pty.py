@@ -2,9 +2,9 @@
 """The dialog at a real terminal, against spark-shell's own providers:
 python3 tests/dialog_pty.py PATH-TO-spark-dialog. A throwaway HOME, a
 60 by 40 pty; the home draws its places, words find a palette, Down
-moves into the list and Enter sets it, unmatched Enter stays local,
-Ask sends deliberately, Esc closes, and no provider outlives the
-window. CI runs it with no
+moves into the list and Enter sets it, words that name no row light
+the ask row and Enter on it asks, Esc closes, and no provider outlives
+the window. CI runs it with no
 network (unshare -n). Linux and macOS, python3 stdlib only."""
 import re
 import fcntl, json, os, pty, select, signal, struct, subprocess, sys, tempfile, termios, time
@@ -232,15 +232,16 @@ print(json.dumps({"answer": "", "steps": [{"name": "notes_pick", "arguments": {"
         with open(path) as f: return [json.loads(line) for line in f if line.endswith("\n")]
     try:
         assert wait_for(lambda: b"Fixture" in seen and b"target" in seen), "the provider did not draw"
+        # Provider discovery and model discovery are independent. Wait for the visible connection state before
+        # typing, so the ask row stands for words that name no row (dialog/DESIGN.md): asking is a row, and Enter
+        # on it asks; typing alone asks nothing
+        assert wait_for(lambda: b"fixture-model" in seen), "the fixture model did not become available"
         os.write(fd, b"\x1b[B")
         time.sleep(.1)
-        os.write(fd, b"use this\r")
-        time.sleep(.15)
-        ok(not records(requests), "Enter on unmatched text stays local")
-        # Provider discovery and model discovery are independent. Wait for the
-        # visible connection state before submitting, rather than racing startup.
-        assert wait_for(lambda: b"fixture-model" in seen), "the fixture model did not become available"
-        os.write(fd, b"\x1b[13;5u")
+        os.write(fd, b"use this")
+        assert wait_for(lambda: b"ask spark" in seen), "the ask row did not draw for words that name no row"
+        ok(not records(requests), "typing asks nothing by itself: the ask row waits for Enter")
+        os.write(fd, b"\r")
         assert wait_for(lambda: b"notes pick Fixture" in seen and b"discard" in seen), "the proposal did not draw"   # the line wraps across a cursor move
         req = records(requests)
         ok(len(req) == 1 and req[0]["argv"][:3] == ["steps", "--about", req[0]["argv"][2]] and "Fixture target" not in req[0]["argv"][2]
