@@ -166,10 +166,7 @@ class Session:
         col = match.search(lines[row]).start() + len(label) // 2
         rect = self.window()["rect"]
         x, y = rect["x"] + 18 + col * self.cell[0] + self.cell[0] // 2, rect["y"] + 18 + row * self.cell[1] + self.cell[1] // 2
-        self.pointer.click(x, y)
-        if double:
-            time.sleep(.12)
-            self.pointer.click(x, y)
+        self.pointer.click(x, y, times=2 if double else 1)
         time.sleep(.4)
 
     def settled(self):

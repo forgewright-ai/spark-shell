@@ -124,18 +124,22 @@ class Pointer:
             if obj == self.callback:
                 return
 
-    def click(self, x, y):
+    def click(self, x, y, times=1):
+        # times 2 is a double click: the two presses 200 ms apart, within the dialog's 400 ms window
+        # (dialog/DESIGN.md, app::DOUBLE_CLICK), as a desktop's double click is; two click() calls would not be,
+        # since each one rests after its release
         def stamp():
             return int(time.monotonic() * 1000) & 0xffffffff
         self.send(5, 1, stamp(), x, y, 1440, 1000)  # motion_absolute
         self.send(5, 4)  # frame
         self.sync()
         time.sleep(.1)
-        for state in (1, 0):
-            self.send(5, 2, stamp(), 272, state)  # BTN_LEFT
-            self.send(5, 4)
-            self.sync()
-            time.sleep(.1)
+        for _ in range(times):
+            for state in (1, 0):
+                self.send(5, 2, stamp(), 272, state)  # BTN_LEFT
+                self.send(5, 4)
+                self.sync()
+                time.sleep(.1)
 
     def close(self):
         self.socket.close()
