@@ -3464,6 +3464,11 @@ cmd_check() {
         elif [ "$DISTRO" = void ] && ! in_group _seatd "$LOGIN_ACCOUNT"; then chk login fail "$LOGIN_ACCOUNT is not in the _seatd group" "spark-shell on login"
         else chk login ok "the login screen takes tty1 at boot, tty2 keeps the console login"; fi
     fi
+    # home runs only the build the release pins, so a clone moved without it opens nothing: said here, not at the key
+    if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ] || [ "$DIALOG_URL" = none ] || [ -n "${SPARK_SHELL_DIALOG:-}" ] || ! dialog_target >/dev/null; then chk dialog ok "na (no release build here)"
+    elif ! _crt=$(release_tag); then chk dialog ok "na (this clone is past its release)"
+    elif dialog_ok; then chk dialog ok "$DIALOG_BIN, the sha256 $_crt pins"
+    else chk dialog fail "not the build $_crt pins, so home will not open" "spark-shell on"; fi
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk apps ok "na (no desktop)"
     else
         sbom_entries; ne=$(wc -l < "$TMP/entries" | tr -d ' ')
@@ -8706,6 +8711,10 @@ cmd_update() {   # the clone moves to the newest tag past its own that a key in 
         [ -n "$_skipped" ] || { echo "spark-shell update: at $_here, the newest release"; return 0; }
         refuse "the releases past $_here are not signed by a key in allowed-signers:$_skipped -- nothing moved"
     fi
+    # a tag is up minutes before its release: a seat moved now finds no build for the new pin, and home will not open
+    if seat_on && ! release_up "$_to"; then
+        refuse "$_to is signed, but its release is not published yet -- nothing moved; try again in a few minutes"
+    fi
     _by=$(git -C "$REPO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$REPO/allowed-signers" verify-tag "$_to" 2>&1 | sed -n 's/.*signature for \([^ ]*\) with.*/\1/p' | sed -n 1p)
     _note=''; [ -z "$_skipped" ] || _note=" (skipped, not a signed release:$_skipped)"
     if [ "$MODE" = dry ]; then
@@ -8718,6 +8727,12 @@ cmd_update() {   # the clone moves to the newest tag past its own that a key in 
     echo "spark-shell update: $_to, signed by ${_by:-a key in allowed-signers} (was $_here)$_note"
     seat_on || return 0
     exec "$REPO/spark-shell" on --yes     # the new tree applies itself
+}
+release_up() {   # release_up TAG -> 0 when TAG's dialog can be fetched, or there is nothing here to fetch (no build for this machine, no release, no curl: on's row says which)
+    _ut=$(dialog_target) || return 0
+    [ "$DIALOG_URL" != none ] || return 0
+    command -v curl >/dev/null 2>&1 || return 0
+    curl -fsIL --proto '=https,file' --proto-redir '=https' -o /dev/null "$DIALOG_URL/$1/spark-dialog-$_ut" 2>/dev/null
 }
 dialog_install() {   # the dialog's row of `on`: in place as the tree pins it, or fetched for the signed release tag and checked
     _dt=$(dialog_target) || { skip dialog "no build for $(uname -m) yet: the desktop keys open nothing"; return 0; }

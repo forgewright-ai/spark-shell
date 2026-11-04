@@ -44,7 +44,8 @@ For persistent mirror 404 errors, see the
 
 To update, run `spark-shell update`: the clone moves to the newest
 release signed by a key in its `allowed-signers`, never to a commit
-nobody signed, and `on` runs again from it.
+nobody signed, and `on` runs again from it. A tag whose release is not
+published yet moves nothing: run it again a few minutes later.
 spark is optional.
 Without it, layouts and spark chat are unavailable. The tmux
 status line still shows the machine and your reminders.
