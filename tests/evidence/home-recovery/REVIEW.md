@@ -45,3 +45,14 @@ tag:
 - `cargo fmt --check` and `cargo clippy --locked --all-targets -- -D
   warnings` clean.
 - `sh tests/gate.sh --quick`: see the pull request for the run.
+
+## native
+
+Pictures from the three desktop proofs on a real machine, a folder each
+under `native/`: `home/` (15), `apps/` (20) and `contract/` (19). They
+were taken at 5a67ca6 on Void with sway 1.12, headless, against CI's
+build of this branch, the one `dialog/dialog.env` pins, sha256
+`641afd004b101a816eeccff2d73893a1651a863d6ab9f3154b01f7877ce0d3bc`.
+`home_desktop_proof.py` passed 13 checks, `apps_desktop_proof.py` 14 and
+`apps_contract_desktop_proof.py` its 4. Two proofs name pictures alike,
+so each keeps its own folder.
