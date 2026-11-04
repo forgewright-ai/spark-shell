@@ -2,6 +2,10 @@
 
 ## v0.123
 
+Apps is a place in home, and the bar gets a review: where it sits,
+one rule of color for every block, a flag for the notifications nobody
+looked at, its own text size, and the tray off (#213, #216).
+
 - Apps is a place in home. It lists the applications installed on the
   machine, read from their desktop entries, in one category each, and
   finds one by its name or its words. Enter or a click opens the lit
@@ -19,6 +23,32 @@
   down to 36 by 20 cells. Unsaved preferences ask Save, Discard or Keep
   editing before you leave. A resize no longer asks the terminal where
   the cursor is, so it redraws without a key.
+- Home steps aside for the app it opened, and Super+Space brings it back
+  as it was, on the workspace you are on. A home that filled the screen
+  comes back at its floating size.
+- The bar sits at the top or the bottom. `spark-shell bar bottom`, the
+  dialog's bar section or BAR_POSITION moves it, the notifications move
+  to the corner by it, and `bar on` brings a hidden bar back where it
+  was.
+- One rule of color for every block. The accent is on and connected,
+  muted is idle, off or muted, red is an alarm. Before, only Bluetooth
+  held to it: the wire, Wi-Fi, sound out, the mic and the brightness
+  drew their signs muted whatever their state. The words take the same
+  colors.
+- A flag and a count show the notifications nobody looked at, up to
+  9+, or `new 3` in words. Looking at one takes it off the count. A
+  reminder due, which wore the flag, now wears an hourglass, on the bar
+  and on its card, so no sign means two things.
+- The bar has its own text size. BAR_TEXT=auto is the text size on a
+  screen of 1080 rows or fewer and larger on a taller one, 15% on 1440
+  rows and 41% on 2160; a size of your own goes from 6 to 40.
+  `spark-shell bar text` and the dialog set it.
+- The tray is off by default, so an app's own icon no longer breaks the
+  bar's look. The apps run the same. An install that shows the tray
+  today loses it at its next render (`spark-shell on` or an update), and
+  an app closed to the tray comes back by opening it again from
+  Super+Space. `spark-shell bar tray on` puts the icons back at the
+  bar's end.
 
 ## v0.122.1
 
