@@ -838,7 +838,8 @@ you do, its key a chip at the right, and whole on the status row while
 the row is lit; words typed keep the rows they name.
 A step that loses something asks on a page of its own, wherever it
 comes from: the verb as the heading, one note in parentheses, two rows,
-the verb and `keep working`. Enter or a click on the verb acts; Esc and
+the verb and `keep working`, which is lit first, so Enter again keeps and
+the verb takes Up or a click. Enter or a click on the verb acts; Esc and
 every back door keep, and typed words are refused there. The typed yes
 is gone.
 `dialog chat` opens this conversation; `spark` remains usable independently.

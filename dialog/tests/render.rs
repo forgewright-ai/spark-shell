@@ -487,6 +487,30 @@ fn help_is_a_list_by_subject_with_key_chips() {
 }
 
 #[test]
+fn help_scrolls_past_its_last_row_to_the_note() {
+    let mut app = base();
+    app.view = View::Help;
+    app.came_from = vec![View::Home];
+    app.size = (60, 30);
+    app.in_list = true;
+    app.sel = app.picks().len() - 1;
+    let (_, _, rows) = drawn(&app);
+    let shown = |rows: &Vec<String>, s: &str| rows.iter().any(|r| r.contains(s));
+    assert!(
+        shown(&rows, "more") && !shown(&rows, "the keys are yours"),
+        "the note sits under the fold: {:?}",
+        rows
+    );
+    // Down past the last row scrolls the list, so the note comes into view (dialog/DESIGN.md, v0.127.2)
+    for _ in 0..3 {
+        app.down();
+    }
+    let (_, _, rows) = drawn(&app);
+    assert!(shown(&rows, "the keys are yours") && !shown(&rows, "more"), "{:?}", rows);
+    assert_eq!(app.sel, app.picks().len() - 1, "the bar stays on the last row");
+}
+
+#[test]
 fn a_destructive_step_waits_for_yes() {
     let mut app = base();
     app.view = View::Section(0);

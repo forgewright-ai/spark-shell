@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.127.2
+
+- The list scrolls past its last row: Down, PageDown or the wheel at
+  the end bring the lines under it into view, where help's note stood
+  behind a `2 more` nothing reached.
+- The question page lights `keep working` first, so Enter again keeps
+  and the verb takes Up or a click; a bounce on Enter no longer shuts
+  the machine down.
+
 ## v0.127.1
 
 - F3 previews, in every list with a preview, and P no longer does. A

@@ -156,7 +156,8 @@ fn a_destructive_step_takes_the_typed_yes() {
     at_row(&mut app, View::Section(0), 1);
     app.enter();
     assert!(matches!(app.mode, Mode::Confirm(_)), "{:?}", app.mode);
-    app.enter(); // the verb's row is lit: Enter is the yes
+    app.sel = 0; // the verb's row: keep working is lit first
+    app.enter(); // Enter on the verb is the yes
     let before = *reads.lock().unwrap();
     assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.undo.is_some()));
     // nothing above the list; a step of the workspace place says its receipt on the status row, its undo beside it
@@ -1184,7 +1185,8 @@ fn risk_is_decided_here_a_hint_that_says_safe_does_not_skip_the_yes() {
     assert!(matches!(app.mode, Mode::Confirm(_)), "{:?}", app.mode);
     // the rows change while the question waits: the network is gone, the yes is checked again
     app.providers[0].tools.clear();
-    app.enter(); // the verb's row is lit: Enter is the yes
+    app.sel = 0; // the verb's row: keep working is lit first
+    app.enter(); // Enter on the verb is the yes
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(*seen.lock().unwrap(), 0, "a yes for a step no longer offered runs nothing");
     assert!(
