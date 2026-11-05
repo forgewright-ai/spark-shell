@@ -44,18 +44,18 @@ def main(binary, destination):
         apps()
         details()
         s.click("hide this app")
-        assert "btop++ hidden" in s.text() and "Undo" in s.text(), s.text()
+        assert "btop++ hidden" in s.text() and "undo" in s.text(), s.text()
         assert hidden(), "saved at once"
         capture("01-applied-at-once")
-        s.click("Undo")
-        assert not hidden(), "Undo on the status row puts the preference back"
+        s.click("undo")
+        assert not hidden(), "undo on the status row puts the preference back"
         s.click("hide this app")
         assert hidden()
         s.key("-k", "Escape")
         # Esc clears the receipt, as it does everywhere, and goes back; nothing is asked. The list still
         # holds the words btop, which name no visible app now
         assert "Save before leaving?" not in s.text() and s.screen()[0].find("apps") >= 0, s.text()
-        assert "Undo" not in s.text() and "no app matches" in s.text(), s.text()
+        assert "undo" not in s.text() and "no app matches" in s.text(), s.text()
         capture("02-back-without-a-question")
         s.key("-k", "Escape")
         s.key("undo", "-k", "Return")

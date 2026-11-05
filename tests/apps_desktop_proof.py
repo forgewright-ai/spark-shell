@@ -286,7 +286,7 @@ def main(binary, destination):
         s.checks.append("Returning from Details restores the app search; active query and selected app survive all four modes; clicked Right keycap opens Details")
         s.key("-k", "Right")
         s.click("hide this app")
-        assert "btop++ hidden" in s.text() and "Undo" in s.text(), "applied at once, said on the status row with Undo"
+        assert "btop++ hidden" in s.text() and "undo" in s.text(), "applied at once, said on the status row with undo"
         preferences = s.root / ".config/spark-shell/apps.json"
         saved = json.loads(preferences.read_text())
         assert saved["apps"]["btop.desktop"]["hidden"], "saved at once"
