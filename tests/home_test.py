@@ -85,11 +85,12 @@ else:
     with (p / "focus").open("a") as f: f.write("focused\\n")
     print('[{"success":true}]')
 ''',
-                "foot": '''import json, os, sys
+                "foot": '''import json, os, sys, time
 from pathlib import Path
 p = Path(os.environ["HOME"])
 with (p / "launches").open("a") as f: f.write(" ".join(sys.argv[1:]) + "\\n")
 (p / "tree").write_text(json.dumps({"nodes":[{"app_id":"spark-dialog","id":42}]}))
+time.sleep(.5)   # a terminal runs while its window is up: home.py reads the window before the exit
 ''',
             }.items():
                 file = root / name
