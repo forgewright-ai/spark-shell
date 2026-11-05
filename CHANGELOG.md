@@ -39,6 +39,11 @@ yes, by the decisions of 2026-11-05 on `dialog/DESIGN.md`.
   air before them. A row that is only its page (the license) is picked
   and Enter reads it, as P does. A key chip may hold several keys,
   `Super+h j k l`.
+- The header comment, the README's "What leaves the machine" and the
+  dialog's crate ban say what spark-shell sends and to where, in place of
+  a blanket "nothing leaves this machine": what the package manager and
+  the pinned downloads fetch, and what you ask of spark, which goes to
+  spark's model server, on this machine or another of yours.
 
 ## v0.126
 

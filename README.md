@@ -1753,19 +1753,20 @@ one. The font stays, as the packages do: four files in
 `~/Library/Fonts` on a Mac. `off login` removes the login screen's
 copy, in `/usr/share/fonts/spark-shell/`.
 
-What leaves the machine: only what the package manager downloads and,
-for the desktop, the release files of the dialog and of spark-wallpaper
-from GitHub, checked against the sha256 the signed tree pins, and
-Monaspace Neon's release file from
-GitHub, checked against the sha256 spark-shell pins. A
-layout asks spark, which runs on this machine, with your words, the
-screen sizes and the app list; a want at the dialog asks it with your
-words, what the bar shows, the list of what it can do (an open window
-by its name among it) and the names of your saved layouts. A theme from
-words asks spark, on this machine, with the words alone; a theme from
-a picture is color math here, and the picture goes nowhere. A file only
-when you attach one, its text and its name, never its path.
-A new Wi-Fi network is saved by the Wi-Fi tool itself.
+What leaves the machine: spark-shell has no account and no telemetry.
+The package manager downloads its packages and, for the desktop, the
+release files of the dialog and of spark-wallpaper from GitHub, checked
+against the sha256 the signed tree pins, and Monaspace Neon's release
+file from GitHub, checked against the sha256 spark-shell pins. What you
+ask of spark goes to spark's model server: this machine's by default, or
+the one `spark client URL` named. spark's README says what each command
+sends. A layout asks spark with your words, the screen sizes and the app
+list; a want at the dialog asks it with your words, what the bar shows,
+the list of what it can do (an open window by its name among it) and the
+names of your saved layouts. A theme from words asks spark with the
+words alone; a theme from a picture is color math here, and the picture
+is not sent. A file only when you attach one, its text and its name,
+never its path. A new Wi-Fi network is saved by the Wi-Fi tool itself.
 
 The settings live in `~/.config/spark-shell/config`, and every run
 reads that file. A setting in the environment never stands in for it.

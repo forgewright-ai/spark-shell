@@ -108,11 +108,13 @@
 # the same slots: SPARK_ACCENT_SGR, SPARK_MUTED_SGR and SPARK_WARN_SGR in
 # the rendered ~/.config/spark-shell/sgr.sh color the prompt. spark
 # itself is not required. Without it the status line stays empty and
-# everything else works. Nothing leaves this machine except what the
-# package manager fetches, the release files of the dialog and of
-# spark-wallpaper, and the font's (Monaspace Neon), each checked against
-# its sha256. A layout, and a want
-# at the bar, ask spark on this machine (spark edit).
+# everything else works. spark-shell has no account and no telemetry.
+# The package manager fetches its packages, and the release files of the
+# dialog and of spark-wallpaper and the font's (Monaspace Neon) are
+# downloaded, each checked against its sha256. A layout, and a want at
+# the bar, ask spark (spark edit), which sends the words to its model
+# server: this machine's by default, or the one spark client named.
+# README.md, "What leaves the machine", says what each one carries.
 #
 # POSIX sh on both OSes: the Debian (Ubuntu too), Arch, Void, Fedora and
 # openSUSE families, each a file of package names in distro/, and macOS;

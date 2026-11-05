@@ -1,6 +1,7 @@
 # cargo-deny over the dialog's crates: advisories, licences, and a ban
-# list of every crate that speaks to a network -- nothing the dialog runs
-# leaves the machine, and a crate that could is refused, by name.
+# list of every crate that speaks to a network -- the dialog's own network
+# use is std's probe of spark's port on this machine, and a crate that
+# could add more is refused, by name.
 [graph]
 targets = ["x86_64-unknown-linux-musl"]
 

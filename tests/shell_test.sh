@@ -1638,7 +1638,7 @@ EOF
     printf '%s\n' 'workspace number 3' 'rename workspace to "3 gone"' 'exec foot -e micro' 'splith' 'exec gone' 'exec firefox' 'focus left' 'resize set width 70 ppt' > "$H/expected.gone"
     cmp -s "$swlog" "$H/expected.gone" && ok "a window that never comes: sway never got the splitv" || bad "gone lines" "$(cat "$swlog" 2>&1)"
     # two screens: the brief says them and the rule; each screen its own workspace, the main's first,
-    # focus output before each; the outputs' make, model and serial never leave the machine
+    # focus output before each; the outputs' make, model and serial never reach the model
     printf '{"words":"ruled", "main":{"app":"micro","floating":true,"border":"pixel"},"side":[]}\n' > "$desks/ruled"
     : > "$swlog"; out=$(sh "$SH" layout ruled 2>&1)
     grep -qxF '[con_id=1000] floating enable' "$swlog" && grep -qxF '[con_id=1000] border pixel' "$swlog" && ! grep -q for_window "$swlog" \
