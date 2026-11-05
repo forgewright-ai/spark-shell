@@ -2642,10 +2642,12 @@ impl App {
     /// once it is rebound.
     fn check_key(&mut self) {
         if self.files_pane_view().is_some() {
-            if !self.files.form() {
+            // the check while the list holds the keys: nothing typed, or the keys handed to the list by Down or a
+            // click; with words typed Space is a letter of the search (#163), and a form's name takes a space
+            let list_keys = self.input.is_empty() || self.list_keys;
+            if !self.files.form() && list_keys {
                 return self.files_check();
             }
-            // a form's name takes a space; another check key has nothing to check there
             if !self.space_checks() {
                 return self.refuse("nothing to check here: Esc goes back to the list");
             }

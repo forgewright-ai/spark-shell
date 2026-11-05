@@ -1946,3 +1946,35 @@ fn a_rows_words_end_two_cells_before_the_edge() {
         );
     }
 }
+
+/// The Space key is the check only while the list holds the keys (#163 for the check as it was for the preview): with
+/// words typed on the list or on a page, the key bound to check types a space, so `two panes` typed on the actions
+/// page narrows it and Enter opens the panes; after Down the keys are the list's and Space checks with no space typed.
+#[test]
+fn the_check_key_is_a_space_while_words_are_typed() {
+    let mut app = files_app();
+    app.right();
+    for c in "two".chars() {
+        app.typed(c);
+    }
+    app.hint_key(HintKey::Check);
+    assert_eq!(app.input, "two ", "a space typed, nothing checked");
+    for c in "panes".chars() {
+        app.typed(c);
+    }
+    assert_eq!(lit(&app).as_deref(), Some("two panes"));
+    app.enter();
+    assert!(app.files.other.is_some() && matches!(app.files.page, Page::List), "Enter opened the panes");
+    assert!(app.files.checks.is_empty(), "no check was made by the space in the words");
+    // on the list: words typed, the key is a space; Down hands the keys to the list, then it checks
+    for c in "no".chars() {
+        app.typed(c);
+    }
+    app.hint_key(HintKey::Check);
+    assert_eq!(app.input, "no ");
+    app.backspace();
+    app.down();
+    app.hint_key(HintKey::Check);
+    assert_eq!(app.input, "no", "no space typed");
+    assert_eq!(app.files.checks.len(), 1, "the lit row checked");
+}
