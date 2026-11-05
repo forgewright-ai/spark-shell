@@ -74,6 +74,13 @@ def main(binary):
     rec = open(audit).read() if os.path.exists(audit) else ""
     ok(rec.count("\n") == 1 and "\ttheme\ttheme_palette\t" in rec and "nord" not in rec and (os.stat(audit).st_mode & 0o777) == 0o600,
        "one audit line, 0600, numbers and names: the tool, never the argument", rec)
+    # the workspace place with no sway: it says so in its header, and Esc comes back
+    os.write(fd, b"workspace")
+    time.sleep(0.5)
+    os.write(fd, b"\r")
+    ok(read_until(lambda: "desktop" in text()[-3000:], 10), "workspace with no sway says no desktop in its header", text()[-400:])
+    os.write(fd, b"\x1b")
+    time.sleep(0.5)
     def processes():
         out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,command="], capture_output=True, text=True, errors="replace").stdout
         return {int(parts[0]): (int(parts[1]), parts[2]) for line in out.splitlines()

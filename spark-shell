@@ -679,6 +679,7 @@ win_load() {
     export WS_LAYOUT
 }
 win_words() { case ${1:-split} in split) echo 'side by side' ;; *) echo "$1" ;; esac; }   # win_words WINDOWS -> the words of the row
+win_said() { case ${1:-split} in tabs) echo 'in tabs' ;; *) win_words "$1" ;; esac; }   # win_said WINDOWS -> those words after "windows", as a receipt says them
 transparency_of() { awk -v a="${1:-1}" 'BEGIN { printf "%d", (1 - a) * 100 + 0.5 }'; }   # transparency_of ALPHA -> the windows' transparency, a percent
 
 # The panel's surface: its window is a shade of the palette's background
@@ -5288,7 +5289,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             # one row a window: the app, its title a column with the app's own name left out (#144); each window keeps its
             # native ID even when labels coincide. The close row is for spark's list and --list: the dialog puts close
             # behind the window's row (provide_rows)
-            [ "${2:-}" != full ] || win_label | win_rows | while IFS="$TAB" read -r _l _i _t; do printf '%s\t%s\tfocus %s\topen now|%s\n-\tclose %s\tclose %s\n' "$PANEL_GO" "$_l" "$_i" "$_t" "$_l" "$_i"; done ;;
+            [ "${2:-}" != full ] || win_read | win_rows | while IFS="$TAB" read -r _l _i _g _t; do printf '%s\t%s\tfocus %s\t%s|%s\n-\tclose %s\tclose %s\n' "$PANEL_GO" "$_l" "$_i" "$_g" "$_t" "$_l" "$_i"; done ;;
         display) for _k in idle lock; do   # the minutes now, then the other picks in a full list
                 if [ "$_k" = idle ]; then _v=$DISPLAY_IDLE; _w='idle screen'; else _v=$DISPLAY_LOCK; _w=lock; fi
                 printf '%s\t%s %s\tshow\n' "$PANEL_TICK" "$_w" "$(idle_words "$_v")"
@@ -5376,8 +5377,8 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
             done
             printf -- '-\tText size\tshow\tlook\n-\tApp icons (the tray)\tshow\tlook\n' ;;
         layout) if [ -d "$LAYOUTS_DIR" ] && [ -n "$(ls -A "$LAYOUTS_DIR" 2>/dev/null)" ]; then
-                for f in "$LAYOUTS_DIR"/*; do _w=$(desk_label "$f"); printf '%s\t%s\topen %s\n-\trename %s\trename %s\n' "$PANEL_GO" "$_w" "${f##*/}" "$_w" "${f##*/}"; done   # by the name it was saved under (#51), and a new name for it (#54)
-            else printf -- '-\tnone saved yet: say what you want to do at the prompt\tshow\n'; fi
+                for f in "$LAYOUTS_DIR"/*; do _w=$(desk_label "$f"); printf '%s\t%s\topen %s\tlayouts\n-\trename %s\trename %s\n' "$PANEL_GO" "$_w" "${f##*/}" "$_w" "${f##*/}"; done   # by the name it was saved under (#51), and a new name for it (#54)
+            else printf -- '-\tnone saved: ask at the prompt or save this workspace\tshow\n'; fi
             [ ! -f "$DESK_LAST" ] || jq -r '.suggested // [] | .[]' "$DESK_LAST" 2>/dev/null | while IFS= read -r a; do printf '%s\talso open %s\tadd %s\n' "$PANEL_GO" "$a" "$a"; done   # what spark also suggested for the last layout, one Enter away
             # recent: the layouts opened lately and not saved, five at most, each with when (#145); a saved one is under its name above
             kept_history layout | while IFS="$TAB" read -r _e _n; do
@@ -5386,7 +5387,7 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                 _f=$(desk_kept_file "$_n") || continue
                 printf '%s\t%s\topen %s\trecent|%s||%s\n' "$PANEL_GO" "$(desk_label "$_f")" "$_n" "$(kept_when "$_e")" "$_e"
             done | head -5
-            [ -z "${SWAYSOCK:-}" ] || printf '%s\tsave what is open now\tsave\n' "$PANEL_GO" ;;
+            [ -z "${SWAYSOCK:-}" ] || printf '%s\tsave this workspace\tsave\n' "$PANEL_GO" ;;
         apps) printf '%s\tterminal\tterminal\n' "$PANEL_GO"   # a terminal window, as Super+Return
             # the apps a layout may open, as rows that open one, under the group their desktop entry names (#169); three unless full
             panel_apps_known > "$TMP/apps.known"
@@ -6208,6 +6209,9 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                 open) desk_kept_file "$_arg" >/dev/null || { echo "no saved layout named $_arg"; return 1; }
                     ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; KEPT_ALSO=1 desk_need "$_arg" ) ;;
                 delete) ( REFUSE_AS=layout; desk_delete "$_arg" ) </dev/null ;;
+                restore) [ -n "${LAYOUT_DELETED:-}" ] && [ -f "$LAYOUT_DELETED/$_arg" ] || { echo "$_arg can no longer come back"; return 1; }
+                    mkdir -p "$LAYOUTS_DIR" && mv "$LAYOUT_DELETED/$_arg" "$LAYOUTS_DIR/$_arg" || { echo "could not bring $_arg back"; return 1; }
+                    echo "$_arg is back" ;;
                 rename) _rn=''; case $_arg in *' to='*) _rn=${_arg#* to=} ;; esac
                     ( REFUSE_AS=layout; desk_rename "${_arg%% *}" "$_rn" ) </dev/null ;;
                 back) ( [ "$OS" = Darwin ] || pm_detect; REFUSE_AS=layout; desk_back ) ;;
@@ -6232,14 +6236,19 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
         spark) case $_a in chat) panel_chat ;; *) echo "$_a is not something spark does here"; return 1 ;; esac ;;
         window) case $_a in
                 split|tabs|stacked) config_set WINDOWS "$_a" >/dev/null; WINDOWS=$_a; export WINDOWS; sway_file_apply   # the default for new workspaces, rendered; this one now
-                    case $_a in tabs) _l=tabbed ;; stacked) _l=stacking ;; *) _l=splith ;; esac
-                    [ -z "${SWAYSOCK:-}" ] || swaymsg -- "[workspace=__focused__ tiling] layout $_l" >/dev/null 2>&1 || :
-                    echo "windows $(win_words "$_a")" ;;
+                    win_arrange "$_a" || { echo "could not arrange this workspace: new workspaces will use $(win_words "$_a")"; return 1; }
+                    echo "windows $(win_said "$_a")" ;;
+                restore) _rd=${_arg%% *}; _rw=${_arg##* now=}   # undo: the default and this workspace, each as it was
+                    config_set WINDOWS "$_rd" >/dev/null; WINDOWS=$_rd; export WINDOWS; sway_file_apply
+                    win_arrange "$_rw" || { echo "could not arrange this workspace: new workspaces will use $(win_words "$_rd")"; return 1; }
+                    echo "windows $(win_said "$_rw")" ;;
+                move) win_move "${_arg%% *}" "${_arg##* to=}" ;;
+                place) win_place "${_arg%% *}" "${_arg##* how=}" ;;
                 close) win_change close "$_arg" ;;
-                capture) case $_arg in screen|area|window) ;; *) echo "capture takes screen, area or window"; return 1 ;; esac
-                    desk_in_sway || { echo "a capture needs the desktop"; return 1; }
-                    swaymsg -- exec "$REPO/spark-shell desktop capture $_arg --wait 1" >/dev/null 2>&1 || { echo "could not capture"; return 1; }   # after the dialog closes, so it is not in the picture
-                    : > "$TMP/opened"; echo "capture: the $_arg, in ~/pictures/screenshots" ;;
+                capture) _cw=${_arg%% *}; _ci=''; case $_arg in *' name='*) _ci=${_arg##* name=} ;; esac
+                    case $_cw in screen|area|window) ;; *) echo "capture takes screen, area or window"; return 1 ;; esac
+                    desk_in_sway || { echo "capture needs the desktop: run spark-shell on desktop"; return 1; }
+                    win_capture "$_cw" "$_ci" ;;
                 focus) win_change focus "$_arg" ;;
                 *) echo "$_a is not something window does"; return 1 ;;
             esac ;;
@@ -6316,7 +6325,78 @@ win_exec() {   # win_exec COMMAND -- sway runs it: 0 once a new window maps, 1 w
 win_open() {   # -> the windows sway shows, one a line: APP<tab>TITLE<tab>ID; the panel's own left out
     swaymsg -t get_tree 2>/dev/null | jq -r --arg me "$PANEL_APP" '.. | objects | select(.pid? != null and (.type? == "con" or .type? == "floating_con")) | select(((.app_id // .window_properties.class // "") != "") and .app_id != $me) | "\(.app_id // .window_properties.class)\t\(.name // "" | gsub("\t"; " "))\t\(.id)"' 2>/dev/null | scrub_text || :   # a title is any program's words: scrubbed
 }
-win_label() { win_open | awk -F '\t' '{ l = $1; if ($2 != "" && $2 != $1) { if ($1 == "foot" || $1 == "footclient") l=$2; else l=l ": " $2 }; print l "\t" $3 }'; }   # -> display label and native container ID
+win_label() { win_open | awk -F '\t' '{ n = split($1, p, "."); a = tolower(p[n]); if (a == "footclient") a = "foot"; l = a; if ($2 != "" && tolower($2) != a) l = l ": " $2; print l "\t" $3 }'; }   # -> display label and native container ID: the app, the last word of its id (org.mozilla.firefox is firefox), then its title
+win_facts() {   # -> one JSON object from one read of the tree: .windows (each with its label, id, workspace, its heading, placement, and whether it is the one in front), .here (the workspace you are on), .spaces (every workspace and its apps); nothing without sway. A window in the scratchpad is left out, and so is the dialog
+    swaymsg -t get_tree 2>/dev/null | jq -c --arg me "$PANEL_APP" --arg sep "$PANEL_SEP" --arg def "${WINDOWS:-split}" '
+        def kids: (.nodes // []) + (.floating_nodes // []);
+        def leaves: if (kids | length) == 0 then . else kids[] | leaves end;
+        def app: (.app_id // .window_properties.class // "") | split(".") | last | ascii_downcase | if . == "footclient" then "foot" else . end;
+        def arrangement: if ((.nodes // []) | length) == 1 and .nodes[0].pid == null then .nodes[0] | arrangement else .layout end;   # sway wraps a workspace'"'"'s windows in one container when they go to tabs
+        def front: ([.focus[]? as $i | kids[] | select(.id == $i and .app_id != $me)] | first) as $c | if $c == null then . else $c | front end;
+        def named: (.name // "") as $n | ((.num // 0) | tostring) as $u | ($n | sub("^[0-9]+"; "")) as $r
+            | if ($r | startswith(":")) then ($r[1:] | split(" ")) as $p | {mark: (if $p[0] == $u then "" else ($p[0] // "") end), label: ($p[1:] | join(" "))}
+              else {mark: "", label: ($r | ltrimstr(" "))} end;
+        [.nodes[]? | select(.type == "output" and .name != "__i3") | .name as $o | .nodes[]? | select(.type == "workspace") | . + {screen: $o}] as $all
+        | ($all | map(.screen) | unique | length) as $many
+        | ($all | map(select(any(.. | objects; .focused? == true))) | first) as $here
+        | (if $here == null then null else ($here | front | .id) end) as $in_front
+        | def heading: named as $m | "workspace \(.num)" + (if $m.mark != "" then " " + $m.mark else "" end)
+            + (if $m.label != "" then " \($sep) " + $m.label else "" end)
+            + (if .id == $here.id then " \($sep) this one" else "" end)
+            + (if $many > 1 then " \($sep) " + .screen else "" end) | gsub("[|]"; "/");
+        def windows: [leaves | select(.pid? != null and (.app_id // .window_properties.class // "") != "" and .app_id != $me)];
+        ($all | sort_by(.num)) as $sorted
+        | {windows: [$sorted[] | heading as $g | .num as $w | windows[]
+              | app as $a | ((.name // "") | gsub("\t"; " ")) as $t
+              | {label: (if $t == "" or ($t | ascii_downcase) == $a then $a else $a + ": " + $t end), id, ws: $w, group: $g,
+                 placed: (if .fullscreen_mode == 1 then "full screen" elif .type == "floating_con" then "floating" else "tiled" end), front: (.id == $in_front)}],
+           here: (if $here == null then null else {ws: $here.num, group: ($here | heading), empty: (($here | windows | length) == 0),
+                 arrange: (if ($here | windows | length) == 0 then $def else ($here | arrangement) as $l | if $l == "tabbed" then "tabs" elif $l == "stacked" then "stacked" else "split" end end)} end),
+           spaces: [$sorted[] | named as $m | {num, mark: $m.mark, label: $m.label, apps: ([windows[] | app] | unique)}]}'
+}
+win_read() { { if [ -n "${WIN_FACTS_READ:-}" ]; then cat "$TMP/win.facts"; else win_facts; fi; } | jq -r '.windows[]? | [.label, (.id | tostring), .group] | @tsv'; }   # -> LABEL<tab>ID<tab>HEADING, a window a line, the workspaces in order
+win_now() { win_facts | jq -r '.here.arrange // "split"'; }   # -> how the windows on this workspace stand: split, tabs or stacked
+win_arrange() {   # win_arrange split|tabs|stacked -- the tiled windows on this workspace so; true with none to arrange
+    [ -n "${SWAYSOCK:-}" ] || return 0
+    case $1 in tabs) _wal=tabbed ;; stacked) _wal=stacking ;; *) _wal=splith ;; esac
+    _wao=$(swaymsg -- "[workspace=__focused__ tiling] layout $_wal" 2>&1) && return 0
+    case $_wao in *[Nn]o\ matching*) return 0 ;; esac   # nothing tiled here: only the default changed
+    return 1
+}
+win_move() {   # win_move ID N -- a window to workspace N; you stay where you are, as Super+Shift+N
+    _wmn=$(win_name_of "$1"); [ -n "$_wmn" ] || { echo 'that window is no longer open'; return 1; }
+    swaymsg -- "[con_id=$1] move container to workspace number $2" >/dev/null 2>&1 || { echo "$_wmn did not move: look at its window, then try again"; return 1; }
+    echo "$_wmn moved to workspace $2"
+}
+win_place() {   # win_place ID tiled|floating|full|left|right|up|down -- how one window sits, by its ID
+    _wpn=$(win_name_of "$1"); [ -n "$_wpn" ] || { echo 'that window is no longer open'; return 1; }
+    _wpw=$(win_facts | jq -r --argjson i "$1" '.windows[] | select(.id == $i) | .placed')
+    case $2 in
+        tiled) swaymsg -- "[con_id=$1] fullscreen disable, floating disable" >/dev/null 2>&1 || { echo "$_wpn did not move: look at its window, then try again"; return 1; }
+            echo "$_wpn tiled" ;;
+        floating) [ "$_wpw" = floating ] || _wpr=$( REFUSE_AS=window; desk_window float "$1" ) || { echo "${_wpr#spark-shell window: }"; return 1; }
+            echo "$_wpn floating" ;;
+        full) swaymsg -- "[con_id=$1] focus, fullscreen enable" >/dev/null 2>&1 || { echo "$_wpn did not go full screen: look at its window, then try again"; return 1; }
+            : > "$TMP/opened"; echo "$_wpn full screen" ;;   # sway draws it over the dialog, so the dialog closes
+        left|right|up|down) _wpr=$( REFUSE_AS=window; desk_window "$2" "$1" ) || { echo "${_wpr#spark-shell window: }"; return 1; }
+            case $2 in up) _wpw=top ;; down) _wpw=bottom ;; *) _wpw=$2 ;; esac
+            echo "$_wpn on the $_wpw half" ;;
+    esac
+}
+win_capture() {   # win_capture WHAT [ID] -- the dialog steps aside, the picture is taken, the dialog comes back with its name, or the reason there is none; a window on another workspace is put in front first, and you end where you began
+    swaymsg -- "[app_id=\"$PANEL_APP\"] move scratchpad" >/dev/null 2>&1 || :
+    _wcb=''
+    if [ -n "${2:-}" ]; then
+        _wcb=$(swaymsg -t get_workspaces 2>/dev/null | jq -r '.[] | select(.focused) | .num')
+        swaymsg -- "[con_id=$2] focus" >/dev/null 2>&1 || :
+    fi
+    _wcr=0; _wco=$(desk_capture "$1" --wait 1 2>&1) || _wcr=$?
+    [ -z "$_wcb" ] || swaymsg -- "workspace number $_wcb" >/dev/null 2>&1 || :
+    swaymsg -- "[app_id=\"$PANEL_APP\"] scratchpad show" >/dev/null 2>&1 || :
+    [ "$_wcr" -eq 0 ] || { printf '%s\n' "${_wco#spark-shell *: }"; return 1; }
+    _wcn=${_wco%%,*}; _wcn=${_wcn##*/}
+    case $_wco in *clipboard*) echo "$_wcn $PANEL_SEP on the clipboard" ;; *) echo "$_wcn" ;; esac
+}
 win_labels() { if [ -n "${WIN_LABELS_READ:-}" ]; then cat "$TMP/win.labels"; else win_label; fi; }   # -> win_label's lines: the call's own read of the windows when it made one (#196)
 win_named() {   # an ID stays exact; legacy words must identify one open window
     win_labels | awk -F '\t' -v w="$(panel_lower "$1")" '
@@ -6332,9 +6412,9 @@ win_rows() {   # LABEL<tab>ID lines -> APP<tab>ID<tab>TITLE (the title last: two
         if (best > 0) { a = substr(l, 1, best - 1); t = substr(l, best + length(s)) }
         for (k = 1; k <= n; k++) { p = 0; r = t; while ((q = index(r, seps[k])) > 0) { p += q + length(seps[k]) - 1; r = substr(r, q + length(seps[k])) }
             if (p > 0 && index(tolower(r), tolower(a)) > 0) t = substr(t, 1, p - length(seps[k])) }
-        gsub(/\|/, "/", t); print a, $2, t }'
+        gsub(/\|/, "/", t); if (NF > 2) print a, $2, $3, t; else print a, $2, t }'
 }
-win_name_of() { win_labels | awk -F '\t' -v i="$1" '$2 == i { print $1; exit }'; }   # win_name_of ID -> its name
+win_name_of() { win_labels | win_rows | awk -F '\t' -v i="$1" '$2 == i { print $1; exit }'; }   # win_name_of ID -> its app's name, as a receipt says it
 win_change() {   # the command receipt alone cannot prove focus or a close an app may decline
     _wc_name=$(win_name_of "$2"); [ -n "$_wc_name" ] || { echo 'that window is no longer open'; return 1; }
     _wc_cmd=focus; [ "$1" != close ] || _wc_cmd='kill'
@@ -6350,7 +6430,7 @@ win_change() {   # the command receipt alone cannot prove focus or a close an ap
         [ "$_wc_rc" -eq 1 ] && [ "$1" = close ] && [ "$_wc_tries" -lt 40 ] || break   # no tree, or a focus not made: no read again
         sleep 0.05; _wc_tries=$((_wc_tries + 1))
     done
-    [ -n "$_wc_ok" ] || { echo "$1 was requested, but the window state did not confirm it; check the window before trying again"; return 1; }
+    [ -n "$_wc_ok" ] || { if [ "$1" = close ]; then echo "$_wc_name did not close: it may be asking something, look at its window"; else echo "$1 was requested, but the window state did not confirm it; check the window before trying again"; fi; return 1; }
     if [ "$1" = close ]; then echo "$_wc_name closed"; else : > "$TMP/opened"; echo "$_wc_name in front"; fi
     [ -z "${PROVIDE_EFFECT:-}" ] || jq -cn --arg id "$2" --arg title "$_wc_name" --arg operation "$1" \
         '{kind:"window", id:$id, title:$title, operation:$operation}' > "$TMP/action.effect"
@@ -6377,7 +6457,7 @@ panel_layout_save() {   # panel_layout_save NAME -> what is open on the focused 
     _name=$(desk_name_of "$1"); [ -n "$_name" ] || { echo "a name for it, in letters"; return 1; }
     [ ! -e "$LAYOUTS_DIR/$_name" ] || { echo "$_name is a layout already: rename it, or delete it first"; return 1; }   # a save never writes over a layout, so it needs no yes (#96)
     mkdir -p "$LAYOUTS_DIR"
-    jq -R -s --arg w "$1" --arg why "saved from the screen on $(date '+%d %B %Y')" 'split("\n") | map(select(. != "")) | {words: $w, why: $why, main: {app: .[0]}, side: [.[1:][] | {app: .}]}' "$TMP/open.apps" > "$LAYOUTS_DIR/$_name"
+    jq -R -s --arg w "$1" --arg why "saved $(date '+%e %b %Y' | sed 's/^ *//')" --arg ar "$(win_now)" 'split("\n") | map(select(. != "")) | {words: $w, why: $why, main: {app: .[0]}, side: [.[1:][] | {app: .}]} + (if $ar == "split" then {} else {arrange: $ar} end)' "$TMP/open.apps" > "$LAYOUTS_DIR/$_name"
     echo "saved $_name: $(paste -sd, "$TMP/open.apps" | sed 's/,/, /g')"
 }
 panel_undo() {   # the last group's inverse steps, played newest first, then forgotten
@@ -6406,6 +6486,8 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
             esac
             printf '%s\t%s restored\n' "$_back" "$_name" ;;
         layout:save) _n=$(desk_name_of "$_arg"); [ -z "$_n" ] || [ -e "$LAYOUTS_DIR/$_n" ] || printf 'delete %s\t%s deleted again\n' "$_n" "$_n" ;;   # a new layout's undo takes it away again
+        layout:delete) [ ! -f "$LAYOUTS_DIR/$_arg" ] || printf 'restore %s\t%s is back\n' "$_arg" "$_arg" ;;   # a saved one comes back; a recent one forgotten has nothing to bring
+        layout:rename) _n=$(desk_name_of "${_arg#* to=}"); [ -z "$_n" ] || printf 'rename %s to=%s\t%s has its name again\n' "$_n" "${_arg%% *}" "${_arg%% *}" ;;
         clock:format) printf 'format %s\tclock format restored\n' "$(time_pref CLOCK_FORMAT 24)" ;;
         clock:week) printf 'week %s\tfirst weekday restored\n' "$(time_pref WEEK_START sunday)" ;;
         clock:zone) _z=$(time_zone); time_zone_valid "$_z" && printf 'zone %s\ttime zone restored\n' "$_z" ;;
@@ -6424,8 +6506,10 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         theme:glyphs) printf 'glyphs %s\tthe bar in %s\n' "$BAR_GLYPHS" "$BAR_GLYPHS" ;;
         theme:workspaces) printf 'workspaces %s\tthe workspaces as %s\n' "$BAR_WORKSPACES" "$BAR_WORKSPACES" ;;
         theme:motion) printf 'motion %s\tmoving wallpaper %s\n' "$WALLPAPER_MOTION" "$WALLPAPER_MOTION" ;;
-        window:close|window:focus) ;;   # a closed window does not come back; a window in front has no inverse worth a row
-        window:*) printf '%s\twindows %s\n' "${WINDOWS:-split}" "$(win_words "$WINDOWS")" ;;
+        window:close|window:focus|window:capture|window:restore) ;;   # a closed window does not come back; a window in front has no inverse worth a row; a picture changes nothing
+        window:move) _n=$(win_facts | jq -r --argjson i "${_arg%% *}" '.windows[] | select(.id == $i) | .ws'); [ -z "$_n" ] || printf 'move %s to=%s\tback on workspace %s\n' "${_arg%% *}" "$_n" "$_n" ;;
+        window:place) _n=$(win_facts | jq -r --argjson i "${_arg%% *}" '.windows[] | select(.id == $i) | .placed | if . == "full screen" then "full" else . end'); [ -z "$_n" ] || printf 'place %s how=%s\tas it was\n' "${_arg%% *}" "$_n" ;;
+        window:*) _n=$(win_now); printf 'restore %s now=%s\twindows %s\n' "${WINDOWS:-split}" "$_n" "$(win_said "$_n")" ;;
         bar:off) printf 'on\tbar shown\n' ;;
         bar:on) printf 'off\tbar hidden\n' ;;
         bar:top|bar:bottom) case $(bar_place) in hidden) printf 'off\tbar hidden\n' ;; *) printf '%s\tbar %s\n' "$BAR_POSITION" "$(bar_place_words "$BAR_POSITION")" ;; esac ;;
@@ -6635,6 +6719,12 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         layout:open) _n=$(desk_name_of "$3"); if [ -n "$_n" ] && desk_kept_file "$_n" >/dev/null; then echo "$_n"; return 0; fi; echo "layout: no saved layout named $3"; return 1 ;;
         layout:new) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: new takes the words for it"; return 1 ;;
         apps:pick|apps:terminal) echo ''; return 0 ;;
+        window:move) _n=$(win_named "${3%% *}") || { echo 'that window is no longer open'; return 1; }; case ${3##* to=} in [1-9]|[1-9][0-9]) ;; *) echo 'a workspace is a number, 1 to 99'; return 1 ;; esac; echo "$_n to=${3##* to=}"; return 0 ;;
+        window:place) _n=$(win_named "${3%% *}") || { echo 'that window is no longer open'; return 1; }; case ${3##* how=} in tiled|floating|full|left|right|up|down) ;; *) echo 'place takes tiled, floating, full, left, right, up or down'; return 1 ;; esac; echo "$_n how=${3##* how=}"; return 0 ;;
+        window:restore) case ${3%% *}:${3##* now=} in split:split|split:tabs|split:stacked|tabs:split|tabs:tabs|tabs:stacked|stacked:split|stacked:tabs|stacked:stacked) echo "$3"; return 0 ;; esac; echo 'restore takes split, tabs or stacked'; return 1 ;;
+        window:capture) case ${3%% *} in screen|area|window) ;; *) echo 'capture takes screen, area or window'; return 1 ;; esac
+            case $3 in *' name='*) _n=$(win_named "${3##* name=}") || { echo 'that window is no longer open'; return 1; }; echo "${3%% *} name=$_n" ;; *) echo "${3%% *}" ;; esac; return 0 ;;
+        layout:restore) [ -n "${3:-}" ] && { echo "$3"; return 0; }; echo 'layout: restore takes the name'; return 1 ;;
         window:close|window:focus|apps:close|apps:focus) if _n=$(win_named "${3:-}"); then echo "$_n"; return 0; fi; echo "window: no unique window named ${3:-?} is open; select it in Workspace"; return 1 ;;
         out:level|mic:level) case $3 in [0-9]|[1-9][0-9]|100) snd_settable "$1" || return 1; echo "$3"; return 0 ;; *) echo "$1: level takes 0 to 100"; return 1 ;; esac ;;
         out:adjust|mic:adjust) case $3 in [0-9]|[1-9][0-9]|100|-[0-9]|-[1-9][0-9]|-100) snd_settable "$1" || return 1; echo "$3"; return 0 ;; *) echo "$1: adjust takes a whole number of percentage points, -100 to 100"; return 1 ;; esac ;;
@@ -6943,7 +7033,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -7028,12 +7118,15 @@ tool_spec() {
         theme_transparency) _ts=theme _ta=transparency _tp=amount _tk='more|less|0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20|21|22|23|24|25|26|27|28|29|30|31|32|33|34|35|36|37|38|39|40|41|42|43|44|45|46|47|48|49|50' _th='' _tt='theme transparency AMOUNT' _td='The windows more or less transparent, or a percent from 0 (off) to 50.' ;;
         theme_preview)     _ts=theme _ta=preview _tp=name _tk="${THEME_ENUM_NOW:-$(theme_enum)}|off" _th='' _tt='theme preview NAME' _td='A palette on the screen while it is looked at, nothing kept; off puts the one in use back.' ;;
         theme_alpha)       _ts=theme _ta=alpha _tp=value _tk=alpha _th=if _tt='theme alpha N' _td='How solid the windows are, 0 to 1.' ;;
-        window_split)      _ts=window _ta=split _th=i _tt='window split' _td='New windows side by side.' ;;
-        window_tabs)       _ts=window _ta=tabs _th=i _tt='window tabs' _td='New windows in tabs.' ;;
-        window_stacked)    _ts=window _ta=stacked _th=i _tt='window stacked' _td='New windows stacked.' ;;
+        window_split)      _ts=window _ta=split _th=if _tt='window split' _td='Windows side by side, on this workspace now and on every new one.' ;;
+        window_tabs)       _ts=window _ta=tabs _th=if _tt='window tabs' _td='Windows in tabs, on this workspace now and on every new one.' ;;
+        window_stacked)    _ts=window _ta=stacked _th=if _tt='window stacked' _td='Windows stacked, on this workspace now and on every new one.' ;;
+        window_restore)    _ts=window _ta=restore _tp=to _tk='split|tabs|stacked' _te='now:text' _th=if _tt='window restore TO' _td='The default and this workspace as they were: the undo of an arrangement.' ;;
+        window_move)       _ts=window _ta=move _tp=name _tk=string _te='to:text' _th=if _tt='window move NAME' _td='Move one open window to a workspace, by its native container ID from the row. The to argument is the workspace number.' ;;
+        window_place)      _ts=window _ta=place _tp=name _tk=string _te='how:text' _th=if _tt='window place NAME' _td='How one open window sits, by its native container ID from the row. The how argument is tiled, floating, full, left, right, up or down.' ;;
         window_focus)      _ts=window _ta=focus _tp=name _tk=string _th=io _tt='window focus NAME' _td='Put one open window in front. Use its native container ID from the row, not its display label.' ;;
         window_close)      _ts=window _ta=close _tp=name _tk=string _th=d _tt='window close NAME' _td='Close one open window by its native container ID from the row. It cannot be undone.' ;;
-        window_capture)    _ts=window _ta=capture _tp=what _tk='screen|area|window' _th=o _tt='window capture WHAT' _td='A picture of the screen, of an area you drag, or of the window in front, in ~/pictures/screenshots.' ;;
+        window_capture)    _ts=window _ta=capture _tp=what _tk='screen|area|window' _te='name:text' _th=f _tt='window capture WHAT' _td='A picture of the screen, of an area you drag, or of a window, in ~/pictures/screenshots. The name argument is the window by its native container ID; with none, the window in front.' ;;
         notes_new)         _ts=notes _ta=new _th='' _tt='notes new' _td='Open a blank note in the editor for the person to write. No supplied text is saved.' ;;
         notes_open)        _ts=notes _ta=open _tp=name _tk=string _th=o _tt='notes open NAME' _td='Only open a note in the editor; this does not append or save supplied text. To append text, use notes_append. Use the filename from the row; duplicate titles are not identities.' ;;
         notes_add)         _ts=notes _ta=add _tp=text _tk=string _th=f _tt='notes add TEXT' _td='Create a new note: text is the literal heading, never an invented filename or filename prefix. The result gives the actual filename. To add a body or append to an existing note, use notes_append with that filename and separate text. The legacy NAME: TEXT syntax still appends when NAME already exists.' ;;
@@ -7092,7 +7185,8 @@ tool_spec() {
         layout_new)        _ts=layout _ta=new _tp=words _tk=string _th=f _tt='layout new WORDS' _td='Open the apps for a task, picked by spark.' ;;
         layout_save)       _ts=layout _ta=save _tp=name _tk=string _th=f _tt='layout save NAME' _td='Save what is open on this workspace as a layout.' ;;
         layout_add)        _ts=layout _ta=add _tp=name _tk=string _th='' _tt='layout add NAME' _td='Open an app spark also suggested for the last layout.' ;;
-        layout_delete)     _ts=layout _ta=delete _tp=name _tk=string _th=dif _tt='layout delete NAME' _td='Delete a saved layout.' ;;
+        layout_delete)     _ts=layout _ta=delete _tp=name _tk=string _th=if _tt='layout delete NAME' _td='Delete a saved layout. Undo brings it back.' ;;
+        layout_restore)    _ts=layout _ta=restore _tp=name _tk=string _th=f _tt='layout restore NAME' _td='A deleted layout, back.' ;;
         layout_rename)     _ts=layout _ta=rename _tp=name _tk=string _te='to:name' _th=f _tt='layout rename NAME' _td='Give a saved layout a new name.' ;;
         layout_back)       _ts=layout _ta=back _th=f _tt='layout back' _td='The layout before this one, opened again.' ;;
         apps_open)         _ts=apps _ta=open _tp=name _tk=string _th=o _tt='apps open NAME' _td='Open an app on this workspace.' ;;
@@ -7178,6 +7272,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
     WIFI_TOOL_READ=''; [ "$1" != wifi ] || { WIFI_TOOL_NOW=$(wifi_tool); WIFI_TOOL_READ=1; }   # the wifi manager once for this read (#196)
     # the theme's own helpers (the chips, the text size, the animation, the transparency) for the theme's rows alone (#196)
     _pr_keys='{}'; [ "$1" != window ] || _pr_keys=$(python3 "$REPO/lib/home.py" map "$REPO/templates/.config/sway/config")
+    case $1 in window|layout) win_facts > "$TMP/win.facts"; WIN_FACTS_READ=1 ;; esac   # the tree read once for this read of the rows
     _pr_chips='{}'; _pr_size=''; _pr_anim=''; _pr_animok=''; _pr_trn=0; _pr_tr=''
     if [ "$1" = theme ]; then
         _pr_chips=$(theme_chips theme); _pr_size=$(look_font_size); _pr_anim=$(anim_now); ! anim_drawn "$(anim_palette)" || _pr_animok=1
@@ -7229,9 +7324,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif $s == "theme" and .id == "theme:show:Animation" then .children = "spark-shell://theme/rows/animations" | .tool = null | .columns = [$anim]
                 elif ($s == "lan" or $s == "wifi") and (.id | startswith($s + ":network-settings")) then .sign = "opens" | .children = ("spark-shell://" + $s + "/rows/network/" + (.id | split(":network-settings ")[1]))
                 elif $s == "display" and (.text | startswith("screen ")) then .sign = "opens" | .children = ("spark-shell://display/rows/screen/" + (.text | split(" ")[1]))
-                elif $s == "window" and (.tool.name // "") == "window_focus" then .group = "open now" | .more = [{name: "window_close", arguments: {name: .tool.arguments.name}, said: "close"}]
                 elif $s == "window" and (.tool.name // "") == "window_capture" then .key = ($desktopkeys["desktop.desktop-capture-" + .tool.arguments.what] // null)
-                elif $s == "window" and (((.tool.name // "") | test("^window_(split|tabs|stacked)$")) or (.id | startswith("window:show:"))) then .group = "layout"
                 elif (.tool.name // "") == "layout_save" then .tool.ask = ["name"]
                 elif (.tool.name // "") == "layout_rename" then .tool.ask = ["to"]
                 elif $s == "layout" and .group == "recent" then .more = [{name: "layout_rename", arguments: {name: .tool.arguments.name}, ask: ["to"], said: "save as"}, {name: "layout_delete", arguments: {name: .tool.arguments.name}, said: "forget"}]
@@ -7244,9 +7337,97 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
             | .rows |= map(if $s == "notes" and (.tool.name // "") == "notes_open" then
                 {name:"notes_append", arguments:{name:.tool.arguments.name}, ask:["text"], said:"append"} as $append |
                 [. + {more:(.more + [$append, {name:"notes_rename", arguments:{name:.tool.arguments.name}, ask:["to"], said:"rename"}, {name:"notes_trash", arguments:{name:.tool.arguments.name}, said:"trash"}])}]
-              else [.] end) | .rows |= (add // [])' | provide_rows_more "$1" && _prs=0 || _prs=$?
-    THEME_ENUM_NOW=''; WIFI_TOOL_READ=''   # the next read sees a palette saved, a manager started meanwhile
+              else [.] end) | .rows |= (add // [])' | provide_rows_more "$1" | provide_rows_place "$1" && _prs=0 || _prs=$?
+    THEME_ENUM_NOW=''; WIFI_TOOL_READ=''; WIN_FACTS_READ=''   # the next read sees a palette saved, a manager started meanwhile
     return "$_prs"
+}
+provide_rows_place() { case $1 in window) provide_rows_window ;; layout) provide_rows_layout ;; *) cat ;; esac; }   # stdin: a rows resource -> the same as the workspace place shows it
+provide_rows_window() {   # stdin: the window section's rows -> a heading per workspace, a window's page and its status line, the two captures, and the row that arranges; no sway: none of them
+    jq -c --slurpfile facts "$TMP/win.facts" --arg sep "$PANEL_SEP" '
+        def step($n; $a; $w): {name: $n, arguments: $a, said: $w};
+        ($facts[0] // null) as $f
+        | if $f.here == null then .state = "no desktop" | .rows = []
+          else (($f.windows | map({key: (.id | tostring), value: .})) | from_entries) as $by
+            | ($f.windows | length) as $n
+            | .state = (if $n == 0 then "no windows" elif $n == 1 then "1 window" else "\($n) windows" end)
+            | ([.rows[] | select(.tool.name == "window_focus") | . as $r | $r.tool.arguments.name as $id | $by[$id] as $w | select($w != null)
+                | $r + {group: $w.group, ws: $w.ws, front: $w.front,
+                    wide: ([($r.columns[0] // ""), $w.placed]),
+                    line: (([$r.text] + $r.columns + ["workspace \($w.ws)", $w.placed]) | map(select(. != "")) | join(" \($sep) ")),
+                    tool: ($r.tool + {said: "put in front"}),
+                    more: [step("window_move"; {name: $id}; "move to workspace") + {value: ($w.ws | tostring), children: ("spark-shell://window/rows/move/" + $id)},
+                           step("window_place"; {name: $id}; "placement") + {value: $w.placed, children: ("spark-shell://window/rows/place/" + $id)},
+                           step("window_capture"; {what: "window", name: $id}; "capture this window"),
+                           step("window_close"; {name: $id}; "close")]}]
+               + (if ($f.here.empty // false) then [{id: "window:none", sign: "blank", text: "no windows here", tool: null, more: [], columns: [], children: null, group: $f.here.group, muted: true, ws: $f.here.ws}] else [] end)
+               | sort_by(.ws) | map(del(.ws))) as $wins
+            | ([.rows[] | select(.tool.name == "window_capture" and .tool.arguments.what != "window")]) as $caps
+            | ($f.here.arrange // "split") as $a
+            | .rows = $wins + $caps + [{id: "window:arrange", sign: "opens", text: "arrange windows", tool: null, more: [], choice: true,
+                columns: [if $a == "split" then "side by side" else $a end], children: "spark-shell://window/rows/arrange", group: null}]
+          end'
+}
+provide_window_rows() {   # provide_window_rows URI -> a picker of the window section, as a rows resource: arrange, move/ID or place/ID; a pick goes back to where it was opened
+    win_facts > "$TMP/win.facts"
+    _pwk=$(python3 "$REPO/lib/home.py" map "$REPO/templates/.config/sway/config")
+    _pwm=$(for _n in 1 2 3 4 5 6 7 8 9 10; do bar_ws_glyph "$_n" 2>/dev/null || echo; done | jq -R . | jq -cs .)
+    jq -cn --slurpfile facts "$TMP/win.facts" --argjson keys "$_pwk" --argjson marks "$_pwm" --arg uri "${1#spark-shell://window/rows/}" '
+        def pick($id; $text; $on; $tool; $key; $group): {id: $id, sign: (if $on then "check" else "blank" end), text: $text, tool: (if $on then null else $tool end), more: [], columns: [], children: null, group: $group, back: true}
+            + (if $key == null then {} else {key: $key} end);
+        ($facts[0] // {windows: [], spaces: []}) as $f
+        | ($uri | split("/")) as $u
+        | ($f.windows | map(select((.id | tostring) == ($u[1] // ""))) | first) as $w
+        | ($w.label // "" | split(": ")[0]) as $app
+        | if $u[0] == "arrange" then ($f.here.arrange // "split") as $a
+            | {title: "arrange windows", rows: [
+                pick("window:arrange:split"; "side by side"; $a == "split"; {name: "window_split", arguments: {}}; $keys["layout.toggle-split"]; "arrange windows"),
+                pick("window:arrange:tabs"; "tabs"; $a == "tabs"; {name: "window_tabs", arguments: {}}; $keys["layout.tabs"]; "arrange windows"),
+                pick("window:arrange:stacked"; "stacked"; $a == "stacked"; {name: "window_stacked", arguments: {}}; $keys["layout.stack"]; "arrange windows"),
+                {id: "window:arrange:note", sign: "blank", text: "this workspace now, and every new workspace", tool: null, more: [], columns: [], children: null, group: null, muted: true}]}
+          elif $w == null then {title: "that window", rows: [{id: "window:gone", sign: "blank", text: "that window is no longer open", tool: null, more: [], columns: [], children: null, group: null, muted: true}]}
+          elif $u[0] == "move" then ($w.ws) as $at
+            | ($f.spaces | map({key: (.num | tostring), value: .}) | from_entries) as $by
+            | {title: $app, rows: [(([range(1; 11)] + [$f.spaces[].num]) | unique)[] | . as $n | ($by[$n | tostring] // {mark: (($marks[$n - 1] // "") | if . == ($n | tostring) then "" else . end), apps: []}) as $s
+                | pick("window:move:\($n)"; (($n | tostring) + (if ($s.mark // "") != "" then " " + $s.mark else "" end)); $n == $at;
+                    {name: "window_move", arguments: {name: ($w.id | tostring), to: ($n | tostring)}}; null; "move to workspace")
+                  + {columns: [if ($s.apps | length) > 0 then ($s.apps | join(", ")) else "empty" end]}]}
+          elif $u[0] == "place" then ($w.id | tostring) as $id
+            | def how($h; $text; $on; $key): pick("window:place:" + $h; $text; $on; {name: "window_place", arguments: {name: $id, how: $h}}; $keys[$key]; "placement");
+              {title: $app, rows: [
+                how("tiled"; "tiled"; $w.placed == "tiled"; "desktop.desktop-window-float"),
+                how("floating"; "floating"; $w.placed == "floating"; "desktop.desktop-window-float"),
+                how("full"; "full screen"; $w.placed == "full screen"; "window.fullscreen"),
+                how("left"; "left half"; false; "desktop.desktop-window-left"),
+                how("right"; "right half"; false; "desktop.desktop-window-right"),
+                how("up"; "top half"; false; "desktop.desktop-window-up"),
+                how("down"; "bottom half"; false; "desktop.desktop-window-down")]}
+          else {title: "", rows: []} end'
+}
+layout_meta() {   # -> {NAME: {apps, why}}, a layout saved or kept for the history; the saved one wins
+    for _lmf in "$KEPT_LAYOUTS"/* "$LAYOUTS_DIR"/*; do
+        [ -f "$_lmf" ] || continue
+        jq -c --arg n "${_lmf##*/}" '{($n): {apps: (([.main.app] + [(.side // [])[] | .app]) | map(select(. != null)) | join(", ")), why: (.why // "" | gsub("[\\n\\r]"; " "))}}' "$_lmf" 2>/dev/null
+    done | jq -cs 'add // {}'
+}
+provide_rows_layout() {   # stdin: the layout section's rows -> each layout with its apps, its status line, an offer under its heading; a terminal session says tmux
+    _prl=''; [ ! -f "$DESK_LAST" ] || _prl=$(desk_words "$DESK_LAST")
+    jq -c --slurpfile facts "$TMP/win.facts" --argjson meta "$(layout_meta)" --arg sep "$PANEL_SEP" --arg last "$_prl" '
+        ($facts[0] // null) as $f | ($f.here != null) as $desk
+        | .rows |= ([.[] | (.tool.name // "") as $t
+            | if $t == "layout_open" then
+                ($meta[.tool.arguments.name] // {apps: "", why: ""}) as $m
+                | (if .group == "recent" then ([$m.apps, (.columns[0] // "")] | map(select(. != "")) | join(", ")) else $m.apps end) as $c
+                | .columns = (if $c == "" then [] else [$c] end)
+                | .wide = ([$c, $m.why] | map(select(. != "")))
+                | .line = (([.text, $m.apps, $m.why] + (if $desk then [] else ["opens in tmux"] end)) | map(select(. != "")) | join(" \($sep) "))
+                | .tool.said = "open"
+              elif $t == "layout_add" then .text = .tool.arguments.name | .group = "also open" | .columns = (if $last == "" then [] else ["suggested for " + $last] end)
+              elif $t == "layout_save" and ($f.here.empty != false) then .tool = null | .muted = true
+              elif (.id | startswith("layout:show:none saved")) then
+                (.group = "layouts" | .muted = true | .when_model = true | (if $desk then . else .text = "none saved: ask at the prompt" end)),
+                (.id = "layout:show:none" | .text = (if $desk then "none saved: save this workspace to keep one" else "none saved" end) | .group = "layouts" | .muted = true | .when_model = false)
+              else . end]
+          | map(select(.group == "also open")) + map(select(.group != "also open")))'
 }
 provide_rows_more() {   # provide_rows_more SECTION -- stdin: a rows resource -> the same with one row a thing, its other steps behind it (a saved network's forget, a paired device's remove, a drive's unmount and eject), and the page Space shows for a thing (#169)
     jq -c --arg s "$1" '
@@ -7407,6 +7588,7 @@ provide_main() {   # provide_main SECTION -- serve it until stdin ends
     exec 3>&1 1>&2 6<&0   # fd 3 the wire out, fd 6 the wire in; whatever a step prints goes to stderr
     WATCH=''; READER=''; SUBSCRIBED=''; PLOCK=$TMP/in.lock; PROOTS=$TMP/roots; CLIENT_ROOTS=''; CLIENT_PAIRING=''; : > "$PROOTS"
     REM_DELETED=$TMP/deleted   # a reminder deleted here is kept until the provider ends: its undo (#111)
+    LAYOUT_DELETED=$TMP/deleted-layouts   # and a layout
     trap '{ [ -z "$WATCH" ] || kill "$WATCH"; [ -z "$READER" ] || kill "$READER"; files_stop; files_sound_stop; } 2>/dev/null || :; rm -rf "$TMP"' EXIT   # the reader has ended with stdin: a kill that finds nobody is no failure
     trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM   # a signal ends a provider through the EXIT trap: the watcher, the reader and the temp folder go (#37)
     mkfifo "$TMP/in"
@@ -7487,6 +7669,9 @@ EOF
                 if provide_network_rows "$sec" "${_uri##*/}" > "$TMP/network.rows"; then rpc_result "$_id" "$(jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}' "$TMP/network.rows")"
                 else rpc_error "$_id" -32002 "no network interface at that uri"; fi
                 return 0
+            fi
+            if [ "$sec" = window ] && [ "$_method" = resources/read ] && case $_uri in spark-shell://window/rows/?*) true ;; *) false ;; esac; then   # a picker of the workspace place
+                rpc_result "$_id" "$(provide_window_rows "$_uri" | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
             fi
             if [ "$sec" = clock ] && [ "$_method" = resources/read ] && [ "$_uri" = "spark-shell://clock/rows/settings" ]; then
                 rpc_result "$_id" "$(provide_rows clock settings | jq -c --arg u "$_uri" '{contents: [{uri: $u, mimeType: "application/json", text: tojson}]}')"; return 0
@@ -8106,7 +8291,7 @@ win_page() {   # win_page ID -> an open window's page: its app, its title, its w
     swaymsg -t get_tree 2>/dev/null | jq -r --argjson i "$1" '
         [.nodes[] | select(.type == "output") as $o | $o.nodes[] | select(.type == "workspace") as $w | $w | .. | objects | select(.id? == $i and (.type == "con" or .type == "floating_con")) | {o: $o.name, w: $w.name, n: .}] | .[0] // empty
         | (.n.app_id // .n.window_properties.class // "a window"), (.n.name // ""),
-          "workspace\t" + (.w | split(":")[0]), "screen\t" + .o, "size\t" + (.n.rect.width | tostring) + " by " + (.n.rect.height | tostring) + " pixels",
+          "workspace\t" + (.w | split(":") | .[0] + (if (.[1] // "") != "" and .[1] != .[0] then " " + .[1] else "" end)), "screen\t" + .o, "size\t" + (.n.rect.width | tostring) + " by " + (.n.rect.height | tostring) + " pixels",
           "placed\t" + (if .n.fullscreen_mode == 1 then "full screen" elif .n.type == "floating_con" then "floating" else "tiled" end)' > "$TMP/win.page" 2>/dev/null
     [ -s "$TMP/win.page" ] || return 1
     sed -n '3,$p' "$TMP/win.page" | page_of "$(sed -n 1p "$TMP/win.page")" "$(sed -n 2p "$TMP/win.page")"
@@ -10326,6 +10511,7 @@ desk_lines() {   # desk_lines WS JSONFILE -> the lines, after desk_windows_of: o
                 echo "focus left"
                 printf 'resize set width %s ppt\n' "$(jq -r '.main.width // 70 | if . < 20 then 20 elif . > 90 then 90 else floor end' "$2")"
             fi
+            [ -z "$main" ] || case $(jq -r '.arrange // ""' "$2") in tabs) echo 'layout tabbed' ;; stacked) echo 'layout stacking' ;; esac   # as it was saved
         }
         main=''
     done
@@ -10655,7 +10841,8 @@ desk_delete() {   # desk_delete NAME...
     [ -f "$LAYOUTS_DIR/$name" ] || refuse "no saved layout named $name"
     why=$(desk_open "$LAYOUTS_DIR/$name"); [ -z "$why" ] || refuse "$why"
     kept_delete_ok layout "$name" || return 0
-    rm -f "${LAYOUTS_DIR:?}/${name:?}"
+    if [ -n "${LAYOUT_DELETED:-}" ]; then mkdir -p "$LAYOUT_DELETED" && mv "$LAYOUTS_DIR/$name" "$LAYOUT_DELETED/$name" || refuse "could not delete $name"   # a provider keeps it in its own folder, so undo brings it back while the dialog is open
+    else rm -f "${LAYOUTS_DIR:?}/${name:?}"; fi
     _kh=$(kept_hist layout); [ ! -f "$_kh" ] || { awk -F '\t' -v n="$name" '$2 != n' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; }; kept_prune layout
     echo "deleted $name"
 }
@@ -10664,16 +10851,16 @@ desk_rename() {   # desk_rename NAME NEW... -- a saved layout under a new name, 
     _rn=$(desk_name_of "$*")
     [ -n "$_ro" ] && [ -n "$_rn" ] || refuse "rename NAME NEW -- the layout and its new name"
     if [ ! -f "$LAYOUTS_DIR/$_ro" ] && [ -f "$KEPT_LAYOUTS/$_ro" ]; then   # a recent one saved under a name (#145)
-        [ ! -e "$LAYOUTS_DIR/$_rn" ] || refuse "a layout named $_rn is saved already"
+        [ ! -e "$LAYOUTS_DIR/$_rn" ] || refuse "$_rn is a layout already: pick another name"
         mkdir -p "$LAYOUTS_DIR"; cp "$KEPT_LAYOUTS/$_ro" "$LAYOUTS_DIR/$_rn"; kept_note layout "$_rn"
-        echo "saved as $_rn -- spark-shell layout $_rn opens it"; return 0
+        echo "saved as $_rn"; return 0
     fi
     [ -f "$LAYOUTS_DIR/$_ro" ] || refuse "no saved layout named $_ro"
     [ "$_rn" != "$_ro" ] || refuse "$_ro is its name already"
-    [ ! -e "$LAYOUTS_DIR/$_rn" ] || refuse "a layout named $_rn is saved already"
+    [ ! -e "$LAYOUTS_DIR/$_rn" ] || refuse "$_rn is a layout already: pick another name"
     mv "$LAYOUTS_DIR/$_ro" "$LAYOUTS_DIR/$_rn"
     _kh=$(kept_hist layout); [ ! -f "$_kh" ] || { awk -F '\t' -v o="$_ro" -v n="$_rn" 'BEGIN { OFS = "\t" } $2 == o { $2 = n } { print }' "$_kh" > "$_kh.new" && mv "$_kh.new" "$_kh"; }
-    echo "$_ro is $_rn now -- spark-shell layout $_rn opens it"
+    echo "$_ro renamed to $_rn"
 }
 desk_label() {   # desk_label FILE -> how a layout is listed: the name it was saved under, or its words when that name is only its words with dashes (#51)
     _dw=$(desk_words "$1"); _dn=${1##*/}
@@ -11156,13 +11343,13 @@ screen_beside_again() {   # screen_beside_again ID -- every screen placed beside
 # halved, so two snapped halves meet at the same eight-pixel strip two tiled windows have. A
 # window floated from the tiling opens at two thirds of that area, centered, never at the size it
 # had in the tiling. One sway command for each, sent to the window by its con_id.
-desk_window() {   # desk_window float|left|right|up|down
+desk_window() {   # desk_window float|left|right|up|down [ID] -- the focused window, or the window ID
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own window keys"
     case ${1:-} in float|left|right|up|down) ;; *) refuse "window takes float, left, right, up or down" ;; esac
     desk_in_sway || refuse "moves the desktop's windows: run it inside it"
     swaymsg -t get_tree > "$TMP/tree" 2>/dev/null || refuse "sway did not answer"
     # the focused window: con_id, floating or not, full screen or not; then its workspace's area
-    _dw=$(jq -r '[.. | objects | select(.focused == true and (.type == "con" or .type == "floating_con"))][0] // empty
+    _dw=$(jq -r --arg id "${2:-}" '[.. | objects | select((if $id == "" then .focused == true else (.id | tostring) == $id end) and (.type == "con" or .type == "floating_con"))][0] // empty
         | "\(.id) \(.type) \(.fullscreen_mode // 0)"' "$TMP/tree" 2>/dev/null)
     [ -n "$_dw" ] || refuse "no window has the focus"
     set -- "$1" $_dw
@@ -11365,8 +11552,8 @@ desk_capture() {   # desk_capture screen|area|window [--wait N]
     case $_wait in ''|*[!0-9]*) refuse "--wait takes whole seconds" ;; esac
     [ "$OS" != Darwin ] || refuse "not on macOS, which has its own (Shift+Command+5)"
     [ -n "${WAYLAND_DISPLAY:-}" ] || refuse "captures the desktop: run it inside it (Print)"
-    command -v grim >/dev/null 2>&1 || refuse "grim is not installed (spark-shell on desktop)"
-    [ "$_what" != area ] || command -v slurp >/dev/null 2>&1 || refuse "slurp is not installed (spark-shell on desktop)"
+    command -v grim >/dev/null 2>&1 || refuse "grim is not installed: run spark-shell on desktop"
+    [ "$_what" != area ] || command -v slurp >/dev/null 2>&1 || refuse "slurp is not installed: run spark-shell on desktop"
     [ "$_wait" = 0 ] || sleep "$_wait"
     mkdir -p "$CAPTURE_DIR"
     _b=$(date +%Y-%m-%d-%H%M%S); _f=$CAPTURE_DIR/$_b.png; _n=2

@@ -362,7 +362,7 @@ as tmux windows anywhere else. Add `--desktop` or `--terminal` to
 choose. spark-shell checks each proposed window against your words
 before opening it. For `notes and firefox`, it opens
 your editor and Firefox. An unmatched suggestion stays closed; the
-dialog offers it as `layout  also open btop`; press Enter to open it.
+dialog offers it in workspace, under `also open`; one click opens it.
 Each app you name opens once. Say `fullscreen` and the main
 window fills the screen alone. Say `workspace 3` and the layout opens
 there.
@@ -553,10 +553,12 @@ the ring, in the ring's own colors.
 
 Print takes a picture of the screen, Shift+Print of an area you drag,
 and Super+Print of the window in front; `spark-shell desktop capture
-screen|area|window` does the same, and the dialog's `window` section
-has the screen and an area. Each picture is a PNG named by the time in
-`~/pictures/screenshots`, and it is on the clipboard too (grim, slurp
-and wl-clipboard).
+screen|area|window` does the same. In the dialog, workspace has the
+screen and an area, and a window's page has that window, on any
+workspace; the dialog steps aside for the picture and comes back with
+the file's name on the status row. Each picture is a PNG named by the
+time in `~/pictures/screenshots`, and it is on the clipboard too (grim,
+slurp and wl-clipboard).
 
 ## Notifications, drives and power
 
@@ -1058,11 +1060,15 @@ In a list,
 Page Up and Page Down move the lit row by a screen, Home and End go to
 its first and its last row.
 
-- `layout`: a saved layout opens on Enter; rename (it asks the new
-  name) and delete are behind it. Words at the prompt make a new one.
-  `save what is open now` asks a name for it. Under `recent`, the last
-  five opened and not saved, each with when; behind one, `save as`
-  gives it a name and `forget` lets it go.
+- `layout`: a saved layout, a row with its apps, opens on Enter or a
+  second click; its page, behind the right arrow, has open, rename (it
+  asks the new name) and delete, each with undo. Words at the prompt
+  make a new one, through the ask row. `save this workspace` asks a
+  name for it, and keeps the apps and how they stand (side by side,
+  tabs or stacked), not their sizes. Under `recent`, the last five
+  opened and not saved, each with when; behind one, `save as` gives it
+  a name and `forget` lets it go. Under `also open`, what spark also
+  suggested, one click away.
 - `wifi`: disconnect the network in use; connect one around, and a new
   network asks its password once, masked; forget a saved one, behind
   its row (a saved one that is not around has a row of its own).
@@ -1125,10 +1131,22 @@ its first and its last row.
   puts the reminder aside in `~/calendar/done` for 30 days, and undo
   brings it back; delete takes the file away, and undo brings it back
   while the dialog is open.
-- `window`: capture the screen, an area or a window, each with its key
-  beside it; the windows open now, a row each with its title, Enter
-  puts one in front and close is behind it; and how new windows sit on
-  a workspace: side by side, in tabs or stacked.
+- `window`: the windows open now, under a heading per workspace, as
+  `workspace 2` and the bar's symbol, `this one` on the workspace you
+  are on, and the screen with more than one; a row each, the app and
+  its title. A click on a heading shows it alone, and Esc shows all
+  again. The selection bar starts on the window that was in front.
+  Enter or a second click puts a window in front. Its page, behind the
+  right arrow, has put in front, move to workspace and placement, each
+  a list that checks the one in use, capture this window, and close.
+  A move leaves you where you are. Placement is tiled, floating, full
+  screen or a half of the screen. Each change has undo; close takes a
+  typed yes. Under the layouts, capture the screen and an area, each
+  with its key, and `arrange windows`: side by side, tabs or stacked,
+  on this workspace now and on every new workspace, its value read from
+  the workspace you are on. A window in sway's scratchpad is not
+  listed. With no sway the place says `no desktop` and has the layouts
+  alone, which open as tmux windows.
 - `bar`: the bar at the top of the screen, at its bottom, or hidden;
   its text size, auto or a size of your own; and the apps' icons (the
   tray) on it or off it.
@@ -1385,7 +1403,7 @@ other providers' current values are not implicitly added to that request.
 The steps come back as commands in
 the prompt, one a line: Enter runs them in order, and a step that loses
 something (forget a network, close a window, remove a device, delete a
-layout or a theme, log out, restart, shut down) still asks for a typed
+theme, log out, restart, shut down) still asks for a typed
 yes, checked again against what is offered then; every other step
 carries its Undo. A step that names a row by a near
 miss ("everforest light" for everforest-light) takes the row's own name
@@ -1442,8 +1460,8 @@ Discarding a model request ignores its late response and restores its
 draft; it does not promise to stop computation in spark.
 The current voice helper supports pause-to-finish and cancellation; Cancel
 does not promise transcription. Tools does not fabricate a procedure or
-data service. Existing native placement stays with Sway; further Workspace
-placement controls remain to be completed against the product handoff.
+data service. Resize, drag, split direction and focus order stay with
+sway and its keys.
 
 Native validation: `python3 tests/home_desktop_proof.py BINARY DIRECTORY`
 uses an isolated headless Sway with real foot and virtual keyboard input.

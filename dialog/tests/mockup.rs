@@ -651,6 +651,8 @@ fn design_system_preview() {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         },
         who: Who::Undo,
         line: "undo theme nord".into(),

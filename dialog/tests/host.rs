@@ -159,9 +159,13 @@ fn a_destructive_step_takes_the_typed_yes() {
     app.enter();
     let before = *reads.lock().unwrap();
     assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.undo.is_some()));
-    // a row picked says nothing: no line above the list, the receipt in no row; its undo stands alone (#196)
+    // nothing above the list; a step of the workspace place says its receipt on the status row, its undo beside it
     assert!(app.exchange.iter().all(|l| l.text.contains("Proposed steps")), "{:?}", app.exchange);
-    assert_eq!(app.reply, Some(Reply::undo_only()), "the result's undo is kept, at the reply row's end");
+    assert_eq!(
+        app.reply.as_ref().map(|r| (r.text.as_str(), r.undo)),
+        Some(("terminal closed", true)),
+        "the receipt and its undo"
+    );
     let c = calls.lock().unwrap()[0].clone();
     assert_eq!(c["name"], "window_close");
     assert!(c.pointer("/_meta/progressToken").is_some(), "a call carries a progress token");
@@ -197,6 +201,8 @@ fn an_elicitation_is_asked_in_the_composer_and_a_secret_is_declined() {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         },
         who: spark_dialog::app::Who::Person,
         line: "window ask".into(),
@@ -640,7 +646,11 @@ fn a_search_finds_the_about_and_a_section_name_opens_its_section() {
         app.typed(c);
     }
     app.enter();
-    assert_eq!(app.view, View::Section(0), "a section's name typed alone opens its section");
+    assert_eq!(
+        app.view,
+        View::Dest(spark_dialog::app::WORKSPACE_DEST),
+        "a section's name typed alone opens its place"
+    );
     assert!(!app.jobs.iter().any(inference), "a section's name never goes to the model");
 }
 
@@ -657,6 +667,8 @@ fn a_planned_undo_is_the_undo_row_and_a_planned_about_opens_the_about() {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         },
         who: spark_dialog::app::Who::Undo,
         line: "undo terminal".into(),
@@ -1000,6 +1012,8 @@ fn words_typed_after_a_step_ask_spark_and_leave_its_undo_alone() {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         },
         who: spark_dialog::app::Who::Undo,
         line: "undo window close terminal".into(),
@@ -1121,6 +1135,8 @@ fn the_undo_is_at_the_end_of_the_reply_row_and_its_click_runs_it() {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         },
         who: spark_dialog::app::Who::Undo,
         line: "undo window close terminal".into(),
@@ -1477,6 +1493,8 @@ fn an_overlong_literal_addition_refuses_without_changing_the_draft() {
             ask: vec!["text".into()],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         },
         who: Who::Person,
         line: "enter literal text".into(),
@@ -2125,6 +2143,8 @@ fn native_pairing_is_bound_to_the_running_native_provider_and_never_echoes_codes
                         ask: vec![],
                         said: None,
                         pick: None,
+                        value: None,
+                        children: None,
                     },
                     who: Who::Person,
                     line: "bt pair Buds".into(),
@@ -2472,6 +2492,8 @@ fn a_pick_from_outside_the_files_reads_its_folder_once() {
             ask: vec![],
             said: None,
             pick: Some("to".into()),
+            value: None,
+            children: None,
         },
         who: spark_dialog::app::Who::Person,
         line: "move notes.md".into(),

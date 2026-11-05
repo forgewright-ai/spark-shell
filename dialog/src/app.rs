@@ -57,7 +57,19 @@ pub const PLACEHOLDER: &str = "search or ask";
 
 impl App {
     /// What the empty prompt says it takes: a form of apps names the one thing to type (dialog/DESIGN.md).
+    /// A layout's name being typed in the prompt: a form, as a category's name is in apps.
+    pub fn layout_form(&self) -> bool {
+        matches!(&self.mode, Mode::Ask { step, .. } if matches!(step.call.name.as_str(), "layout_save" | "layout_rename"))
+    }
+
     pub fn placeholder(&self) -> &'static str {
+        if let Mode::Ask { step, .. } = &self.mode {
+            match step.call.name.as_str() {
+                "layout_save" => return "a name for this layout",
+                "layout_rename" => return "the new name",
+                _ => {}
+            }
+        }
         if self.view == View::Apps {
             if let crate::apps::Page::Form(form) = &self.apps.page {
                 return match form {
@@ -141,6 +153,23 @@ pub const SETTINGS_DEST: usize = 6;
 pub const HELP_DEST: usize = 7;
 pub const TOOLS_DEST: usize = 5;
 pub const CALENDAR_DEST: usize = 4;
+pub const WORKSPACE_DEST: usize = 2;
+/// The steps of the workspace place whose receipt stands on the status row, as a change of Apps does (dialog/DESIGN.md).
+const WORKSPACE_SAYS: [&str; 13] = [
+    "window_split",
+    "window_tabs",
+    "window_stacked",
+    "window_restore",
+    "window_move",
+    "window_place",
+    "window_close",
+    "window_capture",
+    "layout_save",
+    "layout_rename",
+    "layout_delete",
+    "layout_restore",
+    "layout_add",
+];
 /// Settings: a section each, then Talk and Connections, in this order, under their groups (#137); About is a
 /// place of the home since v0.114 (#136).
 pub const SETTINGS: [(&str, &str, &str); 17] = [
@@ -688,6 +717,8 @@ pub enum Item {
     /// matches, so Enter asks; only while a model answers.
     Ask,
     Model(usize),
+    /// A muted line under a page's title.
+    Note(String),
     /// A destination of the home.
     Dest(usize),
     /// A row of Settings: its index in SETTINGS.
@@ -731,6 +762,8 @@ pub struct App {
     pub folder: Option<(usize, String, Rows)>,
     /// The row whose steps are shown (View::Steps), as it was when Right opened them.
     pub steps_row: Option<model::Row>,
+    /// The heading shown alone in the workspace place (dialog/DESIGN.md).
+    pub ws_filter: Option<String>,
     /// Plus is picking a file: the view to go back to and how deep the stack was.
     pub attaching: Option<(View, usize)>,
     /// The file the next want carries (`spark-shell want --attach`).
@@ -850,7 +883,21 @@ fn view_named(providers: &[Provider], name: &str) -> Option<View> {
         "chat" => Some(View::Conversation),
         "help" => Some(View::Help),
         "clock" | "reminders" => Some(View::Dest(CALENDAR_DEST)), // the bar's clock opens the Calendar
+        "window" | "layout" => Some(View::Dest(WORKSPACE_DEST)),
         h => providers.iter().position(|p| p.label == h).map(View::Section),
+    }
+}
+
+/// A window's name and title are labels, lowercase (dialog/DESIGN.md); here rather than at the provider, which has
+/// no lowercase past ASCII.
+fn lower_titles(rows: &mut [model::Row]) {
+    for r in rows.iter_mut().filter(|r| r.tool.as_ref().is_some_and(|t| t.name == "window_focus")) {
+        r.text = r.text.to_lowercase();
+        r.columns.iter_mut().for_each(|c| *c = c.to_lowercase());
+        if let Some(w) = r.wide.as_mut() {
+            w.iter_mut().for_each(|c| *c = c.to_lowercase());
+        }
+        r.line = r.line.as_ref().map(|l| l.to_lowercase());
     }
 }
 
@@ -937,6 +984,7 @@ impl App {
             films_want: None,
             preview_pages: 1,
             steps_row: None,
+            ws_filter: None,
             hits: vec![],
             hits_for: String::new(),
             search_at: None,
@@ -1367,13 +1415,17 @@ impl App {
                 if text.len() > mcp::RESOURCE_MAX {
                     return self.lose(idx, "its rows are over 512 kB");
                 }
-                if let Some(rows) = model::rows(text) {
+                if let Some(mut rows) = model::rows(text) {
                     if let Some(st) = &rows.state {
                         self.providers[idx].title = st.clone(); // the subtitle follows the section's state, step by step
+                    }
+                    if self.providers[idx].label == "window" {
+                        lower_titles(&mut rows.rows); // a window's title is a label (dialog/DESIGN.md)
                     }
                     self.providers[idx].rows = rows;
                     self.hold_rows(idx);
                     self.providers[idx].ready = true;
+                    self.workspace_follow(idx);
                     if self.view == View::Section(idx) {
                         if let Some(root) = self.files_root(idx) {
                             self.view = View::Folder(idx, root.clone());
@@ -1591,14 +1643,14 @@ impl App {
         self.row_matches(prov, row, self.query())
     }
 
-    /// Every word typed is in the row's words, or its section's name.
+    /// Every word typed is in the row's words, its line, or its section's name.
     fn row_matches(&self, prov: usize, row: &model::Row, words: &str) -> bool {
-        let hay = format!("{} {}", self.providers[prov].label, row.text).to_lowercase();
+        let hay = format!("{} {} {}", self.providers[prov].label, row.text, row.line.as_deref().unwrap_or("")).to_lowercase();
         words.to_lowercase().split_whitespace().all(|w| hay.contains(w))
     }
 
     pub fn pickable(row: &model::Row) -> bool {
-        row.tool.is_some() || row.children.is_some() || row.step.is_some() || row.switch.is_some() || !row.more.is_empty()
+        row.tool.is_some() || row.children.is_some() || row.step.is_some() || row.switch.is_some() || !row.more.is_empty() || row.back
     }
 
     /// The sections present that a destination holds; Settings holds those of SETTINGS that run here.
@@ -1689,6 +1741,124 @@ impl App {
             out.push(Item::Title(section_name(&self.providers[p].label)));
         }
         out.extend(rows);
+    }
+
+    /// Whether a row of the workspace place stands: as a model answers or not, and by the words typed.
+    fn workspace_keeps(&self, p: usize, r: &model::Row) -> bool {
+        let model = self.cfg.model && self.model_on && self.model_name.is_some();
+        r.when_model.is_none_or(|m| m == model) && (self.query().is_empty() || self.matches(p, r))
+    }
+
+    /// The workspace place (dialog/DESIGN.md): the windows under their workspaces, then the layouts, then a menu's
+    /// rows. A heading shown alone keeps its rows alone.
+    fn workspace_rows(&self, out: &mut Vec<Item>) {
+        let secs = self.dest_sections(WORKSPACE_DEST);
+        let mut heading: Option<&str> = None;
+        for &p in &secs {
+            for (i, r) in self.providers[p].rows.rows.iter().enumerate() {
+                let Some(g) = r.group.as_deref() else { continue };
+                if !self.workspace_keeps(p, r) || self.ws_filter.as_deref().is_some_and(|f| f != g) {
+                    continue;
+                }
+                if heading != Some(g) {
+                    if !out.is_empty() {
+                        out.push(Item::Blank);
+                    }
+                    out.push(Item::Heading(g.to_string()));
+                    heading = Some(g);
+                }
+                out.push(Item::Row(p, i));
+            }
+        }
+        if self.ws_filter.is_some() {
+            return;
+        }
+        let mut first = true;
+        for &p in &secs {
+            for (i, r) in self.providers[p].rows.rows.iter().enumerate() {
+                if r.group.is_some() || !self.workspace_keeps(p, r) {
+                    continue;
+                }
+                if first && !out.is_empty() {
+                    out.push(Item::Blank);
+                }
+                first = false;
+                out.push(Item::Row(p, i));
+            }
+        }
+    }
+
+    /// The workspace place's rows came again: a row's page follows its row, and a heading shown alone that has gone
+    /// shows all.
+    fn workspace_follow(&mut self, idx: usize) {
+        if !matches!(self.providers[idx].label.as_str(), "window" | "layout") {
+            return;
+        }
+        if let Some(id) = self.steps_row.as_ref().map(|r| r.id.clone()).filter(|_| self.step_prov() == Some(idx)) {
+            match self.providers[idx].rows.rows.iter().find(|r| r.id == id).cloned() {
+                Some(row) => self.steps_row = Some(row),
+                None if matches!(self.view, View::Steps(_)) => {
+                    self.steps_row = None;
+                    if let Some(v) = self.came_from.pop() {
+                        self.go_back(v);
+                    }
+                }
+                None => {}
+            }
+        }
+        if let Some(f) = self.ws_filter.clone() {
+            let held = self
+                .dest_sections(WORKSPACE_DEST)
+                .iter()
+                .any(|&p| self.providers[p].rows.rows.iter().any(|r| r.group.as_deref() == Some(f.as_str())));
+            if !held && self.dest_sections(WORKSPACE_DEST).iter().all(|&p| self.providers[p].ready) {
+                self.ws_filter = None;
+            }
+        }
+    }
+
+    /// The provider of the row whose steps are held: the view's, or the picker's opened from them.
+    fn step_prov(&self) -> Option<usize> {
+        match &self.view {
+            View::Steps(p) | View::Folder(p, _) => Some(*p),
+            _ => None,
+        }
+    }
+
+    /// Arriving at the workspace place: the bar stands on the window that was in front, so Right acts on it.
+    fn workspace_arrive(&mut self) {
+        if self.view != View::Dest(WORKSPACE_DEST) {
+            return;
+        }
+        let front = self
+            .dest_sections(WORKSPACE_DEST)
+            .iter()
+            .find_map(|&p| self.providers[p].rows.rows.iter().find(|r| r.front).map(|r| r.id.clone()));
+        if let Some(id) = front {
+            self.in_list = true;
+            self.keep_lit = Some(id);
+            self.follow_lit();
+        }
+    }
+
+    /// A click on a heading of the workspace place: that heading alone, or all again on the one shown alone.
+    fn workspace_heading(&mut self, label: &str) {
+        self.ws_filter = if self.ws_filter.as_deref() == Some(label) {
+            None
+        } else {
+            Some(label.to_string())
+        };
+        self.reply = None;
+        self.keep_lit = None;
+        self.sel = 0;
+        self.scroll = 0;
+    }
+
+    /// The header's words for the heading shown alone: `2 <symbol>` of a workspace, a heading's own words else.
+    fn workspace_filter_words(&self) -> Option<String> {
+        let f = self.ws_filter.as_deref()?;
+        let head = f.split(crate::ui::SEP).next().unwrap_or(f);
+        Some(head.strip_prefix("workspace ").unwrap_or(head).to_string())
     }
 
     /// The content area's items: conversation turns or the current native view.
@@ -1843,7 +2013,17 @@ impl App {
                 self.text(&mut list, "Commands: spark-shell desktop keys; spark-shell help; spark --help", true);
                 self.text(&mut list, "Configure: ~/.config/spark-shell/home-keys.json", true);
             }
-            View::Steps(_) => {
+            View::Steps(p) => {
+                // a window's page, a layout's: what it is above its steps, as an app's details have it
+                if matches!(self.providers[*p].label.as_str(), "window" | "layout") {
+                    if let Some(r) = &self.steps_row {
+                        list.push(Item::Title(r.text.clone()));
+                        if let Some(c) = r.columns.first().filter(|c| !c.is_empty()) {
+                            list.push(Item::Note(c.clone()));
+                        }
+                        list.push(Item::Blank);
+                    }
+                }
                 let n = self.steps_row.as_ref().map(|r| r.tool.iter().count() + r.more.len()).unwrap_or(0);
                 for k in 0..n {
                     list.push(Item::StepOf(k));
@@ -1887,6 +2067,7 @@ impl App {
                     self.section_rows(p, &mut list, false);
                 }
             }
+            View::Dest(d) if *d == WORKSPACE_DEST => self.workspace_rows(&mut list),
             View::Dest(d) => {
                 let secs = self.dest_sections(*d);
                 let one = secs.len() == 1;
@@ -2385,38 +2566,53 @@ impl App {
                     .filter(|v| !v.is_empty())?;
                 return Some(format!("spark-shell v{}", v));
             }
-            "workspace" | "notes" | "calendar" => {}
-            _ => return None,
-        }
-        let tools = |l: &str, names: &[&str]| -> Vec<String> {
-            prov(l)
-                .map(|p| {
-                    p.rows
-                        .rows
-                        .iter()
-                        .filter(|r| r.tool.as_ref().is_some_and(|t| names.contains(&t.name.as_str())))
-                        .map(|r| r.text.clone())
-                        .collect()
-                })
-                .unwrap_or_default()
-        };
-        let count = |n: usize, one: &str, many: &str| if n == 1 { format!("1 {}", one) } else { format!("{} {}", n, many) };
-        let said = match DESTS[d].name {
+            "notes" | "calendar" => {}
             "workspace" => {
-                // the windows open and their names, lowercase as every label is; the layouts when no window is
-                prov("window")?;
-                let names: Vec<String> = tools("window", &["window_focus"]).iter().map(|n| n.to_lowercase()).collect();
-                let l = tools("layout", &["layout_open"]).len();
-                if names.is_empty() {
-                    if l == 0 {
+                // the windows open and their apps, each named once; the layouts where no window is. With no desktop
+                // the window section says so, and the layouts are what the place holds
+                if self.providers.iter().any(|p| p.label == "window" && p.dead.is_none() && !p.ready) {
+                    return None;
+                }
+                let names = |l: &str, tool: &str| -> Vec<String> {
+                    prov(l)
+                        .map(|p| {
+                            p.rows
+                                .rows
+                                .iter()
+                                .filter(|r| r.tool.as_ref().is_some_and(|t| t.name == tool) && (l != "layout" || r.group.as_deref() == Some("layouts")))
+                                .map(|r| r.text.to_lowercase())
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                };
+                let count = |n: usize, one: &str, many: &str| if n == 1 { format!("1 {}", one) } else { format!("{} {}", n, many) };
+                let windows = names("window", "window_focus");
+                let layouts = names("layout", "layout_open");
+                let desktop = prov("window").is_some_and(|p| p.title != "no desktop");
+                return if !windows.is_empty() {
+                    let mut apps: Vec<&str> = vec![];
+                    for w in &windows {
+                        if !apps.contains(&w.as_str()) {
+                            apps.push(w);
+                        }
+                    }
+                    Some(format!("{}{}{}", count(windows.len(), "window", "windows"), sep, apps.join(", ")))
+                } else if desktop {
+                    Some(if layouts.is_empty() {
                         "no windows open".to_string()
                     } else {
-                        format!("no windows open{}{}", sep, count(l, "layout", "layouts"))
-                    }
+                        format!("no windows open{}{}", sep, count(layouts.len(), "layout", "layouts"))
+                    })
+                } else if layouts.is_empty() {
+                    None
                 } else {
-                    format!("{}{}{}", count(names.len(), "window", "windows"), sep, names.join(", "))
-                }
+                    Some(format!("{}{}{}", count(layouts.len(), "layout", "layouts"), sep, layouts.join(", ")))
+                };
             }
+            _ => return None,
+        }
+        let count = |n: usize, one: &str, many: &str| if n == 1 { format!("1 {}", one) } else { format!("{} {}", n, many) };
+        let said = match DESTS[d].name {
             "notes" => {
                 // the count, the newest note's title and its date
                 let p = prov("notes")?;
@@ -2947,6 +3143,17 @@ impl App {
         if self.files_page_open() && self.mode == Mode::Normal && self.chip_focus.is_none() && (self.input.is_empty() || self.files.form()) {
             return self.files_back();
         }
+        // a heading shown alone in the workspace place: Esc shows all first, as apps' filter does (dialog/DESIGN.md)
+        if self.view == View::Dest(WORKSPACE_DEST)
+            && self.ws_filter.is_some()
+            && self.mode == Mode::Normal
+            && self.chip_focus.is_none()
+            && self.input.is_empty()
+        {
+            self.ws_filter = None;
+            self.reply = None;
+            return;
+        }
         // a form of Apps: Esc lets it go, words typed or none, and asks nothing; a page: back, once the words are cleared
         if self.view == View::Apps && self.mode == Mode::Normal && self.chip_focus.is_none() && (self.input.is_empty() || self.apps.form()) {
             // a category filter on the list: Esc shows all apps first (dialog/DESIGN.md, v0.124.4)
@@ -3067,6 +3274,9 @@ impl App {
         self.keep_lit = None;
         self.reply = None; // a reply is the view's it was said in: it never follows to another (#196)
         self.view = v;
+        if self.view == View::Home {
+            self.ws_filter = None;
+        }
         self.prompt_arrive();
         self.sel = 0;
         self.in_list = false;
@@ -3134,6 +3344,7 @@ impl App {
 
     pub(crate) fn go(&mut self, v: View) {
         let v = match v {
+            View::Section(p) if matches!(self.providers[p].label.as_str(), "window" | "layout") => View::Dest(WORKSPACE_DEST),
             View::Section(p) => self.files_root(p).map(|root| View::Folder(p, root)).unwrap_or(View::Section(p)),
             other => other,
         };
@@ -3145,7 +3356,8 @@ impl App {
         self.target = None;
         self.keep_lit = None;
         self.reply = None;
-        if v != View::Conversation {
+        // a picker opened from a row's steps keeps them: the pick comes back to that page
+        if v != View::Conversation && !(matches!(self.view, View::Steps(_)) && matches!(v, View::Folder(..))) {
             self.steps_row = None;
         }
         self.came_from.push(self.view.clone());
@@ -3165,6 +3377,7 @@ impl App {
         if let View::Folder(p, uri) = self.view.clone() {
             self.read_folder(p, &uri);
         }
+        self.workspace_arrive();
     }
 
     /// A word typed alone that names a place: its view. "calendar" and "settings" are places, and
@@ -3206,7 +3419,7 @@ impl App {
         if d == HELP_DEST {
             return View::Help;
         }
-        if d == SETTINGS_DEST || d == CALENDAR_DEST {
+        if d == SETTINGS_DEST || d == CALENDAR_DEST || d == WORKSPACE_DEST {
             return View::Dest(d);
         }
         if DESTS[d].sections == ["about"] {
@@ -3422,6 +3635,9 @@ impl App {
                     return;
                 };
                 let Some(call) = self.step_call(k) else { return };
+                if let Some(uri) = call.children.clone() {
+                    return self.open_children(p, &uri); // a choice: its list, and the pick comes back here
+                }
                 if call.name.ends_with("_preview") {
                     self.view = self.came_from.pop().unwrap_or(View::Home);
                     self.in_list = true;
@@ -3559,6 +3775,16 @@ impl App {
             Item::Folder(i) => {
                 let Some((p, _, rows)) = self.folder.clone() else { return };
                 let Some(row) = rows.rows.get(i).cloned() else { return };
+                if row.back {
+                    // a pick among choices: back where the list was opened, and the change is said there
+                    if let Some(v) = self.came_from.pop() {
+                        self.go_back(v);
+                    }
+                    if let Some(call) = row.tool {
+                        self.pick_step(p, call, &row.text);
+                    }
+                    return;
+                }
                 if let Some(c) = row.children {
                     self.open_children(p, &c);
                     return;
@@ -3586,6 +3812,8 @@ impl App {
                         ask: vec![],
                         said: None,
                         pick: None,
+                        value: None,
+                        children: None,
                     };
                     self.pick_step(pk.prov, call, &row.text);
                     return;
@@ -3948,6 +4176,8 @@ impl App {
                     ask: vec![],
                     said: None,
                     pick: None,
+                    value: None,
+                    children: None,
                 };
                 best = Some((
                     own,
@@ -4141,6 +4371,8 @@ impl App {
                             ask: vec![],
                             said: None,
                             pick: None,
+                            value: None,
+                            children: None,
                         },
                         who: Who::Model,
                         line: "about".into(),
@@ -4156,6 +4388,8 @@ impl App {
                 ask: vec![],
                 said: None,
                 pick: None,
+                value: None,
+                children: None,
             };
             let at = self.providers.iter().position(|p| p.tools.iter().any(|t| t.name == name));
             if let Some(p) = at {
@@ -4554,7 +4788,9 @@ impl App {
                     self.hidden = false;
                 }
                 // the receipt, every line of it, for typed words alone: a click's row shows what it did (#196)
-                if step.typed && !self.opened {
+                // the workspace place says each change on the status row, as apps does (dialog/DESIGN.md)
+                let says = step.typed || WORKSPACE_SAYS.contains(&step.call.name.as_str());
+                if says && !self.opened {
                     let receipt = sc.get("receipt").and_then(Value::as_str).unwrap_or(text).to_string();
                     if privacy.text_safe(&receipt) {
                         self.reply(Mark::Done, &receipt);
@@ -4572,6 +4808,8 @@ impl App {
                             ask: vec![],
                             said: None,
                             pick: None,
+                            value: None,
+                            children: None,
                         };
                         let undo_schema = self.providers[idx].tools.iter().find(|t| t.name == name).map(|t| &t.schema);
                         let carries_secret = args.iter().any(|(k, v)| {
@@ -4664,6 +4902,9 @@ impl App {
     /// A click on a category's heading in the list of apps (dialog/DESIGN.md, v0.124.4): the list narrows to that
     /// category; on the heading of the category shown alone, it widens to all. `label` is the heading as drawn.
     pub fn apps_heading(&mut self, label: &str) {
+        if self.view == View::Dest(WORKSPACE_DEST) {
+            return self.workspace_heading(label);
+        }
         if self.view != View::Apps || self.apps.page != crate::apps::Page::List || self.mode != Mode::Normal {
             return;
         }
@@ -4685,9 +4926,16 @@ impl App {
             Item::Apps(line) => {
                 matches!(self.apps.page, crate::apps::Page::List | crate::apps::Page::Hidden) && matches!(line.action, Some(crate::apps::Action::Launch(_)))
             }
-            Item::Folder(_) | Item::Row(..) | Item::Hit(_) => self
-                .prov_of(&it)
-                .is_some_and(|p| matches!(self.providers[p].label.as_str(), "files" | "notes" | "window" | "layout")),
+            // a window's row and a layout's are the objects of the workspace place; capture, arrange and save are a
+            // menu's and act on one click (dialog/DESIGN.md)
+            Item::Folder(_) | Item::Row(..) | Item::Hit(_) => self.prov_of(&it).is_some_and(|p| match self.providers[p].label.as_str() {
+                "files" | "notes" => true,
+                "window" | "layout" => self
+                    .row_ref(&it)
+                    .and_then(|r| r.tool.as_ref())
+                    .is_some_and(|t| matches!(t.name.as_str(), "window_focus" | "layout_open")),
+                _ => false,
+            }),
             _ => false,
         }
     }
@@ -4723,6 +4971,9 @@ impl App {
             }
             Item::Folder(_) | Item::Row(..) | Item::Hit(_) if self.object_pick(self.sel) => {
                 let r = self.row_ref(&it)?;
+                if let Some(line) = &r.line {
+                    return Some(line.clone());
+                }
                 let cols = r.wide.as_ref().unwrap_or(&r.columns);
                 let mut parts = vec![r.text.clone()];
                 if r.id.starts_with("files:") {
@@ -4892,6 +5143,7 @@ impl App {
             View::Help => "help".into(),
             View::Conversation => "conversation".into(),
             View::Dest(d) => DESTS[*d].name.to_lowercase(),
+            View::Section(p) | View::Folder(p, _) | View::Steps(p) if matches!(self.providers[*p].label.as_str(), "window" | "layout") => "workspace".into(),
             View::Section(p) | View::Folder(p, _) | View::Steps(p) => section_name(&self.providers[*p].label).to_lowercase(),
             View::About => "about".into(),
             View::Models => "model".into(),
@@ -4921,6 +5173,23 @@ impl App {
                     Page::Form(Form::RenameCategory(_)) => "rename category".into(),
                     Page::Form(Form::AddMapping) => "add mapping".into(),
                 }
+            }
+            View::Dest(d) if *d == WORKSPACE_DEST => {
+                // a form says what it is for, a heading shown alone says which, else what the place holds now
+                if let Mode::Ask { step, .. } = &self.mode {
+                    match step.call.name.as_str() {
+                        "layout_save" => return "save layout".into(),
+                        "layout_rename" => return "rename layout".into(),
+                        _ => {}
+                    }
+                }
+                self.workspace_filter_words().unwrap_or_else(|| {
+                    self.providers
+                        .iter()
+                        .find(|p| p.label == "window" && p.dead.is_none())
+                        .map(|p| p.title.clone())
+                        .unwrap_or_else(|| "no desktop".into())
+                })
             }
             View::Section(p) => self.providers[*p].title.clone(),
             View::Folder(..) => {
@@ -5011,6 +5280,13 @@ impl App {
             Mode::Confirm(s) => {
                 let mut v = vec![(format!("type yes to {}", s.line), false)];
                 v.extend(esc("Keep"));
+                return v;
+            }
+            Mode::Ask { .. } if self.layout_form() => {
+                // a form says what to type in the prompt's placeholder, and Enter saves (dialog/DESIGN.md)
+                let mut v = key("Cancel", "Esc");
+                v.push(gap());
+                v.extend(key("Save", "Enter"));
                 return v;
             }
             Mode::Ask { step, field, masked } => {
@@ -5111,7 +5387,13 @@ impl App {
         // the key bar is the view's: what Esc does, then the keys any row of the view takes. Enter has no chip:
         // it opens what the bar is on, everywhere. The bar never changes for the row lit or the words typed, so
         // a label stands still under a moving pointer
-        let back = if self.came_from.is_empty() { "Close" } else { "Back" };
+        let back = if self.view == View::Dest(WORKSPACE_DEST) && self.ws_filter.is_some() {
+            "All windows"
+        } else if self.came_from.is_empty() {
+            "Close"
+        } else {
+            "Back"
+        };
         let mut v = vec![(format!("{} ", back), false), ("Esc".to_string(), true)];
         let add = |v: &mut Vec<(String, bool)>, w: &str, k: &str| {
             v.push(gap());

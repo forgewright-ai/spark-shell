@@ -593,10 +593,8 @@ fn an_objects_row_is_selected_by_a_click_and_acts_on_a_second_while_a_menus_row_
         app.reply.is_none() && app.running.is_none() && app.mode == Mode::Normal,
         "a slow second click selects again"
     );
-    assert!(
-        app.object_pick(terminal) && app.object_pick(0),
-        "a window is an object, and so is a saved layout"
-    );
+    assert!(app.object_pick(terminal), "a window is an object");
+    assert!(!app.object_pick(0), "tabs is a menu's row among them: one click acts");
     app.view = View::Section(1);
     assert!(!app.object_pick(tray), "a control among a section's rows is a menu's row");
 }

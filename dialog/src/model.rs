@@ -14,6 +14,10 @@ pub struct Call {
     pub said: Option<String>,
     /// The argument a folder picked in the files fills before the call (a move's "to").
     pub pick: Option<String>,
+    /// What a step that opens a list has now, shown before its arrow (a window's workspace).
+    pub value: Option<String>,
+    /// The provider's list this step opens to choose from, in place of running.
+    pub children: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -53,6 +57,18 @@ pub struct Row {
     pub key: Option<String>,
     /// The columns a wide list shows in place of `columns` (a file's kind, size, and date with the time: #141).
     pub wide: Option<Vec<String>>,
+    /// The status row's line for this row, where it says more than the row's columns (a window's workspace and placement).
+    pub line: Option<String>,
+    /// The window that was in front: the bar starts on it.
+    pub front: bool,
+    /// A fact, in muted words: it opens nothing.
+    pub muted: bool,
+    /// A choice among choices: a pick goes back to where the list was opened.
+    pub back: bool,
+    /// A row that shows what it holds before its arrow, a choice with a list behind it.
+    pub choice: bool,
+    /// A row that stands only while a model answers, or only while none does.
+    pub when_model: Option<bool>,
 }
 
 impl Row {
@@ -313,6 +329,12 @@ pub fn call(v: &Value) -> Option<Call> {
         ask,
         said,
         pick,
+        value: v.get("value").and_then(Value::as_str).map(scrub).filter(|t| !t.is_empty()),
+        children: v
+            .get("children")
+            .and_then(Value::as_str)
+            .filter(|u| u.starts_with("spark-shell://") && !u.chars().any(char::is_control))
+            .map(str::to_string),
     })
 }
 
@@ -430,6 +452,12 @@ pub fn rows(text: &str) -> Option<Rows> {
                 .get("wide")
                 .and_then(Value::as_array)
                 .map(|a| a.iter().take(6).map(|c| scrub(c.as_str().unwrap_or(""))).collect()),
+            line: r.get("line").and_then(Value::as_str).map(scrub).filter(|l| !l.is_empty()),
+            front: r.get("front").and_then(Value::as_bool).unwrap_or(false),
+            muted: r.get("muted").and_then(Value::as_bool).unwrap_or(false),
+            back: r.get("back").and_then(Value::as_bool).unwrap_or(false),
+            choice: r.get("choice").and_then(Value::as_bool).unwrap_or(false),
+            when_model: r.get("when_model").and_then(Value::as_bool),
         })
         .collect();
     let short = v

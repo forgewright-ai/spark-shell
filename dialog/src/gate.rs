@@ -379,6 +379,8 @@ mod tests {
                 ask: vec![],
                 said: None,
                 pick: None,
+                value: None,
+                children: None,
             }),
             more: vec![],
             columns: vec![],
@@ -397,6 +399,12 @@ mod tests {
             film: None,
             key: None,
             wide: None,
+            line: None,
+            front: false,
+            muted: false,
+            back: false,
+            choice: false,
+            when_model: None,
         };
         (
             vec![tool("wifi_connect", s), tool("out_level", lv)],
@@ -420,6 +428,8 @@ mod tests {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         };
         assert_eq!(step(&t, &r, &c).unwrap_err(), "this is not offered here now");
     }
@@ -433,6 +443,8 @@ mod tests {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         };
         assert_eq!(step(&t, &r, &c).unwrap_err(), "it takes no x");
         let c = Call {
@@ -441,6 +453,8 @@ mod tests {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         };
         assert_eq!(step(&t, &r, &c).unwrap_err(), "300 is not a level it takes");
         let c = Call {
@@ -449,6 +463,8 @@ mod tests {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         };
         assert_eq!(step(&t, &r, &c).unwrap_err(), "it needs a level");
     }
@@ -462,6 +478,8 @@ mod tests {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         };
         assert!(step(&t, &r, &ok).is_ok(), "the password is not part of the match");
         let no = Call {
@@ -470,6 +488,8 @@ mod tests {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         };
         assert_eq!(step(&t, &r, &no).unwrap_err(), "evil twin is not in the list now");
         let free = Call {
@@ -478,6 +498,8 @@ mod tests {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         };
         assert!(step(&t, &r, &free).is_ok(), "a level names no row");
     }
@@ -506,6 +528,8 @@ mod tests {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         };
         assert!(step(&tools, &r, &named("gruvbox-dark")).is_ok(), "the one in use");
         assert!(step(&tools, &r, &named("nord")).is_ok(), "a listed one");
@@ -535,6 +559,8 @@ mod tests {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         };
         assert!(step(&tools, &r, &c).is_ok(), "25 is the schema's to hold, not the rows'");
         let bad = Call {
@@ -543,6 +569,8 @@ mod tests {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         };
         assert_eq!(step(&tools, &r, &bad).unwrap_err(), "200 is not a level it takes", "the schema still holds it");
     }
@@ -566,6 +594,8 @@ mod tests {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         };
         assert!(step(&tools, &r, &c).is_ok(), "the save row asks for its name, so a typed one is free");
     }
@@ -611,6 +641,8 @@ mod path_tests {
             ask: vec![],
             said: None,
             pick: Some("to".into()),
+            value: None,
+            children: None,
         };
         let rows = Rows {
             title: "~".into(),
@@ -638,6 +670,12 @@ mod path_tests {
                 film: None,
                 key: None,
                 wide: None,
+                line: None,
+                front: false,
+                muted: false,
+                back: false,
+                choice: false,
+                when_model: None,
             }],
             short: vec![],
             look_back: None,
@@ -648,6 +686,8 @@ mod path_tests {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         };
         assert!(step(&tools, &rows, &step_with("/h/a.txt", "/h")).is_ok(), "a row's path, and the folder itself");
         assert_eq!(

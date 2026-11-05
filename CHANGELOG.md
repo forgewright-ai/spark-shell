@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.126
+
+Workspace, the third place of home, is one list: where every window is,
+the layouts, and what you can do to them.
+
+- The windows stand under a heading per workspace, `workspace 2` and the
+  bar's symbol, the number being the key and the symbol what the bar
+  shows; `this one` says which workspace you are on, a layout's name and
+  the screen follow where there is one. A row is the app and its title,
+  lowercase; foot reads foot. The bar starts on the window that was in
+  front. The header says how many windows there are.
+- A heading is the filter, as apps' categories are: a click shows it
+  alone, the header reads `workspace . 2`, and Esc shows all again.
+- The status row says the selected window's app, title, workspace and
+  placement. At 120 cells the placement and a layout's reason are
+  columns.
+- A window's page, behind the right arrow: put in front, move to
+  workspace and placement, each a list that checks the one in use,
+  capture this window, and close. A move leaves you where you are.
+  Placement is tiled, floating, full screen or a half of the screen, by
+  the window's ID where the keys take the one in focus. Each change is
+  said on the status row with undo.
+- `arrange windows` is one row: side by side, tabs or stacked, on this
+  workspace now and on every new workspace. Its value is read from the
+  workspace you are on, so it no longer goes stale after Super+w, and
+  undo puts back the workspace and the default. A failure is said; it
+  was ignored.
+- A layout's row shows its apps. Delete and rename carry undo, and
+  delete takes no typed yes, from a row or from a step spark plans.
+  `save this workspace` keeps how the windows stand, and a layout opens
+  that way again. `also open` has a heading of its own.
+- Capture steps the dialog aside and brings it back, with the file's
+  name on the status row, or the reason there is none: the dialog closed
+  first, so both were lost. `capture a window`, which took the window
+  in front, is `capture this window` on any window's page.
+- Only a window's row and a layout's are selected first; capture,
+  arrange, save and `also open` act on one click, as a menu's rows do.
+- With no sway the place says `no desktop`, has the layouts alone, and
+  a layout's line says it opens in tmux.
+- `tests/workspace_desktop_proof.py` moves, places, arranges and
+  captures real windows on a headless sway.
+
 ## v0.125.1
 
 - Space checks a file or a folder for several files' operations, and P

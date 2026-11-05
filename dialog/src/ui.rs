@@ -552,7 +552,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
     let n = 2;
     let top = cr.saturating_sub(n - 1).min(rows.len().saturating_sub(n));
     drawn.prompt = (PROMPT_Y, PROMPT_Y + n as u16 - 1);
-    if app.input.is_empty() && app.mode == Mode::Normal {
+    if app.input.is_empty() && (app.mode == Mode::Normal || app.layout_form()) {
         pen.put(tx, PROMPT_Y, app.placeholder(), pal.muted, false, false);
     } else {
         for (k, r) in rows.iter().skip(top).take(n).enumerate() {
@@ -933,6 +933,9 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         Item::Text(t, muted) => {
             pen.put(2, y, t, if *muted { pal.muted } else { pal.fg }, false, false);
         }
+        Item::Note(t) => {
+            pen.put(4, y, t, pal.muted, false, false);
+        }
         Item::Model(i) => {
             let (n, st) = &app.models[*i];
             let (g, c, said) = match st.as_str() {
@@ -1026,6 +1029,13 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             // one of a row's steps, in the provider's words: a row of its own, no sign
             if let Some(c) = app.steps_row.as_ref().and_then(|r| r.tool.iter().chain(r.more.iter()).nth(*k)) {
                 pen.put(4, y, &app.step_words(c), pal.fg, false, lit);
+                if c.children.is_some() {
+                    // a choice: what it has now, then the arrow that says a list opens
+                    let end = pen.end(y).saturating_sub(2);
+                    let v = c.value.as_deref().unwrap_or("");
+                    pen.put(end.saturating_sub(cells(v) as u16 + 2), y, v, pal.muted, false, lit);
+                    pen.put(end.saturating_sub(1), y, MORE, pal.muted, false, lit);
+                }
             }
         }
         Item::Here => {
@@ -1533,6 +1543,12 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
                 drawn.heads.push((line.indent, line.indent + cells(&line.label) as u16, y, line.label.clone()));
             }
         }
+        // a heading of the workspace place is one too
+        if let Item::Heading(h) = it {
+            if app.view == View::Dest(crate::app::WORKSPACE_DEST) {
+                drawn.heads.push((2, 2 + cells(h) as u16, y, h.clone()));
+            }
+        }
         let chips = row_of(app, it).is_some_and(|r| chip_groups.contains(&r.group));
         let (w, r) = cols_at(k);
         // a value's arrows take a click, each with a cell of air on either side so it is easy to hit (#175)
@@ -1838,7 +1854,7 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
     } else {
         cut(&row.text, cap)
     };
-    let mut x = pen.put(tx, y, &name, pal.fg, false, lit);
+    let mut x = pen.put(tx, y, &name, if row.muted { pal.muted } else { pal.fg }, false, lit);
     let name_end = tx + widths.first().copied().unwrap_or(0) as u16;
     // a control's last cell is where the rows' arrows stand
     let end = pen.end(y).saturating_sub(2);
@@ -1868,7 +1884,7 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
         pen.put(x0 + 2, y, word, wc, false, lit);
         return None;
     }
-    if controls && row.children.is_some() && !columns.is_empty() {
+    if (controls || row.choice) && row.children.is_some() && !columns.is_empty() {
         // a choice among settings: its name, then its arrow where the rows' arrows stand (#183)
         let v = cut(&columns[0], 16);
         pen.put(end.saturating_sub(cells(&v) as u16 + 2), y, &v, pal.muted, false, lit);

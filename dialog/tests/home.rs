@@ -359,6 +359,8 @@ fn conversation_shows_the_answer_once_and_keeps_other_feedback() {
             ask: vec![],
             said: None,
             pick: None,
+            value: None,
+            children: None,
         },
         who: Who::Undo,
         line: "undo".into(),

@@ -197,14 +197,14 @@ case ${1:-} in
             get_tree) echo tree >> "${log%.log}.trees"   # each count of the windows, for the tests that say none is polled
                 ws=$(grep -n '^workspace number' "$log" 2>/dev/null | tail -1); from=${ws%%:*}; num=${ws##* }; [ -n "$from" ] || { from=0; num=3; }
                 n=$({ if [ "$from" -gt 0 ]; then sed "1,${from}d" "$log"; else cat "$log"; fi; } 2>/dev/null | grep '^exec' | grep -vc 'exec gone' || :); [ -n "$n" ] || n=0; i=0
-                printf '{"type":"root","nodes":[{"type":"workspace","num":%s,"fullscreen_mode":0,"nodes":[' "$num"
+                printf '{"type":"root","nodes":[{"type":"output","name":"DP-1","nodes":[{"type":"workspace","name":"%s","num":%s,"focused":true,"fullscreen_mode":0,"nodes":[' "$num" "$num"
                 # with $HOME/fullscreen: a fullscreen window (77) on the workspace, and the panel floating under it with the pid the test wrote
                 [ ! -e "$HOME/aerc" ] || { printf '{"type":"con","id":79,"pid":300,"app_id":"foot","name":"aerc"}'; { [ -e "$HOME/fullscreen" ] || [ "$n" -gt 0 ]; } && printf ','; }   # a terminal running aerc
                 [ ! -e "$HOME/fullscreen" ] || { printf '{"type":"con","id":77,"pid":200,"app_id":"firefox","fullscreen_mode":1}'; [ "$n" -eq 0 ] || printf ','; }
                 while [ "$i" -lt "$n" ]; do [ "$i" -eq 0 ] || printf ','; printf '{"type":"con","pid":%d,"id":%d}' $((100 + i)) $((1000 + i)); i=$((i + 1)); done
                 printf ']'
                 [ ! -e "$HOME/fullscreen" ] || printf ',"floating_nodes":[{"type":"floating_con","id":78,"app_id":"spark-dialog","pid":%s,"fullscreen_mode":0}]' "$(cat "$HOME/panel.ppid" 2>/dev/null || echo 1)"
-                echo '}]}' ;;
+                echo '}]}]}' ;;
         esac ;;
     --) shift; echo "$*" >> "$log"
         case "$*" in '[con_id=77] kill') rm -f "$HOME/fullscreen" ;; '[con_id=79] kill') rm -f "$HOME/aerc" ;; esac ;;
@@ -1482,7 +1482,7 @@ EOF
     # the old Super+d spelling: the panel with the layouts first; no terminal, so the list as text
     : > "$swlog"; SEP=$(printf '\302\267'); GO=$(printf '\342\226\270')
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" layout --ask </dev/null 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | sed -n 1p)" = "layout     none saved yet" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  layout     none saved yet: say what you want to do at the prompt	layout show" ] && [ ! -s "$swlog" ] \
+    [ "$st" -eq 0 ] && [ "$(printf '%s\n' "$out" | sed -n 1p)" = "layout     none saved yet" ] && [ "$(printf '%s\n' "$out" | sed -n 2p)" = "  layout     none saved: ask at the prompt or save this workspace	layout show" ] && [ ! -s "$swlog" ] \
         && ok "layout --ask: the panel with the layouts first, as text without a terminal; nothing played" || bad "ask form" "st=$st $out $(head -2 "$swlog")"
     printf '%s' "$out" | grep -q "$(printf '\033')" && bad "the pulse reached a pipe" "unexpected escape byte" || ok "no pulse on a pipe (a tty only, like spark's)"
     # keep, list, replay, status, forget
@@ -1526,7 +1526,7 @@ EOF
     # a new name for a saved layout, made as a save makes one; its lines in the history follow it (#54)
     kh=${XDG_STATE_HOME:-$HOME/.local/state}/spark-shell/layout.history; mkdir -p "$(dirname "$kh")"; printf '%s\tstudio\n' "$(date +%s)" >> "$kh"
     out=$(sh "$SH" layout rename studio Photo Studio)
-    [ "$out" = "studio is photo-studio now -- spark-shell layout photo-studio opens it" ] && [ -f "$desks/photo-studio" ] && [ ! -e "$desks/studio" ] \
+    [ "$out" = "studio renamed to photo-studio" ] && [ -f "$desks/photo-studio" ] && [ ! -e "$desks/studio" ] \
         && grep -q '	photo-studio$' "$kh" && ! grep -q '	studio$' "$kh" \
         && ok "layout rename NAME NEW: the file and its history lines under the new name, said in one line (#54)" || bad "rename" "$out $(ls "$desks") $(cat "$kh")"
     st=0; out=$(sh "$SH" layout rename studio x 2>&1) || st=$?
@@ -3037,9 +3037,17 @@ _wr=$(printf 'firefox: Claude Code \342\200\224 Mozilla Firefox\t12\n~/projects\
 [ "$_wr" = "$(printf 'firefox\t12\tClaude Code\n~/projects\t13\t\nmicro\t14\tnotes.md\nzen\t15\ta/b: c')" ] \
     && ok "window rows: the app, its ID, then the title with the app's name off its end, a bar in a title kept out of the row's fields (#144)" || bad "win_rows" "$_wr"
 rm -f "$HOME/swaymsg.log"
-rc=0; out=$(SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel window capture area 2>&1) || rc=$?
-[ "$rc" = 0 ] && [ "$out" = 'capture: the area, in ~/pictures/screenshots' ] && grep -qx -- "-- exec $REPO/spark-shell desktop capture area --wait 1" "$HOME/swaymsg.log" \
-    && ok "the dialog: capture runs through sway a second later, after the dialog closes" || bad "capture from the dialog" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
+rm -f "$HOME/slurp-none"
+rc=0; out=$(WAYLAND_DISPLAY=wayland-1 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel window capture area 2>&1) || rc=$?
+_aside=$(grep -n 'move scratchpad' "$HOME/swaymsg.log" | cut -d: -f1); _again=$(grep -n 'scratchpad show' "$HOME/swaymsg.log" | cut -d: -f1)
+case $out in 2026-10-19-*.png*'on the clipboard') _named=1 ;; *) _named='' ;; esac
+[ "$rc" = 0 ] && [ -n "$_named" ] && [ -n "$_aside" ] && [ -n "$_again" ] && [ "$_aside" -lt "$_again" ] \
+    && ok "the dialog: a capture steps the dialog aside, takes the picture, brings it back, and says the file's name" || bad "capture from the dialog" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
+touch "$HOME/slurp-none"; rm -f "$HOME/swaymsg.log"
+rc=0; out=$(WAYLAND_DISPLAY=wayland-1 SWAYSOCK=$H/sock PATH="$H/lx:$PATH" sh "$SH" bar panel window capture area 2>&1) || rc=$?
+rm -f "$HOME/slurp-none"
+[ "$rc" != 0 ] && [ "$out" = 'no area picked: nothing captured' ] && grep -q 'scratchpad show' "$HOME/swaymsg.log" \
+    && ok "the dialog: a capture refused comes back too, with its reason on the status row" || bad "capture refused" "rc=$rc $out $(cat "$HOME/swaymsg.log" 2>&1)"
 rm -f "$H/lx/swaylock" "$H/lx/pgrep" "$H/lx/grim" "$H/lx/slurp" "$H/lx/wl-copy" "$H/lx/swaymsg" "$H/lx/date"
 
 # the display, the keyboard, the screens and the brightness: the renders
@@ -4324,7 +4332,7 @@ STUB
         && ok "panel bar text auto: with no sway to ask, the text size (13)" || bad "bar text auto" "st=$st $out $(grep -n font "$sway")"
     # the windows: how new ones sit, this workspace now and the default for new ones
     rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window tabs 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'windows tabs' ] && grep -q '^WINDOWS=tabs$' "$HOME/.config/spark-shell/config" && grep -q '^workspace_layout tabbed$' "$sway" && grep -qxF '[workspace=__focused__ tiling] layout tabbed' "$H/.local/state/swaymsg.log" \
+    [ "$st" -eq 0 ] && [ "$out" = 'windows in tabs' ] && grep -q '^WINDOWS=tabs$' "$HOME/.config/spark-shell/config" && grep -q '^workspace_layout tabbed$' "$sway" && grep -qxF '[workspace=__focused__ tiling] layout tabbed' "$H/.local/state/swaymsg.log" \
         && [ "$(sh "$SH" panel window --list | sed -n 1p)" = "window     tabs" ] && sh "$SH" panel window --list | grep -q "^$TICK window     tabs	window show$" && sh "$SH" panel window --list | grep -q "^  window     side by side	window split$" && sh "$SH" panel --list | grep -q "^  undo       windows side by side	undo all$" \
         && ok "panel window tabs: WINDOWS=tabs, workspace_layout tabbed rendered, this workspace's tiling windows in tabs now, the rows and the undo say it" || bad "window tabs" "st=$st $out $(grep -n 'workspace_layout' "$sway"; cat "$H/.local/state/swaymsg.log"; sh "$SH" panel window --list)"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window split 2>&1) || st=$?
@@ -4344,13 +4352,13 @@ STUB
     [ "$st" -eq 0 ] && [ "$out" = 'firefox closed' ] && grep -qxF '[con_id=77] kill' "$H/.local/state/swaymsg.log" && ! grep -q 'app_id=firefox\] kill' "$H/.local/state/swaymsg.log" && ! sh "$SH" panel --list | grep -q 'undo.*firefox' \
         && ok "panel window close firefox: that one window, by its id, is told to close; no undo row for it" || bad "window close" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
     rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window close aerc 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'aerc closed' ] && grep -qxF '[con_id=79] kill' "$H/.local/state/swaymsg.log" && ! grep -q 'foot' "$H/.local/state/swaymsg.log" \
+    [ "$st" -eq 0 ] && [ "$out" = 'foot closed' ] && grep -qxF '[con_id=79] kill' "$H/.local/state/swaymsg.log" && ! grep -q 'foot' "$H/.local/state/swaymsg.log" \
         && ok "panel window close aerc: a terminal window goes by what runs in it, and only that terminal is told to close" || bad "window close aerc" "st=$st $out $(cat "$H/.local/state/swaymsg.log" 2>&1)"
     touch "$HOME/aerc"; rm -f "$H/.local/state/swaymsg.log"; st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel apps close aerc 2>&1) || st=$?
-    [ "$st" -eq 0 ] && [ "$out" = 'aerc closed' ] && grep -qxF '[con_id=79] kill' "$H/.local/state/swaymsg.log" && ok "panel apps close NAME: read as window close, the way spark tends to say it" || bad "apps close" "st=$st $out"
+    [ "$st" -eq 0 ] && [ "$out" = 'foot closed' ] && grep -qxF '[con_id=79] kill' "$H/.local/state/swaymsg.log" && ok "panel apps close NAME: read as window close, the way spark tends to say it" || bad "apps close" "st=$st $out"
     touch "$HOME/fullscreen" "$HOME/aerc"; SWAYSOCK=/tmp/x sh "$SH" panel window --list > "$H/win.list"
-    grep -q "^$(printf '\342\226\270') window     firefox	window focus 77$" "$H/win.list" && grep -q "^  window     close firefox	window close 77$" "$H/win.list" && grep -q "^$(printf '\342\226\270') window     aerc	window focus 79$" "$H/win.list" && ! grep -q 'spark-dialog\|window     foot' "$H/win.list" \
-        && ok "panel window --list: each open window by its name is a row that puts it in front, and a close row; the terminal by what runs in it; the panel's own window not listed" || bad "window rows" "$(cat "$H/win.list")"
+    grep -q "^$(printf '\342\226\270') window     firefox	window focus 77$" "$H/win.list" && grep -q "^  window     close firefox	window close 77$" "$H/win.list" && grep -q "^$(printf '\342\226\270') window     foot	window focus 79$" "$H/win.list" && ! grep -q 'spark-dialog' "$H/win.list" \
+        && ok "panel window --list: each open window by its name is a row that puts it in front, and a close row; a terminal as foot; the panel's own window not listed" || bad "window rows" "$(cat "$H/win.list")"
     st=0; out=$(SWAYSOCK=/tmp/x sh "$SH" panel window close nothing 2>&1) || st=$?
     [ "$st" -eq 1 ] && [ "$out" = 'spark-shell panel: window: no unique window named nothing is open; select it in Workspace' ] && ok "panel window close NAME: a window that is not open is refused" || bad "window close refuse" "st=$st $out"
     # a close as the dialog makes it, the rows read first: the windows read once for the call (its check, its name, the
@@ -4559,8 +4567,8 @@ for _mf in "$REPO"/wallpaper/motion/*; do _mn=${_mf##*/}; case $_mn in *.py) wal
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 139 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 139 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 143 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 143 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -4666,10 +4674,10 @@ mcp theme "$(rq 1 initialize '{"protocolVersion":"2025-06-18","capabilities":{},
 jq -e -s 'all(.[]; (.name | test("^[a-z][a-z0-9_]{0,63}$")) and (.title | test("^[a-z][a-z-]*( [a-z-]+| [A-Z]+)*$")) and (.title | length) <= 60)' "$H/tools.all" >/dev/null \
     && ok "provide: every tool name is lower case with underscores, every title a sentence of plain words with its argument in capitals, 60 at most" || bad "tool shapes" "$(jq -r '.name + " | " + .title' "$H/tools.all")"
 jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.destructiveHint | type) == "boolean" and (.idempotentHint | type) == "boolean" and .openWorldHint == false)' "$H/tools.all" >/dev/null \
-    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove files_empty files_purge layout_delete power_logout power_restart power_shutdown printers_cancel theme_delete wifi_forget wifi_setup window_close' ] \
+    && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove files_empty files_purge power_logout power_restart power_shutdown printers_cancel theme_delete wifi_forget wifi_setup window_close' ] \
     && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find about_open files_show files_attach files_find files_say' ] \
     && ok "provide: every hint spelled out (the spec's default is destructive); destructive only where something is lost (#112): forget, close, remove, delete, delete for good and empty the trash (#130), the power steps, a print job cancelled, the network manager installed; the network, clock and printer settings carry undo instead; read only: notes find, about, files show, attach, find and say" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
-[ "$(jq -r 'select(._meta["spark-shell/opens"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'apps_open apps_terminal files_browse files_open files_reveal notes_open power_lock power_suspend storage_open window_capture window_focus' ] \
+[ "$(jq -r 'select(._meta["spark-shell/opens"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'apps_open apps_terminal files_browse files_open files_reveal notes_open power_lock power_suspend storage_open window_focus' ] \
     && [ "$(jq -s '[.[] | select(._meta != null and ._meta != {"spark-shell/opens": true})] | length' "$H/tools.all")" = 0 ] \
     && ok "provide: the tools that put a window in front say so (_meta spark-shell/opens), so the dialog steps aside at the click (#196); no other tool carries _meta" || bad "tool opens" "$(jq -c 'select(._meta) | [.name, ._meta]' "$H/tools.all")"
 jq -e -s 'all(.[]; .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .outputSchema.type == "object")' "$H/tools.all" >/dev/null \
@@ -4726,8 +4734,70 @@ mcp layout "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(c
 [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'saved three: firefox, sleep, shell' ] \
     && [ "$(jq -c 'del(.why)' "$HOME/.config/spark-shell/layouts/three")" = '{"words":"three","main":{"app":"firefox"},"side":[{"app":"sleep"},{"app":"shell"}]}' ] \
     && ok "provide layout_save: three windows saved as a layout knows them (Firefox is firefox, a terminal by the program in it, a shell when none), the dialog left out (#196)" || bad "layout save windows" "$(ans 2) $(cat "$HOME/.config/spark-shell/layouts/three" 2>&1)"
-rm -f "$HOME/ls.tree" "$H/ls/ps" "$HOME/.config/spark-shell/layouts/three"   # the layouts after it are webdev alone
+rm -f "$HOME/.config/spark-shell/layouts/three"
+# the workspace place: four windows on two workspaces and two screens, one in the scratchpad, the dialog over them
+cat > "$HOME/ls.tree" <<'EOF'
+{"type":"root","nodes":[{"type":"output","name":"__i3","nodes":[{"type":"workspace","name":"__i3_scratch","num":-1,"nodes":[],"floating_nodes":[{"id":99,"type":"floating_con","pid":9,"app_id":"xterm","name":"hidden"}]}]},
+{"type":"output","name":"HDMI-A-1","nodes":[{"type":"workspace","id":10,"name":"1:s","num":1,"layout":"splith","focus":[11,12],"nodes":[{"id":11,"type":"con","pid":1,"app_id":"org.mozilla.firefox","name":"Claude Code \u2014 Mozilla Firefox","nodes":[],"floating_nodes":[]},{"id":12,"type":"con","pid":2,"app_id":"foot","name":"~/projects","nodes":[],"floating_nodes":[]}],"floating_nodes":[]}]},
+{"type":"output","name":"eDP-1","nodes":[{"type":"workspace","id":20,"name":"2:t writing","num":2,"layout":"tabbed","rect":{"x":0,"y":0,"width":1920,"height":1080},"focus":[30,21,22],"nodes":[{"id":21,"type":"con","pid":3,"app_id":"foot","name":"btop","nodes":[],"floating_nodes":[]}],"floating_nodes":[{"id":22,"type":"floating_con","pid":4,"app_id":"chromium","name":"invoice.pdf","nodes":[],"floating_nodes":[]},{"id":30,"type":"floating_con","pid":5,"app_id":"spark-dialog","focused":true,"name":"dialog","nodes":[],"floating_nodes":[]}]}]}]}
+EOF
+cat > "$H/ls/swaymsg" <<'EOF'
+#!/bin/sh
+case "$*" in "-t get_version") echo '{"human_readable":"sway-stub"}' ;; "-t get_tree") cat "$HOME/ls.tree" ;; *) echo "$*" >> "$HOME/ls.log"; echo '[{"success":true}]' ;; esac
+EOF
+printf '#!/bin/sh\necho Linux\n' > "$H/ls/uname"; chmod +x "$H/ls/uname"   # a window is placed on Linux alone
+_d=$(printf '\302\267'); : > "$HOME/ls.log"
+mcp window "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 21 resources/read '{"uri":"spark-shell://window/rows"}')" "$(rq 22 resources/read '{"uri":"spark-shell://window/rows/arrange"}')" "$(rq 23 resources/read '{"uri":"spark-shell://window/rows/move/21"}')" "$(rq 24 resources/read '{"uri":"spark-shell://window/rows/place/22"}')" \
+    "$(call 5 window_move '{"name":"21","to":"3"}')" "$(call 6 window_place '{"name":"21","how":"floating"}')" "$(call 7 window_stacked)" "$(call 8 window_restore '{"to":"split","now":"tabs"}')" "$(call 9 window_move '{"name":"77","to":"3"}')" "$(call 10 window_place '{"name":"21","how":"left"}')"
+_w=$(ans 21 | jq -r '.result.contents[0].text')
+[ "$(printf '%s' "$_w" | jq -r .state)" = '4 windows' ] \
+    && [ "$(printf '%s' "$_w" | jq -c '[.rows[] | select(.tool.name == "window_focus") | [.text, .columns[0]]]')" = '[["firefox","Claude Code"],["foot","~/projects"],["foot","btop"],["chromium","invoice.pdf"]]' ] \
+    && [ "$(printf '%s' "$_w" | jq -r '[.rows[] | select(.group != null) | .group] | unique | join("/")')" = "workspace 1 s $_d HDMI-A-1/workspace 2 t $_d writing $_d this one $_d eDP-1" ] \
+    && [ "$(printf '%s' "$_w" | jq -r '.rows[] | select(.front == true) | .id')" = 'window:focus 21' ] \
+    && [ "$(printf '%s' "$_w" | jq -r '.rows[] | select(.id == "window:focus 22") | .line')" = "chromium $_d invoice.pdf $_d workspace 2 $_d floating" ] \
+    && [ "$(printf '%s' "$_w" | jq -c '.rows[] | select(.id == "window:focus 22") | .wide')" = '["invoice.pdf","floating"]' ] \
+    && [ "$(printf '%s' "$_w" | jq -c '[.rows[] | select(.tool.name == "window_capture") | [.text, .key]]')" = '[["capture the screen","Print"],["capture an area","Shift+Print"]]' ] \
+    && [ "$(printf '%s' "$_w" | jq -c '.rows[] | select(.id == "window:arrange") | [.columns[0], .children, .choice]')" = '["tabs","spark-shell://window/rows/arrange",true]' ] \
+    && [ "$(printf '%s' "$_w" | jq -c '[.rows[] | select(.id == "window:focus 21") | .tool.said, (.more[] | .said)]')" = '["put in front","move to workspace","placement","capture this window","close"]' ] \
+    && [ "$(printf '%s' "$_w" | jq -c '.rows[] | select(.id == "window:focus 21") | [.more[0].value, .more[1].value]')" = '["2","tiled"]' ] \
+    && ok "provide window rows: a heading per workspace, the app and its title, the window in front marked, the status line, placement wide, the two captures, arrange with what this workspace has; the scratchpad and the dialog left out" || bad "workspace rows" "$_w"
+ans 22 | jq -r '.result.contents[0].text' > "$H/ws.arrange"; ans 23 | jq -r '.result.contents[0].text' > "$H/ws.move"; ans 24 | jq -r '.result.contents[0].text' > "$H/ws.place"
+[ "$(jq -c '[.rows[] | [.text, .sign, .key, (.tool.name // "")]]' "$H/ws.arrange")" = '[["side by side","blank","Super+e","window_split"],["tabs","check","Super+w",""],["stacked","blank","Super+Shift+s","window_stacked"],["this workspace now, and every new workspace","blank",null,""]]' ] \
+    && [ "$(jq -r .title "$H/ws.move")" = foot ] && [ "$(jq -c '[.rows[] | select(.sign == "check") | .text]' "$H/ws.move")" = '["2 t"]' ] && [ "$(jq -c '.rows[0].columns' "$H/ws.move")" = '["firefox, foot"]' ] \
+    && [ "$(jq -c '.rows[2] | [.columns, .tool.arguments]' "$H/ws.move")" = '[["empty"],{"name":"21","to":"3"}]' ] && [ "$(jq '[.rows[] | select(.back)] | length' "$H/ws.move")" = 10 ] \
+    && [ "$(jq -c '[.rows[] | .text]' "$H/ws.place")" = '["tiled","floating","full screen","left half","right half","top half","bottom half"]' ] && [ "$(jq -c '[.rows[] | select(.sign == "check") | .text]' "$H/ws.place")" = '["floating"]' ] \
+    && ok "provide window pickers: arrange with its keys and its note, move to workspace with what each holds, placement with the one in use checked, each pick going back" || bad "workspace pickers" "$(cat "$H/ws.arrange" "$H/ws.move" "$H/ws.place")"
+[ "$(ans 5 | jq -r '.result.structuredContent.receipt')" = 'foot moved to workspace 3' ] && [ "$(ans 5 | jq -c '.result.structuredContent.undo')" = '{"name":"window_move","arguments":{"name":"21","to":"2"}}' ] && grep -qx -- '-- \[con_id=21\] move container to workspace number 3' "$HOME/ls.log" \
+    && [ "$(ans 6 | jq -r '.result.structuredContent.receipt')" = 'foot floating' ] && [ "$(ans 6 | jq -c '.result.structuredContent.undo')" = '{"name":"window_place","arguments":{"name":"21","how":"tiled"}}' ] \
+    && [ "$(ans 7 | jq -r '.result.structuredContent.receipt')" = 'windows stacked' ] && [ "$(ans 7 | jq -c '.result.structuredContent.undo')" = '{"name":"window_restore","arguments":{"to":"split","now":"tabs"}}' ] \
+    && [ "$(ans 8 | jq -r '.result.structuredContent.receipt')" = 'windows in tabs' ] && [ "$(ans 8 | jq -c '.result.structuredContent.undo')" = null ] && grep -qx -- '-- \[workspace=__focused__ tiling\] layout tabbed' "$HOME/ls.log" \
+    && [ "$(ans 9 | jq -r '.result.content[0].text')" = 'that window is no longer open' ] \
+    && [ "$(ans 10 | jq -r '.result.structuredContent.receipt')" = 'foot on the left half' ] \
+    && ok "provide window steps: move and place by the window's ID, each with its undo; arrange undone puts back the default and this workspace; a window gone is said" || bad "workspace steps" "$(cut -c1-300 "$H/mcp.out") $(cat "$HOME/ls.log")"
+sed -i.bak '/^WINDOWS=/d' "$HOME/.config/spark-shell/config" 2>/dev/null; rm -f "$HOME/.config/spark-shell/config.bak"
+# a layout's delete and rename carry undo, and a save keeps how the workspace stands
+printf '{"words":"writing","why":"saved 4 Nov 2026","main":{"app":"foot"},"side":[{"app":"firefox"}]}\n' > "$HOME/.config/spark-shell/layouts/writing"
+mcp layout "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 9 tools/list)" "$(rq 21 resources/read '{"uri":"spark-shell://layout/rows"}')" "$(call 2 layout_rename '{"name":"writing","to":"drafting"}')" "$(call 3 layout_delete '{"name":"drafting"}')" "$(call 4 layout_restore '{"name":"drafting"}')" "$(call 5 layout_rename '{"name":"drafting","to":"webdev"}')" "$(call 6 layout_save '{"name":"tabbed"}')"
+_l=$(ans 21 | jq -r '.result.contents[0].text')
+ans 9 | jq -e '.result.tools[] | select(.name == "layout_delete") | .annotations.destructiveHint == false' >/dev/null \
+    && [ "$(printf '%s' "$_l" | jq -c '.rows[] | select(.text == "writing") | [.group, .columns, .wide, .line, .tool.said, .tool.ask]')" = "[\"layouts\",[\"foot, firefox\"],[\"foot, firefox\",\"saved 4 Nov 2026\"],\"writing $_d foot, firefox $_d saved 4 Nov 2026\",\"open\",null]" ] \
+    && [ "$(printf '%s' "$_l" | jq -c '.rows[] | select(.id == "layout:save") | [.text, .tool.ask]')" = '["save this workspace",["name"]]' ] \
+    && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = 'writing renamed to drafting' ] && [ "$(ans 2 | jq -c '.result.structuredContent.undo')" = '{"name":"layout_rename","arguments":{"name":"drafting","to":"writing"}}' ] \
+    && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = 'deleted drafting' ] && [ "$(ans 3 | jq -c '.result.structuredContent.undo')" = '{"name":"layout_restore","arguments":{"name":"drafting"}}' ] \
+    && [ "$(ans 4 | jq -r '.result.structuredContent.receipt')" = 'drafting is back' ] && [ -f "$HOME/.config/spark-shell/layouts/drafting" ] \
+    && [ "$(ans 5 | jq -r '.result.content[0].text')" = 'spark-shell layout: webdev is a layout already: pick another name' ] \
+    && [ "$(jq -r .arrange "$HOME/.config/spark-shell/layouts/tabbed")" = tabs ] \
+    && ok "provide layout: a row with its apps and its reason, the status line; rename and delete with undo, no typed yes; a save keeps how the workspace stands" || bad "workspace layouts" "$_l $(cut -c1-300 "$H/mcp.out")"
+rm -f "$HOME/.config/spark-shell/layouts/drafting" "$HOME/.config/spark-shell/layouts/tabbed"
+# no sway: the window section says so, and a layout says tmux
 unset SWAYSOCK; PATH=$_lp
+mcp window "$(rq 1 resources/read '{"uri":"spark-shell://window/rows"}')"
+_w=$(ans 1 | jq -r '.result.contents[0].text')
+mcp layout "$(rq 1 resources/read '{"uri":"spark-shell://layout/rows"}')"
+_l=$(ans 1 | jq -r '.result.contents[0].text')
+[ "$(printf '%s' "$_w" | jq -c '[.state, (.rows | length)]')" = '["no desktop",0]' ] && printf '%s' "$_l" | jq -e '.rows[] | select(.text == "webdev") | .line | endswith("opens in tmux")' >/dev/null \
+    && ok "provide with no sway: no desktop, no rows of windows, and a layout says it opens in tmux" || bad "workspace no desktop" "$_w $_l"
+rm -f "$HOME/ls.tree" "$HOME/ls.log" "$H/ls/ps" "$H/ls/uname"   # the layouts after it are webdev alone
 # every palette: the dialog's quiet words read at 4.5 to 1 on its surface, or as its author's own text where that reads lower (#18)
 _cw=''
 for env in "$REPO"/themes/*.env; do
@@ -5287,16 +5357,16 @@ cat > "$H/.local/bin/spark" <<'STUB'
 #!/bin/sh
 case $1 in
     help) echo ' spark steps <words> < TOOLS  the tool calls that do what you say (-h)' ;;
-    steps) cat > /dev/null; printf '{"answer": "", "steps": [{"name": "layout_delete", "arguments": {"name": "work"}}, {"name": "theme_palette", "arguments": {"name": "dracula"}}], "refused": []}\n' ;;
+    steps) cat > /dev/null; printf '{"answer": "", "steps": [{"name": "theme_delete", "arguments": {"name": "work"}}, {"name": "theme_palette", "arguments": {"name": "dracula"}}], "refused": []}\n' ;;
     *) printf '%s\n' "$@" > "$HOME/spark.argv"; cat > "$HOME/spark.stdin"; case "$*" in *--source*) echo 'the notes say to buy bread.' ;; *) echo '{"steps": []}' ;; esac ;;
 esac
 STUB
 chmod +x "$H/.local/bin/spark"
-mkdir -p "$HOME/.config/spark-shell/layouts"; printf '{"words": "work", "why": "a fixture", "main": {"app": "shell"}, "side": []}\n' > "$HOME/.config/spark-shell/layouts/work"
+sh "$SH" theme save work >/dev/null 2>&1; sh "$SH" theme nord >/dev/null 2>&1
 st=0; out=$(echo no | SPARK_SHELL_TEST_TTY=1 sh "$SH" want drop work and go dracula 2>&1) || st=$?; st2=0; out2=$(sh "$SH" want drop work and go dracula </dev/null 2>&1) || st2=$?
 x=$(printf '\342\234\227')
-printf '%s\n' "$out" | grep -q "type yes to layout delete work: $x layout delete work: kept, not done (it takes a typed yes)" && printf '%s\n' "$out" | grep -qx "$x not run, for the step before was not done: theme dracula" \
-    && printf '%s\n' "$out2" | grep -qx "$x layout delete work: kept, not done (it takes a typed yes)" && ! grep -q '^THEME=dracula' "$HOME/.config/spark-shell/config" && [ -e "$HOME/.config/spark-shell/layouts/work" ] \
+printf '%s\n' "$out" | grep -q "type yes to theme delete work: $x theme delete work: kept, not done (it takes a typed yes)" && printf '%s\n' "$out" | grep -qx "$x not run, for the step before was not done: theme dracula" \
+    && printf '%s\n' "$out2" | grep -qx "$x theme delete work: kept, not done (it takes a typed yes)" && ! grep -q '^THEME=dracula' "$HOME/.config/spark-shell/config" \
     && ok "want at the terminal: a risky step (its destructive hint, or this machine's list) asks for yes, and with no terminal is kept; the steps after it are not run" || bad "want risky" "$out | $out2"
 rm -f "$HOME/.config/spark-shell/layouts/work"
 grep -q '^LOCAL_RISK="wifi_forget window_close bt_pair"$' "$SH" && grep -q 'pub const LOCAL_RISK: \[&str; 3\] = \["wifi_forget", "window_close", "bt_pair"\];' "$REPO/dialog/src/app.rs" \
@@ -5347,17 +5417,11 @@ if [ "$(uname -s)" != Darwin ]; then
     mcp wifi "$(rq 1 resources/read '{"uri":"spark-shell://wifi/rows"}')"; ans 1 | jq -r '.result.contents[0].text' > "$H/wifi.rows"
     jq -e '(.rows[] | select(.tool.name == "wifi_connect" and .tool.arguments.name == "cafe") | .tool.ask == ["password"]) and (.rows[] | select(.tool.name == "wifi_connect" and .tool.arguments.name == "open") | .tool.ask == null)' "$H/wifi.rows" >/dev/null \
         && ok "provide wifi rows: a secured network not saved asks its password; an open one asks nothing" || bad "wifi ask" "$(jq -c '.rows[] | .tool' "$H/wifi.rows")"
-    mcp window "$(rq 1 resources/read '{"uri":"spark-shell://window/rows"}')"; ans 1 | jq -r '.result.contents[0].text' > "$H/window.rows"
-    jq -e '[.rows[] | .group] | unique | . - [null] | inside(["layout", "open now"]) and contains(["layout"])' "$H/window.rows" >/dev/null && jq -e 'all(.rows[] | select((.tool.name // "") | test("^window_(focus|close)$")); .group == "open now")' "$H/window.rows" >/dev/null \
-        && jq -e '[.rows[] | select(.tool.name == "window_capture") | .key] == ["Print", "Shift+Print", "Super+Print"] and all(.rows[] | select(.tool.name == "window_focus"); .more == [{name: "window_close", arguments: {name: .tool.arguments.name}, said: "close"}]) and ([.rows[] | select(.tool.name == "window_close")] | length == 0)' "$H/window.rows" >/dev/null \
-        && ok "provide window rows: one row a window under open now, close behind it; the capture rows with their keys; split, tabs and stacked under layout (#144)" || bad "window groups" "$(jq -c '.rows[] | [.id, .group, .key, .more]' "$H/window.rows")"
-    mcp layout "$(rq 1 resources/read '{"uri":"spark-shell://layout/rows"}')"
-    ans 1 | jq -r '.result.contents[0].text' | jq -e '.rows[] | select(.tool.name == "layout_save") | .tool.ask == ["name"]' >/dev/null && ok "provide layout rows: save what is open asks a name" || bad "layout ask" "$(ans 1 | head -c 300)"
     # a layout by the name it was saved under, a rename row that asks the new name, made as a save makes one (#51, #54)
     mkdir -p "$HOME/.config/spark-shell/layouts"; printf '{"words":"zen and micro","main":{"app":"zen"}}' > "$HOME/.config/spark-shell/layouts/webdev"
     mcp layout "$(rq 1 resources/read '{"uri":"spark-shell://layout/rows"}')" "$(call 2 layout_rename '{"name":"webdev","to":"Web Dev"}')" "$(call 3 layout_rename '{"name":"nowhere","to":"x"}')"
-    ans 1 | jq -r '.result.contents[0].text' | jq -e '(.rows[] | select(.text == "webdev") | .tool == {name: "layout_open", arguments: {name: "webdev"}} and .more == [{name: "layout_rename", arguments: {name: "webdev"}, ask: ["to"], said: "rename"}, {name: "layout_delete", arguments: {name: "webdev"}, said: "delete"}]) and ([.rows[] | select(.text | startswith("rename "))] | length == 0)' >/dev/null \
-        && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = "webdev is web-dev now -- spark-shell layout web-dev opens it" ] && [ -f "$HOME/.config/spark-shell/layouts/web-dev" ] \
+    ans 1 | jq -r '.result.contents[0].text' | jq -e '(.rows[] | select(.text == "webdev") | .tool.name == "layout_open" and .tool.arguments == {name: "webdev"} and .more == [{name: "layout_rename", arguments: {name: "webdev"}, ask: ["to"], said: "rename"}, {name: "layout_delete", arguments: {name: "webdev"}, said: "delete"}]) and ([.rows[] | select(.text | startswith("rename "))] | length == 0)' >/dev/null \
+        && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = "webdev renamed to web-dev" ] && [ -f "$HOME/.config/spark-shell/layouts/web-dev" ] \
         && [ "$(ans 3 | jq -r '.result.content[0].text')" = "layout: no saved or recent layout named nowhere" ] \
         && ok "provide layout: a layout by its name, rename (it asks the new name) and delete behind it, and the call renames it (#51, #54, #145)" || bad "provide layout rename" "$(cut -c1-300 "$H/mcp.out")"
     rm -f "$HOME/.config/spark-shell/layouts/web-dev"
@@ -5370,7 +5434,7 @@ if [ "$(uname -s)" != Darwin ]; then
     _kr=$(ans 1 | jq -r '.result.contents[0].text')
     [ "$(printf '%s' "$_kr" | jq -c '[.rows[] | select(.group == "recent") | .text]')" = '["one","two","three","four","five"]' ] \
         && printf '%s' "$_kr" | jq -e '(.rows[] | select(.group == "recent" and .text == "one") | .more) == [{name: "layout_rename", arguments: {name: "one"}, ask: ["to"], said: "save as"}, {name: "layout_delete", arguments: {name: "one"}, said: "forget"}]' >/dev/null \
-        && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = "saved as focus -- spark-shell layout focus opens it" ] && [ -f "$HOME/.config/spark-shell/layouts/focus" ] \
+        && [ "$(ans 2 | jq -r '.result.structuredContent.receipt')" = "saved as focus" ] && [ -f "$HOME/.config/spark-shell/layouts/focus" ] \
         && [ "$(ans 3 | jq -r '.result.structuredContent.receipt')" = "forgot two" ] && ! cut -f2 "$_ks/layout.history" | grep -qx two \
         && ok "provide layout: recent holds the five last opened and not saved, a command's words never one; save as names one, forget lets it go (#145)" || bad "layout recent" "$_kr $(cut -c1-400 "$H/mcp.out")"
     st=0; o=$(sh "$SH" layout layout delete x 2>&1) || st=$?; st2=0; o2=$(sh "$SH" layout help 2>&1) || st2=$?

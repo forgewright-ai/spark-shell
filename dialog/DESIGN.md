@@ -214,7 +214,9 @@ from what the dialog already holds:
 - apps: the catalog's count and the hidden count, once the catalog has
   been read; the purpose until then.
 - files: the folder's own summary, as the files section writes it.
-- workspace: the window count and their names, lowercase, cut to fit.
+- workspace: the window count and their apps, each named once,
+  lowercase, cut to fit; no windows open and the layouts' count; with
+  no desktop, the layouts by name, else the purpose.
 - notes: the count, the newest note's title and its date.
 - calendar: the next reminder, or none ahead.
 - tools: its purpose, since it has no state yet.
@@ -586,6 +588,140 @@ text file`.
 Select all and checks by pattern; sorting other than folders first,
 then by name; a cancel inside one large file (Esc stops after it); a
 percentage while totals are unknown; archive contents.
+
+## Workspace
+
+The decisions of 2026-11-05. One list: where every window is, the
+layouts, then what a menu does. `<s>` stands for the bar's symbol of a
+workspace, and a `v` before a pick for its check.
+
+        < back           workspace . 4 windows               x   <- header band
+
+      > search or ask
+
+        attach             gemma4-e4b              talk
+      ---------------------------<*>--------------------------
+
+      workspace 1 <s> . HDMI-A-1
+        firefox              claude code
+        foot                 ~/projects
+
+      workspace 2 <s> . this one . eDP-1
+        foot                 btop                              <- selection bar
+        chromium             invoice-0412.pdf
+
+      also open
+        btop                 suggested for writing
+
+      layouts
+        writing              foot, firefox
+        news                 newsboat, firefox, mpv
+
+      recent
+        read the news        newsboat, firefox, today 09:12
+
+        capture the screen   Print
+        capture an area      Shift+Print
+        arrange windows                      side by side >
+        save this workspace
+
+
+      foot . btop . workspace 2 . floating
+      --------------------------------------------------------
+
+      back  Esc    actions  ->    preview  Space
+
+A heading names a workspace by its number, the key, and the bar's
+symbol, what you see; with numbered workspaces on, the number alone. A
+layout's name follows where the workspace has one, `this one` marks the
+workspace you are on and stands even when it is empty, and the screen's
+name stands only with two screens or more: a workspace sits on one
+screen, so a column per row would repeat it. Every heading is the
+filter, as apps' categories are: a click shows it alone, the header
+reads `workspace . 2 <s>` or `workspace . layouts`, Esc's chip reads
+`all windows`.
+
+The header says what the place holds: `workspace . 4 windows`,
+`workspace . no windows`, `workspace . no desktop`. The bar starts on
+the window that was in front, so Right acts on what you were using.
+
+A window's row is its app's name and its title, muted, both lowercase;
+two windows of one app differ by title. A window in sway's scratchpad
+is not listed. The status row says app, title, workspace and placement;
+a layout's says its name, its apps and its reason. At 120 cells a
+window's placement and a layout's reason come back as columns; nothing
+else changes.
+
+Only a window's row and a layout's row are objects: one click selects,
+Enter or a second click puts it in front or opens it, Right opens its
+page, Space its preview. Capture, arrange, save and `also open` are a
+menu's rows and act on one click.
+
+A window's page keeps to 60 cells at any width. Its rows are a menu's;
+the two choices show what the window has now and open a checked list,
+as apps' do. A pick goes back to the page with the change on the status
+row and `undo`.
+
+        < back              workspace . foot                 x   <- header band
+
+      foot
+        btop
+
+        put in front                                           <- selection bar
+        move to workspace                                2 >
+        placement                                 floating >
+        capture this window
+        close
+
+      move to workspace                  placement
+          1 <s>     firefox, foot            tiled          Super+Shift+space
+        v 2 <s>     foot, chromium         v floating       Super+Shift+space
+          3 <s>     empty                    full screen    Super+f
+          ...                                left half      Super+Left
+          10 <s>    empty                    right half     Super+Right
+                                             top half       Super+Up
+                                             bottom half    Super+Down
+
+A move leaves you where you are, as Super+Shift+3 does. `full screen`
+closes the dialog, since sway draws it over the dialog. Close keeps the
+typed yes. Sway keeps resize, drag, split direction and focus order;
+moving to a screen is no action, since a workspace sits on one screen.
+
+`arrange windows` is one row, because sway cannot put only a
+workspace's new windows in tabs: tabs and a stack are a state of the
+container the windows share. So it changes this workspace now and is
+the default for every new workspace, and its value is read from the
+workspace you are on. Its list has `side by side`, `tabs` and `stacked`
+with their keys, and a note saying that. Undo puts back both.
+
+A layout's row shows its apps. Its page offers open, rename and delete;
+a recent one's, open, save as and forget. Delete and rename carry
+`undo`, and delete takes no typed yes, from a row or from a step spark
+plans. `save this workspace` is a form in the prompt: the header reads
+`workspace . save layout`, the placeholder `a name for this layout`,
+the keys `cancel  Esc    save  Enter`. It keeps the apps and how they
+stand, not their sizes. Opening one closes the dialog once its windows
+are there. A layout asked in words follows the prompt's rules: the ask
+row, the step in the prompt, nothing opens before Enter, the result
+under `recent`.
+
+A capture steps the dialog aside and it comes back on the same page
+with the file's name on the status row, or the reason there is none. A
+picture changes nothing, so it has no undo. `capture this window` puts
+a window on another workspace in front for the picture, and you end
+where you began.
+
+With nothing open the heading of this workspace stands over `no windows
+here`; with nothing saved, `layouts` stands over `none saved: ask at
+the prompt or save this workspace`, or `none saved: save this workspace
+to keep one` when no model answers. `save this workspace` is muted when
+there is nothing to save, as `hidden apps` is; `arrange windows` stays
+live, since it sets the default. With no sway the header says `no
+desktop`, the layouts stand alone, and the selected one's line ends
+`opens in tmux`: no note stands over the list.
+
+Saved sizes and splits, a picture of the window on Space, renaming a
+workspace and acting on several windows at once wait.
 
 ## About
 

@@ -474,7 +474,7 @@ else: sys.exit(1)
         fixture = bindir / "swaymsg"
         fixture.write_text("#!" + sys.executable + "\n" + '''import json,os,pathlib,re,sys
 p=pathlib.Path(os.environ['HOME'])/'windows.json'; s=json.loads(p.read_text()); a=sys.argv[1:]
-if a==['-t','get_tree']: print(json.dumps({'type':'root','nodes':s['nodes']}))
+if a==['-t','get_tree']: print(json.dumps({'type':'root','nodes':[{'type':'output','name':'DP-1','nodes':[{'type':'workspace','name':'1','num':1,'focused':True,'nodes':s['nodes']}]}]}))
 elif a==['-t','get_version']: print('{}')
 elif a and a[0]=='--':
  m=re.fullmatch(r'\\[con_id=(\\d+)\\] (kill|focus)',a[1])
@@ -493,7 +493,7 @@ else: print('[]')
         # one row a window, close behind it by the same container ID (#144)
         rows = [r for r in self.rows("window") if r["tool"] and r["tool"]["name"] == "window_focus"]
         self.assertEqual({r["tool"]["arguments"]["name"] for r in rows}, {"101", "102"})
-        self.assertEqual([[m["name"], m["arguments"]["name"]] for r in rows for m in r["more"]], [["window_close", r["tool"]["arguments"]["name"]] for r in rows])
+        self.assertEqual([[m["name"], m["arguments"]["name"]] for r in rows for m in r["more"] if m["name"] == "window_close"], [["window_close", r["tool"]["arguments"]["name"]] for r in rows])
         self.assertFalse([r for r in self.rows("window") if r["tool"] and r["tool"]["name"] == "window_close"])
         result = self.provider("window", call(1,"window_close",name="fixture"), call(2,"window_focus",name="102"))
         self.assertTrue(result[1]["result"]["isError"])
