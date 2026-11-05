@@ -202,8 +202,10 @@ fn a_proposal_cannot_bypass_destructive_confirmation() {
     app.enter();
     assert!(matches!(app.mode, Mode::Confirm(_)));
     assert!(calls.lock().unwrap().is_empty());
-    app.input = "no".into();
+    // the question's page: keep working runs nothing
+    app.sel = 1;
     app.enter();
+    assert!(matches!(app.mode, Mode::Normal));
     assert!(calls.lock().unwrap().is_empty());
 }
 
@@ -605,10 +607,8 @@ fn a_plan_that_comes_while_the_prompt_asks_waits_for_the_question() {
     let (serial, _, _) = request(&app);
     app.mode = Mode::Confirm(app.commands("out level 20").unwrap().remove(0));
     app.stash = Some(String::new());
-    type_words(&mut app, "ye");
     propose(&mut app, serial, json!([{"name": "out_level", "arguments": {"level": 10}}]));
-    assert_eq!(app.input, "ye", "the yes being typed stays");
-    assert!(matches!(app.mode, Mode::Confirm(_)));
+    assert!(matches!(app.mode, Mode::Confirm(_)), "the question stands while the plan waits");
     app.escape();
     assert!(app.staged_now(), "the question let go, the commands are in the box: {:?}", app.input);
     assert!(calls.lock().unwrap().is_empty(), "and nothing ran");

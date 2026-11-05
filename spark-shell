@@ -7175,9 +7175,9 @@ tool_spec() {
         storage_eject)     _ts=storage _ta=eject _tp=name _tk=string _th='' _tt='storage eject NAME' _td='Unmount every part of a drive and power it off, so it can be taken out.' ;;
         power_lock)        _ts=power _ta=lock _th=o _tt='power lock' _td='Lock the screen.' ;;
         power_suspend)     _ts=power _ta=suspend _th=o _tt='power suspend' _td='Lock the screen and suspend the machine.' ;;
-        power_logout)      _ts=power _ta=logout _th=d _tt='power logout' _td='Log out: every window closes.' ;;
-        power_restart)     _ts=power _ta=restart _th=d _tt='power restart' _td='Restart the machine.' ;;
-        power_shutdown)    _ts=power _ta=shutdown _th=d _tt='power shutdown' _td='Shut the machine down.' ;;
+        power_logout)      _ts=power _ta=logout _th=d _tt='power logout' _td='Log out. Every window closes and the session ends.' ;;
+        power_restart)     _ts=power _ta=restart _th=d _tt='power restart' _td='Restart the machine. Everything open closes and it starts again.' ;;
+        power_shutdown)    _ts=power _ta=shutdown _th=d _tt='power shutdown' _td='Shut the machine down. Everything open closes and the machine turns off.' ;;
         bar_on)            _ts=bar _ta=on _th=i _tt='bar on' _td='Show the bar where it was, at the top or the bottom of the screen.' ;;
         bar_off)           _ts=bar _ta=off _th=i _tt='bar off' _td='Hide the bar.' ;;
         bar_top)           _ts=bar _ta=top _th=i _tt='bar top' _td='Show the bar at the top of the screen.' ;;

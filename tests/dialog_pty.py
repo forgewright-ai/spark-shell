@@ -256,9 +256,9 @@ print(json.dumps({"answer": "", "steps": [{"name": "notes_pick", "arguments": {"
            "the words go to spark steps once, with explicit context only and the providers' tools on stdin")
         ok(not records(calls), "nothing runs before Enter")
         os.write(fd, b"\r")
-        assert wait_for(lambda: b"type yes" in seen), "the confirmation did not draw"
-        ok(not records(calls), "Enter on a step that is not read-only still waits for the typed yes")
-        os.write(fd, b"yes\r")
+        assert wait_for(lambda: b"keep" in seen and b"working" in seen), "the question's page did not draw"   # the words may part across a cursor move
+        ok(not records(calls), "Enter on a step that is not read-only waits for the question's yes")
+        os.write(fd, b"\r")   # the verb's row is lit: Enter is the yes
         assert wait_for(lambda: len(records(calls)) == 1 and b"completed" in seen), "the step did not run"   # the receipt wraps across a cursor move
         ok(records(calls)[0]["arguments"]["name"] == "Fixture target" and len(records(requests)) == 1,
            "Enter runs the proposal as proposed, and spark is not asked again")

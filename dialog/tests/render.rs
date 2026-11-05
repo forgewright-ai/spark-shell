@@ -434,9 +434,9 @@ fn a_destructive_step_waits_for_yes() {
         line: "window close terminal".into(),
         typed: false,
     });
-    app.input = "ye".into();
-    app.cursor = 2;
-    render(&app, "confirm");
+    app.in_list = true;
+    app.sel = 0;
+    render(&app, "question");
 }
 
 #[test]
@@ -986,10 +986,13 @@ fn key_chips_preserve_the_typed_confirmation_for_destructive_actions() {
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
     let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
     assert!(drawn.keys.iter().all(|k| k.3 == HintKey::Escape));
+    // the question's page (dialog/DESIGN.md, v0.125): keep working, as Esc, keeps; only the verb's row is the yes
+    app.in_list = true;
+    app.sel = 1;
     app.hint_key(HintKey::Enter);
     assert!(matches!(app.mode, Mode::Normal));
-    assert!(app.running.is_none() && app.queue.is_empty(), "without a typed yes, Enter keeps the window");
-    assert!(app.jobs.is_empty(), "a click never bypasses the native confirmation");
+    assert!(app.running.is_none() && app.queue.is_empty(), "keep working keeps the window");
+    assert!(app.jobs.is_empty(), "keep never runs the step");
 }
 
 /// A preview (#120): `name` lit in a folder of three files, its page as its provider answers it.

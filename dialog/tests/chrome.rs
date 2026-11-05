@@ -1016,3 +1016,56 @@ fn undo_on_the_status_row_is_a_control_not_a_key_chip() {
     assert_eq!(buf[(a + 1, y)].fg, pal.fg, "in the text color, not boxed as a key");
     assert_eq!(buf[(a + 1, y)].bg, buf[(4, y)].bg, "no chip background");
 }
+
+#[test]
+fn a_question_is_a_page_of_choices_and_the_typed_yes_is_gone() {
+    // dialog/DESIGN.md (v0.125): a risky step opens a page in the frame, its line as the heading, two menu rows,
+    // the verb and keep working. The header says the verb, the key bar reads keep Esc, typing is refused, keep
+    // working and Esc keep; only the verb's row is the yes
+    let mut app = home();
+    let step = Step {
+        prov: 0,
+        call: model::call(&json!({"name": "window_close", "arguments": {"name": "terminal"}})).unwrap(),
+        who: Who::Person,
+        line: "close the window terminal".into(),
+        typed: false,
+    };
+    app.set_draft("my draft");
+    app.run(step.clone());
+    assert!(matches!(app.mode, Mode::Confirm(_)), "a risky step asks: {:?}", app.mode);
+    assert!(app.input.is_empty(), "the draft waits aside");
+    let (buf, drawn, pal) = draw(&mut app, 60, 40);
+    assert!(
+        text(&buf, 0).contains("close the window terminal"),
+        "the verb in the header: {:?}",
+        text(&buf, 0)
+    );
+    let rows: Vec<String> = (CONTENT_Y..35).map(|y| text(&buf, y).trim().to_string()).filter(|s| !s.is_empty()).collect();
+    assert_eq!(
+        rows,
+        vec!["close the window terminal", "close the window terminal", "keep working"],
+        "{:?}",
+        rows
+    );
+    let keys = text(&buf, keys_y(40));
+    assert!(keys.contains("keep") && keys.contains("Esc") && !keys.contains("yes"), "{:?}", keys);
+    assert_eq!(drawn.picks.len(), 2, "two rows to pick");
+    assert!(app.in_list && app.sel == 0, "the verb's row is lit");
+    assert_eq!(buf[(4, drawn.picks[0].0)].bg, pal.lit, "the verb's row wears the bar");
+    // typing is refused: the question takes Enter on a row
+    app.text_key('y');
+    assert!(app.input.is_empty());
+    assert!(app.reply.as_ref().is_some_and(|r| r.text.contains("takes Enter on a row")), "{:?}", app.reply);
+    // keep working keeps: the mode ends, nothing runs, the draft comes back
+    app.sel = 1;
+    app.enter();
+    assert!(matches!(app.mode, Mode::Normal));
+    assert!(app.jobs.is_empty() && app.running.is_none(), "keep working runs nothing");
+    assert_eq!(app.input, "my draft");
+    // Esc keeps too
+    app.run(step);
+    assert!(matches!(app.mode, Mode::Confirm(_)));
+    app.escape();
+    assert!(matches!(app.mode, Mode::Normal) && app.jobs.is_empty());
+    assert_eq!(app.input, "my draft");
+}

@@ -961,6 +961,12 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             pen.put(4, y, g, c, false, lit);
             pen.put(6, y, if *on { "a model answers what you ask" } else { "off" }, pal.fg, false, lit);
         }
+        Item::Question(verb) => {
+            // the question's rows (dialog/DESIGN.md, v0.125): the verb, then keep working; a menu's rows at the row
+            // column, nothing drawn beside them
+            let words = if *verb { app.question_verb() } else { "keep working".to_string() };
+            pen.put(4, y, &words, pal.fg, false, lit);
+        }
         Item::Conn(k) => {
             if *k == 0 {
                 pen.put(4, y, DOT, pal.accent, false, false);

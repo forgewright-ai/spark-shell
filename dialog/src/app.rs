@@ -716,6 +716,9 @@ pub enum Item {
     /// The row that asks spark the words typed (dialog/DESIGN.md): last among the matches, alone when nothing
     /// matches, so Enter asks; only while a model answers.
     Ask,
+    /// A question's two rows (dialog/DESIGN.md, v0.125): the verb, which acts, and keep working, which lets the
+    /// step go. The page stands in for the typed yes wherever a step is risky.
+    Question(bool),
     Model(usize),
     /// A muted line under a page's title.
     Note(String),
@@ -1890,6 +1893,11 @@ impl App {
     }
 
     pub fn items(&self) -> Vec<Item> {
+        // a question is a page of choices (dialog/DESIGN.md, v0.125): the step's line as the heading, one note,
+        // the verb's row and keep working; it takes the whole list, whatever the view
+        if let Mode::Confirm(step) = &self.mode {
+            return self.question_items(step);
+        }
         if self.view == View::Apps {
             let mut list: Vec<Item> = self
                 .apps
@@ -2368,6 +2376,36 @@ impl App {
     }
 
     /// Words that open nothing, wrapped to the content's width.
+    /// The question's page for a risky step: its line as the heading, what it does in parentheses under it, a row
+    /// of air, then the verb's row and keep working.
+    fn question_items(&self, step: &Step) -> Vec<Item> {
+        let mut list = vec![Item::Heading(step.line.to_lowercase())];
+        if let Some(note) = self.question_note(step) {
+            for l in crate::ui::wrap(&format!("({})", note), self.col_w().saturating_sub(8).max(10) as usize) {
+                list.push(Item::Text(format!("  {}", l), true));
+            }
+        }
+        list.push(Item::Blank);
+        list.push(Item::Question(true));
+        list.push(Item::Question(false));
+        list
+    }
+
+    /// What the step does, in one line: the last sentence of its tool's description, lowercase, its period dropped.
+    fn question_note(&self, step: &Step) -> Option<String> {
+        let d = self.tool_of(step)?.description.trim().trim_end_matches('.').to_string();
+        let last = d.rsplit(". ").next().unwrap_or(&d).trim().to_lowercase();
+        (!last.is_empty()).then_some(last)
+    }
+
+    /// The verb's row of the question: the step's line.
+    pub fn question_verb(&self) -> String {
+        match &self.mode {
+            Mode::Confirm(s) => s.line.to_lowercase(),
+            _ => String::new(),
+        }
+    }
+
     fn text(&self, out: &mut Vec<Item>, words: &str, muted: bool) {
         for l in crate::ui::wrap(words, self.col_w().saturating_sub(6).max(10) as usize) {
             out.push(Item::Text(l, muted));
@@ -2393,7 +2431,7 @@ impl App {
                 .unwrap_or(false),
             Item::Model(i) => self.models.get(*i).map(|(_, s)| s == "serving" || s == "downloaded").unwrap_or(false),
             Item::TalkOpt(_) => self.voice_on,
-            Item::ModelOpt(_) => true,
+            Item::ModelOpt(_) | Item::Question(_) => true,
             Item::Hit(i) => self.hits.get(*i).is_some_and(|(_, r)| Self::pickable(r)),
             Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::StepOf(_) | Item::Here | Item::More(..) | Item::Ask => true,
             _ => false,
@@ -2875,6 +2913,11 @@ impl App {
     pub fn text_key(&mut self, c: char) {
         self.keep_lit = None;
         if c.is_control() {
+            return;
+        }
+        // the question takes no words: its rows answer it
+        if matches!(self.mode, Mode::Confirm(_)) {
+            self.refuse("the question takes Enter on a row");
             return;
         }
         // typing is the prompt's: a control's focus (Tab) lets go, so Enter goes with the words, not the control
@@ -3443,19 +3486,23 @@ impl App {
             }
             return;
         }
-        match std::mem::replace(&mut self.mode, Mode::Normal) {
-            Mode::Confirm(step) => {
-                let typed = std::mem::take(&mut self.input);
-                self.unstash();
-                if typed.trim() == "yes" {
-                    self.approved(step);
-                } else {
-                    self.hidden = false;
-                    self.refuse("not done: it takes the word yes");
-                    self.stop_queue();
-                }
-                return;
+        // the question's page (dialog/DESIGN.md, v0.125): Enter on the verb's row is the yes; on keep working, or
+        // anywhere else, it keeps
+        if matches!(self.mode, Mode::Confirm(_)) {
+            let verb = self.in_list && matches!(self.picks().get(self.sel), Some(Item::Question(true)));
+            if !verb {
+                return self.escape();
             }
+            if let Mode::Confirm(step) = std::mem::replace(&mut self.mode, Mode::Normal) {
+                self.input.clear();
+                self.unstash();
+                self.hidden = false;
+                self.approved(step);
+            }
+            return;
+        }
+        match std::mem::replace(&mut self.mode, Mode::Normal) {
+            Mode::Confirm(_) => return,
             Mode::Ask { mut step, field, .. } => {
                 let typed = std::mem::take(&mut self.input);
                 self.unstash();
@@ -4588,6 +4635,10 @@ impl App {
         if self.risky(&tool) {
             self.stash_draft();
             self.mode = Mode::Confirm(step);
+            // the question's page, the verb's row lit: Enter again is the yes
+            self.in_list = true;
+            self.sel = 0;
+            self.reply = None;
             return;
         }
         self.call(step);
@@ -5155,6 +5206,10 @@ impl App {
     }
 
     pub fn subtitle(&self) -> String {
+        // the question's page says its verb in the header: `power . shutdown`
+        if let Mode::Confirm(s) = &self.mode {
+            return s.line.to_lowercase();
+        }
         match &self.view {
             View::Apps => {
                 // the header says which page of apps this is (dialog/DESIGN.md, v0.124.4)
@@ -5277,11 +5332,8 @@ impl App {
         let gap = || ("   ".to_string(), false);
         let esc = |w: &str| vec![gap(), (format!("{} ", w), false), ("Esc".to_string(), true)];
         match &self.mode {
-            Mode::Confirm(s) => {
-                let mut v = vec![(format!("type yes to {}", s.line), false)];
-                v.extend(esc("Keep"));
-                return v;
-            }
+            // the question's page: Esc keeps; Enter has no chip, it acts on the lit row
+            Mode::Confirm(_) => return vec![("keep ".to_string(), false), ("Esc".to_string(), true)],
             Mode::Ask { .. } if self.layout_form() => {
                 // a form says what to type in the prompt's placeholder, and Enter saves (dialog/DESIGN.md)
                 let mut v = key("Cancel", "Esc");

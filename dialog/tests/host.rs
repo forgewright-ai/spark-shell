@@ -144,19 +144,19 @@ fn a_destructive_step_takes_the_typed_yes() {
     assert!(calls.lock().unwrap().is_empty(), "nothing spark planned runs before Enter");
     app.enter();
     assert!(matches!(app.mode, Mode::Confirm(_)), "{:?}", app.mode);
-    assert!(app.input.is_empty(), "the prompt takes the yes; the draft waits aside");
+    assert!(app.input.is_empty(), "the question's page stands; the draft waits aside");
     typed(&mut app, "y");
-    app.enter();
-    assert!(calls.lock().unwrap().is_empty(), "anything but yes runs nothing");
+    assert!(app.input.is_empty(), "the question takes no words");
     assert_eq!(app.reply.as_ref().unwrap().mark, Mark::Refused, "the refusal is the reply row's");
+    app.sel = 1; // keep working
+    app.enter();
+    assert!(calls.lock().unwrap().is_empty(), "keep working runs nothing");
     assert_eq!(app.input, "my draft", "the draft comes back after the question");
     app.set_draft("");
     at_row(&mut app, View::Section(0), 1);
     app.enter();
-    for c in "yes".chars() {
-        app.typed(c);
-    }
-    app.enter();
+    assert!(matches!(app.mode, Mode::Confirm(_)), "{:?}", app.mode);
+    app.enter(); // the verb's row is lit: Enter is the yes
     let before = *reads.lock().unwrap();
     assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.undo.is_some()));
     // nothing above the list; a step of the workspace place says its receipt on the status row, its undo beside it
@@ -1184,8 +1184,7 @@ fn risk_is_decided_here_a_hint_that_says_safe_does_not_skip_the_yes() {
     assert!(matches!(app.mode, Mode::Confirm(_)), "{:?}", app.mode);
     // the rows change while the question waits: the network is gone, the yes is checked again
     app.providers[0].tools.clear();
-    typed(&mut app, "yes");
-    app.enter();
+    app.enter(); // the verb's row is lit: Enter is the yes
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(*seen.lock().unwrap(), 0, "a yes for a step no longer offered runs nothing");
     assert!(
