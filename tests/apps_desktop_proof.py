@@ -173,8 +173,8 @@ class Session:
     def settled(self):
         def current():
             rect = self.window()["rect"]
-            cols = (rect["width"] - 36) // self.cell[0]
-            rows = (rect["height"] - 36) // self.cell[1]
+            cols = rect["width"] // self.cell[0]   # no air of foot's own (v0.124.5)
+            rows = rect["height"] // self.cell[1]
             lines = self.screen()
             # one frame width per view: the dialog's own 60 cells for home, apps and the conversation, up to 120 for
             # a list with columns (files); the title sits two cells into it
