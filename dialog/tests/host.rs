@@ -2367,9 +2367,17 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
     );
     assert!(app.steps_row.is_none());
     assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.undo.is_some()));
-    // a step from a row's list says nothing: the row is gone from the list, its undo in the reply row (#196)
+    // a files step from the actions page says its receipt on the status row with undo (dialog/DESIGN.md): the
+    // words carry what a row cannot; nothing in the exchange
     assert!(app.exchange.is_empty(), "{:?}", app.exchange);
-    assert_eq!(app.reply, Some(Reply::undo_only()));
+    assert_eq!(
+        app.reply,
+        Some(Reply {
+            mark: Mark::Done,
+            text: "notes.md is in the trash".into(),
+            undo: true
+        })
+    );
     // the undo names the file, never its whole path (#112)
     assert_eq!(app.undo.as_ref().unwrap().line, "undo files trash notes.md");
     let c = tool_calls(&calls);

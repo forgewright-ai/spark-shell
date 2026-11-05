@@ -1728,11 +1728,11 @@ fn widths_of<'a>(rows: impl Iterator<Item = &'a crate::model::Row>, w: u16, narr
     (widths, right)
 }
 
-/// A name's cells at most: in a narrow pane what is left beside the size or the count, with two cells of air at
-/// the right; else name_cap.
+/// A name's cells at most: in a narrow pane what is left beside the size or the count (the indent, two cells
+/// between them, a cell of air at the right), so a name is cut only when its row overflows; else name_cap.
 fn name_cap_at(w: u16, narrow: bool, first: usize) -> usize {
     if narrow {
-        (w as usize).saturating_sub(8 + first).max(4)
+        (w as usize).saturating_sub(7 + first).max(4)
     } else {
         name_cap(w)
     }

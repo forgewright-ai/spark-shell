@@ -152,7 +152,7 @@ impl State {
                     .iter()
                     .find_map(|r| r.more.iter().chain(r.tool.iter()).find(|c| c.name == verb.tool()).cloned())
             };
-            for verb in [Verb::Copy, Verb::Move] {
+            for verb in [Verb::Move, Verb::Copy] {
                 match (step_of(verb), &a.other) {
                     (_, Some(place)) => l.row(
                         &format!("{} to {}", verb.tool().trim_start_matches("files_"), place),

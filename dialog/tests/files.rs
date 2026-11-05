@@ -593,8 +593,8 @@ fn a_folders_page_the_summary_rows_and_the_checked_sets() {
     assert_eq!(
         labels(&app),
         [
-            "copy to a folder",
             "move to a folder",
+            "copy to a folder",
             "trash",
             "uncheck all",
             "",
@@ -857,6 +857,11 @@ fn files_stub(calls: Calls, also: Vec<&'static str>, refuse: Vec<&'static str>) 
                     json!({"receipt": format!("{} moved to ~/pictures", file), "undo": {"name": "files_move", "arguments": {"path": format!("{}/{}", to, file), "to": from}}})
                 }
                 "files_trash" => json!({"receipt": format!("{} is in the trash", file), "undo": {"name": "files_restore", "arguments": {"path": path}}}),
+                "files_rename" => {
+                    let new = v.pointer("/params/arguments/name").and_then(Value::as_str).unwrap_or("").to_string();
+                    let dir = path.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_default();
+                    json!({"receipt": format!("{} renamed", file), "undo": {"name": "files_rename", "arguments": {"path": format!("{}/{}", dir, new), "name": file}}})
+                }
                 _ => json!({"receipt": format!("{} {}", name, file)}),
             };
             send(result(
@@ -1018,6 +1023,16 @@ fn esc_stops_a_batch_after_the_file_under_way_wherever_you_are_and_so_does_the_x
     assert_eq!(app.view, View::Folder(0, HOME.into()), "Esc stops the batch, and goes nowhere");
     assert!(app.files.batch.as_ref().is_some_and(|b| b.stopping && b.stopped == 2), "{:?}", app.files.batch);
     assert!(app.queue.is_empty(), "the files not yet under way are not run");
+    // the march says so while the step under way lands; Esc and the x change nothing until it has
+    app.files.batch.as_mut().unwrap().since = Instant::now() - Duration::from_millis(400);
+    let status = screen(&app)[spark_dialog::ui::status_y(40) as usize].clone();
+    assert!(status.contains("stopping after notes.md \u{b7} 1 of 3"), "{:?}", status);
+    app.escape();
+    app.close_window();
+    assert!(
+        app.quit.is_none() && app.view == View::Folder(0, HOME.into()) && app.files.batch.is_some(),
+        "swallowed"
+    );
     assert!(pump(&mut app, &rx, |a| a.files.batch.is_none() && a.running.is_none()));
     assert_eq!(tool_calls(&calls).len(), 1, "the file under way alone");
     let r = app.reply.clone().unwrap();
@@ -1052,16 +1067,24 @@ fn esc_stops_a_batch_after_the_file_under_way_wherever_you_are_and_so_does_the_x
 fn a_single_file_goes_through_the_providers_step_as_today() {
     let (mut app, rx, calls) = started(vec![], vec![]);
     with_pictures(&mut app, &rx);
+    app.hint_key(HintKey::Check); // notes.md alone checked: one file, one step
     app.right();
+    assert_eq!(app.subtitle(), "1 checked");
     page_row(&mut app, "copy to ~/pictures");
     app.enter();
     assert!(app.files.batch.is_none(), "one file: no batch");
+    assert!(!app.files_checks_any(), "the checks clear when the step is sent");
     assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.undo.is_some()));
     let c = tool_calls(&calls);
     assert_eq!(c.len(), 1);
     assert_eq!(c[0]["arguments"]["to"], "/data/me/pictures");
     assert!(c[0]["arguments"].get("there").is_none(), "no conflict, no there");
-    assert_eq!(app.reply, Some(spark_dialog::reply::Reply::undo_only()), "a click's receipt: undo alone");
+    let r = app.reply.clone().expect("the receipt");
+    assert_eq!(
+        (r.mark, r.text.as_str(), r.undo),
+        (Mark::Done, "notes.md copied to ~/pictures", true),
+        "a files step from the actions page says its receipt, with undo"
+    );
     assert!(
         pump(&mut app, &rx, |_| calls.lock().unwrap().iter().filter(|c| c["read"] == PICS).count() >= 2),
         "the other pane reads its folder again"
@@ -1170,7 +1193,7 @@ fn skip_all_leaves_the_files_out_and_counts_them_and_esc_lets_the_whole_go() {
     app.enter();
     page_row(&mut app, "skip");
     app.enter();
-    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("0 copied to ~/pictures, 1 skipped"));
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("nothing copied: 1 skipped"));
     assert!(tool_calls(&calls).is_empty());
 }
 
@@ -1344,6 +1367,11 @@ fn the_form_runs_the_step_with_the_name_and_both_panes_read_again() {
         (c[0]["name"].as_str(), c[0]["arguments"]["name"].as_str()),
         (Some("files_rename"), Some("notes2.md"))
     );
+    assert_eq!(
+        app.reply.as_ref().map(|r| (r.text.as_str(), r.undo)),
+        Some(("notes.md renamed", true)),
+        "the form's step says its receipt"
+    );
     assert!(
         pump(&mut app, &rx, |_| reads(&calls, HOME) > home_before && reads(&calls, PICS) > pics_before),
         "both panes read their folders again"
@@ -1505,4 +1533,248 @@ fn typing_narrows_the_actions_page_and_enter_acts_on_the_row_the_words_name() {
     assert!(!app.in_list, "nothing lit: Enter is the prompt's, which says why");
     app.escape();
     assert!(app.input.is_empty() && matches!(app.files.page, Page::Actions(_)), "Esc clears the words first");
+}
+
+// ---- the review round
+
+#[test]
+fn a_refused_first_step_never_takes_a_standing_undo_into_the_batch() {
+    // a rename's undo stands; a batch of three whose first step is refused: its undo takes back the two done, and
+    // nothing else
+    let (mut app, rx, calls) = started(vec![], vec!["notes.md"]);
+    with_pictures(&mut app, &rx);
+    light_row(&mut app, "todo.txt");
+    app.right();
+    page_row(&mut app, "rename");
+    app.enter();
+    app.set_draft("later.txt");
+    app.enter();
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.undo.is_some()));
+    assert_eq!(app.undo.as_ref().map(|u| u.call.name.as_str()), Some("files_rename"), "a rename's undo stands");
+    light_row(&mut app, "notes.md");
+    for _ in 0..3 {
+        app.hint_key(HintKey::Check);
+    }
+    app.right();
+    page_row(&mut app, "copy to ~/pictures");
+    app.enter();
+    assert!(app.files.batch.is_some() && app.undo.is_none(), "a batch starting lets the undo before it go");
+    assert!(pump(&mut app, &rx, |a| a.files.batch.is_none() && a.running.is_none()));
+    assert_eq!(
+        app.reply.as_ref().map(|r| r.text.as_str()),
+        Some("2 of 3 copied to ~/pictures, 1 refused: notes.md is there already")
+    );
+    assert_eq!(app.files.undo_more.len(), 1, "two undos: the head and one more");
+    let before = tool_calls(&calls).len();
+    app.undo_now();
+    assert!(pump(&mut app, &rx, |a| a.files.batch.is_none() && a.running.is_none()));
+    let c = tool_calls(&calls);
+    assert_eq!(c.len(), before + 2, "exactly the two done are taken back");
+    assert!(c[before..].iter().all(|x| x["name"] == "files_trash"), "{:?}", &c[before..]);
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("2 put back"));
+}
+
+#[test]
+fn a_single_step_from_the_page_says_its_receipt() {
+    let (mut app, rx, _calls) = started(vec![], vec![]);
+    app.right();
+    page_row(&mut app, "trash");
+    app.enter();
+    assert!(app.files.batch.is_none());
+    assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.reply.is_some()));
+    assert_eq!(
+        app.reply.as_ref().map(|r| (r.text.as_str(), r.undo)),
+        Some(("notes.md is in the trash", true)),
+        "the words carry what a row cannot"
+    );
+}
+
+#[test]
+fn insert_on_the_actions_page_checks_the_row_and_goes_back() {
+    let mut app = files_app();
+    app.right();
+    app.hint_key(HintKey::Check);
+    assert!(!app.files_page_open(), "back to the list");
+    assert!(app.files.checked("files:file:home:notes.md"), "the row checked, as the check row does");
+    assert_eq!(lit(&app).as_deref(), Some("report.pdf"), "and the bar a row down");
+    // the checked set's page, a conflict, a form: nothing to check there, and the key says so
+    app.right();
+    assert_eq!(app.subtitle(), "1 checked");
+    app.hint_key(HintKey::Check);
+    assert_eq!(
+        app.reply.as_ref().map(|r| r.text.as_str()),
+        Some("nothing to check here: Esc goes back to the list")
+    );
+    assert!(app.files_page_open(), "and stays");
+    app.escape();
+    app.files_activate(Action::UncheckAll);
+    app.files.other = Some(pane(PICS, Some(pics_rows(&["notes.md"]))));
+    light_row(&mut app, "notes.md");
+    app.right();
+    page_row(&mut app, "copy to ~/pictures");
+    app.enter();
+    assert!(matches!(app.files.page, Page::Conflict(_)));
+    app.hint_key(HintKey::Check);
+    assert_eq!(
+        app.reply.as_ref().map(|r| r.text.as_str()),
+        Some("nothing to check here: Esc goes back to the list")
+    );
+    assert!(matches!(app.files.page, Page::Conflict(_)));
+    app.escape();
+    app.right();
+    page_row(&mut app, "rename");
+    app.enter();
+    assert!(app.files.form());
+    app.hint_key(HintKey::Check);
+    assert_eq!(
+        app.reply.as_ref().map(|r| r.text.as_str()),
+        Some("nothing to check here: Esc goes back to the list")
+    );
+    assert!(app.files.form());
+}
+
+#[test]
+fn the_picker_says_what_the_folder_is_for() {
+    let mut app = files_app();
+    for _ in 0..2 {
+        app.hint_key(HintKey::Check);
+    }
+    app.right();
+    page_row(&mut app, "copy to a folder");
+    app.enter();
+    assert!(app.picking.is_some());
+    app.sel = 1; // a folder lit, not the row that lands it here
+    assert!(hint(&app).starts_with("A folder for 2 files"), "{:?}", hint(&app));
+    app.escape();
+    assert!(app.picking.is_none() && app.files_checks_any(), "Esc cancels the pick first; the checks wait");
+    app.files_activate(Action::UncheckAll);
+    light_row(&mut app, "notes.md");
+    app.right();
+    page_row(&mut app, "move to a folder");
+    app.enter();
+    app.sel = 1;
+    assert!(hint(&app).starts_with("A folder for notes.md"), "{:?}", hint(&app));
+}
+
+#[test]
+fn a_provider_dying_mid_batch_counts_the_step_with_its_reason_and_stops_the_rest() {
+    let (mut app, rx, _calls) = started(vec![], vec![]);
+    with_pictures(&mut app, &rx);
+    for _ in 0..3 {
+        app.hint_key(HintKey::Check);
+    }
+    app.right();
+    page_row(&mut app, "copy to ~/pictures");
+    app.enter();
+    assert!(app.running.is_some());
+    app.incoming(spark_dialog::mcp::Incoming::Gone(0, "it exited".into()));
+    assert!(app.files.batch.is_none() && app.running.is_none(), "the batch ended");
+    let r = app.reply.clone().expect("the receipt");
+    assert_eq!(
+        (r.text.as_str(), r.undo),
+        (
+            "0 of 3 copied to ~/pictures, 1 refused: stopped before it answered, so it may or may not have happened, 2 not: stopped",
+            false
+        ),
+        "the broken step with its reason, the rest not run, no undo"
+    );
+    assert!(app.undo.is_none());
+}
+
+#[test]
+fn a_name_under_recent_or_drives_is_no_conflict() {
+    // copying ~/camera/photo-0412.jpg to ~, where the home lists photo-0412.jpg under recent: the folder's own
+    // rows alone are its names
+    let mut app = files_app();
+    let camera = "/data/me/camera";
+    at(
+        &mut app,
+        "spark-shell://files/rows/Y2FtZXJh",
+        json!({"title": "~/camera", "here": camera, "kinds": kinds(), "rows": [
+            up(HOME),
+            file(camera, "photo-0412.jpg", "4.8 MB", "yesterday", "", None),
+            file(camera, "STICK", "1 KB", "today", "", None),
+            summary("this folder \u{b7} 2 files \u{b7} 4.8 MB", camera)
+        ], "short": []}),
+    );
+    app.files.other = Some(pane(HOME, Some(home_rows())));
+    light_row(&mut app, "photo-0412.jpg");
+    app.hint_key(HintKey::Check);
+    app.hint_key(HintKey::Check); // STICK, named as the drive is
+    app.right();
+    page_row(&mut app, "copy to ~");
+    app.enter();
+    assert!(
+        !matches!(app.files.page, Page::Conflict(_)),
+        "no conflict with a recent file or a drive: {:?}",
+        app.files.page
+    );
+    // with no provider to answer, the batch of two ends at once: its receipt says the copy went ahead
+    assert!(app.reply.as_ref().is_some_and(|r| r.text.starts_with("0 of 2 copied to ~")), "{:?}", app.reply);
+}
+
+#[test]
+fn enter_with_words_that_name_no_row_on_a_page_says_so() {
+    let mut app = files_app();
+    app.right();
+    for c in "zzz".chars() {
+        app.typed(c);
+    }
+    assert!(!app.in_list);
+    app.enter();
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("no action by these words: Esc clears them"));
+    assert!(
+        app.files_page_open() && app.pending.is_none() && app.view != View::Conversation,
+        "nothing asked, the page stays"
+    );
+    assert_eq!(app.input, "zzz", "the words stay for Esc to clear");
+}
+
+#[test]
+fn a_narrow_pane_keeps_a_name_that_fits() {
+    let mut app = files_app();
+    at(&mut app, DOCS, docs_rows());
+    app.files.other = Some(pane(PICS, Some(pics_rows(&[]))));
+    let rows = screen(&app);
+    assert!(
+        rows.iter().any(|r| r.contains("photo-0412.jpg     4.8 MB")),
+        "4 + 14 + 2 + 9 fits in 30: {:?}",
+        rows[12]
+    );
+}
+
+#[test]
+fn a_click_on_the_other_pane_declined_changes_nothing() {
+    let mut app = files_app();
+    app.files.other = Some(pane(PICS, Some(pics_rows(&[]))));
+    app.mode = Mode::Listening;
+    app.pane_clicked(2, Instant::now());
+    assert_eq!(app.view, View::Folder(0, HOME.into()), "the pane did not switch");
+    assert_eq!(app.sel, 3, "and the click fell on no row of the active pane");
+}
+
+#[test]
+fn copy_to_a_pane_whose_rows_have_not_come_says_a_moment() {
+    let mut app = files_app();
+    app.files.other = Some(pane(PICS, None));
+    app.right();
+    page_row(&mut app, "copy to the other pane");
+    app.enter();
+    assert_eq!(
+        app.reply.as_ref().map(|r| r.text.as_str()),
+        Some("the other pane's rows have not come yet: a moment")
+    );
+}
+
+#[test]
+fn a_trashed_row_is_not_checkable() {
+    let mut app = files_app();
+    at(&mut app, TRASH, trash_rows());
+    app.came_from.push(View::Folder(0, HOME.into()));
+    light_row(&mut app, "old.txt");
+    app.hint_key(HintKey::Check);
+    assert_eq!(app.reply.as_ref().map(|r| r.text.as_str()), Some("only a file or a folder can be checked"));
+    assert!(!app.files_checks_any());
+    app.right();
+    assert!(!labels(&app).contains(&"check".to_string()), "{:?}", labels(&app));
 }

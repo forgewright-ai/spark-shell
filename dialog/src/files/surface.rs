@@ -139,8 +139,17 @@ impl App {
                     self.open_preview();
                     return;
                 }
+                // a files step from the actions page says its receipt on the status row with undo, as apps' changes do:
+                // the words carry what a row cannot (as notes 2.md, the one there is in the trash)
                 let text = call.arguments.get("path").and_then(Value::as_str).map(name_of).unwrap_or_default();
-                self.pick_step(p, call, &text);
+                let line = self.step_line(p, &call, &text);
+                self.run(Step {
+                    prov: p,
+                    call,
+                    who: Who::Person,
+                    line,
+                    typed: true,
+                });
             }
             Action::Ask(call, words) => {
                 let line = self.step_line(p, &call, "");
@@ -181,11 +190,19 @@ impl App {
 
     // ---- the checks
 
-    /// Insert: the lit file's or folder's check toggled, and the bar a row down, as Norton Commander's did.
+    /// Insert: the lit file's or folder's check toggled, and the bar a row down, as Norton Commander's did. On a
+    /// row's actions page it is the check row's key; any other page has nothing to check, and says so.
     pub fn files_check(&mut self) {
-        if self.files_pane_view().is_none() || self.mode != Mode::Normal || self.files.page != Page::List || self.picking.is_some() || self.attaching.is_some()
-        {
+        if self.files_pane_view().is_none() || self.mode != Mode::Normal || self.picking.is_some() || self.attaching.is_some() {
             return;
+        }
+        match &self.files.page {
+            Page::List => {}
+            Page::Actions(a) if a.row.as_ref().is_some_and(checkable) => {
+                let id = a.row.as_ref().map(|r| r.id.clone()).unwrap_or_default();
+                return self.files_activate(Action::Check(id));
+            }
+            _ => return self.refuse("nothing to check here: Esc goes back to the list"),
         }
         if !self.in_list {
             return self.refuse("nothing is lit: an arrow or a click lights a row");
@@ -220,9 +237,10 @@ impl App {
         }
     }
 
-    /// Esc with nothing typed: the checks go first; true when there were any.
+    /// Esc with nothing typed: the checks go first; true when there were any. A pick or an attach on is Esc's
+    /// to cancel first: the checked set waits for its folder through it.
     pub(crate) fn files_checks_clear(&mut self) -> bool {
-        if !self.files_checks_any() || self.files.page != Page::List {
+        if !self.files_checks_any() || self.files.page != Page::List || self.picking.is_some() || self.attaching.is_some() {
             return false;
         }
         self.files.clear_checks();
@@ -310,13 +328,14 @@ impl App {
         self.files_refresh_other(p);
     }
 
-    /// Ctrl+Tab, a click on the other pane: the other pane becomes active, the active one waits aside.
-    pub fn files_pane(&mut self) {
-        let Some((p, uri)) = self.files_pane_view() else { return };
+    /// Ctrl+Tab, a click on the other pane: the other pane becomes active, the active one waits aside. False when
+    /// nothing switched: no other pane, a page open, a pick or a question on.
+    pub fn files_pane(&mut self) -> bool {
+        let Some((p, uri)) = self.files_pane_view() else { return false };
         if self.mode != Mode::Normal || self.files.page != Page::List || self.picking.is_some() || self.attaching.is_some() {
-            return;
+            return false;
         }
-        let Some(other) = self.files.other.take() else { return };
+        let Some(other) = self.files.other.take() else { return false };
         self.prompt_depart();
         let active = Pane {
             uri,
@@ -352,11 +371,15 @@ impl App {
         self.prompt_arrive();
         self.in_list = true;
         self.list_keys = true;
+        true
     }
 
     /// A click on a row of the other pane: it becomes active and that row is selected; a second click opens it.
+    /// A click the switch declines falls on nothing.
     pub fn pane_clicked(&mut self, n: usize, now: std::time::Instant) {
-        self.files_pane();
+        if !self.files_pane() {
+            return;
+        }
         self.last_click = None;
         self.clicked(n, now);
     }
@@ -498,6 +521,7 @@ impl App {
         let mut step = f.step;
         step.call.arguments.insert(f.field.clone(), Value::String(typed));
         step.call.ask.retain(|a| a != &f.field);
+        step.typed = true; // the receipt says what was made or renamed
         self.files_to_list();
         self.run(step);
     }
@@ -555,6 +579,9 @@ impl App {
         let Some(other) = self.files.other.clone() else {
             return self.files_pick_folder(p, verb, chosen);
         };
+        if other.rows.is_none() {
+            return self.refuse("the other pane's rows have not come yet: a moment");
+        }
         let Some(here) = other.here() else {
             return self.refuse("the other pane is not a folder");
         };
@@ -675,12 +702,8 @@ impl App {
     /// the operation.
     fn files_transfer(&mut self, verb: Verb, mut transfers: Vec<Transfer>, dest: Option<(String, Rows)>) {
         if let Some((title, rows)) = &dest {
-            let taken: Vec<String> = rows
-                .rows
-                .iter()
-                .filter(|r| !is_summary(r) && !is_up(r) && (r.tool.is_some() || r.children.is_some()))
-                .map(|r| r.text.clone())
-                .collect();
+            // the folder's own rows alone: a recent file, a drive, the trash, `..` are no names in it
+            let taken: Vec<String> = rows.rows.iter().filter(|r| in_folder(r)).map(|r| r.text.clone()).collect();
             // a file in its own folder already is no conflict: the provider says so, as today
             let here = rows.here.clone().unwrap_or_default();
             for t in transfers.iter_mut() {
@@ -763,9 +786,18 @@ impl App {
             }
         }
         if steps.len() == 1 && seeded.is_empty() && skipped == 0 {
-            let (step, _, _) = steps.remove(0);
-            return self.run(step);
+            // one file: the provider's step, its receipt on the status row; the checks go once it is sent
+            let (mut step, _, _) = steps.remove(0);
+            step.typed = true;
+            self.run(step);
+            if self.running.is_some() || matches!(self.mode, Mode::Confirm(_)) {
+                self.files.clear_checks();
+            }
+            return;
         }
+        // the batch's undo is its own: the undo standing before it goes, so a refused step can never take it
+        self.undo = None;
+        self.files.undo_more.clear();
         let calls: Vec<(Call, String, u64)> = steps.iter().map(|(s, n, z)| (s.call.clone(), n.clone(), *z)).collect();
         let mut batch = Batch::new(verb, dest_title, calls, skipped);
         batch.total += seeded.len();
@@ -795,7 +827,8 @@ impl App {
 
     /// A batch's step landed: counted, its undo kept, nothing said; the last one ends the batch with its receipt.
     pub(crate) fn files_step_done(&mut self, step: &Step, outcome: Result<(), String>) {
-        let undo = self.undo.take();
+        // a step done leaves its undo; a refused one leaves none, and takes none that stood before
+        let undo = if outcome.is_ok() { self.undo.take() } else { None };
         let Some(b) = self.files.batch.as_mut() else { return };
         let Some(k) = b.steps.iter().position(|(c, _, _)| *c == step.call) else {
             return;
@@ -856,15 +889,15 @@ impl App {
         true
     }
 
-    /// A batch's step that got no answer (the provider stopped, or kept silent): counted as refused, the rest not
-    /// run, and the receipt says so. False for a step of no batch.
+    /// A batch's step that got no answer (the provider stopped, or kept silent): counted as refused with its reason,
+    /// then the rest not run, and the receipt says so. False for a step of no batch.
     pub(crate) fn files_batch_broken(&mut self, step: &Step, why: &str) -> bool {
         if !self.files_batch_owns(&step.call) {
             return false;
         }
         self.running = None;
-        self.files_stop_batch();
         self.files_step_done(step, Err(why.to_string()));
+        self.files_stop_batch();
         true
     }
 

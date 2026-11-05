@@ -1136,7 +1136,7 @@ impl App {
             self.opened = false;
             self.hidden = false;
             let why = format!("{} stopped before it answered, so it may or may not have happened", label);
-            if step.is_some_and(|s| self.files_batch_broken(&s, &why)) {
+            if step.is_some_and(|s| self.files_batch_broken(&s, "stopped before it answered, so it may or may not have happened")) {
                 return;
             }
             self.refuse(&why);
@@ -3283,6 +3283,10 @@ impl App {
         if self.files_page_open() && self.files.form() && !self.in_list {
             return self.files_submit();
         }
+        // a page of files is a menu: words that name no row of it ask nothing, and the status row says so
+        if self.files_page_open() && !self.in_list && !self.input.trim().is_empty() {
+            return self.refuse("no action by these words: Esc clears them");
+        }
         // the commands spark planned, as they stand in the box: Enter runs them, in order (#53)
         if self.staged_now() && !self.in_list {
             if let Some(st) = self.staged.take() {
@@ -4893,7 +4897,9 @@ impl App {
             HintKey::Down => self.down(),
             HintKey::Char(c) => self.typed(c),
             HintKey::Check => self.files_check(),
-            HintKey::Pane => self.files_pane(),
+            HintKey::Pane => {
+                self.files_pane();
+            }
         }
     }
 
@@ -5006,7 +5012,10 @@ impl App {
                 if lit == Some(Item::Here) {
                     key("Here", "Enter")
                 } else {
-                    vec![(format!("A folder for {}", pk.what.split(' ').nth(1).unwrap_or("it")), false)]
+                    // what the folder is for, from the row's words without their verb and their "here": notes.md, 2 files
+                    let what = pk.what.strip_suffix(" here").unwrap_or(&pk.what);
+                    let what = what.split_once(' ').map(|(_, w)| w).unwrap_or("it");
+                    vec![(format!("A folder for {}", what), false)]
                 }
             } else {
                 vec![(format!("Pick a picture ({})", pk.types.join(" ")), false)]

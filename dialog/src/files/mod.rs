@@ -220,14 +220,24 @@ impl Batch {
     pub fn ok(&self) -> usize {
         self.done.iter().filter(|(_, r)| r.is_ok()).count()
     }
-    /// The step under way, counted: "copying photo-0412.jpg . 2 of 5".
+    /// The step under way, counted: "copying photo-0412.jpg . 2 of 5"; "stopping after photo-0412.jpg . 2 of 5"
+    /// once Esc or the x asked the batch to stop.
     pub fn march(&self) -> String {
         let name = self.current.clone().unwrap_or_default();
-        format!("{} {}{}{} of {}", self.verb.doing(), name, crate::ui::SEP, self.done.len() + 1, self.total)
+        let doing = if self.stopping {
+            "stopping after".to_string()
+        } else {
+            self.verb.doing().to_string()
+        };
+        format!("{} {}{}{} of {}", doing, name, crate::ui::SEP, self.done.len() + 1, self.total)
     }
     /// The one receipt for the whole, with the real counts.
     pub fn receipt(&self) -> String {
         let ok = self.ok();
+        if self.total == 0 {
+            // nothing was tried: every file skipped
+            return format!("nothing {}: {} skipped", self.verb.done(), self.skipped);
+        }
         let dest = match (&self.dest_title, self.verb) {
             (Some(t), Verb::Copy | Verb::Move) => format!(" to {}", t),
             _ => String::new(),
@@ -346,9 +356,21 @@ pub fn is_up(row: &Row) -> bool {
     row.id == "files:up" || row.text == ".."
 }
 
-/// A row a check can stand on: a file or a folder; not `..`, the summary row, a drive, a next-page row.
+/// A row a check can stand on: a file (a page of its own, or the open step) or a folder (children and steps);
+/// not `..`, the summary row, a drive, a next-page row, a trashed file.
 pub fn checkable(row: &Row) -> bool {
-    !is_up(row) && !is_summary(row) && (row.tool.is_some() || !row.more.is_empty())
+    let file = row.page.is_some() || row.tool.as_ref().is_some_and(|t| t.name == "files_open");
+    let folder = row.children.is_some() && !row.more.is_empty();
+    !is_up(row) && !is_summary(row) && (file || folder)
+}
+
+/// A row of the folder's own: a file or a folder in it, never a recent file, a drive, the trash, `..`, the
+/// next page or the summary. The names a copy or a move may run into are these rows' alone.
+pub fn in_folder(row: &Row) -> bool {
+    !matches!(row.group.as_deref(), Some("recent") | Some("drives"))
+        && !matches!(row.id.as_str(), "files:trash" | "files:up" | "files:more" | "files:here" | "files:total")
+        && !is_up(row)
+        && (row.tool.is_some() || row.children.is_some())
 }
 
 /// A row's size in bytes, from its size column; a folder's count is no size.
