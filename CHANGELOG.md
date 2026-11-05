@@ -1,5 +1,100 @@
 # Changelog
 
+## v0.125
+
+Files v0: the file manager built from the rows the dialog has, by the
+decisions of 2026-11-05 on `dialog/DESIGN.md`. Where the page was
+silent, the rule was what Norton Commander did: Insert for the check,
+two panels, the status row as the mini-status under the panel.
+
+- Files is the same kind of list as apps, drawn as the design page
+  draws it: `home`, `recent` and `drives` under their headings, the
+  trash among home's rows, the folder's own row last, muted, a summary
+  that opens the folder's actions on Enter and Right. One click selects
+  and the status row gives the line the narrow columns cannot: name,
+  kind, size, the date with its time, and the place, which is the
+  row's own folder for a recent file or a file found, else the folder
+  on screen, written as the header writes it. A folder's line is its
+  name, `folder`, its count and its place. Names keep their spelling.
+- Insert checks the lit file or folder for one operation and moves the
+  bar down a row, as Norton Commander's did; on a checked row it
+  unchecks. The check is a sign cell before the name, as a checked list
+  draws its picks, and nothing else on the row changes: no color on
+  the name, no bold. The status row says the count and the size while
+  checks stand, in place of the lit row's line; Esc with nothing typed
+  clears the checks first, and the next Esc goes back. A check keeps to
+  its row through a filter and a refresh, and the checks go when the
+  pane opens another folder.
+- Right opens a row's actions as a page of its own, a menu: its rows
+  act on one click and the header names the row. The row's actions
+  come first (open, preview, attach to the next request, rename, copy
+  to a folder, move to a folder, trash, `check` with Insert as its
+  chip, the one key chip on a row), then the folder's under `this
+  folder` (new folder, new text file, two panes, open in the system
+  file manager where one is configured), so a new folder is in reach
+  from any row of a folder of thousands. With checks standing the page
+  is the checked set's: copy, move, trash and `uncheck all`, then the
+  folder's, whichever row is lit.
+- `two panes` in the folder's actions opens a second pane beside the
+  first, on the same folder, and `one pane` closes it. Each pane keeps
+  its own folder, selection, scroll and typed words. The active pane
+  has the selection bar, its path on its first row in the text color,
+  the header's place and the status row; the other has no bar and its
+  path muted, and nothing else tells them apart, no accent, no frame.
+  Ctrl+Tab makes the other pane active, as Tab did in Norton Commander
+  and Tab here is the prompt's; a click on a row of the other pane
+  makes it active and selects that row, and a click on its path makes
+  it active too; the key bar adds `pane  Ctrl+Tab`. At 120 cells each
+  pane is 60, the list as drawn for one pane; at 60 each is 30, the
+  name cut in its middle, its size or its count; below 60 the active
+  pane alone is drawn and `two panes` is refused: two panes need a
+  window 60 cells wide.
+- In two panes copy and move go to the other pane's folder, and the
+  action says where: `copy to ~/pictures`, `move to ~/pictures`. The
+  other pane on the same folder, on the trash or on a search refuses
+  with the reason. In one pane `copy to a folder` and `move to a
+  folder` pick the folder as they did. After a copy or a move the other
+  pane reads its folder again, so the result is seen.
+- Several checked files run one after another, in the list's order.
+  While one is felt the status row shows the march with the file and
+  the count, `copying photo-0412.jpg . 2 of 5`; then one receipt for
+  the whole, with the real counts, and one `undo` that takes the whole
+  back, newest first. Esc while files are being copied, moved or
+  trashed stops after the file under way, wherever you are, and the
+  receipt says what was done; the x does the same and the dialog stays
+  open, so no transfer ends with the window; the next Esc or x closes.
+  A transfer goes on while you look at home or apps, and typed `undo`
+  takes the last change back too. The checks clear once the operation
+  ends.
+- A conflict is a page of choices, a menu, never a message box: the
+  header says `notes.md is in ~/pictures already`, the rows are skip,
+  keep both (the copy is named `notes 2.md`) and replace (the one there
+  goes to the trash, and the receipt says so), and while more
+  conflicts remain, skip all, keep both for all and replace all. Esc
+  lets the operation go and nothing is said: Esc said it. The names
+  already in the destination are read from its rows before the
+  operation starts; a conflict the rows could not show is refused by
+  the provider with its reason, and the operation goes on with the
+  rest.
+- Rename, new folder and new text file take their words in the prompt,
+  as apps' forms do: the placeholder says what to type (the new name, a
+  name for the folder, a name for the text file), the key bar says
+  `save  Enter`, Esc lets it go. Rename starts with the name as it is,
+  so a letter can be changed.
+- The provider's `files_copy` and `files_move` take `there`, keep or
+  replace, which says what to do with a file of that name already in
+  the destination, and `name`, the name a kept copy gets; with neither,
+  a name already there is refused with its reason, as before.
+- The preview's refusals are lowercase, as every label the dialog
+  writes is, and each says its remedy: Enter opens the file in its app,
+  or the tool to install where one is missing (poppler for a PDF, mpv
+  for a sound or a video).
+- `check` and `pane` are named actions in `home-keys.json`, Insert and
+  Ctrl+Tab unless rebound, and help lists them.
+- A files desktop proof runs beside the home and apps proofs: an
+  isolated Sway and foot, a throwaway home with folders and files, the
+  check, two panes, a copy with its conflict and its undo.
+
 ## v0.124.4
 
 - The header is back at the left where there is a level above, the
