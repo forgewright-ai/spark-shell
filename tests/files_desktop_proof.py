@@ -256,7 +256,8 @@ def open_folder(s, name, place):
 
 def click_at(s, row, col, double=False):
     rect = s.window()["rect"]
-    s.pointer.click(rect["x"] + 18 + col * s.cell[0] + s.cell[0] // 2, rect["y"] + 18 + row * s.cell[1] + s.cell[1] // 2,
+    # the window's first pixel is the first cell's: no air of foot's own (v0.124.5)
+    s.pointer.click(rect["x"] + col * s.cell[0] + s.cell[0] // 2, rect["y"] + row * s.cell[1] + s.cell[1] // 2,
                     times=2 if double else 1)
     time.sleep(.4)
 

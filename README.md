@@ -806,12 +806,14 @@ AI and the machine stay on the status line inside each window.
 
 The dialog is one window in the middle of the screen, 60 by 40 cells,
 3:4 in a 9 by 18 pixel cell: a plain surface a shade lighter than the
-windows behind it, with air around its text and no frame. On a smaller
+windows behind it, a band across its top, and no frame. On a smaller
 screen sway keeps the window inside it, and the dialog fits its rows to
 the window, down to 36 by 20 cells.
 Super+Space opens or focuses home. Repeating it retains the same window,
 draft, attachments, view and ongoing request. A bar click uses the same
-entry; if no window exists it opens that section. Esc or the x closes it.
+entry: with no home open it opens that block's section, and with home
+open it takes home there, the draft and the way back kept, so Esc
+returns to where home was. Esc or the x closes it.
 The root order is apps, files, workspace, notes, calendar, tools, settings,
 help, about, power, in three groups. The menu breathes: a row of air
 between its rows when the window has the rows for it, two rows of air
@@ -878,7 +880,13 @@ it: a step shows on its row, and a page that takes a moment has its
 waiting animation. The header has no clock: the bar has it. In a
 window wider than the column, a wide one or a full screen, the header,
 both rules and the key bar take the window's width and the column
-stays centered at its measure.
+stays centered at its measure. The header is a band across the
+window's top, the accent at a quarter over the surface (the tint the
+desktop gives the place a moving window would land on), its words in
+the text color and the title bold. The window has no air of foot's own
+around its cells, so the band and the selection bar meet its edges;
+the dialog's own margins, two cells each side and a row under the key
+bar, are the air.
 Under it is the prompt, two rows tall, and it reads `search or ask`:
 typing searches the list in front of you at once, Enter opens what the
 selection bar is on, in the list and from the prompt, and Shift+Enter
@@ -920,8 +928,10 @@ is Esc's alone. The wheel moves the bar a row at a time in a list, as
 the arrows do, and three lines in text.
 A mode that waits on Enter for something else (run the commands spark
 planned, apply a model, land a step in this folder) says so with its
-chip. Narrow, the keys wrap onto a second line under the bar, whole
-groups at a time. Help lists every shortcut, including conversation.
+chip. Narrow, the keys wrap onto a second line, whole groups at a
+time, the two lines in the row of air above the key bar, so the
+window's last row stays empty. Help lists every shortcut, including
+conversation.
 A key chip is a label for its key, never a control: it is never lit,
 never in focus, and Tab never stops on it; a click on it sends the key,
 and the pointer's shape alone says so. A key is drawn as a key, and

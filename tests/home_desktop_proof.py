@@ -37,7 +37,7 @@ def native_foot_config(root):
     A probe replaces only the dialog executable, before Sway starts. This uses
     production theme loading and contrast adjustment without painting a desktop.
     """
-    keys = ["HEX_FG", "HEX_ACCENT", "HEX_MUTED", "PANEL_BG", "PANEL_HI", "PANEL_MUTED"]
+    keys = ["HEX_FG", "HEX_ACCENT", "HEX_MUTED", "PANEL_BG", "PANEL_HI", "PANEL_MUTED", "PANEL_BAND"]
     keys += ["HEX_ANSI_" + str(i) for i in range(16)]
     probe = root / "palette-probe"
     probe.write_text("#!" + sys.executable + "\nimport json, os\nprint(json.dumps({k: os.environ[k] for k in " + repr(keys) + "}))\n")
@@ -66,7 +66,7 @@ def native_foot_config(root):
              "background=" + palette["PANEL_BG"], "foreground=" + palette["HEX_FG"]]
     lines += [("regular" if i < 8 else "bright") + str(i % 8) + "=" + palette["HEX_ANSI_" + str(i)] for i in range(16)]
     lines += [str(slot) + "=" + palette[key] for slot, key in
-              ((16, "HEX_ACCENT"), (17, "HEX_MUTED"), (18, "PANEL_BG"), (19, "PANEL_HI"), (20, "PANEL_MUTED"))]
+              ((16, "HEX_ACCENT"), (17, "HEX_MUTED"), (18, "PANEL_BG"), (19, "PANEL_HI"), (20, "PANEL_MUTED"), (21, "PANEL_BAND"))]
     (root / ".config/foot/foot.ini").write_text("\n".join(lines) + "\n")
     return colors, {"colors": palette, "contrast": ratios, "source": "spark-shell dialog launcher environment"}
 
@@ -232,7 +232,7 @@ elif sys.argv[1] == 'steps':
         foot.mkdir()
         colors, palette = native_foot_config(root)
         template = (REPO / "templates/.config/foot/dialog.ini").read_text()
-        for old, new in {"@HOME@": tmp, "@PANEL_SIZE@": "60x40", "@PANEL_PAD@": "18x18", "@FOOT_COLORS@": colors, "@PANEL_BG@": palette["colors"]["PANEL_BG"]}.items():
+        for old, new in {"@HOME@": tmp, "@PANEL_SIZE@": "60x40", "@PANEL_PAD@": "0x0", "@FOOT_COLORS@": colors, "@PANEL_BG@": palette["colors"]["PANEL_BG"]}.items():
             template = template.replace(old, new)
         dump = fixtures / "screen-dump"
         dump.write_text("from pathlib import Path\nimport sys\n(Path.home() / 'screen.txt').write_text(sys.stdin.read())\n")
@@ -298,7 +298,7 @@ elif sys.argv[1] == 'steps':
                 first = open_home()
                 area = next(w["rect"] for w in sway("-t", "get_workspaces") if w["focused"])
                 assert area["y"] >= 28, "the bar must reserve the top of the usable area"
-                cell = ((first["rect"]["width"] - 36) // 60, (first["rect"]["height"] - 36) // 40)
+                cell = (first["rect"]["width"] // 60, first["rect"]["height"] // 40)   # no air of foot's own (v0.124.5)
 
                 def screen():
                     file = root / "screen.txt"
@@ -314,7 +314,8 @@ elif sys.argv[1] == 'steps':
                     row = next(i for i in range(len(lines) - 1, -1, -1) if label in lines[i])
                     col = lines[row].index(label) + len(label) // 2
                     rect = windows()[0]["rect"]
-                    x, y = rect["x"] + 18 + col * cell[0] + cell[0] // 2, rect["y"] + 18 + row * cell[1] + cell[1] // 2
+                    # the window's first pixel is the first cell's: no air of foot's own (v0.124.5)
+                    x, y = rect["x"] + col * cell[0] + cell[0] // 2, rect["y"] + row * cell[1] + cell[1] // 2
                     pointer.click(x, y)
                     time.sleep(.5)
 

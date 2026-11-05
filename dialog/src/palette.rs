@@ -10,6 +10,8 @@ pub struct Palette {
     pub muted: Color,
     pub surface: Color,
     pub lit: Color,
+    /// The header's band (dialog/DESIGN.md, v0.124.5): the accent at a quarter over the surface.
+    pub band: Color,
     pub alarm: Color,
     /// A good state: the login's ready dot.
     pub ok: Color,
@@ -33,27 +35,45 @@ fn luma(c: Color) -> u32 {
     }
 }
 
+/// `a` moved `pct` of the way to `b`, channel by channel, as spark-shell's hex_mix does it (whole
+/// numbers, the remainder dropped), so the dialog and the launcher derive the same shade; a color
+/// that is no RGB stays `a`.
+fn mix(a: Color, b: Color, pct: i32) -> Color {
+    match (a, b) {
+        (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => {
+            let m = |x: u8, y: u8| (x as i32 + (y as i32 - x as i32) * pct / 100) as u8;
+            Color::Rgb(m(r1, r2), m(g1, g2), m(b1, b2))
+        }
+        _ => a,
+    }
+}
+
 impl Palette {
     /// From a lookup (the environment, or a test's table); a key that is
     /// missing or not a color takes the dark default.
     pub fn from(get: impl Fn(&str) -> Option<String>) -> Palette {
         let c = |k: &str, d: &str| get(k).and_then(|v| hex(&v)).unwrap_or_else(|| hex(d).unwrap());
         let surface = c("PANEL_BG", "1f1f1f");
+        let accent = c("HEX_ACCENT", "5555ff");
+        // the band is spark-shell's PANEL_BAND; a launcher without it (or a test's table) gets the same derivation
+        let band = get("PANEL_BAND").and_then(|v| hex(&v)).unwrap_or_else(|| mix(surface, accent, 25));
         Palette {
             fg: c("HEX_FG", "aaaaaa"),
-            accent: c("HEX_ACCENT", "5555ff"),
+            accent,
             muted: c("PANEL_MUTED", "7f7f7f"),
             surface,
             lit: c("PANEL_HI", "333333"),
+            band,
             alarm: c("HEX_ANSI_1", "aa0000"),
             ok: c("HEX_ANSI_2", "00aa00"),
             dark: luma(surface) < 128,
         }
     }
 
-    /// The same palette drawn in the terminal's own slots (#34): spark-shell's foot.ini gives 16 to 20
-    /// the accent, the muted color, the surface, the lit row and the quiet text, and a new look sends
-    /// them to the open windows, so a cell drawn in a slot changes color in place, with no redraw.
+    /// The same palette drawn in the terminal's own slots (#34): spark-shell's foot.ini gives 16 to 21
+    /// the accent, the muted color, the surface, the lit row, the quiet text and the header's band, and
+    /// a new look sends them to the open windows, so a cell drawn in a slot changes color in place, with
+    /// no redraw.
     pub fn slots(self) -> Palette {
         Palette {
             fg: Color::Reset,
@@ -61,6 +81,7 @@ impl Palette {
             muted: Color::Indexed(20),
             surface: Color::Indexed(18),
             lit: Color::Indexed(19),
+            band: Color::Indexed(21),
             alarm: Color::Indexed(1),
             ok: Color::Indexed(2),
             dark: self.dark,
@@ -124,6 +145,22 @@ mod tests {
         assert_eq!(p.accent, Color::Rgb(0x26, 0x8b, 0xd2));
         assert_eq!(p.fg, Color::Rgb(0xaa, 0xaa, 0xaa));
         assert!(!p.dark);
+    }
+
+    #[test]
+    fn the_band_is_the_accent_at_a_quarter_over_the_surface_unless_the_key_says_otherwise() {
+        // dialog/DESIGN.md (v0.124.5): the header's band is PANEL_BAND, which spark-shell derives as the accent at a
+        // quarter over the surface (hex_mix PANEL_BG HEX_ACCENT 25, integer arithmetic); without the key the dialog
+        // derives the same, so a test's palette and an old launcher draw the same band; in slots it is the 22nd
+        let p = Palette::from(|k| match k {
+            "PANEL_BG" => Some("393834".into()),
+            "HEX_ACCENT" => Some("fe8019".into()),
+            _ => None,
+        });
+        assert_eq!(p.band, Color::Rgb(0x6a, 0x4a, 0x2e));
+        let q = Palette::from(|k| (k == "PANEL_BAND").then(|| "112233".into()));
+        assert_eq!(q.band, Color::Rgb(0x11, 0x22, 0x33));
+        assert_eq!(p.slots().band, Color::Indexed(21));
     }
 
     #[test]

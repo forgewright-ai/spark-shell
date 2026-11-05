@@ -907,6 +907,90 @@ fn the_header_is_back_the_centered_title_and_the_x_and_the_chrome_takes_a_wide_w
 }
 
 #[test]
+fn the_header_is_a_band_across_the_window_and_its_words_are_in_the_text_color() {
+    // dialog/DESIGN.md (v0.124.5): row 0 is a band in the band slot, the accent at a quarter over the surface,
+    // across the window at every width; its words are in the text color (muted did not read on the tint), the
+    // title bold; the band is one row, and no other row wears it
+    let t0 = std::time::Instant::now();
+    let mut app = home();
+    let (buf, drawn, pal) = draw(&mut app, 60, 40);
+    assert!(pal.band != pal.lit && pal.band != pal.surface && pal.band != pal.accent, "a slot of its own");
+    assert!((0..60).all(|x| buf[(x, 0)].bg == pal.band), "the band spans the window: {:?}", text(&buf, 0));
+    assert!((0..60).all(|x| buf[(x, 1)].bg != pal.band), "the band is one row");
+    assert!((0..60).all(|x| buf[(x, CONTENT_Y)].bg != pal.band), "a list row never wears it");
+    let (a, _) = drawn.title.unwrap();
+    assert_eq!(buf[(a, 0)].fg, pal.fg, "the title in the text color");
+    assert!(buf[(a, 0)].modifier.contains(Modifier::BOLD), "and bold");
+    assert_eq!(buf[(57, 0)].fg, pal.fg, "the x in the text color on the band");
+    app.clicked(0, t0);
+    let (buf, drawn, _) = draw(&mut app, 60, 40);
+    let (ba, _) = drawn.back.expect("back where there is a level above");
+    assert_eq!(buf[(ba, 0)].fg, pal.fg, "back in the text color on the band");
+    let head = text(&buf, 0);
+    let state = head.find("installed").expect("the place's state after its name") as u16;
+    assert_eq!(buf[(state, 0)].fg, pal.fg, "the state in the text color too, plain: {:?}", head);
+    assert!(!buf[(state, 0)].modifier.contains(Modifier::BOLD));
+    // a wide window: the band is the window's, with the rest of the chrome
+    let (buf, _, _) = draw(&mut app, 100, 40);
+    assert!((0..100).all(|x| buf[(x, 0)].bg == pal.band), "the band across a wide window");
+    assert!((0..100).all(|x| buf[(x, 1)].bg != pal.band));
+}
+
+#[test]
+fn a_wrapped_key_bar_takes_the_air_above_it_and_leaves_the_last_row_empty() {
+    // (v0.124.5) with no air of foot's own around the cells, the window's last row is its bottom edge. Narrow, the
+    // keys wrap onto a second line: the two lines stand at h-3 and h-2, in the air above the key bar, so nothing is
+    // drawn on the edge; wide, the one line stays at h-2 with the last row empty
+    let root = json!({"title": "files", "rows": [{"id": "files:root:a", "sign": "opens", "text": "~", "tool": null, "more": [], "columns": [], "children": "spark-shell://files/rows/aG9tZQ", "group": null}], "short": ["files:root:a"]});
+    let folder = json!({"title": "~", "rows": [
+        {"id": "files:file:n", "sign": "blank", "text": "notes.md", "tool": {"name": "files_open", "arguments": {"path": "/x/notes.md"}},
+         "more": [{"name": "files_show", "arguments": {"path": "/x/notes.md"}}], "columns": ["12 B", "today"], "children": null, "group": null,
+         "page": "spark-shell://files/page/bm90ZXM"}
+    ], "short": []});
+    let tools = json!([
+        {"name": "files_open", "title": "files open PATH", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}, "annotations": {"destructiveHint": false}},
+        {"name": "files_show", "title": "files show PATH", "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}, "annotations": {"readOnlyHint": true}}
+    ]);
+    let (mut app, rx, tx) = common::app_with(&["files"]);
+    app.servers.push(common::stub(
+        0,
+        "files",
+        Box::new(move |v, send| {
+            if v.get("method").and_then(serde_json::Value::as_str) == Some("resources/read")
+                && v.pointer("/params/uri") != Some(&json!("spark-shell://files/rows"))
+            {
+                return send(common::result(
+                    &v["id"],
+                    json!({"contents": [{"uri": v["params"]["uri"], "mimeType": "application/json", "text": folder.to_string()}]}),
+                ));
+            }
+            if let Some(r) = common::ordinary("files", v, &tools, &root) {
+                send(r);
+            }
+        }),
+        tx,
+    ));
+    app.start();
+    assert!(common::pump(&mut app, &rx, |a| a.providers[0].ready && !a.providers[0].tools.is_empty()));
+    app.in_list = true;
+    app.sel = 1; // files, the second place of home
+    app.enter();
+    assert!(common::pump(&mut app, &rx, |a| a.folder.is_some()), "the folder opens: {:?}", app.view);
+    assert!(matches!(app.view, View::Folder(0, _)), "{:?}", app.view);
+    let (buf, drawn, _) = draw(&mut app, 60, 40);
+    let keys = text(&buf, keys_y(40));
+    assert!(keys.contains("Esc") && keys.contains("Space"), "wide, one line of keys: {:?}", keys);
+    assert!(text(&buf, 39).trim().is_empty(), "the last row is empty");
+    assert!(drawn.keys.iter().all(|k| k.2 == keys_y(40)));
+    let (buf, drawn, _) = draw(&mut app, 36, 20);
+    assert!(text(&buf, 19).trim().is_empty(), "narrow, the last row is still empty: {:?}", text(&buf, 19));
+    assert!(text(&buf, 17).contains("Esc"), "the first line of keys at h-3: {:?}", text(&buf, 17));
+    assert!(text(&buf, 18).contains("Space"), "the second at h-2: {:?}", text(&buf, 18));
+    assert!(text(&buf, 16).contains("\u{2500}"), "the plain rule above them where it was");
+    assert!(drawn.keys.iter().all(|k| k.2 == 17 || k.2 == 18), "{:?}", drawn.keys);
+}
+
+#[test]
 fn the_wheel_moves_the_bar_a_row_at_a_time() {
     let mut app = home();
     assert!(!app.in_list);

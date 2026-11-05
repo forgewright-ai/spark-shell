@@ -1447,7 +1447,9 @@ fn every_size_draws_the_panes_the_checks_and_the_pages_whole() {
         }
         let rows = screen(&app);
         assert!(rows[0].contains("files"), "{}x{}: the header: {:?}", w, h, rows[0]);
-        assert!(rows[spark_dialog::ui::keys_y(h) as usize].contains("Esc"), "{}x{}: the key bar", w, h);
+        // a wrapped key bar takes the row of air above it (v0.124.5): at 60 cells two panes wrap `pane Ctrl+Tab`
+        let ky = spark_dialog::ui::keys_y(h) as usize;
+        assert!(rows[ky].contains("Esc") || rows[ky - 1].contains("Esc"), "{}x{}: the key bar", w, h);
         app.right();
         let _ = screen(&app);
         page_row(&mut app, "copy to ~/pictures");
