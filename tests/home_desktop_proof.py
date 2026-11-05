@@ -430,8 +430,42 @@ elif sys.argv[1] == 'steps':
                 key("-k", "Escape")
                 key("-k", "F2")
                 key("help", "-k", "Return")
+                time.sleep(1)
+                text = "\n".join(screen())
+                assert "in home" in text and "windows" in text and "Super+Return" in text, "help is a list by subject with the desktop's keys"
                 capture("help-void")
-                checks.append("Narrow keys wrap whole groups on the key bar; Help lists the conversation shortcut")
+                checks.append("Narrow keys wrap whole groups on the key bar; help lists the dialog's and the desktop's keys by subject")
+                close_home()
+
+                open_home()
+                key("about", "-k", "Return")
+                time.sleep(1)
+                text = "\n".join(screen())
+                assert "spark-shell" in text and "project" in text and "license" in text and "credits" in text and "installed at" in text, "about is the facts and the four rows: " + text
+                capture("about-void")
+                key("license", "-k", "Return")
+                time.sleep(1)
+                assert "MIT License" in "\n".join(screen()), "the license opens as a page"
+                key("-k", "Escape")
+                time.sleep(1)
+                assert "credits" in "\n".join(screen()), "Esc comes back to about"
+                checks.append("About shows the release, the dialog's version, project, license, credits and help; the license is a page and Esc comes back")
+                close_home()
+
+                open_home()
+                key("power", "-k", "Return")
+                time.sleep(1)
+                text = "\n".join(screen())
+                assert "lock" in text and "logout" in text, "power's rows are one word each: " + text
+                key("logout", "-k", "Return")
+                time.sleep(1)
+                text = "\n".join(screen())
+                assert "keep working" in text and "every window closes" in text, "logout asks on the question page: " + text
+                capture("question-void")
+                key("-k", "Down", "-k", "Return")
+                time.sleep(1)
+                assert "keep working" not in "\n".join(screen()) and windows(), "keep working keeps the session and comes back"
+                checks.append("Power is five verbs; logout asks on a question page and keep working comes back")
                 close_home()
 
                 first = open_home()

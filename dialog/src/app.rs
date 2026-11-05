@@ -145,7 +145,7 @@ pub const DESTS: [Dest; 10] = [
     },
     Dest {
         name: "power",
-        purpose: "lock, log out, restart, shut down",
+        purpose: "lock, logout, restart, shutdown",
         sections: &["power"],
     },
 ];
@@ -716,9 +716,11 @@ pub enum Item {
     /// The row that asks spark the words typed (dialog/DESIGN.md): last among the matches, alone when nothing
     /// matches, so Enter asks; only while a model answers.
     Ask,
-    /// A question's two rows (dialog/DESIGN.md, v0.125): the verb, which acts, and keep working, which lets the
+    /// A question's two rows (dialog/DESIGN.md, v0.127): the verb, which acts, and keep working, which lets the
     /// step go. The page stands in for the typed yes wherever a step is risky.
     Question(bool),
+    /// A row of help (dialog/DESIGN.md, v0.127): what you do, and the key that does it, drawn as a chip.
+    Key(String, String),
     Model(usize),
     /// A muted line under a page's title.
     Note(String),
@@ -1653,7 +1655,7 @@ impl App {
     }
 
     pub fn pickable(row: &model::Row) -> bool {
-        row.tool.is_some() || row.children.is_some() || row.step.is_some() || row.switch.is_some() || !row.more.is_empty() || row.back
+        row.tool.is_some() || row.children.is_some() || row.step.is_some() || row.switch.is_some() || !row.more.is_empty() || row.back || row.page.is_some()
     }
 
     /// The sections present that a destination holds; Settings holds those of SETTINGS that run here.
@@ -1734,6 +1736,15 @@ impl App {
             }
             rows.push(Item::Row(p, i));
         }
+        // the facts at a menu's end stand apart from its rows (power's uptime: dialog/DESIGN.md, v0.127)
+        if let Some(last) = rows
+            .iter()
+            .rposition(|it| matches!(it, Item::Row(_, r) if Self::pickable(&self.providers[p].rows.rows[*r])))
+        {
+            if matches!(rows.get(last + 1), Some(Item::Row(..))) {
+                rows.insert(last + 1, Item::Blank);
+            }
+        }
         if rows.is_empty() {
             return;
         }
@@ -1787,6 +1798,88 @@ impl App {
                 }
                 first = false;
                 out.push(Item::Row(p, i));
+            }
+        }
+    }
+
+    /// Help's rows (dialog/DESIGN.md, v0.127): a subject, what you do, the key that does it. The dialog's own keys
+    /// first, as they are bound now; then the desktop's, as the about provider sends them, in their subjects; then
+    /// the words typed at the prompt. Arrows, Home, End, Backspace and Delete need no help.
+    pub fn help_rows(&self) -> Vec<(String, String, String)> {
+        let k = |a: HintKey| self.cfg.keys.label(a).to_string();
+        let mut rows: Vec<(String, String, String)> = vec![
+            ("in home", "open what the bar is on", k(HintKey::Enter)),
+            ("in home", "back a level; at home, close", k(HintKey::Escape)),
+            ("in home", "ask spark the words", k(HintKey::Ask)),
+            ("in home", "a new line in the prompt", k(HintKey::Newline)),
+            ("in home", "the conversation, and back", k(HintKey::Conversation)),
+            ("in home", "the prompt's tools, one to the next", k(HintKey::Tab)),
+            ("in home", "a file's preview", k(HintKey::Preview)),
+            ("in home", "a row's actions or details", k(HintKey::Right)),
+            ("in home", "check a file, and the next", k(HintKey::Check)),
+            ("in home", "the other pane", k(HintKey::Pane)),
+            ("in home", "a page up, a page down", format!("{}  {}", k(HintKey::PageUp), k(HintKey::PageDown))),
+            (
+                "in a preview",
+                "bigger, smaller, as it fits",
+                format!("{}  {}  {}", k(HintKey::Char('+')), k(HintKey::Char('-')), k(HintKey::Char('0'))),
+            ),
+            (
+                "in a preview",
+                "the page before, the page after",
+                format!("{}  {}", k(HintKey::Char('<')), k(HintKey::Char('>'))),
+            ),
+        ]
+        .into_iter()
+        .map(|(g, w, key)| (g.to_string(), w.to_string(), key))
+        .collect();
+        if let Some(p) = self.about_idx {
+            for r in &self.providers[p].rows.rows {
+                if let (true, Some(key), Some(g)) = (r.id.starts_with("about:key:"), &r.key, &r.group) {
+                    rows.push((g.clone(), r.text.clone(), key.clone()));
+                }
+            }
+        }
+        for (w, key) in [
+            ("search the list in front of you", "type"),
+            ("take the last thing back", "undo"),
+            ("a tool's words with its value", "display brightness 30"),
+        ] {
+            rows.push(("at the prompt".into(), w.into(), key.into()));
+        }
+        rows
+    }
+
+    /// How many keys help lists: the home's column.
+    pub fn shortcuts(&self) -> usize {
+        self.help_rows().iter().filter(|(g, _, _)| g != "at the prompt").count()
+    }
+
+    /// Help as a list (dialog/DESIGN.md, v0.127): the rows under their subjects, the ones the words typed name when
+    /// there are words; then the note that the keys are yours to change.
+    fn help_items(&self, list: &mut Vec<Item>) {
+        let filtering = !self.query().trim().is_empty();
+        let mut group: Option<String> = None;
+        for (g, words, key) in self.help_rows() {
+            if filtering && !self.word_in(&format!("{} {} {}", g, words, key)) {
+                continue;
+            }
+            if group.as_deref() != Some(g.as_str()) {
+                if group.is_some() {
+                    list.push(Item::Blank);
+                }
+                list.push(Item::Heading(g.clone()));
+                group = Some(g);
+            }
+            list.push(Item::Key(words, key));
+        }
+        if !filtering {
+            list.push(Item::Blank);
+            for l in crate::ui::wrap(
+                "the keys are yours to change: home-keys.json for home, sway's config.d for the desktop",
+                self.col_w().saturating_sub(8).max(10) as usize,
+            ) {
+                list.push(Item::Text(format!("  {}", l), true));
             }
         }
     }
@@ -1864,12 +1957,53 @@ impl App {
         Some(head.strip_prefix("workspace ").unwrap_or(head).to_string())
     }
 
+    /// The about (dialog/DESIGN.md, v0.127): the facts, the installed release with its date and the dialog's own
+    /// under it, the purpose line; then the rows that open, project, license, credits and help; then where it is
+    /// installed. The provider's key rows are help's, not listed here.
+    fn about_items(&self, list: &mut Vec<Item>) {
+        let Some(p) = self.about_idx else { return };
+        let rows = &self.providers[p].rows.rows;
+        let fact = |id: &str| rows.iter().find(|r| r.id == id).map(|r| r.text.clone());
+        let w = self.col_w().saturating_sub(8) as usize; // the row column to two cells before the band's close
+        let version = self.providers[p].version.trim_start_matches('v').to_string();
+        let mut first = format!(
+            "{:<13}{}",
+            "spark-shell",
+            if version.is_empty() {
+                "release unknown here".to_string()
+            } else {
+                format!("v{}", version)
+            }
+        );
+        if let Some(released) = fact("about:released") {
+            let pad = w.saturating_sub(cells(&first) + cells(&released));
+            if pad >= 2 {
+                first = format!("{}{}{}", first, " ".repeat(pad), released);
+            }
+        }
+        list.push(Item::Text(format!("  {}", first), false));
+        list.push(Item::Text(format!("  {:<13}v{}", "spark-dialog", env!("CARGO_PKG_VERSION")), false));
+        list.push(Item::Blank);
+        list.push(Item::Text("  a lightweight sway shell".into(), true));
+        list.push(Item::Blank);
+        for (i, r) in rows.iter().enumerate() {
+            if matches!(r.id.as_str(), "about:project" | "about:license" | "about:credits") {
+                list.push(Item::Row(p, i));
+            }
+        }
+        list.push(Item::Dest(HELP_DEST));
+        if let Some(i) = rows.iter().position(|r| r.id == "about:installed") {
+            list.push(Item::Blank);
+            list.push(Item::Row(p, i));
+        }
+    }
+
     /// The content area's items: conversation turns or the current native view.
     /// Whether the ask row stands in the list: words typed in a view that searches by them, a model that answers,
     /// and nothing else waiting on the prompt (dialog/DESIGN.md).
     pub fn ask_row(&self) -> bool {
         let searching_view = match &self.view {
-            View::Home | View::Dest(_) | View::Section(_) | View::Found(..) => true,
+            View::Home | View::Dest(_) | View::Section(_) | View::Found(..) | View::Help => true,
             View::Folder(..) => !self.files_page_open(),
             View::Apps => matches!(self.apps.page, crate::apps::Page::List | crate::apps::Page::Hidden),
             _ => false,
@@ -1893,7 +2027,7 @@ impl App {
     }
 
     pub fn items(&self) -> Vec<Item> {
-        // a question is a page of choices (dialog/DESIGN.md, v0.125): the step's line as the heading, one note,
+        // a question is a page of choices (dialog/DESIGN.md, v0.127): the step's line as the heading, one note,
         // the verb's row and keep working; it takes the whole list, whatever the view
         if let Mode::Confirm(step) = &self.mode {
             return self.question_items(step);
@@ -1998,29 +2132,9 @@ impl App {
                 list.push(Item::Heading("model".into()));
                 list.push(Item::OpenModels);
             }
-            View::Conversation | View::About | View::Preview => {}
-            View::Help => {
-                self.text(
-                    &mut list,
-                    "Type to find local actions. Enter opens the selected result. Ask sends only when invited; Attach explicitly adds a file.",
-                    false,
-                );
-                list.push(Item::Blank);
-                for (name, binding) in self.cfg.keys.help() {
-                    self.text(&mut list, &format!("{}: {}", name, binding), false);
-                }
-                list.push(Item::Blank);
-                if let Some(p) = self.about_idx {
-                    for row in &self.providers[p].rows.rows {
-                        if let Some(key) = row.columns.first() {
-                            self.text(&mut list, &format!("{}: {}", row.text, key), false);
-                        }
-                    }
-                }
-                list.push(Item::Blank);
-                self.text(&mut list, "Commands: spark-shell desktop keys; spark-shell help; spark --help", true);
-                self.text(&mut list, "Configure: ~/.config/spark-shell/home-keys.json", true);
-            }
+            View::Conversation | View::Preview => {}
+            View::About => self.about_items(&mut list),
+            View::Help => self.help_items(&mut list),
             View::Steps(p) => {
                 // a window's page, a layout's: what it is above its steps, as an app's details have it
                 if matches!(self.providers[*p].label.as_str(), "window" | "layout") {
@@ -2379,7 +2493,7 @@ impl App {
     /// The question's page for a risky step: its line as the heading, what it does in parentheses under it, a row
     /// of air, then the verb's row and keep working.
     fn question_items(&self, step: &Step) -> Vec<Item> {
-        let mut list = vec![Item::Heading(step.line.to_lowercase())];
+        let mut list = vec![Item::Heading(self.question_line(step))];
         if let Some(note) = self.question_note(step) {
             for l in crate::ui::wrap(&format!("({})", note), self.col_w().saturating_sub(8).max(10) as usize) {
                 list.push(Item::Text(format!("  {}", l), true));
@@ -2398,10 +2512,20 @@ impl App {
         (!last.is_empty()).then_some(last)
     }
 
-    /// The verb's row of the question: the step's line.
+    /// The question's words: the row's own text where the step is a row's (`shutdown`), else the step's line
+    /// (`close the window firefox`, as spark planned it), lowercase.
+    fn question_line(&self, step: &Step) -> String {
+        self.providers
+            .get(step.prov)
+            .and_then(|p| p.rows.rows.iter().find(|r| r.tool.as_ref() == Some(&step.call)))
+            .map(|r| r.text.to_lowercase())
+            .unwrap_or_else(|| step.line.to_lowercase())
+    }
+
+    /// The verb's row of the question.
     pub fn question_verb(&self) -> String {
         match &self.mode {
-            Mode::Confirm(s) => s.line.to_lowercase(),
+            Mode::Confirm(s) => self.question_line(s),
             _ => String::new(),
         }
     }
@@ -2431,7 +2555,7 @@ impl App {
                 .unwrap_or(false),
             Item::Model(i) => self.models.get(*i).map(|(_, s)| s == "serving" || s == "downloaded").unwrap_or(false),
             Item::TalkOpt(_) => self.voice_on,
-            Item::ModelOpt(_) | Item::Question(_) => true,
+            Item::ModelOpt(_) | Item::Question(_) | Item::Key(..) => true,
             Item::Hit(i) => self.hits.get(*i).is_some_and(|(_, r)| Self::pickable(r)),
             Item::Dest(_) | Item::Setting(_) | Item::OpenModels | Item::StepOf(_) | Item::Here | Item::More(..) | Item::Ask => true,
             _ => false,
@@ -2460,6 +2584,7 @@ impl App {
             Item::Here => self.picking.as_ref().map(|pk| pk.what.clone()),
             Item::Dest(d) => Some(DESTS[*d].name.to_string()),
             Item::Setting(i) => Some(SETTINGS[*i].1.to_string()),
+            Item::Key(words, _) => Some(words.clone()),
             _ => None,
         }
         .map(|n| n.to_lowercase())
@@ -2588,15 +2713,7 @@ impl App {
                 }
                 return (!parts.is_empty()).then(|| parts.join(sep));
             }
-            "help" => {
-                let keys = self.cfg.keys.help().len();
-                let commands = self.about_idx.map(|i| self.providers[i].rows.rows.len()).unwrap_or(0);
-                return Some(if commands > 0 {
-                    format!("{} shortcuts{}{} commands", keys, sep, commands)
-                } else {
-                    format!("{} shortcuts", keys)
-                });
-            }
+            "help" => return Some(format!("{} shortcuts", self.shortcuts())),
             "about" => {
                 let v = self
                     .about_idx
@@ -3074,8 +3191,9 @@ impl App {
     /// list or the view this one came from; no words typed, no question open, no request pending, no commands
     /// staged, no form of Apps being filled (dialog/DESIGN.md).
     pub fn can_go_back(&self) -> bool {
+        // a question's page keeps on every back door, the header's among them (dialog/DESIGN.md, v0.127)
         self.input.is_empty()
-            && self.mode == Mode::Normal
+            && matches!(self.mode, Mode::Normal | Mode::Confirm(_))
             && self.chip_focus.is_none()
             && self.staged.is_none()
             && self.pending.is_none()
@@ -3486,7 +3604,7 @@ impl App {
             }
             return;
         }
-        // the question's page (dialog/DESIGN.md, v0.125): Enter on the verb's row is the yes; on keep working, or
+        // the question's page (dialog/DESIGN.md, v0.127): Enter on the verb's row is the yes; on keep working, or
         // anywhere else, it keeps
         if matches!(self.mode, Mode::Confirm(_)) {
             let verb = self.in_list && matches!(self.picks().get(self.sel), Some(Item::Question(true)));
@@ -3817,6 +3935,9 @@ impl App {
                 } else if !row.more.is_empty() {
                     // a row that is only its steps (a saved network not around, #169): Enter opens them, as Right does
                     self.steps_of(p, row);
+                } else if row.page.is_some() {
+                    // a row that is only its page (the license, the credits): Enter reads it, as P does
+                    self.open_preview();
                 }
             }
             Item::Folder(i) => {
@@ -5038,6 +5159,17 @@ impl App {
                 }
                 Some(parts.join(crate::ui::SEP))
             }
+            // help's row: what you do and its key, whole, where the row cut the words (dialog/DESIGN.md, v0.127)
+            Item::Key(words, key) => Some(format!("{}{}{}", words, crate::ui::SEP, key)),
+            // a menu's row with a wide column (power: what the step does): the row stays one word, its line
+            // here while it is lit (dialog/DESIGN.md, v0.127)
+            Item::Row(..) => {
+                let r = self.row_ref(&it)?;
+                let wide = r.wide.as_ref()?;
+                let mut parts = vec![r.text.clone()];
+                parts.extend(wide.iter().filter(|c| !c.is_empty()).cloned());
+                Some(parts.join(crate::ui::SEP))
+            }
             _ => None,
         }
     }
@@ -5208,14 +5340,15 @@ impl App {
     pub fn subtitle(&self) -> String {
         // the question's page says its verb in the header: `power . shutdown`
         if let Mode::Confirm(s) = &self.mode {
-            return s.line.to_lowercase();
+            return self.question_line(s);
         }
         match &self.view {
             View::Apps => {
                 // the header says which page of apps this is (dialog/DESIGN.md, v0.124.4)
                 use crate::apps::{Form, Page};
                 match &self.apps.page {
-                    Page::List => self.apps.filter.as_ref().map(|c| c.to_lowercase()).unwrap_or_else(|| "installed apps".into()),
+                    // the list of every app says nothing after the name (dialog/DESIGN.md, v0.127); a category filter says which
+                    Page::List => self.apps.filter.as_ref().map(|c| c.to_lowercase()).unwrap_or_default(),
                     Page::Hidden => "hidden".into(),
                     Page::Details(id) | Page::Technical(id) | Page::CategoryPicker(id) | Page::LaunchPicker(id) => {
                         self.apps.entry(id).map(|a| a.name.to_lowercase()).unwrap_or_default()

@@ -194,12 +194,12 @@ scrolls.
 
         settings     dark . 2 screens
 
-        help         38 shortcuts . 12 commands
+        help         31 shortcuts
 
         about        spark-shell v0.124                      <- selection bar
 
 
-        power        lock, log out, restart, shut down
+        power        lock, logout, restart, shutdown
 
 
 
@@ -223,7 +223,7 @@ from what the dialog already holds:
 - settings: the look and the screens, from what their sections say,
   whichever are known; never the network, whose name is no business of
   the home's first screen.
-- help: the counts of shortcuts and commands.
+- help: how many keys it lists.
 - about: `spark-shell` and the installed release.
 - power: its actions.
 
@@ -244,7 +244,7 @@ Comment with the trailing period dropped (a comment that only repeats
 the name is dropped too), else nothing; cut with an ellipsis at the
 column's end and whole on the status row and in the details.
 
-        < back             apps . installed apps                 x   <- header band
+        < back                  apps                         x   <- header band
 
       > search or ask
 
@@ -589,6 +589,160 @@ Select all and checks by pattern; sorting other than folders first,
 then by name; a cancel inside one large file (Esc stops after it); a
 percentage while totals are unknown; archive contents.
 
+## The header's second part
+
+State, or a place within the place, never a restatement (v0.127):
+`apps` alone at the top of the list of every app, `help` alone at the
+top of help; `apps . web`, `apps . firefox`, `files . ~` and
+`power . up 3 days` stay.
+
+## Help
+
+One list by subject, searchable, scrolling: `in home` and `in a
+preview` are the dialog's keys as bound now, a sentence each;
+`windows`, `workspaces` and `the desktop` are the desktop's, as the
+about provider sends them; `at the prompt` is the words typed there. A
+row is what you do, its key a chip at the right where the rows' arrows
+stand; the sentence is whole on the status row while the row is lit.
+Arrows, Home, End, Backspace and Delete need no help. Words typed keep
+the rows they name, under their subjects, and the ask row stands last
+when a model answers. The last lines are a note: the keys are yours to
+change. Home's column is how many keys it lists.
+
+        < back                  help                         x   <- header band
+
+      > search or ask
+
+        attach             gemma4-e4b              talk
+      ---------------------------<*>--------------------------
+
+      in home
+        open what the bar is on                          Enter
+        back a level; at home, close                       Esc
+        ask spark the words                         Ctrl+Enter   <- selection bar
+        a new line in the prompt                   Shift+Enter
+        the conversation, and back                          F2
+        the prompt's tools, one to the next                Tab
+        a file's preview                                     P
+        a row's actions or details                       Right
+        check a file, and the next                       Space
+        the other pane                                Ctrl+Tab
+        a page up, a page down                PageUp  PageDown
+
+      in a preview
+        bigger, smaller, as it fits                    +  -  0
+        the page before, the page after                   <  >
+
+      windows
+        a terminal window                         Super+Return
+        ...
+
+      ask spark the words . Ctrl+Enter
+      --------------------------------------------------------
+
+      back  Esc
+
+## About
+
+Facts, then the rows that open, then where it is installed. The
+installed release with the day of its tag, the dialog's own version
+aligned under it, a row of air, the purpose line; `project` opens the
+address in the browser, `license` and `credits` open the files as
+read-only pages (Esc comes back with the row lit), `help` goes to
+help. The status row says what the lit row does: `project . opens in
+the browser`, `license . MIT . LICENSE in ~/.spark-shell`.
+
+        < back                  about                        x   <- header band
+
+      > search or ask
+
+        attach             gemma4-e4b              talk
+      ---------------------------<*>--------------------------
+
+        spark-shell  v0.127               released 5 Nov 2026
+        spark-dialog v0.127.0
+
+        a lightweight sway shell
+
+        project  github.com/forgewright-ai/spark-shell       <- selection bar
+        license  MIT
+        credits  48 projects and their licenses
+        help     31 shortcuts
+
+        installed at ~/.spark-shell
+
+
+
+      project . opens in the browser
+      --------------------------------------------------------
+
+      back  Esc
+
+## Power
+
+Five verbs, one word each, each shown where it can act; the fact row
+where restart and shutdown cannot; the uptime a fact under them, a row
+of air before it, as the facts at any menu's end stand apart. What each
+does is the status row's line while the row is lit, from the row's
+wide column: `lock . the screen . Super+Escape`, `suspend . the screen
+locks first`, `logout . every window closes`, `restart . asks first`.
+Suspend answers `back from suspend` when the machine wakes; lock has
+no receipt.
+
+        < back              power . up 3 days                 x   <- header band
+
+      > search or ask
+
+        attach             gemma4-e4b              talk
+      ---------------------------<*>--------------------------
+
+        lock                                                   <- selection bar
+        suspend
+        logout
+        restart
+        shutdown
+
+        up 3 days
+
+
+
+      lock . the screen . Super+Escape
+      --------------------------------------------------------
+
+      back  Esc
+
+## The question
+
+Wherever a step loses something (power's logout, restart and shutdown;
+forget a network, close a window, pair a device, set up the network
+manager, empty the trash; any spark-planned destructive step), the
+dialog asks on a page of its own, never a message box and never typed
+words: the verb as the heading, one note in parentheses (the last
+sentence of the tool's description, lowercase), two menu rows, the verb
+and `keep working`. Enter or a click on the verb acts; `keep working`,
+Esc and every back door keep; typed words are refused. The header says
+the verb; the key bar `keep  Esc`. A spark-planned step's heading is
+its line.
+
+        < back              power . shutdown                  x   <- header band
+
+      > search or ask
+
+        attach             gemma4-e4b              talk
+      ---------------------------<*>--------------------------
+
+      shutdown
+        (everything open closes and the machine turns off)
+
+        shutdown                                               <- selection bar
+        keep working
+
+
+
+      --------------------------------------------------------
+
+      keep  Esc
+
 ## Workspace
 
 The decisions of 2026-11-05. One list: where every window is, the
@@ -723,16 +877,8 @@ desktop`, the layouts stand alone, and the selected one's line ends
 Saved sizes and splits, a picture of the window on Space, renaming a
 workspace and acting on several windows at once wait.
 
-## About
-
-The page opens on the versions: `spark-shell v0.124` first, the
-dialog's own version under it, then the project, the license and the
-credits.
-
 ## Outside this design
 
-- The typed yes at the prompt stays as it is: a question needs a
-  design of its own, not a component borrowed from elsewhere.
 - No pane beside the list: the status row is the mini-status, as
   Norton Commander drew it under the panel.
 - An app's version on the status row would need its details read at

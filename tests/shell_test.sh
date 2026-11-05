@@ -4576,8 +4576,8 @@ for _mf in "$REPO"/wallpaper/motion/*; do _mn=${_mf##*/}; case $_mn in *.py) wal
 # every tool of every section: one name shape, one title shape, the hints spelled out, the destructive and read-only ones named
 : > "$H/tools.all"
 for s in lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files; do mcp "$s" "$(rq 1 tools/list)"; ans 1 | jq -c '.result.tools[]' >> "$H/tools.all"; done
-[ "$(grep -c '' "$H/tools.all")" = 143 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
-    && ok "provide: the twenty-four sections hold the 143 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
+[ "$(grep -c '' "$H/tools.all")" = 144 ] && [ "$(jq -r .name "$H/tools.all" | sort | paste -sd ' ' -)" = "$(sed -n 's/^PROVIDE_TOOLS="\(.*\)"$/\1/p' "$SH" | tr ' ' '\n' | sort | paste -sd ' ' -)" ] \
+    && ok "provide: the twenty-four sections hold the 144 tools of PROVIDE_TOOLS, each once" || bad "provide tool count" "$(jq -r .name "$H/tools.all" | paste -sd ' ' -)"
 jq -e -s 'any(.name == "pointer_speed" and .inputSchema.properties.value.type == "number" and .inputSchema.properties.value.minimum == -1 and .inputSchema.properties.value.maximum == 1) and any(.name == "keyboard_repeat_delay" and .inputSchema.properties.value.minimum == 100)' "$H/tools.all" >/dev/null \
     && ok "input tools: numeric bounds reach the decision model" || bad "input schemas"
 mcp pointer "$(call 1 pointer_speed '{"value":2}')"
@@ -4686,7 +4686,7 @@ jq -e -s 'all(.[]; .annotations | (.readOnlyHint | type) == "boolean" and (.dest
     && [ "$(jq -r 'select(.annotations.destructiveHint) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'bt_remove files_empty files_purge power_logout power_restart power_shutdown printers_cancel theme_delete wifi_forget wifi_setup window_close' ] \
     && [ "$(jq -r 'select(.annotations.readOnlyHint) | .name' "$H/tools.all" | paste -sd ' ' -)" = 'notes_find about_open files_show files_attach files_find files_say' ] \
     && ok "provide: every hint spelled out (the spec's default is destructive); destructive only where something is lost (#112): forget, close, remove, delete, delete for good and empty the trash (#130), the power steps, a print job cancelled, the network manager installed; the network, clock and printer settings carry undo instead; read only: notes find, about, files show, attach, find and say" || bad "tool hints" "$(jq -c '[.name, .annotations]' "$H/tools.all")"
-[ "$(jq -r 'select(._meta["spark-shell/opens"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'apps_open apps_terminal files_browse files_open files_reveal notes_open power_lock power_suspend storage_open window_focus' ] \
+[ "$(jq -r 'select(._meta["spark-shell/opens"] == true) | .name' "$H/tools.all" | sort | paste -sd ' ' -)" = 'about_site apps_open apps_terminal files_browse files_open files_reveal notes_open power_lock power_suspend storage_open window_focus' ] \
     && [ "$(jq -s '[.[] | select(._meta != null and ._meta != {"spark-shell/opens": true})] | length' "$H/tools.all")" = 0 ] \
     && ok "provide: the tools that put a window in front say so (_meta spark-shell/opens), so the dialog steps aside at the click (#196); no other tool carries _meta" || bad "tool opens" "$(jq -c 'select(._meta) | [.name, ._meta]' "$H/tools.all")"
 jq -e -s 'all(.[]; .inputSchema.type == "object" and .inputSchema.additionalProperties == false and .outputSchema.type == "object")' "$H/tools.all" >/dev/null \
@@ -5480,10 +5480,21 @@ grep -q '^spark-shell-release namespaces="git" ssh-ed25519 [A-Za-z0-9+/=]*$' "$R
 grep -q '^DIALOG_SHA256_X86_64_LINUX_MUSL=[0-9a-f]\{64\}$' "$REPO/dialog/dialog.env" && ok "dialog.env: the x86_64 build pinned by its sha256" || bad "dialog.env" "$(cat "$REPO/dialog/dialog.env")"
 # the about provider: the template's key sentences, each combo a column, the splash's groups
 printf '%s\n' "$(rq 1 resources/read '{"uri":"spark-shell://about/rows"}')" | sh "$SH" provide about | jq -r 'select(.id == 1) | .result.contents[0].text' > "$H/about.json"
-[ "$(jq -r '[.rows[] | select(.group // "" | startswith("keys"))] | length' "$H/about.json")" = "$(sh "$SH" desktop keys | grep -c '')" ] \
-    && [ "$(jq -c '.rows[0] | [.columns, .text, .group]' "$H/about.json")" = '[["Super+Return"],"terminal.open.","keys 1"]' ] \
+# the facts as this clone has them: the tag's day (none in a clone without tags), the path, the count of credited projects
+_tag=$(cd "$REPO" && git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'); _day=''
+[ -z "$_tag" ] || _day=$(cd "$REPO" && LC_ALL=C git log -1 --format=%cd --date=format:'%e %b %Y' "v$_tag" 2>/dev/null | sed 's/^ *//')
+_want=$(jq -cn --arg d "$_day" --arg p "$REPO" --arg n "$(grep -c '^- ' "$REPO/CREDITS.md")" --arg v "$_tag" '(if $d == "" then [] else [["about:released", "released " + $d, [], null, null, null, "blank"]] end)
+    + [["about:project", "project", ["github.com/forgewright-ai/spark-shell"], ["opens in the browser"], null, "about_site", "opens"],
+       ["about:license", "license", ["MIT"], ["MIT", "LICENSE in " + $p], "spark-shell://about/page/YWJvdXQ6bGljZW5zZQ", null, "blank"],
+       ["about:credits", "credits", [$n + " projects and their licenses"], [$n + " projects and their licenses", "CREDITS.md in " + $p], "spark-shell://about/page/YWJvdXQ6Y3JlZGl0cw", null, "blank"],
+       ["about:installed", "installed at " + $p, [], null, null, null, "blank"],
+       ["about:open", "spark-shell " + $v, [], null, null, "about_open", "opens"]]')
+[ "$(jq -r '[.rows[] | select(.id | startswith("about:key:"))] | length' "$H/about.json")" = 18 ] \
+    && [ "$(jq -c '[.rows[] | select(.id | startswith("about:key:")) | [.group, .text, .key]][0, 2, 12]' "$H/about.json" | paste -sd ' ' -)" = '["windows","a terminal window","Super+Return"] ["windows","move the focus","Super+h j k l"] ["the desktop","home","Super+space"]' ] \
+    && [ "$(jq -c '[.rows[] | select(.id | startswith("about:key:")) | .group] | unique' "$H/about.json")" = '["the desktop","windows","workspaces"]' ] \
     && [ "$(jq -c '.short' "$H/about.json")" = '["about:open"]' ] && jq -e '.rows[] | select(.id == "about:open") | .tool.name == "about_open"' "$H/about.json" >/dev/null \
-    && ok "provide about: a row per key sentence, the combo a column, in groups; the address; the short form is the row that opens it" || bad "about rows" "$(head -c 400 "$H/about.json")"
+    && [ "$(jq -c '[.rows[] | select(.id | startswith("about:key") | not) | [.id, .text, .columns, .wide, .page, .tool.name, .sign]]' "$H/about.json")" = "$_want" ] \
+    && ok "provide about: the facts by id (released, installed), project with its tool, license and credits with their pages, the short form that opens it; then help's 18 desktop rows, what you do with its key, under windows, workspaces and the desktop (dialog/DESIGN.md, v0.127)" || bad "about rows" "$(jq -c '[.rows[] | select(.id | startswith("about:key") | not)]' "$H/about.json")"
 sh "$SH" desktop keys | grep -v '^[A-Za-z0-9_+]* [a-z][a-z0-9.-]*\.$' > "$H/keys.odd" || :
 [ ! -s "$H/keys.odd" ] && ok "desktop keys: each sentence opens with one combo and a verb (the about's two columns)" || bad "key sentences" "$(cat "$H/keys.odd")"
 if [ "$(uname -s)" = Darwin ]; then
@@ -6609,22 +6620,23 @@ STUB
     mkdir -p "$S/power" "$H/proc"; echo 'freeze mem disk' > "$S/power/state"; echo '273000.12 100.0' > "$H/proc/uptime"
     pw() { SPARK_SHELL_SYS=$S SPARK_SHELL_PROC=$H/proc WAYLAND_DISPLAY=wayland-1 SWAYSOCK=$H/sock "$@"; }
     out=$(pw sh "$SH" panel power --list 2>&1 | sed -n '1,3p')
-    [ "$out" = "$(printf 'power      up 3 days\n  power      lock the screen\tpower lock\n  power      log out\tpower logout')" ] && pw sh "$SH" panel power --list 2>&1 | grep -qF 'restart and shut down: no logind or sudo rule here' \
-        && ok "power: up 3 days; lock and log out always, restart and shut down where something does them, said when nothing does (#72)" || bad "power none" "$(pw sh "$SH" panel power --list 2>&1 | head -6)"
+    [ "$out" = "$(printf 'power      up 3 days\n  power      lock\tpower lock\n  power      logout\tpower logout')" ] && pw sh "$SH" panel power --list 2>&1 | grep -qF 'restart and shut down: no logind or sudo rule here' \
+        && ok "power: up 3 days; lock and logout always, one word each; restart and shutdown where something does them, said when nothing does (#72)" || bad "power none" "$(pw sh "$SH" panel power --list 2>&1 | head -6)"
     mkdir -p "$H/root/run/systemd/system" "$H/root/etc/systemd" "$H/proc/acpi/button/lid/LID0"; printf '[Login]\nHandlePowerKey=ignore\n' > "$H/root/etc/systemd/logind.conf"; echo 'state: open' > "$H/proc/acpi/button/lid/LID0/state"
     pw sh -c 'sh "$1" provide power' _ "$SH" > "$H/mcp.out" 2>/dev/null <<EOF
 $(rq 1 resources/read '{"uri":"spark-shell://power/rows"}')
 EOF
-    [ "$(ans 1 | jq -r '.result.contents[0].text' | jq -c '[.rows[] | .text]')" = '["lock the screen","suspend","log out","restart","shut down"]' ] \
-        && ok "power rows with logind: lock, suspend, log out, restart, shut down; what the buttons do is no row (#143)" || bad "power systemd rows" "$(cat "$H/mcp.out")"
+    [ "$(ans 1 | jq -r '.result.contents[0].text' | jq -c '[.rows[] | .text]')" = '["lock","suspend","logout","restart","shutdown","up 3 days"]' ] \
+        && [ "$(ans 1 | jq -r '.result.contents[0].text' | jq -c '[.rows[] | [.columns, .wide]]')" = "$(printf '[[[],["the screen \302\267 Super+Escape"]],[[],["the screen locks first"]],[[],["every window closes"]],[[],["asks first"]],[[],["asks first"]],[[],null]]')" ] \
+        && ok "power rows with logind: lock, suspend, logout, restart, shutdown, one word each, what each does its wide column, the uptime a fact; what the buttons do is no row (#143)" || bad "power systemd rows" "$(cat "$H/mcp.out")"
     rm -f "$HOME/power.log" "$HOME/swaymsg.log"
     pw sh -c 'sh "$1" provide power' _ "$SH" > "$H/mcp.out" 2>/dev/null <<EOF
 $(call 1 power_restart)
 $(call 2 power_suspend)
 EOF
     [ "$(ans 1 | jq -c '.result.structuredContent | del(.rows)')" = '{"receipt":"restarting"}' ] && grep -qx 'systemctl reboot' "$HOME/power.log" \
-        && [ "$(ans 2 | jq -c '.result.structuredContent | del(.rows)')" = '{"opened":true}' ] && grep -qxF -- "-- exec $REPO/spark-shell desktop power suspend" "$HOME/swaymsg.log" \
-        && ok "power restart: logind restarts it; power suspend: after the dialog closes, the lock its receipt" || bad "power calls" "$(cat "$H/mcp.out") $(cat "$HOME/power.log" "$HOME/swaymsg.log" 2>&1)"
+        && [ "$(ans 2 | jq -c '.result.structuredContent | del(.rows)')" = '{"receipt":"back from suspend"}' ] && grep -qx 'swaylock' "$HOME/power.log" && grep -qx 'systemctl suspend' "$HOME/power.log" && ! grep -qs 'power suspend' "$HOME/swaymsg.log" \
+        && ok "power restart: logind restarts it; power suspend: the screen locks, logind suspends, and the receipt comes on waking (dialog/DESIGN.md, v0.127)" || bad "power calls" "$(cat "$H/mcp.out") $(cat "$HOME/power.log" "$HOME/swaymsg.log" 2>&1)"
     rm -rf "$H/root/run/systemd" "$HOME/power.log"; mkdir -p "$H/root/etc/runit" "$H/root/usr/bin"
     printf '#!/bin/sh\n' > "$H/root/usr/bin/zzz"; printf '#!/bin/sh\n' > "$H/root/usr/bin/reboot"; chmod +x "$H/root/usr/bin/zzz" "$H/root/usr/bin/reboot"
     printf '#!/bin/sh\necho "visudo $*" >> "$HOME/root.log"\n[ ! -e "$HOME/visudo.no" ]\n' > "$H/.local/bin/visudo"; chmod +x "$H/.local/bin/visudo"

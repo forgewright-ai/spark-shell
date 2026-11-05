@@ -676,11 +676,11 @@ fn a_places_second_column_is_its_state_from_what_the_dialog_already_holds() {
     );
     assert_eq!(state(&app, "tools"), None, "no state worth more than its purpose");
     assert_eq!(state(&app, "power"), None);
-    // the about page opens on the versions
+    // the about page opens on the versions, the dialog's own aligned under the installed release (dialog/DESIGN.md, v0.127)
     app.view = View::About;
     let (buf, _, _) = draw(&mut app, 60, 40);
-    assert!(text(&buf, CONTENT_Y).contains("spark-shell v0.124"), "{:?}", text(&buf, CONTENT_Y));
-    assert!(text(&buf, CONTENT_Y + 2).contains("dialog "), "{:?}", text(&buf, CONTENT_Y + 2));
+    assert!(text(&buf, CONTENT_Y).contains("spark-shell  v0.124"), "{:?}", text(&buf, CONTENT_Y));
+    assert!(text(&buf, CONTENT_Y + 1).contains("spark-dialog v"), "{:?}", text(&buf, CONTENT_Y + 1));
 }
 
 #[test]
@@ -887,8 +887,12 @@ fn the_header_is_back_the_centered_title_and_the_x_and_the_chrome_takes_a_wide_w
     assert_eq!((ba, span(&buf, 0, ba, bb)), (2, "\u{2039} back".to_string()));
     let (a, b) = drawn.title.unwrap();
     assert_eq!(span(&buf, 0, a, b), "apps", "{:?}", head);
-    assert!(head.contains("installed apps"), "the state after the name: {:?}", head);
-    assert!((a as i32 - 19).abs() <= 1, "the title and its state centered: {}", a);
+    assert!(
+        !head.contains("installed"),
+        "the list of every app says nothing after the name (dialog/DESIGN.md, v0.127): {:?}",
+        head
+    );
+    assert!((a as i32 - 28).abs() <= 1, "the title centered: {}", a);
     // a wide window: the chrome at its width, the column in the middle
     let (buf, drawn, pal) = draw(&mut app, 100, 40);
     let left = (100 - 60) / 2;
@@ -924,8 +928,12 @@ fn the_header_is_a_band_across_the_window_and_its_words_are_in_the_text_color() 
     let (buf, drawn, _) = draw(&mut app, 60, 40);
     let (ba, _) = drawn.back.expect("back where there is a level above");
     assert_eq!(buf[(ba, 0)].fg, pal.fg, "back in the text color on the band");
+    // the list of every app says nothing after the name; a category filter is a state (dialog/DESIGN.md, v0.127)
+    assert!(!text(&buf, 0).contains("\u{b7}"), "{:?}", text(&buf, 0));
+    app.apps.filter = Some("web".into());
+    let (buf, _, _) = draw(&mut app, 60, 40);
     let head = text(&buf, 0);
-    let state = head.find("installed").expect("the place's state after its name") as u16;
+    let state = head.find("web").expect("the place's state after its name") as u16;
     assert_eq!(buf[(state, 0)].fg, pal.fg, "the state in the text color too, plain: {:?}", head);
     assert!(!buf[(state, 0)].modifier.contains(Modifier::BOLD));
     // a wide window: the band is the window's, with the rest of the chrome
@@ -1019,7 +1027,7 @@ fn undo_on_the_status_row_is_a_control_not_a_key_chip() {
 
 #[test]
 fn a_question_is_a_page_of_choices_and_the_typed_yes_is_gone() {
-    // dialog/DESIGN.md (v0.125): a risky step opens a page in the frame, its line as the heading, two menu rows,
+    // dialog/DESIGN.md (v0.127): a risky step opens a page in the frame, its line as the heading, two menu rows,
     // the verb and keep working. The header says the verb, the key bar reads keep Esc, typing is refused, keep
     // working and Esc keep; only the verb's row is the yes
     let mut app = home();

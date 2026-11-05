@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.127
+
+Help, about and power v0, and the question page in place of the typed
+yes, by the decisions of 2026-11-05 on `dialog/DESIGN.md`.
+
+- A step that loses something asks on a page of its own, wherever it
+  comes from: the verb as the heading (`shutdown`, or a spark-planned
+  step's line), one note in parentheses from the tool's description,
+  two rows, the verb and `keep working`. Enter or a click on the verb
+  acts; Esc and every back door keep; typed words are refused there.
+  The header says the verb, `power . shutdown`; the key bar
+  `keep  Esc`. The typed yes is gone.
+- Power is five verbs, `lock`, `suspend`, `logout`, `restart`,
+  `shutdown`, each where it can act, and the uptime a fact under them.
+  What each does is the status row's line while the row is lit, from
+  the row's wide column, and a column in a wide list. Suspend locks the
+  screen, sleeps, and answers `back from suspend` when the machine
+  wakes; it no longer closes the dialog. Home's column reads `lock,
+  logout, restart, shutdown`.
+- About is the facts, the installed release with the day of its tag
+  and the dialog's own version aligned under it, the purpose line; then
+  `project`, which opens the address in the browser (`about_site`),
+  `license` and `credits`, which open the files as read-only pages, and
+  `help`; then where it is installed. The key list left it.
+- Help is one list by subject, searchable: `in home` and `in a preview`
+  are the dialog's keys as bound now with a sentence each, `windows`,
+  `workspaces` and `the desktop` the desktop's eighteen as the about
+  provider sends them (a key you rebound shows as you set it), `at the
+  prompt` the words typed there; each row's key a chip at the right,
+  the sentence whole on the status row while the row is lit; a note
+  that the keys are yours to change. Home's column reads `31
+  shortcuts`.
+- The header's second part is state or a place within the place, never
+  a restatement: the list of every app says `apps` alone, a category
+  filter still says which.
+- A menu's facts stand apart: the facts at a section's end have a row of
+  air before them. A row that is only its page (the license) is picked
+  and Enter reads it, as P does. A key chip may hold several keys,
+  `Super+h j k l`.
+
 ## v0.126
 
 Workspace, the third place of home, is one list: where every window is,

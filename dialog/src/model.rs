@@ -446,7 +446,7 @@ pub fn rows(text: &str) -> Option<Rows> {
             key: r
                 .get("key")
                 .and_then(Value::as_str)
-                .filter(|k| !k.is_empty() && k.len() <= 24 && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '+'))
+                .filter(|k| !k.is_empty() && k.len() <= 24 && k.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | ' ' | '.'))) // a chip of several keys: Super+h j k l, Super+1..0 (help, dialog/DESIGN.md v0.127)
                 .map(str::to_string),
             wide: r
                 .get("wide")

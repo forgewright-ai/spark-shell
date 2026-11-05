@@ -399,7 +399,9 @@ limits those two alone: home's Apps shows and opens every installed app.
 ## Keys
 
 Type `spark-shell desktop keys` for the actual configured bindings and their
-named actions. Home's Help lists shortcuts; About contains project details.
+named actions. Home's help is one list of the keys by subject, the
+dialog's and the desktop's; about has the project, the license and the
+credits.
 The default desktop actions include:
 
     Super+Return opens a terminal window.
@@ -618,9 +620,11 @@ The disk the system runs from, and a disk the system mounts itself, is
 never listed.
 
 Type `spark-shell desktop power suspend`. The screen locks first, then
-the machine sleeps, from the dialog's Power too, where lock, log out,
-restart and shut down sit beside it; log out, restart and shut down ask
-for a typed yes there. Where logind runs, it does them for you; logind
+the machine sleeps, from the dialog's power too, where lock, logout,
+restart and shutdown sit beside it, one word a row; logout, restart and
+shutdown ask on a question page, the verb and `keep working`. From the
+dialog, suspend answers `back from suspend` when the machine wakes.
+Where logind runs, it does them for you; logind
 refuses a restart while another login is open, and spark-shell says
 so. On Void `on desktop` writes a sudo rule that lets you run zzz,
 reboot and poweroff, each with no argument, and nothing else (sudo).
@@ -827,6 +831,16 @@ drive, a network, a package manager. The design's rules are one page,
 `dialog/DESIGN.md`. Unavailable capabilities explain their availability.
 Help and the conversation are views inside this same process. F2
 switches between the conversation and the previous view without losing a draft.
+Help is one list by subject: `in home` and `in a preview` are the
+dialog's keys as bound now, `windows`, `workspaces` and `the desktop`
+the desktop's, `at the prompt` the words typed there. A row is what
+you do, its key a chip at the right, and whole on the status row while
+the row is lit; words typed keep the rows they name.
+A step that loses something asks on a page of its own, wherever it
+comes from: the verb as the heading, one note in parentheses, two rows,
+the verb and `keep working`. Enter or a click on the verb acts; Esc and
+every back door keep, and typed words are refused there. The typed yes
+is gone.
 `dialog chat` opens this conversation; `spark` remains usable independently.
 
 Two kinds of row, told apart by what they are. A menu's row acts on one
@@ -933,8 +947,8 @@ A mode that waits on Enter for something else (run the commands spark
 planned, apply a model, land a step in this folder) says so with its
 chip. Narrow, the keys wrap onto a second line, whole groups at a
 time, the two lines in the row of air above the key bar, so the
-window's last row stays empty. Help lists every shortcut, including
-conversation.
+window's last row stays empty. Help lists every key, the
+conversation's among them.
 A key chip is a label for its key, never a control: it is never lit,
 never in focus, and Tab never stops on it; a click on it sends the key,
 and the pointer's shape alone says so. A key is drawn as a key, and
@@ -1081,8 +1095,11 @@ its first and its last row.
 - `storage`: each drive plugged in, with its parts: Enter mounts one,
   and on one that is mounted opens it in your file manager; behind it,
   unmount it and eject the drive; then this computer's free space.
-- `power`: lock the screen, suspend, log out, restart, shut down; the
-  last three ask for a typed yes.
+- `power`: `lock`, `suspend`, `logout`, `restart`, `shutdown`, one word
+  a row, what each does on the status row while it is lit, and the
+  uptime a fact under them. The last three ask on a question page.
+  Suspend locks the screen first and answers `back from suspend` when
+  the machine wakes.
 - `theme`: the palettes first, dark then light in one column, each
   with a chip of its colors (its ground, its accent and six hues).
   Enter or a click puts one on the screen, sway, the bar, the open
@@ -1157,10 +1174,11 @@ its first and its last row.
   under the group its desktop entry names: internet, office, graphics,
   sound and video, development, education, games, system, utilities,
   and others for an app whose entry names none of them.
-- `about`: the version, the licence and the address, then each key on
-  one line, its sentence up to the first comma; `spark-shell desktop
-  keys` has every sentence whole. It opens by itself the first time the
-  desktop starts, and Esc gives the list back.
+- `about`: the installed release with the day of its tag, the dialog's
+  own version under it, then `project`, which opens the address in the
+  browser, `license` and `credits`, which open the files as pages, and
+  `help`; then where it is installed. `spark-shell desktop keys` has
+  every desktop key's sentence whole.
 - `files`: your home folder, as a file manager of its own, built from
   the rows the dialog has, as Norton Commander's panel was. Enter on a
   folder opens it; in a subfolder `..` stands first and opens the
@@ -1266,7 +1284,7 @@ its first and its last row.
   delete: the file goes to the freedesktop trash (`gio trash` where it
   is, else the spec by hand), and `undo` brings it back; a rename and a
   move come back the same way, and a copy's `undo` trashes the copy.
-  Nothing here asks for a typed yes.
+  Nothing here asks a question.
 
   A conflict is a page of choices, never a message box. Before a copy
   or a move starts, the names already in the destination are read from
@@ -1403,8 +1421,9 @@ other providers' current values are not implicitly added to that request.
 The steps come back as commands in
 the prompt, one a line: Enter runs them in order, and a step that loses
 something (forget a network, close a window, remove a device, delete a
-theme, log out, restart, shut down) still asks for a typed
-yes, checked again against what is offered then; every other step
+theme, log out, restart, shut down) still asks, on the question
+page with its line as the heading, checked again against what is
+offered then; every other step
 carries its Undo. A step that names a row by a near
 miss ("everforest light" for everforest-light) takes the row's own name
 when one row alone fits, and the proposal shows it; a miss with no one
@@ -1428,7 +1447,8 @@ Home bindings are named actions in `~/.config/spark-shell/home-keys.json`:
 {"ask": "Ctrl+Enter", "newline": "Shift+Enter", "conversation": "F2"}
 ```
 
-Help lists every action, including navigation, editing, preview and quit.
+Help lists the actions with their keys as bound, under `in home` and
+`in a preview`; arrows, Home, End, Backspace and Delete need no help.
 Files' keys are named actions too: `check`, Space, `preview`, P, and
 `pane`, Ctrl+Tab between two panes.
 An override replaces the original binding; unknown actions and conflicts
@@ -1507,7 +1527,7 @@ The command line and the dialog use the same native controls, with no AI.
 
 The dialog's key chips take a click. A click takes the same action as
 the key; each half of the Calendar's arrow chip moves in that direction.
-A step that loses something still takes the typed yes.
+A step that loses something still asks, on the question page.
 
 ## Providers
 

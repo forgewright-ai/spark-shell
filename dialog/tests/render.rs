@@ -7,7 +7,7 @@ use common::palette;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use serde_json::json;
-use spark_dialog::app::{App, Config, Line, Mode, Provider, Sign, Staged, Step, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
+use spark_dialog::app::{App, Config, Item, Line, Mode, Provider, Sign, Staged, Step, View, Who, CALENDAR_DEST, HEIGHT, SETTINGS_DEST, WIDTH};
 use spark_dialog::model;
 use spark_dialog::reply::{Mark, Reply};
 
@@ -409,7 +409,81 @@ fn about() {
         sign: Sign::You,
         text: "show me about".into(),
     }]; // the about is a page: the exchange is not drawn on it
+    app.in_list = true;
+    app.sel = 0;
+    // the facts, then project, license, credits and help, then where it is installed (dialog/DESIGN.md, v0.127)
+    let label = |app: &App, it: &Item| match it {
+        Item::Row(p, r) => app.providers[*p].rows.rows[*r].text.clone(),
+        Item::Dest(d) => spark_dialog::app::DESTS[*d].name.to_string(),
+        _ => String::new(),
+    };
+    let names: Vec<String> = app.picks().iter().map(|it| label(&app, it)).collect();
+    assert_eq!(names, vec!["project", "license", "credits", "help"]);
+    assert_eq!(app.selected_line().as_deref(), Some("project \u{b7} opens in the browser"));
     render(&app, "about");
+    // the license is a page: Enter reads it, as Space does; Esc comes back with the row lit
+    app.sel = 1;
+    app.enter();
+    assert_eq!(app.view, View::Preview);
+    assert_eq!(app.preview.as_ref().map(|pv| pv.row().id.clone()).as_deref(), Some("about:license"));
+    app.escape();
+    assert_eq!(app.view, View::About);
+    assert_eq!(label(&app, &app.picks()[app.sel]), "license");
+    // help is the dialog's own place
+    app.sel = 3;
+    app.enter();
+    assert_eq!(app.view, View::Help);
+}
+
+#[test]
+fn help_is_a_list_by_subject_with_key_chips() {
+    let mut app = base();
+    app.view = View::Help;
+    app.came_from = vec![View::Home];
+    app.in_list = true;
+    app.sel = 2;
+    // the dialog's keys first with sentences, then the desktop's by subject, then the words at the prompt
+    let groups: Vec<String> = app
+        .items()
+        .iter()
+        .filter_map(|it| match it {
+            Item::Heading(h) => Some(h.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(groups, vec!["in home", "in a preview", "windows", "workspaces", "the desktop", "at the prompt"]);
+    assert_eq!(app.selected_line().as_deref(), Some("ask spark the words \u{b7} Ctrl+Enter"));
+    assert_eq!(app.shortcuts(), 31, "13 of the dialog's and 18 of the desktop's");
+    render(&app, "help");
+    // words typed keep the rows they name, under their subjects, and the note goes
+    app.input = "window".into();
+    app.in_list = true;
+    app.sel = 0;
+    let rows: Vec<String> = app
+        .items()
+        .iter()
+        .filter_map(|it| match it {
+            Item::Key(w, _) => Some(w.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        rows.iter().all(|w| w.contains("window")
+            || w == "a terminal window"
+            || w == "tabs"
+            || w == "a stack"
+            || w == "side by side again"
+            || w == "move the focus"
+            || w == "fill the screen"),
+        "{:?}",
+        rows
+    );
+    assert!(
+        rows.contains(&"close the window".to_string()) && rows.contains(&"take the window there".to_string()),
+        "{:?}",
+        rows
+    );
+    render(&app, "help-found");
 }
 
 #[test]
@@ -986,7 +1060,7 @@ fn key_chips_preserve_the_typed_confirmation_for_destructive_actions() {
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
     let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
     assert!(drawn.keys.iter().all(|k| k.3 == HintKey::Escape));
-    // the question's page (dialog/DESIGN.md, v0.125): keep working, as Esc, keeps; only the verb's row is the yes
+    // the question's page (dialog/DESIGN.md, v0.127): keep working, as Esc, keeps; only the verb's row is the yes
     app.in_list = true;
     app.sel = 1;
     app.hint_key(HintKey::Enter);
@@ -1575,4 +1649,60 @@ fn an_apps_details_are_its_facts_its_steps_and_its_preferences() {
     app.apps.pending = None; // the facts are in: nothing on its way
     app.light(2); // the switch
     render(&app, "apps-details");
+}
+
+/// The power place (dialog/DESIGN.md, v0.127): five verbs, one word each, what each does as its column, the
+/// uptime a fact under them, the section's state the uptime.
+#[test]
+fn power_is_five_verbs_and_the_uptime() {
+    let cfg = Config {
+        model: true,
+        talk: true,
+        close: true,
+        ..Config::default()
+    };
+    let mut app = App::new(cfg, &["power".into()]);
+    let mut p = provider(
+        "power",
+        "up 3 days",
+        json!({"title": "power", "rows": [
+            {"id": "power:lock", "sign": "blank", "text": "lock", "tool": {"name": "power_lock", "arguments": {}}, "more": [], "columns": [], "wide": ["the screen \u{b7} Super+Escape"], "children": null, "group": null},
+            {"id": "power:suspend", "sign": "blank", "text": "suspend", "tool": {"name": "power_suspend", "arguments": {}}, "more": [], "columns": [], "wide": ["the screen locks first"], "children": null, "group": null},
+            {"id": "power:logout", "sign": "blank", "text": "logout", "tool": {"name": "power_logout", "arguments": {}}, "more": [], "columns": [], "wide": ["every window closes"], "children": null, "group": null},
+            {"id": "power:restart", "sign": "blank", "text": "restart", "tool": {"name": "power_restart", "arguments": {}}, "more": [], "columns": [], "wide": ["asks first"], "children": null, "group": null},
+            {"id": "power:shutdown", "sign": "blank", "text": "shutdown", "tool": {"name": "power_shutdown", "arguments": {}}, "more": [], "columns": [], "wide": ["asks first"], "children": null, "group": null},
+            {"id": "power:up", "sign": "blank", "text": "up 3 days", "tool": null, "more": [], "columns": [], "children": null, "group": null}
+        ], "short": []}),
+        json!([
+            {"name": "power_lock", "title": "power lock", "description": "Lock the screen.", "inputSchema": {"type": "object", "properties": {}}, "annotations": {"destructiveHint": false}},
+            {"name": "power_suspend", "title": "power suspend", "description": "Lock the screen and suspend the machine.", "inputSchema": {"type": "object", "properties": {}}, "annotations": {"destructiveHint": false}},
+            {"name": "power_logout", "title": "power logout", "description": "Log out. Every window closes and the session ends.", "inputSchema": {"type": "object", "properties": {}}},
+            {"name": "power_restart", "title": "power restart", "description": "Restart the machine. Everything open closes and it starts again.", "inputSchema": {"type": "object", "properties": {}}},
+            {"name": "power_shutdown", "title": "power shutdown", "description": "Shut the machine down. Everything open closes and the machine turns off.", "inputSchema": {"type": "object", "properties": {}}}
+        ]),
+    );
+    p.version = "v0.126".into();
+    app.providers = vec![p];
+    app.model_name = Some("gemma4-26b-a4b".into());
+    app.voice_on = true;
+    app.came_from.push(View::Home);
+    app.view = View::Section(0);
+    app.in_list = true;
+    app.sel = 0;
+    // the row one word; what it does is the status row's line while it is lit; the uptime a fact apart
+    assert_eq!(app.selected_line().as_deref(), Some("lock \u{b7} the screen \u{b7} Super+Escape"));
+    render(&app, "power");
+    app.sel = 1;
+    assert_eq!(app.selected_line().as_deref(), Some("suspend \u{b7} the screen locks first"));
+    // shutdown asks: the question's page, its note the description's last sentence
+    app.sel = 4;
+    app.enter();
+    assert!(matches!(app.mode, Mode::Confirm(_)), "{:?}", app.mode);
+    let items = app.items();
+    let note = items.iter().find_map(|it| match it {
+        Item::Text(t, _) => Some(t.trim().to_string()),
+        _ => None,
+    });
+    assert_eq!(note.as_deref(), Some("(everything open closes and the machine turns off)"));
+    render(&app, "power-question");
 }

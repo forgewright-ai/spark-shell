@@ -5112,7 +5112,7 @@ panel_title() {   # panel_title SECTION -> the line(s) that say what opened the 
         storage) _sn=$(storage_drives | grep -c . || :)   # the drives alone: this computer's free space is a row, and the header has no room for both
             case ${_sn:-0} in 0) echo "$(panel_col storage)no drive plugged in" ;; 1) echo "$(panel_col storage)1 drive" ;; *) echo "$(panel_col storage)$_sn drives" ;; esac ;;
         power) _pu=$(power_up); echo "$(panel_col power)${_pu:-lock, suspend, restart}" ;;
-        about) echo "$(panel_col about)spark-shell $(panel_version) $PANEL_SEP the keys, the licence, the address" ;;
+        about) echo "$(panel_col about)spark-shell $(panel_version) $PANEL_SEP the project, the license, the credits" ;;
         layout) _n=$(ls -A "$LAYOUTS_DIR" 2>/dev/null | wc -l | tr -d ' '); _last=''; [ ! -f "$DESK_LAST" ] || _last=$(desk_words "$DESK_LAST")
             if [ "$_n" -eq 0 ]; then echo "$(panel_col layout)none saved yet"
             else echo "$(panel_col layout)$_n saved${_last:+ $PANEL_SEP last: $_last}"; fi ;;
@@ -5342,11 +5342,12 @@ panel_rows() {   # panel_rows SECTION [full] -> the rows; without `full` a long 
                 printf -- '-\teject %s\teject %s\t%s||\n' "$_sdn" "$_sdn" "$_sdn"
             done < "$TMP/storage.d"
             _sh=$(storage_here); [ -z "$_sh" ] || printf -- '-\t%s\tshow\tthis computer||\n' "$_sh" ;;
-        power) _pt=$(power_tool)
-            [ -z "${WAYLAND_DISPLAY:-}" ] || printf -- '-\tlock the screen\tlock\n'
-            [ -z "$_pt" ] || ! power_sleeps || printf -- '-\tsuspend\tsuspend\n'
-            [ -z "${SWAYSOCK:-}" ] || printf -- '-\tlog out\tlogout\n'
-            if [ -n "$_pt" ]; then printf -- '-\trestart\trestart\n-\tshut down\tshutdown\n'; else printf -- '-\t%s\tshow\n' "$(power_why)"; fi ;;   # what the machine's buttons do is no step here (#143)
+        power) _pt=$(power_tool)   # one word a row, what it does as its wide column: the status row's line while it is lit (dialog/DESIGN.md, v0.127); the uptime a fact under them
+            [ -z "${WAYLAND_DISPLAY:-}" ] || printf -- '-\tlock\tlock\t|the screen %s Super+Escape\n' "$PANEL_SEP"
+            [ -z "$_pt" ] || ! power_sleeps || printf -- '-\tsuspend\tsuspend\t|the screen locks first\n'
+            [ -z "${SWAYSOCK:-}" ] || printf -- '-\tlogout\tlogout\t|every window closes\n'
+            if [ -n "$_pt" ]; then printf -- '-\trestart\trestart\t|asks first\n-\tshutdown\tshutdown\t|asks first\n'; else printf -- '-\t%s\tshow\n' "$(power_why)"; fi   # what the machine's buttons do is no step here (#143)
+            _pu=$(power_up); [ -z "$_pu" ] || printf -- '-\t%s\tshow\n' "$_pu" ;;
         notes) printf '%s\tnew note\tnew\n' "$PANEL_GO"   # the newest five, and a more row; a full list, all of them; the date a column, the group recent
             notes_list > "$TMP/notes.l"; _n=0
             while IFS="$TAB" read -r _e _nm _f; do
@@ -6017,6 +6018,13 @@ storage_off() {   # by the record alone: the rule spark-shell wrote
 # screen first, whoever asks. What the power button and the lid do stays
 # logind's or acpid's: the section says it and changes nothing.
 POWER_SUDOERS=etc/sudoers.d/spark-shell-power
+about_site() {   # the project page in the browser (dialog/DESIGN.md, v0.127): the system's opener, and the dialog steps aside
+    _as=https://github.com/forgewright-ai/spark-shell
+    if [ "$OS" = Darwin ]; then open "$_as" >/dev/null 2>&1 || { echo "the browser did not open"; return 1; }
+    else command -v xdg-open >/dev/null 2>&1 || { echo "xdg-open is not installed, so nothing opens the page"; return 1; }
+        ( xdg-open "$_as" >/dev/null 2>&1 </dev/null 3>&- 4<&- 5>&- & ); fi
+    : > "$TMP/opened"; echo "opened in the browser"
+}
 power_tool() {   # -> systemd | sudo | nothing: who restarts, shuts down and suspends this machine for you
     if [ "$(init_shape)" = systemd ] && command -v systemctl >/dev/null 2>&1; then echo systemd
     elif [ -s "$STATE_DIR/power.sudoers" ] && command -v sudo >/dev/null 2>&1; then echo sudo; fi
@@ -6067,13 +6075,13 @@ power_now() {   # power_now lock|suspend|logout|restart|shutdown -> it happens n
         *) echo "$1 is not something power does"; return 1 ;;
     esac
 }
-power_act() {   # power_act ACTION -> the dialog's step: the lock and suspend after the dialog closes (the lock is the receipt), the rest now
+power_act() {   # power_act ACTION -> the dialog's step: the lock after the dialog closes (the lock is the receipt); suspend answers on waking (dialog/DESIGN.md, v0.127); the rest now
     case $1 in
-        lock|suspend) desk_in_sway || { power_now "$1"; return; }
-            [ "$1" != suspend ] || power_sleeps || { echo "this machine cannot suspend"; return 1; }
-            [ "$1" != suspend ] || [ -n "$(power_tool)" ] || { power_why; return 1; }
-            swaymsg -- exec "$REPO/spark-shell desktop power $1" >/dev/null 2>&1 || { echo "could not $1"; return 1; }
-            : > "$TMP/opened"; if [ "$1" = lock ]; then echo "locked"; else echo "suspending"; fi ;;
+        lock) desk_in_sway || { power_now lock; return; }
+            swaymsg -- exec "$REPO/spark-shell desktop power lock" >/dev/null 2>&1 || { echo "could not lock"; return 1; }
+            : > "$TMP/opened"; echo "locked" ;;
+        suspend) power_now suspend > "$TMP/suspend.out" 2>&1 || { cat "$TMP/suspend.out"; return 1; }   # the screen locks, the machine sleeps, and the step returns when it wakes
+            echo "back from suspend" ;;
         *) power_now "$1" ;;
     esac
 }
@@ -6282,7 +6290,7 @@ panel_act() {   # panel_act SECTION ACTION [ARG] -> one line (what was done, or 
                     bar_redraw; echo "the keyboard is $_arg" ;;
                 *) echo "$_a is not something keyboard does"; return 1 ;;
             esac ;;
-        about) case $_a in open) panel_about 72 ;; *) echo "$_a is not something about does"; return 1 ;; esac ;;   # on a pipe: the splash as text
+        about) case $_a in open) panel_about 72 ;; site) about_site ;; *) echo "$_a is not something about does"; return 1 ;; esac ;;   # on a pipe: the splash as text
         bar) case $_a in
                 off) bar_desktop off desktop >/dev/null; echo "bar hidden $PANEL_SEP $(panel_keys "$(desk_keys | awk '$2 == "home.open." {print $1; exit}')") opens the dialog" ;;
                 on) bar_desktop on desktop >/dev/null; echo "bar shown" ;;
@@ -6713,7 +6721,7 @@ panel_gate() {   # panel_gate SECTION ACTION [ARG] -> the row's own ARG (exit 0)
         wifi:hidden)
             [ -n "${3:-}" ] && [ "$(printf '%s' "$3" | wc -c)" -le 32 ] && [ "$(printf '%s' "$3" | tr -d '\001-\037\177')" = "$3" ] || { echo 'a network name is 1 to 32 bytes, without control characters'; return 1; }
             echo "$3"; return 0 ;;
-        spark:chat|undo:all|about:open) echo ''; return 0 ;;
+        spark:chat|undo:all|about:open|about:site) echo ''; return 0 ;;
         layout:save) [ -n "$3" ] && { echo "$3"; return 0; }; echo "layout: save takes a name"; return 1 ;;
         layout:add) _n=$(jq -r '.suggested // [] | .[]' "$DESK_LAST" 2>/dev/null | awk -v w="$(panel_lower "$3")" 'tolower($0) == w && !d {print; d = 1}'); [ -n "$_n" ] && { echo "$_n"; return 0; }; echo "layout: $3 was not suggested for the last layout"; return 1 ;;
         apps:open) panel_apps_read "$TMP/apps.gate"   # the list the step opens from too: the desktop read once a step (#196)
@@ -7036,7 +7044,7 @@ bar_want() {   # bar_want WORDS -- from the shell: `spark-shell panel "mute ever
 PROVIDE_PROTOCOL=2025-06-18
 PROVIDE_SECTIONS="lan wifi bt printers out mic bat clock theme window display keyboard pointer notifications storage power notes reminders bar layout apps about undo files"   # every panel section but spark (its one row is the chat, which the dialog holds itself), and files
 PROVIDE_LINE_MAX=65536    # a request longer than this is refused whole
-PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
+PROVIDE_TOOLS="printers_default printers_pause printers_resume printers_cancel clock_format clock_week clock_zone wifi_connect wifi_disconnect wifi_forget bt_connect bt_disconnect bt_pair bt_remove bt_scan bt_power out_use out_level out_adjust out_mute out_unmute mic_use mic_level mic_adjust mic_mute mic_unmute theme_palette theme_save theme_delete theme_back theme_text theme_transparency theme_preview theme_animation theme_glyphs theme_workspaces theme_motion theme_alpha theme_wallpaper theme_wallpaper_color theme_wallpaper_picture theme_picture theme_words window_split window_tabs window_stacked window_restore window_move window_place window_focus window_close window_capture notes_new notes_open notes_add notes_append notes_find notes_rename notes_trash notes_restore reminders_add reminders_done reminders_snooze reminders_restore reminders_delete display_idle display_lock display_saver display_brightness display_scale display_mode display_position display_place display_transform display_main display_on display_off keyboard_use keyboard_next keyboard_repeat_delay keyboard_repeat_rate keyboard_caps pointer_tap pointer_scroll pointer_speed notifications_do_not_disturb notifications_dismiss notifications_restore storage_mount storage_unmount storage_open storage_eject power_lock power_suspend power_logout power_restart power_shutdown bar_on bar_off bar_top bar_bottom bar_text bar_tray layout_open layout_new layout_save layout_add layout_delete layout_restore layout_rename layout_back apps_open apps_terminal about_open about_site undo_all files_browse files_open files_show files_attach files_reveal files_rename files_move files_copy files_trash files_restore files_purge files_empty files_new_folder files_new_text files_find files_say files_play files_stop lan_address lan_auto lan_dns lan_restore wifi_address wifi_auto wifi_dns wifi_restore wifi_setup wifi_hidden"
 # The scrubber, one list for every string a provider hands on (a row, a
 # receipt, a title) and for the want's plan: what can redraw or reorder a
 # screen goes. Each class is a named line, so it can be argued with:
@@ -7174,7 +7182,7 @@ tool_spec() {
         storage_open)      _ts=storage _ta=open _tp=name _tk=string _th=fo _tt='storage open NAME' _td='Open a drive in the file manager, mounted first when it is not.' ;;
         storage_eject)     _ts=storage _ta=eject _tp=name _tk=string _th='' _tt='storage eject NAME' _td='Unmount every part of a drive and power it off, so it can be taken out.' ;;
         power_lock)        _ts=power _ta=lock _th=o _tt='power lock' _td='Lock the screen.' ;;
-        power_suspend)     _ts=power _ta=suspend _th=o _tt='power suspend' _td='Lock the screen and suspend the machine.' ;;
+        power_suspend)     _ts=power _ta=suspend _th='' _tt='power suspend' _td='Lock the screen and suspend the machine. The answer comes when it wakes.' ;;
         power_logout)      _ts=power _ta=logout _th=d _tt='power logout' _td='Log out. Every window closes and the session ends.' ;;
         power_restart)     _ts=power _ta=restart _th=d _tt='power restart' _td='Restart the machine. Everything open closes and it starts again.' ;;
         power_shutdown)    _ts=power _ta=shutdown _th=d _tt='power shutdown' _td='Shut the machine down. Everything open closes and the machine turns off.' ;;
@@ -7194,7 +7202,8 @@ tool_spec() {
         layout_back)       _ts=layout _ta=back _th=f _tt='layout back' _td='The layout before this one, opened again.' ;;
         apps_open)         _ts=apps _ta=open _tp=name _tk=string _th=o _tt='apps open NAME' _td='Open an app on this workspace.' ;;
         apps_terminal)     _ts=apps _ta=terminal _th=o _tt='apps terminal' _td='Open a terminal window.' ;;
-        about_open)        _ts=about _ta=open _th=ri _tt='about' _td='The version, the keys, the licence and the address.' ;;
+        about_open)        _ts=about _ta=open _th=ri _tt='about' _td='The version, the project, the license and the credits.' ;;
+        about_site)        _ts=about _ta=site _th=o _tt='about site' _td='Open the project page in the browser.' ;;
         undo_all)          _ts=undo _ta=all _th='' _tt='undo' _td='Take the last thing done back.' ;;
         files_browse)      _ts=files _ta=browse _tp=path _tk=path _th=ifo _tt='files browse PATH' _td='Open a folder in the system file manager, for anything beyond the steps here. path is a row'"'"'s own path, exactly as written.' ;;
         files_open)        _ts=files _ta=open _tp=path _tk=path _th=ifo _tt='files open PATH' _td='Open a file with the app that opens its kind. path is a row'"'"'s own path, exactly as written.' ;;
@@ -7327,6 +7336,7 @@ provide_rows() {   # provide_rows SECTION -> the rows resource: {"title", "state
                 elif $s == "theme" and .id == "theme:show:Animation" then .children = "spark-shell://theme/rows/animations" | .tool = null | .columns = [$anim]
                 elif ($s == "lan" or $s == "wifi") and (.id | startswith($s + ":network-settings")) then .sign = "opens" | .children = ("spark-shell://" + $s + "/rows/network/" + (.id | split(":network-settings ")[1]))
                 elif $s == "display" and (.text | startswith("screen ")) then .sign = "opens" | .children = ("spark-shell://display/rows/screen/" + (.text | split(" ")[1]))
+                elif $s == "power" and (.columns | length) > 0 then .wide = .columns | .columns = []   # the rows bare; what each does is the status row while it is lit, and a column in a wide list (dialog/DESIGN.md, v0.127)
                 elif $s == "window" and (.tool.name // "") == "window_capture" then .key = ($desktopkeys["desktop.desktop-capture-" + .tool.arguments.what] // null)
                 elif (.tool.name // "") == "layout_save" then .tool.ask = ["name"]
                 elif (.tool.name // "") == "layout_rename" then .tool.ask = ["to"]
@@ -7517,16 +7527,46 @@ provide_clock_rows() {
     jq -cn --arg state "$(time_zone), $(time_sync)" '{title: "clock", state: $state, rows: [{id: "clock:settings", sign: "opens", text: "time settings", tool: null, more: [], columns: [], children: "spark-shell://clock/rows/settings", group: null}], short: ["clock:settings"]}'
 }
 provide_title() { [ "$1" != about ] || return 0; [ "$1" != files ] || { echo "your home folder"; return; }; panel_title "$1" | sed -n 1p | sed "s/^$1 *//" | scrub_text; }
-provide_about_rows() {   # -> the about's rows: the template's `# key:` sentences, a combo (or Print) as a column, in five groups; the licence and the address; the row that opens it
-    desk_keys | scrub_text | jq -Rn --arg v "$(panel_version)" '
-        [inputs] | to_entries | map(.key as $i | .value as $l
-            | true as $k
-            | {id: ("about:key:" + ($i | tostring)), sign: "blank",
-               text: (if $k then ($l | sub("^[^ ]* "; "")) else $l end), tool: null, more: [],
-               columns: (if $k then [$l | sub(" .*$"; "") | sub(",$"; "")] else [] end), children: null,
-               group: ("keys " + (if $i < 3 then "1" elif $i < 6 then "2" elif $i < 15 then "3" elif $i < 18 then "4" else "5" end))})
-        | . + [{id: "about:address", sign: "opens", text: "github.com/forgewright-ai/spark-shell", tool: null, more: [], columns: [], children: null, group: "address"},
-               {id: "about:open", sign: "opens", text: ("spark-shell " + $v), tool: {name: "about_open", arguments: {}}, more: [], columns: [], children: null, group: null}]
+help_keys() {   # -> help's desktop rows (dialog/DESIGN.md, v0.127): SUBJECT, what you do, the binding whose key it is (one key a row, or none), the key as the template binds it
+    printf '%s\n' \
+        "windows	a terminal window	terminal.open	Super+Return" \
+        "windows	close the window	window.close	Super+Shift+q" \
+        "windows	move the focus		Super+h j k l" \
+        "windows	snap the window to a half		Super+arrow" \
+        "windows	float the window, or tile it again	desktop.desktop-window-float	Super+Shift+space" \
+        "windows	fill the screen	window.fullscreen	Super+f" \
+        "windows	tabs	layout.tabs	Super+w" \
+        "windows	a stack	layout.stack	Super+Shift+s" \
+        "windows	side by side again	layout.toggle-split	Super+e" \
+        "workspaces	go to workspace 1 to 10		Super+1..0" \
+        "workspaces	take the window there		Super+Shift+1..0" \
+        "workspaces	the previous one, the next		Super+Ctrl+Left  Right" \
+        "the desktop	home	home.open	Super+space" \
+        "the desktop	lock the screen	desktop.desktop-lock	Super+Escape" \
+        "the desktop	capture the screen	desktop.desktop-capture-screen	Print" \
+        "the desktop	capture an area	desktop.desktop-capture-area	Shift+Print" \
+        "the desktop	capture the window	desktop.desktop-capture-window	Super+Print" \
+        "the desktop	the next keyboard layout	desktop.desktop-keyboard-next	Super+Ctrl+space"
+}
+provide_about_rows() {   # -> the about's rows (dialog/DESIGN.md, v0.127): the facts by id (released, installed), the rows that open (project, license, credits: a tool, two pages) and the short form that opens the page; then help's key rows, a sentence each with its combo as a column
+    _av=$(panel_version); _ad=''
+    [ -z "$_av" ] || _ad=$(cd "$REPO" 2>/dev/null && LC_ALL=C git log -1 --format=%cd --date=format:'%e %b %Y' "v$_av" 2>/dev/null | sed 's/^ *//')   # the day of the tag this copy is at
+    _ap=$REPO; case $_ap in "$HOME"/*) _ap="~${_ap#"$HOME"}" ;; esac
+    _an=$(grep -c '^- ' "$REPO/CREDITS.md" 2>/dev/null || echo 0)
+    _am=$(python3 "$REPO/lib/home.py" map "$REPO/templates/.config/sway/config" 2>/dev/null) || _am='{}'   # the keys as bound now, your overrides in
+    help_keys | scrub_text | jq -Rn --arg v "$_av" --arg d "$_ad" --arg p "$_ap" --arg n "$_an" --argjson m "$_am" '
+        def b64: @base64 | gsub("="; "") | gsub("[+]"; "-") | gsub("/"; "_");
+        def row(id; text; tool; cols): {id: id, sign: "blank", text: text, tool: tool, more: [], columns: cols, children: null, group: null};
+        [inputs | split("\t")] | to_entries | map(.key as $i | .value as $r
+            | row("about:key:" + ($i | tostring); $r[1]; null; []) | .group = $r[0]
+            | .key = (if $r[2] != "" and ($m[$r[2]] // "") != "" then $m[$r[2]] else $r[3] end)) as $keys
+        | (if $d == "" then [] else [row("about:released"; "released " + $d; null; [])] end)
+          + [(row("about:project"; "project"; {name: "about_site", arguments: {}}; ["github.com/forgewright-ai/spark-shell"]) | .sign = "opens" | .wide = ["opens in the browser"]),
+             (row("about:license"; "license"; null; ["MIT"]) | .wide = ["MIT", "LICENSE in " + $p] | .page = ("spark-shell://about/page/" + ("about:license" | b64))),
+             (row("about:credits"; "credits"; null; [$n + " projects and their licenses"]) | .wide = [$n + " projects and their licenses", "CREDITS.md in " + $p] | .page = ("spark-shell://about/page/" + ("about:credits" | b64))),
+             row("about:installed"; "installed at " + $p; null; []),
+             (row("about:open"; "spark-shell " + $v; {name: "about_open", arguments: {}}; []) | .sign = "opens")]
+          + $keys
         | {title: "about", rows: ., short: ["about:open"]}'
 }   # provide_title SECTION -> the context title: the panel's title line without the section's column
 
@@ -8260,6 +8300,8 @@ provide_page() {   # provide_page SECTION ROW-ID -> the page Space shows for one
         wifi:wifi:*) wifi_page "$2" ;;
         bt:'bt:'*' '?*) bt_page "${2#bt:* }" ;;
         storage:'storage:'*' '?*) storage_page "${2#storage:* }" ;;
+        about:about:license) scrub_text < "$REPO/LICENSE" | jq -Rn '{title: "license", lines: [inputs], bold: []}' ;;   # the files as they are, read only (dialog/DESIGN.md, v0.127)
+        about:about:credits) scrub_text < "$REPO/CREDITS.md" | jq -Rn '[inputs] as $l | {title: "credits", lines: ($l | map(sub("^#+ *"; ""))), bold: [range($l | length) | select($l[.] | startswith("#"))]}' ;;
         *) return 1 ;;
     esac
 }

@@ -593,8 +593,6 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
             },
         );
         drawn.film = Some((x, y, w, h, reel, since));
-    } else if app.view == View::About {
-        about(app, &mut pen, content_y, bottom);
     } else if app.view == View::Preview {
         let (picks, picture, pages) = preview(app, &mut pen, content_y, bottom, &mut drawn);
         drawn.picks = picks;
@@ -891,6 +889,14 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
     match it {
         Item::Apps(line) => page_line(pen, line, y, lit),
         Item::Files(line) => page_line(pen, line, y, lit),
+        Item::Key(words, key) => {
+            // help's row (dialog/DESIGN.md, v0.127): what you do at the row column, the key a chip at the right, where
+            // the rows' arrows stand; the words cut before it, whole on the status row while the row is lit
+            let e = pen.end(y);
+            let kx = e.saturating_sub(3 + cells(key) as u16 + 2);
+            pen.put(4, y, &cut_words(words, kx.saturating_sub(6) as usize), pal.fg, false, lit);
+            pen.chip(kx, y, key);
+        }
         Item::Heading(h) => {
             pen.put(2, y, h, pal.muted, false, false);
         }
@@ -903,14 +909,13 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             pen.put(4, y, DESTS[*d].name, pal.fg, false, lit);
             let words = app.dest_state(*d).unwrap_or_else(|| DESTS[*d].purpose.to_string());
             let e = pen.end(y);
-            pen.put(
-                PURPOSE_X,
-                y,
-                &cut_words(&words, e.saturating_sub(PURPOSE_X + 2) as usize),
-                pal.muted,
-                false,
-                lit,
-            );
+            // among the about's rows (help, dialog/DESIGN.md v0.127) its column is theirs, so the four line up
+            let px = if app.view == View::About {
+                base + widths.first().copied().unwrap_or(0) as u16 + 2
+            } else {
+                PURPOSE_X
+            };
+            pen.put(px, y, &cut_words(&words, e.saturating_sub(px + 2) as usize), pal.muted, false, lit);
         }
         Item::Setting(i) => {
             let (label, name, purpose) = SETTINGS[*i];
@@ -962,7 +967,7 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
             pen.put(6, y, if *on { "a model answers what you ask" } else { "off" }, pal.fg, false, lit);
         }
         Item::Question(verb) => {
-            // the question's rows (dialog/DESIGN.md, v0.125): the verb, then keep working; a menu's rows at the row
+            // the question's rows (dialog/DESIGN.md, v0.127): the verb, then keep working; a menu's rows at the row
             // column, nothing drawn beside them
             let words = if *verb { app.question_verb() } else { "keep working".to_string() };
             pen.put(4, y, &words, pal.fg, false, lit);
@@ -2046,43 +2051,6 @@ fn month(app: &App, pen: &mut Pen, x0: u16, top: u16, bottom: u16, k: i32) -> Op
     }
     // six weeks' room whatever the month: Left and Right never move what is under it (#196)
     Some(end.max(y))
-}
-
-/// The about (#40): spark-shell, its version and licence, and its address; then the keys, each a chip
-/// and the first part of its sentence on one line, in their groups, a group whole or not at all; then
-/// the command that shows every sentence whole, with the ones that have no key (the media keys,
-/// typing exit).
-fn about(app: &App, pen: &mut Pen, top: u16, bottom: u16) {
-    let pal = pen.pal.clone();
-    let w = pen.w;
-    // the page opens on the versions (dialog/DESIGN.md): the installed release first, the dialog's own under it
-    let release = app
-        .about_idx
-        .map(|i| app.providers[i].version.trim_start_matches('v').to_string())
-        .filter(|v| !v.is_empty());
-    let lines = [
-        match &release {
-            Some(v) => format!("spark-shell v{}", v),
-            None => "spark-shell, release unknown here".to_string(),
-        },
-        format!("dialog {}", env!("CARGO_PKG_VERSION")),
-        "home: local discovery and optional assistance".into(),
-        "github.com/forgewright-ai/spark-shell".into(),
-        "MIT License".into(),
-        "Credits: forgewright contributors; Ratatui and Crossterm; the native tools of your OS.".into(),
-        "Full license and acknowledgements: LICENSE and CREDITS.md in the project.".into(),
-    ];
-    let mut y = top;
-    for text in lines {
-        for line in wrap(&text, w.saturating_sub(4) as usize) {
-            if y >= bottom {
-                return;
-            }
-            pen.put(2, y, &line, pal.fg, false, false);
-            y += 1;
-        }
-        y += 1;
-    }
 }
 
 /// A rendered buffer as text and tokens: the 60 characters of each row,
