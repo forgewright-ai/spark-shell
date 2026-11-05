@@ -69,6 +69,50 @@ time.sleep(.2)
             self.assertEqual((root / "draft").read_text(), "preserve this draft")
             self.assertGreaterEqual(len((root / "focus").read_text().splitlines()), 4)
 
+    def test_a_section_asked_of_an_open_home_is_a_request_it_takes(self):
+        # a bar block clicked while home is open: the section written for home to go to, the window focused,
+        # no second launch; with no home open, the launch names the section and no request is left behind
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = {**os.environ, "HOME": tmp, "XDG_RUNTIME_DIR": tmp, "PATH": tmp + os.pathsep + os.environ["PATH"]}
+            for name, body in {
+                "swaymsg": '''import os, sys
+from pathlib import Path
+p = Path(os.environ["HOME"])
+if "get_tree" in sys.argv:
+    print((p / "tree").read_text() if (p / "tree").exists() else '{"nodes":[]}')
+else:
+    with (p / "focus").open("a") as f: f.write("focused\\n")
+    print('[{"success":true}]')
+''',
+                "foot": '''import json, os, sys
+from pathlib import Path
+p = Path(os.environ["HOME"])
+with (p / "launches").open("a") as f: f.write(" ".join(sys.argv[1:]) + "\\n")
+(p / "tree").write_text(json.dumps({"nodes":[{"app_id":"spark-dialog","id":42}]}))
+''',
+            }.items():
+                file = root / name
+                file.write_text("#!" + sys.executable + "\n" + body)
+                file.chmod(0o700)
+            argv = [sys.executable, str(REPO / "lib/home.py"), "open", str(REPO / "spark-shell")]
+            goto = root / "spark-home.goto"
+            done = subprocess.run(argv + ["notifications"], env=env, capture_output=True, timeout=10)
+            self.assertEqual(done.returncode, 0, done.stderr.decode())
+            self.assertTrue((root / "launches").read_text().rstrip().endswith("dialog notifications"))
+            self.assertFalse(goto.exists(), "a new home takes its section from its argument")
+            done = subprocess.run(argv + ["bt"], env=env, capture_output=True, timeout=10)
+            self.assertEqual(done.returncode, 0, done.stderr.decode())
+            self.assertEqual(len((root / "launches").read_text().splitlines()), 1, "home open: no second launch")
+            self.assertEqual(goto.read_text(), "bt\n")
+            self.assertEqual(goto.stat().st_mode & 0o777, 0o600)
+            done = subprocess.run(argv, env=env, capture_output=True, timeout=10)
+            self.assertEqual(done.returncode, 0, done.stderr.decode())
+            self.assertEqual(goto.read_text(), "bt\n", "no section asked: no request written")
+            for bad in ["../x", "Bt", "a b"]:
+                done = subprocess.run(argv + [bad], env=env, capture_output=True, timeout=10)
+                self.assertNotEqual(done.returncode, 0, bad)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -95,12 +95,26 @@ def focus_existing():
     return True
 
 
+def ask_section(runtime, section):
+    """A section for the open home to go to (a bar block's click): one word, written whole, then taken
+    by the dialog on its tick (dialog/src/goto.rs); an older request is replaced."""
+    temp = runtime / ("spark-home.goto.%d" % os.getpid())
+    fd = os.open(temp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(section + "\n")
+    os.replace(temp, runtime / "spark-home.goto")
+
+
 def open_home(shell, section=None):
+    if section is not None and not re.fullmatch(r"[a-z]{1,32}", section):
+        raise ValueError("a section is one word in lowercase letters")
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR", str(config_dir())))
     runtime.mkdir(mode=0o700, parents=True, exist_ok=True)
     lock = os.open(runtime / "spark-home.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     with os.fdopen(lock, "w") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
+        if section and home_id(sway("-t", "get_tree")) is not None:
+            ask_section(runtime, section)   # home is open: it goes there, its draft and its way back kept
         if focus_existing():
             return
         argv = ["foot", "--config", str(Path.home() / ".config/foot/dialog.ini"), "--app-id", "spark-dialog", "-e", shell, "dialog"]

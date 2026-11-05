@@ -830,19 +830,24 @@ pub struct App {
     cols_held: std::cell::RefCell<Option<(View, Vec<usize>, u16)>>,
 }
 
+/// The view a name opens: home's own places, the bar's clock (the Calendar), else the section of that
+/// provider; none for a name nothing here answers to. The start's --home and a bar click share it.
+fn view_named(providers: &[Provider], name: &str) -> Option<View> {
+    match name {
+        "apps" => Some(View::Apps),
+        "about" => Some(View::About),
+        "chat" => Some(View::Conversation),
+        "help" => Some(View::Help),
+        "clock" | "reminders" => Some(View::Dest(CALENDAR_DEST)), // the bar's clock opens the Calendar
+        h => providers.iter().position(|p| p.label == h).map(View::Section),
+    }
+}
+
 impl App {
     pub fn new(cfg: Config, labels: &[String]) -> App {
         let providers: Vec<Provider> = labels.iter().map(|l| Provider::new(l)).collect();
         let about_idx = providers.iter().position(|p| p.label == "about");
-        let view = match cfg.home.as_deref() {
-            Some("apps") => View::Apps,
-            Some("about") => View::About,
-            Some("chat") => View::Conversation,
-            Some("help") => View::Help,
-            Some("clock") | Some("reminders") => View::Dest(CALENDAR_DEST), // the bar's clock opens the Calendar
-            Some(h) => providers.iter().position(|p| p.label == h).map(View::Section).unwrap_or(View::Home),
-            None => View::Home,
-        };
+        let view = cfg.home.as_deref().and_then(|h| view_named(&providers, h)).unwrap_or(View::Home);
         let came_from: Vec<View> = if matches!(view, View::About | View::Conversation | View::Help) {
             vec![View::Home]
         } else {
@@ -3007,6 +3012,18 @@ impl App {
             if let Some(st) = self.staged.take() {
                 self.set_input(st.draft);
             }
+        }
+    }
+
+    /// A bar block clicked while home is open (lib/home.py's request, crate::goto): home goes to that
+    /// block's section as a click on its row would, the draft and the way back kept; true when it moved.
+    pub fn go_to(&mut self, name: &str) -> bool {
+        match view_named(&self.providers, name) {
+            Some(v) if v != self.view => {
+                self.go(v);
+                true
+            }
+            _ => false,
         }
     }
 
