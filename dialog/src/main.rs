@@ -350,7 +350,9 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
         || drawn.chips.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.keys.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.wave.is_some_and(on)
-        || drawn.reply_undo.is_some_and(|(a, b, y)| span(a, b, y));
+        || drawn.reply_undo.is_some_and(|(a, b, y)| span(a, b, y))
+        || drawn.other_path.is_some_and(|(a, b, y)| span(a, b, y))
+        || drawn.other_pick_at(col, row).is_some();
     if dragging {
         "grabbing"
     } else if clicks {
@@ -784,7 +786,7 @@ fn main() {
                 dirty |= frame_for_tick(
                     was,
                     app.busy(),
-                    app.cfg.progress && (app.thinking() || app.view == View::Apps && app.apps.pending.is_some()),
+                    app.cfg.progress && (app.thinking() || app.view == View::Apps && app.apps.pending.is_some() || app.files.batch.is_some()),
                 );
                 // a window still unseen after a moment is shown whatever is drawn: never a dialog that cannot be seen
                 if unseen && started.elapsed() >= Duration::from_millis(1500) {
@@ -920,6 +922,11 @@ fn main() {
                             // a menu's row acts on one click; an object's row is selected first and acts on a second
                             // click, as a file does on every desktop (dialog/DESIGN.md)
                             app.clicked(n, Instant::now());
+                        } else if let Some(n) = drawn.other_pick_at(m.column, m.row) {
+                            // a row of the other pane: that pane becomes active and the row is selected (dialog/DESIGN.md)
+                            app.pane_clicked(n, Instant::now());
+                        } else if drawn.other_path.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
+                            app.files_pane(); // its path: the pane becomes active
                         }
                     }
                     MouseEventKind::Drag(MouseButton::Left) => {

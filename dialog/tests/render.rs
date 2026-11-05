@@ -677,9 +677,10 @@ fn files_your_home_starts_with_home_and_ends_with_its_own_row() {
 
 #[test]
 fn files_a_files_actions_on_the_right_arrow() {
+    // the files' own page (dialog/DESIGN.md): the row's actions, check with its key, then the folder's
     let mut app = files_home();
     app.right();
-    assert!(matches!(app.view, View::Steps(_)));
+    assert!(matches!(app.view, View::Folder(..)) && app.files_page_open());
     render(&app, "files-actions");
 }
 
@@ -728,9 +729,10 @@ fn an_empty_trash_keeps_the_sizes_on_their_right_edge() {
 
 #[test]
 fn right_on_a_file_lists_its_steps_in_the_providers_words() {
+    // the provider's steps in its words on the files' actions page, a menu (dialog/DESIGN.md)
     let mut app = manager_app();
     app.right();
-    assert!(matches!(app.view, View::Steps(_)));
+    assert!(matches!(app.view, View::Folder(..)) && app.files_page_open());
     app.sel = 5;
     render(&app, "steps");
 }
@@ -1149,7 +1151,7 @@ fn a_zoomed_picture_moves_with_the_arrows_and_fits_with_esc() {
 
 #[test]
 fn a_file_with_no_preview_says_why_in_the_middle() {
-    let page = json!({"title": "backup.tar.zst", "facts": ["1.2 GB", "18 Oct"], "say": "No preview for this kind of file. Enter opens it."});
+    let page = json!({"title": "backup.tar.zst", "facts": ["1.2 GB", "18 Oct"], "say": "no preview for this kind of file: Enter opens it"});
     render(&preview_app("backup.tar.zst", "~", page, WIDTH, HEIGHT), "preview-none");
 }
 

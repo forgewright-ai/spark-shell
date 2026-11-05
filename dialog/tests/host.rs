@@ -2330,21 +2330,27 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
     assert!(app.hint().iter().any(|(t, _)| t == "Preview "), "with words typed the label stands still");
     app.input.clear();
     app.right();
-    assert!(matches!(app.view, View::Steps(0)), "{:?}", app.view);
+    // the files' own actions page, in place of the list of steps (dialog/DESIGN.md): the row's steps in the
+    // provider's words, then check, then the folder's under a heading
+    assert!(matches!(app.view, View::Folder(0, _)) && app.files_page_open(), "{:?}", app.view);
     assert_eq!(app.subtitle(), "notes.md");
-    let words = app.items().iter().filter(|it| matches!(it, Item::StepOf(_))).count();
-    assert_eq!(words, 8, "the tool and its seven more steps, each a row");
     let texts: Vec<String> = app
         .picks()
         .iter()
         .filter_map(|it| match it {
-            Item::StepOf(k) => app.step_call_words(*k),
+            Item::Files(l) => Some(l.label.clone()),
             _ => None,
         })
         .collect();
     assert_eq!(texts[0], "open");
     assert_eq!(texts[2], "attach to the next request");
     assert_eq!(texts[7], "trash");
+    assert_eq!(texts[8], "check", "the dialog's own, after the provider's steps");
+    assert!(
+        texts.contains(&"new folder".to_string()) && texts.contains(&"two panes".to_string()),
+        "{:?}",
+        texts
+    );
     app.sel = 7;
     let hint: Vec<String> = app.hint().into_iter().map(|(t, _)| t).collect();
     assert_eq!(
@@ -2354,7 +2360,11 @@ fn right_on_a_row_opens_its_steps_in_the_providers_words_and_enter_runs_one() {
         hint
     );
     app.enter();
-    assert!(matches!(app.view, View::Folder(0, _)), "back to the folder: {:?}", app.view);
+    assert!(
+        matches!(app.view, View::Folder(0, _)) && !app.files_page_open(),
+        "back to the folder: {:?}",
+        app.view
+    );
     assert!(app.steps_row.is_none());
     assert!(pump(&mut app, &rx, |a| a.running.is_none() && a.undo.is_some()));
     // a step from a row's list says nothing: the row is gone from the list, its undo in the reply row (#196)

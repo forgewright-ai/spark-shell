@@ -23,6 +23,8 @@ const DEFAULTS: &[(&str, HintKey, &str)] = &[
     ("delete", HintKey::Delete, "Delete"),
     ("quit", HintKey::Quit, "Ctrl+c"),
     ("preview", HintKey::Char(' '), "Space"),
+    ("check", HintKey::Check, "Insert"),
+    ("pane", HintKey::Pane, "Ctrl+Tab"),
     ("zoom-in", HintKey::Char('+'), "Plus"),
     ("zoom-out", HintKey::Char('-'), "-"),
     ("zoom-fit", HintKey::Char('0'), "0"),
@@ -63,6 +65,7 @@ fn parse(text: &str) -> Result<KeyEvent, String> {
         "pagedown" => KeyCode::PageDown,
         "backspace" => KeyCode::Backspace,
         "delete" => KeyCode::Delete,
+        "insert" => KeyCode::Insert,
         "space" => KeyCode::Char(' '),
         "plus" => KeyCode::Char('+'),
         f if f.starts_with('f') && f.len() > 1 => {

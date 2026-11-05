@@ -21,7 +21,7 @@
                                                                                           
                    settings       tokyonight-night                                        
                                                                                           
-                   help           24 shortcuts · 22 commands                              
+                   help           26 shortcuts · 22 commands                              
                                                                                           
                    about          spark-shell v0.90                                       
                                                                                           

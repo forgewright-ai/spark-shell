@@ -102,35 +102,13 @@ pub enum Action {
     Undo(Box<Preferences>),
 }
 
-/// One line of a page, in the row shapes the dialog has: a group's heading, the page's subject, a note,
-/// a fact (a label and a value, no action), or a row with a sign, a label, a value and an arrow. A switch
-/// is a row whose sign is a dot or a ring and whose value is on or off, drawn at the value column as a
-/// setting's is.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Line {
-    pub sign: &'static str,
-    pub label: String,
-    pub value: String,
-    pub value_x: u16,
-    pub tail: String,
-    pub action: Option<Action>,
-    pub indent: u16,
-    pub heading: bool,
-    pub title: bool,
-    pub muted: bool,
-    pub value_muted: bool,
-    /// A wrapped value's next line: one target with the line it continues.
-    pub continuation: bool,
-    pub disabled: bool,
-}
+/// One line of a page, in the row shapes the dialog has (crate::page::Line): a group's heading, the page's
+/// subject, a note, a fact (a label and a value, no action), or a row with a sign, a label, a value and an
+/// arrow. A switch is a row whose sign is a dot or a ring and whose value is on or off, drawn at the value
+/// column as a setting's is.
+pub type Line = crate::page::Line<Action>;
 
-#[derive(Clone, Debug, Default)]
-pub struct Navigation {
-    pub query: String,
-    pub selected: usize,
-    pub in_list: bool,
-    pub scroll: usize,
-}
+pub use crate::page::Navigation;
 
 #[derive(Default)]
 pub struct Outcome {

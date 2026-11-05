@@ -23,6 +23,9 @@ pub enum HintKey {
     Down,
     /// A character a key chip stands for (a preview's + - < >), typed as the key is.
     Char(char),
+    /// Files: the lit row's check (Insert), and the other pane made active (Ctrl+Tab).
+    Check,
+    Pane,
 }
 
 use crate::gate;
@@ -62,6 +65,9 @@ impl App {
                     crate::apps::Form::AddMapping => "a desktop category, such as Network",
                 };
             }
+        }
+        if let Some(p) = self.files_placeholder() {
+            return p;
         }
         PLACEHOLDER
     }
@@ -662,6 +668,8 @@ impl Default for Config {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Item {
     Apps(crate::apps::Line),
+    /// A line of a page of files: the actions, a conflict's choices, a form.
+    Files(crate::files::Line),
     Heading(String),
     Blank,
     Row(usize, usize),
@@ -705,6 +713,8 @@ pub enum Item {
 pub struct App {
     pub prompts: crate::interaction::Prompts,
     pub apps: crate::apps::State,
+    /// Files' own state over the folder list: checks, pages, the other pane, a batch (crate::files).
+    pub files: crate::files::State,
     pub window_focused: bool,
     /// The request spark is answering now; an older reply is dropped.
     pub want_serial: u64,
@@ -851,6 +861,7 @@ impl App {
         App {
             prompts: Default::default(),
             apps: crate::apps::State::default(),
+            files: crate::files::State::default(),
             window_focused: true,
             want_serial: 0,
             target: None,
@@ -1120,11 +1131,15 @@ impl App {
             s.close_stdin();
         }
         if self.running.as_ref().is_some_and(|(p, _, _)| *p == idx) {
-            self.running = None;
+            let step = self.running.take().map(|(_, _, s)| s);
             self.want_cancel();
             self.opened = false;
             self.hidden = false;
-            self.refuse(&format!("{} stopped before it answered, so it may or may not have happened", label));
+            let why = format!("{} stopped before it answered, so it may or may not have happened", label);
+            if step.is_some_and(|s| self.files_batch_broken(&s, &why)) {
+                return;
+            }
+            self.refuse(&why);
             self.stop_queue();
             return self.next_step();
         }
@@ -1370,19 +1385,10 @@ impl App {
                 if text.len() > mcp::RESOURCE_MAX {
                     return self.refuse("that folder holds too much to show");
                 }
-                // the rows of the folder on screen alone: an answer for a folder left meanwhile lands nowhere (#112)
+                // the rows of the folder on screen, or of the other pane: an answer for a folder neither shows lands
+                // nowhere (#112); a pick kept in a list (a wallpaper) stays checked over the read (#191)
                 let of = result.as_ref().and_then(|r| r.pointer("/contents/0/uri")).and_then(Value::as_str).map(scrub);
-                if let View::Folder(p, uri) = self.view.clone() {
-                    if p == idx && of.as_deref().is_none_or(|u| u == uri) {
-                        match model::rows(text) {
-                            Some(rows) => {
-                                self.folder = Some((p, uri, rows));
-                                self.hold_rows(p); // a pick kept in a list (a wallpaper) stays checked over the read (#191)
-                            }
-                            None => self.refuse(&error.unwrap_or_else(|| "that folder could not be read".into())),
-                        }
-                    }
-                }
+                self.files_land(idx, n, of, model::rows(text), error);
             }
             Kind::Hits => {
                 // what a provider found for the words: kept for the words typed now, an answer for older words lands nowhere
@@ -1519,15 +1525,19 @@ impl App {
                 Kind::Call(_) => {
                     self.clear_pair(idx);
                     if self.running.as_ref().is_some_and(|(p, n, _)| *p == idx && *n == id) {
-                        self.running = None;
+                        let step = self.running.take().map(|(_, _, s)| s);
                         self.want_cancel();
                         self.opened = false;
                         self.hidden = false;
                         // no answer is no proof either way: say so, and run nothing that depends on it
-                        self.refuse(&format!(
+                        let why = format!(
                             "no answer in {} s, so it may or may not have happened: look before you try again",
                             mcp::T_CALL.as_secs()
-                        ));
+                        );
+                        if step.is_some_and(|s| self.files_batch_broken(&s, &why)) {
+                            continue;
+                        }
+                        self.refuse(&why);
                         self.stop_queue();
                         self.next_step();
                     }
@@ -1537,7 +1547,10 @@ impl App {
                         self.providers[idx].reading = false;
                     }
                 }
-                Kind::Folder => self.refuse("the list did not come in time: Esc goes back"),
+                Kind::Folder => {
+                    self.files.folder_reads.retain(|(p, i, _)| !(*p == idx && *i == id));
+                    self.refuse("the list did not come in time: Esc goes back")
+                }
                 Kind::Page => {
                     if let Some(pv) = self.preview.as_mut() {
                         pv.failed = true; // the wait ends with the words (#124)
@@ -1560,12 +1573,8 @@ impl App {
             let p = &self.providers[i];
             if p.dirty && !p.reading && p.last_read.map(|t| now.duration_since(t) >= READ_GAP).unwrap_or(true) {
                 self.read(i);
-                // the folder on screen is this provider's too (the wallpaper list, a files folder): read again, kept up meanwhile, so a check moves to the row chosen (#29)
-                if let View::Folder(fp, uri) = self.view.clone() {
-                    if fp == i {
-                        self.refresh_folder(fp, &uri);
-                    }
-                }
+                // the folder on screen is this provider's too (the wallpaper list, a files folder): read again, kept up meanwhile, so a check moves to the row chosen (#29); the other pane with it
+                self.refresh_panes(i);
             }
         }
     }
@@ -1573,11 +1582,16 @@ impl App {
     // ---- the list
 
     fn matches(&self, prov: usize, row: &model::Row) -> bool {
-        let hay = format!("{} {}", self.providers[prov].label, row.text).to_lowercase();
-        self.query().to_lowercase().split_whitespace().all(|w| hay.contains(w))
+        self.row_matches(prov, row, self.query())
     }
 
-    fn pickable(row: &model::Row) -> bool {
+    /// Every word typed is in the row's words, or its section's name.
+    fn row_matches(&self, prov: usize, row: &model::Row, words: &str) -> bool {
+        let hay = format!("{} {}", self.providers[prov].label, row.text).to_lowercase();
+        words.to_lowercase().split_whitespace().all(|w| hay.contains(w))
+    }
+
+    pub fn pickable(row: &model::Row) -> bool {
         row.tool.is_some() || row.children.is_some() || row.step.is_some() || row.switch.is_some() || !row.more.is_empty()
     }
 
@@ -1676,7 +1690,8 @@ impl App {
     /// and nothing else waiting on the prompt (dialog/DESIGN.md).
     pub fn ask_row(&self) -> bool {
         let searching_view = match &self.view {
-            View::Home | View::Dest(_) | View::Section(_) | View::Folder(..) | View::Found(..) => true,
+            View::Home | View::Dest(_) | View::Section(_) | View::Found(..) => true,
+            View::Folder(..) => !self.files_page_open(),
             View::Apps => matches!(self.apps.page, crate::apps::Page::List | crate::apps::Page::Hidden),
             _ => false,
         };
@@ -1713,6 +1728,11 @@ impl App {
                 list.push(Item::Ask);
             }
             return list;
+        }
+        if self.files_page_open() {
+            // a page of files: its lines, a menu; no ask row over it
+            let key = self.cfg.keys.label(HintKey::Check).to_string();
+            return self.files.lines(self.col_w(), &key).into_iter().map(Item::Files).collect();
         }
         let mut out = vec![];
         if self.view == View::Conversation {
@@ -1830,47 +1850,14 @@ impl App {
                 if folder_pick && rows.here.is_some() {
                     list.push(Item::Here);
                 }
-                for (i, r) in rows.rows.iter().enumerate() {
-                    if !self.query().is_empty() && !self.matches(*p, r) {
-                        continue;
-                    }
-                    if folder_pick && r.children.is_none() {
-                        continue;
-                    }
-                    // attaching or picking, the files offered are of the types asked; the summary goes
-                    let types = match (&self.picking, &self.attaching) {
-                        (Some(pk), _) => Some(&pk.types),
-                        (None, Some(_)) => Some(&self.cfg.attach),
-                        _ => None,
-                    };
-                    if let Some(t) = types {
-                        if r.children.is_none() && r.tool.is_some() {
-                            let ext = r.text.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
-                            if !t.contains(&ext) {
-                                continue;
-                            }
-                        }
-                        if r.tool.is_none() && r.children.is_none() {
-                            continue;
-                        }
-                    }
-                    if i + 1 == rows.rows.len() && i > 0 && r.tool.is_none() && r.children.is_none() {
-                        list.push(Item::Blank); // the summary at the end stands apart
-                    }
-                    // a group starts under its heading, with air above it, as in a section
-                    let prev = rows.rows[..i]
-                        .iter()
-                        .rev()
-                        .find(|q| self.query().is_empty() || self.matches(*p, q))
-                        .map(|q| q.group.clone());
-                    if r.group.is_some() && prev.as_ref() != Some(&r.group) {
-                        if !list.is_empty() {
-                            list.push(Item::Blank);
-                        }
-                        list.push(Item::Heading(r.group.clone().unwrap_or_default()));
-                    }
-                    list.push(Item::Folder(i));
-                }
+                // attaching or picking, the files offered are of the types asked; the summary goes
+                let types = match (&self.picking, &self.attaching) {
+                    (Some(pk), _) => Some(pk.types.as_slice()),
+                    (None, Some(_)) => Some(self.cfg.attach.as_slice()),
+                    _ => None,
+                };
+                let lead = !list.is_empty();
+                list.extend(self.folder_items(*p, rows, self.query(), folder_pick, types, lead));
             }
             View::Section(p) => self.section_rows(*p, &mut list, false),
             View::Dest(d) if *d == SETTINGS_DEST => {
@@ -1972,6 +1959,49 @@ impl App {
         }
         out.extend(list);
         out
+    }
+
+    /// A folder's rows as items, filtered by the words: a group under its heading with air above it (and above the
+    /// first where a row leads the list), the summary row apart at the end; the folders alone during a folder pick,
+    /// the types asked during a file pick.
+    pub(crate) fn folder_items(&self, p: usize, rows: &Rows, words: &str, folder_pick: bool, types: Option<&[String]>, lead: bool) -> Vec<Item> {
+        let mut list = vec![];
+        for (i, r) in rows.rows.iter().enumerate() {
+            if !words.is_empty() && !self.row_matches(p, r, words) {
+                continue;
+            }
+            if folder_pick && r.children.is_none() {
+                continue;
+            }
+            if let Some(t) = types {
+                if r.children.is_none() && r.tool.is_some() {
+                    let ext = r.text.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+                    if !t.contains(&ext) {
+                        continue;
+                    }
+                }
+                if r.tool.is_none() && r.children.is_none() {
+                    continue;
+                }
+            }
+            if i + 1 == rows.rows.len() && i > 0 && r.tool.is_none() && r.children.is_none() {
+                list.push(Item::Blank); // the summary at the end stands apart
+            }
+            // a group starts under its heading, with air above it, as in a section
+            let prev = rows.rows[..i]
+                .iter()
+                .rev()
+                .find(|q| words.is_empty() || self.row_matches(p, q, words))
+                .map(|q| q.group.clone());
+            if r.group.is_some() && prev.as_ref() != Some(&r.group) {
+                if !list.is_empty() || lead {
+                    list.push(Item::Blank);
+                }
+                list.push(Item::Heading(r.group.clone().unwrap_or_default()));
+            }
+            list.push(Item::Folder(i));
+        }
+        list
     }
 
     /// Everything the words name, by kind, the best first in each (#169): the places and the settings by their names, every
@@ -2166,6 +2196,7 @@ impl App {
     pub fn pickable_item(&self, i: &Item) -> bool {
         match i {
             Item::Apps(line) => line.action.is_some(),
+            Item::Files(line) => line.action.is_some(),
             Item::Row(p, r) => Self::pickable(&self.providers[*p].rows.rows[*r]),
             Item::Folder(i) => self
                 .folder
@@ -2751,11 +2782,15 @@ impl App {
             && self.staged.is_none()
             && self.pending.is_none()
             && !(self.view == View::Apps && self.apps.form())
-            && ((self.view == View::Apps && self.apps.has_back()) || !self.came_from.is_empty())
+            && !(self.files_page_open() && self.files.form())
+            && ((self.view == View::Apps && self.apps.has_back()) || (self.files_pane_view().is_some() && self.files.has_back()) || !self.came_from.is_empty())
     }
 
     pub fn right(&mut self) {
         if self.apps_details() {
+            return;
+        }
+        if self.mode == Mode::Normal && self.chip_focus.is_none() && self.files_right() {
             return;
         }
         if self.preview_key() {
@@ -2834,7 +2869,7 @@ impl App {
     }
 
     /// The question answered or let go: the draft comes back as it was.
-    fn unstash(&mut self) {
+    pub(crate) fn unstash(&mut self) {
         if let Some(s) = self.stash.take() {
             if self.input.is_empty() {
                 self.set_input(s);
@@ -2845,6 +2880,10 @@ impl App {
     /// Esc: a question waiting is answered no (the draft comes back); the focus on a control or the
     /// draft goes first; then back one view; from the first view the dialog closes.
     pub fn escape(&mut self) {
+        // a page of files: the actions or a conflict go back, a form is let go (dialog/DESIGN.md); the words first
+        if self.files_page_open() && self.mode == Mode::Normal && self.chip_focus.is_none() && (self.input.is_empty() || self.files.form()) {
+            return self.files_back();
+        }
         // a form of Apps: Esc lets it go, words typed or none, and asks nothing; a page: back, once the words are cleared
         if self.view == View::Apps && self.mode == Mode::Normal && self.chip_focus.is_none() && (self.input.is_empty() || self.apps.form()) {
             // a category filter on the list: Esc shows all apps first (dialog/DESIGN.md, v0.124.4)
@@ -2881,6 +2920,10 @@ impl App {
                 self.hidden = false;
                 self.input.clear();
                 self.unstash();
+                // a batch's step let go stops the batch with it: the receipt says what was done
+                if self.files.batch.is_some() {
+                    self.files_stop_batch();
+                }
                 self.queue.clear();
             }
             Mode::Pair { prov, id, .. } | Mode::Elicit { prov, id, .. } => {
@@ -2900,6 +2943,10 @@ impl App {
                 self.jobs.push(Job::StopListening);
             }
             Mode::Normal => {
+                // files being copied, moved or trashed: Esc stops after the file under way, wherever you are
+                if self.files_stop_batch() {
+                    return;
+                }
                 if self.chip_focus.is_some() {
                     self.chip_focus = None;
                 } else if let Some(st) = self.staged.take() {
@@ -2912,6 +2959,8 @@ impl App {
                     self.set_input(String::new());
                     self.in_list = false;
                     self.sel = 0;
+                } else if self.files_checks_clear() {
+                    // the checks go first; the next Esc goes back (dialog/DESIGN.md)
                 } else if self.zoomed() {
                     if let Some(pv) = self.preview.as_mut() {
                         pv.fit();
@@ -2968,7 +3017,9 @@ impl App {
         }
         if self.picking.as_ref().map(|pk| self.came_from.len() < pk.depth + 1).unwrap_or(false) {
             self.picking = None;
+            self.files.pending = None;
         }
+        self.files_on_view();
         if !matches!(self.view, View::Steps(_)) {
             self.steps_row = None;
         }
@@ -3028,6 +3079,7 @@ impl App {
         }
         self.came_from.push(self.view.clone());
         self.view = v;
+        self.files_on_view();
         self.prompt_arrive();
         self.sel = 0;
         self.in_list = false;
@@ -3225,6 +3277,10 @@ impl App {
         if self.view == View::Apps {
             return self.apps_enter();
         }
+        // a form of files: Enter saves the name typed
+        if self.files_page_open() && self.files.form() && !self.in_list {
+            return self.files_submit();
+        }
         // the commands spark planned, as they stand in the box: Enter runs them, in order (#53)
         if self.staged_now() && !self.in_list {
             if let Some(st) = self.staged.take() {
@@ -3258,6 +3314,12 @@ impl App {
         if let Item::Apps(line) = &item {
             if let Some(action) = &line.action {
                 self.apps_activate(action.clone());
+            }
+            return;
+        }
+        if let Item::Files(line) = &item {
+            if let Some(action) = &line.action {
+                self.files_activate(action.clone());
             }
             return;
         }
@@ -3306,7 +3368,7 @@ impl App {
                 let Some(here) = self.folder.as_ref().and_then(|(_, _, r)| r.here.clone()) else {
                     return;
                 };
-                step.call.arguments.insert(pk.field.clone(), Value::String(here));
+                step.call.arguments.insert(pk.field.clone(), Value::String(here.clone()));
                 step.call.pick = None;
                 self.came_from.truncate(pk.depth);
                 // landed in the folder the pick began in: the copy pushed so Esc could cancel goes (the review's B)
@@ -3314,6 +3376,10 @@ impl App {
                     self.came_from.pop();
                 }
                 self.sel = 0;
+                // a files copy or move: the names already here are asked about first, and several files go as one
+                if self.files_picked(step.clone(), &here) {
+                    return;
+                }
                 self.run(step);
             }
             Item::Dest(d) => {
@@ -3422,6 +3488,10 @@ impl App {
                     self.open_children(p, &c);
                     return;
                 }
+                // the folder's own row: its actions (dialog/DESIGN.md), Enter never silent
+                if self.providers[p].label == "files" && crate::files::is_summary(&row) && self.files_actions(Some(row.clone())) {
+                    return;
+                }
                 if let Some(pk) = self.picking.clone() {
                     // the file picked goes to the tool the pick names, at its own provider; the shell checks the path
                     let Some(path) = row.tool.as_ref().and_then(|t| t.arguments.get("path")).and_then(Value::as_str) else {
@@ -3454,7 +3524,9 @@ impl App {
                     self.pick_step(p, call, &row.text);
                 } else if !row.more.is_empty() {
                     // a row that is only its actions (this folder, #127): Enter opens them, as Right does
-                    self.steps_of(p, row);
+                    if !self.files_actions(Some(row.clone())) {
+                        self.steps_of(p, row);
+                    }
                 }
             }
             _ => {}
@@ -3462,7 +3534,7 @@ impl App {
     }
 
     /// A row's children: a provider's own rows (its section), or one of its folders.
-    fn open_children(&mut self, from: usize, uri: &str) {
+    pub(crate) fn open_children(&mut self, from: usize, uri: &str) {
         let rest = uri.strip_prefix("spark-shell://").unwrap_or("");
         let (label, tail) = rest.split_once('/').unwrap_or((rest, ""));
         let Some(q) = self.providers.iter().position(|x| x.label == label) else {
@@ -3483,15 +3555,18 @@ impl App {
         }
     }
 
-    fn read_folder(&mut self, p: usize, uri: &str) {
+    pub(crate) fn read_folder(&mut self, p: usize, uri: &str) {
         self.folder = None;
         self.refresh_folder(p, uri);
     }
 
-    /// The folder read again while its rows stay on screen: the answer replaces them.
-    fn refresh_folder(&mut self, p: usize, uri: &str) {
-        if let Some(s) = self.server(p) {
-            s.request("resources/read", json!({"uri": uri}), Kind::Folder, mcp::T_READ);
+    /// The folder read again while its rows stay on screen: the answer replaces them, landing in the active pane.
+    pub(crate) fn refresh_folder(&mut self, p: usize, uri: &str) {
+        if let Some(id) = self
+            .server(p)
+            .and_then(|s| s.request("resources/read", json!({"uri": uri}), Kind::Folder, mcp::T_READ))
+        {
+            self.files.folder_reads.push((p, id, crate::files::Landing::Active(uri.to_string())));
         }
     }
 
@@ -3505,7 +3580,7 @@ impl App {
     }
 
     /// The files provider, when one is running and handed a root.
-    fn files(&self) -> Option<usize> {
+    pub(crate) fn files(&self) -> Option<usize> {
         self.providers.iter().position(|p| p.label == "files" && p.dead.is_none())
     }
 
@@ -3650,6 +3725,11 @@ impl App {
             return self.reply(Mark::Note, "the controls are still loading; press Enter when they appear");
         }
         self.remember_prompt(words);
+        // undo of a batch of files: every step back, as one (dialog/DESIGN.md)
+        if words.trim().eq_ignore_ascii_case("undo") && self.files_undo_batch() {
+            self.set_input(String::new());
+            return;
+        }
         // undo with no provider step at hand: the last change of Apps, whose receipt Esc may have cleared
         if words.trim().eq_ignore_ascii_case("undo") && self.undo.is_none() && self.apps.undo.is_some() {
             self.set_input(String::new());
@@ -4109,7 +4189,7 @@ impl App {
 
     /// A row picked (a click, Enter, a preview's Enter, a step from a row's list): its step, run as every
     /// step is and silent unless refused (#196).
-    fn pick_step(&mut self, prov: usize, call: Call, row_text: &str) {
+    pub(crate) fn pick_step(&mut self, prov: usize, call: Call, row_text: &str) {
         let line = self.step_line(prov, &call, row_text);
         self.run(Step {
             prov,
@@ -4138,6 +4218,10 @@ impl App {
             self.target = None;
         }
         if let Some(field) = step.call.ask.first().cloned() {
+            // files' rename, new folder and new text file: a form typed in the prompt (dialog/DESIGN.md)
+            if self.files_form(step.clone()) {
+                return;
+            }
             let masked = gate::secret(&field, self.tool_of(&step).and_then(|t| t.schema.pointer(&format!("/properties/{}", field))));
             self.stash_draft();
             self.mode = Mode::Ask { step, field, masked };
@@ -4260,6 +4344,7 @@ impl App {
         match n {
             Some(id) => {
                 self.asks_this_call = 0;
+                self.files_step_sent(&step.call);
                 self.running = Some((idx, id, step));
                 self.hidden = opens;
             }
@@ -4317,25 +4402,23 @@ impl App {
             &step.call.arguments,
             refused,
         );
+        // a batch's step: its refusal is counted, never the queue's to stop; its receipt is the batch's one (dialog/DESIGN.md)
+        let batch_step = self.files_batch_owns(&step.call);
+        let mut outcome: Result<(), String> = Ok(());
+        let mut fresh = false;
         if let Some(e) = output_error {
             self.opened = false;
             self.hidden = false;
-            self.refuse(&e);
-            self.stop_queue();
-            self.providers[idx].dirty = true;
-            return;
-        }
-        let mut fresh = false;
-        if let Some(r) = result {
+            outcome = Err(e);
+        } else if let Some(r) = result {
             let text = r.pointer("/content/0/text").and_then(Value::as_str).unwrap_or("");
             if refused {
                 self.hidden = false;
-                self.refuse(if text.is_empty() || !privacy.text_safe(text) {
-                    "the action did not complete"
+                outcome = Err(if text.is_empty() || !privacy.text_safe(text) {
+                    "the action did not complete".to_string()
                 } else {
-                    text
+                    text.to_string()
                 });
-                self.stop_queue();
             } else {
                 let sc = r.get("structuredContent").cloned().unwrap_or(Value::Null);
                 fresh = self.take_rows(idx, &sc);
@@ -4399,6 +4482,7 @@ impl App {
                     }
                 }
                 self.undo = None;
+                self.files.undo_more.clear(); // a batch's undo past this step goes with the undo it followed
                 if let Some(u) = sc.get("undo") {
                     if let (Some(name), Some(args)) = (u.get("name").and_then(Value::as_str), u.get("arguments").and_then(Value::as_object)) {
                         let call = Call {
@@ -4432,8 +4516,17 @@ impl App {
                 }
             }
         }
+        if let Err(e) = &outcome {
+            if !batch_step {
+                self.refuse(e);
+                self.stop_queue();
+            }
+        }
         if !fresh {
             self.providers[idx].dirty = true;
+        }
+        if batch_step {
+            self.files_step_done(&step, outcome);
         }
         self.next_step();
     }
@@ -4455,17 +4548,13 @@ impl App {
         self.providers[idx].last_read = Some(Instant::now());
         self.hold_rows(idx);
         // a list of the provider's own on screen (the wallpapers) is read again: the answer is the section's rows
-        if let View::Folder(fp, uri) = self.view.clone() {
-            if fp == idx {
-                self.refresh_folder(fp, &uri);
-            }
-        }
+        self.refresh_panes(idx);
         true
     }
 
     /// Home keeps its reading measure; wider views can use more of the grid.
     pub fn col_w(&self) -> u16 {
-        crate::ui::column_width(self.size.0, &self.view)
+        crate::ui::frame_width(self.size.0, self)
     }
 
     /// A click lights row `n`: a choice, as a key's is, so the light kept from a preview lets go (#153).
@@ -4526,6 +4615,10 @@ impl App {
     /// nothing is said there. An app: its name, what it is, its category, its launch choice. A file or a row: its
     /// name and its wide columns.
     pub fn selected_line(&self) -> Option<String> {
+        // checks standing: their count and size, in place of the lit row's line (dialog/DESIGN.md)
+        if let Some(line) = self.files_checked_line() {
+            return Some(line);
+        }
         if !self.in_list || self.mode != Mode::Normal {
             return None;
         }
@@ -4551,7 +4644,15 @@ impl App {
                 let r = self.row_ref(&it)?;
                 let cols = r.wide.as_ref().unwrap_or(&r.columns);
                 let mut parts = vec![r.text.clone()];
-                parts.extend(cols.iter().filter(|c| !c.is_empty()).cloned());
+                if r.id.starts_with("files:") {
+                    // a file: name, kind, size, the date with its time, then the place: the row's own folder where it
+                    // carries one (a recent file, a file found), else the folder on screen (dialog/DESIGN.md)
+                    let before_place = if r.wide.is_some() { 3 } else { 2 };
+                    parts.extend(cols.iter().take(before_place).filter(|c| !c.is_empty()).cloned());
+                    parts.extend(self.files_place(&it, r));
+                } else {
+                    parts.extend(cols.iter().filter(|c| !c.is_empty()).cloned());
+                }
                 Some(parts.join(crate::ui::SEP))
             }
             _ => None,
@@ -4561,6 +4662,9 @@ impl App {
     /// The undo at hand runs now (the status row's Undo): a provider's step, or Apps' preferences as they were.
     pub fn undo_now(&mut self) {
         self.reply = None;
+        if self.files_undo_batch() {
+            return;
+        }
         if let Some(u) = self.undo.take() {
             self.run(u);
         } else if self.apps.undo.is_some() {
@@ -4738,7 +4842,17 @@ impl App {
                 }
             }
             View::Section(p) => self.providers[*p].title.clone(),
-            View::Folder(..) => self.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default(),
+            View::Folder(..) => {
+                use crate::files::Page;
+                match &self.files.page {
+                    Page::Actions(a) if self.files_page_open() => a.title.clone(),
+                    Page::Conflict(c) if self.files_page_open() => {
+                        format!("{} is in {} already", c.current().map(|t| t.name.clone()).unwrap_or_default(), c.dest_title)
+                    }
+                    Page::Form(f) if self.files_page_open() => f.words.clone(),
+                    _ => self.folder.as_ref().map(|(_, _, r)| r.title.clone()).unwrap_or_default(),
+                }
+            }
             View::Steps(_) => self.steps_row.as_ref().map(|r| r.text.clone()).unwrap_or_default(),
             View::Preview => self.preview.as_ref().map(|pv| pv.place.clone()).unwrap_or_default(),
             View::Found(_, words) => words.clone(),
@@ -4770,6 +4884,8 @@ impl App {
             HintKey::Up => self.up(),
             HintKey::Down => self.down(),
             HintKey::Char(c) => self.typed(c),
+            HintKey::Check => self.files_check(),
+            HintKey::Pane => self.files_pane(),
         }
     }
 
@@ -4798,6 +4914,11 @@ impl App {
     fn hint_keys(&self, pages: usize) -> Vec<(String, bool)> {
         if self.view == View::Apps && self.mode == Mode::Normal && self.chip_focus.is_none() {
             return self.apps_hint();
+        }
+        if self.mode == Mode::Normal && self.chip_focus.is_none() && self.picking.is_none() && self.attaching.is_none() {
+            if let Some(h) = self.files_hint() {
+                return h;
+            }
         }
         let key = |w: &str, k: &str| vec![(format!("{} ", w), false), (k.to_string(), true)];
         let gap = || ("   ".to_string(), false);
@@ -4914,11 +5035,15 @@ impl App {
             View::Models | View::Talk | View::Steps(_) | View::Help | View::About | View::Preview | View::Apps | View::Home | View::Connections => {}
             View::Dest(_) | View::Section(_) | View::Folder(..) | View::Found(..) => {
                 let rows = self.view_rows();
-                if rows.iter().any(|r| !r.more.is_empty()) {
+                // in a files folder every row opens its actions page (dialog/DESIGN.md)
+                if rows.iter().any(|r| !r.more.is_empty()) || self.files_pane_view().is_some() {
                     add(&mut v, "Actions", "\u{2192}");
                 }
                 if rows.iter().any(|r| r.page.is_some()) {
                     add(&mut v, "Preview", "Space");
+                }
+                if self.two_panes() {
+                    add(&mut v, "Pane", "Ctrl+Tab");
                 }
                 if rows.iter().any(|r| r.step.is_some()) {
                     add(&mut v, "Change", "\u{2190} \u{2192}");
@@ -4955,7 +5080,7 @@ impl App {
     }
 
     /// The provider row an item stands for (a section's row, or a folder's).
-    fn row_ref(&self, it: &Item) -> Option<&model::Row> {
+    pub(crate) fn row_ref(&self, it: &Item) -> Option<&model::Row> {
         match it {
             Item::Row(p, r) => self.providers[*p].rows.rows.get(*r),
             Item::Folder(i) => self.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)),
@@ -4975,7 +5100,7 @@ impl App {
     }
 
     /// The lit row and its provider, where the lit pick is a row.
-    fn lit_row(&self) -> Option<(usize, model::Row)> {
+    pub(crate) fn lit_row(&self) -> Option<(usize, model::Row)> {
         let it = self.picks().get(self.sel).cloned()?;
         Some((self.prov_of(&it)?, self.row_ref(&it)?.clone()))
     }
@@ -5206,7 +5331,7 @@ impl App {
     /// The values held for a provider's rows, over the rows as they came: a step's place, a switch's
     /// state, the setting kept checked, in the section or in the list shown of it (a wallpaper, an
     /// animation: one checked, #191). A hold that ran out goes.
-    fn hold_rows(&mut self, p: usize) {
+    pub(crate) fn hold_rows(&mut self, p: usize) {
         let now = Instant::now();
         self.held.retain(|(_, _, _, until)| until.is_none_or(|u| u > now));
         let held: Vec<(String, Held)> = self.held.iter().filter(|h| h.0 == p).map(|h| (h.1.clone(), h.2.clone())).collect();
@@ -5254,6 +5379,9 @@ impl App {
             return false;
         }
         let Some((prov, row)) = self.lit_row() else { return false };
+        if self.providers[prov].label == "files" && self.files_actions(Some(row.clone())) {
+            return true; // the files' own page, in place of the list of steps (dialog/DESIGN.md)
+        }
         if row.more.is_empty() {
             return false;
         }
@@ -5367,7 +5495,7 @@ impl App {
 
     /// The lit row's page, where it has one (#120; every kind of row since #169): the list it is in goes with it, so
     /// up and down go to the next of its kind; false where it has none.
-    fn open_preview(&mut self) -> bool {
+    pub(crate) fn open_preview(&mut self) -> bool {
         if !self.in_list || self.picking.is_some() || self.attaching.is_some() {
             return false;
         }
@@ -5678,6 +5806,10 @@ impl App {
 impl App {
     /// The window closes: with the close playing first where the transitions are loaded (Esc, the x).
     pub fn close_window(&mut self) {
+        // files being copied, moved or trashed: the x stops the batch and the dialog stays; the next x closes
+        if self.files_stop_batch() {
+            return;
+        }
         if self.films {
             self.motion = Some((Reel::Close, Instant::now()));
             self.in_list = false;
