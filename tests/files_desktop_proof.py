@@ -537,6 +537,10 @@ def main(binary, destination):
         s.key("-k", "Down")   # a key while the folder is read: the dialog answers it, nothing hangs
         until(lambda: row_named(s.screen(), "f00000.txt"), "the big folder's first row", 30)
         first = time.monotonic() - started
+        # the Down above may have come before the rows: once they are drawn, Down lights a row of the folder, so End
+        # is the list's and goes to its last row
+        s.key("-k", "Down")
+        until(lambda: re.search(r"~/big\s*$", status(s.screen())), "the bar on a row of the big folder", 10)
         s.key("-k", "End")
         until(lambda: any("the next page" in l for l in body(s.screen())), "the last row, the next page", 30)
         last = time.monotonic() - started

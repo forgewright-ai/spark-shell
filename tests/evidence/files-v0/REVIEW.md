@@ -39,7 +39,8 @@ headless sway and foot on Void) ride with the pull request as
 
 `native/` holds the files proof's own captures from the owner's Void
 box, a headless sway and foot at 1440 by 1000 against CI's build of
-`24474d3` (run 41961076715, sha256 `02df85d0...`), with `native.json`
+`5163205`, files v0 over v0.124.5's band (run 41971275430, sha256
+`c60e991a...`), with `native.json`
 (the checks, the captures, the timings of the 10,000-file folder) and
 `proofs.log`, the lines of the home, apps and files proofs as they
 passed there (13, 14 and 16 checks); `home-native.json` and

@@ -5,7 +5,7 @@
     "model/source",
     "talk"
   ],
-  "binary_sha256": "02df85d03f7a1d14b0942b033b83f2105f4dc4afe8526d42eb5c4b777688cf29",
+  "binary_sha256": "c60e991a95f96327a9cd688b43cca1b0787424c3cb24718757bbbc180ed0cf64",
   "palette": {
     "colors": {
       "HEX_FG": "c0caf5",
@@ -14,6 +14,7 @@
       "PANEL_BG": "282a38",
       "PANEL_HI": "373a4b",
       "PANEL_MUTED": "8b94bf",
+      "PANEL_BAND": "3c4867",
       "HEX_ANSI_0": "15161e",
       "HEX_ANSI_1": "f7768e",
       "HEX_ANSI_2": "9ece6a",
@@ -54,10 +55,10 @@
   ],
   "captures": {
     "root-void": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "root-fullscreen-void": {
@@ -82,24 +83,24 @@
       "full_output": true
     },
     "draft-refocus-void": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": false
     },
     "conversation-void": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "conversation-scroll-void": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": false
     },
     "fullscreen-void": {
@@ -145,17 +146,17 @@
       "full_output": false
     },
     "root-unavailable-void": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "unavailable-ask-void": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": false
     }
   },

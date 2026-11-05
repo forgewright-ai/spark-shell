@@ -1,5 +1,5 @@
-== head 24474d3cdf657bc5fcd9f7e8f3631d2a14717bff binary 02df85d03f7a1d14b0942b033b83f2105f4dc4afe8526d42eb5c4b777688cf29 2026-11-04T21:35:55
-== home proof 21:35:55
+== head 51632056e10f720d46a61f50c97c8198121555d5 binary c60e991a95f96327a9cd688b43cca1b0787424c3cb24718757bbbc180ed0cf64 2026-11-04T23:12:27
+== home proof 23:12:27
 ok: Root is bounded and centered; both snaps fill equivalent halves of the usable area below the bar
 ok: Native model clicks and the frame's two strips are correct after normal, fullscreen and both snaps
 ok: The selected Power destination and root view survive fullscreen, both snaps and restore
@@ -13,8 +13,8 @@ ok: Narrow keys wrap whole groups on the key bar; Help lists the conversation sh
 ok: At 36 columns with a long attachment, Talk, Cancel, Remove, Model and Attach clicks reach their displayed controls
 ok: Configured F4 reaches the same explicit Ask action
 ok: Unavailable model and voice keep the configured footer visible; Ask retains the draft and makes no model request
-== home exit 0 21:37:15
-== apps proof 21:37:15
+== home exit 0 23:13:46
+== apps proof 23:13:46
 ok: Names are lowercase labels; foot helpers start hidden and stand under hidden apps, a list of their own
 ok: Browse uses concise desktop-entry roles; role and full-comment searches both find the installed app
 ok: Real system Apps and on-demand btop Details render in compact, fullscreen and equal work-area snaps
@@ -29,10 +29,7 @@ ok: Focus existing starts the installed btop application when no matching window
 ok: After restarting home, btop retains its category override, restored visibility and Focus existing preference
 ok: A labelled local desktop-entry fixture shows unavailable package metadata; its declared New window action opens two real foot windows through the saved preference
 ok: Explicit adapter failure fixtures verify empty catalog versus unavailable discovery, retry recovery, and launch failure retaining the search
-== apps exit 0 21:40:14
-== shell suite 21:40:40
-== suite exit 0 21:43:31
-== done 21:43:31
+== apps exit 0 23:16:46
 ok: files from home draws the home folder: documents, pictures, big, the folder's own row this folder and trash; the header reads files . ~; the frame holds in compact, fullscreen, both snaps and the 36x20 minimum
 ok: Down to notes.md: the status row holds its line, notes.md . Markdown . its size . the date . ~/documents; the key bar reads back  Esc   actions  ->   preview  Space
 ok: Insert checks the lit row and moves the bar down: the status row reads 2 checked with the size, the rows' words stand right of the check sign; Esc with nothing typed clears the checks first and the lit file's line comes back
@@ -47,6 +44,5 @@ ok: The PDF previews as its page drawn: the zoom on the facts row and zoom among
 ok: The sound previews with the sound's keys, play on Space; nothing is played
 ok: Space previews the lit file in the whole window: the Markdown's first line, the picture's 20 x 40 on the facts row; Esc comes back to the two panes as they were with the file lit
 ok: one pane under this folder closes the second pane: ~/documents once, no pane key
-ok: A folder of 10000 files lists its first page in 1.2 s and End reaches the next page row, with how many more, in 2.1 s; a key pressed meanwhile is answered
+ok: A folder of 10000 files lists its first page in 1.2 s and End reaches the next page row, with how many more, in 2.9 s; a key pressed meanwhile is answered
 ok: With nothing typed Left, Backspace and the header's back go up a level; typed words filter the folder and Esc clears them
-== done

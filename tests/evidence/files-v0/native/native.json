@@ -1,5 +1,5 @@
 {
-  "binary_sha256": "02df85d03f7a1d14b0942b033b83f2105f4dc4afe8526d42eb5c4b777688cf29",
+  "binary_sha256": "c60e991a95f96327a9cd688b43cca1b0787424c3cb24718757bbbc180ed0cf64",
   "palette": {
     "colors": {
       "HEX_FG": "c0caf5",
@@ -8,6 +8,7 @@
       "PANEL_BG": "282a38",
       "PANEL_HI": "373a4b",
       "PANEL_MUTED": "8b94bf",
+      "PANEL_BAND": "3c4867",
       "HEX_ANSI_0": "15161e",
       "HEX_ANSI_1": "f7768e",
       "HEX_ANSI_2": "9ece6a",
@@ -46,10 +47,10 @@
   },
   "captures": {
     "files-compact": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "files-fullscreen": {
@@ -81,38 +82,38 @@
       "full_output": true
     },
     "files-status": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "files-checked": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "files-actions": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "files-two-panes": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "two-panes-compact": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "two-panes-fullscreen": {
@@ -137,52 +138,52 @@
       "full_output": true
     },
     "files-two-panes-folders": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "files-conflict": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "files-receipt": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "files-undo": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "files-new-folder": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "preview-text": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     },
     "preview-picture": {
-      "x": 402,
-      "y": 116,
-      "width": 636,
-      "height": 796,
+      "x": 420,
+      "y": 134,
+      "width": 600,
+      "height": 760,
       "full_output": true
     }
   },
@@ -201,13 +202,13 @@
     "The sound previews with the sound's keys, play on Space; nothing is played",
     "Space previews the lit file in the whole window: the Markdown's first line, the picture's 20 x 40 on the facts row; Esc comes back to the two panes as they were with the file lit",
     "one pane under this folder closes the second pane: ~/documents once, no pane key",
-    "A folder of 10000 files lists its first page in 1.2 s and End reaches the next page row, with how many more, in 2.1 s; a key pressed meanwhile is answered",
+    "A folder of 10000 files lists its first page in 1.2 s and End reaches the next page row, with how many more, in 2.9 s; a key pressed meanwhile is answered",
     "With nothing typed Left, Backspace and the header's back go up a level; typed words filter the folder and Esc clears them"
   ],
   "timings": {
     "big_files": 10000,
-    "big_write_seconds": 0.158,
-    "big_first_row_seconds": 1.243,
-    "big_next_page_row_seconds": 2.071
+    "big_write_seconds": 0.157,
+    "big_first_row_seconds": 1.248,
+    "big_next_page_row_seconds": 2.915
   }
 }
