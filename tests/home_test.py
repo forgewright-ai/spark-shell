@@ -106,9 +106,10 @@ with (p / "launches").open("a") as f: f.write(" ".join(sys.argv[1:]) + "\\n")
             self.assertEqual(len((root / "launches").read_text().splitlines()), 1, "home open: no second launch")
             self.assertEqual(goto.read_text(), "bt\n")
             self.assertEqual(goto.stat().st_mode & 0o777, 0o600)
-            done = subprocess.run(argv, env=env, capture_output=True, timeout=10)
-            self.assertEqual(done.returncode, 0, done.stderr.decode())
-            self.assertEqual(goto.read_text(), "bt\n", "no section asked: no request written")
+            for none in ([], [""]):   # Super+Space and the bar's sign ask for no section, an empty word among them
+                done = subprocess.run(argv + none, env=env, capture_output=True, timeout=10)
+                self.assertEqual(done.returncode, 0, done.stderr.decode())
+                self.assertEqual(goto.read_text(), "bt\n", "no section asked: no request written")
             for bad in ["../x", "Bt", "a b"]:
                 done = subprocess.run(argv + [bad], env=env, capture_output=True, timeout=10)
                 self.assertNotEqual(done.returncode, 0, bad)
