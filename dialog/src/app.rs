@@ -2880,6 +2880,10 @@ impl App {
     /// Esc: a question waiting is answered no (the draft comes back); the focus on a control or the
     /// draft goes first; then back one view; from the first view the dialog closes.
     pub fn escape(&mut self) {
+        // files being copied, moved or trashed: Esc stops after the file under way, wherever you are (dialog/DESIGN.md)
+        if self.mode == Mode::Normal && self.files_stop_batch() {
+            return;
+        }
         // a page of files: the actions or a conflict go back, a form is let go (dialog/DESIGN.md); the words first
         if self.files_page_open() && self.mode == Mode::Normal && self.chip_focus.is_none() && (self.input.is_empty() || self.files.form()) {
             return self.files_back();
@@ -2943,10 +2947,6 @@ impl App {
                 self.jobs.push(Job::StopListening);
             }
             Mode::Normal => {
-                // files being copied, moved or trashed: Esc stops after the file under way, wherever you are
-                if self.files_stop_batch() {
-                    return;
-                }
                 if self.chip_focus.is_some() {
                     self.chip_focus = None;
                 } else if let Some(st) = self.staged.take() {
@@ -4271,12 +4271,10 @@ impl App {
             self.undo = None; // the undo at hand is taken, wherever it came from (its row, "undo", spark)
         }
         let Some(tool) = self.tool_of(&step).cloned() else {
-            self.refuse("this is not offered here now");
-            return self.stop_queue();
+            return self.step_refused_early(&step, "this is not offered here now");
         };
         if let Err(e) = self.checked(&step) {
-            self.refuse(&e);
-            return self.stop_queue();
+            return self.step_refused_early(&step, &e);
         }
         if self.risky(&tool) {
             self.stash_draft();
@@ -4348,11 +4346,19 @@ impl App {
                 self.running = Some((idx, id, step));
                 self.hidden = opens;
             }
-            None => {
-                self.refuse("not done: the part of the desktop that does it stopped");
-                self.stop_queue();
-            }
+            None => self.step_refused_early(&step, "not done: the part of the desktop that does it stopped"),
         }
+    }
+
+    /// A step refused before it was sent: said, and the steps after it not run; a batch's step is counted as
+    /// refused and the batch goes on.
+    fn step_refused_early(&mut self, step: &Step, why: &str) {
+        if self.files_batch_owns(&step.call) {
+            self.files_step_done(step, Err(why.to_string()));
+            return self.next_step();
+        }
+        self.refuse(why);
+        self.stop_queue();
     }
 
     fn called(&mut self, idx: usize, n: u64, result: Option<Value>, error: Option<String>) {

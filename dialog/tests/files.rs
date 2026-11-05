@@ -1398,3 +1398,44 @@ fn enter_is_never_silent_in_a_files_folder() {
     app.enter();
     assert!(matches!(&app.view, View::Folder(0, u) if u.ends_with("c3RpY2s")), "a drive opens");
 }
+
+#[test]
+fn every_size_draws_the_panes_the_checks_and_the_pages_whole() {
+    // an odd half, the minimum window, a wide and a tall screen: the frame holds, nothing panics, and the bar is the
+    // active pane's half alone while two panes are drawn
+    for (w, h) in [(60u16, 40u16), (61, 40), (36, 20), (59, 30), (119, 40), (150, 46), (90, 80)] {
+        let mut app = files_app();
+        app.size = (w, h);
+        app.files.other = Some(pane(PICS, Some(pics_rows(&[]))));
+        app.hint_key(HintKey::Check);
+        let drawn = draw(&app);
+        let cw = w.min(120);
+        if cw >= 60 {
+            let left = (w - cw) / 2;
+            assert_eq!(drawn.columns, (left, left + cw / 2), "{}x{}: the bar spans the active half", w, h);
+            assert!(!drawn.other_picks.is_empty(), "{}x{}: the other pane's rows", w, h);
+        } else {
+            assert!(drawn.other_picks.is_empty(), "{}x{}: the other pane waits", w, h);
+        }
+        let rows = screen(&app);
+        assert!(rows[0].contains("files"), "{}x{}: the header: {:?}", w, h, rows[0]);
+        assert!(rows[spark_dialog::ui::keys_y(h) as usize].contains("Esc"), "{}x{}: the key bar", w, h);
+        app.right();
+        let _ = screen(&app);
+        page_row(&mut app, "copy to ~/pictures");
+        app.files.other = Some(pane(PICS, Some(pics_rows(&["notes.md", "report.pdf"]))));
+        app.escape();
+        app.files_activate(Action::UncheckAll);
+        app.right();
+        page_row(&mut app, "copy to ~/pictures");
+        app.enter();
+        assert!(matches!(app.files.page, Page::Conflict(_)), "{}x{}: {:?}", w, h, app.files.page);
+        let _ = screen(&app);
+        app.escape();
+        app.right();
+        page_row(&mut app, "rename");
+        app.enter();
+        assert!(app.files.form());
+        let _ = screen(&app);
+    }
+}
