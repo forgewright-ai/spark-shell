@@ -90,6 +90,11 @@ fn text(buf: &Buffer, y: u16) -> String {
     (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect()
 }
 
+/// The cells a..b of a row, by cell and not by byte: a glyph outside ASCII is one cell.
+fn span(buf: &Buffer, y: u16, a: u16, b: u16) -> String {
+    (a..b).map(|x| buf[(x, y)].symbol()).collect()
+}
+
 fn a_step() -> Step {
     Step {
         prov: 0,
@@ -370,33 +375,37 @@ fn one_frame_width_per_view_in_the_middle_of_the_window() {
             let left = (w - width) / 2;
             let (buf, drawn, _) = draw(&mut app, w, h);
             assert_eq!(drawn.columns, (left, left + width), "{:?} at {}x{}", view, w, h);
-            // the header, the prompt, the keys, the rule and the footer share the column (a title the narrowest
-            // window cannot hold beside the clock is cut at a word, as it was)
+            // the prompt, the list and the status row share the column; the header, the rules and the key bar are
+            // the window's (v0.124.4): the title centered, the key bar at the window's inset
             let title = app.title();
             if title.len() + 26 <= width as usize {
                 assert!(text(&buf, 0).contains(&title), "{:?} at {}x{}: the title", view, w, h);
-                assert_eq!(
-                    buf[(left + 2, 0)].symbol(),
-                    &title[..1],
-                    "{:?} at {}x{}: the title at the column's inset",
+                // the name and its state are centered together: their middle is the window's, within a cell
+                let (ta, _) = drawn.title.expect("the title's cells");
+                let end = (ta..w - 4).rev().find(|&x| buf[(x, 0)].symbol() != " ").map_or(ta, |x| x + 1);
+                assert!(
+                    ((ta + end) as i32 / 2 - w as i32 / 2).abs() <= 1,
+                    "{:?} at {}x{}: the title centered in the window ({}..{})",
                     view,
                     w,
-                    h
+                    h,
+                    ta,
+                    end
                 );
             }
             assert_eq!(buf[(left + 2, PROMPT_Y)].symbol(), "\u{276f}", "{:?} at {}x{}: the prompt", view, w, h);
             assert_eq!(
-                buf[(left + 2, keys_y(h))].symbol().to_lowercase(),
-                buf[(left + 2, keys_y(h))].symbol(),
+                buf[(2, keys_y(h))].symbol().to_lowercase(),
+                buf[(2, keys_y(h))].symbol(),
                 "{:?} at {}x{}: the key bar",
                 view,
                 w,
                 h
             );
             assert_ne!(
-                buf[(left + 2, keys_y(h))].symbol(),
+                buf[(2, keys_y(h))].symbol(),
                 " ",
-                "{:?} at {}x{}: the key bar starts at the inset",
+                "{:?} at {}x{}: the key bar starts at the window's inset",
                 view,
                 w,
                 h
@@ -429,8 +438,8 @@ fn one_frame_width_per_view_in_the_middle_of_the_window() {
             );
             assert_eq!(
                 drawn.close,
-                Some((left + width - 4, left + width - 1)),
-                "{:?} at {}x{}: the x at the column's end",
+                Some((w - 4, w - 1)),
+                "{:?} at {}x{}: the x at the window's end, the header being the window's (v0.124.4)",
                 view,
                 w,
                 h
@@ -797,7 +806,7 @@ fn back_has_more_doors_than_its_chip() {
     assert!(app.can_go_back());
     let (buf, drawn, _) = draw(&mut app, 60, 40);
     let (a, b) = drawn.title.expect("the header's place name has cells");
-    assert!(text(&buf, 0)[a as usize..b as usize].contains("apps"), "{:?}", text(&buf, 0));
+    assert_eq!(span(&buf, 0, a, b), "apps", "{:?}", text(&buf, 0));
 }
 
 #[test]
@@ -856,4 +865,72 @@ fn asking_off_turns_the_model_off_everywhere_and_is_the_model_pages_first_choice
         tools
     );
     assert!(text(&buf, TOP_RULE_Y).contains('\u{25c6}'), "the diamond full again");
+}
+
+#[test]
+fn the_header_is_back_the_centered_title_and_the_x_and_the_chrome_takes_a_wide_window() {
+    // dialog/DESIGN.md (v0.124.4): no clock in the header; the place's name centered; back at the left where there
+    // is a level above; the x at the right. Wider than the column, the header, the rules and the key bar take the
+    // window's width and the column stays centered
+    let t0 = std::time::Instant::now();
+    let mut app = home();
+    let (buf, drawn, _) = draw(&mut app, 60, 40);
+    let head = text(&buf, 0);
+    assert!(!head.contains("12:04") && !head.contains("Oct"), "no clock: {:?}", head);
+    assert!(drawn.back.is_none(), "home is the first level");
+    let (a, b) = drawn.title.unwrap();
+    assert_eq!(span(&buf, 0, a, b), "home");
+    assert!((a as i32 - 28).abs() <= 1, "centered in 60 cells: {}", a);
+    assert_eq!(buf[(57, 0)].symbol(), "\u{d7}", "the x at the right");
+    app.clicked(0, t0);
+    let (buf, drawn, _) = draw(&mut app, 60, 40);
+    let head = text(&buf, 0);
+    let (ba, bb) = drawn.back.expect("back where there is a level above");
+    assert_eq!((ba, span(&buf, 0, ba, bb)), (2, "\u{2039} back".to_string()));
+    let (a, b) = drawn.title.unwrap();
+    assert_eq!(span(&buf, 0, a, b), "apps", "{:?}", head);
+    assert!(head.contains("installed apps"), "the state after the name: {:?}", head);
+    assert!((a as i32 - 19).abs() <= 1, "the title and its state centered: {}", a);
+    // a wide window: the chrome at its width, the column in the middle
+    let (buf, drawn, pal) = draw(&mut app, 100, 40);
+    let left = (100 - 60) / 2;
+    assert_eq!(buf[(left + 2, PROMPT_Y)].symbol(), "\u{276f}", "the prompt sign at the column's edge");
+    assert_eq!(buf[(2, TOP_RULE_Y)].symbol(), "\u{2500}", "the rule from the window's edge");
+    assert_eq!(buf[(97, TOP_RULE_Y)].symbol(), "\u{2500}", "to the window's edge");
+    assert_eq!(buf[(50, TOP_RULE_Y)].symbol(), "\u{25c6}", "the diamond in the middle");
+    assert_eq!(buf[(2, 36)].symbol(), "\u{2500}", "the plain rule too");
+    assert_eq!(buf[(97, 0)].symbol(), "\u{d7}", "the x at the window's right");
+    assert_eq!(drawn.back.map(|(a, _)| a), Some(2), "back at the window's left");
+    assert_eq!(drawn.keys.iter().map(|k| k.0).min(), Some(2), "the key bar at the window's left");
+    assert_eq!(drawn.close, Some((96, 99)));
+    let _ = pal;
+}
+
+#[test]
+fn the_wheel_moves_the_bar_a_row_at_a_time() {
+    let mut app = home();
+    assert!(!app.in_list);
+    app.wheel(1);
+    assert!(app.in_list && app.sel == 0, "a notch down enters the list");
+    app.wheel(1);
+    assert_eq!(app.sel, 1, "one row a notch");
+    app.wheel(-1);
+    assert_eq!(app.sel, 0);
+    app.wheel(-1);
+    assert!(!app.in_list, "above the first row is the prompt, as the arrow has it");
+}
+
+#[test]
+fn undo_on_the_status_row_is_a_control_not_a_key_chip() {
+    let mut app = home();
+    app.undo = Some(a_step());
+    let mut r = Reply::new(Mark::Done, "theme set");
+    r.undo = true;
+    app.reply = Some(r);
+    let (buf, drawn, pal) = draw(&mut app, 60, 40);
+    let y = ui::status_y(40);
+    let (a, b, _) = drawn.reply_undo.expect("undo at the row's right");
+    assert_eq!(span(&buf, y, a, b), " undo ", "lowercase, the controls' brush");
+    assert_eq!(buf[(a + 1, y)].fg, pal.fg, "in the text color, not boxed as a key");
+    assert_eq!(buf[(a + 1, y)].bg, buf[(4, y)].bg, "no chip background");
 }

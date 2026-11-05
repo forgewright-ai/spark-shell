@@ -1,5 +1,56 @@
 # Changelog
 
+## v0.124.4
+
+- The header is back at the left where there is a level above, the
+  place's name centered with its state, the x at the right, and the
+  march before the x while spark thinks. No clock: the bar has it.
+- In a window wider than the column, a wide one or a full screen, the
+  header, both rules and the key bar take the window's width and the
+  column stays centered at its measure.
+- Enter with words typed never does nothing. The search answer that
+  lands when typing rests dropped the ask row's selection (relight
+  without the ask row's fallback), so Enter went nowhere and the words
+  stayed; the row keeps its selection. Words that match no row ask when
+  a model answers; a control that cannot act, and a box that holds the
+  commands spark planned, say why on the status row; typing takes the
+  focus from a control; leaving a view drops the plan from the box,
+  and typing over it starts clean.
+- Undo on the status row is a control, lowercase, in the controls' own
+  brush, not a key's chip.
+- The wheel moves the selection bar a row at a time in a list, as the
+  arrows do; three lines in text.
+- Apps' category headings are the filter: a click on one shows that
+  category alone, the header says which, and Esc shows all again. The
+  `category` row at the end of the list is gone, a filter one had to
+  scroll to, and the row one letter from it reads `edit categories`.
+  The managing rows at the end act on one click, as a menu's rows do:
+  only an app's own row is selected first and opened second. Hidden
+  apps open in the list's own shape, under their categories, searched
+  by typing, the header reading hidden: a state of the same apps, not
+  another kind of list. With nothing hidden the row is a fact, muted,
+  and opens nothing.
+- Every page of apps says where you are in the header: installed apps,
+  a category shown alone, hidden, an app's name on its details, its
+  technical details and its pickers, categories, a category's name,
+  mappings, a desktop word on its mapping page, new category, rename
+  category, add mapping. Every page read installed apps before.
+- A form of apps says what to type in the prompt's placeholder (a name
+  for the category, the new name, a desktop category) and its key bar
+  says Enter saves; the note that repeated both is gone. Add mapping
+  offers the desktop categories the installed apps carry and no mapping
+  places yet, to pick instead of recall; a word the catalog lacks is
+  still typed. A mapping page keeps the desktop word as spelled.
+- Refresh apps answers with its count, N apps read. Every word of apps
+  is lowercase and says what to do: the apps are busy, this app is no
+  longer installed, the apps could not be read: refresh apps reads them
+  again; no app is installed. The prompt's refusals on Enter follow:
+  no model is available: the draft stays; wait for the current request.
+- The theme tool's description tells the model that a near name, as
+  heard or typed, is the nearest palette (groove box dark is
+  gruvbox-dark): a request was answered with a refusal in words and no
+  step, though the model had named the palette itself.
+
 ## v0.124.3
 
 - Back has more doors than its chip: Esc, and with nothing typed Left

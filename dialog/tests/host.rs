@@ -2969,3 +2969,50 @@ fn the_way_back_to_home_reads_no_rows_of_the_apps_provider() {
     pump(&mut app, &rx, |_| false);
     assert_eq!(*reads.lock().unwrap(), at_start, "a read nothing here uses");
 }
+
+#[test]
+fn a_search_answer_that_lands_after_typing_keeps_the_ask_row_lit_so_enter_asks() {
+    // v0.124.4: words that name no row light the ask row; when typing rests, home asks files for the words, and
+    // the answer landing relit the list without the ask row's fallback: the row stayed drawn, unselected, and
+    // Enter went to the prompt's own path, so nothing left and the words stayed
+    let (mut app, rx, tx) = app_with(&["files"]);
+    let tools = json!([]);
+    let rows = json!({"title": "files", "rows": [], "short": []});
+    let none = rows.clone();
+    let script: Script = Box::new(move |v, send| {
+        if v.get("method").and_then(Value::as_str) == Some("resources/read")
+            && v.pointer("/params/uri").and_then(Value::as_str).is_some_and(|u| u.contains("/rows/match/"))
+        {
+            // nothing by these words
+            return send(result(
+                &v["id"],
+                json!({"contents": [{"uri": v["params"]["uri"], "mimeType": "application/json", "text": none.to_string()}]}),
+            ));
+        }
+        if let Some(r) = ordinary("files", v, &tools, &rows) {
+            send(r);
+        }
+    });
+    app.servers.push(stub(0, "files", script, tx));
+    app.start();
+    assert!(pump(&mut app, &rx, |a| a.providers[0].ready));
+    app.cfg.model = true;
+    app.model_on = true;
+    app.model_name = Some("fixture-model".into());
+    let words = "so that in turn my HDMI display on.";
+    typed(&mut app, words);
+    assert!(
+        app.in_list && matches!(app.picks().get(app.sel), Some(Item::Ask)),
+        "the ask row lit by the words"
+    );
+    // typing rests: the search goes, and its empty answer lands
+    app.search_at = Some(Instant::now() - spark_dialog::app::SEARCH_PAUSE - Duration::from_millis(1));
+    assert!(pump(&mut app, &rx, |a| a.hits_for == words), "the files' answer landed");
+    assert!(
+        app.in_list && matches!(app.picks().get(app.sel), Some(Item::Ask)),
+        "the ask row keeps its selection after the answer"
+    );
+    app.enter();
+    assert!(app.pending.is_some(), "Enter asked: the request left");
+    assert_eq!(app.view, View::Conversation);
+}

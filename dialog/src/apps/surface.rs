@@ -24,7 +24,7 @@ impl App {
 
     pub fn apps_request(&mut self, request: Value) {
         if self.apps.pending.is_some() {
-            return self.refuse("wait for the current Apps operation");
+            return self.refuse("the apps are busy: a moment");
         }
         self.apps.serial += 1;
         let serial = self.apps.serial;
@@ -124,7 +124,18 @@ impl App {
     /// has no chip: it opens the app the bar is on, saves a form, as it does everywhere.
     pub fn apps_hint(&self) -> Vec<(String, bool)> {
         let pair = |w: &str, k: &str| vec![(format!("{w} "), false), (k.to_string(), true)];
-        let mut keys = if self.apps.form() { pair("Cancel", "Esc") } else { pair("Back", "Esc") };
+        // what Esc does here: a form let go, the category filter cleared, else back
+        let mut keys = if self.apps.form() {
+            // a form waits on Enter for the name typed, so Enter has its chip here (dialog/DESIGN.md)
+            let mut k = pair("Cancel", "Esc");
+            k.push(("   ".into(), false));
+            k.extend(pair("Save", "Enter"));
+            k
+        } else if (self.apps.page == Page::List && self.apps.filter.is_some()) || self.apps.page == Page::Hidden {
+            pair("All apps", "Esc")
+        } else {
+            pair("Back", "Esc")
+        };
         if matches!(self.apps.page, Page::List | Page::Hidden) {
             keys.push(("   ".into(), false));
             keys.extend(pair("Details", "\u{2192}"));

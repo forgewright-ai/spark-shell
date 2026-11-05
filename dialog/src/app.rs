@@ -50,6 +50,22 @@ pub const INPUT_MAX: usize = 2000;
 /// What the prompt is for, in the two words the market settled on for a box that both filters a list and takes a
 /// question (dialog/DESIGN.md): typing searches at once, and asking is a row among the results.
 pub const PLACEHOLDER: &str = "search or ask";
+
+impl App {
+    /// What the empty prompt says it takes: a form of apps names the one thing to type (dialog/DESIGN.md).
+    pub fn placeholder(&self) -> &'static str {
+        if self.view == View::Apps {
+            if let crate::apps::Page::Form(form) = &self.apps.page {
+                return match form {
+                    crate::apps::Form::AddCategory => "a name for the category",
+                    crate::apps::Form::RenameCategory(_) => "the new name",
+                    crate::apps::Form::AddMapping => "a desktop category, such as Network",
+                };
+            }
+        }
+        PLACEHOLDER
+    }
+}
 /// Steps this machine counts as risky whatever their provider says (the hint is the provider's word,
 /// the risk is decided here): a saved password gone, a window closed with its work, a layout written
 /// over, a new device trusted.
@@ -2059,7 +2075,9 @@ impl App {
             return;
         }
         if !self.list_keys {
-            match self.best() {
+            // the words still light the row they name best, else the ask row, as follow_words lights it: a search
+            // answer landing after typing rested must not drop the ask row's selection (v0.124.4)
+            match self.best().or_else(|| self.ask_pick()) {
                 Some(i) => self.sel = i,
                 None => (self.in_list, self.sel) = (false, 0),
             }
@@ -2229,7 +2247,7 @@ impl App {
         }
         self.scroll = 0;
         if self.view == View::Apps {
-            if matches!(self.apps.page, crate::apps::Page::List) && !self.input.trim().is_empty() {
+            if matches!(self.apps.page, crate::apps::Page::List | crate::apps::Page::Hidden) && !self.input.trim().is_empty() {
                 let found = self
                     .picks()
                     .iter()
@@ -2573,6 +2591,13 @@ impl App {
         if c.is_control() {
             return;
         }
+        // typing is the prompt's: a control's focus (Tab) lets go, so Enter goes with the words, not the control
+        self.chip_focus = None;
+        // typing over the commands spark planned starts clean: the plan is dropped, as Esc drops it
+        if self.staged_now() {
+            self.staged = None;
+            self.set_input(String::new());
+        }
         self.insert(&c.to_string());
         self.follow_words();
     }
@@ -2822,6 +2847,11 @@ impl App {
     pub fn escape(&mut self) {
         // a form of Apps: Esc lets it go, words typed or none, and asks nothing; a page: back, once the words are cleared
         if self.view == View::Apps && self.mode == Mode::Normal && self.chip_focus.is_none() && (self.input.is_empty() || self.apps.form()) {
+            // a category filter on the list: Esc shows all apps first (dialog/DESIGN.md, v0.124.4)
+            if self.apps.page == crate::apps::Page::List && self.apps.filter.is_some() && self.input.is_empty() {
+                self.reply = None;
+                return self.apps_activate(crate::apps::Action::SetFilter(None));
+            }
             if let Some(nav) = self.apps.back() {
                 self.apps_restore(nav);
                 self.reply = None;
@@ -2906,6 +2936,7 @@ impl App {
     }
 
     fn go_back(&mut self, v: View) {
+        self.leave_plan();
         self.prompt_depart();
         self.navigation.retain(|(view, ..)| *view != self.view);
         self.navigation
@@ -2969,11 +3000,22 @@ impl App {
         }
     }
 
+    /// Leaving a view while the box holds the commands spark planned: the plan is the conversation's and goes on
+    /// the way out, as Esc drops it; what was typed before them comes back (v0.124.4).
+    fn leave_plan(&mut self) {
+        if self.staged_now() {
+            if let Some(st) = self.staged.take() {
+                self.set_input(st.draft);
+            }
+        }
+    }
+
     pub(crate) fn go(&mut self, v: View) {
         let v = match v {
             View::Section(p) => self.files_root(p).map(|root| View::Folder(p, root)).unwrap_or(View::Section(p)),
             other => other,
         };
+        self.leave_plan();
         self.prompt_depart();
         self.navigation.retain(|(view, ..)| *view != self.view);
         self.navigation
@@ -3479,7 +3521,9 @@ impl App {
             }
             0 if self.cfg.plus => {
                 self.reply = None; // a new action: what the status row said about the last one is gone
-                let Some(f) = self.files() else { return };
+                let Some(f) = self.files() else {
+                    return self.refuse("nothing to attach from: the files section is not here");
+                };
                 let Some(root) = self.providers[f].rows.rows.iter().find_map(|r| r.children.clone()) else {
                     return self.refuse("no folder to attach from");
                 };
@@ -3507,7 +3551,34 @@ impl App {
                     ));
                 }
             }
+            // a control that cannot act says why, on the status row: Enter or a click is never silent (v0.124.4)
+            3 if self.cfg.talk => self.refuse(if self.voice_on {
+                "talk is off: the talk page turns it on"
+            } else {
+                "spark's voice is off: spark voice clear turns it on"
+            }),
             _ => {}
+        }
+    }
+
+    /// The wheel: a row at a time in a list, as the arrows move the bar; three lines in text, and in a page of
+    /// Apps that scrolls (dialog/DESIGN.md).
+    pub fn wheel(&mut self, d: i32) {
+        let step = |s: usize| if d < 0 { s.saturating_sub(3) } else { s + 3 };
+        if self.view == View::Apps && matches!(self.apps.page, crate::apps::Page::Details(_) | crate::apps::Page::Technical(_)) {
+            self.scroll = step(crate::ui::body_scroll(self));
+            self.in_list = false;
+            self.list_keys = false;
+            return;
+        }
+        if self.picks().is_empty() || self.preview_key() {
+            self.scroll = step(self.scroll);
+            return;
+        }
+        if d < 0 {
+            self.up();
+        } else {
+            self.down();
         }
     }
 
@@ -3597,30 +3668,42 @@ impl App {
             return self.next_step();
         }
         self.set_input(words.to_string());
-        self.reply(Mark::Note, "No native match. Use Ask to send this draft to the model.");
+        // no row, no place, no command by these words: they are a request, and Enter asks (dialog/DESIGN.md), or
+        // the status row says why it cannot
+        if self.cfg.model && self.model_on && self.model_name.is_some() {
+            return self.ask();
+        }
+        if self.cfg.model && !self.model_on {
+            return self.reply(Mark::Note, "no row by these words, and the model is off: the model control turns it on");
+        }
+        self.reply(Mark::Note, "no row by these words, and no model to ask");
     }
 
     /// Explicit model request. Forms, confirmation text and previews grant no context authority.
     pub fn ask(&mut self) {
         if self.view == View::Apps && self.apps.form() {
-            return self.refuse("Finish the category edit before asking");
+            return self.refuse("finish the category edit first: Enter saves it, Esc lets it go");
         }
-        if self.mode != Mode::Normal || self.staged_now() {
+        if self.mode != Mode::Normal {
             return;
+        }
+        if self.staged_now() {
+            // the box holds the commands spark planned: Enter runs them, Esc drops them; asking waits for that
+            return self.reply(Mark::Note, "Enter runs the planned commands, Esc drops them");
         }
         if !self.request_prompt() {
             self.conversation();
-            return self.reply(Mark::Note, "Write a request here; your module query is kept.");
+            return self.reply(Mark::Note, "write a request here: the words typed in the list stay");
         }
         if self.pending.is_some() || self.running.is_some() || self.wait.is_some() {
-            return self.reply(Mark::Note, "Wait for the current request or action.");
+            return self.reply(Mark::Note, "wait for the current request");
         }
         let words = self.input.trim().to_string();
         if words.is_empty() {
             return;
         }
         if self.model_name.is_none() {
-            return self.refuse("No model is available. Your draft is kept; native actions still work.");
+            return self.refuse("no model is available: the draft stays, and the rows still work");
         }
         if !self.model_on {
             return self.refuse("the model is off: the model control turns it on");
@@ -4408,12 +4491,30 @@ impl App {
         }
     }
 
+    /// A click on a category's heading in the list of apps (dialog/DESIGN.md, v0.124.4): the list narrows to that
+    /// category; on the heading of the category shown alone, it widens to all. `label` is the heading as drawn.
+    pub fn apps_heading(&mut self, label: &str) {
+        if self.view != View::Apps || self.apps.page != crate::apps::Page::List || self.mode != Mode::Normal {
+            return;
+        }
+        let Some(c) = self.apps.prefs.categories.iter().find(|c| c.to_lowercase() == label).cloned() else {
+            return;
+        };
+        let next = if self.apps.filter.as_deref() == Some(c.as_str()) { None } else { Some(c) };
+        self.reply = None;
+        self.apps_activate(crate::apps::Action::SetFilter(next));
+    }
+
     /// Whether pick `n` is an object, selected before it is acted on: an app in the list, a file, a folder, a
     /// note, a window, a layout. A place, a setting, a choice, an action of a details page is a menu's row.
     pub fn object_pick(&self, n: usize) -> bool {
         let Some(it) = self.picks().get(n).cloned() else { return false };
         match &it {
-            Item::Apps(_) => matches!(self.apps.page, crate::apps::Page::List | crate::apps::Page::Hidden),
+            // an app's own row is the object; the managing rows at the list's end are a menu's and act on one
+            // click (dialog/DESIGN.md, v0.124.4)
+            Item::Apps(line) => {
+                matches!(self.apps.page, crate::apps::Page::List | crate::apps::Page::Hidden) && matches!(line.action, Some(crate::apps::Action::Launch(_)))
+            }
             Item::Folder(_) | Item::Row(..) | Item::Hit(_) => self
                 .prov_of(&it)
                 .is_some_and(|p| matches!(self.providers[p].label.as_str(), "files" | "notes" | "window" | "layout")),
@@ -4619,10 +4720,21 @@ impl App {
     pub fn subtitle(&self) -> String {
         match &self.view {
             View::Apps => {
-                if self.apps.form() {
-                    "category edit".into()
-                } else {
-                    "installed apps".into()
+                // the header says which page of apps this is (dialog/DESIGN.md, v0.124.4)
+                use crate::apps::{Form, Page};
+                match &self.apps.page {
+                    Page::List => self.apps.filter.as_ref().map(|c| c.to_lowercase()).unwrap_or_else(|| "installed apps".into()),
+                    Page::Hidden => "hidden".into(),
+                    Page::Details(id) | Page::Technical(id) | Page::CategoryPicker(id) | Page::LaunchPicker(id) => {
+                        self.apps.entry(id).map(|a| a.name.to_lowercase()).unwrap_or_default()
+                    }
+                    Page::Categories => "categories".into(),
+                    Page::Category(c) => c.to_lowercase(),
+                    Page::Mappings => "mappings".into(),
+                    Page::Mapping(s) => s.clone(), // the desktop's own word, as it is spelled
+                    Page::Form(Form::AddCategory) => "new category".into(),
+                    Page::Form(Form::RenameCategory(_)) => "rename category".into(),
+                    Page::Form(Form::AddMapping) => "add mapping".into(),
                 }
             }
             View::Section(p) => self.providers[*p].title.clone(),

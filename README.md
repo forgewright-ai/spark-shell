@@ -868,13 +868,17 @@ the animation from a list of the pieces, or none for no
 motion (`DIALOG_ANIMATION`, embers to begin with); a palette with no set
 of its own plays none.
 
-The top row says where you are (`home`, a place, a section and its
-state; a long one is cut at a word). Then the
-date and the time as your locale writes them, and a small bar while
-spark works on your words: one of the animations spark draws at its
-prompt, a light bouncing while it thinks and a bar growing and shrinking
-while a model loads. Nothing else shows it: a step shows on its row,
-and a page that takes a moment has its waiting animation.
+The top row is the header: `< back` at the left where there is a level
+above this one, where you are in the middle (`home`, a place, a section
+and its state; a long one is cut at a word), the x at the right, and
+before the x a small bar while spark works on your words: one of the
+animations spark draws at its prompt, a light bouncing while it thinks
+and a bar growing and shrinking while a model loads. Nothing else shows
+it: a step shows on its row, and a page that takes a moment has its
+waiting animation. The header has no clock: the bar has it. In a
+window wider than the column, a wide one or a full screen, the header,
+both rules and the key bar take the window's width and the column
+stays centered at its measure.
 Under it is the prompt, two rows tall, and it reads `search or ask`:
 typing searches the list in front of you at once, Enter opens what the
 selection bar is on, in the list and from the prompt, and Shift+Enter
@@ -910,8 +914,10 @@ rows take: details, actions, preview, change, month, history. The same
 words whatever row is lit or typed, so nothing changes under a moving
 pointer. Enter has no chip: it opens what the bar is on, everywhere.
 Back has more doors than its chip: with nothing typed, Left and
-Backspace go back a level, and so does a click on the header's place
-name; none of them closes the dialog from home, which is Esc's alone.
+Backspace go back a level, and so does a click on the header's `< back`
+or on its place name; none of them closes the dialog from home, which
+is Esc's alone. The wheel moves the bar a row at a time in a list, as
+the arrows do, and three lines in text.
 A mode that waits on Enter for something else (run the commands spark
 planned, apply a model, land a step in this folder) says so with its
 chip. Narrow, the keys wrap onto a second line under the bar, whole
@@ -952,10 +958,12 @@ about a third of a second in, the status row shows the march with
 the refusal with its reason, which clears when the next action starts,
 as every refusal on the status row does. Esc clears the words first,
 then goes back; the details keep the list's words and position.
-At the end of the list stand the managing rows, each a row the dialog
-has elsewhere: category, a choice with its arrow that opens the list of
-categories with the one in use checked; hidden apps, a list of its own;
-categories, the list below; and refresh apps.
+The category headings are the filter: a click on one shows that
+category alone, the header says which, and Esc shows all again. At the
+end of the list stand the managing rows, a menu's rows that act on one
+click: hidden apps, the hidden ones in the list's own shape under their
+categories, searched by typing like the list; edit categories, the
+list below; and refresh apps.
 
 An app's details are its name and description, lowercase, its version,
 where it was installed from and its source, then open, technical

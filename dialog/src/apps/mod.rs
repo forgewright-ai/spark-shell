@@ -64,7 +64,6 @@ pub enum Page {
     Hidden,
     Details(String),
     Technical(String),
-    Filter,
     CategoryPicker(String),
     LaunchPicker(String),
     Categories,
@@ -79,7 +78,6 @@ pub enum Action {
     Launch(String),
     Details(String),
     Technical(String),
-    Filter,
     SetFilter(Option<String>),
     Hidden,
     Categories,
@@ -151,6 +149,8 @@ pub struct State {
     pub preference_error: Option<String>,
     pub page: Page,
     pub filter: Option<String>,
+    /// A refresh asked by the person: its read says how many apps it found.
+    pub refreshing: bool,
     pub details: BTreeMap<String, Value>,
     pub loaded: bool,
     pub failed: bool,
@@ -177,6 +177,7 @@ impl Default for State {
             preference_error,
             page: Page::List,
             filter: None,
+            refreshing: false,
             details: BTreeMap::new(),
             loaded: false,
             failed: false,
@@ -241,6 +242,33 @@ impl State {
         self.sorted(self.entries.iter().filter(|a| self.preference(&a.id).hidden))
     }
 
+    /// The desktop categories the installed apps carry that no mapping places yet, sorted, each once: what add
+    /// mapping offers to pick (dialog/DESIGN.md, v0.124.4).
+    pub fn unmapped_sources(&self) -> Vec<String> {
+        let mut v: Vec<String> = self
+            .entries
+            .iter()
+            .flat_map(|a| a.categories.iter().cloned())
+            .filter(|c| !c.is_empty() && !self.prefs.mappings.contains_key(c))
+            .collect();
+        v.sort();
+        v.dedup();
+        v
+    }
+
+    /// The hidden apps the words name, every one of them with nothing typed: the hidden list is searched as the
+    /// list is (dialog/DESIGN.md, v0.124.4).
+    pub fn hidden_matching(&self, query: &str) -> Vec<&Entry> {
+        let words = query.to_lowercase();
+        self.sorted(self.entries.iter().filter(|a| {
+            if !self.preference(&a.id).hidden {
+                return false;
+            }
+            let text = format!("{} {} {} {}", a.name, a.display_name, a.generic_name, a.description).to_lowercase();
+            words.split_whitespace().all(|w| text.contains(w))
+        }))
+    }
+
     fn navigate(&mut self, page: Page, nav: Navigation) -> Navigation {
         self.stack.push((self.page.clone(), nav));
         self.page = page;
@@ -293,9 +321,9 @@ impl State {
         match action {
             Action::Launch(id) => {
                 if self.pending.is_some() {
-                    return Err("wait for the current Apps operation".into());
+                    return Err("the apps are busy: a moment".into());
                 }
-                let app = self.entry(&id).ok_or("this application is no longer available")?;
+                let app = self.entry(&id).ok_or("this app is no longer installed")?;
                 let pref = self.preference(&id);
                 if pref.mode() == "focus" && !app.focus {
                     return Err("focus existing is unavailable here; choose application default in its details".into());
@@ -307,15 +335,14 @@ impl State {
             }
             Action::Details(id) => {
                 if self.pending.is_some() {
-                    return Err("wait for the current Apps operation".into());
+                    return Err("the apps are busy: a moment".into());
                 }
-                self.entry(&id).ok_or("this application is no longer available")?;
+                self.entry(&id).ok_or("this app is no longer installed")?;
                 out.navigation = Some(self.navigate(Page::Details(id.clone()), nav));
                 // the cached facts stay readable while fresh ones come: packages and windows change
                 out.request = Some(json!({"op":"details","id":id}));
             }
             Action::Technical(id) => out.navigation = Some(self.navigate(Page::Technical(id), nav)),
-            Action::Filter => out.navigation = Some(self.navigate(Page::Filter, nav)),
             Action::SetFilter(category) => {
                 self.filter = category;
                 out.navigation = self.back().map(|n| Navigation {
@@ -372,7 +399,7 @@ impl State {
                     }
                     Page::Form(Form::AddMapping) => {
                         if typed.is_empty() || typed.len() > 80 || !typed.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
-                            return Err("use a desktop category identifier, such as Network".into());
+                            return Err("a desktop category is one word, such as Network".into());
                         }
                         self.page = Page::Mapping(typed);
                         out.navigation = Some(Navigation::default());
@@ -426,7 +453,10 @@ impl State {
                 self.undo = None;
                 out.notice = Some("put back".into());
             }
-            Action::Refresh => out.request = Some(json!({"op":"catalog"})),
+            Action::Refresh => {
+                self.refreshing = true; // the read that follows gets a receipt; the first read at the home does not
+                out.request = Some(json!({"op":"catalog"}));
+            }
             Action::RetryDetails(id) => out.request = Some(json!({"op":"details","id":id})),
             Action::Copy(value) => out.copy = Some(value),
         }
@@ -449,21 +479,25 @@ impl State {
                 self.failed = true;
                 self.entries = value["apps"]
                     .as_array()
-                    .ok_or("invalid native Apps catalog")?
+                    .ok_or("the apps could not be read")?
                     .iter()
                     .filter_map(Entry::read)
                     .collect();
                 self.loaded = true;
                 self.failed = false;
                 self.details.clear();
+                if std::mem::take(&mut self.refreshing) {
+                    let n = self.entries.len();
+                    return Ok(Some(format!("{} app{} read", n, if n == 1 { "" } else { "s" })));
+                }
             }
             "details" => {
-                let id = value["id"].as_str().ok_or("invalid application details")?.to_string();
+                let id = value["id"].as_str().ok_or("the app's details could not be read")?.to_string();
                 self.details.insert(id, value);
             }
             "launch" => return Ok(Some(scrub(value["message"].as_str().unwrap_or("launch outcome is unavailable")))),
             "copy" => return Ok(Some("copied".into())),
-            _ => return Err("unknown Apps operation result".into()),
+            _ => return Err("the apps answered something unknown".into()),
         }
         Ok(None)
     }

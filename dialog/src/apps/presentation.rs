@@ -195,49 +195,43 @@ impl State {
                 let apps = self.visible(query);
                 if apps.is_empty() && self.pending.is_none() {
                     l.note(if self.failed {
-                        "Apps unavailable. Retry discovery below."
+                        "the apps could not be read: refresh apps, at the end of the list, reads them again"
                     } else if !self.loaded {
                         "the apps have not been read yet"
                     } else if self.entries.is_empty() {
-                        "No launchable applications are installed."
+                        "no app is installed"
                     } else if !query.trim().is_empty() {
                         "no app matches these words"
                     } else {
                         "no app in this category"
                     });
                 }
-                let mut category = String::new();
-                for a in apps {
-                    let group = self.category_of(a);
-                    if group != category {
-                        if !category.is_empty() {
-                            l.blank();
-                        }
-                        l.heading(&group);
-                        category = group;
-                    }
-                    l.app(a);
-                }
+                self.grouped(&mut l, apps);
                 l.blank();
-                let filter = self.filter.clone().unwrap_or_else(|| "all".into()).to_lowercase();
-                l.choice("category", &filter, Action::Filter);
+                // the category filter is the headings' (dialog/DESIGN.md, v0.124.4): a click on one shows that
+                // category alone, Esc shows all; no filter row at the end of a list to scroll to
+                // with nothing hidden the row is a fact, muted, and opens nothing
                 let hidden = self.hidden().len();
-                l.choice(
-                    "hidden apps",
-                    &if hidden == 0 { "none".to_string() } else { hidden.to_string() },
-                    Action::Hidden,
-                );
-                l.choice("categories", "", Action::Categories);
+                if hidden == 0 {
+                    l.row("", "hidden apps", "none", None);
+                } else {
+                    l.choice("hidden apps", &hidden.to_string(), Action::Hidden);
+                }
+                l.choice("edit categories", "", Action::Categories);
                 l.row("", "refresh apps", "", Some(Action::Refresh));
             }
             Page::Hidden => {
-                let hidden = self.hidden();
+                // the hidden apps in the list's own shape, under their categories, searched by the words typed
+                // (dialog/DESIGN.md, v0.124.4): hidden is a state of the same apps, not another kind of list
+                let hidden = self.hidden_matching(query);
                 if hidden.is_empty() {
-                    l.note("no app is hidden");
+                    l.note(if query.trim().is_empty() {
+                        "no app is hidden"
+                    } else {
+                        "no hidden app matches these words"
+                    });
                 }
-                for a in hidden {
-                    l.app(a);
-                }
+                self.grouped(&mut l, hidden);
             }
             Page::Details(id) => {
                 let Some(app) = self.entry(id) else {
@@ -291,13 +285,6 @@ impl State {
                 }
                 l.blank();
                 l.row("", "copy launcher path", "", Some(Action::Copy(app.launcher.clone())));
-            }
-            Page::Filter => {
-                l.heading("category");
-                l.pick(self.filter.is_none(), "all", Action::SetFilter(None));
-                for c in &self.prefs.categories {
-                    l.pick(self.filter.as_deref() == Some(c.as_str()), c, Action::SetFilter(Some(c.clone())));
-                }
             }
             Page::CategoryPicker(id) => {
                 l.heading("category");
@@ -372,6 +359,9 @@ impl State {
             }
             Page::Mapping(source) => {
                 l.heading(&format!("{} maps to", source));
+                if let Some(row) = l.rows.last_mut() {
+                    row.label = format!("{} maps to", source); // the desktop's own word, as it is spelled
+                }
                 let current = self.prefs.mappings.get(source);
                 for c in &self.prefs.categories {
                     l.pick(current == Some(c), c, Action::Map(source.clone(), Some(c.clone())));
@@ -389,11 +379,25 @@ impl State {
                     Form::AddMapping => "add mapping",
                 });
                 l.blank();
-                l.note(match form {
-                    Form::AddCategory => "type the category's name in the prompt, then Enter",
-                    Form::RenameCategory(_) => "type the new name in the prompt, then Enter",
-                    Form::AddMapping => "type the desktop category's identifier in the prompt, such as Network, then Enter",
-                });
+                if *form == Form::AddMapping {
+                    // the desktop categories the installed apps carry and no mapping places yet: picked, not
+                    // recalled (dialog/DESIGN.md, v0.124.4); a word the catalog does not have is typed
+                    let sources = self.unmapped_sources();
+                    if !sources.is_empty() {
+                        l.heading("seen in installed apps");
+                        for s in &sources {
+                            l.choice(s, "", Action::Mapping(s.clone()));
+                            if let Some(row) = l.rows.last_mut() {
+                                row.label = cut_words(s, 18); // the desktop's own word, as it is spelled
+                            }
+                        }
+                        l.blank();
+                    }
+                }
+                // the prompt's placeholder says what to type and the key bar says Enter saves: no note repeats them
+                if *form == Form::AddMapping {
+                    l.note("or type a desktop category in the prompt, such as Network, then Enter");
+                }
                 if let Form::RenameCategory(from) = form {
                     l.blank();
                     l.fact("now", from);
@@ -401,5 +405,22 @@ impl State {
             }
         }
         l.rows
+    }
+
+    /// Apps under their categories' headings, a row of air between groups: the list's shape, and the hidden
+    /// page's (dialog/DESIGN.md, v0.124.4).
+    fn grouped(&self, l: &mut Lines, apps: Vec<&Entry>) {
+        let mut category = String::new();
+        for a in apps {
+            let group = self.category_of(a);
+            if group != category {
+                if !category.is_empty() {
+                    l.blank();
+                }
+                l.heading(&group);
+                category = group;
+            }
+            l.app(a);
+        }
     }
 }

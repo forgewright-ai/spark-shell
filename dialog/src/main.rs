@@ -345,7 +345,8 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
     let span = |a: u16, b: u16, y: u16| row == y && col >= a && col < b;
     // where a click acts: the x, a chip, a key, the waveform (it seeks), a row of the list
     let clicks = (row == 0 && drawn.close.is_some_and(|(a, b)| span(a, b, 0)))
-        || (row == 0 && app.can_go_back() && drawn.title.is_some_and(|(a, b)| span(a, b, 0)))
+        || (row == 0 && app.can_go_back() && (drawn.back.is_some_and(|(a, b)| span(a, b, 0)) || drawn.title.is_some_and(|(a, b)| span(a, b, 0))))
+        || drawn.heads.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.chips.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.keys.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.wave.is_some_and(on)
@@ -886,8 +887,14 @@ fn main() {
                             } else {
                                 app.close_window();
                             }
-                        } else if m.row == 0 && drawn.title.is_some_and(|(a, b)| m.column >= a && m.column < b) && app.can_go_back() {
-                            app.escape(); // the header's place name: back a level (dialog/DESIGN.md)
+                        } else if m.row == 0
+                            && app.can_go_back()
+                            && (drawn.back.is_some_and(|(a, b)| m.column >= a && m.column < b)
+                                || drawn.title.is_some_and(|(a, b)| m.column >= a && m.column < b))
+                        {
+                            app.escape(); // the header's back, or its place name: back a level (dialog/DESIGN.md)
+                        } else if let Some((_, _, _, label)) = drawn.heads.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
+                            app.apps_heading(&label.clone()); // a category's heading: the list narrowed to it, or widened
                         } else if drawn.reply_undo.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
                             app.undo_now();
                         } else if let Some((_, _, _, c)) = drawn.chips.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
@@ -939,8 +946,9 @@ fn main() {
                     }
                     MouseEventKind::ScrollUp if app.view == View::Preview => app.preview_wheel(-1, m.modifiers.contains(KeyModifiers::CONTROL)),
                     MouseEventKind::ScrollDown if app.view == View::Preview => app.preview_wheel(1, m.modifiers.contains(KeyModifiers::CONTROL)),
-                    MouseEventKind::ScrollUp => app.page(-1),
-                    MouseEventKind::ScrollDown => app.page(1),
+                    // the wheel moves the bar a row in a list, as the arrows do; three lines in text (dialog/DESIGN.md)
+                    MouseEventKind::ScrollUp => app.wheel(-1),
+                    MouseEventKind::ScrollDown => app.wheel(1),
                     _ => {}
                 }
             }

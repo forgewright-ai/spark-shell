@@ -7005,7 +7005,7 @@ tool_spec() {
         mic_adjust)        _ts=mic _ta=adjust _tp=delta _tk=delta _th=f _tt='mic adjust DELTA' _td='Change the microphone level by delta percentage points from its fresh native level. Negative lowers and positive raises; the result is bounded to 0 to 100 and read back. Use this for relative requests; no arithmetic from a remembered level is needed.' ;;
         mic_mute)          _ts=mic _ta=mute _th=if _tt='mic mute' _td='Mute the microphone.' ;;
         mic_unmute)        _ts=mic _ta=unmute _th=if _tt='mic unmute' _td='Unmute the microphone.' ;;
-        theme_palette)     _ts=theme _ta='=' _tp=name _tk=${THEME_ENUM_NOW:-$(theme_enum)} _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none.' ;;
+        theme_palette)     _ts=theme _ta='=' _tp=name _tk=${THEME_ENUM_NOW:-$(theme_enum)} _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none. A near name, heard or typed, is the nearest palette: groove box dark is gruvbox-dark.' ;;
         theme_save)        _ts=theme _ta=save _tp=name _tk=string _th=f _tt='theme save NAME' _td='Keep the look in use under a name: the palette, the wallpaper, the text size, the transparency. After the look is made, never before it.' ;;
         theme_delete)      _ts=theme _ta=delete _tp=name _tk=string _th=dif _tt='theme delete NAME' _td='Delete a saved theme.' ;;
         theme_back)        _ts=theme _ta=back _th=f _tt='theme back' _td='The look before this one.' ;;   # free: no row carries it, the gate asks the history

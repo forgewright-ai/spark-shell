@@ -109,20 +109,15 @@ fn the_list_is_the_apps_under_their_categories_then_the_managing_rows() {
     );
     let tail: Vec<(&str, &str, &str)> = ls
         .iter()
-        .skip_while(|l| l.action != Some(Action::Filter))
+        .skip_while(|l| l.label != "hidden apps")
         .map(|l| (l.label.as_str(), l.value.as_str(), l.tail.as_str()))
         .collect();
     assert_eq!(
         tail,
-        [
-            ("category", "all", "\u{203a}"),
-            ("hidden apps", "none", "\u{203a}"),
-            ("categories", "", "\u{203a}"),
-            ("refresh apps", "", "")
-        ],
-        "the managing rows at the end, each a row the dialog has: a choice with its arrow, a list behind an arrow, a step"
+        [("hidden apps", "none", ""), ("edit categories", "", "\u{203a}"), ("refresh apps", "", "")],
+        "the managing rows at the end, a menu's rows: no filter row, the headings are the filter; nothing hidden, nothing to open (v0.124.4)"
     );
-    let at = ls.iter().position(|l| l.action == Some(Action::Filter)).unwrap();
+    let at = ls.iter().position(|l| l.label == "hidden apps").unwrap();
     assert!(ls[at - 1].label.is_empty(), "a row of air before them");
     cleanup(&a);
 }
@@ -206,7 +201,26 @@ fn the_frame_is_the_dialogs_own_column_in_the_middle() {
         let width = w.min(60);
         let left = (w - width) / 2;
         assert_eq!(d.columns, (left, left + width));
-        assert_eq!(b[(left + 2, 0)].symbol(), "a", "the header at the column's inset at {}x{}", w, h);
+        // the header is the window's (v0.124.4): back at its left, the title centered, the x at its right; the
+        // prompt sign says where the column is
+        let head: String = (0..w).map(|x| b[(x, 0)].symbol()).collect();
+        assert!(
+            head.trim_start().starts_with("\u{2039} back"),
+            "back at the window's left at {}x{}: {:?}",
+            w,
+            h,
+            head
+        );
+        let (ta, _) = d.title.expect("the title's cells");
+        assert!(ta > left + 2 && head.contains("apps"), "the title centered at {}x{}: {:?}", w, h, head);
+        assert_eq!(b[(w - 3, 0)].symbol(), "\u{d7}", "the x at the window's right at {}x{}", w, h);
+        assert_eq!(
+            b[(2, spark_dialog::ui::TOP_RULE_Y)].symbol(),
+            "\u{2500}",
+            "the rule from the window's edge at {}x{}",
+            w,
+            h
+        );
         assert_eq!(b[(left + 2, spark_dialog::ui::PROMPT_Y)].symbol(), "\u{276f}");
         let y = d.picks.iter().find(|(_, n)| *n == a.sel).unwrap().0;
         assert_eq!(
@@ -228,7 +242,7 @@ fn the_key_row_is_the_pages_whatever_is_lit_or_typed() {
     a.set_draft("fire");
     assert_eq!(words(&a), list, "words typed");
     a.set_draft("");
-    pick(&mut a, Action::Filter);
+    pick(&mut a, Action::Categories);
     assert_eq!(words(&a), list, "the managing row lit");
     act(&mut a, Action::Details(ID.into()));
     let details = words(&a);
@@ -239,9 +253,13 @@ fn the_key_row_is_the_pages_whatever_is_lit_or_typed() {
     assert_eq!(words(&a), details, "a choice lit");
     act(&mut a, Action::Categories);
     act(&mut a, Action::AddCategory);
-    assert_eq!(words(&a), "Cancel Esc", "a form: Esc lets it go, Enter saves as it does everywhere");
+    assert_eq!(
+        words(&a),
+        "Cancel Esc   Save Enter",
+        "a form waits on Enter for the name typed, so Enter has its chip here"
+    );
     a.set_draft("Writing");
-    assert_eq!(words(&a), "Cancel Esc");
+    assert_eq!(words(&a), "Cancel Esc   Save Enter");
     cleanup(&a);
 }
 
@@ -270,7 +288,11 @@ fn hiding_an_app_is_a_switch_applied_at_once_with_undo() {
     let (b, d, _) = draw(&mut a, 60, 40);
     assert!(d.reply_undo.is_some(), "Undo at the status row's right");
     let status: String = (0..60).map(|x| b[(x, 35)].symbol()).collect();
-    assert!(status.contains("editor hidden") && status.contains("Undo"), "{:?}", status);
+    assert!(
+        status.contains("editor hidden") && status.contains(" undo "),
+        "undo, a control at the right: {:?}",
+        status
+    );
     a.undo_now();
     assert!(!a.apps.preference(ID).hidden, "undo puts it back");
     assert!(!Preferences::load(&a.apps.path).unwrap().apps.get(ID).is_some_and(|p| p.hidden));
@@ -387,7 +409,11 @@ fn hidden_apps_are_a_list_of_their_own_and_never_leak_into_the_homes_search() {
         .map(|l| l.label.as_str())
         .collect();
     assert_eq!(hidden, ["foot client", "foot server"], "each a row that opens, as in the list");
-    assert_eq!(words(&a), "Back Esc   Details \u{2192}", "the same keys as the list");
+    assert_eq!(
+        words(&a),
+        "All apps Esc   Details \u{2192}",
+        "the list's keys, Esc showing all apps again (v0.124.4)"
+    );
     pick(&mut a, Action::Launch("footclient.desktop".into()));
     assert!(a.apps_details(), "Right opens its details, where the switch is");
     act(&mut a, Action::Visibility("footclient.desktop".into()));
@@ -640,7 +666,7 @@ fn a_renamed_category_keeps_its_filter() {
     let mut a = app();
     let name = a.apps.prefs.categories[0].clone();
     act(&mut a, Action::SetFilter(Some(name.clone())));
-    assert_eq!(line(&lines(&a), &Action::Filter).value, "development", "the filter row says which");
+    assert_eq!(a.subtitle(), "development", "the header says which category is shown");
     act(&mut a, Action::Categories);
     act(&mut a, Action::Category(name.clone()));
     act(&mut a, Action::Rename(name));
@@ -651,19 +677,17 @@ fn a_renamed_category_keeps_its_filter() {
 }
 
 #[test]
-fn the_filter_is_a_checked_list_and_the_query_crosses_categories() {
+fn the_filter_is_the_headings_and_the_query_crosses_categories() {
+    // dialog/DESIGN.md (v0.124.4): a heading narrows the list to its category; words typed search every category
     let mut a = app();
-    act(&mut a, Action::Filter);
-    assert_eq!(a.apps.page, Page::Filter);
-    let ls = lines(&a);
-    assert_eq!(line(&ls, &Action::SetFilter(None)).sign, "check");
-    assert_eq!(line(&ls, &Action::SetFilter(Some("Web".into()))).label, "web");
-    act(&mut a, Action::SetFilter(Some("Web".into())));
-    assert_eq!(a.apps.page, Page::List);
+    a.apps_heading("web");
+    assert_eq!(a.apps.page, Page::List, "the list itself narrows: no page opens");
+    assert_eq!(a.apps.filter.as_deref(), Some("Web"));
     assert_eq!(a.apps.visible("")[0].id, "browser.desktop");
+    assert!(lines(&a).iter().filter(|l| l.heading).count() == 1, "one heading, the category shown");
     assert_eq!(a.apps.visible("write doc")[0].name, "Editor", "words search every category");
-    act(&mut a, Action::Filter);
-    assert_eq!(line(&lines(&a), &Action::SetFilter(Some("Web".into()))).sign, "check");
+    a.apps_heading("web");
+    assert!(a.apps.filter.is_none(), "the same heading again shows all");
     cleanup(&a);
 }
 
@@ -697,10 +721,10 @@ fn preferences_survive_updates_and_restart() {
 fn unavailable_catalog_missing_metadata_and_invalid_preferences_are_explicit() {
     let mut a = app();
     a.apps.entries.clear();
-    assert!(lines(&a).iter().any(|l| l.label.contains("No launchable")));
+    assert!(lines(&a).iter().any(|l| l.label.contains("no app is installed")));
     a.apps.pending = Some((8, "catalog".into()));
     a.apps.receive(8, json!({"error":"GIO unavailable"})).unwrap_err();
-    assert!(lines(&a).iter().any(|l| l.label.contains("Apps unavailable")));
+    assert!(lines(&a).iter().any(|l| l.label.contains("could not be read")));
     assert!(Preferences::parse("{}").is_err());
     a.apps.preference_error = Some("Invalid preferences".into());
     assert!(
@@ -913,5 +937,79 @@ fn typed_undo_takes_the_last_change_of_apps_back_after_its_receipt_is_gone() {
     a.set_draft("undo");
     a.enter();
     assert!(!a.apps.preference(ID).hidden, "typed undo at the home");
+    cleanup(&a);
+}
+
+#[test]
+fn a_categorys_heading_is_the_filter_and_the_managing_rows_act_on_one_click() {
+    // dialog/DESIGN.md (v0.124.4): a click on a heading shows that category alone, the header says which, Esc shows
+    // all; the rows at the list's end are a menu's and act on one click; an app's row is selected first
+    let mut a = app();
+    let t0 = std::time::Instant::now();
+    let c = {
+        let shown = a.apps.visible("");
+        a.apps.category_of(shown[0])
+    };
+    assert!(lines(&a).iter().filter(|l| l.heading).count() > 1, "more than one category to begin with");
+    a.apps_heading(&c.to_lowercase());
+    assert_eq!(a.apps.filter.as_deref(), Some(c.as_str()), "the heading's category alone");
+    assert_eq!(a.subtitle(), c.to_lowercase(), "the header says which");
+    assert_eq!(lines(&a).iter().filter(|l| l.heading).count(), 1);
+    let hint: String = a.hint().iter().map(|(t, _)| t.as_str()).collect();
+    assert!(hint.contains("All apps"), "Esc shows all, and its chip says so: {:?}", hint);
+    a.apps_heading(&c.to_lowercase());
+    assert!(a.apps.filter.is_none(), "the same heading again widens to all");
+    a.apps_heading(&c.to_lowercase());
+    a.escape();
+    assert!(
+        a.apps.filter.is_none() && a.view == spark_dialog::app::View::Apps,
+        "Esc clears the filter, and stays"
+    );
+    // the managing rows act on one click; an app's row is selected by one
+    act(&mut a, Action::Visibility("mystery.desktop".into()));
+    let picks = a.picks();
+    let hidden = picks
+        .iter()
+        .position(|it| matches!(it, spark_dialog::app::Item::Apps(l) if l.action == Some(Action::Hidden)))
+        .expect("the hidden apps row");
+    a.clicked(hidden, t0);
+    assert_eq!(a.apps.page, Page::Hidden, "one click opens the hidden list");
+    a.escape();
+    assert_eq!(a.apps.page, Page::List);
+    let picks = a.picks();
+    let app_row = picks
+        .iter()
+        .position(|it| matches!(it, spark_dialog::app::Item::Apps(l) if matches!(l.action, Some(Action::Launch(_)))))
+        .expect("an app's row");
+    a.clicked(app_row, t0);
+    assert!(
+        a.in_list && a.sel == app_row && a.apps.page == Page::List && a.apps.pending.is_none(),
+        "selected, not opened"
+    );
+    cleanup(&a);
+}
+
+#[test]
+fn the_hidden_apps_are_the_lists_own_shape_under_their_categories_and_searched_by_typing() {
+    let mut a = app();
+    act(&mut a, Action::Visibility(ID.into()));
+    act(&mut a, Action::Hidden);
+    assert_eq!(a.subtitle(), "hidden", "the header says hidden");
+    let ls = lines(&a);
+    assert!(
+        ls.iter().any(|l| l.heading && l.label == "development"),
+        "under its category's heading: {:?}",
+        ls.iter().map(|l| l.label.as_str()).collect::<Vec<_>>()
+    );
+    assert!(ls.iter().any(|l| l.label == "editor"));
+    let hint: String = a.hint().iter().map(|(t, _)| t.as_str()).collect();
+    assert!(hint.contains("All apps"), "{:?}", hint);
+    a.set_draft("zzz");
+    assert!(
+        lines(&a).iter().any(|l| l.label.contains("no hidden app matches")),
+        "typing searches the hidden list"
+    );
+    a.set_draft("edit");
+    assert!(lines(&a).iter().any(|l| l.label == "editor"), "and finds by the words");
     cleanup(&a);
 }

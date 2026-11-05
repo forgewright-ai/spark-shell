@@ -4,7 +4,7 @@
 //! turn first, then the view's list), scrolled as it needs; a rule; the footer's controls (Attach, the
 //! model, the mic).
 
-use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, PLACEHOLDER, SETTINGS, WIDTH};
+use crate::app::{App, HintKey, Item, Mode, Sign, Talk, View, DESTS, MIN_HEIGHT, MIN_WIDTH, SETTINGS, WIDTH};
 use crate::palette::Palette;
 use crate::progress;
 use crate::reply::Mark;
@@ -25,6 +25,8 @@ pub const CLOSE: &str = "\u{d7}";
 pub const BELOW: &str = "\u{2193}";
 pub const ABOVE: &str = "\u{2191}";
 pub const MORE: &str = "\u{203a}";
+/// The header's back, the mirror of MORE: where there is a level above this one (dialog/DESIGN.md).
+pub const BACK: &str = "\u{2039} back";
 pub const RULE: &str = "\u{2500}";
 /// A color's sample: two full blocks, about a square in a terminal cell's shape.
 pub const SAMPLE: &str = "\u{2588}\u{2588}";
@@ -191,6 +193,11 @@ pub struct Drawn {
     pub close: Option<(u16, u16)>,
     /// The header's place name, its cells on row 0: a click there goes back a level (dialog/DESIGN.md).
     pub title: Option<(u16, u16)>,
+    /// The header's back, its cells on row 0, where there is a level above this one.
+    pub back: Option<(u16, u16)>,
+    /// The category headings of the list of apps, their cells (x0, x1, y) and the heading as drawn: a click
+    /// narrows the list to that category (dialog/DESIGN.md, v0.124.4). Not picks: the arrows skip them.
+    pub heads: Vec<(u16, u16, u16, String)>,
     pub prompt: (u16, u16),
     /// A picture to draw beside the list, or a preview's page.
     pub preview: Option<Picture>,
@@ -313,6 +320,11 @@ impl Drawn {
         }
         self.close = self.close.map(|(a, b)| (a + dx, b + dx));
         self.title = self.title.map(|(a, b)| (a + dx, b + dx));
+        self.back = self.back.map(|(a, b)| (a + dx, b + dx));
+        for hd in &mut self.heads {
+            hd.0 += dx;
+            hd.1 += dx;
+        }
         if let Some(p) = self.preview.as_mut() {
             p.x += dx;
         }
@@ -368,19 +380,87 @@ fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     // column in the middle, the view's width (#141)
     let cw = column_width(w, &app.view);
     if cw == w {
-        let d = draw_column(app, pal, clock, buf);
-        return d;
+        return draw_column(app, pal, clock, buf, true);
     }
+    // the column in the middle; the frame's chrome, the header, the two rules and the key bar, at the window's
+    // width, so a wide or a full screen is the frame and the column keeps its measure (dialog/DESIGN.md, v0.124.4)
     let x = (w - cw) / 2;
     let mut col = Buffer::empty(Rect::new(0, 0, cw, h));
-    let mut drawn = draw_column(app, pal, clock, &mut col);
+    let mut drawn = draw_column(app, pal, clock, &mut col, false);
     blit(buf, &col, x, 0);
     drawn.shift(x);
+    if cw >= MIN_WIDTH && h >= MIN_HEIGHT {
+        let mut pen = Pen { buf, pal, w, h, right: w };
+        header(app, &mut pen, &mut drawn);
+        rules(app, &mut pen);
+        contextual_keys(app, &mut pen, &mut drawn);
+    }
     drawn
 }
 
+/// The header (dialog/DESIGN.md, v0.124.4): back at the left where there is a level above this one, the place's
+/// name centered with its state after it, the x at the right, and the march before the x while spark thinks on
+/// the words. No clock: the bar has it. In a window wider than the column it takes the window's width.
+fn header(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
+    let w = pen.w;
+    let pal = pen.pal.clone();
+    let right = if app.cfg.close { w - 3 } else { w - 1 };
+    if app.cfg.close {
+        pen.put(w - 3, 0, CLOSE, pal.muted, false, false);
+        drawn.close = Some((w - 4, w - 1));
+    }
+    let mut left = 2;
+    if app.can_go_back() {
+        let e = pen.put(2, 0, BACK, pal.muted, false, false);
+        drawn.back = Some((2, e));
+        left = e + 2;
+    }
+    // spark at work on the words: the march is the header's alone, never a label's and never the status row's. A
+    // read of the machine (a place's rows, Apps' catalog or an app's facts) shows none, as #139 has it: its rows
+    // come when they come
+    let end = if app.cfg.progress && app.thinking() {
+        let mx = right.saturating_sub(13);
+        pen.put(mx, 0, &progress::bar(app.work(), app.frame), pal.muted, false, false);
+        mx.saturating_sub(1)
+    } else {
+        right.saturating_sub(1)
+    };
+    // the title centered in the frame, its state muted after it; cut at a word where the room is short
+    let title = app.title();
+    let sub = app.subtitle();
+    let full = if sub.is_empty() { title.clone() } else { format!("{}{}{}", title, SEP, sub) };
+    let room = end.saturating_sub(left) as usize;
+    let shown = cut_words(&full, room);
+    let width = cells(&shown) as u16;
+    let x = ((w.saturating_sub(width)) / 2).clamp(left, end.saturating_sub(width).max(left));
+    let tx = pen.put(x, 0, &cut_words(&title, room), pal.fg, true, false);
+    drawn.title = Some((x, tx));
+    if shown.len() > title.len() && shown.starts_with(title.as_str()) {
+        pen.put(tx, 0, &shown[title.len()..], pal.muted, false, false);
+    }
+}
+
+/// The frame's two rules (dialog/DESIGN.md): under the prompt's block with the diamond in its middle, full when
+/// a model answers and hollow when none does or asking is off; above the key bar, plain. In a window wider than
+/// the column they take the window's width.
+fn rules(app: &App, pen: &mut Pen) {
+    let (w, h) = (pen.w, pen.h);
+    let pal = pen.pal.clone();
+    for x in 2..w - 2 {
+        pen.put(x, TOP_RULE_Y, RULE, pal.lit, false, false);
+        pen.put(x, h - 4, RULE, pal.lit, false, false);
+    }
+    if app.cfg.model && app.model_on && app.model_name.is_some() {
+        pen.put(w / 2 - 1, TOP_RULE_Y, " \u{25c6} ", pal.accent, false, false);
+    } else {
+        pen.put(w / 2 - 1, TOP_RULE_Y, " \u{25c7} ", pal.muted, false, false);
+    }
+}
+
 /// The dialog's own column.
-fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn {
+/// The dialog's own column. With `chrome` it draws the frame's header, rules and key bar too, at its own width;
+/// without, draw_layout draws them at the window's.
+fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: bool) -> Drawn {
     let mut drawn = Drawn::default();
     let (w, h) = (buf.area.width, buf.area.height);
     drawn.columns = (0, w);
@@ -393,47 +473,8 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
         pen.put(w.saturating_sub(cells(t) as u16) / 2, h / 2, t, pal.muted, false, false);
         return drawn;
     }
-
-    // the header: the title, its state; then the march, the date and the time, close. Back is the key row's
-    // (#165): a back arrow here read as the prompt sign below it
-    let mut x = 2;
-    let right = if app.cfg.close { w - 3 } else { w - 1 };
-    if app.cfg.close {
-        pen.put(w - 3, 0, CLOSE, pal.muted, false, false);
-        drawn.close = Some((w - 4, w - 1));
-    }
-    // the march sits before the date while something runs; where the window is too narrow for both,
-    // it takes the date's place, which comes back when the work is done
-    let clock_x = right.saturating_sub(2 + cells(clock) as u16);
-    // spark at work on the words: the march is the header's alone, never a label's and never the status row's. A
-    // read of the machine (a place's rows, Apps' catalog or an app's facts) shows none, as #139 has it: its rows
-    // come when they come
-    let busy = app.cfg.progress && app.thinking();
-    let work = app.work();
-    let title = app.title();
-    let narrow = clock_x.saturating_sub(12) < x + cells(&title) as u16 + 1;
-    let (end, march_x) = match (busy, narrow) {
-        (false, _) => (clock_x, None),
-        (true, false) => (clock_x - 12, Some(clock_x - 12)),
-        (true, true) => (right.saturating_sub(12), Some(right.saturating_sub(12))),
-    };
-    x = pen.put(x, 0, &cut_words(&title, end.saturating_sub(x + 1) as usize), pal.fg, true, false);
-    drawn.title = Some((2, x));
-    let sub = app.subtitle();
-    if !sub.is_empty() && end > x + 12 {
-        // two cells of air before the date: a long state is cut, never run into it
-        pen.put(x, 0, &cut_words(&format!("{}{}", SEP, sub), (end - x - 2) as usize), pal.muted, false, false);
-    }
-    match march_x {
-        Some(mx) => {
-            pen.put(mx, 0, &progress::bar(work, app.frame), pal.muted, false, false);
-            if !narrow {
-                pen.put(clock_x, 0, clock, pal.muted, false, false);
-            }
-        }
-        None => {
-            pen.put(clock_x, 0, clock, pal.muted, false, false);
-        }
+    if chrome {
+        header(app, &mut pen, &mut drawn);
     }
 
     // the prompt: two rows always; a longer draft scrolls inside them (#196)
@@ -451,7 +492,7 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     let top = cr.saturating_sub(n - 1).min(rows.len().saturating_sub(n));
     drawn.prompt = (PROMPT_Y, PROMPT_Y + n as u16 - 1);
     if app.input.is_empty() && app.mode == Mode::Normal {
-        pen.put(tx, PROMPT_Y, &PLACEHOLDER.to_lowercase(), pal.muted, false, false);
+        pen.put(tx, PROMPT_Y, app.placeholder(), pal.muted, false, false);
     } else {
         for (k, r) in rows.iter().skip(top).take(n).enumerate() {
             pen.put(tx, PROMPT_Y + k as u16, r, pal.fg, false, false);
@@ -468,13 +509,8 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     // the prompt's tools under it, then the rule that closes the prompt's block, the diamond in its middle: full
     // when a model answers, hollow when none does. The one mark in the frame, and it carries that one fact
     tools(app, &mut pen, TOOLS_Y, &mut drawn);
-    for x in 2..w - 2 {
-        pen.put(x, TOP_RULE_Y, RULE, pal.lit, false, false);
-    }
-    if app.cfg.model && app.model_on && app.model_name.is_some() {
-        pen.put(w / 2 - 1, TOP_RULE_Y, " \u{25c6} ", pal.accent, false, false);
-    } else {
-        pen.put(w / 2 - 1, TOP_RULE_Y, " \u{25c7} ", pal.muted, false, false);
+    if chrome {
+        rules(app, &mut pen);
     }
 
     // the content first: a preview's text decides the pages its key row offers
@@ -514,10 +550,9 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
     // the status row: the reply, a note or the selected object's line, the one place a message is written; then
     // the plain rule, a blank row, and the key bar, the last thing in the frame
     reply_row(app, &mut pen, status_y(h), &mut drawn);
-    for x in 2..w - 2 {
-        pen.put(x, h - 4, RULE, pal.lit, false, false);
+    if chrome {
+        contextual_keys(app, &mut pen, &mut drawn);
     }
-    contextual_keys(app, &mut pen, &mut drawn);
     drawn
 }
 
@@ -695,8 +730,10 @@ fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
     }
     let pal = pen.pal.clone();
     let w = pen.w;
+    // undo is a control, not a key's chip (dialog/DESIGN.md, v0.124.4): the controls' own brush, lowercase, at
+    // the row's right
     let undo = r.undo && (app.undo.is_some() || app.apps.undo.is_some());
-    let undo_x = w.saturating_sub(7);
+    let undo_x = w.saturating_sub(2 + cells(" undo ") as u16);
     match r.mark {
         Mark::Done if !r.text.is_empty() => {
             pen.put(2, y, CHECK, pal.accent, false, false);
@@ -716,7 +753,7 @@ fn reply_row(app: &App, pen: &mut Pen, y: u16, drawn: &mut Drawn) {
         false,
     );
     if undo {
-        let e = pen.chip(undo_x, y, "Undo");
+        let e = pen.control(undo_x, y, "undo", false, false, false);
         drawn.reply_undo = Some((undo_x, e, y));
     }
 }
@@ -1354,6 +1391,12 @@ fn content(app: &App, pen: &mut Pen, top: u16, bottom: u16, drawn: &mut Drawn) -
             // the selection bar: the one signal, a background and nothing else (dialog/DESIGN.md)
             for x in band.0..band.1 {
                 pen.buf[(x, y)].set_bg(pal.lit);
+            }
+        }
+        // a category's heading in the list of apps is a click's target, not a pick (dialog/DESIGN.md, v0.124.4)
+        if let Item::Apps(line) = it {
+            if line.heading && app.view == View::Apps && app.apps.page == crate::apps::Page::List {
+                drawn.heads.push((line.indent, line.indent + cells(&line.label) as u16, y, line.label.clone()));
             }
         }
         let chips = row_of(app, it).is_some_and(|r| chip_groups.contains(&r.group));

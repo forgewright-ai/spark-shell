@@ -927,9 +927,12 @@ fn a_long_state_in_the_header_stops_short_of_the_date() {
     app.view = View::Section(1);
     app.came_from = vec![View::Home];
     let (_, _, rows) = drawn(&app);
-    let at_clock = at(&rows[0], CLOCK).expect("the date and the time");
-    let before: String = rows[0].chars().skip(at_clock - 2).take(2).collect();
-    assert_eq!(before, "  ", "two cells of air before the date: {}", rows[0]);
+    // no clock in the header (v0.124.4): the state is cut at a word before the x, with air before it
+    assert!(!rows[0].contains(CLOCK), "the clock is the bar's: {}", rows[0]);
+    let at_x = at(&rows[0], "\u{d7}").expect("the x");
+    let before: String = rows[0].chars().skip(at_x - 2).take(2).collect();
+    assert_eq!(before, "  ", "two cells of air before the x: {}", rows[0]);
+    assert!(rows[0].contains("catppuccin-latte"), "the state after the name: {}", rows[0]);
 }
 
 #[test]
@@ -1303,16 +1306,18 @@ fn the_opening_plays_alone_then_the_whole_dialog() {
     assert!(!drawn.alone && drawn.film.is_none(), "after it, the dialog whole");
 }
 
-/// Back is the key row's (#165): the header starts with the place, no arrow that reads as the prompt sign
-/// below it, and the key row says Back with its key.
+/// Back is the header's left where there is a level above (dialog/DESIGN.md, v0.124.4), the place's name
+/// centered after it, and the key row still says Back with its key.
 #[test]
-fn back_is_in_the_key_row_never_the_header() {
+fn back_is_in_the_header_and_in_the_key_row() {
     let app = manager_app();
     let p = palette("tokyonight-night");
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
-    spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
+    let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
     let head: String = (0..WIDTH).map(|x| b[(x, 0)].symbol().to_string()).collect();
-    assert!(head.starts_with("  files"), "the header starts with the place: {:?}", head);
+    assert!(head.starts_with("  \u{2039} back"), "the header starts with back: {:?}", head);
+    assert_eq!(drawn.back.map(|(a, _)| a), Some(2));
+    assert!(head.contains("files"), "then the place: {:?}", head);
     let hint: String = app.hint().iter().map(|(t, _)| t.as_str()).collect();
     assert!(hint.contains("Back Esc"), "the key row says Back: {:?}", hint);
 }

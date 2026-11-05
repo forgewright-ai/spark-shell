@@ -179,8 +179,10 @@ class Session:
             # a list with columns (files); the title sits two cells into it
             place = re.search(r"\b(home|apps|files|conversation)\b", lines[0])
             frame = min(cols, 120 if place and place.group(1) == "files" else 60)
+            # the column's left edge: the prompt sign stands two cells into it (the header is the window's and its
+            # title is centered since v0.124.4, so the prompt row says where the column is)
             title = 2 + (cols - frame) // 2
-            good = place is not None and len(lines[0]) - len(lines[0].lstrip()) == title and any(word in lines[4] for word in ("attach", "remove", "talk"))
+            good = place is not None and len(lines[2]) - len(lines[2].lstrip()) == title and any(word in lines[4] for word in ("attach", "remove", "talk"))
             return good
         wait_for(current, "terminal redraw after resize")
         time.sleep(.3)
@@ -190,7 +192,7 @@ class Session:
         if name.startswith(("apps-", "details-")):
             lines = self.screen()
             inset = lambda line: len(line) - len(line.lstrip())
-            assert inset(lines[8]) == inset(lines[0]), "Apps body must share the header's left anchor"
+            assert inset(lines[8]) == inset(lines[2]), "Apps body must share the prompt's left anchor"
         rect = self.window()["rect"]
         geometry = "{x},{y} {width}x{height}".format(**rect)
         subprocess.run(["grim", *(["-o", "HEADLESS-1"] if whole else ["-g", geometry]), str(self.evidence / (name + ".png"))], env=self.env, check=True)
@@ -254,7 +256,7 @@ def main(binary, destination):
         assert not helpers.search(text), "the helpers start hidden"
         assert "firefox" in text and "mozilla firefox" not in text, "the name as a label, lowercase, never the display name"
         assert "mpv media player" in text
-        s.click("hidden apps", body=True, double=True)
+        s.click("hidden apps", body=True)
         assert re.search(r"foot client", s.text(), re.I) and re.search(r"foot server", s.text(), re.I), "the hidden apps, a list of their own"
         s.capture("hidden-helpers")
         s.key("-k", "Escape")
@@ -295,7 +297,7 @@ def main(binary, destination):
         assert "no app matches" in s.text()
         s.capture("hidden-search")
         s.key("-k", "Escape")
-        s.click("hidden apps", body=True, double=True)
+        s.click("hidden apps", body=True)
         assert "btop++" in s.text()
         s.key("-k", "Down", "-k", "Right")
         wait_for(lambda: "technical details" in s.text(), "hidden app Details")
@@ -303,7 +305,7 @@ def main(binary, destination):
         assert not json.loads(preferences.read_text())["apps"]["btop.desktop"]["hidden"]
         s.checks.append("Hide is a switch applied at once with Undo: it leaves the search, stands under hidden apps, and comes back from its details without editing launchers")
         s.key("-k", "Escape", "-k", "Escape")  # the details, then the hidden apps, back to the list
-        s.click("categories", body=True, double=True)
+        s.click("edit categories", body=True)
         s.click("new category")
         s.key("Writing", "-k", "Return")
         s.click("writing")
@@ -424,7 +426,7 @@ def main(binary, destination):
         entries.mkdir(parents=True, exist_ok=True)
         fixture = entries / "org.example.AppsProof.desktop"
         fixture.write_text("[Desktop Entry]\nType=Application\nName=Inspection Fixture\nComment=Local fixture for missing package metadata and declared desktop actions\nExec=foot --app-id=org.example.AppsProof --title=Apps-proof\nActions=new-window;\n\n[Desktop Action new-window]\nName=New window\nExec=foot --app-id=org.example.AppsProof --title=Apps-proof-new\n")
-        s.click("refresh apps", double=True)
+        s.click("refresh apps")
         time.sleep(1)
         s.key("inspection", "-k", "Right")
         wait_for(lambda: re.search("unavailable", s.text(), re.I), "missing package metadata")
@@ -453,15 +455,15 @@ def main(binary, destination):
         mode.unlink()
         s.key("-k", "Escape")
         mode.write_text("empty")
-        s.click("refresh apps", double=True)
+        s.click("refresh apps")
         wait_for(lambda: "No launchable" in s.text(), "empty catalog")
         s.capture("empty-catalog")
         mode.write_text("discovery")
-        s.click("refresh apps", double=True)
+        s.click("refresh apps")
         wait_for(lambda: "Apps unavailable" in s.text(), "discovery failure")
         s.capture("discovery-failure")
         mode.unlink()
-        s.click("refresh apps", double=True)
+        s.click("refresh apps")
         wait_for(lambda: "btop" in s.text(), "discovery retry")
         s.checks.append("Explicit adapter failure fixtures verify empty catalog versus unavailable discovery, retry recovery, and launch failure retaining the search")
         manifest = {"binary_sha256": s.binary_sha256,

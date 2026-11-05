@@ -19,7 +19,8 @@ home, apps, help, about and the conversation, up to 120 for a list
 with columns, the whole window for a preview. Top and bottom have the
 same shape, a strip, a rule, a row of air, then content:
 
-    row 0   the header: where you are, its state; the date and time; the x
+    row 0   the header: back at the left where there is a level above,
+            where you are and its state in the middle, the x at the right
     row 2   the prompt
     row 4   the prompt's tools: attach, the model, talk
     row 6   a rule with the diamond in its middle, a row of air each side
@@ -34,7 +35,15 @@ AI is off. It is read, never clicked. Nothing else in the dialog is
 drawn for decoration alone.
 
 The march that says spark is thinking on your words stays in the
-header, before the clock. Nothing at the bottom animates.
+header, before the x. Nothing at the bottom animates. The header has
+no clock: the bar has it (v0.124.4).
+
+In a window wider than the column, a wide one or a full screen, the
+frame is the window and the column keeps its measure: the header, both
+rules and the key bar take the window's width, the prompt, its tools,
+the content and the status row stay in the column, centered
+(v0.124.4). The diamond stays in the middle, which is the column's
+middle too.
 
 ## The prompt
 
@@ -73,8 +82,13 @@ says so with its chip, as a question says what it takes.
 
 Back has more doors than its chip (v0.124.3): Esc; with nothing typed,
 Left, since Right opens a level, and Backspace, as a launcher's does;
-and a click on the header's place name. None of them closes the dialog
-from home: that is Esc's alone.
+and a click on the header's `< back`, or on its place name. None of
+them closes the dialog from home: that is Esc's alone.
+
+The wheel moves the bar a row at a time in a list, as the arrows do,
+and three lines in text (v0.124.4). Enter with words typed is never
+silent: the words open a place, run a command, or go to the model,
+and where none of that can be, the status row says why.
 
 ## Selection and action
 
@@ -94,9 +108,10 @@ Two kinds of row, told apart by what they are:
   choice among choices, an action or a preference on a details page.
 - An object's row is selected by a click: an app, a file, a folder, a
   note, a window, a layout. Enter or a second click acts on it. Right
-  arrow opens its details or its actions, Space previews a file. One
-  list, one rule: in apps the managing rows at the end take the same
-  click as the apps above them.
+  arrow opens its details or its actions, Space previews a file. In
+  apps only an app's own row is an object: the managing rows at the
+  list's end open pages or run, so they are a menu's and act on one
+  click (v0.124.4).
 
 The pointer resting on a row changes nothing. The bar moves by the
 arrows or by a click, never by the pointer.
@@ -109,8 +124,9 @@ The last row above the rule is the one place a message is written:
   whole of what the narrow columns cut: for a file its kind, size, date
   and place; for an app its description, its category, and its launch
   choice where it is not the default;
-- a receipt with Undo at the right, or a refusal, while it stands; Esc
-  clears it, and so does the next action, talk again, ask or attach
+- a receipt with `undo` at the right, a control in the controls' own
+  brush and no key's chip (v0.124.4), or a refusal, while it stands;
+  Esc clears it, and so does the next action, talk again, ask or attach
   (v0.124.3: nothing heard stood through the next try);
 - an action's march while it is felt: an app opening, a file opening,
   a copy. The header's own frames, with the words, after about a third
@@ -248,6 +264,29 @@ One click selects an app and the status row says what it is; a second
 click or Enter launches it; Right arrow opens its details. While a
 launch is felt the status row reads `opening firefox` with the march,
 then `firefox opened`, or the refusal with its reason.
+
+The category headings are the filter (v0.124.4): a click on `web`
+shows web alone, the header reads `apps . web`, and Esc shows all
+again, its chip reading `all apps` while a filter is on. The headings
+stand at the top of every group, so the filter is in reach wherever
+the list is scrolled; the arrows skip them, as before. There is no
+filter row at the end of the list. The rows that stay there, `hidden
+apps`, `edit categories` and `refresh apps`, act on one click. Hidden
+is a state of the same apps, not another kind of list: `hidden apps`
+opens the list's own shape, the hidden ones under their categories,
+the header reading `apps . hidden`, Esc back to all, typing searching
+it as it searches the list. Two hundred hidden apps behave as two
+hundred installed ones do. With nothing hidden the row is a fact,
+muted, and opens nothing.
+
+Every page of apps says where you are in the header: `apps . web`,
+`apps . hidden`, `apps . firefox` on an app's pages, `apps .
+categories`, `apps . mappings`, `apps . Audio` on a desktop word's
+mapping page, `apps . new category` in a form. A form says what to
+type in the prompt's placeholder and its key bar says `save  Enter`;
+nothing repeats them. Add mapping offers the desktop categories the
+installed apps carry and no mapping places yet, to pick, and a word
+the catalog lacks is typed. A refresh answers with its count.
 
 A details page is a menu: its facts are not rows; open, the technical
 details and the three preferences act on one click, and a change

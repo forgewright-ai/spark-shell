@@ -64,7 +64,7 @@ fn unmatched_enter_and_unavailable_ask_preserve_work() {
     assert!(app.jobs.is_empty() && app.pending.is_none());
     assert_eq!(app.input, "explain this please");
     assert_eq!(app.attachment.as_deref(), Some("/data/explicit.md"));
-    assert!(app.reply.as_ref().unwrap().text.contains("No model"));
+    assert!(app.reply.as_ref().unwrap().text.contains("no model"));
 }
 
 #[test]

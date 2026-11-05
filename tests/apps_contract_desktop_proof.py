@@ -24,7 +24,7 @@ def main(binary, destination):
         s.capture(name)
         lines = s.screen()
         (s.evidence / (name + ".txt")).write_text("\n".join(lines) + "\n")
-        title = len(lines[0]) - len(lines[0].lstrip())
+        title = len(lines[2]) - len(lines[2].lstrip())  # the column's edge: the prompt sign, two cells in
         attach = lines[4].index("attach")  # the prompt's tools, the fourth row
         observations.append({"capture": name, "rect": s.window()["rect"], "title_column": title, "attach_column": attach})
         return title, attach
@@ -54,7 +54,7 @@ def main(binary, destination):
         s.key("-k", "Escape")
         # Esc clears the receipt, as it does everywhere, and goes back; nothing is asked. The list still
         # holds the words btop, which name no visible app now
-        assert "Save before leaving?" not in s.text() and s.screen()[0].lstrip().startswith("apps"), s.text()
+        assert "Save before leaving?" not in s.text() and s.screen()[0].find("apps") >= 0, s.text()
         assert "Undo" not in s.text() and "no app matches" in s.text(), s.text()
         capture("02-back-without-a-question")
         s.key("-k", "Escape")
@@ -71,7 +71,7 @@ def main(binary, destination):
         wait_for(s.window, "reopen")
         time.sleep(2)
         apps("hidden apps")  # btop is hidden now: the list leaves it out, and says so in the count
-        s.click("hidden apps", body=True, double=True)
+        s.click("hidden apps", body=True)
         s.key("-k", "Down", "-k", "Right")
         wait_for(lambda: "preferences" in s.text(), "the hidden app's details")
         s.click("hide this app")
@@ -79,7 +79,7 @@ def main(binary, destination):
         s.key("-k", "Escape", "-k", "Escape")
         s.key("btop")
         s.key("-k", "F2")
-        assert s.screen()[0].lstrip().startswith("conversation")
+        assert s.screen()[0].find("conversation") >= 0
         s.key("retain this request draft", "-k", "F2")
         assert "btop" in s.screen()[2], "the app query is its own"
         capture("03-restored-app-query")
@@ -90,7 +90,7 @@ def main(binary, destination):
         s.checks.append("A change applies at once, is said with Undo and survives Esc and the close without a question; request and app query restore separately")
 
         s.key("-k", "Escape")
-        s.click("categories", body=True, double=True)
+        s.click("edit categories", body=True)
         s.click("new category")
         s.key("Writing", "-k", "Escape")
         assert "Writing" not in json.loads(preferences.read_text())["categories"], "Esc lets a form go"
@@ -135,7 +135,7 @@ def main(binary, destination):
                 snaps.append(s.screen()[1:])
             s.key("-k", "Escape")
             s.click("files", body=True)
-            wait_for(lambda: s.screen()[0].lstrip().startswith("files"), "files")
+            wait_for(lambda: s.screen()[0].find("files") >= 0, "files")
             assert s.window()["rect"] == rect
             files_anchor = capture("files-" + mode)
             assert files_anchor[1] == files_anchor[0] + 2, "files' header and tools row share its frame, the wide one"
