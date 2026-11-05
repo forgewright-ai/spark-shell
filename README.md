@@ -832,8 +832,9 @@ click: home's places, settings' rows, a choice among choices, an action
 or a preference on a details page. An object's row is selected by a
 click: an app, a file, a folder, a note, a window, a layout. Enter or a
 second click acts on it, the right arrow opens its details or its
-actions, Space previews a file. The pointer resting on a row changes
-nothing; the selection bar moves by the arrows or by a click. A pick
+actions, P previews a file, Space checks it. The pointer resting on a
+row changes nothing; the selection bar moves by the arrows or by a
+click. A pick
 that puts a window in front (an app, a file, a terminal, a window, the
 lock) clears the dialog and closes it once the window is there; if the
 step is refused, the dialog comes back with the reason on the status
@@ -854,7 +855,7 @@ each state whole. A list ends where its words end, and the selection
 bar spans the list column from its first cell to that end, the same
 for every row at every size. The bar is the one signal: a background,
 and nothing else on the row changes, no cursor glyph, no accent on the
-name, no bold. The preview Space opens takes the whole screen.
+name, no bold. The preview P opens takes the whole screen.
 
 The dialog opens with a short animation in the middle of its window,
 alone, and then the whole dialog is drawn at once; the window shows only
@@ -1161,16 +1162,17 @@ its first and its last row.
   columns cannot: its name, its kind, its size, the date with its time,
   its place (the row's own folder for a recent file or a file found,
   else the folder on screen, written as the header writes it, `~`,
-  `~/documents`); Enter or a second click opens it, and Space previews
-  it. Names keep their spelling; a long name is cut in its middle, its
-  end and its type kept. Enter on a text file opens it in your editor,
-  in a terminal window; any other file opens with the app for its kind.
+  `~/documents`); Enter or a second click opens it, P previews it and
+  Space checks it. Names keep their spelling; a long name is cut in its
+  middle, its end and its type kept. Enter on a text file opens it in
+  your editor, in a terminal window; any other file opens with the app
+  for its kind.
   Right opens the lit row's actions as a page of its own, a menu whose
   rows act on one click, which typed words narrow as they narrow every
   list, and whose header names the row: open, preview,
   attach to the next request, reveal in the system file manager where
   one is configured, rename, move to a folder, copy to a folder, trash,
-  and `check` with Insert as its chip, the one key chip on a row (a
+  and `check` with Space as its chip, the one key chip on a row (a
   folder's row has open, rename, move, copy, trash and check); then,
   under `this folder`, the folder's own: `new folder`,
   `new text file` (the text file opens in your editor), `two panes`,
@@ -1188,9 +1190,11 @@ its first and its last row.
   hidden file, a link and anything outside your home and your drives
   are never read, and never written.
 
-  Several files at once: Insert checks the lit file or folder for one
-  operation and moves the bar down a row, as Norton Commander's did;
-  Insert on a checked row unchecks it. A check is a sign cell before
+  Several files at once: Space checks the lit file or folder for one
+  operation and moves the bar down a row, as Norton Commander's Insert
+  did (Insert is far on a full keyboard and a chord on a laptop's);
+  Space on a checked row unchecks it, and with words typed Space is a
+  letter of the search, so Down first. A check is a sign cell before
   the name, drawn as a checked list draws its picks: the rows' words
   move to the sign's right while any row is checked, and back when none
   is, and nothing else on the row changes, no color on the name, no
@@ -1214,7 +1218,7 @@ its first and its last row.
   click on one of its rows, which selects that row, or on its path; the
   key bar adds `pane  Ctrl+Tab` while two panes stand. Opening a
   folder, going back, typing and checking act in the active pane alone;
-  Space previews its lit file in the whole window, and Esc comes back
+  P previews its lit file in the whole window, and Esc comes back
   to the panes as they were. At 60 cells each pane is 30, the name cut
   in its middle with its size or its count; at 120 each is 60, the list
   as it is drawn for one pane; below 60 cells the active pane alone is
@@ -1264,10 +1268,10 @@ its first and its last row.
   new name`, `a name for the folder`, `a name for the text file`), the
   key bar says `let go  Esc   save  Enter`, Enter saves and Esc lets it
   go; rename starts with the name as it is, so a letter can be changed.
-  Space on a lit file, with nothing typed, opens its preview, described
-  below (a folder's says what it holds and its newest things); after
-  words that filter the folder, the down arrow first, since Space is a
-  space while you type.
+  P on a lit file, while the list holds the keys, opens its preview,
+  described below (a folder's says what it holds and its newest
+  things); from the prompt p is a letter of the search, as every letter
+  is: after words that filter the folder, the down arrow first, then P.
 - Preview: one file, or the page of any row, as large as the content
   area allows, read only. The header names its folder or its place, the
   facts row at the area's foot says what it is. Selecting or previewing
@@ -1407,8 +1411,8 @@ Home bindings are named actions in `~/.config/spark-shell/home-keys.json`:
 ```
 
 Help lists every action, including navigation, editing, preview and quit.
-Files' keys are named actions too: `check`, Insert, and `pane`, Ctrl+Tab
-between two panes.
+Files' keys are named actions too: `check`, Space, `preview`, P, and
+`pane`, Ctrl+Tab between two panes.
 An override replaces the original binding; unknown actions and conflicts
 are reported before home starts. The visible keycaps use that same
 map, and clicking them dispatches the same action. Restart home after edits.

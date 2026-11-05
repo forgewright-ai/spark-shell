@@ -377,18 +377,18 @@ def files(binary, env, home):
         # protocol's and a legacy pty cannot send it, so the pane switch is the desktop proof's alone
         status = lambda: re.sub(r"\s+", "", "".join(screen.cells[35]))
         twice = lambda word: any("".join(row).count(word) >= 2 for row in screen.cells)
-        os.write(fd, b"\x1b[2~")       # Insert: the lit file checked, the bar a row down
-        assert wait_for(lambda: "1checked" in status()), "Insert did not count the check on the status row: " + screen.text()[-900:]
-        ok(True, "Insert checks the lit file: the status row reads 1 checked")
+        os.write(fd, b" ")             # Space: the lit file checked, the bar a row down (v0.125.1)
+        assert wait_for(lambda: "1checked" in status()), "Space did not count the check on the status row: " + screen.text()[-900:]
+        ok(True, "Space checks the lit file: the status row reads 1 checked")
         os.write(fd, b"\x1b")          # Esc with nothing typed: the checks go first, the lit row's line comes back
         assert wait_for(lambda: status() and "checked" not in status()), "Esc did not clear the check: " + screen.text()[-900:]
         if "hello.txt" not in status():
-            os.write(fd, b"\x1b[A")    # Up: Insert moved the bar a row down, so the file's line is a row up
+            os.write(fd, b"\x1b[A")    # Up: Space moved the bar a row down, so the file's line is a row up
         assert wait_for(lambda: "hello.txt" in status()), "the file's line is not back on the status row: " + screen.text()[-900:]
         ok(True, "Esc clears the checks first: hello.txt's line is back on the status row")
         os.write(fd, b"\x1b[C")        # Right: the actions, the row's first, the folder's under this folder
-        assert wait_for(lambda: all(w in shown() for w in ("thisfolder", "newfolder", "twopanes", "check", "Insert"))), "the actions page lacks the folder's actions or the check chip: " + screen.text()[-900:]
-        ok(True, "Right opens the actions: check with its Insert chip, then this folder with new folder and two panes")
+        assert wait_for(lambda: all(w in shown() for w in ("thisfolder", "newfolder", "twopanes", "check", "Space"))), "the actions page lacks the folder's actions or the check chip: " + screen.text()[-900:]
+        ok(True, "Right opens the actions: check with its Space chip, then this folder with new folder and two panes")
         os.write(fd, b"two panes")     # the page is a menu and typing searches it as every list does
         assert wait_for(lambda: "twopanes" in shown() and "newfolder" not in shown()), "typing did not filter the actions page: " + screen.text()[-900:]
         os.write(fd, b"\r")

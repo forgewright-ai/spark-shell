@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.125.1
+
+- Space checks a file or a folder for several files' operations, and P
+  previews one. Insert was far on a full keyboard and a chord or gone
+  on a laptop's, and a run of checks a run of hard presses; ranger, nnn
+  and lf check with Space. Space on a checked row unchecks it, and with
+  words typed Space stays a letter of the search: Down first, then
+  Space. P previews while the list holds the keys, a row lit by the
+  arrows or a click; typed at the prompt, p is a letter of the search,
+  as every letter is. The `check` row's chip reads Space, the key bar
+  `preview  P`, help lists both, and `check` and `preview` stay named
+  actions in `home-keys.json`, so Insert comes back to anyone who wants
+  it. In the preview Space still plays and pauses a sound or a video,
+  and in settings it still flips a switch. Ctrl+P stays free, for print
+  (#224).
+- A row's words end two cells before the column's edge, as the header's
+  x and the rules do: since v0.124.5 the window's air is the dialog's
+  own, and a long last column (a recent file's folder) reached the
+  window's last cell (#223).
+
 ## v0.125
 
 Files v0: the file manager built from the rows the dialog has, by the

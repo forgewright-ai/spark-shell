@@ -122,9 +122,10 @@ Two kinds of row, told apart by what they are:
   choice among choices, an action or a preference on a details page.
 - An object's row is selected by a click: an app, a file, a folder, a
   note, a window, a layout. Enter or a second click acts on it. Right
-  arrow opens its details or its actions, Space previews a file. In
-  apps only an app's own row is an object: the managing rows at the
-  list's end open pages or run, so they are a menu's and act on one
+  arrow opens its details or its actions, P previews a file, Space
+  checks it (v0.125.1). In apps only an app's own row is an object: the
+  managing rows at the list's end open pages or run, so they are a
+  menu's and act on one
   click (v0.124.4).
 
 The pointer resting on a row changes nothing. The bar moves by the
@@ -315,11 +316,14 @@ that resolves them is the README's, not a note above the list.
 ## Files
 
 The same kind of list as apps. One click selects, Enter or a second
-click opens, Space previews, Right arrow opens the actions. The status
+click opens, P previews, Space checks, Right arrow opens the actions.
+The status
 row gives the line the narrow columns cannot: name, kind, size, the
 date with its time, the place. Names keep their spelling. A folder is
 told by its item count where a file has a size, and by its kind
-column where there is one.
+column where there is one. P previews while the list holds the keys,
+a row lit by the arrows or a click; typed at the prompt, p is a letter
+of the search, as every letter is (v0.125.1).
 
         < back                   files . ~                       x   <- header band
 
@@ -350,7 +354,7 @@ column where there is one.
       notes.md . Markdown . 2 KB . 4 Nov 09:14 . ~
       --------------------------------------------------------
 
-      back  Esc    actions  ->    preview  Space
+      back  Esc    actions  ->    preview  P
 
 At 120 cells the kind and the place come back as columns; nothing
 else changes.
@@ -373,9 +377,11 @@ do with nothing typed.
 
 ### Several files: a check
 
-Insert checks the lit file or folder for one operation and moves the
-bar down a row, as Norton Commander's did; Insert on a checked row
-unchecks it. A check is a sign cell before the name, drawn as a checked
+Space checks the lit file or folder for one operation and moves the
+bar down a row, as Norton Commander's Insert did (v0.125.1: Insert is
+far on a full keyboard and a chord on a laptop's; ranger, nnn and lf
+check with Space); Space on a checked row unchecks it. With words
+typed Space is a letter of the search: Down first, then Space checks. A check is a sign cell before the name, drawn as a checked
 list draws its picks: the rows' words move to the sign's right while
 any row is checked, and back when none is. There is no other mark: no
 color on the name, no bold. The status row says the count and the
@@ -395,7 +401,7 @@ a refresh, and the pane's checks go when it opens another folder.
       2 checked . 4.5 MB
       --------------------------------------------------------
 
-      back  Esc    actions  ->    preview  Space
+      back  Esc    actions  ->    preview  P
 
 `v` stands for the check sign, at the row column, the words after it
 at the sign's right. With checks standing, Right and the
@@ -428,7 +434,7 @@ that name no row leave `no action by these words`, muted.
         move to a folder
         copy to a folder
         trash
-        check                                        Insert
+        check                                         Space
 
       this folder
         new folder
@@ -462,7 +468,7 @@ status row is the active pane's. Ctrl+Tab makes the other pane active,
 as Tab did in Norton Commander and Tab here is the prompt's; a click on
 a row of the other pane makes it active and selects that row, and a
 second click opens it; a click on its path makes it active too. The
-key bar adds `pane  Ctrl+Tab` while two panes stand. Space previews the
+key bar adds `pane  Ctrl+Tab` while two panes stand. P previews the
 active pane's lit file in the whole window and Esc comes back to the
 panes as they were. Opening a folder, going back, typing and checking
 act in the active pane alone.
@@ -493,7 +499,7 @@ the active pane alone is drawn and the other waits, nothing said;
       notes.md . Markdown . 2 KB . 4 Nov 09:14 . ~/documents
       --------------------------------------------------------
 
-      back  Esc   actions  ->   preview  Space   pane  Ctrl+Tab
+      back  Esc   actions  ->   preview  P   pane  Ctrl+Tab
 
 The bar is on `todo.txt` in the left pane. At 120 cells, the left pane
 `~/documents` at 60 and the right `~/pictures` at 60, each pane the

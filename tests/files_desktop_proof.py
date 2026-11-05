@@ -67,7 +67,7 @@ def silence(path, seconds=1, rate=8000):
 
 def build_tree(root, big=BIG):
     """The proof's own files under the fixture HOME, nothing of the host's; the time the big folder took.
-    documents' names sort so notes.md and todo.txt are neighbours: Insert on the one lands the bar on the other."""
+    documents' names sort so notes.md and todo.txt are neighbours: Space on the one lands the bar on the other."""
     documents = root / "documents"
     documents.mkdir()
     (documents / "notes.md").write_text("# Proof notes\n\nA few lines of Markdown for the preview.\n\n- one line\n- another\n")
@@ -338,9 +338,9 @@ def main(binary, destination):
         s.capture("files-status")
         s.checks.append("Down to notes.md: the status row holds its line, notes.md . Markdown . its size . the date . ~/documents; "
                         "the key bar reads back  Esc   actions  ->   preview  Space")
-        # 3. a check: Insert twice, the count, the sign, Esc clears
-        s.key("-k", "Insert")
-        s.key("-k", "Insert")
+        # 3. a check: Space twice, the count, the sign, Esc clears
+        s.key("-k", "space")
+        s.key("-k", "space")
         until(lambda: re.match(r"\s*2 checked\b", status(s.screen())), "two checks counted on the status row")
         lines = s.screen()
         signed = [l for l in body(lines) if re.match(r"\s*" + CHECK + r"\s+(notes\.md|todo\.txt)(?=\s)", l)]
@@ -352,9 +352,9 @@ def main(binary, destination):
               "Esc clears the checks: a file's line back on the status row")
         assert not any(CHECK in l for l in body(s.screen())), "no sign stands once no row is checked"
         light(s, "notes.md")
-        s.key("-k", "Insert")
+        s.key("-k", "space")
         until(lambda: re.match(r"\s*1 checked\b", status(s.screen())), "notes.md checked again")
-        s.checks.append("Insert checks the lit row and moves the bar down: the status row reads 2 checked with the size, the rows' words "
+        s.checks.append("Space checks the lit row and moves the bar down: the status row reads 2 checked with the size, the rows' words "
                         "stand right of the check sign; Esc with nothing typed clears the checks first and the lit file's line comes back")
         # 4. the actions page, then two panes
         s.key("-k", "Right")
@@ -393,8 +393,8 @@ def main(binary, destination):
         s.key("-k", "Escape")
         until(lambda: not re.match(r"\s*\d+ checked\b", status(s.screen())), "the checks cleared")
         light(s, "notes.md")
-        s.key("-k", "Insert")
-        s.key("-k", "Insert")   # the bar moved to todo.txt, the next row by name
+        s.key("-k", "space")
+        s.key("-k", "space")   # the bar moved to todo.txt, the next row by name
         until(lambda: re.match(r"\s*2 checked\b", status(s.screen())), "notes.md and todo.txt checked")
         lines = s.screen()
         for name in ("notes.md", "todo.txt"):
@@ -428,7 +428,7 @@ def main(binary, destination):
                         "and says put back")
         # 7. a move and its undo
         light(s, "draft.py")
-        s.key("-k", "Insert")
+        s.key("-k", "space")
         until(lambda: re.match(r"\s*1 checked\b", status(s.screen())), "draft.py checked")
         s.key("-k", "Right")
         until(lambda: find_row(s.screen(), "move to ~/pictures"), "the actions")
@@ -483,20 +483,20 @@ def main(binary, destination):
         s.checks.append("trash puts the file in the fixture's own Trash/files and says is in the trash with undo; undo brings it back")
         # 11. the preview: text, picture, PDF, sound; Esc back to the panes as they were
         light(s, "notes.md")
-        s.key("-k", "space")
+        s.key("p")
         until(lambda: "Proof notes" in s.text(), "the text preview")
         shot(s, "preview-text")
         s.key("-k", "Escape")
         until(lambda: header_has(s.screen()[0], "~/documents") and lit(s.screen(), "notes.md"), "back to the panes with notes.md lit")
         assert any("~/documents" in l and "~/pictures" in l for l in body(s.screen())), "the two panes stand as they were"
         light(s, "cover.png")
-        s.key("-k", "space")
+        s.key("p")
         until(lambda: re.search(r"\b20\s*\S\s*40\b", s.text()), "the picture's size on the facts row")
         shot(s, "preview-picture")
         s.key("-k", "Escape")
         until(lambda: header_has(s.screen()[0], "~/documents") and lit(s.screen(), "cover.png"), "back from the picture")
         light(s, "letter.pdf")
-        s.key("-k", "space")
+        s.key("p")
         if shutil.which("pdftoppm"):
             # one page: the page drawn as a picture, its zoom on the facts row and the zoom keys on the bar; a count
             # of pages stands there only where there are several
@@ -508,7 +508,7 @@ def main(binary, destination):
         s.key("-k", "Escape")
         until(lambda: header_has(s.screen()[0], "~/documents") and lit(s.screen(), "letter.pdf"), "back from the PDF")
         light(s, "voice.wav")
-        s.key("-k", "space")
+        s.key("p")
         if shutil.which("mpv"):
             until(lambda: re.search(r"\bplay\b", keys(s.screen())), "the sound's keys")
             s.checks.append("The sound previews with the sound's keys, play on Space; nothing is played")
