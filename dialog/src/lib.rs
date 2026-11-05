@@ -6,6 +6,7 @@ pub mod apps;
 pub mod audit;
 pub mod calendar;
 pub mod gate;
+pub mod goto;
 pub mod greetd;
 pub mod helper;
 pub mod interaction;

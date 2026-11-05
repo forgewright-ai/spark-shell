@@ -768,6 +768,10 @@ fn main() {
                 dirty = true;
             }
             Ev::Tick => {
+                // a bar block clicked while home is open: its section (lib/home.py's request)
+                if let Some(name) = spark_dialog::goto::take() {
+                    dirty |= app.go_to(&name);
+                }
                 // Some launchers do not deliver SIGWINCH to the UI process.
                 // Size is cheap to query; a resize must redraw without a keypress.
                 if terminal::size().is_ok_and(|size| size != app.size) {
