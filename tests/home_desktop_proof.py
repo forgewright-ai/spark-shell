@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import socket
 import struct
 import subprocess
@@ -19,6 +20,55 @@ import tempfile
 import time
 
 REPO = Path(__file__).resolve().parents[1]
+
+
+def contrast_ratio(foreground, background):
+    def luminance(color):
+        channels = [int(color[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        linear = [v / 12.92 if v <= .04045 else ((v + .055) / 1.055) ** 2.4 for v in channels]
+        return sum(a * b for a, b in zip(linear, (.2126, .7152, .0722)))
+    a, b = sorted((luminance(foreground), luminance(background)))
+    return (b + .05) / (a + .05)
+
+
+def native_foot_config(root):
+    """Read the palette from the real launcher in the isolated fixture HOME.
+
+    A probe replaces only the dialog executable, before Sway starts. This uses
+    production theme loading and contrast adjustment without painting a desktop.
+    """
+    keys = ["HEX_FG", "HEX_ACCENT", "HEX_MUTED", "PANEL_BG", "PANEL_HI", "PANEL_MUTED"]
+    keys += ["HEX_ANSI_" + str(i) for i in range(16)]
+    probe = root / "palette-probe"
+    probe.write_text("#!" + sys.executable + "\nimport json, os\nprint(json.dumps({k: os.environ[k] for k in " + repr(keys) + "}))\n")
+    probe.chmod(0o700)
+    env = {k: v for k, v in os.environ.items() if k not in keys and k not in
+           ("SWAYSOCK", "WAYLAND_DISPLAY", "DISPLAY", "DBUS_SESSION_BUS_ADDRESS", "SPARK_DIALOG_WINDOW")}
+    env.update(HOME=str(root), XDG_CONFIG_HOME=str(root / ".config"),
+               XDG_STATE_HOME=str(root / "state"), XDG_DATA_HOME=str(root / "data"),
+               XDG_RUNTIME_DIR=str(root / "run"), SPARK_SHELL_DIALOG=str(probe),
+               SPARK_SHELL_PTS_DIR=str(root / "ptys"), SPARK_SHELL_NO_APPLY="1")
+    try:
+        result = subprocess.run(["sh", str(REPO / "spark-shell"), "dialog"], env=env,
+                                stdin=subprocess.DEVNULL, text=True, capture_output=True,
+                                check=True, timeout=30)
+        palette = json.loads(result.stdout)
+    finally:
+        probe.unlink()
+    assert all(re.fullmatch(r"[0-9a-fA-F]{6}", value) for value in palette.values())
+    ratios = {role: round(contrast_ratio(palette[key], palette["PANEL_BG"]), 3)
+              for role, key in (("muted", "PANEL_MUTED"), ("foreground", "HEX_FG"), ("accent", "HEX_ACCENT"))}
+    assert all(ratio >= 4.5 for ratio in ratios.values()), ratios
+    version = subprocess.check_output(["foot", "--version"], text=True)
+    major, minor = map(int, re.search(r"version: (\d+)\.(\d+)", version).groups())
+    colors = "colors-dark" if (major, minor) >= (1, 26) else "colors"
+    lines = ["[main]", "font=monospace:size=12", "[" + colors + "]",
+             "background=" + palette["PANEL_BG"], "foreground=" + palette["HEX_FG"]]
+    lines += [("regular" if i < 8 else "bright") + str(i % 8) + "=" + palette["HEX_ANSI_" + str(i)] for i in range(16)]
+    lines += [str(slot) + "=" + palette[key] for slot, key in
+              ((16, "HEX_ACCENT"), (17, "HEX_MUTED"), (18, "PANEL_BG"), (19, "PANEL_HI"), (20, "PANEL_MUTED"))]
+    (root / ".config/foot/foot.ini").write_text("\n".join(lines) + "\n")
+    return colors, {"colors": palette, "contrast": ratios, "source": "spark-shell dialog launcher environment"}
 
 
 class Pointer:
@@ -75,18 +125,22 @@ class Pointer:
             if obj == self.callback:
                 return
 
-    def click(self, x, y):
+    def click(self, x, y, times=1):
+        # times 2 is a double click: the two presses 200 ms apart, within the dialog's 400 ms window
+        # (dialog/DESIGN.md, app::DOUBLE_CLICK), as a desktop's double click is; two click() calls would not be,
+        # since each one rests after its release
         def stamp():
             return int(time.monotonic() * 1000) & 0xffffffff
         self.send(5, 1, stamp(), x, y, 1440, 1000)  # motion_absolute
         self.send(5, 4)  # frame
         self.sync()
         time.sleep(.1)
-        for state in (1, 0):
-            self.send(5, 2, stamp(), 272, state)  # BTN_LEFT
-            self.send(5, 4)
-            self.sync()
-            time.sleep(.1)
+        for _ in range(times):
+            for state in (1, 0):
+                self.send(5, 2, stamp(), 272, state)  # BTN_LEFT
+                self.send(5, 4)
+                self.sync()
+                time.sleep(.1)
 
     def close(self):
         self.socket.close()
@@ -100,6 +154,37 @@ def wait_for(read, label):
             return value
         time.sleep(.1)
     raise AssertionError("timed out: " + label)
+
+
+def stop_round(env):
+    """Stop what the round started and the compositor's end leaves: spark-shell desktop home starts its foot in
+    a session of its own (lib/home.py), so the terminal, the dialog and its providers outlive sway, reparented to
+    init; a failed round left a set alive on the box for 17 hours. Every process with this round's runtime dir in
+    its environment goes, a term first and a kill for what stays a second later."""
+    mark = ("XDG_RUNTIME_DIR=" + env["XDG_RUNTIME_DIR"]).encode()
+
+    def alive():
+        found = []
+        for p in Path("/proc").iterdir():
+            if not p.name.isdigit() or int(p.name) == os.getpid():
+                continue
+            try:
+                if mark in p.joinpath("environ").read_bytes().split(b"\0"):
+                    found.append(int(p.name))
+            except OSError:
+                continue
+        return found
+
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        pids = alive()
+        if not pids:
+            return
+        for pid in pids:
+            try:
+                os.kill(pid, sig)
+            except ProcessLookupError:
+                pass
+        time.sleep(1)
 
 
 def main(binary, destination):
@@ -131,6 +216,7 @@ if sys.argv[1] == 'model':
     if not here.with_suffix('.unavailable').exists(): print('fixture-model\\tserving')
 elif sys.argv[1] == 'client': print('spark client -- local')
 elif sys.argv[1] == 'voice':
+    if here.with_suffix('.unavailable').exists(): sys.exit(1)
     if 'listen' in sys.argv:
         here.with_suffix('.listening').touch()
         time.sleep(30)
@@ -144,12 +230,9 @@ elif sys.argv[1] == 'steps':
         fixture.chmod(0o700)
         foot = root / ".config/foot"
         foot.mkdir()
-        version = subprocess.check_output(["foot", "--version"], text=True)
-        major, minor = map(int, re.search(r"version: (\d+)\.(\d+)", version).groups())
-        colors = "colors-dark" if (major, minor) >= (1, 26) else "colors"
-        (foot / "foot.ini").write_text("[main]\nfont=monospace:size=12\n[" + colors + "]\nbackground=282a38\nforeground=c0caf5\n16=7aa2f7\n17=7b84ae\n18=282a38\n19=373a4b\n20=7b84ae\n")
+        colors, palette = native_foot_config(root)
         template = (REPO / "templates/.config/foot/dialog.ini").read_text()
-        for old, new in {"@HOME@": tmp, "@PANEL_SIZE@": "60x40", "@PANEL_PAD@": "18x18", "@FOOT_COLORS@": colors, "@PANEL_BG@": "282a38"}.items():
+        for old, new in {"@HOME@": tmp, "@PANEL_SIZE@": "60x40", "@PANEL_PAD@": "18x18", "@FOOT_COLORS@": colors, "@PANEL_BG@": palette["colors"]["PANEL_BG"]}.items():
             template = template.replace(old, new)
         dump = fixtures / "screen-dump"
         dump.write_text("from pathlib import Path\nimport sys\n(Path.home() / 'screen.txt').write_text(sys.stdin.read())\n")
@@ -236,10 +319,16 @@ elif sys.argv[1] == 'steps':
                     time.sleep(.5)
 
                 def footer_gap():
+                    # the frame's two strips (dialog/DESIGN.md): the prompt's tools on the fourth row, the diamond's rule
+                    # under them and a row of air; the plain rule, a row of air and the key bar at the bottom
                     lines = screen()
-                    divider = next(i for i, line in enumerate(lines) if "\u25c7" in line)
-                    assert not lines[divider + 1].strip(), "a full blank row separates divider and controls"
-                    assert "fixture-model" in lines[divider + 2] or "Model" in lines[divider + 2]
+                    assert "fixture-model" in lines[4] or "model" in lines[4], "the prompt's tools on the fourth row"
+                    assert not lines[5].strip(), "a row of air between the tools and the rule (v0.124.3)"
+                    assert "\u2500" in lines[6] and ("\u25c6" in lines[6] or "\u25c7" in lines[6]), "the diamond's rule under the air"
+                    assert not lines[7].strip(), "a row of air under the rule"
+                    bottom = max(i for i, line in enumerate(lines) if "\u2500" in line)
+                    assert not lines[bottom + 1].strip(), "a full blank row separates the plain rule and the keys"
+                    assert "Esc" in lines[bottom + 2], "the key bar is the last thing in the frame"
 
                 def model_click():
                     footer_gap()
@@ -278,7 +367,7 @@ elif sys.argv[1] == 'steps':
                 time.sleep(2)
                 assert windows()[0]["rect"] == right, "fullscreen restores the snapped rectangle"
                 checks.append("Root is bounded and centered; both snaps fill equivalent halves of the usable area below the bar")
-                checks.append("Native model clicks and the blank footer row are correct after normal, fullscreen and both snaps")
+                checks.append("Native model clicks and the frame's two strips are correct after normal, fullscreen and both snaps")
                 # Restore the fixture's normal dimensions for the conversation comparison.
                 sway("[con_id=%d] resize set width %d px height %d px, move position center" % (first["id"], first["rect"]["width"], first["rect"]["height"]))
                 time.sleep(2)
@@ -341,30 +430,30 @@ elif sys.argv[1] == 'steps':
                 key("-k", "F2")
                 key("help", "-k", "Return")
                 capture("help-void")
-                checks.append("Narrow hints wrap whole groups with Ask visible; Help lists the conversation shortcut")
+                checks.append("Narrow keys wrap whole groups on the key bar; Help lists the conversation shortcut")
                 close_home()
 
                 first = open_home()
-                control("Attach")
+                control("attach")
                 key("long-attachment", "-k", "Down", "-k", "Return")
                 time.sleep(1)
-                assert "Remove" in "\n".join(screen()), "attachment picker did not return its file"
+                assert "remove" in "\n".join(screen()), "attachment picker did not return its file"
                 sway("[con_id=%d] resize set width 396 px height 492 px" % first["id"])
                 time.sleep(2)
                 footer_gap()
-                control("Talk")
+                control("talk")
                 wait_for(fixture.with_suffix(".listening").exists, "native Talk click")
-                assert "Cancel" in "\n".join(screen())
+                assert "cancel" in "\n".join(screen())
                 capture("narrow-attachment-void")
-                control("Cancel")
-                assert "Talk" in "\n".join(screen())
-                control("Remove")
-                assert "Remove" not in "\n".join(screen())
-                control("Model")
+                control("cancel")
+                assert "talk" in "\n".join(screen())
+                control("remove")
+                assert "remove" not in "\n".join(screen())
+                control("model")
                 assert "model" in screen()[0].lower()
                 key("-k", "Escape")
-                control("Attach")
-                assert "Pick a file" in "\n".join(screen())
+                control("attach")
+                assert "pick a file" in "\n".join(screen())
                 checks.append("At 36 columns with a long attachment, Talk, Cancel, Remove, Model and Attach clicks reach their displayed controls")
                 close_home()
 
@@ -379,11 +468,12 @@ elif sys.argv[1] == 'steps':
                 fixture.with_suffix(".unavailable").touch()
                 previous_request = request_file.read_text()
                 open_home()
+                capture("root-unavailable-void", whole=True)
                 key("unavailable draft")
                 key("-M", "ctrl", "-k", "Return", "-m", "ctrl")
                 assert request_file.read_text() == previous_request
                 capture("unavailable-ask-void")
-                checks.append("No serving model keeps the draft and makes no model request")
+                checks.append("Unavailable model and voice keep the configured footer visible; Ask retains the draft and makes no model request")
             finally:
                 if keyboard:
                     keyboard.terminate()
@@ -391,12 +481,17 @@ elif sys.argv[1] == 'steps':
                 if pointer:
                     pointer.close()
                 compositor.terminate()
-                compositor.wait(timeout=10)
+                try:
+                    compositor.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    compositor.kill()
+                stop_round(env)
     (evidence / "native.json").write_text(json.dumps({"platform": "Void Linux", "tools": ["sway", "swaybar", "foot", "wtype", "grim", "persistent virtual pointer"],
                                                      "binary_sha256": hashlib.sha256(Path(binary).read_bytes()).hexdigest(),
+                                                     "palette": palette,
                                                      "display": {"width": 1440, "height": 1000, "usable_area": area},
                                                      "fixtures": ["model response", "voice availability"],
-                                                     "footer": ["Attach", "model/source", "Talk"],
+                                                     "tools": ["attach", "model/source", "talk"],
                                                      "captures": captures, "checks": checks}, indent=2) + "\n")
     for check in checks:
         print("ok: " + check)

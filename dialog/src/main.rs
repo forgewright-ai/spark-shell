@@ -148,7 +148,11 @@ fn run_job(job: Job, tx: mpsc::Sender<Ev>, listening: Arc<Mutex<Option<u32>>>) {
     match job {
         Job::RunInput(h, argv, input) => {
             std::thread::spawn(move || {
-                let result = spark_dialog::helper::invoke(&argv, input);
+                let result = if matches!(h, spark_dialog::app::Helper::Apps(_)) {
+                    spark_dialog::helper::invoke_apps(&argv, input)
+                } else {
+                    spark_dialog::helper::invoke(&argv, input)
+                };
                 let _ = tx.send(Ev::Helper(h, result));
             });
         }
@@ -307,10 +311,20 @@ fn reveal() {
 /// The dialog's window made clear (0) or solid (1) on sway's own socket: clear while a step puts a window in
 /// front, so the click shows that window coming at once, solid again when the step comes back refused (#196).
 fn opacity(level: u8, after: Duration) {
+    sway_command(format!("[app_id=\"spark-dialog\"] opacity {}", level), after);
+}
+
+/// Home put away while the app it opened is in front. It stays as it is and Super+Space brings it back; a clear
+/// window would stay over that app and take its clicks, and the pointer crossing it would bring home back.
+fn stow() {
+    sway_command("[app_id=\"spark-dialog\"] move scratchpad".into(), Duration::ZERO);
+}
+
+/// One command on sway's own socket; away from sway, nothing.
+fn sway_command(cmd: String, after: Duration) {
     let Some(sock) = std::env::var_os("SWAYSOCK") else { return };
     std::thread::spawn(move || {
         std::thread::sleep(after);
-        let cmd = format!("[app_id=\"spark-dialog\"] opacity {}", level);
         let cmd = cmd.as_bytes();
         if let Ok(mut s) = std::os::unix::net::UnixStream::connect(sock) {
             let mut msg = b"i3-ipc".to_vec();
@@ -331,6 +345,8 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
     let span = |a: u16, b: u16, y: u16| row == y && col >= a && col < b;
     // where a click acts: the x, a chip, a key, the waveform (it seeks), a row of the list
     let clicks = (row == 0 && drawn.close.is_some_and(|(a, b)| span(a, b, 0)))
+        || (row == 0 && app.can_go_back() && (drawn.back.is_some_and(|(a, b)| span(a, b, 0)) || drawn.title.is_some_and(|(a, b)| span(a, b, 0))))
+        || drawn.heads.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.chips.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.keys.iter().any(|(a, b, y, _)| span(*a, *b, *y))
         || drawn.wave.is_some_and(on)
@@ -343,10 +359,19 @@ fn pointer_at(app: &App, drawn: &ui::Drawn, col: u16, row: u16, dragging: bool) 
         "grab"
     } else if row >= drawn.prompt.0 && row <= drawn.prompt.1 {
         "text"
-    } else if drawn.picks.iter().any(|(y, _)| *y == row) && col >= drawn.columns.0 && col < drawn.columns.1 {
+    } else if drawn.pick_at(col, row).is_some() {
         "pointer"
     } else {
         "default"
+    }
+}
+
+/// Force a full repaint without querying the cursor. Terminal::clear asks the
+/// input reader for a cursor report; with event::read on another thread that
+/// can block resize until the next key. A fullscreen resize only writes output.
+fn invalidate_frame(term: &mut Terminal<CrosstermBackend<std::io::Stdout>>) {
+    if let Ok(size) = term.size() {
+        let _ = term.resize(Rect::new(0, 0, size.width, size.height));
     }
 }
 
@@ -506,7 +531,7 @@ fn main() {
                     let _ = write!(out, "\x1b]11;#{:02x}{:02x}{:02x}\x1b\\", r, g, b);
                     let _ = out.flush();
                 }
-                let _ = term.clear();
+                invalidate_frame(&mut term);
             }
             shown_preview = None;
             dirty = true;
@@ -535,9 +560,6 @@ fn main() {
             dirty |= app.motion.is_some() || shown_film.is_some();
         }
         if dirty {
-            if let Ok(sz) = term.size() {
-                app.size = (sz.width, sz.height);
-            }
             // a sound's picture read once: its waveform and its spectrum, before it is drawn
             if let Some(pv) = app.preview.as_mut().filter(|pv| pv.heard.is_none()) {
                 if let Some((file, wave)) = pv.shown.as_ref().and_then(|pg| pg.sound.clone()) {
@@ -546,8 +568,11 @@ fn main() {
             }
             let _ = out.write_all(b"\x1b[?2026h");
             let _ = out.flush();
-            let _ = term.draw(|f| {
+            let frame_drawn = term.draw(|f| {
                 let area = f.area();
+                // Use the frame actually being drawn, not an earlier size
+                // query that can race the compositor's next configure event.
+                app.size = (area.width, area.height);
                 let mut b = Buffer::empty(Rect::new(0, 0, area.width, area.height));
                 drawn = ui::draw(&app, &pal, &last_clock, &mut b);
                 let fb = f.buffer_mut();
@@ -561,6 +586,12 @@ fn main() {
                     f.set_cursor_position(drawn.cursor);
                 }
             });
+            let frame_drawn = frame_drawn.is_ok();
+            if !frame_drawn {
+                // SIGWINCH can interrupt an output write. Invalidate the diff
+                // and retry on the next event even when the size is unchanged.
+                invalidate_frame(&mut term);
+            }
             let _ = out.write_all(b"\x1b[?2026l");
             // the mouse still and the frame new: the pointer's shape asked again where it rests
             if let Some((c, r)) = mouse_at {
@@ -579,6 +610,9 @@ fn main() {
             if app.hidden != cleared && !unseen {
                 cleared = app.hidden;
                 opacity(if cleared { 0 } else { 1 }, Duration::ZERO);
+            }
+            if std::mem::take(&mut app.stow) {
+                stow();
             }
             app.preview_pages = drawn.pages.max(1);
             // the picture beside a list: drawn when it changed, its cells blanked first (the buffer skips them);
@@ -687,7 +721,7 @@ fn main() {
                 }
                 _ => shown_film = None,
             }
-            dirty = again;
+            dirty = again || !frame_drawn;
         }
         if app.quit.is_some() {
             break;
@@ -738,15 +772,20 @@ fn main() {
                 // Some launchers do not deliver SIGWINCH to the UI process.
                 // Size is cheap to query; a resize must redraw without a keypress.
                 if terminal::size().is_ok_and(|size| size != app.size) {
+                    mouse_at = None;
                     app.stop_video();
                     shown_preview = None;
-                    let _ = term.clear();
+                    invalidate_frame(&mut term);
                     dirty = true;
                 }
                 let was = app.busy();
                 app.tick(Instant::now());
                 // a frame for the march while it shows, and when the work starts or ends; none for work nothing shows (#196)
-                dirty |= frame_for_tick(was, app.busy(), app.cfg.progress && app.thinking());
+                dirty |= frame_for_tick(
+                    was,
+                    app.busy(),
+                    app.cfg.progress && (app.thinking() || app.view == View::Apps && app.apps.pending.is_some()),
+                );
                 // a window still unseen after a moment is shown whatever is drawn: never a dialog that cannot be seen
                 if unseen && started.elapsed() >= Duration::from_millis(1500) {
                     reveal();
@@ -786,9 +825,10 @@ fn main() {
                 dirty = true;
             }
             Ev::Term(Event::Resize(_, _)) => {
+                mouse_at = None;
                 app.stop_video(); // the frame moves: the player would stand where it was (#125)
                 shown_preview = None;
-                let _ = term.clear();
+                invalidate_frame(&mut term);
                 dirty = true;
             }
             Ev::Term(Event::Key(k)) if k.kind == KeyEventKind::Press => {
@@ -813,7 +853,13 @@ fn main() {
                 app.paste(&p);
                 dirty = true;
             }
+            Ev::Term(Event::FocusGained) => {
+                app.window_focused = true;
+                app.hidden = false;
+                dirty = true;
+            }
             Ev::Term(Event::FocusLost) => {
+                app.window_focused = false;
                 app.focus_lost();
                 dirty = true;
             }
@@ -841,6 +887,14 @@ fn main() {
                             } else {
                                 app.close_window();
                             }
+                        } else if m.row == 0
+                            && app.can_go_back()
+                            && (drawn.back.is_some_and(|(a, b)| m.column >= a && m.column < b)
+                                || drawn.title.is_some_and(|(a, b)| m.column >= a && m.column < b))
+                        {
+                            app.escape(); // the header's back, or its place name: back a level (dialog/DESIGN.md)
+                        } else if let Some((_, _, _, label)) = drawn.heads.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
+                            app.apps_heading(&label.clone()); // a category's heading: the list narrowed to it, or widened
                         } else if drawn.reply_undo.is_some_and(|(a, b, y)| m.row == y && m.column >= a && m.column < b) {
                             app.undo_now();
                         } else if let Some((_, _, _, c)) = drawn.chips.iter().find(|(a, b, y, _)| m.row == *y && m.column >= *a && m.column < *b) {
@@ -862,16 +916,10 @@ fn main() {
                             app.step_at(*n, *up); // a value's arrow steps it, as left and right do (#175)
                         } else if m.row >= drawn.prompt.0 && m.row <= drawn.prompt.1 {
                             app.focus_prompt();
-                        } else if let Some((_, n)) = drawn
-                            .picks
-                            .iter()
-                            .find(|(y, _)| *y == m.row && m.column >= drawn.columns.0 && m.column < drawn.columns.1)
-                            .copied()
-                            .as_ref()
-                        {
-                            // one click runs a row, everywhere, a folder's and a file's too (#196)
-                            app.light(*n);
-                            app.enter();
+                        } else if let Some(n) = drawn.pick_at(m.column, m.row) {
+                            // a menu's row acts on one click; an object's row is selected first and acts on a second
+                            // click, as a file does on every desktop (dialog/DESIGN.md)
+                            app.clicked(n, Instant::now());
                         }
                     }
                     MouseEventKind::Drag(MouseButton::Left) => {
@@ -898,8 +946,9 @@ fn main() {
                     }
                     MouseEventKind::ScrollUp if app.view == View::Preview => app.preview_wheel(-1, m.modifiers.contains(KeyModifiers::CONTROL)),
                     MouseEventKind::ScrollDown if app.view == View::Preview => app.preview_wheel(1, m.modifiers.contains(KeyModifiers::CONTROL)),
-                    MouseEventKind::ScrollUp => app.page(-1),
-                    MouseEventKind::ScrollDown => app.page(1),
+                    // the wheel moves the bar a row in a list, as the arrows do; three lines in text (dialog/DESIGN.md)
+                    MouseEventKind::ScrollUp => app.wheel(-1),
+                    MouseEventKind::ScrollDown => app.wheel(1),
                     _ => {}
                 }
             }

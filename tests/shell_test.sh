@@ -704,10 +704,10 @@ fi
 mv "$H/starship.aside" "$H/.local/bin/starship"
 out=$(sh "$SH" on --dry-run)
 printf '%s\n' "$out" | grep -q '^ok     prompt       starship 0.0-stub draws the prompt$' && ok "on: the prompt row names the starship it found" || bad "prompt ok" "$out"
-! grep -q 'STARSHIP_VERSION' "$SH" && [ "$(grep -c 'curl -' "$SH")" = 3 ] && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_df" "$DIALOG_URL/$_rt/spark-dialog-$_dt"' "$SH" \
+! grep -q 'STARSHIP_VERSION' "$SH" && [ "$(grep -c 'curl -' "$SH")" = 4 ] && grep -q '^    curl -fsIL --proto .=https,file. --proto-redir .=https. -o /dev/null "$DIALOG_URL/$1/spark-dialog-$_ut"' "$SH" && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_df" "$DIALOG_URL/$_rt/spark-dialog-$_dt"' "$SH" \
     && grep -q '^    curl -fsSL --proto .=https,file. --proto-redir .=https. -o "$_plf" "$DIALOG_URL/$_plr/spark-wallpaper-$_plt"' "$SH" \
     && grep -q '^    if ! curl -fsSL --proto .=https,file. --proto-redir .=https. --connect-timeout 30 -o "$_nz" "$NEON_URL"' "$SH" && grep -q '^NEON_SHA256=[0-9a-f]\{64\} ' "$SH" \
-    && ok "spark-shell: three downloads, the release files of the dialog and of spark-wallpaper (#187) and the font's, each checked against the sha256 pinned for it; no pinned version of anything else" || bad "a download survives" "$(grep -n 'STARSHIP_VERSION\|curl ' "$SH")"
+    && ok "spark-shell: three downloads, the release files of the dialog and of spark-wallpaper (#187) and the font's, each checked against the sha256 pinned for it, and one look that keeps nothing, whether a release is up; no pinned version of anything else" || bad "a download survives" "$(grep -n 'STARSHIP_VERSION\|curl ' "$SH")"
 
 fi
 
@@ -3926,8 +3926,21 @@ else
     # clicks: swaybar's stream on stdin; the gauges set the levels, any other block opens the panel; each redraws the bar at once
     rm -f "$amlog" "$H/.local/state/foot.log"
     printf '[\n,{"name":"out","instance":"gauge","button":1,"relative_x":60,"width":100}\n,{"name":"out","instance":"gauge","button":4}\n,{"name":"out","instance":"gauge","button":3}\n,{"name":"mic","instance":"gauge","button":3}\n,{"name":"mic","instance":"gauge","button":1,"relative_x":30,"width":100}\n,{"name":"out","instance":"name","button":1,"x":1500,"relative_x":12,"width":90}\n,{"name":"lan","instance":"","button":1,"x":1200,"relative_x":5,"width":40}\n' > "$H/clicks"
-    sh "$SH" bar status < "$H/clicks" > "$H/bar.out" 2> "$H/bar.err" & bp=$!
-    sleep 3
+    # Send clicks after the initial frame. Feeding a completed file at startup
+    # can coalesce every signal into that first frame on a busy CI runner.
+    mkfifo "$H/bar-clicks"
+    sh "$SH" bar status < "$H/bar-clicks" > "$H/bar.out" 2> "$H/bar.err" & bp=$!
+    exec 8> "$H/bar-clicks"
+    for _i in $(seq 1 100); do
+        [ "$(grep -c '^\[{' "$H/bar.out")" -ge 1 ] && break
+        sleep .1
+    done
+    cat "$H/clicks" >&8
+    exec 8>&-
+    for _i in $(seq 1 100); do
+        [ "$(grep -c '^\[{' "$H/bar.out")" -ge 2 ] && [ "$(wc -l < "$amlog" 2>/dev/null || echo 0)" -ge 5 ] && [ "$(wc -l < "$H/.local/state/foot.log" 2>/dev/null || echo 0)" -ge 2 ] && break
+        sleep .1
+    done
     kill "$bp" 2>/dev/null || :; wait "$bp" 2>/dev/null || :
     head -1 "$H/bar.out" | grep -q '^{"version":1,"click_events":true}$' && [ "$(sed -n 2p "$H/bar.out")" = '[' ] && ok "bar status: the i3bar header asks for clicks, then the array opens" || bad "bar header" "$(head -2 "$H/bar.out")"
     [ "$(grep -c '^\[{' "$H/bar.out")" -ge 2 ] && ok "bar status: one line at start, and the bar drawn again after the clicks (quick clicks share one redraw)" || bad "bar redraws" "$(grep -c '^\[{' "$H/bar.out") lines; $(cat "$H/bar.err")"
@@ -5392,6 +5405,14 @@ else
     st=0; out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --yes 2>&1) || st=$?
     printf '%s\n' "$out" | grep -q "^ok     dialog       installed for v9.9 ($bin), sha256 checked$" && [ -x "$bin" ] && [ "$(sum256 "$bin")" = "$sha" ] \
         && ok "on: the dialog fetched for the signed release tag, its sha256 the tag's own tree pins, installed" || bad "dialog install" "st=$st $(printf '%s\n' "$out" | grep dialog)"
+    out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" check 2>&1 || :)
+    printf '%s\n' "$out" | grep -q "^ok     dialog       $bin, the sha256 v9.9 pins$" \
+        && ok "check: the dialog in place is the build the release pins" || bad "check dialog ok" "$(printf '%s\n' "$out" | grep dialog)"
+    cp "$bin" "$H/dialog.keep"; printf 'x' >> "$bin"
+    st=0; out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" check 2>&1) || st=$?
+    printf '%s\n' "$out" | grep -q '^FAIL   dialog       not the build v9.9 pins, so home will not open -- spark-shell on$' && [ "$st" -ne 0 ] \
+        && ok "check: a dialog that is not the release's fails, and says home will not open" || bad "check dialog fail" "st=$st $(printf '%s\n' "$out" | grep dialog)"
+    cp "$H/dialog.keep" "$bin"
     cp "$C/dialog/dialog.env" "$H/dialog.env.keep"; sed 's/=.*/=0000000000000000000000000000000000000000000000000000000000000000/' "$H/dialog.env.keep" > "$C/dialog/dialog.env"
     out=$(SPARK_SHELL_DIALOG_URL="file://$H/assets" sh "$C/spark-shell" on --dry-run 2>&1 || :); cp "$H/dialog.env.keep" "$C/dialog/dialog.env"
     printf '%s\n' "$out" | grep -q '^todo   dialog       this clone is past its release: the dialog comes with the next tag$' && ok "on: a dialog.env edited in the working copy is no release: the tag's own tree decides" || bad "dialog env edited" "$(printf '%s\n' "$out" | grep dialog)"
@@ -6215,6 +6236,19 @@ if command -v ssh-keygen >/dev/null 2>&1; then
     [ "$rc" -eq 0 ] && [ "$first" = "spark-shell update: v9.6, signed by spark-shell-release (was v9.1)" ] \
         && [ "$(printf '%s\n' "$out" | wc -l)" -gt 1 ] && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.6^{commit}')" ] \
         && ok "update with the seat on: the move, then on --yes from the new tree" || bad "update: seat on" "$rc $out"
+    # a tag is up before its release: a seat stays where it is until the build can be fetched (the owner's box, v0.124.2)
+    mkdir -p "$U/bin" "$U/rel"
+    printf '#!/bin/sh\ncase "$1" in -m) echo x86_64 ;; *) exec "%s" "$@" ;; esac\n' "$(command -v uname)" > "$U/bin/uname"; chmod +x "$U/bin/uname"
+    echo seven > "$U/w/seven"; git -C "$U/w" add -A; git -C "$U/w" commit -q -m v9.7; git -C "$U/w" tag -s -m v9.7 v9.7; git -C "$U/w" push -q origin main v9.7
+    out=$(PATH=$U/bin:$PATH SPARK_SHELL_DIALOG_URL="file://$U/rel" sh "$C" update 2>&1) && rc=0 || rc=$?
+    [ "$rc" -eq 1 ] && [ "$out" = "spark-shell update: v9.7 is signed, but its release is not published yet -- nothing moved; try again in a few minutes" ] \
+        && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.6^{commit}')" ] \
+        && ok "update: a tag whose release is not up moves nothing, and says so" || bad "update: release not up" "$rc $out"
+    mkdir -p "$U/rel/v9.7"; : > "$U/rel/v9.7/spark-dialog-x86_64-linux-musl"
+    out=$(PATH=$U/bin:$PATH SPARK_SHELL_DIALOG_URL="file://$U/rel" sh "$C" update 2>&1) && rc=0 || rc=$?
+    [ "$(printf '%s\n' "$out" | sed -n 1p)" = "spark-shell update: v9.7, signed by spark-shell-release (was v9.6)" ] \
+        && [ "$(git -C "$U/c" rev-parse HEAD)" = "$(git -C "$U/c" rev-parse 'v9.7^{commit}')" ] \
+        && ok "update: once the release is up, the same command moves" || bad "update: release up" "$rc $out"
     unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_CONFIG_NOSYSTEM
     rm -rf "$U"
 else

@@ -44,7 +44,8 @@ For persistent mirror 404 errors, see the
 
 To update, run `spark-shell update`: the clone moves to the newest
 release signed by a key in its `allowed-signers`, never to a commit
-nobody signed, and `on` runs again from it.
+nobody signed, and `on` runs again from it. A tag whose release is not
+published yet moves nothing: run it again a few minutes later.
 spark is optional.
 Without it, layouts and spark chat are unavailable. The tmux
 status line still shows the machine and your reminders.
@@ -391,8 +392,9 @@ that still cannot fit it produces a refusal. No font size is guessed or changed.
 
 Type `spark-shell apps`. You get a list of the installed apps and
 tools. `Tab` selects or clears a row, `Enter` saves to
-`~/.config/spark-shell/apps`. A layout then opens only those apps. With
-no list, any app with a desktop entry is allowed.
+`~/.config/spark-shell/apps`. A layout and spark then open only those
+apps. With no list, any app with a desktop entry is allowed. The list
+limits those two alone: home's Apps shows and opens every installed app.
 
 ## Keys
 
@@ -810,29 +812,47 @@ the window, down to 36 by 20 cells.
 Super+Space opens or focuses home. Repeating it retains the same window,
 draft, attachments, view and ongoing request. A bar click uses the same
 entry; if no window exists it opens that section. Esc or the x closes it.
-The root order is Apps, Files, Workspace, Notes, Calendar, Tools, Settings,
-Help, About, Power. Unavailable capabilities explain their availability.
+The root order is apps, files, workspace, notes, calendar, tools, settings,
+help, about, power, in three groups. The menu breathes: a row of air
+between its rows when the window has the rows for it, two rows of air
+between the groups; the minimum window single spaces and scrolls.
+Every label the dialog writes is lowercase, and so is a name that is a
+label: an app's, its role, a window's title, a category, a note's
+title. A name that is an identifier keeps its spelling: a file, a
+drive, a network, a package manager. The design's rules are one page,
+`dialog/DESIGN.md`. Unavailable capabilities explain their availability.
 Help and the conversation are views inside this same process. F2
 switches between the conversation and the previous view without losing a draft.
 `dialog chat` opens this conversation; `spark` remains usable independently.
 
-A click on an application or file still uses the native launch behavior.
-A pick that puts a window in front (an app, a file, a terminal, a window,
-the lock) clears
-the dialog at the click and closes it once the window is there; if the
-step is refused, the dialog comes back with the reason under the keys.
+Two kinds of row, told apart by what they are. A menu's row acts on one
+click: home's places, settings' rows, a choice among choices, an action
+or a preference on a details page. An object's row is selected by a
+click: an app, a file, a folder, a note, a window, a layout. Enter or a
+second click acts on it, the right arrow opens its details or its
+actions, Space previews a file. The pointer resting on a row changes
+nothing; the selection bar moves by the arrows or by a click. A pick
+that puts a window in front (an app, a file, a terminal, a window, the
+lock) clears the dialog and closes it once the window is there; if the
+step is refused, the dialog comes back with the reason on the status
+row.
 A window that is
 fullscreen steps aside for the dialog and is fullscreen again when the
 dialog closes with nothing opened.
 
-Full screen (Super+f), home keeps one centered column, at most 60 cells
-wide. Its header, prompt, keys, menu and footer share that measure.
-Wider views can use up to 120 cells, and the space goes to their lists: in Files
-a whole name, the kind (picture, sound, PDF, Word), the size, and the
-date with the time; the Calendar shows as many months across as fit;
-Settings writes each state whole. A list ends where its
-words end, its arrows right after them. The preview Space opens takes
-the whole screen.
+Full screen (Super+f) and snapped to either half, every view is one
+column in the middle of the window: 60 cells for home, apps, help,
+about and the conversation, up to 120 for a list with columns. The
+header, the prompt and its tools, the rules, the list, the status row
+and the key bar share that column; nothing stands outside it. The
+space a wide list gets goes to its rows: in Files a whole name, the
+kind (picture, sound, PDF, Word), the size, and the date with the
+time; the Calendar shows as many months across as fit; Settings writes
+each state whole. A list ends where its words end, and the selection
+bar spans the list column from its first cell to that end, the same
+for every row at every size. The bar is the one signal: a background,
+and nothing else on the row changes, no cursor glyph, no accent on the
+name, no bold. The preview Space opens takes the whole screen.
 
 The dialog opens with a short animation in the middle of its window,
 alone, and then the whole dialog is drawn at once; the window shows only
@@ -848,32 +868,158 @@ the animation from a list of the pieces, or none for no
 motion (`DIALOG_ANIMATION`, embers to begin with); a palette with no set
 of its own plays none.
 
-The top row says where you are (`home`, a place, a section and its
-state; a long one is cut at a word). Then the
-date and the time as your locale writes them, and a small bar while
-spark works on your words: one of the animations spark draws at its
-prompt, a light bouncing while it thinks and a bar growing and shrinking
-while a model loads. Nothing else shows it: a step shows on its row,
-and a page that takes a moment has its waiting animation.
-Under it is the prompt, two rows tall:
-type to find local actions, Enter performs the selected native action,
-and Shift+Enter starts a new line. Ctrl+Enter or the clickable Ask control
-explicitly sends the request. Unmatched text never sends automatically.
-Credential fields, confirmations and provider forms cannot use Ask.
-A longer draft scrolls inside the two rows, and a paste keeps its lines
-and never sends. The
-row under the prompt puts navigation first and keeps Ask visible. At the
-normal width it is one row; narrow windows can use a second reserved row.
-Action groups and configured keycaps stay whole. Secondary hints use the
-remaining space; Help lists every shortcut, including conversation.
-A click on a label or its keycap does what the key does. Back
-is there, never at the top. A key is drawn as a key, and nothing else
-is.
+The top row is the header: `< back` at the left where there is a level
+above this one, where you are in the middle (`home`, a place, a section
+and its state; a long one is cut at a word), the x at the right, and
+before the x a small bar while spark works on your words: one of the
+animations spark draws at its prompt, a light bouncing while it thinks
+and a bar growing and shrinking while a model loads. Nothing else shows
+it: a step shows on its row, and a page that takes a moment has its
+waiting animation. The header has no clock: the bar has it. In a
+window wider than the column, a wide one or a full screen, the header,
+both rules and the key bar take the window's width and the column
+stays centered at its measure.
+Under it is the prompt, two rows tall, and it reads `search or ask`:
+typing searches the list in front of you at once, Enter opens what the
+selection bar is on, in the list and from the prompt, and Shift+Enter
+starts a new line. Asking is a row, not a key: while there are words
+in the prompt and a model answers, an `ask spark` row stands last among
+the matches, with the words echoed muted beside it, and alone when
+nothing matches, so Enter asks. With no model there is no ask row and
+typing searches alone. Ctrl+Enter still asks, a shortcut listed in help
+and shown on no chip. Unmatched text never sends by itself. Credential
+fields, confirmations and provider forms cannot ask. A longer draft
+scrolls inside the two rows, and a paste keeps its lines and never
+sends.
 
-The home gives each place a purpose description. Workspace shows open
-windows and saved layouts, Notes its count and newest note, and Calendar
-the next reminder when that context is available. All ten places stay
-visible; a missing capability explains its availability when opened.
+Under the prompt stand its tools, muted: attach, the model and talk.
+An attached file's name replaces the word attach, with remove after
+it; talk reads cancel while listening. Tab cycles these three and
+nothing else. The model control is the model's name alone, `gemma4-e4b`
+(a server says `gemma4-e4b, remote`), and it opens the model page,
+whose first choice is asking: a model answers, or off. Off, nothing is
+asked: no ask row, the diamond hollow, Ctrl+Enter refused with the
+reason, the control reading `model off`; the choice is kept across
+runs. Under the tools, a row of air, then a rule closes the prompt's
+block, with the diamond in its middle: full, in the accent, when a
+model answers; hollow, muted, when none does or asking is off. It is
+the frame's one ornament, it is read and never clicked, and nothing
+else in the dialog is drawn for decoration alone. A row of air, then
+the list, which starts at the ninth row at every width.
+
+The key bar is the last thing in the frame, over a plain rule, as
+every terminal program places its keys: the view's keys alone, Esc
+first (close at home, back everywhere else), then the keys the view's
+rows take: details, actions, preview, change, month, history. The same
+words whatever row is lit or typed, so nothing changes under a moving
+pointer. Enter has no chip: it opens what the bar is on, everywhere.
+Back has more doors than its chip: with nothing typed, Left and
+Backspace go back a level, and so does a click on the header's `< back`
+or on its place name; none of them closes the dialog from home, which
+is Esc's alone. The wheel moves the bar a row at a time in a list, as
+the arrows do, and three lines in text.
+A mode that waits on Enter for something else (run the commands spark
+planned, apply a model, land a step in this folder) says so with its
+chip. Narrow, the keys wrap onto a second line under the bar, whole
+groups at a time. Help lists every shortcut, including conversation.
+A key chip is a label for its key, never a control: it is never lit,
+never in focus, and Tab never stops on it; a click on it sends the key,
+and the pointer's shape alone says so. A key is drawn as a key, and
+nothing else is. Nothing in the dialog is underlined, and the pointer
+resting on the window changes nothing drawn: a row lights by a key or
+a click.
+
+The home's second column is state: what the place holds now, from
+what the dialog already has, muted as a launcher's subtitle is, so the
+name leads and the column is one color. Apps its count of apps
+installed and hidden once the catalog is read; files the folder's own
+summary; workspace its open windows by name; notes their count and the
+newest with its date; calendar the next reminder; settings the look and
+the screens, never the network; help its counts of shortcuts and
+commands; about `spark-shell` and the installed release. A purpose in
+muted words stands only where there is no state worth more, which is
+power alone, and until a place's section has spoken. All ten places
+stay visible; a missing capability explains its availability when
+opened.
+Apps lists the installed, launchable desktop entries from the system's
+GIO library, an app a row under its category's heading, sorted by name
+within it. The name is the desktop entry's own, lowercase as a label
+(firefox, btop++); the role beside it, muted and lowercase, is its
+GenericName, else its Comment with the period dropped (a comment that
+only repeats the name is dropped too), else nothing; a long role is cut
+with an ellipsis and stands whole on the status row and in the
+details. Typed words search the name, the full name, the role and the
+full description across every category. One click selects an app and
+the status row says what it is: its name, what it is, its category,
+and its launch choice where it is not the default. Enter or a second
+click opens it; Right opens its details. While an opening is felt,
+about a third of a second in, the status row shows the march with
+`opening NAME`; then the receipt, `NAME opened` or `NAME focused`, or
+the refusal with its reason, which clears when the next action starts,
+as every refusal on the status row does. Esc clears the words first,
+then goes back; the details keep the list's words and position.
+The category headings are the filter: a click on one shows that
+category alone, the header says which, and Esc shows all again. At the
+end of the list stand the managing rows, a menu's rows that act on one
+click: hidden apps, the hidden ones in the list's own shape under their
+categories, searched by typing like the list; edit categories, the
+list below; and refresh apps.
+
+An app's details are its name and description, lowercase, its version,
+where it was installed from and its source, then open, technical
+details (a list behind its arrow, every field with its original
+spelling, and copy launcher path at its end), and its preferences: hide
+this app, a switch as a setting's; category and launch, choices whose
+list checks the one in use. A details page is a menu: its rows act on
+one click. Every change applies at once and is said on the status row
+with Undo at its end: there is no draft, no save, no cancel, and
+nothing asks before you leave. A hidden app leaves the list and the
+home's search and stands under hidden apps, where its details bring it
+back. foot stays visible; foot client and foot server start hidden
+until their switch says otherwise.
+
+Categories lists the local categories; one opens to rename (typed in
+the prompt, Enter saves, Esc lets go) or delete, each applied at once
+with Undo, and says which desktop categories map to it. Mappings lists
+the desktop categories and ours; one opens the list to pick from, and
+a new mapping is typed in the prompt. The first mapped desktop category
+wins; a choice in an app's details wins over the mappings, and Other is
+the fallback. Deleting a category removes its mappings and choices and
+keeps the apps' other preferences. The preferences
+live in `~/.config/spark-shell/apps.json` (or
+`$XDG_CONFIG_HOME/spark-shell/apps.json`), keyed by desktop-entry identity, so
+ordinary package updates retain them. System launchers and packages are never
+changed by these controls.
+
+Application default uses the platform desktop-entry launch behavior. New
+window is available only for an explicitly declared New window action. Focus
+existing requires a supported Sway identity and uses its focus order; when
+nested groups make their relative recency ambiguous, it reports that
+limitation instead of choosing a window arbitrarily. No matching window starts
+the application. A launch request is distinguished from a window actually
+observed or focused. GIO owns argument expansion, desktop actions, working
+directories and activation. On foot-only desktops a private terminal bridge
+supplies GIO's terminal fallback. The adapter never interpolates discovered
+commands into shell text. An app remains running after the launch helper
+exits. Once the app has focus, home clears from view; Super+Space returns to
+the same search and edits. Failures remain visible in context.
+
+The details read package and desktop metadata on demand. Missing package
+data is shown as unavailable; absent declarations do not imply a
+security policy. Copy launcher path copies its original contents. Apps
+shares home's frame, its tools row and its key bar in compact,
+fullscreen and both snaps, down to 36 by 20 cells, where a long value
+goes under its label and the page scrolls with Page Up, Page Down and
+the wheel. The full model identity remains available in the model
+selector when its label on the tools row is shortened. AI is optional
+throughout Apps.
+
+Native validation: `python3 tests/apps_desktop_proof.py BINARY DIRECTORY` runs
+an isolated Sway/foot session with real system discovery and launches,
+temporary preferences, and identified model/voice fixtures.
+`python3 tests/apps_test.py` checks adapter contracts, using isolated
+desktop-entry fixtures on Linux.
+
 Settings stands in groups: sound and microphone; Wi-Fi, Bluetooth and
 the network; storage, display, keyboard and pointer; theme, wallpaper,
 the bar and notifications; power, battery, Talk and Connections. A
@@ -881,8 +1027,12 @@ setting shows only where this machine has it. The down arrow moves from
 the prompt into the
 list, and up from the first row comes back. A row wears a sign where
 there is a state: a dot is in use or connected, a ring is available, a
-check is current or saved, a small triangle opens something. A row
-that ends in a small arrow opens more. Every row takes the same keys:
+check is current or saved; in a list where no row has one the words
+start where the sign would. There is no sign for a row that opens:
+every row in a list opens, and the selection bar says which is
+selected. A row whose value ends in a small arrow opens a list; a
+folder shows no arrow, its count of items says what it is. Every row
+takes the same keys:
 Enter does what it does, the right arrow opens its other steps as a
 list (a file's rename and trash, a network's forget, a device's remove,
 a drive's unmount and eject), and Space shows its page: an app's group,
@@ -985,9 +1135,11 @@ its first and its last row.
 - `files`: your home folder, as a file manager of its own. Enter on a
   folder opens it, `..` goes back up, and Esc walks back the way you
   came; a folder lists its folders, then its files with the size and
-  the date. A click on a file or a folder opens it, as Enter does and
-  as one click does everywhere in the dialog; a long name is cut in its
-  middle, its end and its type kept. A folder of thousands lists about
+  the date. A click on a file or a folder selects it, and the status
+  row gives the line the narrow columns cannot: its name, its kind, its
+  size, the date with its time, its place; Enter or a second click
+  opens it. A long name is cut in its middle, its end and its type
+  kept. A folder of thousands lists about
   a thousand at a time: its last row, `the next page`, says how many
   more there are and opens them. Enter on a text file opens it in your
   editor, in a terminal window; any other file opens with the app for
@@ -1061,28 +1213,31 @@ its first and its last row.
   is not. spark reads text: a PDF goes with your words as the text of its
   page, a sound or a picture with none.
 
-A click on a row runs it and says nothing: the row shows that it
-worked, and nothing else on the screen moves. Under the key row, one
-reply row says what came of the last step when there is something to
-say: a cross and the reason for a step refused, a check and the receipt
-for a command you typed, and Undo at the right where the step can be
-taken back (alone, for a click). A new reply takes the place of the
-last; Esc clears it, and so does leaving the view. Typing undo still
-takes the step back. The full model answer appears once in Conversation,
-under the words that asked it. If it arrives in another view, a summary
-in the reply row makes it visible without changing the view or draft. While
-commands spark planned wait in the two rows of the prompt, the reply
-row names them all (`run: ...`). At the bottom, a full blank row separates
-the diamond divider from the controls. Content reserves space for the
-whole footer. Its controls are plain text: Attach at the left, the
-model/source centered when it fits, and the mic at the right. Narrow
-windows shorten attachment names and use Model when needed, keeping
-Remove and Talk/Cancel separate.
-Tab moves through them and the one in focus is lit; Shift+Tab goes back.
+A step run from a row says nothing: the row shows that it worked, and
+nothing else on the screen moves. The status row, the last row above
+the plain rule, is the one place a message is written: the selected
+object's line, muted, moving only with the bar, as Norton Commander's
+mini-status did; a cross and the reason for a step refused; a check
+and the receipt for a command you typed, and Undo at the right where
+the step can be taken back (alone, for a click); an action's march
+while it is felt. Nothing comes between the prompt's block and the
+list, and nothing among the list's rows. A new reply takes the place
+of the last; Esc clears it, and so does leaving the view. Typing undo
+still takes the step back. The full model answer appears once in
+Conversation, under the words that asked it. If it arrives in another
+view, a summary on the status row makes it visible without changing
+the view or draft. While commands spark planned wait in the two rows
+of the prompt, the status row names them all (`run: ...`). The
+prompt's tools are plain text on the row under the prompt: attach at
+the left, the model centered under the prompt when it fits, and the
+mic at the right. Narrow windows shorten attachment names and use
+Model when needed, keeping Remove and Talk/Cancel separate. Tab moves
+through them and the one in focus wears the band; Shift+Tab goes back.
+The key chips are not among them: a key is pressed, not focused.
 
 - Attach picks one text or Markdown file from your home (the types
   `DIALOG_ATTACH_TYPES` names), for the next question only: its name
-  shows in the footer in place of Attach, with Remove after it.
+  shows on the tools row in place of attach, with remove after it.
   Picking it sends nothing. It
   goes with the next words, and comes back with them if that request
   fails. spark reads a file of 16 kB whole; a longer one goes to `spark
@@ -1118,13 +1273,14 @@ of the names kept in `~/.cache/spark-shell/files.names` (yours alone,
 never sent anywhere, walked again in the background when it is ten
 minutes old), and notes by what they say; both come in once typing
 rests for a moment. A section's name holds its rows too: `wifi` lists
-the networks. The row your words name is lit, and
+the networks. The row your words name is selected, and
 Enter runs it with no model call: `nord` and Enter is the palette nord
-(`drac` lights dracula). Words that name no row stay at the prompt,
-and Enter preserves them. Ask explicitly sends them. A place's name alone, as
-`settings` or `calendar`, opens it. A command in the dialog's own
-words, as `display brightness 30` or `theme dracula`, runs at once,
-with no model. Ask sends the draft, explicitly attached context and the
+(`drac` lights dracula). Words that name no row select the ask row,
+when a model answers, so Enter asks; with no model they stay at the
+prompt, and Enter preserves them. A place's name alone, as `settings`
+or `calendar`, opens it. A command in the dialog's own words, as
+`display brightness 30` or `theme dracula`, runs at once, with no
+model. Asking sends the draft, explicitly attached context and the
 ready providers' tool schemas to spark in one bounded call. Browsed paths,
 selected rows and
 other providers' current values are not implicitly added to that request.

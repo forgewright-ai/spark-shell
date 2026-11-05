@@ -360,7 +360,7 @@ fn a_list_of_a_thousand_pages_and_jumps_by_its_keys() {
     app.view = View::Section(3);
     app.came_from = vec![View::Home];
     app.in_list = true;
-    let step = app.size.1.saturating_sub(14).max(4) as usize;
+    let step = app.size.1.saturating_sub(spark_dialog::ui::CONTENT_Y + spark_dialog::ui::BOTTOM + 1).max(4) as usize;
     app.page(1);
     assert_eq!(app.sel, step, "Page Down: the lit row a screen down");
     app.line_end();
@@ -378,7 +378,9 @@ fn a_list_of_a_thousand_pages_and_jumps_by_its_keys() {
 }
 
 #[test]
-fn root_settings_keeps_its_purpose_instead_of_network_details() {
+fn root_settings_says_the_look_and_the_screens_never_network_details() {
+    // the settings row at home holds the look and the screens (dialog/DESIGN.md); a network's name or its state is
+    // no business of the home's first screen
     let net = |wifi: &str, lan: &str| {
         let mut app = base();
         app.providers
@@ -388,9 +390,10 @@ fn root_settings_keeps_its_purpose_instead_of_network_details() {
         app.about_idx = Some(app.providers.len() - 1);
         app.dest_state(spark_dialog::app::SETTINGS_DEST).unwrap_or_default()
     };
-    assert!(net("not connected", "up").is_empty());
-    assert!(net("private network", "up").is_empty());
-    assert!(net("not connected", "no wire").is_empty());
+    for (wifi, lan) in [("not connected", "up"), ("private network", "up"), ("not connected", "no wire")] {
+        let said = net(wifi, lan);
+        assert!(!said.contains(wifi) && !said.contains(lan) && !said.contains("wi-fi"), "{:?}", said);
+    }
 }
 
 #[test]
@@ -804,25 +807,25 @@ fn the_calendar_shows_the_time_in_large_figures() {
     let app = calendar_app(true);
     let (b, p, rows) = drawn(&app);
     let block = "\u{2588}";
-    assert!(rows[7..12].iter().all(|r| r.contains(block)), "five rows of figures under the hint");
-    assert!(!rows[6].contains(block) && !rows[12].contains(block), "a row of air above and below them");
-    assert_eq!(b[(2, 7)].fg, p.accent, "in the accent");
+    assert!(rows[8..13].iter().all(|r| r.contains(block)), "five rows of figures under the hint");
+    assert!(!rows[7].contains(block) && !rows[13].contains(block), "a row of air above and below them");
+    assert_eq!(b[(2, 8)].fg, p.accent, "in the accent");
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
     spark_dialog::ui::draw(&app, &p, "Sun 18 Oct \u{b7} 9:05 PM", &mut b);
     let row = |y: u16| (0..WIDTH).map(|x| b[(x, y)].symbol().to_string()).collect::<String>();
     assert!(
-        row(11).trim_end().ends_with("PM"),
+        row(12).trim_end().ends_with("PM"),
         "a twelve-hour clock says PM beside the figures: {}",
-        row(11)
+        row(12)
     );
-    assert_eq!((7..12).filter_map(|y| at(&row(y), block)).min(), Some(2), "a 9 starts at the months' left edge");
+    assert_eq!((8..13).filter_map(|y| at(&row(y), block)).min(), Some(2), "a 9 starts at the months' left edge");
 }
 
 #[test]
 fn the_calendar_draws_this_month_and_the_next_side_by_side() {
     let (_, _, rows) = drawn(&calendar_app(true));
     let y = rows.iter().position(|r| r.starts_with("  October 2026")).expect("this month");
-    assert_eq!(y, 13, "under the prompt, the hint and the time's five rows of figures");
+    assert_eq!(y, 14, "under the prompt's block, the hint and the time's five rows of figures");
     assert_eq!(at(&rows[y], "November 2026"), Some(32), "the next month on the same row");
     assert_eq!(at(&rows[y + 1], "Su"), Some(2));
     assert_eq!(rows[y + 1].matches("Su").count(), 2, "a weekday line under each month");
@@ -855,7 +858,7 @@ fn a_day_with_a_reminder_is_in_the_accent_and_today_is_a_chip() {
 fn the_reminders_under_the_months_are_rows_to_pick_in_their_groups() {
     let mut app = calendar_app(true);
     // Room for all groups, including the final reminder above the footer gap.
-    app.size.1 = 42;
+    app.size.1 = 43;
     let (b, p, rows) = drawn(&app);
     let head = |g: &str| {
         rows.iter()
@@ -924,9 +927,12 @@ fn a_long_state_in_the_header_stops_short_of_the_date() {
     app.view = View::Section(1);
     app.came_from = vec![View::Home];
     let (_, _, rows) = drawn(&app);
-    let at_clock = at(&rows[0], CLOCK).expect("the date and the time");
-    let before: String = rows[0].chars().skip(at_clock - 2).take(2).collect();
-    assert_eq!(before, "  ", "two cells of air before the date: {}", rows[0]);
+    // no clock in the header (v0.124.4): the state is cut at a word before the x, with air before it
+    assert!(!rows[0].contains(CLOCK), "the clock is the bar's: {}", rows[0]);
+    let at_x = at(&rows[0], "\u{d7}").expect("the x");
+    let before: String = rows[0].chars().skip(at_x - 2).take(2).collect();
+    assert_eq!(before, "  ", "two cells of air before the x: {}", rows[0]);
+    assert!(rows[0].contains("catppuccin-latte"), "the state after the name: {}", rows[0]);
 }
 
 #[test]
@@ -1300,16 +1306,18 @@ fn the_opening_plays_alone_then_the_whole_dialog() {
     assert!(!drawn.alone && drawn.film.is_none(), "after it, the dialog whole");
 }
 
-/// Back is the key row's (#165): the header starts with the place, no arrow that reads as the prompt sign
-/// below it, and the key row says Back with its key.
+/// Back is the header's left where there is a level above (dialog/DESIGN.md, v0.124.4), the place's name
+/// centered after it, and the key row still says Back with its key.
 #[test]
-fn back_is_in_the_key_row_never_the_header() {
+fn back_is_in_the_header_and_in_the_key_row() {
     let app = manager_app();
     let p = palette("tokyonight-night");
     let mut b = Buffer::empty(Rect::new(0, 0, WIDTH, HEIGHT));
-    spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
+    let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
     let head: String = (0..WIDTH).map(|x| b[(x, 0)].symbol().to_string()).collect();
-    assert!(head.starts_with("  files"), "the header starts with the place: {:?}", head);
+    assert!(head.starts_with("  \u{2039} back"), "the header starts with back: {:?}", head);
+    assert_eq!(drawn.back.map(|(a, _)| a), Some(2));
+    assert!(head.contains("files"), "then the place: {:?}", head);
     let hint: String = app.hint().iter().map(|(t, _)| t.as_str()).collect();
     assert!(hint.contains("Back Esc"), "the key row says Back: {:?}", hint);
 }
@@ -1330,7 +1338,11 @@ fn a_filtered_file_shows_its_preview_after_the_down_arrow() {
     };
     let hint = |app: &App| app.hint().iter().map(|(t, _)| t.as_str()).collect::<String>();
     let mut app = filtered();
-    assert!(hint(&app).contains("Preview \u{2193}"), "the way to the preview is said: {:?}", hint(&app));
+    assert!(
+        hint(&app).contains("Preview Space"),
+        "the way to the preview is said, the same words as always: {:?}",
+        hint(&app)
+    );
     app.typed(' ');
     assert_eq!(app.input, "invo ", "Space before Down is a space");
     let mut app = filtered();
@@ -1428,7 +1440,7 @@ fn connections_say_the_tools_once() {
         "the tools counted, not the sections"
     );
     assert!(
-        texts.iter().any(|t| t.contains("Windows") && t.contains("Theme")),
+        texts.iter().any(|t| t.contains("windows") && t.contains("theme")),
         "Settings' names: {:?}",
         texts
     );
@@ -1499,4 +1511,53 @@ fn the_previews_keys_hold_their_places_between_files() {
     app.down();
     assert!(app.preview.as_ref().unwrap().shown.is_none(), "the next file's page is on its way");
     assert_eq!(row(&app), s, "the row as it was, no blink while it loads");
+}
+
+/// Apps with a catalog read: eight apps in five categories, two helpers hidden, Firefox's facts in.
+fn apps_app() -> App {
+    let mut app = base();
+    app.view = View::Apps;
+    app.came_from.push(View::Home);
+    app.apps.prefs = spark_dialog::apps::preferences::Preferences::default();
+    app.apps.preference_error = None;
+    app.apps.path = std::env::temp_dir().join("spark-dialog-render-apps.json");
+    app.apps.pending = Some((1, "catalog".into()));
+    app.apps
+        .receive(
+            1,
+            json!({"apps": [
+                {"id": "btop.desktop", "name": "btop++", "generic_name": "System Monitor", "categories": ["System"]},
+                {"id": "foot.desktop", "name": "foot", "generic_name": "Terminal", "categories": ["System"]},
+                {"id": "footclient.desktop", "name": "foot client", "generic_name": "Terminal", "categories": ["System"]},
+                {"id": "foot-server.desktop", "name": "foot server", "generic_name": "Terminal", "categories": ["System"]},
+                {"id": "org.mozilla.firefox.desktop", "name": "Firefox", "generic_name": "Web Browser", "description": "Browse the World Wide Web", "categories": ["Network"], "focus": true, "launcher": "/usr/share/applications/org.mozilla.firefox.desktop"},
+                {"id": "chromium.desktop", "name": "Chromium", "generic_name": "Web Browser", "categories": ["Network"]},
+                {"id": "aerc.desktop", "name": "aerc", "generic_name": "Mail Client", "categories": ["Office"]},
+                {"id": "mpv.desktop", "name": "mpv Media Player", "generic_name": "Multimedia player", "categories": ["AudioVideo"]},
+                {"id": "micro.desktop", "name": "micro", "generic_name": "Text Editor", "categories": ["Utility"]}
+            ]}),
+        )
+        .unwrap();
+    app.apps.details.insert(
+        "org.mozilla.firefox.desktop".into(),
+        json!({"id": "org.mozilla.firefox.desktop", "version": "128.0", "installed": "XBPS / System", "source": "XBPS",
+               "fields": [["Launcher", "/usr/share/applications/org.mozilla.firefox.desktop"]]}),
+    );
+    app
+}
+
+#[test]
+fn apps_is_the_list_under_its_categories_then_the_managing_rows() {
+    let mut app = apps_app();
+    app.light(3); // Firefox
+    render(&app, "apps");
+}
+
+#[test]
+fn an_apps_details_are_its_facts_its_steps_and_its_preferences() {
+    let mut app = apps_app();
+    app.apps_activate(spark_dialog::apps::Action::Details("org.mozilla.firefox.desktop".into()));
+    app.apps.pending = None; // the facts are in: nothing on its way
+    app.light(2); // the switch
+    render(&app, "apps-details");
 }

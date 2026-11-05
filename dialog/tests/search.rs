@@ -113,6 +113,16 @@ fn started() -> Run {
         pump(&mut app, &rx, |a| a.providers.iter().all(|p| p.ready && !p.tools.is_empty())),
         "the stubs never got ready"
     );
+    app.apps.pending = Some((1, "catalog".into()));
+    app.apps
+        .receive(
+            1,
+            json!({"apps":[
+                {"id":"firefox.desktop", "name":"Firefox", "description":"Web Browser"},
+                {"id":"micro.desktop", "name":"Micro", "description":"Text editor"}
+            ]}),
+        )
+        .unwrap();
     Run { app, rx, asked }
 }
 
@@ -128,6 +138,7 @@ fn list(app: &App) -> Vec<String> {
         .iter()
         .filter_map(|it| match it {
             Item::Heading(h) => Some(format!("# {}", h)),
+            Item::Apps(line) => Some(line.label.clone()),
             Item::Row(p, r) => Some(app.providers[*p].rows.rows[*r].text.clone()),
             Item::Hit(i) => Some(app.hits[*i].1.text.clone()),
             Item::Dest(d) => Some(spark_dialog::app::DESTS[*d].name.to_string()),
@@ -143,8 +154,8 @@ fn a_search_from_home_groups_what_it_finds_by_kind_the_best_three_each() {
     typed(&mut r.app, "fi");
     let l = list(&r.app);
     let at = |s: &str| l.iter().position(|x| x == s).unwrap_or_else(|| panic!("{} not in {:?}", s, l));
-    assert!(at("# places") < at("Files") && at("Files") < at("# apps"), "{:?}", l);
-    assert!(at("# apps") < at("firefox") && at("firefox") < at("# notes"), "{:?}", l);
+    assert!(at("# places") < at("files") && at("files") < at("# apps"), "{:?}", l);
+    assert!(at("# apps") < at("Firefox") && at("Firefox") < at("# notes"), "{:?}", l);
     assert!(at("# notes") < at("# settings") && at("# settings") < at("FiberNet"), "{:?}", l);
     // four notes say fi: the best three, then the rest as one row; a name's start before a word's start
     let notes: Vec<&String> = l[at("# notes") + 1..at("# settings")].iter().collect();
@@ -200,7 +211,7 @@ fn a_letter_off_still_finds_and_never_lights_the_row() {
     let mut r = started();
     typed(&mut r.app, "firfox");
     let l = list(&r.app);
-    assert!(l.contains(&"firefox".to_string()), "{:?}", l);
+    assert!(l.contains(&"Firefox".to_string()), "{:?}", l);
     assert!(!r.app.in_list, "a typo never lights a row Enter would run");
     r.app.typed('\u{8}');
 }

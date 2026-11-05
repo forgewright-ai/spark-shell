@@ -815,7 +815,7 @@ pkg_listed() { case " $PKG_SHELL $PKG_CLI $PKG_CONSOLE $PKG_DESKTOP $PKG_SOUND $
 starship_listed() { [ "$PM" = brew ] || pkg_listed starship; }   # the prompt comes with the packages: the Brewfile has it, a family's list may (Debian's has none)
 pkg_update_said() {   # -> the family's own step when an install is refused: a rolling distro wants the whole upgrade first
     case $PM in
-        pacman) echo 'sudo pacman -Syu' ;; xbps) echo 'sudo xbps-install -Su' ;;
+        xbps) echo 'sudo xbps-install -Su' ;;   # not pacman: its install is that upgrade already
         dnf) echo 'sudo dnf upgrade --refresh' ;; zypper) echo 'sudo zypper dup' ;;
     esac
 }
@@ -842,6 +842,11 @@ pkg_install() {   # pkg_install NAME... -- as root, the manager's own way (the t
         zypper) as_root zypper --non-interactive install "$@" ;;   # the same: zypper refreshes first
         *) return 1 ;;
     esac
+}
+pkg_nobody() {   # -> true when no one here can answer: no terminal, and sudo wants its password or pacman asks before its upgrade
+    [ ! -t 0 ] || return 1
+    if [ "$PM" = pacman ] && [ -z "${SPARK_SHELL_TEST_TTY:-}" ]; then return 0; fi
+    [ "$(id -u)" -ne 0 ] && ! sudo -n true 2>/dev/null
 }
 pkg_install_on() {
     # Arch's setup refreshes with a full upgrade; pacman asks before applying it.
@@ -3061,11 +3066,20 @@ cmd_on() {   # cmd_on [desktop|login]
         if login_wanted; then pkgs="$pkgs $PKG_LOGIN"; fi
         # shellcheck disable=SC2086
         for p in $pkgs; do pkg_installed "$p" || missing="$missing $p"; done
+        _again="spark-shell on${*:+ $*}"
         if [ -z "$missing" ]; then ok packages "installed"
-        elif [ "$(id -u)" -ne 0 ] && ! sudo -n true 2>/dev/null && [ ! -t 0 ]; then
-            # nobody to type a password here: say what is left, keep going
-            # (the links and renders below need no root)
-            row todo packages "still to install:$missing -- spark-shell on at a terminal (sudo once)"
+        elif pkg_nobody; then
+            # nobody here to type a password, or to answer pacman before its
+            # upgrade. A desktop or a login asked for now waits for its
+            # packages, as after a failed install; anything else goes on, as
+            # update must: the links and renders need no root
+            _why='sudo once'; [ "$PM" != pacman ] || _why='pacman asks before it upgrades'
+            case ${1:-} in desktop|login) if [ "$MODE" != dry ]; then
+                row todo packages "still to install:$missing -- $_again at a terminal ($_why)"
+                echo 'spark-shell: the packages are not in; setup stopped before changing shell or desktop files.' >&2
+                return 1
+            fi ;; esac
+            row todo packages "still to install:$missing -- $_again at a terminal ($_why); the links and renders need no root, so they go on"
         else
             _install="install$missing ($PM, sudo)"
             [ "$PM" != pacman ] || _install="full system upgrade and install$missing (pacman -Syu --needed, sudo; pacman asks first)"
@@ -3073,8 +3087,8 @@ cmd_on() {   # cmd_on [desktop|login]
                 # shellcheck disable=SC2086
                 if pkg_install_on $missing; then ok packages "installed"
                 else
-                    if _up=$(pkg_update_said) && [ -n "$_up" ]; then row todo packages "$PM could not install:$missing -- $_up, then spark-shell on $*"
-                    else row todo packages "$PM failed (see above) -- run spark-shell on $* again"; fi
+                    if _up=$(pkg_update_said) && [ -n "$_up" ]; then row todo packages "$PM could not install:$missing -- $_up, then $_again"
+                    else row todo packages "$PM failed (see above) -- run $_again again"; fi
                     echo 'spark-shell: package installation failed; setup stopped before changing shell or desktop files.' >&2
                     return 1
                 fi
@@ -3450,6 +3464,11 @@ cmd_check() {
         elif [ "$DISTRO" = void ] && ! in_group _seatd "$LOGIN_ACCOUNT"; then chk login fail "$LOGIN_ACCOUNT is not in the _seatd group" "spark-shell on login"
         else chk login ok "the login screen takes tty1 at boot, tty2 keeps the console login"; fi
     fi
+    # home runs only the build the release pins, so a clone moved without it opens nothing: said here, not at the key
+    if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ] || [ "$DIALOG_URL" = none ] || [ -n "${SPARK_SHELL_DIALOG:-}" ] || ! dialog_target >/dev/null; then chk dialog ok "na (no release build here)"
+    elif ! _crt=$(release_tag); then chk dialog ok "na (this clone is past its release)"
+    elif dialog_ok; then chk dialog ok "$DIALOG_BIN, the sha256 $_crt pins"
+    else chk dialog fail "not the build $_crt pins, so home will not open" "spark-shell on"; fi
     if [ "$OS" = Darwin ] || [ "$DESKTOP" = none ]; then chk apps ok "na (no desktop)"
     else
         sbom_entries; ne=$(wc -l < "$TMP/entries" | tr -d ' ')
@@ -6986,7 +7005,7 @@ tool_spec() {
         mic_adjust)        _ts=mic _ta=adjust _tp=delta _tk=delta _th=f _tt='mic adjust DELTA' _td='Change the microphone level by delta percentage points from its fresh native level. Negative lowers and positive raises; the result is bounded to 0 to 100 and read back. Use this for relative requests; no arithmetic from a remembered level is needed.' ;;
         mic_mute)          _ts=mic _ta=mute _th=if _tt='mic mute' _td='Mute the microphone.' ;;
         mic_unmute)        _ts=mic _ta=unmute _th=if _tt='mic unmute' _td='Unmute the microphone.' ;;
-        theme_palette)     _ts=theme _ta='=' _tp=name _tk=${THEME_ENUM_NOW:-$(theme_enum)} _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none.' ;;
+        theme_palette)     _ts=theme _ta='=' _tp=name _tk=${THEME_ENUM_NOW:-$(theme_enum)} _th=i _tt='theme NAME' _td='Use a palette everywhere, a saved theme, a look from the last ten, or none. A near name, heard or typed, is the nearest palette: groove box dark is gruvbox-dark.' ;;
         theme_save)        _ts=theme _ta=save _tp=name _tk=string _th=f _tt='theme save NAME' _td='Keep the look in use under a name: the palette, the wallpaper, the text size, the transparency. After the look is made, never before it.' ;;
         theme_delete)      _ts=theme _ta=delete _tp=name _tk=string _th=dif _tt='theme delete NAME' _td='Delete a saved theme.' ;;
         theme_back)        _ts=theme _ta=back _th=f _tt='theme back' _td='The look before this one.' ;;   # free: no row carries it, the gate asks the history
@@ -8692,6 +8711,10 @@ cmd_update() {   # the clone moves to the newest tag past its own that a key in 
         [ -n "$_skipped" ] || { echo "spark-shell update: at $_here, the newest release"; return 0; }
         refuse "the releases past $_here are not signed by a key in allowed-signers:$_skipped -- nothing moved"
     fi
+    # a tag is up minutes before its release: a seat moved now finds no build for the new pin, and home will not open
+    if seat_on && ! release_up "$_to"; then
+        refuse "$_to is signed, but its release is not published yet -- nothing moved; try again in a few minutes"
+    fi
     _by=$(git -C "$REPO" -c gpg.format=ssh -c "gpg.ssh.allowedSignersFile=$REPO/allowed-signers" verify-tag "$_to" 2>&1 | sed -n 's/.*signature for \([^ ]*\) with.*/\1/p' | sed -n 1p)
     _note=''; [ -z "$_skipped" ] || _note=" (skipped, not a signed release:$_skipped)"
     if [ "$MODE" = dry ]; then
@@ -8704,6 +8727,12 @@ cmd_update() {   # the clone moves to the newest tag past its own that a key in 
     echo "spark-shell update: $_to, signed by ${_by:-a key in allowed-signers} (was $_here)$_note"
     seat_on || return 0
     exec "$REPO/spark-shell" on --yes     # the new tree applies itself
+}
+release_up() {   # release_up TAG -> 0 when TAG's dialog can be fetched, or there is nothing here to fetch (no build for this machine, no release, no curl: on's row says which)
+    _ut=$(dialog_target) || return 0
+    [ "$DIALOG_URL" != none ] || return 0
+    command -v curl >/dev/null 2>&1 || return 0
+    curl -fsIL --proto '=https,file' --proto-redir '=https' -o /dev/null "$DIALOG_URL/$1/spark-dialog-$_ut" 2>/dev/null
 }
 dialog_install() {   # the dialog's row of `on`: in place as the tree pins it, or fetched for the signed release tag and checked
     _dt=$(dialog_target) || { skip dialog "no build for $(uname -m) yet: the desktop keys open nothing"; return 0; }

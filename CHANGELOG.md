@@ -1,5 +1,250 @@
 # Changelog
 
+## v0.124.4
+
+- The header is back at the left where there is a level above, the
+  place's name centered with its state, the x at the right, and the
+  march before the x while spark thinks. No clock: the bar has it.
+- In a window wider than the column, a wide one or a full screen, the
+  header, both rules and the key bar take the window's width and the
+  column stays centered at its measure.
+- Enter with words typed never does nothing. The search answer that
+  lands when typing rests dropped the ask row's selection (relight
+  without the ask row's fallback), so Enter went nowhere and the words
+  stayed; the row keeps its selection. Words that match no row ask when
+  a model answers; a control that cannot act, and a box that holds the
+  commands spark planned, say why on the status row; typing takes the
+  focus from a control; leaving a view drops the plan from the prompt,
+  and typing over it starts clean.
+- Undo on the status row is a control, lowercase, in the controls' own
+  brush, not a key's chip.
+- The wheel moves the selection bar a row at a time in a list, as the
+  arrows do; three lines in text.
+- Apps' category headings are the filter: a click on one shows that
+  category alone, the header says which, and Esc shows all again. The
+  `category` row at the end of the list is gone, a filter one had to
+  scroll to, and the row one letter from it reads `edit categories`.
+  The managing rows at the end act on one click, as a menu's rows do:
+  only an app's own row is selected first and opened second. Hidden
+  apps open in the list's own shape, under their categories, searched
+  by typing, the header reading hidden: a state of the same apps, not
+  another kind of list. With nothing hidden the row is a fact, muted,
+  and opens nothing.
+- Every page of apps says where you are in the header: installed apps,
+  a category shown alone, hidden, an app's name on its details, its
+  technical details and its pickers, categories, a category's name,
+  mappings, a desktop word on its mapping page, new category, rename
+  category, add mapping. Every page read installed apps before.
+- A form of apps says what to type in the prompt's placeholder (a name
+  for the category, the new name, a desktop category) and its key bar
+  says Enter saves; the note that repeated both is gone. Add mapping
+  offers the desktop categories the installed apps carry and no mapping
+  places yet, to pick instead of recall; a word the catalog lacks is
+  still typed. A mapping page keeps the desktop word as spelled.
+- Refresh apps answers with its count, N apps read. Every word of apps
+  is lowercase and says what to do: the apps are busy, this app is no
+  longer installed, the apps could not be read: refresh apps reads them
+  again; no app is installed. The prompt's refusals on Enter follow:
+  no model is available: the draft stays; wait for the current request.
+- The theme tool's description tells the model that a near name, as
+  heard or typed, is the nearest palette (groove box dark is
+  gruvbox-dark): a request was answered with a refusal in words and no
+  step, though the model had named the palette itself.
+
+## v0.124.3
+
+- Back has more doors than its chip: Esc, and with nothing typed Left
+  and Backspace, and a click on the header's place name. None closes
+  the dialog from home.
+- The model control is the model's name alone: no down glyph, no
+  separator over the diamond, no place word for the default; a server
+  says remote. A row of air stands between the tools and the diamond's
+  rule.
+- The model page opens on asking: a model answers, or off. Off, no
+  model answers: no ask row, the diamond hollow, Ctrl+Enter refused
+  with the reason, the control reading model off; kept across runs.
+- A refusal on the status row clears when the next action starts, talk
+  again, ask or attach: nothing heard stood through the next try with
+  the mic connected.
+- Apps' action rows (new category, add mapping, rename, delete, copy
+  launcher path, remove mapping) stand at the row column like every
+  row; they stood two cells deeper, as a checked list's picks do. The
+  mappings page loses the note above its rows.
+- spark-shell update waits for the release. A tag is up minutes before
+  its release, and a machine moved in that gap had no build for the
+  new pin, so home did not open. It now moves nothing, says so, and the
+  same command works once the release is up.
+- spark-shell check has a dialog row: a dialog that is not the build
+  the release pins fails it, and says home will not open.
+
+## v0.124.2
+
+- Home's second column is one color, muted, whether it says what the
+  place holds now or what the place is for. At v0.124.1 the state was
+  in the text color and the purpose muted, so a place with no state
+  yet (files before Files was opened, tools, power) stood dim among the
+  others and the column read as two fonts. The name leads in the text
+  color; the words after it are its line, as the status row is.
+
+## v0.124.1
+
+The home dialog's design, written down and built: `dialog/DESIGN.md`
+holds the decisions of 2026-11-04, taken from the screens people know
+(Norton Commander, Sidekick, the launchers and chat boxes of today).
+
+- The frame has one shape top and bottom: the prompt, its tools
+  (attach, the model, talk) under it, a rule with the diamond in its
+  middle, full when a model answers and hollow when none does; the
+  status row, a plain rule, and the key bar as the last thing in the
+  frame, the view's keys alone, Esc first. Enter has no chip.
+- The prompt reads `search or ask`. Asking is a row: `ask spark` stands
+  last among the matches with the words echoed, alone and selected when
+  nothing matches, so Enter asks; Ctrl+Enter stays as a shortcut.
+- The selection bar is the one signal: a background, no cursor glyph,
+  no accent on the name, no bold. Every pointer sign is gone: the small
+  sign before an app or a folder, the arrow at a place's end. Rows
+  start at column 4.
+- A menu's row acts on one click; an object's row (an app, a file, a
+  folder, a note, a window, a layout) is selected by a click and acts
+  on a second click or Enter. The status row says what is selected: a
+  file's kind, size, date and place; an app's description, category
+  and launch choice.
+- Home's second column is state: the catalog's counts, the folder's
+  summary, the windows by name, the newest note and its date, the look
+  and the screens, help's counts, the installed release. Its rows
+  breathe when the window has the rows, two rows of air between the
+  groups.
+- Apps' names and roles are lowercase; a missing GenericName falls back
+  to the Comment; receipts name the app as a label (`firefox opened`);
+  a launch that is felt shows the march with `opening firefox` on the
+  status row. The about page opens on the versions.
+- A name that is an identifier keeps its spelling: a file, a drive, a
+  network, a package manager.
+
+## v0.124
+
+Home's frame put right after v0.123: one column at every size, one band,
+the key row the view's, no hover, no underline, the reply on a status
+row above the rule, and Apps drawn with the rows the dialog has.
+
+- Every label the dialog writes is lowercase: the home's ten places
+  (v0.123 lowercased apps and files alone), Settings' rows and their
+  purposes, a section's name. A supplied name keeps its spelling: an
+  app's, a window's title, Wi-Fi, Bluetooth.
+- The home's places stand single spaced in three groups, a row of air
+  before settings and before power. A place's purpose is muted; what
+  it holds now (the windows open, the notes, the next reminder) is in
+  the text color, and the lit row's name is in the accent.
+- One frame width per view, in the middle of the window: 60 cells for
+  home, apps, help, about and the conversation, up to 120 for a list
+  with columns. The header, the prompt, the keys, the list, the status
+  row and the footer share it. Full screen and both snaps no longer
+  draw a 60 cell list inside a 120 cell frame.
+- The lit row's band is the list column, its first cell to the list's
+  end, the same for every row whatever the window's size.
+- The key row is the view's: the same words whatever row is lit or
+  typed, so nothing changes under a moving pointer. Esc is close at
+  home and back everywhere else, Enter is open in a list, and the keys
+  a view's rows take (actions, preview, change, month) stand whichever
+  row is lit. The spinner left the ask label: the march is the
+  header's alone.
+- A key chip is a helper, never a control: never lit, never in focus,
+  and Tab never stops on it. A click on it still sends the key, and the
+  pointer's shape alone says so. The pointer resting on the window
+  changes nothing drawn: no hover on a row, a chip or a control, and it
+  never moves the selection.
+- Nothing is underlined. A footer control in focus wears the band.
+- The reply row moved from between the keys and the list to the status
+  row, the last row above the rule: a receipt, a refusal, the note of
+  the row the words are for, and Undo live there and nowhere else. The
+  list starts under the keys at every width, and nothing is written
+  among its rows.
+- Apps is drawn with the dialog's own rows. An app is a row under its
+  category's heading, its name as supplied, its role muted; Enter opens
+  it, Right its details. The toolbar is gone: category (a choice with
+  its arrow), hidden apps (a list of their own), categories and refresh
+  stand at the end of the list. An app's details are its facts, open,
+  technical details behind an arrow, and its preferences: hide this app
+  (a switch), category and launch (choices whose list checks the one in
+  use). Every change applies at once with Undo on the status row: no
+  draft, no save, no cancel and no question before you leave. A
+  category's rename and delete and a mapping's change apply the same
+  way; a new category or mapping is typed in the prompt, Enter saves it
+  and Esc lets it go.
+
+## v0.123.1
+
+A patch, the owner's pick of 2026-11-03 (#217): what a failed or
+unattended package install leaves behind, on every family.
+
+- A failed install stops `spark-shell on` on Debian, Ubuntu, Void, Fedora
+  and openSUSE as it does on Arch, and each now has a test. The notes of
+  v0.122.1 said Arch alone: the stop was always on the shared path.
+- With no terminal, `spark-shell on` no longer reaches pacman's question
+  before its upgrade. It says what is left to install and goes on, as
+  update must, since the links and renders need no root.
+- With nobody to type a password or to answer pacman, `on desktop` and
+  `on login` stop as a failed install does, so DESKTOP=sway and LOGIN=yes
+  are saved only once the packages are in. Before, they were saved
+  anyway.
+- The retry hint has one space, and on Arch it no longer sends you back
+  to the upgrade that just failed.
+- The README says what the allowed apps limit: layouts and spark. Home's
+  Apps shows every installed app.
+- Going back to home no longer reads the apps provider's rows again,
+  which nothing there uses.
+
+## v0.123
+
+Apps is a place in home, and the bar gets a review: where it sits,
+one rule of color for every block, a flag for the notifications nobody
+looked at, its own text size, and the tray off (#213, #216).
+
+- Apps is a place in home. It lists the applications installed on the
+  machine, read from their desktop entries, in one category each, and
+  finds one by its name or its words. Enter or a click opens the lit
+  app; Right or Space opens its Details: the version, the package, the
+  launcher and the windows it has open, read when asked. An app can be
+  hidden and shown again, and the categories and their mappings are
+  yours to edit. The preferences live in
+  `~/.config/spark-shell/apps.json`, keyed by the desktop entry, so a
+  package update keeps them. No system launcher is changed.
+- An app opens the way its desktop entry says. Focus existing goes to
+  the app's newest window on sway, or opens the app when it has none,
+  and New window is offered only where the entry declares one. The
+  reply says whether a window was seen, or only asked for.
+- Apps and Details share home's frame in full screen and in both snaps,
+  down to 36 by 20 cells. Unsaved preferences ask Save, Discard or Keep
+  editing before you leave. A resize no longer asks the terminal where
+  the cursor is, so it redraws without a key.
+- Home steps aside for the app it opened, a slow one too once its window
+  takes the focus, and Super+Space brings it back as it was, on the
+  workspace you are on. A home that filled the screen comes back at its
+  floating size.
+- The bar sits at the top or the bottom. `spark-shell bar bottom`, the
+  dialog's bar section or BAR_POSITION moves it, the notifications move
+  to the corner by it, and `bar on` brings a hidden bar back where it
+  was.
+- One rule of color for every block. The accent is on and connected,
+  muted is idle, off or muted, red is an alarm. Before, only Bluetooth
+  held to it: the wire, Wi-Fi, sound out, the mic and the brightness
+  drew their signs muted whatever their state. The words take the same
+  colors.
+- A flag and a count show the notifications nobody looked at, up to
+  9+, or `new 3` in words. Looking at one takes it off the count. A
+  reminder due, which wore the flag, now wears an hourglass, on the bar
+  and on its card, so no sign means two things.
+- The bar has its own text size. BAR_TEXT=auto is the text size on a
+  screen of 1080 rows or fewer and larger on a taller one, 15% on 1440
+  rows and 41% on 2160; a size of your own goes from 6 to 40.
+  `spark-shell bar text` and the dialog set it.
+- The tray is off by default, so an app's own icon no longer breaks the
+  bar's look. The apps run the same. An install that shows the tray
+  today loses it at its next render (`spark-shell on` or an update), and
+  an app closed to the tray comes back by opening it again from
+  Super+Space. `spark-shell bar tray on` puts the icons back at the
+  bar's end.
+
 ## v0.122.1
 
 A patch, the owner's pick of 2026-11-03 (#214): on Arch, setup no

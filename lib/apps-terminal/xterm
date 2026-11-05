@@ -1,0 +1,8 @@
+#!/bin/sh
+# Private GIO fallback for spark-shell's foot desktop, never installed on PATH.
+# GIO already expanded the desktop entry into argv. No command is parsed here.
+[ "${1:-}" = -e ] || exit 2
+shift
+PATH=${PATH#*:}
+export PATH
+exec foot --app-id="${SPARK_APPS_TERMINAL_ID:-foot}" -- "$@"

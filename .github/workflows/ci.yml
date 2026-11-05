@@ -69,7 +69,7 @@ jobs:
           if grep -rnE '#[0-9a-fA-F]{6}' templates; then
             echo "a hex color is in a template"; exit 1; fi
       - name: shellcheck
-        run: shellcheck -S warning spark-shell tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/player_build.sh tests/desktop_proof.sh tests/wifi_proof.sh tests/greetd_upgrade_proof.sh tests/dhcpcd_proof.sh tests/gate.sh .githooks/pre-push .claude/hooks/session-start.sh
+        run: shellcheck -S warning spark-shell lib/apps-terminal/xterm tests/shell_test.sh tests/dialog_build.sh tests/dialog_sbom.sh tests/player_build.sh tests/desktop_proof.sh tests/wifi_proof.sh tests/greetd_upgrade_proof.sh tests/dhcpcd_proof.sh tests/gate.sh .githooks/pre-push .claude/hooks/session-start.sh
       - name: zizmor over .github/workflows
         # the workflows are code too: zizmor (pinned, in a venv of its own)
         # reads every file under .github/workflows; medium and above fail.
@@ -90,6 +90,7 @@ jobs:
       - name: the suite in a throwaway HOME
         run: |
           timeout --foreground 780 sh tests/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          python3 tests/apps_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
       - name: the idle screen's savers
@@ -124,6 +125,8 @@ jobs:
       - name: the suite in a throwaway HOME
         run: |
           timeout --foreground 780 sh tests/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   ubuntu:
@@ -149,6 +152,8 @@ jobs:
       - name: the suite in a throwaway HOME
         run: |
           timeout --foreground 780 sh tests/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   arch:
@@ -167,6 +172,8 @@ jobs:
       - name: the suite in a throwaway HOME
         run: |
           timeout --foreground 900 sh tests/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 15 minutes, before the job's 20, so the parts say where they are
+          python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   void:
@@ -201,6 +208,8 @@ jobs:
       - name: the suite in a throwaway HOME
         run: |
           timeout --foreground 780 sh tests/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   fedora:
@@ -220,6 +229,8 @@ jobs:
       - name: the suite in a throwaway HOME
         run: |
           timeout --foreground 780 sh tests/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   opensuse:
@@ -241,6 +252,8 @@ jobs:
       - name: the suite in a throwaway HOME
         run: |
           timeout --foreground 780 sh tests/shell_test.sh --parallel   # only the suite told to stop, so its parts still run when it lists them; cut short at 13 minutes, before the job's 15, so a hang says where it is (#172)
+          python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
   desktop:
@@ -355,6 +368,8 @@ jobs:
       - name: the suite in a throwaway HOME (Apple's sh)
         run: |
           sh tests/shell_test.sh --parallel
+          python3 tests/apps_test.py
+          python3 -I tests/install_test.py
           python3 tests/bt_agent_test.py
           python3 tests/provider_acceptance.py
       - name: the Terminal.app helper, built and never applied
