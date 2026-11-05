@@ -394,7 +394,10 @@ Right on a row opens a page of its own, a menu: its rows act on one
 click. The header names the row. The row's actions come first, then
 the folder's under a heading, so a new folder is in reach from any row
 of a folder of thousands. `check` carries its key as a chip beside it,
-the one key chip on a row; it reads `uncheck` on a checked row.
+the one key chip on a row. The rows stand in the provider's order.
+Typing narrows the page to the rows the words name, as typing
+searches every list, the best match lit so Enter acts on it; words
+that name no row leave `no action by these words`, muted.
 
       < back           files . notes.md                       x
 
@@ -407,8 +410,8 @@ the one key chip on a row; it reads `uncheck` on a checked row.
         preview
         attach to the next request
         rename
-        copy to a folder
         move to a folder
+        copy to a folder
         trash
         check                                        Insert
 
@@ -423,8 +426,10 @@ the one key chip on a row; it reads `uncheck` on a checked row.
 
       back  Esc
 
-A folder's row has open, rename, copy, move, trash and check. `..` and
-the folder's own row open the folder's actions alone. With checks
+A folder's row has open, rename, move, copy, trash and check; a file's
+has `reveal in the system file manager` after attach where one is
+configured. `..` and the folder's own row open the folder's actions
+alone. With checks
 standing the page is the checked set's: the header reads `files . 2
 checked`, the rows copy, move, trash and `uncheck all`, then the
 folder's. `open in the system file manager` stands only where one is
@@ -448,7 +453,9 @@ panes as they were. Opening a folder, going back, typing and checking
 act in the active pane alone.
 
 At 60 cells each pane is 30: the name cut in its middle, its size or
-its count. At 120 each pane is 60, the list drawn above. Below 60 cells
+its count, the size column lined up after the widest name as the list
+lines its columns up, and the key bar's `pane  Ctrl+Tab` wrapped whole
+to the bar's second line. At 120 each pane is 60, the list drawn above. Below 60 cells
 the active pane alone is drawn and the other waits, nothing said;
 `two panes` asked in such a window is refused: `two panes need a window
 60 cells wide`.
@@ -549,7 +556,9 @@ Rename, new folder and new text file take their words in the prompt,
 as apps' forms do: the placeholder says what to type (`the new name`,
 `a name for the folder`, `a name for the text file`), the key bar says
 `let go  Esc   save  Enter`, Enter saves and Esc lets it go. Rename
-starts with the name as it is, so a letter can be changed.
+starts with the name as it is, so a letter can be changed. The header
+names the form: `files . rename`, `files . new folder`, `files . new
+text file`.
 
 ### Not in v0
 

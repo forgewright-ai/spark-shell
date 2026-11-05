@@ -173,14 +173,25 @@ def reply_stands(lines):
 
 
 def clear_reply(s):
-    """A receipt or a refusal stands until Esc or the next action (dialog/DESIGN.md, the status row): one Esc
-    clears it and goes nowhere."""
+    """A receipt or a refusal stands until Esc or the next action (dialog/DESIGN.md, the status row). Esc clears
+    it and goes back a level in the same press (dialog/tests/host.rs), so the proof clears it by the next action
+    that leaves the list where it is: the lit row's actions opened with Right and left with Esc, which lights the
+    row again and says nothing."""
     lines = s.screen()
-    if reply_stands(lines):
-        s.key("-k", "Escape")
+    if not reply_stands(lines):
+        return
+    s.key("-k", "Right")
+    after = s.screen()
+    if after[0] == lines[0]:
+        # nothing was lit: Down lights the first row, then Right opens its actions
+        s.key("-k", "Down")
+        s.key("-k", "Right")
         after = s.screen()
-        assert after[0] == lines[0], "Esc on a standing receipt left the view: " + after[0]
-        assert not reply_stands(after), "Esc did not clear the status row: " + status(after)
+    assert after[0] != lines[0], "Right did not open the actions: " + after[0]
+    s.key("-k", "Escape")
+    after = s.screen()
+    assert after[0] == lines[0], "Esc from the actions did not come back: " + after[0]
+    assert not reply_stands(after), "the status row still holds a receipt: " + status(after)
 
 
 def lit(lines, name):

@@ -59,9 +59,51 @@ fn asks_name(call: &Call) -> bool {
     call.ask.iter().any(|a| a == "name")
 }
 
+/// The page narrowed to the rows the typed words name (dialog/DESIGN.md: typing searches the list in front
+/// of you): a row stays when its words hold every word typed, a heading only with a row under it, and with
+/// no row left the page says so, muted. A form's page keeps its title: the prompt holds the name there.
+fn narrowed(rows: Vec<Line>, query: &str) -> Vec<Line> {
+    let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+    if words.is_empty() || rows.iter().any(|r| r.title) {
+        return rows;
+    }
+    let mut out: Vec<Line> = vec![];
+    for r in rows {
+        if r.action.is_some() {
+            let label = r.label.to_lowercase();
+            if words.iter().all(|w| label.contains(w.as_str())) {
+                out.push(r);
+            }
+        } else if r.heading {
+            if out.last().is_some_and(|l| l.action.is_some()) {
+                out.push(Line::default());
+            }
+            out.push(r);
+        }
+    }
+    // a heading with nothing under it goes, with the air before it
+    while out.last().is_some_and(|l| l.heading || l.label.is_empty()) {
+        out.pop();
+    }
+    if out.is_empty() {
+        out.push(Line {
+            label: "no action by these words".into(),
+            indent: 4,
+            muted: true,
+            ..Line::default()
+        });
+    }
+    out
+}
+
 impl State {
-    /// The page as lines; `check_key` is the key that checks a row, as a chip beside check.
-    pub fn lines(&self, width: u16, check_key: &str) -> Vec<Line> {
+    /// The page as lines, narrowed to the words typed; `check_key` is the key that checks a row, as a chip
+    /// beside check.
+    pub fn lines(&self, width: u16, check_key: &str, query: &str) -> Vec<Line> {
+        narrowed(self.page_lines(width, check_key), query)
+    }
+
+    fn page_lines(&self, width: u16, check_key: &str) -> Vec<Line> {
         let mut l = Lines { rows: vec![], width };
         match &self.page {
             Page::List => {}

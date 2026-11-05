@@ -1732,7 +1732,7 @@ impl App {
         if self.files_page_open() {
             // a page of files: its lines, a menu; no ask row over it
             let key = self.cfg.keys.label(HintKey::Check).to_string();
-            return self.files.lines(self.col_w(), &key).into_iter().map(Item::Files).collect();
+            return self.files.lines(self.col_w(), &key, &self.input).into_iter().map(Item::Files).collect();
         }
         let mut out = vec![];
         if self.view == View::Conversation {
@@ -2226,6 +2226,8 @@ impl App {
     fn name_of(&self, it: &Item) -> Option<String> {
         match it {
             Item::Apps(line) if matches!(line.action, Some(crate::apps::Action::Launch(_))) => Some(line.label.clone()),
+            // a page of files is a menu typed words narrow: the row they name best is lit, so Enter acts on it
+            Item::Files(line) if line.action.is_some() => Some(line.label.clone()),
             Item::Row(p, r) => Some(self.providers[*p].rows.rows[*r].text.clone()),
             Item::Folder(i) => self.folder.as_ref().and_then(|(_, _, rows)| rows.rows.get(*i)).map(|r| r.text.clone()),
             Item::Hit(i) => self.hits.get(*i).map(|(_, r)| r.text.clone()),

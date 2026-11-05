@@ -1439,3 +1439,70 @@ fn every_size_draws_the_panes_the_checks_and_the_pages_whole() {
         let _ = screen(&app);
     }
 }
+
+/// Your home lists a recent file twice, under `home` and under `recent`, with one id (the provider's is the
+/// path's): a check on either is one check on one file, counted once, drawn on both rows, and acted on once.
+#[test]
+fn a_file_listed_under_home_and_recent_is_one_check() {
+    let mut app = files_app();
+    let h = "/data/me";
+    let twice = |group: &str, folder: Option<&str>| {
+        let mut v = file(h, "notes.md", "2 KB", "18 Oct", group, folder);
+        v["id"] = json!("files:file:bm90ZXM");
+        v
+    };
+    at(
+        &mut app,
+        HOME,
+        json!({"title": "~", "here": h, "kinds": kinds(), "rows": [
+            dir(h, "documents", "12 items", "home", DOCS),
+            twice("home", None),
+            file(h, "todo.txt", "1 KB", "2025", "home", None),
+            twice("recent", Some("~")),
+            summary("this folder \u{b7} 1 folder \u{b7} 2 files \u{b7} 3 KB", h)
+        ], "short": []}),
+    );
+    light_row(&mut app, "notes.md");
+    app.hint_key(HintKey::Check);
+    assert_eq!(app.selected_line().as_deref(), Some("1 checked \u{b7} 2 KB"), "one file, once");
+    let rows = screen(&app);
+    assert_eq!(
+        rows.iter().filter(|r| r.contains("\u{2713} notes.md")).count(),
+        2,
+        "the check on both rows of the one file"
+    );
+    app.right();
+    let Page::Actions(a) = &app.files.page else { panic!("{:?}", app.files.page) };
+    assert_eq!((a.title.as_str(), a.checked.len()), ("1 checked", 1), "the checked set holds it once");
+}
+
+/// Typing on the actions page narrows it to the rows the words name, as typing searches every list: the best
+/// match is lit, Enter acts on it and the list's own words come back; a heading stays only with a row under
+/// it, and words that name no row say so.
+#[test]
+fn typing_narrows_the_actions_page_and_enter_acts_on_the_row_the_words_name() {
+    let mut app = files_app();
+    app.right();
+    assert!(matches!(app.files.page, Page::Actions(_)));
+    for c in "two".chars() {
+        app.typed(c);
+    }
+    assert_eq!(labels(&app), vec!["this folder", "two panes"], "the heading and the row the words name");
+    assert_eq!(lit(&app).as_deref(), Some("two panes"), "lit by the words");
+    for c in " panes".chars() {
+        app.typed(c);
+    }
+    assert_eq!(lit(&app).as_deref(), Some("two panes"));
+    app.enter();
+    assert!(app.files.other.is_some(), "Enter acted on the row");
+    assert!(matches!(app.files.page, Page::List));
+    assert!(app.input.is_empty(), "the words were the page's, not the folder's");
+    app.right();
+    for c in "zzz".chars() {
+        app.typed(c);
+    }
+    assert_eq!(labels(&app), vec!["no action by these words"]);
+    assert!(!app.in_list, "nothing lit: Enter is the prompt's, which says why");
+    app.escape();
+    assert!(app.input.is_empty() && matches!(app.files.page, Page::Actions(_)), "Esc clears the words first");
+}

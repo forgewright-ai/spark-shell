@@ -1145,7 +1145,7 @@ its first and its last row.
   root beside your home. Every folder ends with one row for itself,
   `this folder` with what it holds and its size, muted, a summary;
   Enter or Right on it opens the folder's actions. A folder of
-  thousands lists about a thousand at a time: a row, `the next page`,
+  thousands lists a thousand at a time: a row after them, `the next page`,
   says how many more there are and opens them. A click on a file or a
   folder selects it, and the status row gives the line the narrow
   columns cannot: its name, its kind, its size, the date with its time,
@@ -1156,11 +1156,13 @@ its first and its last row.
   end and its type kept. Enter on a text file opens it in your editor,
   in a terminal window; any other file opens with the app for its kind.
   Right opens the lit row's actions as a page of its own, a menu whose
-  rows act on one click and whose header names the row: open, preview,
-  attach to the next request, rename, copy to a folder, move to a
-  folder, trash, and `check` with Insert as its chip, the one key chip
-  on a row (a folder's row has open, rename, copy, move, trash and
-  check); then, under `this folder`, the folder's own: `new folder`,
+  rows act on one click, which typed words narrow as they narrow every
+  list, and whose header names the row: open, preview,
+  attach to the next request, reveal in the system file manager where
+  one is configured, rename, move to a folder, copy to a folder, trash,
+  and `check` with Insert as its chip, the one key chip on a row (a
+  folder's row has open, rename, move, copy, trash and check); then,
+  under `this folder`, the folder's own: `new folder`,
   `new text file` (the text file opens in your editor), `two panes`,
   and `open in the system file manager`, for anything beyond these
   steps (permissions, archives, remote places), offered only where a

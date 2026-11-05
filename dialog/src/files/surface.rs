@@ -85,11 +85,7 @@ impl App {
             return false;
         }
         let Some((_, _, rows)) = self.folder.clone() else { return false };
-        let checked: Vec<Row> = if self.files_checks_any() {
-            rows.rows.iter().filter(|r| self.files.checked(&r.id) && checkable(r)).cloned().collect()
-        } else {
-            vec![]
-        };
+        let checked: Vec<Row> = if self.files_checks_any() { self.files_checked_rows(&rows) } else { vec![] };
         let folder = folder_actions(&rows);
         let browse = self.providers[p]
             .tools
@@ -233,17 +229,33 @@ impl App {
         true
     }
 
+    /// The checked rows of the folder on screen, each file once: your home lists a recent file under `recent`
+    /// and under `home` with one id, and a check on either is one check on one file.
+    pub(crate) fn files_checked_rows(&self, rows: &Rows) -> Vec<Row> {
+        let mut seen: Vec<&str> = vec![];
+        rows.rows
+            .iter()
+            .filter(|r| {
+                self.files.checked(&r.id) && checkable(r) && !seen.contains(&r.id.as_str()) && {
+                    seen.push(r.id.as_str());
+                    true
+                }
+            })
+            .cloned()
+            .collect()
+    }
+
     /// The status row while checks stand: `2 checked . 4.5 MB`, the checked files' sizes summed.
     pub fn files_checked_line(&self) -> Option<String> {
         if !self.files_checks_any() || self.files.page != Page::List || self.mode != Mode::Normal {
             return None;
         }
         let rows = &self.folder.as_ref()?.2;
-        let checked: Vec<&Row> = rows.rows.iter().filter(|r| self.files.checked(&r.id)).collect();
+        let checked = self.files_checked_rows(rows);
         if checked.is_empty() {
             return None;
         }
-        let size: u64 = checked.iter().map(|r| row_size(r)).sum();
+        let size: u64 = checked.iter().map(row_size).sum();
         let mut s = format!("{} checked", checked.len());
         if size > 0 {
             s.push_str(&format!("{}{}", crate::ui::SEP, size_words(size)));
@@ -525,11 +537,7 @@ impl App {
     fn files_transfer_now(&mut self, verb: Verb) {
         let Some((p, _)) = self.files_pane_view() else { return };
         let Some((_, _, rows)) = self.folder.clone() else { return };
-        let mut chosen: Vec<Row> = if self.files_checks_any() {
-            rows.rows.iter().filter(|r| self.files.checked(&r.id) && checkable(r)).cloned().collect()
-        } else {
-            vec![]
-        };
+        let mut chosen: Vec<Row> = if self.files_checks_any() { self.files_checked_rows(&rows) } else { vec![] };
         if chosen.is_empty() {
             if let Some(Item::Folder(i)) = self.picks().get(self.sel).filter(|_| self.in_list) {
                 if let Some(r) = rows.rows.get(*i).filter(|r| checkable(r)) {

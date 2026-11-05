@@ -27,8 +27,8 @@ two panels, the status row as the mini-status under the panel.
   pane opens another folder.
 - Right opens a row's actions as a page of its own, a menu: its rows
   act on one click and the header names the row. The row's actions
-  come first (open, preview, attach to the next request, rename, copy
-  to a folder, move to a folder, trash, `check` with Insert as its
+  come first (open, preview, attach to the next request, rename, move
+  to a folder, copy to a folder, trash, `check` with Insert as its
   chip, the one key chip on a row), then the folder's under `this
   folder` (new folder, new text file, two panes, open in the system
   file manager where one is configured), so a new folder is in reach
