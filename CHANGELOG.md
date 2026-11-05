@@ -14,7 +14,7 @@
   stayed; the row keeps its selection. Words that match no row ask when
   a model answers; a control that cannot act, and a box that holds the
   commands spark planned, say why on the status row; typing takes the
-  focus from a control; leaving a view drops the plan from the box,
+  focus from a control; leaving a view drops the plan from the prompt,
   and typing over it starts clean.
 - Undo on the status row is a control, lowercase, in the controls' own
   brush, not a key's chip.
