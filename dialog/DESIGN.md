@@ -719,7 +719,8 @@ manager, empty the trash; any spark-planned destructive step), the
 dialog asks on a page of its own, never a message box and never typed
 words: the verb as the heading, one note in parentheses (the last
 sentence of the tool's description, lowercase), two menu rows, the verb
-and `keep working`. Enter or a click on the verb acts; `keep working`,
+and `keep working`, which is lit first (v0.127.1), so Enter again keeps
+and the verb takes Up or a click. Enter or a click on the verb acts; `keep working`,
 Esc and every back door keep; typed words are refused. The header says
 the verb; the key bar `keep  Esc`. A spark-planned step's heading is
 its line.
@@ -734,8 +735,8 @@ its line.
       shutdown
         (everything open closes and the machine turns off)
 
-        shutdown                                               <- selection bar
-        keep working
+        shutdown
+        keep working                                           <- selection bar
 
 
 

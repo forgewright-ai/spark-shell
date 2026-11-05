@@ -2870,6 +2870,10 @@ impl App {
             }
             if self.sel + 1 < self.picks().len() {
                 self.sel += 1;
+            } else {
+                // past the last row the list still scrolls, a line at a time, so what stands under it (help's note)
+                // comes into view (dialog/DESIGN.md, v0.127.1)
+                self.scroll = crate::ui::body_scroll(self) + 1;
             }
             return;
         }
@@ -3270,7 +3274,11 @@ impl App {
         if self.in_list && !self.preview_key() {
             self.keep_lit = None;
             let last = self.picks().len().saturating_sub(1);
-            self.sel = if d < 0 { self.sel.saturating_sub(step) } else { (self.sel + step).min(last) };
+            if d > 0 && self.sel == last {
+                self.scroll = crate::ui::body_scroll(self) + step; // past the last row: the lines under it
+            } else {
+                self.sel = if d < 0 { self.sel.saturating_sub(step) } else { (self.sel + step).min(last) };
+            }
             return;
         }
         self.scroll = if d < 0 { self.scroll.saturating_sub(step) } else { self.scroll + step };
@@ -4756,9 +4764,10 @@ impl App {
         if self.risky(&tool) {
             self.stash_draft();
             self.mode = Mode::Confirm(step);
-            // the question's page, the verb's row lit: Enter again is the yes
+            // the question's page, keep working lit first (dialog/DESIGN.md, v0.127.1): Enter again keeps, and the
+            // verb takes Up or a click, so a bounce on Enter never shuts the machine down
             self.in_list = true;
-            self.sel = 0;
+            self.sel = 1;
             self.reply = None;
             return;
         }

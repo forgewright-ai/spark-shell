@@ -471,7 +471,7 @@ elif sys.argv[1] == 'steps':
                 text = "\n".join(screen())
                 assert "keep working" in text and "every window closes" in text, "logout asks on the question page: " + text
                 capture("question-void")
-                key("-k", "Down", "-k", "Return")
+                key("-k", "Return")   # keep working is lit first: Enter keeps
                 time.sleep(1)
                 assert "keep working" not in "\n".join(screen()) and windows(), "keep working keeps the session and comes back"
                 checks.append("Power is five verbs; logout asks on a question page and keep working comes back")

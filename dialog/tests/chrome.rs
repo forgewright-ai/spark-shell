@@ -1058,8 +1058,9 @@ fn a_question_is_a_page_of_choices_and_the_typed_yes_is_gone() {
     let keys = text(&buf, keys_y(40));
     assert!(keys.contains("keep") && keys.contains("Esc") && !keys.contains("yes"), "{:?}", keys);
     assert_eq!(drawn.picks.len(), 2, "two rows to pick");
-    assert!(app.in_list && app.sel == 0, "the verb's row is lit");
-    assert_eq!(buf[(4, drawn.picks[0].0)].bg, pal.lit, "the verb's row wears the bar");
+    assert!(app.in_list && app.sel == 1, "keep working is lit first (dialog/DESIGN.md, v0.127.1)");
+    assert_eq!(buf[(4, drawn.picks[1].0)].bg, pal.lit, "keep working wears the bar");
+    assert_ne!(buf[(4, drawn.picks[0].0)].bg, pal.lit, "the verb's row does not");
     // typing is refused: the question takes Enter on a row
     app.text_key('y');
     assert!(app.input.is_empty());
