@@ -23,8 +23,9 @@ pub enum HintKey {
     Down,
     /// A character a key chip stands for (a preview's + - < >), typed as the key is.
     Char(char),
-    /// Files: the lit row's check (Insert), and the other pane made active (Ctrl+Tab).
+    /// Files: the lit row's check (Space), its preview (P), and the other pane made active (Ctrl+Tab).
     Check,
+    Preview,
     Pane,
 }
 
@@ -2613,14 +2614,63 @@ impl App {
                 self.flip_or_keep(&it); // a switch: Space flips it, as Enter and a click do (#183)
                 return;
             }
-            if self.open_preview() {
-                return;
+            if self.files_pane_view().is_some() && !self.files.form() {
+                // in a files folder Space checks the lit row while it is the check key (v0.125.1, #224); P previews.
+                // A form's name takes the space
+                if self.space_checks() {
+                    return self.files_check();
+                }
+            } else if self.open_preview() {
+                return; // elsewhere a lit row with a page (a section's, a search's) shows it
             }
             if self.in_list && self.input.is_empty() {
                 return; // a lit row with no page: Space is no letter of a search not begun (#196)
             }
         }
         self.text_key(c);
+    }
+
+    /// Whether Space is the check key (the default): then it checks in files, and keeps its other meanings elsewhere;
+    /// rebound (Insert), Space is a plain key.
+    fn space_checks(&self) -> bool {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        self.cfg.keys.action(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE)) == Some(HintKey::Check)
+    }
+
+    /// The check key: in a files folder, or on a files page, the check (Space by default); elsewhere the key does
+    /// what Space does (a switch flips, a section's file previews, a space is typed) while it is Space, and nothing
+    /// once it is rebound.
+    fn check_key(&mut self) {
+        if self.files_pane_view().is_some() {
+            if !self.files.form() {
+                return self.files_check();
+            }
+            // a form's name takes a space; another check key has nothing to check there
+            if !self.space_checks() {
+                return self.refuse("nothing to check here: Esc goes back to the list");
+            }
+        } else if !self.space_checks() {
+            return;
+        }
+        self.typed(' ');
+    }
+
+    /// The preview key, P: while the list holds the keys in a files folder (nothing typed, or the keys handed to the
+    /// list) and the lit row has a page, its preview; anywhere else the letter p, typed.
+    fn preview_key_pressed(&mut self) {
+        let list_keys = self.in_list && (self.input.is_empty() || self.list_keys);
+        if self.files_pane_view().is_some()
+            && self.files.page == crate::files::Page::List
+            && self.mode == Mode::Normal
+            && self.chip_focus.is_none()
+            && self.pending.is_none()
+            && list_keys
+            && self.lit_has_page()
+            && self.open_preview()
+        {
+            return;
+        }
+        self.text_key('p');
     }
 
     /// A printable key not bound to an action. Remapping removes its old shortcut.
@@ -4913,7 +4963,8 @@ impl App {
             HintKey::Up => self.up(),
             HintKey::Down => self.down(),
             HintKey::Char(c) => self.typed(c),
-            HintKey::Check => self.files_check(),
+            HintKey::Check => self.check_key(),
+            HintKey::Preview => self.preview_key_pressed(),
             HintKey::Pane => {
                 self.files_pane();
             }
@@ -5074,7 +5125,8 @@ impl App {
                     add(&mut v, "Actions", "\u{2192}");
                 }
                 if rows.iter().any(|r| r.page.is_some()) {
-                    add(&mut v, "Preview", "Space");
+                    // in a files folder the preview is P, the preview binding's (v0.125.1); elsewhere Space shows a row's page
+                    add(&mut v, "Preview", if self.files_pane_view().is_some() { "P" } else { "Space" });
                 }
                 if self.two_panes() {
                     add(&mut v, "Pane", "Ctrl+Tab");

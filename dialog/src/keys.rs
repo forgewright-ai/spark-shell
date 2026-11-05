@@ -22,8 +22,8 @@ const DEFAULTS: &[(&str, HintKey, &str)] = &[
     ("backspace", HintKey::Backspace, "Backspace"),
     ("delete", HintKey::Delete, "Delete"),
     ("quit", HintKey::Quit, "Ctrl+c"),
-    ("preview", HintKey::Char(' '), "Space"),
-    ("check", HintKey::Check, "Insert"),
+    ("preview", HintKey::Preview, "P"),
+    ("check", HintKey::Check, "Space"),
     ("pane", HintKey::Pane, "Ctrl+Tab"),
     ("zoom-in", HintKey::Char('+'), "Plus"),
     ("zoom-out", HintKey::Char('-'), "-"),
@@ -75,6 +75,8 @@ fn parse(text: &str) -> Result<KeyEvent, String> {
             }
             KeyCode::F(n)
         }
+        // a letter binds its key whatever its case (P is the p key); a shifted one is written Shift+p
+        l if l.len() == 1 && l.as_bytes()[0].is_ascii_alphabetic() => KeyCode::Char(l.as_bytes()[0].to_ascii_lowercase() as char),
         _ if key.chars().count() == 1 && !key.chars().any(char::is_control) => KeyCode::Char(key.chars().next().unwrap()),
         _ => return Err(format!("unknown key: {}", key)),
     };
@@ -154,7 +156,8 @@ impl Bindings {
             .iter()
             .find(|(_, a, ..)| *a == action)
             .map(|(_, _, label, _)| label.as_str())
-            .unwrap_or("")
+            // the player's Space (play, pause) is no binding's: its chip keeps its word
+            .unwrap_or(if action == HintKey::Char(' ') { "Space" } else { "" })
         {
             "Up" => "\u{2191}",
             "Down" => "\u{2193}",

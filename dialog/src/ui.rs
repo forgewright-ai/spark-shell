@@ -723,7 +723,7 @@ fn key_of(k: &str) -> Option<HintKey> {
         "+" | "-" | "0" | "<" | ">" => HintKey::Char(k.chars().next()?),
         // Space previews the lit file, its chip as clickable as the others (#150)
         "Space" => HintKey::Char(' '),
-        "Insert" => HintKey::Check,
+        "P" => HintKey::Preview,
         "Ctrl+Tab" => HintKey::Pane,
         _ => return None,
     })
@@ -1031,7 +1031,7 @@ fn item_line(app: &App, pen: &mut Pen, it: &Item, y: u16, lit: bool, cols: Cols)
         Item::Here => {
             // the row that lands a step in the folder shown (#112): it opens nothing, it does
             let what = app.picking.as_ref().map(|pk| pk.what.clone()).unwrap_or_default();
-            pen.put(4, y, &what, pal.fg, false, lit);
+            pen.put(4, y, &cut_words(&what, pen.end(y).saturating_sub(6) as usize), pal.fg, false, lit);
         }
         Item::Ask => {
             // asking is a row (dialog/DESIGN.md): the words echoed muted beside it, so you see what will be sent
@@ -1754,10 +1754,11 @@ fn widths_of<'a>(rows: impl Iterator<Item = &'a crate::model::Row>, w: u16, narr
 }
 
 /// A name's cells at most: in a narrow pane what is left beside the size or the count (the indent, two cells
-/// between them, a cell of air at the right), so a name is cut only when its row overflows; else name_cap.
+/// between them, the two cells of air every row keeps at its column's edge, #223), so a name is cut only when its
+/// row would overflow; else name_cap.
 fn name_cap_at(w: u16, narrow: bool, first: usize) -> usize {
     if narrow {
-        (w as usize).saturating_sub(7 + first).max(4)
+        (w as usize).saturating_sub(8 + first).max(4)
     } else {
         name_cap(w)
     }
@@ -1816,16 +1817,22 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
     // a file's or a folder's name cut in its middle, its type kept (#140); other rows' at their end; a wide list's whole
     let columns = row_columns_at(row, pen.w, pen.narrow);
     let cap = name_cap_at(pen.w, pen.narrow, widths.get(1).copied().unwrap_or(0));
-    let name = if columns.is_empty() && pen.narrow && row.id.starts_with("files:") {
-        // the folder's own row in a narrow pane: cut with an ellipsis, as the mock has it
-        let room = pen.end(y).saturating_sub(tx + 4) as usize;
+    // a row's words end two cells before the column's edge (#223): the window's air is the dialog's own since
+    // v0.124.5, so the last column is cut there, with its ellipsis, and the bar alone reaches the edge
+    let edge = pen.end(y).saturating_sub(2);
+    let name = if columns.is_empty() {
+        // a row that is its words alone (the folder's own row): cut with an ellipsis where it would overflow; in a
+        // narrow pane four cells before the pane's edge, as the mock has it
+        let room = if pen.narrow && row.id.starts_with("files:") {
+            pen.end(y).saturating_sub(tx + 4)
+        } else {
+            edge.saturating_sub(tx)
+        } as usize;
         if cells(&row.text) > room {
             format!("{}\u{2026}", cut(&row.text, room.saturating_sub(1)))
         } else {
             row.text.clone()
         }
-    } else if columns.is_empty() {
-        row.text.clone()
     } else if row.id.starts_with("files:") {
         crate::scrub::cut_middle(&row.text, cap)
     } else {
@@ -1890,7 +1897,7 @@ fn row_line(pen: &mut Pen, row: &crate::model::Row, y: u16, lit: bool, cols: Col
             } else {
                 x + 3
             };
-            let room = pen.end(y).saturating_sub(at) as usize;
+            let room = edge.saturating_sub(at) as usize;
             // a number cut is no number: whole or not drawn at all (nor what follows it); words are cut at a word
             if numeric && cw as usize > room {
                 break;

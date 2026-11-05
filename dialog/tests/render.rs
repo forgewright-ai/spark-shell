@@ -1186,10 +1186,10 @@ fn space_opens_the_lit_files_preview_and_esc_lights_it_again() {
     app.folder = Some((f, uri, rows));
     app.in_list = true;
     app.sel = 2;
-    app.typed(' ');
+    app.hint_key(spark_dialog::app::HintKey::Preview);
     assert_eq!(app.view, View::Preview);
     assert_eq!(app.preview.as_ref().unwrap().row().text, "notes.md");
-    assert!(app.input.is_empty(), "the space opened the preview and typed nothing");
+    assert!(app.input.is_empty(), "P opened the preview and typed nothing");
     // up and down move through the list's files
     app.down();
     assert_eq!(
@@ -1341,7 +1341,7 @@ fn a_filtered_file_shows_its_preview_after_the_down_arrow() {
     let hint = |app: &App| app.hint().iter().map(|(t, _)| t.as_str()).collect::<String>();
     let mut app = filtered();
     assert!(
-        hint(&app).contains("Preview Space"),
+        hint(&app).contains("Preview P"),
         "the way to the preview is said, the same words as always: {:?}",
         hint(&app)
     );
@@ -1349,9 +1349,9 @@ fn a_filtered_file_shows_its_preview_after_the_down_arrow() {
     assert_eq!(app.input, "invo ", "Space before Down is a space");
     let mut app = filtered();
     app.down();
-    assert!(hint(&app).contains("Preview Space"), "Down: the keys are the list's: {:?}", hint(&app));
-    app.typed(' ');
-    assert_eq!(app.view, View::Preview, "Space shows the lit file");
+    assert!(hint(&app).contains("Preview P"), "Down: the keys are the list's: {:?}", hint(&app));
+    app.hint_key(spark_dialog::app::HintKey::Preview);
+    assert_eq!(app.view, View::Preview, "P shows the lit file");
     assert!(app.input.is_empty(), "the filter's words let go, so Space plays and Esc goes back");
     assert_eq!(app.preview.as_ref().unwrap().row().text, "invoice-0412.pdf");
 }
@@ -1375,7 +1375,7 @@ fn a_long_sound_plays_the_wait_until_its_waveform_is_there() {
     assert!(all.contains("Evening sketch"), "the title stays above it");
 }
 
-/// The Space chip takes a click as the other chips do (#150).
+/// The preview's chip takes a click as the other chips do (#150): it sends P (v0.125.1).
 #[test]
 fn the_space_chip_is_a_key_a_click_takes() {
     let mut app = manager_app();
@@ -1387,8 +1387,8 @@ fn the_space_chip_is_a_key_a_click_takes() {
     let mut b = Buffer::empty(Rect::new(0, 0, 120, 40));
     let drawn = spark_dialog::ui::draw(&app, &p, CLOCK, &mut b);
     assert!(
-        drawn.keys.iter().any(|(_, _, _, k)| *k == spark_dialog::app::HintKey::Char(' ')),
-        "Space's chip is clickable: {:?}",
+        drawn.keys.iter().any(|(_, _, _, k)| *k == spark_dialog::app::HintKey::Preview),
+        "the preview chip is clickable and sends P: {:?}",
         drawn.keys
     );
 }
