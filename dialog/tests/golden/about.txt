@@ -8,7 +8,7 @@
                                                             
   spark-shell v0.90                                         
                                                             
-  dialog 0.124.4                                            
+  dialog 0.125.0                                            
                                                             
   home: local discovery and optional assistance             
                                                             
