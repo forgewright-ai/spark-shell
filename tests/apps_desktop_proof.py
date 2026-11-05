@@ -165,7 +165,8 @@ class Session:
         row = in_list[-1] if in_list else next(i for i in range(len(lines) - 1, -1, -1) if matches(lines[i]) and (not body or i >= 7))
         col = match.search(lines[row]).start() + len(label) // 2
         rect = self.window()["rect"]
-        x, y = rect["x"] + 18 + col * self.cell[0] + self.cell[0] // 2, rect["y"] + 18 + row * self.cell[1] + self.cell[1] // 2
+        # the window's first pixel is the first cell's: no air of foot's own (v0.124.5)
+        x, y = rect["x"] + col * self.cell[0] + self.cell[0] // 2, rect["y"] + row * self.cell[1] + self.cell[1] // 2
         self.pointer.click(x, y, times=2 if double else 1)
         time.sleep(.4)
 

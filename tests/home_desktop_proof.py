@@ -314,7 +314,8 @@ elif sys.argv[1] == 'steps':
                     row = next(i for i in range(len(lines) - 1, -1, -1) if label in lines[i])
                     col = lines[row].index(label) + len(label) // 2
                     rect = windows()[0]["rect"]
-                    x, y = rect["x"] + 18 + col * cell[0] + cell[0] // 2, rect["y"] + 18 + row * cell[1] + cell[1] // 2
+                    # the window's first pixel is the first cell's: no air of foot's own (v0.124.5)
+                    x, y = rect["x"] + col * cell[0] + cell[0] // 2, rect["y"] + row * cell[1] + cell[1] // 2
                     pointer.click(x, y)
                     time.sleep(.5)
 
