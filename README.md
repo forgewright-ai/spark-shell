@@ -1241,12 +1241,13 @@ its first and its last row.
   its rows, and each name there opens a page whose header says so
   (`notes.md is in ~/pictures already`), with `skip`, `keep both` (the
   copy is named `notes 2.md`) and `replace` (the one there goes to the
-  trash, and the receipt says so); while more conflicts remain, `skip
-  all`, `keep both for all` and `replace all` stand under them. Esc
-  lets the operation go. A conflict the rows could not show (a file
-  past the first page of a large folder, a hidden one) is refused by
-  the provider with its reason, and the operation goes on with the
-  rest.
+  trash, and the receipt says so; `undo` takes the move or the copy back
+  and leaves the replaced one in the trash); while more conflicts
+  remain, `skip all`, `keep both for all` and `replace all` stand under
+  them. Esc lets the operation go. A conflict the rows could not show
+  (a file past the first page of a large folder, a hidden one) is
+  refused by the provider with its reason, and the operation goes on
+  with the rest.
 
   Rename, `new folder` and `new text file` take their words in the
   prompt, as apps' forms do: the placeholder says what to type (`the

@@ -490,11 +490,11 @@ def main(binary, destination):
         light(s, "voice.wav")
         s.key("-k", "space")
         if shutil.which("mpv"):
-            until(lambda: re.search(r"\bplay\b", keys(s.screen())), "the player's keys")
-            s.checks.append("The sound previews with the player's keys, play on Space; nothing is played")
+            until(lambda: re.search(r"\bplay\b", keys(s.screen())), "the sound's keys")
+            s.checks.append("The sound previews with the sound's keys, play on Space; nothing is played")
         else:
             until(lambda: "no preview: mpv is not installed" in s.text(), "the sound's refusal")
-            s.checks.append("No mpv on this machine: the sound says no preview: mpv is not installed; the player is not proved here")
+            s.checks.append("No mpv on this machine: the sound says no preview: mpv is not installed; the play is not proved here")
         s.key("-k", "Escape")
         until(lambda: header_has(s.screen()[0], "~/documents") and lit(s.screen(), "voice.wav"), "back from the sound")
         s.checks.append("Space previews the lit file in the whole window: the Markdown's first line, the picture's 20 x 40 on the facts row; "

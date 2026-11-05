@@ -371,19 +371,20 @@ A check keeps to its row by the row's own identity through a filter and
 a refresh, and the pane's checks go when it opens another folder.
 
       home
-        documents               12 items
-      v notes.md                    2 KB   4 Nov
-        todo.txt                    1 KB   2025              <- selection bar
-      v report.pdf                4.5 MB   today
+          documents               12 items
+        v notes.md                    2 KB   4 Nov
+          todo.txt                    1 KB   2025            <- selection bar
+        v report.pdf                4.5 MB   today
 
-        this folder . 2 folders . 3 files . 4.5 MB
+          this folder . 2 folders . 3 files . 4.5 MB
 
       2 checked . 4.5 MB
       --------------------------------------------------------
 
       back  Esc    actions  ->    preview  Space
 
-`v` stands for the check sign. With checks standing, Right and the
+`v` stands for the check sign, at the row column, the words after it
+at the sign's right. With checks standing, Right and the
 actions chip open the actions of the checked set, whichever row is
 lit, and copy, move and trash act on every checked file in the list's
 order.
@@ -403,7 +404,7 @@ that name no row leave `no action by these words`, muted.
 
       > search or ask
 
-        attach   gemma4-e4b . local v   talk
+        attach   gemma4-e4b   talk
       ---------------------------<*>--------------------------
 
         open                                                  <- selection bar
@@ -464,7 +465,7 @@ the active pane alone is drawn and the other waits, nothing said;
 
       > search or ask
 
-        attach   gemma4-e4b . local v   talk
+        attach   gemma4-e4b   talk
       ---------------------------<*>--------------------------
 
       ~/documents                   ~/pictures
@@ -526,7 +527,7 @@ message box; the second column says what the choice does, muted:
 
       > search or ask
 
-        attach   gemma4-e4b . local v   talk
+        attach   gemma4-e4b   talk
       ---------------------------<*>--------------------------
 
         skip                                                  <- selection bar

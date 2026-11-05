@@ -8543,6 +8543,7 @@ files_trash_rows() {   # -> the rows of your home's trash, the newest first: eac
     _ftw=empty; [ "$_ftn" -eq 0 ] || { _ftw="item"; [ "$_ftn" = 1 ] || _ftw="items"; _ftw="$(files_num "$_ftn") $_ftw $PANEL_SEP $(files_size "$_ftb")"; }
     printf 'files:here\037opens\037the trash %s %s\037\037\037\037\037\037\037trash-here\037\n' "$PANEL_SEP" "$_ftw"
 }
+files_unreplace() { [ -z "${_fend:-}" ] || files_restore "$_fone" >/dev/null 2>&1 || :; }   # a replace whose move or copy failed: the one there comes back from the trash, so nothing is half done
 files_result() {   # files_result ID RECEIPT [UNDO-TOOL UNDO-ARGS-JSON] [open=URI] -- a step's result: the receipt, its undo, the uri to open
     _fr=$(jq -cn --arg r "$2" '{receipt: $r}')
     [ -z "${3:-}" ] || _fr=$(printf '%s' "$_fr" | jq -c --arg n "$3" --argjson a "$4" '. + {undo: {name: $n, arguments: $a}}')
@@ -8668,11 +8669,11 @@ provide_files_call() {   # provide_files_call ID TOOL ARGUMENTS -- a step over a
             _fn=$(files_new_ok "$_fd" "$_fnn") || { provide_refuse "$1" "files: $_fn"; return 0; }
             _fas=''; [ "$_fnn" = "${_ff##*/}" ] || _fas=" as $(printf '%s' "$_fnn" | scrub_text)"   # the receipt names the name it took when that is not its own
             if [ "$2" = files_move ]; then
-                mv "$_ff" "$_fn" 2>/dev/null || { provide_refuse "$1" "files: could not move $_fname"; return 0; }
+                mv "$_ff" "$_fn" 2>/dev/null || { files_unreplace; provide_refuse "$1" "files: could not move $_fname"; return 0; }
                 _fub=$(jq -cn --arg p "$_fn" --arg t "${_ff%/*}" --arg n "${_ff##*/}" --arg k "$_fnn" '{path: $p, to: $t} + (if $n == $k then {} else {name: $n} end)')   # back, under its old name
                 files_result "$1" "$_fname moved to $(files_home "$_fd")$_fas$_fend" files_move "$_fub"
             else
-                cp -Rp "$_ff" "$_fn" 2>/dev/null || { rm -rf "$_fn"; provide_refuse "$1" "files: could not copy $_fname"; return 0; }
+                cp -Rp "$_ff" "$_fn" 2>/dev/null || { rm -rf "$_fn"; files_unreplace; provide_refuse "$1" "files: could not copy $_fname"; return 0; }
                 files_result "$1" "$_fname copied to $(files_home "$_fd")$_fas$_fend" files_trash "$(jq -cn --arg p "$_fn" '{path: $p}')"
             fi ;;
         files_trash)
