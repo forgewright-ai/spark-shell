@@ -6350,19 +6350,20 @@ win_facts() {   # -> one JSON object from one read of the tree: .windows (each w
         | ($all | map(.screen) | unique | length) as $many
         | ($all | map(select(any(.. | objects; .focused? == true))) | first) as $here
         | (if $here == null then null else ($here | front | .id) end) as $in_front
-        | def heading: named as $m | "workspace \(.num)" + (if $m.mark != "" then " " + $m.mark else "" end)
-            + (if $m.label != "" then " \($sep) " + $m.label else "" end)
+        | def place: if (.num // 0) < 0 then .name else (.num | tostring) end;   # a name and no number: sway says -1
+        def heading: named as $m | "workspace " + place + (if (.num // 0) < 0 then "" else (if $m.mark != "" then " " + $m.mark else "" end)
+            + (if $m.label != "" then " \($sep) " + $m.label else "" end) end)
             + (if .id == $here.id then " \($sep) this one" else "" end)
             + (if $many > 1 then " \($sep) " + .screen else "" end) | gsub("[|]"; "/");
         def windows: [leaves | select(.pid? != null and (.app_id // .window_properties.class // "") != "" and .app_id != $me)];
-        ($all | sort_by(.num)) as $sorted
-        | {windows: [$sorted[] | heading as $g | .num as $w | windows[]
+        ($all | sort_by([(.num // 0) < 0, .num])) as $sorted
+        | {windows: [$sorted[] | heading as $g | .num as $w | place as $p | windows[]
               | app as $a | ((.name // "") | gsub("\t"; " ")) as $t
-              | {label: (if $t == "" or ($t | ascii_downcase) == $a then $a else $a + ": " + $t end), id, ws: $w, group: $g,
+              | {label: (if $t == "" or ($t | ascii_downcase) == $a then $a else $a + ": " + $t end), id, ws: $w, place: $p, group: $g,
                  placed: (if .fullscreen_mode == 1 or (.id | tostring) == $aside then "full screen" elif .type == "floating_con" then "floating" else "tiled" end), floating: (.type == "floating_con"), front: (.id == $in_front)}],
            here: (if $here == null then null else {ws: $here.num, group: ($here | heading), empty: (($here | windows | length) == 0),
                  arrange: (if ($here | windows | length) == 0 then $def else ($here | arrangement) as $l | if $l == "tabbed" then "tabs" elif $l == "stacked" then "stacked" else "split" end end)} end),
-           spaces: [$sorted[] | named as $m | {num, mark: $m.mark, label: $m.label, apps: ([windows[] | app] | unique)}]}'
+           spaces: [$sorted[] | select((.num // 0) > 0) | named as $m | {num, mark: $m.mark, label: $m.label, apps: ([windows[] | app] | unique)}]}'
 }
 win_aside() { [ -z "${SPARK_SHELL_ASIDE:-}" ] || cat "$SPARK_SHELL_ASIDE" 2>/dev/null || :; }   # -> the window that stepped aside for the dialog, if one did
 win_read() { { if [ -n "${WIN_FACTS_READ:-}" ]; then cat "$TMP/win.facts"; else win_facts; fi; } | jq -r '.windows[]? | [.label, (.id | tostring), .group] | @tsv'; }   # -> LABEL<tab>ID<tab>HEADING, a window a line, the workspaces in order
@@ -6400,11 +6401,11 @@ win_capture() {   # win_capture WHAT [ID] -- the dialog steps aside, the picture
     swaymsg -- "[app_id=\"$PANEL_APP\"] move scratchpad" >/dev/null 2>&1 || :
     _wcb=''
     if [ -n "${2:-}" ]; then
-        _wcb=$(swaymsg -t get_workspaces 2>/dev/null | jq -r '.[] | select(.focused) | .num')
+        _wcb=$(swaymsg -t get_workspaces 2>/dev/null | jq -r '.[] | select(.focused) | if .num > 0 then "number \(.num)" else "\"\(.name)\"" end')
         swaymsg -- "[con_id=$2] focus" >/dev/null 2>&1 || :
     fi
     _wcr=0; _wco=$(desk_capture "$1" --wait 1 2>&1) || _wcr=$?
-    [ -z "$_wcb" ] || swaymsg -- "workspace number $_wcb" >/dev/null 2>&1 || :
+    [ -z "$_wcb" ] || swaymsg -- "workspace $_wcb" >/dev/null 2>&1 || :
     swaymsg -- "[app_id=\"$PANEL_APP\"] scratchpad show" >/dev/null 2>&1 || :
     [ "$_wcr" -eq 0 ] || { printf '%s\n' "${_wco#spark-shell *: }"; return 1; }
     _wcn=${_wco%%,*}; _wcn=${_wcn##*/}
@@ -6520,7 +6521,7 @@ panel_inverse() {   # panel_inverse SECTION ACTION [ARG] -> "ACTION ARG<tab>WORD
         theme:workspaces) printf 'workspaces %s\tthe workspaces as %s\n' "$BAR_WORKSPACES" "$BAR_WORKSPACES" ;;
         theme:motion) printf 'motion %s\tmoving wallpaper %s\n' "$WALLPAPER_MOTION" "$WALLPAPER_MOTION" ;;
         window:close|window:focus|window:capture|window:restore) ;;   # a closed window does not come back; a window in front has no inverse worth a row; a picture changes nothing
-        window:move) _n=$(win_facts | jq -r --argjson i "${_arg%% *}" '.windows[] | select(.id == $i) | .ws'); [ -z "$_n" ] || printf 'move %s to=%s\tback on workspace %s\n' "${_arg%% *}" "$_n" "$_n" ;;
+        window:move) _n=$(win_facts | jq -r --argjson i "${_arg%% *}" '.windows[] | select(.id == $i) | .ws'); [ -z "$_n" ] || [ "$_n" -lt 1 ] || printf 'move %s to=%s\tback on workspace %s\n' "${_arg%% *}" "$_n" "$_n" ;;
         window:place) _n=$(win_facts | jq -r --argjson i "${_arg%% *}" '.windows[] | select(.id == $i) | .placed | if . == "full screen" then "full" else . end'); [ -z "$_n" ] || printf 'place %s how=%s\tas it was\n' "${_arg%% *}" "$_n" ;;
         window:*) _n=$(win_now); printf 'restore %s now=%s\twindows %s\n' "${WINDOWS:-split}" "$_n" "$(win_said "$_n")" ;;
         bar:off) printf 'on\tbar shown\n' ;;
@@ -7368,14 +7369,14 @@ provide_rows_window() {   # stdin: the window section's rows -> a heading per wo
             | ([.rows[] | select(.tool.name == "window_focus") | . as $r | $r.tool.arguments.name as $id | $by[$id] as $w | select($w != null)
                 | $r + {group: $w.group, ws: $w.ws, front: $w.front,
                     wide: ([($r.columns[0] // ""), $w.placed]),
-                    line: (([$r.text] + $r.columns + ["workspace \($w.ws)", $w.placed]) | map(select(. != "")) | join(" \($sep) ")),
+                    line: (([$r.text] + $r.columns + ["workspace \($w.place)", $w.placed]) | map(select(. != "")) | join(" \($sep) ")),
                     tool: ($r.tool + {said: "put in front"}),
-                    more: [step("window_move"; {name: $id}; "move to workspace") + {value: ($w.ws | tostring), children: ("spark-shell://window/rows/move/" + $id)},
+                    more: [step("window_move"; {name: $id}; "move to workspace") + {value: $w.place, children: ("spark-shell://window/rows/move/" + $id)},
                            step("window_place"; {name: $id}; "placement") + {value: $w.placed, children: ("spark-shell://window/rows/place/" + $id)},
                            step("window_capture"; {what: "window", name: $id}; "capture this window"),
                            step("window_close"; {name: $id}; "close")]}]
                + (if ($f.here.empty // false) then [{id: "window:none", sign: "blank", text: "no windows here", tool: null, more: [], columns: [], children: null, group: $f.here.group, muted: true, ws: $f.here.ws}] else [] end)
-               | sort_by(.ws) | map(del(.ws))) as $wins
+               | sort_by([.ws < 0, .ws]) | map(del(.ws))) as $wins
             | ([.rows[] | select(.tool.name == "window_capture" and .tool.arguments.what != "window")]) as $caps
             | ($f.here.arrange // "split") as $a
             | .rows = $wins + $caps + [{id: "window:arrange", sign: "opens", text: "arrange windows", tool: null, more: [], choice: true,
@@ -8288,7 +8289,7 @@ files_tool() {   # files_tool CMD... -- CMD, stopped after FILES_TOOL_T seconds 
     if command -v timeout >/dev/null 2>&1; then timeout "$FILES_TOOL_T" "$@"; else "$@"; fi
 }
 files_say() { jq -cn --arg s "$1" '{say: $s}' > "$TMP/page.json"; }   # files_say WORDS -- page.json: no preview, and why
-provide_page() {   # provide_page SECTION ROW-ID -> the page Space shows for one row of the section (#169): its name, what it is, a fact a line; false when no row is that one now
+provide_page() {   # provide_page SECTION ROW-ID -> the page F3 shows for one row of the section (#169): its name, what it is, a fact a line; false when no row is that one now
     case $1:$2 in
         apps:'apps:open '?*) app_page "${2#apps:open }" ;;
         notes:'notes:open '?*)

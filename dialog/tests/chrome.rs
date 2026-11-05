@@ -985,13 +985,13 @@ fn a_wrapped_key_bar_takes_the_air_above_it_and_leaves_the_last_row_empty() {
     assert!(matches!(app.view, View::Folder(0, _)), "{:?}", app.view);
     let (buf, drawn, _) = draw(&mut app, 60, 40);
     let keys = text(&buf, keys_y(40));
-    assert!(keys.contains("Esc") && keys.contains("P"), "wide, one line of keys: {:?}", keys);
+    assert!(keys.contains("Esc") && keys.contains("F3"), "wide, one line of keys: {:?}", keys);
     assert!(text(&buf, 39).trim().is_empty(), "the last row is empty");
     assert!(drawn.keys.iter().all(|k| k.2 == keys_y(40)));
     let (buf, drawn, _) = draw(&mut app, 36, 20);
     assert!(text(&buf, 19).trim().is_empty(), "narrow, the last row is still empty: {:?}", text(&buf, 19));
     assert!(text(&buf, 17).contains("Esc"), "the first line of keys at h-3: {:?}", text(&buf, 17));
-    assert!(text(&buf, 18).contains("P"), "the second at h-2: {:?}", text(&buf, 18));
+    assert!(text(&buf, 18).contains("F3"), "the second at h-2: {:?}", text(&buf, 18));
     assert!(text(&buf, 16).contains("\u{2500}"), "the plain rule above them where it was");
     assert!(drawn.keys.iter().all(|k| k.2 == 17 || k.2 == 18), "{:?}", drawn.keys);
 }

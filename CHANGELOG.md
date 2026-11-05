@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.127.1
+
+- F3 previews, in every list with a preview, and P no longer does. A
+  letter opened a preview for anyone who typed p with a row lit; F3
+  cannot be typed, and it was Norton Commander's view key. It works with
+  words typed too, on the row the bar is on, and p is a letter of the
+  search on any row. `preview` stays a named action in `home-keys.json`,
+  so P comes back to anyone who wants it, and there it stays a letter of
+  the words. The key bar reads `preview  F3`, in workspace too, which
+  said Space.
+- Space no longer previews in any list. It checks in files, flips a
+  switch, and plays and pauses in a preview, as it did.
+- A workspace with a name and no number reads by that name, after the
+  numbered ones: it read `workspace -1`, and the move list offered -1.
+  A capture comes back to it, and a move away from it has no undo.
+
 ## v0.127
 
 Help, about and power v0, and the question page in place of the typed

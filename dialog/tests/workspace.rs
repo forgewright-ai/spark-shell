@@ -5,7 +5,7 @@ mod common;
 use common::palette;
 use ratatui::{buffer::Buffer, layout::Rect};
 use serde_json::{json, Value};
-use spark_dialog::app::{App, Config, Item, Mode, Provider, View, DESTS, WORKSPACE_DEST};
+use spark_dialog::app::{App, Config, HintKey, Item, Mode, Provider, View, DESTS, WORKSPACE_DEST};
 use spark_dialog::model;
 use spark_dialog::ui;
 use std::time::{Duration, Instant};
@@ -308,6 +308,101 @@ fn saving_is_a_form_in_the_prompt() {
     app.escape();
     assert_eq!(app.mode, Mode::Normal);
     assert_eq!(app.subtitle(), "4 windows", "Esc lets it go");
+}
+
+#[test]
+fn f3_previews_a_window_or_a_layout_and_no_letter_or_space_does() {
+    let mut app = busy();
+    at_workspace(&mut app);
+    assert!(app.in_list, "the bar stands on the window in front on arrival");
+    let hint: String = app.hint().iter().map(|(t, _)| t.as_str()).collect();
+    assert!(hint.contains("Preview F3"), "the key bar reads the preview binding's label: {hint}");
+    assert!(!hint.contains("Space"), "{hint}");
+
+    // Space: no preview, no letter of a search not begun
+    let lit = lit_text(&app);
+    app.typed(' ');
+    assert_eq!(app.view, View::Dest(WORKSPACE_DEST), "Space shows no preview");
+    assert!(app.preview.is_none());
+    assert_eq!(app.input, "", "and types nothing");
+    assert_eq!(lit_text(&app), lit, "and leaves the bar where it was");
+
+    // p is the letter, with the bar on a window: a search starts and nothing opens
+    app.text_key('p');
+    assert_eq!(app.view, View::Dest(WORKSPACE_DEST), "p opens no preview");
+    assert!(app.preview.is_none());
+    assert_eq!(app.input, "p", "p starts a search");
+    app.set_draft("");
+
+    // F3 on a window, and Esc comes back
+    app.sel = pick_of(&app, &lit);
+    app.in_list = true;
+    app.hint_key(HintKey::Preview);
+    assert_eq!(app.view, View::Preview, "F3 previews the lit window");
+    assert_eq!(app.preview.as_ref().unwrap().row().text, lit);
+    app.escape();
+    assert_eq!(app.view, View::Dest(WORKSPACE_DEST), "Esc comes back to the list");
+    assert_eq!(app.input, "", "nothing typed");
+
+    // F3 on a layout
+    app.sel = pick_of(&app, "writing");
+    app.in_list = true;
+    app.hint_key(HintKey::Preview);
+    assert_eq!(app.view, View::Preview, "F3 previews the lit layout");
+    assert_eq!(app.preview.as_ref().unwrap().row().text, "writing");
+    app.escape();
+
+    // words typed: F3 is no letter, so it previews the row the bar is on
+    for c in "writing".chars() {
+        app.typed(c);
+    }
+    assert_eq!(lit_text(&app), "writing", "the bar on the best match");
+    app.hint_key(HintKey::Preview);
+    assert_eq!(app.view, View::Preview, "F3 with words typed previews the best match");
+    app.escape();
+
+    // a menu's row has no page: F3 does nothing and types nothing
+    app.set_draft("");
+    app.sel = pick_of(&app, "save this workspace");
+    app.in_list = true;
+    app.hint_key(HintKey::Preview);
+    assert_eq!(app.view, View::Dest(WORKSPACE_DEST));
+    assert_eq!(app.input, "", "no page: F3 does nothing");
+
+    // a form is the prompt's: F3 opens nothing over it
+    app.enter();
+    assert!(matches!(app.mode, Mode::Ask { .. }), "{:?}", app.mode);
+    app.hint_key(HintKey::Preview);
+    assert_eq!(app.view, View::Dest(WORKSPACE_DEST), "no preview over a form");
+    assert_eq!(app.input, "", "and F3 types nothing in the name");
+}
+
+#[test]
+fn preview_bound_to_a_letter_stays_that_letter_in_the_words() {
+    let dir = std::env::temp_dir().join(format!("ws-keys-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("home-keys.json");
+    std::fs::write(&file, r#"{"preview": "P"}"#).unwrap();
+    let keys = spark_dialog::keys::Bindings::load(&file).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+
+    let mut app = busy();
+    app.cfg.keys = keys;
+    at_workspace(&mut app);
+    let drawn = screen(&mut app);
+    assert!(drawn.contains("preview  P"), "the key bar draws the person's own key: {drawn}");
+    app.hint_key(HintKey::Preview);
+    assert_eq!(app.view, View::Preview, "nothing typed: their key previews");
+    app.escape();
+    app.typed('a');
+    app.hint_key(HintKey::Preview);
+    assert_eq!(app.view, View::Dest(WORKSPACE_DEST), "with words typed it opens nothing");
+    assert_eq!(app.input, "ap", "it is the letter of the search");
+    app.set_draft("");
+    app.sel = pick_of(&app, "save this workspace");
+    app.in_list = true;
+    app.hint_key(HintKey::Preview);
+    assert_eq!(app.input, "p", "on a row with no page it is the letter too");
 }
 
 fn none_saved() -> Value {

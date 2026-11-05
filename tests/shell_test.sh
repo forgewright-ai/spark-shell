@@ -4806,6 +4806,19 @@ case $_a in *'full screen'*) _ar=1 ;; *) _ar='' ;; esac
 [ -n "$_ar" ] && [ "$_u" = '{"name":"window_place","arguments":{"name":"21","how":"full"}}' ] && [ ! -s "$HOME/ls.aside" ] \
     && ok "provide window: a window stepped aside for the dialog reads full screen, another's placing leaves it, its own clears it, and undo makes it full again" || bad "workspace aside" "line=$_a undo=$_u aside=$(cat "$HOME/ls.aside" 2>&1)"
 rm -f "$HOME/.config/spark-shell/layouts/drafting" "$HOME/.config/spark-shell/layouts/tabbed"
+# a workspace with a name and no number, which sway calls -1: it reads by its name, after the numbered ones, and is no move target
+cp "$HOME/ls.tree" "$HOME/ls.tree.keep"
+cat > "$HOME/ls.tree" <<'EOF'
+{"type":"root","nodes":[{"type":"output","name":"eDP-1","nodes":[{"type":"workspace","id":40,"name":"notes","num":-1,"layout":"splith","rect":{"x":0,"y":0,"width":1920,"height":1080},"focus":[41],"nodes":[{"id":41,"type":"con","pid":7,"app_id":"foot","name":"plan","focused":true,"fullscreen_mode":0,"rect":{"x":0,"y":0,"width":1920,"height":1080}}],"floating_nodes":[]},
+{"type":"workspace","id":50,"name":"2","num":2,"layout":"splith","rect":{"x":0,"y":0,"width":1920,"height":1080},"focus":[51],"nodes":[{"id":51,"type":"con","pid":8,"app_id":"firefox","name":"docs","fullscreen_mode":0,"rect":{"x":0,"y":0,"width":1920,"height":1080}}],"floating_nodes":[]}]}]}
+EOF
+mcp window "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 41 resources/read '{"uri":"spark-shell://window/rows"}')" "$(rq 42 resources/read '{"uri":"spark-shell://window/rows/move/41"}')" "$(call 43 window_move '{"name":"41","to":"2"}')"
+_n=$(ans 41 | jq -r '.result.contents[0].text'); _m=$(ans 42 | jq -r '.result.contents[0].text'); _u=$(ans 43 | jq -c '.result.structuredContent.undo')
+mv "$HOME/ls.tree.keep" "$HOME/ls.tree"
+[ "$(printf '%s' "$_n" | jq -c '[.rows[] | select(.tool.name == "window_focus") | .group]')" = "[\"workspace 2\",\"workspace notes $_d this one\"]" ] \
+    && printf '%s' "$_n" | jq -e '.rows[] | select(.tool.arguments.name == "41") | (.line | test("workspace notes")) and (.more[0].value == "notes")' >/dev/null \
+    && [ "$(printf '%s' "$_m" | jq -c '[.rows[] | select(.text | startswith("-"))] | length')" = 0 ] && [ "$(printf '%s' "$_m" | jq -c '[.rows[] | select(.sign == "check")] | length')" = 0 ] && [ "$_u" = null ] \
+    && ok "provide window: a workspace with no number reads by its name, after the numbered ones; the move list holds no -1, and a move from it has no undo to refuse" || bad "workspace named" "$_n | $_m | undo=$_u"
 # no sway: the window section says so, and a layout says tmux
 unset SWAYSOCK; mkdir -p "$H/nosway"; printf '#!/bin/sh\nexit 1\n' > "$H/nosway/swaymsg"; chmod +x "$H/nosway/swaymsg"; PATH=$H/nosway:$_lp   # as swaymsg does with no socket
 mcp window "$(rq 1 resources/read '{"uri":"spark-shell://window/rows"}')"

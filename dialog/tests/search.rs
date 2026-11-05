@@ -248,16 +248,19 @@ fn the_files_are_asked_once_typing_rests_and_an_answer_for_older_words_lands_now
 }
 
 #[test]
-fn space_shows_any_row_that_has_a_page_and_the_keys_name_what_it_is() {
+fn f3_shows_any_row_that_has_a_page_and_space_does_not() {
     let mut r = started();
     r.app.view = View::Section(0);
     r.app.came_from.push(View::Home);
     r.app.in_list = true;
     r.app.sel = 0;
     let keys = |a: &App| a.hint().into_iter().map(|(t, _)| t).collect::<String>();
-    assert!(keys(&r.app).contains("Preview Space"), "{}", keys(&r.app));
+    assert!(keys(&r.app).contains("Preview F3"), "{}", keys(&r.app));
     r.app.typed(' ');
-    assert_eq!(r.app.view, View::Preview);
+    assert_eq!(r.app.view, View::Section(0), "Space shows no preview");
+    assert_eq!(r.app.input, "", "and types nothing on a lit row");
+    r.app.hint_key(spark_dialog::app::HintKey::Preview);
+    assert_eq!(r.app.view, View::Preview, "F3 shows it");
     let app = &mut r.app;
     assert!(
         pump(app, &r.rx, |a| a.preview.as_ref().is_some_and(|p| p.shown.is_some())),

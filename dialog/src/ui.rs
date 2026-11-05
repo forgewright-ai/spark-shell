@@ -719,9 +719,9 @@ fn key_of(k: &str) -> Option<HintKey> {
         "\u{2191}" => HintKey::Up,
         "\u{2193}" => HintKey::Down,
         "+" | "-" | "0" | "<" | ">" => HintKey::Char(k.chars().next()?),
-        // Space previews the lit file, its chip as clickable as the others (#150)
+        // Space plays and pauses, its chip as clickable as the others (#150)
         "Space" => HintKey::Char(' '),
-        "P" => HintKey::Preview,
+        "F3" => HintKey::Preview,
         "Ctrl+Tab" => HintKey::Pane,
         _ => return None,
     })

@@ -848,7 +848,7 @@ click: home's places, settings' rows, a choice among choices, an action
 or a preference on a details page. An object's row is selected by a
 click: an app, a file, a folder, a note, a window, a layout. Enter or a
 second click acts on it, the right arrow opens its details or its
-actions, P previews a file, Space checks it. The pointer resting on a
+actions, F3 previews it, Space checks a file. The pointer resting on a
 row changes nothing; the selection bar moves by the arrows or by a
 click. A pick
 that puts a window in front (an app, a file, a terminal, a window, the
@@ -1062,7 +1062,7 @@ folder shows no arrow, its count of items says what it is. Every row
 takes the same keys:
 Enter does what it does, the right arrow opens its other steps as a
 list (a file's rename and trash, a network's forget, a device's remove,
-a drive's unmount and eject), and Space shows its page: an app's group,
+a drive's unmount and eject), and F3 shows its page: an app's group,
 where it runs and its command; a note's text; a reminder's time and
 calendar; a window's app, workspace and screen; a layout's apps; a
 network's signal and security; a device's state; a drive's size and
@@ -1198,7 +1198,7 @@ its first and its last row.
   columns cannot: its name, its kind, its size, the date with its time,
   its place (the row's own folder for a recent file or a file found,
   else the folder on screen, written as the header writes it, `~`,
-  `~/documents`); Enter or a second click opens it, P previews it and
+  `~/documents`); Enter or a second click opens it, F3 previews it and
   Space checks it. Names keep their spelling; a long name is cut in its
   middle, its end and its type kept. Enter on a text file opens it in
   your editor, in a terminal window; any other file opens with the app
@@ -1254,7 +1254,7 @@ its first and its last row.
   click on one of its rows, which selects that row, or on its path; the
   key bar adds `pane  Ctrl+Tab` while two panes stand. Opening a
   folder, going back, typing and checking act in the active pane alone;
-  P previews its lit file in the whole window, and Esc comes back
+  F3 previews its lit file in the whole window, and Esc comes back
   to the panes as they were. At 60 cells each pane is 30, the name cut
   in its middle with its size or its count; at 120 each is 60, the list
   as it is drawn for one pane; below 60 cells the active pane alone is
@@ -1449,7 +1449,7 @@ Home bindings are named actions in `~/.config/spark-shell/home-keys.json`:
 
 Help lists the actions with their keys as bound, under `in home` and
 `in a preview`; arrows, Home, End, Backspace and Delete need no help.
-Files' keys are named actions too: `check`, Space, `preview`, P, and
+Files' keys are named actions too: `check`, Space, `preview`, F3, and
 `pane`, Ctrl+Tab between two panes.
 An override replaces the original binding; unknown actions and conflicts
 are reported before home starts. The visible keycaps use that same

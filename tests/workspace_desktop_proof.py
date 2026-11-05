@@ -205,6 +205,17 @@ def main():
             wait_for(lambda: sum(1 for n in desk.nodes() if n.get("app_id") == "foot") == 2, "the layout's two windows", 20)
             ok(desk.arranged("foot") == "tabbed", "open: a saved layout comes back in tabs", desk.arranged("foot"))
 
+            desk.sway(f"[con_id={one}] move container to workspace notes")
+            listed = rows(desk, "window")["rows"]
+            named = next(r for r in listed if r.get("tool", {}).get("arguments", {}).get("name") == str(one))
+            ok(named["group"].startswith("workspace notes") and "workspace notes" in named["line"] and "-1" not in named["group"], "named: a workspace with no number reads by its name", named)
+            desk.sway("workspace notes")
+            call(desk, "window", "window_capture", what="window", name=str(two))
+            focused = [w["name"] for w in json.loads(desk.sway("-t", "get_workspaces").stdout) if w["focused"]]
+            ok(focused == ["notes"], "named: a capture comes back to it", focused)
+            back = call(desk, "window", "window_move", name=str(one), to="1")
+            ok(desk.workspace_of("proof-one")["num"] == 1 and not back.get("undo"), "named: a move from it works, with no undo to refuse", back)
+
             gone = call(desk, "window", "window_move", name="999999", to="2")
             ok(gone.get("refused") == "that window is no longer open", "a window gone is said", gone)
         finally:

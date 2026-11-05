@@ -22,7 +22,7 @@ const DEFAULTS: &[(&str, HintKey, &str)] = &[
     ("backspace", HintKey::Backspace, "Backspace"),
     ("delete", HintKey::Delete, "Delete"),
     ("quit", HintKey::Quit, "Ctrl+c"),
-    ("preview", HintKey::Preview, "P"),
+    ("preview", HintKey::Preview, "F3"),
     ("check", HintKey::Check, "Space"),
     ("pane", HintKey::Pane, "Ctrl+Tab"),
     ("zoom-in", HintKey::Char('+'), "Plus"),
@@ -176,6 +176,14 @@ impl Bindings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn preview_is_f3_so_no_typed_letter_opens_it() {
+        let keys = Bindings::default();
+        assert_eq!(keys.action(KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE)), Some(HintKey::Preview));
+        assert_eq!(keys.action(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE)), None);
+        assert_eq!(keys.label(HintKey::Preview), "F3");
+    }
+
     #[test]
     fn remapping_and_conflicts_are_resolved_before_input() {
         let keys = Bindings::from_json(r#"{"ask":"F4"}"#).unwrap();

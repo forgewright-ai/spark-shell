@@ -49,7 +49,7 @@ pub struct Row {
     pub look: Option<Call>,
     /// A picture of what the row brings (a wallpaper), drawn beside the list while the row is lit.
     pub preview: Option<String>,
-    /// The uri of the page that shows the row's file (#120): Space opens its preview.
+    /// The uri of the page that shows the row's file (#120): F3 opens its preview.
     pub page: Option<String>,
     /// The folder of an animation the row brings (#132): its open and its wait play beside the list while it is lit.
     pub film: Option<String>,

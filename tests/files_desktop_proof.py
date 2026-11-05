@@ -483,20 +483,20 @@ def main(binary, destination):
         s.checks.append("trash puts the file in the fixture's own Trash/files and says is in the trash with undo; undo brings it back")
         # 11. the preview: text, picture, PDF, sound; Esc back to the panes as they were
         light(s, "notes.md")
-        s.key("p")
+        s.key("-k", "F3")
         until(lambda: "Proof notes" in s.text(), "the text preview")
         shot(s, "preview-text")
         s.key("-k", "Escape")
         until(lambda: header_has(s.screen()[0], "~/documents") and lit(s.screen(), "notes.md"), "back to the panes with notes.md lit")
         assert any("~/documents" in l and "~/pictures" in l for l in body(s.screen())), "the two panes stand as they were"
         light(s, "cover.png")
-        s.key("p")
+        s.key("-k", "F3")
         until(lambda: re.search(r"\b20\s*\S\s*40\b", s.text()), "the picture's size on the facts row")
         shot(s, "preview-picture")
         s.key("-k", "Escape")
         until(lambda: header_has(s.screen()[0], "~/documents") and lit(s.screen(), "cover.png"), "back from the picture")
         light(s, "letter.pdf")
-        s.key("p")
+        s.key("-k", "F3")
         if shutil.which("pdftoppm"):
             # one page: the page drawn as a picture, its zoom on the facts row and the zoom keys on the bar; a count
             # of pages stands there only where there are several
@@ -508,7 +508,7 @@ def main(binary, destination):
         s.key("-k", "Escape")
         until(lambda: header_has(s.screen()[0], "~/documents") and lit(s.screen(), "letter.pdf"), "back from the PDF")
         light(s, "voice.wav")
-        s.key("p")
+        s.key("-k", "F3")
         if shutil.which("mpv"):
             until(lambda: re.search(r"\bplay\b", keys(s.screen())), "the sound's keys")
             s.checks.append("The sound previews with the sound's keys, play on Space; nothing is played")

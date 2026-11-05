@@ -23,7 +23,7 @@ pub enum HintKey {
     Down,
     /// A character a key chip stands for (a preview's + - < >), typed as the key is.
     Char(char),
-    /// Files: the lit row's check (Space), its preview (P), and the other pane made active (Ctrl+Tab).
+    /// The lit row's preview (F3); files: its check (Space), and the other pane made active (Ctrl+Tab).
     Check,
     Preview,
     Pane,
@@ -505,7 +505,7 @@ pub enum View {
 }
 
 /// How the person talks to the prompt. Holding a key waits for a spark that can finish a recording on
-/// a signal (Space is the preview's, #120); until then it is said, and not offered.
+/// a signal; until then it is said, and not offered.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Talk {
     Click,
@@ -847,7 +847,7 @@ pub struct App {
     /// The row a value was just changed on: the light stays on it while the list around it changes
     /// (the receipt and the Undo row come in above it), until a key moves it.
     pub keep_lit: Option<String>,
-    /// Words typed, then the down arrow or a click: the keys are the list's, so Space previews the lit file (#163).
+    /// Words typed, then the down arrow or a click: the keys are the list's, so Space checks the lit file (#163).
     pub list_keys: bool,
     /// The preview shown (View::Preview): the list it came from, the file, its page (#120).
     pub preview: Option<Preview>,
@@ -1814,7 +1814,7 @@ impl App {
             ("in home", "a new line in the prompt", k(HintKey::Newline)),
             ("in home", "the conversation, and back", k(HintKey::Conversation)),
             ("in home", "the prompt's tools, one to the next", k(HintKey::Tab)),
-            ("in home", "a file's preview", k(HintKey::Preview)),
+            ("in home", "a row's preview", k(HintKey::Preview)),
             ("in home", "a row's actions or details", k(HintKey::Right)),
             ("in home", "check a file, and the next", k(HintKey::Check)),
             ("in home", "the other pane", k(HintKey::Pane)),
@@ -2861,7 +2861,7 @@ impl App {
         self.keep_lit = None;
         if self.in_list {
             // words typed lit a file: the first Down hands the keys to the list and keeps it lit, so Space
-            // previews it (#163)
+            // checks it (#163)
             if !self.input.is_empty() && !self.list_keys {
                 self.list_keys = true;
                 if self.lit_has_page() {
@@ -2947,7 +2947,7 @@ impl App {
         if self.preview_picture_key(c) {
             return;
         }
-        // Space with nothing typed, or with the keys on the list: a lit file's preview, or back from one (#120, #163)
+        // Space with nothing typed, or with the keys on the list: back from a preview, a switch, a check (#120, #163)
         if c == ' ' && (self.input.is_empty() || self.list_keys) && self.mode == Mode::Normal && self.chip_focus.is_none() && self.pending.is_none() {
             if self.view == View::Preview {
                 // a sound or a video: Space plays and pauses, as a player's does (#151); else back to the list
@@ -2965,17 +2965,12 @@ impl App {
                 self.flip_or_keep(&it); // a switch: Space flips it, as Enter and a click do (#183)
                 return;
             }
-            if self.files_pane_view().is_some() && !self.files.form() {
-                // in a files folder Space checks the lit row while it is the check key (v0.125.1, #224); P previews.
-                // A form's name takes the space
-                if self.space_checks() {
-                    return self.files_check();
-                }
-            } else if self.open_preview() {
-                return; // elsewhere a lit row with a page (a section's, a search's) shows it
+            // in a files folder Space checks the lit row while it is the check key (v0.125.1, #224); a form's name takes the space
+            if self.files_pane_view().is_some() && !self.files.form() && self.space_checks() {
+                return self.files_check();
             }
             if self.in_list && self.input.is_empty() {
-                return; // a lit row with no page: Space is no letter of a search not begun (#196)
+                return; // a lit row: Space is no letter of a search not begun (#196)
             }
         }
         self.text_key(c);
@@ -2989,7 +2984,7 @@ impl App {
     }
 
     /// The check key: in a files folder, or on a files page, the check (Space by default); elsewhere the key does
-    /// what Space does (a switch flips, a section's file previews, a space is typed) while it is Space, and nothing
+    /// what Space does (a switch flips, a space is typed) while it is Space, and nothing
     /// once it is rebound.
     fn check_key(&mut self) {
         if self.files_pane_view().is_some() {
@@ -3008,22 +3003,27 @@ impl App {
         self.typed(' ');
     }
 
-    /// The preview key, P: while the list holds the keys in a files folder (nothing typed, or the keys handed to the
-    /// list) and the lit row has a page, its preview; anywhere else the letter p, typed.
+    /// The preview key, F3: the lit row's preview, in any list with one, words typed or not: no word typed reaches a
+    /// function key. Bound to a letter in a person's own keys, it previews while the list holds the keys, and is that
+    /// letter everywhere else.
     fn preview_key_pressed(&mut self) {
-        let list_keys = self.in_list && (self.input.is_empty() || self.list_keys);
-        if self.files_pane_view().is_some()
-            && self.files.page == crate::files::Page::List
+        let bound = self.cfg.keys.label(HintKey::Preview);
+        let letter = bound.chars().next().filter(|_| bound.chars().count() == 1).map(|c| c.to_ascii_lowercase());
+        let typing = letter.is_some() && !self.input.is_empty() && !self.list_keys;
+        let files_page = self.files_pane_view().is_some() && self.files.page != crate::files::Page::List;
+        if !typing
+            && !files_page
             && self.mode == Mode::Normal
             && self.chip_focus.is_none()
             && self.pending.is_none()
-            && list_keys
             && self.lit_has_page()
             && self.open_preview()
         {
             return;
         }
-        self.text_key('p');
+        if let Some(c) = letter {
+            self.text_key(c);
+        }
     }
 
     /// A printable key not bound to an action. Remapping removes its old shortcut.
@@ -3422,7 +3422,7 @@ impl App {
             (View::Found(_, w), View::Home) => Some(w.clone()),
             _ => None,
         };
-        // back from a preview or from a row's steps: that row lit again, so Space and the right arrow go on from it (#169)
+        // back from a preview or from a row's steps: that row lit again, so F3 and the right arrow go on from it (#169)
         let lit = if self.view == View::Preview {
             self.stop_sound();
             self.preview.take().map(|pv| pv.row().id.clone())
@@ -5594,8 +5594,7 @@ impl App {
                     add(&mut v, "Actions", "\u{2192}");
                 }
                 if rows.iter().any(|r| r.page.is_some()) {
-                    // in a files folder the preview is P, the preview binding's (v0.125.1); elsewhere Space shows a row's page
-                    add(&mut v, "Preview", if self.files_pane_view().is_some() { "P" } else { "Space" });
+                    add(&mut v, "Preview", "F3");
                 }
                 if self.two_panes() {
                     add(&mut v, "Pane", "Ctrl+Tab");
@@ -6041,7 +6040,7 @@ impl App {
     }
 }
 
-/// The preview (#120): opened by Space on a lit file, or by the preview step of its list of steps.
+/// The preview (#120): opened by F3 on a lit row, or by the preview step of its list of steps.
 impl App {
     /// A key that moves the preview: in it, nothing typed, nothing asked, no control in focus.
     fn preview_key(&self) -> bool {

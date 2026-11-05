@@ -354,7 +354,7 @@ fn the_status_row_says_the_place_the_rows_own_folder_else_the_folder_on_screen()
 fn insert_checks_the_lit_row_moves_the_bar_down_and_the_status_row_counts() {
     let mut app = files_app();
     assert!(app.cfg.keys.help().contains(&("check", "Space")), "a named action, in help: check Space");
-    assert!(app.cfg.keys.help().contains(&("preview", "P")), "and preview P");
+    assert!(app.cfg.keys.help().contains(&("preview", "F3")), "and preview F3");
     assert_eq!(lit(&app).as_deref(), Some("notes.md"));
     app.typed(' ');
     assert!(app.files.checked("files:file:home:notes.md"), "checked by its id");
@@ -470,7 +470,7 @@ fn files_checked_golden() {
 #[test]
 fn right_opens_the_rows_actions_then_the_folders_and_every_door_goes_back_with_the_row_lit() {
     let mut app = files_app();
-    assert_eq!(hint(&app), "Back Esc   Actions \u{2192}   Preview P");
+    assert_eq!(hint(&app), "Back Esc   Actions \u{2192}   Preview F3");
     app.right();
     assert!(app.files_page_open() && matches!(app.files.page, Page::Actions(_)));
     assert_eq!(format!("{} \u{b7} {}", app.title(), app.subtitle()), "files \u{b7} notes.md");
@@ -675,7 +675,7 @@ fn two_panes_open_beside_the_first_switch_with_ctrl_tab_and_keep_each_panes_stat
         "the same folder beside"
     );
     assert_eq!(app.files.other_side, Side::Right);
-    assert_eq!(hint(&app), "Back Esc   Actions \u{2192}   Preview P   Pane Ctrl+Tab");
+    assert_eq!(hint(&app), "Back Esc   Actions \u{2192}   Preview F3   Pane Ctrl+Tab");
     app.right();
     assert!(
         labels(&app).contains(&"one pane".to_string()),
@@ -710,7 +710,7 @@ fn two_panes_open_beside_the_first_switch_with_ctrl_tab_and_keep_each_panes_stat
     app.set_draft("");
     app.files_activate(Action::Panes(false));
     assert!(app.files.other.is_none() && !app.two_panes());
-    assert_eq!(hint(&app), "Back Esc   Actions \u{2192}   Preview P");
+    assert_eq!(hint(&app), "Back Esc   Actions \u{2192}   Preview F3");
     // a narrow window refuses
     app.size = (50, 40);
     app.files_activate(Action::Panes(true));
@@ -1783,17 +1783,17 @@ fn a_trashed_row_is_not_checkable() {
     assert!(!labels(&app).contains(&"check".to_string()), "{:?}", labels(&app));
 }
 
-// ---- v0.125.1: Space checks, P previews (#224); the rows' air (#223)
+// ---- v0.125.1: Space checks (#224); the rows' air (#223). F3 previews
 
 #[test]
-fn space_checks_the_lit_row_and_p_previews_it_elsewhere_p_is_the_letter() {
+fn space_checks_the_lit_row_and_f3_previews_it_and_p_is_always_the_letter() {
     let mut app = files_app();
     app.typed(' ');
     assert!(app.files.checked("files:file:home:notes.md"), "Space checks the lit file");
     assert_eq!(lit(&app).as_deref(), Some("report.pdf"), "and the bar moves down");
     assert!(app.input.is_empty(), "no space typed");
     app.hint_key(HintKey::Preview);
-    assert_eq!(app.view, View::Preview, "P previews the lit file");
+    assert_eq!(app.view, View::Preview, "F3 previews the lit file");
     assert_eq!(app.preview.as_ref().unwrap().row().text, "report.pdf");
     app.typed(' ');
     assert!(
@@ -1802,16 +1802,20 @@ fn space_checks_the_lit_row_and_p_previews_it_elsewhere_p_is_the_letter() {
     );
     assert_eq!(
         hint(&app),
-        "Back Esc   Actions \u{2192}   Preview P",
+        "Back Esc   Actions \u{2192}   Preview F3",
         "the key bar reads the preview binding's label"
     );
-    // a folder lit: P is the letter, and starts a search
+    // a folder lit: no preview, and F3 types nothing
     light_row(&mut app, "documents");
     app.hint_key(HintKey::Preview);
-    assert_eq!(app.input, "p", "no page: P is the letter p");
-    app.text_key('P');
-    assert_eq!(app.input, "pP", "a Shift+p is the letter too");
-    // words typed, then Down hands the keys to the list (#163): P previews, Space checks
+    assert!(matches!(app.view, View::Folder(..)), "no page: F3 does nothing");
+    assert!(app.input.is_empty(), "and types nothing");
+    // p is the letter, on any row: a search starts and nothing opens
+    light_row(&mut app, "report.pdf");
+    app.text_key('p');
+    assert_eq!(app.input, "p", "p starts a search");
+    assert!(matches!(app.view, View::Folder(..)), "and no preview comes up");
+    // words typed, then Down hands the keys to the list (#163): F3 previews, Space checks
     app.set_draft("");
     for c in "report".chars() {
         app.typed(c);
@@ -1826,7 +1830,7 @@ fn space_checks_the_lit_row_and_p_previews_it_elsewhere_p_is_the_letter() {
     light_row(&mut app, "report.pdf");
     app.list_keys = true;
     app.hint_key(HintKey::Preview);
-    assert_eq!(app.view, View::Preview, "P with the list's keys previews");
+    assert_eq!(app.view, View::Preview, "F3 with the list's keys previews");
     app.escape();
     // a form takes a space in the name
     app.set_draft("");
@@ -1894,7 +1898,7 @@ fn check_rebound_to_insert_checks_in_files_and_nothing_elsewhere_and_space_is_pl
         !app.files_checks_any() && app.input.is_empty(),
         "Space checks nothing now, and types nothing on a lit row"
     );
-    assert!(app.cfg.keys.help().contains(&("check", "Insert")) && app.cfg.keys.help().contains(&("preview", "P")));
+    assert!(app.cfg.keys.help().contains(&("check", "Insert")) && app.cfg.keys.help().contains(&("preview", "F3")));
     // elsewhere Insert does nothing
     app.escape();
     assert_eq!(app.view, View::Home);

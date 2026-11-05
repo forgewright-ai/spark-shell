@@ -379,6 +379,23 @@ def files(binary, env, home):
         os.write(fd, b"\x1b")          # back to the folder
         assert wait_for(lambda: "hello.txt" in shown() and "thisfolder" in shown()), "Esc did not come back: " + screen.text()[-900:]
         ok(True, "Esc comes back to the folder")
+        os.write(fd, b"\x1bOR")        # F3, the bytes foot sends: the lit file's preview
+        assert wait_for(lambda: "preview\u00b7" in shown()), "F3 did not preview the lit file: " + screen.text()[-900:]
+        os.write(fd, b"\x1b")
+        assert wait_for(lambda: "thisfolder" in shown() and "preview\u00b7" not in shown()), "Esc did not leave the preview: " + screen.text()[-900:]
+        ok(True, "F3 through the terminal previews the lit file, and Esc comes back")
+        os.write(fd, b"p")             # p on a lit row is a letter: a search starts and no preview comes up
+        assert wait_for(lambda: "searchorask" not in shown()), "p did not reach the prompt: " + screen.text()[-900:]
+        time.sleep(0.5)
+        wait_for(lambda: False, 0.3)
+        assert "preview\u00b7" not in shown(), "p opened a preview: " + screen.text()[-900:]
+        os.write(fd, b"\x7f")
+        assert wait_for(lambda: "searchorask" in shown() and "hello.txt" in shown()), "Backspace did not clear the p: " + screen.text()[-900:]
+        ok(True, "p on a lit row types a letter and opens nothing")
+        os.write(fd, b"\x1b[B")       # typing took the keys to the prompt: Down, Down lights the file again
+        time.sleep(0.3)
+        os.write(fd, b"\x1b[B")
+        assert wait_for(lambda: "hello.txt" in re.sub(r"\s+", "", "".join(screen.cells[35]))), "the file was not lit again: " + screen.text()[-900:]
         # files v0 (dialog/DESIGN.md, Files): a check, the folder's actions under this folder, two panes and back
         # to one. The status row is h-5, row 35 of 40; read with no spaces, as the rest. Ctrl+Tab is the kitty
         # protocol's and a legacy pty cannot send it, so the pane switch is the desktop proof's alone
