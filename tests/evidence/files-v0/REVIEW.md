@@ -34,3 +34,30 @@ headless sway and foot on Void) ride with the pull request as
   with the file and the count.
 - `files-form.png`: rename typed in the prompt, the name prefilled,
   `let go  Esc   save  Enter` on the bar.
+
+## The native proofs
+
+`native/` holds the files proof's own captures from the owner's Void
+box, a headless sway and foot at 1440 by 1000 against CI's build of
+`24474d3` (run 41961076715, sha256 `02df85d0...`), with `native.json`
+(the checks, the captures, the timings of the 10,000-file folder) and
+`proofs.log`, the lines of the home, apps and files proofs as they
+passed there (13, 14 and 16 checks); `home-native.json` and
+`apps-native.json` are those two proofs' manifests.
+
+- `files-compact.png`, `files-fullscreen.png`, `files-snap-left.png`,
+  `files-snap-right.png`, `files-minimum.png`: the home folder in every
+  mode, the 36 by 20 minimum last.
+- `files-status.png`: the lit file's line on the status row.
+- `files-checked.png`: two files checked, the count and the size.
+- `files-actions.png`: the actions page of a checked file.
+- `files-two-panes.png`, `two-panes-compact.png`,
+  `two-panes-fullscreen.png`, `two-panes-snap-left.png`,
+  `two-panes-snap-right.png`, `files-two-panes-folders.png`: two panes
+  on one folder in every mode, then on two folders after Ctrl+Tab.
+- `files-conflict.png`, `files-receipt.png`, `files-undo.png`: a copy
+  of two checked files that meets a name already there, kept both, the
+  receipt with undo, and undo taking both back.
+- `files-new-folder.png`: the new folder's form landed.
+- `preview-text.png`, `preview-picture.png`: Space on a file, the whole
+  window.

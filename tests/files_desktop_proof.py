@@ -120,19 +120,33 @@ def until(read, label, seconds=20):
     raise AssertionError("timed out: " + label)
 
 
+RULE = "\u2500"
+
+
+def bottom_rule(lines):
+    """The plain rule above the key bar (dialog/DESIGN.md, the frame: h-4), the last row made of rule glyphs alone (the
+    top rule carries the diamond). foot's dump drops the empty rows under the key bar, so the frame's bottom is found on
+    the screen, never counted from its end."""
+    for i in range(len(lines) - 1, 7, -1):
+        s = lines[i].strip()
+        if s and set(s) == {RULE}:
+            return i
+    return max(len(lines) - 3, 8)
+
+
 def body(lines):
     """The content rows: from row 8 to the status row (dialog/DESIGN.md, the frame)."""
-    return lines[8:-5]
+    return lines[8:bottom_rule(lines) - 1]
 
 
 def status(lines):
-    """The status row, h-5."""
-    return lines[-5]
+    """The status row, the row above the plain rule."""
+    return lines[bottom_rule(lines) - 1]
 
 
 def keys(lines):
-    """The key bar, h-2 and its second line."""
-    return "\n".join(lines[-2:])
+    """The key bar under the plain rule, its second line with it."""
+    return "\n".join(lines[bottom_rule(lines) + 1:])
 
 
 def column_left(lines):
@@ -154,7 +168,7 @@ def find_row(lines, label):
     """The first list row whose words are LABEL (a check sign allowed before them) and the column the words start
     at. Anchored at the row's left: in two panes it is the left pane's row, or a row that spans the column."""
     pattern = row_pattern(label)
-    for i in range(8, len(lines) - 5):
+    for i in range(8, bottom_rule(lines) - 1):
         m = pattern.match(lines[i])
         if m:
             return i, len(m.group(1))
@@ -225,6 +239,9 @@ def light(s, name):
             return
         s.key("-k", "Down")
         after = status(s.screen())
+        if after == row:
+            time.sleep(.3)   # a frame read before the dialog drew the press: once more
+            after = status(s.screen())
         if after == row:
             break
         row = after
@@ -314,11 +331,11 @@ def main(binary, destination):
         light(s, "notes.md")
         lines = s.screen()
         row = status(lines)
-        assert all(w in row for w in ("notes.md", "Markdown", "KB", "~/documents")), row
+        assert all(w in row for w in ("notes.md", "Markdown", "~/documents")) and re.search(r"\b\d+ K?B\b", row), row
         assert re.search(r"\bactions\b", keys(lines)) and re.search(r"\bpreview\b", keys(lines)) and "Esc" in keys(lines), keys(lines)
         words_at = next(l.index("notes.md") for l in body(lines) if row_pattern("notes.md").match(l))
         s.capture("files-status")
-        s.checks.append("Down to notes.md: the status row holds its line, notes.md . Markdown . KB . the date . ~/documents; "
+        s.checks.append("Down to notes.md: the status row holds its line, notes.md . Markdown . its size . the date . ~/documents; "
                         "the key bar reads back  Esc   actions  ->   preview  Space")
         # 3. a check: Insert twice, the count, the sign, Esc clears
         s.key("-k", "Insert")
@@ -480,8 +497,10 @@ def main(binary, destination):
         light(s, "letter.pdf")
         s.key("-k", "space")
         if shutil.which("pdftoppm"):
-            until(lambda: "page 1 of 1" in s.text(), "the PDF's page")
-            s.checks.append("The PDF previews as its page: page 1 of 1 on the facts row")
+            # one page: the page drawn as a picture, its zoom on the facts row and the zoom keys on the bar; a count
+            # of pages stands there only where there are several
+            until(lambda: re.search(r"\b\d+%", s.text()) and re.search(r"\bzoom\b", keys(s.screen())), "the PDF's page")
+            s.checks.append("The PDF previews as its page drawn: the zoom on the facts row and zoom among the keys")
         else:
             until(lambda: "no preview: pdftoppm (poppler) is not installed" in s.text(), "the PDF's refusal")
             s.checks.append("No poppler on this machine: the PDF says no preview: pdftoppm (poppler) is not installed; its page is not proved here")

@@ -1,0 +1,213 @@
+{
+  "binary_sha256": "02df85d03f7a1d14b0942b033b83f2105f4dc4afe8526d42eb5c4b777688cf29",
+  "palette": {
+    "colors": {
+      "HEX_FG": "c0caf5",
+      "HEX_ACCENT": "7aa2f7",
+      "HEX_MUTED": "565f89",
+      "PANEL_BG": "282a38",
+      "PANEL_HI": "373a4b",
+      "PANEL_MUTED": "8b94bf",
+      "HEX_ANSI_0": "15161e",
+      "HEX_ANSI_1": "f7768e",
+      "HEX_ANSI_2": "9ece6a",
+      "HEX_ANSI_3": "e0af68",
+      "HEX_ANSI_4": "7aa2f7",
+      "HEX_ANSI_5": "bb9af7",
+      "HEX_ANSI_6": "7dcfff",
+      "HEX_ANSI_7": "a9b1d6",
+      "HEX_ANSI_8": "414868",
+      "HEX_ANSI_9": "ff899d",
+      "HEX_ANSI_10": "9fe044",
+      "HEX_ANSI_11": "faba4a",
+      "HEX_ANSI_12": "8db0ff",
+      "HEX_ANSI_13": "c7a9ff",
+      "HEX_ANSI_14": "a4daff",
+      "HEX_ANSI_15": "c0caf5"
+    },
+    "contrast": {
+      "muted": 4.793,
+      "foreground": 8.798,
+      "accent": 5.64
+    },
+    "source": "spark-shell dialog launcher environment"
+  },
+  "environment": "Void Linux; native headless Sway, foot; 1440x1000",
+  "data": "A fixture home of the proof's own: documents (Markdown, text, Python, a 20x40 PNG, a one-page PDF, a second of silence), pictures (a PNG and a notes.md a copy runs into), big (10,000 files), an empty folder; the real files provider; no drives",
+  "tools": {
+    "pdftoppm": true,
+    "mpv": true
+  },
+  "usable_area": {
+    "x": 0,
+    "y": 28,
+    "width": 1440,
+    "height": 972
+  },
+  "captures": {
+    "files-compact": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "files-fullscreen": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 1000,
+      "full_output": true
+    },
+    "files-snap-left": {
+      "x": 0,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "files-snap-right": {
+      "x": 720,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "files-minimum": {
+      "x": 522,
+      "y": 306,
+      "width": 396,
+      "height": 416,
+      "full_output": true
+    },
+    "files-status": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "files-checked": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "files-actions": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "files-two-panes": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "two-panes-compact": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "two-panes-fullscreen": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 1000,
+      "full_output": true
+    },
+    "two-panes-snap-left": {
+      "x": 0,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "two-panes-snap-right": {
+      "x": 720,
+      "y": 28,
+      "width": 720,
+      "height": 972,
+      "full_output": true
+    },
+    "files-two-panes-folders": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "files-conflict": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "files-receipt": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "files-undo": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "files-new-folder": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "preview-text": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    },
+    "preview-picture": {
+      "x": 402,
+      "y": 116,
+      "width": 636,
+      "height": 796,
+      "full_output": true
+    }
+  },
+  "checks": [
+    "files from home draws the home folder: documents, pictures, big, the folder's own row this folder and trash; the header reads files . ~; the frame holds in compact, fullscreen, both snaps and the 36x20 minimum",
+    "Down to notes.md: the status row holds its line, notes.md . Markdown . its size . the date . ~/documents; the key bar reads back  Esc   actions  ->   preview  Space",
+    "Insert checks the lit row and moves the bar down: the status row reads 2 checked with the size, the rows' words stand right of the check sign; Esc with nothing typed clears the checks first and the lit file's line comes back",
+    "Right opens the actions page named for the row: copy to a folder, trash, then this folder with new folder and two panes; two panes shows the folder twice with each pane's path on its first row and pane  Ctrl+Tab on the key bar, in compact, fullscreen and both snaps",
+    "Ctrl+Tab makes the other pane active: the header names its place, .. opens the folder above there and pictures opens in it alone, Ctrl+Tab comes back to ~/documents with both paths on the panes' first row",
+    "With 2 checked the actions read copy to ~/pictures, move to ~/pictures, trash and uncheck all; the copy stops on the conflict page notes.md is in ~/pictures already with skip, keep both and replace; keep both writes notes 2.md and todo.txt, the receipt reads 2 copied to ~/pictures with undo, the other pane reads again, undo takes both back and says put back",
+    "move to ~/pictures moves the checked file, the receipt says so, the other pane shows it, undo brings it back",
+    "rename opens the prompt with the name as it is and the key bar let go  Esc   save  Enter; Enter renames the file and the row, the receipt says renamed, undo names it back",
+    "new folder asks a name for the folder in the prompt; Enter makes drafts on disk and its row reads empty",
+    "trash puts the file in the fixture's own Trash/files and says is in the trash with undo; undo brings it back",
+    "The PDF previews as its page drawn: the zoom on the facts row and zoom among the keys",
+    "The sound previews with the sound's keys, play on Space; nothing is played",
+    "Space previews the lit file in the whole window: the Markdown's first line, the picture's 20 x 40 on the facts row; Esc comes back to the two panes as they were with the file lit",
+    "one pane under this folder closes the second pane: ~/documents once, no pane key",
+    "A folder of 10000 files lists its first page in 1.2 s and End reaches the next page row, with how many more, in 2.1 s; a key pressed meanwhile is answered",
+    "With nothing typed Left, Backspace and the header's back go up a level; typed words filter the folder and Esc clears them"
+  ],
+  "timings": {
+    "big_files": 10000,
+    "big_write_seconds": 0.158,
+    "big_first_row_seconds": 1.243,
+    "big_next_page_row_seconds": 2.071
+  }
+}
