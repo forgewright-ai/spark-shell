@@ -341,6 +341,222 @@ column where there is one.
 At 120 cells the kind and the place come back as columns; nothing
 else changes.
 
+The decisions of files v0 (2026-11-05), where the page above was
+silent. The rule that decided each: what Norton Commander did, built
+from the rows the dialog has.
+
+The status row's place is the row's own folder where the row carries
+one (a recent file, a file found), else the folder on screen, written
+as the header writes it (`~`, `~/documents`). A folder's line is its
+name, `folder`, its count and its place. Typing searches the folder on
+screen at once, as everywhere; `files find NAME` and `files say WORDS`
+search below it, as lists of their own.
+
+The folder's own row stands last, muted, as drawn above: a summary.
+Enter and Right on it open the folder's actions. In a subfolder `..`
+stands first and opens the folder above, as Esc, Left and Backspace
+do with nothing typed.
+
+### Several files: a check
+
+Insert checks the lit file or folder for one operation and moves the
+bar down a row, as Norton Commander's did; Insert on a checked row
+unchecks it. A check is a sign cell before the name, drawn as a checked
+list draws its picks: the rows' words move to the sign's right while
+any row is checked, and back when none is. There is no other mark: no
+color on the name, no bold. The status row says the count and the
+checked files' size while checks stand, in place of the lit row's line.
+Esc with nothing typed clears the checks first; the next Esc goes back.
+A check keeps to its row by the row's own identity through a filter and
+a refresh, and the pane's checks go when it opens another folder.
+
+      home
+        documents               12 items
+      v notes.md                    2 KB   4 Nov
+        todo.txt                    1 KB   2025              <- selection bar
+      v report.pdf                4.5 MB   today
+
+        this folder . 2 folders . 3 files . 4.5 MB
+
+      2 checked . 4.5 MB
+      --------------------------------------------------------
+
+      back  Esc    actions  ->    preview  Space
+
+`v` stands for the check sign. With checks standing, Right and the
+actions chip open the actions of the checked set, whichever row is
+lit, and copy, move and trash act on every checked file in the list's
+order.
+
+### The actions
+
+Right on a row opens a page of its own, a menu: its rows act on one
+click. The header names the row. The row's actions come first, then
+the folder's under a heading, so a new folder is in reach from any row
+of a folder of thousands. `check` carries its key as a chip beside it,
+the one key chip on a row; it reads `uncheck` on a checked row.
+
+      < back           files . notes.md                       x
+
+      > search or ask
+
+        attach   gemma4-e4b . local v   talk
+      ---------------------------<*>--------------------------
+
+        open                                                  <- selection bar
+        preview
+        attach to the next request
+        rename
+        copy to a folder
+        move to a folder
+        trash
+        check                                        Insert
+
+      this folder
+        new folder
+        new text file
+        two panes
+        open in the system file manager
+
+
+      --------------------------------------------------------
+
+      back  Esc
+
+A folder's row has open, rename, copy, move, trash and check. `..` and
+the folder's own row open the folder's actions alone. With checks
+standing the page is the checked set's: the header reads `files . 2
+checked`, the rows copy, move, trash and `uncheck all`, then the
+folder's. `open in the system file manager` stands only where one is
+configured.
+
+### Two panes
+
+`two panes` in the folder's actions opens a second pane beside the
+first, showing the same folder; `one pane` closes it. Each pane keeps
+its own folder, selection, scroll and typed words. One pane is active:
+it has the selection bar, its path on its first row in the text color,
+and the header names its place. The other pane has no bar and its path
+is muted: nothing else tells them apart, no accent, no frame. The
+status row is the active pane's. Ctrl+Tab makes the other pane active,
+as Tab did in Norton Commander and Tab here is the prompt's; a click on
+a row of the other pane makes it active and selects that row, and a
+second click opens it; a click on its path makes it active too. The
+key bar adds `pane  Ctrl+Tab` while two panes stand. Space previews the
+active pane's lit file in the whole window and Esc comes back to the
+panes as they were. Opening a folder, going back, typing and checking
+act in the active pane alone.
+
+At 60 cells each pane is 30: the name cut in its middle, its size or
+its count. At 120 each pane is 60, the list drawn above. Below 60 cells
+the active pane alone is drawn and the other waits, nothing said;
+`two panes` asked in such a window is refused: `two panes need a window
+60 cells wide`.
+
+      < back          files . ~/documents                     x
+
+      > search or ask
+
+        attach   gemma4-e4b . local v   talk
+      ---------------------------<*>--------------------------
+
+      ~/documents                   ~/pictures
+        ..                            ..
+        drafts         3 items        2024          120 items
+        notes.md          2 KB        holiday.jpg     4.8 MB
+        todo.txt          1 KB        photo-0412.jpg  4.8 MB
+        this folder . 1 fol...        this folder . 1 fol...
+
+
+      notes.md . Markdown . 2 KB . 4 Nov 09:14 . ~/documents
+      --------------------------------------------------------
+
+      back  Esc   actions  ->   preview  Space   pane  Ctrl+Tab
+
+The bar is on `todo.txt` in the left pane. At 120 cells, the left pane
+`~/documents` at 60 and the right `~/pictures` at 60, each pane the
+list the page draws for a folder: name, size or count, date.
+
+In two panes copy and move go to the other pane's folder, and the
+action says where: `copy to ~/pictures`, `move to ~/pictures`. The
+other pane on the same folder, on the trash or on a search refuses:
+`the other pane shows this folder: open another there`, `the other
+pane is not a folder`. In one pane `copy to a folder` and `move to a
+folder` pick the folder as today: open folders until the right one,
+Enter on the row that lands it here. After a copy or a move the other
+pane reads its folder again, so the result is seen.
+
+### The operation and its receipt
+
+One file goes through the provider's step as today, its receipt on the
+status row with `undo`. Several checked files run one after another,
+in the list's order. While one is felt, a third of a second in, the
+status row shows the march with the file and the count:
+
+      copying photo-0412.jpg . 2 of 5
+
+Then one receipt for the whole, with the real counts, and `undo` that
+takes the whole back, newest first:
+
+      5 copied to ~/pictures . 12.4 MB                    undo
+      3 of 5 moved to ~/pictures, 2 refused: notes.md is there already
+      2 of 5 trashed, 3 not: stopped                      undo
+
+Esc while files are being copied, moved or trashed stops after the
+file under way, wherever you are, and the receipt says what was done;
+the x does the same and the dialog stays open, so no transfer ends
+with the window. The next Esc or x closes. A transfer goes on while
+you look at home or apps. Typed `undo` at the prompt takes the last
+change back too. The checks clear once the operation ends.
+
+### A conflict: a page of choices
+
+Before a copy or a move starts, the names already in the destination
+are read from its rows. Each conflict is a page, a menu, never a
+message box; the second column says what the choice does, muted:
+
+      < back     files . notes.md is in ~/pictures already    x
+
+      > search or ask
+
+        attach   gemma4-e4b . local v   talk
+      ---------------------------<*>--------------------------
+
+        skip                                                  <- selection bar
+        keep both              the copy is named notes 2.md
+        replace                the one there goes to the trash
+
+      the 2 others too
+        skip all
+        keep both for all
+        replace all
+
+
+      --------------------------------------------------------
+
+      back  Esc
+
+The second group stands only while more conflicts remain. Esc lets the
+operation go and nothing is said: Esc said it. A replaced file is in
+the trash and the receipt says so; a conflict the rows could not show
+(a file past the first page of a large folder, a hidden one) is refused
+by the provider with its reason and the operation goes on with the
+rest.
+
+### A form typed in the prompt
+
+Rename, new folder and new text file take their words in the prompt,
+as apps' forms do: the placeholder says what to type (`the new name`,
+`a name for the folder`, `a name for the text file`), the key bar says
+`let go  Esc   save  Enter`, Enter saves and Esc lets it go. Rename
+starts with the name as it is, so a letter can be changed.
+
+### Not in v0
+
+Select all and checks by pattern; sorting other than folders first,
+then by name; a cancel inside one large file (Esc stops after it); a
+percentage while totals are unknown; archive contents.
+
 ## About
 
 The page opens on the versions: `spark-shell v0.124` first, the
