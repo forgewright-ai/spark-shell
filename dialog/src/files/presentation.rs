@@ -219,6 +219,8 @@ impl State {
                     ask: vec![],
                     said: Some("open in the system file manager".into()),
                     pick: None,
+                    value: None,
+                    children: None,
                 }
             })
         });

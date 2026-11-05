@@ -6327,7 +6327,7 @@ win_open() {   # -> the windows sway shows, one a line: APP<tab>TITLE<tab>ID; th
 }
 win_label() { win_open | awk -F '\t' '{ n = split($1, p, "."); a = tolower(p[n]); if (a == "footclient") a = "foot"; l = a; if ($2 != "" && tolower($2) != a) l = l ": " $2; print l "\t" $3 }'; }   # -> display label and native container ID: the app, the last word of its id (org.mozilla.firefox is firefox), then its title
 win_facts() {   # -> one JSON object from one read of the tree: .windows (each with its label, id, workspace, its heading, placement, and whether it is the one in front), .here (the workspace you are on), .spaces (every workspace and its apps); nothing without sway. A window in the scratchpad is left out, and so is the dialog
-    swaymsg -t get_tree 2>/dev/null | jq -c --arg me "$PANEL_APP" --arg sep "$PANEL_SEP" --arg def "${WINDOWS:-split}" '
+    swaymsg -t get_tree 2>/dev/null | jq -c --arg me "$PANEL_APP" --arg sep "$PANEL_SEP" --arg def "${WINDOWS:-split}" --arg aside "$(win_aside)" '
         def kids: (.nodes // []) + (.floating_nodes // []);
         def leaves: if (kids | length) == 0 then . else kids[] | leaves end;
         def app: (.app_id // .window_properties.class // "") | split(".") | last | ascii_downcase | if . == "footclient" then "foot" else . end;
@@ -6349,11 +6349,12 @@ win_facts() {   # -> one JSON object from one read of the tree: .windows (each w
         | {windows: [$sorted[] | heading as $g | .num as $w | windows[]
               | app as $a | ((.name // "") | gsub("\t"; " ")) as $t
               | {label: (if $t == "" or ($t | ascii_downcase) == $a then $a else $a + ": " + $t end), id, ws: $w, group: $g,
-                 placed: (if .fullscreen_mode == 1 then "full screen" elif .type == "floating_con" then "floating" else "tiled" end), front: (.id == $in_front)}],
+                 placed: (if .fullscreen_mode == 1 or (.id | tostring) == $aside then "full screen" elif .type == "floating_con" then "floating" else "tiled" end), floating: (.type == "floating_con"), front: (.id == $in_front)}],
            here: (if $here == null then null else {ws: $here.num, group: ($here | heading), empty: (($here | windows | length) == 0),
                  arrange: (if ($here | windows | length) == 0 then $def else ($here | arrangement) as $l | if $l == "tabbed" then "tabs" elif $l == "stacked" then "stacked" else "split" end end)} end),
            spaces: [$sorted[] | named as $m | {num, mark: $m.mark, label: $m.label, apps: ([windows[] | app] | unique)}]}'
 }
+win_aside() { [ -z "${SPARK_SHELL_ASIDE:-}" ] || cat "$SPARK_SHELL_ASIDE" 2>/dev/null || :; }   # -> the window that stepped aside for the dialog, if one did
 win_read() { { if [ -n "${WIN_FACTS_READ:-}" ]; then cat "$TMP/win.facts"; else win_facts; fi; } | jq -r '.windows[]? | [.label, (.id | tostring), .group] | @tsv'; }   # -> LABEL<tab>ID<tab>HEADING, a window a line, the workspaces in order
 win_now() { win_facts | jq -r '.here.arrange // "split"'; }   # -> how the windows on this workspace stand: split, tabs or stacked
 win_arrange() {   # win_arrange split|tabs|stacked -- the tiled windows on this workspace so; true with none to arrange
@@ -6370,11 +6371,12 @@ win_move() {   # win_move ID N -- a window to workspace N; you stay where you ar
 }
 win_place() {   # win_place ID tiled|floating|full|left|right|up|down -- how one window sits, by its ID
     _wpn=$(win_name_of "$1"); [ -n "$_wpn" ] || { echo 'that window is no longer open'; return 1; }
-    _wpw=$(win_facts | jq -r --argjson i "$1" '.windows[] | select(.id == $i) | .placed')
+    _wpw=$(win_facts | jq -r --argjson i "$1" '.windows[] | select(.id == $i) | .floating')
     case $2 in
         tiled) swaymsg -- "[con_id=$1] fullscreen disable, floating disable" >/dev/null 2>&1 || { echo "$_wpn did not move: look at its window, then try again"; return 1; }
             echo "$_wpn tiled" ;;
-        floating) [ "$_wpw" = floating ] || _wpr=$( REFUSE_AS=window; desk_window float "$1" ) || { echo "${_wpr#spark-shell window: }"; return 1; }
+        floating) if [ "$_wpw" = true ]; then swaymsg -- "[con_id=$1] fullscreen disable" >/dev/null 2>&1 || :
+            else _wpr=$( REFUSE_AS=window; desk_window float "$1" ) || { echo "${_wpr#spark-shell window: }"; return 1; }; fi
             echo "$_wpn floating" ;;
         full) swaymsg -- "[con_id=$1] focus, fullscreen enable" >/dev/null 2>&1 || { echo "$_wpn did not go full screen: look at its window, then try again"; return 1; }
             : > "$TMP/opened"; echo "$_wpn full screen" ;;   # sway draws it over the dialog, so the dialog closes
@@ -6382,6 +6384,7 @@ win_place() {   # win_place ID tiled|floating|full|left|right|up|down -- how one
             case $2 in up) _wpw=top ;; down) _wpw=bottom ;; *) _wpw=$2 ;; esac
             echo "$_wpn on the $_wpw half" ;;
     esac
+    [ "$2" = full ] || [ "$(win_aside)" != "$1" ] || : > "$SPARK_SHELL_ASIDE"   # placed: it stays so when the dialog closes
 }
 win_capture() {   # win_capture WHAT [ID] -- the dialog steps aside, the picture is taken, the dialog comes back with its name, or the reason there is none; a window on another workspace is put in front first, and you end where you began
     swaymsg -- "[app_id=\"$PANEL_APP\"] move scratchpad" >/dev/null 2>&1 || :
@@ -8288,11 +8291,11 @@ rem_page() {   # rem_page UID -> a reminder's page: its words, when, and the cal
 }
 win_page() {   # win_page ID -> an open window's page: its app, its title, its workspace, its screen, its size
     case $1 in ''|*[!0-9]*) return 1 ;; esac
-    swaymsg -t get_tree 2>/dev/null | jq -r --argjson i "$1" '
+    swaymsg -t get_tree 2>/dev/null | jq -r --argjson i "$1" --arg aside "$(win_aside)" '
         [.nodes[] | select(.type == "output") as $o | $o.nodes[] | select(.type == "workspace") as $w | $w | .. | objects | select(.id? == $i and (.type == "con" or .type == "floating_con")) | {o: $o.name, w: $w.name, n: .}] | .[0] // empty
         | (.n.app_id // .n.window_properties.class // "a window"), (.n.name // ""),
           "workspace\t" + (.w | split(":") | .[0] + (if (.[1] // "") != "" and .[1] != .[0] then " " + .[1] else "" end)), "screen\t" + .o, "size\t" + (.n.rect.width | tostring) + " by " + (.n.rect.height | tostring) + " pixels",
-          "placed\t" + (if .n.fullscreen_mode == 1 then "full screen" elif .n.type == "floating_con" then "floating" else "tiled" end)' > "$TMP/win.page" 2>/dev/null
+          "placed\t" + (if .n.fullscreen_mode == 1 or (.n.id | tostring) == $aside then "full screen" elif .n.type == "floating_con" then "floating" else "tiled" end)' > "$TMP/win.page" 2>/dev/null
     [ -s "$TMP/win.page" ] || return 1
     sed -n '3,$p' "$TMP/win.page" | page_of "$(sed -n 1p "$TMP/win.page")" "$(sed -n 2p "$TMP/win.page")"
 }
@@ -9098,9 +9101,10 @@ panel_full_aside() {   # a window fullscreen on the panel's workspace steps asid
     [ -n "$FULL_ID" ] || return 0
     swaymsg -- "[con_id=$FULL_ID] fullscreen disable" >/dev/null 2>&1 || { FULL_ID=''; return 0; }
     swaymsg -- "[app_id=$PANEL_APP] focus" >/dev/null 2>&1 || :
+    printf '%s\n' "$FULL_ID" > "$TMP/full.aside"; SPARK_SHELL_ASIDE=$TMP/full.aside; export SPARK_SHELL_ASIDE   # a provider reads the window as full screen, and placing it clears this
 }
-panel_full_back() {   # the window that stepped aside is fullscreen again, unless a pick put a window on the screen
-    [ -n "${FULL_ID:-}" ] && [ ! -f "$TMP/opened" ] || return 0
+panel_full_back() {   # the window that stepped aside is fullscreen again, unless a pick put a window on the screen or placed it
+    [ -n "${FULL_ID:-}" ] && [ ! -f "$TMP/opened" ] && [ -s "$TMP/full.aside" ] || return 0
     swaymsg -- "[con_id=$FULL_ID] fullscreen enable" >/dev/null 2>&1 || :
 }
 panel_reload() {   # the settings again, as a pick may have changed them (a palette, the font): the config, the palette's hex, the panel's shades and signs

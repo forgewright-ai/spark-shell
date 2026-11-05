@@ -4488,6 +4488,15 @@ STUB
     cat > "$H/.local/bin/fzf" <<'STUB'
 #!/bin/sh
 case $1 in --version) echo 0.60.3; exit 0 ;; esac
+: > "$SPARK_SHELL_ASIDE"; exit 130
+STUB
+    rm -f "$swlog"
+    out=$(SWAYSOCK=/tmp/x SPARK_SHELL_TEST_TTY=1 "$H/ft/foot" -c 'echo $$ > "$HOME/panel.ppid"; sh "$1" panel 2>&1 </dev/null; echo "exit $?"' foot "$SH"); st=${out##*exit }
+    [ "$st" = 0 ] && [ "$(grep 'fullscreen' "$swlog" | tr '\n' '|')" = '[con_id=77] fullscreen disable|' ] \
+        && ok "the window under a fullscreen one: placed otherwise while the panel is up, it stays as placed" || bad "window aside placed" "st=$st sway=$(tr '\n' '|' < "$swlog" 2>&1) out=$out"
+    cat > "$H/.local/bin/fzf" <<'STUB'
+#!/bin/sh
+case $1 in --version) echo 0.60.3; exit 0 ;; esac
 n=$(cat "$HOME/fzf.calls" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$HOME/fzf.calls"
 cat > "$HOME/fzf.in.$n"; printf '%s\n' "$*" > "$HOME/fzf.args.$n"
 if [ "$n" -eq 1 ]; then printf '\n  apps       firefox\tapps open firefox\n'; exit 0; else exit 130; fi
@@ -4788,13 +4797,22 @@ ans 9 | jq -e '.result.tools[] | select(.name == "layout_delete") | .annotations
     && [ "$(ans 5 | jq -r '.result.content[0].text')" = 'spark-shell layout: webdev is a layout already: pick another name' ] \
     && [ "$(jq -r .arrange "$HOME/.config/spark-shell/layouts/tabbed")" = tabs ] \
     && ok "provide layout: a row with its apps and its reason, the status line; rename and delete with undo, no typed yes; a save keeps how the workspace stands" || bad "workspace layouts" "$_l $(cut -c1-300 "$H/mcp.out")"
+printf '21\n' > "$HOME/ls.aside"
+SPARK_SHELL_ASIDE="$HOME/ls.aside"; export SPARK_SHELL_ASIDE
+mcp window "$init" '{"jsonrpc":"2.0","method":"notifications/initialized"}' "$(rq 31 resources/read '{"uri":"spark-shell://window/rows"}')" "$(call 32 window_place '{"name":"22","how":"tiled"}')" "$(call 33 window_place '{"name":"21","how":"tiled"}')"
+_a=$(ans 31 | jq -r '.result.contents[0].text' | jq -r '.rows[] | select(.tool.arguments.name == "21") | .line'); _u=$(ans 33 | jq -c '.result.structuredContent.undo')
+unset SPARK_SHELL_ASIDE
+case $_a in *'full screen'*) _ar=1 ;; *) _ar='' ;; esac
+[ -n "$_ar" ] && [ "$_u" = '{"name":"window_place","arguments":{"name":"21","how":"full"}}' ] && [ ! -s "$HOME/ls.aside" ] \
+    && ok "provide window: a window stepped aside for the dialog reads full screen, another's placing leaves it, its own clears it, and undo makes it full again" || bad "workspace aside" "line=$_a undo=$_u aside=$(cat "$HOME/ls.aside" 2>&1)"
 rm -f "$HOME/.config/spark-shell/layouts/drafting" "$HOME/.config/spark-shell/layouts/tabbed"
 # no sway: the window section says so, and a layout says tmux
-unset SWAYSOCK; PATH=$_lp
+unset SWAYSOCK; mkdir -p "$H/nosway"; printf '#!/bin/sh\nexit 1\n' > "$H/nosway/swaymsg"; chmod +x "$H/nosway/swaymsg"; PATH=$H/nosway:$_lp   # as swaymsg does with no socket
 mcp window "$(rq 1 resources/read '{"uri":"spark-shell://window/rows"}')"
 _w=$(ans 1 | jq -r '.result.contents[0].text')
 mcp layout "$(rq 1 resources/read '{"uri":"spark-shell://layout/rows"}')"
 _l=$(ans 1 | jq -r '.result.contents[0].text')
+PATH=$_lp
 [ "$(printf '%s' "$_w" | jq -c '[.state, (.rows | length)]')" = '["no desktop",0]' ] && printf '%s' "$_l" | jq -e '.rows[] | select(.text == "webdev") | .line | endswith("opens in tmux")' >/dev/null \
     && ok "provide with no sway: no desktop, no rows of windows, and a layout says it opens in tmux" || bad "workspace no desktop" "$_w $_l"
 rm -f "$HOME/ls.tree" "$HOME/ls.log" "$H/ls/ps" "$H/ls/uname"   # the layouts after it are webdev alone

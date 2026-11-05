@@ -168,6 +168,15 @@ def main():
             ok(desk.window("proof-one")["fullscreen_mode"] == 1, "place: full screen", full)
             call(desk, "window", "window_place", name=str(one), how="tiled")
             ok(desk.window("proof-one")["fullscreen_mode"] == 0, "place: tiled leaves full screen")
+            aside = root / "aside"
+            aside.write_text(f"{one}\n")
+            desk.env["SPARK_SHELL_ASIDE"] = str(aside)   # what the panel hands the dialog when a full screen window steps aside
+            line = next(r for r in rows(desk, "window")["rows"] if r.get("tool", {}).get("arguments", {}).get("name") == str(one))["line"]
+            ok("full screen" in line, "aside: a window that stepped aside reads full screen", line)
+            call(desk, "window", "window_place", name=str(one), how="floating")
+            ok(desk.window("proof-one")["type"] == "floating_con" and not aside.read_text().strip(), "aside: placing it clears it, so it stays as placed")
+            call(desk, "window", "window_place", name=str(one), how="tiled")
+            del desk.env["SPARK_SHELL_ASIDE"]
             desk.sway("[app_id=spark-dialog] focus")   # full screen took the focus, as the dialog closing would give it
 
             arranged = call(desk, "window", "window_tabs")

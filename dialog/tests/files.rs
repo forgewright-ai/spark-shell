@@ -1253,6 +1253,8 @@ fn files_batch_golden() {
         ask: vec![],
         said: None,
         pick: None,
+        value: None,
+        children: None,
     };
     let steps = vec![
         (call("photo-0412.jpg"), "photo-0412.jpg".to_string(), 0u64),

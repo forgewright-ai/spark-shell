@@ -22,6 +22,9 @@ the layouts, and what you can do to them.
   Placement is tiled, floating, full screen or a half of the screen, by
   the window's ID where the keys take the one in focus. Each change is
   said on the status row with undo.
+- A full screen window steps aside while the dialog is up. Its page
+  still reads full screen, and placing it another way keeps it there
+  when the dialog closes; it no longer jumps back.
 - `arrange windows` is one row: side by side, tabs or stacked, on this
   workspace now and on every new workspace. Its value is read from the
   workspace you are on, so it no longer goes stale after Super+w, and
