@@ -106,6 +106,7 @@ def ask_section(runtime, section):
 
 
 def open_home(shell, section=None):
+    section = section or None   # an empty word is no section: Super+Space and the bar's sign ask for none
     if section is not None and not re.fullmatch(r"[a-z]{1,32}", section):
         raise ValueError("a section is one word in lowercase letters")
     runtime = Path(os.environ.get("XDG_RUNTIME_DIR", str(config_dir())))
