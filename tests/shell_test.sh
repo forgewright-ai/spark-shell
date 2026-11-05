@@ -872,11 +872,11 @@ else
         && ok "sway: Super+Space opens home, without separate desktop chat keys" || bad "sway home render" "$(grep -n 'desktop home' "$sway")"
     dini=$HOME/.config/foot/dialog.ini
     grep -qx 'resize-by-cells=no' "$dini" && ok "home: floating snaps honor the compositor's pixel dimensions" || bad "home pixel resize" "$(cat "$dini")"
-    grep -qx "include=$HOME/.config/foot/foot.ini" "$dini" && grep -qx 'initial-window-size-chars=60x40' "$dini" && grep -qx 'pad=24x19' "$dini" && grep -qx 'background=0f0f0f' "$dini" && grep -qx 'alpha=1.0' "$dini" && grep -qx '\[colors-dark\]' "$dini" \
+    grep -qx "include=$HOME/.config/foot/foot.ini" "$dini" && grep -qx 'initial-window-size-chars=60x40' "$dini" && grep -qx 'pad=0x0' "$dini" && grep -qx 'background=0f0f0f' "$dini" && grep -qx 'alpha=1.0' "$dini" && grep -qx '\[colors-dark\]' "$dini" \
         && [ "$(sed -n '/^\[environment\]$/,$p' "$dini" | grep -v '^#' | tr '\n' ' ')" = '[environment] SPARK_DIALOG_WINDOW=1 ' ] \
-        && ok "dialog.ini: foot.ini included, then the dialog's size, air and surface, opaque (#33); the window says it is the dialog's, so its prompt is drawn the moment it maps (#138)" || bad "dialog.ini" "$(cat "$dini" 2>&1)"
-    grep -qx '16=ff5555' "$foot" && grep -qx '17=555555' "$foot" && grep -qx '18=0f0f0f' "$foot" && grep -qx '19=1e1e1e' "$foot" && grep -q '^20=[0-9a-f]\{6\}$' "$foot" \
-        && ok "foot.ini: the five slots after the sixteen, the accent, the muted color, the surface, the lit row, the quiet text (#34)" || bad "foot slots" "$(grep -n '^[12][0-9]=' "$foot")"
+        && ok "dialog.ini: foot.ini included, then the dialog's size and surface, opaque, no air of foot's own (the dialog draws its margins, v0.124.5) (#33); the window says it is the dialog's, so its prompt is drawn the moment it maps (#138)" || bad "dialog.ini" "$(cat "$dini" 2>&1)"
+    grep -qx '16=ff5555' "$foot" && grep -qx '17=555555' "$foot" && grep -qx '18=0f0f0f' "$foot" && grep -qx '19=1e1e1e' "$foot" && grep -q '^20=[0-9a-f]\{6\}$' "$foot" && grep -qx '21=4b2020' "$foot" \
+        && ok "foot.ini: the six slots after the sixteen, the accent, the muted color, the surface, the lit row, the quiet text (#34), the header's band, the accent at a quarter over the surface (v0.124.5)" || bad "foot slots" "$(grep -n '^[12][0-9]=' "$foot")"
     sgr=$HOME/.config/spark-shell/sgr.sh
     # shellcheck disable=SC1090   # the render just written, on purpose
     (TERM=foot; . "$sgr" && [ "$SPARK_ACCENT_SGR" = '1;38;5;16' ] && [ "$SPARK_MUTED_SGR" = '38;5;17' ] && [ "$SPARK_WARN_SGR" = '1;31' ]) \
@@ -2236,12 +2236,13 @@ printf 'DESKTOP=sway\nTHEME=test\nALPHA=0.75\n' > "$HOME/.config/spark-shell/con
 printf '#!/bin/sh\nprintf "%%s\\n" "  100     1 ?        foot" "  101   100 pts/4    sh" "  102   101 pts/4    bash" "  200     1 ?        foot" "  201   200 pts/5    sh" "  202   201 pts/5    spark-dialog" "  300     1 ?        sshd" "  301   300 pts/6    bash"\n' > "$H/lx/ps"
 chmod +x "$H/lx/ps"
 out=$(L theme test)
-slots=$(printf '\033]4;16;#fe8019\033\\\033]4;17;#928374\033\\\033]4;18;#393834\033\\\033]4;19;#4b4840\033\\')
-grep -qF "$slots" "$H/pts/4" && grep -qF "$(printf '\033]11;[75]#282828\033\\')" "$H/pts/4" \
-    && grep -qF "$slots" "$H/pts/5" && grep -qF "$(printf '\033]11;#393834\033\\')" "$H/pts/5" \
-    && ! grep -qF "$(printf '\033]4;16;')" "$H/pts/6" && grep -qF "$(printf '\033]11;#282828\033\\')" "$H/pts/6" \
+slots=$(printf '\033]4;16;#fe8019\033\\\033]4;17;#928374\033\\\033]4;18;#393834\033\\\033]4;19;#4b4840\033\\\033]4;20;#')
+band=$(printf '\033]4;21;#6a4a2e\033\\')
+grep -qF "$slots" "$H/pts/4" && grep -qF "$band" "$H/pts/4" && grep -qF "$(printf '\033]11;[75]#282828\033\\')" "$H/pts/4" \
+    && grep -qF "$slots" "$H/pts/5" && grep -qF "$band" "$H/pts/5" && grep -qF "$(printf '\033]11;#393834\033\\')" "$H/pts/5" \
+    && ! grep -qF "$(printf '\033]4;16;')" "$H/pts/6" && ! grep -qF "$band" "$H/pts/6" && grep -qF "$(printf '\033]11;#282828\033\\')" "$H/pts/6" \
     && printf '%s\n' "$out" | grep -qx 'Repainted 3 open terminals.' \
-    && ok "theme test on the desktop: a window of foot takes the five slots and its transparency ([75]), the dialog's window its surface, opaque; an ssh pty the sixteen alone" || bad "repaint kinds" "$(od -c "$H/pts/4" | tail -4; od -c "$H/pts/5" | tail -3; od -c "$H/pts/6" | tail -3; printf '%s\n' "$out" | tail -3)"
+    && ok "theme test on the desktop: a window of foot takes the six slots (the header's band among them, v0.124.5) and its transparency ([75]), the dialog's window its surface, opaque; an ssh pty the sixteen alone" || bad "repaint kinds" "$(od -c "$H/pts/4" | tail -4; od -c "$H/pts/5" | tail -3; od -c "$H/pts/6" | tail -3; printf '%s\n' "$out" | tail -3)"
 rm -f "$H/lx/ps" "$H/pts/4" "$H/pts/5" "$H/pts/6"
 # macOS: Terminal.app is its profile's, no pty is written
 fresh

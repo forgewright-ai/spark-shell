@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.124.5
+
+- The header is a band across the window's top: the accent at a quarter
+  over the surface, the tint the desktop gives the place a moving window
+  would land on, in a slot of its own (foot's 21st, sent to the open
+  windows with the others). Its words are in the text color and the
+  title is bold, since muted did not read on the tint. The band meets
+  the window's edges, and so does the selection bar: foot draws no air
+  of its own around the dialog's cells any more, and the dialog's
+  margins, two cells each side and a row under the key bar, are the
+  air. The divider asked for under the title line is the band's lower
+  edge.
+- A key bar that wraps in a narrow window takes the row of air above
+  it, so the window's last row, its bottom edge now, stays empty.
+- A bar block clicked while home is open takes home to that block's
+  section, the draft and the way back kept. It focused the window and
+  left home where it was, and a click on the notifications count
+  cleared the count with nothing to show for it (#222).
+
 ## v0.124.4
 
 - The header is back at the left where there is a level above, the

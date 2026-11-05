@@ -113,13 +113,14 @@ pub fn pump(app: &mut App, rx: &Receiver<Incoming>, done: impl Fn(&App) -> bool)
 /// per run of one style, a glyph outside ASCII held to one cell, a
 /// picture's cells one image (`picture`, its URL).
 pub fn html_runs(buf: &Buffer, pal: &Palette, caption: &str, picture: &str) -> String {
+    // no air around the frame (v0.124.5): the window has none of its own, so the render shows its edges as they are
     let hex = |c: Color, d: Color| match if c == Color::Reset { d } else { c } {
         Color::Rgb(r, g, b) => format!("#{:02x}{:02x}{:02x}", r, g, b),
         _ => "inherit".into(),
     };
     let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     let mut out = format!(
-        "<div><p style=\"color:{};font-size:13px;margin:0 0 8px\">{}</p><div style=\"background:{};padding:19px 2ch;white-space:pre;width:{}ch;line-height:19px\">",
+        "<div><p style=\"color:{};font-size:13px;margin:0 0 8px\">{}</p><div style=\"background:{};padding:0;white-space:pre;width:{}ch;line-height:19px\">",
         hex(pal.muted, pal.muted),
         esc(caption),
         hex(pal.surface, pal.surface),

@@ -19,8 +19,9 @@ home, apps, help, about and the conversation, up to 120 for a list
 with columns, the whole window for a preview. Top and bottom have the
 same shape, a strip, a rule, a row of air, then content:
 
-    row 0   the header: back at the left where there is a level above,
-            where you are and its state in the middle, the x at the right
+    row 0   the header, a band across the window: back at the left where
+            there is a level above, where you are and its state in the
+            middle, the x at the right
     row 2   the prompt
     row 4   the prompt's tools: attach, the model, talk
     row 6   a rule with the diamond in its middle, a row of air each side
@@ -37,6 +38,19 @@ drawn for decoration alone.
 The march that says spark is thinking on your words stays in the
 header, before the x. Nothing at the bottom animates. The header has
 no clock: the bar has it (v0.124.4).
+
+The header is a band (v0.124.5): a slot of its own, the accent at a
+quarter over the surface, the tint the desktop gives the place a
+moving window would land on, from the window's first cell to its
+last. Its words are in the text color, since muted does not read on
+the tint; the title is bold; the march is in the accent. The window
+has no air of foot's own around its cells: the band and the selection
+bar meet the window's edges, and the dialog's margins are the air,
+two cells each side and a row under the key bar. A key bar that wraps
+in a narrow window takes the row of air above it, h-3 and h-2, so the
+last row stays empty. No rule is drawn under the header: the band's
+lower edge is the divider. No border: the desktop's windows are flat
+and draw none, and sway cannot give one window a line of its own.
 
 In a window wider than the column, a wide one or a full screen, the
 frame is the window and the column keeps its measure: the header, both
@@ -157,11 +171,11 @@ A menu. Air between its rows when the window has the rows for it, two
 rows of air between its groups; the minimum window single spaces and
 scrolls.
 
-      home                            Wed 4 Nov . 09:39   x
+                                  home                         x   <- header band
 
       > search or ask
 
-        attach   gemma4-e4b . local v   talk
+        attach             gemma4-e4b              talk
       ---------------------------<*>--------------------------
 
         apps         14 installed . 2 hidden
@@ -227,11 +241,11 @@ Comment with the trailing period dropped (a comment that only repeats
 the name is dropped too), else nothing; cut with an ellipsis at the
 column's end and whole on the status row and in the details.
 
-      apps . installed apps           Wed 4 Nov . 09:39   x
+        < back             apps . installed apps                 x   <- header band
 
       > search or ask
 
-        attach   gemma4-e4b . local v   talk
+        attach             gemma4-e4b              talk
       ---------------------------<*>--------------------------
 
       system
@@ -307,11 +321,11 @@ date with its time, the place. Names keep their spelling. A folder is
 told by its item count where a file has a size, and by its kind
 column where there is one.
 
-      files . ~                       Wed 4 Nov . 09:39   x
+        < back                   files . ~                       x   <- header band
 
       > search or ask
 
-        attach   gemma4-e4b . local v   talk
+        attach             gemma4-e4b              talk
       ---------------------------<*>--------------------------
 
       home

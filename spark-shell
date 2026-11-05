@@ -682,13 +682,18 @@ win_words() { case ${1:-split} in split) echo 'side by side' ;; *) echo "$1" ;; 
 transparency_of() { awk -v a="${1:-1}" 'BEGIN { printf "%d", (1 - a) * 100 + 0.5 }'; }   # transparency_of ALPHA -> the windows' transparency, a percent
 
 # The panel's surface: its window is a shade of the palette's background
-# towards the text, the picked row a shade more, with air around the
-# text from the font size; no frame, so it reads as a surface of the
-# desktop, not a window with a border. The sway template takes the keys.
-PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_BG PANEL_HI PANEL_MUTED NOTIFY_PAD NOTIFY_WIDTH NOTIFY_HEIGHT"   # NOTIFY_*: a notification's air, width and most height in pixels, from the text size (mako's config, #71)
+# towards the text, the picked row a shade more, the header's band the
+# accent at a quarter over it; no frame and no air of foot's own, so the
+# band and the lit row meet the window's edges and the dialog draws its
+# margins in cells (dialog/DESIGN.md, v0.124.5). The sway template takes
+# the keys.
+PANEL_KEYS="PANEL_SIZE PANEL_PAD PANEL_BG PANEL_HI PANEL_BAND PANEL_MUTED NOTIFY_PAD NOTIFY_WIDTH NOTIFY_HEIGHT"   # NOTIFY_*: a notification's air, width and most height in pixels, from the text size (mako's config, #71)
 panel_load() {
     # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
-    PANEL_BG=$(hex_mix "$HEX_BG" "$HEX_FG" 9); PANEL_HI=$(hex_mix "$HEX_BG" "$HEX_FG" 18); PANEL_PAD=$(panel_pad)
+    # the header's band (dialog/DESIGN.md, v0.124.5): the accent at a quarter over the surface, the tint the desktop
+    # gives the drop area; no air of foot's own around the cells: the dialog draws its margins, so its band and its
+    # selection bar meet the window's edges
+    PANEL_BG=$(hex_mix "$HEX_BG" "$HEX_FG" 9); PANEL_HI=$(hex_mix "$HEX_BG" "$HEX_FG" 18); PANEL_BAND=$(hex_mix "$PANEL_BG" "$HEX_ACCENT" 25); PANEL_PAD=0x0
     _ns=$(look_font_size); : "${_ns:=12}"
     # shellcheck disable=SC2034   # read by render_expr through PANEL_KEYS
     { NOTIFY_PAD="$_ns,$((_ns * 3 / 2))"; NOTIFY_WIDTH=$((_ns * 30)); NOTIFY_HEIGHT=$((_ns * 8)); }   # a small card: half the dialog's air, about thirty cells, four lines at most
@@ -712,7 +717,6 @@ hex_sgr() {   # hex_sgr rrggbb -> the SGR of that color as text
     # shellcheck disable=SC2046   # three numbers, split on purpose
     set -- $(hex_rgb "#$1"); printf '38;2;%s;%s;%s' "$1" "$2" "$3"
 }
-panel_pad() { _s=$(look_font_size); : "${_s:=12}"; printf '%sx%s' $(( _s * 2 )) $(( _s * 16 / 10 )); }   # the air in pixels: two cells wide, one tall, at the font's size
 panel_foot() {   # panel_foot ARGS... -- the desktop window as Super+d opens it: foot with the dialog's own dialog.ini (its size, air and ground), running spark-shell dialog ARGS (PANEL_LEAD, setsid, before it); before dialog.ini is rendered, the same window from options
     if [ -f "$HOME/.config/foot/dialog.ini" ]; then
         # shellcheck disable=SC2086   # the leader, or nothing
@@ -2299,7 +2303,7 @@ osc_render() {   # osc_render plain|foot|dialog -> $TMP/osc.KIND: the look loade
         printf '\033]4;%d;#%s\033\\' "$_i" "$_h" >> "$_o"
         _i=$((_i + 1))
     done
-    [ "$1" = plain ] || printf '\033]4;16;#%s\033\\\033]4;17;#%s\033\\\033]4;18;#%s\033\\\033]4;19;#%s\033\\\033]4;20;#%s\033\\' "$HEX_ACCENT" "$HEX_MUTED" "$PANEL_BG" "$PANEL_HI" "$PANEL_MUTED" >> "$_o"
+    [ "$1" = plain ] || printf '\033]4;16;#%s\033\\\033]4;17;#%s\033\\\033]4;18;#%s\033\\\033]4;19;#%s\033\\\033]4;20;#%s\033\\\033]4;21;#%s\033\\' "$HEX_ACCENT" "$HEX_MUTED" "$PANEL_BG" "$PANEL_HI" "$PANEL_MUTED" "$PANEL_BAND" >> "$_o"
     case $1 in
         foot) _bg="[$(awk -v a="$FOOT_ALPHA" 'BEGIN { printf "%d", a * 100 + 0.5 }')]#$HEX_BG" ;;   # foot's own words: the opacity in percent before the color
         dialog) _bg="#$PANEL_BG" ;;   # the dialog's surface, opaque as its window is

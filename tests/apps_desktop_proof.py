@@ -49,7 +49,7 @@ class Session:
         dump = fixtures / "screen-dump"
         dump.write_text("from pathlib import Path\nimport sys\n(Path.home() / 'screen.txt').write_text(sys.stdin.read())\n")
         template = (REPO / "templates/.config/foot/dialog.ini").read_text()
-        for old, new in {"@HOME@": str(self.root), "@PANEL_SIZE@": "60x40", "@PANEL_PAD@": "18x18", "@FOOT_COLORS@": colors, "@PANEL_BG@": self.palette["colors"]["PANEL_BG"]}.items():
+        for old, new in {"@HOME@": str(self.root), "@PANEL_SIZE@": "60x40", "@PANEL_PAD@": "0x0", "@FOOT_COLORS@": colors, "@PANEL_BG@": self.palette["colors"]["PANEL_BG"]}.items():
             template = template.replace(old, new)
         template += "\n[key-bindings]\npipe-visible=[python3 " + str(dump) + "] Control+Shift+F12\n"
         (foot / "dialog.ini").write_text(template)
@@ -93,7 +93,7 @@ class Session:
         self.first = wait_for(lambda: self.window(), "home")
         time.sleep(3)
         rect = self.first["rect"]
-        self.cell = ((rect["width"] - 36) // 60, (rect["height"] - 36) // 40)
+        self.cell = (rect["width"] // 60, rect["height"] // 40)   # no air of foot's own (v0.124.5)
         self.area = next(w["rect"] for w in self.sway("-t", "get_workspaces") if w["focused"])
 
     def sway(self, *args):

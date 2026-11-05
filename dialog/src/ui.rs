@@ -400,18 +400,22 @@ fn draw_layout(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer) -> Drawn
 
 /// The header (dialog/DESIGN.md, v0.124.4): back at the left where there is a level above this one, the place's
 /// name centered with its state after it, the x at the right, and the march before the x while spark thinks on
-/// the words. No clock: the bar has it. In a window wider than the column it takes the window's width.
+/// the words. No clock: the bar has it. In a window wider than the column it takes the window's width. The row is
+/// a band (v0.124.5): the band slot, the accent at a quarter over the surface, from the window's first cell to its
+/// last; its words are in the text color, since muted does not read on the tint, the title bold, the march in the
+/// accent.
 fn header(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
     let w = pen.w;
     let pal = pen.pal.clone();
+    pen.buf.set_style(Rect::new(0, 0, w, 1), Style::default().bg(pal.band));
     let right = if app.cfg.close { w - 3 } else { w - 1 };
     if app.cfg.close {
-        pen.put(w - 3, 0, CLOSE, pal.muted, false, false);
+        pen.put(w - 3, 0, CLOSE, pal.fg, false, false);
         drawn.close = Some((w - 4, w - 1));
     }
     let mut left = 2;
     if app.can_go_back() {
-        let e = pen.put(2, 0, BACK, pal.muted, false, false);
+        let e = pen.put(2, 0, BACK, pal.fg, false, false);
         drawn.back = Some((2, e));
         left = e + 2;
     }
@@ -420,12 +424,12 @@ fn header(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
     // come when they come
     let end = if app.cfg.progress && app.thinking() {
         let mx = right.saturating_sub(13);
-        pen.put(mx, 0, &progress::bar(app.work(), app.frame), pal.muted, false, false);
+        pen.put(mx, 0, &progress::bar(app.work(), app.frame), pal.accent, false, false);
         mx.saturating_sub(1)
     } else {
         right.saturating_sub(1)
     };
-    // the title centered in the frame, its state muted after it; cut at a word where the room is short
+    // the title centered in the frame, its state plain after it; cut at a word where the room is short
     let title = app.title();
     let sub = app.subtitle();
     let full = if sub.is_empty() { title.clone() } else { format!("{}{}{}", title, SEP, sub) };
@@ -436,7 +440,7 @@ fn header(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
     let tx = pen.put(x, 0, &cut_words(&title, room), pal.fg, true, false);
     drawn.title = Some((x, tx));
     if shown.len() > title.len() && shown.starts_with(title.as_str()) {
-        pen.put(tx, 0, &shown[title.len()..], pal.muted, false, false);
+        pen.put(tx, 0, &shown[title.len()..], pal.fg, false, false);
     }
 }
 
@@ -556,8 +560,10 @@ fn draw_column(app: &App, pal: &Palette, clock: &str, buf: &mut Buffer, chrome: 
     drawn
 }
 
-/// The key bar: the view's keys, Esc first. Complete groups wrap together onto its second line when they need
-/// it, and keycaps are never clipped; secondary shortcuts remain in Help.
+/// The key bar: the view's keys, Esc first. Complete groups wrap together onto a second line when they need it,
+/// and keycaps are never clipped; secondary shortcuts remain in Help. The window's last row is its bottom edge
+/// (v0.124.5: no air of foot's own), so a bar that wraps takes the row of air above it, h-3 and h-2, and the last
+/// row stays empty at every size.
 fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
     let mut groups: Vec<Vec<(String, bool)>> = vec![vec![]];
     for (text, key) in app.hint_with(drawn.pages.max(1)) {
@@ -573,22 +579,41 @@ fn contextual_keys(app: &App, pen: &mut Pen, drawn: &mut Drawn) {
         groups.insert(0, back);
     }
     let right = pen.w.saturating_sub(2);
-    let (mut x, mut y) = (2, keys_y(pen.h));
-    let last_y = y + 1;
-    for group in groups {
-        let parts: Vec<_> = group
-            .into_iter()
-            .map(|(t, key)| {
-                let actions: Vec<_> = if key { t.split(' ').filter_map(key_of).collect() } else { vec![] };
-                let label = if actions.is_empty() {
-                    t
-                } else {
-                    actions.iter().map(|a| app.cfg.keys.label(*a)).collect::<Vec<_>>().join(" ")
-                };
-                (label, key, actions)
-            })
-            .collect();
-        let span = |parts: &[(String, bool, Vec<HintKey>)]| parts.iter().map(|(t, k, _)| cells(t) + if *k { 2 } else { 0 }).sum::<usize>() as u16;
+    let span = |parts: &[(String, bool, Vec<HintKey>)]| parts.iter().map(|(t, k, _)| cells(t) + if *k { 2 } else { 0 }).sum::<usize>() as u16;
+    let groups: Vec<Vec<(String, bool, Vec<HintKey>)>> = groups
+        .into_iter()
+        .map(|group| {
+            group
+                .into_iter()
+                .map(|(t, key)| {
+                    let actions: Vec<_> = if key { t.split(' ').filter_map(key_of).collect() } else { vec![] };
+                    let label = if actions.is_empty() {
+                        t
+                    } else {
+                        actions.iter().map(|a| app.cfg.keys.label(*a)).collect::<Vec<_>>().join(" ")
+                    };
+                    (label, key, actions)
+                })
+                .collect()
+        })
+        .collect();
+    // does the bar need its second line: the first group that does not fit the first line, and would fit a line
+    let wraps = {
+        let mut x = 2u16;
+        let mut second = false;
+        for parts in &groups {
+            let width = span(parts);
+            if x + width > right {
+                second = width <= right - 2;
+                break;
+            }
+            x += width + 2;
+        }
+        second
+    };
+    let last_y = keys_y(pen.h);
+    let (mut x, mut y) = (2, if wraps { last_y - 1 } else { last_y });
+    for parts in groups {
         let width = span(&parts);
         if x + width > right && y < last_y && width <= right - 2 {
             x = 2;
@@ -1765,7 +1790,7 @@ fn about(app: &App, pen: &mut Pen, top: u16, bottom: u16) {
 /// A rendered buffer as text and tokens: the 60 characters of each row,
 /// then one line of two codes a cell -- the text's slot (f fg, m muted,
 /// a accent, r alarm, s surface, l lit: the rule; upper case when bold) and the ground
-/// (. the surface, l lit, a accent). A cell a picture takes is #.
+/// (. the surface, l lit, a accent, b the header's band). A cell a picture takes is #.
 pub fn snapshot(buf: &Buffer, pal: &Palette) -> String {
     let slot = |c: Color| -> char {
         if c == pal.fg || c == Color::Reset {
@@ -1808,6 +1833,8 @@ pub fn snapshot(buf: &Buffer, pal: &Palette) -> String {
                 'l'
             } else if c.bg == pal.accent {
                 'a'
+            } else if c.bg == pal.band {
+                'b'
             } else {
                 '.'
             };
@@ -1829,7 +1856,7 @@ pub fn html(buf: &Buffer, pal: &Palette, caption: &str) -> String {
     };
     let esc = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     let mut out = format!(
-        "<div><p style=\"color:{};font-size:13px;margin:0 0 8px\">{}</p><div style=\"background:{};padding:19px 2ch;white-space:pre;width:{}ch;line-height:19px\">",
+        "<div><p style=\"color:{};font-size:13px;margin:0 0 8px\">{}</p><div style=\"background:{};padding:0;white-space:pre;width:{}ch;line-height:19px\">",
         hex(pal.muted, pal.muted),
         esc(caption),
         hex(pal.surface, pal.surface),
