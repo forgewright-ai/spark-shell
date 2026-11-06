@@ -4202,6 +4202,9 @@ impl App {
                     if !self.files_actions(Some(row.clone())) {
                         self.steps_of(p, row);
                     }
+                } else if row.page.is_some() {
+                    // a row that is only its view (a package, v0.129): Enter views it, as F3 does
+                    self.open_preview();
                 }
             }
             _ => {}

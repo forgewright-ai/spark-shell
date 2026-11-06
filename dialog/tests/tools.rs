@@ -56,7 +56,7 @@ fn check_page() -> Value {
     let mut fix = row("tools:fix:spark-shell on", "fix");
     fix["columns"] = json!(["spark-shell on"]);
     fix["tool"] = json!({"name": "tools_fix", "arguments": {"command": "spark-shell on"}});
-    fix["line"] = json!(format!("fix {SEP} runs spark-shell on in a terminal"));
+    fix["line"] = json!(format!("fix {SEP} in a terminal: spark-shell on"));
     let mut passed = row("tools:passed", "14 passed");
     passed["children"] = json!("spark-shell://tools/rows/check/passed");
     passed["line"] = json!(format!("14 passed {SEP} the checks with no problem"));
@@ -176,7 +176,7 @@ fn check_is_the_problems_then_one_fix_for_both_then_what_passed() {
     // the problems are facts: the bar lands on the fix, the passed list and check again alone
     let names: Vec<String> = app.picks().iter().map(|it| label(&app, it)).collect();
     assert_eq!(names, vec!["fix", "14 passed", "check again"]);
-    assert_eq!(app.selected_line().as_deref(), Some("fix \u{b7} runs spark-shell on in a terminal"));
+    assert_eq!(app.selected_line().as_deref(), Some("fix \u{b7} in a terminal: spark-shell on"));
     assert_eq!(app.subtitle(), "check");
     golden(&mut app, "tools-check", 60, 40);
     // Enter on the fix runs its tool with the command, as the row says
@@ -203,4 +203,106 @@ fn check_with_no_problems_says_so_and_offers_no_fix() {
     let names: Vec<String> = app.picks().iter().map(|it| label(&app, it)).collect();
     assert_eq!(names, vec!["16 passed", "check again"]);
     golden(&mut app, "tools-check-ok", 60, 40);
+}
+
+fn fact(group: &str, label: &str, value: &str) -> Value {
+    json!({"id": format!("tools:fact:{label}"), "sign": "blank", "text": label, "tool": null, "more": [], "columns": [value], "children": null, "group": group})
+}
+
+#[test]
+fn system_is_three_groups_of_facts_and_copy_details() {
+    let mut app = app();
+    let mut copy = row("tools:copy-details", "copy details");
+    copy["tool"] = json!({"name": "tools_copy_details", "arguments": {}});
+    copy["line"] = json!(format!("copy details {SEP} to the clipboard, for bug reports"));
+    let page = json!({"title": "system", "state": "", "rows": [
+        fact("hardware", "model", "ThinkPad T14 Gen 3"),
+        fact("hardware", "processor", "AMD Ryzen 7 PRO 6850U, 8 cores"),
+        fact("hardware", "memory", "16 GB, 5.2 GB used"),
+        fact("hardware", "disk", "476.9 GB, 120.3 GB free"),
+        fact("hardware", "graphics", "amdgpu"),
+        fact("hardware", "battery", "82%, health 91%"),
+        fact("operating system", "system", "Void Linux"),
+        fact("operating system", "kernel", "6.12.8_1"),
+        fact("operating system", "init", "runit"),
+        fact("operating system", "packages", "xbps"),
+        fact("operating system", "uptime", "3 days"),
+        fact("desktop", "sway", "1.10"),
+        fact("desktop", "screens", "eDP-1 1920x1200, HDMI-A-1 2560x1440"),
+        fact("desktop", "spark-shell", "v0.128"),
+        fact("desktop", "spark-dialog", "v0.128.0"),
+        fact("desktop", "spark", "1.113.1"),
+        gap("1"), copy
+    ], "short": []});
+    at_page(&mut app, "system", page);
+    let names: Vec<String> = app.picks().iter().map(|it| label(&app, it)).collect();
+    assert_eq!(names, vec!["copy details"], "the facts are facts; copy details is the one row");
+    assert_eq!(app.selected_line().as_deref(), Some("copy details \u{b7} to the clipboard, for bug reports"));
+    golden(&mut app, "tools-system", 60, 40);
+}
+
+#[test]
+fn updates_is_the_two_versions_and_the_two_updates() {
+    let mut app = app();
+    let mut up = row("tools:update", "update spark-shell");
+    up["tool"] = json!({"name": "tools_update", "arguments": {}});
+    up["line"] = json!(format!("update spark-shell {SEP} in a terminal: spark-shell update"));
+    let mut sys = row("tools:update-system", "update system");
+    sys["tool"] = json!({"name": "tools_update_system", "arguments": {}});
+    sys["line"] = json!(format!("update system {SEP} in a terminal: sudo xbps-install -Su"));
+    let page = json!({"title": "updates", "state": "", "rows": [
+        fact("", "spark-shell", "v0.128, released 6 Nov 2026"), fact("", "spark-dialog", "v0.128.0"), up,
+        gap("1"), fact("", "system", "Void Linux, xbps"), sys
+    ], "short": []});
+    let page: Value = serde_json::from_str(&page.to_string().replace("\"group\":\"\"", "\"group\":null")).unwrap();
+    at_page(&mut app, "updates", page);
+    let names: Vec<String> = app.picks().iter().map(|it| label(&app, it)).collect();
+    assert_eq!(names, vec!["update spark-shell", "update system"]);
+    assert_eq!(
+        app.selected_line().as_deref(),
+        Some("update spark-shell \u{b7} in a terminal: spark-shell update")
+    );
+    golden(&mut app, "tools-updates", 60, 40);
+}
+
+#[test]
+fn software_counts_open_their_lists_and_a_package_is_an_object_with_its_view() {
+    let mut app = app();
+    let kind = |k: &str, n: &str, what: &str| {
+        let mut r = row(&format!("tools:software:{k}"), k);
+        r["columns"] = json!([n]);
+        r["children"] = json!(format!("spark-shell://tools/rows/software/{k}"));
+        r["line"] = json!(format!("{k} {SEP} {what}"));
+        r
+    };
+    let mut export = row("tools:export", "export");
+    export["columns"] = json!(["CycloneDX 1.5"]);
+    export["tool"] = json!({"name": "tools_export", "arguments": {}});
+    export["line"] = json!(format!("export {SEP} save the list as a CycloneDX file"));
+    let page = json!({"title": "software", "state": "", "rows": [
+        kind("apps", "4", "packages with a desktop entry"), kind("tools", "161", "packages with commands"),
+        kind("parts", "672", "libraries and data"), gap("1"), export
+    ], "short": []});
+    at_page(&mut app, "software", page);
+    let names: Vec<String> = app.picks().iter().map(|it| label(&app, it)).collect();
+    assert_eq!(names, vec!["apps", "tools", "parts", "export"]);
+    golden(&mut app, "tools-software", 60, 40);
+    // a package's list: a package is an object, its line on the status row, Enter its view
+    let package = |n: &str, v: &str, l: &str| {
+        let mut r = row(&format!("tools:package:app:{n}"), n);
+        r["columns"] = json!([v]);
+        r["line"] = json!(format!("{n} {SEP} {v} {SEP} {l}"));
+        r["page"] = json!(format!("spark-shell://tools/page/{n}"));
+        r
+    };
+    let list = json!({"title": "apps", "state": "", "rows": [
+        package("firefox", "133.0_1", "MPL-2.0"), package("foot", "1.20.2_1", "MIT"), package("mpv", "0.39.0_1", "GPL-2.0-or-later"), package("thunar", "4.20.0_1", "GPL-2.0-or-later")
+    ], "short": []});
+    at_page(&mut app, "software/apps", list);
+    assert!(app.object_pick(0), "a package is an object: a click selects it");
+    assert_eq!(app.selected_line().as_deref(), Some("firefox \u{b7} 133.0_1 \u{b7} MPL-2.0"));
+    assert_eq!(app.subtitle(), "apps");
+    golden(&mut app, "tools-software-apps", 60, 40);
+    app.enter();
+    assert_eq!(app.view, View::Preview, "Enter views a package, as F3 does");
 }
