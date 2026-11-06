@@ -348,6 +348,7 @@ fn running_is_every_program_its_cpu_and_its_memory_and_a_program_is_an_object() 
     let names: Vec<String> = app.picks().iter().map(|it| label(&app, it)).collect();
     assert_eq!(names, vec!["firefox", "llama-server", "foot", "pipewire", "udevd"]);
     assert!(app.object_pick(0), "a program is an object: a click selects it");
+    assert!(app.object_pick(4), "every program");
     assert_eq!(app.selected_line().as_deref(), Some("firefox \u{b7} 9% cpu \u{b7} 1.6 GB \u{b7} 14 processes"));
     assert_eq!(app.subtitle(), "running");
     golden(&mut app, "tools-running", 60, 40);
@@ -389,4 +390,94 @@ fn f9_on_a_program_is_put_in_front_and_end_and_end_asks_first() {
     assert!(screen.contains("(unsaved work is lost)"), "{screen}");
     app.escape();
     assert!(matches!(app.mode, Mode::Normal), "Esc keeps working: {:?}", app.mode);
+}
+
+/// Space's page, as `spark-shell provide tools` writes it: the system disk, cleanup, home's largest folders.
+fn space() -> Value {
+    let clean = |id: &str, text: &str, size: &str, line: &str| {
+        let mut r = row(id, text);
+        r["group"] = json!("cleanup");
+        r["columns"] = json!([size]);
+        r["line"] = json!(format!("{text} {SEP} {line}"));
+        r
+    };
+    let mut trash = clean("tools:trash", "trash", "2.1 GB", "open in files to restore or empty");
+    trash["children"] = json!("spark-shell://files/rows/trash");
+    let mut pkg = clean("tools:clean-packages", "package cache", "3.2 GB", "clean: sudo xbps-remove -O");
+    pkg["tool"] = json!({"name": "tools_clean_packages", "arguments": {}});
+    let mut caches = clean("tools:caches", "app caches", "1.4 GB", "~/.cache by folder");
+    caches["page"] = json!("spark-shell://tools/page/caches");
+    let folder = |name: &str, size: &str| {
+        let hidden = name.starts_with('.');
+        let mut r = row(&format!("tools:folder:{name}"), name);
+        r["group"] = json!("home");
+        r["columns"] = json!([size]);
+        r["line"] = json!(format!("{name} {SEP} {size} {SEP} {}", if hidden { "hidden folder" } else { "folder" }));
+        r["page"] = json!(format!("spark-shell://tools/page/{name}"));
+        if !hidden {
+            r["children"] = json!(format!("spark-shell://files/rows/{name}"));
+        }
+        r
+    };
+    let mut loose = folder("~", "2.4 GB");
+    loose["text"] = json!("files in home");
+    loose["line"] = json!(format!("files in home {SEP} 2.4 GB {SEP} files directly in ~"));
+    loose["page"] = Value::Null;
+    let mut more = row("tools:space:more", "9 more folders");
+    more["group"] = json!("home");
+    more["columns"] = json!(["0.4 GB"]);
+    let mut again = row("tools:measure", "measure again");
+    again["columns"] = json!(["measured at 09:12"]);
+    again["tool"] = json!({"name": "tools_measure", "arguments": {}});
+    again["line"] = json!(format!("measure again {SEP} what uses the disk now"));
+    json!({"title": "space", "state": "120.3 GB free", "rows": [
+        fact("", "system disk", "476.9 GB, 120.3 GB free"),
+        trash, pkg, caches,
+        folder("downloads", "18.2 GB"), folder("pictures", "12.0 GB"), folder("projects", "4.8 GB"), folder(".local", "4.2 GB"),
+        loose, more, gap("1"), again
+    ], "short": []})
+}
+
+#[test]
+fn space_is_the_disk_then_cleanup_then_homes_folders_as_objects() {
+    let mut app = app();
+    at_page(&mut app, "space", space_page());
+    let names: Vec<String> = app.picks().iter().map(|it| label(&app, it)).collect();
+    assert_eq!(
+        names,
+        vec![
+            "trash",
+            "package cache",
+            "app caches",
+            "downloads",
+            "pictures",
+            "projects",
+            ".local",
+            "files in home",
+            "measure again"
+        ],
+        "the disk and the rest of home are facts"
+    );
+    assert!(!app.object_pick(0), "cleanup is a menu: a click opens");
+    assert_eq!(app.selected_line().as_deref(), Some("trash \u{b7} open in files to restore or empty"));
+    golden(&mut app, "tools-space", 60, 40);
+    app.sel = 3;
+    assert!(app.object_pick(3), "a home folder is an object: a click selects it");
+    assert!(app.object_pick(7), "and the files in home");
+    assert!(!app.object_pick(8), "measure again is a menu's row");
+    assert_eq!(app.selected_line().as_deref(), Some("downloads \u{b7} 18.2 GB \u{b7} folder"));
+    app.sel = 6;
+    assert_eq!(app.selected_line().as_deref(), Some(".local \u{b7} 4.2 GB \u{b7} hidden folder"));
+    // files hides a hidden folder: Enter views it instead
+    app.enter();
+    assert_eq!(app.view, View::Preview, "Enter views a hidden folder");
+    // app caches is a view: Enter opens it, as a click does
+    at_page(&mut app, "space", space_page());
+    app.sel = 2;
+    app.enter();
+    assert_eq!(app.view, View::Preview, "app caches opens its view");
+}
+
+fn space_page() -> Value {
+    serde_json::from_str(&space().to_string().replace("\"group\":\"\"", "\"group\":null")).unwrap()
 }
