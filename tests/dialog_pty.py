@@ -579,25 +579,45 @@ def tools_walk(binary, env, home):
     seen.clear()
     os.write(fd, b"\x1b")
     ok(wait_for(lambda: "software" in tail() and "check again" not in tail()), "Esc goes back to the six", tail()[-600:])
+    def stop(what):
+        # a step that did not hold: nothing more is typed, so nothing is ended that the walk did not ask for
+        ok(False, what, scr.text())
+        os.kill(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+        if held.poll() is None:
+            held.kill()
+        held.wait()
+
+    asked = lambda: "end spark-pty-sleeper" in scr.text() and "(unsaved work is lost)" in scr.text() and "keep working" in scr.text()
     os.write(fd, b"running")
     time.sleep(0.5)
     os.write(fd, b"\r")
-    ok(wait_for(lambda: "tools \u00b7 running" in scr.text()), "running opens", scr.text())
+    if not wait_for(lambda: "tools \u00b7 running" in scr.text()):
+        return stop("running opens")
     os.write(fd, b"spark-pty")
-    ok(wait_for(lambda: "spark-pty-sleeper \u00b7 0% cpu" in scr.text()), "words find the walk's program, its line on the status row", scr.text())
+    if not wait_for(lambda: "spark-pty-sleeper \u00b7 0% cpu" in scr.text()):
+        return stop("words find the walk's program, its line on the status row")
     os.write(fd, b"\x1b[20~")   # F9
-    ok(wait_for(lambda: "tools \u00b7 spark-pty-sleeper" in scr.text() and "    end" in scr.text()), "F9: its actions, end among them", scr.text())
+    if not wait_for(lambda: "tools \u00b7 spark-pty-sleeper" in scr.text() and "    end" in scr.text()):
+        return stop("F9: the walk's program's actions, end among them")
     os.write(fd, b"\r")
-    ok(wait_for(lambda: "(unsaved work is lost)" in scr.text() and "keep working" in scr.text()), "end asks on the question page", scr.text())
+    if not wait_for(asked):
+        return stop("end asks on the question page, about the walk's program")
+    ok(True, "words find the walk's program; F9 has end; end asks about it")
     os.write(fd, b"\r")   # keep working is lit first
-    ok(wait_for(lambda: "spark-pty-sleeper \u00b7 0% cpu" in scr.text() and "keep working" not in scr.text()) and held.poll() is None,
-       "keep working keeps it, back on the list with the bar on it", scr.text())
+    if not (wait_for(lambda: "spark-pty-sleeper \u00b7 0% cpu" in scr.text() and "keep working" not in scr.text()) and held.poll() is None):
+        return stop("keep working keeps it, back on the list with the bar on it")
+    ok(True, "keep working keeps it, back on the list with the bar on it")
     os.write(fd, b"\x1b[20~")
-    wait_for(lambda: "    end" in scr.text())
+    if not wait_for(lambda: "tools \u00b7 spark-pty-sleeper" in scr.text() and "    end" in scr.text()):
+        return stop("F9 again: the walk's program's actions")
     os.write(fd, b"\r")
-    wait_for(lambda: "keep working" in scr.text())
+    if not wait_for(asked):   # the question names the walk's program, or nothing is confirmed
+        return stop("end asks again, about the walk's program")
     os.write(fd, b"\x1b[A")   # the verb
     time.sleep(0.3)
+    if not asked():
+        return stop("the question still names the walk's program before the verb is taken")
     os.write(fd, b"\r")
     end = time.time() + 8
     while time.time() < end and held.poll() is None:

@@ -25,8 +25,10 @@ Tools, six utilities after Norton Utilities, and help in plain English.
   its processes hold alone, read again every 3 seconds while it is on
   screen. A program is an object: Enter puts its window in front, or
   views it; F9 is `put in front` and `end`, which asks on the question
-  page and stops every process of the program. The desktop, the dialog
-  and another user's programs are refused with where they close.
+  page and stops every process of the program. The desktop's own parts
+  (sway, its bar, background, idle and lock, spark-shell, the session
+  bus, the sound server), the dialog and another user's programs are
+  refused with where they close.
 - `system` is the hardware, the operating system and the desktop, and
   `copy details` copies them for a bug report.
 - `updates` says spark-shell's release and the dialog's version, and

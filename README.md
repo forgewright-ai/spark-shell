@@ -1189,7 +1189,8 @@ its first and its last row.
   terminal; the app caches, a view), then home's largest folders, each
   counted once; it deletes nothing itself. `running` is every program
   by its cpu, read again every 3 seconds while it is on screen; F9 puts
-  one in front, or ends one of yours after a question. `system` is the
+  one in front, or ends one of yours after a question, never a part of
+  the desktop itself. `system` is the
   hardware, the operating system and the desktop, and copies them for a
   bug report. `updates` runs `spark-shell update` or the system upgrade
   in a terminal. `software` lists the installed packages and exports

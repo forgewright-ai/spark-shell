@@ -507,20 +507,31 @@ elif sys.argv[1] == 'steps':
                     key("spark-proof")
                     wait_for(lambda: "spark-proof-sleeper \u00b7 0% cpu" in "\n".join(screen()), "words find the proof's program")
                     capture("tools-running-void")
+                    # every step checks it is about the proof's own program before the next key: a wait that fails
+                    # raises, so nothing is confirmed on a row the proof did not find
+                    def asked():
+                        text = "\n".join(screen())
+                        return text if ("end spark-proof-sleeper" in text and "(unsaved work is lost)" in text and "keep working" in text) else None
+
+                    def actions():
+                        lines = screen()
+                        return any("spark-proof-sleeper" in l for l in lines[:1]) and any(l.strip() == "end" for l in lines)
+
                     key("-k", "F9")
-                    wait_for(lambda: any(l.strip() == "end" for l in screen()), "its actions, end among them")
+                    wait_for(actions, "F9: the proof's program's actions, end among them")
                     key("-k", "Return")
-                    text = wait_for(lambda: (lambda t: t if "(unsaved work is lost)" in t else None)("\n".join(screen())), "end asks")
-                    assert "keep working" in text, "the question's two rows: " + text
+                    wait_for(asked, "end asks about the proof's program")
                     capture("tools-end-void")
                     key("-k", "Return")   # keep working is lit first: Enter keeps
-                    time.sleep(1)
-                    assert held.poll() is None and "keep working" not in "\n".join(screen()), "keep working keeps the program"
+                    wait_for(lambda: "keep working" not in "\n".join(screen()) and "spark-proof-sleeper \u00b7 0% cpu" in "\n".join(screen()), "keep working comes back with the bar on the program")
+                    assert held.poll() is None, "keep working keeps the program"
                     key("-k", "F9")
-                    wait_for(lambda: any(l.strip() == "end" for l in screen()), "its actions again")
+                    wait_for(actions, "F9 again: the proof's program's actions")
                     key("-k", "Return")
-                    wait_for(lambda: "keep working" in "\n".join(screen()), "end asks again")
-                    key("-k", "Up", "-k", "Return")   # the verb
+                    wait_for(asked, "end asks again about the proof's program")
+                    key("-k", "Up")   # the verb
+                    assert asked(), "the question still names the proof's program before the verb is taken"
+                    key("-k", "Return")
                     wait_for(lambda: held.poll() is not None, "end ends the program")
                     for _ in range(4):   # the receipt, the words, then back to the six: an Esc each
                         if "updates" in "\n".join(screen()) and "software" in "\n".join(screen()):

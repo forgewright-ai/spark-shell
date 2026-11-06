@@ -1021,9 +1021,10 @@ program works as a window does in workspace: a click selects it; Enter
 or a second click puts its window in front, or views it when it has
 none; F3 views it; F9 is `put in front` when it has a window and `end`
 when it is yours. `end` asks on the question page and stops every
-process of the program. Sway, the dialog and another user's programs
-have no `end`, and the refusal says where they close (power's
-`logout`, Esc). The list is read again every 3 seconds while it is on
+process of the program. The desktop's own parts (sway, its bar,
+background, idle and lock, spark-shell, the session bus, the sound
+server), the dialog and another user's programs have no `end`, and the
+refusal says where they close (power's `logout`, Esc). The list is read again every 3 seconds while it is on
 screen: the dialog subscribes to that list's own uri, one thing watched
 at a time, and the selection stays on its program.
 

@@ -4762,17 +4762,18 @@ if [ "$(uname -s)" != Darwin ]; then
     }
     tproc 4194401 "$(id -u)" 50 /usr/bin/sway; tproc 4194402 "$(id -u)" 10 /usr/bin/spark-dialog --home; tproc 4194403 "$_ou" 5 /usr/sbin/udevd
     tproc 4194404 0 0; tproc 4194405 "$(id -u)" 300 /usr/lib/firefox/firefox; tproc 4194406 "$(id -u)" 200 /usr/lib/firefox/firefox -contentproc
-    tproc 4194407 "$(id -u)" 1 python3 /opt/notes-sync.py
+    tproc 4194407 "$(id -u)" 1 python3 /opt/notes-sync.py; tproc 4194408 "$(id -u)" 0 /usr/bin/swaybar -b bar-0
     (SPARK_SHELL_PROC=$TP; export SPARK_SHELL_PROC; mcp tools "$(rq 1 resources/read '{"uri":"spark-shell://tools/rows"}')" "$(rq 2 resources/read '{"uri":"spark-shell://tools/rows/check"}')" \
         "$(rq 3 resources/read '{"uri":"spark-shell://tools/rows/check/passed"}')" "$(rq 4 resources/read '{"uri":"spark-shell://tools/rows/running"}')" \
         "$(rq 5 resources/read "$(jq -cn --arg u "spark-shell://tools/page/$(b64u tools:program:firefox)" '{uri: $u}')")" \
         "$(call 6 tools_end '{"name":"sway"}')" "$(call 7 tools_end '{"name":"spark-dialog"}')" "$(call 8 tools_end '{"name":"udevd"}')" "$(call 9 tools_end '{"name":"nosuch"}')" \
         "$(call 10 tools_front '{"name":"firefox"}')" "$(call 11 tools_fix '{"command":"rm -rf /"}')" "$(call 12 tools_fix '{"command":"spark-shell on"}')" \
-        "$(call 13 tools_clean_packages)" "$(rq 14 resources/read '{"uri":"spark-shell://tools/rows/system"}')" "$(rq 15 resources/read '{"uri":"spark-shell://tools/rows/updates"}')")   # a subshell: sh keeps a variable set before a function after it
+        "$(call 13 tools_clean_packages)" "$(rq 14 resources/read '{"uri":"spark-shell://tools/rows/system"}')" "$(rq 15 resources/read '{"uri":"spark-shell://tools/rows/updates"}')" \
+        "$(call 16 tools_end '{"name":"swaybar"}')")   # a subshell: sh keeps a variable set before a function after it
     rows() { ans "$1" | jq -c '.result.contents[0].text | fromjson'; }
     said() { ans "$1" | jq -r '.result.content[0].text'; }
     [ "$(rows 1 | jq -c '[.rows[] | [.id, .text, .children]]')" = '[["tools:check","check","spark-shell://tools/rows/check"],["tools:space","space","spark-shell://tools/rows/space"],["tools:running","running","spark-shell://tools/rows/running"],["tools:system","system","spark-shell://tools/rows/system"],["tools:updates","updates","spark-shell://tools/rows/updates"],["tools:software","software","spark-shell://tools/rows/software"]]' ] \
-        && [ "$(rows 1 | jq -r '.rows[0].columns[0], .rows[2].columns[0], .rows[0].line')" = "$(printf '3 problems\n7 processes\ncheck %s test the setup and fix problems' "$SEP")" ] \
+        && [ "$(rows 1 | jq -r '.rows[0].columns[0], .rows[2].columns[0], .rows[0].line')" = "$(printf '3 problems\n8 processes\ncheck %s test the setup and fix problems' "$SEP")" ] \
         && rows 1 | jq -e 'all(.rows[]; (.columns[0] | length) > 0)' >/dev/null \
         && ok "provide tools: six rows, one word each, each its state (the last check, the processes) and its page as children" || bad "tools rows" "$(rows 1)"
     [ "$(rows 2 | jq -c '[.rows[] | select(.text != "") | [.text, .group, (.columns[0] // ""), (.tool.arguments.command // "")]]')" = '[["programs","problems","missing: fzf zoxide",""],["config files","problems","out of date: .tmux.conf",""],["screen saver","problems","no screen saver",""],["fix",null,"spark-shell on","spark-shell on"],["fix",null,"spark-shell desktop","spark-shell desktop"],["1 passed",null,"",""],["1 not applicable",null,"",""],["check again",null,"checked at '"$(date -d "@$(sed -n 1p "$_ts/check.last")" +%H:%M)"'",""]]' ] \
@@ -4780,13 +4781,15 @@ if [ "$(uname -s)" != Darwin ]; then
         && ok "tools check: the problems by plain name, one fix for the two that share it, the passed and the not applicable counted apart, check again with its time" || bad "tools check" "$(rows 2)"
     [ "$(rows 4 | jq -c '[.rows[] | [.text, .columns, ([.more[].name] | join(" ")), .line]]')" = "$(jq -cn --arg s "$SEP" --arg o "$_on" '[["firefox", ["0%", "3.1 MB"], "tools_end", "firefox \($s) 0% cpu \($s) 3.1 MB \($s) 2 processes"],
             ["notes-sync.py", ["0%", "1.6 MB"], "tools_end", "notes-sync.py \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"], ["spark-dialog", ["0%", "1.6 MB"], "", "spark-dialog \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"],
-            ["sway", ["0%", "1.6 MB"], "", "sway \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"], ["udevd", ["0%", "1.6 MB"], "", "udevd \($s) 0% cpu \($s) 1.6 MB \($s) 1 process \($s) user \($o)"]]')" ] \
-        && [ "$(rows 4 | jq -r .state)" = '7 processes' ] && [ "$(ans 5 | jq -r '.result.contents[0].text | fromjson | .lines[2:5] | join("|")')" = 'processes   2|ids         4194405, 4194406|user        you' ] \
-        && ok "tools running: a program its command's name (a script by its script), its processes one row, a kernel thread left out; end on the person's own alone, not the desktop's or the dialog's; its view" || bad "tools running" "$(rows 4) $(ans 5)"
+            ["sway", ["0%", "1.6 MB"], "", "sway \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"], ["swaybar", ["0%", "1.6 MB"], "", "swaybar \($s) 0% cpu \($s) 1.6 MB \($s) 1 process"],
+            ["udevd", ["0%", "1.6 MB"], "", "udevd \($s) 0% cpu \($s) 1.6 MB \($s) 1 process \($s) user \($o)"]]')" ] \
+        && [ "$(rows 4 | jq -r .state)" = '8 processes' ] && [ "$(ans 5 | jq -r '.result.contents[0].text | fromjson | .lines[2:5] | join("|")')" = 'processes   2|ids         4194405, 4194406|user        you' ] \
+        && ok "tools running: a program its command's name (a script by its script), its processes one row, a kernel thread left out; end on the person's own alone, not the desktop's parts or the dialog; its view" || bad "tools running" "$(rows 4) $(ans 5)"
     [ "$(said 6)" = 'sway is the desktop: use logout in power' ] && [ "$(said 7)" = 'the dialog closes with Esc' ] && [ "$(said 8)" = "udevd belongs to $_on and cannot be ended here" ] \
         && [ "$(said 9)" = 'nosuch is not running' ] && [ "$(said 10)" = 'firefox has no window' ] && [ "$(said 11)" = 'rm -rf / is not a fix the last check gave' ] \
         && [ "$(said 12)" = 'a terminal window needs the desktop' ] && [ "$(said 13)" = 'no supported package manager here' ] \
-        && ans 8 | jq -e '.result.isError' >/dev/null && ok "tools: end refuses the desktop, the dialog, another user's program and one not running; front one with no window; a fix the check did not give; a terminal with no desktop; a clean with no package manager" \
+        && [ "$(said 16)" = 'swaybar is part of the desktop: use logout in power' ] \
+        && ans 8 | jq -e '.result.isError' >/dev/null && ok "tools: end refuses the desktop and its parts, the dialog, another user's program and one not running; front one with no window; a fix the check did not give; a terminal with no desktop; a clean with no package manager" \
         || bad "tools refusals" "$(for i in 6 7 8 9 10 11 12 13; do said $i; done | paste -sd '|' -)"
     [ "$(rows 14 | jq -c '[.rows[] | .group] | unique')" != '[null]' ] && rows 14 | jq -e 'any(.rows[]; .id == "tools:copy-details" and .tool.name == "tools_copy_details") and all(.rows[]; .group == null or .group == "hardware" or .group == "operating system" or .group == "desktop")' >/dev/null \
         && rows 15 | jq -e '[.rows[] | .id] | index("tools:update") != null' >/dev/null \

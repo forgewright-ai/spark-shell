@@ -7647,7 +7647,7 @@ tools_menu() {   # -> NAME<tab>STATE<tab>LINE, the six in their order
 }
 tools_os() { sed -n "s/^$1=//p" "${SPARK_OS_RELEASE:-/etc/os-release}" 2>/dev/null | head -1 | tr -d '"'; }   # tools_os KEY -> os-release's value
 tools_space_state() { _tsh=$(storage_here); case $_tsh in *', '*) printf '%s\n' "${_tsh#*, }" ;; *) echo 'the system disk' ;; esac; }   # -> "120.3 GB free"
-tools_running_state() { echo "$(ls -d "$BAR_PROC"/[0-9]* 2>/dev/null | grep -c . || :) processes"; }   # -> "412 processes"
+tools_running_state() { _trn=0; for _trp in "$BAR_PROC"/[0-9]*; do [ ! -d "$_trp" ] || _trn=$((_trn + 1)); done; echo "$_trn processes"; }   # -> "412 processes"
 tools_mem_kb() { awk -v k="$1" '$1 == k ":" { print $2; exit }' "$BAR_PROC/meminfo" 2>/dev/null || :; }   # tools_mem_kb MemTotal -> kB
 tools_system_state() {   # -> "Void Linux, 16 GB": the system's name and the memory, rounded
     _tsn=$(tools_os NAME); _tsm=$(tools_mem_kb MemTotal)
@@ -7838,7 +7838,7 @@ tools_cache_dir() { printf '%s\n' "${XDG_CACHE_HOME:-$HOME/.cache}"; }
 tools_trash_dir() { printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/Trash"; }
 tools_tilde() {   # tools_tilde PATH -> ~/.cache: your home as ~, as written or as a root names it
     _ttr=$(files_home_root)
-    case $1 in "$HOME"|"$_ttr") echo '~' ;; "$HOME"/*) printf '~/%s\n' "${1#"$HOME"/}" ;; "$_ttr"/*) printf '~/%s\n' "${1#"$_ttr"/}" ;; *) printf '%s\n' "$1" ;; esac
+    case $1 in "$HOME"|"$_ttr") echo '~' ;; "$HOME"/*) printf '%s/%s\n' '~' "${1#"$HOME"/}" ;; "$_ttr"/*) printf '%s/%s\n' '~' "${1#"$_ttr"/}" ;; *) printf '%s\n' "$1" ;; esac
 }
 tools_space_measure() {   # measure now, TOOLS_SPACE_WAIT seconds at most, side by side: home by folder, the app caches by folder, the trash, the package cache
     mkdir -p "$TOOLS_SPACE"
@@ -7851,7 +7851,7 @@ tools_space_measure() {   # measure now, TOOLS_SPACE_WAIT seconds at most, side 
     for _f in home cache trash packages; do
         if [ -f "$TOOLS_SPACE/$_f.new" ]; then mv -f "$TOOLS_SPACE/$_f.new" "$TOOLS_SPACE/$_f"; else : > "$TOOLS_SPACE/$_f"; fi
     done
-    _tmd=done; [ "$(cat "$TOOLS_SPACE/home.rc" 2>/dev/null)" != 124 ] || _tmd=part   # timeout's own word: du was stopped before it ended
+    _tmd='done'; [ "$(cat "$TOOLS_SPACE/home.rc" 2>/dev/null)" != 124 ] || _tmd='part'   # timeout's own word: du was stopped before it ended
     printf '%s %s\n' "$(date +%s)" "$_tmd" > "$TOOLS_SPACE/at"
 }
 tools_space_run() {   # the measure made now, unless the kept one is younger than TOOLS_SPACE_FRESH seconds
@@ -7866,7 +7866,7 @@ tools_space_folders() {   # -> KB<tab>NAME<tab>PATH, home's folders, the largest
         { k = $1; if (tk != "" && index(trash "/", $2 "/") == 1) k -= tk; if (k < 0) k = 0; n = $2; sub(/.*\//, "", n); printf "%d\t%s\t%s\n", k, n, $2 }' "$TOOLS_SPACE/home" 2>/dev/null | sort -t "$TAB" -k1,1nr
 }
 tools_space_loose() {   # -> the KB of the files directly in home: the whole, less its folders; nothing when the measure did not end
-    [ "$(cut -d' ' -f2 "$TOOLS_SPACE/at" 2>/dev/null)" = done ] || return 0
+    [ "$(cut -d' ' -f2 "$TOOLS_SPACE/at" 2>/dev/null)" = 'done' ] || return 0
     awk -F '\t' -v root="$(files_home_root)" '$2 == root { t = $1; next } { s += $1 } END { if (t != "") { d = t - s; print (d < 0 ? 0 : d) } }' "$TOOLS_SPACE/home" 2>/dev/null
 }
 TOOLS_SPACE_SHOWN=6   # home's folders listed by name; the rest are one row
@@ -7914,10 +7914,10 @@ tools_space_page() {   # -> the system disk; cleanup: trash, package cache, app 
 }
 tools_space_view() {   # tools_space_view caches|folder:NAME -> a view of a folder's largest folders: the app caches as measured, a home folder measured now
     case $1 in
-        caches) _tvp=$(realpath "$(tools_cache_dir)" 2>/dev/null || tools_cache_dir); cp "$TOOLS_SPACE/cache" "$TMP/view.du" 2>/dev/null || : > "$TMP/view.du"; _tvt='app caches'; _tvd=done ;;
+        caches) _tvp=$(realpath "$(tools_cache_dir)" 2>/dev/null || tools_cache_dir); cp "$TOOLS_SPACE/cache" "$TMP/view.du" 2>/dev/null || : > "$TMP/view.du"; _tvt='app caches' ;;
         folder:?*) _tvn=${1#folder:}; case $_tvn in */*|.|..) return 1 ;; esac
-            _tvp=$(files_home_root)/$_tvn; [ -d "$_tvp" ] || return 1; _tvt=$_tvn; _tvd=done
-            timeout 5 du -x -d1 -k "$_tvp" > "$TMP/view.du" 2>/dev/null; [ $? != 124 ] || _tvd=part ;;
+            _tvp=$(files_home_root)/$_tvn; [ -d "$_tvp" ] || return 1; _tvt=$_tvn
+            timeout 5 du -x -d1 -k "$_tvp" > "$TMP/view.du" 2>/dev/null || : ;;   # stopped at 5 seconds, the folder's own total is missing: said below
         *) return 1 ;;
     esac
     _tvk=$(awk -F '\t' -v p="$_tvp" '$2 == p { print $1 }' "$TMP/view.du")
@@ -7931,7 +7931,7 @@ tools_running_read() {   # -> $TMP/running.tsv, the programs now (lib/tools_runn
     python3 -I "$REPO/lib/tools_running.py" list "$BAR_PROC" "$TMP/running.state" "$TMP/running.windows" > "$TMP/running.tsv" 2>/dev/null
 }
 tools_users() { awk -F: '{ printf "%s\t%s\n", $3, $1 }' /etc/passwd 2>/dev/null | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}'; }   # -> {"0": "root", ...}
-TOOLS_KEEP='sway spark-dialog'   # never ended from here: the desktop and the dialog
+TOOLS_KEEP='sway swaybar swaybg swayidle swaylock spark-shell spark-dialog dbus-daemon pipewire pipewire-pulse wireplumber'   # never ended from here: the desktop's own parts (the compositor, its bar, background, idle and lock, spark-shell, the session bus, the sound server) and the dialog
 tools_running_page() {   # -> every program, the busiest first: an object each, its actions put in front and end
     tools_running_read
     jq -Rn --arg sep "$PANEL_SEP" --arg me "$(id -u)" --argjson users "$(tools_users)" --arg keep " $TOOLS_KEEP " --arg state "$(tools_running_state)" '
@@ -7983,7 +7983,7 @@ tools_gate() {   # tools_gate ACTION [ARG] -> ARG as the step takes it (exit 0),
         front) _tgl=$(tools_program "$2"); [ -n "$_tgl" ] || { echo "$2 is not running"; return 1; }
             [ -n "$(printf '%s' "$_tgl" | cut -f10)" ] || { echo "$2 has no window"; return 1; }
             printf '%s\n' "$2"; return 0 ;;
-        end) case " $TOOLS_KEEP " in *" $2 "*) case $2 in sway) echo "sway is the desktop: use logout in power" ;; *) echo "the dialog closes with Esc" ;; esac; return 1 ;; esac
+        end) case " $TOOLS_KEEP " in *" $2 "*) case $2 in sway) echo "sway is the desktop: use logout in power" ;; spark-dialog) echo "the dialog closes with Esc" ;; *) echo "$2 is part of the desktop: use logout in power" ;; esac; return 1 ;; esac
             tools_running_read; _tgl=$(tools_program "$2"); [ -n "$_tgl" ] || { echo "$2 is not running"; return 1; }
             _tgu=$(printf '%s' "$_tgl" | cut -f6)
             [ "$_tgu" = "$(id -u)" ] || { echo "$2 belongs to $(printf '%s\n' "$_tgu" | tr ',' '\n' | grep -vx "$(id -u)" | head -1 | while read -r _u; do awk -F: -v u="$_u" '$3 == u { print $1; f = 1 } END { if (!f) print "user " u }' /etc/passwd; done) and cannot be ended here"; return 1; }
