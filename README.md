@@ -841,7 +841,7 @@ A step that loses something asks on a page of its own, wherever it
 comes from: the verb as the heading, one note in parentheses, two rows,
 the verb and `keep working`, which is lit first, so Enter again keeps and
 the verb takes Up or a click. Enter or a click on the verb acts; Esc and
-every back door keep, and typed words are refused there. The typed yes
+every other way back keep, and typed words are refused there. The typed yes
 is gone.
 `dialog chat` opens this conversation; `spark` remains usable independently.
 
@@ -941,10 +941,10 @@ rows take: `actions  F9` (`details  F9` in apps), `view  F3`, change,
 month, history. The same
 words whatever row is lit or typed, so nothing changes under a moving
 pointer. Enter has no chip: it opens what the bar is on, everywhere.
-Back has more doors than its chip: with nothing typed, Backspace goes
-back a level, and so does Left outside files, where Left is the left
-pane, and a click on the header's `< back` or on its place name; none
-of them closes the dialog from home, which is Esc's alone. The wheel
+Going back has more keys than its chip: with nothing typed, Backspace
+goes back a level, and so does Left outside files, where Left is the
+left pane, and a click on the header's `< back` or on the place name.
+Only Esc closes the dialog from home. The wheel
 moves the bar a row at a time in a list, as the arrows do, and three
 lines in text.
 A mode that waits on Enter for something else (run the commands spark

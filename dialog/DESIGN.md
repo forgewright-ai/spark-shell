@@ -94,11 +94,10 @@ waits on Enter for something other than the selection (run the
 commands spark planned, apply a model, land a step in this folder)
 says so with its chip, as a question says what it takes.
 
-Back has more doors than its chip (v0.124.3): Esc; with nothing typed,
-Left, outside files, where it is the left pane, and Backspace, as a
-launcher's does; and a click on the header's `< back`, or on its place
-name. None of
-them closes the dialog from home: that is Esc's alone.
+Going back has more keys than its chip (v0.124.3): Esc; with nothing
+typed, Left (outside files, where Left is the left pane) and
+Backspace, as in a launcher; and a click on the header's `< back` or
+on the place name. Only Esc closes the dialog from home.
 
 The wheel moves the bar a row at a time in a list, as the arrows do,
 and three lines in text (v0.124.4). Enter with words typed is never
@@ -760,7 +759,7 @@ words: the verb as the heading, one note in parentheses (the last
 sentence of the tool's description, lowercase), two menu rows, the verb
 and `keep working`, which is lit first (v0.127.2), so Enter again keeps
 and the verb takes Up or a click. Enter or a click on the verb acts; `keep working`,
-Esc and every back door keep; typed words are refused. The header says
+Esc and every other way back keep; typed words are refused. The header says
 the verb; the key bar `keep  Esc`. A spark-planned step's heading is
 its line.
 
